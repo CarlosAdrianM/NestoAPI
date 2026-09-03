@@ -42,7 +42,7 @@ namespace NestoAPI.Tests.Infraestructure.Buscador
             }
         }
 
-        private static ResultadoBusqueda CrearProducto(string id, string nombre, bool anulado)
+        private static ResultadoBusqueda CrearProducto(string id, string nombre, bool anulado, int? posicionMasVendido = null)
         {
             return new ResultadoBusqueda
             {
@@ -53,8 +53,14 @@ namespace NestoAPI.Tests.Infraestructure.Buscador
                 Subgrupo = "Subgrupo",
                 DescripcionBreve = "",
                 DescripcionLarga = "",
-                Anulado = anulado
+                Anulado = anulado,
+                PosicionMasVendido = posicionMasVendido
             };
+        }
+
+        private static List<string> Ids(IEnumerable<dynamic> resultados)
+        {
+            return resultados.Select(r => (string)r.Id).ToList();
         }
 
         private void Indexar(params ResultadoBusqueda[] productos)
@@ -81,6 +87,155 @@ namespace NestoAPI.Tests.Infraestructure.Buscador
                 IncluirAnulados = incluirAnulados
             });
         }
+
+        #region La palabra exacta gana al radical (03/09/26: "vapore" no sacaba la Vapore de Eva Visnú)
+
+        [TestMethod]
+        public void LuceneBuscador_PalabraExacta_SaleAntesQueLosQueSoloCasanPorElRadical()
+        {
+            // El stemmer deja "vapore" en "vapor", así que "vapore" era la misma búsqueda que
+            // "vapor": 65 productos y la Vapore la 26ª, detrás de vasos y gomas de vapor con el
+            // nombre corto y sin descripción. La Vapore tiene descripción larga, que diluye su
+            // puntuación en el texto completo.
+            ResultadoBusqueda vapore = CrearProducto("37668", "VAPORE CREMA SUSTITUTIVA DEL VAPOR", anulado: false);
+            vapore.DescripcionLarga = "Crema de la línea Splendore que sustituye al vapor en la cabina para ablandar el poro "
+                + "antes de la extracción. Se aplica una capa generosa sobre el rostro limpio y se deja actuar diez minutos "
+                + "cubriendo con film o toalla templada. Ideal para pieles sensibles que no toleran el calor del aparato.";
+            Indexar(
+                CrearProducto("32841", "VASO VAPOR SILVERFOX (Vapor B-002)", anulado: false),
+                CrearProducto("33872", "VASO VAPOR (Vapor A-30 / FD-2103)", anulado: false),
+                CrearProducto("22703", "VASO VAPOR", anulado: false),
+                CrearProducto("27166", "GOMA VASO VAPOR", anulado: false),
+                CrearProducto("27163", "RESISTENCIA VAPOR", anulado: false),
+                vapore);
+
+            List<string> porVapore = Ids(Buscar("vapore", incluirAnulados: false));
+            List<string> porVapor = Ids(Buscar("vapor", incluirAnulados: false));
+
+            Assert.AreEqual(6, porVapore.Count, "el radical sigue encontrando a los de vapor: no se pierde nada");
+            Assert.AreEqual("37668", porVapore[0], "la palabra tal cual manda sobre el radical");
+            Assert.AreEqual(6, porVapor.Count, "\"vapor\" sigue encontrando la Vapore");
+        }
+
+        [TestMethod]
+        public void LuceneBuscador_PalabraExacta_IgnoraAcentosYMayusculas()
+        {
+            // (El stemmer ligero no junta "champús" con "champú", pero sí "cremas" con "crema".)
+            Indexar(
+                CrearProducto("plural", "Cremas para la casa", anulado: false),
+                CrearProducto("exacto", "Crema hidratante", anulado: false),
+                CrearProducto("acento", "Champú anticaspa", anulado: false));
+
+            List<string> porCrema = Ids(Buscar("CREMA", incluirAnulados: false));
+            List<string> porChampu = Ids(Buscar("champu", incluirAnulados: false));
+
+            Assert.AreEqual(2, porCrema.Count, "el radical sigue encontrando el plural");
+            Assert.AreEqual("exacto", porCrema[0], "y el exacto, en mayúsculas, pone delante al que se llama así");
+            CollectionAssert.AreEqual(new List<string> { "acento" }, porChampu, "sin acento también casa");
+        }
+
+        #endregion
+
+        [TestMethod]
+        public void LuceneBuscador_LosVideosNoDegradanElNombreDeLosProductos()
+        {
+            // 03/09/26: en producción "vapor" daba la Vapore la 26ª y en local, con los mismos datos,
+            // la primera. La diferencia eran los vídeos: su título iba como StringField("Nombre")
+            // (OmitNorms + DOCS_ONLY), y en Lucene 4 eso se contagia al campo entero del segmento:
+            // el Nombre de TODOS los productos perdía boost, normalización y frecuencia.
+            ResultadoBusqueda vapore = CrearProducto("37668", "VAPORE CREMA SUSTITUTIVA DEL VAPOR", anulado: false);
+            vapore.DescripcionLarga = "Crema de la línea Splendore que sustituye al vapor en la cabina para ablandar el poro "
+                + "antes de la extracción. Se aplica una capa generosa sobre el rostro limpio y se deja actuar diez minutos "
+                + "cubriendo con film o toalla templada. Ideal para pieles sensibles que no toleran el calor del aparato.";
+            List<ResultadoBusqueda> productos = new List<ResultadoBusqueda>
+            {
+                CrearProducto("32841", "VASO VAPOR SILVERFOX (Vapor B-002)", anulado: false),
+                CrearProducto("33872", "VASO VAPOR (Vapor A-30 / FD-2103)", anulado: false),
+                vapore
+            };
+            (int, string, string, string) video = (99, "Protocolo de manicura", "transcripción", "Vídeo de manicura");
+
+            LuceneBuscador.Indexar(_rutaIndice, productos, new List<(int, string, string, string)>());
+            List<string> sinVideo = Ids(LuceneBuscador.BuscarEnIndice(_rutaIndice, new ParametrosBusqueda { Query = "vapor", Tipo = "producto" }));
+            LuceneBuscador.Indexar(_rutaIndice, productos, new List<(int, string, string, string)> { video });
+            List<string> conVideo = Ids(LuceneBuscador.BuscarEnIndice(_rutaIndice, new ParametrosBusqueda { Query = "vapor", Tipo = "producto" }));
+
+            Assert.AreEqual("37668", sinVideo[0], "por nombre (boost 4), vapor dos veces en cuatro palabras gana a dos veces en seis");
+            CollectionAssert.AreEqual(sinVideo, conVideo, "un vídeo en el índice no puede cambiar el orden de los productos");
+        }
+
+        #region Los más vendidos pesan (03/09/26: ClasificacionMasVendidos no se miraba)
+
+        [TestMethod]
+        public void LuceneBuscador_FactorMasVendido_ElPrimeroDoblaYElUltimoNoSuma()
+        {
+            Assert.AreEqual(1f + PESO_MAS_VENDIDOS, FactorMasVendido(1), 0.0001f);
+            Assert.AreEqual(1f, FactorMasVendido(0), "sin clasificar (vídeos, productos nuevos) se queda igual");
+            Assert.AreEqual(1f, FactorMasVendido(-1));
+            Assert.AreEqual(1f, FactorMasVendido(1000000), "más allá del horizonte no suma");
+            Assert.IsTrue(FactorMasVendido(10) > FactorMasVendido(100), "decrece con la posición");
+            Assert.IsTrue(FactorMasVendido(100) > FactorMasVendido(10000));
+            Assert.IsTrue(FactorMasVendido(36000) > 1f, "el último de hoy aún suma algo");
+        }
+
+        [TestMethod]
+        public void LuceneBuscador_MasVendido_AdelantaAIgualRelevancia()
+        {
+            // Los tres se llaman igual: por texto empatan y Lucene los daría en orden de indexado
+            // (el sin clasificar el primero). Lo que se vende manda.
+            Indexar(
+                CrearProducto("sin", "Champú anticaspa", anulado: false, posicionMasVendido: null),
+                CrearProducto("medio", "Champú anticaspa", anulado: false, posicionMasVendido: 5000),
+                CrearProducto("top", "Champú anticaspa", anulado: false, posicionMasVendido: 10));
+
+            List<string> resultados = Ids(Buscar("champú", incluirAnulados: false));
+
+            CollectionAssert.AreEqual(new List<string> { "top", "medio", "sin" }, resultados);
+        }
+
+        [TestMethod]
+        public void LuceneBuscador_MasVendido_NoAdelantaAUnaCoincidenciaClaramenteMejor()
+        {
+            // El peso multiplica la puntuación de texto, no la sustituye: el que casa con las dos
+            // palabras sigue por delante del superventas que solo casa con una.
+            Indexar(
+                CrearProducto("superventas", "Champú", anulado: false, posicionMasVendido: 1),
+                CrearProducto("exacto", "Champú anticaspa", anulado: false, posicionMasVendido: 30000));
+
+            List<string> resultados = Ids(Buscar("champú anticaspa", incluirAnulados: false));
+
+            Assert.AreEqual(2, resultados.Count);
+            Assert.AreEqual("exacto", resultados[0]);
+        }
+
+        [TestMethod]
+        public void LuceneBuscador_MasVendido_NoApareceEnBusquedasQueNoLeTocan()
+        {
+            Indexar(
+                CrearProducto("superventas", "Cartucho cera tibia natural", anulado: false, posicionMasVendido: 1),
+                CrearProducto("normal", "Champú anticaspa", anulado: false, posicionMasVendido: 20000));
+
+            List<string> resultados = Ids(Buscar("champú", incluirAnulados: false));
+
+            CollectionAssert.AreEqual(new List<string> { "normal" }, resultados);
+        }
+
+        [TestMethod]
+        public void LuceneBuscador_MasVendido_UnIndiceSoloDeVideosNoRevienta()
+        {
+            // Los vídeos no llevan posición: en un segmento sin el campo, los doc values son null
+            LuceneBuscador.Indexar(
+                _rutaIndice,
+                new List<ResultadoBusqueda>(),
+                new List<(int, string, string, string)> { (99, "Protocolo de manicura", "transcripción", "Vídeo de manicura") });
+
+            List<dynamic> resultados = Buscar("manicura", incluirAnulados: false);
+
+            Assert.AreEqual(1, resultados.Count);
+            Assert.AreEqual("video", (string)resultados[0].Tipo);
+        }
+
+        #endregion
 
         #region Buscar por referencia (la caja del footer de la tienda, Nesto y la app)
 

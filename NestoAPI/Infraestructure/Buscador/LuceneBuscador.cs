@@ -1,5 +1,8 @@
-﻿using Lucene.Net.Documents;
+﻿using Lucene.Net.Analysis;
+using Lucene.Net.Analysis.Miscellaneous;
+using Lucene.Net.Documents;
 using Lucene.Net.Index;
+using Lucene.Net.Queries;
 using Lucene.Net.QueryParsers.Classic;
 using Lucene.Net.Search;
 using Lucene.Net.Store;
@@ -19,6 +22,19 @@ namespace NestoAPI.Infraestructure.Buscador
         private static readonly LuceneVersion AppLuceneVersion = LuceneVersion.LUCENE_48;
         private static readonly string _luceneIndexDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "lucene_index");
 
+        /// <summary>
+        /// El nombre sin stemming ni sinónimos (<see cref="SpanishExactoAnalyzer"/>): la palabra
+        /// tal cual la escribe el usuario, para que "vapore" ponga por delante al producto que se
+        /// llama "Vapore" y no lo mezcle con los sesenta que llevan "vapor".
+        /// </summary>
+        internal const string CAMPO_NOMBRE_EXACTO = "NombreExacto";
+
+        /// <summary>
+        /// Posición en ClasificacionMasVendidos (1 = el que más se vende; 0 = sin clasificar).
+        /// Va en doc values, no en el texto: solo sirve para ponderar la puntuación.
+        /// </summary>
+        internal const string CAMPO_POSICION_MAS_VENDIDO = "PosicionMasVendido";
+
         public static void IndexarTodo()
         {
             Indexar(_luceneIndexDirectory, ObtenerProductos(), ObtenerVideos());
@@ -28,8 +44,7 @@ namespace NestoAPI.Infraestructure.Buscador
         // los datos ya leídos, para poder indexar en una carpeta temporal sin tocar la base de datos.
         internal static void Indexar(string rutaIndice, List<ResultadoBusqueda> productos, List<(int Id, string Protocolo, string Transcripcion, string Nombre)> videos)
         {
-            SpanishInsensitiveAnalyzer analyzer = new SpanishInsensitiveAnalyzer(AppLuceneVersion);
-            IndexWriterConfig indexConfig = new IndexWriterConfig(AppLuceneVersion, analyzer);
+            IndexWriterConfig indexConfig = new IndexWriterConfig(AppLuceneVersion, CrearAnalizadorDeIndexado());
 
             using (FSDirectory dir = FSDirectory.Open(rutaIndice))
             using (IndexWriter writer = new IndexWriter(dir, indexConfig))
@@ -44,6 +59,8 @@ namespace NestoAPI.Infraestructure.Buscador
                         new StringField("Id", producto.Id, Field.Store.YES),
                         new StringField("Anulado", producto.Anulado ? "true" : "false", Field.Store.YES),
                         new TextField("Nombre", producto.Nombre, Field.Store.YES) { Boost = 4.0f },
+                        new TextField(CAMPO_NOMBRE_EXACTO, producto.Nombre, Field.Store.NO),
+                        new NumericDocValuesField(CAMPO_POSICION_MAS_VENDIDO, producto.PosicionMasVendido ?? 0),
                         new TextField("Familia", producto.Familia ?? "", Field.Store.YES) { Boost = 3.0f },
                         new TextField("Subgrupo", producto.Subgrupo ?? "", Field.Store.YES) { Boost = 3.0f },
                         // La referencia también va en el texto: "17404" tiene que encontrar el producto
@@ -62,13 +79,27 @@ namespace NestoAPI.Infraestructure.Buscador
                         new StringField("Id", Id.ToString(), Field.Store.YES),
                         new TextField("Protocolo", protocoloLimpio, Field.Store.NO) {Boost = 2.0f },
                         new TextField("TextoCompleto", $"{protocoloLimpio} {QuitarTiempos(Transcripcion)}", Field.Store.NO),
-                        new StringField("Nombre", Nombre, Field.Store.YES)
+                        // OJO: TextField, igual que el nombre de los productos, y NUNCA StringField.
+                        // StringField lleva OmitNorms y DOCS_ONLY, y en Lucene 4 eso se pega al
+                        // campo entero del segmento: el Nombre de los 35.000 productos perdía el
+                        // boost, la normalización por longitud y la frecuencia, y el ranking
+                        // quedaba decidido solo por TextoCompleto (03/09/26: "vapore" sacaba la
+                        // Vapore la 26ª, detrás de todos los vasos de vapor).
+                        new TextField("Nombre", Nombre, Field.Store.YES) { Boost = 4.0f }
                     };
                     writer.AddDocument(doc);
                 }
 
                 writer.Commit();
             }
+        }
+
+        // Cada campo con su analizador: el nombre exacto no se stemea; el resto, como siempre.
+        private static Analyzer CrearAnalizadorDeIndexado()
+        {
+            return new PerFieldAnalyzerWrapper(
+                new SpanishInsensitiveAnalyzer(AppLuceneVersion),
+                new Dictionary<string, Analyzer> { { CAMPO_NOMBRE_EXACTO, new SpanishExactoAnalyzer(AppLuceneVersion) } });
         }
 
         public static List<dynamic> Buscar(string q, string tipo = null, int skip = 0, int take = 20, bool usarOperadorAND = false, bool incluirAnulados = false)
@@ -160,6 +191,17 @@ namespace NestoAPI.Infraestructure.Buscador
                 textoOReferencia.Add(new TermQuery(new Term("Id", referencia)) { Boost = BOOST_REFERENCIA_EXACTA }, Occur.SHOULD);
             }
 
+            // Y la palabra tal cual sobre el nombre, sin stemming: "vapore" suma aquí solo para
+            // el producto que se llama "Vapore"; "vapor" sigue encontrándolo por los campos de
+            // siempre. Es un SHOULD más: no quita resultados, solo reordena.
+            QueryParser parserExacto = new QueryParser(AppLuceneVersion, CAMPO_NOMBRE_EXACTO, new SpanishExactoAnalyzer(AppLuceneVersion))
+            {
+                DefaultOperator = parser.DefaultOperator
+            };
+            Query nombreExacto = parserExacto.Parse(escapedQuery);
+            nombreExacto.Boost = BOOST_NOMBRE_EXACTO;
+            textoOReferencia.Add(nombreExacto, Occur.SHOULD);
+
             BooleanQuery query = new BooleanQuery
             {
                 { textoOReferencia, Occur.MUST }
@@ -175,10 +217,64 @@ namespace NestoAPI.Infraestructure.Buscador
             TermQuery esAnulado = new TermQuery(new Term("Anulado", "true"));
             query.Add(esAnulado, soloAnulados ? Occur.MUST : Occur.MUST_NOT);
 
-            return query;
+            return new PonderadorMasVendidos(query);
         }
 
         private const float BOOST_REFERENCIA_EXACTA = 50f;
+        private const float BOOST_NOMBRE_EXACTO = 3f;
+
+        /// <summary>
+        /// Cuánto sube la puntuación de texto un producto por lo que se vende. Con 1, el que más
+        /// se vende dobla su puntuación; el último de la clasificación y los sin clasificar (y los
+        /// vídeos) se quedan como están. Va con el logaritmo de la posición: entre el 50 y el 500
+        /// hay más diferencia que entre el 5.000 y el 5.450, que es como se reparten las ventas.
+        /// </summary>
+        internal const float PESO_MAS_VENDIDOS = 1f;
+
+        // A partir de aquí la posición ya no suma nada. Hoy hay ~36.400 productos clasificados.
+        private const double POSICION_HORIZONTE = 50000;
+
+        /// <summary>Multiplicador de la puntuación de texto según la posición en más vendidos. Internal para tests.</summary>
+        internal static float FactorMasVendido(long posicion)
+        {
+            if (posicion <= 0 || posicion >= POSICION_HORIZONTE)
+            {
+                return 1f;
+            }
+            return (float)(1 + PESO_MAS_VENDIDOS * (1 - Math.Log(posicion) / Math.Log(POSICION_HORIZONTE)));
+        }
+
+        /// <summary>
+        /// Multiplica la puntuación de texto de Lucene por <see cref="FactorMasVendido"/>: un
+        /// producto que se vende mucho adelanta a los de relevancia parecida, pero no aparece en
+        /// búsquedas que no le tocan, porque no se le añade puntuación: se le multiplica la suya.
+        /// </summary>
+        private class PonderadorMasVendidos : CustomScoreQuery
+        {
+            public PonderadorMasVendidos(Query subQuery) : base(subQuery) { }
+
+            protected override CustomScoreProvider GetCustomScoreProvider(AtomicReaderContext context)
+            {
+                return new Proveedor(context);
+            }
+
+            private class Proveedor : CustomScoreProvider
+            {
+                private readonly NumericDocValues _posiciones;
+
+                public Proveedor(AtomicReaderContext context) : base(context)
+                {
+                    // Null si ningún documento del segmento lleva el campo (un índice solo de vídeos)
+                    _posiciones = context.AtomicReader.GetNumericDocValues(CAMPO_POSICION_MAS_VENDIDO);
+                }
+
+                public override float CustomScore(int doc, float subQueryScore, float valSrcScore)
+                {
+                    long posicion = _posiciones == null ? 0 : _posiciones.Get(doc);
+                    return subQueryScore * FactorMasVendido(posicion);
+                }
+            }
+        }
 
         /// <summary>
         /// Las palabras de la consulta que pueden ser una referencia de producto: entre 3 y 10
@@ -252,13 +348,16 @@ namespace NestoAPI.Infraestructure.Buscador
                             ISNULL(pp.Descripción, '') AS DescripcionLarga,
                             ISNULL(rtrim(f.Descripción), '') AS Familia,
 	                        ISNULL(rtrim(s.Descripción), '') AS Subgrupo,
-                            ISNULL(p.Estado, 0) AS Estado
+                            ISNULL(p.Estado, 0) AS Estado,
+                            c.Posicion AS PosicionMasVendido
                         FROM Productos p INNER JOIN Familias f
                         on f.Empresa = p.Empresa and f.Número = p.Familia
                         INNER JOIN SubGruposProducto s
                         on s.Empresa = p.Empresa and s.Grupo = p.Grupo and s.Número = p.SubGrupo
                         LEFT JOIN PrestashopProductos pp
                             ON p.Empresa = pp.Empresa AND p.Número = pp.Número
+                        LEFT JOIN ClasificacionMasVendidos c
+                            ON c.Empresa = p.Empresa AND c.Producto = p.Número
                         WHERE p.Empresa = '1' and p.Grupo != 'MTP' and p.Subgrupo != 'MMP'
                         ", conexion))
                     {
@@ -274,6 +373,7 @@ namespace NestoAPI.Infraestructure.Buscador
                                 string familia = lector.IsDBNull(4) ? "" : lector.GetString(4);
                                 string subgrupo = lector.IsDBNull(5) ? "" : lector.GetString(5);
                                 short estado = lector.GetInt16(6);
+                                int? posicionMasVendido = lector.IsDBNull(7) ? (int?)null : lector.GetInt32(7);
 
                                 resultado.Add(new ResultadoBusqueda
                                 {
@@ -284,7 +384,8 @@ namespace NestoAPI.Infraestructure.Buscador
                                     Subgrupo = subgrupo,
                                     DescripcionBreve = descripcionBreve,
                                     DescripcionLarga = descripcionLarga,
-                                    Anulado = estado < 0
+                                    Anulado = estado < 0,
+                                    PosicionMasVendido = posicionMasVendido
                                 });
                             }
 
@@ -371,6 +472,9 @@ namespace NestoAPI.Infraestructure.Buscador
             public string DescripcionBreve { get; set; }
             public string DescripcionLarga { get; set; }
             public bool Anulado { get; set; }
+
+            /// <summary>Posición en ClasificacionMasVendidos (1 = el que más). Null si no está clasificado.</summary>
+            public int? PosicionMasVendido { get; set; }
         }
 
 

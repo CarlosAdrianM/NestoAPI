@@ -530,6 +530,20 @@ namespace NestoAPI
 
             Console.WriteLine("✅ Job recurrente 'picking-cierre-diario' configurado (L-V a las 11:00)");
 
+            // NestoAPI#402: el reindexado del buscador, que antes dependía de una tarea fuera del
+            // repo. A las 20:30 porque prdActualizarClasificacionProductos (más vendidos) corre a
+            // las 20:00 y tarda unos 5 minutos, y el índice guarda esa posición para ponderar.
+            RecurringJob.AddOrUpdate(
+                "reindexar-buscador",
+                () => Infraestructure.Buscador.BuscadorJobsService.Reindexar(),
+                "30 20 * * *", // Cron: todos los días a las 20:30
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'reindexar-buscador' configurado (diario a las 20:30)");
+
             // NOTA: El job de clientes está deshabilitado porque aún se usa Task Scheduler
             // Para habilitarlo en el futuro, cambia '#if false' por '#if true':
 #if false
