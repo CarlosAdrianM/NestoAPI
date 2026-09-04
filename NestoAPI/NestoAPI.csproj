@@ -740,6 +740,7 @@
     <Compile Include="Infraestructure\Pedidos\ServicioPedidosParaFacturacion.cs" />
     <Compile Include="Infraestructure\PedidosVenta\GestorPedidosVenta.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ConstructorPedidoCliente.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\ResumidorPedidosCliente.cs" />
     <Compile Include="Infraestructure\PedidosVenta\GestorPortes.cs" />
     <Compile Include="Infraestructure\PedidosVenta\TransicionPresupuesto.cs" />
     <Compile Include="Infraestructure\PedidosVenta\IServicioPedidosVenta.cs" />
@@ -1358,6 +1359,7 @@
     <Compile Include="Models\CanalesExternos\CredencialAmazonDTO.cs" />
     <Compile Include="Models\PedidosVenta\LineaPedidoVentaBusquedaDTO.cs" />
     <Compile Include="Models\PedidosVenta\LineaPedidoVentaDTO.cs" />
+    <Compile Include="Models\PedidosVenta\PedidoClienteResumenDTO.cs" />
     <Compile Include="Models\PedidosVenta\ParametroStringIntInt.cs" />
     <Compile Include="Models\PedidosVenta\ParametroStringIntPedido.cs" />
     <Compile Include="Models\PedidosVenta\PedidoVentaDTO.cs" />

@@ -23,6 +23,63 @@ namespace NestoAPI.Tests.Controllers
     [TestClass]
     public class PedidosClienteControllerTests
     {
+        #region TNV#66: la lista de pedidos del cliente
+
+        [TestMethod]
+        public async Task GetPedidosCliente_SinClaimDeCliente_NoEntra()
+        {
+            // Un empleado o un vendedor no tienen claim "cliente": esta lista es la de un cliente
+            // final viendo SUS pedidos, y quien no lo es no puede pedirla.
+            PedidosClienteController controller = ControllerConIdentity(new ClaimsIdentity(new List<Claim>(), "JWT"));
+
+            IHttpActionResult resultado = await controller.GetPedidosCliente();
+
+            Assert.IsInstanceOfType(resultado, typeof(UnauthorizedResult));
+        }
+
+        [TestMethod]
+        public async Task GetPedidosCliente_SinAutenticar_NoEntra()
+        {
+            PedidosClienteController controller = ControllerConIdentity(null);
+
+            IHttpActionResult resultado = await controller.GetPedidosCliente();
+
+            Assert.IsInstanceOfType(resultado, typeof(UnauthorizedResult));
+        }
+
+        [TestMethod]
+        public async Task GetPedidosCliente_DiasFueraDeRango_NoSeTraeElHistoricoEntero()
+        {
+            PedidosClienteController controller = ControllerConIdentity(IdentityDeCliente("15816"));
+
+            IHttpActionResult demasiados = await controller.GetPedidosCliente(
+                PedidosClienteController.MAXIMO_DIAS_DE_PEDIDOS + 1);
+            IHttpActionResult ninguno = await controller.GetPedidosCliente(0);
+
+            Assert.IsInstanceOfType(demasiados, typeof(BadRequestErrorMessageResult));
+            Assert.IsInstanceOfType(ninguno, typeof(BadRequestErrorMessageResult));
+        }
+
+        private static ClaimsIdentity IdentityDeCliente(string cliente)
+        {
+            return new ClaimsIdentity(new List<Claim> { new Claim("cliente", cliente) }, "JWT");
+        }
+
+        private static PedidosClienteController ControllerConIdentity(ClaimsIdentity identity)
+        {
+            PedidosClienteController controller = new PedidosClienteController(
+                A.Fake<NVEntities>(), A.Fake<IServicioPagos>())
+            {
+                RequestContext = new HttpRequestContext
+                {
+                    Principal = identity == null ? null : new ClaimsPrincipal(identity)
+                }
+            };
+            return controller;
+        }
+
+        #endregion
+
         #region NestoAPI#452: el cobro directo (MIT) cobraba la base imponible, sin IVA ni portes
 
         [TestMethod]

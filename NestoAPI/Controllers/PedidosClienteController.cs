@@ -45,6 +45,12 @@ namespace NestoAPI.Controllers
     [RoutePrefix("api/Pedidos")]
     public class PedidosClienteController : ApiController
     {
+        /// <summary>TNV#66: cuántos días de pedidos ve el cliente en la app si no pide otra cosa.</summary>
+        internal const int DIAS_DE_PEDIDOS_POR_DEFECTO = 60;
+
+        /// <summary>Tope para que nadie se traiga el histórico entero en una llamada.</summary>
+        internal const int MAXIMO_DIAS_DE_PEDIDOS = 365;
+
         private readonly NVEntities db;
         private readonly IServicioPagos servicioPagos;
 
@@ -721,6 +727,160 @@ namespace NestoAPI.Controllers
             }
 
             return respuesta;
+        }
+
+        /// <summary>
+        /// TNV#66: los pedidos recientes del cliente que ha iniciado sesión, para que después de
+        /// comprar tenga dónde comprobar que su pedido existe y por dónde va.
+        ///
+        /// <para>Hasta ahora, al confirmar se le vaciaba el carrito y ya: exactamente lo mismo que
+        /// vería si el pedido hubiera fallado. La única señal que le dábamos era ambigua justo en
+        /// el momento de más incertidumbre.</para>
+        ///
+        /// <para>Se devuelven también los ya servidos de los últimos días, no solo los que están
+        /// en curso: el paquete de un pedido facturado ayer todavía está de camino, y es el que el
+        /// cliente quiere seguir. El envío viaja en el mismo DTO que usa
+        /// <c>EnviosAgencias/UltimoEnvioCliente</c> (TNV#5), con su URL de seguimiento ya montada.</para>
+        /// </summary>
+        /// <param name="dias">Cuántos días atrás se miran (1-365). Por defecto, dos meses.</param>
+        // GET: api/Pedidos/Cliente
+        [HttpGet]
+        [Route("Cliente")]
+        [ResponseType(typeof(List<PedidoClienteResumenDTO>))]
+        public async Task<IHttpActionResult> GetPedidosCliente(int dias = DIAS_DE_PEDIDOS_POR_DEFECTO)
+        {
+            // El cliente sale SIEMPRE del JWT, nunca de la petición: es lo que impide ver los
+            // pedidos de otro. Misma regla que el POST.
+            ClaimsIdentity identity = User?.Identity as ClaimsIdentity;
+            string cliente = identity?.FindFirst("cliente")?.Value?.Trim();
+            if (string.IsNullOrWhiteSpace(cliente))
+            {
+                return Unauthorized();
+            }
+            if (!ValidadorAccesoCliente.ValidarAcceso(identity, cliente).Autorizado)
+            {
+                return Unauthorized();
+            }
+
+            if (dias < 1 || dias > MAXIMO_DIAS_DE_PEDIDOS)
+            {
+                return BadRequest($"El número de días tiene que estar entre 1 y {MAXIMO_DIAS_DE_PEDIDOS}");
+            }
+
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO;
+            DateTime desde = DateTime.Today.AddDays(-dias);
+
+            var pedidos = await db.CabPedidoVtas
+                .Where(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.Fecha >= desde)
+                .Select(c => new
+                {
+                    c.Número,
+                    c.Fecha,
+                    c.Forma_Pago,
+                    c.PlazosPago,
+                    Lineas = c.LinPedidoVtas.Select(l => new
+                    {
+                        l.Estado,
+                        l.TipoLinea,
+                        l.Cantidad,
+                        l.Total,
+                        l.Texto
+                    }),
+                    // Solo los prepagos vivos del pedido: los que ya se llevó una factura no
+                    // cuentan (es lo mismo que mira el picking para soltarlo).
+                    ImportePrepagado = db.Prepagos
+                        .Where(p => p.Pedido == c.Número && p.Factura == null)
+                        .Select(p => (decimal?)p.Importe)
+                        .Sum()
+                })
+                .OrderByDescending(c => c.Fecha)
+                .ThenByDescending(c => c.Número)
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            List<int> numeros = pedidos.Select(p => p.Número).ToList();
+            Dictionary<int, UltimoEnvioClienteDTO> envios = await LeerEnviosDeLosPedidos(empresa, cliente, numeros)
+                .ConfigureAwait(false);
+
+            List<PedidoClienteResumenDTO> resumenes = pedidos
+                // Un presupuesto todavía no es un pedido: enseñárselo como tal sería prometerle
+                // algo que nadie ha confirmado. Basta con una línea viva para que cuente.
+                .Where(p => p.Lineas.Any(l => l.Estado > Constantes.EstadosLineaVenta.PRESUPUESTO))
+                .Select(p => ResumidorPedidosCliente.Resumir(new DatosPedidoCliente
+                {
+                    Numero = p.Número,
+                    Fecha = p.Fecha,
+                    FormaPago = p.Forma_Pago,
+                    PlazosPago = p.PlazosPago,
+                    ImportePrepagado = p.ImportePrepagado ?? 0m,
+                    Envio = envios.ContainsKey(p.Número) ? envios[p.Número] : null,
+                    Lineas = p.Lineas.Select(l => new DatosLineaPedidoCliente
+                    {
+                        Estado = l.Estado,
+                        TipoLinea = l.TipoLinea,
+                        Cantidad = l.Cantidad,
+                        Total = l.Total,
+                        Texto = l.Texto
+                    }).ToList()
+                }))
+                .ToList();
+
+            if (PoliticaPreciosOcultos.OcultaImportes(identity))
+            {
+                // NestoAPI#446: quien hace pedidos sin ver los precios tampoco ve lo que costaron.
+                foreach (PedidoClienteResumenDTO resumen in resumenes)
+                {
+                    resumen.Total = 0m;
+                    resumen.ImportePendiente = 0m;
+                }
+            }
+
+            return Ok(resumenes);
+        }
+
+        /// <summary>
+        /// El envío de cada pedido (el último, si hubo varios), con su seguimiento. Se filtra
+        /// igual que <c>EnviosAgencias/UltimoEnvioCliente</c>: sin código de barras no hay nada
+        /// que seguir, y los que aún no están en curso no han salido del almacén.
+        /// </summary>
+        private async Task<Dictionary<int, UltimoEnvioClienteDTO>> LeerEnviosDeLosPedidos(
+            string empresa, string cliente, List<int> pedidos)
+        {
+            if (pedidos.Count == 0)
+            {
+                return new Dictionary<int, UltimoEnvioClienteDTO>();
+            }
+
+            List<UltimoEnvioClienteDTO> enviosDelCliente = await db.EnviosAgencias
+                .Where(e => e.Empresa == empresa &&
+                            e.Cliente == cliente &&
+                            e.Pedido != null &&
+                            pedidos.Contains(e.Pedido.Value) &&
+                            e.CodigoBarras != null &&
+                            e.Estado >= Constantes.Agencias.ESTADO_EN_CURSO)
+                .OrderByDescending(e => e.Fecha)
+                .ThenByDescending(e => e.Numero)
+                .Select(e => new UltimoEnvioClienteDTO
+                {
+                    Pedido = e.Pedido ?? 0,
+                    Fecha = e.Fecha,
+                    FechaEntrega = e.FechaEntrega,
+                    AgenciaId = e.Agencia,
+                    AgenciaNombre = e.AgenciasTransporte.Nombre,
+                    AgenciaIdentificador = e.AgenciasTransporte.Identificador,
+                    NumeroSeguimiento = e.CodigoBarras,
+                    CodigoPostal = e.CodPostal,
+                    Cliente = e.Cliente,
+                    Estado = e.Estado,
+                    Bultos = e.Bultos,
+                    Observaciones = e.Observaciones
+                })
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            return enviosDelCliente
+                .GroupBy(e => e.Pedido)
+                .ToDictionary(g => g.Key, g => g.First());
         }
 
         private static string MotivoParaElCliente(PedidoValidacionException ex)

@@ -264,6 +264,7 @@
     <Compile Include="Models\PedidosVenta\CuadrarEfectosTests.cs" />
     <Compile Include="Infraestructure\Buscador\LuceneBuscadorTests.cs" />
     <Compile Include="Infraestructure\DiagnosticoBloqueosTests.cs" />
+    <Compile Include="Infraestructure\ResumidorPedidosClienteTests.cs" />
     <Compile Include="Infraestructure\ServicioDireccionesGoogleTests.cs" />
     <Compile Include="Infraestructure\GestorSeEstaVendiendoTests.cs" />
     <Compile Include="Infrastructure\MessageRetryManagerTests.cs" />
