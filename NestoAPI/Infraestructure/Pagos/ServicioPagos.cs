@@ -183,8 +183,6 @@ namespace NestoAPI.Infraestructure.Pagos
                 return false;
             }
 
-            // #445 (TEMPORAL): qué manda exactamente nuestro terminal en cada notificación
-            LogDiagnosticoRedsys("Notificación recibida", resultado.NumeroOrden, resultado.NotificacionDecodificada);
 
             using (NVEntities db = new NVEntities())
             {
@@ -282,22 +280,6 @@ namespace NestoAPI.Infraestructure.Pagos
         }
 
         /// <summary>
-        /// #445 (TEMPORAL, 02/09/26): deja en ELMAH un JSON de Redsys completo (claves y valores,
-        /// token tapado) para poder analizar qué manda nuestro terminal. Nunca tira el flujo.
-        /// </summary>
-        internal void LogDiagnosticoRedsys(string que, string numeroOrden, string json)
-        {
-            try
-            {
-                _logService.LogError($"[Redsys diag #445] {que}. Orden: {numeroOrden}. {json ?? "(sin JSON)"}");
-            }
-            catch
-            {
-                // El diagnóstico nunca puede romper un cobro
-            }
-        }
-
-        /// <summary>
         /// NestoAPI#178: da de alta (o refresca) la tarjeta guardada del cliente con el token que
         /// viene en la notificación de un pago autorizado. Sin cliente no hay a quién asignarla y
         /// no se guarda nada.
@@ -311,7 +293,7 @@ namespace NestoAPI.Infraestructure.Pagos
 
             // Los últimos dígitos NO son obligatorios (01/09/26: el terminal no tiene activado el
             // envío de datos de tarjeta y el alta se perdió por un NOT NULL). Se deja rastro; la
-            // notificación completa ya la loguea ProcesarNotificacion (#445).
+            // notificación completa (ya no se loguea: el diagnóstico #445 se retiró el 04/09).
             if (string.IsNullOrWhiteSpace(resultado.UltimosDigitosTarjeta))
             {
                 _logService.LogError($"[Tarjetas] La notificación de la orden {pago.NumeroOrden} trae token pero " +
@@ -508,9 +490,6 @@ namespace NestoAPI.Infraestructure.Pagos
             try
             {
                 respuesta = await _redsysService.EnviarPeticionREST(parametros).ConfigureAwait(false);
-                // #445 (TEMPORAL): la respuesta completa del POST REST de cobro con token
-                LogDiagnosticoRedsys("Respuesta REST al cobro con tarjeta guardada", parametros.NumeroOrden,
-                    RedsysService.ParaDiagnostico(respuesta?.JsonCrudo));
             }
             catch (Exception ex)
             {
@@ -891,9 +870,6 @@ namespace NestoAPI.Infraestructure.Pagos
                 try
                 {
                     RespuestaRedsys respuesta = await _redsysService.EnviarPeticionREST(parametros).ConfigureAwait(false);
-                    // #445 (TEMPORAL): la respuesta completa del POST REST de devolución
-                    LogDiagnosticoRedsys("Respuesta REST a la devolución", pago.NumeroOrden,
-                        RedsysService.ParaDiagnostico(respuesta?.JsonCrudo));
                     // 0900 = devolución aceptada
                     devuelto = string.Equals(respuesta?.Ds_Response?.Trim(), "0900", StringComparison.Ordinal);
                 }

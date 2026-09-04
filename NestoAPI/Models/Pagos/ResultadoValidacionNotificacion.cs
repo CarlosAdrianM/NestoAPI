@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 
 namespace NestoAPI.Models.Pagos
 {
@@ -27,12 +27,6 @@ namespace NestoAPI.Models.Pagos
 
         /// <summary>C = crédito, D = débito.</summary>
         public string TipoTarjeta { get; set; }
-
-        /// <summary>
-        /// La notificación decodificada completa (claves y valores) con el token tapado. Para el
-        /// diagnóstico temporal (#445) de qué manda y qué no manda Redsys en nuestro terminal.
-        /// </summary>
-        public string NotificacionDecodificada { get; set; }
 
         public bool TieneTokenTarjeta => !string.IsNullOrWhiteSpace(TokenTarjeta);
     }

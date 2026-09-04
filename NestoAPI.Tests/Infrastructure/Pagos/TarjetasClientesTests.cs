@@ -230,24 +230,6 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
         }
 
         [TestMethod]
-        public void ParaDiagnostico_DevuelveElJsonCompletoConElTokenTapado()
-        {
-            // Diagnóstico temporal (#445): se quiere ver TODO lo que manda el terminal (claves y
-            // valores, también las no mapeadas), salvo el token, que es con lo que se cobra
-            string json = "{\"Ds_Order\":\"E6E4EDC15191\",\"Ds_Merchant_Identifier\":\"726732bcff81808ce9547f939e20b16d2fced12b\",\"Ds_ExpiryDate\":\"2803\",\"Ds_Card_Typology\":\"CONSUMO\",\"Ds_Response\":\"0000\"}";
-
-            string campos = RedsysService.ParaDiagnostico(json);
-
-            Assert.IsFalse(campos.Contains("726732bcff81808ce9547f939e20b16d2fced12b"));
-            Assert.IsTrue(campos.Contains("\"Ds_Merchant_Identifier\":\"726732******************************d12b\""), campos);
-            Assert.IsTrue(campos.Contains("\"Ds_ExpiryDate\":\"2803\""));
-            Assert.IsTrue(campos.Contains("\"Ds_Card_Typology\":\"CONSUMO\""), "las claves no mapeadas también se ven");
-            Assert.IsTrue(campos.Contains("\"Ds_Order\":\"E6E4EDC15191\""));
-            Assert.IsNull(RedsysService.ParaDiagnostico("esto no es json"));
-            Assert.IsNull(RedsysService.ParaDiagnostico(null));
-        }
-
-        [TestMethod]
         public void ParametrosDeLaRespuestaREST_ConErrorCode_LanzaConElCodigoYLaRespuesta()
         {
             // 02/09/26, primer cobro real con token: Redsys respondió 200 con {"errorCode":...} y
@@ -308,26 +290,6 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             Assert.AreEqual("eyJEc19SZXNwb25zZSI6IjAwMDAifQ==", parametros);
         }
 
-        [TestMethod]
-        public void LogDiagnosticoRedsys_DejaEnElmahElJsonConLaOrden()
-        {
-            // #445 (temporal): la respuesta al POST REST / la notificación, claves y valores
-            _servicio.LogDiagnosticoRedsys("Respuesta REST al cobro con tarjeta guardada", "ORD7",
-                "{\"Ds_Response\":\"0000\",\"Ds_Card_Typology\":\"CONSUMO\"}");
-
-            A.CallTo(() => _logService.LogError(
-                A<string>.That.Matches(m => m.Contains("[Redsys diag #445]") && m.Contains("ORD7")
-                    && m.Contains("\"Ds_Card_Typology\":\"CONSUMO\"")),
-                A<Exception>._)).MustHaveHappenedOnceExactly();
-        }
-
-        [TestMethod]
-        public void LogDiagnosticoRedsys_NuncaRompeElCobro()
-        {
-            A.CallTo(() => _logService.LogError(A<string>._, A<Exception>._)).Throws(new Exception("ELMAH caido"));
-
-            _servicio.LogDiagnosticoRedsys("Notificación recibida", "ORD7", null); // no lanza
-        }
 
         [TestMethod]
         public void Describir_ConDigitos_MarcaAcabadaEn()

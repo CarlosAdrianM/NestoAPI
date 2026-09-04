@@ -1,4 +1,4 @@
-using Newtonsoft.Json.Linq;
+﻿using Newtonsoft.Json.Linq;
 
 namespace NestoAPI.Models.Pagos
 {
@@ -61,7 +61,7 @@ namespace NestoAPI.Models.Pagos
 
         /// <summary>
         /// El JSON decodificado tal cual llegó de Redsys (todas las claves y valores, también
-        /// las que no están mapeadas arriba). Solo para el diagnóstico temporal de #445; no se
+        /// las que no están mapeadas arriba), por si hace falta mirarlo al depurar. No se
         /// serializa.
         /// </summary>
         [Newtonsoft.Json.JsonIgnore]

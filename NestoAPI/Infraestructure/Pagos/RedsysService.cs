@@ -599,8 +599,7 @@ namespace NestoAPI.Infraestructure.Pagos
                 UltimosDigitosTarjeta = UltimosDigitosDe(respuesta),
                 FechaCaducidadTarjeta = ParsearCaducidadRedsys(respuesta.Ds_ExpiryDate),
                 MarcaTarjeta = NombreMarcaTarjeta(respuesta.Ds_Card_Brand),
-                TipoTarjeta = respuesta.Ds_Card_Type?.Trim(),
-                NotificacionDecodificada = ParaDiagnostico(decoded)
+                TipoTarjeta = respuesta.Ds_Card_Type?.Trim()
             };
         }
 
@@ -620,34 +619,6 @@ namespace NestoAPI.Infraestructure.Pagos
                 ?? ExtraerUltimosDigitos(respuesta.Ds_Card_Number);
         }
 
-        /// <summary>
-        /// Un JSON de Redsys (notificación o respuesta REST) tal cual llegó, claves y valores,
-        /// para el diagnóstico de qué campos manda este terminal (#445: TEMPORAL, una entrada de
-        /// ELMAH por cada notificación y por cada POST REST; retirar cuando se hayan visto unas
-        /// cuantas). Lo único que se tapa es el token (Ds_Merchant_Identifier): con él y
-        /// nuestra clave se cobra.
-        /// </summary>
-        internal static string ParaDiagnostico(string jsonNotificacion)
-        {
-            if (string.IsNullOrWhiteSpace(jsonNotificacion))
-            {
-                return null;
-            }
-            try
-            {
-                JObject notificacion = JObject.Parse(jsonNotificacion);
-                JProperty token = notificacion.Property("Ds_Merchant_Identifier");
-                if (token != null)
-                {
-                    token.Value = Enmascarar(token.Value?.ToString());
-                }
-                return notificacion.ToString(Formatting.None);
-            }
-            catch (JsonException)
-            {
-                return null;
-            }
-        }
 
         private static string Enmascarar(string valor)
         {
