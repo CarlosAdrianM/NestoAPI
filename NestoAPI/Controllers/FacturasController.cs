@@ -119,6 +119,15 @@ namespace NestoAPI.Controllers
             }
             catch (Exception ex)
             {
+                // NestoAPI#453: sin esto el fallo no dejaba rastro en ningún sitio. El PDF del
+                // pedido 925368 llevaba dos días fallando ("No cuadran los vencimientos con el
+                // total de la factura") y en ELMAH no había ni una línea, porque el error se
+                // convertía en un BadRequest y ahí se acababa. Un error que no se registra
+                // cuesta el doble: hay que reproducirlo para poder verlo.
+                ElmahHelper.Log(new Exception(
+                    $"[Facturas] No se ha podido generar el PDF de {numeroFactura} " +
+                    $"(empresa {empresa}): {ex.Message}", ex));
+
                 var errorResponse = new HttpResponseMessage(HttpStatusCode.BadRequest)
                 {
                     Content = new StringContent(ex.Message),
