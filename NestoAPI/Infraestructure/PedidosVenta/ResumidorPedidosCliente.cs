@@ -135,7 +135,15 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 }
                 bool entregado = pedido.Envio.FechaEntrega.HasValue
                     || pedido.Envio.Estado == Constantes.Agencias.ESTADO_ENTREGADO;
-                return entregado ? EstadoPedidoCliente.Entregado : EstadoPedidoCliente.Enviado;
+                if (entregado)
+                {
+                    return EstadoPedidoCliente.Entregado;
+                }
+                // La agencia no ha podido entregarlo: es lo único que el cliente puede resolver
+                // (llamar, dar otra dirección), así que no se le esconde detrás de "en camino".
+                return pedido.Envio.Estado == Constantes.Agencias.ESTADO_INCIDENTADO
+                    ? EstadoPedidoCliente.Incidencia
+                    : EstadoPedidoCliente.Enviado;
             }
 
             if (algoEntregadoALaAgencia)
@@ -171,6 +179,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     return "Una parte va en camino";
                 case EstadoPedidoCliente.Enviado:
                     return "En camino";
+                case EstadoPedidoCliente.Incidencia:
+                    return "Incidencia con la entrega";
                 case EstadoPedidoCliente.Entregado:
                     return "Entregado";
                 case EstadoPedidoCliente.Servido:

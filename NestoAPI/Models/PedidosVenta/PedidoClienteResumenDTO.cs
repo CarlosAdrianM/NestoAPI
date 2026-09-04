@@ -88,6 +88,12 @@ namespace NestoAPI.Models.PedidosVenta
         /// <summary>Todo entregado a la agencia y de camino.</summary>
         Enviado,
 
+        /// <summary>
+        /// La agencia no ha podido entregarlo. Es el único estado malo que el cliente SÍ puede
+        /// resolver (llamar, dar otra dirección), así que se le dice.
+        /// </summary>
+        Incidencia,
+
         /// <summary>La agencia lo ha entregado (lo dice su seguimiento, no nosotros).</summary>
         Entregado,
 

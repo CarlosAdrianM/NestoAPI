@@ -341,6 +341,21 @@ namespace NestoAPI
 
         private void ConfigurarJobsRecurrentes()
         {
+            // TNV#66: avisa al cliente por push cuando su pedido cambia de estado (ha salido,
+            // ha salido una parte, incidencia con la entrega, o lleva horas esperando el pago).
+            // Cada media hora: el paso a albarán ocurre a lo largo del día y el seguimiento de la
+            // agencia se refresca cada 2 horas, así que más frecuencia no adelantaría nada.
+            RecurringJob.AddOrUpdate(
+                "avisos-pedidos-cliente",
+                () => Infraestructure.Notificaciones.AvisosPedidosJobsService.AvisarCambiosDeEstado(),
+                "*/30 * * * *", // Cron: cada 30 minutos
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'avisos-pedidos-cliente' configurado (cada 30 minutos)");
+
             // Sincronización de Productos cada 5 minutos
             RecurringJob.AddOrUpdate(
                 "sincronizar-productos",
