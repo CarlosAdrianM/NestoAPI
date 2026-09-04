@@ -257,7 +257,7 @@ namespace NestoAPI.Infraestructure.Pagos
         /// contracargos (ver <see cref="ModoCobroTarjetaGuardada"/>).</para>
         /// </summary>
         private JObject ParametrosBaseCobro3DS(decimal importe, string numeroOrden,
-            string descripcion, string tokenTarjeta, string cofTxnId)
+            string descripcion, string tokenTarjeta, string cofTxnId, string urlNotificacion)
         {
             JObject parametros = new JObject
             {
@@ -279,6 +279,13 @@ namespace NestoAPI.Infraestructure.Pagos
             if (!string.IsNullOrWhiteSpace(descripcion))
             {
                 parametros["DS_MERCHANT_PRODUCTDESCRIPTION"] = descripcion;
+            }
+            if (!string.IsNullOrWhiteSpace(urlNotificacion))
+            {
+                // Redsys manda la notificacion online SIEMPRE que esta URL viaje, tambien en los
+                // pagos REST. Asi el cobro autorizado entra como prepago del pedido por el mismo
+                // circuito que el resto (ProcesarNotificacion), sin duplicar nada.
+                parametros["DS_MERCHANT_MERCHANTURL"] = urlNotificacion;
             }
 
             return parametros;
@@ -304,13 +311,13 @@ namespace NestoAPI.Infraestructure.Pagos
         /// versión del protocolo, el identificador de la autenticación y, si el emisor lo usa, la
         /// URL del 3DSMethod para recoger datos del dispositivo.
         /// </summary>
-        public ParametrosRedsysFirmados CrearParametrosInicio3DS(decimal importe, string descripcion,
-            string cliente, string tokenTarjeta, string cofTxnId)
+        public ParametrosRedsysFirmados CrearParametrosInicio3DS(decimal importe, string numeroOrden,
+            string descripcion, string tokenTarjeta, string cofTxnId, string urlNotificacion)
         {
-            string numeroOrden = GenerarNumeroPedido(
-                string.IsNullOrWhiteSpace(cliente) ? null : "C" + cliente.Trim());
-
-            JObject parametros = ParametrosBaseCobro3DS(importe, numeroOrden, descripcion, tokenTarjeta, cofTxnId);
+            // El numero de orden es el del PagoTPV que ya existe: la notificacion de Redsys se
+            // casa con el pago por ese numero, asi que generar uno nuevo aqui dejaria el cobro
+            // huerfano.
+            JObject parametros = ParametrosBaseCobro3DS(importe, numeroOrden, descripcion, tokenTarjeta, cofTxnId, urlNotificacion);
             parametros["DS_MERCHANT_EMV3DS"] = new JObject { ["threeDSInfo"] = "CardData" };
 
             return Firmar(parametros, numeroOrden, UrlRedsysRESTInicia);
@@ -324,7 +331,7 @@ namespace NestoAPI.Infraestructure.Pagos
         /// </summary>
         public ParametrosRedsysFirmados CrearParametrosAutenticacion3DS(decimal importe,
             string numeroOrden, string descripcion, string tokenTarjeta, string cofTxnId,
-            PeticionAutenticacion3DS peticion)
+            string urlNotificacion, PeticionAutenticacion3DS peticion)
         {
             if (peticion == null)
             {
@@ -358,7 +365,7 @@ namespace NestoAPI.Infraestructure.Pagos
                 emv3ds["browserTZ"] = navegador.DiferenciaHorariaMinutos.ToString();
             }
 
-            JObject parametros = ParametrosBaseCobro3DS(importe, numeroOrden, descripcion, tokenTarjeta, cofTxnId);
+            JObject parametros = ParametrosBaseCobro3DS(importe, numeroOrden, descripcion, tokenTarjeta, cofTxnId, urlNotificacion);
             parametros["DS_MERCHANT_EMV3DS"] = emv3ds;
 
             return Firmar(parametros, numeroOrden, UrlRedsysREST);
@@ -371,9 +378,9 @@ namespace NestoAPI.Infraestructure.Pagos
         /// </summary>
         public ParametrosRedsysFirmados CrearParametrosRespuestaReto3DS(decimal importe,
             string numeroOrden, string descripcion, string tokenTarjeta, string cofTxnId,
-            string protocolVersion, string cres)
+            string urlNotificacion, string protocolVersion, string cres)
         {
-            JObject parametros = ParametrosBaseCobro3DS(importe, numeroOrden, descripcion, tokenTarjeta, cofTxnId);
+            JObject parametros = ParametrosBaseCobro3DS(importe, numeroOrden, descripcion, tokenTarjeta, cofTxnId, urlNotificacion);
             parametros["DS_MERCHANT_EMV3DS"] = new JObject
             {
                 ["threeDSInfo"] = "ChallengeResponse",

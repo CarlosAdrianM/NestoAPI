@@ -1,4 +1,4 @@
-using NestoAPI.Models.Pagos;
+﻿using NestoAPI.Models.Pagos;
 using System.Threading.Tasks;
 
 namespace NestoAPI.Infraestructure.Pagos
@@ -17,12 +17,14 @@ namespace NestoAPI.Infraestructure.Pagos
 
         // NestoAPI#181: los tres pasos de EMV 3DS 2 para cobrar con tarjeta guardada
         // autenticando al cliente (CIT), que es lo que conserva el traslado de responsabilidad.
-        ParametrosRedsysFirmados CrearParametrosInicio3DS(decimal importe, string descripcion,
-            string cliente, string tokenTarjeta, string cofTxnId);
+        ParametrosRedsysFirmados CrearParametrosInicio3DS(decimal importe, string numeroOrden,
+            string descripcion, string tokenTarjeta, string cofTxnId, string urlNotificacion);
         ParametrosRedsysFirmados CrearParametrosAutenticacion3DS(decimal importe, string numeroOrden,
-            string descripcion, string tokenTarjeta, string cofTxnId, PeticionAutenticacion3DS peticion);
+            string descripcion, string tokenTarjeta, string cofTxnId, string urlNotificacion,
+            PeticionAutenticacion3DS peticion);
         ParametrosRedsysFirmados CrearParametrosRespuestaReto3DS(decimal importe, string numeroOrden,
-            string descripcion, string tokenTarjeta, string cofTxnId, string protocolVersion, string cres);
+            string descripcion, string tokenTarjeta, string cofTxnId, string urlNotificacion,
+            string protocolVersion, string cres);
         Task<RespuestaRedsys> EnviarPeticionREST(ParametrosRedsysFirmados parametros);
         RespuestaRedsys DecodificarParametros(string merchantParametersBase64);
         ResultadoValidacionNotificacion ValidarNotificacion(NotificacionRedsys notificacion);

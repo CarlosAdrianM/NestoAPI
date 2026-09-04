@@ -1,4 +1,5 @@
-using NestoAPI.Models.Pagos;
+﻿using NestoAPI.Models.Pagos;
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
@@ -22,5 +23,13 @@ namespace NestoAPI.Infraestructure.Pagos
 
         // NestoAPI#178: alta de tarjeta sin cobro (autorización 0 EUR con tokenización)
         Task<RespuestaIniciarPago> IniciarAltaTarjeta(SolicitudAltaTarjeta solicitud, string usuario);
+
+        // NestoAPI#181: EMV 3DS 2 por REST. El cobro se autentica sin enseñar la pasarela: si el
+        // emisor no pide desafío, el cliente no ve nada.
+        Task<InicioAutenticacion3DS> Iniciar3DS(Guid tokenAcceso, int tarjetaId);
+        Task<ResultadoAutenticacion3DS> Autenticar3DS(Guid tokenAcceso, int tarjetaId,
+            PeticionAutenticacion3DS peticion);
+        Task<ResultadoAutenticacion3DS> ResolverReto3DS(Guid tokenAcceso, int tarjetaId,
+            string protocolVersion, string cres);
     }
 }

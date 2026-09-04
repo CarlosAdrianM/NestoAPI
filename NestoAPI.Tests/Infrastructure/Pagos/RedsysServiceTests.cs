@@ -1,4 +1,4 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.Pagos;
 using NestoAPI.Models.Pagos;
 using Newtonsoft.Json.Linq;
@@ -141,8 +141,9 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             // DIRECTPAYMENT aquí, estaríamos declarándolo MIT y comiéndonos los contracargos.
             var service = new RedsysService("claveTestP2F", CLAVE_3DES, "329515704", true);
 
-            var parametros = service.CrearParametrosInicio3DS(3.84m, "Pago pedido 925300", "15191",
-                tokenTarjeta: "a26a5b0359c693cb3849bcb84d50f6bbf607aab0", cofTxnId: "232026245295044");
+            var parametros = service.CrearParametrosInicio3DS(3.84m, "250904C15191", "Pago pedido 925300",
+                tokenTarjeta: "a26a5b0359c693cb3849bcb84d50f6bbf607aab0", cofTxnId: "232026245295044",
+                urlNotificacion: "https://api.nuevavision.es/api/pagos/notificacion");
 
             JObject json = JObject.Parse(DecodificarParametros(parametros.Ds_MerchantParameters));
             Assert.AreEqual("CardData", json["DS_MERCHANT_EMV3DS"]["threeDSInfo"].ToString());
@@ -150,6 +151,11 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             Assert.AreEqual("N", json["DS_MERCHANT_COF_INI"].ToString());
             Assert.AreEqual("232026245295044", json["DS_MERCHANT_COF_TXNID"].ToString());
             Assert.AreEqual("384", json["DS_MERCHANT_AMOUNT"].ToString());
+            Assert.AreEqual("250904C15191", json["DS_MERCHANT_ORDER"].ToString(),
+                "tiene que ser el numero de orden del PagoTPV, no uno nuevo");
+            Assert.AreEqual("https://api.nuevavision.es/api/pagos/notificacion",
+                json["DS_MERCHANT_MERCHANTURL"].ToString(),
+                "sin MERCHANTURL el cobro autorizado no entraría como prepago del pedido");
             Assert.IsNull(json["DS_MERCHANT_EXCEP_SCA"], "el cliente está presente: no es MIT");
             Assert.IsNull(json["DS_MERCHANT_DIRECTPAYMENT"], "hay intención de autenticar");
         }
@@ -159,9 +165,9 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
         {
             var service = new RedsysService("claveTestP2F", CLAVE_3DES, "329515704", true);
 
-            var inicio = service.CrearParametrosInicio3DS(3.84m, "Pago", "15191", "token", null);
+            var inicio = service.CrearParametrosInicio3DS(3.84m, "250904C15191", "Pago", "token", null, "https://api/notif");
             var autenticacion = service.CrearParametrosAutenticacion3DS(3.84m, inicio.NumeroOrden,
-                "Pago", "token", null, new PeticionAutenticacion3DS { ProtocolVersion = "2.2.0" });
+                "Pago", "token", null, "https://api/notif", new PeticionAutenticacion3DS { ProtocolVersion = "2.2.0" });
 
             StringAssert.Contains(inicio.UrlRedsys.ToString(), "iniciaPeticionREST");
             StringAssert.Contains(autenticacion.UrlRedsys.ToString(), "trataPeticionREST");
@@ -194,7 +200,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             };
 
             var parametros = service.CrearParametrosAutenticacion3DS(3.84m, "250904C15191",
-                "Pago pedido 925300", "token", "232026245295044", peticion);
+                "Pago pedido 925300", "token", "232026245295044", "https://api/notif", peticion);
 
             JObject emv3ds = (JObject)JObject.Parse(
                 DecodificarParametros(parametros.Ds_MerchantParameters))["DS_MERCHANT_EMV3DS"];
@@ -214,7 +220,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             var service = new RedsysService("claveTestP2F", CLAVE_3DES, "329515704", true);
 
             var parametros = service.CrearParametrosAutenticacion3DS(3.84m, "250904C15191", "Pago",
-                "token", null, new PeticionAutenticacion3DS { ProtocolVersion = "2.2.0" });
+                "token", null, "https://api/notif", new PeticionAutenticacion3DS { ProtocolVersion = "2.2.0" });
 
             JObject emv3ds = (JObject)JObject.Parse(
                 DecodificarParametros(parametros.Ds_MerchantParameters))["DS_MERCHANT_EMV3DS"];
@@ -228,7 +234,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             var service = new RedsysService("claveTestP2F", CLAVE_3DES, "329515704", true);
 
             var parametros = service.CrearParametrosRespuestaReto3DS(3.84m, "250904C15191", "Pago",
-                "token", null, "2.2.0", "eyJhY3NUcmFuc0lEIjoiMTIzIn0=");
+                "token", null, "https://api/notif", "2.2.0", "eyJhY3NUcmFuc0lEIjoiMTIzIn0=");
 
             JObject emv3ds = (JObject)JObject.Parse(
                 DecodificarParametros(parametros.Ds_MerchantParameters))["DS_MERCHANT_EMV3DS"];

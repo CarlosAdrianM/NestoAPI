@@ -1,11 +1,14 @@
 ﻿using NestoAPI.Infraestructure.Contabilidad;
 using NestoAPI.Models;
 using NestoAPI.Models.Pagos;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Data.Entity;
 using System.Linq;
 using System.Net.Mail;
+using System.Text;
 using System.Threading.Tasks;
 using System.Web;
 using static NestoAPI.Models.Constantes;
@@ -158,7 +161,12 @@ namespace NestoAPI.Infraestructure.Pagos
                     Ds_MerchantParameters = parametros.Ds_MerchantParameters,
                     Ds_Signature = parametros.Ds_Signature,
                     TokenAcceso = pago.TokenAcceso,
-                    UrlPaginaPago = urlPaginaPago
+                    UrlPaginaPago = urlPaginaPago,
+                    // NestoAPI#181: con tarjeta guardada, la app abre nuestra página de 3DS2 en
+                    // vez de la pasarela. Si el emisor no exige desafío, el cliente no ve nada.
+                    UrlPago3DS = solicitud.TarjetaGuardada != null
+                        ? UrlPagina3DS(pago.TokenAcceso, solicitud.TarjetaGuardada.Id)
+                        : null
                 };
             }
         }
@@ -552,6 +560,296 @@ namespace NestoAPI.Infraestructure.Pagos
                       "Puedes intentarlo con otra tarjeta."
             };
         }
+
+        #region EMV 3DS 2 (NestoAPI#181)
+
+        internal const string URL_BASE_API = "https://api.nuevavision.es";
+        private static string UrlNotificacionRedsys => URL_BASE_API + "/api/Pagos/NotificacionRedsys";
+
+        /// <summary>
+        /// NestoAPI#181: el pago y la tarjeta con los que trabaja el flujo 3DS. Todo lo que
+        /// importa (importe, cliente, número de orden) sale del PagoTPV, no del navegador: el
+        /// único dato que viene de fuera es el token de acceso, que es el que da permiso.
+        /// </summary>
+        private class Contexto3DS
+        {
+            public PagoTPV Pago { get; set; }
+            public TarjetaCliente Tarjeta { get; set; }
+        }
+
+        private async Task<Contexto3DS> CargarContexto3DS(Guid tokenAcceso, int tarjetaId)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                PagoTPV pago = await db.PagosTPV
+                    .FirstOrDefaultAsync(p => p.TokenAcceso == tokenAcceso)
+                    .ConfigureAwait(false);
+
+                if (pago == null || pago.Estado == Constantes.EstadosPagoTPV.AUTORIZADO)
+                {
+                    // Un pago ya cobrado no se vuelve a cobrar aunque alguien reabra la página
+                    return null;
+                }
+
+                // La tarjeta tiene que ser del cliente de ESTE pago: con esto, el id de tarjeta
+                // puede viajar por la URL sin que sirva para cobrar en la tarjeta de otro.
+                TarjetaCliente tarjeta = TarjetaGuardadaDe(pago.Empresa, pago.Cliente, tarjetaId);
+                if (tarjeta == null || !tarjeta.Usable)
+                {
+                    return null;
+                }
+
+                return new Contexto3DS { Pago = pago, Tarjeta = tarjeta };
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#181, paso 1: pregunta a Redsys qué sabe hacer la tarjeta. Si no soporta
+        /// EMV 3DS 2 devuelve el formulario de la pasarela de siempre para que la página lo
+        /// envíe: el cliente paga igual, solo que viendo la pasarela.
+        /// </summary>
+        public async Task<InicioAutenticacion3DS> Iniciar3DS(Guid tokenAcceso, int tarjetaId)
+        {
+            Contexto3DS contexto = await CargarContexto3DS(tokenAcceso, tarjetaId).ConfigureAwait(false);
+            if (contexto == null)
+            {
+                return new InicioAutenticacion3DS
+                {
+                    Soporta3DS2 = false,
+                    Motivo = "El pago no existe, ya está cobrado o la tarjeta no es utilizable"
+                };
+            }
+
+            try
+            {
+                ParametrosRedsysFirmados parametros = _redsysService.CrearParametrosInicio3DS(
+                    contexto.Pago.Importe,
+                    contexto.Pago.NumeroOrden,
+                    contexto.Pago.Descripcion,
+                    contexto.Tarjeta.TokenRedsys,
+                    contexto.Tarjeta.CofTxnId,
+                    UrlNotificacionRedsys);
+
+                RespuestaRedsys respuesta = await _redsysService.EnviarPeticionREST(parametros).ConfigureAwait(false);
+                JObject emv3ds = RedsysService.Emv3DSDe(respuesta);
+                string protocolVersion = emv3ds?["protocolVersion"]?.ToString();
+
+                if (!SoportaEmv3DS2(protocolVersion))
+                {
+                    return ConPasarelaClasica(contexto,
+                        $"La tarjeta no soporta EMV 3DS 2 (protocolVersion '{protocolVersion}')");
+                }
+
+                string transId = emv3ds["threeDSServerTransID"]?.ToString();
+                string metodoUrl = emv3ds["threeDSMethodURL"]?.ToString();
+
+                return new InicioAutenticacion3DS
+                {
+                    Soporta3DS2 = true,
+                    ProtocolVersion = protocolVersion,
+                    ThreeDSServerTransID = transId,
+                    ThreeDSMethodURL = metodoUrl,
+                    ThreeDSMethodData = string.IsNullOrWhiteSpace(metodoUrl)
+                        ? null
+                        : ConstruirMethodData(transId, UrlMetodo3DS(tokenAcceso))
+                };
+            }
+            catch (Exception ex)
+            {
+                // Que no se pueda autenticar por REST no puede dejar al cliente sin pagar
+                _logService.LogError($"[3DS] No se pudo iniciar la autenticación del pago " +
+                    $"{contexto.Pago.NumeroOrden}: {ex.Message}", ex);
+                return ConPasarelaClasica(contexto, ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#181, paso 2: autentica. O sale autorizado sin que el cliente vea nada
+        /// (frictionless) o el emisor pide desafío y hay que pintárselo.
+        /// </summary>
+        public async Task<ResultadoAutenticacion3DS> Autenticar3DS(Guid tokenAcceso, int tarjetaId,
+            PeticionAutenticacion3DS peticion)
+        {
+            Contexto3DS contexto = await CargarContexto3DS(tokenAcceso, tarjetaId).ConfigureAwait(false);
+            if (contexto == null || peticion == null)
+            {
+                return Denegado("No hemos podido continuar con el pago. Inténtalo de nuevo.");
+            }
+
+            peticion.NotificationURL = UrlReto3DS(tokenAcceso, tarjetaId, peticion.ProtocolVersion);
+
+            ParametrosRedsysFirmados parametros = _redsysService.CrearParametrosAutenticacion3DS(
+                contexto.Pago.Importe,
+                contexto.Pago.NumeroOrden,
+                contexto.Pago.Descripcion,
+                contexto.Tarjeta.TokenRedsys,
+                contexto.Tarjeta.CofTxnId,
+                UrlNotificacionRedsys,
+                peticion);
+
+            return await EnviarYInterpretar3DS(parametros, contexto, peticion.ProtocolVersion).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// NestoAPI#181, paso 3: cierra el desafío con el cres que ha dejado el emisor.
+        /// </summary>
+        public async Task<ResultadoAutenticacion3DS> ResolverReto3DS(Guid tokenAcceso, int tarjetaId,
+            string protocolVersion, string cres)
+        {
+            Contexto3DS contexto = await CargarContexto3DS(tokenAcceso, tarjetaId).ConfigureAwait(false);
+            if (contexto == null || string.IsNullOrWhiteSpace(cres))
+            {
+                return Denegado("No hemos podido confirmar la autenticación con tu banco.");
+            }
+
+            ParametrosRedsysFirmados parametros = _redsysService.CrearParametrosRespuestaReto3DS(
+                contexto.Pago.Importe,
+                contexto.Pago.NumeroOrden,
+                contexto.Pago.Descripcion,
+                contexto.Tarjeta.TokenRedsys,
+                contexto.Tarjeta.CofTxnId,
+                UrlNotificacionRedsys,
+                protocolVersion,
+                cres);
+
+            return await EnviarYInterpretar3DS(parametros, contexto, protocolVersion).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// El núcleo común de los pasos 2 y 3: manda la petición y traduce la respuesta a
+        /// autorizado / denegado / hay que retar.
+        ///
+        /// <para>No toca el estado del PagoTPV ni aplica el cobro al pedido: de eso se sigue
+        /// encargando la notificación de Redsys (ProcesarNotificacion), igual que en el pago por
+        /// redirección. Aquí solo se decide qué se le enseña al cliente.</para>
+        /// </summary>
+        private async Task<ResultadoAutenticacion3DS> EnviarYInterpretar3DS(
+            ParametrosRedsysFirmados parametros, Contexto3DS contexto, string protocolVersion)
+        {
+            RespuestaRedsys respuesta;
+            try
+            {
+                respuesta = await _redsysService.EnviarPeticionREST(parametros).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logService.LogError($"[3DS] Error autenticando el pago {contexto.Pago.NumeroOrden}: {ex.Message}", ex);
+                return Denegado("No hemos podido conectar con el banco. Inténtalo de nuevo en unos minutos.");
+            }
+
+            JObject emv3ds = RedsysService.Emv3DSDe(respuesta);
+            if (string.Equals(emv3ds?["threeDSInfo"]?.ToString(), "ChallengeRequest", StringComparison.OrdinalIgnoreCase))
+            {
+                return new ResultadoAutenticacion3DS
+                {
+                    Estado = EstadoAutenticacion3DS.RetoRequerido,
+                    AcsUrl = emv3ds["acsURL"]?.ToString(),
+                    Creq = emv3ds["creq"]?.ToString(),
+                    ProtocolVersion = emv3ds["protocolVersion"]?.ToString() ?? protocolVersion
+                };
+            }
+
+            bool autorizado = int.TryParse(respuesta?.Ds_Response, out int codigo) && codigo >= 0 && codigo <= 99;
+
+            return new ResultadoAutenticacion3DS
+            {
+                Estado = autorizado ? EstadoAutenticacion3DS.Autorizado : EstadoAutenticacion3DS.Denegado,
+                CodigoRespuesta = respuesta?.Ds_Response,
+                CodigoAutorizacion = respuesta?.Ds_AuthorisationCode,
+                ProtocolVersion = protocolVersion,
+                MensajeError = autorizado
+                    ? null
+                    : $"El banco no ha autorizado el pago con la tarjeta ({contexto.Tarjeta.Descripcion})."
+            };
+        }
+
+        /// <summary>
+        /// Redsys responde "NO_3DS_v2" cuando la tarjeta no está en el protocolo. Se acepta solo
+        /// lo que empieza por "2.": cualquier otra cosa se trata como que no se puede autenticar
+        /// por REST, y se cae a la pasarela.
+        /// </summary>
+        internal static bool SoportaEmv3DS2(string protocolVersion)
+        {
+            return !string.IsNullOrWhiteSpace(protocolVersion)
+                && protocolVersion.Trim().StartsWith("2.", StringComparison.Ordinal);
+        }
+
+        private InicioAutenticacion3DS ConPasarelaClasica(Contexto3DS contexto, string motivo)
+        {
+            ParametrosRedsysFirmados parametros = _redsysService.CrearParametrosTPVVirtual(
+                contexto.Pago.Importe,
+                contexto.Pago.Descripcion,
+                contexto.Pago.Correo,
+                contexto.Pago.Cliente,
+                UrlNotificacionRedsys,
+                URL_BASE_API + "/pago/ok.html",
+                URL_BASE_API + "/pago/ko.html",
+                metodoPago: null,
+                numeroOrdenExistente: contexto.Pago.NumeroOrden,
+                solicitarToken: false,
+                tokenTarjeta: contexto.Tarjeta.TokenRedsys,
+                cofTxnId: contexto.Tarjeta.CofTxnId);
+
+            return new InicioAutenticacion3DS
+            {
+                Soporta3DS2 = false,
+                Motivo = motivo,
+                FormularioClasico = new FormularioRedsysClasico
+                {
+                    Url = _redsysService.UrlFormularioRedsys,
+                    Ds_SignatureVersion = parametros.Ds_SignatureVersion,
+                    Ds_MerchantParameters = parametros.Ds_MerchantParameters,
+                    Ds_Signature = parametros.Ds_Signature
+                }
+            };
+        }
+
+        private static ResultadoAutenticacion3DS Denegado(string mensaje)
+        {
+            return new ResultadoAutenticacion3DS
+            {
+                Estado = EstadoAutenticacion3DS.Denegado,
+                MensajeError = mensaje
+            };
+        }
+
+        /// <summary>
+        /// El threeDSMethodData que la página postea al emisor: base64 (sin relleno, en URL-safe
+        /// como pide la especificación) del transId y de la URL donde avisarnos.
+        /// </summary>
+        internal static string ConstruirMethodData(string threeDSServerTransID, string urlNotificacionMetodo)
+        {
+            JObject datos = new JObject
+            {
+                ["threeDSServerTransID"] = threeDSServerTransID,
+                ["threeDSMethodNotificationURL"] = urlNotificacionMetodo
+            };
+
+            string base64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(datos.ToString(Formatting.None)));
+            return base64.TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        }
+
+        internal static string UrlPagina3DS(Guid tokenAcceso, int tarjetaId)
+        {
+            return $"{URL_BASE_API}/pago3ds/{tokenAcceso}/{tarjetaId}";
+        }
+
+        private static string UrlMetodo3DS(Guid tokenAcceso)
+        {
+            return $"{URL_BASE_API}/pago3ds/{tokenAcceso}/metodo";
+        }
+
+        /// <summary>
+        /// La URL donde el ACS deja el cres. La version del protocolo va en la query porque el
+        /// emisor solo devuelve el cres, y el paso 3 la necesita para cerrar la autenticacion.
+        /// </summary>
+        private static string UrlReto3DS(Guid tokenAcceso, int tarjetaId, string protocolVersion)
+        {
+            return $"{URL_BASE_API}/pago3ds/{tokenAcceso}/{tarjetaId}/reto" +
+                $"?pv={HttpUtility.UrlEncode(protocolVersion ?? string.Empty)}";
+        }
+
+        #endregion
 
         /// <summary>
         /// NestoAPI#178: enlaza un cobro con tarjeta guardada con el pedido recién creado y apunta

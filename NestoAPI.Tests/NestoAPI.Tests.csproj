@@ -451,6 +451,7 @@
     <Compile Include="Infrastructure\Pagos\FormatoCorreoReclamacionTests.cs" />
     <Compile Include="Infrastructure\Pagos\RedsysServiceTests.cs" />
     <Compile Include="Infrastructure\Pagos\FirmadorRedsysTests.cs" />
+    <Compile Include="Controllers\Pago3DSControllerTests.cs" />
     <Compile Include="Infrastructure\Pagos\ServicioReclamacionDeudaTests.cs" />
     <Compile Include="Infrastructure\Pagos\ServicioPagosTests.cs" />
     <Compile Include="Infrastructure\Pagos\TarjetasClientesTests.cs" />

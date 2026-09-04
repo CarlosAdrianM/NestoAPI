@@ -50,6 +50,27 @@ namespace NestoAPI.Models.Pagos
         /// threeDSServerTransID y la URL nuestra donde el emisor avisa de que ha terminado.
         /// </summary>
         public string ThreeDSMethodData { get; set; }
+
+        /// <summary>
+        /// El formulario de la pasarela de siempre, para cuando no se puede autenticar por REST
+        /// (<see cref="Soporta3DS2"/> false). La página lo envía y el cliente paga como hasta
+        /// ahora: nunca se le deja sin poder pagar por un problema nuestro.
+        /// </summary>
+        public FormularioRedsysClasico FormularioClasico { get; set; }
+
+        /// <summary>Motivo para el log cuando no se puede seguir por 3DS2. No se enseña.</summary>
+        public string Motivo { get; set; }
+    }
+
+    /// <summary>
+    /// NestoAPI#181: los datos del POST a la pasarela clásica, para el plan de reserva.
+    /// </summary>
+    public class FormularioRedsysClasico
+    {
+        public string Url { get; set; }
+        public string Ds_SignatureVersion { get; set; }
+        public string Ds_MerchantParameters { get; set; }
+        public string Ds_Signature { get; set; }
     }
 
     public enum EstadoAutenticacion3DS
