@@ -20,6 +20,20 @@ namespace NestoAPI.Infraestructure.Buscador
             Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] Reindexando el buscador...");
             LuceneBuscador.IndexarTodo();
             Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] Buscador reindexado");
+
+            // NestoAPI#455: el de clientes va en su propio índice y aparte, para que un fallo suyo
+            // no deje sin reindexar el de productos, que es el que usa la tienda.
+            try
+            {
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] Reindexando el buscador de clientes...");
+                BuscadorClientes.IndexarTodo();
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] Buscador de clientes reindexado");
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception(
+                    "[Buscador] No se ha podido reindexar el buscador de clientes: " + ex.Message, ex));
+            }
         }
     }
 }
