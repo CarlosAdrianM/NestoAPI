@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.Notificaciones;
 using NestoAPI.Infraestructure.PedidosVenta;
@@ -47,6 +47,20 @@ namespace NestoAPI.Tests.Infraestructure
             ConDispositivosDe(CLIENTE);
             A.CallTo(() => almacen.Obtener(A<string>._, A<IReadOnlyCollection<int>>._))
                 .Returns(new Dictionary<int, EstadoNotificadoPedido>());
+        }
+
+        [TestMethod]
+        public void EstaActivo_SoloConUnTrueExplicito()
+        {
+            // Encender algo que le escribe a los clientes tiene que ser una decisión explícita:
+            // sin la clave (o con cualquier otra cosa) los avisos están apagados. Es lo que
+            // permite desplegar el servidor antes de que la app esté publicada.
+            Assert.IsFalse(AvisosPedidosJobsService.EstaActivo(null));
+            Assert.IsFalse(AvisosPedidosJobsService.EstaActivo(string.Empty));
+            Assert.IsFalse(AvisosPedidosJobsService.EstaActivo("false"));
+            Assert.IsFalse(AvisosPedidosJobsService.EstaActivo("1"));
+            Assert.IsTrue(AvisosPedidosJobsService.EstaActivo("true"));
+            Assert.IsTrue(AvisosPedidosJobsService.EstaActivo(" True "));
         }
 
         [TestMethod]

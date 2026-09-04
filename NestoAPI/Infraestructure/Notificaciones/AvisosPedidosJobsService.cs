@@ -5,6 +5,7 @@ using NestoAPI.Models.Notificaciones;
 using NestoAPI.Models.PedidosVenta;
 using System;
 using System.Collections.Generic;
+using System.Configuration;
 using System.Data.Entity;
 using System.Linq;
 using System.Threading.Tasks;
@@ -31,11 +32,34 @@ namespace NestoAPI.Infraestructure.Notificaciones
         internal const int DIAS_VIGILADOS = 15;
 
         /// <summary>
+        /// Clave de Web.config que enciende los avisos. Nace apagada: los avisos remiten a la
+        /// pantalla «Mis pedidos», que hasta que la app no esté publicada EN PRODUCCIÓN no existe
+        /// en el móvil de nadie. Se enciende el día que se publique.
+        /// </summary>
+        internal const string CLAVE_ACTIVO = "AvisosPedidos:Activo";
+
+        /// <summary>
+        /// ¿Están encendidos los avisos? Apagados si la clave falta o no dice true: encender algo
+        /// que le escribe a 45 clientes tiene que ser una decisión explícita, no un descuido.
+        /// </summary>
+        internal static bool EstaActivo(string valorConfigurado)
+        {
+            return string.Equals(valorConfigurado?.Trim(), "true", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
         /// Job recurrente. Lo llama Hangfire; no lanza nunca: un fallo avisando no puede tumbar la
         /// cadena de jobs, y lo que pase se ve en ELMAH.
         /// </summary>
         public static async Task AvisarCambiosDeEstado()
         {
+            if (!EstaActivo(ConfigurationManager.AppSettings[CLAVE_ACTIVO]))
+            {
+                // Apagado: ni se abre la conexión. Así el despliegue puede ir por delante de la
+                // publicación de la app, y la tabla de control puede crearse más tarde.
+                return;
+            }
+
             try
             {
                 using (NVEntities db = new NVEntities())

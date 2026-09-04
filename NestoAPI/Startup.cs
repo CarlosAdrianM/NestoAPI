@@ -345,6 +345,8 @@ namespace NestoAPI
             // ha salido una parte, incidencia con la entrega, o lleva horas esperando el pago).
             // Cada media hora: el paso a albarán ocurre a lo largo del día y el seguimiento de la
             // agencia se refresca cada 2 horas, así que más frecuencia no adelantaría nada.
+            // El job se registra siempre, pero solo hace algo si AvisosPedidos:Activo está a true
+            // en Web.config: así se enciende sin desplegar, el día que la app esté publicada.
             RecurringJob.AddOrUpdate(
                 "avisos-pedidos-cliente",
                 () => Infraestructure.Notificaciones.AvisosPedidosJobsService.AvisarCambiosDeEstado(),
