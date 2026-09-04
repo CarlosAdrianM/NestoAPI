@@ -1,3 +1,5 @@
+using Newtonsoft.Json.Linq;
+
 namespace NestoAPI.Models.Pagos
 {
     public class RespuestaRedsys
@@ -49,6 +51,13 @@ namespace NestoAPI.Models.Pagos
         /// posteriores (DS_MERCHANT_COF_TXNID).
         /// </summary>
         public string Ds_Merchant_Cof_Txnid { get; set; }
+
+        /// <summary>
+        /// NestoAPI#181: bloque de EMV 3DS 2 (protocolVersion, threeDSServerTransID,
+        /// threeDSMethodURL, acsURL, creq...). Es un objeto JSON anidado, así que se guarda como
+        /// JToken; usar <c>RedsysService.Emv3DSDe()</c> para leerlo.
+        /// </summary>
+        public JToken Ds_EMV3DS { get; set; }
 
         /// <summary>
         /// El JSON decodificado tal cual llegó de Redsys (todas las claves y valores, también

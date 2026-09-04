@@ -235,6 +235,190 @@ namespace NestoAPI.Infraestructure.Pagos
             };
         }
 
+        #region EMV 3DS 2 (NestoAPI#181)
+
+        private Uri UrlRedsysRESTInicia
+        {
+            get
+            {
+                return _modoPruebas
+                    ? new Uri("https://sis-t.redsys.es:25443/sis/rest/iniciaPeticionREST")
+                    : new Uri("https://sis.redsys.es/sis/rest/iniciaPeticionREST");
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#181: parámetros comunes de un cobro con tarjeta guardada autenticado por
+        /// EMV 3DS 2.
+        ///
+        /// <para><b>Ni EXCEP_SCA ni DIRECTPAYMENT.</b> Es un CIT sobre credencial en fichero: el
+        /// cliente está delante y se le autentica, así que la responsabilidad del fraude se
+        /// traslada al emisor. Marcarlo como MIT sería declararlo mal y comernos nosotros los
+        /// contracargos (ver <see cref="ModoCobroTarjetaGuardada"/>).</para>
+        /// </summary>
+        private JObject ParametrosBaseCobro3DS(decimal importe, string numeroOrden,
+            string descripcion, string tokenTarjeta, string cofTxnId)
+        {
+            JObject parametros = new JObject
+            {
+                ["DS_MERCHANT_AMOUNT"] = ((int)(importe * 100)).ToString(),
+                ["DS_MERCHANT_ORDER"] = numeroOrden,
+                ["DS_MERCHANT_MERCHANTCODE"] = _merchantCode,
+                ["DS_MERCHANT_CURRENCY"] = "978",
+                ["DS_MERCHANT_TRANSACTIONTYPE"] = "0",
+                ["DS_MERCHANT_TERMINAL"] = Redsys.TERMINAL_TPV_VIRTUAL,
+                ["DS_MERCHANT_IDENTIFIER"] = tokenTarjeta,
+                ["DS_MERCHANT_COF_INI"] = "N",
+                ["DS_MERCHANT_COF_TYPE"] = "C"
+            };
+
+            if (!string.IsNullOrWhiteSpace(cofTxnId))
+            {
+                parametros["DS_MERCHANT_COF_TXNID"] = cofTxnId;
+            }
+            if (!string.IsNullOrWhiteSpace(descripcion))
+            {
+                parametros["DS_MERCHANT_PRODUCTDESCRIPTION"] = descripcion;
+            }
+
+            return parametros;
+        }
+
+        private ParametrosRedsysFirmados Firmar(JObject parametros, string numeroOrden, Uri url)
+        {
+            string parametrosBase64 = FirmadorRedsys.ParametrosBase64(parametros);
+
+            return new ParametrosRedsysFirmados
+            {
+                Ds_SignatureVersion = "HMAC_SHA256_V1",
+                Ds_MerchantParameters = parametrosBase64,
+                Ds_Signature = FirmadorRedsys.Firmar(parametrosBase64, numeroOrden, _secretKeyTPVVirtual),
+                UrlRedsys = url,
+                NumeroOrden = numeroOrden
+            };
+        }
+
+        /// <summary>
+        /// NestoAPI#181, paso 1 de 3: pregunta a Redsys qué sabe hacer la tarjeta
+        /// (<c>iniciaPeticionREST</c> con <c>threeDSInfo=CardData</c>). De la respuesta salen la
+        /// versión del protocolo, el identificador de la autenticación y, si el emisor lo usa, la
+        /// URL del 3DSMethod para recoger datos del dispositivo.
+        /// </summary>
+        public ParametrosRedsysFirmados CrearParametrosInicio3DS(decimal importe, string descripcion,
+            string cliente, string tokenTarjeta, string cofTxnId)
+        {
+            string numeroOrden = GenerarNumeroPedido(
+                string.IsNullOrWhiteSpace(cliente) ? null : "C" + cliente.Trim());
+
+            JObject parametros = ParametrosBaseCobro3DS(importe, numeroOrden, descripcion, tokenTarjeta, cofTxnId);
+            parametros["DS_MERCHANT_EMV3DS"] = new JObject { ["threeDSInfo"] = "CardData" };
+
+            return Firmar(parametros, numeroOrden, UrlRedsysRESTInicia);
+        }
+
+        /// <summary>
+        /// NestoAPI#181, paso 2 de 3: autentica (<c>trataPeticionREST</c> con
+        /// <c>threeDSInfo=AuthenticationData</c>). Si el emisor se conforma con los datos del
+        /// dispositivo, responde ya autorizado (frictionless) y el cliente no ve nada; si no,
+        /// responde con el desafío que hay que pintarle.
+        /// </summary>
+        public ParametrosRedsysFirmados CrearParametrosAutenticacion3DS(decimal importe,
+            string numeroOrden, string descripcion, string tokenTarjeta, string cofTxnId,
+            PeticionAutenticacion3DS peticion)
+        {
+            if (peticion == null)
+            {
+                throw new ArgumentNullException(nameof(peticion));
+            }
+
+            JObject emv3ds = new JObject
+            {
+                ["threeDSInfo"] = "AuthenticationData",
+                ["protocolVersion"] = peticion.ProtocolVersion,
+                ["threeDSServerTransID"] = peticion.ThreeDSServerTransID,
+                ["notificationURL"] = peticion.NotificationURL,
+                ["threeDSCompInd"] = string.IsNullOrWhiteSpace(peticion.ThreeDSCompInd)
+                    ? "N"
+                    : peticion.ThreeDSCompInd
+            };
+
+            // Cuantos más datos reales del navegador, más probable es el frictionless. Si no
+            // llegan (la página no pudo recogerlos) se manda lo mínimo y el emisor decidirá.
+            if (peticion.TieneDatosNavegador)
+            {
+                DatosNavegador3DS navegador = peticion.Navegador;
+                emv3ds["browserAcceptHeader"] = navegador.AcceptHeader;
+                emv3ds["browserUserAgent"] = navegador.UserAgent;
+                emv3ds["browserJavaEnabled"] = false;
+                emv3ds["browserJavascriptEnabled"] = navegador.JavaScriptActivado;
+                emv3ds["browserLanguage"] = navegador.Idioma;
+                emv3ds["browserColorDepth"] = navegador.ProfundidadColor.ToString();
+                emv3ds["browserScreenHeight"] = navegador.AltoPantalla.ToString();
+                emv3ds["browserScreenWidth"] = navegador.AnchoPantalla.ToString();
+                emv3ds["browserTZ"] = navegador.DiferenciaHorariaMinutos.ToString();
+            }
+
+            JObject parametros = ParametrosBaseCobro3DS(importe, numeroOrden, descripcion, tokenTarjeta, cofTxnId);
+            parametros["DS_MERCHANT_EMV3DS"] = emv3ds;
+
+            return Firmar(parametros, numeroOrden, UrlRedsysREST);
+        }
+
+        /// <summary>
+        /// NestoAPI#181, paso 3 de 3: cierra el desafío (<c>trataPeticionREST</c> con
+        /// <c>threeDSInfo=ChallengeResponse</c>) con el <c>cres</c> que el ACS del emisor ha
+        /// dejado en nuestra notificationURL. La respuesta ya es la autorización definitiva.
+        /// </summary>
+        public ParametrosRedsysFirmados CrearParametrosRespuestaReto3DS(decimal importe,
+            string numeroOrden, string descripcion, string tokenTarjeta, string cofTxnId,
+            string protocolVersion, string cres)
+        {
+            JObject parametros = ParametrosBaseCobro3DS(importe, numeroOrden, descripcion, tokenTarjeta, cofTxnId);
+            parametros["DS_MERCHANT_EMV3DS"] = new JObject
+            {
+                ["threeDSInfo"] = "ChallengeResponse",
+                ["protocolVersion"] = protocolVersion,
+                ["cres"] = cres
+            };
+
+            return Firmar(parametros, numeroOrden, UrlRedsysREST);
+        }
+
+        /// <summary>
+        /// NestoAPI#181: el bloque Ds_EMV3DS de una respuesta de Redsys. Llega como objeto JSON
+        /// anidado, pero algunos entornos lo mandan como cadena con el JSON dentro: se aceptan
+        /// las dos formas para no depender de eso.
+        /// </summary>
+        internal static JObject Emv3DSDe(RespuestaRedsys respuesta)
+        {
+            JToken token = respuesta?.Ds_EMV3DS;
+            if (token == null || token.Type == JTokenType.Null)
+            {
+                return null;
+            }
+            if (token.Type == JTokenType.Object)
+            {
+                return (JObject)token;
+            }
+
+            string texto = token.ToString();
+            if (string.IsNullOrWhiteSpace(texto))
+            {
+                return null;
+            }
+
+            try
+            {
+                return JObject.Parse(HttpUtility.UrlDecode(texto));
+            }
+            catch (JsonReaderException)
+            {
+                return null;
+            }
+        }
+
+        #endregion
+
         /// <summary>
         /// NestoAPI#178: devolución de un cobro hecho por REST (mismo número de orden). Se usa
         /// para deshacer el cobro con tarjeta guardada si el pedido no se llega a crear: dinero

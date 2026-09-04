@@ -818,6 +818,7 @@
     <Compile Include="Infraestructure\Pagos\IServicioPagos.cs" />
     <Compile Include="Infraestructure\Pagos\ServicioPagos.cs" />
     <Compile Include="Infraestructure\Pagos\ModoCobroTarjetaGuardada.cs" />
+    <Compile Include="Infraestructure\Pagos\FirmadorRedsys.cs" />
     <Compile Include="Infraestructure\Pagos\PoliticaPagoCanal.cs" />
     <Compile Include="Infraestructure\Pagos\ITarjetaClienteStore.cs" />
     <Compile Include="Infraestructure\Pagos\TarjetaClienteStore.cs" />
@@ -1480,6 +1481,7 @@
     <Compile Include="Models\Pagos\PeticionRedsys.cs" />
     <Compile Include="Models\Pagos\RespuestaIniciarPago.cs" />
     <Compile Include="Models\Pagos\RespuestaRedsys.cs" />
+    <Compile Include="Models\Pagos\Emv3DS.cs" />
     <Compile Include="Models\Pagos\ResultadoValidacionNotificacion.cs" />
     <Compile Include="Models\Pagos\EfectoAPagar.cs" />
     <Compile Include="Models\Pagos\EfectoTPVDTO.cs" />

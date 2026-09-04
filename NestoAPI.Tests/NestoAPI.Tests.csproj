@@ -120,6 +120,11 @@
     <Reference Include="Newtonsoft.Json.Bson, Version=1.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
       <HintPath>..\packages\Newtonsoft.Json.Bson.1.0.3\lib\net45\Newtonsoft.Json.Bson.dll</HintPath>
     </Reference>
+    <!-- NestoAPI#181: para comprobar que FirmadorRedsys firma igual que el helper oficial -->
+    <Reference Include="RedsysAPI, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\NestoAPI\RedsysAPI.dll</HintPath>
+    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Transactions" />
     <Reference Include="System.Buffers, Version=4.0.4.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
@@ -445,6 +450,7 @@
     <Compile Include="Infrastructure\CanalesExternos\Amazon\AwsSignatureV4Tests.cs" />
     <Compile Include="Infrastructure\Pagos\FormatoCorreoReclamacionTests.cs" />
     <Compile Include="Infrastructure\Pagos\RedsysServiceTests.cs" />
+    <Compile Include="Infrastructure\Pagos\FirmadorRedsysTests.cs" />
     <Compile Include="Infrastructure\Pagos\ServicioReclamacionDeudaTests.cs" />
     <Compile Include="Infrastructure\Pagos\ServicioPagosTests.cs" />
     <Compile Include="Infrastructure\Pagos\TarjetasClientesTests.cs" />
