@@ -151,6 +151,23 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(0, Buscar(null).Count);
         }
 
+
+        [TestMethod]
+        public void ElQueMasCompraNoSaleSiNoCoincideConLaBusqueda()
+        {
+            // Las ventas MULTIPLICAN la puntuación de texto, no la suman: si un cliente no casa
+            // con nada, su puntuación es cero y cero por el factor que sea sigue siendo cero.
+            // Por eso no hay que excluir a nadie del cálculo del ranking: el que más compra no
+            // aparece en las búsquedas que no le tocan.
+            List<string> encontrados = Buscar("PELUQUERIA").Select(r => r.Cliente).ToList();
+
+            CollectionAssert.Contains(encontrados, "1519", "la peluquería sí tenía que salir");
+            CollectionAssert.DoesNotContain(encontrados, "9471",
+                "el cliente con el puesto 1 de ventas no coincide con 'PELUQUERIA' y no debe salir");
+            CollectionAssert.DoesNotContain(encontrados, "22516",
+                "el puesto 3 de ventas tampoco coincide y tampoco debe salir");
+        }
+
         [TestMethod]
         public void FactorVentas_ElQueMasCompraPuntuaMasYElQueNoCompraNoPenaliza()
         {
