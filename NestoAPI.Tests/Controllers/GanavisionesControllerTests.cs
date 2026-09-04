@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure.Kits;
@@ -2555,6 +2555,143 @@ namespace NestoAPI.Tests.Controllers
         /// <summary>
         /// Configura el mock de IProductoService.CalcularStockProducto para un producto y almacen.
         /// </summary>
+
+        [TestMethod]
+        public async Task GetProductosBonificables_MaximoBloqueados_SoloDevuelveLosMasCercanos()
+        {
+            // TNV#65: el carrito de la app pinta los siguientes regalos que se desbloquearian.
+            // Solo quiere los mas cercanos: calcular el stock de todo el catalogo (x3 sedes) en
+            // cada refresco del carrito sale caro y ademas satura la pantalla.
+            var ganavisiones = new List<Ganavision>
+            {
+                CrearGanavision(1, "PROD_OK", 5),      // canjeable con base 100
+                CrearGanavision(2, "PROD_BLOQ_15", 15), // faltan 50
+                CrearGanavision(3, "PROD_BLOQ_20", 20), // faltan 100
+                CrearGanavision(4, "PROD_BLOQ_30", 30)  // faltan 200
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+            MockStock("PROD_OK", "ALG", 10);
+            MockStock("PROD_BLOQ_15", "ALG", 10);
+            MockStock("PROD_BLOQ_20", "ALG", 10);
+            MockStock("PROD_BLOQ_30", "ALG", 10);
+
+            var resultado = await controller.GetProductosBonificables("1", 100m, incluirBloqueados: true, maximoBloqueados: 2);
+
+            var okResult = (OkNegotiatedContentResult<ProductosBonificablesResponse>)resultado;
+            // El canjeable siempre sale; de los bloqueados, los dos que menos falta les queda.
+            CollectionAssert.AreEqual(
+                new[] { "PROD_OK", "PROD_BLOQ_15", "PROD_BLOQ_20" },
+                okResult.Content.Productos.Select(p => p.ProductoId.Trim()).ToArray());
+        }
+
+        [TestMethod]
+        public async Task GetProductosBonificables_MaximoBloqueados_NoCuentaLosQueSeCaenPorStock()
+        {
+            // El limite es de regalos DEVUELTOS: si el mas cercano no tiene stock no sale, y su
+            // hueco lo ocupa el siguiente. Si contara los descartados devolveriamos menos de los
+            // pedidos (o ninguno) sin motivo visible para el cliente.
+            var ganavisiones = new List<Ganavision>
+            {
+                CrearGanavision(1, "SIN_STOCK", 15),   // el mas cercano, pero sin stock
+                CrearGanavision(2, "CON_STOCK", 20)
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+            MockStock("CON_STOCK", "ALG", 10);
+
+            var resultado = await controller.GetProductosBonificables("1", 100m, incluirBloqueados: true, maximoBloqueados: 1);
+
+            var okResult = (OkNegotiatedContentResult<ProductosBonificablesResponse>)resultado;
+            Assert.AreEqual(1, okResult.Content.Productos.Count);
+            Assert.AreEqual("CON_STOCK", okResult.Content.Productos[0].ProductoId.Trim());
+        }
+
+        [TestMethod]
+        public async Task GetProductosBonificables_SinMaximoBloqueados_LosDevuelveTodos()
+        {
+            // Retrocompatibilidad: la plantilla de Nesto (Nesto#370) los quiere todos.
+            var ganavisiones = new List<Ganavision>
+            {
+                CrearGanavision(1, "PROD_BLOQ_15", 15),
+                CrearGanavision(2, "PROD_BLOQ_20", 20)
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+            MockStock("PROD_BLOQ_15", "ALG", 10);
+            MockStock("PROD_BLOQ_20", "ALG", 10);
+
+            var resultado = await controller.GetProductosBonificables("1", 100m, incluirBloqueados: true);
+
+            var okResult = (OkNegotiatedContentResult<ProductosBonificablesResponse>)resultado;
+            Assert.AreEqual(2, okResult.Content.Productos.Count);
+        }
+
+        [TestMethod]
+        public async Task GetProductosBonificables_NoCalculaElStockDeLosBloqueadosQueNoCaben()
+        {
+            // El limite existe para AHORRAR trabajo: si igualmente calculasemos el stock de todo
+            // el catalogo no habriamos arreglado nada (es lo caro, una consulta por sede).
+            var ganavisiones = new List<Ganavision>
+            {
+                CrearGanavision(1, "PROD_BLOQ_15", 15),
+                CrearGanavision(2, "PROD_BLOQ_99", 99)
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+            MockStock("PROD_BLOQ_15", "ALG", 10);
+            MockStock("PROD_BLOQ_99", "ALG", 10);
+
+            _ = await controller.GetProductosBonificables("1", 100m, incluirBloqueados: true, maximoBloqueados: 1);
+
+            A.CallTo(() => fakeProductoService.CalcularStockProducto("PROD_BLOQ_99", A<string>._, A<int?>._))
+                .MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task GetProductosBonificables_DevuelveElValorDelGanavisionEnEuros()
+        {
+            // TNV#65: los clientes no deben llevar el 10 a pelo. Si algun dia cambia, cambia aqui.
+            var resultado = await controller.GetProductosBonificables("1", 100m);
+
+            var okResult = (OkNegotiatedContentResult<ProductosBonificablesResponse>)resultado;
+            Assert.AreEqual(Constantes.Productos.VALOR_GANAVISION_EN_EUROS, okResult.Content.ValorGanavisionEnEuros);
+        }
+
+        [TestMethod]
+        public async Task GetProductosBonificables_DevuelveElImporteMinimoDePedidoDeCadaRegalo()
+        {
+            // TNV#65: para poder explicar POR QUE esta bloqueado. No es lo mismo "te faltan
+            // puntos" que "este regalo pide un pedido minimo".
+            var ganavisiones = new List<Ganavision>
+            {
+                new Ganavision
+                {
+                    Id = 1, Empresa = "1  ", ProductoId = "PROD1", Ganavisiones = 5,
+                    ImporteMinimoPedido = 200m,
+                    FechaDesde = DateTime.Today.AddDays(-5), FechaHasta = null,
+                    Producto = new Producto { Número = "PROD1", Nombre = "Producto Barato", PVP = 5m }
+                }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+            MockStock("PROD1", "ALG", 10);
+
+            var resultado = await controller.GetProductosBonificables("1", 100m, incluirBloqueados: true);
+
+            var okResult = (OkNegotiatedContentResult<ProductosBonificablesResponse>)resultado;
+            Assert.AreEqual(200m, okResult.Content.Productos[0].ImporteMinimoPedido);
+        }
+
+        private static Ganavision CrearGanavision(int id, string productoId, int ganavisiones)
+        {
+            return new Ganavision
+            {
+                Id = id,
+                Empresa = "1  ",
+                ProductoId = productoId,
+                Ganavisiones = ganavisiones,
+                FechaDesde = DateTime.Today.AddDays(-5),
+                FechaHasta = null,
+                Producto = new Producto { Número = productoId, Nombre = productoId, PVP = 1m }
+            };
+        }
+
         private void MockStock(string productoId, string almacen, int stock, int pendienteEntregar = 0)
         {
             A.CallTo(() => fakeProductoService.CalcularStockProducto(productoId, almacen, A<int?>._))

@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure.Kits;
+﻿using NestoAPI.Infraestructure.Kits;
 using NestoAPI.Infraestructure.ServirJunto;
 using NestoAPI.Models;
 using NestoAPI.Models.Ganavisiones;
@@ -198,11 +198,13 @@ namespace NestoAPI.Controllers
         /// <param name="almacen">Almacen del pedido (opcional). Si se especifica junto con servirJunto=false, solo devuelve productos con stock en ese almacen</param>
         /// <param name="servirJunto">Si es true (default), devuelve productos con stock en cualquier almacen. Si es false, solo con stock en el almacen especificado</param>
         /// <param name="cliente">Numero de cliente. Si se especifica, excluye productos que el cliente haya comprado (BaseImponible != 0)</param>
+        /// <param name="incluirBloqueados">Si es true (Nesto#370), devuelve tambien los regalos que todavia no se pueden canjear, marcados con Bloqueado e ImporteParaDesbloquear</param>
+        /// <param name="maximoBloqueados">Cuantos regalos bloqueados como maximo se devuelven, los mas cercanos a desbloquearse. Null (default) los devuelve todos. TNV#65: el carrito de la app solo quiere los siguientes, y calcular el stock de todo el catalogo en cada refresco sale caro</param>
         /// <returns>Lista de productos bonificables con sus Ganavisiones y stocks, ordenados por Ganavisiones ascendente</returns>
         [HttpGet]
         [Route("api/Ganavisiones/ProductosBonificables")]
         [ResponseType(typeof(ProductosBonificablesResponse))]
-        public async Task<IHttpActionResult> GetProductosBonificables(string empresa, decimal baseImponibleBonificable, string almacen = null, bool servirJunto = true, string cliente = null, string productosExcluir = null, bool incluirBloqueados = false)
+        public async Task<IHttpActionResult> GetProductosBonificables(string empresa, decimal baseImponibleBonificable, string almacen = null, bool servirJunto = true, string cliente = null, string productosExcluir = null, bool incluirBloqueados = false, int? maximoBloqueados = null)
         {
             if (baseImponibleBonificable < 0)
             {
@@ -284,70 +286,55 @@ namespace NestoAPI.Controllers
 
             // Obtener disponibilidad (stock - pendientes entregar) via IProductoService
             // Issue #117: Usar disponibilidad real en vez de stock bruto
-            var productosBonificables = new List<ProductoBonificableDTO>();
-            foreach (var g in ganavisionesQuery)
-            {
-                var stocks = new List<StockAlmacenDTO>();
-                foreach (var sede in Constantes.Sedes.ListaSedes)
+            //
+            // TNV#65: se calculan en dos tandas para poder cortar por maximoBloqueados. Los
+            // seleccionables se devuelven todos; de los bloqueados basta con los mas cercanos,
+            // que son los que empujan a ampliar el pedido. Calcular el stock de todo el catalogo
+            // de Ganavisiones (x3 sedes) en cada refresco del carrito sale caro y no aporta.
+            var candidatos = ganavisionesQuery
+                .Select(g => new
                 {
-                    var stockProducto = await productoService.CalcularStockProducto(g.ProductoId, sede).ConfigureAwait(false);
-                    stocks.Add(new StockAlmacenDTO
-                    {
-                        almacen = sede,
-                        stock = stockProducto.Stock,
-                        cantidadDisponible = stockProducto.CantidadDisponible
-                    });
+                    Ganavision = g,
+                    ImporteParaDesbloquear = CalcularImporteParaDesbloquear(g, baseImponibleBonificable)
+                })
+                .ToList();
+
+            var productosBonificables = new List<ProductoBonificableDTO>();
+
+            // Los seleccionables mantienen el orden por Ganavisiones/Nombre que trae la consulta.
+            foreach (var candidato in candidatos.Where(c => c.ImporteParaDesbloquear <= 0m))
+            {
+                ProductoBonificableDTO dto = await ConstruirProductoBonificable(
+                    candidato.Ganavision, candidato.ImporteParaDesbloquear).ConfigureAwait(false);
+                if (HayDisponibilidad(dto, almacen, servirJunto))
+                {
+                    productosBonificables.Add(dto);
+                }
+            }
+
+            // Nesto#370: los bloqueados van detras, ordenados por lo que falta para desbloquearlos
+            // (lo mas cercano arriba). El filtro de stock se aplica tambien a ellos: no tiene
+            // sentido mostrar un producto que, aunque se desbloquee, no se podria dar por falta de
+            // stock (confundiria al cliente: amplia el pedido y luego no puede entregarse).
+            int bloqueadosAnadidos = 0;
+            foreach (var candidato in candidatos
+                .Where(c => c.ImporteParaDesbloquear > 0m)
+                .OrderBy(c => c.ImporteParaDesbloquear)
+                .ThenBy(c => c.Ganavision.Producto?.Nombre))
+            {
+                if (maximoBloqueados.HasValue && bloqueadosAnadidos >= maximoBloqueados.Value)
+                {
+                    break;
                 }
 
-                // Nesto#370: un producto está bloqueado si faltan puntos o no se alcanza su importe
-                // mínimo. El importe que falta es el mayor de los dos umbrales menos la base actual.
-                decimal importeNecesario = Math.Max(
-                    g.Ganavisiones * Constantes.Productos.VALOR_GANAVISION_EN_EUROS,
-                    g.ImporteMinimoPedido);
-                decimal importeParaDesbloquear = Math.Max(0m, importeNecesario - baseImponibleBonificable);
-
-                var dto = new ProductoBonificableDTO
+                ProductoBonificableDTO dto = await ConstruirProductoBonificable(
+                    candidato.Ganavision, candidato.ImporteParaDesbloquear).ConfigureAwait(false);
+                if (HayDisponibilidad(dto, almacen, servirJunto))
                 {
-                    ProductoId = g.ProductoId?.Trim(),
-                    ProductoNombre = g.Producto?.Nombre?.Trim(),
-                    Ganavisiones = g.Ganavisiones,
-                    PVP = g.Producto?.PVP ?? 0,
-                    Iva = g.Producto?.IVA_Repercutido?.Trim(),
-                    Stocks = stocks,
-                    Bloqueado = importeParaDesbloquear > 0m,
-                    ImporteParaDesbloquear = importeParaDesbloquear
-                };
-
-                productosBonificables.Add(dto);
+                    productosBonificables.Add(dto);
+                    bloqueadosAnadidos++;
+                }
             }
-
-            // Filtrar por disponibilidad segun servirJunto
-            // Issue #117: Usar cantidadDisponible en vez de stock bruto
-            // Nesto#370: el filtro de stock se aplica a TODOS (tambien a los bloqueados): no tiene
-            // sentido mostrar un producto que, aunque se desbloquee, no se podria dar por falta de
-            // stock (confundiria al vendedor: amplia el pedido y luego no puede entregarlo).
-            if (!servirJunto && !string.IsNullOrEmpty(almacen))
-            {
-                // Solo productos con disponibilidad en el almacen especificado
-                productosBonificables = productosBonificables
-                    .Where(p => p.Stocks.Any(s => s.almacen == almacen && s.cantidadDisponible > 0))
-                    .ToList();
-            }
-            else
-            {
-                // Productos con disponibilidad en cualquier almacen
-                productosBonificables = productosBonificables
-                    .Where(p => p.DisponibleTotal > 0)
-                    .ToList();
-            }
-
-            // Nesto#370: los seleccionables primero (en su orden por Ganavisiones/Nombre, que OrderBy
-            // mantiene por ser estable) y los bloqueados al final, ordenados por lo que falta para
-            // desbloquearlos (lo más cercano arriba).
-            productosBonificables = productosBonificables
-                .OrderBy(p => p.Bloqueado)
-                .ThenBy(p => p.Bloqueado ? p.ImporteParaDesbloquear : 0m)
-                .ToList();
 
             // Foto para el carrito de TiendasNuevaVision. Después del filtro de stock, para no
             // consultar la tienda por productos que no se van a devolver.
@@ -529,6 +516,67 @@ namespace NestoAPI.Controllers
                 db.Dispose();
             }
             base.Dispose(disposing);
+        }
+
+        /// <summary>
+        /// Nesto#370: cuanto falta (en base imponible bonificable) para poder canjear este regalo.
+        /// Un regalo esta bloqueado si faltan puntos o si no se alcanza su importe minimo de
+        /// pedido: el umbral es el mayor de los dos. 0 o menos = ya se puede canjear.
+        /// </summary>
+        private static decimal CalcularImporteParaDesbloquear(Ganavision ganavision, decimal baseImponibleBonificable)
+        {
+            decimal importeNecesario = Math.Max(
+                ganavision.Ganavisiones * Constantes.Productos.VALOR_GANAVISION_EN_EUROS,
+                ganavision.ImporteMinimoPedido);
+
+            return Math.Max(0m, importeNecesario - baseImponibleBonificable);
+        }
+
+        /// <summary>
+        /// Monta el DTO de un regalo consultando su disponibilidad real en las tres sedes
+        /// (Issue #117: disponible, no stock bruto). Es la parte cara: una consulta por sede.
+        /// </summary>
+        private async Task<ProductoBonificableDTO> ConstruirProductoBonificable(Ganavision ganavision, decimal importeParaDesbloquear)
+        {
+            var stocks = new List<StockAlmacenDTO>();
+            foreach (var sede in Constantes.Sedes.ListaSedes)
+            {
+                var stockProducto = await productoService.CalcularStockProducto(ganavision.ProductoId, sede).ConfigureAwait(false);
+                stocks.Add(new StockAlmacenDTO
+                {
+                    almacen = sede,
+                    stock = stockProducto.Stock,
+                    cantidadDisponible = stockProducto.CantidadDisponible
+                });
+            }
+
+            return new ProductoBonificableDTO
+            {
+                ProductoId = ganavision.ProductoId?.Trim(),
+                ProductoNombre = ganavision.Producto?.Nombre?.Trim(),
+                Ganavisiones = ganavision.Ganavisiones,
+                PVP = ganavision.Producto?.PVP ?? 0,
+                Iva = ganavision.Producto?.IVA_Repercutido?.Trim(),
+                Stocks = stocks,
+                Bloqueado = importeParaDesbloquear > 0m,
+                ImporteParaDesbloquear = importeParaDesbloquear,
+                ImporteMinimoPedido = ganavision.ImporteMinimoPedido
+            };
+        }
+
+        /// <summary>
+        /// Issue #117: se ofrece lo que hay disponible de verdad (stock menos pendiente de
+        /// entregar). Con "servir junto" vale cualquier sede; si el pedido sale de un almacen
+        /// concreto, solo cuenta ese.
+        /// </summary>
+        private static bool HayDisponibilidad(ProductoBonificableDTO producto, string almacen, bool servirJunto)
+        {
+            if (!servirJunto && !string.IsNullOrEmpty(almacen))
+            {
+                return producto.Stocks.Any(s => s.almacen == almacen && s.cantidadDisponible > 0);
+            }
+
+            return producto.DisponibleTotal > 0;
         }
 
         private GanavisionDTO MapToDTO(Ganavision ganavision)

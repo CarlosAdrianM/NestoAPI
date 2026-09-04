@@ -72,6 +72,13 @@ namespace NestoAPI.Models.Ganavisiones
         public decimal ImporteParaDesbloquear { get; set; }
 
         /// <summary>
+        /// Importe mínimo de pedido que exige este regalo (0 si no exige ninguno). Va aparte de
+        /// <see cref="ImporteParaDesbloquear"/> para que el cliente pueda explicar POR QUÉ está
+        /// bloqueado: no es lo mismo "te faltan puntos" que "hay un pedido mínimo". TNV#65.
+        /// </summary>
+        public decimal ImporteMinimoPedido { get; set; }
+
+        /// <summary>
         /// Foto del producto, para que el regalo se vea en el carrito de TiendasNuevaVision.
         /// Puede venir null si la tienda no tiene imagen para esa referencia.
         /// </summary>
@@ -86,6 +93,14 @@ namespace NestoAPI.Models.Ganavisiones
     {
         public int GanavisionesDisponibles { get; set; }
         public decimal BaseImponibleBonificable { get; set; }
+
+        /// <summary>
+        /// Cuántos euros de base imponible bonificable vale un Ganavisión. Lo manda el servidor
+        /// para que los clientes no lo lleven duplicado a pelo: si algún día cambia, cambia aquí
+        /// y todos se enteran (TNV#65).
+        /// </summary>
+        public decimal ValorGanavisionEnEuros { get; set; } = Constantes.Productos.VALOR_GANAVISION_EN_EUROS;
+
         public List<ProductoBonificableDTO> Productos { get; set; }
     }
 
