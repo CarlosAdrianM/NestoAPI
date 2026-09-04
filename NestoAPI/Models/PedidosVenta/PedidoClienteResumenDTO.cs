@@ -70,19 +70,28 @@ namespace NestoAPI.Models.PedidosVenta
         /// <summary>Esperando su pago: hasta que no entre, el pedido no se prepara.</summary>
         PendienteDePago,
 
-        /// <summary>Lo tenemos y va a su turno.</summary>
+        /// <summary>
+        /// Lo tenemos y todavía no se ha movido: en curso sin picking, o esperando existencias
+        /// (líneas en PENDIENTE, a la espera de una tienda o de un proveedor).
+        /// </summary>
         Recibido,
 
-        /// <summary>Se está montando en el almacén.</summary>
+        /// <summary>El almacén lo está montando: líneas EN_CURSO con picking asignado.</summary>
         EnPreparacion,
 
-        /// <summary>Ha salido: hay envío con seguimiento.</summary>
+        /// <summary>
+        /// Parte del pedido ya está entregada a la agencia y parte no. Se le dice: si no, abre
+        /// una caja incompleta creyendo que le falta algo.
+        /// </summary>
+        EnviadoEnParte,
+
+        /// <summary>Todo entregado a la agencia y de camino.</summary>
         Enviado,
 
-        /// <summary>La agencia lo ha entregado.</summary>
+        /// <summary>La agencia lo ha entregado (lo dice su seguimiento, no nosotros).</summary>
         Entregado,
 
-        /// <summary>Servido y facturado, sin envío que seguir (recogida en tienda, ruta propia).</summary>
+        /// <summary>Servido entero sin envío por agencia (recogida en tienda, ruta propia).</summary>
         Servido
     }
 }

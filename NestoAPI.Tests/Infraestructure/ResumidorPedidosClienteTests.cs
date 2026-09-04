@@ -139,23 +139,48 @@ namespace NestoAPI.Tests.Infraestructure
         [TestMethod]
         public void Resumir_RecienCreado_LoHemosRecibido()
         {
-            DatosPedidoCliente pedido = Pedido(Linea(estado: Constantes.EstadosLineaVenta.PENDIENTE));
+            // Los pedidos de la app nacen en EN_CURSO y sin picking: nadie los ha cogido todavía.
+            DatosPedidoCliente pedido = Pedido(Linea(estado: Constantes.EstadosLineaVenta.EN_CURSO));
 
             Assert.AreEqual(EstadoPedidoCliente.Recibido, ResumidorPedidosCliente.Resumir(pedido).Estado);
         }
 
         [TestMethod]
-        public void Resumir_ConAlgunaLineaEnCurso_SeEstaPreparando()
+        public void Resumir_EsperandoExistencias_TodaviaEsLoHemosRecibido()
+        {
+            // Estado PENDIENTE es que falta recibirlo de una tienda o de un proveedor. Para el
+            // cliente sigue siendo "lo tenemos": de dónde lo sacamos no es asunto suyo.
+            DatosPedidoCliente pedido = Pedido(
+                Linea(estado: Constantes.EstadosLineaVenta.PENDIENTE),
+                Linea(estado: Constantes.EstadosLineaVenta.EN_CURSO));
+
+            Assert.AreEqual(EstadoPedidoCliente.Recibido, ResumidorPedidosCliente.Resumir(pedido).Estado);
+        }
+
+        [TestMethod]
+        public void Resumir_ConPickingAsignado_SeEstaPreparando()
         {
             DatosPedidoCliente pedido = Pedido(
-                Linea(estado: Constantes.EstadosLineaVenta.EN_CURSO),
+                Linea(estado: Constantes.EstadosLineaVenta.EN_CURSO, picking: 45231),
                 Linea(estado: Constantes.EstadosLineaVenta.PENDIENTE));
 
             Assert.AreEqual(EstadoPedidoCliente.EnPreparacion, ResumidorPedidosCliente.Resumir(pedido).Estado);
         }
 
         [TestMethod]
-        public void Resumir_TodoServidoSinEnvio_EsServido()
+        public void Resumir_EnCursoSinPicking_NoSeEstaPreparandoTodavia()
+        {
+            // Lo que dice que el almacén lo está montando es el picking, no el estado 1: si no,
+            // le diríamos "preparándolo" a un pedido que nadie ha tocado.
+            DatosPedidoCliente pedido = Pedido(
+                Linea(estado: Constantes.EstadosLineaVenta.EN_CURSO, picking: 0),
+                Linea(estado: Constantes.EstadosLineaVenta.EN_CURSO));
+
+            Assert.AreEqual(EstadoPedidoCliente.Recibido, ResumidorPedidosCliente.Resumir(pedido).Estado);
+        }
+
+        [TestMethod]
+        public void Resumir_TodoEntregadoALaAgenciaSinEnvio_EsServido()
         {
             // Recogida en tienda o ruta propia: no hay paquete que seguir.
             DatosPedidoCliente pedido = Pedido(
@@ -166,18 +191,31 @@ namespace NestoAPI.Tests.Infraestructure
         }
 
         [TestMethod]
-        public void Resumir_ServidoAMedias_SigueEnPreparacion()
+        public void Resumir_ConParteEntregadaALaAgencia_SeDiceQueVaEnDosVeces()
         {
-            // La mitad servida no es un pedido terminado: la otra mitad es la que está esperando.
+            // Si no se le dice, abre una caja incompleta y cree que le falta algo.
             DatosPedidoCliente pedido = Pedido(
                 Linea(estado: Constantes.EstadosLineaVenta.ALBARAN),
-                Linea(estado: Constantes.EstadosLineaVenta.EN_CURSO));
+                Linea(estado: Constantes.EstadosLineaVenta.EN_CURSO, picking: 45231));
 
-            Assert.AreEqual(EstadoPedidoCliente.EnPreparacion, ResumidorPedidosCliente.Resumir(pedido).Estado);
+            Assert.AreEqual(EstadoPedidoCliente.EnviadoEnParte, ResumidorPedidosCliente.Resumir(pedido).Estado);
         }
 
         [TestMethod]
-        public void Resumir_ConEnvio_EstaEnCamino()
+        public void Resumir_ParteEnviadaConSuEnvio_SigueSiendoEnviadoEnParte()
+        {
+            // El envío que ya salió tiene su seguimiento, pero el pedido NO está completo: decir
+            // "en camino" a secas sería prometer que va todo.
+            DatosPedidoCliente pedido = Pedido(
+                Linea(estado: Constantes.EstadosLineaVenta.ALBARAN),
+                Linea(estado: Constantes.EstadosLineaVenta.PENDIENTE));
+            pedido.Envio = new UltimoEnvioClienteDTO { Pedido = pedido.Numero, NumeroSeguimiento = "123" };
+
+            Assert.AreEqual(EstadoPedidoCliente.EnviadoEnParte, ResumidorPedidosCliente.Resumir(pedido).Estado);
+        }
+
+        [TestMethod]
+        public void Resumir_TodoEnLaAgenciaConEnvio_EstaEnCamino()
         {
             DatosPedidoCliente pedido = Pedido(Linea(estado: Constantes.EstadosLineaVenta.ALBARAN));
             pedido.Envio = new UltimoEnvioClienteDTO { Pedido = pedido.Numero, NumeroSeguimiento = "123" };
@@ -188,6 +226,7 @@ namespace NestoAPI.Tests.Infraestructure
         [TestMethod]
         public void Resumir_EnvioConFechaDeEntrega_EstaEntregado()
         {
+            // Entregado AL CLIENTE lo dice el seguimiento de la agencia, no nuestros estados.
             DatosPedidoCliente pedido = Pedido(Linea(estado: Constantes.EstadosLineaVenta.FACTURA));
             pedido.Envio = new UltimoEnvioClienteDTO
             {
@@ -269,7 +308,8 @@ namespace NestoAPI.Tests.Infraestructure
             short cantidad = 1,
             int estado = Constantes.EstadosLineaVenta.PENDIENTE,
             int tipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
-            string texto = "PRODUCTO")
+            string texto = "PRODUCTO",
+            int? picking = null)
         {
             return new DatosLineaPedidoCliente
             {
@@ -277,7 +317,8 @@ namespace NestoAPI.Tests.Infraestructure
                 Cantidad = cantidad,
                 Estado = (short)estado,
                 TipoLinea = (byte)tipoLinea,
-                Texto = texto
+                Texto = texto,
+                Picking = picking
             };
         }
     }

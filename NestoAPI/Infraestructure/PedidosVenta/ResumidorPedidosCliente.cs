@@ -98,30 +98,49 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         }
 
         /// <summary>
-        /// El punto del recorrido en el que está. Lo que ya ha pasado de verdad manda sobre lo que
-        /// está esperando: un pedido que ha salido está enviado aunque quede algo por cobrar (no
-        /// debería pasar —el picking lo retiene—, pero si pasa, negarle el envío sería mentirle).
+        /// El punto del recorrido en el que está, según los estados de las líneas:
+        ///
+        /// <list type="bullet">
+        /// <item>Alguna línea en ALBARAN (2) o más, pero no todas: parte del pedido ya está en la
+        /// agencia y parte no. Se dice, porque si no el cliente abre una caja incompleta y cree
+        /// que le falta algo.</item>
+        /// <item>Todas en ALBARAN o más: entregado a la agencia. A partir de ahí, que esté
+        /// entregado AL CLIENTE lo dice el seguimiento, no nosotros.</item>
+        /// <item>Alguna en EN_CURSO (1) con picking asignado: el almacén lo está montando.</item>
+        /// <item>El resto (EN_CURSO sin picking, o PENDIENTE (-1) esperando existencias): lo
+        /// tenemos, todavía no se ha movido.</item>
+        /// </list>
+        ///
+        /// <para>Lo que ya ha pasado de verdad manda sobre lo que está esperando: un pedido que ha
+        /// salido está enviado aunque quede algo por cobrar (no debería pasar —el picking lo
+        /// retiene—, pero si pasa, negarle el envío sería mentirle).</para>
         /// </summary>
         internal static EstadoPedidoCliente CalcularEstado(
             DatosPedidoCliente pedido, List<DatosLineaPedidoCliente> lineas, bool pendienteDePago)
         {
-            if (pedido.Envio != null)
+            List<DatosLineaPedidoCliente> vivas = lineas
+                .Where(l => l.Estado > Constantes.EstadosLineaVenta.PRESUPUESTO)
+                .ToList();
+
+            bool algoEntregadoALaAgencia = vivas.Any(l => l.Estado >= Constantes.EstadosLineaVenta.ALBARAN);
+            bool todoEntregadoALaAgencia = vivas.Count > 0
+                && vivas.All(l => l.Estado >= Constantes.EstadosLineaVenta.ALBARAN);
+
+            if (todoEntregadoALaAgencia)
             {
+                if (pedido.Envio == null)
+                {
+                    // Sin envío por agencia que seguir: recogida en tienda o ruta propia.
+                    return EstadoPedidoCliente.Servido;
+                }
                 bool entregado = pedido.Envio.FechaEntrega.HasValue
                     || pedido.Envio.Estado == Constantes.Agencias.ESTADO_ENTREGADO;
                 return entregado ? EstadoPedidoCliente.Entregado : EstadoPedidoCliente.Enviado;
             }
 
-            // Sin envío que seguir: lo que hay son los estados de las líneas. Se mira el MENOR de
-            // las que quedan vivas, porque un pedido con la mitad servida sigue teniendo la otra
-            // mitad en marcha y es lo que el cliente está esperando.
-            List<DatosLineaPedidoCliente> vivas = lineas
-                .Where(l => l.Estado > Constantes.EstadosLineaVenta.PRESUPUESTO)
-                .ToList();
-
-            if (vivas.Count > 0 && vivas.All(l => l.Estado >= Constantes.EstadosLineaVenta.ALBARAN))
+            if (algoEntregadoALaAgencia)
             {
-                return EstadoPedidoCliente.Servido;
+                return EstadoPedidoCliente.EnviadoEnParte;
             }
 
             if (pendienteDePago)
@@ -129,9 +148,13 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 return EstadoPedidoCliente.PendienteDePago;
             }
 
-            return vivas.Any(l => l.Estado >= Constantes.EstadosLineaVenta.EN_CURSO)
-                ? EstadoPedidoCliente.EnPreparacion
-                : EstadoPedidoCliente.Recibido;
+            // Estado 1 a secas solo significa que el pedido está en curso: lo que dice que el
+            // almacén lo está montando es tener picking asignado (así nacen los pedidos de la
+            // app, en EN_CURSO y sin picking).
+            bool enPicking = vivas.Any(l => l.Estado == Constantes.EstadosLineaVenta.EN_CURSO
+                                            && l.Picking.HasValue && l.Picking.Value != 0);
+
+            return enPicking ? EstadoPedidoCliente.EnPreparacion : EstadoPedidoCliente.Recibido;
         }
 
         internal static string TextoDe(EstadoPedidoCliente estado)
@@ -144,6 +167,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     return "Lo hemos recibido";
                 case EstadoPedidoCliente.EnPreparacion:
                     return "Preparándolo";
+                case EstadoPedidoCliente.EnviadoEnParte:
+                    return "Una parte va en camino";
                 case EstadoPedidoCliente.Enviado:
                     return "En camino";
                 case EstadoPedidoCliente.Entregado:
@@ -171,6 +196,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
     internal class DatosLineaPedidoCliente
     {
         public short Estado { get; set; }
+
+        /// <summary>
+        /// Número de picking. Con estado EN_CURSO, es lo que distingue un pedido que el almacén
+        /// está montando de uno que solo está aceptado. Null o 0 = todavía nadie lo ha cogido.
+        /// </summary>
+        public int? Picking { get; set; }
         public byte? TipoLinea { get; set; }
         public short? Cantidad { get; set; }
         public decimal Total { get; set; }

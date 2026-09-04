@@ -781,6 +781,7 @@ namespace NestoAPI.Controllers
                     Lineas = c.LinPedidoVtas.Select(l => new
                     {
                         l.Estado,
+                        l.Picking,
                         l.TipoLinea,
                         l.Cantidad,
                         l.Total,
@@ -817,6 +818,7 @@ namespace NestoAPI.Controllers
                     Lineas = p.Lineas.Select(l => new DatosLineaPedidoCliente
                     {
                         Estado = l.Estado,
+                        Picking = l.Picking,
                         TipoLinea = l.TipoLinea,
                         Cantidad = l.Cantidad,
                         Total = l.Total,
