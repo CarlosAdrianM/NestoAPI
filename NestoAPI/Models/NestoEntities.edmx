@@ -1801,7 +1801,7 @@
           <Property Name="Factura" Type="char" MaxLength="10" />
           <Property Name="CuentaContable" Type="char" MaxLength="10" Nullable="false" />
           <Property Name="ConceptoAdicional" Type="nvarchar" MaxLength="50" Nullable="false" />
-          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" StoreGeneratedPattern="Computed" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="FechaModificacion" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
         </EntityType>
         <EntityType Name="PrestashopProductos">
@@ -12004,7 +12004,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="Factura" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
           <Property Name="CuentaContable" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
           <Property Name="ConceptoAdicional" Type="String" Nullable="false" MaxLength="50" FixedLength="false" Unicode="true" />
-          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" annotation:StoreGeneratedPattern="Computed" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
           <Property Name="FechaModificacion" Type="DateTime" Nullable="false" Precision="3" annotation:StoreGeneratedPattern="Computed" />
           <NavigationProperty Name="CabPedidoVta" Relationship="NVModel.FK_Prepagos_CabPedidoVta" FromRole="Prepago" ToRole="CabPedidoVta" />
           <NavigationProperty Name="PlanCuenta" Relationship="NVModel.FK_Prepagos_PlanCuentas" FromRole="Prepago" ToRole="PlanCuenta" />

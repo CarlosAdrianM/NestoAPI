@@ -1002,7 +1002,8 @@ namespace NestoAPI.Infraestructure.Pagos
                 Importe = pago.Importe,
                 CuentaContable = Constantes.Prepagos.CUENTA_REDSYS,
                 ConceptoAdicional = concepto,
-                Usuario = pago.Usuario
+                // NestoAPI#456: ya no lo tapa el valor por defecto de la BD
+                Usuario = UsuarioAuditoriaHelper.ParaAuditoria(pago.Usuario)
             });
             _ = await db.SaveChangesAsync().ConfigureAwait(false);
 

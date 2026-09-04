@@ -20,6 +20,12 @@ namespace NestoAPI.Infraestructure
     /// </remarks>
     public static class UsuarioAuditoriaHelper
     {
+        /// <summary>Longitud de las columnas Usuario de auditoría.</summary>
+        public const int LONGITUD_MAXIMA = 30;
+
+        /// <summary>Cuando no hay forma de saber quién fue. Mejor esto que una cadena vacía.</summary>
+        public const string DESCONOCIDO = "DESCONOCIDO";
+
         public static string Resolver(IPrincipal user, string usuarioFallback)
         {
             if (user?.Identity?.IsAuthenticated == true && !string.IsNullOrWhiteSpace(user.Identity.Name))
@@ -28,6 +34,29 @@ namespace NestoAPI.Infraestructure
             }
 
             return usuarioFallback;
+        }
+
+        /// <summary>
+        /// NestoAPI#456: deja el usuario listo para grabarlo en una columna de auditoría:
+        /// recortado, de 30 caracteres como mucho y nunca vacío.
+        ///
+        /// <para>Hace falta porque estas columnas son NOT NULL con un valor por defecto
+        /// <c>suser_sname()</c>. Mientras el EDMX marcaba la columna como <c>Computed</c>, EF ni
+        /// siquiera la mandaba y el valor por defecto tapaba el problema: los 43.286 prepagos de
+        /// la tabla salían a nombre de la cuenta de máquina. Al dejar de ser <c>Computed</c>, un
+        /// usuario vacío ya no se tapa: rompe contra el NOT NULL. De eso protege esto.</para>
+        /// </summary>
+        public static string ParaAuditoria(string usuario)
+        {
+            string limpio = usuario?.Trim();
+            if (string.IsNullOrEmpty(limpio))
+            {
+                return DESCONOCIDO;
+            }
+
+            return limpio.Length > LONGITUD_MAXIMA
+                ? limpio.Substring(0, LONGITUD_MAXIMA)
+                : limpio;
         }
     }
 }

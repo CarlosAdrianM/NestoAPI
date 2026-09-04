@@ -1014,7 +1014,8 @@ namespace NestoAPI.Controllers
                             Importe = prepagoPedido.Importe,
                             CuentaContable = prepagoPedido.CuentaContable,
                             ConceptoAdicional = prepagoPedido.ConceptoAdicional,
-                            Usuario = pedido.Usuario
+                            // NestoAPI#456: ya no lo tapa el valor por defecto de la BD
+                            Usuario = UsuarioAuditoriaHelper.ParaAuditoria(pedido.Usuario)
                         });
                     }
 
@@ -1739,7 +1740,8 @@ namespace NestoAPI.Controllers
                     Factura = prepago.Factura,
                     CuentaContable = prepago.CuentaContable,
                     ConceptoAdicional = prepago.ConceptoAdicional,
-                    Usuario = pedido.Usuario
+                    // NestoAPI#456: ya no lo tapa el valor por defecto de la BD
+                    Usuario = UsuarioAuditoriaHelper.ParaAuditoria(pedido.Usuario)
                 });
             }
 
