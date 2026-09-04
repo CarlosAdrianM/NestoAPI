@@ -1,4 +1,7 @@
 ﻿using NestoAPI.Infraestructure;
+using System.Linq.Expressions;
+using System.Configuration;
+using NestoAPI.Infraestructure.Buscador;
 using NestoAPI.Infraestructure.Clientes;
 using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Infraestructure.Seguridad;
@@ -245,6 +248,45 @@ namespace NestoAPI.Controllers
         }
 
         // GET: api/Clientes
+
+        /// <summary>
+        /// NestoAPI#455: la proyección estaba repetida en cada búsqueda; ahora es una sola, para
+        /// que el camino por índice y el de siempre devuelvan EXACTAMENTE el mismo DTO.
+        /// </summary>
+        private static readonly Expression<Func<Cliente, ClienteDTO>> PROYECCION_CLIENTE =
+            clienteEncontrado => new ClienteDTO
+            {
+                albaranValorado = clienteEncontrado.AlbaranValorado,
+                cadena = clienteEncontrado.Cadena.Trim(),
+                ccc = clienteEncontrado.CCC.Trim(),
+                cifNif = clienteEncontrado.CIF_NIF.Trim(),
+                cliente = clienteEncontrado.Nº_Cliente.Trim(),
+                clientePrincipal = clienteEncontrado.ClientePrincipal,
+                codigoPostal = clienteEncontrado.CodPostal.Trim(),
+                comentarioPicking = clienteEncontrado.ComentarioPicking.Trim(),
+                comentarioRuta = clienteEncontrado.ComentarioRuta.Trim(),
+                comentarios = clienteEncontrado.Comentarios,
+                contacto = clienteEncontrado.Contacto.Trim(),
+                copiasAlbaran = clienteEncontrado.NºCopiasAlbarán,
+                copiasFactura = clienteEncontrado.NºCopiasFactura,
+                direccion = clienteEncontrado.Dirección.Trim(),
+                empresa = clienteEncontrado.Empresa.Trim(),
+                estado = clienteEncontrado.Estado,
+                grupo = clienteEncontrado.Grupo.Trim(),
+                iva = clienteEncontrado.IVA.Trim(),
+                mantenerJunto = clienteEncontrado.MantenerJunto,
+                noComisiona = clienteEncontrado.NoComisiona,
+                nombre = clienteEncontrado.Nombre.Trim(),
+                periodoFacturacion = clienteEncontrado.PeriodoFacturación.Trim(),
+                poblacion = clienteEncontrado.Población.Trim(),
+                provincia = clienteEncontrado.Provincia.Trim(),
+                ruta = clienteEncontrado.Ruta.Trim(),
+                servirJunto = clienteEncontrado.ServirJunto,
+                telefono = clienteEncontrado.Teléfono.Trim(),
+                vendedor = clienteEncontrado.Vendedor.Trim(),
+                web = clienteEncontrado.Web.Trim()
+            };
+
         public IQueryable<ClienteDTO> GetClientes(string empresa, string filtro)
         {
             // filtro puede llegar como null (p.ej. NestoApp manda ?filtro= al limpiar la búsqueda):
@@ -252,6 +294,16 @@ namespace NestoAPI.Controllers
             if (string.IsNullOrEmpty(filtro) || (filtro.Length < 4 && !filtro.All(c => char.IsDigit(c))))
             {
                 throw new NestoBusinessException("Por favor, utilice un filtro de al menos 4 caracteres");
+            }
+
+            // NestoAPI#455: con el índice activado, el orden lo decide el buscador (número exacto
+            // primero y después por lo que compra cada uno). Si está apagado, si el índice todavía
+            // no se ha construido o si no encuentra nada, se sigue por el camino de siempre: nadie
+            // se queda sin buscar clientes por culpa del buscador.
+            List<ClienteDTO> porIndice = BuscarPorIndice(empresa, filtro);
+            if (porIndice != null)
+            {
+                return porIndice.AsQueryable();
             }
 
             List<ClienteDTO> clientes = db.Clientes
@@ -265,42 +317,66 @@ namespace NestoAPI.Controllers
                     c.Población.Contains(filtro) ||
                     c.Comentarios.Contains(filtro)
                 ))
-                .Select(clienteEncontrado => new ClienteDTO
-                {
-                    albaranValorado = clienteEncontrado.AlbaranValorado,
-                    cadena = clienteEncontrado.Cadena.Trim(),
-                    ccc = clienteEncontrado.CCC.Trim(),
-                    cifNif = clienteEncontrado.CIF_NIF.Trim(),
-                    cliente = clienteEncontrado.Nº_Cliente.Trim(),
-                    clientePrincipal = clienteEncontrado.ClientePrincipal,
-                    codigoPostal = clienteEncontrado.CodPostal.Trim(),
-                    comentarioPicking = clienteEncontrado.ComentarioPicking.Trim(),
-                    comentarioRuta = clienteEncontrado.ComentarioRuta.Trim(),
-                    comentarios = clienteEncontrado.Comentarios,
-                    contacto = clienteEncontrado.Contacto.Trim(),
-                    copiasAlbaran = clienteEncontrado.NºCopiasAlbarán,
-                    copiasFactura = clienteEncontrado.NºCopiasFactura,
-                    direccion = clienteEncontrado.Dirección.Trim(),
-                    empresa = clienteEncontrado.Empresa.Trim(),
-                    estado = clienteEncontrado.Estado,
-                    grupo = clienteEncontrado.Grupo.Trim(),
-                    iva = clienteEncontrado.IVA.Trim(),
-                    mantenerJunto = clienteEncontrado.MantenerJunto,
-                    noComisiona = clienteEncontrado.NoComisiona,
-                    nombre = clienteEncontrado.Nombre.Trim(),
-                    periodoFacturacion = clienteEncontrado.PeriodoFacturación.Trim(),
-                    poblacion = clienteEncontrado.Población.Trim(),
-                    provincia = clienteEncontrado.Provincia.Trim(),
-                    ruta = clienteEncontrado.Ruta.Trim(),
-                    servirJunto = clienteEncontrado.ServirJunto,
-                    telefono = clienteEncontrado.Teléfono.Trim(),
-                    vendedor = clienteEncontrado.Vendedor.Trim(),
-                    web = clienteEncontrado.Web.Trim()
-                }).
-                OrderByDescending(o => o.cliente.Equals(filtro))
+                .Select(PROYECCION_CLIENTE)
+                .OrderByDescending(o => o.cliente.Equals(filtro))
                 .ToList();
 
             return clientes.AsQueryable();
+        }
+
+        /// <summary>
+        /// NestoAPI#455: apagado mientras se rueda. Con "true" en el appSettings, las búsquedas de
+        /// clientes salen del índice Lucene en vez de los LIKE de siempre.
+        /// </summary>
+        internal const string CLAVE_BUSCADOR_CLIENTES = "Buscador:ClientesPorIndice";
+
+        internal static bool BuscadorPorIndiceActivo(string valor)
+        {
+            return string.Equals(valor?.Trim(), "true", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Los clientes que encuentra el índice, en su orden. Devuelve null cuando no se puede o no
+        /// hay nada, que para el que llama significa "sigue por el camino de siempre".
+        /// </summary>
+        private List<ClienteDTO> BuscarPorIndice(string empresa, string filtro)
+        {
+            if (!BuscadorPorIndiceActivo(ConfigurationManager.AppSettings[CLAVE_BUSCADOR_CLIENTES]))
+            {
+                return null;
+            }
+
+            try
+            {
+                List<ClaveCliente> claves = BuscadorClientes.Buscar(empresa, filtro, 100);
+                if (!claves.Any())
+                {
+                    return null;
+                }
+
+                List<string> numeros = claves.Select(c => c.Cliente).Distinct().ToList();
+                List<ClienteDTO> encontrados = db.Clientes
+                    .Where(c => c.Empresa == empresa && c.Estado >= 0 && numeros.Contains(c.Nº_Cliente))
+                    .Select(PROYECCION_CLIENTE)
+                    .ToList();
+
+                // El orden lo manda el buscador, no la base de datos
+                Dictionary<string, int> orden = numeros
+                    .Select((numero, posicion) => new { numero, posicion })
+                    .ToDictionary(x => x.numero, x => x.posicion);
+
+                return encontrados
+                    .OrderBy(c => orden.TryGetValue(c.cliente, out int posicion) ? posicion : int.MaxValue)
+                    .ToList();
+            }
+            catch (Exception ex)
+            {
+                // Un índice corrupto o a medio construir no puede dejar sin buscar a nadie
+                ElmahHelper.Log(new Exception(
+                    $"[Buscador] No se ha podido buscar el cliente '{filtro}' por índice, " +
+                    $"se usa la búsqueda de siempre: {ex.Message}", ex));
+                return null;
+            }
         }
 
         // GET: api/Clientes

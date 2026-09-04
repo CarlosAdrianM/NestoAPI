@@ -1,4 +1,4 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.Buscador;
 using System;
 using System.Collections.Generic;
@@ -162,6 +162,26 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.IsTrue(intermedio > 1f, "el 500 sigue sumando algo");
             Assert.AreEqual(1f, sinVentas, "quien no compra no puede salir penalizado, solo no sube");
             Assert.AreEqual(1f, BuscadorClientes.FactorVentas(99999), "pasado el horizonte, no suma");
+        }
+    }
+
+    /// <summary>
+    /// NestoAPI#455: el buscador entra detrás de un flag, para poder encenderlo y apagarlo sin
+    /// publicar. Mientras esté apagado, la búsqueda de clientes es exactamente la de siempre.
+    /// </summary>
+    [TestClass]
+    public class BuscadorClientesFlagTests
+    {
+        [TestMethod]
+        public void SoloSeActivaConTrue()
+        {
+            Assert.IsTrue(NestoAPI.Controllers.ClientesController.BuscadorPorIndiceActivo("true"));
+            Assert.IsTrue(NestoAPI.Controllers.ClientesController.BuscadorPorIndiceActivo(" TRUE "));
+            Assert.IsFalse(NestoAPI.Controllers.ClientesController.BuscadorPorIndiceActivo("false"));
+            Assert.IsFalse(NestoAPI.Controllers.ClientesController.BuscadorPorIndiceActivo(""));
+            Assert.IsFalse(NestoAPI.Controllers.ClientesController.BuscadorPorIndiceActivo(null));
+            Assert.IsFalse(NestoAPI.Controllers.ClientesController.BuscadorPorIndiceActivo("1"),
+                "cualquier cosa que no sea true deja la búsqueda de siempre");
         }
     }
 }
