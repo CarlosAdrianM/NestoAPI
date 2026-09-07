@@ -444,8 +444,157 @@ namespace NestoAPI.Controllers
                 ImporteMinimoSinPortes = portes.ImporteMinimoPedidoSinPortes,
                 FaltaParaPortesGratis = portes.ImporteFaltaParaPortesGratis,
                 TotalConIva = carrito.Total,
-                ComisionReembolso = portes.ComisionReembolso
+                ComisionReembolso = portes.ComisionReembolso,
+                // TNV#70: con la tienda elegida, el mismo cálculo dice ya qué no está allí
+                ProductosSinStockEnTienda = LoQueNoHayEnLaTienda(preparado.Pedido, preparado.Tienda)
             });
+        }
+
+        /// <summary>
+        /// TNV#69: las direcciones a las que este cliente puede pedir que le mandemos el pedido.
+        ///
+        /// <para>Hasta ahora cerraba el pedido <b>sin ver a dónde se lo íbamos a mandar</b>: se
+        /// creaba siempre contra el contacto principal de su ficha y no tenía forma ni de saberlo
+        /// ni de cambiarlo.</para>
+        ///
+        /// <para>Va aquí, acotado al canal de la app, y no se reutiliza <c>GET api/Clientes</c>:
+        /// aquel devuelve la ficha entera de UN contacto —CCC, vendedor, comentarios internos—, y
+        /// para elegir a dónde va el paquete solo hace falta la dirección.</para>
+        /// </summary>
+        // GET: api/Pedidos/Cliente/Direcciones
+        [HttpGet]
+        [Route("Cliente/Direcciones")]
+        [ResponseType(typeof(List<DireccionEntregaClienteDTO>))]
+        public async Task<IHttpActionResult> GetDireccionesCliente()
+        {
+            ClaimsIdentity identity = User?.Identity as ClaimsIdentity;
+            string cliente = identity?.FindFirst("cliente")?.Value?.Trim();
+            if (string.IsNullOrWhiteSpace(cliente)
+                || !ValidadorAccesoCliente.ValidarAcceso(identity, cliente).Autorizado)
+            {
+                return Unauthorized();
+            }
+
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO;
+
+            // Solo las fichas vivas: una ficha anulada es una dirección a la que ya no se manda,
+            // y ofrecerla es ofrecer un pedido que luego se rechaza.
+            List<DireccionEntregaClienteDTO> direcciones = await db.Clientes
+                .Where(c => c.Empresa == empresa
+                         && c.Nº_Cliente == cliente
+                         && c.Estado >= Constantes.Clientes.Estados.VISITA_PRESENCIAL)
+                .OrderByDescending(c => c.ClientePrincipal)
+                .ThenBy(c => c.Nombre)
+                .Select(c => new DireccionEntregaClienteDTO
+                {
+                    Contacto = c.Contacto,
+                    Nombre = c.Nombre,
+                    Direccion = c.Dirección,
+                    CodigoPostal = c.CodPostal,
+                    Poblacion = c.Población,
+                    Provincia = c.Provincia,
+                    Telefono = c.Teléfono,
+                    EsPrincipal = c.ClientePrincipal
+                })
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            // Los char de la base vienen rellenos de espacios y la app los pinta tal cual
+            foreach (DireccionEntregaClienteDTO direccion in direcciones)
+            {
+                direccion.Contacto = direccion.Contacto?.Trim();
+                direccion.Nombre = direccion.Nombre?.Trim();
+                direccion.Direccion = direccion.Direccion?.Trim();
+                direccion.CodigoPostal = direccion.CodigoPostal?.Trim();
+                direccion.Poblacion = direccion.Poblacion?.Trim();
+                direccion.Provincia = direccion.Provincia?.Trim();
+                direccion.Telefono = direccion.Telefono?.Trim();
+            }
+
+            return Ok(direcciones);
+        }
+
+        /// <summary>
+        /// TNV#70: las tiendas donde el cliente puede pasar a recoger el pedido en vez de que se
+        /// lo mandemos. Recogiendo no hay portes.
+        ///
+        /// <para>Se devuelven siempre las tres: qué hay y qué no en cada una depende del carrito,
+        /// y eso lo dice <c>POST Cliente/Portes</c> con la tienda elegida
+        /// (<c>ProductosSinStockEnTienda</c>), que es donde el cliente puede verlo con su pedido
+        /// delante.</para>
+        /// </summary>
+        // GET: api/Pedidos/Cliente/Tiendas
+        [HttpGet]
+        [Route("Cliente/Tiendas")]
+        [ResponseType(typeof(List<TiendaRecogidaDTO>))]
+        public IHttpActionResult GetTiendasRecogida()
+        {
+            ClaimsIdentity identity = User?.Identity as ClaimsIdentity;
+            string cliente = identity?.FindFirst("cliente")?.Value?.Trim();
+            if (string.IsNullOrWhiteSpace(cliente)
+                || !ValidadorAccesoCliente.ValidarAcceso(identity, cliente).Autorizado)
+            {
+                return Unauthorized();
+            }
+
+            return Ok(TiendasRecogida.Todas.Select(t => new TiendaRecogidaDTO
+            {
+                Almacen = t.Almacen,
+                Nombre = t.Nombre,
+                Direccion = t.Direccion,
+                CodigoPostal = t.CodigoPostal,
+                Poblacion = t.Poblacion,
+                Horario = t.Horario,
+                Telefono = t.Telefono
+            }).ToList());
+        }
+
+        /// <summary>
+        /// TNV#70: lo que el cliente ha pedido y no está en la tienda donde quiere recogerlo.
+        ///
+        /// <para>Se decidió avisar y que decida él, no esconderle la tienda: puede que le compense
+        /// esperar. Pero tiene que verlo antes de confirmar, porque si no se planta allí a por un
+        /// pedido que todavía no está.</para>
+        ///
+        /// <para>Disponible es lo mismo que mira el picking: el stock de ese almacén menos lo que
+        /// ya está comprometido en otros pedidos.</para>
+        /// </summary>
+        private static List<ProductoSinStockEnTiendaDTO> LoQueNoHayEnLaTienda(
+            PedidoVentaDTO pedido, TiendasRecogida.Tienda tienda)
+        {
+            if (tienda == null)
+            {
+                return new List<ProductoSinStockEnTiendaDTO>();
+            }
+
+            IGestorStocks gestorStocks = new GestorStocks();
+            List<ProductoSinStockEnTiendaDTO> faltan = new List<ProductoSinStockEnTiendaDTO>();
+
+            foreach (LineaPedidoVentaDTO linea in pedido.Lineas
+                .Where(l => l.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO))
+            {
+                string producto = linea.Producto?.Trim();
+                if (string.IsNullOrWhiteSpace(producto))
+                {
+                    continue;
+                }
+
+                int disponible = gestorStocks.Stock(producto, tienda.Almacen)
+                    - gestorStocks.UnidadesPendientesEntregarAlmacen(producto, tienda.Almacen);
+
+                if (disponible < linea.Cantidad)
+                {
+                    faltan.Add(new ProductoSinStockEnTiendaDTO
+                    {
+                        Producto = producto,
+                        Texto = linea.texto,
+                        Cantidad = (short)linea.Cantidad,
+                        Disponible = disponible < 0 ? 0 : disponible
+                    });
+                }
+            }
+
+            return faltan;
         }
 
         /// <summary>
@@ -627,6 +776,9 @@ namespace NestoAPI.Controllers
 
             /// <summary>Correo del cliente (del JWT), para el aviso previo al cobro.</summary>
             public string Correo { get; set; }
+
+            /// <summary>TNV#70: la tienda donde lo va a recoger, o null si se lo mandamos.</summary>
+            public TiendasRecogida.Tienda Tienda { get; set; }
         }
 
         private async Task<PedidoPreparado> PrepararPedido(PedidoClienteRequest peticion)
@@ -656,12 +808,33 @@ namespace NestoAPI.Controllers
 
             string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO;
 
+            // 2 bis. TNV#70: ¿se lo mandamos o pasa a recogerlo? Solo valen las tres tiendas; un
+            //    almacén cualquiera que llegue en la petición se rechaza, no se ignora en
+            //    silencio, porque el cliente ha elegido algo y hay que decirle que no puede.
+            TiendasRecogida.Tienda tienda = null;
+            if (!string.IsNullOrWhiteSpace(peticion.TiendaRecogida))
+            {
+                tienda = TiendasRecogida.Buscar(peticion.TiendaRecogida);
+                if (tienda == null)
+                {
+                    return new PedidoPreparado { Error = BadRequest("Esa tienda no existe. Elige una de las nuestras o pide que te lo enviemos.") };
+                }
+            }
+
             // 3. Su ficha: de ahí salen iva, ruta, ccc, periodo de facturación, servir junto,
             //    vendedor y el código postal con el que se calculan los portes.
-            ClienteDTO fichaCliente = await LeerFichaCliente(empresa, cliente).ConfigureAwait(false);
+            //    TNV#69: y la dirección, que ahora puede elegir. Recogiendo en tienda no hay
+            //    dirección que elegir, así que se usa la principal.
+            string contactoPedido = tienda != null ? null : peticion.Contacto?.Trim();
+            ClienteDTO fichaCliente = await LeerFichaCliente(empresa, cliente, contactoPedido).ConfigureAwait(false);
             if (fichaCliente == null)
             {
-                return new PedidoPreparado { Error = BadRequest($"No se encuentra la ficha del cliente {cliente}") };
+                return new PedidoPreparado
+                {
+                    Error = BadRequest(string.IsNullOrWhiteSpace(contactoPedido)
+                        ? $"No se encuentra la ficha del cliente {cliente}"
+                        : "Esa dirección de entrega ya no está disponible. Elige otra.")
+                };
             }
             if (fichaCliente.estado < Constantes.Clientes.Estados.VISITA_PRESENCIAL)
             {
@@ -715,11 +888,12 @@ namespace NestoAPI.Controllers
             return new PedidoPreparado
             {
                 Pedido = ConstructorPedidoCliente.Construir(
-                    peticion, fichaCliente, precios, formaPago, plazosPago, DateTime.Today),
+                    peticion, fichaCliente, precios, formaPago, plazosPago, DateTime.Today, tienda),
                 FormaPago = formaPago,
                 PlazosPago = plazosPago,
                 CodigoPostal = fichaCliente.codigoPostal?.Trim() ?? string.Empty,
-                Correo = identity.FindFirst(ClaimTypes.Email)?.Value
+                Correo = identity.FindFirst(ClaimTypes.Email)?.Value,
+                Tienda = tienda
             };
         }
 
@@ -779,14 +953,24 @@ namespace NestoAPI.Controllers
 
 
         /// <summary>
-        /// La ficha del contacto principal, que es sobre el que se crea el pedido: el JWT
-        /// identifica al cliente, no a uno de sus contactos.
+        /// La ficha sobre la que se crea el pedido. El JWT identifica al CLIENTE, no a uno de sus
+        /// contactos, así que por defecto se usa el principal — que es lo que se hacía siempre.
+        ///
+        /// <para>TNV#69: si el cliente ha elegido una de sus direcciones, se usa ESE contacto, y
+        /// con él van su código postal (los portes), su ruta y su dirección de entrega. Que el
+        /// contacto sea suyo no hace falta comprobarlo aparte: los contactos cuelgan del número de
+        /// cliente y el número de cliente sale del JWT, así que el de otro sencillamente no
+        /// aparece. Lo que sí se exige es que esté activo, igual que el principal.</para>
         /// </summary>
-        private async Task<ClienteDTO> LeerFichaCliente(string empresa, string cliente)
+        private async Task<ClienteDTO> LeerFichaCliente(string empresa, string cliente, string contacto = null)
         {
-            Cliente fichaCliente = await db.Clientes
-                .SingleOrDefaultAsync(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.ClientePrincipal)
-                .ConfigureAwait(false);
+            Cliente fichaCliente = string.IsNullOrWhiteSpace(contacto)
+                ? await db.Clientes
+                    .SingleOrDefaultAsync(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.ClientePrincipal)
+                    .ConfigureAwait(false)
+                : await db.Clientes
+                    .SingleOrDefaultAsync(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.Contacto == contacto)
+                    .ConfigureAwait(false);
             if (fichaCliente == null)
             {
                 return null;

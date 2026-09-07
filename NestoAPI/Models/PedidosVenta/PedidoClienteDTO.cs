@@ -68,6 +68,87 @@ namespace NestoAPI.Models.PedidosVenta
         /// borrar a mano (pedido 925607, 07/09/26).</para>
         /// </summary>
         public int? IdPagoCarrito { get; set; }
+
+        /// <summary>
+        /// TNV#69: a cuál de sus direcciones se lo mandamos (el contacto, de
+        /// <c>GET api/Pedidos/Cliente/Direcciones</c>). Vacío = la principal de su ficha, que es
+        /// lo que se hacía siempre y sin que el cliente lo viera.
+        ///
+        /// <para>El servidor comprueba que ese contacto es suyo y está activo. No hace falta más
+        /// para que nadie mande el pedido a la dirección de otro: los contactos cuelgan del número
+        /// de cliente, y el número de cliente sale del JWT.</para>
+        /// </summary>
+        public string Contacto { get; set; }
+
+        /// <summary>
+        /// TNV#70: pasa a recogerlo por una tienda (el almacén: ALG, ALC o REI) en vez de que se
+        /// lo mandemos. Vacío = envío normal.
+        ///
+        /// <para>De aquí salen el <b>almacén de las líneas</b> —el pedido se prepara en esa
+        /// tienda— y la <b>ruta</b>, con la que los portes desaparecen solos. El servidor solo
+        /// acepta las tres tiendas de <see cref="Infraestructure.PedidosVenta.TiendasRecogida"/>,
+        /// no un almacén cualquiera que le manden.</para>
+        ///
+        /// <para>Si recoge, la dirección de entrega sobra: <see cref="Contacto"/> se ignora.</para>
+        /// </summary>
+        public string TiendaRecogida { get; set; }
+    }
+
+    /// <summary>
+    /// TNV#69: una dirección a la que el cliente puede pedir que le mandemos el pedido. Es un
+    /// contacto de su ficha, con lo justo para reconocerla y elegirla: ni condiciones de pago, ni
+    /// vendedor, ni comentarios internos.
+    /// </summary>
+    public class DireccionEntregaClienteDTO
+    {
+        /// <summary>El contacto, que es lo que se devuelve en
+        /// <see cref="PedidoClienteRequest.Contacto"/>.</summary>
+        public string Contacto { get; set; }
+
+        public string Nombre { get; set; }
+        public string Direccion { get; set; }
+        public string CodigoPostal { get; set; }
+        public string Poblacion { get; set; }
+        public string Provincia { get; set; }
+        public string Telefono { get; set; }
+
+        /// <summary>La de su ficha principal: es la que se usa si no elige ninguna.</summary>
+        public bool EsPrincipal { get; set; }
+    }
+
+    /// <summary>
+    /// TNV#70: una tienda donde el cliente puede pasar a recoger el pedido, con lo que necesita
+    /// para decidir: dónde está, cuándo puede ir y qué de su carrito no está allí.
+    /// </summary>
+    public class TiendaRecogidaDTO
+    {
+        /// <summary>El almacén, que es lo que se devuelve en
+        /// <see cref="PedidoClienteRequest.TiendaRecogida"/>.</summary>
+        public string Almacen { get; set; }
+
+        public string Nombre { get; set; }
+        public string Direccion { get; set; }
+        public string CodigoPostal { get; set; }
+        public string Poblacion { get; set; }
+        public string Horario { get; set; }
+        public string Telefono { get; set; }
+    }
+
+    /// <summary>
+    /// TNV#70: un producto del carrito que no está en la tienda elegida. No impide recoger allí
+    /// —se decidió avisar y que el cliente decida—, pero tiene que saberlo antes de elegirla: el
+    /// pedido no estará listo hasta que llegue.
+    /// </summary>
+    public class ProductoSinStockEnTiendaDTO
+    {
+        public string Producto { get; set; }
+        public string Texto { get; set; }
+
+        /// <summary>Lo que ha pedido.</summary>
+        public short Cantidad { get; set; }
+
+        /// <summary>Lo que hay disponible ahora mismo en esa tienda (0 o menos si no hay nada).</summary>
+        public int Disponible { get; set; }
     }
 
     /// <summary>
@@ -217,6 +298,17 @@ namespace NestoAPI.Models.PedidosVenta
         /// <summary>La comisión de reembolso, si el pedido va contra reembolso: es otro gasto que
         /// el cliente tiene que ver antes de confirmar.</summary>
         public decimal ComisionReembolso { get; set; }
+
+        /// <summary>
+        /// TNV#70: lo que el cliente ha pedido y no está en la tienda que ha elegido para
+        /// recogerlo. Vacío si no ha elegido recoger, o si está todo.
+        ///
+        /// <para>No impide elegir esa tienda: se decidió avisar y que decida él. Pero tiene que
+        /// verlo ANTES de confirmar, porque si no se plantará allí a por un pedido que todavía no
+        /// está.</para>
+        /// </summary>
+        public List<ProductoSinStockEnTiendaDTO> ProductosSinStockEnTienda { get; set; }
+            = new List<ProductoSinStockEnTiendaDTO>();
     }
 
     public class LineaPedidoClienteResponse

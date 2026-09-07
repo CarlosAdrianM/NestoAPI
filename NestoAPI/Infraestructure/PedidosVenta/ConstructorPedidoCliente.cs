@@ -47,13 +47,19 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// <param name="formaPago">La que ha autorizado la política del canal.</param>
         /// <param name="plazosPago">Los que ha autorizado la política del canal.</param>
         /// <param name="fecha">Fecha del pedido (se inyecta para poder probarlo).</param>
+        /// <param name="tienda">
+        /// TNV#70: la tienda donde el cliente va a recogerlo, si ha elegido recogerlo. De ella
+        /// salen el almacén de las líneas (el pedido se prepara ALLÍ, no en Algete) y la ruta,
+        /// con la que los portes desaparecen solos. Null = se lo mandamos, que es lo de siempre.
+        /// </param>
         public static PedidoVentaDTO Construir(
             PedidoClienteRequest peticion,
             ClienteDTO cliente,
             IDictionary<string, ProductoPlantillaDTO> precios,
             string formaPago,
             string plazosPago,
-            DateTime fecha)
+            DateTime fecha,
+            TiendasRecogida.Tienda tienda = null)
         {
             if (peticion == null)
             {
@@ -84,9 +90,13 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 periodoFacturacion = string.IsNullOrWhiteSpace(cliente.periodoFacturacion)
                     ? Constantes.Pedidos.PERIODO_FACTURACION_NORMAL
                     : cliente.periodoFacturacion.Trim(),
-                ruta = string.IsNullOrWhiteSpace(cliente.ruta)
-                    ? Constantes.Pedidos.RUTA_AGENCIA_00
-                    : cliente.ruta.Trim(),
+                // TNV#70: recogiendo en tienda manda la ruta de la tienda, y con ella se van los
+                // portes (GestorImportesMinimos.esRutaConPortes no incluye AM, ALC ni REI).
+                ruta = tienda != null
+                    ? tienda.Ruta
+                    : string.IsNullOrWhiteSpace(cliente.ruta)
+                        ? Constantes.Pedidos.RUTA_AGENCIA_00
+                        : cliente.ruta.Trim(),
                 servirJunto = cliente.servirJunto,
                 mantenerJunto = cliente.mantenerJunto,
                 noComisiona = cliente.noComisiona,
@@ -109,7 +119,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
             foreach (LineaPedidoClienteRequest lineaPedida in peticion.Lineas ?? new List<LineaPedidoClienteRequest>())
             {
-                pedido.Lineas.Add(ConstruirLinea(lineaPedida, precios, fecha, usuario));
+                pedido.Lineas.Add(ConstruirLinea(lineaPedida, precios, fecha, usuario, tienda));
             }
 
             return pedido;
@@ -119,7 +129,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             LineaPedidoClienteRequest lineaPedida,
             IDictionary<string, ProductoPlantillaDTO> precios,
             DateTime fecha,
-            string usuario)
+            string usuario,
+            TiendasRecogida.Tienda tienda)
         {
             string producto = lineaPedida.Producto?.Trim();
             ProductoPlantillaDTO precio = null;
@@ -141,7 +152,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 AplicarDescuento = precio?.aplicarDescuento ?? true,
                 DescuentoLinea = 0,
                 iva = precio?.iva,
-                almacen = Constantes.Almacenes.ALGETE,
+                // TNV#70: el pedido se prepara donde el cliente lo va a recoger. Sin tienda, en
+                // Algete, que es de donde salen todos los envios.
+                almacen = tienda?.Almacen ?? Constantes.Almacenes.ALGETE,
+                // La delegacion NO sigue al almacen: la venta es de la app, no del mostrador de
+                // esa tienda, y la delegacion es lo que atribuye la venta.
                 delegacion = Constantes.Empresas.DELEGACION_POR_DEFECTO,
                 formaVenta = Constantes.FormasVenta.APP,
                 usuario = usuario,

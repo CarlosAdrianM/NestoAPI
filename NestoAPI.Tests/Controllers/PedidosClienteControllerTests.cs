@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using NestoAPI.Infraestructure.Clientes;
+using System.Linq;
 using System.Net.Http;
 using System.Security.Claims;
 using System.Threading.Tasks;
@@ -370,6 +371,73 @@ namespace NestoAPI.Tests.Controllers
             peticion.IdPagoCarrito = 689;
 
             var resultado = await controller.PostPedidoCliente(peticion);
+
+            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+        }
+
+        // TNV#69 / TNV#70: el paso de confirmacion — a donde se lo mandamos, o donde lo recoge.
+
+        [TestMethod]
+        public async Task GetDireccionesCliente_SinTokenDeCliente_NoAutorizado()
+        {
+            // Las direcciones de un cliente son suyas: quien no es ese cliente no las ve.
+            PedidosClienteController controller = ControllerConIdentidad();
+
+            var resultado = await controller.GetDireccionesCliente();
+
+            Assert.IsInstanceOfType(resultado, typeof(UnauthorizedResult));
+        }
+
+        [TestMethod]
+        public void GetTiendasRecogida_SinTokenDeCliente_NoAutorizado()
+        {
+            PedidosClienteController controller = ControllerConIdentidad();
+
+            var resultado = controller.GetTiendasRecogida();
+
+            Assert.IsInstanceOfType(resultado, typeof(UnauthorizedResult));
+        }
+
+        [TestMethod]
+        public void GetTiendasRecogida_DevuelveLasTresTiendas()
+        {
+            PedidosClienteController controller = ControllerConIdentidad(new Claim("cliente", "15191"));
+
+            var resultado = controller.GetTiendasRecogida() as OkNegotiatedContentResult<List<TiendaRecogidaDTO>>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(3, resultado.Content.Count);
+            CollectionAssert.AreEquivalent(
+                new[] { "ALG", "ALC", "REI" },
+                resultado.Content.Select(t => t.Almacen).ToArray());
+        }
+
+        [TestMethod]
+        public async Task PostPedidoCliente_UnaTiendaQueNoEsNuestra_NoCreaElPedido()
+        {
+            // El almacen de las lineas sale de aqui. Sin esta puerta, el cliente podria colocar su
+            // pedido en el almacen ficticio de cualquiera mandando su codigo.
+            PedidosClienteController controller = ControllerConIdentidad(new Claim("cliente", "15191"));
+            PedidoClienteRequest peticion = PeticionValida();
+            peticion.TiendaRecogida = "CNG";
+
+            var resultado = await controller.PostPedidoCliente(peticion);
+
+            var badRequest = resultado as BadRequestErrorMessageResult;
+            Assert.IsNotNull(badRequest);
+            StringAssert.Contains(badRequest.Message, "tienda");
+        }
+
+        [TestMethod]
+        public async Task PostPortesCliente_UnaTiendaQueNoEsNuestra_TampocoCalculaPortes()
+        {
+            // El mismo camino: si el pedido no se puede hacer asi, tampoco se le dice lo que
+            // costaria.
+            PedidosClienteController controller = ControllerConIdentidad(new Claim("cliente", "15191"));
+            PedidoClienteRequest peticion = PeticionValida();
+            peticion.TiendaRecogida = "XXX";
+
+            var resultado = await controller.PostPortesCliente(peticion);
 
             Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
         }

@@ -5,6 +5,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
+using NestoAPI.Models.Picking;
 
 namespace NestoAPI.Tests.Infrastructure
 {
@@ -66,7 +67,8 @@ namespace NestoAPI.Tests.Infrastructure
             };
         }
 
-        private static PedidoVentaDTO Construir(PedidoClienteRequest peticion = null, ClienteDTO cliente = null)
+        private static PedidoVentaDTO Construir(PedidoClienteRequest peticion = null, ClienteDTO cliente = null,
+            TiendasRecogida.Tienda tienda = null)
         {
             return ConstructorPedidoCliente.Construir(
                 peticion ?? Peticion(),
@@ -74,8 +76,87 @@ namespace NestoAPI.Tests.Infrastructure
                 Precios(),
                 Constantes.FormasPago.TARJETA,
                 Constantes.PlazosPago.PREPAGO,
-                new DateTime(2026, 9, 1));
+                new DateTime(2026, 9, 1),
+                tienda);
         }
+
+        #region TNV#70: recoger el pedido en tienda
+
+        [TestMethod]
+        public void Construir_SinTienda_SaleDeAlgeteYPorLaRutaDelCliente()
+        {
+            // Lo de siempre: todos los pedidos de la app salen de Algete.
+            PedidoVentaDTO pedido = Construir();
+
+            Assert.IsTrue(pedido.Lineas.All(l => l.almacen == Constantes.Almacenes.ALGETE));
+            Assert.AreEqual("FW", pedido.ruta, "la ruta es la de su ficha");
+        }
+
+        [TestMethod]
+        public void Construir_RecogiendoEnTienda_ElPedidoSePreparaEnEsaTienda()
+        {
+            // Lo importante de la issue: el almacén. Si el pedido se prepara en Algete, el cliente
+            // se planta en Alcobendas y allí no hay nada que darle.
+            TiendasRecogida.Tienda alcobendas = TiendasRecogida.Buscar(Constantes.Almacenes.ALCOBENDAS);
+
+            PedidoVentaDTO pedido = Construir(tienda: alcobendas);
+
+            Assert.IsTrue(pedido.Lineas.All(l => l.almacen == Constantes.Almacenes.ALCOBENDAS),
+                "el picking tiene que salir en la cola de esa tienda");
+            Assert.AreEqual("ALC", pedido.ruta);
+        }
+
+        [TestMethod]
+        public void Construir_RecogiendoEnTienda_LaDelegacionNoSigueAlAlmacen()
+        {
+            // La venta es de la app, no del mostrador de esa tienda: la delegación es lo que
+            // atribuye la venta, y recoger allí no la convierte en una venta suya.
+            PedidoVentaDTO pedido = Construir(tienda: TiendasRecogida.Buscar(Constantes.Almacenes.REINA));
+
+            Assert.IsTrue(pedido.Lineas.All(l => l.delegacion == Constantes.Empresas.DELEGACION_POR_DEFECTO));
+        }
+
+        [TestMethod]
+        public void TiendasRecogida_NingunaLlevaPortes()
+        {
+            // De esto depende que recoger en tienda salga sin portes, y no se ve en ningún sitio:
+            // esRutaConPortes solo dice que sí para FW, 00, 16, AT y OT. Si alguien añadiera una
+            // tienda con una ruta de esas, se le cobraría el envío por venir a recogerlo.
+            foreach (TiendasRecogida.Tienda tienda in TiendasRecogida.Todas)
+            {
+                Assert.IsFalse(GestorImportesMinimos.esRutaConPortes(tienda.Ruta),
+                    $"la tienda {tienda.Nombre} (ruta {tienda.Ruta}) llevaría portes");
+            }
+        }
+
+        [TestMethod]
+        public void TiendasRecogida_SonLasTresYCadaUnaConSuAlmacen()
+        {
+            CollectionAssert.AreEquivalent(
+                new[] { Constantes.Almacenes.ALGETE, Constantes.Almacenes.ALCOBENDAS, Constantes.Almacenes.REINA },
+                TiendasRecogida.Todas.Select(t => t.Almacen).ToArray());
+        }
+
+        [TestMethod]
+        public void TiendasRecogida_UnAlmacenQueNoEsTienda_NoVale()
+        {
+            // La puerta: el cliente manda un código y aquí se decide si vale. Sin esto podría
+            // colocar su pedido en el almacén ficticio de cualquiera.
+            Assert.IsNull(TiendasRecogida.Buscar("CNG"), "un almacén que no es tienda");
+            Assert.IsNull(TiendasRecogida.Buscar("XXX"));
+            Assert.IsNull(TiendasRecogida.Buscar(""));
+            Assert.IsNull(TiendasRecogida.Buscar(null));
+        }
+
+        [TestMethod]
+        public void TiendasRecogida_ElCodigoLlegaComoLlegue_SeReconoce()
+        {
+            // Los char de la base vienen con espacios y la app puede mandar minúsculas
+            Assert.IsNotNull(TiendasRecogida.Buscar(" alc "));
+            Assert.AreEqual(Constantes.Almacenes.ALCOBENDAS, TiendasRecogida.Buscar("ALC").Almacen);
+        }
+
+        #endregion
 
         // --- Lo que decide el servidor ---
 
