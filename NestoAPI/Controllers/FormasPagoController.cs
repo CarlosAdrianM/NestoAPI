@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
 using System.Web.Http.Results;
+using NestoAPI.Infraestructure.Seguridad;
 using NestoAPI.Models;
 
 namespace NestoAPI.Controllers
@@ -44,6 +45,7 @@ namespace NestoAPI.Controllers
 
         // GET: api/FormasPago
         [ResponseType(typeof(FormaPagoDTO))]
+        [AutorizadoOApiKey("ApiKeyPrestashop", "X-API-KEY")]
         public async Task<IHttpActionResult> GetFormasPago(string empresa, string cliente, decimal totalPedido, string tipoIva)
         //public IQueryable<FormaPago> GetFormasPago(string empresa)
         {
@@ -64,6 +66,7 @@ namespace NestoAPI.Controllers
         }
             // GET: api/FormasPago
         [ResponseType(typeof(FormaPagoDTO))]
+        [AutorizadoOApiKey("ApiKeyPrestashop", "X-API-KEY")]
         public async Task<IHttpActionResult> GetFormasPago(string empresa, string cliente)
         //public IQueryable<FormaPago> GetFormasPago(string empresa)
         {

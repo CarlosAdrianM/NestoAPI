@@ -425,6 +425,7 @@
     <Compile Include="Infrastructure\Domiciliaciones\GestorDomiciliacionesTests.cs" />
     <Compile Include="Infrastructure\Rectificativas\GestorCopiaPedidosTests.cs" />
     <Compile Include="Infrastructure\Seguridad\ClaimsVendedorHelperTests.cs" />
+    <Compile Include="Infrastructure\Seguridad\CredencialPlazosYFormasPagoTests.cs" />
     <Compile Include="Infrastructure\Seguridad\ValidadorAccesoClienteTests.cs" />
     <Compile Include="Providers\SimpleRefreshTokenProviderTests.cs" />
     <Compile Include="Infrastructure\ValidadoresPedido\ValidadorGanavisionesTests.cs" />

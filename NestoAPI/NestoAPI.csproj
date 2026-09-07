@@ -755,6 +755,7 @@
     <Compile Include="Infraestructure\RoundingHelper.cs" />
     <Compile Include="Infraestructure\ValidadorDescuentoPP.cs" />
     <Compile Include="Infraestructure\Seguridad\ApiKeyAttribute.cs" />
+    <Compile Include="Infraestructure\Seguridad\AutorizadoOApiKeyAttribute.cs" />
     <Compile Include="Infraestructure\Seguridad\ComparacionSegura.cs" />
     <Compile Include="Infraestructure\Seguridad\ValidadorApiKey.cs" />
     <Compile Include="Infraestructure\Seguridad\ValidadorJwt.cs" />

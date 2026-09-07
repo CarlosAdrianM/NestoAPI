@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
 using System.Web.Http.Results;
+using NestoAPI.Infraestructure.Seguridad;
 using NestoAPI.Infraestructure.Pagos;
 using NestoAPI.Models;
 using NestoAPI.Models.RecursosHumanos;
@@ -61,6 +62,7 @@ namespace NestoAPI.Controllers
 
 
         [ResponseType(typeof(PlazoPagoDTO))]
+        [AutorizadoOApiKey("ApiKeyPrestashop", "X-API-KEY")]
         public async Task<IHttpActionResult> GetPlazosPago(string empresa, string cliente)
         //public IQueryable<FormaPago> GetFormasPago(string empresa)
         {
@@ -119,6 +121,7 @@ namespace NestoAPI.Controllers
         }
 
         [ResponseType(typeof(PlazoPagoDTO))]
+        [AutorizadoOApiKey("ApiKeyPrestashop", "X-API-KEY")]
         public async Task<IHttpActionResult> GetPlazosPago(string empresa, string cliente, string formaPago, decimal totalPedido)
         {
             Cliente clienteBuscado = db.Clientes.Include(p => p.CondPagoClientes).Where(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.ClientePrincipal == true).SingleOrDefault();
@@ -173,6 +176,7 @@ namespace NestoAPI.Controllers
         [HttpGet]
         [Route("ConInfoDeuda")]
         [ResponseType(typeof(PlazosPagoResponse))]
+        [AutorizadoOApiKey("ApiKeyPrestashop", "X-API-KEY")]
         public async Task<IHttpActionResult> GetPlazosPagoConInfoDeuda(string empresa, string cliente)
         {
             // Reutiliza la lógica existente obteniendo el resultado
@@ -214,6 +218,7 @@ namespace NestoAPI.Controllers
         [HttpGet]
         [Route("CondicionesPago")]
         [ResponseType(typeof(CondicionesPagoResponse))]
+        [AutorizadoOApiKey("ApiKeyPrestashop", "X-API-KEY")]
         public async Task<IHttpActionResult> GetCondicionesPago(string empresa, string cliente, string canal = null)
         {
             // Obtener plazos de pago
