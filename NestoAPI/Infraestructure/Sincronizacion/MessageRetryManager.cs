@@ -1,7 +1,8 @@
-using NestoAPI.Models;
+﻿using NestoAPI.Models;
 using NestoAPI.Models.Sincronizacion;
 using System;
 using System.Data.Entity;
+using System.Data.Entity.Infrastructure;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -141,6 +142,43 @@ namespace NestoAPI.Infraestructure.Sincronizacion
                     _ = await _db.SaveChangesAsync();
                 }
             }
+            catch when (esNuevo)
+            {
+                // NestoAPI#463: si el guardado falla por CUALQUIER otra cosa, la fila nueva se
+                // queda en estado Added dentro del contexto, que es el de toda la petición. El
+                // siguiente SaveChanges -normalmente el de RecordFailure, llamado desde el
+                // manejador de error, que solo actualiza- reintenta ese INSERT y revienta con la
+                // PK duplicada... apuntando a RecordFailure, que no inserta nada. El error de una
+                // operación se lo comía la siguiente y el stack señalaba al sitio equivocado.
+                DescartarSiEstaPendiente(retryRecord);
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Saca del contexto una fila que iba a insertarse y no llegó a guardarse, para que no la
+        /// arrastre el siguiente SaveChanges. Es limpieza best-effort dentro de un catch que va a
+        /// relanzar: si fallara, taparía la excepción de verdad.
+        /// </summary>
+        private void DescartarSiEstaPendiente(SyncMessageRetry registro)
+        {
+            try
+            {
+                if (registro == null)
+                {
+                    return;
+                }
+
+                DbEntityEntry<SyncMessageRetry> entrada = _db.Entry(registro);
+                if (entrada != null && entrada.State == EntityState.Added)
+                {
+                    entrada.State = EntityState.Detached;
+                }
+            }
+            catch
+            {
+                // Da igual por qué no se ha podido desasociar: manda la excepción original.
+            }
         }
 
         private static void IncrementarIntento(SyncMessageRetry retryRecord, DateTime now)
@@ -172,6 +210,25 @@ namespace NestoAPI.Infraestructure.Sincronizacion
         }
 
         /// <summary>
+        /// NestoAPI#463: estos dos métodos solo actualizan o borran, pero comparten el DbContext de
+        /// la petición, así que pueden arrastrar un INSERT de RecordAttempt que no llegó a
+        /// guardarse. Que eso reviente no puede costar un 500 en el webhook: Pub/Sub lo tomaría
+        /// por un fallo y reintentaría el mensaje, que es el bucle que #308 vino a cortar. Anotar
+        /// el intento es contabilidad interna; el mensaje ya se ha procesado.
+        /// </summary>
+        private async Task GuardarTolerandoClaveDuplicada()
+        {
+            try
+            {
+                _ = await _db.SaveChangesAsync();
+            }
+            catch (System.Data.Entity.Infrastructure.DbUpdateException ex) when (EsClaveDuplicada(ex))
+            {
+                Console.WriteLine("⚠️ Clave duplicada al anotar el reintento; el mensaje ya estaba registrado");
+            }
+        }
+
+        /// <summary>
         /// Registra un procesamiento exitoso
         /// Elimina el registro para no acumular registros innecesarios
         /// </summary>
@@ -185,7 +242,7 @@ namespace NestoAPI.Infraestructure.Sincronizacion
             {
                 // Eliminar registro (o marcarlo como Resolved si prefieres mantener histórico)
                 _db.SyncMessageRetries.Remove(retryRecord);
-                await _db.SaveChangesAsync();
+                await GuardarTolerandoClaveDuplicada();
 
                 Console.WriteLine($"✅ Registro de reintento eliminado: MessageId={messageId}");
             }
@@ -206,7 +263,7 @@ namespace NestoAPI.Infraestructure.Sincronizacion
                 retryRecord.LastError = TruncateError(error);
                 retryRecord.LastAttemptDate = DateTime.UtcNow;
 
-                await _db.SaveChangesAsync();
+                await GuardarTolerandoClaveDuplicada();
 
                 Console.WriteLine($"❌ Fallo registrado: MessageId={messageId}, Attempt={retryRecord.AttemptCount}/{MaxAttempts}");
             }

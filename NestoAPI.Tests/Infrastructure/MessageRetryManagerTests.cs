@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.Sincronizacion;
 using NestoAPI.Models;
@@ -96,6 +96,60 @@ namespace NestoAPI.Tests.Infrastructure
             // Assert: se releyó el registro del otro webhook y se incrementó su contador
             Assert.AreEqual(2, saves);
             Assert.AreEqual(2, insertadoPorElOtro.AttemptCount);
+        }
+
+        // NestoAPI#463: la misma PK volvió a saltar el 06/09/26, pero desde RecordFailure, que
+        // solo ACTUALIZA. La violación venía de un INSERT que RecordAttempt había dejado pendiente
+        // en el contexto compartido de la petición: el error de una operación se lo comía la
+        // siguiente, y el webhook devolvía 500 (con lo que Pub/Sub reintentaba el mensaje).
+
+        private static NVEntities FakeDbConRegistro(SyncMessageRetry registro)
+        {
+            NVEntities db = A.Fake<NVEntities>();
+            DbSet<SyncMessageRetry> fakeRetries = A.Fake<DbSet<SyncMessageRetry>>(o =>
+                o.Implements<IQueryable<SyncMessageRetry>>().Implements<IDbAsyncEnumerable<SyncMessageRetry>>());
+            A.CallTo(() => db.SyncMessageRetries).Returns(fakeRetries);
+            ConfigurarFakeDbSet(fakeRetries, new List<SyncMessageRetry> { registro }.AsQueryable());
+            return db;
+        }
+
+        [TestMethod]
+        public async Task RecordFailure_SiElContextoArrastraUnaClaveDuplicada_NoTiraElWebhook()
+        {
+            var registro = new SyncMessageRetry { MessageId = "m1", AttemptCount = 2, Status = RetryStatus.Retrying.ToString() };
+            NVEntities db = FakeDbConRegistro(registro);
+            A.CallTo(() => db.SaveChangesAsync())
+                .Throws(() => new DbUpdateException("dup", new Exception("intermedia", CrearSqlException(2627))));
+
+            // No debe propagar: anotar el intento es contabilidad interna, el mensaje ya se procesó.
+            await new MessageRetryManager(db).RecordFailure("m1", "lo que fuera");
+
+            Assert.AreEqual("lo que fuera", registro.LastError);
+        }
+
+        [TestMethod]
+        public async Task RecordSuccess_SiElContextoArrastraUnaClaveDuplicada_NoTiraElWebhook()
+        {
+            var registro = new SyncMessageRetry { MessageId = "m1", AttemptCount = 2, Status = RetryStatus.Retrying.ToString() };
+            NVEntities db = FakeDbConRegistro(registro);
+            A.CallTo(() => db.SaveChangesAsync())
+                .Throws(() => new DbUpdateException("dup", new Exception("intermedia", CrearSqlException(2627))));
+
+            await new MessageRetryManager(db).RecordSuccess("m1");
+        }
+
+        [TestMethod]
+        public async Task RecordFailure_SiElGuardadoFallaPorOtraCosa_SiPropaga()
+        {
+            // Tolerar la clave duplicada es una excepción muy concreta: un timeout o un deadlock
+            // tienen que seguir viéndose.
+            var registro = new SyncMessageRetry { MessageId = "m1", AttemptCount = 2, Status = RetryStatus.Retrying.ToString() };
+            NVEntities db = FakeDbConRegistro(registro);
+            A.CallTo(() => db.SaveChangesAsync())
+                .Throws(() => new DbUpdateException("deadlock", CrearSqlException(1205)));
+
+            _ = await Assert.ThrowsExceptionAsync<DbUpdateException>(
+                () => new MessageRetryManager(db).RecordFailure("m1", "lo que fuera"));
         }
 
         private static void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class
