@@ -238,6 +238,33 @@ namespace NestoAPI.Controllers
             return Ok(envios);
         }
 
+        /// <summary>
+        /// El envío PENDIENTE (Estado &lt; 0) de un pedido concreto. Nesto lo usa para heredar el
+        /// destino real de la etiqueta que creó la tienda online (Nesto#395) cuando se abre el
+        /// pedido en la ventana de Agencias y al insertar el registro.
+        ///
+        /// Nesto#340 (Agencias, slice A3): replica el filtro EXACTO de AgenciaService.CargarEnvio.
+        /// ESTADO_INICIAL_ENVIO, la constante que usaba el cliente, vale 0 igual que ESTADO_EN_CURSO
+        /// aquí. Devuelve una LISTA de cero o un elemento a propósito: el cliente reutiliza así el
+        /// mapeo de los demás listados, y un pedido sin envío pendiente es una lista vacía en vez de
+        /// un 404 que haya que distinguir de un fallo de red. El OrderBy no estaba en la consulta de
+        /// EF, que se fiaba del orden que devolviera SQL Server: con varios pendientes del mismo
+        /// pedido ahora gana siempre el más antiguo, que es lo que hacía en la práctica.
+        /// </summary>
+        [HttpGet]
+        [Route("api/EnviosAgencias/PendientePorPedido")]
+        [ResponseType(typeof(List<EnvioAgenciaListadoDTO>))]
+        public async Task<IHttpActionResult> GetEnvioPendientePorPedido(string empresa, int pedido)
+        {
+            List<EnvioAgenciaListadoDTO> envio = await ProyectarListado(db.EnviosAgencias
+                .Where(e => e.Estado < Constantes.Agencias.ESTADO_EN_CURSO &&
+                            e.Empresa == empresa && e.Pedido == pedido)
+                .OrderBy(e => e.Numero))
+                .Take(1)
+                .ToListAsync();
+            return Ok(envio);
+        }
+
         /// <summary>En curso (Estado = 0, etiqueta creada sin cerrar el día) de una agencia —
         /// pestaña En curso.</summary>
         [HttpGet]

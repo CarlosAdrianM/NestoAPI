@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Models;
@@ -52,12 +52,14 @@ namespace NestoAPI.Tests.Controllers
             string cliente = "15191", DateTime? fecha = null, decimal reembolso = 0,
             DateTime? fechaPagoReembolso = null, short retorno = 0, DateTime? fechaRetornoRecibido = null,
             string nombre = "CLIENTE PRUEBA", string direccion = "CALLE MAYOR 1", string telefono = "916281914",
-            string movil = "600000000")
+            string movil = "600000000",
+            int? pedido = null)
         {
             return new EnviosAgencia
             {
                 Numero = numero,
                 Empresa = empresa,
+                Pedido = pedido,
                 Agencia = agencia,
                 Cliente = cliente,
                 Contacto = "0",
@@ -73,6 +75,113 @@ namespace NestoAPI.Tests.Controllers
                 Movil = movil,
                 AgenciasTransporte = new AgenciaTransporte { Nombre = "ASM " }
             };
+        }
+
+        // Nesto#340 (Agencias, slice A3): PendientePorPedido sustituye a AgenciaService.CargarEnvio,
+        // que leía el envío pendiente del pedido con Entity Framework. De él sale el destino real de
+        // la etiqueta cuando la tienda online ya la había creado (Nesto#395), así que el filtro tiene
+        // que ser el mismo: Estado < 0, esta empresa y este pedido.
+
+        [TestMethod]
+        public async Task PendientePorPedido_DevuelveElPendienteDeEsePedido()
+        {
+            ConEnvios(
+                Envio(1, estado: -1, pedido: 12345, nombre: "DESTINO DE LA TIENDA ONLINE"),
+                Envio(2, estado: -1, pedido: 99999));
+
+            var resultado = await controller.GetEnvioPendientePorPedido("1", 12345)
+                as OkNegotiatedContentResult<List<EnvioAgenciaListadoDTO>>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(1, resultado.Content.Count);
+            Assert.AreEqual(1, resultado.Content.Single().Numero);
+            Assert.AreEqual("DESTINO DE LA TIENDA ONLINE", resultado.Content.Single().Nombre);
+        }
+
+        [TestMethod]
+        public async Task PendientePorPedido_NoDevuelveLosQueYaEstanEnCursoNiTramitados()
+        {
+            ConEnvios(
+                Envio(1, estado: 0, pedido: 12345),
+                Envio(2, estado: 1, pedido: 12345),
+                Envio(3, estado: 2, pedido: 12345));
+
+            var resultado = await controller.GetEnvioPendientePorPedido("1", 12345)
+                as OkNegotiatedContentResult<List<EnvioAgenciaListadoDTO>>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(0, resultado.Content.Count);
+        }
+
+        [TestMethod]
+        public async Task PendientePorPedido_NoSeSaltaLaEmpresa()
+        {
+            ConEnvios(Envio(1, estado: -1, empresa: "3", pedido: 12345));
+
+            var resultado = await controller.GetEnvioPendientePorPedido("1", 12345)
+                as OkNegotiatedContentResult<List<EnvioAgenciaListadoDTO>>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(0, resultado.Content.Count);
+        }
+
+        [TestMethod]
+        public async Task PendientePorPedido_SinEnvioPendienteDevuelveListaVaciaYNoUn404()
+        {
+            // El cliente distingue "este pedido no tiene etiqueta previa" de "falló la llamada":
+            // lo primero es un caso normalísimo y no puede parecerse a un error.
+            ConEnvios(Envio(1, estado: -1, pedido: 99999));
+
+            var resultado = await controller.GetEnvioPendientePorPedido("1", 12345)
+                as OkNegotiatedContentResult<List<EnvioAgenciaListadoDTO>>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(0, resultado.Content.Count);
+        }
+
+        [TestMethod]
+        public async Task PendientePorPedido_ConVariosPendientesDevuelveElMasAntiguo()
+        {
+            ConEnvios(
+                Envio(7, estado: -1, pedido: 12345, nombre: "EL SEGUNDO"),
+                Envio(3, estado: -1, pedido: 12345, nombre: "EL PRIMERO"));
+
+            var resultado = await controller.GetEnvioPendientePorPedido("1", 12345)
+                as OkNegotiatedContentResult<List<EnvioAgenciaListadoDTO>>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(1, resultado.Content.Count);
+            Assert.AreEqual(3, resultado.Content.Single().Numero);
+        }
+
+        [TestMethod]
+        public async Task PendientePorPedido_LlevaLosCamposQueNesto_UsaParaHeredarElDestino()
+        {
+            // Estos son los que copia AgenciasViewModel al abrir el pedido; si alguno se cayera del
+            // DTO, Newtonsoft lo dejaría a Nothing y el envío saldría al destino equivocado sin
+            // que saltara ningún error.
+            var envio = Envio(1, estado: -1, pedido: 12345, nombre: "ANA GARCIA");
+            envio.Direccion = "CALLE DEL PEZ 4";
+            envio.Poblacion = "MADRID";
+            envio.Provincia = "MADRID";
+            envio.CodPostal = "28004";
+            envio.Movil = "600123456";
+            envio.Email = "ana@example.com";
+            envio.Atencion = "PORTERIA";
+            ConEnvios(envio);
+
+            var resultado = await controller.GetEnvioPendientePorPedido("1", 12345)
+                as OkNegotiatedContentResult<List<EnvioAgenciaListadoDTO>>;
+
+            EnvioAgenciaListadoDTO dto = resultado.Content.Single();
+            Assert.AreEqual("ANA GARCIA", dto.Nombre);
+            Assert.AreEqual("CALLE DEL PEZ 4", dto.Direccion);
+            Assert.AreEqual("MADRID", dto.Poblacion);
+            Assert.AreEqual("MADRID", dto.Provincia);
+            Assert.AreEqual("28004", dto.CodPostal);
+            Assert.AreEqual("600123456", dto.Movil);
+            Assert.AreEqual("ana@example.com", dto.Email);
+            Assert.AreEqual("PORTERIA", dto.Atencion);
         }
 
         [TestMethod]
