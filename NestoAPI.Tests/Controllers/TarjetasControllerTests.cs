@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure.Pagos;
@@ -37,6 +37,23 @@ namespace NestoAPI.Tests.Controllers
                     Principal = new ClaimsPrincipal(new ClaimsIdentity(claims, "JWT"))
                 }
             };
+        }
+
+        [TestMethod]
+        public void GetCapacidades_ElCobroDirectoPorMITEstaRetirado_SiempreFalse()
+        {
+            // NestoAPI#181: el pedido que hace el cliente desde la app es un CIT sobre credencial
+            // en fichero y se autentica; cobrarlo por MIT sería saltarse la SCA y renunciar al
+            // traslado de responsabilidad. El MIT que Comercia activó el 07/09/26 es para la
+            // cartera de aplazados y periódicos, que cobrará desde el motor de remesa.
+            //
+            // Hasta el 07/09 lo que impedía que esto se encendiera por error era que el terminal
+            // contestaba SIS0883 y el código caía al plan B. Esa red ya no existe: ahora el MIT
+            // se autorizaría de verdad. Por eso el camino se retiró entero y esto es una constante.
+            var resultado = CrearController().GetCapacidades() as OkNegotiatedContentResult<CapacidadesTarjetasDTO>;
+
+            Assert.IsNotNull(resultado);
+            Assert.IsFalse(resultado.Content.CobroDirecto);
         }
 
         [TestMethod]

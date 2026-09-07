@@ -259,18 +259,6 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             Assert.IsFalse(new ResultadoCobroTarjetaGuardada { Autorizado = true, CodigoErrorRedsys = "SIS0883" }.TerminalSinMIT);
         }
 
-        [TestMethod]
-        public void CaerAlPlanB_SoloCuandoElTerminalNoAdmiteMIT()
-        {
-            Assert.IsTrue(PedidosClienteController.CaerAlPlanB(
-                new ResultadoCobroTarjetaGuardada { Autorizado = false, CodigoErrorRedsys = "SIS0883" }));
-            Assert.IsFalse(PedidosClienteController.CaerAlPlanB(
-                new ResultadoCobroTarjetaGuardada { Autorizado = false, MensajeError = "El banco no ha autorizado el cobro" }));
-            Assert.IsFalse(PedidosClienteController.CaerAlPlanB(
-                new ResultadoCobroTarjetaGuardada { Autorizado = true }));
-            Assert.IsFalse(PedidosClienteController.CaerAlPlanB(null));
-        }
-
         #endregion
 
         [TestMethod]
@@ -394,17 +382,6 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             Assert.IsNull(_servicio.TarjetaGuardadaDe("1", "99999", 7), "de otro cliente");
             Assert.IsNull(_servicio.TarjetaGuardadaDe("1", "15191", 8), "desactivada");
             Assert.IsNull(_servicio.TarjetaGuardadaDe("1", "15191", 9), "no existe");
-        }
-
-        [TestMethod]
-        public void ModoCobroTarjetaGuardada_SoloEsDirectoConTrueExplicito()
-        {
-            // Sin la clave (o con cualquier otra cosa) manda el plan B: el más seguro hoy
-            Assert.IsTrue(ModoCobroTarjetaGuardada.Leer("true"));
-            Assert.IsTrue(ModoCobroTarjetaGuardada.Leer(" TRUE "));
-            Assert.IsFalse(ModoCobroTarjetaGuardada.Leer("false"));
-            Assert.IsFalse(ModoCobroTarjetaGuardada.Leer(null));
-            Assert.IsFalse(ModoCobroTarjetaGuardada.Leer(""));
         }
 
         [TestMethod]

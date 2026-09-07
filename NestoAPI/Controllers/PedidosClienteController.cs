@@ -91,24 +91,16 @@ namespace NestoAPI.Controllers
                 return preparado.Error;
             }
 
-            // NestoAPI#178: con tarjeta guardada y cobro directo (MIT), el cobro es síncrono y va
-            // PRIMERO: si el banco no lo autoriza, no se crea nada y la app vuelve al carrito.
-            // Mientras el terminal no permita MIT (SIS0883, 02/09/26) se va por el plan B: el
-            // pedido se crea y el cliente confirma el pago en la pasarela con su tarjeta guardada,
-            // sin volver a teclearla (ModoCobroTarjetaGuardada).
+            // NestoAPI#178/#181: el pedido lo hace el CLIENTE con su tarjeta guardada, así que es
+            // un CIT sobre credencial en fichero y hay que autenticarlo. Se crea el pedido y el
+            // pago se confirma con la tarjeta ya cargada, sin volver a teclearla, por EMV 3DS 2
+            // (frictionless cuando el emisor no exige reto). Aquí NO se cobra por MIT: hacerlo
+            // sería clasificar mal la operación, saltarse la SCA y renunciar al traslado de
+            // responsabilidad. El MIT que el banco activó el 07/09/26 es para la cartera de
+            // aplazados y periódicos (#181), que cobrará desde el motor de remesa, no desde aquí.
             TarjetaCliente tarjetaParaLaPasarela = null;
             if (peticion.PagarConTarjetaGuardada)
             {
-                if (ModoCobroTarjetaGuardada.EsCobroDirecto)
-                {
-                    IHttpActionResult cobrado = await CrearPedidoCobrandoTarjetaGuardada(peticion, preparado).ConfigureAwait(false);
-                    if (cobrado != null)
-                    {
-                        return cobrado;
-                    }
-                    // null = el terminal ha contestado SIS0883 (MIT aún no operativo): se sigue
-                    // por el plan B en esta misma petición, sin que el cliente pierda el pedido.
-                }
                 if (!peticion.TarjetaId.HasValue)
                 {
                     return BadRequest("Falta la tarjeta con la que pagar (TarjetaId)");
@@ -172,130 +164,6 @@ namespace NestoAPI.Controllers
         /// devolución falla, ELMAH y correo, porque dinero cobrado sin pedido no puede esperar
         /// al cuadre de fin de mes.</para>
         /// </summary>
-        /// <summary>
-        /// NestoAPI#178: con el cobro directo activado, ¿hay que caer al plan B (pasarela con la
-        /// tarjeta cargada) en vez de dar el KO al cliente? Solo cuando Redsys rechaza la petición
-        /// con el SIS0883 del terminal: cualquier otro rechazo o denegación del banco es un KO.
-        /// </summary>
-        internal static bool CaerAlPlanB(ResultadoCobroTarjetaGuardada cobro)
-        {
-            return cobro != null && cobro.TerminalSinMIT;
-        }
-
-        /// <summary>
-        /// Cobra con la tarjeta guardada por REST y después crea el pedido. Devuelve null cuando
-        /// el terminal no admite MIT (<see cref="CaerAlPlanB"/>): el que llama sigue por el plan B.
-        /// </summary>
-        private async Task<IHttpActionResult> CrearPedidoCobrandoTarjetaGuardada(
-            PedidoClienteRequest peticion, PedidoPreparado preparado)
-        {
-            if (!peticion.TarjetaId.HasValue)
-            {
-                return BadRequest("Falta la tarjeta con la que pagar (TarjetaId)");
-            }
-
-            // NestoAPI#452: el importe tiene que ser el DEFINITIVO (con IVA y con portes) antes de
-            // cobrar. Sin esto se cobraba la base imponible de los productos: 0,75 EUR en vez de
-            // 0,91 EUR el 03/09/26, porque el porcentaje de IVA y la línea de portes solo se
-            // rellenaban dentro de PostPedidoVenta, que va DESPUÉS del cobro.
-            await CompletarImportesDelPedido(preparado).ConfigureAwait(false);
-            decimal importeACobrar = preparado.Pedido.Total;
-
-            ResultadoCobroTarjetaGuardada cobro = await servicioPagos.CobrarConTarjetaGuardada(
-                new SolicitudCobroTarjetaGuardada
-                {
-                    Cliente = preparado.Pedido.cliente?.Trim(),
-                    Contacto = preparado.Pedido.contacto?.Trim(),
-                    Importe = importeACobrar,
-                    Descripcion = "Pago pedido app",
-                    TarjetaId = peticion.TarjetaId.Value
-                }, preparado.Pedido.Usuario).ConfigureAwait(false);
-
-            if (CaerAlPlanB(cobro))
-            {
-                // Comercia activó MIT el 02/09/26 "a falta del barrido nocturno": mientras el
-                // terminal siga diciendo SIS0883, el cliente confirma en la pasarela con su
-                // tarjeta cargada (plan B). Se apunta para saber cuándo deja de pasar.
-                ElmahHelper.Log(new Exception(
-                    $"[Tarjetas] El terminal sigue sin admitir MIT ({ResultadoCobroTarjetaGuardada.SIS_TERMINAL_SIN_MIT}): " +
-                    $"el pedido del cliente {preparado.Pedido.cliente?.Trim()} ({preparado.Pedido.Total:N2} EUR, orden {cobro.NumeroOrden}) " +
-                    "va por la pasarela con la tarjeta guardada (plan B). Si esto sigue pasando, avisar a Comercia."));
-                return null;
-            }
-
-            if (!cobro.Autorizado)
-            {
-                // KO: sin pedido, sin cargo. La app vuelve al carrito tal cual estaba.
-                return BadRequest(cobro.MensajeError ?? "El banco no ha autorizado el cobro.");
-            }
-
-            PedidosVentaController controllerPedidos = CrearControllerPedidos();
-            IHttpActionResult resultado;
-            string motivoFallo = null;
-            try
-            {
-                resultado = await controllerPedidos.PostPedidoVenta(preparado.Pedido).ConfigureAwait(false);
-                if (!(resultado is CreatedAtRouteNegotiatedContentResult<PedidoVentaDTO>))
-                {
-                    motivoFallo = "El pedido no se ha podido crear.";
-                }
-            }
-            catch (PedidoValidacionException ex)
-            {
-                resultado = null;
-                motivoFallo = MotivoParaElCliente(ex);
-            }
-            catch (NestoBusinessException ex)
-            {
-                resultado = null;
-                motivoFallo = ex.Message;
-            }
-
-            if (motivoFallo != null)
-            {
-                bool devuelto = await servicioPagos.DevolverCobro(cobro.IdPago,
-                    "el pedido de la app no se llegó a crear").ConfigureAwait(false);
-                if (!devuelto)
-                {
-                    ElmahHelper.Log(new Exception(
-                        $"[Pedido app] Cobro {cobro.NumeroOrden} ({preparado.Pedido.Total:N2} EUR) con tarjeta " +
-                        $"guardada SIN pedido y la devolución ha fallado: anular a mano en el panel de Redsys."));
-                }
-                string queHaPasadoConElCobro = devuelto
-                    ? "No se te ha cobrado nada: hemos anulado el cargo."
-                    : "Estamos anulando el cargo; si lo ves en tu cuenta, desaparecerá en unos días.";
-                return BadRequest($"{motivoFallo} {queHaPasadoConElCobro}");
-            }
-
-            PedidoClienteResponse respuesta = ConstruirRespuesta(preparado.Pedido, preparado.FormaPago, preparado.PlazosPago);
-            // NestoAPI#452: el pedido ya está creado y PostPedidoVenta ha recalculado precios,
-            // descuentos y portes. Si lo cobrado no coincide con lo que ha acabado valiendo, hay
-            // que enterarse HOY: el cliente ha pagado de menos (o de más) y el prepago no cuadra.
-            AvisarSiElCobroNoCuadra(importeACobrar, respuesta.Total, respuesta.Numero, cobro.NumeroOrden);
-            respuesta.RequierePago = false;
-            respuesta.Pagado = true;
-            respuesta.TarjetaUltimosDigitos = cobro.UltimosDigitos;
-            respuesta.TarjetaDescripcion = cobro.Descripcion;
-            respuesta.Avisos.Clear();
-            respuesta.Avisos.Add($"Pagado con tu tarjeta: {cobro.Descripcion}.");
-
-            try
-            {
-                await servicioPagos.AplicarCobroAlPedido(cobro.IdPago, respuesta.Numero).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                // El cliente ya tiene pedido y cargo correctos; lo que ha fallado es el enlace
-                // interno (Documento + Prepago). Sin el prepago el pedido queda retenido en el
-                // picking, así que hay que enterarse hoy.
-                ElmahHelper.Log(new Exception(
-                    $"[Pedido app] El pedido {respuesta.Numero} está cobrado (orden {cobro.NumeroOrden}) " +
-                    $"pero no se pudo aplicar el prepago: aplicarlo a mano o el picking no lo soltará. {ex.Message}", ex));
-            }
-
-            return Ok(respuesta);
-        }
-
         /// <summary>
         /// El controller de pedidos de siempre, cableado para que actúe como si hubiera atendido
         /// él la petición (mismo principal, misma request, misma configuración).
@@ -546,42 +414,9 @@ namespace NestoAPI.Controllers
             return GestorPortes.CalcularPortes(input);
         }
 
-        /// <summary>
-        /// NestoAPI#452: deja el pedido con sus importes DEFINITIVOS antes de cobrarlo, que es lo
-        /// que <see cref="PedidosVentaController.PostPedidoVenta"/> hace al crearlo pero que en el
-        /// flujo "cobrar primero" llega tarde:
-        /// <list type="number">
-        /// <item>el porcentaje de IVA (y el recargo) de cada línea, que en el DTO recién construido
-        /// vale 0 porque solo se ha puesto el CÓDIGO de IVA;</item>
-        /// <item>la línea de portes, que hasta ahora no existía hasta después del cobro.</item>
-        /// </list>
-        /// <para>Se puede llamar antes de PostPedidoVenta sin duplicar nada: el POST vuelve a
-        /// asignar los mismos porcentajes, y <see cref="GestorPortes.GestionarLineasPortes"/> solo
-        /// añade la línea de portes si no la encuentra ya.</para>
-        /// </summary>
-        private async Task CompletarImportesDelPedido(PedidoPreparado preparado)
-        {
-            PedidoVentaDTO pedido = preparado.Pedido;
-            if (pedido.ParametrosIva == null || !pedido.ParametrosIva.Any())
-            {
-                pedido.ParametrosIva = await db.ParametrosIVA
-                    .Where(p => p.Empresa == pedido.empresa && p.IVA_Cliente_Prov == pedido.iva)
-                    .Select(p => new ParametrosIvaBase
-                    {
-                        CodigoIvaProducto = p.IVA_Producto.Trim(),
-                        PorcentajeIvaProducto = (decimal)p.C__IVA / 100,
-                        PorcentajeRecargoEquivalencia = (decimal)p.C__RE / 100
-                    }).ToListAsync().ConfigureAwait(false);
-            }
-            RellenarPorcentajesIva(pedido);
-
-            ResultadoPortes portes = CalcularPortesDelCarrito(pedido, preparado.CodigoPostal);
-            _ = GestorPortes.GestionarLineasPortes(pedido.Lineas, portes, pedido.iva, pedido.ParametrosIva);
-            // La línea de portes recién creada también necesita su porcentaje para sumar al total
-            RellenarPorcentajesIva(pedido);
-        }
-
-        /// <summary>El porcentaje de IVA y de recargo de cada línea, a partir de su código de IVA. Internal para tests.</summary>
+        /// <summary>El porcentaje de IVA y de recargo de cada línea, a partir de su código de IVA.
+        /// El DTO recién construido solo trae el CÓDIGO ("G21"), y sin el porcentaje el total del
+        /// pedido es la base imponible (NestoAPI#452). Internal para tests.</summary>
         internal static void RellenarPorcentajesIva(PedidoVentaDTO pedido)
         {
             if (pedido.ParametrosIva == null || !pedido.ParametrosIva.Any())
@@ -617,14 +452,6 @@ namespace NestoAPI.Controllers
                    $"(diferencia {totalPedido - importeCobrado:N2} EUR). Revisar el cobro y el prepago.";
         }
 
-        private static void AvisarSiElCobroNoCuadra(decimal importeCobrado, decimal totalPedido, int numeroPedido, string numeroOrden)
-        {
-            string aviso = DiferenciaCobroPedido(importeCobrado, totalPedido, numeroPedido, numeroOrden);
-            if (aviso != null)
-            {
-                ElmahHelper.Log(new Exception(aviso));
-            }
-        }
 
         /// <summary>
         /// La ficha del contacto principal, que es sobre el que se crea el pedido: el JWT

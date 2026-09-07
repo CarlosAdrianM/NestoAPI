@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure;
+﻿using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Contabilidad;
 using NestoAPI.Infraestructure.Pagos;
 using NestoAPI.Infraestructure.Seguridad;
@@ -39,16 +39,24 @@ namespace NestoAPI.Controllers
         }
 
         /// <summary>
-        /// NestoAPI#178: cómo se cobra hoy con una tarjeta guardada, para que la app sepa si el
-        /// cobro es directo (sin pasarela) o si el cliente tiene que confirmarlo en la pasarela
-        /// (plan B mientras el terminal no permita MIT). Ver <see cref="ModoCobroTarjetaGuardada"/>.
+        /// NestoAPI#178: cómo se cobra con una tarjeta guardada, para que la app se lo cuente bien
+        /// al cliente antes de confirmar el pedido.
+        ///
+        /// <para>Siempre <c>false</c>: el pedido lo hace el propio cliente, es un CIT, y se paga
+        /// confirmando en la pasarela con la tarjeta ya cargada. El cobro directo (MIT, sin que el
+        /// cliente intervenga) se retiró de este flujo en #181 por clasificar mal la operación; el
+        /// MIT que el banco activó el 07/09/26 es para la cartera de aplazados y periódicos, que
+        /// cobrará desde el motor de remesa.</para>
+        ///
+        /// <para>El endpoint se mantiene, y con su campo, porque lo consultan las versiones de la
+        /// app que ya están instaladas: quitarlo las obligaría a actualizar para nada.</para>
         /// </summary>
         [HttpGet]
         [Route("Capacidades")]
         [ResponseType(typeof(CapacidadesTarjetasDTO))]
         public IHttpActionResult GetCapacidades()
         {
-            return Ok(new CapacidadesTarjetasDTO { CobroDirecto = ModoCobroTarjetaGuardada.EsCobroDirecto });
+            return Ok(new CapacidadesTarjetasDTO { CobroDirecto = false });
         }
 
         // GET: api/Tarjetas

@@ -153,7 +153,7 @@ namespace NestoAPI.Infraestructure.Pagos
             // ampara los cobros con token posteriores.
             if (!string.IsNullOrWhiteSpace(tokenTarjeta))
             {
-                // NestoAPI#178 (plan B, ModoCobroTarjetaGuardada): pago por referencia POR
+                // NestoAPI#178: pago por referencia POR
                 // REDIRECCIÓN. Redsys enseña la tarjeta guardada y solo pide la autenticación
                 // del titular: el cliente está presente (CIT), así que no hace falta la exención
                 // MIT que el terminal no permite. COF_INI=N + COF_TXNID enlazan con el alta.
@@ -254,7 +254,7 @@ namespace NestoAPI.Infraestructure.Pagos
         /// <para><b>Ni EXCEP_SCA ni DIRECTPAYMENT.</b> Es un CIT sobre credencial en fichero: el
         /// cliente está delante y se le autentica, así que la responsabilidad del fraude se
         /// traslada al emisor. Marcarlo como MIT sería declararlo mal y comernos nosotros los
-        /// contracargos (ver <see cref="ModoCobroTarjetaGuardada"/>).</para>
+        /// contracargos: por eso el cobro directo por MIT se retiró del pedido de la app (#181).</para>
         /// </summary>
         private JObject ParametrosBaseCobro3DS(decimal importe, string numeroOrden,
             string descripcion, string tokenTarjeta, string cofTxnId, string urlNotificacion)
