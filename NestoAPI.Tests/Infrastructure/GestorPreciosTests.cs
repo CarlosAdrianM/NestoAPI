@@ -7,6 +7,7 @@ using NestoAPI.Models.PedidosVenta;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace NestoAPI.Tests.Infrastructure
 {
@@ -4814,5 +4815,49 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.IsFalse(respuesta.ValidacionSuperada,
                 "Si alguna línea no es WEB, el descuento no viene de Prestashop y no se justifica automáticamente.");
         }
+    }
+
+    /// <summary>
+    /// NestoAPI#461: las listas de validadores son estáticas y las comparten todas las peticiones.
+    /// Se llenaban con .Add() sobre la lista ya publicada y sin candado, así que dos peticiones
+    /// simultáneas podían dejar la lista con el doble de validadores (y cada motivo de denegación
+    /// repetido) o tirar un pedido correcto con "Colección modificada".
+    /// </summary>
+    [TestClass]
+    public class GestorPreciosValidadoresConcurrenciaTests
+    {
+        [TestMethod]
+        public void CargarValidadores_DesdeVariosHilosALaVez_NoDuplicaNiUnValidador()
+        {
+            List<IValidadorDenegacion> denegacionOriginal = GestorPrecios.listaValidadoresDenegacion;
+            List<IValidadorAceptacion> aceptacionOriginal = GestorPrecios.listaValidadoresAceptacion;
+            try
+            {
+                // El estado que provoca la carrera: las dos listas vacías y varias peticiones
+                // entrando a validar a la vez, que es justo lo que pasa en el IIS a media mañana.
+                GestorPrecios.listaValidadoresDenegacion = new List<IValidadorDenegacion>();
+                GestorPrecios.listaValidadoresAceptacion = new List<IValidadorAceptacion>();
+
+                Parallel.For(0, 32, indiceHilo =>
+                {
+                    PedidoVentaDTO pedido = new PedidoVentaDTO { cliente = "0", Lineas = new List<LineaPedidoVentaDTO>() };
+                    _ = GestorPrecios.EsPedidoValido(pedido);
+                });
+
+                Assert.AreEqual(5, GestorPrecios.listaValidadoresDenegacion.Count,
+                    "Con .Add() sin candado dos hilos cargaban los dos y quedaban 10 validadores, " +
+                    "con lo que cada motivo de denegación salía por duplicado");
+                Assert.AreEqual(
+                    GestorPrecios.listaValidadoresDenegacion.Select(v => v.GetType()).Distinct().Count(),
+                    GestorPrecios.listaValidadoresDenegacion.Count,
+                    "No puede haber dos validadores del mismo tipo");
+            }
+            finally
+            {
+                GestorPrecios.listaValidadoresDenegacion = denegacionOriginal;
+                GestorPrecios.listaValidadoresAceptacion = aceptacionOriginal;
+            }
+        }
+
     }
 }

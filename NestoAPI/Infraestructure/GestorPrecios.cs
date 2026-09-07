@@ -215,21 +215,71 @@ namespace NestoAPI.Infraestructure
             listaCondiciones.Add(new ThuyaNoPuedeLlevarCualquierDescuento());
         }
 
+        // NestoAPI#461: las dos listas son estáticas y las comparten TODAS las peticiones del
+        // proceso. Antes se llenaban con .Add() sobre la lista ya publicada, con el patrón "si
+        // está vacía, cárgala" y sin candado, y eso daba dos fallos distintos con varias
+        // peticiones a la vez:
+        //
+        //   1. Un hilo enumeraba el foreach mientras otro añadía -> "Colección modificada" y el
+        //      pedido, que era correcto, se caía (04/09/26, pedido de MariaJose).
+        //   2. Dos hilos veían la lista vacía y cargaban los dos: como no se limpiaba antes de
+        //      añadir, la lista se quedaba con 12 validadores en vez de 6 para el resto de la
+        //      vida del proceso, y cada motivo de denegación salía repetido. Este NO lanzaba nada
+        //      (comprobado el 07/09/26: ninguno de los 373 mensajes multi-motivo desde junio trae
+        //      un motivo repetido, así que no llegó a pasar; pero la carrera estaba abierta).
+        //
+        // Ahora la lista se construye ENTERA aparte y se publica con una única asignación de
+        // referencia, que es atómica: nadie puede ver una lista a medio llenar, y si dos hilos
+        // coinciden el peor caso es construir dos veces lo mismo y que gane una. El candado con
+        // doble comprobación evita incluso eso.
+        private static readonly object candadoValidadores = new object();
+
         private static void CargarListaValidadoresPedido()
         {
-            listaValidadoresDenegacion.Add(new ValidadorOfertasPermitidas());
-            listaValidadoresDenegacion.Add(new ValidadorDescuentosPermitidos());
-            listaValidadoresDenegacion.Add(new ValidadorOtrosAparatosSiempreSinDescuento());
-            listaValidadoresDenegacion.Add(new ValidadorLimiteRegalos());
-            listaValidadoresDenegacion.Add(new ValidadorOfertaSinBeneficio());
+            CargarValidadoresDenegacion();
+            CargarValidadoresAceptacion();
+        }
 
-            listaValidadoresAceptacion.Add(new ValidadorOfertasCombinadas());
-            listaValidadoresAceptacion.Add(new ValidadorOfertasEscalonadas());
-            listaValidadoresAceptacion.Add(new ValidadorMuestrasYMaterialPromocional());
-            listaValidadoresAceptacion.Add(new ValidadorRegalosTiendaOnline());
-            listaValidadoresAceptacion.Add(new ValidadorDescuentoTiendaOnline());
-            listaValidadoresAceptacion.Add(new ValidadorGanavisiones());
-            listaValidadoresAceptacion.Add(new ValidadorRegaloPorImportePedido());
+        private static void CargarValidadoresDenegacion()
+        {
+            lock (candadoValidadores)
+            {
+                if (listaValidadoresDenegacion != null && listaValidadoresDenegacion.Count > 0)
+                {
+                    return;
+                }
+
+                listaValidadoresDenegacion = new List<IValidadorDenegacion>
+                {
+                    new ValidadorOfertasPermitidas(),
+                    new ValidadorDescuentosPermitidos(),
+                    new ValidadorOtrosAparatosSiempreSinDescuento(),
+                    new ValidadorLimiteRegalos(),
+                    new ValidadorOfertaSinBeneficio()
+                };
+            }
+        }
+
+        private static void CargarValidadoresAceptacion()
+        {
+            lock (candadoValidadores)
+            {
+                if (listaValidadoresAceptacion != null && listaValidadoresAceptacion.Count > 0)
+                {
+                    return;
+                }
+
+                listaValidadoresAceptacion = new List<IValidadorAceptacion>
+                {
+                    new ValidadorOfertasCombinadas(),
+                    new ValidadorOfertasEscalonadas(),
+                    new ValidadorMuestrasYMaterialPromocional(),
+                    new ValidadorRegalosTiendaOnline(),
+                    new ValidadorDescuentoTiendaOnline(),
+                    new ValidadorGanavisiones(),
+                    new ValidadorRegaloPorImportePedido()
+                };
+            }
         }
 
         public static bool comprobarCondiciones(PrecioDescuentoProducto datos)
@@ -303,8 +353,12 @@ namespace NestoAPI.Infraestructure
 
             if (listaValidadoresDenegacion == null || listaValidadoresDenegacion.Count == 0)
             {
-                CargarListaValidadoresPedido();
+                CargarValidadoresDenegacion();
             }
+
+            // NestoAPI#461: se recorre una referencia estable, no el campo estático: si otro hilo
+            // publica una lista nueva a mitad del foreach, este pedido termina con la que empezó.
+            List<IValidadorDenegacion> validadoresDenegacion = listaValidadoresDenegacion;
 
             List<string> erroresAcumulados = new List<string>();
             string ultimoMotivoExitoso = null;
@@ -314,7 +368,7 @@ namespace NestoAPI.Infraestructure
             // clientes lo veían siempre a false).
             bool algunaDenegadaExpresamente = false;
 
-            foreach (IValidadorDenegacion validador in listaValidadoresDenegacion)
+            foreach (IValidadorDenegacion validador in validadoresDenegacion)
             {
                 RespuestaValidacion respuestaValidacion = validador.EsPedidoValido(pedido, servicio);
 
@@ -415,8 +469,11 @@ namespace NestoAPI.Infraestructure
         {
             if (listaValidadoresAceptacion == null || listaValidadoresAceptacion.Count == 0)
             {
-                CargarListaValidadoresPedido();
+                CargarValidadoresAceptacion();
             }
+
+            // NestoAPI#461: referencia estable para el foreach, como en EsPedidoValido.
+            List<IValidadorAceptacion> validadoresAceptacion = listaValidadoresAceptacion;
 
             RespuestaValidacion respuesta = new RespuestaValidacion
             {
@@ -428,7 +485,7 @@ namespace NestoAPI.Infraestructure
             // el producto (MotivoEspecifico) en vez del genérico del último de la lista: así el pipeline
             // puede dar un mensaje útil al usuario (p. ej. "supera el 5 % del pedido").
             RespuestaValidacion rechazoEspecifico = null;
-            foreach (IValidadorAceptacion validador in listaValidadoresAceptacion)
+            foreach (IValidadorAceptacion validador in validadoresAceptacion)
             {
                 respuesta = validador.EsPedidoValido(pedido, numeroProducto, servicio);
                 if (respuesta.ValidacionSuperada)
