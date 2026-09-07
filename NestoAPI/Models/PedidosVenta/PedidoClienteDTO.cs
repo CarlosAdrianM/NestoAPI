@@ -130,8 +130,14 @@ namespace NestoAPI.Models.PedidosVenta
         public string Direccion { get; set; }
         public string CodigoPostal { get; set; }
         public string Poblacion { get; set; }
-        public string Horario { get; set; }
         public string Telefono { get; set; }
+
+        /// <summary>
+        /// La ficha de la tienda en Google, donde el horario SÍ está al día. La app la abre en vez
+        /// de enseñar un horario copiado aquí, que envejecería sin que nadie se enterara y mandaría
+        /// al cliente a una tienda cerrada.
+        /// </summary>
+        public string UrlGoogle { get; set; }
     }
 
     /// <summary>

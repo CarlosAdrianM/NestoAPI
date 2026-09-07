@@ -138,6 +138,31 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void TiendasRecogida_TodasSabenDondeEstanYComoLlegar()
+        {
+            // Si el cliente va a ir a recogerlo, tiene que poder saber dónde y a qué hora. El
+            // horario NO se guarda aquí a propósito (envejecería sin que nadie se enterara): se
+            // mira en la ficha de Google, que es la que mantenemos al día.
+            foreach (TiendasRecogida.Tienda tienda in TiendasRecogida.Todas)
+            {
+                Assert.IsFalse(string.IsNullOrWhiteSpace(tienda.Direccion), tienda.Nombre);
+                Assert.IsFalse(string.IsNullOrWhiteSpace(tienda.CodigoPostal), tienda.Nombre);
+                Assert.IsTrue(tienda.UrlGoogle.StartsWith("https://www.google.com/maps/"), tienda.Nombre);
+            }
+        }
+
+        [TestMethod]
+        public void TiendasRecogida_LaUrlDeGoogleVaEscapada()
+        {
+            // Las direcciones llevan espacios, comas y tildes: sin escapar, el enlace no abre nada.
+            string url = TiendasRecogida.UrlDeGoogle("Nueva Visión, C/ Río Tiétar 11, Algete");
+
+            StringAssert.StartsWith(url, "https://www.google.com/maps/search/?api=1&query=");
+            Assert.IsFalse(url.Contains(" "), "un espacio sin escapar parte la URL");
+            Assert.IsFalse(url.Contains("ó"), "las tildes van escapadas");
+        }
+
+        [TestMethod]
         public void TiendasRecogida_UnAlmacenQueNoEsTienda_NoVale()
         {
             // La puerta: el cliente manda un código y aquí se decide si vale. Sin esto podría

@@ -41,12 +41,26 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             public string CodigoPostal { get; set; }
             public string Poblacion { get; set; }
 
-            /// <summary>Horario de recogida, tal cual se le enseña al cliente.</summary>
-            public string Horario { get; set; }
+            /// <summary>
+            /// La ficha de la tienda en Google. El horario NO se guarda aquí a propósito: en
+            /// Google se mantiene al día y aquí se quedaría viejo sin que nadie se enterara, y un
+            /// horario viejo manda al cliente a una tienda cerrada. Desde la app se abre esta
+            /// ficha, que además le da el "cómo llegar".
+            /// </summary>
+            public string UrlGoogle { get; set; }
 
             public string Telefono { get; set; }
         }
 
+        /// <summary>
+        /// Direcciones y teléfonos, tal como los publica nuestra propia web (la página de
+        /// contacto de la tienda online).
+        ///
+        /// <para><b>El horario no está aquí, y es deliberado</b>: el que mantenemos al día es el
+        /// de Google, así que la app abre la ficha de Google de la tienda. Un horario copiado
+        /// aquí envejecería sin que nadie se diera cuenta, y un horario viejo manda al cliente a
+        /// una tienda cerrada.</para>
+        /// </summary>
         private static readonly List<Tienda> TIENDAS = new List<Tienda>
         {
             new Tienda
@@ -54,35 +68,48 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 Almacen = Constantes.Almacenes.ALGETE,
                 Nombre = "Algete",
                 Ruta = "AM",
-                Direccion = "C/ Río Tiétar, 11 - Nave 22",
-                CodigoPostal = "28110",
+                Direccion = "C/ Río Tiétar, 11 - Políg. Ind. Los Nogales",
+                CodigoPostal = "28119",
                 Poblacion = "Algete (Madrid)",
                 Telefono = "916281914",
-                Horario = string.Empty
+                UrlGoogle = UrlDeGoogle("Nueva Visión, C/ Río Tiétar 11, 28119 Algete, Madrid")
             },
             new Tienda
             {
                 Almacen = Constantes.Almacenes.ALCOBENDAS,
                 Nombre = "Alcobendas",
                 Ruta = "ALC",
-                Direccion = string.Empty,
-                CodigoPostal = string.Empty,
+                Direccion = "C/ La Granja, 1 - Local 10, P.I. La Granja",
+                CodigoPostal = "28108",
                 Poblacion = "Alcobendas (Madrid)",
-                Telefono = string.Empty,
-                Horario = string.Empty
+                Telefono = "916281914",
+                UrlGoogle = UrlDeGoogle("Nueva Visión, C/ La Granja 1, 28108 Alcobendas, Madrid")
             },
             new Tienda
             {
                 Almacen = Constantes.Almacenes.REINA,
-                Nombre = "Reina",
+                Nombre = "Madrid centro",
                 Ruta = "REI",
-                Direccion = string.Empty,
-                CodigoPostal = string.Empty,
+                Direccion = "C/ Reina, 5 - Local",
+                CodigoPostal = "28004",
                 Poblacion = "Madrid",
-                Telefono = string.Empty,
-                Horario = string.Empty
+                Telefono = "915311914",
+                UrlGoogle = UrlDeGoogle("Nueva Visión, C/ Reina 5, 28004 Madrid")
             }
         };
+
+        /// <summary>
+        /// La ficha de la tienda en Google Maps, buscada por nombre y dirección. Se monta así, y
+        /// no con un identificador de sitio, porque un identificador hay que ir a buscarlo y no
+        /// se puede comprobar desde aquí que siga siendo el bueno; el nombre y la dirección son
+        /// los mismos datos que ya enseñamos, así que si un día cambian, cambia también el
+        /// enlace. Si algún día tenemos los place_id, se sustituye esto y ya.
+        /// </summary>
+        internal static string UrlDeGoogle(string nombreYDireccion)
+        {
+            return "https://www.google.com/maps/search/?api=1&query="
+                + Uri.EscapeDataString(nombreYDireccion);
+        }
 
         public static IReadOnlyList<Tienda> Todas => TIENDAS;
 

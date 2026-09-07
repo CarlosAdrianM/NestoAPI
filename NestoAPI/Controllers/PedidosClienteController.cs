@@ -544,8 +544,8 @@ namespace NestoAPI.Controllers
                 Direccion = t.Direccion,
                 CodigoPostal = t.CodigoPostal,
                 Poblacion = t.Poblacion,
-                Horario = t.Horario,
-                Telefono = t.Telefono
+                Telefono = t.Telefono,
+                UrlGoogle = t.UrlGoogle
             }).ToList());
         }
 
