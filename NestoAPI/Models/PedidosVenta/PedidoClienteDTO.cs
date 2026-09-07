@@ -201,6 +201,22 @@ namespace NestoAPI.Models.PedidosVenta
 
         /// <summary>Lo que le falta al carrito para llegar al envío gratis (0 si ya llega).</summary>
         public decimal FaltaParaPortesGratis { get; set; }
+
+        /// <summary>
+        /// TNV#68: lo que va a pagar por este carrito — total del pedido, con IVA, recargo de
+        /// equivalencia y portes incluidos.
+        ///
+        /// <para>Está aquí porque es el número que el carrito le enseña al cliente, y el que se le
+        /// va a cobrar tiene que ser exactamente ese. La app lo calculaba por su cuenta sumando un
+        /// 21 % a los portes, y a un cliente con recargo de equivalencia le enseñaba menos de lo
+        /// que le habríamos cobrado. Las versiones antiguas ignoran el campo y siguen con su
+        /// estimación.</para>
+        /// </summary>
+        public decimal TotalConIva { get; set; }
+
+        /// <summary>La comisión de reembolso, si el pedido va contra reembolso: es otro gasto que
+        /// el cliente tiene que ver antes de confirmar.</summary>
+        public decimal ComisionReembolso { get; set; }
     }
 
     public class LineaPedidoClienteResponse

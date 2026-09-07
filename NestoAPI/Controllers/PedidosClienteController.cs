@@ -178,7 +178,7 @@ namespace NestoAPI.Controllers
                 // El mismo cálculo con el que se cobró. Si no da lo mismo, algo ha cambiado entre
                 // el pago y ahora (un precio, el stock que decide los portes) y no se crea el
                 // pedido: se devuelve el dinero y que lo vuelva a intentar viendo el importe nuevo.
-                decimal totalAhora = await CalcularTotalDelCarrito(preparado).ConfigureAwait(false);
+                decimal totalAhora = (await CalcularTotalDelCarrito(preparado).ConfigureAwait(false)).Total;
                 if (totalAhora != cobroCarrito.Importe)
                 {
                     _ = await DevolverCobroDelCarrito(cobroCarrito,
@@ -429,7 +429,12 @@ namespace NestoAPI.Controllers
                 return preparado.Error;
             }
 
-            ResultadoPortes portes = CalcularPortesDelCarrito(preparado.Pedido, preparado.CodigoPostal);
+            // TNV#68: el total va aquí porque es el número que el carrito le enseña al cliente, y
+            // tiene que ser el mismo que se le va a cobrar. La app lo calculaba por su cuenta
+            // sumando un 21 % a los portes, así que a un cliente con recargo de equivalencia le
+            // enseñaba uno y se le habría cobrado otro.
+            TotalCarrito carrito = await CalcularTotalDelCarrito(preparado).ConfigureAwait(false);
+            ResultadoPortes portes = carrito.Portes;
 
             return Ok(new PortesClienteResponse
             {
@@ -437,7 +442,9 @@ namespace NestoAPI.Controllers
                 Portes = portes.ImportePortes,
                 PortesGratis = portes.PortesGratis,
                 ImporteMinimoSinPortes = portes.ImporteMinimoPedidoSinPortes,
-                FaltaParaPortesGratis = portes.ImporteFaltaParaPortesGratis
+                FaltaParaPortesGratis = portes.ImporteFaltaParaPortesGratis,
+                TotalConIva = carrito.Total,
+                ComisionReembolso = portes.ComisionReembolso
             });
         }
 
@@ -501,7 +508,7 @@ namespace NestoAPI.Controllers
                 return BadRequest("No encontramos esa tarjeta guardada. Elige otra forma de pago.");
             }
 
-            decimal total = await CalcularTotalDelCarrito(preparado).ConfigureAwait(false);
+            decimal total = (await CalcularTotalDelCarrito(preparado).ConfigureAwait(false)).Total;
             if (total <= 0)
             {
                 return BadRequest("No hemos podido calcular el importe del pedido. Vuelve a abrir el carrito.");
@@ -554,7 +561,7 @@ namespace NestoAPI.Controllers
         /// que se ha cobrado (volver a gestionarlas es idempotente, y la base de portes no cuenta
         /// las líneas de cuenta contable).</para>
         /// </summary>
-        private async Task<decimal> CalcularTotalDelCarrito(PedidoPreparado preparado)
+        private async Task<TotalCarrito> CalcularTotalDelCarrito(PedidoPreparado preparado)
         {
             PedidoVentaDTO pedido = preparado.Pedido;
 
@@ -570,7 +577,15 @@ namespace NestoAPI.Controllers
             // el pedido sin IVA.
             RellenarPorcentajesIva(pedido);
 
-            return pedido.Total;
+            return new TotalCarrito { Total = pedido.Total, Portes = portes };
+        }
+
+        /// <summary>Lo que cuesta el carrito y por qué: el total que se cobra y los portes que
+        /// lleva dentro. Van juntos porque salen del mismo cálculo.</summary>
+        private class TotalCarrito
+        {
+            public decimal Total { get; set; }
+            public ResultadoPortes Portes { get; set; }
         }
 
         /// <summary>Los parámetros de IVA del cliente, los mismos que lee PostPedidoVenta cuando el
