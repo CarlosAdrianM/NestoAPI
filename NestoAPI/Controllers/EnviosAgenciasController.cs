@@ -280,6 +280,103 @@ namespace NestoAPI.Controllers
         }
 
         /// <summary>
+        /// NestoAPI#173: envíos que salieron hace días y que la agencia todavía no ha dado por
+        /// entregados. Para llamar al cliente antes de que llame él, y como termómetro del
+        /// seguimiento de cada agencia.
+        ///
+        /// <para><b>Qué cuenta como retrasado</b>: estado TRAMITADO (salió con la agencia) y
+        /// ninguno de los terminales que llegan por el poll (Entregado, Incidentado, Devuelto),
+        /// con al menos <paramref name="diasUmbral"/> días desde que salió. La issue original
+        /// planteaba filtrar por <c>FechaEntrega IS NULL</c>, pero esa columna NO sirve: se
+        /// rellena al crear el envío y en producción no hay ni una fila con ella a null. Lo que sí
+        /// sirve —y no existía cuando se escribió la issue— es la columna Estado que mantiene el
+        /// job de seguimiento, así que esto ya no depende de la fase 0 de #172.</para>
+        ///
+        /// <para><b>Por qué hay un techo de antigüedad</b> (<paramref name="diasMaximo"/>): antes
+        /// de que cada agencia tuviera seguimiento automático, sus envíos se quedaban en TRAMITADO
+        /// para siempre. En producción eso son ~3.500 filas anteriores a junio de 2026 (2.617 de
+        /// ASM y 952 de Correos Express) que nadie va a reclamar ya. Sin techo, el listado nacería
+        /// con tres mil falsos positivos y no lo miraría nadie, que es la manera segura de que una
+        /// pantalla así no sirva para nada.</para>
+        /// </summary>
+        /// <param name="diasUmbral">Días desde la salida a partir de los cuales interesa mirarlo (por defecto 3).</param>
+        /// <param name="diasMaximo">Antigüedad máxima; más allá es residuo histórico (por defecto 60).</param>
+        /// <param name="agencia">Filtrar por una agencia.</param>
+        /// <param name="vendedor">Filtrar por el vendedor del envío.</param>
+        [HttpGet]
+        [Route("api/EnviosAgencias/Retrasados")]
+        [ResponseType(typeof(List<EnvioRetrasadoDTO>))]
+        public async Task<IHttpActionResult> GetEnviosRetrasados(int diasUmbral = 3, int diasMaximo = 60,
+            int? agencia = null, string vendedor = null)
+        {
+            if (diasUmbral < 0)
+            {
+                return BadRequest("El umbral de días no puede ser negativo.");
+            }
+            if (diasMaximo < diasUmbral)
+            {
+                return BadRequest("La antigüedad máxima no puede ser menor que el umbral de días.");
+            }
+
+            DateTime hoy = DateTime.Today;
+            DateTime salidaMasReciente = hoy.AddDays(-diasUmbral);
+            DateTime salidaMasAntigua = hoy.AddDays(-diasMaximo);
+
+            IQueryable<EnviosAgencia> query = db.EnviosAgencias
+                .Where(e => e.Estado == Constantes.Agencias.ESTADO_TRAMITADO
+                            && e.Fecha <= salidaMasReciente
+                            && e.Fecha >= salidaMasAntigua);
+            if (agencia.HasValue)
+            {
+                query = query.Where(e => e.Agencia == agencia.Value);
+            }
+            if (!string.IsNullOrWhiteSpace(vendedor))
+            {
+                query = query.Where(e => e.Vendedor == vendedor);
+            }
+
+            List<EnvioRetrasadoDTO> envios = await query
+                .OrderBy(e => e.Fecha)
+                .Select(e => new EnvioRetrasadoDTO
+                {
+                    Numero = e.Numero,
+                    Empresa = e.Empresa,
+                    Pedido = e.Pedido,
+                    Cliente = e.Cliente,
+                    Contacto = e.Contacto,
+                    Nombre = e.Nombre,
+                    Agencia = e.Agencia,
+                    NombreAgencia = e.AgenciasTransporte != null ? e.AgenciasTransporte.Nombre.Trim() : null,
+                    CodigoBarras = e.CodigoBarras,
+                    Fecha = e.Fecha,
+                    DetalleEstado = e.DetalleEstado,
+                    Poblacion = e.Poblacion,
+                    CodPostal = e.CodPostal,
+                    Telefono = e.Telefono,
+                    Movil = e.Movil,
+                    Email = e.Email,
+                    Observaciones = e.Observaciones,
+                    Vendedor = e.Vendedor
+                })
+                .ToListAsync();
+
+            // Los días se calculan aquí y no en la consulta: DbFunctions.DiffDays traduce a SQL,
+            // pero deja el DTO atado al proveedor de EF y no se puede probar sin base de datos.
+            foreach (EnvioRetrasadoDTO envio in envios)
+            {
+                envio.DiasTranscurridos = DiasDesde(envio.Fecha, hoy);
+            }
+
+            return Ok(envios);
+        }
+
+        /// <summary>Días naturales transcurridos desde la salida. Internal para tests.</summary>
+        internal static int DiasDesde(DateTime? fecha, DateTime hoy)
+        {
+            return fecha.HasValue ? (int)(hoy.Date - fecha.Value.Date).TotalDays : 0;
+        }
+
+        /// <summary>
         /// Tramitados (Estado &gt;= 1, que incluye Entregado e Incidentado, #387) con las tres
         /// búsquedas de la pestaña: por agencia+fecha, por cliente o por texto (nombre,
         /// dirección o teléfonos). Sin ningún filtro no hay listado: el histórico es enorme.

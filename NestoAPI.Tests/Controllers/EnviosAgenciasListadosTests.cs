@@ -2,6 +2,7 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Models;
+using NestoAPI.Models.Agencias;
 using NestoAPI.Tests.Helpers;
 using System;
 using System.Collections.Generic;
@@ -354,6 +355,132 @@ namespace NestoAPI.Tests.Controllers
             Assert.IsNotNull(resultado);
             CollectionAssert.AreEqual(new List<int> { 4, 1 }, resultado.Content.Select(e => e.Numero).ToList(),
                 "Ordenados por fecha ascendente, como la pestaña de retornos");
+        }
+
+        // NestoAPI#173: envíos que salieron y la agencia no ha dado por entregados. El caso que lo
+        // destapó (07/09/26): el envío 247926 llevaba DIECINUEVE días en "REPARTO" y nadie se había
+        // enterado, porque REPARTO es un estado de tránsito conocido y no genera ni un aviso. Los
+        // estados de tránsito no caducan solos: hace falta mirarlos por antigüedad.
+
+        private static EnviosAgencia EnvioConFecha(int numero, short estado, DateTime fecha,
+            string detalle = null, int agencia = 1, string vendedor = "NV")
+        {
+            EnviosAgencia envio = Envio(numero, estado, agencia: agencia, fecha: fecha);
+            envio.DetalleEstado = detalle;
+            envio.Vendedor = vendedor;
+            return envio;
+        }
+
+        [TestMethod]
+        public async Task Retrasados_SoloLosTramitadosQuePasanDelUmbral()
+        {
+            DateTime hoy = DateTime.Today;
+            ConEnvios(
+                EnvioConFecha(1, Constantes.Agencias.ESTADO_TRAMITADO, hoy.AddDays(-19), "REPARTO"),
+                EnvioConFecha(2, Constantes.Agencias.ESTADO_TRAMITADO, hoy.AddDays(-1), "DOCUMENTADO"));
+
+            var resultado = await controller.GetEnviosRetrasados(diasUmbral: 3)
+                as OkNegotiatedContentResult<List<EnvioRetrasadoDTO>>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(1, resultado.Content.Count, "el de ayer todavía no es un retraso");
+            Assert.AreEqual(1, resultado.Content.Single().Numero);
+            Assert.AreEqual(19, resultado.Content.Single().DiasTranscurridos);
+            Assert.AreEqual("REPARTO", resultado.Content.Single().DetalleEstado,
+                "el último evento distingue un envío sin recoger de uno perdido");
+        }
+
+        [TestMethod]
+        public async Task Retrasados_LoQueYaTerminoNoEsUnRetraso()
+        {
+            DateTime hoy = DateTime.Today;
+            ConEnvios(
+                EnvioConFecha(1, Constantes.Agencias.ESTADO_ENTREGADO, hoy.AddDays(-10)),
+                EnvioConFecha(2, Constantes.Agencias.ESTADO_INCIDENTADO, hoy.AddDays(-10)),
+                EnvioConFecha(3, Constantes.Agencias.ESTADO_DEVUELTO, hoy.AddDays(-10)),
+                EnvioConFecha(4, (short)Constantes.Agencias.ESTADO_EN_CURSO, hoy.AddDays(-10)),
+                EnvioConFecha(5, (short)Constantes.Agencias.ESTADO_PENDIENTE, hoy.AddDays(-10)));
+
+            var resultado = await controller.GetEnviosRetrasados(diasUmbral: 3)
+                as OkNegotiatedContentResult<List<EnvioRetrasadoDTO>>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(0, resultado.Content.Count,
+                "entregado, incidentado y devuelto ya se ven en su pestaña; en curso y pendiente aún no han salido");
+        }
+
+        [TestMethod]
+        public async Task Retrasados_ElResiduoHistoricoNoEntra()
+        {
+            // Antes de que cada agencia tuviera seguimiento, sus envíos se quedaban en TRAMITADO
+            // para siempre: en producción hay ~3.500 así, anteriores a junio de 2026. Sin el techo
+            // de antigüedad, el listado nacería inservible.
+            DateTime hoy = DateTime.Today;
+            ConEnvios(
+                EnvioConFecha(1, Constantes.Agencias.ESTADO_TRAMITADO, hoy.AddDays(-120), "DOCUMENTADO"),
+                EnvioConFecha(2, Constantes.Agencias.ESTADO_TRAMITADO, hoy.AddDays(-5), "RECANALIZADO"));
+
+            var resultado = await controller.GetEnviosRetrasados(diasUmbral: 3, diasMaximo: 60)
+                as OkNegotiatedContentResult<List<EnvioRetrasadoDTO>>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(1, resultado.Content.Count);
+            Assert.AreEqual(2, resultado.Content.Single().Numero);
+        }
+
+        [TestMethod]
+        public async Task Retrasados_LosMasViejosPrimero()
+        {
+            DateTime hoy = DateTime.Today;
+            ConEnvios(
+                EnvioConFecha(1, Constantes.Agencias.ESTADO_TRAMITADO, hoy.AddDays(-5), "RECANALIZADO"),
+                EnvioConFecha(2, Constantes.Agencias.ESTADO_TRAMITADO, hoy.AddDays(-19), "REPARTO"),
+                EnvioConFecha(3, Constantes.Agencias.ESTADO_TRAMITADO, hoy.AddDays(-8), "DOCUMENTADO"));
+
+            var resultado = await controller.GetEnviosRetrasados(diasUmbral: 3)
+                as OkNegotiatedContentResult<List<EnvioRetrasadoDTO>>;
+
+            CollectionAssert.AreEqual(new[] { 2, 3, 1 },
+                resultado.Content.Select(e => e.Numero).ToArray(),
+                "el más viejo es el más urgente");
+        }
+
+        [TestMethod]
+        public async Task Retrasados_FiltraPorAgenciaYPorVendedor()
+        {
+            DateTime hoy = DateTime.Today;
+            ConEnvios(
+                EnvioConFecha(1, Constantes.Agencias.ESTADO_TRAMITADO, hoy.AddDays(-5), agencia: 12, vendedor: "NV"),
+                EnvioConFecha(2, Constantes.Agencias.ESTADO_TRAMITADO, hoy.AddDays(-5), agencia: 1, vendedor: "NV"),
+                EnvioConFecha(3, Constantes.Agencias.ESTADO_TRAMITADO, hoy.AddDays(-5), agencia: 12, vendedor: "JI"));
+
+            var porAgencia = await controller.GetEnviosRetrasados(diasUmbral: 3, agencia: 12)
+                as OkNegotiatedContentResult<List<EnvioRetrasadoDTO>>;
+            Assert.AreEqual(2, porAgencia.Content.Count);
+
+            var porVendedor = await controller.GetEnviosRetrasados(diasUmbral: 3, agencia: 12, vendedor: "JI")
+                as OkNegotiatedContentResult<List<EnvioRetrasadoDTO>>;
+            Assert.AreEqual(1, porVendedor.Content.Count);
+            Assert.AreEqual(3, porVendedor.Content.Single().Numero);
+        }
+
+        [TestMethod]
+        public async Task Retrasados_ConUmbralMayorQueElTecho_LoDiceEnVezDeDevolverNada()
+        {
+            var resultado = await controller.GetEnviosRetrasados(diasUmbral: 90, diasMaximo: 60);
+
+            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult),
+                "callar y devolver la lista vacía haría pensar que no hay retrasos");
+        }
+
+        [TestMethod]
+        public void DiasDesde_CuentaDiasNaturalesYAguantaElNulo()
+        {
+            DateTime hoy = new DateTime(2026, 9, 7);
+
+            Assert.AreEqual(19, EnviosAgenciasController.DiasDesde(new DateTime(2026, 8, 19), hoy));
+            Assert.AreEqual(0, EnviosAgenciasController.DiasDesde(hoy, hoy));
+            Assert.AreEqual(0, EnviosAgenciasController.DiasDesde(null, hoy), "sin fecha no se inventan días");
         }
     }
 }
