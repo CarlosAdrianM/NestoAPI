@@ -757,14 +757,30 @@ namespace NestoAPI.Infraestructure
                 {
                     _ = db.CCCs.Add(ccc);
                 }
-                if (resultado.CccAsignado != null)
+
+                // NestoAPI#462: DOS guardados, no uno. El destino viene con Include(c => c.CCCs),
+                // así que el CCC nuevo cuelga de él y a la vez la ficha lo referencia por
+                // destino.CCC: en un único SaveChanges eso es un ciclo Cliente -> CCC -> Cliente
+                // que Entity Framework no sabe ordenar, y lo tira con "Circular relationships with
+                // referential integrity constraints detected" (07/09/26, alta de Laura). Primero se
+                // insertan las filas nuevas y solo después la ficha apunta a una que YA existe.
+                // Las dos en la misma transacción: si fallara la segunda, un CCC creado y sin
+                // asignar dejaría al contacto igual de manco que antes, pero sin avisar.
+                using (DbContextTransaction transaccion = db.Database.BeginTransaction())
                 {
-                    destino.CCC = resultado.CccAsignado;
-                    destino.Usuario = usuario;
-                    destino.Fecha_Modificación = DateTime.Now;
+                    _ = await db.SaveChangesAsync().ConfigureAwait(false);
+
+                    if (resultado.CccAsignado != null)
+                    {
+                        destino.CCC = resultado.CccAsignado;
+                        destino.Usuario = usuario;
+                        destino.Fecha_Modificación = DateTime.Now;
+                        _ = await db.SaveChangesAsync().ConfigureAwait(false);
+                    }
+
+                    transaccion.Commit();
                 }
 
-                _ = await db.SaveChangesAsync().ConfigureAwait(false);
                 return resultado;
             }
         }

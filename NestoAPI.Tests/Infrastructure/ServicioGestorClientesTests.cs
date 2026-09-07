@@ -1,4 +1,4 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
 using NestoAPI.Models;
 using System;
@@ -276,6 +276,24 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual("1234567890", cuenta.Nº_Cuenta);
             Assert.AreEqual("RCUR", cuenta.Secuencia, "El mandato viaja tal cual: el deudor es el mismo cliente");
             Assert.AreEqual("1", resultado.CccAsignado, "La ficha del destino apunta al equivalente del predeterminado");
+        }
+
+        [TestMethod]
+        public void PrepararCopiaDelPrincipal_CuandoAsignaCcc_EsSiempreUnoRecienCreado_PorEsoElGuardadoVaEnDosPasos()
+        {
+            // NestoAPI#462: el CCC que se le pone a la ficha del destino NUNCA es uno que ya
+            // existiera, es siempre uno de los que se acaban de crear. Por eso insertar las filas
+            // nuevas y apuntar la ficha a una de ellas en el MISMO SaveChanges es un ciclo
+            // Cliente -> CCC -> Cliente, y Entity Framework lo tira con "Circular relationships
+            // with referential integrity constraints detected" (le pasó a Laura el 07/09/26).
+            // Si alguien vuelve a juntar los dos guardados en CopiarDatosDelPrincipal, el alta
+            // vuelve a romperse: este test deja escrito por qué son dos.
+            var resultado = ServicioGestorClientes.PrepararCopiaDelPrincipal(
+                PrincipalConDatos(), DestinoVacio(), "NUEVAVISION\\Vendedor", AHORA);
+
+            Assert.IsNotNull(resultado.CccAsignado);
+            Assert.IsTrue(resultado.NuevosCccs.Any(c => c.Número == resultado.CccAsignado),
+                "El CCC asignado a la ficha sale de los NUEVOS, así que todavía no existe en la base de datos");
         }
 
         [TestMethod]
