@@ -1,4 +1,4 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure.Seguridad;
 using System.Linq;
@@ -68,6 +68,21 @@ namespace NestoAPI.Tests.Infrastructure.Seguridad
         public void FormasPagoPorClienteYTotal_ExigeCredencial()
         {
             AssertExigeCredencial(typeof(FormasPagoController), "GetFormasPago", 4);
+        }
+
+        [TestMethod]
+        public void ElInterruptorNaceApagado_ParaNoTumbarALosNestoQueNoHanReiniciado()
+        {
+            // Nesto se distribuye por ClickOnce: cada puesto actualiza cuando reinicia la
+            // aplicación, no cuando publicamos. Si la API exigiera credencial el mismo día del
+            // despliegue, el SelectorPlazosPago viejo (sin JWT) se quedaría sin lista de plazos y
+            // sin dar ningún error. Mientras el interruptor esté apagado se deja pasar y se apunta
+            // en ELMAH quién sigue llamando sin credencial.
+            Assert.IsFalse(AutorizadoOApiKeyAttribute.Exigir,
+                "El Web.config publicado tiene que traerlo en false: se enciende cuando el aviso " +
+                "de ELMAH deje de aparecer, no antes");
+            Assert.AreEqual("Seguridad:ExigirCredencialPlazosYFormasPago",
+                AutorizadoOApiKeyAttribute.CLAVE_EXIGIR);
         }
 
         // ===== Quién puede preguntar por qué cliente =====

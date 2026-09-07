@@ -1,5 +1,7 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
+using NestoAPI.Infraestructure;
+using System.Collections.Concurrent;
 using System.Configuration;
 using System.Linq;
 using System.Net;
@@ -52,6 +54,15 @@ namespace NestoAPI.Infraestructure.Seguridad
 
             if (!conApiKey && identity?.IsAuthenticated != true)
             {
+                if (!Exigir)
+                {
+                    // MODO SOMBRA (ver Exigir): se deja pasar y se apunta quién sigue llamando sin
+                    // credencial, para poder encenderlo con datos en vez de a ciegas.
+                    AvisarLlamadaSinCredencialUnaVez(actionContext);
+                    base.OnAuthorization(actionContext);
+                    return;
+                }
+
                 // Sin cuerpo, como el resto de la casa: quien no trae credencial no tiene por qué
                 // saber si falló por ausente, por incorrecta o por mala configuración.
                 actionContext.Response = actionContext.Request.CreateResponse(HttpStatusCode.Unauthorized);
@@ -66,6 +77,44 @@ namespace NestoAPI.Infraestructure.Seguridad
             }
 
             base.OnAuthorization(actionContext);
+        }
+
+        /// <summary>
+        /// NestoAPI#459: si vale <c>false</c> (el valor de arranque), una petición SIN credencial
+        /// NO se rechaza: se deja pasar y se apunta en ELMAH.
+        ///
+        /// <para>Existe por el despliegue, no por gusto. El <c>SelectorPlazosPago</c> de Nesto
+        /// llamaba a estos endpoints con un HttpClient sin JWT; ya está arreglado, pero Nesto se
+        /// distribuye por ClickOnce y cada puesto actualiza cuando reinicia la aplicación, no
+        /// cuando publicamos. Exigir credencial el mismo día dejaría sin lista de plazos de pago
+        /// —y en silencio— a todo el que no hubiera reiniciado, que es media plantilla de venta.</para>
+        ///
+        /// <para>Se pone a <c>true</c> en el Web.config cuando el aviso de abajo deje de aparecer
+        /// en ELMAH unos días seguidos: entonces sabremos que ya no queda ningún cliente viejo.</para>
+        /// </summary>
+        internal static bool Exigir =>
+            string.Equals(ConfigurationManager.AppSettings[CLAVE_EXIGIR]?.Trim(), "true",
+                StringComparison.OrdinalIgnoreCase);
+
+        public const string CLAVE_EXIGIR = "Seguridad:ExigirCredencialPlazosYFormasPago";
+
+        // Una vez por ruta y por arranque del proceso: el selector de plazos se llama en cada
+        // cambio de cliente, y un aviso por llamada convertiría ELMAH en un log de tráfico.
+        private static readonly ConcurrentDictionary<string, byte> AvisadasSinCredencial =
+            new ConcurrentDictionary<string, byte>();
+
+        private static void AvisarLlamadaSinCredencialUnaVez(HttpActionContext actionContext)
+        {
+            string ruta = actionContext?.Request?.RequestUri?.AbsolutePath ?? "(sin ruta)";
+            if (!AvisadasSinCredencial.TryAdd(ruta, 0))
+            {
+                return;
+            }
+
+            ElmahHelper.Log(new Exception(
+                $"[Credenciales #459] Llamada SIN credencial a {ruta}. Se ha dejado pasar porque " +
+                $"{CLAVE_EXIGIR} está apagado. Cuando este aviso deje de salir unos días, ponerlo a true."),
+                "Sistema (control de credenciales)");
         }
 
         /// <summary>
