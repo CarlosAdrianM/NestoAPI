@@ -56,6 +56,51 @@ namespace NestoAPI.Models.PedidosVenta
         /// cliente del JWT.
         /// </summary>
         public int? TarjetaId { get; set; }
+
+        /// <summary>
+        /// TNV#68: el cobro del carrito que YA está autorizado (el <c>IdPago</c> que devolvió
+        /// <c>POST api/Pedidos/Cliente/Carrito/Pago</c>). Cuando viene, el pedido solo se crea si
+        /// ese cobro existe, es de este cliente, el banco lo autorizó, no se ha usado ya y su
+        /// importe es exactamente el del pedido; al crearse, el cobro entra como Prepago.
+        ///
+        /// <para>Es el orden nuevo: cobrar primero y crear después. Antes se creaba el pedido y
+        /// luego se cobraba, y cancelar en la pasarela dejaba un pedido fantasma que había que
+        /// borrar a mano (pedido 925607, 07/09/26).</para>
+        /// </summary>
+        public int? IdPagoCarrito { get; set; }
+    }
+
+    /// <summary>
+    /// TNV#68: lo que la app necesita para cobrar el carrito ANTES de que exista el pedido.
+    ///
+    /// <para>El importe lo dice el servidor —es el del pedido que se crearía, con sus precios,
+    /// sus portes y su IVA—, no la app: si lo dijera el cliente podría pagar 1 € por un carrito
+    /// de 100. Y es el mismo importe que se le exige al pedido al crearlo.</para>
+    /// </summary>
+    public class PagoCarritoResponse
+    {
+        /// <summary>
+        /// Los parámetros con los que la app abre el pago, exactamente igual que los del cobro de
+        /// un pedido: si trae <c>UrlPago3DS</c> se carga esa página en el WebView (autenticación
+        /// EMV 3DS 2, normalmente sin que el cliente vea nada) y, si no, se envía el formulario
+        /// de la pasarela de siempre.
+        /// </summary>
+        public Pagos.RespuestaIniciarPago Pago { get; set; }
+
+        /// <summary>El id del cobro, que es lo que hay que devolver en
+        /// <see cref="PedidoClienteRequest.IdPagoCarrito"/> al crear el pedido.</summary>
+        public int IdPago { get; set; }
+
+        /// <summary>Lo que se va a cobrar: total con IVA y portes incluidos.</summary>
+        public decimal Importe { get; set; }
+
+        public decimal BaseImponible { get; set; }
+
+        /// <summary>Portes que lleva el pedido (0 si son gratis), para poder desglosarlo.</summary>
+        public decimal Portes { get; set; }
+
+        public string TarjetaUltimosDigitos { get; set; }
+        public string TarjetaDescripcion { get; set; }
     }
 
     public class LineaPedidoClienteRequest

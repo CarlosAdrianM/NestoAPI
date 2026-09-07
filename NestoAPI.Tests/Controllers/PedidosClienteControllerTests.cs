@@ -315,5 +315,71 @@ namespace NestoAPI.Tests.Controllers
 
             Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
         }
+
+        // TNV#68: el cobro del carrito, que va ANTES de crear el pedido. Tiene las mismas reglas
+        // de acceso que el resto del canal, y ademas exige la tarjeta con la que se va a cobrar.
+
+        [TestMethod]
+        public async Task PostPagoCarrito_SinTokenDeCliente_NoAutorizado()
+        {
+            PedidosClienteController controller = ControllerConIdentidad();
+            PedidoClienteRequest peticion = PeticionValida();
+            peticion.TarjetaId = 7;
+
+            var resultado = await controller.PostPagoCarrito(peticion);
+
+            Assert.IsInstanceOfType(resultado, typeof(UnauthorizedResult));
+        }
+
+        [TestMethod]
+        public async Task PostPagoCarrito_SinTarjeta_NoSeCobraNada()
+        {
+            // Sin tarjeta no hay nada que cobrar: es lo unico que la app tiene que decir.
+            PedidosClienteController controller = ControllerConIdentidad(new Claim("cliente", "15191"));
+
+            var resultado = await controller.PostPagoCarrito(PeticionValida());
+
+            var badRequest = resultado as BadRequestErrorMessageResult;
+            Assert.IsNotNull(badRequest);
+            StringAssert.Contains(badRequest.Message, "TarjetaId");
+        }
+
+        [TestMethod]
+        public async Task PostPagoCarrito_UsuarioSinPrecios_NoPagaConTarjeta()
+        {
+            // NestoAPI#446: la pasarela ensenaria el importe. Su pedido va con la forma de pago
+            // habitual de su ficha, asi que no hay cobro por adelantado que arrancar.
+            PedidosClienteController controller = ControllerConIdentidad(
+                new Claim("cliente", "15191"), new Claim(PoliticaPreciosOcultos.CLAIM_NIVEL_PRECIOS, "SinPrecios"));
+            PedidoClienteRequest peticion = PeticionValida();
+            peticion.TarjetaId = 7;
+
+            var resultado = await controller.PostPagoCarrito(peticion);
+
+            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+        }
+
+        [TestMethod]
+        public async Task PostPedidoCliente_UsuarioSinPreciosConCobroDelCarrito_NoCreaElPedido()
+        {
+            // A este usuario no se le arranca el cobro del carrito, asi que si llega uno es que
+            // algo no cuadra: no se le crea un pedido con una tarjeta que su politica no permite.
+            PedidosClienteController controller = ControllerConIdentidad(
+                new Claim("cliente", "15191"), new Claim(PoliticaPreciosOcultos.CLAIM_NIVEL_PRECIOS, "SinPrecios"));
+            PedidoClienteRequest peticion = PeticionValida();
+            peticion.IdPagoCarrito = 689;
+
+            var resultado = await controller.PostPedidoCliente(peticion);
+
+            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+        }
+
+        [TestMethod]
+        public void CobrarCarritoAntesDelPedido_SinTocarElWebConfig_VieneEncendido()
+        {
+            // Nace encendido porque es el orden correcto; el interruptor esta para poder volver
+            // al antiguo sin publicar una version de la app.
+            Assert.IsTrue(PedidosClienteController.CobrarCarritoAntesDelPedido);
+        }
     }
 }

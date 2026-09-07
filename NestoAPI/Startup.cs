@@ -561,6 +561,21 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'reindexar-buscador' configurado (diario a las 20:30)");
 
+            // TNV#68: cobrar antes de crear el pedido quita el pedido fantasma, pero deja el hueco
+            // contrario: el cliente paga y cierra la app antes de que se cree el pedido. Este job
+            // devuelve esos cobros y avisa de los que se quedaron a medio aplicar. Cada hora, que
+            // es de sobra: lo normal es que no encuentre nada.
+            RecurringJob.AddOrUpdate(
+                "cobros-carrito-huerfanos",
+                () => Infraestructure.Pagos.CobrosCarritoJobsService.RevisarCobrosHuerfanos(),
+                "5 * * * *", // Cron: cada hora, en el minuto 5
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'cobros-carrito-huerfanos' configurado (cada hora)");
+
             // NOTA: El job de clientes está deshabilitado porque aún se usa Task Scheduler
             // Para habilitarlo en el futuro, cambia '#if false' por '#if true':
 #if false

@@ -36,10 +36,19 @@ namespace NestoAPI.Controllers
     /// <c>AuthController.CrearJWTAsync</c>. Las reglas de acceso son las que ya estaban escritas y
     /// en producción en <see cref="ValidadorAccesoCliente"/>.</para>
     ///
-    /// <para>El pedido se crea ANTES de cobrar (opción B de la issue): un pedido sin cobrar es
-    /// recuperable —se cancela o se persigue— y un cobro sin pedido es un problema contable.
-    /// Además no hay riesgo de que salga sin pagar: al crearse con plazos de pago PRE, el picking
-    /// lo retiene hasta que los prepagos cubren el total (ver PedidoPicking.RetenidoPorPrepago).</para>
+    /// <para><b>TNV#68: con tarjeta se cobra ANTES de crear el pedido.</b> Nació al revés (crear
+    /// y luego cobrar), y el 07/09/26 el cliente 25299 canceló el pago en Redsys y el pedido
+    /// 925607 se creó igualmente: un pedido fantasma que hubo que borrar a mano y que él veía en
+    /// «Mis pedidos». Ahora la app cobra el carrito (<c>POST Cliente/Carrito/Pago</c>), lo
+    /// autentica por EMV 3DS 2 y solo pide crear el pedido si el banco autorizó, mandando el
+    /// cobro en <see cref="PedidoClienteRequest.IdPagoCarrito"/>. Si el pedido no se puede crear,
+    /// el dinero se devuelve.</para>
+    ///
+    /// <para>Sin tarjeta (recibo, transferencia) el pedido se crea sin más, que es lo de siempre.
+    /// Y el camino antiguo —crear y cobrar después— sigue vivo para las versiones de la app ya
+    /// instaladas: al crearse con plazos de pago PRE, el picking retiene el pedido hasta que los
+    /// prepagos cubren el total (ver PedidoPicking.RetenidoPorPrepago), así que no sale sin
+    /// pagar; lo que deja son pedidos fantasma, que es justo lo que quita el orden nuevo.</para>
     /// </summary>
     [Authorize]
     [RoutePrefix("api/Pedidos")]
@@ -50,6 +59,19 @@ namespace NestoAPI.Controllers
 
         /// <summary>Tope para que nadie se traiga el histórico entero en una llamada.</summary>
         internal const int MAXIMO_DIAS_DE_PEDIDOS = 365;
+
+        /// <summary>
+        /// TNV#68: interruptor del orden nuevo (cobrar y luego crear). Nace ENCENDIDO, porque el
+        /// orden nuevo es el correcto; existe para poder volver al antiguo desde el Web.config sin
+        /// esperar a que Google apruebe una versión de la app, que es lo único que no podríamos
+        /// hacer deprisa si algo saliera mal en el cobro.
+        /// </summary>
+        internal const string CLAVE_COBRAR_CARRITO_ANTES = "Pagos:CobrarCarritoAntesDelPedido";
+
+        /// <summary>Encendido salvo que el Web.config diga expresamente "false".</summary>
+        internal static bool CobrarCarritoAntesDelPedido =>
+            !string.Equals(System.Configuration.ConfigurationManager.AppSettings[CLAVE_COBRAR_CARRITO_ANTES]?.Trim(),
+                "false", StringComparison.OrdinalIgnoreCase);
 
         private readonly NVEntities db;
         private readonly IServicioPagos servicioPagos;
@@ -82,7 +104,22 @@ namespace NestoAPI.Controllers
             bool sinPrecios = PoliticaPreciosOcultos.OcultaImportes(User?.Identity);
             if (sinPrecios)
             {
+                if (peticion.IdPagoCarrito.HasValue)
+                {
+                    // No debería llegar aquí (a este usuario no se le arranca el cobro del
+                    // carrito), y si llega no se le crea el pedido con una tarjeta que su política
+                    // no permite. El cobro, si existiera, lo recoge el job de cobros huérfanos.
+                    return BadRequest("Tu pedido se paga con tu forma de pago habitual, no con tarjeta.");
+                }
                 PoliticaPreciosOcultos.ForzarFormaDePagoHabitual(peticion);
+            }
+
+            // TNV#68: si viene el cobro del carrito, se paga con tarjeta guardada y punto. Lo
+            // decide el servidor y no la petición, para que un cuerpo mal montado no acabe
+            // creando un pedido a crédito con un cobro con tarjeta ya hecho.
+            if (peticion.IdPagoCarrito.HasValue)
+            {
+                peticion.PagarConTarjetaGuardada = true;
             }
 
             PedidoPreparado preparado = await PrepararPedido(peticion).ConfigureAwait(false);
@@ -98,18 +135,57 @@ namespace NestoAPI.Controllers
             // sería clasificar mal la operación, saltarse la SCA y renunciar al traslado de
             // responsabilidad. El MIT que el banco activó el 07/09/26 es para la cartera de
             // aplazados y periódicos (#181), que cobrará desde el motor de remesa, no desde aquí.
+            // TNV#68: cuando el cobro ya está hecho (IdPagoCarrito), la tarjeta solo sirve para
+            // contarle al cliente en qué tarjeta se le ha cobrado. No se le puede rechazar el
+            // pedido por ella: el dinero ya está cobrado y rechazarlo dejaría un cobro sin pedido.
+            bool yaSeHaCobrado = peticion.IdPagoCarrito.HasValue;
             TarjetaCliente tarjetaParaLaPasarela = null;
             if (peticion.PagarConTarjetaGuardada)
             {
                 if (!peticion.TarjetaId.HasValue)
                 {
-                    return BadRequest("Falta la tarjeta con la que pagar (TarjetaId)");
+                    if (!yaSeHaCobrado)
+                    {
+                        return BadRequest("Falta la tarjeta con la que pagar (TarjetaId)");
+                    }
                 }
-                tarjetaParaLaPasarela = servicioPagos.TarjetaGuardadaDe(
-                    preparado.Pedido.empresa, preparado.Pedido.cliente, peticion.TarjetaId.Value);
-                if (tarjetaParaLaPasarela == null)
+                else
                 {
-                    return BadRequest("No encontramos esa tarjeta guardada. Elige otra forma de pago.");
+                    tarjetaParaLaPasarela = servicioPagos.TarjetaGuardadaDe(
+                        preparado.Pedido.empresa, preparado.Pedido.cliente, peticion.TarjetaId.Value);
+                    if (tarjetaParaLaPasarela == null && !yaSeHaCobrado)
+                    {
+                        return BadRequest("No encontramos esa tarjeta guardada. Elige otra forma de pago.");
+                    }
+                }
+            }
+
+            // TNV#68: el cobro del carrito se toma ANTES de crear nada. Aquí se decide si este
+            // pedido llega a existir: si el cobro no está autorizado, no es de este cliente, ya se
+            // usó o no cuadra con el importe, no se crea el pedido (que es exactamente lo que
+            // faltaba el día del 925607).
+            ReservaCobroCarrito cobroCarrito = null;
+            if (peticion.IdPagoCarrito.HasValue)
+            {
+                cobroCarrito = await servicioPagos.ReservarCobroCarrito(
+                    peticion.IdPagoCarrito.Value, preparado.Pedido.empresa, preparado.Pedido.cliente)
+                    .ConfigureAwait(false);
+                if (!cobroCarrito.Valido)
+                {
+                    return BadRequest(cobroCarrito.Motivo);
+                }
+
+                // El mismo cálculo con el que se cobró. Si no da lo mismo, algo ha cambiado entre
+                // el pago y ahora (un precio, el stock que decide los portes) y no se crea el
+                // pedido: se devuelve el dinero y que lo vuelva a intentar viendo el importe nuevo.
+                decimal totalAhora = await CalcularTotalDelCarrito(preparado).ConfigureAwait(false);
+                if (totalAhora != cobroCarrito.Importe)
+                {
+                    _ = await DevolverCobroDelCarrito(cobroCarrito,
+                        $"el pedido vale ahora {totalAhora:N2} EUR y se cobraron {cobroCarrito.Importe:N2} EUR")
+                        .ConfigureAwait(false);
+                    return BadRequest("El importe del pedido ha cambiado desde que lo pagaste, así que no lo hemos " +
+                        "creado y te hemos devuelto el pago. Vuelve a entrar en el carrito para verlo y confirmarlo otra vez.");
                 }
             }
 
@@ -126,20 +202,27 @@ namespace NestoAPI.Controllers
             {
                 // El pedido no se ha creado. Que un pedido se quede esperando aprobación sin
                 // decir nada es peor que un error: el cliente se entera de por qué.
-                return BadRequest(MotivoParaElCliente(ex));
+                return await NoSeHaCreado(cobroCarrito, MotivoParaElCliente(ex)).ConfigureAwait(false);
             }
             catch (NestoBusinessException ex)
             {
-                return BadRequest(ex.Message);
+                return await NoSeHaCreado(cobroCarrito, ex.Message).ConfigureAwait(false);
             }
 
             if (!(resultado is CreatedAtRouteNegotiatedContentResult<PedidoVentaDTO>))
             {
-                // BadRequest, Conflict... lo que haya respondido el endpoint de siempre
+                // BadRequest, Conflict... lo que haya respondido el endpoint de siempre. Si el
+                // dinero ya estaba cobrado vuelve: cobrado y sin pedido no se queda nada.
+                if (cobroCarrito != null)
+                {
+                    _ = await DevolverCobroDelCarrito(cobroCarrito, "el pedido no se ha llegado a crear")
+                        .ConfigureAwait(false);
+                }
                 return resultado;
             }
 
-            PedidoClienteResponse respuesta = ConstruirRespuesta(preparado.Pedido, preparado.FormaPago, preparado.PlazosPago);
+            PedidoClienteResponse respuesta = ConstruirRespuesta(
+                preparado.Pedido, preparado.FormaPago, preparado.PlazosPago, yaCobrado: cobroCarrito != null);
 
             if (sinPrecios)
             {
@@ -147,7 +230,11 @@ namespace NestoAPI.Controllers
                 PoliticaPreciosOcultos.OcultarImportes(respuesta);
             }
 
-            if (respuesta.RequierePago)
+            if (cobroCarrito != null)
+            {
+                await AplicarCobroDelCarrito(cobroCarrito, respuesta, tarjetaParaLaPasarela).ConfigureAwait(false);
+            }
+            else if (respuesta.RequierePago)
             {
                 await ArrancarPago(respuesta, preparado, tarjetaParaLaPasarela).ConfigureAwait(false);
             }
@@ -156,14 +243,81 @@ namespace NestoAPI.Controllers
         }
 
         /// <summary>
-        /// NestoAPI#178: el flujo cobrar-primero con la tarjeta guardada del cliente.
-        ///
-        /// <para>OK = se cobra, se crea el pedido y se le aplica el cobro como Prepago. KO = no
-        /// se crea nada y el error le dice al cliente por qué. Y la rama fea —cobro autorizado
-        /// pero el pedido no se puede crear— deshace el cobro con una devolución; si hasta la
-        /// devolución falla, ELMAH y correo, porque dinero cobrado sin pedido no puede esperar
-        /// al cuadre de fin de mes.</para>
+        /// TNV#68: el pedido no se ha creado. Si se había cobrado por adelantado, el dinero vuelve
+        /// antes de contestar: un cobro sin pedido no puede esperar a que alguien lo vea.
         /// </summary>
+        private async Task<IHttpActionResult> NoSeHaCreado(ReservaCobroCarrito cobroCarrito, string motivo)
+        {
+            if (cobroCarrito == null)
+            {
+                return BadRequest(motivo);
+            }
+
+            bool devuelto = await DevolverCobroDelCarrito(cobroCarrito, "el pedido no se ha podido crear")
+                .ConfigureAwait(false);
+
+            return BadRequest(devuelto
+                ? motivo + " No te hemos cobrado nada: el pago se ha devuelto."
+                : motivo + " El pago se te devolverá; si en unos días no lo ves, llámanos.");
+        }
+
+        /// <summary>
+        /// TNV#68: devuelve el cobro del carrito cuando el pedido no llega a existir. Que la
+        /// devolución falle no puede tumbar la respuesta al cliente (el pedido no se ha creado
+        /// igualmente), pero sí tiene que dejar rastro: eso lo hace ServicioPagos.DevolverCobro.
+        /// </summary>
+        private async Task<bool> DevolverCobroDelCarrito(ReservaCobroCarrito cobro, string motivo)
+        {
+            try
+            {
+                return await servicioPagos.DevolverCobro(cobro.IdPago, motivo).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception(
+                    $"[Pedido app] No se ha podido devolver el cobro {cobro.NumeroOrden} " +
+                    $"({cobro.Importe:N2} EUR) despues de que {motivo}: {ex.Message}", ex));
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// TNV#68: el pedido ya existe y el dinero ya estaba cobrado. Solo queda enlazarlos, que
+        /// es lo que apunta el Prepago y saca al pedido de la retención por prepago del picking.
+        ///
+        /// <para>Si esto fallara, el pedido se queda creado y retenido: no se sirve sin cobrar
+        /// (que es lo que hay que proteger), pero tampoco sale, así que el aviso a ELMAH es de los
+        /// que hay que mirar el mismo día.</para>
+        /// </summary>
+        private async Task AplicarCobroDelCarrito(ReservaCobroCarrito cobro, PedidoClienteResponse respuesta,
+            TarjetaCliente tarjeta)
+        {
+            string diferencia = DiferenciaCobroPedido(cobro.Importe, respuesta.Total, respuesta.Numero, cobro.NumeroOrden);
+            if (diferencia != null)
+            {
+                // No debería pasar (el importe se comprueba antes de crear), pero si pasa hay que
+                // enterarse hoy: el pedido habría salido cobrado de menos o de más.
+                ElmahHelper.Log(new Exception(diferencia));
+            }
+
+            try
+            {
+                await servicioPagos.AplicarCobroAlPedido(cobro.IdPago, respuesta.Numero).ConfigureAwait(false);
+                respuesta.Pagado = true;
+                respuesta.TarjetaUltimosDigitos = tarjeta?.UltimosDigitos;
+                respuesta.TarjetaDescripcion = tarjeta?.Descripcion;
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception(
+                    $"[Pedido app] Cobrados {cobro.Importe:N2} EUR (orden {cobro.NumeroOrden}) y creado el pedido " +
+                    $"{respuesta.Numero}, pero NO se ha podido apuntar el prepago: el pedido se queda retenido " +
+                    $"hasta que se apunte a mano. {ex.Message}", ex));
+                respuesta.Avisos.Add("Hemos cobrado tu pedido, pero el cobro tardará un poco en reflejarse. " +
+                    "Si en un rato sigue como pendiente de pago, llámanos y lo miramos.");
+            }
+        }
+
         /// <summary>
         /// El controller de pedidos de siempre, cableado para que actúe como si hubiera atendido
         /// él la petición (mismo principal, misma request, misma configuración).
@@ -285,6 +439,162 @@ namespace NestoAPI.Controllers
                 ImporteMinimoSinPortes = portes.ImporteMinimoPedidoSinPortes,
                 FaltaParaPortesGratis = portes.ImporteFaltaParaPortesGratis
             });
+        }
+
+        /// <summary>
+        /// TNV#68: cobra el carrito ANTES de que exista el pedido. Es el primer paso del orden
+        /// nuevo; el segundo es <c>POST Cliente</c> con el <c>IdPagoCarrito</c> que se devuelve
+        /// aquí.
+        ///
+        /// <para>El importe es el del pedido que se crearía —los mismos precios, los mismos portes
+        /// y el mismo IVA, calculados con el mismo código—, no el que diga la app: si lo dijera
+        /// ella, el cliente podría pagar 1 € por un carrito de 100. Y es ese importe exacto el que
+        /// se le exige al pedido cuando se crea.</para>
+        ///
+        /// <para>El cobro nace sin pedido, y así se queda si el cliente cancela: no hay nada que
+        /// borrar a mano. Un cobro autorizado que no llegue a ser pedido lo caza el job de cobros
+        /// huérfanos.</para>
+        /// </summary>
+        // POST: api/Pedidos/Cliente/Carrito/Pago
+        [HttpPost]
+        [Route("Cliente/Carrito/Pago")]
+        [ResponseType(typeof(PagoCarritoResponse))]
+        public async Task<IHttpActionResult> PostPagoCarrito(PedidoClienteRequest peticion)
+        {
+            if (!CobrarCarritoAntesDelPedido)
+            {
+                // Interruptor apagado: la app se entera y se va por el camino de siempre (crear y
+                // luego cobrar), sin dejar de vender mientras se arregla lo que sea.
+                return BadRequest("Ahora mismo el pago se hace al confirmar el pedido.");
+            }
+
+            if (PoliticaPreciosOcultos.OcultaImportes(User?.Identity))
+            {
+                // NestoAPI#446: quien no ve los precios no paga con tarjeta (la pasarela enseñaría
+                // el importe): su pedido va con la forma de pago habitual de su ficha.
+                return BadRequest("Tu pedido se paga con tu forma de pago habitual, no con tarjeta.");
+            }
+
+            if (peticion?.TarjetaId == null)
+            {
+                return BadRequest("Falta la tarjeta con la que pagar (TarjetaId)");
+            }
+            peticion.PagarConTarjetaGuardada = true;
+
+            PedidoPreparado preparado = await PrepararPedido(peticion).ConfigureAwait(false);
+            if (preparado.Error != null)
+            {
+                return preparado.Error;
+            }
+
+            if (!PoliticaPagoCanal.SeCobraEnElMomento(preparado.FormaPago, preparado.PlazosPago))
+            {
+                // La política del canal no ha dejado el pedido en tarjeta al contado: no hay nada
+                // que cobrar por adelantado.
+                return BadRequest("Este pedido no se cobra con tarjeta, así que no hay nada que pagar ahora.");
+            }
+
+            TarjetaCliente tarjeta = servicioPagos.TarjetaGuardadaDe(
+                preparado.Pedido.empresa, preparado.Pedido.cliente, peticion.TarjetaId.Value);
+            if (tarjeta == null)
+            {
+                return BadRequest("No encontramos esa tarjeta guardada. Elige otra forma de pago.");
+            }
+
+            decimal total = await CalcularTotalDelCarrito(preparado).ConfigureAwait(false);
+            if (total <= 0)
+            {
+                return BadRequest("No hemos podido calcular el importe del pedido. Vuelve a abrir el carrito.");
+            }
+
+            RespuestaIniciarPago pago;
+            try
+            {
+                pago = await servicioPagos.IniciarPago(new SolicitudPagoTPV
+                {
+                    Empresa = preparado.Pedido.empresa,
+                    Cliente = preparado.Pedido.cliente,
+                    Contacto = preparado.Pedido.contacto,
+                    Importe = total,
+                    Descripcion = "Pedido en Nueva Visión",
+                    Correo = preparado.Correo,
+                    // Sin pedido: todavía no existe, y solo existirá si esto se autoriza
+                    EsCarritoApp = true,
+                    TarjetaGuardada = tarjeta
+                }, preparado.Pedido.Usuario).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception(
+                    $"[Pedido app] No se ha podido arrancar el cobro del carrito del cliente " +
+                    $"{preparado.Pedido.cliente?.Trim()} ({total:N2} EUR): {ex.Message}", ex));
+                return BadRequest("No hemos podido abrir el pago. Inténtalo de nuevo en unos minutos.");
+            }
+
+            return Ok(new PagoCarritoResponse
+            {
+                Pago = pago,
+                IdPago = pago.IdPago,
+                Importe = total,
+                BaseImponible = preparado.Pedido.BaseImponible,
+                Portes = PortesDelPedido(preparado.Pedido),
+                TarjetaUltimosDigitos = tarjeta.UltimosDigitos,
+                TarjetaDescripcion = tarjeta.Descripcion
+            });
+        }
+
+        /// <summary>
+        /// TNV#68: lo que va a costar el pedido que se crearía con este carrito, con IVA y portes
+        /// incluidos. Es el importe que se cobra y, después, el que se le exige al pedido.
+        ///
+        /// <para>No es una cuenta aparte: monta las líneas de portes con el MISMO
+        /// <c>GestorPortes.GestionarLineasPortes</c> que usa PostPedidoVenta al crear el pedido, y
+        /// con el mismo input. Por eso lo cobrado y lo facturado coinciden al céntimo, y por eso
+        /// deja el DTO ya con su línea de portes: el pedido que se cree después es exactamente el
+        /// que se ha cobrado (volver a gestionarlas es idempotente, y la base de portes no cuenta
+        /// las líneas de cuenta contable).</para>
+        /// </summary>
+        private async Task<decimal> CalcularTotalDelCarrito(PedidoPreparado preparado)
+        {
+            PedidoVentaDTO pedido = preparado.Pedido;
+
+            if (pedido.ParametrosIva == null || !pedido.ParametrosIva.Any())
+            {
+                pedido.ParametrosIva = await LeerParametrosIva(pedido.empresa, pedido.iva).ConfigureAwait(false);
+            }
+
+            ResultadoPortes portes = CalcularPortesDelCarrito(pedido, preparado.CodigoPostal);
+            _ = GestorPortes.GestionarLineasPortes(pedido.Lineas, portes, pedido.iva, pedido.ParametrosIva);
+
+            // NestoAPI#452: sin los porcentajes, el "total" del DTO es la base pelada y se cobraría
+            // el pedido sin IVA.
+            RellenarPorcentajesIva(pedido);
+
+            return pedido.Total;
+        }
+
+        /// <summary>Los parámetros de IVA del cliente, los mismos que lee PostPedidoVenta cuando el
+        /// DTO no los trae.</summary>
+        private async Task<List<ParametrosIvaBase>> LeerParametrosIva(string empresa, string iva)
+        {
+            return await db.ParametrosIVA
+                .Where(p => p.Empresa == empresa && p.IVA_Cliente_Prov == iva)
+                .Select(p => new ParametrosIvaBase
+                {
+                    CodigoIvaProducto = p.IVA_Producto.Trim(),
+                    PorcentajeIvaProducto = (decimal)p.C__IVA / 100,
+                    PorcentajeRecargoEquivalencia = (decimal)p.C__RE / 100
+                })
+                .ToListAsync()
+                .ConfigureAwait(false);
+        }
+
+        /// <summary>Los portes del pedido: son líneas de cuenta contable, no de producto.</summary>
+        private static decimal PortesDelPedido(PedidoVentaDTO pedido)
+        {
+            return pedido.Lineas
+                .Where(l => l.tipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE)
+                .Sum(l => l.BaseImponible);
         }
 
         /// <summary>
@@ -515,7 +825,10 @@ namespace NestoAPI.Controllers
             return precios;
         }
 
-        private static PedidoClienteResponse ConstruirRespuesta(PedidoVentaDTO pedido, string formaPago, string plazosPago)
+        /// <param name="yaCobrado">TNV#68: el pedido se ha pagado ANTES de crearse, asi que no
+        /// hay nada pendiente ni pasarela que abrir.</param>
+        private static PedidoClienteResponse ConstruirRespuesta(PedidoVentaDTO pedido, string formaPago,
+            string plazosPago, bool yaCobrado = false)
         {
             PedidoClienteResponse respuesta = new PedidoClienteResponse
             {
@@ -528,10 +841,8 @@ namespace NestoAPI.Controllers
                 BaseImponible = pedido.BaseImponible,
                 Total = pedido.Total,
                 // Los portes los ha calculado el servidor y son una línea más de cuenta contable
-                Portes = pedido.Lineas
-                    .Where(l => l.tipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE)
-                    .Sum(l => l.BaseImponible),
-                RequierePago = PoliticaPagoCanal.SeCobraEnElMomento(formaPago, plazosPago)
+                Portes = PortesDelPedido(pedido),
+                RequierePago = !yaCobrado && PoliticaPagoCanal.SeCobraEnElMomento(formaPago, plazosPago)
             };
 
             foreach (LineaPedidoVentaDTO linea in pedido.Lineas.Where(l => l.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO))

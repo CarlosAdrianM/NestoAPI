@@ -77,6 +77,19 @@ namespace NestoAPI.Models.Pagos
     public class CapacidadesTarjetasDTO
     {
         public bool CobroDirecto { get; set; }
+
+        /// <summary>
+        /// TNV#68: el cobro va ANTES de crear el pedido. La app arranca el pago del carrito
+        /// (<c>POST api/Pedidos/Cliente/Carrito/Pago</c>), lo autentica con EMV 3DS 2 y solo pide
+        /// crear el pedido si el banco lo autoriza: si el cliente cancela, no queda pedido
+        /// fantasma que borrar a mano.
+        ///
+        /// <para>Es un interruptor, no una capacidad del terminal: si hubiera que volver al orden
+        /// antiguo (crear y luego cobrar) se apaga en el Web.config y las apps ya instaladas se
+        /// vuelven solas, sin esperar a que Google apruebe una versión. Las versiones antiguas
+        /// ignoran el campo.</para>
+        /// </summary>
+        public bool PagoAntesDelPedido { get; set; }
     }
 
     /// <summary>

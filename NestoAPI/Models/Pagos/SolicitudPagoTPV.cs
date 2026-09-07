@@ -36,6 +36,19 @@ namespace NestoAPI.Models.Pagos
         [Newtonsoft.Json.JsonIgnore]
         public TarjetaCliente TarjetaGuardada { get; set; }
 
+        /// <summary>
+        /// TNV#68: es el cobro de un CARRITO, o sea, de un pedido que todavia no existe. Se
+        /// comporta como el de un pedido de la app (ni contabiliza contra el extracto, ni manda
+        /// correo de enlace de pago, ni genera reintentos), con la unica diferencia de que no
+        /// lleva Documento: se lo pone el pedido al crearse, y solo si el banco autoriza.
+        ///
+        /// <para>Lo pone el servidor con el importe que ha calculado el, igual que
+        /// <see cref="Pedido"/>: si lo dijera el cliente, podria pagar 1 EUR por un carrito
+        /// de 100.</para>
+        /// </summary>
+        [Newtonsoft.Json.JsonIgnore]
+        public bool EsCarritoApp { get; set; }
+
         // Campos legacy para compatibilidad con pago individual sin Efectos
         public int? ExtractoClienteId { get; set; }
         public string Documento { get; set; }

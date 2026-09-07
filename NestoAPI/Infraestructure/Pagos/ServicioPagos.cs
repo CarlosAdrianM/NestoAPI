@@ -68,6 +68,12 @@ namespace NestoAPI.Infraestructure.Pagos
             string urlOk = solicitud.UrlOk ?? urlBase + "/pago/ok.html";
             string urlKo = solicitud.UrlKo ?? urlBase + "/pago/ko.html";
 
+            // NestoAPI#436 / TNV#68: los cobros de la tienda (el de un pedido ya creado y el del
+            // carrito que aun no lo es) NO son enlaces de pago. El cliente esta delante y la
+            // pasarela se abre en el momento: ni correo previo, ni contabilizacion contra el
+            // extracto, ni reintentos automaticos.
+            bool esCobroDeLaApp = solicitud.Pedido.HasValue || solicitud.EsCarritoApp;
+
             // NestoAPI#178: en los cobros de pedidos de la app se pide a Redsys que tokenice la
             // tarjeta. El objetivo es que el cliente la meta UNA vez: cada pedido cobrado sin
             // tokenizar es un cliente al que habrá que volver a pedírsela.
@@ -81,7 +87,7 @@ namespace NestoAPI.Infraestructure.Pagos
                 urlKo,
                 solicitud.MetodoPago,
                 // Con tarjeta guardada no se pide tokenizar (ya lo está): se manda la referencia
-                solicitarToken: solicitud.Pedido.HasValue && solicitud.TarjetaGuardada == null,
+                solicitarToken: esCobroDeLaApp && solicitud.TarjetaGuardada == null,
                 tokenTarjeta: solicitud.TarjetaGuardada?.TokenRedsys,
                 cofTxnId: solicitud.TarjetaGuardada?.CofTxnId);
 
@@ -92,9 +98,12 @@ namespace NestoAPI.Infraestructure.Pagos
                     NumeroOrden = parametros.NumeroOrden,
                     // NestoAPI#436: el cobro de un pedido de la app no se contabiliza como el
                     // enlace de pago; se distingue por el Tipo y lleva el pedido en Documento.
-                    Tipo = solicitud.Pedido.HasValue
-                        ? Constantes.TiposPagoTPV.PEDIDO_APP
-                        : Constantes.TiposPagoTPV.TPV_VIRTUAL,
+                    // TNV#68: el del carrito es ese mismo cobro cuando el pedido aun no existe.
+                    Tipo = solicitud.EsCarritoApp
+                        ? Constantes.TiposPagoTPV.CARRITO_APP
+                        : solicitud.Pedido.HasValue
+                            ? Constantes.TiposPagoTPV.PEDIDO_APP
+                            : Constantes.TiposPagoTPV.TPV_VIRTUAL,
                     Empresa = solicitud.Empresa ?? Empresas.EMPRESA_POR_DEFECTO,
                     Cliente = solicitud.Cliente,
                     Contacto = solicitud.Contacto,
@@ -148,7 +157,7 @@ namespace NestoAPI.Infraestructure.Pagos
                 // que lo abra cuando quiera: es un cobro online, el cliente esta delante y la
                 // pasarela se abre en el momento. Mandarle un correo con un enlace de pago
                 // ademas del cobro que acaba de hacer solo confunde (y se pagaria dos veces).
-                if (!solicitud.Pedido.HasValue)
+                if (!esCobroDeLaApp)
                 {
                     EnviarCorreoPreCobro(pago, efectos, urlPaginaPago);
                 }
@@ -238,6 +247,16 @@ namespace NestoAPI.Infraestructure.Pagos
                         {
                             await AnadirPrepagoAlPedido(pago, db).ConfigureAwait(false);
                         }
+                        else if (EsCobroDeLaTienda(pago))
+                        {
+                            // TNV#68: cobro de la tienda que todavía no tiene pedido al que
+                            // pertenecer (el del carrito, que se cobra ANTES de crearlo). No hay
+                            // nada que apuntar aquí: el prepago lo pone AplicarCobroAlPedido
+                            // cuando la app pide crear el pedido, que es el único momento en que
+                            // se sabe a qué pedido corresponde este dinero. Lo que NO puede pasar
+                            // es caer en ContabilizarCobro y apuntarlo contra el extracto, porque
+                            // luego se contaría otra vez como prepago.
+                        }
                         else
                         {
                             await ContabilizarCobro(pago).ConfigureAwait(false);
@@ -254,7 +273,7 @@ namespace NestoAPI.Infraestructure.Pagos
                     // online de una tienda: avisar a administracion de cada compra seria ruido, y
                     // el ruido acaba en que nadie mira el correo que si importa.
                     // NestoAPI#178: el alta de tarjeta (0 EUR) tampoco avisa: no hay cobro.
-                    if ((!EsPagoDePedido(pago) && !EsAltaTarjeta(pago)) || errorContabilizacion != null)
+                    if (!EsCobroDeLaTienda(pago) || errorContabilizacion != null)
                     {
                         EnviarCorreoPostCobro(pago, errorContabilizacion);
                     }
@@ -698,9 +717,13 @@ namespace NestoAPI.Infraestructure.Pagos
         /// El núcleo común de los pasos 2 y 3: manda la petición y traduce la respuesta a
         /// autorizado / denegado / hay que retar.
         ///
-        /// <para>No toca el estado del PagoTPV ni aplica el cobro al pedido: de eso se sigue
-        /// encargando la notificación de Redsys (ProcesarNotificacion), igual que en el pago por
-        /// redirección. Aquí solo se decide qué se le enseña al cliente.</para>
+        /// <para>Aplicar el cobro al pedido (el prepago) lo sigue haciendo la notificación de
+        /// Redsys (ProcesarNotificacion), igual que en el pago por redirección. Lo que sí se
+        /// escribe aquí es el ESTADO del pago, porque la respuesta REST del banco ya lo dice y
+        /// esperar a la notificación abría una carrera: en el flujo cobrar-primero (TNV#68) la
+        /// app pide crear el pedido en cuanto ve el pago autorizado, y con el PagoTPV todavía en
+        /// "Pendiente" el pedido se le rechazaría a un cliente que sí ha pagado. Escribirlo dos
+        /// veces no molesta: ProcesarNotificacion es idempotente.</para>
         /// </summary>
         private async Task<ResultadoAutenticacion3DS> EnviarYInterpretar3DS(
             ParametrosRedsysFirmados parametros, Contexto3DS contexto, string protocolVersion)
@@ -729,6 +752,12 @@ namespace NestoAPI.Infraestructure.Pagos
             }
 
             bool autorizado = int.TryParse(respuesta?.Ds_Response, out int codigo) && codigo >= 0 && codigo <= 99;
+
+            // El desafio no ha terminado: solo se escribe cuando el banco ya ha dicho si o no.
+            await ActualizarEstadoCobro(contexto.Pago.Id,
+                autorizado ? Constantes.EstadosPagoTPV.AUTORIZADO : Constantes.EstadosPagoTPV.DENEGADO,
+                respuesta?.Ds_Response,
+                respuesta?.Ds_AuthorisationCode).ConfigureAwait(false);
 
             return new ResultadoAutenticacion3DS
             {
@@ -851,6 +880,132 @@ namespace NestoAPI.Infraestructure.Pagos
         }
 
         /// <summary>
+        /// TNV#68: toma el cobro del carrito para el pedido que se va a crear, y lo deja marcado
+        /// para que no lo pueda usar ningún otro.
+        ///
+        /// <para>Comprueba lo único que importa: que ese cobro existe, que es un cobro de carrito,
+        /// que es de ESTE cliente (el del JWT, no el que diga la petición), que el banco lo
+        /// autorizó, que no está caducado y que no se ha usado ya. El pedido no se crea si algo
+        /// de eso falla, que es justamente lo que evita el pedido fantasma del 925607.</para>
+        ///
+        /// <para>La marca se pone con un UPDATE condicional, no leyendo y luego escribiendo: dos
+        /// peticiones simultáneas con el mismo cobro (un reintento de la app sobre una llamada que
+        /// sí había llegado) crearían dos pedidos y aplicarían el mismo dinero a los dos. Gana la
+        /// primera; la segunda se encuentra el cobro tomado y no crea nada.</para>
+        /// </summary>
+        public async Task<ReservaCobroCarrito> ReservarCobroCarrito(int idPago, string empresa, string cliente)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                PagoTPV pago = await db.PagosTPV
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(p => p.Id == idPago)
+                    .ConfigureAwait(false);
+
+                ReservaCobroCarrito comprobacion = ComprobarCobroCarrito(pago, empresa, cliente, DateTime.Now);
+                if (!comprobacion.Valido)
+                {
+                    if (comprobacion.HayQueDevolver)
+                    {
+                        // Cobrado hace demasiado y sin pedido: el dinero vuelve aquí mismo, sin
+                        // esperar al job. Lo prometido en el mensaje se cumple en el acto.
+                        _ = await DevolverCobro(pago.Id, "cobro de carrito caducado sin pedido (TNV#68)")
+                            .ConfigureAwait(false);
+                    }
+                    return comprobacion;
+                }
+
+                int reservados = await db.Database.ExecuteSqlCommandAsync(
+                    "UPDATE dbo.PagosTPV SET Documento = @p1, FechaActualizacion = GETDATE() " +
+                    "WHERE Id = @p0 AND Estado = @p2 AND (Documento IS NULL OR LTRIM(RTRIM(Documento)) = '')",
+                    idPago, MARCA_COBRO_RESERVADO, Constantes.EstadosPagoTPV.AUTORIZADO)
+                    .ConfigureAwait(false);
+
+                if (reservados == 0)
+                {
+                    return ReservaCobroCarrito.No("Ese pago ya corresponde a un pedido. Míralo en «Mis pedidos» " +
+                        "antes de volver a comprar, para no pagarlo dos veces.");
+                }
+
+                return new ReservaCobroCarrito
+                {
+                    Valido = true,
+                    IdPago = pago.Id,
+                    NumeroOrden = pago.NumeroOrden,
+                    Importe = pago.Importe
+                };
+            }
+        }
+
+        /// <summary>
+        /// TNV#68: las reglas de si un cobro de carrito sirve para crear un pedido, separadas de
+        /// la base de datos para poder probarlas. El caso que las motiva es el del 925607: pago
+        /// DENEGADO (código 9915, cancelación del usuario) y pedido creado igualmente.
+        /// </summary>
+        internal static ReservaCobroCarrito ComprobarCobroCarrito(PagoTPV pago, string empresa,
+            string cliente, DateTime ahora)
+        {
+            // La misma respuesta si no existe que si es de otro cliente: no se filtra qué cobros
+            // hay ni de quién son.
+            if (pago == null
+                || !EsCobroDeCarrito(pago)
+                || !string.Equals(pago.Cliente?.Trim(), cliente?.Trim(), StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(pago.Empresa?.Trim(), (empresa ?? Empresas.EMPRESA_POR_DEFECTO).Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                return ReservaCobroCarrito.No("No encontramos el pago de este pedido. Vuelve a intentarlo desde el carrito.");
+            }
+
+            if (!string.Equals(pago.Estado?.Trim(), Constantes.EstadosPagoTPV.AUTORIZADO, StringComparison.OrdinalIgnoreCase))
+            {
+                // Aquí es donde se corta el pedido fantasma: el banco no ha dicho que sí.
+                return ReservaCobroCarrito.No("El banco no ha confirmado el pago, así que no hemos creado el pedido " +
+                    "ni te hemos cobrado nada. Tu carrito sigue igual: puedes intentarlo de nuevo.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(pago.Documento))
+            {
+                return ReservaCobroCarrito.No("Ese pago ya corresponde a un pedido. Míralo en «Mis pedidos» " +
+                    "antes de volver a comprar, para no pagarlo dos veces.");
+            }
+
+            if (pago.FechaCreacion < ahora.AddMinutes(-MINUTOS_VALIDEZ_COBRO_CARRITO))
+            {
+                // No se crea el pedido con un cobro de hace horas: los precios y el stock que se
+                // cobraron ya no tienen por qué ser los de ahora. Se devuelve el dinero.
+                return new ReservaCobroCarrito
+                {
+                    Valido = false,
+                    HayQueDevolver = true,
+                    Motivo = "Ha pasado demasiado tiempo desde el pago. " +
+                        "Te devolvemos el importe y puedes volver a hacer el pedido."
+                };
+            }
+
+            return new ReservaCobroCarrito
+            {
+                Valido = true,
+                IdPago = pago.Id,
+                NumeroOrden = pago.NumeroOrden,
+                Importe = pago.Importe
+            };
+        }
+
+        /// <summary>
+        /// TNV#68: cuánto vale un cobro de carrito sin pedido. Es el tiempo que puede pasar entre
+        /// que el banco autoriza y la app pide crear el pedido: lo normal es un segundo, y media
+        /// hora ya es que algo se torció.
+        /// </summary>
+        internal const int MINUTOS_VALIDEZ_COBRO_CARRITO = 30;
+
+        /// <summary>
+        /// TNV#68: lo que se escribe en Documento mientras el pedido se está creando. No es un
+        /// número de pedido, así que <see cref="EsPagoDePedido"/> lo descarta y la notificación de
+        /// Redsys no intenta apuntarle ningún prepago; y ocupa el hueco, que es lo que impide que
+        /// dos peticiones a la vez usen el mismo cobro. Caben 10 caracteres en la columna.
+        /// </summary>
+        internal const string MARCA_COBRO_RESERVADO = "RESERVADO";
+
+        /// <summary>
         /// NestoAPI#178: devuelve un cobro hecho con tarjeta guardada. Es la red de seguridad del
         /// flujo cobrar-primero: si el pedido no se llega a crear, el dinero vuelve. Devuelve true
         /// si Redsys acepta la devolución.
@@ -916,10 +1071,33 @@ namespace NestoAPI.Infraestructure.Pagos
         /// </summary>
         internal static bool EsPagoDePedido(PagoTPV pago)
         {
-            return pago != null
-                && string.Equals(pago.Tipo?.Trim(), Constantes.TiposPagoTPV.PEDIDO_APP, StringComparison.OrdinalIgnoreCase)
+            // TNV#68: el cobro del carrito es un cobro de pedido en cuanto el pedido existe, y lo
+            // que dice que existe es el numero en Documento. Mientras no lo tenga (o lleve la
+            // marca de reservado) no hay pedido al que apuntarle el prepago.
+            return EsCobroDeLaTienda(pago)
+                && !EsAltaTarjeta(pago)
                 && int.TryParse(pago.Documento?.Trim(), out int numero)
                 && numero > 0;
+        }
+
+        /// <summary>
+        /// NestoAPI#436 / #178 / TNV#68: cobros de la tienda (la app y su carrito). Ninguno es un
+        /// enlace de pago, asi que ninguno contabiliza contra el extracto, ni manda el correo de
+        /// "pago no procesado", ni genera enlaces de reintento: eso lo lleva la app.
+        /// </summary>
+        internal static bool EsCobroDeLaTienda(PagoTPV pago)
+        {
+            string tipo = pago?.Tipo?.Trim();
+            return string.Equals(tipo, Constantes.TiposPagoTPV.PEDIDO_APP, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(tipo, Constantes.TiposPagoTPV.CARRITO_APP, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(tipo, Constantes.TiposPagoTPV.ALTA_TARJETA, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>TNV#68: cobro del carrito (el que va ANTES de crear el pedido).</summary>
+        internal static bool EsCobroDeCarrito(PagoTPV pago)
+        {
+            return string.Equals(pago?.Tipo?.Trim(), Constantes.TiposPagoTPV.CARRITO_APP,
+                StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>
@@ -1688,20 +1866,13 @@ namespace NestoAPI.Infraestructure.Pagos
 
         internal async Task RegenerarPagoDenegado(PagoTPV pagoDenegado, NVEntities db)
         {
-            // El cobro de un pedido de la app (#436) no es un enlace de pago: el pago se cancela
-            // o deniega DENTRO de la app y es la app quien ofrece reintentarlo. Generar aquí un
-            // enlace y mandar el correo de "Pago no procesado" confunde (detectado por Carlos el
-            // 01/09/26 con el primer pedido real: canceló en la pasarela y le llegó el correo del
-            // circuito de enlaces). El pedido queda retenido por prepago, que es el estado seguro.
-            if (string.Equals(pagoDenegado.Tipo?.Trim(), Constantes.TiposPagoTPV.PEDIDO_APP, StringComparison.OrdinalIgnoreCase))
-            {
-                return;
-            }
-
-            // NestoAPI#178: el alta de tarjeta tampoco es un enlace de pago: si el cliente
-            // cancela o el banco deniega, la app lo enseña y se puede volver a intentar desde
-            // alli. Ni enlace nuevo ni correo.
-            if (EsAltaTarjeta(pagoDenegado))
+            // Ningun cobro de la tienda es un enlace de pago: el pago se cancela o deniega DENTRO
+            // de la app y es la app quien ofrece reintentarlo. Generar aquí un enlace y mandar el
+            // correo de "Pago no procesado" confunde (detectado por Carlos el 01/09/26 con el
+            // primer pedido real: canceló en la pasarela y le llegó el correo del circuito de
+            // enlaces). Vale para el cobro del pedido (#436), para el alta de tarjeta (#178) y
+            // para el del carrito (TNV#68), que ademas no ha llegado a crear pedido ninguno.
+            if (EsCobroDeLaTienda(pagoDenegado))
             {
                 return;
             }

@@ -831,6 +831,7 @@
     <Compile Include="Infraestructure\Pagos\PoliticaPagoCanal.cs" />
     <Compile Include="Infraestructure\Pagos\ITarjetaClienteStore.cs" />
     <Compile Include="Infraestructure\Pagos\TarjetaClienteStore.cs" />
+    <Compile Include="Infraestructure\Pagos\CobrosCarritoJobsService.cs" />
     <Compile Include="Infraestructure\Sincronizacion\VigenciaCampanasJobsService.cs" />
     <Compile Include="Infraestructure\Sincronizacion\AlcanceCampanas.cs" />
     <Compile Include="Infraestructure\Sincronizacion\ClienteChangeDetector.cs" />
@@ -1491,6 +1492,7 @@
     <Compile Include="Models\Pagos\ParametrosRedsysFirmados.cs" />
     <Compile Include="Models\Pagos\PeticionRedsys.cs" />
     <Compile Include="Models\Pagos\RespuestaIniciarPago.cs" />
+    <Compile Include="Models\Pagos\ReservaCobroCarrito.cs" />
     <Compile Include="Models\Pagos\RespuestaRedsys.cs" />
     <Compile Include="Models\Pagos\Emv3DS.cs" />
     <Compile Include="Models\Pagos\ResultadoValidacionNotificacion.cs" />

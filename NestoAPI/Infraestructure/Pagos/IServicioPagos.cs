@@ -21,6 +21,11 @@ namespace NestoAPI.Infraestructure.Pagos
         Task AplicarCobroAlPedido(int idPago, int pedido);
         Task<bool> DevolverCobro(int idPago, string motivo);
 
+        /// <summary>TNV#68: toma el cobro del carrito para el pedido que se va a crear (y lo
+        /// marca, para que no lo use otro). Sin esto no se crea ningún pedido pagado con
+        /// tarjeta desde la app.</summary>
+        Task<ReservaCobroCarrito> ReservarCobroCarrito(int idPago, string empresa, string cliente);
+
         // NestoAPI#178: alta de tarjeta sin cobro (autorización 0 EUR con tokenización)
         Task<RespuestaIniciarPago> IniciarAltaTarjeta(SolicitudAltaTarjeta solicitud, string usuario);
 

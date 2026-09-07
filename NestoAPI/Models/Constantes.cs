@@ -355,6 +355,18 @@ namespace NestoAPI.Models
             /// primero) con el flujo cobrar-primero.
             /// </summary>
             public const string ALTA_TARJETA = "AltaTarjeta";
+
+            /// <summary>
+            /// TNV#68: cobro del CARRITO, antes de que el pedido exista. Es el mismo cobro que
+            /// <see cref="PEDIDO_APP"/> —tarjeta guardada, autenticado por EMV 3DS 2— pero al
+            /// revés: primero se cobra y solo si el banco autoriza se crea el pedido. Mientras no
+            /// hay pedido, el PagoTPV no lleva Documento; al crearse, AplicarCobroAlPedido se lo
+            /// pone y a partir de ahí es un cobro de pedido a todos los efectos (prepago incluido).
+            ///
+            /// <para>Nace del pedido 925607 (07/09/26): el cliente canceló el pago en Redsys, el
+            /// pedido ya estaba creado y hubo que borrarlo a mano.</para>
+            /// </summary>
+            public const string CARRITO_APP = "CarritoApp";
         }
 
         public static class Prepagos
