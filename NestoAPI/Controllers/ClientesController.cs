@@ -496,9 +496,25 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(ClienteDTO))]
         public async Task<IHttpActionResult> GetCliente(string empresa, string cliente, string contacto)
         {
+            // Sin contacto se busca el principal, y ahí hay que elegir: la ficha del cliente NO
+            // garantiza un único ClientePrincipal. Hoy hay 79 clientes con más de uno, casi siempre
+            // porque al anular un contacto se le deja la marca puesta y se crea otro (el 34154:
+            // contacto "0" anulado y contacto "1" de alta, los dos principales). Con
+            // SingleOrDefaultAsync eso era un 500 -"Sequence contains more than one element"- y el
+            // usuario no podía ni abrir la ficha.
+            //
+            // NO sirve reutilizar PrincipalesActivos (el de ExisteClientePrincipalActivo): añade
+            // Estado >= 0, y hay 19.405 clientes cuyo único principal está anulado. Filtrarlos
+            // convertiría en 404 la ficha de todos los clientes dados de baja, que SÍ se consultan.
+            //
+            // Se ordena en su lugar: primero los que no están anulados y, a igualdad, el contacto más
+            // bajo. Determinista, no deja fuera a nadie y devuelve el contacto vivo cuando lo hay.
             Cliente clienteEncontrado = contacto != null && contacto.Trim() != ""
                 ? await (from c in db.Clientes where c.Empresa == empresa && c.Nº_Cliente == cliente && c.Contacto == contacto select c).SingleOrDefaultAsync()
-                : await (from c in db.Clientes where c.Empresa == empresa && c.Nº_Cliente == cliente && c.ClientePrincipal select c).SingleOrDefaultAsync();
+                : await (from c in db.Clientes
+                         where c.Empresa == empresa && c.Nº_Cliente == cliente && c.ClientePrincipal
+                         orderby c.Estado >= Constantes.Clientes.Estados.VISITA_PRESENCIAL descending, c.Contacto
+                         select c).FirstOrDefaultAsync();
             if (clienteEncontrado == null)
             {
                 return NotFound();
