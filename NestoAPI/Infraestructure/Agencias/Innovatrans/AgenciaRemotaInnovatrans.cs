@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -402,7 +402,7 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
             // incidentado. Antes caía en el catch-all -> Tramitado y NO entraba en "Incidentados"
             // (NestoAPI#259, albarán 6522393004, 27-29/06/2026). Se mira el último porque una INCIDENCIA
             // seguida de un evento de tránsito posterior ya estaría resuelta (el último manda).
-            if (ultimo != null && NombreContiene(ultimo, "INCIDEN", ESTADO_DISPONIBLE_PARA_RECOGER))
+            if (ultimo != null && NombreContiene(ultimo, "INCIDEN", ESTADO_DISPONIBLE_PARA_RECOGER, ESTADO_RECANALIZADO))
             {
                 return new SeguimientoEnvioRemoto
                 {
@@ -430,6 +430,19 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
         // Incidentados y alguien avise al cliente a tiempo (NestoAPI#259, albarán 6544316001,
         // envío 247975 del 21/08/2026: 5 pasadas del poll seguidas en este estado).
         private const string ESTADO_DISPONIBLE_PARA_RECOGER = "DISPONIBLE PARA RECOGER";
+
+        // El paquete se ha tenido que reencaminar: no ha ido por donde debía. Cuenta como INCIDENCIA,
+        // no como tránsito, porque el reencaminamiento ES la anomalía y porque el catch-all lo dejaba
+        // invisible: el envío 248260 (albarán 6547739002, cliente 41506) lleva desde el 02/09/26 en
+        // este estado, seis días, contado como "Tramitado" y por tanto fuera de la pestaña de
+        // Incidentados. Está en la lista de envíos a reclamar de NestoAPI#173, que es justo lo que
+        // esta pestaña existe para evitar.
+        //
+        // Cautela honesta: la evidencia es UN envío. Si al mirarlo se ve que "recanalizado" es una
+        // etapa normal de la agencia y se resuelve sola, la corrección es mover esta constante a
+        // EstadosEnTransitoConocidos, que es una línea. Se elige incidencia porque el error barato es
+        // mirar un envío que iba bien, y el caro es no mirar uno que está parado.
+        private const string ESTADO_RECANALIZADO = "RECANALIZADO";
 
         // Estados de Innovatrans que YA sabemos que son "en tránsito" y caen bien en el catch-all
         // (-> Tramitado). Cualquier nombre que no sea entrega/devolución/incidencia NI uno de estos se

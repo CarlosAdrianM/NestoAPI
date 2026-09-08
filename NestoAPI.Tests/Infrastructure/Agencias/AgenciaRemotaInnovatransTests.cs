@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Xml.Linq;
@@ -668,6 +668,41 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
 
             Assert.AreEqual(EstadoEnvioSeguimiento.Entregado, seg.Estado);
             Assert.AreEqual(new System.DateTime(2026, 8, 25, 10, 15, 0), seg.FechaEntrega);
+        }
+
+        [TestMethod]
+        public async Task ConsultarSeguimiento_Recanalizado_DevuelveIncidentadoConSuEtiqueta()
+        {
+            // Caso real albarán 6547739002 (envío 248260, cliente 41506): entró en RECANALIZADO el
+            // 02/09/2026 y seis días después seguía ahí. Como el estado no estaba clasificado caía en
+            // el catch-all -> Tramitado, así que NO salía en Incidentados y nadie lo reclamaba; de
+            // hecho acabó en la lista de envíos a reclamar de NestoAPI#173.
+            var fake = new FakeClienteSoap();
+            fake.Responder("ConsultarEstados", RespEstados(
+                ("DOCUMENTADO", "02/09/2026", "18:00:00"),
+                ("RECANALIZADO", "02/09/2026", "21:40:00")));
+            fake.Responder("ConsultarIncidencias", RespIncidencias());
+
+            SeguimientoEnvioRemoto seg = await NuevaAgenciaConLectura(fake).ConsultarSeguimientoAsync("6547739002");
+
+            Assert.AreEqual(EstadoEnvioSeguimiento.Incidentado, seg.Estado);
+            Assert.AreEqual("RECANALIZADO", seg.Detalle);
+        }
+
+        [TestMethod]
+        public async Task ConsultarSeguimiento_RecanalizadoYLuegoEntregado_DevuelveEntregado()
+        {
+            // Si el reencaminamiento acaba bien, la entrega manda y el envío sale de Incidentados
+            // solo: marcarlo como incidencia no lo deja atrapado ahí.
+            var fake = new FakeClienteSoap();
+            fake.Responder("ConsultarEstados", RespEstados(
+                ("RECANALIZADO", "02/09/2026", "21:40:00"),
+                ("ENTREGADO", "04/09/2026", "10:15:00")));
+            fake.Responder("ConsultarIncidencias", RespIncidencias());
+
+            SeguimientoEnvioRemoto seg = await NuevaAgenciaConLectura(fake).ConsultarSeguimientoAsync("6547739002");
+
+            Assert.AreEqual(EstadoEnvioSeguimiento.Entregado, seg.Estado);
         }
 
         [TestMethod]
