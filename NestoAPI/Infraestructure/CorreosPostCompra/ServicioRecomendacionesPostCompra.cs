@@ -1,4 +1,4 @@
-using NestoAPI.Models;
+﻿using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
 using System.Data.Entity;
@@ -46,7 +46,7 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                                 l.Fecha_Albarán <= fechaHasta &&
                                 l.Producto != null &&
                                 l.Precio >= PRECIO_MINIMO_CORREO &&
-                                _db.VideosProductos.Any(vp => vp.Referencia == l.Producto && vp.Video.EsUnProtocolo))
+                                _db.VideosProductos.Any(vp => vp.Referencia == l.Producto && vp.Video.EsUnProtocolo && vp.Video.FechaBaja == null))
                     .Select(l => new
                     {
                         l.Nº_Cliente,
@@ -110,7 +110,8 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
 
                 var videosProductos = await _db.VideosProductos
                     .Where(vp => productosIds.Contains(vp.Referencia) &&
-                                 vp.Video.EsUnProtocolo)
+                                 vp.Video.EsUnProtocolo &&
+                                 vp.Video.FechaBaja == null)
                     .Select(vp => new
                     {
                         vp.Referencia,
@@ -141,6 +142,7 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                 var todosProductosEnVideos = await _db.VideosProductos
                     .Where(vp => videoYoutubeIds.Contains(vp.Video.VideoId) &&
                                  vp.Video.EsUnProtocolo &&
+                                 vp.Video.FechaBaja == null &&
                                  vp.Referencia != null &&
                                  _db.Productos.Any(p => p.Empresa == empresa &&
                                      p.Número == vp.Referencia &&

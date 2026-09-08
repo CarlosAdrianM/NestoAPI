@@ -2183,6 +2183,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.RentingFacturas' no tiene definida ni
           <Property Name="FechaPublicacion" Type="datetime" />
           <Property Name="Protocolo" Type="nvarchar(max)" />
           <Property Name="EsUnProtocolo" Type="bit" Nullable="false" />
+          <Property Name="FechaBaja" Type="datetime" />
         </EntityType>
         <EntityType Name="VideosProductos">
           <Key>
@@ -12919,6 +12920,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="FechaPublicacion" Type="DateTime" Precision="3" />
           <Property Name="Protocolo" Type="String" MaxLength="Max" FixedLength="false" Unicode="true" />
           <Property Name="EsUnProtocolo" Type="Boolean" Nullable="false" />
+          <Property Name="FechaBaja" Type="DateTime" Precision="3" />
           <NavigationProperty Name="VideosProductos" Relationship="NVModel.FK_VideosProductos_Videos" FromRole="Video" ToRole="VideosProducto" />
         </EntityType>
         <EntityType Name="VideoProducto">
@@ -15846,6 +15848,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySetMapping Name="Videos">
             <EntityTypeMapping TypeName="NVModel.Video">
               <MappingFragment StoreEntitySet="Videos">
+                <ScalarProperty Name="FechaBaja" ColumnName="FechaBaja" />
                 <ScalarProperty Name="EsUnProtocolo" ColumnName="EsUnProtocolo" />
                 <ScalarProperty Name="Protocolo" ColumnName="Protocolo" />
                 <ScalarProperty Name="FechaPublicacion" ColumnName="FechaPublicacion" />

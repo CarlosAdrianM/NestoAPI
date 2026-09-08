@@ -25,7 +25,7 @@ namespace NestoAPI.Controllers
         [HttpGet]
         [Route("")]
         [ResponseType(typeof(List<VideoLookupModel>))]
-        public async Task<IHttpActionResult> GetVideos(int skip, int take, bool soloProtocolos = false)
+        public async Task<IHttpActionResult> GetVideos(int skip, int take, bool soloProtocolos = false, bool incluirBajas = false)
         {
             bool tieneComprasRecientes = false;
 
@@ -40,7 +40,7 @@ namespace NestoAPI.Controllers
             }
 
             // Obtener los videos en función de si tiene compras recientes
-            List<VideoLookupModel> videos = await _servicioVideos.GetVideos(skip, take, tieneComprasRecientes, soloProtocolos);
+            List<VideoLookupModel> videos = await _servicioVideos.GetVideos(skip, take, tieneComprasRecientes, soloProtocolos, incluirBajas);
             return Ok(videos);
         }
 
@@ -74,7 +74,9 @@ namespace NestoAPI.Controllers
             {
                 Video video = await db.Videos.FindAsync(id);
 
-                if (video == null)
+                // Un vídeo retirado se comporta como si no estuviera: la ficha de la tienda tiene
+                // que seguir respondiendo lo mismo que cuando la fila se borraba.
+                if (video == null || video.FechaBaja != null)
                 {
                     return NotFound();
                 }
@@ -93,6 +95,7 @@ namespace NestoAPI.Controllers
                     VideoId = video.VideoId,
                     Titulo = video.Titulo,
                     Descripcion = video.Descripcion,
+                    DescripcionParaFicha = DescripcionFichaVideo.Componer(video.Descripcion, video.Protocolo),
                     FechaPublicacion = (DateTime)video.FechaPublicacion,
                     Protocolo = video.Protocolo,
                     Productos = video.VideosProductos.Select(vp => new ProductoVideoModel

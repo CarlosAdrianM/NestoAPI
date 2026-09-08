@@ -6,7 +6,11 @@ namespace NestoAPI.Infraestructure.Videos
     public interface IServicioVideos
     {
         Task<List<VideoLookupModel>> BuscarVideos(string query, bool tieneComprasRecientes, bool soloProtocolos = false, int skip = 0, int take = 20);
-        Task<List<VideoLookupModel>> GetVideos(int skip, int take, bool tieneComprasRecientes, bool soloProtocolos = false);
+        /// <param name="incluirBajas">
+        /// Si es true devuelve también los vídeos retirados, marcados con su FechaBaja, para que la
+        /// tienda online no tenga que deducir la baja de que un vídeo haya dejado de aparecer.
+        /// </param>
+        Task<List<VideoLookupModel>> GetVideos(int skip, int take, bool tieneComprasRecientes, bool soloProtocolos = false, bool incluirBajas = false);
         Task<List<VideoLookupModel>> GetVideosConProducto(string productoId);
 
         /// <summary>

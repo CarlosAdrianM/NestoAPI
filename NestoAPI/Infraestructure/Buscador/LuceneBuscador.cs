@@ -498,9 +498,12 @@ namespace NestoAPI.Infraestructure.Buscador
 
                 using (SqlConnection conexion = new SqlConnection(cadenaConexion))
                 {
+                    // Los vídeos retirados (FechaBaja) no entran en el índice: el buscador no debe
+                    // ofrecer una ficha que la tienda ya ha dado de baja.
                     using (SqlCommand comando = new SqlCommand(@"
-                            SELECT Id, Protocolo, Transcripcion, Titulo 
-                            FROM Videos", conexion))
+                            SELECT Id, Protocolo, Transcripcion, Titulo
+                            FROM Videos
+                            WHERE FechaBaja IS NULL", conexion))
                     {
                         conexion.Open();
                         using (SqlDataReader lector = comando.ExecuteReader())

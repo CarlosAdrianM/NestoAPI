@@ -27,6 +27,7 @@ namespace NestoAPI.Models
         public Nullable<System.DateTime> FechaPublicacion { get; set; }
         public string Protocolo { get; set; }
         public bool EsUnProtocolo { get; set; }
+        public Nullable<System.DateTime> FechaBaja { get; set; }
     
         public virtual ICollection<VideoProducto> VideosProductos { get; set; }
     }

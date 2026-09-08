@@ -263,6 +263,9 @@
     <Compile Include="Models\PrecioPublicoFinalTests.cs" />
     <Compile Include="Models\PedidosVenta\CuadrarEfectosTests.cs" />
     <Compile Include="Infraestructure\Buscador\LuceneBuscadorTests.cs" />
+    <Compile Include="Infraestructure\Videos\DescripcionFichaVideoTests.cs" />
+    <Compile Include="Infraestructure\Videos\VideoFechaBajaTests.cs" />
+    <Compile Include="Infraestructure\Videos\ListadoVideosBajasTests.cs" />
     <Compile Include="Infraestructure\DiagnosticoBloqueosTests.cs" />
     <Compile Include="Infraestructure\ResumidorPedidosClienteTests.cs" />
     <Compile Include="Infraestructure\AvisosEstadoPedidoTests.cs" />
