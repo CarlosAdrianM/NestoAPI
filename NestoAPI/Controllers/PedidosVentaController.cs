@@ -547,7 +547,7 @@ namespace NestoAPI.Controllers
             // NestoAPI#470: va DESPUÉS de comprobar que el pedido es modificable. Antes iba primero
             // y quien tocaba un pedido ya facturado veía el mensaje de la muestra, que no explica
             // nada de lo que pasa de verdad (caso del 08/09/26, pedido facturado el 03/09).
-            var fallaServirJunto = await ValidarServirJuntoDesdePedidoAsync(pedido).ConfigureAwait(false);
+            var fallaServirJunto = await ValidarServirJuntoDesdePedidoAsync(pedido, cabPedidoVta).ConfigureAwait(false);
             if (fallaServirJunto != null)
             {
                 return BadRequest(fallaServirJunto.Mensaje);
@@ -2564,7 +2564,8 @@ namespace NestoAPI.Controllers
         //
         // Devuelve null si la validación es irrelevante o pasa; un ValidarServirJuntoResponse
         // con PuedeDesmarcar=false si hay que rechazar la operación.
-        internal async Task<ValidarServirJuntoResponse> ValidarServirJuntoDesdePedidoAsync(PedidoVentaDTO pedido)
+        internal async Task<ValidarServirJuntoResponse> ValidarServirJuntoDesdePedidoAsync(
+            PedidoVentaDTO pedido, CabPedidoVta pedidoGuardado = null)
         {
             if (pedido == null || pedido.servirJunto || pedido.Lineas == null)
             {
@@ -2601,6 +2602,22 @@ namespace NestoAPI.Controllers
                 EsBonificadoGanavisiones = l.BaseImponible == 0 && (l.oferta == null || l.oferta == 0)
             }).ToList();
 
+            // NestoAPI#470: si el pedido YA estaba con "servir junto" desmarcado, solo se comprueba
+            // lo que empeora la situacion. Antes se revalidaba el pedido entero en cada guardado, y
+            // uno que ya llevaba dentro una muestra sin stock quedaba bloqueado para cualquier
+            // cambio, tuviera o no que ver (pedido 925807: la casilla llevaba desmarcada desde las
+            // 11:12 y cada intento de ampliar volvia a chocar con ella).
+            // El agujero de #176 sigue cerrado: la muestra anadida DESPUES de desmarcar es una
+            // linea nueva y si se valida. Y cuando el guardado cambia la casilla, se comprueba todo.
+            if (pedidoGuardado != null && !pedidoGuardado.ServirJunto)
+            {
+                lineasRequest = LineasQueEmpeoranElServirJunto(lineasRequest, pedidoGuardado.LinPedidoVtas);
+                if (!lineasRequest.Any())
+                {
+                    return null;
+                }
+            }
+
             var request = new ValidarServirJuntoRequest
             {
                 Almacen = almacen,
@@ -2616,6 +2633,45 @@ namespace NestoAPI.Controllers
 
             var resultado = await servicioValidarServirJunto.Validar(request).ConfigureAwait(false);
             return resultado.PuedeDesmarcar ? null : resultado;
+        }
+
+        /// <summary>
+        /// NestoAPI#470: de las lineas propuestas, las que empeoran la situacion respecto a lo que ya
+        /// habia guardado: producto que no estaba entre las lineas vivas del pedido, o cuya cantidad
+        /// total sube. Se devuelven con su cantidad TOTAL, no con el incremento, porque el stock
+        /// disponible se calcula excluyendo el propio pedido (#262): las unidades que ya estaban no
+        /// cuentan como pendiente, asi que hay que comprobar que hay stock para todas.
+        ///
+        /// Solo cuentan como "ya guardadas" las lineas aun no despachadas: una que esta en albaran
+        /// ya no reserva stock pendiente, asi que volver a pedirla es una peticion nueva.
+        /// </summary>
+        internal static List<ProductoBonificadoConCantidadRequest> LineasQueEmpeoranElServirJunto(
+            List<ProductoBonificadoConCantidadRequest> lineasPropuestas,
+            IEnumerable<LinPedidoVta> lineasGuardadas)
+        {
+            Dictionary<string, int> cantidadGuardadaPorProducto = (lineasGuardadas ?? new List<LinPedidoVta>())
+                .Where(l => l.TipoLinea == TIPO_LINEA_PRODUCTO
+                         && !string.IsNullOrWhiteSpace(l.Producto)
+                         && l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO)
+                .GroupBy(l => l.Producto.Trim())
+                .ToDictionary(g => g.Key, g => g.Sum(l => (int)(l.Cantidad ?? 0)));
+
+            var cantidadPropuestaPorProducto = lineasPropuestas
+                .GroupBy(l => l.ProductoId?.Trim())
+                .ToDictionary(g => g.Key, g => g.Sum(l => l.Cantidad));
+
+            return cantidadPropuestaPorProducto
+                .Where(propuesta => propuesta.Value >
+                    (cantidadGuardadaPorProducto.TryGetValue(propuesta.Key, out int guardada) ? guardada : 0))
+                .Select(propuesta => new ProductoBonificadoConCantidadRequest
+                {
+                    ProductoId = propuesta.Key,
+                    Cantidad = propuesta.Value,
+                    EsBonificadoGanavisiones = lineasPropuestas
+                        .Where(l => l.ProductoId?.Trim() == propuesta.Key)
+                        .Any(l => l.EsBonificadoGanavisiones)
+                })
+                .ToList();
         }
 
         /// <summary>

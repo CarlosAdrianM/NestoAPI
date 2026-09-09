@@ -273,6 +273,209 @@ namespace NestoAPI.Tests.Controllers
             Assert.IsNull(requestCapturado.Pedido);
         }
 
+        [TestMethod]
+        public async Task ValidarServirJuntoDesdePedido_PedidoYaDesmarcadoYSinCambios_NoValidaNada()
+        {
+            // NestoAPI#470: un pedido que ya estaba con "servir junto" desmarcado y con una muestra
+            // dentro quedaba bloqueado para CUALQUIER modificacion, aunque el cambio no tuviera nada
+            // que ver. Es lo que le paso al 925807: la casilla llevaba desmarcada desde las 11:12 y
+            // cada intento de ampliar volvia a validar el desmarcado.
+            var pedido = new PedidoVentaDTO
+            {
+                numero = 925807,
+                servirJunto = false,
+                Lineas = new List<LineaPedidoVentaDTO>
+                {
+                    NuevaLinea("MMP1", cantidad: 4, baseImponibleCero: false)
+                }
+            };
+            CabPedidoVta guardado = PedidoGuardado(servirJunto: false, LineaGuardada("MMP1", 4));
+
+            var resultado = await controller.ValidarServirJuntoDesdePedidoAsync(pedido, guardado);
+
+            Assert.IsNull(resultado);
+            A.CallTo(() => servicio.Validar(A<ValidarServirJuntoRequest>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task ValidarServirJuntoDesdePedido_PedidoYaDesmarcadoConProductoNuevo_ValidaSoloElNuevo()
+        {
+            // El agujero de NestoAPI#176 sigue cerrado: desmarcar primero y anadir la muestra
+            // despues se sigue detectando, porque la linea nueva si se valida.
+            ValidarServirJuntoRequest requestCapturado = null;
+            A.CallTo(() => servicio.Validar(A<ValidarServirJuntoRequest>._))
+                .Invokes((ValidarServirJuntoRequest r) => requestCapturado = r)
+                .Returns(Task.FromResult(new ValidarServirJuntoResponse { PuedeDesmarcar = true }));
+
+            var pedido = new PedidoVentaDTO
+            {
+                numero = 925807,
+                servirJunto = false,
+                Lineas = new List<LineaPedidoVentaDTO>
+                {
+                    NuevaLinea("MMP1", cantidad: 4, baseImponibleCero: false),
+                    NuevaLinea("MMP2", cantidad: 2, baseImponibleCero: false)
+                }
+            };
+            CabPedidoVta guardado = PedidoGuardado(servirJunto: false, LineaGuardada("MMP1", 4));
+
+            await controller.ValidarServirJuntoDesdePedidoAsync(pedido, guardado);
+
+            Assert.AreEqual(1, requestCapturado.LineasPedido.Count);
+            Assert.AreEqual("MMP2", requestCapturado.LineasPedido[0].ProductoId);
+        }
+
+        [TestMethod]
+        public async Task ValidarServirJuntoDesdePedido_PedidoYaDesmarcadoYSubeLaCantidad_ValidaElTotal()
+        {
+            // Se valida la cantidad TOTAL, no el incremento: el stock disponible se calcula
+            // excluyendo el propio pedido (#262), asi que las unidades que ya estaban no cuentan
+            // como pendiente y hay que comprobar que hay stock para todas.
+            ValidarServirJuntoRequest requestCapturado = null;
+            A.CallTo(() => servicio.Validar(A<ValidarServirJuntoRequest>._))
+                .Invokes((ValidarServirJuntoRequest r) => requestCapturado = r)
+                .Returns(Task.FromResult(new ValidarServirJuntoResponse { PuedeDesmarcar = true }));
+
+            var pedido = new PedidoVentaDTO
+            {
+                numero = 925807,
+                servirJunto = false,
+                Lineas = new List<LineaPedidoVentaDTO>
+                {
+                    NuevaLinea("MMP1", cantidad: 6, baseImponibleCero: false)
+                }
+            };
+            CabPedidoVta guardado = PedidoGuardado(servirJunto: false, LineaGuardada("MMP1", 4));
+
+            await controller.ValidarServirJuntoDesdePedidoAsync(pedido, guardado);
+
+            Assert.AreEqual(1, requestCapturado.LineasPedido.Count);
+            Assert.AreEqual(6, requestCapturado.LineasPedido[0].Cantidad);
+        }
+
+        [TestMethod]
+        public async Task ValidarServirJuntoDesdePedido_PedidoYaDesmarcadoYBajaLaCantidad_NoValida()
+        {
+            // Quitar unidades nunca empeora la situacion.
+            var pedido = new PedidoVentaDTO
+            {
+                numero = 925807,
+                servirJunto = false,
+                Lineas = new List<LineaPedidoVentaDTO>
+                {
+                    NuevaLinea("MMP1", cantidad: 2, baseImponibleCero: false)
+                }
+            };
+            CabPedidoVta guardado = PedidoGuardado(servirJunto: false, LineaGuardada("MMP1", 4));
+
+            var resultado = await controller.ValidarServirJuntoDesdePedidoAsync(pedido, guardado);
+
+            Assert.IsNull(resultado);
+            A.CallTo(() => servicio.Validar(A<ValidarServirJuntoRequest>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task ValidarServirJuntoDesdePedido_SeEstaDesmarcandoAhora_ValidaTodasLasLineas()
+        {
+            // Regresion NestoAPI#176: cuando el guardado SI cambia la casilla, se comprueba el
+            // pedido entero, que es el momento en el que la decision se toma de verdad.
+            ValidarServirJuntoRequest requestCapturado = null;
+            A.CallTo(() => servicio.Validar(A<ValidarServirJuntoRequest>._))
+                .Invokes((ValidarServirJuntoRequest r) => requestCapturado = r)
+                .Returns(Task.FromResult(new ValidarServirJuntoResponse { PuedeDesmarcar = true }));
+
+            var pedido = new PedidoVentaDTO
+            {
+                numero = 925807,
+                servirJunto = false,
+                Lineas = new List<LineaPedidoVentaDTO>
+                {
+                    NuevaLinea("MMP1", cantidad: 4, baseImponibleCero: false),
+                    NuevaLinea("PROD1", cantidad: 1, baseImponibleCero: false)
+                }
+            };
+            CabPedidoVta guardado = PedidoGuardado(servirJunto: true, LineaGuardada("MMP1", 4), LineaGuardada("PROD1", 1));
+
+            await controller.ValidarServirJuntoDesdePedidoAsync(pedido, guardado);
+
+            Assert.AreEqual(2, requestCapturado.LineasPedido.Count);
+        }
+
+        [TestMethod]
+        public async Task ValidarServirJuntoDesdePedido_SinEstadoGuardado_ValidaTodasLasLineas()
+        {
+            // El POST de creacion no tiene estado anterior con el que comparar.
+            ValidarServirJuntoRequest requestCapturado = null;
+            A.CallTo(() => servicio.Validar(A<ValidarServirJuntoRequest>._))
+                .Invokes((ValidarServirJuntoRequest r) => requestCapturado = r)
+                .Returns(Task.FromResult(new ValidarServirJuntoResponse { PuedeDesmarcar = true }));
+
+            var pedido = new PedidoVentaDTO
+            {
+                numero = 0,
+                servirJunto = false,
+                Lineas = new List<LineaPedidoVentaDTO>
+                {
+                    NuevaLinea("MMP1", cantidad: 4, baseImponibleCero: false)
+                }
+            };
+
+            await controller.ValidarServirJuntoDesdePedidoAsync(pedido);
+
+            Assert.AreEqual(1, requestCapturado.LineasPedido.Count);
+        }
+
+        [TestMethod]
+        public async Task ValidarServirJuntoDesdePedido_LineaGuardadaYaServida_CuentaComoNueva()
+        {
+            // Una linea que en BD esta en albaran ya no reserva stock pendiente: si vuelve al pedido
+            // como pendiente, es una peticion nueva y hay que comprobarla.
+            ValidarServirJuntoRequest requestCapturado = null;
+            A.CallTo(() => servicio.Validar(A<ValidarServirJuntoRequest>._))
+                .Invokes((ValidarServirJuntoRequest r) => requestCapturado = r)
+                .Returns(Task.FromResult(new ValidarServirJuntoResponse { PuedeDesmarcar = true }));
+
+            var pedido = new PedidoVentaDTO
+            {
+                numero = 925807,
+                servirJunto = false,
+                Lineas = new List<LineaPedidoVentaDTO>
+                {
+                    NuevaLinea("MMP1", cantidad: 4, baseImponibleCero: false)
+                }
+            };
+            CabPedidoVta guardado = PedidoGuardado(servirJunto: false,
+                LineaGuardada("MMP1", 4, estado: (short)Constantes.EstadosLineaVenta.ALBARAN));
+
+            await controller.ValidarServirJuntoDesdePedidoAsync(pedido, guardado);
+
+            Assert.AreEqual(1, requestCapturado.LineasPedido.Count);
+        }
+
+        private static CabPedidoVta PedidoGuardado(bool servirJunto, params LinPedidoVta[] lineas)
+        {
+            return new CabPedidoVta
+            {
+                Empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO,
+                Número = 925807,
+                ServirJunto = servirJunto,
+                LinPedidoVtas = new List<LinPedidoVta>(lineas)
+            };
+        }
+
+        private static LinPedidoVta LineaGuardada(
+            string producto, short cantidad, short estado = (short)Constantes.EstadosLineaVenta.PENDIENTE)
+        {
+            return new LinPedidoVta
+            {
+                Producto = producto,
+                Cantidad = cantidad,
+                Almacén = "ALG",
+                TipoLinea = PedidosVentaController.TIPO_LINEA_PRODUCTO,
+                Estado = estado
+            };
+        }
+
         private static LineaPedidoVentaDTO NuevaLinea(
             string producto,
             int cantidad,
