@@ -43,6 +43,16 @@ namespace NestoAPI.Models
         public bool mantenerJunto { get; set; }
         public string usuario { get; set; }
 
+        // NestoAPI#464: 0 = sin empleados, 1..4, 5 = "5 o más"; null = no se ha preguntado.
+        public byte? empleados { get; set; }
+        public DateTime? empleadosFecha { get; set; }
+        /// <summary>
+        /// Si la pantalla de rapport tiene que preguntar (o enseñar ya relleno) el número de
+        /// empleados. La regla vive en el servidor (PoliticaEmpleadosCliente): Nesto y NestoApp
+        /// solo pintan la combo cuando esto es true.
+        /// </summary>
+        public bool preguntarEmpleados => Infraestructure.Clientes.PoliticaEmpleadosCliente.PreguntarEmpleados(codigoPostal);
+
         public virtual ICollection<VendedorGrupoProductoDTO> VendedoresGrupoProducto { get; set; }
         public virtual ICollection<PersonaContactoDTO> PersonasContacto { get; set; }
     }
@@ -382,6 +392,12 @@ namespace NestoAPI.Models
         public string Nombre { get; set; }
         public string Direccion { get; set; }
         public int? NumOrdenExtracto { get; set; }
+        /// <summary>
+        /// NestoAPI#464: lo que contestó el cliente (0 = sin empleados, 1..4, 5 = "5 o más").
+        /// Opcional: con null la ficha no se toca. Con valor, la API lo guarda en la ficha del
+        /// cliente principal al crear o modificar el rapport.
+        /// </summary>
+        public byte? Empleados { get; set; }
 
         public enum TiposCentro
         {

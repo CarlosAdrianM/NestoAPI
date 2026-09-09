@@ -392,6 +392,8 @@
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
           <Property Name="Pais" Type="varchar" MaxLength="2" />
+          <Property Name="Empleados" Type="tinyint" />
+          <Property Name="EmpleadosFecha" Type="datetime" />
         </EntityType>
         <EntityType Name="CódigosPostales">
           <Key>
@@ -8295,6 +8297,8 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="MantenerJunto" Type="Boolean" Nullable="false" />
           <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
           <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" annotation:StoreGeneratedPattern="Computed" />
+          <Property Name="Empleados" Type="Byte" />
+          <Property Name="EmpleadosFecha" Type="DateTime" Precision="3" />
           <NavigationProperty Name="CabPedidoVtas" Relationship="NVModel.FK_CabPedidoVta_Clientes" FromRole="Cliente" ToRole="CabPedidoVta" />
           <NavigationProperty Name="Clientes1" Relationship="NVModel.FK_Clientes_Clientes" FromRole="Cliente" ToRole="Cliente1" />
           <NavigationProperty Name="Cliente1" Relationship="NVModel.FK_Clientes_Clientes" FromRole="Cliente1" ToRole="Cliente" />
@@ -14233,6 +14237,8 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySetMapping Name="Clientes">
             <EntityTypeMapping TypeName="NVModel.Cliente">
               <MappingFragment StoreEntitySet="Clientes">
+                <ScalarProperty Name="Empleados" ColumnName="Empleados" />
+                <ScalarProperty Name="EmpleadosFecha" ColumnName="EmpleadosFecha" />
                 <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
                 <ScalarProperty Name="Usuario" ColumnName="Usuario" />
                 <ScalarProperty Name="MantenerJunto" ColumnName="MantenerJunto" />

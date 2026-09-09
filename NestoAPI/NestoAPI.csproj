@@ -668,6 +668,7 @@
     <Compile Include="Models\Agencias\EnvioRetrasadoDTO.cs" />
     <Compile Include="Infraestructure\Clientes\NombreFiscalPlaceholder.cs" />
     <Compile Include="Infraestructure\Clientes\PoliticaPersonasContacto.cs" />
+    <Compile Include="Infraestructure\Clientes\PoliticaEmpleadosCliente.cs" />
     <Compile Include="Infraestructure\Clientes\PoliticaPreciosOcultos.cs" />
     <Compile Include="Infraestructure\Clientes\ServicioValidacionNif.cs" />
     <Compile Include="Infraestructure\Clientes\ValidacionNif.cs" />

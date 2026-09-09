@@ -1,6 +1,7 @@
 ﻿using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Rapports;
 using NestoAPI.Infraestructure.Vendedores;
+using NestoAPI.Infraestructure.Clientes;
 using NestoAPI.Models;
 using NestoAPI.Models.Rapports;
 using Newtonsoft.Json;
@@ -859,6 +860,12 @@ El mensaje resultante es importante que lo devuelvas en HTML para poner en el cu
 
 
             db.Entry(seguimientoCliente).State = EntityState.Modified;
+            string motivoEmpleados = PoliticaEmpleadosCliente.MotivoParaNoGuardar(seguimientoClienteDTO.Empleados);
+            if (motivoEmpleados != null)
+            {
+                return BadRequest(motivoEmpleados);
+            }
+            GuardarEmpleadosEnLaFicha(seguimientoClienteDTO);
 
             try
             {
@@ -892,6 +899,11 @@ El mensaje resultante es importante que lo devuelvas en HTML para poner en el cu
             if (string.IsNullOrWhiteSpace(seguimientoClienteDTO.Usuario))
             {
                 return BadRequest("El seguimiento debe llevar usuario.");
+            }
+            string motivoEmpleados = PoliticaEmpleadosCliente.MotivoParaNoGuardar(seguimientoClienteDTO.Empleados);
+            if (motivoEmpleados != null)
+            {
+                return BadRequest(motivoEmpleados);
             }
 
             DateTime fechaDesde = new DateTime(seguimientoClienteDTO.Fecha.Year, seguimientoClienteDTO.Fecha.Month, seguimientoClienteDTO.Fecha.Day);
@@ -972,6 +984,7 @@ El mensaje resultante es importante que lo devuelvas en HTML para poner en el cu
             }
 
             _ = db.SeguimientosClientes.Add(seguimientoCliente);
+            GuardarEmpleadosEnLaFicha(seguimientoClienteDTO);
 
             try
             {
@@ -1004,6 +1017,22 @@ El mensaje resultante es importante que lo devuelvas en HTML para poner en el cu
 
             return CreatedAtRoute("DefaultApi", new { id = seguimientoCliente.NºOrden }, seguimientoCliente);
             } // using transaccion
+        }
+
+        /// <summary>
+        /// NestoAPI#464: lo que el vendedor contestó sobre los empleados del centro va a la ficha
+        /// del cliente PRINCIPAL (el dato es del centro, no del rapport). Con null no se toca nada.
+        /// Se guarda en la misma transacción que el rapport.
+        /// </summary>
+        private void GuardarEmpleadosEnLaFicha(SeguimientoClienteDTO seguimientoClienteDTO)
+        {
+            if (!seguimientoClienteDTO.Empleados.HasValue || seguimientoClienteDTO.Cliente == null)
+            {
+                return;
+            }
+            Cliente principal = db.Clientes.FirstOrDefault(c => c.Empresa == seguimientoClienteDTO.Empresa
+                && c.Nº_Cliente == seguimientoClienteDTO.Cliente && c.ClientePrincipal);
+            _ = PoliticaEmpleadosCliente.AplicarAlCliente(principal, seguimientoClienteDTO.Empleados, DateTime.Now, seguimientoClienteDTO.Usuario);
         }
 
         /// <summary>

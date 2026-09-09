@@ -241,7 +241,9 @@ namespace NestoAPI.Controllers
                                                   servirJunto = c.ServirJunto,
                                                   telefono = c.Teléfono.Trim(),
                                                   vendedor = c.Vendedor.Trim(),
-                                                  web = c.Web.Trim()
+                                                  web = c.Web.Trim(),
+                                                  empleados = c.Empleados,
+                                                  empleadosFecha = c.EmpleadosFecha
                                               };
 
             return clientes.OrderByDescending(o => o.cliente.Equals(filtro));
@@ -284,7 +286,9 @@ namespace NestoAPI.Controllers
                 servirJunto = clienteEncontrado.ServirJunto,
                 telefono = clienteEncontrado.Teléfono.Trim(),
                 vendedor = clienteEncontrado.Vendedor.Trim(),
-                web = clienteEncontrado.Web.Trim()
+                web = clienteEncontrado.Web.Trim(),
+                empleados = clienteEncontrado.Empleados,
+                empleadosFecha = clienteEncontrado.EmpleadosFecha
             };
 
         public IQueryable<ClienteDTO> GetClientes(string empresa, string filtro)
@@ -428,7 +432,9 @@ namespace NestoAPI.Controllers
                     servirJunto = clienteEncontrado.ServirJunto,
                     telefono = clienteEncontrado.Teléfono.Trim(),
                     vendedor = clienteEncontrado.Vendedor.Trim(),
-                    web = clienteEncontrado.Web.Trim()
+                    web = clienteEncontrado.Web.Trim(),
+                    empleados = clienteEncontrado.Empleados,
+                    empleadosFecha = clienteEncontrado.EmpleadosFecha
                 }).ToList();
 
             return clientes.AsQueryable();
@@ -560,6 +566,8 @@ namespace NestoAPI.Controllers
                 telefono = clienteEncontrado.Teléfono,
                 vendedor = clienteEncontrado.Vendedor,
                 web = clienteEncontrado.Web,
+                empleados = clienteEncontrado.Empleados,
+                empleadosFecha = clienteEncontrado.EmpleadosFecha,
                 VendedoresGrupoProducto = vendedoresGrupoProducto,
                 // Nesto#340 (1C.8, slice 4): la ficha comercial de Nesto necesita las personas de
                 // contacto (grid + correo de agencia) sin cargar la entidad EF en el cliente.
