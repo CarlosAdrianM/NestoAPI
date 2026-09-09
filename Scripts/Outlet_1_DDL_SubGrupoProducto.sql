@@ -1,4 +1,4 @@
--- =====================================================================================
+﻿-- =====================================================================================
 -- Outlet por familia + categoría (paso 1 de 3): columna nueva en DescuentosProducto
 -- 09/09/2026 — Ejecutar en SSMS como sa contra NV. ANTES de desplegar la NestoAPI que
 -- trae el nivel nuevo del motor de precios (EF ignora una columna que no está en el modelo,
@@ -23,6 +23,10 @@ BEGIN
 END
 ELSE
     PRINT 'La columna SubGrupoProducto ya existía';
+GO
+-- GO obligatorio (09/09/26): la restricción de abajo nombra la columna, y SQL Server resuelve los
+-- nombres de columna al COMPILAR el lote, antes de ejecutar el ALTER de arriba. En un solo lote
+-- daba "El nombre de columna 'SubGrupoProducto' no es válido" y no se aplicaba nada.
 
 IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'CK_DescuentosProducto_SubGrupo')
 BEGIN
@@ -36,6 +40,7 @@ BEGIN
 END
 ELSE
     PRINT 'La restricción CK_DescuentosProducto_SubGrupo ya existía';
+GO
 
 -- Comprobación
 SELECT c.name, t.name AS tipo, c.max_length, c.is_nullable
