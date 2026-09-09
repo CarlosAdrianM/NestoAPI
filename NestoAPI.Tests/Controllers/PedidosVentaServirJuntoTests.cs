@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure.ServirJunto;
@@ -216,6 +216,61 @@ namespace NestoAPI.Tests.Controllers
 
             Assert.AreEqual(1, requestCapturado.LineasPedido.Count);
             Assert.AreEqual("PROD1", requestCapturado.LineasPedido[0].ProductoId);
+        }
+
+        [TestMethod]
+        public async Task ValidarServirJuntoDesdePedido_PedidoExistente_MandaSuNumeroParaNoContarSuPropiaReserva()
+        {
+            // Regresión NestoAPI#469: al guardar un pedido ya existente hay que decirle al validador
+            // QUÉ pedido se está guardando. Sin ese número, CalcularStockBase cuenta como "pendiente
+            // de entregar" las líneas del propio pedido y la muestra que se quiere servir compite
+            // contra su propia reserva: sale disponible 0 y se deniega con stock de sobra.
+            // Es lo que pasó con el pedido 925807 el 09/09/26 (stock 26, pendiente 26, de los
+            // cuales 4 eran suyos).
+            ValidarServirJuntoRequest requestCapturado = null;
+            A.CallTo(() => servicio.Validar(A<ValidarServirJuntoRequest>._))
+                .Invokes((ValidarServirJuntoRequest r) => requestCapturado = r)
+                .Returns(Task.FromResult(new ValidarServirJuntoResponse { PuedeDesmarcar = true }));
+
+            var pedido = new PedidoVentaDTO
+            {
+                numero = 925807,
+                servirJunto = false,
+                Lineas = new List<LineaPedidoVentaDTO>
+                {
+                    NuevaLinea("MMP1", cantidad: 4, baseImponibleCero: false)
+                }
+            };
+
+            await controller.ValidarServirJuntoDesdePedidoAsync(pedido);
+
+            Assert.AreEqual(925807, requestCapturado.Pedido,
+                "El validador debe excluir del pendiente las líneas del propio pedido (NestoAPI#262)");
+        }
+
+        [TestMethod]
+        public async Task ValidarServirJuntoDesdePedido_PedidoNuevo_NoMandaNumero()
+        {
+            // Al CREAR (POST) el pedido todavía no tiene número: no hay nada que excluir y el
+            // request debe ir sin él, como hasta ahora.
+            ValidarServirJuntoRequest requestCapturado = null;
+            A.CallTo(() => servicio.Validar(A<ValidarServirJuntoRequest>._))
+                .Invokes((ValidarServirJuntoRequest r) => requestCapturado = r)
+                .Returns(Task.FromResult(new ValidarServirJuntoResponse { PuedeDesmarcar = true }));
+
+            var pedido = new PedidoVentaDTO
+            {
+                numero = 0,
+                servirJunto = false,
+                Lineas = new List<LineaPedidoVentaDTO>
+                {
+                    NuevaLinea("MMP1", cantidad: 4, baseImponibleCero: false)
+                }
+            };
+
+            await controller.ValidarServirJuntoDesdePedidoAsync(pedido);
+
+            Assert.IsNull(requestCapturado.Pedido);
         }
 
         private static LineaPedidoVentaDTO NuevaLinea(

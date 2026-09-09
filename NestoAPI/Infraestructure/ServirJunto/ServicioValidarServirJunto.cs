@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure.Kits;
+﻿using NestoAPI.Infraestructure.Kits;
 using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.ValidadoresServirJunto;
@@ -228,9 +228,16 @@ namespace NestoAPI.Infraestructure.ServirJunto
                 // NestoAPI#394: el mensaje ya termina en punto, así que añadir otro dejaba un ".." en el log.
                 string motivo = (resultado.Mensaje ?? string.Empty).TrimEnd('.', ' ');
 
+                // NestoAPI#468: el pedido va en el mensaje porque sin él no se puede reconstruir
+                // después qué se estaba guardando: el rechazo no deja rastro en la tabla
+                // Modificaciones (el PUT devuelve BadRequest antes del SaveChanges).
+                string pedido = request.Pedido.HasValue && request.Pedido.Value != 0
+                    ? request.Pedido.Value.ToString()
+                    : "sin número (pedido nuevo o cliente que no lo envía)";
+
                 logService.LogError(
                     $"[ServirJunto NestoAPI#220] Denegado desmarcar 'servir junto' en almacén {request.Almacen?.Trim()}. " +
-                    $"Motivo: {motivo}. Productos problemáticos: [{problematicos}]. " +
+                    $"Pedido: {pedido}. Motivo: {motivo}. Productos problemáticos: [{problematicos}]. " +
                     $"Bonificados enviados: [{bonificados}]. Líneas enviadas: [{lineas}].");
             }
             catch

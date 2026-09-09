@@ -486,15 +486,6 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest(fueraDeRango);
             }
-            // NestoAPI#176: bloquear desmarcado de servirJunto si una línea MMP o un
-            // bonificado Ganavisiones se quedaría pendiente. Cierra el agujero de orden
-            // de operaciones sin depender del cliente.
-            var fallaServirJunto = await ValidarServirJuntoDesdePedidoAsync(pedido).ConfigureAwait(false);
-            if (fallaServirJunto != null)
-            {
-                return BadRequest(fallaServirJunto.Mensaje);
-            }
-
             // Carlos 28/11/25: Verificar si pertenece al grupo "Dirección", "Almacén" o "Tiendas" (igual que en POST)
             bool grupoPermitidoSinValidacion;
             bool grupoTiendasConAlmacenCorrecto = false;
@@ -548,6 +539,18 @@ namespace NestoAPI.Controllers
             if (cabPedidoVta.NotaEntrega)
             {
                 errorPersonalizado("No se puede ampliar una nota de entrega");
+            }
+
+            // NestoAPI#176: bloquear desmarcado de servirJunto si una línea MMP o un
+            // bonificado Ganavisiones se quedaría pendiente. Cierra el agujero de orden
+            // de operaciones sin depender del cliente.
+            // NestoAPI#470: va DESPUÉS de comprobar que el pedido es modificable. Antes iba primero
+            // y quien tocaba un pedido ya facturado veía el mensaje de la muestra, que no explica
+            // nada de lo que pasa de verdad (caso del 08/09/26, pedido facturado el 03/09).
+            var fallaServirJunto = await ValidarServirJuntoDesdePedidoAsync(pedido).ConfigureAwait(false);
+            if (fallaServirJunto != null)
+            {
+                return BadRequest(fallaServirJunto.Mensaje);
             }
 
             // En una primera fase no permitimos modificar si ya está impresa la etiqueta de la agencia
@@ -2601,6 +2604,13 @@ namespace NestoAPI.Controllers
             var request = new ValidarServirJuntoRequest
             {
                 Almacen = almacen,
+                // NestoAPI#469: sin el número de pedido, CalcularStockBase cuenta como pendiente de
+                // entregar las líneas del propio pedido y la muestra que se quiere servir compite
+                // contra su propia reserva (pedido 925807: stock 26, pendiente 26, de los cuales 4
+                // eran suyos → disponible 0 y denegado con stock de sobra). La pantalla sí mandaba
+                // el número, así que validaba OK y luego el guardado lo rechazaba. Al CREAR todavía
+                // no hay número: va null y no se excluye nada, como antes (NestoAPI#262).
+                Pedido = pedido.numero != 0 ? pedido.numero : (int?)null,
                 LineasPedido = lineasRequest
             };
 
