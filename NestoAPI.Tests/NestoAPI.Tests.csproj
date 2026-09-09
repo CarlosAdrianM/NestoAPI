@@ -217,6 +217,7 @@
     <Compile Include="Controllers\FacturacionRutasControllerAgruparPorPOTests.cs" />
     <Compile Include="Controllers\FacturacionRutasControllerTests.cs" />
     <Compile Include="Controllers\ErroresControllerTests.cs" />
+    <Compile Include="Controllers\EmpresaJsonContratoTests.cs" />
     <Compile Include="Controllers\ExtractosClienteControllerTests.cs" />
     <Compile Include="Controllers\EnviosAgenciasListadosTests.cs" />
     <Compile Include="Controllers\EnviosAgenciasHistoriaTests.cs" />
