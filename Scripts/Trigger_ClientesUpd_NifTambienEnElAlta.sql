@@ -1,4 +1,4 @@
-/*
+﻿/*
     trgClientesUpd - devolver la comprobacion de CIF/NIF duplicado a las ALTAS.
 
     QUE PASO
@@ -79,6 +79,15 @@ SET @viejo =
     + N'				and d.contacto     = i.contacto' + @crlf
     + N'			where isnull(i.[CIF/NIF], '''') <> isnull(d.[CIF/NIF], '''')' + @crlf
     + N'			  and exists (select 1 from clientes c';
+
+-- 09/09/26: se ejecuto dos veces y la segunda abortaba con "aparece 0 veces", que parecia un
+-- fallo cuando en realidad el cambio YA estaba aplicado. Si el disparador ya lleva el LEFT JOIN,
+-- se dice y se sale sin error.
+IF CHARINDEX(N'where (d.empresa is null', @definicion) > 0
+BEGIN
+    PRINT 'trgClientesUpd: el cambio YA estaba aplicado (la comprobacion de NIF cubre las altas). No se hace nada.';
+    RETURN;
+END
 
 SET @apariciones = (DATALENGTH(@definicion) - DATALENGTH(REPLACE(@definicion, @viejo, N''))) / DATALENGTH(@viejo);
 
