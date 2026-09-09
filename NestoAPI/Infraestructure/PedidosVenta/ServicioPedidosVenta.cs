@@ -34,19 +34,6 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             }
         }
 
-        public CentrosCoste CalcularCentroCoste(string empresa, int numeroPedido)
-        {
-            CabPedidoVta cabPedidoCoste = db.CabPedidoVtas.FirstOrDefault(l => l.Empresa == empresa && l.Número == numeroPedido);
-            if (cabPedidoCoste == null)
-            {
-                cabPedidoCoste = db.CabPedidoVtas.Local.FirstOrDefault(l => l.Empresa == empresa && l.Número == numeroPedido);
-            }
-            string vendedor = cabPedidoCoste?.Vendedor;
-            return string.IsNullOrWhiteSpace(vendedor)
-                ? throw new Exception("No se puede calcular el centro de coste del pedido " + numeroPedido.ToString() + ", porque falta el vendedor")
-                : CalcularCentroCoste(empresa, vendedor);
-        }
-
         public CentrosCoste CalcularCentroCoste(string empresa, string vendedor)
         {
             if (string.IsNullOrWhiteSpace(vendedor))
@@ -76,7 +63,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 throw new Exception("No se puede calcular el centro de coste porque el vendedor " + vendedor + " no tiene un usuario asociado");
             }
 
-            return db.CentrosCostes.SingleOrDefault(c => c.Empresa == empresa && c.Número == numeroCentroCoste);
+            return LeerCentroCoste(empresa, numeroCentroCoste);
+        }
+
+        public CentrosCoste LeerCentroCoste(string empresa, string numero)
+        {
+            return db.CentrosCostes.SingleOrDefault(c => c.Empresa == empresa && c.Número == numero);
         }
 
         public string CalcularDelegacion(string usuario, string empresa, int numeroPedido)

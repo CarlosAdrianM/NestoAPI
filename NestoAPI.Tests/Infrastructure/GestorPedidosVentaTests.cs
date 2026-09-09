@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Exceptions;
@@ -959,6 +959,78 @@ namespace NestoAPI.Tests.Infrastructure
             // Intento explícito de modificar una línea albaranada → error claro
             Assert.AreEqual(TratamientoLineaProtegida.Rechazar,
                 GestorPedidosVenta.EvaluarLineaProtegida(false, Constantes.EstadosLineaVenta.ALBARAN, vieneEnPayload: true, mismaCantidad: false));
+        }
+
+        #endregion
+
+        #region CrearLineaVta - centro de coste sin vendedor (ELMAH 09/09/26)
+
+        [TestMethod]
+        public void CrearLineaVta_CuentaContableSinVendedorEnElPedidoNiEnLaFicha_VaAlCentroDeCostePorDefecto()
+        {
+            // ELMAH 09/09/26: Laura intentó 4 veces seguidas meter un pedido con una línea de portes
+            // (62400003) para un cliente cuya ficha no tiene vendedor, y las 4 veces la API devolvió
+            // "No se puede calcular el centro de coste del pedido, porque falta el vendedor".
+            // Ya había pasado en junio (Santiago). Con ese cliente NO HAY vendedor en ningún sitio:
+            // ni en el DTO ni en la ficha (ResolverVendedorBase ya lo intenta).
+            // Dejar la línea SIN centro de coste tampoco vale: la fórmula de CamposNecesarios
+            // (prdComprobarCamposNecesarios, cuentas 620-639) exige centro de coste, delegación y
+            // departamento, así que el pedido entraría pero no se podría facturar. Se imputa al
+            // centro de coste por defecto (CA/ADM), igual que hace Nesto en Cajas (Nesto#382).
+            var servicio = A.Fake<IServicioPedidosVenta>();
+            A.CallTo(() => servicio.LeerEmpresa(EMPRESA)).Returns(new Empresa { Número = EMPRESA, TipoIvaDefecto = "G21" });
+            A.CallTo(() => servicio.LeerParametroIVA(A<string>._, A<string>._, A<string>._)).Returns((ParametroIVA)null); // ver ServicioParaInmovilizado
+            A.CallTo(() => servicio.LeerCentroCoste(EMPRESA, Constantes.Empresas.CENTRO_COSTE_POR_DEFECTO))
+                .Returns(new CentrosCoste { Empresa = EMPRESA, Número = "CA", Departamento = "ADM" });
+            // En un POST la cabecera todavía no está en la BD (el servicio usa su propio contexto),
+            // y en un PUT de un cliente sin vendedor está pero con Vendedor NULL. En los dos casos
+            // el servicio real tiraba la excepción de arriba: se reproduce aquí.
+            A.CallTo(() => servicio.LeerCabPedidoVta(EMPRESA, PEDIDO)).Returns(new CabPedidoVta { Empresa = EMPRESA, Número = PEDIDO, Vendedor = null });
+            var gestor = new GestorPedidosVenta(servicio);
+            var lineaPortes = new LineaPedidoVentaDTO
+            {
+                tipoLinea = Constantes.TiposLineaVenta.CUENTA_CONTABLE,
+                Producto = "62400003",
+                Cantidad = 1,
+                PrecioUnitario = 3,
+                texto = "PORTES",
+                fechaEntrega = DateTime.Today
+            };
+            var plazoPago = new PlazoPago { DtoProntoPago = 0 };
+
+            LinPedidoVta resultado = gestor.CrearLineaVta(lineaPortes, PEDIDO, EMPRESA, "G21", plazoPago, "41887", "0", "FW", vendedor: null);
+
+            Assert.AreEqual("CA", resultado.CentroCoste, "Sin vendedor la línea de gasto va al centro de coste por defecto; sin él no se podría facturar");
+            Assert.AreEqual("ADM", resultado.Departamento);
+            A.CallTo(() => servicio.CalcularCentroCoste(A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void CrearLineaVta_CuentaContableSinVendedorEnLaLlamadaPeroConVendedorEnLaCabecera_UsaElDeLaCabecera()
+        {
+            // El camino del PUT: la línea llega sin vendedor pero la cabecera guardada sí lo tiene.
+            // El centro de coste se calcula a partir de ese vendedor, como siempre.
+            var servicio = A.Fake<IServicioPedidosVenta>();
+            A.CallTo(() => servicio.LeerEmpresa(EMPRESA)).Returns(new Empresa { Número = EMPRESA, TipoIvaDefecto = "G21" });
+            A.CallTo(() => servicio.LeerParametroIVA(A<string>._, A<string>._, A<string>._)).Returns((ParametroIVA)null); // ver ServicioParaInmovilizado
+            A.CallTo(() => servicio.LeerCabPedidoVta(EMPRESA, PEDIDO)).Returns(new CabPedidoVta { Empresa = EMPRESA, Número = PEDIDO, Vendedor = "LV " });
+            A.CallTo(() => servicio.CalcularCentroCoste(EMPRESA, "LV ")).Returns(new CentrosCoste { Empresa = EMPRESA, Número = "LV", Departamento = "COM" });
+            var gestor = new GestorPedidosVenta(servicio);
+            var lineaPortes = new LineaPedidoVentaDTO
+            {
+                tipoLinea = Constantes.TiposLineaVenta.CUENTA_CONTABLE,
+                Producto = "62400003",
+                Cantidad = 1,
+                PrecioUnitario = 3,
+                texto = "PORTES",
+                fechaEntrega = DateTime.Today
+            };
+            var plazoPago = new PlazoPago { DtoProntoPago = 0 };
+
+            LinPedidoVta resultado = gestor.CrearLineaVta(lineaPortes, PEDIDO, EMPRESA, "G21", plazoPago, "41887", "0", "FW", vendedor: null);
+
+            Assert.AreEqual("LV", resultado.CentroCoste);
+            Assert.AreEqual("COM", resultado.Departamento);
         }
 
         #endregion

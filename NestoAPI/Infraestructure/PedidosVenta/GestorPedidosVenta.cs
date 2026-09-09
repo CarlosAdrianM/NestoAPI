@@ -92,13 +92,30 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 linea.EstadoProducto = estado;
             }
         }
-        internal CentrosCoste CalcularCentroCoste(string empresa, int numeroPedido)
+        /// <summary>
+        /// Centro de coste de una línea de cuenta contable (6xx/7xx). Sale del vendedor: el que
+        /// llega en la llamada o, si no, el de la cabecera guardada (camino del PUT).
+        ///
+        /// ELMAH 09/09/26: cuando NO hay vendedor en ningún sitio (cliente sin vendedor en la
+        /// ficha; ya pasó en junio y hoy Laura lo intentó 4 veces seguidas con una línea de
+        /// portes 62400003), el servicio reventaba con "falta el vendedor" y el pedido no entraba.
+        /// Y en un POST era inevitable: la cabecera aún no está en la BD, así que preguntar por
+        /// número de pedido nunca la encontraba. Dejar la línea sin centro de coste tampoco sirve:
+        /// la fórmula de CamposNecesarios (prdComprobarCamposNecesarios, cuentas 620-639) exige
+        /// centro de coste, delegación y departamento, y la factura no se podría contabilizar.
+        /// Sin vendedor se imputa al centro de coste por defecto, igual que Nesto en Cajas
+        /// (Nesto#382). Mismo remedio si el vendedor existe pero no lleva a ningún centro de coste.
+        /// </summary>
+        internal CentrosCoste CalcularCentroCosteCuentaContable(string empresa, int numeroPedido, string vendedor)
         {
-            return servicio.CalcularCentroCoste(empresa, numeroPedido);
-        }
-        internal CentrosCoste CalcularCentroCoste(string empresa, string vendedor)
-        {
-            return servicio.CalcularCentroCoste(empresa, vendedor);
+            if (string.IsNullOrWhiteSpace(vendedor))
+            {
+                vendedor = servicio.LeerCabPedidoVta(empresa, numeroPedido)?.Vendedor;
+            }
+            CentrosCoste centroCoste = string.IsNullOrWhiteSpace(vendedor)
+                ? null
+                : servicio.CalcularCentroCoste(empresa, vendedor);
+            return centroCoste ?? servicio.LeerCentroCoste(empresa, Constantes.Empresas.CENTRO_COSTE_POR_DEFECTO);
         }
 
         // NestoAPI#277: vendedor base del pedido = el del DTO o, si no viene, el de la ficha del cliente.
@@ -410,7 +427,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     estadoProducto = 0;
                     if (linea.Producto.Substring(0, 1) == "6" || linea.Producto.Substring(0, 1) == "7")
                     {
-                        centroCoste = string.IsNullOrWhiteSpace(vendedor) ? CalcularCentroCoste(empresa, numeroPedido) : CalcularCentroCoste(empresa, vendedor);
+                        centroCoste = CalcularCentroCosteCuentaContable(empresa, numeroPedido, vendedor);
                     }
                     break;
 

@@ -197,6 +197,11 @@ namespace NestoAPI.Models
 
         public static class Empresas
         {
+            // Imputación por defecto de una línea de GASTO (620-639) cuando no hay vendedor del que
+            // sacarla: la fórmula de CamposNecesarios exige centro de coste, delegación y
+            // departamento para contabilizarla. Mismo valor que Constantes.Empresas.CENTRO_COSTE_DEFECTO
+            // en Nesto (Cajas, Nesto#382) y que las comisiones de TPV de ContabilidadService.
+            public const string CENTRO_COSTE_POR_DEFECTO = "CA";
             public const string DELEGACION_POR_DEFECTO = "ALG";
             public const string EMPRESA_ESPEJO_POR_DEFECTO = "3";
             public const string EMPRESA_POR_DEFECTO = "1";

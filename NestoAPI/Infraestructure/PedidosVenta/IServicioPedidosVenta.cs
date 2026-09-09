@@ -10,8 +10,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
     public interface IServicioPedidosVenta
     {
         string CalcularAlmacen(string usuario, string empresa, int numeroPedido);
-        CentrosCoste CalcularCentroCoste(string empresa, int numeroPedido);
         CentrosCoste CalcularCentroCoste(string empresa, string vendedor);
+        CentrosCoste LeerCentroCoste(string empresa, string numero);
         string CalcularDelegacion(string usuario, string empresa, int numeroPedido);
         string CalcularFormaVenta(string usuario, string empresa, int numeroPedido);
         bool EsSobrePedido(string producto, short cantidad);
