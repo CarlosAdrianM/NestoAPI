@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Models;
@@ -441,6 +441,75 @@ namespace NestoAPI.Tests.Controllers
             // Assert
             Assert.IsNotNull(envioCreado);
             Assert.AreEqual(150.50M, envioCreado.Reembolso);
+        }
+
+        // NestoAPI#365: sin importe fijado, el reembolso sale del pedido (mismo cálculo que Agencias)
+        [TestMethod]
+        public async Task CrearEtiquetaPendiente_PedidoEnEfectivoConPicking_CobraElTotalContraReembolso()
+        {
+            var pedido = PedidoConLinea(formaPago: Constantes.FormasPago.EFECTIVO, ccc: null, total: 121M);
+            EnviosAgencia envioCreado = PrepararCreacion(pedido);
+
+            await controller.CrearEtiquetaPendiente(new CrearEtiquetaPendienteDTO { Empresa = "1  ", Pedido = 12345, Agencia = 3, Retorno = 1 });
+
+            envioCreado = _envioCreado;
+            Assert.IsNotNull(envioCreado);
+            Assert.AreEqual(121M, envioCreado.Reembolso, "pedido de 121 EUR en efectivo: la agencia tiene que cobrar 121, no 0");
+        }
+
+        [TestMethod]
+        public async Task CrearEtiquetaPendiente_PedidoConTarjeta_NoCobraReembolso()
+        {
+            var pedido = PedidoConLinea(formaPago: Constantes.FormasPago.TARJETA, ccc: null, total: 121M);
+            PrepararCreacion(pedido);
+
+            await controller.CrearEtiquetaPendiente(new CrearEtiquetaPendienteDTO { Empresa = "1  ", Pedido = 12345, Agencia = 3, Retorno = 1 });
+
+            Assert.IsNotNull(_envioCreado);
+            Assert.AreEqual(0M, _envioCreado.Reembolso, "con tarjeta no hay contra reembolso");
+        }
+
+        private EnviosAgencia _envioCreado;
+
+        private static CabPedidoVta PedidoConLinea(string formaPago, string ccc, decimal total)
+        {
+            return new CabPedidoVta
+            {
+                Empresa = "1  ",
+                Número = 12345,
+                Nº_Cliente = "10000",
+                Contacto = "0  ",
+                Forma_Pago = formaPago,
+                PlazosPago = "CONTADO",
+                CCC = ccc,
+                MantenerJunto = false,
+                LinPedidoVtas = new List<LinPedidoVta>
+                {
+                    new LinPedidoVta { Estado = Constantes.EstadosLineaVenta.EN_CURSO, Picking = 1, Total = total }
+                }
+            };
+        }
+
+        private EnviosAgencia PrepararCreacion(CabPedidoVta pedido)
+        {
+            ConfigurarFakeDbSet(fakePedidos, new List<CabPedidoVta> { pedido }.AsQueryable());
+            var direccion = new Cliente
+            {
+                Empresa = "1  ",
+                Nº_Cliente = "10000",
+                Contacto = "0  ",
+                Nombre = "Test",
+                CodPostal = "28001",
+                PersonasContactoClientes = new List<PersonaContactoCliente>()
+            };
+            ConfigurarFakeDbSet(fakeClientes, new List<Cliente> { direccion }.AsQueryable());
+            ConfigurarFakeDbSet(fakeEnvios, new List<EnviosAgencia>().AsQueryable());
+            _envioCreado = null;
+            A.CallTo(() => fakeEnvios.Add(A<EnviosAgencia>.Ignored))
+                .Invokes((EnviosAgencia e) => _envioCreado = e)
+                .ReturnsLazily((EnviosAgencia e) => e);
+            A.CallTo(() => db.SaveChangesAsync()).Returns(Task.FromResult(1));
+            return _envioCreado;
         }
 
         [TestMethod]

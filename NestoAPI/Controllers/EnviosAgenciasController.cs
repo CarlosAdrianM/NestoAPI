@@ -1362,7 +1362,11 @@ namespace NestoAPI.Controllers
             }
             else
             {
-                reembolso = 0;
+                // NestoAPI#365: antes aquí se ponía 0 siempre, así que la etiqueta de recogida de un
+                // pedido en efectivo salía sin reembolso. Se calcula igual que en Agencias de Nesto
+                // (GET PedidosVenta/ImporteReembolso) y que la comprobación del PUT del pedido: contra
+                // reembolso solo si la forma de pago lo es, y por el total de las líneas con picking.
+                reembolso = GestorEnviosAgencia.ImporteReembolso(pedido);
             }
 
             var codPostal = direccion.CodPostal?.Trim() ?? "";
