@@ -831,6 +831,7 @@
     <Compile Include="Infraestructure\Pagos\ServicioPagos.cs" />
     <Compile Include="Infraestructure\Pagos\FirmadorRedsys.cs" />
     <Compile Include="Infraestructure\Pagos\PoliticaPagoCanal.cs" />
+    <Compile Include="Infraestructure\Pagos\PoliticaImporteMinimoEfecto.cs" />
     <Compile Include="Infraestructure\Pagos\ITarjetaClienteStore.cs" />
     <Compile Include="Infraestructure\Pagos\TarjetaClienteStore.cs" />
     <Compile Include="Infraestructure\Pagos\CobrosCarritoJobsService.cs" />

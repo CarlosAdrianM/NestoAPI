@@ -134,41 +134,20 @@ namespace NestoAPI.Controllers
             }
 
             var plazosPago = okResult.Content;
-            var plazosPagoCliente = clienteBuscado.CondPagoClientes.Where(c => c.ImporteMínimo <= totalPedido || (totalPedido <= 0 && c.ImporteMínimo == 0)).ToList();
+
+            // NestoAPI#458: la regla de los 150 EUR por efecto vive en PoliticaImporteMinimoEfecto y
+            // la comparte CondicionesPago (tienda y app). Antes estaba inline aqui y con un catch
+            // que, si el filtro lanzaba, devolvia la lista SIN filtrar (#396); la politica es pura
+            // y no lanza, asi que el catch sobra.
+            List<PoliticaImporteMinimoEfecto.CondicionFicha> ficha = AFicha(clienteBuscado?.CondPagoClientes);
+            var plazosPagoCliente = PoliticaImporteMinimoEfecto.CondicionesQueAplican(ficha, totalPedido);
 
             if (formaPago == Constantes.FormasPago.EFECTIVO)
             {
                 plazosPago = plazosPago.Where(p => p.numeroPlazos == 1 && p.diasPrimerPlazo == 0 && p.mesesPrimerPlazo == 0 || plazosPagoCliente.Any(c => c.PlazosPago?.Trim() == p.plazoPago)).ToList();
             }
 
-            try
-            {
-                // NestoAPI#396: el mínimo por efecto sale de Constantes. Estaba escrito a mano
-                // como 100 € aquí y como 150 € en el aviso del correo de nuevo pedido, así que el
-                // correo marcaba como sospechosos plazos que este selector acababa de ofrecerle al
-                // vendedor. El valor bueno es 150 (Carlos 21/08/26); el 100 se quedó sin actualizar.
-                plazosPago = plazosPago
-                .Where(p => p.numeroPlazos == 1 ||
-                    ((p.diasPrimerPlazo + p.mesesPrimerPlazo > 0) ?
-                    totalPedido / p.numeroPlazos >= Constantes.PlazosPago.IMPORTE_MINIMO_EFECTO :
-                    totalPedido / (p.numeroPlazos - 1) >= Constantes.PlazosPago.IMPORTE_MINIMO_EFECTO)
-                    || (plazosPagoCliente.Any(c => c.ImporteMínimo <= totalPedido && c.PlazosPago.Trim() == p.plazoPago))
-                    )
-                .ToList();
-            }
-            catch (Exception ex)
-            {
-                // NestoAPI#396: este catch estaba VACÍO. Si el filtro lanzaba, plazosPago se
-                // quedaba SIN FILTRAR y al vendedor se le ofrecían plazos que no debería poder
-                // elegir, en silencio y con consecuencias financieras. Se sigue sin romper la
-                // pantalla (devolver la lista completa es el comportamiento que había), pero
-                // ahora queda rastro para poder arreglarlo.
-                Infraestructure.ElmahHelper.Log(new Exception(
-                    $"PlazosPago: no se pudo aplicar el filtro de importe mínimo por efecto para el " +
-                    $"cliente {cliente?.Trim()} (total {totalPedido}); se devuelven TODOS los plazos: {ex.Message}", ex));
-            }
-            
-                        
+            plazosPago = PoliticaImporteMinimoEfecto.Filtrar(plazosPago, totalPedido, ficha);
 
             return Ok(plazosPago);
         }
@@ -219,7 +198,12 @@ namespace NestoAPI.Controllers
         [Route("CondicionesPago")]
         [ResponseType(typeof(CondicionesPagoResponse))]
         [AutorizadoOApiKey("ApiKeyPrestashop", "X-API-KEY")]
-        public async Task<IHttpActionResult> GetCondicionesPago(string empresa, string cliente, string canal = null)
+        /// <param name="totalPedido">
+        /// NestoAPI#458: importe del pedido. Si viene, se aplican los 150 EUR por efecto
+        /// (PoliticaImporteMinimoEfecto) DESPUES de la politica del canal, como en GET api/PlazosPago
+        /// con importe. Sin el, comportamiento de siempre (TNV no lo manda todavia).
+        /// </param>
+        public async Task<IHttpActionResult> GetCondicionesPago(string empresa, string cliente, string canal = null, decimal? totalPedido = null)
         {
             // Obtener plazos de pago
             IHttpActionResult resultPlazos = await GetPlazosPago(empresa, cliente);
@@ -260,6 +244,14 @@ namespace NestoAPI.Controllers
                 condiciones = PoliticaPagoCanal.AplicarPoliticaApp(condiciones, LeerCondicionesFicha(empresa, cliente));
             }
 
+            if (totalPedido.HasValue)
+            {
+                List<CondPagoCliente> condicionesCliente = db.CondPagoClientes
+                    .Where(c => c.Empresa == empresa && c.Nº_Cliente == cliente)
+                    .ToList();
+                condiciones = PoliticaImporteMinimoEfecto.AplicarSiHayImporte(condiciones, totalPedido, AFicha(condicionesCliente));
+            }
+
             return Ok(condiciones);
         }
 
@@ -267,6 +259,14 @@ namespace NestoAPI.Controllers
         /// NestoAPI#436: formas y plazos de pago que el cliente tiene en su ficha. En la app son
         /// los únicos con los que se le puede ofrecer crédito.
         /// </summary>
+        /// <summary>NestoAPI#458: CondPagoClientes reducido a lo que necesita la regla del importe.</summary>
+        private static List<PoliticaImporteMinimoEfecto.CondicionFicha> AFicha(IEnumerable<CondPagoCliente> condiciones)
+        {
+            return (condiciones ?? Enumerable.Empty<CondPagoCliente>())
+                .Select(c => new PoliticaImporteMinimoEfecto.CondicionFicha { PlazosPago = c.PlazosPago, ImporteMinimo = c.ImporteMínimo })
+                .ToList();
+        }
+
         private PoliticaPagoCanal.CondicionesFicha LeerCondicionesFicha(string empresa, string cliente)
         {
             List<CondPagoCliente> condicionesCliente = db.CondPagoClientes
