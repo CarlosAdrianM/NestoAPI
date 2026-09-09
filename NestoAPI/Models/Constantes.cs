@@ -532,9 +532,14 @@ namespace NestoAPI.Models
 
             /// <summary>
             /// Grupos de producto que generan Ganavisiones (puntos para bonificaciones).
-            /// Issue #94: Sistema Ganavisiones
+            /// Issue #94: Sistema Ganavisiones.
+            /// NestoAPI#466 (Carlos, 09/09/26): la PELUQUERÍA (PEL) queda FUERA. 1.000 € de
+            /// peluquería no dan derecho a ningún regalo. Esta es la lista que manda: la del
+            /// validador del pedido y la que devuelve GET api/Ganavisiones/GruposBonificables.
+            /// Nesto, NestoApp y TiendasNuevaVision la tienen copiada para pintar los regalos
+            /// antes de guardar; si divergen, el servidor rechaza el regalo al guardar.
             /// </summary>
-            public static readonly string[] GRUPOS_BONIFICABLES_CON_GANAVISIONES = { GRUPO_COSMETICA, GRUPO_ACCESORIOS, GRUPO_PELUQUERIA };
+            public static readonly string[] GRUPOS_BONIFICABLES_CON_GANAVISIONES = { GRUPO_COSMETICA, GRUPO_ACCESORIOS };
 
             /// <summary>
             /// Valor en EUR de cada Ganavisión para bonificaciones.

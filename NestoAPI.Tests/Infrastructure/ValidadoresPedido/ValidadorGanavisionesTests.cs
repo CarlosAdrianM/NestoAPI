@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.ValidadoresPedido;
@@ -231,9 +231,11 @@ namespace NestoAPI.Tests.Infrastructure.ValidadoresPedido
         }
 
         [TestMethod]
-        public void EsPedidoValido_TodosGruposBonificables_GeneranGanavisiones()
+        public void EsPedidoValido_LaPeluqueriaNoGeneraGanavisiones()
         {
-            // Arrange - Pedido con COS (30 EUR), ACC (40 EUR), PEL (30 EUR) = 100 EUR = 10 Ganavisiones
+            // NestoAPI#466 (Carlos, 09/09/26): PEL queda fuera. Antes COS (30) + ACC (40) + PEL (30)
+            // = 100 EUR = 10 Ganavisiones y el regalo de 10 pasaba; ahora solo cuentan COS + ACC = 70
+            // EUR = 7 Ganavisiones, y el regalo de 10 se rechaza. El de 7 (test siguiente) pasa.
             var pedido = new PedidoVentaDTO
             {
                 Lineas = new List<LineaPedidoVentaDTO>
@@ -281,8 +283,42 @@ namespace NestoAPI.Tests.Infrastructure.ValidadoresPedido
             var resultado = _validador.EsPedidoValido(pedido, "REGALO01", _servicioPrecios);
 
             // Assert
-            Assert.IsTrue(resultado.ValidacionSuperada,
-                "COS+ACC+PEL = 100 EUR = 10 Ganavisiones, producto necesita 10: debe ser valido");
+            Assert.IsFalse(resultado.ValidacionSuperada,
+                "COS+ACC = 70 EUR = 7 Ganavisiones; los 30 EUR de PEL no cuentan y el regalo necesita 10");
+            StringAssert.Contains(resultado.Motivo, "70,00");
+        }
+
+        [TestMethod]
+        public void EsPedidoValido_SoloCosmeticaYAccesoriosGeneranGanavisiones()
+        {
+            // El mismo pedido con un regalo de 7 Ganavisiones: COS + ACC lo cubren justo.
+            var pedido = new PedidoVentaDTO
+            {
+                Lineas = new List<LineaPedidoVentaDTO>
+                {
+                    new LineaPedidoVentaDTO { Producto = "COS01", GrupoProducto = Constantes.Productos.GRUPO_COSMETICA, tipoLinea = 1, Cantidad = 1, PrecioUnitario = 30m },
+                    new LineaPedidoVentaDTO { Producto = "ACC01", GrupoProducto = Constantes.Productos.GRUPO_ACCESORIOS, tipoLinea = 1, Cantidad = 1, PrecioUnitario = 40m },
+                    new LineaPedidoVentaDTO { Producto = "PEL01", GrupoProducto = Constantes.Productos.GRUPO_PELUQUERIA, tipoLinea = 1, Cantidad = 1, PrecioUnitario = 1000m },
+                    new LineaPedidoVentaDTO { Producto = "REGALO01", tipoLinea = 1, Cantidad = 1, PrecioUnitario = 0m }
+                }
+            };
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("COS01")).Returns(null);
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("ACC01")).Returns(null);
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("PEL01")).Returns(null);
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("REGALO01")).Returns(7);
+
+            var resultado = _validador.EsPedidoValido(pedido, "REGALO01", _servicioPrecios);
+
+            Assert.IsTrue(resultado.ValidacionSuperada, "COS + ACC = 70 EUR = 7 Ganavisiones cubren el regalo de 7; los 1.000 EUR de PEL ni suman ni restan");
+        }
+
+        [TestMethod]
+        public void GruposBonificables_SonCosmeticaYAccesorios_SinPeluqueria()
+        {
+            CollectionAssert.AreEquivalent(
+                new[] { Constantes.Productos.GRUPO_COSMETICA, Constantes.Productos.GRUPO_ACCESORIOS },
+                Constantes.Productos.GRUPOS_BONIFICABLES_CON_GANAVISIONES,
+                "NestoAPI#466: la peluquería no genera Ganavisiones");
         }
 
         [TestMethod]

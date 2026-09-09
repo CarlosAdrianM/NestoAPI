@@ -1,4 +1,4 @@
-using NestoAPI.Models;
+﻿using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
 using System.Linq;
 
@@ -9,7 +9,8 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
     /// Issue #94: Sistema Ganavisiones
     ///
     /// 1 Ganavisión = 10 EUR de importe bonificable.
-    /// Los Ganavisiones se generan a partir de líneas de pedido de grupos específicos (COS, ACC, PEL).
+    /// Los Ganavisiones se generan a partir de líneas de pedido de grupos específicos (COS y ACC;
+    /// la peluquería quedó fuera en NestoAPI#466).
     /// Los productos con Ganavisiones configurados pueden bonificarse (100% descuento) si hay suficientes Ganavisiones disponibles.
     /// </summary>
     public class ValidadorGanavisiones : IValidadorAceptacion
@@ -65,7 +66,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             }
 
             // Calcular los Ganavisiones disponibles en el pedido
-            // Se generan a partir de las líneas de grupos bonificables (COS, ACC, PEL)
+            // Se generan a partir de las líneas de grupos bonificables (COS y ACC; PEL no, #466)
             // Fix #118: GrupoProducto puede ser null en líneas de ampliación (NestoApp/Nesto no lo envían),
             // así que lo resolvemos vía servicio cuando no está presente en el DTO
             decimal baseImponibleBonificable = pedido.Lineas

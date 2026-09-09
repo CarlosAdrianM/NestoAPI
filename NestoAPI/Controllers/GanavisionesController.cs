@@ -169,6 +169,19 @@ namespace NestoAPI.Controllers
         /// </summary>
         /// <param name="empresa">Codigo de empresa</param>
         /// <returns>Lista de ProductoIds bonificables</returns>
+        /// <summary>
+        /// NestoAPI#466: los grupos de producto que generan Ganavisiones. Es la misma lista que usa
+        /// el validador del pedido, para que los clientes (Nesto, NestoApp, la app y la tienda) la
+        /// lean de aquí en vez de copiarla. Hoy: COS y ACC (la peluquería quedó fuera el 09/09/26).
+        /// </summary>
+        [HttpGet]
+        [Route("api/Ganavisiones/GruposBonificables")]
+        [ResponseType(typeof(string[]))]
+        public IHttpActionResult GetGruposBonificables()
+        {
+            return Ok(Constantes.Productos.GRUPOS_BONIFICABLES_CON_GANAVISIONES);
+        }
+
         [HttpGet]
         [Route("api/Ganavisiones/ProductosIds")]
         [ResponseType(typeof(List<string>))]
@@ -194,7 +207,7 @@ namespace NestoAPI.Controllers
         /// Issue #94: Sistema Ganavisiones - FASE 2/3
         /// </summary>
         /// <param name="empresa">Codigo de empresa</param>
-        /// <param name="baseImponibleBonificable">Importe en EUR de la base imponible de grupos bonificables (COS, ACC, PEL)</param>
+        /// <param name="baseImponibleBonificable">Importe en EUR de la base imponible de grupos bonificables (ver GET api/Ganavisiones/GruposBonificables: COS y ACC; PEL no desde #466)</param>
         /// <param name="almacen">Almacen del pedido (opcional). Si se especifica junto con servirJunto=false, solo devuelve productos con stock en ese almacen</param>
         /// <param name="servirJunto">Si es true (default), devuelve productos con stock en cualquier almacen. Si es false, solo con stock en el almacen especificado</param>
         /// <param name="cliente">Numero de cliente. Si se especifica, excluye productos que el cliente haya comprado (BaseImponible != 0)</param>
