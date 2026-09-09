@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using NestoAPI.Tests.Helpers;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
@@ -155,6 +155,82 @@ namespace NestoAPI.Tests.Controllers
             var contenido = resultado as NegotiatedContentResult<string>;
             Assert.IsNotNull(contenido);
             Assert.AreEqual(HttpStatusCode.Forbidden, contenido.StatusCode);
+            A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
+        }
+
+        // ----- Misma persona en varios contactos (15191: la titular estaba en el 0 y en el 2) -----
+
+        [TestMethod]
+        public async Task Get_LaMismaPersonaEnDosContactos_SaleUnaSolaVez()
+        {
+            Datos(
+                Persona("15191", "0", "2", 22, "info@esteticaeleden.com"),
+                Persona("15191", "2", "1", 22, "info@esteticaeleden.com"),
+                Persona("15191", "1", "1", 31, "EsteticaElEden@gmail.com"),
+                Persona("15191", "2", "2", 31, "angelamaritzaperalta@gmail.com"));
+
+            IHttpActionResult resultado = await Controller("15191", "info@esteticaeleden.com").GetPersonasDelCentro();
+
+            var ok = resultado as OkNegotiatedContentResult<List<PersonaContactoCentroDTO>>;
+            Assert.IsNotNull(ok);
+            Assert.AreEqual(3, ok.Content.Count, "una entrada por correo, no por fila");
+            Assert.AreEqual(1, ok.Content.Count(p => p.EsTitular));
+            Assert.AreEqual(1, ok.Content.Count(p => p.EsYo));
+        }
+
+        [TestMethod]
+        public async Task Get_LaMismaPersonaConCargosDistintosEnDosContactos_EnseñaElMasAlto()
+        {
+            Datos(
+                Persona("15191", "0", "1", 22, "info@esteticaeleden.com"),
+                Persona("15191", "2", "1", 31, "ANGELA@centro.com"),
+                Persona("15191", "0", "2", 22, "angela@centro.com"));
+
+            IHttpActionResult resultado = await Controller("15191", "info@esteticaeleden.com").GetPersonasDelCentro();
+
+            var ok = resultado as OkNegotiatedContentResult<List<PersonaContactoCentroDTO>>;
+            Assert.AreEqual(2, ok.Content.Count, "el correo se compara sin distinguir mayúsculas");
+            PersonaContactoCentroDTO angela = ok.Content.Single(p => !p.EsYo);
+            Assert.AreEqual((short)22, angela.Cargo, "en algún contacto es titular, así que EsTitular la trata como tal");
+            Assert.IsTrue(angela.EsTitular);
+        }
+
+        [TestMethod]
+        public async Task Put_CambiarElCargoDeUnaPersonaEnVariosContactos_LoCambiaEnTodos()
+        {
+            Datos(
+                Persona("15191", "0", "1", 22, "info@esteticaeleden.com"),
+                Persona("15191", "0", "2", 11, "angela@centro.com"),
+                Persona("15191", "2", "1", 11, "angela@centro.com"));
+
+            IHttpActionResult resultado = await Controller("15191", "info@esteticaeleden.com")
+                .PutCargo("0", "2", new CambioCargoPersonaContactoRequest { Cargo = 30 });
+
+            var ok = resultado as OkNegotiatedContentResult<PersonaContactoCentroDTO>;
+            Assert.IsNotNull(ok);
+            Assert.AreEqual((short)30, ok.Content.Cargo);
+            A.CallTo(() => db.SaveChangesAsync()).MustHaveHappenedOnceExactly();
+            foreach (PersonaContactoCliente fila in fakePersonas.Where(p => p.CorreoElectrónico == "angela@centro.com"))
+            {
+                Assert.AreEqual((short)30, fila.Cargo, "contacto " + fila.Contacto);
+                Assert.AreEqual("info@esteticaeleden.com", fila.Usuario);
+            }
+            Assert.AreEqual((short)22, fakePersonas.Single(p => p.Contacto == "0" && p.Número == "1").Cargo, "la titular no se toca");
+        }
+
+        [TestMethod]
+        public async Task Put_LaTitularEstaEnDosContactos_NoCuentaComoOtraTitularParaQuitarseElPermiso()
+        {
+            // Antes, la fila del otro contacto pasaba por "otra titular" y dejaba quitarse el permiso
+            // en una sola fila: la app enseñaba una titular que ya no lo era en uno de los contactos.
+            Datos(
+                Persona("15191", "0", "2", 22, "info@esteticaeleden.com"),
+                Persona("15191", "2", "1", 22, "info@esteticaeleden.com"));
+
+            IHttpActionResult resultado = await Controller("15191", "info@esteticaeleden.com")
+                .PutCargo("0", "2", new CambioCargoPersonaContactoRequest { Cargo = 31 });
+
+            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
             A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
         }
 

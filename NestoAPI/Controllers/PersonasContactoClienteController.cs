@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure.Clientes;
+﻿using NestoAPI.Infraestructure.Clientes;
 using NestoAPI.Infraestructure.Seguridad;
 using NestoAPI.Models;
 using System;
@@ -59,9 +59,10 @@ namespace NestoAPI.Controllers
                 return Content(HttpStatusCode.Forbidden, "Solo la persona que ve las facturas puede gestionar a las demás.");
             }
 
-            return Ok(personas
-                .OrderBy(p => p.Contacto)
-                .ThenBy(p => p.Número)
+            // Una entrada por persona aunque esté en varios contactos (el 15191 enseñaba a la titular
+            // dos veces): para la app la persona es su correo. Al cambiarle el cargo se igualan todas
+            // sus filas, así que lo que se ve es lo que hay.
+            return Ok(PoliticaPersonasContacto.SinDuplicar(personas)
                 .Select(p => Mapear(p, sesion.Email))
                 .ToList());
         }
@@ -98,11 +99,20 @@ namespace NestoAPI.Controllers
                 return BadRequest(motivo);
             }
 
-            if (persona.Cargo != peticion.Cargo)
+            // La misma persona (mismo correo) puede estar en varios contactos: el cambio se aplica a
+            // todas sus filas, que es lo que el titular espera al ver una sola entrada. Afinar por
+            // contacto es un caso rarísimo y se hace desde Nesto.
+            List<PersonaContactoCliente> filas = PoliticaPersonasContacto.FilasDeLaMismaPersona(personas, persona)
+                .Where(p => p.Cargo != peticion.Cargo)
+                .ToList();
+            if (filas.Count > 0)
             {
-                persona.Cargo = peticion.Cargo;
-                persona.Usuario = sesion.Email;
-                persona.Fecha_Modificación = DateTime.Now;
+                foreach (PersonaContactoCliente fila in filas)
+                {
+                    fila.Cargo = peticion.Cargo;
+                    fila.Usuario = sesion.Email;
+                    fila.Fecha_Modificación = DateTime.Now;
+                }
                 await db.SaveChangesAsync().ConfigureAwait(false);
             }
 

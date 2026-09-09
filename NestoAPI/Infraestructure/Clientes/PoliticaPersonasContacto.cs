@@ -1,4 +1,4 @@
-using NestoAPI.Models;
+﻿using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -79,10 +79,75 @@ namespace NestoAPI.Infraestructure.Clientes
                     && !string.IsNullOrWhiteSpace(p.CorreoElectrónico));
         }
 
-        private static bool MismaPersona(PersonaContactoCliente a, PersonaContactoCliente b)
+        /// <summary>
+        /// La misma persona puede estar dada de alta en varios contactos del cliente (1.098 clientes
+        /// lo tienen así; el 15191 tenía a la titular en el 0 y en el 2 con el mismo correo). Para la
+        /// app es UNA persona: la que entra con ese correo. Dos filas son la misma persona si tienen
+        /// el mismo correo; sin correo, solo si son la misma fila (contacto + número).
+        /// </summary>
+        internal static bool MismaPersona(PersonaContactoCliente a, PersonaContactoCliente b)
         {
-            return string.Equals(a.Contacto?.Trim(), b.Contacto?.Trim(), StringComparison.OrdinalIgnoreCase)
-                && string.Equals(a.Número?.Trim(), b.Número?.Trim(), StringComparison.OrdinalIgnoreCase);
+            string correoA = a?.CorreoElectrónico?.Trim();
+            string correoB = b?.CorreoElectrónico?.Trim();
+            if (!string.IsNullOrWhiteSpace(correoA) && !string.IsNullOrWhiteSpace(correoB))
+            {
+                return string.Equals(correoA, correoB, StringComparison.OrdinalIgnoreCase);
+            }
+            return string.Equals(a?.Contacto?.Trim(), b?.Contacto?.Trim(), StringComparison.OrdinalIgnoreCase)
+                && string.Equals(a?.Número?.Trim(), b?.Número?.Trim(), StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>Todas las filas (una por contacto) que son la misma persona que <paramref name="persona"/>.</summary>
+        public static List<PersonaContactoCliente> FilasDeLaMismaPersona(IEnumerable<PersonaContactoCliente> personas, PersonaContactoCliente persona)
+        {
+            if (persona == null)
+            {
+                return new List<PersonaContactoCliente>();
+            }
+            return (personas ?? Enumerable.Empty<PersonaContactoCliente>())
+                .Where(p => MismaPersona(p, persona))
+                .ToList();
+        }
+
+        /// <summary>
+        /// Una entrada por persona, no por fila. Cuando la misma persona está en varios contactos con
+        /// cargos distintos se enseña el más alto (el titular, si lo es en alguno: así casa con
+        /// EsTitular, que mira cualquier fila). Al cambiar el cargo se igualan todas (ver PutCargo).
+        /// </summary>
+        public static List<PersonaContactoCliente> SinDuplicar(IEnumerable<PersonaContactoCliente> personas)
+        {
+            List<PersonaContactoCliente> resultado = new List<PersonaContactoCliente>();
+            foreach (PersonaContactoCliente persona in (personas ?? Enumerable.Empty<PersonaContactoCliente>())
+                .OrderBy(p => p.Contacto).ThenBy(p => p.Número))
+            {
+                int indice = resultado.FindIndex(r => MismaPersona(r, persona));
+                if (indice < 0)
+                {
+                    resultado.Add(persona);
+                }
+                else if (Prioridad(persona.Cargo) > Prioridad(resultado[indice].Cargo))
+                {
+                    resultado[indice] = persona;
+                }
+            }
+            return resultado;
+        }
+
+        private static int Prioridad(short? cargo)
+        {
+            if (cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO)
+            {
+                return 3;
+            }
+            if (cargo == Constantes.Clientes.PersonasContacto.CARGO_PEDIDOS_SIN_DESCUENTOS)
+            {
+                return 1;
+            }
+            if (cargo == Constantes.Clientes.PersonasContacto.CARGO_PEDIDOS_SIN_PRECIOS)
+            {
+                return 0;
+            }
+            return 2; // ve precios y descuentos
         }
 
         private static IEnumerable<PersonaContactoCliente> DeEsteEmail(IEnumerable<PersonaContactoCliente> personas, string email)
