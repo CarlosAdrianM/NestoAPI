@@ -13,6 +13,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Transactions;
 using System.Web.Http;
+using System.Web.Http.Results;
 
 namespace NestoAPI.Infraestructure.PedidosVenta
 {
@@ -1058,12 +1059,105 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         {
             using (PedidosVentaController controller = new PedidosVentaController())
             {
-                if (pedidoAmpliacion.numero != 0)
-                {
-                    _ = await controller.PutPedidoVenta(pedidoAmpliacion).ConfigureAwait(true);
-                }
-                _ = await controller.PutPedidoVenta(pedidoOriginal).ConfigureAwait(true);
+                await PersistirUnionCon(controller.PutPedidoVenta, pedidoOriginal, pedidoAmpliacion).ConfigureAwait(true);
             }
+        }
+
+        /// <summary>
+        /// NestoAPI#468: guarda la ampliación (si existe en BD) y después el original, COMPROBANDO
+        /// el resultado de cada guardado. <see cref="PedidosVentaController.PutPedidoVenta"/> no
+        /// lanza cuando rechaza el pedido: devuelve <c>BadRequest</c>. Al descartarse el resultado,
+        /// la unión se daba por buena, se llamaba a <c>transaction.Complete()</c> y el cliente
+        /// recibía un 200 con el pedido "ampliado" que en realidad no se había guardado (pedido
+        /// 925807, 09/09/26: cuatro intentos, ninguna línea guardada, y el vendedor convencido de
+        /// que estaba hecho). Peor todavía al unir dos pedidos existentes: el primer guardado deja
+        /// la ampliación sin líneas y, si el segundo se rechaza en silencio, las líneas desaparecen
+        /// de los dos pedidos.
+        ///
+        /// El guardado se recibe como delegado para poder testear el flujo sin tocar la BD.
+        /// </summary>
+        internal static async Task PersistirUnionCon(
+            Func<PedidoVentaDTO, Task<IHttpActionResult>> guardar,
+            PedidoVentaDTO pedidoOriginal,
+            PedidoVentaDTO pedidoAmpliacion)
+        {
+            if (pedidoAmpliacion.numero != 0)
+            {
+                ComprobarGuardado(await guardar(pedidoAmpliacion).ConfigureAwait(true), pedidoAmpliacion.numero);
+            }
+            ComprobarGuardado(await guardar(pedidoOriginal).ConfigureAwait(true), pedidoOriginal.numero);
+        }
+
+        private static void ComprobarGuardado(IHttpActionResult resultado, int numeroPedido)
+        {
+            string motivo = MensajeDeErrorDelGuardado(resultado);
+            if (motivo == null)
+            {
+                return;
+            }
+
+            // Excepción normal (no NestoBusinessException) a propósito: un rechazo de este tipo no
+            // debe ofrecerle al usuario el "¿unir de todas formas?", que es solo para la validación
+            // de precios y descuentos (NestoAPI#216/#324).
+            throw new Exception($"No se ha podido guardar el pedido {numeroPedido}: {motivo}");
+        }
+
+        /// <summary>
+        /// NestoAPI#468: motivo por el que un guardado no se completó, o null si fue correcto.
+        /// Se mira el TIPO del resultado en vez de ejecutarlo, porque el controller se instancia a
+        /// mano (sin Request) y ejecutar un <c>BadRequestErrorMessageResult</c> ahí revienta.
+        /// Los resultados de éxito que devuelve hoy el PUT son 204 sin avisos y
+        /// <c>Ok(RespuestaModificacionPedidoDTO)</c> cuando los hay.
+        /// </summary>
+        internal static string MensajeDeErrorDelGuardado(IHttpActionResult resultado)
+        {
+            switch (resultado)
+            {
+                case null:
+                    return "el guardado no ha devuelto respuesta";
+                case OkResult _:
+                    return null;
+                case StatusCodeResult codigo:
+                    return (int)codigo.StatusCode < 400
+                        ? null
+                        : $"el servidor ha respondido {(int)codigo.StatusCode}";
+                case BadRequestErrorMessageResult mensaje:
+                    return mensaje.Message;
+                case InvalidModelStateResult modelo:
+                    return DescribirModelState(modelo.ModelState);
+                case NotFoundResult _:
+                    return "no se encuentra el pedido";
+                case BadRequestResult _:
+                    return "el pedido no es válido";
+                default:
+                    return EsOkConContenido(resultado)
+                        ? null
+                        : $"respuesta inesperada del guardado ({resultado.GetType().Name})";
+            }
+        }
+
+        private static bool EsOkConContenido(IHttpActionResult resultado)
+        {
+            Type tipo = resultado.GetType();
+            return tipo.IsGenericType
+                && tipo.GetGenericTypeDefinition() == typeof(OkNegotiatedContentResult<>);
+        }
+
+        private static string DescribirModelState(System.Web.Http.ModelBinding.ModelStateDictionary modelState)
+        {
+            if (modelState == null)
+            {
+                return "el pedido no es válido";
+            }
+
+            string errores = string.Join("; ", modelState
+                .SelectMany(entrada => entrada.Value.Errors
+                    .Select(error => string.IsNullOrWhiteSpace(error.ErrorMessage)
+                        ? error.Exception?.Message
+                        : error.ErrorMessage))
+                .Where(mensaje => !string.IsNullOrWhiteSpace(mensaje)));
+
+            return string.IsNullOrWhiteSpace(errores) ? "el pedido no es válido" : errores;
         }
 
         /// <summary>

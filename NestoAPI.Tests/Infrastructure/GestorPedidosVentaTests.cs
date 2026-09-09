@@ -8,7 +8,10 @@ using NestoAPI.Models.PedidosVenta;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Threading.Tasks;
+using System.Web.Http;
+using System.Web.Http.Results;
 
 namespace NestoAPI.Tests.Infrastructure
 {
@@ -440,6 +443,146 @@ namespace NestoAPI.Tests.Infrastructure
             var lineaMovida = original.Lineas.Single(l => l.Producto == "B");
             Assert.AreEqual(0, lineaMovida.id);
         }
+
+        #endregion
+
+        #region PersistirUnion comprueba el resultado del guardado - NestoAPI#468
+
+        [TestMethod]
+        public void PersistirUnion_SiElGuardadoDelOriginalRechaza_LanzaConElMotivo()
+        {
+            // Regresión NestoAPI#468: PutPedidoVenta NO lanza cuando rechaza, devuelve BadRequest.
+            // Al descartarse el resultado, la unión se daba por buena, la transacción se completaba
+            // y el cliente recibía un 200 con el pedido "ampliado" que en realidad no se guardó.
+            // Caso real: pedido 925807 el 09/09/26, cuatro intentos y ninguna línea guardada.
+            var guardados = new List<int>();
+            Task<IHttpActionResult> Guardar(PedidoVentaDTO pedido)
+            {
+                guardados.Add(pedido.numero);
+                return Task.FromResult<IHttpActionResult>(pedido.numero == 100
+                    ? (IHttpActionResult)new BadRequestErrorMessageResult("No se puede desmarcar 'Servir junto'", new FakeController())
+                    : new StatusCodeResult(HttpStatusCode.NoContent, new FakeController()));
+            }
+
+            PedidoVentaDTO original = NuevoPedidoDto();
+            original.numero = 100;
+            PedidoVentaDTO ampliacion = NuevoPedidoDto();
+            ampliacion.numero = 200;
+
+            Exception ex = Assert.ThrowsException<Exception>(() =>
+                GestorPedidosVenta.PersistirUnionCon(Guardar, original, ampliacion).GetAwaiter().GetResult());
+
+            StringAssert.Contains(ex.Message, "Servir junto");
+            StringAssert.Contains(ex.Message, "100");
+            CollectionAssert.AreEqual(new[] { 200, 100 }, guardados,
+                "La ampliación se guarda antes que el original");
+        }
+
+        [TestMethod]
+        public void PersistirUnion_SiElGuardadoDeLaAmpliacionRechaza_NoLlegaAGuardarElOriginal()
+        {
+            // El caso peor de #468: al unir dos pedidos EXISTENTES, el guardado de la ampliación
+            // le borra sus líneas. Si después falla el del original y nadie lanza, las líneas
+            // desaparecen de los dos pedidos.
+            var guardados = new List<int>();
+            Task<IHttpActionResult> Guardar(PedidoVentaDTO pedido)
+            {
+                guardados.Add(pedido.numero);
+                return Task.FromResult<IHttpActionResult>(
+                    new BadRequestErrorMessageResult("Descuento fuera de rango", new FakeController()));
+            }
+
+            PedidoVentaDTO original = NuevoPedidoDto();
+            original.numero = 100;
+            PedidoVentaDTO ampliacion = NuevoPedidoDto();
+            ampliacion.numero = 200;
+
+            _ = Assert.ThrowsException<Exception>(() =>
+                GestorPedidosVenta.PersistirUnionCon(Guardar, original, ampliacion).GetAwaiter().GetResult());
+
+            CollectionAssert.AreEqual(new[] { 200 }, guardados);
+        }
+
+        [TestMethod]
+        public void PersistirUnion_AmpliacionSinNumero_SoloGuardaElOriginal()
+        {
+            // Ampliar desde la plantilla: la ampliación no existe en BD (numero=0).
+            var guardados = new List<int>();
+            Task<IHttpActionResult> Guardar(PedidoVentaDTO pedido)
+            {
+                guardados.Add(pedido.numero);
+                return Task.FromResult<IHttpActionResult>(new StatusCodeResult(HttpStatusCode.NoContent, new FakeController()));
+            }
+
+            PedidoVentaDTO original = NuevoPedidoDto();
+            original.numero = 100;
+
+            GestorPedidosVenta.PersistirUnionCon(Guardar, original, NuevoPedidoDto()).GetAwaiter().GetResult();
+
+            CollectionAssert.AreEqual(new[] { 100 }, guardados);
+        }
+
+        [TestMethod]
+        public void PersistirUnion_GuardadosCorrectos_NoLanza()
+        {
+            // Los dos resultados de éxito que devuelve PutPedidoVenta hoy: 204 sin avisos y
+            // Ok(RespuestaModificacionPedidoDTO) cuando los hay. Ninguno puede tomarse por error.
+            Task<IHttpActionResult> Guardar(PedidoVentaDTO pedido) =>
+                Task.FromResult<IHttpActionResult>(pedido.numero == 200
+                    ? (IHttpActionResult)new StatusCodeResult(HttpStatusCode.NoContent, new FakeController())
+                    : new OkNegotiatedContentResult<RespuestaModificacionPedidoDTO>(
+                        new RespuestaModificacionPedidoDTO(), new FakeController()));
+
+            PedidoVentaDTO original = NuevoPedidoDto();
+            original.numero = 100;
+            PedidoVentaDTO ampliacion = NuevoPedidoDto();
+            ampliacion.numero = 200;
+
+            GestorPedidosVenta.PersistirUnionCon(Guardar, original, ampliacion).GetAwaiter().GetResult();
+        }
+
+        [TestMethod]
+        public void MensajeDeErrorDelGuardado_ResultadosCorrectos_DevuelveNull()
+        {
+            var controlador = new FakeController();
+            Assert.IsNull(GestorPedidosVenta.MensajeDeErrorDelGuardado(new OkResult(controlador)));
+            Assert.IsNull(GestorPedidosVenta.MensajeDeErrorDelGuardado(
+                new StatusCodeResult(HttpStatusCode.NoContent, controlador)));
+            Assert.IsNull(GestorPedidosVenta.MensajeDeErrorDelGuardado(
+                new OkNegotiatedContentResult<RespuestaModificacionPedidoDTO>(new RespuestaModificacionPedidoDTO(), controlador)));
+        }
+
+        [TestMethod]
+        public void MensajeDeErrorDelGuardado_Rechazos_DevuelveElMotivo()
+        {
+            var controlador = new FakeController();
+            StringAssert.Contains(
+                GestorPedidosVenta.MensajeDeErrorDelGuardado(new BadRequestErrorMessageResult("motivo concreto", controlador)),
+                "motivo concreto");
+            Assert.IsNotNull(GestorPedidosVenta.MensajeDeErrorDelGuardado(new NotFoundResult(controlador)));
+            Assert.IsNotNull(GestorPedidosVenta.MensajeDeErrorDelGuardado(new BadRequestResult(controlador)));
+            Assert.IsNotNull(GestorPedidosVenta.MensajeDeErrorDelGuardado(
+                new StatusCodeResult(HttpStatusCode.NotAcceptable, controlador)));
+            Assert.IsNotNull(GestorPedidosVenta.MensajeDeErrorDelGuardado(null));
+        }
+
+        [TestMethod]
+        public void MensajeDeErrorDelGuardado_ModelStateInvalido_DevuelveLosErrores()
+        {
+            var modelState = new System.Web.Http.ModelBinding.ModelStateDictionary();
+            modelState.AddModelError("Lineas[0].Cantidad", "La cantidad es obligatoria");
+
+            string mensaje = GestorPedidosVenta.MensajeDeErrorDelGuardado(
+                new InvalidModelStateResult(modelState, new FakeController()));
+
+            StringAssert.Contains(mensaje, "La cantidad es obligatoria");
+        }
+
+        /// <summary>
+        /// Los IHttpActionResult de System.Web.Http.Results necesitan un ApiController para
+        /// resolver la negociación de contenido. Aquí no se ejecutan, solo se inspecciona su tipo.
+        /// </summary>
+        private class FakeController : System.Web.Http.ApiController { }
 
         #endregion
 
