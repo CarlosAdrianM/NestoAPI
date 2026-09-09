@@ -55,7 +55,7 @@ namespace NestoAPI.Tests.Infrastructure.Seguridad
         [TestMethod]
         public void CondicionesPago_ExigeCredencial()
         {
-            AssertExigeCredencial(typeof(PlazosPagoController), "GetCondicionesPago", 3);
+            AssertExigeCredencial(typeof(PlazosPagoController), "GetCondicionesPago", 4); // NestoAPI#458: + totalPedido
         }
 
         [TestMethod]
