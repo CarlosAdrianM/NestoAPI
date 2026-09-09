@@ -104,7 +104,43 @@ namespace NestoAPI.Infraestructure.Videos
             List<VideoResultadoBusqueda> resultadosLucene = LuceneBuscador.BuscarVideos(query, skip, take);
             List<int> ids = resultadosLucene.Select(r => r.Id).ToList();
 
-            return GetVideos(ids, tieneComprasRecientes, soloProtocolos);
+            List<VideoLookupModel> videos = GetVideos(ids, tieneComprasRecientes, soloProtocolos).Result;
+            AnotarProductoCoincidente(query, videos);
+            return Task.FromResult(videos);
+        }
+
+        /// <summary>
+        /// NestoAPI#454: para cada vídeo del resultado, el momento del producto que casa con la
+        /// búsqueda (si casa alguno), para que el buscador de la tienda enlace con &amp;t= en vez de
+        /// al minuto 0. Una sola consulta para todos los vídeos de la página: la ruta caliente del
+        /// buscador no puede pagar una llamada por vídeo.
+        /// </summary>
+        private static void AnotarProductoCoincidente(string query, List<VideoLookupModel> videos)
+        {
+            if (videos == null || videos.Count == 0)
+            {
+                return;
+            }
+            List<int> ids = videos.Select(v => v.Id).ToList();
+            using (NVEntities db = new NVEntities())
+            {
+                var productos = db.Videos
+                    .Where(v => ids.Contains(v.Id))
+                    .SelectMany(v => v.VideosProductos.Select(vp => new { VideoId = v.Id, vp.NombreProducto, vp.TiempoAparicion }))
+                    .ToList();
+
+                foreach (VideoLookupModel video in videos)
+                {
+                    CoincidenciaProductoVideo.Coincidencia coincidencia = CoincidenciaProductoVideo.Elegir(query,
+                        productos.Where(p => p.VideoId == video.Id)
+                            .Select(p => new CoincidenciaProductoVideo.ProductoEnVideo { Nombre = p.NombreProducto, TiempoAparicion = p.TiempoAparicion }));
+                    if (coincidencia != null)
+                    {
+                        video.TiempoAparicion = coincidencia.Segundos;
+                        video.ProductoCoincidente = coincidencia.Producto;
+                    }
+                }
+            }
         }
 
         /// <summary>

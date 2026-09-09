@@ -26,5 +26,21 @@ public class VideoLookupModel
     public bool EsUnProtocolo { get; set; }
     public bool BloqueadoPorComprasRecientes { get; set; }
     public string UrlVideo => !string.IsNullOrEmpty(VideoId) ? $"https://www.youtube.com/watch?v={VideoId}" : string.Empty;
+
+    /// <summary>
+    /// NestoAPI#454 (solo en Videos/Buscar): el momento, en segundos, del producto del vídeo que
+    /// casa con lo que se buscó. Null si el vídeo salió por el título o la transcripción y no por
+    /// un producto: entonces el módulo se queda con <see cref="UrlVideo"/>. Si casan varios, el
+    /// más temprano.
+    /// </summary>
+    public int? TiempoAparicion { get; set; }
+
+    /// <summary>NestoAPI#454: el producto que ha provocado la coincidencia, si lo hay.</summary>
+    public string ProductoCoincidente { get; set; }
+
+    /// <summary>NestoAPI#454: el enlace al momento del producto; null si no hay momento.</summary>
+    public string UrlVideoEnMomento => TiempoAparicion.HasValue && !string.IsNullOrEmpty(VideoId)
+        ? $"https://www.youtube.com/watch?v={VideoId}&t={TiempoAparicion.Value}s"
+        : null;
     public string UrlImagen => !string.IsNullOrEmpty(VideoId) ? $"https://img.youtube.com/vi/{VideoId}/0.jpg" : string.Empty;
 }

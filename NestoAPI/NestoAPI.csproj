@@ -891,6 +891,7 @@
     <Compile Include="Infraestructure\Vendedores\ServicioVendedores.cs" />
     <Compile Include="Infraestructure\Ventas\GestorVentasCliente.cs" />
     <Compile Include="Infraestructure\Videos\DescripcionFichaVideo.cs" />
+    <Compile Include="Infraestructure\Videos\CoincidenciaProductoVideo.cs" />
     <Compile Include="Infraestructure\Videos\GestorVideos.cs" />
     <Compile Include="Infraestructure\Videos\IServicioVideos.cs" />
     <Compile Include="Infraestructure\Videos\ServicioVideos.cs" />
