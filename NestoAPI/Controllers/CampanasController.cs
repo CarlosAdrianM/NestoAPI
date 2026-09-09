@@ -101,6 +101,7 @@ namespace NestoAPI.Controllers
                 Nº_Producto = Vacio(campana.Producto) ? null : campana.Producto.Trim(),
                 Familia = Vacio(campana.Familia) ? null : campana.Familia.Trim(),
                 GrupoProducto = Vacio(campana.Grupo) ? null : campana.Grupo.Trim(),
+                SubGrupoProducto = Vacio(campana.SubGrupo) ? null : campana.SubGrupo.Trim(),
                 CantidadMínima = 1,
                 Descuento = campana.Descuento,
                 Precio = campana.PrecioFijo,
@@ -148,6 +149,7 @@ namespace NestoAPI.Controllers
             fila.Nº_Producto = Vacio(campana.Producto) ? null : campana.Producto.Trim();
             fila.Familia = Vacio(campana.Familia) ? null : campana.Familia.Trim();
             fila.GrupoProducto = Vacio(campana.Grupo) ? null : campana.Grupo.Trim();
+            fila.SubGrupoProducto = Vacio(campana.SubGrupo) ? null : campana.SubGrupo.Trim();
             fila.Descuento = campana.Descuento;
             fila.Precio = campana.PrecioFijo;
             fila.DescuentoPublico = campana.DescuentoPublico;
@@ -358,6 +360,7 @@ namespace NestoAPI.Controllers
                 Nº_Producto = fila.Nº_Producto,
                 Familia = fila.Familia,
                 GrupoProducto = fila.GrupoProducto,
+                SubGrupoProducto = fila.SubGrupoProducto,
                 // Sin la audiencia no se puede saber si la fila VIAJABA antes: un cambio de 2 a 0
                 // tiene que retirar la oferta de la tienda, y eso solo se ve mirando el valor viejo.
                 AudienciaOferta = fila.AudienciaOferta
@@ -416,6 +419,12 @@ namespace NestoAPI.Controllers
             if (tieneGrupo && !tieneFamilia)
             {
                 return "El grupo solo se puede usar junto a una familia: no existe una campaña solo por grupo";
+            }
+            // NestoAPI#467: el subgrupo es el nivel "esta marca en esta categoría": exige familia y grupo.
+            if (!Vacio(campana.SubGrupo) && !tieneGrupo)
+            {
+                return "El subgrupo solo se puede usar junto a una familia y un grupo: es la campaña " +
+                       "\"esta marca en esta categoría\" (p. ej. Maystar en COS/OUT)";
             }
             if (tieneProducto == tieneFamilia)
             {
@@ -487,6 +496,18 @@ namespace NestoAPI.Controllers
                 {
                     return $"La familia {familia} no existe";
                 }
+                if (!Vacio(campana.SubGrupo))
+                {
+                    string grupo = campana.Grupo.Trim();
+                    string subGrupo = campana.SubGrupo.Trim();
+                    bool existeSubGrupo = await db.SubGruposProductoes
+                        .AnyAsync(s => s.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && s.Grupo == grupo && s.Número == subGrupo)
+                        .ConfigureAwait(false);
+                    if (!existeSubGrupo)
+                    {
+                        return $"El subgrupo {grupo}/{subGrupo} no existe";
+                    }
+                }
             }
 
             return await ValidarSolape(campana, idQueSeEdita).ConfigureAwait(false);
@@ -503,6 +524,7 @@ namespace NestoAPI.Controllers
             string producto = Vacio(campana.Producto) ? null : campana.Producto.Trim();
             string familia = Vacio(campana.Familia) ? null : campana.Familia.Trim();
             string grupo = Vacio(campana.Grupo) ? null : campana.Grupo.Trim();
+            string subGrupo = Vacio(campana.SubGrupo) ? null : campana.SubGrupo.Trim();
 
             List<DescuentosProducto> mismoNivel = await FilasDeTarifa().ToListAsync().ConfigureAwait(false);
 
@@ -511,6 +533,7 @@ namespace NestoAPI.Controllers
                 && f.Nº_Producto?.Trim() == producto
                 && f.Familia?.Trim() == familia
                 && f.GrupoProducto?.Trim() == grupo
+                && f.SubGrupoProducto?.Trim() == subGrupo
                 && SeSolapan(f.FechaDesde, f.FechaHasta, campana.FechaDesde, campana.FechaHasta));
 
             return choca == null
@@ -536,6 +559,7 @@ namespace NestoAPI.Controllers
                 Producto = fila.Nº_Producto?.Trim(),
                 Familia = fila.Familia?.Trim(),
                 Grupo = fila.GrupoProducto?.Trim(),
+                SubGrupo = fila.SubGrupoProducto?.Trim(),
                 Descuento = fila.Descuento,
                 PrecioFijo = fila.Precio,
                 DescuentoPublico = fila.DescuentoPublico,
@@ -572,6 +596,13 @@ namespace NestoAPI.Controllers
         public string Producto { get; set; }
         public string Familia { get; set; }
         public string Grupo { get; set; }
+
+        /// <summary>
+        /// NestoAPI#467: solo junto a familia y grupo. "Esta marca en esta categoría", donde la
+        /// categoría del producto es la principal de su ficha o cualquiera de sus secundarias.
+        /// Es lo que hace del Outlet una fila por marca (Maystar / COS / OUT al 15 %).
+        /// </summary>
+        public string SubGrupo { get; set; }
 
         /// <summary>En tanto por uno, como en la tabla: 0,20 = 20 %.</summary>
         public decimal Descuento { get; set; }

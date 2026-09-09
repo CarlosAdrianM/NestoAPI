@@ -1,4 +1,4 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Models;
 
 namespace NestoAPI.Tests.Models
@@ -195,6 +195,109 @@ namespace NestoAPI.Tests.Models
                 new[] { DeFamilia(0.20M), DeFamiliaYGrupo(0.10M) }, 100M, null);
 
             Assert.AreEqual(20M, resultado.Profesional);
+        }
+
+        // ===== NestoAPI#467: familia + grupo + subgrupo (categoría principal o secundaria) =====
+        // El Outlet de la tienda como UNA fila por marca: "Maystar en COS/OUT al 15 %".
+
+        private static DescuentosProducto DeCategoria(decimal descuento, string grupo = GRUPO, string subgrupo = "OUT",
+            byte ambito = 2, decimal? descuentoPublico = null, short cantidadMinima = 1)
+        {
+            return new DescuentosProducto
+            {
+                Empresa = "1",
+                Familia = FAMILIA,
+                GrupoProducto = grupo,
+                SubGrupoProducto = subgrupo,
+                CantidadMínima = cantidadMinima,
+                Descuento = descuento,
+                DescuentoPublico = descuentoPublico,
+                AudienciaOferta = ambito
+            };
+        }
+
+        private static CategoriaSecundariaDTO Secundaria(string grupo, string subgrupo)
+        {
+            return new CategoriaSecundariaDTO { Grupo = grupo, Subgrupo = subgrupo };
+        }
+
+        private static DescuentosPorAudiencia CalcularCon(string subgrupoPrincipal, CategoriaSecundariaDTO[] secundarias, params DescuentosProducto[] filas)
+        {
+            return ProductoDTO.CalcularDescuentosPorAudiencia(filas, 100M, GRUPO, subgrupoPrincipal, secundarias);
+        }
+
+        [TestMethod]
+        public void Categoria_ElProductoQueEstaEnOutletComoSecundaria_HeredaElPorcentaje()
+        {
+            DescuentosPorAudiencia resultado = CalcularCon("ACB", new[] { Secundaria("COS", "OUT") }, DeCategoria(0.15M));
+
+            Assert.AreEqual(15M, resultado.Profesional);
+            Assert.AreEqual(15M, resultado.Publico);
+        }
+
+        [TestMethod]
+        public void Categoria_ElProductoQueEstaEnOutletComoPrincipal_HeredaElPorcentaje()
+        {
+            DescuentosPorAudiencia resultado = CalcularCon("OUT", new CategoriaSecundariaDTO[0], DeCategoria(0.15M));
+
+            Assert.AreEqual(15M, resultado.Profesional);
+        }
+
+        [TestMethod]
+        public void Categoria_ElProductoDeLaMarcaQueNoEstaEnOutlet_NoLaHereda()
+        {
+            DescuentosPorAudiencia resultado = CalcularCon("ACB", new[] { Secundaria("COS", "107") }, DeCategoria(0.15M));
+
+            Assert.IsNull(resultado.Profesional);
+        }
+
+        /// <summary>El test rojo: la fila con subgrupo NO es una fila de familia+grupo.</summary>
+        [TestMethod]
+        public void Categoria_LaFilaConSubgrupoNoContaminaElNivelFamiliaGrupo()
+        {
+            DescuentosPorAudiencia resultado = CalcularCon("ACB", new CategoriaSecundariaDTO[0], DeFamiliaYGrupo(0.10M), DeCategoria(0.15M));
+
+            Assert.AreEqual(10M, resultado.Profesional, "un Maystar de cosmética fuera del Outlet se queda con el 10 % de familia+grupo");
+        }
+
+        [TestMethod]
+        public void Categoria_SobrescribeALaFamiliaYAlGrupo_YElProductoSoloGanaSiEsMayor()
+        {
+            CategoriaSecundariaDTO[] outlet = new[] { Secundaria("COS", "OUT") };
+
+            Assert.AreEqual(15M, CalcularCon("ACB", outlet, DeFamilia(0.30M), DeFamiliaYGrupo(0.20M), DeCategoria(0.15M)).Profesional,
+                "los niveles de familia son asignaciones: el último pisa aunque sea menor");
+            Assert.AreEqual(20M, CalcularCon("ACB", outlet, DeCategoria(0.15M), DeProducto(0.20M)).Profesional, "producto mayor: gana");
+            Assert.AreEqual(15M, CalcularCon("ACB", outlet, DeCategoria(0.15M), DeProducto(0.10M)).Profesional, "producto menor: no pisa");
+        }
+
+        [TestMethod]
+        public void Categoria_ConDescuentoPublicoDistinto_CadaAudienciaLoSuyo()
+        {
+            // Anubis: 30,89 % al profesional y 25 % al público, en la misma fila.
+            DescuentosPorAudiencia resultado = CalcularCon("ACB", new[] { Secundaria("COS", "OUT") },
+                DeCategoria(0.3089M, descuentoPublico: 0.25M));
+
+            Assert.AreEqual(30.89M, resultado.Profesional);
+            Assert.AreEqual(25M, resultado.Publico);
+        }
+
+        [TestMethod]
+        public void Categoria_SoloProfesionales_ElPublicoNoLaVe()
+        {
+            DescuentosPorAudiencia resultado = CalcularCon("ACB", new[] { Secundaria("COS", "OUT") }, DeCategoria(0.15M, ambito: 1));
+
+            Assert.AreEqual(15M, resultado.Profesional);
+            Assert.IsNull(resultado.Publico);
+        }
+
+        [TestMethod]
+        public void Categoria_DosCategoriasOutletConFila_GanaLaDeMayorCantidadMinimaYAIgualdadLaDeMayorDescuento()
+        {
+            DescuentosPorAudiencia resultado = CalcularCon("ACB", new[] { Secundaria("COS", "OUT"), Secundaria("COS", "OUM") },
+                DeCategoria(0.25M, subgrupo: "OUT"), DeCategoria(0.30M, subgrupo: "OUM"));
+
+            Assert.AreEqual(30M, resultado.Profesional);
         }
     }
 }

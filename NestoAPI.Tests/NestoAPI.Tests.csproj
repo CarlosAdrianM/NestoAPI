@@ -391,6 +391,7 @@
     <Compile Include="Controllers\NovedadesControllerTests.cs" />
     <Compile Include="Infrastructure\VigenciaDescuentosTests.cs" />
     <Compile Include="Infrastructure\GestorPreciosCalcularDescuentoProductoTests.cs" />
+    <Compile Include="Infrastructure\GestorPreciosCategoriaTests.cs" />
     <Compile Include="Infrastructure\GestorPreciosTests.cs" />
     <Compile Include="Infrastructure\ConstructorPedidoClienteTests.cs" />
     <Compile Include="Infrastructure\PoliticaPagoCanalTests.cs" />

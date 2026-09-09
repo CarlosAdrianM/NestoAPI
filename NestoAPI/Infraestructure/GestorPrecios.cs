@@ -120,9 +120,20 @@ namespace NestoAPI.Infraestructure
                     datos.descuentoCalculado = dtoProducto.Descuento;
                 }
 
-                dtoProducto = BuscarDescuentoUnico(db, d => d.Empresa == datos.producto.Empresa && d.Familia == datos.producto.Familia && d.CantidadMínima <= datos.cantidad && d.NºProveedor == null && d.GrupoProducto == datos.producto.Grupo && d.FiltroProducto == null && d.Nº_Cliente == null,
+                dtoProducto = BuscarDescuentoUnico(db, d => d.Empresa == datos.producto.Empresa && d.Familia == datos.producto.Familia && d.CantidadMínima <= datos.cantidad && d.NºProveedor == null && d.GrupoProducto == datos.producto.Grupo && d.FiltroProducto == null && d.Nº_Cliente == null && d.SubGrupoProducto == null, // #467: las filas con subgrupo son otro nivel
                     datos, $"la familia {datos.producto.Familia?.Trim()} (grupo {datos.producto.Grupo?.Trim()})");
                 if (dtoProducto != null) // && dtoProducto.Descuento > datos.descuentoCalculado)
+                {
+                    datos.descuentoCalculado = dtoProducto.Descuento;
+                }
+
+                // NestoAPI#467: familia + grupo + subgrupo, donde la categoría del producto es la
+                // principal de la ficha O cualquiera de sus secundarias. "Maystar en COS/OUT al 15 %"
+                // es una fila, y un producto de Maystar que entre mañana en Outlet la hereda sin tocar
+                // nada. Misma forma que los otros niveles de familia: ASIGNA (pisa lo anterior aunque
+                // sea menor); el nivel de producto, más abajo, sigue ganando solo si es mayor.
+                dtoProducto = BuscarDescuentoCategoria(db, datos);
+                if (dtoProducto != null)
                 {
                     datos.descuentoCalculado = dtoProducto.Descuento;
                 }
@@ -200,6 +211,56 @@ namespace NestoAPI.Infraestructure
                 // Si quisiéramos comprobar también las condiciones que tiene en ficha, descomentar la siguiente línea
                 // comprobarCondiciones(datos);
             }
+        }
+
+        /// <summary>
+        /// NestoAPI#467: la fila de familia + grupo + subgrupo que aplica a este producto, si la hay.
+        /// Solo se pregunta por las categorías del producto cuando su familia tiene alguna fila con
+        /// subgrupo: para el 99 % de los productos no hay consulta extra.
+        /// </summary>
+        private static DescuentosProducto BuscarDescuentoCategoria(NVEntities db, PrecioDescuentoProducto datos)
+        {
+            List<DescuentosProducto> filasConSubgrupo = Vigencia.Vigentes(db.DescuentosProductoes)
+                .Where(d => d.Empresa == datos.producto.Empresa && d.Familia == datos.producto.Familia
+                    && d.SubGrupoProducto != null && d.CantidadMínima <= datos.cantidad
+                    && d.NºProveedor == null && d.Nº_Cliente == null && d.FiltroProducto == null && d.Nº_Producto == null)
+                .ToList();
+            if (filasConSubgrupo.Count == 0)
+            {
+                return null;
+            }
+            return ElegirDescuentoDeCategoria(filasConSubgrupo, CategoriasDelProducto(db, datos.producto));
+        }
+
+        /// <summary>La categoría principal de la ficha más las secundarias (ProductosCategoriasSecundarias, #414).</summary>
+        internal static List<CategoriaProducto> CategoriasDelProducto(NVEntities db, Producto producto)
+        {
+            List<CategoriaProducto> categorias = new List<CategoriaProducto>();
+            if (!string.IsNullOrWhiteSpace(producto.Grupo) && !string.IsNullOrWhiteSpace(producto.SubGrupo))
+            {
+                categorias.Add(new CategoriaProducto(producto.Grupo, producto.SubGrupo));
+            }
+            categorias.AddRange(db.ProductosCategoriasSecundarias
+                .Where(c => c.Empresa == producto.Empresa && c.Número == producto.Número)
+                .Select(c => new { c.Grupo, c.SubGrupo })
+                .ToList()
+                .Select(c => new CategoriaProducto(c.Grupo, c.SubGrupo)));
+            return categorias;
+        }
+
+        /// <summary>
+        /// De las filas con subgrupo de la familia, la que casa con alguna categoría del producto.
+        /// Si casan varias (Fama Fabre está en COS/OUT y en COS/OUM con filas distintas), la de mayor
+        /// CantidadMínima y, a igualdad, la de mayor descuento. Pura, para poder probarla sin BD.
+        /// </summary>
+        internal static DescuentosProducto ElegirDescuentoDeCategoria(IEnumerable<DescuentosProducto> filasConSubgrupo, IEnumerable<CategoriaProducto> categorias)
+        {
+            HashSet<string> claves = new HashSet<string>((categorias ?? Enumerable.Empty<CategoriaProducto>()).Select(c => c.Clave));
+            return (filasConSubgrupo ?? Enumerable.Empty<DescuentosProducto>())
+                .Where(f => f.SubGrupoProducto != null && claves.Contains(CategoriaProducto.ClaveDe(f.GrupoProducto, f.SubGrupoProducto)))
+                .OrderByDescending(f => f.CantidadMínima)
+                .ThenByDescending(f => f.Descuento)
+                .FirstOrDefault();
         }
 
         private static void cargarListaCondiciones()
@@ -499,6 +560,26 @@ namespace NestoAPI.Infraestructure
             }
 
             return rechazoEspecifico ?? respuesta;
+        }
+    }
+
+    /// <summary>
+    /// NestoAPI#467: un par grupo/subgrupo de producto, comparado como lo haría SQL Server (sin el
+    /// relleno de los char y sin distinguir mayúsculas).
+    /// </summary>
+    public class CategoriaProducto
+    {
+        public CategoriaProducto(string grupo, string subGrupo)
+        {
+            Grupo = grupo?.Trim();
+            SubGrupo = subGrupo?.Trim();
+        }
+        public string Grupo { get; }
+        public string SubGrupo { get; }
+        public string Clave => ClaveDe(Grupo, SubGrupo);
+        public static string ClaveDe(string grupo, string subGrupo)
+        {
+            return (grupo ?? string.Empty).Trim().ToUpperInvariant() + "/" + (subGrupo ?? string.Empty).Trim().ToUpperInvariant();
         }
     }
 

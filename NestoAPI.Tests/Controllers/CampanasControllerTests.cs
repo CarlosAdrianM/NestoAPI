@@ -26,6 +26,7 @@ namespace NestoAPI.Tests.Controllers
         private DbSet<DescuentosProducto> fakeDescuentos;
         private DbSet<Producto> fakeProductos;
         private DbSet<Familia> fakeFamilias;
+        private DbSet<SubGruposProducto> fakeSubGrupos;
         private CampanasController controller;
 
         [TestInitialize]
@@ -39,6 +40,12 @@ namespace NestoAPI.Tests.Controllers
             A.CallTo(() => db.DescuentosProductoes).Returns(fakeDescuentos);
             A.CallTo(() => db.Productos).Returns(fakeProductos);
             A.CallTo(() => db.Familias).Returns(fakeFamilias);
+            fakeSubGrupos = A.Fake<DbSet<SubGruposProducto>>(o => o.Implements<IQueryable<SubGruposProducto>>().Implements<IDbAsyncEnumerable<SubGruposProducto>>());
+            A.CallTo(() => db.SubGruposProductoes).Returns(fakeSubGrupos);
+            ConfigurarFakeDbSet(fakeSubGrupos, new List<SubGruposProducto>
+            {
+                new SubGruposProducto { Empresa = "1", Grupo = "COS", Número = "OUT", Descripción = "Outlet Estética" }
+            }.AsQueryable());
             A.CallTo(() => db.EncolarProductoSync(A<string>.Ignored, A<string>.Ignored)).Returns(Task.FromResult(1));
 
             ConfigurarFakeDbSet(fakeDescuentos, new List<DescuentosProducto>().AsQueryable());
@@ -378,6 +385,95 @@ namespace NestoAPI.Tests.Controllers
 
             A.CallTo(() => db.EncolarProductosSync(
                     A<IEnumerable<string>>.That.Matches(l => l.Contains("44166")), A<string>.Ignored))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        // ===== NestoAPI#467: familia + grupo + subgrupo (el Outlet como campaña de marca) =====
+
+        private static CampanaDTO CampanaDeCategoria(string subGrupo = "OUT", string grupo = "COS", decimal descuento = 0.15M)
+        {
+            return new CampanaDTO
+            {
+                Familia = "Ufaes", Grupo = grupo, SubGrupo = subGrupo, Descuento = descuento, AudienciaOferta = 2,
+                FechaDesde = DateTime.Today, FechaHasta = DateTime.Today.AddDays(30), Campana = "Outlet"
+            };
+        }
+
+        [TestMethod]
+        public async Task PostCampana_SubgrupoSinGrupo_Rechaza()
+        {
+            var resultado = await controller.PostCampana(new CampanaDTO { Familia = "Ufaes", SubGrupo = "OUT", Descuento = 0.15M, AudienciaOferta = 2 });
+
+            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+            StringAssert.Contains(MensajeDe(resultado).ToLower(), "subgrupo");
+        }
+
+        [TestMethod]
+        public async Task PostCampana_SubgrupoQueNoExisteEnEseGrupo_Rechaza()
+        {
+            var resultado = await controller.PostCampana(CampanaDeCategoria(subGrupo: "ZZZ"));
+
+            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+            StringAssert.Contains(MensajeDe(resultado), "COS/ZZZ");
+        }
+
+        [TestMethod]
+        public async Task PostCampana_DeCategoria_SeGuardaConElSubgrupoYLoDevuelve()
+        {
+            var resultado = await controller.PostCampana(CampanaDeCategoria());
+
+            var ok = resultado as OkNegotiatedContentResult<CampanaDTO>;
+            Assert.IsNotNull(ok, MensajeDe(resultado));
+            Assert.AreEqual("OUT", ok.Content.SubGrupo);
+            Assert.AreEqual("COS", ok.Content.Grupo);
+            Assert.AreEqual("Ufaes", ok.Content.Familia);
+        }
+
+        [TestMethod]
+        public async Task PostCampana_DeCategoria_SolapaConOtraDeLaMismaCategoria_Rechaza()
+        {
+            ConfigurarFakeDbSet(fakeDescuentos, new List<DescuentosProducto>
+            {
+                new DescuentosProducto { Empresa = "1", Nº_Orden = 7, Familia = "Ufaes", GrupoProducto = "COS", SubGrupoProducto = "OUT", CantidadMínima = 1, Descuento = 0.10M, AudienciaOferta = 2 }
+            }.AsQueryable());
+
+            var resultado = await controller.PostCampana(CampanaDeCategoria());
+
+            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+            StringAssert.Contains(MensajeDe(resultado), "solapan");
+        }
+
+        [TestMethod]
+        public async Task PostCampana_DeCategoria_NoSolapaConLaDeFamiliaYGrupo_SonNivelesDistintos()
+        {
+            ConfigurarFakeDbSet(fakeDescuentos, new List<DescuentosProducto>
+            {
+                new DescuentosProducto { Empresa = "1", Nº_Orden = 7, Familia = "Ufaes", GrupoProducto = "COS", CantidadMínima = 1, Descuento = 0.10M, AudienciaOferta = 2 }
+            }.AsQueryable());
+
+            var resultado = await controller.PostCampana(CampanaDeCategoria());
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<CampanaDTO>), MensajeDe(resultado));
+        }
+
+        [TestMethod]
+        public async Task PostCampana_DeCategoria_EncolaSoloLosProductosDeLaMarcaEnEsaCategoria()
+        {
+            Producto enOutletComoSecundaria = new Producto { Empresa = "1", Número = "55555", Familia = "Ufaes", Grupo = "COS", SubGrupo = "ACB", Estado = 0 };
+            enOutletComoSecundaria.ProductosCategoriasSecundarias.Add(new ProductoCategoriaSecundaria { Empresa = "1", Número = "55555", Orden = 1, Grupo = "COS", SubGrupo = "OUT" });
+            ConfigurarFakeDbSet(fakeProductos, new List<Producto>
+            {
+                new Producto { Empresa = "1", Número = "44166", Familia = "Ufaes", Grupo = "COS", SubGrupo = "ACB", Estado = 0 }, // de la marca, pero fuera del Outlet
+                enOutletComoSecundaria,
+                new Producto { Empresa = "1", Número = "66666", Familia = "Ufaes", Grupo = "COS", SubGrupo = "OUT", Estado = 0 },  // Outlet como categoría principal
+                new Producto { Empresa = "1", Número = "77777", Familia = "Lisap", Grupo = "COS", SubGrupo = "OUT", Estado = 0 }   // otra marca en el Outlet
+            }.AsQueryable());
+
+            _ = await controller.PostCampana(CampanaDeCategoria());
+
+            A.CallTo(() => db.EncolarProductosSync(
+                    A<IEnumerable<string>>.That.Matches(l => l.Contains("55555") && l.Contains("66666") && !l.Contains("44166") && !l.Contains("77777")),
+                    A<string>.Ignored))
                 .MustHaveHappenedOnceExactly();
         }
 

@@ -1,4 +1,4 @@
-using NestoAPI.Models;
+﻿using NestoAPI.Models;
 using System.Collections.Generic;
 using System.Data.Entity;
 using System.Linq;
@@ -63,13 +63,22 @@ namespace NestoAPI.Infraestructure.Sincronizacion
                 .Where(p => p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO
                     && p.Estado >= 0
                     && familias.Contains(p.Familia))
-                .Select(p => new { p.Número, p.Familia, p.Grupo })
+                .Select(p => new
+                {
+                    p.Número,
+                    p.Familia,
+                    p.Grupo,
+                    p.SubGrupo,
+                    // NestoAPI#467: las categorías secundarias, para las filas con subgrupo
+                    Secundarias = p.ProductosCategoriasSecundarias.Select(s => new { s.Grupo, s.SubGrupo })
+                })
                 .ToListAsync().ConfigureAwait(false);
 
             foreach (DescuentosProducto fila in deFamilia)
             {
                 string familia = fila.Familia.Trim();
                 string grupo = fila.GrupoProducto?.Trim();
+                string subgrupo = fila.SubGrupoProducto?.Trim();
 
                 foreach (var candidato in candidatos)
                 {
@@ -77,9 +86,22 @@ namespace NestoAPI.Infraestructure.Sincronizacion
                     {
                         continue;
                     }
+                    if (subgrupo != null)
+                    {
+                        // NestoAPI#467: una fila con subgrupo alcanza a los productos de la marca cuya
+                        // categoría PRINCIPAL o alguna SECUNDARIA sea ese grupo/subgrupo. No a la
+                        // familia entera, ni al grupo entero.
+                        string clave = CategoriaProducto.ClaveDe(grupo, subgrupo);
+                        bool principal = CategoriaProducto.ClaveDe(candidato.Grupo, candidato.SubGrupo) == clave;
+                        bool secundaria = candidato.Secundarias.Any(s => CategoriaProducto.ClaveDe(s.Grupo, s.SubGrupo) == clave);
+                        if (!principal && !secundaria)
+                        {
+                            continue;
+                        }
+                    }
                     // Una fila de familia+grupo solo alcanza a los productos de ESE grupo: es el
                     // nivel 5 del motor de precios, que exige las dos cosas a la vez.
-                    if (grupo != null && candidato.Grupo?.Trim() != grupo)
+                    else if (grupo != null && candidato.Grupo?.Trim() != grupo)
                     {
                         continue;
                     }

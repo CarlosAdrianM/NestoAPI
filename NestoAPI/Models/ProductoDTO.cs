@@ -352,7 +352,7 @@ namespace NestoAPI.Models
             // Lo que NO vale es tirar de `dto.Familia`: ahí va la DESCRIPCIÓN ("Productos Genéricos"),
             // no el código, y no casaría con ninguna fila de descuento — en silencio. Para quien
             // necesite el código desde el DTO está `dto.FamiliaCodigo`.
-            await CargarDescuentosPorAudiencia(dto, db, producto.PVP, producto.Familia, producto.Grupo).ConfigureAwait(false);
+            await CargarDescuentosPorAudiencia(dto, db, producto.PVP, producto.Familia, producto.Grupo, producto.SubGrupo).ConfigureAwait(false);
 
             foreach (Kit kit in producto.Kits)
             {
@@ -412,7 +412,7 @@ namespace NestoAPI.Models
         /// hace falta que algo reencole el producto en Nesto_sync (el job del Slice 2 de #423).
         /// </summary>
         internal static async Task CargarDescuentosPorAudiencia(ProductoDTO dto, NVEntities db, decimal? pvp,
-            string familia = null, string grupo = null)
+            string familia = null, string grupo = null, string subgrupo = null)
         {
             // #423 (Slice 3): además de las filas del producto, las de su FAMILIA. Son los dos
             // niveles de tarifa que el motor de precios aplica de verdad (ver la precedencia en
@@ -431,7 +431,10 @@ namespace NestoAPI.Models
                     && d.AudienciaOferta > 0)
                 .ToListAsync().ConfigureAwait(false);
 
-            DescuentosPorAudiencia calculados = CalcularDescuentosPorAudiencia(filas, pvp, grupo);
+            // NestoAPI#467: las filas de familia+grupo+subgrupo ya vienen en `filas` (son de la
+            // familia); para saber cuáles casan hacen falta la categoría principal y las
+            // secundarias del producto, que CargarCategoriasSecundarias acaba de dejar en el DTO.
+            DescuentosPorAudiencia calculados = CalcularDescuentosPorAudiencia(filas, pvp, grupo, subgrupo, dto.CategoriasSecundarias);
             dto.DescuentoPorcentajeProfesional = calculados.Profesional;
             dto.DescuentoPorcentajePublico = calculados.Publico;
         }
@@ -472,7 +475,8 @@ namespace NestoAPI.Models
         /// repartir un precio fijo entre los productos de una marca no significaría nada.
         /// </summary>
         internal static DescuentosPorAudiencia CalcularDescuentosPorAudiencia(
-            System.Collections.Generic.IEnumerable<DescuentosProducto> filas, decimal? pvp, string grupo = null)
+            System.Collections.Generic.IEnumerable<DescuentosProducto> filas, decimal? pvp, string grupo = null,
+            string subgrupo = null, System.Collections.Generic.IEnumerable<CategoriaSecundariaDTO> secundarias = null)
         {
             DescuentosPorAudiencia resultado = new DescuentosPorAudiencia();
             if (filas == null)
@@ -481,28 +485,60 @@ namespace NestoAPI.Models
             }
 
             System.Collections.Generic.List<DescuentosProducto> lista = filas.ToList();
+            // NestoAPI#467: las categorías del producto (principal + secundarias) con las que casa
+            // el nivel familia+grupo+subgrupo. Misma clave que el motor (CategoriaProducto).
+            System.Collections.Generic.HashSet<string> categorias = ClavesDeCategoria(grupo, subgrupo, secundarias);
 
             // Cada audiencia se calcula por separado, como si el motor corriera dos veces: primero
             // sobre lo que se le publica al profesional y luego sobre lo que se le publica al
             // público. Así "25 % a profesionales y 10 % al público" se puede seguir expresando con
             // dos filas de ámbitos distintos (lo de #413), y no solo con DescuentoPublico.
-            resultado.Profesional = CalcularParaAudiencia(lista, pvp, grupo,
+            resultado.Profesional = CalcularParaAudiencia(lista, pvp, grupo, categorias,
                 f => f.AudienciaOferta == 1 || f.AudienciaOferta == 2, usarDescuentoPublico: false);
-            resultado.Publico = CalcularParaAudiencia(lista, pvp, grupo,
+            resultado.Publico = CalcularParaAudiencia(lista, pvp, grupo, categorias,
                 f => f.AudienciaOferta == 2 || f.AudienciaOferta == 3, usarDescuentoPublico: true);
 
             return resultado;
         }
 
+        private static System.Collections.Generic.HashSet<string> ClavesDeCategoria(string grupo, string subgrupo,
+            System.Collections.Generic.IEnumerable<CategoriaSecundariaDTO> secundarias)
+        {
+            System.Collections.Generic.HashSet<string> claves = new System.Collections.Generic.HashSet<string>();
+            if (!string.IsNullOrWhiteSpace(grupo) && !string.IsNullOrWhiteSpace(subgrupo))
+            {
+                _ = claves.Add(Infraestructure.CategoriaProducto.ClaveDe(grupo, subgrupo));
+            }
+            foreach (CategoriaSecundariaDTO secundaria in secundarias ?? System.Linq.Enumerable.Empty<CategoriaSecundariaDTO>())
+            {
+                if (secundaria != null && !string.IsNullOrWhiteSpace(secundaria.Grupo) && !string.IsNullOrWhiteSpace(secundaria.Subgrupo))
+                {
+                    _ = claves.Add(Infraestructure.CategoriaProducto.ClaveDe(secundaria.Grupo, secundaria.Subgrupo));
+                }
+            }
+            return claves;
+        }
+
         private static decimal? CalcularParaAudiencia(System.Collections.Generic.List<DescuentosProducto> lista,
-            decimal? pvp, string grupo, Func<DescuentosProducto, bool> esDeLaAudiencia, bool usarDescuentoPublico)
+            decimal? pvp, string grupo, System.Collections.Generic.HashSet<string> categorias,
+            Func<DescuentosProducto, bool> esDeLaAudiencia, bool usarDescuentoPublico)
         {
             System.Collections.Generic.List<DescuentosProducto> suyas = lista.Where(esDeLaAudiencia).ToList();
 
             // La clasificación es por la FORMA de la fila, igual que los filtros del motor.
             DescuentosProducto deFamilia = MejorDelNivel(suyas.Where(f => f.Familia != null && f.GrupoProducto == null));
             DescuentosProducto deFamiliaYGrupo = MejorDelNivel(suyas.Where(f => f.Familia != null && f.GrupoProducto != null
+                && f.SubGrupoProducto == null // #467: las filas con subgrupo son otro nivel
                 && grupo != null && f.GrupoProducto.Trim() == grupo.Trim()));
+            // NestoAPI#467: familia + grupo + subgrupo, si el producto está en esa categoría (principal
+            // o secundaria). Entre varias, la de mayor CantidadMínima y a igualdad la de mayor
+            // descuento, igual que el motor (GestorPrecios.ElegirDescuentoDeCategoria).
+            DescuentosProducto deCategoria = suyas
+                .Where(f => f.Familia != null && f.GrupoProducto != null && f.SubGrupoProducto != null
+                    && categorias.Contains(Infraestructure.CategoriaProducto.ClaveDe(f.GrupoProducto, f.SubGrupoProducto)))
+                .OrderByDescending(f => f.CantidadMínima)
+                .ThenByDescending(f => f.Descuento)
+                .FirstOrDefault();
             DescuentosProducto deProducto = MejorDelNivel(suyas.Where(f => f.Familia == null && f.GrupoProducto == null));
 
             // Se acumula en decimal (no en decimal?) para que un nivel con Descuento 0 pueda
@@ -518,6 +554,10 @@ namespace NestoAPI.Models
             if (deFamiliaYGrupo != null)
             {
                 porcentaje = PorcentajeDe(deFamiliaYGrupo, pvp, derivarDePrecio: false, usarDescuentoPublico);
+            }
+            if (deCategoria != null)
+            {
+                porcentaje = PorcentajeDe(deCategoria, pvp, derivarDePrecio: false, usarDescuentoPublico);
             }
             if (deProducto != null)
             {
