@@ -1168,6 +1168,7 @@
     <Compile Include="Models\PlanesVentajas\EmpresaResumenDTO.cs" />
     <Compile Include="Models\RespuestaModificacionPedidoDTO.cs" />
     <Compile Include="Models\UltimoEnvioClienteDTO.cs" />
+    <Compile Include="Models\EmpresaDTO.cs" />
     <Compile Include="Models\EnviosAgencia.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>

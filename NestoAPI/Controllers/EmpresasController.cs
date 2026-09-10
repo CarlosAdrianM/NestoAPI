@@ -18,18 +18,35 @@ namespace NestoAPI.Controllers
         // Carlos 12/04/17: lo pongo para desactivar el Lazy Loading
         public EmpresasController()
         {
+            db = new NVEntities();
             db.Configuration.LazyLoadingEnabled = false;
         }
-        private NVEntities db = new NVEntities();
+
+        // Para los tests: la BD llega de fuera, como en el resto de controllers.
+        public EmpresasController(NVEntities db)
+        {
+            this.db = db;
+            db.Configuration.LazyLoadingEnabled = false;
+        }
+
+        private readonly NVEntities db;
 
         // GET: api/Empresas
-        public IQueryable<Empresa> GetEmpresas()
+        // NestoAPI#472: se devuelve el DTO (columnas de la tabla, sin navegaciones de EF), no la
+        // entidad. La entidad serializaba "Vendedores":[] y Nesto, que ahí tiene un objeto y no una
+        // colección, reventaba al deserializar: Agencias se quedaba sin empresas. Ver EmpresaDTO.
+        [ResponseType(typeof(List<EmpresaDTO>))]
+        public IHttpActionResult GetEmpresas()
         {
-            return db.Empresas;
+            // ToList() ANTES del Select: DesdeEntidad no es traducible a SQL.
+            List<EmpresaDTO> empresas = db.Empresas.ToList()
+                .Select(EmpresaDTO.DesdeEntidad)
+                .ToList();
+            return Ok(empresas);
         }
 
         // GET: api/Empresas/5
-        [ResponseType(typeof(Empresa))]
+        [ResponseType(typeof(EmpresaDTO))]
         public async Task<IHttpActionResult> GetEmpresa(string id)
         {
             Empresa empresa = await db.Empresas.FindAsync(id);
@@ -38,7 +55,7 @@ namespace NestoAPI.Controllers
                 return NotFound();
             }
 
-            return Ok(empresa);
+            return Ok(EmpresaDTO.DesdeEntidad(empresa));
         }
 
         // PUT: api/Empresas/5

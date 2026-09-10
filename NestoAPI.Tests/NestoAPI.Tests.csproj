@@ -212,6 +212,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Controllers\ClientesControllerTests.cs" />
+    <Compile Include="Controllers\EmpresasControllerTests.cs" />
     <Compile Include="Infrastructure\Seguridad\SeguridadTanda1Tests.cs" />
     <Compile Include="Controllers\AutorizacionControllersTests.cs" />
     <Compile Include="Controllers\FacturacionRutasControllerAgruparPorPOTests.cs" />
