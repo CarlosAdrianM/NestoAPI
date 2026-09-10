@@ -169,5 +169,15 @@ namespace NestoAPI.Models.Sincronizacion
         /// (retirar las que sobren en el consumidor).
         /// </summary>
         public List<CategoriaSecundariaDTO> CategoriasSecundarias { get; set; }
+
+        /// <summary>
+        /// NestoAPI#477: null = producto plano (lo de siempre). Con valor = esta referencia es
+        /// una COMBINACIÓN del producto <c>Variante.Principal</c> en la tienda, no un producto
+        /// aparte: el consumidor crea/actualiza la combinación (reference = <see cref="Producto"/>,
+        /// ean13 = <see cref="CodigoBarras"/>, precio y stock los de este mensaje) y NO toca los
+        /// textos, que son los de la principal. Viaja también en el mensaje de la principal, con
+        /// Principal = ella misma. Odoo puede ignorarlo.
+        /// </summary>
+        public VarianteDTO Variante { get; set; }
     }
 }

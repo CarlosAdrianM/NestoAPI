@@ -548,6 +548,7 @@
     <Compile Include="Controllers\PrestashopProductosController.cs" />
     <Compile Include="Controllers\CampanasController.cs" />
     <Compile Include="Controllers\ProductosCategoriasSecundariasController.cs" />
+    <Compile Include="Controllers\ProductosVariantesController.cs" />
     <Compile Include="Controllers\PlazosPagoController.cs" />
     <Compile Include="Controllers\PreContabilidadesController.cs" />
     <Compile Include="Controllers\ProductosController.cs" />
@@ -1036,6 +1037,9 @@
     <Compile Include="Models\Alquileres\MovimientoAlquilerDTO.cs" />
     <Compile Include="Models\Alquileres\ProductoAlquilerDTO.cs" />
     <Compile Include="Models\ProductoCategoriaSecundaria.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\ProductoVariante.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\Remesas\RemesaDTO.cs" />

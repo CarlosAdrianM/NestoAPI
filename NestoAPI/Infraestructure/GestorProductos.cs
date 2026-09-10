@@ -76,6 +76,7 @@ namespace NestoAPI.Infraestructure
                 // BoM del kit (la lista plana de arriba se queda por compatibilidad).
                 ComponentesKit = productoDTO.ProductosKit?.ToList(),
                 CategoriasSecundarias = productoDTO.CategoriasSecundarias?.ToList(),
+                Variante = productoDTO.Variante,
                 Stocks = productoDTO.Stocks?.ToList()
             };
 

@@ -135,6 +135,7 @@ namespace NestoAPI.Models
         public virtual DbSet<PlanVentajasCliente> PlanesVentajasClientes { get; set; }
         public virtual DbSet<CabAlquiler> CabAlquileres { get; set; }
         public virtual DbSet<ProductoCategoriaSecundaria> ProductosCategoriasSecundarias { get; set; }
+        public virtual DbSet<ProductoVariante> ProductosVariantes { get; set; }
         public virtual DbSet<EnvioHistoria> EnviosHistorias { get; set; }
         public virtual DbSet<MultiUsuario> MultiUsuarios { get; set; }
     

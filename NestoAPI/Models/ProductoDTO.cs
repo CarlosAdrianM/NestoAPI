@@ -88,6 +88,10 @@ namespace NestoAPI.Models
         // Pack Regalo, Exclusivo Profesional...) que el legacy mantenía con listas a mano.
         public ICollection<CategoriaSecundariaDTO> CategoriasSecundarias { get; set; }
 
+        // NestoAPI#477: si el producto pertenece a una familia de variantes (color, tapizado...),
+        // aquí va de quién es combinación y con qué valor. null = producto plano, lo de siempre.
+        public VarianteDTO Variante { get; set; }
+
         public class StockProducto
         {
             public string Almacen { get; set; }
@@ -347,6 +351,7 @@ namespace NestoAPI.Models
             await CargarTextosTienda(dto, db).ConfigureAwait(false);
             await CargarTipoIva(dto, db, producto.IVA_Repercutido).ConfigureAwait(false);
             await CargarCategoriasSecundarias(dto, db).ConfigureAwait(false);
+            await CargarVariante(dto, db).ConfigureAwait(false);
             // #423: familia y grupo salen de la FICHA, sin recortar, porque DescuentosProducto.Familia
             // es char(10) igual que Productos.Familia y la comparación en SQL casa con el relleno.
             // Lo que NO vale es tirar de `dto.Familia`: ahí va la DESCRIPCIÓN ("Productos Genéricos"),
@@ -371,6 +376,27 @@ namespace NestoAPI.Models
             }
 
             return dto;
+        }
+
+        /// <summary>
+        /// NestoAPI#477: la fila de ProductosVariantes de este producto, si la hay. La principal de
+        /// la familia también tiene fila (con Principal = ella misma), así que su mensaje viaja
+        /// igual de marcado y el consumidor sabe que esa ficha lleva combinaciones.
+        /// </summary>
+        internal static async Task CargarVariante(ProductoDTO dto, NVEntities db)
+        {
+            var fila = await db.ProductosVariantes
+                .Where(v => v.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && v.Número == dto.Producto)
+                .Select(v => new { v.NúmeroPrincipal, v.Atributo, v.Valor, v.Orden })
+                .FirstOrDefaultAsync().ConfigureAwait(false);
+
+            dto.Variante = fila == null ? null : new VarianteDTO
+            {
+                Principal = fila.NúmeroPrincipal?.Trim(),
+                Atributo = fila.Atributo?.Trim(),
+                Valor = fila.Valor?.Trim(),
+                Orden = fila.Orden
+            };
         }
 
         internal static async Task CargarCategoriasSecundarias(ProductoDTO dto, NVEntities db)
@@ -832,6 +858,20 @@ namespace NestoAPI.Models
     /// NestoAPI#414: una categoría secundaria de producto (par grupo/subgrupo con sus
     /// descripciones). Viaja en el mensaje de Productos en el orden definido en la pantalla.
     /// </summary>
+    /// <summary>
+    /// NestoAPI#477: lo que el mensaje de Productos dice de una variante. Contrato con el módulo
+    /// de PrestaShop: con Variante, la referencia es una COMBINACIÓN del producto Principal
+    /// (reference = la referencia de Nesto, para que CanalesExternos la reciba tal cual en el
+    /// pedido); sin Variante, producto plano como siempre.
+    /// </summary>
+    public class VarianteDTO
+    {
+        public string Principal { get; set; }
+        public string Atributo { get; set; }
+        public string Valor { get; set; }
+        public int Orden { get; set; }
+    }
+
     public class CategoriaSecundariaDTO
     {
         public string Grupo { get; set; }

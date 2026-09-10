@@ -179,6 +179,38 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public async Task PublicarProductoSincronizar_LaVarianteViajaEnElMensaje()
+        {
+            // NestoAPI#477: una hermana de color viaja marcada como combinación de su principal.
+            var dto = new ProductoDTO
+            {
+                Producto = "45814",
+                Nombre = "SILLON DE BARBERO CHECK BR",
+                Variante = new VarianteDTO { Principal = "45813", Atributo = "Color", Valor = "Marrón", Orden = 2 }
+            };
+
+            var mensaje = await PublicarYCapturar(dto);
+
+            Assert.IsNotNull(mensaje.Variante);
+            Assert.AreEqual("45813", mensaje.Variante.Principal);
+            Assert.AreEqual("Color", mensaje.Variante.Atributo);
+            Assert.AreEqual("Marrón", mensaje.Variante.Valor);
+            Assert.AreEqual(2, mensaje.Variante.Orden);
+        }
+
+        [TestMethod]
+        public async Task PublicarProductoSincronizar_ProductoPlano_LaVarianteViajaComoNull()
+        {
+            // null es el contrato de "producto plano, como siempre": el consumidor no debe crear
+            // ninguna combinación ni tocar las que hubiera.
+            var dto = new ProductoDTO { Producto = "17404", Nombre = "NOMBRE FICHA" };
+
+            var mensaje = await PublicarYCapturar(dto);
+
+            Assert.IsNull(mensaje.Variante);
+        }
+
+        [TestMethod]
         public async Task PublicarProductoSincronizar_LasCategoriasSecundariasViajanEnOrden()
         {
             // NestoAPI#414: la ristra de categorías comerciales secundarias viaja en el mensaje,

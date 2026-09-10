@@ -33,6 +33,8 @@ namespace NestoAPI.Models
             this.Ganavisiones = new HashSet<Ganavision>();
             this.CabAlquileres = new HashSet<CabAlquiler>();
             this.ProductosCategoriasSecundarias = new HashSet<ProductoCategoriaSecundaria>();
+            this.ProductosVariantes = new HashSet<ProductoVariante>();
+            this.ProductosVariantesComoPrincipal = new HashSet<ProductoVariante>();
             this.ProductosGruposComisionablesAlternativos = new HashSet<ProductoGrupoComisionableAlternativo>();
         }
     
@@ -97,6 +99,8 @@ namespace NestoAPI.Models
         public virtual PrestashopProducto PrestashopProducto { get; set; }
         public virtual ICollection<CabAlquiler> CabAlquileres { get; set; }
         public virtual ICollection<ProductoCategoriaSecundaria> ProductosCategoriasSecundarias { get; set; }
+        public virtual ICollection<ProductoVariante> ProductosVariantes { get; set; }
+        public virtual ICollection<ProductoVariante> ProductosVariantesComoPrincipal { get; set; }
         public virtual ICollection<ProductoGrupoComisionableAlternativo> ProductosGruposComisionablesAlternativos { get; set; }
     }
 }
