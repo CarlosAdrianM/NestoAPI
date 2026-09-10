@@ -326,6 +326,7 @@
     <Compile Include="Infrastructure\Agencias\FabricaAgenciasRemotasTests.cs" />
     <Compile Include="Infrastructure\GestorAgenciasGlovoTests.cs" />
     <Compile Include="Infrastructure\GestorClientesTests.cs" />
+    <Compile Include="Infrastructure\Clientes\GuardiaAnulacionClienteTests.cs" />
     <Compile Include="Infrastructure\GestorEnviosAgenciaTests.cs" />
     <Compile Include="Infrastructure\GestorFacturacionRutasTests.cs" />
     <Compile Include="Infrastructure\ServicioGestorClientesTests.cs" />

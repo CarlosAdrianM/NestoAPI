@@ -891,6 +891,17 @@ namespace NestoAPI.Controllers
                 return Content(HttpStatusCode.Forbidden, permiso.Motivo);
             }
 
+            // NestoAPI#476: anular (pasar a un estado negativo) solo si no hay productos pendientes
+            // ni deuda. Todos los motivos de una vez, como las validaciones del pedido.
+            if (GuardiaAnulacionCliente.EsAnulacion(cliente.estado, clienteDB.Estado))
+            {
+                List<string> motivos = await GuardiaAnulacionCliente.MotivosParaNoAnular(db, clienteDB.Empresa, clienteDB.Nº_Cliente);
+                if (motivos.Any())
+                {
+                    return BadRequest(string.Join(" ", motivos));
+                }
+            }
+
             AplicarCambiosClienteComercial(clienteDB, cliente);
 
             db.Entry(clienteDB).State = System.Data.Entity.EntityState.Modified;
@@ -965,6 +976,12 @@ namespace NestoAPI.Controllers
                 }
 
                 _ = await db.SaveChangesAsync();
+            }
+            // NestoAPI#476: DejarDeVisitar puede acabar en NULO; si el cliente tiene pendientes o
+            // deuda, la guardia lo corta y el motivo llega a la pantalla.
+            catch (ValidationException ex)
+            {
+                return BadRequest(ex.Message);
             }
             catch (NotFoundException ex)
             {

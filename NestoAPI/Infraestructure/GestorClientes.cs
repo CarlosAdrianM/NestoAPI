@@ -1,4 +1,5 @@
-﻿using Microsoft.ML;
+﻿using NestoAPI.Infraestructure.Clientes;
+using Microsoft.ML;
 using Microsoft.Reporting.WebForms;
 using NestoAPI.Infraestructure.Sincronizacion;
 using NestoAPI.Models;
@@ -846,6 +847,8 @@ namespace NestoAPI.Infraestructure
                     }
                     else if (pasarANulo)
                     {
+                        // NestoAPI#476: con pendientes o deuda no se anula; ValidationException -> 400.
+                        await GuardiaAnulacionCliente.ExigirAnulable(db, clienteDB.Empresa, clienteDB.Nº_Cliente).ConfigureAwait(false);
                         nuevoEstado = Constantes.Clientes.Estados.NULO;
                     }
                     else
