@@ -756,6 +756,7 @@
     <Compile Include="Infraestructure\Rapports\ServicioRapports.cs" />
     <Compile Include="Infraestructure\RespuestaAgencia.cs" />
     <Compile Include="Infraestructure\ReintentosSql.cs" />
+    <Compile Include="Infraestructure\ErroresTriggerSql.cs" />
     <Compile Include="Infraestructure\RoundingHelper.cs" />
     <Compile Include="Infraestructure\ValidadorDescuentoPP.cs" />
     <Compile Include="Infraestructure\Seguridad\ApiKeyAttribute.cs" />

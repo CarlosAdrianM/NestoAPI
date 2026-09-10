@@ -273,6 +273,7 @@
     <Compile Include="Infraestructure\Videos\CoincidenciaProductoVideoTests.cs" />
     <Compile Include="Infraestructure\Videos\ListadoVideosBajasTests.cs" />
     <Compile Include="Infraestructure\DiagnosticoBloqueosTests.cs" />
+    <Compile Include="Infraestructure\ErroresTriggerSqlTests.cs" />
     <Compile Include="Infraestructure\ResumidorPedidosClienteTests.cs" />
     <Compile Include="Infraestructure\AvisosEstadoPedidoTests.cs" />
     <Compile Include="Infraestructure\AvisosPedidosJobsServiceTests.cs" />

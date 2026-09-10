@@ -29,13 +29,16 @@ namespace NestoAPI.Controllers
     public class ClientesController : ApiController
     {
         private IServicioVendedores servicioVendedores { get; }
-        private readonly NVEntities db = new NVEntities();
+        private readonly NVEntities db;
         private readonly IGestorClientes _gestorClientes;
         private readonly IGestorSincronizacion _gestorSincronizacion;
         // Carlos 06/07/15: lo pongo para desactivar el Lazy Loading
         public ClientesController(IGestorClientes gestorClientes, IServicioVendedores servicioVendedores, IGestorSincronizacion gestorSincronizacion = null,
-            Infraestructure.Clientes.IServicioValidacionNif servicioValidacionNif = null)
+            Infraestructure.Clientes.IServicioValidacionNif servicioValidacionNif = null, NVEntities dbInyectada = null)
         {
+            // NestoAPI#473: inyectable para los tests que necesitan que SaveChanges falle como falla
+            // un trigger; en producción sigue siendo el contexto propio del controller.
+            db = dbInyectada ?? new NVEntities();
             db.Configuration.LazyLoadingEnabled = false;
             this.servicioVendedores = servicioVendedores;
             _gestorClientes = gestorClientes;
@@ -724,7 +727,16 @@ namespace NestoAPI.Controllers
                 return BadRequest(ex.Message);
             }
 
-            _ = await db.SaveChangesAsync();
+            try
+            {
+                _ = await db.SaveChangesAsync();
+            }
+            // NestoAPI#473: el trigger del IBAN corta con un texto que dice el CCC, el cliente y el
+            // contacto; era un 500 y el usuario reintentaba a ciegas. Ahora es un 400 con el motivo.
+            catch (DbUpdateException ex) when (ErroresTriggerSql.MensajeDeValidacion(ex) != null)
+            {
+                return BadRequest(ErroresTriggerSql.MensajeDeValidacion(ex));
+            }
 
             return Ok(respuesta);
         }
@@ -1003,6 +1015,12 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest(ex.Message);
             }
+            // NestoAPI#473: "Ya existe un cliente con ese CIF/NIF" lo dice un trigger; que llegue
+            // a la pantalla como motivo, no como error del servidor.
+            catch (DbUpdateException ex) when (ErroresTriggerSql.MensajeDeValidacion(ex) != null)
+            {
+                return BadRequest(ErroresTriggerSql.MensajeDeValidacion(ex));
+            }
         }
 
 
@@ -1029,6 +1047,10 @@ namespace NestoAPI.Controllers
             catch (ValidationException ex)
             {
                 return BadRequest(ex.Message);
+            }
+            catch (DbUpdateException ex) when (ErroresTriggerSql.MensajeDeValidacion(ex) != null)
+            {
+                return BadRequest(ErroresTriggerSql.MensajeDeValidacion(ex));
             }
         }
 
