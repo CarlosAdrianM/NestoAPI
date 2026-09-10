@@ -106,25 +106,11 @@ namespace NestoAPI.Infraestructure.Remesas
                 .ToListAsync().ConfigureAwait(false);
             decimal importeTotal = efectos.Sum(e => e.ImportePdte);
 
-            // NestoAPI#386: la secuencia SEPA (FRST/RCUR) de la ficha bancaria de cada efecto,
-            // leída AHORA — el fichero usará el mismo valor, porque prdCrearRemesaIso20022
-            // voltea los FRST a RCUR DESPUÉS de generarlo. Sin ficha (el selector ya retiene
-            // esos efectos, #381) se cuenta como RCUR.
-            List<string> clientesEfectos = efectos.Select(e => e.Número.Trim()).Distinct().ToList();
-            List<CCC> fichasCcc = await db.CCCs
-                .Where(c => c.Empresa == peticion.Empresa && clientesEfectos.Contains(c.Cliente.Trim()))
-                .ToListAsync().ConfigureAwait(false);
-            var secuenciaPorEfecto = new Dictionary<int, string>();
-            foreach (ExtractoCliente efecto in efectos)
-            {
-                CCC ficha = fichasCcc.FirstOrDefault(c => c.Cliente.Trim() == efecto.Número.Trim()
-                    && c.Contacto.Trim() == (efecto.Contacto?.Trim() ?? string.Empty)
-                    && c.Número.Trim() == (efecto.CCC?.Trim() ?? string.Empty));
-                if (!string.IsNullOrWhiteSpace(ficha?.Secuencia))
-                {
-                    secuenciaPorEfecto[efecto.Nº_Orden] = ficha.Secuencia.Trim();
-                }
-            }
+            // NestoAPI#480: ya no se lee la secuencia SEPA (FRST/RCUR) de la ficha. Se leía aquí
+            // (#386) y otra vez al generar el fichero, y entre medias el propio SP la cambiaba: el
+            // fichero se genera siempre dos veces y la segunda salía sin bloque FRST, con lo que el
+            // banco abonaba 2 bloques contra 3 asientos (10930, 10931, 10937). Desde el Rulebook
+            // SEPA de 2016 la secuencia es informativa: todo viaja como RCUR y se agrupa solo por fecha.
             // NestoAPI#345: en modo RESPETAR el suelo de AGRUPACIÓN es HOY (los vencidos se cobran
             // ya y los futuros conservan su fecha; la FechaCargo del request no pinta nada ahí).
             // En modo forzado, la fecha única elegida — nunca anterior a hoy.
@@ -163,7 +149,7 @@ namespace NestoAPI.Infraestructure.Remesas
                         new SqlParameter("@p3", peticion.Banco)).ConfigureAwait(false);
 
                     List<PreContabilidad> lineas = ConstruirLineasRemesa(numeroRemesa, peticion.Empresa, banco, efectos, usuario,
-                        peticion.RespetarVencimientos, fechaCargo, fechaValorMinima, secuenciaPorEfecto);
+                        peticion.RespetarVencimientos, fechaCargo, fechaValorMinima);
                     int resultado = await contabilidad.CrearLineasYContabilizarDiario(lineas, db).ConfigureAwait(false);
                     if (resultado <= 0)
                     {
@@ -306,14 +292,9 @@ namespace NestoAPI.Infraestructure.Remesas
         /// no por la fecha. En modo forzado (default) todo va a fechaCargo en un único asiento.
         /// Pura y estática.
         /// </summary>
-        /// <summary>NestoAPI#386: secuencia SEPA que cuenta como recurrente (la de los efectos
-        /// sin ficha o sin diccionario, para no cambiar el comportamiento previo).</summary>
-        internal const string SECUENCIA_RECURRENTE = "RCUR";
-
         internal static List<PreContabilidad> ConstruirLineasRemesa(int numeroRemesa, string empresa,
             Banco banco, List<ExtractoCliente> efectos, string usuario,
-            bool respetarVencimientos = false, DateTime? fechaCargo = null, DateTime? fechaValorMinima = null,
-            IReadOnlyDictionary<int, string> secuenciaPorEfecto = null)
+            bool respetarVencimientos = false, DateTime? fechaCargo = null, DateTime? fechaValorMinima = null)
         {
             var lineas = new List<PreContabilidad>();
             string cuentaBanco = banco.Cuenta_Contable?.Trim();
@@ -323,49 +304,40 @@ namespace NestoAPI.Infraestructure.Remesas
             DateTime sueloValor = fechaValorMinima.HasValue && fechaValorMinima.Value.Date > suelo
                 ? fechaValorMinima.Value.Date : suelo;
 
-            // AGRUPACIÓN por (secuencia SEPA, fecha de cargo SOLICITADA) — NestoAPI#386, caso real
-            // remesa 10908: el fichero SEPA genera un PmtInf por (CCC.Secuencia, fecha) y el banco
-            // ABONA Y FACTURA COMISIONES por PmtInf, así que un grupo de fecha con mezcla FRST y
-            // RCUR se cobra en DOS abonos. Cada grupo es su propio asiento provisional (1..N en el
-            // MISMO orden que el SP: secuencia y luego fecha) — prdContabilizar exige una fecha por
-            // asiento, y el informe (que agrupa por asiento) queda 1:1 con el extracto del banco.
-            string SecuenciaDe(ExtractoCliente efecto) =>
-                secuenciaPorEfecto != null
-                    && secuenciaPorEfecto.TryGetValue(efecto.Nº_Orden, out string secuencia)
-                    && !string.IsNullOrWhiteSpace(secuencia)
-                ? secuencia.Trim().ToUpperInvariant()
-                : SECUENCIA_RECURRENTE;
+            // AGRUPACIÓN por fecha de cargo SOLICITADA: el fichero SEPA genera un PmtInf por fecha y
+            // el banco ABONA Y FACTURA COMISIONES por PmtInf, así que cada grupo es su propio asiento
+            // provisional (1..N en orden de fecha, el mismo del SP) — prdContabilizar exige una
+            // fecha por asiento, y el informe (que agrupa por asiento) queda 1:1 con el extracto.
+            // NestoAPI#480: antes se agrupaba también por secuencia SEPA (#386); ahora todo viaja
+            // como RCUR y la secuencia ya no separa nada.
             DateTime FechaSolicitadaDe(ExtractoCliente efecto) => respetarVencimientos
                 ? VencimientoEfectivo(efecto.FechaVto, suelo)
                 : suelo;
 
-            var totalesPorGrupo = new SortedDictionary<Tuple<string, DateTime>, decimal>();
+            var totalesPorGrupo = new SortedDictionary<DateTime, decimal>();
             foreach (ExtractoCliente efecto in efectos)
             {
-                Tuple<string, DateTime> grupo = Tuple.Create(SecuenciaDe(efecto), FechaSolicitadaDe(efecto));
+                DateTime grupo = FechaSolicitadaDe(efecto);
                 totalesPorGrupo[grupo] = (totalesPorGrupo.TryGetValue(grupo, out decimal acumulado)
                     ? acumulado : 0) + efecto.ImportePdte;
             }
-            Dictionary<Tuple<string, DateTime>, int> asientoPorGrupo = totalesPorGrupo.Keys
+            Dictionary<DateTime, int> asientoPorGrupo = totalesPorGrupo.Keys
                 .Select((grupo, indice) => new { grupo, indice })
                 .ToDictionary(x => x.grupo, x => x.indice + 1);
 
-            // NestoAPI#386 (caso real 10909, presentada viernes 31/07): el banco abona los FRST
-            // el día que PROCESA el fichero, sin el D-1 de los RCUR (el FRST del 31/07 se abonó
-            // el mismo 31/07; los RCUR, el lunes 03/08). Día de valor del grupo FRST = el suelo
-            // (hoy, la presentación); los RCUR suben al siguiente laborable como siempre.
-            DateTime FechaValorDe(string secuencia, DateTime fechaSolicitada) =>
-                secuencia == SECUENCIA_RECURRENTE
-                    ? VencimientoEfectivo(fechaSolicitada, sueloValor)
-                    : suelo;
+            // Día de valor de un grupo: el banco no abona antes del siguiente laborable (D-1 de
+            // SEPA), así que el grupo de hoy sube a la próxima fecha de cargo y los futuros
+            // conservan la suya. NestoAPI#480: la regla especial de los FRST (#386: se abonaban el
+            // día de presentación) desaparece con ellos.
+            DateTime FechaValorDe(DateTime fechaSolicitada) => VencimientoEfectivo(fechaSolicitada, sueloValor);
 
             foreach (ExtractoCliente efecto in efectos)
             {
                 DateTime fechaSolicitada = FechaSolicitadaDe(efecto);
                 // El día de VALOR (fecha contable): el banco no abona los RCUR antes de la próxima
                 // fecha de cargo, así que el grupo de hoy sube al siguiente laborable; los futuros
-                // conservan su fecha; los FRST van al día de presentación (#386).
-                DateTime fechaValor = FechaValorDe(SecuenciaDe(efecto), fechaSolicitada);
+                // conservan su fecha.
+                DateTime fechaValor = FechaValorDe(fechaSolicitada);
 
                 string documento = efecto.Nº_Documento?.Trim();
                 string concepto = $"Pago Factura {documento}  {efecto.Efecto?.Trim()}".TrimEnd();
@@ -387,7 +359,7 @@ namespace NestoAPI.Infraestructure.Remesas
                     Diario = DIARIO_REMESA,
                     Fecha = fechaValor,
                     FechaVto = fechaSolicitada,
-                    Asiento = asientoPorGrupo[Tuple.Create(SecuenciaDe(efecto), fechaSolicitada)],
+                    Asiento = asientoPorGrupo[fechaSolicitada],
                     Asiento_Automático = true,
                     Delegación = efecto.Delegación?.Trim(),
                     FormaVenta = efecto.FormaVenta?.Trim(),
@@ -402,10 +374,9 @@ namespace NestoAPI.Infraestructure.Remesas
                 });
             }
 
-            // Un apunte de banco por grupo (secuencia, fecha solicitada) — una sola en el modo
-            // forzado clásico sin FRST: el banco hace un abono en cuenta por cada PmtInf, con el
-            // DÍA DE VALOR como fecha contable — así cuadra apunte a apunte contra el extracto.
-            // El sufijo FRST en el concepto ayuda al punteo (los RCUR se quedan como siempre).
+            // Un apunte de banco por fecha solicitada — una sola en el modo forzado clásico: el
+            // banco hace un abono en cuenta por cada PmtInf, con el DÍA DE VALOR como fecha
+            // contable — así cuadra apunte a apunte contra el extracto.
             // Fallo 20/08/26 (apunte 7100551): el apunte del banco iba SIN delegación ni forma de
             // venta (los de pago del cliente sí las llevan, de su efecto). Se rellenan con la
             // MAYORITARIA entre los efectos del grupo y, si ninguno la trae, con la de por defecto.
@@ -416,13 +387,12 @@ namespace NestoAPI.Infraestructure.Remesas
                 .OrderByDescending(g => g.Count())
                 .Select(g => g.Key)
                 .FirstOrDefault() ?? porDefecto;
-            foreach (KeyValuePair<Tuple<string, DateTime>, decimal> grupo in totalesPorGrupo)
+            foreach (KeyValuePair<DateTime, decimal> grupo in totalesPorGrupo)
             {
-                DateTime fechaValor = FechaValorDe(grupo.Key.Item1, grupo.Key.Item2);
-                string conceptoBanco = $"Remesa:{numeroRemesa}. Al Banco: {cuentaBanco}" +
-                    (grupo.Key.Item1 == SECUENCIA_RECURRENTE ? string.Empty : $" {grupo.Key.Item1}");
+                DateTime fechaValor = FechaValorDe(grupo.Key);
+                string conceptoBanco = $"Remesa:{numeroRemesa}. Al Banco: {cuentaBanco}";
                 List<ExtractoCliente> efectosGrupo = efectos
-                    .Where(e => SecuenciaDe(e) == grupo.Key.Item1 && FechaSolicitadaDe(e) == grupo.Key.Item2)
+                    .Where(e => FechaSolicitadaDe(e) == grupo.Key)
                     .ToList();
                 lineas.Add(new PreContabilidad
                 {

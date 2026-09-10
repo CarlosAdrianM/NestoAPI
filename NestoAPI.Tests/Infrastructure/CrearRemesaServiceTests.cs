@@ -273,47 +273,41 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(Constantes.Empresas.FORMA_VENTA_POR_DEFECTO, banco.FormaVenta);
         }
 
-        // NestoAPI#386 (caso real remesa 10908): el banco abona por (secuencia SEPA, fecha de
-        // cargo) — el fichero genera un PmtInf por CCC.Secuencia y fecha (FRST = primer adeudo
-        // del mandato) y el banco abona y factura comisiones por PmtInf. La contabilización
-        // agrupa igual, en el mismo orden que el SP (secuencia, fecha), para que asientos e
-        // informe (que agrupa por asiento) casen 1:1 con los abonos del banco.
+        // NestoAPI#480 (casos reales 10930, 10931 y 10937): la contabilización agrupaba por
+        // (secuencia SEPA, fecha) desde #386, pero el fichero se genera siempre dos veces y el SP
+        // volteaba los FRST a RCUR entre medias, así que el banco abonaba 2 bloques contra 3
+        // asientos. Desde el Rulebook SEPA de 2016 la secuencia es informativa: todo viaja como
+        // RCUR y se agrupa SOLO por fecha, igual que el fichero (prdCrearRemesaIso20022 con
+        // Scripts/Issue480_prdCrearRemesaIso20022_TodoRCUR.sql).
 
         [TestMethod]
-        public void ConstruirLineasRemesa_ConEfectosFrstYRcur_UnAsientoPorSecuencia()
+        public void ConstruirLineasRemesa_MismaFecha_UnSoloAsientoAunqueHubieraUnMandatoNuevo()
         {
+            // Antes (#386) el 41223 con ficha FRST iba a su propio asiento (327,39) y el banco
+            // abonó 1.081,55 de una vez: 3 asientos contra 2 abonos en la 10930.
             var efectos = new List<ExtractoCliente>
             {
-                Efecto(1, "15191", 131.62m, "NV1"),
-                Efecto(2, "26985", 2124.09m, "NV2"),
-                Efecto(3, "40227", 447.01m, "NV3")
+                Efecto(1, "41223", 327.39m, "NV1"),
+                Efecto(2, "13767", 161.14m, "NV2"),
+                Efecto(3, "25431", 95.14m, "NV3")
             };
-            var secuencias = new Dictionary<int, string> { { 1, "FRST" }, { 2, "RCUR" }, { 3, "RCUR" } };
 
             List<PreContabilidad> lineas = CrearRemesaService.ConstruirLineasRemesa(
-                10908, "1", BancoSabadell(), efectos, "carlos", secuenciaPorEfecto: secuencias);
+                10930, "1", BancoSabadell(), efectos, "carlos");
 
             List<PreContabilidad> bancos = lineas
-                .Where(l => l.TipoCuenta == Constantes.Contabilidad.TiposCuenta.CUENTA_CONTABLE)
-                .OrderBy(l => l.Asiento).ToList();
-            Assert.AreEqual(2, bancos.Count, "Un apunte de banco por secuencia aunque compartan fecha");
-            Assert.AreEqual(131.62m, bancos[0].Debe, "El grupo FRST va primero (orden del SP)");
-            StringAssert.Contains(bancos[0].Concepto, "FRST");
-            Assert.AreEqual(2571.10m, bancos[1].Debe);
-            Assert.IsFalse(bancos[1].Concepto.Contains("FRST"));
-            Assert.AreNotEqual(bancos[0].Asiento, bancos[1].Asiento, "Cada grupo es su propio asiento");
+                .Where(l => l.TipoCuenta == Constantes.Contabilidad.TiposCuenta.CUENTA_CONTABLE).ToList();
+            Assert.AreEqual(1, bancos.Count, "Un solo abono por fecha, como hace el banco con todo RCUR");
+            Assert.AreEqual(583.67m, bancos[0].Debe);
+            Assert.IsFalse(bancos[0].Concepto.Contains("FRST"));
+            Assert.AreEqual(1, lineas.Select(l => l.Asiento).Distinct().Count(), "Todos en el mismo asiento");
             Assert.AreEqual(lineas.Sum(l => l.Debe), lineas.Sum(l => l.Haber), "El asiento debe cuadrar");
-
-            PreContabilidad pagoFrst = lineas.Single(l => l.Liquidado == 1);
-            Assert.AreEqual(bancos[0].Asiento, pagoFrst.Asiento, "El pago FRST comparte asiento con su banco");
         }
 
         [TestMethod]
-        public void ConstruirLineasRemesa_ReplicaLaRemesa10908_TresGruposComoElBanco()
+        public void ConstruirLineasRemesa_DosFechasDeCargo_DosAsientosSinDistinguirSecuencia()
         {
-            // 2 fechas de cargo, la primera con mezcla FRST+RCUR: el banco abonó 131,62 (FRST)
-            // + 2.124,09 (RCUR) + 447,01 (RCUR de la otra fecha) y nosotros contabilizábamos
-            // solo 2 sub-remesas (2.255,71 + 447,01).
+            // Réplica de la 10908 con la regla nueva: 2 fechas → 2 abonos (2.255,71 + 447,01).
             DateTime hoy = DateTime.Today;
             var efectos = new List<ExtractoCliente>
             {
@@ -321,58 +315,46 @@ namespace NestoAPI.Tests.Infrastructure
                 Efecto(2, "26985", 2124.09m, "NV2", vencimiento: hoy.AddDays(1)),
                 Efecto(3, "40227", 447.01m, "NV3", vencimiento: hoy.AddDays(2))
             };
-            var secuencias = new Dictionary<int, string> { { 1, "FRST" }, { 2, "RCUR" }, { 3, "RCUR" } };
 
             List<PreContabilidad> lineas = CrearRemesaService.ConstruirLineasRemesa(
-                10908, "1", BancoSabadell(), efectos, "carlos", respetarVencimientos: true,
-                secuenciaPorEfecto: secuencias);
+                10908, "1", BancoSabadell(), efectos, "carlos", respetarVencimientos: true);
 
             List<PreContabilidad> bancos = lineas
                 .Where(l => l.TipoCuenta == Constantes.Contabilidad.TiposCuenta.CUENTA_CONTABLE)
                 .OrderBy(l => l.Asiento).ToList();
-            Assert.AreEqual(3, bancos.Count, "Tres abonos, como el banco");
-            Assert.AreEqual(131.62m, bancos[0].Debe);
-            Assert.AreEqual(2124.09m, bancos[1].Debe);
-            Assert.AreEqual(447.01m, bancos[2].Debe);
-            Assert.AreEqual(3, bancos.Select(b => b.Asiento).Distinct().Count());
+            Assert.AreEqual(2, bancos.Count, "Un abono por fecha de cargo");
+            Assert.AreEqual(2255.71m, bancos[0].Debe);
+            Assert.AreEqual(447.01m, bancos[1].Debe);
+            Assert.AreEqual(2, bancos.Select(b => b.Asiento).Distinct().Count());
             Assert.AreEqual(lineas.Sum(l => l.Debe), lineas.Sum(l => l.Haber));
         }
 
         [TestMethod]
-        public void ConstruirLineasRemesa_GrupoFrst_SeContabilizaConValorDeHoy()
+        public void ConstruirLineasRemesa_ElDiaDeValorEsElMismoParaTodosLosDelGrupo()
         {
-            // Caso real remesa 10909 (creada viernes 31/07): el banco abonó el grupo FRST el
-            // MISMO día de la presentación (31/07) y los RCUR el siguiente hábil (03/08). Los
-            // FRST no llevan el D-1: su día de valor es el de presentación (hoy), mientras que
-            // los RCUR del mismo día suben a fechaValorMinima como siempre.
+            // Con todo RCUR desaparece la excepción de #386 (los FRST se abonaban el día de la
+            // presentación): el grupo de hoy sube entero a la próxima fecha de cargo.
             DateTime hoy = DateTime.Today;
-            DateTime lunes = hoy.AddDays(3); // simula el siguiente laborable tras el fin de semana
+            DateTime lunes = hoy.AddDays(3);
             var efectos = new List<ExtractoCliente>
             {
                 Efecto(1, "15191", 257.06m, "NV1", vencimiento: hoy),
                 Efecto(2, "26985", 2141.50m, "NV2", vencimiento: hoy)
             };
-            var secuencias = new Dictionary<int, string> { { 1, "FRST" }, { 2, "RCUR" } };
 
             List<PreContabilidad> lineas = CrearRemesaService.ConstruirLineasRemesa(
                 10909, "1", BancoSabadell(), efectos, "carlos", respetarVencimientos: true,
-                fechaValorMinima: lunes, secuenciaPorEfecto: secuencias);
+                fechaValorMinima: lunes);
 
-            PreContabilidad bancoFrst = lineas.Single(l =>
-                l.TipoCuenta == Constantes.Contabilidad.TiposCuenta.CUENTA_CONTABLE && l.Concepto.Contains("FRST"));
-            PreContabilidad bancoRcur = lineas.Single(l =>
-                l.TipoCuenta == Constantes.Contabilidad.TiposCuenta.CUENTA_CONTABLE && !l.Concepto.Contains("FRST"));
-            Assert.AreEqual(hoy, bancoFrst.Fecha, "El FRST se abona el día de la presentación (sin D-1)");
-            Assert.AreEqual(lunes, bancoRcur.Fecha, "El RCUR sube al siguiente laborable, como siempre");
-            Assert.AreEqual(hoy, lineas.Single(l => l.Liquidado == 1).Fecha, "El pago FRST acompaña a su banco");
-            Assert.AreEqual(lunes, lineas.Single(l => l.Liquidado == 2).Fecha);
+            PreContabilidad banco = lineas.Single(l => l.TipoCuenta == Constantes.Contabilidad.TiposCuenta.CUENTA_CONTABLE);
+            Assert.AreEqual(lunes, banco.Fecha, "El abono sube al siguiente laborable (D-1 de SEPA)");
+            Assert.IsTrue(lineas.All(l => l.Fecha == lunes), "Los pagos acompañan a su banco");
+            Assert.AreEqual(2398.56m, banco.Debe);
         }
 
         [TestMethod]
-        public void ConstruirLineasRemesa_SinSecuencias_TodoRecurrenteComoHastaAhora()
+        public void ConstruirLineasRemesa_SinSecuencias_UnGrupoPorFechaYConceptoSinSufijo()
         {
-            // Compatibilidad: sin diccionario (o efecto sin ficha) todo cuenta como RCUR — un
-            // solo grupo por fecha y el concepto del banco sin sufijo.
             var efectos = new List<ExtractoCliente>
             {
                 Efecto(1, "15191", 100m, "NV1"),
