@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure;
+﻿using NestoAPI.Infraestructure;
 using NestoAPI.Models;
 using NestoAPI.Models.OfertasCombinadas;
 using System;
@@ -94,12 +94,18 @@ namespace NestoAPI.Controllers
 
             string empresaPadded = dto.Empresa.PadRight(3);
 
-            // Validar que la familia existe
-            var familiaExiste = await db.Familias
-                .AnyAsync(f => f.Empresa == empresaPadded && f.Número == dto.Familia)
+            // Validar que la familia existe. NestoAPI#481: se busca sin distinguir mayúsculas
+            // (SQL ya lo hacía) y se graba el Número tal como está en Familias, no como lo tecleó
+            // el usuario ("staleks" → "Staleks"): así lo que se ve en la pantalla de ofertas y en
+            // los informes es siempre el nombre canónico de la familia.
+            string familiaBuscada = dto.Familia.Trim().ToUpper();
+            string familia = await db.Familias
+                .Where(f => f.Empresa == empresaPadded && f.Número.Trim().ToUpper() == familiaBuscada)
+                .Select(f => f.Número)
+                .FirstOrDefaultAsync()
                 .ConfigureAwait(false);
 
-            if (!familiaExiste)
+            if (familia == null)
             {
                 return BadRequest($"La familia '{dto.Familia}' no existe en la empresa '{dto.Empresa}'");
             }
@@ -110,7 +116,7 @@ namespace NestoAPI.Controllers
                 .AnyAsync(o => o.Empresa == empresaPadded
                     && o.Cliente == null
                     && o.Número == null
-                    && o.Familia == dto.Familia
+                    && o.Familia == familia
                     && (filtro == null || filtro == ""
                         ? (o.FiltroProducto == null || o.FiltroProducto.Trim() == "")
                         : o.FiltroProducto == filtro))
@@ -124,7 +130,7 @@ namespace NestoAPI.Controllers
             var oferta = new OfertaPermitida
             {
                 Empresa = empresaPadded,
-                Familia = dto.Familia,
+                Familia = familia,
                 CantidadConPrecio = dto.CantidadConPrecio,
                 CantidadRegalo = dto.CantidadRegalo,
                 FiltroProducto = string.IsNullOrWhiteSpace(dto.FiltroProducto) ? null : dto.FiltroProducto.Trim(),
@@ -137,7 +143,7 @@ namespace NestoAPI.Controllers
             await db.SaveChangesAsync().ConfigureAwait(false);
 
             var familias = await db.Familias
-                .Where(f => f.Empresa == empresaPadded && f.Número == dto.Familia)
+                .Where(f => f.Empresa == empresaPadded && f.Número == familia)
                 .ToDictionaryAsync(f => f.Número, f => f.Descripción)
                 .ConfigureAwait(false);
 
@@ -174,12 +180,18 @@ namespace NestoAPI.Controllers
 
             string empresaPadded = dto.Empresa.PadRight(3);
 
-            // Validar que la familia existe
-            var familiaExiste = await db.Familias
-                .AnyAsync(f => f.Empresa == empresaPadded && f.Número == dto.Familia)
+            // Validar que la familia existe. NestoAPI#481: se busca sin distinguir mayúsculas
+            // (SQL ya lo hacía) y se graba el Número tal como está en Familias, no como lo tecleó
+            // el usuario ("staleks" → "Staleks"): así lo que se ve en la pantalla de ofertas y en
+            // los informes es siempre el nombre canónico de la familia.
+            string familiaBuscada = dto.Familia.Trim().ToUpper();
+            string familia = await db.Familias
+                .Where(f => f.Empresa == empresaPadded && f.Número.Trim().ToUpper() == familiaBuscada)
+                .Select(f => f.Número)
+                .FirstOrDefaultAsync()
                 .ConfigureAwait(false);
 
-            if (!familiaExiste)
+            if (familia == null)
             {
                 return BadRequest($"La familia '{dto.Familia}' no existe en la empresa '{dto.Empresa}'");
             }
@@ -191,7 +203,7 @@ namespace NestoAPI.Controllers
                     && o.NºOrden != nOrden
                     && o.Cliente == null
                     && o.Número == null
-                    && o.Familia == dto.Familia
+                    && o.Familia == familia
                     && (filtro == null || filtro == ""
                         ? (o.FiltroProducto == null || o.FiltroProducto.Trim() == "")
                         : o.FiltroProducto == filtro))
@@ -202,7 +214,7 @@ namespace NestoAPI.Controllers
                 return BadRequest($"Ya existe una oferta para la familia '{dto.Familia}' con el mismo filtro");
             }
 
-            oferta.Familia = dto.Familia;
+            oferta.Familia = familia;
             oferta.CantidadConPrecio = dto.CantidadConPrecio;
             oferta.CantidadRegalo = dto.CantidadRegalo;
             oferta.FiltroProducto = string.IsNullOrWhiteSpace(dto.FiltroProducto) ? null : dto.FiltroProducto.Trim();
@@ -212,7 +224,7 @@ namespace NestoAPI.Controllers
             await db.SaveChangesAsync().ConfigureAwait(false);
 
             var familias = await db.Familias
-                .Where(f => f.Empresa == empresaPadded && f.Número == dto.Familia)
+                .Where(f => f.Empresa == empresaPadded && f.Número == familia)
                 .ToDictionaryAsync(f => f.Número, f => f.Descripción)
                 .ConfigureAwait(false);
 

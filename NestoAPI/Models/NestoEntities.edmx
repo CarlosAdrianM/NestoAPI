@@ -1475,8 +1475,8 @@
           <Property Name="Cliente" Type="char" MaxLength="10" />
           <Property Name="Contacto" Type="char" MaxLength="3" />
           <Property Name="FiltroProducto" Type="nvarchar" MaxLength="50" />
-          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" StoreGeneratedPattern="Computed" />
-          <Property Name="FechaModificación" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
+          <Property Name="FechaModificación" Type="datetime" Nullable="false" />
           <Property Name="FechaDesde" Type="date" />
           <Property Name="FechaHasta" Type="date" />
         </EntityType>
@@ -11011,8 +11011,8 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="Denegar" Type="Boolean" Nullable="false" />
           <Property Name="Cliente" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
           <Property Name="Contacto" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
-          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" annotation:StoreGeneratedPattern="Computed" />
-          <Property Name="FechaModificación" Type="DateTime" Nullable="false" Precision="3" annotation:StoreGeneratedPattern="Computed" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="FechaModificación" Type="DateTime" Nullable="false" Precision="3" />
           <NavigationProperty Name="Cliente1" Relationship="NVModel.FK_OfertasPermitidas_Clientes" FromRole="OfertasPermitida" ToRole="Cliente" />
           <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_OfertasPermitidas_Empresas" FromRole="OfertasPermitida" ToRole="Empresa" />
           <NavigationProperty Name="Producto" Relationship="NVModel.FK_OfertasPermitidas_Productos" FromRole="OfertasPermitida" ToRole="Producto" />

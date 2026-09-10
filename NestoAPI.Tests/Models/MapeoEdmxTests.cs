@@ -1,4 +1,4 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
@@ -102,6 +102,26 @@ namespace NestoAPI.Tests.Models
             }
 
             Assert.AreEqual(0, fallos.Count, string.Join(Environment.NewLine, fallos));
+        }
+
+        /// <summary>
+        /// NestoAPI#481 (y #456 antes): con Usuario marcado Computed, EF no manda la columna y el
+        /// DEFAULT suser_sname() graba la cuenta del pool (NUEVAVISION\RDS2016$) aunque el código
+        /// asigne el usuario. Las entidades en las que graba una PERSONA no pueden llevarlo.
+        /// </summary>
+        [TestMethod]
+        public void Edmx_ElUsuarioDeAuditoriaNoEsComputedEnLasEntidadesQueGrabanPersonas()
+        {
+            string[] entidadesDePersonas = { "OfertasPermitidas" };
+            Dictionary<string, XElement> almacen = EntidadesPorNombre(LeerRecurso("ssdl"), SsdlNs);
+
+            foreach (string entidad in entidadesDePersonas)
+            {
+                XElement usuario = almacen[entidad].Elements(SsdlNs + "Property")
+                    .Single(p => p.Attribute("Name").Value == "Usuario");
+                Assert.AreNotEqual("Computed", (string)usuario.Attribute("StoreGeneratedPattern"),
+                    $"{entidad}.Usuario es Computed: lo que asigne el código se pierde y graba el pool");
+            }
         }
 
         [TestMethod]

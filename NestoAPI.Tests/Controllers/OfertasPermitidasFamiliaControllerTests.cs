@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Models;
@@ -226,6 +226,35 @@ namespace NestoAPI.Tests.Controllers
             Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<OfertaPermitidaFamiliaDTO>));
             Assert.IsNotNull(ofertaGrabada);
             Assert.AreEqual("NUEVAVISION\\Carlos", ofertaGrabada.Usuario);
+        }
+
+        [TestMethod]
+        public async Task PostOfertaPermitidaFamilia_FamiliaEnMinusculas_SeGrabaComoEstaEnFamilias()
+        {
+            // NestoAPI#481 (10/09/26): Manuel tecleó "staleks" y así se quedó en la oferta 800.
+            // SQL no distingue mayúsculas, así que funcionaba, pero en pantalla e informes debe
+            // verse el nombre canónico de la familia.
+            ConfigurarFakeDbSet(fakeFamilias, new List<Familia>
+            {
+                new Familia { Empresa = "1  ", Número = "Staleks   ", Descripción = "Staleks" }
+            }.AsQueryable());
+            ConfigurarFakeDbSet(fakeOfertasPermitidas, new List<OfertaPermitida>().AsQueryable());
+            OfertaPermitida ofertaGrabada = null;
+            A.CallTo(() => fakeOfertasPermitidas.Add(A<OfertaPermitida>.Ignored))
+                .Invokes((OfertaPermitida o) => ofertaGrabada = o)
+                .ReturnsLazily((OfertaPermitida o) => o);
+            A.CallTo(() => db.SaveChangesAsync()).Returns(Task.FromResult(1));
+
+            var resultado = await controller.PostOfertaPermitidaFamilia(new OfertaPermitidaFamiliaCreateDTO
+            {
+                Empresa = "1",
+                Familia = "staleks",
+                CantidadConPrecio = 6,
+                CantidadRegalo = 1
+            }, "testuser");
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<OfertaPermitidaFamiliaDTO>));
+            Assert.AreEqual("Staleks   ", ofertaGrabada.Familia);
         }
 
         [TestMethod]
