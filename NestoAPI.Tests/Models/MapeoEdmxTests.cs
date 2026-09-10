@@ -124,6 +124,23 @@ namespace NestoAPI.Tests.Models
             }
         }
 
+        /// <summary>
+        /// 10/09/26: la API se publicó con una multiplicidad inválida en FK_ProductosVariantes_Productos
+        /// (error 0113) y TODAS las peticiones con base de datos cayeron. Los tests con NVEntities falso
+        /// no cargan los metadatos; este los carga exactamente como EF al arrancar (sin base de datos).
+        /// </summary>
+        [TestMethod]
+        public void Edmx_LosMetadatosCarganComoLoHaceEntityFrameworkAlArrancar()
+        {
+            // Solo el modelo conceptual: el de almacén exige el proveedor SqlClient registrado en el
+            // app.config de los tests y no aporta reglas nuevas (las multiplicidades se validan aquí).
+            using (var csdl = LeerRecurso("csdl").CreateReader())
+            {
+                var conceptual = new System.Data.Entity.Core.Metadata.Edm.EdmItemCollection(new[] { csdl });
+                Assert.IsTrue(conceptual.GetItems<System.Data.Entity.Core.Metadata.Edm.EntityType>().Any());
+            }
+        }
+
         [TestMethod]
         public void Edmx_NingunaEntidadTienePropiedadesFantasma()
         {

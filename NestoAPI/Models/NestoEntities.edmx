@@ -5236,7 +5236,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
         </Association>
         <Association Name="FK_ProductosVariantes_Productos">
           <End Role="Productos" Type="Self.Productos" Multiplicity="1" />
-          <End Role="ProductosVariantes" Type="Self.ProductosVariantes" Multiplicity="*" />
+          <End Role="ProductosVariantes" Type="Self.ProductosVariantes" Multiplicity="0..1" />
           <ReferentialConstraint>
             <Principal Role="Productos">
               <PropertyRef Name="Empresa" />
@@ -14022,7 +14022,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
         </Association>
         <Association Name="FK_ProductosVariantes_Productos">
           <End Type="NVModel.Producto" Role="Producto" Multiplicity="1" />
-          <End Type="NVModel.ProductoVariante" Role="ProductoVariante" Multiplicity="*" />
+          <End Type="NVModel.ProductoVariante" Role="ProductoVariante" Multiplicity="0..1" />
           <ReferentialConstraint>
             <Principal Role="Producto">
               <PropertyRef Name="Empresa" />
