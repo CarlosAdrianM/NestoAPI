@@ -199,5 +199,81 @@ namespace NestoAPI.Tests.Controllers
             A.CallTo(() => ((IQueryable<T>)fakeDbSet).ElementType).Returns(data.ElementType);
             A.CallTo(() => ((IQueryable<T>)fakeDbSet).GetEnumerator()).Returns(data.GetEnumerator());
         }
+
+        // NestoAPI#478: interruptor de familia para la tienda
+
+        [TestMethod]
+        public async Task Familias_Put_PausarLaVenta_MarcaLaFamiliaYRepublicaSusProductosVivos()
+        {
+            // Mirplay, 10/09/26: tarifa del proveedor errónea, hay que sacar la casa entera de la tienda.
+            ConfigurarFakeDbSet(fakeFamilias, new List<Familia> { Familia("Mirplay", "Mirplay", false) }.AsQueryable());
+            ConfigurarFakeDbSet(fakeProductos, new List<Producto>
+            {
+                new Producto { Empresa = "1", Número = "45700", Familia = "Mirplay", Estado = 0 },
+                new Producto { Empresa = "1", Número = "45701", Familia = "Mirplay", Estado = -1 },
+                new Producto { Empresa = "1", Número = "30001", Familia = "Lisap", Estado = 0 }
+            }.AsQueryable());
+
+            var resultado = await controller.PutFamilia(new FamiliaMantenimientoDTO
+            {
+                Numero = "Mirplay",
+                PublicoIgualQueProfesional = false,
+                VentaPausadaEnTienda = true
+            }) as OkNegotiatedContentResult<FamiliaMantenimientoDTO>;
+
+            Assert.IsTrue(resultado.Content.VentaPausadaEnTienda.Value);
+            A.CallTo(() => db.SaveChangesAsync()).MustHaveHappenedOnceExactly();
+            A.CallTo(() => db.EncolarProductosSync(
+                    A<IEnumerable<string>>.That.Matches(l => l.Contains("45700") && !l.Contains("45701") && !l.Contains("30001")),
+                    "Familia pausada en tienda"))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Familias_Put_ReanudarLaVenta_DesmarcaYRepublica()
+        {
+            Familia familia = Familia("Mirplay", "Mirplay", false);
+            familia.VentaPausadaEnTienda = true;
+            ConfigurarFakeDbSet(fakeFamilias, new List<Familia> { familia }.AsQueryable());
+            ConfigurarFakeDbSet(fakeProductos, new List<Producto>
+            {
+                new Producto { Empresa = "1", Número = "45700", Familia = "Mirplay", Estado = 0 }
+            }.AsQueryable());
+
+            _ = await controller.PutFamilia(new FamiliaMantenimientoDTO
+            {
+                Numero = "Mirplay",
+                PublicoIgualQueProfesional = false,
+                VentaPausadaEnTienda = false
+            });
+
+            Assert.IsFalse(familia.VentaPausadaEnTienda);
+            A.CallTo(() => db.EncolarProductosSync(
+                    A<IEnumerable<string>>.That.Matches(l => l.Contains("45700")), "Familia reanudada en tienda"))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Familias_Put_SinElCampoDePausa_NoDespausaLaFamilia()
+        {
+            // Un Nesto anterior a #478 manda el DTO sin VentaPausadaEnTienda: si eso desmarcara la
+            // pausa, cualquier PUT viejo devolvería Mirplay a la tienda con la tarifa mala.
+            Familia familia = Familia("Mirplay", "Mirplay", false);
+            familia.VentaPausadaEnTienda = true;
+            familia.Usuario = "el de antes";
+            ConfigurarFakeDbSet(fakeFamilias, new List<Familia> { familia }.AsQueryable());
+
+            _ = await controller.PutFamilia(new FamiliaMantenimientoDTO
+            {
+                Numero = "Mirplay",
+                PublicoIgualQueProfesional = false,
+                VentaPausadaEnTienda = null
+            });
+
+            Assert.IsTrue(familia.VentaPausadaEnTienda, "null = no tocar");
+            Assert.AreEqual("el de antes", familia.Usuario);
+            A.CallTo(() => db.EncolarProductosSync(A<IEnumerable<string>>.That.Matches(l => l.Any()), A<string>._))
+                .MustNotHaveHappened();
+        }
     }
 }

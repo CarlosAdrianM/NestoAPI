@@ -1,4 +1,4 @@
-using NestoAPI.Models;
+﻿using NestoAPI.Models;
 using System.Collections.Generic;
 
 namespace NestoAPI.Models.Sincronizacion
@@ -179,5 +179,14 @@ namespace NestoAPI.Models.Sincronizacion
         /// Principal = ella misma. Odoo puede ignorarlo.
         /// </summary>
         public VarianteDTO Variante { get; set; }
+
+        /// <summary>
+        /// NestoAPI#478: true = la venta de este producto está PAUSADA por decisión de Nesto (su
+        /// familia está pausada): el consumidor lo desactiva y lo deja con marca propia, para
+        /// distinguirlo de lo que desactivó el equipo web. false = no está pausada por Nesto: el
+        /// consumidor reactiva SOLO lo que lleva su marca y la quita; lo desactivado a mano no se
+        /// toca. null = no tocar (Nesto siempre publica con valor; el null es para otros emisores).
+        /// </summary>
+        public bool? VentaPausada { get; set; }
     }
 }

@@ -91,6 +91,8 @@ namespace NestoAPI.Models
         // NestoAPI#477: si el producto pertenece a una familia de variantes (color, tapizado...),
         // aquí va de quién es combinación y con qué valor. null = producto plano, lo de siempre.
         public VarianteDTO Variante { get; set; }
+        /// <summary>NestoAPI#478: la familia del producto tiene la venta pausada en la tienda.</summary>
+        public bool VentaPausada { get; set; }
 
         public class StockProducto
         {
@@ -338,6 +340,7 @@ namespace NestoAPI.Models
                 UnidadMedida = producto.UnidadMedida?.Trim(),
                 Familia = producto.Familia1?.Descripción?.Trim(),
                 FamiliaCodigo = producto.Familia?.Trim(),
+                VentaPausada = producto.Familia1?.VentaPausadaEnTienda ?? false,
                 PrecioProfesional = (decimal)producto.PVP,
                 Estado = (short)producto.Estado,
                 Grupo = producto.Grupo,

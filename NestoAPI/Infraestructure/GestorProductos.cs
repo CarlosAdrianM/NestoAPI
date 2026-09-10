@@ -77,6 +77,8 @@ namespace NestoAPI.Infraestructure
                 ComponentesKit = productoDTO.ProductosKit?.ToList(),
                 CategoriasSecundarias = productoDTO.CategoriasSecundarias?.ToList(),
                 Variante = productoDTO.Variante,
+                // NestoAPI#478: siempre con valor explícito, como ClasificacionMasVendidos.
+                VentaPausada = productoDTO.VentaPausada,
                 Stocks = productoDTO.Stocks?.ToList()
             };
 

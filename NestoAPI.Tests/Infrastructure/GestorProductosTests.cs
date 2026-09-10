@@ -199,6 +199,18 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public async Task PublicarProductoSincronizar_LaPausaDeVentaViajaSiempreConValor()
+        {
+            // NestoAPI#478: true mientras la familia está pausada, false si no. Nunca null: el null
+            // del contrato ("no tocar") es para el consumidor, no algo que publique Nesto.
+            var pausado = await PublicarYCapturar(new ProductoDTO { Producto = "45700", Nombre = "SILLON", VentaPausada = true });
+            var normal = await PublicarYCapturar(new ProductoDTO { Producto = "17404", Nombre = "NOMBRE FICHA" });
+
+            Assert.IsTrue(pausado.VentaPausada.HasValue && pausado.VentaPausada.Value);
+            Assert.IsTrue(normal.VentaPausada.HasValue && !normal.VentaPausada.Value);
+        }
+
+        [TestMethod]
         public async Task PublicarProductoSincronizar_ProductoPlano_LaVarianteViajaComoNull()
         {
             // null es el contrato de "producto plano, como siempre": el consumidor no debe crear

@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure;
+﻿using NestoAPI.Infraestructure;
 using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
@@ -10,9 +10,10 @@ using System.Web.Http;
 namespace NestoAPI.Controllers
 {
     /// <summary>
-    /// NestoAPI#406: mantenimiento de familias. De momento lo ÚNICO editable es
-    /// <c>PublicoIgualQueProfesional</c>, la marca de "esta familia se vende al público al mismo
-    /// precio que al profesional".
+    /// NestoAPI#406: mantenimiento de familias. Lo editable es <c>PublicoIgualQueProfesional</c>,
+    /// la marca de "esta familia se vende al público al mismo precio que al profesional", y desde
+    /// NestoAPI#478 <c>VentaPausadaEnTienda</c>, el interruptor que pausa y reanuda la venta de la
+    /// casa entera en la tienda.
     ///
     /// El resto de campos viajan solo para poder identificar la familia en la pantalla y NO se
     /// pueden modificar a propósito: <c>%ComisiónFija</c> y <c>%DtoMáximoComisión</c> mueven
@@ -79,12 +80,19 @@ namespace NestoAPI.Controllers
                 return NotFound();
             }
 
-            if (familia.PublicoIgualQueProfesional == dto.PublicoIgualQueProfesional)
+            bool cambiaPublico = familia.PublicoIgualQueProfesional != dto.PublicoIgualQueProfesional;
+            // NestoAPI#478: null = el llamante no conoce (o no toca) la pausa
+            bool cambiaPausa = dto.VentaPausadaEnTienda.HasValue && familia.VentaPausadaEnTienda != dto.VentaPausadaEnTienda.Value;
+            if (!cambiaPublico && !cambiaPausa)
             {
                 return Ok(ADto(familia));   // no hay cambio: ni se toca la auditoría
             }
 
             familia.PublicoIgualQueProfesional = dto.PublicoIgualQueProfesional;
+            if (cambiaPausa)
+            {
+                familia.VentaPausadaEnTienda = dto.VentaPausadaEnTienda.Value;
+            }
             familia.Usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
             familia.Fecha_Modificación = DateTime.Now;
 
@@ -93,6 +101,8 @@ namespace NestoAPI.Controllers
             // Los productos de la familia cambian de precio público al marcarla o desmarcarla, así
             // que hay que republicarlos: si no, la web se queda con el precio anterior hasta que
             // algo toque cada producto. Se encolan los vivos; el resto no se publica nunca.
+            // NestoAPI#478: pausar o reanudar la venta también viaja por aquí (VentaPausada en el
+            // mensaje de cada producto), así que la republicación es la misma.
             List<string> productos = await db.Productos
                 .Where(p => p.Empresa == empresa && p.Familia == numero && p.Estado >= 0)
                 .Select(p => p.Número)
@@ -101,7 +111,10 @@ namespace NestoAPI.Controllers
 
             // NestoAPI#433: la lista entera en una sentencia. Marcar Lisap son 843 productos, y de
             // uno en uno era un viaje a SQL por producto dentro de la petición.
-            _ = await db.EncolarProductosSync(productos, "Mantenimiento familias").ConfigureAwait(false);
+            string motivo = cambiaPausa
+                ? (familia.VentaPausadaEnTienda ? "Familia pausada en tienda" : "Familia reanudada en tienda")
+                : "Mantenimiento familias";
+            _ = await db.EncolarProductosSync(productos, motivo).ConfigureAwait(false);
 
             return Ok(ADto(familia));
         }
@@ -114,7 +127,8 @@ namespace NestoAPI.Controllers
                 Numero = f.Número?.Trim(),
                 Descripcion = f.Descripción?.Trim(),
                 Estado = f.Estado,
-                PublicoIgualQueProfesional = f.PublicoIgualQueProfesional
+                PublicoIgualQueProfesional = f.PublicoIgualQueProfesional,
+                VentaPausadaEnTienda = f.VentaPausadaEnTienda
             };
         }
 
