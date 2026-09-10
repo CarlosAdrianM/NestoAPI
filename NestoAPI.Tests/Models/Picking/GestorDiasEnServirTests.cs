@@ -160,5 +160,47 @@ namespace NestoAPI.Tests.Models.Picking
             Assert.ThrowsException<System.ComponentModel.DataAnnotations.ValidationException>(
                 () => GestorDiasEnServir.AplicarCambio("11111", "LMXJV"));
         }
+
+        // 10/09/26: almacén se quejó de un correo por cada picking con los mismos pedidos
+
+        [TestMethod]
+        public void PendientesDeAvisar_UnPedidoSoloSeAvisaUnaVezPorDiaDeEntrega()
+        {
+            PedidoPicking pedido = PedidoCon("01111");
+            pedido.Id = 925758;
+            Dictionary<string, DateTime> avisados = new Dictionary<string, DateTime>();
+
+            List<PedidoPicking> primera = GestorDiasEnServir.PendientesDeAvisar(new List<PedidoPicking> { pedido }, LUNES, avisados);
+            List<PedidoPicking> segunda = GestorDiasEnServir.PendientesDeAvisar(new List<PedidoPicking> { pedido }, LUNES, avisados);
+
+            Assert.AreEqual(1, primera.Count, "la primera pasada avisa");
+            Assert.AreEqual(0, segunda.Count, "la siguiente pasada del picking del mismo día no repite el correo");
+        }
+
+        [TestMethod]
+        public void PendientesDeAvisar_SiCambiaElDiaDeEntrega_SeVuelveAAvisar()
+        {
+            PedidoPicking pedido = PedidoCon("01110"); // cierra lunes y viernes
+            pedido.Id = 925758;
+            Dictionary<string, DateTime> avisados = new Dictionary<string, DateTime>();
+
+            _ = GestorDiasEnServir.PendientesDeAvisar(new List<PedidoPicking> { pedido }, LUNES, avisados);
+            List<PedidoPicking> otroDia = GestorDiasEnServir.PendientesDeAvisar(new List<PedidoPicking> { pedido }, VIERNES, avisados);
+
+            Assert.AreEqual(1, otroDia.Count, "otro día de entrega es otro aviso: el usuario debe saber que sigue sin salir");
+        }
+
+        [TestMethod]
+        public void PendientesDeAvisar_LosAvisosViejosSeOlvidan()
+        {
+            PedidoPicking pedido = PedidoCon("01111");
+            pedido.Id = 900001;
+            Dictionary<string, DateTime> avisados = new Dictionary<string, DateTime> { { "777777|20260101", DateTime.Now.AddDays(-30) } };
+
+            _ = GestorDiasEnServir.PendientesDeAvisar(new List<PedidoPicking> { pedido }, LUNES, avisados);
+
+            Assert.IsFalse(avisados.ContainsKey("777777|20260101"), "el registro no crece sin fin");
+            Assert.IsTrue(avisados.ContainsKey($"900001|{LUNES:yyyyMMdd}"));
+        }
     }
 }

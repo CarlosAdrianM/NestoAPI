@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Configuration;
@@ -115,12 +116,50 @@ namespace NestoAPI.Models.Picking
         }
 
         /// <summary>
-        /// Aviso al usuario de cada pedido (CC administración), mismo patrón que el correo de
-        /// retenidos por prepago. Nunca lanza: un fallo de correo no debe romper el picking.
+        /// Los pedidos retirados de los que todavía no se ha avisado para ESE día de entrega. Un
+        /// pedido que el cliente no puede recibir el lunes se retira en todas las pasadas del
+        /// picking hasta que cambia el día de entrega, y avisar en cada pasada es spam (10/09/26:
+        /// almacén se quejó de que le llegaba un correo por cada picking). Se avisa una vez por
+        /// pedido y día de entrega; el registro es el de la propia app (se pierde al reciclar el
+        /// pool, y entonces como mucho se repite un aviso).
+        /// </summary>
+        internal static List<PedidoPicking> PendientesDeAvisar(List<PedidoPicking> pedidosRetirados, DateTime diaEntrega, IDictionary<string, DateTime> yaAvisados)
+        {
+            List<PedidoPicking> nuevos = new List<PedidoPicking>();
+            foreach (PedidoPicking pedido in pedidosRetirados)
+            {
+                string clave = $"{pedido.Id}|{diaEntrega:yyyyMMdd}";
+                if (yaAvisados.ContainsKey(clave))
+                {
+                    continue;
+                }
+                yaAvisados[clave] = DateTime.Now;
+                nuevos.Add(pedido);
+            }
+            // Que no crezca sin fin: lo de hace más de una semana ya no se va a repetir
+            foreach (string clave in yaAvisados.Where(a => a.Value < DateTime.Now.AddDays(-7)).Select(a => a.Key).ToList())
+            {
+                yaAvisados.Remove(clave);
+            }
+            return nuevos;
+        }
+
+        private static readonly ConcurrentDictionary<string, DateTime> avisosEnviados = new ConcurrentDictionary<string, DateTime>();
+
+        /// <summary>
+        /// Aviso al usuario de cada pedido con ALMACÉN en copia (son ellos quienes echan en falta
+        /// el pedido en el picking; administración no pinta nada aquí), mismo patrón que el correo
+        /// de retenidos por prepago. Una sola vez por pedido y día de entrega. Nunca lanza: un
+        /// fallo de correo no debe romper el picking.
         /// </summary>
         public static void EnviarCorreo(List<PedidoPicking> pedidosRetirados, DateTime diaEntrega)
         {
             if (pedidosRetirados == null || pedidosRetirados.Count == 0)
+            {
+                return;
+            }
+            pedidosRetirados = PendientesDeAvisar(pedidosRetirados, diaEntrega, avisosEnviados);
+            if (pedidosRetirados.Count == 0)
             {
                 return;
             }
@@ -143,7 +182,7 @@ namespace NestoAPI.Models.Picking
                 {
                     mail.To.Add(new MailAddress(correoUsuario));
                 }
-                mail.CC.Add(new MailAddress(Constantes.Correos.CORREO_ADMON));
+                mail.CC.Add(new MailAddress(Constantes.Correos.ALMACEN));
                 mail.Subject = "Pedidos sin picking: el cliente cierra el día de la entrega";
                 mail.Body = GenerarCuerpo(pedidosRetirados, diaEntrega);
                 mail.IsBodyHtml = true;
