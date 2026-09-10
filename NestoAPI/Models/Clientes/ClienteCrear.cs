@@ -42,6 +42,8 @@ namespace NestoAPI.Models.Clientes
         public string Telefono { get; set; }
         public string VendedorEstetica { get; set; }
         public string VendedorPeluqueria { get; set; }
+        // NestoAPI#471: días que el cliente cierra (5 posiciones L..V, '1' abre). Null en el PUT = no tocar.
+        public string DiasEnServir { get; set; }
 
         public string Usuario { get; set; }
 

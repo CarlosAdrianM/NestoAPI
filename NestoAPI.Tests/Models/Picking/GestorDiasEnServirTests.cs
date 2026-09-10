@@ -1,4 +1,4 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Models.Picking;
 using System;
 using System.Collections.Generic;
@@ -116,6 +116,49 @@ namespace NestoAPI.Tests.Models.Picking
                 DiasEnServir = diasEnServir,
                 Lineas = new List<LineaPedidoPicking> { new LineaPedidoPicking { Cantidad = 1 } }
             };
+        }
+            // NestoAPI#471: la ficha del cliente expone y guarda DiasEnServir por la API
+
+        [TestMethod]
+        public void EsFormatoValido_SoloCincoCerosYUnos()
+        {
+            Assert.IsTrue(GestorDiasEnServir.EsFormatoValido("11111"));
+            Assert.IsTrue(GestorDiasEnServir.EsFormatoValido("01111"));
+            Assert.IsTrue(GestorDiasEnServir.EsFormatoValido(" 11110 "), "la BD lo guarda en char(5): se tolera el relleno");
+            Assert.IsFalse(GestorDiasEnServir.EsFormatoValido(null));
+            Assert.IsFalse(GestorDiasEnServir.EsFormatoValido(""));
+            Assert.IsFalse(GestorDiasEnServir.EsFormatoValido("1111"));
+            Assert.IsFalse(GestorDiasEnServir.EsFormatoValido("111111"));
+            Assert.IsFalse(GestorDiasEnServir.EsFormatoValido("1111X"));
+        }
+
+        [TestMethod]
+        public void AplicarCambio_SinValorNuevo_NoTocaElActual()
+        {
+            Assert.AreEqual("01111", GestorDiasEnServir.AplicarCambio("01111", null), "el PUT de un cliente viejo no debe blanquear");
+            Assert.AreEqual("01111", GestorDiasEnServir.AplicarCambio("01111", "  "));
+        }
+
+        [TestMethod]
+        public void AplicarCambio_SinValorNuevoNiActual_PonePorDefecto()
+        {
+            Assert.AreEqual("11111", GestorDiasEnServir.AplicarCambio(null, null), "al crear un cliente abre todos los días");
+        }
+
+        [TestMethod]
+        public void AplicarCambio_ConValorNuevoValido_LoGuardaRecortado()
+        {
+            Assert.AreEqual("01111", GestorDiasEnServir.AplicarCambio("11111", "01111"));
+            Assert.AreEqual("11110", GestorDiasEnServir.AplicarCambio(null, " 11110 "));
+        }
+
+        [TestMethod]
+        public void AplicarCambio_ConValorMalFormado_Rechaza()
+        {
+            Assert.ThrowsException<System.ComponentModel.DataAnnotations.ValidationException>(
+                () => GestorDiasEnServir.AplicarCambio("11111", "1111"));
+            Assert.ThrowsException<System.ComponentModel.DataAnnotations.ValidationException>(
+                () => GestorDiasEnServir.AplicarCambio("11111", "LMXJV"));
         }
     }
 }

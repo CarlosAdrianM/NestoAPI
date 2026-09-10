@@ -1,5 +1,6 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.Configuration;
 using System.Linq;
 using System.Net.Mail;
@@ -38,6 +39,31 @@ namespace NestoAPI.Models.Picking
                 entrega = entrega.AddDays(1);
             }
             return entrega;
+        }
+
+        /// <summary>NestoAPI#471: 5 caracteres, cada uno '0' o '1'.</summary>
+        public static bool EsFormatoValido(string diasEnServir)
+        {
+            string dias = diasEnServir?.Trim();
+            return dias != null && dias.Length == 5 && dias.All(c => c == '0' || c == '1');
+        }
+
+        /// <summary>
+        /// NestoAPI#471: el valor que debe quedar en la ficha al guardar. Null o vacío = no tocar
+        /// (los llamantes que aún no envían el campo no deben blanquearlo); si no había nada, el
+        /// valor por defecto (abre todos los días). Un valor mal formado no se guarda: se rechaza.
+        /// </summary>
+        public static string AplicarCambio(string actual, string nuevo)
+        {
+            if (string.IsNullOrWhiteSpace(nuevo))
+            {
+                return string.IsNullOrWhiteSpace(actual) ? Constantes.Clientes.DIAS_EN_SERVIR_POR_DEFECTO : actual;
+            }
+            if (!EsFormatoValido(nuevo))
+            {
+                throw new ValidationException($"Los días de servir deben ser 5 posiciones (lunes a viernes) con 0 o 1: '{nuevo}' no vale.");
+            }
+            return nuevo.Trim();
         }
 
         internal static bool EstaAbierto(string diasEnServir, DateTime diaEntrega)

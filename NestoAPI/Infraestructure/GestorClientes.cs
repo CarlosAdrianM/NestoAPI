@@ -3,6 +3,7 @@ using Microsoft.ML;
 using Microsoft.Reporting.WebForms;
 using NestoAPI.Infraestructure.Sincronizacion;
 using NestoAPI.Models;
+using NestoAPI.Models.Picking;
 using NestoAPI.Models.Clientes;
 using NestoAPI.Models.Sincronizacion;
 using System;
@@ -606,6 +607,7 @@ namespace NestoAPI.Infraestructure
                 Direccion = clienteDb.Dirección?.Trim(),
                 Estado = clienteDb.Estado,
                 Nif = clienteDb.CIF_NIF?.Trim(),
+                DiasEnServir = clienteDb.DiasEnServir?.Trim(),
                 Pais = clienteDb.Pais?.Trim(),
                 Nombre = clienteDb.Nombre?.Trim(),
                 Poblacion = clienteDb.Población?.Trim(),
@@ -992,6 +994,8 @@ namespace NestoAPI.Infraestructure
 
             // test se rellenan los datos y el CIF sobre todo
             clienteDB.CIF_NIF = clienteModificar.Nif;
+            // NestoAPI#471: los días de servir solo se pisan si el DTO los trae (y bien formados)
+            clienteDB.DiasEnServir = GestorDiasEnServir.AplicarCambio(clienteDB.DiasEnServir, clienteModificar.DiasEnServir);
             // NestoAPI#355: solo se pisa el país si el DTO trae uno (la ficha comercial y otros
             // llamantes que aún no envían país no deben blanquear el que ya tenga el cliente).
             if (!string.IsNullOrWhiteSpace(clienteModificar.Pais))
@@ -1271,7 +1275,7 @@ namespace NestoAPI.Infraestructure
                 ContactoBonificacion = contacto,
                 ContactoCobro = contacto,
                 ContactoDefecto = contacto,
-                DiasEnServir = Constantes.Clientes.DIAS_EN_SERVIR_POR_DEFECTO,
+                DiasEnServir = GestorDiasEnServir.AplicarCambio(null, clienteCrear.DiasEnServir),
                 Dirección = clienteCrear.Direccion,
                 Estado = clienteCrear.Estado,
                 Grupo = Constantes.Clientes.GRUPO_POR_DEFECTO,

@@ -571,6 +571,7 @@ namespace NestoAPI.Controllers
                 web = clienteEncontrado.Web,
                 empleados = clienteEncontrado.Empleados,
                 empleadosFecha = clienteEncontrado.EmpleadosFecha,
+                diasEnServir = clienteEncontrado.DiasEnServir?.Trim(),
                 VendedoresGrupoProducto = vendedoresGrupoProducto,
                 // Nesto#340 (1C.8, slice 4): la ficha comercial de Nesto necesita las personas de
                 // contacto (grid + correo de agencia) sin cargar la entidad EF en el cliente.

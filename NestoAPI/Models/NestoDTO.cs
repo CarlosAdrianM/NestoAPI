@@ -46,6 +46,8 @@ namespace NestoAPI.Models
         // NestoAPI#464: 0 = sin empleados, 1..4, 5 = "5 o más"; null = no se ha preguntado.
         public byte? empleados { get; set; }
         public DateTime? empleadosFecha { get; set; }
+        // NestoAPI#471: 5 posiciones lunes..viernes, '1' abre y '0' cierra (Clientes.DiasEnServir)
+        public string diasEnServir { get; set; }
         /// <summary>
         /// Si la pantalla de rapport tiene que preguntar (o enseñar ya relleno) el número de
         /// empleados. La regla vive en el servidor (PoliticaEmpleadosCliente): Nesto y NestoApp
