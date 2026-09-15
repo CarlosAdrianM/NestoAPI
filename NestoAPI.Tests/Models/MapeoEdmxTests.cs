@@ -112,7 +112,12 @@ namespace NestoAPI.Tests.Models
         [TestMethod]
         public void Edmx_ElUsuarioDeAuditoriaNoEsComputedEnLasEntidadesQueGrabanPersonas()
         {
-            string[] entidadesDePersonas = { "OfertasPermitidas" };
+            // #481 punto 3 (15/09/26): Inventarios (PostInventario resuelve el usuario del Identity),
+            // VendedoresClienteGrupoProducto y VendedoresPedidoGrupoProducto (GestorClientes y
+            // GestorComisiones asignan Usuario en todos los inserts). Se quedan Computed a propósito:
+            // Ubicaciones (el picking las inserta sin usuario: habría que resolverlo antes),
+            // InventariosCuadre (la API no inserta), y las de jobs (Comisiones*, Modificaciones).
+            string[] entidadesDePersonas = { "OfertasPermitidas", "Inventarios", "VendedoresClienteGrupoProducto", "VendedoresPedidoGrupoProducto" };
             Dictionary<string, XElement> almacen = EntidadesPorNombre(LeerRecurso("ssdl"), SsdlNs);
 
             foreach (string entidad in entidadesDePersonas)

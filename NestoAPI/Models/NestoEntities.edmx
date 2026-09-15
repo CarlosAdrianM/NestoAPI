@@ -1131,7 +1131,7 @@
           <Property Name="Pasillo" Type="char" MaxLength="3" />
           <Property Name="Fila" Type="char" MaxLength="3" />
           <Property Name="Columna" Type="char" MaxLength="3" />
-          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" StoreGeneratedPattern="Computed" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
         </EntityType>
         <EntityType Name="InventariosCuadre">
@@ -2134,7 +2134,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.RentingFacturas' no tiene definida ni
           <Property Name="GrupoProducto" Type="char" MaxLength="3" Nullable="false" />
           <Property Name="Vendedor" Type="char" MaxLength="3" Nullable="false" />
           <Property Name="Estado" Type="smallint" Nullable="false" />
-          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" StoreGeneratedPattern="Computed" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="FechaModificacion" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
         </EntityType>
         <EntityType Name="VendedoresCodigoPostalGrupoProducto">
@@ -2158,7 +2158,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.RentingFacturas' no tiene definida ni
           <Property Name="Pedido" Type="int" Nullable="false" />
           <Property Name="GrupoProducto" Type="char" MaxLength="3" Nullable="false" />
           <Property Name="Vendedor" Type="char" MaxLength="3" Nullable="false" />
-          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" StoreGeneratedPattern="Computed" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="FechaModificacion" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
         </EntityType>
         <EntityType Name="VendedorLinPedidoVta">
@@ -9860,7 +9860,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="Pasillo" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
           <Property Name="Fila" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
           <Property Name="Columna" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
-          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" annotation:StoreGeneratedPattern="Computed" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
           <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" annotation:StoreGeneratedPattern="Computed" />
           <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_Inventario_Empresas" FromRole="Inventario" ToRole="Empresa" />
           <NavigationProperty Name="Familia1" Relationship="NVModel.FK_Inventarios_Familias" FromRole="Inventario" ToRole="Familia" />
@@ -10712,7 +10712,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="Contacto" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
           <Property Name="GrupoProducto" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
           <Property Name="Vendedor" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
-          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" annotation:StoreGeneratedPattern="Computed" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
           <Property Name="FechaModificacion" Type="DateTime" Nullable="false" Precision="3" annotation:StoreGeneratedPattern="Computed" />
           <NavigationProperty Name="Cliente1" Relationship="NVModel.FK_VendedoresClienteGrupoProducto_Clientes" FromRole="VendedoresClienteGrupoProducto" ToRole="Cliente" />
           <NavigationProperty Name="Vendedore" Relationship="NVModel.FK_VendedoresClienteGrupoProducto_Vendedores" FromRole="VendedorClienteGrupoProducto" ToRole="Vendedore" />
@@ -10728,7 +10728,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="Pedido" Type="Int32" Nullable="false" />
           <Property Name="GrupoProducto" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
           <Property Name="Vendedor" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
-          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" annotation:StoreGeneratedPattern="Computed" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
           <Property Name="FechaModificacion" Type="DateTime" Nullable="false" Precision="3" annotation:StoreGeneratedPattern="Computed" />
           <NavigationProperty Name="CabPedidoVta" Relationship="NVModel.FK_VendedoresPedidoGrupoProducto_CabPedidoVta" FromRole="VendedoresPedidoGrupoProducto" ToRole="CabPedidoVta" />
           <NavigationProperty Name="Vendedore" Relationship="NVModel.FK_VendedoresPedidoGrupoProducto_Vendedores" FromRole="VendedorPedidoGrupoProducto" ToRole="Vendedore" />

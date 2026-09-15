@@ -118,6 +118,10 @@ namespace NestoAPI.Controllers
             inventario.Subgrupo = inventario.Subgrupo ?? producto.SubGrupo;
             inventario.Estado = 1; // Sin contabilizar
             inventario.Aplicacion = "NestoAPI";
+            // #481: Usuario ya no es Computed en el EDMX (antes el DEFAULT grababa el pool de IIS).
+            // Manda el Identity; lo que traiga el cliente es el fallback (Nesto manda configuracion.usuario).
+            inventario.Usuario = Infraestructure.UsuarioAuditoriaHelper.ParaAuditoria(
+                Infraestructure.UsuarioAuditoriaHelper.Resolver(User, inventario.Usuario));
 
             db.Inventarios.Add(inventario);
             
