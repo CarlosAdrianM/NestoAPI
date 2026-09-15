@@ -212,7 +212,53 @@ Devuelve ASUNTO en la primera línea y luego el HTML del cuerpo, sin etiquetas <
 
         #region Issue #152: Optimización - una sola plantilla por lote semanal
 
-        internal const int TAMANO_LOTE_SALUDOS = 200;
+        /// <summary>
+        /// NestoAPI#484: con 200 iban TODOS los nombres de la semana en una llamada y, a partir de
+        /// 30-49 nombres, gpt-4o-mini dejaba de aplicar la regla de las empresas ("Hola The Look
+        /// Getafe SL"). Los lotes de hasta 12 nunca fallaron; 20 deja margen sin multiplicar llamadas.
+        /// </summary>
+        internal const int TAMANO_LOTE_SALUDOS = 20;
+
+        internal const string SALUDO_GENERICO = "Hola";
+
+        /// <summary>Un saludo a una persona lleva como mucho un nombre de pila compuesto ("Hola María José").</summary>
+        private const int MAX_PALABRAS_DE_NOMBRE_EN_SALUDO = 2;
+
+        // Siglas de sociedad, con o sin puntos y con o sin espacios: S.L., SL, S.L.U., SLU, SLL,
+        // S.A., SAU, S.R.L., SRL, S.C., SCP, C.B., S.COOP., SLNE, LTDA, LTD, GMBH, INC, LLC
+        private static readonly Regex SiglasDeSociedad = new Regex(
+            @"(?<![\p{L}\d])(S\.?\s?L\.?(\s?[UL]\.?)?|S\.?\s?A\.?(\s?U\.?)?|S\.?\s?R\.?\s?L\.?|S\.?\s?C\.?(\s?P\.?)?|C\.?\s?B\.?|S\.?\s?COOP\.?|SLNE|LTDA?|GMBH|INC\.?|LLC)(?![\p{L}\d])",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        private static readonly HashSet<string> FormulasDeSaludo = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "hola", "buenos", "buenas", "días", "dias", "tardes", "noches", "qué", "que", "tal",
+            "saludos", "bienvenido", "bienvenida", "estimado", "estimada", "querido", "querida", "hey", "de", "nuevo",
+        };
+
+        /// <summary>
+        /// NestoAPI#484: guarda determinista sobre lo que devuelve el modelo. La instrucción de
+        /// "si es una empresa, saludo genérico" no se puede fiar al prompt: con lotes grandes la
+        /// ignoraba y salían "Hola The Look Getafe SL" o "Hola Eurobeauty Canarias, SRL". Si el
+        /// saludo (o el nombre del cliente) lleva siglas de sociedad, o el saludo lleva más de dos
+        /// palabras aparte de la fórmula, se sustituye por el genérico.
+        /// </summary>
+        internal static string SanearSaludo(string nombreCliente, string saludo)
+        {
+            if (string.IsNullOrWhiteSpace(saludo))
+            {
+                return SALUDO_GENERICO;
+            }
+            string limpio = saludo.Trim();
+            if (SiglasDeSociedad.IsMatch(limpio) || (nombreCliente != null && SiglasDeSociedad.IsMatch(nombreCliente)))
+            {
+                return SALUDO_GENERICO;
+            }
+            int palabrasDeNombre = Regex.Replace(limpio, @"[¡!¿?,.:;()""']", " ")
+                .Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)
+                .Count(p => !FormulasDeSaludo.Contains(p));
+            return palabrasDeNombre > MAX_PALABRAS_DE_NOMBRE_EN_SALUDO ? SALUDO_GENERICO : limpio;
+        }
 
         /// <summary>
         /// Genera una plantilla HTML reutilizable con placeholders.
@@ -311,7 +357,7 @@ Ejemplo: entrada [""MARIA PELUQUEROS S.L."", ""Rosa Martínez""] → respuesta [
                 {
                     for (int i = 0; i < nombres.Count; i++)
                     {
-                        resultado[nombres[i]] = saludos[i];
+                        resultado[nombres[i]] = SanearSaludo(nombres[i], saludos[i]);
                     }
                     return resultado;
                 }
