@@ -1,4 +1,4 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Models.Picking;
 using System.Collections.Generic;
 using System.Net.Mail;
@@ -144,6 +144,42 @@ namespace NestoAPI.Tests.Models.Picking
             PedidoPicking pedido = CrearPedido(Linea(100, 10, 0));
 
             Assert.IsNull(GestorAvisosPicking.ComponerCorreo(pedido, "vendedor@nv.es", "usuario@nv.es"));
+        }
+
+        [TestMethod]
+        public void AjustarALineaServida_LineaPartida_ElAvisoLlevaSoloLoQueSale()
+        {
+            // NestoAPI#485, pedido 925872: línea de 15 uds (112,12 € base, 141,50 € con IVA y RE),
+            // picking coge 2 y parte las otras 13 a una línea nueva. dividirLinea deja la fila
+            // original con los importes de las 2 uds; el objeto del picking tiene que copiarlos.
+            LineaPedidoPicking linea = Linea(112.12m, 15, 2, total: 141.50m);
+            linea.Producto = "42294";
+            PedidoPicking pedido = CrearPedido(linea, Linea(27.67m, 3, 3, total: 34.92m));
+            var filaServida = new NestoAPI.Models.LinPedidoVta { Cantidad = 2, Base_Imponible = 14.95m, Total = 18.87m };
+
+            linea.AjustarALineaServida(filaServida);
+
+            Assert.AreEqual(2, linea.Cantidad);
+            Assert.AreEqual(14.95m, linea.BaseImponibleEntrega, "La base de la tanda es la de las 2 uds, no la de las 15");
+            Assert.AreEqual(18.87m, linea.TotalEntrega);
+            Assert.AreEqual(14.95m + 27.67m, System.Math.Round(GestorAvisosPicking.ImporteCogido(pedido), 2));
+            Assert.AreEqual(18.87m + 34.92m, System.Math.Round(GestorAvisosPicking.TotalConIvaCogido(pedido), 2));
+            MailMessage mail = GestorAvisosPicking.ComponerCorreo(pedido, "vendedor@nv.es", null);
+            StringAssert.Contains(mail.Body, 14.95m.ToString("C"));
+            Assert.IsFalse(mail.Body.Contains(112.12m.ToString("C")), "No puede aparecer el importe de la línea entera");
+        }
+
+        [TestMethod]
+        public void AjustarALineaServida_SinFila_SoloAjustaLaCantidad()
+        {
+            // Si dividirLinea no partió nada (no hay fila nueva), la línea original sigue entera:
+            // solo se cierra la cantidad a lo reservado, como siempre
+            LineaPedidoPicking linea = Linea(100, 10, 10);
+
+            linea.AjustarALineaServida(null);
+
+            Assert.AreEqual(10, linea.Cantidad);
+            Assert.AreEqual(100m, linea.BaseImponibleEntrega);
         }
     }
 }

@@ -48,5 +48,23 @@ namespace NestoAPI.Models.Picking
                 return Cantidad != 0 ? Total / Cantidad * CantidadReservada : 0;
             }
         }
+
+        /// <summary>
+        /// NestoAPI#485: cuando el picking parte la línea en BD (lo reservado se queda en la fila
+        /// original y el resto pasa a una fila nueva pendiente), esta línea tiene que reflejar la
+        /// parte servida ENTERA: cantidad, base y total, que dividirLinea acaba de recalcular
+        /// para esa fila. Antes solo se actualizaba la cantidad y el aviso con importe (#253/#314)
+        /// prorrateaba la base de las 15 uds sobre 2 reservadas de 2: importe de 15 (pedido 925872).
+        /// </summary>
+        public void AjustarALineaServida(LinPedidoVta lineaServida)
+        {
+            Cantidad = CantidadReservada;
+            if (lineaServida == null)
+            {
+                return;
+            }
+            BaseImponible = lineaServida.Base_Imponible;
+            Total = lineaServida.Total;
+        }
     }
 }

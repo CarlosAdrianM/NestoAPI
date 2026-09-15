@@ -59,7 +59,9 @@ namespace NestoAPI.Models.Picking
                 if (!elPedidoSeBorrara)
                 {
                     lineaNueva = pedidosCtrl.dividirLinea(db, lineaActual, (short)(linea.CantidadReservada));
-                    linea.Cantidad = linea.CantidadReservada;
+                    // NestoAPI#485: lineaActual ya es solo la parte servida (dividirLinea la ha
+                    // recalculado); la línea del picking tiene que llevar sus importes, no solo la cantidad
+                    linea.AjustarALineaServida(lineaActual);
                 }                
                 // comprobar, pero creo que esto solo hay que hacerlo si la cantidad es distinta a la cantidadreservada
                 // porque al no crear línea nueva, lo que hacemos es volver a poner en estado 1.
