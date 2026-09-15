@@ -265,6 +265,24 @@ namespace NestoAPI.Controllers
             return Ok(envio);
         }
 
+        /// <summary>
+        /// TODOS los envíos de un pedido, en cualquier estado, por orden de número (o sea, de
+        /// creación). Nesto#340 (Agencias, slice A3): sustituye a AgenciaService.CargarListaEnviosPedido,
+        /// que era la lista de la pestaña Pedidos (y de la que sale envioActual = el último). Replica
+        /// su filtro EXACTO: empresa y pedido, sin filtrar por estado, Order By Numero.
+        /// </summary>
+        [HttpGet]
+        [Route("api/EnviosAgencias/PorPedido")]
+        [ResponseType(typeof(List<EnvioAgenciaListadoDTO>))]
+        public async Task<IHttpActionResult> GetEnviosPorPedido(string empresa, int pedido)
+        {
+            List<EnvioAgenciaListadoDTO> envios = await ProyectarListado(db.EnviosAgencias
+                .Where(e => e.Empresa == empresa && e.Pedido == pedido)
+                .OrderBy(e => e.Numero))
+                .ToListAsync();
+            return Ok(envios);
+        }
+
         /// <summary>En curso (Estado = 0, etiqueta creada sin cerrar el día) de una agencia —
         /// pestaña En curso.</summary>
         [HttpGet]

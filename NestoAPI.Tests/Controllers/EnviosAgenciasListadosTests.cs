@@ -78,6 +78,48 @@ namespace NestoAPI.Tests.Controllers
             };
         }
 
+        // Nesto#340 (Agencias, slice A3): PorPedido sustituye a AgenciaService.CargarListaEnviosPedido
+        // (la lista de la pestaña Pedidos; envioActual es el último). Todos los estados, por número.
+
+        [TestMethod]
+        public async Task PorPedido_DevuelveTodosLosEstadosDeEsePedidoPorOrdenDeNumero()
+        {
+            ConEnvios(
+                Envio(3, estado: 1, pedido: 12345),
+                Envio(1, estado: 2, pedido: 12345),
+                Envio(2, estado: -1, pedido: 12345),
+                Envio(4, estado: 1, pedido: 99999));
+
+            var resultado = await controller.GetEnviosPorPedido("1", 12345)
+                as OkNegotiatedContentResult<List<EnvioAgenciaListadoDTO>>;
+
+            Assert.IsNotNull(resultado);
+            CollectionAssert.AreEqual(new[] { 1, 2, 3 }, resultado.Content.Select(e => e.Numero).ToList());
+        }
+
+        [TestMethod]
+        public async Task PorPedido_NoSeSaltaLaEmpresa()
+        {
+            ConEnvios(Envio(1, estado: 1, pedido: 12345, empresa: "3"));
+
+            var resultado = await controller.GetEnviosPorPedido("1", 12345)
+                as OkNegotiatedContentResult<List<EnvioAgenciaListadoDTO>>;
+
+            Assert.AreEqual(0, resultado.Content.Count);
+        }
+
+        [TestMethod]
+        public async Task PorPedido_SinEnviosDevuelveListaVaciaYNoUn404()
+        {
+            ConEnvios();
+
+            var resultado = await controller.GetEnviosPorPedido("1", 12345)
+                as OkNegotiatedContentResult<List<EnvioAgenciaListadoDTO>>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(0, resultado.Content.Count);
+        }
+
         // Nesto#340 (Agencias, slice A3): PendientePorPedido sustituye a AgenciaService.CargarEnvio,
         // que leía el envío pendiente del pedido con Entity Framework. De él sale el destino real de
         // la etiqueta cuando la tienda online ya la había creado (Nesto#395), así que el filtro tiene
