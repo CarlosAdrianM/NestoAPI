@@ -213,11 +213,13 @@ namespace NestoAPI.Tests.Infrastructure.CanalesExternos.Amazon
         }
 
         [TestMethod]
-        public void EsClienteFacturaSimplificada_LosTresClientesFicticios()
+        public void EsClienteFacturaSimplificada_LosClientesFicticios()
         {
             Assert.IsTrue(Constantes.ClientesEspeciales.EsClienteFacturaSimplificada("32624"));   // Amazon
             Assert.IsTrue(Constantes.ClientesEspeciales.EsClienteFacturaSimplificada("31517 ")); // tienda online (con relleno)
             Assert.IsTrue(Constantes.ClientesEspeciales.EsClienteFacturaSimplificada("10458"));  // público final
+            Assert.IsTrue(Constantes.ClientesEspeciales.EsClienteFacturaSimplificada("31794"));  // materiales cursos
+            Assert.IsTrue(Constantes.ClientesEspeciales.EsClienteFacturaSimplificada("9500 "));  // #483 PEDIDO TIENDA (NIF '00')
             Assert.IsFalse(Constantes.ClientesEspeciales.EsClienteFacturaSimplificada("15191")); // El Edén factura completa
             Assert.IsFalse(Constantes.ClientesEspeciales.EsClienteFacturaSimplificada(null));
         }

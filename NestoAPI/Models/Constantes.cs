@@ -624,12 +624,16 @@ namespace NestoAPI.Models
             /// Decisión Carlos 17/08/26: deja de usarse para facturar (los materiales salen
             /// por diario); mientras existan facturas suyas, se declaran como simplificadas.</summary>
             public const string MATERIALES_CURSOS = "31794";
+            /// <summary>Ficticio de venta en tienda "PEDIDO TIENDA" (NIF '00', pedidos desde 2002).
+            /// NestoAPI#483: el circuito de NIF lo daba por NO IDENTIFICADO en cada pedido.</summary>
+            public const string PEDIDO_TIENDA = "9500";
 
             // Clientes ficticios de venta a consumidor final: sus facturas son SIMPLIFICADAS
             // (F2 sin destinatario, art. 6.1.d RD 1619/2012). Criterio único compartido por
-            // Verifactu (#325) y por la subida de facturas a Amazon (#366), que las excluye.
+            // Verifactu (#325), la validación de NIF (#327/#391) y la subida de facturas a
+            // Amazon (#366), que las excluye.
             private static readonly HashSet<string> _clientesFacturaSimplificada =
-                new HashSet<string> { AMAZON, TIENDA_ONLINE, PUBLICO_FINAL, MATERIALES_CURSOS };
+                new HashSet<string> { AMAZON, TIENDA_ONLINE, PUBLICO_FINAL, MATERIALES_CURSOS, PEDIDO_TIENDA };
 
             public static bool EsClienteFacturaSimplificada(string cliente)
                 => !string.IsNullOrWhiteSpace(cliente) && _clientesFacturaSimplificada.Contains(cliente.Trim());
