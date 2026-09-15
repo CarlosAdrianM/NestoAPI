@@ -51,6 +51,7 @@ namespace NestoAPI.Models
         public bool FijarPrimerVto { get; set; }
         public bool MantenerJunto { get; set; }
         public bool ServirJunto { get; set; }
+        public Nullable<byte> ModoServicio { get; set; }
         public string Usuario { get; set; }
         public System.DateTime Fecha_Modificación { get; set; }
         public byte[] RowVersion { get; set; }

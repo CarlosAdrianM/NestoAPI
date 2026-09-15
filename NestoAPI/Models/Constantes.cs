@@ -420,6 +420,74 @@ namespace NestoAPI.Models
             // Issue #159: a partir de esta fecha el flag NoCobrarComisionReembolso se ignora
             // y siempre se aplica la comisión cuando procede.
             public static readonly DateTime FECHA_CORTE_NO_COBRAR_COMISION_REEMBOLSO = new DateTime(2026, 9, 1);
+
+            /// <summary>
+            /// NestoAPI#482: modo de servicio del pedido (CabPedidoVta.ModoServicio). ServirJunto (bit)
+            /// se queda corto; se mantiene como columna coherente (modo 1 ⇔ true) durante la transición.
+            /// <para>NULL en BD = "no informado": manda ServirJunto (true → 1, false → 2). Así los
+            /// escritores que no conocen la columna (SPs, Nesto viejo, la app) no cambian de
+            /// comportamiento, y no hace falta backfill.</para>
+            /// </summary>
+            public static class ModosServicio
+            {
+                /// <summary>No sale nada hasta que hay stock de todo el pedido (ServirJunto = true).</summary>
+                public const byte TODO_JUNTO = 1;
+                /// <summary>Sale lo que haya en cada pasada; tantas entregas como haga falta (ServirJunto = false).</summary>
+                public const byte SEGUN_VAYA_ENTRANDO = 2;
+                /// <summary>Se espera a que las reposiciones habituales (prdRellenarReposicionStock) traigan el
+                /// stock de las tiendas; cuando no queda nada que traer, sale lo que hay y sigue como 2.
+                /// Slice 1: NO disponible todavía (el POST/PUT lo rechaza).</summary>
+                public const byte TRAS_REPONER_DE_TIENDAS = 3;
+                /// <summary>Sale ya lo que hay; lo que falta se entrega en UNA sola entrega más, cuando esté
+                /// todo (tras la primera entrega el pedido se comporta como 1 para el resto).</summary>
+                public const byte AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ = 4;
+
+                public static bool EsValido(byte modo) => modo >= TODO_JUNTO && modo <= AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ;
+
+                /// <summary>El modo que rige de verdad: el informado o, si no hay, el que dice ServirJunto.</summary>
+                public static byte Efectivo(byte? modoServicio, bool servirJunto)
+                    => modoServicio.HasValue && EsValido(modoServicio.Value)
+                        ? modoServicio.Value
+                        : (servirJunto ? TODO_JUNTO : SEGUN_VAYA_ENTRANDO);
+
+                /// <summary>Solo el modo 1 es "servir junto" en el sentido de la columna y de las validaciones
+                /// de #220/#470: cualquier otro modo puede servir parcialmente en la primera pasada.</summary>
+                public static bool EsTodoJunto(byte modo) => modo == TODO_JUNTO;
+
+                /// <summary>A efectos de portes (Nesto#211/#365, "1 entrega → todo cuenta"): 1 y 4 acaban en
+                /// una entrega única del resto; 2 y 3 son por entrega.</summary>
+                public static bool EsEntregaUnica(byte modo) => modo == TODO_JUNTO || modo == AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ;
+
+                /// <summary>
+                /// Deja el DTO coherente antes de validar o grabar: sin modo → se deriva de servirJunto (los
+                /// clientes que aún no lo mandan no cambian); con modo → servirJunto pasa a ser su derivado,
+                /// para que todo el código que sigue leyendo servirJunto (validadores, portes, picking) vea
+                /// lo correcto. Devuelve el mensaje de error si el modo no se puede aceptar, o null.
+                /// </summary>
+                public static string Normalizar(NestoAPI.Models.PedidosVenta.PedidoVentaDTO pedido)
+                {
+                    if (pedido == null)
+                    {
+                        return null;
+                    }
+                    if (!pedido.modoServicio.HasValue)
+                    {
+                        pedido.modoServicio = pedido.servirJunto ? TODO_JUNTO : SEGUN_VAYA_ENTRANDO;
+                        return null;
+                    }
+                    byte modo = pedido.modoServicio.Value;
+                    if (!EsValido(modo))
+                    {
+                        return $"El modo de servicio {modo} no existe (1 todo junto, 2 según vaya entrando, 3 tras reponer de tiendas, 4 ahora lo que hay y el resto de una vez)";
+                    }
+                    if (modo == TRAS_REPONER_DE_TIENDAS)
+                    {
+                        return "El modo de servicio 3 (tras reponer de tiendas) todavía no está disponible";
+                    }
+                    pedido.servirJunto = EsTodoJunto(modo);
+                    return null;
+                }
+            }
         }
         public static class ParametrosUsuario
         {

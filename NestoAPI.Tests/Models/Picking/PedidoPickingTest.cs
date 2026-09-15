@@ -45,6 +45,62 @@ namespace NestoAPI.Tests.Models.Picking
             Assert.IsFalse(pedido.RetenidoPorPrepago);
         }
 
+        // NestoAPI#482: modo de servicio. Sin modo informado manda ServirJunto (los tests de arriba);
+        // con modo, una estrategia por modo.
+
+        private static PedidoPicking PedidoConStockParcial(byte? modo, bool servirJunto, bool yaServido)
+        {
+            return new PedidoPicking
+            {
+                Id = 1,
+                ServirJunto = servirJunto,
+                ModoServicio = modo,
+                TieneLineasServidas = yaServido,
+                Lineas = new List<LineaPedidoPicking>
+                {
+                    new LineaPedidoPicking { Id = 1, TipoLinea = Constantes.TiposLineaVenta.PRODUCTO, Producto = "A", Cantidad = 6, CantidadReservada = 5 }
+                }
+            };
+        }
+
+        [TestMethod]
+        public void PedidoPicking_ModoServicio_SinInformar_MandaServirJunto()
+        {
+            Assert.AreEqual(Constantes.Pedidos.ModosServicio.TODO_JUNTO, PedidoConStockParcial(null, true, false).ModoServicioEfectivo);
+            Assert.AreEqual(Constantes.Pedidos.ModosServicio.SEGUN_VAYA_ENTRANDO, PedidoConStockParcial(null, false, false).ModoServicioEfectivo);
+            Assert.IsFalse(PedidoConStockParcial(null, true, false).saleEnPicking());
+            Assert.IsTrue(PedidoConStockParcial(null, false, false).saleEnPicking());
+        }
+
+        [TestMethod]
+        public void PedidoPicking_ModoServicio_ElModoInformadoMandaSobreServirJunto()
+        {
+            // Un ServirJunto incoherente (escritor viejo) no puede tapar el modo
+            Assert.IsFalse(PedidoConStockParcial(Constantes.Pedidos.ModosServicio.TODO_JUNTO, false, false).saleEnPicking());
+            Assert.IsTrue(PedidoConStockParcial(Constantes.Pedidos.ModosServicio.SEGUN_VAYA_ENTRANDO, true, false).saleEnPicking());
+        }
+
+        [TestMethod]
+        public void PedidoPicking_Modo4_AntesDeLaPrimeraEntrega_SaleLoQueHay()
+        {
+            PedidoPicking pedido = PedidoConStockParcial(Constantes.Pedidos.ModosServicio.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ, false, yaServido: false);
+
+            Assert.IsFalse(pedido.ExigeStockDeTodo());
+            Assert.IsTrue(pedido.saleEnPicking());
+        }
+
+        [TestMethod]
+        public void PedidoPicking_Modo4_TrasLaPrimeraEntrega_ElRestoSoloSaleDeUnaVez()
+        {
+            PedidoPicking pedido = PedidoConStockParcial(Constantes.Pedidos.ModosServicio.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ, false, yaServido: true);
+
+            Assert.IsTrue(pedido.ExigeStockDeTodo());
+            Assert.IsFalse(pedido.saleEnPicking(), "Con stock parcial y una entrega ya hecha, el resto espera a estar completo");
+
+            pedido.Lineas[0].CantidadReservada = 6; // ya hay stock de todo lo pendiente
+            Assert.IsTrue(pedido.saleEnPicking());
+        }
+
         [TestMethod]
         public void PedidoPicking_saleEnPicking_siNoHayNingunaLineaNoSale()
         {

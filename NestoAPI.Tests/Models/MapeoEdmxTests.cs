@@ -105,6 +105,29 @@ namespace NestoAPI.Tests.Models
         }
 
         /// <summary>
+        /// NestoAPI#482 (slice 1): CabPedidoVta.ModoServicio se añadió a mano en las tres capas. Es
+        /// NULLABLE a propósito (NULL = manda ServirJunto; ALTER instantáneo, sin backfill): si un
+        /// refresh del modelo lo dejara NOT NULL, EF mandaría 0 en cada insert y saltaría el CHECK.
+        /// </summary>
+        [TestMethod]
+        public void Edmx_ModoServicioDelPedido_EstaEnLasTresCapasYEsNullable()
+        {
+            XElement almacen = EntidadesPorNombre(LeerRecurso("ssdl"), SsdlNs)["CabPedidoVta"]
+                .Elements(SsdlNs + "Property").Single(p => p.Attribute("Name").Value == "ModoServicio");
+            XElement conceptual = EntidadesPorNombre(LeerRecurso("csdl"), CsdlNs)["CabPedidoVta"]
+                .Elements(CsdlNs + "Property").Single(p => p.Attribute("Name").Value == "ModoServicio");
+            bool mapeada = LeerRecurso("msl").Descendants(MslNs + "ScalarProperty")
+                .Any(p => p.Attribute("Name").Value == "ModoServicio" && p.Attribute("ColumnName").Value == "ModoServicio");
+
+            Assert.AreEqual("tinyint", (string)almacen.Attribute("Type"));
+            Assert.AreEqual("true", (string)almacen.Attribute("Nullable"));
+            Assert.AreEqual("Byte", (string)conceptual.Attribute("Type"));
+            Assert.AreNotEqual("false", (string)conceptual.Attribute("Nullable"));
+            Assert.IsTrue(mapeada);
+            Assert.AreEqual(typeof(byte?), typeof(CabPedidoVta).GetProperty("ModoServicio").PropertyType);
+        }
+
+        /// <summary>
         /// NestoAPI#481 (y #456 antes): con Usuario marcado Computed, EF no manda la columna y el
         /// DEFAULT suser_sname() graba la cuenta del pool (NUEVAVISION\RDS2016$) aunque el código
         /// asigne el usuario. Las entidades en las que graba una PERSONA no pueden llevarlo.

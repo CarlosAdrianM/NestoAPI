@@ -253,6 +253,7 @@
           <Property Name="FijarPrimerVto" Type="bit" Nullable="false" />
           <Property Name="MantenerJunto" Type="bit" Nullable="false" />
           <Property Name="ServirJunto" Type="bit" Nullable="false" />
+          <Property Name="ModoServicio" Type="tinyint" Nullable="true" />
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
           <Property Name="RowVersion" Type="timestamp" StoreGeneratedPattern="Computed" Nullable="false" />
@@ -8199,6 +8200,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="FijarPrimerVto" Type="Boolean" Nullable="false" />
           <Property Name="MantenerJunto" Type="Boolean" Nullable="false" />
           <Property Name="ServirJunto" Type="Boolean" Nullable="false" />
+          <Property Name="ModoServicio" Type="Byte" />
           <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
           <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" annotation:StoreGeneratedPattern="Computed" />
           <NavigationProperty Name="LinPedidoVtas" Relationship="NVModel.FK_LinPedidoVta_CabPedidoVta" FromRole="CabPedidoVta" ToRole="LinPedidoVta" />
@@ -14252,6 +14254,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
                 <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
                 <ScalarProperty Name="Usuario" ColumnName="Usuario" />
                 <ScalarProperty Name="ServirJunto" ColumnName="ServirJunto" />
+                <ScalarProperty Name="ModoServicio" ColumnName="ModoServicio" />
                 <ScalarProperty Name="MantenerJunto" ColumnName="MantenerJunto" />
                 <ScalarProperty Name="FijarPrimerVto" ColumnName="FijarPrimerVto" />
                 <ScalarProperty Name="Operador" ColumnName="Operador" />

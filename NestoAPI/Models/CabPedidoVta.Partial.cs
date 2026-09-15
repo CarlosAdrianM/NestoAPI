@@ -47,6 +47,7 @@ namespace NestoAPI.Models
                 FijarPrimerVto = this.FijarPrimerVto,
                 MantenerJunto = this.MantenerJunto,
                 ServirJunto = this.ServirJunto,
+                ModoServicio = this.ModoServicio,
                 Usuario = this.Usuario,
                 Fecha_Modificación = this.Fecha_Modificación,
                 SuPedido = this.SuPedido

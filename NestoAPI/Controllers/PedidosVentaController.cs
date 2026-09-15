@@ -547,6 +547,12 @@ namespace NestoAPI.Controllers
             // NestoAPI#470: va DESPUÉS de comprobar que el pedido es modificable. Antes iba primero
             // y quien tocaba un pedido ya facturado veía el mensaje de la muestra, que no explica
             // nada de lo que pasa de verdad (caso del 08/09/26, pedido facturado el 03/09).
+            // NestoAPI#482: el modo de servicio manda sobre servirJunto; se normaliza antes de validar.
+            string modoInvalido = Constantes.Pedidos.ModosServicio.Normalizar(pedido);
+            if (modoInvalido != null)
+            {
+                return BadRequest(modoInvalido);
+            }
             var fallaServirJunto = await ValidarServirJuntoDesdePedidoAsync(pedido, cabPedidoVta).ConfigureAwait(false);
             if (fallaServirJunto != null)
             {
@@ -710,6 +716,7 @@ namespace NestoAPI.Controllers
             cabPedidoVta.NoComisiona = pedido.noComisiona;
             cabPedidoVta.MantenerJunto = pedido.mantenerJunto;
             cabPedidoVta.ServirJunto = pedido.servirJunto;
+            cabPedidoVta.ModoServicio = pedido.modoServicio; // #482: ya normalizado, nunca null aquí
             cabPedidoVta.NoCobrarComisionReembolso = pedido.NoCobrarComisionReembolso;
 
             cabPedidoVta.Usuario = pedido.Usuario;
@@ -1114,7 +1121,7 @@ namespace NestoAPI.Controllers
                 // excluyen las líneas sobre pedido (EstadoProducto != 0 sin stock en el almacén).
                 // NestoAPI#299: EstadoProducto no viene del cliente; se rellena de la ficha del producto.
                 this.gestor.RellenarEstadoProducto(pedido);
-                decimal baseImponibleProductosPut = GestorPortes.CalcularBaseImponibleProductos(pedido.Lineas, pedido.servirJunto, new GestorStocks());
+                decimal baseImponibleProductosPut = GestorPortes.CalcularBaseImponibleProductos(pedido.Lineas, Constantes.Pedidos.ModosServicio.EsEntregaUnica(Constantes.Pedidos.ModosServicio.Efectivo(pedido.modoServicio, pedido.servirJunto)), new GestorStocks());
                 var inputPortesPut = GestorPortes.ConstruirInput(pedido, codigoPostalPut, baseImponibleProductosPut,
                     DebeAnadirPortes(UsuarioPuedeSuprimirPortes(), pedido.AnadirPortes, pedido.Lineas.FirstOrDefault()?.almacen?.Trim()));
                 var resultadoPortesPut = GestorPortes.CalcularPortes(inputPortesPut);
@@ -1451,6 +1458,13 @@ namespace NestoAPI.Controllers
                 return BadRequest(faltanDatos);
             }
 
+            // NestoAPI#482: el modo de servicio manda sobre servirJunto; se normaliza antes de validar.
+            string modoInvalido = Constantes.Pedidos.ModosServicio.Normalizar(pedido);
+            if (modoInvalido != null)
+            {
+                return BadRequest(modoInvalido);
+            }
+
             // NestoAPI#176: bloquear creación de pedido si servirJunto=false y alguna
             // línea MMP o bonificado Ganavisiones se quedaría pendiente. Cierra el
             // agujero de orden de operaciones sin depender del cliente.
@@ -1566,6 +1580,7 @@ namespace NestoAPI.Controllers
                 NoComisiona = pedido.noComisiona,
                 MantenerJunto = pedido.mantenerJunto,
                 ServirJunto = pedido.servirJunto,
+                ModoServicio = pedido.modoServicio, // #482: ya normalizado
                 ComentarioPicking = pedido.comentarioPicking,
                 AvisarConImporteAlCogerPicking = pedido.avisarConImporteAlCogerPicking,
                 Comentarios = pedido.comentarios,
@@ -1695,7 +1710,7 @@ namespace NestoAPI.Controllers
                 // excluyen las líneas sobre pedido (EstadoProducto != 0 sin stock en el almacén).
                 // NestoAPI#299: EstadoProducto no viene del cliente; se rellena de la ficha del producto.
                 this.gestor.RellenarEstadoProducto(pedido);
-                decimal baseImponibleProductos = GestorPortes.CalcularBaseImponibleProductos(pedido.Lineas, pedido.servirJunto, new GestorStocks());
+                decimal baseImponibleProductos = GestorPortes.CalcularBaseImponibleProductos(pedido.Lineas, Constantes.Pedidos.ModosServicio.EsEntregaUnica(Constantes.Pedidos.ModosServicio.Efectivo(pedido.modoServicio, pedido.servirJunto)), new GestorStocks());
                 // NestoAPI#436: el input lo monta GestorPortes, que es de donde lo lee también el
                 // carrito de la app, para que el envío que se le enseña sea el que va a pagar.
                 var inputPortes = GestorPortes.ConstruirInput(pedido, codigoPostalPortes, baseImponibleProductos,

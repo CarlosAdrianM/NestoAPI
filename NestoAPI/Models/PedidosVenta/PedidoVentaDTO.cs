@@ -47,6 +47,9 @@ namespace NestoAPI.Models.PedidosVenta
         public string ruta { get; set; }
         public string serie { get; set; }
         public bool servirJunto { get; set; }
+        /// <summary>NestoAPI#482: modo de servicio (1..4, ver Constantes.Pedidos.ModosServicio). Null = el
+        /// cliente no lo manda y se deriva de servirJunto. Al leer, siempre viene con valor.</summary>
+        public byte? modoServicio { get; set; }
         public string suPedido { get; set; }
         public string vendedor { get; set; }
         public bool vistoBuenoPlazosPago { get; set; }

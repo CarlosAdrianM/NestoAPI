@@ -702,6 +702,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         vistoBuenoPlazosPago = cabPedidoVta.vtoBuenoPlazosPago,
                         mantenerJunto = cabPedidoVta.MantenerJunto,
                         servirJunto = cabPedidoVta.ServirJunto,
+                        // #482: al leer siempre con valor (NULL en BD = el que dice ServirJunto)
+                        modoServicio = Constantes.Pedidos.ModosServicio.Efectivo(cabPedidoVta.ModoServicio, cabPedidoVta.ServirJunto),
                         notaEntrega = cabPedidoVta.NotaEntrega,
                         Agrupada = cabPedidoVta.Agrupada,
                         suPedido = cabPedidoVta.SuPedido,
