@@ -449,6 +449,8 @@
     <Compile Include="Infrastructure\Contabilidad\CalculadorSaldoMayorTests.cs" />
     <Compile Include="Infrastructure\Contabilidad\ContabilidadServiceTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\PrestashopProductosSyncHandlerTests.cs" />
+    <Compile Include="Infrastructure\Sincronizacion\FormateadorNombreTiendaTests.cs" />
+    <Compile Include="Models\ProductoDTONombreTiendaTests.cs" />
     <Compile Include="Infrastructure\ValidadorCambioClienteComercialTests.cs" />
     <Compile Include="Models\Picking\GestorDiasEnServirTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\PuertaPublicacionTiendaTests.cs" />

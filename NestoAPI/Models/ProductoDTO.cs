@@ -352,6 +352,7 @@ namespace NestoAPI.Models
             };
 
             await CargarTextosTienda(dto, db).ConfigureAwait(false);
+            await AplicarFormatoOracionAlNombre(dto, db, producto).ConfigureAwait(false);
             await CargarTipoIva(dto, db, producto.IVA_Repercutido).ConfigureAwait(false);
             await CargarCategoriasSecundarias(dto, db).ConfigureAwait(false);
             await CargarVariante(dto, db).ConfigureAwait(false);
@@ -379,6 +380,28 @@ namespace NestoAPI.Models
             }
 
             return dto;
+        }
+
+        /// <summary>
+        /// NestoAPI#479: sin NombrePersonalizado con visto bueno, el Nombre que viaja es el de la
+        /// ficha (MAYÚSCULAS) pasado a formato oración, respetando cómo escribe el fabricante su
+        /// modelo (ProveedoresProducto.ReferenciaProv del proveedor principal, Orden = 1). Va
+        /// DESPUÉS de CargarTextosTienda, que es quien decide si hay NombrePersonalizado. Con
+        /// NombrePersonalizado no se toca nada: la tienda usa ese y el Nombre de Nesto es informativo.
+        /// </summary>
+        internal static async Task AplicarFormatoOracionAlNombre(ProductoDTO dto, NVEntities db, Producto producto)
+        {
+            if (!string.IsNullOrWhiteSpace(dto.NombrePersonalizado))
+            {
+                return;
+            }
+
+            string referenciaProveedor = await db.ProveedoresProductoes
+                .Where(r => r.Empresa == producto.Empresa && r.Nº_Producto == producto.Número && r.Orden == 1)
+                .Select(r => r.ReferenciaProv)
+                .FirstOrDefaultAsync().ConfigureAwait(false);
+
+            dto.Nombre = Infraestructure.Sincronizacion.FormateadorNombreTienda.FormatoOracion(dto.Nombre, referenciaProveedor?.Trim());
         }
 
         /// <summary>
