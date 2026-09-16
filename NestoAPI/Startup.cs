@@ -576,9 +576,11 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'cobros-carrito-huerfanos' configurado (cada hora)");
 
-            // NOTA: El job de clientes está deshabilitado porque aún se usa Task Scheduler
-            // Para habilitarlo en el futuro, cambia '#if false' por '#if true':
-#if false
+            // NestoAPI#402 (16/09/26): la sincronización de clientes pasa a Hangfire. Hasta hoy la
+            // lanzaba la tarea «Nesto_sync Clientes» del Task Scheduler de RDS2016 (cada 5 minutos,
+            // GET api/Clientes/Sync), que se deshabilita al publicar esta versión. Hace exactamente lo
+            // mismo (GestorSincronizacion.ProcesarTabla "Clientes"), pero aquí se ve en el dashboard
+            // y deja rastro si falla.
             RecurringJob.AddOrUpdate(
                 "sincronizar-clientes",
                 () => SincronizacionJobsService.SincronizarClientes(),
@@ -589,7 +591,6 @@ namespace NestoAPI
                 }
             );
             Console.WriteLine("✅ Job recurrente 'sincronizar-clientes' configurado (cada 5 minutos)");
-#endif
         }
     }
 
