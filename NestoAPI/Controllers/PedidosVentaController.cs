@@ -547,8 +547,9 @@ namespace NestoAPI.Controllers
             // NestoAPI#470: va DESPUÉS de comprobar que el pedido es modificable. Antes iba primero
             // y quien tocaba un pedido ya facturado veía el mensaje de la muestra, que no explica
             // nada de lo que pasa de verdad (caso del 08/09/26, pedido facturado el 03/09).
-            // NestoAPI#482: el modo de servicio manda sobre servirJunto; se normaliza antes de validar.
-            string modoInvalido = Constantes.Pedidos.ModosServicio.Normalizar(pedido);
+            // NestoAPI#482: se normaliza antes de validar. Un cliente que no manda el modo (NestoApp)
+            // no pisa el modo 3/4 que ya tenga el pedido, salvo que marque servirJunto (→ 1).
+            string modoInvalido = Constantes.Pedidos.ModosServicio.Normalizar(pedido, cabPedidoVta.ModoServicio);
             if (modoInvalido != null)
             {
                 return BadRequest(modoInvalido);

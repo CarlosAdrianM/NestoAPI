@@ -444,11 +444,26 @@ namespace NestoAPI.Models
 
                 public static bool EsValido(byte modo) => modo >= TODO_JUNTO && modo <= AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ;
 
-                /// <summary>El modo que rige de verdad: el informado o, si no hay, el que dice ServirJunto.</summary>
+                /// <summary>
+                /// El modo que rige de verdad. Regla (Carlos, 16/09/26): <b>ServirJunto marcado SIEMPRE es
+                /// «todo junto» (1)</b>; desmarcado, rige el modo parcial guardado (3 o 4) o, si no hay, el 2.
+                /// El bool es la autoridad de «todo junto» porque es lo único que saben decir NestoApp y el
+                /// Nesto viejo (VB6), que escribe ServirJunto directamente en CabPedidoVta sin conocer el
+                /// modo: un pedido en modo 1 que el Nesto viejo desmarca pasa a servirse según entre, y uno
+                /// en modo 4 que marca pasa a todo junto. El modo solo REFINA el «no todo junto».
+                /// </summary>
                 public static byte Efectivo(byte? modoServicio, bool servirJunto)
-                    => modoServicio.HasValue && EsValido(modoServicio.Value)
-                        ? modoServicio.Value
-                        : (servirJunto ? TODO_JUNTO : SEGUN_VAYA_ENTRANDO);
+                {
+                    if (servirJunto)
+                    {
+                        return TODO_JUNTO;
+                    }
+                    return EsModoParcialGuardable(modoServicio) ? modoServicio.Value : SEGUN_VAYA_ENTRANDO;
+                }
+
+                /// <summary>3 o 4: los únicos modos que dicen algo que el bool ServirJunto no puede decir.</summary>
+                private static bool EsModoParcialGuardable(byte? modo)
+                    => modo.HasValue && (modo.Value == TRAS_REPONER_DE_TIENDAS || modo.Value == AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ);
 
                 /// <summary>Solo el modo 1 es "servir junto" en el sentido de la columna y de las validaciones
                 /// de #220/#470: cualquier otro modo puede servir parcialmente en la primera pasada.</summary>
@@ -459,12 +474,15 @@ namespace NestoAPI.Models
                 public static bool EsEntregaUnica(byte modo) => modo == TODO_JUNTO || modo == AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ;
 
                 /// <summary>
-                /// Deja el DTO coherente antes de validar o grabar: sin modo → se deriva de servirJunto (los
-                /// clientes que aún no lo mandan no cambian); con modo → servirJunto pasa a ser su derivado,
+                /// Deja el DTO coherente antes de validar o grabar. Sin modo (NestoApp, Nesto viejo, TNV):
+                /// se deriva con la regla de <see cref="Efectivo"/> sobre el modo YA GUARDADO del pedido
+                /// (<paramref name="modoAlmacenado"/>): así un PUT de la app sobre un pedido que Nesto puso
+                /// en modo 4 no lo pisa con un 2 (Carlos, 16/09/26); con servirJunto marcado pasa a 1, que
+                /// es lo que el usuario ha pedido. Con modo informado → servirJunto pasa a ser su derivado,
                 /// para que todo el código que sigue leyendo servirJunto (validadores, portes, picking) vea
                 /// lo correcto. Devuelve el mensaje de error si el modo no se puede aceptar, o null.
                 /// </summary>
-                public static string Normalizar(NestoAPI.Models.PedidosVenta.PedidoVentaDTO pedido)
+                public static string Normalizar(NestoAPI.Models.PedidosVenta.PedidoVentaDTO pedido, byte? modoAlmacenado = null)
                 {
                     if (pedido == null)
                     {
@@ -472,7 +490,7 @@ namespace NestoAPI.Models
                     }
                     if (!pedido.modoServicio.HasValue)
                     {
-                        pedido.modoServicio = pedido.servirJunto ? TODO_JUNTO : SEGUN_VAYA_ENTRANDO;
+                        pedido.modoServicio = Efectivo(modoAlmacenado, pedido.servirJunto);
                         return null;
                     }
                     byte modo = pedido.modoServicio.Value;

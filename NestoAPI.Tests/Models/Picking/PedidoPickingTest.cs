@@ -73,11 +73,14 @@ namespace NestoAPI.Tests.Models.Picking
         }
 
         [TestMethod]
-        public void PedidoPicking_ModoServicio_ElModoInformadoMandaSobreServirJunto()
+        public void PedidoPicking_ModoServicio_ServirJuntoMandaSobreLosModos1Y2()
         {
-            // Un ServirJunto incoherente (escritor viejo) no puede tapar el modo
-            Assert.IsFalse(PedidoConStockParcial(Constantes.Pedidos.ModosServicio.TODO_JUNTO, false, false).saleEnPicking());
-            Assert.IsTrue(PedidoConStockParcial(Constantes.Pedidos.ModosServicio.SEGUN_VAYA_ENTRANDO, true, false).saleEnPicking());
+            // Regla del 16/09/26: el Nesto viejo escribe ServirJunto sin conocer el modo. Si lo
+            // desmarca sobre un modo 1, se sirve según entre; si lo marca sobre un 2, todo junto.
+            Assert.IsTrue(PedidoConStockParcial(Constantes.Pedidos.ModosServicio.TODO_JUNTO, false, false).saleEnPicking());
+            Assert.IsFalse(PedidoConStockParcial(Constantes.Pedidos.ModosServicio.SEGUN_VAYA_ENTRANDO, true, false).saleEnPicking());
+            // Y sobre un modo parcial (4) marcado: todo junto
+            Assert.IsFalse(PedidoConStockParcial(Constantes.Pedidos.ModosServicio.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ, true, false).saleEnPicking());
         }
 
         [TestMethod]
