@@ -1459,8 +1459,9 @@ namespace NestoAPI.Controllers
                 return BadRequest(faltanDatos);
             }
 
-            // NestoAPI#482: el modo de servicio manda sobre servirJunto; se normaliza antes de validar.
-            string modoInvalido = Constantes.Pedidos.ModosServicio.Normalizar(pedido);
+            // NestoAPI#482: sin modo informado el pedido NACE en el modo por defecto (parámetro
+            // ModoServicioPorDefecto del usuario, o 3), no en el ServirJunto de la ficha del cliente.
+            string modoInvalido = Constantes.Pedidos.ModosServicio.NormalizarAlCrear(pedido, ModoServicioPorDefecto());
             if (modoInvalido != null)
             {
                 return BadRequest(modoInvalido);
@@ -2580,6 +2581,32 @@ namespace NestoAPI.Controllers
         //
         // Devuelve null si la validación es irrelevante o pasa; un ValidarServirJuntoResponse
         // con PuedeDesmarcar=false si hay que rechazar la operación.
+        /// <summary>NestoAPI#482: lector del parámetro ModoServicioPorDefecto (sustituible en tests).</summary>
+        internal ILectorParametrosUsuario LectorParametros { get; set; } = new LectorParametrosUsuario();
+
+        /// <summary>
+        /// El modo con el que nace un pedido que no lo informa: el parámetro ModoServicioPorDefecto del
+        /// usuario que crea el pedido (hereda de «(defecto)») o, si falta o falla, ModosServicio.POR_DEFECTO.
+        /// </summary>
+        internal byte ModoServicioPorDefecto()
+        {
+            try
+            {
+                string usuario = User?.Identity?.Name;
+                if (string.IsNullOrWhiteSpace(usuario))
+                {
+                    usuario = Constantes.ParametrosUsuario.USUARIO_POR_DEFECTO;
+                }
+                string valor = LectorParametros?.LeerParametro(
+                    Constantes.Empresas.EMPRESA_POR_DEFECTO, usuario, Constantes.ParametrosUsuario.MODO_SERVICIO_POR_DEFECTO);
+                return Constantes.Pedidos.ModosServicio.ParsearPorDefecto(valor);
+            }
+            catch
+            {
+                return Constantes.Pedidos.ModosServicio.POR_DEFECTO;
+            }
+        }
+
         internal async Task<ValidarServirJuntoResponse> ValidarServirJuntoDesdePedidoAsync(
             PedidoVentaDTO pedido, CabPedidoVta pedidoGuardado = null)
         {

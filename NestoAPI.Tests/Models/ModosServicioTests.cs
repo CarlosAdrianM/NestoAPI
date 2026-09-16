@@ -115,6 +115,61 @@ namespace NestoAPI.Tests.Models
             Assert.IsFalse(pedido.servirJunto, "El 3 puede servir parcialmente cuando ya no queda nada que traer");
         }
 
+        // Valores por defecto (Carlos, 16/09/26): un pedido que no informa el modo NACE en el 3 («tras
+        // reponer de tiendas»), no en el ServirJunto de la ficha del cliente: una referencia agotada o
+        // anulada dejaba pedidos «todo junto» sin servir nunca. El parámetro permite excepciones.
+
+        [TestMethod]
+        public void NormalizarAlCrear_SinModo_NaceEnElPorDefecto_AunqueServirJuntoVengaMarcado()
+        {
+            var marcado = new PedidoVentaDTO { servirJunto = true };
+            var sinMarcar = new PedidoVentaDTO { servirJunto = false };
+
+            Assert.IsNull(ModosServicio.NormalizarAlCrear(marcado, ModosServicio.POR_DEFECTO));
+            Assert.IsNull(ModosServicio.NormalizarAlCrear(sinMarcar, ModosServicio.POR_DEFECTO));
+
+            Assert.AreEqual(ModosServicio.TRAS_REPONER_DE_TIENDAS, marcado.modoServicio);
+            Assert.IsFalse(marcado.servirJunto, "El ServirJunto de la ficha no se arrastra al pedido");
+            Assert.AreEqual(ModosServicio.TRAS_REPONER_DE_TIENDAS, sinMarcar.modoServicio);
+        }
+
+        [TestMethod]
+        public void NormalizarAlCrear_ConModoInformado_SeRespetaElDelCliente()
+        {
+            var modo1 = new PedidoVentaDTO { servirJunto = false, modoServicio = 1 };
+            var modo4 = new PedidoVentaDTO { servirJunto = true, modoServicio = 4 };
+
+            Assert.IsNull(ModosServicio.NormalizarAlCrear(modo1, ModosServicio.POR_DEFECTO));
+            Assert.IsNull(ModosServicio.NormalizarAlCrear(modo4, ModosServicio.POR_DEFECTO));
+
+            Assert.AreEqual(ModosServicio.TODO_JUNTO, modo1.modoServicio);
+            Assert.IsTrue(modo1.servirJunto);
+            Assert.AreEqual(ModosServicio.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ, modo4.modoServicio);
+            Assert.IsFalse(modo4.servirJunto);
+        }
+
+        [TestMethod]
+        public void NormalizarAlCrear_ElParametroPermiteOtroPorDefecto()
+        {
+            var pedido = new PedidoVentaDTO { servirJunto = false };
+
+            Assert.IsNull(ModosServicio.NormalizarAlCrear(pedido, ModosServicio.TODO_JUNTO));
+
+            Assert.AreEqual(ModosServicio.TODO_JUNTO, pedido.modoServicio);
+            Assert.IsTrue(pedido.servirJunto);
+        }
+
+        [TestMethod]
+        public void ParsearPorDefecto_ValorDelParametro_OElTresSiFaltaONoVale()
+        {
+            Assert.AreEqual((byte)2, ModosServicio.ParsearPorDefecto("2"));
+            Assert.AreEqual((byte)4, ModosServicio.ParsearPorDefecto(" 4 "));
+            Assert.AreEqual(ModosServicio.POR_DEFECTO, ModosServicio.ParsearPorDefecto(null));
+            Assert.AreEqual(ModosServicio.POR_DEFECTO, ModosServicio.ParsearPorDefecto(""));
+            Assert.AreEqual(ModosServicio.POR_DEFECTO, ModosServicio.ParsearPorDefecto("9"));
+            Assert.AreEqual(ModosServicio.POR_DEFECTO, ModosServicio.ParsearPorDefecto("tres"));
+        }
+
         [TestMethod]
         public void Normalizar_ModoFueraDeRango_Error()
         {

@@ -442,6 +442,37 @@ namespace NestoAPI.Models
                 /// todo (tras la primera entrega el pedido se comporta como 1 para el resto).</summary>
                 public const byte AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ = 4;
 
+                /// <summary>
+                /// Modo con el que nace un pedido cuando el cliente (NestoApp, TNV, Nesto sin selector)
+                /// no dice nada (Carlos, 16/09/26): «tras reponer de tiendas», y NO el ServirJunto de la
+                /// ficha del cliente, que dejaba pedidos sin servir nunca por una referencia agotada o
+                /// anulada. El parámetro de usuario ModoServicioPorDefecto permite excepciones.
+                /// </summary>
+                public const byte POR_DEFECTO = TRAS_REPONER_DE_TIENDAS;
+
+                /// <summary>El valor del parámetro ModoServicioPorDefecto, o POR_DEFECTO si falta o no es un modo válido.</summary>
+                public static byte ParsearPorDefecto(string valorParametro)
+                {
+                    return byte.TryParse(valorParametro?.Trim(), out byte modo) && EsValido(modo) ? modo : POR_DEFECTO;
+                }
+
+                /// <summary>
+                /// Normalización al CREAR: sin modo informado, el pedido nace en <paramref name="modoPorDefecto"/>
+                /// (no se arrastra el ServirJunto de la ficha); con modo, servirJunto pasa a ser su derivado.
+                /// </summary>
+                public static string NormalizarAlCrear(NestoAPI.Models.PedidosVenta.PedidoVentaDTO pedido, byte modoPorDefecto)
+                {
+                    if (pedido == null)
+                    {
+                        return null;
+                    }
+                    if (!pedido.modoServicio.HasValue)
+                    {
+                        pedido.modoServicio = EsValido(modoPorDefecto) ? modoPorDefecto : POR_DEFECTO;
+                    }
+                    return Normalizar(pedido);
+                }
+
                 public static bool EsValido(byte modo) => modo >= TODO_JUNTO && modo <= AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ;
 
                 /// <summary>
@@ -508,6 +539,10 @@ namespace NestoAPI.Models
             // #256: almacenes cuyo stock se muestra en la plantilla de venta (CSV, p. ej.
             // "ALG,ALC,REI" o "ALG"). El contrato de la clave es común a Nesto y NestoApp.
             public const string ALMACENES_PLANTILLA_VENTA = "AlmacenesPlantillaVenta";
+
+            /// <summary>NestoAPI#482: modo de servicio con el que nacen los pedidos que no lo informan
+            /// (1..4). Sin fila, ModosServicio.POR_DEFECTO (3). Contrato común con Nesto y NestoApp.</summary>
+            public const string MODO_SERVICIO_POR_DEFECTO = "ModoServicioPorDefecto";
 
             /// <summary>Usuario bajo el que viven los parametros que no son de nadie en concreto.</summary>
             public const string USUARIO_POR_DEFECTO = "(defecto)";
