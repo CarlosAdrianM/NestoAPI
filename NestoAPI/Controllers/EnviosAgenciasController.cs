@@ -283,6 +283,29 @@ namespace NestoAPI.Controllers
             return Ok(envios);
         }
 
+        /// <summary>
+        /// Envío EN CURSO (Estado = 0, etiqueta creada hoy sin cerrar el día) del mismo cliente,
+        /// contacto y dirección: es la "ampliación" de Agencias (si el cliente ya tiene un envío
+        /// abierto hoy a esa dirección, el nuevo pedido va en el mismo bulto). Nesto#340 (Agencias,
+        /// slice A3): sustituye a AgenciaService.CargarEnvioPorClienteYDireccion y replica su filtro
+        /// EXACTO (sin empresa: la consulta EF tampoco la miraba). Devuelve lista de 0 o 1 para
+        /// reutilizar el listado del cliente y que "no hay ampliación" no sea un 404. El EF no
+        /// ordenaba; con varios abiertos gana el más antiguo.
+        /// </summary>
+        [HttpGet]
+        [Route("api/EnviosAgencias/EnCursoPorClienteYDireccion")]
+        [ResponseType(typeof(List<EnvioAgenciaListadoDTO>))]
+        public async Task<IHttpActionResult> GetEnvioEnCursoPorClienteYDireccion(string cliente, string contacto, string direccion)
+        {
+            List<EnvioAgenciaListadoDTO> envio = await ProyectarListado(db.EnviosAgencias
+                .Where(e => e.Estado == Constantes.Agencias.ESTADO_EN_CURSO &&
+                            e.Cliente == cliente && e.Contacto == contacto && e.Direccion == direccion)
+                .OrderBy(e => e.Numero))
+                .Take(1)
+                .ToListAsync();
+            return Ok(envio);
+        }
+
         /// <summary>En curso (Estado = 0, etiqueta creada sin cerrar el día) de una agencia —
         /// pestaña En curso.</summary>
         [HttpGet]

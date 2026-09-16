@@ -120,6 +120,82 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual(0, resultado.Content.Count);
         }
 
+        // Nesto#340 (Agencias, slice A3): EnCursoPorClienteYDireccion sustituye a
+        // AgenciaService.CargarEnvioPorClienteYDireccion (la "ampliación": si el cliente ya tiene un
+        // envío abierto hoy a esa dirección, el pedido nuevo va en el mismo). Filtro EXACTO del EF:
+        // Estado = 0, cliente, contacto y dirección; sin empresa.
+
+        [TestMethod]
+        public async Task EnCursoPorClienteYDireccion_DevuelveElEnvioAbiertoDeEseClienteYDireccion()
+        {
+            ConEnvios(
+                Envio(1, estado: 0, cliente: "15191", direccion: "CALLE MAYOR 1", pedido: 11111),
+                Envio(2, estado: 0, cliente: "15191", direccion: "OTRA CALLE 2", pedido: 22222),
+                Envio(3, estado: 0, cliente: "99999", direccion: "CALLE MAYOR 1", pedido: 33333));
+
+            var resultado = await controller.GetEnvioEnCursoPorClienteYDireccion("15191", "0", "CALLE MAYOR 1")
+                as OkNegotiatedContentResult<List<EnvioAgenciaListadoDTO>>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(1, resultado.Content.Count);
+            Assert.AreEqual(1, resultado.Content.Single().Numero);
+            Assert.AreEqual(11111, resultado.Content.Single().Pedido);
+        }
+
+        [TestMethod]
+        public async Task EnCursoPorClienteYDireccion_SoloMiraLosEnCurso_NiPendientesNiTramitados()
+        {
+            ConEnvios(
+                Envio(1, estado: -1),
+                Envio(2, estado: 1),
+                Envio(3, estado: 2));
+
+            var resultado = await controller.GetEnvioEnCursoPorClienteYDireccion("15191", "0", "CALLE MAYOR 1")
+                as OkNegotiatedContentResult<List<EnvioAgenciaListadoDTO>>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(0, resultado.Content.Count);
+        }
+
+        [TestMethod]
+        public async Task EnCursoPorClienteYDireccion_NoSeSaltaElContacto()
+        {
+            ConEnvios(Envio(1, estado: 0));
+
+            var resultado = await controller.GetEnvioEnCursoPorClienteYDireccion("15191", "1", "CALLE MAYOR 1")
+                as OkNegotiatedContentResult<List<EnvioAgenciaListadoDTO>>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(0, resultado.Content.Count);
+        }
+
+        [TestMethod]
+        public async Task EnCursoPorClienteYDireccion_SinEnvioAbiertoDevuelveListaVaciaYNoUn404()
+        {
+            ConEnvios();
+
+            var resultado = await controller.GetEnvioEnCursoPorClienteYDireccion("15191", "0", "CALLE MAYOR 1")
+                as OkNegotiatedContentResult<List<EnvioAgenciaListadoDTO>>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(0, resultado.Content.Count);
+        }
+
+        [TestMethod]
+        public async Task EnCursoPorClienteYDireccion_ConVariosAbiertosDevuelveElMasAntiguo()
+        {
+            ConEnvios(
+                Envio(7, estado: 0),
+                Envio(3, estado: 0));
+
+            var resultado = await controller.GetEnvioEnCursoPorClienteYDireccion("15191", "0", "CALLE MAYOR 1")
+                as OkNegotiatedContentResult<List<EnvioAgenciaListadoDTO>>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(1, resultado.Content.Count);
+            Assert.AreEqual(3, resultado.Content.Single().Numero);
+        }
+
         // Nesto#340 (Agencias, slice A3): PendientePorPedido sustituye a AgenciaService.CargarEnvio,
         // que leía el envío pendiente del pedido con Entity Framework. De él sale el destino real de
         // la etiqueta cuando la tienda online ya la había creado (Nesto#395), así que el filtro tiene
