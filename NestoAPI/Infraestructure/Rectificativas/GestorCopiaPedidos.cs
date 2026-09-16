@@ -564,6 +564,7 @@ namespace NestoAPI.Infraestructure.Rectificativas
                 NoComisiona = pedidoOriginal?.NoComisiona ?? 0,
                 MantenerJunto = true, // Para que se facture todo junto
                 ServirJunto = true,
+                ModoServicio = Constantes.Pedidos.ModosServicio.TODO_JUNTO, // NestoAPI#482: explícito, no el por defecto
                 SuPedido = pedidoOriginal?.SuPedido,
                 Usuario = usuario
             };

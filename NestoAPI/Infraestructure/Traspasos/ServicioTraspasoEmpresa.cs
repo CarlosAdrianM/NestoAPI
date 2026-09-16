@@ -384,18 +384,20 @@ namespace NestoAPI.Infraestructure.Traspasos
                             // 8. Copiar cabecera a empresa destino usando INSERT
                             System.Diagnostics.Debug.WriteLine($"  → Copiando cabecera a empresa destino con INSERT");
 
+                            // NestoAPI#482: el espejo copia también ModoServicio; sin él, un pedido en modo 3 o 4
+                            // llegaba al espejo como NULL y se servía por ServirJunto (= según entre).
                             string sqlInsert = string.IsNullOrEmpty(serieFacturacion)
                                 ? @"INSERT INTO CabPedidoVta (
                                       Empresa, Número, [Nº Cliente], Contacto, Fecha, [Forma Pago], PlazosPago, [Primer Vencimiento],
                                       IVA, Vendedor, Comentarios, ComentarioPicking, [Periodo Facturacion], Ruta, Serie, CCC, Origen,
                                       Agrupada, MotivoDevolución, ContactoCobro, NoComisiona, NotaEntrega, vtoBuenoPlazosPago,
-                                      Operador, FijarPrimerVto, MantenerJunto, ServirJunto, Usuario, [Fecha Modificación], SuPedido
+                                      Operador, FijarPrimerVto, MantenerJunto, ServirJunto, ModoServicio, Usuario, [Fecha Modificación], SuPedido
                                     )
                                     SELECT
                                       @EmpresaDestino, Número, [Nº Cliente], Contacto, Fecha, [Forma Pago], PlazosPago, [Primer Vencimiento],
                                       @IVA, Vendedor, Comentarios, ComentarioPicking, [Periodo Facturacion], Ruta, Serie, CCC, Origen,
                                       Agrupada, MotivoDevolución, ContactoCobro, NoComisiona, NotaEntrega, vtoBuenoPlazosPago,
-                                      Operador, FijarPrimerVto, MantenerJunto, ServirJunto, Usuario, [Fecha Modificación], SuPedido
+                                      Operador, FijarPrimerVto, MantenerJunto, ServirJunto, ModoServicio, Usuario, [Fecha Modificación], SuPedido
                                     FROM CabPedidoVta
                                     WHERE Empresa = @EmpresaOrigen
                                       AND Número = @NumeroPedido"
@@ -403,13 +405,13 @@ namespace NestoAPI.Infraestructure.Traspasos
                                       Empresa, Número, [Nº Cliente], Contacto, Fecha, [Forma Pago], PlazosPago, [Primer Vencimiento],
                                       IVA, Vendedor, Comentarios, ComentarioPicking, [Periodo Facturacion], Ruta, Serie, CCC, Origen,
                                       Agrupada, MotivoDevolución, ContactoCobro, NoComisiona, NotaEntrega, vtoBuenoPlazosPago,
-                                      Operador, FijarPrimerVto, MantenerJunto, ServirJunto, Usuario, [Fecha Modificación], SuPedido
+                                      Operador, FijarPrimerVto, MantenerJunto, ServirJunto, ModoServicio, Usuario, [Fecha Modificación], SuPedido
                                     )
                                     SELECT
                                       @EmpresaDestino, Número, [Nº Cliente], Contacto, Fecha, [Forma Pago], PlazosPago, [Primer Vencimiento],
                                       @IVA, Vendedor, Comentarios, ComentarioPicking, [Periodo Facturacion], Ruta, @Serie, CCC, Origen,
                                       Agrupada, MotivoDevolución, ContactoCobro, NoComisiona, NotaEntrega, vtoBuenoPlazosPago,
-                                      Operador, FijarPrimerVto, MantenerJunto, ServirJunto, Usuario, [Fecha Modificación], SuPedido
+                                      Operador, FijarPrimerVto, MantenerJunto, ServirJunto, ModoServicio, Usuario, [Fecha Modificación], SuPedido
                                     FROM CabPedidoVta
                                     WHERE Empresa = @EmpresaOrigen
                                       AND Número = @NumeroPedido";

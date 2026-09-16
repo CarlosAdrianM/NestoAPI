@@ -906,8 +906,12 @@ namespace NestoAPI.Controllers
         {
             GestorPedidosVenta gestorPedidos = new GestorPedidosVenta(new ServicioPedidosVenta());
             gestorPedidos.RellenarEstadoProducto(pedido);
+            // NestoAPI#482: el pedido nacerá en el modo informado o en el por defecto (3), no en el
+            // servirJunto de la ficha; los portes del carrito se estiman con ese mismo modo (1 y 4 =
+            // entrega única), igual que hará PostPedidoVenta tras normalizar.
+            byte modoAlCrear = pedido.modoServicio ?? Constantes.Pedidos.ModosServicio.POR_DEFECTO;
             decimal baseImponibleProductos = GestorPortes.CalcularBaseImponibleProductos(
-                pedido.Lineas, pedido.servirJunto, new GestorStocks());
+                pedido.Lineas, Constantes.Pedidos.ModosServicio.EsEntregaUnica(modoAlCrear), new GestorStocks());
             PedidoPortesInput input = GestorPortes.ConstruirInput(
                 pedido, codigoPostal, baseImponibleProductos, anadirPortes: true);
             return GestorPortes.CalcularPortes(input);
