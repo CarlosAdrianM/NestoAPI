@@ -2671,7 +2671,9 @@ namespace NestoAPI.Controllers
                 // el número, así que validaba OK y luego el guardado lo rechazaba. Al CREAR todavía
                 // no hay número: va null y no se excluye nada, como antes (NestoAPI#262).
                 Pedido = pedido.numero != 0 ? pedido.numero : (int?)null,
-                LineasPedido = lineasRequest
+                LineasPedido = lineasRequest,
+                // NestoAPI#482: el mensaje nombra el modo al que se quiere pasar el pedido (ya normalizado)
+                ModoServicio = pedido.modoServicio
             };
 
             var resultado = await servicioValidarServirJunto.Validar(request).ConfigureAwait(false);

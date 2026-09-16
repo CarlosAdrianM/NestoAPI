@@ -12,6 +12,13 @@ namespace NestoAPI.Models.PedidosVenta.ServirJunto
         public string Almacen { get; set; }
 
         /// <summary>
+        /// NestoAPI#482: modo de servicio al que se quiere pasar el pedido (2, 3 o 4), solo para que
+        /// los mensajes de denegación lo nombren en vez de hablar de la casilla «Servir junto».
+        /// Opcional: sin él se asume «Según vaya entrando» (NestoApp y clientes que solo mandan el bool).
+        /// </summary>
+        public byte? ModoServicio { get; set; }
+
+        /// <summary>
         /// NestoAPI#262: número del pedido que se está validando. Permite excluir sus propias líneas
         /// del cálculo de stock disponible (si no, una línea del pedido cuenta su reserva contra sí
         /// misma y se deniega aunque haya stock libre). Opcional — si es null/0 no se excluye nada

@@ -1,6 +1,9 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Models;
+using NestoAPI.Infraestructure.ValidadoresServirJunto;
 using NestoAPI.Models.PedidosVenta;
+using NestoAPI.Models.PedidosVenta.ServirJunto;
+using System.Collections.Generic;
 using static NestoAPI.Models.Constantes.Pedidos;
 
 namespace NestoAPI.Tests.Models
@@ -168,6 +171,34 @@ namespace NestoAPI.Tests.Models
             Assert.AreEqual(ModosServicio.POR_DEFECTO, ModosServicio.ParsearPorDefecto(""));
             Assert.AreEqual(ModosServicio.POR_DEFECTO, ModosServicio.ParsearPorDefecto("9"));
             Assert.AreEqual(ModosServicio.POR_DEFECTO, ModosServicio.ParsearPorDefecto("tres"));
+        }
+
+        // NestoAPI#220/#470 (16/09/26): los mensajes de denegación nombran el modo elegido, no la casilla.
+
+        [TestMethod]
+        public void NombreDestino_NombraElModoElegido_YSinModoAsumeSegunVayaEntrando()
+        {
+            Assert.AreEqual("Ahora lo que hay, el resto de una vez", ModosServicio.NombreDestino(4));
+            Assert.AreEqual("Tras reponer de tiendas", ModosServicio.NombreDestino(3));
+            Assert.AreEqual("Según vaya entrando", ModosServicio.NombreDestino(2));
+            Assert.AreEqual("Según vaya entrando", ModosServicio.NombreDestino(null), "NestoApp solo manda el bool");
+            Assert.AreEqual("Según vaya entrando", ModosServicio.NombreDestino(1), "Pasar a todo junto nunca se deniega: no es un destino");
+            Assert.AreEqual("Según vaya entrando", ModosServicio.NombreDestino(9));
+        }
+
+        [TestMethod]
+        public void MensajeDeMaterialPromocional_NombraElModoYNoLaCasilla()
+        {
+            var problematicos = new List<ProductoSinStockDTO>
+            {
+                new ProductoSinStockDTO { ProductoId = "45461", ProductoNombre = "SENSITIVE MUESTRA" }
+            };
+
+            string mensaje = ValidadorMaterialPromocional.ConstruirMensaje(problematicos, 4);
+
+            StringAssert.Contains(mensaje, "pasar el pedido a «Ahora lo que hay, el resto de una vez»");
+            StringAssert.Contains(mensaje, "45461");
+            Assert.IsFalse(mensaje.Contains("Servir junto"), "La casilla ya no existe en Nesto");
         }
 
         [TestMethod]

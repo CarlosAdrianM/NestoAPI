@@ -450,6 +450,31 @@ namespace NestoAPI.Models
                 /// </summary>
                 public const byte POR_DEFECTO = TRAS_REPONER_DE_TIENDAS;
 
+                /// <summary>Nombre que ve el usuario (contrato con ModosServicio.Lista de Nesto y NestoApp#174).</summary>
+                public static string Nombre(byte modo)
+                {
+                    switch (modo)
+                    {
+                        case TODO_JUNTO: return "Todo junto";
+                        case SEGUN_VAYA_ENTRANDO: return "Según vaya entrando";
+                        case TRAS_REPONER_DE_TIENDAS: return "Tras reponer de tiendas";
+                        case AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ: return "Ahora lo que hay, el resto de una vez";
+                        default: return $"Modo {modo}";
+                    }
+                }
+
+                /// <summary>
+                /// NestoAPI#220/#470: el modo al que se quiere pasar el pedido, para los mensajes de
+                /// denegación (Nesto ya no tiene casilla «Servir junto», tiene un selector). Un cliente
+                /// que solo manda el bool (NestoApp) no informa el modo: se asume «Según vaya entrando».
+                /// </summary>
+                public static string NombreDestino(byte? modoServicio)
+                {
+                    return modoServicio.HasValue && EsValido(modoServicio.Value) && !EsTodoJunto(modoServicio.Value)
+                        ? Nombre(modoServicio.Value)
+                        : Nombre(SEGUN_VAYA_ENTRANDO);
+                }
+
                 /// <summary>El valor del parámetro ModoServicioPorDefecto, o POR_DEFECTO si falta o no es un modo válido.</summary>
                 public static byte ParsearPorDefecto(string valorParametro)
                 {

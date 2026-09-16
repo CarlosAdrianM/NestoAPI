@@ -27,7 +27,8 @@ namespace NestoAPI.Infraestructure.ValidadoresServirJunto
             string almacen,
             List<ProductoBonificadoConCantidadRequest> productos,
             List<ProductoBonificadoConCantidadRequest> lineasPedido,
-            int? pedido = null)
+            int? pedido = null,
+            byte? modoServicio = null)
         {
             // NestoAPI#175: además de los bonificados explícitos (productos), considerar
             // las líneas del pedido marcadas como EsBonificadoGanavisiones. Cierra el
@@ -88,9 +89,10 @@ namespace NestoAPI.Infraestructure.ValidadoresServirJunto
                 {
                     PuedeDesmarcar = false,
                     ProductosProblematicos = productosProblematicos,
-                    Mensaje = $"No se puede desmarcar 'Servir junto' porque los siguientes productos bonificados " +
+                    // NestoAPI#482: se nombra el modo elegido; la casilla «Servir junto» ya no existe en Nesto.
+                    Mensaje = $"No se puede pasar el pedido a «{Constantes.Pedidos.ModosServicio.NombreDestino(modoServicio)}» porque los siguientes productos bonificados " +
                               $"no tienen stock suficiente en {almacen}: {listaProductos}. " +
-                              $"Cambie los productos bonificados por otros con stock en {almacen} o mantenga 'Servir junto' marcado."
+                              $"Cambie los productos bonificados por otros con stock en {almacen} o deje el pedido en «{Constantes.Pedidos.ModosServicio.Nombre(Constantes.Pedidos.ModosServicio.TODO_JUNTO)}»."
                 };
             }
 

@@ -34,7 +34,8 @@ namespace NestoAPI.Infraestructure.ValidadoresServirJunto
             string almacen,
             List<ProductoBonificadoConCantidadRequest> productos,
             List<ProductoBonificadoConCantidadRequest> lineasPedido,
-            int? pedido = null)
+            int? pedido = null,
+            byte? modoServicio = null)
         {
             if (lineasPedido == null || !lineasPedido.Any())
             {
@@ -91,7 +92,7 @@ namespace NestoAPI.Infraestructure.ValidadoresServirJunto
             {
                 PuedeDesmarcar = false,
                 ProductosProblematicos = productosProblematicos,
-                Mensaje = ConstruirMensaje(productosProblematicos)
+                Mensaje = ConstruirMensaje(productosProblematicos, modoServicio)
             };
         }
 
@@ -104,17 +105,19 @@ namespace NestoAPI.Infraestructure.ValidadoresServirJunto
         /// Ahora la lista aparece UNA vez, al final, con el código delante del nombre (sin el código
         /// hay que buscar la línea a ojo) y con el plural concordado.
         /// </summary>
-        private static string ConstruirMensaje(List<ProductoSinStockDTO> productosProblematicos)
+        internal static string ConstruirMensaje(List<ProductoSinStockDTO> productosProblematicos, byte? modoServicio = null)
         {
             string listaProductos = string.Join(", ",
                 productosProblematicos.Select(p => $"{p.ProductoId} {p.ProductoNombre}"));
+            // NestoAPI#482: se nombra el modo elegido; la casilla «Servir junto» ya no existe en Nesto.
+            string destino = Constantes.Pedidos.ModosServicio.NombreDestino(modoServicio);
 
             // "material promocional" se mantiene en el texto a propósito: explica al usuario POR QUÉ
             // no se puede, y es lo que distingue este mensaje del del validador de regalos.
             return productosProblematicos.Count == 1
-                ? "No se puede desmarcar 'Servir junto': esta muestra (material promocional) se quedaría " +
+                ? $"No se puede pasar el pedido a «{destino}»: esta muestra (material promocional) se quedaría " +
                   $"pendiente y no está permitido. Bórrala primero del pedido: {listaProductos}."
-                : "No se puede desmarcar 'Servir junto': estas muestras (material promocional) se quedarían " +
+                : $"No se puede pasar el pedido a «{destino}»: estas muestras (material promocional) se quedarían " +
                   $"pendientes y no está permitido. Bórralas primero del pedido: {listaProductos}.";
         }
 
