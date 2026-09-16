@@ -7,3 +7,10 @@ SET Titulo = N'El cliente que compra desde la app recibe un correo de confirmaci
 WHERE Version = '1.10.28.0' AND Titulo LIKE N'El cliente que compra desde la tienda online%';
 
 SELECT Titulo FROM dbo.Novedades WHERE Version = '1.10.28.0' AND Titulo LIKE N'El cliente que compra%';
+
+-- Y la entrada del modo por defecto decía «tienda online y app»: la tienda de PrestaShop entra por marketplaces en «Todo junto».
+UPDATE dbo.Novedades
+SET Descripcion = REPLACE(Descripcion, N'Los pedidos de la tienda online y de la app del cliente también nacen así; los de Amazon, Miravia y PrestaShop siguen siendo "Todo junto".', N'Los pedidos de la app del cliente también nacen así; los de Amazon, Miravia y la tienda online de PrestaShop siguen siendo "Todo junto".')
+WHERE Version = '1.10.28.0' AND Titulo = N'Los pedidos nuevos nacen en "Tras reponer de tiendas"';
+
+SELECT Titulo, RIGHT(Descripcion, 120) AS Final FROM dbo.Novedades WHERE Version = '1.10.28.0' AND Titulo LIKE N'Los pedidos nuevos nacen%';

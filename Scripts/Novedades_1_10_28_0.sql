@@ -3,7 +3,7 @@
 
     Tanda completa: NestoAPI + Nesto (ClickOnce 1.10.28.0). Se sube la tercera cifra porque hay
     funcionalidad nueva visible: el selector de modo de entrega del pedido (que sustituye a la
-    casilla "Servir junto"), la confirmación al cliente de la tienda y varias preguntas nuevas.
+    casilla "Servir junto"), la confirmación al cliente de la app y varias preguntas nuevas.
 
     ORDEN: 1) publicar NestoAPI; 2) deshabilitar la tarea "Nesto_sync Clientes" del Task Scheduler
     de RDS2016 (la sincronización pasa a Hangfire); 3) publicar la ClickOnce; 4) ejecutar ESTE
@@ -36,7 +36,7 @@ VALUES
  N'En el detalle del pedido y en la plantilla de venta, donde estaba la casilla "Servir junto" ahora hay un selector con cuatro modos: "Todo junto" (lo que era la casilla marcada), "Según vaya entrando" (la casilla desmarcada), "Tras reponer de tiendas" (espera a que la reposición habitual traiga de Reina y Alcobendas el stock que le corresponda al pedido y, cuando ya no queda nada que traer, sale lo que hay) y "Ahora lo que hay, el resto de una vez" (sale ya lo que hay y lo que falte se entrega en una única entrega más). El picking y los portes respetan cada modo. Los pedidos antiguos se muestran con el modo que corresponde a cómo tenían la casilla.', 'Nesto', 1, 'sa'),
 
 (@version, @fecha, 'Nuevo', N'Los pedidos nuevos nacen en "Tras reponer de tiendas"',
- N'Al elegir el cliente en la plantilla (y al crear un pedido nuevo desde el detalle), el selector arranca en "Tras reponer de tiendas" y ya no se arrastra la casilla "Servir junto" de la ficha del cliente: esa casilla dejaba pedidos sin servir nunca cuando faltaba una referencia agotada o anulada. Se puede cambiar el modo en cada pedido, y quien quiera otro modo por defecto puede pedirlo (parámetro de usuario "ModoServicioPorDefecto"). Los pedidos de la tienda online y de la app del cliente también nacen así; los de Amazon, Miravia y PrestaShop siguen siendo "Todo junto".', 'Nesto', 1, 'sa'),
+ N'Al elegir el cliente en la plantilla (y al crear un pedido nuevo desde el detalle), el selector arranca en "Tras reponer de tiendas" y ya no se arrastra la casilla "Servir junto" de la ficha del cliente: esa casilla dejaba pedidos sin servir nunca cuando faltaba una referencia agotada o anulada. Se puede cambiar el modo en cada pedido, y quien quiera otro modo por defecto puede pedirlo (parámetro de usuario "ModoServicioPorDefecto"). Los pedidos de la app del cliente también nacen así; los de Amazon, Miravia y la tienda online de PrestaShop siguen siendo "Todo junto".', 'Nesto', 1, 'sa'),
 
 (@version, @fecha, 'Mejorado', N'Los avisos al salir de "Todo junto" y el correo del pedido hablan del modo de entrega',
  N'Cuando no se puede cambiar el modo porque una muestra o un regalo se quedarían pendientes, el mensaje dice a qué modo se intentaba pasar ("No se puede pasar el pedido a «Según vaya entrando»...") en vez de hablar de una casilla que ya no existe. Y el correo de "Pedido nuevo" o "Pedido modificado" lleva siempre una línea "Modo de entrega: ..." (antes solo avisaba si la casilla estaba desmarcada).', 'Nesto', 1, 'sa'),
