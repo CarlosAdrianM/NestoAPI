@@ -937,6 +937,48 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.IsTrue(GestorPresupuestos.TieneFechaEntregaUnica(null));
         }
 
+        // NestoAPI#482 (Carlos, 16/09/26): el correo de nuevo pedido / pedido modificado enseña el
+        // MODO de entrega, no si la casilla «Servir junto» estaba marcada.
+
+        [TestMethod]
+        public void GenerarHtmlModoServicio_NombraElModoEfectivo_YSaleSiempre()
+        {
+            PedidoVentaDTO modo3 = new PedidoVentaDTO { modoServicio = 3, servirJunto = false };
+            PedidoVentaDTO todoJuntoViejo = new PedidoVentaDTO { modoServicio = null, servirJunto = true };
+
+            string html3 = GestorPresupuestos.GenerarHtmlModoServicio(modo3, faltaStockDeAlgo: true, tieneQueVenirAlgunProducto: true, colspan: 6);
+            string html1 = GestorPresupuestos.GenerarHtmlModoServicio(todoJuntoViejo, faltaStockDeAlgo: false, tieneQueVenirAlgunProducto: true, colspan: 6);
+
+            StringAssert.Contains(html3, "Modo de entrega: Tras reponer de tiendas");
+            StringAssert.Contains(html3, "colspan='6'");
+            StringAssert.Contains(html1, "Modo de entrega: Todo junto", "Un pedido anterior al modo se lee por servirJunto");
+            Assert.IsFalse(html1.Contains("ATENCIÓN"), "Todo junto nunca avisa");
+            Assert.IsFalse(html3.Contains("servir junto"), "Ya no se habla de la casilla");
+        }
+
+        [TestMethod]
+        public void GenerarHtmlModoServicio_AvisaEnRojoSiVaASalirEnVariasEntregasSinQuererlo()
+        {
+            // No falta stock de nada, pero hay algo por venir del proveedor y el modo no es todo junto.
+            PedidoVentaDTO pedido = new PedidoVentaDTO { modoServicio = 2, servirJunto = false, periodoFacturacion = "NRM" };
+
+            string html = GestorPresupuestos.GenerarHtmlModoServicio(pedido, faltaStockDeAlgo: false, tieneQueVenirAlgunProducto: true, colspan: 7);
+
+            StringAssert.Contains(html, "color: red");
+            StringAssert.Contains(html, "¡¡¡ ATENCIÓN !!! Modo de entrega: Según vaya entrando");
+        }
+
+        [TestMethod]
+        public void GenerarHtmlModoServicio_MantenerJunto_SeAnadeYQuitaElAviso()
+        {
+            PedidoVentaDTO pedido = new PedidoVentaDTO { modoServicio = 4, servirJunto = false, mantenerJunto = true, periodoFacturacion = "NRM" };
+
+            string html = GestorPresupuestos.GenerarHtmlModoServicio(pedido, faltaStockDeAlgo: false, tieneQueVenirAlgunProducto: true, colspan: 6);
+
+            StringAssert.Contains(html, "Modo de entrega: Ahora lo que hay, el resto de una vez. Marcado mantener junto");
+            StringAssert.Contains(html, "color: black");
+        }
+
         [TestMethod]
         public void GenerarHtmlFechaEntregaComun_FechaUnica_MuestraLaFechaAlPie()
         {

@@ -650,32 +650,11 @@ namespace NestoAPI.Infraestructure
                 }
                 _ = s.AppendLine("</tr>");
             }
-            if (!pedido.servirJunto || pedido.mantenerJunto)
-            {
-                string textoServirMantener = string.Empty;
-                string colorServirJunto = "black";
-                if (!faltaStockDeAlgo && tieneQueVenirAlgunProducto && !pedido.servirJunto && pedido.periodoFacturacion != Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES && !pedido.mantenerJunto)
-                {
-                    colorServirJunto = "red";
-                    textoServirMantener += "¡¡¡ ATENCIÓN !!!";
-                }
-                if (!pedido.servirJunto)
-                {
-                    textoServirMantener += " Desmarcado servir junto ";
-                }
-                if (!pedido.servirJunto && pedido.mantenerJunto)
-                {
-                    textoServirMantener += "y";
-                }
-                if (pedido.mantenerJunto)
-                {
-                    textoServirMantener += " Marcado mantener junto ";
-                }
-                _ = s.AppendLine("<tr style=\"color: " + colorServirJunto + ";\">");
-                int colspanNotas = 6 + (hayDescuentos ? 1 : 0) + (hayLineasConReservas ? 1 : 0) + (hayFechasEntregaDistintas ? 1 : 0);
-                _ = s.AppendLine($"<td colspan='{colspanNotas}'>{textoServirMantener.Trim()}</td>");
-                _ = s.AppendLine("</tr>");
-            }
+            // NestoAPI#482: el correo dice CÓMO se va a entregar el pedido (el modo de servicio), no si
+            // una casilla estaba marcada. Siempre sale; en rojo cuando va a haber más de una entrega
+            // por falta de stock de algo que está por venir (mismo criterio de aviso que antes).
+            int colspanNotas = 6 + (hayDescuentos ? 1 : 0) + (hayLineasConReservas ? 1 : 0) + (hayFechasEntregaDistintas ? 1 : 0);
+            _ = s.Append(GenerarHtmlModoServicio(pedido, faltaStockDeAlgo, tieneQueVenirAlgunProducto, colspanNotas));
             // Issue #110: fecha de entrega común a todo el pedido, al pie y discreta (cuando las
             // líneas difieren no sale nada aquí: cada una lleva la suya en la columna F. Entrega).
             int colspanFechaEntrega = 6 + (hayDescuentos ? 1 : 0) + (hayLineasConReservas ? 1 : 0) + (hayFechasEntregaDistintas ? 1 : 0);
@@ -1161,6 +1140,40 @@ namespace NestoAPI.Infraestructure
         /// </summary>
         /// <param name="lineas">Líneas del pedido</param>
         /// <param name="colspan">Número de columnas de la tabla, para el colspan</param>
+        /// <summary>
+        /// NestoAPI#482: la fila del correo con el modo de entrega («Modo de entrega: Tras reponer de
+        /// tiendas») y, si procede, «Marcado mantener junto». Antes solo salía cuando la casilla
+        /// «Servir junto» estaba desmarcada o «Mantener junto» marcada, y hablaba de casillas.
+        /// Va en rojo con «¡¡¡ ATENCIÓN !!!» cuando el pedido NO es todo junto, no falta stock de nada
+        /// pero hay algo por venir del proveedor, no es de fin de mes y no lleva mantener junto: es
+        /// decir, cuando va a salir en más de una entrega sin que nadie lo haya pedido a propósito.
+        /// </summary>
+        internal static string GenerarHtmlModoServicio(PedidoVentaDTO pedido, bool faltaStockDeAlgo, bool tieneQueVenirAlgunProducto, int colspan)
+        {
+            byte modo = Constantes.Pedidos.ModosServicio.Efectivo(pedido.modoServicio, pedido.servirJunto);
+            bool todoJunto = Constantes.Pedidos.ModosServicio.EsTodoJunto(modo);
+
+            string color = "black";
+            string texto = string.Empty;
+            if (!faltaStockDeAlgo && tieneQueVenirAlgunProducto && !todoJunto
+                && pedido.periodoFacturacion != Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES && !pedido.mantenerJunto)
+            {
+                color = "red";
+                texto = "¡¡¡ ATENCIÓN !!! ";
+            }
+            texto += "Modo de entrega: " + Constantes.Pedidos.ModosServicio.Nombre(modo);
+            if (pedido.mantenerJunto)
+            {
+                texto += ". Marcado mantener junto";
+            }
+
+            StringBuilder s = new StringBuilder();
+            _ = s.AppendLine("<tr style=\"color: " + color + ";\">");
+            _ = s.AppendLine($"<td colspan='{colspan}'>{texto}</td>");
+            _ = s.AppendLine("</tr>");
+            return s.ToString();
+        }
+
         internal static string GenerarHtmlFechaEntregaComun(IEnumerable<LineaPedidoVentaDTO> lineas, int colspan)
         {
             List<LineaPedidoVentaDTO> listaLineas = lineas?.ToList() ?? new List<LineaPedidoVentaDTO>();
