@@ -44,6 +44,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 Comentarios = pedido.comentarios?.Trim(),
                 Ruta = pedido.ruta?.Trim(),
                 ServirJunto = pedido.servirJunto,
+                ModoServicio = pedido.modoServicio,
                 MantenerJunto = pedido.mantenerJunto
             };
 

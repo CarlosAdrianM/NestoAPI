@@ -25,6 +25,9 @@ namespace NestoAPI.Models.PedidosVenta
         public string Comentarios { get; set; }
         public string Ruta { get; set; }
         public bool ServirJunto { get; set; }
+        // NestoAPI#482 / Nesto#476: el modo de servicio (1 todo junto, 2 según entre, 4 ahora lo que
+        // hay y el resto de una vez). NULL en pedidos anteriores al modo: el cliente lo deriva de ServirJunto.
+        public byte? ModoServicio { get; set; }
         public bool MantenerJunto { get; set; }
         // De las líneas (la cabecera no las lleva): entrega mínima y almacén de la primera línea real.
         public DateTime? FechaEntrega { get; set; }

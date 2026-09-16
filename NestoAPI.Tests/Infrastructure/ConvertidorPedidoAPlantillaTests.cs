@@ -52,6 +52,35 @@ namespace NestoAPI.Tests.Infrastructure
             };
         }
 
+        // Nesto#476: "Modificar con plantilla" (Nesto#397) tiene que conservar el modo de servicio
+        // del pedido (NestoAPI#482), no solo el bool ServirJunto del que deriva.
+
+        [TestMethod]
+        public void Convertir_LlevaElModoDeServicioDelPedido()
+        {
+            PedidoVentaDTO pedido = Pedido(Linea(1, "38697", 6, 10m));
+            pedido.modoServicio = 4;
+            pedido.servirJunto = false;
+
+            var resultado = ConvertidorPedidoAPlantilla.Convertir(pedido);
+
+            Assert.AreEqual((byte)4, resultado.ModoServicio);
+            Assert.IsFalse(resultado.ServirJunto);
+        }
+
+        [TestMethod]
+        public void Convertir_PedidoAnteriorAlModo_ElModoViajaNuloYServirJuntoManda()
+        {
+            PedidoVentaDTO pedido = Pedido(Linea(1, "38697", 6, 10m));
+            pedido.modoServicio = null;
+            pedido.servirJunto = true;
+
+            var resultado = ConvertidorPedidoAPlantilla.Convertir(pedido);
+
+            Assert.IsNull(resultado.ModoServicio);
+            Assert.IsTrue(resultado.ServirJunto);
+        }
+
         // NestoAPI#303: las líneas ya en albarán/factura (estado >= 2) no son modificables y no
         // se cargan en la plantilla; se cuentan para que el cliente avise al usuario.
 
