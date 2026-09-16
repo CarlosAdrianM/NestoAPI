@@ -19,7 +19,12 @@ namespace NestoAPI.Models.Picking
             {
                 Producto = s,
                 StockDisponible = db.ExtractosProducto.Where(e => e.Número == s && e.Almacén == Constantes.Productos.ALMACEN_POR_DEFECTO).Select(l => (int)l.Cantidad).DefaultIfEmpty(0).Sum(),
-                StockTienda = db.ExtractosProducto.Where(e => e.Número == s && (e.Almacén == Constantes.Productos.ALMACEN_TIENDA || e.Almacén == Constantes.Almacenes.ALCOBENDAS)).Select(l => (int)l.Cantidad).DefaultIfEmpty(0).Sum()
+                StockTienda = db.ExtractosProducto.Where(e => e.Número == s && (e.Almacén == Constantes.Productos.ALMACEN_TIENDA || e.Almacén == Constantes.Almacenes.ALCOBENDAS)).Select(l => (int)l.Cantidad).DefaultIfEmpty(0).Sum(),
+                // NestoAPI#482 (modo 3): reposiciones generadas y sin contabilizar, hacia Algete o hacia
+                // una tienda. Mismo criterio que prdRellenarReposicionStock (NºTraspaso <> 0).
+                EnCamino = db.PreExtrProductos.Where(e => e.Número == s && e.NºTraspaso != null && e.NºTraspaso != 0
+                        && (e.Almacén == Constantes.Almacenes.ALGETE || e.Almacén == Constantes.Almacenes.REINA || e.Almacén == Constantes.Almacenes.ALCOBENDAS))
+                    .Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum()
             }).ToList();
             return stocks;
         }

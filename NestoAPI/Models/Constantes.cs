@@ -435,8 +435,8 @@ namespace NestoAPI.Models
                 /// <summary>Sale lo que haya en cada pasada; tantas entregas como haga falta (ServirJunto = false).</summary>
                 public const byte SEGUN_VAYA_ENTRANDO = 2;
                 /// <summary>Se espera a que las reposiciones habituales (prdRellenarReposicionStock) traigan el
-                /// stock de las tiendas; cuando no queda nada que traer, sale lo que hay y sigue como 2.
-                /// Slice 1: NO disponible todavía (el POST/PUT lo rechaza).</summary>
+                /// stock de las tiendas que le corresponda al pedido; cuando no queda nada que traer, sale lo
+                /// que hay y sigue como 2. Lo decide GestorReposicionTiendas en el picking (slice 2, 16/09/26).</summary>
                 public const byte TRAS_REPONER_DE_TIENDAS = 3;
                 /// <summary>Sale ya lo que hay; lo que falta se entrega en UNA sola entrega más, cuando esté
                 /// todo (tras la primera entrega el pedido se comporta como 1 para el resto).</summary>
@@ -479,10 +479,6 @@ namespace NestoAPI.Models
                     if (!EsValido(modo))
                     {
                         return $"El modo de servicio {modo} no existe (1 todo junto, 2 según vaya entrando, 3 tras reponer de tiendas, 4 ahora lo que hay y el resto de una vez)";
-                    }
-                    if (modo == TRAS_REPONER_DE_TIENDAS)
-                    {
-                        return "El modo de servicio 3 (tras reponer de tiendas) todavía no está disponible";
                     }
                     pedido.servirJunto = EsTodoJunto(modo);
                     return null;

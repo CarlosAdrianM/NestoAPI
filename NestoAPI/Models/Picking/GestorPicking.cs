@@ -153,7 +153,12 @@ namespace NestoAPI.Models.Picking
 
             todasLasLineas = modulos.rellenadorPicking.RellenarTodasLasLineas(candidatos);
 
+            // NestoAPI#482 (modo 3): el pool ANTES de repartir, porque Reservar consume los stocks.
+            List<StockProducto> stocksIniciales = stocks.Select(st => st.Clonar()).ToList();
+
             GestorReservasStock.Reservar(stocks, candidatos, todasLasLineas);
+
+            GestorReposicionTiendas.MarcarEsperas(stocksIniciales, candidatos, todasLasLineas);
 
             GestorReservasStock.BorrarLineasQueNoDebenSalir(candidatos, fechaPicking);
 

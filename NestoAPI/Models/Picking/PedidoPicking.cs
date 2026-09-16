@@ -76,13 +76,19 @@ namespace NestoAPI.Models.Picking
         /// factura). En el modo 4 es lo que convierte "ahora lo que hay" en "el resto de una vez".</summary>
         public bool TieneLineasServidas { get; set; }
 
+        /// <summary>NestoAPI#482 (modo 3): lo marca GestorReposicionTiendas tras repartir el stock.
+        /// True = a alguna línea le va a llegar stock suyo que aún no está en Algete (en una tienda o
+        /// en camino), así que el pedido no sale en esta pasada.</summary>
+        public bool EsperaReposicionDeTiendas { get; set; }
+
         public byte ModoServicioEfectivo => Constantes.Pedidos.ModosServicio.Efectivo(ModoServicio, ServirJunto);
 
         /// <summary>
         /// NestoAPI#482: una estrategia por modo, en vez de un if más.
         /// 1: siempre hace falta stock de todo. 2: nunca. 4: solo a partir de la segunda entrega
-        /// (la primera saca lo que hay; el resto va de una vez). 3: hoy como 2 (el POST/PUT lo
-        /// rechaza hasta que se implemente con prdRellenarReposicionStock).
+        /// (la primera saca lo que hay; el resto va de una vez). 3: nunca exige stock de todo, pero
+        /// no sale mientras le quede stock suyo por llegar de las tiendas (EsperaReposicionDeTiendas,
+        /// que decide GestorReposicionTiendas); cuando ya no queda nada que traer, sale con lo que hay.
         /// </summary>
         public bool ExigeStockDeTodo()
         {
@@ -99,6 +105,10 @@ namespace NestoAPI.Models.Picking
 
         public bool saleEnPicking()
         {
+            if (ModoServicioEfectivo == Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS && EsperaReposicionDeTiendas)
+            {
+                return false;
+            }
             GestorStocksPicking gestorStocks = new GestorStocksPicking(this);
             bool salePorStock = this.Lineas != null && this.Lineas.Count > 0 && (!ExigeStockDeTodo() || gestorStocks.HayStockDeTodo());
             if (!salePorStock)

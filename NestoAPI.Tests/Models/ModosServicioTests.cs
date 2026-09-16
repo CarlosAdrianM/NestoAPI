@@ -66,14 +66,12 @@ namespace NestoAPI.Tests.Models
         }
 
         [TestMethod]
-        public void Normalizar_Modo3_TodaviaNoDisponible()
+        public void Normalizar_Modo3_DisponibleDesdeElSlice2_NoEsTodoJunto()
         {
-            var pedido = new PedidoVentaDTO { servirJunto = false, modoServicio = 3 };
+            var pedido = new PedidoVentaDTO { servirJunto = true, modoServicio = 3 };
 
-            string error = ModosServicio.Normalizar(pedido);
-
-            Assert.IsNotNull(error);
-            StringAssert.Contains(error, "3");
+            Assert.IsNull(ModosServicio.Normalizar(pedido));
+            Assert.IsFalse(pedido.servirJunto, "El 3 puede servir parcialmente cuando ya no queda nada que traer");
         }
 
         [TestMethod]

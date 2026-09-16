@@ -498,6 +498,7 @@
     <Compile Include="Models\Picking\PedidoPickingTest.cs" />
     <Compile Include="Models\ModosServicioTests.cs" />
     <Compile Include="Models\Picking\GestorReservasStockTest.cs" />
+    <Compile Include="Models\Picking\GestorReposicionTiendasTest.cs" />
     <Compile Include="Models\Picking\GestorStocksPickingTest.cs" />
     <Compile Include="Models\Picking\GestorImportesMinimosTest.cs" />
     <Compile Include="Models\Picking\GestorUbicacionesTest.cs" />
