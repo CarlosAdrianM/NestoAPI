@@ -12,8 +12,10 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 {
     /// <summary>
     /// NestoAPI#444 (parte 1): el correo de confirmación que recibe el CLIENTE cuando hace un pedido
-    /// desde la tienda online o la app (POST api/Pedidos/Cliente). Hasta ahora no recibía nada: el
-    /// carrito se vaciaba y se quedaba sin constancia de que el pedido hubiera entrado (TNV#66).
+    /// desde la APP de clientes (POST api/Pedidos/Cliente, el único que llama a este endpoint). Hasta
+    /// ahora no recibía nada: el carrito se vaciaba y se quedaba sin constancia de que el pedido hubiera
+    /// entrado (TNV#66). Los pedidos de la tienda online de PrestaShop NO pasan por aquí (entran por
+    /// CanalesExternos → POST api/PedidosVenta) y ya reciben el correo de la propia tienda.
     /// El correo interno de «Pedido nuevo» sigue igual y va a las mismas personas de siempre.
     ///
     /// Lo que viaja al job de Hangfire es un DTO plano (sin los parámetros firmados de Redsys ni
