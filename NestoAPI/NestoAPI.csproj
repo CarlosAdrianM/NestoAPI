@@ -744,6 +744,7 @@
     <Compile Include="Infraestructure\Pedidos\ServicioPedidosParaFacturacion.cs" />
     <Compile Include="Infraestructure\PedidosVenta\GestorPedidosVenta.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ConstructorPedidoCliente.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\CorreoConfirmacionPedidoCliente.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ResumidorPedidosCliente.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ServicioPedidosCliente.cs" />
     <Compile Include="Infraestructure\PedidosVenta\GestorPortes.cs" />

@@ -239,8 +239,16 @@ namespace NestoAPI.Controllers
                 await ArrancarPago(respuesta, preparado, tarjetaParaLaPasarela).ConfigureAwait(false);
             }
 
+            // NestoAPI#444: el cliente recibe su confirmación (hasta hoy no recibía nada). Va después
+            // del cobro para decirle la situación real del pago, y en segundo plano.
+            CorreoConfirmacionPedidoCliente.Encolar(
+                CorreoConfirmacionPedidoCliente.Preparar(respuesta, preparado.Correo, sinPrecios), EncolarCorreoCliente);
+
             return Ok(respuesta);
         }
+
+        /// <summary>NestoAPI#444: cómo se encola el correo al cliente (Hangfire); sustituible en tests.</summary>
+        internal Action<CorreoConfirmacionPedidoDTO> EncolarCorreoCliente { get; set; }
 
         /// <summary>
         /// TNV#68: el pedido no se ha creado. Si se había cobrado por adelantado, el dinero vuelve
