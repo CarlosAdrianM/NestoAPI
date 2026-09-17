@@ -147,6 +147,24 @@ namespace NestoAPI.Infraestructure.Agencias.Perfiles
     }
 
     /// <summary>Sending: en cuarentena (no se tramita), pero conserva sus defaults de envío.</summary>
+    /// <summary>
+    /// NestoAPI#493: CTT Express. Hoy es agencia SOMBRA (AgenciasTransporte.EsSombra = 1): la puerta de
+    /// activas la deja fuera, así que este perfil es inerte hasta que salga a producción. Cuando llegue la
+    /// documentación de su API ganará IPerfilConGestionRemota e IPerfilConSeguimiento (mismo patrón que
+    /// Innovatrans: tramitación server-side, registrar al imprimir).
+    /// </summary>
+    public class PerfilAgenciaCTT : IPerfilConDefaultsEnvio
+    {
+        public int AgenciaId => Constantes.Agencias.AGENCIA_CTT;
+
+        // Servicio 48 = "CTT 48h" (TarifaCTT48h.ServicioId), el económico que usamos como base.
+        // Portugal es zona propia de la oferta (misma API, país distinto); el resto, España.
+        public (short Servicio, short Horario, int Pais) DefaultsEnvio(string codPostal)
+            => PerfilAgenciaCorreosExpress.EsCodigoPostalPortugues(codPostal ?? string.Empty)
+                ? (Servicio: (short)48, Horario: (short)0, Pais: 351)
+                : (Servicio: (short)48, Horario: (short)0, Pais: 34);
+    }
+
     public class PerfilAgenciaSending : IPerfilConDefaultsEnvio
     {
         public int AgenciaId => Constantes.Agencias.AGENCIA_SENDING;

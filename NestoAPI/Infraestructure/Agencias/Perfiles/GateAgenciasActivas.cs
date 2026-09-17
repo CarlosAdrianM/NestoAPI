@@ -46,10 +46,17 @@ namespace NestoAPI.Infraestructure.Agencias.Perfiles
 
         public bool EstaActiva(int agenciaId) => _activas.Contains(agenciaId);
 
+        /// <summary>
+        /// Activa = existe en AgenciasTransporte, no está en cuarentena y NO es sombra. NestoAPI#493: una
+        /// agencia sombra (CTT mientras solo compite en el comparador) puede tener ya su perfil con
+        /// gestión remota y seguimiento preparados; sin esta exclusión, en cuanto existiera el perfil
+        /// el poll de seguimiento y Tramitar la tratarían como una agencia real.
+        /// </summary>
         internal static ISet<int> CalcularActivas(IEnumerable<AgenciaTransporte> agencias, string valorCuarentena)
         {
             var cuarentena = new HashSet<string>(ParsearNombres(valorCuarentena), StringComparer.OrdinalIgnoreCase);
             return new HashSet<int>((agencias ?? Enumerable.Empty<AgenciaTransporte>())
+                .Where(a => !a.EsSombra)
                 .Where(a => !cuarentena.Contains((a.Nombre ?? string.Empty).Trim()))
                 .Select(a => a.Numero));
         }

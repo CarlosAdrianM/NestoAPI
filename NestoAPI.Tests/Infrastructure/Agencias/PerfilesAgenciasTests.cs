@@ -75,6 +75,11 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             Assert.AreEqual(((short)93, (short)0, 724), cex.DefaultsEnvio(CP_MADRID), "ePaq24 España");
             Assert.AreEqual(((short)63, (short)0, 724), cex.DefaultsEnvio("1000-001"), "Paq24 Portugal");
             Assert.AreEqual(((short)90, (short)0, 724), cex.DefaultsEnvio("75008"), "CP francés: internacional monobulto");
+            // NestoAPI#493: CTT 48h (servicio 48 = TarifaCTT48h.ServicioId); Portugal con su país.
+            var ctt = new PerfilAgenciaCTT();
+            Assert.AreEqual(Constantes.Agencias.AGENCIA_CTT, ctt.AgenciaId);
+            Assert.AreEqual(((short)48, (short)0, 34), ctt.DefaultsEnvio(CP_MADRID), "CTT 48h España");
+            Assert.AreEqual(((short)48, (short)0, 351), ctt.DefaultsEnvio("1000-001"), "CTT 48h Portugal");
         }
 
         [TestMethod]

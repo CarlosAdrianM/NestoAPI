@@ -17,8 +17,20 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             new AgenciaTransporte { Numero = 1, Nombre = "ASM" },
             new AgenciaTransporte { Numero = 8, Nombre = "Correos Express" },
             new AgenciaTransporte { Numero = 10, Nombre = "Sending" },
-            new AgenciaTransporte { Numero = 12, Nombre = "Innovatrans" }
+            new AgenciaTransporte { Numero = 12, Nombre = "Innovatrans" },
+            new AgenciaTransporte { Numero = 13, Nombre = "CTT", EsSombra = true }
         };
+
+        [TestMethod]
+        public void AgenciaSombra_EsInactivaAunqueNoEsteEnCuarentena()
+        {
+            // NestoAPI#493: CTT compite en el comparador como sombra pero no se tramita ni se sigue.
+            // Rojo sin el fix: la puerta solo miraba la cuarentena y la daba por activa.
+            var gate = new GateAgenciasActivasPorCuarentena(Agencias(), "");
+
+            Assert.IsFalse(gate.EstaActiva(13), "Una agencia sombra no puede tener gestión remota ni seguimiento activos");
+            Assert.IsTrue(gate.EstaActiva(12), "Las que no son sombra siguen activas");
+        }
 
         [TestMethod]
         public void LasEnCuarentenaQuedanInactivas_ElRestoActivas()
