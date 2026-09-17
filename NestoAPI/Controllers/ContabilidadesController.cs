@@ -26,6 +26,35 @@ namespace NestoAPI.Controllers
             db.Configuration.LazyLoadingEnabled = false;
         }
 
+        // Para tests: contexto inyectado.
+        internal ContabilidadesController(NVEntities db)
+        {
+            this.db = db;
+        }
+
+        /// <summary>
+        /// Nesto#340 (Agencias 1D): saldo (Debe - Haber) de una cuenta contable desde una fecha. Lo usaba
+        /// AgenciaService.CalcularSumaContabilidad con EF para el saldo de la cuenta de reembolsos de la
+        /// agencia (ventana de Agencias, desde 2019). Sin fecha, desde el 01/01/2019, como hacía Nesto.
+        /// </summary>
+        [HttpGet]
+        [Route("api/Contabilidades/Saldo")]
+        public IHttpActionResult GetSaldo(string empresa, string cuenta, DateTime? desde = null)
+        {
+            if (string.IsNullOrWhiteSpace(empresa) || string.IsNullOrWhiteSpace(cuenta))
+            {
+                return BadRequest("Faltan la empresa o la cuenta.");
+            }
+            DateTime fechaDesde = desde ?? new DateTime(2019, 1, 1);
+            string empresaBuscada = empresa.Trim();
+            string cuentaBuscada = cuenta.Trim();
+            decimal saldo = db.Contabilidades
+                .Where(c => c.Empresa == empresaBuscada && c.Nº_Cuenta == cuentaBuscada && c.Fecha >= fechaDesde)
+                .Select(c => (decimal?)(c.Debe - c.Haber))
+                .Sum() ?? 0m;
+            return Ok(saldo);
+        }
+
         //// GET: api/Contabilidades
         //public IQueryable<Contabilidad> GetContabilidades()
         //{
