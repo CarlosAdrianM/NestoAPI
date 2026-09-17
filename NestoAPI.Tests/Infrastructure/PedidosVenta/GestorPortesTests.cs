@@ -252,7 +252,7 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
             var resultado = GestorPortes.CalcularPortes(input);
 
             Assert.IsFalse(resultado.PortesGratis);
-            Assert.AreEqual(Constantes.Portes.PROVINCIAL, resultado.ImportePortes);
+            Assert.AreEqual(Constantes.Portes.Provincial(System.DateTime.Now), resultado.ImportePortes);
             Assert.AreEqual(Constantes.Cuentas.CUENTA_PORTES_ONTIME, resultado.CuentaPortes);
             Assert.AreEqual(25, resultado.ImporteFaltaParaPortesGratis);
         }
@@ -433,7 +433,7 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
             var resultado = GestorPortes.CalcularPortes(input);
 
             Assert.IsFalse(resultado.PortesGratis);
-            Assert.AreEqual(Constantes.Portes.PROVINCIAL, resultado.ImportePortes);
+            Assert.AreEqual(Constantes.Portes.Provincial(System.DateTime.Now), resultado.ImportePortes);
         }
 
         [TestMethod]
@@ -1126,7 +1126,7 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
             var resultado = GestorPortes.CalcularPortes(input);
 
             Assert.IsFalse(resultado.PortesGratis);
-            Assert.AreEqual(Constantes.Portes.PROVINCIAL, resultado.ImportePortes);
+            Assert.AreEqual(Constantes.Portes.Provincial(System.DateTime.Now), resultado.ImportePortes);
         }
 
         [TestMethod]
@@ -1146,7 +1146,7 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
             var resultado = GestorPortes.CalcularPortes(input);
 
             Assert.IsFalse(resultado.PortesGratis);
-            Assert.AreEqual(Constantes.Portes.PROVINCIAL, resultado.ImportePortes);
+            Assert.AreEqual(Constantes.Portes.Provincial(System.DateTime.Now), resultado.ImportePortes);
         }
 
         #endregion
@@ -1207,7 +1207,7 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
 
             Assert.IsTrue(resultado.PortesGratis,
                 "Sin productos (base=0), no se deben cobrar portes");
-            Assert.AreEqual(Constantes.Portes.PROVINCIAL, resultado.ImportePortes,
+            Assert.AreEqual(Constantes.Portes.Provincial(System.DateTime.Now), resultado.ImportePortes,
                 "Debe devolver el importe de portes aunque no los cobre, para que el cliente " +
                 "pueda mostrarlo cuando se añadan productos y no se llegue al mínimo");
             Assert.AreEqual(GestorImportesMinimos.IMPORTE_MINIMO, resultado.ImporteMinimoPedidoSinPortes,
@@ -1298,7 +1298,7 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
             var resultado = GestorPortes.CalcularPortes(input);
 
             Assert.IsFalse(resultado.PortesGratis, "No llega al mínimo, debe cobrar portes");
-            Assert.AreEqual(Constantes.Portes.PROVINCIAL, resultado.ImportePortes, "Portes provinciales");
+            Assert.AreEqual(Constantes.Portes.Provincial(System.DateTime.Now), resultado.ImportePortes, "Portes provinciales");
             Assert.IsFalse(resultado.EsContraReembolso, "TAR no es contra reembolso");
 
             var resultadoGestion = GestorPortes.GestionarLineasPortes(lineas, resultado, "G21", null);
@@ -1795,6 +1795,77 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
 
             Assert.IsFalse(input.EsCanalExterno);
         }
+
+        #endregion
+
+        #region NestoAPI#488: portes provinciales a 5 € desde el 01/10/2026 (fecha del pedido)
+
+        [TestMethod]
+        public void Portes_Provincial_CambiaA5EurosEl1DeOctubre2026()
+        {
+            Assert.AreEqual(3.5M, Constantes.Portes.Provincial(new System.DateTime(2026, 9, 15)));
+            Assert.AreEqual(3.5M, Constantes.Portes.Provincial(new System.DateTime(2026, 9, 30, 23, 59, 59)), "Último segundo de septiembre");
+            Assert.AreEqual(5M, Constantes.Portes.Provincial(new System.DateTime(2026, 10, 1)), "Justo el 01/10 a las 00:00");
+            Assert.AreEqual(5M, Constantes.Portes.Provincial(new System.DateTime(2027, 3, 1)));
+        }
+
+        [TestMethod]
+        public void CalcularPortes_Provincial_MandaLaFechaDelPedido_NoElDiaQueSeCalcula()
+        {
+            // Un pedido de septiembre que se recalcula (o coge picking) en octubre sigue a 3,50 €:
+            // es lo que aceptó el cliente. Y uno de octubre paga 5 € aunque hoy fuera septiembre.
+            try
+            {
+                GestorPortes.FechaActualParaPruebas = new System.DateTime(2026, 10, 15);
+
+                var septiembre = GestorPortes.CalcularPortes(InputProvincial(new System.DateTime(2026, 9, 20)));
+                Assert.AreEqual(3.5M, septiembre.ImportePortes, "Pedido de septiembre calculado en octubre");
+
+                GestorPortes.FechaActualParaPruebas = new System.DateTime(2026, 9, 20);
+                var octubre = GestorPortes.CalcularPortes(InputProvincial(new System.DateTime(2026, 10, 2)));
+                Assert.AreEqual(5M, octubre.ImportePortes, "Pedido de octubre calculado en septiembre");
+            }
+            finally
+            {
+                GestorPortes.FechaActualParaPruebas = null;
+            }
+        }
+
+        [TestMethod]
+        public void CalcularPortes_Provincial_SinFechaDePedido_UsaLaFechaActual()
+        {
+            // Simulaciones de la app y la tienda (pedido aún sin crear): el importe vigente hoy.
+            try
+            {
+                GestorPortes.FechaActualParaPruebas = new System.DateTime(2026, 9, 30);
+                Assert.AreEqual(3.5M, GestorPortes.CalcularPortes(InputProvincial(null)).ImportePortes);
+
+                GestorPortes.FechaActualParaPruebas = new System.DateTime(2026, 10, 1);
+                Assert.AreEqual(5M, GestorPortes.CalcularPortes(InputProvincial(null)).ImportePortes);
+            }
+            finally
+            {
+                GestorPortes.FechaActualParaPruebas = null;
+            }
+        }
+
+        [TestMethod]
+        public void ConstruirInput_LlevaLaFechaDelPedido()
+        {
+            var pedido = new PedidoVentaDTO { fecha = new System.DateTime(2026, 9, 20) };
+            PedidoPortesInput input = GestorPortes.ConstruirInput(pedido, "28100", 50M, anadirPortes: true);
+            Assert.AreEqual(new System.DateTime(2026, 9, 20), input.FechaPedido);
+        }
+
+        private static PedidoPortesInput InputProvincial(System.DateTime? fechaPedido) => new PedidoPortesInput
+        {
+            CodigoPostal = "28100",
+            Ruta = "FW",
+            FormaPago = "EFC",
+            Iva = Constantes.Empresas.IVA_POR_DEFECTO,
+            BaseImponibleProductos = 50,
+            FechaPedido = fechaPedido
+        };
 
         #endregion
     }

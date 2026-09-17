@@ -624,7 +624,20 @@ namespace NestoAPI.Models
 
         public static class Portes
         {
-            public const decimal PROVINCIAL = 3.5M;
+            /// <summary>
+            /// NestoAPI#488: los portes provinciales suben de 3,50 € a 5 € el 01/10/2026. Interruptor por
+            /// fecha para publicar cualquier día de septiembre sin tener que desplegar el día 1. La fecha
+            /// que manda es la DEL PEDIDO (Carlos, 17/09/26): un pedido de septiembre que sale en octubre
+            /// paga 3,50 €, que es lo que aceptó el cliente. El mínimo para portes pagados no cambia.
+            /// </summary>
+            public static readonly DateTime FECHA_CORTE_PROVINCIAL_5 = new DateTime(2026, 10, 1);
+            public const decimal PROVINCIAL_HASTA_SEPTIEMBRE_2026 = 3.5M;
+            public const decimal PROVINCIAL_DESDE_OCTUBRE_2026 = 5M;
+
+            /// <summary>Importe de los portes provinciales para un pedido de la fecha dada.</summary>
+            public static decimal Provincial(DateTime fechaPedido)
+                => fechaPedido < FECHA_CORTE_PROVINCIAL_5 ? PROVINCIAL_HASTA_SEPTIEMBRE_2026 : PROVINCIAL_DESDE_OCTUBRE_2026;
+
             public const decimal PENINSULAR = 7M;
             public const decimal BALEARES = 20M;
             public const decimal CANARIAS = 100M;

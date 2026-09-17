@@ -1,4 +1,4 @@
-using NestoAPI.Models;
+﻿using NestoAPI.Models;
 using NestoAPI.Models.Picking;
 using System;
 using System.Collections.Generic;
@@ -39,6 +39,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         public string Iva { get; set; }
         public decimal BaseImponibleProductos { get; set; }
         public bool AnadirPortes { get; set; } = true;
+        /// <summary>
+        /// NestoAPI#488: fecha del pedido, que es la que decide el importe de los portes provinciales
+        /// (3,50 € hasta el 30/09/2026, 5 € desde el 01/10/2026). Sin ella (simulaciones de la app o
+        /// de la tienda para un pedido que aún no existe) se usa la fecha actual.
+        /// </summary>
+        public DateTime? FechaPedido { get; set; }
 
         /// <summary>
         /// Issue #159: si es <c>true</c> y la fecha actual es anterior a
@@ -188,7 +194,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 resultado.ImporteMinimoPedidoSinPortes = ObtenerUmbralPortesGratis(
                     input.CodigoPostal, input.EsPrecioPublicoFinal, input.Iva);
                 resultado.ImporteFaltaParaPortesGratis = resultado.ImporteMinimoPedidoSinPortes;
-                AsignarImporteYCuentaPortes(resultado, input.CodigoPostal);
+                AsignarImporteYCuentaPortes(resultado, input.CodigoPostal, input.FechaPedido ?? FechaActual());
                 return resultado;
             }
             else if (input.BaseImponibleProductos <= 0)
@@ -224,13 +230,13 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
             if (!resultado.PortesGratis)
             {
-                AsignarImporteYCuentaPortes(resultado, input.CodigoPostal);
+                AsignarImporteYCuentaPortes(resultado, input.CodigoPostal, input.FechaPedido ?? FechaActual());
             }
 
             return resultado;
         }
 
-        private static void AsignarImporteYCuentaPortes(ResultadoPortes resultado, string codigoPostal)
+        private static void AsignarImporteYCuentaPortes(ResultadoPortes resultado, string codigoPostal, DateTime fechaPedido)
         {
             // NestoAPI#192: Canarias y Baleares tienen importe propio. La cuenta contable
             // es CUENTA_PORTES_CEX porque al crear el pedido aún no sabemos qué agencia
@@ -249,7 +255,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             }
             else if (EsProvincial(codigoPostal))
             {
-                resultado.ImportePortes = Constantes.Portes.PROVINCIAL;
+                resultado.ImportePortes = Constantes.Portes.Provincial(fechaPedido);
                 resultado.CuentaPortes = Constantes.Cuentas.CUENTA_PORTES_ONTIME;
             }
             else
@@ -538,6 +544,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 Iva = pedido.iva?.Trim(),
                 BaseImponibleProductos = baseImponibleProductos,
                 AnadirPortes = anadirPortes,
+                FechaPedido = pedido.fecha,
                 NoCobrarComisionReembolso = pedido.NoCobrarComisionReembolso
             };
         }

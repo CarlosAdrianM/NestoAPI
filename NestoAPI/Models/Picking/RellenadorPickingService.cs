@@ -170,6 +170,7 @@ namespace NestoAPI.Models.Picking
                 ImporteOriginalSobrePedido = db.LinPedidoVtas.Where(l => l.Número == p.Número && l.EstadoProducto != Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO && !l.LineaParcial).Select(l => l.Base_Imponible).DefaultIfEmpty(0).Sum(),
                 ImporteOriginalNoSobrePedido = db.LinPedidoVtas.Where(l => l.Número == p.Número && (l.EstadoProducto == Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO || l.LineaParcial)).Select(l => l.Base_Imponible).DefaultIfEmpty(0).Sum(),
                 CodigoPostal = p.Cliente.CodPostal,
+                Fecha = p.Fecha,
                 Ruta = p.Ruta,
                 PlazosPago = p.PlazosPago?.Trim(),
                 Iva = p.IVA,

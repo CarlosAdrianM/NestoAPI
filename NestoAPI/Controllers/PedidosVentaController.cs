@@ -2116,7 +2116,8 @@ namespace NestoAPI.Controllers
                 Iva = cabecera.IVA?.Trim(),
                 BaseImponibleProductos = baseImponibleProductos,
                 AnadirPortes = DebeAnadirPortes(UsuarioPuedeSuprimirPortes(), anadirPortes, cabecera.LinPedidoVtas.FirstOrDefault()?.Almacén?.Trim()),
-                NoCobrarComisionReembolso = cabecera.NoCobrarComisionReembolso
+                NoCobrarComisionReembolso = cabecera.NoCobrarComisionReembolso,
+                FechaPedido = cabecera.Fecha
             };
 
             var resultado = GestorPortes.CalcularPortes(input);

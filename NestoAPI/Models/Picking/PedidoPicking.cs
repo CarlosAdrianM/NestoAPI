@@ -34,6 +34,8 @@ namespace NestoAPI.Models.Picking
         public decimal ImporteOriginalSobrePedido { get; set; }
         public decimal ImporteOriginalNoSobrePedido { get; set; }
         public string CodigoPostal { get; set; }
+        /// <summary>NestoAPI#488: fecha del pedido (CabPedidoVta.Fecha), decide el importe de los portes provinciales.</summary>
+        public System.DateTime? Fecha { get; set; }
         public string Ruta { get; set; }
         public string PlazosPago { get; set; }
         public bool Borrar { get; set; }

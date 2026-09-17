@@ -1,4 +1,4 @@
-using NestoAPI.Controllers;
+﻿using NestoAPI.Controllers;
 using NestoAPI.Infraestructure.PedidosVenta;
 using System;
 using System.Linq;
@@ -38,8 +38,9 @@ namespace NestoAPI.Models.Picking
             string cuenta = esProvincial
                 ? Constantes.Cuentas.CUENTA_PORTES_ONTIME
                 : Constantes.Cuentas.CUENTA_PORTES_CEX;
+            // NestoAPI#488: el importe provincial depende de la fecha DEL PEDIDO, no del día que sale.
             decimal portes = esProvincial
-                ? Constantes.Portes.PROVINCIAL
+                ? Constantes.Portes.Provincial(pedido.Fecha ?? DateTime.Today)
                 : Constantes.Portes.PENINSULAR;
 
             // Si ya tiene portes, no los volvemos a añadir

@@ -940,7 +940,7 @@ namespace NestoAPI.Tests.Models.Picking
                 Producto = Constantes.Cuentas.CUENTA_PORTES_ONTIME,
                 Cantidad = 1,
                 CantidadReservada = 1,
-                BaseImponible = Constantes.Portes.PROVINCIAL,
+                BaseImponible = Constantes.Portes.Provincial(System.DateTime.Now),
                 EsSobrePedido = false
             };
             PedidoPicking pedido = new PedidoPicking
