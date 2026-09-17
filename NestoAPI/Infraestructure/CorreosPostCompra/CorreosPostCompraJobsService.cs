@@ -1,4 +1,4 @@
-using Elmah;
+﻿using Elmah;
 using NestoAPI.Infraestructure.OpenAI;
 using NestoAPI.Models;
 using System;
@@ -14,22 +14,42 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
     /// <summary>
     /// Servicio con métodos estáticos para jobs de Hangfire de correos post-compra.
     /// Issue #74: Sistema de correos automáticos con videos personalizados post-compra.
-    /// Se ejecuta los miércoles a las 20:30, procesa albaranes de la semana y programa
+    /// Se ejecuta los jueves a las 05:00, procesa los albaranes de jueves a miércoles y programa
     /// envíos individuales para el sábado a las 10:00.
     /// </summary>
     public class CorreosPostCompraJobsService
     {
         /// <summary>
-        /// Job semanal (miércoles 20:30). Obtiene los albaranes de la semana,
-        /// agrupa por cliente y programa los envíos para 3 días después (sábado 10:00).
+        /// Ventana de albaranes y fecha de envío de una ejecución del job, calculadas desde el día
+        /// en que corre y no desde su hora: hasta el 17/09/26 el job iba los miércoles a las 20:30
+        /// con "hoy-6..hoy" y "hoy+3 a las 10:00", y al pasarlo a los jueves a las 05:00 eso habría
+        /// dejado fuera los albaranes de cada jueves y mandado los correos el domingo.
+        /// Siempre: los 7 días completos anteriores al día del job (para el jueves, de jueves a
+        /// miércoles, la misma semana de siempre) y el siguiente sábado a las 10:00.
+        /// </summary>
+        internal static (DateTime desde, DateTime hasta, DateTimeOffset envio) CalcularVentana(DateTime hoy)
+        {
+            hoy = hoy.Date;
+            DateTime hasta = hoy.AddDays(-1);
+            DateTime desde = hoy.AddDays(-7);
+            int diasHastaSabado = ((int)DayOfWeek.Saturday - (int)hoy.DayOfWeek + 7) % 7;
+            if (diasHastaSabado == 0)
+            {
+                diasHastaSabado = 7;
+            }
+            DateTime sabado = hoy.AddDays(diasHastaSabado).AddHours(10);
+            return (desde, hasta, new DateTimeOffset(sabado, TimeZoneInfo.Local.GetUtcOffset(sabado)));
+        }
+
+        /// <summary>
+        /// Job semanal (jueves 05:00). Obtiene los albaranes de la semana (jueves a miércoles),
+        /// agrupa por cliente y programa los envíos para el sábado a las 10:00.
         /// </summary>
         public static async Task ProcesarCorreosSemanales()
         {
             try
             {
-                DateTime hoy = DateTime.Today;
-                DateTime fechaDesde = hoy.AddDays(-6);
-                DateTime fechaHasta = hoy;
+                (DateTime fechaDesde, DateTime fechaHasta, DateTimeOffset fechaEnvio) = CalcularVentana(DateTime.Today);
 
                 ErrorLog.GetDefault(null)?.Log(new Error(
                     new Exception($"[CorreosPostCompra] Iniciando ProcesarCorreosSemanales. Fechas: {fechaDesde:dd/MM/yyyy} - {fechaHasta:dd/MM/yyyy}")));
@@ -76,8 +96,7 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                 ErrorLog.GetDefault(null)?.Log(new Error(
                     new Exception($"[CorreosPostCompra] Plantilla generada. Saludos generados para {saludos.Count} nombres.")));
 
-                // Programar envíos para el sábado a las 10:00 (3 días después del miércoles)
-                DateTimeOffset fechaEnvio = new DateTimeOffset(hoy.AddDays(3).AddHours(10), TimeZoneInfo.Local.GetUtcOffset(hoy));
+                // Programar envíos para el sábado a las 10:00 (calculado en CalcularVentana)
                 int programados = 0;
 
                 foreach (var correo in correos)

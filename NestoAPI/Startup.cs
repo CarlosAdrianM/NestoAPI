@@ -419,20 +419,23 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'vigencia-campanas' configurado (diario a la 1:00)");
 
-            // Job de correos post-compra: se ejecuta los miércoles a las 20:30
+            // Job de correos post-compra: se ejecuta los jueves a las 05:00 (hasta el 17/09/26 iba los
+            // miércoles a las 20:30; la consulta de albaranes tarda ~50 s y a esa hora aún hay gente
+            // trabajando). La ventana de albaranes (jueves a miércoles) y el envío (sábado 10:00) no
+            // dependen de la hora del job: los calcula CorreosPostCompraJobsService.CalcularVentana.
             // Issue #74: Sistema de correos automáticos con videos personalizados post-compra
             RecurringJob.RemoveIfExists("correos-postcompra-procesar-albaranes"); // Eliminar job viejo (diario)
             RecurringJob.AddOrUpdate(
                 "correos-postcompra-semanal",
                 () => CorreosPostCompraJobsService.ProcesarCorreosSemanales(),
-                "30 20 * * 3", // Cron: miércoles a las 20:30
+                "0 5 * * 4", // Cron: jueves a las 05:00
                 new RecurringJobOptions
                 {
                     TimeZone = TimeZoneInfo.Local
                 }
             );
 
-            Console.WriteLine("✅ Job recurrente 'correos-postcompra-semanal' configurado (miércoles a las 20:30)");
+            Console.WriteLine("✅ Job recurrente 'correos-postcompra-semanal' configurado (jueves a las 05:00)");
 
             // Issue #137: Informe semanal de clientes nuevos por vendedor
             RecurringJob.AddOrUpdate(
