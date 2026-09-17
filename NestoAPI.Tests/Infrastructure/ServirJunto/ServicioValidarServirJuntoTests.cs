@@ -166,12 +166,102 @@ namespace NestoAPI.Tests.Infrastructure.ServirJunto
                 .MustHaveHappened();
         }
 
+        // ===== NestoAPI#491: la validación solo aplica a «Según vaya entrando» =====
+        // Pedido 926383 (17/09/26): tres denegaciones al intentar pasarlo a «Ahora lo que hay, el
+        // resto de una vez» por un regalo sin stock. En los modos 3 y 4 el regalo no sale solo, así
+        // que no hay nada que denegar. Rojos sin el fix: el servicio ejecutaba los validadores para
+        // cualquier modo distinto de «Todo junto».
+
+        [TestMethod]
+        public async Task Validar_AhoraLoQueHayYElRestoDeUnaVez_RegaloSinStock_Permite()
+        {
+            ILogService logService = A.Fake<ILogService>();
+            IProductoService productoService = A.Fake<IProductoService>();
+
+            ValidarServirJuntoResponse resultado = await ValidarRegaloSinStock(
+                Constantes.Pedidos.ModosServicio.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ, logService, productoService);
+
+            Assert.IsTrue(resultado.PuedeDesmarcar, $"En modo 4 el regalo va con el resto. Mensaje: '{resultado.Mensaje}'");
+            Assert.AreEqual(0, resultado.ProductosProblematicos.Count);
+            A.CallTo(() => productoService.CalcularStockProducto(A<string>._, A<string>._, A<int?>._)).MustNotHaveHappened();
+            A.CallTo(() => logService.LogError(A<string>._, A<Exception>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Validar_TrasReponerDeTiendas_MuestraSinStock_Permite()
+        {
+            ILogService logService = A.Fake<ILogService>();
+            ValidarServirJuntoResponse resultado = await ValidarConMuestrasSinStock(
+                logService, Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS, ("MMP1", "MUESTRA CREMA FACIAL"));
+
+            Assert.IsTrue(resultado.PuedeDesmarcar, $"En modo 3 se espera a la reposición. Mensaje: '{resultado.Mensaje}'");
+            A.CallTo(() => logService.LogError(A<string>._, A<Exception>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Validar_SegunVayaEntrando_RegaloSinStock_SigueDenegandoYOfreceLosOtrosModos()
+        {
+            ILogService logService = A.Fake<ILogService>();
+            ValidarServirJuntoResponse resultado = await ValidarRegaloSinStock(
+                Constantes.Pedidos.ModosServicio.SEGUN_VAYA_ENTRANDO, logService, A.Fake<IProductoService>());
+
+            Assert.IsFalse(resultado.PuedeDesmarcar);
+            Assert.IsTrue(resultado.Mensaje.Contains("«Según vaya entrando»"), $"Mensaje: '{resultado.Mensaje}'");
+            Assert.IsTrue(resultado.Mensaje.Contains("«Ahora lo que hay, el resto de una vez»"),
+                $"Debe ofrecer los modos que sí se permiten. Mensaje: '{resultado.Mensaje}'");
+            A.CallTo(() => logService.LogError(A<string>.That.Contains("REG1"), A<Exception>._)).MustHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Validar_SinModoInformado_MuestraSinStock_SigueDenegando()
+        {
+            // NestoApp solo manda el bool: sin modo se asume «Según vaya entrando», como hasta ahora.
+            ValidarServirJuntoResponse resultado = await ValidarConMuestrasSinStock(
+                A.Fake<ILogService>(), null, ("MMP1", "MUESTRA CREMA FACIAL"));
+
+            Assert.IsFalse(resultado.PuedeDesmarcar);
+            Assert.IsTrue(resultado.Mensaje.Contains("«Según vaya entrando»"), $"Mensaje: '{resultado.Mensaje}'");
+        }
+
+        /// <summary>Regalo Ganavisiones (confirmado contra la tabla Ganavision) sin stock en ALG.</summary>
+        private static async Task<ValidarServirJuntoResponse> ValidarRegaloSinStock(
+            byte? modoServicio, ILogService logService, IProductoService productoService)
+        {
+            NVEntities db = A.Fake<NVEntities>();
+            A.CallTo(() => db.Productos).Returns(FakeDbSet(new List<Producto>
+            {
+                new Producto { Empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO, Número = "REG1", Nombre = "ALTA FRECUENCIA PORTATIL", SubGrupo = "ACP" }
+            }));
+            A.CallTo(() => db.Ganavisiones).Returns(FakeDbSet(new List<Ganavision>
+            {
+                new Ganavision { Empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO, ProductoId = "REG1", Ganavisiones = 100 }
+            }));
+            A.CallTo(() => productoService.CalcularStockProducto("REG1", A<string>._, A<int?>._))
+                .Returns(Task.FromResult(new ProductoDTO.StockProducto { Almacen = "ALG", Stock = 0 }));
+
+            ServicioValidarServirJunto servicio = new ServicioValidarServirJunto(db, productoService, logService);
+            return await servicio.Validar(new ValidarServirJuntoRequest
+            {
+                Almacen = "ALG",
+                Pedido = 926383,
+                ModoServicio = modoServicio,
+                LineasPedido = new List<ProductoBonificadoConCantidadRequest>
+                {
+                    new ProductoBonificadoConCantidadRequest { ProductoId = "REG1", Cantidad = 1, EsBonificadoGanavisiones = true }
+                }
+            });
+        }
+
         private static Task<ValidarServirJuntoResponse> ValidarConMuestrasSinStock(
             params (string Id, string Nombre)[] muestras) =>
-            ValidarConMuestrasSinStock(A.Fake<ILogService>(), muestras);
+            ValidarConMuestrasSinStock(A.Fake<ILogService>(), null, muestras);
+
+        private static Task<ValidarServirJuntoResponse> ValidarConMuestrasSinStock(
+            ILogService logService, params (string Id, string Nombre)[] muestras) =>
+            ValidarConMuestrasSinStock(logService, null, muestras);
 
         private static async Task<ValidarServirJuntoResponse> ValidarConMuestrasSinStock(
-            ILogService logService, params (string Id, string Nombre)[] muestras)
+            ILogService logService, byte? modoServicio, params (string Id, string Nombre)[] muestras)
         {
             NVEntities db = A.Fake<NVEntities>();
             List<Producto> productos = muestras.Select(m => new Producto
@@ -194,6 +284,7 @@ namespace NestoAPI.Tests.Infrastructure.ServirJunto
             return await servicio.Validar(new ValidarServirJuntoRequest
             {
                 Almacen = "ALG",
+                ModoServicio = modoServicio,
                 LineasPedido = muestras.Select(m => new ProductoBonificadoConCantidadRequest
                 {
                     ProductoId = m.Id,

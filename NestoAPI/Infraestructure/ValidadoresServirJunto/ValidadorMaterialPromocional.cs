@@ -114,11 +114,14 @@ namespace NestoAPI.Infraestructure.ValidadoresServirJunto
 
             // "material promocional" se mantiene en el texto a propósito: explica al usuario POR QUÉ
             // no se puede, y es lo que distingue este mensaje del del validador de regalos.
+            // NestoAPI#491: solo se deniega «Según vaya entrando»; los otros modos son la otra salida.
+            string alternativa = $" O elija otro modo de servicio ({Constantes.Pedidos.ModosServicio.AlternativasSinValidacion()}).";
+
             return productosProblematicos.Count == 1
                 ? $"No se puede pasar el pedido a «{destino}»: esta muestra (material promocional) se quedaría " +
-                  $"pendiente y no está permitido. Bórrala primero del pedido: {listaProductos}."
+                  $"pendiente y no está permitido. Bórrala primero del pedido: {listaProductos}.{alternativa}"
                 : $"No se puede pasar el pedido a «{destino}»: estas muestras (material promocional) se quedarían " +
-                  $"pendientes y no está permitido. Bórralas primero del pedido: {listaProductos}.";
+                  $"pendientes y no está permitido. Bórralas primero del pedido: {listaProductos}.{alternativa}";
         }
 
         private static ValidarServirJuntoResponse PuedeDesmarcar() =>

@@ -15,6 +15,18 @@ namespace NestoAPI.Tests.Models
     public class ModosServicioTests
     {
         [TestMethod]
+        public void ValidaBonificadosSinStock_SoloSegunVayaEntrandoOSinModo()
+        {
+            // NestoAPI#491: solo el modo 2 (o ninguno, que NestoApp interpreta como 2) deja un regalo
+            // sin stock saliendo solo; 1, 3 y 4 no pasan por los validadores.
+            Assert.IsTrue(ModosServicio.ValidaBonificadosSinStock(null));
+            Assert.IsTrue(ModosServicio.ValidaBonificadosSinStock(ModosServicio.SEGUN_VAYA_ENTRANDO));
+            Assert.IsFalse(ModosServicio.ValidaBonificadosSinStock(ModosServicio.TODO_JUNTO));
+            Assert.IsFalse(ModosServicio.ValidaBonificadosSinStock(ModosServicio.TRAS_REPONER_DE_TIENDAS));
+            Assert.IsFalse(ModosServicio.ValidaBonificadosSinStock(ModosServicio.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ));
+        }
+
+        [TestMethod]
         public void Efectivo_SinModoInformado_MandaServirJunto()
         {
             Assert.AreEqual(ModosServicio.TODO_JUNTO, ModosServicio.Efectivo(null, servirJunto: true));

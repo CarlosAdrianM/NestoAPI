@@ -475,6 +475,25 @@ namespace NestoAPI.Models
                         : Nombre(SEGUN_VAYA_ENTRANDO);
                 }
 
+                /// <summary>
+                /// NestoAPI#491: ¿hay que comprobar que los bonificados y las muestras tienen stock antes
+                /// de pasar el pedido a este modo? Solo en «Según vaya entrando» (Carlos, 17/09/26): es el
+                /// único modo en el que un regalo sin stock saldría después él solo o se quedaría pendiente
+                /// para siempre. En 3 el pedido espera a la reposición y en 4 el resto sale de una vez, como
+                /// en «Todo junto» para la segunda entrega. Sin modo (NestoApp solo manda el bool) se asume
+                /// «Según vaya entrando», igual que <see cref="NombreDestino"/>.
+                /// </summary>
+                public static bool ValidaBonificadosSinStock(byte? modoServicio)
+                {
+                    return !modoServicio.HasValue || modoServicio.Value == SEGUN_VAYA_ENTRANDO;
+                }
+
+                /// <summary>Los modos que se pueden elegir cuando la validación de #491 deniega «Según vaya entrando».</summary>
+                public static string AlternativasSinValidacion()
+                {
+                    return $"«{Nombre(TODO_JUNTO)}», «{Nombre(TRAS_REPONER_DE_TIENDAS)}» o «{Nombre(AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ)}»";
+                }
+
                 /// <summary>El valor del parámetro ModoServicioPorDefecto, o POR_DEFECTO si falta o no es un modo válido.</summary>
                 public static byte ParsearPorDefecto(string valorParametro)
                 {

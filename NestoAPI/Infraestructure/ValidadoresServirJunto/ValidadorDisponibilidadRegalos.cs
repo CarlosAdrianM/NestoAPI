@@ -92,7 +92,8 @@ namespace NestoAPI.Infraestructure.ValidadoresServirJunto
                     // NestoAPI#482: se nombra el modo elegido; la casilla «Servir junto» ya no existe en Nesto.
                     Mensaje = $"No se puede pasar el pedido a «{Constantes.Pedidos.ModosServicio.NombreDestino(modoServicio)}» porque los siguientes productos bonificados " +
                               $"no tienen stock suficiente en {almacen}: {listaProductos}. " +
-                              $"Cambie los productos bonificados por otros con stock en {almacen} o deje el pedido en «{Constantes.Pedidos.ModosServicio.Nombre(Constantes.Pedidos.ModosServicio.TODO_JUNTO)}»."
+                              // NestoAPI#491: solo se deniega «Según vaya entrando»; cualquiera de los otros modos vale.
+                              $"Cambie los productos bonificados por otros con stock en {almacen} o elija otro modo de servicio ({Constantes.Pedidos.ModosServicio.AlternativasSinValidacion()})."
                 };
             }
 

@@ -53,14 +53,20 @@ namespace NestoAPI.Infraestructure.ServirJunto
                 return NuevaRespuestaOK();
             }
 
-            // ValidadorMaterialPromocional va primero porque tiene un mensaje más
-            // específico: los MMP no se resuelven trayendo stock de otro almacén; la
-            // única solución es borrar ese producto del pedido.
-            var validadores = new List<IValidadorServirJunto>
-            {
-                new ValidadorMaterialPromocional(db, productoService),
-                new ValidadorDisponibilidadRegalos(db, productoService)
-            };
+            // NestoAPI#491: solo «Según vaya entrando» (o sin modo, que es lo mismo) tiene que pasar
+            // por los validadores. «Tras reponer de tiendas» y «Ahora lo que hay, el resto de una vez»
+            // no dejan un regalo sin stock saliendo solo (pedido 926383, 17/09/26: tres denegaciones
+            // al intentar pasar a modo 4). Los avisos y la base de portes de abajo sí aplican a todos.
+            var validadores = Constantes.Pedidos.ModosServicio.ValidaBonificadosSinStock(request.ModoServicio)
+                // ValidadorMaterialPromocional va primero porque tiene un mensaje más
+                // específico: los MMP no se resuelven trayendo stock de otro almacén; la
+                // única solución es borrar ese producto del pedido.
+                ? new List<IValidadorServirJunto>
+                {
+                    new ValidadorMaterialPromocional(db, productoService),
+                    new ValidadorDisponibilidadRegalos(db, productoService)
+                }
+                : new List<IValidadorServirJunto>();
 
             foreach (var validador in validadores)
             {
