@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure.Novedades;
+﻿using NestoAPI.Infraestructure.Novedades;
 using NestoAPI.Models.Novedades;
 using System;
 using System.Collections.Generic;
@@ -26,10 +26,22 @@ namespace NestoAPI.Controllers
 
         // GET api/Novedades
         // GET api/Novedades?desdeVersion=1.10.5.3 (solo novedades de versiones POSTERIORES a la indicada)
+        // GET api/Novedades?ambito=NestoApp (NestoAPI#489: solo las de ese producto; sin él, todas)
         [ResponseType(typeof(List<NovedadDTO>))]
-        public IHttpActionResult GetNovedades(string desdeVersion = null)
+        public IHttpActionResult GetNovedades(string desdeVersion = null, string ambito = null)
         {
             List<NovedadDTO> novedades = servicio.LeerNovedadesPublicadas();
+
+            // NestoAPI#489: el ámbito se filtra ANTES que la versión. Nesto (1.10.x) y NestoApp (2.x)
+            // tienen espacios de versiones distintos: comparar desdeVersion sin acotar el producto
+            // descartaría o colaría entradas del otro.
+            if (!string.IsNullOrWhiteSpace(ambito))
+            {
+                string ambitoBuscado = ambito.Trim();
+                novedades = novedades
+                    .Where(n => string.Equals(n.Ambito?.Trim(), ambitoBuscado, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+            }
 
             if (Version.TryParse(desdeVersion, out Version versionVista))
             {

@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure.Novedades;
@@ -53,6 +53,64 @@ namespace NestoAPI.Tests.Controllers
 
             Assert.IsNotNull(resultado);
             Assert.AreEqual(2, resultado.Content.Count);
+        }
+
+        // NestoAPI#489: NestoApp consume el changelog con su propio ámbito y su propio espacio de versiones.
+
+        [TestMethod]
+        public void GetNovedades_ConAmbito_SoloDevuelveLasDeEseProducto()
+        {
+            NovedadDTO app = Novedad(3, "2.20.0", "Solo app");
+            app.Ambito = "NestoApp";
+            A.CallTo(() => servicio.LeerNovedadesPublicadas()).Returns(new List<NovedadDTO>
+            {
+                Novedad(1, "1.10.4.0"),
+                Novedad(2, "1.10.5.0"),
+                app
+            });
+
+            var resultado = controller.GetNovedades(ambito: "nestoapp") as OkNegotiatedContentResult<List<NovedadDTO>>;
+
+            Assert.AreEqual(1, resultado.Content.Count, "Solo las de NestoApp (sin distinguir mayúsculas)");
+            Assert.AreEqual("Solo app", resultado.Content.Single().Titulo);
+        }
+
+        [TestMethod]
+        public void GetNovedades_ConAmbitoYDesdeVersion_ElCorteDeVersionEsDentroDelProducto()
+        {
+            // Nesto va por 1.10.x y NestoApp por 2.x: sin acotar el ámbito antes, desdeVersion=2.20.0
+            // descartaría todo lo de Nesto (1.10 < 2.20) y colaría entradas ajenas.
+            NovedadDTO appVieja = Novedad(3, "2.19.0", "App vieja");
+            appVieja.Ambito = "NestoApp";
+            NovedadDTO appNueva = Novedad(4, "2.21.0", "App nueva");
+            appNueva.Ambito = "NestoApp";
+            A.CallTo(() => servicio.LeerNovedadesPublicadas()).Returns(new List<NovedadDTO>
+            {
+                Novedad(1, "1.10.4.0"),
+                Novedad(2, "1.10.30.0"),
+                appVieja,
+                appNueva
+            });
+
+            var app = controller.GetNovedades(desdeVersion: "2.20.0", ambito: "NestoApp") as OkNegotiatedContentResult<List<NovedadDTO>>;
+            Assert.AreEqual(1, app.Content.Count);
+            Assert.AreEqual("App nueva", app.Content.Single().Titulo);
+
+            var nesto = controller.GetNovedades(desdeVersion: "1.10.5.0", ambito: "Nesto") as OkNegotiatedContentResult<List<NovedadDTO>>;
+            Assert.AreEqual(1, nesto.Content.Count);
+            Assert.AreEqual(2, nesto.Content.Single().Id, "Las 2.x de la app no se cuelan aunque sean 'posteriores' a 1.10.5");
+        }
+
+        [TestMethod]
+        public void GetNovedades_SinAmbito_DevuelveTodoMezcladoComoAntes()
+        {
+            NovedadDTO app = Novedad(3, "2.20.0", "Solo app");
+            app.Ambito = "NestoApp";
+            A.CallTo(() => servicio.LeerNovedadesPublicadas()).Returns(new List<NovedadDTO> { Novedad(1, "1.10.4.0"), app });
+
+            var resultado = controller.GetNovedades() as OkNegotiatedContentResult<List<NovedadDTO>>;
+
+            Assert.AreEqual(2, resultado.Content.Count, "Retrocompatible con Nesto: sin ámbito no se filtra");
         }
 
         [TestMethod]
