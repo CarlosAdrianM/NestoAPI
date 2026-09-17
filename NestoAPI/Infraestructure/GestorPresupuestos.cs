@@ -1144,18 +1144,21 @@ namespace NestoAPI.Infraestructure
         /// NestoAPI#482: la fila del correo con el modo de entrega («Modo de entrega: Tras reponer de
         /// tiendas») y, si procede, «Marcado mantener junto». Antes solo salía cuando la casilla
         /// «Servir junto» estaba desmarcada o «Mantener junto» marcada, y hablaba de casillas.
-        /// Va en rojo con «¡¡¡ ATENCIÓN !!!» cuando el pedido NO es todo junto, no falta stock de nada
-        /// pero hay algo por venir del proveedor, no es de fin de mes y no lleva mantener junto: es
-        /// decir, cuando va a salir en más de una entrega sin que nadie lo haya pedido a propósito.
+        /// Va en rojo con «¡¡¡ ATENCIÓN !!!» cuando no falta stock de nada pero hay algo por traer de
+        /// una tienda y el modo va a partir el pedido en varias entregas (2 «Según vaya entrando» y 4
+        /// «Ahora lo que hay, el resto de una vez»), no es de fin de mes y no lleva mantener junto.
+        /// Carlos, 17/09/26 (pedido 926430): en «Tras reponer de tiendas» NO se avisa, porque ese modo
+        /// espera la reposición y sale en una sola entrega; avisar en rojo de una forma correcta de
+        /// servir era muy llamativo. «Todo junto» tampoco avisa nunca.
         /// </summary>
         internal static string GenerarHtmlModoServicio(PedidoVentaDTO pedido, bool faltaStockDeAlgo, bool tieneQueVenirAlgunProducto, int colspan)
         {
             byte modo = Constantes.Pedidos.ModosServicio.Efectivo(pedido.modoServicio, pedido.servirJunto);
-            bool todoJunto = Constantes.Pedidos.ModosServicio.EsTodoJunto(modo);
 
             string color = "black";
             string texto = string.Empty;
-            if (!faltaStockDeAlgo && tieneQueVenirAlgunProducto && !todoJunto
+            if (!faltaStockDeAlgo && tieneQueVenirAlgunProducto
+                && Constantes.Pedidos.ModosServicio.SaleEnVariasEntregasSiHayQueReponer(modo)
                 && pedido.periodoFacturacion != Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES && !pedido.mantenerJunto)
             {
                 color = "red";

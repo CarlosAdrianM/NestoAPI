@@ -969,6 +969,34 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void GenerarHtmlModoServicio_TrasReponerDeTiendas_ConAlgoPorTraer_NoAvisa()
+        {
+            // Carlos, 17/09/26 (pedido 926430): stock de todo menos una cosa que está en una tienda, en
+            // modo 3. El modo espera la reposición y sale en una sola entrega: es una forma correcta de
+            // servir y el «¡¡¡ ATENCIÓN !!!» en rojo era muy llamativo. Rojo sin el fix.
+            PedidoVentaDTO pedido = new PedidoVentaDTO { modoServicio = 3, servirJunto = false, periodoFacturacion = "NRM" };
+
+            string html = GestorPresupuestos.GenerarHtmlModoServicio(pedido, faltaStockDeAlgo: false, tieneQueVenirAlgunProducto: true, colspan: 7);
+
+            Assert.IsFalse(html.Contains("ATENCIÓN"), html);
+            StringAssert.Contains(html, "color: black");
+            StringAssert.Contains(html, "Modo de entrega: Tras reponer de tiendas");
+        }
+
+        [TestMethod]
+        public void GenerarHtmlModoServicio_AhoraLoQueHay_ConAlgoPorTraer_SigueAvisando()
+        {
+            // En modo 4 sí sale en dos entregas (ahora lo que hay, la tienda después): administración
+            // tiene que saberlo por si los plazos parten en varias facturas.
+            PedidoVentaDTO pedido = new PedidoVentaDTO { modoServicio = 4, servirJunto = false, periodoFacturacion = "NRM" };
+
+            string html = GestorPresupuestos.GenerarHtmlModoServicio(pedido, faltaStockDeAlgo: false, tieneQueVenirAlgunProducto: true, colspan: 7);
+
+            StringAssert.Contains(html, "¡¡¡ ATENCIÓN !!! Modo de entrega: Ahora lo que hay, el resto de una vez");
+            StringAssert.Contains(html, "color: red");
+        }
+
+        [TestMethod]
         public void GenerarHtmlModoServicio_MantenerJunto_SeAnadeYQuitaElAviso()
         {
             PedidoVentaDTO pedido = new PedidoVentaDTO { modoServicio = 4, servirJunto = false, mantenerJunto = true, periodoFacturacion = "NRM" };

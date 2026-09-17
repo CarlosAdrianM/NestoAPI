@@ -549,6 +549,15 @@ namespace NestoAPI.Models
                 public static bool EsEntregaUnica(byte modo) => modo == TODO_JUNTO || modo == AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ;
 
                 /// <summary>
+                /// Para el aviso del correo de pedido (Carlos, 17/09/26): con stock de todo pero algo por traer de
+                /// una tienda, el pedido va a salir en más de una entrega SOLO en 2 (sale lo que hay y el resto
+                /// después) y en 4 (ahora lo que hay y el resto de una vez). En 1 espera a todo y en 3 espera a
+                /// la reposición de la tienda y sale junto: no hay nada que avisar.
+                /// </summary>
+                public static bool SaleEnVariasEntregasSiHayQueReponer(byte modo)
+                    => modo == SEGUN_VAYA_ENTRANDO || modo == AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ;
+
+                /// <summary>
                 /// Deja el DTO coherente antes de validar o grabar. Sin modo (NestoApp, Nesto viejo, TNV):
                 /// se deriva con la regla de <see cref="Efectivo"/> sobre el modo YA GUARDADO del pedido
                 /// (<paramref name="modoAlmacenado"/>): así un PUT de la app sobre un pedido que Nesto puso
