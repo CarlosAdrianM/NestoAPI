@@ -102,15 +102,21 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
-        public void GetNovedades_SinAmbito_DevuelveTodoMezcladoComoAntes()
+        public void GetNovedades_SinAmbito_DevuelveNestoYNestoAPIPeroNuncaLasDeLaApp()
         {
-            NovedadDTO app = Novedad(3, "2.20.0", "Solo app");
+            // 17/09/26: el Nesto publicado no manda ámbito y solo desdeVersion=1.10.28.2; las 2.20.x de
+            // NestoApp son "posteriores" y se colaron en su popup. Sin ámbito = escritorio (Nesto + NestoAPI).
+            NovedadDTO app = Novedad(3, "2.20.1", "Solo app");
             app.Ambito = "NestoApp";
-            A.CallTo(() => servicio.LeerNovedadesPublicadas()).Returns(new List<NovedadDTO> { Novedad(1, "1.10.4.0"), app });
+            NovedadDTO api = Novedad(4, "1.10.28.2", "Del API");
+            api.Ambito = "NestoAPI";
+            A.CallTo(() => servicio.LeerNovedadesPublicadas()).Returns(new List<NovedadDTO> { Novedad(1, "1.10.28.2"), app, api });
 
-            var resultado = controller.GetNovedades() as OkNegotiatedContentResult<List<NovedadDTO>>;
+            var todas = controller.GetNovedades() as OkNegotiatedContentResult<List<NovedadDTO>>;
+            var desde = controller.GetNovedades("1.10.28.0") as OkNegotiatedContentResult<List<NovedadDTO>>;
 
-            Assert.AreEqual(2, resultado.Content.Count, "Retrocompatible con Nesto: sin ámbito no se filtra");
+            CollectionAssert.AreEquivalent(new[] { 1, 4 }, todas.Content.Select(n => n.Id).ToList());
+            CollectionAssert.AreEquivalent(new[] { 1, 4 }, desde.Content.Select(n => n.Id).ToList(), "La 2.20.1 no se cuela aunque 2.20 > 1.10");
         }
 
         [TestMethod]

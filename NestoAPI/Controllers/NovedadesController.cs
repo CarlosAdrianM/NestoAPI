@@ -26,7 +26,10 @@ namespace NestoAPI.Controllers
 
         // GET api/Novedades
         // GET api/Novedades?desdeVersion=1.10.5.3 (solo novedades de versiones POSTERIORES a la indicada)
-        // GET api/Novedades?ambito=NestoApp (NestoAPI#489: solo las de ese producto; sin él, todas)
+        // GET api/Novedades?ambito=NestoApp (NestoAPI#489: solo las de ese producto; sin él, las del
+        //     escritorio: Nesto y NestoAPI, que es lo que pide el Nesto publicado, que no manda ámbito)
+        internal const string AMBITO_NESTOAPP = "NestoApp";
+
         [ResponseType(typeof(List<NovedadDTO>))]
         public IHttpActionResult GetNovedades(string desdeVersion = null, string ambito = null)
         {
@@ -40,6 +43,14 @@ namespace NestoAPI.Controllers
                 string ambitoBuscado = ambito.Trim();
                 novedades = novedades
                     .Where(n => string.Equals(n.Ambito?.Trim(), ambitoBuscado, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+            }
+            else
+            {
+                // Sin ámbito (Nesto de escritorio, que solo manda desdeVersion=1.10.x): NUNCA las de la app.
+                // El 17/09/26 se colaron las 2.20.x de NestoApp en el popup de Nesto porque 2.20 > 1.10.
+                novedades = novedades
+                    .Where(n => !string.Equals(n.Ambito?.Trim(), AMBITO_NESTOAPP, StringComparison.OrdinalIgnoreCase))
                     .ToList();
             }
 
