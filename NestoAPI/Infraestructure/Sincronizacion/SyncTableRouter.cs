@@ -14,6 +14,24 @@ namespace NestoAPI.Infraestructure.Sincronizacion
     {
         private readonly Dictionary<string, ISyncTableHandlerBase> _handlers;
 
+        /// <summary>
+        /// NestoAPI#490: los Source con los que publica el PROPIO API (GestorProductos /
+        /// GestorClientes: "Nesto" por defecto, "Nesto viejo" desde los jobs de Nesto_sync). El API
+        /// está suscrito al mismo topic en el que publica, así que recibe sus propios mensajes; lo
+        /// que llevan ya está en la BD y procesarlos solo puede ser un no-op o un daño: el 17/09/26
+        /// el nombre en formato oración de #479 (presentación para la tienda) volvió por aquí y
+        /// reescribió 676 fichas de Productos. Lista EXACTA, no StartsWith: un módulo externo
+        /// podría llamarse "NestoSync" y ese sí hay que procesarlo.
+        /// </summary>
+        internal static readonly string[] SOURCES_PROPIOS = { "Nesto", "Nesto viejo" };
+
+        /// <summary>¿Es un mensaje que publicó este mismo API (ver <see cref="SOURCES_PROPIOS"/>)?</summary>
+        internal static bool EsMensajePropio(string source)
+        {
+            return !string.IsNullOrWhiteSpace(source)
+                && SOURCES_PROPIOS.Contains(source.Trim(), StringComparer.OrdinalIgnoreCase);
+        }
+
         public SyncTableRouter(IEnumerable<ISyncTableHandlerBase> handlers)
         {
             _handlers = handlers.ToDictionary(h => h.TableName, h => h, StringComparer.OrdinalIgnoreCase);
@@ -52,6 +70,14 @@ namespace NestoAPI.Infraestructure.Sincronizacion
             }
 
             Console.WriteLine($"📥 Mensaje recibido: Tabla={message.Tabla}, Source={message.Source}");
+
+            // NestoAPI#490: eco de nuestra propia publicación. Se da por procesado (true = ack) sin
+            // tocar nada: devolver false lo mandaría a reintentos y a la lista de poison pills.
+            if (EsMensajePropio(message.Source))
+            {
+                Console.WriteLine($"↩️ Mensaje propio (Source={message.Source}) ignorado: ya está en Nesto");
+                return true;
+            }
 
             if (!_handlers.ContainsKey(message.Tabla))
             {

@@ -1,7 +1,9 @@
+using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.Sincronizacion;
 using NestoAPI.Models.Sincronizacion;
 using System.Text.Json;
+using System.Threading.Tasks;
 
 namespace NestoAPI.Tests.Infrastructure.Sincronizacion
 {
@@ -21,6 +23,57 @@ namespace NestoAPI.Tests.Infrastructure.Sincronizacion
             };
             _router = new SyncTableRouter(handlers);
         }
+
+        #region NestoAPI#490: el API recibe sus propios mensajes y no debe procesarlos
+
+        // El 17/09/26 el nombre en formato oración de #479 (presentación para la tienda) volvió por
+        // el bus con Source "Nesto viejo" y ProductosSyncHandler lo grabó en 676 fichas. Rojo sin el
+        // fix: el router enrutaba cualquier Source al handler.
+
+        [TestMethod]
+        public async Task RouteAsync_MensajePropio_NoLlamaAlHandlerYLoDaPorProcesado()
+        {
+            ISyncTableHandlerBase handler = A.Fake<ISyncTableHandlerBase>();
+            A.CallTo(() => handler.TableName).Returns("Productos");
+            SyncTableRouter router = new SyncTableRouter(new[] { handler });
+            ProductoSyncMessage mensaje = new ProductoSyncMessage { Tabla = "Productos", Source = "Nesto viejo", Producto = "46100", Nombre = "Keraplant new viales" };
+
+            bool resultado = await router.RouteAsync(mensaje);
+
+            Assert.IsTrue(resultado, "Se da por procesado (ack): devolver false lo mandaría a reintentos");
+            A.CallTo(() => handler.HandleAsync(A<SyncMessageBase>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task RouteAsync_MensajeDeOdoo_SigueLlegandoAlHandler()
+        {
+            ISyncTableHandlerBase handler = A.Fake<ISyncTableHandlerBase>();
+            A.CallTo(() => handler.TableName).Returns("Productos");
+            A.CallTo(() => handler.HandleAsync(A<SyncMessageBase>._)).Returns(Task.FromResult(true));
+            SyncTableRouter router = new SyncTableRouter(new[] { handler });
+            ProductoSyncMessage mensaje = new ProductoSyncMessage { Tabla = "Productos", Source = "Odoo", Producto = "46100" };
+
+            bool resultado = await router.RouteAsync(mensaje);
+
+            Assert.IsTrue(resultado);
+            A.CallTo(() => handler.HandleAsync(mensaje)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public void EsMensajePropio_SoloLosSourceConLosQuePublicaElApi()
+        {
+            Assert.IsTrue(SyncTableRouter.EsMensajePropio("Nesto"));
+            Assert.IsTrue(SyncTableRouter.EsMensajePropio("Nesto viejo"));
+            Assert.IsTrue(SyncTableRouter.EsMensajePropio(" nesto VIEJO "));
+            Assert.IsFalse(SyncTableRouter.EsMensajePropio("Odoo"));
+            Assert.IsFalse(SyncTableRouter.EsMensajePropio("Prestashop"));
+            // Lista exacta, no StartsWith: un módulo externo podría llamarse así y hay que procesarlo.
+            Assert.IsFalse(SyncTableRouter.EsMensajePropio("NestoSync"));
+            Assert.IsFalse(SyncTableRouter.EsMensajePropio(null));
+            Assert.IsFalse(SyncTableRouter.EsMensajePropio(""));
+        }
+
+        #endregion
 
         #region GetHandler(string tableName)
 
