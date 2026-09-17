@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
@@ -89,6 +89,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             CodigoPostal = "28001",
             Poblacion = "MADRID",
             Direccion = "CALLE MAYOR 1",
+            Email = "cliente@example.com",
             Peso = 3m,
             Bultos = 2,
             Reembolso = 0,
@@ -120,6 +121,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             CollectionAssert.AreEqual(new[] { "600000000", "916000000" }, ((JArray)m["recipient_phones"]).Select(t => (string)t).ToArray(), "Móvil primero, sin vacíos");
             Assert.AreEqual("2026-09-17", (string)m["shipping_date"]);
             Assert.AreEqual("Llamar antes", (string)m["delivery"]["comments"]);
+            Assert.AreEqual("cliente@example.com", (string)m["recipient_email_notify_address"], "Con email CTT avisa al cliente y le deja elegir punto de recogida");
             Assert.IsNull(m["additionals"], "Sin reembolso no hay additionals");
         }
 

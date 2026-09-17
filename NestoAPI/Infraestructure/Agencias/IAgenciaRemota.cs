@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Threading.Tasks;
 using NestoAPI.Infraestructure.Agencias.Innovatrans;
 
@@ -16,6 +16,8 @@ namespace NestoAPI.Infraestructure.Agencias
         public string Nombre { get; set; }
         public string Telefono { get; set; }
         public string Movil { get; set; }
+        /// <summary>NestoAPI#493: email del destinatario para los avisos de la agencia (entrega prevista, entrega hoy, incidencia, punto de recogida). CTT lo usa; Innovatrans lo ignora.</summary>
+        public string Email { get; set; }
         public string CodigoPostal { get; set; }
         public string Poblacion { get; set; }
         public string Direccion { get; set; }

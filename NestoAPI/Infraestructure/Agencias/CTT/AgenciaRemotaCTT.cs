@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -167,7 +167,7 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
             }
 
             JArray eventos = respuesta.Json?["data"]?["shipping_history"]?["events"] as JArray;
-            return InterpretarEventos(eventos);
+            return InterpretarEventos(eventos, albaran.Trim());
         }
 
         // ---- Núcleo puro (testeable sin HTTP) ----
@@ -228,6 +228,12 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
             {
                 manifiesto["sender_email_notify_address"] = _config.Remitente.Email;
             }
+            // Con email, CTT avisa al cliente (entrega prevista, entrega hoy, ausente) y le deja elegir
+            // un punto Collectt Express; sin él, no hay avisos.
+            if (!string.IsNullOrWhiteSpace(envio.Email) && envio.Email.Contains("@"))
+            {
+                manifiesto["recipient_email_notify_address"] = envio.Email.Trim();
+            }
             if (envio.Reembolso > 0)
             {
                 manifiesto["additionals"] = new JArray(new JObject
@@ -248,7 +254,9 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
         /// de destino, 1500 en reparto, 1600 entrega fallida, 2100 entregado, 3000 anulado. Para los
         /// que no conocemos se mira la descripción; si tampoco dice nada, sigue en curso.
         /// </summary>
-        internal static SeguimientoEnvioRemoto InterpretarEventos(JArray eventos)
+        internal static readonly string[] CODIGOS_CONOCIDOS = { "0000", "0900", "1200", "1500", "1600", "2100", "3000" };
+
+        internal static SeguimientoEnvioRemoto InterpretarEventos(JArray eventos, string albaran = null)
         {
             if (eventos == null || !eventos.Any())
             {
@@ -276,7 +284,10 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
                 case "0900":
                 case "1200":
                 case "1500": estado = EstadoEnvioSeguimiento.EnCurso; break;
-                default: estado = EstadoDesdeDescripcion(descripcion); break;
+                default:
+                    estado = EstadoDesdeDescripcion(descripcion);
+                    LoguearCodigoNoContemplado(codigo, descripcion, albaran);
+                    break;
             }
 
             return new SeguimientoEnvioRemoto
@@ -285,6 +296,25 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
                 FechaEntrega = estado == EstadoEnvioSeguimiento.Entregado ? fecha : null,
                 Detalle = detalle
             };
+        }
+
+        /// <summary>
+        /// Vigilancia como en Innovatrans (NestoAPI#259): un código de estado que no está en la lista se
+        /// interpreta por la descripción (o queda en curso) y se deja constancia en ELMAH para escribir
+        /// su tratamiento. Nunca lanza: lo dispara el poll de Hangfire.
+        /// </summary>
+        private static void LoguearCodigoNoContemplado(string codigo, string descripcion, string albaran)
+        {
+            try
+            {
+                ElmahHelper.Log(new Exception(
+                    $"Estado de CTT no contemplado: código '{codigo}' '{descripcion}' (albarán {albaran}). Revisar si hay que tratarlo (NestoAPI#493)."),
+                    "Sistema (seguimiento de envíos)");
+            }
+            catch
+            {
+                // El diagnóstico nunca rompe el seguimiento.
+            }
         }
 
         private static EstadoEnvioSeguimiento EstadoDesdeDescripcion(string descripcion)
