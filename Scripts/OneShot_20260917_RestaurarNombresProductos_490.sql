@@ -2,61 +2,55 @@
 -- NestoAPI#490: restaurar los 676 nombres de Productos que el eco del bus reescribió
 -- en formato oración la madrugada del 17/09/2026 (02:11-02:16, usuario 'Sync stocks nocturno').
 --
--- ORDEN OBLIGATORIO:
---   1. Publicar la NestoAPI con el fix de #490 (SyncTableRouter ignora los mensajes propios).
---   2. Ejecutar este script en SSMS (login con permisos sobre NV y sobre la copia del backup).
---   El trigger trgProductosUpd reencola las fichas tocadas en Nesto_sync y el job las republica:
---   con el fix es inofensivo (la tienda recibe el mismo nombre en formato oración que ya tiene);
---   SIN el fix, el eco volvería a pasarlas a minúsculas.
+-- ✅ EJECUTADO el 17/09/2026 a las 09:50 (tras publicar la API con el fix): COMMIT de 676 filas.
 --
--- FUENTE: el backup completo de NV del 16/09/2026 20:30 (msdb.dbo.backupset), anterior a la
--- reescritura. Restaurarlo como copia con el nombre [NV_20260916] (o cambiar el nombre abajo).
--- UPPER(Nombre) NO vale como atajo: ~9 % de las fichas activas tenían mayúsculas mixtas antes
--- (630 de 6674) y UPPER las estropearía. La sección 3 (comentada) es el plan B si no hay backup.
+-- Se eligió UPPER() (decisión de Carlos) en vez de restaurar el backup del 16/09 20:30 como
+-- copia: son 97 GB y no había garantía de espacio en el servidor. Coste asumido: las fichas
+-- que ya tenían mayúsculas mixtas antes del 17/09 (~9 % del catálogo activo) quedan en
+-- mayúsculas; el que se detecte se corrige a mano en la ficha.
+--
+-- ORDEN: publicar primero la API con el fix de #490 (SyncTableRouter ignora los mensajes
+-- propios). Sin él, cualquier republicación volvería a bajar los nombres a minúsculas.
+--
+-- Fechas en ISO 8601 con T: los literales 'yyyy-mm-dd hh:mm' fallan con idioma español
+-- (Msg 242, se leen como día/mes).
 -- =============================================================================
 
 USE NV;
 GO
 
--- 1. Vista previa: las fichas que se van a restaurar (deben ser 676) -----------------------------
-SELECT p.Número, p.Nombre AS NombreActual, b.Nombre AS NombreBackup, p.Usuario, p.[Fecha Modificación]
-FROM dbo.Productos p
-INNER JOIN NV_20260916.dbo.Productos b
-    ON b.Empresa = p.Empresa AND b.Número = p.Número
-WHERE p.Empresa = '1'
-  AND RTRIM(p.Usuario) = 'Sync stocks nocturno'
-  AND p.[Fecha Modificación] >= '2026-09-17 02:00'
-  AND p.[Fecha Modificación] <  '2026-09-17 03:00'
-  AND p.Nombre COLLATE Latin1_General_CS_AS <> b.Nombre COLLATE Latin1_General_CS_AS
-ORDER BY p.Número;
-
--- 2. Restaurar nombre y auditoría desde el backup ------------------------------------------------
 BEGIN TRANSACTION;
 
-UPDATE p
-SET p.Nombre = b.Nombre,
-    p.Usuario = b.Usuario,
-    p.[Fecha Modificación] = b.[Fecha Modificación]
-FROM dbo.Productos p
-INNER JOIN NV_20260916.dbo.Productos b
-    ON b.Empresa = p.Empresa AND b.Número = p.Número
-WHERE p.Empresa = '1'
-  AND RTRIM(p.Usuario) = 'Sync stocks nocturno'
-  AND p.[Fecha Modificación] >= '2026-09-17 02:00'
-  AND p.[Fecha Modificación] <  '2026-09-17 03:00'
-  AND p.Nombre COLLATE Latin1_General_CS_AS <> b.Nombre COLLATE Latin1_General_CS_AS;
-
--- Debe decir 676 filas afectadas. Si no, ROLLBACK y revisar.
--- COMMIT TRANSACTION;
--- ROLLBACK TRANSACTION;
-
--- 3. PLAN B sin backup (solo si no se puede restaurar la copia): todo a mayúsculas ---------------
--- Acepta que las fichas que tenían mayúsculas mixtas antes del 17/09 queden en mayúsculas.
-/*
 UPDATE dbo.Productos
 SET Nombre = UPPER(Nombre)
 WHERE Empresa = '1'
   AND RTRIM(Usuario) = 'Sync stocks nocturno'
-  AND [Fecha Modificación] >= '2026-09-17 02:00'
-  AND [Fecha Modificación] <  '2026-09-17 03:00';
-*/
+  AND [Fecha Modificación] >= '2026-09-17T02:00:00'
+  AND [Fecha Modificación] <  '2026-09-17T03:00:00';
+
+DECLARE @n int = @@ROWCOUNT;
+IF @n = 676
+BEGIN
+    COMMIT TRANSACTION;
+    PRINT 'COMMIT: ' + CAST(@n AS varchar);
+END
+ELSE
+BEGIN
+    ROLLBACK TRANSACTION;
+    PRINT 'ROLLBACK: filas=' + CAST(@n AS varchar);
+END
+
+-- Verificación: debe devolver 0.
+SELECT COUNT(*) AS quedanEnMinusculas
+FROM dbo.Productos
+WHERE Empresa = '1'
+  AND RTRIM(Usuario) = 'Sync stocks nocturno'
+  AND [Fecha Modificación] >= '2026-09-17T00:00:00'
+  AND Nombre COLLATE Latin1_General_CS_AS <> UPPER(Nombre) COLLATE Latin1_General_CS_AS;
+
+-- Verificación del fix (mañana 18/09 y siguientes): debe devolver 0. Si no, el eco sigue vivo.
+SELECT COUNT(*) AS fichasTocadasPorElSyncDespuesDelFix
+FROM dbo.Productos
+WHERE Empresa = '1'
+  AND RTRIM(Usuario) = 'Sync stocks nocturno'
+  AND [Fecha Modificación] >= '2026-09-17T12:00:00';
