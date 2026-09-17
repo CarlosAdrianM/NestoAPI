@@ -886,6 +886,7 @@
     <Compile Include="Infraestructure\ValidadoresServirJunto\ValidadorDisponibilidadRegalos.cs" />
     <Compile Include="Infraestructure\ValidadoresServirJunto\ValidadorMaterialPromocional.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\GestorOfertasPedido.cs" />
+    <Compile Include="Infraestructure\ValidadoresPedido\GestorSugerenciasOfertas.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorDescuentosPermitidos.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorGanavisiones.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorLimiteRegalos.cs" />

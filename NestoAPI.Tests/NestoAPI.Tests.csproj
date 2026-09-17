@@ -252,6 +252,7 @@
     <Compile Include="Controllers\ProductosVariantesControllerTests.cs" />
     <Compile Include="Controllers\ProductosExclusivoProfesionalControllerTests.cs" />
     <Compile Include="Controllers\CrearEtiquetaPendienteTests.cs" />
+    <Compile Include="Controllers\ContabilidadesControllerTests.cs" />
     <Compile Include="Infrastructure\GestorPedidoParaAgenciaTests.cs" />
     <Compile Include="Infrastructure\Contabilidad\GeneradorContraasientoTests.cs" />
     <Compile Include="Controllers\EnviosAgenciasTextosLargosTests.cs" />

@@ -421,6 +421,22 @@ namespace NestoAPI.Controllers
         // con la MISMA inversión que el GET. Sin este POST, un pedido no creado no se puede
         // recuperar por el GET (no existe en BD). Los regalos Ganavisiones del dump llegan sin
         // confirmar contra la tabla (línea a 0 € sin flag) y se cargan como líneas normales.
+        // NestoAPI#457 (corte 1): qué ofertas N+M se podrían aplicar al pedido que se está montando y
+        // no se están aplicando. Mismo DTO que se manda a guardar; la respuesta es accionable (producto
+        // y cantidades) para que Nesto, NestoApp y, más adelante, la tienda puedan pintarla y aplicarla.
+        [HttpPost]
+        [Authorize]
+        [Route("api/PedidosVenta/OfertasSugeridas")]
+        [ResponseType(typeof(List<Infraestructure.ValidadoresPedido.SugerenciaOfertaDTO>))]
+        public IHttpActionResult PostOfertasSugeridas([FromBody] PedidoVentaDTO pedido)
+        {
+            if (pedido == null)
+            {
+                return BadRequest("Falta el pedido.");
+            }
+            return Ok(Infraestructure.ValidadoresPedido.GestorSugerenciasOfertas.Calcular(pedido, GestorPrecios.servicio));
+        }
+
         [HttpPost]
         [Route("api/PedidosVenta/ParaPlantilla")]
         [ResponseType(typeof(PedidoParaPlantillaDTO))]
