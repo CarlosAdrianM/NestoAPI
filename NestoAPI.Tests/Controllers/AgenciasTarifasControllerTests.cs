@@ -27,6 +27,13 @@ namespace NestoAPI.Tests.Controllers
                 .Implements<IQueryable<AgenciaTransporte>>()
                 .Implements<IDbAsyncEnumerable<AgenciaTransporte>>());
             A.CallTo(() => db.AgenciasTransportes).Returns(fakeAgencias);
+            // NestoAPI#493: el comparador de selección lee el freno por zonas de CTT (parámetro
+            // CTTZonasActivas); sin filas = sin freno, como antes.
+            var fakeParametros = A.Fake<DbSet<ParametroUsuario>>(o => o
+                .Implements<IQueryable<ParametroUsuario>>()
+                .Implements<IDbAsyncEnumerable<ParametroUsuario>>());
+            ConfigurarFakeDbSet(fakeParametros, new List<ParametroUsuario>().AsQueryable());
+            A.CallTo(() => db.ParametrosUsuario).Returns(fakeParametros);
             controller = new AgenciasTarifasController(db);
         }
 

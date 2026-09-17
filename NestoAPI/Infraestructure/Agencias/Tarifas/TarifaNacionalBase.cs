@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 namespace NestoAPI.Infraestructure.Agencias.Tarifas
 {
@@ -36,7 +36,7 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
         // Para España (o país vacío/no informado) la zona sale del CP (incluida la detección de
         // Portugal por formato de CP). Para "PT" explícito, Portugal. Para cualquier otro país, las
         // tarifas nacionales no cubren -> Extranjero (sin tramos -> coste MaxValue).
-        private static ZonasEnvioAgencia ZonaNacional(string codigoPostal, string paisIso)
+        internal static ZonasEnvioAgencia ZonaNacional(string codigoPostal, string paisIso)
         {
             string iso = (paisIso ?? string.Empty).Trim().ToUpperInvariant();
             if (iso == "PT")

@@ -1,5 +1,6 @@
 ﻿using System.Configuration;
 using System.Linq;
+using NestoAPI.Controllers;
 using NestoAPI.Infraestructure.Agencias.CTT;
 using NestoAPI.Infraestructure.Agencias.Gls;
 using NestoAPI.Infraestructure.Agencias.Innovatrans;
@@ -39,6 +40,7 @@ namespace NestoAPI.Infraestructure.Agencias.Perfiles
 
         // La estrategia de tramitación ya cumple el seguimiento (IAgenciaRemota lo hereda).
         public ISeguimientoAgenciaRemota CrearSeguimiento(NVEntities db) => CrearGestionRemota(db);
+
 
         // Remitente fijo (nuestro almacén de Algete). Se configura en Web.config para no hardcodearlo.
         private static DireccionDataTrans LeerRemitente()
@@ -154,7 +156,7 @@ namespace NestoAPI.Infraestructure.Agencias.Perfiles
     /// = 1): la puerta de activas la deja fuera, así que este perfil no se usa hasta que salga a
     /// producción (checklist en la issue). Config: Web.config CTT:* y secretos.config CTTClientId/Secret.
     /// </summary>
-    public class PerfilAgenciaCTT : IPerfilConGestionRemota, IPerfilConSeguimiento, IPerfilConDefaultsEnvio
+    public class PerfilAgenciaCTT : IPerfilConGestionRemota, IPerfilConSeguimiento, IPerfilConDefaultsEnvio, IPerfilConReglasDestino
     {
         public int AgenciaId => Constantes.Agencias.AGENCIA_CTT;
 
@@ -170,6 +172,25 @@ namespace NestoAPI.Infraestructure.Agencias.Perfiles
         }
 
         public ISeguimientoAgenciaRemota CrearSeguimiento(NVEntities db) => CrearGestionRemota(db);
+
+        /// <summary>
+        /// Freno por zonas (NestoAPI#493): mientras CTT arranca "de menos a más", una etiqueta elegida a
+        /// mano fuera de las zonas activas se rechaza con un mensaje claro (el comparador ya no la
+        /// propone en esas zonas). Parámetro CTTZonasActivas; vacío = todas.
+        /// </summary>
+        public string ValidarDestino(string codPostal, CabPedidoVta pedido, bool cobrarReembolso)
+            => MensajeZonaInactiva(codPostal, ParametrosUsuarioController.LeerParametro(
+                Constantes.Empresas.EMPRESA_POR_DEFECTO, "(defecto)", Tarifas.ZonasActivasAgencia.CLAVE_CTT));
+
+        internal static string MensajeZonaInactiva(string codPostal, string valorParametro)
+        {
+            var zonasActivas = Tarifas.ZonasActivasAgencia.Parsear(valorParametro);
+            Tarifas.ZonasEnvioAgencia zona = Tarifas.TarifaNacionalBase.ZonaNacional(codPostal, null);
+            return Tarifas.ZonasActivasAgencia.EstaActiva(zonasActivas, zona)
+                ? null
+                : $"CTT todavía no está activa para la zona {zona} (CP {codPostal}). Zonas activas: {valorParametro.Trim()}. " +
+                  "Elige otra agencia o amplía el parámetro CTTZonasActivas.";
+        }
 
         // Servicio 48 = "CTT 48h" (TarifaCTT48h.ServicioId), el económico que usamos como base.
         // Portugal es zona propia de la oferta (misma API, país distinto); el resto, España.

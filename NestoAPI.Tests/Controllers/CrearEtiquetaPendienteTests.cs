@@ -42,6 +42,11 @@ namespace NestoAPI.Tests.Controllers
             // La validación de cobertura (agencias del comparador) consulta AgenciasTransportes;
             // se fakea siempre para que cualquier test con GLS/Innovatrans pueda calcular cobertura.
             ConfigurarAgenciasComparador();
+            // NestoAPI#493: el comparador de selección lee el freno por zonas de CTT (parámetro
+            // CTTZonasActivas); sin filas = sin freno, como antes.
+            var fakeParametros = A.Fake<DbSet<ParametroUsuario>>(o => o.Implements<IQueryable<ParametroUsuario>>().Implements<IDbAsyncEnumerable<ParametroUsuario>>());
+            ConfigurarFakeDbSet(fakeParametros, new List<ParametroUsuario>().AsQueryable());
+            A.CallTo(() => db.ParametrosUsuario).Returns(fakeParametros);
 
             controller = new EnviosAgenciasController(db);
             controller.Request = new System.Net.Http.HttpRequestMessage

@@ -1524,10 +1524,8 @@ namespace NestoAPI.Controllers
                 return null;
             }
 
-            var numerosExistentes = db.AgenciasTransportes.Select(a => a.Numero).Distinct().ToList();
-            var idsSombra = db.AgenciasTransportes.Where(a => a.EsSombra).Select(a => a.Numero).ToList();
-            var registro = new RegistroTarifasExistentes(new RegistroTarifas(), numerosExistentes);
-            var comparador = new ComparadorAgencias(registro, new ProveedorRecargoCombustibleEF(db), idsSombra);
+            // NestoAPI#493: agencias de alta, sombras fuera de la elección y freno por zonas (CTT).
+            var comparador = ComparadorAgenciasFactory.ParaSeleccion(db);
 
             // peso/reembolso 0: la cobertura depende solo de que la zona tenga tramos en la tarifa.
             if (comparador.CosteDeAgencia(empresa, codPostal, 0m, 0m, agencia) == null)

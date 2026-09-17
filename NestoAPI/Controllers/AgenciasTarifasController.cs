@@ -27,6 +27,8 @@ namespace NestoAPI.Controllers
         public string PrefijoCodigoBarras { get; set; }
         public string CuentaReembolsos { get; set; }
         public decimal RecargoCombustible { get; set; }
+        /// <summary>NestoAPI#493: compite en el comparador pero no se ofrece ni se tramita (CTT hasta su salida).</summary>
+        public bool EsSombra { get; set; }
     }
 
     /// <summary>
@@ -138,13 +140,8 @@ namespace NestoAPI.Controllers
         [Route("api/Agencias/MasEconomica")]
         public IHttpActionResult GetMasEconomica(string codigoPostal, decimal peso, string empresa = "1", decimal reembolso = 0, string pais = "ES")
         {
-            // Solo se comparan agencias dadas de alta en AgenciasTransporte: una tarifa portada pero
-            // sin fila (p.ej. Innovatrans antes de crearla) no debe entrar en la comparación.
-            var numerosExistentes = db.AgenciasTransportes.Select(a => a.Numero).Distinct().ToList();
-            // Las agencias sombra compiten en el ranking interno pero NUNCA se auto-seleccionan.
-            var idsSombra = db.AgenciasTransportes.Where(a => a.EsSombra).Select(a => a.Numero).ToList();
-            var registro = new RegistroTarifasExistentes(new RegistroTarifas(), numerosExistentes);
-            var comparador = new ComparadorAgencias(registro, new ProveedorRecargoCombustibleEF(db), idsSombra);
+            // NestoAPI#493: agencias de alta, sombras fuera de la elección y freno por zonas (CTT).
+            var comparador = ComparadorAgenciasFactory.ParaSeleccion(db);
             OpcionEnvioAgencia mejor = comparador.MasEconomica(empresa, codigoPostal, peso, reembolso, pais);
 
             if (mejor == null)
@@ -164,10 +161,8 @@ namespace NestoAPI.Controllers
         public IHttpActionResult GetCosteAgencia(int numero, string codigoPostal, decimal peso,
             string empresa = "1", decimal reembolso = 0, byte? servicioId = null, string pais = "ES")
         {
-            var numerosExistentes = db.AgenciasTransportes.Select(a => a.Numero).Distinct().ToList();
-            var idsSombra = db.AgenciasTransportes.Where(a => a.EsSombra).Select(a => a.Numero).ToList();
-            var registro = new RegistroTarifasExistentes(new RegistroTarifas(), numerosExistentes);
-            var comparador = new ComparadorAgencias(registro, new ProveedorRecargoCombustibleEF(db), idsSombra);
+            // NestoAPI#493: agencias de alta, sombras fuera de la elección y freno por zonas (CTT).
+            var comparador = ComparadorAgenciasFactory.ParaSeleccion(db);
             OpcionEnvioAgencia opcion = comparador.CosteDeAgencia(empresa, codigoPostal, peso, reembolso, numero, servicioId, pais);
 
             if (opcion == null)
@@ -257,7 +252,8 @@ namespace NestoAPI.Controllers
             Identificador = a.Identificador?.Trim(),
             PrefijoCodigoBarras = a.PrefijoCodigoBarras?.Trim(),
             CuentaReembolsos = a.CuentaReembolsos?.Trim(),
-            RecargoCombustible = a.RecargoCombustible
+            RecargoCombustible = a.RecargoCombustible,
+            EsSombra = a.EsSombra
         };
     }
 }
