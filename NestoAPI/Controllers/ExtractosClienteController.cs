@@ -129,7 +129,9 @@ namespace NestoAPI.Controllers
                     formaPago = extractoEncontrado.FormaPago.Trim(),
                     delegacion = extractoEncontrado.Delegación.Trim(),
                     formaVenta = extractoEncontrado.FormaVenta.Trim(),
-                    usuario = extractoEncontrado.Usuario.Trim()
+                    usuario = extractoEncontrado.Usuario.Trim(),
+                    // NestoAPI#492: una subconsulta correlacionada, sin N+1.
+                    tieneFactura = db.CabsFacturasVtas.Any(f => f.Empresa == extractoEncontrado.Empresa && f.Número == extractoEncontrado.Nº_Documento)
                 }).ToList();
             return extracto.AsQueryable();
         }
@@ -165,7 +167,9 @@ namespace NestoAPI.Controllers
                     ccc = extractoEncontrado.CCC.Trim(),
                     ruta = extractoEncontrado.Ruta.Trim(),
                     estado = extractoEncontrado.Estado.Trim(),
-                    formaPago = extractoEncontrado.FormaPago.Trim()
+                    formaPago = extractoEncontrado.FormaPago.Trim(),
+                    // NestoAPI#492: una subconsulta correlacionada, sin N+1.
+                    tieneFactura = db.CabsFacturasVtas.Any(f => f.Empresa == extractoEncontrado.Empresa && f.Número == extractoEncontrado.Nº_Documento)
                 });
             return extracto;
         }

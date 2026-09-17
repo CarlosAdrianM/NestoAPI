@@ -183,6 +183,8 @@ namespace NestoAPI.Models
         public string formaVenta { get; set; }
         public string delegacion { get; set; }
         public string usuario { get; set; }
+        /// <summary>NestoAPI#492: el nº de documento es una factura existente (CabFacturaVta, misma empresa). Nesto abre la factura desde el Extracto Cliente.</summary>
+        public bool tieneFactura { get; set; }
     }
     public class FormaPagoDTO
     {

@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure;
@@ -21,6 +21,7 @@ namespace NestoAPI.Tests.Controllers
     {
         private NVEntities db;
         private DbSet<ExtractoCliente> fakeExtractos;
+        private DbSet<CabFacturaVta> fakeFacturas;
         private ExtractosClienteController controller;
 
         [TestInitialize]
@@ -29,8 +30,36 @@ namespace NestoAPI.Tests.Controllers
             db = A.Fake<NVEntities>();
             fakeExtractos = A.Fake<DbSet<ExtractoCliente>>(o => o.Implements<IQueryable<ExtractoCliente>>().Implements<IDbAsyncEnumerable<ExtractoCliente>>());
             A.CallTo(() => db.ExtractosCliente).Returns(fakeExtractos);
+            // NestoAPI#492: la proyección consulta CabFacturaVtas para el flag tieneFactura.
+            fakeFacturas = A.Fake<DbSet<CabFacturaVta>>(o => o.Implements<IQueryable<CabFacturaVta>>().Implements<IDbAsyncEnumerable<CabFacturaVta>>());
+            ConfigurarFakeDbSet(fakeFacturas, new List<CabFacturaVta>().AsQueryable());
+            A.CallTo(() => db.CabsFacturasVtas).Returns(fakeFacturas);
 
             controller = new ExtractosClienteController(A.Fake<IServicioCorreoElectronico>(), db);
+        }
+
+        // NestoAPI#492: el nº de documento de un movimiento puede ser una factura existente.
+
+        [TestMethod]
+        public void GetExtractosCliente_TieneFactura_SoloCuandoElDocumentoEsUnaFacturaDeLaMismaEmpresa()
+        {
+            ExtractoCliente factura = Crear("1", "CLI1", "1", new DateTime(2026, 1, 15));
+            factura.Nº_Documento = "NV26/001234";
+            ExtractoCliente recibo = Crear("1", "CLI1", "1", new DateTime(2026, 2, 10));
+            recibo.Nº_Documento = "REMESA 17";
+            ExtractoCliente otraEmpresa = Crear("3", "CLI1", "1", new DateTime(2026, 3, 5));
+            otraEmpresa.Nº_Documento = "NV26/001234";
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente> { factura, recibo, otraEmpresa }.AsQueryable());
+            ConfigurarFakeDbSet(fakeFacturas, new List<CabFacturaVta>
+            {
+                new CabFacturaVta { Empresa = "1", Número = "NV26/001234", Nº_Cliente = "CLI1" }
+            }.AsQueryable());
+
+            List<ExtractoClienteDTO> resultado = controller.GetExtractosCliente("1", "CLI1", "1", new DateTime(2026, 1, 1), new DateTime(2026, 12, 31)).ToList();
+
+            Assert.IsTrue(resultado.Single(r => r.fecha == new DateTime(2026, 1, 15)).tieneFactura, "Documento que es factura de la empresa 1");
+            Assert.IsFalse(resultado.Single(r => r.fecha == new DateTime(2026, 2, 10)).tieneFactura, "Un recibo no es factura");
+            Assert.IsFalse(resultado.Single(r => r.fecha == new DateTime(2026, 3, 5)).tieneFactura, "Mismo número pero de otra empresa");
         }
 
         [TestMethod]
