@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 
@@ -127,6 +127,22 @@ namespace NestoAPI.Models.Agencias
             => SeguimientoUrl.SinEsquema(ConstruirUrl(d)) ?? d.CodigoSeguimiento?.Trim();
     }
 
+    internal class SeguimientoCTT : IEstrategiaSeguimientoAgencia
+    {
+        public string Nombre => "CTT";
+        public string TransportistaPrestashop => "160";
+        public string CarrierNameAmazon => "CTT Express";
+        public string ShippingMethodAmazon => "Estándar";
+        // Localizador público de CTT Express; sc = shipping_code (el albarán de 22 dígitos que
+        // guardamos en CodigoSeguimiento). NestoAPI#493: verificar con un envío real al salir a producción.
+        public string ConstruirUrl(DatosSeguimientoEnvio d)
+            => !string.IsNullOrEmpty(d.CodigoSeguimiento)
+                ? $"https://www.cttexpress.com/localizador-de-envios?sc={d.CodigoSeguimiento.Trim()}"
+                : null;
+        public string TrackingPrestashop(DatosSeguimientoEnvio d)
+            => SeguimientoUrl.SinEsquema(ConstruirUrl(d)) ?? d.CodigoSeguimiento?.Trim();
+    }
+
     internal static class SeguimientoUrl
     {
         /// <summary>Quita el "https://" inicial: la plantilla del transportista genérico de
@@ -144,7 +160,8 @@ namespace NestoAPI.Models.Agencias
                 new SeguimientoOnTime(),
                 new SeguimientoCorreosExpress(),
                 new SeguimientoSending(),
-                new SeguimientoInnovatrans()
+                new SeguimientoInnovatrans(),
+                new SeguimientoCTT()
             }.ToDictionary(e => e.Nombre);
 
         /// <summary>¿Hay una estrategia de seguimiento para esa agencia?</summary>

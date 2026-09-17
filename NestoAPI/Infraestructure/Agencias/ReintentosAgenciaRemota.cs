@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure.Agencias.Innovatrans;
+﻿using NestoAPI.Infraestructure.Agencias.Innovatrans;
 using Polly;
 using Polly.Retry;
 using System;
@@ -11,7 +11,7 @@ namespace NestoAPI.Infraestructure.Agencias
     /// <summary>
     /// Política de reintentos para TRANSITORIOS de transporte contra los servicios de las agencias
     /// (NestoAPI#288, punto 1). Reintenta SOLO excepciones que pueden desaparecer en segundos:
-    /// fallo de conexión, HTTP 5xx (DataTransException.EsTransitoria) y timeout del HttpClient
+    /// fallo de conexión, HTTP 5xx (AgenciaRemotaException.EsTransitoria) y timeout del HttpClient
     /// (TaskCanceledException). 2 reintentos con backoff corto (1s, 2s): un hipo puntual se salva,
     /// una degradación larga (asmred 15-50 min, #266) NO se combate aquí — eso lo resuelve
     /// re-programar la pasada entera (Hangfire, aa389e9), no alargarla con reintentos.
@@ -26,7 +26,7 @@ namespace NestoAPI.Infraestructure.Agencias
         public static AsyncRetryPolicy CrearPoliticaTransitorios()
         {
             return Policy
-                .Handle<DataTransException>(ex => ex.EsTransitoria)
+                .Handle<AgenciaRemotaException>(ex => ex.EsTransitoria)
                 .Or<HttpRequestException>()
                 .Or<TaskCanceledException>()
                 .WaitAndRetryAsync(REINTENTOS, intento => TimeSpan.FromSeconds(intento));

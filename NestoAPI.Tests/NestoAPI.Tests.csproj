@@ -320,6 +320,8 @@
     <Compile Include="Infrastructure\Agencias\ControlTasaDataTransTests.cs" />
     <Compile Include="Infrastructure\Agencias\ClienteSoapDataTransTests.cs" />
     <Compile Include="Infrastructure\Agencias\OperacionesEnviosDataTransTests.cs" />
+    <Compile Include="Infrastructure\Agencias\AgenciaRemotaCTTTests.cs" />
+    <Compile Include="Infrastructure\Agencias\ClienteRestCTTTests.cs" />
     <Compile Include="Infrastructure\Agencias\AgenciaRemotaInnovatransTests.cs" />
     <Compile Include="Infrastructure\Agencias\CanalizadorPoblacionDataTransTests.cs" />
     <Compile Include="Infrastructure\Agencias\AgenciaRemotaGlsTests.cs" />

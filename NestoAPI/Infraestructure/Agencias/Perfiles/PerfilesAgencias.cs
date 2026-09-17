@@ -1,5 +1,6 @@
-using System.Configuration;
+﻿using System.Configuration;
 using System.Linq;
+using NestoAPI.Infraestructure.Agencias.CTT;
 using NestoAPI.Infraestructure.Agencias.Gls;
 using NestoAPI.Infraestructure.Agencias.Innovatrans;
 using NestoAPI.Models;
@@ -148,14 +149,27 @@ namespace NestoAPI.Infraestructure.Agencias.Perfiles
 
     /// <summary>Sending: en cuarentena (no se tramita), pero conserva sus defaults de envío.</summary>
     /// <summary>
-    /// NestoAPI#493: CTT Express. Hoy es agencia SOMBRA (AgenciasTransporte.EsSombra = 1): la puerta de
-    /// activas la deja fuera, así que este perfil es inerte hasta que salga a producción. Cuando llegue la
-    /// documentación de su API ganará IPerfilConGestionRemota e IPerfilConSeguimiento (mismo patrón que
-    /// Innovatrans: tramitación server-side, registrar al imprimir).
+    /// NestoAPI#493: CTT Express por su API REST, mismo patrón que Innovatrans (tramitación server-side,
+    /// registrar al imprimir, seguimiento por el poll). Hoy es agencia SOMBRA (AgenciasTransporte.EsSombra
+    /// = 1): la puerta de activas la deja fuera, así que este perfil no se usa hasta que salga a
+    /// producción (checklist en la issue). Config: Web.config CTT:* y secretos.config CTTClientId/Secret.
     /// </summary>
-    public class PerfilAgenciaCTT : IPerfilConDefaultsEnvio
+    public class PerfilAgenciaCTT : IPerfilConGestionRemota, IPerfilConSeguimiento, IPerfilConDefaultsEnvio
     {
         public int AgenciaId => Constantes.Agencias.AGENCIA_CTT;
+
+        public IAgenciaRemota CrearGestionRemota(NVEntities db)
+        {
+            // El registro de intercambios lo comparten el cliente (que lo escribe) y la agencia (que lo
+            // expone), para auditar el JSON crudo de cada operación, como en Innovatrans.
+            var registro = new RegistroIntercambiosRemotos();
+            var configuracion = new ConfiguracionCTT();
+            var cliente = new ClienteRestCTT(configuracion, registro: registro);
+            // Transitorios (5xx, timeout, conexión) reintentados en el punto único (#288).
+            return new AgenciaRemotaConReintentos(new AgenciaRemotaCTT(cliente, configuracion, registro));
+        }
+
+        public ISeguimientoAgenciaRemota CrearSeguimiento(NVEntities db) => CrearGestionRemota(db);
 
         // Servicio 48 = "CTT 48h" (TarifaCTT48h.ServicioId), el económico que usamos como base.
         // Portugal es zona propia de la oferta (misma API, país distinto); el resto, España.

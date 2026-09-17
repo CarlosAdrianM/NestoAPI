@@ -574,6 +574,12 @@
       <DependentUpon>Global.asax</DependentUpon>
     </Compile>
     <Compile Include="Infraestructure\Agencias\GestorEnviosAgencia.cs" />
+    <Compile Include="Infraestructure\Agencias\AgenciaRemotaException.cs" />
+    <Compile Include="Infraestructure\Agencias\CTT\AgenciaRemotaCTT.cs" />
+    <Compile Include="Infraestructure\Agencias\CTT\ClienteRestCTT.cs" />
+    <Compile Include="Infraestructure\Agencias\CTT\ConfiguracionCTT.cs" />
+    <Compile Include="Infraestructure\Agencias\CTT\MapeadorTipoServicioCTT.cs" />
+    <Compile Include="Infraestructure\Agencias\CTT\NormalizadorZplCTT.cs" />
     <Compile Include="Infraestructure\Agencias\Innovatrans\CanalizadorPoblacionDataTrans.cs" />
     <Compile Include="Infraestructure\Agencias\Innovatrans\MapeadorDireccionDataTrans.cs" />
     <Compile Include="Infraestructure\Agencias\Innovatrans\CredencialesDataTrans.cs" />

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -225,7 +225,7 @@ namespace NestoAPI.Controllers
                     poblaciones = resultado.Poblaciones
                 });
             }
-            catch (DataTransException ex)
+            catch (AgenciaRemotaException ex)
             {
                 return Content(HttpStatusCode.BadGateway, new { estado = "ERROR_CONEXION", detalle = ex.Message });
             }

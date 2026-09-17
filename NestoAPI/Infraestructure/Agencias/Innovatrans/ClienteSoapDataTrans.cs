@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Net.Http;
 using System.Text;
@@ -13,18 +13,10 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
     /// No representa un error de negocio de DataTrans (esos vienen en codError/respuesta
     /// dentro del XML), sino un fallo de conexión, HTTP o de parseo de la respuesta.
     /// </summary>
-    public class DataTransException : Exception
+    public class DataTransException : AgenciaRemotaException
     {
         public DataTransException(string message) : base(message) { }
         public DataTransException(string message, Exception inner) : base(message, inner) { }
-
-        /// <summary>
-        /// True si el fallo es de transporte y puede desaparecer reintentando en segundos (no se
-        /// pudo conectar, HTTP 5xx). False para errores estables (respuesta no XML, SOAP Fault):
-        /// reintentarlos solo repite el mismo error. Lo usa la política de reintentos de
-        /// PoliticasAgenciasRemotas (NestoAPI#288).
-        /// </summary>
-        public bool EsTransitoria { get; set; }
     }
 
     public interface IClienteSoapDataTrans

@@ -693,7 +693,7 @@ namespace NestoAPI.Controllers
             {
                 resultado = await agencia.InsertarYEtiquetarAsync(MapearEnvioRemoto(envio));
             }
-            catch (DataTransException ex)
+            catch (AgenciaRemotaException ex)
             {
                 await AuditarTramitacion(envio, agencia, false, ex.Message);
                 return Content(HttpStatusCode.BadGateway, ex.Message);
@@ -791,7 +791,7 @@ namespace NestoAPI.Controllers
             {
                 resultado = await agencia.AnularAsync(envio.CodigoBarras.Trim());
             }
-            catch (DataTransException ex)
+            catch (AgenciaRemotaException ex)
             {
                 await AuditarOperacion(envio, agencia, false, ex.Message, "Anular");
                 return Content(HttpStatusCode.BadGateway, ex.Message);
@@ -868,7 +868,7 @@ namespace NestoAPI.Controllers
             {
                 resultado = await agencia.ModificarYEtiquetarAsync(datosRemotos, envio.CodigoBarras.Trim());
             }
-            catch (DataTransException ex)
+            catch (AgenciaRemotaException ex)
             {
                 await AuditarOperacion(envio, agencia, false, ex.Message, "Modificar");
                 return Content(HttpStatusCode.BadGateway, ex.Message);
@@ -1064,7 +1064,7 @@ namespace NestoAPI.Controllers
             {
                 return await agencia.ReimprimirAsync(albaran);
             }
-            catch (DataTransException)
+            catch (AgenciaRemotaException)
             {
                 return null;
             }
