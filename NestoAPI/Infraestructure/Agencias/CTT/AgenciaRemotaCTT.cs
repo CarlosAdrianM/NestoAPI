@@ -366,11 +366,34 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
             return new JArray(lista.Cast<object>().ToArray());
         }
 
+        /// <summary>
+        /// Acota y pasa a ASCII. CTT no conserva los caracteres no ASCII de NUESTROS textos: en el
+        /// sandbox (17/09/26) "ESPAÑA Ñ" salió en la etiqueta como "ESPAA" y "impresión" como
+        /// "impresin" (elimina la letra, no la translitera). Mejor "ESPANA" y "MOSTOLES" que un
+        /// nombre mutilado en la etiqueta y en el seguimiento.
+        /// </summary>
         private static string Acotar(string texto, int maximo)
         {
-            string t = (texto ?? string.Empty).Trim();
+            string t = Transliterar(texto).Trim();
             if (t.Length == 0) return null;
             return t.Length > maximo ? t.Substring(0, maximo) : t;
+        }
+
+        /// <summary>Quita tildes y diéresis, ñ→n, ç→c, º/ª→o/a, y descarta cualquier otro carácter no ASCII.</summary>
+        internal static string Transliterar(string texto)
+        {
+            if (string.IsNullOrEmpty(texto)) return string.Empty;
+            string descompuesto = texto.Normalize(System.Text.NormalizationForm.FormD);
+            var sb = new System.Text.StringBuilder(descompuesto.Length);
+            foreach (char c in descompuesto)
+            {
+                if (CharUnicodeInfo.GetUnicodeCategory(c) == UnicodeCategory.NonSpacingMark) continue; // la tilde suelta
+                if (c == 'º') { sb.Append('o'); continue; }
+                if (c == 'ª') { sb.Append('a'); continue; }
+                if (c == '€') { sb.Append("EUR"); continue; }
+                if (c < 0x80) sb.Append(c);
+            }
+            return sb.ToString();
         }
 
         private static DateTime? LeerFecha(string iso)

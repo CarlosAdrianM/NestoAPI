@@ -116,11 +116,22 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             Assert.AreEqual("28110", (string)m["sender_postal_code"]);
             Assert.AreEqual("ES", (string)m["recipient_country_code"]);
             Assert.AreEqual("28001", (string)m["recipient_postal_code"]);
-            Assert.AreEqual("PRUEBA INTEGRACIÓN NESTO", (string)m["recipient_name"]);
+            Assert.AreEqual("PRUEBA INTEGRACION NESTO", (string)m["recipient_name"], "Sin tildes: CTT las elimina en vez de transliterarlas");
             CollectionAssert.AreEqual(new[] { "600000000", "916000000" }, ((JArray)m["recipient_phones"]).Select(t => (string)t).ToArray(), "Móvil primero, sin vacíos");
             Assert.AreEqual("2026-09-17", (string)m["shipping_date"]);
             Assert.AreEqual("Llamar antes", (string)m["delivery"]["comments"]);
             Assert.IsNull(m["additionals"], "Sin reembolso no hay additionals");
+        }
+
+        [TestMethod]
+        public void Transliterar_QuitaTildesYEnyes_ComoQuiereCTT()
+        {
+            // Sandbox 17/09/26: CTT ELIMINA la ñ y las tildes de nuestros textos ("ESPAÑA Ñ" -> "ESPAA"),
+            // así que se las quitamos nosotros bien: la letra base se conserva.
+            Assert.AreEqual("PRUEBA ESPANA N MOSTOLES", AgenciaRemotaCTT.Transliterar("PRUEBA ESPAÑA Ñ MÓSTOLES"));
+            Assert.AreEqual("Cocina de Ines, 3o Izq, portal 2a - 12 EUR", AgenciaRemotaCTT.Transliterar("Cocina de Inés, 3º Izq, portal 2ª - 12 €"));
+            Assert.AreEqual("Francois Cancao", AgenciaRemotaCTT.Transliterar("François Cançao"));
+            Assert.AreEqual(string.Empty, AgenciaRemotaCTT.Transliterar(null));
         }
 
         [TestMethod]
