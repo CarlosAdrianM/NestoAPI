@@ -300,6 +300,7 @@
     <Compile Include="Controllers\NotificacionesControllerTests.cs" />
     <Compile Include="Controllers\PedidosVentaJefeEquipoTests.cs" />
     <Compile Include="Controllers\PedidosVentaListadoTests.cs" />
+    <Compile Include="Infrastructure\GestorClientesObtenerClientesTests.cs" />
     <Compile Include="Controllers\PedidosVentaPorCanalExternoTests.cs" />
     <Compile Include="Controllers\PagoRedirectControllerTests.cs" />
     <Compile Include="Infraestructure\Notificaciones\BuzonNotificacionesTests.cs" />

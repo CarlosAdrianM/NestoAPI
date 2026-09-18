@@ -12,6 +12,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Data.Entity;
 using System.Data.Entity.Infrastructure;
 using System.Data.Entity.Validation;
+using System.Data;
 using System.Data.SqlClient;
 using System.Globalization;
 using System.IO;
@@ -1540,136 +1541,152 @@ namespace NestoAPI.Infraestructure
 
 
 
-        private static List<ClienteInteraccion> ObtenerClientes(string vendedor, string tipoInteraccion)
-        {
-            if (string.IsNullOrEmpty(tipoInteraccion) || tipoInteraccion == "Teléfono")
-            {
-                tipoInteraccion = "Llamada";
-            }
-            string query = $@"
+        /// <summary>
+        /// NestoAPI#401: la consulta del modelo de probabilidad de venta (primera pantalla del comercial
+        /// por la mañana). Mismo resultado que antes, pero:
+        /// <list type="bullet">
+        /// <item>Las interacciones y los pedidos de 5 años se MATERIALIZAN en temporales, filtradas por
+        /// los clientes del vendedor, con índice. Antes eran CTEs sin filtrar por vendedor usadas en cuatro
+        /// subconsultas correlacionadas por cliente: una CTE no se materializa, así que el join de 5 años
+        /// de CabPedidoVta con LinPedidoVta se recalculaba hasta 3·N veces (N = clientes del vendedor).</item>
+        /// <item><c>vendedor</c> y <c>tipoInteraccion</c> van como parámetros: antes se interpolaban en el
+        /// SQL y eran inyectables desde la query string.</item>
+        /// <item>CommandTimeout de 120 s (antes los 30 por defecto). ReintentosSql solo reintenta deadlocks,
+        /// no timeouts, así que no multiplica la carga.</item>
+        /// </list>
+        /// </summary>
+        internal const string SQL_OBTENER_CLIENTES = @"
+            DECLARE @FechaHoy datetime = GETDATE();
+            DECLARE @FechaHace11Meses datetime = DATEADD(month, -11, @FechaHoy);
+            DECLARE @FechaHace12Meses datetime = DATEADD(yy, -1, @FechaHoy);
+            DECLARE @FechaHace5Anos datetime = DATEADD(yy, -5, @FechaHoy);
+
             select row_number() over (partition by l.[nº cliente], l.contacto order by sum(cantidad) desc) rn, L.[Nº Cliente] Cliente, L.Contacto, L.Grupo + Subgrupo GrupoSubgrupo, sum(Cantidad) Ventas
             into #Gruposubgrupo
             from LinPedidoVta l inner join Clientes c
             on l.[Nº Cliente] = c.[Nº Cliente] and l.Contacto = c.Contacto
-            where c.Vendedor = '{vendedor}' AND [Fecha Factura] >= DATEADD(year, -5, getdate()) and SubGrupo != 'MMP' and L.Estado = 4
+            where c.Vendedor = @Vendedor AND [Fecha Factura] >= @FechaHace5Anos and SubGrupo != 'MMP' and L.Estado = 4
             group by l.[Nº Cliente], l.Contacto, DATEPART(month, [Fecha Factura]), DATEPART(YEAR, [Fecha Factura]), l.Grupo + Subgrupo;
 
-            WITH cte_fechas AS (
-                SELECT 
-                    GETDATE() AS FechaHoy, 
-                    DATEADD(month, -11, GETDATE()) AS FechaHace11Meses,
-                    DATEADD(yy, -1, GETDATE()) AS FechaHace12Meses, 
-                    DATEADD(yy, -5, GETDATE()) AS FechaHace5Años
-            ),
-            cte_clientes AS (
-                SELECT 
-                    TRIM([nº cliente]) + '/' + TRIM(contacto) AS ClienteId, 
-		            [nº Cliente] Cliente,
-		            Contacto,
-                    Nombre AS NombreCliente
-                FROM 
-                    Clientes c
-                WHERE 
-                    empresa = '1' 
-                    AND estado >= 0 
-                    AND Estado not in (7, 67)
-                    AND vendedor = '{vendedor}'
-            ),
-            cte_interacciones AS (
-                SELECT 
-                    Número Cliente,
-		            Contacto,
-                    DATEADD(HOUR, -1, Fecha) AS FechaInteraccion, 
-                    CASE Tipo 
-                        WHEN 'T' THEN 'Llamada' 
-                        WHEN 'V' THEN 'Visita' 
-                        WHEN 'W' THEN 'WhatsApp' 
-                    END AS TipoInteraccion
-                FROM 
-                    SeguimientoCliente
-                WHERE 
-                    Fecha >= (SELECT FechaHace5Años FROM cte_fechas) 
-                    AND Estado = 0 AND Pedido = 0
-            ),
-            cte_pedidos AS (
-                SELECT 
-		            c.[Nº Cliente] Cliente,
-		            c.Contacto,
-                    c.Número AS PedidoId, 
-                    CASE 
-                        WHEN c.[Periodo Facturacion] = 'FDM' THEN l.[Fecha Modificacion] 
-                        ELSE c.[Fecha Modificación] 
-                    END AS FechaPedido
-                FROM 
-                    CabPedidoVta c 
-                INNER JOIN 
-                    LinPedidoVta l ON c.empresa = l.empresa AND c.número = l.número
-                WHERE 
-                    TipoLinea = 1 and Estado >= -1 AND c.NotaEntrega = 0
-                    AND [base imponible] > 0 
-                    AND c.Fecha >= (SELECT FechaHace5Años FROM cte_fechas)
-            )
-            SELECT 
+            SELECT
+                TRIM([nº cliente]) + '/' + TRIM(contacto) AS ClienteId,
+                [nº Cliente] Cliente,
+                Contacto,
+                Nombre AS NombreCliente
+            INTO #Clientes
+            FROM Clientes c
+            WHERE empresa = '1'
+                AND estado >= 0
+                AND Estado not in (7, 67)
+                AND vendedor = @Vendedor;
+
+            -- Solo las interacciones de los clientes del vendedor: son las únicas que leen las
+            -- subconsultas (correlacionan por cliente y contacto).
+            SELECT
+                s.Número Cliente,
+                s.Contacto,
+                DATEADD(HOUR, -1, s.Fecha) AS FechaInteraccion
+            INTO #Interacciones
+            FROM SeguimientoCliente s
+            WHERE s.Fecha >= @FechaHace5Anos
+                AND s.Estado = 0 AND s.Pedido = 0
+                AND EXISTS (SELECT 1 FROM #Clientes x WHERE x.Cliente = s.Número AND x.Contacto = s.Contacto);
+            CREATE CLUSTERED INDEX IX_Interacciones ON #Interacciones (Cliente, Contacto, FechaInteraccion);
+
+            SELECT
+                c.[Nº Cliente] Cliente,
+                c.Contacto,
+                c.Número AS PedidoId,
+                CASE
+                    WHEN c.[Periodo Facturacion] = 'FDM' THEN l.[Fecha Modificacion]
+                    ELSE c.[Fecha Modificación]
+                END AS FechaPedido
+            INTO #Pedidos
+            FROM CabPedidoVta c
+            INNER JOIN LinPedidoVta l ON c.empresa = l.empresa AND c.número = l.número
+            WHERE TipoLinea = 1 and Estado >= -1 AND c.NotaEntrega = 0
+                AND [base imponible] > 0
+                AND c.Fecha >= @FechaHace5Anos
+                AND EXISTS (SELECT 1 FROM #Clientes x WHERE x.Cliente = c.[Nº Cliente] AND x.Contacto = c.Contacto);
+            CREATE CLUSTERED INDEX IX_Pedidos ON #Pedidos (Cliente, Contacto, FechaPedido);
+
+            SELECT
                 c.ClienteId,
-                '{tipoInteraccion}' AS TipoInteraccion, 
-                DATEPART(MONTH, (SELECT FechaHoy FROM cte_fechas)) AS MesActual,
-                DATEPART(WEEKDAY, (SELECT FechaHoy FROM cte_fechas)) AS DiaDeLaSemana,
-                CASE WHEN DATEPART(HOUR, (SELECT FechaHoy FROM cte_fechas)) > 14 THEN 1 ELSE 0 END AS EsPorLaTarde,
-                ISNULL(DATEDIFF(DAY, (SELECT MAX(FechaInteraccion) FROM cte_interacciones i WHERE i.Cliente = c.Cliente and i.Contacto = c.Contacto), (SELECT FechaHoy FROM cte_fechas)), 9999) AS DiasDesdeUltimaInteraccion,
-                ISNULL(DATEDIFF(DAY, (SELECT MAX(FechaPedido) FROM cte_pedidos p WHERE p.Cliente = c.Cliente and p.Contacto = c.Contacto), (SELECT FechaHoy FROM cte_fechas)), 9999) AS DiasDesdeUltimoPedido,
-                isnull((SELECT ISNULL(365 / NULLIF(COUNT(DISTINCT CAST(FechaPedido AS date)), 0), 0) FROM cte_pedidos p WHERE p.Cliente = c.Cliente and p.Contacto = c.Contacto AND p.FechaPedido >= (SELECT FechaHace12Meses FROM cte_fechas)), 0) AS FrecuenciaPedidosUltimoAnno,
-                ISNULL((SELECT COUNT(*) FROM cte_interacciones p WHERE p.Cliente = c.Cliente and p.Contacto = c.Contacto AND p.FechaInteraccion >= (SELECT FechaHace12Meses FROM cte_fechas)), 0) AS InteraccionesUltimos12Meses,
-                isnull((SELECT COUNT(distinct(cast(FechaPedido as DATE))) FROM cte_pedidos p WHERE p.Cliente = c.Cliente and p.Contacto = c.Contacto AND p.FechaPedido >= (SELECT FechaHace12Meses FROM cte_fechas) AND p.FechaPedido < (SELECT FechaHace11Meses FROM cte_fechas)), 0) AS PedidosMesAnnoAnterior,
-                isnull((select GrupoSubgrupo from #grupoSubgrupo g where rn = 1 and g.Cliente = c.Cliente and g.Contacto= c.Contacto), 'NADA') GrupoSubgrupoMasVendido,
+                @TipoInteraccion AS TipoInteraccion,
+                DATEPART(MONTH, @FechaHoy) AS MesActual,
+                DATEPART(WEEKDAY, @FechaHoy) AS DiaDeLaSemana,
+                CASE WHEN DATEPART(HOUR, @FechaHoy) > 14 THEN 1 ELSE 0 END AS EsPorLaTarde,
+                ISNULL(DATEDIFF(DAY, (SELECT MAX(FechaInteraccion) FROM #Interacciones i WHERE i.Cliente = c.Cliente and i.Contacto = c.Contacto), @FechaHoy), 9999) AS DiasDesdeUltimaInteraccion,
+                ISNULL(DATEDIFF(DAY, (SELECT MAX(FechaPedido) FROM #Pedidos p WHERE p.Cliente = c.Cliente and p.Contacto = c.Contacto), @FechaHoy), 9999) AS DiasDesdeUltimoPedido,
+                isnull((SELECT ISNULL(365 / NULLIF(COUNT(DISTINCT CAST(FechaPedido AS date)), 0), 0) FROM #Pedidos p WHERE p.Cliente = c.Cliente and p.Contacto = c.Contacto AND p.FechaPedido >= @FechaHace12Meses), 0) AS FrecuenciaPedidosUltimoAnno,
+                ISNULL((SELECT COUNT(*) FROM #Interacciones p WHERE p.Cliente = c.Cliente and p.Contacto = c.Contacto AND p.FechaInteraccion >= @FechaHace12Meses), 0) AS InteraccionesUltimos12Meses,
+                isnull((SELECT COUNT(distinct(cast(FechaPedido as DATE))) FROM #Pedidos p WHERE p.Cliente = c.Cliente and p.Contacto = c.Contacto AND p.FechaPedido >= @FechaHace12Meses AND p.FechaPedido < @FechaHace11Meses), 0) AS PedidosMesAnnoAnterior,
+                isnull((select GrupoSubgrupo from #Gruposubgrupo g where rn = 1 and g.Cliente = c.Cliente and g.Contacto= c.Contacto), 'NADA') GrupoSubgrupoMasVendido,
                 0 AS target
-            FROM 
-                cte_clientes c
-            ORDER BY 
-                c.ClienteId;
+            FROM #Clientes c
+            ORDER BY c.ClienteId;
             ";
 
+        internal const int TIMEOUT_OBTENER_CLIENTES_SEGUNDOS = 120;
+
+        /// <summary>El tipo de interacción por defecto del modelo es la llamada.</summary>
+        internal static string NormalizarTipoInteraccion(string tipoInteraccion)
+        {
+            return string.IsNullOrEmpty(tipoInteraccion) || tipoInteraccion == "Teléfono" ? "Llamada" : tipoInteraccion;
+        }
+
+        internal static SqlCommand CrearComandoObtenerClientes(SqlConnection connection, string vendedor, string tipoInteraccion)
+        {
+            SqlCommand command = new SqlCommand(SQL_OBTENER_CLIENTES, connection)
+            {
+                CommandTimeout = TIMEOUT_OBTENER_CLIENTES_SEGUNDOS
+            };
+            _ = command.Parameters.Add(new SqlParameter("@Vendedor", SqlDbType.VarChar, 10) { Value = (object)vendedor?.Trim() ?? DBNull.Value });
+            _ = command.Parameters.Add(new SqlParameter("@TipoInteraccion", SqlDbType.VarChar, 20) { Value = NormalizarTipoInteraccion(tipoInteraccion) });
+            return command;
+        }
+
+        private static List<ClienteInteraccion> ObtenerClientes(string vendedor, string tipoInteraccion)
+        {
             using (var context = new NVEntities())
             {
                 var connectionString = context.Database.Connection.ConnectionString;
 
                 using (SqlConnection connection = new SqlConnection(connectionString))
+                using (SqlCommand command = CrearComandoObtenerClientes(connection, vendedor, tipoInteraccion))
                 {
-                    SqlCommand command = new SqlCommand(query, connection);
                     connection.Open();
-                    SqlDataReader reader = command.ExecuteReader();
-
                     List<ClienteInteraccion> clientes = new List<ClienteInteraccion>();
-
-                    while (reader.Read())
+                    using (SqlDataReader reader = command.ExecuteReader())
                     {
-                        try
+                        while (reader.Read())
                         {
-                            clientes.Add(new ClienteInteraccion
+                            try
                             {
-                                ClienteId = reader["ClienteId"].ToString(),
-                                TipoInteraccion = reader["TipoInteraccion"].ToString(),
-                                MesActual = reader["MesActual"].ToString(),
-                                DiaDeLaSemana = reader["DiaDeLaSemana"].ToString(),
-                                GrupoSubgrupoMasVendido = reader["GrupoSubgrupoMasVendido"].ToString(),
-                                EsPorLaTarde = Convert.ToSingle(reader["EsPorLaTarde"]),
-                                DiasDesdeUltimaInteraccion = Convert.ToSingle(reader["DiasDesdeUltimaInteraccion"]),
-                                DiasDesdeUltimoPedido = Convert.ToSingle(reader["DiasDesdeUltimoPedido"]),
-                                FrecuenciaPedidosUltimoAnno = Convert.ToSingle(reader["FrecuenciaPedidosUltimoAnno"]),
-                                InteraccionesUltimos12Meses = Convert.ToSingle(reader["InteraccionesUltimos12Meses"]),
-                                PedidosMesAnnoAnterior = Convert.ToSingle(reader["PedidosMesAnnoAnterior"]),
-                                Target = Convert.ToBoolean(reader["target"])
-                            });
+                                clientes.Add(new ClienteInteraccion
+                                {
+                                    ClienteId = reader["ClienteId"].ToString(),
+                                    TipoInteraccion = reader["TipoInteraccion"].ToString(),
+                                    MesActual = reader["MesActual"].ToString(),
+                                    DiaDeLaSemana = reader["DiaDeLaSemana"].ToString(),
+                                    GrupoSubgrupoMasVendido = reader["GrupoSubgrupoMasVendido"].ToString(),
+                                    EsPorLaTarde = Convert.ToSingle(reader["EsPorLaTarde"]),
+                                    DiasDesdeUltimaInteraccion = Convert.ToSingle(reader["DiasDesdeUltimaInteraccion"]),
+                                    DiasDesdeUltimoPedido = Convert.ToSingle(reader["DiasDesdeUltimoPedido"]),
+                                    FrecuenciaPedidosUltimoAnno = Convert.ToSingle(reader["FrecuenciaPedidosUltimoAnno"]),
+                                    InteraccionesUltimos12Meses = Convert.ToSingle(reader["InteraccionesUltimos12Meses"]),
+                                    PedidosMesAnnoAnterior = Convert.ToSingle(reader["PedidosMesAnnoAnterior"]),
+                                    Target = Convert.ToBoolean(reader["target"])
+                                });
+                            }
+                            catch (Exception ex)
+                            {
+                                throw new Exception("No se pudo leer los datos del modele", ex);
+                            }
                         }
-                        catch (Exception ex)
-                        {
-                            throw new Exception("No se pudo leer los datos del modele", ex);
-                        }
-
                     }
 
-                    var clientesFiltrados = clientes.Where(c => c.DiasDesdeUltimaInteraccion >= 7 && c.DiasDesdeUltimoPedido >= 6).ToList();
-
-                    return clientesFiltrados;
+                    return clientes.Where(c => c.DiasDesdeUltimaInteraccion >= 7 && c.DiasDesdeUltimoPedido >= 6).ToList();
                 }
             }
         }
