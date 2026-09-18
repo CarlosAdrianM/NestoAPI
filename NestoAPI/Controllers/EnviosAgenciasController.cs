@@ -1043,6 +1043,35 @@ namespace NestoAPI.Controllers
             }
         }
 
+        // POST: api/EnviosAgencias/5/ModificarDatos
+        /// <summary>
+        /// Nesto#340 (Agencias, slice A4.4): reembolso, retorno, estado y fecha de entrega de un envío
+        /// ya tramitado (pestaña Tramitados y «Rehusar»), con historia, contabilización del cambio de
+        /// reembolso y marcado RHS del efecto, en una transacción del servidor. No confundir con
+        /// <see cref="ModificarEnvio"/>, que corrige la DIRECCIÓN en la agencia (#317).
+        /// </summary>
+        [HttpPost]
+        [Authorize]
+        [Route("api/EnviosAgencias/{id:int}/ModificarDatos")]
+        [ResponseType(typeof(ResultadoModificacionEnvio))]
+        public async Task<IHttpActionResult> ModificarDatosEnvio(int id, ModificarDatosEnvioDTO datos)
+        {
+            if (datos == null)
+            {
+                return BadRequest("Faltan los datos a modificar.");
+            }
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
+            ITramitacionEnviosService servicio = tramitacionEnviosService ?? new TramitacionEnviosService(db);
+            try
+            {
+                return Ok(await servicio.ModificarDatosAsync(id, datos, usuario));
+            }
+            catch (NestoBusinessException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+
         // POST: api/EnviosAgencias/5/RecibirRetorno
         /// <summary>
         /// Nesto#340 (Agencias, slice A4.2): el almacén confirma que ha recibido el retorno del envío
