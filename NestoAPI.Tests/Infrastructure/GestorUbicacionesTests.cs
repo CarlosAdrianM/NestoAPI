@@ -1,5 +1,6 @@
 ﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Infraestructure.Kits;
 using NestoAPI.Models.Kits;
 using NestoAPI.Models;
@@ -97,7 +98,7 @@ namespace NestoAPI.Tests.Infrastructure
             };
 
             // Act y Assert
-            var excepcion = Assert.ThrowsException<Exception>(() => sut.AsignarUbicacionesMasAntiguas(preExtractosIn).GetAwaiter().GetResult());
+            var excepcion = Assert.ThrowsException<NestoBusinessException>(() => sut.AsignarUbicacionesMasAntiguas(preExtractosIn).GetAwaiter().GetResult());
             Assert.AreEqual("No hay cantidad suficiente para montar el kit", excepcion.Message);
         }
 

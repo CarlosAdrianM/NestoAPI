@@ -1,5 +1,6 @@
 ﻿using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Clientes;
+using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Infraestructure.Kits;
 using NestoAPI.Infraestructure.Sincronizacion;
 using NestoAPI.Infraestructure.Vendedores;
@@ -538,9 +539,17 @@ namespace NestoAPI.Controllers
 
             IUbicacionService ubicacionService = new UbicacionService();
             GestorKits gestorKits = new GestorKits(productoService, ubicacionService);
-            int traspaso = await gestorKits.MontarKit(empresa, almacen, producto, cantidad, usuario);
-
-            return Ok(traspaso);
+            try
+            {
+                int traspaso = await gestorKits.MontarKit(empresa, almacen, producto, cantidad, usuario);
+                return Ok(traspaso);
+            }
+            catch (NestoBusinessException ex)
+            {
+                // Nesto#479: "no hay cantidad suficiente" es un motivo de negocio, no un 500:
+                // 400 con el texto, que es lo que Nesto enseña al usuario (y no ensucia ELMAH).
+                return BadRequest(ex.Message);
+            }
         }
 
         /*

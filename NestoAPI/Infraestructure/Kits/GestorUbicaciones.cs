@@ -1,4 +1,5 @@
-﻿using NestoAPI.Models.Kits;
+﻿using NestoAPI.Infraestructure.Exceptions;
+using NestoAPI.Models.Kits;
 using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
@@ -66,7 +67,8 @@ namespace NestoAPI.Infraestructure.Kits
                     {
                         if (ubicacion == ubicaciones.Last())
                         {
-                            throw new Exception("No hay cantidad suficiente para montar el kit");
+                            // Nesto#479: excepción de negocio, que el controlador devuelve como 400 con el texto.
+                            throw new NestoBusinessException("No hay cantidad suficiente para montar el kit");
                         }
                         ubicacion.Cantidad = -ubicacion.Cantidad;
                         ubicacion.Estado = Constantes.Ubicaciones.ESTADO_REGISTRO_MONTAR_KITS;
