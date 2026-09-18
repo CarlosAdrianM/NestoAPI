@@ -115,19 +115,6 @@ namespace NestoAPI.Controllers
 
         public async Task<List<ResumenPedidoVentaDTO>> GetPedidosVenta(string vendedor)
         {
-            //IQueryable<CabPedidoVta> pedidosVendedor = from c in db.CabPedidoVtas
-            //                                       join v in db.VendedoresPedidosGruposProductos
-
-            //                                       //This is how you join by multiple values
-            //                                       on new { empresa = c.Empresa, pedido = c.Número } equals new { empresa = v.Empresa, pedido = v.Pedido }
-            //                                       into jointData
-
-            //                                       //This is how you actually turn the join into a left-join
-            //                                       from jointRecord in jointData.DefaultIfEmpty()
-
-            //                                       where (vendedor == "" || vendedor == null || c.Vendedor ==  vendedor || jointRecord.Vendedor == vendedor)
-            //                                       select c;
-
             List<string> vendedoresLista;
             if (string.IsNullOrWhiteSpace(vendedor))
             {
@@ -135,73 +122,12 @@ namespace NestoAPI.Controllers
             }
             else
             {
-                //// Crear una instancia del controlador VendedoresController
-                //VendedoresController vendedoresController = new VendedoresController();
-
-                //// Llamar al método GetVendedores con los parámetros deseados
                 string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO;
-                //var resultado = await vendedoresController.GetVendedores(empresa, vendedor).ConfigureAwait(false);
-                List<VendedorDTO> listaVendedores;
-                listaVendedores = await servicioVendedores.VendedoresEquipo(empresa, vendedor).ConfigureAwait(false);
-                //// Puedes procesar el resultado y devolver la respuesta adecuada
-                //if (resultado is OkNegotiatedContentResult<List<VendedorDTO>>)
-                //{
-                //    listaVendedores = ((OkNegotiatedContentResult<List<VendedorDTO>>)resultado).Content;
-                //}
-                //else //(resultado is BadRequestErrorMessageResult)
-                //{
-                //    var mensajeError = ((BadRequestErrorMessageResult)resultado).Message;
-                //    // Manejar el error de acuerdo a tus necesidades
-                //    throw new Exception(mensajeError);
-                //}
+                List<VendedorDTO> listaVendedores = await servicioVendedores.VendedoresEquipo(empresa, vendedor).ConfigureAwait(false);
                 vendedoresLista = listaVendedores.Select(v => v.vendedor).ToList();
             }
 
-            IQueryable<CabPedidoVta> pedidosVendedor = from c in db.CabPedidoVtas
-                                                       join v in db.VendedoresPedidosGruposProductos
-                                                       on new { empresa = c.Empresa, pedido = c.Número } equals new { empresa = v.Empresa, pedido = v.Pedido }
-                                                       into jointData
-                                                       from jointRecord in jointData.DefaultIfEmpty()
-                                                       where vendedor == "" || vendedor == null || vendedoresLista.Contains(c.Vendedor) || (jointRecord != null && vendedoresLista.Contains(jointRecord.Vendedor))
-                                                       select c;
-
-
-            IQueryable<ResumenPedidoVentaDTO> cabeceraPedidos = pedidosVendedor
-                .Join(db.LinPedidoVtas, c => new { empresa = c.Empresa, numero = c.Número }, l => new { empresa = l.Empresa, numero = l.Número }, (c, l) => new { c.Vendedor, c.Empresa, c.Número, c.Nº_Cliente, c.Cliente.Nombre, c.Cliente.Dirección, c.Cliente.CodPostal, c.Cliente.Población, c.Cliente.Provincia, c.Fecha, l.TipoLinea, l.Estado, l.Picking, l.Fecha_Entrega, l.Base_Imponible, l.Total, c.Ruta })
-                .Where(c => c.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && c.Estado <= Constantes.EstadosLineaVenta.EN_CURSO)
-                .GroupBy(g => new { g.Empresa, g.Número, g.Nº_Cliente, g.Nombre, g.Dirección, g.CodPostal, g.Población, g.Provincia, g.Vendedor, g.Ruta })
-                .Select(x => new ResumenPedidoVentaDTO
-                {
-                    empresa = x.Key.Empresa.Trim(),
-                    numero = x.Key.Número,
-                    cliente = x.Key.Nº_Cliente.Trim(),
-                    nombre = x.Key.Nombre.Trim(),
-                    direccion = x.Key.Dirección.Trim(),
-                    codPostal = x.Key.CodPostal.Trim(),
-                    poblacion = x.Key.Población.Trim(),
-                    provincia = x.Key.Provincia.Trim(),
-                    fecha = x.Min(c => c.Fecha_Entrega),
-                    tieneProductos = x.FirstOrDefault(c => c.TipoLinea == 1) != null,
-                    //tieneFechasFuturas = x.FirstOrDefault(c => c.Fecha_Entrega > fechaEntregaAjustada(DateTime.Now, c.Ruta)) != null,
-                    tienePendientes = x.FirstOrDefault(c => c.Estado < 0) != null,
-                    tienePicking = x.FirstOrDefault(c => c.Picking != 0) != null,
-                    baseImponible = x.Sum(c => c.Base_Imponible),
-                    total = x.Sum(c => c.Total),
-                    vendedor = x.Key.Vendedor.Trim(),
-                    ruta = x.Key.Ruta.Trim()
-                })
-                .OrderByDescending(c => c.numero);
-
-            List<ResumenPedidoVentaDTO> listaPedidos = cabeceraPedidos.ToList();
-
-            foreach (ResumenPedidoVentaDTO cab in listaPedidos)
-            {
-                DateTime fechaEntregaFutura = gestor.FechaEntregaAjustada(DateTime.Now, cab.ruta);
-                cab.tieneFechasFuturas = db.LinPedidoVtas.Any(c => c.Empresa == cab.empresa && c.Número == cab.numero && c.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && c.Estado <= Constantes.EstadosLineaVenta.EN_CURSO && c.Fecha_Entrega > fechaEntregaFutura);
-                cab.ultimoSeguimiento = db.EnviosAgencias.Where(e => e.Pedido == cab.numero).OrderByDescending(e => e.Numero).FirstOrDefault()?.CodigoBarras;
-            }
-
-            return listaPedidos;
+            return ResumirPedidos(vendedoresLista, cliente: null, soloLineasPendientes: true, maximo: null);
         }
 
         public async Task<List<ResumenPedidoVentaDTO>> GetPedidosVenta(string vendedor, string cliente)
@@ -222,53 +148,118 @@ namespace NestoAPI.Controllers
                     .ConfigureAwait(false);
             }
 
-            IQueryable<CabPedidoVta> pedidosVendedor = from c in db.CabPedidoVtas
-                                                       join v in db.VendedoresPedidosGruposProductos
-                                                       on new { empresa = c.Empresa, pedido = c.Número } equals new { empresa = v.Empresa, pedido = v.Pedido }
-                                                       into jointData
-                                                       from jointRecord in jointData.DefaultIfEmpty()
-                                                       where vendedor == "" || vendedor == null
-                                                           || vendedoresLista.Contains(c.Vendedor)
-                                                           || (jointRecord != null && vendedoresLista.Contains(jointRecord.Vendedor))
-                                                       select c;
+            return ResumirPedidos(vendedoresLista, cliente, soloLineasPendientes: false, maximo: NUMERO_PRESUPUESTOS_MOSTRADOS);
+        }
 
-            IQueryable<ResumenPedidoVentaDTO> cabeceraPedidos = pedidosVendedor
-                .Join(db.LinPedidoVtas, c => new { empresa = c.Empresa, numero = c.Número }, l => new { empresa = l.Empresa, numero = l.Número }, (c, l) => new { c.Vendedor, c.Empresa, c.Número, c.Nº_Cliente, c.Cliente.Nombre, c.Cliente.Dirección, c.Cliente.CodPostal, c.Cliente.Población, c.Cliente.Provincia, c.Fecha, l.TipoLinea, l.Estado, l.Picking, l.Fecha_Entrega, l.Base_Imponible, l.Total, c.Ruta })
-                .Where(c => c.Nº_Cliente == cliente)
-                .GroupBy(g => new { g.Empresa, g.Número, g.Nº_Cliente, g.Nombre, g.Dirección, g.CodPostal, g.Población, g.Provincia, g.Vendedor, g.Ruta })
-                .Select(x => new ResumenPedidoVentaDTO
-                {
-                    empresa = x.Key.Empresa.Trim(),
-                    numero = x.Key.Número,
-                    cliente = x.Key.Nº_Cliente.Trim(),
-                    nombre = x.Key.Nombre.Trim(),
-                    direccion = x.Key.Dirección.Trim(),
-                    codPostal = x.Key.CodPostal.Trim(),
-                    poblacion = x.Key.Población.Trim(),
-                    provincia = x.Key.Provincia.Trim(),
-                    fecha = x.Min(c => c.Fecha_Entrega),
-                    tieneProductos = x.FirstOrDefault(c => c.TipoLinea == 1) != null,
-                    //tieneFechasFuturas = x.FirstOrDefault(c => c.Fecha_Entrega > fechaEntregaAjustada(DateTime.Now, c.Ruta)) != null,
-                    tienePendientes = x.FirstOrDefault(c => c.Estado < 0) != null,
-                    tienePicking = x.FirstOrDefault(c => c.Picking != 0) != null,
-                    baseImponible = x.Sum(c => c.Base_Imponible),
-                    total = x.Sum(c => c.Total),
-                    vendedor = x.Key.Vendedor.Trim(),
-                    ruta = x.Key.Ruta.Trim()
-                })
-                .OrderByDescending(c => c.numero)
-                .Take(NUMERO_PRESUPUESTOS_MOSTRADOS);
+        /// <summary>
+        /// NestoAPI#496: el listado de pedidos de la app (y el de la ficha de cliente) en TRES viajes a
+        /// SQL en vez de 1 + 2 por pedido. Antes, sin vendedor (administración), el left join de todas
+        /// las cabeceras históricas con VendedoresPedidosGruposProductos agotaba el timeout antes de
+        /// que el filtro de líneas pendientes dejara los ~290 pedidos que de verdad se devuelven, y
+        /// después se lanzaban dos consultas más por cada uno (tieneFechasFuturas y ultimoSeguimiento).
+        ///
+        /// Ahora: (1) se parte de las LÍNEAS (pendientes, si procede) y el vendedor se filtra con un
+        /// EXISTS sobre VendedoresPedidosGruposProductos —el left join de antes DUPLICABA las líneas
+        /// (y sus sumas) cuando un pedido tenía varias filas de grupos—; (2) tieneFechasFuturas sale de
+        /// la propia agrupación (la última fecha de entrega de las líneas pendientes, comparada en
+        /// memoria con la fecha ajustada de su ruta, que son pocas); (3) los seguimientos se traen de
+        /// una vez para todos los números.
+        /// </summary>
+        private List<ResumenPedidoVentaDTO> ResumirPedidos(List<string> vendedoresLista, string cliente, bool soloLineasPendientes, int? maximo)
+        {
+            bool filtrarVendedor = vendedoresLista != null && vendedoresLista.Count > 0;
 
-            List<ResumenPedidoVentaDTO> listaPedidos = cabeceraPedidos.ToList();
-
-            foreach (ResumenPedidoVentaDTO cab in listaPedidos)
+            IQueryable<LinPedidoVta> lineas = db.LinPedidoVtas;
+            if (soloLineasPendientes)
             {
-                DateTime fechaEntregaFutura = gestor.FechaEntregaAjustada(DateTime.Now, cab.ruta);
-                cab.tieneFechasFuturas = db.LinPedidoVtas.FirstOrDefault(c => c.Empresa == cab.empresa && c.Número == cab.numero && c.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && c.Estado <= Constantes.EstadosLineaVenta.EN_CURSO && c.Fecha_Entrega > fechaEntregaFutura) != null;
-                cab.ultimoSeguimiento = db.EnviosAgencias.Where(e => e.Pedido == cab.numero).OrderByDescending(e => e.Numero).FirstOrDefault()?.CodigoBarras;
+                lineas = lineas.Where(l => l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO);
             }
 
-            return listaPedidos;
+            IQueryable<CabPedidoVta> cabeceras = db.CabPedidoVtas;
+            if (!string.IsNullOrWhiteSpace(cliente))
+            {
+                cabeceras = cabeceras.Where(c => c.Nº_Cliente == cliente);
+            }
+            if (filtrarVendedor)
+            {
+                cabeceras = cabeceras.Where(c => vendedoresLista.Contains(c.Vendedor)
+                    || db.VendedoresPedidosGruposProductos.Any(v => v.Empresa == c.Empresa && v.Pedido == c.Número && vendedoresLista.Contains(v.Vendedor)));
+            }
+
+            var grupos = lineas
+                .Join(cabeceras, l => new { l.Empresa, Numero = l.Número }, c => new { c.Empresa, Numero = c.Número },
+                    (l, c) => new { c.Vendedor, c.Empresa, c.Número, c.Nº_Cliente, c.Cliente.Nombre, c.Cliente.Dirección, c.Cliente.CodPostal, c.Cliente.Población, c.Cliente.Provincia, l.TipoLinea, l.Estado, l.Picking, l.Fecha_Entrega, l.Base_Imponible, l.Total, c.Ruta })
+                .GroupBy(g => new { g.Empresa, g.Número, g.Nº_Cliente, g.Nombre, g.Dirección, g.CodPostal, g.Población, g.Provincia, g.Vendedor, g.Ruta })
+                .Select(x => new
+                {
+                    x.Key.Empresa,
+                    x.Key.Número,
+                    x.Key.Nº_Cliente,
+                    x.Key.Nombre,
+                    x.Key.Dirección,
+                    x.Key.CodPostal,
+                    x.Key.Población,
+                    x.Key.Provincia,
+                    x.Key.Vendedor,
+                    x.Key.Ruta,
+                    fecha = x.Min(c => c.Fecha_Entrega),
+                    tieneProductos = x.Any(c => c.TipoLinea == 1),
+                    tienePendientes = x.Any(c => c.Estado < 0),
+                    tienePicking = x.Any(c => c.Picking != 0),
+                    baseImponible = x.Sum(c => c.Base_Imponible),
+                    total = x.Sum(c => c.Total),
+                    // Solo las líneas pendientes/en curso cuentan para "tiene fechas futuras".
+                    ultimaEntregaPendiente = x.Where(c => c.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && c.Estado <= Constantes.EstadosLineaVenta.EN_CURSO)
+                        .Max(c => (DateTime?)c.Fecha_Entrega)
+                })
+                .OrderByDescending(g => g.Número);
+
+            var lista = (maximo.HasValue ? grupos.Take(maximo.Value) : grupos).ToList();
+
+            // Un viaje para los seguimientos de todos los pedidos de la lista.
+            List<int> numeros = lista.Select(g => g.Número).ToList();
+            Dictionary<int, string> seguimientos = numeros.Count == 0
+                ? new Dictionary<int, string>()
+                : db.EnviosAgencias
+                    .Where(e => e.Pedido.HasValue && numeros.Contains(e.Pedido.Value))
+                    .Select(e => new { e.Pedido, e.Numero, e.CodigoBarras })
+                    .ToList()
+                    .GroupBy(e => e.Pedido.Value)
+                    .ToDictionary(g => g.Key, g => g.OrderByDescending(e => e.Numero).First().CodigoBarras);
+
+            // La fecha ajustada depende de la ruta (y de la hora): una por ruta distinta.
+            Dictionary<string, DateTime> fechaAjustadaPorRuta = new Dictionary<string, DateTime>();
+
+            return lista.Select(g =>
+            {
+                string ruta = g.Ruta?.Trim() ?? string.Empty;
+                if (!fechaAjustadaPorRuta.TryGetValue(ruta, out DateTime fechaEntregaFutura))
+                {
+                    fechaEntregaFutura = gestor.FechaEntregaAjustada(DateTime.Now, ruta);
+                    fechaAjustadaPorRuta[ruta] = fechaEntregaFutura;
+                }
+                return new ResumenPedidoVentaDTO
+                {
+                    empresa = g.Empresa?.Trim(),
+                    numero = g.Número,
+                    cliente = g.Nº_Cliente?.Trim(),
+                    nombre = g.Nombre?.Trim(),
+                    direccion = g.Dirección?.Trim(),
+                    codPostal = g.CodPostal?.Trim(),
+                    poblacion = g.Población?.Trim(),
+                    provincia = g.Provincia?.Trim(),
+                    fecha = g.fecha,
+                    tieneProductos = g.tieneProductos,
+                    tienePendientes = g.tienePendientes,
+                    tienePicking = g.tienePicking,
+                    baseImponible = g.baseImponible,
+                    total = g.total,
+                    vendedor = g.Vendedor?.Trim(),
+                    ruta = ruta,
+                    tieneFechasFuturas = g.ultimaEntregaPendiente.HasValue && g.ultimaEntregaPendiente.Value > fechaEntregaFutura,
+                    ultimoSeguimiento = seguimientos.TryGetValue(g.Número, out string codigoBarras) ? codigoBarras : null
+                };
+            }).ToList();
         }
 
         public IQueryable<ResumenPedidoVentaDTO> GetPedidosVenta(string vendedor, int estado)
