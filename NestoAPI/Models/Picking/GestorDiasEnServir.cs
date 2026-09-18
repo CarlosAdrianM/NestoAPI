@@ -202,21 +202,61 @@ namespace NestoAPI.Models.Picking
             }
         }
 
-        private static string GenerarCuerpo(List<PedidoPicking> pedidos, DateTime diaEntrega)
+        /// <summary>
+        /// NestoAPI#497: el cuerpo lo leen personas que no saben cómo se guarda el dato. Nada de
+        /// "01111": una columna por día con Abierto/Cerrado, el día de la entrega resaltado, y el
+        /// motivo en una frase con el día de la semana en palabras.
+        /// </summary>
+        internal static string GenerarCuerpo(List<PedidoPicking> pedidos, DateTime diaEntrega)
         {
             System.Globalization.CultureInfo castellano = new System.Globalization.CultureInfo("es-ES");
+            string diaSemana = diaEntrega.ToString("dddd", castellano);
             StringBuilder s = new StringBuilder();
-            _ = s.Append("<p>Estos pedidos no han cogido picking porque se entregarían el ");
+            _ = s.Append("<p>Estos pedidos no han cogido picking porque se entregarían el <strong>");
             _ = s.Append(diaEntrega.ToString("dddd d 'de' MMMM", castellano));
-            _ = s.Append(", y ese día de la semana el cliente cierra (días de servir de su ficha). ");
-            _ = s.Append("Saldrán solos en la primera pasada cuya entrega caiga en día abierto; ");
+            _ = s.Append($"</strong>, y el cliente tiene el <strong>{diaSemana}</strong> marcado como <strong>cerrado</strong> en su ficha ");
+            _ = s.Append("(días de servir). Saldrán solos en la primera pasada cuya entrega caiga en un día abierto; ");
             _ = s.Append("para forzar la salida, poner una fecha de entrega concreta en el pedido.</p>");
-            _ = s.Append("<table border='1' cellpadding='4' cellspacing='0'><tr><th>Pedido</th><th>Cliente</th><th>Días de servir (L-V)</th></tr>");
+            _ = s.Append("<table border='1' cellpadding='4' cellspacing='0'><tr><th>Pedido</th><th>Cliente</th>");
+            foreach (string dia in NOMBRES_DIAS)
+            {
+                _ = s.Append(dia.Equals(diaSemana, StringComparison.OrdinalIgnoreCase)
+                    ? $"<th style='background-color:#fde2e2'>{dia}</th>"
+                    : $"<th>{dia}</th>");
+            }
+            _ = s.Append("</tr>");
             foreach (PedidoPicking pedido in pedidos)
             {
-                _ = s.Append($"<tr><td>{pedido.Id}</td><td>{pedido.Cliente?.Trim()}</td><td>{pedido.DiasEnServir?.Trim()}</td></tr>");
+                _ = s.Append($"<tr><td>{pedido.Id}</td><td>{pedido.Cliente?.Trim()}</td>");
+                _ = s.Append(CeldasDias(pedido.DiasEnServir, diaEntrega));
+                _ = s.Append("</tr>");
             }
             _ = s.Append("</table>");
+            _ = s.Append("<p style='color:#666;font-size:90%'>Abierto = el cliente recibe ese día; Cerrado = no. ");
+            _ = s.Append("Se cambia en la ficha del cliente (días de servir).</p>");
+            return s.ToString();
+        }
+
+        private static readonly string[] NOMBRES_DIAS = { "lunes", "martes", "miércoles", "jueves", "viernes" };
+
+        /// <summary>
+        /// Las cinco celdas lunes..viernes de un cliente, en palabras. La del día de la entrega va
+        /// resaltada. Un dato que no es de 5 posiciones 0/1 sale como "Sin dato" (GestorDiasEnServir
+        /// lo trata como abierto, así que un pedido con ese dato no llega a este correo).
+        /// </summary>
+        internal static string CeldasDias(string diasEnServir, DateTime diaEntrega)
+        {
+            string dias = diasEnServir?.Trim();
+            bool valido = dias != null && dias.Length == 5 && dias.All(c => c == '0' || c == '1');
+            StringBuilder s = new StringBuilder();
+            for (int i = 0; i < 5; i++)
+            {
+                string texto = !valido ? "Sin dato" : (dias[i] == '1' ? "Abierto" : "Cerrado");
+                bool esElDiaDeEntrega = (int)diaEntrega.DayOfWeek == i + 1;   // Monday = 1
+                _ = s.Append(esElDiaDeEntrega
+                    ? $"<td style='background-color:#fde2e2'><strong>{texto}</strong></td>"
+                    : $"<td>{texto}</td>");
+            }
             return s.ToString();
         }
     }

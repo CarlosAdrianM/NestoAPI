@@ -202,5 +202,44 @@ namespace NestoAPI.Tests.Models.Picking
             Assert.IsFalse(avisados.ContainsKey("777777|20260101"), "el registro no crece sin fin");
             Assert.IsTrue(avisados.ContainsKey($"900001|{LUNES:yyyyMMdd}"));
         }
+        // ===== NestoAPI#497: el correo se entiende sin conocer el formato de la base de datos =====
+
+        private static PedidoPicking PedidoConDias(int id, string cliente, string dias) =>
+            new PedidoPicking { Id = id, Cliente = cliente, DiasEnServir = dias };
+
+        [TestMethod]
+        public void GenerarCuerpo_ClienteQueCierraLosLunes_UnaColumnaPorDiaConAbiertoCerrado()
+        {
+            // El caso real de la issue: 925239 / 29268 / "01111", entrega el lunes 21/09/2026.
+            DateTime lunes21 = new DateTime(2026, 9, 21);
+            string cuerpo = GestorDiasEnServir.GenerarCuerpo(new List<PedidoPicking> { PedidoConDias(925239, "29268     ", "01111") }, lunes21);
+
+            Assert.IsFalse(cuerpo.Contains("01111"), "el formato interno no sale en el correo");
+            StringAssert.Contains(cuerpo, "<th>Pedido</th><th>Cliente</th>");
+            foreach (string dia in new[] { "lunes", "martes", "miércoles", "jueves", "viernes" })
+            {
+                StringAssert.Contains(cuerpo, $">{dia}</th>", $"falta la columna {dia}");
+            }
+            StringAssert.Contains(cuerpo, "<td>925239</td><td>29268</td>");
+            string celdas = GestorDiasEnServir.CeldasDias("01111", lunes21);
+            Assert.AreEqual("<td style='background-color:#fde2e2'><strong>Cerrado</strong></td><td>Abierto</td><td>Abierto</td><td>Abierto</td><td>Abierto</td>", celdas);
+            StringAssert.Contains(cuerpo, "el cliente tiene el <strong>lunes</strong> marcado como <strong>cerrado</strong>");
+        }
+
+        [TestMethod]
+        public void CeldasDias_EntregaEnJueves_ResaltaElJuevesYNoElResto()
+        {
+            string celdas = GestorDiasEnServir.CeldasDias("11101", JUEVES);
+
+            Assert.AreEqual("<td>Abierto</td><td>Abierto</td><td>Abierto</td><td style='background-color:#fde2e2'><strong>Cerrado</strong></td><td>Abierto</td>", celdas);
+        }
+
+        [TestMethod]
+        public void CeldasDias_DatoRaro_SinDatoEnVezDeInventarse()
+        {
+            Assert.AreEqual(5, System.Text.RegularExpressions.Regex.Matches(GestorDiasEnServir.CeldasDias(null, JUEVES), "Sin dato").Count);
+            Assert.AreEqual(5, System.Text.RegularExpressions.Regex.Matches(GestorDiasEnServir.CeldasDias("1x111", JUEVES), "Sin dato").Count);
+        }
+
     }
 }
