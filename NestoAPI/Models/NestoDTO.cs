@@ -48,6 +48,9 @@ namespace NestoAPI.Models
         public DateTime? empleadosFecha { get; set; }
         // NestoAPI#471: 5 posiciones lunes..viernes, '1' abre y '0' cierra (Clientes.DiasEnServir)
         public string diasEnServir { get; set; }
+        // Nesto#429: país FISCAL del cliente (Clientes.Pais, ISO-2; NestoAPI#355). No es el país del
+        // CCC/IBAN. En el PUT de ClienteComercial, null = no tocar (llamantes que aún no lo mandan).
+        public string pais { get; set; }
         /// <summary>
         /// Si la pantalla de rapport tiene que preguntar (o enseñar ya relleno) el número de
         /// empleados. La regla vive en el servidor (PoliticaEmpleadosCliente): Nesto y NestoApp

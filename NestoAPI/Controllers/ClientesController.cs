@@ -572,6 +572,7 @@ namespace NestoAPI.Controllers
                 empleados = clienteEncontrado.Empleados,
                 empleadosFecha = clienteEncontrado.EmpleadosFecha,
                 diasEnServir = clienteEncontrado.DiasEnServir?.Trim(),
+                pais = clienteEncontrado.Pais?.Trim(),
                 VendedoresGrupoProducto = vendedoresGrupoProducto,
                 // Nesto#340 (1C.8, slice 4): la ficha comercial de Nesto necesita las personas de
                 // contacto (grid + correo de agencia) sin cargar la entidad EF en el cliente.
@@ -903,6 +904,13 @@ namespace NestoAPI.Controllers
                 }
             }
 
+            // Nesto#429: el país fiscal llega del SelectorPais (códigos de api/Paises). Un valor que no
+            // sea ISO-2 se rechaza con motivo en vez de acabar en un error de clave foránea.
+            if (!string.IsNullOrWhiteSpace(cliente.pais) && !EsCodigoPaisValido(cliente.pais))
+            {
+                return BadRequest($"El país fiscal '{cliente.pais}' no es un código ISO de dos letras.");
+            }
+
             AplicarCambiosClienteComercial(clienteDB, cliente);
 
             db.Entry(clienteDB).State = System.Data.Entity.EntityState.Modified;
@@ -954,6 +962,22 @@ namespace NestoAPI.Controllers
                 clienteDB.Vendedor = cliente.vendedor;
                 clienteDB.Usuario = cliente.usuario;
             }
+
+            // Nesto#429: país fiscal desde la ficha comercial. Null o vacío = no tocar (el Nesto y la
+            // NestoApp que aún no lo mandan no deben dejarlo en blanco).
+            if (!string.IsNullOrWhiteSpace(cliente.pais)
+                && !string.Equals(clienteDB.Pais?.Trim(), cliente.pais.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                clienteDB.Pais = cliente.pais.Trim().ToUpperInvariant();
+                clienteDB.Usuario = cliente.usuario;
+            }
+        }
+
+        /// <summary>Nesto#429: dos letras, como los códigos de la tabla Paises.</summary>
+        internal static bool EsCodigoPaisValido(string pais)
+        {
+            string codigo = pais?.Trim();
+            return codigo != null && codigo.Length == 2 && codigo.All(char.IsLetter);
         }
 
         [HttpPut]

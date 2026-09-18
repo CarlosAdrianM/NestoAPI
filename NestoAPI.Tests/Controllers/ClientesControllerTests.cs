@@ -111,6 +111,54 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual("viejo", clienteDB.Usuario, "Sin cambios no se toca la auditoría");
         }
 
+        // ===== Nesto#429: país fiscal editable desde la ficha comercial =====
+
+        [TestMethod]
+        public void AplicarCambiosClienteComercial_CambiaElPais_SePersisteEnMayusculasYAudita()
+        {
+            var clienteDB = new Cliente { Estado = 5, Vendedor = "NV ", Pais = "ES", Usuario = "viejo" };
+            var dto = new ClienteDTO { estado = 5, vendedor = "NV", pais = "fr ", usuario = "carlos" };
+
+            ClientesController.AplicarCambiosClienteComercial(clienteDB, dto);
+
+            Assert.AreEqual("FR", clienteDB.Pais);
+            Assert.AreEqual("carlos", clienteDB.Usuario);
+        }
+
+        [TestMethod]
+        public void AplicarCambiosClienteComercial_PaisNull_NoLoMachaca()
+        {
+            // Los Nesto y NestoApp que aún no mandan el país no pueden dejarlo en blanco.
+            var clienteDB = new Cliente { Estado = 5, Vendedor = "NV ", Pais = "PT", Usuario = "viejo" };
+            var dto = new ClienteDTO { estado = 5, vendedor = "NV", pais = null, usuario = "carlos" };
+
+            ClientesController.AplicarCambiosClienteComercial(clienteDB, dto);
+
+            Assert.AreEqual("PT", clienteDB.Pais);
+            Assert.AreEqual("viejo", clienteDB.Usuario, "sin cambios no se toca la auditoría");
+        }
+
+        [TestMethod]
+        public void AplicarCambiosClienteComercial_MismoPaisConOtroFormato_NoEsUnCambio()
+        {
+            var clienteDB = new Cliente { Estado = 5, Vendedor = "NV ", Pais = "ES", Usuario = "viejo" };
+            var dto = new ClienteDTO { estado = 5, vendedor = "NV", pais = "es", usuario = "carlos" };
+
+            ClientesController.AplicarCambiosClienteComercial(clienteDB, dto);
+
+            Assert.AreEqual("viejo", clienteDB.Usuario);
+        }
+
+        [TestMethod]
+        public void EsCodigoPaisValido_SoloDosLetras()
+        {
+            Assert.IsTrue(ClientesController.EsCodigoPaisValido("ES"));
+            Assert.IsTrue(ClientesController.EsCodigoPaisValido(" fr "));
+            Assert.IsFalse(ClientesController.EsCodigoPaisValido("ESP"));
+            Assert.IsFalse(ClientesController.EsCodigoPaisValido("E1"));
+            Assert.IsFalse(ClientesController.EsCodigoPaisValido("España"));
+        }
+
         // NestoAPI#327: endpoints del circuito de validación de NIF contra la AEAT
 
         private static ClientesController ControllerConValidacion(IServicioValidacionNif servicio)
