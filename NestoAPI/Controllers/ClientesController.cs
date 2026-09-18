@@ -5,6 +5,7 @@ using NestoAPI.Infraestructure.Buscador;
 using NestoAPI.Infraestructure.Clientes;
 using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Infraestructure.Seguridad;
+using NestoAPI.Infraestructure.Sincronizacion;
 using NestoAPI.Infraestructure.Vendedores;
 using NestoAPI.Models;
 using NestoAPI.Models.Clientes;
@@ -1183,6 +1184,12 @@ namespace NestoAPI.Controllers
                 .Include(c => c.PersonasContactoClientes1)
                 .ToListAsync();
 
+            // NestoAPI#498: esta es la carga inicial de las fechas de compras en Odoo. Se calculan
+            // para todos los clientes del vendedor con una sola consulta agrupada (por lotes), no
+            // tres por cliente.
+            Dictionary<string, FechasComprasCliente> fechasCompras =
+                await _gestorClientes.LeerFechasCompras(clientes.Select(c => c.Nº_Cliente));
+
             bool todosOK = true;
             int batchSize = 50; // Tamaño del lote
             int totalClientes = clientes.Count;
@@ -1197,7 +1204,8 @@ namespace NestoAPI.Controllers
                 {
                     try
                     {
-                        await _gestorClientes.PublicarClienteSincronizar(cliente, "Nesto viejo");
+                        await _gestorClientes.PublicarClienteSincronizar(cliente,
+                            CalculoFechasComprasCliente.Buscar(fechasCompras, cliente.Nº_Cliente), "Nesto viejo");
                     }
                     catch
                     {
@@ -1220,10 +1228,18 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(bool))]
         public async Task<IHttpActionResult> GetClientesSync()
         {
+            // NestoAPI#498: fechas de compras una vez por cliente, no por contacto (mismo patrón
+            // que SincronizacionJobsService.SincronizarClientes)
+            FechasComprasCliente fechasCompras = null;
+
             bool resultado = await _gestorSincronizacion.ProcesarTabla(
                 tabla: "Clientes",
                 obtenerEntidades: async (registro) =>
                 {
+                    fechasCompras = CalculoFechasComprasCliente.Buscar(
+                        await _gestorClientes.LeerFechasCompras(new[] { registro.ModificadoId }),
+                        registro.ModificadoId);
+
                     // Buscar todos los contactos del cliente en la base de datos
                     return await db.Clientes
                         .Where(c => c.Nº_Cliente == registro.ModificadoId && c.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO)
@@ -1235,7 +1251,7 @@ namespace NestoAPI.Controllers
                 },
                 publicarEntidad: async (cliente, usuario) =>
                 {
-                    await _gestorClientes.PublicarClienteSincronizar(cliente, "Nesto viejo", usuario);
+                    await _gestorClientes.PublicarClienteSincronizar(cliente, fechasCompras, "Nesto viejo", usuario);
                 }
             );
 

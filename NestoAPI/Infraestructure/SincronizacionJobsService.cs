@@ -120,10 +120,19 @@ namespace NestoAPI.Infraestructure
                         sincronizacionEventWrapper
                     );
 
+                    // NestoAPI#498: las fechas de compras son del cliente, no del contacto: se
+                    // calculan una vez por registro y valen para todos sus contactos
+                    // (ProcesarTabla recorre los registros de uno en uno).
+                    FechasComprasCliente fechasCompras = null;
+
                     bool resultado = await gestorSincronizacion.ProcesarTabla(
                         tabla: "Clientes",
                         obtenerEntidades: async (registro) =>
                         {
+                            fechasCompras = CalculoFechasComprasCliente.Buscar(
+                                await gestorClientes.LeerFechasCompras(new[] { registro.ModificadoId }),
+                                registro.ModificadoId);
+
                             // Buscar todos los contactos del cliente en la base de datos
                             return await db.Clientes
                                 .Where(c => c.Nº_Cliente == registro.ModificadoId && c.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO)
@@ -135,7 +144,7 @@ namespace NestoAPI.Infraestructure
                         },
                         publicarEntidad: async (cliente, usuario) =>
                         {
-                            await gestorClientes.PublicarClienteSincronizar(cliente, "Nesto viejo", usuario);
+                            await gestorClientes.PublicarClienteSincronizar(cliente, fechasCompras, "Nesto viejo", usuario);
                         }
                     );
 

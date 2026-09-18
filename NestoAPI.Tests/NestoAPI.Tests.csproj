@@ -265,6 +265,7 @@
     <Compile Include="Controllers\FamiliasControllerTests.cs" />
     <Compile Include="Controllers\EquiposDeVentasResumenTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\VigenciaCampanasJobsServiceTests.cs" />
+    <Compile Include="Infrastructure\Sincronizacion\FechasComprasClientesTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\SentinelPrecioPublicoJobsServiceTests.cs" />
     <Compile Include="Models\MapeoEdmxTests.cs" />
     <Compile Include="Models\CampanasPorNivelTests.cs" />

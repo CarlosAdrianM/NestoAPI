@@ -936,6 +936,15 @@ namespace NestoAPI.Infraestructure
             }
         }
 
+        public async Task<Dictionary<string, Sincronizacion.FechasComprasCliente>> LeerFechasCompras(IEnumerable<string> clientes)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                db.Configuration.LazyLoadingEnabled = false;
+                return await Sincronizacion.CalculoFechasComprasCliente.Calcular(db, clientes).ConfigureAwait(false);
+            }
+        }
+
         internal static string NormalizarNif(string nif)
         {
             if (string.IsNullOrWhiteSpace(nif))

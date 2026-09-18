@@ -45,5 +45,6 @@ namespace NestoAPI.Infraestructure
         Task<bool> RecuperarCCC(CCC cccEncontrado);
         Task<CodigoPostal> BuscarCodigoPostal(string empresa, string codigoPostal);
         Task<string> ObtenerEmailVendedor(string empresa, string vendedor);
+        Task<Dictionary<string, Sincronizacion.FechasComprasCliente>> LeerFechasCompras(IEnumerable<string> clientes);
     }
 }

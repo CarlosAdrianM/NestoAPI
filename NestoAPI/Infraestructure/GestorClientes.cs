@@ -1804,6 +1804,22 @@ namespace NestoAPI.Infraestructure
 
         public async Task PublicarClienteSincronizar(Cliente cliente, string source = "Nesto", string usuario = null)
         {
+            // NestoAPI#498: publicación suelta de un cliente, así que se calculan sus fechas aquí.
+            // Quien publica muchos (carga inicial, job de Nesto_sync) las calcula antes de una vez
+            // con LeerFechasCompras y usa la otra sobrecarga.
+            Dictionary<string, FechasComprasCliente> fechas = await LeerFechasCompras(new[] { cliente.Nº_Cliente }).ConfigureAwait(false);
+            await PublicarClienteSincronizar(cliente, CalculoFechasComprasCliente.Buscar(fechas, cliente.Nº_Cliente), source, usuario).ConfigureAwait(false);
+        }
+
+        public Task<Dictionary<string, FechasComprasCliente>> LeerFechasCompras(IEnumerable<string> clientes)
+        {
+            return servicio.LeerFechasCompras(clientes);
+        }
+
+        public async Task PublicarClienteSincronizar(Cliente cliente, FechasComprasCliente fechasCompras, string source = "Nesto", string usuario = null)
+        {
+            fechasCompras = fechasCompras ?? new FechasComprasCliente();
+
             var personasContacto = cliente.PersonasContactoClientes
                 .Where(p => p.Empresa.Trim() == Constantes.Empresas.EMPRESA_POR_DEFECTO && p.Estado >= 0)
                 .Select(p => new PersonaContactoSyncDTO
@@ -1855,6 +1871,9 @@ namespace NestoAPI.Infraestructure
                 Vendedor = cliente.Vendedor?.Trim(),
                 VendedorEmail = vendedorEmail,
                 Estado = cliente.Estado,
+                FechaPrimerPresupuesto = fechasCompras.FechaPrimerPresupuesto,
+                FechaPrimerPedido = fechasCompras.FechaPrimerPedido,
+                FechaUltimoPedido = fechasCompras.FechaUltimoPedido,
                 PersonasContacto = personasContacto
             };
 

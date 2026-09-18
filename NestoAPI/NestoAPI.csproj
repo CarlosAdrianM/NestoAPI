@@ -847,6 +847,8 @@
     <Compile Include="Infraestructure\Pagos\TarjetaClienteStore.cs" />
     <Compile Include="Infraestructure\Pagos\CobrosCarritoJobsService.cs" />
     <Compile Include="Infraestructure\Sincronizacion\VigenciaCampanasJobsService.cs" />
+    <Compile Include="Infraestructure\Sincronizacion\FechasComprasCliente.cs" />
+    <Compile Include="Infraestructure\Sincronizacion\FechasComprasClientesJobsService.cs" />
     <Compile Include="Infraestructure\Sincronizacion\AlcanceCampanas.cs" />
     <Compile Include="Infraestructure\Sincronizacion\ClienteChangeDetector.cs" />
     <Compile Include="Infraestructure\Sincronizacion\ClientesSyncHandler.cs" />

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace NestoAPI.Models.Sincronizacion
@@ -77,6 +78,26 @@ namespace NestoAPI.Models.Sincronizacion
         /// Estado del cliente
         /// </summary>
         public short? Estado { get; set; }
+
+        // NestoAPI#498: fechas de compras de TODO el cliente (iguales en todos sus contactos),
+        // calculadas en CalculoFechasComprasCliente. Solo viajan de Nesto a Odoo
+        // (odoo-custom-addons#8): Odoo no las devuelve y Nesto no las lee al recibir.
+
+        /// <summary>
+        /// Fecha (de cabecera) del primer pedido con alguna línea en presupuesto; null si no hay
+        /// </summary>
+        public DateTime? FechaPrimerPresupuesto { get; set; }
+
+        /// <summary>
+        /// Fecha (de cabecera) del primer pedido real (línea en estado -1 o superior; la nota de
+        /// entrega no cuenta); null si no hay
+        /// </summary>
+        public DateTime? FechaPrimerPedido { get; set; }
+
+        /// <summary>
+        /// Fecha (de cabecera) del último pedido real; null si no hay
+        /// </summary>
+        public DateTime? FechaUltimoPedido { get; set; }
 
         /// <summary>
         /// Lista de personas de contacto del cliente

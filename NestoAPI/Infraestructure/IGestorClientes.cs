@@ -32,5 +32,7 @@ namespace NestoAPI.Infraestructure
         Task<List<ClienteDTO>> BuscarClientesPorTelefono(string telefono);
         Task<List<ClienteDTO>> BuscarClientesPorNif(string nif);
         Task PublicarClienteSincronizar(Cliente cliente, string source = "Nesto", string usuario = null);
+        Task PublicarClienteSincronizar(Cliente cliente, Sincronizacion.FechasComprasCliente fechasCompras, string source = "Nesto", string usuario = null);
+        Task<Dictionary<string, Sincronizacion.FechasComprasCliente>> LeerFechasCompras(IEnumerable<string> clientes);
     }
 }

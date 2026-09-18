@@ -42,9 +42,19 @@ namespace NestoAPI.Models
         /// compatibilidad 100 (comprobado 01/09/26). Lotes de 500: el límite de SQL Server son
         /// 2.100 parámetros por sentencia.</para>
         /// </summary>
-        public virtual async Task<int> EncolarProductosSync(IEnumerable<string> productos, string usuario)
+        public virtual Task<int> EncolarProductosSync(IEnumerable<string> productos, string usuario)
         {
-            List<string> limpios = (productos ?? Enumerable.Empty<string>())
+            return EncolarSync("Productos", productos, usuario);
+        }
+
+        /// <summary>
+        /// NestoAPI#498: lo mismo que <see cref="EncolarProductosSync"/> para cualquier tabla de
+        /// Nesto_sync (el job de fechas de compras encola 'Clientes'). La tabla va como parámetro,
+        /// nunca concatenada.
+        /// </summary>
+        public virtual async Task<int> EncolarSync(string tabla, IEnumerable<string> ids, string usuario)
+        {
+            List<string> limpios = (ids ?? Enumerable.Empty<string>())
                 .Where(p => !string.IsNullOrWhiteSpace(p))
                 .Select(p => p.Trim())
                 .Distinct()
@@ -55,7 +65,11 @@ namespace NestoAPI.Models
             for (int inicio = 0; inicio < limpios.Count; inicio += tamanoLote)
             {
                 List<string> lote = limpios.Skip(inicio).Take(tamanoLote).ToList();
-                List<object> parametros = new List<object> { new SqlParameter("@usuario", usuario ?? "NestoAPI") };
+                List<object> parametros = new List<object>
+                {
+                    new SqlParameter("@tabla", tabla),
+                    new SqlParameter("@usuario", usuario ?? "NestoAPI")
+                };
                 List<string> filas = new List<string>();
                 for (int i = 0; i < lote.Count; i++)
                 {
@@ -65,10 +79,10 @@ namespace NestoAPI.Models
 
                 encolados += await Database.ExecuteSqlCommandAsync($@"
                     INSERT INTO Nesto_sync (Tabla, ModificadoId, Usuario, FechaModificacion)
-                    SELECT 'Productos', v.valor, @usuario, GETDATE()
+                    SELECT @tabla, v.valor, @usuario, GETDATE()
                     FROM (VALUES {string.Join(",", filas)}) v(valor)
                     WHERE NOT EXISTS (SELECT 1 FROM Nesto_sync ns
-                                      WHERE ns.Tabla = 'Productos'
+                                      WHERE ns.Tabla = @tabla
                                         AND ns.ModificadoId = v.valor
                                         AND ns.Sincronizado IS NULL)",
                     parametros.ToArray()).ConfigureAwait(false);

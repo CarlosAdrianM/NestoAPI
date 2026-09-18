@@ -594,6 +594,36 @@ namespace NestoAPI
                 }
             );
             Console.WriteLine("✅ Job recurrente 'sincronizar-clientes' configurado (cada 5 minutos)");
+
+            // NestoAPI#498: encola los clientes con primer presupuesto o primer pedido nuevos, para
+            // que Odoo mueva sus leads el mismo día. Solo encola: publica 'sincronizar-clientes'.
+            // Ventana de 90 minutos para una cadencia de 30 (si se cambia el cron, cambiar también
+            // MINUTOS_VENTANA_FRECUENTE). Al minuto 7 y 37, para no coincidir con los de :00 y :30.
+            RecurringJob.AddOrUpdate(
+                "fechas-compras-clientes",
+                () => Infraestructure.Sincronizacion.FechasComprasClientesJobsService.EncolarClientesConPrimerasCompras(
+                    Infraestructure.Sincronizacion.FechasComprasClientesJobsService.MINUTOS_VENTANA_FRECUENTE),
+                "7,37 * * * *", // Cron: cada 30 minutos
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'fechas-compras-clientes' configurado (cada 30 minutos)");
+
+            // NestoAPI#498: de noche, además, los clientes con último pedido nuevo (FechaUltimoPedido).
+            // A las 3:00, después de la tanda de productos de la 1:00 a las 2:00.
+            RecurringJob.AddOrUpdate(
+                "fechas-compras-clientes-nocturno",
+                () => Infraestructure.Sincronizacion.FechasComprasClientesJobsService.EncolarClientesConUltimoPedido(
+                    Infraestructure.Sincronizacion.FechasComprasClientesJobsService.HORAS_VENTANA_NOCTURNA),
+                "0 3 * * *", // Cron: todos los días a las 3:00
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'fechas-compras-clientes-nocturno' configurado (diario a las 3:00)");
         }
     }
 
