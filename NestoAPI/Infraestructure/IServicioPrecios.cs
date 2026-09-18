@@ -18,6 +18,8 @@ namespace NestoAPI.Infraestructure
         // los llamantes que no filtran por grupo (OfertasPermitidas).
         List<LineaPedidoVentaDTO> FiltrarLineas(PedidoVentaDTO pedido, string filtroProducto, string familia, string grupo, string subgrupo);
         List<RegaloImportePedido> BuscarRegaloPorImportePedido(string numeroProducto);
+        /// <summary>NestoAPI#457 (corte 2): todos los regalos por importe vigentes hoy, para sugerirlos.</summary>
+        List<RegaloImportePedido> BuscarRegalosPorImportePedidoVigentes();
 
         /// <summary>
         /// Obtiene los Ganavisiones activos para un producto (puntos de bonificación).

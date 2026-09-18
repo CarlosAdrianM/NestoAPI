@@ -237,6 +237,21 @@ namespace NestoAPI.Infraestructure
         }
 
         /// <summary>
+        /// NestoAPI#457 (corte 2): los regalos por importe de pedido vigentes (mismas fechas que
+        /// BuscarRegaloPorImportePedido, sin filtrar por producto). Son pocas filas.
+        /// </summary>
+        public List<RegaloImportePedido> BuscarRegalosPorImportePedidoVigentes()
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                return db.RegalosImportePedido.Where(
+                    r => (r.FechaInicio == null || r.FechaInicio < DateTime.Now) &&
+                    (r.FechaFin == null || r.FechaFin > DateTime.Now)
+                ).ToList();
+            }
+        }
+
+        /// <summary>
         /// Obtiene el stock disponible total (todas las sedes) de un producto.
         /// Issue #117: Validar stock de Ganavisiones al crear pedido
         /// </summary>

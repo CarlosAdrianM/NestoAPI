@@ -160,5 +160,96 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(5, linea.Cantidad);
             Assert.AreEqual(1, pedido.Lineas.Count);
         }
+        // ===== Corte 2: regalo por importe de pedido =====
+
+        private void ConRegalo(string producto, decimal importe, short cantidad, string empresa = "1")
+        {
+            var lista = servicio.BuscarRegalosPorImportePedidoVigentes() ?? new List<RegaloImportePedido>();
+            lista = new List<RegaloImportePedido>(lista) { new RegaloImportePedido { Empresa = empresa, Producto = producto, ImportePedido = importe, Cantidad = cantidad } };
+            A.CallTo(() => servicio.BuscarRegalosPorImportePedidoVigentes()).Returns(lista);
+        }
+
+        [TestMethod]
+        public void RegaloPorImporte_ElPedidoLlegaYNoLoLleva_AvisaConElTramoQueMasDa()
+        {
+            ConRegalo("REG1", 200, 1);
+            ConRegalo("REG1", 400, 2);
+            // 45 × 10 = 450 € de base imponible: llega a los dos tramos, el de 400 da más.
+            List<SugerenciaOfertaDTO> s = GestorSugerenciasOfertas.Calcular(Pedido(Linea("SINOF", 45, 10)), servicio, Acepta);
+
+            SugerenciaOfertaDTO r = s.Single(x => x.Tipo == GestorSugerenciasOfertas.TIPO_REGALO_NO_APLICADO);
+            Assert.AreEqual("REG1", r.Producto);
+            Assert.AreEqual(2, r.CantidadRegalo);
+            Assert.AreEqual(400M, r.ImportePedido);
+            Assert.AreEqual(0M, r.ImporteQueFalta);
+            StringAssert.Contains(r.Texto, "400,00");
+            StringAssert.Contains(r.Texto, "2 unidades del producto REG1 de regalo");
+        }
+
+        [TestMethod]
+        public void RegaloPorImporte_FaltaPoco_SugiereAmpliarConLoQueFalta()
+        {
+            ConRegalo("REG1", 200, 1);
+            // 17 × 10 = 170 €: faltan 30 €, dentro del 25 % de 200 (50 €).
+            List<SugerenciaOfertaDTO> s = GestorSugerenciasOfertas.Calcular(Pedido(Linea("SINOF", 17, 10)), servicio, Deniega);
+
+            SugerenciaOfertaDTO r = s.Single();
+            Assert.AreEqual(GestorSugerenciasOfertas.TIPO_AMPLIAR_IMPORTE, r.Tipo);
+            Assert.AreEqual(30M, r.ImporteQueFalta);
+            Assert.AreEqual(200M, r.ImportePedido);
+            Assert.AreEqual(1, r.CantidadRegalo);
+            StringAssert.Contains(r.Texto, "Añadiendo 30,00");
+            StringAssert.Contains(r.Texto, "1 unidad del producto REG1");
+        }
+
+        [TestMethod]
+        public void RegaloPorImporte_FaltaMucho_NoMolesta()
+        {
+            ConRegalo("REG1", 200, 1);
+            // 10 × 10 = 100 €: faltan 100 €, más del 25 %.
+            Assert.AreEqual(0, GestorSugerenciasOfertas.Calcular(Pedido(Linea("SINOF", 10, 10)), servicio, Acepta).Count);
+        }
+
+        [TestMethod]
+        public void RegaloPorImporte_YaLoLleva_NoSugiereNada()
+        {
+            ConRegalo("REG1", 200, 1);
+            List<SugerenciaOfertaDTO> s = GestorSugerenciasOfertas.Calcular(Pedido(Linea("SINOF", 30, 10), Linea("REG1", 1, 0, 2)), servicio, Acepta);
+            Assert.IsFalse(s.Any(x => x.Producto == "REG1"));
+        }
+
+        [TestMethod]
+        public void RegaloPorImporte_LaValidacionLoRechaza_NoSeSugiere()
+        {
+            ConRegalo("REG1", 200, 1);
+            Assert.AreEqual(0, GestorSugerenciasOfertas.Calcular(Pedido(Linea("SINOF", 30, 10)), servicio, Deniega).Count);
+        }
+
+        [TestMethod]
+        public void RegaloPorImporte_DeOtraEmpresa_NoCuenta()
+        {
+            ConRegalo("REG1", 200, 1, empresa: "3");
+            Assert.AreEqual(0, GestorSugerenciasOfertas.Calcular(Pedido(Linea("SINOF", 30, 10)), servicio, Acepta).Count);
+        }
+
+        [TestMethod]
+        public void RegaloPorImporte_LaLineaDeRegaloHipoteticaVaAPrecioCeroConLosDatosDeLaPrimeraLinea()
+        {
+            ConRegalo("REG1", 200, 1);
+            A.CallTo(() => servicio.BuscarProducto("REG1")).Returns(new Producto { Número = "REG1", Nombre = "NECESER", Grupo = "COS", SubGrupo = "MMP", PVP = 12 });
+            PedidoVentaDTO validado = null;
+            _ = GestorSugerenciasOfertas.Calcular(Pedido(Linea("SINOF", 30, 10)), servicio, p => { validado = p; return new RespuestaValidacion { ValidacionSuperada = true }; });
+
+            LineaPedidoVentaDTO regalo = validado.Lineas.Last();
+            Assert.AreEqual("REG1", regalo.Producto);
+            Assert.AreEqual(0, regalo.id);
+            Assert.AreEqual(1, regalo.Cantidad);
+            Assert.AreEqual(0M, regalo.PrecioUnitario);
+            Assert.AreEqual(0M, regalo.BaseImponible);
+            Assert.AreEqual("ALG", regalo.almacen);
+            Assert.AreEqual("COS", regalo.GrupoProducto);
+            Assert.AreEqual(2, validado.Lineas.Count, "las líneas del pedido de verdad no se tocan");
+        }
+
     }
 }

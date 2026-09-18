@@ -13,7 +13,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
     /// </summary>
     public class SugerenciaOfertaDTO
     {
-        /// <summary>Tipo: <see cref="GestorSugerenciasOfertas.TIPO_OFERTA_NO_APLICADA"/> o <see cref="GestorSugerenciasOfertas.TIPO_AMPLIAR_CANTIDAD"/>.</summary>
+        /// <summary>Tipo: una de las constantes TIPO_* de <see cref="GestorSugerenciasOfertas"/>.</summary>
         public string Tipo { get; set; }
         public string Producto { get; set; }
         /// <summary>Unidades cobradas que hay ahora en el pedido.</summary>
@@ -22,8 +22,10 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
         public int CantidadSugerida { get; set; }
         /// <summary>Unidades de regalo que se llevaría con la cantidad sugerida.</summary>
         public int CantidadRegalo { get; set; }
-        /// <summary>Reservado para las sugerencias por importe de pedido (0 en las de cantidad).</summary>
+        /// <summary>Lo que falta para llegar al importe del regalo (0 en las de cantidad y si ya se llega).</summary>
         public decimal ImporteQueFalta { get; set; }
+        /// <summary>Importe de pedido a partir del cual hay regalo (0 en las de cantidad).</summary>
+        public decimal ImportePedido { get; set; }
         public string Texto { get; set; }
         /// <summary>Nº de orden de la oferta permitida que la sustenta.</summary>
         public int? Oferta { get; set; }
@@ -42,6 +44,17 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
     {
         public const string TIPO_OFERTA_NO_APLICADA = "OfertaNoAplicada";
         public const string TIPO_AMPLIAR_CANTIDAD = "AmpliarCantidad";
+        // Corte 2: regalo por importe de pedido (RegalosImportePedido).
+        public const string TIPO_REGALO_NO_APLICADO = "RegaloNoAplicado";
+        public const string TIPO_AMPLIAR_IMPORTE = "AmpliarImporte";
+
+        /// <summary>
+        /// Corte 2: se sugiere ampliar el pedido para llegar al regalo solo si falta como mucho esta
+        /// fracción del importe (0,25 = un 25 %: con 150 € de un regalo a 200 € sí, con 100 € no).
+        /// Criterio de partida, a ajustar al verlo en la plantilla.
+        /// </summary>
+        public const decimal FRACCION_CERCANIA_IMPORTE = 0.25M;
+        private static readonly System.Globalization.CultureInfo CASTELLANO = new System.Globalization.CultureInfo("es-ES");
 
         public static List<SugerenciaOfertaDTO> Calcular(PedidoVentaDTO pedido, IServicioPrecios servicio, Func<PedidoVentaDTO, RespuestaValidacion> validar = null)
         {
@@ -64,7 +77,120 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     sugerencias.Add(sugerencia);
                 }
             }
+            sugerencias.AddRange(SugerirRegalosPorImporte(pedido, servicio, validar));
             return sugerencias;
+        }
+
+        /// <summary>
+        /// Corte 2: regalos por importe de pedido. El importe es la suma de BaseImponible del pedido,
+        /// el mismo que usa <see cref="ValidadorRegaloPorImportePedido"/>. Por producto regalado:
+        ///   - RegaloNoAplicado: el pedido ya llega a algún tramo y el producto no va de regalo.
+        ///     Se ofrece el tramo que más unidades da, y se valida con la línea de regalo puesta.
+        ///   - AmpliarImporte: no llega a ningún tramo, pero al más cercano le falta como mucho
+        ///     <see cref="FRACCION_CERCANIA_IMPORTE"/> del importe. No se valida: el pedido
+        ///     hipotético necesitaría importe que aún no existe; cuando se llegue, saldrá como
+        ///     RegaloNoAplicado y entonces sí.
+        /// </summary>
+        internal static List<SugerenciaOfertaDTO> SugerirRegalosPorImporte(PedidoVentaDTO pedido, IServicioPrecios servicio, Func<PedidoVentaDTO, RespuestaValidacion> validar)
+        {
+            var sugerencias = new List<SugerenciaOfertaDTO>();
+            LineaPedidoVentaDTO modelo = pedido.Lineas.FirstOrDefault(l => EsLineaDeProducto(l) && l.Cantidad > 0 && l.BaseImponible > 0);
+            if (modelo == null)
+            {
+                return sugerencias;
+            }
+            List<RegaloImportePedido> regalos = (servicio.BuscarRegalosPorImportePedidoVigentes() ?? new List<RegaloImportePedido>())
+                .Where(r => r.Cantidad > 0 && r.ImportePedido > 0 && !string.IsNullOrWhiteSpace(r.Producto))
+                .Where(r => string.IsNullOrWhiteSpace(r.Empresa) || r.Empresa.Trim() == pedido.empresa?.Trim())
+                .ToList();
+            if (!regalos.Any())
+            {
+                return sugerencias;
+            }
+            decimal importe = pedido.Lineas.Sum(l => l.BaseImponible);
+
+            foreach (IGrouping<string, RegaloImportePedido> porProducto in regalos.GroupBy(r => r.Producto.Trim()))
+            {
+                string producto = porProducto.Key;
+                bool yaRegalado = pedido.Lineas.Any(l => EsLineaDeProducto(l) && l.Producto?.Trim() == producto && l.Cantidad > 0 && l.BaseImponible == 0);
+                if (yaRegalado)
+                {
+                    continue;
+                }
+
+                RegaloImportePedido alcanzado = porProducto
+                    .Where(r => importe >= r.ImportePedido)
+                    .OrderByDescending(r => r.Cantidad)
+                    .FirstOrDefault();
+                if (alcanzado != null)
+                {
+                    var sugerencia = new SugerenciaOfertaDTO
+                    {
+                        Tipo = TIPO_REGALO_NO_APLICADO,
+                        Producto = producto,
+                        CantidadRegalo = alcanzado.Cantidad,
+                        ImportePedido = alcanzado.ImportePedido,
+                        ImporteQueFalta = 0,
+                        Texto = $"El pedido supera los {alcanzado.ImportePedido.ToString("C", CASTELLANO)}: le corresponde{(alcanzado.Cantidad == 1 ? string.Empty : "n")} " +
+                                $"{alcanzado.Cantidad} unidad{(alcanzado.Cantidad == 1 ? string.Empty : "es")} del producto {producto} de regalo."
+                    };
+                    RespuestaValidacion validacion = validar(ConRegaloPorImporte(pedido, modelo, servicio.BuscarProducto(producto), producto, alcanzado.Cantidad));
+                    if (validacion != null && validacion.ValidacionSuperada)
+                    {
+                        sugerencias.Add(sugerencia);
+                    }
+                    continue;
+                }
+
+                RegaloImportePedido cercano = porProducto
+                    .Where(r => r.ImportePedido - importe <= r.ImportePedido * FRACCION_CERCANIA_IMPORTE)
+                    .OrderBy(r => r.ImportePedido)
+                    .FirstOrDefault();
+                if (cercano != null)
+                {
+                    decimal falta = cercano.ImportePedido - importe;
+                    sugerencias.Add(new SugerenciaOfertaDTO
+                    {
+                        Tipo = TIPO_AMPLIAR_IMPORTE,
+                        Producto = producto,
+                        CantidadRegalo = cercano.Cantidad,
+                        ImportePedido = cercano.ImportePedido,
+                        ImporteQueFalta = falta,
+                        Texto = $"Añadiendo {falta.ToString("C", CASTELLANO)} más al pedido llegas a los {cercano.ImportePedido.ToString("C", CASTELLANO)} " +
+                                $"y te llevas {cercano.Cantidad} unidad{(cercano.Cantidad == 1 ? string.Empty : "es")} del producto {producto} de regalo."
+                    });
+                }
+            }
+            return sugerencias;
+        }
+
+        /// <summary>
+        /// Copia del pedido con una línea de regalo del producto (precio 0) al final. La línea toma
+        /// almacén, delegación, forma de venta, IVA, estado y fecha de la primera línea cobrada.
+        /// </summary>
+        internal static PedidoVentaDTO ConRegaloPorImporte(PedidoVentaDTO pedido, LineaPedidoVentaDTO modelo, Producto producto, string numeroProducto, int cantidad)
+        {
+            LineaPedidoVentaDTO regalo = Copiar(modelo);
+            regalo.id = 0;
+            regalo.Producto = numeroProducto;
+            regalo.texto = producto?.Nombre;
+            regalo.Cantidad = cantidad;
+            regalo.PrecioUnitario = 0;
+            regalo.DescuentoLinea = 0;
+            regalo.DescuentoProducto = 0;
+            regalo.oferta = null;
+            regalo.GrupoProducto = producto?.Grupo;
+            regalo.SubgrupoProducto = producto?.SubGrupo;
+            regalo.precioTarifa = producto?.PVP ?? 0;
+            return new PedidoVentaDTO
+            {
+                empresa = pedido.empresa,
+                cliente = pedido.cliente,
+                contacto = pedido.contacto,
+                contactoCobro = pedido.contactoCobro,
+                fecha = pedido.fecha,
+                Lineas = pedido.Lineas.Concat(new[] { regalo }).ToList()
+            };
         }
 
         private static SugerenciaOfertaDTO SugerirParaProducto(string numeroProducto, List<LineaPedidoVentaDTO> lineas, PedidoVentaDTO pedido,
