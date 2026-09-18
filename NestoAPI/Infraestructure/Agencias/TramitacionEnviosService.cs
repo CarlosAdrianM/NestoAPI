@@ -149,6 +149,218 @@ namespace NestoAPI.Infraestructure.Agencias
             return asiento;
         }
 
+
+        // ===== Nesto#415 / Nesto#340 (Agencias A4.3): pago de reembolsos =====
+
+        /// <summary>
+        /// La agencia liquida los reembolsos que cobró: un apunte al HABER de la cuenta de reembolsos
+        /// de la agencia de cada envío y uno al DEBE del cliente al que se le paga por la suma, en el
+        /// diario _PagoReemb; después prdContabilizar y, en la MISMA transacción,
+        /// FechaPagoReembolso = hoy en los envíos. Sustituye a <c>AgenciasViewModel.OnContabilizarReembolso</c>
+        /// (Nesto), que hacía todo esto por Entity Framework y era el último sitio fuera de la API que
+        /// llamaba a prdContabilizar (Nesto#415: sin ELMAH, sin reintento ante deadlock, con el
+        /// login de Windows del usuario en vez del canal centralizado).
+        ///
+        /// Como TramitarAsync, la parte que toca la base de datos NO la pillan los tests (dobles en
+        /// memoria); la construcción de los apuntes y las validaciones son estáticas y sí.
+        /// </summary>
+        public async Task<ResultadoPagoReembolsos> PagarReembolsosAsync(PagoReembolsosDTO datos, string usuario)
+        {
+            if (datos == null || datos.NumerosEnvio == null || datos.NumerosEnvio.Count == 0)
+            {
+                throw new NestoBusinessException("No hay ningún reembolso seleccionado.");
+            }
+            if (string.IsNullOrWhiteSpace(datos.Empresa) || string.IsNullOrWhiteSpace(datos.Cliente))
+            {
+                throw new NestoBusinessException("Faltan la empresa o el cliente al que se le paga.");
+            }
+
+            string empresaId = datos.Empresa.Trim();
+            string cliente = datos.Cliente.Trim();
+            List<int> numeros = datos.NumerosEnvio.Distinct().ToList();
+
+            // Where + ToListAsync, nunca SingleOrDefaultAsync con Include: ver la nota de TramitarAsync (Limit1).
+            List<EnviosAgencia> envios = await _db.EnviosAgencias
+                .Include(e => e.AgenciasTransporte)
+                .Where(e => numeros.Contains(e.Numero))
+                .ToListAsync()
+                .ConfigureAwait(false);
+            string error = ErrorEnviosAPagar(envios, numeros, empresaId);
+            if (error != null)
+            {
+                throw new NestoBusinessException(error);
+            }
+
+            // Los filtros van en SQL, que ignora el relleno de los char (reference_migracion_ef_padding_cadenas).
+            Empresa empresa = (await _db.Empresas.Where(e => e.Número == empresaId).ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+            if (empresa == null)
+            {
+                throw new NestoBusinessException($"No existe la empresa {empresaId}.");
+            }
+            AgenciaTransporte agenciaCobra = (await _db.AgenciasTransportes.Where(a => a.Numero == datos.Agencia).ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+            if (agenciaCobra == null)
+            {
+                throw new NestoBusinessException($"No existe la agencia {datos.Agencia}.");
+            }
+            // El cliente al que se paga tiene que estar de alta como principal (el ViewModel lo
+            // comprobaba antes de contabilizar; mismo criterio que GET api/Clientes/ExistePrincipalActivo).
+            bool existeCliente = await Controllers.ClientesController
+                .PrincipalesActivos(_db.Clientes, empresaId, cliente)
+                .AnyAsync()
+                .ConfigureAwait(false);
+            if (!existeCliente)
+            {
+                throw new NestoBusinessException($"El cliente {cliente} no existe en la empresa {empresaId} (o no está de alta como principal).");
+            }
+
+            DateTime hoy = _hoy();
+            List<PreContabilidad> lineas = ConstruirApuntesPagoReembolsos(envios, agenciaCobra, empresa, cliente, hoy, usuario);
+            decimal importe = envios.Sum(e => e.Reembolso);
+
+            // El asiento y la fecha de pago de los envíos van juntos o no van (el cliente lo resolvía
+            // con un TransactionScope alrededor de los dos).
+            using (DbContextTransaction transaccion = _db.Database.BeginTransaction())
+            {
+                try
+                {
+                    _ = await _contabilidad.CrearLineas(_db, lineas).ConfigureAwait(false);
+                    int asiento = await _contabilidad
+                        .ContabilizarDiario(_db, empresaId, Constantes.Contabilidad.Diarios.DIARIO_PAGO_REEMBOLSOS, usuario)
+                        .ConfigureAwait(false);
+                    if (asiento <= 0)
+                    {
+                        throw new Exception($"No se ha podido contabilizar el pago de los reembolsos al cliente {cliente}.");
+                    }
+                    foreach (EnviosAgencia envio in envios)
+                    {
+                        envio.FechaPagoReembolso = hoy;
+                        envio.Usuario = usuario;
+                    }
+                    _ = await _db.SaveChangesAsync().ConfigureAwait(false);
+                    transaccion.Commit();
+                    return new ResultadoPagoReembolsos
+                    {
+                        Asiento = asiento,
+                        Envios = envios.Count,
+                        Importe = importe,
+                        Mensaje = $"Pagados {envios.Count} reembolsos ({importe:N2} €) al cliente {cliente}. Asiento {asiento}."
+                    };
+                }
+                catch (Exception)
+                {
+                    // #291: rollback seguro — con una transacción zombi (SP abortado por dentro) el
+                    // Rollback normal lanzaría y taparía la excepción de verdad.
+                    transaccion.RollbackSeguro();
+                    throw;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Por qué NO se pueden pagar estos envíos, o null si todo está bien. Se acumulan todos los
+        /// motivos, que el usuario selecciona varias filas y conviene que vea la lista entera.
+        /// </summary>
+        internal static string ErrorEnviosAPagar(List<EnviosAgencia> envios, List<int> numeros, string empresa)
+        {
+            List<string> errores = new List<string>();
+            foreach (int numero in numeros)
+            {
+                EnviosAgencia envio = envios.FirstOrDefault(e => e.Numero == numero);
+                if (envio == null)
+                {
+                    errores.Add($"No existe el envío {numero}.");
+                    continue;
+                }
+                if (!string.Equals(envio.Empresa?.Trim(), empresa?.Trim(), StringComparison.OrdinalIgnoreCase))
+                {
+                    errores.Add($"El envío {numero} es de la empresa {envio.Empresa?.Trim()}, no de la {empresa?.Trim()}.");
+                }
+                if (envio.FechaPagoReembolso.HasValue)
+                {
+                    errores.Add($"El reembolso del envío {numero} (pedido {envio.Pedido}) ya se pagó el {envio.FechaPagoReembolso.Value:dd/MM/yyyy}.");
+                }
+                if (envio.Reembolso == 0)
+                {
+                    errores.Add($"El envío {numero} (pedido {envio.Pedido}) no tiene reembolso.");
+                }
+                if (envio.AgenciasTransporte == null || string.IsNullOrWhiteSpace(envio.AgenciasTransporte.CuentaReembolsos))
+                {
+                    errores.Add($"La agencia del envío {numero} no tiene establecida una cuenta de reembolsos.");
+                }
+            }
+            return errores.Count == 0 ? null : string.Join(" ", errores);
+        }
+
+        /// <summary>
+        /// Los apuntes de PreContabilidad del pago, campo a campo como los construía el cliente
+        /// (Nesto: <c>AgenciasViewModel.OnContabilizarReembolso</c>): uno al haber de la cuenta de
+        /// reembolsos de la agencia de CADA envío (Nº documento = 10 primeras letras del nombre de
+        /// esa agencia) y uno al debe del cliente por la suma, con la forma de pago en efectivo de
+        /// la empresa y el vendedor general. Delegación y forma de venta iban a pelo en el cliente
+        /// ("ALG"/"VAR"), no los "varios" de la empresa; se respeta. Es el contrato que fija el test
+        /// de paridad, porque una sola diferencia descuadra el cuadre de reembolsos.
+        /// </summary>
+        internal static List<PreContabilidad> ConstruirApuntesPagoReembolsos(List<EnviosAgencia> envios,
+            AgenciaTransporte agenciaCobra, Empresa empresa, string cliente, DateTime hoy, string usuario)
+        {
+            string empresaId = empresa.Número.Trim();
+            List<PreContabilidad> lineas = new List<PreContabilidad>();
+            foreach (EnviosAgencia envio in envios)
+            {
+                lineas.Add(new PreContabilidad
+                {
+                    Empresa = empresaId,
+                    Diario = Constantes.Contabilidad.Diarios.DIARIO_PAGO_REEMBOLSOS,
+                    Asiento = 1,
+                    Fecha = hoy,
+                    FechaVto = hoy,
+                    TipoApunte = Constantes.ExtractosCliente.TiposApunte.PAGO,
+                    TipoCuenta = Constantes.Contabilidad.TiposCuenta.CUENTA_CONTABLE,
+                    Nº_Cuenta = envio.AgenciasTransporte.CuentaReembolsos.Trim(),
+                    Concepto = Recortar50($"Pago reembolso {envio.Cliente?.Trim()}"),
+                    Haber = envio.Reembolso,
+                    Nº_Documento = NumeroDocumento(envio.AgenciasTransporte.Nombre),
+                    Delegación = Constantes.Almacenes.ALGETE,
+                    FormaVenta = Constantes.Empresas.FORMA_VENTA_POR_DEFECTO,
+                    Usuario = usuario,
+                    Fecha_Modificación = DateTime.Now
+                });
+            }
+            lineas.Add(new PreContabilidad
+            {
+                Empresa = empresaId,
+                Diario = Constantes.Contabilidad.Diarios.DIARIO_PAGO_REEMBOLSOS,
+                Asiento = 1,
+                Fecha = hoy,
+                FechaVto = hoy,
+                TipoApunte = Constantes.ExtractosCliente.TiposApunte.PAGO,
+                TipoCuenta = Constantes.Contabilidad.TiposCuenta.CLIENTE,
+                Nº_Cuenta = cliente.Trim(),
+                Contacto = "0",
+                Concepto = Recortar50($"Pago reembolso {agenciaCobra.Nombre?.Trim()}"),
+                Debe = envios.Sum(e => e.Reembolso),
+                Nº_Documento = NumeroDocumento(agenciaCobra.Nombre),
+                Delegación = Constantes.Almacenes.ALGETE,
+                FormaVenta = Constantes.Empresas.FORMA_VENTA_POR_DEFECTO,
+                FormaPago = empresa.FormaPagoEfectivo,
+                Vendedor = Constantes.Vendedores.VENDEDOR_GENERAL,
+                Usuario = usuario,
+                Fecha_Modificación = DateTime.Now
+            });
+            return lineas;
+        }
+
+        private static string NumeroDocumento(string nombreAgencia)
+        {
+            string nombre = nombreAgencia?.Trim() ?? string.Empty;
+            return nombre.Length > 10 ? nombre.Substring(0, 10) : nombre;
+        }
+
+        private static string Recortar50(string concepto)
+        {
+            return concepto.Length > 50 ? concepto.Substring(0, 50) : concepto;
+        }
+
         /// <summary>
         /// Apunte de PreContabilidad del reembolso, campo a campo como lo construía el cliente
         /// (Nesto: <c>AgenciaService.ContabilizarReembolso</c>). Es el contrato que fija el test de
@@ -293,9 +505,29 @@ namespace NestoAPI.Infraestructure.Agencias
         public string Mensaje { get; set; }
     }
 
+    /// <summary>Nesto#415 (A4.3): qué reembolsos paga la agencia y a qué cliente.</summary>
+    public class PagoReembolsosDTO
+    {
+        public string Empresa { get; set; }
+        /// <summary>Cliente al que se le paga (normalmente la propia agencia como cliente).</summary>
+        public string Cliente { get; set; }
+        /// <summary>Agencia seleccionada en la pestaña: da el concepto y el Nº documento del apunte del cliente.</summary>
+        public int Agencia { get; set; }
+        public List<int> NumerosEnvio { get; set; }
+    }
+
+    public class ResultadoPagoReembolsos
+    {
+        public int Asiento { get; set; }
+        public int Envios { get; set; }
+        public decimal Importe { get; set; }
+        public string Mensaje { get; set; }
+    }
+
     public interface ITramitacionEnviosService
     {
         Task<ResultadoTramitacionEnvio> TramitarAsync(int numeroEnvio, string usuario);
         Task<int> ContabilizarReembolsoAsync(EnviosAgencia envio, string usuario);
+        Task<ResultadoPagoReembolsos> PagarReembolsosAsync(PagoReembolsosDTO datos, string usuario);
     }
 }

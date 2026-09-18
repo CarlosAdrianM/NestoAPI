@@ -853,6 +853,8 @@ namespace NestoAPI.Models
                 public const string DIARIO_CIERRE = "_ASIENTCIE";
                 // Nesto#340 (A4.1): diario donde caen los cobros de reembolso de las agencias.
                 public const string DIARIO_REEMBOLSOS = "_Reembolso";
+                // Nesto#415 (A4.3): diario del pago que la agencia hace de los reembolsos cobrados.
+                public const string DIARIO_PAGO_REEMBOLSOS = "_PagoReemb";
             }
 
             public static class TiposCuenta

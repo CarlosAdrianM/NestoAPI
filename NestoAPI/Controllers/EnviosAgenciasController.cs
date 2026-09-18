@@ -22,6 +22,7 @@ using NestoAPI.Infraestructure.Agencias.Tarifas;
 using System.Web.Http.Cors;
 using System.Security.Claims;
 using NestoAPI.Infraestructure.Seguridad;
+using NestoAPI.Infraestructure.Exceptions;
 
 namespace NestoAPI.Controllers
 {
@@ -1008,6 +1009,38 @@ namespace NestoAPI.Controllers
             ITramitacionEnviosService servicio = tramitacionEnviosService ?? new TramitacionEnviosService(db);
             ResultadoTramitacionEnvio resultado = await servicio.TramitarAsync(id, usuario);
             return Ok(resultado);
+        }
+
+        // POST: api/EnviosAgencias/PagarReembolsos
+        /// <summary>
+        /// Nesto#415 / Nesto#340 (Agencias, slice A4.3): la agencia paga los reembolsos que cobró.
+        /// Apuntes en _PagoReemb + prdContabilizar + FechaPagoReembolso en los envíos, todo en una
+        /// transacción del servidor. Sustituye a <c>AgenciasViewModel.OnContabilizarReembolso</c>,
+        /// que era el último sitio de Nesto que llamaba a prdContabilizar por Entity Framework.
+        /// El usuario del asiento sale del JWT.
+        /// </summary>
+        [HttpPost]
+        [Authorize]
+        [Route("api/EnviosAgencias/PagarReembolsos")]
+        [ResponseType(typeof(ResultadoPagoReembolsos))]
+        public async Task<IHttpActionResult> PagarReembolsos(PagoReembolsosDTO datos)
+        {
+            if (datos == null)
+            {
+                return BadRequest("Faltan los datos del pago.");
+            }
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
+            ITramitacionEnviosService servicio = tramitacionEnviosService ?? new TramitacionEnviosService(db);
+            try
+            {
+                return Ok(await servicio.PagarReembolsosAsync(datos, usuario));
+            }
+            catch (NestoBusinessException ex)
+            {
+                // Motivo de negocio (envío ya pagado, cliente inexistente...): 400 con el texto tal
+                // cual, que es lo que Nesto enseña al usuario.
+                return BadRequest(ex.Message);
+            }
         }
 
         // POST: api/EnviosAgencias/5/RecibirRetorno

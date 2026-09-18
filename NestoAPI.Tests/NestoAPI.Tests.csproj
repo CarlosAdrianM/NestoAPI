@@ -258,6 +258,7 @@
     <Compile Include="Controllers\EnviosAgenciasTextosLargosTests.cs" />
     <Compile Include="Controllers\ConfirmarTramitacionTests.cs" />
     <Compile Include="Controllers\RecibirRetornoTests.cs" />
+    <Compile Include="Controllers\PagarReembolsosControllerTests.cs" />
     <Compile Include="Controllers\TramitarEnvioTests.cs" />
     <Compile Include="Controllers\PlazosPagoControllerTests.cs" />
     <Compile Include="Controllers\CabRemesasPagoControllerTests.cs" />
@@ -313,6 +314,7 @@
     <Compile Include="Infrastructure\Agencias\TarifasGLSTests.cs" />
     <Compile Include="Infrastructure\Agencias\TarifasGLSEuroTests.cs" />
     <Compile Include="Infrastructure\Agencias\TramitacionEnviosServiceTests.cs" />
+    <Compile Include="Infrastructure\Agencias\PagoReembolsosServiceTests.cs" />
     <Compile Include="Infrastructure\Agencias\TarifasInnovatransTests.cs" />
     <Compile Include="Infrastructure\Agencias\TarifasCTTTests.cs" />
     <Compile Include="Infrastructure\Agencias\ZonasActivasAgenciaTests.cs" />
