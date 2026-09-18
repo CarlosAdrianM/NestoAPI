@@ -75,6 +75,17 @@ namespace NestoAPI.Controllers
     }
 
     /// <summary>
+    /// Nesto#340 (Agencias, slice A4.2): respuesta de POST EnviosAgencias/{id}/RecibirRetorno.
+    /// La fecha la pone el servidor, para que el cliente la refleje sin recargar la lista.
+    /// </summary>
+    public class RetornoRecibidoDTO
+    {
+        public int Numero { get; set; }
+        public int? Pedido { get; set; }
+        public DateTime FechaRetornoRecibido { get; set; }
+    }
+
+    /// <summary>
     /// Nesto#340 (Agencias, slice A1): fila de los listados de la ventana de Agencias de Nesto
     /// (pendientes, en curso, tramitados, incidentados, reembolsos y retornos), calcada del
     /// EnvioAgenciaWrapper del cliente, con el nombre de la agencia aplanado para no viajar
@@ -997,6 +1008,44 @@ namespace NestoAPI.Controllers
             ITramitacionEnviosService servicio = tramitacionEnviosService ?? new TramitacionEnviosService(db);
             ResultadoTramitacionEnvio resultado = await servicio.TramitarAsync(id, usuario);
             return Ok(resultado);
+        }
+
+        // POST: api/EnviosAgencias/5/RecibirRetorno
+        /// <summary>
+        /// Nesto#340 (Agencias, slice A4.2): el almacén confirma que ha recibido el retorno del envío
+        /// (la mercancía que la agencia trae de vuelta) y se estampa la fecha de recepción. Sustituye
+        /// al UPDATE por Entity Framework de <c>AgenciasViewModel.OnRecibirRetorno</c>. Un retorno ya
+        /// recibido no se vuelve a estampar: la lista de retornos solo enseña los que no tienen fecha,
+        /// así que un segundo intento es otra sesión pisando la misma fila.
+        /// </summary>
+        [HttpPost]
+        [Authorize]
+        [Route("api/EnviosAgencias/{id:int}/RecibirRetorno")]
+        [ResponseType(typeof(RetornoRecibidoDTO))]
+        public async Task<IHttpActionResult> RecibirRetorno(int id)
+        {
+            EnviosAgencia envio = await db.EnviosAgencias.FindAsync(id);
+            if (envio == null)
+            {
+                return NotFound();
+            }
+
+            if (envio.FechaRetornoRecibido.HasValue)
+            {
+                return BadRequest($"El retorno del envío {id} (pedido {envio.Pedido}) ya se recibió el " +
+                    $"{envio.FechaRetornoRecibido.Value:dd/MM/yyyy}.");
+            }
+
+            envio.FechaRetornoRecibido = DateTime.Today;
+            envio.Usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
+            _ = await db.SaveChangesAsync();
+
+            return Ok(new RetornoRecibidoDTO
+            {
+                Numero = envio.Numero,
+                Pedido = envio.Pedido,
+                FechaRetornoRecibido = envio.FechaRetornoRecibido.Value
+            });
         }
 
         // POST: api/EnviosAgencias/5/ActualizarSeguimiento

@@ -257,6 +257,7 @@
     <Compile Include="Infrastructure\Contabilidad\GeneradorContraasientoTests.cs" />
     <Compile Include="Controllers\EnviosAgenciasTextosLargosTests.cs" />
     <Compile Include="Controllers\ConfirmarTramitacionTests.cs" />
+    <Compile Include="Controllers\RecibirRetornoTests.cs" />
     <Compile Include="Controllers\TramitarEnvioTests.cs" />
     <Compile Include="Controllers\PlazosPagoControllerTests.cs" />
     <Compile Include="Controllers\CabRemesasPagoControllerTests.cs" />
