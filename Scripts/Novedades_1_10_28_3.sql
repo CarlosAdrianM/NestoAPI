@@ -43,8 +43,8 @@ VALUES
 (@version, @fecha, 'Corregido', N'La lista de pedidos de la app ya no se queda cargando sin vendedor asignado',
  N'Para los usuarios de la app sin vendedor asignado (administración), la lista de pedidos pendientes tardaba tanto que acababa en error de tiempo agotado. Ahora se carga mucho más rápido. Además, algunos pedidos en los que participaban varios vendedores por grupo de producto mostraban el importe duplicado en esa lista; ya sale el importe correcto.', 'NestoAPI', 1, 'sa'),
 
-(@version, @fecha, 'Corregido', N'La lista de clientes a llamar o visitar carga más rápido',
- N'La lista de clientes recomendados para llamar o visitar, la primera que abre el comercial por la mañana, podía agotar el tiempo de espera con los vendedores que tienen muchos clientes. Se ha rehecho la consulta para que cargue bastante más rápido y, si aun así tarda, espera más antes de dar error.', 'NestoAPI', 1, 'sa'),
+(@version, @fecha, 'Corregido', N'La lista de clientes a llamar o visitar debería cargar más rápido',
+ N'La lista de clientes recomendados para llamar o visitar, la primera que abre el comercial por la mañana, podía agotar el tiempo de espera con los vendedores que tienen muchos clientes. Se ha rehecho la consulta para que tarde bastante menos y, si aun así tarda, espera más antes de dar error.', 'NestoAPI', 1, 'sa'),
 
 (@version, @fecha, 'Corregido', N'Al montar un kit sin cantidad suficiente se explica el motivo',
  N'Al montar un kit desde la ficha del producto, si no había unidades suficientes de algún componente el aviso decía solo «No se han podido traspasar los movimientos de producto», sin el motivo. Ahora añade «No hay cantidad suficiente para montar el kit» (y, en general, el motivo que dé el servidor).', 'Nesto', 1, 'sa'),
