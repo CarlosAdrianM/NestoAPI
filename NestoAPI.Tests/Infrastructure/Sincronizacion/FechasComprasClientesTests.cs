@@ -378,6 +378,21 @@ namespace NestoAPI.Tests.Infrastructure.Sincronizacion
             Assert.IsNull(mensaje.FechaUltimoPedido);
         }
 
+        // Odoo vacía el campo si llega null (odoo-custom-addons#3): publicar sin las fechas
+        // calculadas borraría las que ya tiene, así que no se publica nada.
+        [TestMethod]
+        public async Task PublicarClienteSincronizar_SinFechasCalculadas_NoPublica()
+        {
+            ISincronizacionEventPublisher publisher = A.Fake<ISincronizacionEventPublisher>();
+            var gestor = new GestorClientes(A.Fake<IServicioGestorClientes>(), A.Fake<IServicioAgencias>(), new SincronizacionEventWrapper(publisher));
+
+            await Assert.ThrowsExceptionAsync<ArgumentNullException>(() =>
+                gestor.PublicarClienteSincronizar(new Cliente { Empresa = "1", Nº_Cliente = "15191", Contacto = "0" },
+                    (FechasComprasCliente)null, "Nesto viejo", "usuario"));
+
+            A.CallTo(() => publisher.PublishEventAsync(A<string>._, A<object>._)).MustNotHaveHappened();
+        }
+
         // Contrato con odoo-custom-addons#8: nombres en la raíz del mensaje, fecha ISO y null
         // explícito (Odoo vacía el campo si viene null y no lo toca si no viene).
         [TestMethod]

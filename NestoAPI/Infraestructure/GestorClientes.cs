@@ -1818,7 +1818,13 @@ namespace NestoAPI.Infraestructure
 
         public async Task PublicarClienteSincronizar(Cliente cliente, FechasComprasCliente fechasCompras, string source = "Nesto", string usuario = null)
         {
-            fechasCompras = fechasCompras ?? new FechasComprasCliente();
+            // NestoAPI#498: Odoo VACÍA el campo si llega null (odoo-custom-addons#3), así que no se
+            // publica nunca sin las fechas calculadas: sin fechas, borraríamos las que ya tiene.
+            if (fechasCompras == null)
+            {
+                throw new ArgumentNullException(nameof(fechasCompras),
+                    "Las fechas de compras del cliente son obligatorias: si viajan a null, Odoo borra las que tiene");
+            }
 
             var personasContacto = cliente.PersonasContactoClientes
                 .Where(p => p.Empresa.Trim() == Constantes.Empresas.EMPRESA_POR_DEFECTO && p.Estado >= 0)
