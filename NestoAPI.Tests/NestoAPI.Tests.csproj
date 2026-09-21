@@ -458,6 +458,7 @@
     <Compile Include="Infrastructure\ValidadoresPedido\ValidadorGanavisionesTests.cs" />
     <Compile Include="Infrastructure\ValidadoresPedido\ValidadorOfertaSinBeneficioTests.cs" />
     <Compile Include="Infrastructure\ValidadoresPedido\ValidadorFamiliasIncompatiblesTests.cs" />
+    <Compile Include="Infrastructure\Productos\FamiliasRestringidasTests.cs" />
     <Compile Include="Infrastructure\ValidadoresPedido\GestorPreciosPermisoNecesarioTests.cs" />
     <Compile Include="Infrastructure\ValidadoresPedido\ValidadorLimiteRegalosTests.cs" />
     <Compile Include="Infrastructure\Contabilidad\ExtractoAdaptersTests.cs" />
