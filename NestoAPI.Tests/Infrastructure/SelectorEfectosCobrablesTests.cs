@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Remesas;
@@ -94,13 +94,14 @@ namespace NestoAPI.Tests.Infrastructure
         // válido ES91 2100 0418 45 0200051332 (mod-97 correcto).
         private static CCC Ficha(string cliente = "15191", string numero = "1", string pais = "ES",
             string dcIban = "91", string entidad = "2100", string oficina = "0418", string dc = "45",
-            string cuenta = "0200051332")
+            string cuenta = "0200051332", short estado = 0)
         {
             return new CCC
             {
                 Empresa = "1",
                 Cliente = cliente,
                 Contacto = "0",
+                Estado = estado,
                 Número = numero,
                 Pais = pais,
                 DC_IBAN = dcIban,
@@ -446,6 +447,79 @@ namespace NestoAPI.Tests.Infrastructure
         public void MotivoRetencionIban_IbanValido_DevuelveNull()
         {
             Assert.IsNull(SelectorEfectosCobrables.MotivoRetencionIban(Ficha(), "1"));
+        }
+
+        /// <summary>
+        /// NestoAPI#502: la ficha DE BAJA con un IBAN perfecto pasaba la puerta y el recibo se
+        /// giraba. Si se dio de baja porque el cliente revocó el mandato, eso vuelve devuelto.
+        /// </summary>
+        [TestMethod]
+        public void MotivoRetencionIban_FichaDeBajaConIbanValido_Retiene()
+        {
+            string motivo = SelectorEfectosCobrables.MotivoRetencionIban(Ficha(estado: -1), "1");
+
+            Assert.IsNotNull(motivo);
+            StringAssert.Contains(motivo, "DE BAJA");
+        }
+
+        [TestMethod]
+        public void MotivoRetencionIban_FichaActiva_NoRetienePorElEstado()
+        {
+            Assert.IsNull(SelectorEfectosCobrables.MotivoRetencionIban(Ficha(estado: 0), "1"));
+            Assert.IsNull(SelectorEfectosCobrables.MotivoRetencionIban(Ficha(estado: 5), "1"));
+        }
+
+        /// <summary>
+        /// Y de punta a punta: retenido y, a diferencia del gating de entrega, NO forzable. Quien
+        /// quiera girar a esa cuenta tiene que cambiarle antes el estado a la ficha.
+        /// </summary>
+        [TestMethod]
+        public async Task CandidatosSepa_FichaBancariaDeBaja_RetenidoYNoForzable()
+        {
+            ConfigurarFakeDbSet(fakeCccs, new List<CCC>
+            {
+                Ficha("15191", estado: -1),
+                Ficha("30676")
+            }.AsQueryable());
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente>
+            {
+                Efecto(id: 1, cliente: "15191"),
+                Efecto(id: 2, cliente: "30676")
+            }.AsQueryable());
+
+            List<EfectoCandidatoDTO> candidatos = await selector.CandidatosSepa("1", HOY);
+
+            EfectoCandidatoDTO retenido = candidatos.Single(c => c.Id == 1);
+            Assert.IsFalse(retenido.Preseleccionado);
+            Assert.IsFalse(retenido.Forzable, "Una ficha de baja no se puede forzar: hay que cambiarle el estado");
+            StringAssert.Contains(retenido.Motivo, "DE BAJA");
+            Assert.IsTrue(candidatos.Single(c => c.Id == 2).Preseleccionado);
+        }
+
+        /// <summary>
+        /// La otra mitad: el POST tampoco lo deja pasar aunque lo manden en efectosForzados.
+        /// </summary>
+        [TestMethod]
+        public void ValidarSeleccion_FichaDeBajaAunqueSeFuerce_SigueDandoError()
+        {
+            List<EfectoCandidatoDTO> candidatos = new List<EfectoCandidatoDTO>
+            {
+                new EfectoCandidatoDTO
+                {
+                    Id = 1,
+                    Cliente = "15191",
+                    Preseleccionado = false,
+                    Forzable = false,
+                    Motivo = "Retenido: la ficha bancaria (CCC \'1\') está DE BAJA"
+                }
+            };
+
+            List<string> errores = CrearRemesaService.ValidarSeleccion(
+                new List<int> { 1 }, candidatos, aceptarClientesConNegativos: true,
+                efectosForzados: new List<int> { 1 });
+
+            Assert.AreEqual(1, errores.Count);
+            StringAssert.Contains(errores.Single(), "DE BAJA");
         }
     }
 }

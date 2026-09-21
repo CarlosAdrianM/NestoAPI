@@ -1,4 +1,4 @@
-using NestoAPI.Models;
+﻿using NestoAPI.Models;
 using NestoAPI.Models.Clientes;
 using NestoAPI.Models.Remesas;
 using System;
@@ -228,6 +228,16 @@ namespace NestoAPI.Infraestructure.Remesas
             {
                 return $"Retenido: el CCC '{codigoCcc}' del efecto no existe en la ficha bancaria " +
                     "del cliente — el fichero SEPA lo descartaría en silencio (#381).";
+            }
+            // NestoAPI#502: la ficha de baja se gira igual que cualquier otra (ni el selector ni el
+            // SP miraban el Estado), y si se dio de baja porque el cliente revocó el mandato o
+            // cerró la cuenta, el recibo vuelve y la reclamación SEPA puede llegar 13 meses
+            // después. NO es forzable a propósito (Carlos, 21/09/26): quien quiera girar ahí que
+            // le cambie antes el estado a la ficha.
+            if (fichaCcc.Estado < 0)
+            {
+                return $"Retenido: la ficha bancaria (CCC '{codigoCcc}') está DE BAJA — cámbiele el " +
+                    "estado antes de remesar o gire por otra cuenta (#502).";
             }
             if (fichaCcc.Pais == null || fichaCcc.DC_IBAN == null || fichaCcc.Entidad == null
                 || fichaCcc.Oficina == null || fichaCcc.DC == null || fichaCcc.Nº_Cuenta == null)
