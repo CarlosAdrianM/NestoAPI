@@ -1,4 +1,5 @@
 ﻿using Elmah;
+using NestoAPI.Infraestructure.Clientes;
 using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Models;
 using NestoAPI.Models.Clientes;
@@ -113,7 +114,14 @@ namespace NestoAPI.Infraestructure.Facturas
 
         public Cliente CargarClientePrincipal(string empresa, string numeroCliente)
         {
-            return db.Clientes.Single(c => c.Empresa == empresa && c.Nº_Cliente == numeroCliente && c.ClientePrincipal);
+            // NestoAPI#500: con dos fichas principales, Single tiraba la factura entera (la razón
+            // social se busca cuando el contacto de entrega no es el principal).
+            Cliente principal = db.Clientes.BuscarPrincipal(empresa, numeroCliente);
+            if (principal == null)
+            {
+                throw new Exception($"El cliente {numeroCliente} no tiene ficha principal");
+            }
+            return principal;
         }
 
         public Empresa CargarEmpresa(string numeroEmpresa)

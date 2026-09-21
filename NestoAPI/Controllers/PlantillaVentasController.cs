@@ -1,4 +1,5 @@
 ﻿using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Clientes;
 using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
@@ -46,7 +47,13 @@ namespace NestoAPI.Controllers
                 throw new Exception("Empresa no válida");
             }
 
-            Cliente clienteCompleto = db.Clientes.Single(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.ClientePrincipal);
+            // NestoAPI#500: ojo, BuscarPrincipal y no Single: si el cliente tiene dos fichas
+            // principales (pasó con 79 clientes) la plantilla entera devolvía un 500.
+            Cliente clienteCompleto = db.Clientes.BuscarPrincipal(empresa, cliente);
+            if (clienteCompleto == null)
+            {
+                throw new Exception($"No existe el cliente {empresa}/{cliente}");
+            }
 
             IQueryable<LineaPlantillaVenta> lineasPlantilla = db.LinPedidoVtas
                 .Join(db.Productos.Include(nameof(ClasificacionMasVendido)).Where(p => p.Empresa == empresa).Include(f => f.Familia).Include(sb => sb.SubGrupo), l => new { producto = l.Producto }, p => new { producto = p.Número }, (l, p) => new { p.Empresa, l.Nº_Cliente, l.TipoLinea, producto = p.Número, p.Estado, p.Nombre, p.Tamaño, p.UnidadMedida, nombreFamilia = p.Familia1.Descripción, nombreSubGrupo = p.SubGruposProducto.Descripción, codigoBarras = p.CodBarras, l.Cantidad, l.Fecha_Albarán, p.Ficticio, p.IVA_Repercutido, p.PVP, aplicarDescuento = p.Aplicar_Dto || l.Nº_Cliente == Constantes.ClientesEspeciales.EL_EDEN || clienteCompleto.Estado == Constantes.Clientes.Estados.DISTRIBUIDOR, estadoLinea = l.Estado, grupo = p.Grupo, p.ClasificacionMasVendido }) // ojo, paso el estado del producto, no el de la línea

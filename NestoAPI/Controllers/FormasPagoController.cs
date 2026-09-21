@@ -1,4 +1,5 @@
-﻿using System;
+﻿using NestoAPI.Infraestructure.Clientes;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Entity;
@@ -70,7 +71,9 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> GetFormasPago(string empresa, string cliente)
         //public IQueryable<FormaPago> GetFormasPago(string empresa)
         {
-            Cliente clienteBuscado = db.Clientes.Where(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.ClientePrincipal == true).SingleOrDefault();
+            // NestoAPI#500: aquí se leía la ficha principal del cliente con un SingleOrDefault
+            // (que revienta si hay dos principales, como pasó con 79 clientes), pero el resultado
+            // NO SE USABA: era una consulta a la base de datos por llamada para nada. Fuera.
 
             // Cargamos todas las formas de pago estándar
             List<FormaPago> formasPago;

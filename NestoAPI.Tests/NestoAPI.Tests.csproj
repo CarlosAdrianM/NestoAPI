@@ -220,6 +220,7 @@
     <Compile Include="Controllers\ErroresControllerTests.cs" />
     <Compile Include="Controllers\EmpresaJsonContratoTests.cs" />
     <Compile Include="Infraestructure\Clientes\PoliticaEmpleadosClienteTests.cs" />
+    <Compile Include="Infraestructure\Clientes\ConsultasClientePrincipalTests.cs" />
     <Compile Include="Infraestructure\Clientes\ClienteEmpleadosEdmxTests.cs" />
     <Compile Include="Controllers\ExtractosClienteControllerTests.cs" />
     <Compile Include="Controllers\EnviosAgenciasListadosTests.cs" />

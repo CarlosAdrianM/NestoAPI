@@ -978,7 +978,8 @@ namespace NestoAPI.Controllers
         {
             Cliente fichaCliente = string.IsNullOrWhiteSpace(contacto)
                 ? await db.Clientes
-                    .SingleOrDefaultAsync(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.ClientePrincipal)
+                    // NestoAPI#500: tolera dos fichas principales en vez de devolver un 500.
+                    .BuscarPrincipalAsync(empresa, cliente)
                     .ConfigureAwait(false)
                 : await db.Clientes
                     .SingleOrDefaultAsync(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.Contacto == contacto)

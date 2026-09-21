@@ -1,4 +1,5 @@
-﻿using NestoAPI.Infraestructure;
+﻿using NestoAPI.Infraestructure.Clientes;
+using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Domiciliaciones;
 using NestoAPI.Models;
 using NestoAPI.Models.Domiciliaciones;
@@ -181,7 +182,8 @@ namespace NestoAPI.Controllers
         {
             Mod347DTO modelo = new Mod347DTO();
 
-            Cliente clienteComprobacion = await db.Clientes.SingleOrDefaultAsync(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.ClientePrincipal == true);
+            // NestoAPI#500: BuscarPrincipalAsync tolera que haya más de una ficha principal.
+            Cliente clienteComprobacion = await db.Clientes.BuscarPrincipalAsync(empresa, cliente);
             if (clienteComprobacion.CIF_NIF != null && clienteComprobacion.CIF_NIF.Trim() != NIF.Trim())
             {
                 throw new Exception("El NIF no es correcto");
@@ -250,7 +252,8 @@ namespace NestoAPI.Controllers
             DateTime fechaHasta = new DateTime(ejercicio + 1, 1, 1);
 
             // Cargar datos del cliente
-            Cliente clienteDb = await db.Clientes.SingleOrDefaultAsync(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.ClientePrincipal == true);
+            // NestoAPI#500: BuscarPrincipalAsync tolera que haya más de una ficha principal.
+            Cliente clienteDb = await db.Clientes.BuscarPrincipalAsync(empresa, cliente);
             if (clienteDb == null)
             {
                 return Request.CreateErrorResponse(HttpStatusCode.NotFound, "Cliente no encontrado");

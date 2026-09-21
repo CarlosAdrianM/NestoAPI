@@ -1,4 +1,5 @@
-﻿using System;
+﻿using NestoAPI.Infraestructure.Clientes;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Entity;
@@ -66,7 +67,9 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> GetPlazosPago(string empresa, string cliente)
         //public IQueryable<FormaPago> GetFormasPago(string empresa)
         {
-            Cliente clienteBuscado = db.Clientes.Include(p => p.CondPagoClientes).Where(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.ClientePrincipal == true).SingleOrDefault();
+            // NestoAPI#500: BuscarPrincipal en vez de SingleOrDefault: con dos fichas principales
+            // (79 clientes lo estaban) esto devolvía un 500 en vez de los plazos de pago.
+            Cliente clienteBuscado = db.Clientes.Include(p => p.CondPagoClientes).BuscarPrincipal(empresa, cliente);
 
             List<PlazoPagoDTO> plazosPago = await db.PlazosPago.Where(l => l.Empresa == empresa).
                 Select(p => new PlazoPagoDTO
@@ -124,7 +127,9 @@ namespace NestoAPI.Controllers
         [AutorizadoOApiKey("ApiKeyPrestashop", "X-API-KEY")]
         public async Task<IHttpActionResult> GetPlazosPago(string empresa, string cliente, string formaPago, decimal totalPedido)
         {
-            Cliente clienteBuscado = db.Clientes.Include(p => p.CondPagoClientes).Where(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.ClientePrincipal == true).SingleOrDefault();
+            // NestoAPI#500: BuscarPrincipal en vez de SingleOrDefault: con dos fichas principales
+            // (79 clientes lo estaban) esto devolvía un 500 en vez de los plazos de pago.
+            Cliente clienteBuscado = db.Clientes.Include(p => p.CondPagoClientes).BuscarPrincipal(empresa, cliente);
 
             IHttpActionResult result = await GetPlazosPago(empresa, cliente).ConfigureAwait(false);
             
