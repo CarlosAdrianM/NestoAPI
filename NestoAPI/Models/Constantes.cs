@@ -606,6 +606,19 @@ namespace NestoAPI.Models
             /// desplegar.
             /// </summary>
             public const string CORREO_AVISO_PICKING_AUTOMATICO = "CorreoAvisoPickingAutomatico";
+
+            /// <summary>
+            /// Permite crear o modificar un pedido que no pasa la validación (precios, ofertas,
+            /// descuentos): es el "¿desea crearlo de todos modos?" de Nesto y NestoApp.
+            /// </summary>
+            public const string PERMITIR_CREAR_PEDIDO_CON_ERRORES = "PermitirCrearPedidoConErroresValidacion";
+
+            /// <summary>
+            /// NestoAPI#501: permiso APARTE para saltarse la denegación de familias incompatibles
+            /// (vender Kinetics a quien compró Faby o Greenik). No vale el general de arriba: ese lo
+            /// tiene gente que puede forzar precios pero que NO debe vender familias restringidas.
+            /// </summary>
+            public const string PERMITIR_VENDER_FAMILIAS_RESTRINGIDAS = "PermitirVenderFamiliasRestringidas";
         }
         public static class PlazosPago
         {

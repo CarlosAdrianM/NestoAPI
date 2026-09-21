@@ -423,6 +423,9 @@ namespace NestoAPI.Infraestructure
             List<IValidadorDenegacion> validadoresDenegacion = listaValidadoresDenegacion;
 
             List<string> erroresAcumulados = new List<string>();
+            // NestoAPI#501: si alguno de los errores que quedan en pie exige un permiso propio, la
+            // respuesta se lo lleva: el controlador no deja saltarselo con el permiso general.
+            string permisoNecesario = null;
             string ultimoMotivoExitoso = null;
             bool hayMotivoDeValidadorAceptacion = false; // NUEVO
             // H1 (15/07/26): el flag de "denegado expresamente" de los errores acumulados se
@@ -476,6 +479,9 @@ namespace NestoAPI.Infraestructure
                                 erroresAcumulados.Add(motivoError);
                             }
                             algunaDenegadaExpresamente |= error.AutorizadaDenegadaExpresamente;
+                            permisoNecesario = permisoNecesario
+                                ?? error.PermisoNecesario
+                                ?? respuestaValidacion.PermisoNecesario;
                         }
                     }
                     else
@@ -506,6 +512,7 @@ namespace NestoAPI.Infraestructure
                             erroresAcumulados.Add(motivoDenegacion);
                         }
                         algunaDenegadaExpresamente |= respuestaValidacion.AutorizadaDenegadaExpresamente;
+                        permisoNecesario = permisoNecesario ?? respuestaValidacion.PermisoNecesario;
                     }
                 }
             }
@@ -517,6 +524,7 @@ namespace NestoAPI.Infraestructure
                 respuesta.ValidacionSuperada = false;
                 respuesta.Motivos = erroresAcumulados;
                 respuesta.AutorizadaDenegadaExpresamente = algunaDenegadaExpresamente;
+                respuesta.PermisoNecesario = permisoNecesario;
             }
             else if (!string.IsNullOrEmpty(ultimoMotivoExitoso))
             {
@@ -663,6 +671,13 @@ namespace NestoAPI.Infraestructure
         public string ProductoId { get; set; }
         public bool AutorizadaDenegadaExpresamente { get; set; }
 
+        /// <summary>
+        /// NestoAPI#501: clave de ParametrosUsuario que hace falta para poder saltarse ESTA
+        /// denegación concreta. Null (lo normal) = basta el permiso general de omitir validación.
+        /// Sirve para denegaciones que no puede levantar cualquiera que pueda forzar precios.
+        /// </summary>
+        public string PermisoNecesario { get; set; }
+
         // Carlos 04/06/26: cuando un validador de ACEPTACIÓN rechaza un producto que él "reconoce"
         // (p. ej. el de muestras sabe que es material promocional y el motivo es que supera el 5 %),
         // marca su rechazo como específico. El pipeline (EsPedidoValido) prefiere este motivo concreto
@@ -676,6 +691,9 @@ namespace NestoAPI.Infraestructure
         public string Motivo { get; set; }
         public string ProductoId { get; set; }
         public bool AutorizadaDenegadaExpresamente { get; set; }
+
+        /// <summary>NestoAPI#501: ver <see cref="RespuestaValidacion.PermisoNecesario"/>.</summary>
+        public string PermisoNecesario { get; set; }
     }
 
     public interface ICondicionPrecioDescuento

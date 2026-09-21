@@ -97,7 +97,35 @@ ORDER BY Empresa, Familia, FamiliaIncompatible;
 GO
 
 -- ---------------------------------------------------------------------------------------
--- 4. Comprobaciones (descomentar y lanzar despues de publicar la API)
+-- 4. Quien puede saltarse la denegacion (el 'desea crearlo de todos modos' de Kinetics)
+-- ---------------------------------------------------------------------------------------
+-- OJO: es un permiso APARTE del general de forzar pedidos. El general
+-- (PermitirCrearPedidoConErroresValidacion) lo tienen hoy Carlos, Manuel y Sancho, y Sancho NO
+-- debe poder vender familias restringidas. Alberto se anade cuando Carlos lo diga.
+MERGE ParametrosUsuario AS destino
+USING (VALUES
+        ('1', 'PermitirVenderFamiliasRestringidas', '(defecto)', '0'),
+        ('1', 'PermitirVenderFamiliasRestringidas', 'Carlos',    '1'),
+        ('1', 'PermitirVenderFamiliasRestringidas', 'Manuel',    '1')
+      ) AS origen (Empresa, Clave, Usuario, Valor)
+   ON  destino.Empresa = origen.Empresa
+   AND destino.Clave = origen.Clave
+   AND destino.Usuario = origen.Usuario
+WHEN MATCHED THEN
+    UPDATE SET Valor = origen.Valor, Usuario2 = SYSTEM_USER, [Fecha Modificación] = GETDATE()
+WHEN NOT MATCHED BY TARGET THEN
+    INSERT (Empresa, Clave, Usuario, Valor, Usuario2, [Fecha Modificación])
+    VALUES (origen.Empresa, origen.Clave, origen.Usuario, origen.Valor, SYSTEM_USER, GETDATE());
+
+PRINT 'Permisos de familias restringidas:';
+SELECT Usuario, LTRIM(RTRIM(Valor)) AS Valor
+FROM ParametrosUsuario
+WHERE Clave = 'PermitirVenderFamiliasRestringidas'
+ORDER BY Usuario;
+GO
+
+-- ---------------------------------------------------------------------------------------
+-- 5. Comprobaciones (descomentar y lanzar despues de publicar la API)
 -- ---------------------------------------------------------------------------------------
 /*
 -- Cuantos clientes quedarian bloqueados hoy para Kinetics (compras de Faby o Greenik en 24 meses,

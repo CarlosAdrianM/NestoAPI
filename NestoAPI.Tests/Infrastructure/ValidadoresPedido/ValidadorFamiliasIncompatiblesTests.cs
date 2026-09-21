@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.ValidadoresPedido;
@@ -90,6 +90,26 @@ namespace NestoAPI.Tests.Infrastructure.ValidadoresPedido
             StringAssert.Contains(respuesta.Motivo, "17/03/2026");
             Assert.AreEqual(PRODUCTO_KINETICS, respuesta.ProductoId);
             Assert.AreEqual(PRODUCTO_KINETICS, respuesta.Errores.Single().ProductoId);
+        }
+
+        /// <summary>
+        /// La denegación exige su PROPIO permiso: el general de forzar pedidos (que tiene gente
+        /// como Sancho, para precios y ofertas) no puede levantar esta.
+        /// </summary>
+        [TestMethod]
+        public void LaDenegacionExigeElPermisoPropioDeFamiliasRestringidas()
+        {
+            KineticsCondicionadaA(FABY);
+            A.CallTo(() => servicio.UltimaCompraDeFamilia(CLIENTE, FABY, 24)).Returns(DateTime.Today);
+
+            RespuestaValidacion respuesta = validador.EsPedidoValido(PedidoCon(PRODUCTO_KINETICS), servicio);
+
+            Assert.AreEqual(Constantes.ParametrosUsuario.PERMITIR_VENDER_FAMILIAS_RESTRINGIDAS,
+                respuesta.PermisoNecesario);
+            Assert.AreEqual(Constantes.ParametrosUsuario.PERMITIR_VENDER_FAMILIAS_RESTRINGIDAS,
+                respuesta.Errores.Single().PermisoNecesario);
+            Assert.AreNotEqual(Constantes.ParametrosUsuario.PERMITIR_CREAR_PEDIDO_CON_ERRORES,
+                respuesta.PermisoNecesario);
         }
 
         [TestMethod]

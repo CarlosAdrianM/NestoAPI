@@ -1,4 +1,4 @@
-using NestoAPI.Models;
+﻿using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
 using System;
 using System.Collections.Generic;
@@ -14,9 +14,13 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
     /// <c>FamiliasIncompatibles</c>, así que ampliarlo no toca código.
     ///
     /// <para>Denegar no es la última palabra: quien tenga el parámetro
-    /// <c>PermitirCrearPedidoConErroresValidacion</c> (Manuel y Carlos hoy) recibe el motivo,
-    /// confirma el "¿desea crearlo de todos modos?" que ya existe en Nesto y en NestoApp, y el
-    /// pedido se crea con <c>CreadoSinPasarValidacion</c>.</para>
+    /// <c>PermitirVenderFamiliasRestringidas</c> (Carlos y Manuel hoy; Alberto Sancho NO) recibe el
+    /// motivo, confirma el "¿desea crearlo de todos modos?" que ya existe en Nesto y en NestoApp, y
+    /// el pedido se crea con <c>CreadoSinPasarValidacion</c>.</para>
+    ///
+    /// <para>Es un permiso APARTE del general de forzar pedidos
+    /// (<c>PermitirCrearPedidoConErroresValidacion</c>) a propósito: ese lo tiene gente que puede
+    /// forzar precios y ofertas pero que no debe poder vender las familias restringidas.</para>
     /// </summary>
     public class ValidadorFamiliasIncompatibles : IValidadorDenegacion
     {
@@ -74,11 +78,15 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     respuesta.ValidacionSuperada = false;
                     respuesta.Motivo = motivo;
                     respuesta.ProductoId = productosDeLaFamilia.FirstOrDefault();
+                    // El permiso general de forzar pedidos (precios, ofertas) NO vale aqui: esto lo
+                    // levanta solo quien tenga el permiso propio de familias restringidas.
+                    respuesta.PermisoNecesario = Constantes.ParametrosUsuario.PERMITIR_VENDER_FAMILIAS_RESTRINGIDAS;
                     respuesta.Errores = productosDeLaFamilia.Select(p => new ErrorValidacion
                     {
                         Motivo = motivo,
                         ProductoId = p,
-                        AutorizadaDenegadaExpresamente = false
+                        AutorizadaDenegadaExpresamente = false,
+                        PermisoNecesario = Constantes.ParametrosUsuario.PERMITIR_VENDER_FAMILIAS_RESTRINGIDAS
                     }).ToList();
                     return respuesta;
                 }

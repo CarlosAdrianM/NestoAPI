@@ -984,7 +984,9 @@ namespace NestoAPI.Controllers
                 // Carlos 28/11/25: Permitir omitir validación si (igual que en POST):
                 // - Tiene rol Dirección o Almacén (sin importar almacenes), O
                 // - Tiene rol Tiendas Y todas las líneas están en su almacén
-                bool puedeOmitirValidacion = grupoPermitidoSinValidacion || grupoTiendasConAlmacenCorrecto;
+                bool puedeOmitirValidacion = (grupoPermitidoSinValidacion || grupoTiendasConAlmacenCorrecto)
+                    // NestoAPI#501: y, si la denegación exige un permiso propio, tenerlo también.
+                    && PuedeSaltarseEstaDenegacion(respuestaValidacion, pedido.empresa, pedido.Usuario);
 
                 if (!pedido.CreadoSinPasarValidacion || !puedeOmitirValidacion)
                 {
@@ -1801,7 +1803,9 @@ namespace NestoAPI.Controllers
             // Carlos 12/01/25: Permitir omitir validación si:
             // - Tiene rol Dirección o Almacén (sin importar almacenes), O
             // - Tiene rol Tiendas Y todas las líneas están en su almacén
-            bool puedeOmitirValidacion = grupoPermitidoSinValidacion || grupoTiendasConAlmacenCorrecto;
+            bool puedeOmitirValidacion = (grupoPermitidoSinValidacion || grupoTiendasConAlmacenCorrecto)
+                // NestoAPI#501: y, si la denegación exige un permiso propio, tenerlo también.
+                && PuedeSaltarseEstaDenegacion(respuestaValidacion, pedido.empresa, pedido.Usuario);
 
             if (!pedido.CreadoSinPasarValidacion || !puedeOmitirValidacion)
             {
@@ -2744,7 +2748,23 @@ namespace NestoAPI.Controllers
 
         private bool TieneParametroPermitirOmitirValidacion(string empresa, string usuario)
         {
-            string valor = ParametrosUsuarioController.LeerParametro(empresa, usuario, "PermitirCrearPedidoConErroresValidacion");
+            return TieneParametroActivado(empresa, usuario, Constantes.ParametrosUsuario.PERMITIR_CREAR_PEDIDO_CON_ERRORES);
+        }
+
+        /// <summary>
+        /// NestoAPI#501: hay denegaciones que no puede levantar cualquiera que tenga el permiso
+        /// general de forzar pedidos. Si la validación pide un permiso propio (familias
+        /// restringidas), el usuario tiene que tenerlo ADEMÁS del general.
+        /// </summary>
+        private bool PuedeSaltarseEstaDenegacion(RespuestaValidacion respuesta, string empresa, string usuario)
+        {
+            string permiso = respuesta?.PermisoNecesario;
+            return string.IsNullOrWhiteSpace(permiso) || TieneParametroActivado(empresa, usuario, permiso);
+        }
+
+        private bool TieneParametroActivado(string empresa, string usuario, string clave)
+        {
+            string valor = ParametrosUsuarioController.LeerParametro(empresa, usuario, clave);
 
             if (!string.IsNullOrWhiteSpace(valor))
             {
