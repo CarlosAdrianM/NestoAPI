@@ -316,7 +316,8 @@ namespace NestoAPI.Infraestructure
                     new ValidadorDescuentosPermitidos(),
                     new ValidadorOtrosAparatosSiempreSinDescuento(),
                     new ValidadorLimiteRegalos(),
-                    new ValidadorOfertaSinBeneficio()
+                    new ValidadorOfertaSinBeneficio(),
+                    new ValidadorFamiliasIncompatibles()
                 };
             }
         }

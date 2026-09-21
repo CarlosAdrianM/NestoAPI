@@ -4844,8 +4844,9 @@ namespace NestoAPI.Tests.Infrastructure
                     _ = GestorPrecios.EsPedidoValido(pedido);
                 });
 
-                Assert.AreEqual(5, GestorPrecios.listaValidadoresDenegacion.Count,
-                    "Con .Add() sin candado dos hilos cargaban los dos y quedaban 10 validadores, " +
+                // 6 desde NestoAPI#501 (ValidadorFamiliasIncompatibles). Si añades uno, sube el número.
+                Assert.AreEqual(6, GestorPrecios.listaValidadoresDenegacion.Count,
+                    "Con .Add() sin candado dos hilos cargaban los dos y quedaban el doble de validadores, " +
                     "con lo que cada motivo de denegación salía por duplicado");
                 Assert.AreEqual(
                     GestorPrecios.listaValidadoresDenegacion.Select(v => v.GetType()).Distinct().Count(),

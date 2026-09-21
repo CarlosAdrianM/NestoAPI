@@ -31,6 +31,42 @@ namespace NestoAPI.Tests.Infrastructure.Sincronizacion
             };
         }
 
+        /// <summary>
+        /// NestoAPI#501: Kinetics es de venta presencial, así que no sale de Nesto. Como hoy la
+        /// tienda y Odoo leen el mismo topic, no publicar el mensaje lo deja fuera de las dos.
+        /// </summary>
+        [TestMethod]
+        public void Evaluar_FamiliaDeVentaPresencial_NoPublicable()
+        {
+            DatosPuertaPublicacion datos = ProductoNormal();
+            datos.FamiliaCodigo = "Kinetics";
+            datos.DescripcionFamilia = "Kinetics Nail Systems";
+            datos.FamiliaSoloVentaPresencial = true;
+
+            var resultado = PuertaPublicacionTienda.Evaluar(datos);
+
+            Assert.IsFalse(resultado.Publicable);
+            StringAssert.Contains(resultado.Motivo, "Kinetics Nail Systems");
+            StringAssert.Contains(resultado.Motivo, "presencial");
+        }
+
+        /// <summary>
+        /// Un producto de una familia de venta presencial que está DE BAJA sí se publica: es el
+        /// mensaje con el que la tienda lo desactiva... salvo que nunca llegó a publicarse. Aquí se
+        /// comprueba lo que importa: la familia manda sobre todo lo demás.
+        /// </summary>
+        [TestMethod]
+        public void Evaluar_FamiliaDeVentaPresencialYProductoDeBaja_SigueSinPublicarse()
+        {
+            DatosPuertaPublicacion datos = ProductoNormal();
+            datos.FamiliaSoloVentaPresencial = true;
+            datos.Estado = -1;
+
+            var resultado = PuertaPublicacionTienda.Evaluar(datos);
+
+            Assert.IsFalse(resultado.Publicable);
+        }
+
         [TestMethod]
         public void Evaluar_ProductoNormalEstadoCero_Publicable()
         {

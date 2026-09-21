@@ -10,6 +10,71 @@ namespace NestoAPI.Infraestructure
 {
     public class ServicioPrecios : IServicioPrecios
     {
+        /// <summary>
+        /// NestoAPI#501: familias que impiden vender esta. Solo las filas activas (Estado >= 0).
+        /// </summary>
+        public List<FamiliaIncompatibilidad> BuscarIncompatibilidadesFamilia(string familia)
+        {
+            if (string.IsNullOrWhiteSpace(familia))
+            {
+                return new List<FamiliaIncompatibilidad>();
+            }
+
+            string familiaBuscada = familia.Trim();
+            using (NVEntities db = new NVEntities())
+            {
+                db.Configuration.LazyLoadingEnabled = false;
+                db.Configuration.ProxyCreationEnabled = false;
+                return db.FamiliasIncompatibles
+                    .Where(f => f.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO
+                             && f.Familia == familiaBuscada
+                             && f.Estado >= 0)
+                    .ToList();
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#501: la compra mas reciente de esa familia dentro de la ventana, o null.
+        ///
+        /// <para>La fecha de una linea es la del albaran cuando ya se ha servido y, si no, la de
+        /// entrega prevista: asi un pedido pendiente cuenta desde que se mete, que es justo lo que
+        /// se quiere (bloquea todo menos los presupuestos, Estado = -3).</para>
+        /// </summary>
+        public DateTime? UltimaCompraDeFamilia(string cliente, string familia, int meses)
+        {
+            if (string.IsNullOrWhiteSpace(cliente) || string.IsNullOrWhiteSpace(familia))
+            {
+                return null;
+            }
+
+            string clienteBuscado = cliente.Trim();
+            string familiaBuscada = familia.Trim();
+            DateTime? desde = meses > 0 ? DateTime.Today.AddMonths(-meses) : (DateTime?)null;
+
+            using (NVEntities db = new NVEntities())
+            {
+                db.Configuration.LazyLoadingEnabled = false;
+                db.Configuration.ProxyCreationEnabled = false;
+
+                IQueryable<LinPedidoVta> lineas = db.LinPedidoVtas
+                    .Where(l => l.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO
+                             && l.Nº_Cliente == clienteBuscado
+                             && l.Familia == familiaBuscada
+                             && l.Estado > Constantes.EstadosLineaVenta.PRESUPUESTO
+                             && l.Cantidad > 0);
+
+                if (desde.HasValue)
+                {
+                    lineas = lineas.Where(l => (l.Fecha_Albarán ?? l.Fecha_Entrega) >= desde.Value);
+                }
+
+                return lineas
+                    .Select(l => (DateTime?)(l.Fecha_Albarán ?? l.Fecha_Entrega))
+                    .OrderByDescending(f => f)
+                    .FirstOrDefault();
+            }
+        }
+
         public Producto BuscarProducto(string producto)
         {
             using (NVEntities db = new NVEntities())

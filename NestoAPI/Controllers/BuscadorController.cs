@@ -1,4 +1,7 @@
 ﻿using NestoAPI.Infraestructure.Buscador;
+using NestoAPI.Infraestructure.Productos;
+using NestoAPI.Models;
+using System;
 using System.Collections.Generic;
 using System.Web.Http;
 using static NestoAPI.Infraestructure.Buscador.LuceneBuscador;
@@ -16,6 +19,16 @@ namespace NestoAPI.Controllers
     {
         internal const int TAKE_POR_DEFECTO = 20;
         internal const int TAKE_MAXIMO = 100;
+
+        private readonly NVEntities db;
+
+        public BuscadorController() : this(new NVEntities()) { }
+
+        // NestoAPI#501: constructor para tests (permite inyectar un NVEntities falso).
+        internal BuscadorController(NVEntities db)
+        {
+            this.db = db;
+        }
 
         [HttpPost]
         [Route("api/buscador/indexar")]
@@ -43,7 +56,8 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest("Indique qué buscar (q)");
             }
-            List<dynamic> resultados = LuceneBuscador.Buscar(Parametros(q, tipo, incluirAnulados, skip, take));
+            List<dynamic> resultados = LuceneBuscador.Buscar(
+                Parametros(q, tipo, incluirAnulados, skip, take, PuedeVerFamiliasPresenciales()));
             return Ok(resultados);
         }
 
@@ -61,20 +75,49 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest("Indique qué buscar (q)");
             }
-            ResultadoPaginado resultado = LuceneBuscador.BuscarPaginado(Parametros(q, tipo, incluirAnulados, skip, take));
+            ResultadoPaginado resultado = LuceneBuscador.BuscarPaginado(
+                Parametros(q, tipo, incluirAnulados, skip, take, PuedeVerFamiliasPresenciales()));
             return Ok(resultado);
         }
 
-        internal static ParametrosBusqueda Parametros(string q, string tipo, bool incluirAnulados, int skip, int take)
+        /// <summary>
+        /// NestoAPI#501: las familias de venta presencial solo las ve un vendedor presencial. Este
+        /// endpoint es anónimo (lo llama el buscador de la tienda), así que lo normal es que no.
+        /// Si la consulta del vendedor fallara, se oculta: el criterio seguro es no enseñarlas.
+        /// </summary>
+        private bool PuedeVerFamiliasPresenciales()
+        {
+            try
+            {
+                return FamiliasRestringidas.PuedeVerlas(User, db);
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        internal static ParametrosBusqueda Parametros(string q, string tipo, bool incluirAnulados, int skip, int take,
+            bool incluirSoloPresenciales = false)
         {
             return new ParametrosBusqueda
             {
                 Query = q,
                 Tipo = tipo,
                 IncluirAnulados = incluirAnulados,
+                IncluirSoloPresenciales = incluirSoloPresenciales,
                 Skip = skip < 0 ? 0 : skip,
                 Take = take <= 0 ? TAKE_POR_DEFECTO : (take > TAKE_MAXIMO ? TAKE_MAXIMO : take)
             };
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                db.Dispose();
+            }
+            base.Dispose(disposing);
         }
     }
 }

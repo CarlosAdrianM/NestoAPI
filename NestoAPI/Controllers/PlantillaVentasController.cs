@@ -1,5 +1,6 @@
 ﻿using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Clientes;
+using NestoAPI.Infraestructure.Productos;
 using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
@@ -37,6 +38,26 @@ namespace NestoAPI.Controllers
             _lectorParametros = lectorParametros;
         }
 
+        /// <summary>
+        /// NestoAPI#501: los productos de familias de venta presencial (Kinetics) solo los ve un
+        /// vendedor presencial. Devuelve los códigos de familia que hay que esconderle a quien
+        /// pregunta; vacío si puede verlas todas.
+        /// </summary>
+        private List<string> FamiliasQueNoPuedeVer()
+        {
+            try
+            {
+                return FamiliasRestringidas.PuedeVerlas(User, db)
+                    ? new List<string>()
+                    : FamiliasRestringidas.Codigos(db).ToList();
+            }
+            catch (Exception)
+            {
+                // Ante la duda, no se enseñan: es lo que pidió Dirección.
+                return FamiliasRestringidas.Codigos(db).ToList();
+            }
+        }
+
         // GET: api/PlantillaVentas
         //public IQueryable<LinPedidoVta> GetLinPedidoVtas()
         public IQueryable<LineaPlantillaVenta> GetPlantillaVentas(string empresa, string cliente)
@@ -55,7 +76,13 @@ namespace NestoAPI.Controllers
                 throw new Exception($"No existe el cliente {empresa}/{cliente}");
             }
 
-            IQueryable<LineaPlantillaVenta> lineasPlantilla = db.LinPedidoVtas
+            List<string> familiasOcultas = FamiliasQueNoPuedeVer();
+
+            IQueryable<LinPedidoVta> lineasFiltradas = familiasOcultas.Any()
+                ? db.LinPedidoVtas.Where(l => l.Familia == null || !familiasOcultas.Contains(l.Familia))
+                : db.LinPedidoVtas;
+
+            IQueryable<LineaPlantillaVenta> lineasPlantilla = lineasFiltradas
                 .Join(db.Productos.Include(nameof(ClasificacionMasVendido)).Where(p => p.Empresa == empresa).Include(f => f.Familia).Include(sb => sb.SubGrupo), l => new { producto = l.Producto }, p => new { producto = p.Número }, (l, p) => new { p.Empresa, l.Nº_Cliente, l.TipoLinea, producto = p.Número, p.Estado, p.Nombre, p.Tamaño, p.UnidadMedida, nombreFamilia = p.Familia1.Descripción, nombreSubGrupo = p.SubGruposProducto.Descripción, codigoBarras = p.CodBarras, l.Cantidad, l.Fecha_Albarán, p.Ficticio, p.IVA_Repercutido, p.PVP, aplicarDescuento = p.Aplicar_Dto || l.Nº_Cliente == Constantes.ClientesEspeciales.EL_EDEN || clienteCompleto.Estado == Constantes.Clientes.Estados.DISTRIBUIDOR, estadoLinea = l.Estado, grupo = p.Grupo, p.ClasificacionMasVendido }) // ojo, paso el estado del producto, no el de la línea
                 .Where(l => (l.Empresa == empresa || l.Empresa == empresaBuscada.IVA_por_defecto) && l.Nº_Cliente == cliente && l.TipoLinea == 1 && !l.Ficticio && l.Estado >= 0 && l.estadoLinea == 4 && l.Fecha_Albarán >= DbFunctions.AddYears(DateTime.Today, -2) && l.grupo != Constantes.Productos.GRUPO_MATERIAS_PRIMAS) // ojo, es el estado del producto
                 .GroupBy(g => new { g.producto, g.Nombre, g.Tamaño, g.UnidadMedida, g.nombreFamilia, g.Estado, g.nombreSubGrupo, g.codigoBarras, g.IVA_Repercutido, g.PVP, g.aplicarDescuento, g.ClasificacionMasVendido, g.grupo })
@@ -96,7 +123,13 @@ namespace NestoAPI.Controllers
                 throw new Exception("El filtro de productos debe tener al menos 3 caracteres de largo");
             }
 
-            IQueryable<LineaPlantillaVenta> lineasPlantilla = db.Productos.Include(nameof(ClasificacionMasVendido))
+            List<string> familiasOcultas = FamiliasQueNoPuedeVer();
+
+            IQueryable<Producto> productosFiltrados = familiasOcultas.Any()
+                ? db.Productos.Where(p => p.Familia == null || !familiasOcultas.Contains(p.Familia))
+                : db.Productos;
+
+            IQueryable<LineaPlantillaVenta> lineasPlantilla = productosFiltrados.Include(nameof(ClasificacionMasVendido))
                 .Include(f => f.Familia)
                 .Join(db.SubGruposProductoes, p => new { empresa = p.Empresa, grupo = p.Grupo, numero = p.SubGrupo }, s => new { empresa = s.Empresa, grupo = s.Grupo, numero = s.Número }, (p, s) => new { p.Empresa, p.Número, p.Estado, p.Nombre, p.Tamaño, p.UnidadMedida, nombreFamilia = p.Familia1.Descripción, estadoFamilia = p.Familia1.Estado, nombreSubGrupo = p.SubGruposProducto.Descripción, cantidad = 0, ficticio = p.Ficticio, aplicarDescuento = p.Aplicar_Dto, precio = p.PVP, iva = p.IVA_Repercutido, grupo = p.Grupo, clasificacion = p.ClasificacionMasVendido, codigoBarras = p.CodBarras })
                 .Join(db.ProveedoresProductoes, p => new { empresa = p.Empresa, producto = p.Número }, r => new { empresa = r.Empresa, producto = r.Nº_Producto }, (p, r) => new { p.Empresa, p.Número, p.Estado, p.Nombre, p.Tamaño, p.UnidadMedida, p.nombreFamilia, p.estadoFamilia, p.nombreSubGrupo, cantidad = 0, p.ficticio, p.aplicarDescuento, p.precio, p.iva, r.ReferenciaProv, p.grupo, p.clasificacion, p.codigoBarras })

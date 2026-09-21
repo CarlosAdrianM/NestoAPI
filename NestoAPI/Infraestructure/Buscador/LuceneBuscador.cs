@@ -30,6 +30,12 @@ namespace NestoAPI.Infraestructure.Buscador
         internal const string CAMPO_NOMBRE_EXACTO = "NombreExacto";
 
         /// <summary>
+        /// NestoAPI#501: "true" en los productos de familias que solo venden los vendedores
+        /// presenciales. Solo se devuelven si quien busca es uno de ellos.
+        /// </summary>
+        internal const string CAMPO_SOLO_PRESENCIAL = "SoloPresencial";
+
+        /// <summary>
         /// Posición en ClasificacionMasVendidos (1 = el que más se vende; 0 = sin clasificar).
         /// Va en doc values, no en el texto: solo sirve para ponderar la puntuación.
         /// </summary>
@@ -66,6 +72,10 @@ namespace NestoAPI.Infraestructure.Buscador
                         new StringField("Tipo", "producto", Field.Store.YES),
                         new StringField("Id", producto.Id, Field.Store.YES),
                         new StringField("Anulado", producto.Anulado ? "true" : "false", Field.Store.YES),
+                        // NestoAPI#501: familias de venta presencial. Los videos no llevan
+                        // este campo, igual que no llevan Anulado, y por eso se filtra con
+                        // MUST_NOT sobre "true" y no exigiendo "false".
+                        new StringField(CAMPO_SOLO_PRESENCIAL, producto.SoloVentaPresencial ? "true" : "false", Field.Store.YES),
                         new TextField("Nombre", producto.Nombre, Field.Store.YES) { Boost = 4.0f },
                         new TextField(CAMPO_NOMBRE_EXACTO, producto.Nombre, Field.Store.NO),
                         new TextField(CAMPO_NOMBRE_FONETICO, producto.Nombre, Field.Store.NO),
@@ -265,6 +275,14 @@ namespace NestoAPI.Infraestructure.Buscador
             TermQuery esAnulado = new TermQuery(new Term("Anulado", "true"));
             query.Add(esAnulado, soloAnulados ? Occur.MUST : Occur.MUST_NOT);
 
+            // NestoAPI#501: las familias de venta presencial se ocultan salvo que quien busque sea
+            // un vendedor presencial. Por defecto no se ven: el buscador es anonimo y lo usa la
+            // tienda de PrestaShop.
+            if (!parametros.IncluirSoloPresenciales)
+            {
+                query.Add(new TermQuery(new Term(CAMPO_SOLO_PRESENCIAL, "true")), Occur.MUST_NOT);
+            }
+
             return new PonderadorMasVendidos(query);
         }
 
@@ -402,7 +420,8 @@ namespace NestoAPI.Infraestructure.Buscador
                     Id = doc.Get("Id"),
                     Nombre = doc.Get("Nombre"),
                     Familia = doc.Get("Familia"),
-                    Anulado = doc.Get("Anulado") == "true"
+                    Anulado = doc.Get("Anulado") == "true",
+                    SoloVentaPresencial = doc.Get(CAMPO_SOLO_PRESENCIAL) == "true"
                 });
             }
 
@@ -438,7 +457,8 @@ namespace NestoAPI.Infraestructure.Buscador
                             ISNULL(rtrim(f.Descripción), '') AS Familia,
 	                        ISNULL(rtrim(s.Descripción), '') AS Subgrupo,
                             ISNULL(p.Estado, 0) AS Estado,
-                            c.Posicion AS PosicionMasVendido
+                            c.Posicion AS PosicionMasVendido,
+                            f.SoloVentaPresencial AS SoloVentaPresencial
                         FROM Productos p INNER JOIN Familias f
                         on f.Empresa = p.Empresa and f.Número = p.Familia
                         INNER JOIN SubGruposProducto s
@@ -463,6 +483,7 @@ namespace NestoAPI.Infraestructure.Buscador
                                 string subgrupo = lector.IsDBNull(5) ? "" : lector.GetString(5);
                                 short estado = lector.GetInt16(6);
                                 int? posicionMasVendido = lector.IsDBNull(7) ? (int?)null : lector.GetInt32(7);
+                                bool soloVentaPresencial = !lector.IsDBNull(8) && lector.GetBoolean(8);
 
                                 resultado.Add(new ResultadoBusqueda
                                 {
@@ -474,7 +495,8 @@ namespace NestoAPI.Infraestructure.Buscador
                                     DescripcionBreve = descripcionBreve,
                                     DescripcionLarga = descripcionLarga,
                                     Anulado = estado < 0,
-                                    PosicionMasVendido = posicionMasVendido
+                                    PosicionMasVendido = posicionMasVendido,
+                                    SoloVentaPresencial = soloVentaPresencial
                                 });
                             }
 
@@ -565,6 +587,9 @@ namespace NestoAPI.Infraestructure.Buscador
             public string DescripcionLarga { get; set; }
             public bool Anulado { get; set; }
 
+            /// <summary>NestoAPI#501: la familia solo la venden los vendedores presenciales.</summary>
+            public bool SoloVentaPresencial { get; set; }
+
             /// <summary>Posición en ClasificacionMasVendidos (1 = el que más). Null si no está clasificado.</summary>
             public int? PosicionMasVendido { get; set; }
         }
@@ -611,6 +636,12 @@ namespace NestoAPI.Infraestructure.Buscador
             /// productos anulados. La tienda los pide con true para poder mostrarlos etiquetados.
             /// </summary>
             public bool IncluirAnulados { get; set; } = false;
+
+            /// <summary>
+            /// NestoAPI#501: false (por defecto) oculta las familias de venta presencial. Solo el
+            /// buscador lo pone a true, y solo cuando quien llama es un vendedor presencial.
+            /// </summary>
+            public bool IncluirSoloPresenciales { get; set; } = false;
         }
     }
 }

@@ -1,5 +1,6 @@
 ﻿using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
+using System;
 using System.Collections.Generic;
 
 namespace NestoAPI.Infraestructure
@@ -35,5 +36,18 @@ namespace NestoAPI.Infraestructure
         /// Disponible = Stock - PendienteEntregar + PendienteRecibir + PendienteReposicion
         /// </summary>
         int BuscarStockDisponibleTotal(string numeroProducto);
+
+        /// <summary>
+        /// NestoAPI#501: familias que impiden vender <paramref name="familia"/>, cada una con su
+        /// ventana en meses (0 = todo el historico). Vacio si la familia no esta condicionada.
+        /// </summary>
+        List<FamiliaIncompatibilidad> BuscarIncompatibilidadesFamilia(string familia);
+
+        /// <summary>
+        /// NestoAPI#501: fecha de la ultima linea de esa familia comprada por el cliente dentro de
+        /// la ventana, o null si no ha comprado. Cuenta TODO menos los presupuestos (pendientes,
+        /// en curso, albaranes y facturas), y mira el numero de cliente entero, no el contacto.
+        /// </summary>
+        DateTime? UltimaCompraDeFamilia(string cliente, string familia, int meses);
     }
 }

@@ -666,6 +666,7 @@
     <Compile Include="Infraestructure\GeneradorPdfModelo347.cs" />
     <Compile Include="Infraestructure\Clientes\NotificadorNifIncorrecto.cs" />
     <Compile Include="Infraestructure\Clientes\ConsultasClientePrincipal.cs" />
+    <Compile Include="Infraestructure\Productos\FamiliasRestringidas.cs" />
     <Compile Include="Infraestructure\Verifactu\VerifactuJobsService.cs" />
     <Compile Include="Infraestructure\Verifactu\DeduplicadorErroresVerifactu.cs" />
     <Compile Include="Infraestructure\Clientes\ProveedorCertificadoAeat.cs" />
@@ -894,6 +895,7 @@
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorGanavisiones.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorLimiteRegalos.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorOfertaSinBeneficio.cs" />
+    <Compile Include="Infraestructure\ValidadoresPedido\ValidadorFamiliasIncompatibles.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorMuestrasYMaterialPromocional.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorOfertasCombinadas.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorOfertasEscalonadas.cs" />
@@ -1052,6 +1054,9 @@
     <Compile Include="Models\Alquileres\MovimientoAlquilerDTO.cs" />
     <Compile Include="Models\Alquileres\ProductoAlquilerDTO.cs" />
     <Compile Include="Models\ProductoCategoriaSecundaria.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\FamiliaIncompatibilidad.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\ProductoVariante.cs">

@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure.Kits;
+﻿using NestoAPI.Infraestructure.Kits;
 using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
@@ -114,6 +114,14 @@ namespace NestoAPI.Infraestructure.Sincronizacion
                 return ResultadoPuertaPublicacion.NoPublicable(motivoVeto);
             }
 
+            // NestoAPI#501: las familias restringidas solo las ofrecen los vendedores presenciales,
+            // así que no salen de Nesto: ni a la tienda ni a Odoo (hoy los dos leen el mismo topic).
+            if (datos.FamiliaSoloVentaPresencial)
+            {
+                return ResultadoPuertaPublicacion.NoPublicable(
+                    $"la familia {datos.DescripcionFamilia ?? datos.FamiliaCodigo} es de venta presencial (#501)");
+            }
+
             if (string.Equals(datos.Grupo, "MTP", StringComparison.OrdinalIgnoreCase))
             {
                 return ResultadoPuertaPublicacion.NoPublicable("el grupo MTP no va a la tienda (07/06/21)");
@@ -191,7 +199,9 @@ namespace NestoAPI.Infraestructure.Sincronizacion
                 DescripcionFamilia = producto.Familia1?.Descripción?.Trim(),
                 DescripcionSubgrupo = producto.SubGruposProducto?.Descripción?.Trim(),
                 Ficticio = producto.Ficticio,
-                Estado = producto.Estado ?? 0
+                Estado = producto.Estado ?? 0,
+                // NestoAPI#501: Familia1 viene con Include desde el job de sincronización.
+                FamiliaSoloVentaPresencial = producto.Familia1 != null && producto.Familia1.SoloVentaPresencial
             };
 
             // Regla del legacy (08/03/19): si el producto tiene proveedores, alguno debe ser el
@@ -262,5 +272,8 @@ namespace NestoAPI.Infraestructure.Sincronizacion
         public bool TieneProveedorPrincipalValido { get; set; }
         public bool EsParteDeKitActivo { get; set; }
         public bool TieneMovimientoExtractoTresAnnos { get; set; }
+
+        /// <summary>NestoAPI#501: la familia solo la venden los vendedores presenciales.</summary>
+        public bool FamiliaSoloVentaPresencial { get; set; }
     }
 }

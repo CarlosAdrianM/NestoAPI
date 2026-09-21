@@ -33,6 +33,7 @@ namespace NestoAPI.Models
         public System.DateTime Fecha_Modificación { get; set; }
         public bool PublicoIgualQueProfesional { get; set; }
         public bool VentaPausadaEnTienda { get; set; }
+        public bool SoloVentaPresencial { get; set; }
     
         public virtual Empresa Empresa1 { get; set; }
         public virtual ICollection<LinPedidoVta> LinPedidoVtas { get; set; }
