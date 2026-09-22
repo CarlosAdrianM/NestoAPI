@@ -211,7 +211,9 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual((short)Constantes.Agencias.ESTADO_EN_CURSO, envio.Estado);
             Assert.AreEqual(0m, envio.Reembolso); // sentinel -1 -> 0 al tramitar
             // Auditoría con éxito.
-            A.CallTo(() => fakeLlamadas.Add(A<AgenciaLlamadaWeb>.That.Matches(l => l.Exito && l.Agencia == "Innovatrans"))).MustHaveHappened();
+            // NestoAPI#512: la auditoría lleva el nombre REAL de la agencia del envío. En este doble la
+            // navegación no está cargada y la tabla de agencias está vacía: queda el valor de respaldo.
+            A.CallTo(() => fakeLlamadas.Add(A<AgenciaLlamadaWeb>.That.Matches(l => l.Exito && l.Agencia == "Agencia remota"))).MustHaveHappened();
             A.CallTo(() => db.SaveChangesAsync()).MustHaveHappened();
         }
 

@@ -628,6 +628,21 @@ namespace NestoAPI.Controllers
                 enviosAgencia.Reembolso = 0;
             }
 
+            // NestoAPI#512 (22/09/26, envío 248984): el botón «Modificar Envío» de la pestaña En curso
+            // manda el envío entero por aquí. Con CTT/Innovatrans el reembolso ya viajó a la agencia al
+            // registrar, y este PUT lo cambiaba solo en nuestra BD (sin historial, sin contabilidad y
+            // con la agencia cobrando el importe antiguo). Se rechaza con el camino correcto.
+            var registrado = await db.EnviosAgencias.AsNoTracking()
+                .Where(e => e.Numero == id)
+                .Select(e => new { e.Reembolso, e.Agencia, e.CodigoBarras, e.Estado })
+                .FirstOrDefaultAsync();
+            if (registrado != null && CambioDeReembolsoBloqueado(registrado.Reembolso, enviosAgencia.Reembolso,
+                    registrado.CodigoBarras, registrado.Estado, _perfilesAgencias.Perfil(registrado.Agencia) is Infraestructure.Agencias.Perfiles.IPerfilConGestionRemota))
+            {
+                return BadRequest($"El envío {id} ya está registrado en la agencia con {registrado.Reembolso:C} de reembolso y no se puede cambiar desde aquí: " +
+                    "la agencia seguiría cobrando el importe antiguo. Anula el envío (Borrar) y vuelve a tramitarlo con el reembolso correcto.");
+            }
+
             enviosAgencia.Usuario = User?.Identity?.Name ?? "NestoAPI";
             RecortarTextosLibres(enviosAgencia);
             db.Entry(enviosAgencia).State = EntityState.Modified;
@@ -1227,7 +1242,8 @@ namespace NestoAPI.Controllers
             try
             {
                 db.AgenciasLlamadasWeb.Add(ConstruirAuditoria(agencia.Intercambios,
-                    $"{operacion} envío {envio.Numero} (pedido {envio.Pedido}, CP {envio.CodPostal?.Trim()})", exito, error));
+                    $"{operacion} envío {envio.Numero} (pedido {envio.Pedido}, CP {envio.CodPostal?.Trim()})", exito, error,
+                    await NombreAgenciaDe(envio)));
                 await db.SaveChangesAsync();
             }
             catch (Exception ex)
@@ -1265,7 +1281,8 @@ namespace NestoAPI.Controllers
                 IReadOnlyList<IntercambioRemoto> intercambios = (agencia as IAgenciaRemota)?.Intercambios
                     ?? new List<IntercambioRemoto>();
                 db.AgenciasLlamadasWeb.Add(ConstruirAuditoria(intercambios,
-                    $"Consultar seguimiento envío {envio.Numero} (pedido {envio.Pedido}, albarán {envio.CodigoBarras?.Trim()})", exito, error));
+                    $"Consultar seguimiento envío {envio.Numero} (pedido {envio.Pedido}, albarán {envio.CodigoBarras?.Trim()})", exito, error,
+                    await NombreAgenciaDe(envio)));
                 await db.SaveChangesAsync();
             }
             catch (Exception ex)
@@ -1280,14 +1297,39 @@ namespace NestoAPI.Controllers
         // Las columnas son NOT NULL con longitud máxima (UrlLlamada/TextoRespuestaError 255, Usuario 30,
         // Agencia 50); CuerpoLlamada/Respuesta son nvarchar(max). Hay que respetar ambas o EF lanza
         // DbEntityValidationException.
-        private AgenciaLlamadaWeb ConstruirAuditoria(IReadOnlyList<IntercambioRemoto> intercambios, string cabecera, bool exito, string error)
+        /// <summary>
+        /// NestoAPI#512: el nombre de la agencia del envío para la auditoría. La navegación no viene
+        /// cargada (FindAsync sin Include y sin lazy loading), así que se busca por su número.
+        /// </summary>
+        private async Task<string> NombreAgenciaDe(EnviosAgencia envio)
+        {
+            string nombre = envio?.AgenciasTransporte?.Nombre?.Trim();
+            if (!string.IsNullOrWhiteSpace(nombre) || envio == null)
+            {
+                return nombre;
+            }
+            try
+            {
+                return (await db.AgenciasTransportes.AsNoTracking()
+                    .Where(a => a.Numero == envio.Agencia)
+                    .Select(a => a.Nombre)
+                    .FirstOrDefaultAsync())?.Trim();
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private AgenciaLlamadaWeb ConstruirAuditoria(IReadOnlyList<IntercambioRemoto> intercambios, string cabecera, bool exito, string error, string nombreAgencia)
         {
             return new AgenciaLlamadaWeb
             {
-                Agencia = Limitar("Innovatrans", 50),
+                // NestoAPI#512: antes ponía "Innovatrans" fijo y las llamadas de CTT figuraban como suyas.
+                Agencia = Limitar(string.IsNullOrWhiteSpace(nombreAgencia) ? "Agencia remota" : nombreAgencia.Trim(), 50),
                 Fecha = DateTime.Now,
                 Exito = exito,
-                UrlLlamada = Limitar(intercambios.LastOrDefault()?.Url ?? ConfigurationManager.AppSettings["Innovatrans:Url"], 255),
+                UrlLlamada = Limitar(intercambios.LastOrDefault()?.Url ?? "(sin intercambios)", 255),
                 CuerpoLlamada = cabecera + "\n\n" + (Serializar(intercambios, i => i.Peticion) ?? string.Empty),
                 CuerpoRespuesta = Serializar(intercambios, i => i.Respuesta) ?? string.Empty,
                 TextoRespuestaError = Limitar(error, 255),
@@ -1610,6 +1652,22 @@ namespace NestoAPI.Controllers
         // (sin BBDD), por eso se cachea estáticamente.
         private static readonly Infraestructure.Agencias.Perfiles.RegistroAgencias _perfilesAgencias =
             Infraestructure.Agencias.Perfiles.RegistroAgencias.PorReflexionSinPuerta();
+
+        /// <summary>
+        /// NestoAPI#512: ¿hay que rechazar un PUT que cambia el reembolso? Solo cuando el envío ya está
+        /// registrado en una agencia de gestión remota (CTT, Innovatrans: tiene albarán y está en curso o
+        /// más), porque allí el importe ya viajó al registrar y cambiarlo aquí dejaría a la agencia
+        /// cobrando el importe antiguo. Las clásicas (GLS) mandan el reembolso al cierre y siguen igual.
+        /// Pura, para testear sin base de datos.
+        /// </summary>
+        internal static bool CambioDeReembolsoBloqueado(decimal reembolsoBD, decimal reembolsoNuevo, string codigoBarras, short estado, bool agenciaConGestionRemota)
+        {
+            if (!agenciaConGestionRemota || reembolsoBD == reembolsoNuevo)
+            {
+                return false;
+            }
+            return !string.IsNullOrWhiteSpace(codigoBarras) && estado >= Constantes.Agencias.ESTADO_EN_CURSO;
+        }
 
         /// <summary>
         /// NestoAPI#204: rechazos por combinación agencia + destino (mensaje de error o null si es
