@@ -91,6 +91,90 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             return decision;
         }
 
+        /// <summary>
+        /// NestoAPI#503: aplica el «pasar a presupuesto» sobre las líneas de BD que la decisión
+        /// marcó como elegibles, vengan o no en el DTO. Antes el PUT recorría las líneas del DTO y
+        /// una elegible que el cliente no mandaba se quedaba en -1 mientras las demás pasaban a -3.
+        /// Devuelve cuántas líneas ha cambiado. Es idempotente.
+        /// </summary>
+        public static int AplicarPasoAPresupuesto(IEnumerable<LinPedidoVta> lineasBD, Decision decision)
+        {
+            if (lineasBD == null || decision == null || !decision.EsPasarAPresupuesto)
+            {
+                return 0;
+            }
+            int cambiadas = 0;
+            foreach (LinPedidoVta linea in lineasBD)
+            {
+                if (decision.IdsParaPresupuesto.Contains(linea.Nº_Orden)
+                    && linea.Estado != Constantes.EstadosLineaVenta.PRESUPUESTO)
+                {
+                    linea.Estado = Constantes.EstadosLineaVenta.PRESUPUESTO;
+                    cambiadas++;
+                }
+            }
+            return cambiadas;
+        }
+
+        /// <summary>
+        /// NestoAPI#503: ¿el pedido, tal y como está en BD, es un presupuesto vivo? Es decir, tiene
+        /// líneas editables (activas y sin picking) y TODAS están en PRESUPUESTO. Calcularlo ANTES
+        /// de que el PUT toque estados.
+        /// </summary>
+        public static bool EsPresupuestoVivo(IEnumerable<LinPedidoVta> lineasBD)
+        {
+            var editables = (lineasBD ?? Enumerable.Empty<LinPedidoVta>()).Where(EsLineaEditable).ToList();
+            return editables.Any() && editables.All(l => l.Estado == Constantes.EstadosLineaVenta.PRESUPUESTO);
+        }
+
+        /// <summary>
+        /// NestoAPI#503: estado con el que debe nacer una línea NUEVA en el PUT, para que no pueda
+        /// mezclarse presupuesto con pedido:
+        /// <list type="bullet">
+        /// <item>Pasando a presupuesto: PRESUPUESTO.</item>
+        /// <item>Aceptando el presupuesto: lo que pida el DTO, salvo que pida PRESUPUESTO (entonces EN_CURSO,
+        /// como las demás).</item>
+        /// <item>Pedido que en BD es un presupuesto vivo y no se está aceptando (se está AMPLIANDO el
+        /// presupuesto): PRESUPUESTO aunque el DTO mande otra cosa. Este era el hueco de la plantilla.</item>
+        /// <item>Resto: lo que pida el DTO.</item>
+        /// </list>
+        /// </summary>
+        public static short EstadoLineaNueva(Decision decision, bool pedidoEsPresupuestoVivoEnBD, short estadoDto)
+        {
+            if (decision != null && decision.EsPasarAPresupuesto)
+            {
+                return Constantes.EstadosLineaVenta.PRESUPUESTO;
+            }
+            if (decision != null && decision.EsAceptarPresupuesto)
+            {
+                return estadoDto == Constantes.EstadosLineaVenta.PRESUPUESTO
+                    ? (short)Constantes.EstadosLineaVenta.EN_CURSO
+                    : estadoDto;
+            }
+            if (pedidoEsPresupuestoVivoEnBD)
+            {
+                return Constantes.EstadosLineaVenta.PRESUPUESTO;
+            }
+            return estadoDto;
+        }
+
+        /// <summary>
+        /// NestoAPI#503: guardia final del PUT. Entre las líneas editables (activas y sin picking) no
+        /// puede haber a la vez PRESUPUESTO y PENDIENTE/EN_CURSO. Las líneas con picking, albarán o
+        /// factura no cuentan: por diseño (#193) se quedan en su estado cuando el resto pasa a presupuesto.
+        /// </summary>
+        public static bool HayMezclaPresupuesto(IEnumerable<LinPedidoVta> lineasBD)
+        {
+            var editables = (lineasBD ?? Enumerable.Empty<LinPedidoVta>()).Where(EsLineaEditable).ToList();
+            return editables.Any(l => l.Estado == Constantes.EstadosLineaVenta.PRESUPUESTO)
+                && editables.Any(l => l.Estado != Constantes.EstadosLineaVenta.PRESUPUESTO);
+        }
+
+        private static bool EsLineaEditable(LinPedidoVta l)
+        {
+            return EsLineaActiva(l) && (l.Picking ?? 0) == 0;
+        }
+
         private static bool EsLineaActiva(LinPedidoVta l)
         {
             return l.Estado == Constantes.EstadosLineaVenta.PENDIENTE

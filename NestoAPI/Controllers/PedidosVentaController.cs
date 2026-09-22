@@ -415,6 +415,35 @@ namespace NestoAPI.Controllers
         // NestoAPI#457 (corte 1): qué ofertas N+M se podrían aplicar al pedido que se está montando y
         // no se están aplicando. Mismo DTO que se manda a guardar; la respuesta es accionable (producto
         // y cantidades) para que Nesto, NestoApp y, más adelante, la tienda puedan pintarla y aplicarla.
+        /// <summary>
+        /// NestoAPI#506: el modo de servicio que el servidor pondría al pedido que se está montando, según
+        /// el stock real de sus líneas (o el que fuerce el parámetro del usuario). Las plantillas de Nesto y
+        /// NestoApp lo llaman al llegar al resumen para preseleccionarlo; el usuario puede cambiarlo.
+        /// Misma regla que aplica PostPedidoVenta cuando el pedido llega sin modo.
+        /// </summary>
+        [HttpPost]
+        [Authorize]
+        [Route("api/PedidosVenta/ModoServicioSugerido")]
+        [ResponseType(typeof(SugeridorModoServicio.Sugerencia))]
+        public IHttpActionResult PostModoServicioSugerido([FromBody] PedidoVentaDTO pedido)
+        {
+            if (pedido == null)
+            {
+                return BadRequest("Falta el pedido.");
+            }
+            byte? forzado = ModoServicioForzadoPorParametro();
+            if (forzado.HasValue)
+            {
+                return Ok(new SugeridorModoServicio.Sugerencia
+                {
+                    Modo = forzado.Value,
+                    Nombre = Constantes.Pedidos.ModosServicio.Nombre(forzado.Value),
+                    Motivo = "Modo fijado por el parámetro ModoServicioPorDefecto del usuario."
+                });
+            }
+            return Ok(SugeridorModoServicio.Sugerir(pedido, Stocks()));
+        }
+
         [HttpPost]
         [Authorize]
         [Route("api/PedidosVenta/OfertasSugeridas")]
@@ -662,6 +691,9 @@ namespace NestoAPI.Controllers
             var transicion = TransicionPresupuesto.Decidir(cabPedidoVta.LinPedidoVtas, pedido);
             bool aceptarPresupuesto = transicion.EsAceptarPresupuesto;
             bool pasarAPresupuesto = transicion.EsPasarAPresupuesto;
+            // NestoAPI#503: se calcula ANTES de tocar estados; decide en qué estado nacen las líneas
+            // nuevas (ampliar un presupuesto no puede meter líneas en -1 junto a las de -3).
+            bool pedidoEsPresupuestoVivoEnBD = TransicionPresupuesto.EsPresupuestoVivo(cabPedidoVta.LinPedidoVtas);
 
             cabPedidoVta.Fecha = pedido.fecha;
             // La forma de pago influye en el importe del reembolso de la agencia. Si se modifica la forma de pago
@@ -776,6 +808,15 @@ namespace NestoAPI.Controllers
                     lineaEncontrada != null && lineaEncontrada.Cantidad == linea.Cantidad);
                 if (tratamiento == TratamientoLineaProtegida.ConservarTalCual)
                 {
+                    // NestoAPI#508: conservar tal cual NO puede significar tragarse un cambio de fecha
+                    // de entrega sin decir nada (pedido 926673: el correo salió con la fecha nueva y la
+                    // línea de portes nació en ella, pero las líneas con picking no cambiaron).
+                    if (lineaEncontrada != null && GestorPedidosVenta.CambiaFechaEntregaDeLineaConPicking(
+                            linea.Picking != 0, linea.Estado, linea.Fecha_Entrega, lineaEncontrada.fechaEntrega))
+                    {
+                        errorPersonalizado($"No se puede cambiar la fecha de entrega de la línea {linea.Nº_Orden} ({linea.Producto?.Trim()}) " +
+                            $"porque ya tiene picking: sigue siendo el {linea.Fecha_Entrega:dd/MM/yyyy}. Quite el picking primero o deje la fecha como estaba.");
+                    }
                     continue;
                 }
                 if (tratamiento == TratamientoLineaProtegida.Rechazar)
@@ -892,6 +933,9 @@ namespace NestoAPI.Controllers
                     if (linea.id == 0)
                     {
                         ComprobarSiSePuedenInsertarLineas(pedido, algunaLineaTienePicking, linea); //da error si no se puede
+                        // NestoAPI#503: el estado de una línea nueva lo decide el servidor según la
+                        // transición y el estado real del pedido, no lo que traiga el DTO.
+                        linea.estado = TransicionPresupuesto.EstadoLineaNueva(transicion, pedidoEsPresupuestoVivoEnBD, linea.estado);
                         lineaPedido = this.gestor.CrearLineaVta(linea, pedido.empresa, pedido.numero);
                         _ = db.LinPedidoVtas.Add(lineaPedido);
                         //linea.BaseImponible = lineaPedido.Base_Imponible;
@@ -949,17 +993,13 @@ namespace NestoAPI.Controllers
                         lineaPedido.Estado = Constantes.EstadosLineaVenta.EN_CURSO;
                     }
 
-                    // NestoAPI#193: pasar a presupuesto solo afecta a las líneas que el helper
-                    // marcó como elegibles (PENDIENTE/EN_CURSO sin picking en BD).
-                    if (pasarAPresupuesto && transicion.IdsParaPresupuesto.Contains(linea.id))
-                    {
-                        lineaPedido = db.LinPedidoVtas.SingleOrDefault(l => l.Nº_Orden == linea.id);
-                        if (lineaPedido != null)
-                        {
-                            lineaPedido.Estado = Constantes.EstadosLineaVenta.PRESUPUESTO;
-                        }
-                    }
                 }
+
+                // NestoAPI#193/#503: pasar a presupuesto afecta a TODAS las líneas que el helper marcó
+                // como elegibles (PENDIENTE/EN_CURSO sin picking en BD), vengan o no en el DTO. Antes
+                // se aplicaba dentro del bucle del DTO y una elegible que el cliente no mandaba se
+                // quedaba en -1 junto a las demás en -3 (presupuestos «a medias»).
+                _ = TransicionPresupuesto.AplicarPasoAPresupuesto(cabPedidoVta.LinPedidoVtas, transicion);
             }
 
             // Carlos 16/02/21: si el reembolso en la etiqueta ha variado, damos error
@@ -1136,15 +1176,11 @@ namespace NestoAPI.Controllers
                     DebeAnadirPortes(UsuarioPuedeSuprimirPortes(), pedido.AnadirPortes, pedido.Lineas.FirstOrDefault()?.almacen?.Trim()));
                 var resultadoPortesPut = GestorPortes.CalcularPortes(inputPortesPut);
 
-                // Verificar si ya tiene línea de portes en BD (excluyendo reembolso,
-                // cuya cuenta también empieza por 624).
-                bool yaLlevaPortesBD = cabPedidoVta.LinPedidoVtas.Any(l =>
-                    l.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE &&
-                    l.Producto != null &&
-                    l.Producto.Trim().StartsWith("624") &&
-                    !(l.Texto != null && l.Texto.IndexOf("reembolso", StringComparison.OrdinalIgnoreCase) >= 0) &&
-                    l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE &&
-                    l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO);
+                // Verificar si ya tiene línea de portes en BD (excluyendo reembolso, cuya cuenta
+                // también empieza por 624). NestoAPI#509: el predicado cuenta también las líneas en
+                // PRESUPUESTO (-3); antes solo PENDIENTE..EN_CURSO y cada guardado de un presupuesto
+                // añadía otra línea de portes.
+                bool yaLlevaPortesBD = cabPedidoVta.LinPedidoVtas.Any(GestorPortes.EsLineaPortesViva);
 
                 // NestoAPI#277: vendedor de las líneas de cuenta contable (portes/reembolso) = predominante por grupo.
                 string vendedorContablePut = this.gestor.CalcularVendedorCuentaContable(pedido);
@@ -1168,7 +1204,8 @@ namespace NestoAPI.Controllers
                             iva = pedido.iva,
                             vistoBueno = true,
                             usuario = lineaRefPut.usuario,
-                            fechaEntrega = lineaRefPut.fechaEntrega
+                            // NestoAPI#508: la fecha de la mercancía viva en BD, no la del DTO.
+                            fechaEntrega = GestorPortes.FechaEntregaLineaCuentaContable(cabPedidoVta.LinPedidoVtas, lineaRefPut.fechaEntrega)
                         };
                         var linPedidoPortes = this.gestor.CrearLineaVta(lineaPortesPut, pedido.empresa, pedido.numero, vendedorContablePut);
                         _ = db.LinPedidoVtas.Add(linPedidoPortes);
@@ -1181,13 +1218,7 @@ namespace NestoAPI.Controllers
                 else if ((resultadoPortesPut.PortesGratis || resultadoPortesPut.ImportePortes == 0) && yaLlevaPortesBD)
                 {
                     var lineaPortesBD = cabPedidoVta.LinPedidoVtas.FirstOrDefault(l =>
-                        l.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE &&
-                        l.Producto != null &&
-                        l.Producto.Trim().StartsWith("624") &&
-                        !(l.Texto != null && l.Texto.IndexOf("reembolso", StringComparison.OrdinalIgnoreCase) >= 0) &&
-                        l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE &&
-                        l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO &&
-                        l.Picking == 0);
+                        GestorPortes.EsLineaPortesViva(l) && l.Picking == 0);
                     if (lineaPortesBD != null)
                     {
                         _ = db.LinPedidoVtas.Remove(lineaPortesBD);
@@ -1227,7 +1258,8 @@ namespace NestoAPI.Controllers
                                 iva = pedido.iva,
                                 vistoBueno = true,
                                 usuario = lineaRefReemb.usuario,
-                                fechaEntrega = lineaRefReemb.fechaEntrega
+                                // NestoAPI#508: misma regla que la línea de portes.
+                                fechaEntrega = GestorPortes.FechaEntregaLineaCuentaContable(cabPedidoVta.LinPedidoVtas, lineaRefReemb.fechaEntrega)
                             };
                             var linPedidoReemb = this.gestor.CrearLineaVta(lineaReembolso, pedido.empresa, pedido.numero, vendedorContablePut);
                             _ = db.LinPedidoVtas.Add(linPedidoReemb);
@@ -1319,6 +1351,18 @@ namespace NestoAPI.Controllers
                         }
                     }
                 }
+            }
+
+            // NestoAPI#503: guardia final. Pase lo que pase arriba, entre las líneas editables del pedido
+            // (activas y sin picking) no puede quedar PRESUPUESTO junto a PENDIENTE/EN_CURSO. Se mira el
+            // ChangeTracker para incluir las líneas añadidas en este PUT y excluir las borradas.
+            var lineasVivasTrasElPut = db.ChangeTracker.Entries<LinPedidoVta>()
+                .Where(e => e.State != EntityState.Deleted && e.State != EntityState.Detached)
+                .Select(e => e.Entity)
+                .Where(l => l.Número == pedido.numero && (l.Empresa ?? string.Empty).Trim() == (pedido.empresa ?? string.Empty).Trim());
+            if (TransicionPresupuesto.HayMezclaPresupuesto(lineasVivasTrasElPut))
+            {
+                errorPersonalizado("No se pueden mezclar pedidos con presupuestos: el guardado dejaría líneas en presupuesto junto a líneas pendientes");
             }
 
             // Validación: verificar que ninguna línea tenga TipoLinea NULL
@@ -1468,9 +1512,10 @@ namespace NestoAPI.Controllers
                 return BadRequest(faltanDatos);
             }
 
-            // NestoAPI#482: sin modo informado el pedido NACE en el modo por defecto (parámetro
-            // ModoServicioPorDefecto del usuario, o 3), no en el ServirJunto de la ficha del cliente.
-            string modoInvalido = Constantes.Pedidos.ModosServicio.NormalizarAlCrear(pedido, ModoServicioPorDefecto());
+            // NestoAPI#482: sin modo informado el pedido NACE en el modo por defecto, no en el ServirJunto
+            // de la ficha del cliente. NestoAPI#506: ese defecto es el que fuerce el parámetro
+            // ModoServicioPorDefecto del usuario o, si no fuerza nada, el que dicta el stock real del pedido.
+            string modoInvalido = Constantes.Pedidos.ModosServicio.NormalizarAlCrear(pedido, ModoServicioAlCrear(pedido));
             if (modoInvalido != null)
             {
                 return BadRequest(modoInvalido);
@@ -2602,6 +2647,16 @@ namespace NestoAPI.Controllers
         /// </summary>
         internal byte ModoServicioPorDefecto()
         {
+            return ModoServicioForzadoPorParametro() ?? Constantes.Pedidos.ModosServicio.POR_DEFECTO;
+        }
+
+        /// <summary>
+        /// NestoAPI#506: el modo que el usuario FUERZA con el parámetro ModoServicioPorDefecto (1..4), o
+        /// null si el parámetro falta, vale "0" (según stock) o no es válido. Un fallo al leerlo cuenta
+        /// como «según stock».
+        /// </summary>
+        internal byte? ModoServicioForzadoPorParametro()
+        {
             try
             {
                 string usuario = User?.Identity?.Name;
@@ -2611,10 +2666,35 @@ namespace NestoAPI.Controllers
                 }
                 string valor = LectorParametros?.LeerParametro(
                     Constantes.Empresas.EMPRESA_POR_DEFECTO, usuario, Constantes.ParametrosUsuario.MODO_SERVICIO_POR_DEFECTO);
-                return Constantes.Pedidos.ModosServicio.ParsearPorDefecto(valor);
+                return Constantes.Pedidos.ModosServicio.ParsearModoForzado(valor);
             }
             catch
             {
+                return null;
+            }
+        }
+
+        /// <summary>NestoAPI#506: lector de stocks para la sugerencia de modo (sustituible en tests).</summary>
+        internal Func<IGestorStocks> Stocks { get; set; } = () => new GestorStocks();
+
+        /// <summary>
+        /// NestoAPI#506: el modo con el que nace un pedido que no lo informa: el que fuerce el parámetro
+        /// del usuario o, si no hay, el que dicta el stock real del pedido (<see cref="SugeridorModoServicio"/>).
+        /// </summary>
+        internal byte ModoServicioAlCrear(PedidoVentaDTO pedido)
+        {
+            byte? forzado = ModoServicioForzadoPorParametro();
+            if (forzado.HasValue)
+            {
+                return forzado.Value;
+            }
+            try
+            {
+                return SugeridorModoServicio.Sugerir(pedido, Stocks()).Modo;
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"NestoAPI#506: no se pudo sugerir el modo de servicio del pedido; se aplica el defecto ({ex.Message})", ex));
                 return Constantes.Pedidos.ModosServicio.POR_DEFECTO;
             }
         }

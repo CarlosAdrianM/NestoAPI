@@ -64,6 +64,29 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             return TratamientoLineaProtegida.Rechazar;
         }
 
+        /// <summary>
+        /// NestoAPI#508: ¿el cliente intenta cambiar la fecha de entrega de una línea que ya tiene
+        /// picking? Una línea así se conserva tal cual (<see cref="EvaluarLineaProtegida"/>), y hasta
+        /// ahora el cambio de fecha se IGNORABA en silencio: el correo salía con la fecha nueva, el
+        /// usuario creía que la había cambiado y la línea de portes nacía en la fecha nueva (pedido
+        /// 926673, 22/09/26). Hay que rechazarlo con un aviso claro.
+        /// Solo cuenta para líneas con picking que aún no están en albarán/factura (las servidas son
+        /// historia y algún cliente puede mandarlas con la fecha normalizada). Una fecha sin informar
+        /// (default) no es un cambio, y se compara solo el día.
+        /// </summary>
+        public static bool CambiaFechaEntregaDeLineaConPicking(bool tienePicking, short estado, DateTime fechaBD, DateTime fechaDto)
+        {
+            if (!tienePicking || estado >= Constantes.EstadosLineaVenta.ALBARAN)
+            {
+                return false;
+            }
+            if (fechaDto == default(DateTime))
+            {
+                return false;
+            }
+            return fechaDto.Date != fechaBD.Date;
+        }
+
         private readonly IServicioPedidosVenta servicio;
         public GestorPedidosVenta(IServicioPedidosVenta servicio)
         {
@@ -875,6 +898,15 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 decimal importeEfectivo = efectosPedido
                     .Where(e => e.FormaPago == Constantes.FormasPago.EFECTIVO)
                     .Sum(e => e.Importe);
+
+                // NestoAPI#513 (925835, 22/09/26): si el pedido ya está facturado, el efecto en efectivo
+                // puede estar cobrado (entrada pagada por adelantado). Manda lo que quede PENDIENTE en el
+                // extracto de esas facturas, no el importe del efecto manual.
+                List<string> facturas = servicio.FacturasDelPedido(empresa, pedido) ?? new List<string>();
+                if (importeEfectivo > 0 && facturas.Any())
+                {
+                    importeEfectivo = servicio.PendienteEfectivoDeFacturas(empresa, pedidoBD.Nº_Cliente?.Trim(), facturas);
+                }
 
                 return RoundingHelper.DosDecimalesRound(importeEfectivo + importeDeuda);
             }

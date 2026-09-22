@@ -243,6 +243,173 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             }
         }
 
+        // ----- NestoAPI#503: presupuestos «a medias» (líneas en -3 y en -1 en el mismo pedido) -----
+
+        [TestMethod]
+        public void AplicarPasoAPresupuesto_LineaElegibleQueNoVieneEnElDTO_TambienPasaAPresupuesto()
+        {
+            // Regresión #503: el PUT aplicaba el cambio recorriendo el DTO; la línea 2, elegible pero
+            // ausente del DTO, se quedaba en -1 mientras la 1 pasaba a -3.
+            var linea1 = LineaBD(1, Constantes.EstadosLineaVenta.PENDIENTE, picking: 0);
+            var linea2 = LineaBD(2, Constantes.EstadosLineaVenta.PENDIENTE, picking: 0);
+            var lineasBD = new List<LinPedidoVta> { linea1, linea2 };
+            var dto = DtoConLineas(LineaDto(1, Constantes.EstadosLineaVenta.PRESUPUESTO));
+
+            var decision = TransicionPresupuesto.Decidir(lineasBD, dto);
+            int cambiadas = TransicionPresupuesto.AplicarPasoAPresupuesto(lineasBD, decision);
+
+            Assert.IsTrue(decision.EsPasarAPresupuesto);
+            Assert.AreEqual(2, cambiadas);
+            Assert.AreEqual(Constantes.EstadosLineaVenta.PRESUPUESTO, linea1.Estado);
+            Assert.AreEqual(Constantes.EstadosLineaVenta.PRESUPUESTO, linea2.Estado, "La línea que no venía en el DTO también debe pasar a presupuesto");
+        }
+
+        [TestMethod]
+        public void AplicarPasoAPresupuesto_LineaConPicking_SeQuedaComoEstaba()
+        {
+            var conPicking = LineaBD(2, Constantes.EstadosLineaVenta.EN_CURSO, picking: 555);
+            var lineasBD = new List<LinPedidoVta>
+            {
+                LineaBD(1, Constantes.EstadosLineaVenta.PENDIENTE, picking: 0),
+                conPicking
+            };
+            var dto = DtoConLineas(
+                LineaDto(1, Constantes.EstadosLineaVenta.PRESUPUESTO),
+                LineaDto(2, Constantes.EstadosLineaVenta.EN_CURSO));
+
+            var decision = TransicionPresupuesto.Decidir(lineasBD, dto);
+            int cambiadas = TransicionPresupuesto.AplicarPasoAPresupuesto(lineasBD, decision);
+
+            Assert.AreEqual(1, cambiadas);
+            Assert.AreEqual(Constantes.EstadosLineaVenta.EN_CURSO, conPicking.Estado);
+        }
+
+        [TestMethod]
+        public void AplicarPasoAPresupuesto_SinTransicion_NoTocaNada()
+        {
+            var linea = LineaBD(1, Constantes.EstadosLineaVenta.PENDIENTE, picking: 0);
+            var lineasBD = new List<LinPedidoVta> { linea };
+            var dto = DtoConLineas(LineaDto(1, Constantes.EstadosLineaVenta.PENDIENTE));
+
+            var decision = TransicionPresupuesto.Decidir(lineasBD, dto);
+
+            Assert.AreEqual(0, TransicionPresupuesto.AplicarPasoAPresupuesto(lineasBD, decision));
+            Assert.AreEqual(0, TransicionPresupuesto.AplicarPasoAPresupuesto(lineasBD, null));
+            Assert.AreEqual(Constantes.EstadosLineaVenta.PENDIENTE, linea.Estado);
+        }
+
+        [TestMethod]
+        public void EsPresupuestoVivo_TodasEditablesEnPresupuesto_True()
+        {
+            var lineasBD = new List<LinPedidoVta>
+            {
+                LineaBD(1, Constantes.EstadosLineaVenta.PRESUPUESTO, picking: 0),
+                LineaBD(2, Constantes.EstadosLineaVenta.PRESUPUESTO, picking: 0),
+                LineaBD(3, Constantes.EstadosLineaVenta.FACTURA, picking: 0) // una factura vieja no cuenta
+            };
+
+            Assert.IsTrue(TransicionPresupuesto.EsPresupuestoVivo(lineasBD));
+        }
+
+        [TestMethod]
+        public void EsPresupuestoVivo_PedidoNormalOSinLineas_False()
+        {
+            Assert.IsFalse(TransicionPresupuesto.EsPresupuestoVivo(new List<LinPedidoVta>
+            {
+                LineaBD(1, Constantes.EstadosLineaVenta.PRESUPUESTO, picking: 0),
+                LineaBD(2, Constantes.EstadosLineaVenta.PENDIENTE, picking: 0)
+            }));
+            Assert.IsFalse(TransicionPresupuesto.EsPresupuestoVivo(new List<LinPedidoVta>()));
+            Assert.IsFalse(TransicionPresupuesto.EsPresupuestoVivo(null));
+        }
+
+        [TestMethod]
+        public void EstadoLineaNueva_AmpliarUnPresupuestoVivo_NaceEnPresupuestoAunqueElDTODigaPendiente()
+        {
+            // Regresión #503 (el hueco de la plantilla): añadir líneas a un presupuesto sin aceptarlo
+            // las creaba con el estado del DTO (-1) junto a las de -3.
+            var sinTransicion = new TransicionPresupuesto.Decision();
+
+            short estado = TransicionPresupuesto.EstadoLineaNueva(sinTransicion, pedidoEsPresupuestoVivoEnBD: true, estadoDto: Constantes.EstadosLineaVenta.PENDIENTE);
+
+            Assert.AreEqual(Constantes.EstadosLineaVenta.PRESUPUESTO, estado);
+        }
+
+        [TestMethod]
+        public void EstadoLineaNueva_PasandoAPresupuesto_NaceEnPresupuesto()
+        {
+            var decision = new TransicionPresupuesto.Decision { EsPasarAPresupuesto = true };
+
+            Assert.AreEqual(Constantes.EstadosLineaVenta.PRESUPUESTO,
+                TransicionPresupuesto.EstadoLineaNueva(decision, pedidoEsPresupuestoVivoEnBD: false, estadoDto: Constantes.EstadosLineaVenta.EN_CURSO));
+        }
+
+        [TestMethod]
+        public void EstadoLineaNueva_AceptandoPresupuesto_NuncaNaceEnPresupuesto()
+        {
+            var decision = new TransicionPresupuesto.Decision { EsAceptarPresupuesto = true };
+
+            Assert.AreEqual(Constantes.EstadosLineaVenta.EN_CURSO,
+                TransicionPresupuesto.EstadoLineaNueva(decision, pedidoEsPresupuestoVivoEnBD: true, estadoDto: Constantes.EstadosLineaVenta.PRESUPUESTO));
+            Assert.AreEqual(Constantes.EstadosLineaVenta.PENDIENTE,
+                TransicionPresupuesto.EstadoLineaNueva(decision, pedidoEsPresupuestoVivoEnBD: true, estadoDto: Constantes.EstadosLineaVenta.PENDIENTE));
+        }
+
+        [TestMethod]
+        public void EstadoLineaNueva_PedidoNormal_RespetaElDTO()
+        {
+            var sinTransicion = new TransicionPresupuesto.Decision();
+
+            Assert.AreEqual(Constantes.EstadosLineaVenta.PENDIENTE,
+                TransicionPresupuesto.EstadoLineaNueva(sinTransicion, pedidoEsPresupuestoVivoEnBD: false, estadoDto: Constantes.EstadosLineaVenta.PENDIENTE));
+            Assert.AreEqual(Constantes.EstadosLineaVenta.EN_CURSO,
+                TransicionPresupuesto.EstadoLineaNueva(null, pedidoEsPresupuestoVivoEnBD: false, estadoDto: Constantes.EstadosLineaVenta.EN_CURSO));
+        }
+
+        [TestMethod]
+        public void HayMezclaPresupuesto_PresupuestoYPendienteSinPicking_True()
+        {
+            var lineasBD = new List<LinPedidoVta>
+            {
+                LineaBD(1, Constantes.EstadosLineaVenta.PRESUPUESTO, picking: 0),
+                LineaBD(2, Constantes.EstadosLineaVenta.PENDIENTE, picking: 0)
+            };
+
+            Assert.IsTrue(TransicionPresupuesto.HayMezclaPresupuesto(lineasBD));
+        }
+
+        [TestMethod]
+        public void HayMezclaPresupuesto_LasProtegidasNoCuentan()
+        {
+            // #193: al pasar a presupuesto, las líneas con picking, albarán o factura se quedan en su
+            // estado. Eso no es una mezcla, es el diseño.
+            var lineasBD = new List<LinPedidoVta>
+            {
+                LineaBD(1, Constantes.EstadosLineaVenta.PRESUPUESTO, picking: 0),
+                LineaBD(2, Constantes.EstadosLineaVenta.EN_CURSO, picking: 555),
+                LineaBD(3, Constantes.EstadosLineaVenta.ALBARAN, picking: 0),
+                LineaBD(4, Constantes.EstadosLineaVenta.FACTURA, picking: 0)
+            };
+
+            Assert.IsFalse(TransicionPresupuesto.HayMezclaPresupuesto(lineasBD));
+        }
+
+        [TestMethod]
+        public void HayMezclaPresupuesto_PedidoNormalOPresupuestoPuro_False()
+        {
+            Assert.IsFalse(TransicionPresupuesto.HayMezclaPresupuesto(new List<LinPedidoVta>
+            {
+                LineaBD(1, Constantes.EstadosLineaVenta.PENDIENTE, picking: 0),
+                LineaBD(2, Constantes.EstadosLineaVenta.EN_CURSO, picking: 0)
+            }));
+            Assert.IsFalse(TransicionPresupuesto.HayMezclaPresupuesto(new List<LinPedidoVta>
+            {
+                LineaBD(1, Constantes.EstadosLineaVenta.PRESUPUESTO, picking: 0),
+                LineaBD(2, Constantes.EstadosLineaVenta.PRESUPUESTO, picking: 0)
+            }));
+            Assert.IsFalse(TransicionPresupuesto.HayMezclaPresupuesto(null));
+        }
+
         // ----- helpers -----
 
         private static LinPedidoVta LineaBD(int numeroOrden, short estado, int picking)

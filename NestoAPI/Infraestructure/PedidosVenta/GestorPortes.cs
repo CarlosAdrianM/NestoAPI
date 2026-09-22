@@ -356,10 +356,59 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             return linea.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE &&
                 linea.Producto != null &&
                 linea.Producto.Trim() == Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL &&
-                linea.Texto != null &&
-                linea.Texto.IndexOf("reembolso", StringComparison.OrdinalIgnoreCase) >= 0 &&
-                linea.Estado >= Constantes.EstadosLineaVenta.PENDIENTE &&
-                linea.Estado <= Constantes.EstadosLineaVenta.EN_CURSO;
+                EsTextoReembolso(linea.Texto) &&
+                EsEstadoVivoCuentaContable(linea.Estado);
+        }
+
+        /// <summary>
+        /// NestoAPI#509: identifica una línea de portes VIVA sobre la entidad LinPedidoVta: cuenta
+        /// contable 624xxx que no sea la comisión contra reembolso (que también cuelga de 624), en
+        /// presupuesto, pendiente o en curso. Único predicado para la detección y el borrado del
+        /// PUT de PedidosVentaController (antes la condición estaba repetida y solo contaba
+        /// PENDIENTE..EN_CURSO, así que la línea de portes de un presupuesto, en -3, no contaba y
+        /// cada guardado del presupuesto añadía otra: el «doble porte» de Paloma, 22/09/26).
+        /// </summary>
+        public static bool EsLineaPortesViva(LinPedidoVta linea)
+        {
+            return linea.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE &&
+                linea.Producto != null &&
+                linea.Producto.Trim().StartsWith("624") &&
+                !EsTextoReembolso(linea.Texto) &&
+                EsEstadoVivoCuentaContable(linea.Estado);
+        }
+
+        /// <summary>
+        /// Estados en los que una línea de cuenta contable (portes o reembolso) sigue siendo «la
+        /// de este pedido»: presupuesto, pendiente y en curso. Albarán y factura quedan fuera: ya se
+        /// cobraron con su entrega.
+        /// </summary>
+        internal static bool EsEstadoVivoCuentaContable(short estado)
+        {
+            return estado == Constantes.EstadosLineaVenta.PRESUPUESTO
+                || estado == Constantes.EstadosLineaVenta.PENDIENTE
+                || estado == Constantes.EstadosLineaVenta.EN_CURSO;
+        }
+
+        private static bool EsTextoReembolso(string texto)
+        {
+            return texto != null && texto.IndexOf("reembolso", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        /// <summary>
+        /// NestoAPI#508: fecha de entrega con la que debe nacer una línea de cuenta contable (portes o
+        /// reembolso) que el PUT añade a un pedido existente: la de la mercancía viva en BD (la menor
+        /// entre las líneas de producto en presupuesto/pendiente/en curso), no la que traiga el DTO.
+        /// Si no hay ninguna (pedido sin productos vivos), se usa la del DTO. Con la del DTO, un cambio
+        /// de fecha que el servidor no aplica a las líneas con picking dejaba la línea de portes sola
+        /// en la fecha nueva (pedido 926673).
+        /// </summary>
+        public static DateTime FechaEntregaLineaCuentaContable(IEnumerable<LinPedidoVta> lineasBD, DateTime fechaDto)
+        {
+            var fechasProductosVivos = (lineasBD ?? Enumerable.Empty<LinPedidoVta>())
+                .Where(l => l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO && EsEstadoVivoCuentaContable(l.Estado))
+                .Select(l => l.Fecha_Entrega)
+                .ToList();
+            return fechasProductosVivos.Any() ? fechasProductosVivos.Min() : fechaDto;
         }
 
         /// <summary>
