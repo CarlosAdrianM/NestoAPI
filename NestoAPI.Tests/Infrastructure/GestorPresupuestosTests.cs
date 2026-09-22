@@ -69,6 +69,63 @@ namespace NestoAPI.Tests.Infrastructure
                 "Financiación null en la ficha = se trata como 0");
         }
 
+        #region NestoAPI#507 - el riesgo B mira el modo de servicio efectivo y el fin de mes
+        // (total, plazo, modoEfectivo, mantenerJunto, finDeMes, faltaStockDeAlgo, autorizada)
+        private static bool Revisar507(decimal total, PlazoPago plazo, byte modo, bool mantenerJunto, bool finDeMes, bool faltaStock, bool autorizada)
+            => GestorPresupuestos.EsFinanciacionARevisar(total, plazo, modo, mantenerJunto, finDeMes, faltaStock, autorizada);
+
+        [TestMethod]
+        public void RiesgoB_TrasReponerDeTiendasSinRojos_NoTrocea_NoAvisa()
+        {
+            // 926697 (21/09/26): 373 € a 30 y 60 días, modo 3, solo verde y rosa: espera la reposición y sale junto.
+            Assert.IsFalse(Revisar507(373, Plazo(2, 45), Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS,
+                mantenerJunto: false, finDeMes: false, faltaStock: false, autorizada: false));
+        }
+
+        [TestMethod]
+        public void RiesgoB_TrasReponerDeTiendasConRojos_SiTrocea_Avisa()
+        {
+            // Con líneas rojas la parte que falta llegará después: puede acabar en más de una factura.
+            Assert.IsTrue(Revisar507(2000, Plazo(2, 45), Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS,
+                mantenerJunto: false, finDeMes: false, faltaStock: true, autorizada: true));
+        }
+
+        [TestMethod]
+        public void RiesgoB_FinDeMes_NuncaTrocea()
+        {
+            // 926712 (21/09/26): fin de mes, todos los albaranes del mes van a una factura.
+            foreach (byte modo in new byte[] { 2, 3, 4 })
+            {
+                Assert.IsFalse(Revisar507(2000, Plazo(2, 45), modo, mantenerJunto: false, finDeMes: true, faltaStock: true, autorizada: true), $"modo {modo}");
+            }
+        }
+
+        [TestMethod]
+        public void RiesgoB_Modos2Y4_SiguenTroceando()
+        {
+            Assert.IsTrue(Revisar507(2000, Plazo(2, 45), Constantes.Pedidos.ModosServicio.SEGUN_VAYA_ENTRANDO, false, false, false, true));
+            Assert.IsTrue(Revisar507(2000, Plazo(2, 45), Constantes.Pedidos.ModosServicio.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ, false, false, false, true));
+        }
+
+        [TestMethod]
+        public void RiesgoA_NoCambia_ConCualquierModo()
+        {
+            // Sale bajo con el total y no está autorizado: avisa aunque el modo no trocee.
+            Assert.IsTrue(Revisar507(200, Plazo(2, 45), Constantes.Pedidos.ModosServicio.TODO_JUNTO, false, false, false, autorizada: false));
+            Assert.IsFalse(Revisar507(200, Plazo(2, 45), Constantes.Pedidos.ModosServicio.TODO_JUNTO, false, false, false, autorizada: true));
+        }
+
+        [TestMethod]
+        public void SeTroceaLaFacturacion_PorModo()
+        {
+            Assert.IsFalse(GestorPresupuestos.SeTroceaLaFacturacion(1, faltaStockDeAlgo: true));
+            Assert.IsTrue(GestorPresupuestos.SeTroceaLaFacturacion(2, faltaStockDeAlgo: false));
+            Assert.IsFalse(GestorPresupuestos.SeTroceaLaFacturacion(3, faltaStockDeAlgo: false));
+            Assert.IsTrue(GestorPresupuestos.SeTroceaLaFacturacion(3, faltaStockDeAlgo: true));
+            Assert.IsTrue(GestorPresupuestos.SeTroceaLaFacturacion(4, faltaStockDeAlgo: false));
+        }
+        #endregion
+
         #region NestoAPI#396 - cuando hay que marcar "[Financiación a revisar]"
 
         // Atajos para leer los casos de un vistazo: (total, plazo, servirJunto, mantenerJunto, autorizadaEnFicha)

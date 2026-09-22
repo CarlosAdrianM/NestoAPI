@@ -254,8 +254,14 @@ namespace NestoAPI.Infraestructure
             // bloquea el pedido: administración va en copia y el asunto queda marcado para
             // que lo tengan controlado.
             decimal totalPedido = pedido.Lineas.Sum(l => l.Total);
-            if (EsFinanciacionARevisar(totalPedido, plazoPagoPedido, pedido.servirJunto,
-                    pedido.mantenerJunto, EstaAutorizadaEnFicha(pedido, totalPedido)))
+            // NestoAPI#507: con el modo de servicio efectivo, fin de mes y si falta stock de algo
+            // (calculado al montar las líneas del correo, que va antes que este bloque).
+            if (EsFinanciacionARevisar(totalPedido, plazoPagoPedido,
+                    Constantes.Pedidos.ModosServicio.Efectivo(pedido.modoServicio, pedido.servirJunto),
+                    pedido.mantenerJunto,
+                    pedido.periodoFacturacion == Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES,
+                    _faltaStockDeAlgo,
+                    EstaAutorizadaEnFicha(pedido, totalPedido)))
             {
                 mail.Priority = MailPriority.High;
                 mail.Subject = "[Financiación a revisar] " + mail.Subject;
@@ -299,6 +305,9 @@ namespace NestoAPI.Infraestructure
         /// <summary>NestoAPI#396: el mínimo por efecto y la financiación estándar viven en
         /// Constantes, porque la MISMA regla la aplican el correo y el selector de plazos.</summary>
         internal const decimal IMPORTE_MINIMO_EFECTO = Constantes.PlazosPago.IMPORTE_MINIMO_EFECTO;
+
+        /// <summary>NestoAPI#507: si alguna línea del correo salió en rojo (sin stock en ningún sitio). Lo fija el montaje de las líneas.</summary>
+        private bool _faltaStockDeAlgo;
         internal const decimal FINANCIACION_ESTANDAR_DIAS = Constantes.PlazosPago.FINANCIACION_ESTANDAR_DIAS;
 
         /// <summary>
@@ -325,6 +334,29 @@ namespace NestoAPI.Infraestructure
         internal static bool EsFinanciacionARevisar(decimal totalPedido, PlazoPago plazoPago,
             bool servirJunto, bool mantenerJunto, bool autorizadaEnFicha)
         {
+            // Compatibilidad con la regla original (#396): servir junto = 1, si no = 2 (siempre troceable).
+            return EsFinanciacionARevisar(totalPedido, plazoPago,
+                servirJunto ? Constantes.Pedidos.ModosServicio.TODO_JUNTO : Constantes.Pedidos.ModosServicio.SEGUN_VAYA_ENTRANDO,
+                mantenerJunto, finDeMes: false, faltaStockDeAlgo: true, autorizadaEnFicha: autorizadaEnFicha);
+        }
+
+        /// <summary>
+        /// NestoAPI#507 (22/09/26): el riesgo B («se va a partir en varias facturas») se decide con el modo
+        /// de servicio EFECTIVO, no con el bool ServirJunto, y respeta fin de mes:
+        /// <list type="bullet">
+        /// <item>1 «Todo junto»: una sola factura, no trocea.</item>
+        /// <item>3 «Tras reponer de tiendas»: espera la reposición y sale junto; solo trocea si además hay
+        /// líneas ROJAS (sin stock en ningún sitio) que llegarán después.</item>
+        /// <item>2 y 4: trocean (4 acaba en dos facturas).</item>
+        /// <item>Fin de mes: todos los albaranes del mes van a una factura; trocear entregas no trocea vencimientos.</item>
+        /// <item>Mantener junto: retiene la facturación hasta tenerlo todo.</item>
+        /// </list>
+        /// Desde #482 el defecto es el modo 3 y con la regla antigua casi todo pedido a «30 y 60» salía marcado
+        /// (926712 fin de mes, 926697 normal, 21/09/26). El riesgo A no cambia.
+        /// </summary>
+        internal static bool EsFinanciacionARevisar(decimal totalPedido, PlazoPago plazoPago,
+            byte modoEfectivo, bool mantenerJunto, bool finDeMes, bool faltaStockDeAlgo, bool autorizadaEnFicha)
+        {
             if (plazoPago == null || plazoPago.Nº_Plazos == 0 || totalPedido <= 0)
             {
                 return false;
@@ -335,13 +367,27 @@ namespace NestoAPI.Infraestructure
                 return false;
             }
 
-            bool seFacturaEntero = servirJunto || mantenerJunto;
+            bool seFacturaEntero = mantenerJunto || finDeMes || !SeTroceaLaFacturacion(modoEfectivo, faltaStockDeAlgo);
             if (!seFacturaEntero && plazoPago.Nº_Plazos > 1)
             {
                 return true; // riesgo B: facturas más pequeñas que el pedido, cada una a plazos
             }
 
             return EsFinanciacionExcesiva(totalPedido, plazoPago) && !autorizadaEnFicha; // riesgo A
+        }
+
+        /// <summary>NestoAPI#507: ¿este modo de servicio va a partir el pedido en más de una factura?</summary>
+        internal static bool SeTroceaLaFacturacion(byte modoEfectivo, bool faltaStockDeAlgo)
+        {
+            switch (modoEfectivo)
+            {
+                case Constantes.Pedidos.ModosServicio.TODO_JUNTO:
+                    return false;
+                case Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS:
+                    return faltaStockDeAlgo;
+                default:
+                    return true; // 2 «Según vaya entrando» y 4 «Ahora lo que hay, el resto de una vez»
+            }
         }
 
         /// <summary>
@@ -654,6 +700,9 @@ namespace NestoAPI.Infraestructure
             // una casilla estaba marcada. Siempre sale; en rojo cuando va a haber más de una entrega
             // por falta de stock de algo que está por venir (mismo criterio de aviso que antes).
             int colspanNotas = 6 + (hayDescuentos ? 1 : 0) + (hayLineasConReservas ? 1 : 0) + (hayFechasEntregaDistintas ? 1 : 0);
+            // NestoAPI#507: la regla de financiación (riesgo B) necesita saber si falta stock de algo,
+            // porque en «Tras reponer de tiendas» el pedido solo se trocea si hay líneas rojas.
+            _faltaStockDeAlgo = faltaStockDeAlgo;
             _ = s.Append(GenerarHtmlModoServicio(pedido, faltaStockDeAlgo, tieneQueVenirAlgunProducto, colspanNotas));
             // Issue #110: fecha de entrega común a todo el pedido, al pie y discreta (cuando las
             // líneas difieren no sale nada aquí: cada una lleva la suya en la columna F. Entrega).
