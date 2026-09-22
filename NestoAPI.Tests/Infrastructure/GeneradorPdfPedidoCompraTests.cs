@@ -115,6 +115,29 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual("0", GeneradorPdfPedidoCompra.FormatoCantidad(null));
         }
 
+        // --- NestoAPI#510: pronto pago a pie de documento ---
+
+        [TestMethod]
+        public void GenerarPdf_ConProntoPago_DevuelvePdfValido()
+        {
+            // El 220319: 45 % de producto y 5 % de pronto pago, grabado en BD como 47,75 % en cada línea.
+            var pedido = PedidoEjemplo(valorado: true);
+            pedido.DescuentoPP = 0.05m;
+            foreach (var linea in pedido.Lineas)
+            {
+                linea.DescuentoPP = 0.05m;
+                linea.Bruto = linea.PrecioUnitario * (linea.Cantidad ?? 0);
+                linea.SumaDescuentos = 1 - (1 - linea.SumaDescuentos) * 0.95m;
+                linea.BaseImponible = Math.Round(linea.Bruto, 2) - Math.Round(linea.Bruto * linea.SumaDescuentos, 2, MidpointRounding.AwayFromZero);
+            }
+
+            var resultado = _generador.GenerarPdf(pedido);
+
+            byte[] bytes = resultado.ReadAsByteArrayAsync().Result;
+            Assert.IsTrue(bytes.Length > 0);
+            ComprobarCabeceraPdf(bytes);
+        }
+
         private static PedidoCompraInformeDTO PedidoEjemplo(bool valorado)
         {
             return new PedidoCompraInformeDTO

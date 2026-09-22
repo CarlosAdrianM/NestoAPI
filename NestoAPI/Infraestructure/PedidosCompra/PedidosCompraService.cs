@@ -248,6 +248,22 @@ namespace NestoAPI.Infraestructure.PedidosCompra
                     .ToListAsync().ConfigureAwait(false)).Single();
             }
 
+            // NestoAPI#510: el pronto pago lo decide el plazo de pago (PlazosPago.DtoProntoPago), como en
+            // venta. Si el cliente no lo ha informado, se toma del plazo aquí, en el servidor, para que
+            // Nesto nuevo, Odoo o quien cree el pedido graben lo mismo que Nesto viejo.
+            if (pedido.DescuentoPP == 0 && !string.IsNullOrWhiteSpace(pedido.PlazosPago))
+            {
+                string empresaPlazo = pedido.Empresa ?? Constantes.Empresas.EMPRESA_POR_DEFECTO;
+                string numeroPlazo = pedido.PlazosPago.Trim();
+                PlazoPago plazo = await db.PlazosPago
+                    .FirstOrDefaultAsync(p => p.Empresa == empresaPlazo && p.Número == numeroPlazo)
+                    .ConfigureAwait(false);
+                if (plazo != null && plazo.DtoProntoPago > 0)
+                {
+                    pedido.DescuentoPP = plazo.DtoProntoPago;
+                }
+            }
+
             CabPedidoCmp cabecera = pedido.ToCabPedidoCmp();
 
             db.CabPedidosCmp.Add(cabecera);

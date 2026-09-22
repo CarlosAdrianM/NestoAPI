@@ -105,6 +105,7 @@ namespace NestoAPI.Controllers
                     DescuentoLinea = l.Descuento,
                     DescuentoProducto = l.DescuentoProducto,
                     DescuentoProveedor = l.DescuentoProveedor,
+                    DescuentoPP = l.DescuentoPP, // NestoAPI#510
                     CodigoIvaProducto = l.IVA,
                     PorcentajeIva = parametros.Where(p => p.CodigoIvaProducto == l.IVA).FirstOrDefault() != null ? parametros.Where(p => p.CodigoIvaProducto == l.IVA).FirstOrDefault().PorcentajeIvaProducto : 0,
                     PrecioTarifa = (decimal)(l.PrecioTarifa == null ? 0 : l.PrecioTarifa),
@@ -112,6 +113,9 @@ namespace NestoAPI.Controllers
                 }).ToListAsync().ConfigureAwait(false);
 
                 pedidoCompra.ParametrosIva = await parametros.ToListAsync().ConfigureAwait(false);
+                // NestoAPI#510: el pronto pago es de cabecera (viene del plazo de pago) aunque la BD lo
+                // guarde en cada línea; el setter de PedidoBase lo vuelve a propagar a las líneas.
+                pedidoCompra.DescuentoPP = pedidoCompra.Lineas.Any() ? pedidoCompra.Lineas.Max(l => l.DescuentoPP) : 0;
 
                 pedidoCompra.CorreoRecepcionPedidos = (await db.PersonasContactoProveedores.FirstOrDefaultAsync(
                     p => p.Empresa == pedidoCompra.Empresa && 
@@ -205,6 +209,16 @@ namespace NestoAPI.Controllers
                         PorcentajeIvaProducto = (decimal)p.C__IVA / 100
                     }).ToListAsync().ConfigureAwait(false);
                 pedido.Lineas = listaLineas.Where(l => l.Id == pedido.Id).ToList();
+                // NestoAPI#510: el pronto pago del plazo del proveedor, para que el pedido propuesto ya
+                // lo enseñe y lo grabe (CrearPedido lo vuelve a resolver si llega a 0).
+                if (!string.IsNullOrWhiteSpace(pedido.PlazosPago))
+                {
+                    string numeroPlazo = pedido.PlazosPago.Trim();
+                    PlazoPago plazo = await db.PlazosPago
+                        .FirstOrDefaultAsync(p => p.Empresa == empresa && p.Número == numeroPlazo)
+                        .ConfigureAwait(false);
+                    pedido.DescuentoPP = plazo?.DtoProntoPago ?? 0;
+                }
                 /*
                 foreach (var linea in pedido.Lineas.Where(l => l.TipoLinea == Constantes.TiposLineaCompra.PRODUCTO && pedido.ParametrosIva.Where(p => p.CodigoIvaProducto == l.CodigoIvaProducto).Any()))
                 {

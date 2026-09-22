@@ -16,6 +16,8 @@ namespace NestoAPI.Models.Informes
         public string Cif { get; set; }
         public DateTime Fecha { get; set; }
         public bool PedidoValorado { get; set; }
+        /// <summary>NestoAPI#510: pronto pago del pedido (tanto por uno), el de sus líneas. Va a pie de documento.</summary>
+        public decimal DescuentoPP { get; set; }
         public List<LineaPedidoCompraInformeDTO> Lineas { get; set; }
     }
 
@@ -28,7 +30,13 @@ namespace NestoAPI.Models.Informes
         public string UnidadMedida { get; set; }
         public short? Cantidad { get; set; }
         public decimal PrecioUnitario { get; set; }
+        /// <summary>Descuento total grabado en BD, CON el pronto pago dentro (lo recalcula el trigger).</summary>
         public decimal SumaDescuentos { get; set; }
+        /// <summary>Base imponible grabada en BD, ya con el pronto pago restado.</summary>
         public decimal BaseImponible { get; set; }
+        /// <summary>NestoAPI#510: Precio × Cantidad sin descuentos, para desplegar el importe sin PP.</summary>
+        public decimal Bruto { get; set; }
+        /// <summary>NestoAPI#510: pronto pago de la línea (tanto por uno).</summary>
+        public decimal DescuentoPP { get; set; }
     }
 }

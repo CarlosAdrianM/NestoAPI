@@ -35,7 +35,9 @@ namespace NestoAPI.Models.PedidosCompra
         public decimal Total { get => Math.Round(Lineas.Sum(l => l.Total), 2, MidpointRounding.AwayFromZero); }
         public string Usuario { get; set; }
         */
-        public IEnumerable<LineaPedidoCompraDTO> Lineas { get; set; }
+        // NestoAPI#510: esta clase redeclaraba Lineas (IEnumerable) OCULTANDO la List<T> de PedidoBase.
+        // Los setters de DescuentoPP/DescuentoEntidad de la base recorrían SU Lineas (siempre vacía) y el
+        // pronto pago de cabecera nunca llegaba a las líneas. Se usa la de la base.
         public IEnumerable<ParametrosIvaBase> ParametrosIva { get; set; }
 
 
@@ -82,6 +84,9 @@ namespace NestoAPI.Models.PedidosCompra
                     Descuento = linea.DescuentoLinea,
                     DescuentoProveedor = linea.DescuentoProveedor,
                     DescuentoProducto = linea.DescuentoProducto,
+                    // NestoAPI#510: el pronto pago del plazo viaja a la línea; el trigger de BD
+                    // recalcula SumaDescuentos con él y la base de arriba ya lo incluye.
+                    DescuentoPP = linea.DescuentoPP,
                     AplicarDto = linea.AplicarDescuento,
                     IVA = linea.CodigoIvaProducto,
                     Grupo = linea.Grupo,
@@ -122,6 +127,7 @@ namespace NestoAPI.Models.PedidosCompra
                         Descuento = linea.DescuentoLinea,
                         DescuentoProveedor = linea.DescuentoProveedor,
                         DescuentoProducto = linea.DescuentoProducto,
+                        DescuentoPP = linea.DescuentoPP, // NestoAPI#510
                         AplicarDto = linea.AplicarDescuento,
                         IVA = linea.CodigoIvaProducto,
                         PorcentajeIVA = linea.PorcentajeIva,

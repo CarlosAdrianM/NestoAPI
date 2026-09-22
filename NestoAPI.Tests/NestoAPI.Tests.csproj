@@ -267,6 +267,8 @@
     <Compile Include="Controllers\EquiposDeVentasResumenTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\VigenciaCampanasJobsServiceTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\FechasComprasClientesTests.cs" />
+    <Compile Include="Infrastructure\Sincronizacion\VendedorEmailPublicacionTests.cs" />
+    <Compile Include="Infrastructure\Clientes\AltaClienteDireccionVerificadaTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\SentinelPrecioPublicoJobsServiceTests.cs" />
     <Compile Include="Models\MapeoEdmxTests.cs" />
     <Compile Include="Models\CampanasPorNivelTests.cs" />
@@ -391,7 +393,9 @@
     <Compile Include="Infrastructure\GeneradorPdfFacturasQuestPdfTests.cs" />
     <Compile Include="Infrastructure\GeneradorExcelPedidoCompraTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfPedidoCompraTests.cs" />
+    <Compile Include="Infrastructure\ResumenImportesPedidoCompraTests.cs" />
     <Compile Include="Models\PedidosCompra\PedidoCompraDTOTests.cs" />
+    <Compile Include="Models\NormalizarCodigoBarrasTests.cs" />
     <Compile Include="Infrastructure\SuPedidoTests.cs" />
     <Compile Include="Infrastructure\GestorFacturasTests.cs" />
     <Compile Include="Infrastructure\GestorFacturasMotorSelectionTests.cs" />
@@ -448,6 +452,9 @@
     <Compile Include="Infrastructure\PedidosVenta\GestorPortesTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\SelectorAlmacenTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\TransicionPresupuestoTests.cs" />
+    <Compile Include="Infrastructure\PedidosVenta\SugeridorModoServicioTests.cs" />
+    <Compile Include="Infrastructure\PedidosVenta\GestorPortesLineasVivasTests.cs" />
+    <Compile Include="Infrastructure\PedidosVenta\FechaEntregaLineasProtegidasTests.cs" />
     <Compile Include="Infrastructure\GestorPedidosVentaTests.cs" />
     <Compile Include="Infrastructure\Domiciliaciones\GestorDomiciliacionesTests.cs" />
     <Compile Include="Infrastructure\Rectificativas\GestorCopiaPedidosTests.cs" />
@@ -499,6 +506,7 @@
     <Compile Include="Infrastructure\Pagos\PoliticaImporteMinimoEfectoTests.cs" />
     <Compile Include="Infrastructure\ServicioFacturasCrearFacturaTests.cs" />
     <Compile Include="Controllers\AnularModificarEnvioTests.cs" />
+    <Compile Include="Controllers\PutEnviosAgenciaReembolsoTests.cs" />
     <Compile Include="Infrastructure\GestorPedidosVentaResolverGrupoTests.cs" />
     <Compile Include="Infrastructure\Verifactu\MapeadorFacturaVerifactuTests.cs" />
     <Compile Include="Models\EnvioAgenciaDTOCanalesExternosTests.cs" />
@@ -535,6 +543,7 @@
     <Compile Include="Models\Ubicaciones\PreExtractoProductoDTOTests.cs" />
     <Compile Include="Models\UltimoEnvioClienteDTOTests.cs" />
     <Compile Include="Models\EnvioAgenciaDTOSeguimientoTests.cs" />
+    <Compile Include="Infrastructure\Agencias\CoberturaSeguimientoAgenciasTests.cs" />
     <Compile Include="Models\FormaVentaAppTests.cs" />
     <Compile Include="Models\LineaPedidoVentaDTOTests.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

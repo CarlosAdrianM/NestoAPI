@@ -131,11 +131,26 @@ namespace NestoAPI.Infraestructure.PedidosCompra
 
                 if (mostrarPrecios)
                 {
-                    decimal total = pedido.Lineas?.Sum(l => l.BaseImponible) ?? 0m;
-                    column.Item().PaddingTop(4).AlignRight().Text(text =>
+                    // NestoAPI#510: con pronto pago, el pie desglosa Base / Dto. pronto pago / Total,
+                    // como en los documentos de venta. Sin PP, solo el Total de siempre.
+                    var resumen = new ResumenImportesPedidoCompra(pedido.Lineas, pedido.DescuentoPP);
+                    if (resumen.TienePP)
+                    {
+                        column.Item().PaddingTop(4).AlignRight().Text(text =>
+                        {
+                            text.Span("Base: ").FontSize(9);
+                            text.Span(FormatoImporte(resumen.Subtotal)).FontSize(9);
+                        });
+                        column.Item().AlignRight().Text(text =>
+                        {
+                            text.Span($"Dto. pronto pago {FormatoDescuento(resumen.DescuentoPP)}: ").FontSize(9);
+                            text.Span(FormatoImporte(-resumen.ImportePP)).FontSize(9);
+                        });
+                    }
+                    column.Item().PaddingTop(resumen.TienePP ? 0 : 4).AlignRight().Text(text =>
                     {
                         text.Span("Total: ").Bold().FontSize(10);
-                        text.Span(FormatoImporte(total)).Bold().FontSize(10);
+                        text.Span(FormatoImporte(resumen.Total)).Bold().FontSize(10);
                     });
                 }
 
@@ -243,9 +258,10 @@ namespace NestoAPI.Infraestructure.PedidosCompra
                         CeldaDato(table.Cell(), FormatoCantidad(linea.Cantidad), alinearDerecha: true);
                         if (mostrarPrecios)
                         {
+                            // NestoAPI#510: descuento e importe de la línea SIN el pronto pago; el PP va al pie.
                             CeldaDato(table.Cell(), FormatoImporte(linea.PrecioUnitario), alinearDerecha: true);
-                            CeldaDato(table.Cell(), FormatoDescuento(linea.SumaDescuentos), alinearDerecha: true);
-                            CeldaDato(table.Cell(), FormatoImporte(linea.BaseImponible), alinearDerecha: true);
+                            CeldaDato(table.Cell(), FormatoDescuento(ResumenImportesPedidoCompra.DescuentoSinPP(linea.SumaDescuentos, pedido.DescuentoPP)), alinearDerecha: true);
+                            CeldaDato(table.Cell(), FormatoImporte(ResumenImportesPedidoCompra.ImporteLineaSinPP(linea, pedido.DescuentoPP)), alinearDerecha: true);
                         }
                     }
                 }

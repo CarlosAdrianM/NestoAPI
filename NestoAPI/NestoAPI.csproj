@@ -746,6 +746,7 @@
     <Compile Include="Infraestructure\Kits\UbicacionService.cs" />
     <Compile Include="Infraestructure\PedidosCompra\GeneradorExcelPedidoCompra.cs" />
     <Compile Include="Infraestructure\PedidosCompra\GeneradorPdfPedidoCompra.cs" />
+    <Compile Include="Infraestructure\PedidosCompra\ResumenImportesPedidoCompra.cs" />
     <Compile Include="Infraestructure\PedidosCompra\IPedidosCompraService.cs" />
     <Compile Include="Infraestructure\PedidosCompra\PedidosCompraService.cs" />
     <Compile Include="Infraestructure\RecursosGraficos.cs" />
@@ -759,6 +760,7 @@
     <Compile Include="Infraestructure\PedidosVenta\GestorPortes.cs" />
     <Compile Include="Infraestructure\PedidosVenta\TiendasRecogida.cs" />
     <Compile Include="Infraestructure\PedidosVenta\TransicionPresupuesto.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\SugeridorModoServicio.cs" />
     <Compile Include="Infraestructure\PedidosVenta\IServicioPedidosVenta.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ServicioPedidosVenta.cs" />
     <Compile Include="Infraestructure\PrincipalExtensions.cs" />

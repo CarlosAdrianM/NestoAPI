@@ -109,6 +109,39 @@ namespace NestoAPI.Tests.Infrastructure
             return contenido.ReadAsByteArrayAsync().Result;
         }
 
+        // --- NestoAPI#510: pronto pago a pie de documento ---
+
+        [TestMethod]
+        public void GenerarExcel_ConProntoPago_LlevaBaseYDescuentoAlPie()
+        {
+            var pedido = PedidoEjemplo(valorado: true);
+            pedido.DescuentoPP = 0.05m;
+            foreach (var linea in pedido.Lineas)
+            {
+                linea.DescuentoPP = 0.05m;
+                linea.Bruto = linea.PrecioUnitario * (linea.Cantidad ?? 0);
+                linea.SumaDescuentos = 1 - (1 - linea.SumaDescuentos) * 0.95m;
+                linea.BaseImponible = Math.Round(linea.Bruto, 2) - Math.Round(linea.Bruto * linea.SumaDescuentos, 2, MidpointRounding.AwayFromZero);
+            }
+
+            byte[] bytes = GenerarBytes(pedido);
+            List<string> textos = LeerTextosCompartidos(bytes);
+
+            ComprobarFirmaXlsx(bytes);
+            Assert.IsTrue(textos.Any(t => t.Contains("Base:")), "Falta la base sin pronto pago");
+            Assert.IsTrue(textos.Any(t => t.Contains("Dto. pronto pago 5%") || t.Contains("Dto. pronto pago 5 %")), "Falta la fila del pronto pago");
+            Assert.IsTrue(textos.Any(t => t.Contains("Total:")), "Falta el total");
+        }
+
+        [TestMethod]
+        public void GenerarExcel_SinProntoPago_NoAnadeFilasAlPie()
+        {
+            List<string> textos = LeerTextosCompartidos(GenerarBytes(PedidoEjemplo(valorado: true)));
+
+            Assert.IsFalse(textos.Any(t => t.Contains("pronto pago")), "Sin PP el pie es el de siempre");
+            Assert.IsFalse(textos.Any(t => t.Contains("Base:")));
+        }
+
         private static PedidoCompraInformeDTO PedidoEjemplo(bool valorado)
         {
             return new PedidoCompraInformeDTO

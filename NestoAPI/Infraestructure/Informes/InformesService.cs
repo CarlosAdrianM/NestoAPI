@@ -484,7 +484,8 @@ namespace NestoAPI.Infraestructure.Informes
             const string sqlLineas = @"
                 SELECT rtrim(p.ReferenciaProv) SuReferencia, rtrim(l.Producto) NuestraReferencia,
                     rtrim(l.Texto) Descripcion, d.Tamaño Tamanno, rtrim(d.UnidadMedida) UnidadMedida,
-                    l.Cantidad, l.Precio PrecioUnitario, l.SumaDescuentos, l.BaseImponible
+                    l.Cantidad, l.Precio PrecioUnitario, l.SumaDescuentos, l.BaseImponible,
+                    l.Bruto, l.DescuentoPP
                 FROM LinPedidoCmp l
                 LEFT JOIN Productos d ON l.Empresa = d.Empresa AND l.Producto = d.Número
                 LEFT JOIN ProveedoresProducto p
@@ -499,6 +500,8 @@ namespace NestoAPI.Infraestructure.Informes
                     new SqlParameter("@Proveedor", SqlDbType.NVarChar) { Value = pedidoCompra.Proveedor ?? string.Empty })
                 .ToListAsync()
                 .ConfigureAwait(false);
+            // NestoAPI#510: el pronto pago va en cada línea en BD; el informe lo saca a pie de documento.
+            pedidoCompra.DescuentoPP = PedidosCompra.ResumenImportesPedidoCompra.DescuentoPPDelPedido(pedidoCompra.Lineas);
 
             // Regla de negocio heredada: si el pedido no está valorado, se ocultan precios.
             if (!pedidoCompra.PedidoValorado)

@@ -197,9 +197,10 @@ namespace NestoAPI.Infraestructure.PedidosCompra
                     {
                         ws.Cell(fila, 6).Value = linea.PrecioUnitario;
                         ws.Cell(fila, 6).Style.NumberFormat.Format = FORMATO_IMPORTE;
-                        ws.Cell(fila, 7).Value = linea.SumaDescuentos;
+                        // NestoAPI#510: descuento e importe de la línea SIN el pronto pago; el PP va al pie.
+                        ws.Cell(fila, 7).Value = ResumenImportesPedidoCompra.DescuentoSinPP(linea.SumaDescuentos, pedido.DescuentoPP);
                         ws.Cell(fila, 7).Style.NumberFormat.Format = FORMATO_DESCUENTO;
-                        ws.Cell(fila, 8).Value = linea.BaseImponible;
+                        ws.Cell(fila, 8).Value = ResumenImportesPedidoCompra.ImporteLineaSinPP(linea, pedido.DescuentoPP);
                         ws.Cell(fila, 8).Style.NumberFormat.Format = FORMATO_IMPORTE;
                     }
                     fila++;
@@ -208,11 +209,25 @@ namespace NestoAPI.Infraestructure.PedidosCompra
 
             if (mostrarPrecios)
             {
-                decimal total = pedido.Lineas?.Sum(l => l.BaseImponible) ?? 0m;
+                // NestoAPI#510: con pronto pago, Base / Dto. pronto pago / Total, como en venta.
+                var resumen = new ResumenImportesPedidoCompra(pedido.Lineas, pedido.DescuentoPP);
+                if (resumen.TienePP)
+                {
+                    ws.Cell(fila, 7).Value = "Base:";
+                    ws.Cell(fila, 7).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+                    ws.Cell(fila, 8).Value = resumen.Subtotal;
+                    ws.Cell(fila, 8).Style.NumberFormat.Format = FORMATO_IMPORTE;
+                    fila++;
+                    ws.Cell(fila, 7).Value = $"Dto. pronto pago {resumen.DescuentoPP.ToString("0.##%", System.Globalization.CultureInfo.GetCultureInfo("es-ES"))}:";
+                    ws.Cell(fila, 7).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+                    ws.Cell(fila, 8).Value = -resumen.ImportePP;
+                    ws.Cell(fila, 8).Style.NumberFormat.Format = FORMATO_IMPORTE;
+                    fila++;
+                }
                 ws.Cell(fila, 7).Value = "Total:";
                 ws.Cell(fila, 7).Style.Font.Bold = true;
                 ws.Cell(fila, 7).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
-                ws.Cell(fila, 8).Value = total;
+                ws.Cell(fila, 8).Value = resumen.Total;
                 ws.Cell(fila, 8).Style.NumberFormat.Format = FORMATO_IMPORTE;
                 ws.Cell(fila, 8).Style.Font.Bold = true;
                 fila++;
