@@ -8,7 +8,9 @@
     ORDEN:
       1) Publicar NestoAPI.
       2) Publicar la ClickOnce (1.10.29.0).
-      3) ESTE script.
+      3) ESTE script. Se puede volver a ejecutar sin miedo: compara por Versión + Título e
+         inserta solo lo que falte (las tres primeras novedades ya se metieron el 22/09 a las
+         21:0x, antes de añadir la del alta de cliente; comprobado en producción: Ids 338-340).
 
     El parámetro ModoServicioPorDefecto ya se pasó a '0' esta misma mañana con
     Scripts/Issue506_ModoServicioSegunStock.sql: no hay que repetirlo.
@@ -41,16 +43,28 @@ USE NV;
 DECLARE @version VARCHAR(23) = '1.10.29.0'; -- <-- AJUSTAR si se publica otra versión
 DECLARE @fecha DATE = '2026-09-22';
 
+-- Idempotente a propósito (Carlos, 22/09/26): las tres primeras novedades ya se insertaron al
+-- publicar, antes de añadir la de Nesto#480. Se compara por Versión + Título, así que volver a
+-- ejecutarlo mete SOLO lo que falte y no duplica nada.
+DECLARE @novedades TABLE (Categoria nvarchar(40), Titulo nvarchar(400), Descripcion nvarchar(2000));
+
+INSERT INTO @novedades (Categoria, Titulo, Descripcion) VALUES
+    ('Nuevo', N'La plantilla avisa de las ofertas que el pedido podría llevar',
+     N'Hasta ahora había que saberse las ofertas de memoria: si nadie caía en que faltaba una unidad para el 6+1, el cliente se quedaba sin ella. Ahora, mientras se montan las líneas, aparece debajo del pedido un aviso con las ofertas que se podrían aplicar y no se están aplicando: las de cantidad («este producto tiene un 2+1 y no lo estás aplicando», «con 1 unidad más te llevas otra de regalo»), los regalos por importe de pedido («añadiendo 12,00 € más entra el regalo») y los descuentos por volumen. En las de cantidad hay un botón «Aplicar» que pone las unidades solo, sin teclear nada. Es solo un aviso: se puede ignorar y el pedido se cierra igual. Los mismos avisos salen ya en la app de vendedores.'),
+    ('Nuevo', N'El modo de entrega viene propuesto según el stock, y dice por qué',
+     N'El desplegable «Servir» de la plantilla proponía siempre «Tras reponer de tiendas», hubiera stock o no. Ahora lo propone el servidor mirando el stock real de las líneas del pedido, y debajo explica el motivo: «Hay stock de todo en el almacén del pedido: sale todo junto», «2 líneas hay que traerlas de las tiendas: se espera a la reposición»... Se recalcula al cambiar las líneas y al pasar de paso, pero si se elige un modo a mano ya no se toca. Es la misma regla que aplican la tienda online, la app y los pedidos que entran solos, así que a partir de ahora todos proponen lo mismo.'),
+    ('Corregido', N'El modo de entrega que se propone ya cuenta las unidades que se piden',
+     N'El cálculo que se estrenó esta mañana miraba si quedaba stock del producto, pero no cuántas unidades se estaban pidiendo: con 7 unidades en Algete y 4 en Reina, pidiendo 8, decía «hay stock de todo». Bastaba una unidad de cada referencia para que un pedido entero saliera como «Todo junto». Ahora se descuenta lo que pide cada línea, y las dos líneas de un mismo producto (la normal y la de regalo de una oferta) cuentan juntas, porque salen del mismo almacén. Afecta también a los pedidos de la tienda online y de la app de clientes, que nacen con ese modo.'),
+    ('Mejorado', N'En el alta de cliente, la dirección se elige de Google y ya no se puede retocar',
+     N'Lo normal era elegir la dirección que proponía Google y luego añadirle cosas al final (el portal, el local, «junto a...»), con lo que la dirección dejaba de ser la que Google había validado y la ficha quedaba mal escrita; eso es justo lo que luego no encuentra la agencia de transporte. Ahora, al elegir una dirección de la lista, el campo se pone verde y queda bloqueado: para cambiarla hay que borrarla con el botón de al lado y buscar otra. Todo lo demás (portal, piso, nombre del centro, referencias) va en «Dirección (resto de información)», que sigue siendo libre. Y ya no se puede terminar el alta con una dirección escrita a mano: el botón Finalizar se queda apagado y explica por qué. Si alguna vez Google no encuentra una dirección, avisa y se da de alta desde el Nesto viejo. En la app de vendedores funciona igual desde la versión 2.20.4.');
+
 INSERT INTO Novedades (Version, Fecha, Categoria, Titulo, Descripcion, Ambito, Publicada, Usuario)
-VALUES
-(@version, @fecha, 'Nuevo', N'La plantilla avisa de las ofertas que el pedido podría llevar',
- N'Hasta ahora había que saberse las ofertas de memoria: si nadie caía en que faltaba una unidad para el 6+1, el cliente se quedaba sin ella. Ahora, mientras se montan las líneas, aparece debajo del pedido un aviso con las ofertas que se podrían aplicar y no se están aplicando: las de cantidad («este producto tiene un 2+1 y no lo estás aplicando», «con 1 unidad más te llevas otra de regalo»), los regalos por importe de pedido («añadiendo 12,00 € más entra el regalo») y los descuentos por volumen. En las de cantidad hay un botón «Aplicar» que pone las unidades solo, sin teclear nada. Es solo un aviso: se puede ignorar y el pedido se cierra igual. Los mismos avisos salen ya en la app de vendedores.', 'Nesto', 1, 'sa'),
+SELECT @version, @fecha, n.Categoria, n.Titulo, n.Descripcion, 'Nesto', 1, 'sa'
+FROM @novedades n
+WHERE NOT EXISTS (SELECT 1 FROM Novedades x WHERE x.Version = @version AND x.Titulo = n.Titulo);
 
-(@version, @fecha, 'Nuevo', N'El modo de entrega viene propuesto según el stock, y dice por qué',
- N'El desplegable «Servir» de la plantilla proponía siempre «Tras reponer de tiendas», hubiera stock o no. Ahora lo propone el servidor mirando el stock real de las líneas del pedido, y debajo explica el motivo: «Hay stock de todo en el almacén del pedido: sale todo junto», «2 líneas hay que traerlas de las tiendas: se espera a la reposición»... Se recalcula al cambiar las líneas y al pasar de paso, pero si se elige un modo a mano ya no se toca. Es la misma regla que aplican la tienda online, la app y los pedidos que entran solos, así que a partir de ahora todos proponen lo mismo.', 'Nesto', 1, 'sa'),
+SELECT @@ROWCOUNT AS NovedadesInsertadasAhora;
 
-(@version, @fecha, 'Corregido', N'El modo de entrega que se propone ya cuenta las unidades que se piden',
- N'El cálculo que se estrenó esta mañana miraba si quedaba stock del producto, pero no cuántas unidades se estaban pidiendo: con 7 unidades en Algete y 4 en Reina, pidiendo 8, decía «hay stock de todo». Bastaba una unidad de cada referencia para que un pedido entero saliera como «Todo junto». Ahora se descuenta lo que pide cada línea, y las dos líneas de un mismo producto (la normal y la de regalo de una oferta) cuentan juntas, porque salen del mismo almacén. Afecta también a los pedidos de la tienda online y de la app de clientes, que nacen con ese modo.', 'Nesto', 1, 'sa'),
-
-(@version, @fecha, 'Mejorado', N'En el alta de cliente, la dirección se elige de Google y ya no se puede retocar',
- N'Lo normal era elegir la dirección que proponía Google y luego añadirle cosas al final (el portal, el local, «junto a...»), con lo que la dirección dejaba de ser la que Google había validado y la ficha quedaba mal escrita; eso es justo lo que luego no encuentra la agencia de transporte. Ahora, al elegir una dirección de la lista, el campo se pone verde y queda bloqueado: para cambiarla hay que borrarla con el botón de al lado y buscar otra. Todo lo demás (portal, piso, nombre del centro, referencias) va en «Dirección (resto de información)», que sigue siendo libre. Y ya no se puede terminar el alta con una dirección escrita a mano: el botón Finalizar se queda apagado y explica por qué. Si alguna vez Google no encuentra una dirección, avisa y se da de alta desde el Nesto viejo. En la app de vendedores funciona igual desde la versión 2.20.4.', 'Nesto', 1, 'sa');
+-- Comprobación: deben salir 4 filas, una por novedad, sin repetidos.
+SELECT Id, Version, Categoria, Titulo, Ambito, Publicada
+FROM Novedades WHERE Version = @version ORDER BY Id;
