@@ -64,6 +64,55 @@ namespace NestoAPI.Tests.Infrastructure
 
         #endregion
 
+        #region ImporteReembolso - NestoAPI#513 (efectos manuales EFC ya cobrados)
+
+        private static (GestorPedidosVenta gestor, IServicioPedidosVenta servicio) GestorCon925835()
+        {
+            // Pedido 925835 (22/09/26): efectos manuales 500 € EFC (entrada) + 2 × 161,48 € RCB.
+            var servicio = A.Fake<IServicioPedidosVenta>();
+            A.CallTo(() => servicio.LeerCabPedidoVta(EMPRESA, PEDIDO)).Returns(new CabPedidoVta { Empresa = EMPRESA, Número = PEDIDO, Nº_Cliente = "206", Forma_Pago = "RCB" });
+            A.CallTo(() => servicio.CargarEfectosPedido(EMPRESA, PEDIDO)).Returns(new List<EfectoPedidoVenta>
+            {
+                new EfectoPedidoVenta { Empresa = EMPRESA, Pedido = PEDIDO, Importe = 500m, FormaPago = Constantes.FormasPago.EFECTIVO },
+                new EfectoPedidoVenta { Empresa = EMPRESA, Pedido = PEDIDO, Importe = 161.48m, FormaPago = "RCB" },
+                new EfectoPedidoVenta { Empresa = EMPRESA, Pedido = PEDIDO, Importe = 161.48m, FormaPago = "RCB" }
+            });
+            return (new GestorPedidosVenta(servicio), servicio);
+        }
+
+        [TestMethod]
+        public void ImporteReembolso_EfectoEFCManualYaCobradoEnLaFactura_DevuelveCero()
+        {
+            // Regresión #513: la entrada de 500 € estaba pagada (ImportePdte 0) y cada etiqueta nueva volvía a proponer 500.
+            var (gestor, servicio) = GestorCon925835();
+            A.CallTo(() => servicio.FacturasDelPedido(EMPRESA, PEDIDO)).Returns(new List<string> { "NV2615509" });
+            A.CallTo(() => servicio.PendienteEfectivoDeFacturas(EMPRESA, "206", A<IEnumerable<string>>.That.Contains("NV2615509"))).Returns(0m);
+
+            Assert.AreEqual(0m, gestor.ImporteReembolso(EMPRESA, PEDIDO));
+        }
+
+        [TestMethod]
+        public void ImporteReembolso_EfectoEFCManualPendienteEnLaFactura_DevuelveLoPendiente()
+        {
+            var (gestor, servicio) = GestorCon925835();
+            A.CallTo(() => servicio.FacturasDelPedido(EMPRESA, PEDIDO)).Returns(new List<string> { "NV2615509" });
+            A.CallTo(() => servicio.PendienteEfectivoDeFacturas(EMPRESA, "206", A<IEnumerable<string>>._)).Returns(320.50m);
+
+            Assert.AreEqual(320.50m, gestor.ImporteReembolso(EMPRESA, PEDIDO), "Cobrado en parte: se propone lo que queda");
+        }
+
+        [TestMethod]
+        public void ImporteReembolso_EfectoEFCManualSinFacturar_SigueProponiendoElEfecto()
+        {
+            // Sin factura no hay extracto que consultar: el efecto manual es la mejor información.
+            var (gestor, servicio) = GestorCon925835();
+            A.CallTo(() => servicio.FacturasDelPedido(EMPRESA, PEDIDO)).Returns(new List<string>());
+
+            Assert.AreEqual(500m, gestor.ImporteReembolso(EMPRESA, PEDIDO));
+            A.CallTo(() => servicio.PendienteEfectivoDeFacturas(A<string>._, A<string>._, A<IEnumerable<string>>._)).MustNotHaveHappened();
+        }
+        #endregion
+
         #region ImporteReembolso - Issue #250
 
         [TestMethod]

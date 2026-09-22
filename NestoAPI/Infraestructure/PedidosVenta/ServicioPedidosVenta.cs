@@ -266,6 +266,43 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             }
         }
 
+        public List<string> FacturasDelPedido(string empresa, int pedido)
+        {
+            using (var db = new NVEntities())
+            {
+                return db.LinPedidoVtas
+                    .Where(l => l.Empresa == empresa && l.Número == pedido && l.Nº_Factura != null && l.Nº_Factura.Trim() != "")
+                    .Select(l => l.Nº_Factura)
+                    .Distinct()
+                    .ToList()
+                    .Select(f => f.Trim())
+                    .Distinct()
+                    .ToList();
+            }
+        }
+
+        public decimal PendienteEfectivoDeFacturas(string empresa, string cliente, IEnumerable<string> facturas)
+        {
+            List<string> lista = (facturas ?? Enumerable.Empty<string>()).Where(f => !string.IsNullOrWhiteSpace(f)).Select(f => f.Trim()).Distinct().ToList();
+            if (!lista.Any() || string.IsNullOrWhiteSpace(cliente))
+            {
+                return 0;
+            }
+            using (var db = new NVEntities())
+            {
+                // Los efectos del extracto (TipoApunte 2) de esas facturas cobrados en efectivo: lo que
+                // aún esté pendiente es lo que hay que cobrar a la entrega. Un efecto ya cobrado
+                // (ImportePdte 0, caso 925835 el 22/09/26) no puede volver a proponerse como reembolso.
+                return db.ExtractosCliente
+                    .Where(x => x.Empresa == empresa && x.Número == cliente
+                             && lista.Contains(x.Nº_Documento.Trim())
+                             && x.TipoApunte == Constantes.TiposApunteExtracto.EFECTO
+                             && x.FormaPago == Constantes.FormasPago.EFECTIVO)
+                    .Select(x => (decimal?)x.ImportePdte)
+                    .Sum() ?? 0;
+            }
+        }
+
         public List<EfectoPedidoVenta> CargarEfectosPedido(string empresa, int pedido)
         {
             using (var db = new NVEntities())

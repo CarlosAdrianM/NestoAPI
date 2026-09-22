@@ -41,5 +41,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         List<LinPedidoVta> CargarLineasPedidoPendientes(int pedido);
         List<LinPedidoVta> CargarLineasPedidoSinPicking(int pedido);
         List<EfectoPedidoVenta> CargarEfectosPedido(string empresa, int pedido);
+        /// <summary>NestoAPI#513: números de factura (distintos, recortados) de las líneas del pedido; vacío si no está facturado.</summary>
+        List<string> FacturasDelPedido(string empresa, int pedido);
+        /// <summary>
+        /// NestoAPI#513: lo que queda pendiente de cobrar EN EFECTIVO de esas facturas en el extracto del
+        /// cliente (efectos con FormaPago EFC, suma de ImportePdte). Es el reembolso real que falta.
+        /// </summary>
+        decimal PendienteEfectivoDeFacturas(string empresa, string cliente, IEnumerable<string> facturas);
     }
 }
