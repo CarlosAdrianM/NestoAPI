@@ -15,5 +15,10 @@ namespace NestoAPI.Infraestructure
         int UnidadesPendientesEntregarAlmacen(string producto, string almacen);
 
         int UnidadesDisponiblesTodosLosAlmacenes(string producto);
+        /// <summary>
+        /// NestoAPI#506: el color de la línea en el correo de pedido: "green" (stock en el almacén),
+        /// "DeepPink" (hay que traerlo de las tiendas) o "red" (no hay en ningún sitio).
+        /// </summary>
+        string ColorStock(string producto, string almacen);
     }
 }

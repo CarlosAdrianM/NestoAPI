@@ -501,6 +501,22 @@ namespace NestoAPI.Models
                 }
 
                 /// <summary>
+                /// NestoAPI#506: valor del parámetro ModoServicioPorDefecto que significa «según el stock del
+                /// pedido» (la regla de <c>SugeridorModoServicio</c>). Es el nuevo defecto; un 1..4 en el
+                /// parámetro es una excepción explícita del usuario y manda sobre la regla.
+                /// </summary>
+                public const string PARAMETRO_SEGUN_STOCK = "0";
+
+                /// <summary>
+                /// NestoAPI#506: el modo FORZADO por el parámetro (1..4) o null si el parámetro falta, es "0"
+                /// o no es un modo válido: entonces decide el stock. Contrato común con Nesto y NestoApp.
+                /// </summary>
+                public static byte? ParsearModoForzado(string valorParametro)
+                {
+                    return byte.TryParse(valorParametro?.Trim(), out byte modo) && EsValido(modo) ? modo : (byte?)null;
+                }
+
+                /// <summary>
                 /// Normalización al CREAR: sin modo informado, el pedido nace en <paramref name="modoPorDefecto"/>
                 /// (no se arrastra el ServirJunto de la ficha); con modo, servirJunto pasa a ser su derivado.
                 /// </summary>
@@ -587,6 +603,15 @@ namespace NestoAPI.Models
                 }
             }
         }
+        /// <summary>NestoAPI#513: valores de ExtractoCliente.TipoApunte tal y como los escribe el SP de facturación.</summary>
+        public static class TiposApunteExtracto
+        {
+            public const string PASO_A_CARTERA = "0";
+            public const string FACTURA = "1";
+            public const string EFECTO = "2";
+            public const string PAGO = "3";
+        }
+
         public static class ParametrosUsuario
         {
             // #256: almacenes cuyo stock se muestra en la plantilla de venta (CSV, p. ej.
@@ -596,6 +621,15 @@ namespace NestoAPI.Models
             /// <summary>NestoAPI#482: modo de servicio con el que nacen los pedidos que no lo informan
             /// (1..4). Sin fila, ModosServicio.POR_DEFECTO (3). Contrato común con Nesto y NestoApp.</summary>
             public const string MODO_SERVICIO_POR_DEFECTO = "ModoServicioPorDefecto";
+
+            /// <summary>
+            /// NestoAPI#499: interruptor del guardarraíl de altas de clientes. Con Valor "1" bajo
+            /// «(defecto)», el POST de clientes rechaza las altas cuya dirección no venga verificada por
+            /// Google (<c>ClienteCrear.DireccionVerificada</c>). Nace apagado: los Nesto y NestoApp que
+            /// aún no mandan el flag lo mandarían a false y se romperían todas las altas. Encender solo
+            /// cuando Nesto#480 y NestoApp#180 estén desplegados y no queden versiones viejas.
+            /// </summary>
+            public const string EXIGIR_DIRECCION_VERIFICADA_ALTA = "ExigirDireccionVerificadaAlta";
 
             /// <summary>Usuario bajo el que viven los parametros que no son de nadie en concreto.</summary>
             public const string USUARIO_POR_DEFECTO = "(defecto)";
@@ -680,6 +714,24 @@ namespace NestoAPI.Models
 
         public static class Productos
         {
+            /// <summary>
+            /// Valores que en Nesto viejo se han usado como «sin código de barras» (38 productos activos
+            /// el 22/09/26: 32 con "1" y 6 con "0"). Hacia fuera (tienda, Odoo) viajan como vacío:
+            /// un EAN de un dígito rompe la unicidad del código en Odoo (odoo-custom-addons#21).
+            /// </summary>
+            public static readonly string[] CODIGOS_BARRAS_VACIOS = { "0", "1" };
+
+            /// <summary>Código de barras limpio para publicar: recortado, y null si está vacío o es un relleno.</summary>
+            public static string NormalizarCodigoBarras(string codigoBarras)
+            {
+                string limpio = codigoBarras?.Trim();
+                if (string.IsNullOrEmpty(limpio) || System.Array.IndexOf(CODIGOS_BARRAS_VACIOS, limpio) >= 0)
+                {
+                    return null;
+                }
+                return limpio;
+            }
+
             public const string ALMACEN_POR_DEFECTO = "ALG";
             public const string ALMACEN_TIENDA = "REI";
             public const short ESTADO_A_EXTINGUIR = 4;
