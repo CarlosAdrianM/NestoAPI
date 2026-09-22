@@ -112,6 +112,39 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         }
 
         [TestMethod]
+        public async Task Un4xxConErrorPlano_NoRevienta_YElMotivoLlega()
+        {
+            // 22/09/26 12:46, primer día de CTT en producción: el seguimiento devolvió {"error":"texto"}
+            // (un JValue, no un objeto) y leer Error lanzaba InvalidOperationException, tapando el motivo.
+            var handler = new HandlerFalso();
+            handler.Responder("oauth2/token", HttpStatusCode.OK, RESP_TOKEN);
+            handler.Responder("tracking/v1.0/shippings/248944", HttpStatusCode.BadRequest, @"{""error"":""Shipping not found in tracking""}");
+            var cliente = new ClienteRestCTT(Config("t4b"), new HttpClient(handler));
+
+            RespuestaCTT r = await cliente.EnviarAsync(HttpMethod.Get, "tracking/v1.0/shippings/248944", null, "Seguimiento");
+
+            Assert.IsFalse(r.Exito);
+            Assert.IsNull(r.ClaveError);
+            StringAssert.Contains(r.Error, "400");
+            StringAssert.Contains(r.Error, "Shipping not found in tracking");
+        }
+
+        [TestMethod]
+        public async Task Un4xxConCuerpoNoJson_ElMotivoEsElCuerpo()
+        {
+            var handler = new HandlerFalso();
+            handler.Responder("oauth2/token", HttpStatusCode.OK, RESP_TOKEN);
+            handler.Responder("tracking/v1.0/shippings/1", HttpStatusCode.Unauthorized, "Unauthorized scope");
+            var cliente = new ClienteRestCTT(Config("t4c"), new HttpClient(handler));
+
+            RespuestaCTT r = await cliente.EnviarAsync(HttpMethod.Get, "tracking/v1.0/shippings/1", null, "Seguimiento");
+
+            Assert.IsFalse(r.Exito);
+            StringAssert.Contains(r.Error, "401");
+            StringAssert.Contains(r.Error, "Unauthorized scope");
+        }
+
+        [TestMethod]
         public async Task Un5xx_LanzaTransitoria_ParaQueLaPoliticaReintente()
         {
             var handler = new HandlerFalso();

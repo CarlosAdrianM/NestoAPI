@@ -63,22 +63,33 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
         /// <summary>
         /// Clave de traducción del error de CTT (p. ej. "ALREADY_NULLED_SHIPPING"), o null.
         /// </summary>
-        public string ClaveError => (Json as JObject)?["error"]?["translation_key"]?.ToString();
+        public string ClaveError => (ErrorComoObjeto)?["translation_key"]?.ToString();
+
+        /// <summary>
+        /// El nodo "error" del cuerpo SOLO si es un objeto. CTT no siempre lo manda así: el
+        /// seguimiento devolvió <c>{"error":"texto"}</c> (22/09/26, 12:46, primer día en producción) y
+        /// el <c>error["x"]</c> sobre un JValue lanzaba InvalidOperationException y tapaba el motivo real.
+        /// </summary>
+        private JObject ErrorComoObjeto => (Json as JObject)?["error"] as JObject;
 
         /// <summary>
         /// Texto legible del error: el mensaje extendido de CTT si lo hay, si no su descripción, si no
-        /// el cuerpo tal cual (acotado). Nunca null cuando no hay éxito.
+        /// el "error" plano, si no el cuerpo tal cual (acotado). Nunca null cuando no hay éxito y
+        /// nunca lanza: sea cual sea la forma del cuerpo, el motivo llega al log.
         /// </summary>
         public string Error
         {
             get
             {
                 if (Exito) return null;
-                JToken error = (Json as JObject)?["error"];
-                string mensaje = error?["error_extended_info"]?["message"]?.ToString();
+                JObject error = ErrorComoObjeto;
+                string mensaje = (error?["error_extended_info"] as JObject)?["message"]?.ToString();
                 string descripcion = error?["error_description"]?.ToString();
+                JToken errorPlano = (Json as JObject)?["error"];
+                string plano = errorPlano is JValue ? errorPlano.ToString() : null;
                 string detalle = !string.IsNullOrWhiteSpace(mensaje) ? mensaje
                     : !string.IsNullOrWhiteSpace(descripcion) ? descripcion
+                    : !string.IsNullOrWhiteSpace(plano) ? plano
                     : (Cuerpo ?? string.Empty).Trim();
                 if (detalle.Length > 300) detalle = detalle.Substring(0, 300) + "…";
                 return $"CTT respondió {Codigo}{(string.IsNullOrEmpty(detalle) ? string.Empty : ": " + detalle)}";

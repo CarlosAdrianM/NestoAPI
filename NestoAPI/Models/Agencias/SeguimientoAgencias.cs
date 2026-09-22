@@ -43,11 +43,19 @@ namespace NestoAPI.Models.Agencias
         string CarrierNameAmazon { get; }
         /// <summary>ShippingMethod para confirmar envíos en Amazon MFN, o null.</summary>
         string ShippingMethodAmazon { get; }
+        /// <summary>
+        /// Nesto#482 (22/09/26): números de AgenciasTransporte que atiende esta estrategia. Une el
+        /// perfil de la agencia (por id) con su seguimiento (por nombre) para que un test pueda
+        /// exigir que TODA agencia con perfil declare sus datos de canal: la de CTT no confirmaba en
+        /// Amazon porque Nesto tenía un respaldo por enlace que no la conocía.
+        /// </summary>
+        IReadOnlyCollection<int> AgenciasId { get; }
     }
 
     internal class SeguimientoGls : IEstrategiaSeguimientoAgencia
     {
         public string Nombre => "ASM";
+        public IReadOnlyCollection<int> AgenciasId => new[] { 1, 2, 3, 5 };
         // GLS e Innovatrans comparten el transportista genérico 160 de Prestashop
         public string TransportistaPrestashop => "160";
         public string CarrierNameAmazon => "GLS";
@@ -65,6 +73,7 @@ namespace NestoAPI.Models.Agencias
     internal class SeguimientoOnTime : IEstrategiaSeguimientoAgencia
     {
         public string Nombre => "OnTime";
+        public IReadOnlyCollection<int> AgenciasId => new[] { 4, 6 };
         // OnTime no se usa en tienda online ni marketplaces
         public string TransportistaPrestashop => null;
         public string CarrierNameAmazon => null;
@@ -86,6 +95,7 @@ namespace NestoAPI.Models.Agencias
     internal class SeguimientoCorreosExpress : IEstrategiaSeguimientoAgencia
     {
         public string Nombre => "Correos Express";
+        public IReadOnlyCollection<int> AgenciasId => new[] { Constantes.Agencias.AGENCIA_CORREOS_EXPRESS, 9 };
         public string TransportistaPrestashop => "105";
         public string CarrierNameAmazon => "Correos Express";
         public string ShippingMethodAmazon => "ePaq";
@@ -100,6 +110,7 @@ namespace NestoAPI.Models.Agencias
     internal class SeguimientoSending : IEstrategiaSeguimientoAgencia
     {
         public string Nombre => "Sending";
+        public IReadOnlyCollection<int> AgenciasId => new[] { Constantes.Agencias.AGENCIA_SENDING };
         public string TransportistaPrestashop => "103";
         public string CarrierNameAmazon => "Sending";
         public string ShippingMethodAmazon => "Send Exprés";
@@ -114,6 +125,7 @@ namespace NestoAPI.Models.Agencias
     internal class SeguimientoInnovatrans : IEstrategiaSeguimientoAgencia
     {
         public string Nombre => "Innovatrans";
+        public IReadOnlyCollection<int> AgenciasId => new[] { Constantes.Agencias.AGENCIA_INNOVATRANS };
         public string TransportistaPrestashop => "160";
         public string CarrierNameAmazon => "Innovatrans";
         public string ShippingMethodAmazon => "Estándar";
@@ -130,6 +142,7 @@ namespace NestoAPI.Models.Agencias
     internal class SeguimientoCTT : IEstrategiaSeguimientoAgencia
     {
         public string Nombre => "CTT";
+        public IReadOnlyCollection<int> AgenciasId => new[] { Constantes.Agencias.AGENCIA_CTT };
         public string TransportistaPrestashop => "160";
         public string CarrierNameAmazon => "CTT Express";
         public string ShippingMethodAmazon => "Estándar";
@@ -178,6 +191,9 @@ namespace NestoAPI.Models.Agencias
                 : null;
 
         /// <summary>Estrategia de la agencia, o null si no está registrada (NestoAPI#258).</summary>
+        /// <summary>Todas las estrategias registradas (para la guardia de cobertura por agencia).</summary>
+        public static IReadOnlyCollection<IEstrategiaSeguimientoAgencia> Todas => PorNombre.Values.ToList();
+
         public static IEstrategiaSeguimientoAgencia Obtener(string agenciaNombre)
             => agenciaNombre != null && PorNombre.TryGetValue(agenciaNombre, out IEstrategiaSeguimientoAgencia estrategia)
                 ? estrategia
