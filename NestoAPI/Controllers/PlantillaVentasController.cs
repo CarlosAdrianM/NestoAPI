@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Data;
 using System.Data.Entity;
 using System.Linq;
+using System.Net.Http;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
@@ -120,7 +121,12 @@ namespace NestoAPI.Controllers
         {
             if (filtroProducto == null || filtroProducto.Length < 3)
             {
-                throw new Exception("El filtro de productos debe tener al menos 3 caracteres de largo");
+                // Un filtro corto es un error del cliente, no del servidor: 400 y fuera. Antes era una
+                // Exception pelada que acababa en ELMAH como error 500 (3 de Javier el 21/09/26). La
+                // HttpResponseException no pasa por el log de errores. Nesto y NestoApp solo miran
+                // IsSuccessStatusCode, así que para ellos no cambia nada.
+                throw new System.Web.Http.HttpResponseException(Request.CreateErrorResponse(
+                    System.Net.HttpStatusCode.BadRequest, "El filtro de productos debe tener al menos 3 caracteres de largo"));
             }
 
             List<string> familiasOcultas = FamiliasQueNoPuedeVer();
