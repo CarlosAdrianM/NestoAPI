@@ -139,7 +139,11 @@ namespace NestoAPI.Infraestructure
                                 .OrderBy(c => c.Nº_Cliente)
                                 .ThenByDescending(c => c.ClientePrincipal)
                                 .ThenBy(c => c.Contacto)
-                                .Include(c => c.PersonasContactoClientes1)
+                                // NestoAPI#504: PublicarClienteSincronizar lee PersonasContactoClientes (sin el 1;
+                                // las dos navegaciones cuelgan de la misma FK duplicada) y el Mail del vendedor:
+                                // con el lazy loading apagado, lo que no se incluye aquí viaja vacío.
+                                .Include(c => c.PersonasContactoClientes)
+                                .Include(c => c.Vendedore)
                                 .ToListAsync();
                         },
                         publicarEntidad: async (cliente, usuario) =>

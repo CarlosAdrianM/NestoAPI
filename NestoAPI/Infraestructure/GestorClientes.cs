@@ -29,6 +29,9 @@ namespace NestoAPI.Infraestructure
         private readonly IServicioAgencias servicioAgencias;
         private readonly SincronizacionEventWrapper _sincronizacionEventWrapper;
 
+        /// <summary>NestoAPI#499: lector del parámetro ExigirDireccionVerificadaAlta (sustituible en tests).</summary>
+        internal ILectorParametrosUsuario LectorParametros { get; set; } = new LectorParametrosUsuario();
+
         public GestorClientes(IServicioGestorClientes servicio, IServicioAgencias servicioAgencias, SincronizacionEventWrapper sincronizacionEventWrapper)
         {
             this.servicio = servicio;
@@ -1755,6 +1758,14 @@ namespace NestoAPI.Infraestructure
                     clienteCrear.Empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO;
                 }
 
+                // NestoAPI#499: guardarraíl de la dirección verificada por Google (detrás del
+                // parámetro ExigirDireccionVerificadaAlta; ValidationException → 400 en PostCliente).
+                string motivoDireccion = MotivoRechazoDireccionNoVerificada(clienteCrear, ExigirDireccionVerificadaAlta(clienteCrear.Empresa));
+                if (motivoDireccion != null)
+                {
+                    throw new ValidationException(motivoDireccion);
+                }
+
                 cliente = await PrepararClienteCrear(clienteCrear, db);
 
                 // Issue #263: guarda dura — nunca dos ClientePrincipal bajo el mismo número.
@@ -1838,16 +1849,22 @@ namespace NestoAPI.Infraestructure
                 })
                 .ToList();
 
-            // Obtener email del vendedor
-            // Si Vendedore está cargado (por Include), usamos su Mail directamente
-            // Si no, hacemos una consulta al servicio
-            string vendedorEmail = cliente.Vendedore?.Mail?.Trim();
-            if (vendedorEmail == null && !string.IsNullOrWhiteSpace(cliente.Vendedor))
+            // Obtener email del vendedor. Si Vendedore está cargado (por Include) usamos su Mail;
+            // si no, consulta al servicio. NestoAPI#504: un Mail en blanco NO es "resuelto" (antes el
+            // Trim() lo dejaba en "" y se saltaba la consulta).
+            string mailVendedor = cliente.Vendedore?.Mail;
+            if (string.IsNullOrWhiteSpace(mailVendedor) && !string.IsNullOrWhiteSpace(cliente.Vendedor))
             {
-                vendedorEmail = await servicio.ObtenerEmailVendedor(
+                mailVendedor = await servicio.ObtenerEmailVendedor(
                     cliente.Empresa?.Trim() ?? Constantes.Empresas.EMPRESA_POR_DEFECTO,
                     cliente.Vendedor?.Trim()
                 );
+            }
+            string vendedorEmail = VendedorEmailParaPublicar(cliente.Vendedor, mailVendedor);
+            if (vendedorEmail == null)
+            {
+                Console.WriteLine($"   ⚠️ NestoAPI#504: el vendedor '{cliente.Vendedor?.Trim()}' del cliente {cliente.Nº_Cliente?.Trim()}-{cliente.Contacto?.Trim()} " +
+                    "no tiene Mail en Vendedores: el mensaje viaja SIN VendedorEmail para que Odoo no le quite el vendedor. Rellenar el Mail.");
             }
 
             // Log para rastrear de dónde viene cada publicación
@@ -1885,6 +1902,73 @@ namespace NestoAPI.Infraestructure
 
             // Pasar el objeto directamente - GooglePubSubEventPublisher se encarga de serializar
             await _sincronizacionEventWrapper.PublishSincronizacionEventAsync("sincronizacion-tablas", message);
+        }
+
+        /// <summary>
+        /// NestoAPI#504: qué <c>VendedorEmail</c> viaja en el mensaje de sincronización. El contrato con
+        /// Odoo (odoo-custom-addons#25) y con nuestro propio <c>ClientesSyncHandler</c> es el mismo en
+        /// los dos sentidos: <b>propiedad ausente = no tocar el vendedor; "" = sin vendedor</b>.
+        /// <list type="bullet">
+        /// <item>Sin vendedor o vendedor general (NV): "" → Odoo quita el comercial, que es lo que hay.</item>
+        /// <item>Vendedor con Mail: el Mail.</item>
+        /// <item>Vendedor SIN Mail en la tabla Vendedores: <c>null</c> → la propiedad no se serializa
+        /// (<see cref="Models.Sincronizacion.ClienteSyncMessage.VendedorEmail"/>) y Odoo conserva el que
+        /// tenga. Es un dato mal puesto en Vendedores, no una desasignación: antes viajaba null y Odoo
+        /// lo leía como "quítalo" (133 clientes desasignados en silencio de abril a septiembre de 2026).</item>
+        /// </list>
+        /// </summary>
+        internal static string VendedorEmailParaPublicar(string vendedor, string mailVendedor)
+        {
+            string codigo = vendedor?.Trim();
+            if (string.IsNullOrEmpty(codigo) || codigo == Constantes.Vendedores.VENDEDOR_GENERAL)
+            {
+                return string.Empty;
+            }
+            string mail = mailVendedor?.Trim();
+            return string.IsNullOrEmpty(mail) ? null : mail;
+        }
+
+        /// <summary>
+        /// NestoAPI#499: guardarraíl de servidor para Nesto#480 / NestoApp#180. Si <paramref name="exigir"/>
+        /// (parámetro ExigirDireccionVerificadaAlta = "1"), un alta que trae dirección sin que el usuario
+        /// la haya elegido de las que propone Google se rechaza. Sin dirección no hay nada que
+        /// verificar (contactos de cobro, altas parciales), y con el interruptor apagado nunca se
+        /// rechaza: los clientes que aún no mandan el flag lo dejarían a false. Devuelve el motivo del
+        /// rechazo o null si el alta puede seguir.
+        /// </summary>
+        internal static string MotivoRechazoDireccionNoVerificada(ClienteCrear clienteCrear, bool exigir)
+        {
+            if (!exigir || clienteCrear == null)
+            {
+                return null;
+            }
+            if (string.IsNullOrWhiteSpace(clienteCrear.Direccion))
+            {
+                return null;
+            }
+            if (clienteCrear.DireccionVerificada)
+            {
+                return null;
+            }
+            return "La dirección tiene que elegirse de las que propone Google, no escribirse a mano. " +
+                "Busca la dirección y selecciónala en la lista; si Google no la encuentra, avisa para darla de alta desde el Nesto viejo.";
+        }
+
+        /// <summary>NestoAPI#499: ¿está encendido el interruptor? Cualquier fallo al leerlo cuenta como apagado.</summary>
+        internal bool ExigirDireccionVerificadaAlta(string empresa)
+        {
+            try
+            {
+                string valor = LectorParametros.LeerParametro(
+                    empresa ?? Constantes.Empresas.EMPRESA_POR_DEFECTO,
+                    Constantes.ParametrosUsuario.USUARIO_POR_DEFECTO,
+                    Constantes.ParametrosUsuario.EXIGIR_DIRECCION_VERIFICADA_ALTA);
+                return valor?.Trim() == "1";
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private bool ClienteExists(NVEntities db, string empresa, string numCliente, string contacto)

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
 
 namespace NestoAPI.Models.Sincronizacion
 {
@@ -72,6 +73,10 @@ namespace NestoAPI.Models.Sincronizacion
         /// <summary>
         /// Email del vendedor asignado
         /// </summary>
+        /// <para>NestoAPI#504: contrato con Odoo (odoo-custom-addons#25): propiedad AUSENTE = no tocar
+        /// el vendedor; "" = sin vendedor. Por eso null no se serializa: si viajara, Odoo lo leería
+        /// como "quítale el comercial". Ver <c>GestorClientes.VendedorEmailParaPublicar</c>.</para>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string VendedorEmail { get; set; }
 
         /// <summary>

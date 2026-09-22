@@ -19,6 +19,13 @@ namespace NestoAPI.Models.Clientes
         public string ComentariosRuta { get; set; }
         [StringLength(50)]
         public string Direccion { get; set; }
+        /// <summary>
+        /// NestoAPI#499: la dirección la eligió el usuario de entre las que propone Google (Nesto#480,
+        /// NestoApp#180), no la tecleó. Con el parámetro ExigirDireccionVerificadaAlta encendido, un
+        /// alta con dirección y este flag a false se rechaza. Los clientes que no lo mandan lo dejan
+        /// en false: por eso el interruptor nace apagado.
+        /// </summary>
+        public bool DireccionVerificada { get; set; }
         public bool EsContacto {get;set;}
         public short? Estado { get; set; }
         public bool Estetica { get; set; }
