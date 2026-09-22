@@ -413,6 +413,7 @@
     <Compile Include="Infrastructure\GestorPreciosCalcularDescuentoProductoTests.cs" />
     <Compile Include="Infrastructure\GestorPreciosCategoriaTests.cs" />
     <Compile Include="Infrastructure\GestorPreciosTests.cs" />
+    <Compile Include="Infrastructure\GestorStocksColorStockTests.cs" />
     <Compile Include="Infrastructure\GestorSugerenciasOfertasTests.cs" />
     <Compile Include="Infrastructure\ConstructorPedidoClienteTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\CorreoConfirmacionPedidoClienteTests.cs" />

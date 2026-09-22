@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using NestoAPI.Models;
@@ -22,6 +22,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
     /// <item>Rosa + rojo → 3, aceptando que la parte roja pueda llegar después en más de una entrega.</item>
     /// <item>Una línea parcialmente cubrible desde tiendas sale roja (como en el correo) y cuenta como roja.</item>
     /// <item>Solo se sugiere al crear; al modificar no se recalcula el modo.</item>
+    /// <item>NestoAPI#515: el color se pide con la cantidad de la línea y agrupando por producto y
+    /// almacén, porque el pedido aún no está grabado. Los recuentos (LineasVerdes/Rosas/Rojas) son, por
+    /// tanto, de grupos producto+almacén, no de líneas sueltas.</item>
     /// </list>
     /// Es la única fuente: la usan <c>PostPedidoVenta</c> cuando el cliente no manda modo, la estimación de
     /// portes del carrito de la app y el endpoint <c>POST api/PedidosVenta/ModoServicioSugerido</c> con el
@@ -63,8 +66,14 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 };
             }
 
+            // NestoAPI#515: un color por producto y almacén, con la CANTIDAD que se pide sumada. Dos cosas:
+            //   - el pedido todavía no existe, así que sus unidades no están en pendientes de entregar y
+            //     hay que descontarlas a mano (si no, 7 en el almacén salen verdes aunque se pidan 8);
+            //   - dos líneas del mismo producto y almacén (la normal y la de regalo de una oferta) consumen
+            //     el mismo stock: se suman y se pide un solo color, o se contaría dos veces.
             var colores = productos
-                .Select(l => stocks.ColorStock(l.Producto.Trim(), l.almacen?.Trim()))
+                .GroupBy(l => new { Producto = l.Producto.Trim(), Almacen = l.almacen?.Trim() })
+                .Select(g => stocks.ColorStock(g.Key.Producto, g.Key.Almacen, g.Sum(l => l.Cantidad)))
                 .ToList();
             int verdes = colores.Count(c => c == VERDE);
             int rosas = colores.Count(c => c == ROSA);

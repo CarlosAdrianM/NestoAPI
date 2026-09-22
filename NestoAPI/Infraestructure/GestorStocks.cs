@@ -76,19 +76,31 @@ namespace NestoAPI.Infraestructure
             return servicio.UnidadesPendientesEntregarAlmacen(producto, almacen);
         }
 
+        // NestoAPI#515: el correo de pedido colorea un pedido YA GRABADO, cuyas unidades están dentro de
+        // UnidadesPendientesEntregarAlmacen; por eso aquí no se resta cantidad (se contaría dos veces).
         public string ColorStock(string producto, string almacen)
+        {
+            return ColorStock(producto, almacen, 0);
+        }
+
+        /// <summary>
+        /// NestoAPI#515: el mismo color, pero para un pedido que TODAVÍA NO EXISTE (el sugeridor de modo
+        /// de servicio, la estimación de portes): sus unidades no están en pendientes de entregar, así que
+        /// hay que descontarlas a mano. Con cantidad 0 se comporta exactamente como la firma de siempre.
+        /// </summary>
+        public string ColorStock(string producto, string almacen, int cantidad)
         {
             int stockAlmacen = Stock(producto, almacen);
             int pendientesEntregar = UnidadesPendientesEntregarAlmacen(producto, almacen);
             string colorCantidad;
-            if (stockAlmacen - pendientesEntregar >= 0)
+            if (stockAlmacen - pendientesEntregar - cantidad >= 0)
             {
                 colorCantidad = "green";
             }
             else
             {
                 int cantidadDisponible = UnidadesDisponiblesTodosLosAlmacenes(producto);
-                if (cantidadDisponible >= 0)
+                if (cantidadDisponible - cantidad >= 0)
                 {
                     colorCantidad = "DeepPink";
                 }

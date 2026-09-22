@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
@@ -22,9 +22,12 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
         public void Setup()
         {
             stocks = A.Fake<IGestorStocks>();
-            A.CallTo(() => stocks.ColorStock("VERDE", A<string>._)).Returns(SugeridorModoServicio.VERDE);
-            A.CallTo(() => stocks.ColorStock("ROSA", A<string>._)).Returns(SugeridorModoServicio.ROSA);
-            A.CallTo(() => stocks.ColorStock("ROJO", A<string>._)).Returns(SugeridorModoServicio.ROJO);
+            // NestoAPI#515: el sugeridor pide el color CON la cantidad, porque el pedido aún no existe.
+            // El producto se llama como su color; el sufijo distingue referencias distintas del mismo color
+            // (desde #515 el color se pide una vez por producto y almacén, no una por línea).
+            A.CallTo(() => stocks.ColorStock(A<string>.That.StartsWith("VERDE"), A<string>._, A<int>._)).Returns(SugeridorModoServicio.VERDE);
+            A.CallTo(() => stocks.ColorStock(A<string>.That.StartsWith("ROSA"), A<string>._, A<int>._)).Returns(SugeridorModoServicio.ROSA);
+            A.CallTo(() => stocks.ColorStock(A<string>.That.StartsWith("ROJO"), A<string>._, A<int>._)).Returns(SugeridorModoServicio.ROJO);
         }
 
         private static PedidoVentaDTO Pedido(params string[] productos)
@@ -41,7 +44,7 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
         [TestMethod]
         public void TodoVerde_TodoJunto()
         {
-            var s = SugeridorModoServicio.Sugerir(Pedido("VERDE", "VERDE"), stocks);
+            var s = SugeridorModoServicio.Sugerir(Pedido("VERDE1", "VERDE2"), stocks);
 
             Assert.AreEqual(Constantes.Pedidos.ModosServicio.TODO_JUNTO, s.Modo);
             Assert.AreEqual("Todo junto", s.Nombre);
@@ -93,7 +96,7 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             var s = SugeridorModoServicio.Sugerir(pedido, stocks);
 
             Assert.AreEqual(Constantes.Pedidos.ModosServicio.POR_DEFECTO, s.Modo);
-            A.CallTo(() => stocks.ColorStock(A<string>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => stocks.ColorStock(A<string>._, A<string>._, A<int>._)).MustNotHaveHappened();
         }
 
         [TestMethod]
@@ -108,6 +111,47 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
 
             Assert.AreEqual(Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS, s.Modo);
             Assert.AreEqual(0, s.LineasRojas, "La línea con cantidad 0 no cuenta");
+        }
+
+        [TestMethod]
+        public void SePideElColorConLaCantidadDeLaLinea()
+        {
+            // NestoAPI#515: sin la cantidad, 7 unidades en el almacén salían verdes aunque se pidieran 8.
+            var pedido = Pedido();
+            pedido.Lineas.Add(new LineaPedidoVentaDTO { id = 1, Producto = "VERDE", Cantidad = 8, PrecioUnitario = 10, almacen = "ALG", tipoLinea = Constantes.TiposLineaVenta.PRODUCTO });
+
+            _ = SugeridorModoServicio.Sugerir(pedido, stocks);
+
+            A.CallTo(() => stocks.ColorStock("VERDE", "ALG", 8)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public void DosLineasDelMismoProductoYAlmacen_ConsumenElMismoStock_YSeMiranJuntas()
+        {
+            // NestoAPI#515: la línea normal y la de regalo de una oferta son las dos tipoLinea PRODUCTO y
+            // salen del mismo almacén: si se preguntan por separado, el stock se cuenta dos veces.
+            var pedido = Pedido();
+            pedido.Lineas.Add(new LineaPedidoVentaDTO { id = 1, Producto = "VERDE", Cantidad = 6, PrecioUnitario = 10, almacen = "ALG", tipoLinea = Constantes.TiposLineaVenta.PRODUCTO });
+            pedido.Lineas.Add(new LineaPedidoVentaDTO { id = 2, Producto = "VERDE", Cantidad = 1, PrecioUnitario = 0, almacen = "ALG", tipoLinea = Constantes.TiposLineaVenta.PRODUCTO });
+
+            var s = SugeridorModoServicio.Sugerir(pedido, stocks);
+
+            A.CallTo(() => stocks.ColorStock("VERDE", "ALG", 7)).MustHaveHappenedOnceExactly();
+            Assert.AreEqual(1, s.LineasVerdes, "Un solo color por producto y almacén");
+        }
+
+        [TestMethod]
+        public void ElMismoProductoEnDosAlmacenes_SeMiraPorSeparado()
+        {
+            var pedido = Pedido();
+            pedido.Lineas.Add(new LineaPedidoVentaDTO { id = 1, Producto = "VERDE", Cantidad = 3, PrecioUnitario = 10, almacen = "ALG", tipoLinea = Constantes.TiposLineaVenta.PRODUCTO });
+            pedido.Lineas.Add(new LineaPedidoVentaDTO { id = 2, Producto = "VERDE", Cantidad = 2, PrecioUnitario = 10, almacen = "REI", tipoLinea = Constantes.TiposLineaVenta.PRODUCTO });
+
+            var s = SugeridorModoServicio.Sugerir(pedido, stocks);
+
+            A.CallTo(() => stocks.ColorStock("VERDE", "ALG", 3)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => stocks.ColorStock("VERDE", "REI", 2)).MustHaveHappenedOnceExactly();
+            Assert.AreEqual(2, s.LineasVerdes);
         }
 
         [TestMethod]
