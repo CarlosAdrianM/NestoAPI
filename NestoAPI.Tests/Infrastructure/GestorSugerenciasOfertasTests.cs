@@ -251,5 +251,163 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(2, validado.Lineas.Count, "las líneas del pedido de verdad no se tocan");
         }
 
+        // ===== Corte 3: ofertas escalonadas (#226) =====
+
+        /// <summary>Oferta escalonada Allure: 44707 y 44708 a 44,95 € de base; tramos 4→10 %, 6→25 %.</summary>
+        private void ConEscalonadaAllure(params string[] productos)
+        {
+            var oferta = new OfertaEscalonada { Id = 5, Empresa = "1", Nombre = "Allure" };
+            foreach (string p in productos)
+            {
+                oferta.OfertasEscalonadasProductos.Add(new OfertaEscalonadaProducto { OfertaId = 5, Producto = p, PrecioBase = 44.95M });
+            }
+            oferta.OfertasEscalonadasTramos.Add(new OfertaEscalonadaTramo { OfertaId = 5, CantidadMinima = 4, Descuento = 0.10M });
+            oferta.OfertasEscalonadasTramos.Add(new OfertaEscalonadaTramo { OfertaId = 5, CantidadMinima = 6, Descuento = 0.25M });
+            foreach (string p in productos)
+            {
+                A.CallTo(() => servicio.BuscarOfertasEscalonadas(p)).Returns(new List<OfertaEscalonada> { oferta });
+            }
+        }
+
+        private static LineaPedidoVentaDTO LineaConDto(string producto, int cantidad, decimal precio, decimal descuentoLinea, int id) => new LineaPedidoVentaDTO
+        {
+            id = id,
+            Producto = producto,
+            Cantidad = cantidad,
+            PrecioUnitario = precio,
+            DescuentoLinea = descuentoLinea,
+            AplicarDescuento = true,
+            tipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+            almacen = "ALG"
+        };
+
+        [TestMethod]
+        public void Escalonada_AlcanzaElTramoYPagaTarifa_AvisaDelDescuentoNoAplicadoYLoValidaConElDescuentoPuesto()
+        {
+            ConEscalonadaAllure("44707", "44708");
+            PedidoVentaDTO validado = null;
+            // 4 de un producto y 2 del otro = 6 unidades: tramo del 25 %, y las dos líneas van a tarifa.
+            List<SugerenciaOfertaDTO> s = GestorSugerenciasOfertas.Calcular(
+                Pedido(Linea("44707", 4, 44.95M, 1), Linea("44708", 2, 44.95M, 2)), servicio,
+                p => { validado = p; return new RespuestaValidacion { ValidacionSuperada = true }; });
+
+            List<SugerenciaOfertaDTO> descuento = s.Where(x => x.Tipo == GestorSugerenciasOfertas.TIPO_DESCUENTO_NO_APLICADO).ToList();
+            Assert.AreEqual(2, descuento.Count, "Un aviso por producto que paga de más");
+            SugerenciaOfertaDTO a = descuento.Single(x => x.Producto == "44707");
+            Assert.AreEqual(0.25M, a.Descuento);
+            Assert.AreEqual(4, a.CantidadActual);
+            Assert.AreEqual(4, a.CantidadSugerida, "No hay que añadir unidades, solo aplicar el descuento");
+            Assert.AreEqual(5, a.OfertaEscalonada);
+            StringAssert.Contains(a.Texto, "6 unidades");
+            StringAssert.Contains(a.Texto, "25 %");
+            StringAssert.Contains(a.Texto, "Allure");
+            // El pedido hipotético lleva las dos líneas al suelo del tramo: base 44,95 con 25 % de línea.
+            Assert.IsNotNull(validado);
+            Assert.IsTrue(validado.Lineas.All(l => l.PrecioUnitario == 44.95M && l.DescuentoLinea == 0.25M && l.AplicarDescuento));
+            Assert.IsFalse(s.Any(x => x.Tipo == GestorSugerenciasOfertas.TIPO_AMPLIAR_CANTIDAD_ESCALONADA), "Ya está en el tramo más alto");
+        }
+
+        [TestMethod]
+        public void Escalonada_YaLlevaElDescuentoDelTramo_NoAvisa()
+        {
+            ConEscalonadaAllure("44707", "44708");
+            List<SugerenciaOfertaDTO> s = GestorSugerenciasOfertas.Calcular(
+                Pedido(LineaConDto("44707", 4, 44.95M, 0.25M, 1), LineaConDto("44708", 2, 44.95M, 0.25M, 2)), servicio, Acepta);
+
+            Assert.IsFalse(s.Any(x => x.Tipo == GestorSugerenciasOfertas.TIPO_DESCUENTO_NO_APLICADO));
+        }
+
+        [TestMethod]
+        public void Escalonada_PrecioRebajadoDirectamenteEnLaLinea_TambienCuentaComoAplicado()
+        {
+            ConEscalonadaAllure("44707");
+            // 44,95 × 0,75 = 33,7125: el vendedor teclea 33,71 (redondeo dentro de la tolerancia).
+            List<SugerenciaOfertaDTO> s = GestorSugerenciasOfertas.Calcular(Pedido(Linea("44707", 6, 33.71M)), servicio, Acepta);
+
+            Assert.IsFalse(s.Any(x => x.Tipo == GestorSugerenciasOfertas.TIPO_DESCUENTO_NO_APLICADO));
+        }
+
+        [TestMethod]
+        public void Escalonada_SoloAvisaDelProductoQuePagaDeMas()
+        {
+            ConEscalonadaAllure("44707", "44708");
+            List<SugerenciaOfertaDTO> s = GestorSugerenciasOfertas.Calcular(
+                Pedido(LineaConDto("44707", 4, 44.95M, 0.25M, 1), Linea("44708", 2, 44.95M, 2)), servicio, Acepta);
+
+            SugerenciaOfertaDTO d = s.Single(x => x.Tipo == GestorSugerenciasOfertas.TIPO_DESCUENTO_NO_APLICADO);
+            Assert.AreEqual("44708", d.Producto);
+        }
+
+        [TestMethod]
+        public void Escalonada_FaltaPocoParaElSiguienteTramo_SugiereAmpliarEnElProductoConMasUnidades()
+        {
+            ConEscalonadaAllure("44707", "44708");
+            // 2 + 1 = 3 unidades: al tramo de 4 le falta 1 (dentro de la mitad).
+            List<SugerenciaOfertaDTO> s = GestorSugerenciasOfertas.Calcular(
+                Pedido(LineaConDto("44707", 2, 44.95M, 0, 1), LineaConDto("44708", 1, 44.95M, 0, 2)), servicio, Deniega);
+
+            SugerenciaOfertaDTO amp = s.Single();
+            Assert.AreEqual(GestorSugerenciasOfertas.TIPO_AMPLIAR_CANTIDAD_ESCALONADA, amp.Tipo);
+            Assert.AreEqual("44707", amp.Producto, "El que más unidades tiene");
+            Assert.AreEqual(2, amp.CantidadActual);
+            Assert.AreEqual(3, amp.CantidadSugerida);
+            Assert.AreEqual(0.10M, amp.Descuento);
+            Assert.AreEqual(5, amp.OfertaEscalonada);
+            StringAssert.Contains(amp.Texto, "1 unidad más");
+            StringAssert.Contains(amp.Texto, "10 %");
+        }
+
+        [TestMethod]
+        public void Escalonada_EnUnTramoYCercaDelSiguiente_AvisaDeLosDos()
+        {
+            ConEscalonadaAllure("44707");
+            // 5 unidades a tarifa: tiene derecho al 10 % (tramo 4) y con 1 más pasa al 25 %.
+            List<SugerenciaOfertaDTO> s = GestorSugerenciasOfertas.Calcular(Pedido(Linea("44707", 5, 44.95M)), servicio, Acepta);
+
+            Assert.AreEqual(0.10M, s.Single(x => x.Tipo == GestorSugerenciasOfertas.TIPO_DESCUENTO_NO_APLICADO).Descuento);
+            SugerenciaOfertaDTO amp = s.Single(x => x.Tipo == GestorSugerenciasOfertas.TIPO_AMPLIAR_CANTIDAD_ESCALONADA);
+            Assert.AreEqual(0.25M, amp.Descuento);
+            Assert.AreEqual(6, amp.CantidadSugerida);
+            StringAssert.Contains(amp.Texto, "ahora tienes el 10 %");
+        }
+
+        [TestMethod]
+        public void Escalonada_LejosDelTramo_NoMolesta()
+        {
+            ConEscalonadaAllure("44707");
+            // 1 de 4: falta más de la mitad.
+            Assert.AreEqual(0, GestorSugerenciasOfertas.Calcular(Pedido(Linea("44707", 1, 44.95M)), servicio, Acepta).Count);
+        }
+
+        [TestMethod]
+        public void Escalonada_LasUnidadesRegaladasNoCuentan()
+        {
+            ConEscalonadaAllure("44707");
+            // 3 cobradas + 3 regaladas: siguen siendo 3 a efectos de tramo (nada de 25 %).
+            List<SugerenciaOfertaDTO> s = GestorSugerenciasOfertas.Calcular(
+                Pedido(Linea("44707", 3, 44.95M, 1), Linea("44707", 3, 0, 2)), servicio, Acepta);
+
+            Assert.IsFalse(s.Any(x => x.Tipo == GestorSugerenciasOfertas.TIPO_DESCUENTO_NO_APLICADO));
+        }
+
+        [TestMethod]
+        public void Escalonada_LaValidacionLoRechaza_NoSeSugiereElDescuento()
+        {
+            ConEscalonadaAllure("44707");
+            List<SugerenciaOfertaDTO> s = GestorSugerenciasOfertas.Calcular(Pedido(Linea("44707", 6, 44.95M)), servicio, Deniega);
+
+            Assert.IsFalse(s.Any(x => x.Tipo == GestorSugerenciasOfertas.TIPO_DESCUENTO_NO_APLICADO));
+        }
+
+        [TestMethod]
+        public void Escalonada_LasLineasOriginalesNoSeTocan()
+        {
+            ConEscalonadaAllure("44707");
+            LineaPedidoVentaDTO linea = Linea("44707", 6, 44.95M);
+            _ = GestorSugerenciasOfertas.Calcular(Pedido(linea), servicio, Acepta);
+
+            Assert.AreEqual(0M, linea.DescuentoLinea);
+            Assert.AreEqual(44.95M, linea.PrecioUnitario);
+        }
     }
 }

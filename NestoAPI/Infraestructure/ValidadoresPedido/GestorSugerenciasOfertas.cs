@@ -29,6 +29,10 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
         public string Texto { get; set; }
         /// <summary>Nº de orden de la oferta permitida que la sustenta.</summary>
         public int? Oferta { get; set; }
+        /// <summary>Corte 3: descuento en tanto por uno al que da derecho el tramo (0 en las demás).</summary>
+        public decimal Descuento { get; set; }
+        /// <summary>Corte 3: Id de la oferta escalonada que la sustenta.</summary>
+        public int? OfertaEscalonada { get; set; }
     }
 
     /// <summary>
@@ -47,6 +51,12 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
         // Corte 2: regalo por importe de pedido (RegalosImportePedido).
         public const string TIPO_REGALO_NO_APLICADO = "RegaloNoAplicado";
         public const string TIPO_AMPLIAR_IMPORTE = "AmpliarImporte";
+        // Corte 3: ofertas escalonadas (descuento por volumen sobre una lista de referencias, #226).
+        public const string TIPO_DESCUENTO_NO_APLICADO = "DescuentoNoAplicado";
+        public const string TIPO_AMPLIAR_CANTIDAD_ESCALONADA = "AmpliarCantidadEscalonada";
+
+        /// <summary>Misma tolerancia que <see cref="ValidadorOfertasEscalonadas"/>: medio céntimo por redondeo.</summary>
+        private const decimal TOLERANCIA_REDONDEO = 0.005M;
 
         /// <summary>
         /// Corte 2: se sugiere ampliar el pedido para llegar al regalo solo si falta como mucho esta
@@ -78,8 +88,179 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 }
             }
             sugerencias.AddRange(SugerirRegalosPorImporte(pedido, servicio, validar));
+            sugerencias.AddRange(SugerirEscalonadas(pedido, servicio, validar));
             return sugerencias;
         }
+
+        /// <summary>
+        /// Corte 3: ofertas escalonadas (#226). Las unidades cobradas de todas las referencias de la
+        /// oferta se suman; los tramos son «cantidad mínima o más». Dos avisos por oferta:
+        ///   - DescuentoNoAplicado (uno por producto afectado): el pedido ya alcanza un tramo y alguna
+        ///     línea paga más que el suelo de ese tramo (PrecioBase × (1 − dto)). Se valida con el
+        ///     descuento puesto en esas líneas; lo que el pedido rechazaría no se sugiere.
+        ///   - AmpliarCantidadEscalonada: al siguiente tramo le falta como mucho la mitad de sus
+        ///     unidades. Se propone añadirlas al producto de la oferta con más unidades en el pedido.
+        ///     No se valida: la cantidad aún no existe; cuando se llegue saldrá como DescuentoNoAplicado.
+        /// Las líneas regaladas (0 €) no cuentan como unidades, igual que en el validador.
+        /// </summary>
+        internal static List<SugerenciaOfertaDTO> SugerirEscalonadas(PedidoVentaDTO pedido, IServicioPrecios servicio, Func<PedidoVentaDTO, RespuestaValidacion> validar)
+        {
+            var sugerencias = new List<SugerenciaOfertaDTO>();
+            List<string> productosPedido = pedido.Lineas
+                .Where(l => EsLineaCobrada(l))
+                .Select(l => l.Producto.Trim())
+                .Distinct()
+                .ToList();
+            if (!productosPedido.Any())
+            {
+                return sugerencias;
+            }
+
+            var ofertas = new Dictionary<int, OfertaEscalonada>();
+            foreach (string producto in productosPedido)
+            {
+                foreach (OfertaEscalonada oferta in servicio.BuscarOfertasEscalonadas(producto) ?? new List<OfertaEscalonada>())
+                {
+                    if (oferta != null && !ofertas.ContainsKey(oferta.Id))
+                    {
+                        ofertas[oferta.Id] = oferta;
+                    }
+                }
+            }
+
+            foreach (OfertaEscalonada oferta in ofertas.Values)
+            {
+                if (oferta.OfertasEscalonadasProductos == null || oferta.OfertasEscalonadasTramos == null || !oferta.OfertasEscalonadasTramos.Any())
+                {
+                    continue;
+                }
+                Dictionary<string, decimal> precioBase = oferta.OfertasEscalonadasProductos
+                    .Where(p => !string.IsNullOrWhiteSpace(p.Producto))
+                    .GroupBy(p => p.Producto.Trim())
+                    .ToDictionary(g => g.Key, g => g.First().PrecioBase);
+                List<LineaPedidoVentaDTO> lineasOferta = pedido.Lineas
+                    .Where(l => EsLineaCobrada(l) && precioBase.ContainsKey(l.Producto.Trim()))
+                    .ToList();
+                int unidades = lineasOferta.Sum(l => l.Cantidad);
+                if (unidades <= 0)
+                {
+                    continue;
+                }
+
+                List<OfertaEscalonadaTramo> tramos = oferta.OfertasEscalonadasTramos.OrderBy(t => t.CantidadMinima).ToList();
+                OfertaEscalonadaTramo alcanzado = tramos.LastOrDefault(t => t.CantidadMinima <= unidades);
+                OfertaEscalonadaTramo siguiente = tramos.FirstOrDefault(t => t.CantidadMinima > unidades);
+
+                if (alcanzado != null)
+                {
+                    sugerencias.AddRange(SugerirDescuentoNoAplicado(pedido, oferta, alcanzado, lineasOferta, precioBase, unidades, validar));
+                }
+                if (siguiente != null && unidades * 2 >= siguiente.CantidadMinima)
+                {
+                    int falta = siguiente.CantidadMinima - unidades;
+                    string productoSugerido = lineasOferta
+                        .GroupBy(l => l.Producto.Trim())
+                        .OrderByDescending(g => g.Sum(l => l.Cantidad))
+                        .First().Key;
+                    int actualDelProducto = lineasOferta.Where(l => l.Producto.Trim() == productoSugerido).Sum(l => l.Cantidad);
+                    sugerencias.Add(new SugerenciaOfertaDTO
+                    {
+                        Tipo = TIPO_AMPLIAR_CANTIDAD_ESCALONADA,
+                        Producto = productoSugerido,
+                        CantidadActual = actualDelProducto,
+                        CantidadSugerida = actualDelProducto + falta,
+                        Descuento = siguiente.Descuento,
+                        OfertaEscalonada = oferta.Id,
+                        Texto = $"Con {falta} unidad{(falta == 1 ? string.Empty : "es")} más de la oferta «{oferta.Nombre?.Trim()}» " +
+                                $"(por ejemplo del producto {productoSugerido}) llegas a {siguiente.CantidadMinima} y pasas al " +
+                                $"{Porcentaje(siguiente.Descuento)} de descuento en todas sus referencias" +
+                                (alcanzado != null ? $" (ahora tienes el {Porcentaje(alcanzado.Descuento)})." : ".")
+                    });
+                }
+            }
+            return sugerencias;
+        }
+
+        private static List<SugerenciaOfertaDTO> SugerirDescuentoNoAplicado(PedidoVentaDTO pedido, OfertaEscalonada oferta, OfertaEscalonadaTramo tramo,
+            List<LineaPedidoVentaDTO> lineasOferta, Dictionary<string, decimal> precioBase, int unidades, Func<PedidoVentaDTO, RespuestaValidacion> validar)
+        {
+            var sugerencias = new List<SugerenciaOfertaDTO>();
+            // Líneas que pagan MÁS que el suelo del tramo: tienen derecho a más descuento del que llevan.
+            List<LineaPedidoVentaDTO> pagandoDeMas = lineasOferta
+                .Where(l => PrecioNeto(l) > precioBase[l.Producto.Trim()] * (1 - tramo.Descuento) + TOLERANCIA_REDONDEO)
+                .ToList();
+            if (!pagandoDeMas.Any())
+            {
+                return sugerencias;
+            }
+
+            PedidoVentaDTO hipotetico = ConDescuentoEscalonado(pedido, pagandoDeMas, precioBase, tramo.Descuento);
+            RespuestaValidacion validacion = validar(hipotetico);
+            if (validacion == null || !validacion.ValidacionSuperada)
+            {
+                return sugerencias;
+            }
+
+            foreach (IGrouping<string, LineaPedidoVentaDTO> porProducto in pagandoDeMas.GroupBy(l => l.Producto.Trim()))
+            {
+                int cantidad = lineasOferta.Where(l => l.Producto.Trim() == porProducto.Key).Sum(l => l.Cantidad);
+                sugerencias.Add(new SugerenciaOfertaDTO
+                {
+                    Tipo = TIPO_DESCUENTO_NO_APLICADO,
+                    Producto = porProducto.Key,
+                    CantidadActual = cantidad,
+                    CantidadSugerida = cantidad,
+                    Descuento = tramo.Descuento,
+                    OfertaEscalonada = oferta.Id,
+                    Texto = $"Con {unidades} unidades de la oferta «{oferta.Nombre?.Trim()}» te corresponde un {Porcentaje(tramo.Descuento)} " +
+                            $"de descuento en el producto {porProducto.Key} y no lo estás aplicando."
+                });
+            }
+            return sugerencias;
+        }
+
+        /// <summary>
+        /// Copia del pedido con el descuento del tramo puesto en las líneas indicadas: precio base de la
+        /// oferta y el descuento del tramo como descuento de línea (sin otros descuentos), que es justo el
+        /// suelo que exige <see cref="ValidadorOfertasEscalonadas"/>. Las demás líneas van tal cual.
+        /// </summary>
+        internal static PedidoVentaDTO ConDescuentoEscalonado(PedidoVentaDTO pedido, List<LineaPedidoVentaDTO> lineasARebajar, Dictionary<string, decimal> precioBase, decimal descuento)
+        {
+            var lineas = new List<LineaPedidoVentaDTO>();
+            foreach (LineaPedidoVentaDTO linea in pedido.Lineas)
+            {
+                if (lineasARebajar.Any(r => ReferenceEquals(r, linea)))
+                {
+                    LineaPedidoVentaDTO copia = Copiar(linea);
+                    copia.PrecioUnitario = precioBase[linea.Producto.Trim()];
+                    copia.AplicarDescuento = true;
+                    copia.DescuentoEntidad = 0;
+                    copia.DescuentoProducto = 0;
+                    copia.DescuentoLinea = descuento;
+                    lineas.Add(copia);
+                }
+                else
+                {
+                    lineas.Add(linea);
+                }
+            }
+            return new PedidoVentaDTO
+            {
+                empresa = pedido.empresa,
+                cliente = pedido.cliente,
+                contacto = pedido.contacto,
+                contactoCobro = pedido.contactoCobro,
+                fecha = pedido.fecha,
+                Lineas = lineas
+            };
+        }
+
+        private static bool EsLineaCobrada(LineaPedidoVentaDTO l)
+            => EsLineaDeProducto(l) && !string.IsNullOrWhiteSpace(l.Producto) && l.Cantidad > 0 && l.PrecioUnitario > 0;
+
+        private static decimal PrecioNeto(LineaPedidoVentaDTO l) => l.PrecioUnitario * (1 - l.SumaDescuentosSinPP);
+
+        private static string Porcentaje(decimal tantoPorUno) => (tantoPorUno * 100).ToString("0.##", CASTELLANO) + " %";
 
         /// <summary>
         /// Corte 2: regalos por importe de pedido. El importe es la suma de BaseImponible del pedido,
