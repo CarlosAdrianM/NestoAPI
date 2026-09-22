@@ -147,6 +147,16 @@ namespace NestoAPI.Infraestructure.Sincronizacion
                 return ResultadoPuertaPublicacion.SiPublicable();
             }
 
+            // Alta a medias (odoo-custom-addons#23, punto 3): un producto vivo SIN NOMBRE no sale hasta
+            // que esté completo (la tienda publicaría una ficha en blanco). El PVP 0 NO se frena: hay
+            // 46 productos vivos a 0 € que son de verdad (folletos, expositores y catálogos de Lisap,
+            // 22/09/26); el «sin precio» de una referencia reservada es PVP NULL y ya lo para
+            // TieneDatosMinimosParaSincronizar. Va DESPUÉS del «de baja → publicable»: la baja se
+            // publica siempre, es la desactivación.
+            if (string.IsNullOrWhiteSpace(datos.Nombre))
+            {
+                return ResultadoPuertaPublicacion.NoPublicable("alta a medias: la ficha no tiene nombre");
+            }
             if (!datos.TieneProveedorPrincipalValido)
             {
                 return ResultadoPuertaPublicacion.NoPublicable(
@@ -201,7 +211,8 @@ namespace NestoAPI.Infraestructure.Sincronizacion
                 Ficticio = producto.Ficticio,
                 Estado = producto.Estado ?? 0,
                 // NestoAPI#501: Familia1 viene con Include desde el job de sincronización.
-                FamiliaSoloVentaPresencial = producto.Familia1 != null && producto.Familia1.SoloVentaPresencial
+                FamiliaSoloVentaPresencial = producto.Familia1 != null && producto.Familia1.SoloVentaPresencial,
+                Nombre = producto.Nombre?.Trim()
             };
 
             // Regla del legacy (08/03/19): si el producto tiene proveedores, alguno debe ser el
@@ -275,5 +286,8 @@ namespace NestoAPI.Infraestructure.Sincronizacion
 
         /// <summary>NestoAPI#501: la familia solo la venden los vendedores presenciales.</summary>
         public bool FamiliaSoloVentaPresencial { get; set; }
+
+        /// <summary>Nombre de la ficha (recortado). Sin nombre = alta a medias (odoo-custom-addons#23, punto 3).</summary>
+        public string Nombre { get; set; }
     }
 }

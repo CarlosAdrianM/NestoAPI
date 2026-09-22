@@ -17,6 +17,37 @@ namespace NestoAPI.Tests.Controllers
     [TestClass]
     public class ProductosControllerTest
     {
+        // ----- odoo-custom-addons#23 (punto 5): republicar una lista concreta de productos -----
+
+        [TestMethod]
+        public async Task PostRepublicar_EncolaLosProductosLimpiosYSinRepetir()
+        {
+            NVEntities db = A.Fake<NVEntities>();
+            IEnumerable<string> encolados = null;
+            A.CallTo(() => db.EncolarProductosSync(A<IEnumerable<string>>._, A<string>._))
+                .Invokes((IEnumerable<string> p, string u) => encolados = p.ToList())
+                .Returns(Task.FromResult(2));
+            ProductosController controller = new ProductosController(db);
+
+            var resultado = await controller.PostRepublicar(new List<string> { " 44605 ", "44604", "44605", "", null });
+
+            var ok = resultado as OkNegotiatedContentResult<int>;
+            Assert.IsNotNull(ok);
+            Assert.AreEqual(2, ok.Content);
+            CollectionAssert.AreEquivalent(new[] { "44605", "44604" }, encolados.ToList());
+        }
+
+        [TestMethod]
+        public async Task PostRepublicar_SinProductos_BadRequest()
+        {
+            NVEntities db = A.Fake<NVEntities>();
+            ProductosController controller = new ProductosController(db);
+
+            Assert.IsInstanceOfType(await controller.PostRepublicar(new List<string>()), typeof(BadRequestErrorMessageResult));
+            Assert.IsInstanceOfType(await controller.PostRepublicar(null), typeof(BadRequestErrorMessageResult));
+            A.CallTo(() => db.EncolarProductosSync(A<IEnumerable<string>>._, A<string>._)).MustNotHaveHappened();
+        }
+
         /// <summary>
         /// Nesto#456: la ficha tiene que dar el CÓDIGO del subgrupo, no solo su descripción.
         ///

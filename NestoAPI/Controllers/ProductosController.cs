@@ -678,6 +678,38 @@ namespace NestoAPI.Controllers
         }
 
         /// <summary>
+        /// Encola en Nesto_sync una lista concreta de productos para que el job los vuelva a publicar
+        /// (tienda y Odoo). Lo pidió el equipo de Odoo (odoo-custom-addons#23, punto 5) para los 263
+        /// atascados en su cola de fallidos; hasta ahora se hacía con un INSERT a mano. No publica nada
+        /// aquí: cada producto pasa por la puerta de publicación cuando el job lo procese. Devuelve
+        /// cuántos ha encolado (los que ya estaban pendientes no se repiten).
+        /// POST: api/Productos/Republicar  body: ["45129","44605",...]
+        /// </summary>
+        [HttpPost]
+        [Authorize]
+        [Route("api/Productos/Republicar")]
+        [ResponseType(typeof(int))]
+        public async Task<IHttpActionResult> PostRepublicar([FromBody] List<string> productos)
+        {
+            List<string> limpios = (productos ?? new List<string>())
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .Select(p => p.Trim())
+                .Distinct()
+                .ToList();
+            if (!limpios.Any())
+            {
+                return BadRequest("Hay que indicar al menos un producto.");
+            }
+            if (limpios.Count > 2000)
+            {
+                return BadRequest("Como mucho 2.000 productos por llamada.");
+            }
+            string usuario = $"Republicar ({User?.Identity?.Name ?? "API"})";
+            int encolados = await db.EncolarProductosSync(limpios, usuario).ConfigureAwait(false);
+            return Ok(encolados);
+        }
+
+        /// <summary>
         /// Endpoint para sincronizar productos pendientes desde la tabla nesto_sync
         /// GET: api/Productos/Sync
         /// </summary>

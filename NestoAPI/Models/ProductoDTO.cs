@@ -348,7 +348,8 @@ namespace NestoAPI.Models
                 Subgrupo = producto.SubGruposProducto?.Descripción?.Trim(),
                 RoturaStockProveedor = producto.RoturaStockProveedor,
                 ExclusivoProfesional = producto.ExclusivoProfesional,
-                CodigoBarras = producto.CodBarras?.Trim()
+                // "0"/"1" son relleno en Nesto viejo: hacia fuera van como sin código (odoo-custom-addons#21).
+                CodigoBarras = Constantes.Productos.NormalizarCodigoBarras(producto.CodBarras)
             };
 
             await CargarTextosTienda(dto, db).ConfigureAwait(false);

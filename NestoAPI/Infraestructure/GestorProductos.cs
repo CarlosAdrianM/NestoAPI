@@ -61,7 +61,7 @@ namespace NestoAPI.Infraestructure
                 // NestoAPI#421: siempre con valor explícito. El null del contrato ("no toques
                 // la marca") es para el consumidor, no algo que publiquemos nosotros.
                 ClasificacionMasVendidos = productoDTO.ClasificacionMasVendidos,
-                CodigoBarras = productoDTO.CodigoBarras?.Trim(),
+                CodigoBarras = Constantes.Productos.NormalizarCodigoBarras(productoDTO.CodigoBarras),
                 // Textos de la tienda: desde el cutover del 26/08/2026 viajan aquí (el mensaje de
                 // tabla PrestashopProductos se retiró). null = no tocar el texto de la tienda.
                 NombrePersonalizado = productoDTO.NombrePersonalizado,

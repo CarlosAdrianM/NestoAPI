@@ -27,8 +27,34 @@ namespace NestoAPI.Tests.Infrastructure.Sincronizacion
                 Estado = 0,
                 TieneProveedorPrincipalValido = true,
                 EsParteDeKitActivo = false,
-                TieneMovimientoExtractoTresAnnos = false
+                TieneMovimientoExtractoTresAnnos = false,
+                Nombre = "CREMA HIDRATANTE 50 ML"
             };
+        }
+
+        // ----- odoo-custom-addons#23 (punto 3): altas a medias -----
+
+        [TestMethod]
+        public void Evaluar_ProductoVivoSinNombre_NoPublicable()
+        {
+            DatosPuertaPublicacion datos = ProductoNormal();
+            datos.Nombre = "   ";
+
+            var resultado = PuertaPublicacionTienda.Evaluar(datos);
+
+            Assert.IsFalse(resultado.Publicable);
+            StringAssert.Contains(resultado.Motivo, "nombre");
+        }
+
+        [TestMethod]
+        public void Evaluar_ProductoDeBajaSinNombre_SiguePublicandose()
+        {
+            // La baja es la desactivación en la tienda: sale aunque la ficha esté a medias.
+            DatosPuertaPublicacion datos = ProductoNormal();
+            datos.Estado = -1;
+            datos.Nombre = null;
+
+            Assert.IsTrue(PuertaPublicacionTienda.Evaluar(datos).Publicable);
         }
 
         /// <summary>
