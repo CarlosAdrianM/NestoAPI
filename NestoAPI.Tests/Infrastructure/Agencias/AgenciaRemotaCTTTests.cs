@@ -342,7 +342,15 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
                 ("0000", "MANIFESTADO O GRABADO", "2026-09-17T09:25:52.546+00:00", null),
                 ("0900", "In Transit", "2026-09-17T17:07:32.660+00:00", null),
                 ("1500", "Out for Delivery", "2026-09-18T07:49:31.565+00:00", null)));
-            Assert.AreEqual(EstadoEnvioSeguimiento.EnCurso, (await agencia.ConsultarSeguimientoAsync(ALBARAN)).Estado);
+            Assert.AreEqual(EstadoEnvioSeguimiento.Tramitado, (await agencia.ConsultarSeguimientoAsync(ALBARAN)).Estado,
+                "En tránsito/en reparto sigue TRAMITADO: EnCurso (0) es la etiqueta sin tramitar (23/09/26)");
+
+            fake.Responder("Seguimiento", 200, RespSeguimiento(
+                ("0000", "MANIFESTADO O GRABADO", "2026-09-22T09:25:52.546+00:00", null),
+                ("1200", "ENVÍO RECOGIDO", "2026-09-22T17:07:32.660+00:00", null)));
+            SeguimientoEnvioRemoto recogido = await agencia.ConsultarSeguimientoAsync(ALBARAN);
+            Assert.AreEqual(EstadoEnvioSeguimiento.Tramitado, recogido.Estado, "Los 20 envíos del 22/09 volvieron a En curso por esto");
+            Assert.AreEqual("ENVÍO RECOGIDO", recogido.Detalle);
 
             fake.Responder("Seguimiento", 200, RespSeguimiento(
                 ("1500", "Out for Delivery", "2026-09-18T07:49:31.565+00:00", null),
@@ -376,7 +384,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             Assert.AreEqual(EstadoEnvioSeguimiento.Devuelto, (await agencia.ConsultarSeguimientoAsync(ALBARAN)).Estado);
 
             fake.Responder("Seguimiento", 200, RespSeguimiento(("1300", "EN REPARTO ZONA", "2026-09-20T10:00:00.000+00:00", null)));
-            Assert.AreEqual(EstadoEnvioSeguimiento.EnCurso, (await agencia.ConsultarSeguimientoAsync(ALBARAN)).Estado);
+            Assert.AreEqual(EstadoEnvioSeguimiento.Tramitado, (await agencia.ConsultarSeguimientoAsync(ALBARAN)).Estado);
         }
 
         [TestMethod]

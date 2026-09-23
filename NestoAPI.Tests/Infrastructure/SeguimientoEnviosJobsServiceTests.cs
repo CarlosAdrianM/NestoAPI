@@ -122,6 +122,25 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void AplicarSeguimiento_AgenciaDevuelveEnCurso_NoDestramitaElEnvio()
+        {
+            // 23/09/26: CTT traducía "ENVÍO RECOGIDO" a EnCurso (0), que en EnviosAgencia es la etiqueta
+            // SIN tramitar: los 20 envíos del 22/09 volvieron a la pestaña En curso y el poll dejó de
+            // consultarlos. El seguimiento nunca puede bajar un envío por debajo de Tramitado.
+            var envio = new EnviosAgencia { Numero = 1, Estado = Constantes.Agencias.ESTADO_TRAMITADO };
+
+            bool cambio = SeguimientoEnviosJobsService.AplicarSeguimiento(envio, new SeguimientoEnvioRemoto
+            {
+                Estado = EstadoEnvioSeguimiento.EnCurso,
+                Detalle = "ENVÍO RECOGIDO"
+            });
+
+            Assert.IsTrue(cambio, "El detalle sí cambia");
+            Assert.AreEqual(Constantes.Agencias.ESTADO_TRAMITADO, envio.Estado);
+            Assert.AreEqual("ENVÍO RECOGIDO", envio.DetalleEstado);
+        }
+
+        [TestMethod]
         public void AplicarSeguimiento_MismoEstadoPeroOtroDetalle_CuentaComoCambio()
         {
             // Dos incidencias distintas seguidas (mismo Estado=3, otro texto): si no contara como

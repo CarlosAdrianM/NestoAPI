@@ -221,6 +221,20 @@ namespace NestoAPI.Infraestructure
                 return false;
             }
 
+            // 23/09/26: el seguimiento nunca "destramita". EnCurso (0) es la etiqueta aún sin tramitar;
+            // un envío que ya consultamos en la agencia está, como poco, tramitado. Si una agencia lo
+            // devuelve (CTT lo hacía con "ENVÍO RECOGIDO"), se guarda como Tramitado: si no, el envío
+            // vuelve a la pestaña En curso y el poll deja de consultarlo (nunca llegaría a Entregado).
+            if (seguimiento.Estado == EstadoEnvioSeguimiento.EnCurso)
+            {
+                seguimiento = new SeguimientoEnvioRemoto
+                {
+                    Estado = EstadoEnvioSeguimiento.Tramitado,
+                    FechaEntrega = seguimiento.FechaEntrega,
+                    Detalle = seguimiento.Detalle
+                };
+            }
+
             // NestoAPI#259: el texto original de la agencia ("DISPONIBLE PARA RECOGER" de Innovatrans,
             // la incidencia de GLS...) se guarda como etiqueta del estado. Antes se descartaba, y la
             // pestaña de Incidentados no podía decir POR QUÉ estaba incidentado un envío. Cambiar SOLO

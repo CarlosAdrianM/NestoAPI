@@ -252,7 +252,10 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
         /// Último evento de tipo STATUS de CTT a nuestro estado. Códigos vistos en el sandbox y en el
         /// manual (Get Shipping Tracking v2.0): 0000 manifestado, 0900 en tránsito, 1200 en delegación
         /// de destino, 1500 en reparto, 1600 entrega fallida, 2100 entregado, 3000 anulado. Para los
-        /// que no conocemos se mira la descripción; si tampoco dice nada, sigue en curso.
+        /// que no conocemos se mira la descripción; si tampoco dice nada, sigue tramitado.
+        /// OJO (23/09/26): "en tránsito/en reparto" es TRAMITADO para nosotros. EstadoEnvioSeguimiento.EnCurso
+        /// vale 0 = "En curso" de EnviosAgencia (etiqueta SIN tramitar): el 22/09 el poll devolvió los 20
+        /// primeros envíos de CTT a la pestaña En curso al leer "ENVÍO RECOGIDO". El texto va en el detalle.
         /// </summary>
         internal static readonly string[] CODIGOS_CONOCIDOS = { "0000", "0900", "1200", "1500", "1600", "2100", "3000" };
 
@@ -277,13 +280,13 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
             EstadoEnvioSeguimiento estado;
             switch (codigo)
             {
-                case "0000": estado = EstadoEnvioSeguimiento.Tramitado; break;
+                case "0000":
+                case "0900":
+                case "1200":
+                case "1500": estado = EstadoEnvioSeguimiento.Tramitado; break;
                 case "2100": estado = EstadoEnvioSeguimiento.Entregado; break;
                 case "1600": estado = EstadoEnvioSeguimiento.Incidentado; break;
                 case "3000": estado = EstadoEnvioSeguimiento.Desconocido; detalle = "Anulado en CTT"; break;
-                case "0900":
-                case "1200":
-                case "1500": estado = EstadoEnvioSeguimiento.EnCurso; break;
                 default:
                     estado = EstadoDesdeDescripcion(descripcion);
                     LoguearCodigoNoContemplado(codigo, descripcion, albaran);
@@ -324,7 +327,7 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
             if (d.Contains("ENTREGADO") || d.Contains("DELIVERED")) return EstadoEnvioSeguimiento.Entregado;
             if (d.Contains("FALLID") || d.Contains("FAILED") || d.Contains("INCIDEN") || d.Contains("NO ENTREG")) return EstadoEnvioSeguimiento.Incidentado;
             if (d.Contains("ANULA") || d.Contains("CANCEL")) return EstadoEnvioSeguimiento.Desconocido;
-            return EstadoEnvioSeguimiento.EnCurso;
+            return EstadoEnvioSeguimiento.Tramitado;
         }
 
         private async Task<EtiquetaDataTrans> ObtenerEtiquetaAsync(string albaran, int? desdeBulto, int? hastaBulto)
