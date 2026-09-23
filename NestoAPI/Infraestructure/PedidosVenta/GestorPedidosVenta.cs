@@ -1,4 +1,5 @@
 ﻿using NestoAPI.Controllers;
+using NestoAPI.Infraestructure.Agencias;
 using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Models;
 using NestoAPI.Models.PedidosBase;
@@ -879,77 +880,18 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
         internal decimal ImporteReembolso(string empresa, int pedido)
         {
-            var pedidoBD = servicio.LeerCabPedidoVta(empresa, pedido);
-
-            // Miramos la deuda que tenga en su extracto.
-            // Esa deuda la tiene que pagar independientemente de la forma de pago
-            decimal importeDeuda = 0; // calcularDeuda()
-
+            // NestoAPI#513: un único cálculo, el de GestorEnviosAgencia. Aquí solo se leen de BD
+            // la cabecera y las líneas que mira (pendientes, para servir junto, y en curso con picking),
+            // ya filtradas por la consulta.
+            CabPedidoVta pedidoBD = servicio.LeerCabPedidoVta(empresa, pedido);
             if (pedidoBD == null)
             {
-                return importeDeuda;
+                return 0;
             }
-
-            // Issue #250: Primero miramos si hay efectos manuales del pedido
-            var efectosPedido = servicio.CargarEfectosPedido(empresa, pedido);
-            if (efectosPedido.Any())
-            {
-                // Si hay efectos manuales, sumamos solo los que tienen FormaPago = EFC (efectivo)
-                decimal importeEfectivo = efectosPedido
-                    .Where(e => e.FormaPago == Constantes.FormasPago.EFECTIVO)
-                    .Sum(e => e.Importe);
-
-                // NestoAPI#513 (925835, 22/09/26): si el pedido ya está facturado, el efecto en efectivo
-                // puede estar cobrado (entrada pagada por adelantado). Manda lo que quede PENDIENTE en el
-                // extracto de esas facturas, no el importe del efecto manual.
-                List<string> facturas = servicio.FacturasDelPedido(empresa, pedido) ?? new List<string>();
-                if (importeEfectivo > 0 && facturas.Any())
-                {
-                    importeEfectivo = servicio.PendienteEfectivoDeFacturas(empresa, pedidoBD.Nº_Cliente?.Trim(), facturas);
-                }
-
-                return RoundingHelper.DosDecimalesRound(importeEfectivo + importeDeuda);
-            }
-
-            // Si no hay efectos manuales, usamos la lógica centralizada de EsContraReembolso
-            if (!GestorPortes.EsContraReembolso(
-                pedidoBD.Forma_Pago?.Trim(),
-                pedidoBD.PlazosPago,
-                pedidoBD.CCC,
-                pedidoBD.Periodo_Facturacion?.Trim(),
-                pedidoBD.NotaEntrega))
-            {
-                return importeDeuda;
-            }
-
-            if (pedidoBD.MantenerJunto)
-            {
-                List<LinPedidoVta> lineasSinFacturar;
-                lineasSinFacturar = servicio.CargarLineasPedidoPendientes(pedido);
-                if (lineasSinFacturar.Any())
-                {
-                    return importeDeuda;
-                }
-            }
-
-            // Para el resto de los casos ponemos el importe correcto
-            List<LinPedidoVta> lineas;
-            lineas = servicio.CargarLineasPedidoSinPicking(pedido);
-            if (lineas == null || !lineas.Any())
-            {
-                return importeDeuda;
-            }
-
-            decimal importeFinal = lineas.Sum(l => l.Total) + importeDeuda;
-            importeFinal = RoundingHelper.DosDecimalesRound(importeFinal);
-
-            // Evitamos los reembolsos negativos
-            if (importeFinal < 0)
-            {
-                importeFinal = 0;
-            }
-
-            return importeFinal;
+            return GestorEnviosAgencia.ImporteReembolso(pedidoBD,
+                servicio.CargarLineasPedidoPendientes(pedido),
+                servicio.CargarLineasPedidoSinPicking(pedido),
+                servicio);
         }
 
         internal async Task<PedidoVentaDTO> UnirPedidos(string empresa, int numeroPedidoOriginal, int numeroPedidoAmpliacion, bool sinPasarValidacion = false)

@@ -1005,7 +1005,7 @@ namespace NestoAPI.Controllers
             // Carlos 16/02/21: si el reembolso en la etiqueta ha variado, damos error
             if (etiquetaAgencia != null)
             {
-                decimal nuevoReembolso = GestorEnviosAgencia.ImporteReembolso(cabPedidoVta);
+                decimal nuevoReembolso = GestorEnviosAgencia.ImporteReembolso(cabPedidoVta, cabPedidoVta.LinPedidoVtas, servicio);
                 if (nuevoReembolso != etiquetaAgencia.Reembolso)
                 {
                     string mensajeError = string.Format("No se puede modificar el pedido porque ya hay una etiqueta impresa con {0} de reembolso y el nuevo reembolso serían {1}",

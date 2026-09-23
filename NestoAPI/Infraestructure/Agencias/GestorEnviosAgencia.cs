@@ -248,16 +248,44 @@ namespace NestoAPI.Infraestructure.Agencias
             return text.Substring(0, maxLength - 3) + "...";
         }
         
-        public static decimal ImporteReembolso(CabPedidoVta pedidoSeleccionado)
+        /// <summary>
+        /// Reembolso que corresponde a la etiqueta del pedido. ÚNICO cálculo (NestoAPI#513): lo usan el
+        /// GET PedidosVenta/ImporteReembolso (Agencias de Nesto), la etiqueta creada desde la API y la
+        /// comprobación del PUT del pedido contra la etiqueta ya impresa. Antes había dos copias que
+        /// divergían (esta no miraba los efectos manuales), y la del PUT podía dar un falso «ya hay una
+        /// etiqueta impresa con X de reembolso» en pedidos con efectos manuales en efectivo.
+        /// </summary>
+        /// <param name="pedidoSeleccionado">Cabecera del pedido.</param>
+        /// <param name="lineas">Líneas del pedido tal cual (las que trae el PUT en memoria, o la cabecera
+        /// con sus líneas): aquí se separan las pendientes y las en curso con picking.</param>
+        /// <param name="servicio">Para los efectos manuales y lo pendiente en el extracto.</param>
+        public static decimal ImporteReembolso(CabPedidoVta pedidoSeleccionado, IEnumerable<LinPedidoVta> lineas, IServicioPedidosVenta servicio)
         {
-            // Miramos la deuda que tenga en su extracto. 
-            // Esa deuda la tiene que pagar independientemente de la forma de pago
-            decimal importeDeuda = 0;
+            List<LinPedidoVta> todas = (lineas ?? Enumerable.Empty<LinPedidoVta>()).ToList();
+            return ImporteReembolso(
+                pedidoSeleccionado,
+                todas.Where(l => l.Estado == Constantes.EstadosLineaVenta.PENDIENTE),
+                todas.Where(l => l.Picking != 0 && l.Estado == Constantes.EstadosLineaVenta.EN_CURSO),
+                servicio);
+        }
 
-            // Miramos los casos en los que no hay contra reembolso
+        /// <param name="lineasPendientes">Líneas pendientes (solo importan para servir junto).</param>
+        /// <param name="lineasEnCursoConPicking">Lo que sale en este envío.</param>
+        internal static decimal ImporteReembolso(CabPedidoVta pedidoSeleccionado,
+            IEnumerable<LinPedidoVta> lineasPendientes, IEnumerable<LinPedidoVta> lineasEnCursoConPicking,
+            IServicioPedidosVenta servicio)
+        {
+            // La "deuda del extracto" (calcularDeuda) llevaba años comentada y a 0 en las dos copias:
+            // se quita. El reembolso es lo de ESTE pedido, no la deuda antigua del cliente.
             if (pedidoSeleccionado == null)
             {
-                return importeDeuda;
+                return 0;
+            }
+
+            decimal? efectivoManual = ImporteEfectosManualesEnEfectivo(pedidoSeleccionado, servicio);
+            if (efectivoManual.HasValue)
+            {
+                return efectivoManual.Value;
             }
 
             if (!GestorPortes.EsContraReembolso(
@@ -267,35 +295,54 @@ namespace NestoAPI.Infraestructure.Agencias
                 pedidoSeleccionado.Periodo_Facturacion?.Trim(),
                 pedidoSeleccionado.NotaEntrega))
             {
-                return importeDeuda;
+                return 0;
             }
 
-            if (pedidoSeleccionado.MantenerJunto) {
-
-                List<LinPedidoVta> lineasSinFacturar;
-                lineasSinFacturar = pedidoSeleccionado.LinPedidoVtas.Where(l => l.Estado == Constantes.EstadosLineaVenta.PENDIENTE).ToList();
-            if (lineasSinFacturar.Any()) {
-                    return importeDeuda;
-            }
-        }
-
-            // Para el resto de los casos ponemos el importe correcto
-            List<LinPedidoVta> lineas;
-            lineas = pedidoSeleccionado.LinPedidoVtas.Where(l => l.Picking != 0 && l.Estado == Constantes.EstadosLineaVenta.EN_CURSO).ToList();
-            if (lineas == null || !lineas.Any()) {
-                return importeDeuda;
+            // Servir junto con líneas aún pendientes: no sale nada todavía, no hay reembolso.
+            if (pedidoSeleccionado.MantenerJunto && (lineasPendientes?.Any() ?? false))
+            {
+                return 0;
             }
 
-            //Double importeFinal = Math.Round((Aggregate l In lineas Select l.Total Into Sum()) + importeDeuda, 2, MidpointRounding.AwayFromZero);
-            decimal importeFinal = Math.Round(lineas.Sum(l => l.Total) + importeDeuda, 2, MidpointRounding.AwayFromZero);
+            // Lo que sale en este envío: las líneas en curso con picking.
+            List<LinPedidoVta> conPicking = (lineasEnCursoConPicking ?? Enumerable.Empty<LinPedidoVta>()).ToList();
+            if (!conPicking.Any())
+            {
+                return 0;
+            }
+
+            decimal importeFinal = RoundingHelper.DosDecimalesRound(conPicking.Sum(l => l.Total));
 
             // Evitamos los reembolsos negativos
-            if (importeFinal < 0) {
-                importeFinal = 0;
+            return importeFinal < 0 ? 0 : importeFinal;
+        }
+
+        /// <summary>
+        /// Issue #250 / NestoAPI#513: si el pedido tiene efectos manuales, mandan ellos (y no la forma de
+        /// pago): se cobra la suma de los que son en efectivo. Si el pedido ya está facturado, esos
+        /// efectos pueden estar cobrados (entrada pagada por adelantado, 925835): manda lo que quede
+        /// PENDIENTE en el extracto de sus facturas. Devuelve null si el pedido no tiene efectos manuales.
+        /// </summary>
+        internal static decimal? ImporteEfectosManualesEnEfectivo(CabPedidoVta pedido, IServicioPedidosVenta servicio)
+        {
+            string empresa = pedido.Empresa?.Trim();
+            List<EfectoPedidoVenta> efectos = servicio.CargarEfectosPedido(empresa, pedido.Número) ?? new List<EfectoPedidoVenta>();
+            if (!efectos.Any())
+            {
+                return null;
             }
 
+            decimal importeEfectivo = efectos
+                .Where(e => e.FormaPago?.Trim() == Constantes.FormasPago.EFECTIVO)
+                .Sum(e => e.Importe);
 
-            return importeFinal;
+            List<string> facturas = servicio.FacturasDelPedido(empresa, pedido.Número) ?? new List<string>();
+            if (importeEfectivo > 0 && facturas.Any())
+            {
+                importeEfectivo = servicio.PendienteEfectivoDeFacturas(empresa, pedido.Nº_Cliente?.Trim(), facturas);
+            }
+
+            return RoundingHelper.DosDecimalesRound(importeEfectivo);
         }
     }
 }

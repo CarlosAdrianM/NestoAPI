@@ -49,6 +49,8 @@ namespace NestoAPI.Tests.Controllers
             A.CallTo(() => db.ParametrosUsuario).Returns(fakeParametros);
 
             controller = new EnviosAgenciasController(db);
+            // NestoAPI#513: sin efectos manuales (el fake devuelve listas vacías): manda la forma de pago.
+            controller.ServicioPedidosVenta = A.Fake<NestoAPI.Infraestructure.PedidosVenta.IServicioPedidosVenta>();
             controller.Request = new System.Net.Http.HttpRequestMessage
             {
                 RequestUri = new System.Uri("http://localhost/api/EnviosAgencias/CrearEtiquetaPendiente")

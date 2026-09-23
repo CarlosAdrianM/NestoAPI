@@ -1,6 +1,7 @@
 ﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Agencias;
 using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Models;
@@ -110,6 +111,72 @@ namespace NestoAPI.Tests.Infrastructure
 
             Assert.AreEqual(500m, gestor.ImporteReembolso(EMPRESA, PEDIDO));
             A.CallTo(() => servicio.PendienteEfectivoDeFacturas(A<string>._, A<string>._, A<IEnumerable<string>>._)).MustNotHaveHappened();
+        }
+
+        // NestoAPI#513: un único cálculo. El PUT del pedido lo llama con las líneas EN MEMORIA para
+        // compararlo con la etiqueta ya impresa; la copia vieja que usaba ignoraba los efectos manuales.
+        private static LinPedidoVta Linea(short estado, int picking, decimal total)
+            => new LinPedidoVta { Estado = estado, Picking = picking, Total = total };
+
+        [TestMethod]
+        public void ImporteReembolso_LineasEnMemoriaConEfectoManualEFC_MandaElEfectoComoEnElGetDeNesto()
+        {
+            // Regresión #513: la etiqueta se creó con los 500 € del efecto manual (GET de Nesto), pero el
+            // PUT comparaba contra el total de las líneas (100 €) y daba un falso «ya hay una etiqueta
+            // impresa con 500 € de reembolso y el nuevo reembolso serían 100 €».
+            var servicio = A.Fake<IServicioPedidosVenta>();
+            A.CallTo(() => servicio.CargarEfectosPedido(EMPRESA, PEDIDO)).Returns(new List<EfectoPedidoVenta>
+            {
+                new EfectoPedidoVenta { Empresa = EMPRESA, Pedido = PEDIDO, Importe = 500m, FormaPago = Constantes.FormasPago.EFECTIVO }
+            });
+            A.CallTo(() => servicio.FacturasDelPedido(EMPRESA, PEDIDO)).Returns(new List<string>());
+            var cabecera = new CabPedidoVta { Empresa = "1  ", Número = PEDIDO, Forma_Pago = "EFC" };
+            var lineas = new List<LinPedidoVta> { Linea(Constantes.EstadosLineaVenta.EN_CURSO, 7, 100m) };
+
+            Assert.AreEqual(500m, GestorEnviosAgencia.ImporteReembolso(cabecera, lineas, servicio));
+        }
+
+        [TestMethod]
+        public void ImporteReembolso_SinEfectosManuales_SumaSoloLasLineasEnCursoConPicking()
+        {
+            var servicio = A.Fake<IServicioPedidosVenta>();
+            A.CallTo(() => servicio.CargarEfectosPedido(A<string>._, A<int>._)).Returns(new List<EfectoPedidoVenta>());
+            var cabecera = new CabPedidoVta { Empresa = EMPRESA, Número = PEDIDO, Forma_Pago = "EFC" };
+            var lineas = new List<LinPedidoVta>
+            {
+                Linea(Constantes.EstadosLineaVenta.EN_CURSO, 7, 50.004m),
+                Linea(Constantes.EstadosLineaVenta.EN_CURSO, 0, 30m),
+                Linea(Constantes.EstadosLineaVenta.PENDIENTE, 0, 20m)
+            };
+
+            Assert.AreEqual(50m, GestorEnviosAgencia.ImporteReembolso(cabecera, lineas, servicio));
+        }
+
+        [TestMethod]
+        public void ImporteReembolso_ServirJuntoConLineasPendientes_EsCero()
+        {
+            var servicio = A.Fake<IServicioPedidosVenta>();
+            A.CallTo(() => servicio.CargarEfectosPedido(A<string>._, A<int>._)).Returns(new List<EfectoPedidoVenta>());
+            var cabecera = new CabPedidoVta { Empresa = EMPRESA, Número = PEDIDO, Forma_Pago = "EFC", MantenerJunto = true };
+            var lineas = new List<LinPedidoVta>
+            {
+                Linea(Constantes.EstadosLineaVenta.EN_CURSO, 7, 50m),
+                Linea(Constantes.EstadosLineaVenta.PENDIENTE, 0, 20m)
+            };
+
+            Assert.AreEqual(0m, GestorEnviosAgencia.ImporteReembolso(cabecera, lineas, servicio));
+        }
+
+        [TestMethod]
+        public void ImporteReembolso_DesdeBD_JuntaPendientesYConPickingYUsaElMismoCalculo()
+        {
+            var servicio = A.Fake<IServicioPedidosVenta>();
+            A.CallTo(() => servicio.LeerCabPedidoVta(EMPRESA, PEDIDO)).Returns(new CabPedidoVta { Empresa = EMPRESA, Número = PEDIDO, Forma_Pago = "EFC", MantenerJunto = true });
+            A.CallTo(() => servicio.CargarEfectosPedido(A<string>._, A<int>._)).Returns(new List<EfectoPedidoVenta>());
+            A.CallTo(() => servicio.CargarLineasPedidoPendientes(PEDIDO)).Returns(new List<LinPedidoVta> { Linea(Constantes.EstadosLineaVenta.PENDIENTE, 0, 20m) });
+            A.CallTo(() => servicio.CargarLineasPedidoSinPicking(PEDIDO)).Returns(new List<LinPedidoVta> { Linea(Constantes.EstadosLineaVenta.EN_CURSO, 7, 50m) });
+
+            Assert.AreEqual(0m, new GestorPedidosVenta(servicio).ImporteReembolso(EMPRESA, PEDIDO), "Servir junto con pendientes");
         }
         #endregion
 

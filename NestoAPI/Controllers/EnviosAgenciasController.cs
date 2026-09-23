@@ -17,6 +17,7 @@ using System.Text;
 using System.Configuration;
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Agencias;
+using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Infraestructure.Agencias.Innovatrans;
 using NestoAPI.Infraestructure.Agencias.Tarifas;
 using System.Web.Http.Cors;
@@ -176,6 +177,15 @@ namespace NestoAPI.Controllers
         private NVEntities db;
         private IFabricaAgenciasRemotas fabricaAgenciasRemotas;
         private ITramitacionEnviosService tramitacionEnviosService;
+
+        // NestoAPI#513: el reembolso de la etiqueta mira los efectos manuales del pedido. Perezoso
+        // (ServicioPedidosVenta abre su propia conexión al construirse) e inyectable para los tests.
+        private IServicioPedidosVenta servicioPedidosVenta;
+        internal IServicioPedidosVenta ServicioPedidosVenta
+        {
+            get => servicioPedidosVenta ?? (servicioPedidosVenta = new ServicioPedidosVenta());
+            set => servicioPedidosVenta = value;
+        }
 
         // ========== Nesto#340 (Agencias, slice A1): listados de la ventana de Agencias ==========
         // Cada endpoint replica el filtro EXACTO del método EF de AgenciaService en el cliente,
@@ -1561,7 +1571,7 @@ namespace NestoAPI.Controllers
                 // pedido en efectivo salía sin reembolso. Se calcula igual que en Agencias de Nesto
                 // (GET PedidosVenta/ImporteReembolso) y que la comprobación del PUT del pedido: contra
                 // reembolso solo si la forma de pago lo es, y por el total de las líneas con picking.
-                reembolso = GestorEnviosAgencia.ImporteReembolso(pedido);
+                reembolso = GestorEnviosAgencia.ImporteReembolso(pedido, pedido.LinPedidoVtas, ServicioPedidosVenta);
             }
 
             var codPostal = direccion.CodPostal?.Trim() ?? "";
