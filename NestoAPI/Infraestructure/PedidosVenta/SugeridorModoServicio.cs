@@ -82,6 +82,18 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 }, tipo, hayLineasProducto: true);
             }
 
+            // NestoAPI#518 (Carlos, 23/09/26): un almacén que no es Algete ni tienda (Amazon, AMZ) no tiene
+            // restricción de modos, pero por defecto sale todo junto: no se mira el stock de Algete.
+            if (tipo == ModosServicioPermitidos.TipoAlmacen.Otro)
+            {
+                return ConModos(new Sugerencia
+                {
+                    Modo = Constantes.Pedidos.ModosServicio.TODO_JUNTO,
+                    Nombre = Constantes.Pedidos.ModosServicio.Nombre(Constantes.Pedidos.ModosServicio.TODO_JUNTO),
+                    Motivo = "Pedido de un almacén sin reglas de stock (por ejemplo Amazon): por defecto sale todo junto."
+                }, tipo, hayLineasProducto: true);
+            }
+
             // NestoAPI#515: un color por producto y almacén, con la CANTIDAD que se pide sumada. Dos cosas:
             //   - el pedido todavía no existe, así que sus unidades no están en pendientes de entregar y
             //     hay que descontarlas a mano (si no, 7 en el almacén salen verdes aunque se pidan 8);

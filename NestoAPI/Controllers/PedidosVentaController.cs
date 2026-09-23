@@ -2723,7 +2723,11 @@ namespace NestoAPI.Controllers
         {
             try
             {
-                ValidadorModoServicio.ComprobarAlCrear(pedido, Stocks());
+                byte? corregido = ValidadorModoServicio.ComprobarAlCrear(pedido, Stocks());
+                if (corregido.HasValue)
+                {
+                    AplicarModoCorregido(pedido, corregido.Value);
+                }
             }
             catch (ModoServicioNoPermitidoException)
             {
@@ -2741,7 +2745,11 @@ namespace NestoAPI.Controllers
             try
             {
                 byte nuevo = Constantes.Pedidos.ModosServicio.Efectivo(pedido.modoServicio, pedido.servirJunto);
-                ValidadorModoServicio.ComprobarAlModificar(pedido, modoEfectivoAnterior, nuevo, Stocks());
+                byte? corregido = ValidadorModoServicio.ComprobarAlModificar(pedido, modoEfectivoAnterior, nuevo, Stocks());
+                if (corregido.HasValue)
+                {
+                    AplicarModoCorregido(pedido, corregido.Value);
+                }
             }
             catch (ModoServicioNoPermitidoException)
             {
@@ -2751,6 +2759,13 @@ namespace NestoAPI.Controllers
             {
                 ElmahHelper.Log(new Exception($"NestoAPI#518: no se pudo comprobar el modo de servicio al modificar; se deja pasar ({ex.Message})", ex));
             }
+        }
+
+        /// <summary>NestoAPI#518: en tienda el modo no se rechaza, se corrige al único permitido (2).</summary>
+        private static void AplicarModoCorregido(PedidoVentaDTO pedido, byte modo)
+        {
+            pedido.modoServicio = modo;
+            pedido.servirJunto = Constantes.Pedidos.ModosServicio.EsTodoJunto(modo);
         }
 
         internal byte ModoServicioAlCrear(PedidoVentaDTO pedido)

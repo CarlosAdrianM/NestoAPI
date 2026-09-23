@@ -151,15 +151,26 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
         }
 
         [TestMethod]
-        public void AlCrear_EnTienda_ElMensajeHablaDeLaTienda()
+        public void AlCrear_EnTienda_NoSeRechaza_SeCorrigeASegunVayaEntrando()
         {
+            // Decisión de Carlos (23/09/26): en tienda el cliente está delante; no se rechaza, se guarda con el 2.
             var pedido = Pedido("ALC", "VERDE1");
             pedido.modoServicio = M.TODO_JUNTO;
 
-            var ex = Assert.ThrowsException<ModoServicioNoPermitidoException>(() => ValidadorModoServicio.ComprobarAlCrear(pedido, stocks));
+            byte? corregido = ValidadorModoServicio.ComprobarAlCrear(pedido, stocks);
 
-            Assert.AreEqual(M.SEGUN_VAYA_ENTRANDO, ex.ModoSugerido);
-            StringAssert.Contains(ex.Message, "En tienda");
+            Assert.AreEqual((byte?)M.SEGUN_VAYA_ENTRANDO, corregido);
+        }
+
+        [TestMethod]
+        public void Sugerir_Amazon_SinRestriccionPeroTodoJuntoPorDefecto()
+        {
+            // Decisión de Carlos (23/09/26): AMZ no se restringe, pero por defecto sale todo junto.
+            SugeridorModoServicio.Sugerencia s = SugeridorModoServicio.Sugerir(Pedido("AMZ", "ROJO1"), stocks);
+
+            Assert.AreEqual(M.TODO_JUNTO, s.Modo);
+            Assert.AreEqual(4, s.ModosPermitidos.Count);
+            A.CallTo(() => stocks.ColorStock(A<string>._, A<string>._, A<int>._)).MustNotHaveHappened();
         }
 
         [TestMethod]
@@ -197,8 +208,9 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
 
             Assert.ThrowsException<ModoServicioNoPermitidoException>(() =>
                 ValidadorModoServicio.ComprobarAlModificar(Pedido("ALG", "VERDE1"), M.TODO_JUNTO, M.TRAS_REPONER_DE_TIENDAS, stocks));
-            Assert.ThrowsException<ModoServicioNoPermitidoException>(() =>
-                ValidadorModoServicio.ComprobarAlModificar(Pedido("REI", "ROJO1"), M.SEGUN_VAYA_ENTRANDO, M.TODO_JUNTO, stocks));
+            Assert.AreEqual((byte?)M.SEGUN_VAYA_ENTRANDO,
+                ValidadorModoServicio.ComprobarAlModificar(Pedido("REI", "ROJO1"), M.SEGUN_VAYA_ENTRANDO, M.TODO_JUNTO, stocks),
+                "En tienda no se rechaza: se corrige al 2");
         }
     }
 }

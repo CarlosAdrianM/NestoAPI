@@ -20,14 +20,17 @@ namespace NestoAPI.Infraestructure.PedidosVenta
     /// </summary>
     public static class ValidadorModoServicio
     {
-        /// <summary>Al crear: el modo que trae el pedido (antes de normalizar) debe estar permitido.</summary>
-        public static void ComprobarAlCrear(PedidoVentaDTO pedido, IGestorStocks stocks)
+        /// <summary>
+        /// Al crear: el modo que trae el pedido (antes de normalizar) debe estar permitido. Devuelve el modo con
+        /// el que hay que guardarlo si hubo que corregirlo (solo en tienda), o null si vale el que trae.
+        /// </summary>
+        public static byte? ComprobarAlCrear(PedidoVentaDTO pedido, IGestorStocks stocks)
         {
             if (pedido?.modoServicio == null)
             {
-                return;
+                return null;
             }
-            Comprobar(pedido, pedido.modoServicio.Value, SugeridorModoServicio.Sugerir(pedido, stocks),
+            return Comprobar(pedido, pedido.modoServicio.Value, SugeridorModoServicio.Sugerir(pedido, stocks),
                 "El stock ha cambiado mientras montabas el pedido y ");
         }
 
@@ -38,11 +41,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// regla de tienda y «todo verde» (si aun descontando dos veces sale todo verde, lo es). Las rojas se
         /// tratan como posibles rosas.
         /// </summary>
-        public static void ComprobarAlModificar(PedidoVentaDTO pedido, byte modoEfectivoAnterior, byte modoEfectivoNuevo, IGestorStocks stocks)
+        public static byte? ComprobarAlModificar(PedidoVentaDTO pedido, byte modoEfectivoAnterior, byte modoEfectivoNuevo, IGestorStocks stocks)
         {
             if (pedido == null || modoEfectivoAnterior == modoEfectivoNuevo)
             {
-                return;
+                return null;
             }
             SugeridorModoServicio.Sugerencia sugerencia = SugeridorModoServicio.Sugerir(pedido, stocks);
             var lineas = LineasProducto(pedido);
@@ -55,7 +58,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     sugerencia.LineasVerdes, sugerencia.LineasRosas + sugerencia.LineasRojas, 0, hayLineasProducto: lineas.Any())
             };
             tolerante.ModosPermitidos = ModosServicioPermitidos.Permitidos(tolerante.Modos);
-            Comprobar(pedido, modoEfectivoNuevo, tolerante, "Con el stock de ahora ");
+            return Comprobar(pedido, modoEfectivoNuevo, tolerante, "Con el stock de ahora ");
         }
 
         private static System.Collections.Generic.List<LineaPedidoVentaDTO> LineasProducto(PedidoVentaDTO pedido)
@@ -64,16 +67,22 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                             && !string.IsNullOrWhiteSpace(l.Producto) && l.Cantidad > 0)
                 .ToList();
 
-        private static void Comprobar(PedidoVentaDTO pedido, byte modo, SugeridorModoServicio.Sugerencia sugerencia, string arranque)
+        private static byte? Comprobar(PedidoVentaDTO pedido, byte modo, SugeridorModoServicio.Sugerencia sugerencia, string arranque)
         {
             if (sugerencia?.ModosPermitidos == null || !sugerencia.ModosPermitidos.Any() || sugerencia.ModosPermitidos.Contains(modo))
             {
-                return;
+                return null;
             }
             byte valido = sugerencia.ModosPermitidos.Contains(sugerencia.Modo) ? sugerencia.Modo : sugerencia.ModosPermitidos.First();
             string nombreValido = Constantes.Pedidos.ModosServicio.Nombre(valido);
             string porQue = sugerencia.Modos?.FirstOrDefault(m => m.Modo == modo)?.Motivo?.TrimEnd('.') ?? "no encaja con el stock del pedido";
             bool esTienda = porQue == ModosServicioPermitidos.MOTIVO_TIENDA.TrimEnd('.');
+            if (esTienda)
+            {
+                // Decisión de Carlos (23/09/26): en tienda no se rechaza (el cliente está delante); se guarda
+                // con el único modo que tiene sentido. Los clientes ya solo ofrecen ese modo, así que no debería darse.
+                return valido;
+            }
             string mensaje = (esTienda ? string.Empty : arranque) +
                              $"{(esTienda ? "El" : "el")} modo «{Constantes.Pedidos.ModosServicio.Nombre(modo)}» no tiene sentido para este pedido ({porQue}). " +
                              $"Elige «{nombreValido}» y vuelve a guardar.";
