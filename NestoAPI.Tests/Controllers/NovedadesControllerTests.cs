@@ -102,6 +102,37 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public void GetNovedades_SinAmbitoDesdeElWebViewDeLaApp_DevuelveLasDeNestoApp()
+        {
+            // NestoApp#186 (23/09/26): la 2.20.5 pide sin ámbito y filtra en cliente; desde el 17/09 no
+            // recibía ninguna suya. La app llama desde el WebView (User-Agent de navegador).
+            NovedadDTO app = Novedad(3, "2.20.5", "Solo app");
+            app.Ambito = "NestoApp";
+            A.CallTo(() => servicio.LeerNovedadesPublicadas()).Returns(new List<NovedadDTO> { Novedad(1, "1.10.29.0"), app });
+            controller.Request = new System.Net.Http.HttpRequestMessage();
+            controller.Request.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Linux; Android 14; SM-A546B Build/UP1A; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/128.0 Mobile Safari/537.36");
+
+            var resultado = controller.GetNovedades() as OkNegotiatedContentResult<List<NovedadDTO>>;
+
+            CollectionAssert.AreEquivalent(new[] { 3 }, resultado.Content.Select(n => n.Id).ToList());
+        }
+
+        [TestMethod]
+        public void GetNovedades_SinAmbitoDesdeNesto_SigueSinDevolverLasDeLaApp()
+        {
+            // Nesto usa HttpClient de .NET: sin User-Agent (o uno propio como "WPF-Client").
+            NovedadDTO app = Novedad(3, "2.20.5", "Solo app");
+            app.Ambito = "NestoApp";
+            A.CallTo(() => servicio.LeerNovedadesPublicadas()).Returns(new List<NovedadDTO> { Novedad(1, "1.10.29.0"), app });
+            controller.Request = new System.Net.Http.HttpRequestMessage();
+            controller.Request.Headers.UserAgent.ParseAdd("WPF-Client");
+
+            var resultado = controller.GetNovedades() as OkNegotiatedContentResult<List<NovedadDTO>>;
+
+            CollectionAssert.AreEquivalent(new[] { 1 }, resultado.Content.Select(n => n.Id).ToList());
+        }
+
+        [TestMethod]
         public void GetNovedades_SinAmbito_DevuelveNestoYNestoAPIPeroNuncaLasDeLaApp()
         {
             // 17/09/26: el Nesto publicado no manda ámbito y solo desdeVersion=1.10.28.2; las 2.20.x de

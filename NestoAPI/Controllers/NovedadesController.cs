@@ -3,6 +3,7 @@ using NestoAPI.Models.Novedades;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
 using System.Web.Http;
 using System.Web.Http.Description;
 
@@ -30,10 +31,27 @@ namespace NestoAPI.Controllers
         //     escritorio: Nesto y NestoAPI, que es lo que pide el Nesto publicado, que no manda ámbito)
         internal const string AMBITO_NESTOAPP = "NestoApp";
 
+        internal static bool EsLlamadaDesdeNavegador(HttpRequestMessage request)
+        {
+            string userAgent = request?.Headers?.UserAgent?.ToString();
+            return !string.IsNullOrEmpty(userAgent)
+                && userAgent.IndexOf("Mozilla", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
         [ResponseType(typeof(List<NovedadDTO>))]
         public IHttpActionResult GetNovedades(string desdeVersion = null, string ambito = null)
         {
             List<NovedadDTO> novedades = servicio.LeerNovedadesPublicadas();
+
+            // APAÑO TEMPORAL (23/09/26, NestoApp#186): la NestoApp publicada (2.20.5) pide sin ámbito y
+            // filtra en cliente, así que desde f167cd3e (sin ámbito = escritorio) no le llega ninguna
+            // novedad suya. Nesto llama con HttpClient de .NET (sin User-Agent de navegador); la app
+            // llama desde el WebView del móvil (User-Agent «Mozilla/...»). Se retira cuando todas las
+            // NestoApp en uso manden ?ambito=NestoApp.
+            if (string.IsNullOrWhiteSpace(ambito) && EsLlamadaDesdeNavegador(Request))
+            {
+                ambito = AMBITO_NESTOAPP;
+            }
 
             // NestoAPI#489: el ámbito se filtra ANTES que la versión. Nesto (1.10.x) y NestoApp (2.x)
             // tienen espacios de versiones distintos: comparar desdeVersion sin acotar el producto
