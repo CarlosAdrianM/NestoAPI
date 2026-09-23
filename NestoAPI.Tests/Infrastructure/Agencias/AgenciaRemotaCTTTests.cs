@@ -347,10 +347,11 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
 
             fake.Responder("Seguimiento", 200, RespSeguimiento(
                 ("0000", "MANIFESTADO O GRABADO", "2026-09-22T09:25:52.546+00:00", null),
-                ("1200", "ENVÍO RECOGIDO", "2026-09-22T17:07:32.660+00:00", null)));
+                ("0500", "ENVÍO RECOGIDO", "2026-09-22T17:07:32.660+00:00", null)));
             SeguimientoEnvioRemoto recogido = await agencia.ConsultarSeguimientoAsync(ALBARAN);
             Assert.AreEqual(EstadoEnvioSeguimiento.Tramitado, recogido.Estado, "Los 20 envíos del 22/09 volvieron a En curso por esto");
             Assert.AreEqual("ENVÍO RECOGIDO", recogido.Detalle);
+            CollectionAssert.Contains(AgenciaRemotaCTT.CODIGOS_CONOCIDOS, "0500", "Si no, cada pasada del poll deja un aviso en ELMAH por envío");
 
             fake.Responder("Seguimiento", 200, RespSeguimiento(
                 ("1500", "Out for Delivery", "2026-09-18T07:49:31.565+00:00", null),
