@@ -167,8 +167,10 @@ namespace NestoAPI.Infraestructure.Agencias.Perfiles
             var registro = new RegistroIntercambiosRemotos();
             var configuracion = new ConfiguracionCTT();
             var cliente = new ClienteRestCTT(configuracion, registro: registro);
-            // Transitorios (5xx, timeout, conexión) reintentados en el punto único (#288).
-            return new AgenciaRemotaConReintentos(new AgenciaRemotaCTT(cliente, configuracion, registro));
+            // Transitorios (5xx, timeout, conexión) reintentados en el punto único (#288). CTT sigue por
+            // lotes (listado por fechas): el poll hace una o pocas llamadas en vez de una por envío.
+            var agencia = new AgenciaRemotaCTT(cliente, configuracion, registro);
+            return new AgenciaRemotaPorLotesConReintentos(agencia, agencia);
         }
 
         public ISeguimientoAgenciaRemota CrearSeguimiento(NVEntities db) => CrearGestionRemota(db);

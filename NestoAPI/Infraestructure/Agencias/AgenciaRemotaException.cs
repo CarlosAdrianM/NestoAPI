@@ -22,4 +22,20 @@ namespace NestoAPI.Infraestructure.Agencias
         /// </summary>
         public bool EsTransitoria { get; set; }
     }
+
+    /// <summary>
+    /// 23/09/26: la agencia ha cortado por CUPO de llamadas (CTT: HTTP 429 «Quota has been exceeded»).
+    /// NO es transitoria para la política de reintentos (#288): reintentar a los pocos segundos solo
+    /// gasta más cupo. Quien la recibe deja de llamar a esa agencia hasta la siguiente pasada.
+    /// </summary>
+    public class CupoAgenciaAgotadoException : AgenciaRemotaException
+    {
+        public CupoAgenciaAgotadoException(string message, System.TimeSpan? reintentarTras = null) : base(message)
+        {
+            ReintentarTras = reintentarTras;
+        }
+
+        /// <summary>Lo que la agencia pide esperar (Retry-After), si lo dice.</summary>
+        public System.TimeSpan? ReintentarTras { get; }
+    }
 }

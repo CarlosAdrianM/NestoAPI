@@ -45,15 +45,27 @@ namespace NestoAPI.Infraestructure
         // pasar la degradación típica de GLS sin solaparse con la siguiente pasada regular (cada 2h).
         public const int REINTENTO_TRAS_MINUTOS = 45;
 
+        // 23/09/26: seguimiento por lotes (ISeguimientoPorLotes, hoy CTT). El listado va por FECHA DE ENVÍO
+        // de la agencia, que es la del manifiesto (al imprimir la etiqueta), y puede ser anterior a
+        // EnviosAgencia.Fecha (la de tramitar). Unos días de margen para no dejar fuera ninguno.
+        public const int MARGEN_DIAS_LOTES = 7;
+
         private readonly NVEntities _db;
         private readonly IFabricaAgenciasRemotas _fabrica;
         private readonly Action _programarReintento;
+        private readonly Action<Exception> _avisar;
+        private readonly Func<DateTime> _hoy;
 
-        public SeguimientoEnviosJobsService(NVEntities db, IFabricaAgenciasRemotas fabrica, Action programarReintento = null)
+        public SeguimientoEnviosJobsService(NVEntities db, IFabricaAgenciasRemotas fabrica, Action programarReintento = null,
+            Action<Exception> avisar = null, Func<DateTime> hoy = null)
         {
             _db = db;
             _fabrica = fabrica;
             _programarReintento = programarReintento;
+            // Como el poll corre en Hangfire (sin usuario HTTP), se estampa el proceso automático para
+            // saber que no hay una persona a quien preguntar (ver ElmahHelper).
+            _avisar = avisar ?? (ex => ElmahHelper.Log(ex, "Sistema (seguimiento de envíos)"));
+            _hoy = hoy ?? (() => DateTime.Today);
         }
 
         /// <summary>Punto de entrada para Hangfire (compone sus propias dependencias).</summary>
@@ -128,46 +140,92 @@ namespace NestoAPI.Infraestructure
             // envíos nuevos. Con el aviso a ciegas estuvimos 10 días sin saber que GLS no encontraba
             // NINGUNA expedición desde el servidor.
             Dictionary<string, int> motivosDesconocido = new Dictionary<string, int>();
-            foreach (EnviosAgencia envio in envios)
+            // NestoAPI#264: Desconocido = la agencia no devolvió datos del envío. Algún suelto es normal
+            // (envío recién creado aún no registrado), pero MUCHOS a la vez delatan un problema
+            // (rate-limit de GLS por ráfaga, uid mal, WS caído) que antes pasaba desapercibido porque se
+            // tragaba como "Tramitado". Se cuentan para avisar al final.
+            void Registrar(EnviosAgencia envio, SeguimientoEnvioRemoto seguimiento)
             {
-                ISeguimientoAgenciaRemota agencia = estrategias[envio.Agencia];
+                if (seguimiento.Estado == EstadoEnvioSeguimiento.Desconocido)
+                {
+                    desconocidos++;
+                    string motivo = string.IsNullOrWhiteSpace(seguimiento.Detalle) ? "(sin detalle)" : seguimiento.Detalle.Trim();
+                    motivosDesconocido[motivo] = motivosDesconocido.TryGetValue(motivo, out int veces) ? veces + 1 : 1;
+                }
+                if (AplicarSeguimiento(envio, seguimiento))
+                {
+                    actualizados++;
+                }
+            }
+
+            foreach (IGrouping<int, EnviosAgencia> grupo in envios.GroupBy(e => e.Agencia))
+            {
+                ISeguimientoAgenciaRemota agencia = estrategias[grupo.Key];
                 if (agencia == null)
                 {
                     continue;
                 }
-                try
+                List<EnviosAgencia> enviosAgencia = grupo.ToList();
+
+                // 23/09/26: la agencia que sabe seguir por lotes (CTT) se consulta con una o pocas
+                // llamadas para todos sus envíos en vuelo. Uno a uno, CTT cortaba por cupo (429).
+                if (agencia is ISeguimientoPorLotes lotes)
                 {
-                    SeguimientoEnvioRemoto seguimiento = await agencia
-                        .ConsultarSeguimientoAsync(envio.CodigoBarras.Trim()).ConfigureAwait(false);
-                    // NestoAPI#264: Desconocido = la agencia no devolvió datos del envío. Algún suelto es
-                    // normal (envío recién creado aún no registrado), pero MUCHOS a la vez delatan un
-                    // problema (rate-limit de GLS por ráfaga, uid mal, WS caído) que antes pasaba
-                    // desapercibido porque se tragaba como "Tramitado". Se cuentan para avisar al final.
-                    if (seguimiento.Estado == EstadoEnvioSeguimiento.Desconocido)
+                    IReadOnlyDictionary<string, SeguimientoEnvioRemoto> estados;
+                    try
                     {
-                        desconocidos++;
-                        string motivo = string.IsNullOrWhiteSpace(seguimiento.Detalle) ? "(sin detalle)" : seguimiento.Detalle.Trim();
-                        motivosDesconocido[motivo] = motivosDesconocido.TryGetValue(motivo, out int veces) ? veces + 1 : 1;
+                        DateTime desde = enviosAgencia.Min(e => e.Fecha).Date.AddDays(-MARGEN_DIAS_LOTES);
+                        estados = await lotes.ConsultarSeguimientosAsync(desde, _hoy().Date).ConfigureAwait(false);
                     }
-                    if (AplicarSeguimiento(envio, seguimiento))
+                    catch (CupoAgenciaAgotadoException ex)
                     {
-                        actualizados++;
+                        AvisarCupoAgotado(grupo.Key, enviosAgencia.Count, ex);
+                        continue;
                     }
-                }
-                catch (Exception ex)
-                {
-                    // Un envío que falla no debe tumbar el job: se loguea y se sigue con el resto. Como el
-                    // poll corre en Hangfire (sin usuario HTTP), se estampa el proceso automático para
-                    // saber que no hay una persona a quien preguntar (ver ElmahHelper).
-                    ElmahHelper.Log(new Exception(
-                        $"Seguimiento del envío {envio.Numero} (albarán {envio.CodigoBarras?.Trim()}): {ex.Message}", ex),
-                        "Sistema (seguimiento de envíos)");
+                    catch (Exception ex)
+                    {
+                        _avisar(new Exception(
+                            $"Seguimiento por lotes de la agencia {grupo.Key}: {ex.Message}. {enviosAgencia.Count} envíos sin consultar en esta pasada.", ex));
+                        continue;
+                    }
+                    foreach (EnviosAgencia envio in enviosAgencia)
+                    {
+                        SeguimientoEnvioRemoto seguimiento = estados != null && estados.TryGetValue(envio.CodigoBarras.Trim(), out SeguimientoEnvioRemoto encontrado)
+                            ? encontrado
+                            : new SeguimientoEnvioRemoto { Estado = EstadoEnvioSeguimiento.Desconocido, Detalle = "La agencia no devuelve el envío en el listado por fechas" };
+                        Registrar(envio, seguimiento);
+                    }
+                    continue;
                 }
 
-                // NestoAPI#264: espaciar las consultas para no parecer una ráfaga abusiva a la agencia
-                // (GLS rate-limitaba el lote y devolvía "no encontrada" para casi todos). A demanda, que es
-                // una sola llamada, nunca falla; esto imita ese ritmo.
-                await Task.Delay(PAUSA_ENTRE_CONSULTAS_MS).ConfigureAwait(false);
+                for (int i = 0; i < enviosAgencia.Count; i++)
+                {
+                    EnviosAgencia envio = enviosAgencia[i];
+                    try
+                    {
+                        SeguimientoEnvioRemoto seguimiento = await agencia
+                            .ConsultarSeguimientoAsync(envio.CodigoBarras.Trim()).ConfigureAwait(false);
+                        Registrar(envio, seguimiento);
+                    }
+                    catch (CupoAgenciaAgotadoException ex)
+                    {
+                        // Seguir llamando solo gasta más cupo: esta agencia se deja para la siguiente pasada
+                        // y se avisa UNA vez (antes era un aviso por envío en ELMAH).
+                        AvisarCupoAgotado(grupo.Key, enviosAgencia.Count - i, ex);
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        // Un envío que falla no debe tumbar el job: se loguea y se sigue con el resto.
+                        _avisar(new Exception(
+                            $"Seguimiento del envío {envio.Numero} (albarán {envio.CodigoBarras?.Trim()}): {ex.Message}", ex));
+                    }
+
+                    // NestoAPI#264: espaciar las consultas para no parecer una ráfaga abusiva a la agencia
+                    // (GLS rate-limitaba el lote y devolvía "no encontrada" para casi todos). A demanda, que es
+                    // una sola llamada, nunca falla; esto imita ese ritmo.
+                    await Task.Delay(PAUSA_ENTRE_CONSULTAS_MS).ConfigureAwait(false);
+                }
             }
 
             if (actualizados > 0)
@@ -198,14 +256,20 @@ namespace NestoAPI.Infraestructure
                     string persistencia = esReintento
                         ? $" Persiste tras el reintento automático de {REINTENTO_TRAS_MINUTOS} min."
                         : string.Empty;
-                    ElmahHelper.Log(new Exception(
+                    _avisar(new Exception(
                         $"Seguimiento de agencias: {desconocidos} de {envios.Count} envíos no devolvieron estado " +
                         $"(Desconocido). Suele indicar un problema de configuración del seguimiento (p. ej. uid de " +
-                        $"GLS incorrecta) o el WS caído.{persistencia} Motivos más frecuentes: {motivos}."),
-                        "Sistema (seguimiento de envíos)");
+                        $"GLS incorrecta) o el WS caído.{persistencia} Motivos más frecuentes: {motivos}."));
                 }
             }
             return actualizados;
+        }
+
+        private void AvisarCupoAgotado(int agenciaId, int sinConsultar, CupoAgenciaAgotadoException ex)
+        {
+            _avisar(new Exception(
+                $"Seguimiento de la agencia {agenciaId}: cupo de su API agotado. {sinConsultar} envío(s) sin consultar " +
+                $"en esta pasada; se reintentan en la siguiente. {ex.Message}", ex));
         }
 
         // Aplica el seguimiento consultado al envío (Estado/FechaEntrega) en memoria. Devuelve true si

@@ -398,6 +398,116 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             Assert.AreEqual(EstadoEnvioSeguimiento.Desconocido, (await agencia.ConsultarSeguimientoAsync(ALBARAN)).Estado);
         }
 
+        // ---- Seguimiento por lotes (listado por fechas) y cupo (23/09/26) ----
+
+        private static string RespPorFechas(int actual, int? siguiente, int ultima, params (string codigo, string estado, string fecha, string incidencia)[] envios)
+        {
+            var data = new JArray();
+            foreach (var e in envios)
+            {
+                data.Add(new JObject
+                {
+                    ["shipping_code"] = e.codigo,
+                    ["shipping_date"] = "2026-09-22",
+                    ["shipping_status_code"] = e.estado,
+                    ["shipping_status_datetime"] = e.fecha,
+                    ["incident_type_code"] = e.incidencia == null ? null : "INC001",
+                    ["incident_type_desc"] = e.incidencia,
+                    ["client_center_code"] = "8090300001"
+                });
+            }
+            return new JObject
+            {
+                ["data"] = data,
+                ["pagination"] = new JObject
+                {
+                    ["page_limit"] = 50,
+                    ["record_count"] = envios.Length,
+                    ["page_offsets"] = new JObject { ["current"] = actual, ["next"] = siguiente, ["last"] = ultima }
+                }
+            }.ToString();
+        }
+
+        [TestMethod]
+        public async Task SeguimientoPorFechas_DosPaginas_DevuelveTodosLosEnviosTraducidos()
+        {
+            var fake = new FakeClienteRest();
+            fake.ResponderSecuencia("SeguimientoPorFechas",
+                (200, RespPorFechas(1, 2, 2,
+                    ("0082800082809772517327", "0500", "2026-09-22T16:00:00Z", null),
+                    ("0082800082809772528136", "1600", "2026-09-23T09:10:00Z", "Ausente"))),
+                (200, RespPorFechas(2, null, 2,
+                    ("0082800082809772570062", "2100", "2026-09-23T11:30:00Z", null))));
+            var agencia = new AgenciaRemotaCTT(fake, Config());
+
+            IReadOnlyDictionary<string, SeguimientoEnvioRemoto> estados = await agencia.ConsultarSeguimientosAsync(new DateTime(2026, 9, 15), new DateTime(2026, 9, 23));
+
+            Assert.AreEqual(2, fake.Llamadas.Count, "Una llamada por página, no una por envío");
+            StringAssert.Contains(fake.Llamadas[0].Ruta, "page_offsets=1");
+            StringAssert.Contains(fake.Llamadas[1].Ruta, "page_offsets=2");
+            StringAssert.Contains(fake.Llamadas[0].Ruta, "client_center_code=8090300001");
+            StringAssert.Contains(fake.Llamadas[0].Ruta, "shipping_date=2026-09-15[range]2026-09-23");
+            StringAssert.Contains(fake.Llamadas[0].Ruta, "mapping_table_code=APITRACK");
+
+            Assert.AreEqual(3, estados.Count);
+            Assert.AreEqual(EstadoEnvioSeguimiento.Tramitado, estados["0082800082809772517327"].Estado);
+            Assert.AreEqual("ENVÍO RECOGIDO", estados["0082800082809772517327"].Detalle);
+            Assert.AreEqual(EstadoEnvioSeguimiento.Incidentado, estados["0082800082809772528136"].Estado);
+            StringAssert.Contains(estados["0082800082809772528136"].Detalle, "Ausente");
+            Assert.AreEqual(EstadoEnvioSeguimiento.Entregado, estados["0082800082809772570062"].Estado);
+            Assert.AreEqual(new DateTime(2026, 9, 23), estados["0082800082809772570062"].FechaEntrega.Value.Date);
+        }
+
+        [TestMethod]
+        public void SeguimientoPorFechas_CadaCodigoSignificaLoMismoQueEnElIndividual()
+        {
+            // Una sola tabla de traducción: el poll (por fechas) y el «Actualizar estado» (individual)
+            // no pueden dar estados distintos para el mismo código de CTT.
+            foreach (string codigo in AgenciaRemotaCTT.CODIGOS_CONOCIDOS)
+            {
+                var individual = AgenciaRemotaCTT.InterpretarEventos((JArray)JObject.Parse(RespSeguimiento(
+                    (codigo, "DESCRIPCION", "2026-09-23T10:00:00Z", null)))["data"]["shipping_history"]["events"]);
+                var porFechas = AgenciaRemotaCTT.InterpretarRegistroPorFechas(JObject.Parse(
+                    RespPorFechas(1, null, 1, ("0082800082809772517327", codigo, "2026-09-23T10:00:00Z", null)))["data"][0]);
+
+                Assert.AreEqual(individual.Estado, porFechas.Estado, "Código " + codigo);
+            }
+        }
+
+        [TestMethod]
+        public async Task SeguimientoIndividual_Cupo429_LanzaCupoAgotadoSinReintentarComoTransitorio()
+        {
+            var fake = new FakeClienteRest();
+            fake.Responder("Seguimiento", 429, @"{""statusCode"": 429, ""message"": ""Quota has been exceeded""}");
+            var agencia = new AgenciaRemotaCTT(fake, Config());
+
+            CupoAgenciaAgotadoException ex = await Assert.ThrowsExceptionAsync<CupoAgenciaAgotadoException>(
+                () => agencia.ConsultarSeguimientoAsync(ALBARAN));
+
+            Assert.IsFalse(ex.EsTransitoria, "Reintentar a los pocos segundos solo gasta más cupo");
+        }
+
+        [TestMethod]
+        public async Task SeguimientoPorFechas_Cupo429_LanzaCupoAgotado()
+        {
+            var fake = new FakeClienteRest();
+            fake.Responder("SeguimientoPorFechas", 429, @"{""statusCode"": 429, ""message"": ""Quota has been exceeded""}");
+            var agencia = new AgenciaRemotaCTT(fake, Config());
+
+            _ = await Assert.ThrowsExceptionAsync<CupoAgenciaAgotadoException>(
+                () => agencia.ConsultarSeguimientosAsync(new DateTime(2026, 9, 15), new DateTime(2026, 9, 23)));
+        }
+
+        [TestMethod]
+        public void LeerRetryAfter_ConSegundos_DevuelveLaEspera()
+        {
+            var http = new HttpResponseMessage((System.Net.HttpStatusCode)429);
+            http.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.FromSeconds(120));
+
+            Assert.AreEqual(TimeSpan.FromSeconds(120), ClienteRestCTT.LeerRetryAfter(http));
+            Assert.IsNull(ClienteRestCTT.LeerRetryAfter(new HttpResponseMessage((System.Net.HttpStatusCode)429)));
+        }
+
         // ---- ZPL y URL pública ----
 
         [TestMethod]
@@ -431,13 +541,23 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         private class FakeClienteRest : IClienteRestCTT
         {
             private readonly Dictionary<string, (int codigo, string cuerpo)> _respuestas = new Dictionary<string, (int, string)>();
+            private readonly Dictionary<string, Queue<(int codigo, string cuerpo)>> _secuencias = new Dictionary<string, Queue<(int, string)>>();
             public readonly List<Llamada> Llamadas = new List<Llamada>();
 
             public void Responder(string operacion, int codigo, string cuerpo) => _respuestas[operacion] = (codigo, cuerpo);
 
+            /// <summary>Respuestas distintas en llamadas sucesivas a la misma operación (paginación).</summary>
+            public void ResponderSecuencia(string operacion, params (int codigo, string cuerpo)[] respuestas)
+                => _secuencias[operacion] = new Queue<(int, string)>(respuestas);
+
             public Task<RespuestaCTT> EnviarAsync(HttpMethod metodo, string rutaRelativa, object cuerpo, string operacion)
             {
                 Llamadas.Add(new Llamada { Operacion = operacion, Metodo = metodo, Ruta = rutaRelativa, Cuerpo = cuerpo });
+                if (_secuencias.TryGetValue(operacion, out Queue<(int codigo, string cuerpo)> cola) && cola.Count > 0)
+                {
+                    (int codigo, string cuerpo) siguiente = cola.Dequeue();
+                    return Task.FromResult(new RespuestaCTT { Codigo = siguiente.codigo, Cuerpo = siguiente.cuerpo });
+                }
                 if (!_respuestas.TryGetValue(operacion, out (int codigo, string cuerpo) r))
                 {
                     throw new InvalidOperationException("El test no preparó respuesta para " + operacion);

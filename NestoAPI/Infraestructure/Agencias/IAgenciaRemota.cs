@@ -110,6 +110,23 @@ namespace NestoAPI.Infraestructure.Agencias
     }
 
     /// <summary>
+    /// 23/09/26: seguimiento POR LOTES, opcional. Una agencia que puede devolver el estado de muchos
+    /// envíos en una sola llamada (CTT: listado por fechas) lo implementa además de
+    /// <see cref="ISeguimientoAgenciaRemota"/>, y el poll la usa en vez de preguntar envío a envío: con
+    /// CTT, 20 consultas sueltas cada 2 h agotaban su cupo (429). Las que no lo implementan siguen igual.
+    /// </summary>
+    public interface ISeguimientoPorLotes
+    {
+        /// <summary>
+        /// Estado de los envíos de la agencia con fecha de envío entre <paramref name="desde"/> y
+        /// <paramref name="hasta"/> (ambos incluidos), por albarán (clave sin espacios). Un envío que no
+        /// viene en el diccionario es que la agencia no lo devolvió: quien llama decide (Desconocido).
+        /// Lanza <see cref="CupoAgenciaAgotadoException"/> si la agencia corta por cupo.
+        /// </summary>
+        Task<IReadOnlyDictionary<string, SeguimientoEnvioRemoto>> ConsultarSeguimientosAsync(System.DateTime desde, System.DateTime hasta);
+    }
+
+    /// <summary>
     /// Estrategia de gestión remota de una agencia (server-side): tramitar un envío contra la API de
     /// la agencia y obtener/reimprimir su etiqueta (ADEMÁS de su seguimiento, vía
     /// <see cref="ISeguimientoAgenciaRemota"/>). Hoy solo la implementa Innovatrans (DataTrans). Las

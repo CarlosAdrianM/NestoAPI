@@ -21,9 +21,10 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
     ///                                                      -> 200 {data:{thermal_label:[zpl por bulto]}}
     ///   POST manifest/v1.0/rpc-cancel-shipping-by-shipping-code/{code} -> 204; repetido -> 403 ALREADY_NULLED_SHIPPING
     ///   GET  trf/item-history-api/history/{code}?view=APITRACK&amp;showItems=false -> 200 {data:{shipping_history:{events[]}}}
+    ///   GET  trf/web-tracking/v1.0/shippings?...&amp;shipping_date=A[range]B -> 200 {data:[{shipping_code, shipping_status_code...}], pagination}
     /// CTT no tiene "modificar": se anula y se registra de nuevo (albarán nuevo, etiqueta nueva).
     /// </summary>
-    public class AgenciaRemotaCTT : IAgenciaRemota
+    public class AgenciaRemotaCTT : IAgenciaRemota, ISeguimientoPorLotes
     {
         // CTT pide medidas por bulto; no guardamos dimensiones (solo el peso), así que va la caja
         // MEDIANA, la más usada, igual que en Innovatrans. Si DatosEnvioRemoto trae medidas, prevalecen.
@@ -35,6 +36,12 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
         internal const string RUTA_ANULAR = "manifest/v1.0/rpc-cancel-shipping-by-shipping-code/";
         internal const string RUTA_ETIQUETAS = "trf/labelling/v1.0/shippings/";
         internal const string RUTA_SEGUIMIENTO = "trf/item-history-api/history/";
+        internal const string RUTA_SEGUIMIENTO_POR_FECHAS = "trf/web-tracking/v1.0/shippings";
+        // Registros por página del listado por fechas (el de la documentación de CTT) y tope de páginas
+        // por consulta: 40 x 50 = 2.000 envíos, muy por encima de lo que tenemos en vuelo, y un límite
+        // duro para que un fallo de paginación nunca se convierta en una ráfaga contra el cupo.
+        internal const int REGISTROS_POR_PAGINA = 50;
+        internal const int MAX_PAGINAS = 40;
         internal const string CLAVE_YA_ANULADO = "ALREADY_NULLED_SHIPPING";
 
         private readonly IClienteRestCTT _cliente;
@@ -156,6 +163,7 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
 
             RespuestaCTT respuesta = await _cliente.EnviarAsync(HttpMethod.Get,
                 RUTA_SEGUIMIENTO + albaran.Trim() + "?view=APITRACK&showItems=false", null, "Seguimiento").ConfigureAwait(false);
+            LanzarSiCupoAgotado(respuesta, "Seguimiento");
             if (respuesta.Codigo == (int)HttpStatusCode.NotFound)
             {
                 // Aún no registrado en CTT o código que no es suyo: no es un estado real (NestoAPI#264).
@@ -169,6 +177,69 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
             JArray eventos = respuesta.Json?["data"]?["shipping_history"]?["events"] as JArray;
             return InterpretarEventos(eventos, albaran.Trim());
         }
+
+        /// <summary>
+        /// 23/09/26: todos los envíos del centro con fecha de envío en el rango, en una o pocas llamadas
+        /// (páginas de <see cref="REGISTROS_POR_PAGINA"/>). Es lo que usa el poll: preguntar envío a envío
+        /// agotaba el cupo de CTT (429 a partir de la 11ª consulta de la pasada de las 10:00).
+        /// </summary>
+        public async Task<IReadOnlyDictionary<string, SeguimientoEnvioRemoto>> ConsultarSeguimientosAsync(DateTime desde, DateTime hasta)
+        {
+            if (string.IsNullOrWhiteSpace(_config.ClientCenterCode))
+            {
+                throw new AgenciaRemotaException("CTT: falta CTT:ClientCenterCode en la configuración (necesario para el seguimiento por fechas).");
+            }
+
+            var resultado = new Dictionary<string, SeguimientoEnvioRemoto>(StringComparer.OrdinalIgnoreCase);
+            string rango = $"{desde:yyyy-MM-dd}[range]{hasta:yyyy-MM-dd}";
+            int pagina = 1;
+            for (int llamadas = 0; llamadas < MAX_PAGINAS; llamadas++)
+            {
+                string ruta = $"{RUTA_SEGUIMIENTO_POR_FECHAS}?page_limit={REGISTROS_POR_PAGINA}&page_offsets={pagina}" +
+                    $"&mapping_table_code=APITRACK&order_by=-shipping_date&client_center_code={_config.ClientCenterCode}&shipping_date={rango}";
+                RespuestaCTT respuesta = await _cliente.EnviarAsync(HttpMethod.Get, ruta, null, "SeguimientoPorFechas").ConfigureAwait(false);
+                LanzarSiCupoAgotado(respuesta, "SeguimientoPorFechas");
+                if (!respuesta.Exito)
+                {
+                    throw new AgenciaRemotaException($"CTT (SeguimientoPorFechas {rango}, página {pagina}): {respuesta.Error}");
+                }
+
+                if (respuesta.Json?["data"] is JArray registros)
+                {
+                    foreach (JToken registro in registros)
+                    {
+                        string codigo = registro["shipping_code"]?.ToString()?.Trim();
+                        if (!string.IsNullOrEmpty(codigo))
+                        {
+                            resultado[codigo] = InterpretarRegistroPorFechas(registro);
+                        }
+                    }
+                }
+
+                int? siguiente = LeerEntero(respuesta.Json?["pagination"]?["page_offsets"]?["next"]);
+                int? ultima = LeerEntero(respuesta.Json?["pagination"]?["page_offsets"]?["last"]);
+                if (!siguiente.HasValue || siguiente.Value <= pagina || (ultima.HasValue && pagina >= ultima.Value))
+                {
+                    break;
+                }
+                pagina = siguiente.Value;
+            }
+            return resultado;
+        }
+
+        private static void LanzarSiCupoAgotado(RespuestaCTT respuesta, string operacion)
+        {
+            if (respuesta != null && respuesta.CupoAgotado)
+            {
+                string espera = respuesta.ReintentarTras.HasValue
+                    ? $" CTT pide esperar {Math.Ceiling(respuesta.ReintentarTras.Value.TotalMinutes)} min."
+                    : string.Empty;
+                throw new CupoAgenciaAgotadoException($"Cupo de la API de CTT agotado ({operacion}).{espera} {respuesta.Error}", respuesta.ReintentarTras);
+            }
+        }
+
+        private static int? LeerEntero(JToken token)
+            => token != null && token.Type != JTokenType.Null && int.TryParse(token.ToString(), out int n) ? n : (int?)null;
 
         // ---- Núcleo puro (testeable sin HTTP) ----
 
@@ -275,6 +346,51 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
             string descripcion = (ultimo["description"]?.ToString() ?? string.Empty).Trim();
             string incidencia = ultimo["detail"]?["incident_type_name"]?.ToString();
             DateTime? fecha = LeerFecha(ultimo["event_date"]?.ToString());
+            return Traducir(codigo, descripcion, incidencia, fecha, albaran);
+        }
+
+        /// <summary>
+        /// Un registro del listado por fechas (web-tracking). Trae el código del último estado pero no su
+        /// descripción: se usa la de <see cref="DESCRIPCIONES"/> para el detalle. La traducción a nuestro
+        /// estado es la MISMA que la del seguimiento individual (<see cref="Traducir"/>).
+        /// </summary>
+        internal static SeguimientoEnvioRemoto InterpretarRegistroPorFechas(JToken registro)
+        {
+            string codigo = (registro?["shipping_status_code"]?.ToString() ?? string.Empty).Trim();
+            string albaran = registro?["shipping_code"]?.ToString()?.Trim();
+            if (codigo.Length == 0)
+            {
+                return new SeguimientoEnvioRemoto { Estado = EstadoEnvioSeguimiento.Desconocido, Detalle = "CTT no devuelve el estado del envío " + albaran };
+            }
+            string descripcion = (registro["shipping_status_desc"]?.ToString()
+                ?? registro["shipping_status_description"]?.ToString()
+                ?? (DESCRIPCIONES.TryGetValue(codigo, out string conocida) ? conocida : string.Empty)).Trim();
+            string incidencia = registro["incident_type_desc"]?.ToString();
+            DateTime? fecha = LeerFecha(registro["shipping_status_datetime"]?.ToString());
+            return Traducir(codigo, descripcion, incidencia, fecha, albaran);
+        }
+
+        /// <summary>Descripción de los códigos conocidos, para el listado por fechas (que no la trae).</summary>
+        internal static readonly Dictionary<string, string> DESCRIPCIONES = new Dictionary<string, string>
+        {
+            ["0000"] = "MANIFESTADO",
+            ["0500"] = "ENVÍO RECOGIDO",
+            ["0900"] = "EN TRÁNSITO",
+            ["1200"] = "EN DELEGACIÓN DE DESTINO",
+            ["1500"] = "EN REPARTO",
+            ["1600"] = "ENTREGA FALLIDA",
+            ["2100"] = "ENTREGADO",
+            ["3000"] = "ANULADO"
+        };
+
+        /// <summary>
+        /// Código de estado de CTT → nuestro estado. ÚNICA tabla para los dos caminos (seguimiento de un
+        /// envío y listado por fechas), para que un código signifique siempre lo mismo.
+        /// </summary>
+        internal static SeguimientoEnvioRemoto Traducir(string codigo, string descripcion, string incidencia, DateTime? fecha, string albaran)
+        {
+            codigo = (codigo ?? string.Empty).Trim();
+            descripcion = (descripcion ?? string.Empty).Trim();
             string detalle = string.IsNullOrWhiteSpace(incidencia) ? descripcion : $"{descripcion}: {incidencia}";
 
             EstadoEnvioSeguimiento estado;

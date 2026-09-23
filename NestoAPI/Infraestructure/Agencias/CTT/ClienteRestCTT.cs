@@ -23,6 +23,15 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
         public string Cuerpo { get; set; }
         public bool Exito => Codigo >= 200 && Codigo <= 299;
 
+        /// <summary>
+        /// 23/09/26: la API de CTT (Azure API Management) corta con 429 «Quota has been exceeded» si se
+        /// pasa del cupo de llamadas. Ver <see cref="ReintentarTras"/>.
+        /// </summary>
+        public bool CupoAgotado => Codigo == 429;
+
+        /// <summary>Cabecera Retry-After del 429, si CTT la manda (null si no).</summary>
+        public TimeSpan? ReintentarTras { get; set; }
+
         private JToken _json;
         private bool _parseado;
 
@@ -275,7 +284,20 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
                 throw new AgenciaRemotaException($"CTT ({operacion}) respondió HTTP {codigo}: {Acotar(cuerpoRespuesta)}") { EsTransitoria = true };
             }
 
-            return new RespuestaCTT { Codigo = codigo, Cuerpo = cuerpoRespuesta };
+            return new RespuestaCTT { Codigo = codigo, Cuerpo = cuerpoRespuesta, ReintentarTras = LeerRetryAfter(http) };
+        }
+
+        internal static TimeSpan? LeerRetryAfter(HttpResponseMessage http)
+        {
+            RetryConditionHeaderValue retry = http?.Headers?.RetryAfter;
+            if (retry == null) return null;
+            if (retry.Delta.HasValue) return retry.Delta;
+            if (retry.Date.HasValue)
+            {
+                TimeSpan hasta = retry.Date.Value - DateTimeOffset.UtcNow;
+                return hasta > TimeSpan.Zero ? hasta : TimeSpan.Zero;
+            }
+            return null;
         }
 
         private static string Acotar(string texto)

@@ -78,6 +78,27 @@ namespace NestoAPI.Infraestructure.Agencias
     }
 
     /// <summary>
+    /// 23/09/26: el mismo decorador para una agencia que además sigue POR LOTES (CTT). La consulta por
+    /// lotes es idempotente y reintenta los transitorios igual; un corte por cupo
+    /// (<see cref="CupoAgenciaAgotadoException"/>) NO es transitorio y sube tal cual, sin reintentar.
+    /// </summary>
+    public class AgenciaRemotaPorLotesConReintentos : AgenciaRemotaConReintentos, ISeguimientoPorLotes
+    {
+        private readonly ISeguimientoPorLotes _lotes;
+        private readonly AsyncRetryPolicy _politicaLotes;
+
+        public AgenciaRemotaPorLotesConReintentos(IAgenciaRemota interior, ISeguimientoPorLotes lotes, AsyncRetryPolicy politica = null)
+            : base(interior, politica)
+        {
+            _lotes = lotes ?? throw new ArgumentNullException(nameof(lotes));
+            _politicaLotes = politica ?? PoliticasAgenciasRemotas.CrearPoliticaTransitorios();
+        }
+
+        public Task<IReadOnlyDictionary<string, SeguimientoEnvioRemoto>> ConsultarSeguimientosAsync(DateTime desde, DateTime hasta)
+            => _politicaLotes.ExecuteAsync(() => _lotes.ConsultarSeguimientosAsync(desde, hasta));
+    }
+
+    /// <summary>
     /// Decorador de <see cref="ISeguimientoAgenciaRemota"/> (agencias que solo siguen, hoy GLS) con
     /// la misma política de transitorios. Hoy GLS no deja escapar transitorios (los convierte en
     /// Desconocido), pero el decorador cubre cualquier excepción transitoria futura del cliente.
