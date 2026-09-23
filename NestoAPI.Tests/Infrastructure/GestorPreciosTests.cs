@@ -502,6 +502,28 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void GestorPrecios_EsOfertaPermitida_UnaOfertaCeroMasUnoNoEsValida()
+        {
+            // NestoAPI#1 (2016): «cuando la cantidad de oferta es mayor que cero, la cantidad cobrada también
+            // debe serlo: no se aceptan ofertas 0+1». El mismo producto que en el test siguiente (familia con
+            // oferta válida), pero solo con la unidad de regalo y ninguna cobrada.
+            Producto producto = GestorPrecios.servicio.BuscarProducto("OF_FAMILIA");
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.Lineas.Add(new LineaPedidoVentaDTO
+            {
+                tipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "OF_FAMILIA",
+                AplicarDescuento = true,
+                Cantidad = 1,
+                PrecioUnitario = 0
+            });
+
+            RespuestaValidacion respuesta = GestorPrecios.EsPedidoValido(pedido);
+
+            Assert.IsFalse(respuesta.ValidacionSuperada, "El pedido entero no debe aceptar un 0+1");
+        }
+
+        [TestMethod]
         public void GestorPrecios_EsOfertaPermitida_SiHayOfertaParaLaFamiliaEsValidaParaElProducto()
         {
             Producto producto = GestorPrecios.servicio.BuscarProducto("OF_FAMILIA");
