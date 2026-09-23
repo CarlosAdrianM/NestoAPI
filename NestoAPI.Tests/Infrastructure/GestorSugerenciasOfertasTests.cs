@@ -25,7 +25,7 @@ namespace NestoAPI.Tests.Infrastructure
         public void Setup()
         {
             servicio = A.Fake<IServicioPrecios>();
-            A.CallTo(() => servicio.BuscarProducto("38093")).Returns(new Producto { Número = "38093", Nombre = "CHAMPU HIDRATANTE", Familia = "DeMarca", PVP = 10 });
+            A.CallTo(() => servicio.BuscarProducto("38093")).Returns(new Producto { Número = "38093", Nombre = "CHAMPU HIDRATANTE", Familia = "DeMarca", PVP = 10, Aplicar_Dto = true });
             A.CallTo(() => servicio.BuscarProducto("SINOF")).Returns(new Producto { Número = "SINOF", Nombre = "OTRO", Familia = "Otra", PVP = 10 });
             A.CallTo(() => servicio.BuscarOfertasPermitidas("38093")).Returns(new List<OfertaPermitida>
             {
@@ -51,6 +51,52 @@ namespace NestoAPI.Tests.Infrastructure
             tipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
             almacen = "ALG"
         };
+
+        // 23/09/26 (vendedor): el 45917 (Anubis) tiene Aplicar_Dto = 0 y Nesto/NestoApp le avisaban del 6+1
+        // de su familia al meter 7 unidades. Sin descuento no hay N+M de familia; solo una oferta expresa.
+        private void OfertaDeFamiliaAnubis(string producto, bool aplicarDto)
+        {
+            A.CallTo(() => servicio.BuscarProducto(producto)).Returns(new Producto { Número = producto, Nombre = "PACK SAPPHIRE", Familia = "Anubis", PVP = 20, Aplicar_Dto = aplicarDto });
+            A.CallTo(() => servicio.BuscarOfertasPermitidas(producto)).Returns(new List<OfertaPermitida>
+            {
+                new OfertaPermitida { NºOrden = 50, Familia = "Anubis", CantidadConPrecio = 6, CantidadRegalo = 1 }
+            });
+        }
+
+        [TestMethod]
+        public void ProductoSinDescuento_NoSeLeSugiereElNMasMDeSuFamilia()
+        {
+            OfertaDeFamiliaAnubis("45917", aplicarDto: false);
+
+            List<SugerenciaOfertaDTO> s = GestorSugerenciasOfertas.Calcular(Pedido(Linea("45917", 7, 20)), servicio, Acepta);
+
+            Assert.AreEqual(0, s.Count);
+        }
+
+        [TestMethod]
+        public void ProductoConDescuento_SiSeLeSugiereElNMasMDeSuFamilia()
+        {
+            OfertaDeFamiliaAnubis("45918", aplicarDto: true);
+
+            List<SugerenciaOfertaDTO> s = GestorSugerenciasOfertas.Calcular(Pedido(Linea("45918", 7, 20)), servicio, Acepta);
+
+            Assert.AreEqual(GestorSugerenciasOfertas.TIPO_OFERTA_NO_APLICADA, s.Single().Tipo);
+        }
+
+        [TestMethod]
+        public void ProductoSinDescuentoConOfertaExpresaSuya_SiSeSugiere()
+        {
+            // 40640/40642 (5+1) y 44731 (10+1) tienen Aplicar_Dto = 0 y una oferta dada de alta para ellos.
+            A.CallTo(() => servicio.BuscarProducto("40640")).Returns(new Producto { Número = "40640", Nombre = "KIT WATERPROOF", Familia = "Otra", PVP = 10, Aplicar_Dto = false });
+            A.CallTo(() => servicio.BuscarOfertasPermitidas("40640")).Returns(new List<OfertaPermitida>
+            {
+                new OfertaPermitida { NºOrden = 308, Número = "40640", CantidadConPrecio = 5, CantidadRegalo = 1 }
+            });
+
+            List<SugerenciaOfertaDTO> s = GestorSugerenciasOfertas.Calcular(Pedido(Linea("40640", 5, 10)), servicio, Acepta);
+
+            Assert.AreEqual(308, s.Single().Oferta);
+        }
 
         [TestMethod]
         public void CincoUnidadesConUn6Mas1_SugiereAmpliarAUnaMas()

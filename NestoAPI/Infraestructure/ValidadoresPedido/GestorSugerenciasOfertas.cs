@@ -401,6 +401,13 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             {
                 aplicables = especificas;
             }
+            else if (producto != null && !GestorPrecios.calcularAplicarDescuento(producto))
+            {
+                // 23/09/26 (vendedor, 45917 de Anubis): un producto que no admite descuento (Aplicar_Dto = 0)
+                // no entra en el N+M de su familia; el regalo es un 100 % de descuento. Solo le vale una
+                // oferta dada de alta expresamente para él (hay tres: 40640, 40642 y 44731).
+                return null;
+            }
             if (!aplicables.Any())
             {
                 return null;
