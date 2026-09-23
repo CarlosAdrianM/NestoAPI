@@ -26,9 +26,6 @@ namespace NestoAPI.Infraestructure.Facturas
         private readonly Verifactu.IServicioVerifactu servicioVerifactu;
         private readonly ILogService logService;
 
-        // Compartido para no crear un HttpClient por cada instancia de ServicioFacturas
-        private static readonly Lazy<Verifactu.IServicioVerifactu> servicioVerifactuPorDefecto =
-            new Lazy<Verifactu.IServicioVerifactu>(() => new Verifactu.Verifacti.ServicioVerifacti());
 
         /// <summary>
         /// Constructor por defecto. Crea su propio NVEntities interno.
@@ -65,7 +62,8 @@ namespace NestoAPI.Infraestructure.Facturas
                 db = new NVEntities();
                 dbEsExterno = false;
             }
-            this.servicioVerifactu = servicioVerifactu ?? servicioVerifactuPorDefecto.Value;
+            // #326: el proveedor lo decide ProveedorVerifactu (instancia compartida, un solo HttpClient).
+            this.servicioVerifactu = servicioVerifactu ?? Verifactu.ProveedorVerifactu.Actual;
             this.logService = logService ?? new ElmahLogService();
             // Issue #87: vinculaciones de rectificativas facturadas a mano (tabla RectificativaPendiente)
             this.almacenRectificativasPendientes = almacenRectificativasPendientes

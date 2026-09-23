@@ -27,8 +27,8 @@ namespace NestoAPI.Infraestructure.Facturas
         // Verifactu #35: interruptor de impresión del QR tributario en las facturas PDF.
         // Independiente de Verifacti:Habilitado a propósito: en la fase en sombra se envía al
         // sandbox (Habilitado=true) pero el QR de preproducción NO debe imprimirse todavía.
-        internal static bool MostrarQrVerifactuEnPdf =>
-            bool.TryParse(ConfigurationManager.AppSettings["Verifacti:MostrarQrEnPdf"], out bool mostrar) && mostrar;
+        // #326: la clave es del proveedor; se pregunta al único punto que lo conoce.
+        internal static bool MostrarQrVerifactuEnPdf => Verifactu.ProveedorVerifactu.MostrarQrEnPdf;
 
         /// <summary>
         /// Verifactu #35 (petición expresa de Carlos, 20/07/26): un QR registrado en el SANDBOX

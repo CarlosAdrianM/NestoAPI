@@ -54,7 +54,8 @@ namespace NestoAPI.Infraestructure.Verifactu
             Func<CabFacturaVta, Task<VerifactuResponse>> reenviar = null)
         {
             this.db = db ?? new NVEntities();
-            this.servicioVerifactu = servicioVerifactu ?? new Verifacti.ServicioVerifacti();
+            // #326: el proveedor lo decide ProveedorVerifactu (antes, un ServicioVerifacti nuevo por job).
+            this.servicioVerifactu = servicioVerifactu ?? ProveedorVerifactu.Actual;
             this.servicioValidacionNif = servicioValidacionNif ?? new ServicioValidacionNif(this.db);
             this.servicioCorreo = servicioCorreo ?? new ServicioCorreoElectronico();
             this.reenviar = reenviar ?? ReenviarConServicioFacturas;
