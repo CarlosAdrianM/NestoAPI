@@ -454,7 +454,13 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest("Falta el pedido.");
             }
-            return Ok(Infraestructure.ValidadoresPedido.GestorSugerenciasOfertas.Calcular(pedido, GestorPrecios.servicio));
+            // APAGADO DE URGENCIA (23/09/26 10:50): la plantilla de Nesto 1.10.29.0 entra en bucle pidiendo
+            // sugerencias cada 1,5 s y cada llamada valida el pedido entero una vez por producto (~50.000
+            // lecturas de Productos en 90 s): w3wp al 100 % en RDS2016 y nadie podía trabajar. Sin
+            // sugerencias Nesto y NestoApp siguen igual (lista vacía = «no hay ofertas que avisar») y el
+            // pedido se valida al guardar como siempre. Reactivar cuando se arregle el bucle del cliente
+            // y el coste por llamada.
+            return Ok(new List<Infraestructure.ValidadoresPedido.SugerenciaOfertaDTO>());
         }
 
         [HttpPost]
