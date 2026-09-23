@@ -19,4 +19,30 @@ namespace NestoAPI.Models.Novedades
         /// <summary>Nesto / NestoAPI (informativo; el usuario ve un único changelog)</summary>
         public string Ambito { get; set; }
     }
+
+    /// <summary>
+    /// NestoAPI#520: la novedad tal cual sale por GET api/Novedades, con el feedback de los usuarios.
+    /// Clase aparte porque <c>SqlQuery&lt;NovedadDTO&gt;</c> exige una columna por propiedad. Los campos
+    /// son opcionales: si las tablas de feedback aún no existen o fallan, salen a null y los clientes
+    /// viejos ni se enteran.
+    /// </summary>
+    public class NovedadConFeedbackDTO : NovedadDTO
+    {
+        public int? VotosPositivos { get; set; }
+        public int? VotosNegativos { get; set; }
+        /// <summary>1, -1 o null (no ha votado, o petición sin usuario).</summary>
+        public short? MiVoto { get; set; }
+        public int? NumeroComentarios { get; set; }
+
+        public static NovedadConFeedbackDTO Desde(NovedadDTO n) => new NovedadConFeedbackDTO
+        {
+            Id = n.Id,
+            Version = n.Version,
+            Fecha = n.Fecha,
+            Categoria = n.Categoria,
+            Titulo = n.Titulo,
+            Descripcion = n.Descripcion,
+            Ambito = n.Ambito
+        };
+    }
 }

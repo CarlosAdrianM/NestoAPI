@@ -695,6 +695,10 @@
     <Compile Include="Infraestructure\Exceptions\DescuentosDuplicadosException.cs" />
     <Compile Include="Infraestructure\Novedades\IServicioNovedades.cs" />
     <Compile Include="Infraestructure\Novedades\ServicioNovedades.cs" />
+    <Compile Include="Infraestructure\Novedades\IServicioFeedbackNovedades.cs" />
+    <Compile Include="Infraestructure\Novedades\ServicioFeedbackNovedades.cs" />
+    <Compile Include="Infraestructure\Novedades\ReglasFeedbackNovedades.cs" />
+    <Compile Include="Models\Novedades\FeedbackNovedadesDTO.cs" />
     <Compile Include="Models\Novedades\NovedadDTO.cs" />
     <Compile Include="Controllers\NovedadesController.cs" />
     <Compile Include="Infraestructure\Exceptions\PedidoValidacionException.cs" />

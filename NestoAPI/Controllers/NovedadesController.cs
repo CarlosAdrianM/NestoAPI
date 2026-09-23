@@ -1,9 +1,15 @@
-﻿using NestoAPI.Infraestructure.Novedades;
+﻿using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Novedades;
+using NestoAPI.Infrastructure;
+using NestoAPI.Models;
 using NestoAPI.Models.Novedades;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Threading;
 using System.Web.Http;
 using System.Web.Http.Description;
 
@@ -17,12 +23,17 @@ namespace NestoAPI.Controllers
     public class NovedadesController : ApiController
     {
         private readonly IServicioNovedades servicio;
+        // NestoAPI#520: votos y comentarios. null = sin feedback (las Novedades salen como siempre).
+        private readonly IServicioFeedbackNovedades feedback;
 
-        public NovedadesController() : this(new ServicioNovedades()) { }
+        public NovedadesController() : this(new ServicioNovedades(), new ServicioFeedbackNovedades()) { }
 
-        public NovedadesController(IServicioNovedades servicio)
+        public NovedadesController(IServicioNovedades servicio) : this(servicio, null) { }
+
+        public NovedadesController(IServicioNovedades servicio, IServicioFeedbackNovedades feedback)
         {
             this.servicio = servicio;
+            this.feedback = feedback;
         }
 
         // GET api/Novedades
@@ -86,7 +97,214 @@ namespace NestoAPI.Controllers
                 .ThenBy(n => n.Id)
                 .ToList();
 
-            return Ok(ordenadas);
+            return Ok(ConFeedback(ordenadas));
         }
+
+        #region NestoAPI#520: feedback de los usuarios (votos y comentarios)
+
+        // Quién puede leer el feedback de todos para el desarrollo (revisión diaria, como ELMAH).
+        internal const string GRUPO_INFORMATICA = "Informatica";
+        private static int feedbackFalloRegistrado;
+
+        /// <summary>
+        /// Añade a cada novedad sus votos, el voto de quien pregunta y el nº de comentarios, con UNA
+        /// consulta para todas (nada de una por novedad). Si el feedback falla (p. ej. tablas aún no
+        /// creadas), las Novedades salen igual y el fallo se registra en ELMAH una sola vez.
+        /// </summary>
+        internal List<NovedadDTO> ConFeedback(List<NovedadDTO> novedades)
+        {
+            if (feedback == null || novedades.Count == 0)
+            {
+                return novedades;
+            }
+            List<ResumenFeedbackNovedad> resumen;
+            try
+            {
+                resumen = feedback.LeerResumen(novedades.Select(n => n.Id), ReglasFeedbackNovedades.ClaveUsuario(User))
+                    ?? new List<ResumenFeedbackNovedad>();
+            }
+            catch (Exception ex)
+            {
+                if (Interlocked.Exchange(ref feedbackFalloRegistrado, 1) == 0)
+                {
+                    try
+                    {
+                        ElmahHelper.Log(new Exception("Novedades (#520): no se pudo leer el feedback; se sirven sin votos ni comentarios. " + ex.Message, ex));
+                    }
+                    catch
+                    {
+                        // El diagnóstico nunca rompe las Novedades.
+                    }
+                }
+                return novedades;
+            }
+            Dictionary<int, ResumenFeedbackNovedad> porNovedad = resumen.GroupBy(r => r.NovedadId).ToDictionary(g => g.Key, g => g.First());
+            return novedades.Select(n =>
+            {
+                NovedadConFeedbackDTO conFeedback = NovedadConFeedbackDTO.Desde(n);
+                porNovedad.TryGetValue(n.Id, out ResumenFeedbackNovedad r);
+                conFeedback.VotosPositivos = r?.Positivos ?? 0;
+                conFeedback.VotosNegativos = r?.Negativos ?? 0;
+                conFeedback.MiVoto = r?.MiVoto;
+                conFeedback.NumeroComentarios = r?.Comentarios ?? 0;
+                return (NovedadDTO)conFeedback;
+            }).ToList();
+        }
+
+        // PUT api/Novedades/5/Voto  { "Voto": 1 | -1 | 0 }   (0 = quitar el voto)
+        [HttpPut]
+        [Authorize]
+        [Route("api/Novedades/{id:int}/Voto")]
+        public IHttpActionResult PutVoto(int id, [FromBody] VotoNovedadDTO voto)
+        {
+            string usuario = ReglasFeedbackNovedades.ClaveUsuario(User);
+            if (usuario == null)
+            {
+                return Unauthorized();
+            }
+            if (voto == null || !ReglasFeedbackNovedades.EsVotoValido(voto.Voto))
+            {
+                return BadRequest("El voto debe ser 1 (me gusta), -1 (no me gusta) o 0 (quitar el voto).");
+            }
+            if (!feedback.ExisteNovedad(id))
+            {
+                return NotFound();
+            }
+            feedback.Votar(id, usuario, ReglasFeedbackNovedades.Cliente(User), voto.Voto);
+            return StatusCode(HttpStatusCode.NoContent);
+        }
+
+        // GET api/Novedades/5/Comentarios
+        [HttpGet]
+        [Authorize]
+        [Route("api/Novedades/{id:int}/Comentarios")]
+        [ResponseType(typeof(List<ComentarioNovedadDTO>))]
+        public IHttpActionResult GetComentarios(int id)
+        {
+            return Ok(feedback.LeerComentarios(id, ReglasFeedbackNovedades.ClaveUsuario(User)));
+        }
+
+        // POST api/Novedades/5/Comentarios  { "Texto": "...", "ImagenBase64": "...", "VersionCliente": "1.10.29.1" }
+        [HttpPost]
+        [Authorize]
+        [Route("api/Novedades/{id:int}/Comentarios")]
+        [ResponseType(typeof(ComentarioNovedadDTO))]
+        public IHttpActionResult PostComentario(int id, [FromBody] NuevoComentarioNovedadDTO comentario)
+        {
+            string usuario = ReglasFeedbackNovedades.ClaveUsuario(User);
+            if (usuario == null)
+            {
+                return Unauthorized();
+            }
+            string error = ReglasFeedbackNovedades.Validar(comentario, out byte[] imagen, out string tipo);
+            if (error != null)
+            {
+                return BadRequest(error);
+            }
+            if (!feedback.ExisteNovedad(id))
+            {
+                return NotFound();
+            }
+            var aGrabar = new ComentarioNovedadAGrabar
+            {
+                NovedadId = id,
+                Usuario = usuario,
+                NombreVisible = ReglasFeedbackNovedades.NombreVisible(User),
+                Cliente = ReglasFeedbackNovedades.Cliente(User),
+                VersionCliente = string.IsNullOrWhiteSpace(comentario.VersionCliente) ? null
+                    : comentario.VersionCliente.Trim().Substring(0, Math.Min(30, comentario.VersionCliente.Trim().Length)),
+                Texto = comentario.Texto.Trim(),
+                Imagen = imagen,
+                ImagenTipo = tipo
+            };
+            int nuevoId = feedback.CrearComentario(aGrabar);
+            return Ok(new ComentarioNovedadDTO
+            {
+                Id = nuevoId,
+                NovedadId = id,
+                NombreVisible = aGrabar.NombreVisible,
+                Cliente = aGrabar.Cliente,
+                VersionCliente = aGrabar.VersionCliente,
+                Texto = aGrabar.Texto,
+                Fecha = DateTime.Now,
+                TieneImagen = imagen != null,
+                EsMio = true
+            });
+        }
+
+        // GET api/Novedades/Comentarios/7/Imagen  → la captura con su content-type
+        [HttpGet]
+        [Authorize]
+        [Route("api/Novedades/Comentarios/{id:int}/Imagen")]
+        public HttpResponseMessage GetImagenComentario(int id)
+        {
+            ImagenComentarioNovedad imagen = feedback.LeerImagen(id);
+            if (imagen?.Imagen == null)
+            {
+                return Request.CreateResponse(HttpStatusCode.NotFound);
+            }
+            var respuesta = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(imagen.Imagen)
+            };
+            respuesta.Content.Headers.ContentType = new MediaTypeHeaderValue(imagen.ImagenTipo ?? ReglasFeedbackNovedades.TIPO_PNG);
+            return respuesta;
+        }
+
+        // DELETE api/Novedades/Comentarios/7  → solo su autor
+        [HttpDelete]
+        [Authorize]
+        [Route("api/Novedades/Comentarios/{id:int}")]
+        public IHttpActionResult DeleteComentario(int id)
+        {
+            string usuario = ReglasFeedbackNovedades.ClaveUsuario(User);
+            if (usuario == null)
+            {
+                return Unauthorized();
+            }
+            string autor = feedback.LeerAutorComentario(id);
+            if (autor == null)
+            {
+                return NotFound();
+            }
+            if (!string.Equals(autor.Trim(), usuario, StringComparison.OrdinalIgnoreCase))
+            {
+                return StatusCode(HttpStatusCode.Forbidden);
+            }
+            feedback.BorrarComentario(id);
+            return StatusCode(HttpStatusCode.NoContent);
+        }
+
+        // GET api/Novedades/Feedback?desde=2026-09-22&soloNoRevisados=true  (desarrollo: Dirección / Informática)
+        [HttpGet]
+        [Authorize]
+        [Route("api/Novedades/Feedback")]
+        [ResponseType(typeof(FeedbackNovedadesDTO))]
+        public IHttpActionResult GetFeedback(DateTime? desde = null, bool soloNoRevisados = true)
+        {
+            if (!PuedeRevisarFeedback())
+            {
+                return StatusCode(HttpStatusCode.Forbidden);
+            }
+            return Ok(feedback.LeerFeedback(desde ?? DateTime.Today.AddDays(-7), soloNoRevisados));
+        }
+
+        // POST api/Novedades/Comentarios/7/Revisado  (desarrollo: Dirección / Informática)
+        [HttpPost]
+        [Authorize]
+        [Route("api/Novedades/Comentarios/{id:int}/Revisado")]
+        public IHttpActionResult PostRevisado(int id)
+        {
+            if (!PuedeRevisarFeedback())
+            {
+                return StatusCode(HttpStatusCode.Forbidden);
+            }
+            return feedback.MarcarRevisado(id) ? (IHttpActionResult)StatusCode(HttpStatusCode.NoContent) : NotFound();
+        }
+
+        private bool PuedeRevisarFeedback() =>
+            User != null && (User.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION) || User.IsInRoleSinDominio(GRUPO_INFORMATICA));
+
+        #endregion
     }
 }
