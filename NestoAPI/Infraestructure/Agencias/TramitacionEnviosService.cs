@@ -814,23 +814,42 @@ namespace NestoAPI.Infraestructure.Agencias
 
     public class ProcedimientosExtractoCliente : IProcedimientosExtractoCliente
     {
-        public Task DesliquidarAsync(NVEntities db, string empresa, int numOrden)
+        public async Task DesliquidarAsync(NVEntities db, string empresa, int numOrden)
         {
-            return db.Database.ExecuteSqlCommandAsync("EXEC prdDesliquidar @Empresa, @NumOrden",
+            _ = await db.Database.ExecuteSqlCommandAsync("EXEC prdDesliquidar @Empresa, @NumOrden",
                 new SqlParameter("@Empresa", SqlDbType.Char, 3) { Value = empresa },
-                new SqlParameter("@NumOrden", SqlDbType.Int) { Value = numOrden });
+                new SqlParameter("@NumOrden", SqlDbType.Int) { Value = numOrden }).ConfigureAwait(false);
+            await RecargarExtractosEnMemoriaAsync(db).ConfigureAwait(false);
         }
 
-        public Task ModificarEfectoClienteAsync(NVEntities db, int numOrden, DateTime? fechaVto, string ccc, string ruta, string estado, string concepto)
+        /// <summary>
+        /// 23/09/26 (envío 247500, cliente 41084, Aida): el SP cambia ImportePdte POR SQL, pero EF no se entera.
+        /// Si el movimiento ya estaba cargado en el contexto (CalcularMovimientoDesliqAsync lo carga para
+        /// decidir si desliquidar), cualquier consulta posterior devuelve la ENTIDAD EN MEMORIA con el
+        /// pendiente viejo (0): la validación previa a contabilizar decía «pendiente del movimiento 0,00 €»
+        /// justo después de haberlo desliquidado, y la modificación del reembolso fallaba. Tras un SP que
+        /// toca el extracto se recargan de la BD los movimientos que EF tenga en memoria.
+        /// No lo pueden cubrir los tests (dobles en memoria): es comportamiento del contexto de EF.
+        /// </summary>
+        internal static async Task RecargarExtractosEnMemoriaAsync(NVEntities db)
+        {
+            foreach (var entrada in db.ChangeTracker.Entries<ExtractoCliente>().ToList())
+            {
+                await entrada.ReloadAsync().ConfigureAwait(false);
+            }
+        }
+
+        public async Task ModificarEfectoClienteAsync(NVEntities db, int numOrden, DateTime? fechaVto, string ccc, string ruta, string estado, string concepto)
         {
             // @Estado es de entrada/salida en el SP (char(3)).
-            return db.Database.ExecuteSqlCommandAsync("EXEC prdModificarEfectoCliente @NumOrden, @FechaVto, @CCC, @Ruta, @Estado OUTPUT, @Concepto",
+            _ = await db.Database.ExecuteSqlCommandAsync("EXEC prdModificarEfectoCliente @NumOrden, @FechaVto, @CCC, @Ruta, @Estado OUTPUT, @Concepto",
                 new SqlParameter("@NumOrden", SqlDbType.Int) { Value = numOrden },
                 new SqlParameter("@FechaVto", SqlDbType.DateTime) { Value = (object)fechaVto ?? DBNull.Value },
                 new SqlParameter("@CCC", SqlDbType.Char, 3) { Value = (object)ccc ?? DBNull.Value },
                 new SqlParameter("@Ruta", SqlDbType.Char, 3) { Value = (object)ruta ?? DBNull.Value },
                 new SqlParameter("@Estado", SqlDbType.Char, 3) { Value = estado, Direction = ParameterDirection.InputOutput },
-                new SqlParameter("@Concepto", SqlDbType.Char, 50) { Value = (object)concepto ?? DBNull.Value });
+                new SqlParameter("@Concepto", SqlDbType.Char, 50) { Value = (object)concepto ?? DBNull.Value }).ConfigureAwait(false);
+            await RecargarExtractosEnMemoriaAsync(db).ConfigureAwait(false);
         }
     }
 
