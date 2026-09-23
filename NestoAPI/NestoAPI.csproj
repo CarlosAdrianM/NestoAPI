@@ -656,6 +656,7 @@
     <Compile Include="Infraestructure\Contabilidad\ExtractoProveedorAdapter.cs" />
     <Compile Include="Infraestructure\Contabilidad\GeneradorPdfMayor.cs" />
     <Compile Include="Infraestructure\Contabilidad\CalculadorSaldoMayor.cs" />
+    <Compile Include="Infraestructure\Contabilidad\SumasPunteo.cs" />
     <Compile Include="Infraestructure\Depositos\GestorDepositos.cs" />
     <Compile Include="Infraestructure\Depositos\IServicioDeposito.cs" />
     <Compile Include="Infraestructure\Depositos\ServicioDeposito.cs" />

@@ -1,4 +1,5 @@
 ﻿using NestoAPI.Infraestructure.Contabilidad;
+using NestoAPI.Infraestructure.Contabilidad;
 using NestoAPI.Models;
 using NestoAPI.Models.ApuntesBanco;
 using NestoAPI.Models.Bancos;
@@ -122,20 +123,19 @@ namespace NestoAPI.Controllers
 
                 List<ApunteBancarioDTO> apuntesBancariosDTO = await apuntesQuery.ToListAsync();
 
+                // 23/09/26: lo punteado de TODOS los apuntes en una consulta agrupada (antes eran dos
+                // consultas por apunte: ~10 s para abrir La Caixa con 555 apuntes).
+                Dictionary<int, decimal> punteado = await SumasPunteo
+                    .PorApunteBancoAsync(db.ConciliacionesBancariasPunteos, apuntesBancariosDTO.Select(a => a.Id))
+                    .ConfigureAwait(false);
+
                 // Realizar la conversión después de obtener los resultados
                 foreach (ApunteBancarioDTO apunte in apuntesBancariosDTO)
                 {
                     apunte.TextoConceptoComun = GestorContabilidad.ObtenerTextoConceptoComun(apunte.ConceptoComun);
-                    apunte.EstadoPunteo = db.ConciliacionesBancariasPunteos
-                            .Where(p => p.ApunteBancoId == apunte.Id)
-                            .Select(p => p.ImportePunteado)
-                            .DefaultIfEmpty(0)
-                            .Sum() == apunte.ImporteConSigno ? EstadoPunteo.CompletamentePunteado :
-                                db.ConciliacionesBancariasPunteos
-                                    .Where(p => p.ApunteBancoId == apunte.Id)
-                                    .Select(p => p.ImportePunteado)
-                                    .DefaultIfEmpty(0)
-                                    .Sum() != 0 ? EstadoPunteo.ParcialmentePunteado : EstadoPunteo.SinPuntear;
+                    decimal sumaPunteada = SumasPunteo.SumaDe(punteado, apunte.Id);
+                    apunte.EstadoPunteo = sumaPunteada == apunte.ImporteConSigno ? EstadoPunteo.CompletamentePunteado :
+                        sumaPunteada != 0 ? EstadoPunteo.ParcialmentePunteado : EstadoPunteo.SinPuntear;
                 }
 
                 return Ok(apuntesBancariosDTO.OrderBy(a => a.FechaOperacion).ThenBy(a => a.Id));

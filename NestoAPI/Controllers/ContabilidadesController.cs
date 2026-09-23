@@ -1,4 +1,5 @@
 ﻿using NestoAPI.Infraestructure.Contabilidad;
+using NestoAPI.Infraestructure.Contabilidad;
 using NestoAPI.Models;
 using NestoAPI.Models.ApuntesBanco;
 using NestoAPI.Models.Mayor;
@@ -225,9 +226,13 @@ namespace NestoAPI.Controllers
                     return NotFound();
                 }
 
+                // 23/09/26: lo punteado de todos los apuntes en una consulta agrupada, no una por apunte.
+                Dictionary<int, decimal> punteado = await SumasPunteo
+                    .PorApunteContabilidadAsync(db.ConciliacionesBancariasPunteos, apuntesDTO.Select(a => a.Id))
+                    .ConfigureAwait(false);
                 foreach (ContabilidadDTO apunte in apuntesDTO)
                 {
-                    apunte.EstadoPunteo = ObtenerEstadoPunteo(apunte.Id, apunte.Debe - apunte.Haber);
+                    apunte.EstadoPunteo = EstadoPunteoContabilidad(SumasPunteo.SumaDe(punteado, apunte.Id), apunte.Debe - apunte.Haber);
                 }
 
                 return Ok(apuntesDTO);
@@ -570,17 +575,9 @@ namespace NestoAPI.Controllers
         }
 
 
-        // Método auxiliar para obtener el estado de punteo
-        private EstadoPunteo ObtenerEstadoPunteo(int contabilidadId, decimal importeContabilidad)
+        // Estado de punteo de un apunte de contabilidad a partir de lo ya punteado (SumasPunteo).
+        internal static EstadoPunteo EstadoPunteoContabilidad(decimal totalPunteado, decimal importeContabilidad)
         {
-            // Lógica para determinar el estado de punteo según tus criterios
-            // Puedes utilizar consultas a la base de datos o lógica en memoria según sea necesario
-            // Aquí proporciono un ejemplo simple para ilustrar el concepto, ajusta según tus necesidades.
-            decimal totalPunteado = db.ConciliacionesBancariasPunteos
-                .Where(p => p.ApunteContabilidadId == contabilidadId)
-                .Select(p => p.ImportePunteado)
-                .DefaultIfEmpty(0)
-                .Sum();
             return totalPunteado == 0 ? EstadoPunteo.SinPuntear :
                    totalPunteado == importeContabilidad ? EstadoPunteo.CompletamentePunteado :
                    EstadoPunteo.ParcialmentePunteado;
