@@ -105,6 +105,22 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public async Task GetPedidosVenta_DeUnCliente_UnPedidoFacturadoNoSaleConPicking()
+        {
+            // NestoAPI#11 (2016): el listado de pedidos de un cliente incluye los facturados, y sus líneas
+            // conservan el nº de picking: salían «con picking» cuando ya habían salido hace tiempo.
+            Pedido(925200, "15191     ", "NV ", ((short)4, 50M, PASADO));
+            lineas.Last().Picking = 1234;
+            Pedido(925201, "15191     ", "NV ", ((short)1, 20M, PASADO));
+            lineas.Last().Picking = 1235;
+
+            List<ResumenPedidoVentaDTO> lista = await controller.GetPedidosVenta("", "15191     ");
+
+            Assert.IsFalse(lista.Single(p => p.numero == 925200).tienePicking, "facturado: ya no tiene picking pendiente");
+            Assert.IsTrue(lista.Single(p => p.numero == 925201).tienePicking, "en curso con picking");
+        }
+
+        [TestMethod]
         public async Task GetPedidosVenta_TieneFechasFuturas_SoloSiUnaLineaPendienteEntregaMasTarde()
         {
             Pedido(925100, "15191", "NV ", ((short)-1, 100M, FUTURO));

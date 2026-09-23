@@ -205,7 +205,9 @@ namespace NestoAPI.Controllers
                     fecha = x.Min(c => c.Fecha_Entrega),
                     tieneProductos = x.Any(c => c.TipoLinea == 1),
                     tienePendientes = x.Any(c => c.Estado < 0),
-                    tienePicking = x.Any(c => c.Picking != 0),
+                    // NestoAPI#11 (2016): una línea servida o facturada conserva su nº de picking; «tiene
+                    // picking» es solo de lo que aún no ha salido (pendiente..en curso).
+                    tienePicking = x.Any(c => c.Picking != 0 && c.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && c.Estado <= Constantes.EstadosLineaVenta.EN_CURSO),
                     baseImponible = x.Sum(c => c.Base_Imponible),
                     total = x.Sum(c => c.Total),
                     // Solo las líneas pendientes/en curso cuentan para "tiene fechas futuras".
@@ -298,7 +300,8 @@ namespace NestoAPI.Controllers
                     tieneProductos = x.FirstOrDefault(c => c.TipoLinea == 1) != null,
                     //tienePendientes = x.FirstOrDefault(c => c.Estado == Constantes.EstadosLineaVenta.PENDIENTE) != null,
                     tienePresupuesto = x.FirstOrDefault(c => c.Estado == Constantes.EstadosLineaVenta.PRESUPUESTO) != null,
-                    tienePicking = x.FirstOrDefault(c => c.Picking != 0) != null,
+                    // NestoAPI#11: solo las líneas que aún no han salido (una facturada conserva su nº de picking).
+                    tienePicking = x.FirstOrDefault(c => c.Picking != 0 && c.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && c.Estado <= Constantes.EstadosLineaVenta.EN_CURSO) != null,
                     baseImponible = x.Sum(c => c.Base_Imponible),
                     total = x.Sum(c => c.Total),
                     vendedor = x.Key.Vendedor.Trim(),
