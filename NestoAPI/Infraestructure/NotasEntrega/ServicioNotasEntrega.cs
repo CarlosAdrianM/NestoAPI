@@ -16,10 +16,21 @@ namespace NestoAPI.Infraestructure.NotasEntrega
     public class ServicioNotasEntrega : IServicioNotasEntrega
     {
         private readonly NVEntities db;
+        private readonly Func<SqlParameter, SqlParameter, Task<int>> ejecutarPrdExtrProducto;
 
-        public ServicioNotasEntrega(NVEntities db)
+        public ServicioNotasEntrega(NVEntities db) : this(db, null)
+        {
+        }
+
+        /// <summary>
+        /// NestoAPI#313: prdExtrProducto se lanza por <c>db.Database</c>, que no es virtual y no se puede
+        /// falsear; los tests pasan aquí su propia forma de "ejecutarlo". En producción (null) es la de siempre.
+        /// </summary>
+        internal ServicioNotasEntrega(NVEntities db, Func<SqlParameter, SqlParameter, Task<int>> ejecutarPrdExtrProducto)
         {
             this.db = db ?? throw new ArgumentNullException(nameof(db));
+            this.ejecutarPrdExtrProducto = ejecutarPrdExtrProducto
+                ?? ((empresa, diario) => this.db.Database.ExecuteSqlCommandAsync("EXEC prdExtrProducto @Empresa, @Diario", empresa, diario));
         }
 
         /// <summary>
@@ -221,10 +232,7 @@ namespace NestoAPI.Infraestructure.NotasEntrega
                         Value = Constantes.DiariosProducto.ENTREGA_FACTURADA
                     };
 
-                    var resultadoProcedimiento = await db.Database.ExecuteSqlCommandAsync(
-                        "EXEC prdExtrProducto @Empresa, @Diario",
-                        empresaParametro,
-                        diarioParametro);
+                    var resultadoProcedimiento = await ejecutarPrdExtrProducto(empresaParametro, diarioParametro);
 
                     System.Diagnostics.Debug.WriteLine($"     [ServicioNotasEntrega] prdExtrProducto ejecutado correctamente. Filas afectadas: {resultadoProcedimiento}");
                 }

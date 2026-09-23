@@ -2,9 +2,12 @@ using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.NotasEntrega;
 using NestoAPI.Models;
+using NestoAPI.Tests.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Data.Entity;
+using System.Data.Entity.Infrastructure;
+using System.Data.SqlClient;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -15,12 +18,48 @@ namespace NestoAPI.Tests.Infrastructure
     {
         private NVEntities db;
         private IServicioNotasEntrega servicio;
+        // NestoAPI#313: DbSets falsos CON datos (los operadores de EF, incluidos los async como
+        // FirstOrDefaultAsync/MinAsync, son métodos de extensión que FakeItEasy no intercepta).
+        private List<ContadorGlobal> contadores;
+        private List<ExtractoRuta> extractosRuta;
+        private List<Ubicacion> ubicacionesBd;
+        // prdExtrProducto no se puede lanzar sin BD: se registra la llamada.
+        private List<(SqlParameter Empresa, SqlParameter Diario)> llamadasPrdExtrProducto;
 
         [TestInitialize]
         public void Setup()
         {
             db = A.Fake<NVEntities>();
-            servicio = new ServicioNotasEntrega(db);
+            contadores = new List<ContadorGlobal> { new ContadorGlobal { NotaEntrega = 1000, TraspasoAlmacén = 5000 } };
+            extractosRuta = new List<ExtractoRuta>();
+            ubicacionesBd = new List<Ubicacion>();
+            llamadasPrdExtrProducto = new List<(SqlParameter, SqlParameter)>();
+            A.CallTo(() => db.ContadoresGlobales).Returns(DbSetCon(contadores));
+            A.CallTo(() => db.ExtractoRutas).Returns(DbSetCon(extractosRuta));
+            A.CallTo(() => db.Ubicaciones).Returns(DbSetCon(ubicacionesBd));
+            servicio = new ServicioNotasEntrega(db, (empresa, diario) =>
+            {
+                llamadasPrdExtrProducto.Add((empresa, diario));
+                return Task.FromResult(1);
+            });
+        }
+
+        private static DbSet<T> DbSetCon<T>(List<T> datos) where T : class
+        {
+            var fake = A.Fake<DbSet<T>>(o => o.Implements<IQueryable<T>>().Implements<IDbAsyncEnumerable<T>>());
+            A.CallTo(() => ((IDbAsyncEnumerable<T>)fake).GetAsyncEnumerator())
+                .ReturnsLazily(() => new TestDbAsyncEnumerator<T>(datos.GetEnumerator()));
+            A.CallTo(() => ((IQueryable<T>)fake).Provider).ReturnsLazily(() => new TestDbAsyncQueryProvider<T>(datos.AsQueryable().Provider));
+            A.CallTo(() => ((IQueryable<T>)fake).Expression).ReturnsLazily(() => datos.AsQueryable().Expression);
+            A.CallTo(() => ((IQueryable<T>)fake).ElementType).Returns(typeof(T));
+            A.CallTo(() => ((IQueryable<T>)fake).GetEnumerator()).ReturnsLazily(() => datos.GetEnumerator());
+            return fake;
+        }
+
+        private void UsarContador(ContadorGlobal contador)
+        {
+            contadores.Clear();
+            contadores.Add(contador);
         }
 
         #region Constructor Tests
@@ -161,7 +200,7 @@ namespace NestoAPI.Tests.Infrastructure
                 p.Número == "PROD003" &&
                 p.Nº_Cliente == "1002" &&
                 p.ContactoCliente == "0" &&
-                p.Cantidad == 5 &&
+                p.Cantidad == -5 && // en negativo: da de baja el stock (ServicioNotasEntrega.DarDeBajaStock)
                 p.Importe == 200m &&
                 p.Almacén == Constantes.Almacenes.ALGETE &&
                 p.Diario == Constantes.DiariosProducto.ENTREGA_FACTURADA &&
@@ -246,7 +285,7 @@ namespace NestoAPI.Tests.Infrastructure
             // Verificar que solo se insertó UNA entrada en PreExtrProducto (solo la línea YaFacturado=true)
             A.CallTo(() => fakePreExtr.Add(A<PreExtrProducto>.That.Matches(p =>
                 p.Número == "PROD005" && // Solo PROD005 está YaFacturado
-                p.Cantidad == 3 &&
+                p.Cantidad == -3 && // en negativo: da de baja el stock
                 p.Importe == 150m
             ))).MustHaveHappenedOnceExactly();
         }
@@ -401,7 +440,7 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => db.Clientes.Find("1", "1006", "0")).Returns(fakeCliente);
 
             var fakeContador = new ContadorGlobal { NotaEntrega = 1000, TraspasoAlmacén = 5000 };
-            A.CallTo(() => db.ContadoresGlobales.FirstOrDefaultAsync()).Returns(Task.FromResult(fakeContador));
+            UsarContador(fakeContador);
 
             var fakePreExtr = A.Fake<System.Data.Entity.DbSet<PreExtrProducto>>();
             A.CallTo(() => db.PreExtrProductos).Returns(fakePreExtr);
@@ -454,7 +493,7 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => db.Clientes.Find("1", "1007", "0")).Returns(fakeCliente);
 
             var fakeContador = new ContadorGlobal { NotaEntrega = 1000, TraspasoAlmacén = 7777 };
-            A.CallTo(() => db.ContadoresGlobales.FirstOrDefaultAsync()).Returns(Task.FromResult(fakeContador));
+            UsarContador(fakeContador);
 
             var fakePreExtr = A.Fake<System.Data.Entity.DbSet<PreExtrProducto>>();
             A.CallTo(() => db.PreExtrProductos).Returns(fakePreExtr);
@@ -506,7 +545,7 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => db.Clientes.Find("1", "1008", "0")).Returns(fakeCliente);
 
             var fakeContador = new ContadorGlobal { NotaEntrega = 1000, TraspasoAlmacén = 5000 };
-            A.CallTo(() => db.ContadoresGlobales.FirstOrDefaultAsync()).Returns(Task.FromResult(fakeContador));
+            UsarContador(fakeContador);
 
             var fakePreExtr = A.Fake<System.Data.Entity.DbSet<PreExtrProducto>>();
             A.CallTo(() => db.PreExtrProductos).Returns(fakePreExtr);
@@ -579,7 +618,7 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => db.Clientes.Find("1", "1009", "0")).Returns(fakeCliente);
 
             var fakeContador = new ContadorGlobal { NotaEntrega = 1000, TraspasoAlmacén = 9000 };
-            A.CallTo(() => db.ContadoresGlobales.FirstOrDefaultAsync()).Returns(Task.FromResult(fakeContador));
+            UsarContador(fakeContador);
 
             var fakePreExtr = A.Fake<System.Data.Entity.DbSet<PreExtrProducto>>();
             A.CallTo(() => db.PreExtrProductos).Returns(fakePreExtr);
@@ -633,7 +672,7 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => db.Clientes.Find("1", "1010", "0")).Returns(fakeCliente);
 
             var fakeContador = new ContadorGlobal { NotaEntrega = 1000, TraspasoAlmacén = 5000 };
-            A.CallTo(() => db.ContadoresGlobales.FirstOrDefaultAsync()).Returns(Task.FromResult(fakeContador));
+            UsarContador(fakeContador);
 
             // Act
             await servicio.ProcesarNotaEntrega(pedido, "NUEVAVISION\\Carlos");
@@ -681,13 +720,10 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => db.Clientes.Find("1", "1011", "0")).Returns(fakeCliente);
 
             var fakeContador = new ContadorGlobal { NotaEntrega = 1000, TraspasoAlmacén = 5000 };
-            A.CallTo(() => db.ContadoresGlobales.FirstOrDefaultAsync()).Returns(Task.FromResult(fakeContador));
+            UsarContador(fakeContador);
 
             var fakePreExtr = A.Fake<System.Data.Entity.DbSet<PreExtrProducto>>();
             A.CallTo(() => db.PreExtrProductos).Returns(fakePreExtr);
-
-            var fakeDatabase = A.Fake<System.Data.Entity.Database>();
-            A.CallTo(() => db.Database).Returns(fakeDatabase);
 
             // Act
             await servicio.ProcesarNotaEntrega(pedido, "NUEVAVISION\\Carlos");
@@ -697,14 +733,9 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => db.SaveChangesAsync()).MustHaveHappened();
 
             // Verificar que prdExtrProducto se ejecutó con los parámetros correctos
-            A.CallTo(() => fakeDatabase.ExecuteSqlCommandAsync(
-                "EXEC prdExtrProducto @Empresa, @Diario",
-                A<object[]>.That.Matches(args =>
-                    args.Length == 2 &&
-                    ((System.Data.SqlClient.SqlParameter)args[0]).Value.ToString() == "1" &&
-                    ((System.Data.SqlClient.SqlParameter)args[1]).Value.ToString() == Constantes.DiariosProducto.ENTREGA_FACTURADA
-                )
-            )).MustHaveHappenedOnceExactly();
+            Assert.AreEqual(1, llamadasPrdExtrProducto.Count, "prdExtrProducto una vez");
+            Assert.AreEqual("1", llamadasPrdExtrProducto[0].Empresa.Value.ToString());
+            Assert.AreEqual(Constantes.DiariosProducto.ENTREGA_FACTURADA, llamadasPrdExtrProducto[0].Diario.Value.ToString());
         }
 
         [TestMethod]
@@ -735,10 +766,7 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => db.Clientes.Find("1", "1012", "0")).Returns(fakeCliente);
 
             var fakeContador = new ContadorGlobal { NotaEntrega = 1000, TraspasoAlmacén = 5000 };
-            A.CallTo(() => db.ContadoresGlobales.FirstOrDefaultAsync()).Returns(Task.FromResult(fakeContador));
-
-            var fakeDatabase = A.Fake<System.Data.Entity.Database>();
-            A.CallTo(() => db.Database).Returns(fakeDatabase);
+            UsarContador(fakeContador);
 
             // Act
             await servicio.ProcesarNotaEntrega(pedido, "NUEVAVISION\\Carlos");
@@ -748,10 +776,7 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => db.SaveChangesAsync()).MustHaveHappened();
 
             // Verificar que prdExtrProducto NO se ejecutó (porque no hay líneas YaFacturado=true)
-            A.CallTo(() => fakeDatabase.ExecuteSqlCommandAsync(
-                A<string>.That.Contains("prdExtrProducto"),
-                A<object[]>._
-            )).MustNotHaveHappened();
+            Assert.AreEqual(0, llamadasPrdExtrProducto.Count);
         }
 
         #endregion
@@ -802,7 +827,7 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => db.Clientes.Find("1", "1013", "0")).Returns(fakeCliente);
 
             var fakeContador = new ContadorGlobal { NotaEntrega = 1000, TraspasoAlmacén = 5000 };
-            A.CallTo(() => db.ContadoresGlobales.FirstOrDefaultAsync()).Returns(Task.FromResult(fakeContador));
+            UsarContador(fakeContador);
 
             // Crear ubicaciones para las líneas del pedido
             var ubicacion1 = new Ubicacion
@@ -843,16 +868,11 @@ namespace NestoAPI.Tests.Infrastructure
             };
 
             var ubicaciones = new List<Ubicacion> { ubicacion1, ubicacion2, ubicacionOtroPedido };
-            var fakeUbicaciones = A.Fake<System.Data.Entity.DbSet<Ubicacion>>();
-            A.CallTo(() => db.Ubicaciones).Returns(fakeUbicaciones);
-            A.CallTo(() => fakeUbicaciones.AsQueryable()).Returns(ubicaciones.AsQueryable());
+            ubicacionesBd.AddRange(ubicaciones);
 
             var fakeNotasEntrega = A.Fake<System.Data.Entity.DbSet<NotaEntrega>>();
             A.CallTo(() => db.NotasEntregas).Returns(fakeNotasEntrega);
 
-            var fakeExtractoRutas = A.Fake<System.Data.Entity.DbSet<ExtractoRuta>>();
-            A.CallTo(() => db.ExtractoRutas).Returns(fakeExtractoRutas);
-            A.CallTo(() => fakeExtractoRutas.AsQueryable()).Returns(new List<ExtractoRuta>().AsQueryable());
 
             // Act
             var resultado = await servicio.ProcesarNotaEntrega(pedido, "testuser");
@@ -907,20 +927,15 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => db.Clientes.Find("1", "1014", "0")).Returns(fakeCliente);
 
             var fakeContador = new ContadorGlobal { NotaEntrega = 1000, TraspasoAlmacén = 5000 };
-            A.CallTo(() => db.ContadoresGlobales.FirstOrDefaultAsync()).Returns(Task.FromResult(fakeContador));
+            UsarContador(fakeContador);
 
             // No hay ubicaciones para este pedido
             var ubicaciones = new List<Ubicacion>();
-            var fakeUbicaciones = A.Fake<System.Data.Entity.DbSet<Ubicacion>>();
-            A.CallTo(() => db.Ubicaciones).Returns(fakeUbicaciones);
-            A.CallTo(() => fakeUbicaciones.AsQueryable()).Returns(ubicaciones.AsQueryable());
+            ubicacionesBd.AddRange(ubicaciones);
 
             var fakeNotasEntrega = A.Fake<System.Data.Entity.DbSet<NotaEntrega>>();
             A.CallTo(() => db.NotasEntregas).Returns(fakeNotasEntrega);
 
-            var fakeExtractoRutas = A.Fake<System.Data.Entity.DbSet<ExtractoRuta>>();
-            A.CallTo(() => db.ExtractoRutas).Returns(fakeExtractoRutas);
-            A.CallTo(() => fakeExtractoRutas.AsQueryable()).Returns(new List<ExtractoRuta>().AsQueryable());
 
             // Act
             var resultado = await servicio.ProcesarNotaEntrega(pedido, "testuser");

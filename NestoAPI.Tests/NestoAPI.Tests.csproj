@@ -288,6 +288,9 @@
     <Compile Include="Infraestructure\GestorSeEstaVendiendoTests.cs" />
     <Compile Include="Infrastructure\MessageRetryManagerTests.cs" />
     <Compile Include="Infrastructure\ServicioExtractoRutaTests.cs" />
+    <Compile Include="Infraestructure\Pedidos\ServicioPedidosParaFacturacionTests.cs" />
+    <Compile Include="Infrastructure\ServicioNotasEntregaTests.cs" />
+    <Compile Include="Infrastructure\ServicioTraspasoEmpresaTests.cs" />
     <Compile Include="Models\Picking\GestorAvisosPickingTests.cs" />
     <Compile Include="Infraestructure\TelefonoTests.cs" />
     <Compile Include="Infraestructure\CorreoClienteTests.cs" />

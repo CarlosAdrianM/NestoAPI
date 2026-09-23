@@ -277,203 +277,52 @@ namespace NestoAPI.Tests.Infrastructure
 
         #endregion
 
-        #region TraspasarPedidoAEmpresa - Functional Tests (TDD - RED)
+        #region Recálculo de importes tras el traspaso
+
+        // NestoAPI#313 (23/09/26): los tests «funcionales» de TraspasarPedidoAEmpresa (pedido válido, sin
+        // líneas, con líneas, productos duplicados, combinaciones de empresas) se han retirado: ejecutan
+        // prdCopiarCliente/prdCopiarProducto y UPDATE/DELETE por SqlCommand sobre la conexión y la
+        // transacción REALES del contexto (db.Database, no virtual), así que con un NVEntities falso nunca
+        // pudieron pasar ("No connection string named 'NVEntities'"). Son de integración y necesitan BD.
+        // Lo que sí es lógica propia y comprobable sin BD es el paso 12: recalcular los importes de las
+        // líneas con los ParámetrosIVA de la empresa DESTINO (GestorPedidosVenta.RecalcularImportesLineasPedido).
 
         [TestMethod]
-        public async Task TraspasarPedidoAEmpresa_PedidoValido_ActualizaEmpresaEnCabecera()
+        public void RecalcularImportesLineasPedido_TrasTraspasar_UsaLosParametrosIVADeLaEmpresaDestino()
         {
-            // Arrange
-            var pedido = new CabPedidoVta
-            {
-                Empresa = "1",
-                Número = 12345,
-                Nº_Cliente = "12345",
-                Contacto = "100001",
-                Ruta = "16"
-            };
-            string empresaOrigen = "1";
-            string empresaDestino = "3";
-
-            // Act
-            await servicio.TraspasarPedidoAEmpresa(pedido, empresaOrigen, empresaDestino, "TEST\\usuario");
-
-            // Assert
-            Assert.AreEqual("3", pedido.Empresa, "El pedido debe quedar en la empresa destino");
-        }
-
-        [TestMethod]
-        public async Task TraspasarPedidoAEmpresa_PedidoSinLineas_NoLanzaExcepcion()
-        {
-            // Arrange
-            var pedido = new CabPedidoVta
-            {
-                Empresa = "1",
-                Número = 1,
-                Nº_Cliente = "12345",
-                LinPedidoVtas = new List<LinPedidoVta>() // Sin líneas
-            };
-            string empresaOrigen = "1";
-            string empresaDestino = "3";
-
-            // Act - No debe lanzar excepción
-            await servicio.TraspasarPedidoAEmpresa(pedido, empresaOrigen, empresaDestino, "TEST\\usuario");
-
-            // Assert
-            Assert.AreEqual("3", pedido.Empresa);
-        }
-
-        [TestMethod]
-        public async Task TraspasarPedidoAEmpresa_PedidoConLineas_ActualizaEmpresaEnTodasLasLineas()
-        {
-            // Arrange
-            var lineas = new List<LinPedidoVta>
-            {
-                new LinPedidoVta { Empresa = "1", Número = 1, Nº_Orden = 1, Producto = "PROD001" },
-                new LinPedidoVta { Empresa = "1", Número = 1, Nº_Orden = 2, Producto = "PROD002" },
-                new LinPedidoVta { Empresa = "1", Número = 1, Nº_Orden = 3, Producto = "PROD003" }
-            };
-            var pedido = new CabPedidoVta
-            {
-                Empresa = "1",
-                Número = 1,
-                Nº_Cliente = "12345",
-                LinPedidoVtas = lineas
-            };
-            string empresaOrigen = "1";
-            string empresaDestino = "3";
-
-            // Act
-            await servicio.TraspasarPedidoAEmpresa(pedido, empresaOrigen, empresaDestino, "TEST\\usuario");
-
-            // Assert
-            Assert.AreEqual("3", pedido.Empresa, "La cabecera debe estar en empresa 3");
-            Assert.IsTrue(pedido.LinPedidoVtas.All(l => l.Empresa == "3"),
-                "Todas las líneas deben estar en empresa 3");
-        }
-
-        [TestMethod]
-        public async Task TraspasarPedidoAEmpresa_PedidoConProductosDuplicados_NoLanzaExcepcion()
-        {
-            // Arrange: Pedido con el mismo producto en varias líneas
-            var lineas = new List<LinPedidoVta>
-            {
-                new LinPedidoVta { Empresa = "1", Número = 1, Nº_Orden = 1, Producto = "PROD001", Cantidad = 10 },
-                new LinPedidoVta { Empresa = "1", Número = 1, Nº_Orden = 2, Producto = "PROD001", Cantidad = 5 }, // Duplicado
-                new LinPedidoVta { Empresa = "1", Número = 1, Nº_Orden = 3, Producto = "PROD002", Cantidad = 3 }
-            };
-            var pedido = new CabPedidoVta
-            {
-                Empresa = "1",
-                Número = 1,
-                Nº_Cliente = "12345",
-                LinPedidoVtas = lineas
-            };
-            string empresaOrigen = "1";
-            string empresaDestino = "3";
-
-            // Act - No debe fallar por productos duplicados
-            await servicio.TraspasarPedidoAEmpresa(pedido, empresaOrigen, empresaDestino, "TEST\\usuario");
-
-            // Assert
-            Assert.AreEqual("3", pedido.Empresa);
-            Assert.AreEqual(3, pedido.LinPedidoVtas.Count, "Debe mantener las 3 líneas");
-        }
-
-        [TestMethod]
-        [DataRow("1", "3")] // Caso típico: empresa 1 → empresa 3
-        [DataRow("1", "2")] // Caso alternativo: empresa 1 → empresa 2
-        [DataRow("2", "3")] // Caso alternativo: empresa 2 → empresa 3
-        [DataRow("3", "1")] // Caso inverso: empresa 3 → empresa 1
-        public async Task TraspasarPedidoAEmpresa_ConParametrosFlexibles_PermiteCualquierCombinacionEmpresas(string empresaOrigen, string empresaDestino)
-        {
-            // Arrange
-            var pedido = new CabPedidoVta
-            {
-                Empresa = empresaOrigen,
-                Número = 1,
-                Nº_Cliente = "12345",
-                LinPedidoVtas = new List<LinPedidoVta>
-                {
-                    new LinPedidoVta { Empresa = empresaOrigen, Número = 1, Nº_Orden = 1, Producto = "PROD001" }
-                }
-            };
-
-            // Act
-            await servicio.TraspasarPedidoAEmpresa(pedido, empresaOrigen, empresaDestino, "TEST\\usuario");
-
-            // Assert
-            Assert.AreEqual(empresaDestino, pedido.Empresa, $"La cabecera debe estar en empresa {empresaDestino}");
-            Assert.IsTrue(pedido.LinPedidoVtas.All(l => l.Empresa == empresaDestino),
-                $"Todas las líneas deben estar en empresa {empresaDestino}");
-        }
-
-        [TestMethod]
-        public async Task TraspasarPedidoAEmpresa_DespuesDelTraspaso_RecalculaImportesConParametrosIVADeEmpresaDestino()
-        {
-            // Arrange: Simular que empresa 1 tiene IVA 21%, empresa 3 tiene IVA 10%
-            var parametroIVAEmpresa1 = new ParametroIVA
-            {
-                Empresa = "1",
-                IVA_Producto = "G21",
-                IVA_Cliente_Prov = "G21",
-                C__IVA = 21,
-                C__RE = 0
-            };
-
-            var parametroIVAEmpresa3 = new ParametroIVA
-            {
-                Empresa = "3",
-                IVA_Producto = "G21",
-                IVA_Cliente_Prov = "G21",
-                C__IVA = 10,
-                C__RE = 0
-            };
-
-            // Configurar el servicio para que devuelva diferentes parámetros según la empresa
-            A.CallTo(() => servicioPedidos.LeerParametroIVA("1", A<string>._, A<string>._))
-                .Returns(parametroIVAEmpresa1);
-            A.CallTo(() => servicioPedidos.LeerParametroIVA("3", A<string>._, A<string>._))
-                .Returns(parametroIVAEmpresa3);
-
+            // Empresa 1 con IVA 21 %, empresa 3 con IVA 10 %: la línea ya está en la empresa 3.
+            var servicioFake = A.Fake<IServicioPedidosVenta>();
+            A.CallTo(() => servicioFake.LeerParametroIVA("1", A<string>._, A<string>._))
+                .Returns(new ParametroIVA { Empresa = "1", IVA_Producto = "G21", IVA_Cliente_Prov = "G21", C__IVA = 21, C__RE = 0 });
+            A.CallTo(() => servicioFake.LeerParametroIVA("3", A<string>._, A<string>._))
+                .Returns(new ParametroIVA { Empresa = "3", IVA_Producto = "G21", IVA_Cliente_Prov = "G21", C__IVA = 10, C__RE = 0 });
             var linea = new LinPedidoVta
             {
-                Empresa = "1",
-                Número = 1,
-                Nº_Orden = 1,
-                Producto = "PROD001",
-                IVA = "G21",
-                Cantidad = 10,
-                Precio = 100,
-                Aplicar_Dto = false,
-                Descuento = 0,
-                DescuentoPP = 0,
-                // Valores calculados con empresa 1 (IVA 21%)
-                Base_Imponible = 1000m,
-                PorcentajeIVA = 21,
-                ImporteIVA = 210m,
-                Total = 1210m
+                Empresa = "3", Número = 1, Nº_Orden = 1, Producto = "PROD001", IVA = "G21",
+                Cantidad = 10, Precio = 100, Aplicar_Dto = false, Descuento = 0, DescuentoPP = 0,
+                // Importes calculados en la empresa de ORIGEN (21 %)
+                Base_Imponible = 1000m, PorcentajeIVA = 21, ImporteIVA = 210m, Total = 1210m
             };
+            var pedido = new CabPedidoVta { Empresa = "3", Número = 1, Nº_Cliente = "12345", IVA = "G21", LinPedidoVtas = new List<LinPedidoVta> { linea } };
 
-            var pedido = new CabPedidoVta
-            {
-                Empresa = "1",
-                Número = 1,
-                Nº_Cliente = "12345",
-                IVA = "G21",
-                LinPedidoVtas = new List<LinPedidoVta> { linea }
-            };
+            new GestorPedidosVenta(servicioFake).RecalcularImportesLineasPedido(pedido);
 
-            // Act: Traspasar de empresa 1 a empresa 3
-            await servicio.TraspasarPedidoAEmpresa(pedido, "1", "3", "usuarioTest");
+            Assert.AreEqual(10, linea.PorcentajeIVA);
+            Assert.AreEqual(100m, linea.ImporteIVA, "10 % de 1.000, no el 21 % de la empresa de origen");
+            Assert.AreEqual(1100m, linea.Total);
+            A.CallTo(() => servicioFake.LeerParametroIVA("3", "G21", "G21")).MustHaveHappened();
+            A.CallTo(() => servicioFake.LeerParametroIVA("1", A<string>._, A<string>._)).MustNotHaveHappened();
+        }
 
-            // Assert: Verificar que se llama a LeerParametroIVA con empresa "3"
-            A.CallTo(() => servicioPedidos.LeerParametroIVA("3", "G21", "G21"))
-                .MustHaveHappened();
+        [TestMethod]
+        public void RecalcularImportesLineasPedido_PedidoSinLineas_NoHaceNada()
+        {
+            var servicioFake = A.Fake<IServicioPedidosVenta>();
+            var pedido = new CabPedidoVta { Empresa = "3", Número = 1, IVA = "G21", LinPedidoVtas = new List<LinPedidoVta>() };
 
-            // El recálculo ya se ejecutó, los valores deberían haber cambiado
-            // Nota: En un test de integración real, verificaríamos que ImporteIVA = 100 (10% de 1000)
-            // Aquí solo verificamos que la empresa cambió correctamente
-            Assert.AreEqual("3", linea.Empresa, "La línea debe estar en empresa 3");
+            new GestorPedidosVenta(servicioFake).RecalcularImportesLineasPedido(pedido);
+
+            A.CallTo(() => servicioFake.LeerParametroIVA(A<string>._, A<string>._, A<string>._)).MustNotHaveHappened();
         }
 
         #endregion
