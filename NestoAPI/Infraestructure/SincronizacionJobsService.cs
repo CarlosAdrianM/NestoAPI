@@ -3,6 +3,7 @@ using NestoAPI.Infraestructure.Sincronizacion;
 using NestoAPI.Models;
 using NestoAPI.Models.Sincronizacion;
 using System;
+using System.Collections.Concurrent;
 using System.Data.Entity;
 using System.Linq;
 using System.Threading.Tasks;
@@ -14,11 +15,44 @@ namespace NestoAPI.Infraestructure
     /// </summary>
     public class SincronizacionJobsService
     {
+        // 23/09/26 (carga inicial NestoAPI#498): los jobs de Nesto_sync corren cada 5 minutos y cada
+        // pasada se lleva TODA la cola pendiente (lotes de 50 con 5 s de pausa). Si una pasada dura
+        // más de 5 minutos (una carga masiva), Hangfire arrancaba otra que volvía a leer las mismas
+        // filas aún sin marcar y las publicaba otra vez: mensajes duplicados a Odoo y carga
+        // multiplicada. Si la pasada anterior sigue viva, la nueva no hace nada; los pendientes los
+        // recoge la que está en marcha o la siguiente.
+        private static readonly ConcurrentDictionary<string, bool> jobsEnMarcha = new ConcurrentDictionary<string, bool>();
+
+        internal static bool IntentarEmpezar(string job) => jobsEnMarcha.TryAdd(job, true);
+
+        internal static void Terminar(string job) => jobsEnMarcha.TryRemove(job, out _);
+
+        private static async Task EjecutarSinSolapar(string job, Func<Task> trabajo)
+        {
+            if (!IntentarEmpezar(job))
+            {
+                Console.WriteLine($"⏭️ [Hangfire] {job}: sigue en marcha la pasada anterior; esta no hace nada.");
+                return;
+            }
+            try
+            {
+                await trabajo().ConfigureAwait(false);
+            }
+            finally
+            {
+                Terminar(job);
+            }
+        }
+
+        public static Task SincronizarProductos() => EjecutarSinSolapar("sincronizar-productos", SincronizarProductosSinCandado);
+
+        public static Task SincronizarClientes() => EjecutarSinSolapar("sincronizar-clientes", SincronizarClientesSinCandado);
+
         /// <summary>
         /// Job para sincronizar productos pendientes desde nesto_sync
         /// Ejecutado por Hangfire cada 5 minutos
         /// </summary>
-        public static async Task SincronizarProductos()
+        private static async Task SincronizarProductosSinCandado()
         {
             Console.WriteLine("🚀 [Hangfire] Iniciando sincronización de productos...");
 
@@ -102,7 +136,7 @@ namespace NestoAPI.Infraestructure
         /// Job para sincronizar clientes pendientes desde nesto_sync
         /// (DESHABILITADO - Se usa Task Scheduler por ahora)
         /// </summary>
-        public static async Task SincronizarClientes()
+        private static async Task SincronizarClientesSinCandado()
         {
             Console.WriteLine("🚀 [Hangfire] Iniciando sincronización de clientes...");
 

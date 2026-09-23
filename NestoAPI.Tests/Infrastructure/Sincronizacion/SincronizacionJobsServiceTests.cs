@@ -37,5 +37,44 @@ namespace NestoAPI.Tests.Infrastructure.Sincronizacion
         }
 
         #endregion Referencias reservadas
+
+        #region Sin solapar pasadas (carga inicial NestoAPI#498, 23/09/26)
+
+        [TestMethod]
+        public void IntentarEmpezar_ConLaPasadaAnteriorEnMarcha_NoArrancaOtra()
+        {
+            // Una carga de miles de clientes dura más que los 5 minutos del cron: la pasada
+            // siguiente releía las mismas filas sin marcar y las publicaba otra vez.
+            const string job = "test-sin-solapar";
+            try
+            {
+                Assert.IsTrue(SincronizacionJobsService.IntentarEmpezar(job));
+                Assert.IsFalse(SincronizacionJobsService.IntentarEmpezar(job), "Con la anterior viva no arranca otra");
+            }
+            finally
+            {
+                SincronizacionJobsService.Terminar(job);
+            }
+
+            Assert.IsTrue(SincronizacionJobsService.IntentarEmpezar(job), "Terminada la anterior, la siguiente sí arranca");
+            SincronizacionJobsService.Terminar(job);
+        }
+
+        [TestMethod]
+        public void IntentarEmpezar_JobsDistintos_NoSeBloqueanEntreSi()
+        {
+            try
+            {
+                Assert.IsTrue(SincronizacionJobsService.IntentarEmpezar("test-a"));
+                Assert.IsTrue(SincronizacionJobsService.IntentarEmpezar("test-b"));
+            }
+            finally
+            {
+                SincronizacionJobsService.Terminar("test-a");
+                SincronizacionJobsService.Terminar("test-b");
+            }
+        }
+
+        #endregion
     }
 }
