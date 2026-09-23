@@ -549,6 +549,26 @@ namespace NestoAPI.Infraestructure.Informes
                 .ToList();
         }
 
+        // NestoAPI#514: SqlQuery<T> materializa columna a columna SIN conversiones, así que cada
+        // columna tiene que llegar ya con el tipo de ApunteCuentaDto. En Contabilidad [Nº Orden] es
+        // int (el DTO, long) y TipoApunte es char(3) (el DTO, int): sin los CAST la pantalla
+        // reventaba siempre. Se convierte aquí y no en el DTO porque Nesto lo deserializa con esos
+        // mismos tipos.
+        internal const string SQL_APUNTES_CUENTA = @"
+                SELECT
+                    CAST([Nº Orden] AS bigint) AS NumeroOrden,
+                    Fecha,
+                    Concepto,
+                    Debe,
+                    Haber,
+                    [Nº Documento] AS NumeroDocumento,
+                    Diario,
+                    CAST(TipoApunte AS int) AS TipoApunte
+                FROM Contabilidad
+                WHERE Empresa = @Empresa
+                AND [Nº Cuenta] = @Cuenta
+                AND Fecha >= @Inicio AND Fecha < @Fin";
+
         public async Task<SaldoCuenta555ResultadoDto> LeerSaldoCuenta555Async(
             string empresa, string cuenta, DateTime fechaCorte)
         {
@@ -558,23 +578,8 @@ namespace NestoAPI.Infraestructure.Informes
             DateTime inicioAnno = new DateTime(fechaCorte.Year, 1, 1);
             DateTime finCorte = fechaCorte.Date.AddDays(1);
 
-            const string sql = @"
-                SELECT
-                    [Nº Orden] AS NumeroOrden,
-                    Fecha,
-                    Concepto,
-                    Debe,
-                    Haber,
-                    [Nº Documento] AS NumeroDocumento,
-                    Diario,
-                    TipoApunte
-                FROM Contabilidad
-                WHERE Empresa = @Empresa
-                AND [Nº Cuenta] = @Cuenta
-                AND Fecha >= @Inicio AND Fecha < @Fin";
-
             var apuntes = await db.Database
-                .SqlQuery<ApunteCuentaDto>(sql,
+                .SqlQuery<ApunteCuentaDto>(SQL_APUNTES_CUENTA,
                     new SqlParameter("@Empresa", SqlDbType.NVarChar) { Value = empresa },
                     new SqlParameter("@Cuenta", SqlDbType.NVarChar) { Value = cuenta },
                     new SqlParameter("@Inicio", SqlDbType.DateTime) { Value = inicioAnno },

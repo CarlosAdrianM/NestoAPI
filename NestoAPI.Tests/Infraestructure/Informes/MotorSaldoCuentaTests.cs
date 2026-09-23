@@ -34,6 +34,21 @@ namespace NestoAPI.Tests.Infraestructure.Informes
         }
 
         [TestMethod]
+        public void ConsultaApuntes_ConvierteLasColumnasAlTipoDelDto()
+        {
+            // NestoAPI#514: SqlQuery<ApunteCuentaDto> no convierte tipos. En Contabilidad [Nº Orden]
+            // es int y TipoApunte char(3); el DTO (que Nesto deserializa igual) usa long e int. Sin
+            // los CAST la pantalla del saldo de la 555 reventaba siempre ("materialized Int32 to Int64").
+            // Los tests del motor usan dobles en memoria y no pueden verlo: se protege la consulta.
+            string sql = InformesService.SQL_APUNTES_CUENTA;
+
+            StringAssert.Contains(sql, "CAST([Nº Orden] AS bigint) AS NumeroOrden");
+            StringAssert.Contains(sql, "CAST(TipoApunte AS int) AS TipoApunte");
+            Assert.AreEqual(typeof(long), typeof(ApunteCuentaDto).GetProperty(nameof(ApunteCuentaDto.NumeroOrden)).PropertyType);
+            Assert.AreEqual(typeof(int), typeof(ApunteCuentaDto).GetProperty(nameof(ApunteCuentaDto.TipoApunte)).PropertyType);
+        }
+
+        [TestMethod]
         public void PrepagoYLiqPagoMismoOrderId_SaldanAcero_CerradoNoAparece()
         {
             var apuntes = new[]
