@@ -835,6 +835,10 @@
     <Compile Include="Infraestructure\IConVigencia.cs" />
     <Compile Include="Infraestructure\Vigencia.cs" />
     <Compile Include="Infraestructure\ServicioPrecios.cs" />
+    <Compile Include="Infraestructure\ServicioPreciosCacheado.cs" />
+    <Compile Include="Infraestructure\CachePorHuellaPedido.cs" />
+    <Compile Include="Infraestructure\InterruptorCacheado.cs" />
+    <Compile Include="Infraestructure\GestorStocksPrecargado.cs" />
     <Compile Include="Infraestructure\ServicioReclamacionDeuda.cs" />
     <Compile Include="Infraestructure\Notificaciones\IServicioNotificacionesPush.cs" />
     <Compile Include="Infraestructure\Notificaciones\ServicioNotificacionesPush.cs" />

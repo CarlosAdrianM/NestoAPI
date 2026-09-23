@@ -40,7 +40,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 return respuestaDenegada;
             }
 
-            PrecioDescuentoProducto oferta = GestorOfertasPedido.MontarOfertaPedido(numeroProducto, pedido);
+            PrecioDescuentoProducto oferta = GestorOfertasPedido.MontarOfertaPedido(numeroProducto, pedido, servicio);
             if (oferta?.descuentoReal == null)
             {
                 return respuestaDenegada;

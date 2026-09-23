@@ -441,7 +441,27 @@ namespace NestoAPI.Controllers
                     Motivo = "Modo fijado por el parámetro ModoServicioPorDefecto del usuario."
                 });
             }
-            return Ok(SugeridorModoServicio.Sugerir(pedido, Stocks()));
+            // NestoAPI#517: va en la misma petición de la plantilla que las ofertas; mismo trato: caché por
+            // huella del pedido y el stock de todos sus productos leído de golpe (antes 2-5 consultas por producto).
+            return Ok(CachePorHuellaPedido.ObtenerOCalcular(CachePorHuellaPedido.ESPACIO_MODO_SERVICIO, pedido,
+                () => SugeridorModoServicio.Sugerir(pedido, StocksPrecargados(pedido))));
+        }
+
+        /// <summary>
+        /// NestoAPI#517: el gestor de stocks con los productos del pedido ya leídos, si es el real. En los
+        /// tests (Stocks sustituido por un doble) se usa el doble tal cual.
+        /// </summary>
+        private IGestorStocks StocksPrecargados(PedidoVentaDTO pedido)
+        {
+            IGestorStocks stocks = Stocks();
+            if (stocks is GestorStocks real && pedido?.Lineas != null)
+            {
+                return real.PrecargarParaProductos(pedido.Lineas
+                    .Where(l => l != null && !string.IsNullOrWhiteSpace(l.Producto))
+                    .Select(l => l.Producto.Trim())
+                    .Distinct());
+            }
+            return stocks;
         }
 
         [HttpPost]
@@ -454,14 +474,25 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest("Falta el pedido.");
             }
-            // APAGADO DE URGENCIA (23/09/26 10:50): la plantilla de Nesto 1.10.29.0 entra en bucle pidiendo
-            // sugerencias cada 1,5 s y cada llamada valida el pedido entero una vez por producto (~50.000
-            // lecturas de Productos en 90 s): w3wp al 100 % en RDS2016 y nadie podía trabajar. Sin
-            // sugerencias Nesto y NestoApp siguen igual (lista vacía = «no hay ofertas que avisar») y el
-            // pedido se valida al guardar como siempre. Reactivar cuando se arregle el bucle del cliente
-            // y el coste por llamada.
-            return Ok(new List<Infraestructure.ValidadoresPedido.SugerenciaOfertaDTO>());
+            // NestoAPI#517 (23/09/26: este endpoint tumbó RDS2016). Tres defensas:
+            //   1. Interruptor en ParámetrosUsuario ((defecto) / OfertasSugeridasActivas = "0" lo apaga sin
+            //      publicar; se relee cada minuto). Apagado = lista vacía, que los clientes ya tratan como
+            //      «no hay ofertas que avisar».
+            //   2. Caché por huella del pedido (30 s): el mismo pedido repetido no se recalcula.
+            //   3. Una caché de lecturas por petición compartida con las validaciones (GestorSugerenciasOfertas).
+            if (!InterruptorOfertasSugeridas.EstaActivo())
+            {
+                return Ok(new List<Infraestructure.ValidadoresPedido.SugerenciaOfertaDTO>());
+            }
+            return Ok(CachePorHuellaPedido.ObtenerOCalcular(CachePorHuellaPedido.ESPACIO_SUGERENCIAS_OFERTAS, pedido,
+                () => Infraestructure.ValidadoresPedido.GestorSugerenciasOfertas.Calcular(pedido, GestorPrecios.servicio)));
         }
+
+        /// <summary>NestoAPI#517: interruptor de las sugerencias de ofertas (sustituible en tests).</summary>
+        internal static InterruptorCacheado InterruptorOfertasSugeridas { get; set; } = new InterruptorCacheado(
+            () => new LectorParametrosUsuario().LeerParametro(Constantes.Empresas.EMPRESA_POR_DEFECTO,
+                Constantes.ParametrosUsuario.USUARIO_POR_DEFECTO, Constantes.ParametrosUsuario.OFERTAS_SUGERIDAS_ACTIVAS),
+            TimeSpan.FromSeconds(60));
 
         [HttpPost]
         [Route("api/PedidosVenta/ParaPlantilla")]

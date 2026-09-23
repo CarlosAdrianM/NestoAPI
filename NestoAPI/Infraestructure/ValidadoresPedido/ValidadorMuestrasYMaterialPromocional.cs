@@ -36,7 +36,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 };
             }
 
-            Producto producto = GestorPrecios.servicio.BuscarProducto(numeroProducto);
+            Producto producto = servicio.BuscarProducto(numeroProducto);
             if (producto.SubGrupo == Constantes.Productos.SUBGRUPO_MUESTRAS && producto.Grupo == Constantes.Productos.GRUPO_COSMETICA)
             {
                 decimal baseImponiblePedido = pedido.Lineas
@@ -87,7 +87,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
         /// </summary>
         private decimal CalcularImporteMuestrasNoJustificadas(PedidoVentaDTO pedido, string numeroProducto, IServicioPrecios servicio)
         {
-            decimal importeTotal = GestorPrecios.servicio.CalcularImporteGrupo(
+            decimal importeTotal = servicio.CalcularImporteGrupo(
                 pedido, Constantes.Productos.GRUPO_COSMETICA, Constantes.Productos.SUBGRUPO_MUESTRAS);
 
             // Otras muestras justificadas por otro validador de aceptación (p. ej. el regalo de una
@@ -98,13 +98,13 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     && l.GrupoProducto?.Trim() == Constantes.Productos.GRUPO_COSMETICA
                     && l.SubgrupoProducto?.Trim() == Constantes.Productos.SUBGRUPO_MUESTRAS
                     && OtroValidadorDeAceptacionLaJustifica(pedido, l.Producto.Trim(), servicio))
-                .Sum(l => (GestorPrecios.servicio.BuscarProducto(l.Producto).PVP ?? 0) * l.Cantidad);
+                .Sum(l => (servicio.BuscarProducto(l.Producto).PVP ?? 0) * l.Cantidad);
 
             // Del propio producto validado puede haber una parte cubierta por una oferta (p. ej. 1 de
             // las 2 camisetas del grupo de alternativas): esas unidades tampoco gastan el 5 %. Solo
             // cuentan las sobrantes. OtroValidador... excluye el propio producto, así que se resta aquí.
             int unidadesCubiertasPropias = ValidadorOfertasCombinadas.UnidadesCubiertas(pedido, numeroProducto, servicio);
-            decimal coberturaPropia = (GestorPrecios.servicio.BuscarProducto(numeroProducto).PVP ?? 0) * unidadesCubiertasPropias;
+            decimal coberturaPropia = (servicio.BuscarProducto(numeroProducto).PVP ?? 0) * unidadesCubiertasPropias;
 
             return importeTotal - importeJustificadas - coberturaPropia;
         }

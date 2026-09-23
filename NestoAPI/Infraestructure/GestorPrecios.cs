@@ -401,7 +401,19 @@ namespace NestoAPI.Infraestructure
         public static IServicioPrecios servicio = new ServicioPrecios();
 
         // Método para validar todas las ofertas de un pedido        
+        // NestoAPI#517: cada validación usa su propia caché de lecturas (ServicioPreciosCacheado): los
+        // validadores preguntan por los mismos productos una y otra vez (ProductosMismoPrecio recorre el
+        // pedido entero por cada producto), y sin caché un pedido de 30 líneas eran cientos de consultas.
         public static RespuestaValidacion EsPedidoValido(PedidoVentaDTO pedido)
+        {
+            return EsPedidoValido(pedido, ServicioPreciosCacheado.Envolver(servicio));
+        }
+
+        /// <summary>
+        /// NestoAPI#517: la misma validación con el servicio que se le pase. Las sugerencias de ofertas
+        /// validan el pedido una vez por candidata y comparten UNA caché en toda la petición.
+        /// </summary>
+        public static RespuestaValidacion EsPedidoValido(PedidoVentaDTO pedido, IServicioPrecios servicio)
         {
             RespuestaValidacion respuesta = new RespuestaValidacion
             {
@@ -454,7 +466,7 @@ namespace NestoAPI.Infraestructure
                             RespuestaValidacion respuestaAceptacion = null;
                             if (!error.AutorizadaDenegadaExpresamente)
                             {
-                                respuestaAceptacion = GestorPrecios.ComprobarValidadoresDeAceptacion(pedido, error.ProductoId);
+                                respuestaAceptacion = GestorPrecios.ComprobarValidadoresDeAceptacion(pedido, error.ProductoId, servicio);
                                 if (respuestaAceptacion.ValidacionSuperada)
                                 {
                                     // Este error está justificado - guardamos el motivo de aceptación
@@ -490,7 +502,7 @@ namespace NestoAPI.Infraestructure
                         RespuestaValidacion respuestaAceptacion = null;
                         if (!respuestaValidacion.AutorizadaDenegadaExpresamente)
                         {
-                            respuestaAceptacion = GestorPrecios.ComprobarValidadoresDeAceptacion(pedido, respuestaValidacion.ProductoId);
+                            respuestaAceptacion = GestorPrecios.ComprobarValidadoresDeAceptacion(pedido, respuestaValidacion.ProductoId, servicio);
                             if (respuestaAceptacion.ValidacionSuperada)
                             {
                                 if (!string.IsNullOrEmpty(respuestaAceptacion.Motivo))
@@ -536,6 +548,11 @@ namespace NestoAPI.Infraestructure
         }
 
         public static RespuestaValidacion ComprobarValidadoresDeAceptacion(PedidoVentaDTO pedido, string numeroProducto)
+        {
+            return ComprobarValidadoresDeAceptacion(pedido, numeroProducto, servicio);
+        }
+
+        public static RespuestaValidacion ComprobarValidadoresDeAceptacion(PedidoVentaDTO pedido, string numeroProducto, IServicioPrecios servicio)
         {
             if (listaValidadoresAceptacion == null || listaValidadoresAceptacion.Count == 0)
             {

@@ -73,7 +73,12 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             {
                 return sugerencias;
             }
-            validar = validar ?? GestorPrecios.EsPedidoValido;
+            // NestoAPI#517: UNA caché de lecturas para toda la petición, compartida con las validaciones que
+            // se lanzan por cada candidata. Sin ella cada validación releía productos y ofertas de BD: el
+            // 23/09/26 fueron ~50.000 lecturas de Productos en 90 s (RDS2016 al 100 %).
+            servicio = ServicioPreciosCacheado.Envolver(servicio);
+            IServicioPrecios servicioPeticion = servicio;
+            validar = validar ?? (p => GestorPrecios.EsPedidoValido(p, servicioPeticion));
 
             IEnumerable<IGrouping<string, LineaPedidoVentaDTO>> porProducto = pedido.Lineas
                 .Where(l => EsLineaDeProducto(l) && !string.IsNullOrWhiteSpace(l.Producto))

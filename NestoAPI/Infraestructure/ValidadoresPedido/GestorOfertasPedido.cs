@@ -12,13 +12,13 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
          * Dado un pedido y un producto determinados, nos devuelve la oferta de ese producto que 
          * hay en ese pedido.
          */
-        public static PrecioDescuentoProducto MontarOfertaPedido(string numeroProducto, PedidoVentaDTO pedido)
+        public static PrecioDescuentoProducto MontarOfertaPedido(string numeroProducto, PedidoVentaDTO pedido, IServicioPrecios servicio = null)
         {
             if (numeroProducto != null)
             {
                 numeroProducto = numeroProducto.Trim();
             }
-            List<string> productosMismoPrecio = ProductosMismoPrecio(numeroProducto, pedido);
+            List<string> productosMismoPrecio = ProductosMismoPrecio(numeroProducto, pedido, servicio);
             IEnumerable<LineaPedidoVentaDTO> lineasProducto = pedido.Lineas.Where(p => productosMismoPrecio.Contains(p.Producto));
             if (lineasProducto == null || lineasProducto.Count() == 0)
             {
@@ -30,7 +30,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             IEnumerable<LineaPedidoVentaDTO> lineasConPrecio = lineasProducto.Where(l => l.Cantidad != 0 && l.BaseImponible / l.Cantidad != 0);
             IEnumerable<LineaPedidoVentaDTO> lineasSinPrecio = lineasProducto.Where(l => l.Cantidad == 0 || l.BaseImponible / l.Cantidad == 0);
 
-            Producto producto = GestorPrecios.servicio.BuscarProducto(numeroProducto);
+            Producto producto = (servicio ?? GestorPrecios.servicio).BuscarProducto(numeroProducto);
 
             if (!lineasSinPrecio.Any(l => l.Producto == numeroProducto))
             {
@@ -55,13 +55,16 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
 
         }
 
-        public static List<string> ProductosMismoPrecio(string numeroProducto, PedidoVentaDTO pedido)
+        public static List<string> ProductosMismoPrecio(string numeroProducto, PedidoVentaDTO pedido, IServicioPrecios servicio = null)
         {
-            Producto productoBuscado = GestorPrecios.servicio.BuscarProducto(numeroProducto);
+            // NestoAPI#517: con el servicio de la petición (cacheado) esto deja de ser una consulta por
+            // producto del pedido y por cada producto validado.
+            servicio = servicio ?? GestorPrecios.servicio;
+            Producto productoBuscado = servicio.BuscarProducto(numeroProducto);
             List<string> productosMismoPrecio = new List<string>();
             foreach (string productoLinea in pedido.Lineas.Where(l => l.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO).Select(l => l.Producto).Distinct())
             {
-                Producto productoEncontrado = GestorPrecios.servicio.BuscarProducto(productoLinea);
+                Producto productoEncontrado = servicio.BuscarProducto(productoLinea);
                 if (productoEncontrado.PVP == productoBuscado.PVP && productoEncontrado.Familia == productoBuscado.Familia)
                 {
                     productosMismoPrecio.Add(productoLinea);

@@ -94,7 +94,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 };
             }
 
-            PrecioDescuentoProducto oferta = GestorOfertasPedido.MontarOfertaPedido(producto.Número, pedido);
+            PrecioDescuentoProducto oferta = GestorOfertasPedido.MontarOfertaPedido(producto.Número, pedido, servicio);
 
             // Buscar si hay oferta combinada
             List<OfertaPermitida> ofertas = servicio.BuscarOfertasPermitidas(producto.Número);

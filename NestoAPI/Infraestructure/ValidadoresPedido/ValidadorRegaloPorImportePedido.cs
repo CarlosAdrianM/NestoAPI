@@ -28,7 +28,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                         + " no puede ir a ese precio porque no es un regalo autorizado para pedidos de este importe"
             };
 
-            var listaRegalos = GestorPrecios.servicio.BuscarRegaloPorImportePedido(numeroProducto);
+            var listaRegalos = servicio.BuscarRegaloPorImportePedido(numeroProducto);
 
             if (listaRegalos.Any(l => pedido.Lineas.Sum(p => p.BaseImponible) >= l.ImportePedido &&
                 pedido.Lineas.Where(p => p.Producto == numeroProducto).Sum(p => p.Cantidad) <= l.Cantidad))

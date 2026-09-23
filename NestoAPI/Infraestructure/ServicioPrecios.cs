@@ -283,9 +283,14 @@ namespace NestoAPI.Infraestructure
                 {
                     consultaFiltrados = consultaFiltrados.Where(p => p.SubGrupo == subgrupo);
                 }
-                IQueryable<string> productosFiltrados = consultaFiltrados.Select(p => p.Número);
+                // NestoAPI#517: se materializa UNA vez. Antes el IQueryable se evaluaba dentro del Where en
+                // memoria: una consulta a Productos por cada línea del pedido. Se compara como SQL Server
+                // (sin el relleno del char y sin distinguir mayúsculas).
+                var productosFiltrados = new HashSet<string>(
+                    consultaFiltrados.Select(p => p.Número).ToList().Select(n => n.Trim()),
+                    StringComparer.OrdinalIgnoreCase);
 
-                var lineas = pedido.Lineas.Where(l => productosFiltrados.Contains(l.Producto)).ToList();
+                var lineas = pedido.Lineas.Where(l => l.Producto != null && productosFiltrados.Contains(l.Producto.Trim())).ToList();
                 return lineas;
             }
         }

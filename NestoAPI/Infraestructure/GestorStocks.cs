@@ -57,6 +57,16 @@ namespace NestoAPI.Infraestructure
         {
             return servicio.Stock(producto);
         }
+
+        /// <summary>
+        /// NestoAPI#517: un gestor para UN pedido con el stock de sus productos leído de golpe (3 consultas
+        /// agrupadas en vez de 2-5 por producto). ColorStock da lo mismo que este gestor.
+        /// </summary>
+        public IGestorStocks PrecargarParaProductos(IEnumerable<string> productos)
+        {
+            List<string> lista = (productos ?? Enumerable.Empty<string>()).ToList();
+            return new GestorStocksPrecargado(this, servicio.LeerResumenStocks(lista), lista);
+        }
         public int Stock(string producto, string almacen)
         {
             return servicio.Stock(producto, almacen);

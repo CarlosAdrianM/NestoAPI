@@ -13,5 +13,10 @@ namespace NestoAPI.Infraestructure
         int UnidadesPendientesEntregar(string producto);
         int UnidadesPendientesEntregarAlmacen(string producto, string almacen);
         int UnidadesDisponiblesTodosLosAlmacenes(string producto);
+        /// <summary>
+        /// NestoAPI#517: todo lo que necesita ColorStock para un conjunto de productos, en unas pocas
+        /// consultas agrupadas (en vez de 2-5 consultas por producto).
+        /// </summary>
+        ResumenStocksProductos LeerResumenStocks(IEnumerable<string> productos);
     }
 }

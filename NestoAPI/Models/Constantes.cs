@@ -631,6 +631,13 @@ namespace NestoAPI.Models
             /// </summary>
             public const string EXIGIR_DIRECCION_VERIFICADA_ALTA = "ExigirDireccionVerificadaAlta";
 
+            /// <summary>
+            /// NestoAPI#517: interruptor de POST api/PedidosVenta/OfertasSugeridas (aviso de ofertas no
+            /// aplicadas en Nesto y NestoApp). Bajo «(defecto)»: "0" lo apaga sin publicar (se nota en
+            /// menos de un minuto); sin fila o cualquier otro valor, encendido.
+            /// </summary>
+            public const string OFERTAS_SUGERIDAS_ACTIVAS = "OfertasSugeridasActivas";
+
             /// <summary>Usuario bajo el que viven los parametros que no son de nadie en concreto.</summary>
             public const string USUARIO_POR_DEFECTO = "(defecto)";
 
