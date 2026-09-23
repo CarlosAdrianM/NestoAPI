@@ -289,5 +289,45 @@ namespace NestoAPI.Tests.Infrastructure
             var excepcion = Assert.ThrowsException<Exception>(() => sut.AsignarUbicacionesMasAntiguas(preExtractosIn).GetAwaiter().GetResult());
             Assert.AreEqual($"El producto {preExtracto.Producto} no tiene stock", excepcion.Message);
         }
+    
+        // ===== NestoAPI#28: descuadre ExtractoProducto/Ubicaciones al montar kits (caso traspaso 77355) =====
+
+        private static (IUbicacionService servicio, GestorUbicaciones sut) GestorConUbicacionDelKit(int cantidadExistente)
+        {
+            IUbicacionService servicio = A.Fake<IUbicacionService>();
+            A.CallTo(() => servicio.AlmacenGestionaUbicaciones(A<string>._, A<string>._)).Returns(true);
+            A.CallTo(() => servicio.LeerUbicacionesProducto(A<string>._, A<string>._, A<string>._)).Returns(new List<UbicacionProductoDTO>
+            {
+                new UbicacionProductoDTO { Id = 1234, Empresa = "1", Almacen = "ALG", Producto = "KIT001", Cantidad = cantidadExistente, Estado = Constantes.Ubicaciones.PENDIENTE_UBICAR }
+            });
+            return (servicio, new GestorUbicaciones(servicio));
+        }
+
+        [TestMethod]
+        public void GestorUbicaciones_MontarKit_ConUbicacionPreviaPendienteDeUbicar_SumaLoMontado()
+        {
+            // 7 pendientes de ubicar + 4 montados = 11 en la misma ubicación, y un registro de 4.
+            var (_, sut) = GestorConUbicacionDelKit(7);
+            var preExtracto = new PreExtractoProductoDTO { Empresa = "1", Almacen = "ALG", Producto = "KIT001", Cantidad = 4 };
+
+            var salida = sut.AsignarUbicacionesMasAntiguas(new List<PreExtractoProductoDTO> { preExtracto }).GetAwaiter().GetResult();
+
+            Assert.AreEqual(11, salida[0].Ubicaciones.Single(u => u.Estado == Constantes.Ubicaciones.ESTADO_A_MODIFICAR_CANTIDAD).Cantidad);
+            Assert.AreEqual(4, salida[0].Ubicaciones.Single(u => u.Estado == Constantes.Ubicaciones.ESTADO_REGISTRO_MONTAR_KITS).Cantidad);
+        }
+
+        [TestMethod]
+        public void GestorUbicaciones_MontarKit_ConUbicacionPreviaNegativa_LaUbicacionQuedaConLaSumaAritmetica()
+        {
+            // Hipótesis del caso real (77355: montar 4 dejó la pendiente de ubicar en 3): si la ubicación
+            // previa estaba en -1, -1 + 4 = 3. Este test DOCUMENTA el comportamiento actual; el descuadre
+            // no nace aquí sino en la ubicación negativa previa (ver comentario en #28).
+            var (_, sut) = GestorConUbicacionDelKit(-1);
+            var preExtracto = new PreExtractoProductoDTO { Empresa = "1", Almacen = "ALG", Producto = "KIT001", Cantidad = 4 };
+
+            var salida = sut.AsignarUbicacionesMasAntiguas(new List<PreExtractoProductoDTO> { preExtracto }).GetAwaiter().GetResult();
+
+            Assert.AreEqual(3, salida[0].Ubicaciones.Single(u => u.Estado == Constantes.Ubicaciones.ESTADO_A_MODIFICAR_CANTIDAD).Cantidad);
+        }
     }
 }
