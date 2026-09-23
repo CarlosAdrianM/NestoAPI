@@ -762,6 +762,9 @@
     <Compile Include="Infraestructure\PedidosVenta\TiendasRecogida.cs" />
     <Compile Include="Infraestructure\PedidosVenta\TransicionPresupuesto.cs" />
     <Compile Include="Infraestructure\PedidosVenta\SugeridorModoServicio.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\ModosServicioPermitidos.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\ValidadorModoServicio.cs" />
+    <Compile Include="Infraestructure\Exceptions\ModoServicioNoPermitidoException.cs" />
     <Compile Include="Infraestructure\PedidosVenta\IServicioPedidosVenta.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ServicioPedidosVenta.cs" />
     <Compile Include="Infraestructure\PrincipalExtensions.cs" />

@@ -455,6 +455,7 @@
     <Compile Include="Infrastructure\PedidosVenta\SelectorAlmacenTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\TransicionPresupuestoTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\SugeridorModoServicioTests.cs" />
+    <Compile Include="Infrastructure\PedidosVenta\ModosServicioPermitidosTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\GestorPortesLineasVivasTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\FechaEntregaLineasProtegidasTests.cs" />
     <Compile Include="Infrastructure\GestorPedidosVentaTests.cs" />

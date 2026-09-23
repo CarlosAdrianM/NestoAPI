@@ -431,20 +431,15 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest("Falta el pedido.");
             }
-            byte? forzado = ModoServicioForzadoPorParametro();
-            if (forzado.HasValue)
-            {
-                return Ok(new SugeridorModoServicio.Sugerencia
-                {
-                    Modo = forzado.Value,
-                    Nombre = Constantes.Pedidos.ModosServicio.Nombre(forzado.Value),
-                    Motivo = "Modo fijado por el parámetro ModoServicioPorDefecto del usuario."
-                });
-            }
             // NestoAPI#517: va en la misma petición de la plantilla que las ofertas; mismo trato: caché por
-            // huella del pedido y el stock de todos sus productos leído de golpe (antes 2-5 consultas por producto).
-            return Ok(CachePorHuellaPedido.ObtenerOCalcular(CachePorHuellaPedido.ESPACIO_MODO_SERVICIO, pedido,
-                () => SugeridorModoServicio.Sugerir(pedido, StocksPrecargados(pedido))));
+            // huella del pedido (que incluye el almacén de cada línea) y el stock de todos sus productos leído
+            // de golpe (antes 2-5 consultas por producto).
+            SugeridorModoServicio.Sugerencia sugerencia = CachePorHuellaPedido.ObtenerOCalcular(CachePorHuellaPedido.ESPACIO_MODO_SERVICIO, pedido,
+                () => SugeridorModoServicio.Sugerir(pedido, StocksPrecargados(pedido)));
+            // NestoAPI#518: el parámetro del usuario manda solo si su modo tiene sentido para el pedido (se
+            // aplica fuera de la caché: la sugerencia es del pedido y el parámetro, de cada usuario).
+            byte? forzado = ModoServicioForzadoPorParametro();
+            return Ok(forzado.HasValue ? SugeridorModoServicio.AplicarForzado(sugerencia, forzado.Value) : sugerencia);
         }
 
         /// <summary>
@@ -622,11 +617,14 @@ namespace NestoAPI.Controllers
             // nada de lo que pasa de verdad (caso del 08/09/26, pedido facturado el 03/09).
             // NestoAPI#482: se normaliza antes de validar. Un cliente que no manda el modo (NestoApp)
             // no pisa el modo 3/4 que ya tenga el pedido, salvo que marque servirJunto (→ 1).
+            byte modoEfectivoAnterior = Constantes.Pedidos.ModosServicio.Efectivo(cabPedidoVta.ModoServicio, cabPedidoVta.ServirJunto);
             string modoInvalido = Constantes.Pedidos.ModosServicio.Normalizar(pedido, cabPedidoVta.ModoServicio);
             if (modoInvalido != null)
             {
                 return BadRequest(modoInvalido);
             }
+            // NestoAPI#518: solo si el modo CAMBIA; un pedido que no toca el modo no se bloquea por el stock.
+            ComprobarModoServicioAlModificar(pedido, modoEfectivoAnterior);
             var fallaServirJunto = await ValidarServirJuntoDesdePedidoAsync(pedido, cabPedidoVta).ConfigureAwait(false);
             if (fallaServirJunto != null)
             {
@@ -1552,6 +1550,9 @@ namespace NestoAPI.Controllers
             // NestoAPI#482: sin modo informado el pedido NACE en el modo por defecto, no en el ServirJunto
             // de la ficha del cliente. NestoAPI#506: ese defecto es el que fuerce el parámetro
             // ModoServicioPorDefecto del usuario o, si no fuerza nada, el que dicta el stock real del pedido.
+            // NestoAPI#518: si el cliente ELIGE modo, tiene que tener sentido con el stock de ahora (no se corrige
+            // en silencio: se rechaza diciendo cuál vale). Sin modo, nace en el sugerido y no hay nada que rechazar.
+            ComprobarModoServicioAlCrear(pedido);
             string modoInvalido = Constantes.Pedidos.ModosServicio.NormalizarAlCrear(pedido, ModoServicioAlCrear(pedido));
             if (modoInvalido != null)
             {
@@ -2717,21 +2718,54 @@ namespace NestoAPI.Controllers
         /// NestoAPI#506: el modo con el que nace un pedido que no lo informa: el que fuerce el parámetro
         /// del usuario o, si no hay, el que dicta el stock real del pedido (<see cref="SugeridorModoServicio"/>).
         /// </summary>
+        /// <summary>NestoAPI#518: rechaza el modo elegido al crear si no tiene sentido; un fallo al leer el stock no bloquea.</summary>
+        internal void ComprobarModoServicioAlCrear(PedidoVentaDTO pedido)
+        {
+            try
+            {
+                ValidadorModoServicio.ComprobarAlCrear(pedido, Stocks());
+            }
+            catch (ModoServicioNoPermitidoException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"NestoAPI#518: no se pudo comprobar el modo de servicio al crear; se deja pasar ({ex.Message})", ex));
+            }
+        }
+
+        /// <summary>NestoAPI#518: rechaza un CAMBIO de modo que no tiene sentido; un fallo al leer el stock no bloquea.</summary>
+        internal void ComprobarModoServicioAlModificar(PedidoVentaDTO pedido, byte modoEfectivoAnterior)
+        {
+            try
+            {
+                byte nuevo = Constantes.Pedidos.ModosServicio.Efectivo(pedido.modoServicio, pedido.servirJunto);
+                ValidadorModoServicio.ComprobarAlModificar(pedido, modoEfectivoAnterior, nuevo, Stocks());
+            }
+            catch (ModoServicioNoPermitidoException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"NestoAPI#518: no se pudo comprobar el modo de servicio al modificar; se deja pasar ({ex.Message})", ex));
+            }
+        }
+
         internal byte ModoServicioAlCrear(PedidoVentaDTO pedido)
         {
             byte? forzado = ModoServicioForzadoPorParametro();
-            if (forzado.HasValue)
-            {
-                return forzado.Value;
-            }
             try
             {
-                return SugeridorModoServicio.Sugerir(pedido, Stocks()).Modo;
+                SugeridorModoServicio.Sugerencia sugerencia = SugeridorModoServicio.Sugerir(pedido, Stocks());
+                // NestoAPI#518: el modo forzado por parámetro solo si tiene sentido para el pedido (en tienda, siempre 2).
+                return forzado.HasValue ? SugeridorModoServicio.AplicarForzado(sugerencia, forzado.Value).Modo : sugerencia.Modo;
             }
             catch (Exception ex)
             {
                 ElmahHelper.Log(new Exception($"NestoAPI#506: no se pudo sugerir el modo de servicio del pedido; se aplica el defecto ({ex.Message})", ex));
-                return Constantes.Pedidos.ModosServicio.POR_DEFECTO;
+                return forzado ?? Constantes.Pedidos.ModosServicio.POR_DEFECTO;
             }
         }
 

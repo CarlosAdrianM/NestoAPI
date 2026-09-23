@@ -44,6 +44,10 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             public int LineasRosas { get; set; }
             public int LineasRojas { get; set; }
             public string Motivo { get; set; }
+            /// <summary>NestoAPI#518: los modos que se pueden elegir para este pedido (el sugerido siempre está).</summary>
+            public List<byte> ModosPermitidos { get; set; } = new List<byte>();
+            /// <summary>NestoAPI#518: los cuatro modos con su permiso y, si no se puede, el motivo para enseñarlo.</summary>
+            public List<ModoServicioPermitidoDTO> Modos { get; set; } = new List<ModoServicioPermitidoDTO>();
         }
 
         public static Sugerencia Sugerir(PedidoVentaDTO pedido, IGestorStocks stocks)
@@ -58,12 +62,24 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 .ToList();
             if (!productos.Any())
             {
-                return new Sugerencia
+                return ConModos(new Sugerencia
                 {
                     Modo = Constantes.Pedidos.ModosServicio.POR_DEFECTO,
                     Nombre = Constantes.Pedidos.ModosServicio.Nombre(Constantes.Pedidos.ModosServicio.POR_DEFECTO),
                     Motivo = "El pedido no tiene líneas de producto: se aplica el modo por defecto."
-                };
+                }, ModosServicioPermitidos.TipoAlmacen.Otro, hayLineasProducto: false);
+            }
+
+            // NestoAPI#518: en tienda el cliente se lleva lo que hay; no hace falta mirar el stock.
+            ModosServicioPermitidos.TipoAlmacen tipo = ModosServicioPermitidos.Clasificar(productos);
+            if (tipo == ModosServicioPermitidos.TipoAlmacen.Tienda)
+            {
+                return ConModos(new Sugerencia
+                {
+                    Modo = Constantes.Pedidos.ModosServicio.SEGUN_VAYA_ENTRANDO,
+                    Nombre = Constantes.Pedidos.ModosServicio.Nombre(Constantes.Pedidos.ModosServicio.SEGUN_VAYA_ENTRANDO),
+                    Motivo = "Pedido de tienda: el cliente se lleva lo que hay y el resto se sirve según vaya entrando."
+                }, tipo, hayLineasProducto: true);
             }
 
             // NestoAPI#515: un color por producto y almacén, con la CANTIDAD que se pide sumada. Dos cosas:
@@ -79,7 +95,47 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             int rosas = colores.Count(c => c == ROSA);
             int rojas = colores.Count(c => c != VERDE && c != ROSA);
 
-            return Decidir(verdes, rosas, rojas);
+            return ConModos(Decidir(verdes, rosas, rojas), tipo, hayLineasProducto: true);
+        }
+
+        /// <summary>NestoAPI#518: rellena los modos permitidos con los recuentos ya calculados.</summary>
+        private static Sugerencia ConModos(Sugerencia sugerencia, ModosServicioPermitidos.TipoAlmacen tipo, bool hayLineasProducto)
+        {
+            sugerencia.Modos = ModosServicioPermitidos.Calcular(tipo, sugerencia.LineasVerdes, sugerencia.LineasRosas, sugerencia.LineasRojas, hayLineasProducto);
+            sugerencia.ModosPermitidos = ModosServicioPermitidos.Permitidos(sugerencia.Modos);
+            return sugerencia;
+        }
+
+        /// <summary>
+        /// NestoAPI#518: el modo que fuerza el parámetro ModoServicioPorDefecto se respeta SOLO si tiene sentido
+        /// para el pedido; si no, se propone el del stock y se explica. Devuelve una COPIA (la sugerencia de
+        /// entrada puede venir de la caché por huella de #517, compartida entre usuarios).
+        /// </summary>
+        public static Sugerencia AplicarForzado(Sugerencia sugerencia, byte forzado)
+        {
+            var copia = new Sugerencia
+            {
+                Modo = sugerencia.Modo,
+                Nombre = sugerencia.Nombre,
+                LineasVerdes = sugerencia.LineasVerdes,
+                LineasRosas = sugerencia.LineasRosas,
+                LineasRojas = sugerencia.LineasRojas,
+                Motivo = sugerencia.Motivo,
+                ModosPermitidos = new List<byte>(sugerencia.ModosPermitidos ?? new List<byte>()),
+                Modos = sugerencia.Modos
+            };
+            if (copia.ModosPermitidos.Contains(forzado))
+            {
+                copia.Modo = forzado;
+                copia.Nombre = Constantes.Pedidos.ModosServicio.Nombre(forzado);
+                copia.Motivo = "Modo fijado por el parámetro ModoServicioPorDefecto del usuario.";
+                return copia;
+            }
+            string porQue = copia.Modos?.FirstOrDefault(m => m.Modo == forzado)?.Motivo;
+            copia.Motivo = $"Tu parámetro ModoServicioPorDefecto fija «{Constantes.Pedidos.ModosServicio.Nombre(forzado)}», " +
+                           $"pero no tiene sentido para este pedido{(string.IsNullOrWhiteSpace(porQue) ? string.Empty : $" ({porQue.TrimEnd('.')})")}. " +
+                           sugerencia.Motivo;
+            return copia;
         }
 
         /// <summary>El núcleo puro de la regla, a partir de los recuentos por color.</summary>
