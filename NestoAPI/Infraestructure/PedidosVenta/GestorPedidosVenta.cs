@@ -531,7 +531,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 Descuento = linea.DescuentoLinea,
                 DescuentoProducto = linea.DescuentoProducto,
                 Aplicar_Dto = linea.AplicarDescuento,
-                VtoBueno = linea.vistoBueno,
+                // Issue #45 / NestoAPI#98: VistoBueno siempre true (una línea sin visto bueno no se
+                // factura y en las tiendas el cliente está esperando la factura). Estaba solo en el
+                // POST y al AMPLIAR un pedido (PUT, líneas nuevas) Nesto las mandaba a false: 921722
+                // (ALC, 01/09/26) se quedó con 3 líneas sin poder facturar. Aquí lo cubren todos los caminos.
+                VtoBueno = true,
                 Usuario = linea.usuario,
                 Almacén = linea.almacen,
                 IVA = linea.iva,

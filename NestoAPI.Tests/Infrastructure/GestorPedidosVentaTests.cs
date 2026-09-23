@@ -1026,6 +1026,21 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void CrearLineaVta_DtoConVistoBuenoFalse_LaLineaSaleConVistoBueno()
+        {
+            // Regresión #98: al ampliar el 921722 (PUT, ALC) Nesto mandó las líneas nuevas con
+            // vistoBueno=false y se quedaron sin poder facturar. La regla de #45 solo estaba en el POST.
+            var gestor = new GestorPedidosVenta(ServicioParaInmovilizado());
+            var plazoPago = new PlazoPago { DtoProntoPago = 0 };
+            LineaPedidoVentaDTO linea = LineaInmovilizado();
+            linea.vistoBueno = false;
+
+            LinPedidoVta resultado = gestor.CrearLineaVta(linea, PEDIDO, EMPRESA, "G21", plazoPago, "12786", "0", "FW", "MRM");
+
+            Assert.IsTrue(resultado.VtoBueno);
+        }
+
+        [TestMethod]
         public void CrearLineaVta_LineaInmovilizadoConTextoNull_NoLanzaNRE()
         {
             // NestoAPI#352 parte 1: el inicializador de LinPedidoVta reventaba con

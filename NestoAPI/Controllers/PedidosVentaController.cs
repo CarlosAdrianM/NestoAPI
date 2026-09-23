@@ -1681,9 +1681,8 @@ namespace NestoAPI.Controllers
                 {
                     linea.estado = Constantes.EstadosLineaVenta.PRESUPUESTO;
                 }
-                // Carlos 02/12/25: VistoBueno siempre true para evitar bloqueos en tiendas (Issue #45)
-                // Solución temporal mientras se define la lógica definitiva
-                linea.vistoBueno = true;
+                // Issue #45: VistoBueno siempre true -> ahora lo pone GestorPedidosVenta.CrearLineaVta
+                // para todos los caminos (POST, PUT, portes...), NestoAPI#98.
                 // NestoAPI#249: se pasa el usuario que mete el pedido para resolver el grupo
                 // comisionable de los productos marcados (guantes COS/PEL).
                 linPedido = this.gestor.CrearLineaVta(linea, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto, pedido.ruta, pedido.vendedor, pedido.Usuario);
