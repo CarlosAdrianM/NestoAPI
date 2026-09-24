@@ -422,6 +422,7 @@
     <Compile Include="Infrastructure\GestorStocksColorStockTests.cs" />
     <Compile Include="Infrastructure\GestorSugerenciasOfertasTests.cs" />
     <Compile Include="Infrastructure\ConstructorPedidoClienteTests.cs" />
+    <Compile Include="Infrastructure\CambioModoConPickingTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\CorreoConfirmacionPedidoClienteTests.cs" />
     <Compile Include="Infrastructure\PoliticaPagoCanalTests.cs" />
     <Compile Include="Infrastructure\ServicioAgenciasTests.cs" />

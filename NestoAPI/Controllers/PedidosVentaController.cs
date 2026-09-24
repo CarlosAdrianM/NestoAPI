@@ -626,6 +626,15 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest(modoInvalido);
             }
+            // NestoAPI#533: con picking (o albarán de hoy) el modo ya no se cambia; el cliente ofrece pedírselo a almacén.
+            if (Constantes.Pedidos.ModosServicio.Efectivo(pedido.modoServicio, pedido.servirJunto) != modoEfectivoAnterior)
+            {
+                string motivoConPicking = Infraestructure.PedidosVenta.CambioModoConPicking.Motivo(cabPedidoVta.LinPedidoVtas, DateTime.Today);
+                if (motivoConPicking != null)
+                {
+                    throw new Infraestructure.PedidosVenta.ModoConPickingException(motivoConPicking, pedido.empresa, pedido.numero);
+                }
+            }
             // NestoAPI#518: solo si el modo CAMBIA; un pedido que no toca el modo no se bloquea por el stock.
             ComprobarModoServicioAlModificar(pedido, modoEfectivoAnterior);
             var fallaServirJunto = await ValidarServirJuntoDesdePedidoAsync(pedido, cabPedidoVta).ConfigureAwait(false);
