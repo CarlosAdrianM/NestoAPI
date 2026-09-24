@@ -191,6 +191,15 @@ namespace NestoAPI.Infraestructure.Verifactu
                 {
                     resumen.SinDeclarar.Add($"{factura.Número?.Trim()} (cliente {factura.Nº_Cliente?.Trim()}): {textoError}");
                 }
+                // NIF de un contacto sin unificar (sin letra, o de otra persona) con el principal ya
+                // validado: se corrige la factura con el del principal y la siguiente pasada la
+                // declara (casos NV2615575 y NV2615647, 23-24/09/26). Antes el rechazo por FORMATO no
+                // se reconocía y la factura se reintentaba igual cada hora sin salir nunca.
+                if ((EsRechazoPorNif(respuesta.MensajeError) || EsRechazoPorFormatoDeNif(respuesta.MensajeError))
+                    && await servicioValidacionNif.CorregirNifFiscalFacturaConElPrincipal(factura, "VerifactuJob").ConfigureAwait(false))
+                {
+                    continue;
+                }
                 if (EsRechazoPorNif(respuesta.MensajeError))
                 {
                     await servicioValidacionNif.MarcarIncorrecto(factura.Nº_Cliente,
@@ -257,6 +266,17 @@ namespace NestoAPI.Infraestructure.Verifactu
             return estado != null &&
                 (estado.IndexOf("Incorrecto", StringComparison.OrdinalIgnoreCase) >= 0
                  || estado.IndexOf("Rechaz", StringComparison.OrdinalIgnoreCase) >= 0);
+        }
+
+        /// <summary>
+        /// Verifacti rechaza el NIF por formato antes de mandarlo a la AEAT («El campo nif no tiene un
+        /// formato válido»). No es el de id_otro: ese es de extranjeros y se corrige en la ventana.
+        /// </summary>
+        internal static bool EsRechazoPorFormatoDeNif(string mensaje)
+        {
+            return mensaje != null
+                && mensaje.IndexOf("campo nif ", StringComparison.OrdinalIgnoreCase) >= 0
+                && mensaje.IndexOf("formato", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         /// <summary>Detecta el rechazo por NIF del destinatario no censado (caso real 21/07:

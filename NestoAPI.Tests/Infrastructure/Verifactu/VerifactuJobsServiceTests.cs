@@ -279,6 +279,56 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
         }
 
         [TestMethod]
+        public async Task Reintentos_NifSinFormatoConElPrincipalValidado_CorrigeLaFacturaYNoMarcaLaFicha()
+        {
+            // 24/09/26 (NV2615647): la factura cogió el NIF del contacto 3, sin letra (50450665),
+            // antes de que #330 lo unificara; el principal (50450665G) está validado. Verifacti lo
+            // rechaza por FORMATO y el job lo reintentaba igual cada hora.
+            var factura = Factura("NV2615647");
+            ConFacturas(factura);
+            respuestaReenvio = new VerifactuResponse { Exitoso = false, MensajeError = "El campo nif no tiene un formato válido" };
+            A.CallTo(() => validacionNif.CorregirNifFiscalFacturaConElPrincipal(factura, "VerifactuJob")).Returns(true);
+
+            await job.ReintentarNoDeclaradas(new ResumenJobVerifactu());
+
+            A.CallTo(() => validacionNif.CorregirNifFiscalFacturaConElPrincipal(factura, "VerifactuJob")).MustHaveHappenedOnceExactly();
+            A.CallTo(() => validacionNif.MarcarIncorrecto(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Reintentos_NifSinFormatoSinPrincipalValidado_NoSeCorrigeYSigueComoAntes()
+        {
+            var factura = Factura("CV2600575");
+            ConFacturas(factura);
+            respuestaReenvio = new VerifactuResponse { Exitoso = false, MensajeError = "El campo nif no tiene un formato válido" };
+            A.CallTo(() => validacionNif.CorregirNifFiscalFacturaConElPrincipal(factura, A<string>.Ignored)).Returns(false);
+
+            var resumen = new ResumenJobVerifactu();
+            await job.ReintentarNoDeclaradas(resumen);
+
+            Assert.AreEqual(1, resumen.SinDeclarar.Count, "sigue avisando: hay que corregirlo a mano (extranjero)");
+        }
+
+        [TestMethod]
+        public void EsRechazoPorFormatoDeNif_SoloElCampoNif()
+        {
+            Assert.IsTrue(VerifactuJobsService.EsRechazoPorFormatoDeNif("El campo nif no tiene un formato válido"));
+            Assert.IsFalse(VerifactuJobsService.EsRechazoPorFormatoDeNif("El campo id_otro.id no tiene un formato válido"));
+            Assert.IsFalse(VerifactuJobsService.EsRechazoPorFormatoDeNif(null));
+        }
+
+        [TestMethod]
+        public void DebeCorregirNifFactura_SoloConElPrincipalCorrectoYOtroNif()
+        {
+            var correcto = new ResultadoValidacionNif { Estado = EstadoValidacionNif.Correcto, Nif = "50450665G", Nombre = "MARIA BELEN ZAHINOS PINILLA" };
+
+            Assert.IsTrue(ServicioValidacionNif.DebeCorregirNifFactura("50450665", correcto));
+            Assert.IsFalse(ServicioValidacionNif.DebeCorregirNifFactura("50450665G ", correcto), "ya lleva el bueno");
+            Assert.IsFalse(ServicioValidacionNif.DebeCorregirNifFactura("50450665",
+                new ResultadoValidacionNif { Estado = EstadoValidacionNif.Incorrecto, Nif = "50450665G", Nombre = "X" }), "#330: solo un NIF validado");
+        }
+
+        [TestMethod]
         public async Task ProcesarPasada_ConLaSombraApagada_NoHaceNada()
         {
             A.CallTo(() => servicioVerifactu.EstaHabilitado).Returns(false);

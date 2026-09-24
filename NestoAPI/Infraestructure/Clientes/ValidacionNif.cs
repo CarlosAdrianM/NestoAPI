@@ -141,6 +141,14 @@ namespace NestoAPI.Infraestructure.Clientes
         /// pasada. Devuelve true si ha corregido algo.
         /// </summary>
         Task<bool> CorregirNombreFiscalFactura(NestoAPI.Models.CabFacturaVta factura, string usuario);
+
+        /// <summary>
+        /// Factura rechazada por el NIF cuando el principal de su cliente SÍ está validado contra la
+        /// AEAT: la factura cogió el NIF de un contacto (sin letra, o de otra persona) antes de que
+        /// #330 lo unificara. Pone en la factura el NIF y el nombre del principal validado y unifica
+        /// los contactos. True si ha cambiado algo (la siguiente pasada la declara sola).
+        /// </summary>
+        Task<bool> CorregirNifFiscalFacturaConElPrincipal(NestoAPI.Models.CabFacturaVta factura, string usuario);
     }
 
     /// <summary>Fila del listado de NIF incorrectos (#327, para Nesto#417/NestoApp#157).</summary>

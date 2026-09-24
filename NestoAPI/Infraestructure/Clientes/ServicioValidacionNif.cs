@@ -524,6 +524,56 @@ namespace NestoAPI.Infraestructure.Clientes
                 .ToList();
         }
 
+        public async Task<bool> CorregirNifFiscalFacturaConElPrincipal(CabFacturaVta factura, string usuario)
+        {
+            string cliente = factura?.Nº_Cliente?.Trim();
+            if (string.IsNullOrEmpty(cliente) || EsClienteSimplificadas(cliente))
+            {
+                return false;
+            }
+            Cliente principal = await db.Clientes.FirstOrDefaultAsync(c =>
+                c.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && c.Nº_Cliente == cliente && c.ClientePrincipal)
+                .ConfigureAwait(false);
+            if (principal == null)
+            {
+                return false;
+            }
+            ResultadoValidacionNif estado = await CalcularEstado(principal).ConfigureAwait(false);
+            if (!DebeCorregirNifFactura(factura.CifNif, estado))
+            {
+                return false;
+            }
+
+            // Auditar: se modifica un dato fiscal de la factura sin intervención humana
+            _ = db.Modificaciones.Add(new Modificacion
+            {
+                Tabla = "CabFacturaVta",
+                Anterior = $"Factura {factura.Número?.Trim()} CifNif={factura.CifNif?.Trim()} NombreFiscal={factura.NombreFiscal?.Trim()}",
+                Nuevo = $"CifNif={estado.Nif} NombreFiscal={estado.Nombre} (los del principal validado contra la AEAT: " +
+                        "la factura cogió el NIF de un contacto sin unificar, #330)",
+                Usuario = usuario
+            });
+            factura.CifNif = estado.Nif;
+            factura.NombreFiscal = estado.Nombre;
+            _ = await db.SaveChangesAsync().ConfigureAwait(false);
+            // Y que no vuelva a pasar con este cliente
+            _ = await UnificarNifContactos(cliente, usuario).ConfigureAwait(false);
+            return true;
+        }
+
+        /// <summary>
+        /// Solo si el principal está CORRECTO (regla de #330: únicamente se propaga un NIF validado)
+        /// y la factura lleva otro NIF. Pura para testear sin BD.
+        /// </summary>
+        internal static bool DebeCorregirNifFactura(string nifFactura, ResultadoValidacionNif principal)
+        {
+            return principal != null
+                && principal.Estado == EstadoValidacionNif.Correcto
+                && !string.IsNullOrWhiteSpace(principal.Nif)
+                && !string.IsNullOrWhiteSpace(principal.Nombre)
+                && !string.Equals(nifFactura?.Trim(), principal.Nif.Trim(), StringComparison.OrdinalIgnoreCase);
+        }
+
         public async Task<int> UnificarNifContactos(string cliente, string usuario)
         {
             if (EsClienteSimplificadas(cliente))
