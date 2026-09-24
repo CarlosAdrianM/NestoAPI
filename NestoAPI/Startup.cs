@@ -78,6 +78,10 @@ namespace NestoAPI
                 ConfigureOAuthTokenGeneration(app);
                 ConfigureOAuthTokenConsumption(app);
 
+                // NestoAPI#536: avisos en tiempo real para Nesto (buzón, Nesto#477). DESPUÉS de la
+                // autenticación JWT, para que el hub vea al usuario del token.
+                _ = app.MapSignalR(Infraestructure.Notificaciones.AvisosTiempoReal.RUTA, new Microsoft.AspNet.SignalR.HubConfiguration());
+
                 // Configurar Hangfire para jobs programados
                 ConfigureHangfire(app);
 
@@ -140,6 +144,17 @@ namespace NestoAPI
                     AllowedAudiences = new[] { audienceId },
                     IssuerSecurityKeyProviders = new IIssuerSecurityKeyProvider[] {
                         new SymmetricKeyIssuerSecurityKeyProvider(issuer, audienceSecret)
+                    },
+                    // NestoAPI#536: SignalR manda el JWT en la query string (access_token) al conectar.
+                    // Solo se lee en /signalr y solo si no venía en la cabecera: el resto de rutas, igual.
+                    Provider = new OAuthBearerAuthenticationProvider
+                    {
+                        OnRequestToken = contexto =>
+                        {
+                            contexto.Token = Infraestructure.Notificaciones.AvisosTiempoReal.TokenDeLaPeticion(
+                                contexto.Request.Path, contexto.Token, contexto.Request.Query.Get("access_token"));
+                            return System.Threading.Tasks.Task.FromResult(0);
+                        }
                     }
                     // IMPORTANTE: NO usar TokenValidationParameters aquí.
                     // Si se proporciona TokenValidationParameters, OWIN ignora AllowedAudiences

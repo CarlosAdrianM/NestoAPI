@@ -45,6 +45,40 @@ namespace NestoAPI.Tests.Infraestructure.Notificaciones
             servicio = new ServicioNotificacionesPush(() => db);
         }
 
+        // ---- NestoAPI#536: aviso en tiempo real (SignalR) a Nesto ----
+
+        [TestMethod]
+        public async Task Buzon_DeNesto_AvisaEnTiempoRealAlUsuario()
+        {
+            var avisos = A.Fake<IAvisosTiempoReal>();
+            servicio.AvisosTiempoReal = avisos;
+
+            await servicio.GuardarEnBuzonDeUsuario(@"NUEVAVISION\Alfredo", "Nesto", new NotificacionPushDTO { Titulo = "Te han contestado en Novedades" });
+
+            A.CallTo(() => avisos.HayNotificacionesNuevas(A<IEnumerable<string>>.That.Matches(u => u.Single() == @"NUEVAVISION\Alfredo")))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Buzon_DeOtraAplicacion_NoAvisaPorSignalR()
+        {
+            var avisos = A.Fake<IAvisosTiempoReal>();
+            servicio.AvisosTiempoReal = avisos;
+
+            await servicio.GuardarEnBuzonDeUsuario(USUARIO, APLICACION, new NotificacionPushDTO { Titulo = "x" });
+
+            A.CallTo(() => avisos.HayNotificacionesNuevas(A<IEnumerable<string>>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void TokenDeLaPeticion_SoloEnSignalRYSinCabecera()
+        {
+            Assert.AreEqual("jwt-query", AvisosTiempoReal.TokenDeLaPeticion(new Microsoft.Owin.PathString("/signalr/negotiate"), null, "jwt-query"));
+            Assert.AreEqual("jwt-cabecera", AvisosTiempoReal.TokenDeLaPeticion(new Microsoft.Owin.PathString("/signalr/connect"), "jwt-cabecera", "jwt-query"));
+            Assert.IsNull(AvisosTiempoReal.TokenDeLaPeticion(new Microsoft.Owin.PathString("/api/Clientes"), null, "jwt-query"),
+                "fuera de /signalr el token de la query no se usa: nada cambia para la API");
+        }
+
         private static DispositivoNotificacion Dispositivo(string usuario, string token, string cliente = "12345")
         {
             return new DispositivoNotificacion

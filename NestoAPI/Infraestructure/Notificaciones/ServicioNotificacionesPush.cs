@@ -34,6 +34,9 @@ namespace NestoAPI.Infraestructure.Notificaciones
         {
         }
 
+        /// <summary>NestoAPI#536: el aviso en tiempo real a Nesto (SignalR). Sustituible en tests.</summary>
+        internal IAvisosTiempoReal AvisosTiempoReal { get; set; } = new AvisosTiempoReal();
+
         // Internal para tests (InternalsVisibleTo("NestoAPI.Tests")): permite inyectar un contexto
         // falso y comprobar que el buzón se guarda y se lee bien sin tocar la base de datos.
         internal ServicioNotificacionesPush(Func<NVEntities> crearContexto)
@@ -351,6 +354,12 @@ namespace NestoAPI.Infraestructure.Notificaciones
                     }
 
                     _ = await db.SaveChangesAsync().ConfigureAwait(false);
+                }
+
+                // NestoAPI#536: Nesto no recibe push; se le avisa por SignalR para que refresque la campana.
+                if (aplicacion == Constantes.Aplicaciones.NESTO)
+                {
+                    AvisosTiempoReal.HayNotificacionesNuevas(dispositivos.Select(d => d.Usuario));
                 }
             }
             catch (Exception ex)
