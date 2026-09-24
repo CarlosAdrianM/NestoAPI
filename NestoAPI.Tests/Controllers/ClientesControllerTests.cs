@@ -321,5 +321,49 @@ namespace NestoAPI.Tests.Controllers
             Assert.IsFalse(ClientesController.PrincipalesActivos(clientes, "1", "22709").Any());
         }
 
+        // Nesto#486 / NestoApp#189: la API dice si la cuenta vale para el recibo, con la regla de
+        // la remesa, para que Nesto y NestoApp no la repitan.
+
+        private static CCC CuentaBancaria(string numero = "1", short estado = 0, string cuenta = "0200051332") => new CCC
+        {
+            Empresa = "1", Cliente = "15191", Contacto = "0", Número = numero, Estado = estado,
+            Pais = "ES", DC_IBAN = "91", Entidad = "2100", Oficina = "0418", DC = "45", Nº_Cuenta = cuenta
+        };
+
+        [TestMethod]
+        public void MarcarValidezParaRecibo_CuentaBuenaDeLaFicha_ValeYEsLaDeLaFicha()
+        {
+            var dto = new CCCDTO { numero = "1" };
+
+            ClientesController.MarcarValidezParaRecibo(dto, CuentaBancaria(), "1  ");
+
+            Assert.IsTrue(dto.validoParaRecibo);
+            Assert.IsNull(dto.motivoNoValido);
+            Assert.IsTrue(dto.esDeLaFicha);
+        }
+
+        [TestMethod]
+        public void MarcarValidezParaRecibo_CuentaDeBaja_NoVale()
+        {
+            var dto = new CCCDTO { numero = "2" };
+
+            ClientesController.MarcarValidezParaRecibo(dto, CuentaBancaria("2", estado: -1), "1");
+
+            Assert.IsFalse(dto.validoParaRecibo);
+            StringAssert.Contains(dto.motivoNoValido, "DE BAJA");
+            Assert.IsFalse(dto.esDeLaFicha);
+        }
+
+        [TestMethod]
+        public void MarcarValidezParaRecibo_IbanMal_NoVale()
+        {
+            var dto = new CCCDTO { numero = "3" };
+
+            ClientesController.MarcarValidezParaRecibo(dto, CuentaBancaria("3", cuenta: "0200051333"), null);
+
+            Assert.IsFalse(dto.validoParaRecibo);
+            Assert.IsNotNull(dto.motivoNoValido);
+        }
+
     }
 }

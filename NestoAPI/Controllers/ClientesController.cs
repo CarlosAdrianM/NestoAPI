@@ -4,6 +4,7 @@ using System.Configuration;
 using NestoAPI.Infraestructure.Buscador;
 using NestoAPI.Infraestructure.Clientes;
 using NestoAPI.Infraestructure.Exceptions;
+using NestoAPI.Infraestructure.Remesas;
 using NestoAPI.Infraestructure.Seguridad;
 using NestoAPI.Infraestructure.Sincronizacion;
 using NestoAPI.Infraestructure.Vendedores;
@@ -633,6 +634,12 @@ namespace NestoAPI.Controllers
                 .Distinct()
                 .ToList();
 
+            // Nesto#486: la cuenta de la ficha del contacto, que es la que acaba en el pedido
+            string cccFicha = await db.Clientes
+                .Where(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.Contacto == contacto)
+                .Select(c => c.CCC)
+                .FirstOrDefaultAsync();
+
             // Buscar nombres de entidades en la tabla Entidades
             var nombresEntidades = await db.Entidades
                 .Where(e => codigosEntidad.Contains(e.Número))
@@ -664,7 +671,7 @@ namespace NestoAPI.Controllers
                     nombreEntidad = nombre;
                 }
 
-                return new CCCDTO
+                CCCDTO dto = new CCCDTO
                 {
                     empresa = c.Empresa.Trim(),
                     cliente = c.Cliente.Trim(),
@@ -684,9 +691,24 @@ namespace NestoAPI.Controllers
                     numeroCuenta = c.Nº_Cuenta?.Trim(),
                     secuencia = c.Secuencia?.Trim()
                 };
+                MarcarValidezParaRecibo(dto, c, cccFicha);
+                return dto;
             }).ToList();
 
             return Ok(cccs);
+        }
+
+        /// <summary>
+        /// Nesto#486 / NestoApp#189: marca si la cuenta vale para mandar el recibo al banco, con la
+        /// regla de la remesa (SelectorEfectosCobrables.MotivoRetencionIban: no de baja, IBAN
+        /// completo y válido), y si es la de la ficha del contacto. Pura para testear sin BD.
+        /// </summary>
+        internal static void MarcarValidezParaRecibo(CCCDTO dto, CCC ficha, string cccFicha)
+        {
+            dto.motivoNoValido = SelectorEfectosCobrables.MotivoRetencionIban(ficha, dto.numero);
+            dto.validoParaRecibo = dto.motivoNoValido == null;
+            dto.esDeLaFicha = !string.IsNullOrWhiteSpace(cccFicha)
+                && string.Equals(cccFicha.Trim(), dto.numero?.Trim(), StringComparison.OrdinalIgnoreCase);
         }
 
         [HttpGet]

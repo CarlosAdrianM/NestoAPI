@@ -95,6 +95,15 @@ namespace NestoAPI.Models
         public string dc { get; set; }
         public string numeroCuenta { get; set; }
         public string secuencia { get; set; }
+
+        // Nesto#486 / NestoApp#189: si el recibo se puede mandar al banco con esta cuenta. Es la
+        // MISMA regla que usa la remesa para retener un efecto (SelectorEfectosCobrables), para que
+        // Nesto y NestoApp no la repitan cada uno a su manera.
+        public bool validoParaRecibo { get; set; }
+        /// <summary>Por qué no vale (el texto de la remesa), o null si vale.</summary>
+        public string motivoNoValido { get; set; }
+        /// <summary>Es la cuenta de la ficha del contacto: la que se pone en el pedido si no se elige otra.</summary>
+        public bool esDeLaFicha { get; set; }
     }
 
     public class EstadoCCCDTO
