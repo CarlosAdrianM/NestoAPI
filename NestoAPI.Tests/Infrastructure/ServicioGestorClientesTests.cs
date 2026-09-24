@@ -29,6 +29,22 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void NormalizarNif_ConPuntosOBarras_EsElMismoNif()
+        {
+            // NestoAPI#523: casos medidos contra producción el 24/09 (con valores ficticios)
+            foreach (string escrito in new[] { "12.345.678-Z", "12.345.678Z", "12345678/Z" })
+            {
+                Assert.AreEqual("12345678Z", ServicioGestorClientes.NormalizarNif(escrito), escrito);
+            }
+            foreach (string escrito in new[] { "B/12345678", "B.12345678", "B-12.345.678" })
+            {
+                Assert.AreEqual("B12345678", ServicioGestorClientes.NormalizarNif(escrito), escrito);
+            }
+            Assert.AreEqual(ServicioGestorClientes.NormalizarNif("FR12345678901"), ServicioGestorClientes.NormalizarNif("FR 12.345.678.901"));
+            Assert.AreEqual(string.Empty, ServicioGestorClientes.NormalizarNif("./-"));
+        }
+
+        [TestMethod]
         public void NormalizarNif_NifNormal_QuitaGuionesEspaciosYCerosIniciales()
         {
             Assert.AreEqual("B12345678", ServicioGestorClientes.NormalizarNif("b-1234 5678"));

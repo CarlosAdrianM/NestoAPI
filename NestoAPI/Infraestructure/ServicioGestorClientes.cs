@@ -952,10 +952,12 @@ namespace NestoAPI.Infraestructure
                 return string.Empty;
             }
 
-            // Limpieza general
-            nif = nif.Trim().ToUpperInvariant().Replace("-", "").Replace(" ", "");
+            // Limpieza general. NestoAPI#523: solo letras y dígitos. Con puntos o barras
+            // («12.345.678-Z», «B/12345678», copiados de una factura) no casaba y el acceso
+            // profesional de la tienda no mandaba el código, sin ningún aviso.
+            nif = new string(nif.Trim().ToUpperInvariant().Where(char.IsLetterOrDigit).ToArray());
 
-            // Issue #285: un NIF de solo guiones/espacios queda vacío tras la limpieza y
+            // Issue #285: un NIF de solo signos queda vacío tras la limpieza y
             // nif.First() lanzaría 'Sequence contains no elements'.
             if (nif.Length == 0)
             {
