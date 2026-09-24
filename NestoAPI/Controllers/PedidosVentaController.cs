@@ -827,6 +827,8 @@ namespace NestoAPI.Controllers
                     // se re-valida su descuento (una subida de tarifa posterior la bloquearía sin tocarla).
                     lineaPedido.NoRevalidarDescuento = lineaPedido.EsIntactaParaDescuento(
                         lineaOriginal.Cantidad ?? -1, lineaOriginal.Precio ?? -1);
+                    // NestoAPI#528: al aceptar un presupuesto sus regalos se validan como nuevos
+                    lineaPedido.VieneDePresupuesto = aceptarPresupuesto;
                 }
             }
 

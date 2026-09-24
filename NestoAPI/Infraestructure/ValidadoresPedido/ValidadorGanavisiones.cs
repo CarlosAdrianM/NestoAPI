@@ -46,7 +46,9 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     && l.BaseImponible == 0
                     && (l.oferta == null || l.oferta == 0))
                 .ToList();
-            if (lineasBonificadasProducto.Any() && lineasBonificadasProducto.All(l => l.id != 0))
+            // NestoAPI#528: "ya estaba guardada" no basta: si se cambia el producto, se sube la cantidad
+            // o viene de un presupuesto, hay unidades nuevas y se valida todo (puntos y stock).
+            if (lineasBonificadasProducto.Any() && lineasBonificadasProducto.All(l => ValidadorRegaloSinStock.UnidadesNuevas(l) == 0))
             {
                 return new RespuestaValidacion
                 {

@@ -53,6 +53,12 @@ namespace NestoAPI.Models.PedidosVenta
         [JsonIgnore]
         public bool CambioProducto => !EsLineaNueva && ProductoAnterior != null && ProductoAnterior.Trim() != Producto?.Trim();
 
+        // NestoAPI#528: la línea pasa de presupuesto a pedido. Aunque ya estuviera guardada, su stock
+        // no estaba reservado (un presupuesto no cuenta como pendiente de entregar): sus unidades son
+        // nuevas a efectos de regalos y Ganavisiones. Lo marca el PUT al aceptar el presupuesto.
+        [JsonIgnore]
+        public bool VieneDePresupuesto { get; set; }
+
         // Issue #237: una línea preexistente que NO se toca (misma cantidad y precio que en BD) y que
         // no pertenece a una oferta no debe re-validar su descuento al modificar/unir el pedido: una
         // subida de tarifa posterior la bloquearía sin haberla tocado. Lo marca el controller; el

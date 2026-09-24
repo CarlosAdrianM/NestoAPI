@@ -69,9 +69,13 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 && (linea.oferta == null || linea.oferta == 0);
         }
 
+        /// <summary>
+        /// Las unidades que entran ahora: toda la línea si es nueva, si cambia de producto o si viene
+        /// de un presupuesto (#528); si ya estaba guardada, solo lo que sube la cantidad.
+        /// </summary>
         internal static int UnidadesNuevas(LineaPedidoVentaDTO linea)
         {
-            if (linea.EsLineaNueva || linea.CambioProducto)
+            if (linea.EsLineaNueva || linea.CambioProducto || linea.VieneDePresupuesto)
             {
                 return linea.Cantidad;
             }

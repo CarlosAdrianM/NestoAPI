@@ -5,6 +5,7 @@ using NestoAPI.Infraestructure.ValidadoresPedido;
 using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace NestoAPI.Tests.Infrastructure.ValidadoresPedido
 {
@@ -503,6 +504,39 @@ namespace NestoAPI.Tests.Infrastructure.ValidadoresPedido
 
             Assert.IsTrue(resultado.ValidacionSuperada,
                 $"El regalo ya guardado debe respetarse aunque hoy no haya saldo. Motivo: {resultado.Motivo}");
+        }
+
+        [TestMethod]
+        public void EsPedidoValido_RegaloGuardadoAlQueSeSubeLaCantidad_SeValidaEntero()
+        {
+            // NestoAPI#528: "ya estaba guardada" no basta si se sube la cantidad: las unidades de más
+            // tienen que tener Ganavisiones (aquí el regalo ya no existe como Ganavisión).
+            var pedido = CrearPedidoAmpliacion(idLineaRegalo: 200);
+            LineaPedidoVentaDTO regalo = pedido.Lineas.Single(l => l.Producto == "REGALO01");
+            regalo.CantidadAnterior = 1;
+            regalo.ProductoAnterior = "REGALO01";
+            regalo.Cantidad = 3;
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("REGALO01")).Returns(null);
+
+            var resultado = _validador.EsPedidoValido(pedido, "REGALO01", _servicioPrecios);
+
+            Assert.IsFalse(resultado.ValidacionSuperada, "subir la cantidad de un regalo no se lo salta nadie");
+        }
+
+        [TestMethod]
+        public void EsPedidoValido_RegaloDeUnPresupuestoQueSeAcepta_SeValidaComoNuevo()
+        {
+            // NestoAPI#528: el presupuesto se hizo con stock y puntos; al aceptarlo se vuelve a mirar.
+            var pedido = CrearPedidoAmpliacion(idLineaRegalo: 200);
+            LineaPedidoVentaDTO regalo = pedido.Lineas.Single(l => l.Producto == "REGALO01");
+            regalo.CantidadAnterior = 1;
+            regalo.ProductoAnterior = "REGALO01";
+            regalo.VieneDePresupuesto = true;
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("REGALO01")).Returns(null);
+
+            var resultado = _validador.EsPedidoValido(pedido, "REGALO01", _servicioPrecios);
+
+            Assert.IsFalse(resultado.ValidacionSuperada);
         }
 
         [TestMethod]

@@ -116,6 +116,19 @@ namespace NestoAPI.Tests.Infrastructure.ValidadoresPedido
         }
 
         [TestMethod]
+        public void RegaloDeUnPresupuestoQueSeAcepta_CuentaEntero()
+        {
+            // NestoAPI#528: el presupuesto se hizo con stock; se acepta cuando ya no queda
+            A.CallTo(() => _servicio.BuscarStockDisponibleTotal(LAMPARA)).Returns(0);
+            LineaPedidoVentaDTO delPresupuesto = Regalo(LAMPARA, 1, id: 328400100);
+            delPresupuesto.CantidadAnterior = 1;
+            delPresupuesto.ProductoAnterior = LAMPARA;
+            delPresupuesto.VieneDePresupuesto = true;
+
+            Assert.IsFalse(_validador.EsPedidoValido(PedidoCon(delPresupuesto), _servicio).ValidacionSuperada);
+        }
+
+        [TestMethod]
         public void UnidadesGratisDeUnaOferta_NoLasMiraEsteValidador()
         {
             A.CallTo(() => _servicio.BuscarStockDisponibleTotal(A<string>._)).Returns(0);
