@@ -578,6 +578,7 @@
       <DependentUpon>Global.asax</DependentUpon>
     </Compile>
     <Compile Include="Infraestructure\Agencias\GestorEnviosAgencia.cs" />
+    <Compile Include="Infraestructure\Agencias\ReglasEnReparto.cs" />
     <Compile Include="Infraestructure\Agencias\AgenciaRemotaException.cs" />
     <Compile Include="Infraestructure\Agencias\CTT\AgenciaRemotaCTT.cs" />
     <Compile Include="Infraestructure\Agencias\CTT\ClienteRestCTT.cs" />

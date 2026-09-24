@@ -144,6 +144,11 @@ namespace NestoAPI.Controllers
         /// y el PUT lo ignora a propósito para que el cliente no lo pise con un valor viejo.
         /// </summary>
         public string DetalleEstado { get; set; }
+        /// <summary>
+        /// NestoAPI#516: tramitado que la agencia ya ha sacado a reparto (se entrega hoy, en principio).
+        /// Se deriva de DetalleEstado; no es un estado nuevo ni lo cambia de pestaña.
+        /// </summary>
+        public bool EnReparto => Infraestructure.Agencias.ReglasEnReparto.EstaEnReparto(Estado, DetalleEstado);
     }
 
     // Issue #189: [Authorize] de clase. Llamantes auditados 13/07/26: Nesto (JWT vía
