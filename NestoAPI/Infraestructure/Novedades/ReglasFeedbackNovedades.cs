@@ -20,6 +20,14 @@ namespace NestoAPI.Infraestructure.Novedades
         public const string CLIENTE_TIENDA = "TiendaOnline";
 
         /// <summary>
+        /// NestoAPI#531: el asistente IA (Claude) contesta con su propio nombre, no con el de quien
+        /// lanza la petición: los usuarios tienen que saber que les responde un agente.
+        /// </summary>
+        public const string USUARIO_ASISTENTE = "Claude";
+        public const string NOMBRE_ASISTENTE = "Claude (asistente IA)";
+        public const string CLIENTE_ASISTENTE = "Asistente";
+
+        /// <summary>
         /// Clave ESTABLE del usuario, sacada del token (nunca del cuerpo de la petición). Al renovar el
         /// token la identidad es la misma: Nesto → nameidentifier = NUEVAVISION\usuario; NestoApp → el
         /// Id de usuario de Identity (nameidentifier), no el UserName, que en teoría es editable.

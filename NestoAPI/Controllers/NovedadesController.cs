@@ -232,6 +232,56 @@ namespace NestoAPI.Controllers
             });
         }
 
+        // POST api/Novedades/5/Comentarios/Asistente  { "Texto": "...", "ComentariosContestados": [1] }
+        // NestoAPI#531: el asistente IA contesta como él mismo (solo Dirección / Informática, que
+        // es desde donde se lanza). Lo contestado queda revisado.
+        [HttpPost]
+        [Authorize]
+        [Route("api/Novedades/{id:int}/Comentarios/Asistente")]
+        [ResponseType(typeof(ComentarioNovedadDTO))]
+        public IHttpActionResult PostComentarioAsistente(int id, [FromBody] NuevoComentarioAsistenteDTO comentario)
+        {
+            if (!PuedeRevisarFeedback())
+            {
+                return StatusCode(HttpStatusCode.Forbidden);
+            }
+            string error = ReglasFeedbackNovedades.Validar(comentario, out byte[] imagen, out string tipo);
+            if (error != null)
+            {
+                return BadRequest(error);
+            }
+            if (!feedback.ExisteNovedad(id))
+            {
+                return NotFound();
+            }
+            var aGrabar = new ComentarioNovedadAGrabar
+            {
+                NovedadId = id,
+                Usuario = ReglasFeedbackNovedades.USUARIO_ASISTENTE,
+                NombreVisible = ReglasFeedbackNovedades.NOMBRE_ASISTENTE,
+                Cliente = ReglasFeedbackNovedades.CLIENTE_ASISTENTE,
+                Texto = comentario.Texto.Trim(),
+                Imagen = imagen,
+                ImagenTipo = tipo
+            };
+            int nuevoId = feedback.CrearComentario(aGrabar);
+            foreach (int contestado in (comentario.ComentariosContestados ?? new List<int>()).Distinct())
+            {
+                _ = feedback.MarcarRevisado(contestado);
+            }
+            return Ok(new ComentarioNovedadDTO
+            {
+                Id = nuevoId,
+                NovedadId = id,
+                NombreVisible = aGrabar.NombreVisible,
+                Cliente = aGrabar.Cliente,
+                Texto = aGrabar.Texto,
+                Fecha = DateTime.Now,
+                TieneImagen = imagen != null,
+                EsMio = false
+            });
+        }
+
         // GET api/Novedades/Comentarios/7/Imagen  → la captura con su content-type
         [HttpGet]
         [Authorize]

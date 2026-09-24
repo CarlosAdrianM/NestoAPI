@@ -36,6 +36,15 @@ namespace NestoAPI.Models.Novedades
         public string VersionCliente { get; set; }
     }
 
+    /// <summary>
+    /// NestoAPI#531: la respuesta del asistente IA a uno o varios comentarios. Los contestados
+    /// pasan a revisados.
+    /// </summary>
+    public class NuevoComentarioAsistenteDTO : NuevoComentarioNovedadDTO
+    {
+        public List<int> ComentariosContestados { get; set; } = new List<int>();
+    }
+
     /// <summary>Comentario tal cual se muestra (la imagen se pide aparte, por su Id).</summary>
     public class ComentarioNovedadDTO
     {

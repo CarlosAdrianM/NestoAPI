@@ -300,6 +300,53 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual(desde, resultado.Content.Desde);
         }
 
+        // ---- NestoAPI#531: el asistente IA contesta como él mismo ----
+
+        [TestMethod]
+        public void PostComentarioAsistente_GrabaComoElAsistenteYDejaRevisadoLoContestado()
+        {
+            ComoUsuarioDeNesto("NUEVAVISION\\Carlos", "NUEVAVISION\\Informatica");
+            A.CallTo(() => feedback.ExisteNovedad(7)).Returns(true);
+            ComentarioNovedadAGrabar grabado = null;
+            A.CallTo(() => feedback.CrearComentario(A<ComentarioNovedadAGrabar>._))
+                .Invokes((ComentarioNovedadAGrabar c) => grabado = c).Returns(43);
+
+            var resultado = controller.PostComentarioAsistente(7, new NuevoComentarioAsistenteDTO
+            {
+                Texto = "Hola, Alfredo. Tienes razón...",
+                ComentariosContestados = new List<int> { 1, 1 }
+            }) as OkNegotiatedContentResult<ComentarioNovedadDTO>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(43, resultado.Content.Id);
+            Assert.AreEqual("Claude", grabado.Usuario, "no como quien lanza la petición");
+            Assert.AreEqual("Claude (asistente IA)", grabado.NombreVisible);
+            Assert.AreEqual(ReglasFeedbackNovedades.CLIENTE_ASISTENTE, grabado.Cliente);
+            A.CallTo(() => feedback.MarcarRevisado(1)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public void PostComentarioAsistente_SinSerDireccionNiInformatica_Forbidden()
+        {
+            ComoUsuarioDeNesto("NUEVAVISION\\Paloma", "NUEVAVISION\\Almacén");
+
+            var resultado = controller.PostComentarioAsistente(7, new NuevoComentarioAsistenteDTO { Texto = "hola" });
+
+            Assert.AreEqual(HttpStatusCode.Forbidden, ((StatusCodeResult)resultado).StatusCode);
+            A.CallTo(() => feedback.CrearComentario(A<ComentarioNovedadAGrabar>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void PostComentarioAsistente_NovedadQueNoExiste_NotFound()
+        {
+            ComoUsuarioDeNesto("NUEVAVISION\\Carlos", "NUEVAVISION\\Informatica");
+            A.CallTo(() => feedback.ExisteNovedad(99)).Returns(false);
+
+            var resultado = controller.PostComentarioAsistente(99, new NuevoComentarioAsistenteDTO { Texto = "hola" });
+
+            Assert.IsInstanceOfType(resultado, typeof(NotFoundResult));
+        }
+
         // ---- Reglas puras ----
 
         [TestMethod]
