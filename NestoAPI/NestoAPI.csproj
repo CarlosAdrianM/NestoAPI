@@ -653,6 +653,9 @@
     <Compile Include="Infraestructure\Remesas\CrearRemesaService.cs" />
     <Compile Include="Infraestructure\Remesas\SelectorEfectosCobrables.cs" />
     <Compile Include="Infraestructure\Remesas\GatingEntregaFacturas.cs" />
+    <Compile Include="Infraestructure\Cobros\PlantillaAvisoFacturaVencida.cs" />
+    <Compile Include="Infraestructure\Cobros\SelectorAvisosFacturasVencidas.cs" />
+    <Compile Include="Models\Cobros\AvisoFacturaVencidaDTO.cs" />
     <Compile Include="Infraestructure\Contabilidad\RepositorioTerminalesTPV.cs" />
     <Compile Include="Infraestructure\Contabilidad\GestorContabilidad.cs" />
     <Compile Include="Infraestructure\Contabilidad\GestorCuaderno43.cs" />
