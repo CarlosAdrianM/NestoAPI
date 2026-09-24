@@ -39,13 +39,23 @@ INSERT INTO @novedades (Categoria, Titulo, Descripcion) VALUES
     ('Mejorado', N'El seguimiento de CTT entiende todos sus estados',
      N'En Agencias, los envíos de CTT reconocen ya todos los estados de la agencia: el «nuevo reparto» (cuando el cliente estaba ausente y vuelve a salir) sigue como tramitado, las devoluciones pasan a devueltos y los envíos estacionados, con reparto fallido o entregados en parte pasan a incidentados para que se revisen.'),
     ('Nuevo', N'Campana de avisos: os enteráis cuando os contestan en Novedades',
-     N'Arriba a la derecha de la cinta hay una campana con el número de avisos sin leer. Cuando el asistente de desarrollo contesta a un comentario vuestro en Novedades, os llega un aviso; al pulsarlo se abre Novedades justo en la respuesta. Desde la campana podéis marcar los avisos como leídos o borrarlos.'),
+     N'Arriba a la derecha de la cinta hay una campana con el número de avisos sin leer. Os llega un aviso cuando el asistente de desarrollo contesta a un comentario vuestro en Novedades o cuando un compañero os menciona con @. El aviso llega al momento, sin tener que cerrar ni refrescar nada; al pulsarlo se abre Novedades justo en ese comentario. Desde la campana podéis marcar los avisos como leídos o borrarlos.'),
+    ('Nuevo', N'Menciones con @ en Novedades',
+     N'Al escribir un comentario o una sugerencia en Novedades podéis poner @ seguido del nombre de un compañero (por ejemplo, @Carlos). Al teclear la @ sale una lista con los nombres que se va filtrando según escribís: elegid con las flechas y Enter o con el ratón. La persona mencionada recibe un aviso en su campana y, al pulsarlo, va directa a ese comentario (o a la sugerencia). Se puede mencionar a cualquier compañero que use Nesto; da igual escribir el nombre con o sin tildes o mayúsculas. No os llega aviso de vuestras propias menciones, y si alguien ya recibe aviso porque le están contestando, no le llega dos veces. Un truco: si el asistente no entiende lo que pedís, mencionad a @Carlos para que lo mire.'),
     ('Mejorado', N'Con picking, el modo de entrega se pide a almacén',
      N'Si un pedido ya está en preparación (tiene picking) o ha salido parte hoy, ya no se puede cambiar el modo de entrega desde el pedido o la plantilla: Nesto explica por qué y os ofrece pedírselo a almacén con un correo. Lo intentarán, pero puede que ya no llegue a tiempo. Si una parte del pedido salió otro día y ahora no tiene picking, sí se puede cambiar para que el resto salga junto.'),
     ('Corregido', N'Los envíos de CTT se confirman en Amazon',
      N'Al confirmar en Amazon un pedido enviado por CTT, ahora se manda el transportista y el servicio «CTT 48h» como Amazon los pide, así que el pedido se marca como enviado. Además, Nesto espera la respuesta de Amazon: si algún pedido no se puede marcar, os dice el motivo en lugar de dar la confirmación por buena.'),
     ('Corregido', N'NIF incorrectos: los botones solo aparecen con un cliente seleccionado',
-     N'En la ventana de clientes con NIF incorrecto parecía que los botones no funcionaban cuando no había ningún cliente seleccionado en la lista. Ahora, sin selección, en su lugar se lee «Selecciona un cliente de la lista para corregir su NIF o marcarlo como extranjero», y los botones salen en cuanto se elige uno.');
+     N'En la ventana de clientes con NIF incorrecto parecía que los botones no funcionaban cuando no había ningún cliente seleccionado en la lista. Ahora, sin selección, en su lugar se lee «Selecciona un cliente de la lista para corregir su NIF o marcarlo como extranjero», y los botones salen en cuanto se elige uno.'),
+    ('Mejorado', N'Crear albarán y factura desde cualquier pestaña del pedido',
+     N'En el detalle del pedido, los botones Crear Albarán, Crear Factura, Crear Albarán y Factura e Imprimir están ahora en una barra debajo de las pestañas, así que se pueden usar desde Líneas sin volver a Cabecera. Si estáis escribiendo en una línea y pulsáis uno de ellos (o Guardar), la línea se da por terminada antes, para que no se quede nada sin guardar.'),
+    ('Mejorado', N'La raya de colores junto a vuestro nombre dice si estáis conectados con el servidor',
+     N'La rayita que hay arriba entre vuestro nombre y el del equipo ahora indica la conexión real con el servidor: verde, todo bien; ámbar, se ha perdido la conexión y Nesto está reintentando solo; roja, la sesión ha caducado. Si pasáis el ratón por encima, lo explica.'),
+    ('Nuevo', N'En Agencias se ve qué envíos están ya en reparto',
+     N'En la pestaña Tramitados hay una columna que marca los envíos que la agencia ya ha sacado a reparto (en principio, se entregan hoy), otra con el último evento que da la agencia, y en el título de la pestaña cuántos hay en reparto. El envío sigue en Tramitados: solo es un dato más.'),
+    ('Corregido', N'Teclear la fecha de entrega en la plantilla ya no cierra Nesto',
+     N'Si en la plantilla de ventas se tecleaba a mano una fecha de entrega anterior a la primera posible, Nesto daba un error. Ahora se ajusta sola a la primera fecha posible.');
 
 INSERT INTO Novedades (Version, Fecha, Categoria, Titulo, Descripcion, Ambito, Publicada, Usuario)
 SELECT @version, @fecha, n.Categoria, n.Titulo, n.Descripcion, 'Nesto', 1, 'sa'
@@ -54,6 +64,6 @@ WHERE NOT EXISTS (SELECT 1 FROM Novedades x WHERE x.Version = @version AND x.Tit
 
 SELECT @@ROWCOUNT AS NovedadesInsertadasAhora;
 
--- Comprobación: deben salir 9 filas, sin repetidos.
+-- Comprobación: deben salir 14 filas, sin repetidos.
 SELECT Id, Version, Categoria, Titulo, Ambito, Publicada
 FROM Novedades WHERE Version = @version ORDER BY Id;
