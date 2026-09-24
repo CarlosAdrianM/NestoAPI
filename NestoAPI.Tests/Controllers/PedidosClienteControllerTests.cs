@@ -1,8 +1,13 @@
 ﻿using System.Collections.Generic;
+using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Clientes;
+using NestoAPI.Tests.Helpers;
+using System.Data.Entity;
+using System.Data.Entity.Infrastructure;
 using System.Linq;
 using System.Net.Http;
 using System.Security.Claims;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Controllers;
@@ -164,6 +169,93 @@ namespace NestoAPI.Tests.Controllers
                         PrecioUnitario = precio,
                         iva = codigoIva
                     }
+                }
+            };
+        }
+
+        #endregion
+
+        #region NestoAPI#524: la política de precios ocultos llegaba al pedido real
+
+        [TestMethod]
+        public async Task CalcularPrecios_PersonaQueNoVeLosPrecios_ElPedidoLlevaElPrecioRealDelCliente()
+        {
+            // Pedido 926936 (23/09/26): una persona con cargo 31 hizo el pedido y se guardó a
+            // tarifa y sin descuentos. El controller de productos creado con new NO va sin usuario:
+            // su User cae a Thread.CurrentPrincipal, que en producción es el del JWT. Con el cargo
+            // 30 el precio habría sido 0.
+            foreach (string nivel in new[] { "SinDescuentos", "SinPrecios" })
+            {
+                System.Security.Principal.IPrincipal anterior = Thread.CurrentPrincipal;
+                try
+                {
+                    Claim[] claims = { new Claim("cliente", "15191"), new Claim(PoliticaPreciosOcultos.CLAIM_NIVEL_PRECIOS, nivel) };
+                    Thread.CurrentPrincipal = new ClaimsPrincipal(new ClaimsIdentity(claims, "JWT"));
+                    PedidosClienteController controller = ControllerConIdentidad(claims);
+                    controller.CrearControllerProductos = () => ControllerProductosConPrecioDeCliente(
+                        new Producto { Empresa = "1", Número = "39667", Nombre = "MASCARILLA", PVP = 17.95M, Aplicar_Dto = true, IVA_Repercutido = "G21" },
+                        precioCliente: 17.95M, descuentoCliente: 0.65M);
+
+                    Dictionary<string, ProductoPlantillaDTO> precios = await controller.CalcularPrecios("1",
+                        new ClienteDTO { cliente = "15191", contacto = "2" },
+                        new List<LineaPedidoClienteRequest> { new LineaPedidoClienteRequest { Producto = "39667", Cantidad = 1 } });
+
+                    ProductoPlantillaDTO precio = precios["39667"];
+                    Assert.AreEqual(17.95M, precio.precio, nivel + ": el precio de cliente, nunca 0");
+                    Assert.AreEqual(0.65M, precio.descuento, nivel + ": su descuento");
+                    Assert.IsTrue(precio.aplicarDescuento, nivel + ": Aplicar Dto de la ficha");
+                }
+                finally
+                {
+                    Thread.CurrentPrincipal = anterior;
+                }
+            }
+        }
+
+        [TestMethod]
+        public async Task GetProducto_PersonaQueNoVeLosDescuentos_SigueSinVerlos()
+        {
+            // El endpoint público sigue ocultando: lo que cambia es solo lo que va al pedido.
+            ProductosController controller = ControllerProductosConPrecioDeCliente(
+                new Producto { Empresa = "1", Número = "39667", Nombre = "MASCARILLA", PVP = 17.95M, Aplicar_Dto = true, IVA_Repercutido = "G21" },
+                precioCliente: 17.95M, descuentoCliente: 0.65M);
+            controller.RequestContext = new HttpRequestContext
+            {
+                Principal = new ClaimsPrincipal(new ClaimsIdentity(new[]
+                {
+                    new Claim("cliente", "15191"),
+                    new Claim(PoliticaPreciosOcultos.CLAIM_NIVEL_PRECIOS, "SinDescuentos")
+                }, "JWT"))
+            };
+
+            var resultado = await controller.GetProducto("1", "39667", "15191", "2", 1) as OkNegotiatedContentResult<ProductoPlantillaDTO>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(0M, resultado.Content.descuento);
+            Assert.IsFalse(resultado.Content.aplicarDescuento);
+            Assert.IsTrue(resultado.Content.descuentoOculto);
+        }
+
+        private static ProductosController ControllerProductosConPrecioDeCliente(Producto producto, decimal precioCliente, decimal descuentoCliente)
+        {
+            NVEntities db = A.Fake<NVEntities>();
+            DbSet<Producto> productos = A.Fake<DbSet<Producto>>(o => o.Implements<IQueryable<Producto>>().Implements<IDbAsyncEnumerable<Producto>>());
+            IQueryable<Producto> datos = new List<Producto> { producto }.AsQueryable();
+            A.CallTo(() => ((IDbAsyncEnumerable<Producto>)productos).GetAsyncEnumerator())
+                .ReturnsLazily(() => new TestDbAsyncEnumerator<Producto>(datos.GetEnumerator()));
+            A.CallTo(() => ((IQueryable<Producto>)productos).Provider).Returns(new TestDbAsyncQueryProvider<Producto>(datos.Provider));
+            A.CallTo(() => ((IQueryable<Producto>)productos).Expression).Returns(datos.Expression);
+            A.CallTo(() => ((IQueryable<Producto>)productos).ElementType).Returns(datos.ElementType);
+            A.CallTo(() => ((IQueryable<Producto>)productos).GetEnumerator()).ReturnsLazily(() => datos.GetEnumerator());
+            A.CallTo(() => db.Productos).Returns(productos);
+
+            return new ProductosController(db, A.Fake<IGestorSincronizacion>())
+            {
+                // GestorPrecios va a la base de datos: aquí, el precio de cliente ya calculado
+                CalcularDescuentoProducto = p =>
+                {
+                    p.precioCalculado = precioCliente;
+                    p.descuentoCalculado = descuentoCliente;
                 }
             };
         }

@@ -232,9 +232,37 @@ namespace NestoAPI.Controllers
             return productosDTO;
         }
 
+        /// <summary>
+        /// NestoAPI#524: el cálculo del precio de cliente. Es GestorPrecios, que abre su propia
+        /// conexión a la base de datos; los tests lo sustituyen.
+        /// </summary>
+        internal Action<PrecioDescuentoProducto> CalcularDescuentoProducto { get; set; } = GestorPrecios.calcularDescuentoProducto;
+
         // GET: api/Productos/5
         [ResponseType(typeof(ProductoPlantillaDTO))]
         public async Task<IHttpActionResult> GetProducto(string empresa, string id, string cliente, string contacto, short cantidad)
+        {
+            // NestoAPI#446: quien hace pedidos sin ver los precios (o sin ver los descuentos) no
+            // ve el precio de cliente.
+            return await ObtenerProductoCliente(empresa, id, cliente, contacto, cantidad,
+                PoliticaPreciosOcultos.NivelDe(User?.Identity));
+        }
+
+        /// <summary>
+        /// NestoAPI#524: el precio REAL de cliente, con el que se construye su pedido. No mira quién
+        /// ha iniciado sesión: ocultarle el precio a una persona no puede cambiar lo que paga su
+        /// empresa. OJO: no vale con llamar a GetProducto desde otro controller creyendo que "no
+        /// lleva usuario". Un ApiController creado con new tiene un RequestBackedHttpRequestContext
+        /// cuyo Principal cae a Thread.CurrentPrincipal, que es el usuario del JWT. Así salió el
+        /// pedido 926936 sin descuentos (cargo 31), y con el cargo 30 habría salido a precio cero.
+        /// </summary>
+        internal Task<IHttpActionResult> GetProductoPrecioReal(string empresa, string id, string cliente, string contacto, short cantidad)
+        {
+            return ObtenerProductoCliente(empresa, id, cliente, contacto, cantidad, PoliticaPreciosOcultos.NivelPrecios.Completo);
+        }
+
+        private async Task<IHttpActionResult> ObtenerProductoCliente(string empresa, string id, string cliente, string contacto,
+            short cantidad, PoliticaPreciosOcultos.NivelPrecios nivelPrecios)
         {
             Producto producto = await db.Productos.SingleOrDefaultAsync(p => p.Empresa == empresa && p.Número == id);
             if (producto == null)
@@ -286,17 +314,14 @@ namespace NestoAPI.Controllers
             }
             else
             {
-                GestorPrecios.calcularDescuentoProducto(precio);
+                CalcularDescuentoProducto(precio);
             }
 
             productoDTO.precio = precio.precioCalculado;
             productoDTO.aplicarDescuento = precio.aplicarDescuento;
             productoDTO.descuento = precio.descuentoCalculado;
 
-            // NestoAPI#446: quien hace pedidos sin ver los precios (o sin ver los descuentos) no
-            // se lleva el precio de cliente. (Las llamadas internas —PedidosClienteController al
-            // construir el pedido— no llevan usuario y siguen calculando el precio real.)
-            PoliticaPreciosOcultos.AplicarNivel(productoDTO, PoliticaPreciosOcultos.NivelDe(User?.Identity), (decimal)producto.PVP);
+            PoliticaPreciosOcultos.AplicarNivel(productoDTO, nivelPrecios, (decimal)producto.PVP);
 
             return Ok(productoDTO);
         }

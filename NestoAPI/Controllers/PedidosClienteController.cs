@@ -1019,17 +1019,23 @@ namespace NestoAPI.Controllers
             return resultado is OkNegotiatedContentResult<CondicionesPagoResponse> ok ? ok.Content : null;
         }
 
-        private async Task<Dictionary<string, ProductoPlantillaDTO>> CalcularPrecios(
+        /// <summary>NestoAPI#524: cómo se crea el controller de productos; sustituible en tests.</summary>
+        internal Func<ProductosController> CrearControllerProductos { get; set; }
+
+        internal async Task<Dictionary<string, ProductoPlantillaDTO>> CalcularPrecios(
             string empresa, ClienteDTO cliente, IEnumerable<LineaPedidoClienteRequest> lineas)
         {
             Dictionary<string, ProductoPlantillaDTO> precios = new Dictionary<string, ProductoPlantillaDTO>();
             // Sin using, igual que arriba: comparte el DbContext de este controller.
-            ProductosController controllerProductos = new ProductosController(db);
+            ProductosController controllerProductos = CrearControllerProductos?.Invoke() ?? new ProductosController(db);
             foreach (LineaPedidoClienteRequest linea in lineas)
             {
                 string producto = linea.Producto.Trim();
+                // NestoAPI#524: el precio REAL, no el que ve quien ha iniciado sesión. GetProducto
+                // aplicaba aquí la política de precios ocultos (el principal del JWT llega al
+                // controller creado con new) y el pedido salía a tarifa, o a cero con el cargo 30.
                 IHttpActionResult resultado = await controllerProductos
-                    .GetProducto(empresa, producto, cliente.cliente, cliente.contacto, linea.Cantidad)
+                    .GetProductoPrecioReal(empresa, producto, cliente.cliente, cliente.contacto, linea.Cantidad)
                     .ConfigureAwait(false);
                 if (resultado is OkNegotiatedContentResult<ProductoPlantillaDTO> ok)
                 {
