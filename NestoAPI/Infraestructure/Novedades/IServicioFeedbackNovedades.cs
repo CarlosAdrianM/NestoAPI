@@ -30,6 +30,15 @@ namespace NestoAPI.Infraestructure.Novedades
         /// <summary>Nesto#477: autor, novedad y programa de cada comentario (los borrados no).</summary>
         List<AutorComentarioNovedad> LeerAutores(IEnumerable<int> comentarios);
 
+        /// <summary>
+        /// NestoAPI#537: a quién se puede mencionar. Nesto: los usuarios que abren Nesto (tienen el
+        /// parámetro UltimaVersionNovedades); NestoApp: los que tienen la app registrada para push.
+        /// </summary>
+        List<MencionableDTO> LeerMencionables(bool deNestoApp);
+
+        /// <summary>NestoAPI#537: el ámbito de una novedad (Nesto, NestoAPI o NestoApp), o null.</summary>
+        string LeerAmbitoNovedad(int novedadId);
+
         void BorrarComentario(int comentarioId);
 
         FeedbackNovedadesDTO LeerFeedback(DateTime desde, bool soloNoRevisados);

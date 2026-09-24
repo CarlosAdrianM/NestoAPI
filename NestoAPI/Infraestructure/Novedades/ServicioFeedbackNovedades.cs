@@ -143,6 +143,31 @@ namespace NestoAPI.Infraestructure.Novedades
             }
         }
 
+        public List<MencionableDTO> LeerMencionables(bool deNestoApp)
+        {
+            using (var db = new NVEntities())
+            {
+                string sql = deNestoApp
+                    ? "SELECT DISTINCT LTRIM(RTRIM(Usuario)) AS Nombre, LTRIM(RTRIM(Usuario)) AS Clave, 'NestoApp' AS Aplicacion " +
+                      "FROM DispositivosNotificaciones WHERE Activo = 1 AND Aplicacion = 'NestoApp' AND Usuario IS NOT NULL"
+                    : "SELECT DISTINCT LTRIM(RTRIM(Usuario)) AS Nombre, 'NUEVAVISION\\' + LTRIM(RTRIM(Usuario)) AS Clave, 'Nesto' AS Aplicacion " +
+                      "FROM ParametrosUsuario WHERE Clave = 'UltimaVersionNovedades' AND Usuario <> '(defecto)'";
+                return db.Database.SqlQuery<MencionableDTO>(sql).ToList()
+                    .Where(m => !string.IsNullOrWhiteSpace(m.Nombre))
+                    .OrderBy(m => m.Nombre, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+            }
+        }
+
+        public string LeerAmbitoNovedad(int novedadId)
+        {
+            using (var db = new NVEntities())
+            {
+                return db.Database.SqlQuery<string>("SELECT Ambito FROM Novedades WHERE Id = @id",
+                    new SqlParameter("@id", novedadId)).FirstOrDefault()?.Trim();
+            }
+        }
+
         public string LeerAutorComentario(int comentarioId)
         {
             using (var db = new NVEntities())

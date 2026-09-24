@@ -61,6 +61,18 @@ namespace NestoAPI.Models.Novedades
     }
 
     /// <summary>Lo que se graba al comentar (interno: ya validado y con el usuario del token).</summary>
+    /// <summary>
+    /// NestoAPI#537: alguien a quien se puede mencionar con @ en Novedades. Nombre = lo que se escribe
+    /// tras la @ («Alfredo»); Clave = su identidad para el aviso (Nesto: NUEVAVISION\usuario, buzón;
+    /// NestoApp: su UserName, push); Aplicacion = por dónde le llega.
+    /// </summary>
+    public class MencionableDTO
+    {
+        public string Nombre { get; set; }
+        public string Clave { get; set; }
+        public string Aplicacion { get; set; }
+    }
+
     /// <summary>Nesto#477: a quién avisar cuando el asistente contesta un comentario.</summary>
     public class AutorComentarioNovedad
     {

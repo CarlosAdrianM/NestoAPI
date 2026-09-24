@@ -128,14 +128,14 @@ namespace NestoAPI.Tests.Controllers
         // ---- Comentarios ----
 
         [TestMethod]
-        public void PostComentario_ConCapturaPegada_GrabaElUsuarioDelTokenYElTipoDeLosBytes()
+        public async System.Threading.Tasks.Task PostComentario_ConCapturaPegada_GrabaElUsuarioDelTokenYElTipoDeLosBytes()
         {
             ComoUsuarioDeNesto();
             ComentarioNovedadAGrabar grabado = null;
             A.CallTo(() => feedback.CrearComentario(A<ComentarioNovedadAGrabar>._))
                 .Invokes((ComentarioNovedadAGrabar c) => grabado = c).Returns(42);
 
-            var resultado = controller.PostComentario(7, new NuevoComentarioNovedadDTO
+            var resultado = await controller.PostComentario(7, new NuevoComentarioNovedadDTO
             {
                 Texto = "  El aviso de ofertas me sale dos veces  ",
                 ImagenBase64 = "data:image/png;base64," + Png(),
@@ -154,41 +154,41 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
-        public void PostComentario_TextoVacio_BadRequest()
+        public async System.Threading.Tasks.Task PostComentario_TextoVacio_BadRequest()
         {
             ComoUsuarioDeNesto();
 
-            Assert.IsInstanceOfType(controller.PostComentario(7, new NuevoComentarioNovedadDTO { Texto = "   " }), typeof(BadRequestErrorMessageResult));
+            Assert.IsInstanceOfType(await controller.PostComentario(7, new NuevoComentarioNovedadDTO { Texto = "   " }), typeof(BadRequestErrorMessageResult));
             A.CallTo(() => feedback.CrearComentario(A<ComentarioNovedadAGrabar>._)).MustNotHaveHappened();
         }
 
         [TestMethod]
-        public void PostComentario_TextoDemasiadoLargo_BadRequest()
+        public async System.Threading.Tasks.Task PostComentario_TextoDemasiadoLargo_BadRequest()
         {
             ComoUsuarioDeNesto();
 
-            var resultado = controller.PostComentario(7, new NuevoComentarioNovedadDTO { Texto = new string('x', 2001) });
+            var resultado = await controller.PostComentario(7, new NuevoComentarioNovedadDTO { Texto = new string('x', 2001) });
 
             Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
         }
 
         [TestMethod]
-        public void PostComentario_ImagenQueNoEsPngNiJpeg_BadRequest()
+        public async System.Threading.Tasks.Task PostComentario_ImagenQueNoEsPngNiJpeg_BadRequest()
         {
             ComoUsuarioDeNesto();
             string gif = Convert.ToBase64String(System.Text.Encoding.ASCII.GetBytes("GIF89a-contenido"));
 
-            var resultado = controller.PostComentario(7, new NuevoComentarioNovedadDTO { Texto = "mira", ImagenBase64 = gif });
+            var resultado = await controller.PostComentario(7, new NuevoComentarioNovedadDTO { Texto = "mira", ImagenBase64 = gif });
 
             StringAssert.Contains(((BadRequestErrorMessageResult)resultado).Message, "PNG o JPEG");
         }
 
         [TestMethod]
-        public void PostComentario_ImagenDeMasDe2MB_BadRequest()
+        public async System.Threading.Tasks.Task PostComentario_ImagenDeMasDe2MB_BadRequest()
         {
             ComoUsuarioDeNesto();
 
-            var resultado = controller.PostComentario(7, new NuevoComentarioNovedadDTO
+            var resultado = await controller.PostComentario(7, new NuevoComentarioNovedadDTO
             {
                 Texto = "mira",
                 ImagenBase64 = Png(ReglasFeedbackNovedades.TAMANO_MAXIMO_IMAGEN)

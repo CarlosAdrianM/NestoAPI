@@ -362,7 +362,7 @@ namespace NestoAPI.Controllers
         [Authorize]
         [Route("api/Novedades/{id:int}/Comentarios")]
         [ResponseType(typeof(ComentarioNovedadDTO))]
-        public IHttpActionResult PostComentario(int id, [FromBody] NuevoComentarioNovedadDTO comentario)
+        public async System.Threading.Tasks.Task<IHttpActionResult> PostComentario(int id, [FromBody] NuevoComentarioNovedadDTO comentario)
         {
             string usuario = ReglasFeedbackNovedades.ClaveUsuario(User);
             if (usuario == null)
@@ -391,6 +391,8 @@ namespace NestoAPI.Controllers
                 ImagenTipo = tipo
             };
             int nuevoId = feedback.CrearComentario(aGrabar);
+            // NestoAPI#537: a quien se mencione con @ le llega el aviso
+            await AvisarMenciones(id, nuevoId, aGrabar.Texto, aGrabar.NombreVisible, User?.Identity?.Name, null).ConfigureAwait(false);
             return Ok(new ComentarioNovedadDTO
             {
                 Id = nuevoId,
@@ -443,7 +445,8 @@ namespace NestoAPI.Controllers
             {
                 _ = feedback.MarcarRevisado(contestado);
             }
-            await AvisarALosContestados(id, nuevoId, aGrabar.Texto, contestados).ConfigureAwait(false);
+            List<string> avisados = await AvisarALosContestados(id, nuevoId, aGrabar.Texto, contestados).ConfigureAwait(false);
+            await AvisarMenciones(id, nuevoId, aGrabar.Texto, aGrabar.NombreVisible, ReglasFeedbackNovedades.USUARIO_ASISTENTE, avisados).ConfigureAwait(false);
             return Ok(new ComentarioNovedadDTO
             {
                 Id = nuevoId,
@@ -464,11 +467,12 @@ namespace NestoAPI.Controllers
         /// su buzón, la campana de la barra; en NestoApp, push + buzón. Al pulsarla se abre la novedad
         /// en el comentario (Datos: novedadId, comentarioId). Nunca rompe la respuesta.
         /// </summary>
-        private async System.Threading.Tasks.Task AvisarALosContestados(int novedadId, int respuestaId, string texto, List<int> contestados)
+        private async System.Threading.Tasks.Task<List<string>> AvisarALosContestados(int novedadId, int respuestaId, string texto, List<int> contestados)
         {
+            var avisados = new List<string>();
             if (Notificaciones == null || contestados.Count == 0)
             {
-                return;
+                return avisados;
             }
             try
             {
@@ -494,16 +498,86 @@ namespace NestoAPI.Controllers
                     {
                         // En la app los dispositivos van por el UserName, que es el nombre visible
                         _ = await Notificaciones.EnviarAUsuario(autor.NombreVisible, Constantes.Aplicaciones.NESTO_APP, notificacion).ConfigureAwait(false);
+                        avisados.Add(autor.NombreVisible);
                     }
                     else if (autor.Cliente == ReglasFeedbackNovedades.CLIENTE_NESTO)
                     {
                         await Notificaciones.GuardarEnBuzonDeUsuario(autor.Usuario, Constantes.Aplicaciones.NESTO, notificacion).ConfigureAwait(false);
+                        avisados.Add(autor.Usuario);
                     }
                 }
             }
             catch (Exception ex)
             {
                 ElmahHelper.Log(new Exception("Novedades (Nesto#477): no se pudo avisar de la respuesta al autor. " + ex.Message, ex));
+            }
+            return avisados;
+        }
+
+        // GET api/Novedades/Mencionables?ambito=NestoApp  → para el autocompletado al escribir @
+        [HttpGet]
+        [Authorize]
+        [Route("api/Novedades/Mencionables")]
+        [ResponseType(typeof(List<MencionableDTO>))]
+        public IHttpActionResult GetMencionables(string ambito = null)
+        {
+            if (feedback == null)
+            {
+                return Ok(new List<MencionableDTO>());
+            }
+            return Ok(feedback.LeerMencionables(EsDeNestoApp(AmbitoEfectivo(ambito))));
+        }
+
+        private static bool EsDeNestoApp(string ambito) =>
+            string.Equals(ambito?.Trim(), AMBITO_NESTOAPP, StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// NestoAPI#537: a cada @mencionado le llega «X te ha mencionado en Novedades», con el mismo
+        /// salto al comentario que la respuesta. Se busca entre los usuarios del ámbito de la novedad
+        /// (Nesto: buzón; NestoApp: push + buzón). Ni a quien escribe ni a quien ya se ha avisado por
+        /// otra vía (el autor contestado). Nunca rompe el comentario.
+        /// </summary>
+        private async System.Threading.Tasks.Task AvisarMenciones(int novedadId, int comentarioId, string texto, string nombreAutor,
+            string claveAutor, IEnumerable<string> yaAvisados)
+        {
+            List<string> menciones = ReglasMenciones.Extraer(texto);
+            if (Notificaciones == null || feedback == null || menciones.Count == 0)
+            {
+                return;
+            }
+            try
+            {
+                bool deNestoApp = EsDeNestoApp(feedback.LeerAmbitoNovedad(novedadId));
+                List<string> excluidos = (yaAvisados ?? Enumerable.Empty<string>()).Where(x => x != null).ToList();
+                IEnumerable<MencionableDTO> mencionados = ReglasMenciones.Resolver(menciones, feedback.LeerMencionables(deNestoApp), claveAutor)
+                    .Where(m => !excluidos.Contains(m.Clave, StringComparer.OrdinalIgnoreCase));
+                var notificacion = new NotificacionPushDTO
+                {
+                    Titulo = $"{nombreAutor} te ha mencionado en Novedades",
+                    Cuerpo = texto.Length > 200 ? texto.Substring(0, 197) + "…" : texto,
+                    Tipo = TIPO_NOTIFICACION_RESPUESTA,
+                    Datos = new Dictionary<string, string>
+                    {
+                        ["tipo"] = TIPO_NOTIFICACION_RESPUESTA,
+                        ["novedadId"] = novedadId.ToString(),
+                        ["comentarioId"] = comentarioId.ToString()
+                    }
+                };
+                foreach (MencionableDTO mencionado in mencionados)
+                {
+                    if (mencionado.Aplicacion == Constantes.Aplicaciones.NESTO_APP)
+                    {
+                        _ = await Notificaciones.EnviarAUsuario(mencionado.Clave, Constantes.Aplicaciones.NESTO_APP, notificacion).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        await Notificaciones.GuardarEnBuzonDeUsuario(mencionado.Clave, Constantes.Aplicaciones.NESTO, notificacion).ConfigureAwait(false);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception("Novedades (NestoAPI#537): no se pudo avisar a los mencionados. " + ex.Message, ex));
             }
         }
 
