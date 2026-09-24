@@ -38,6 +38,12 @@ INSERT INTO @novedades (Categoria, Titulo, Descripcion) VALUES
      N'Un regalo (Ganavisión, regalo por importe, material promocional) ya no se puede añadir si no hay stock para darlo: al guardar, Nesto os dice qué regalo no tiene stock para que elijáis otro. Lo mismo al aceptar un presupuesto o al subir la cantidad de un regalo que ya estaba en el pedido. Además, si un pedido se sirve por partes y lo único que se quedaría pendiente es un regalo, ya no sale a medias: espera a poder salir entero. Así no hay que hacer un envío solo para el regalo, de 0 €.'),
     ('Mejorado', N'El seguimiento de CTT entiende todos sus estados',
      N'En Agencias, los envíos de CTT reconocen ya todos los estados de la agencia: el «nuevo reparto» (cuando el cliente estaba ausente y vuelve a salir) sigue como tramitado, las devoluciones pasan a devueltos y los envíos estacionados, con reparto fallido o entregados en parte pasan a incidentados para que se revisen.'),
+    ('Nuevo', N'Campana de avisos: os enteráis cuando os contestan en Novedades',
+     N'Arriba a la derecha de la cinta hay una campana con el número de avisos sin leer. Cuando el asistente de desarrollo contesta a un comentario vuestro en Novedades, os llega un aviso; al pulsarlo se abre Novedades justo en la respuesta. Desde la campana podéis marcar los avisos como leídos o borrarlos.'),
+    ('Mejorado', N'Con picking, el modo de entrega se pide a almacén',
+     N'Si un pedido ya está en preparación (tiene picking) o ha salido parte hoy, ya no se puede cambiar el modo de entrega desde el pedido o la plantilla: Nesto explica por qué y os ofrece pedírselo a almacén con un correo. Lo intentarán, pero puede que ya no llegue a tiempo. Si una parte del pedido salió otro día y ahora no tiene picking, sí se puede cambiar para que el resto salga junto.'),
+    ('Corregido', N'Los envíos de CTT se confirman en Amazon',
+     N'Al confirmar en Amazon un pedido enviado por CTT, ahora se manda el transportista y el servicio «CTT 48h» como Amazon los pide, así que el pedido se marca como enviado. Además, Nesto espera la respuesta de Amazon: si algún pedido no se puede marcar, os dice el motivo en lugar de dar la confirmación por buena.'),
     ('Corregido', N'NIF incorrectos: los botones solo aparecen con un cliente seleccionado',
      N'En la ventana de clientes con NIF incorrecto parecía que los botones no funcionaban cuando no había ningún cliente seleccionado en la lista. Ahora, sin selección, en su lugar se lee «Selecciona un cliente de la lista para corregir su NIF o marcarlo como extranjero», y los botones salen en cuanto se elige uno.');
 
@@ -48,6 +54,6 @@ WHERE NOT EXISTS (SELECT 1 FROM Novedades x WHERE x.Version = @version AND x.Tit
 
 SELECT @@ROWCOUNT AS NovedadesInsertadasAhora;
 
--- Comprobación: deben salir 6 filas, sin repetidos.
+-- Comprobación: deben salir 9 filas, sin repetidos.
 SELECT Id, Version, Categoria, Titulo, Ambito, Publicada
 FROM Novedades WHERE Version = @version ORDER BY Id;
