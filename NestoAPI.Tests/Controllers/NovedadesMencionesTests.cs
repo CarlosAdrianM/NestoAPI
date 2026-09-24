@@ -158,6 +158,20 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public async Task PostSugerencia_ConMencion_AvisaYLlevaALaSugerencia()
+        {
+            ComoUsuarioDeNesto(@"NUEVAVISION\Alfredo");
+            A.CallTo(() => servicio.CrearSugerencia(A<SugerenciaNovedadAGrabar>._)).Returns(361);
+            A.CallTo(() => feedback.LeerAmbitoNovedad(361)).Returns("Nesto");
+
+            _ = await controller.PostSugerencia(new NuevoComentarioNovedadDTO { Texto = "Un botón para duplicar. @Carlos, ¿lo ves?" });
+
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario(@"NUEVAVISION\Carlos", "Nesto",
+                A<NotificacionPushDTO>.That.Matches(n => n.Datos["novedadId"] == "361" && !n.Datos.ContainsKey("comentarioId"))))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
         public void GetMencionables_SinAmbito_LosDeNesto()
         {
             ComoUsuarioDeNesto("NUEVAVISION\\Alfredo");

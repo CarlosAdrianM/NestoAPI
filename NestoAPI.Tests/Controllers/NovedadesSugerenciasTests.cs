@@ -82,14 +82,14 @@ namespace NestoAPI.Tests.Controllers
         // ---- Crear ----
 
         [TestMethod]
-        public void PostSugerencia_DesdeNesto_NaceSinVersionPendienteYConElTextoTalCual()
+        public async System.Threading.Tasks.Task PostSugerencia_DesdeNesto_NaceSinVersionPendienteYConElTextoTalCual()
         {
             ComoUsuarioDeNesto();
             SugerenciaNovedadAGrabar grabada = null;
             A.CallTo(() => servicio.CrearSugerencia(A<SugerenciaNovedadAGrabar>._))
                 .Invokes((SugerenciaNovedadAGrabar s) => grabada = s).Returns(360);
 
-            var resultado = controller.PostSugerencia(new NuevoComentarioNovedadDTO
+            var resultado = await controller.PostSugerencia(new NuevoComentarioNovedadDTO
             {
                 Texto = "  Aquí iría bien un botón para duplicar el pedido\nsin tener que meterlo otra vez  "
             }) as OkNegotiatedContentResult<SugerenciaNovedadDTO>;
@@ -106,34 +106,34 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
-        public void PostSugerencia_DesdeNestoApp_EsDeLaApp()
+        public async System.Threading.Tasks.Task PostSugerencia_DesdeNestoApp_EsDeLaApp()
         {
             ComoVendedorDeLaApp();
             SugerenciaNovedadAGrabar grabada = null;
             A.CallTo(() => servicio.CrearSugerencia(A<SugerenciaNovedadAGrabar>._)).Invokes((SugerenciaNovedadAGrabar s) => grabada = s);
 
-            _ = controller.PostSugerencia(new NuevoComentarioNovedadDTO { Texto = "Filtro por ruta" });
+            _ = await controller.PostSugerencia(new NuevoComentarioNovedadDTO { Texto = "Filtro por ruta" });
 
             Assert.AreEqual("NestoApp", grabada.Ambito);
         }
 
         [TestMethod]
-        public void PostSugerencia_DesdeLaTienda_Forbidden()
+        public async System.Threading.Tasks.Task PostSugerencia_DesdeLaTienda_Forbidden()
         {
             ComoClienteDeLaTienda();
 
-            var resultado = controller.PostSugerencia(new NuevoComentarioNovedadDTO { Texto = "Quiero más colores" });
+            var resultado = await controller.PostSugerencia(new NuevoComentarioNovedadDTO { Texto = "Quiero más colores" });
 
             Assert.AreEqual(HttpStatusCode.Forbidden, ((StatusCodeResult)resultado).StatusCode);
             A.CallTo(() => servicio.CrearSugerencia(A<SugerenciaNovedadAGrabar>._)).MustNotHaveHappened();
         }
 
         [TestMethod]
-        public void PostSugerencia_SinTexto_BadRequest()
+        public async System.Threading.Tasks.Task PostSugerencia_SinTexto_BadRequest()
         {
             ComoUsuarioDeNesto();
 
-            Assert.IsInstanceOfType(controller.PostSugerencia(new NuevoComentarioNovedadDTO { Texto = "  " }), typeof(BadRequestErrorMessageResult));
+            Assert.IsInstanceOfType(await controller.PostSugerencia(new NuevoComentarioNovedadDTO { Texto = "  " }), typeof(BadRequestErrorMessageResult));
             A.CallTo(() => servicio.CrearSugerencia(A<SugerenciaNovedadAGrabar>._)).MustNotHaveHappened();
         }
 

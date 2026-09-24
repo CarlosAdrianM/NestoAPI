@@ -149,7 +149,7 @@ namespace NestoAPI.Controllers
         [Authorize]
         [Route("api/Novedades/Sugerencias")]
         [ResponseType(typeof(SugerenciaNovedadDTO))]
-        public IHttpActionResult PostSugerencia([FromBody] NuevoComentarioNovedadDTO sugerencia)
+        public async System.Threading.Tasks.Task<IHttpActionResult> PostSugerencia([FromBody] NuevoComentarioNovedadDTO sugerencia)
         {
             string usuario = ReglasFeedbackNovedades.ClaveUsuario(User);
             if (usuario == null)
@@ -178,6 +178,8 @@ namespace NestoAPI.Controllers
                 SugeridaNombre = ReglasFeedbackNovedades.NombreVisible(User)
             };
             int id = servicio.CrearSugerencia(aGrabar);
+            // NestoAPI#537: también se puede mencionar a alguien al sugerir (el aviso lleva a la sugerencia)
+            await AvisarMencionesEnSugerencia(id, aGrabar.TextoOriginal, aGrabar.SugeridaNombre, User?.Identity?.Name).ConfigureAwait(false);
             return Ok(new SugerenciaNovedadDTO
             {
                 Id = id,
@@ -528,6 +530,12 @@ namespace NestoAPI.Controllers
             return Ok(feedback.LeerMencionables(EsDeNestoApp(AmbitoEfectivo(ambito))));
         }
 
+        /// <summary>NestoAPI#537: la mención en una sugerencia lleva a la sugerencia (sin comentario).</summary>
+        private System.Threading.Tasks.Task AvisarMencionesEnSugerencia(int novedadId, string texto, string nombreAutor, string claveAutor)
+        {
+            return AvisarMenciones(novedadId, 0, texto, nombreAutor, claveAutor, null);
+        }
+
         private static bool EsDeNestoApp(string ambito) =>
             string.Equals(ambito?.Trim(), AMBITO_NESTOAPP, StringComparison.OrdinalIgnoreCase);
 
@@ -559,10 +567,14 @@ namespace NestoAPI.Controllers
                     Datos = new Dictionary<string, string>
                     {
                         ["tipo"] = TIPO_NOTIFICACION_RESPUESTA,
-                        ["novedadId"] = novedadId.ToString(),
-                        ["comentarioId"] = comentarioId.ToString()
+                        ["novedadId"] = novedadId.ToString()
                     }
                 };
+                if (comentarioId > 0)
+                {
+                    // Sin comentario (mención al sugerir): el aviso lleva a la sugerencia
+                    notificacion.Datos["comentarioId"] = comentarioId.ToString();
+                }
                 foreach (MencionableDTO mencionado in mencionados)
                 {
                     if (mencionado.Aplicacion == Constantes.Aplicaciones.NESTO_APP)
