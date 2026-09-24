@@ -61,6 +61,16 @@ namespace NestoAPI.Models.Novedades
     }
 
     /// <summary>Lo que se graba al comentar (interno: ya validado y con el usuario del token).</summary>
+    /// <summary>Nesto#477: a quién avisar cuando el asistente contesta un comentario.</summary>
+    public class AutorComentarioNovedad
+    {
+        public int Id { get; set; }
+        public int NovedadId { get; set; }
+        public string Usuario { get; set; }
+        public string NombreVisible { get; set; }
+        public string Cliente { get; set; }
+    }
+
     public class ComentarioNovedadAGrabar
     {
         public int NovedadId { get; set; }

@@ -9,6 +9,8 @@ namespace NestoAPI.Models
         {
             public const string NESTO_APP = "NestoApp";
             public const string NESTO_TIENDAS = "NestoTiendas";
+            /// <summary>Nesto#477: el escritorio no recibe push; solo buzón (campana en la barra).</summary>
+            public const string NESTO = "Nesto";
         }
 
         public class Agencias

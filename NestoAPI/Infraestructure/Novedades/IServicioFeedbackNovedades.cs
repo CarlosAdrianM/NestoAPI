@@ -27,6 +27,9 @@ namespace NestoAPI.Infraestructure.Novedades
         /// <summary>Usuario autor del comentario, o null si no existe o ya está borrado.</summary>
         string LeerAutorComentario(int comentarioId);
 
+        /// <summary>Nesto#477: autor, novedad y programa de cada comentario (los borrados no).</summary>
+        List<AutorComentarioNovedad> LeerAutores(IEnumerable<int> comentarios);
+
         void BorrarComentario(int comentarioId);
 
         FeedbackNovedadesDTO LeerFeedback(DateTime desde, bool soloNoRevisados);

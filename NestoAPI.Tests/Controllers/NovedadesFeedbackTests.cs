@@ -303,7 +303,7 @@ namespace NestoAPI.Tests.Controllers
         // ---- NestoAPI#531: el asistente IA contesta como él mismo ----
 
         [TestMethod]
-        public void PostComentarioAsistente_GrabaComoElAsistenteYDejaRevisadoLoContestado()
+        public async System.Threading.Tasks.Task PostComentarioAsistente_GrabaComoElAsistenteYDejaRevisadoLoContestado()
         {
             ComoUsuarioDeNesto("NUEVAVISION\\Carlos", "NUEVAVISION\\Informatica");
             A.CallTo(() => feedback.ExisteNovedad(7)).Returns(true);
@@ -311,7 +311,7 @@ namespace NestoAPI.Tests.Controllers
             A.CallTo(() => feedback.CrearComentario(A<ComentarioNovedadAGrabar>._))
                 .Invokes((ComentarioNovedadAGrabar c) => grabado = c).Returns(43);
 
-            var resultado = controller.PostComentarioAsistente(7, new NuevoComentarioAsistenteDTO
+            var resultado = await controller.PostComentarioAsistente(7, new NuevoComentarioAsistenteDTO
             {
                 Texto = "Hola, Alfredo. Tienes razón...",
                 ComentariosContestados = new List<int> { 1, 1 }
@@ -326,25 +326,55 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
-        public void PostComentarioAsistente_SinSerDireccionNiInformatica_Forbidden()
+        public async System.Threading.Tasks.Task PostComentarioAsistente_SinSerDireccionNiInformatica_Forbidden()
         {
             ComoUsuarioDeNesto("NUEVAVISION\\Paloma", "NUEVAVISION\\Almacén");
 
-            var resultado = controller.PostComentarioAsistente(7, new NuevoComentarioAsistenteDTO { Texto = "hola" });
+            var resultado = await controller.PostComentarioAsistente(7, new NuevoComentarioAsistenteDTO { Texto = "hola" });
 
             Assert.AreEqual(HttpStatusCode.Forbidden, ((StatusCodeResult)resultado).StatusCode);
             A.CallTo(() => feedback.CrearComentario(A<ComentarioNovedadAGrabar>._)).MustNotHaveHappened();
         }
 
         [TestMethod]
-        public void PostComentarioAsistente_NovedadQueNoExiste_NotFound()
+        public async System.Threading.Tasks.Task PostComentarioAsistente_NovedadQueNoExiste_NotFound()
         {
             ComoUsuarioDeNesto("NUEVAVISION\\Carlos", "NUEVAVISION\\Informatica");
             A.CallTo(() => feedback.ExisteNovedad(99)).Returns(false);
 
-            var resultado = controller.PostComentarioAsistente(99, new NuevoComentarioAsistenteDTO { Texto = "hola" });
+            var resultado = await controller.PostComentarioAsistente(99, new NuevoComentarioAsistenteDTO { Texto = "hola" });
 
             Assert.IsInstanceOfType(resultado, typeof(NotFoundResult));
+        }
+
+        [TestMethod]
+        public async System.Threading.Tasks.Task PostComentarioAsistente_AvisaALosAutores_NestoAlBuzonYNestoAppConPush()
+        {
+            // Nesto#477: el 24/09 contestamos a Alfredo y a Enrique y no se enteraban.
+            ComoUsuarioDeNesto("NUEVAVISION\\Carlos", "NUEVAVISION\\Informatica");
+            var notificaciones = A.Fake<NestoAPI.Infraestructure.Notificaciones.IServicioNotificacionesPush>();
+            controller.Notificaciones = notificaciones;
+            A.CallTo(() => feedback.ExisteNovedad(7)).Returns(true);
+            A.CallTo(() => feedback.CrearComentario(A<ComentarioNovedadAGrabar>._)).Returns(50);
+            A.CallTo(() => feedback.LeerAutores(A<IEnumerable<int>>._)).Returns(new List<AutorComentarioNovedad>
+            {
+                new AutorComentarioNovedad { Id = 1, NovedadId = 7, Usuario = "NUEVAVISION\\Alfredo", NombreVisible = "Alfredo", Cliente = "Nesto" },
+                new AutorComentarioNovedad { Id = 4, NovedadId = 7, Usuario = "5f1c-guid", NombreVisible = "manuel@nuevavision.es", Cliente = "NestoApp" },
+                new AutorComentarioNovedad { Id = 5, NovedadId = 7, Usuario = "Claude", NombreVisible = "Claude (asistente IA)", Cliente = "Asistente" }
+            });
+
+            _ = await controller.PostComentarioAsistente(7, new NuevoComentarioAsistenteDTO
+            {
+                Texto = "Hola. Ya está arreglado.",
+                ComentariosContestados = new List<int> { 1, 4, 5 }
+            });
+
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Alfredo", "Nesto",
+                A<NestoAPI.Models.NotificacionPushDTO>.That.Matches(n => n.Datos["novedadId"] == "7" && n.Datos["comentarioId"] == "50")))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => notificaciones.EnviarAUsuario("manuel@nuevavision.es", "NestoApp", A<NestoAPI.Models.NotificacionPushDTO>._))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("Claude", A<string>._, A<NestoAPI.Models.NotificacionPushDTO>._)).MustNotHaveHappened();
         }
 
         // ---- Reglas puras ----

@@ -127,6 +127,22 @@ namespace NestoAPI.Infraestructure.Novedades
             }
         }
 
+        public List<AutorComentarioNovedad> LeerAutores(IEnumerable<int> comentarios)
+        {
+            List<int> ids = (comentarios ?? Enumerable.Empty<int>()).Distinct().ToList();
+            if (!ids.Any())
+            {
+                return new List<AutorComentarioNovedad>();
+            }
+            // Los ids son int: se pueden componer en el IN sin riesgo de inyección.
+            using (var db = new NVEntities())
+            {
+                return db.Database.SqlQuery<AutorComentarioNovedad>(
+                    "SELECT Id, NovedadId, Usuario, NombreVisible, Cliente FROM NovedadesComentarios " +
+                    "WHERE Borrado = 0 AND Id IN (" + string.Join(",", ids) + ")").ToList();
+            }
+        }
+
         public string LeerAutorComentario(int comentarioId)
         {
             using (var db = new NVEntities())

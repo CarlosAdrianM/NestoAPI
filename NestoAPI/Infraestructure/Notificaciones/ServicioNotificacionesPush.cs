@@ -252,6 +252,19 @@ namespace NestoAPI.Infraestructure.Notificaciones
             }
         }
 
+        public async Task GuardarEnBuzonDeUsuario(string usuario, string aplicacion, NotificacionPushDTO notificacion)
+        {
+            if (string.IsNullOrWhiteSpace(usuario) || string.IsNullOrWhiteSpace(aplicacion) || notificacion == null)
+            {
+                return;
+            }
+            // Un destinatario "virtual" para reutilizar el guardado de siempre (una fila por usuario)
+            await GuardarEnBuzon(new List<DispositivoNotificacion>
+            {
+                new DispositivoNotificacion { Usuario = usuario.Trim(), Aplicacion = aplicacion }
+            }, notificacion, aplicacion).ConfigureAwait(false);
+        }
+
         public async Task<int> EnviarAUsuario(string usuario, string aplicacion, NotificacionPushDTO notificacion)
         {
             var dispositivos = await ObtenerDispositivosUsuario(usuario, aplicacion).ConfigureAwait(false);

@@ -26,7 +26,16 @@ namespace NestoAPI.Controllers
         // NestoAPI#520: votos y comentarios. null = sin feedback (las Novedades salen como siempre).
         private readonly IServicioFeedbackNovedades feedback;
 
-        public NovedadesController() : this(new ServicioNovedades(), new ServicioFeedbackNovedades()) { }
+        public NovedadesController() : this(new ServicioNovedades(), new ServicioFeedbackNovedades())
+        {
+            Notificaciones = new Infraestructure.Notificaciones.ServicioNotificacionesPush();
+        }
+
+        /// <summary>
+        /// Nesto#477: con quién se avisa al autor cuando el asistente le contesta. null = no se avisa
+        /// (los tests que no lo necesitan).
+        /// </summary>
+        internal Infraestructure.Notificaciones.IServicioNotificacionesPush Notificaciones { get; set; }
 
         public NovedadesController(IServicioNovedades servicio) : this(servicio, null) { }
 
@@ -403,7 +412,7 @@ namespace NestoAPI.Controllers
         [Authorize]
         [Route("api/Novedades/{id:int}/Comentarios/Asistente")]
         [ResponseType(typeof(ComentarioNovedadDTO))]
-        public IHttpActionResult PostComentarioAsistente(int id, [FromBody] NuevoComentarioAsistenteDTO comentario)
+        public async System.Threading.Tasks.Task<IHttpActionResult> PostComentarioAsistente(int id, [FromBody] NuevoComentarioAsistenteDTO comentario)
         {
             if (!PuedeRevisarFeedback())
             {
@@ -429,10 +438,12 @@ namespace NestoAPI.Controllers
                 ImagenTipo = tipo
             };
             int nuevoId = feedback.CrearComentario(aGrabar);
-            foreach (int contestado in (comentario.ComentariosContestados ?? new List<int>()).Distinct())
+            List<int> contestados = (comentario.ComentariosContestados ?? new List<int>()).Distinct().ToList();
+            foreach (int contestado in contestados)
             {
                 _ = feedback.MarcarRevisado(contestado);
             }
+            await AvisarALosContestados(id, nuevoId, aGrabar.Texto, contestados).ConfigureAwait(false);
             return Ok(new ComentarioNovedadDTO
             {
                 Id = nuevoId,
@@ -444,6 +455,56 @@ namespace NestoAPI.Controllers
                 TieneImagen = imagen != null,
                 EsMio = false
             });
+        }
+
+        internal const string TIPO_NOTIFICACION_RESPUESTA = "NovedadComentario";
+
+        /// <summary>
+        /// Nesto#477: quien comentó se entera de que le hemos contestado. En Nesto (sin push) queda en
+        /// su buzón, la campana de la barra; en NestoApp, push + buzón. Al pulsarla se abre la novedad
+        /// en el comentario (Datos: novedadId, comentarioId). Nunca rompe la respuesta.
+        /// </summary>
+        private async System.Threading.Tasks.Task AvisarALosContestados(int novedadId, int respuestaId, string texto, List<int> contestados)
+        {
+            if (Notificaciones == null || contestados.Count == 0)
+            {
+                return;
+            }
+            try
+            {
+                var notificacion = new NotificacionPushDTO
+                {
+                    Titulo = "Te han contestado en Novedades",
+                    Cuerpo = ReglasFeedbackNovedades.NOMBRE_ASISTENTE + ": " + (texto.Length > 200 ? texto.Substring(0, 197) + "…" : texto),
+                    Tipo = TIPO_NOTIFICACION_RESPUESTA,
+                    Datos = new Dictionary<string, string>
+                    {
+                        ["tipo"] = TIPO_NOTIFICACION_RESPUESTA,
+                        ["novedadId"] = novedadId.ToString(),
+                        ["comentarioId"] = respuestaId.ToString()
+                    }
+                };
+                IEnumerable<AutorComentarioNovedad> autores = feedback.LeerAutores(contestados)
+                    .Where(a => !string.Equals(a.Usuario?.Trim(), ReglasFeedbackNovedades.USUARIO_ASISTENTE, StringComparison.OrdinalIgnoreCase))
+                    .GroupBy(a => a.Usuario?.Trim(), StringComparer.OrdinalIgnoreCase)
+                    .Select(g => g.First());
+                foreach (AutorComentarioNovedad autor in autores)
+                {
+                    if (autor.Cliente == ReglasFeedbackNovedades.CLIENTE_NESTOAPP)
+                    {
+                        // En la app los dispositivos van por el UserName, que es el nombre visible
+                        _ = await Notificaciones.EnviarAUsuario(autor.NombreVisible, Constantes.Aplicaciones.NESTO_APP, notificacion).ConfigureAwait(false);
+                    }
+                    else if (autor.Cliente == ReglasFeedbackNovedades.CLIENTE_NESTO)
+                    {
+                        await Notificaciones.GuardarEnBuzonDeUsuario(autor.Usuario, Constantes.Aplicaciones.NESTO, notificacion).ConfigureAwait(false);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception("Novedades (Nesto#477): no se pudo avisar de la respuesta al autor. " + ex.Message, ex));
+            }
         }
 
         // GET api/Novedades/Comentarios/7/Imagen  → la captura con su content-type
