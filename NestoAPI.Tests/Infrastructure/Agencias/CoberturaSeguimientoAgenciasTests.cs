@@ -70,7 +70,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
 
             Assert.AreEqual("Other", dto.CarrierCodeAmazon, "hasta confirmar el código de la lista de Amazon");
             Assert.AreEqual("CTT Express", dto.CarrierNameAmazon);
-            Assert.AreEqual("Estándar", dto.ShippingMethodAmazon);
+            Assert.AreEqual("CTT 48h", dto.ShippingMethodAmazon, "el servicio que usamos (Enrique, 24/09)");
             Assert.AreEqual("0082800082809772536836", dto.NumeroSeguimiento);
             Assert.AreEqual("160", dto.TransportistaPrestashop);
             Assert.AreEqual("www.cttexpress.com/localizador-de-envios?sc=0082800082809772536836", dto.TrackingPrestashop);

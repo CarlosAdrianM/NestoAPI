@@ -166,7 +166,9 @@ namespace NestoAPI.Models.Agencias
         // confirmación se acepta siempre; con el código bueno Amazon valida además el seguimiento.
         public string CarrierCodeAmazon => CodigosAmazon.OTRO;
         public string CarrierNameAmazon => "CTT Express";
-        public string ShippingMethodAmazon => "Estándar";
+        // 24/09/26 (Enrique): el servicio que usamos es «CTT 48h». Para CTTExpress Seller Central no
+        // tiene lista de servicios: marca «Otra» y se teclea el nombre.
+        public string ShippingMethodAmazon => "CTT 48h";
         // Localizador público de CTT Express; sc = shipping_code (el albarán de 22 dígitos que
         // guardamos en CodigoSeguimiento). NestoAPI#493: verificar con un envío real al salir a producción.
         public string ConstruirUrl(DatosSeguimientoEnvio d)
