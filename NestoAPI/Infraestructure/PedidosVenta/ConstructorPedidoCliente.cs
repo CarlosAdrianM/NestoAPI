@@ -31,6 +31,13 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         internal const int MAXIMO_LINEAS = 100;
 
         /// <summary>
+        /// NestoAPI#530: el texto del regalo, igual que en NestoApp: el nombre hasta 40 caracteres
+        /// y « (BONIF)» (el campo Texto es de 50).
+        /// </summary>
+        internal const int LONGITUD_NOMBRE_REGALO = 40;
+        internal const string SUFIJO_REGALO = " (BONIF)";
+
+        /// <summary>
         /// El pedido de la app se guarda a nombre de un usuario que dice canal y cliente, para que
         /// en la auditoría se distinga de un pedido metido por un empleado. Sale del cliente que
         /// viene en el JWT, nunca del cuerpo de la petición: es lo que impide pedir en nombre de
@@ -52,6 +59,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// salen el almacén de las líneas (el pedido se prepara ALLÍ, no en Algete) y la ruta,
         /// con la que los portes desaparecen solos. Null = se lo mandamos, que es lo de siempre.
         /// </param>
+        /// <param name="regalos">
+        /// NestoAPI#530: la ficha de los productos de las líneas de regalo de Ganavisiones, con la
+        /// TARIFA en <c>precio</c> (el regalo se guarda a tarifa con el 100 % de descuento, como en
+        /// Nesto), por producto.
+        /// </param>
         public static PedidoVentaDTO Construir(
             PedidoClienteRequest peticion,
             ClienteDTO cliente,
@@ -59,7 +71,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             string formaPago,
             string plazosPago,
             DateTime fecha,
-            TiendasRecogida.Tienda tienda = null)
+            TiendasRecogida.Tienda tienda = null,
+            IDictionary<string, ProductoPlantillaDTO> regalos = null)
         {
             if (peticion == null)
             {
@@ -119,7 +132,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
             foreach (LineaPedidoClienteRequest lineaPedida in peticion.Lineas ?? new List<LineaPedidoClienteRequest>())
             {
-                pedido.Lineas.Add(ConstruirLinea(lineaPedida, precios, fecha, usuario, tienda));
+                pedido.Lineas.Add(lineaPedida.EsRegaloGanavisiones
+                    ? ConstruirRegalo(lineaPedida, regalos, fecha, usuario, tienda)
+                    : ConstruirLinea(lineaPedida, precios, fecha, usuario, tienda));
             }
 
             return pedido;
@@ -165,6 +180,37 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         }
 
         /// <summary>
+        /// NestoAPI#530: un regalo de Ganavisiones, igual que los que guarda Nesto: a tarifa, con el
+        /// 100 % de descuento de línea, sin Aplicar Dto y sin oferta (es lo que ValidadorGanavisiones
+        /// y EsBonificadoGanavisiones reconocen como Ganavisión).
+        /// </summary>
+        private static LineaPedidoVentaDTO ConstruirRegalo(
+            LineaPedidoClienteRequest lineaPedida,
+            IDictionary<string, ProductoPlantillaDTO> regalos,
+            DateTime fecha,
+            string usuario,
+            TiendasRecogida.Tienda tienda)
+        {
+            LineaPedidoVentaDTO linea = ConstruirLinea(lineaPedida, regalos, fecha, usuario, tienda);
+            linea.texto = TextoRegalo(linea.texto);
+            linea.DescuentoProducto = 0;
+            linea.DescuentoLinea = 1;
+            linea.AplicarDescuento = false;
+            linea.oferta = null;
+            return linea;
+        }
+
+        internal static string TextoRegalo(string nombre)
+        {
+            string limpio = (nombre ?? string.Empty).Trim();
+            if (limpio.Length > LONGITUD_NOMBRE_REGALO)
+            {
+                limpio = limpio.Substring(0, LONGITUD_NOMBRE_REGALO).TrimEnd();
+            }
+            return limpio + SUFIJO_REGALO;
+        }
+
+        /// <summary>
         /// NestoAPI#436: lo que el cliente puede pedir mal. Devuelve null si la petición es válida,
         /// o el mensaje de qué está mal para responder un BadRequest.
         /// </summary>
@@ -193,10 +239,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             {
                 return $"La cantidad del producto {cantidadNoValida.Producto?.Trim()} tiene que ser mayor que cero";
             }
+            // NestoAPI#530: el mismo producto puede ir una vez comprado y otra de regalo
             IEnumerable<string> repetidos = peticion.Lineas
-                .GroupBy(l => l.Producto.Trim().ToUpperInvariant())
+                .GroupBy(l => new { Producto = l.Producto.Trim().ToUpperInvariant(), l.EsRegaloGanavisiones })
                 .Where(g => g.Count() > 1)
-                .Select(g => g.Key);
+                .Select(g => g.Key.Producto);
             if (repetidos.Any())
             {
                 // Un carrito manda una línea por producto. Si llegan dos del mismo, o es un error

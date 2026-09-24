@@ -364,6 +364,73 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.IsNotNull(ConstructorPedidoCliente.ValidarPeticion(peticion));
         }
 
+        // NestoAPI#530: los regalos de Ganavisiones que canjea el cliente llegan al pedido. Antes
+        // TNV no los mandaba y el cliente se quedaba sin ellos (926936: EXFOLIANTE DE CEJAS).
+
+        private static PedidoVentaDTO ConstruirConRegalo(string nombreRegalo = "EXFOLIANTE DE CEJAS")
+        {
+            PedidoClienteRequest peticion = Peticion();
+            peticion.Lineas.Add(new LineaPedidoClienteRequest { Producto = "43408", Cantidad = 1, EsRegaloGanavisiones = true });
+            var regalos = new Dictionary<string, ProductoPlantillaDTO>
+            {
+                ["43408"] = new ProductoPlantillaDTO { producto = "43408", nombre = nombreRegalo, precio = 13.30M, iva = "G21" }
+            };
+            return ConstructorPedidoCliente.Construir(peticion, FichaCliente(), Precios(), "RCB", "CONTADO",
+                new DateTime(2026, 9, 24), null, regalos);
+        }
+
+        [TestMethod]
+        public void Construir_RegaloGanavisiones_SeGuardaComoLosDeNesto()
+        {
+            LineaPedidoVentaDTO regalo = ConstruirConRegalo().Lineas.Single(l => l.Producto == "43408");
+
+            Assert.AreEqual(13.30M, regalo.PrecioUnitario, "a tarifa");
+            Assert.AreEqual(1M, regalo.DescuentoLinea, "100 % de descuento de línea");
+            Assert.AreEqual(0M, regalo.DescuentoProducto);
+            Assert.IsFalse(regalo.AplicarDescuento);
+            Assert.IsNull(regalo.oferta, "sin oferta: es lo que lo distingue como Ganavisión");
+            Assert.AreEqual(0M, regalo.BaseImponible);
+            Assert.AreEqual("EXFOLIANTE DE CEJAS (BONIF)", regalo.texto);
+            Assert.AreEqual(Constantes.FormasVenta.APP, regalo.formaVenta);
+        }
+
+        [TestMethod]
+        public void Construir_RegaloConNombreLargo_ElTextoCabeEnLaLinea()
+        {
+            LineaPedidoVentaDTO regalo = ConstruirConRegalo(new string('X', 60)).Lineas.Single(l => l.Producto == "43408");
+
+            Assert.AreEqual(new string('X', 40) + " (BONIF)", regalo.texto);
+        }
+
+        [TestMethod]
+        public void Construir_ConRegalo_LaLineaCompradaNoCambia()
+        {
+            LineaPedidoVentaDTO comprada = ConstruirConRegalo().Lineas.Single(l => l.Producto == "12345");
+
+            Assert.AreEqual(10M, comprada.PrecioUnitario);
+            Assert.AreEqual(0.10M, comprada.DescuentoProducto);
+            Assert.IsTrue(comprada.AplicarDescuento);
+        }
+
+        [TestMethod]
+        public void ValidarPeticion_MismoProductoCompradoYDeRegalo_Vale()
+        {
+            PedidoClienteRequest peticion = Peticion();
+            peticion.Lineas.Add(new LineaPedidoClienteRequest { Producto = "12345", Cantidad = 1, EsRegaloGanavisiones = true });
+
+            Assert.IsNull(ConstructorPedidoCliente.ValidarPeticion(peticion));
+        }
+
+        [TestMethod]
+        public void ValidarPeticion_ElMismoRegaloRepetido_DaError()
+        {
+            PedidoClienteRequest peticion = Peticion();
+            peticion.Lineas.Add(new LineaPedidoClienteRequest { Producto = "43408", Cantidad = 1, EsRegaloGanavisiones = true });
+            peticion.Lineas.Add(new LineaPedidoClienteRequest { Producto = "43408", Cantidad = 1, EsRegaloGanavisiones = true });
+
+            Assert.IsNotNull(ConstructorPedidoCliente.ValidarPeticion(peticion));
+        }
+
         [TestMethod]
         public void ValidarPeticion_DemasiadasLineas_DaError()
         {

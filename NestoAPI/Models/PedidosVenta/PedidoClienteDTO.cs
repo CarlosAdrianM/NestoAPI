@@ -194,6 +194,13 @@ namespace NestoAPI.Models.PedidosVenta
     {
         public string Producto { get; set; }
         public short Cantidad { get; set; }
+
+        /// <summary>
+        /// NestoAPI#530: regalo de Ganavisiones canjeado en el carrito. Se guarda como los de Nesto
+        /// (tarifa y 100 % de descuento de línea) y lo valida ValidadorGanavisiones: si no hay
+        /// puntos o stock, el pedido no se crea. Nunca se cae en silencio (TNV#78).
+        /// </summary>
+        public bool EsRegaloGanavisiones { get; set; }
     }
 
     /// <summary>

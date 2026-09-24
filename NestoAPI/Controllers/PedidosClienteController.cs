@@ -520,6 +520,33 @@ namespace NestoAPI.Controllers
                 .Sum(l => l.BaseImponible);
         }
 
+        /// <summary>
+        /// NestoAPI#530: la ficha de los productos regalo, con la tarifa en <c>precio</c>. Si el
+        /// producto ya no existe, no está: el pedido se rechaza en vez de perder el regalo.
+        /// </summary>
+        private async Task<Dictionary<string, ProductoPlantillaDTO>> LeerTarifaRegalos(string empresa, IEnumerable<string> productos)
+        {
+            List<string> numeros = productos.Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p.Trim()).Distinct().ToList();
+            if (!numeros.Any())
+            {
+                return new Dictionary<string, ProductoPlantillaDTO>();
+            }
+            var fichas = await db.Productos
+                .Where(p => p.Empresa == empresa && numeros.Contains(p.Número))
+                .Select(p => new { p.Número, p.Nombre, p.PVP, p.IVA_Repercutido })
+                .ToListAsync()
+                .ConfigureAwait(false);
+            return fichas
+                .GroupBy(p => p.Número.Trim())
+                .ToDictionary(g => g.Key, g => new ProductoPlantillaDTO
+                {
+                    producto = g.Key,
+                    nombre = g.First().Nombre?.Trim(),
+                    precio = g.First().PVP ?? 0M,
+                    iva = g.First().IVA_Repercutido
+                });
+        }
+
         private async Task<Dictionary<string, string>> LeerGruposProductos(string empresa, IEnumerable<string> productos)
         {
             List<string> numeros = productos.Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p.Trim()).Distinct().ToList();
@@ -951,16 +978,19 @@ namespace NestoAPI.Controllers
 
             // 5. El precio y el descuento de cada línea los calcula el servidor, exactamente igual
             //    que GET api/Productos?cliente=&contacto=&cantidad=
+            //    NestoAPI#530: los regalos de Ganavisiones no tienen precio de cliente: van a tarifa
+            //    con el 100 % de descuento, como en Nesto.
+            List<LineaPedidoClienteRequest> compradas = peticion.Lineas.Where(l => !l.EsRegaloGanavisiones).ToList();
             Dictionary<string, ProductoPlantillaDTO> precios;
             try
             {
-                precios = await CalcularPrecios(empresa, fichaCliente, peticion.Lineas).ConfigureAwait(false);
+                precios = await CalcularPrecios(empresa, fichaCliente, compradas).ConfigureAwait(false);
             }
             catch (NestoBusinessException ex)
             {
                 return new PedidoPreparado { Error = BadRequest(ex.Message) };
             }
-            string productoSinPrecio = peticion.Lineas
+            string productoSinPrecio = compradas
                 .Select(l => l.Producto.Trim())
                 .FirstOrDefault(p => !precios.ContainsKey(p));
             if (productoSinPrecio != null)
@@ -968,10 +998,21 @@ namespace NestoAPI.Controllers
                 return new PedidoPreparado { Error = BadRequest($"No se ha podido calcular el precio del producto {productoSinPrecio}") };
             }
 
+            Dictionary<string, ProductoPlantillaDTO> regalos = await LeerTarifaRegalos(empresa,
+                peticion.Lineas.Where(l => l.EsRegaloGanavisiones).Select(l => l.Producto)).ConfigureAwait(false);
+            string regaloDesconocido = peticion.Lineas
+                .Where(l => l.EsRegaloGanavisiones)
+                .Select(l => l.Producto.Trim())
+                .FirstOrDefault(p => !regalos.ContainsKey(p));
+            if (regaloDesconocido != null)
+            {
+                return new PedidoPreparado { Error = BadRequest($"El regalo {regaloDesconocido} ya no está disponible. Quítalo del carrito y elige otro.") };
+            }
+
             return new PedidoPreparado
             {
                 Pedido = ConstructorPedidoCliente.Construir(
-                    peticion, fichaCliente, precios, formaPago, plazosPago, DateTime.Today, tienda),
+                    peticion, fichaCliente, precios, formaPago, plazosPago, DateTime.Today, tienda, regalos),
                 FormaPago = formaPago,
                 PlazosPago = plazosPago,
                 CodigoPostal = fichaCliente.codigoPostal?.Trim() ?? string.Empty,
