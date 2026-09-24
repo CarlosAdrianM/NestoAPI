@@ -640,6 +640,20 @@ namespace NestoAPI.Models
             /// </summary>
             public const string OFERTAS_SUGERIDAS_ACTIVAS = "OfertasSugeridasActivas";
 
+            /// <summary>
+            /// NestoAPI#534: interruptor del aviso automático de facturas vencidas por transferencia
+            /// (job diario de Hangfire). Bajo «(defecto)». Sin fila, "0" o cualquier valor que no se
+            /// reconozca: APAGADO (no hace nada). "Sombra": calcula la lista y la manda SOLO a
+            /// administración, sin escribir a ningún cliente. El envío a clientes llegará en el corte 2.
+            /// </summary>
+            public const string AVISO_FACTURAS_VENCIDAS = "AvisoFacturasVencidas";
+
+            /// <summary>
+            /// NestoAPI#534: días que tienen que haber pasado desde el vencimiento para avisar (entero
+            /// &gt; 0). Sin fila o con un valor no válido, 5 (criterio de Carlos y Laura, 24/09/26).
+            /// </summary>
+            public const string AVISO_FACTURAS_VENCIDAS_DIAS = "AvisoFacturasVencidasDias";
+
             /// <summary>Usuario bajo el que viven los parametros que no son de nadie en concreto.</summary>
             public const string USUARIO_POR_DEFECTO = "(defecto)";
 

@@ -639,6 +639,22 @@ namespace NestoAPI
                 }
             );
             Console.WriteLine("✅ Job recurrente 'fechas-compras-clientes-nocturno' configurado (diario a las 3:00)");
+
+            // NestoAPI#534: aviso de facturas vencidas por transferencia. De lunes a viernes a las
+            // 7:45: después del poll de seguimiento de las 6:00 (el gating de entrega mira el estado
+            // de los envíos) y antes de que administración empiece la jornada y la remesa. El job se
+            // registra siempre pero NO HACE NADA salvo que el parámetro AvisoFacturasVencidas de
+            // (defecto) valga "Sombra" (corte 1: la lista va solo a administración).
+            RecurringJob.AddOrUpdate(
+                "aviso-facturas-vencidas",
+                () => Infraestructure.Cobros.AvisosFacturasVencidasJobsService.Procesar(),
+                "45 7 * * 1-5", // Cron: de lunes a viernes a las 7:45
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'aviso-facturas-vencidas' configurado (L-V a las 7:45; apagado salvo parámetro)");
         }
     }
 
