@@ -63,6 +63,9 @@ namespace NestoAPI.Infraestructure.Clientes
         /// </summary>
         internal const string MARCADOR_ERROR_FORMATO_NIF = "no tiene un formato válido";
 
+        /// <summary>Lo que ve la ventana de NIF incorrectos cuando ya está corregido y solo falta el reintento.</summary>
+        internal const string TEXTO_PENDIENTE_REENVIO = "Corregido: pendiente de reenviar a Verifactu (se hace solo)";
+
         /// <summary>
         /// Formato SINTÁCTICO de identificación fiscal española (DNI, NIE o CIF), carácter de
         /// control incluido. No consulta el censo: es el algoritmo oficial. La AEAT lo exige en
@@ -676,7 +679,12 @@ namespace NestoAPI.Infraestructure.Clientes
                 // a los que ya salen como INCORRECTO.
                 "UNION " +
                 "SELECT LTRIM(RTRIM(c.[Nº Cliente])), LTRIM(RTRIM(c.Contacto)), c.Nombre, c.[CIF/NIF], " +
-                "       'VERIFACTU: formato de IVA/NIF rechazado', " +
+                // 24/09/26 (cliente 41959, México): corregido DESPUÉS del último intento fallido (marcado
+                // como extranjero o NIF validado) = se ha guardado y solo falta que el job la reenvíe.
+                // Se sigue listando (para poder cambiar la corrección, p. ej. poner el RFC en vez de la
+                // CURP), pero diciéndolo: antes parecía que la corrección no se había guardado.
+                "       CASE WHEN MAX(CASE WHEN vc.FechaCorreccion > f.VerifactuUltimoIntento THEN 0 ELSE 1 END) = 0 " +
+                $"            THEN '{TEXTO_PENDIENTE_REENVIO}' ELSE 'VERIFACTU: formato de IVA/NIF rechazado' END, " +
                 "       ISNULL(MAX(f.VerifactuUltimoIntento), CAST('20000101' AS datetime)), LTRIM(RTRIM(c.Vendedor)), " +
                 "       CAST(CASE WHEN EXISTS (SELECT 1 FROM LinPedidoVta l " +
                 "               WHERE l.Empresa = c.Empresa AND l.[Nº Cliente] = c.[Nº Cliente] " +
@@ -684,6 +692,9 @@ namespace NestoAPI.Infraestructure.Clientes
                 "       CAST(NULL AS varchar(2)) " +
                 "FROM CabFacturaVta f " +
                 "INNER JOIN Clientes c ON c.Empresa = f.Empresa AND c.[Nº Cliente] = f.[Nº Cliente] AND c.Contacto = f.Contacto " +
+                "LEFT JOIN (SELECT Empresa, Cliente, MAX(FechaValidacion) AS FechaCorreccion FROM ValidacionesNif " +
+                "           WHERE Estado IN (@pCorregidoA, @pCorregidoB) GROUP BY Empresa, Cliente) vc " +
+                "       ON vc.Empresa = c.Empresa AND vc.Cliente = c.[Nº Cliente] " +
                 // El marcador compartido (collation AI: casa con y sin acento) engancha tanto los
                 // rechazos de Verifacti como las exclusiones propias (NO CENSADO con relleno).
                 $"WHERE f.VerifactuUltimoError LIKE '%{MARCADOR_ERROR_FORMATO_NIF}%' " +
@@ -692,12 +703,6 @@ namespace NestoAPI.Infraestructure.Clientes
                 "  AND NOT EXISTS (SELECT 1 FROM ValidacionesNif v2 WHERE v2.Empresa = c.Empresa " +
                 "        AND v2.Cliente = c.[Nº Cliente] AND v2.Contacto = c.Contacto AND v2.Estado = @p0 " +
                 "        AND c.[CIF/NIF] = v2.Nif AND c.Nombre = v2.Nombre) " +
-                // 24/09/26 (cliente 41959, México): corregido DESPUÉS del último intento fallido
-                // (marcado como extranjero o NIF validado) = ya no hay nada que hacer en la ventana,
-                // solo esperar al reintento del job. Antes seguía saliendo y parecía que no se guardaba.
-                "  AND NOT EXISTS (SELECT 1 FROM ValidacionesNif v3 WHERE v3.Empresa = c.Empresa " +
-                "        AND v3.Cliente = c.[Nº Cliente] AND v3.Estado IN (@pCorregidoA, @pCorregidoB) " +
-                "        AND v3.FechaValidacion > f.VerifactuUltimoIntento) " +
                 condicionVendedor +
                 "GROUP BY c.Empresa, c.[Nº Cliente], c.Contacto, c.Nombre, c.[CIF/NIF], c.Vendedor " +
                 "ORDER BY TienePedidoPendiente DESC, FechaValidacion DESC";
