@@ -627,7 +627,12 @@ namespace NestoAPI.Infraestructure.Clientes
             // Nesto#417: el filtro admite VARIOS vendedores (jefe de equipo = él + su equipo).
             List<string> filtro = vendedores?.Where(v => !string.IsNullOrWhiteSpace(v))
                 .Select(v => v.Trim()).Distinct().ToList() ?? new List<string>();
-            var parametros = new List<object> { new SqlParameter("@p0", ESTADO_INCORRECTO) };
+            var parametros = new List<object>
+            {
+                new SqlParameter("@p0", ESTADO_INCORRECTO),
+                new SqlParameter("@pCorregidoA", ESTADO_EXTRANJERO),
+                new SqlParameter("@pCorregidoB", ESTADO_CORRECTO)
+            };
             string condicionVendedor = string.Empty;
             if (filtro.Any())
             {
@@ -687,6 +692,12 @@ namespace NestoAPI.Infraestructure.Clientes
                 "  AND NOT EXISTS (SELECT 1 FROM ValidacionesNif v2 WHERE v2.Empresa = c.Empresa " +
                 "        AND v2.Cliente = c.[Nº Cliente] AND v2.Contacto = c.Contacto AND v2.Estado = @p0 " +
                 "        AND c.[CIF/NIF] = v2.Nif AND c.Nombre = v2.Nombre) " +
+                // 24/09/26 (cliente 41959, México): corregido DESPUÉS del último intento fallido
+                // (marcado como extranjero o NIF validado) = ya no hay nada que hacer en la ventana,
+                // solo esperar al reintento del job. Antes seguía saliendo y parecía que no se guardaba.
+                "  AND NOT EXISTS (SELECT 1 FROM ValidacionesNif v3 WHERE v3.Empresa = c.Empresa " +
+                "        AND v3.Cliente = c.[Nº Cliente] AND v3.Estado IN (@pCorregidoA, @pCorregidoB) " +
+                "        AND v3.FechaValidacion > f.VerifactuUltimoIntento) " +
                 condicionVendedor +
                 "GROUP BY c.Empresa, c.[Nº Cliente], c.Contacto, c.Nombre, c.[CIF/NIF], c.Vendedor " +
                 "ORDER BY TienePedidoPendiente DESC, FechaValidacion DESC";
