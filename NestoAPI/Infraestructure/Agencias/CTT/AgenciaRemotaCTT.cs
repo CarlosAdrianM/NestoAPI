@@ -328,7 +328,57 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
         /// vale 0 = "En curso" de EnviosAgencia (etiqueta SIN tramitar): el 22/09 el poll devolvió los 20
         /// primeros envíos de CTT a la pestaña En curso al leer "ENVÍO RECOGIDO". El texto va en el detalle.
         /// </summary>
-        internal static readonly string[] CODIGOS_CONOCIDOS = { "0000", "0500", "0900", "1200", "1500", "1600", "2100", "3000" };
+        internal static string[] CODIGOS_CONOCIDOS => ESTADOS_CTT.Keys.ToArray();
+
+        /// <summary>
+        /// NestoAPI#493: la tabla OFICIAL de estados de CTT (fichero STATUS_INCIDENTS_MANAGEMENTS que
+        /// mandó CTT el 24/09/26, hoja STATUS), código → nuestro estado y su descripción. Es la única
+        /// fuente de CODIGOS_CONOCIDOS, DESCRIPCIONES y Traducir.
+        /// Finales según CTT: 2100, 2110 (entregado), 2500 (devolución) y 2600 (reexpedición).
+        /// Tránsito y esperas normales = Tramitado (NUNCA EnCurso: incidente del 22/09). Lo que pide que
+        /// alguien mire el envío (fallidos, estacionados, parciales, mal transitados…) = Incidentado.
+        /// </summary>
+        internal static readonly Dictionary<string, (EstadoEnvioSeguimiento Estado, string Descripcion)> ESTADOS_CTT =
+            new Dictionary<string, (EstadoEnvioSeguimiento, string)>
+            {
+                ["0000"] = (EstadoEnvioSeguimiento.Tramitado, "MANIFESTADO O GRABADO"),
+                ["0010"] = (EstadoEnvioSeguimiento.Tramitado, "RECEPCIÓN PROVISIONAL"),
+                ["0020"] = (EstadoEnvioSeguimiento.Tramitado, "PENDIENTE DE DEPOSITAR EN PUNTO CTT"),
+                ["0030"] = (EstadoEnvioSeguimiento.Tramitado, "DEPOSITADO EN PUNTO PENDIENTE DE RECOGER"),
+                ["0300"] = (EstadoEnvioSeguimiento.Tramitado, "RECOGIDA ASIGNADA"),
+                ["0400"] = (EstadoEnvioSeguimiento.Incidentado, "RECOGIDA ANULADA"),
+                ["0500"] = (EstadoEnvioSeguimiento.Tramitado, "ENVÍO RECOGIDO"),
+                ["0600"] = (EstadoEnvioSeguimiento.Incidentado, "RECOGIDA FALLIDA"),
+                ["0700"] = (EstadoEnvioSeguimiento.Tramitado, "DELEGACIÓN DE ORIGEN"),
+                ["0701"] = (EstadoEnvioSeguimiento.Incidentado, "MERCANCÍA NO ENLAZADA EN ORIGEN"),
+                ["0900"] = (EstadoEnvioSeguimiento.Tramitado, "EN TRÁNSITO"),
+                ["1000"] = (EstadoEnvioSeguimiento.Tramitado, "DELEGACIÓN DE TRÁNSITO"),
+                ["1001"] = (EstadoEnvioSeguimiento.Incidentado, "MERCANCÍA NO ENLAZADA EN CRUCE"),
+                ["1100"] = (EstadoEnvioSeguimiento.Incidentado, "MAL TRANSITADO"),
+                ["1200"] = (EstadoEnvioSeguimiento.Tramitado, "DELEGACIÓN DESTINO"),
+                ["1500"] = (EstadoEnvioSeguimiento.Tramitado, "EN REPARTO"),
+                ["1600"] = (EstadoEnvioSeguimiento.Incidentado, "REPARTO FALLIDO"),
+                ["1700"] = (EstadoEnvioSeguimiento.Incidentado, "ENVÍO ESTACIONADO"),
+                ["1800"] = (EstadoEnvioSeguimiento.Incidentado, "ESTACIONADO UBICADO"),
+                ["1900"] = (EstadoEnvioSeguimiento.Tramitado, "PENDIENTE DE EXTRACCIÓN"),
+                ["2100"] = (EstadoEnvioSeguimiento.Entregado, "ENTREGADO"),
+                ["2110"] = (EstadoEnvioSeguimiento.Entregado, "ENTREGADO ADMINISTRATIVO"),
+                ["2200"] = (EstadoEnvioSeguimiento.Incidentado, "ENTREGA PARCIAL"),
+                ["2310"] = (EstadoEnvioSeguimiento.Tramitado, "DISPONIBLE EN PUNTO CTT PARA ENTREGA"),
+                // 24/09/26 (CTT): el cliente estaba ausente y sale de nuevo a reparto
+                ["2400"] = (EstadoEnvioSeguimiento.Tramitado, "NUEVO REPARTO"),
+                ["2500"] = (EstadoEnvioSeguimiento.Devuelto, "DEVOLUCIÓN"),
+                // Final para este albarán: sigue con otro código de envío, que hay que mirar
+                ["2600"] = (EstadoEnvioSeguimiento.Incidentado, "REEXPEDICIÓN"),
+                ["2700"] = (EstadoEnvioSeguimiento.Incidentado, "ENTREGADO ALMACÉN REGULADOR"),
+                ["2900"] = (EstadoEnvioSeguimiento.Incidentado, "RECOGER EN DELEGACIÓN"),
+                ["3000"] = (EstadoEnvioSeguimiento.Desconocido, "ENVÍO ANULADO"),
+                ["3900"] = (EstadoEnvioSeguimiento.Tramitado, "TRÁNSITO INTERNACIONAL"),
+                ["3901"] = (EstadoEnvioSeguimiento.Tramitado, "GESTIÓN ADUANERA"),
+                ["3902"] = (EstadoEnvioSeguimiento.Tramitado, "DESPACHADO"),
+                ["3903"] = (EstadoEnvioSeguimiento.Tramitado, "REVISIÓN ADUANERA"),
+                ["3904"] = (EstadoEnvioSeguimiento.Tramitado, "INSPECCIÓN ADUANERA")
+            };
 
         internal static SeguimientoEnvioRemoto InterpretarEventos(JArray eventos, string albaran = null)
         {
@@ -371,17 +421,8 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
         }
 
         /// <summary>Descripción de los códigos conocidos, para el listado por fechas (que no la trae).</summary>
-        internal static readonly Dictionary<string, string> DESCRIPCIONES = new Dictionary<string, string>
-        {
-            ["0000"] = "MANIFESTADO",
-            ["0500"] = "ENVÍO RECOGIDO",
-            ["0900"] = "EN TRÁNSITO",
-            ["1200"] = "EN DELEGACIÓN DE DESTINO",
-            ["1500"] = "EN REPARTO",
-            ["1600"] = "ENTREGA FALLIDA",
-            ["2100"] = "ENTREGADO",
-            ["3000"] = "ANULADO"
-        };
+        internal static readonly Dictionary<string, string> DESCRIPCIONES =
+            ESTADOS_CTT.ToDictionary(e => e.Key, e => e.Value.Descripcion);
 
         /// <summary>
         /// Código de estado de CTT → nuestro estado. ÚNICA tabla para los dos caminos (seguimiento de un
@@ -394,20 +435,23 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
             string detalle = string.IsNullOrWhiteSpace(incidencia) ? descripcion : $"{descripcion}: {incidencia}";
 
             EstadoEnvioSeguimiento estado;
-            switch (codigo)
+            if (ESTADOS_CTT.TryGetValue(codigo, out var conocido))
             {
-                case "0000":
-                case "0500":
-                case "0900":
-                case "1200":
-                case "1500": estado = EstadoEnvioSeguimiento.Tramitado; break;
-                case "2100": estado = EstadoEnvioSeguimiento.Entregado; break;
-                case "1600": estado = EstadoEnvioSeguimiento.Incidentado; break;
-                case "3000": estado = EstadoEnvioSeguimiento.Desconocido; detalle = "Anulado en CTT"; break;
-                default:
-                    estado = EstadoDesdeDescripcion(descripcion);
-                    LoguearCodigoNoContemplado(codigo, descripcion, albaran);
-                    break;
+                estado = conocido.Estado;
+                if (string.IsNullOrWhiteSpace(descripcion))
+                {
+                    // El 2400 llegó sin descripción: el detalle sale de la tabla oficial
+                    detalle = string.IsNullOrWhiteSpace(incidencia) ? conocido.Descripcion : $"{conocido.Descripcion}: {incidencia}";
+                }
+                if (codigo == "3000")
+                {
+                    detalle = "Anulado en CTT";
+                }
+            }
+            else
+            {
+                estado = EstadoDesdeDescripcion(descripcion);
+                LoguearCodigoNoContemplado(codigo, descripcion, albaran);
             }
 
             return new SeguimientoEnvioRemoto

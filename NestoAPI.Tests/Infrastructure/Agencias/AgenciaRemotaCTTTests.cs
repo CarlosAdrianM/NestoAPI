@@ -459,6 +459,37 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         }
 
         [TestMethod]
+        public void Traducir_2400SinDescripcion_EsNuevoRepartoYSigueTramitado()
+        {
+            // 24/09/26: envío 249000 (cliente ausente, sale de nuevo). Llegaba sin descripción y dejaba
+            // un aviso en ELMAH en cada pasada del poll.
+            var resultado = AgenciaRemotaCTT.Traducir("2400", "", null, null, "0082800082809772536836");
+
+            Assert.AreEqual(EstadoEnvioSeguimiento.Tramitado, resultado.Estado);
+            Assert.AreEqual("NUEVO REPARTO", resultado.Detalle);
+            CollectionAssert.Contains(AgenciaRemotaCTT.CODIGOS_CONOCIDOS, "2400");
+        }
+
+        [TestMethod]
+        public void Traducir_FinalesDeLaTablaOficial()
+        {
+            Assert.AreEqual(EstadoEnvioSeguimiento.Entregado, AgenciaRemotaCTT.Traducir("2110", "", null, null, "A").Estado);
+            Assert.AreEqual(EstadoEnvioSeguimiento.Devuelto, AgenciaRemotaCTT.Traducir("2500", "", null, null, "A").Estado);
+            Assert.AreEqual(EstadoEnvioSeguimiento.Incidentado, AgenciaRemotaCTT.Traducir("2600", "", null, null, "A").Estado);
+            Assert.AreEqual(EstadoEnvioSeguimiento.Incidentado, AgenciaRemotaCTT.Traducir("1600", "REPARTO FALLIDO", "Ausente", null, "A").Estado);
+        }
+
+        [TestMethod]
+        public void Traducir_NingunCodigoConocidoEsEnCurso()
+        {
+            // 22/09/26: EnCurso = "sin tramitar" en EnviosAgencia; el poll dejaba de seguirlos.
+            foreach (string codigo in AgenciaRemotaCTT.CODIGOS_CONOCIDOS)
+            {
+                Assert.AreNotEqual(EstadoEnvioSeguimiento.EnCurso, AgenciaRemotaCTT.Traducir(codigo, "", null, null, "A").Estado, codigo);
+            }
+        }
+
+        [TestMethod]
         public void SeguimientoPorFechas_CadaCodigoSignificaLoMismoQueEnElIndividual()
         {
             // Una sola tabla de traducción: el poll (por fechas) y el «Actualizar estado» (individual)
