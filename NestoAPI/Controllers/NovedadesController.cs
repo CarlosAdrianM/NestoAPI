@@ -74,7 +74,22 @@ namespace NestoAPI.Controllers
                 .ThenBy(n => n.Id)
                 .ToList();
 
-            return Ok(ConFeedback(ordenadas));
+            return Ok(OrdenarPorReacciones(ConFeedback(ordenadas)));
+        }
+
+        /// <summary>
+        /// NestoAPI#535: dentro de cada versión, lo que más gusta arriba (👍 − 👎); a igualdad (o sin
+        /// feedback), el orden de siempre. Las versiones no se mueven: de la más nueva a la más antigua.
+        /// </summary>
+        internal static List<NovedadDTO> OrdenarPorReacciones(List<NovedadDTO> novedades)
+        {
+            return novedades
+                .Select((n, posicion) => new { Novedad = n, Posicion = posicion })
+                .OrderByDescending(x => Version.TryParse(x.Novedad.Version, out Version v) ? v : new Version(0, 0))
+                .ThenByDescending(x => x.Novedad is NovedadConFeedbackDTO f ? (f.VotosPositivos ?? 0) - (f.VotosNegativos ?? 0) : 0)
+                .ThenBy(x => x.Posicion)
+                .Select(x => x.Novedad)
+                .ToList();
         }
 
         /// <summary>

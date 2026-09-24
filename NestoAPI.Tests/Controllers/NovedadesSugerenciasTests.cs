@@ -242,6 +242,49 @@ namespace NestoAPI.Tests.Controllers
             Assert.IsNull(resultado.Content[1].Version, "la sugerencia no tiene versión");
         }
 
+        // ---- NestoAPI#535: lo que más gusta, arriba ----
+
+        private static NovedadConFeedbackDTO ConVotos(int id, string version, int positivos, int negativos = 0) =>
+            new NovedadConFeedbackDTO { Id = id, Version = version, VotosPositivos = positivos, VotosNegativos = negativos };
+
+        [TestMethod]
+        public void OrdenarPorReacciones_DentroDeCadaVersionLasMasVotadasArriba_YLasVersionesNoSeMueven()
+        {
+            var novedades = new List<NovedadDTO>
+            {
+                ConVotos(10, "1.10.31.0", 0),
+                ConVotos(11, "1.10.31.0", 3),
+                ConVotos(12, "1.10.31.0", 3, 1),
+                ConVotos(13, "1.10.31.0", 0),
+                ConVotos(5, "1.10.30.0", 9)
+            };
+
+            List<NovedadDTO> ordenadas = NovedadesController.OrdenarPorReacciones(novedades);
+
+            CollectionAssert.AreEqual(new[] { 11, 12, 10, 13, 5 }, ordenadas.Select(n => n.Id).ToArray(),
+                "11 (+3), 12 (+2), y sin votos en su orden (10, 13); la 1.10.30.0 sigue detrás aunque tenga más");
+        }
+
+        [TestMethod]
+        public void OrdenarPorReacciones_SinFeedback_ElOrdenDeSiempre()
+        {
+            var novedades = new List<NovedadDTO>
+            {
+                new NovedadDTO { Id = 2, Version = "1.10.31.0" },
+                new NovedadDTO { Id = 1, Version = "1.10.31.0" }
+            };
+
+            CollectionAssert.AreEqual(new[] { 2, 1 }, NovedadesController.OrdenarPorReacciones(novedades).Select(n => n.Id).ToArray());
+        }
+
+        [TestMethod]
+        public void OrdenarPorReacciones_LasNegativasVanAlFinalDeSuVersion()
+        {
+            var novedades = new List<NovedadDTO> { ConVotos(1, "1.10.31.0", 0, 2), ConVotos(2, "1.10.31.0", 0) };
+
+            CollectionAssert.AreEqual(new[] { 2, 1 }, NovedadesController.OrdenarPorReacciones(novedades).Select(n => n.Id).ToArray());
+        }
+
         // ---- Reglas puras ----
 
         [TestMethod]
