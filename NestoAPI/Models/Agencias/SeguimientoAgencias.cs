@@ -39,6 +39,12 @@ namespace NestoAPI.Models.Agencias
         /// (CEX/Sending), el número pelado. Null si la agencia no vende por ese canal.
         /// </summary>
         string TrackingPrestashop(DatosSeguimientoEnvio datos);
+        /// <summary>
+        /// CarrierCode para confirmar envíos en Amazon MFN, o null. OBLIGATORIO en España desde 2021:
+        /// sin él Amazon acepta el feed pero NO la confirmación (24/09/26, CTT no se marcaba). Un
+        /// transportista que no está en la lista de Amazon va como "Other" y su nombre en CarrierName.
+        /// </summary>
+        string CarrierCodeAmazon { get; }
         /// <summary>CarrierName para confirmar envíos en Amazon MFN, o null.</summary>
         string CarrierNameAmazon { get; }
         /// <summary>ShippingMethod para confirmar envíos en Amazon MFN, o null.</summary>
@@ -52,12 +58,19 @@ namespace NestoAPI.Models.Agencias
         IReadOnlyCollection<int> AgenciasId { get; }
     }
 
+    internal static class CodigosAmazon
+    {
+        /// <summary>Transportista que no está en la lista de Amazon: el nombre va en CarrierName.</summary>
+        internal const string OTRO = "Other";
+    }
+
     internal class SeguimientoGls : IEstrategiaSeguimientoAgencia
     {
         public string Nombre => "ASM";
         public IReadOnlyCollection<int> AgenciasId => new[] { 1, 2, 3, 5 };
         // GLS e Innovatrans comparten el transportista genérico 160 de Prestashop
         public string TransportistaPrestashop => "160";
+        public string CarrierCodeAmazon => "GLS";
         public string CarrierNameAmazon => "GLS";
         public string ShippingMethodAmazon => "Business Parcel";
         public string ConstruirUrl(DatosSeguimientoEnvio d)
@@ -76,6 +89,7 @@ namespace NestoAPI.Models.Agencias
         public IReadOnlyCollection<int> AgenciasId => new[] { 4, 6 };
         // OnTime no se usa en tienda online ni marketplaces
         public string TransportistaPrestashop => null;
+        public string CarrierCodeAmazon => null;
         public string CarrierNameAmazon => null;
         public string ShippingMethodAmazon => null;
         public string ConstruirUrl(DatosSeguimientoEnvio d)
@@ -97,6 +111,7 @@ namespace NestoAPI.Models.Agencias
         public string Nombre => "Correos Express";
         public IReadOnlyCollection<int> AgenciasId => new[] { Constantes.Agencias.AGENCIA_CORREOS_EXPRESS, 9 };
         public string TransportistaPrestashop => "105";
+        public string CarrierCodeAmazon => "Correos Express";
         public string CarrierNameAmazon => "Correos Express";
         public string ShippingMethodAmazon => "ePaq";
         public string ConstruirUrl(DatosSeguimientoEnvio d)
@@ -112,6 +127,7 @@ namespace NestoAPI.Models.Agencias
         public string Nombre => "Sending";
         public IReadOnlyCollection<int> AgenciasId => new[] { Constantes.Agencias.AGENCIA_SENDING };
         public string TransportistaPrestashop => "103";
+        public string CarrierCodeAmazon => CodigosAmazon.OTRO;
         public string CarrierNameAmazon => "Sending";
         public string ShippingMethodAmazon => "Send Exprés";
         public string ConstruirUrl(DatosSeguimientoEnvio d)
@@ -127,6 +143,7 @@ namespace NestoAPI.Models.Agencias
         public string Nombre => "Innovatrans";
         public IReadOnlyCollection<int> AgenciasId => new[] { Constantes.Agencias.AGENCIA_INNOVATRANS };
         public string TransportistaPrestashop => "160";
+        public string CarrierCodeAmazon => CodigosAmazon.OTRO;
         public string CarrierNameAmazon => "Innovatrans";
         public string ShippingMethodAmazon => "Estándar";
         // Portal TIP-SA: id fijo de cliente (028040028040) + albarán (CodigoSeguimiento) de DataTrans.
@@ -144,6 +161,10 @@ namespace NestoAPI.Models.Agencias
         public string Nombre => "CTT";
         public IReadOnlyCollection<int> AgenciasId => new[] { Constantes.Agencias.AGENCIA_CTT };
         public string TransportistaPrestashop => "160";
+        // 24/09/26: "Other" hasta confirmar el código exacto de la lista de Amazon (Seller Central lo
+        // enseña como «CTTExpress» y entonces pide un «Servicio de envío» de su lista). Con "Other" la
+        // confirmación se acepta siempre; con el código bueno Amazon valida además el seguimiento.
+        public string CarrierCodeAmazon => CodigosAmazon.OTRO;
         public string CarrierNameAmazon => "CTT Express";
         public string ShippingMethodAmazon => "Estándar";
         // Localizador público de CTT Express; sc = shipping_code (el albarán de 22 dígitos que

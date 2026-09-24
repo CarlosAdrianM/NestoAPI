@@ -85,6 +85,9 @@ namespace NestoAPI.Models
         /// <summary>CarrierName para confirmar el envío en Amazon MFN.</summary>
         public string CarrierNameAmazon => RegistroSeguimientoAgencias.Obtener(AgenciaNombre)?.CarrierNameAmazon;
 
+        /// <summary>CarrierCode para confirmar el envío en Amazon MFN (obligatorio en España).</summary>
+        public string CarrierCodeAmazon => RegistroSeguimientoAgencias.Obtener(AgenciaNombre)?.CarrierCodeAmazon;
+
         /// <summary>ShippingMethod para confirmar el envío en Amazon MFN.</summary>
         public string ShippingMethodAmazon => RegistroSeguimientoAgencias.Obtener(AgenciaNombre)?.ShippingMethodAmazon;
     }

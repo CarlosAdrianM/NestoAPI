@@ -45,7 +45,9 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
                 {
                     continue; // lo denuncia el otro test
                 }
-                if (string.IsNullOrWhiteSpace(estrategia.CarrierNameAmazon)
+                // 24/09/26: sin CarrierCode Amazon no acepta la confirmación en España
+                if (string.IsNullOrWhiteSpace(estrategia.CarrierCodeAmazon)
+                    || string.IsNullOrWhiteSpace(estrategia.CarrierNameAmazon)
                     || string.IsNullOrWhiteSpace(estrategia.ShippingMethodAmazon)
                     || string.IsNullOrWhiteSpace(estrategia.TransportistaPrestashop))
                 {
@@ -66,6 +68,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             // El caso del 22/09/26: pedido 926717 (Amazon) y 926733 (web) enviados por CTT.
             var dto = new EnvioAgenciaDTO { AgenciaNombre = "CTT", CodigoBarras = "0082800082809772536836", CodigoPostal = "28001" };
 
+            Assert.AreEqual("Other", dto.CarrierCodeAmazon, "hasta confirmar el código de la lista de Amazon");
             Assert.AreEqual("CTT Express", dto.CarrierNameAmazon);
             Assert.AreEqual("Estándar", dto.ShippingMethodAmazon);
             Assert.AreEqual("0082800082809772536836", dto.NumeroSeguimiento);
