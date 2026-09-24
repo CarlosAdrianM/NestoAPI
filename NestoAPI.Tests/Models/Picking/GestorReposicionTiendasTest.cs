@@ -29,7 +29,9 @@ namespace NestoAPI.Tests.Models.Picking
                 Cantidad = cantidad,
                 CantidadReservada = reservada,
                 Almacen = almacen,
-                FechaModificacion = modificacion
+                FechaModificacion = modificacion,
+                // Líneas de pago: una a base 0 es un regalo, que no sale solo (NestoAPI#529)
+                BaseImponible = 10M * cantidad
             };
         }
 

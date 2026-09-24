@@ -91,6 +91,10 @@ namespace NestoAPI.Models.Picking
         /// (la primera saca lo que hay; el resto va de una vez). 3: nunca exige stock de todo, pero
         /// no sale mientras le quede stock suyo por llegar de las tiendas (EsperaReposicionDeTiendas,
         /// que decide GestorReposicionTiendas); cuando ya no queda nada que traer, sale con lo que hay.
+        ///
+        /// <para>NestoAPI#529: en los modos parciales, si lo único que se quedaría pendiente son
+        /// regalos (base 0), no se sirve a medias: se espera a tenerlo todo, como en el 1. Si no,
+        /// el regalo acaba saliendo solo en un envío de 0 € (pedido 926923).</para>
         /// </summary>
         public bool ExigeStockDeTodo()
         {
@@ -99,9 +103,9 @@ namespace NestoAPI.Models.Picking
                 case Constantes.Pedidos.ModosServicio.TODO_JUNTO:
                     return true;
                 case Constantes.Pedidos.ModosServicio.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ:
-                    return TieneLineasServidas;
+                    return TieneLineasServidas || new GestorStocksPicking(this).LoPendienteSonSoloRegalos();
                 default:
-                    return false;
+                    return new GestorStocksPicking(this).LoPendienteSonSoloRegalos();
             }
         }
 

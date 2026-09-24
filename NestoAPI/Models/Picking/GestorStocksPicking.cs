@@ -24,6 +24,24 @@ namespace NestoAPI.Models.Picking
             return linea == null;
         }
 
+        /// <summary>
+        /// NestoAPI#529: lo que no tiene stock en esta pasada son solo regalos (líneas de producto
+        /// a base 0: Ganavisiones, regalo por importe, material promocional, unidades gratis de
+        /// una oferta). Servir lo demás obligaría a mandar después el regalo solo, en un envío de
+        /// 0 €. Falso si no queda nada pendiente.
+        /// </summary>
+        public bool LoPendienteSonSoloRegalos()
+        {
+            if (pedido.EsNotaEntrega || pedido.Lineas == null)
+            {
+                return false;
+            }
+            List<LineaPedidoPicking> pendientes = pedido.Lineas
+                .Where(l => l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO && l.Cantidad > l.CantidadReservada)
+                .ToList();
+            return pendientes.Any() && pendientes.All(l => l.BaseImponible == 0);
+        }
+
         public bool HayStockDeAlgo()
         {
             bool lineaEncontrada;

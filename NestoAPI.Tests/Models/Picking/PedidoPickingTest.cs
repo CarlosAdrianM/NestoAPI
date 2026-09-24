@@ -58,9 +58,57 @@ namespace NestoAPI.Tests.Models.Picking
                 TieneLineasServidas = yaServido,
                 Lineas = new List<LineaPedidoPicking>
                 {
-                    new LineaPedidoPicking { Id = 1, TipoLinea = Constantes.TiposLineaVenta.PRODUCTO, Producto = "A", Cantidad = 6, CantidadReservada = 5 }
+                    new LineaPedidoPicking { Id = 1, TipoLinea = Constantes.TiposLineaVenta.PRODUCTO, Producto = "A", Cantidad = 6, CantidadReservada = 5, BaseImponible = 60M }
                 }
             };
+        }
+
+        // NestoAPI#529: si lo único que quedaría pendiente es un regalo (base 0), no se sirve a
+        // medias en ningún modo parcial: el regalo acabaría saliendo solo en un envío de 0 €.
+
+        private static PedidoPicking PedidoConRegaloSinStock(byte modo, bool yaServido = false)
+        {
+            return new PedidoPicking
+            {
+                Id = 926923,
+                ServirJunto = false,
+                ModoServicio = modo,
+                TieneLineasServidas = yaServido,
+                Lineas = new List<LineaPedidoPicking>
+                {
+                    new LineaPedidoPicking { Id = 1, TipoLinea = Constantes.TiposLineaVenta.PRODUCTO, Producto = "19828", Cantidad = 6, CantidadReservada = 6, BaseImponible = 62.28M },
+                    new LineaPedidoPicking { Id = 2, TipoLinea = Constantes.TiposLineaVenta.PRODUCTO, Producto = "44357", Cantidad = 1, CantidadReservada = 0, BaseImponible = 0M }
+                }
+            };
+        }
+
+        [TestMethod]
+        public void PedidoPicking_ModosParciales_SiSoloQuedaPendienteElRegalo_NoSaleAMedias()
+        {
+            foreach (byte modo in new[] { Constantes.Pedidos.ModosServicio.SEGUN_VAYA_ENTRANDO,
+                Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS,
+                Constantes.Pedidos.ModosServicio.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ })
+            {
+                PedidoPicking pedido = PedidoConRegaloSinStock(modo);
+
+                Assert.IsTrue(pedido.ExigeStockDeTodo(), "modo " + modo);
+                Assert.IsFalse(pedido.saleEnPicking(), "modo " + modo + ": el regalo no se queda solo");
+
+                pedido.Lineas[1].CantidadReservada = 1; // llega el regalo
+                Assert.IsTrue(pedido.saleEnPicking(), "modo " + modo + ": con el regalo, sale todo");
+            }
+        }
+
+        [TestMethod]
+        public void PedidoPicking_ModosParciales_SiQuedaPendienteAlgoDePago_SaleLoQueHay()
+        {
+            // Si además del regalo falta algo que se cobra, habrá otra entrega de todos modos:
+            // se sirve lo que hay, como siempre.
+            PedidoPicking pedido = PedidoConRegaloSinStock(Constantes.Pedidos.ModosServicio.SEGUN_VAYA_ENTRANDO);
+            pedido.Lineas.Add(new LineaPedidoPicking { Id = 3, TipoLinea = Constantes.TiposLineaVenta.PRODUCTO, Producto = "12634", Cantidad = 40, CantidadReservada = 0, BaseImponible = 66.8M });
+
+            Assert.IsFalse(pedido.ExigeStockDeTodo());
+            Assert.IsTrue(pedido.saleEnPicking());
         }
 
         [TestMethod]

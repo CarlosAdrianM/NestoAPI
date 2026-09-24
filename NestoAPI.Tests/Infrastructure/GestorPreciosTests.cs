@@ -273,6 +273,10 @@ namespace NestoAPI.Tests.Infrastructure
                 }
             });
 
+            // NestoAPI#529: estos tests prueban precios y ofertas, no stock. Sin esto el fake dice 0
+            // y ValidadorRegaloSinStock rechaza cualquier regalo.
+            _ = A.CallTo(() => servicio.BuscarStockDisponibleTotal(A<string>._)).Returns(999);
+
             GestorPrecios.servicio = servicio;
         }
 
@@ -4866,8 +4870,8 @@ namespace NestoAPI.Tests.Infrastructure
                     _ = GestorPrecios.EsPedidoValido(pedido);
                 });
 
-                // 6 desde NestoAPI#501 (ValidadorFamiliasIncompatibles). Si añades uno, sube el número.
-                Assert.AreEqual(6, GestorPrecios.listaValidadoresDenegacion.Count,
+                // 7 desde NestoAPI#529 (ValidadorRegaloSinStock). Si añades uno, sube el número.
+                Assert.AreEqual(7, GestorPrecios.listaValidadoresDenegacion.Count,
                     "Con .Add() sin candado dos hilos cargaban los dos y quedaban el doble de validadores, " +
                     "con lo que cada motivo de denegación salía por duplicado");
                 Assert.AreEqual(

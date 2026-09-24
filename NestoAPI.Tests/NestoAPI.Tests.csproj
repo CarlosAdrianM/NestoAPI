@@ -471,6 +471,7 @@
     <Compile Include="Providers\SimpleRefreshTokenProviderTests.cs" />
     <Compile Include="Infrastructure\ValidadoresPedido\ValidadorGanavisionesTests.cs" />
     <Compile Include="Infrastructure\ValidadoresPedido\ValidadorOfertaSinBeneficioTests.cs" />
+    <Compile Include="Infrastructure\ValidadoresPedido\ValidadorRegaloSinStockTests.cs" />
     <Compile Include="Infrastructure\ValidadoresPedido\ValidadorFamiliasIncompatiblesTests.cs" />
     <Compile Include="Infrastructure\Productos\FamiliasRestringidasTests.cs" />
     <Compile Include="Infrastructure\ValidadoresPedido\GestorPreciosPermisoNecesarioTests.cs" />

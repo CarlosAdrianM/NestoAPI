@@ -911,6 +911,7 @@
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorLimiteRegalos.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorOfertaSinBeneficio.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorFamiliasIncompatibles.cs" />
+    <Compile Include="Infraestructure\ValidadoresPedido\ValidadorRegaloSinStock.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorMuestrasYMaterialPromocional.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorOfertasCombinadas.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorOfertasEscalonadas.cs" />
