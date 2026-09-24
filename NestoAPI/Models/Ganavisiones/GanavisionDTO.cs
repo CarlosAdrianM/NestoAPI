@@ -102,6 +102,13 @@ namespace NestoAPI.Models.Ganavisiones
         public decimal ValorGanavisionEnEuros { get; set; } = Constantes.Productos.VALOR_GANAVISION_EN_EUROS;
 
         public List<ProductoBonificableDTO> Productos { get; set; }
+
+        /// <summary>
+        /// NestoAPI#525: quien ha iniciado sesión no ve el precio de cliente (#446). Los puntos y
+        /// los regalos son los reales, pero van sin importes: la base bonificable y lo que falta
+        /// para desbloquear un regalo dirían lo que paga su empresa.
+        /// </summary>
+        public bool ImportesOcultos { get; set; }
     }
 
     // Los DTOs de validación de "Servir junto" se movieron a

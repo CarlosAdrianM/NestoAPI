@@ -1,4 +1,5 @@
 using NestoAPI.Models;
+using NestoAPI.Models.Ganavisiones;
 using NestoAPI.Models.PedidosVenta;
 using System;
 using System.Collections.Generic;
@@ -187,6 +188,30 @@ namespace NestoAPI.Infraestructure.Clientes
                 linea.Descuento = 0;
                 linea.BaseImponible = 0;
                 linea.Total = 0;
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#525: los Ganavisiones del carrito van con los puntos reales pero sin importes.
+        /// La tarifa del regalo (PVP) solo se quita a quien no ve precios; la tarifa profesional la
+        /// puede ver el cargo 31.
+        /// </summary>
+        public static void OcultarImportes(ProductosBonificablesResponse respuesta, NivelPrecios nivel)
+        {
+            if (respuesta == null || nivel == NivelPrecios.Completo)
+            {
+                return;
+            }
+            respuesta.BaseImponibleBonificable = 0;
+            respuesta.ImportesOcultos = true;
+            foreach (ProductoBonificableDTO producto in respuesta.Productos ?? Enumerable.Empty<ProductoBonificableDTO>())
+            {
+                producto.ImporteParaDesbloquear = 0;
+                producto.ImporteMinimoPedido = 0;
+                if (nivel == NivelPrecios.SinPrecios)
+                {
+                    producto.PVP = 0;
+                }
             }
         }
 

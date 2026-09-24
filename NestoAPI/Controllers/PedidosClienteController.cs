@@ -6,6 +6,7 @@ using NestoAPI.Infraestructure.Pagos;
 using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Infraestructure.Seguridad;
 using NestoAPI.Models;
+using NestoAPI.Models.Ganavisiones;
 using NestoAPI.Models.Pagos;
 using NestoAPI.Models.PedidosBase;
 using NestoAPI.Models.PedidosVenta;
@@ -456,6 +457,80 @@ namespace NestoAPI.Controllers
                 // TNV#70: con la tienda elegida, el mismo cálculo dice ya qué no está allí
                 ProductosSinStockEnTienda = LoQueNoHayEnLaTienda(preparado.Pedido, preparado.Tienda)
             });
+        }
+
+        /// <summary>
+        /// NestoAPI#525: los Ganavisiones del carrito, calculados con el MISMO pedido que se crearía
+        /// (sus precios reales) y no con la base que suma el móvil. El móvil suma lo que VE, y quien
+        /// no ve el precio de cliente (#446) ve la tarifa (cargo 31) o nada (cargo 30): la app le
+        /// prometía más puntos de los que luego valida ValidadorGanavisiones, o ninguno.
+        ///
+        /// <para>Devuelve lo mismo que <c>GET api/Ganavisiones/ProductosBonificables</c>. Con los
+        /// precios ocultos, los puntos y los regalos son los reales pero van sin importes.</para>
+        /// </summary>
+        // POST: api/Pedidos/Cliente/Ganavisiones
+        [HttpPost]
+        [Route("Cliente/Ganavisiones")]
+        [ResponseType(typeof(ProductosBonificablesResponse))]
+        public async Task<IHttpActionResult> PostGanavisionesCliente(PedidoClienteRequest peticion,
+            bool incluirBloqueados = false, int? maximoBloqueados = null)
+        {
+            PedidoPreparado preparado = await PrepararPedido(peticion).ConfigureAwait(false);
+            if (preparado.Error != null)
+            {
+                return preparado.Error;
+            }
+
+            PedidoVentaDTO pedido = preparado.Pedido;
+            Dictionary<string, string> grupos = await LeerGruposProductos(pedido.empresa,
+                pedido.Lineas.Select(l => l.Producto)).ConfigureAwait(false);
+            decimal baseBonificable = BaseImponibleBonificable(pedido, grupos);
+
+            GanavisionesController controllerGanavisiones = CrearControllerGanavisiones?.Invoke() ?? new GanavisionesController(db);
+            // Recogiendo en tienda, el regalo tiene que estar en esa tienda (TNV#70)
+            IHttpActionResult resultado = await controllerGanavisiones.GetProductosBonificables(
+                pedido.empresa, baseBonificable,
+                almacen: preparado.Tienda?.Almacen,
+                servirJunto: preparado.Tienda == null,
+                cliente: pedido.cliente,
+                incluirBloqueados: incluirBloqueados,
+                maximoBloqueados: maximoBloqueados).ConfigureAwait(false);
+
+            if (resultado is OkNegotiatedContentResult<ProductosBonificablesResponse> ok)
+            {
+                PoliticaPreciosOcultos.OcultarImportes(ok.Content, PoliticaPreciosOcultos.NivelDe(User?.Identity));
+                return Ok(ok.Content);
+            }
+            return resultado;
+        }
+
+        /// <summary>NestoAPI#525: cómo se crea el controller de Ganavisiones; sustituible en tests.</summary>
+        internal Func<GanavisionesController> CrearControllerGanavisiones { get; set; }
+
+        /// <summary>
+        /// NestoAPI#525: la base que da Ganavisiones, con el mismo criterio que ValidadorGanavisiones
+        /// (líneas de producto de los grupos bonificables, por su BaseImponible). Internal para tests.
+        /// </summary>
+        internal static decimal BaseImponibleBonificable(PedidoVentaDTO pedido, IDictionary<string, string> grupoPorProducto)
+        {
+            return pedido.Lineas
+                .Where(l => l.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
+                .Where(l => grupoPorProducto.TryGetValue(l.Producto?.Trim() ?? string.Empty, out string grupo)
+                    && Constantes.Productos.GRUPOS_BONIFICABLES_CON_GANAVISIONES.Contains(grupo?.Trim()))
+                .Sum(l => l.BaseImponible);
+        }
+
+        private async Task<Dictionary<string, string>> LeerGruposProductos(string empresa, IEnumerable<string> productos)
+        {
+            List<string> numeros = productos.Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p.Trim()).Distinct().ToList();
+            var grupos = await db.Productos
+                .Where(p => p.Empresa == empresa && numeros.Contains(p.Número))
+                .Select(p => new { p.Número, p.Grupo })
+                .ToListAsync()
+                .ConfigureAwait(false);
+            return grupos
+                .GroupBy(p => p.Número.Trim())
+                .ToDictionary(g => g.Key, g => g.First().Grupo?.Trim());
         }
 
         /// <summary>

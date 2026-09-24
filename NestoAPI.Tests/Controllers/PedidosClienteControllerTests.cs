@@ -17,6 +17,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure.Pagos;
 using NestoAPI.Models;
+using NestoAPI.Models.Ganavisiones;
 using NestoAPI.Models.PedidosBase;
 using NestoAPI.Models.PedidosVenta;
 
@@ -256,6 +257,128 @@ namespace NestoAPI.Tests.Controllers
                 {
                     p.precioCalculado = precioCliente;
                     p.descuentoCalculado = descuentoCliente;
+                }
+            };
+        }
+
+        #endregion
+
+        #region NestoAPI#525: Ganavisiones del carrito con los precios reales
+
+        [TestMethod]
+        public void BaseImponibleBonificable_CuentaLasLineasCosYAccConSuDescuento_YNoLaPeluqueria()
+        {
+            // Pedido 926936: la app sumaba 95,40 € de COS/ACC a tarifa (9 Ganavisiones); con los
+            // descuentos del cliente son 49,29 € (4). Los tintes (PEL) no suman desde #466.
+            PedidoVentaDTO pedido = new PedidoVentaDTO
+            {
+                Lineas = new List<LineaPedidoVentaDTO>
+                {
+                    LineaConDescuento("18575", 29.88M, 0.30M),  // ACC
+                    LineaConDescuento("12289", 13.32M, 0.40M),  // ACC
+                    LineaConDescuento("20892", 9.95M, 0.65M),   // ACC
+                    LineaConDescuento("38626", 7.25M, 0.60M),   // COS
+                    LineaConDescuento("38655", 35.00M, 0.60M),  // ACC
+                    LineaConDescuento("46056", 13.95M, 0.67M, cantidad: 6) // PEL
+                }
+            };
+            Dictionary<string, string> grupos = new Dictionary<string, string>
+            {
+                ["18575"] = "ACC", ["12289"] = "ACC", ["20892"] = "ACC", ["38626"] = "COS", ["38655"] = "ACC", ["46056"] = "PEL"
+            };
+
+            decimal baseBonificable = PedidosClienteController.BaseImponibleBonificable(pedido, grupos);
+
+            Assert.AreEqual(49.29M, baseBonificable);
+            Assert.AreEqual(4, (int)(baseBonificable / Constantes.Productos.VALOR_GANAVISION_EN_EUROS));
+        }
+
+        [TestMethod]
+        public void BaseImponibleBonificable_ProductoSinGrupoConocido_NoSuma()
+        {
+            PedidoVentaDTO pedido = new PedidoVentaDTO
+            {
+                Lineas = new List<LineaPedidoVentaDTO> { LineaConDescuento("99999", 50M, 0M) }
+            };
+
+            Assert.AreEqual(0M, PedidosClienteController.BaseImponibleBonificable(pedido, new Dictionary<string, string>()));
+        }
+
+        [TestMethod]
+        public void OcultarImportesGanavisiones_SinDescuentos_PuntosRealesSinImportesYConTarifa()
+        {
+            ProductosBonificablesResponse respuesta = RespuestaGanavisiones();
+
+            PoliticaPreciosOcultos.OcultarImportes(respuesta, PoliticaPreciosOcultos.NivelPrecios.SinDescuentos);
+
+            Assert.AreEqual(4, respuesta.GanavisionesDisponibles, "los puntos son los reales");
+            Assert.AreEqual(0M, respuesta.BaseImponibleBonificable);
+            Assert.IsTrue(respuesta.ImportesOcultos);
+            Assert.AreEqual(0M, respuesta.Productos[0].ImporteParaDesbloquear);
+            Assert.AreEqual(0M, respuesta.Productos[0].ImporteMinimoPedido);
+            Assert.AreEqual(12.5M, respuesta.Productos[0].PVP, "la tarifa profesional la ve el cargo 31");
+            Assert.IsTrue(respuesta.Productos[0].Bloqueado, "sigue sabiendo que está bloqueado");
+        }
+
+        [TestMethod]
+        public void OcultarImportesGanavisiones_SinPrecios_TambienQuitaLaTarifa()
+        {
+            ProductosBonificablesResponse respuesta = RespuestaGanavisiones();
+
+            PoliticaPreciosOcultos.OcultarImportes(respuesta, PoliticaPreciosOcultos.NivelPrecios.SinPrecios);
+
+            Assert.AreEqual(0M, respuesta.Productos[0].PVP);
+            Assert.IsTrue(respuesta.ImportesOcultos);
+        }
+
+        [TestMethod]
+        public void OcultarImportesGanavisiones_Completo_NoTocaNada()
+        {
+            ProductosBonificablesResponse respuesta = RespuestaGanavisiones();
+
+            PoliticaPreciosOcultos.OcultarImportes(respuesta, PoliticaPreciosOcultos.NivelPrecios.Completo);
+
+            Assert.AreEqual(49.29M, respuesta.BaseImponibleBonificable);
+            Assert.IsFalse(respuesta.ImportesOcultos);
+            Assert.AreEqual(10.71M, respuesta.Productos[0].ImporteParaDesbloquear);
+        }
+
+        [TestMethod]
+        public async Task PostGanavisionesCliente_SinTokenDeCliente_NoAutorizado()
+        {
+            PedidosClienteController controller = ControllerConIdentidad(new Claim("IsEmployee", "true"));
+
+            var resultado = await controller.PostGanavisionesCliente(PeticionValida());
+
+            Assert.IsInstanceOfType(resultado, typeof(UnauthorizedResult));
+        }
+
+        private static LineaPedidoVentaDTO LineaConDescuento(string producto, decimal precio, decimal descuento, short cantidad = 1)
+        {
+            return new LineaPedidoVentaDTO
+            {
+                tipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = producto,
+                Cantidad = cantidad,
+                PrecioUnitario = precio,
+                DescuentoProducto = descuento,
+                AplicarDescuento = true
+            };
+        }
+
+        private static ProductosBonificablesResponse RespuestaGanavisiones()
+        {
+            return new ProductosBonificablesResponse
+            {
+                GanavisionesDisponibles = 4,
+                BaseImponibleBonificable = 49.29M,
+                Productos = new List<ProductoBonificableDTO>
+                {
+                    new ProductoBonificableDTO
+                    {
+                        ProductoId = "12345", Ganavisiones = 6, PVP = 12.5M,
+                        Bloqueado = true, ImporteParaDesbloquear = 10.71M, ImporteMinimoPedido = 0M
+                    }
                 }
             };
         }
