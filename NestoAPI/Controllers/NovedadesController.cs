@@ -54,34 +54,11 @@ namespace NestoAPI.Controllers
         {
             List<NovedadDTO> novedades = servicio.LeerNovedadesPublicadas();
 
-            // APAÑO TEMPORAL (23/09/26, NestoApp#186): la NestoApp publicada (2.20.5) pide sin ámbito y
-            // filtra en cliente, así que desde f167cd3e (sin ámbito = escritorio) no le llega ninguna
-            // novedad suya. Nesto llama con HttpClient de .NET (sin User-Agent de navegador); la app
-            // llama desde el WebView del móvil (User-Agent «Mozilla/...»). Se retira cuando todas las
-            // NestoApp en uso manden ?ambito=NestoApp.
-            if (string.IsNullOrWhiteSpace(ambito) && EsLlamadaDesdeNavegador(Request))
-            {
-                ambito = AMBITO_NESTOAPP;
-            }
-
             // NestoAPI#489: el ámbito se filtra ANTES que la versión. Nesto (1.10.x) y NestoApp (2.x)
             // tienen espacios de versiones distintos: comparar desdeVersion sin acotar el producto
             // descartaría o colaría entradas del otro.
-            if (!string.IsNullOrWhiteSpace(ambito))
-            {
-                string ambitoBuscado = ambito.Trim();
-                novedades = novedades
-                    .Where(n => string.Equals(n.Ambito?.Trim(), ambitoBuscado, StringComparison.OrdinalIgnoreCase))
-                    .ToList();
-            }
-            else
-            {
-                // Sin ámbito (Nesto de escritorio, que solo manda desdeVersion=1.10.x): NUNCA las de la app.
-                // El 17/09/26 se colaron las 2.20.x de NestoApp en el popup de Nesto porque 2.20 > 1.10.
-                novedades = novedades
-                    .Where(n => !string.Equals(n.Ambito?.Trim(), AMBITO_NESTOAPP, StringComparison.OrdinalIgnoreCase))
-                    .ToList();
-            }
+            string ambitoEfectivo = AmbitoEfectivo(ambito);
+            novedades = novedades.Where(n => EsDelAmbito(n.Ambito, ambitoEfectivo)).ToList();
 
             if (Version.TryParse(desdeVersion, out Version versionVista))
             {
@@ -100,6 +77,165 @@ namespace NestoAPI.Controllers
             return Ok(ConFeedback(ordenadas));
         }
 
+        /// <summary>
+        /// APAÑO TEMPORAL (23/09/26, NestoApp#186): la NestoApp publicada (2.20.5) pide sin ámbito y
+        /// filtra en cliente, así que desde f167cd3e (sin ámbito = escritorio) no le llega ninguna
+        /// novedad suya. Nesto llama con HttpClient de .NET (sin User-Agent de navegador); la app
+        /// llama desde el WebView del móvil (User-Agent «Mozilla/...»). Se retira cuando todas las
+        /// NestoApp en uso manden ?ambito=NestoApp.
+        /// </summary>
+        private string AmbitoEfectivo(string ambito) =>
+            string.IsNullOrWhiteSpace(ambito) && EsLlamadaDesdeNavegador(Request) ? AMBITO_NESTOAPP : ambito;
+
+        /// <summary>
+        /// Con ámbito, solo las de ese producto. Sin ámbito (Nesto de escritorio, que solo manda
+        /// desdeVersion=1.10.x): todo MENOS las de la app. El 17/09/26 se colaron las 2.20.x de
+        /// NestoApp en el popup de Nesto porque 2.20 > 1.10.
+        /// </summary>
+        internal static bool EsDelAmbito(string ambitoNovedad, string ambito)
+        {
+            return !string.IsNullOrWhiteSpace(ambito)
+                ? string.Equals(ambitoNovedad?.Trim(), ambito.Trim(), StringComparison.OrdinalIgnoreCase)
+                : !string.Equals(ambitoNovedad?.Trim(), AMBITO_NESTOAPP, StringComparison.OrdinalIgnoreCase);
+        }
+
+        #region NestoAPI#526/#527: sugerencias de los usuarios y buscador
+
+        // GET api/Novedades/Sugerencias?ambito=NestoApp&incluirCerradas=false
+        // Las que salen por delante de la versión actual: sin versión, abiertas, las más votadas arriba.
+        [HttpGet]
+        [Route("api/Novedades/Sugerencias")]
+        [ResponseType(typeof(List<SugerenciaNovedadDTO>))]
+        public IHttpActionResult GetSugerencias(string ambito = null, bool incluirCerradas = false)
+        {
+            string ambitoEfectivo = AmbitoEfectivo(ambito);
+            List<SugerenciaNovedadDTO> sugerencias = servicio.LeerSugerencias(incluirCerradas)
+                .Where(s => EsDelAmbito(s.Ambito, ambitoEfectivo))
+                .Select(s => s.ADto())
+                .ToList();
+            _ = RellenarFeedback(sugerencias);
+            return Ok(sugerencias
+                .OrderByDescending(s => (s.VotosPositivos ?? 0) - (s.VotosNegativos ?? 0))
+                .ThenByDescending(s => s.SugeridaFecha)
+                .ToList());
+        }
+
+        // POST api/Novedades/Sugerencias  { "Texto": "Aquí iría bien un botón...", "ImagenBase64": "...", "VersionCliente": "1.10.31.0" }
+        [HttpPost]
+        [Authorize]
+        [Route("api/Novedades/Sugerencias")]
+        [ResponseType(typeof(SugerenciaNovedadDTO))]
+        public IHttpActionResult PostSugerencia([FromBody] NuevoComentarioNovedadDTO sugerencia)
+        {
+            string usuario = ReglasFeedbackNovedades.ClaveUsuario(User);
+            if (usuario == null)
+            {
+                return Unauthorized();
+            }
+            string cliente = ReglasFeedbackNovedades.Cliente(User);
+            if (cliente == ReglasFeedbackNovedades.CLIENTE_TIENDA)
+            {
+                // Las sugerencias son de Nesto y de NestoApp; la tienda no tiene Novedades.
+                return StatusCode(HttpStatusCode.Forbidden);
+            }
+            string error = ReglasFeedbackNovedades.Validar(sugerencia, out byte[] imagen, out string tipo);
+            if (error != null)
+            {
+                return BadRequest(error);
+            }
+            var aGrabar = new SugerenciaNovedadAGrabar
+            {
+                Ambito = cliente == ReglasFeedbackNovedades.CLIENTE_NESTOAPP ? AMBITO_NESTOAPP : "Nesto",
+                Titulo = ReglasSugerenciasNovedades.TituloDesde(sugerencia.Texto),
+                TextoOriginal = sugerencia.Texto.Trim(),
+                Imagen = imagen,
+                ImagenTipo = tipo,
+                SugeridaPor = usuario,
+                SugeridaNombre = ReglasFeedbackNovedades.NombreVisible(User)
+            };
+            int id = servicio.CrearSugerencia(aGrabar);
+            return Ok(new SugerenciaNovedadDTO
+            {
+                Id = id,
+                Fecha = DateTime.Today,
+                Categoria = ReglasSugerenciasNovedades.CATEGORIA_SUGERENCIA,
+                Titulo = aGrabar.Titulo,
+                Ambito = aGrabar.Ambito,
+                TextoOriginal = aGrabar.TextoOriginal,
+                SugeridaNombre = aGrabar.SugeridaNombre,
+                SugeridaFecha = DateTime.Now,
+                Estado = ReglasSugerenciasNovedades.ESTADO_PENDIENTE,
+                TieneImagen = imagen != null,
+                VotosPositivos = 0,
+                VotosNegativos = 0,
+                NumeroComentarios = 0
+            });
+        }
+
+        // GET api/Novedades/7/Imagen  -> la captura de la sugerencia con su content-type
+        [HttpGet]
+        [Authorize]
+        [Route("api/Novedades/{id:int}/Imagen")]
+        public HttpResponseMessage GetImagenNovedad(int id)
+        {
+            ImagenComentarioNovedad imagen = servicio.LeerImagen(id);
+            if (imagen?.Imagen == null)
+            {
+                return Request.CreateResponse(HttpStatusCode.NotFound);
+            }
+            var respuesta = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(imagen.Imagen)
+            };
+            respuesta.Content.Headers.ContentType = new MediaTypeHeaderValue(imagen.ImagenTipo ?? ReglasFeedbackNovedades.TIPO_PNG);
+            return respuesta;
+        }
+
+        // PUT api/Novedades/Sugerencias/7  { "Titulo": "...", "Descripcion": "...", "Estado": "Aceptada", "Version": "1.10.31.0" }
+        // Desarrollo (Dirección / Informática): el texto claro, el estado y, al implementarla, la versión.
+        [HttpPut]
+        [Authorize]
+        [Route("api/Novedades/Sugerencias/{id:int}")]
+        public IHttpActionResult PutSugerencia(int id, [FromBody] ActualizarSugerenciaNovedadDTO cambios)
+        {
+            if (!PuedeRevisarFeedback())
+            {
+                return StatusCode(HttpStatusCode.Forbidden);
+            }
+            string error = ReglasSugerenciasNovedades.Normalizar(cambios);
+            if (error != null)
+            {
+                return BadRequest(error);
+            }
+            return servicio.ActualizarSugerencia(id, cambios, User?.Identity?.Name)
+                ? (IHttpActionResult)StatusCode(HttpStatusCode.NoContent)
+                : NotFound();
+        }
+
+        // GET api/Novedades/Buscar?texto=reembolso envío&ambito=NestoApp
+        // Novedades y sugerencias que contienen todas las palabras, sin distinguir tildes. Cada una
+        // dice su versión (null = sugerencia) para que el cliente salte a ella y se pueda comentar.
+        [HttpGet]
+        [Route("api/Novedades/Buscar")]
+        [ResponseType(typeof(List<SugerenciaNovedadDTO>))]
+        public IHttpActionResult GetBuscar(string texto, string ambito = null)
+        {
+            List<string> palabras = ReglasSugerenciasNovedades.Palabras(texto);
+            if (palabras.Count == 0)
+            {
+                return BadRequest($"Escribe al menos una palabra de {ReglasSugerenciasNovedades.LONGITUD_MINIMA_PALABRA} letras");
+            }
+            string ambitoEfectivo = AmbitoEfectivo(ambito);
+            List<SugerenciaNovedadDTO> encontradas = servicio.Buscar(palabras)
+                .Where(n => EsDelAmbito(n.Ambito, ambitoEfectivo))
+                .Select(n => n.ADto())
+                .ToList();
+            _ = RellenarFeedback(encontradas);
+            return Ok(encontradas);
+        }
+
+        #endregion
+
         #region NestoAPI#520: feedback de los usuarios (votos y comentarios)
 
         // Quién puede leer el feedback de todos para el desarrollo (revisión diaria, como ELMAH).
@@ -116,6 +252,20 @@ namespace NestoAPI.Controllers
             if (feedback == null || novedades.Count == 0)
             {
                 return novedades;
+            }
+            List<NovedadConFeedbackDTO> conFeedback = novedades.Select(NovedadConFeedbackDTO.Desde).ToList();
+            return RellenarFeedback(conFeedback) ? conFeedback.Cast<NovedadDTO>().ToList() : novedades;
+        }
+
+        /// <summary>
+        /// Rellena en su sitio votos, voto propio y nº de comentarios. False si no se ha podido (sin
+        /// feedback o fallo de las tablas): quien llama sirve las novedades sin él.
+        /// </summary>
+        internal bool RellenarFeedback<T>(List<T> novedades) where T : NovedadConFeedbackDTO
+        {
+            if (feedback == null || novedades.Count == 0)
+            {
+                return false;
             }
             List<ResumenFeedbackNovedad> resumen;
             try
@@ -136,19 +286,18 @@ namespace NestoAPI.Controllers
                         // El diagnóstico nunca rompe las Novedades.
                     }
                 }
-                return novedades;
+                return false;
             }
             Dictionary<int, ResumenFeedbackNovedad> porNovedad = resumen.GroupBy(r => r.NovedadId).ToDictionary(g => g.Key, g => g.First());
-            return novedades.Select(n =>
+            foreach (T novedad in novedades)
             {
-                NovedadConFeedbackDTO conFeedback = NovedadConFeedbackDTO.Desde(n);
-                porNovedad.TryGetValue(n.Id, out ResumenFeedbackNovedad r);
-                conFeedback.VotosPositivos = r?.Positivos ?? 0;
-                conFeedback.VotosNegativos = r?.Negativos ?? 0;
-                conFeedback.MiVoto = r?.MiVoto;
-                conFeedback.NumeroComentarios = r?.Comentarios ?? 0;
-                return (NovedadDTO)conFeedback;
-            }).ToList();
+                porNovedad.TryGetValue(novedad.Id, out ResumenFeedbackNovedad r);
+                novedad.VotosPositivos = r?.Positivos ?? 0;
+                novedad.VotosNegativos = r?.Negativos ?? 0;
+                novedad.MiVoto = r?.MiVoto;
+                novedad.NumeroComentarios = r?.Comentarios ?? 0;
+            }
+            return true;
         }
 
         // PUT api/Novedades/5/Voto  { "Voto": 1 | -1 | 0 }   (0 = quitar el voto)
