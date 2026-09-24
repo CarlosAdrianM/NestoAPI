@@ -21,7 +21,10 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$token = (Invoke-RestMethod -Method Post -Uri "$Api/api/auth/windows-token" -UseDefaultCredentials).token
+# PowerShell 7 no manda las credenciales de Windows por http sin este permiso explícito (la API va por http).
+$sinCifrar = @{}
+if ($PSVersionTable.PSVersion.Major -ge 6 -and $Api.StartsWith("http:")) { $sinCifrar.AllowUnencryptedAuthentication = $true }
+$token = (Invoke-RestMethod -Method Post -Uri "$Api/api/auth/windows-token" -UseDefaultCredentials @sinCifrar).token
 if (-not $token) { throw "No se ha obtenido el token de Windows." }
 $cabeceras = @{ Authorization = "Bearer $token" }
 
