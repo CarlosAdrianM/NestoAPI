@@ -332,7 +332,9 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     .Where(r => r.ImportePedido - importe <= r.ImportePedido * FRACCION_CERCANIA_IMPORTE)
                     .OrderBy(r => r.ImportePedido)
                     .FirstOrDefault();
-                if (cercano != null)
+                // #528: «añadiendo X € te llevas el regalo» no pasa por la validación (el pedido aún no llega),
+                // así que el stock del regalo se mira aquí; si no, se promete un regalo que luego no puede entrar.
+                if (cercano != null && HayStockParaRegalar(servicio, producto, cercano.Cantidad))
                 {
                     decimal falta = cercano.ImportePedido - importe;
                     sugerencias.Add(new SugerenciaOfertaDTO
@@ -348,6 +350,11 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 }
             }
             return sugerencias;
+        }
+
+        private static bool HayStockParaRegalar(IServicioPrecios servicio, string producto, int cantidad)
+        {
+            return servicio.BuscarProducto(producto)?.Ficticio == true || servicio.BuscarStockDisponibleTotal(producto) >= cantidad;
         }
 
         /// <summary>
