@@ -652,6 +652,7 @@
     <Compile Include="Infraestructure\ExtractosCliente\ServicioLiquidarEfectos.cs" />
     <Compile Include="Infraestructure\Remesas\CrearRemesaService.cs" />
     <Compile Include="Infraestructure\Remesas\SelectorEfectosCobrables.cs" />
+    <Compile Include="Infraestructure\Remesas\GatingEntregaFacturas.cs" />
     <Compile Include="Infraestructure\Contabilidad\RepositorioTerminalesTPV.cs" />
     <Compile Include="Infraestructure\Contabilidad\GestorContabilidad.cs" />
     <Compile Include="Infraestructure\Contabilidad\GestorCuaderno43.cs" />

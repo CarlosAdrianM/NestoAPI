@@ -22,21 +22,21 @@ namespace NestoAPI.Infraestructure.Remesas
     {
         private readonly NVEntities db;
         private readonly Func<string, Task<List<string>>> leerEstadosQueBloquean;
-        private readonly Func<int[]> leerAgenciasConSeguimiento;
+        private readonly GatingEntregaFacturas gatingEntrega;
 
         public SelectorEfectosCobrables(NVEntities db, Func<string, Task<List<string>>> leerEstadosQueBloquean = null,
             Func<int[]> leerAgenciasConSeguimiento = null)
         {
             this.db = db;
-            this.leerEstadosQueBloquean = leerEstadosQueBloquean ?? LeerEstadosQueBloqueanBd;
-            // Fallo 20/08/26: el gating solo puede mirar agencias cuyo estado SÍ actualizamos
-            // (las del poll de seguimiento). Inyectable para tests.
-            this.leerAgenciasConSeguimiento = leerAgenciasConSeguimiento
-                ?? (() => new Agencias.FabricaAgenciasRemotas(db).AgenciasConSeguimiento.ToArray());
+            this.leerEstadosQueBloquean = leerEstadosQueBloquean ?? (e => LeerEstadosQueBloqueanBd(db, e));
+            // El gating de entrega (#172) vive en GatingEntregaFacturas para que lo compartan la
+            // remesa y el aviso de facturas vencidas (#534). Agencias con seguimiento inyectables.
+            gatingEntrega = new GatingEntregaFacturas(db, leerAgenciasConSeguimiento);
         }
 
         // EstadosExtracto no está en el EDMX (SQL crudo, patrón Cargos). Inyectable para tests.
-        private async Task<List<string>> LeerEstadosQueBloqueanBd(string empresa)
+        // Internal y estático para que el aviso de facturas vencidas (#534) use los MISMOS estados.
+        internal static async Task<List<string>> LeerEstadosQueBloqueanBd(NVEntities db, string empresa)
         {
             return await db.Database.SqlQuery<string>(
                 "SELECT LTRIM(RTRIM([Número])) FROM EstadosExtracto WHERE Empresa = @p0 AND [BloquearLiquidación] = 1",
@@ -87,46 +87,10 @@ namespace NestoAPI.Infraestructure.Remesas
                 await leerEstadosQueBloquean(empresa).ConfigureAwait(false),
                 StringComparer.OrdinalIgnoreCase);
 
-            // Gating de entrega (#172, refinado por Carlos 21/07): un efecto se retiene si
-            // ALGÚN envío de los pedidos de su factura no está entregado (pedidos parciales:
-            // TODOS entregados). Cadena: factura → LinPedidoVta.[Nº Factura] → Número
-            // (pedido) → EnviosAgencia.Pedido → Estado. Sin envíos = se libera. Matices:
-            // - Envíos ANTERIORES a la fecha de corte del poll de seguimiento: sin
-            //   seguimiento posible ('tramitado' eterno, caso NV2515520 de sept/2025) → NO
-            //   retienen. La señal correcta es la fecha de corte, no un timeout de N días.
-            // - Envíos posteriores al corte sin entregar: retienen SIN timeout (el poll los
-            //   sigue; si no confirma, puede estar perdido o en reparto — no liberar).
-            // - INCIDENTADO: retiene siempre, con su motivo.
-            // - DEVUELTO: retiene siempre — la mercancía volvió, ese cobro no procede por
-            //   remesa; salida manual (abono / corregir el envío).
-            // - Fallo 20/08/26 (caso 3028653): solo cuentan los envíos de agencias CON
-            //   SEGUIMIENTO (las que el poll actualiza hasta Entregado: ASM, Innovatrans...).
-            //   Un envío de Correos Express u otra agencia sin integración se queda en
-            //   'tramitado' PARA SIEMPRE y retenía el efecto eternamente: nunca iba al banco.
-            List<string> documentos = efectos.Select(e => e.Nº_Documento?.Trim())
-                .Where(d => !string.IsNullOrEmpty(d)).Distinct().ToList();
-            var facturaPedidos = await db.LinPedidoVtas
-                .Where(l => l.Empresa == empresa && documentos.Contains(l.Nº_Factura))
-                .Select(l => new { l.Nº_Factura, Pedido = l.Número })
-                .Distinct()
-                .ToListAsync().ConfigureAwait(false);
-            List<int> pedidos = facturaPedidos.Select(fp => fp.Pedido).Distinct().ToList();
-            DateTime corteSeguimiento = SeguimientoEnviosJobsService.FECHA_CORTE;
-            int[] agenciasConSeguimiento = leerAgenciasConSeguimiento();
-            var enviosNoEntregados = await db.EnviosAgencias
-                .Where(ea => ea.Pedido != null && pedidos.Contains(ea.Pedido.Value)
-                    && agenciasConSeguimiento.Contains(ea.Agencia)
-                    && ea.Estado != Constantes.Agencias.ESTADO_ENTREGADO
-                    && ea.Fecha >= corteSeguimiento)
-                .Select(ea => new { Pedido = ea.Pedido.Value, ea.Estado })
-                .ToListAsync().ConfigureAwait(false);
-            Dictionary<string, List<int>> pedidosPorFactura = facturaPedidos
-                .GroupBy(fp => fp.Nº_Factura?.Trim())
-                .ToDictionary(g => g.Key, g => g.Select(x => x.Pedido).Distinct().ToList());
-            Dictionary<int, short> peorEstadoPorPedido = enviosNoEntregados
-                .GroupBy(e => e.Pedido)
-                .ToDictionary(g => g.Key, g => g.Max(x => (short)x.Estado));
-            HashSet<int> pedidosRetenidos = new HashSet<int>(peorEstadoPorPedido.Keys);
+            // Gating de entrega (#172): ver GatingEntregaFacturas (núcleo compartido con #534).
+            Dictionary<string, short> peorEstadoPorFactura = await gatingEntrega
+                .PeorEstadoSinEntregarPorFactura(empresa, efectos.Select(e => e.Nº_Documento))
+                .ConfigureAwait(false);
 
             List<string> clientes = efectos.Select(e => e.Número?.Trim()).Distinct().ToList();
 
@@ -173,25 +137,10 @@ namespace NestoAPI.Infraestructure.Remesas
                     motivo = MotivoRetencionIban(fichaCcc, e.CCC?.Trim());
                 }
                 if (motivo == null && documento != null
-                    && pedidosPorFactura.TryGetValue(documento, out List<int> pedidosFactura))
+                    && peorEstadoPorFactura.TryGetValue(documento, out short peorEstado))
                 {
-                    List<short> estadosEnvios = pedidosFactura
-                        .Where(p => peorEstadoPorPedido.ContainsKey(p))
-                        .Select(p => peorEstadoPorPedido[p])
-                        .ToList();
-                    if (estadosEnvios.Any())
-                    {
-                        short peorEstado = estadosEnvios.Max();
-                        motivo = peorEstado >= Constantes.Agencias.ESTADO_DEVUELTO
-                            ? "Retenido: envío DEVUELTO — el cobro no procede por remesa; requiere abono o gestión manual."
-                            : peorEstado >= Constantes.Agencias.ESTADO_INCIDENTADO
-                                ? "Retenido: envío INCIDENTADO — esperar a que se resuelva la incidencia (#172)."
-                                : "Retenido: el pedido tiene envíos de agencia sin confirmar la entrega (#172).";
-                        // Fallo 20/08/26: la retención por entrega pendiente o incidencia se puede
-                        // FORZAR desde la remesa (el usuario confirma que quiere girarlo igual);
-                        // el DEVUELTO no — la mercancía volvió y ese cobro no procede.
-                        forzable = peorEstado < Constantes.Agencias.ESTADO_DEVUELTO;
-                    }
+                    motivo = GatingEntregaFacturas.MotivoRetencion(peorEstado);
+                    forzable = GatingEntregaFacturas.EsForzable(peorEstado);
                 }
 
                 return new EfectoCandidatoDTO
