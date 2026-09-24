@@ -1308,5 +1308,37 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         #endregion
+
+        #region CrearCabeceraDTO - pedido vacío (ELMAH 23/09/26)
+
+        // Abrir un pedido que se quedó a medio crear (cabecera sin cliente, contacto ni plazos, sin líneas)
+        // tumbaba GetPedidoVenta con un NullReferenceException (pedido 926861, seis veces seguidas).
+        [TestMethod]
+        public void CrearCabeceraDTO_PedidoVacioSinClienteNiPlazos_NoRevienta()
+        {
+            var cab = new CabPedidoVta { Empresa = "1  ", Número = 926861, Nº_Cliente = null, Contacto = null, PlazosPago = null };
+
+            PedidoVentaDTO pedido = GestorPedidosVenta.CrearCabeceraDTO(cab);
+
+            Assert.AreEqual("1", pedido.empresa);
+            Assert.AreEqual(926861, pedido.numero);
+            Assert.IsNull(pedido.cliente);
+            Assert.IsNull(pedido.contacto);
+            Assert.IsNull(pedido.plazosPago);
+        }
+
+        [TestMethod]
+        public void CrearCabeceraDTO_PedidoNormal_QuitaElRelleno()
+        {
+            var cab = new CabPedidoVta { Empresa = "1  ", Número = 1, Nº_Cliente = "15191     ", Contacto = "0  ", PlazosPago = "CONTADO   " };
+
+            PedidoVentaDTO pedido = GestorPedidosVenta.CrearCabeceraDTO(cab);
+
+            Assert.AreEqual("15191", pedido.cliente);
+            Assert.AreEqual("0", pedido.contacto);
+            Assert.AreEqual("CONTADO", pedido.plazosPago);
+        }
+
+        #endregion
     }
 }

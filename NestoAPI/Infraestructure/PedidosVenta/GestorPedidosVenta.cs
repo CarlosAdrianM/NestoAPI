@@ -690,6 +690,47 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             return fechaDevolver;
         }
 
+        /// <summary>
+        /// La cabecera del DTO. Tolera los pedidos vacíos que se quedan a medio crear (sin cliente, contacto ni
+        /// plazos): abrirlos tumbaba GetPedidoVenta con un NullReferenceException (ELMAH 23/09/26, pedido 926861).
+        /// </summary>
+        internal static PedidoVentaDTO CrearCabeceraDTO(CabPedidoVta cab)
+        {
+            return new PedidoVentaDTO
+            {
+                empresa = cab.Empresa?.Trim(),
+                numero = cab.Número,
+                cliente = cab.Nº_Cliente?.Trim(),
+                contacto = cab.Contacto?.Trim(),
+                fecha = cab.Fecha,
+                formaPago = cab.Forma_Pago,
+                plazosPago = cab.PlazosPago?.Trim(),
+                primerVencimiento = cab.Primer_Vencimiento,
+                iva = cab.IVA,
+                vendedor = cab.Vendedor,
+                comentarios = cab.Comentarios,
+                comentarioPicking = cab.ComentarioPicking,
+                avisarConImporteAlCogerPicking = cab.AvisarConImporteAlCogerPicking,
+                periodoFacturacion = cab.Periodo_Facturacion,
+                ruta = cab.Ruta,
+                serie = cab.Serie,
+                ccc = cab.CCC,
+                origen = !string.IsNullOrWhiteSpace(cab.Origen) ? cab.Origen : cab.Empresa,
+                contactoCobro = cab.ContactoCobro,
+                noComisiona = cab.NoComisiona,
+                vistoBuenoPlazosPago = cab.vtoBuenoPlazosPago,
+                mantenerJunto = cab.MantenerJunto,
+                servirJunto = cab.ServirJunto,
+                // #482: al leer siempre con valor (NULL en BD = el que dice ServirJunto)
+                modoServicio = Constantes.Pedidos.ModosServicio.Efectivo(cab.ModoServicio, cab.ServirJunto),
+                notaEntrega = cab.NotaEntrega,
+                Agrupada = cab.Agrupada,
+                suPedido = cab.SuPedido,
+                NoCobrarComisionReembolso = cab.NoCobrarComisionReembolso,
+                Usuario = cab.Usuario
+            };
+        }
+
         internal static async Task<PedidoVentaDTO> LeerPedido(string empresa, int numero)
         {
             using (NVEntities db = new NVEntities())
@@ -702,47 +743,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
                 decimal totalComprobacion = RoundingHelper.DosDecimalesRound(cabPedidoVta.LinPedidoVtas.Sum(l => l.Total));
 
-                PedidoVentaDTO pedido;
-                try
-                {
-                    pedido = new PedidoVentaDTO
-                    {
-                        empresa = cabPedidoVta.Empresa.Trim(),
-                        numero = cabPedidoVta.Número,
-                        cliente = cabPedidoVta.Nº_Cliente.Trim(),
-                        contacto = cabPedidoVta.Contacto.Trim(),
-                        fecha = cabPedidoVta.Fecha,
-                        formaPago = cabPedidoVta.Forma_Pago,
-                        plazosPago = cabPedidoVta.PlazosPago.Trim(),
-                        primerVencimiento = cabPedidoVta.Primer_Vencimiento,
-                        iva = cabPedidoVta.IVA,
-                        vendedor = cabPedidoVta.Vendedor,
-                        comentarios = cabPedidoVta.Comentarios,
-                        comentarioPicking = cabPedidoVta.ComentarioPicking,
-                        avisarConImporteAlCogerPicking = cabPedidoVta.AvisarConImporteAlCogerPicking,
-                        periodoFacturacion = cabPedidoVta.Periodo_Facturacion,
-                        ruta = cabPedidoVta.Ruta,
-                        serie = cabPedidoVta.Serie,
-                        ccc = cabPedidoVta.CCC,
-                        origen = !string.IsNullOrWhiteSpace(cabPedidoVta.Origen) ? cabPedidoVta.Origen : cabPedidoVta.Empresa,
-                        contactoCobro = cabPedidoVta.ContactoCobro,
-                        noComisiona = cabPedidoVta.NoComisiona,
-                        vistoBuenoPlazosPago = cabPedidoVta.vtoBuenoPlazosPago,
-                        mantenerJunto = cabPedidoVta.MantenerJunto,
-                        servirJunto = cabPedidoVta.ServirJunto,
-                        // #482: al leer siempre con valor (NULL en BD = el que dice ServirJunto)
-                        modoServicio = Constantes.Pedidos.ModosServicio.Efectivo(cabPedidoVta.ModoServicio, cabPedidoVta.ServirJunto),
-                        notaEntrega = cabPedidoVta.NotaEntrega,
-                        Agrupada = cabPedidoVta.Agrupada,
-                        suPedido = cabPedidoVta.SuPedido,
-                        NoCobrarComisionReembolso = cabPedidoVta.NoCobrarComisionReembolso,
-                        Usuario = cabPedidoVta.Usuario
-                    };
-                }
-                catch (Exception ex)
-                {
-                    throw ex;
-                }
+                PedidoVentaDTO pedido = CrearCabeceraDTO(cabPedidoVta);
 
                 var parametros = db.ParametrosIVA
                     .Where(p => p.Empresa == empresa && p.IVA_Cliente_Prov == pedido.iva)
@@ -755,8 +756,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
                 pedido.ParametrosIva = await parametros.ToListAsync().ConfigureAwait(false);
 
-                var plazosPago = db.PlazosPago.Single(p => p.Empresa == empresa && p.Número == pedido.plazosPago);
-                pedido.DescuentoPP = plazosPago.DtoProntoPago;
+                // Un pedido vacío (cabecera sin cliente, sin plazos ni líneas) también se tiene que poder abrir.
+                var plazosPago = pedido.plazosPago == null ? null : db.PlazosPago.SingleOrDefault(p => p.Empresa == empresa && p.Número == pedido.plazosPago);
+                pedido.DescuentoPP = plazosPago?.DtoProntoPago ?? 0;
 
                 // Carlos 09/12/25: Issue #253/#52 - Join con Productos para obtener EsFicticio
                 List<LineaPedidoVentaDTO> lineasPedido = (from l in db.LinPedidoVtas
