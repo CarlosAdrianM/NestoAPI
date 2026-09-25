@@ -847,6 +847,11 @@ namespace NestoAPI.Infraestructure.Facturas
         /// (doble alta por carrera, o respuesta perdida de un envío anterior).</summary>
         internal const string ERROR_FACTURA_YA_REGISTRADA = "Ya existe una factura con la misma serie";
 
+        /// <summary>NestoAPI#522: código (nuestro, no del proveedor) de la respuesta que devuelve el
+        /// envío cuando una factura pendiente por incidencia es de otro día y NO se reenvía todavía
+        /// (a la espera de que Verifacti confirme el camino que respeta la fecha original).</summary>
+        internal const string CODIGO_INCIDENCIA_OTRO_DIA = "INCIDENCIA_OTRO_DIA";
+
         // NestoAPI#385: el job horario de Verifactu y el envío al facturar corren en el MISMO
         // proceso (Hangfire in-process, un único servidor): un candado por factura elimina la
         // doble alta cuando la factura se crea en la ventana de la pasada del job (caso real
@@ -1062,6 +1067,29 @@ namespace NestoAPI.Infraestructure.Facturas
                         $"{Verifactu.MapeadorFacturaVerifactu.LIMITE_FACTURA_SIMPLIFICADA:C}: hay que revisarla.");
                 }
 
+                // NestoAPI#522: la factura quedó «pendiente por incidencia» (fallo TÉCNICO al
+                // enviarla: sin conexión, timeout, 5xx). La normativa exige remitirla al recuperarse
+                // marcando la incidencia (Verifacti: incidencia = "S"). El create exige que la fecha
+                // de expedición sea la del día, y la fecha de la factura NO se cambia (decisión de
+                // Carlos, 24/09/26): solo se reenvía el MISMO día. Las de días anteriores esperan a
+                // que Verifacti confirme si el PUT modify vale para un alta que nunca llegó (correo
+                // del 25/09/26): quedan marcadas y visibles en el correo del job, sin reenviar.
+                if (factura.VerifactuIncidencia == true)
+                {
+                    request.Incidencia = true;
+                    if (factura.Fecha.Date != DateTime.Today)
+                    {
+                        return new Verifactu.VerifactuResponse
+                        {
+                            Exitoso = false,
+                            CodigoError = CODIGO_INCIDENCIA_OTRO_DIA,
+                            MensajeError = $"Pendiente por incidencia técnica desde el {factura.Fecha:dd/MM/yyyy}: " +
+                                "no se reenvía hasta que Verifacti confirme cómo declararla manteniendo la fecha (#522). " +
+                                $"Último error: {factura.VerifactuUltimoError?.Trim()}"
+                        };
+                    }
+                }
+
                 // NestoAPI#346: el create de Verifacti solo admite fecha_expedicion de hoy (con
                 // tolerancia observada de ayer). Una factura más antigua sin declarar (NIF
                 // corregido días después, caída del proveedor...) va por el camino legal de la
@@ -1095,6 +1123,15 @@ namespace NestoAPI.Infraestructure.Facturas
                         .FirstOrDefaultAsync();
                     duplicadoBenigno = !string.IsNullOrWhiteSpace(uuidPersistido)
                         || !string.IsNullOrWhiteSpace(factura.VerifactuUUID);
+                }
+
+                // NestoAPI#522: fallo TÉCNICO (el registro no se ha tramitado) → la factura queda
+                // «pendiente por incidencia». La marca se conserva al registrarla después: es el
+                // rastro de que se declaró con incidencia = S (el payload queda en VerifactuRegistros).
+                bool falloTecnico = !exitoso && respuesta != null && respuesta.EsFalloTecnico;
+                if (falloTecnico)
+                {
+                    factura.VerifactuIncidencia = true;
                 }
 
                 factura.VerifactuUltimoIntento = DateTime.Now;
@@ -1144,6 +1181,10 @@ namespace NestoAPI.Infraestructure.Facturas
                           "pero no tenemos su UUID (la respuesta de un envío anterior se perdió): " +
                           "hay que recuperar el UUID (panel de Verifacti o POST /verifactu/list) " +
                           "y grabarlo en VerifactuUUID (#385)."
+                        : falloTecnico
+                        ? $"Verifactu: fallo técnico al enviar la factura {numeroFactura} " +
+                          $"({respuesta.CodigoError}): {respuesta.MensajeError}. Queda PENDIENTE POR " +
+                          "INCIDENCIA: se reenviará con incidencia=S el mismo día (#522)."
                         : $"Verifactu: error al enviar la factura {numeroFactura} " +
                           $"({respuesta?.CodigoError}): {respuesta?.MensajeError}";
                     if (Verifactu.DeduplicadorErroresVerifactu.EsNovedad(claveRuido, mensaje))

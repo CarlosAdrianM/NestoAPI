@@ -114,6 +114,20 @@ namespace NestoAPI.Infraestructure.Verifactu.Verifacti
             return await EnviarRegistroAsync(factura, rechazoPrevio ?? "N");
         }
 
+        internal const string CODIGO_ERROR_CONEXION = "ERROR_CONEXION";
+        internal const string CODIGO_TIMEOUT = "TIMEOUT";
+
+        /// <summary>
+        /// NestoAPI#522: un 5xx es que la API de Verifacti está caída o averiada (la factura NO se ha
+        /// tramitado): incidencia técnica, se reenvía al recuperarse con incidencia=S. Un 4xx es un
+        /// rechazo de los datos (validación, NIF, autenticación): circuito de corrección de siempre.
+        /// Conservador a propósito: solo 5xx, timeout y sin conexión cuentan como incidencia.
+        /// </summary>
+        internal static bool EsFalloTecnico(System.Net.HttpStatusCode codigo)
+        {
+            return (int)codigo >= 500 && (int)codigo <= 599;
+        }
+
         private async Task<VerifactuResponse> EnviarRegistroAsync(VerifactuFacturaRequest factura, string rechazoPrevio)
         {
             if (!EstaHabilitado)
@@ -157,7 +171,8 @@ namespace NestoAPI.Infraestructure.Verifactu.Verifacti
                         {
                             Exitoso = false,
                             MensajeError = errorResponse?.Error ?? errorResponse?.Message ?? $"Error HTTP {(int)response.StatusCode}",
-                            CodigoError = errorResponse?.ErrorCode ?? response.StatusCode.ToString()
+                            CodigoError = errorResponse?.ErrorCode ?? response.StatusCode.ToString(),
+                            EsFalloTecnico = EsFalloTecnico(response.StatusCode)
                         };
                     }
                     catch
@@ -166,7 +181,8 @@ namespace NestoAPI.Infraestructure.Verifactu.Verifacti
                         {
                             Exitoso = false,
                             MensajeError = $"Error HTTP {(int)response.StatusCode}: {responseBody}",
-                            CodigoError = response.StatusCode.ToString()
+                            CodigoError = response.StatusCode.ToString(),
+                            EsFalloTecnico = EsFalloTecnico(response.StatusCode)
                         };
                     }
                 }
@@ -177,7 +193,8 @@ namespace NestoAPI.Infraestructure.Verifactu.Verifacti
                 {
                     Exitoso = false,
                     MensajeError = $"Error de conexión con Verifacti: {ex.Message}",
-                    CodigoError = "ERROR_CONEXION"
+                    CodigoError = CODIGO_ERROR_CONEXION,
+                    EsFalloTecnico = true
                 };
             }
             catch (TaskCanceledException ex)
@@ -186,7 +203,8 @@ namespace NestoAPI.Infraestructure.Verifactu.Verifacti
                 {
                     Exitoso = false,
                     MensajeError = $"Timeout al conectar con Verifacti: {ex.Message}",
-                    CodigoError = "TIMEOUT"
+                    CodigoError = CODIGO_TIMEOUT,
+                    EsFalloTecnico = true
                 };
             }
             catch (Exception ex)
@@ -308,6 +326,9 @@ namespace NestoAPI.Infraestructure.Verifactu.Verifacti
 
         #region Métodos de mapeo privados
 
+        /// <summary>NestoAPI#522: valor documentado del campo incidencia de Verifacti.</summary>
+        internal const string INCIDENCIA_SI = "S";
+
         /// <summary>
         /// Mapea del DTO genérico al formato específico de Verifacti
         /// </summary>
@@ -318,6 +339,8 @@ namespace NestoAPI.Infraestructure.Verifactu.Verifacti
                 Serie = factura.Serie,
                 Numero = factura.Numero,
                 FechaExpedicion = factura.FechaExpedicion.ToString("dd-MM-yyyy"),
+                // NestoAPI#522: reenvío tras incidencia técnica → "S" (string); si no, no se manda
+                Incidencia = factura.Incidencia ? INCIDENCIA_SI : null,
                 TipoFactura = factura.TipoFactura,
                 Descripcion = factura.Descripcion?.Length > 500
                     ? factura.Descripcion.Substring(0, 500)

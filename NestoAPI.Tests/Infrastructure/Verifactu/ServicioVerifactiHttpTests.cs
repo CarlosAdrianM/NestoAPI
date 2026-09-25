@@ -195,16 +195,129 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
             Assert.AreEqual("Correcto", respuesta.Estado);
         }
 
+        #region NestoAPI#522: incidencia = "S" y fallo técnico vs rechazo de datos
+
+        [TestMethod]
+        public async Task EnviarFacturaAsync_ReenvioTrasIncidencia_MandaIncidenciaComoStringS()
+        {
+            // Documentación de verifactu/create (24/09/26): «Incident indicator. The value S must be
+            // set if an incident has occurred». Es un string "S", no un booleano true.
+            VerifactuFacturaRequest request = CrearRequest();
+            request.Incidencia = true;
+
+            _ = await servicio.EnviarFacturaAsync(request);
+
+            StringAssert.Contains(handler.UltimoBody, "\"incidencia\":\"S\"");
+            Assert.IsFalse(handler.UltimoBody.Contains("\"incidencia\":true"), "Nunca como booleano");
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturaAsync_AltaNormal_NoMandaElCampoIncidencia()
+        {
+            _ = await servicio.EnviarFacturaAsync(CrearRequest());
+
+            Assert.IsFalse(handler.UltimoBody.Contains("incidencia"),
+                "En el alta normal el campo no viaja (ni como \"N\" ni vacío)");
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturaAsync_Http503_EsFalloTecnico()
+        {
+            // Verifacti caído: el registro NO se ha tramitado → incidencia técnica (reenviar con S)
+            handler.Respuesta = new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+            {
+                Content = new StringContent("<html>Service Unavailable</html>", Encoding.UTF8, "text/html")
+            };
+
+            VerifactuResponse respuesta = await servicio.EnviarFacturaAsync(CrearRequest());
+
+            Assert.IsFalse(respuesta.Exitoso);
+            Assert.IsTrue(respuesta.EsFalloTecnico);
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturaAsync_Http500ConJsonDeError_EsFalloTecnico()
+        {
+            handler.Respuesta = new HttpResponseMessage(HttpStatusCode.InternalServerError)
+            {
+                Content = new StringContent("{\"error\":\"Internal error\"}", Encoding.UTF8, "application/json")
+            };
+
+            VerifactuResponse respuesta = await servicio.EnviarFacturaAsync(CrearRequest());
+
+            Assert.IsFalse(respuesta.Exitoso);
+            Assert.IsTrue(respuesta.EsFalloTecnico);
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturaAsync_Http400DeValidacion_NoEsFalloTecnico()
+        {
+            // Rechazo de los DATOS: circuito de corrección de siempre, nunca incidencia
+            handler.Respuesta = new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent("{\"error\":\"El campo nif no tiene un formato válido\"}", Encoding.UTF8, "application/json")
+            };
+
+            VerifactuResponse respuesta = await servicio.EnviarFacturaAsync(CrearRequest());
+
+            Assert.IsFalse(respuesta.Exitoso);
+            Assert.IsFalse(respuesta.EsFalloTecnico);
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturaAsync_SinConexion_EsFalloTecnico()
+        {
+            handler.Excepcion = new HttpRequestException("No such host is known");
+
+            VerifactuResponse respuesta = await servicio.EnviarFacturaAsync(CrearRequest());
+
+            Assert.IsFalse(respuesta.Exitoso);
+            Assert.AreEqual(ServicioVerifacti.CODIGO_ERROR_CONEXION, respuesta.CodigoError);
+            Assert.IsTrue(respuesta.EsFalloTecnico);
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturaAsync_Timeout_EsFalloTecnico()
+        {
+            handler.Excepcion = new TaskCanceledException("A task was canceled");
+
+            VerifactuResponse respuesta = await servicio.EnviarFacturaAsync(CrearRequest());
+
+            Assert.IsFalse(respuesta.Exitoso);
+            Assert.AreEqual(ServicioVerifacti.CODIGO_TIMEOUT, respuesta.CodigoError);
+            Assert.IsTrue(respuesta.EsFalloTecnico);
+        }
+
+        [TestMethod]
+        public void EsFalloTecnico_Solo5xx()
+        {
+            Assert.IsTrue(ServicioVerifacti.EsFalloTecnico(HttpStatusCode.InternalServerError));
+            Assert.IsTrue(ServicioVerifacti.EsFalloTecnico(HttpStatusCode.BadGateway));
+            Assert.IsTrue(ServicioVerifacti.EsFalloTecnico(HttpStatusCode.GatewayTimeout));
+            Assert.IsFalse(ServicioVerifacti.EsFalloTecnico(HttpStatusCode.BadRequest));
+            Assert.IsFalse(ServicioVerifacti.EsFalloTecnico(HttpStatusCode.Unauthorized));
+            Assert.IsFalse(ServicioVerifacti.EsFalloTecnico((HttpStatusCode)422));
+            Assert.IsFalse(ServicioVerifacti.EsFalloTecnico((HttpStatusCode)429));
+        }
+
+        #endregion
+
         private class FakeHttpHandler : HttpMessageHandler
         {
             public HttpRequestMessage UltimaPeticion { get; private set; }
             public string UltimoBody { get; private set; }
             public HttpResponseMessage Respuesta { get; set; }
+            /// <summary>NestoAPI#522: simula sin conexión / timeout (la excepción que lanzaría HttpClient).</summary>
+            public Exception Excepcion { get; set; }
 
             protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             {
                 UltimaPeticion = request;
                 UltimoBody = request.Content != null ? await request.Content.ReadAsStringAsync() : null;
+                if (Excepcion != null)
+                {
+                    throw Excepcion;
+                }
                 return Respuesta;
             }
         }

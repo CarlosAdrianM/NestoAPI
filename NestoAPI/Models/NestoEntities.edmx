@@ -194,6 +194,7 @@
           <Property Name="SuPedido" Type="nvarchar" MaxLength="50" />
           <Property Name="VerifactuUltimoError" Type="nvarchar" MaxLength="500" />
           <Property Name="VerifactuUltimoIntento" Type="datetime" />
+          <Property Name="VerifactuIncidencia" Type="bit" />
         </EntityType>
         <EntityType Name="CabPedidoCmp">
           <Key>
@@ -11917,6 +11918,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="SuPedido" Type="String" MaxLength="50" FixedLength="false" Unicode="true" />
           <Property Name="VerifactuUltimoError" Type="String" MaxLength="500" FixedLength="false" Unicode="true" />
           <Property Name="VerifactuUltimoIntento" Type="DateTime" Precision="3" />
+          <Property Name="VerifactuIncidencia" Type="Boolean" />
         </EntityType>
         <Association Name="FK_CabFacturaVta_CCC">
           <End Type="NVModel.CCC" Role="CCC" Multiplicity="0..1" />
@@ -15541,6 +15543,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySetMapping Name="CabsFacturasVtas">
             <EntityTypeMapping TypeName="NVModel.CabFacturaVta">
               <MappingFragment StoreEntitySet="CabFacturaVta">
+                <ScalarProperty Name="VerifactuIncidencia" ColumnName="VerifactuIncidencia" />
                 <ScalarProperty Name="VerifactuUltimoIntento" ColumnName="VerifactuUltimoIntento" />
                 <ScalarProperty Name="VerifactuUltimoError" ColumnName="VerifactuUltimoError" />
                 <ScalarProperty Name="SuPedido" ColumnName="SuPedido" />

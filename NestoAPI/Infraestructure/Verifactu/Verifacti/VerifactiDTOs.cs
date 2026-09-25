@@ -57,6 +57,13 @@ namespace NestoAPI.Infraestructure.Verifactu.Verifacti
         // fue rechazada. (Cuadro operativo oficial AEAT, FAQs-Desarrolladores pág. 36.)
         [JsonProperty("rechazo_previo", NullValueHandling = NullValueHandling.Ignore)]
         public string RechazoPrevio { get; set; }
+
+        // NestoAPI#522: «Incident indicator. The value S must be set if an incident has occurred»
+        // (documentación de verifactu/create, consultada el 24/09/26). Es un STRING ("S"), no un
+        // booleano. Solo viaja en los reenvíos tras una incidencia técnica; en el alta normal no se
+        // manda (null → se omite del JSON).
+        [JsonProperty("incidencia", NullValueHandling = NullValueHandling.Ignore)]
+        public string Incidencia { get; set; }
     }
 
     /// <summary>

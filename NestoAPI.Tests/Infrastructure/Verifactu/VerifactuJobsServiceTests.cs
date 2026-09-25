@@ -341,6 +341,79 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
             A.CallTo(() => servicioVerifactu.ConsultarEstadoAsync(A<string>.Ignored)).MustNotHaveHappened();
         }
 
+        // NestoAPI#522: pendientes por incidencia técnica de otro día — no se reenvían (a la
+        // espera de Verifacti) pero tienen que ser VISIBLES para administración.
+
+        [TestMethod]
+        public async Task Reintentar_PendientePorIncidenciaDeOtroDia_VaAlApartadoDeIncidenciasDelCorreo()
+        {
+            var factura = Factura("NV2615700", fecha: DateTime.Today.AddDays(-1));
+            factura.VerifactuIncidencia = true;
+            ConFacturas(factura);
+            respuestaReenvio = new VerifactuResponse
+            {
+                Exitoso = false,
+                CodigoError = NestoAPI.Infraestructure.Facturas.ServicioFacturas.CODIGO_INCIDENCIA_OTRO_DIA,
+                MensajeError = "Pendiente por incidencia técnica desde ayer: no se reenvía hasta que Verifacti confirme (#522)"
+            };
+
+            var resumen = new ResumenJobVerifactu();
+            await job.ReintentarNoDeclaradas(resumen);
+
+            Assert.AreEqual(1, resumen.PendientesPorIncidencia.Count);
+            StringAssert.Contains(resumen.PendientesPorIncidencia.Single(), "NV2615700");
+            StringAssert.Contains(resumen.PendientesPorIncidencia.Single(), "#522");
+            Assert.AreEqual(0, resumen.SinDeclarar.Count, "No es un error de datos: apartado propio");
+            A.CallTo(() => validacionNif.MarcarIncorrecto(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored))
+                .MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Reintentar_PendientePorIncidenciaEnDosPasadas_SoloAvisaLaPrimera()
+        {
+            var factura = Factura("NV2615700", fecha: DateTime.Today.AddDays(-1));
+            factura.VerifactuIncidencia = true;
+            ConFacturas(factura);
+            respuestaReenvio = new VerifactuResponse
+            {
+                Exitoso = false,
+                CodigoError = NestoAPI.Infraestructure.Facturas.ServicioFacturas.CODIGO_INCIDENCIA_OTRO_DIA,
+                MensajeError = "Pendiente por incidencia (#522)"
+            };
+
+            var resumen1 = new ResumenJobVerifactu();
+            await job.ReintentarNoDeclaradas(resumen1);
+            var resumen2 = new ResumenJobVerifactu();
+            await job.ReintentarNoDeclaradas(resumen2);
+
+            Assert.AreEqual(1, resumen1.PendientesPorIncidencia.Count);
+            Assert.AreEqual(0, resumen2.PendientesPorIncidencia.Count, "Deduplicado: el job pasa cada hora");
+        }
+
+        [TestMethod]
+        public async Task ProcesarPasada_SoloPendientesPorIncidencia_MandaElCorreoAAdministracion()
+        {
+            var factura = Factura("NV2615700", fecha: DateTime.Today.AddDays(-1));
+            factura.VerifactuIncidencia = true;
+            ConFacturas(factura);
+            respuestaReenvio = new VerifactuResponse
+            {
+                Exitoso = false,
+                CodigoError = NestoAPI.Infraestructure.Facturas.ServicioFacturas.CODIGO_INCIDENCIA_OTRO_DIA,
+                MensajeError = "Pendiente por incidencia (#522)"
+            };
+            System.Net.Mail.MailMessage enviado = null;
+            A.CallTo(() => correo.EnviarCorreoSMTP(A<System.Net.Mail.MailMessage>.Ignored))
+                .Invokes((System.Net.Mail.MailMessage m) => enviado = m)
+                .Returns(true);
+
+            await job.ProcesarPasada();
+
+            Assert.IsNotNull(enviado, "Tiene que ser visible para administración");
+            StringAssert.Contains(enviado.Body, "incidencia técnica");
+            StringAssert.Contains(enviado.Body, "NV2615700");
+        }
+
         [TestMethod]
         public void EsRechazoPorNif_DetectaElCasoRealYNoOtrosErrores()
         {

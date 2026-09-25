@@ -61,6 +61,13 @@ namespace NestoAPI.Infraestructure.Verifactu
         public decimal ImporteTotal { get; set; }
 
         /// <summary>
+        /// NestoAPI#522: el registro se remite tras una INCIDENCIA técnica (caída del proveedor, de la
+        /// conexión o de la luz) que impidió enviarlo en su momento. La normativa exige marcarlo así al
+        /// reenviar (Verifacti: campo <c>incidencia = "S"</c>). False = alta normal (no se envía nada).
+        /// </summary>
+        public bool Incidencia { get; set; }
+
+        /// <summary>
         /// Para rectificativas: tipo de rectificación (S=sustitución, I=diferencia)
         /// Por defecto se usa sustitución.
         /// </summary>

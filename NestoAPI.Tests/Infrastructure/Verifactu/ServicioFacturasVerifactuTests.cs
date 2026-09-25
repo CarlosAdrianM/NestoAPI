@@ -1054,5 +1054,158 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
         }
 
         #endregion
+
+        #region NestoAPI#522: fallo técnico → pendiente por incidencia; reenvío con incidencia=S
+
+        [TestMethod]
+        public async Task EnviarFacturaAVerifactu_FalloTecnico_QuedaPendientePorIncidencia()
+        {
+            // Verifacti caído (5xx / timeout / sin conexión): el registro NO se ha tramitado. La
+            // factura queda marcada para reenviarla con incidencia=S (art. 16.4 Orden HAC/1177/2024).
+            var factura = ConfigurarFactura();
+            A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored))
+                .Returns(new VerifactuResponse
+                {
+                    Exitoso = false,
+                    CodigoError = "TIMEOUT",
+                    MensajeError = "Timeout al conectar con Verifacti",
+                    EsFalloTecnico = true
+                });
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            await servicio.EnviarFacturaAVerifactu("1", "NV2600123");
+
+            Assert.IsTrue(factura.VerifactuIncidencia == true, "Marcada como pendiente por incidencia");
+            Assert.IsNull(factura.VerifactuUUID);
+            StringAssert.Contains(factura.VerifactuUltimoError, "TIMEOUT");
+            A.CallTo(() => db.SaveChangesAsync()).MustHaveHappened();
+            A.CallTo(() => logService.LogError(A<string>.That.Contains("PENDIENTE POR INCIDENCIA"), A<Exception>.Ignored))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturaAVerifactu_RechazoDeDatos_NoEsIncidencia()
+        {
+            // Un 4xx (NIF, validación) es un rechazo de los DATOS: circuito de corrección de siempre
+            var factura = ConfigurarFactura();
+            A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored))
+                .Returns(new VerifactuResponse { Exitoso = false, CodigoError = "400", MensajeError = "NIF incorrecto" });
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            await servicio.EnviarFacturaAVerifactu("1", "NV2600123");
+
+            Assert.IsFalse(factura.VerifactuIncidencia == true, "Un rechazo de datos no es una incidencia técnica");
+            A.CallTo(() => logService.LogError(A<string>.That.Contains("PENDIENTE POR INCIDENCIA"), A<Exception>.Ignored))
+                .MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturaAVerifactu_AltaNormal_NoMandaIncidencia()
+        {
+            _ = ConfigurarFactura();
+            VerifactuFacturaRequest enviado = null;
+            A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored))
+                .Invokes((VerifactuFacturaRequest r) => enviado = r)
+                .Returns(new VerifactuResponse { Exitoso = true, Uuid = "uuid-1" });
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            await servicio.EnviarFacturaAVerifactu("1", "NV2600123");
+
+            Assert.IsNotNull(enviado);
+            Assert.IsFalse(enviado.Incidencia);
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturaAVerifactu_PendientePorIncidenciaDelMismoDia_ReenviaConIncidencia()
+        {
+            // Se restablece el servicio el mismo día: create normal (fecha de expedición = hoy) con
+            // incidencia = S. La marca se conserva como rastro de que se declaró con incidencia.
+            var factura = ConfigurarFactura();
+            factura.VerifactuIncidencia = true;
+            factura.Fecha = DateTime.Today;
+            VerifactuFacturaRequest enviado = null;
+            A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored))
+                .Invokes((VerifactuFacturaRequest r) => enviado = r)
+                .Returns(new VerifactuResponse { Exitoso = true, Uuid = "uuid-incidencia" });
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            await servicio.EnviarFacturaAVerifactu("1", "NV2600123");
+
+            Assert.IsNotNull(enviado, "Se reenvía por create");
+            Assert.IsTrue(enviado.Incidencia, "Con incidencia = S");
+            A.CallTo(() => servicioVerifactu.ModificarFacturaAsync(A<VerifactuFacturaRequest>.Ignored, A<string>.Ignored))
+                .MustNotHaveHappened();
+            Assert.AreEqual("uuid-incidencia", factura.VerifactuUUID);
+            Assert.IsTrue(factura.VerifactuIncidencia == true, "La marca se conserva: se declaró con incidencia");
+            Assert.IsNull(factura.VerifactuUltimoError);
+            var registro = registrosInsertados.Single();
+            StringAssert.Contains(registro.Payload, "\"Incidencia\":true", "El payload auditado deja constancia");
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturaAVerifactu_PendientePorIncidenciaDeAyer_NoSeReenviaTodavia()
+        {
+            // Decisión de Carlos (24/09/26): la fecha de la factura NO se cambia, así que el create
+            // (que exige fecha de expedición = hoy) no vale para días anteriores; irán por PUT modify
+            // manteniendo fecha y número, PENDIENTE de que Verifacti lo confirme (correo 25/09/26).
+            // Mientras: ni create ni modify; queda marcada y visible para administración.
+            var factura = ConfigurarFactura();
+            factura.VerifactuIncidencia = true;
+            factura.Fecha = DateTime.Today.AddDays(-1);
+            factura.VerifactuUltimoError = "(TIMEOUT) Timeout al conectar con Verifacti";
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            VerifactuResponse respuesta = await servicio.EnviarFacturaAVerifactu("1", "NV2600123");
+
+            A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored)).MustNotHaveHappened();
+            A.CallTo(() => servicioVerifactu.ModificarFacturaAsync(A<VerifactuFacturaRequest>.Ignored, A<string>.Ignored))
+                .MustNotHaveHappened();
+            Assert.IsNotNull(respuesta);
+            Assert.IsFalse(respuesta.Exitoso);
+            Assert.AreEqual(ServicioFacturas.CODIGO_INCIDENCIA_OTRO_DIA, respuesta.CodigoError);
+            StringAssert.Contains(respuesta.MensajeError, "#522");
+            StringAssert.Contains(respuesta.MensajeError, "TIMEOUT", "El último error técnico acompaña al aviso");
+            Assert.IsNull(factura.VerifactuUUID);
+            Assert.IsTrue(factura.VerifactuIncidencia == true, "Sigue marcada");
+            Assert.AreEqual(0, registrosInsertados.Count, "No hubo intento: nada que auditar");
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturaAVerifactu_PendientePorIncidenciaDeHaceDosDias_TampocoVaPorModify()
+        {
+            // Sin incidencia, una factura de hace dos días va por modify con X (#346). Con incidencia
+            // se espera a Verifacti: no se manda nada.
+            var factura = ConfigurarFactura();
+            factura.VerifactuIncidencia = true;
+            factura.Fecha = DateTime.Today.AddDays(-2);
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            VerifactuResponse respuesta = await servicio.EnviarFacturaAVerifactu("1", "NV2600123");
+
+            A.CallTo(() => servicioVerifactu.ModificarFacturaAsync(A<VerifactuFacturaRequest>.Ignored, A<string>.Ignored))
+                .MustNotHaveHappened();
+            A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored)).MustNotHaveHappened();
+            Assert.AreEqual(ServicioFacturas.CODIGO_INCIDENCIA_OTRO_DIA, respuesta.CodigoError);
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturaAVerifactu_FalloTecnicoRepetidoElMismoDia_SigueMarcadaYReintentable()
+        {
+            // Segunda caída durante el reenvío: sigue pendiente, sin UUID, y el siguiente intento
+            // del job (horario) volverá a mandarla con incidencia = S.
+            var factura = ConfigurarFactura();
+            factura.VerifactuIncidencia = true;
+            A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored))
+                .Returns(new VerifactuResponse { Exitoso = false, CodigoError = "503", MensajeError = "Error HTTP 503", EsFalloTecnico = true });
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            await servicio.EnviarFacturaAVerifactu("1", "NV2600123");
+
+            Assert.IsTrue(factura.VerifactuIncidencia == true);
+            Assert.IsNull(factura.VerifactuUUID);
+            StringAssert.Contains(factura.VerifactuUltimoError, "503");
+        }
+
+        #endregion
     }
 }

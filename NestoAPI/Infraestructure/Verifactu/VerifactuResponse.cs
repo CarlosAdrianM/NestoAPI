@@ -44,5 +44,14 @@ namespace NestoAPI.Infraestructure.Verifactu
         /// Código de error del proveedor
         /// </summary>
         public string CodigoError { get; set; }
+
+        /// <summary>
+        /// NestoAPI#522: el envío NO llegó a tramitarse por un FALLO TÉCNICO (sin conexión, timeout,
+        /// HTTP 5xx del proveedor), no por un rechazo de los datos de la factura (4xx de validación,
+        /// NIF...). Distingue la «incidencia» de la normativa Verifactu (se remite al recuperarse,
+        /// marcando incidencia) del circuito de corrección de datos. Lo decide el proveedor, que es
+        /// quien conoce sus códigos.
+        /// </summary>
+        public bool EsFalloTecnico { get; set; }
     }
 }

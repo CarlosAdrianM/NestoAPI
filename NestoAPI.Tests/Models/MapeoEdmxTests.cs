@@ -202,6 +202,29 @@ namespace NestoAPI.Tests.Models
             Assert.AreEqual(0, fantasmas.Count, string.Join(Environment.NewLine, fantasmas));
         }
 
+        /// <summary>
+        /// NestoAPI#522: CabFacturaVta.VerifactuIncidencia («pendiente por incidencia» técnica de
+        /// Verifactu) se añadió a mano en las tres capas. NULLABLE a propósito: ALTER instantáneo, sin
+        /// backfill, y prdCrearFacturaVta / Nesto viejo no la conocen (NULL = sin incidencia).
+        /// </summary>
+        [TestMethod]
+        public void Edmx_VerifactuIncidenciaDeLaFactura_EstaEnLasTresCapasYEsNullable()
+        {
+            XElement almacen = EntidadesPorNombre(LeerRecurso("ssdl"), SsdlNs)["CabFacturaVta"]
+                .Elements(SsdlNs + "Property").Single(p => p.Attribute("Name").Value == "VerifactuIncidencia");
+            XElement conceptual = EntidadesPorNombre(LeerRecurso("csdl"), CsdlNs)["CabFacturaVta"]
+                .Elements(CsdlNs + "Property").Single(p => p.Attribute("Name").Value == "VerifactuIncidencia");
+            bool mapeada = LeerRecurso("msl").Descendants(MslNs + "ScalarProperty")
+                .Any(p => p.Attribute("Name").Value == "VerifactuIncidencia" && p.Attribute("ColumnName").Value == "VerifactuIncidencia");
+
+            Assert.AreEqual("bit", (string)almacen.Attribute("Type"));
+            Assert.AreNotEqual("false", (string)almacen.Attribute("Nullable"));
+            Assert.AreEqual("Boolean", (string)conceptual.Attribute("Type"));
+            Assert.AreNotEqual("false", (string)conceptual.Attribute("Nullable"));
+            Assert.IsTrue(mapeada);
+            Assert.AreEqual(typeof(bool?), typeof(CabFacturaVta).GetProperty("VerifactuIncidencia").PropertyType);
+        }
+
         [TestMethod]
         public void Edmx_NotificacionesBuzon_EstaCompletaEnLasTresCapas()
         {

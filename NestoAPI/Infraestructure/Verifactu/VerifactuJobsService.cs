@@ -187,6 +187,19 @@ namespace NestoAPI.Infraestructure.Verifactu
                     continue;
                 }
                 string textoError = $"{respuesta.CodigoError} {respuesta.MensajeError}".Trim();
+                // NestoAPI#522: pendiente por incidencia técnica de OTRO día: no se ha reenviado
+                // (a la espera de Verifacti). Va a su propio apartado del correo a administración
+                // (una vez por factura, deduplicado) y no pasa por el circuito del NIF.
+                if (respuesta.CodigoError == Facturas.ServicioFacturas.CODIGO_INCIDENCIA_OTRO_DIA)
+                {
+                    if (DeduplicadorErroresVerifactu.EsNovedad(claveRuido, textoError))
+                    {
+                        resumen.PendientesPorIncidencia.Add(
+                            $"{factura.Número?.Trim()} (cliente {factura.Nº_Cliente?.Trim()}, fecha {factura.Fecha:dd/MM/yyyy}): " +
+                            respuesta.MensajeError);
+                    }
+                    continue;
+                }
                 if (DeduplicadorErroresVerifactu.EsNovedad(claveRuido, textoError))
                 {
                     resumen.SinDeclarar.Add($"{factura.Número?.Trim()} (cliente {factura.Nº_Cliente?.Trim()}): {textoError}");
@@ -227,7 +240,7 @@ namespace NestoAPI.Infraestructure.Verifactu
 
         private void EnviarResumenSiProcede(ResumenJobVerifactu resumen)
         {
-            if (!resumen.Rechazadas.Any() && !resumen.SinDeclarar.Any())
+            if (!resumen.Rechazadas.Any() && !resumen.SinDeclarar.Any() && !resumen.PendientesPorIncidencia.Any())
             {
                 return; // sin novedades malas: sin ruido
             }
@@ -246,6 +259,11 @@ namespace NestoAPI.Infraestructure.Verifactu
                         (resumen.SinDeclarar.Any()
                             ? "<p><b>Sin poder declarar (se reintentará):</b></p><ul><li>" + string.Join("</li><li>",
                                 resumen.SinDeclarar.Select(System.Net.WebUtility.HtmlEncode)) + "</li></ul>"
+                            : string.Empty) +
+                        (resumen.PendientesPorIncidencia.Any()
+                            ? "<p><b>Pendientes por incidencia técnica de otro día (sin registrar en Verifactu; " +
+                              "NO se reenvían hasta que Verifacti confirme cómo declararlas con su fecha, #522):</b></p><ul><li>" +
+                              string.Join("</li><li>", resumen.PendientesPorIncidencia.Select(System.Net.WebUtility.HtmlEncode)) + "</li></ul>"
                             : string.Empty) +
                         "<p>Si el motivo es el NIF del cliente, la ficha ya ha quedado marcada como incorrecta: " +
                         "corregidlo (se revalida y la factura se declara sola en la siguiente pasada).</p>"
@@ -296,5 +314,8 @@ namespace NestoAPI.Infraestructure.Verifactu
         public int Declaradas { get; set; }
         public List<string> Rechazadas { get; } = new List<string>();
         public List<string> SinDeclarar { get; } = new List<string>();
+        /// <summary>NestoAPI#522: pendientes por incidencia técnica de otro día, sin reenviar
+        /// (a la espera de Verifacti). Visibles en el correo a administración.</summary>
+        public List<string> PendientesPorIncidencia { get; } = new List<string>();
     }
 }
