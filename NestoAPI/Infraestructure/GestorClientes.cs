@@ -32,6 +32,11 @@ namespace NestoAPI.Infraestructure
         /// <summary>NestoAPI#499: lector del parámetro ExigirDireccionVerificadaAlta (sustituible en tests).</summary>
         internal ILectorParametrosUsuario LectorParametros { get; set; } = new LectorParametrosUsuario();
 
+        /// <summary>NestoAPI#541: por donde sale el aviso a almacén (sustituible en tests).</summary>
+        internal IServicioCorreoElectronico ServicioCorreo { get; set; } = new ServicioCorreoElectronico();
+        /// <summary>NestoAPI#541: el aviso que deja preparado PrepararClienteModificar y manda ModificarCliente tras guardar.</summary>
+        internal System.Net.Mail.MailMessage avisoAlmacenPendiente;
+
         public GestorClientes(IServicioGestorClientes servicio, IServicioAgencias servicioAgencias, SincronizacionEventWrapper sincronizacionEventWrapper)
         {
             this.servicio = servicio;
@@ -999,7 +1004,13 @@ namespace NestoAPI.Infraestructure
             // test se rellenan los datos y el CIF sobre todo
             clienteDB.CIF_NIF = clienteModificar.Nif;
             // NestoAPI#471: los días de servir solo se pisan si el DTO los trae (y bien formados)
-            clienteDB.DiasEnServir = GestorDiasEnServir.AplicarCambio(clienteDB.DiasEnServir, clienteModificar.DiasEnServir);
+            string diasDespues = GestorDiasEnServir.AplicarCambio(clienteDB.DiasEnServir, clienteModificar.DiasEnServir);
+            // NestoAPI#541: cerrar un día con pedidos ya en picking se rechaza hasta que el usuario acepte
+            // avisar a almacén; el correo se manda después de guardar (ModificarCliente).
+            avisoAlmacenPendiente = CambioDiasEnServirConPicking.Comprobar(clienteDB, diasDespues,
+                () => db.LinPedidoVtas.Where(l => l.Empresa == clienteDB.Empresa && l.Nº_Cliente == clienteDB.Nº_Cliente && l.Contacto == clienteDB.Contacto).ToList(),
+                clienteModificar.ConfirmarDiasEnServirConPicking, clienteModificar.Usuario);
+            clienteDB.DiasEnServir = diasDespues;
             // NestoAPI#355: solo se pisa el país si el DTO trae uno (la ficha comercial y otros
             // llamantes que aún no envían país no deben blanquear el que ya tenga el cliente).
             if (!string.IsNullOrWhiteSpace(clienteModificar.Pais))
@@ -1712,6 +1723,7 @@ namespace NestoAPI.Infraestructure
                 // Publicar evento de sincronización
                 await PublicarClienteSincronizar(cliente);
 
+                EnviarAvisoAlmacenPendiente(cliente);
                 return cliente;
             }
             catch (DbUpdateConcurrencyException)
@@ -1725,6 +1737,33 @@ namespace NestoAPI.Infraestructure
             catch (Exception ex)
             {
                 throw ex;
+            }
+            finally
+            {
+                avisoAlmacenPendiente = null;
+            }
+        }
+
+        /// <summary>NestoAPI#541: el cambio ya está guardado; que falle el correo no lo deshace, pero se registra.</summary>
+        internal void EnviarAvisoAlmacenPendiente(Cliente cliente)
+        {
+            if (avisoAlmacenPendiente == null)
+            {
+                return;
+            }
+            bool enviado;
+            try
+            {
+                enviado = ServicioCorreo.EnviarCorreoSMTP(avisoAlmacenPendiente);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Días de servir #541] No se ha podido avisar a almacén del cliente {cliente.Nº_Cliente?.Trim()}/{cliente.Contacto?.Trim()}: {ex.Message}", ex));
+                return;
+            }
+            if (!enviado)
+            {
+                ElmahHelper.Log(new Exception($"[Días de servir #541] El correo a almacén del cliente {cliente.Nº_Cliente?.Trim()}/{cliente.Contacto?.Trim()} no se ha enviado."));
             }
         }
 

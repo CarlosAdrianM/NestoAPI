@@ -51,6 +51,12 @@ namespace NestoAPI.Models.Clientes
         public string VendedorPeluqueria { get; set; }
         // NestoAPI#471: días que el cliente cierra (5 posiciones L..V, '1' abre). Null en el PUT = no tocar.
         public string DiasEnServir { get; set; }
+        /// <summary>
+        /// NestoAPI#541: si el cambio de DiasEnServir cierra un día y el contacto tiene pedidos con picking, el PUT
+        /// se rechaza (código DIAS_CON_PICKING) hasta que el usuario acepte avisar a almacén: entonces se repite
+        /// con esto a true, se guarda y se manda el correo. Los clientes que no lo mandan reciben el rechazo.
+        /// </summary>
+        public bool ConfirmarDiasEnServirConPicking { get; set; }
 
         public string Usuario { get; set; }
 
