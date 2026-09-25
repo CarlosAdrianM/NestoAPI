@@ -24,6 +24,12 @@ namespace NestoAPI.Models.PedidosVenta
         public string iva { get; set; }
         public Nullable<int> oferta { get; set; }
         public int picking { get; set; }
+        /// <summary>NestoAPI#542: unidades de la línea que NO se entregan con el albarán aunque se facturen
+        /// (LinPedidoVta.Recoger). Solo lectura: lo escribe el picking (modo de facturación 3) o el Nesto viejo.</summary>
+        public int recoger { get; set; }
+        /// <summary>NestoAPI#542: la línea ya se facturó y lo que queda es entregarla (LinPedidoVta.YaFacturado).
+        /// Solo lectura: lo escribe prdCrearAlbaránVta.</summary>
+        public bool yaFacturado { get; set; }
         public string SubgrupoProducto { get; set; }
         public string texto { get; set; }
         public Nullable<byte> tipoLinea { get; set; }

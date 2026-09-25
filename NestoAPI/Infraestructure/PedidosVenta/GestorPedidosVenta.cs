@@ -723,6 +723,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 servirJunto = cab.ServirJunto,
                 // #482: al leer siempre con valor (NULL en BD = el que dice ServirJunto)
                 modoServicio = Constantes.Pedidos.ModosServicio.Efectivo(cab.ModoServicio, cab.ServirJunto),
+                // #542: igual que el de servicio, al leer siempre con valor (NULL en BD = el que dice MantenerJunto)
+                modoFacturacion = Constantes.Pedidos.ModosFacturacion.Efectivo(cab.ModoFacturacion, cab.MantenerJunto),
+                pedidoOrigen = cab.PedidoOrigen,
                 notaEntrega = cab.NotaEntrega,
                 Agrupada = cab.Agrupada,
                 suPedido = cab.SuPedido,
@@ -784,6 +787,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         iva = l.IVA,
                         oferta = l.NºOferta,
                         picking = l.Picking != null ? (int)l.Picking : 0,
+                        recoger = l.Recoger, // #542
+                        yaFacturado = l.YaFacturado, // #542
                         PrecioUnitario = l.Precio != null ? (decimal)l.Precio : 0,
                         Producto = l.Producto.Trim(),
                         SubgrupoProducto = l.SubGrupo,

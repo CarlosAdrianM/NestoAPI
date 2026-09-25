@@ -446,6 +446,55 @@ namespace NestoAPI.Controllers
         }
 
         /// <summary>
+        /// NestoAPI#542: qué modos de facturación se pueden elegir para el pedido y cuál se propone. La regla
+        /// es la de los plazos (<see cref="ModosFacturacionPermitidos"/>); Nesto y NestoApp la usan para
+        /// habilitar el selector. Misma regla que aplica el POST/PUT al guardar un modo informado.
+        /// </summary>
+        [HttpPost]
+        [Authorize]
+        [Route("api/PedidosVenta/ModoFacturacionSugerido")]
+        [ResponseType(typeof(ModosFacturacionPermitidos.Sugerencia))]
+        public IHttpActionResult PostModoFacturacionSugerido([FromBody] PedidoVentaDTO pedido)
+        {
+            if (pedido == null)
+            {
+                return BadRequest("Falta el pedido.");
+            }
+            byte? modoAlmacenado = pedido.numero != 0
+                ? db.CabPedidoVtas.Where(c => c.Empresa == pedido.empresa && c.Número == pedido.numero).Select(c => c.ModoFacturacion).FirstOrDefault()
+                : null;
+            return Ok(ModosFacturacionPermitidos.Sugerir(pedido, modoAlmacenado, PlazosSonDeLaFicha(pedido)));
+        }
+
+        /// <summary>
+        /// NestoAPI#542: normaliza el modo de facturación del DTO y, solo si el cliente lo ha INFORMADO, comprueba
+        /// que se puede elegir (la regla de los plazos). Un cliente que no lo manda nunca se rechaza por esto: se
+        /// deriva de mantenerJunto, como hasta ahora. Devuelve el mensaje de error o null.
+        /// </summary>
+        internal string NormalizarModoFacturacion(PedidoVentaDTO pedido, byte? modoAlmacenado)
+        {
+            bool informado = pedido.modoFacturacion.HasValue;
+            string invalido = Constantes.Pedidos.ModosFacturacion.Normalizar(pedido, modoAlmacenado);
+            if (invalido != null || !informado)
+            {
+                return invalido;
+            }
+            return ModosFacturacionPermitidos.MotivoRechazo(pedido.modoFacturacion.Value, pedido.plazosPago, pedido.periodoFacturacion,
+                PlazosSonDeLaFicha(pedido), pedido.notaEntrega);
+        }
+
+        /// <summary>
+        /// NestoAPI#542: la misma pregunta que hacen los triggers trgCabPedidoVtaIns/Upd: ¿los plazos del pedido son
+        /// alguno de los de la ficha (CondPagoClientes) del contacto de cobro?
+        /// </summary>
+        internal bool PlazosSonDeLaFicha(PedidoVentaDTO pedido)
+        {
+            string contactoCobro = string.IsNullOrWhiteSpace(pedido.contactoCobro) ? pedido.contacto : pedido.contactoCobro;
+            return db.CondPagoClientes.Any(c => c.Empresa == pedido.empresa && c.Nº_Cliente == pedido.cliente
+                && c.Contacto == contactoCobro && c.PlazosPago == pedido.plazosPago);
+        }
+
+        /// <summary>
         /// NestoAPI#517: el gestor de stocks con los productos del pedido ya leídos, si es el real. En los
         /// tests (Stocks sustituido por un doble) se usa el doble tal cual.
         /// </summary>
@@ -626,6 +675,13 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest(modoInvalido);
             }
+            // NestoAPI#542: lo mismo con el modo de facturación. Un cliente que no lo manda (Nesto hasta el
+            // corte 3, NestoApp) no pisa el 3 que ya tenga el pedido, salvo que marque mantenerJunto (→ 2).
+            string modoFacturacionInvalido = NormalizarModoFacturacion(pedido, cabPedidoVta.ModoFacturacion);
+            if (modoFacturacionInvalido != null)
+            {
+                return BadRequest(modoFacturacionInvalido);
+            }
             // NestoAPI#533: con picking (o albarán de hoy) el modo ya no se cambia; el cliente ofrece pedírselo a almacén.
             if (Constantes.Pedidos.ModosServicio.Efectivo(pedido.modoServicio, pedido.servirJunto) != modoEfectivoAnterior)
             {
@@ -802,6 +858,7 @@ namespace NestoAPI.Controllers
             cabPedidoVta.Origen = pedido.origen;
             cabPedidoVta.NoComisiona = pedido.noComisiona;
             cabPedidoVta.MantenerJunto = pedido.mantenerJunto;
+            cabPedidoVta.ModoFacturacion = pedido.modoFacturacion; // #542: ya normalizado, nunca null aquí
             cabPedidoVta.ServirJunto = pedido.servirJunto;
             cabPedidoVta.ModoServicio = pedido.modoServicio; // #482: ya normalizado, nunca null aquí
             cabPedidoVta.NoCobrarComisionReembolso = pedido.NoCobrarComisionReembolso;
@@ -1572,6 +1629,12 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest(modoInvalido);
             }
+            // NestoAPI#542: sin modo de facturación, el pedido nace en el que dice mantenerJunto (como hasta ahora).
+            string modoFacturacionInvalido = NormalizarModoFacturacion(pedido, null);
+            if (modoFacturacionInvalido != null)
+            {
+                return BadRequest(modoFacturacionInvalido);
+            }
 
             // NestoAPI#176: bloquear creación de pedido si servirJunto=false y alguna
             // línea MMP o bonificado Ganavisiones se quedaría pendiente. Cierra el
@@ -1687,6 +1750,7 @@ namespace NestoAPI.Controllers
                 ContactoCobro = pedido.contactoCobro,
                 NoComisiona = pedido.noComisiona,
                 MantenerJunto = pedido.mantenerJunto,
+                ModoFacturacion = pedido.modoFacturacion, // #542: ya normalizado
                 ServirJunto = pedido.servirJunto,
                 ModoServicio = pedido.modoServicio, // #482: ya normalizado
                 ComentarioPicking = pedido.comentarioPicking,

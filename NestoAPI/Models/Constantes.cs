@@ -604,6 +604,90 @@ namespace NestoAPI.Models
                     return null;
                 }
             }
+
+            /// <summary>
+            /// NestoAPI#542: modo de facturación del pedido (CabPedidoVta.ModoFacturacion). MantenerJunto (bit)
+            /// se queda corto: además de «cada albarán su factura» y «una factura al final», hace falta «todo
+            /// ahora y lo pendiente después», que factura el pedido entero con el primer albarán y deja lo que
+            /// no hay en una nota de entrega. Es un eje distinto del modo de SERVICIO (cómo se entrega lo que
+            /// falta); se combinan.
+            /// <para>NULL en BD = "no informado": manda MantenerJunto (true → 2, false → 1). Mismo patrón que
+            /// <see cref="ModosServicio"/>: sin backfill, y los escritores que no conocen la columna (SPs,
+            /// Nesto viejo, NestoApp) no cambian de comportamiento. El trigger trgCabPedidoVtaModoFacturacion
+            /// mantiene las dos columnas coherentes cuando alguien cambia solo el bit.</para>
+            /// </summary>
+            public static class ModosFacturacion
+            {
+                /// <summary>Cada albarán lleva su factura (MantenerJunto = false).</summary>
+                public const byte POR_ENTREGAS = 1;
+                /// <summary>Una sola factura cuando esté todo el pedido servido (MantenerJunto = true).</summary>
+                public const byte AL_COMPLETAR = 2;
+                /// <summary>Se factura el pedido entero con el primer albarán; lo que no se entrega queda en
+                /// LinPedidoVta.Recoger y pasa a una nota de entrega (YaFacturado) que hereda el modo de servicio.
+                /// Corte 1: solo el dato; el picking y la nota automática llegan en el corte 2.</summary>
+                public const byte TODO_AHORA_Y_LO_PENDIENTE_DESPUES = 3;
+
+                /// <summary>Nombre que ve el usuario (contrato con Nesto y NestoApp).</summary>
+                public static string Nombre(byte modo)
+                {
+                    switch (modo)
+                    {
+                        case POR_ENTREGAS: return "Por entregas";
+                        case AL_COMPLETAR: return "Al completar el pedido";
+                        case TODO_AHORA_Y_LO_PENDIENTE_DESPUES: return "Todo ahora, lo pendiente se entrega después";
+                        default: return $"Modo {modo}";
+                    }
+                }
+
+                public static bool EsValido(byte modo) => modo >= POR_ENTREGAS && modo <= TODO_AHORA_Y_LO_PENDIENTE_DESPUES;
+
+                /// <summary>
+                /// El modo que rige de verdad. <b>MantenerJunto marcado SIEMPRE es «al completar» (2)</b>: el bit es
+                /// lo único que saben decir el Nesto viejo, NestoApp y los triggers de plazos, y quien lo marca
+                /// quiere una sola factura. Desmarcado, rige el 3 si está guardado (es lo único que el bit no
+                /// puede decir) o, si no, el 1.
+                /// </summary>
+                public static byte Efectivo(byte? modoFacturacion, bool mantenerJunto)
+                {
+                    if (mantenerJunto)
+                    {
+                        return AL_COMPLETAR;
+                    }
+                    return modoFacturacion == TODO_AHORA_Y_LO_PENDIENTE_DESPUES ? TODO_AHORA_Y_LO_PENDIENTE_DESPUES : POR_ENTREGAS;
+                }
+
+                /// <summary>Solo el 2 es «mantener junto» en el sentido de la columna y de PuedeFacturarPedido.</summary>
+                public static bool EsAlCompletar(byte modo) => modo == AL_COMPLETAR;
+
+                public static bool EsTodoAhora(byte modo) => modo == TODO_AHORA_Y_LO_PENDIENTE_DESPUES;
+
+                /// <summary>
+                /// Deja el DTO coherente antes de validar o grabar, como <see cref="ModosServicio.Normalizar"/>.
+                /// Sin modo (Nesto hasta el corte 3, NestoApp, TNV): se deriva con <see cref="Efectivo"/> sobre el
+                /// modo YA GUARDADO, para que un PUT que solo manda el bit no pise un 3. Con modo informado,
+                /// mantenerJunto pasa a ser su derivado, que es lo que siguen leyendo los SPs y la facturación.
+                /// Devuelve el mensaje de error si el modo no existe, o null.
+                /// </summary>
+                public static string Normalizar(NestoAPI.Models.PedidosVenta.PedidoVentaDTO pedido, byte? modoAlmacenado = null)
+                {
+                    if (pedido == null)
+                    {
+                        return null;
+                    }
+                    if (!pedido.modoFacturacion.HasValue)
+                    {
+                        pedido.modoFacturacion = Efectivo(modoAlmacenado, pedido.mantenerJunto);
+                        return null;
+                    }
+                    byte modo = pedido.modoFacturacion.Value;
+                    if (!EsValido(modo))
+                    {
+                        return $"El modo de facturación {modo} no existe (1 por entregas, 2 al completar el pedido, 3 todo ahora y lo pendiente después)";
+                    }
+                    pedido.mantenerJunto = EsAlCompletar(modo);
+                    return null;
+                }
+            }
         }
         /// <summary>NestoAPI#513: valores de ExtractoCliente.TipoApunte tal y como los escribe el SP de facturación.</summary>
         public static class TiposApunteExtracto

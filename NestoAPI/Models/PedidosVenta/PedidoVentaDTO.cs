@@ -50,6 +50,13 @@ namespace NestoAPI.Models.PedidosVenta
         /// <summary>NestoAPI#482: modo de servicio (1..4, ver Constantes.Pedidos.ModosServicio). Null = el
         /// cliente no lo manda y se deriva de servirJunto. Al leer, siempre viene con valor.</summary>
         public byte? modoServicio { get; set; }
+        /// <summary>NestoAPI#542: modo de facturación (1 por entregas, 2 al completar el pedido, 3 todo ahora y lo
+        /// pendiente después; ver Constantes.Pedidos.ModosFacturacion). Null = el cliente no lo manda y se
+        /// deriva de mantenerJunto. Al leer, siempre viene con valor.</summary>
+        public byte? modoFacturacion { get; set; }
+        /// <summary>NestoAPI#542: en una nota de entrega creada por la API con lo pendiente de un pedido
+        /// facturado entero, el número de ese pedido. Solo lectura.</summary>
+        public int? pedidoOrigen { get; set; }
         public string suPedido { get; set; }
         public string vendedor { get; set; }
         public bool vistoBuenoPlazosPago { get; set; }
