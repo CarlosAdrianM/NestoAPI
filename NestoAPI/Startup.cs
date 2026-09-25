@@ -452,6 +452,20 @@ namespace NestoAPI
 
             Console.WriteLine("✅ Job recurrente 'correos-postcompra-semanal' configurado (jueves a las 05:00)");
 
+            // NestoAPI#532: recordatorio de reposición con las ventas de Nesto (todos los canales). Jueves 05:30,
+            // detrás del de posventa. NO HACE NADA salvo con el parámetro RecordatorioReposicion de (defecto) a
+            // "Sombra", y en ese modo solo escribe al equipo interno (Scripts/Issue532_RecordatorioReposicion.sql).
+            RecurringJob.AddOrUpdate(
+                "recordatorio-reposicion-semanal",
+                () => RecordatorioReposicionJobsService.Procesar(),
+                "30 5 * * 4", // Cron: jueves a las 05:30
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'recordatorio-reposicion-semanal' configurado (jueves a las 05:30; apagado salvo parámetro)");
+
             // Issue #137: Informe semanal de clientes nuevos por vendedor
             RecurringJob.AddOrUpdate(
                 "informe-clientes-nuevos-semanal",
