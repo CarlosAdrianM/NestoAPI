@@ -470,6 +470,8 @@
     <Compile Include="Infrastructure\PedidosVenta\TransicionPresupuestoTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\SugeridorModoServicioTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\ModosServicioPermitidosTests.cs" />
+    <Compile Include="Infrastructure\PedidosVenta\CambioClientePedidoTests.cs" />
+    <Compile Include="Infrastructure\PedidosVenta\GestorCambioClientePedidoTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\ModosFacturacionPermitidosTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\GestorPortesLineasVivasTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\FechaEntregaLineasProtegidasTests.cs" />

@@ -551,6 +551,78 @@ namespace NestoAPI.Controllers
                 : Ok(ConvertidorPedidoAPlantilla.Convertir(pedido));
         }
 
+        /// <summary>
+        /// NestoAPI#519: pasa a otro cliente un pedido que todavía no tiene picking, albarán ni factura, y lo
+        /// recalcula como si hubiera nacido para él (condiciones de pago, CCC, IVA, vendedor, ruta, precios,
+        /// portes...). Ver <see cref="GestorCambioClientePedido"/>. 400 con el motivo si no se puede.
+        /// </summary>
+        [HttpPost]
+        [Route("api/PedidosVenta/{empresa}/{numero:int}/CambiarCliente")]
+        [ResponseType(typeof(CambiarClientePedidoRespuesta))]
+        public async Task<IHttpActionResult> PostCambiarCliente(string empresa, int numero, [FromBody] CambiarClientePedidoRequest peticion)
+        {
+            // Solo empleados y vendedores: un cliente de la tienda (JWT con claim "cliente") no cambia pedidos de sitio.
+            if ((User?.Identity as System.Security.Claims.ClaimsIdentity)?.FindFirst("cliente") != null)
+            {
+                return StatusCode(HttpStatusCode.Forbidden);
+            }
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, peticion?.Usuario);
+            string empresaPedido = string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
+
+            GestorCambioClientePedido gestorCambio = new GestorCambioClientePedido(db, PutPedidoVenta)
+            {
+                CalcularPrecio = async (emp, producto, cliente, contacto, cantidad) =>
+                {
+                    IHttpActionResult resultado = await new ProductosController(db)
+                        .GetProductoPrecioReal(emp, producto, cliente, contacto, cantidad).ConfigureAwait(true);
+                    return resultado is System.Web.Http.Results.OkNegotiatedContentResult<ProductoPlantillaDTO> ok ? ok.Content : null;
+                },
+                CalcularImportes = (linea, iva) => gestor.CalcularImportesLinea(linea, iva),
+                // Mismo permiso que el PUT para seguir con un pedido que no pasa la validación
+                PuedeOmitirValidacion = validacion => UsuarioPuedeOmitirValidacion(empresaPedido, numero, usuario, validacion)
+            };
+
+            ResultadoCambioClientePedido resultadoCambio = await gestorCambio
+                .CambiarCliente(empresaPedido, numero, peticion, usuario).ConfigureAwait(true);
+            if (resultadoCambio.NoEncontrado)
+            {
+                return NotFound();
+            }
+            if (resultadoCambio.Error != null)
+            {
+                return BadRequest(resultadoCambio.Error);
+            }
+            return Ok(resultadoCambio.Respuesta);
+        }
+
+        /// <summary>
+        /// NestoAPI#519: la misma regla que aplica el PUT: Dirección, Almacén o el parámetro; Tiendas si todas las
+        /// líneas son de su almacén; y, si la denegación pide un permiso propio, tenerlo también.
+        /// </summary>
+        private bool UsuarioPuedeOmitirValidacion(string empresa, int numero, string usuario, RespuestaValidacion validacion)
+        {
+            try
+            {
+                IPrincipal principal = PrincipalParaValidacion();
+                bool grupoPermitido = principal.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION) ||
+                    principal.IsInRoleSinDominio(Constantes.GruposSeguridad.ALMACEN) ||
+                    TieneParametroPermitirOmitirValidacion(Constantes.Empresas.EMPRESA_POR_DEFECTO, usuario);
+                if (!grupoPermitido && principal.IsInRoleSinDominio(Constantes.GruposSeguridad.TIENDAS))
+                {
+                    string almacenUsuario = ParametrosUsuarioController.LeerParametro(empresa, UsuarioSinDominio(usuario), "AlmacénPedidoVta");
+                    List<string> almacenes = db.LinPedidoVtas.Where(l => l.Empresa == empresa && l.Número == numero)
+                        .Select(l => l.Almacén).ToList();
+                    grupoPermitido = !string.IsNullOrWhiteSpace(almacenUsuario) && almacenes.Any()
+                        && almacenes.All(a => a?.Trim() == almacenUsuario.Trim());
+                }
+                return grupoPermitido && PuedeSaltarseEstaDenegacion(validacion, empresa, usuario);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         // PUT: api/PedidosVenta/5
         [ResponseType(typeof(RespuestaModificacionPedidoDTO))]
         public async Task<IHttpActionResult> PutPedidoVenta(PedidoVentaDTO pedido)
