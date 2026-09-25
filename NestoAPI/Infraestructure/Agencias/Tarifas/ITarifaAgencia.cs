@@ -41,4 +41,23 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
         /// </summary>
         decimal CalcularCoste(string codigoPostal, string paisIso, decimal peso, decimal reembolso, decimal recargoCombustible);
     }
+
+    /// <summary>
+    /// NestoAPI#505: marca un servicio que el comparador NUNCA propone (más caro, p. ej. CTT 24h). Solo
+    /// entra cuando se pide expresamente por su ServicioId (<see cref="ComparadorAgencias.CosteDeAgencia"/>
+    /// con servicioId), porque el usuario lo ha forzado a mano.
+    /// </summary>
+    public interface ITarifaSoloAPeticion
+    {
+    }
+
+    /// <summary>Capacidades de una tarifa, mirando a través de los decoradores (freno por zonas).</summary>
+    public static class CapacidadesTarifa
+    {
+        public static bool EsSoloAPeticion(ITarifaAgencia tarifa)
+        {
+            if (tarifa is ITarifaSoloAPeticion) return true;
+            return tarifa is TarifaConZonasActivas decorada && EsSoloAPeticion(decorada.Interior);
+        }
+    }
 }

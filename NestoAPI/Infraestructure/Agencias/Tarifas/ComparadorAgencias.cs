@@ -57,12 +57,19 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
             decimal reembolso, int agenciaId, byte? servicioId = null, string paisIso = "ES")
         {
             // Ranking ya viene ordenado de más barato a más caro: el primero que case es el correcto.
-            return Ranking(empresa, codigoPostal, peso, reembolso, paisIso)
+            // NestoAPI#505: un servicio solo a petición (CTT 24h) únicamente cuenta si se pide por su id.
+            return Opciones(empresa, codigoPostal, peso, reembolso, paisIso, incluirSoloAPeticion: servicioId.HasValue)
                 .FirstOrDefault(o => o.AgenciaId == agenciaId
                     && (servicioId == null || o.ServicioId == servicioId.Value));
         }
 
         public IReadOnlyList<OpcionEnvioAgencia> Ranking(string empresa, string codigoPostal, decimal peso, decimal reembolso, string paisIso = "ES")
+            => Opciones(empresa, codigoPostal, peso, reembolso, paisIso, incluirSoloAPeticion: false);
+
+        // NestoAPI#505: los servicios solo a petición (ITarifaSoloAPeticion) quedan fuera del ranking
+        // (MasEconomica y comparativa sombra); solo entran cuando se pide un servicio concreto.
+        private IReadOnlyList<OpcionEnvioAgencia> Opciones(string empresa, string codigoPostal, decimal peso, decimal reembolso,
+            string paisIso, bool incluirSoloAPeticion)
         {
             // Canarias (siempre España) va siempre por Canteras, sin comparar precio.
             if (EsEspana(paisIso))
@@ -81,6 +88,11 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
 
             foreach (ITarifaAgencia tarifa in _registro.Todas())
             {
+                if (!incluirSoloAPeticion && CapacidadesTarifa.EsSoloAPeticion(tarifa))
+                {
+                    continue;
+                }
+
                 decimal fuel = _recargoCombustible.RecargoCombustible(empresa, tarifa.AgenciaId);
                 // Cada tarifa resuelve su zona PUERTAS ADENTRO a partir del destino canónico (CP + país).
                 decimal coste = tarifa.CalcularCoste(codigoPostal, paisIso, peso, reembolso, fuel);

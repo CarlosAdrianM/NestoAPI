@@ -62,6 +62,9 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
             _zonasActivas = zonasActivas;
         }
 
+        /// <summary>La tarifa decorada (para mirar sus capacidades, <see cref="CapacidadesTarifa"/>).</summary>
+        public ITarifaAgencia Interior => _interior;
+
         public int AgenciaId => _interior.AgenciaId;
         public byte ServicioId => _interior.ServicioId;
         public string NombreServicio => _interior.NombreServicio;

@@ -165,6 +165,34 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         }
 
         [TestMethod]
+        public void ConstruirManifiesto_ServicioUrgenteForzado_MandaEl24h()
+        {
+            // NestoAPI#505: el usuario ha elegido "CTT 24h" en la ventana de agencias.
+            var agencia = new AgenciaRemotaCTT(new FakeClienteRest(), Config());
+            DatosEnvioRemoto envio = EnvioMadrid();
+            envio.Servicio = 24;
+
+            JObject m = agencia.ConstruirManifiesto(envio);
+
+            Assert.AreEqual("C24", (string)m["shipping_type_code"]);
+        }
+
+        [TestMethod]
+        public async Task InsertarYEtiquetar_ServicioQueCTTNoTiene_NoLlamaACTTYDevuelveElMotivo()
+        {
+            var fake = new FakeClienteRest();
+            IAgenciaRemota agencia = new AgenciaRemotaCTT(fake, Config());
+            DatosEnvioRemoto envio = EnvioMadrid();
+            envio.Servicio = 96; // BusinessParcel de GLS
+
+            ResultadoTramitacionRemota r = await agencia.InsertarYEtiquetarAsync(envio);
+
+            Assert.IsFalse(r.Exito);
+            StringAssert.Contains(r.Error, "96");
+            Assert.AreEqual(0, fake.Llamadas.Count, "No se registra nada en CTT");
+        }
+
+        [TestMethod]
         public void TipoServicio_PorCodigoPostal()
         {
             Assert.AreEqual("C48", MapeadorTipoServicioCTT.TipoServicioDesdeCodigoPostal("28001"));   // Madrid

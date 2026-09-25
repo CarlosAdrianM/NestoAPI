@@ -31,6 +31,15 @@ namespace NestoAPI.Controllers
         public bool EsSombra { get; set; }
     }
 
+    /// <summary>NestoAPI#505: un servicio con tarifa de una agencia (EnviosAgencia.Servicio = ServicioId).</summary>
+    public class ServicioAgenciaDTO
+    {
+        public byte ServicioId { get; set; }
+        public string Nombre { get; set; }
+        /// <summary>El comparador no lo propone nunca; solo si el usuario lo fuerza (p. ej. CTT 24h).</summary>
+        public bool SoloAPeticion { get; set; }
+    }
+
     /// <summary>
     /// Mantenimiento de agencias de transporte server-side (Nesto#340): alta/edición de agencias
     /// (incluido el recargo de combustible, editable mensual) y comparador "agencia más económica"
@@ -171,6 +180,29 @@ namespace NestoAPI.Controllers
             }
             return Ok(opcion);
         }
+
+        // GET: api/Agencias/{numero}/Servicios
+        // NestoAPI#505: catálogo de servicios con tarifa de una agencia (id, nombre y si solo va a
+        // petición del usuario), para que los clientes no tengan que hardcodearlo. Los que NO son
+        // SoloAPeticion los elige el comparador según la zona; los SoloAPeticion (CTT 24h) solo salen
+        // si el usuario los fuerza. Lista vacía si la agencia no tiene tarifas portadas.
+        [HttpGet]
+        [Route("api/Agencias/{numero:int}/Servicios")]
+        public IHttpActionResult GetServiciosAgencia(int numero)
+        {
+            return Ok(ServiciosDeAgencia(new RegistroTarifas(), numero));
+        }
+
+        internal static List<ServicioAgenciaDTO> ServiciosDeAgencia(IRegistroTarifas registro, int numero)
+            => registro.Todas()
+                .Where(t => t.AgenciaId == numero)
+                .Select(t => new ServicioAgenciaDTO
+                {
+                    ServicioId = t.ServicioId,
+                    Nombre = t.NombreServicio,
+                    SoloAPeticion = CapacidadesTarifa.EsSoloAPeticion(t)
+                })
+                .ToList();
 
         // POST: api/Agencias/ComparativaSombra/Recalcular?dias=30
         // Rellena ComparativaAgenciaSombra con los envíos reales de los últimos N días (idempotente):

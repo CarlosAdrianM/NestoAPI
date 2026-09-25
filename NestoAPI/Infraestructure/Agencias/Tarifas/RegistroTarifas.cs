@@ -28,7 +28,9 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
             new TarifaInnovatransEconomy(),
             new TarifaInnovatransPortugal(),
             new TarifaInnovatransMaritimo(),
-            new TarifaCTT48h()
+            new TarifaCTT48h(),
+            // NestoAPI#505: solo a petición (ITarifaSoloAPeticion): el comparador no la propone nunca.
+            new TarifaCTT24h()
         };
 
         public IEnumerable<ITarifaAgencia> Todas() => _tarifas;

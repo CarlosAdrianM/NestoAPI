@@ -28,6 +28,11 @@ namespace NestoAPI.Infraestructure.Agencias
         public decimal Largo { get; set; }
         public decimal Alto { get; set; }
         public decimal Ancho { get; set; }
+        /// <summary>
+        /// NestoAPI#505: EnviosAgencia.Servicio tal cual (cada agencia tiene sus códigos). CTT: 0 o 48 =
+        /// 48 h (defecto), 24 = urgente forzado a mano. Innovatrans lo ignora (su servicio va por CP).
+        /// </summary>
+        public short Servicio { get; set; }
     }
 
     /// <summary>

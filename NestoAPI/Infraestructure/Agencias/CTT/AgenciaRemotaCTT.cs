@@ -271,7 +271,8 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
             var manifiesto = new JObject
             {
                 ["client_center_code"] = _config.ClientCenterCode,
-                ["shipping_type_code"] = MapeadorTipoServicioCTT.TipoServicioDesdeCodigoPostal(cp),
+                // NestoAPI#505: el servicio elegido (48 h por defecto, 24 h si el usuario lo fuerza).
+                ["shipping_type_code"] = MapeadorTipoServicioCTT.TipoServicio(envio.Servicio, cp),
                 ["client_references"] = new JArray(Acotar(envio.Referencia, 30) ?? string.Empty, string.Empty),
                 ["shipping_weight_declared"] = Math.Round(envio.Peso, 2, MidpointRounding.AwayFromZero),
                 ["item_count"] = bultos,

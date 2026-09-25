@@ -218,6 +218,23 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public async Task Tramitar_PasaElServicioDelEnvioALaAgencia()
+        {
+            // NestoAPI#505: el servicio elegido (p. ej. CTT 24h forzado a mano) tiene que llegar a la
+            // agencia remota; antes no viajaba y CTT salía siempre por 48 h.
+            EnviosAgencia envio = EnvioPendiente();
+            envio.Servicio = 24;
+            ConEnvio(envio);
+            A.CallTo(() => fakeFabrica.Crear(Constantes.Agencias.AGENCIA_INNOVATRANS)).Returns(fakeAgencia);
+            A.CallTo(() => fakeAgencia.InsertarYEtiquetarAsync(A<DatosEnvioRemoto>.Ignored))
+                .Returns(Task.FromResult(new ResultadoTramitacionRemota { Exito = true, Albaran = "0123456789", Bultos = 1, Etiqueta = EtiquetaZpl() }));
+
+            await controller.TramitarEnvio(1);
+
+            A.CallTo(() => fakeAgencia.InsertarYEtiquetarAsync(A<DatosEnvioRemoto>.That.Matches(d => d.Servicio == 24))).MustHaveHappened();
+        }
+
+        [TestMethod]
         public async Task Tramitar_Exito_AuditaElSoapCrudoDeLosIntercambios()
         {
             EnviosAgencia envio = EnvioPendiente();

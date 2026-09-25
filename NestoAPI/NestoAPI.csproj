@@ -624,6 +624,7 @@
     <Compile Include="Infraestructure\Agencias\Tarifas\TarifaInnovatransPortugal.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\TarifaInnovatransMaritimo.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\TarifaCTT48h.cs" />
+    <Compile Include="Infraestructure\Agencias\Tarifas\TarifaCTT24h.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\ZonasEnvioAgencia.cs" />
     <Compile Include="Infraestructure\Agencias\ServicioEnviosAgencia.cs" />
     <Compile Include="Infraestructure\Agencias\TramitacionEnviosService.cs" />

@@ -1224,7 +1224,8 @@ namespace NestoAPI.Controllers
             Peso = envio.Peso,
             Bultos = envio.Bultos,
             Reembolso = envio.Reembolso,
-            Observaciones = envio.Observaciones?.Trim()
+            Observaciones = envio.Observaciones?.Trim(),
+            Servicio = envio.Servicio
         };
 
         private Task AuditarTramitacion(EnviosAgencia envio, IAgenciaRemota agencia, bool exito, string error)
