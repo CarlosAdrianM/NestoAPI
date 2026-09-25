@@ -251,7 +251,20 @@ namespace NestoAPI.Controllers
                                                   empleadosFecha = c.EmpleadosFecha
                                               };
 
-            return clientes.OrderByDescending(o => o.cliente.Equals(filtro));
+            List<ClienteDTO> lista = clientes.OrderByDescending(o => o.cliente.Equals(filtro)).ToList();
+
+            // NestoAPI#544 (f): sin resultados y con formato de factura, el cliente de esa factura
+            // (respetando el filtro por vendedor: clientesVendedor ya lo lleva)
+            if (!lista.Any())
+            {
+                IQueryable<Cliente> porFactura = Infraestructure.Clientes.BuscadorClientesPorFactura
+                    .ClienteDeLaFactura(db, clientesVendedor, empresa, filtro);
+                if (porFactura != null)
+                {
+                    lista = porFactura.Select(PROYECCION_CLIENTE).ToList();
+                }
+            }
+            return lista.AsQueryable();
         }
 
         // GET: api/Clientes
@@ -329,6 +342,18 @@ namespace NestoAPI.Controllers
                 .Select(PROYECCION_CLIENTE)
                 .OrderByDescending(o => o.cliente.Equals(filtro))
                 .ToList();
+
+            // NestoAPI#544 (f): sin resultados y con formato de factura (NV2615541), el cliente de
+            // esa factura, para contabilizar la transferencia yendo directo a la ficha
+            if (!clientes.Any())
+            {
+                IQueryable<Cliente> porFactura = Infraestructure.Clientes.BuscadorClientesPorFactura
+                    .ClienteDeLaFactura(db, db.Clientes, empresa, filtro);
+                if (porFactura != null)
+                {
+                    clientes = porFactura.Select(PROYECCION_CLIENTE).ToList();
+                }
+            }
 
             return clientes.AsQueryable();
         }
