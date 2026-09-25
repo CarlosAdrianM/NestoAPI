@@ -714,7 +714,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 periodoFacturacion = cab.Periodo_Facturacion,
                 ruta = cab.Ruta,
                 serie = cab.Serie,
-                ccc = cab.CCC,
+                // Nesto#494: el CCC es char en BD y llegaba con relleno ("1  "); la lista de CCCs de la
+                // ficha viene recortada, y el SelectorCCC de Nesto no lo encontraba y se quedaba en blanco.
+                ccc = cab.CCC?.Trim(),
                 origen = !string.IsNullOrWhiteSpace(cab.Origen) ? cab.Origen : cab.Empresa,
                 contactoCobro = cab.ContactoCobro,
                 noComisiona = cab.NoComisiona,
@@ -837,6 +839,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         Ccc = p.CCC
                     })
                 .ToList();
+                // Nesto#494: mismo relleno que en la cabecera; los SelectorCCC de las filas de efectos lo sufren igual
+                efectos.ForEach(e => e.Ccc = e.Ccc?.Trim());
 
                 foreach (var linea in lineasPedido)
                 {

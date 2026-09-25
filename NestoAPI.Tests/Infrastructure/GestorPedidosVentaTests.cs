@@ -1339,6 +1339,18 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual("CONTADO", pedido.plazosPago);
         }
 
+        [TestMethod]
+        public void CrearCabeceraDTO_ElCccSaleSinRelleno_ParaQueElSelectorDeNestoLoEncuentre()
+        {
+            // Nesto#494: la lista de CCCs de la ficha viene recortada ("1"); con "1  " el combo se quedaba en blanco
+            var cab = new CabPedidoVta { Empresa = "1  ", Número = 1, Nº_Cliente = "15191     ", Contacto = "0  ", PlazosPago = "CONTADO   ", CCC = "1  " };
+
+            PedidoVentaDTO pedido = GestorPedidosVenta.CrearCabeceraDTO(cab);
+
+            Assert.AreEqual("1", pedido.ccc);
+            Assert.IsNull(GestorPedidosVenta.CrearCabeceraDTO(new CabPedidoVta { Empresa = "1", Número = 2 }).ccc);
+        }
+
         #endregion
     }
 }
