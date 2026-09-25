@@ -139,7 +139,8 @@ WHERE l.Estado BETWEEN -2 AND 1 AND l.Empresa = @empresa AND l.TipoLinea = 1 AND
                     .ToListAsync().ConfigureAwait(false);
 
                 var correos = await db.PersonasContactoClientes
-                    .Where(p => p.Empresa == empresa && lote.Contains(p.NºCliente)
+                    // Carlos (25/09/26): es un correo comercial: solo a quien tiene marcado «Enviar boletín»
+                    .Where(p => p.Empresa == empresa && lote.Contains(p.NºCliente) && p.EnviarBoletin
                         && p.CorreoElectrónico != null && p.CorreoElectrónico.Trim() != "")
                     .GroupBy(p => p.NºCliente)
                     .Select(g => new { Cliente = g.Key, Email = g.FirstOrDefault().CorreoElectrónico })

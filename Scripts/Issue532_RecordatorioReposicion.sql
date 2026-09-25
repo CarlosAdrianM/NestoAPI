@@ -2,8 +2,8 @@
 -- El job 'recordatorio-reposicion-semanal' de Hangfire corre los jueves a las 5:30, pero NO HACE NADA
 -- mientras no exista esta fila (sin fila = APAGADO, que es como nace al publicar).
 --
--- Este script lo pone en modo SOMBRA: cada jueves manda UN correo a los de CorreosPostCompra:EmailsTest
--- (Manuel, Laura y Carlos) con los clientes y productos a los que se les recordaría reponer, el grupo de
+-- Este script lo pone en modo SOMBRA: cada jueves manda UN correo a Carlos (de momento solo a él)
+-- con los clientes y productos a los que se les recordaría reponer, el grupo de
 -- control, los que se quedan fuera y por qué, y una muestra del correo. NO escribe a ningún cliente ni
 -- registra nada (eso es el corte 2).
 -- Se lee en cada ejecución: el cambio se nota en la siguiente pasada, sin publicar ni reiniciar.
@@ -32,7 +32,7 @@ GO
 -- IF NOT EXISTS (SELECT 1 FROM dbo.ParámetrosUsuario WHERE Empresa = '1' AND Usuario = '(defecto)' AND Clave = 'RecordatorioReposicionConsumibles')
 --     INSERT INTO dbo.ParámetrosUsuario (Empresa, Usuario, Clave, Valor, Usuario2, [Fecha Modificación])
 --     VALUES ('1', '(defecto)', 'RecordatorioReposicionConsumibles',
---             'COS, -COS/MMP, -COS/PRG, -COS/PRO, ACC/002, PEL/ACB, PEL/DES, PEL/LAV, PEL/MYD, PEL/TIN, PEL/TRA',
+--             'COS, -COS/MMP, -COS/PRG, -COS/PRO, ACC/002, ACC/005, ACC/006, PEL/ACB, PEL/DES, PEL/LAV, PEL/MYD, PEL/PEL, PEL/TIN, PEL/TRA, PEL/UTJ',
 --             'NestoAPI#532', GETDATE());
 
 -- PROBAR SIN ESPERAR AL JUEVES (no hace falta encender nada; solo escribe al equipo interno):

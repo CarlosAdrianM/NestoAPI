@@ -13,12 +13,13 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
     public class ConsumiblesReposicion
     {
         /// <summary>
-        /// Cosmética entera salvo muestras/material promocional, packs regalo y promociones; los
-        /// desechables de accesorios; y en peluquería lo que se gasta (acabado, desechables, lavado,
-        /// moldeado, tintes y tratamiento). Fuera: aparatología, útiles, cursos, materias primas,
-        /// manicura/pedicura (herramienta), peines, utillaje, extensiones y pelucas.
+        /// Cosmética entera salvo muestras/material promocional, packs regalo y promociones; en accesorios,
+        /// desechables, manicura y pedicura; y en peluquería lo que se gasta (acabado, desechables, lavado,
+        /// moldeado, tintes, tratamiento) y el utillaje. Carlos (25/09/26): la manicura, la pedicura y el
+        /// utillaje también se compran cíclicamente. Fuera: aparatología, cursos, materias primas, peines,
+        /// extensiones y pelucas.
         /// </summary>
-        public const string POR_DEFECTO = "COS, -COS/MMP, -COS/PRG, -COS/PRO, ACC/002, PEL/ACB, PEL/DES, PEL/LAV, PEL/MYD, PEL/TIN, PEL/TRA";
+        public const string POR_DEFECTO = "COS, -COS/MMP, -COS/PRG, -COS/PRO, ACC/002, ACC/005, ACC/006, PEL/ACB, PEL/DES, PEL/LAV, PEL/MYD, PEL/PEL, PEL/TIN, PEL/TRA, PEL/UTJ";
 
         private readonly HashSet<string> grupos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> subgrupos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

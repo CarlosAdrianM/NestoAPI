@@ -39,7 +39,7 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
         public const string MOTIVO_SUSTITUTO_PENDIENTE = "Tiene pendiente un producto equivalente (misma marca y subgrupo): ";
         public const string MOTIVO_CLIENTE_NO_ENCONTRADO = "No se encuentra la ficha principal del cliente.";
         public const string MOTIVO_CLIENTE_BAJA = "Cliente de baja (estado 8).";
-        public const string MOTIVO_SIN_CORREO = "El cliente no tiene correo electrónico.";
+        public const string MOTIVO_SIN_CORREO = "El cliente no tiene correo electrónico con «Enviar boletín» marcado.";
         public const string MOTIVO_MAXIMO_PRODUCTOS = "Ya van 3 productos en su correo (se eligen los de más importe).";
         public const string MOTIVO_CORREO_DUPLICADO = "Mismo correo que otro cliente al que ya se escribe: ";
 
@@ -123,7 +123,12 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                 {
                     continue;
                 }
-                double intervalo = Math.Max(mediana.Value, INTERVALO_MINIMO_DIAS);
+                // Carlos (25/09/26): quien lo compra cada semana (o más a menudo) no necesita recordatorio
+                if (mediana.Value < INTERVALO_MINIMO_DIAS)
+                {
+                    continue;
+                }
+                double intervalo = mediana.Value;
                 DateTime ultima = dias.Last();
                 int diasDesde = (int)(fechaHoy - ultima).TotalDays;
                 if (!TocaReponer(intervalo, diasDesde))
@@ -372,8 +377,24 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
             {
                 return null;
             }
-            string nombre = cliente.VendedorNombre?.Trim();
-            return string.IsNullOrWhiteSpace(nombre) ? null : nombre;
+            return NombreDePila(cliente.VendedorNombre);
+        }
+
+        /// <summary>
+        /// Carlos (25/09/26): en el correo, el comercial por su nombre de pila («Lidia», no «LIDIA HERNÁNDEZ
+        /// YAGÜE»). La primera palabra en tipo título; si es una abreviatura («Mª», «M.») va con la siguiente.
+        /// </summary>
+        internal static string NombreDePila(string nombreCompleto)
+        {
+            string[] palabras = (nombreCompleto ?? string.Empty).Trim()
+                .Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            if (palabras.Length == 0)
+            {
+                return null;
+            }
+            bool abreviatura = palabras[0].Length <= 2 || palabras[0].EndsWith(".") || palabras[0].Contains("ª");
+            string nombre = abreviatura && palabras.Length > 1 ? palabras[0] + " " + palabras[1] : palabras[0];
+            return System.Globalization.CultureInfo.GetCultureInfo("es-ES").TextInfo.ToTitleCase(nombre.ToLower(System.Globalization.CultureInfo.GetCultureInfo("es-ES")));
         }
 
         /// <summary>

@@ -155,16 +155,29 @@ namespace NestoAPI.Tests.Infrastructure.CorreosPostCompra
         }
 
         [TestMethod]
-        public void EvaluarPares_RitmoSemanal_SeUsaElIntervaloMinimo()
+        public void EvaluarPares_RitmoSemanal_NoSeAvisaNunca()
         {
-            // Compra cada 7 días; con el mínimo de 14, a los 10 días todavía no toca y a los 18 sí
+            // Carlos (25/09/26): quien compra cada semana no necesita recordatorio, ni a los 10 días ni a los 18
             Compras("1001", "CREMA500", 50m, 31, 24, 17, 10);
             Assert.AreEqual(0, Evaluar().Count);
 
             compras.Clear();
             Compras("1001", "CREMA500", 50m, 39, 32, 25, 18);
-            CandidatoReposicionDTO candidato = Evaluar().Single();
-            Assert.AreEqual(CalculadoraReposicion.INTERVALO_MINIMO_DIAS, candidato.IntervaloDias);
+            Assert.AreEqual(0, Evaluar().Count);
+
+            // Cada 14 días ya no es semanal: se avisa a partir de 1,25 veces el ritmo
+            compras.Clear();
+            Compras("1001", "CREMA500", 50m, 60, 46, 32, 18);
+            Assert.AreEqual(14, Evaluar().Single().IntervaloDias);
+        }
+
+        [TestMethod]
+        public void NombreDePila_ElComercialPorSuNombre()
+        {
+            Assert.AreEqual("Lidia", CalculadoraReposicion.NombreDePila("LIDIA HERNÁNDEZ YAGÜE"));
+            Assert.AreEqual("Mª José", CalculadoraReposicion.NombreDePila("Mª JOSÉ PÉREZ"));
+            Assert.AreEqual("Ángela", CalculadoraReposicion.NombreDePila(" ángela  ruiz "));
+            Assert.IsNull(CalculadoraReposicion.NombreDePila("  "));
         }
 
         [TestMethod]
@@ -438,7 +451,12 @@ namespace NestoAPI.Tests.Infrastructure.CorreosPostCompra
             Assert.IsTrue(CONSUMIBLES.EsConsumible("PEL", "TIN"));
             Assert.IsFalse(CONSUMIBLES.EsConsumible("PEL", "PEI"));
             Assert.IsTrue(CONSUMIBLES.EsConsumible("ACC", "002"));
-            Assert.IsFalse(CONSUMIBLES.EsConsumible("ACC", "005"));
+            // Carlos (25/09/26): manicura, pedicura y utillaje también se compran cíclicamente
+            Assert.IsTrue(CONSUMIBLES.EsConsumible("ACC", "005"), "Manicura");
+            Assert.IsTrue(CONSUMIBLES.EsConsumible("ACC", "006"), "Pedicura");
+            Assert.IsTrue(CONSUMIBLES.EsConsumible("PEL", "UTJ"), "Utillaje");
+            Assert.IsTrue(CONSUMIBLES.EsConsumible("PEL", "PEL"), "Utillaje.");
+            Assert.IsFalse(CONSUMIBLES.EsConsumible("ACC", "001"), "Vestuario");
             Assert.IsFalse(CONSUMIBLES.EsConsumible("APA", "001"));
             Assert.IsFalse(CONSUMIBLES.EsConsumible("CUR", "INI"));
         }

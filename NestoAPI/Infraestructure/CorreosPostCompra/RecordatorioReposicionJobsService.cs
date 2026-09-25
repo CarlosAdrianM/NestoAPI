@@ -26,8 +26,8 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
     /// <see cref="SelectorRecordatoriosReposicion"/> y el texto en <see cref="PlantillaRecordatorioReposicion"/>.
     ///
     /// Interruptor: parámetro <c>RecordatorioReposicion</c> bajo «(defecto)» en ParámetrosUsuario.
-    /// Sin fila (así nace) = APAGADO. Con "Sombra", cada jueves manda UN correo al equipo que revisa los
-    /// correos posventa (CorreosPostCompra:EmailsTest: Laura, Manuel y Carlos) con los clientes y productos
+    /// Sin fila (así nace) = APAGADO. Con "Sombra", cada jueves manda UN correo a Carlos (de momento solo a
+    /// él, 25/09/26; ver <see cref="DestinatariosSombra"/>) con los clientes y productos
     /// que recibirían el aviso, el grupo de control, los que se quedan fuera y por qué, y una muestra del
     /// correo. En este corte NO se escribe a clientes ni se registra nada.
     /// </summary>
@@ -152,12 +152,11 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
             }
         }
 
-        /// <summary>Los mismos que revisan el modo test de los correos posventa (#74); si no hay, Carlos.</summary>
-        internal static string DestinatariosSombra()
-        {
-            string configurados = ConfigurationManager.AppSettings["CorreosPostCompra:EmailsTest"];
-            return string.IsNullOrWhiteSpace(configurados) ? Constantes.Correos.INFORMATICA : configurados;
-        }
+        /// <summary>
+        /// Carlos (25/09/26): de momento la sombra solo le llega a él. Para ampliarlo, volver a los de
+        /// CorreosPostCompra:EmailsTest (Laura, Manuel y Carlos), que son los que revisan los correos posventa.
+        /// </summary>
+        internal static string DestinatariosSombra() => Constantes.Correos.INFORMATICA;
 
         /// <summary>Enlace a la ficha de la tienda de cada producto (una llamada a PrestaShop por producto).</summary>
         internal static async Task RellenarEnlacesTienda(RecordatorioReposicionClienteDTO correo)
