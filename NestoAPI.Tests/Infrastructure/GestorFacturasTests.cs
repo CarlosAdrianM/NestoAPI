@@ -560,6 +560,28 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void GestorFacturas_LeerPedido_SiNoTieneLineasDaUnErrorQueLoExplica()
+        {
+            // NestoAPI#538: el pedido 927024 tenía cabecera (con cliente y plazos) y ninguna línea
+            IServicioFacturas servicio = A.Fake<IServicioFacturas>();
+            CabPedidoVta cab = A.Fake<CabPedidoVta>();
+            cab.Empresa = "1";
+            cab.Número = 927024;
+            cab.Nº_Cliente = "38496";
+            cab.Contacto = "0";
+            cab.Serie = "NV";
+            cab.PlazosPago = "CONTADO";
+            cab.Fecha = new DateTime(2026, 9, 24);
+            cab.Primer_Vencimiento = new DateTime(2026, 9, 24);
+            A.CallTo(() => servicio.CargarCabPedido("1", 927024)).Returns(cab);
+            IGestorFacturas gestor = new GestorFacturas(servicio);
+
+            Exception ex = Assert.ThrowsException<Exception>(() => gestor.LeerPedido("1", 927024));
+
+            StringAssert.Contains(ex.Message, "no tiene ninguna línea");
+        }
+
+        [TestMethod]
         public void GestorFactura_CalcularVencimientos_SiNumeroPlazosEsUnoSoloPoneUnPlazo()
         {
             PlazoPago plazoPago = new PlazoPago { Nº_Plazos = 1, DíasPrimerPlazo = 0 };

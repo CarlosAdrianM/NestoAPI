@@ -407,7 +407,18 @@ namespace NestoAPI.Infraestructure.Facturas
         public Factura LeerPedido(string empresa, int pedido)
         {
             CabPedidoVta cabPedido = servicio.CargarCabPedido(empresa, pedido);
-            LinPedidoVta primeraLinea = cabPedido.LinPedidoVtas.FirstOrDefault();
+            if (cabPedido == null)
+            {
+                throw new Exception($"No existe el pedido {pedido}");
+            }
+            // NestoAPI#538: hay cabeceras sin ninguna línea (927024, 25/09/26). Imprimirlas daba un
+            // NullReferenceException en la Delegación de la primera línea, y el usuario solo veía
+            // un error sin explicación.
+            if (cabPedido.LinPedidoVtas == null || !cabPedido.LinPedidoVtas.Any())
+            {
+                throw new Exception($"El pedido {pedido} no tiene ninguna línea, así que no hay nada que imprimir");
+            }
+            LinPedidoVta primeraLinea = cabPedido.LinPedidoVtas.First();
             ISerieFactura serieFactura = LeerSerie(cabPedido.Serie);
 
             Cliente clienteEntrega = servicio.CargarCliente(cabPedido.Empresa, cabPedido.Nº_Cliente, cabPedido.Contacto);
