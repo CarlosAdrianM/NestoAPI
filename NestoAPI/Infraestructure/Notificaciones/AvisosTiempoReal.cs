@@ -23,6 +23,7 @@ namespace NestoAPI.Infraestructure.Notificaciones
             if (!string.IsNullOrWhiteSpace(usuario))
             {
                 _ = Groups.Add(Context.ConnectionId, AvisosTiempoReal.GrupoDe(usuario));
+                UsuariosConectadosNesto.Registrar(Context.ConnectionId, usuario);
             }
             return base.OnConnected();
         }
@@ -33,9 +34,50 @@ namespace NestoAPI.Infraestructure.Notificaciones
             if (!string.IsNullOrWhiteSpace(usuario))
             {
                 _ = Groups.Add(Context.ConnectionId, AvisosTiempoReal.GrupoDe(usuario));
+                UsuariosConectadosNesto.Registrar(Context.ConnectionId, usuario);
             }
             return base.OnReconnected();
         }
+
+        public override Task OnDisconnected(bool stopCalled)
+        {
+            UsuariosConectadosNesto.Quitar(Context.ConnectionId);
+            return base.OnDisconnected(stopCalled);
+        }
+    }
+
+    /// <summary>
+    /// Carlos (25/09/26): quién tiene Nesto abierto ahora mismo (cada Nesto se conecta al hub al arrancar). Sirve
+    /// para avisar de una versión nueva solo a quien tiene que cerrar y volver a abrir: los que no lo tienen
+    /// abierto se actualizan solos al abrirlo. En memoria: se vacía al reciclar la API y se rellena en cuanto
+    /// los Nesto se reconectan (lo hacen solos en unos segundos).
+    /// </summary>
+    public static class UsuariosConectadosNesto
+    {
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> conexiones =
+            new System.Collections.Concurrent.ConcurrentDictionary<string, string>();
+
+        public static void Registrar(string conexion, string usuario)
+        {
+            if (!string.IsNullOrWhiteSpace(conexion) && !string.IsNullOrWhiteSpace(usuario))
+            {
+                conexiones[conexion] = usuario.Trim();
+            }
+        }
+
+        public static void Quitar(string conexion)
+        {
+            if (!string.IsNullOrWhiteSpace(conexion))
+            {
+                _ = conexiones.TryRemove(conexion, out _);
+            }
+        }
+
+        /// <summary>Los usuarios distintos con al menos un Nesto conectado.</summary>
+        public static List<string> Usuarios()
+            => conexiones.Values.Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(u => u, StringComparer.OrdinalIgnoreCase).ToList();
+
+        internal static void Vaciar() => conexiones.Clear();
     }
 
     public interface IAvisosTiempoReal

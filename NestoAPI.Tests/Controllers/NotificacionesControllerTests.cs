@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure.Notificaciones;
@@ -411,5 +411,60 @@ namespace NestoAPI.Tests.Controllers
         }
 
         #endregion
+
+        // Ritual del deploy de Nesto (Carlos, 25/09/26): aviso de versión nueva a quien tiene Nesto abierto
+
+        [TestMethod]
+        public async Task NuevaVersionNesto_SinSerDireccionNiInformatica_Forbidden()
+        {
+            _controller.UsuariosConNestoAbierto = () => new System.Collections.Generic.List<string> { "NUEVAVISION\\Alfredo" };
+
+            var resultado = await _controller.NuevaVersionNesto(new NuevaVersionNestoDTO { Version = "1.10.32.0" });
+
+            Assert.IsInstanceOfType(resultado, typeof(StatusCodeResult));
+            A.CallTo(() => _servicio.GuardarEnBuzonDeUsuario(A<string>._, A<string>._, A<NotificacionPushDTO>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task NuevaVersionNesto_SinVersionValida_BadRequest()
+        {
+            _controller.User = new GenericPrincipal(new GenericIdentity("NUEVAVISION\\Carlos"), new[] { "NUEVAVISION\\Informatica" });
+
+            Assert.IsInstanceOfType(await _controller.NuevaVersionNesto(new NuevaVersionNestoDTO { Version = "" }), typeof(BadRequestErrorMessageResult));
+            Assert.IsInstanceOfType(await _controller.NuevaVersionNesto(new NuevaVersionNestoDTO { Version = "ya" }), typeof(BadRequestErrorMessageResult));
+        }
+
+        [TestMethod]
+        public async Task NuevaVersionNesto_AvisaEnLaCampanaDeNestoAQuienLoTieneAbierto()
+        {
+            _controller.User = new GenericPrincipal(new GenericIdentity("NUEVAVISION\\Carlos"), new[] { "NUEVAVISION\\Dirección" });
+            _controller.UsuariosConNestoAbierto = () => new System.Collections.Generic.List<string> { "NUEVAVISION\\Alfredo", "NUEVAVISION\\Laura" };
+
+            var resultado = await _controller.NuevaVersionNesto(new NuevaVersionNestoDTO { Version = " 1.10.32.0 " });
+
+            Assert.IsNotInstanceOfType(resultado, typeof(StatusCodeResult));
+            A.CallTo(() => _servicio.GuardarEnBuzonDeUsuario("NUEVAVISION\\Alfredo", Constantes.Aplicaciones.NESTO,
+                A<NotificacionPushDTO>.That.Matches(n => n.Titulo == "Nesto 1.10.32.0 ya está publicado"
+                    && n.Cuerpo.Contains("cerrad Nesto y volved a abrirlo")
+                    && n.Datos["tipo"] == NotificacionesController.TIPO_NUEVA_VERSION_NESTO
+                    && n.Datos["version"] == "1.10.32.0"))).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _servicio.GuardarEnBuzonDeUsuario("NUEVAVISION\\Laura", Constantes.Aplicaciones.NESTO, A<NotificacionPushDTO>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public void UsuariosConectadosNesto_UnUsuarioConDosNestoCuentaUnaVez_YAlDesconectarseSale()
+        {
+            UsuariosConectadosNesto.Vaciar();
+            UsuariosConectadosNesto.Registrar("c1", "NUEVAVISION\\Laura");
+            UsuariosConectadosNesto.Registrar("c2", "nuevavision\\laura");
+            UsuariosConectadosNesto.Registrar("c3", "NUEVAVISION\\Alfredo");
+
+            Assert.AreEqual(2, UsuariosConectadosNesto.Usuarios().Count);
+
+            UsuariosConectadosNesto.Quitar("c3");
+
+            CollectionAssert.AreEqual(new[] { "NUEVAVISION\\Laura" }, UsuariosConectadosNesto.Usuarios());
+            UsuariosConectadosNesto.Vaciar();
+        }
     }
 }

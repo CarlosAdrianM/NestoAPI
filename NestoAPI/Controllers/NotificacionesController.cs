@@ -1,3 +1,4 @@
+using NestoAPI.Infrastructure;
 using NestoAPI.Infraestructure.Notificaciones;
 using NestoAPI.Models;
 using System;
@@ -14,9 +15,52 @@ namespace NestoAPI.Controllers
     {
         private readonly IServicioNotificacionesPush _servicio;
 
+        /// <summary>Quién tiene Nesto abierto (sustituible en tests).</summary>
+        internal Func<List<string>> UsuariosConNestoAbierto { get; set; } = UsuariosConectadosNesto.Usuarios;
+
+        internal const string TIPO_NUEVA_VERSION_NESTO = "NuevaVersionNesto";
+
         public NotificacionesController(IServicioNotificacionesPush servicio)
         {
             _servicio = servicio;
+        }
+
+        /// <summary>
+        /// Carlos (25/09/26), ritual del deploy de Nesto: tras publicar la ClickOnce y comprobar Carlos que actualiza
+        /// bien, un aviso en la campana a quien tiene Nesto abierto para que salga y vuelva a entrar cuando le venga
+        /// bien. Solo Dirección e Informática. Devuelve a cuántos y a quién se ha avisado.
+        /// POST api/Notificaciones/NuevaVersionNesto  { "Version": "1.10.32.0" }
+        /// </summary>
+        [HttpPost]
+        [Route("NuevaVersionNesto")]
+        [Authorize]
+        public async Task<IHttpActionResult> NuevaVersionNesto([FromBody] NuevaVersionNestoDTO dto)
+        {
+            if (User == null || !(User.IsInRoleSinDominio(GruposSeguridad.DIRECCION) || User.IsInRoleSinDominio(NovedadesController.GRUPO_INFORMATICA)))
+            {
+                return StatusCode(System.Net.HttpStatusCode.Forbidden);
+            }
+            string version = dto?.Version?.Trim();
+            if (string.IsNullOrWhiteSpace(version) || !System.Version.TryParse(version, out _))
+            {
+                return BadRequest("Falta la versión (por ejemplo, 1.10.32.0)");
+            }
+            var notificacion = new NotificacionPushDTO
+            {
+                Titulo = $"Nesto {version} ya está publicado",
+                Cuerpo = string.IsNullOrWhiteSpace(dto.Texto)
+                    ? $"Cuando os venga bien, cerrad Nesto y volved a abrirlo para actualizar a la versión {version}. En Novedades tenéis lo que trae."
+                    : dto.Texto.Trim(),
+                Tipo = TIPO_NUEVA_VERSION_NESTO,
+                Datos = new Dictionary<string, string> { ["tipo"] = TIPO_NUEVA_VERSION_NESTO, ["version"] = version }
+            };
+            List<string> usuarios = UsuariosConNestoAbierto() ?? new List<string>();
+            foreach (string usuario in usuarios)
+            {
+                // El buzón ya avisa por SignalR al guardar: la campana se enciende al momento
+                await _servicio.GuardarEnBuzonDeUsuario(usuario, Aplicaciones.NESTO, notificacion).ConfigureAwait(false);
+            }
+            return Ok(new { Version = version, Avisados = usuarios.Count, Usuarios = usuarios });
         }
 
         [HttpPost]
