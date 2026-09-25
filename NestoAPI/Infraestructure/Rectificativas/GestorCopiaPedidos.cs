@@ -569,8 +569,10 @@ namespace NestoAPI.Infraestructure.Rectificativas
                 Usuario = usuario
             };
 
+            // NestoAPI#538: aquí NO se guarda. La cabecera entra en el mismo SaveChanges que las
+            // líneas (CopiarLineas / CopiarLineasMultiples), que EF hace en una sola transacción:
+            // si falla la copia de líneas no queda en la BD una cabecera sin ninguna línea.
             _db.CabPedidoVtas.Add(pedidoNuevo);
-            await _db.SaveChangesAsync();
 
             return pedidoNuevo;
         }

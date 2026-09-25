@@ -1143,6 +1143,89 @@ namespace NestoAPI.Tests.Infrastructure.Rectificativas
                 new InvalidOperationException("La secuencia contiene mas de un elemento")));
         }
 
+        // NestoAPI#538: la cabecera del pedido nuevo se guardaba ANTES de copiar las líneas
+        // (SaveChanges en CrearPedidoNuevo). Si la copia de líneas fallaba después, quedaba en
+        // CabPedidoVta una cabecera con cliente pero sin ninguna línea. Ahora la cabecera se guarda
+        // en el mismo SaveChanges que las líneas: o entra todo, o no entra nada.
+
+        [TestMethod]
+        public async Task CopiarFactura_SiFallaLaCopiaDeLineas_NoGuardaLaCabeceraSinLineas()
+        {
+            var db = A.Fake<NVEntities>();
+            var lineas = A.Fake<DbSet<LinPedidoVta>>(o =>
+                o.Implements<IQueryable<LinPedidoVta>>().Implements<IDbAsyncEnumerable<LinPedidoVta>>());
+            ConfigurarFakeDbSet(lineas, new List<LinPedidoVta>
+            {
+                new LinPedidoVta
+                {
+                    Empresa = "1", Número = 900001, Nº_Orden = 1, Nº_Factura = "NV26/000001",
+                    Estado = Constantes.EstadosLineaVenta.FACTURA, TipoLinea = 1, Producto = "P1",
+                    Cantidad = 1, Precio = 10, Contacto = "0", IVA = "G21"
+                }
+            }.AsQueryable());
+            A.CallTo(() => lineas.Add(A<LinPedidoVta>._)).Throws(new InvalidOperationException("fallo al copiar la línea"));
+            A.CallTo(() => db.LinPedidoVtas).Returns(lineas);
+
+            var clientes = A.Fake<DbSet<Cliente>>(o =>
+                o.Implements<IQueryable<Cliente>>().Implements<IDbAsyncEnumerable<Cliente>>());
+            ConfigurarFakeDbSet(clientes, new List<Cliente>
+            {
+                new Cliente { Empresa = "1", Nº_Cliente = "15234", Contacto = "0", IVA = "G21" }
+            }.AsQueryable());
+            A.CallTo(() => clientes.Include(A<string>._)).Returns(clientes);
+            A.CallTo(() => db.Clientes).Returns(clientes);
+
+            var cabeceras = A.Fake<DbSet<CabPedidoVta>>(o =>
+                o.Implements<IQueryable<CabPedidoVta>>().Implements<IDbAsyncEnumerable<CabPedidoVta>>());
+            ConfigurarFakeDbSet(cabeceras, new List<CabPedidoVta>
+            {
+                new CabPedidoVta { Empresa = "1", Número = 900001, Serie = "NV", Nº_Cliente = "15234", Contacto = "0" }
+            }.AsQueryable());
+            CabPedidoVta cabeceraConstruida = null;
+            A.CallTo(() => cabeceras.Add(A<CabPedidoVta>._)).ReturnsLazily((CabPedidoVta c) => cabeceraConstruida = c);
+            A.CallTo(() => db.CabPedidoVtas).Returns(cabeceras);
+
+            var plazos = A.Fake<DbSet<PlazoPago>>(o =>
+                o.Implements<IQueryable<PlazoPago>>().Implements<IDbAsyncEnumerable<PlazoPago>>());
+            ConfigurarFakeDbSet(plazos, new List<PlazoPago>().AsQueryable());
+            A.CallTo(() => db.PlazosPago).Returns(plazos);
+
+            A.CallTo(() => db.TomarSiguienteNumeroPedido()).Returns(927999);
+            int guardados = 0;
+            A.CallTo(() => db.SaveChangesAsync()).ReturnsLazily(() => { guardados++; return Task.FromResult(1); });
+            A.CallTo(() => db.SaveChanges()).ReturnsLazily(() => { guardados++; return 1; });
+
+            var gestor = new GestorCopiaPedidos(
+                db,
+                A.Fake<IServicioPedidosVenta>(),
+                A.Fake<IServicioAlbaranesVenta>(),
+                A.Fake<IServicioFacturas>());
+
+            CopiarFacturaResponse respuesta = await gestor.CopiarFactura(new CopiarFacturaRequest
+            {
+                Empresa = "1",
+                Cliente = "15234",
+                NumeroFactura = "NV26/000001"
+            }, "Carlos");
+
+            Assert.IsFalse(respuesta.Exitoso, respuesta.Mensaje);
+            // La cabecera sí se llegó a construir (el fallo es en las líneas, no antes)...
+            Assert.AreEqual(927999, cabeceraConstruida?.Número, respuesta.Mensaje);
+            // ...pero no se ha guardado nada: no queda una cabecera huérfana en la BD.
+            Assert.AreEqual(0, guardados, "Si fallan las líneas no se puede haber guardado la cabecera sola");
+        }
+
+        private static void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class
+        {
+            A.CallTo(() => ((IDbAsyncEnumerable<T>)fakeDbSet).GetAsyncEnumerator())
+                .ReturnsLazily(() => new TestDbAsyncEnumerator<T>(data.GetEnumerator()));
+            A.CallTo(() => ((IQueryable<T>)fakeDbSet).Provider)
+                .Returns(new TestDbAsyncQueryProvider<T>(data.Provider));
+            A.CallTo(() => ((IQueryable<T>)fakeDbSet).Expression).Returns(data.Expression);
+            A.CallTo(() => ((IQueryable<T>)fakeDbSet).ElementType).Returns(data.ElementType);
+            A.CallTo(() => ((IQueryable<T>)fakeDbSet).GetEnumerator()).ReturnsLazily(() => data.GetEnumerator());
+        }
+
         private static GestorCopiaPedidos CrearGestorConFacturas(params CabFacturaVta[] facturas)
         {
             var db = A.Fake<NVEntities>();
