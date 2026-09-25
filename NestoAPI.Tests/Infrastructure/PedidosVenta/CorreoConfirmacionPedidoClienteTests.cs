@@ -67,6 +67,10 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             Assert.AreEqual("Gracias por tu pedido nº 925347", asunto);
             StringAssert.Contains(html, "CHAMPU 1000 ML &lt;Pro&gt;");
             StringAssert.Contains(html, "SERUM");
+            // Carlos (25/09/26): la referencia del producto, en su columna
+            StringAssert.Contains(html, "<th align=\"left\">Referencia</th>");
+            StringAssert.Contains(html, ">38697</td>");
+            StringAssert.Contains(html, ">44707</td>");
             StringAssert.Contains(html, "121,00");
             StringAssert.Contains(html, "100,00");
             StringAssert.Contains(html, "21,00");

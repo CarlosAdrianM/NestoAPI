@@ -17,7 +17,7 @@ namespace NestoAPI.Tests.Infrastructure
     [TestClass]
     public class ConstructorPedidoClienteTests
     {
-        private const string CLIENTE = "15191";
+        private const string CLIENTE = "15192"; // no El Edén (15191): ese tiene forma de venta propia
 
         private static ClienteDTO FichaCliente()
         {
@@ -191,6 +191,20 @@ namespace NestoAPI.Tests.Infrastructure
             PedidoVentaDTO pedido = Construir();
 
             Assert.IsTrue(pedido.Lineas.All(l => l.formaVenta == Constantes.FormasVenta.APP));
+        }
+
+        [TestMethod]
+        public void Construir_ElEden_LaFormaDeVentaEsVariosAunqueVengaDeLaApp()
+        {
+            // Carlos (25/09/26): El Edén (15191) cuenta como «Varios» venga por donde venga; el usuario APP\15191 sigue diciendo el canal
+            ClienteDTO elEden = FichaCliente();
+            elEden.cliente = Constantes.ClientesEspeciales.EL_EDEN + "     ";
+
+            PedidoVentaDTO pedido = Construir(cliente: elEden);
+
+            Assert.IsTrue(pedido.Lineas.All(l => l.formaVenta == Constantes.Empresas.FORMA_VENTA_POR_DEFECTO));
+            Assert.AreEqual("VAR", Constantes.Empresas.FORMA_VENTA_POR_DEFECTO);
+            Assert.AreEqual(Constantes.FormasVenta.APP, ConstructorPedidoCliente.FormaVentaDelPedido("15192"));
         }
 
         [TestMethod]

@@ -48,6 +48,18 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             return Constantes.FormasVenta.APP + "\\" + (cliente ?? string.Empty).Trim();
         }
 
+        /// <summary>
+        /// La forma de venta de las líneas: APP, salvo para El Edén (Carlos, 25/09/26): aunque pida por la
+        /// tienda, sus ventas cuentan como «Varios», como siempre han contado. El usuario del pedido
+        /// (APP\15191) sigue diciendo que vino por la app.
+        /// </summary>
+        internal static string FormaVentaDelPedido(string cliente)
+        {
+            return string.Equals(cliente?.Trim(), Constantes.ClientesEspeciales.EL_EDEN, StringComparison.OrdinalIgnoreCase)
+                ? Constantes.Empresas.FORMA_VENTA_POR_DEFECTO
+                : Constantes.FormasVenta.APP;
+        }
+
         /// <param name="peticion">Lo que ha pedido el cliente.</param>
         /// <param name="cliente">Su ficha, ya resuelta a partir del JWT.</param>
         /// <param name="precios">Precio y descuento calculados por el servidor, por producto.</param>
@@ -135,6 +147,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 pedido.Lineas.Add(lineaPedida.EsRegaloGanavisiones
                     ? ConstruirRegalo(lineaPedida, regalos, fecha, usuario, tienda)
                     : ConstruirLinea(lineaPedida, precios, fecha, usuario, tienda));
+            }
+            string formaVenta = FormaVentaDelPedido(cliente?.cliente);
+            foreach (LineaPedidoVentaDTO linea in pedido.Lineas)
+            {
+                linea.formaVenta = formaVenta;
             }
 
             return pedido;

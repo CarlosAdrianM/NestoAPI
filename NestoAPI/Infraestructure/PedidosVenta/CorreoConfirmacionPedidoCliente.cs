@@ -102,11 +102,13 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             _ = s.AppendLine("<p>Hemos recibido tu pedido y ya está en manos de nuestro equipo. Te avisaremos cuando salga hacia tu dirección.</p>");
 
             _ = s.AppendLine("<table style=\"width: 100%; border-collapse: collapse;\" cellpadding=\"6\">");
-            _ = s.AppendLine("<thead><tr style=\"background: #f2f2f2;\"><th align=\"left\">Producto</th><th align=\"right\">Cantidad</th>"
+            // Carlos (25/09/26): la referencia también, que es con lo que se busca el producto
+            _ = s.AppendLine("<thead><tr style=\"background: #f2f2f2;\"><th align=\"left\">Referencia</th><th align=\"left\">Producto</th><th align=\"right\">Cantidad</th>"
                 + (dto.SinImportes ? "" : "<th align=\"right\">Importe</th>") + "</tr></thead><tbody>");
             foreach (LineaCorreoConfirmacionPedidoDTO linea in dto.Lineas)
             {
-                _ = s.Append($"<tr><td style=\"border-bottom: 1px solid #eee;\">{WebUtility.HtmlEncode(linea.Texto)}</td>");
+                _ = s.Append($"<tr><td style=\"border-bottom: 1px solid #eee; white-space: nowrap;\">{WebUtility.HtmlEncode(linea.Producto?.Trim())}</td>");
+                _ = s.Append($"<td style=\"border-bottom: 1px solid #eee;\">{WebUtility.HtmlEncode(linea.Texto)}</td>");
                 _ = s.Append($"<td align=\"right\" style=\"border-bottom: 1px solid #eee;\">{linea.Cantidad}</td>");
                 if (!dto.SinImportes)
                 {
