@@ -69,6 +69,20 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void Convertir_LlevaElModoDeFacturacionDelPedido()
+        {
+            // NestoAPI#542 / Nesto#493: al modificar con plantilla, el combo «Facturación» tiene que enseñar el modo real
+            PedidoVentaDTO pedido = Pedido(Linea(1, "38697", 6, 10m));
+            pedido.modoFacturacion = 3;
+            pedido.mantenerJunto = false;
+
+            var resultado = ConvertidorPedidoAPlantilla.Convertir(pedido);
+
+            Assert.AreEqual((byte)3, resultado.ModoFacturacion);
+            Assert.IsFalse(resultado.MantenerJunto);
+        }
+
+        [TestMethod]
         public void Convertir_PedidoAnteriorAlModo_ElModoViajaNuloYServirJuntoManda()
         {
             PedidoVentaDTO pedido = Pedido(Linea(1, "38697", 6, 10m));

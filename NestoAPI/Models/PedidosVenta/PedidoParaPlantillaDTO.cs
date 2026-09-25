@@ -29,6 +29,8 @@ namespace NestoAPI.Models.PedidosVenta
         // hay y el resto de una vez). NULL en pedidos anteriores al modo: el cliente lo deriva de ServirJunto.
         public byte? ModoServicio { get; set; }
         public bool MantenerJunto { get; set; }
+        /// <summary>NestoAPI#542: el modo de facturación que rige (siempre con valor), para que la plantilla lo enseñe al modificar.</summary>
+        public byte? ModoFacturacion { get; set; }
         // De las líneas (la cabecera no las lleva): entrega mínima y almacén de la primera línea real.
         public DateTime? FechaEntrega { get; set; }
         public string Almacen { get; set; }

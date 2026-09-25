@@ -45,7 +45,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 Ruta = pedido.ruta?.Trim(),
                 ServirJunto = pedido.servirJunto,
                 ModoServicio = pedido.modoServicio,
-                MantenerJunto = pedido.mantenerJunto
+                MantenerJunto = pedido.mantenerJunto,
+                ModoFacturacion = pedido.modoFacturacion // #542
             };
 
             List<LineaPedidoVentaDTO> lineasProducto = (pedido.Lineas ?? Enumerable.Empty<LineaPedidoVentaDTO>())
