@@ -11,27 +11,35 @@
 -- PedidoOrigen: en la nota de entrega que se cree automáticamente (corte 2), el pedido del que sale.
 -- Es lo que evita crearla dos veces y lo que permite navegar nota ↔ pedido desde Nesto.
 --
--- ⚠️ EJECUTAR COMO sa EN SSMS ANTES de publicar la API: el EDMX ya mapea las dos columnas y sin
--- ellas cualquier lectura de CabPedidoVta se cae. El índice filtrado recorre la tabla una vez
--- (unos segundos): mejor fuera de horario.
+-- ⚠️ EJECUTAR COMO sa EN SSMS ANTES de publicar la API: el EDMX ya mapea las columnas y sin
+-- ellas cualquier lectura de CabPedidoVta se cae.
+--
+-- Se puede lanzar en horario (25/09/26): añadir columnas que admiten NULL es solo metadatos (no se
+-- reescribe la tabla), y el CHECK va WITH NOCHECK (las columnas son nuevas y están todas a NULL: no hay
+-- nada que validar, y así no recorre las 666.000 cabeceras con la tabla bloqueada). Cada ALTER necesita
+-- un instante de bloqueo exclusivo de esquema: con LOCK_TIMEOUT, si hay una consulta larga sobre la
+-- tabla, el ALTER falla a los 5 s en vez de quedarse esperando y dejar a todos en cola detrás. Si falla,
+-- volver a lanzarlo un poco después (es idempotente). El índice filtrado sí recorre la tabla: va aparte,
+-- al final, para lanzarlo fuera de horario (no hace falta para publicar).
 
-ALTER TABLE dbo.CabPedidoVta ADD ModoFacturacion tinyint NULL;
+SET LOCK_TIMEOUT 5000;
 GO
-ALTER TABLE dbo.CabPedidoVta ADD PedidoOrigen int NULL;
+
+IF COL_LENGTH('dbo.CabPedidoVta', 'ModoFacturacion') IS NULL
+    ALTER TABLE dbo.CabPedidoVta ADD ModoFacturacion tinyint NULL;
+GO
+IF COL_LENGTH('dbo.CabPedidoVta', 'PedidoOrigen') IS NULL
+    ALTER TABLE dbo.CabPedidoVta ADD PedidoOrigen int NULL;
 GO
 -- El albarán de ese pedido del que sale lo pendiente: un pedido puede dar varios albaranes con Recoger
 -- (modo de servicio «según vaya entrando»), y (PedidoOrigen, AlbaranOrigen) es lo que hace única la nota.
-ALTER TABLE dbo.CabPedidoVta ADD AlbaranOrigen int NULL;
+IF COL_LENGTH('dbo.CabPedidoVta', 'AlbaranOrigen') IS NULL
+    ALTER TABLE dbo.CabPedidoVta ADD AlbaranOrigen int NULL;
 GO
 
-ALTER TABLE dbo.CabPedidoVta WITH CHECK
-    ADD CONSTRAINT CK_CabPedidoVta_ModoFacturacion CHECK (ModoFacturacion IS NULL OR ModoFacturacion BETWEEN 1 AND 3);
-GO
-
--- Solo las notas de entrega automáticas lo tienen informado: el índice filtrado es diminuto.
-CREATE NONCLUSTERED INDEX IX_CabPedidoVta_PedidoOrigen
-    ON dbo.CabPedidoVta (Empresa, PedidoOrigen, AlbaranOrigen)
-    WHERE PedidoOrigen IS NOT NULL;
+IF OBJECT_ID('dbo.CK_CabPedidoVta_ModoFacturacion', 'C') IS NULL
+    ALTER TABLE dbo.CabPedidoVta WITH NOCHECK
+        ADD CONSTRAINT CK_CabPedidoVta_ModoFacturacion CHECK (ModoFacturacion IS NULL OR ModoFacturacion BETWEEN 1 AND 3);
 GO
 
 -- Coherencia cuando alguien cambia SOLO MantenerJunto sin conocer el modo (Nesto viejo, y sobre todo
@@ -71,9 +79,19 @@ BEGIN
 END
 GO
 
--- Comprobación: todo NULL al principio
-SELECT ModoFacturacion, COUNT(*) AS Pedidos FROM dbo.CabPedidoVta GROUP BY ModoFacturacion;
+-- Comprobación (solo metadatos, no recorre la tabla): las tres columnas, el CHECK y el trigger
+SELECT c.name AS Columna, TYPE_NAME(c.user_type_id) AS Tipo, c.is_nullable AS AdmiteNull
+FROM sys.columns c WHERE c.object_id = OBJECT_ID('dbo.CabPedidoVta') AND c.name IN ('ModoFacturacion', 'PedidoOrigen', 'AlbaranOrigen');
+SELECT name FROM sys.objects WHERE name IN ('CK_CabPedidoVta_ModoFacturacion', 'trgCabPedidoVtaModoFacturacion');
 GO
+
+-- ============================================================================================
+-- FUERA DE HORARIO (no hace falta para publicar): índice para encontrar la nota de entrega de un pedido.
+-- Recorre CabPedidoVta una vez (unos segundos, bloqueando escrituras mientras se construye). Mientras no
+-- exista, la comprobación de «ya hay nota para este albarán» funciona igual, solo que más lenta.
+-- CREATE NONCLUSTERED INDEX IX_CabPedidoVta_PedidoOrigen
+--     ON dbo.CabPedidoVta (Empresa, PedidoOrigen, AlbaranOrigen)
+--     WHERE PedidoOrigen IS NOT NULL;
 
 -- ============================================================================================
 -- Corte 2: nota de entrega automática (NestoAPI#542). NACE APAGADA: sin fila = apagado.
