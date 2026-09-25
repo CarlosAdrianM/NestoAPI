@@ -32,6 +32,12 @@ namespace NestoAPI.Infraestructure.Facturas
         /// entrega y proformas es el número de PEDIDO, y en el albarán el del albarán (ponía
         /// "Nº Factura" fijo para todos, fallo 20/08/26).
         /// </summary>
+        /// <summary>NestoAPI#522: banda de aviso del justificante provisional (bajo el cuadro de
+        /// cabecera). El texto largo con cómo obtener la factura va en la nota al pie.</summary>
+        internal const string AVISO_DOCUMENTO_PROVISIONAL =
+            "NO ES UNA FACTURA: documento provisional a la espera del registro en VERI*FACTU. " +
+            "La factura se emitirá con este mismo número en cuanto se restablezca el servicio.";
+
         internal static string EtiquetaNumeroDocumento(string tipoDocumento)
         {
             switch (tipoDocumento?.Trim())
@@ -42,6 +48,10 @@ namespace NestoAPI.Infraestructure.Facturas
                     return "Nº Pedido";
                 case Models.Constantes.Facturas.TiposDocumento.ALBARAN:
                     return "Nº Albarán";
+                case Models.Constantes.Facturas.TiposDocumento.DOCUMENTO_PROVISIONAL:
+                    // NestoAPI#522: el número es el que tendrá la factura cuando se registre, pero
+                    // este documento NO es la factura: no se etiqueta como tal.
+                    return "Nº Documento";
                 default:
                     return "Nº Factura";
             }
@@ -392,6 +402,16 @@ namespace NestoAPI.Infraestructure.Facturas
                         table.Cell().Padding(2).Text(factura.NumeroFactura ?? "").FontSize(8);
                     });
                 });
+
+                // ========== NestoAPI#522: aviso del justificante provisional ==========
+                // Justo debajo del cuadro, imposible de pasar por alto: este papel NO es la factura.
+                // El detalle de cómo obtenerla va en la nota al pie (GestorFacturas).
+                if (factura.EsDocumentoProvisional)
+                {
+                    column.Item().PaddingTop(3).Border(1).BorderColor(Colors.Red.Medium)
+                        .Background(Colors.Red.Lighten5).Padding(4).AlignCenter()
+                        .Text(AVISO_DOCUMENTO_PROVISIONAL).Bold().FontSize(10).FontColor(Colors.Red.Darken2);
+                }
 
                 // ========== Su Pedido / P.O. (Issue #58) ==========
                 if (!string.IsNullOrWhiteSpace(factura.SuPedido))

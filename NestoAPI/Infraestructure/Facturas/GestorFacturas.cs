@@ -44,6 +44,67 @@ namespace NestoAPI.Infraestructure.Facturas
                 && verifactuUrl.IndexOf("prewww", StringComparison.OrdinalIgnoreCase) < 0;
         }
 
+        /// <summary>
+        /// NestoAPI#522: interruptor del justificante provisional. Fecha (yyyy-MM-dd) a partir de la
+        /// cual una factura de una serie que tramita Verifactu y que aún NO está registrada se
+        /// imprime y se envía como «DOCUMENTO PROVISIONAL» en vez de como factura. Vacío = apagado
+        /// (fase en sombra: hoy todo se imprime como siempre). Se pondrá a la fecha de entrada en
+        /// producción (01/12/2026) junto con la api-key real (#42); las facturas anteriores a esa
+        /// fecha no tenían obligación de registro y siguen imprimiéndose como facturas. Internal
+        /// set para tests.
+        /// </summary>
+        internal static DateTime? JustificanteProvisionalDesde { get; set; } = LeerJustificanteProvisionalDesde();
+
+        internal const string CLAVE_JUSTIFICANTE_PROVISIONAL_DESDE = "Verifactu:JustificanteProvisionalDesde";
+
+        private static DateTime? LeerJustificanteProvisionalDesde()
+        {
+            string valor = System.Configuration.ConfigurationManager.AppSettings[CLAVE_JUSTIFICANTE_PROVISIONAL_DESDE];
+            return DateTime.TryParse(valor?.Trim(), System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out DateTime fecha)
+                ? fecha.Date
+                : (DateTime?)null;
+        }
+
+        /// <summary>
+        /// NestoAPI#522: ¿esta factura tiene que salir como justificante provisional? Solo con el
+        /// interruptor encendido, con fecha igual o posterior a él, de una serie que tramita
+        /// Verifactu y SIN registro: sin UUID, o con un UUID del sandbox (URL de preproducción
+        /// prewww*.aeat.es, que no es un registro válido). Una factura registrada sin URL persistida
+        /// se da por registrada (el UUID manda; la URL solo sirve para descartar el sandbox).
+        /// </summary>
+        internal static bool EsDocumentoProvisional(CabFacturaVta cabFactura)
+        {
+            if (cabFactura == null || JustificanteProvisionalDesde == null
+                || cabFactura.Fecha.Date < JustificanteProvisionalDesde.Value)
+            {
+                return false;
+            }
+            bool registrada = !string.IsNullOrWhiteSpace(cabFactura.VerifactuUUID)
+                && (string.IsNullOrWhiteSpace(cabFactura.VerifactuURL)
+                    || cabFactura.VerifactuURL.IndexOf("prewww", StringComparison.OrdinalIgnoreCase) < 0);
+            if (registrada)
+            {
+                return false;
+            }
+            ISerieFacturaVerifactu serie = RegistroSeriesVerifactu.ObtenerSerie(cabFactura.Serie);
+            return serie != null && serie.TramitaVerifactu;
+        }
+
+        /// <summary>
+        /// NestoAPI#522: nota al pie del justificante provisional. Dice claramente que NO es una
+        /// factura e indica cómo obtenerla después (lo que pide la FAQ de Verifacti).
+        /// </summary>
+        internal static string TextoAvisoDocumentoProvisional(string numeroFactura, System.Net.Mail.MailAddress correoContacto)
+        {
+            string comoObtenerla = correoContacto != null
+                ? $"La recibirá por correo electrónico en cuanto se emita; si no la recibe, puede solicitarla en {correoContacto.Address}."
+                : "La recibirá en cuanto se emita; si no la recibe, solicítenosla.";
+            return "DOCUMENTO PROVISIONAL: NO ES UNA FACTURA. Por una incidencia técnica en el sistema de " +
+                $"registro de facturación (VERI*FACTU), la factura {numeroFactura?.Trim()} todavía no ha podido " +
+                $"emitirse. Se emitirá con este mismo número en cuanto se restablezca el servicio. {comoObtenerla}";
+        }
+
         public GestorFacturas()
         {
             servicio = new ServicioFacturas();
@@ -359,6 +420,25 @@ namespace NestoAPI.Infraestructure.Facturas
                 ? Constantes.Facturas.TiposDocumento.FACTURA
                 : Constantes.Facturas.TiposDocumento.FACTURA_RECTIFICATIVA;
 
+            // NestoAPI#522: sin registro en Verifactu (caída del proveedor o de la conexión) el
+            // documento NO puede entregarse como factura: sale como justificante provisional, con
+            // el mismo detalle, y la factura definitiva (con QR) saldrá por el circuito normal en
+            // cuanto se registre. Apagado hasta configurar Verifactu:JustificanteProvisionalDesde.
+            bool esDocumentoProvisional = EsDocumentoProvisional(cabFactura);
+            List<NotaFactura> notasAlPie = serieFactura.Notas;
+            if (esDocumentoProvisional)
+            {
+                tipoDocumento = Constantes.Facturas.TiposDocumento.DOCUMENTO_PROVISIONAL;
+                notasAlPie = new List<NotaFactura>
+                {
+                    new NotaFactura { Nota = TextoAvisoDocumentoProvisional(cabFactura.Número, serieFactura.CorreoDesdeFactura) }
+                };
+                if (serieFactura.Notas != null)
+                {
+                    notasAlPie.AddRange(serieFactura.Notas);
+                }
+            }
+
 
             // Verifactu: usar NIF persistido si existe
             string nifFactura = TieneDatosFiscalesPersistidos(cabFactura)
@@ -377,7 +457,8 @@ namespace NestoAPI.Infraestructure.Facturas
                 ImporteTotal = importeTotal,
                 Lineas = lineas,
                 Nif = nifFactura,
-                NotasAlPie = serieFactura.Notas,
+                NotasAlPie = notasAlPie,
+                EsDocumentoProvisional = esDocumentoProvisional,
                 NumeroFactura = cabFactura.Número?.Trim(),
                 Ruta = cabPedido.Ruta?.Trim(),
                 RutaInforme = serieFactura.RutaInforme,
@@ -1134,10 +1215,17 @@ namespace NestoAPI.Infraestructure.Facturas
                 try
                 {
                     ByteArrayContent facturaPdf = FacturaEnPDF(fra.Empresa, fra.Factura);
-                    Attachment attachment = new Attachment(new MemoryStream(await facturaPdf.ReadAsByteArrayAsync()), fra.Factura + ".pdf");
+                    // NestoAPI#522: una factura sin registrar en Verifactu se adjunta como justificante
+                    // provisional (el PDF ya lo dice), y el nombre del adjunto y el asunto también, para
+                    // que el cliente no lo archive como factura. Solo se consulta con el interruptor
+                    // encendido (en sombra no hay consulta extra ni cambio alguno).
+                    bool esProvisional = JustificanteProvisionalDesde != null
+                        && EsDocumentoProvisional(servicio.CargarCabFactura(fra.Empresa, fra.Factura));
+                    string nombreAdjunto = esProvisional ? fra.Factura + "_PROVISIONAL.pdf" : fra.Factura + ".pdf";
+                    Attachment attachment = new Attachment(new MemoryStream(await facturaPdf.ReadAsByteArrayAsync()), nombreAdjunto);
                     mail.Attachments.Add(attachment);
                     // El nº de factura se añade al asunto SOLO si se ha podido adjuntar.
-                    mail.Subject += fra.Factura + ", ";
+                    mail.Subject += esProvisional ? fra.Factura + " (documento provisional), " : fra.Factura + ", ";
                 }
                 catch (Exception ex)
                 {

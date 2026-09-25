@@ -143,6 +143,33 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void GenerarPdf_DocumentoProvisional_GeneraSinErrores()
+        {
+            // NestoAPI#522: justificante provisional (sin registro en Verifactu): cabecera
+            // «DOCUMENTO PROVISIONAL», banda de aviso y nota al pie con cómo obtener la factura.
+            var factura = CrearFacturaBasica();
+            factura.UrlLogo = "http://localhost/logo-inexistente.png"; // la descarga falla en silencio
+            factura.TipoDocumento = NestoAPI.Models.Constantes.Facturas.TiposDocumento.DOCUMENTO_PROVISIONAL;
+            factura.EsDocumentoProvisional = true;
+            factura.NotasAlPie = new List<NotaFactura>
+            {
+                new NotaFactura { Nota = GestorFacturas.TextoAvisoDocumentoProvisional("NV000001", new System.Net.Mail.MailAddress("administracion@nuevavision.es")) }
+            };
+
+            var resultado = _generador.GenerarPdf(new List<Factura> { factura });
+
+            Assert.IsNotNull(resultado, "El justificante provisional debe generarse sin errores");
+        }
+
+        [TestMethod]
+        public void EtiquetaNumeroDocumento_DocumentoProvisional_NoLoLlamaFactura()
+        {
+            Assert.AreEqual("Nº Documento", GeneradorPdfFacturasQuestPdf.EtiquetaNumeroDocumento(
+                NestoAPI.Models.Constantes.Facturas.TiposDocumento.DOCUMENTO_PROVISIONAL));
+            StringAssert.Contains(GeneradorPdfFacturasQuestPdf.AVISO_DOCUMENTO_PROVISIONAL, "NO ES UNA FACTURA");
+        }
+
+        [TestMethod]
         public void GenerarPdf_ConQrVerifactuCorrupto_GeneraSinQrYSinErrores()
         {
             var factura = CrearFacturaBasica();

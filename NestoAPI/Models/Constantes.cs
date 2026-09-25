@@ -254,6 +254,14 @@ namespace NestoAPI.Models
                 public const string PEDIDO = "PEDIDO";
                 public const string NOTA_ENTREGA = "NOTA DE ENTREGA";
                 public const string ALBARAN = "ALBARÁN";
+                /// <summary>
+                /// NestoAPI#522: justificante provisional de venta. Una factura de una serie que tramita
+                /// Verifactu y que aún NO está registrada (caída del proveedor o de la conexión) no
+                /// puede entregarse como factura: se imprime y se envía como documento provisional que
+                /// dice claramente que no es una factura y cómo obtenerla después (FAQ de Verifacti
+                /// «¿Qué pasa si se cae Internet o la API?», respuesta de Xabier Vicuña del 23/09/26).
+                /// </summary>
+                public const string DOCUMENTO_PROVISIONAL = "DOCUMENTO PROVISIONAL";
             }
         }
 

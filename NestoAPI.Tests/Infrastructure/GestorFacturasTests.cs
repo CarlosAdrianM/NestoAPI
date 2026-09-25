@@ -2005,6 +2005,184 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         #endregion
+
+        #region NestoAPI#522: justificante provisional (factura sin registrar en Verifactu)
+
+        private static readonly DateTime FECHA_PRODUCCION_VERIFACTU = new DateTime(2026, 12, 1);
+
+        private static IGestorFacturas GestorConFactura(CabFacturaVta cab)
+        {
+            IServicioFacturas servicio = A.Fake<IServicioFacturas>();
+            cab.Vendedor = "VD";
+            cab.Nº_Cliente = "1111";
+            cab.Número = "NV11111";
+            cab.LinPedidoVtas.Add(new LinPedidoVta
+            {
+                Nº_Albarán = 1,
+                Fecha_Albarán = new DateTime(2026, 12, 2),
+                Cantidad = 1,
+                Texto = "PRODUCTO ROJO",
+                Precio = 20,
+                Producto = "123345",
+                Base_Imponible = 16.52M,
+                ImporteIVA = 3.48M,
+                ImporteRE = 0,
+                Total = 20,
+                PorcentajeIVA = 21,
+                PorcentajeRE = 0M
+            });
+            A.CallTo(() => servicio.CargarCabFactura("1", "NV11111")).Returns(cab);
+            A.CallTo(() => servicio.CargarVencimientosExtracto(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored))
+                .Returns(new List<VencimientoFactura> { new VencimientoFactura { FormaPago = "EFC", Importe = 20, ImportePendiente = 0 } });
+            return new GestorFacturas(servicio);
+        }
+
+        private static CabFacturaVta CabSinRegistrar(string serie = "NV", DateTime? fecha = null)
+        {
+            CabFacturaVta cab = A.Fake<CabFacturaVta>();
+            cab.Serie = serie;
+            cab.Fecha = fecha ?? new DateTime(2026, 12, 2);
+            cab.VerifactuUUID = null;
+            return cab;
+        }
+
+        [TestMethod]
+        public void LeerFactura_SinRegistroEnVerifactuConElInterruptorEncendido_SaleComoDocumentoProvisional()
+        {
+            // Verifacti (23/09/26): la AEAT no permite emitir la factura sin haber generado el XML;
+            // hasta que se registre solo puede entregarse un justificante provisional que diga
+            // claramente que NO es una factura y cómo obtenerla después.
+            DateTime? original = GestorFacturas.JustificanteProvisionalDesde;
+            try
+            {
+                GestorFacturas.JustificanteProvisionalDesde = FECHA_PRODUCCION_VERIFACTU;
+                IGestorFacturas gestor = GestorConFactura(CabSinRegistrar());
+
+                Factura factura = gestor.LeerFactura("1", "NV11111");
+
+                Assert.AreEqual(Constantes.Facturas.TiposDocumento.DOCUMENTO_PROVISIONAL, factura.TipoDocumento);
+                Assert.IsTrue(factura.EsDocumentoProvisional);
+                Assert.IsNull(factura.VerifactuQrBase64, "Sin registro no hay QR que imprimir");
+                StringAssert.Contains(factura.NotasAlPie.First().Nota, "NO ES UNA FACTURA");
+                StringAssert.Contains(factura.NotasAlPie.First().Nota, "NV11111");
+                StringAssert.Contains(factura.NotasAlPie.First().Nota, "administracion@nuevavision.es", "Cómo obtenerla después");
+                Assert.IsTrue(factura.NotasAlPie.Count > new NestoAPI.Models.Facturas.SeriesFactura.SerieNV().Notas.Count, "Las notas de la serie se conservan detrás del aviso");
+            }
+            finally
+            {
+                GestorFacturas.JustificanteProvisionalDesde = original;
+            }
+        }
+
+        [TestMethod]
+        public void LeerFactura_SinRegistroEnVerifactuConElInterruptorApagado_SigueSiendoFactura()
+        {
+            // Fase en sombra (hoy): NADA cambia en lo que se imprime
+            DateTime? original = GestorFacturas.JustificanteProvisionalDesde;
+            try
+            {
+                GestorFacturas.JustificanteProvisionalDesde = null;
+                IGestorFacturas gestor = GestorConFactura(CabSinRegistrar());
+
+                Factura factura = gestor.LeerFactura("1", "NV11111");
+
+                Assert.AreEqual(Constantes.Facturas.TiposDocumento.FACTURA, factura.TipoDocumento);
+                Assert.IsFalse(factura.EsDocumentoProvisional);
+                Assert.AreEqual(new NestoAPI.Models.Facturas.SeriesFactura.SerieNV().Notas.Count, factura.NotasAlPie.Count);
+            }
+            finally
+            {
+                GestorFacturas.JustificanteProvisionalDesde = original;
+            }
+        }
+
+        [TestMethod]
+        public void LeerFactura_RegistradaEnProduccion_EsFacturaAunqueElInterruptorEsteEncendido()
+        {
+            DateTime? original = GestorFacturas.JustificanteProvisionalDesde;
+            try
+            {
+                GestorFacturas.JustificanteProvisionalDesde = FECHA_PRODUCCION_VERIFACTU;
+                CabFacturaVta cab = CabSinRegistrar();
+                cab.VerifactuUUID = "uuid-prod";
+                cab.VerifactuURL = "https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/ValidarQR?nif=A78368255";
+                IGestorFacturas gestor = GestorConFactura(cab);
+
+                Factura factura = gestor.LeerFactura("1", "NV11111");
+
+                Assert.AreEqual(Constantes.Facturas.TiposDocumento.FACTURA, factura.TipoDocumento);
+                Assert.IsFalse(factura.EsDocumentoProvisional);
+            }
+            finally
+            {
+                GestorFacturas.JustificanteProvisionalDesde = original;
+            }
+        }
+
+        [TestMethod]
+        public void LeerFactura_AnteriorALaFechaDelInterruptor_EsFactura()
+        {
+            // Antes de la entrada en producción no había obligación de registro: las facturas de
+            // la sombra (y las históricas) se reimprimen como facturas.
+            DateTime? original = GestorFacturas.JustificanteProvisionalDesde;
+            try
+            {
+                GestorFacturas.JustificanteProvisionalDesde = FECHA_PRODUCCION_VERIFACTU;
+                IGestorFacturas gestor = GestorConFactura(CabSinRegistrar(fecha: new DateTime(2026, 11, 30)));
+
+                Factura factura = gestor.LeerFactura("1", "NV11111");
+
+                Assert.AreEqual(Constantes.Facturas.TiposDocumento.FACTURA, factura.TipoDocumento);
+                Assert.IsFalse(factura.EsDocumentoProvisional);
+            }
+            finally
+            {
+                GestorFacturas.JustificanteProvisionalDesde = original;
+            }
+        }
+
+        [TestMethod]
+        public void EsDocumentoProvisional_CasosLimite()
+        {
+            DateTime? original = GestorFacturas.JustificanteProvisionalDesde;
+            try
+            {
+                GestorFacturas.JustificanteProvisionalDesde = FECHA_PRODUCCION_VERIFACTU;
+                Assert.IsFalse(GestorFacturas.EsDocumentoProvisional(null));
+                Assert.IsTrue(GestorFacturas.EsDocumentoProvisional(CabSinRegistrar()));
+                Assert.IsTrue(GestorFacturas.EsDocumentoProvisional(CabSinRegistrar(serie: "RV")), "Las rectificativas también tramitan");
+                Assert.IsFalse(GestorFacturas.EsDocumentoProvisional(CabSinRegistrar(serie: "GB")), "GB no tramita Verifactu");
+                Assert.IsTrue(GestorFacturas.EsDocumentoProvisional(CabSinRegistrar(fecha: FECHA_PRODUCCION_VERIFACTU)), "El mismo día del interruptor ya cuenta");
+
+                CabFacturaVta sandbox = CabSinRegistrar();
+                sandbox.VerifactuUUID = "uuid-sandbox";
+                sandbox.VerifactuURL = "https://prewww2.aeat.es/wlpl/TIKE-CONT/ValidarQR?nif=B75777847";
+                Assert.IsTrue(GestorFacturas.EsDocumentoProvisional(sandbox), "Un registro del sandbox no es un registro");
+
+                CabFacturaVta sinUrl = CabSinRegistrar();
+                sinUrl.VerifactuUUID = "uuid-sin-url";
+                Assert.IsFalse(GestorFacturas.EsDocumentoProvisional(sinUrl), "El UUID manda; la URL solo descarta el sandbox");
+
+                GestorFacturas.JustificanteProvisionalDesde = null;
+                Assert.IsFalse(GestorFacturas.EsDocumentoProvisional(CabSinRegistrar()), "Apagado: nunca");
+            }
+            finally
+            {
+                GestorFacturas.JustificanteProvisionalDesde = original;
+            }
+        }
+
+        [TestMethod]
+        public void TextoAvisoDocumentoProvisional_SinCorreoDeContacto_NoRompe()
+        {
+            string texto = GestorFacturas.TextoAvisoDocumentoProvisional("NV11111", null);
+
+            StringAssert.Contains(texto, "NO ES UNA FACTURA");
+            StringAssert.Contains(texto, "NV11111");
+            Assert.IsFalse(texto.Contains("@"));
+        }
+
+        #endregion
     }
 
 

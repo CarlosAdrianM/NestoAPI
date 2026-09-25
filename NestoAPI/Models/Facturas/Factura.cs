@@ -25,6 +25,13 @@ namespace NestoAPI.Models.Facturas
         /// activada (Verifacti:MostrarQrEnPdf); si es null el PDF no cambia.
         /// </summary>
         public string VerifactuQrBase64 { get; set; }
+        /// <summary>
+        /// NestoAPI#522: la factura aún no está registrada en Verifactu (caída del proveedor o de la
+        /// conexión) y el documento sale como JUSTIFICANTE PROVISIONAL, no como factura: cabecera
+        /// «DOCUMENTO PROVISIONAL», aviso destacado y nota al pie con cómo obtener la factura. Solo
+        /// se activa con Verifactu:JustificanteProvisionalDesde configurado (apagado en sombra).
+        /// </summary>
+        public bool EsDocumentoProvisional { get; set; }
         public bool UsaFormatoTicket { get; set; }
         public bool MostrarImagenes { get; set; }
         public string SuPedido { get; set; }
