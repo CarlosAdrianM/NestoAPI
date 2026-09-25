@@ -18,6 +18,8 @@ namespace NestoAPI.Models.Picking
 
         public void Ejecutar()
         {
+            PasarAEnCursoLoQueYaTieneStock();
+
             for (int j = 0; j < pedidos.Count; j++)
             {
                 PedidoPicking pedido = pedidos[j];
@@ -39,6 +41,35 @@ namespace NestoAPI.Models.Picking
                 }
             }
             //pedidos.RemoveAll(p => p.Borrar);
+        }
+
+        /// <summary>
+        /// NestoAPI#540: en un pedido que no sale (Todo junto al que le falta algo, retenido por
+        /// prepago...), las líneas que ya tienen sus unidades vuelven de pendiente (-1) a en curso
+        /// (1), para que en el pedido solo quede en -1 lo que de verdad falta. No basta con que haya
+        /// stock: tiene que estar reservada ENTERA en esta pasada, y el reparto va por antigüedad
+        /// (GestorReservasStock), así que ningún pedido más antiguo la necesita y no volverá a -1
+        /// (ni saltará otra vez el correo de «Pasado a Pendientes» del trigger).
+        /// </summary>
+        private void PasarAEnCursoLoQueYaTieneStock()
+        {
+            List<int> idsConStock = pedidos
+                .Where(p => p.Borrar && !(p.EsNotaEntrega && !p.EsProductoYaFacturado))
+                .SelectMany(p => p.Lineas)
+                .Where(l => l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO && l.Cantidad > 0 && l.CantidadReservada == l.Cantidad)
+                .Select(l => l.Id)
+                .ToList();
+            if (!idsConStock.Any())
+            {
+                return;
+            }
+            List<LinPedidoVta> pendientes = db.LinPedidoVtas
+                .Where(l => idsConStock.Contains(l.Nº_Orden) && l.Estado == Constantes.EstadosLineaVenta.PENDIENTE)
+                .ToList();
+            foreach (LinPedidoVta linea in pendientes)
+            {
+                linea.Estado = Constantes.EstadosLineaVenta.EN_CURSO;
+            }
         }
 
         private LineaPedidoPicking pasarAPendiente(LineaPedidoPicking linea, bool elPedidoSeBorrara)
