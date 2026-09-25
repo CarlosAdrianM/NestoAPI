@@ -33,6 +33,8 @@ namespace NestoAPI.Tests.Infrastructure
         private DbSet<PersonaContactoCliente> fakePersonas;
         private List<string> estadosQueBloquean;
         private List<int> agenciasConSeguimiento;
+        private IAlmacenAvisosFacturasVencidas almacen;
+        private Dictionary<int, AvisoFacturaVencidaRegistrado> memoria;
         private SelectorAvisosFacturasVencidas selector;
 
         [TestInitialize]
@@ -72,8 +74,14 @@ namespace NestoAPI.Tests.Infrastructure
             estadosQueBloquean = new List<string>();
             // Los envíos de los tests no fijan Agencia (0): 0 cuenta como agencia con seguimiento
             agenciasConSeguimiento = new List<int> { 0 };
+            // NestoAPI#544: la memoria (tabla AvisosFacturasVencidas) va por su interfaz; vacía por defecto
+            almacen = A.Fake<IAlmacenAvisosFacturasVencidas>();
+            memoria = new Dictionary<int, AvisoFacturaVencidaRegistrado>();
+            A.CallTo(() => almacen.UltimoAvisoPorEfecto("1", A<IEnumerable<int>>._))
+                .ReturnsLazily((string e, IEnumerable<int> ordenes) => Task.FromResult(
+                    memoria.Where(m => ordenes.Contains(m.Key)).ToDictionary(m => m.Key, m => m.Value)));
             selector = new SelectorAvisosFacturasVencidas(db, e => Task.FromResult(estadosQueBloquean),
-                () => agenciasConSeguimiento.ToArray());
+                () => agenciasConSeguimiento.ToArray(), almacen);
         }
 
         private static DbSet<T> Crear<T>() where T : class
@@ -118,7 +126,8 @@ namespace NestoAPI.Tests.Infrastructure
         private static CabFacturaVta Factura(string numero, string plazos = "1/30", DateTime? fecha = null)
             => new CabFacturaVta { Empresa = "1", Número = numero, PlazosPago = plazos, Fecha = fecha ?? HOY.AddDays(-40) };
 
-        private static PersonaContactoCliente Persona(string cliente, string correo, short cargo, short estado = 0)
+        private static PersonaContactoCliente Persona(string cliente, string correo, short cargo, short estado = 0,
+            string nombre = null, string saludo = null)
             => new PersonaContactoCliente
             {
                 Empresa = "1",
@@ -126,7 +135,9 @@ namespace NestoAPI.Tests.Infrastructure
                 Contacto = "0",
                 CorreoElectrónico = correo,
                 Cargo = cargo,
-                Estado = estado
+                Estado = estado,
+                Nombre = nombre,
+                Saludo = saludo
             };
 
         [TestMethod]
@@ -397,6 +408,128 @@ namespace NestoAPI.Tests.Infrastructure
             {
                 Persona("15191", "jefa@ana.es", 5)
             }), "Sin cobros ni facturación no se escribe a cualquiera");
+        }
+        // ---------------------------------------------------------------- NestoAPI#544
+
+        [TestMethod]
+        public async Task Candidatos_SinMemoria_TodosSonPrimerAvisoYTocanHoy()
+        {
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente> { Efecto() });
+
+            AvisoFacturaVencidaDTO aviso = (await selector.Candidatos("1", 5, HOY)).Single();
+
+            Assert.AreEqual(1, aviso.NumeroAviso);
+            Assert.IsTrue(aviso.TocaHoy);
+            Assert.IsNull(aviso.FechaUltimoAviso);
+            A.CallTo(() => almacen.UltimoAvisoPorEfecto("1", A<IEnumerable<int>>.That.Matches(o => o.Contains(1)))).MustHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Candidatos_ConMemoria_AplicaLaCadenciaPorEfecto()
+        {
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente>
+            {
+                Efecto(id: 1),
+                Efecto(id: 2, documento: "NV2612001"),
+                Efecto(id: 3, cliente: "30676", documento: "NV2612002", pendiente: 40)
+            });
+            memoria[1] = new AvisoFacturaVencidaRegistrado { NumOrden = 1, NumeroAviso = 1, Fecha = HOY.AddDays(-3), ImportePendiente = 250.50m };
+            memoria[2] = new AvisoFacturaVencidaRegistrado { NumOrden = 2, NumeroAviso = 1, Fecha = HOY.AddDays(-10), ImportePendiente = 250.50m };
+            memoria[3] = new AvisoFacturaVencidaRegistrado { NumOrden = 3, NumeroAviso = 2, Fecha = HOY.AddDays(-1), ImportePendiente = 100 };
+
+            List<AvisoFacturaVencidaDTO> candidatos = await selector.Candidatos("1", 5, HOY);
+
+            AvisoFacturaVencidaDTO reciente = candidatos.Single(c => c.NOrden == 1);
+            Assert.IsTrue(reciente.SeAvisaria, "Sigue siendo avisable (sin motivo)...");
+            Assert.IsFalse(reciente.TocaHoy, "...pero hoy no le toca");
+            Assert.AreEqual(2, reciente.NumeroAviso);
+            Assert.AreEqual(HOY.AddDays(7), reciente.FechaSiguienteAviso);
+
+            AvisoFacturaVencidaDTO cumplido = candidatos.Single(c => c.NOrden == 2);
+            Assert.IsTrue(cumplido.TocaHoy);
+            Assert.AreEqual(2, cumplido.NumeroAviso);
+
+            AvisoFacturaVencidaDTO pagoParcial = candidatos.Single(c => c.NOrden == 3);
+            Assert.IsTrue(pagoParcial.ReinicioPorPagoParcial, "Debía 100 y ahora 40");
+            Assert.AreEqual(1, pagoParcial.NumeroAviso);
+            Assert.IsTrue(pagoParcial.TocaHoy);
+        }
+
+        [TestMethod]
+        public async Task Candidatos_SiLaTablaDeMemoriaFalla_TodosCuentanComoPrimerAvisoYNoSeCae()
+        {
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente> { Efecto() });
+            A.CallTo(() => almacen.UltimoAvisoPorEfecto(A<string>._, A<IEnumerable<int>>._)).Throws(new Exception("Invalid object name 'AvisosFacturasVencidas'"));
+
+            AvisoFacturaVencidaDTO aviso = (await selector.Candidatos("1", 5, HOY)).Single();
+
+            Assert.AreEqual(1, aviso.NumeroAviso);
+            Assert.IsTrue(aviso.TocaHoy);
+        }
+
+        [TestMethod]
+        public async Task Candidatos_NombreDeLaPersonaDeContacto_SaludoAntesQueNombreYCobrosAntesQueFacturacion()
+        {
+            ConfigurarFakeDbSet(fakePersonas, new List<PersonaContactoCliente>
+            {
+                Persona("15191", "facturas@ana.es", Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO, nombre: "Ana López"),
+                Persona("15191", "cobros@ana.es", Constantes.Clientes.PersonasContacto.CARGO_COBROS, nombre: "Susana García", saludo: "Susana"),
+                Persona("30676", "facturas@luz.es", Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO, nombre: "Luz Martín")
+            });
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente>
+            {
+                Efecto(id: 1),
+                Efecto(id: 2, cliente: "30676", documento: "NV2612001")
+            });
+
+            List<AvisoFacturaVencidaDTO> candidatos = await selector.Candidatos("1", 5, HOY);
+
+            Assert.AreEqual("Susana", candidatos.Single(c => c.NOrden == 1).NombrePersonaContacto, "La de Cobros, y su Saludo");
+            Assert.AreEqual("cobros@ana.es", candidatos.Single(c => c.NOrden == 1).Destinatarios);
+            Assert.AreEqual("Luz Martín", candidatos.Single(c => c.NOrden == 2).NombrePersonaContacto, "Sin Saludo, el Nombre");
+        }
+
+        [TestMethod]
+        public void ResolverNombrePersonaContacto_SinNombreNiSaludo_Null_YNoMezclaGrupos()
+        {
+            Assert.IsNull(SelectorAvisosFacturasVencidas.ResolverNombrePersonaContacto(new[]
+            {
+                Persona("15191", "cobros@ana.es", Constantes.Clientes.PersonasContacto.CARGO_COBROS)
+            }));
+            Assert.IsNull(SelectorAvisosFacturasVencidas.ResolverNombrePersonaContacto(new[]
+            {
+                Persona("15191", "cobros@ana.es", Constantes.Clientes.PersonasContacto.CARGO_COBROS),
+                Persona("15191", "facturas@ana.es", Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO, nombre: "Ana")
+            }), "Se escribe a Cobros: no se saluda con el nombre de la de facturación");
+            Assert.IsNull(SelectorAvisosFacturasVencidas.ResolverNombrePersonaContacto(new[]
+            {
+                Persona("15191", "cobros@ana.es", Constantes.Clientes.PersonasContacto.CARGO_COBROS, estado: -1, nombre: "Baja")
+            }), "Las personas de baja no cuentan");
+            Assert.IsNull(SelectorAvisosFacturasVencidas.ResolverNombrePersonaContacto(null));
+        }
+
+        [TestMethod]
+        public async Task ApuntesNegativos_DevuelveLosApuntesConPendienteNegativoDeEsosClientes()
+        {
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente>
+            {
+                Efecto(id: 1, cliente: "15191"),
+                Efecto(id: 2, cliente: "15191", pendiente: -80.25m, tipoApunte: "3", formaPago: null, documento: "TRF"),
+                Efecto(id: 3, cliente: "15191", pendiente: -10m, tipoApunte: "2", formaPago: null, documento: "NV2611999"),
+                Efecto(id: 4, cliente: "30676", pendiente: -5m, tipoApunte: "3", formaPago: null)
+            });
+
+            List<ApunteNegativoClienteDTO> apuntes = await selector.ApuntesNegativos("1", new[] { "15191" });
+
+            Assert.AreEqual(2, apuntes.Count);
+            ApunteNegativoClienteDTO pago = apuntes.Single(a => a.NOrden == 2);
+            Assert.AreEqual("15191", pago.Cliente);
+            Assert.AreEqual("PELUQUERÍA ANA", pago.Nombre);
+            Assert.AreEqual(-80.25m, pago.Importe);
+            Assert.AreEqual("3", pago.TipoApunte);
+            Assert.AreEqual("TRF", pago.Documento);
+            Assert.IsFalse(apuntes.Any(a => a.Cliente == "30676"), "Solo los clientes pedidos");
+            Assert.AreEqual(0, (await selector.ApuntesNegativos("1", new string[0])).Count);
         }
     }
 }

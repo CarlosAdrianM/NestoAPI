@@ -261,6 +261,24 @@ Devuelve ASUNTO en la primera línea y luego el HTML del cuerpo, sin etiquetas <
         }
 
         /// <summary>
+        /// NestoAPI#544 (d): el nombre de pila que lleva un saludo ya saneado ("¡Hola Carlos!" →
+        /// "Carlos"; "Buenos días" → ""). Sirve para componer otra fórmula (el aviso de facturas
+        /// vencidas saluda con «Buenos días, Carlos:») reutilizando la decisión persona/empresa que
+        /// toma <see cref="GenerarSaludosAsync"/> y la guarda de <see cref="SanearSaludo"/>.
+        /// </summary>
+        internal static string NombreDelSaludo(string saludo)
+        {
+            if (string.IsNullOrWhiteSpace(saludo))
+            {
+                return string.Empty;
+            }
+            IEnumerable<string> palabras = Regex.Replace(saludo, @"[¡!¿?,.:;()""']", " ")
+                .Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)
+                .Where(p => !FormulasDeSaludo.Contains(p));
+            return string.Join(" ", palabras).Trim();
+        }
+
+        /// <summary>
         /// Genera una plantilla HTML reutilizable con placeholders.
         /// Se llama una vez por lote semanal.
         /// </summary>

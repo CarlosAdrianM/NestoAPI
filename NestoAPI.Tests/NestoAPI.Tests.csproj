@@ -393,6 +393,7 @@
     <Compile Include="Infrastructure\SelectorEfectosCobrablesTests.cs" />
     <Compile Include="Infrastructure\SelectorAvisosFacturasVencidasTests.cs" />
     <Compile Include="Infrastructure\AvisosFacturasVencidasJobsServiceTests.cs" />
+    <Compile Include="Infrastructure\CadenciaAvisosFacturasVencidasTests.cs" />
     <Compile Include="Infrastructure\ServicioLiquidarEfectosTests.cs" />
     <Compile Include="Infrastructure\ProveedorCertificadoAeatTests.cs" />
     <Compile Include="Infrastructure\DiagnosticoBloqueosDeadlockTests.cs" />

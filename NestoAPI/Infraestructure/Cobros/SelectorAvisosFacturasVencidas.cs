@@ -27,7 +27,10 @@ namespace NestoAPI.Infraestructure.Cobros
     /// entregado (el MISMO gating que la remesa, <see cref="GatingEntregaFacturas"/>) y los que no
     /// tienen correo al que escribir.
     ///
-    /// Solo lee: no manda nada ni registra nada. El «una vez por efecto» llegará en el corte 2.
+    /// Solo lee: no manda nada ni registra nada. NestoAPI#544 (corte 2): además consulta la memoria
+    /// (<see cref="IAlmacenAvisosFacturasVencidas"/>) y aplica la cadencia
+    /// (<see cref="CadenciaAvisosFacturasVencidas"/>) para decir qué número de aviso sería cada
+    /// efecto y si le toca hoy.
     /// </summary>
     public class SelectorAvisosFacturasVencidas
     {
@@ -55,14 +58,16 @@ namespace NestoAPI.Infraestructure.Cobros
         private readonly NVEntities db;
         private readonly Func<string, Task<List<string>>> leerEstadosQueBloquean;
         private readonly GatingEntregaFacturas gatingEntrega;
+        private readonly IAlmacenAvisosFacturasVencidas almacen;
 
         public SelectorAvisosFacturasVencidas(NVEntities db, Func<string, Task<List<string>>> leerEstadosQueBloquean = null,
-            Func<int[]> leerAgenciasConSeguimiento = null)
+            Func<int[]> leerAgenciasConSeguimiento = null, IAlmacenAvisosFacturasVencidas almacen = null)
         {
             this.db = db;
             this.leerEstadosQueBloquean = leerEstadosQueBloquean
                 ?? (e => SelectorEfectosCobrables.LeerEstadosQueBloqueanBd(db, e));
             gatingEntrega = new GatingEntregaFacturas(db, leerAgenciasConSeguimiento);
+            this.almacen = almacen ?? new AlmacenAvisosFacturasVencidasSql(db);
         }
 
         /// <summary>
@@ -149,14 +154,30 @@ namespace NestoAPI.Infraestructure.Cobros
             HashSet<string> conNegativos = new HashSet<string>(
                 conNegativosLista.Select(c => c?.Trim()), StringComparer.OrdinalIgnoreCase);
 
+            // NestoAPI#544 (c): la memoria. Si la tabla aún no existe (script sin ejecutar) o falla,
+            // se avisa a ELMAH y ese día todos cuentan como primer aviso: mejor eso que no avisar.
+            Dictionary<int, AvisoFacturaVencidaRegistrado> ultimos;
+            try
+            {
+                ultimos = await almacen.UltimoAvisoPorEfecto(empresa, efectos.Select(e => e.Nº_Orden)).ConfigureAwait(false)
+                    ?? new Dictionary<int, AvisoFacturaVencidaRegistrado>();
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception("[Aviso facturas vencidas #544] No se ha podido leer la tabla AvisosFacturasVencidas; " +
+                    "hoy todos cuentan como primer aviso: " + ex.Message, ex));
+                ultimos = new Dictionary<int, AvisoFacturaVencidaRegistrado>();
+            }
+
             return efectos.Select(e =>
             {
                 string documento = e.Nº_Documento?.Trim();
                 string cliente = e.Número?.Trim();
                 string clave = Clave(cliente, e.Contacto);
                 bool tieneFactura = documento != null && facturaPorNumero.ContainsKey(documento);
-                string destinatarios = ResolverDestinatarios(
-                    personasPorClave.TryGetValue(clave, out List<PersonaContactoCliente> ps) ? ps : null);
+                List<PersonaContactoCliente> personasDelCliente =
+                    personasPorClave.TryGetValue(clave, out List<PersonaContactoCliente> ps) ? ps : null;
+                string destinatarios = ResolverDestinatarios(personasDelCliente);
 
                 string motivo = null;
                 string estadoEfecto = e.Estado?.Trim();
@@ -181,7 +202,7 @@ namespace NestoAPI.Infraestructure.Cobros
                     motivo = MOTIVO_SIN_CORREO;
                 }
 
-                return new AvisoFacturaVencidaDTO
+                AvisoFacturaVencidaDTO aviso = new AvisoFacturaVencidaDTO
                 {
                     NOrden = e.Nº_Orden,
                     Cliente = cliente,
@@ -194,13 +215,83 @@ namespace NestoAPI.Infraestructure.Cobros
                     Importe = e.ImportePdte,
                     DiasVencida = (fechaHoy - e.FechaVto.Value.Date).Days,
                     Destinatarios = destinatarios,
+                    NombrePersonaContacto = ResolverNombrePersonaContacto(personasDelCliente),
                     Motivo = motivo
                 };
+                CadenciaAvisosFacturasVencidas.Aplicar(aviso,
+                    ultimos.TryGetValue(e.Nº_Orden, out AvisoFacturaVencidaRegistrado ultimo) ? ultimo : null, fechaHoy);
+                return aviso;
             })
             .OrderBy(a => a.Motivo != null)
             .ThenBy(a => a.Cliente)
             .ThenBy(a => a.Vencimiento)
             .ToList();
+        }
+
+        /// <summary>
+        /// NestoAPI#544 (b): los apuntes con pendiente negativo de esos clientes (los que hacen que no
+        /// se les avise), para que administración los liquide.
+        /// </summary>
+        public async Task<List<ApunteNegativoClienteDTO>> ApuntesNegativos(string empresa, IEnumerable<string> clientes)
+        {
+            List<string> lista = (clientes ?? Enumerable.Empty<string>())
+                .Select(c => c?.Trim()).Where(c => !string.IsNullOrEmpty(c)).Distinct().ToList();
+            if (!lista.Any())
+            {
+                return new List<ApunteNegativoClienteDTO>();
+            }
+            List<ExtractoCliente> apuntes = await db.ExtractosCliente
+                .Where(e => e.Empresa == empresa && lista.Contains(e.Número) && e.ImportePdte < 0)
+                .ToListAsync().ConfigureAwait(false);
+            List<string> numeros = apuntes.Select(a => a.Número?.Trim()).Distinct().ToList();
+            var fichas = await db.Clientes
+                .Where(c => c.Empresa == empresa && numeros.Contains(c.Nº_Cliente))
+                .Select(c => new { c.Nº_Cliente, c.Contacto, c.Nombre })
+                .ToListAsync().ConfigureAwait(false);
+            Dictionary<string, string> nombrePorClave = fichas
+                .GroupBy(c => Clave(c.Nº_Cliente, c.Contacto))
+                .ToDictionary(g => g.Key, g => g.First().Nombre?.Trim());
+            return apuntes.Select(a => new ApunteNegativoClienteDTO
+            {
+                Cliente = a.Número?.Trim(),
+                Contacto = a.Contacto?.Trim(),
+                Nombre = nombrePorClave.TryGetValue(Clave(a.Número, a.Contacto), out string nombre) ? nombre : null,
+                NOrden = a.Nº_Orden,
+                Fecha = a.Fecha,
+                Importe = a.ImportePdte,
+                TipoApunte = a.TipoApunte?.Trim(),
+                Concepto = a.Concepto?.Trim(),
+                Documento = a.Nº_Documento?.Trim()
+            })
+            .OrderBy(a => a.Cliente).ThenBy(a => a.Fecha)
+            .ToList();
+        }
+
+        /// <summary>
+        /// NestoAPI#544 (d): a quién saludar. La persona de Cobros (o, si no hay, la de Factura por
+        /// correo) a la que va el aviso: su Saludo si lo tiene, si no su Nombre. Null si no hay.
+        /// </summary>
+        public static string ResolverNombrePersonaContacto(IEnumerable<PersonaContactoCliente> personas)
+        {
+            List<PersonaContactoCliente> conCorreo = (personas ?? Enumerable.Empty<PersonaContactoCliente>())
+                .Where(p => !string.IsNullOrWhiteSpace(p.CorreoElectrónico)
+                    && p.Estado >= Constantes.Clientes.PersonasContacto.ESTADO_POR_DEFECTO)
+                .ToList();
+            // El mismo grupo al que se escribe (ResolverDestinatarios): Cobros si hay, si no Factura por correo
+            List<PersonaContactoCliente> grupo = conCorreo
+                .Where(p => p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_COBROS).ToList();
+            if (!grupo.Any())
+            {
+                grupo = conCorreo
+                    .Where(p => p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO).ToList();
+            }
+            PersonaContactoCliente elegida = grupo
+                .FirstOrDefault(p => !string.IsNullOrWhiteSpace(p.Saludo) || !string.IsNullOrWhiteSpace(p.Nombre));
+            if (elegida == null)
+            {
+                return null;
+            }
+            return string.IsNullOrWhiteSpace(elegida.Saludo) ? elegida.Nombre.Trim() : elegida.Saludo.Trim();
         }
 
         /// <summary>

@@ -658,7 +658,8 @@ namespace NestoAPI
             // 7:45: después del poll de seguimiento de las 6:00 (el gating de entrega mira el estado
             // de los envíos) y antes de que administración empiece la jornada y la remesa. El job se
             // registra siempre pero NO HACE NADA salvo que el parámetro AvisoFacturasVencidas de
-            // (defecto) valga "Sombra" (corte 1: la lista va solo a administración).
+            // (defecto) valga "Sombra" (la lista va solo a administración) o "Activo" (NestoAPI#544:
+            // escribe a los clientes, registra en AvisosFacturasVencidas y resume a administración).
             RecurringJob.AddOrUpdate(
                 "aviso-facturas-vencidas",
                 () => Infraestructure.Cobros.AvisosFacturasVencidasJobsService.Procesar(),

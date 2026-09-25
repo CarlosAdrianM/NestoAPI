@@ -736,7 +736,9 @@ namespace NestoAPI.Models
             /// NestoAPI#534: interruptor del aviso automático de facturas vencidas por transferencia
             /// (job diario de Hangfire). Bajo «(defecto)». Sin fila, "0" o cualquier valor que no se
             /// reconozca: APAGADO (no hace nada). "Sombra": calcula la lista y la manda SOLO a
-            /// administración, sin escribir a ningún cliente. El envío a clientes llegará en el corte 2.
+            /// administración, sin escribir a ningún cliente ni registrar nada. "Activo" (NestoAPI#544):
+            /// escribe a los clientes, registra cada aviso en AvisosFacturasVencidas y manda el resumen
+            /// a administración.
             /// </summary>
             public const string AVISO_FACTURAS_VENCIDAS = "AvisoFacturasVencidas";
 
@@ -748,6 +750,15 @@ namespace NestoAPI.Models
             /// de encenderlo para que no hagan la suya a mano (duplicado).
             /// </summary>
             public const string NOTA_ENTREGA_AUTOMATICA = "NotaEntregaAutomatica";
+
+            /// <summary>
+            /// NestoAPI#544 (a): con "1", al crear o modificar un cliente cuya forma de pago sea
+            /// transferencia a plazo (TRN y plazos distintos de PRE, CONTADO y CR) se exige una persona
+            /// de contacto activa con correo y cargo Cobros o Factura por correo (400 si no). Sin fila
+            /// o con otro valor: no se exige (los clientes que aún no mandan persona de contacto en el
+            /// alta seguirían funcionando).
+            /// </summary>
+            public const string EXIGIR_CORREO_COBROS_TRANSFERENCIA = "ExigirCorreoCobrosTransferencia";
 
             /// <summary>
             /// NestoAPI#534: días que tienen que haber pasado desde el vencimiento para avisar (entero
