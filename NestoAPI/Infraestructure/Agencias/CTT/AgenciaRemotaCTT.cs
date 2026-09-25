@@ -44,6 +44,18 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
         internal const int MAX_PAGINAS = 40;
         internal const string CLAVE_YA_ANULADO = "ALREADY_NULLED_SHIPPING";
 
+        // NestoAPI#494: tipos de retorno de CTT (EnviosAgencia.Retorno), los que ofrece Nesto en su lista.
+        public const short RETORNO_NINGUNO = 0;
+        /// <summary>Se entrega el envío y el repartidor trae algo de vuelta (adicional RET del manifiesto).</summary>
+        public const short RETORNO_CON_RETORNO = 1;
+        /// <summary>Solo recogida: CTT va al domicilio del cliente/proveedor y lo trae a nuestro almacén (pickup.has_pickup_asap).</summary>
+        public const short RETORNO_RECOGIDA_EN_ORIGEN = 2;
+        /// <summary>Clave del interruptor (ParametrosUsuario, empresa 1, «(defecto)»): "1"/"true" = activos.</summary>
+        public const string CLAVE_RETORNOS_ACTIVOS = "CTTRetornosActivos";
+        // Franja por defecto de la recogida: CTT la ajusta a la primera posible si no encaja.
+        internal const string RECOGIDA_HORA_DESDE = "09:00";
+        internal const string RECOGIDA_HORA_HASTA = "18:00";
+
         private readonly IClienteRestCTT _cliente;
         private readonly ConfiguracionCTT _config;
         private readonly RegistroIntercambiosRemotos _registro;
@@ -144,6 +156,17 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
         {
             if (envio == null) throw new ArgumentNullException(nameof(envio));
             if (string.IsNullOrWhiteSpace(albaran)) throw new ArgumentNullException(nameof(albaran));
+
+            // NestoAPI#494/#505: si el envío nuevo no se puede registrar (servicio o retorno que CTT no
+            // tiene, retornos apagados...), no se anula el anterior: nos quedaríamos sin ninguno.
+            try
+            {
+                ConstruirManifiesto(envio);
+            }
+            catch (ArgumentException ex)
+            {
+                return new ResultadoTramitacionRemota { Exito = false, Error = ex.Message };
+            }
 
             ResultadoOperacionRemota anulacion = await AnularAsync(albaran).ConfigureAwait(false);
             if (!anulacion.Exito)
@@ -249,6 +272,12 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
         /// </summary>
         internal JObject ConstruirManifiesto(DatosEnvioRemoto envio)
         {
+            ValidarRetorno(envio);
+            if (envio.Retorno == RETORNO_RECOGIDA_EN_ORIGEN)
+            {
+                return ConstruirManifiestoRecogida(envio);
+            }
+
             string cp = (envio.CodigoPostal ?? string.Empty).Trim();
             int bultos = Math.Max(1, envio.Bultos);
             decimal pesoBulto = Math.Max(0.01m, Math.Round(envio.Peso / bultos, 2, MidpointRounding.AwayFromZero));
@@ -306,9 +335,10 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
             {
                 manifiesto["recipient_email_notify_address"] = envio.Email.Trim();
             }
+            var adicionales = new JArray();
             if (envio.Reembolso > 0)
             {
-                manifiesto["additionals"] = new JArray(new JObject
+                adicionales.Add(new JObject
                 {
                     ["additional_code"] = "REE",
                     ["additional_value"] = Math.Round(envio.Reembolso, 2, MidpointRounding.AwayFromZero),
@@ -316,6 +346,124 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
                     ["additional_text"] = string.Empty,
                     ["additional_sub_code"] = string.Empty
                 });
+            }
+            if (envio.Retorno == RETORNO_CON_RETORNO)
+            {
+                // NestoAPI#494: "RETURN SHIPMENT" del manual (Shipping Manifest v2.2, Additionals).
+                adicionales.Add(new JObject
+                {
+                    ["additional_code"] = "RET",
+                    ["additional_value"] = 0,
+                    ["additional_flag"] = true,
+                    ["additional_text"] = string.Empty,
+                    ["additional_sub_code"] = string.Empty
+                });
+            }
+            if (adicionales.Count > 0)
+            {
+                manifiesto["additionals"] = adicionales;
+            }
+            return manifiesto;
+        }
+
+        /// <summary>
+        /// NestoAPI#494: un tipo de retorno solo sale hacia CTT si es uno de los suyos y el interruptor
+        /// está encendido. Lanza ArgumentException (InsertarYEtiquetar la devuelve como error, sin llamar
+        /// a CTT): nunca se manda como envío normal algo que el usuario pidió como recogida.
+        /// </summary>
+        private void ValidarRetorno(DatosEnvioRemoto envio)
+        {
+            if (envio.Retorno == RETORNO_NINGUNO) return;
+            if (envio.Retorno != RETORNO_CON_RETORNO && envio.Retorno != RETORNO_RECOGIDA_EN_ORIGEN)
+            {
+                throw new ArgumentException($"CTT no tiene el tipo de retorno {envio.Retorno}. Elige «NO», «Con retorno» o «Recogida en origen».");
+            }
+            if (!_config.RetornosActivos)
+            {
+                throw new ArgumentException($"Las recogidas y retornos por CTT todavía no están activados (parámetro {CLAVE_RETORNOS_ACTIVOS}). Tramítalo sin retorno o por otra agencia.");
+            }
+            if (envio.Retorno == RETORNO_RECOGIDA_EN_ORIGEN && envio.Reembolso > 0)
+            {
+                throw new ArgumentException("Una recogida en origen no puede llevar reembolso: CTT no cobra al recoger.");
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#494: recogida en el domicilio de un cliente o proveedor que viene a nuestro almacén.
+        /// Se invierte el envío: remitente = el domicilio del envío (EnviosAgencia), destinatario = el
+        /// remitente de siempre (CTT:Remitente:*, Algete), y el bloque pickup con has_pickup_asap = true
+        /// para que CTT genere la orden de recogida en la dirección del remitente (manual Shipping
+        /// Manifest v2.2, "Pickup Information Section"). Si la fecha/franja no encaja, CTT la ajusta a la
+        /// primera posible. El servicio sale de la zona del domicilio donde se recoge.
+        /// </summary>
+        internal JObject ConstruirManifiestoRecogida(DatosEnvioRemoto envio)
+        {
+            string cpOrigen = (envio.CodigoPostal ?? string.Empty).Trim();
+            int bultos = Math.Max(1, envio.Bultos);
+            decimal pesoBulto = Math.Max(0.01m, Math.Round(envio.Peso / bultos, 2, MidpointRounding.AwayFromZero));
+            decimal largo = envio.Largo > 0 ? envio.Largo : LARGO_POR_DEFECTO;
+            decimal ancho = envio.Ancho > 0 ? envio.Ancho : ANCHO_POR_DEFECTO;
+            decimal alto = envio.Alto > 0 ? envio.Alto : ALTO_POR_DEFECTO;
+
+            var items = new JArray();
+            for (int i = 0; i < bultos; i++)
+            {
+                items.Add(new JObject
+                {
+                    ["item_weight_declared"] = pesoBulto,
+                    ["item_length_declared"] = largo,
+                    ["item_width_declared"] = ancho,
+                    ["item_height_declared"] = alto
+                });
+            }
+
+            DateTime hoy = _hoy().Date;
+            DateTime fechaRecogida = envio.FechaRecogida.HasValue && envio.FechaRecogida.Value.Date > hoy
+                ? envio.FechaRecogida.Value.Date
+                : hoy;
+
+            var manifiesto = new JObject
+            {
+                ["client_center_code"] = _config.ClientCenterCode,
+                ["shipping_type_code"] = MapeadorTipoServicioCTT.TipoServicio(envio.Servicio, cpOrigen),
+                ["client_references"] = new JArray(Acotar(envio.Referencia, 30) ?? string.Empty, string.Empty),
+                ["shipping_weight_declared"] = Math.Round(envio.Peso, 2, MidpointRounding.AwayFromZero),
+                ["item_count"] = bultos,
+                ["sender_name"] = Acotar(envio.Nombre, 60),
+                ["sender_country_code"] = MapeadorTipoServicioCTT.PaisDesdeCodigoPostal(cpOrigen),
+                ["sender_postal_code"] = cpOrigen,
+                ["sender_address"] = Acotar(envio.Direccion, 100),
+                ["sender_town"] = Acotar(envio.Poblacion, 60),
+                ["sender_phones"] = Telefonos(envio.Telefono, envio.Movil),
+                ["recipient_name"] = _config.Remitente.Nombre,
+                ["recipient_country_code"] = _config.Remitente.Pais ?? "ES",
+                ["recipient_postal_code"] = _config.Remitente.CodigoPostal,
+                ["recipient_address"] = _config.Remitente.Direccion,
+                ["recipient_town"] = _config.Remitente.Poblacion,
+                ["recipient_phones"] = Telefonos(_config.Remitente.Telefono, null),
+                ["shipping_date"] = hoy.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                ["pickup"] = new JObject
+                {
+                    ["has_pickup_asap"] = true,
+                    ["comments"] = Acotar(envio.Observaciones, 200) ?? string.Empty,
+                    ["date"] = fechaRecogida.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                    ["time"] = new JArray(new JObject
+                    {
+                        ["min_hourminute"] = RECOGIDA_HORA_DESDE,
+                        ["max_hourminute"] = RECOGIDA_HORA_HASTA
+                    })
+                },
+                ["delivery"] = new JObject
+                {
+                    ["contact_name"] = _config.Remitente.Nombre,
+                    ["comments"] = string.Empty
+                },
+                ["items"] = items
+            };
+            // Los avisos de CTT nos llegan a nosotros, que en una recogida somos el destinatario.
+            if (!string.IsNullOrWhiteSpace(_config.Remitente.Email))
+            {
+                manifiesto["recipient_email_notify_address"] = _config.Remitente.Email;
             }
             return manifiesto;
         }

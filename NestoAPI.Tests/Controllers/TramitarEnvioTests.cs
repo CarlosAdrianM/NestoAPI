@@ -235,6 +235,24 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public async Task Tramitar_PasaElTipoDeRetornoYLaFechaALaAgencia()
+        {
+            // NestoAPI#494: la recogida en origen de CTT necesita el tipo de retorno y el día pedido.
+            EnviosAgencia envio = EnvioPendiente();
+            envio.Retorno = 2;
+            envio.Fecha = new System.DateTime(2026, 9, 29);
+            ConEnvio(envio);
+            A.CallTo(() => fakeFabrica.Crear(Constantes.Agencias.AGENCIA_INNOVATRANS)).Returns(fakeAgencia);
+            A.CallTo(() => fakeAgencia.InsertarYEtiquetarAsync(A<DatosEnvioRemoto>.Ignored))
+                .Returns(Task.FromResult(new ResultadoTramitacionRemota { Exito = true, Albaran = "0123456789", Bultos = 1, Etiqueta = EtiquetaZpl() }));
+
+            await controller.TramitarEnvio(1);
+
+            A.CallTo(() => fakeAgencia.InsertarYEtiquetarAsync(A<DatosEnvioRemoto>.That.Matches(d =>
+                d.Retorno == 2 && d.FechaRecogida == new System.DateTime(2026, 9, 29)))).MustHaveHappened();
+        }
+
+        [TestMethod]
         public async Task Tramitar_Exito_AuditaElSoapCrudoDeLosIntercambios()
         {
             EnviosAgencia envio = EnvioPendiente();

@@ -64,5 +64,13 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
         }
 
         public bool TieneCredenciales => !string.IsNullOrWhiteSpace(ClientId) && !string.IsNullOrWhiteSpace(ClientSecret);
+
+        /// <summary>
+        /// NestoAPI#494: interruptor de las recogidas y retornos por CTT (parámetro de usuario
+        /// CTTRetornosActivos de la empresa por defecto, «(defecto)»; lo pone el perfil al componer la
+        /// agencia). Apagado, un envío de CTT con tipo de retorno se RECHAZA con un mensaje claro: nunca
+        /// sale como envío normal (el paquete iría al cliente en vez de recogerse en su casa).
+        /// </summary>
+        public bool RetornosActivos { get; set; }
     }
 }

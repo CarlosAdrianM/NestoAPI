@@ -355,6 +355,163 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             Assert.AreEqual(1, fake.Llamadas.Count, "Sin anulación no se registra un segundo envío");
         }
 
+        // ---- NestoAPI#494: recogidas y retornos ----
+
+        private static ConfiguracionCTT ConfigConRetornos()
+        {
+            ConfiguracionCTT c = Config();
+            c.RetornosActivos = true;
+            return c;
+        }
+
+        private static DatosEnvioRemoto RecogidaEnValencia()
+        {
+            DatosEnvioRemoto envio = EnvioMadrid();
+            envio.Nombre = "PROVEEDOR DE PRUEBA";
+            envio.Direccion = "CALLE COLÓN 5";
+            envio.CodigoPostal = "46001";
+            envio.Poblacion = "VALENCIA";
+            envio.Retorno = AgenciaRemotaCTT.RETORNO_RECOGIDA_EN_ORIGEN;
+            envio.Observaciones = "Preguntar por Ana";
+            envio.Reembolso = -1m; // centinela "no cobrar"
+            return envio;
+        }
+
+        [TestMethod]
+        public void RecogidaEnOrigen_InvierteElEnvio_YPideLaRecogidaEnCasaDelCliente()
+        {
+            var agencia = new AgenciaRemotaCTT(new FakeClienteRest(), ConfigConRetornos(), hoy: () => new DateTime(2026, 9, 25));
+            DatosEnvioRemoto envio = RecogidaEnValencia();
+            envio.FechaRecogida = new DateTime(2026, 9, 28);
+
+            JObject m = agencia.ConstruirManifiesto(envio);
+
+            Assert.AreEqual("PROVEEDOR DE PRUEBA", (string)m["sender_name"], "El remitente es el cliente/proveedor");
+            Assert.AreEqual("46001", (string)m["sender_postal_code"]);
+            Assert.AreEqual("CALLE COLON 5", (string)m["sender_address"]);
+            CollectionAssert.AreEqual(new[] { "600000000", "916000000" }, ((JArray)m["sender_phones"]).Select(t => (string)t).ToArray());
+            Assert.AreEqual("NUEVA VISION S.A.", (string)m["recipient_name"], "El destinatario es nuestro almacén");
+            Assert.AreEqual("28110", (string)m["recipient_postal_code"]);
+            Assert.AreEqual("C48", (string)m["shipping_type_code"], "Servicio por la zona del domicilio donde se recoge");
+            Assert.IsTrue((bool)m["pickup"]["has_pickup_asap"], "CTT genera la orden de recogida en la dirección del remitente");
+            Assert.AreEqual("2026-09-28", (string)m["pickup"]["date"]);
+            Assert.AreEqual("09:00", (string)m["pickup"]["time"][0]["min_hourminute"]);
+            Assert.AreEqual("18:00", (string)m["pickup"]["time"][0]["max_hourminute"]);
+            Assert.AreEqual("Preguntar por Ana", (string)m["pickup"]["comments"]);
+            Assert.IsNull(m["additionals"], "Sin reembolso ni RET");
+            Assert.IsNull(m["recipient_email_notify_address"], "No se avisa al cliente como si fuera el destinatario");
+        }
+
+        [TestMethod]
+        public void RecogidaEnOrigen_ConFechaPasada_PideHoy()
+        {
+            var agencia = new AgenciaRemotaCTT(new FakeClienteRest(), ConfigConRetornos(), hoy: () => new DateTime(2026, 9, 25));
+            DatosEnvioRemoto envio = RecogidaEnValencia();
+            envio.FechaRecogida = new DateTime(2026, 9, 20);
+
+            JObject m = agencia.ConstruirManifiesto(envio);
+
+            Assert.AreEqual("2026-09-25", (string)m["pickup"]["date"]);
+        }
+
+        [TestMethod]
+        public void ConRetorno_EsUnEnvioNormalConElAdicionalRET_YElReembolsoSeMantiene()
+        {
+            var agencia = new AgenciaRemotaCTT(new FakeClienteRest(), ConfigConRetornos());
+            DatosEnvioRemoto envio = EnvioMadrid();
+            envio.Retorno = AgenciaRemotaCTT.RETORNO_CON_RETORNO;
+            envio.Reembolso = 20m;
+
+            JObject m = agencia.ConstruirManifiesto(envio);
+
+            Assert.AreEqual("28001", (string)m["recipient_postal_code"], "Se entrega al cliente como siempre");
+            Assert.IsNull(m["pickup"]);
+            CollectionAssert.AreEquivalent(new[] { "REE", "RET" }, ((JArray)m["additionals"]).Select(a => (string)a["additional_code"]).ToArray());
+        }
+
+        [TestMethod]
+        public async Task Retornos_ConElInterruptorApagado_SeRechazanSinLlamarACTT()
+        {
+            // Nunca sale como envío normal algo pedido como recogida: el paquete iría al cliente.
+            var fake = new FakeClienteRest();
+            IAgenciaRemota agencia = new AgenciaRemotaCTT(fake, Config());
+
+            ResultadoTramitacionRemota r = await agencia.InsertarYEtiquetarAsync(RecogidaEnValencia());
+
+            Assert.IsFalse(r.Exito);
+            StringAssert.Contains(r.Error, AgenciaRemotaCTT.CLAVE_RETORNOS_ACTIVOS);
+            Assert.AreEqual(0, fake.Llamadas.Count);
+        }
+
+        [TestMethod]
+        public async Task RecogidaEnOrigen_ConReembolso_SeRechaza()
+        {
+            var fake = new FakeClienteRest();
+            IAgenciaRemota agencia = new AgenciaRemotaCTT(fake, ConfigConRetornos());
+            DatosEnvioRemoto envio = RecogidaEnValencia();
+            envio.Reembolso = 30m;
+
+            ResultadoTramitacionRemota r = await agencia.InsertarYEtiquetarAsync(envio);
+
+            Assert.IsFalse(r.Exito);
+            StringAssert.Contains(r.Error, "reembolso");
+            Assert.AreEqual(0, fake.Llamadas.Count);
+        }
+
+        [TestMethod]
+        public async Task TipoDeRetornoQueCTTNoTiene_SeRechaza()
+        {
+            var fake = new FakeClienteRest();
+            IAgenciaRemota agencia = new AgenciaRemotaCTT(fake, ConfigConRetornos());
+            DatosEnvioRemoto envio = EnvioMadrid();
+            envio.Retorno = 7;
+
+            ResultadoTramitacionRemota r = await agencia.InsertarYEtiquetarAsync(envio);
+
+            Assert.IsFalse(r.Exito);
+            Assert.AreEqual(0, fake.Llamadas.Count);
+        }
+
+        [TestMethod]
+        public async Task Modificar_SiElEnvioNuevoNoSePuedeRegistrar_NoAnulaElAnterior()
+        {
+            // Retornos apagados: antes se anulaba el albarán y luego fallaba el registro -> sin ninguno.
+            var fake = new FakeClienteRest();
+            IAgenciaRemota agencia = new AgenciaRemotaCTT(fake, Config());
+
+            ResultadoTramitacionRemota r = await agencia.ModificarYEtiquetarAsync(RecogidaEnValencia(), ALBARAN);
+
+            Assert.IsFalse(r.Exito);
+            Assert.AreEqual(0, fake.Llamadas.Count, "No se anula nada");
+        }
+
+        [TestMethod]
+        public async Task RecogidaEnOrigen_ConInterruptorEncendido_RegistraYDevuelveElAlbaran()
+        {
+            var fake = new FakeClienteRest();
+            fake.Responder("Manifiesto", 201, RESP_MANIFIESTO);
+            fake.Responder("Etiqueta", 200, RespEtiqueta(ZPL_BULTO_1));
+            IAgenciaRemota agencia = new AgenciaRemotaCTT(fake, ConfigConRetornos());
+
+            ResultadoTramitacionRemota r = await agencia.InsertarYEtiquetarAsync(RecogidaEnValencia());
+
+            Assert.IsTrue(r.Exito, r.Error);
+            Assert.AreEqual(ALBARAN, r.Albaran, "El seguimiento de la recogida va por el mismo shipping_code");
+            var cuerpo = (JObject)fake.Llamadas.First(l => l.Operacion == "Manifiesto").Cuerpo;
+            Assert.IsTrue((bool)cuerpo["pickup"]["has_pickup_asap"]);
+        }
+
+        [TestMethod]
+        public void InterruptorRetornos_SoloSeEnciendeConUnValorExplicito()
+        {
+            Assert.IsTrue(NestoAPI.Infraestructure.Agencias.Perfiles.PerfilAgenciaCTT.RetornosActivos("1"));
+            Assert.IsTrue(NestoAPI.Infraestructure.Agencias.Perfiles.PerfilAgenciaCTT.RetornosActivos(" true "));
+            Assert.IsTrue(NestoAPI.Infraestructure.Agencias.Perfiles.PerfilAgenciaCTT.RetornosActivos("Sí"));
+            Assert.IsFalse(NestoAPI.Infraestructure.Agencias.Perfiles.PerfilAgenciaCTT.RetornosActivos(null));
+            Assert.IsFalse(NestoAPI.Infraestructure.Agencias.Perfiles.PerfilAgenciaCTT.RetornosActivos(""));
+            Assert.IsFalse(NestoAPI.Infraestructure.Agencias.Perfiles.PerfilAgenciaCTT.RetornosActivos("0"));
+        }
+
         // ---- Seguimiento ----
 
         [TestMethod]

@@ -165,7 +165,12 @@ namespace NestoAPI.Infraestructure.Agencias.Perfiles
             // El registro de intercambios lo comparten el cliente (que lo escribe) y la agencia (que lo
             // expone), para auditar el JSON crudo de cada operación, como en Innovatrans.
             var registro = new RegistroIntercambiosRemotos();
-            var configuracion = new ConfiguracionCTT();
+            // NestoAPI#494: interruptor de recogidas/retornos (parámetro CTTRetornosActivos; apagado por defecto).
+            var configuracion = new ConfiguracionCTT
+            {
+                RetornosActivos = RetornosActivos(ParametrosUsuarioController.LeerParametro(
+                    Constantes.Empresas.EMPRESA_POR_DEFECTO, "(defecto)", AgenciaRemotaCTT.CLAVE_RETORNOS_ACTIVOS))
+            };
             var cliente = new ClienteRestCTT(configuracion, registro: registro);
             // Transitorios (5xx, timeout, conexión) reintentados en el punto único (#288). CTT sigue por
             // lotes (listado por fechas): el poll hace una o pocas llamadas en vez de una por envío.
@@ -174,6 +179,13 @@ namespace NestoAPI.Infraestructure.Agencias.Perfiles
         }
 
         public ISeguimientoAgenciaRemota CrearSeguimiento(NVEntities db) => CrearGestionRemota(db);
+
+        /// <summary>NestoAPI#494: "1", "true", "si"/"sí" encienden; vacío o cualquier otra cosa, apagado.</summary>
+        internal static bool RetornosActivos(string valorParametro)
+        {
+            string v = (valorParametro ?? string.Empty).Trim().ToLowerInvariant();
+            return v == "1" || v == "true" || v == "si" || v == "sí";
+        }
 
         /// <summary>
         /// Freno por zonas (NestoAPI#493): mientras CTT arranca "de menos a más", una etiqueta elegida a

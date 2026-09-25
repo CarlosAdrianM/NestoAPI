@@ -142,16 +142,18 @@ namespace NestoAPI.Controllers
             return Ok(ADto(agencia));
         }
 
-        // GET: api/Agencias/MasEconomica?empresa=&codigoPostal=&peso=&reembolso=&pais=
+        // GET: api/Agencias/MasEconomica?empresa=&codigoPostal=&peso=&reembolso=&pais=&modo=Envio|Retorno|EnvioYRetorno
         // pais en ISO 3166-1 alpha-2 (ES, PT, FR...); "ES" por defecto (retrocompatible). El destino
         // canónico es (codigoPostal + pais): cada tarifa resuelve su zona puertas adentro.
         [HttpGet]
         [Route("api/Agencias/MasEconomica")]
-        public IHttpActionResult GetMasEconomica(string codigoPostal, decimal peso, string empresa = "1", decimal reembolso = 0, string pais = "ES")
+        public IHttpActionResult GetMasEconomica(string codigoPostal, decimal peso, string empresa = "1", decimal reembolso = 0, string pais = "ES",
+            ModoComparacionAgencia modo = ModoComparacionAgencia.Envio)
         {
             // NestoAPI#493: agencias de alta, sombras fuera de la elección y freno por zonas (CTT).
+            // NestoAPI#494: modo=Retorno|EnvioYRetorno subasta la recogida (solo agencias con precio de retorno).
             var comparador = ComparadorAgenciasFactory.ParaSeleccion(db);
-            OpcionEnvioAgencia mejor = comparador.MasEconomica(empresa, codigoPostal, peso, reembolso, pais);
+            OpcionEnvioAgencia mejor = comparador.MasEconomica(empresa, codigoPostal, peso, reembolso, pais, modo);
 
             if (mejor == null)
             {
@@ -168,11 +170,12 @@ namespace NestoAPI.Controllers
         [HttpGet]
         [Route("api/Agencias/{numero:int}/Coste")]
         public IHttpActionResult GetCosteAgencia(int numero, string codigoPostal, decimal peso,
-            string empresa = "1", decimal reembolso = 0, byte? servicioId = null, string pais = "ES")
+            string empresa = "1", decimal reembolso = 0, byte? servicioId = null, string pais = "ES",
+            ModoComparacionAgencia modo = ModoComparacionAgencia.Envio)
         {
             // NestoAPI#493: agencias de alta, sombras fuera de la elección y freno por zonas (CTT).
             var comparador = ComparadorAgenciasFactory.ParaSeleccion(db);
-            OpcionEnvioAgencia opcion = comparador.CosteDeAgencia(empresa, codigoPostal, peso, reembolso, numero, servicioId, pais);
+            OpcionEnvioAgencia opcion = comparador.CosteDeAgencia(empresa, codigoPostal, peso, reembolso, numero, servicioId, pais, modo);
 
             if (opcion == null)
             {

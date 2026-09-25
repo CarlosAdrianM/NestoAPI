@@ -32,11 +32,14 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
 
         /// <summary>
         /// La opción más barata que SÍ se puede seleccionar (excluye las agencias sombra). Null si
-        /// ninguna agencia seleccionable cubre el destino.
+        /// ninguna agencia seleccionable cubre el destino. NestoAPI#494: con <paramref name="modo"/>
+        /// Retorno / EnvioYRetorno subasta la recogida (sola o junto al envío); solo compiten las
+        /// agencias con precio de retorno (<see cref="ITarifaConRetorno"/>).
         /// </summary>
-        public OpcionEnvioAgencia MasEconomica(string empresa, string codigoPostal, decimal peso, decimal reembolso, string paisIso = "ES")
+        public OpcionEnvioAgencia MasEconomica(string empresa, string codigoPostal, decimal peso, decimal reembolso, string paisIso = "ES",
+            ModoComparacionAgencia modo = ModoComparacionAgencia.Envio)
         {
-            return Ranking(empresa, codigoPostal, peso, reembolso, paisIso)
+            return Opciones(empresa, codigoPostal, peso, reembolso, paisIso, incluirSoloAPeticion: false, modo: modo)
                 .FirstOrDefault(o => !_agenciasSombra.Contains(o.AgenciaId));
         }
 
@@ -54,25 +57,28 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
         /// cubre el destino o no tiene tarifa portada.
         /// </summary>
         public OpcionEnvioAgencia CosteDeAgencia(string empresa, string codigoPostal, decimal peso,
-            decimal reembolso, int agenciaId, byte? servicioId = null, string paisIso = "ES")
+            decimal reembolso, int agenciaId, byte? servicioId = null, string paisIso = "ES",
+            ModoComparacionAgencia modo = ModoComparacionAgencia.Envio)
         {
             // Ranking ya viene ordenado de más barato a más caro: el primero que case es el correcto.
             // NestoAPI#505: un servicio solo a petición (CTT 24h) únicamente cuenta si se pide por su id.
-            return Opciones(empresa, codigoPostal, peso, reembolso, paisIso, incluirSoloAPeticion: servicioId.HasValue)
+            return Opciones(empresa, codigoPostal, peso, reembolso, paisIso, incluirSoloAPeticion: servicioId.HasValue, modo: modo)
                 .FirstOrDefault(o => o.AgenciaId == agenciaId
                     && (servicioId == null || o.ServicioId == servicioId.Value));
         }
 
         public IReadOnlyList<OpcionEnvioAgencia> Ranking(string empresa, string codigoPostal, decimal peso, decimal reembolso, string paisIso = "ES")
-            => Opciones(empresa, codigoPostal, peso, reembolso, paisIso, incluirSoloAPeticion: false);
+            => Opciones(empresa, codigoPostal, peso, reembolso, paisIso, incluirSoloAPeticion: false, modo: ModoComparacionAgencia.Envio);
 
         // NestoAPI#505: los servicios solo a petición (ITarifaSoloAPeticion) quedan fuera del ranking
         // (MasEconomica y comparativa sombra); solo entran cuando se pide un servicio concreto.
+        // NestoAPI#494: el modo decide qué se tarifica (envío, retorno o ambos).
         private IReadOnlyList<OpcionEnvioAgencia> Opciones(string empresa, string codigoPostal, decimal peso, decimal reembolso,
-            string paisIso, bool incluirSoloAPeticion)
+            string paisIso, bool incluirSoloAPeticion, ModoComparacionAgencia modo)
         {
-            // Canarias (siempre España) va siempre por Canteras, sin comparar precio.
-            if (EsEspana(paisIso))
+            // Canarias (siempre España) va siempre por Canteras, sin comparar precio. Solo en envíos:
+            // Canteras no tiene precio de retorno, así que un retorno en Canarias no tiene opción aquí.
+            if (modo == ModoComparacionAgencia.Envio && EsEspana(paisIso))
             {
                 ZonasEnvioAgencia zonaEspana = CalculadoraZonaEnvio.CalcularZona(codigoPostal);
                 if (zonaEspana == ZonasEnvioAgencia.CanariasMayores || zonaEspana == ZonasEnvioAgencia.CanariasMenores)
@@ -95,7 +101,7 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
 
                 decimal fuel = _recargoCombustible.RecargoCombustible(empresa, tarifa.AgenciaId);
                 // Cada tarifa resuelve su zona PUERTAS ADENTRO a partir del destino canónico (CP + país).
-                decimal coste = tarifa.CalcularCoste(codigoPostal, paisIso, peso, reembolso, fuel);
+                decimal coste = CapacidadesTarifa.Coste(tarifa, modo, codigoPostal, paisIso, peso, reembolso, fuel);
 
                 // La tarifa no cubre el destino (coste centinela): no es una opción.
                 if (coste == decimal.MaxValue)

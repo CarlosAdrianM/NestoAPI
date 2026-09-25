@@ -173,6 +173,23 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual(1, resultado.Content.AgenciaId);
         }
 
+        [TestMethod]
+        public void GetMasEconomica_ModoRetorno_SoloCompiteQuienTienePrecioDeRetorno()
+        {
+            // NestoAPI#494: GLS no tiene precio de retorno (hoy no lo tenemos): el retorno es de CTT y GLS
+            // no tiene coste de retorno.
+            Datos(
+                new AgenciaTransporte { Numero = 1, Empresa = "1  ", Nombre = "GLS", RecargoCombustible = 0m },
+                new AgenciaTransporte { Numero = 13, Empresa = "1  ", Nombre = "CTT", RecargoCombustible = 0m });
+
+            var retorno = controller.GetMasEconomica("08001", peso: 3m, empresa: "1", reembolso: 0m, modo: ModoComparacionAgencia.Retorno)
+                as OkNegotiatedContentResult<OpcionEnvioAgencia>;
+            var costeGls = controller.GetCosteAgencia(1, "08001", peso: 3m, empresa: "1", reembolso: 0m, modo: ModoComparacionAgencia.Retorno);
+
+            Assert.AreEqual(13, retorno.Content.AgenciaId);
+            Assert.IsInstanceOfType(costeGls, typeof(NotFoundResult));
+        }
+
         // NestoAPI#238: coste de UNA agencia (la realmente usada), no la más barata.
 
         [TestMethod]

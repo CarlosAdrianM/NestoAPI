@@ -15,7 +15,7 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
     /// nuestras 2 (Provincial / Peninsular); usamos la columna "Peninsular" de CTT (la media). Canarias
     /// no se modela: el comparador la resuelve siempre por Canteras.
     /// </summary>
-    public class TarifaCTT48h : TarifaNacionalBase
+    public class TarifaCTT48h : TarifaNacionalBase, ITarifaConRetorno
     {
         public override int AgenciaId => 13; // CTT (debe coincidir con AgenciasTransporte.Numero)
         public override byte ServicioId => 48; // CTT 48h
@@ -82,5 +82,14 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
 
         /// <summary>Reembolso CTT: 0% del importe, mínimo 1,15€ (oferta 2026). No se le aplica fuel.</summary>
         protected override decimal CosteReembolso(decimal reembolso) => 1.15m;
+
+        /// <summary>
+        /// NestoAPI#494: «Retornos y devoluciones: se aplicará la misma tarifa que la de emisión» (oferta
+        /// 2026, pág. 14). La recogida en un domicilio distinto del habitual solo tiene recargo cuando
+        /// origen Y destino son distintos del punto habitual; en un retorno el destino es Algete, así que
+        /// no aplica. Zona = la del domicilio donde se recoge; sin reembolso.
+        /// </summary>
+        public decimal CalcularCosteRetorno(string codigoPostal, string paisIso, decimal peso, decimal recargoCombustible)
+            => CalcularCoste(codigoPostal, paisIso, peso, 0m, recargoCombustible);
     }
 }

@@ -33,6 +33,14 @@ namespace NestoAPI.Infraestructure.Agencias
         /// 48 h (defecto), 24 = urgente forzado a mano. Innovatrans lo ignora (su servicio va por CP).
         /// </summary>
         public short Servicio { get; set; }
+        /// <summary>
+        /// NestoAPI#494: EnviosAgencia.Retorno tal cual (cada agencia tiene sus tipos). CTT: 0 = sin
+        /// retorno, 1 = envío con retorno (adicional RET), 2 = recogida en origen (el remitente es el
+        /// cliente/proveedor y el destinatario nuestro almacén). Innovatrans lo ignora.
+        /// </summary>
+        public short Retorno { get; set; }
+        /// <summary>NestoAPI#494: día pedido para la recogida (EnviosAgencia.Fecha). Si es pasado, hoy.</summary>
+        public System.DateTime? FechaRecogida { get; set; }
     }
 
     /// <summary>
