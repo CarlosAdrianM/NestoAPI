@@ -159,6 +159,9 @@ namespace NestoAPI.Models.Picking
                 // NestoAPI#482: el modo informado y si ya hubo una primera entrega (modo 4)
                 ModoServicio = p.ModoServicio,
                 TieneLineasServidas = p.LinPedidoVtas.Any(l => l.Estado >= Constantes.EstadosLineaVenta.ALBARAN),
+                // NestoAPI#542: el modo de facturación (3 = lo que falte va a Recoger, no a pendiente)
+                MantenerJunto = p.MantenerJunto,
+                ModoFacturacion = p.ModoFacturacion,
                 // NestoAPI#435: las formas de venta salen de Constantes (antes estaban escritas a
                 // mano aqui y en media docena de sitios mas). La app (APP) se prepara y se envia
                 // como un pedido de tienda online, pero su albaran NO va a precio de publico

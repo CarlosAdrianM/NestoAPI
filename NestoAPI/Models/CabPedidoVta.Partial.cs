@@ -48,6 +48,9 @@ namespace NestoAPI.Models
                 MantenerJunto = this.MantenerJunto,
                 ServirJunto = this.ServirJunto,
                 ModoServicio = this.ModoServicio,
+                ModoFacturacion = this.ModoFacturacion,
+                PedidoOrigen = this.PedidoOrigen,
+                AlbaranOrigen = this.AlbaranOrigen,
                 Usuario = this.Usuario,
                 Fecha_Modificación = this.Fecha_Modificación,
                 SuPedido = this.SuPedido

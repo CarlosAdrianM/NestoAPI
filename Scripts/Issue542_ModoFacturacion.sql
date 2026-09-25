@@ -19,6 +19,10 @@ ALTER TABLE dbo.CabPedidoVta ADD ModoFacturacion tinyint NULL;
 GO
 ALTER TABLE dbo.CabPedidoVta ADD PedidoOrigen int NULL;
 GO
+-- El albarán de ese pedido del que sale lo pendiente: un pedido puede dar varios albaranes con Recoger
+-- (modo de servicio «según vaya entrando»), y (PedidoOrigen, AlbaranOrigen) es lo que hace única la nota.
+ALTER TABLE dbo.CabPedidoVta ADD AlbaranOrigen int NULL;
+GO
 
 ALTER TABLE dbo.CabPedidoVta WITH CHECK
     ADD CONSTRAINT CK_CabPedidoVta_ModoFacturacion CHECK (ModoFacturacion IS NULL OR ModoFacturacion BETWEEN 1 AND 3);
@@ -26,7 +30,7 @@ GO
 
 -- Solo las notas de entrega automáticas lo tienen informado: el índice filtrado es diminuto.
 CREATE NONCLUSTERED INDEX IX_CabPedidoVta_PedidoOrigen
-    ON dbo.CabPedidoVta (Empresa, PedidoOrigen)
+    ON dbo.CabPedidoVta (Empresa, PedidoOrigen, AlbaranOrigen)
     WHERE PedidoOrigen IS NOT NULL;
 GO
 
@@ -70,3 +74,21 @@ GO
 -- Comprobación: todo NULL al principio
 SELECT ModoFacturacion, COUNT(*) AS Pedidos FROM dbo.CabPedidoVta GROUP BY ModoFacturacion;
 GO
+
+-- ============================================================================================
+-- Corte 2: nota de entrega automática (NestoAPI#542). NACE APAGADA: sin fila = apagado.
+-- Actúa sobre CUALQUIER albarán con líneas con Recoger, también los que se ponen a mano desde el Nesto
+-- viejo (unos 100 pedidos al año), así que antes de encenderla hay que avisar a almacén (Alfredo) para
+-- que no haga la nota a mano y salga duplicada. Nunca es retroactiva: solo albaranes creados después.
+--
+-- Paso 1, SOMBRA (solo deja en ELMAH la nota que habría creado; comparar con las que hace Alfredo):
+-- IF NOT EXISTS (SELECT 1 FROM dbo.ParámetrosUsuario WHERE Empresa = '1' AND Usuario = '(defecto)' AND Clave = 'NotaEntregaAutomatica')
+--     INSERT INTO dbo.ParámetrosUsuario (Empresa, Usuario, Clave, Valor, Usuario2, [Fecha Modificación])
+--     VALUES ('1', '(defecto)', 'NotaEntregaAutomatica', 'Sombra', 'NestoAPI#542', GETDATE());
+-- ELSE
+--     UPDATE dbo.ParámetrosUsuario SET Valor = 'Sombra', Usuario2 = 'NestoAPI#542', [Fecha Modificación] = GETDATE()
+--     WHERE Empresa = '1' AND Usuario = '(defecto)' AND Clave = 'NotaEntregaAutomatica';
+--
+-- Paso 2, ENCENDER (crea la nota): mismo UPDATE con Valor = '1'.  Apagar: Valor = '0'.
+-- Diagnóstico de las notas creadas:
+-- SELECT Número, Fecha, PedidoOrigen, AlbaranOrigen, Usuario FROM dbo.CabPedidoVta WHERE PedidoOrigen IS NOT NULL ORDER BY Número DESC;

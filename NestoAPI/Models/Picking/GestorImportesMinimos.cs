@@ -47,8 +47,22 @@ namespace NestoAPI.Models.Picking
             }
 
             
-            return pedido.Lineas.Where(l => l.EsSobrePedido && (l.Cantidad!=0)).Sum(l => l.BaseImponible / l.Cantidad * l.CantidadReservada) >= importeMinimo;
-            
+            return pedido.Lineas.Where(l => l.EsSobrePedido && (l.Cantidad != 0 || l.CantidadRecogida != 0)).Sum(BaseQueSeFactura) >= importeMinimo;
+
+        }
+
+        /// <summary>
+        /// NestoAPI#542: lo que se le va a cobrar al cliente por esta línea en este albarán. Normalmente lo que
+        /// sale (prorrateo por lo reservado); en «todo ahora» se factura la línea entera, incluidas las unidades
+        /// a recoger, así que el mínimo de portes se mira sobre la base completa (Carlos, 25/09/26).
+        /// </summary>
+        private decimal BaseQueSeFactura(LineaPedidoPicking linea)
+        {
+            if (pedido.FacturaTodoAhora && linea.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
+            {
+                return linea.BaseImponible;
+            }
+            return linea.BaseImponibleEntrega;
         }
 
         public bool LosProductosDelPedidoOriginalLlegabanAlImporteSinPortes()
@@ -69,7 +83,7 @@ namespace NestoAPI.Models.Picking
 
         public bool LaEntregaLlegaAlImporteMinimo()
         {
-            decimal importeEntrega = pedido.Lineas.Sum(l => l.BaseImponibleEntrega);
+            decimal importeEntrega = pedido.Lineas.Sum(BaseQueSeFactura);
             if (importeEntrega >= importeMinimo) {
                 return true;
             }

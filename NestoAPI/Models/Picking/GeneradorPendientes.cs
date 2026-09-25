@@ -19,6 +19,7 @@ namespace NestoAPI.Models.Picking
         public void Ejecutar()
         {
             PasarAEnCursoLoQueYaTieneStock();
+            EscribirLoQueSeRecoge();
 
             for (int j = 0; j < pedidos.Count; j++)
             {
@@ -69,6 +70,30 @@ namespace NestoAPI.Models.Picking
             foreach (LinPedidoVta linea in pendientes)
             {
                 linea.Estado = Constantes.EstadosLineaVenta.EN_CURSO;
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#542: en los pedidos que salen y se facturan «todo ahora», las unidades que
+        /// GestorFacturarTodoAhora convirtió en memoria pasan a LinPedidoVta.Recoger. La línea se queda en
+        /// curso (1): entra en el picking y en el albarán con la cantidad completa. El trigger
+        /// trgLinPedidoVtaUpd admite el cambio porque la línea todavía no tiene picking (se lo pone
+        /// AsignadorPicking en el mismo SaveChanges), y Recoger nunca supera la cantidad.
+        /// </summary>
+        private void EscribirLoQueSeRecoge()
+        {
+            foreach (PedidoPicking pedido in pedidos.Where(p => !p.Borrar && p.FacturaTodoAhora))
+            {
+                foreach (LineaPedidoPicking linea in pedido.Lineas.Where(l => l.CantidadARecoger > 0 && l.Id != 0))
+                {
+                    LinPedidoVta lineaActual = db.LinPedidoVtas.SingleOrDefault(l => l.Nº_Orden == linea.Id);
+                    if (lineaActual == null)
+                    {
+                        continue;
+                    }
+                    lineaActual.Recoger += linea.CantidadARecoger;
+                    lineaActual.Estado = Constantes.EstadosLineaVenta.EN_CURSO;
+                }
             }
         }
 

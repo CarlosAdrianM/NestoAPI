@@ -733,6 +733,15 @@ namespace NestoAPI.Models
             public const string AVISO_FACTURAS_VENCIDAS = "AvisoFacturasVencidas";
 
             /// <summary>
+            /// NestoAPI#542: interruptor de la nota de entrega automática con lo pendiente de un albarán
+            /// facturado entero (líneas con Recoger). Bajo «(defecto)»: sin fila o "0" = apagado; "Sombra" =
+            /// solo deja en ELMAH la nota que habría creado; "1" = la crea. Nace apagado: también actúa
+            /// sobre los Recoger que ponen a mano desde el Nesto viejo, y hay que avisar a almacén antes
+            /// de encenderlo para que no hagan la suya a mano (duplicado).
+            /// </summary>
+            public const string NOTA_ENTREGA_AUTOMATICA = "NotaEntregaAutomatica";
+
+            /// <summary>
             /// NestoAPI#534: días que tienen que haber pasado desde el vencimiento para avisar (entero
             /// &gt; 0). Sin fila o con un valor no válido, 5 (criterio de Carlos y Laura, 24/09/26).
             /// </summary>

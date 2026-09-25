@@ -57,6 +57,8 @@ namespace NestoAPI.Models.PedidosVenta
         /// <summary>NestoAPI#542: en una nota de entrega creada por la API con lo pendiente de un pedido
         /// facturado entero, el número de ese pedido. Solo lectura.</summary>
         public int? pedidoOrigen { get; set; }
+        /// <summary>NestoAPI#542: el albarán de ese pedido del que sale lo pendiente. Solo lectura.</summary>
+        public int? albaranOrigen { get; set; }
         public string suPedido { get; set; }
         public string vendedor { get; set; }
         public bool vistoBuenoPlazosPago { get; set; }

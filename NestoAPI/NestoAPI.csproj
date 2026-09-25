@@ -820,6 +820,7 @@
     <Compile Include="Infraestructure\Verifactu\Verifacti\ServicioVerifacti.cs" />
     <Compile Include="Infraestructure\Verifactu\Verifacti\VerifactiDTOs.cs" />
     <Compile Include="Infraestructure\NotasEntrega\ServicioNotasEntrega.cs" />
+    <Compile Include="Infraestructure\NotasEntrega\CreadorNotaEntregaPendiente.cs" />
     <Compile Include="Infraestructure\ExtractosRuta\ServicioExtractoRuta.cs" />
     <Compile Include="Infraestructure\Alquileres\IProductosAlquilerService.cs" />
     <Compile Include="Infraestructure\Alquileres\ProductosAlquilerService.cs" />
@@ -1454,6 +1455,7 @@
     <Compile Include="Models\Picking\AsignadorPicking.cs" />
     <Compile Include="Models\Picking\FinalizadorPicking.cs" />
     <Compile Include="Models\Picking\GeneradorPendientes.cs" />
+    <Compile Include="Models\Picking\GestorFacturarTodoAhora.cs" />
     <Compile Include="Models\Picking\GeneradorPortes.cs" />
     <Compile Include="Models\Picking\GestorImportesMinimos.cs" />
     <Compile Include="Models\Picking\GestorMargenes.cs" />

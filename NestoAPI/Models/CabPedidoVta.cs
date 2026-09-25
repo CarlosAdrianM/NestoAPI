@@ -54,6 +54,7 @@ namespace NestoAPI.Models
         public Nullable<byte> ModoServicio { get; set; }
         public Nullable<byte> ModoFacturacion { get; set; }
         public Nullable<int> PedidoOrigen { get; set; }
+        public Nullable<int> AlbaranOrigen { get; set; }
         public string Usuario { get; set; }
         public System.DateTime Fecha_Modificación { get; set; }
         public byte[] RowVersion { get; set; }

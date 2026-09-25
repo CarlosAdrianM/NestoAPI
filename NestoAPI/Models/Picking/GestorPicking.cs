@@ -169,6 +169,10 @@ namespace NestoAPI.Models.Picking
             sinSalirPorCierreCliente = GestorDiasEnServir.RetirarPedidosDeClientesCerrados(candidatos, diaEntrega);
             diaEntregaPicking = diaEntrega;
 
+            // NestoAPI#542: los pedidos que se facturan «todo ahora» convierten lo que falta en Recoger, antes
+            // de que las reglas de abajo decidan qué sale.
+            GestorFacturarTodoAhora.Aplicar(candidatos);
+
             // Recorrer Candidatos (quitamos los que no tienen que salir)
             for (int i = 0; i < candidatos.Count(); i++)
             {

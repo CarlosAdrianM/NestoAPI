@@ -85,6 +85,15 @@ namespace NestoAPI.Models.Picking
 
         public byte ModoServicioEfectivo => Constantes.Pedidos.ModosServicio.Efectivo(ModoServicio, ServirJunto);
 
+        /// <summary>NestoAPI#542: MantenerJunto de la cabecera (manda cuando ModoFacturacion es null).</summary>
+        public bool MantenerJunto { get; set; }
+        /// <summary>NestoAPI#542: modo de facturación informado (null = manda MantenerJunto).</summary>
+        public byte? ModoFacturacion { get; set; }
+        public byte ModoFacturacionEfectivo => Constantes.Pedidos.ModosFacturacion.Efectivo(ModoFacturacion, MantenerJunto);
+        /// <summary>NestoAPI#542: «todo ahora, lo pendiente después»: el pedido se factura entero con el primer
+        /// albarán y lo que no sale en esta pasada va a Recoger (GestorFacturarTodoAhora).</summary>
+        public bool FacturaTodoAhora => Constantes.Pedidos.ModosFacturacion.EsTodoAhora(ModoFacturacionEfectivo);
+
         /// <summary>
         /// NestoAPI#482: una estrategia por modo, en vez de un if más.
         /// 1: siempre hace falta stock de todo. 2: nunca. 4: solo a partir de la segunda entrega
@@ -122,7 +131,20 @@ namespace NestoAPI.Models.Picking
                 return false;
             }
 
-            if (PlazosPago == Constantes.PlazosPago.PREPAGO)
+            return CubiertoPorPrepago();
+        }
+
+        /// <summary>
+        /// NestoAPI#542: la retención por prepago, separada de <see cref="saleEnPicking"/> para que «todo
+        /// ahora» (GestorFacturarTodoAhora) pueda preguntarla ANTES de convertir lo que falta en Recoger:
+        /// un pedido retenido por prepago se queda como está. Marca RetenidoPorPrepago si no está cubierto.
+        /// </summary>
+        public bool CubiertoPorPrepago()
+        {
+            if (PlazosPago != Constantes.PlazosPago.PREPAGO)
+            {
+                return true;
+            }
             {
                 Prepagos = rellenadorPrepagos.Prepagos(Id);
                 decimal total = Math.Round(ImporteTotalConIVA, 2, MidpointRounding.AwayFromZero);
@@ -165,8 +187,6 @@ namespace NestoAPI.Models.Picking
                     return false;
                 }
             }
-
-            return true;
         }
 
         public bool hayQueSumarPortes()

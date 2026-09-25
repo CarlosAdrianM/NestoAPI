@@ -726,6 +726,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 // #542: igual que el de servicio, al leer siempre con valor (NULL en BD = el que dice MantenerJunto)
                 modoFacturacion = Constantes.Pedidos.ModosFacturacion.Efectivo(cab.ModoFacturacion, cab.MantenerJunto),
                 pedidoOrigen = cab.PedidoOrigen,
+                albaranOrigen = cab.AlbaranOrigen,
                 notaEntrega = cab.NotaEntrega,
                 Agrupada = cab.Agrupada,
                 suPedido = cab.SuPedido,

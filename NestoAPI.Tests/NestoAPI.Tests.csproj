@@ -290,6 +290,7 @@
     <Compile Include="Infrastructure\ServicioExtractoRutaTests.cs" />
     <Compile Include="Infraestructure\Pedidos\ServicioPedidosParaFacturacionTests.cs" />
     <Compile Include="Infrastructure\ServicioNotasEntregaTests.cs" />
+    <Compile Include="Infrastructure\CreadorNotaEntregaPendienteTests.cs" />
     <Compile Include="Infrastructure\ServicioTraspasoEmpresaTests.cs" />
     <Compile Include="Models\Picking\GestorAvisosPickingTests.cs" />
     <Compile Include="Infraestructure\TelefonoTests.cs" />
@@ -554,6 +555,7 @@
     <Compile Include="Infrastructure\PickingJobsServiceTests.cs" />
     <Compile Include="Infrastructure\ConfiguracionTlsTests.cs" />
     <Compile Include="Models\Picking\GeneradorPendientesTest.cs" />
+    <Compile Include="Models\Picking\GestorFacturarTodoAhoraTests.cs" />
     <Compile Include="Models\RecursosHumanos\GestorAccionesTest.cs" />
     <Compile Include="Models\RecursosHumanos\ImportadorAccionesAlgeteTest.cs" />
     <Compile Include="Models\RecursosHumanos\GestorEmpleadosTest.cs" />

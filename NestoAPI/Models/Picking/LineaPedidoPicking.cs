@@ -22,6 +22,12 @@ namespace NestoAPI.Models.Picking
         public bool Borrar { get; set; } = false;
         public DateTime FechaModificacion { get; set; }
         public bool EsPedidoEspecial { get; set; }
+        /// <summary>
+        /// NestoAPI#542: unidades que en esta pasada NO tienen stock y que, porque el pedido se factura «todo
+        /// ahora», pasan a Recoger en vez de a pendiente. Lo pone GestorFacturarTodoAhora en memoria y lo
+        /// escribe GeneradorPendientes en LinPedidoVta.Recoger si el pedido sale.
+        /// </summary>
+        public int CantidadARecoger { get; set; }
         public decimal BaseImponibleEntrega {
             get
             {

@@ -143,6 +143,46 @@ namespace NestoAPI.Tests.Models.Picking
             Assert.AreEqual(Constantes.EstadosLineaVenta.EN_CURSO, enBd.Estado);
         }
 
+        // NestoAPI#542: en un pedido que sale y se factura «todo ahora», lo que GestorFacturarTodoAhora convirtió
+        // pasa a LinPedidoVta.Recoger y la línea se queda en curso.
+
+        [TestMethod]
+        public void GeneradorPendientes_TodoAhora_PedidoQueSale_LoQueFaltaSeEscribeEnRecogerYLaLineaSigueEnCurso()
+        {
+            LinPedidoVta enBd = LineaBd(1, Constantes.EstadosLineaVenta.PENDIENTE);
+            enBd.Cantidad = 5;
+            enBd.Recoger = 1; // ya tenía 1 a recoger puesto a mano
+            NVEntities db = DbCon(enBd);
+            LineaPedidoPicking convertida = LineaPicking(1, cantidad: 2, reservada: 2); // de 4 quedaban 2 sin stock
+            convertida.CantidadRecogida = 3;
+            convertida.CantidadARecoger = 2;
+            PedidoPicking pedido = PedidoQueNoSale(convertida);
+            pedido.Borrar = false;
+            pedido.ModoFacturacion = Constantes.Pedidos.ModosFacturacion.TODO_AHORA_Y_LO_PENDIENTE_DESPUES;
+
+            new GeneradorPendientes(db, new List<PedidoPicking> { pedido }).Ejecutar();
+
+            Assert.AreEqual(3, enBd.Recoger);
+            Assert.AreEqual(Constantes.EstadosLineaVenta.EN_CURSO, enBd.Estado);
+            Assert.AreEqual(1, pedido.Lineas.Count, "La línea sigue en el picking para que le asignen número");
+        }
+
+        [TestMethod]
+        public void GeneradorPendientes_TodoAhora_PedidoRetenido_NoEscribeRecoger()
+        {
+            LinPedidoVta enBd = LineaBd(1, Constantes.EstadosLineaVenta.EN_CURSO);
+            enBd.Cantidad = 5;
+            NVEntities db = DbCon(enBd);
+            LineaPedidoPicking linea = LineaPicking(1, cantidad: 5, reservada: 3);
+            linea.CantidadARecoger = 2;
+            PedidoPicking pedido = PedidoQueNoSale(linea); // Borrar = true
+            pedido.ModoFacturacion = Constantes.Pedidos.ModosFacturacion.TODO_AHORA_Y_LO_PENDIENTE_DESPUES;
+
+            new GeneradorPendientes(db, new List<PedidoPicking> { pedido }).Ejecutar();
+
+            Assert.AreEqual(0, enBd.Recoger);
+        }
+
         private static PedidoPicking PedidoQueNoSale(params LineaPedidoPicking[] lineas)
         {
             return new PedidoPicking
