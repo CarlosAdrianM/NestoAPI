@@ -269,6 +269,7 @@
     <Compile Include="Infrastructure\Sincronizacion\FechasComprasClientesTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\VendedorEmailPublicacionTests.cs" />
     <Compile Include="Infrastructure\Clientes\AltaClienteDireccionVerificadaTests.cs" />
+    <Compile Include="Infrastructure\Clientes\ClienteTransferenciaCorreoCobrosTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\SentinelPrecioPublicoJobsServiceTests.cs" />
     <Compile Include="Models\MapeoEdmxTests.cs" />
     <Compile Include="Models\CampanasPorNivelTests.cs" />

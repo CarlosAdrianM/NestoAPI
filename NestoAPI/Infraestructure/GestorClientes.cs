@@ -1711,6 +1711,16 @@ namespace NestoAPI.Infraestructure
             try
             {
                 cliente = await PrepararClienteModificar(clienteCrear, db);
+
+                // NestoAPI#544 (a): transferencia a plazo exige correo de cobros (detrás de interruptor).
+                // Va ANTES de marcar nada como modificado y de guardar: si se rechaza, no se toca la BD.
+                string motivoCobros = MotivoRechazoSinCorreoCobros(clienteCrear.FormaPago, clienteCrear.PlazosPago,
+                    cliente.PersonasContactoClientes, ExigirCorreoCobrosTransferencia(clienteCrear.Empresa));
+                if (motivoCobros != null)
+                {
+                    throw new ValidationException(motivoCobros);
+                }
+
                 db.Entry(cliente).State = EntityState.Modified;
 
                 _ = await db.SaveChangesAsync();
@@ -1806,6 +1816,15 @@ namespace NestoAPI.Infraestructure
                 }
 
                 cliente = await PrepararClienteCrear(clienteCrear, db);
+
+                // NestoAPI#544 (a): transferencia a plazo exige correo de cobros (detrás de interruptor;
+                // ValidationException → 400 en PostCliente). Antes de añadir nada al contexto.
+                string motivoCobros = MotivoRechazoSinCorreoCobros(clienteCrear.FormaPago, clienteCrear.PlazosPago,
+                    cliente.PersonasContactoClientes, ExigirCorreoCobrosTransferencia(clienteCrear.Empresa));
+                if (motivoCobros != null)
+                {
+                    throw new ValidationException(motivoCobros);
+                }
 
                 // Issue #263: guarda dura — nunca dos ClientePrincipal bajo el mismo número.
                 // Cubre el doble-submit con el MISMO NIF (que la coherencia de NIF no caza):
@@ -1991,6 +2010,63 @@ namespace NestoAPI.Infraestructure
             }
             return "La dirección tiene que elegirse de las que propone Google, no escribirse a mano. " +
                 "Busca la dirección y selecciónala en la lista; si Google no la encuentra, avisa para darla de alta desde el Nesto viejo.";
+        }
+
+        /// <summary>
+        /// NestoAPI#544 (a): un cliente que paga por transferencia a plazo (TRN y plazos distintos de
+        /// prepago y contado) recibe las facturas y los avisos de pago por correo: tiene que tener una
+        /// persona de contacto activa con correo y cargo Cobros o Factura por correo. Si
+        /// <paramref name="exigir"/> (parámetro ExigirCorreoCobrosTransferencia = "1") y no la tiene,
+        /// devuelve el motivo del rechazo (400); si no, null. Se evalúa sobre las personas YA
+        /// preparadas del cliente (las que van a quedar en la BD), tanto al crear como al modificar.
+        /// Con el interruptor apagado nunca rechaza: los clientes que aún no mandan persona de
+        /// contacto en el alta seguirían funcionando.
+        /// </summary>
+        internal static string MotivoRechazoSinCorreoCobros(string formaPago, string plazosPago,
+            IEnumerable<PersonaContactoCliente> personas, bool exigir)
+        {
+            if (!exigir)
+            {
+                return null;
+            }
+            string forma = formaPago?.Trim();
+            string plazos = plazosPago?.Trim();
+            if (!string.Equals(forma, Constantes.FormasPago.TRANSFERENCIA, StringComparison.OrdinalIgnoreCase)
+                || string.IsNullOrEmpty(plazos)
+                || Cobros.SelectorAvisosFacturasVencidas.PLAZOS_EXCLUIDOS.Contains(plazos, StringComparer.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+            bool tieneCorreoDeCobros = (personas ?? Enumerable.Empty<PersonaContactoCliente>()).Any(p =>
+                p != null
+                && p.Estado >= Constantes.Clientes.PersonasContacto.ESTADO_POR_DEFECTO
+                && !string.IsNullOrWhiteSpace(p.CorreoElectrónico)
+                && (p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_COBROS
+                    || p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO));
+            if (tieneCorreoDeCobros)
+            {
+                return null;
+            }
+            return $"El cliente paga por transferencia a plazo ({forma} {plazos}) y necesita una persona de contacto activa " +
+                "con correo electrónico y cargo Cobros o Factura por correo, para poder mandarle las facturas y los avisos de pago. " +
+                "Añade la persona con su correo marcando «Factura por correo», o cambia la forma de pago a prepago o contado.";
+        }
+
+        /// <summary>NestoAPI#544: ¿está encendido el interruptor? Cualquier fallo al leerlo cuenta como apagado.</summary>
+        internal bool ExigirCorreoCobrosTransferencia(string empresa)
+        {
+            try
+            {
+                string valor = LectorParametros.LeerParametro(
+                    empresa ?? Constantes.Empresas.EMPRESA_POR_DEFECTO,
+                    Constantes.ParametrosUsuario.USUARIO_POR_DEFECTO,
+                    Constantes.ParametrosUsuario.EXIGIR_CORREO_COBROS_TRANSFERENCIA);
+                return valor?.Trim() == "1";
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         /// <summary>NestoAPI#499: ¿está encendido el interruptor? Cualquier fallo al leerlo cuenta como apagado.</summary>
