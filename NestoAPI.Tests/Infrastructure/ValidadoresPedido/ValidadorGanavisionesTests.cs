@@ -29,7 +29,7 @@ namespace NestoAPI.Tests.Infrastructure.ValidadoresPedido
         {
             _servicioPrecios = A.Fake<IServicioPrecios>();
             // Por defecto, stock suficiente para que los tests existentes no fallen
-            A.CallTo(() => _servicioPrecios.BuscarStockDisponibleTotal(A<string>.Ignored)).Returns(999);
+            A.CallTo(() => _servicioPrecios.BuscarStockDisponibleParaRegalar(A<string>.Ignored, A<string>.Ignored)).Returns(999);
             _validador = new ValidadorGanavisiones();
         }
 
@@ -1010,7 +1010,7 @@ namespace NestoAPI.Tests.Infrastructure.ValidadoresPedido
             var pedido = CrearPedidoConBonificado(100m, Constantes.Productos.GRUPO_COSMETICA, "REGALO01");
 
             A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("REGALO01")).Returns(5);
-            A.CallTo(() => _servicioPrecios.BuscarStockDisponibleTotal("REGALO01")).Returns(0);
+            A.CallTo(() => _servicioPrecios.BuscarStockDisponibleParaRegalar("REGALO01", A<string>._)).Returns(0);
 
             var resultado = _validador.EsPedidoValido(pedido, "REGALO01", _servicioPrecios);
 
@@ -1021,12 +1021,34 @@ namespace NestoAPI.Tests.Infrastructure.ValidadoresPedido
         }
 
         [TestMethod]
+        public void EsPedidoValido_SegunVayaEntrandoSinStockEnSuAlmacen_Invalido()
+        {
+            // NestoAPI#528: el stock repartido en las tiendas no sirve si el pedido sale con lo que hay
+            // en su almacén: el regalo se quedaría pendiente o saldría solo.
+            var pedido = CrearPedidoConBonificado(100m, Constantes.Productos.GRUPO_COSMETICA, "REGALO01");
+            pedido.modoServicio = Constantes.Pedidos.ModosServicio.SEGUN_VAYA_ENTRANDO;
+            foreach (var linea in pedido.Lineas)
+            {
+                linea.almacen = Constantes.Almacenes.ALGETE;
+            }
+
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("REGALO01")).Returns(5);
+            A.CallTo(() => _servicioPrecios.BuscarStockDisponibleParaRegalar("REGALO01", null)).Returns(4);
+            A.CallTo(() => _servicioPrecios.BuscarStockDisponibleParaRegalar("REGALO01", Constantes.Almacenes.ALGETE)).Returns(0);
+
+            var resultado = _validador.EsPedidoValido(pedido, "REGALO01", _servicioPrecios);
+
+            Assert.IsFalse(resultado.ValidacionSuperada);
+            StringAssert.Contains(resultado.Motivo, "en " + Constantes.Almacenes.ALGETE);
+        }
+
+        [TestMethod]
         public void EsPedidoValido_ProductoBonificadoConStockSuficiente_Valido()
         {
             var pedido = CrearPedidoConBonificado(100m, Constantes.Productos.GRUPO_COSMETICA, "REGALO01");
 
             A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("REGALO01")).Returns(5);
-            A.CallTo(() => _servicioPrecios.BuscarStockDisponibleTotal("REGALO01")).Returns(10);
+            A.CallTo(() => _servicioPrecios.BuscarStockDisponibleParaRegalar("REGALO01", A<string>._)).Returns(10);
 
             var resultado = _validador.EsPedidoValido(pedido, "REGALO01", _servicioPrecios);
 
@@ -1041,7 +1063,7 @@ namespace NestoAPI.Tests.Infrastructure.ValidadoresPedido
             var pedido = CrearPedidoConBonificado(100m, Constantes.Productos.GRUPO_COSMETICA, "REGALO01");
 
             A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("REGALO01")).Returns(5);
-            A.CallTo(() => _servicioPrecios.BuscarStockDisponibleTotal("REGALO01")).Returns(1);
+            A.CallTo(() => _servicioPrecios.BuscarStockDisponibleParaRegalar("REGALO01", A<string>._)).Returns(1);
 
             var resultado = _validador.EsPedidoValido(pedido, "REGALO01", _servicioPrecios);
 
@@ -1077,7 +1099,7 @@ namespace NestoAPI.Tests.Infrastructure.ValidadoresPedido
 
             A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("PROD01")).Returns(null);
             A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("REGALO01")).Returns(5);
-            A.CallTo(() => _servicioPrecios.BuscarStockDisponibleTotal("REGALO01")).Returns(2);
+            A.CallTo(() => _servicioPrecios.BuscarStockDisponibleParaRegalar("REGALO01", A<string>._)).Returns(2);
 
             var resultado = _validador.EsPedidoValido(pedido, "REGALO01", _servicioPrecios);
 
@@ -1094,7 +1116,7 @@ namespace NestoAPI.Tests.Infrastructure.ValidadoresPedido
             var pedido = CrearPedidoConBonificado(10m, Constantes.Productos.GRUPO_COSMETICA, "REGALO01");
 
             A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("REGALO01")).Returns(5);
-            A.CallTo(() => _servicioPrecios.BuscarStockDisponibleTotal("REGALO01")).Returns(0);
+            A.CallTo(() => _servicioPrecios.BuscarStockDisponibleParaRegalar("REGALO01", A<string>._)).Returns(0);
 
             var resultado = _validador.EsPedidoValido(pedido, "REGALO01", _servicioPrecios);
 
@@ -1102,8 +1124,8 @@ namespace NestoAPI.Tests.Infrastructure.ValidadoresPedido
             // El error debe ser de Ganavisiones insuficientes, no de stock
             Assert.IsTrue(resultado.Motivo.Contains("Ganavisiones"),
                 $"El error debe ser de Ganavisiones, no de stock. Motivo: {resultado.Motivo}");
-            // No deberia haber llamado a BuscarStockDisponibleTotal
-            A.CallTo(() => _servicioPrecios.BuscarStockDisponibleTotal(A<string>.Ignored)).MustNotHaveHappened();
+            // No deberia haber llamado a BuscarStockDisponibleParaRegalar
+            A.CallTo(() => _servicioPrecios.BuscarStockDisponibleParaRegalar(A<string>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
         }
 
         #endregion
@@ -1252,7 +1274,7 @@ namespace NestoAPI.Tests.Infrastructure.ValidadoresPedido
             // (id != 0) no debe someterse al check de stock del Issue #117: cuando se
             // creó el pedido ya pasó ese check y su stock quedó reservado (justamente
             // por esta misma línea). Al re-validar tras UnirPedidos con un ampliación,
-            // BuscarStockDisponibleTotal ahora devuelve 0 porque cuenta la propia
+            // BuscarStockDisponibleParaRegalar ahora devuelve 0 porque cuenta la propia
             // reserva como stock consumido → rechazo incorrecto.
             var pedido = new PedidoVentaDTO
             {
@@ -1276,7 +1298,7 @@ namespace NestoAPI.Tests.Infrastructure.ValidadoresPedido
             A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("40538")).Returns(1);
             A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("41279")).Returns(null);
             // Stock 0 porque la propia línea del pedido ya reservó la única unidad disponible
-            A.CallTo(() => _servicioPrecios.BuscarStockDisponibleTotal("40538")).Returns(0);
+            A.CallTo(() => _servicioPrecios.BuscarStockDisponibleParaRegalar("40538", A<string>._)).Returns(0);
 
             var resultado = _validador.EsPedidoValido(pedido, "40538", _servicioPrecios);
 

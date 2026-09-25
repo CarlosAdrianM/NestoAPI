@@ -113,30 +113,24 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             if (ganavisionesConsumidos <= ganavisionesDisponibles)
             {
                 // Issue #117: Validar stock disponible del producto bonificado.
-                // Nesto#346: solo se valida el stock para líneas NUEVAS (id == 0). Las
-                // líneas ya persistidas en el pedido (id != 0) ya pasaron este check al
-                // crearse y su stock ya quedó reservado; re-validarlas devolvería 0
-                // disponible (porque cuenta la propia reserva como stock consumido) y
-                // rechazaría incorrectamente tras cada ampliación o modificación del pedido.
-                int cantidadBonificada = pedido.Lineas
-                    .Where(l => l.id == 0
-                        && l.Producto == numeroProducto && l.BaseImponible == 0
-                        && (l.oferta == null || l.oferta == 0))
-                    .Sum(l => l.Cantidad);
-
-                if (cantidadBonificada > 0)
+                // Nesto#346: solo se valida el stock de lo NUEVO. Las líneas ya persistidas ya
+                // pasaron este check al crearse y su stock ya quedó reservado; re-validarlas
+                // devolvería 0 disponible (porque cuenta la propia reserva como stock consumido).
+                // NestoAPI#528: mismo núcleo que ValidadorRegaloSinStock: "nuevo" incluye cambiar el
+                // producto, subir la cantidad o aceptar un presupuesto, y el stock es el del almacén
+                // de la línea si el pedido sale según vaya entrando.
+                FaltaDeStockRegalo falta = ValidadorRegaloSinStock.PrimeraFaltaDeStock(
+                    pedido, servicio, l => l.Producto?.Trim() == numeroProducto?.Trim());
+                if (falta != null)
                 {
-                    int stockDisponible = servicio.BuscarStockDisponibleTotal(numeroProducto);
-                    if (stockDisponible < cantidadBonificada)
+                    return new RespuestaValidacion
                     {
-                        return new RespuestaValidacion
-                        {
-                            ValidacionSuperada = false,
-                            ProductoId = numeroProducto,
-                            Motivo = $"El producto {numeroProducto} no puede bonificarse porque no hay stock disponible suficiente " +
-                                     $"(disponible: {stockDisponible}, solicitado: {cantidadBonificada})"
-                        };
-                    }
+                        ValidacionSuperada = false,
+                        ProductoId = numeroProducto,
+                        Motivo = $"El producto {numeroProducto} no puede bonificarse porque no hay stock disponible suficiente" +
+                                 $"{(falta.Almacen == null ? string.Empty : " en " + falta.Almacen)} " +
+                                 $"(disponible: {falta.Disponible}, solicitado: {falta.UnidadesNuevas})"
+                    };
                 }
 
                 return new RespuestaValidacion

@@ -31,11 +31,11 @@ namespace NestoAPI.Infraestructure
         int? BuscarGanavisionesProducto(string numeroProducto);
 
         /// <summary>
-        /// Obtiene el stock disponible total (todas las sedes) de un producto.
-        /// Issue #117: Validar stock de Ganavisiones al crear pedido
-        /// Disponible = Stock - PendienteEntregar + PendienteRecibir + PendienteReposicion
+        /// Stock que se puede regalar de un producto en <paramref name="almacen"/>, o en todas las
+        /// sedes si es null. Issue #117 / NestoAPI#528.
+        /// Disponible = Stock - PendienteEntregar + PendienteReposicion (los pedidos de compra no cuentan)
         /// </summary>
-        int BuscarStockDisponibleTotal(string numeroProducto);
+        int BuscarStockDisponibleParaRegalar(string numeroProducto, string almacen);
 
         /// <summary>
         /// NestoAPI#501: familias que impiden vender <paramref name="familia"/>, cada una con su

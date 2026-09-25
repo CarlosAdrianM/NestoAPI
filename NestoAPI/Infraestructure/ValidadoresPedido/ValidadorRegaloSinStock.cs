@@ -1,4 +1,4 @@
-using NestoAPI.Models;
+﻿using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
 using System;
 using System.Collections.Generic;
@@ -18,46 +18,84 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
     ///
     /// <para>Solo cuentan las unidades NUEVAS: líneas nuevas, líneas a las que se cambia el
     /// producto y lo que sube la cantidad de una línea guardada. Lo ya guardado se respeta, como
-    /// en ValidadorGanavisiones (#228). El stock es el mismo que usa ese validador
-    /// (BuscarStockDisponibleTotal).</para>
+    /// en ValidadorGanavisiones (#228). El stock es el del almacén del que tiene que salir el
+    /// regalo, o el de todas las sedes si el pedido espera a reponer (#528, ver AlmacenDelStock).</para>
     /// </summary>
     public class ValidadorRegaloSinStock : IValidadorDenegacion
     {
         public RespuestaValidacion EsPedidoValido(PedidoVentaDTO pedido, IServicioPrecios servicio)
         {
             RespuestaValidacion respuesta = new RespuestaValidacion { ValidacionSuperada = true };
-            if (pedido?.Lineas == null)
+            FaltaDeStockRegalo falta = PrimeraFaltaDeStock(pedido, servicio, l => true);
+            if (falta == null)
             {
                 return respuesta;
             }
 
-            IEnumerable<IGrouping<string, LineaPedidoVentaDTO>> regalosPorProducto = pedido.Lineas
-                .Where(EsRegalo)
-                .GroupBy(l => l.Producto.Trim());
+            respuesta.ValidacionSuperada = false;
+            respuesta.AutorizadaDenegadaExpresamente = true;
+            respuesta.ProductoId = falta.Producto;
+            string donde = falta.Almacen == null ? string.Empty : $" en {falta.Almacen}";
+            respuesta.Motivo = falta.Disponible <= 0
+                ? $"No se puede regalar el producto {falta.Producto}: no hay stock{donde}. Elige otro regalo."
+                : $"No se pueden regalar {falta.UnidadesNuevas} unidades del producto {falta.Producto}: solo hay {falta.Disponible} disponibles{donde}.";
+            return respuesta;
+        }
 
-            foreach (IGrouping<string, LineaPedidoVentaDTO> regalos in regalosPorProducto)
+        /// <summary>
+        /// NestoAPI#528: núcleo común del stock de los regalos (este validador, ValidadorGanavisiones y
+        /// las sugerencias). Primer grupo de regalos (producto + almacén del que se tienen que servir)
+        /// cuyas unidades nuevas no caben en el stock; null si caben todos.
+        /// </summary>
+        internal static FaltaDeStockRegalo PrimeraFaltaDeStock(PedidoVentaDTO pedido, IServicioPrecios servicio, Func<LineaPedidoVentaDTO, bool> filtro)
+        {
+            if (pedido?.Lineas == null || servicio == null)
+            {
+                return null;
+            }
+
+            var grupos = pedido.Lineas
+                .Where(l => EsRegalo(l) && filtro(l))
+                .GroupBy(l => new { Producto = l.Producto.Trim(), Almacen = AlmacenDelStock(pedido, l) });
+
+            foreach (var regalos in grupos)
             {
                 int unidadesNuevas = regalos.Sum(UnidadesNuevas);
-                if (unidadesNuevas <= 0 || servicio.BuscarProducto(regalos.Key)?.Ficticio == true)
+                if (unidadesNuevas <= 0 || servicio.BuscarProducto(regalos.Key.Producto)?.Ficticio == true)
                 {
                     // Un producto ficticio no lleva stock: exigírselo lo bloquearía siempre
                     continue;
                 }
 
-                int disponible = servicio.BuscarStockDisponibleTotal(regalos.Key);
+                int disponible = servicio.BuscarStockDisponibleParaRegalar(regalos.Key.Producto, regalos.Key.Almacen);
                 if (unidadesNuevas > disponible)
                 {
-                    respuesta.ValidacionSuperada = false;
-                    respuesta.AutorizadaDenegadaExpresamente = true;
-                    respuesta.ProductoId = regalos.Key;
-                    respuesta.Motivo = disponible <= 0
-                        ? $"No se puede regalar el producto {regalos.Key}: no hay stock. Elige otro regalo."
-                        : $"No se pueden regalar {unidadesNuevas} unidades del producto {regalos.Key}: solo hay {disponible} disponibles.";
-                    return respuesta;
+                    return new FaltaDeStockRegalo
+                    {
+                        Producto = regalos.Key.Producto,
+                        Almacen = regalos.Key.Almacen,
+                        UnidadesNuevas = unidadesNuevas,
+                        Disponible = disponible
+                    };
                 }
             }
 
-            return respuesta;
+            return null;
+        }
+
+        /// <summary>
+        /// NestoAPI#528: de qué almacén tiene que salir el regalo. Solo en «Según vaya entrando» (o, sin
+        /// modo, sin servir junto) el regalo sale con lo que haya en SU almacén: si ahí no está, se queda
+        /// pendiente o sale él solo. En los demás modos el pedido espera a las reposiciones de las
+        /// tiendas, así que vale el stock de todas las sedes (null). Mismo criterio que
+        /// ProductosBonificables (servirJunto) y que la validación de #491 al cambiar de modo.
+        /// </summary>
+        internal static string AlmacenDelStock(PedidoVentaDTO pedido, LineaPedidoVentaDTO linea)
+        {
+            bool soloSuAlmacen = pedido.modoServicio.HasValue
+                ? pedido.modoServicio.Value == Constantes.Pedidos.ModosServicio.SEGUN_VAYA_ENTRANDO
+                : !pedido.servirJunto;
+            return soloSuAlmacen && !string.IsNullOrWhiteSpace(linea.almacen) ? linea.almacen.Trim() : null;
         }
 
         internal static bool EsRegalo(LineaPedidoVentaDTO linea)
@@ -81,5 +119,15 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             }
             return linea.CantidadAnterior.HasValue ? Math.Max(0, linea.Cantidad - linea.CantidadAnterior.Value) : 0;
         }
+    }
+
+    /// <summary>NestoAPI#528: regalos de un producto que no caben en el stock de donde tienen que salir.</summary>
+    internal class FaltaDeStockRegalo
+    {
+        public string Producto { get; set; }
+        /// <summary>Null = todas las sedes.</summary>
+        public string Almacen { get; set; }
+        public int UnidadesNuevas { get; set; }
+        public int Disponible { get; set; }
     }
 }

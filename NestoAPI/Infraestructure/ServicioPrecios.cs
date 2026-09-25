@@ -322,10 +322,16 @@ namespace NestoAPI.Infraestructure
         }
 
         /// <summary>
-        /// Obtiene el stock disponible total (todas las sedes) de un producto.
-        /// Issue #117: Validar stock de Ganavisiones al crear pedido
+        /// Stock que se puede regalar de un producto: el de <paramref name="almacen"/>, o el de todas
+        /// las sedes si es null. Issue #117 (Ganavisiones) y NestoAPI#529 (regalos).
+        ///
+        /// <para>NestoAPI#528: antes era siempre el total de las sedes y sumaba los pedidos de compra
+        /// enviados. Así se aceptaron 5 regalos del 40144 en ALG con 3 en ALG (y 2 repartidos en las
+        /// tiendas), y un regalo contaba con mercancía que aún no ha llegado. Ahora los pedidos de
+        /// compra no cuentan; las reposiciones en curso sí (la mercancía ya salió de la otra sede y
+        /// solo suma en el almacén de destino).</para>
         /// </summary>
-        public int BuscarStockDisponibleTotal(string numeroProducto)
+        public int BuscarStockDisponibleParaRegalar(string numeroProducto, string almacen)
         {
             if (string.IsNullOrWhiteSpace(numeroProducto))
             {
@@ -336,35 +342,31 @@ namespace NestoAPI.Infraestructure
             {
                 string productoTrimmed = numeroProducto.Trim();
                 string[] empresas = new[] { Constantes.Empresas.EMPRESA_POR_DEFECTO, Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO };
+                List<string> almacenes = string.IsNullOrWhiteSpace(almacen)
+                    ? Constantes.Sedes.ListaSedes
+                    : new List<string> { almacen.Trim() };
 
                 int stock = db.ExtractosProducto
-                    .Where(e => empresas.Contains(e.Empresa) && Constantes.Sedes.ListaSedes.Contains(e.Almacén) && e.Número == productoTrimmed)
+                    .Where(e => empresas.Contains(e.Empresa) && almacenes.Contains(e.Almacén) && e.Número == productoTrimmed)
                     .Select(e => (int)e.Cantidad)
                     .DefaultIfEmpty(0)
                     .Sum();
 
                 int pendienteEntregar = db.LinPedidoVtas
-                    .Where(e => empresas.Contains(e.Empresa) && Constantes.Sedes.ListaSedes.Contains(e.Almacén) && e.Producto == productoTrimmed
+                    .Where(e => empresas.Contains(e.Empresa) && almacenes.Contains(e.Almacén) && e.Producto == productoTrimmed
                         && (e.Estado == Constantes.EstadosLineaVenta.EN_CURSO || e.Estado == Constantes.EstadosLineaVenta.PENDIENTE))
                     .Select(e => (int)e.Cantidad)
                     .DefaultIfEmpty(0)
                     .Sum();
 
-                int pendienteRecibir = db.LinPedidoCmps
-                    .Where(e => empresas.Contains(e.Empresa) && Constantes.Sedes.ListaSedes.Contains(e.Almacén) && e.Producto == productoTrimmed
-                        && (e.Estado == Constantes.EstadosLineaVenta.EN_CURSO || e.Estado == Constantes.EstadosLineaVenta.PENDIENTE) && e.Enviado == true)
-                    .Select(e => (int)e.Cantidad)
-                    .DefaultIfEmpty(0)
-                    .Sum();
-
                 int pendienteReposicion = db.PreExtrProductos
-                    .Where(e => empresas.Contains(e.Empresa) && Constantes.Sedes.ListaSedes.Contains(e.Almacén) && e.Producto.Número == productoTrimmed
+                    .Where(e => empresas.Contains(e.Empresa) && almacenes.Contains(e.Almacén) && e.Producto.Número == productoTrimmed
                         && e.NºTraspaso != null && e.NºTraspaso > 0)
                     .Select(e => (int)e.Cantidad)
                     .DefaultIfEmpty(0)
                     .Sum();
 
-                return stock - pendienteEntregar + pendienteRecibir + pendienteReposicion;
+                return stock - pendienteEntregar + pendienteReposicion;
             }
         }
 

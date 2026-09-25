@@ -1,4 +1,4 @@
-using NestoAPI.Models;
+﻿using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
 using System;
 using System.Collections.Concurrent;
@@ -78,8 +78,8 @@ namespace NestoAPI.Infraestructure
         public int? BuscarGanavisionesProducto(string numeroProducto)
             => Memo("GV|" + Normalizar(numeroProducto), () => _servicio.BuscarGanavisionesProducto(numeroProducto));
 
-        public int BuscarStockDisponibleTotal(string numeroProducto)
-            => Memo("ST|" + Normalizar(numeroProducto), () => _servicio.BuscarStockDisponibleTotal(numeroProducto));
+        public int BuscarStockDisponibleParaRegalar(string numeroProducto, string almacen)
+            => Memo($"ST|{Normalizar(numeroProducto)}|{Normalizar(almacen)}", () => _servicio.BuscarStockDisponibleParaRegalar(numeroProducto, almacen));
 
         public List<FamiliaIncompatibilidad> BuscarIncompatibilidadesFamilia(string familia)
             => MemoLista("FI|" + Normalizar(familia), () => _servicio.BuscarIncompatibilidadesFamilia(familia));

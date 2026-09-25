@@ -275,7 +275,7 @@ namespace NestoAPI.Tests.Infrastructure
 
             // NestoAPI#529: estos tests prueban precios y ofertas, no stock. Sin esto el fake dice 0
             // y ValidadorRegaloSinStock rechaza cualquier regalo.
-            _ = A.CallTo(() => servicio.BuscarStockDisponibleTotal(A<string>._)).Returns(999);
+            _ = A.CallTo(() => servicio.BuscarStockDisponibleParaRegalar(A<string>._, A<string>._)).Returns(999);
 
             GestorPrecios.servicio = servicio;
         }

@@ -334,7 +334,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     .FirstOrDefault();
                 // #528: «añadiendo X € te llevas el regalo» no pasa por la validación (el pedido aún no llega),
                 // así que el stock del regalo se mira aquí; si no, se promete un regalo que luego no puede entrar.
-                if (cercano != null && HayStockParaRegalar(servicio, producto, cercano.Cantidad))
+                if (cercano != null && HayStockParaRegalar(servicio, pedido, modelo, producto, cercano.Cantidad))
                 {
                     decimal falta = cercano.ImportePedido - importe;
                     sugerencias.Add(new SugerenciaOfertaDTO
@@ -352,9 +352,12 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             return sugerencias;
         }
 
-        private static bool HayStockParaRegalar(IServicioPrecios servicio, string producto, int cantidad)
+        // #528: mismo stock que ValidadorRegaloSinStock (almacén de la línea o todas las sedes según el modo),
+        // para no prometer un regalo que luego el validador no deja meter.
+        private static bool HayStockParaRegalar(IServicioPrecios servicio, PedidoVentaDTO pedido, LineaPedidoVentaDTO modelo, string producto, int cantidad)
         {
-            return servicio.BuscarProducto(producto)?.Ficticio == true || servicio.BuscarStockDisponibleTotal(producto) >= cantidad;
+            return servicio.BuscarProducto(producto)?.Ficticio == true
+                || servicio.BuscarStockDisponibleParaRegalar(producto, ValidadorRegaloSinStock.AlmacenDelStock(pedido, modelo)) >= cantidad;
         }
 
         /// <summary>
@@ -382,6 +385,9 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 contacto = pedido.contacto,
                 contactoCobro = pedido.contactoCobro,
                 fecha = pedido.fecha,
+                // #528: el stock del regalo depende del modo (su almacén o todas las sedes)
+                servirJunto = pedido.servirJunto,
+                modoServicio = pedido.modoServicio,
                 Lineas = pedido.Lineas.Concat(new[] { regalo }).ToList()
             };
         }

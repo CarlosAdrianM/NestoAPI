@@ -32,7 +32,7 @@ namespace NestoAPI.Tests.Infrastructure
                 new OfertaPermitida { NºOrden = 7, Número = "38093", CantidadConPrecio = 6, CantidadRegalo = 1 }
             });
             A.CallTo(() => servicio.BuscarOfertasPermitidas("SINOF")).Returns(new List<OfertaPermitida>());
-            A.CallTo(() => servicio.BuscarStockDisponibleTotal(A<string>._)).Returns(100);
+            A.CallTo(() => servicio.BuscarStockDisponibleParaRegalar(A<string>._, A<string>._)).Returns(100);
         }
 
         private static PedidoVentaDTO Pedido(params LineaPedidoVentaDTO[] lineas) => new PedidoVentaDTO
@@ -254,9 +254,51 @@ namespace NestoAPI.Tests.Infrastructure
         {
             // #528 / comentario de Sancho en Novedades (24/09): seguía ofreciendo un regalo que ya no está disponible.
             ConRegalo("REG1", 200, 1);
-            A.CallTo(() => servicio.BuscarStockDisponibleTotal("REG1")).Returns(0);
+            A.CallTo(() => servicio.BuscarStockDisponibleParaRegalar("REG1", A<string>._)).Returns(0);
 
             Assert.AreEqual(0, GestorSugerenciasOfertas.Calcular(Pedido(Linea("SINOF", 17, 10)), servicio, Deniega).Count);
+        }
+
+        [TestMethod]
+        public void RegaloPorImporte_FaltaPocoYSaleSegunVayaEntrando_MiraElStockDeSuAlmacen()
+        {
+            // #528: el 40144 tenía 5 en total pero 3 en ALG, y se regalaron 5 en ALG.
+            ConRegalo("REG1", 200, 1);
+            A.CallTo(() => servicio.BuscarStockDisponibleParaRegalar("REG1", null)).Returns(5);
+            A.CallTo(() => servicio.BuscarStockDisponibleParaRegalar("REG1", "ALG")).Returns(0);
+            PedidoVentaDTO pedido = Pedido(Linea("SINOF", 17, 10));
+            pedido.modoServicio = Constantes.Pedidos.ModosServicio.SEGUN_VAYA_ENTRANDO;
+
+            Assert.AreEqual(0, GestorSugerenciasOfertas.Calcular(pedido, servicio, Deniega).Count);
+        }
+
+        [TestMethod]
+        public void RegaloPorImporte_FaltaPocoYEsperaAReponer_ValeElStockDeLasTiendas()
+        {
+            ConRegalo("REG1", 200, 1);
+            A.CallTo(() => servicio.BuscarStockDisponibleParaRegalar("REG1", null)).Returns(5);
+            A.CallTo(() => servicio.BuscarStockDisponibleParaRegalar("REG1", "ALG")).Returns(0);
+            PedidoVentaDTO pedido = Pedido(Linea("SINOF", 17, 10));
+            pedido.modoServicio = Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS;
+
+            Assert.AreEqual(1, GestorSugerenciasOfertas.Calcular(pedido, servicio, Deniega).Count);
+        }
+
+        [TestMethod]
+        public void RegaloPorImporte_ElPedidoQueSeValidaLlevaElModoDeServicio()
+        {
+            // #528: el validador decide el almacén del stock con el modo; la copia no puede perderlo.
+            ConRegalo("REG1", 200, 1);
+            PedidoVentaDTO pedido = Pedido(Linea("SINOF", 25, 10));
+            pedido.modoServicio = Constantes.Pedidos.ModosServicio.SEGUN_VAYA_ENTRANDO;
+            pedido.servirJunto = false;
+            PedidoVentaDTO validado = null;
+
+            GestorSugerenciasOfertas.Calcular(pedido, servicio, p => { validado = p; return new RespuestaValidacion { ValidacionSuperada = true }; });
+
+            Assert.IsNotNull(validado);
+            Assert.AreEqual(Constantes.Pedidos.ModosServicio.SEGUN_VAYA_ENTRANDO, validado.modoServicio);
+            Assert.IsFalse(validado.servirJunto);
         }
 
         [TestMethod]
