@@ -217,7 +217,12 @@
     <Compile Include="Infrastructure\PreciosMedios\AritmeticaMoneyTests.cs" />
     <Compile Include="Infrastructure\PreciosMedios\CalculadoraPrecioMedioFixturesTests.cs" />
     <Compile Include="Infrastructure\PreciosMedios\CalculadoraPrecioMedioReglasTests.cs" />
+    <Compile Include="Infrastructure\PreciosMedios\ComparadorSombraPreciosMediosTests.cs" />
+    <Compile Include="Infrastructure\PreciosMedios\ConstructorHistorialPrecioMedioTests.cs" />
     <Compile Include="Infrastructure\PreciosMedios\FixturePrecioMedio.cs" />
+    <Compile Include="Infrastructure\PreciosMedios\PreciosMediosControllerTests.cs" />
+    <Compile Include="Infrastructure\PreciosMedios\PreciosMediosJobsServiceTests.cs" />
+    <Compile Include="Infrastructure\PreciosMedios\ServicioSombraPreciosMediosTests.cs" />
     <Compile Include="Infrastructure\Seguridad\SeguridadTanda1Tests.cs" />
     <Compile Include="Controllers\AutorizacionControllersTests.cs" />
     <Compile Include="Controllers\FacturacionRutasControllerAgruparPorPOTests.cs" />

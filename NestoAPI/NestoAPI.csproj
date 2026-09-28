@@ -560,6 +560,7 @@
     <Compile Include="Controllers\PlazosPagoController.cs" />
     <Compile Include="Controllers\PreContabilidadesController.cs" />
     <Compile Include="Controllers\ProductosController.cs" />
+    <Compile Include="Controllers\PreciosMediosController.cs" />
     <Compile Include="Controllers\ProveedoresController.cs" />
     <Compile Include="Controllers\InformesController.cs" />
     <Compile Include="Controllers\ServirJuntoController.cs" />
@@ -638,9 +639,16 @@
     <Compile Include="Infraestructure\CorreoCliente.cs" />
     <Compile Include="Infraestructure\PreciosMedios\AritmeticaMoney.cs" />
     <Compile Include="Infraestructure\PreciosMedios\CalculadoraPrecioMedio.cs" />
+    <Compile Include="Infraestructure\PreciosMedios\ComparadorSombraPreciosMedios.cs" />
+    <Compile Include="Infraestructure\PreciosMedios\ConstructorHistorialPrecioMedio.cs" />
+    <Compile Include="Infraestructure\PreciosMedios\DatosProductoPrecioMedio.cs" />
     <Compile Include="Infraestructure\PreciosMedios\HistorialPrecioMedio.cs" />
+    <Compile Include="Infraestructure\PreciosMedios\IRepositorioPreciosMedios.cs" />
     <Compile Include="Infraestructure\PreciosMedios\LineaCompraPrecioMedio.cs" />
+    <Compile Include="Infraestructure\PreciosMedios\PreciosMediosJobsService.cs" />
+    <Compile Include="Infraestructure\PreciosMedios\RepositorioPreciosMediosSql.cs" />
     <Compile Include="Infraestructure\PreciosMedios\ResultadoPrecioMedio.cs" />
+    <Compile Include="Infraestructure\PreciosMedios\ServicioSombraPreciosMedios.cs" />
     <Compile Include="Infraestructure\Telefono.cs" />
     <Compile Include="Infraestructure\ApplicationDbContext.cs" />
     <Compile Include="Infraestructure\ApplicationRoleManager.cs" />

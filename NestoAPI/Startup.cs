@@ -510,6 +510,21 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'comparativa-agencia-sombra' configurado (diario a las 6:30)");
 
+            // NestoAPI#547 (corte b): SOMBRA de los precios medios. Domingo a las 6:30, después del SP «Precios
+            // Medios» de msdb (00:30): calcula la media en C# y la compara al diezmilésimo con lo que ha dejado el SP.
+            // Solo lee (lo único que escribe es la tabla de diagnóstico PreciosMediosSombra). NO HACE NADA salvo con
+            // el parámetro PreciosMediosSombra de (defecto) a "1"; si el SP sigue corriendo, se aplaza sin comparar.
+            RecurringJob.AddOrUpdate(
+                "precios-medios-sombra",
+                () => Infraestructure.PreciosMedios.PreciosMediosJobsService.ProcesarSombraSemanal(),
+                "30 6 * * 0", // Cron: domingo a las 6:30
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'precios-medios-sombra' configurado (domingo a las 6:30; apagado salvo parámetro)");
+
             // Poll de seguimiento de envíos (#248). Actualiza Estado (Entregado/Incidentado), el último
             // texto de la agencia (DetalleEstado, de donde sale «en reparto», #516) y FechaEntrega real
             // consultando a cada agencia con gestión remota. Acotado a los envíos desde una fecha de corte

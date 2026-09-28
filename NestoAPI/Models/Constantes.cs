@@ -789,6 +789,14 @@ namespace NestoAPI.Models
             /// </summary>
             public const string RECORDATORIO_REPOSICION_CONSUMIBLES = "RecordatorioReposicionConsumibles";
 
+            /// <summary>
+            /// NestoAPI#547 (corte b): interruptor de la sombra semanal de precios medios (job de Hangfire, domingo
+            /// 06:30). Bajo «(defecto)». Sin fila, "0" o cualquier valor que no se reconozca: APAGADO. "1" o "Activo":
+            /// calcula en C# y compara con lo que dejó el SP, registrando en PreciosMediosSombra. Nunca escribe
+            /// en Productos, LinPedidoCmp ni LinPedidoVta.
+            /// </summary>
+            public const string PRECIOS_MEDIOS_SOMBRA = "PreciosMediosSombra";
+
             /// <summary>Usuario bajo el que viven los parametros que no son de nadie en concreto.</summary>
             public const string USUARIO_POR_DEFECTO = "(defecto)";
 
