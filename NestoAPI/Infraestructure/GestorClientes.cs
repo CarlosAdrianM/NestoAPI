@@ -71,7 +71,7 @@ namespace NestoAPI.Infraestructure
                 {
                     CodigoPostal = codigoPostal.Trim(),
                     Ruta = Constantes.Clientes.RUTA_CLIENTES_EXTRANJEROS,
-                    DireccionFormateada = PonerAbreviaturas(direccion.ToUpper().Trim())
+                    DireccionFormateada = ComaAntesDelNumero(PonerAbreviaturas(direccion.ToUpper().Trim()))
                 };
             }
             else
@@ -85,7 +85,7 @@ namespace NestoAPI.Infraestructure
                     // Google ni pasar por la cirugía de strings de LimpiarDireccion (la fuente de los
                     // falsos "El código postal X es incorrecto"). Solo se aplica la normalización de
                     // nuestra BD (mayúsculas + abreviaturas C/, Av., ...).
-                    respuesta.DireccionFormateada = PonerAbreviaturas(direccion.ToUpper().Trim());
+                    respuesta.DireccionFormateada = ComaAntesDelNumero(PonerAbreviaturas(direccion.ToUpper().Trim()));
                 }
                 else
                 {
@@ -477,6 +477,22 @@ namespace NestoAPI.Infraestructure
             }
 
             return direccion;
+        }
+
+        /// <summary>
+        /// 28/09/26 (cliente 41966): NestoApp junta calle y número del combo de Google con un espacio
+        /// («Paseo de la Chopera 204») y Nesto con coma («…, 204»), que es el formato de la BD. La dirección
+        /// verificada no vuelve a pasar por Google, así que la coma se pone aquí: si termina en un número
+        /// (con letra opcional, 12B) separado por espacio de un texto que no acaba en número, va «, número».
+        /// Lo que ya lleva coma o no termina en número se queda igual.
+        /// </summary>
+        internal static string ComaAntesDelNumero(string direccion)
+        {
+            if (string.IsNullOrWhiteSpace(direccion) || direccion.Contains(","))
+            {
+                return direccion;
+            }
+            return Regex.Replace(direccion.Trim(), @"^(.*[^\s\d])\s+(\d+[A-Z]?)$", "$1, $2");
         }
 
         private static Dictionary<string, string> CargarAbreviaturas()

@@ -75,6 +75,32 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public async Task ComprobarDatosGenerales_DireccionVerificadaSinComa_LaPoneAntesDelNumero()
+        {
+            // 28/09/26 (cliente 41966): NestoApp manda «Paseo de la Chopera 204» (calle y número con espacio)
+            // y quedaba «PºCHOPERA 204»; el formato de la BD (el de Nesto) lleva coma.
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
+            _ = A.CallTo(() => servicio.CogerDatosCodigoPostal("28100"))
+                .Returns(new NestoAPI.Models.Clientes.RespuestaDatosGeneralesClientes());
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencias);
+
+            var respuesta = await gestor.ComprobarDatosGenerales("Paseo de la Chopera 204", "28100", "916773415", direccionVerificada: true);
+
+            Assert.AreEqual("PºCHOPERA, 204", respuesta.DireccionFormateada);
+        }
+
+        [TestMethod]
+        public void ComaAntesDelNumero_SoloCuandoTerminaEnNumeroYNoHayComa()
+        {
+            Assert.AreEqual("C/ AZUCENA, 7", GestorClientes.ComaAntesDelNumero("C/ AZUCENA 7"));
+            Assert.AreEqual("VIA DANTE ALIGHIERI, 147B", GestorClientes.ComaAntesDelNumero("VIA DANTE ALIGHIERI 147B"));
+            Assert.AreEqual("Av. CASTILLA, 3", GestorClientes.ComaAntesDelNumero("Av. CASTILLA, 3"), "ya la lleva");
+            Assert.AreEqual("C/ MAYOR", GestorClientes.ComaAntesDelNumero("C/ MAYOR"), "sin número");
+            Assert.AreEqual("C/ 13 ROSAS", GestorClientes.ComaAntesDelNumero("C/ 13 ROSAS"), "el número no está al final");
+        }
+
+        [TestMethod]
         public async Task ComprobarDatosGenerales_PaisExtranjero_NoConsultaLaTablaDeCPsNiGoogleYAsignaRuta00()
         {
             // Nesto#436: una dirección de Italia no está en nuestra tabla de CPs (lanzaría "No
