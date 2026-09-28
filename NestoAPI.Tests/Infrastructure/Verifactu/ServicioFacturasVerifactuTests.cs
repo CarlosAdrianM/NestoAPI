@@ -1204,5 +1204,79 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
         }
 
         #endregion
+
+        #region Subsanación a mano de una factura incorrecta en la AEAT (#522)
+
+        [TestMethod]
+        public async Task SubsanarFacturaRechazada_IncorrectaEnLaAeat_VaPorModifyConRechazoPrevioXYPersisteElNuevoRegistro()
+        {
+            // NestoAPI#522: declarada (con UUID) pero la AEAT la dio por incorrecta. Corregido el motivo,
+            // administración la reenvía desde la ventana: subsanación con rechazo_previo = X, aunque sea de hoy.
+            var factura = ConfigurarFactura(uuidYaEnviado: "uuid-rechazado");
+            factura.VerifactuEstado = "Incorrecto";
+            factura.VerifactuUltimoError = "AEAT (Incorrecto): NIF no identificado";
+            A.CallTo(() => servicioVerifactu.ModificarFacturaAsync(A<VerifactuFacturaRequest>.Ignored, "X"))
+                .Returns(new VerifactuResponse { Exitoso = true, Uuid = "uuid-subsanado", Estado = "Pendiente" });
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            VerifactuResponse respuesta = await servicio.SubsanarFacturaRechazadaEnVerifactu("1", "NV2600123");
+
+            Assert.IsTrue(respuesta.Exitoso);
+            A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored)).MustNotHaveHappened();
+            Assert.AreEqual("uuid-subsanado", factura.VerifactuUUID);
+            Assert.AreEqual("Pendiente", factura.VerifactuEstado, "El job vuelve a consultar su estado");
+            Assert.IsNull(factura.VerifactuUltimoError);
+            var registro = registrosInsertados.Single();
+            Assert.AreEqual("Subsanacion", registro.TipoRegistro);
+            Assert.AreEqual("X", registro.RechazoPrevio);
+        }
+
+        [TestMethod]
+        public async Task SubsanarFacturaRechazada_RegistradaYCorrecta_NoEnviaNada()
+        {
+            var factura = ConfigurarFactura(uuidYaEnviado: "uuid-1");
+            factura.VerifactuEstado = "Correcto";
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            VerifactuResponse respuesta = await servicio.SubsanarFacturaRechazadaEnVerifactu("1", "NV2600123");
+
+            Assert.IsNull(respuesta);
+            A.CallTo(() => servicioVerifactu.ModificarFacturaAsync(A<VerifactuFacturaRequest>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
+            A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturaAVerifactu_IncorrectaEnLaAeat_ElEnvioNormalSigueSiendoIdempotente()
+        {
+            // El job y la facturación nunca reenvían una factura con UUID: solo la ventana, a mano
+            var factura = ConfigurarFactura(uuidYaEnviado: "uuid-rechazado");
+            factura.VerifactuEstado = "Incorrecto";
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            Assert.IsNull(await servicio.EnviarFacturaAVerifactu("1", "NV2600123"));
+            A.CallTo(() => servicioVerifactu.ModificarFacturaAsync(A<VerifactuFacturaRequest>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task SubsanarFacturaRechazada_ConMarcaDeIncidencia_NoLlevaIncidenciaNiSeBloqueaPorLaFecha()
+        {
+            // La marca de incidencia se conserva al registrar; la subsanación posterior no es el alta pendiente
+            var factura = ConfigurarFactura(uuidYaEnviado: "uuid-rechazado");
+            factura.VerifactuEstado = "Rechazado";
+            factura.VerifactuIncidencia = true;
+            factura.Fecha = DateTime.Today.AddDays(-5);
+            VerifactuFacturaRequest enviado = null;
+            A.CallTo(() => servicioVerifactu.ModificarFacturaAsync(A<VerifactuFacturaRequest>.Ignored, "X"))
+                .Invokes((VerifactuFacturaRequest r, string _) => enviado = r)
+                .Returns(new VerifactuResponse { Exitoso = true, Uuid = "uuid-subsanado", Estado = "Pendiente" });
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            VerifactuResponse respuesta = await servicio.SubsanarFacturaRechazadaEnVerifactu("1", "NV2600123");
+
+            Assert.IsTrue(respuesta.Exitoso);
+            Assert.IsFalse(enviado.Incidencia);
+        }
+
+        #endregion
     }
 }

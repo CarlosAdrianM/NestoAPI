@@ -357,6 +357,8 @@
       <HintPath>..\packages\System.Collections.Immutable.8.0.0\lib\net462\System.Collections.Immutable.dll</HintPath>
     </Reference>
     <Reference Include="System.Data" />
+    <Reference Include="System.DirectoryServices" />
+    <Reference Include="System.DirectoryServices.AccountManagement" />
     <Reference Include="System.Data.DataSetExtensions" />
     <Reference Include="System.Diagnostics.DiagnosticSource, Version=9.0.0.4, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
       <HintPath>..\packages\System.Diagnostics.DiagnosticSource.9.0.4\lib\net462\System.Diagnostics.DiagnosticSource.dll</HintPath>
@@ -563,6 +565,7 @@
     <Compile Include="Controllers\ServirJuntoController.cs" />
     <Compile Include="Controllers\ErroresController.cs" />
     <Compile Include="Controllers\NotificacionesController.cs" />
+    <Compile Include="Controllers\VerifactuController.cs" />
     <Compile Include="Controllers\PagosController.cs" />
     <Compile Include="Controllers\ReclamacionDeudaController.cs" />
     <Compile Include="Controllers\RecursosHumanosController.cs" />
@@ -693,6 +696,8 @@
     <Compile Include="Infraestructure\Clientes\ConsultasClientePrincipal.cs" />
     <Compile Include="Infraestructure\Productos\FamiliasRestringidas.cs" />
     <Compile Include="Infraestructure\Verifactu\VerifactuJobsService.cs" />
+    <Compile Include="Infraestructure\Verifactu\ServicioFacturasPendientesVerifactu.cs" />
+    <Compile Include="Infraestructure\Verifactu\AvisoFacturasPendientesVerifactuJobsService.cs" />
     <Compile Include="Infraestructure\Verifactu\DeduplicadorErroresVerifactu.cs" />
     <Compile Include="Infraestructure\Clientes\ProveedorCertificadoAeat.cs" />
     <Compile Include="Infraestructure\Remesas\ResolutorSecuenciasCcc.cs" />
@@ -1282,6 +1287,7 @@
     <Compile Include="Models\Facturas\DocumentoImprimibleDTO.cs" />
     <Compile Include="Models\Facturas\DocumentoParaImprimir.cs" />
     <Compile Include="Models\Facturas\FacturaCorreo.cs" />
+    <Compile Include="Models\Facturas\FacturaPendienteVerifactuDTO.cs" />
     <Compile Include="Models\Facturas\FacturaCreadaDTO.cs" />
     <Compile Include="Models\Facturas\FacturaLookup.cs" />
     <Compile Include="Models\Facturas\FacturarRutasRequestDTO.cs" />

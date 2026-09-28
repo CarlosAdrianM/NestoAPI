@@ -200,6 +200,29 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
         }
 
         [TestMethod]
+        public async Task ActualizarEstados_Rechazo_GuardaElMotivoDeLaAeatEnLaFactura()
+        {
+            // NestoAPI#522: el motivo tiene que verse en la ventana de administración, no solo en el correo
+            var factura = Factura("NV2612489", uuid: "uuid-2", estado: "Pendiente");
+            ConFacturas(factura);
+            _ = A.CallTo(() => servicioVerifactu.ConsultarEstadoAsync("uuid-2"))
+                .Returns(new VerifactuResponse
+                {
+                    Exitoso = true,
+                    Estado = "Incorrecto",
+                    CodigoError = "1117",
+                    MensajeError = "Si la factura es de tipo rectificativa, el campo TipoRectificativa debe tener valor"
+                });
+
+            await job.ActualizarEstadosPendientes(new ResumenJobVerifactu());
+
+            Assert.AreEqual("Incorrecto", factura.VerifactuEstado);
+            StringAssert.Contains(factura.VerifactuUltimoError, "AEAT (Incorrecto)");
+            StringAssert.Contains(factura.VerifactuUltimoError, "1117");
+            StringAssert.Contains(factura.VerifactuUltimoError, "TipoRectificativa");
+        }
+
+        [TestMethod]
         public async Task ActualizarEstados_RechazoPorNif_MarcaLaFichaComoIncorrecta()
         {
             var factura = Factura("NV2612489", uuid: "uuid-2", estado: "Pendiente");

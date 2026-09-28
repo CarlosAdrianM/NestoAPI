@@ -842,6 +842,18 @@ namespace NestoAPI.Infraestructure.Facturas
             return await EnviarAVerifactu(empresa, numeroFactura, permitirRectificativas: true);
         }
 
+        /// <summary>
+        /// NestoAPI#522: reenvío a mano (ventana de administración) de una factura que la AEAT marcó como
+        /// INCORRECTA o RECHAZADA después de declararla (tiene UUID, pero el registro no vale). Una vez
+        /// corregido el motivo (NIF, nombre...), se vuelve a declarar como SUBSANACIÓN (PUT modify) con
+        /// rechazo_previo = X: el alta nunca llegó a aceptarse. Mantiene la fecha y el número. Si la
+        /// factura no está en un estado de rechazo, no hace nada (devuelve null).
+        /// </summary>
+        internal async Task<Verifactu.VerifactuResponse> SubsanarFacturaRechazadaEnVerifactu(string empresa, string numeroFactura)
+        {
+            return await EnviarAVerifactu(empresa, numeroFactura, permitirRectificativas: true, subsanarRechazada: true);
+        }
+
         /// <summary>NestoAPI#346: rechazo_previo=X — el alta inicial fue rechazada (cuadro
         /// operativo AEAT para reenviar como subsanación un registro que nunca se aceptó).</summary>
         private const string RECHAZO_PREVIO_ALTA_RECHAZADA = "X";
@@ -878,7 +890,8 @@ namespace NestoAPI.Infraestructure.Facturas
             return texto != null && texto.Length > maximo ? texto.Substring(0, maximo) : texto;
         }
 
-        private async Task<Verifactu.VerifactuResponse> EnviarAVerifactu(string empresa, string numeroFactura, bool permitirRectificativas)
+        private async Task<Verifactu.VerifactuResponse> EnviarAVerifactu(string empresa, string numeroFactura, bool permitirRectificativas,
+            bool subsanarRechazada = false)
         {
             try
             {
@@ -893,7 +906,7 @@ namespace NestoAPI.Infraestructure.Facturas
                 await candado.WaitAsync();
                 try
                 {
-                    return await EnviarAVerifactuSerializado(empresa, numeroFactura, permitirRectificativas);
+                    return await EnviarAVerifactuSerializado(empresa, numeroFactura, permitirRectificativas, subsanarRechazada);
                 }
                 finally
                 {
@@ -907,7 +920,8 @@ namespace NestoAPI.Infraestructure.Facturas
             }
         }
 
-        private async Task<Verifactu.VerifactuResponse> EnviarAVerifactuSerializado(string empresa, string numeroFactura, bool permitirRectificativas)
+        private async Task<Verifactu.VerifactuResponse> EnviarAVerifactuSerializado(string empresa, string numeroFactura, bool permitirRectificativas,
+            bool subsanarRechazada)
         {
             try
             {
@@ -930,7 +944,12 @@ namespace NestoAPI.Infraestructure.Facturas
                     return null; // desde CrearFactura las vinculaciones aún no existen (#36)
                 }
 
-                if (!string.IsNullOrWhiteSpace(factura.VerifactuUUID))
+                // NestoAPI#522: la única excepción a la idempotencia es el reenvío a mano de una factura
+                // declarada que la AEAT dio por incorrecta o rechazada (su registro no vale).
+                bool esSubsanacionDeRechazada = subsanarRechazada
+                    && !string.IsNullOrWhiteSpace(factura.VerifactuUUID)
+                    && Verifactu.VerifactuJobsService.EsEstadoDeRechazo(factura.VerifactuEstado);
+                if (!string.IsNullOrWhiteSpace(factura.VerifactuUUID) && !esSubsanacionDeRechazada)
                 {
                     return null; // ya se envió (idempotencia)
                 }
@@ -1079,7 +1098,8 @@ namespace NestoAPI.Infraestructure.Facturas
                 // y su create admite la fecha de expedición del día anterior precisamente para estos
                 // casos. Así que se reenvía la del mismo día y la de ayer; las más antiguas quedan
                 // marcadas y visibles en el correo del job para revisarlas a mano.
-                if (factura.VerifactuIncidencia == true)
+                // (La subsanación de una rechazada no es el alta pendiente por la incidencia: no la lleva.)
+                if (factura.VerifactuIncidencia == true && !esSubsanacionDeRechazada)
                 {
                     request.Incidencia = true;
                     if (factura.Fecha.Date < DateTime.Today.AddDays(-1))
@@ -1102,7 +1122,9 @@ namespace NestoAPI.Infraestructure.Facturas
                 // nunca llegó a aceptarse. Pendiente confirmar con soporte de Verifacti que el
                 // modify vale cuando el create ni siquiera pasó su filtro previo; si no, el error
                 // quedará en ELMAH (una sola vez, deduplicado) y lo veremos en la sombra.
-                bool fueraDeVentanaCreate = factura.Fecha.Date < DateTime.Today.AddDays(-1);
+                // NestoAPI#522: la rechazada por la AEAT después de declararla va SIEMPRE por la subsanación
+                // (el alta nunca se aceptó: rechazo_previo = X), sea de la fecha que sea.
+                bool fueraDeVentanaCreate = factura.Fecha.Date < DateTime.Today.AddDays(-1) || esSubsanacionDeRechazada;
                 Verifactu.VerifactuResponse respuesta = fueraDeVentanaCreate
                     ? await servicioVerifactu.ModificarFacturaAsync(request, RECHAZO_PREVIO_ALTA_RECHAZADA)
                     : await servicioVerifactu.EnviarFacturaAsync(request);
@@ -1117,7 +1139,9 @@ namespace NestoAPI.Infraestructure.Facturas
                 // rechazo es BENIGNO: ni error ni ELMAH. Si no hay UUID, es una huérfana (la
                 // respuesta de un envío anterior se perdió tras registrar Verifacti): reintentar
                 // el alta no lleva a nada y el rastro debe decir cómo salir.
-                bool esDuplicado = !exitoso && respuesta?.MensajeError != null
+                // (En la subsanación de una rechazada el UUID persistido es el del registro que no vale:
+                // un «ya existe» ahí no es la huérfana de #385, es un error más a enseñar.)
+                bool esDuplicado = !exitoso && !esSubsanacionDeRechazada && respuesta?.MensajeError != null
                     && respuesta.MensajeError.IndexOf(ERROR_FACTURA_YA_REGISTRADA, StringComparison.OrdinalIgnoreCase) >= 0;
                 bool duplicadoBenigno = false;
                 if (esDuplicado)
@@ -1134,7 +1158,7 @@ namespace NestoAPI.Infraestructure.Facturas
                 // «pendiente por incidencia». La marca se conserva al registrarla después: es el
                 // rastro de que se declaró con incidencia = S (el payload queda en VerifactuRegistros).
                 bool falloTecnico = !exitoso && respuesta != null && respuesta.EsFalloTecnico;
-                if (falloTecnico)
+                if (falloTecnico && !esSubsanacionDeRechazada)
                 {
                     factura.VerifactuIncidencia = true;
                 }

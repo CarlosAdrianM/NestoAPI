@@ -116,6 +116,12 @@ namespace NestoAPI.Infraestructure.Verifactu
 
                 if (EsEstadoDeRechazo(estadoNuevo))
                 {
+                    // NestoAPI#522: el motivo de la AEAT queda en la factura para que administración lo vea
+                    // en la ventana de facturas pendientes de Verifactu (antes solo iba en el correo).
+                    string motivo = $"{estado.CodigoError} {estado.MensajeError}".Trim();
+                    factura.VerifactuUltimoError = TruncarMotivo(string.IsNullOrEmpty(motivo)
+                        ? $"La AEAT ha marcado el registro como {estadoNuevo} sin indicar el motivo"
+                        : $"AEAT ({estadoNuevo}): {motivo}");
                     resumen.Rechazadas.Add($"{factura.Número?.Trim()} (cliente {factura.Nº_Cliente?.Trim()}): " +
                         $"{estadoNuevo} - {estado.CodigoError} {estado.MensajeError}".Trim());
                     if (EsRechazoPorNif(estado.MensajeError))
@@ -275,6 +281,11 @@ namespace NestoAPI.Infraestructure.Verifactu
             {
                 ElmahHelper.Log(new Exception($"[Verifactu job] No se pudo enviar el resumen: {ex.Message}", ex));
             }
+        }
+
+        private static string TruncarMotivo(string texto)
+        {
+            return texto != null && texto.Length > 500 ? texto.Substring(0, 500) : texto;
         }
 
         /// <summary>Estados de Verifacti que significan rechazo (el resto: Correcto,

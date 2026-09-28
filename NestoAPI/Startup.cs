@@ -209,6 +209,9 @@ namespace NestoAPI
             // Servicios de Notificaciones Push (Issue #108)
             _ = services.AddScoped<IServicioNotificacionesPush, ServicioNotificacionesPush>();
 
+            // Ventana de facturas pendientes de Verifactu (NestoAPI#522)
+            _ = services.AddScoped<Infraestructure.Verifactu.IServicioFacturasPendientesVerifactu, Infraestructure.Verifactu.ServicioFacturasPendientesVerifactu>();
+
             // Servicios de Informes (Nesto#340 Fase 1A)
             _ = services.AddScoped<IInformesService, InformesService>();
 
@@ -538,6 +541,20 @@ namespace NestoAPI
                 }
             );
             Console.WriteLine("✅ Job recurrente 'verifactu-estados' configurado (cada hora)");
+
+            // NestoAPI#522: de lunes a viernes a las 8:30, nota en la campana de Nesto al grupo Administración
+            // si hay facturas pendientes de Verifactu o incorrectas en la AEAT (al pulsarla se abre la ventana
+            // para verlas y reintentarlas). Sin pendientes no avisa. Interruptor: Verifactu:AvisoDiarioPendientes.
+            RecurringJob.AddOrUpdate(
+                "verifactu-aviso-pendientes",
+                () => Infraestructure.Verifactu.AvisoFacturasPendientesVerifactuJobsService.Avisar(),
+                "30 8 * * 1-5", // Cron: de lunes a viernes a las 8:30
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'verifactu-aviso-pendientes' configurado (laborables a las 8:30)");
 
             // NestoAPI#366: cada 30 minutos, cierra el bucle de las facturas subidas a Amazon
             // (feed UPLOAD_VAT_INVOICE): consulta getFeed de las filas ENVIADA y guarda el

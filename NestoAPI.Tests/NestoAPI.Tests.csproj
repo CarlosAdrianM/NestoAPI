@@ -385,6 +385,8 @@
     <Compile Include="Infrastructure\Verifactu\ProveedorVerifactuTests.cs" />
     <Compile Include="Infrastructure\Verifactu\ServicioVerifactiTests.cs" />
     <Compile Include="Infrastructure\Verifactu\VerifactuJobsServiceTests.cs" />
+    <Compile Include="Infrastructure\Verifactu\ServicioFacturasPendientesVerifactuTests.cs" />
+    <Compile Include="Infrastructure\Verifactu\AvisoFacturasPendientesVerifactuJobsServiceTests.cs" />
     <Compile Include="Models\Facturas\RegistroSeriesVerifactuTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfResumenVentasTests.cs" />
     <Compile Include="Infrastructure\ValidadorDescuentoPPTests.cs" />
