@@ -1,0 +1,56 @@
+{
+  "producto": "40179",
+  "empresa": "5",
+  "empresaEspejo": "5",
+  "nota": "Empresa 5; dos líneas de la misma factura y fecha.",
+  "ficticio": false,
+  "fechaUltimoMontaje": null,
+  "fechaUltimaRecepcion": "2019-11-21T15:24:06.070",
+  "motivoEsperado": "Ninguno",
+  "precioMedioSP": 1846.0,
+  "compras": [
+    {
+      "empresa": "5",
+      "numeroFactura": 67330,
+      "fechaAlbaran": "2019-10-02T17:03:57.077",
+      "numeroAlbaran": 99489,
+      "numeroOrden": 116712451,
+      "cantidad": 1,
+      "baseImponible": 2135.5,
+      "coste": 2135.5,
+      "estado": 4
+    },
+    {
+      "empresa": "5",
+      "numeroFactura": 67829,
+      "fechaAlbaran": "2019-11-21T15:24:06.070",
+      "numeroAlbaran": 100210,
+      "numeroOrden": 117368151,
+      "cantidad": 1,
+      "baseImponible": 1846.0,
+      "coste": 1846.0,
+      "estado": 4
+    },
+    {
+      "empresa": "5",
+      "numeroFactura": 67829,
+      "fechaAlbaran": "2019-11-21T15:24:06.070",
+      "numeroAlbaran": 100210,
+      "numeroOrden": 117368251,
+      "cantidad": 1,
+      "baseImponible": 1846.0,
+      "coste": 1846.0,
+      "estado": 4
+    }
+  ],
+  "stockHasta": [
+    {
+      "fecha": "2019-10-02T17:03:57.077",
+      "stock": 1
+    },
+    {
+      "fecha": "2019-11-21T15:24:06.070",
+      "stock": 2
+    }
+  ]
+}

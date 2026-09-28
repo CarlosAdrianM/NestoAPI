@@ -1,0 +1,101 @@
+{
+  "producto": "34248",
+  "empresa": "1",
+  "empresaEspejo": "3",
+  "nota": "Línea de cantidad 0; líneas a las 00:00:00 sin apuntes en el extracto (stock NULL -> 0); misma factura con dos fechas; albarán anterior con dos costes (2,10 y 3,85): el SP cogió el de la línea más reciente (3,85).",
+  "ficticio": false,
+  "fechaUltimoMontaje": null,
+  "fechaUltimaRecepcion": "2016-12-01T09:50:32.933",
+  "motivoEsperado": "Ninguno",
+  "precioMedioSP": 3.675,
+  "compras": [
+    {
+      "empresa": "1",
+      "numeroFactura": 46022,
+      "fechaAlbaran": "2014-02-10T14:06:11.887",
+      "numeroAlbaran": 67135,
+      "numeroOrden": 73151451,
+      "cantidad": 1,
+      "baseImponible": 4.2,
+      "coste": 4.2,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 55907,
+      "fechaAlbaran": "2016-10-25T00:00:00",
+      "numeroAlbaran": 82870,
+      "numeroOrden": 94584151,
+      "cantidad": 1,
+      "baseImponible": 0.0,
+      "coste": 2.1,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 55907,
+      "fechaAlbaran": "2016-10-25T14:23:38.490",
+      "numeroAlbaran": 82870,
+      "numeroOrden": 94309651,
+      "cantidad": 5,
+      "baseImponible": 21.0,
+      "coste": 3.85,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 56268,
+      "fechaAlbaran": "2016-12-01T00:00:00",
+      "numeroAlbaran": 83414,
+      "numeroOrden": 95196551,
+      "cantidad": 5,
+      "baseImponible": 21.0,
+      "coste": 3.675,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 56268,
+      "fechaAlbaran": "2016-12-01T00:00:00",
+      "numeroAlbaran": 83414,
+      "numeroOrden": 95196651,
+      "cantidad": 1,
+      "baseImponible": 0.0,
+      "coste": 3.675,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 56268,
+      "fechaAlbaran": "2016-12-01T09:50:32.933",
+      "numeroAlbaran": 83414,
+      "numeroOrden": 94852651,
+      "cantidad": 0,
+      "baseImponible": 0.0,
+      "coste": 3.675,
+      "estado": 4
+    }
+  ],
+  "stockHasta": [
+    {
+      "fecha": "2014-02-10T14:06:11.887",
+      "stock": 1
+    },
+    {
+      "fecha": "2016-10-25T00:00:00",
+      "stock": 0
+    },
+    {
+      "fecha": "2016-10-25T14:23:38.490",
+      "stock": 6
+    },
+    {
+      "fecha": "2016-12-01T00:00:00",
+      "stock": 0
+    },
+    {
+      "fecha": "2016-12-01T09:50:32.933",
+      "stock": 6
+    }
+  ]
+}

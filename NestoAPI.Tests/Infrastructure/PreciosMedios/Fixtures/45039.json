@@ -1,0 +1,105 @@
+{
+  "producto": "45039",
+  "empresa": "1",
+  "empresaEspejo": "3",
+  "nota": "Kit (44563 x4) con compras propias: se trata como un producto normal.",
+  "ficticio": false,
+  "fechaUltimoMontaje": null,
+  "fechaUltimaRecepcion": "2026-09-21T14:50:35.643",
+  "motivoEsperado": "Ninguno",
+  "precioMedioSP": 45.08,
+  "compras": [
+    {
+      "empresa": "1",
+      "numeroFactura": 85138,
+      "fechaAlbaran": "2025-09-23T14:23:09.653",
+      "numeroAlbaran": 121579,
+      "numeroOrden": 139205051,
+      "cantidad": 1,
+      "baseImponible": 45.08,
+      "coste": 45.08,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 85749,
+      "fechaAlbaran": "2025-11-26T10:47:05.633",
+      "numeroAlbaran": 122337,
+      "numeroOrden": 139599551,
+      "cantidad": 2,
+      "baseImponible": 90.16,
+      "coste": 45.08,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 86542,
+      "fechaAlbaran": "2026-02-20T10:33:36.187",
+      "numeroAlbaran": 123205,
+      "numeroOrden": 140158551,
+      "cantidad": 1,
+      "baseImponible": 45.08,
+      "coste": 45.08,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 86601,
+      "fechaAlbaran": "2026-02-26T11:06:37.283",
+      "numeroAlbaran": 123266,
+      "numeroOrden": 140190551,
+      "cantidad": 2,
+      "baseImponible": 90.16,
+      "coste": 45.08,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 87171,
+      "fechaAlbaran": "2026-04-14T15:49:34.663",
+      "numeroAlbaran": 123738,
+      "numeroOrden": 140511751,
+      "cantidad": 2,
+      "baseImponible": 90.16,
+      "coste": 45.08,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 88414,
+      "fechaAlbaran": "2026-09-21T14:50:35.643",
+      "numeroAlbaran": 125315,
+      "numeroOrden": 141406251,
+      "cantidad": 3,
+      "baseImponible": 135.24,
+      "coste": 45.08,
+      "estado": 4
+    }
+  ],
+  "stockHasta": [
+    {
+      "fecha": "2025-09-23T14:23:09.653",
+      "stock": 1
+    },
+    {
+      "fecha": "2025-11-26T10:47:05.633",
+      "stock": 3
+    },
+    {
+      "fecha": "2026-02-20T10:33:36.187",
+      "stock": 3
+    },
+    {
+      "fecha": "2026-02-26T11:06:37.283",
+      "stock": 3
+    },
+    {
+      "fecha": "2026-04-14T15:49:34.663",
+      "stock": 4
+    },
+    {
+      "fecha": "2026-09-21T14:50:35.643",
+      "stock": 3
+    }
+  ]
+}

@@ -214,6 +214,10 @@
     <Compile Include="Controllers\ClientesControllerTests.cs" />
     <Compile Include="Controllers\ClientesControllerBusquedaPorFacturaTests.cs" />
     <Compile Include="Controllers\EmpresasControllerTests.cs" />
+    <Compile Include="Infrastructure\PreciosMedios\AritmeticaMoneyTests.cs" />
+    <Compile Include="Infrastructure\PreciosMedios\CalculadoraPrecioMedioFixturesTests.cs" />
+    <Compile Include="Infrastructure\PreciosMedios\CalculadoraPrecioMedioReglasTests.cs" />
+    <Compile Include="Infrastructure\PreciosMedios\FixturePrecioMedio.cs" />
     <Compile Include="Infrastructure\Seguridad\SeguridadTanda1Tests.cs" />
     <Compile Include="Controllers\AutorizacionControllersTests.cs" />
     <Compile Include="Controllers\FacturacionRutasControllerAgruparPorPOTests.cs" />
@@ -595,6 +599,26 @@
       <Project>{6789673D-EE07-4FEB-9848-C74FE9D1137A}</Project>
       <Name>NestoAPI</Name>
     </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Infrastructure\PreciosMedios\Fixtures\16137.json" />
+    <EmbeddedResource Include="Infrastructure\PreciosMedios\Fixtures\17877.json" />
+    <EmbeddedResource Include="Infrastructure\PreciosMedios\Fixtures\34248.json" />
+    <EmbeddedResource Include="Infrastructure\PreciosMedios\Fixtures\34929.json" />
+    <EmbeddedResource Include="Infrastructure\PreciosMedios\Fixtures\37688.json" />
+    <EmbeddedResource Include="Infrastructure\PreciosMedios\Fixtures\38896.json" />
+    <EmbeddedResource Include="Infrastructure\PreciosMedios\Fixtures\40179.json" />
+    <EmbeddedResource Include="Infrastructure\PreciosMedios\Fixtures\40985.json" />
+    <EmbeddedResource Include="Infrastructure\PreciosMedios\Fixtures\41281.json" />
+    <EmbeddedResource Include="Infrastructure\PreciosMedios\Fixtures\43859.json" />
+    <EmbeddedResource Include="Infrastructure\PreciosMedios\Fixtures\44243.json" />
+    <EmbeddedResource Include="Infrastructure\PreciosMedios\Fixtures\44904.json" />
+    <EmbeddedResource Include="Infrastructure\PreciosMedios\Fixtures\45039.json" />
+    <EmbeddedResource Include="Infrastructure\PreciosMedios\Fixtures\45188.json" />
+    <EmbeddedResource Include="Infrastructure\PreciosMedios\Fixtures\45396.json" />
+    <EmbeddedResource Include="Infrastructure\PreciosMedios\Fixtures\45668.json" />
+    <EmbeddedResource Include="Infrastructure\PreciosMedios\Fixtures\45934.json" />
+    <EmbeddedResource Include="Infrastructure\PreciosMedios\Fixtures\47074.json" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

@@ -1,0 +1,30 @@
+{
+  "producto": "45934",
+  "empresa": "1",
+  "empresaEspejo": "3",
+  "nota": "Una sola compra (25/09/26, 8 uds, 99,20): regla (b) de primera compra.",
+  "ficticio": false,
+  "fechaUltimoMontaje": null,
+  "fechaUltimaRecepcion": "2026-09-25T09:59:24.423",
+  "motivoEsperado": "Ninguno",
+  "precioMedioSP": 12.4,
+  "compras": [
+    {
+      "empresa": "1",
+      "numeroFactura": 88467,
+      "fechaAlbaran": "2026-09-25T09:59:24.423",
+      "numeroAlbaran": 125389,
+      "numeroOrden": 141494551,
+      "cantidad": 8,
+      "baseImponible": 99.2,
+      "coste": 12.4,
+      "estado": 4
+    }
+  ],
+  "stockHasta": [
+    {
+      "fecha": "2026-09-25T09:59:24.423",
+      "stock": 8
+    }
+  ]
+}

@@ -1,0 +1,180 @@
+{
+  "producto": "16137",
+  "empresa": "1",
+  "empresaEspejo": "3",
+  "nota": "La primera compra es un abono (-7 -> 10,9214); denominador 0 -> conserva la media (regla c); compras de la espejo; misma factura en dos fechas.",
+  "ficticio": false,
+  "fechaUltimoMontaje": null,
+  "fechaUltimaRecepcion": "2017-02-07T14:00:40.853",
+  "motivoEsperado": "Ninguno",
+  "precioMedioSP": 18.17,
+  "compras": [
+    {
+      "empresa": "1",
+      "numeroFactura": 1730,
+      "fechaAlbaran": "2003-07-11T12:55:21.043",
+      "numeroAlbaran": 2324,
+      "numeroOrden": 2475551,
+      "cantidad": -7,
+      "baseImponible": -76.45,
+      "coste": 10.9214,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 3049,
+      "fechaAlbaran": "2003-10-20T15:41:49.560",
+      "numeroAlbaran": 3297,
+      "numeroOrden": 4082651,
+      "cantidad": 1,
+      "baseImponible": 11.48,
+      "coste": 10.9912,
+      "estado": 4
+    },
+    {
+      "empresa": "3",
+      "numeroFactura": 5504,
+      "fechaAlbaran": "2004-08-26T13:39:19.217",
+      "numeroAlbaran": 7072,
+      "numeroOrden": 9657651,
+      "cantidad": -4,
+      "baseImponible": -47.73,
+      "coste": 10.9912,
+      "estado": 4
+    },
+    {
+      "empresa": "3",
+      "numeroFactura": 5358,
+      "fechaAlbaran": "2004-09-08T13:56:17.013",
+      "numeroAlbaran": 7196,
+      "numeroOrden": 9829551,
+      "cantidad": 1,
+      "baseImponible": 12.49,
+      "coste": 12.49,
+      "estado": 4
+    },
+    {
+      "empresa": "3",
+      "numeroFactura": 5504,
+      "fechaAlbaran": "2004-09-27T13:14:10.530",
+      "numeroAlbaran": 7491,
+      "numeroOrden": 10242251,
+      "cantidad": 4,
+      "baseImponible": 47.73,
+      "coste": 12.044,
+      "estado": 4
+    },
+    {
+      "empresa": "3",
+      "numeroFactura": 5885,
+      "fechaAlbaran": "2004-10-19T12:25:22.217",
+      "numeroAlbaran": 7836,
+      "numeroOrden": 10722451,
+      "cantidad": 1,
+      "baseImponible": 11.93,
+      "coste": 12.0212,
+      "estado": 4
+    },
+    {
+      "empresa": "3",
+      "numeroFactura": 7791,
+      "fechaAlbaran": "2005-05-04T12:10:15.890",
+      "numeroAlbaran": 10711,
+      "numeroOrden": 14768651,
+      "cantidad": 1,
+      "baseImponible": 13.23,
+      "coste": 12.6256,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 13366,
+      "fechaAlbaran": "2006-10-09T15:57:24.233",
+      "numeroAlbaran": 19302,
+      "numeroOrden": 25713851,
+      "cantidad": 1,
+      "baseImponible": 13.39,
+      "coste": 13.0078,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 19060,
+      "fechaAlbaran": "2007-10-16T15:15:06.123",
+      "numeroAlbaran": 28726,
+      "numeroOrden": 34081151,
+      "cantidad": 1,
+      "baseImponible": 14.85,
+      "coste": 14.85,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 36449,
+      "fechaAlbaran": "2011-07-18T12:22:16.830",
+      "numeroAlbaran": 53989,
+      "numeroOrden": 60964751,
+      "cantidad": 1,
+      "baseImponible": 17.47,
+      "coste": 17.47,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 56978,
+      "fechaAlbaran": "2017-02-07T14:00:40.853",
+      "numeroAlbaran": 84544,
+      "numeroOrden": 95887751,
+      "cantidad": 1,
+      "baseImponible": 18.17,
+      "coste": 18.17,
+      "estado": 4
+    }
+  ],
+  "stockHasta": [
+    {
+      "fecha": "2003-07-11T12:55:21.043",
+      "stock": 9
+    },
+    {
+      "fecha": "2003-10-20T15:41:49.560",
+      "stock": 8
+    },
+    {
+      "fecha": "2004-08-26T13:39:19.217",
+      "stock": 0
+    },
+    {
+      "fecha": "2004-09-08T13:56:17.013",
+      "stock": 1
+    },
+    {
+      "fecha": "2004-09-27T13:14:10.530",
+      "stock": 5
+    },
+    {
+      "fecha": "2004-10-19T12:25:22.217",
+      "stock": 5
+    },
+    {
+      "fecha": "2005-05-04T12:10:15.890",
+      "stock": 2
+    },
+    {
+      "fecha": "2006-10-09T15:57:24.233",
+      "stock": 2
+    },
+    {
+      "fecha": "2007-10-16T15:15:06.123",
+      "stock": 1
+    },
+    {
+      "fecha": "2011-07-18T12:22:16.830",
+      "stock": 1
+    },
+    {
+      "fecha": "2017-02-07T14:00:40.853",
+      "stock": 1
+    }
+  ]
+}

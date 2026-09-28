@@ -631,6 +631,11 @@
     <Compile Include="Infraestructure\Agencias\TramitacionEnviosService.cs" />
     <Compile Include="Infraestructure\AlbaranesVenta\IGestorAlbaranesVenta.cs" />
     <Compile Include="Infraestructure\CorreoCliente.cs" />
+    <Compile Include="Infraestructure\PreciosMedios\AritmeticaMoney.cs" />
+    <Compile Include="Infraestructure\PreciosMedios\CalculadoraPrecioMedio.cs" />
+    <Compile Include="Infraestructure\PreciosMedios\HistorialPrecioMedio.cs" />
+    <Compile Include="Infraestructure\PreciosMedios\LineaCompraPrecioMedio.cs" />
+    <Compile Include="Infraestructure\PreciosMedios\ResultadoPrecioMedio.cs" />
     <Compile Include="Infraestructure\Telefono.cs" />
     <Compile Include="Infraestructure\ApplicationDbContext.cs" />
     <Compile Include="Infraestructure\ApplicationRoleManager.cs" />

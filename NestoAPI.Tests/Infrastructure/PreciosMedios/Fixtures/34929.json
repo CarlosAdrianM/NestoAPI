@@ -1,0 +1,761 @@
+{
+  "producto": "34929",
+  "empresa": "1",
+  "empresaEspejo": "3",
+  "nota": "Excluido por la regla de montajes: el 27/09 el último montaje era del 16/07/26 (hay otro del 28/09, posterior al SP) y la última recepción del 16/04/24. Pese a sus 49 compras, no se procesa: media congelada en 32,00.",
+  "ficticio": false,
+  "fechaUltimoMontaje": "2026-07-16T15:44:44.947",
+  "fechaUltimaRecepcion": "2024-04-16T13:30:10.953",
+  "motivoEsperado": "ExcluidoPorMontaje",
+  "precioMedioSP": 32.0,
+  "compras": [
+    {
+      "empresa": "1",
+      "numeroFactura": null,
+      "fechaAlbaran": null,
+      "numeroAlbaran": null,
+      "numeroOrden": 93177551,
+      "cantidad": 1,
+      "baseImponible": 36.0,
+      "coste": 36.0,
+      "estado": -99
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 48352,
+      "fechaAlbaran": "2014-12-01T15:21:21.683",
+      "numeroAlbaran": 71706,
+      "numeroOrden": 80071651,
+      "cantidad": 10,
+      "baseImponible": 360.0,
+      "coste": 36.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 50783,
+      "fechaAlbaran": "2015-06-05T11:49:15.653",
+      "numeroAlbaran": 74771,
+      "numeroOrden": 84952951,
+      "cantidad": 3,
+      "baseImponible": 108.0,
+      "coste": 36.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 51793,
+      "fechaAlbaran": "2015-10-19T18:09:06.717",
+      "numeroAlbaran": 76855,
+      "numeroOrden": 87390851,
+      "cantidad": 1,
+      "baseImponible": 36.0,
+      "coste": 36.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 52245,
+      "fechaAlbaran": "2015-11-17T13:44:10.260",
+      "numeroAlbaran": 77430,
+      "numeroOrden": 87928051,
+      "cantidad": 1,
+      "baseImponible": 36.0,
+      "coste": 36.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 52801,
+      "fechaAlbaran": "2015-12-30T15:30:18.177",
+      "numeroAlbaran": 78190,
+      "numeroOrden": 88676251,
+      "cantidad": 2,
+      "baseImponible": 72.0,
+      "coste": 36.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 53324,
+      "fechaAlbaran": "2016-03-10T18:15:36.123",
+      "numeroAlbaran": 79283,
+      "numeroOrden": 89980351,
+      "cantidad": 3,
+      "baseImponible": 108.0,
+      "coste": 36.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 53816,
+      "fechaAlbaran": "2016-04-19T14:13:42.110",
+      "numeroAlbaran": 79954,
+      "numeroOrden": 90686751,
+      "cantidad": 2,
+      "baseImponible": 72.0,
+      "coste": 36.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 54010,
+      "fechaAlbaran": "2016-05-09T19:30:51.630",
+      "numeroAlbaran": 80268,
+      "numeroOrden": 91086251,
+      "cantidad": 2,
+      "baseImponible": 72.0,
+      "coste": 36.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 54447,
+      "fechaAlbaran": "2016-06-14T13:29:59.273",
+      "numeroAlbaran": 80956,
+      "numeroOrden": 92096051,
+      "cantidad": 2,
+      "baseImponible": 72.0,
+      "coste": 36.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 54685,
+      "fechaAlbaran": "2016-07-01T17:39:16.113",
+      "numeroAlbaran": 81341,
+      "numeroOrden": 92475451,
+      "cantidad": 2,
+      "baseImponible": 72.0,
+      "coste": 36.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 55206,
+      "fechaAlbaran": "2016-09-08T09:59:08.580",
+      "numeroAlbaran": 82076,
+      "numeroOrden": 93341251,
+      "cantidad": 1,
+      "baseImponible": 36.0,
+      "coste": 36.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 56795,
+      "fechaAlbaran": "2017-01-23T09:58:47.633",
+      "numeroAlbaran": 84261,
+      "numeroOrden": 95643351,
+      "cantidad": 3,
+      "baseImponible": 108.0,
+      "coste": 36.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 57126,
+      "fechaAlbaran": "2017-02-21T09:24:27.307",
+      "numeroAlbaran": 84782,
+      "numeroOrden": 96138151,
+      "cantidad": 2,
+      "baseImponible": 72.0,
+      "coste": 36.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 57733,
+      "fechaAlbaran": "2017-03-23T12:22:15.273",
+      "numeroAlbaran": 85311,
+      "numeroOrden": 96828051,
+      "cantidad": 1,
+      "baseImponible": 36.0,
+      "coste": 36.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 58509,
+      "fechaAlbaran": "2017-06-06T12:17:30.247",
+      "numeroAlbaran": 86617,
+      "numeroOrden": 98701351,
+      "cantidad": 2,
+      "baseImponible": 72.0,
+      "coste": 36.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 58520,
+      "fechaAlbaran": "2017-06-22T18:34:40.350",
+      "numeroAlbaran": 86929,
+      "numeroOrden": 99242951,
+      "cantidad": 3,
+      "baseImponible": 108.0,
+      "coste": 36.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 58694,
+      "fechaAlbaran": "2017-07-06T08:27:07.490",
+      "numeroAlbaran": 87183,
+      "numeroOrden": 99583851,
+      "cantidad": 4,
+      "baseImponible": 144.0,
+      "coste": 36.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 59264,
+      "fechaAlbaran": "2017-09-15T09:52:21.673",
+      "numeroAlbaran": 87989,
+      "numeroOrden": 100547051,
+      "cantidad": 2,
+      "baseImponible": 72.0,
+      "coste": 36.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 59264,
+      "fechaAlbaran": "2017-09-15T10:00:26.703",
+      "numeroAlbaran": 87990,
+      "numeroOrden": 100635751,
+      "cantidad": 2,
+      "baseImponible": 72.0,
+      "coste": 36.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 59728,
+      "fechaAlbaran": "2017-11-02T14:27:42.417",
+      "numeroAlbaran": 88795,
+      "numeroOrden": 102048851,
+      "cantidad": 1,
+      "baseImponible": 36.0,
+      "coste": 36.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 61411,
+      "fechaAlbaran": "2018-04-04T12:59:13.027",
+      "numeroAlbaran": 91021,
+      "numeroOrden": 105153151,
+      "cantidad": 3,
+      "baseImponible": 108.0,
+      "coste": 36.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 61991,
+      "fechaAlbaran": "2018-05-23T10:13:05.307",
+      "numeroAlbaran": 91888,
+      "numeroOrden": 106466751,
+      "cantidad": 1,
+      "baseImponible": 36.0,
+      "coste": 36.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 62068,
+      "fechaAlbaran": "2018-05-28T13:11:25.917",
+      "numeroAlbaran": 91964,
+      "numeroOrden": 106516751,
+      "cantidad": 1,
+      "baseImponible": 36.0,
+      "coste": 36.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 62234,
+      "fechaAlbaran": "2018-05-31T09:14:08.700",
+      "numeroAlbaran": 92022,
+      "numeroOrden": 106676451,
+      "cantidad": 1,
+      "baseImponible": 36.0,
+      "coste": 36.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 62135,
+      "fechaAlbaran": "2018-06-05T13:17:05.943",
+      "numeroAlbaran": 92124,
+      "numeroOrden": 106775251,
+      "cantidad": 1,
+      "baseImponible": 34.0,
+      "coste": 35.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 62500,
+      "fechaAlbaran": "2018-06-27T10:22:10.843",
+      "numeroAlbaran": 92507,
+      "numeroOrden": 107286351,
+      "cantidad": 1,
+      "baseImponible": 34.0,
+      "coste": 34.5,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 62435,
+      "fechaAlbaran": "2018-07-02T15:47:22.457",
+      "numeroAlbaran": 92580,
+      "numeroOrden": 107434951,
+      "cantidad": 2,
+      "baseImponible": 68.0,
+      "coste": 34.1666,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 62809,
+      "fechaAlbaran": "2018-07-26T10:16:59.820",
+      "numeroAlbaran": 93071,
+      "numeroOrden": 108060051,
+      "cantidad": 3,
+      "baseImponible": 102.0,
+      "coste": 34.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 62886,
+      "fechaAlbaran": "2018-07-30T10:39:08.133",
+      "numeroAlbaran": 93125,
+      "numeroOrden": 108106551,
+      "cantidad": 3,
+      "baseImponible": 102.0,
+      "coste": 34.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 62890,
+      "fechaAlbaran": "2018-08-01T13:22:46.297",
+      "numeroAlbaran": 93148,
+      "numeroOrden": 108157051,
+      "cantidad": 1,
+      "baseImponible": 34.0,
+      "coste": 34.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 63296,
+      "fechaAlbaran": "2018-09-27T13:10:16.650",
+      "numeroAlbaran": 93791,
+      "numeroOrden": 109020951,
+      "cantidad": 3,
+      "baseImponible": 102.0,
+      "coste": 34.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 63373,
+      "fechaAlbaran": "2018-10-03T15:02:37.790",
+      "numeroAlbaran": 93888,
+      "numeroOrden": 109117051,
+      "cantidad": 1,
+      "baseImponible": 34.0,
+      "coste": 34.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 63809,
+      "fechaAlbaran": "2018-11-06T14:11:20.803",
+      "numeroAlbaran": 94424,
+      "numeroOrden": 109611551,
+      "cantidad": 1,
+      "baseImponible": 34.0,
+      "coste": 34.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 63999,
+      "fechaAlbaran": "2018-11-28T16:41:47.750",
+      "numeroAlbaran": 94782,
+      "numeroOrden": 109953951,
+      "cantidad": 1,
+      "baseImponible": 34.0,
+      "coste": 34.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 64596,
+      "fechaAlbaran": "2019-01-22T17:25:43.630",
+      "numeroAlbaran": 95572,
+      "numeroOrden": 110837451,
+      "cantidad": 1,
+      "baseImponible": 32.0,
+      "coste": 32.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 64968,
+      "fechaAlbaran": "2019-02-19T08:37:57.337",
+      "numeroAlbaran": 96030,
+      "numeroOrden": 111479551,
+      "cantidad": 2,
+      "baseImponible": 64.0,
+      "coste": 32.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 65594,
+      "fechaAlbaran": "2019-04-03T16:09:19.827",
+      "numeroAlbaran": 96779,
+      "numeroOrden": 112686551,
+      "cantidad": 1,
+      "baseImponible": 32.0,
+      "coste": 32.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 65855,
+      "fechaAlbaran": "2019-05-06T12:48:43.310",
+      "numeroAlbaran": 97290,
+      "numeroOrden": 113399851,
+      "cantidad": 1,
+      "baseImponible": 32.0,
+      "coste": 32.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 65936,
+      "fechaAlbaran": "2019-05-13T16:32:14.757",
+      "numeroAlbaran": 97444,
+      "numeroOrden": 113776851,
+      "cantidad": 2,
+      "baseImponible": 64.0,
+      "coste": 32.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 66872,
+      "fechaAlbaran": "2019-07-29T08:46:18.113",
+      "numeroAlbaran": 98824,
+      "numeroOrden": 115866951,
+      "cantidad": 2,
+      "baseImponible": 64.0,
+      "coste": 32.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 67486,
+      "fechaAlbaran": "2019-10-18T10:48:55.100",
+      "numeroAlbaran": 99783,
+      "numeroOrden": 116897051,
+      "cantidad": 1,
+      "baseImponible": 32.0,
+      "coste": 32.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 68387,
+      "fechaAlbaran": "2020-01-30T10:37:09.240",
+      "numeroAlbaran": 101039,
+      "numeroOrden": 118208251,
+      "cantidad": 2,
+      "baseImponible": 64.0,
+      "coste": 32.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 71881,
+      "fechaAlbaran": "2021-05-24T10:48:31.107",
+      "numeroAlbaran": 105742,
+      "numeroOrden": 126901151,
+      "cantidad": 6,
+      "baseImponible": 282.0,
+      "coste": 47.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 76806,
+      "fechaAlbaran": "2023-01-31T10:19:24.013",
+      "numeroAlbaran": 111823,
+      "numeroOrden": 133109451,
+      "cantidad": 2,
+      "baseImponible": 70.0,
+      "coste": 35.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 78214,
+      "fechaAlbaran": "2023-07-14T10:45:32.270",
+      "numeroAlbaran": 113543,
+      "numeroOrden": 134135851,
+      "cantidad": 1,
+      "baseImponible": 35.0,
+      "coste": 35.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 79951,
+      "fechaAlbaran": "2024-02-14T12:40:17.730",
+      "numeroAlbaran": 115601,
+      "numeroOrden": 135474551,
+      "cantidad": 2,
+      "baseImponible": 64.0,
+      "coste": 32.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 80109,
+      "fechaAlbaran": "2024-02-22T11:13:14.560",
+      "numeroAlbaran": 115753,
+      "numeroOrden": 135513351,
+      "cantidad": 2,
+      "baseImponible": 64.0,
+      "coste": 32.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 80146,
+      "fechaAlbaran": "2024-02-29T13:01:09.957",
+      "numeroAlbaran": 115826,
+      "numeroOrden": 135553951,
+      "cantidad": 2,
+      "baseImponible": 64.0,
+      "coste": 32.0,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 80636,
+      "fechaAlbaran": "2024-04-16T13:30:10.953",
+      "numeroAlbaran": 116384,
+      "numeroOrden": 135940751,
+      "cantidad": 1,
+      "baseImponible": 32.0,
+      "coste": 32.0,
+      "estado": 4
+    }
+  ],
+  "stockHasta": [
+    {
+      "fecha": "2014-12-01T15:21:21.683",
+      "stock": 10
+    },
+    {
+      "fecha": "2015-06-05T11:49:15.653",
+      "stock": 4
+    },
+    {
+      "fecha": "2015-10-19T18:09:06.717",
+      "stock": 2
+    },
+    {
+      "fecha": "2015-11-17T13:44:10.260",
+      "stock": 2
+    },
+    {
+      "fecha": "2015-12-30T15:30:18.177",
+      "stock": 3
+    },
+    {
+      "fecha": "2016-03-10T18:15:36.123",
+      "stock": 4
+    },
+    {
+      "fecha": "2016-04-19T14:13:42.110",
+      "stock": 2
+    },
+    {
+      "fecha": "2016-05-09T19:30:51.630",
+      "stock": 3
+    },
+    {
+      "fecha": "2016-06-14T13:29:59.273",
+      "stock": 4
+    },
+    {
+      "fecha": "2016-07-01T17:39:16.113",
+      "stock": 4
+    },
+    {
+      "fecha": "2016-09-08T09:59:08.580",
+      "stock": 3
+    },
+    {
+      "fecha": "2017-01-23T09:58:47.633",
+      "stock": 3
+    },
+    {
+      "fecha": "2017-02-21T09:24:27.307",
+      "stock": 5
+    },
+    {
+      "fecha": "2017-03-23T12:22:15.273",
+      "stock": 5
+    },
+    {
+      "fecha": "2017-06-06T12:17:30.247",
+      "stock": 4
+    },
+    {
+      "fecha": "2017-06-22T18:34:40.350",
+      "stock": 3
+    },
+    {
+      "fecha": "2017-07-06T08:27:07.490",
+      "stock": 7
+    },
+    {
+      "fecha": "2017-09-15T09:52:21.673",
+      "stock": 3
+    },
+    {
+      "fecha": "2017-09-15T10:00:26.703",
+      "stock": 5
+    },
+    {
+      "fecha": "2017-11-02T14:27:42.417",
+      "stock": 3
+    },
+    {
+      "fecha": "2018-04-04T12:59:13.027",
+      "stock": 5
+    },
+    {
+      "fecha": "2018-05-23T10:13:05.307",
+      "stock": 2
+    },
+    {
+      "fecha": "2018-05-28T13:11:25.917",
+      "stock": 2
+    },
+    {
+      "fecha": "2018-05-31T09:14:08.700",
+      "stock": 2
+    },
+    {
+      "fecha": "2018-06-05T13:17:05.943",
+      "stock": 2
+    },
+    {
+      "fecha": "2018-06-27T10:22:10.843",
+      "stock": 2
+    },
+    {
+      "fecha": "2018-07-02T15:47:22.457",
+      "stock": 3
+    },
+    {
+      "fecha": "2018-07-26T10:16:59.820",
+      "stock": 3
+    },
+    {
+      "fecha": "2018-07-30T10:39:08.133",
+      "stock": 5
+    },
+    {
+      "fecha": "2018-08-01T13:22:46.297",
+      "stock": 6
+    },
+    {
+      "fecha": "2018-09-27T13:10:16.650",
+      "stock": 3
+    },
+    {
+      "fecha": "2018-10-03T15:02:37.790",
+      "stock": 3
+    },
+    {
+      "fecha": "2018-11-06T14:11:20.803",
+      "stock": 3
+    },
+    {
+      "fecha": "2018-11-28T16:41:47.750",
+      "stock": 3
+    },
+    {
+      "fecha": "2019-01-22T17:25:43.630",
+      "stock": 1
+    },
+    {
+      "fecha": "2019-02-19T08:37:57.337",
+      "stock": 2
+    },
+    {
+      "fecha": "2019-04-03T16:09:19.827",
+      "stock": 2
+    },
+    {
+      "fecha": "2019-05-06T12:48:43.310",
+      "stock": 1
+    },
+    {
+      "fecha": "2019-05-13T16:32:14.757",
+      "stock": 3
+    },
+    {
+      "fecha": "2019-07-29T08:46:18.113",
+      "stock": 2
+    },
+    {
+      "fecha": "2019-10-18T10:48:55.100",
+      "stock": 3
+    },
+    {
+      "fecha": "2020-01-30T10:37:09.240",
+      "stock": 2
+    },
+    {
+      "fecha": "2021-05-24T10:48:31.107",
+      "stock": 6
+    },
+    {
+      "fecha": "2023-01-31T10:19:24.013",
+      "stock": 2
+    },
+    {
+      "fecha": "2023-07-14T10:45:32.270",
+      "stock": 1
+    },
+    {
+      "fecha": "2024-02-14T12:40:17.730",
+      "stock": 2
+    },
+    {
+      "fecha": "2024-02-22T11:13:14.560",
+      "stock": 3
+    },
+    {
+      "fecha": "2024-02-29T13:01:09.957",
+      "stock": 5
+    },
+    {
+      "fecha": "2024-04-16T13:30:10.953",
+      "stock": 3
+    }
+  ]
+}

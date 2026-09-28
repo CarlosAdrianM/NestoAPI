@@ -1,0 +1,13 @@
+{
+  "producto": "47074",
+  "empresa": "1",
+  "empresaEspejo": "3",
+  "nota": "Sin compras (con descuento de proveedor): hoy nadie lo recalcula; su 3,91 lo puso otro escritor.",
+  "ficticio": false,
+  "fechaUltimoMontaje": null,
+  "fechaUltimaRecepcion": null,
+  "motivoEsperado": "SinCompras",
+  "precioMedioSP": 3.91,
+  "compras": [],
+  "stockHasta": []
+}

@@ -1,0 +1,82 @@
+{
+  "producto": "45396",
+  "empresa": "1",
+  "empresaEspejo": "3",
+  "nota": "Dos líneas de la misma factura y fecha (7+8 uds: se suman). La compra de 24 uds se facturó el lunes 28/09 (albarán 28/09 08:42): el 27/09 era una línea pendiente (estado 1, sin fecha de albarán ni factura) y así figura aquí. Con ella facturada la media pasa a 5,2478 (test aparte).",
+  "ficticio": false,
+  "fechaUltimoMontaje": null,
+  "fechaUltimaRecepcion": "2026-09-28T08:42:22.423",
+  "motivoEsperado": "Ninguno",
+  "precioMedioSP": 5.25,
+  "compras": [
+    {
+      "empresa": "1",
+      "numeroFactura": 87484,
+      "fechaAlbaran": "2026-05-22T14:15:11",
+      "numeroAlbaran": 124173,
+      "numeroOrden": 140705551,
+      "cantidad": 7,
+      "baseImponible": 36.75,
+      "coste": 5.25,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 87484,
+      "fechaAlbaran": "2026-05-22T14:15:11",
+      "numeroAlbaran": 124173,
+      "numeroOrden": 140705651,
+      "cantidad": 8,
+      "baseImponible": 42.0,
+      "coste": 5.25,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 87902,
+      "fechaAlbaran": "2026-07-07T14:27:18.333",
+      "numeroAlbaran": 124621,
+      "numeroOrden": 141083551,
+      "cantidad": 60,
+      "baseImponible": 315.0,
+      "coste": 5.25,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 88013,
+      "fechaAlbaran": "2026-07-16T17:17:03.900",
+      "numeroAlbaran": 124788,
+      "numeroOrden": 141126751,
+      "cantidad": 18,
+      "baseImponible": 94.5,
+      "coste": 5.25,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": null,
+      "fechaAlbaran": null,
+      "numeroAlbaran": null,
+      "numeroOrden": 141491851,
+      "cantidad": 24,
+      "baseImponible": 125.92,
+      "coste": 0.0,
+      "estado": 1
+    }
+  ],
+  "stockHasta": [
+    {
+      "fecha": "2026-05-22T14:15:11",
+      "stock": 15
+    },
+    {
+      "fecha": "2026-07-07T14:27:18.333",
+      "stock": 62
+    },
+    {
+      "fecha": "2026-07-16T17:17:03.900",
+      "stock": 35
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "producto": "45668",
+  "empresa": "1",
+  "empresaEspejo": "3",
+  "nota": "Kit sin compras (20 componentes): hoy nadie lo recalcula (fase de acciones 1/2/4 muerta).",
+  "ficticio": false,
+  "fechaUltimoMontaje": null,
+  "fechaUltimaRecepcion": null,
+  "motivoEsperado": "SinCompras",
+  "precioMedioSP": 410.15,
+  "compras": [],
+  "stockHasta": []
+}

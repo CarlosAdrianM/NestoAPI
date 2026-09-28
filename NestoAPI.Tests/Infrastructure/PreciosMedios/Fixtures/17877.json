@@ -1,0 +1,60 @@
+{
+  "producto": "17877",
+  "empresa": "1",
+  "empresaEspejo": "3",
+  "nota": "Compra en la empresa espejo (3) con stock previo 8: la regla (b) ignora el stock (6,32); abono total de la misma factura el mismo día.",
+  "ficticio": false,
+  "fechaUltimoMontaje": null,
+  "fechaUltimaRecepcion": "2016-07-18T09:31:06.600",
+  "motivoEsperado": "Ninguno",
+  "precioMedioSP": 6.3196,
+  "compras": [
+    {
+      "empresa": "3",
+      "numeroFactura": 5885,
+      "fechaAlbaran": "2004-10-19T12:25:22.217",
+      "numeroAlbaran": 7836,
+      "numeroOrden": 10729351,
+      "cantidad": 1,
+      "baseImponible": 6.32,
+      "coste": 6.32,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 54869,
+      "fechaAlbaran": "2016-07-18T09:31:06.600",
+      "numeroAlbaran": 81626,
+      "numeroOrden": 92756951,
+      "cantidad": 7,
+      "baseImponible": 51.31,
+      "coste": 7.2037,
+      "estado": 4
+    },
+    {
+      "empresa": "1",
+      "numeroFactura": 54869,
+      "fechaAlbaran": "2016-07-18T10:48:43.863",
+      "numeroAlbaran": 81631,
+      "numeroOrden": 92875951,
+      "cantidad": -7,
+      "baseImponible": -51.31,
+      "coste": 6.3196,
+      "estado": 4
+    }
+  ],
+  "stockHasta": [
+    {
+      "fecha": "2004-10-19T12:25:22.217",
+      "stock": 8
+    },
+    {
+      "fecha": "2016-07-18T09:31:06.600",
+      "stock": 8
+    },
+    {
+      "fecha": "2016-07-18T10:48:43.863",
+      "stock": 1
+    }
+  ]
+}
