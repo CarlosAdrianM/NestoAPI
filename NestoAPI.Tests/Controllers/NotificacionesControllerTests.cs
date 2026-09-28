@@ -451,6 +451,45 @@ namespace NestoAPI.Tests.Controllers
             A.CallTo(() => _servicio.GuardarEnBuzonDeUsuario("NUEVAVISION\\Laura", Constantes.Aplicaciones.NESTO, A<NotificacionPushDTO>._)).MustHaveHappenedOnceExactly();
         }
 
+        // 28/09/26: aviso en la campana de Nesto a usuarios concretos (p. ej. Alfredo y la nota de entrega automática)
+
+        [TestMethod]
+        public async Task AvisoNesto_SinSerDireccionNiInformatica_Forbidden()
+        {
+            var resultado = await _controller.AvisoNesto(new AvisoNestoDTO { Usuarios = new System.Collections.Generic.List<string> { "Alfredo" }, Titulo = "t", Texto = "x" });
+
+            Assert.IsInstanceOfType(resultado, typeof(StatusCodeResult));
+            A.CallTo(() => _servicio.GuardarEnBuzonDeUsuario(A<string>._, A<string>._, A<NotificacionPushDTO>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task AvisoNesto_SinUsuariosOTexto_BadRequest()
+        {
+            _controller.User = new GenericPrincipal(new GenericIdentity("NUEVAVISION\\Carlos"), new[] { "NUEVAVISION\\Dirección" });
+
+            Assert.IsInstanceOfType(await _controller.AvisoNesto(new AvisoNestoDTO { Titulo = "t", Texto = "x" }), typeof(BadRequestErrorMessageResult));
+            Assert.IsInstanceOfType(await _controller.AvisoNesto(new AvisoNestoDTO { Usuarios = new System.Collections.Generic.List<string> { "Alfredo" }, Titulo = "t" }), typeof(BadRequestErrorMessageResult));
+        }
+
+        [TestMethod]
+        public async Task AvisoNesto_LoGuardaEnElBuzonDeNestoDeCadaUsuario_ConDominio()
+        {
+            _controller.User = new GenericPrincipal(new GenericIdentity("NUEVAVISION\\Carlos"), new[] { "NUEVAVISION\\Informatica" });
+
+            var resultado = await _controller.AvisoNesto(new AvisoNestoDTO
+            {
+                Usuarios = new System.Collections.Generic.List<string> { "Alfredo", "NUEVAVISION\\Laura", "alfredo" },
+                Titulo = "Notas de entrega automáticas",
+                Texto = "Desde hoy se crean solas"
+            });
+
+            Assert.IsNotInstanceOfType(resultado, typeof(StatusCodeResult));
+            A.CallTo(() => _servicio.GuardarEnBuzonDeUsuario("NUEVAVISION\\Alfredo", Constantes.Aplicaciones.NESTO,
+                A<NotificacionPushDTO>.That.Matches(n => n.Titulo == "Notas de entrega automáticas" && n.Cuerpo == "Desde hoy se crean solas"
+                    && n.Datos["tipo"] == NotificacionesController.TIPO_AVISO_NESTO))).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _servicio.GuardarEnBuzonDeUsuario("NUEVAVISION\\Laura", Constantes.Aplicaciones.NESTO, A<NotificacionPushDTO>._)).MustHaveHappenedOnceExactly();
+        }
+
         [TestMethod]
         public void UsuariosConectadosNesto_UnUsuarioConDosNestoCuentaUnaVez_YAlDesconectarseSale()
         {

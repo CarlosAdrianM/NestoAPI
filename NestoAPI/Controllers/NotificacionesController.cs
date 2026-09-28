@@ -4,6 +4,7 @@ using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
 using System.Configuration;
+using System.Linq;
 using static NestoAPI.Models.Constantes;
 using System.Threading.Tasks;
 using System.Web.Http;
@@ -61,6 +62,45 @@ namespace NestoAPI.Controllers
                 await _servicio.GuardarEnBuzonDeUsuario(usuario, Aplicaciones.NESTO, notificacion).ConfigureAwait(false);
             }
             return Ok(new { Version = version, Avisados = usuarios.Count, Usuarios = usuarios });
+        }
+
+        internal const string TIPO_AVISO_NESTO = "AvisoNesto";
+
+        /// <summary>
+        /// 28/09/26 (Carlos): un aviso en la campana de Nesto a usuarios concretos (p. ej. a Alfredo al encender la
+        /// nota de entrega automática), sin correo. El buzón avisa por SignalR al guardar. Solo Dirección e Informática.
+        /// POST api/Notificaciones/AvisoNesto  { "Usuarios": ["Alfredo"], "Titulo": "...", "Texto": "..." }
+        /// </summary>
+        [HttpPost]
+        [Route("AvisoNesto")]
+        [Authorize]
+        public async Task<IHttpActionResult> AvisoNesto([FromBody] AvisoNestoDTO dto)
+        {
+            if (User == null || !(User.IsInRoleSinDominio(GruposSeguridad.DIRECCION) || User.IsInRoleSinDominio(NovedadesController.GRUPO_INFORMATICA)))
+            {
+                return StatusCode(System.Net.HttpStatusCode.Forbidden);
+            }
+            List<string> usuarios = (dto?.Usuarios ?? new List<string>())
+                .Where(u => !string.IsNullOrWhiteSpace(u))
+                .Select(u => u.Trim().Contains("\\") ? u.Trim() : "NUEVAVISION\\" + u.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (usuarios.Count == 0 || string.IsNullOrWhiteSpace(dto.Titulo) || string.IsNullOrWhiteSpace(dto.Texto))
+            {
+                return BadRequest("Faltan los usuarios, el título o el texto del aviso");
+            }
+            var notificacion = new NotificacionPushDTO
+            {
+                Titulo = dto.Titulo.Trim(),
+                Cuerpo = dto.Texto.Trim(),
+                Tipo = TIPO_AVISO_NESTO,
+                Datos = new Dictionary<string, string> { ["tipo"] = TIPO_AVISO_NESTO }
+            };
+            foreach (string usuario in usuarios)
+            {
+                await _servicio.GuardarEnBuzonDeUsuario(usuario, Aplicaciones.NESTO, notificacion).ConfigureAwait(false);
+            }
+            return Ok(new { Avisados = usuarios.Count, Usuarios = usuarios });
         }
 
         [HttpPost]
