@@ -1181,6 +1181,92 @@ namespace NestoAPI.Tests.Controllers
 
         #endregion
 
+        // ---- NestoAPI#494 (28/09/26): «Recoger producto» con la agencia del comparador ----
+
+        private EnviosAgencia CrearConCodigoPostal(string codPostal, int agencia, short retorno)
+        {
+            ConfigurarFakeDbSet(fakePedidos, new List<CabPedidoVta>
+            {
+                new CabPedidoVta { Empresa = "1  ", Número = 12345, Nº_Cliente = "10000", Contacto = "0  ", LinPedidoVtas = new List<LinPedidoVta>() }
+            }.AsQueryable());
+            ConfigurarFakeDbSet(fakeClientes, new List<Cliente>
+            {
+                new Cliente
+                {
+                    Empresa = "1  ", Nº_Cliente = "10000", Contacto = "0  ", Nombre = "Cliente Test", Dirección = "Calle Mayor 1",
+                    CodPostal = codPostal, Población = "Pueblo", Provincia = "Provincia", Teléfono = "911234567",
+                    PersonasContactoClientes = new List<PersonaContactoCliente>()
+                }
+            }.AsQueryable());
+            EnviosAgencia creado = null;
+            A.CallTo(() => fakeEnvios.Add(A<EnviosAgencia>.Ignored)).Invokes((EnviosAgencia e) => creado = e).ReturnsLazily((EnviosAgencia e) => e);
+            A.CallTo(() => db.SaveChangesAsync()).Returns(Task.FromResult(1));
+            _ = controller.CrearEtiquetaPendiente(new CrearEtiquetaPendienteDTO
+            {
+                Empresa = "1  ", Pedido = 12345, Agencia = agencia, Retorno = retorno, CobrarReembolso = false
+            }).GetAwaiter().GetResult();
+            return creado;
+        }
+
+        private void ComparadorConGLSYCTT()
+        {
+            var registro = A.Fake<NestoAPI.Infraestructure.Agencias.Tarifas.IRegistroTarifas>();
+            A.CallTo(() => registro.Todas()).Returns(new NestoAPI.Infraestructure.Agencias.Tarifas.ITarifaAgencia[]
+            {
+                new NestoAPI.Infraestructure.Agencias.Tarifas.TarifaGLSBusinessParcel(),
+                new NestoAPI.Infraestructure.Agencias.Tarifas.TarifaCTT48h()
+            });
+            var fuel = A.Fake<NestoAPI.Infraestructure.Agencias.Tarifas.IProveedorRecargoCombustible>();
+            A.CallTo(() => fuel.RecargoCombustible(A<string>._, A<int>._)).Returns(0m);
+            controller.ComparadorParaPendientes = () => new NestoAPI.Infraestructure.Agencias.Tarifas.ComparadorAgencias(registro, fuel);
+        }
+
+        [TestMethod]
+        public void RecogerProducto_SinAgencia_LaEligeElComparadorEnModoEnvioYRetorno()
+        {
+            ComparadorConGLSYCTT();
+
+            // En Madrid, envío + retorno: CTT (2 × 2,66) gana a GLS (2 × 3,10). (La creación completa con CTT no
+            // se puede probar aquí: su perfil lee CTTZonasActivas directamente de la BD.)
+            int elegida = controller.ElegirAgenciaPendiente(new CrearEtiquetaPendienteDTO { Empresa = "1  ", Pedido = 12345, Retorno = 1 }, "28001", 0m);
+
+            Assert.AreEqual(13, elegida);
+        }
+
+        [TestMethod]
+        public void RecogerProducto_SinAgenciaYNadieConPrecio_GLSComoSiempre()
+        {
+            var registro = A.Fake<NestoAPI.Infraestructure.Agencias.Tarifas.IRegistroTarifas>();
+            A.CallTo(() => registro.Todas()).Returns(new NestoAPI.Infraestructure.Agencias.Tarifas.ITarifaAgencia[0]);
+            controller.ComparadorParaPendientes = () => new NestoAPI.Infraestructure.Agencias.Tarifas.ComparadorAgencias(
+                registro, A.Fake<NestoAPI.Infraestructure.Agencias.Tarifas.IProveedorRecargoCombustible>());
+
+            EnviosAgencia creado = CrearConCodigoPostal("28001", 0, 2);
+
+            Assert.IsNotNull(creado);
+            Assert.AreEqual(1, creado.Agencia);
+        }
+
+        [TestMethod]
+        public void RecogerProducto_ConAgenciaConcreta_NoPreguntaAlComparador()
+        {
+            bool preguntado = false;
+            controller.ComparadorParaPendientes = () => { preguntado = true; return null; };
+
+            EnviosAgencia creado = CrearConCodigoPostal("28001", 1, 1);
+
+            Assert.AreEqual(1, creado.Agencia);
+            Assert.IsFalse(preguntado);
+        }
+
+        [TestMethod]
+        public void ModoSegunRetorno()
+        {
+            Assert.AreEqual(NestoAPI.Infraestructure.Agencias.Tarifas.ModoComparacionAgencia.EnvioYRetorno, EnviosAgenciasController.ModoSegunRetorno(1));
+            Assert.AreEqual(NestoAPI.Infraestructure.Agencias.Tarifas.ModoComparacionAgencia.Retorno, EnviosAgenciasController.ModoSegunRetorno(2));
+            Assert.AreEqual(NestoAPI.Infraestructure.Agencias.Tarifas.ModoComparacionAgencia.Envio, EnviosAgenciasController.ModoSegunRetorno(0));
+        }
+
         #region Helpers
 
         private void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class

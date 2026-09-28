@@ -1544,6 +1544,14 @@ namespace NestoAPI.Controllers
                 return BadRequest("No se encontró la dirección del contacto del pedido");
             }
 
+            // NestoAPI#494 (28/09/26): «Recoger producto» ya no fija GLS; la agencia la elige el comparador
+            // igual que la de un envío, en el modo del retorno. Sin agencia con precio, GLS como siempre.
+            if (request.Agencia <= 0)
+            {
+                request.Agencia = ElegirAgenciaPendiente(request, direccion.CodPostal?.Trim() ?? "",
+                    request.CobrarReembolso ? request.ImporteReembolso ?? 0m : 0m);
+            }
+
             // NestoAPI#204: validar combinación agencia + destino antes de crear la etiqueta.
             var errorAgencia = ValidarAgenciaCompatibleConDestino(
                 request.Agencia, direccion.CodPostal?.Trim() ?? "", pedido, request.CobrarReembolso);
@@ -1721,6 +1729,39 @@ namespace NestoAPI.Controllers
                 return $"La agencia seleccionada no tiene tarifa para la zona del destino (CP {codPostal}). No se puede crear la etiqueta.";
             }
             return null;
+        }
+
+        /// <summary>
+        /// NestoAPI#494: la etiqueta se crea al hacer el pedido, sin bultos ni peso: se compara con un peso
+        /// nominal (el primer tramo), que es lo que pesan casi todas las recogidas.
+        /// </summary>
+        internal const decimal PESO_NOMINAL_PENDIENTE = 1m;
+
+        internal static ModoComparacionAgencia ModoSegunRetorno(short retorno)
+            => retorno == Infraestructure.Agencias.CTT.AgenciaRemotaCTT.RETORNO_RECOGIDA_EN_ORIGEN ? ModoComparacionAgencia.Retorno
+                : retorno > 0 ? ModoComparacionAgencia.EnvioYRetorno
+                : ModoComparacionAgencia.Envio;
+
+        /// <summary>Comparador por el que se elige la agencia de una etiqueta pendiente (sustituible en tests).</summary>
+        internal Func<ComparadorAgencias> ComparadorParaPendientes { get; set; }
+
+        internal int ElegirAgenciaPendiente(CrearEtiquetaPendienteDTO request, string codPostal, decimal reembolso)
+        {
+            try
+            {
+                ComparadorAgencias comparador = ComparadorParaPendientes?.Invoke() ?? ComparadorAgenciasFactory.ParaSeleccion(db);
+                OpcionEnvioAgencia mejor = comparador.MasEconomica(request.Empresa, codPostal, PESO_NOMINAL_PENDIENTE,
+                    reembolso, "ES", ModoSegunRetorno(request.Retorno));
+                if (mejor != null)
+                {
+                    return mejor.AgenciaId;
+                }
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"Etiqueta pendiente del pedido {request.Pedido}: el comparador falló, se usa GLS. {ex.Message}", ex));
+            }
+            return Constantes.Agencias.AGENCIA_GLS;
         }
 
         /// <summary>Defaults de envío de la agencia (su perfil) o el genérico si no tiene.</summary>
