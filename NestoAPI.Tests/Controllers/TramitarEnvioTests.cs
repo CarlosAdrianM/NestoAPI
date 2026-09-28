@@ -222,10 +222,12 @@ namespace NestoAPI.Tests.Controllers
         {
             // NestoAPI#505: el servicio elegido (p. ej. CTT 24h forzado a mano) tiene que llegar a la
             // agencia remota; antes no viajaba y CTT salía siempre por 48 h.
+            // NestoAPI#546: el 24 es de CTT; con Innovatrans la API lo rechaza antes de llamar a la agencia.
             EnviosAgencia envio = EnvioPendiente();
+            envio.Agencia = Constantes.Agencias.AGENCIA_CTT;
             envio.Servicio = 24;
             ConEnvio(envio);
-            A.CallTo(() => fakeFabrica.Crear(Constantes.Agencias.AGENCIA_INNOVATRANS)).Returns(fakeAgencia);
+            A.CallTo(() => fakeFabrica.Crear(Constantes.Agencias.AGENCIA_CTT)).Returns(fakeAgencia);
             A.CallTo(() => fakeAgencia.InsertarYEtiquetarAsync(A<DatosEnvioRemoto>.Ignored))
                 .Returns(Task.FromResult(new ResultadoTramitacionRemota { Exito = true, Albaran = "0123456789", Bultos = 1, Etiqueta = EtiquetaZpl() }));
 

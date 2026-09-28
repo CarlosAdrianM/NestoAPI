@@ -19,6 +19,7 @@ using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Agencias;
 using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Infraestructure.Agencias.Innovatrans;
+using NestoAPI.Infraestructure.Agencias.Perfiles;
 using NestoAPI.Infraestructure.Agencias.Tarifas;
 using System.Web.Http.Cors;
 using System.Security.Claims;
@@ -649,13 +650,26 @@ namespace NestoAPI.Controllers
             // con la agencia cobrando el importe antiguo). Se rechaza con el camino correcto.
             var registrado = await db.EnviosAgencias.AsNoTracking()
                 .Where(e => e.Numero == id)
-                .Select(e => new { e.Reembolso, e.Agencia, e.CodigoBarras, e.Estado })
+                .Select(e => new { e.Reembolso, e.Agencia, e.CodigoBarras, e.Estado, e.Servicio, e.Horario, e.Retorno })
                 .FirstOrDefaultAsync();
             if (registrado != null && CambioDeReembolsoBloqueado(registrado.Reembolso, enviosAgencia.Reembolso,
                     registrado.CodigoBarras, registrado.Estado, _perfilesAgencias.Perfil(registrado.Agencia) is Infraestructure.Agencias.Perfiles.IPerfilConGestionRemota))
             {
                 return BadRequest($"El envío {id} ya está registrado en la agencia con {registrado.Reembolso:C} de reembolso y no se puede cambiar desde aquí: " +
                     "la agencia seguiría cobrando el importe antiguo. Anula el envío (Borrar) y vuelve a tramitarlo con el reembolso correcto.");
+            }
+
+            // NestoAPI#546 (28/09/26, envíos 249165/249181/249182): un pendiente de GLS se guardó con el
+            // servicio 48 / horario 0 de CTT. Solo se valida si el envío está pendiente o si el PUT toca
+            // agencia/servicio/horario/retorno: los tramitados con datos históricos se pueden seguir tocando.
+            if (registrado == null || CatalogoServiciosAgencias.DebeValidarModificacion(registrado.Estado, registrado.Agencia,
+                    registrado.Servicio, registrado.Horario, registrado.Retorno, enviosAgencia))
+            {
+                string errorCatalogo = CatalogoServiciosAgencias.Validar(enviosAgencia);
+                if (errorCatalogo != null)
+                {
+                    return BadRequest($"Envío {id}: {errorCatalogo}");
+                }
             }
 
             enviosAgencia.Usuario = User?.Identity?.Name ?? "NestoAPI";
@@ -728,6 +742,13 @@ namespace NestoAPI.Controllers
                         "borra el código de barras del envío para que se registre de nuevo con albarán propio.");
                 }
                 return Ok(AResultado(envio, envio.CodigoBarras.Trim(), envio.Bultos, reimpresion, reimpresion: true));
+            }
+
+            // NestoAPI#546: no se registra en la agencia un envío con un servicio/horario/retorno que no es suyo.
+            string errorCatalogo = CatalogoServiciosAgencias.Validar(envio);
+            if (errorCatalogo != null)
+            {
+                return BadRequest($"Envío {id}: {errorCatalogo}");
             }
 
             ResultadoTramitacionRemota resultado;
@@ -1432,6 +1453,13 @@ namespace NestoAPI.Controllers
             // al crear la etiqueta desde CanalesExternos. Igual que en el PUT: el usuario de
             // auditoría sale SIEMPRE del Identity, nunca del cliente (UsuarioAuditoriaHelper
             // además cubre el principal anónimo, cuyo Name es "" y no null).
+            // NestoAPI#546: el alta siempre se valida contra el catálogo de la agencia.
+            string errorCatalogo = CatalogoServiciosAgencias.Validar(enviosAgencia);
+            if (errorCatalogo != null)
+            {
+                return BadRequest(errorCatalogo);
+            }
+
             enviosAgencia.Usuario = Infraestructure.UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
             RecortarTextosLibres(enviosAgencia);
             db.EnviosAgencias.Add(enviosAgencia);
@@ -1632,6 +1660,14 @@ namespace NestoAPI.Controllers
                 Pais = defaultsAgencia.Pais,
                 Usuario = User?.Identity?.Name ?? "NestoAPI"
             };
+
+            // NestoAPI#546: servicio y horario salen de los defaults de la agencia, pero el retorno viene del
+            // cliente (p. ej. «Recoger producto» con una agencia sin retornos, como Canteras).
+            string errorCatalogo = CatalogoServiciosAgencias.Validar(envio);
+            if (errorCatalogo != null)
+            {
+                return BadRequest(errorCatalogo);
+            }
 
             db.EnviosAgencias.Add(envio);
             await db.SaveChangesAsync();

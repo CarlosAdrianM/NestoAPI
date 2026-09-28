@@ -606,6 +606,7 @@
     <Compile Include="Infraestructure\Agencias\Perfiles\GateAgenciasActivas.cs" />
     <Compile Include="Infraestructure\Agencias\Perfiles\RegistroAgencias.cs" />
     <Compile Include="Infraestructure\Agencias\Perfiles\PerfilesAgencias.cs" />
+    <Compile Include="Infraestructure\Agencias\Perfiles\CatalogoServiciosAgencias.cs" />
     <Compile Include="Infraestructure\Agencias\ComparativaAgenciaSombraJobsService.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\CalculadoraCosteEnvio.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\ComparadorAgencias.cs" />

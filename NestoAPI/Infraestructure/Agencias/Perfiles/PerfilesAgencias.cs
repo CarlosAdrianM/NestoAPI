@@ -1,4 +1,5 @@
-﻿using System.Configuration;
+﻿using System.Collections.Generic;
+using System.Configuration;
 using System.Linq;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure.Agencias.CTT;
@@ -14,9 +15,18 @@ namespace NestoAPI.Infraestructure.Agencias.Perfiles
     // crear su clase en este fichero (y que la puerta de activas la deje pasar).
 
     /// <summary>Innovatrans (DataTrans DTX): tramitación remota + seguimiento server-side.</summary>
-    public class PerfilAgenciaInnovatrans : IPerfilConGestionRemota, IPerfilConSeguimiento
+    public class PerfilAgenciaInnovatrans : IPerfilConGestionRemota, IPerfilConSeguimiento, IPerfilConCatalogoServicios
     {
         public int AgenciaId => Constantes.Agencias.AGENCIA_INNOVATRANS;
+
+        // NestoAPI#546: el tipo de servicio de DataTrans sale del CP (MapeadorTipoServicioDataTrans), así que
+        // el Servicio del envío no viaja: Nesto guarda 0 («sin elegir», ~230 envíos desde junio). Se admiten
+        // también los ServicioId/HorarioDefectoId de sus tarifas. Retornos: #494 la mete en la subasta de
+        // retornos (CrearEtiquetaPendiente puede elegirla con retorno 1 o 2).
+        public CatalogoServiciosAgencia CatalogoServicios { get; } = new CatalogoServiciosAgencia("Innovatrans",
+            servicios: new Dictionary<short, string> { { 0, "sin elegir" }, { 1, "Economy" }, { 2, "14H Portugal" }, { 3, "Marítimo islas" } },
+            horarios: new Dictionary<short, string> { { 0, "" }, { 1, "Normal" } },
+            retornos: new Dictionary<short, string> { { 0, "NO" }, { 1, "Con retorno" }, { 2, "Recogida en origen" } });
 
         public IAgenciaRemota CrearGestionRemota(NVEntities db)
         {
@@ -58,9 +68,17 @@ namespace NestoAPI.Infraestructure.Agencias.Perfiles
     }
 
     /// <summary>GLS/ASM: solo SEGUIMIENTO (no tramita server-side) y con defaults de envío propios.</summary>
-    public class PerfilAgenciaGls : IPerfilConSeguimiento, IPerfilConDefaultsEnvio
+    public class PerfilAgenciaGls : IPerfilConSeguimiento, IPerfilConDefaultsEnvio, IPerfilConCatalogoServicios
     {
         public int AgenciaId => Constantes.Agencias.AGENCIA_GLS;
+
+        // NestoAPI#546: AgenciaASM.vb (ListaServicios/ListaHorarios/ListaTiposRetorno) + sus tarifas
+        // (TarifaGLSBusinessParcel 96/18, TarifaGLSBaleares 6/10, TarifaGLSEuroBusinessParcel 74/18).
+        // Sin horario 0 ni servicio 48: son de CTT (envíos 249165/249181/249182 del 28/09/26).
+        public CatalogoServiciosAgencia CatalogoServicios { get; } = new CatalogoServiciosAgencia("GLS",
+            servicios: new Dictionary<short, string> { { 6, "Baleares marítimo" }, { 74, "EuroBusinessParcel" }, { 96, "BusinessParcel" } },
+            horarios: new Dictionary<short, string> { { 10, "Marítimo" }, { 18, "Economy" } },
+            retornos: new Dictionary<short, string> { { 0, "Sin retorno" }, { 1, "Con retorno" }, { 2, "Retorno opcional" } });
 
         // Seguimiento vía su web de tracking (GetExpCli). uid de nuestra cuenta en Web.config.
         public ISeguimientoAgenciaRemota CrearSeguimiento(NVEntities db)
@@ -74,9 +92,15 @@ namespace NestoAPI.Infraestructure.Agencias.Perfiles
     }
 
     /// <summary>Canteras (Canarias, operativa manual): tiene reglas propias de compatibilidad con el destino.</summary>
-    public class PerfilAgenciaCanteras : IPerfilConReglasDestino
+    public class PerfilAgenciaCanteras : IPerfilConReglasDestino, IPerfilConCatalogoServicios
     {
         public int AgenciaId => Constantes.Agencias.AGENCIA_CANTERAS;
+
+        // NestoAPI#546: operativa manual por correo, sin servicios ni retornos (AgenciaCanteras.vb).
+        public CatalogoServiciosAgencia CatalogoServicios { get; } = new CatalogoServiciosAgencia("Canteras",
+            servicios: new Dictionary<short, string> { { 0, "sin elegir" } },
+            horarios: new Dictionary<short, string> { { 0, "" } },
+            retornos: new Dictionary<short, string> { { 0, "NO" } });
 
         // NestoAPI#204: Canteras solo opera en Canarias, sin reembolso y con mínimo de importe.
         public string ValidarDestino(string codPostal, CabPedidoVta pedido, bool cobrarReembolso)
@@ -113,9 +137,20 @@ namespace NestoAPI.Infraestructure.Agencias.Perfiles
     /// Correos Express: en cuarentena (no se tramita), pero sus reglas de destino y defaults siguen
     /// aplicando a las etiquetas que se creen a mano.
     /// </summary>
-    public class PerfilAgenciaCorreosExpress : IPerfilConReglasDestino, IPerfilConDefaultsEnvio
+    public class PerfilAgenciaCorreosExpress : IPerfilConReglasDestino, IPerfilConDefaultsEnvio, IPerfilConCatalogoServicios
     {
         public int AgenciaId => Constantes.Agencias.AGENCIA_CORREOS_EXPRESS;
+
+        // NestoAPI#546: AgenciaCorreosExpress.vb (tarifas actuales + la lista antigua comentada, que
+        // incluye los internacionales 90/91 de DefaultsEnvio). Sin horarios ni retornos.
+        public CatalogoServiciosAgencia CatalogoServicios { get; } = new CatalogoServiciosAgencia("Correos Express",
+            servicios: new Dictionary<short, string>
+            {
+                { 54, "EntregaPlus" }, { 63, "Paq 24" }, { 66, "Baleares" }, { 69, "Canarias marítimo" },
+                { 90, "Internacional estándar" }, { 91, "Internacional express" }, { 92, "Paq Empresa 14" }, { 93, "ePaq 24" }
+            },
+            horarios: new Dictionary<short, string> { { 0, "" } },
+            retornos: new Dictionary<short, string> { { 0, "No disponible" } });
 
         public string ValidarDestino(string codPostal, CabPedidoVta pedido, bool cobrarReembolso)
             => PedidosVenta.GestorPortes.EsCanarias(codPostal)
@@ -156,9 +191,26 @@ namespace NestoAPI.Infraestructure.Agencias.Perfiles
     /// = 1): la puerta de activas la deja fuera, así que este perfil no se usa hasta que salga a
     /// producción (checklist en la issue). Config: Web.config CTT:* y secretos.config CTTClientId/Secret.
     /// </summary>
-    public class PerfilAgenciaCTT : IPerfilConGestionRemota, IPerfilConSeguimiento, IPerfilConDefaultsEnvio, IPerfilConReglasDestino
+    public class PerfilAgenciaCTT : IPerfilConGestionRemota, IPerfilConSeguimiento, IPerfilConDefaultsEnvio, IPerfilConReglasDestino, IPerfilConCatalogoServicios
     {
         public int AgenciaId => Constantes.Agencias.AGENCIA_CTT;
+
+        // NestoAPI#546: AgenciaCTT.vb. El servicio 0 («sin elegir») es el de los envíos de antes de #505
+        // y MapeadorTipoServicioCTT lo trata como 48 h al registrar: se sigue admitiendo.
+        public CatalogoServiciosAgencia CatalogoServicios { get; } = new CatalogoServiciosAgencia("CTT",
+            servicios: new Dictionary<short, string>
+            {
+                { 0, "sin elegir" },
+                { MapeadorTipoServicioCTT.SERVICIO_ID_24H, "CTT 24h" },
+                { MapeadorTipoServicioCTT.SERVICIO_ID_48H, "CTT 48h" }
+            },
+            horarios: new Dictionary<short, string> { { 0, "" } },
+            retornos: new Dictionary<short, string>
+            {
+                { AgenciaRemotaCTT.RETORNO_NINGUNO, "NO" },
+                { AgenciaRemotaCTT.RETORNO_CON_RETORNO, "Con retorno" },
+                { AgenciaRemotaCTT.RETORNO_RECOGIDA_EN_ORIGEN, "Recogida en origen" }
+            });
 
         public IAgenciaRemota CrearGestionRemota(NVEntities db)
         {

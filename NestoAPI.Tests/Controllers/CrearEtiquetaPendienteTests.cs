@@ -880,7 +880,8 @@ namespace NestoAPI.Tests.Controllers
                 Empresa = "1  ",
                 Pedido = 12345,
                 Agencia = agencia,
-                Retorno = 1
+                // NestoAPI#546: sin retorno, que CEX y Canteras no tienen (su catálogo solo admite el 0).
+                Retorno = 0
             };
 
             await controller.CrearEtiquetaPendiente(request);
@@ -1031,7 +1032,8 @@ namespace NestoAPI.Tests.Controllers
                 Empresa = "1  ",
                 Pedido = 12345,
                 Agencia = agencia,
-                Retorno = 1,
+                // NestoAPI#546: sin retorno, que CEX y Canteras no tienen (su catálogo solo admite el 0).
+                Retorno = 0,
                 CobrarReembolso = cobrarReembolso,
                 ImporteReembolso = importeReembolso
             };
@@ -1257,6 +1259,16 @@ namespace NestoAPI.Tests.Controllers
 
             Assert.AreEqual(1, creado.Agencia);
             Assert.IsFalse(preguntado);
+        }
+
+        [TestMethod]
+        public void RecogerProducto_RetornoQueLaAgenciaNoTiene_NoCreaLaEtiqueta()
+        {
+            // NestoAPI#546: el retorno viene del cliente; GLS solo tiene 0, 1 y 2.
+            EnviosAgencia creado = CrearConCodigoPostal("28001", 1, 3);
+
+            Assert.IsNull(creado);
+            A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
         }
 
         [TestMethod]

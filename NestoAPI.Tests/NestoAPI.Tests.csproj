@@ -266,6 +266,7 @@
     <Compile Include="Controllers\RecibirRetornoTests.cs" />
     <Compile Include="Controllers\PagarReembolsosControllerTests.cs" />
     <Compile Include="Controllers\TramitarEnvioTests.cs" />
+    <Compile Include="Controllers\EnviosAgenciasCatalogoServiciosTests.cs" />
     <Compile Include="Controllers\PlazosPagoControllerTests.cs" />
     <Compile Include="Controllers\CabRemesasPagoControllerTests.cs" />
     <Compile Include="Controllers\FamiliasControllerTests.cs" />
@@ -324,6 +325,7 @@
     <Compile Include="Infraestructure\Informes\InformeClientesNuevosTests.cs" />
     <Compile Include="Infraestructure\Informes\MotorSaldoCuentaTests.cs" />
     <Compile Include="Infrastructure\Agencias\RegistroAgenciasTests.cs" />
+    <Compile Include="Infrastructure\Agencias\CatalogoServiciosAgenciasTests.cs" />
     <Compile Include="Infrastructure\Agencias\PerfilesAgenciasTests.cs" />
     <Compile Include="Infrastructure\Agencias\GateAgenciasActivasTests.cs" />
     <Compile Include="Infrastructure\Agencias\CalculadoraCosteEnvioTests.cs" />
