@@ -27,5 +27,8 @@ namespace NestoAPI.Infraestructure.Videos
         /// dejando constancia en LogVideosProductos. Ver <see cref="GestorBorradoVideos"/>.
         /// </summary>
         Task<ResultadoBorradoVideo> BorrarVideo(int id, bool forzar, bool puedeForzar, string usuario);
+
+        /// <summary>Carlos 28/09/26: retira un vídeo (FechaBaja). Ver <see cref="GestorBorradoVideos.DarDeBaja"/>.</summary>
+        Task<ResultadoBajaVideo> DarDeBajaVideo(int id, string usuario);
     }
 }

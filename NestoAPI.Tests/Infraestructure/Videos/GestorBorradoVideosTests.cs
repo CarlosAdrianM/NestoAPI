@@ -155,6 +155,86 @@ namespace NestoAPI.Tests.Infraestructure.Videos
             A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
         }
 
+        // ---- Carlos 28/09/26: duplicados de baja y baja desde Nesto ----
+
+        [TestMethod]
+        public async Task Borrar_ElActivoCuandoElDuplicadoEstaDeBaja_NoSeBorra()
+        {
+            List<Video> videos = Duplicados();
+            videos.Single(v => v.Id == 1980).FechaBaja = new System.DateTime(2026, 9, 25);
+            Datos(videos, ProductosDe1981());
+
+            ResultadoBorradoVideo resultado = await gestor.Borrar(1981, forzar: false, puedeForzar: false, usuario: "laura");
+
+            Assert.AreEqual(EstadoBorradoVideo.DuplicadosDeBaja, resultado.Estado);
+            Assert.AreEqual(GestorBorradoVideos.MENSAJE_DUPLICADOS_DE_BAJA, resultado.Mensaje);
+            A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Borrar_ElDeBajaCuandoElOtroEstaActivo_SiSeBorra()
+        {
+            List<Video> videos = Duplicados();
+            videos.Single(v => v.Id == 1981).FechaBaja = new System.DateTime(2026, 9, 25);
+            Datos(videos, ProductosDe1981());
+
+            ResultadoBorradoVideo resultado = await gestor.Borrar(1981, forzar: false, puedeForzar: false, usuario: "laura");
+
+            Assert.AreEqual(EstadoBorradoVideo.Borrado, resultado.Estado);
+        }
+
+        [TestMethod]
+        public async Task Borrar_ElActivoConDuplicadoDeBaja_DireccionForzando_SiSeBorra()
+        {
+            List<Video> videos = Duplicados();
+            videos.Single(v => v.Id == 1980).FechaBaja = new System.DateTime(2026, 9, 25);
+            Datos(videos, ProductosDe1981());
+
+            ResultadoBorradoVideo resultado = await gestor.Borrar(1981, forzar: true, puedeForzar: true, usuario: "carlos");
+
+            Assert.AreEqual(EstadoBorradoVideo.Borrado, resultado.Estado);
+        }
+
+        [TestMethod]
+        public async Task DarDeBaja_PoneLaFechaYGuarda()
+        {
+            List<Video> videos = Duplicados();
+            Datos(videos, new List<VideoProducto>());
+
+            ResultadoBajaVideo resultado = await gestor.DarDeBaja(1990, "laura");
+
+            Assert.AreEqual(EstadoBajaVideo.DadoDeBaja, resultado.Estado);
+            Assert.IsNotNull(videos.Single(v => v.Id == 1990).FechaBaja);
+            StringAssert.Contains(resultado.Mensaje, "1990");
+            A.CallTo(() => db.SaveChangesAsync()).MustHaveHappenedOnceExactly();
+            A.CallTo(() => fakeVideos.Remove(A<Video>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task DarDeBaja_YaEstabaDeBaja_NoLaCambia()
+        {
+            List<Video> videos = Duplicados();
+            var fecha = new System.DateTime(2026, 9, 1);
+            videos.Single(v => v.Id == 1990).FechaBaja = fecha;
+            Datos(videos, new List<VideoProducto>());
+
+            ResultadoBajaVideo resultado = await gestor.DarDeBaja(1990, "laura");
+
+            Assert.AreEqual(EstadoBajaVideo.YaEstabaDeBaja, resultado.Estado);
+            Assert.AreEqual(fecha, videos.Single(v => v.Id == 1990).FechaBaja);
+            A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task DarDeBaja_NoExiste()
+        {
+            Datos(Duplicados(), new List<VideoProducto>());
+
+            ResultadoBajaVideo resultado = await gestor.DarDeBaja(4242, "laura");
+
+            Assert.AreEqual(EstadoBajaVideo.NoExiste, resultado.Estado);
+        }
+
         private static void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class
         {
             A.CallTo(() => ((IDbAsyncEnumerable<T>)fakeDbSet).GetAsyncEnumerator())

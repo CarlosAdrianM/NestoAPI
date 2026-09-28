@@ -133,5 +133,53 @@ namespace NestoAPI.Tests.Controllers
 
             Assert.AreEqual(HttpStatusCode.Forbidden, await Codigo(await controller.DeleteVideo(1990, forzar: true)));
         }
+
+        // ---- Carlos 28/09/26: baja desde la ventana Vídeos ----
+
+        [TestMethod]
+        public async Task DarDeBaja_SinGrupoAutorizado_Prohibido()
+        {
+            Usuario("Almacén");
+
+            IHttpActionResult resultado = await controller.DarDeBajaVideo(1990);
+
+            Assert.AreEqual(HttpStatusCode.Forbidden, await Codigo(resultado));
+            A.CallTo(() => servicio.DarDeBajaVideo(A<int>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task DarDeBaja_TiendaOnline_Ok()
+        {
+            Usuario("NUEVAVISION\\TiendaOnline");
+            A.CallTo(() => servicio.DarDeBajaVideo(1990, A<string>._))
+                .Returns(Task.FromResult(new ResultadoBajaVideo { Estado = EstadoBajaVideo.DadoDeBaja, Mensaje = "hecho" }));
+
+            IHttpActionResult resultado = await controller.DarDeBajaVideo(1990);
+
+            Assert.AreEqual(HttpStatusCode.OK, await Codigo(resultado));
+        }
+
+        [TestMethod]
+        public async Task DarDeBaja_YaEstabaDeBaja_BadRequest()
+        {
+            Usuario("NUEVAVISION\\TiendaOnline");
+            A.CallTo(() => servicio.DarDeBajaVideo(1990, A<string>._))
+                .Returns(Task.FromResult(new ResultadoBajaVideo { Estado = EstadoBajaVideo.YaEstabaDeBaja, Mensaje = "ya" }));
+
+            IHttpActionResult resultado = await controller.DarDeBajaVideo(1990);
+
+            Assert.AreEqual(HttpStatusCode.BadRequest, await Codigo(resultado));
+        }
+
+        [TestMethod]
+        public async Task DeleteVideo_ActivoConDuplicadosDeBaja_BadRequest()
+        {
+            Usuario("NUEVAVISION\\TiendaOnline");
+            ServicioDevuelve(EstadoBorradoVideo.DuplicadosDeBaja, GestorBorradoVideos.MENSAJE_DUPLICADOS_DE_BAJA);
+
+            IHttpActionResult resultado = await controller.DeleteVideo(1981);
+
+            Assert.AreEqual(HttpStatusCode.BadRequest, await Codigo(resultado));
+        }
     }
 }

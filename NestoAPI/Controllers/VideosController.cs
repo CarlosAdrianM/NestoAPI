@@ -188,12 +188,43 @@ namespace NestoAPI.Controllers
                 case EstadoBorradoVideo.NoExiste:
                     return NotFound();
                 case EstadoBorradoVideo.NoEsDuplicado:
+                case EstadoBorradoVideo.DuplicadosDeBaja:
                     return BadRequest(resultado.Mensaje);
                 case EstadoBorradoVideo.ForzarNoPermitido:
                     return Content(System.Net.HttpStatusCode.Forbidden, resultado.Mensaje);
                 default:
                     RegistrarBorradoEnElmah(resultado.Mensaje, resultado.Borrado, usuario);
                     return Ok(resultado.Borrado);
+            }
+        }
+
+        /// <summary>
+        /// Carlos 28/09/26: retirar un vídeo desde la ventana Vídeos de Nesto (shorts o vídeos de vida
+        /// corta que en Nesto no pintan nada). Mismos permisos que el borrado. Es la baja de siempre
+        /// (FechaBaja): sale del listado, del buscador y de la tienda; se repone quitando la fecha.
+        /// POST api/Videos/1981/Baja
+        /// </summary>
+        [HttpPost]
+        [Authorize]
+        [Route("{id:int}/Baja")]
+        public async Task<IHttpActionResult> DarDeBajaVideo(int id)
+        {
+            if (!PuedeBorrarVideos(User))
+            {
+                return Content(System.Net.HttpStatusCode.Forbidden, "No tienes permiso para dar de baja vídeos.");
+            }
+
+            string usuario = User?.Identity?.Name ?? "Desconocido";
+            ResultadoBajaVideo resultado = await _servicioVideos.DarDeBajaVideo(id, usuario);
+            switch (resultado.Estado)
+            {
+                case EstadoBajaVideo.NoExiste:
+                    return NotFound();
+                case EstadoBajaVideo.YaEstabaDeBaja:
+                    return BadRequest(resultado.Mensaje);
+                default:
+                    RegistrarBorradoEnElmah(resultado.Mensaje, null, usuario);
+                    return Ok(resultado.Mensaje);
             }
         }
 
@@ -214,7 +245,9 @@ namespace NestoAPI.Controllers
             try
             {
                 Elmah.ErrorLog.GetDefault(null)?.Log(new Elmah.Error(new Exception(
-                    $"[Informativo NestoAPI#545] {mensaje}. Productos borrados: {borrado?.ProductosBorrados}. Usuario: {usuario}")));
+                    borrado == null
+                        ? $"[Informativo vídeos] {mensaje}"
+                        : $"[Informativo NestoAPI#545] {mensaje}. Productos borrados: {borrado.ProductosBorrados}. Usuario: {usuario}")));
             }
             catch
             {

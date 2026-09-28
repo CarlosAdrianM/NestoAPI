@@ -175,6 +175,14 @@ namespace NestoAPI.Infraestructure.Videos
             }
         }
 
+        public async Task<ResultadoBajaVideo> DarDeBajaVideo(int id, string usuario)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                return await new GestorBorradoVideos(db).DarDeBaja(id, usuario).ConfigureAwait(false);
+            }
+        }
+
         /// <summary>
         /// Deja fuera los vídeos retirados salvo que se pidan expresamente.
         ///
