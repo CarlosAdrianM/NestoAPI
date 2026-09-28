@@ -1803,7 +1803,11 @@ namespace NestoAPI.Controllers
         [Route("api/EnviosAgencias/EnviarCorreoEntregaAgencia")]
         public async Task EnviarCorreoEntregaAgencia(EnviosAgencia envio)
         {
-            GestorEnviosAgencia gestor = new GestorEnviosAgencia();
+            GestorEnviosAgencia gestor = new GestorEnviosAgencia
+            {
+                // NestoAPI#494: para adjuntar la etiqueta PDF de una recogida en origen de CTT
+                CrearAgenciaRemota = fabricaAgenciasRemotas.Crear
+            };
 
             await gestor.EnviarCorreoEntregaAgencia(envio);
         }

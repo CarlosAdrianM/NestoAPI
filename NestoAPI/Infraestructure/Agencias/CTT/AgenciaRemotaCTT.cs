@@ -24,7 +24,7 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
     ///   GET  trf/web-tracking/v1.0/shippings?...&amp;shipping_date=A[range]B -> 200 {data:[{shipping_code, shipping_status_code...}], pagination}
     /// CTT no tiene "modificar": se anula y se registra de nuevo (albarán nuevo, etiqueta nueva).
     /// </summary>
-    public class AgenciaRemotaCTT : IAgenciaRemota, ISeguimientoPorLotes
+    public class AgenciaRemotaCTT : IAgenciaRemota, ISeguimientoPorLotes, IEtiquetaPdfRemota
     {
         // CTT pide medidas por bulto; no guardamos dimensiones (solo el peso), así que va la caja
         // MEDIANA, la más usada, igual que en Innovatrans. Si DatosEnvioRemoto trae medidas, prevalecen.
@@ -671,6 +671,40 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
                 TamanoBytes = contenido.Length,
                 Contenido = contenido
             };
+        }
+
+        /// <summary>
+        /// NestoAPI#494: la etiqueta en PDF (una por página, SINGLE) para mandarla al cliente en una
+        /// recogida en origen. Mismo endpoint que la ZPL; con PDF, CTT la devuelve en base64 en data.label.
+        /// </summary>
+        public async Task<byte[]> ObtenerEtiquetaPdfAsync(string albaran)
+        {
+            if (string.IsNullOrWhiteSpace(albaran))
+            {
+                return null;
+            }
+            RespuestaCTT respuesta = await _cliente.EnviarAsync(HttpMethod.Get,
+                RUTA_ETIQUETAS + albaran.Trim() + "/shipping-labels?label_type_code=PDF&model_type_code=SINGLE&label_offset=0",
+                null, "Etiqueta PDF").ConfigureAwait(false);
+            return respuesta.Exito ? ExtraerPdf(respuesta.Json) : null;
+        }
+
+        /// <summary>El PDF en base64 de data.label (data puede venir como objeto o como lista); null si no hay.</summary>
+        internal static byte[] ExtraerPdf(JToken json)
+        {
+            JToken data = json?["data"];
+            if (data == null) return null;
+            JToken bloque = data is JArray lista ? lista.FirstOrDefault() : data;
+            string base64 = bloque?["label"]?.ToString();
+            if (string.IsNullOrWhiteSpace(base64)) return null;
+            try
+            {
+                return Convert.FromBase64String(base64);
+            }
+            catch (FormatException)
+            {
+                return null;
+            }
         }
 
         /// <summary>Una etiqueta ZPL por bulto (thermal_label[]); data puede venir como objeto o como lista.</summary>

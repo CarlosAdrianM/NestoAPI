@@ -146,6 +146,16 @@ namespace NestoAPI.Infraestructure.Agencias
     /// agencias sin integración de tramitación (GLS, Canteras…) NO la implementan: la factory devuelve
     /// null en <c>Crear</c> y el flujo común sigue siendo solo BD (GLS sí hace seguimiento por su lado).
     /// </summary>
+    /// <summary>
+    /// NestoAPI#494 (Carlos 28/09/26): la etiqueta en PDF, para mandársela al cliente en una recogida
+    /// en origen (la pega él en el paquete). Solo las agencias que la dan en PDF (CTT).
+    /// </summary>
+    public interface IEtiquetaPdfRemota
+    {
+        /// <summary>El PDF con la etiqueta de cada bulto del albarán, o null si la agencia no lo da.</summary>
+        Task<byte[]> ObtenerEtiquetaPdfAsync(string albaran);
+    }
+
     public interface IAgenciaRemota : ISeguimientoAgenciaRemota
     {
         /// <summary>Inserta el envío en la agencia (asigna albarán) y obtiene su etiqueta. Crea envío REAL.</summary>

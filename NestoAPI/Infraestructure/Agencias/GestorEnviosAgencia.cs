@@ -6,6 +6,7 @@ using NestoAPI.Models.Facturas;
 using System;
 using System.Collections.Generic;
 using System.Configuration;
+using System.Data.Entity;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -18,11 +19,66 @@ namespace NestoAPI.Infraestructure.Agencias
 {
     public class GestorEnviosAgencia
     {
+        /// <summary>
+        /// NestoAPI#494: cómo se construye la agencia remota (para pedir la etiqueta PDF de una recogida).
+        /// null = no se adjunta etiqueta (tests, o quien no lo configure).
+        /// </summary>
+        internal Func<int, IAgenciaRemota> CrearAgenciaRemota { get; set; }
+
+        /// <summary>NestoAPI#494: cómo se relee el envío de la BD (sustituible en tests).</summary>
+        internal Func<int, EnviosAgencia> LeerEnvioDeBd { get; set; } = numero =>
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                return db.EnviosAgencias.AsNoTracking().FirstOrDefault(e => e.Numero == numero);
+            }
+        };
+
+        /// <summary>
+        /// NestoAPI#494: una recogida en origen de CTT (el repartidor recoge en casa del cliente y lo trae a
+        /// Algete). El cliente tiene que pegar la etiqueta en el paquete: se la mandamos en este correo.
+        /// </summary>
+        internal static bool EsRecogidaEnOrigenCTT(EnviosAgencia envio)
+            => envio != null && envio.Agencia == Constantes.Agencias.AGENCIA_CTT
+               && envio.Retorno == CTT.AgenciaRemotaCTT.RETORNO_RECOGIDA_EN_ORIGEN
+               && !string.IsNullOrWhiteSpace(envio.CodigoBarras);
+
         public async Task EnviarCorreoEntregaAgencia(EnviosAgencia envio)
         {
             if (envio == null || string.IsNullOrWhiteSpace(envio.Email))
             {
                 return;
+            }
+
+            // NestoAPI#494: el endpoint es anónimo (#189) y el envío llega en el cuerpo. Antes de pedir y
+            // mandar una etiqueta a nadie, se relee de la BD: correo, código, agencia y retorno salen de ahí.
+            bool esRecogida = false;
+            byte[] etiquetaRecogida = null;
+            if (EsRecogidaEnOrigenCTT(envio) && CrearAgenciaRemota != null)
+            {
+                EnviosAgencia guardado = LeerEnvioDeBd(envio.Numero);
+                if (guardado == null || !EsRecogidaEnOrigenCTT(guardado) || string.IsNullOrWhiteSpace(guardado.Email)
+                    || guardado.CodigoBarras.Trim() != envio.CodigoBarras.Trim())
+                {
+                    return;
+                }
+                envio = guardado;
+                esRecogida = true;
+                try
+                {
+                    etiquetaRecogida = CrearAgenciaRemota(envio.Agencia) is IEtiquetaPdfRemota agenciaPdf
+                        ? await agenciaPdf.ObtenerEtiquetaPdfAsync(envio.CodigoBarras.Trim()).ConfigureAwait(false)
+                        : null;
+                }
+                catch (Exception ex)
+                {
+                    ElmahHelper.Log(new Exception($"Recogida CTT {envio.CodigoBarras?.Trim()}: no se pudo obtener la etiqueta PDF. {ex.Message}", ex));
+                }
+                if (etiquetaRecogida == null)
+                {
+                    ElmahHelper.Log(new Exception($"Recogida CTT {envio.CodigoBarras?.Trim()} (envío {envio.Numero}, cliente {envio.Cliente?.Trim()}): " +
+                        "el correo al cliente sale SIN la etiqueta; hay que mandársela a mano (copia a logística)."));
+                }
             }
 
             if (envio.Cliente == Constantes.ClientesEspeciales.TIENDA_ONLINE || envio.Cliente == Constantes.ClientesEspeciales.AMAZON)
@@ -54,7 +110,13 @@ namespace NestoAPI.Infraestructure.Agencias
                 mail.From = serieFactura.CorreoDesdeLogistica;
                 mail.To.Add(new MailAddress(envio.Email));
                 mail.Bcc.Add(new MailAddress("carlosadrian@nuevavision.es"));
-                mail.Subject = string.Format("Pedido entregado a la agencia ({0}/{1})", envio.Cliente.Trim(), envio.Pedido.ToString());
+                mail.Subject = esRecogida
+                    ? string.Format("Recogida de su paquete: etiqueta para pegar ({0}/{1})", envio.Cliente.Trim(), envio.Pedido.ToString())
+                    : string.Format("Pedido entregado a la agencia ({0}/{1})", envio.Cliente.Trim(), envio.Pedido.ToString());
+                if (esRecogida && etiquetaRecogida == null)
+                {
+                    mail.CC.Add(new MailAddress(Constantes.Correos.LOGISTICA));
+                }
             }
             catch
             {
@@ -62,9 +124,13 @@ namespace NestoAPI.Infraestructure.Agencias
                 mail.Subject = String.Format("[ERROR: {0}] Pedido entregado a la agencia ({1}/{2})", envio.Email, envio.Cliente.Trim(), envio.Pedido.ToString());
             }
 
-            mail.Body = (await GenerarCorreoHTML(envio)).ToString();
+            mail.Body = (await GenerarCorreoHTML(envio, esRecogida, etiquetaRecogida != null)).ToString();
             mail.IsBodyHtml = true;
             mail.Attachments.Add(attachment);
+            if (etiquetaRecogida != null)
+            {
+                mail.Attachments.Add(new Attachment(new MemoryStream(etiquetaRecogida), $"Etiqueta recogida {envio.CodigoBarras.Trim()}.pdf", "application/pdf"));
+            }
             SmtpClient client = CrearClienteSMTP();
             client.Send(mail);
             mail.Dispose();
@@ -85,7 +151,22 @@ namespace NestoAPI.Infraestructure.Agencias
             return client;
         }
 
-        private async Task<StringBuilder> GenerarCorreoHTML(EnviosAgencia envio)
+        /// <summary>
+        /// NestoAPI#494 (Carlos 28/09/26): en una recogida en origen el correo no dice que hemos enviado el
+        /// pedido, sino que la agencia pasará a recogerlo y que tiene que pegar la etiqueta adjunta.
+        /// </summary>
+        internal static string ParrafoRecogida(string nombreAgencia, bool llevaEtiqueta)
+        {
+            return "<p>Le comunicamos que hemos solicitado a <b>" + HttpUtility.HtmlEncode(nombreAgencia) + "</b> que pase a <b>recoger el paquete</b> en la dirección de este envío. " +
+                "El repartidor pasará en los próximos días laborables, en horario de 9 a 18 h.</p>" +
+                (llevaEtiqueta
+                    ? "<p><strong>¡IMPORTANTE! Imprima la etiqueta que le adjuntamos en PDF y péguela en el paquete</strong>, en un lugar bien visible. " +
+                      "Sin la etiqueta el repartidor no podrá llevárselo.</p>"
+                    : "<p><strong>¡IMPORTANTE!</strong> En breve le haremos llegar la etiqueta que tiene que pegar en el paquete. Sin ella el repartidor no podrá llevárselo.</p>") +
+                "<p>Deje el paquete bien cerrado y preparado para cuando pase el repartidor.</p>";
+        }
+
+        private async Task<StringBuilder> GenerarCorreoHTML(EnviosAgencia envio, bool esRecogida = false, bool llevaEtiqueta = false)
         {
             ServicioEnviosAgencia servicio = new ServicioEnviosAgencia();
             string nombreAgencia = servicio.LeerAgencia(envio.Agencia).Nombre;
@@ -94,10 +175,17 @@ namespace NestoAPI.Infraestructure.Agencias
             StringBuilder s = new StringBuilder();
 
             s.AppendLine("<h3>¡Hola!</h3>");
+            if (esRecogida)
+            {
+                s.AppendLine(ParrafoRecogida(nombreAgencia, llevaEtiqueta));
+            }
+            else
+            {
             s.AppendLine("<p>Le comunicamos que ya hemos enviado su pedido. Debido a que este pedido ya se encuentra en poder de la agencia de transportes, a partir de este momento no se puede realizar ninguna modificación en él. ");
             s.AppendLine("El pedido ya está en camino y por lo tanto no se puede modificar.</p>");
             s.AppendLine("<p>¡IMPORTANTE! Si a la entrega de la mercancía encuentra algún daño en la caja, es <strong>importante que lo indique en el albarán o PDA del transportista</strong>. En caso contrario, la agencia no admitirá reclamaciones posteriores.</p>");
             s.AppendLine("<p>También es muy importante, de cara a una posible reclamación posterior, <strong>comprobar que el nº de bultos que pone en la PDA o albarán coincide con el nº de bultos efectivamente recibido</strong>.</p>");
+            }
             s.AppendLine("<p></p>");
             s.AppendLine("<p>La propia agencia le enviará un correo electrónico a esta misma dirección con el enlace al seguimiento de la expedición, para que pueda saber en cada momento por donde va el envío.</p>");
             s.AppendLine("<p>No obstante, le adelantamos que <b>la agencia responsable de la entrega es "+ nombreAgencia +" y el número de envío es <a href=\""+envioDTO.EnlaceSeguimiento+"\">" +envio.CodigoBarras+"</a> </b>");
