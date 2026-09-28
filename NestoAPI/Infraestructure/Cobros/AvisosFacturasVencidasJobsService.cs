@@ -90,11 +90,7 @@ namespace NestoAPI.Infraestructure.Cobros
                         Almacen = almacen,
                         CalcularCandidatos = (dias, hoy) => selector.Candidatos(EMPRESA, dias, hoy),
                         LeerApuntesNegativos = clientes => selector.ApuntesNegativos(EMPRESA, clientes),
-                        LeerDatosPago = () => new DatosPagoAviso
-                        {
-                            Iban = NormalizarIban(servicioFacturas.CuentaBancoEmpresa(EMPRESA)),
-                            Titular = db.Empresas.Where(e => e.Número == EMPRESA).Select(e => e.Nombre).FirstOrDefault()?.Trim()
-                        },
+                        LeerDatosPago = () => new LectorDatosPagoEmpresa(db, servicioFacturas).Leer(EMPRESA),
                         GenerarSaludos = nombres => new GeneradorContenidoCorreoPostCompra(new ServicioOpenAI()).GenerarSaludosAsync(nombres),
                         LeerFacturaPdf = (empresa, factura) => gestorFacturas.FacturaEnPDF(empresa, factura).ReadAsByteArrayAsync().Result,
                         Ahora = DateTime.Now

@@ -541,6 +541,7 @@
     <Compile Include="Controllers\ParametrosUsuarioController.cs" />
     <Compile Include="Controllers\PedidosCompraController.cs" />
     <Compile Include="Controllers\PedidosVentaController.cs" />
+    <Compile Include="Controllers\PedidosVentaTransferenciaController.cs" />
     <Compile Include="Controllers\PedidosVentaSolicitudesController.cs" />
     <Compile Include="Controllers\TarjetasController.cs" />
     <Compile Include="Controllers\PedidosClienteController.cs" />
@@ -662,6 +663,7 @@
     <Compile Include="Infraestructure\Remesas\SelectorEfectosCobrables.cs" />
     <Compile Include="Infraestructure\Remesas\GatingEntregaFacturas.cs" />
     <Compile Include="Infraestructure\Cobros\AvisosFacturasVencidasJobsService.cs" />
+    <Compile Include="Infraestructure\Cobros\LectorDatosPagoEmpresa.cs" />
     <Compile Include="Infraestructure\Cobros\AlmacenAvisosFacturasVencidas.cs" />
     <Compile Include="Infraestructure\Cobros\CadenciaAvisosFacturasVencidas.cs" />
     <Compile Include="Infraestructure\Cobros\PlantillaAvisoFacturaVencida.cs" />
@@ -788,6 +790,8 @@
     <Compile Include="Infraestructure\PedidosVenta\CambioClientePedido.cs" />
     <Compile Include="Infraestructure\PedidosVenta\CambioModoConPicking.cs" />
     <Compile Include="Infraestructure\PedidosVenta\GestorCambioClientePedido.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\ServicioDatosTransferenciaPedido.cs" />
+    <Compile Include="Models\PedidosVenta\DatosTransferenciaPedidoDTO.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ConstructorPedidoCliente.cs" />
     <Compile Include="Infraestructure\PedidosVenta\CorreoConfirmacionPedidoCliente.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ResumidorPedidosCliente.cs" />
