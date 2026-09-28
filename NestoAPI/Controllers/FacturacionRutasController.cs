@@ -1,3 +1,4 @@
+using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.AlbaranesVenta;
 using NestoAPI.Infraestructure.ExtractosRuta;
 using NestoAPI.Infraestructure.Facturas;
@@ -122,6 +123,7 @@ namespace NestoAPI.Controllers
             }
             catch (Exception ex)
             {
+                ElmahHelper.Log(ex); // 28/09/26: InternalServerError se salta el GlobalExceptionFilter
                 return InternalServerError(ex);
             }
         }
@@ -220,6 +222,7 @@ namespace NestoAPI.Controllers
             }
             catch (Exception ex)
             {
+                ElmahHelper.Log(ex); // 28/09/26: InternalServerError se salta el GlobalExceptionFilter
                 return InternalServerError(ex);
             }
         }
@@ -260,6 +263,7 @@ namespace NestoAPI.Controllers
             }
             catch (Exception ex)
             {
+                ElmahHelper.Log(ex); // 28/09/26: InternalServerError se salta el GlobalExceptionFilter
                 return InternalServerError(ex);
             }
         }
@@ -334,6 +338,7 @@ namespace NestoAPI.Controllers
             }
             catch (Exception ex)
             {
+                ElmahHelper.Log(ex); // 28/09/26: InternalServerError se salta el GlobalExceptionFilter
                 return InternalServerError(ex);
             }
         }

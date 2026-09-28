@@ -1,4 +1,5 @@
-﻿using NestoAPI.Infraestructure.AlbaranesVenta;
+﻿using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.AlbaranesVenta;
 using NestoAPI.Infraestructure.Facturas;
 using NestoAPI.Models.Facturas;
 using System.Collections.Generic;
@@ -68,6 +69,7 @@ namespace NestoAPI.Controllers
             }
             catch (System.Exception ex)
             {
+                ElmahHelper.Log(ex); // 28/09/26: InternalServerError se salta el GlobalExceptionFilter
                 return InternalServerError(ex);
             }
         }

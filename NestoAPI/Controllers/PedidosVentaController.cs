@@ -1594,6 +1594,9 @@ namespace NestoAPI.Controllers
             }
             catch (Exception e)
             {
+                // 28/09/26: el HttpResponseException de abajo no pasa por el GlobalExceptionFilter, así que un
+                // fallo al guardar la modificación (p. ej. vendedor NULL de Alfredo) no llegaba a ELMAH.
+                LoguearPedidoEnElmah(pedido, e, "Exception al modificar pedido");
                 string message = e.Message;
                 Exception recorremosExcepcion = e;
                 while (recorremosExcepcion.InnerException != null)
@@ -2641,6 +2644,7 @@ namespace NestoAPI.Controllers
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Error en ObtenerDocumentosImpresion: {ex.Message}");
+                ElmahHelper.Log(ex); // 28/09/26: InternalServerError se salta el GlobalExceptionFilter
                 return InternalServerError(ex);
             }
         }

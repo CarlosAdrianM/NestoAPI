@@ -1003,6 +1003,13 @@ namespace NestoAPI.Infraestructure.Facturas
 
             RegistrarError(pedido, tipoError, mensajeCompleto, response, severidad);
 
+            // 28/09/26 (Carlos): los errores de la facturación de rutas solo salían en el informe que ve quien factura
+            // y había que reenviarlos a mano. Los de severidad Error van también a ELMAH (los avisos no).
+            if (severidad == NivelSeveridad.Error)
+            {
+                ElmahHelper.Log(new Exception($"Facturación de rutas: pedido {pedido?.Número} ({tipoError}): {mensajeCompleto}", ex));
+            }
+
             // Si es un error de descuadre, añadir información del validador de descuento PP
             if (EsErrorDescuadre(mensajeCompleto))
             {

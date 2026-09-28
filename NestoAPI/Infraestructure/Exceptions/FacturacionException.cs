@@ -85,6 +85,16 @@ namespace NestoAPI.Infraestructure.Exceptions
         }
 
         /// <summary>
+        /// 28/09/26: que se registre en ELMAH aunque sea un 400 de negocio (ver
+        /// <see cref="NestoBusinessException.RegistrarEnLog"/>).
+        /// </summary>
+        public FacturacionException ConRegistroEnLog()
+        {
+            RegistrarEnLog = true;
+            return this;
+        }
+
+        /// <summary>
         /// Marca esta excepción como warning (no crítica)
         /// </summary>
         public FacturacionException AsWarning()

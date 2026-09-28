@@ -1,3 +1,4 @@
+using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Sincronizacion;
 using NestoAPI.Models.Sincronizacion;
 using System;
@@ -370,6 +371,7 @@ namespace NestoAPI.Controllers
             catch (Exception ex)
             {
                 Log($"❌ Error obteniendo poison pills: {ex.Message}");
+                ElmahHelper.Log(ex); // 28/09/26: InternalServerError se salta el GlobalExceptionFilter
                 return InternalServerError(ex);
             }
         }
@@ -423,6 +425,7 @@ namespace NestoAPI.Controllers
             catch (Exception ex)
             {
                 Log($"❌ Error cambiando estado: {ex.Message}");
+                ElmahHelper.Log(ex); // 28/09/26: InternalServerError se salta el GlobalExceptionFilter
                 return InternalServerError(ex);
             }
         }

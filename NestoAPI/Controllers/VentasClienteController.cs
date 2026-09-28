@@ -1,4 +1,5 @@
-﻿using Microsoft.ApplicationInsights;
+﻿using NestoAPI.Infraestructure;
+using Microsoft.ApplicationInsights;
 using NestoAPI.Infraestructure.Ventas;
 using NestoAPI.Models;
 using System;
@@ -58,6 +59,7 @@ namespace NestoAPI.Controllers
                     { "FechaDesde", fechaDesde?.ToString("o") }
                 });
 
+                ElmahHelper.Log(ex); // 28/09/26: InternalServerError se salta el GlobalExceptionFilter
                 return InternalServerError(ex);
             }
         }
@@ -126,6 +128,7 @@ namespace NestoAPI.Controllers
                     { "AgruparPor", agruparPor }
                 });
 
+                ElmahHelper.Log(ex); // 28/09/26: InternalServerError se salta el GlobalExceptionFilter
                 return InternalServerError(ex);
             }
 
@@ -180,6 +183,7 @@ namespace NestoAPI.Controllers
                     { "AgruparPor", agruparPor }
                 });
 
+                ElmahHelper.Log(ex); // 28/09/26: InternalServerError se salta el GlobalExceptionFilter
                 return InternalServerError(ex);
             }
         }

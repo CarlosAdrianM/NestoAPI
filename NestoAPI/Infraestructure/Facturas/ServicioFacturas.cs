@@ -696,7 +696,10 @@ namespace NestoAPI.Infraestructure.Facturas
                     usuario: usuario)
                     .WithData("SqlErrorNumber", sqlEx.Number)
                     .WithData("StoredProcedure", "prdCrearFacturaVta")
-                    .WithData("SeAplicoAutoFixPreventivo", seAplicoAutoFix);
+                    .WithData("SeAplicoAutoFixPreventivo", seAplicoAutoFix)
+                    // 28/09/26 (Carlos): un pedido que no se deja facturar tiene que verse en ELMAH aunque sea un 400
+                    // de negocio; hasta hoy solo lo veía quien facturaba y había que reenviarlo a mano.
+                    .ConRegistroEnLog();
             }
             catch (Exception ex)
             {
