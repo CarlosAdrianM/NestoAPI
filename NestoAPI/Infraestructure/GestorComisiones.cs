@@ -115,6 +115,13 @@ namespace NestoAPI.Infraestructure
             {
                 return;
             }
+            // 28/09/26 (Alfredo, «no se puede insertar el valor NULL en la columna vendedor»): el detalle de Nesto
+            // mete un vendedor de peluquería de relleno con vendedor vacío cuando el pedido no tiene ninguno (lo
+            // necesita la pantalla). Vacío no es un vendedor: ni se crea el registro ni se borra el que hubiera.
+            if (string.IsNullOrWhiteSpace(vendedorPedidoGrupoNuevo.vendedor))
+            {
+                return;
+            }
             if (vendedorPedidoGrupoActual != null)
             {
                 vendedorPedidoGrupoActual.Vendedor = vendedorPedidoGrupoNuevo.vendedor;

@@ -62,6 +62,39 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void ActualizarVendedorPedido_SinRegistroYVendedorVacio_NoCreaNada()
+        {
+            // 28/09/26: el detalle de Nesto manda PEL con vendedor null cuando el pedido no tiene vendedor por grupo;
+            // se insertaba y la BD lo rechazaba («no se puede insertar el valor NULL en la columna vendedor»).
+            ConfigurarDb();
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.VendedoresGrupoProducto = new List<VendedorGrupoProductoDTO>
+            {
+                new VendedorGrupoProductoDTO { grupoProducto = "PEL", vendedor = null }
+            };
+
+            GestorComisiones.ActualizarVendedorPedidoGrupoProducto(_db, Cabecera(), pedido);
+
+            A.CallTo(() => _db.VendedoresPedidosGruposProductos.Add(A<VendedorPedidoGrupoProducto>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void ActualizarVendedorPedido_ConRegistroYVendedorVacio_NoLoBorra()
+        {
+            _registroActual = new VendedorPedidoGrupoProducto { Empresa = "1", Pedido = 922324, GrupoProducto = "PEL", Vendedor = "IF" };
+            ConfigurarDb(_registroActual);
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.VendedoresGrupoProducto = new List<VendedorGrupoProductoDTO>
+            {
+                new VendedorGrupoProductoDTO { grupoProducto = "PEL", vendedor = " " }
+            };
+
+            GestorComisiones.ActualizarVendedorPedidoGrupoProducto(_db, Cabecera(), pedido);
+
+            Assert.AreEqual("IF", _registroActual.Vendedor);
+        }
+
+        [TestMethod]
         public void ActualizarVendedorPedido_ConVendedorNuevo_ActualizaElRegistro()
         {
             _registroActual = new VendedorPedidoGrupoProducto { Empresa = "1", Pedido = 922324, GrupoProducto = "PEL", Vendedor = "IF" };
