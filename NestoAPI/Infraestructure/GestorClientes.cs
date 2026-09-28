@@ -635,9 +635,11 @@ namespace NestoAPI.Infraestructure
             clienteCrear.Estetica = clienteCrear.VendedorEstetica != null && clienteCrear.VendedorEstetica != Constantes.Vendedores.VENDEDOR_GENERAL;
             clienteCrear.Peluqueria = clienteCrear.VendedorPeluqueria != null && clienteCrear.VendedorPeluqueria != Constantes.Vendedores.VENDEDOR_GENERAL;
 
+            // 28/09/26 (cliente 1668/1, NestoApp): hay ~160 contactos activos sin CondPagoClientes; la
+            // ficha se abre igual, con la forma y los plazos de pago vacíos, en vez de un 500.
             CondPagoCliente condPagoCliente = await servicio.BuscarCondicionesPago(empresa, cliente, contacto);
-            clienteCrear.FormaPago = condPagoCliente.FormaPago?.Trim();
-            clienteCrear.PlazosPago = condPagoCliente.PlazosPago?.Trim();
+            clienteCrear.FormaPago = condPagoCliente?.FormaPago?.Trim();
+            clienteCrear.PlazosPago = condPagoCliente?.PlazosPago?.Trim();
 
             CCC cccCliente = await servicio.BuscarCCC(empresa, cliente, contacto, clienteDb.CCC);
             if (cccCliente != null)

@@ -693,6 +693,21 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void GestorClientes_ConstruirClienteCrear_SinCondicionesDePago_NoFallaYLasDejaVacias()
+        {
+            // 28/09/26: el contacto 1668/1 no tiene fila en CondPagoClientes y la ficha daba un 500 (NRE).
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
+            A.CallTo(() => servicio.BuscarCliente("1", "1668", "1")).Returns(new Cliente { Empresa = "1  ", Nº_Cliente = "1668", Contacto = "1  " });
+            A.CallTo(() => servicio.BuscarCondicionesPago("1", "1668", "1")).Returns((CondPagoCliente)null);
+
+            var clienteCrear = gestor.ConstruirClienteCrear("1", "1668", "1").Result;
+
+            Assert.IsNull(clienteCrear.FormaPago);
+            Assert.IsNull(clienteCrear.PlazosPago);
+        }
+
+        [TestMethod]
         public void GestorClientes_ConstruirClienteCrear_ElIbanCuadra()
         {
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
