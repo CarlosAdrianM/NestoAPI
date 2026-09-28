@@ -1054,6 +1054,34 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        [DataRow("REI")]
+        [DataRow("ALC")]
+        public void GenerarHtmlModoServicio_PedidoDeTienda_NoAvisa(string almacen)
+        {
+            // Carlos, 28/09/26: en las tiendas lo normal es entregar según vaya entrando el stock;
+            // ni rojo ni «¡¡¡ ATENCIÓN !!!» (y por tanto tampoco prioridad alta en el correo).
+            PedidoVentaDTO pedido = new PedidoVentaDTO { modoServicio = 2, servirJunto = false, periodoFacturacion = "NRM" };
+            pedido.Lineas.Add(new LineaPedidoVentaDTO { almacen = almacen });
+
+            string html = GestorPresupuestos.GenerarHtmlModoServicio(pedido, faltaStockDeAlgo: false, tieneQueVenirAlgunProducto: true, colspan: 7);
+
+            Assert.IsFalse(html.Contains("ATENCIÓN"), html);
+            StringAssert.Contains(html, "color: black");
+            StringAssert.Contains(html, "Modo de entrega: Según vaya entrando");
+        }
+
+        [TestMethod]
+        public void GenerarHtmlModoServicio_PedidoDeAlgete_SigueAvisando()
+        {
+            PedidoVentaDTO pedido = new PedidoVentaDTO { modoServicio = 2, servirJunto = false, periodoFacturacion = "NRM" };
+            pedido.Lineas.Add(new LineaPedidoVentaDTO { almacen = "ALG" });
+
+            string html = GestorPresupuestos.GenerarHtmlModoServicio(pedido, faltaStockDeAlgo: false, tieneQueVenirAlgunProducto: true, colspan: 7);
+
+            StringAssert.Contains(html, "¡¡¡ ATENCIÓN !!!");
+        }
+
+        [TestMethod]
         public void GenerarHtmlModoServicio_MantenerJunto_SeAnadeYQuitaElAviso()
         {
             PedidoVentaDTO pedido = new PedidoVentaDTO { modoServicio = 4, servirJunto = false, mantenerJunto = true, periodoFacturacion = "NRM" };

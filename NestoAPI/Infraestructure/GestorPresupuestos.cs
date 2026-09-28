@@ -1199,6 +1199,8 @@ namespace NestoAPI.Infraestructure
         /// Carlos, 17/09/26 (pedido 926430): en «Tras reponer de tiendas» NO se avisa, porque ese modo
         /// espera la reposición y sale en una sola entrega; avisar en rojo de una forma correcta de
         /// servir era muy llamativo. «Todo junto» tampoco avisa nunca.
+        /// Carlos, 28/09/26: los pedidos de tienda (almacén REI o ALC) tampoco avisan: allí lo normal
+        /// es que las líneas se entreguen según vaya entrando el stock.
         /// </summary>
         internal static string GenerarHtmlModoServicio(PedidoVentaDTO pedido, bool faltaStockDeAlgo, bool tieneQueVenirAlgunProducto, int colspan)
         {
@@ -1208,7 +1210,8 @@ namespace NestoAPI.Infraestructure
             string texto = string.Empty;
             if (!faltaStockDeAlgo && tieneQueVenirAlgunProducto
                 && Constantes.Pedidos.ModosServicio.SaleEnVariasEntregasSiHayQueReponer(modo)
-                && pedido.periodoFacturacion != Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES && !pedido.mantenerJunto)
+                && pedido.periodoFacturacion != Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES && !pedido.mantenerJunto
+                && !EsPedidoDeTienda(pedido))
             {
                 color = "red";
                 texto = "¡¡¡ ATENCIÓN !!! ";
@@ -1224,6 +1227,12 @@ namespace NestoAPI.Infraestructure
             _ = s.AppendLine($"<td colspan='{colspan}'>{texto}</td>");
             _ = s.AppendLine("</tr>");
             return s.ToString();
+        }
+
+        internal static bool EsPedidoDeTienda(PedidoVentaDTO pedido)
+        {
+            string almacen = pedido.Lineas?.FirstOrDefault()?.almacen?.Trim();
+            return almacen == Constantes.Almacenes.REINA || almacen == Constantes.Almacenes.ALCOBENDAS;
         }
 
         internal static string GenerarHtmlFechaEntregaComun(IEnumerable<LineaPedidoVentaDTO> lineas, int colspan)
