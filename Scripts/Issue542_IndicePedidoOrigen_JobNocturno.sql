@@ -1,5 +1,8 @@
 -- NestoAPI#542: programa en el Agente SQL la creación del índice filtrado IX_CabPedidoVta_PedidoOrigen para esta
--- madrugada (26/09/26 a las 02:30), cuando nadie graba pedidos. SQL Server Standard no crea índices ONLINE, así que
+-- madrugada (29/09/26 a las 02:30), cuando nadie graba pedidos.
+-- 28/09/26: la primera vez (26/09) FALLÓ con el error 1934 ('QUOTED_IDENTIFIER'): los pasos T-SQL del Agente se
+-- ejecutan con QUOTED_IDENTIFIER OFF y un índice filtrado lo exige en ON (el mismo tropiezo de #294). El paso lo
+-- pone ahora explícitamente. Volver a ejecutar este script como sa: borra el trabajo fallido y lo reprograma. SQL Server Standard no crea índices ONLINE, así que
 -- construirlo en horario bloquearía las escrituras en CabPedidoVta unos segundos (666.000 cabeceras, 359 MB).
 --
 -- Ejecutar como sa DESPUÉS de Issue542_ModoFacturacion.sql (el paso comprueba que existan las columnas).
@@ -23,7 +26,8 @@ EXEC dbo.sp_add_jobstep
     @step_name = N'Crear índice',
     @subsystem = N'TSQL',
     @database_name = N'NV',
-    @command = N'SET LOCK_TIMEOUT 60000;
+    @command = N'SET QUOTED_IDENTIFIER ON; SET ANSI_NULLS ON; SET ANSI_PADDING ON; SET ANSI_WARNINGS ON; SET ARITHABORT ON; SET CONCAT_NULL_YIELDS_NULL ON; SET NUMERIC_ROUNDABORT OFF;
+SET LOCK_TIMEOUT 60000;
 IF COL_LENGTH(''dbo.CabPedidoVta'', ''PedidoOrigen'') IS NULL OR COL_LENGTH(''dbo.CabPedidoVta'', ''AlbaranOrigen'') IS NULL
     RAISERROR(''Faltan las columnas de NestoAPI#542: ejecutar antes Issue542_ModoFacturacion.sql'', 16, 1);
 ELSE IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(''dbo.CabPedidoVta'') AND name = ''IX_CabPedidoVta_PedidoOrigen'')
@@ -35,9 +39,9 @@ ELSE IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(''dbo.
 
 EXEC dbo.sp_add_jobschedule
     @job_name = @nombre,
-    @name = N'Una vez, 26/09/26 02:30',
+    @name = N'Una vez, 29/09/26 02:30',
     @freq_type = 1,              -- una sola vez
-    @active_start_date = 20260926,
+    @active_start_date = 20260929,
     @active_start_time = 023000;
 
 EXEC dbo.sp_add_jobserver @job_name = @nombre, @server_name = N'(local)';
