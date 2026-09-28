@@ -318,5 +318,58 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => ((IQueryable<T>)fakeDbSet).ElementType).Returns(data.ElementType);
             A.CallTo(() => ((IQueryable<T>)fakeDbSet).GetEnumerator()).Returns(data.GetEnumerator());
         }
+
+        // NestoAPI#516: el cron dispara cada 30 min; el job solo pasa cada 30 min en horario de reparto
+        // (lun-sáb, 8:00-20:00) y, el resto, a las horas pares en punto (la cadencia de 2 h de antes).
+        // 28/09/2026 es lunes; 03/10/2026, sábado; 04/10/2026, domingo.
+        [DataTestMethod]
+        [DataRow("2026-09-28 08:00", true, DisplayName = "Lunes 8:00: empieza el reparto")]
+        [DataRow("2026-09-28 09:30", true, DisplayName = "Lunes 9:30: media hora en reparto")]
+        [DataRow("2026-09-28 19:30", true, DisplayName = "Lunes 19:30: última media hora de reparto")]
+        [DataRow("2026-10-03 11:30", true, DisplayName = "Sábado 11:30: también es día de reparto")]
+        [DataRow("2026-09-28 20:00", true, DisplayName = "Lunes 20:00: hora par fuera de reparto")]
+        [DataRow("2026-09-28 20:30", false, DisplayName = "Lunes 20:30: fuera de reparto")]
+        [DataRow("2026-09-28 21:00", false, DisplayName = "Lunes 21:00: hora impar fuera de reparto")]
+        [DataRow("2026-09-28 06:00", true, DisplayName = "Lunes 6:00: la pasada de antes del aviso de las 7:45")]
+        [DataRow("2026-09-28 07:00", false, DisplayName = "Lunes 7:00: hora impar")]
+        [DataRow("2026-09-28 07:30", false, DisplayName = "Lunes 7:30: aún no es horario de reparto")]
+        [DataRow("2026-10-04 10:00", true, DisplayName = "Domingo 10:00: hora par")]
+        [DataRow("2026-10-04 10:30", false, DisplayName = "Domingo 10:30: el domingo va cada 2 horas")]
+        [DataRow("2026-10-04 11:00", false, DisplayName = "Domingo 11:00: hora impar")]
+        [DataRow("2026-09-28 00:00", true, DisplayName = "Medianoche: hora par")]
+        public void TocaPasadaProgramada_CadaMediaHoraEnRepartoYCadaDosHorasElResto(string ahora, bool esperado)
+        {
+            DateTime momento = DateTime.ParseExact(ahora, "yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+
+            Assert.AreEqual(esperado, SeguimientoEnviosJobsService.TocaPasadaProgramada(momento));
+        }
+
+        [TestMethod]
+        public void TocaPasadaProgramada_UnaPasadaQueArrancaConRetrasoSigueContando()
+        {
+            // Hangfire puede arrancar la pasada de las 22:00 unos segundos o minutos tarde: sigue valiendo.
+            Assert.IsTrue(SeguimientoEnviosJobsService.TocaPasadaProgramada(new DateTime(2026, 9, 28, 22, 3, 15)));
+        }
+
+        [TestMethod]
+        public void TocaPasadaProgramada_TreintaPasadasDeLunesASabadoYDoceElDomingo()
+        {
+            // Lun-sáb: 24 medias horas de 8:00 a 19:30 + 0, 2, 4, 6, 20 y 22 h = 30. Domingo: cada 2 h = 12.
+            Assert.AreEqual(30, ContarPasadas(new DateTime(2026, 9, 28)));
+            Assert.AreEqual(12, ContarPasadas(new DateTime(2026, 10, 4)));
+        }
+
+        private static int ContarPasadas(DateTime dia)
+        {
+            int pasadas = 0;
+            for (DateTime t = dia; t < dia.AddDays(1); t = t.AddMinutes(30))
+            {
+                if (SeguimientoEnviosJobsService.TocaPasadaProgramada(t))
+                {
+                    pasadas++;
+                }
+            }
+            return pasadas;
+        }
     }
 }

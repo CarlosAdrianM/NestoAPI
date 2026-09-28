@@ -362,7 +362,8 @@ namespace NestoAPI
             // TNV#66: avisa al cliente por push cuando su pedido cambia de estado (ha salido,
             // ha salido una parte, incidencia con la entrega, o lleva horas esperando el pago).
             // Cada media hora: el paso a albarán ocurre a lo largo del día y el seguimiento de la
-            // agencia se refresca cada 2 horas, así que más frecuencia no adelantaría nada.
+            // agencia se refresca cada 30 min en horario de reparto (#516), así que más frecuencia no
+            // adelantaría nada.
             // El job se registra siempre, pero solo hace algo si AvisosPedidos:Activo está a true
             // en Web.config: así se enciende sin desplegar, el día que la app esté publicada.
             RecurringJob.AddOrUpdate(
@@ -509,20 +510,23 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'comparativa-agencia-sombra' configurado (diario a las 6:30)");
 
-            // Cada 2 horas: poll de seguimiento de envíos (#248). Actualiza Estado (Entregado/Incidentado)
-            // y FechaEntrega real consultando a cada agencia con gestión remota (hoy Innovatrans). Acotado
-            // a los envíos desde una fecha de corte fija (SeguimientoEnviosJobsService.FECHA_CORTE), así
-            // que no recorre el histórico antiguo de GLS.
+            // Poll de seguimiento de envíos (#248). Actualiza Estado (Entregado/Incidentado), el último
+            // texto de la agencia (DetalleEstado, de donde sale «en reparto», #516) y FechaEntrega real
+            // consultando a cada agencia con gestión remota. Acotado a los envíos desde una fecha de corte
+            // fija (SeguimientoEnviosJobsService.FECHA_CORTE), así que no recorre el histórico antiguo de GLS.
+            // NestoAPI#516: cada 30 min en horario de reparto (lun-sáb, 8:00-20:00) y cada 2 horas el resto
+            // (a las horas pares en punto, como antes). El cron dispara cada 30 min y el propio job
+            // descarta las pasadas de fuera de horario (SeguimientoEnviosJobsService.TocaPasadaProgramada).
             RecurringJob.AddOrUpdate(
                 "seguimiento-envios",
                 () => SeguimientoEnviosJobsService.ProcesarSeguimientosAsync(),
-                "0 */2 * * *", // Cron: cada 2 horas
+                SeguimientoEnviosJobsService.CRON_SEGUIMIENTO, // Cron: cada 30 min (filtrado por horario en el job)
                 new RecurringJobOptions
                 {
                     TimeZone = TimeZoneInfo.Local
                 }
             );
-            Console.WriteLine("✅ Job recurrente 'seguimiento-envios' configurado (cada 2 horas)");
+            Console.WriteLine("✅ Job recurrente 'seguimiento-envios' configurado (cada 30 min en horario de reparto, cada 2 horas el resto)");
 
             // NestoAPI#329: cada hora (a y cuarto, para no coincidir con seguimiento-envios),
             // consulta estados Verifactu pendientes, reintenta las facturas sin declarar (series

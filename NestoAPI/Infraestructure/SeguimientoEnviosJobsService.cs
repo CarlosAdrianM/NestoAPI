@@ -42,7 +42,8 @@ namespace NestoAPI.Infraestructure
         // NestoAPI#266: cuando una pasada viene masivamente en Desconocido (WS de la agencia caído,
         // p. ej. asmred en su punta de las 10:00 devolviendo "Servicio no disponible"), se programa UN
         // reintento en vez de avisar; el aviso solo salta si el reintento también falla. 45 min deja
-        // pasar la degradación típica de GLS sin solaparse con la siguiente pasada regular (cada 2h).
+        // pasar la degradación típica de GLS sin solaparse con la siguiente pasada regular (cada 2h fuera
+        // del horario de reparto; dentro de él, #516, las pasadas van cada 30 min y el reintento cae entre dos).
         public const int REINTENTO_TRAS_MINUTOS = 45;
 
         // 23/09/26: seguimiento por lotes (ISeguimientoPorLotes, hoy CTT). El listado va por FECHA DE ENVÍO
@@ -68,9 +69,37 @@ namespace NestoAPI.Infraestructure
             _hoy = hoy ?? (() => DateTime.Today);
         }
 
+        // NestoAPI#516: horario de reparto (lunes a sábado, de 8:00 a 20:00). En él el job pasa cada 30 min
+        // para que «en reparto» y «entregado» se vean casi al momento; fuera de él, cada 2 horas como
+        // siempre (a las horas pares en punto), para no castigar a las agencias de noche (GLS ya nos
+        // limitó por ráfagas, #264). El cron de Hangfire dispara cada 30 min y TocaPasadaProgramada
+        // descarta las que caen fuera de ese reparto.
+        public const int HORA_INICIO_REPARTO = 8;
+        public const int HORA_FIN_REPARTO = 20;
+        public const string CRON_SEGUIMIENTO = "*/30 * * * *";
+
+        /// <summary>
+        /// NestoAPI#516: ¿toca pasada a esta hora? En horario de reparto (lun-sáb, 8:00-20:00) siempre;
+        /// el resto, solo en la media hora que empieza en una hora par (la cadencia de 2 horas de antes:
+        /// 20:00, 22:00, 0:00, 2:00, 4:00, 6:00 y todo el domingo).
+        /// </summary>
+        public static bool TocaPasadaProgramada(DateTime ahora)
+        {
+            bool diaDeReparto = ahora.DayOfWeek != DayOfWeek.Sunday;
+            if (diaDeReparto && ahora.Hour >= HORA_INICIO_REPARTO && ahora.Hour < HORA_FIN_REPARTO)
+            {
+                return true;
+            }
+            return ahora.Hour % 2 == 0 && ahora.Minute < 30;
+        }
+
         /// <summary>Punto de entrada para Hangfire (compone sus propias dependencias).</summary>
         public static Task ProcesarSeguimientosAsync()
         {
+            if (!TocaPasadaProgramada(DateTime.Now))
+            {
+                return Task.FromResult(0);
+            }
             var db = new NVEntities();
             db.Configuration.LazyLoadingEnabled = false;
             return new SeguimientoEnviosJobsService(db, new FabricaAgenciasRemotas(db),
