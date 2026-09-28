@@ -176,15 +176,16 @@ namespace NestoAPI.Tests.Controllers
         [TestMethod]
         public void GetMasEconomica_ModoRetorno_SoloCompiteQuienTienePrecioDeRetorno()
         {
-            // NestoAPI#494: GLS no tiene precio de retorno (hoy no lo tenemos): el retorno es de CTT y GLS
+            // NestoAPI#494: GLS tiene precio de recogida suelta en Madrid y en capitales (28/09/26), pero no en
+            // pueblos (cobra km a la capital, que no calculamos): en 08400 (Granollers) el retorno es de CTT y GLS
             // no tiene coste de retorno.
             Datos(
                 new AgenciaTransporte { Numero = 1, Empresa = "1  ", Nombre = "GLS", RecargoCombustible = 0m },
                 new AgenciaTransporte { Numero = 13, Empresa = "1  ", Nombre = "CTT", RecargoCombustible = 0m });
 
-            var retorno = controller.GetMasEconomica("08001", peso: 3m, empresa: "1", reembolso: 0m, modo: ModoComparacionAgencia.Retorno)
+            var retorno = controller.GetMasEconomica("08400", peso: 3m, empresa: "1", reembolso: 0m, modo: ModoComparacionAgencia.Retorno)
                 as OkNegotiatedContentResult<OpcionEnvioAgencia>;
-            var costeGls = controller.GetCosteAgencia(1, "08001", peso: 3m, empresa: "1", reembolso: 0m, modo: ModoComparacionAgencia.Retorno);
+            var costeGls = controller.GetCosteAgencia(1, "08400", peso: 3m, empresa: "1", reembolso: 0m, modo: ModoComparacionAgencia.Retorno);
 
             Assert.AreEqual(13, retorno.Content.AgenciaId);
             Assert.IsInstanceOfType(costeGls, typeof(NotFoundResult));

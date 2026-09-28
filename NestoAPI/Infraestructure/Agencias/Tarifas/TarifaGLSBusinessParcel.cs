@@ -7,7 +7,7 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
     /// Precios ANTES de fuel (GLS aplica carburante + climat protec aparte; el fuel se añade
     /// en el comparador por agencia desde AgenciasTransporte.RecargoCombustible).
     /// </summary>
-    public class TarifaGLSBusinessParcel : TarifaNacionalBase
+    public class TarifaGLSBusinessParcel : TarifaNacionalBase, ITarifaConRetorno, ITarifaConVueltaEnEntrega
     {
         public override int AgenciaId => 1; // GLS/ASM
         public override byte ServicioId => 96; // BusinessParcel
@@ -53,5 +53,13 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
         }
 
         protected override decimal CosteReembolso(decimal reembolso) => 1.80m;
+
+        /// <summary>NestoAPI#494: recogida suelta (ver <see cref="ReglasRetornoAgencias"/>).</summary>
+        public decimal CalcularCosteRetorno(string codigoPostal, string paisIso, decimal peso, decimal recargoCombustible)
+            => ReglasRetornoAgencias.RecogidaSueltaGLS(CalcularCoste(codigoPostal, paisIso, peso, 0m, recargoCombustible), codigoPostal, paisIso);
+
+        /// <summary>NestoAPI#494: «En los servicios con retorno el puente de vuelta se facturará como nuevo envío».</summary>
+        public decimal CalcularCosteVueltaEnEntrega(string codigoPostal, string paisIso, decimal peso, decimal recargoCombustible)
+            => CalcularCoste(codigoPostal, paisIso, peso, 0m, recargoCombustible);
     }
 }

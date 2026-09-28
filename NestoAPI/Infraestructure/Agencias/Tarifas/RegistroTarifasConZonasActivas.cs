@@ -54,7 +54,7 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
     /// Envuelve una tarifa y la deja sin cobertura (coste MaxValue) fuera de las zonas activas. El
     /// freno aplica igual al retorno (NestoAPI#494): la zona es la del domicilio donde se recoge.
     /// </summary>
-    public class TarifaConZonasActivas : ITarifaAgencia, ITarifaConRetorno
+    public class TarifaConZonasActivas : ITarifaAgencia, ITarifaConRetorno, ITarifaConVueltaEnEntrega
     {
         private readonly ITarifaAgencia _interior;
         private readonly ISet<ZonasEnvioAgencia> _zonasActivas;
@@ -73,6 +73,14 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
             ZonasEnvioAgencia zona = TarifaNacionalBase.ZonaNacional(codigoPostal, paisIso);
             return ZonasActivasAgencia.EstaActiva(_zonasActivas, zona)
                 ? CapacidadesTarifa.CosteRetorno(_interior, codigoPostal, paisIso, peso, recargoCombustible)
+                : decimal.MaxValue;
+        }
+
+        public decimal CalcularCosteVueltaEnEntrega(string codigoPostal, string paisIso, decimal peso, decimal recargoCombustible)
+        {
+            ZonasEnvioAgencia zona = TarifaNacionalBase.ZonaNacional(codigoPostal, paisIso);
+            return ZonasActivasAgencia.EstaActiva(_zonasActivas, zona)
+                ? CapacidadesTarifa.CosteVueltaEnEntrega(_interior, codigoPostal, paisIso, peso, recargoCombustible)
                 : decimal.MaxValue;
         }
 

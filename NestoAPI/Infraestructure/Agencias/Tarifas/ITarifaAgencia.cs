@@ -67,6 +67,17 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
     }
 
     /// <summary>
+    /// NestoAPI#494 (Carlos 28/09/26): el «puente de vuelta» cuando el retorno se hace EN LA MISMA ENTREGA
+    /// (el repartidor entrega y se trae algo: el «Recoger producto» de GLS). No es una recogida suelta, así
+    /// que no lleva los recargos de recogida fuera de origen ni sus límites de zona. Sin implementarla, la
+    /// vuelta cuesta lo mismo que el retorno suelto (<see cref="ITarifaConRetorno"/>), como en CTT.
+    /// </summary>
+    public interface ITarifaConVueltaEnEntrega
+    {
+        decimal CalcularCosteVueltaEnEntrega(string codigoPostal, string paisIso, decimal peso, decimal recargoCombustible);
+    }
+
+    /// <summary>
     /// NestoAPI#494: qué se subasta en el comparador. <see cref="Envio"/> es lo de siempre;
     /// <see cref="Retorno"/>, solo la recogida en el cliente/proveedor; <see cref="EnvioYRetorno"/>,
     /// el envío y su retorno juntos (suma de los dos costes, por la MISMA agencia).
@@ -93,6 +104,12 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
                 ? conRetorno.CalcularCosteRetorno(codigoPostal, paisIso, peso, recargoCombustible)
                 : decimal.MaxValue;
 
+        /// <summary>NestoAPI#494: coste de la vuelta hecha en la misma entrega (o el del retorno suelto si no la distingue).</summary>
+        public static decimal CosteVueltaEnEntrega(ITarifaAgencia tarifa, string codigoPostal, string paisIso, decimal peso, decimal recargoCombustible)
+            => tarifa is ITarifaConVueltaEnEntrega vuelta
+                ? vuelta.CalcularCosteVueltaEnEntrega(codigoPostal, paisIso, peso, recargoCombustible)
+                : CosteRetorno(tarifa, codigoPostal, paisIso, peso, recargoCombustible);
+
         /// <summary>
         /// NestoAPI#494: coste de la tarifa en el modo pedido. Envío = lo de siempre; Retorno = solo la
         /// recogida; EnvioYRetorno = la suma (MaxValue si falta cualquiera de los dos).
@@ -105,7 +122,7 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
                 case ModoComparacionAgencia.Retorno:
                     return CosteRetorno(tarifa, codigoPostal, paisIso, peso, recargoCombustible);
                 case ModoComparacionAgencia.EnvioYRetorno:
-                    decimal retorno = CosteRetorno(tarifa, codigoPostal, paisIso, peso, recargoCombustible);
+                    decimal retorno = CosteVueltaEnEntrega(tarifa, codigoPostal, paisIso, peso, recargoCombustible);
                     if (retorno == decimal.MaxValue) return decimal.MaxValue;
                     decimal envio = tarifa.CalcularCoste(codigoPostal, paisIso, peso, reembolso, recargoCombustible);
                     return envio == decimal.MaxValue ? decimal.MaxValue : envio + retorno;
