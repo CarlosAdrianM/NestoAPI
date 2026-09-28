@@ -11,7 +11,11 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
     /// aplica el 2,5% en la tarifa. El recargo de combustible lo aplica el comparador a partir de
     /// AgenciasTransporte.RecargoCombustible (la fila Numero=12 debe llevar 0,025 = 2,5%).
     /// </summary>
-    public abstract class TarifaInnovatransBase : TarifaNacionalBase, ITarifaConRetorno, ITarifaConVueltaEnEntrega
+    // 28/09/26: SIN ITarifaConRetorno / ITarifaConVueltaEnEntrega a propósito: DataTrans no recibe todavía el
+    // retorno (el alta no manda el campo), así que Innovatrans queda FUERA de la subasta de retornos. Los precios
+    // de abajo ya están calculados según su oferta: al integrar el retorno en DataTrans, basta con volver a
+    // declarar las dos interfaces.
+    public abstract class TarifaInnovatransBase : TarifaNacionalBase
     {
         // Sending=10, Canteras=11 → Innovatrans=12. Debe coincidir con AgenciasTransporte.Numero.
         public override int AgenciaId => 12;
@@ -42,7 +46,7 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
             return comision;
         }
 
-        /// <summary>NestoAPI#494: recogida suelta, solo en Madrid (ver <see cref="ReglasRetornoAgencias"/>).</summary>
+        /// <summary>NestoAPI#494: recogida suelta, solo en Madrid (ver <see cref="ReglasRetornoAgencias"/>). Hoy sin uso: ver arriba.</summary>
         public decimal CalcularCosteRetorno(string codigoPostal, string paisIso, decimal peso, decimal recargoCombustible)
             => ReglasRetornoAgencias.RecogidaSueltaInnovatrans(CalcularCoste(codigoPostal, paisIso, peso, 0m, recargoCombustible), codigoPostal, paisIso);
 

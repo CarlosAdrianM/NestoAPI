@@ -73,12 +73,12 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         }
 
         [TestMethod]
-        public void Innovatrans_SinElegirYConRetornoDeLaSubasta_Pasa()
+        public void Innovatrans_SinElegirPasa_PeroConRetornoNo()
         {
             Assert.IsNull(CatalogoServiciosAgencias.Validar(INNOVATRANS, 0, 0, 0));
-            // #494: el comparador la puede elegir para «Recoger producto».
-            Assert.IsNull(CatalogoServiciosAgencias.Validar(INNOVATRANS, 0, 0, 1));
-            Assert.IsNull(CatalogoServiciosAgencias.Validar(INNOVATRANS, 0, 0, 2));
+            // 28/09/26: DataTrans no recibe el retorno; con retorno la recogida se perdería en silencio.
+            Assert.IsNotNull(CatalogoServiciosAgencias.Validar(INNOVATRANS, 0, 0, 1));
+            Assert.IsNotNull(CatalogoServiciosAgencias.Validar(INNOVATRANS, 0, 0, 2));
             Assert.IsNotNull(CatalogoServiciosAgencias.Validar(INNOVATRANS, 96, 18, 0));
         }
 

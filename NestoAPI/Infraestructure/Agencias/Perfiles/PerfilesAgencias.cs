@@ -21,12 +21,13 @@ namespace NestoAPI.Infraestructure.Agencias.Perfiles
 
         // NestoAPI#546: el tipo de servicio de DataTrans sale del CP (MapeadorTipoServicioDataTrans), así que
         // el Servicio del envío no viaja: Nesto guarda 0 («sin elegir», ~230 envíos desde junio). Se admiten
-        // también los ServicioId/HorarioDefectoId de sus tarifas. Retornos: #494 la mete en la subasta de
-        // retornos (CrearEtiquetaPendiente puede elegirla con retorno 1 o 2).
+        // también los ServicioId/HorarioDefectoId de sus tarifas. Retornos: SOLO 0 (28/09/26): el alta en DataTrans
+        // (InsertarEnvios) no manda el campo «retorno», así que un envío con retorno saldría como normal y la
+        // recogida no se pediría. Hasta que se integre (issue aparte), elegirla con retorno da un 400 claro.
         public CatalogoServiciosAgencia CatalogoServicios { get; } = new CatalogoServiciosAgencia("Innovatrans",
             servicios: new Dictionary<short, string> { { 0, "sin elegir" }, { 1, "Economy" }, { 2, "14H Portugal" }, { 3, "Marítimo islas" } },
             horarios: new Dictionary<short, string> { { 0, "" }, { 1, "Normal" } },
-            retornos: new Dictionary<short, string> { { 0, "NO" }, { 1, "Con retorno" }, { 2, "Recogida en origen" } });
+            retornos: new Dictionary<short, string> { { 0, "NO" } });
 
         public IAgenciaRemota CrearGestionRemota(NVEntities db)
         {

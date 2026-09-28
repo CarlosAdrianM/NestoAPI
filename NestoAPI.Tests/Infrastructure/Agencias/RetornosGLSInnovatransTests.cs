@@ -73,6 +73,15 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         // ---- Innovatrans ----
 
         [TestMethod]
+        public void Innovatrans_FueraDeLaSubastaDeRetornos_MientrasDataTransNoRecibaElRetorno()
+        {
+            // 28/09/26: el alta en DataTrans no manda el retorno; si el comparador la eligiera para «Recoger
+            // producto», la recogida no se pediría.
+            Assert.AreEqual(decimal.MaxValue, CapacidadesTarifa.CosteRetorno(innovatrans, "28670", "ES", 3m, 0m));
+            Assert.AreEqual(decimal.MaxValue, CapacidadesTarifa.Coste(innovatrans, ModoComparacionAgencia.EnvioYRetorno, "28670", "ES", 3m, 0m, 0m));
+        }
+
+        [TestMethod]
         public void Innovatrans_RecogidaEnMadrid_CuestaUnEnvio()
         {
             Assert.AreEqual(innovatrans.CalcularCoste("28670", "ES", 3m, 0m, 0.025m), innovatrans.CalcularCosteRetorno("28670", "ES", 3m, 0.025m));
