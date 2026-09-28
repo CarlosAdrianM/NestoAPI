@@ -21,5 +21,11 @@ namespace NestoAPI.Infraestructure.Videos
         /// <param name="cliente">Cliente al que se enviará el correo (para futura personalización)</param>
         /// <returns>VideoLookupModel del videoprotocolo o null si no hay ninguno</returns>
         Task<VideoLookupModel> ObtenerVideoprotocoloParaCorreo(string cliente = null);
+
+        /// <summary>
+        /// NestoAPI#545: borra un vídeo duplicado (otro con el mismo VideoId) con sus productos,
+        /// dejando constancia en LogVideosProductos. Ver <see cref="GestorBorradoVideos"/>.
+        /// </summary>
+        Task<ResultadoBorradoVideo> BorrarVideo(int id, bool forzar, bool puedeForzar, string usuario);
     }
 }

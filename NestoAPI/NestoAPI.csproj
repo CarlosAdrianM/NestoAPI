@@ -952,6 +952,7 @@
     <Compile Include="Infraestructure\Ventas\GestorVentasCliente.cs" />
     <Compile Include="Infraestructure\Videos\DescripcionFichaVideo.cs" />
     <Compile Include="Infraestructure\Videos\CoincidenciaProductoVideo.cs" />
+    <Compile Include="Infraestructure\Videos\GestorBorradoVideos.cs" />
     <Compile Include="Infraestructure\Videos\GestorVideos.cs" />
     <Compile Include="Infraestructure\Videos\IServicioVideos.cs" />
     <Compile Include="Infraestructure\Videos\ServicioVideos.cs" />
@@ -1676,6 +1677,7 @@
     <Compile Include="Models\Videos\ProductoVideoModel.cs" />
     <Compile Include="Models\Videos\VideoLookupModel.cs" />
     <Compile Include="Models\Videos\VideoModel.cs" />
+    <Compile Include="Models\Videos\VideoBorradoDTO.cs" />
     <Compile Include="Models\vstLinPedidoVtaComisione.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>

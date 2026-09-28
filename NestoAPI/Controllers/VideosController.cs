@@ -1,10 +1,12 @@
 ﻿using NestoAPI.Infraestructure.Videos;
+using NestoAPI.Infrastructure;
 using NestoAPI.Models;
 using NestoAPI.Models.Videos;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Security.Claims;
+using System.Security.Principal;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
@@ -158,6 +160,66 @@ namespace NestoAPI.Controllers
             }
             List<VideoLookupModel> videos = await _servicioVideos.GetVideosConProducto(productoId);
             return Ok(videos);
+        }
+
+        /// <summary>
+        /// NestoAPI#545 / Nesto#497: borra un vídeo DUPLICADO (hay otro con el mismo VideoId de
+        /// YouTube) con sus productos, desde la ventana Vídeos de Nesto. Pueden TiendaOnline (quien
+        /// lleva los vídeos), Dirección e Informática. Un vídeo que no está duplicado no se borra
+        /// (400: para retirarlo se usa la baja) salvo con ?forzar=true, y eso solo Dirección.
+        /// DELETE api/Videos/1981[?forzar=true]
+        /// </summary>
+        [HttpDelete]
+        [Authorize]
+        [Route("{id:int}")]
+        [ResponseType(typeof(VideoBorradoDTO))]
+        public async Task<IHttpActionResult> DeleteVideo(int id, bool forzar = false)
+        {
+            if (!PuedeBorrarVideos(User))
+            {
+                return Content(System.Net.HttpStatusCode.Forbidden, "No tienes permiso para borrar vídeos.");
+            }
+
+            string usuario = User?.Identity?.Name ?? "Desconocido";
+            ResultadoBorradoVideo resultado = await _servicioVideos.BorrarVideo(id, forzar, User.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION), usuario);
+
+            switch (resultado.Estado)
+            {
+                case EstadoBorradoVideo.NoExiste:
+                    return NotFound();
+                case EstadoBorradoVideo.NoEsDuplicado:
+                    return BadRequest(resultado.Mensaje);
+                case EstadoBorradoVideo.ForzarNoPermitido:
+                    return Content(System.Net.HttpStatusCode.Forbidden, resultado.Mensaje);
+                default:
+                    RegistrarBorradoEnElmah(resultado.Mensaje, resultado.Borrado, usuario);
+                    return Ok(resultado.Borrado);
+            }
+        }
+
+        internal static bool PuedeBorrarVideos(IPrincipal user)
+        {
+            return user != null && (
+                user.IsInRoleSinDominio(Constantes.GruposSeguridad.TIENDA_ON_LINE) ||
+                user.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION) ||
+                user.IsInRoleSinDominio(NovedadesController.GRUPO_INFORMATICA));
+        }
+
+        /// <summary>
+        /// Rastro informativo en ELMAH (además del log de productos, que no guarda un vídeo sin
+        /// productos). Nunca rompe el borrado, que ya está hecho.
+        /// </summary>
+        private static void RegistrarBorradoEnElmah(string mensaje, VideoBorradoDTO borrado, string usuario)
+        {
+            try
+            {
+                Elmah.ErrorLog.GetDefault(null)?.Log(new Elmah.Error(new Exception(
+                    $"[Informativo NestoAPI#545] {mensaje}. Productos borrados: {borrado?.ProductosBorrados}. Usuario: {usuario}")));
+            }
+            catch
+            {
+                // Sin ELMAH (tests) o fallo al registrar: el borrado sigue siendo válido.
+            }
         }
     }
 }

@@ -167,6 +167,14 @@ namespace NestoAPI.Infraestructure.Videos
             }
         }
 
+        public async Task<ResultadoBorradoVideo> BorrarVideo(int id, bool forzar, bool puedeForzar, string usuario)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                return await new GestorBorradoVideos(db).Borrar(id, forzar, puedeForzar, usuario).ConfigureAwait(false);
+            }
+        }
+
         /// <summary>
         /// Deja fuera los vídeos retirados salvo que se pidan expresamente.
         ///

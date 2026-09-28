@@ -305,6 +305,8 @@
     <Compile Include="Controllers\RemesasControllerTests.cs" />
     <Compile Include="Controllers\ComisionesControllerTests.cs" />
     <Compile Include="Controllers\VideosProductosControllerTests.cs" />
+    <Compile Include="Controllers\VideosControllerBorrarTests.cs" />
+    <Compile Include="Infraestructure\Videos\GestorBorradoVideosTests.cs" />
     <Compile Include="Controllers\BancosControllerTests.cs" />
     <Compile Include="Controllers\InformesControllerTests.cs" />
     <Compile Include="Controllers\NotificacionesControllerTests.cs" />
