@@ -743,6 +743,15 @@ namespace NestoAPI.Models
             public const string AVISO_FACTURAS_VENCIDAS = "AvisoFacturasVencidas";
 
             /// <summary>
+            /// Carlos, 28/09/26: a quién se avisa de TODA la actividad de los usuarios en Novedades
+            /// (comentarios, votos y sugerencias), para llevar el control. Bajo «(defecto)»: sin fila =
+            /// Carlos (NovedadesController.SUPERVISOR_ACTIVIDAD_POR_DEFECTO); "0" o vacío = nadie; otro
+            /// valor = ese usuario (sin dominio). Se lee en cada aviso: apagarlo no necesita publicar.
+            /// </summary>
+            public const string AVISAR_ACTIVIDAD_NOVEDADES_A = "AvisarActividadNovedadesA";
+
+
+            /// <summary>
             /// NestoAPI#542: interruptor de la nota de entrega automática con lo pendiente de un albarán
             /// facturado entero (líneas con Recoger). Bajo «(defecto)»: sin fila o "0" = apagado; "Sombra" =
             /// solo deja en ELMAH la nota que habría creado; "1" = la crea. Nace apagado: también actúa

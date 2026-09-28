@@ -29,7 +29,14 @@ namespace NestoAPI.Controllers
         public NovedadesController() : this(new ServicioNovedades(), new ServicioFeedbackNovedades())
         {
             Notificaciones = new Infraestructure.Notificaciones.ServicioNotificacionesPush();
+            LectorParametros = new LectorParametrosUsuario();
         }
+
+        /// <summary>
+        /// Carlos, 28/09/26: de dónde se lee a quién avisar de la actividad de Novedades. null = no se
+        /// avisa a nadie (los tests que no lo necesitan).
+        /// </summary>
+        internal ILectorParametrosUsuario LectorParametros { get; set; }
 
         /// <summary>
         /// Nesto#477: con quién se avisa al autor cuando el asistente le contesta. null = no se avisa
@@ -180,6 +187,7 @@ namespace NestoAPI.Controllers
             int id = servicio.CrearSugerencia(aGrabar);
             // NestoAPI#537: también se puede mencionar a alguien al sugerir (el aviso lleva a la sugerencia)
             await AvisarMencionesEnSugerencia(id, aGrabar.TextoOriginal, aGrabar.SugeridaNombre, User?.Identity?.Name).ConfigureAwait(false);
+            await AvisarActividad(id, 0, $"{aGrabar.SugeridaNombre} ha hecho una sugerencia", aGrabar.TextoOriginal, aGrabar.TextoOriginal).ConfigureAwait(false);
             return Ok(new SugerenciaNovedadDTO
             {
                 Id = id,
@@ -330,7 +338,7 @@ namespace NestoAPI.Controllers
         [HttpPut]
         [Authorize]
         [Route("api/Novedades/{id:int}/Voto")]
-        public IHttpActionResult PutVoto(int id, [FromBody] VotoNovedadDTO voto)
+        public async System.Threading.Tasks.Task<IHttpActionResult> PutVoto(int id, [FromBody] VotoNovedadDTO voto)
         {
             string usuario = ReglasFeedbackNovedades.ClaveUsuario(User);
             if (usuario == null)
@@ -346,6 +354,13 @@ namespace NestoAPI.Controllers
                 return NotFound();
             }
             feedback.Votar(id, usuario, ReglasFeedbackNovedades.Cliente(User), voto.Voto);
+            if (voto.Voto != 0)
+            {
+                string titulo = feedback.LeerTituloNovedad(id);
+                await AvisarActividad(id, 0,
+                    $"{ReglasFeedbackNovedades.NombreVisible(User)} ha votado {(voto.Voto > 0 ? "👍" : "👎")} en Novedades",
+                    string.IsNullOrWhiteSpace(titulo) ? $"Novedad {id}" : titulo, null).ConfigureAwait(false);
+            }
             return StatusCode(HttpStatusCode.NoContent);
         }
 
@@ -395,6 +410,11 @@ namespace NestoAPI.Controllers
             int nuevoId = feedback.CrearComentario(aGrabar);
             // NestoAPI#537: a quien se mencione con @ le llega el aviso
             await AvisarMenciones(id, nuevoId, aGrabar.Texto, aGrabar.NombreVisible, User?.Identity?.Name, null).ConfigureAwait(false);
+            string tituloComentado = feedback.LeerTituloNovedad(id);
+            await AvisarActividad(id, nuevoId,
+                string.IsNullOrWhiteSpace(tituloComentado) ? $"{aGrabar.NombreVisible} ha comentado en Novedades"
+                    : $"{aGrabar.NombreVisible} ha comentado «{tituloComentado}»",
+                aGrabar.Texto, aGrabar.Texto).ConfigureAwait(false);
             return Ok(new ComentarioNovedadDTO
             {
                 Id = nuevoId,
@@ -463,6 +483,90 @@ namespace NestoAPI.Controllers
         }
 
         internal const string TIPO_NOTIFICACION_RESPUESTA = "NovedadComentario";
+
+        internal const string SUPERVISOR_ACTIVIDAD_POR_DEFECTO = "Carlos";
+        private const string DOMINIO = "NUEVAVISION\\";
+
+        /// <summary>
+        /// Carlos, 28/09/26: a quién avisar de la actividad de los usuarios (parámetro
+        /// AvisarActividadNovedadesA de «(defecto)»; sin fila, Carlos; "0" o vacío, a nadie).
+        /// </summary>
+        internal string SupervisorActividad()
+        {
+            if (LectorParametros == null)
+            {
+                return null;
+            }
+            string valor = LectorParametros.LeerParametro(Constantes.Empresas.EMPRESA_POR_DEFECTO,
+                Constantes.ParametrosUsuario.USUARIO_POR_DEFECTO, Constantes.ParametrosUsuario.AVISAR_ACTIVIDAD_NOVEDADES_A);
+            if (valor == null)
+            {
+                return SUPERVISOR_ACTIVIDAD_POR_DEFECTO;
+            }
+            valor = SinDominio(valor);
+            return valor.Length == 0 || valor == "0" ? null : valor;
+        }
+
+        private static string SinDominio(string usuario) => usuario.Substring(usuario.IndexOf('\\') + 1).Trim();
+
+        /// <summary>
+        /// Carlos, 28/09/26: cada comentario, voto o sugerencia de un usuario le llega al supervisor
+        /// (Carlos) por el programa donde se ha hecho: desde Nesto, a su campana (buzón + SignalR); desde
+        /// NestoApp, push a su móvil. No se avisa de lo que hace él mismo, ni si ya le llega como @mención
+        /// en el mismo texto. Nunca rompe la acción del usuario.
+        /// </summary>
+        private async System.Threading.Tasks.Task AvisarActividad(int novedadId, int comentarioId, string titulo, string cuerpo, string textoConMenciones)
+        {
+            if (Notificaciones == null)
+            {
+                return;
+            }
+            try
+            {
+                string supervisor = SupervisorActividad();
+                if (supervisor == null || EsElMismoUsuario(User?.Identity?.Name, supervisor))
+                {
+                    return;
+                }
+                if (!string.IsNullOrEmpty(textoConMenciones) && ReglasMenciones.Resolver(ReglasMenciones.Extraer(textoConMenciones),
+                        new List<MencionableDTO> { new MencionableDTO { Nombre = supervisor, Clave = supervisor } }, null).Any())
+                {
+                    return;
+                }
+                cuerpo = cuerpo ?? string.Empty;
+                var notificacion = new NotificacionPushDTO
+                {
+                    Titulo = titulo,
+                    Cuerpo = cuerpo.Length > 200 ? cuerpo.Substring(0, 197) + "…" : cuerpo,
+                    Tipo = TIPO_NOTIFICACION_RESPUESTA,
+                    Datos = new Dictionary<string, string>
+                    {
+                        ["tipo"] = TIPO_NOTIFICACION_RESPUESTA,
+                        ["novedadId"] = novedadId.ToString()
+                    }
+                };
+                if (comentarioId > 0)
+                {
+                    notificacion.Datos["comentarioId"] = comentarioId.ToString();
+                }
+                if (ReglasFeedbackNovedades.Cliente(User) == ReglasFeedbackNovedades.CLIENTE_NESTOAPP)
+                {
+                    _ = await Notificaciones.EnviarAUsuario(supervisor, Constantes.Aplicaciones.NESTO_APP, notificacion).ConfigureAwait(false);
+                }
+                else
+                {
+                    await Notificaciones.GuardarEnBuzonDeUsuario(DOMINIO + supervisor, Constantes.Aplicaciones.NESTO, notificacion).ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception("Novedades: no se pudo avisar de la actividad al supervisor. " + ex.Message, ex));
+            }
+        }
+
+        internal static bool EsElMismoUsuario(string nombreIdentidad, string usuario)
+            => !string.IsNullOrWhiteSpace(nombreIdentidad)
+               && string.Equals(SinDominio(nombreIdentidad), usuario, StringComparison.OrdinalIgnoreCase);
 
         /// <summary>
         /// Nesto#477: quien comentó se entera de que le hemos contestado. En Nesto (sin push) queda en

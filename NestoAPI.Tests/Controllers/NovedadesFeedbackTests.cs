@@ -6,6 +6,7 @@ using NestoAPI.Models.Novedades;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Net;
 using System.Security.Claims;
 using System.Web.Http.Results;
@@ -65,64 +66,64 @@ namespace NestoAPI.Tests.Controllers
         // ---- Votos ----
 
         [TestMethod]
-        public void PutVoto_UsaElUsuarioDelToken_YSabeQueEsDeNesto()
+        public async Task PutVoto_UsaElUsuarioDelToken_YSabeQueEsDeNesto()
         {
             ComoUsuarioDeNesto();
 
-            var resultado = controller.PutVoto(7, new VotoNovedadDTO { Voto = 1 });
+            var resultado = await controller.PutVoto(7, new VotoNovedadDTO { Voto = 1 });
 
             Assert.AreEqual(HttpStatusCode.NoContent, ((StatusCodeResult)resultado).StatusCode);
             A.CallTo(() => feedback.Votar(7, "NUEVAVISION\\Paloma", ReglasFeedbackNovedades.CLIENTE_NESTO, (short)1)).MustHaveHappenedOnceExactly();
         }
 
         [TestMethod]
-        public void PutVoto_DesdeLaApp_LaClaveEsElIdDeIdentity_NoElNombre()
+        public async Task PutVoto_DesdeLaApp_LaClaveEsElIdDeIdentity_NoElNombre()
         {
             // Pregunta de Carlos (23/09): al renovar el token el usuario es el mismo; la clave estable
             // en NestoApp es el Id de Identity, porque el UserName en teoría se puede cambiar.
             ComoVendedorDeLaApp();
 
-            _ = controller.PutVoto(7, new VotoNovedadDTO { Voto = -1 });
+            _ = await controller.PutVoto(7, new VotoNovedadDTO { Voto = -1 });
 
             A.CallTo(() => feedback.Votar(7, "5f1c-guid", ReglasFeedbackNovedades.CLIENTE_NESTOAPP, (short)-1)).MustHaveHappenedOnceExactly();
         }
 
         [TestMethod]
-        public void PutVoto_Cero_QuitaElVoto()
+        public async Task PutVoto_Cero_QuitaElVoto()
         {
             ComoUsuarioDeNesto();
 
-            _ = controller.PutVoto(7, new VotoNovedadDTO { Voto = 0 });
+            _ = await controller.PutVoto(7, new VotoNovedadDTO { Voto = 0 });
 
             A.CallTo(() => feedback.Votar(7, "NUEVAVISION\\Paloma", A<string>._, (short)0)).MustHaveHappenedOnceExactly();
         }
 
         [TestMethod]
-        public void PutVoto_ValorFueraDeRango_BadRequestYNoVota()
+        public async Task PutVoto_ValorFueraDeRango_BadRequestYNoVota()
         {
             ComoUsuarioDeNesto();
 
-            var resultado = controller.PutVoto(7, new VotoNovedadDTO { Voto = 5 });
+            var resultado = await controller.PutVoto(7, new VotoNovedadDTO { Voto = 5 });
 
             Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
             A.CallTo(() => feedback.Votar(A<int>._, A<string>._, A<string>._, A<short>._)).MustNotHaveHappened();
         }
 
         [TestMethod]
-        public void PutVoto_SinUsuarioAutenticado_Unauthorized()
+        public async Task PutVoto_SinUsuarioAutenticado_Unauthorized()
         {
             controller.User = new ClaimsPrincipal(new ClaimsIdentity());
 
-            Assert.IsInstanceOfType(controller.PutVoto(7, new VotoNovedadDTO { Voto = 1 }), typeof(UnauthorizedResult));
+            Assert.IsInstanceOfType(await controller.PutVoto(7, new VotoNovedadDTO { Voto = 1 }), typeof(UnauthorizedResult));
         }
 
         [TestMethod]
-        public void PutVoto_NovedadQueNoExiste_NotFound()
+        public async Task PutVoto_NovedadQueNoExiste_NotFound()
         {
             ComoUsuarioDeNesto();
             A.CallTo(() => feedback.ExisteNovedad(99)).Returns(false);
 
-            Assert.IsInstanceOfType(controller.PutVoto(99, new VotoNovedadDTO { Voto = 1 }), typeof(NotFoundResult));
+            Assert.IsInstanceOfType(await controller.PutVoto(99, new VotoNovedadDTO { Voto = 1 }), typeof(NotFoundResult));
         }
 
         // ---- Comentarios ----

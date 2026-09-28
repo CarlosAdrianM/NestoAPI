@@ -39,6 +39,9 @@ namespace NestoAPI.Infraestructure.Novedades
         /// <summary>NestoAPI#537: el ámbito de una novedad (Nesto, NestoAPI o NestoApp), o null.</summary>
         string LeerAmbitoNovedad(int novedadId);
 
+        /// <summary>El título de una novedad o sugerencia (para los avisos de actividad), o null.</summary>
+        string LeerTituloNovedad(int novedadId);
+
         void BorrarComentario(int comentarioId);
 
         FeedbackNovedadesDTO LeerFeedback(DateTime desde, bool soloNoRevisados);

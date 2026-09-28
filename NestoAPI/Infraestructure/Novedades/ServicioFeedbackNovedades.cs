@@ -168,6 +168,15 @@ namespace NestoAPI.Infraestructure.Novedades
             }
         }
 
+        public string LeerTituloNovedad(int novedadId)
+        {
+            using (var db = new NVEntities())
+            {
+                return db.Database.SqlQuery<string>("SELECT Titulo FROM Novedades WHERE Id = @id",
+                    new SqlParameter("@id", novedadId)).FirstOrDefault()?.Trim();
+            }
+        }
+
         public string LeerAutorComentario(int comentarioId)
         {
             using (var db = new NVEntities())
