@@ -1143,31 +1143,28 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
         }
 
         [TestMethod]
-        public async Task EnviarFacturaAVerifactu_PendientePorIncidenciaDeAyer_NoSeReenviaTodavia()
+        public async Task EnviarFacturaAVerifactu_PendientePorIncidenciaDeAyer_SeReenviaPorCreateConIncidencia()
         {
-            // Decisión de Carlos (24/09/26): la fecha de la factura NO se cambia, así que el create
-            // (que exige fecha de expedición = hoy) no vale para días anteriores; irán por PUT modify
-            // manteniendo fecha y número, PENDIENTE de que Verifacti lo confirme (correo 25/09/26).
-            // Mientras: ni create ni modify; queda marcada y visible para administración.
+            // Respuesta de Verifacti (28/09/26): el alta que no se pudo enviar va por create (nunca por
+            // modify), y su create admite la fecha de expedición del día anterior para estos casos.
+            // La fecha de la factura se mantiene (decisión de Carlos, 24/09/26).
             var factura = ConfigurarFactura();
             factura.VerifactuIncidencia = true;
             factura.Fecha = DateTime.Today.AddDays(-1);
-            factura.VerifactuUltimoError = "(TIMEOUT) Timeout al conectar con Verifacti";
+            VerifactuFacturaRequest enviado = null;
+            A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored))
+                .Invokes((VerifactuFacturaRequest r) => enviado = r)
+                .Returns(new VerifactuResponse { Exitoso = true, Uuid = "uuid-incidencia-ayer" });
             var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
 
-            VerifactuResponse respuesta = await servicio.EnviarFacturaAVerifactu("1", "NV2600123");
+            await servicio.EnviarFacturaAVerifactu("1", "NV2600123");
 
-            A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored)).MustNotHaveHappened();
+            Assert.IsNotNull(enviado, "Se reenvía por create");
+            Assert.IsTrue(enviado.Incidencia, "Con incidencia = S");
             A.CallTo(() => servicioVerifactu.ModificarFacturaAsync(A<VerifactuFacturaRequest>.Ignored, A<string>.Ignored))
                 .MustNotHaveHappened();
-            Assert.IsNotNull(respuesta);
-            Assert.IsFalse(respuesta.Exitoso);
-            Assert.AreEqual(ServicioFacturas.CODIGO_INCIDENCIA_OTRO_DIA, respuesta.CodigoError);
-            StringAssert.Contains(respuesta.MensajeError, "#522");
-            StringAssert.Contains(respuesta.MensajeError, "TIMEOUT", "El último error técnico acompaña al aviso");
-            Assert.IsNull(factura.VerifactuUUID);
-            Assert.IsTrue(factura.VerifactuIncidencia == true, "Sigue marcada");
-            Assert.AreEqual(0, registrosInsertados.Count, "No hubo intento: nada que auditar");
+            Assert.AreEqual("uuid-incidencia-ayer", factura.VerifactuUUID);
+            Assert.AreEqual(DateTime.Today.AddDays(-1), factura.Fecha, "La fecha no se toca");
         }
 
         [TestMethod]

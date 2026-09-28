@@ -187,8 +187,8 @@ namespace NestoAPI.Infraestructure.Verifactu
                     continue;
                 }
                 string textoError = $"{respuesta.CodigoError} {respuesta.MensajeError}".Trim();
-                // NestoAPI#522: pendiente por incidencia técnica de OTRO día: no se ha reenviado
-                // (a la espera de Verifacti). Va a su propio apartado del correo a administración
+                // NestoAPI#522: pendiente por incidencia técnica de ANTES DE AYER: no se puede reenviar
+                // (Verifacti solo admite el create hasta el día siguiente). Va a su propio apartado del correo a administración
                 // (una vez por factura, deduplicado) y no pasa por el circuito del NIF.
                 if (respuesta.CodigoError == Facturas.ServicioFacturas.CODIGO_INCIDENCIA_OTRO_DIA)
                 {
@@ -261,8 +261,8 @@ namespace NestoAPI.Infraestructure.Verifactu
                                 resumen.SinDeclarar.Select(System.Net.WebUtility.HtmlEncode)) + "</li></ul>"
                             : string.Empty) +
                         (resumen.PendientesPorIncidencia.Any()
-                            ? "<p><b>Pendientes por incidencia técnica de otro día (sin registrar en Verifactu; " +
-                              "NO se reenvían hasta que Verifacti confirme cómo declararlas con su fecha, #522):</b></p><ul><li>" +
+                            ? "<p><b>Pendientes por incidencia técnica de hace más de un día (sin registrar en Verifactu; " +
+                              "Verifacti solo admite reenviarlas hasta el día siguiente a su fecha: hay que revisarlas a mano, #522):</b></p><ul><li>" +
                               string.Join("</li><li>", resumen.PendientesPorIncidencia.Select(System.Net.WebUtility.HtmlEncode)) + "</li></ul>"
                             : string.Empty) +
                         "<p>Si el motivo es el NIF del cliente, la ficha ya ha quedado marcada como incorrecta: " +

@@ -848,8 +848,9 @@ namespace NestoAPI.Infraestructure.Facturas
         internal const string ERROR_FACTURA_YA_REGISTRADA = "Ya existe una factura con la misma serie";
 
         /// <summary>NestoAPI#522: código (nuestro, no del proveedor) de la respuesta que devuelve el
-        /// envío cuando una factura pendiente por incidencia es de otro día y NO se reenvía todavía
-        /// (a la espera de que Verifacti confirme el camino que respeta la fecha original).</summary>
+        /// envío cuando una factura pendiente por incidencia es anterior a ayer y NO se puede reenviar:
+        /// Verifacti solo admite el create con fecha de expedición de hoy o de ayer, y el modify no vale
+        /// para un alta que nunca llegó (respuesta de Verifacti, 28/09/26). Se revisa a mano.</summary>
         internal const string CODIGO_INCIDENCIA_OTRO_DIA = "INCIDENCIA_OTRO_DIA";
 
         // NestoAPI#385: el job horario de Verifactu y el envío al facturar corren en el MISMO
@@ -1069,22 +1070,23 @@ namespace NestoAPI.Infraestructure.Facturas
 
                 // NestoAPI#522: la factura quedó «pendiente por incidencia» (fallo TÉCNICO al
                 // enviarla: sin conexión, timeout, 5xx). La normativa exige remitirla al recuperarse
-                // marcando la incidencia (Verifacti: incidencia = "S"). El create exige que la fecha
-                // de expedición sea la del día, y la fecha de la factura NO se cambia (decisión de
-                // Carlos, 24/09/26): solo se reenvía el MISMO día. Las de días anteriores esperan a
-                // que Verifacti confirme si el PUT modify vale para un alta que nunca llegó (correo
-                // del 25/09/26): quedan marcadas y visibles en el correo del job, sin reenviar.
+                // marcando la incidencia (Verifacti: incidencia = "S"). La fecha de la factura NO se
+                // cambia (decisión de Carlos, 24/09/26). Respuesta de Verifacti (28/09/26): el alta que
+                // no se pudo enviar va SIEMPRE por create (el modify es solo para subsanar registros),
+                // y su create admite la fecha de expedición del día anterior precisamente para estos
+                // casos. Así que se reenvía la del mismo día y la de ayer; las más antiguas quedan
+                // marcadas y visibles en el correo del job para revisarlas a mano.
                 if (factura.VerifactuIncidencia == true)
                 {
                     request.Incidencia = true;
-                    if (factura.Fecha.Date != DateTime.Today)
+                    if (factura.Fecha.Date < DateTime.Today.AddDays(-1))
                     {
                         return new Verifactu.VerifactuResponse
                         {
                             Exitoso = false,
                             CodigoError = CODIGO_INCIDENCIA_OTRO_DIA,
                             MensajeError = $"Pendiente por incidencia técnica desde el {factura.Fecha:dd/MM/yyyy}: " +
-                                "no se reenvía hasta que Verifacti confirme cómo declararla manteniendo la fecha (#522). " +
+                                "Verifacti solo admite reenviarla (create) hasta el día siguiente a su fecha; hay que revisarla a mano (#522). " +
                                 $"Último error: {factura.VerifactuUltimoError?.Trim()}"
                         };
                     }
