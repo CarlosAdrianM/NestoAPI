@@ -110,21 +110,21 @@ namespace NestoAPI.Controllers
                 return BadRequest($"La familia '{dto.Familia}' no existe en la empresa '{dto.Empresa}'");
             }
 
-            // Validar que no existe ya una oferta con misma Familia + FiltroProducto
-            string filtro = dto.FiltroProducto?.Trim();
-            var duplicada = await db.OfertasPermitidas
-                .AnyAsync(o => o.Empresa == empresaPadded
-                    && o.Cliente == null
-                    && o.Número == null
-                    && o.Familia == familia
-                    && (filtro == null || filtro == ""
-                        ? (o.FiltroProducto == null || o.FiltroProducto.Trim() == "")
-                        : o.FiltroProducto == filtro))
-                .ConfigureAwait(false);
+            // NestoAPI#564: un Nesto antiguo no manda SubGrupo ni Denegar → toda la familia y autorización.
+            string subGrupo = NormalizarSubGrupo(dto.SubGrupo);
+            bool denegar = dto.Denegar ?? false;
 
-            if (duplicada)
+            var errorSubGrupo = await ValidarSubGrupo(empresaPadded, subGrupo).ConfigureAwait(false);
+            if (errorSubGrupo != null)
             {
-                return BadRequest($"Ya existe una oferta para la familia '{dto.Familia}' con el mismo filtro");
+                return BadRequest(errorSubGrupo);
+            }
+
+            // Validar que no existe ya una oferta con misma Familia + FiltroProducto + SubGrupo + Denegar
+            string filtro = dto.FiltroProducto?.Trim();
+            if (await ExisteDuplicada(empresaPadded, null, familia, filtro, subGrupo, denegar).ConfigureAwait(false))
+            {
+                return BadRequest(MensajeDuplicada(dto.Familia, denegar));
             }
 
             var oferta = new OfertaPermitida
@@ -134,7 +134,8 @@ namespace NestoAPI.Controllers
                 CantidadConPrecio = dto.CantidadConPrecio,
                 CantidadRegalo = dto.CantidadRegalo,
                 FiltroProducto = string.IsNullOrWhiteSpace(dto.FiltroProducto) ? null : dto.FiltroProducto.Trim(),
-                Denegar = false,
+                SubGrupo = subGrupo,
+                Denegar = denegar,
                 Usuario = UsuarioAuditoriaHelper.Resolver(User, usuario),
                 FechaModificación = DateTime.Now
             };
@@ -196,28 +197,31 @@ namespace NestoAPI.Controllers
                 return BadRequest($"La familia '{dto.Familia}' no existe en la empresa '{dto.Empresa}'");
             }
 
+            // NestoAPI#564: si el cliente no manda SubGrupo/Denegar (Nesto antiguo) se conserva lo
+            // que ya tenga la fila; así editar la cantidad no convierte una denegación en una
+            // autorización ni la extiende a toda la familia. SubGrupo = "" sí lo quita.
+            string subGrupo = dto.SubGrupo == null ? NormalizarSubGrupo(oferta.SubGrupo) : NormalizarSubGrupo(dto.SubGrupo);
+            bool denegar = dto.Denegar ?? oferta.Denegar;
+
+            var errorSubGrupo = await ValidarSubGrupo(empresaPadded, subGrupo).ConfigureAwait(false);
+            if (errorSubGrupo != null)
+            {
+                return BadRequest(errorSubGrupo);
+            }
+
             // Validar duplicado (excluyendo el registro actual)
             string filtro = dto.FiltroProducto?.Trim();
-            var duplicada = await db.OfertasPermitidas
-                .AnyAsync(o => o.Empresa == empresaPadded
-                    && o.NºOrden != nOrden
-                    && o.Cliente == null
-                    && o.Número == null
-                    && o.Familia == familia
-                    && (filtro == null || filtro == ""
-                        ? (o.FiltroProducto == null || o.FiltroProducto.Trim() == "")
-                        : o.FiltroProducto == filtro))
-                .ConfigureAwait(false);
-
-            if (duplicada)
+            if (await ExisteDuplicada(empresaPadded, nOrden, familia, filtro, subGrupo, denegar).ConfigureAwait(false))
             {
-                return BadRequest($"Ya existe una oferta para la familia '{dto.Familia}' con el mismo filtro");
+                return BadRequest(MensajeDuplicada(dto.Familia, denegar));
             }
 
             oferta.Familia = familia;
             oferta.CantidadConPrecio = dto.CantidadConPrecio;
             oferta.CantidadRegalo = dto.CantidadRegalo;
             oferta.FiltroProducto = string.IsNullOrWhiteSpace(dto.FiltroProducto) ? null : dto.FiltroProducto.Trim();
+            oferta.SubGrupo = subGrupo;
+            oferta.Denegar = denegar;
             oferta.Usuario = UsuarioAuditoriaHelper.Resolver(User, usuario);
             oferta.FechaModificación = DateTime.Now;
 
@@ -281,7 +285,59 @@ namespace NestoAPI.Controllers
                 return "La cantidad de regalo debe ser al menos 1";
             }
 
+            if (dto.SubGrupo != null && dto.SubGrupo.Trim().Length > 3)
+            {
+                return $"El subgrupo '{dto.SubGrupo.Trim()}' no es válido: tiene como máximo 3 caracteres";
+            }
+
             return null;
+        }
+
+        // NestoAPI#564: el subgrupo se guarda recortado y en mayúsculas; vacío = toda la familia.
+        internal static string NormalizarSubGrupo(string subGrupo)
+        {
+            return string.IsNullOrWhiteSpace(subGrupo) ? null : subGrupo.Trim().ToUpper();
+        }
+
+        // NestoAPI#564: el subgrupo tiene que existir en SubGruposProducto. Se busca en cualquier grupo
+        // porque la regla no guarda el grupo (el filtro compara solo con Productos.SubGrupo).
+        private async Task<string> ValidarSubGrupo(string empresaPadded, string subGrupo)
+        {
+            if (subGrupo == null)
+            {
+                return null;
+            }
+
+            bool existe = await db.SubGruposProductoes
+                .AnyAsync(s => s.Empresa == empresaPadded && s.Número.Trim().ToUpper() == subGrupo)
+                .ConfigureAwait(false);
+
+            return existe ? null : $"El subgrupo '{subGrupo}' no existe en la empresa '{empresaPadded.Trim()}'";
+        }
+
+        // NestoAPI#564: la autorización y la denegación de una misma familia (p. ej. Genéricos 6+1 y
+        // Genéricos + DES 6+1 Denegar) conviven, así que el duplicado compara también SubGrupo y Denegar.
+        private Task<bool> ExisteDuplicada(string empresaPadded, int? nOrdenExcluido, string familia, string filtro, string subGrupo, bool denegar)
+        {
+            return db.OfertasPermitidas
+                .AnyAsync(o => o.Empresa == empresaPadded
+                    && (nOrdenExcluido == null || o.NºOrden != nOrdenExcluido)
+                    && o.Cliente == null
+                    && o.Número == null
+                    && o.Familia == familia
+                    && (filtro == null || filtro == ""
+                        ? (o.FiltroProducto == null || o.FiltroProducto.Trim() == "")
+                        : o.FiltroProducto == filtro)
+                    && (subGrupo == null
+                        ? (o.SubGrupo == null || o.SubGrupo.Trim() == "")
+                        : (o.SubGrupo != null && o.SubGrupo.Trim() == subGrupo))
+                    && o.Denegar == denegar);
+        }
+
+        private static string MensajeDuplicada(string familia, bool denegar)
+        {
+            string tipo = denegar ? "denegación" : "oferta";
+            return $"Ya existe una {tipo} para la familia '{familia}' con el mismo filtro y subgrupo";
         }
 
         private OfertaPermitidaFamiliaDTO MapToDTO(OfertaPermitida oferta, Dictionary<string, string> familias)
@@ -301,6 +357,8 @@ namespace NestoAPI.Controllers
                 CantidadConPrecio = oferta.CantidadConPrecio,
                 CantidadRegalo = oferta.CantidadRegalo,
                 FiltroProducto = oferta.FiltroProducto?.Trim(),
+                SubGrupo = NormalizarSubGrupo(oferta.SubGrupo),
+                Denegar = oferta.Denegar,
                 Usuario = oferta.Usuario?.Trim(),
                 FechaModificacion = oferta.FechaModificación
             };

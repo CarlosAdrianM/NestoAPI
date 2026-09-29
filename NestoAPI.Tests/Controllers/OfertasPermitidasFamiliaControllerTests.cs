@@ -23,6 +23,7 @@ namespace NestoAPI.Tests.Controllers
         private OfertasPermitidasFamiliaController controller;
         private DbSet<OfertaPermitida> fakeOfertasPermitidas;
         private DbSet<Familia> fakeFamilias;
+        private DbSet<SubGruposProducto> fakeSubGrupos;
 
         [TestInitialize]
         public void Setup()
@@ -36,6 +37,14 @@ namespace NestoAPI.Tests.Controllers
 
             ConfigurarFakeDbSet(fakeOfertasPermitidas, new List<OfertaPermitida>().AsQueryable());
             ConfigurarFakeDbSet(fakeFamilias, new List<Familia>().AsQueryable());
+
+            // NestoAPI#564: subgrupos para validar el SubGrupo de la regla.
+            fakeSubGrupos = A.Fake<DbSet<SubGruposProducto>>(o => o.Implements<IQueryable<SubGruposProducto>>().Implements<IDbAsyncEnumerable<SubGruposProducto>>());
+            A.CallTo(() => db.SubGruposProductoes).Returns(fakeSubGrupos);
+            ConfigurarFakeDbSet(fakeSubGrupos, new List<SubGruposProducto>
+            {
+                new SubGruposProducto { Empresa = "1  ", Grupo = "PEL", Número = "DES", Descripción = "Desechables" }
+            }.AsQueryable());
 
             controller = new OfertasPermitidasFamiliaController(db);
         }
@@ -448,6 +457,210 @@ namespace NestoAPI.Tests.Controllers
 
             // Assert
             Assert.IsInstanceOfType(resultado, typeof(NotFoundResult));
+        }
+
+        #endregion
+
+        #region NestoAPI#564: Denegar y SubGrupo
+
+        private static readonly List<Familia> FamiliaGenericos = new List<Familia>
+        {
+            new Familia { Empresa = "1  ", Número = "Genéricos ", Descripción = "Genéricos" }
+        };
+
+        private static OfertaPermitida AutorizacionGenericos6mas1(int nOrden = 48) => new OfertaPermitida
+        {
+            NºOrden = nOrden, Empresa = "1  ", Familia = "Genéricos ",
+            CantidadConPrecio = 6, CantidadRegalo = 1, Denegar = false,
+            Cliente = null, Número = null, Usuario = "admin", FechaModificación = DateTime.Now
+        };
+
+        private static OfertaPermitida DenegacionGenericosDes6mas1(int nOrden = 900) => new OfertaPermitida
+        {
+            NºOrden = nOrden, Empresa = "1  ", Familia = "Genéricos ", SubGrupo = "DES",
+            CantidadConPrecio = 6, CantidadRegalo = 1, Denegar = true,
+            Cliente = null, Número = null, Usuario = "admin", FechaModificación = DateTime.Now
+        };
+
+        [TestMethod]
+        public async Task GetOfertasPermitidasFamilia_DevuelveDenegarYSubGrupo()
+        {
+            // La denegación no puede parecer otra «Genéricos 6+1» en la pantalla (la borrarían por duplicada).
+            ConfigurarFakeDbSet(fakeOfertasPermitidas, new List<OfertaPermitida>
+            {
+                AutorizacionGenericos6mas1(), DenegacionGenericosDes6mas1()
+            }.AsQueryable());
+            ConfigurarFakeDbSet(fakeFamilias, FamiliaGenericos.AsQueryable());
+
+            var resultado = await controller.GetOfertasPermitidasFamilia("1");
+
+            var lista = ((OkNegotiatedContentResult<List<OfertaPermitidaFamiliaDTO>>)resultado).Content;
+            Assert.AreEqual(2, lista.Count);
+            Assert.IsFalse(lista[0].Denegar);
+            Assert.IsNull(lista[0].SubGrupo);
+            Assert.IsTrue(lista[1].Denegar);
+            Assert.AreEqual("DES", lista[1].SubGrupo);
+        }
+
+        [TestMethod]
+        public async Task PostOfertaPermitidaFamilia_SinCamposNuevos_AutorizacionDeTodaLaFamilia()
+        {
+            // Compatibilidad: un Nesto antiguo no manda Denegar ni SubGrupo.
+            ConfigurarFakeDbSet(fakeFamilias, FamiliaGenericos.AsQueryable());
+            OfertaPermitida grabada = null;
+            A.CallTo(() => fakeOfertasPermitidas.Add(A<OfertaPermitida>.Ignored))
+                .Invokes((OfertaPermitida o) => grabada = o).ReturnsLazily((OfertaPermitida o) => o);
+
+            var resultado = await controller.PostOfertaPermitidaFamilia(new OfertaPermitidaFamiliaCreateDTO
+            {
+                Empresa = "1", Familia = "Genéricos", CantidadConPrecio = 6, CantidadRegalo = 1
+            }, "testuser");
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<OfertaPermitidaFamiliaDTO>));
+            Assert.IsFalse(grabada.Denegar);
+            Assert.IsNull(grabada.SubGrupo);
+        }
+
+        [TestMethod]
+        public async Task PostOfertaPermitidaFamilia_DenegacionConSubGrupo_ConviveConLaAutorizacion()
+        {
+            // Genéricos 6+1 (autorización) ya existe; la denegación Genéricos + DES 6+1 no es un duplicado.
+            ConfigurarFakeDbSet(fakeFamilias, FamiliaGenericos.AsQueryable());
+            ConfigurarFakeDbSet(fakeOfertasPermitidas, new List<OfertaPermitida> { AutorizacionGenericos6mas1() }.AsQueryable());
+            OfertaPermitida grabada = null;
+            A.CallTo(() => fakeOfertasPermitidas.Add(A<OfertaPermitida>.Ignored))
+                .Invokes((OfertaPermitida o) => grabada = o).ReturnsLazily((OfertaPermitida o) => o);
+
+            var resultado = await controller.PostOfertaPermitidaFamilia(new OfertaPermitidaFamiliaCreateDTO
+            {
+                Empresa = "1", Familia = "Genéricos", CantidadConPrecio = 6, CantidadRegalo = 1,
+                SubGrupo = " des ", Denegar = true
+            }, "testuser");
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<OfertaPermitidaFamiliaDTO>));
+            Assert.IsTrue(grabada.Denegar);
+            Assert.AreEqual("DES", grabada.SubGrupo);
+            var dto = ((OkNegotiatedContentResult<OfertaPermitidaFamiliaDTO>)resultado).Content;
+            Assert.IsTrue(dto.Denegar);
+            Assert.AreEqual("DES", dto.SubGrupo);
+        }
+
+        [TestMethod]
+        public async Task PostOfertaPermitidaFamilia_DenegacionRepetida_RetornaBadRequest()
+        {
+            ConfigurarFakeDbSet(fakeFamilias, FamiliaGenericos.AsQueryable());
+            ConfigurarFakeDbSet(fakeOfertasPermitidas, new List<OfertaPermitida> { DenegacionGenericosDes6mas1() }.AsQueryable());
+
+            var resultado = await controller.PostOfertaPermitidaFamilia(new OfertaPermitidaFamiliaCreateDTO
+            {
+                Empresa = "1", Familia = "Genéricos", CantidadConPrecio = 6, CantidadRegalo = 1,
+                SubGrupo = "DES", Denegar = true
+            }, "testuser");
+
+            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+            StringAssert.Contains(((BadRequestErrorMessageResult)resultado).Message, "Ya existe una denegación");
+        }
+
+        [TestMethod]
+        public async Task PostOfertaPermitidaFamilia_SubGrupoInexistente_RetornaBadRequest()
+        {
+            ConfigurarFakeDbSet(fakeFamilias, FamiliaGenericos.AsQueryable());
+
+            var resultado = await controller.PostOfertaPermitidaFamilia(new OfertaPermitidaFamiliaCreateDTO
+            {
+                Empresa = "1", Familia = "Genéricos", CantidadConPrecio = 6, CantidadRegalo = 1,
+                SubGrupo = "XYZ", Denegar = true
+            }, "testuser");
+
+            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+            StringAssert.Contains(((BadRequestErrorMessageResult)resultado).Message, "El subgrupo 'XYZ' no existe");
+            A.CallTo(() => fakeOfertasPermitidas.Add(A<OfertaPermitida>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task PostOfertaPermitidaFamilia_SubGrupoDemasiadoLargo_RetornaBadRequest()
+        {
+            var resultado = await controller.PostOfertaPermitidaFamilia(new OfertaPermitidaFamiliaCreateDTO
+            {
+                Empresa = "1", Familia = "Genéricos", CantidadConPrecio = 6, CantidadRegalo = 1,
+                SubGrupo = "DESE"
+            }, "testuser");
+
+            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+            StringAssert.Contains(((BadRequestErrorMessageResult)resultado).Message, "máximo 3 caracteres");
+        }
+
+        [TestMethod]
+        public async Task PutOfertaPermitidaFamilia_EditarAutorizacionConDenegacionDeLaMismaFamilia_NoEsDuplicada()
+        {
+            // El fallo de #564: editar la regla 48 (Genéricos 6+1) daba «ya existe» por culpa de la denegación.
+            var autorizacion = AutorizacionGenericos6mas1();
+            ConfigurarFakeDbSet(fakeOfertasPermitidas, new List<OfertaPermitida> { autorizacion, DenegacionGenericosDes6mas1() }.AsQueryable());
+            ConfigurarFakeDbSet(fakeFamilias, FamiliaGenericos.AsQueryable());
+
+            var resultado = await controller.PutOfertaPermitidaFamilia(48, new OfertaPermitidaFamiliaCreateDTO
+            {
+                Empresa = "1", Familia = "Genéricos", CantidadConPrecio = 12, CantidadRegalo = 2,
+                SubGrupo = "", Denegar = false
+            }, "testuser");
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<OfertaPermitidaFamiliaDTO>));
+            Assert.AreEqual(12, autorizacion.CantidadConPrecio);
+            Assert.IsFalse(autorizacion.Denegar);
+            Assert.IsNull(autorizacion.SubGrupo);
+        }
+
+        [TestMethod]
+        public async Task PutOfertaPermitidaFamilia_ClienteAntiguoSinCamposNuevos_ConservaDenegarYSubGrupo()
+        {
+            // Un Nesto antiguo que edita la denegación no manda Denegar ni SubGrupo: no se pueden borrar.
+            var denegacion = DenegacionGenericosDes6mas1();
+            ConfigurarFakeDbSet(fakeOfertasPermitidas, new List<OfertaPermitida> { AutorizacionGenericos6mas1(), denegacion }.AsQueryable());
+            ConfigurarFakeDbSet(fakeFamilias, FamiliaGenericos.AsQueryable());
+
+            var resultado = await controller.PutOfertaPermitidaFamilia(900, new OfertaPermitidaFamiliaCreateDTO
+            {
+                Empresa = "1", Familia = "Genéricos", CantidadConPrecio = 6, CantidadRegalo = 1
+            }, "testuser");
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<OfertaPermitidaFamiliaDTO>));
+            Assert.IsTrue(denegacion.Denegar);
+            Assert.AreEqual("DES", denegacion.SubGrupo);
+        }
+
+        [TestMethod]
+        public async Task PutOfertaPermitidaFamilia_SubGrupoVacio_QuitaElSubGrupo()
+        {
+            var denegacion = DenegacionGenericosDes6mas1();
+            ConfigurarFakeDbSet(fakeOfertasPermitidas, new List<OfertaPermitida> { denegacion }.AsQueryable());
+            ConfigurarFakeDbSet(fakeFamilias, FamiliaGenericos.AsQueryable());
+
+            var resultado = await controller.PutOfertaPermitidaFamilia(900, new OfertaPermitidaFamiliaCreateDTO
+            {
+                Empresa = "1", Familia = "Genéricos", CantidadConPrecio = 6, CantidadRegalo = 1,
+                SubGrupo = "", Denegar = true
+            }, "testuser");
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<OfertaPermitidaFamiliaDTO>));
+            Assert.IsNull(denegacion.SubGrupo);
+            Assert.IsTrue(denegacion.Denegar);
+        }
+
+        [TestMethod]
+        public async Task PutOfertaPermitidaFamilia_ConvertirEnDenegacionYaExistente_RetornaBadRequest()
+        {
+            // Pasar la autorización a denegación de DES chocaría con la denegación que ya hay.
+            ConfigurarFakeDbSet(fakeOfertasPermitidas, new List<OfertaPermitida> { AutorizacionGenericos6mas1(), DenegacionGenericosDes6mas1() }.AsQueryable());
+            ConfigurarFakeDbSet(fakeFamilias, FamiliaGenericos.AsQueryable());
+
+            var resultado = await controller.PutOfertaPermitidaFamilia(48, new OfertaPermitidaFamiliaCreateDTO
+            {
+                Empresa = "1", Familia = "Genéricos", CantidadConPrecio = 6, CantidadRegalo = 1,
+                SubGrupo = "DES", Denegar = true
+            }, "testuser");
+
+            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+            StringAssert.Contains(((BadRequestErrorMessageResult)resultado).Message, "Ya existe una denegación");
         }
 
         #endregion
