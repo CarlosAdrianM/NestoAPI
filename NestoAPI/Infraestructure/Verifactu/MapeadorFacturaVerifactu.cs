@@ -37,16 +37,26 @@ namespace NestoAPI.Infraestructure.Verifactu
             // NIF ficticio hacía que la AEAT las rechazara (26 rechazos en las primeras horas de
             // la fase en sombra).
             bool esSimplificada = EsFacturaSimplificada(factura);
+            // NestoAPI#392: factura COMPLETA con un NIF que no se puede conseguir, marcada a mano por
+            // administración para declararse como simplificada (F2, sin destinatario). Sus rectificativas
+            // heredan la marca (de la propia columna o de la factura rectificada) y van como R5.
+            bool declaradaSimplificadaPorMarca = SeDeclaraSimplificadaPorMarca(factura, facturasRectificadas);
+            string tipoFactura = esSimplificada
+                ? TIPO_FACTURA_SIMPLIFICADA
+                : declaradaSimplificadaPorMarca
+                    ? (serie.EsRectificativa ? TIPO_RECTIFICATIVA_SIMPLIFICADA : TIPO_FACTURA_SIMPLIFICADA)
+                    : TipoFactura(serie, factura);
+            bool sinDestinatario = esSimplificada || declaradaSimplificadaPorMarca;
 
             var request = new VerifactuFacturaRequest
             {
                 Serie = factura.Serie?.Trim(),
                 Numero = NumeroSinSerie(factura.Número, factura.Serie),
                 FechaExpedicion = factura.Fecha,
-                TipoFactura = esSimplificada ? TIPO_FACTURA_SIMPLIFICADA : TipoFactura(serie, factura),
+                TipoFactura = tipoFactura,
                 Descripcion = serie.DescripcionVerifactu,
-                NifDestinatario = esSimplificada ? null : factura.CifNif?.Trim(),
-                NombreDestinatario = esSimplificada ? null : factura.NombreFiscal?.Trim()
+                NifDestinatario = sinDestinatario ? null : factura.CifNif?.Trim(),
+                NombreDestinatario = sinDestinatario ? null : factura.NombreFiscal?.Trim()
             };
 
             // Issue #36: nuestras rectificativas son abonos con los importes en negativo, que en
@@ -152,6 +162,21 @@ namespace NestoAPI.Infraestructure.Verifactu
 
         /// <summary>Tipo AEAT de la factura simplificada / sin identificación del destinatario.</summary>
         internal const string TIPO_FACTURA_SIMPLIFICADA = "F2";
+
+        /// <summary>NestoAPI#392: tipo AEAT de la rectificativa de una factura simplificada (sin destinatario).</summary>
+        internal const string TIPO_RECTIFICATIVA_SIMPLIFICADA = "R5";
+
+        /// <summary>
+        /// NestoAPI#392: ¿se declara como simplificada por la marca manual (VerifactuDeclararSimplificada)?
+        /// Vale la marca de la propia factura o, en una rectificativa, la de cualquiera de las facturas que
+        /// rectifica (la hereda aunque la rectificativa se haya creado después de marcar la original).
+        /// </summary>
+        internal static bool SeDeclaraSimplificadaPorMarca(CabFacturaVta factura,
+            System.Collections.Generic.IEnumerable<VerifactuFacturaRectificada> facturasRectificadas = null)
+        {
+            return factura?.VerifactuDeclararSimplificada == true
+                || facturasRectificadas?.Any(r => r.DeclaradaSimplificada) == true;
+        }
 
         /// <summary>
         /// Límite legal de importe de una factura simplificada (art. 4 RD 1619/2012). Por encima,

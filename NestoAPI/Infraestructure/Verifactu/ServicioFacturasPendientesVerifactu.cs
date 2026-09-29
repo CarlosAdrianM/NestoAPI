@@ -15,6 +15,13 @@ namespace NestoAPI.Infraestructure.Verifactu
 
         /// <summary>Vuelve a enviar la factura a Verifactu (alta o subsanación, según esté). Null si no existe.</summary>
         Task<ResultadoReintentoVerifactuDTO> Reintentar(string empresa, string numeroFactura);
+
+        /// <summary>
+        /// NestoAPI#392: marca una factura completa cuyo NIF no se puede conseguir para declararla como
+        /// simplificada (F2; sus rectificativas, R5). Null si no existe; Exitoso = false si no se puede
+        /// (supera el límite legal, es rectificativa, ya está registrada...).
+        /// </summary>
+        Task<ResultadoReintentoVerifactuDTO> DeclararSimplificada(string empresa, string numeroFactura, string motivo, string usuario);
     }
 
     /// <summary>
@@ -194,7 +201,10 @@ namespace NestoAPI.Infraestructure.Verifactu
                 Motivo = factura.VerifactuUltimoError?.Trim(),
                 QueHacer = QueHacer(situacion),
                 UltimoIntento = factura.VerifactuUltimoIntento,
-                PuedeReintentar = situacion != SITUACION_SIN_DATOS_FISCALES && situacion != SITUACION_INCIDENCIA_ANTIGUA
+                PuedeReintentar = situacion != SITUACION_SIN_DATOS_FISCALES && situacion != SITUACION_INCIDENCIA_ANTIGUA,
+                // NestoAPI#392
+                DeclararSimplificada = factura.VerifactuDeclararSimplificada == true,
+                PuedeDeclararSimplificada = TieneProblemaDeNif(factura) && MotivoParaNoDeclararSimplificada(factura, "-") == null
             };
         }
 
@@ -237,6 +247,155 @@ namespace NestoAPI.Infraestructure.Verifactu
                 default:
                     return "Todavía no se ha enviado. Se envía sola cada hora; podéis pulsar Reintentar para no esperar.";
             }
+        }
+
+        /// <summary>
+        /// NestoAPI#392: salida legal para una factura COMPLETA emitida con un NIF que no se puede conseguir
+        /// (caso 9093, NIF de relleno). No se puede dejar sin declarar (huecos en la serie y en el encadenamiento),
+        /// así que se declara como SIMPLIFICADA: F2 sin destinatario, y sus rectificativas como R5. Solo si el
+        /// importe cabe en una simplificada (400 €, art. 4 RD 1619/2012, #325); por encima no hay salida sin el NIF.
+        /// Deja la factura (y sus rectificativas) lista para enviar: la manda el job en su siguiente pasada o el
+        /// botón «Reintentar». El motivo queda auditado en Modificaciones (la tabla de auditoría de los cambios en
+        /// datos fiscales de CabFacturaVta, #330), con quién lo hizo y el error que tenía la factura.
+        /// </summary>
+        public async Task<ResultadoReintentoVerifactuDTO> DeclararSimplificada(string empresa, string numeroFactura, string motivo, string usuario)
+        {
+            string numero = numeroFactura?.Trim();
+            string codigoEmpresa = empresa?.Trim();
+            string motivoLimpio = motivo?.Trim();
+            CabFacturaVta factura = await db.CabsFacturasVtas
+                .Include(f => f.LinPedidoVtas)
+                .FirstOrDefaultAsync(f => f.Empresa == codigoEmpresa && f.Número == numero).ConfigureAwait(false);
+            if (factura == null)
+            {
+                return null;
+            }
+
+            string noSePuede = MotivoParaNoDeclararSimplificada(factura, motivoLimpio);
+            if (noSePuede != null)
+            {
+                return new ResultadoReintentoVerifactuDTO { Exitoso = false, Mensaje = noSePuede, Factura = Mapear(factura, null) };
+            }
+
+            // El mismo importe que se declararía (y que vigila el aviso de #325 en ServicioFacturas)
+            decimal importe = Math.Abs(MapeadorFacturaVerifactu.Mapear(factura).ImporteTotal);
+            if (importe > MapeadorFacturaVerifactu.LIMITE_FACTURA_SIMPLIFICADA)
+            {
+                return new ResultadoReintentoVerifactuDTO
+                {
+                    Exitoso = false,
+                    Mensaje = $"La factura {numero} es de {importe:C} y una factura simplificada no puede pasar de " +
+                        $"{MapeadorFacturaVerifactu.LIMITE_FACTURA_SIMPLIFICADA:C} (art. 4 RD 1619/2012). " +
+                        "No hay salida sin el NIF: hay que conseguir el NIF real del cliente y corregirlo en la ventana «NIF incorrectos».",
+                    Factura = Mapear(factura, null)
+                };
+            }
+
+            string antes = $"Factura {numero} CifNif={factura.CifNif?.Trim()} NombreFiscal={factura.NombreFiscal?.Trim()} " +
+                $"VerifactuEstado={factura.VerifactuEstado?.Trim()} VerifactuUltimoError={factura.VerifactuUltimoError?.Trim()}";
+            MarcarParaDeclararSimplificada(factura);
+
+            // Las rectificativas ya emitidas heredan la marca y salen también de la exclusión (se declaran R5).
+            // Las que se emitan después la heredan al enviarlas (ServicioFacturas.CargarFacturasRectificadas).
+            List<string> numerosRectificativas = await db.LinFacturaVtaRectificaciones
+                .Where(r => r.Empresa == codigoEmpresa && r.FacturaOriginalNumero.Trim() == numero)
+                .Select(r => r.NumeroFactura)
+                .Distinct()
+                .ToListAsync().ConfigureAwait(false);
+            var heredan = new List<string>();
+            foreach (string numeroRectificativa in numerosRectificativas
+                .Select(n => n?.Trim()).Where(n => !string.IsNullOrEmpty(n)).Distinct())
+            {
+                CabFacturaVta rectificativa = await db.CabsFacturasVtas
+                    .FirstOrDefaultAsync(f => f.Empresa == codigoEmpresa && f.Número.Trim() == numeroRectificativa).ConfigureAwait(false);
+                if (rectificativa == null || EstaRegistrada(rectificativa))
+                {
+                    continue;
+                }
+                MarcarParaDeclararSimplificada(rectificativa);
+                heredan.Add(numeroRectificativa);
+            }
+
+            string usuarioAuditoria = UsuarioAuditoriaHelper.ParaAuditoria(usuario);
+            // Modificaciones.Usuario es Computed en el EDMX (lo rellena suser_sname()): el usuario real va en el texto.
+            _ = db.Modificaciones.Add(new Modificacion
+            {
+                Tabla = "CabFacturaVta",
+                Anterior = antes,
+                Nuevo = "Se declara a Verifactu como SIMPLIFICADA (F2, sin destinatario) por NIF inconseguible (#392). " +
+                    $"Usuario: {usuarioAuditoria}. Motivo: {motivoLimpio}" +
+                    (heredan.Any() ? $". Rectificativas que heredan la marca (R5): {string.Join(", ", heredan)}" : string.Empty),
+                Usuario = usuarioAuditoria
+            });
+            _ = await db.SaveChangesAsync().ConfigureAwait(false);
+
+            return new ResultadoReintentoVerifactuDTO
+            {
+                Exitoso = true,
+                Mensaje = $"La factura {numero} se declarará como simplificada (F2, sin destinatario)" +
+                    (heredan.Any() ? $" y su rectificativa {string.Join(", ", heredan)} como R5" : string.Empty) +
+                    ". Se envía sola en menos de una hora; podéis pulsar Reintentar para no esperar.",
+                Factura = Mapear(factura, null)
+            };
+        }
+
+        /// <summary>NestoAPI#392: por qué no se puede declarar como simplificada (null si se puede).</summary>
+        internal static string MotivoParaNoDeclararSimplificada(CabFacturaVta factura, string motivo)
+        {
+            string numero = factura.Número?.Trim();
+            if (string.IsNullOrWhiteSpace(motivo))
+            {
+                return "Hay que indicar el motivo por el que se declara como simplificada (queda registrado).";
+            }
+            if (!RegistroSeriesVerifactu.TramitaVerifactu(factura.Serie))
+            {
+                return $"La factura {numero} es de la serie {factura.Serie?.Trim()}, que no se declara a Verifactu.";
+            }
+            if (RegistroSeriesVerifactu.EsSerieRectificativa(factura.Serie))
+            {
+                return $"La factura {numero} es una rectificativa: hay que marcar la factura que rectifica; " +
+                    "la rectificativa hereda la marca y se declara como R5.";
+            }
+            if (MapeadorFacturaVerifactu.EsFacturaSimplificada(factura) || factura.VerifactuDeclararSimplificada == true)
+            {
+                return $"La factura {numero} ya se declara como simplificada.";
+            }
+            if (EstaRegistrada(factura))
+            {
+                return $"La factura {numero} ya está registrada en Verifactu (estado {factura.VerifactuEstado?.Trim()}): " +
+                    "ya no se puede cambiar su tipo.";
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// NestoAPI#392: pone la marca y la saca de la exclusión del job (el NIF sin formato válido la dejaba
+        /// como «sin datos fiscales», #391): como F2/R5 no lleva destinatario, ya se puede declarar.
+        /// </summary>
+        private static void MarcarParaDeclararSimplificada(CabFacturaVta factura)
+        {
+            factura.VerifactuDeclararSimplificada = true;
+            if (TieneRegistro(factura))
+            {
+                return; // incorrecta en la AEAT: «Reintentar» la manda como subsanación, ya como simplificada
+            }
+            if (factura.VerifactuEstado?.Trim() == VerifactuJobsService.ESTADO_SIN_DATOS_FISCALES)
+            {
+                factura.VerifactuEstado = null;
+            }
+            factura.VerifactuUltimoError = null; // el error del NIF ya no aplica (queda en Modificaciones)
+        }
+
+        /// <summary>
+        /// NestoAPI#392: ¿el problema de la factura es el NIF del destinatario? Solo entonces tiene sentido
+        /// ofrecer «Declarar como simplificada»: NIF sin formato válido (#391, excluida del job) o rechazo por
+        /// NIF de Verifacti o de la AEAT (con cualquier redacción: «no se encuentra registrado», «no está
+        /// identificado», «formato»...). Es solo para enseñar el botón: el endpoint valida el resto.
+        /// </summary>
+        internal static bool TieneProblemaDeNif(CabFacturaVta factura)
+        {
+            string error = factura.VerifactuUltimoError;
+            return error != null && error.IndexOf("NIF", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private async Task<VerifactuResponse> ReenviarConServicioFacturas(CabFacturaVta factura)

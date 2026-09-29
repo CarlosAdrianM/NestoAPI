@@ -158,5 +158,12 @@ namespace NestoAPI.Infraestructure.Verifactu
         /// Fecha de expedición de la factura original
         /// </summary>
         public DateTime FechaExpedicion { get; set; }
+
+        /// <summary>
+        /// NestoAPI#392: la factura original está marcada para declararse como simplificada (F2): la
+        /// rectificativa hereda la marca y va como R5 sin destinatario. Solo para el mapeador; no viaja
+        /// al proveedor.
+        /// </summary>
+        public bool DeclaradaSimplificada { get; set; }
     }
 }

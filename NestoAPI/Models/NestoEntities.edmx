@@ -196,6 +196,7 @@
           <Property Name="VerifactuUltimoIntento" Type="datetime" />
           <Property Name="VerifactuIncidencia" Type="bit" />
           <Property Name="VerifactuEnviadaProvisional" Type="bit" />
+          <Property Name="VerifactuDeclararSimplificada" Type="bit" />
         </EntityType>
         <EntityType Name="CabPedidoCmp">
           <Key>
@@ -11923,6 +11924,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="VerifactuUltimoIntento" Type="DateTime" Precision="3" />
           <Property Name="VerifactuIncidencia" Type="Boolean" />
           <Property Name="VerifactuEnviadaProvisional" Type="Boolean" />
+          <Property Name="VerifactuDeclararSimplificada" Type="Boolean" />
         </EntityType>
         <Association Name="FK_CabFacturaVta_CCC">
           <End Type="NVModel.CCC" Role="CCC" Multiplicity="0..1" />
@@ -15548,6 +15550,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySetMapping Name="CabsFacturasVtas">
             <EntityTypeMapping TypeName="NVModel.CabFacturaVta">
               <MappingFragment StoreEntitySet="CabFacturaVta">
+                <ScalarProperty Name="VerifactuDeclararSimplificada" ColumnName="VerifactuDeclararSimplificada" />
                 <ScalarProperty Name="VerifactuEnviadaProvisional" ColumnName="VerifactuEnviadaProvisional" />
                 <ScalarProperty Name="VerifactuIncidencia" ColumnName="VerifactuIncidencia" />
                 <ScalarProperty Name="VerifactuUltimoIntento" ColumnName="VerifactuUltimoIntento" />

@@ -367,5 +367,84 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
         }
 
         #endregion
+
+        #region Declarar como simplificada por NIF inconseguible (#392)
+
+        [TestMethod]
+        public void Mapear_FacturaCompletaMarcadaComoSimplificada_EsF2SinDestinatario()
+        {
+            var factura = CrearFacturaNV();
+            factura.CifNif = "1000000"; // NIF de relleno (caso 9093)
+            factura.VerifactuDeclararSimplificada = true;
+
+            VerifactuFacturaRequest request = MapeadorFacturaVerifactu.Mapear(factura);
+
+            Assert.AreEqual("F2", request.TipoFactura);
+            Assert.IsNull(request.NifDestinatario);
+            Assert.IsNull(request.NombreDestinatario);
+            Assert.AreEqual(121.00M, request.ImporteTotal);
+        }
+
+        [TestMethod]
+        public void Mapear_FacturaConMarcaAFalse_SigueSiendoF1ConDestinatario()
+        {
+            var factura = CrearFacturaNV();
+            factura.VerifactuDeclararSimplificada = false;
+
+            VerifactuFacturaRequest request = MapeadorFacturaVerifactu.Mapear(factura);
+
+            Assert.AreEqual("F1", request.TipoFactura);
+            Assert.AreEqual("12345678Z", request.NifDestinatario);
+        }
+
+        [TestMethod]
+        public void Mapear_RectificativaDeUnaFacturaMarcada_HeredaLaMarcaYEsR5SinDestinatario()
+        {
+            // La rectificativa NO tiene la marca en su columna: la hereda de la factura que rectifica
+            var rectificativa = CrearRectificativaRV();
+            var rectificadas = new List<VerifactuFacturaRectificada>
+            {
+                new VerifactuFacturaRectificada { Serie = "NV", Numero = "2600123", FechaExpedicion = new DateTime(2026, 6, 1), DeclaradaSimplificada = true }
+            };
+
+            VerifactuFacturaRequest request = MapeadorFacturaVerifactu.Mapear(rectificativa, rectificadas);
+
+            Assert.AreEqual("R5", request.TipoFactura);
+            Assert.AreEqual("I", request.TipoRectificacion);
+            Assert.IsNull(request.NifDestinatario);
+            Assert.IsNull(request.NombreDestinatario);
+            Assert.AreEqual(1, request.FacturasRectificadas.Count);
+            Assert.AreEqual(-121.00M, request.ImporteTotal);
+        }
+
+        [TestMethod]
+        public void Mapear_RectificativaConLaMarcaEnSuColumna_EsR5AunqueTengaTipoPersistido()
+        {
+            var rectificativa = CrearRectificativaRV();
+            rectificativa.TipoRectificativa = "R1";
+            rectificativa.VerifactuDeclararSimplificada = true;
+
+            VerifactuFacturaRequest request = MapeadorFacturaVerifactu.Mapear(rectificativa, new List<VerifactuFacturaRectificada>());
+
+            Assert.AreEqual("R5", request.TipoFactura);
+            Assert.IsNull(request.NifDestinatario);
+        }
+
+        [TestMethod]
+        public void Mapear_RectificativaDeUnaFacturaSinMarca_SigueSiendoR1ConDestinatario()
+        {
+            var rectificativa = CrearRectificativaRV();
+            var rectificadas = new List<VerifactuFacturaRectificada>
+            {
+                new VerifactuFacturaRectificada { Serie = "NV", Numero = "2600123", FechaExpedicion = new DateTime(2026, 6, 1) }
+            };
+
+            VerifactuFacturaRequest request = MapeadorFacturaVerifactu.Mapear(rectificativa, rectificadas);
+
+            Assert.AreEqual("R1", request.TipoFactura);
+            Assert.AreEqual("12345678Z", request.NifDestinatario);
+        }
+
+        #endregion
     }
 }

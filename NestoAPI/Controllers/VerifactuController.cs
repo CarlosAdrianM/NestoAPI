@@ -63,6 +63,51 @@ namespace NestoAPI.Controllers
             return Ok(resultado);
         }
 
+        /// <summary>
+        /// NestoAPI#392: POST api/Verifactu/DeclararSimplificada  { "Empresa": "1", "Numero": "NV2615864", "Motivo": "..." }
+        /// Declara como simplificada (F2; sus rectificativas R5) una factura completa cuyo NIF no se puede conseguir.
+        /// Solo Administración y Dirección, con motivo obligatorio. 400 si no se puede (p. ej. supera el límite legal).
+        /// </summary>
+        [HttpPost]
+        [Route("DeclararSimplificada")]
+        [Authorize]
+        [ResponseType(typeof(ResultadoReintentoVerifactuDTO))]
+        public async Task<IHttpActionResult> DeclararSimplificada([FromBody] DeclararSimplificadaVerifactuDTO dto)
+        {
+            if (!PuedeDeclararSimplificada(User))
+            {
+                return StatusCode(HttpStatusCode.Forbidden);
+            }
+            if (string.IsNullOrWhiteSpace(dto?.Empresa) || string.IsNullOrWhiteSpace(dto.Numero))
+            {
+                return BadRequest("Faltan la empresa y el número de la factura");
+            }
+            if (string.IsNullOrWhiteSpace(dto.Motivo))
+            {
+                return BadRequest("Hay que indicar el motivo por el que se declara como simplificada (queda registrado).");
+            }
+            string usuario = Infraestructure.UsuarioAuditoriaHelper.Resolver(User, null);
+            ResultadoReintentoVerifactuDTO resultado = await servicio
+                .DeclararSimplificada(dto.Empresa, dto.Numero, dto.Motivo, usuario).ConfigureAwait(false);
+            if (resultado == null)
+            {
+                return NotFound();
+            }
+            if (!resultado.Exitoso)
+            {
+                return BadRequest(resultado.Mensaje);
+            }
+            return Ok(resultado);
+        }
+
+        /// <summary>NestoAPI#392: decisión de Carlos (29/09/26): solo Administración y Dirección.</summary>
+        internal static bool PuedeDeclararSimplificada(IPrincipal usuario)
+        {
+            return usuario != null
+                && (usuario.IsInRoleSinDominio(GruposSeguridad.ADMINISTRACION)
+                    || usuario.IsInRoleSinDominio(GruposSeguridad.DIRECCION));
+        }
+
         internal static bool PuedeGestionar(IPrincipal usuario)
         {
             return usuario != null

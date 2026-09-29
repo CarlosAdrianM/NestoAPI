@@ -159,6 +159,21 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
         }
 
         [TestMethod]
+        public async Task Reintentar_MarcadaParaDeclararSimplificadaSinNombreFiscal_SiSeReintenta()
+        {
+            // NestoAPI#392: la marca manual la declara como F2 sin destinatario: tampoco necesita datos fiscales
+            var factura = Factura("NV2612501", nombreFiscal: null, fecha: new DateTime(2026, 7, 21));
+            factura.VerifactuDeclararSimplificada = true;
+            ConFacturas(factura);
+
+            var resumen = new ResumenJobVerifactu();
+            await job.ReintentarNoDeclaradas(resumen);
+
+            Assert.AreEqual(1, reenviadas.Count);
+            Assert.AreNotEqual(VerifactuJobsService.ESTADO_SIN_DATOS_FISCALES, factura.VerifactuEstado);
+        }
+
+        [TestMethod]
         public async Task Reintentar_MismoErrorEnDosPasadas_SoloLaPrimeraVaAlResumen()
         {
             // NestoAPI#346: una factura atascada falla idéntico en cada pasada horaria; el correo

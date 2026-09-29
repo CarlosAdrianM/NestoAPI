@@ -173,7 +173,8 @@ namespace NestoAPI.Infraestructure.Verifactu
                 // obligatorio"). Las simplificadas (F2, sin destinatario) sí pueden declararse.
                 // Se marca el estado para que la query las excluya en adelante (aviso único).
                 if (string.IsNullOrWhiteSpace(factura.NombreFiscal)
-                    && !MapeadorFacturaVerifactu.EsFacturaSimplificada(factura))
+                    && !MapeadorFacturaVerifactu.EsFacturaSimplificada(factura)
+                    && !MapeadorFacturaVerifactu.SeDeclaraSimplificadaPorMarca(factura)) // #392: F2 sin destinatario
                 {
                     factura.VerifactuEstado = ESTADO_SIN_DATOS_FISCALES;
                     factura.VerifactuUltimoError = "Factura de camino externo a la API (#348) sin datos " +

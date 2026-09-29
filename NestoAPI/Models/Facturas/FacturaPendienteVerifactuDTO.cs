@@ -27,6 +27,22 @@ namespace NestoAPI.Models.Facturas
         public DateTime? UltimoIntento { get; set; }
         /// <summary>Si tiene sentido pulsar «Reintentar» (no, si no hay camino para declararla desde aquí).</summary>
         public bool PuedeReintentar { get; set; }
+        /// <summary>NestoAPI#392: está marcada para declararse como simplificada (F2; si es rectificativa, R5).</summary>
+        public bool DeclararSimplificada { get; set; }
+        /// <summary>
+        /// NestoAPI#392: si tiene sentido ofrecer «Declarar como simplificada»: el problema es el NIF del
+        /// destinatario y no es rectificativa ni está ya registrada o marcada. El límite de importe lo valida el endpoint.
+        /// </summary>
+        public bool PuedeDeclararSimplificada { get; set; }
+    }
+
+    /// <summary>NestoAPI#392: cuerpo de POST api/Verifactu/DeclararSimplificada.</summary>
+    public class DeclararSimplificadaVerifactuDTO
+    {
+        public string Empresa { get; set; }
+        public string Numero { get; set; }
+        /// <summary>Obligatorio: por qué no se puede conseguir el NIF (queda en la tabla Modificaciones).</summary>
+        public string Motivo { get; set; }
     }
 
     /// <summary>NestoAPI#522: resultado de reintentar el envío a Verifactu desde la ventana de administración.</summary>

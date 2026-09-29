@@ -360,5 +360,239 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
         }
 
         #endregion
+
+        #region Declarar como simplificada por NIF inconseguible (#392)
+
+        private const string ERROR_NIF_RELLENO = "Marcada como NO CENSADO (07) pero el NIF '1000000' no tiene un formato válido " +
+            "de NIF: la AEAT lo rechaza. Conseguir el NIF real del cliente y corregirlo (la reabre). Excluida de los reintentos.";
+
+        private List<Modificacion> modificaciones;
+
+        private void ConFacturasYRectificaciones(IEnumerable<CabFacturaVta> facturas, params LinFacturaVtaRectificacion[] vinculaciones)
+        {
+            ConFacturas(facturas.ToArray());
+            // Include(...) sobre el fake: que devuelva el mismo DbSet para que la consulta funcione
+            A.CallTo(() => ((DbQuery<CabFacturaVta>)fakeFacturas).Include(A<string>._)).Returns(fakeFacturas);
+            var fakeVinculaciones = A.Fake<DbSet<LinFacturaVtaRectificacion>>(o => o.Implements<IQueryable<LinFacturaVtaRectificacion>>()
+                .Implements<IDbAsyncEnumerable<LinFacturaVtaRectificacion>>());
+            ConfigurarFakeDbSet(fakeVinculaciones, vinculaciones.AsQueryable());
+            A.CallTo(() => db.LinFacturaVtaRectificaciones).Returns(fakeVinculaciones);
+            modificaciones = new List<Modificacion>();
+            var fakeModificaciones = A.Fake<DbSet<Modificacion>>();
+            A.CallTo(() => fakeModificaciones.Add(A<Modificacion>._)).ReturnsLazily((Modificacion m) => { modificaciones.Add(m); return m; });
+            A.CallTo(() => db.Modificaciones).Returns(fakeModificaciones);
+        }
+
+        private static CabFacturaVta ConImporte(CabFacturaVta factura, decimal baseImponible)
+        {
+            factura.CifNif = "1000000";
+            factura.LinPedidoVtas = new List<LinPedidoVta>
+            {
+                new LinPedidoVta { PorcentajeIVA = 21, PorcentajeRE = 0, Base_Imponible = baseImponible, ImporteIVA = baseImponible * 0.21M }
+            };
+            return factura;
+        }
+
+        [TestMethod]
+        public async Task DeclararSimplificada_FacturaExcluidaPorNifDentroDelLimite_LaMarcaLaReabreYAudita()
+        {
+            CabFacturaVta factura = ConImporte(Factura("NV2615001", estado: VerifactuJobsService.ESTADO_SIN_DATOS_FISCALES, error: ERROR_NIF_RELLENO), 300M);
+            ConFacturasYRectificaciones(new[] { factura });
+
+            ResultadoReintentoVerifactuDTO resultado = await servicio.DeclararSimplificada("1", "NV2615001", "Cliente de paso, no da el DNI", "NUEVAVISION\\Laura");
+
+            Assert.IsTrue(resultado.Exitoso, resultado.Mensaje);
+            Assert.IsTrue(factura.VerifactuDeclararSimplificada == true);
+            Assert.IsNull(factura.VerifactuEstado, "Sale de la exclusión del job: ya se puede declarar");
+            Assert.IsNull(factura.VerifactuUltimoError);
+            Assert.AreEqual(ServicioFacturasPendientesVerifactu.SITUACION_PENDIENTE, resultado.Factura.Situacion);
+            Assert.IsTrue(resultado.Factura.DeclararSimplificada);
+            Assert.AreEqual(0, reenviadas.Count, "No se envía aquí: la manda el job o el botón Reintentar");
+            Modificacion auditoria = modificaciones.Single();
+            Assert.AreEqual("CabFacturaVta", auditoria.Tabla);
+            StringAssert.Contains(auditoria.Nuevo, "Cliente de paso, no da el DNI");
+            StringAssert.Contains(auditoria.Nuevo, "NUEVAVISION\\Laura");
+            StringAssert.Contains(auditoria.Anterior, "1000000");
+            StringAssert.Contains(auditoria.Anterior, "no tiene un formato válido");
+            A.CallTo(() => db.SaveChangesAsync()).MustHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task DeclararSimplificada_PorEncimaDelLimiteLegal_NoLaMarcaYDiceQueHayQueConseguirElNif()
+        {
+            // 400 € de base + IVA = 484 €: no cabe en una simplificada (límite 400 €, #325)
+            CabFacturaVta factura = ConImporte(Factura("NV2615001", estado: VerifactuJobsService.ESTADO_SIN_DATOS_FISCALES, error: ERROR_NIF_RELLENO), 400M);
+            ConFacturasYRectificaciones(new[] { factura });
+
+            ResultadoReintentoVerifactuDTO resultado = await servicio.DeclararSimplificada("1", "NV2615001", "No da el DNI", "NUEVAVISION\\Laura");
+
+            Assert.IsFalse(resultado.Exitoso);
+            StringAssert.Contains(resultado.Mensaje, "No hay salida sin el NIF");
+            Assert.IsNull(factura.VerifactuDeclararSimplificada);
+            Assert.AreEqual(VerifactuJobsService.ESTADO_SIN_DATOS_FISCALES, factura.VerifactuEstado);
+            Assert.AreEqual(0, modificaciones.Count);
+            A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task DeclararSimplificada_JustoEnElLimite_SePermite()
+        {
+            // 330,58 + 21 % = 400,00 €
+            CabFacturaVta factura = ConImporte(Factura("NV2615001", error: ERROR_NIF_RELLENO), 330.58M);
+            ConFacturasYRectificaciones(new[] { factura });
+
+            ResultadoReintentoVerifactuDTO resultado = await servicio.DeclararSimplificada("1", "NV2615001", "No da el DNI", "u");
+
+            Assert.IsTrue(resultado.Exitoso, resultado.Mensaje);
+        }
+
+        [TestMethod]
+        public async Task DeclararSimplificada_SusRectificativasHeredanLaMarcaYSalenDeLaExclusion()
+        {
+            CabFacturaVta factura = ConImporte(Factura("NV2615001", estado: VerifactuJobsService.ESTADO_SIN_DATOS_FISCALES, error: ERROR_NIF_RELLENO), 100M);
+            CabFacturaVta rectificativa = ConImporte(Factura("RV2600010", serie: "RV", estado: VerifactuJobsService.ESTADO_SIN_DATOS_FISCALES, error: ERROR_NIF_RELLENO), -100M);
+            CabFacturaVta otraRectificativa = Factura("RV2600011", serie: "RV");
+            ConFacturasYRectificaciones(new[] { factura, rectificativa, otraRectificativa },
+                new LinFacturaVtaRectificacion { Empresa = "1", NumeroFactura = "RV2600010", NumeroLinea = 1, FacturaOriginalNumero = "NV2615001" },
+                new LinFacturaVtaRectificacion { Empresa = "1", NumeroFactura = "RV2600010", NumeroLinea = 2, FacturaOriginalNumero = "NV2615001" },
+                new LinFacturaVtaRectificacion { Empresa = "1", NumeroFactura = "RV2600011", NumeroLinea = 1, FacturaOriginalNumero = "NV2615999" });
+
+            ResultadoReintentoVerifactuDTO resultado = await servicio.DeclararSimplificada("1", "NV2615001", "No da el DNI", "u");
+
+            Assert.IsTrue(resultado.Exitoso, resultado.Mensaje);
+            Assert.IsTrue(rectificativa.VerifactuDeclararSimplificada == true);
+            Assert.IsNull(rectificativa.VerifactuEstado);
+            Assert.IsNull(otraRectificativa.VerifactuDeclararSimplificada, "Rectifica otra factura: no hereda nada");
+            StringAssert.Contains(resultado.Mensaje, "RV2600010");
+            StringAssert.Contains(modificaciones.Single().Nuevo, "RV2600010");
+        }
+
+        [TestMethod]
+        public async Task DeclararSimplificada_Rectificativa_NoSeMarcaDirectamente()
+        {
+            CabFacturaVta rectificativa = ConImporte(Factura("RV2600010", serie: "RV", error: ERROR_NIF_RELLENO), -100M);
+            ConFacturasYRectificaciones(new[] { rectificativa });
+
+            ResultadoReintentoVerifactuDTO resultado = await servicio.DeclararSimplificada("1", "RV2600010", "No da el DNI", "u");
+
+            Assert.IsFalse(resultado.Exitoso);
+            StringAssert.Contains(resultado.Mensaje, "hereda");
+            Assert.IsNull(rectificativa.VerifactuDeclararSimplificada);
+        }
+
+        [TestMethod]
+        public async Task DeclararSimplificada_YaRegistrada_NoSePuede()
+        {
+            CabFacturaVta factura = ConImporte(Factura("NV2615001", uuid: "u-1", estado: "Correcto"), 100M);
+            ConFacturasYRectificaciones(new[] { factura });
+
+            ResultadoReintentoVerifactuDTO resultado = await servicio.DeclararSimplificada("1", "NV2615001", "No da el DNI", "u");
+
+            Assert.IsFalse(resultado.Exitoso);
+            Assert.IsNull(factura.VerifactuDeclararSimplificada);
+        }
+
+        [TestMethod]
+        public async Task DeclararSimplificada_SinMotivo_NoSePuede()
+        {
+            CabFacturaVta factura = ConImporte(Factura("NV2615001", error: ERROR_NIF_RELLENO), 100M);
+            ConFacturasYRectificaciones(new[] { factura });
+
+            ResultadoReintentoVerifactuDTO resultado = await servicio.DeclararSimplificada("1", "NV2615001", "   ", "u");
+
+            Assert.IsFalse(resultado.Exitoso);
+            Assert.IsNull(factura.VerifactuDeclararSimplificada);
+        }
+
+        [TestMethod]
+        public async Task DeclararSimplificada_NoExiste_DevuelveNull()
+        {
+            ConFacturasYRectificaciones(new CabFacturaVta[0]);
+
+            Assert.IsNull(await servicio.DeclararSimplificada("1", "NV9999999", "motivo", "u"));
+        }
+
+        [TestMethod]
+        public void Mapear_PuedeDeclararSimplificada_SoloSiElProblemaEsElNif()
+        {
+            Assert.IsTrue(servicio.Mapear(Factura("NV1", estado: VerifactuJobsService.ESTADO_SIN_DATOS_FISCALES, error: ERROR_NIF_RELLENO), null).PuedeDeclararSimplificada);
+            Assert.IsTrue(servicio.Mapear(Factura("NV2", uuid: "u", estado: "Incorrecto", error: "AEAT (Incorrecto): 4104 El NIF no está identificado"), null).PuedeDeclararSimplificada);
+            Assert.IsTrue(servicio.Mapear(Factura("NV3", error: "(400) El campo nif no tiene un formato válido"), null).PuedeDeclararSimplificada);
+
+            Assert.IsFalse(servicio.Mapear(Factura("NV4", error: "(TIMEOUT) Timeout"), null).PuedeDeclararSimplificada);
+            Assert.IsFalse(servicio.Mapear(Factura("NV5", estado: VerifactuJobsService.ESTADO_SIN_DATOS_FISCALES,
+                error: "Factura de camino externo a la API (#348) sin datos fiscales"), null).PuedeDeclararSimplificada);
+            Assert.IsFalse(servicio.Mapear(Factura("RV6", serie: "RV", error: ERROR_NIF_RELLENO), null).PuedeDeclararSimplificada,
+                "La rectificativa hereda la marca de su original");
+            CabFacturaVta yaMarcada = Factura("NV7", error: ERROR_NIF_RELLENO);
+            yaMarcada.VerifactuDeclararSimplificada = true;
+            Assert.IsFalse(servicio.Mapear(yaMarcada, null).PuedeDeclararSimplificada);
+        }
+
+        [TestMethod]
+        public async Task Controlador_DeclararSimplificada_InformaticaNoPuede_SoloAdministracionYDireccion()
+        {
+            var fake = A.Fake<IServicioFacturasPendientesVerifactu>();
+            var controller = new VerifactuController(fake)
+            {
+                User = new GenericPrincipal(new GenericIdentity("NUEVAVISION\\Tecnico"), new[] { "NUEVAVISION\\" + NovedadesController.GRUPO_INFORMATICA })
+            };
+
+            var resultado = await controller.DeclararSimplificada(new DeclararSimplificadaVerifactuDTO { Empresa = "1", Numero = "NV2615001", Motivo = "x" }) as StatusCodeResult;
+
+            Assert.AreEqual(HttpStatusCode.Forbidden, resultado?.StatusCode);
+            A.CallTo(() => fake.DeclararSimplificada(A<string>._, A<string>._, A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Controlador_DeclararSimplificada_SinMotivo_BadRequest()
+        {
+            var fake = A.Fake<IServicioFacturasPendientesVerifactu>();
+            var controller = new VerifactuController(fake)
+            {
+                User = new GenericPrincipal(new GenericIdentity("NUEVAVISION\\Laura"), new[] { "NUEVAVISION\\Administración" })
+            };
+
+            var resultado = await controller.DeclararSimplificada(new DeclararSimplificadaVerifactuDTO { Empresa = "1", Numero = "NV2615001", Motivo = " " });
+
+            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+            A.CallTo(() => fake.DeclararSimplificada(A<string>._, A<string>._, A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Controlador_DeclararSimplificada_PorEncimaDelLimite_BadRequestConElMensaje()
+        {
+            var fake = A.Fake<IServicioFacturasPendientesVerifactu>();
+            A.CallTo(() => fake.DeclararSimplificada("1", "NV2615001", "No da el DNI", "NUEVAVISION\\Carlos"))
+                .Returns(new ResultadoReintentoVerifactuDTO { Exitoso = false, Mensaje = "No hay salida sin el NIF" });
+            var controller = new VerifactuController(fake)
+            {
+                User = new GenericPrincipal(new GenericIdentity("NUEVAVISION\\Carlos"), new[] { "NUEVAVISION\\Dirección" })
+            };
+
+            var resultado = await controller.DeclararSimplificada(new DeclararSimplificadaVerifactuDTO { Empresa = "1", Numero = "NV2615001", Motivo = "No da el DNI" })
+                as BadRequestErrorMessageResult;
+
+            Assert.AreEqual("No hay salida sin el NIF", resultado?.Message);
+        }
+
+        [TestMethod]
+        public async Task Controlador_DeclararSimplificada_Administracion_OkConElUsuarioDelIdentity()
+        {
+            var fake = A.Fake<IServicioFacturasPendientesVerifactu>();
+            A.CallTo(() => fake.DeclararSimplificada("1", "NV2615001", "No da el DNI", "NUEVAVISION\\Laura"))
+                .Returns(new ResultadoReintentoVerifactuDTO { Exitoso = true, Mensaje = "ok" });
+            var controller = new VerifactuController(fake)
+            {
+                User = new GenericPrincipal(new GenericIdentity("NUEVAVISION\\Laura"), new[] { "NUEVAVISION\\Administración" })
+            };
+
+            var resultado = await controller.DeclararSimplificada(new DeclararSimplificadaVerifactuDTO { Empresa = "1", Numero = "NV2615001", Motivo = "No da el DNI" })
+                as OkNegotiatedContentResult<ResultadoReintentoVerifactuDTO>;
+
+            Assert.IsTrue(resultado.Content.Exitoso);
+        }
+
+        #endregion
     }
 }

@@ -248,6 +248,29 @@ namespace NestoAPI.Tests.Models
             Assert.AreEqual(typeof(bool?), typeof(CabFacturaVta).GetProperty("VerifactuEnviadaProvisional").PropertyType);
         }
 
+        /// <summary>
+        /// NestoAPI#392: CabFacturaVta.VerifactuDeclararSimplificada (factura completa con NIF inconseguible que se
+        /// declara como F2, y su rectificativa como R5) se añadió a mano en las tres capas. NULLABLE: ALTER
+        /// instantáneo y los escritores viejos no la conocen.
+        /// </summary>
+        [TestMethod]
+        public void Edmx_VerifactuDeclararSimplificadaDeLaFactura_EstaEnLasTresCapasYEsNullable()
+        {
+            XElement almacen = EntidadesPorNombre(LeerRecurso("ssdl"), SsdlNs)["CabFacturaVta"]
+                .Elements(SsdlNs + "Property").Single(p => p.Attribute("Name").Value == "VerifactuDeclararSimplificada");
+            XElement conceptual = EntidadesPorNombre(LeerRecurso("csdl"), CsdlNs)["CabFacturaVta"]
+                .Elements(CsdlNs + "Property").Single(p => p.Attribute("Name").Value == "VerifactuDeclararSimplificada");
+            bool mapeada = LeerRecurso("msl").Descendants(MslNs + "ScalarProperty")
+                .Any(p => p.Attribute("Name").Value == "VerifactuDeclararSimplificada" && p.Attribute("ColumnName").Value == "VerifactuDeclararSimplificada");
+
+            Assert.AreEqual("bit", (string)almacen.Attribute("Type"));
+            Assert.AreNotEqual("false", (string)almacen.Attribute("Nullable"));
+            Assert.AreEqual("Boolean", (string)conceptual.Attribute("Type"));
+            Assert.AreNotEqual("false", (string)conceptual.Attribute("Nullable"));
+            Assert.IsTrue(mapeada);
+            Assert.AreEqual(typeof(bool?), typeof(CabFacturaVta).GetProperty("VerifactuDeclararSimplificada").PropertyType);
+        }
+
         [TestMethod]
         public void Edmx_NotificacionesBuzon_EstaCompletaEnLasTresCapas()
         {

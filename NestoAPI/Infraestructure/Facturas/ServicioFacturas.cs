@@ -1129,7 +1129,9 @@ namespace NestoAPI.Infraestructure.Facturas
                 // Issue #325: una factura simplificada (F2) por encima del límite legal no puede
                 // documentarse como tal. No se bloquea la facturación (el importe ya está emitido),
                 // pero tiene que saltar el aviso para revisarla.
-                if (request.TipoFactura == Verifactu.MapeadorFacturaVerifactu.TIPO_FACTURA_SIMPLIFICADA &&
+                // NestoAPI#392: también la rectificativa de una simplificada (R5).
+                if ((request.TipoFactura == Verifactu.MapeadorFacturaVerifactu.TIPO_FACTURA_SIMPLIFICADA
+                        || request.TipoFactura == Verifactu.MapeadorFacturaVerifactu.TIPO_RECTIFICATIVA_SIMPLIFICADA) &&
                     Math.Abs(request.ImporteTotal) > Verifactu.MapeadorFacturaVerifactu.LIMITE_FACTURA_SIMPLIFICADA)
                 {
                     logService.LogError($"Verifactu: la factura {numeroFactura} se declara como SIMPLIFICADA (F2) " +
@@ -1490,7 +1492,9 @@ namespace NestoAPI.Infraestructure.Facturas
                 {
                     Serie = original.Serie?.Trim(),
                     Numero = Verifactu.MapeadorFacturaVerifactu.NumeroSinSerie(original.Número, original.Serie),
-                    FechaExpedicion = original.Fecha
+                    FechaExpedicion = original.Fecha,
+                    // NestoAPI#392: la rectificativa hereda la marca «declarar como simplificada» (→ R5)
+                    DeclaradaSimplificada = original.VerifactuDeclararSimplificada == true
                 });
             }
             return facturasRectificadas;

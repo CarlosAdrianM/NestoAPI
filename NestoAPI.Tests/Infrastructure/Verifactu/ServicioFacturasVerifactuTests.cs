@@ -883,6 +883,88 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
         }
 
         [TestMethod]
+        public async Task EnviarFacturaAVerifactu_NifDeRellenoMarcadaParaDeclararSimplificada_SeEnviaComoF2SinDestinatario()
+        {
+            // NestoAPI#392 (caso 9093): la misma factura del test anterior, marcada por administración como
+            // simplificada, ya no se excluye: va como F2 sin NIF ni nombre (y sin IDOtro 07).
+            var factura = ConfigurarFactura();
+            factura.CifNif = "1000000";
+            factura.VerifactuDeclararSimplificada = true;
+            var validacion = A.Fake<NestoAPI.Infraestructure.Clientes.IServicioValidacionNif>();
+            _ = A.CallTo(() => validacion.ValidarPrincipal(A<string>.Ignored, A<string>.Ignored))
+                .Returns(new NestoAPI.Infraestructure.Clientes.ResultadoValidacionNif
+                {
+                    Estado = NestoAPI.Infraestructure.Clientes.EstadoValidacionNif.Extranjero,
+                    TipoIdentificacion = "07",
+                    Pais = "ES"
+                });
+            VerifactuFacturaRequest enviado = null;
+            A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored))
+                .Invokes((VerifactuFacturaRequest r) => enviado = r)
+                .Returns(new VerifactuResponse { Exitoso = true, Uuid = "uuid-f2", Estado = "Pendiente" });
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService,
+                almacenRectificativasPendientes: null, servicioValidacionNif: validacion);
+
+            await servicio.EnviarFacturaAVerifactu("1", "NV2600123");
+
+            Assert.IsNotNull(enviado, "Ya no se excluye: se declara");
+            Assert.AreEqual("F2", enviado.TipoFactura);
+            Assert.IsNull(enviado.NifDestinatario);
+            Assert.IsNull(enviado.NombreDestinatario);
+            Assert.IsNull(enviado.IdOtro);
+            Assert.AreNotEqual(VerifactuJobsService.ESTADO_SIN_DATOS_FISCALES, factura.VerifactuEstado);
+            Assert.AreEqual("uuid-f2", factura.VerifactuUUID);
+        }
+
+        [TestMethod]
+        public async Task EnviarRectificativaAVerifactu_DeUnaFacturaMarcadaComoSimplificada_HeredaYSeEnviaComoR5()
+        {
+            // NestoAPI#392: la rectificativa no tiene la marca en su columna (se creó después de marcar la
+            // original, o nadie se la puso): la hereda de la factura rectificada vía LinFacturaVtaRectificacion.
+            var rectificativa = new CabFacturaVta
+            {
+                Empresa = "1",
+                Serie = "RV",
+                Número = "RV2600001",
+                Fecha = DateTime.Today,
+                CifNif = "1000000",
+                NombreFiscal = "CLIENTE SIN NIF",
+                LinPedidoVtas = new List<LinPedidoVta>
+                {
+                    new LinPedidoVta { PorcentajeIVA = 21, PorcentajeRE = 0, Base_Imponible = -100.00M, ImporteIVA = -21.00M }
+                }
+            };
+            var original = new CabFacturaVta
+            {
+                Empresa = "1",
+                Serie = "NV",
+                Número = "NV2600123 ",
+                Fecha = new DateTime(2026, 6, 1),
+                VerifactuDeclararSimplificada = true,
+                LinPedidoVtas = new List<LinPedidoVta>()
+            };
+            ConfigurarFakeDbSet(fakeFacturas, new List<CabFacturaVta> { rectificativa, original }.AsQueryable());
+            ConfigurarFakeDbSet(fakeRectificaciones, new List<LinFacturaVtaRectificacion>
+            {
+                new LinFacturaVtaRectificacion { Empresa = "1", NumeroFactura = "RV2600001", NumeroLinea = 1, FacturaOriginalNumero = "NV2600123", FacturaOriginalLinea = 5, CantidadRectificada = 1 }
+            }.AsQueryable());
+            VerifactuFacturaRequest enviado = null;
+            A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored))
+                .Invokes((VerifactuFacturaRequest r) => enviado = r)
+                .Returns(new VerifactuResponse { Exitoso = true, Uuid = "uuid-r5", Estado = "Pendiente" });
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            await servicio.EnviarRectificativaAVerifactu("1", "RV2600001");
+
+            Assert.IsNotNull(enviado);
+            Assert.AreEqual("R5", enviado.TipoFactura);
+            Assert.AreEqual("I", enviado.TipoRectificacion);
+            Assert.IsNull(enviado.NifDestinatario);
+            Assert.IsNull(enviado.NombreDestinatario);
+            Assert.AreEqual("2600123", enviado.FacturasRectificadas.Single().Numero);
+        }
+
+        [TestMethod]
         public async Task EnviarFacturaAVerifactu_ClienteTipo02EnFacturaOss_DeclaraIdOtroTipo04()
         {
             // NestoAPI#375: la AEAT valida el tipo 02 (NIF-IVA) contra el censo VIES. Un cliente
