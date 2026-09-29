@@ -1488,6 +1488,124 @@ namespace NestoAPI.Infraestructure.Pagos
             }
         }
 
+        /// <summary>
+        /// Nesto#261: auditoría de enlaces de pago para Administración. Solo lectura.
+        /// </summary>
+        public async Task<List<PagoTPVAuditoriaDTO>> BuscarAuditoria(FiltroAuditoriaPagosTPV filtro)
+        {
+            filtro = filtro ?? new FiltroAuditoriaPagosTPV();
+            using (NVEntities db = new NVEntities())
+            {
+                List<PagoTPV> pagos = await AplicarFiltroAuditoria(db.PagosTPV.Include(p => p.PagosTPV_Efectos).AsNoTracking(), filtro)
+                    .ToListAsync()
+                    .ConfigureAwait(false);
+
+                if (!pagos.Any())
+                {
+                    return new List<PagoTPVAuditoriaDTO>();
+                }
+
+                // Nombres de los clientes: una sola consulta con los números que salen (SQL ignora el relleno de los char).
+                List<string> numerosCliente = pagos.Select(p => p.Cliente).Where(c => c != null).Distinct().ToList();
+                var clientes = await db.Clientes.AsNoTracking()
+                    .Where(c => numerosCliente.Contains(c.Nº_Cliente))
+                    .Select(c => new { c.Empresa, c.Nº_Cliente, c.Contacto, c.Nombre, c.ClientePrincipal })
+                    .ToListAsync()
+                    .ConfigureAwait(false);
+
+                return pagos.Select(p =>
+                {
+                    var delCliente = clientes.Where(c => c.Empresa?.Trim() == p.Empresa?.Trim() && c.Nº_Cliente?.Trim() == p.Cliente?.Trim()).ToList();
+                    var cliente = delCliente.FirstOrDefault(c => c.Contacto?.Trim() == p.Contacto?.Trim())
+                        ?? delCliente.FirstOrDefault(c => c.ClientePrincipal)
+                        ?? delCliente.FirstOrDefault();
+                    return MapearAuditoria(p, cliente?.Nombre);
+                }).ToList();
+            }
+        }
+
+        internal static IQueryable<PagoTPV> AplicarFiltroAuditoria(IQueryable<PagoTPV> pagos, FiltroAuditoriaPagosTPV filtro)
+        {
+            if (!string.IsNullOrWhiteSpace(filtro.NumeroOrden))
+            {
+                string numeroOrden = filtro.NumeroOrden.Trim().ToUpperInvariant();
+                pagos = pagos.Where(p => p.NumeroOrden == numeroOrden);
+            }
+            else
+            {
+                if (filtro.FechaDesde.HasValue)
+                {
+                    DateTime desde = filtro.FechaDesde.Value.Date;
+                    pagos = pagos.Where(p => p.FechaCreacion >= desde);
+                }
+                if (filtro.FechaHasta.HasValue)
+                {
+                    DateTime hastaExclusive = filtro.FechaHasta.Value.Date.AddDays(1);
+                    pagos = pagos.Where(p => p.FechaCreacion < hastaExclusive);
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(filtro.Cliente))
+            {
+                string cliente = filtro.Cliente.Trim();
+                pagos = pagos.Where(p => p.Cliente == cliente);
+            }
+            if (!string.IsNullOrWhiteSpace(filtro.Usuario))
+            {
+                string usuario = filtro.Usuario.Trim();
+                pagos = pagos.Where(p => p.Usuario != null && p.Usuario.Contains(usuario));
+            }
+            if (!string.IsNullOrWhiteSpace(filtro.Estado))
+            {
+                string estado = filtro.Estado.Trim();
+                pagos = pagos.Where(p => p.Estado == estado);
+            }
+
+            int limite = filtro.Limite.HasValue && filtro.Limite.Value > 0
+                ? Math.Min(filtro.Limite.Value, FiltroAuditoriaPagosTPV.LIMITE_MAXIMO)
+                : FiltroAuditoriaPagosTPV.LIMITE_POR_DEFECTO;
+
+            return pagos.OrderByDescending(p => p.FechaCreacion).ThenByDescending(p => p.Id).Take(limite);
+        }
+
+        internal static PagoTPVAuditoriaDTO MapearAuditoria(PagoTPV pago, string nombreCliente)
+        {
+            List<PagoTPV_Efecto> efectos = pago.PagosTPV_Efectos?.ToList() ?? new List<PagoTPV_Efecto>();
+            List<string> documentos = efectos
+                .Select(e => e.Documento?.Trim())
+                .Where(d => !string.IsNullOrEmpty(d))
+                .Distinct()
+                .ToList();
+            if (!documentos.Any() && !string.IsNullOrWhiteSpace(pago.Documento))
+            {
+                documentos.Add(pago.Documento.Trim());
+            }
+
+            return new PagoTPVAuditoriaDTO
+            {
+                Id = pago.Id,
+                NumeroOrden = pago.NumeroOrden?.Trim(),
+                Tipo = pago.Tipo,
+                Estado = pago.Estado,
+                Empresa = pago.Empresa?.Trim(),
+                Cliente = pago.Cliente?.Trim(),
+                Contacto = pago.Contacto?.Trim(),
+                NombreCliente = nombreCliente?.Trim(),
+                Importe = pago.Importe,
+                Descripcion = pago.Descripcion,
+                Usuario = pago.Usuario,
+                FechaCreacion = pago.FechaCreacion,
+                FechaActualizacion = pago.FechaActualizacion,
+                Correo = string.IsNullOrWhiteSpace(pago.Correo) ? null : pago.Correo.Trim(),
+                Movil = string.IsNullOrWhiteSpace(pago.Movil) ? null : pago.Movil.Trim(),
+                CodigoRespuesta = pago.CodigoRespuesta,
+                CodigoAutorizacion = pago.CodigoAutorizacion,
+                MetodoPago = pago.MetodoPago,
+                NumeroEfectos = efectos.Count,
+                Documentos = string.Join(", ", documentos)
+            };
+        }
+
         internal static PagoTPVDTO MapearADTO(PagoTPV pago)
         {
             var dto = new PagoTPVDTO

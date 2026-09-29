@@ -13,6 +13,9 @@ namespace NestoAPI.Infraestructure.Pagos
         Task<PagoTPVDTO> ConsultarAuditoria(string numeroOrden);
         Task<List<PagoTPVDTO>> ListarPorCliente(string empresa, string cliente, int limite = 20);
 
+        /// <summary>Nesto#261: consulta de auditoría de enlaces de pago (solo lectura).</summary>
+        Task<List<PagoTPVAuditoriaDTO>> BuscarAuditoria(FiltroAuditoriaPagosTPV filtro);
+
         // NestoAPI#178/#181: cobro directo con tarjeta guardada (token Redsys), síncrono
         Task<ResultadoCobroTarjetaGuardada> CobrarConTarjetaGuardada(SolicitudCobroTarjetaGuardada solicitud, string usuario);
 

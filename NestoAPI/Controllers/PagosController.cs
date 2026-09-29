@@ -1,12 +1,16 @@
-using NestoAPI.Infraestructure.Pagos;
+﻿using NestoAPI.Infraestructure.Pagos;
+using NestoAPI.Infrastructure;
 using NestoAPI.Models.Pagos;
 using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
+using System.Security.Principal;
 using System.Threading.Tasks;
 using System.Web.Http;
+using static NestoAPI.Models.Constantes;
 
 namespace NestoAPI.Controllers
 {
@@ -98,6 +102,49 @@ namespace NestoAPI.Controllers
             }
 
             return Ok(pago);
+        }
+
+        /// <summary>
+        /// Nesto#261: GET api/Pagos/Auditoria?fechaDesde=2026-09-01&amp;fechaHasta=2026-09-29&amp;cliente=15191&amp;usuario=Sancho&amp;estado=Pendiente&amp;numeroOrden=B9BC22C32366&amp;limite=500
+        /// Auditoría de enlaces de pago: quién y cuándo los creó, cliente, importe y adónde se enviaron.
+        /// Solo lectura. Solo Administración y Dirección (403 al resto).
+        /// Si se indica numeroOrden, se ignoran las fechas.
+        /// </summary>
+        [HttpGet]
+        [Route("Auditoria")]
+        [Authorize]
+        public async Task<IHttpActionResult> BuscarAuditoria(DateTime? fechaDesde = null, DateTime? fechaHasta = null,
+            string cliente = null, string usuario = null, string estado = null, string numeroOrden = null, int? limite = null)
+        {
+            if (!PuedeConsultarAuditoria(User))
+            {
+                return StatusCode(HttpStatusCode.Forbidden);
+            }
+            if (fechaDesde.HasValue && fechaHasta.HasValue && fechaDesde.Value.Date > fechaHasta.Value.Date)
+            {
+                return BadRequest("La fecha desde no puede ser posterior a la fecha hasta");
+            }
+
+            var filtro = new FiltroAuditoriaPagosTPV
+            {
+                FechaDesde = fechaDesde,
+                FechaHasta = fechaHasta,
+                Cliente = cliente,
+                Usuario = usuario,
+                Estado = estado,
+                NumeroOrden = numeroOrden,
+                Limite = limite
+            };
+            List<PagoTPVAuditoriaDTO> pagos = await _servicioPagos.BuscarAuditoria(filtro).ConfigureAwait(false);
+            return Ok(pagos);
+        }
+
+        /// <summary>Nesto#261: la auditoría de enlaces de pago es de Administración y Dirección.</summary>
+        internal static bool PuedeConsultarAuditoria(IPrincipal usuario)
+        {
+            return usuario != null
+                && (usuario.IsInRoleSinDominio(GruposSeguridad.ADMINISTRACION)
+                    || usuario.IsInRoleSinDominio(GruposSeguridad.DIRECCION));
         }
 
         [HttpGet]
