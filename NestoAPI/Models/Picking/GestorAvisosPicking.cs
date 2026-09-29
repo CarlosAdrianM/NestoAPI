@@ -1,3 +1,5 @@
+using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Notificaciones;
 using System;
 using System.Collections.Generic;
 using System.Configuration;
@@ -96,6 +98,74 @@ namespace NestoAPI.Models.Picking
             // Office 365 sobre ese buzón; mientras no se conceda, esta es la alternativa acordada.
             mail.ReplyToList.Add(new MailAddress(CORREO_ALMACEN));
             return mail;
+        }
+
+        /// <summary>NestoAPI#555: tipo de la notificación en la campana de Nesto y en la push de NestoApp.</summary>
+        public const string TIPO_NOTIFICACION = "AvisoPickingConImporte";
+        private const string DOMINIO = "NUEVAVISION\\";
+
+        /// <summary>
+        /// NestoAPI#555 (Carlos, 29/09/26): además del correo, el usuario que metió el pedido recibe el aviso en
+        /// la campana de Nesto (buzón + SignalR) y, si tiene NestoApp con el móvil registrado, en una push.
+        /// Nunca lanza: un fallo del aviso no debe romper el picking.
+        /// </summary>
+        public static async Task AvisarEnAplicaciones(IEnumerable<PedidoPicking> candidatos, IServicioNotificacionesPush notificaciones)
+        {
+            if (candidatos == null || notificaciones == null)
+            {
+                return;
+            }
+            foreach (PedidoPicking pedido in candidatos.Where(c => c != null && c.AvisarConImporteAlCogerPicking))
+            {
+                try
+                {
+                    string usuario = UsuarioSinDominio(pedido.Usuario);
+                    NotificacionPushDTO notificacion = ComponerNotificacion(pedido);
+                    if (usuario == null || notificacion == null)
+                    {
+                        continue;
+                    }
+                    await notificaciones.GuardarEnBuzonDeUsuario(DOMINIO + usuario, Constantes.Aplicaciones.NESTO, notificacion).ConfigureAwait(false);
+                    _ = await notificaciones.EnviarAUsuario(usuario, Constantes.Aplicaciones.NESTO_APP, notificacion).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    ElmahHelper.Log(new Exception(
+                        $"[AvisoPicking #555] No se pudo avisar en Nesto/NestoApp del pedido {pedido.Empresa?.Trim()}/{pedido.Id}: {ex.Message}", ex));
+                }
+            }
+        }
+
+        /// <summary>El aviso para la campana y la push. Null si no hay importe que avisar (igual que el correo).</summary>
+        internal static NotificacionPushDTO ComponerNotificacion(PedidoPicking pedido)
+        {
+            if (pedido == null || ImporteCogido(pedido) <= 0)
+            {
+                return null;
+            }
+            return new NotificacionPushDTO
+            {
+                Titulo = $"El pedido {pedido.Id} ha cogido picking",
+                Cuerpo = $"Cliente {pedido.Cliente?.Trim()}: {TotalConIvaCogido(pedido):C} a cobrar (IVA incluido).",
+                Tipo = TIPO_NOTIFICACION,
+                Datos = new Dictionary<string, string>
+                {
+                    ["tipo"] = TIPO_NOTIFICACION,
+                    ["empresa"] = pedido.Empresa?.Trim(),
+                    ["pedido"] = pedido.Id.ToString()
+                }
+            };
+        }
+
+        /// <summary>«NUEVAVISION\Lidia» → «Lidia». Null si no hay usuario.</summary>
+        internal static string UsuarioSinDominio(string usuario)
+        {
+            if (string.IsNullOrWhiteSpace(usuario))
+            {
+                return null;
+            }
+            string sinDominio = usuario.Substring(usuario.IndexOf('\\') + 1).Trim();
+            return sinDominio.Length == 0 ? null : sinDominio;
         }
 
         private const string CORREO_REMITENTE = "nesto@nuevavision.es";

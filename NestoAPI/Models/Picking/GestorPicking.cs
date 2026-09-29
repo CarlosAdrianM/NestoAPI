@@ -229,6 +229,14 @@ namespace NestoAPI.Models.Picking
             // marcada. Nunca lanza (un fallo de correo no debe romper el picking).
             GestorAvisosPicking.EnviarCorreos(candidatos,
                 vendedor => db.Vendedores.FirstOrDefault(v => v.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && v.Número == vendedor)?.Mail?.Trim());
+            // NestoAPI#555: y a la campana de Nesto / push de NestoApp del usuario del pedido, en segundo
+            // plano (la push va por Firebase y no debe alargar el picking, que corre en exclusiva).
+            List<PedidoPicking> avisables = candidatos?.Where(c => c != null && c.AvisarConImporteAlCogerPicking).ToList();
+            if (avisables != null && avisables.Any())
+            {
+                _ = System.Threading.Tasks.Task.Run(() => GestorAvisosPicking.AvisarEnAplicaciones(avisables,
+                    new Infraestructure.Notificaciones.ServicioNotificacionesPush()));
+            }
             
         }
 

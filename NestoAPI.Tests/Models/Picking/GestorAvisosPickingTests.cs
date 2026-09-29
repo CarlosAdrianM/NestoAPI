@@ -1,7 +1,11 @@
-﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
+﻿using FakeItEasy;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NestoAPI.Infraestructure.Notificaciones;
+using NestoAPI.Models;
 using NestoAPI.Models.Picking;
 using System.Collections.Generic;
 using System.Net.Mail;
+using System.Threading.Tasks;
 
 namespace NestoAPI.Tests.Models.Picking
 {
@@ -180,6 +184,65 @@ namespace NestoAPI.Tests.Models.Picking
 
             Assert.AreEqual(10, linea.Cantidad);
             Assert.AreEqual(100m, linea.BaseImponibleEntrega);
+        }
+
+        // NestoAPI#555: además del correo, campana de Nesto y push de NestoApp al usuario del pedido
+
+        [TestMethod]
+        public async Task AvisarEnAplicaciones_UsuarioDelPedido_CampanaDeNestoYPushDeNestoApp()
+        {
+            IServicioNotificacionesPush notificaciones = A.Fake<IServicioNotificacionesPush>();
+            PedidoPicking pedido = CrearPedido(Linea(100, 1, 1, 121));
+            pedido.Usuario = "NUEVAVISION\\Lidia";
+
+            await GestorAvisosPicking.AvisarEnAplicaciones(new List<PedidoPicking> { pedido }, notificaciones);
+
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Lidia", Constantes.Aplicaciones.NESTO,
+                A<NotificacionPushDTO>.That.Matches(n => n.Tipo == GestorAvisosPicking.TIPO_NOTIFICACION && n.Datos["pedido"] == "922500")))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => notificaciones.EnviarAUsuario("Lidia", Constantes.Aplicaciones.NESTO_APP, A<NotificacionPushDTO>.Ignored))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task AvisarEnAplicaciones_SinCasillaOSinImporteOSinUsuario_NoAvisa()
+        {
+            IServicioNotificacionesPush notificaciones = A.Fake<IServicioNotificacionesPush>();
+            PedidoPicking sinCasilla = CrearPedido(Linea(100, 1, 1));
+            sinCasilla.AvisarConImporteAlCogerPicking = false;
+            PedidoPicking sinImporte = CrearPedido(Linea(100, 1, 0));
+            PedidoPicking sinUsuario = CrearPedido(Linea(100, 1, 1));
+            sinUsuario.Usuario = " ";
+
+            await GestorAvisosPicking.AvisarEnAplicaciones(new List<PedidoPicking> { sinCasilla, sinImporte, sinUsuario }, notificaciones);
+
+            A.CallTo(notificaciones).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task AvisarEnAplicaciones_SiFallaUnAviso_SigueConElResto()
+        {
+            IServicioNotificacionesPush notificaciones = A.Fake<IServicioNotificacionesPush>();
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Carlos", A<string>.Ignored, A<NotificacionPushDTO>.Ignored))
+                .Throws(new System.Exception("SignalR caído"));
+            PedidoPicking falla = CrearPedido(Linea(100, 1, 1));
+            PedidoPicking otro = CrearPedido(Linea(50, 1, 1));
+            otro.Usuario = "Paloma";
+
+            await GestorAvisosPicking.AvisarEnAplicaciones(new List<PedidoPicking> { falla, otro }, notificaciones);
+
+            A.CallTo(() => notificaciones.EnviarAUsuario("Paloma", Constantes.Aplicaciones.NESTO_APP, A<NotificacionPushDTO>.Ignored))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public void ComponerNotificacion_DiceElPedidoYElTotalConIva()
+        {
+            NotificacionPushDTO n = GestorAvisosPicking.ComponerNotificacion(CrearPedido(Linea(100, 2, 1, 242)));
+
+            Assert.AreEqual("El pedido 922500 ha cogido picking", n.Titulo);
+            StringAssert.Contains(n.Cuerpo, "Cliente 15191");
+            StringAssert.Contains(n.Cuerpo, 121m.ToString("C"));
         }
     }
 }
