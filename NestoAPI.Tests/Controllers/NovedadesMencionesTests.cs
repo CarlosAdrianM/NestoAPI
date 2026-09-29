@@ -164,7 +164,7 @@ namespace NestoAPI.Tests.Controllers
             A.CallTo(() => servicio.CrearSugerencia(A<SugerenciaNovedadAGrabar>._)).Returns(361);
             A.CallTo(() => feedback.LeerAmbitoNovedad(361)).Returns("Nesto");
 
-            _ = await controller.PostSugerencia(new NuevoComentarioNovedadDTO { Texto = "Un botón para duplicar. @Carlos, ¿lo ves?" });
+            _ = await controller.PostSugerencia(new NuevaSugerenciaNovedadDTO { Texto = "Un botón para duplicar. @Carlos, ¿lo ves?" });
 
             A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario(@"NUEVAVISION\Carlos", "Nesto",
                 A<NotificacionPushDTO>.That.Matches(n => n.Datos["novedadId"] == "361" && !n.Datos.ContainsKey("comentarioId"))))

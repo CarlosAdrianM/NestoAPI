@@ -123,7 +123,7 @@ namespace NestoAPI.Tests.Controllers
         {
             ComoUsuarioDeNesto("NUEVAVISION\\Alfredo");
 
-            _ = await controller.PostSugerencia(new NuevoComentarioNovedadDTO { Texto = "Un botón para duplicar pedidos" });
+            _ = await controller.PostSugerencia(new NuevaSugerenciaNovedadDTO { Texto = "Un botón para duplicar pedidos" });
 
             A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Carlos", "Nesto",
                 A<NotificacionPushDTO>.That.Matches(n => n.Titulo == "Alfredo ha hecho una sugerencia" && n.Datos["novedadId"] == "401")))

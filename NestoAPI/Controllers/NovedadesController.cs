@@ -144,6 +144,7 @@ namespace NestoAPI.Controllers
                 .Where(s => EsDelAmbito(s.Ambito, ambitoEfectivo))
                 .Select(s => s.ADto())
                 .ToList();
+            OcultarContextoSiNoRevisa(sugerencias);
             _ = RellenarFeedback(sugerencias);
             return Ok(sugerencias
                 .OrderByDescending(s => (s.VotosPositivos ?? 0) - (s.VotosNegativos ?? 0))
@@ -152,11 +153,13 @@ namespace NestoAPI.Controllers
         }
 
         // POST api/Novedades/Sugerencias  { "Texto": "Aquí iría bien un botón...", "ImagenBase64": "...", "VersionCliente": "1.10.31.0" }
+        // NestoAPI#558: «Algo no funciona» es el mismo POST con "EsIncidencia": true (y, desde Nesto,
+        // "Pantalla": "PlantillaVenta"): se guarda con categoría Incidencia y con el contexto automático.
         [HttpPost]
         [Authorize]
         [Route("api/Novedades/Sugerencias")]
         [ResponseType(typeof(SugerenciaNovedadDTO))]
-        public async System.Threading.Tasks.Task<IHttpActionResult> PostSugerencia([FromBody] NuevoComentarioNovedadDTO sugerencia)
+        public async System.Threading.Tasks.Task<IHttpActionResult> PostSugerencia([FromBody] NuevaSugerenciaNovedadDTO sugerencia)
         {
             string usuario = ReglasFeedbackNovedades.ClaveUsuario(User);
             if (usuario == null)
@@ -182,17 +185,23 @@ namespace NestoAPI.Controllers
                 Imagen = imagen,
                 ImagenTipo = tipo,
                 SugeridaPor = usuario,
-                SugeridaNombre = ReglasFeedbackNovedades.NombreVisible(User)
+                SugeridaNombre = ReglasFeedbackNovedades.NombreVisible(User),
+                Categoria = sugerencia.EsIncidencia ? ReglasSugerenciasNovedades.CATEGORIA_INCIDENCIA : ReglasSugerenciasNovedades.CATEGORIA_SUGERENCIA,
+                Contexto = sugerencia.EsIncidencia ? ContextoIncidencia(sugerencia) : null
             };
             int id = servicio.CrearSugerencia(aGrabar);
             // NestoAPI#537: también se puede mencionar a alguien al sugerir (el aviso lleva a la sugerencia)
             await AvisarMencionesEnSugerencia(id, aGrabar.TextoOriginal, aGrabar.SugeridaNombre, User?.Identity?.Name).ConfigureAwait(false);
-            await AvisarActividad(id, 0, $"{aGrabar.SugeridaNombre} ha hecho una sugerencia", aGrabar.TextoOriginal, aGrabar.TextoOriginal).ConfigureAwait(false);
+            string tituloAviso = sugerencia.EsIncidencia
+                ? $"{aGrabar.SugeridaNombre} ha avisado de algo que no funciona"
+                : $"{aGrabar.SugeridaNombre} ha hecho una sugerencia";
+            await AvisarActividad(id, 0, tituloAviso, aGrabar.TextoOriginal, aGrabar.TextoOriginal).ConfigureAwait(false);
             return Ok(new SugerenciaNovedadDTO
             {
                 Id = id,
                 Fecha = DateTime.Today,
-                Categoria = ReglasSugerenciasNovedades.CATEGORIA_SUGERENCIA,
+                Categoria = aGrabar.Categoria,
+                EsIncidencia = sugerencia.EsIncidencia,
                 Titulo = aGrabar.Titulo,
                 Ambito = aGrabar.Ambito,
                 TextoOriginal = aGrabar.TextoOriginal,
@@ -204,6 +213,63 @@ namespace NestoAPI.Controllers
                 VotosNegativos = 0,
                 NumeroComentarios = 0
             });
+        }
+
+        /// <summary>
+        /// NestoAPI#558: versión, pantalla y errores de ELMAH del usuario de la última hora. Nunca rompe el
+        /// aviso: si ELMAH no se puede leer, se guarda lo demás y el fallo va a ELMAH.
+        /// </summary>
+        internal string ContextoIncidencia(NuevaSugerenciaNovedadDTO incidencia)
+        {
+            List<ErrorElmahResumen> errores = null;
+            try
+            {
+                List<string> usuarios = ReglasSugerenciasNovedades.UsuariosElmah(User?.Identity?.Name, DOMINIO);
+                errores = servicio.LeerErroresElmah(usuarios,
+                    DateTime.UtcNow.AddMinutes(-ReglasSugerenciasNovedades.MINUTOS_ERRORES_ELMAH),
+                    ReglasSugerenciasNovedades.MAXIMO_ERRORES_ELMAH) ?? new List<ErrorElmahResumen>();
+            }
+            catch (Exception ex)
+            {
+                RegistrarSinRomper(new Exception("Novedades (NestoAPI#558): no se pudieron leer los errores de ELMAH para la incidencia. " + ex.Message, ex));
+            }
+            try
+            {
+                return ReglasSugerenciasNovedades.ComponerContexto(incidencia.VersionCliente, incidencia.Pantalla, errores);
+            }
+            catch (Exception ex)
+            {
+                RegistrarSinRomper(new Exception("Novedades (NestoAPI#558): no se pudo componer el contexto de la incidencia. " + ex.Message, ex));
+                return null;
+            }
+        }
+
+        private static void RegistrarSinRomper(Exception ex)
+        {
+            try
+            {
+                ElmahHelper.Log(ex);
+            }
+            catch
+            {
+                // El diagnóstico nunca rompe el aviso del usuario.
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#558: el contexto de las incidencias (errores de ELMAH de un usuario) solo lo ven
+        /// Dirección / Informática.
+        /// </summary>
+        private void OcultarContextoSiNoRevisa(IEnumerable<SugerenciaNovedadDTO> sugerencias)
+        {
+            if (PuedeRevisarFeedback())
+            {
+                return;
+            }
+            foreach (SugerenciaNovedadDTO s in sugerencias)
+            {
+                s.Contexto = null;
+            }
         }
 
         // GET api/Novedades/7/Imagen  -> la captura de la sugerencia con su content-type
@@ -264,6 +330,7 @@ namespace NestoAPI.Controllers
                 .Where(n => EsDelAmbito(n.Ambito, ambitoEfectivo))
                 .Select(n => n.ADto())
                 .ToList();
+            OcultarContextoSiNoRevisa(encontradas);
             _ = RellenarFeedback(encontradas);
             return Ok(encontradas);
         }

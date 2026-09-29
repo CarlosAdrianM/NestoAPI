@@ -15,8 +15,21 @@ namespace NestoAPI.Infraestructure.Novedades
         public const string ESTADO_IMPLEMENTADA = "Implementada";
         public const string ESTADO_DESCARTADA = "Descartada";
         public static readonly string[] ESTADOS = { ESTADO_PENDIENTE, ESTADO_ACEPTADA, ESTADO_IMPLEMENTADA, ESTADO_DESCARTADA };
-        public static readonly string[] CATEGORIAS = { "Nuevo", "Mejorado", "Corregido" };
+        public static readonly string[] CATEGORIAS = { "Nuevo", "Mejorado", "Corregido", CATEGORIA_INCIDENCIA };
         public const string CATEGORIA_SUGERENCIA = "Nuevo";
+        /// <summary>
+        /// NestoAPI#558: «Algo no funciona». Se guarda como una sugerencia pero con esta categoría; al
+        /// corregirla (con versión) pasa a Corregido y sale en el changelog como cualquier novedad.
+        /// </summary>
+        public const string CATEGORIA_INCIDENCIA = "Incidencia";
+        public const string CATEGORIA_CORREGIDO = "Corregido";
+
+        /// <summary>NestoAPI#558: contexto automático de las incidencias.</summary>
+        public const int MINUTOS_ERRORES_ELMAH = 60;
+        public const int MAXIMO_ERRORES_ELMAH = 5;
+        public const int LONGITUD_MENSAJE_ERROR = 200;
+        public const int LONGITUD_PANTALLA = 100;
+        public const int LONGITUD_VERSION_CLIENTE = 30;
 
         public const int LONGITUD_TITULO = 200;
         public const int LONGITUD_DESCRIPCION = 1000;
@@ -110,7 +123,91 @@ namespace NestoAPI.Infraestructure.Novedades
                 }
                 cambios.Categoria = categoria;
             }
+            // NestoAPI#558: una incidencia con versión es que ya está corregida (sin categoría, el UPDATE
+            // también pasa las incidencias a Corregido).
+            if (cambios.Version != null && cambios.Categoria == CATEGORIA_INCIDENCIA)
+            {
+                cambios.Categoria = CATEGORIA_CORREGIDO;
+            }
             return null;
+        }
+
+        /// <summary>
+        /// NestoAPI#558: los nombres con los que ELMAH puede tener guardado al usuario: tal cual, sin el
+        /// dominio y con él (Nesto graba «NUEVAVISION\Alfredo»; NestoApp, el UserName).
+        /// </summary>
+        public static List<string> UsuariosElmah(string nombreIdentidad, string dominio)
+        {
+            var usuarios = new List<string>();
+            if (string.IsNullOrWhiteSpace(nombreIdentidad))
+            {
+                return usuarios;
+            }
+            string completo = nombreIdentidad.Trim();
+            string sinDominio = completo.Substring(completo.IndexOf('\\') + 1).Trim();
+            foreach (string candidato in new[] { completo, sinDominio, (dominio ?? string.Empty) + sinDominio })
+            {
+                if (candidato.Length > 0 && !usuarios.Contains(candidato, StringComparer.OrdinalIgnoreCase))
+                {
+                    usuarios.Add(candidato);
+                }
+            }
+            return usuarios;
+        }
+
+        /// <summary>
+        /// NestoAPI#558: el contexto que se guarda con la incidencia, en texto para leerlo de un vistazo:
+        /// versión, pantalla y los errores de ELMAH del usuario de la última hora (hora de España,
+        /// tipo y el principio del mensaje). <paramref name="errores"/> null = no se pudieron leer.
+        /// </summary>
+        public static string ComponerContexto(string versionCliente, string pantalla, IEnumerable<ErrorElmahResumen> errores)
+        {
+            var lineas = new List<string>
+            {
+                "Versión: " + (string.IsNullOrWhiteSpace(versionCliente) ? "(desconocida)" : Recortar(versionCliente, LONGITUD_VERSION_CLIENTE))
+            };
+            if (!string.IsNullOrWhiteSpace(pantalla))
+            {
+                lineas.Add("Pantalla: " + Recortar(pantalla, LONGITUD_PANTALLA));
+            }
+            List<ErrorElmahResumen> lista = errores?.Where(e => e != null).ToList();
+            if (lista == null)
+            {
+                lineas.Add("Errores de la última hora: no se pudieron consultar.");
+            }
+            else if (lista.Count == 0)
+            {
+                lineas.Add("Errores de la última hora: ninguno.");
+            }
+            else
+            {
+                lineas.Add($"Errores de la última hora ({lista.Count}):");
+                foreach (ErrorElmahResumen error in lista)
+                {
+                    string mensaje = System.Text.RegularExpressions.Regex.Replace(error.Message ?? string.Empty, @"\s+", " ").Trim();
+                    lineas.Add($"- {HoraEspana(error.TimeUtc):HH:mm} {error.Type?.Trim()}: {Recortar(mensaje, LONGITUD_MENSAJE_ERROR)}");
+                }
+            }
+            return string.Join(Environment.NewLine, lineas);
+        }
+
+        private static DateTime HoraEspana(DateTime utc)
+        {
+            DateTime enUtc = DateTime.SpecifyKind(utc, DateTimeKind.Utc);
+            try
+            {
+                return TimeZoneInfo.ConvertTimeFromUtc(enUtc, TimeZoneInfo.FindSystemTimeZoneById("Romance Standard Time"));
+            }
+            catch (Exception)
+            {
+                return enUtc.ToLocalTime();
+            }
+        }
+
+        private static string Recortar(string texto, int longitud)
+        {
+            string limpio = (texto ?? string.Empty).Trim();
+            return limpio.Length <= longitud ? limpio : limpio.Substring(0, longitud - 1).TrimEnd() + "…";
         }
 
         /// <summary>

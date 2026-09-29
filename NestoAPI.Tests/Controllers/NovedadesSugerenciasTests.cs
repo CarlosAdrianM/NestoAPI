@@ -89,7 +89,7 @@ namespace NestoAPI.Tests.Controllers
             A.CallTo(() => servicio.CrearSugerencia(A<SugerenciaNovedadAGrabar>._))
                 .Invokes((SugerenciaNovedadAGrabar s) => grabada = s).Returns(360);
 
-            var resultado = await controller.PostSugerencia(new NuevoComentarioNovedadDTO
+            var resultado = await controller.PostSugerencia(new NuevaSugerenciaNovedadDTO
             {
                 Texto = "  Aquí iría bien un botón para duplicar el pedido\nsin tener que meterlo otra vez  "
             }) as OkNegotiatedContentResult<SugerenciaNovedadDTO>;
@@ -112,7 +112,7 @@ namespace NestoAPI.Tests.Controllers
             SugerenciaNovedadAGrabar grabada = null;
             A.CallTo(() => servicio.CrearSugerencia(A<SugerenciaNovedadAGrabar>._)).Invokes((SugerenciaNovedadAGrabar s) => grabada = s);
 
-            _ = await controller.PostSugerencia(new NuevoComentarioNovedadDTO { Texto = "Filtro por ruta" });
+            _ = await controller.PostSugerencia(new NuevaSugerenciaNovedadDTO { Texto = "Filtro por ruta" });
 
             Assert.AreEqual("NestoApp", grabada.Ambito);
         }
@@ -122,7 +122,7 @@ namespace NestoAPI.Tests.Controllers
         {
             ComoClienteDeLaTienda();
 
-            var resultado = await controller.PostSugerencia(new NuevoComentarioNovedadDTO { Texto = "Quiero más colores" });
+            var resultado = await controller.PostSugerencia(new NuevaSugerenciaNovedadDTO { Texto = "Quiero más colores" });
 
             Assert.AreEqual(HttpStatusCode.Forbidden, ((StatusCodeResult)resultado).StatusCode);
             A.CallTo(() => servicio.CrearSugerencia(A<SugerenciaNovedadAGrabar>._)).MustNotHaveHappened();
@@ -133,7 +133,7 @@ namespace NestoAPI.Tests.Controllers
         {
             ComoUsuarioDeNesto();
 
-            Assert.IsInstanceOfType(await controller.PostSugerencia(new NuevoComentarioNovedadDTO { Texto = "  " }), typeof(BadRequestErrorMessageResult));
+            Assert.IsInstanceOfType(await controller.PostSugerencia(new NuevaSugerenciaNovedadDTO { Texto = "  " }), typeof(BadRequestErrorMessageResult));
             A.CallTo(() => servicio.CrearSugerencia(A<SugerenciaNovedadAGrabar>._)).MustNotHaveHappened();
         }
 

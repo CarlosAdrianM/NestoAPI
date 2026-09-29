@@ -1,4 +1,5 @@
 using NestoAPI.Models.Novedades;
+using System;
 using System.Collections.Generic;
 
 namespace NestoAPI.Infraestructure.Novedades
@@ -22,5 +23,11 @@ namespace NestoAPI.Infraestructure.Novedades
 
         /// <summary>NestoAPI#527: novedades y sugerencias publicadas que contienen TODAS las palabras.</summary>
         List<NovedadConSugerenciaFila> Buscar(IReadOnlyList<string> palabras);
+
+        /// <summary>
+        /// NestoAPI#558: los últimos errores de ELMAH (dbo.ELMAH_Error) de cualquiera de esos usuarios desde
+        /// <paramref name="desdeUtc"/>, del más reciente al más antiguo. Para el contexto de las incidencias.
+        /// </summary>
+        List<ErrorElmahResumen> LeerErroresElmah(IReadOnlyList<string> usuarios, DateTime desdeUtc, int maximo);
     }
 }

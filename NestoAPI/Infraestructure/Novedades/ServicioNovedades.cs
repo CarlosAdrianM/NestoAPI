@@ -20,7 +20,9 @@ namespace NestoAPI.Infraestructure.Novedades
     {
         private const string COLUMNAS_SUGERENCIA =
             "Id, Version, Fecha, Categoria, Titulo, Descripcion, Ambito, TextoOriginal, SugeridaNombre, SugeridaFecha, Estado, " +
-            "CAST(CASE WHEN Imagen IS NULL THEN 0 ELSE 1 END AS bit) AS TieneImagen";
+            "CAST(CASE WHEN Imagen IS NULL THEN 0 ELSE 1 END AS bit) AS TieneImagen, " +
+            // NestoAPI#558 (Scripts/Issue558_IncidenciasNovedades.sql)
+            "Contexto";
 
         public List<NovedadDTO> LeerNovedadesPublicadas()
         {
@@ -50,11 +52,13 @@ namespace NestoAPI.Infraestructure.Novedades
             {
                 return db.Database.SqlQuery<int>(@"
                     INSERT INTO Novedades (Version, Fecha, Categoria, Titulo, Descripcion, Ambito, Publicada, Usuario,
-                                           TextoOriginal, Imagen, ImagenTipo, SugeridaPor, SugeridaNombre, SugeridaFecha, Estado)
+                                           TextoOriginal, Imagen, ImagenTipo, SugeridaPor, SugeridaNombre, SugeridaFecha, Estado, Contexto)
                     OUTPUT CAST(INSERTED.Id AS int)
                     VALUES (NULL, CAST(GETDATE() AS date), @categoria, @titulo, NULL, @ambito, 1, @usuarioCorto,
-                            @texto, @imagen, @tipo, @usuario, @nombre, SYSDATETIME(), 'Pendiente');",
-                    new SqlParameter("@categoria", SqlDbType.NVarChar, 20) { Value = ReglasSugerenciasNovedades.CATEGORIA_SUGERENCIA },
+                            @texto, @imagen, @tipo, @usuario, @nombre, SYSDATETIME(), 'Pendiente', @contexto);",
+                    // NestoAPI#558: Incidencia para «Algo no funciona»; si no, Nuevo como siempre
+                    new SqlParameter("@categoria", SqlDbType.NVarChar, 20) { Value = string.IsNullOrWhiteSpace(s.Categoria) ? ReglasSugerenciasNovedades.CATEGORIA_SUGERENCIA : s.Categoria },
+                    new SqlParameter("@contexto", SqlDbType.NVarChar, -1) { Value = (object)s.Contexto ?? DBNull.Value },
                     new SqlParameter("@titulo", SqlDbType.NVarChar, 200) { Value = s.Titulo },
                     new SqlParameter("@ambito", SqlDbType.NVarChar, 20) { Value = s.Ambito },
                     new SqlParameter("@usuarioCorto", SqlDbType.NVarChar, 50) { Value = Recortar(s.SugeridaPor, 50) },
@@ -78,7 +82,8 @@ namespace NestoAPI.Infraestructure.Novedades
                         Descripcion = ISNULL(@descripcion, Descripcion),
                         Estado = ISNULL(@estado, Estado),
                         Version = ISNULL(@version, Version),
-                        Categoria = ISNULL(@categoria, Categoria),
+                        -- NestoAPI#558: la incidencia que recibe versión es que ya está corregida
+                        Categoria = ISNULL(@categoria, CASE WHEN @version IS NOT NULL AND Categoria = N'Incidencia' THEN N'Corregido' ELSE Categoria END),
                         Usuario = @usuario,
                         Fecha_Modificación = GETDATE()
                     WHERE Id = @id AND TextoOriginal IS NOT NULL;",
@@ -126,6 +131,33 @@ namespace NestoAPI.Infraestructure.Novedades
             using (NVEntities db = new NVEntities())
             {
                 return db.Database.SqlQuery<NovedadConSugerenciaFila>(sql, parametros.ToArray()).ToList();
+            }
+        }
+
+        public List<ErrorElmahResumen> LeerErroresElmah(IReadOnlyList<string> usuarios, DateTime desdeUtc, int maximo)
+        {
+            if (usuarios == null || usuarios.Count == 0 || maximo <= 0)
+            {
+                return new List<ErrorElmahResumen>();
+            }
+            List<SqlParameter> parametros = new List<SqlParameter>
+            {
+                new SqlParameter("@desde", SqlDbType.DateTime) { Value = desdeUtc }
+            };
+            List<string> nombres = new List<string>();
+            for (int i = 0; i < usuarios.Count; i++)
+            {
+                string nombre = "@u" + i;
+                nombres.Add(nombre);
+                parametros.Add(new SqlParameter(nombre, SqlDbType.NVarChar, 100) { Value = usuarios[i] });
+            }
+            // NOLOCK: es solo diagnóstico y no debe esperar a nadie (ni bloquear a ELMAH mientras escribe)
+            string sql = "SELECT TOP (" + maximo + ") TimeUtc, Type, Message FROM dbo.ELMAH_Error WITH (NOLOCK) " +
+                         "WHERE TimeUtc >= @desde AND [User] IN (" + string.Join(", ", nombres) + ") ORDER BY TimeUtc DESC";
+            using (NVEntities db = new NVEntities())
+            {
+                db.Database.CommandTimeout = 10;
+                return db.Database.SqlQuery<ErrorElmahResumen>(sql, parametros.ToArray()).ToList();
             }
         }
 
