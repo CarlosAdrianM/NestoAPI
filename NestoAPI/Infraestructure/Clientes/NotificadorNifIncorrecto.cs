@@ -1,5 +1,7 @@
+using NestoAPI.Infraestructure.Notificaciones;
 using NestoAPI.Models;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net.Mail;
 using System.Threading.Tasks;
@@ -17,11 +19,19 @@ namespace NestoAPI.Infraestructure.Clientes
     {
         private readonly NVEntities db;
         private readonly IServicioCorreoElectronico servicioCorreo;
+        private readonly IServicioNotificacionesPush notificaciones;
 
-        public NotificadorNifIncorrecto(NVEntities db, IServicioCorreoElectronico servicioCorreo = null)
+        /// <summary>NestoAPI#557: tipo del aviso en la campana de Nesto y en la push de NestoApp.</summary>
+        public const string TIPO_NOTIFICACION = "NifIncorrectoPedido";
+
+        /// <param name="notificaciones">NestoAPI#557: si se pasa, el aviso de un PEDIDO llega también a la
+        /// campana de Nesto y a NestoApp del usuario que lo metió. Null = solo correo.</param>
+        public NotificadorNifIncorrecto(NVEntities db, IServicioCorreoElectronico servicioCorreo = null,
+            IServicioNotificacionesPush notificaciones = null)
         {
             this.db = db;
             this.servicioCorreo = servicioCorreo ?? new ServicioCorreoElectronico();
+            this.notificaciones = notificaciones;
         }
 
         /// <param name="contexto">De dónde viene el aviso: "el pedido 922123" o "la factura NV2612489".</param>
@@ -29,8 +39,10 @@ namespace NestoAPI.Infraestructure.Clientes
         /// queda margen hasta facturar, el documento acaba de emitirse).</param>
         /// <param name="usuario">Quien procesó el documento (con o sin dominio). Si el vendedor
         /// es el general o no tiene correo, el aviso va a su CorreoDefecto de ParametrosUsuario.</param>
+        /// <param name="pedido">NestoAPI#557: el pedido que se acaba de crear. Con él, el aviso llega además a la
+        /// campana de Nesto / NestoApp del usuario y al pulsarlo se abre el pedido.</param>
         public async Task Enviar(string empresa, string cliente, string contexto, bool esFactura,
-            string nif, string nombre, string resultadoAeat, string usuario = null)
+            string nif, string nombre, string resultadoAeat, string usuario = null, int? pedido = null)
         {
             Cliente ficha = await LeerFichaPrincipalOContacto(empresa, cliente).ConfigureAwait(false);
             Vendedor vendedor = ficha == null ? null : db.Vendedores
@@ -86,6 +98,48 @@ namespace NestoAPI.Infraestructure.Clientes
             }
 
             _ = servicioCorreo.EnviarCorreoSMTP(mail);
+
+            if (pedido.HasValue && notificaciones != null)
+            {
+                await AvisarEnAplicaciones(empresa, cliente, nombre, nif, pedido.Value, usuario).ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#557 (Carlos, 29/09/26): el que mete el pedido tiene al cliente delante o al teléfono; el
+        /// aviso le llega también a la campana de Nesto (buzón + SignalR) y, si usa NestoApp, en una push.
+        /// Nunca lanza: el pedido ya está creado.
+        /// </summary>
+        internal async Task AvisarEnAplicaciones(string empresa, string cliente, string nombre, string nif, int pedido, string usuario)
+        {
+            if (string.IsNullOrWhiteSpace(usuario))
+            {
+                return;
+            }
+            try
+            {
+                string sinDominio = usuario.Substring(usuario.IndexOf('\\') + 1).Trim();
+                var notificacion = new NotificacionPushDTO
+                {
+                    Titulo = $"NIF incorrecto del cliente {cliente?.Trim()}",
+                    Cuerpo = $"Pedido {pedido} ({nombre?.Trim()}): el NIF {nif?.Trim()} no está en el censo de la AEAT. " +
+                        "Pide al cliente el NIF correcto y corrígelo en la ficha.",
+                    Tipo = TIPO_NOTIFICACION,
+                    Datos = new Dictionary<string, string>
+                    {
+                        ["tipo"] = TIPO_NOTIFICACION,
+                        ["empresa"] = empresa?.Trim(),
+                        ["pedido"] = pedido.ToString(),
+                        ["cliente"] = cliente?.Trim()
+                    }
+                };
+                await notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\" + sinDominio, Constantes.Aplicaciones.NESTO, notificacion).ConfigureAwait(false);
+                _ = await notificaciones.EnviarAUsuario(sinDominio, Constantes.Aplicaciones.NESTO_APP, notificacion).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[NIF incorrecto #557] No se pudo avisar en Nesto/NestoApp del pedido {pedido}: {ex.Message}", ex));
+            }
         }
 
         // El correo del usuario que procesó el documento: parámetro CorreoDefecto de

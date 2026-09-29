@@ -2132,12 +2132,13 @@ namespace NestoAPI.Controllers
                 }
                 if (validacionNif.AcabaDeResultarIncorrecto)
                 {
-                    await new Infraestructure.Clientes.NotificadorNifIncorrecto(db).Enviar(
+                    await new Infraestructure.Clientes.NotificadorNifIncorrecto(db,
+                        notificaciones: new Infraestructure.Notificaciones.ServicioNotificacionesPush()).Enviar(
                         Constantes.Empresas.EMPRESA_POR_DEFECTO, pedido.cliente,
                         $"el pedido {pedido.numero}", esFactura: false,
                         nif: validacionNif.Nif, nombre: validacionNif.Nombre,
                         resultadoAeat: validacionNif.ResultadoAeat,
-                        usuario: pedido.Usuario);
+                        usuario: pedido.Usuario, pedido: pedido.numero);
                     ElmahHelper.Log(new Exception(
                         $"[NIF incorrecto] Cliente {pedido.cliente?.Trim()} en el pedido {pedido.numero}: " +
                         $"NIF '{validacionNif.Nif}' no registrado en la AEAT ({validacionNif.ResultadoAeat}). " +

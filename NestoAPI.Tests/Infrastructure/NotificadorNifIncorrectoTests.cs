@@ -2,6 +2,7 @@ using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Clientes;
+using NestoAPI.Infraestructure.Notificaciones;
 using NestoAPI.Models;
 using NestoAPI.Tests.Helpers;
 using System.Collections.Generic;
@@ -176,6 +177,60 @@ namespace NestoAPI.Tests.Infrastructure
             await Enviar(usuario: "NUEVAVISION\\Laura");
 
             Assert.AreEqual("laura@nuevavision.es", enviado.To.Single().Address);
+        }
+
+        // NestoAPI#557: al crear un pedido, el aviso llega también a la campana de Nesto y a NestoApp del usuario
+
+        [TestMethod]
+        public async Task Enviar_ConPedidoYNotificaciones_AvisaEnCampanaYNestoAppDelUsuario()
+        {
+            ConFicha(vendedor: "DV ");
+            IServicioNotificacionesPush notificaciones = A.Fake<IServicioNotificacionesPush>();
+
+            await new NotificadorNifIncorrecto(db, correo, notificaciones).Enviar(
+                "1", "26760", "el pedido 922900", esFactura: false,
+                nif: "X9999999X", nombre: "ZHANNA YURCHYK", resultadoAeat: "NO IDENTIFICADO",
+                usuario: "NUEVAVISION\\Laura", pedido: 922900);
+
+            Assert.IsNotNull(enviado, "El correo sigue saliendo");
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Laura", Constantes.Aplicaciones.NESTO,
+                A<NotificacionPushDTO>.That.Matches(n => n.Tipo == NotificadorNifIncorrecto.TIPO_NOTIFICACION
+                    && n.Datos["pedido"] == "922900" && n.Cuerpo.Contains("X9999999X"))))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => notificaciones.EnviarAUsuario("Laura", Constantes.Aplicaciones.NESTO_APP, A<NotificacionPushDTO>.Ignored))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Enviar_SinPedido_SoloCorreo()
+        {
+            // Al facturar el aviso ya sale en pantalla: no se manda a la campana
+            ConFicha(vendedor: "DV ");
+            IServicioNotificacionesPush notificaciones = A.Fake<IServicioNotificacionesPush>();
+
+            await new NotificadorNifIncorrecto(db, correo, notificaciones).Enviar(
+                "1", "26760", "la factura NV2612489", esFactura: true,
+                nif: "X9999999X", nombre: "ZHANNA YURCHYK", resultadoAeat: "NO IDENTIFICADO",
+                usuario: "NUEVAVISION\\Laura");
+
+            Assert.IsNotNull(enviado);
+            A.CallTo(notificaciones).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Enviar_SiFallaLaCampana_NoRompeNada()
+        {
+            ConFicha(vendedor: "DV ");
+            IServicioNotificacionesPush notificaciones = A.Fake<IServicioNotificacionesPush>();
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario(A<string>.Ignored, A<string>.Ignored, A<NotificacionPushDTO>.Ignored))
+                .Throws(new System.Exception("SignalR caído"));
+
+            await new NotificadorNifIncorrecto(db, correo, notificaciones).Enviar(
+                "1", "26760", "el pedido 922900", esFactura: false,
+                nif: "X9999999X", nombre: "ZHANNA YURCHYK", resultadoAeat: "NO IDENTIFICADO",
+                usuario: "Laura", pedido: 922900);
+
+            Assert.IsNotNull(enviado);
         }
     }
 }
