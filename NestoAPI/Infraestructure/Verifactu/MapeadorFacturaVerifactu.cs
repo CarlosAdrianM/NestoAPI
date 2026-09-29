@@ -41,12 +41,12 @@ namespace NestoAPI.Infraestructure.Verifactu
             // administración para declararse como simplificada (F2, sin destinatario). Sus rectificativas
             // heredan la marca (de la propia columna o de la factura rectificada) y van como R5.
             bool declaradaSimplificadaPorMarca = SeDeclaraSimplificadaPorMarca(factura, facturasRectificadas);
-            string tipoFactura = esSimplificada
-                ? TIPO_FACTURA_SIMPLIFICADA
-                : declaradaSimplificadaPorMarca
-                    ? (serie.EsRectificativa ? TIPO_RECTIFICATIVA_SIMPLIFICADA : TIPO_FACTURA_SIMPLIFICADA)
-                    : TipoFactura(serie, factura);
             bool sinDestinatario = esSimplificada || declaradaSimplificadaPorMarca;
+            // NestoAPI#392 (punto 1, Carlos 29/09/26): la rectificativa de una simplificada es R5, también la
+            // de los clientes simplificados por defecto (#325), que antes salía como F2.
+            string tipoFactura = sinDestinatario
+                ? (serie.EsRectificativa ? TIPO_RECTIFICATIVA_SIMPLIFICADA : TIPO_FACTURA_SIMPLIFICADA)
+                : TipoFactura(serie, factura);
 
             var request = new VerifactuFacturaRequest
             {

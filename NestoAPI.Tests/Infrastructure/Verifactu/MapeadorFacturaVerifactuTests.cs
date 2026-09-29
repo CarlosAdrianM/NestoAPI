@@ -398,6 +398,23 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
         }
 
         [TestMethod]
+        public void Mapear_RectificativaDeClienteSimplificadoPorDefecto_EsR5SinDestinatario()
+        {
+            // NestoAPI#392 punto 1: la rectificativa de una venta de Amazon (#325) salía como F2; es R5
+            var rectificativa = CrearRectificativaRV();
+            rectificativa.Nº_Cliente = "32624"; // ClientesEspeciales.AMAZON
+            rectificativa.CifNif = "NV";
+            rectificativa.NombreFiscal = "FACT. SIMP. VENTAS AMAZON";
+
+            VerifactuFacturaRequest request = MapeadorFacturaVerifactu.Mapear(rectificativa);
+
+            Assert.AreEqual("R5", request.TipoFactura);
+            Assert.AreEqual("I", request.TipoRectificacion);
+            Assert.IsNull(request.NifDestinatario);
+            Assert.IsNull(request.NombreDestinatario);
+        }
+
+        [TestMethod]
         public void Mapear_RectificativaDeUnaFacturaMarcada_HeredaLaMarcaYEsR5SinDestinatario()
         {
             // La rectificativa NO tiene la marca en su columna: la hereda de la factura que rectifica
