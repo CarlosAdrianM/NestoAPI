@@ -1,4 +1,5 @@
 ﻿using NestoAPI.Infraestructure.Contabilidad;
+using NestoAPI.Infraestructure.Notificaciones;
 using NestoAPI.Models;
 using NestoAPI.Models.Pagos;
 using Newtonsoft.Json;
@@ -23,6 +24,12 @@ namespace NestoAPI.Infraestructure.Pagos
         private readonly IServicioCorreoElectronico _servicioCorreo;
         private readonly ILogService _logService;
         private readonly ITarjetaClienteStore _tarjetaStore;
+
+        /// <summary>
+        /// NestoAPI#565: el servicio de avisos (campana de Nesto + push de NestoApp) del cobro realizado.
+        /// Se crea solo cuando hay que avisar (arranca Firebase). Sustituible en tests.
+        /// </summary>
+        internal Func<IServicioNotificacionesPush> CrearNotificaciones { get; set; } = () => new ServicioNotificacionesPush();
 
         public ServicioPagos(IRedsysService redsysService, IContabilidadService contabilidadService, ILectorParametrosUsuario lectorParametros)
             : this(redsysService, contabilidadService, lectorParametros, new ServicioCorreoElectronico(), new ElmahLogService())
@@ -277,6 +284,9 @@ namespace NestoAPI.Infraestructure.Pagos
                     {
                         EnviarCorreoPostCobro(pago, errorContabilizacion);
                     }
+
+                    // NestoAPI#565: y quien creó el enlace lo ve en la campana de Nesto y en NestoApp
+                    AvisarCobroEnAplicaciones(pago, errorContabilizacion);
                 }
                 else
                 {
@@ -1658,6 +1668,39 @@ namespace NestoAPI.Infraestructure.Pagos
         /// Envía correo a administración con los detalles del cobro realizado.
         /// Issue #139: Correo post-cobro.
         /// </summary>
+        /// <summary>
+        /// NestoAPI#565: el aviso se compone aquí (con el pago aún en memoria) y se envía en segundo plano.
+        /// Devuelve la tarea para los tests; quien llama no la espera. Nunca lanza.
+        /// </summary>
+        internal Task AvisarCobroEnAplicaciones(PagoTPV pago, string errorContabilizacion = null)
+        {
+            try
+            {
+                NotificacionPushDTO notificacion = AvisoCobroNestoPago.ComponerNotificacion(pago, errorContabilizacion);
+                if (notificacion == null)
+                {
+                    return Task.CompletedTask;
+                }
+                string usuario = pago.Usuario;
+                return Task.Run(async () =>
+                {
+                    try
+                    {
+                        await AvisoCobroNestoPago.Avisar(usuario, notificacion, CrearNotificaciones()).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logService.LogError($"[CobroNestoPago #565] Error al avisar del cobro {pago.NumeroOrden}: {ex.Message}", ex);
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                _logService.LogError($"[CobroNestoPago #565] Error al componer el aviso del cobro {pago?.NumeroOrden}: {ex.Message}", ex);
+                return Task.CompletedTask;
+            }
+        }
+
         internal void EnviarCorreoPostCobro(PagoTPV pago, string errorContabilizacion = null)
         {
             try

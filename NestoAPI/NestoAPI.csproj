@@ -918,6 +918,7 @@
     <Compile Include="Infraestructure\Notificaciones\AvisosPedidosJobsService.cs" />
     <Compile Include="Infraestructure\Pagos\IRedsysService.cs" />
     <Compile Include="Infraestructure\Pagos\RedsysService.cs" />
+    <Compile Include="Infraestructure\Pagos\AvisoCobroNestoPago.cs" />
     <Compile Include="Infraestructure\Pagos\IServicioPagos.cs" />
     <Compile Include="Infraestructure\Pagos\ServicioPagos.cs" />
     <Compile Include="Infraestructure\Pagos\FirmadorRedsys.cs" />
