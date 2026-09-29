@@ -501,6 +501,8 @@
     <Compile Include="Infrastructure\PedidosVenta\TransicionPresupuestoTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\SugeridorModoServicioTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\ModosServicioPermitidosTests.cs" />
+    <Compile Include="Infrastructure\PedidosVenta\ClasificadorCausasModoServicioTests.cs" />
+    <Compile Include="Infrastructure\PedidosVenta\SombraModoServicioTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\CambioClientePedidoTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\GestorCambioClientePedidoTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\ServicioDatosTransferenciaPedidoTests.cs" />

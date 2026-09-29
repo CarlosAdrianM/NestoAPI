@@ -65,17 +65,32 @@ namespace NestoAPI.Infraestructure
             {
                 return _real.ColorStock(producto, almacen, cantidad);
             }
+            return ColorDesdeResumen(_resumen, producto, almacen, cantidad);
+        }
+
+        /// <summary>
+        /// La regla de <see cref="GestorStocks.ColorStock(string, string, int)"/> sobre datos ya leídos. NestoAPI#563:
+        /// también la usa la sombra del modo de servicio, que lee el stock por su cuenta.
+        /// </summary>
+        public static string ColorDesdeResumen(ResumenStocksProductos resumen, string producto, string almacen, int cantidad)
+        {
             string claveAlmacen = ResumenStocksProductos.Clave(producto, almacen);
-            int stockAlmacen = ResumenStocksProductos.Valor(_resumen.StockAlmacen, claveAlmacen);
-            int pendientesEntregar = ResumenStocksProductos.Valor(_resumen.PendienteEntregarAlmacen, claveAlmacen);
+            int stockAlmacen = ResumenStocksProductos.Valor(resumen.StockAlmacen, claveAlmacen);
+            int pendientesEntregar = ResumenStocksProductos.Valor(resumen.PendienteEntregarAlmacen, claveAlmacen);
             if (stockAlmacen - pendientesEntregar - cantidad >= 0)
             {
                 return "green";
             }
-            int disponibleTodos = ResumenStocksProductos.Valor(_resumen.StockSedes, claveProducto)
-                - ResumenStocksProductos.Valor(_resumen.PendienteEntregarTotal, claveProducto)
-                + ResumenStocksProductos.Valor(_resumen.PendienteReposicion, claveProducto);
-            return disponibleTodos - cantidad >= 0 ? "DeepPink" : "red";
+            return DisponibleTodos(resumen, producto) - cantidad >= 0 ? "DeepPink" : "red";
+        }
+
+        /// <summary>Lo mismo que <see cref="GestorStocks.UnidadesDisponiblesTodosLosAlmacenes"/> sobre datos ya leídos.</summary>
+        public static int DisponibleTodos(ResumenStocksProductos resumen, string producto)
+        {
+            string claveProducto = ResumenStocksProductos.Clave(producto);
+            return ResumenStocksProductos.Valor(resumen.StockSedes, claveProducto)
+                - ResumenStocksProductos.Valor(resumen.PendienteEntregarTotal, claveProducto)
+                + ResumenStocksProductos.Valor(resumen.PendienteReposicion, claveProducto);
         }
 
         public string ColorStock(string producto, string almacen) => ColorStock(producto, almacen, 0);

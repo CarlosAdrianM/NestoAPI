@@ -438,7 +438,13 @@ namespace NestoAPI.Controllers
             // huella del pedido (que incluye el almacén de cada línea) y el stock de todos sus productos leído
             // de golpe (antes 2-5 consultas por producto).
             SugeridorModoServicio.Sugerencia sugerencia = CachePorHuellaPedido.ObtenerOCalcular(CachePorHuellaPedido.ESPACIO_MODO_SERVICIO, pedido,
-                () => SugeridorModoServicio.Sugerir(pedido, StocksPrecargados(pedido)));
+                () =>
+                {
+                    SugeridorModoServicio.Sugerencia calculada = SugeridorModoServicio.Sugerir(pedido, StocksPrecargados(pedido));
+                    // NestoAPI#563: sombra del sugeridor por causas (en segundo plano; apagada salvo parámetro, no toca la respuesta).
+                    SombraModoServicio.Registrar(SombraModoServicio.ORIGEN_PLANTILLA, pedido, calculada.Modo);
+                    return calculada;
+                });
             // NestoAPI#518: el parámetro del usuario manda solo si su modo tiene sentido para el pedido (se
             // aplica fuera de la caché: la sugerencia es del pedido y el parámetro, de cada usuario).
             byte? forzado = ModoServicioForzadoPorParametro();
@@ -2151,6 +2157,10 @@ namespace NestoAPI.Controllers
                     $"ValidacionNif: fallo best-effort al validar el NIF del cliente {pedido.cliente?.Trim()} " +
                     $"tras crear el pedido {pedido.numero}: {exNif.Message}", exNif));
             }
+
+            // NestoAPI#563: sombra del sugeridor por causas con el pedido recién creado (en segundo plano; apagada salvo
+            // parámetro; nunca cambia la respuesta ni la retrasa). Excluye sus propias líneas de los pendientes.
+            SombraModoServicio.Registrar(SombraModoServicio.ORIGEN_CREAR, pedido, pedido.modoServicio);
 
             // esto no sé si está muy bien, porque ponía empresa y lo he cambiado a número. Deberían ir los dos
             return CreatedAtRoute("DefaultApi", new { id = pedido.numero }, pedido);

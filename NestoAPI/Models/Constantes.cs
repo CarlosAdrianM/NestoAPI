@@ -816,6 +816,14 @@ namespace NestoAPI.Models
             public const string PRECIOS_MEDIOS_SOMBRA = "PreciosMediosSombra";
 
             /// <summary>
+            /// NestoAPI#563: interruptor de la sombra del modo de servicio por CAUSAS, bajo «(defecto)». Sin fila, "0" o
+            /// cualquier valor que no se reconozca: APAGADO. "1" (o "Todo"): registra en ModoServicioSombra cada
+            /// sugerencia comparada; "Diferencias": solo las que no coinciden. Se relee cada minuto. Nunca cambia lo
+            /// que ve el usuario.
+            /// </summary>
+            public const string MODO_SERVICIO_SOMBRA = "ModoServicioSombra";
+
+            /// <summary>
             /// NestoAPI#547 (corte c): marca (yyyy-MM-ddTHH:mm:ss, hora del servidor de BD) de la última pasada nocturna
             /// completa del incremental de precios medios, bajo «(defecto)» de la empresa 1. La escribe el propio job; la
             /// siguiente pasada recalcula lo modificado desde entonces. Para forzar que repase más atrás, poner una fecha
@@ -936,6 +944,8 @@ namespace NestoAPI.Models
             public const string ALMACEN_TIENDA = "REI";
             public const short ESTADO_A_EXTINGUIR = 4;
             public const short ESTADO_NO_SOBRE_PEDIDO = 0;
+            /// <summary>NestoAPI#563: estado «SOBRE PEDIDO» de EstadosProducto (SobrePedido = 1): se pide al proveedor cuando se vende.</summary>
+            public const short ESTADO_SOBRE_PEDIDO = 1;
             public const string FAMILIA_BONIFICACION = "Bonificac";
             public const string GRUPO_ACCESORIOS = "ACC";
             public const string GRUPO_APARATOS = "APA";
