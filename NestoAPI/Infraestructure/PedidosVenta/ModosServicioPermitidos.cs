@@ -23,6 +23,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
     /// <item>Pedido de TIENDA (todas sus líneas de producto en Alcobendas o Reina): solo «Según vaya entrando»;
     /// el cliente se lleva lo que hay.</item>
     /// <item>Algete, todo verde: solo «Todo junto» (los demás acaban haciendo lo mismo).</item>
+    /// <item>NestoAPI#561 (pedido 927293): Algete sin nada con stock (ni verdes ni rosas): «Todo junto» y, si hay
+    /// dos o más productos, «Según vaya entrando». «Ahora lo que hay» no serviría nada ahora (solo portes) y
+    /// con un único producto no hay nada que repartir.</item>
     /// <item>Algete, ninguna rosa: todos menos «Tras reponer de tiendas» (no hay nada que reponer).</item>
     /// <item>Algete con alguna rosa, pedido sin líneas de producto, o almacén de otro tipo (Amazon…): todos.</item>
     /// </list>
@@ -44,6 +47,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         internal const string MOTIVO_TIENDA = "En tienda el cliente se lleva lo que hay: el pedido se sirve según vaya entrando.";
         internal const string MOTIVO_TODO_VERDE = "Todo el pedido tiene stock en Algete: sale todo junto.";
         internal const string MOTIVO_SIN_ROSAS = "No hay nada que traer de las tiendas: esperar a la reposición no cambiaría nada.";
+        internal const string MOTIVO_NADA_CON_STOCK = "Ahora no hay stock de nada del pedido: no hay nada que servir ya.";
+        internal const string MOTIVO_UN_PRODUCTO_SIN_STOCK = "Es un solo producto y no tiene stock: sale entero cuando llegue.";
 
         private static readonly byte[] TODOS =
         {
@@ -102,6 +107,20 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     if (verdes > 0 && rosas == 0 && rojas == 0)
                     {
                         return modo == Constantes.Pedidos.ModosServicio.TODO_JUNTO ? null : MOTIVO_TODO_VERDE;
+                    }
+                    if (verdes == 0 && rosas == 0)
+                    {
+                        // NestoAPI#561: nada con stock ahora
+                        if (modo == Constantes.Pedidos.ModosServicio.TODO_JUNTO)
+                        {
+                            return null;
+                        }
+                        if (modo == Constantes.Pedidos.ModosServicio.SEGUN_VAYA_ENTRANDO)
+                        {
+                            return rojas >= 2 ? null : MOTIVO_UN_PRODUCTO_SIN_STOCK;
+                        }
+                        return modo == Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS ? MOTIVO_SIN_ROSAS
+                            : rojas >= 2 ? MOTIVO_NADA_CON_STOCK : MOTIVO_UN_PRODUCTO_SIN_STOCK;
                     }
                     if (rosas == 0)
                     {

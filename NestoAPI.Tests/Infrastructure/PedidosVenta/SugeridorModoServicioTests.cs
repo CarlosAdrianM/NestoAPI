@@ -61,10 +61,11 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
         }
 
         [TestMethod]
-        public void SoloRojo_TambienAhoraLoQueHay()
+        public void SoloRojo_TodoJunto()
         {
-            // No hay nada en las tiendas que reponer: «Tras reponer de tiendas» no significaría nada.
-            Assert.AreEqual(Constantes.Pedidos.ModosServicio.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ,
+            // NestoAPI#561 (Carlos, 29/09/26, pedido 927293): sin nada con stock, «ahora lo que hay» no serviría nada
+            // (salían solo los portes) y «Tras reponer» tampoco (no hay nada en las tiendas): todo junto.
+            Assert.AreEqual(Constantes.Pedidos.ModosServicio.TODO_JUNTO,
                 SugeridorModoServicio.Sugerir(Pedido("ROJO"), stocks).Modo);
         }
 

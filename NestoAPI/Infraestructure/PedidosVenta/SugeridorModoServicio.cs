@@ -160,6 +160,13 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 modo = Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS;
                 motivo = $"{rosas} línea{(rosas == 1 ? string.Empty : "s")} hay que traerla{(rosas == 1 ? string.Empty : "s")} de las tiendas: se espera a la reposición.";
             }
+            else if (rojas > 0 && verdes == 0)
+            {
+                // NestoAPI#561 (pedido 927293): sin nada con stock, «ahora lo que hay» no servía nada (salían solo
+                // los portes). Sale todo junto cuando llegue.
+                modo = Constantes.Pedidos.ModosServicio.TODO_JUNTO;
+                motivo = $"Ahora no hay stock de {(rojas == 1 ? "este producto" : "ninguna de las líneas")}: sale todo junto cuando llegue.";
+            }
             else if (rojas > 0)
             {
                 modo = Constantes.Pedidos.ModosServicio.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ;

@@ -69,8 +69,35 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
         {
             CollectionAssert.AreEqual(new List<byte> { M.TODO_JUNTO, M.SEGUN_VAYA_ENTRANDO, M.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ },
                 Permitidos(ModosServicioPermitidos.TipoAlmacen.Central, 2, 0, 1), "Verde + rojo");
-            CollectionAssert.AreEqual(new List<byte> { M.TODO_JUNTO, M.SEGUN_VAYA_ENTRANDO, M.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ },
-                Permitidos(ModosServicioPermitidos.TipoAlmacen.Central, 0, 0, 2), "Solo rojo");
+        }
+
+        [TestMethod]
+        public void Algete_NadaConStock_NiAhoraLoQueHay_NiSegunVayaEntrandoSiEsUnSoloProducto()
+        {
+            // NestoAPI#561 (pedido 927293): un solo producto sin stock en ningún almacén; con «ahora lo que hay»
+            // salieron solo los portes. Solo cabe «Todo junto».
+            var uno = ModosServicioPermitidos.Calcular(ModosServicioPermitidos.TipoAlmacen.Central, 0, 0, 1, true);
+            CollectionAssert.AreEqual(new List<byte> { M.TODO_JUNTO }, ModosServicioPermitidos.Permitidos(uno));
+            StringAssert.Contains(uno.Single(m => m.Modo == M.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ).Motivo, "un solo producto");
+
+            // Con dos o más productos sin stock, pueden llegar por separado: «Según vaya entrando» sí tiene sentido
+            var dos = ModosServicioPermitidos.Calcular(ModosServicioPermitidos.TipoAlmacen.Central, 0, 0, 2, true);
+            CollectionAssert.AreEqual(new List<byte> { M.TODO_JUNTO, M.SEGUN_VAYA_ENTRANDO }, ModosServicioPermitidos.Permitidos(dos));
+            StringAssert.Contains(dos.Single(m => m.Modo == M.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ).Motivo, "no hay nada que servir");
+        }
+
+        [TestMethod]
+        public void Sugerir_UnSoloProductoSinStock_SugiereTodoJunto_YAlCrearRechazaAhoraLoQueHay()
+        {
+            var pedido = Pedido("ALG", "ROJO1");
+
+            var s = SugeridorModoServicio.Sugerir(pedido, stocks);
+            Assert.AreEqual(M.TODO_JUNTO, s.Modo, "Antes sugería «Ahora lo que hay, el resto de una vez»");
+
+            pedido.modoServicio = M.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ;
+            var ex = Assert.ThrowsException<ModoServicioNoPermitidoException>(() => ValidadorModoServicio.ComprobarAlCrear(pedido, stocks));
+            Assert.AreEqual(M.TODO_JUNTO, ex.ModoSugerido);
+            StringAssert.Contains(ex.Message, "Elige «Todo junto»");
         }
 
         [TestMethod]
