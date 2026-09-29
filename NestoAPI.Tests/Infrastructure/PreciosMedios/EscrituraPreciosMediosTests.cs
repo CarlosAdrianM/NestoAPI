@@ -398,6 +398,22 @@ namespace NestoAPI.Tests.Infrastructure.PreciosMedios
         }
 
         [TestMethod]
+        public void Seleccion_ComprasModificadas_TambienVeLasFacturasDeshechas()
+        {
+            // Corte (b): prdDeshacerFacturaCmp BORRA CabFacturaCmp y deja las líneas en estado 2 sin NºFactura, poniendo
+            // [Fecha Modificación] (Scripts/Issue547_DeshacerFacturaCmp_FechaModificacion.sql). La rama de las LÍNEAS no
+            // puede filtrar por estado ni por factura, o dejaría fuera justo esas líneas.
+            string sql = RepositorioEscrituraPreciosMediosSql.SQL_PRODUCTOS_COMPRAS_MODIFICADAS;
+            string ramaLineas = sql.Substring(0, sql.IndexOf("UNION", StringComparison.Ordinal));
+
+            StringAssert.Contains(ramaLineas, "FROM LinPedidoCmp l");
+            StringAssert.Contains(ramaLineas, "l.[Fecha Modificación] >= @desde");
+            Assert.IsFalse(ramaLineas.Contains("Estado"), ramaLineas);
+            Assert.IsFalse(ramaLineas.Contains("NºFactura"), ramaLineas);
+            Assert.IsFalse(ramaLineas.Contains("CabFacturaCmp"), ramaLineas);
+        }
+
+        [TestMethod]
         public void NingunSqlDelIncremental_CreaIndicesNiTablas()
         {
             // #542: un índice filtrado en LinPedidoVta tumbó producción (módulos con QUOTED_IDENTIFIER OFF).
@@ -408,7 +424,9 @@ namespace NestoAPI.Tests.Infrastructure.PreciosMedios
                 RepositorioEscrituraPreciosMediosSql.SQL_PRODUCTOS_COMPRAS_MODIFICADAS,
                 RepositorioEscrituraPreciosMediosSql.SQL_PRODUCTOS_MOVIMIENTOS_FECHA_PASADA,
                 RepositorioEscrituraPreciosMediosSql.SQL_PRODUCTOS_PEDIDO, RepositorioEscrituraPreciosMediosSql.SQL_LEER_ULTIMA_PASADA,
-                RepositorioEscrituraPreciosMediosSql.SQL_GUARDAR_ULTIMA_PASADA, RepositorioEscrituraPreciosMediosSql.SQL_MAXIMO_NUM_ORDEN_EXTRACTO
+                RepositorioEscrituraPreciosMediosSql.SQL_GUARDAR_ULTIMA_PASADA, RepositorioEscrituraPreciosMediosSql.SQL_MAXIMO_NUM_ORDEN_EXTRACTO,
+                RepositorioEscrituraPreciosMediosSql.SQL_PRODUCTOS_PENDIENTES, RepositorioEscrituraPreciosMediosSql.SQL_MARCAR_PENDIENTE,
+                RepositorioEscrituraPreciosMediosSql.SQL_QUITAR_PENDIENTE
             })
             {
                 Assert.IsFalse(sql.IndexOf("CREATE", StringComparison.OrdinalIgnoreCase) >= 0, sql);

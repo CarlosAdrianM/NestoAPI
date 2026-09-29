@@ -221,6 +221,7 @@
     <Compile Include="Infrastructure\PreciosMedios\ComparadorSombraPreciosMediosTests.cs" />
     <Compile Include="Infrastructure\PreciosMedios\ConstructorHistorialPrecioMedioTests.cs" />
     <Compile Include="Infrastructure\PreciosMedios\EscrituraPreciosMediosTests.cs" />
+    <Compile Include="Infrastructure\PreciosMedios\PreciosMediosPendientesTests.cs" />
     <Compile Include="Infrastructure\PreciosMedios\FixturePrecioMedio.cs" />
     <Compile Include="Infrastructure\PreciosMedios\PreciosMediosControllerTests.cs" />
     <Compile Include="Infrastructure\PreciosMedios\PreciosMediosIncrementalTests.cs" />

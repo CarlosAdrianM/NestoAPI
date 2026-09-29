@@ -647,6 +647,7 @@
     <Compile Include="Infraestructure\PreciosMedios\ComparadorSombraPreciosMedios.cs" />
     <Compile Include="Infraestructure\PreciosMedios\ConstructorHistorialPrecioMedio.cs" />
     <Compile Include="Infraestructure\PreciosMedios\DatosProductoPrecioMedio.cs" />
+    <Compile Include="Infraestructure\PreciosMedios\EjecutorComandosPreciosMedios.cs" />
     <Compile Include="Infraestructure\PreciosMedios\EscritorPreciosMedios.cs" />
     <Compile Include="Infraestructure\PreciosMedios\HistorialPrecioMedio.cs" />
     <Compile Include="Infraestructure\PreciosMedios\IRepositorioEscrituraPreciosMedios.cs" />

@@ -20,6 +20,14 @@ namespace NestoAPI.Infraestructure.PreciosMedios
         /// revisado) con fecha en o antes de una compra facturada (riesgo 2).
         /// </summary>
         public int PorMovimientos { get; set; }
+
+        /// <summary>
+        /// Corte (a): productos que quedaron a medias en una pasada anterior (tope de filas) y se continúan en esta.
+        /// </summary>
+        public HashSet<string> Pendientes { get; set; } = new HashSet<string>(StringComparer.Ordinal);
+
+        /// <summary>Si no se han podido leer los pendientes (p. ej. falta la tabla PreciosMediosPendientes), por qué.</summary>
+        public string ErrorPendientes { get; set; }
     }
 
     /// <summary>Resumen de una empresa en una pasada nocturna del incremental.</summary>
@@ -31,6 +39,7 @@ namespace NestoAPI.Infraestructure.PreciosMedios
         public string EmpresaEspejo { get; set; }
         public int PorCompras { get; set; }
         public int PorMovimientos { get; set; }
+        public int PorPendientes { get; set; }
         public int Seleccionados { get; set; }
         public int Revisados { get; set; }
         public int ConCambios { get; set; }
@@ -42,6 +51,14 @@ namespace NestoAPI.Infraestructure.PreciosMedios
         public int FilasVentas { get; set; }
         public double Segundos { get; set; }
         public bool Interrumpida { get; set; }
+
+        /// <summary>Corte (a): productos que han llegado al tope de filas en esta pasada y quedan pendientes.</summary>
+        public int QuedanPendientes { get; set; }
+
+        /// <summary>Corte (a): productos pendientes de pasadas anteriores que se han terminado en esta.</summary>
+        public int PendientesTerminados { get; set; }
+
+        public string ErrorPendientes { get; set; }
         public List<string> PrimerosErrores { get; } = new List<string>();
     }
 
@@ -91,11 +108,14 @@ namespace NestoAPI.Infraestructure.PreciosMedios
                     Desde, OrigenDesde, MarcaGuardada.HasValue ? MarcaGuardada.Value.ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture) : "NO guardada",
                     TextoNumOrden()) +
                 string.Join(" | ", Empresas.Select(e => string.Format(CultureInfo.InvariantCulture,
-                    "empresa {0}: {1}/{2} productos ({3} por compras, {4} por movimientos con fecha pasada) en {5:0}s{6}; con cambios {7}, sin cambios {8}, " +
-                    "no procesados {9}, ERRORES {10}; filas Productos {11}, LinPedidoCmp {12}, LinPedidoVta {13}{14}",
+                    "empresa {0}: {1}/{2} productos ({3} por compras, {4} por movimientos con fecha pasada, {15} pendientes de antes) en {5:0}s{6}; " +
+                    "con cambios {7}, sin cambios {8}, no procesados {9}, ERRORES {10}; filas Productos {11}, LinPedidoCmp {12}, LinPedidoVta {13}; " +
+                    "tope de {16} filas: {17} quedan PENDIENTES, {18} pendientes terminados{19}{14}",
                     e.Empresa, e.Revisados, e.Seleccionados, e.PorCompras, e.PorMovimientos, e.Segundos, e.Interrumpida ? " (INTERRUMPIDA por tiempo)" : "",
                     e.ConCambios, e.SinCambios, e.NoProcesados, e.Errores, e.FilasProductos, e.FilasCompras, e.FilasVentas,
-                    e.PrimerosErrores.Any() ? "; errores: " + string.Join("; ", e.PrimerosErrores) : "")));
+                    e.PrimerosErrores.Any() ? "; errores: " + string.Join("; ", e.PrimerosErrores) : "",
+                    e.PorPendientes, EjecutorComandosPreciosMedios.TOPE_FILAS_POR_PRODUCTO_Y_PASADA, e.QuedanPendientes, e.PendientesTerminados,
+                    e.ErrorPendientes != null ? " (NO se han podido leer los pendientes: " + e.ErrorPendientes + ")" : "")));
         }
 
         private string TextoNumOrden()
@@ -180,7 +200,8 @@ namespace NestoAPI.Infraestructure.PreciosMedios
         /// movimientos de stock grabados desde la última pasada (Nº Orden en (<paramref name="desdeNumOrden"/>,
         /// <paramref name="hastaNumOrden"/>]) con fecha pasada (riesgo 2: cambian el stock a la fecha de una compra
         /// antigua sin tocar LinPedidoCmp). Sin <paramref name="desdeNumOrden"/> (primera noche) no se miran
-        /// movimientos. Unión ordenada, sin repetidos ni espacios.
+        /// movimientos. MÁS los que quedaron pendientes en una pasada anterior por el tope de filas (corte a; si no se
+        /// pueden leer, se sigue sin ellos y se dice en el resumen). Unión ordenada, sin repetidos ni espacios.
         /// </summary>
         public SeleccionIncrementalPrecioMedio SeleccionarProductos(string empresa, string espejo, DateTime desde, int? desdeNumOrden, int? hastaNumOrden)
         {
@@ -188,11 +209,25 @@ namespace NestoAPI.Infraestructure.PreciosMedios
             List<string> porMovimientos = desdeNumOrden.HasValue && hastaNumOrden.HasValue && hastaNumOrden.Value > desdeNumOrden.Value
                 ? Limpiar(escritura.ProductosConMovimientosConFechaPasada(empresa, espejo, desdeNumOrden.Value, hastaNumOrden.Value))
                 : new List<string>();
+            List<string> pendientes;
+            string errorPendientes = null;
+            try
+            {
+                pendientes = Limpiar(escritura.ProductosPendientes(empresa));
+            }
+            catch (Exception ex)
+            {
+                pendientes = new List<string>();
+                errorPendientes = ex.Message;
+            }
             return new SeleccionIncrementalPrecioMedio
             {
                 PorCompras = porCompras.Count,
                 PorMovimientos = porMovimientos.Count,
-                Productos = porCompras.Union(porMovimientos, StringComparer.Ordinal).OrderBy(p => p, StringComparer.Ordinal).ToList()
+                Pendientes = new HashSet<string>(pendientes, StringComparer.Ordinal),
+                ErrorPendientes = errorPendientes,
+                Productos = porCompras.Union(porMovimientos, StringComparer.Ordinal).Union(pendientes, StringComparer.Ordinal)
+                    .OrderBy(p => p, StringComparer.Ordinal).ToList()
             };
         }
 
@@ -201,7 +236,11 @@ namespace NestoAPI.Infraestructure.PreciosMedios
             return Limpiar(escritura.ProductosDelPedidoCompra(empresa, pedido));
         }
 
-        /// <summary>Recalcula y escribe un producto (la empresa puede venir como espejo: se traduce a la principal).</summary>
+        /// <summary>
+        /// Recalcula y escribe un producto (la empresa puede venir como espejo: se traduce a la principal). Si llega al
+        /// tope de filas, lo marca como pendiente para que lo continúe la pasada nocturna (corte a). La marca solo la
+        /// quita la pasada nocturna, que es la que lee los pendientes.
+        /// </summary>
         public ResultadoEscrituraPrecioMedio RecalcularProducto(string empresa, string producto)
         {
             string principal = EmpresaPrincipal(empresa);
@@ -209,7 +248,20 @@ namespace NestoAPI.Infraestructure.PreciosMedios
             {
                 return null; // empresa que el SP no procesa
             }
-            return escritor.RecalcularProducto(principal, EmpresaEspejo(principal), producto);
+            ResultadoEscrituraPrecioMedio resultado = escritor.RecalcularProducto(principal, EmpresaEspejo(principal), producto);
+            if (resultado != null && resultado.QuedaPendiente)
+            {
+                escritura.MarcarPendiente(principal, producto?.Trim(), MotivoPendiente(resultado));
+            }
+            return resultado;
+        }
+
+        /// <summary>Texto para PreciosMediosPendientes.Motivo.</summary>
+        internal static string MotivoPendiente(ResultadoEscrituraPrecioMedio resultado)
+        {
+            return string.Format(CultureInfo.InvariantCulture,
+                "Tope de {0} filas por pasada: escritas Productos {1}, LinPedidoCmp {2}, LinPedidoVta {3}",
+                EjecutorComandosPreciosMedios.TOPE_FILAS_POR_PRODUCTO_Y_PASADA, resultado.FilasProductos, resultado.FilasCompras, resultado.FilasVentas);
         }
 
         /// <summary>
@@ -300,6 +352,8 @@ namespace NestoAPI.Infraestructure.PreciosMedios
             SeleccionIncrementalPrecioMedio seleccion = SeleccionarProductos(empresa, espejo, desde, desdeNumOrden, hastaNumOrden);
             r.PorCompras = seleccion.PorCompras;
             r.PorMovimientos = seleccion.PorMovimientos;
+            r.PorPendientes = seleccion.Pendientes.Count;
+            r.ErrorPendientes = seleccion.ErrorPendientes;
             r.Seleccionados = seleccion.Productos.Count;
 
             foreach (string producto in seleccion.Productos)
@@ -328,6 +382,18 @@ namespace NestoAPI.Infraestructure.PreciosMedios
                     r.FilasProductos += resultado?.FilasProductos ?? 0;
                     r.FilasCompras += resultado?.FilasCompras ?? 0;
                     r.FilasVentas += resultado?.FilasVentas ?? 0;
+
+                    // Corte (a): a medias por el tope -> se marca para la próxima pasada; terminado y marcado de antes -> se desmarca.
+                    if (resultado != null && resultado.QuedaPendiente)
+                    {
+                        escritura.MarcarPendiente(empresa, producto, MotivoPendiente(resultado));
+                        r.QuedanPendientes++;
+                    }
+                    else if (seleccion.Pendientes.Contains(producto))
+                    {
+                        escritura.QuitarPendiente(empresa, producto);
+                        r.PendientesTerminados++;
+                    }
                 }
                 catch (Exception ex)
                 {

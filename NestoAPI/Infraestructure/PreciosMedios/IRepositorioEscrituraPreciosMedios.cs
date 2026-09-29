@@ -48,9 +48,24 @@ namespace NestoAPI.Infraestructure.PreciosMedios
         void GuardarUltimoNumOrdenExtracto(int numOrden);
 
         /// <summary>
+        /// Corte (a) del incremental: productos de <paramref name="empresa"/> que quedaron a medias en una pasada
+        /// anterior (superaron <see cref="EjecutorComandosPreciosMedios.TOPE_FILAS_POR_PRODUCTO_Y_PASADA"/>) y hay que
+        /// continuar. Tabla <c>PreciosMediosPendientes</c> (Scripts/Issue547_PreciosMediosPendientes.sql).
+        /// </summary>
+        IReadOnlyList<string> ProductosPendientes(string empresa);
+
+        /// <summary>Marca (o vuelve a marcar, sumando una vez) un producto como pendiente de continuar.</summary>
+        void MarcarPendiente(string empresa, string producto, string motivo);
+
+        /// <summary>Quita la marca de pendiente (el producto ya se ha escrito entero).</summary>
+        void QuitarPendiente(string empresa, string producto);
+
+        /// <summary>
         /// En UNA transacción y con un bloqueo de aplicación por (empresa, producto): lee el producto en lectura
         /// confirmada, pide el plan a <paramref name="planificar"/> (puro) y ejecuta sus sentencias. Si algo falla,
-        /// deshace todo el producto.
+        /// deshace todo el producto. Como mucho escribe
+        /// <see cref="EjecutorComandosPreciosMedios.TOPE_FILAS_POR_PRODUCTO_Y_PASADA"/> filas (entre lotes): si llega al
+        /// tope confirma lo escrito y devuelve <see cref="ResultadoEscrituraPrecioMedio.QuedaPendiente"/>.
         /// </summary>
         ResultadoEscrituraPrecioMedio RecalcularYEscribir(string empresa, string empresaEspejo, string producto,
             Func<DatosProductoPrecioMedio, PlanEscrituraPrecioMedio> planificar);
@@ -66,6 +81,13 @@ namespace NestoAPI.Infraestructure.PreciosMedios
         public int FilasCompras { get; set; }
         public int FilasVentas { get; set; }
         public double Milisegundos { get; set; }
+
+        /// <summary>
+        /// Se ha llegado al tope de filas de una pasada (<see cref="EjecutorComandosPreciosMedios.TOPE_FILAS_POR_PRODUCTO_Y_PASADA"/>)
+        /// y queda algo por escribir: lo escrito se ha confirmado y el producto se tiene que continuar en otra pasada
+        /// (el predicado «solo lo que cambia» hace que la siguiente empiece donde se quedó esta).
+        /// </summary>
+        public bool QuedaPendiente { get; set; }
 
         public bool HaCambiadoAlgo => FilasProductos + FilasCompras + FilasVentas > 0;
     }

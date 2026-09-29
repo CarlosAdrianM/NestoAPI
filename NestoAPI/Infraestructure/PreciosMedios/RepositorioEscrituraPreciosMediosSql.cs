@@ -50,8 +50,14 @@ SET @resultado = @r;";
 
         internal const string SQL_AHORA = "SELECT GETDATE()";
 
+        /// <summary>Motivo recortado (la columna es varchar(200); los parámetros de texto van con tamaño 162).</summary>
+        internal const int LONGITUD_MOTIVO_PENDIENTE = 150;
+
         // Compras modificadas (índice Producto+Enviado+Estado+Fecha Modificación) o de facturas creadas/modificadas
         // desde la última pasada (CabFacturaCmp → LinPedidoCmp por Empresa+NºFactura).
+        // Corte (b): una factura DESHECHA (prdDeshacerFacturaCmp, fuera de NestoAPI) borra CabFacturaCmp y deja las líneas
+        // en estado 2 sin NºFactura; la ve la primera rama porque el SP pone [Fecha Modificación] en esas líneas
+        // (Scripts/Issue547_DeshacerFacturaCmp_FechaModificacion.sql). Por eso esa rama NO filtra por estado ni factura.
         internal const string SQL_PRODUCTOS_COMPRAS_MODIFICADAS = @"
 SELECT RTRIM(l.Producto)
 FROM LinPedidoCmp l WITH (NOLOCK)
@@ -94,6 +100,20 @@ WHERE Empresa = @empresa AND Usuario = @usuario AND Clave = @clave;
 IF @@ROWCOUNT = 0
     INSERT INTO ParámetrosUsuario (Empresa, Clave, Usuario, Valor, Usuario2, [Fecha Modificación])
     VALUES (@empresa, @clave, @usuario, @valor, @usuario, GETDATE());";
+
+        // Corte (a): productos que quedaron a medias por el tope de filas (Scripts/Issue547_PreciosMediosPendientes.sql).
+        internal const string SQL_PRODUCTOS_PENDIENTES = @"
+SELECT RTRIM(Producto) FROM PreciosMediosPendientes WHERE Empresa = @empresa";
+
+        internal const string SQL_MARCAR_PENDIENTE = @"
+UPDATE PreciosMediosPendientes SET Veces = Veces + 1, Motivo = @motivo, [Fecha Modificación] = GETDATE()
+WHERE Empresa = @empresa AND Producto = @producto;
+IF @@ROWCOUNT = 0
+    INSERT INTO PreciosMediosPendientes (Empresa, Producto, Motivo, Veces, Fecha, [Fecha Modificación])
+    VALUES (@empresa, @producto, @motivo, 1, GETDATE(), GETDATE());";
+
+        internal const string SQL_QUITAR_PENDIENTE = @"
+DELETE FROM PreciosMediosPendientes WHERE Empresa = @empresa AND Producto = @producto";
 
         /// <summary>Formato de la marca de la última pasada en ParámetrosUsuario.Valor.</summary>
         internal const string FORMATO_MARCA = "yyyy-MM-ddTHH:mm:ss";
@@ -174,6 +194,42 @@ IF @@ROWCOUNT = 0
                 LeerCadenas(comando, productos);
             }
             return productos;
+        }
+
+        public IReadOnlyList<string> ProductosPendientes(string empresa)
+        {
+            List<string> productos = new List<string>();
+            using (SqlConnection conexion = Abrir())
+            using (SqlCommand comando = Comando(conexion, null, SQL_PRODUCTOS_PENDIENTES, TIMEOUT_ESCRITURA_SEGUNDOS))
+            {
+                Texto(comando, "@empresa", empresa?.Trim());
+                LeerCadenas(comando, productos);
+            }
+            return productos;
+        }
+
+        public void MarcarPendiente(string empresa, string producto, string motivo)
+        {
+            using (SqlConnection conexion = Abrir())
+            using (SqlCommand comando = Comando(conexion, null, SQL_MARCAR_PENDIENTE, TIMEOUT_ESCRITURA_SEGUNDOS))
+            {
+                Texto(comando, "@empresa", empresa?.Trim());
+                Texto(comando, "@producto", producto?.Trim());
+                string m = motivo?.Trim();
+                Texto(comando, "@motivo", m != null && m.Length > LONGITUD_MOTIVO_PENDIENTE ? m.Substring(0, LONGITUD_MOTIVO_PENDIENTE) : m);
+                _ = comando.ExecuteNonQuery();
+            }
+        }
+
+        public void QuitarPendiente(string empresa, string producto)
+        {
+            using (SqlConnection conexion = Abrir())
+            using (SqlCommand comando = Comando(conexion, null, SQL_QUITAR_PENDIENTE, TIMEOUT_ESCRITURA_SEGUNDOS))
+            {
+                Texto(comando, "@empresa", empresa?.Trim());
+                Texto(comando, "@producto", producto?.Trim());
+                _ = comando.ExecuteNonQuery();
+            }
         }
 
         public DateTime? LeerUltimaPasada()
@@ -265,16 +321,10 @@ IF @@ROWCOUNT = 0
                         PlanEscrituraPrecioMedio plan = planificar(datos);
                         resultado.Plan = plan;
 
-                        foreach (ComandoEscrituraPrecioMedio comando in SqlEscrituraPreciosMedios.Generar(plan))
-                        {
-                            int filas = Ejecutar(conexion, transaccion, comando);
-                            switch (comando.Tabla)
-                            {
-                                case TablaEscrituraPrecioMedio.Productos: resultado.FilasProductos += filas; break;
-                                case TablaEscrituraPrecioMedio.LinPedidoCmp: resultado.FilasCompras += filas; break;
-                                case TablaEscrituraPrecioMedio.LinPedidoVta: resultado.FilasVentas += filas; break;
-                            }
-                        }
+                        // Corte (a): con tope de filas. Si se llega, se confirma lo escrito y el producto queda pendiente.
+                        EjecutorComandosPreciosMedios.Ejecutar(SqlEscrituraPreciosMedios.Generar(plan),
+                            EjecutorComandosPreciosMedios.TOPE_FILAS_POR_PRODUCTO_Y_PASADA,
+                            comando => EjecutarUnaVez(conexion, transaccion, comando), resultado);
                         transaccion.Commit();
                     }
                     catch
@@ -320,34 +370,23 @@ IF @@ROWCOUNT = 0
         }
 
         /// <summary>
-        /// Ejecuta una sentencia y devuelve las filas de ESA sentencia (<c>@@ROWCOUNT</c> en un parámetro de salida: el
-        /// valor de ExecuteNonQuery sumaría también lo que hagan los triggers). En lotes, repite mientras cambie un lote entero.
+        /// Ejecuta UNA vuelta de una sentencia y devuelve las filas de ESA sentencia (<c>@@ROWCOUNT</c> en un parámetro
+        /// de salida: el valor de ExecuteNonQuery sumaría también lo que hagan los triggers). Las vueltas de los lotes y
+        /// el tope los decide <see cref="EjecutorComandosPreciosMedios"/>.
         /// </summary>
-        private static int Ejecutar(SqlConnection conexion, SqlTransaction transaccion, ComandoEscrituraPrecioMedio comando)
+        private static int EjecutarUnaVez(SqlConnection conexion, SqlTransaction transaccion, ComandoEscrituraPrecioMedio comando)
         {
-            int total = 0;
-            int vueltas = 0;
-            while (true)
+            using (SqlCommand sql = Comando(conexion, transaccion, comando.Texto + ";\nSET @filas = @@ROWCOUNT;", TIMEOUT_ESCRITURA_SEGUNDOS))
             {
-                int filas;
-                using (SqlCommand sql = Comando(conexion, transaccion, comando.Texto + ";\nSET @filas = @@ROWCOUNT;", TIMEOUT_ESCRITURA_SEGUNDOS))
+                foreach (ParametroEscrituraPrecioMedio p in comando.Parametros)
                 {
-                    foreach (ParametroEscrituraPrecioMedio p in comando.Parametros)
-                    {
-                        SqlParameter parametro = p.Tamano > 0 ? sql.Parameters.Add(p.Nombre, p.Tipo, p.Tamano) : sql.Parameters.Add(p.Nombre, p.Tipo);
-                        parametro.Value = p.Valor ?? DBNull.Value;
-                    }
-                    SqlParameter salida = sql.Parameters.Add("@filas", SqlDbType.Int);
-                    salida.Direction = ParameterDirection.Output;
-                    _ = sql.ExecuteNonQuery();
-                    filas = salida.Value == DBNull.Value ? 0 : (int)salida.Value;
+                    SqlParameter parametro = p.Tamano > 0 ? sql.Parameters.Add(p.Nombre, p.Tipo, p.Tamano) : sql.Parameters.Add(p.Nombre, p.Tipo);
+                    parametro.Value = p.Valor ?? DBNull.Value;
                 }
-                total += filas;
-                vueltas++;
-                if (!comando.EnLotes || filas < SqlEscrituraPreciosMedios.TAMANO_LOTE_VENTAS || vueltas >= MAXIMO_VUELTAS_LOTE)
-                {
-                    return total;
-                }
+                SqlParameter salida = sql.Parameters.Add("@filas", SqlDbType.Int);
+                salida.Direction = ParameterDirection.Output;
+                _ = sql.ExecuteNonQuery();
+                return salida.Value == DBNull.Value ? 0 : (int)salida.Value;
             }
         }
 
