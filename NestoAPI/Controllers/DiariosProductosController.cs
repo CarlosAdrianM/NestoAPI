@@ -15,9 +15,26 @@ using Newtonsoft.Json;
 
 namespace NestoAPI.Controllers
 {
+    /// <summary>
+    /// NestoAPI#554: con [Authorize] (el único llamante es Nesto, que manda el JWT) y el traspaso de
+    /// diario con SQL parametrizado. Antes el POST era anónimo y concatenaba lo que llegaba en el cuerpo.
+    /// </summary>
+    [Authorize]
     public class DiariosProductosController : ApiController
     {
-        private NVEntities db = new NVEntities();
+        private readonly NVEntities db;
+        private readonly Func<string, object[], Task<int>> ejecutarSql;
+
+        public DiariosProductosController() : this(new NVEntities())
+        {
+        }
+
+        /// <param name="ejecutarSql">(sql, parámetros) → filas afectadas. Inyectable para tests.</param>
+        internal DiariosProductosController(NVEntities db, Func<string, object[], Task<int>> ejecutarSql = null)
+        {
+            this.db = db;
+            this.ejecutarSql = ejecutarSql ?? ((sql, parametros) => this.db.Database.ExecuteSqlCommandAsync(sql, parametros));
+        }
 
 
         // GET: api/DiariosProductos
@@ -84,51 +101,47 @@ namespace NestoAPI.Controllers
         */
 
         // POST: api/DiariosProductos
+        // Traspasa los movimientos pendientes (PreExtrProducto) de un diario a otro, opcionalmente solo los de un almacén.
         [HttpPost]
         [ResponseType(typeof(bool))]
         public async Task<IHttpActionResult> PostDiarioProducto(ParametrosDiarioProducto parametros)
         {
-            try
+            if (parametros == null)
             {
-                if (parametros == null)
-                {
-                    return BadRequest();
-                }
-                // Obtener los valores de los parámetros individuales
-                string diarioOrigen = parametros.diarioOrigen;
-                string diarioDestino = parametros.diarioDestino;
-                string almacen = parametros.almacen;
-
-                // Construye tu consulta T-SQL
-                string sqlQuery = $"UPDATE PreExtrProducto SET Diario = '{diarioDestino}' WHERE Diario = '{diarioOrigen}'";
-
-                if (!string.IsNullOrEmpty(almacen) && almacen != "(todos)")
-                {
-                    sqlQuery += $" and Almacén = '{almacen}'";
-                }
-
-                // Ejecuta la consulta
-                int filasAfectadas = db.Database.ExecuteSqlCommand(sqlQuery);
-
-                // Verifica si hubo filas afectadas
-                if (filasAfectadas > 0)
-                {
-                    return Ok(true);
-                }
-                else
-                {
-                    return BadRequest("No se encontraron registros para actualizar");
-                }
-
+                return BadRequest();
             }
-            catch (Exception ex)
+            string diarioOrigen = parametros.diarioOrigen?.Trim();
+            string diarioDestino = parametros.diarioDestino?.Trim();
+            string almacen = parametros.almacen?.Trim();
+
+            // Solo los diarios que ofrece el GET (de la empresa, no de sistema, no «_...»)
+            List<string> diariosPermitidos = (await db.DiariosProductos
+                .Where(d => d.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && !d.Sistema && !d.Número.StartsWith("_"))
+                .Select(d => d.Número)
+                .ToListAsync().ConfigureAwait(false))
+                .Select(d => d?.Trim())
+                .ToList();
+            if (string.IsNullOrEmpty(diarioOrigen) || !diariosPermitidos.Contains(diarioOrigen))
             {
-                throw ex;
+                return BadRequest($"El diario de origen '{diarioOrigen}' no existe o no se puede traspasar.");
+            }
+            if (string.IsNullOrEmpty(diarioDestino) || !diariosPermitidos.Contains(diarioDestino))
+            {
+                return BadRequest($"El diario de destino '{diarioDestino}' no existe o no se puede traspasar.");
             }
 
+            string sql = "UPDATE PreExtrProducto SET Diario = @p0 WHERE Diario = @p1";
+            List<object> valores = new List<object> { diarioDestino, diarioOrigen };
+            if (!string.IsNullOrEmpty(almacen) && almacen != "(todos)")
+            {
+                sql += " AND Almacén = @p2";
+                valores.Add(almacen);
+            }
 
-            
-            return Ok(false); 
+            int filasAfectadas = await ejecutarSql(sql, valores.ToArray()).ConfigureAwait(false);
+            return filasAfectadas > 0
+                ? (IHttpActionResult)Ok(true)
+                : BadRequest("No se encontraron registros para actualizar");
         }
 
 
