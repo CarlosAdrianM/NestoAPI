@@ -1151,5 +1151,29 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(string.Empty, GestorPresupuestos.GenerarHtmlAvisos(null));
         }
 
+        [TestMethod]
+        public void CantidadParaColorStock_LineaDePresupuesto_DescuentaSuCantidad()
+        {
+            // Presupuesto 927312: 5 productos sin stock salían en verde en el correo
+            var presupuesto = new LineaPedidoVentaDTO { Cantidad = 2, estado = Constantes.EstadosLineaVenta.PRESUPUESTO };
+            var pedido = new LineaPedidoVentaDTO { Cantidad = 2, estado = Constantes.EstadosLineaVenta.PENDIENTE };
+
+            Assert.AreEqual(2, GestorPresupuestos.CantidadParaColorStock(presupuesto));
+            Assert.AreEqual(0, GestorPresupuestos.CantidadParaColorStock(pedido), "Las de un pedido ya están en pendientes de entregar");
+        }
+
+        [TestMethod]
+        public void ColorStock_PresupuestoSinStock_EsRojoYNoVerde()
+        {
+            var servicio = A.Fake<IServicioGestorStocks>();
+            A.CallTo(() => servicio.Stock("34100", "ALG")).Returns(0);
+            A.CallTo(() => servicio.UnidadesPendientesEntregarAlmacen("34100", "ALG")).Returns(0);
+            A.CallTo(() => servicio.UnidadesDisponiblesTodosLosAlmacenes("34100")).Returns(0);
+            var gestor = new GestorStocks(servicio);
+            var linea = new LineaPedidoVentaDTO { Producto = "34100", almacen = "ALG", Cantidad = 1, estado = Constantes.EstadosLineaVenta.PRESUPUESTO };
+
+            Assert.AreEqual("green", gestor.ColorStock("34100", "ALG"), "Así salía antes");
+            Assert.AreEqual("red", gestor.ColorStock("34100", "ALG", GestorPresupuestos.CantidadParaColorStock(linea)));
+        }
     }
 }

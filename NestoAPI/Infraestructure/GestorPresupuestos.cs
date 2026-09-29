@@ -33,6 +33,14 @@ namespace NestoAPI.Infraestructure
         }
 
         /// <summary>
+        /// Presupuesto 927312 (29/09/26): el color del correo es «stock − pendientes de entregar» y da por hecho que
+        /// las unidades de la línea ya están en pendientes. Las de un PRESUPUESTO no lo están (estado −3), así que
+        /// con 0 de stock salía 0 ≥ 0 = verde. En esas líneas hay que descontar su propia cantidad.
+        /// </summary>
+        internal static int CantidadParaColorStock(LineaPedidoVentaDTO linea)
+            => linea != null && linea.estado == Constantes.EstadosLineaVenta.PRESUPUESTO ? linea.Cantidad : 0;
+
+        /// <summary>
         /// NestoAPI#335: avisos operativos acumulados durante el guardado (p. ej. "se quitó la
         /// comisión de reembolso pero el envío de agencia sigue con su importe"). Se pintan
         /// destacados al principio del correo para que el usuario pueda controlar el cambio.
@@ -606,7 +614,9 @@ namespace NestoAPI.Infraestructure
 
             foreach (LineaPedidoVentaDTO linea in pedido.Lineas)
             {
-                string colorCantidad = linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO ? gestorStocks.ColorStock(linea.Producto, linea.almacen) : "black";
+                string colorCantidad = linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO
+                    ? gestorStocks.ColorStock(linea.Producto, linea.almacen, CantidadParaColorStock(linea))
+                    : "black";
                 string textoReserva = "";
 
                 // Carlos 23/10/25: Calcular si la línea necesita reservas AHORA
