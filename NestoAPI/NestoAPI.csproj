@@ -529,6 +529,7 @@
     <Compile Include="Controllers\CredencialesAmazonController.cs" />
     <Compile Include="Controllers\FacturasAmazonController.cs" />
     <Compile Include="Controllers\OfertasCombinadasController.cs" />
+    <Compile Include="Controllers\OfertasAutorizadasController.cs" />
     <Compile Include="Controllers\OfertasEscalonadasController.cs" />
     <Compile Include="Controllers\OfertasPermitidasProductoController.cs" />
     <Compile Include="Controllers\OfertasPermitidasFamiliaController.cs" />
@@ -1358,6 +1359,11 @@
     <Compile Include="Models\OfertasEscalonadas\OfertaEscalonadaDTO.cs" />
     <Compile Include="Models\OfertasCombinadas\OfertaPermitidaProductoDTO.cs" />
     <Compile Include="Models\OfertasCombinadas\OfertaPermitidaFamiliaDTO.cs" />
+    <Compile Include="Models\OfertasCombinadas\OfertasAutorizadasDTO.cs" />
+    <Compile Include="Infraestructure\OfertasAutorizadas\ITipoOfertaAutorizada.cs" />
+    <Compile Include="Infraestructure\OfertasAutorizadas\MapeadorOfertas.cs" />
+    <Compile Include="Infraestructure\OfertasAutorizadas\ServicioOfertasAutorizadas.cs" />
+    <Compile Include="Infraestructure\OfertasAutorizadas\TiposOfertaAutorizada.cs" />
     <Compile Include="Models\FicheroCuaderno43.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>

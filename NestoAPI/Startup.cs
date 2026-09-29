@@ -209,6 +209,9 @@ namespace NestoAPI
             // Servicios de Notificaciones Push (Issue #108)
             _ = services.AddScoped<IServicioNotificacionesPush, ServicioNotificacionesPush>();
 
+            // Ofertas autorizadas: lectura para NestoApp e informar a los vendedores bajo demanda (NestoAPI#233)
+            _ = services.AddScoped<Infraestructure.OfertasAutorizadas.IServicioOfertasAutorizadas, Infraestructure.OfertasAutorizadas.ServicioOfertasAutorizadas>();
+
             // Ventana de facturas pendientes de Verifactu (NestoAPI#522)
             _ = services.AddScoped<Infraestructure.Verifactu.IServicioFacturasPendientesVerifactu, Infraestructure.Verifactu.ServicioFacturasPendientesVerifactu>();
 

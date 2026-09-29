@@ -1,4 +1,5 @@
 using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.OfertasAutorizadas;
 using NestoAPI.Models;
 using NestoAPI.Models.OfertasEscalonadas;
 using System;
@@ -435,33 +436,6 @@ namespace NestoAPI.Controllers
             return null;
         }
 
-        private OfertaEscalonadaDTO MapToDTO(OfertaEscalonada oferta)
-        {
-            return new OfertaEscalonadaDTO
-            {
-                Id = oferta.Id,
-                Empresa = oferta.Empresa?.Trim(),
-                Nombre = oferta.Nombre?.Trim(),
-                FechaDesde = oferta.FechaDesde,
-                FechaHasta = oferta.FechaHasta,
-                Usuario = oferta.Usuario?.Trim(),
-                FechaModificacion = oferta.FechaModificacion,
-                Productos = oferta.OfertasEscalonadasProductos?.Select(p => new OfertaEscalonadaProductoDTO
-                {
-                    Id = p.Id,
-                    Producto = p.Producto?.Trim(),
-                    ProductoNombre = p.Producto1?.Nombre?.Trim(),
-                    PrecioBase = p.PrecioBase
-                }).ToList() ?? new List<OfertaEscalonadaProductoDTO>(),
-                Tramos = oferta.OfertasEscalonadasTramos?
-                    .OrderBy(t => t.CantidadMinima)
-                    .Select(t => new OfertaEscalonadaTramoDTO
-                    {
-                        Id = t.Id,
-                        CantidadMinima = t.CantidadMinima,
-                        Descuento = t.Descuento
-                    }).ToList() ?? new List<OfertaEscalonadaTramoDTO>()
-            };
-        }
+        private static OfertaEscalonadaDTO MapToDTO(OfertaEscalonada oferta) => MapeadorOfertas.Escalonada(oferta);
     }
 }

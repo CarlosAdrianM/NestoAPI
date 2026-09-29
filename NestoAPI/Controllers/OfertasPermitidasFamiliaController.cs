@@ -1,4 +1,5 @@
 ﻿using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.OfertasAutorizadas;
 using NestoAPI.Models;
 using NestoAPI.Models.OfertasCombinadas;
 using System;
@@ -340,28 +341,6 @@ namespace NestoAPI.Controllers
             return $"Ya existe una {tipo} para la familia '{familia}' con el mismo filtro y subgrupo";
         }
 
-        private OfertaPermitidaFamiliaDTO MapToDTO(OfertaPermitida oferta, Dictionary<string, string> familias)
-        {
-            string descripcionFamilia = null;
-            if (oferta.Familia != null && familias.ContainsKey(oferta.Familia))
-            {
-                descripcionFamilia = familias[oferta.Familia]?.Trim();
-            }
-
-            return new OfertaPermitidaFamiliaDTO
-            {
-                NOrden = oferta.NºOrden,
-                Empresa = oferta.Empresa?.Trim(),
-                Familia = oferta.Familia?.Trim(),
-                FamiliaDescripcion = descripcionFamilia,
-                CantidadConPrecio = oferta.CantidadConPrecio,
-                CantidadRegalo = oferta.CantidadRegalo,
-                FiltroProducto = oferta.FiltroProducto?.Trim(),
-                SubGrupo = NormalizarSubGrupo(oferta.SubGrupo),
-                Denegar = oferta.Denegar,
-                Usuario = oferta.Usuario?.Trim(),
-                FechaModificacion = oferta.FechaModificación
-            };
-        }
+        private static OfertaPermitidaFamiliaDTO MapToDTO(OfertaPermitida oferta, Dictionary<string, string> familias) => MapeadorOfertas.Familia(oferta, familias);
     }
 }

@@ -1,4 +1,5 @@
 ﻿using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.OfertasAutorizadas;
 using NestoAPI.Models;
 using NestoAPI.Models.OfertasCombinadas;
 using System;
@@ -422,36 +423,7 @@ namespace NestoAPI.Controllers
             return null;
         }
 
-        private OfertaCombinadaDTO MapToDTO(OfertaCombinada oferta)
-        {
-            return new OfertaCombinadaDTO
-            {
-                Id = oferta.Id,
-                Empresa = oferta.Empresa?.Trim(),
-                Nombre = oferta.Nombre?.Trim(),
-                ImporteMinimo = oferta.ImporteMinimo,
-                FechaDesde = oferta.FechaDesde,
-                FechaHasta = oferta.FechaHasta,
-                RegalarMenorImporte = oferta.RegalarMenorImporte,
-                UnidadesRegaladas = oferta.UnidadesRegaladas < 1 ? (short)1 : oferta.UnidadesRegaladas,
-                Usuario = oferta.Usuario?.Trim(),
-                FechaModificacion = oferta.FechaModificacion,
-                Detalles = oferta.OfertasCombinadasDetalles?.Select(d => new OfertaCombinadaDetalleDTO
-                {
-                    Id = d.Id,
-                    Producto = d.Producto?.Trim(),
-                    ProductoNombre = d.Producto1?.Nombre?.Trim(),
-                    Familia = d.Familia?.Trim(),
-                    FiltroProducto = d.FiltroProducto?.Trim(),
-                    Grupo = d.Grupo?.Trim(),
-                    Subgrupo = d.Subgrupo?.Trim(),
-                    Cantidad = d.Cantidad,
-                    Precio = d.Precio,
-                    GrupoAlternativa = d.GrupoAlternativa,
-                    PermitirCantidadMenor = d.PermitirCantidadMenor
-                }).ToList() ?? new List<OfertaCombinadaDetalleDTO>()
-            };
-        }
+        private static OfertaCombinadaDTO MapToDTO(OfertaCombinada oferta) => MapeadorOfertas.Combinada(oferta);
 
         // Issue #289: en BD el filtro vacio debe ser NULL (el CHECK y el matching distinguen
         // NULL de cadena vacia).
