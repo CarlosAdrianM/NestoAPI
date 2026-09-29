@@ -50,9 +50,16 @@ namespace NestoAPI.Models.Picking
                 lineaEncontrada = pedido.Lineas.Any(l => l.CantidadReservada > 0 || !pedido.EsProductoYaFacturado || (l.TipoLinea == Constantes.TiposLineaVenta.TEXTO && l.Cantidad == 0));
             } else
             {
+                // Pedido 927293 (29/09/26): si el pedido tiene productos, los portes y demás cuentas contables
+                // no son «lo que hay»: tiene que salir algún producto (o inmovilizado). Si no, en los modos que
+                // sirven lo que haya salía un envío con solo los portes. Un pedido SOLO de cuentas contables
+                // (un cargo) sigue saliendo como siempre.
+                bool tieneProductos = pedido.Lineas.Any(l => l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO
+                    || l.TipoLinea == Constantes.TiposLineaVenta.INMOVILIZADO);
                 lineaEncontrada = pedido.Lineas.Any(
                     l => (l.CantidadReservada > 0 || (l.CantidadRecogida > 0 && l.Cantidad == l.CantidadReservada) || (l.Cantidad == l.CantidadReservada && l.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE)) && 
-                    (l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO || l.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE || l.TipoLinea == Constantes.TiposLineaVenta.INMOVILIZADO)
+                    (l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO || l.TipoLinea == Constantes.TiposLineaVenta.INMOVILIZADO
+                        || (l.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE && !tieneProductos))
                 );
             }
             return lineaEncontrada;

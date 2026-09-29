@@ -64,6 +64,43 @@ namespace NestoAPI.Tests.Models.Picking
         }
 
         [TestMethod]
+        public void GestorStock_HayStockDeAlgo_siElUnicoProductoNoTieneStock_LosPortesSolosNoSalen()
+        {
+            // Pedido 927293 (29/09/26), modo «ahora lo que hay, el resto de una vez»: el diapasón no tenía
+            // stock y el picking sacó solo la línea de portes (62400002), con aviso de 4,24 € al comercial.
+            PedidoPicking pedido = new PedidoPicking
+            {
+                Id = 927293,
+                EsNotaEntrega = false,
+                Lineas = new List<LineaPedidoPicking>
+                {
+                    new LineaPedidoPicking { Id = 1, TipoLinea = Constantes.TiposLineaVenta.PRODUCTO, Producto = "45149", Cantidad = 1, BaseImponible = 24, CantidadReservada = 0, FechaEntrega = new DateTime() },
+                    new LineaPedidoPicking { Id = 2, TipoLinea = Constantes.TiposLineaVenta.CUENTA_CONTABLE, Producto = "62400002", Cantidad = 1, BaseImponible = 3.5M, CantidadReservada = 1, FechaEntrega = new DateTime() }
+                }
+            };
+
+            Assert.IsFalse(new GestorStocksPicking(pedido).HayStockDeAlgo());
+        }
+
+        [TestMethod]
+        public void GestorStock_HayStockDeAlgo_siAlgunProductoTieneStock_SaleConSusPortes()
+        {
+            PedidoPicking pedido = new PedidoPicking
+            {
+                Id = 1,
+                EsNotaEntrega = false,
+                Lineas = new List<LineaPedidoPicking>
+                {
+                    new LineaPedidoPicking { Id = 1, TipoLinea = Constantes.TiposLineaVenta.PRODUCTO, Producto = "45149", Cantidad = 1, BaseImponible = 24, CantidadReservada = 0, FechaEntrega = new DateTime() },
+                    new LineaPedidoPicking { Id = 2, TipoLinea = Constantes.TiposLineaVenta.PRODUCTO, Producto = "41060", Cantidad = 2, BaseImponible = 20, CantidadReservada = 2, FechaEntrega = new DateTime() },
+                    new LineaPedidoPicking { Id = 3, TipoLinea = Constantes.TiposLineaVenta.CUENTA_CONTABLE, Producto = "62400002", Cantidad = 1, BaseImponible = 3.5M, CantidadReservada = 1, FechaEntrega = new DateTime() }
+                }
+            };
+
+            Assert.IsTrue(new GestorStocksPicking(pedido).HayStockDeAlgo());
+        }
+
+        [TestMethod]
         public void GestorStock_HayStockDeAlgo_siHayUnaCuentaContableNegativaDevuelveTrue()
         {
             LineaPedidoPicking linea = new LineaPedidoPicking
