@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Clientes;
@@ -125,6 +125,22 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
             Assert.AreEqual(0, reenviadas.Count);
             Assert.AreEqual(0, resumen.SinDeclarar.Count,
                 "Ya excluida: fuera del control, sin ruido en pasadas posteriores");
+        }
+
+        [TestMethod]
+        public async Task Reintentar_DescartadaAMano_NiSeReintentaNiSeAvisa()
+        {
+            // NestoAPI#551
+            var factura = Factura("CV2600484", serie: "CV", cliente: "41739", nombreFiscal: null,
+                estado: VerifactuJobsService.ESTADO_DESCARTADA, fecha: new DateTime(2026, 7, 20));
+            ConFacturas(factura);
+
+            var resumen = new ResumenJobVerifactu();
+            await job.ReintentarNoDeclaradas(resumen);
+
+            Assert.AreEqual(0, reenviadas.Count);
+            Assert.AreEqual(0, resumen.SinDeclarar.Count);
+            Assert.AreEqual(VerifactuJobsService.ESTADO_DESCARTADA, factura.VerifactuEstado);
         }
 
         [TestMethod]

@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure.Clientes;
+﻿using NestoAPI.Infraestructure.Clientes;
 using NestoAPI.Models;
 using NestoAPI.Models.Facturas;
 using System;
@@ -42,6 +42,12 @@ namespace NestoAPI.Infraestructure.Verifactu
         // sin datos fiscales persistidos: no puede declararse jamás (el nombre del destinatario
         // sale de NombreFiscal) y se saca del ciclo de reintentos marcándola con este estado.
         internal const string ESTADO_SIN_DATOS_FISCALES = "SinDatosFiscales";
+
+        /// <summary>
+        /// NestoAPI#551: factura sin declarar que se da por cerrada a mano (CV2600484/485, facturadas por el
+        /// camino viejo antes de que Verifactu fuera obligatorio). Ni el job ni la ventana la vuelven a mirar.
+        /// </summary>
+        internal const string ESTADO_DESCARTADA = "DescartadaPreObligatoria";
 
         private readonly NVEntities db;
         private readonly IServicioVerifactu servicioVerifactu;
@@ -145,7 +151,8 @@ namespace NestoAPI.Infraestructure.Verifactu
                 .Where(f => (f.VerifactuUUID == null || f.VerifactuUUID == "")
                     && f.Fecha >= fechaInicio
                     && series.Contains(f.Serie)
-                    && (f.VerifactuEstado == null || f.VerifactuEstado != ESTADO_SIN_DATOS_FISCALES))
+                    && (f.VerifactuEstado == null
+                        || (f.VerifactuEstado != ESTADO_SIN_DATOS_FISCALES && f.VerifactuEstado != ESTADO_DESCARTADA)))
                 .OrderBy(f => f.Fecha)
                 .Take(MAX_REINTENTOS_POR_PASADA)
                 .ToListAsync().ConfigureAwait(false);

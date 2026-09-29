@@ -1,4 +1,4 @@
-using NestoAPI.Models;
+﻿using NestoAPI.Models;
 using NestoAPI.Models.Facturas;
 using System;
 using System.Collections.Generic;
@@ -65,6 +65,7 @@ namespace NestoAPI.Infraestructure.Verifactu
             DateTime fechaInicio = VerifactuJobsService.FechaInicioDeclaracion;
             List<CabFacturaVta> facturas = await db.CabsFacturasVtas
                 .Where(f => f.Fecha >= fechaInicio && series.Contains(f.Serie)
+                    && (f.VerifactuEstado == null || f.VerifactuEstado != VerifactuJobsService.ESTADO_DESCARTADA)
                     && (f.VerifactuUUID == null || f.VerifactuUUID == ""
                         || (f.VerifactuEstado != null
                             && (f.VerifactuEstado.Contains("Incorrecto") || f.VerifactuEstado.Contains("Rechaz")))))

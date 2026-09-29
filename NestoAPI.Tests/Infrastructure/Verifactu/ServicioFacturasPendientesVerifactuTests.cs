@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure.Verifactu;
@@ -130,6 +130,21 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
             List<FacturaPendienteVerifactuDTO> lista = await servicio.Listar();
 
             CollectionAssert.AreEquivalent(new[] { "NV2615001", "NV2615002" }, lista.Select(f => f.Numero).ToList());
+        }
+
+        [TestMethod]
+        public async Task Listar_DescartadaAMano_NoSale()
+        {
+            // NestoAPI#551: CV2600484/485, del camino viejo y anteriores a la obligación
+            ConFacturas(
+                Factura("CV2600484", serie: "CV", nombreFiscal: null, fecha: new DateTime(2026, 7, 20),
+                    estado: VerifactuJobsService.ESTADO_DESCARTADA),
+                Factura("CV2600485", serie: "CV", nombreFiscal: null, fecha: new DateTime(2026, 7, 20),
+                    estado: VerifactuJobsService.ESTADO_SIN_DATOS_FISCALES));
+
+            List<FacturaPendienteVerifactuDTO> lista = await servicio.Listar();
+
+            CollectionAssert.AreEquivalent(new[] { "CV2600485" }, lista.Select(f => f.Numero).ToList());
         }
 
         [TestMethod]
