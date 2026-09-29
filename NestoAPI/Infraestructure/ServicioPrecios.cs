@@ -115,10 +115,13 @@ namespace NestoAPI.Infraestructure
                 // (ValidadorOfertasPermitidas y ValidadorDescuentosPermitidos): una oferta con la
                 // fecha pasada deja de autorizar el pedido, que es justo para lo que se le pone
                 // fecha de fin.
+                // NestoAPI#564: una regla con subgrupo solo aplica a los productos de ese subgrupo (Genéricos + DES).
+                string subGrupo = producto.SubGrupo?.Trim();
                 return db.OfertasPermitidas
                     .Where(o => o.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && (o.Número == numeroProducto.Trim() || o.Familia == producto.Familia))
                     .ToList()
                     .Where(o => Vigencia.EsVigente(o))
+                    .Where(o => string.IsNullOrWhiteSpace(o.SubGrupo) || string.Equals(o.SubGrupo.Trim(), subGrupo, System.StringComparison.OrdinalIgnoreCase))
                     .ToList();
             }
         }

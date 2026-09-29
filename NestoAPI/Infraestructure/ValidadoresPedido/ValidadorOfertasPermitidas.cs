@@ -109,6 +109,10 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 (o.Cliente == null || o.Cliente == pedido.cliente) &&
                 (o.Contacto == null || (o.Cliente == pedido.cliente && o.Contacto == pedido.contacto))
             );
+            // NestoAPI#564: las denegaciones no autorizan nada (antes una fila «Denegar» que coincidía se tomaba como
+            // autorización expresa) y además anulan la autorización del mismo N+M para los productos a los que aplican.
+            List<OfertaPermitida> reglasDelCliente = ofertasFiltradas.ToList();
+            ofertasFiltradas = ReglasOfertasPermitidas.AutorizacionesEfectivas(reglasDelCliente, producto);
 
             OfertaPermitida ofertaCombinada = ofertasFiltradas.FirstOrDefault(o =>
                 o.FiltroProducto != null && o.FiltroProducto.Trim() != "" && producto.Nombre.StartsWith(o.FiltroProducto)
@@ -153,6 +157,19 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 {
                     ValidacionSuperada = false,
                     Motivo = "Oferta no puede llevar descuento en el producto " + producto.Número.Trim(),
+                    ProductoId = producto.Número.Trim()
+                };
+            }
+
+            // NestoAPI#564: una denegación del N+M (o de un múltiplo) es la última palabra
+            OfertaPermitida denegacion = ReglasOfertasPermitidas.DenegacionQueLaProhibe(reglasDelCliente, producto, oferta.cantidad, oferta.cantidadOferta);
+            if (denegacion != null)
+            {
+                return new RespuestaValidacion
+                {
+                    ValidacionSuperada = false,
+                    Motivo = $"La oferta {denegacion.CantidadConPrecio}+{denegacion.CantidadRegalo} (y sus múltiplos) está denegada para el producto {producto.Número.Trim()}",
+                    AutorizadaDenegadaExpresamente = true,
                     ProductoId = producto.Número.Trim()
                 };
             }

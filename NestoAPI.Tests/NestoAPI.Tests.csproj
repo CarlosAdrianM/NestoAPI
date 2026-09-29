@@ -466,6 +466,7 @@
     <Compile Include="Infrastructure\GestorPedidosVentaGanavisionesTests.cs" />
     <Compile Include="Infrastructure\NVEntitiesContadoresTests.cs" />
     <Compile Include="Infrastructure\GestorPresupuestosTests.cs" />
+    <Compile Include="Infrastructure\ReglasOfertasPermitidasTests.cs" />
     <Compile Include="Infrastructure\ValidadorOfertasCombinadasCantidadMenorTests.cs" />
     <Compile Include="Infrastructure\ValidadorOfertasCombinadasFiltrosTests.cs" />
     <Compile Include="Infrastructure\ValidadorOfertasCombinadasRegalarMenorImporteTests.cs" />

@@ -1499,6 +1499,7 @@
           <Property Name="FechaModificación" Type="datetime" Nullable="false" />
           <Property Name="FechaDesde" Type="date" />
           <Property Name="FechaHasta" Type="date" />
+          <Property Name="SubGrupo" Type="char" MaxLength="3" />
         </EntityType>
         <EntityType Name="OfertasProveedores">
           <Key>
@@ -11059,6 +11060,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="FiltroProducto" Type="String" MaxLength="50" FixedLength="false" Unicode="true" />
           <Property Name="FechaDesde" Type="DateTime" Precision="0" />
           <Property Name="FechaHasta" Type="DateTime" Precision="0" />
+          <Property Name="SubGrupo" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
         </EntityType>
         <Association Name="FK_OfertasPermitidas_Clientes">
           <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="0..1" />
@@ -15196,6 +15198,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySetMapping Name="OfertasPermitidas">
             <EntityTypeMapping TypeName="NVModel.OfertaPermitida">
               <MappingFragment StoreEntitySet="OfertasPermitidas">
+                <ScalarProperty Name="SubGrupo" ColumnName="SubGrupo" />
                 <ScalarProperty Name="FechaHasta" ColumnName="FechaHasta" />
                 <ScalarProperty Name="FechaDesde" ColumnName="FechaDesde" />
                 <ScalarProperty Name="FiltroProducto" ColumnName="FiltroProducto" />

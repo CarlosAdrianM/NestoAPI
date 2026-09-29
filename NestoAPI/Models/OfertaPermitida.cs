@@ -28,6 +28,7 @@ namespace NestoAPI.Models
         public string FiltroProducto { get; set; }
         public Nullable<System.DateTime> FechaDesde { get; set; }
         public Nullable<System.DateTime> FechaHasta { get; set; }
+        public string SubGrupo { get; set; }
     
         public virtual Cliente Cliente1 { get; set; }
         public virtual Empresa Empresa1 { get; set; }

@@ -406,10 +406,13 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
 
             Producto producto = servicio.BuscarProducto(numeroProducto);
             List<OfertaPermitida> ofertas = servicio.BuscarOfertasPermitidas(numeroProducto) ?? new List<OfertaPermitida>();
-            List<OfertaPermitida> aplicables = ofertas
-                .Where(o => !o.Denegar && o.CantidadConPrecio > 0 && o.CantidadRegalo > 0)
+            List<OfertaPermitida> delCliente = ofertas
                 .Where(o => (o.Cliente == null || o.Cliente.Trim() == pedido.cliente?.Trim())
                          && (o.Contacto == null || (o.Cliente != null && o.Contacto.Trim() == pedido.contacto?.Trim())))
+                .ToList();
+            // NestoAPI#564: nunca se sugiere un N+M denegado para el producto (Genéricos 6+1 salvo desechables)
+            List<OfertaPermitida> aplicables = ReglasOfertasPermitidas.AutorizacionesEfectivas(delCliente, producto)
+                .Where(o => o.CantidadConPrecio > 0 && o.CantidadRegalo > 0)
                 .Where(o => string.IsNullOrWhiteSpace(o.FiltroProducto)
                          || (producto?.Nombre != null && producto.Nombre.StartsWith(o.FiltroProducto.Trim(), StringComparison.OrdinalIgnoreCase)))
                 .ToList();
