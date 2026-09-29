@@ -823,6 +823,14 @@ namespace NestoAPI.Models
             /// </summary>
             public const string PRECIOS_MEDIOS_ULTIMA_PASADA_INCREMENTAL = "PreciosMediosUltimaPasadaIncremental";
 
+            /// <summary>
+            /// NestoAPI#547 (corte c): último <c>[Nº Orden]</c> de ExtractoProducto revisado por la pasada nocturna
+            /// completa del incremental (riesgo 2: movimientos con fecha pasada), bajo «(defecto)» de la empresa 1. La
+            /// siguiente pasada solo mira los apuntes con Nº Orden mayor (búsqueda por la clave primaria, sin recorrer la
+            /// tabla). Sin fila, la primera pasada empieza a seguir desde el máximo actual (lo anterior lo cubre el SP).
+            /// </summary>
+            public const string PRECIOS_MEDIOS_ULTIMO_NUM_ORDEN_EXTRACTO = "PreciosMediosUltimoNumOrdenExtracto";
+
             /// <summary>Usuario bajo el que viven los parametros que no son de nadie en concreto.</summary>
             public const string USUARIO_POR_DEFECTO = "(defecto)";
 

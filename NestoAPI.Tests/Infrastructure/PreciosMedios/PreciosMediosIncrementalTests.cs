@@ -18,6 +18,8 @@ namespace NestoAPI.Tests.Infrastructure.PreciosMedios
         private static readonly DateTime AHORA = new DateTime(2026, 9, 30, 2, 30, 0);
         private static readonly DateTime INICIO_SERVIDOR = new DateTime(2026, 9, 30, 2, 30, 7);
         private static readonly DateTime MARCA = new DateTime(2026, 9, 29, 2, 20, 0);
+        private const int NUM_ORDEN_GUARDADO = 4690000;
+        private const int NUM_ORDEN_MAXIMO = 4691450;
 
         private IRepositorioEscrituraPreciosMedios escritura;
         private IRepositorioPreciosMedios lectura;
@@ -34,7 +36,12 @@ namespace NestoAPI.Tests.Infrastructure.PreciosMedios
             A.CallTo(() => escritura.AhoraServidor()).Returns(INICIO_SERVIDOR);
             A.CallTo(() => escritura.LeerUltimaPasada()).Returns(MARCA);
             A.CallTo(() => escritura.ProductosConComprasModificadas(A<string>._, A<string>._, A<DateTime>._)).Returns(new List<string>());
-            A.CallTo(() => escritura.ProductosConMovimientosConFechaPasada(A<string>._, A<string>._, A<DateTime>._)).Returns(new List<string>());
+            A.CallTo(() => escritura.ProductosConMovimientosConFechaPasada(A<string>._, A<string>._, A<int>._, A<int>._)).Returns(new List<string>());
+            A.CallTo(() => escritura.LeerUltimoNumOrdenExtracto()).Returns(NUM_ORDEN_GUARDADO);
+            A.CallTo(() => escritura.MaximoNumOrdenExtracto(A<string>._)).Returns(null);
+            A.CallTo(() => escritura.MaximoNumOrdenExtracto("1")).Returns(NUM_ORDEN_MAXIMO);
+            A.CallTo(() => escritura.MaximoNumOrdenExtracto("3")).Returns(4625815);
+            A.CallTo(() => escritura.MaximoNumOrdenExtracto("4")).Returns(4100000);
             A.CallTo(() => escritura.RecalcularYEscribir(A<string>._, A<string>._, A<string>._, A<Func<DatosProductoPrecioMedio, PlanEscrituraPrecioMedio>>._))
                 .ReturnsLazily((string e, string esp, string p, Func<DatosProductoPrecioMedio, PlanEscrituraPrecioMedio> f) =>
                 {
@@ -55,9 +62,10 @@ namespace NestoAPI.Tests.Infrastructure.PreciosMedios
         public void Seleccion_UneComprasYMovimientosConFechaPasada_SinRepetidosNiEspacios()
         {
             A.CallTo(() => escritura.ProductosConComprasModificadas("1", "3", MARCA)).Returns(new List<string> { "45396 ", "41281", "41281" });
-            A.CallTo(() => escritura.ProductosConMovimientosConFechaPasada("1", "3", MARCA)).Returns(new List<string> { "41281", "17877", " " });
+            A.CallTo(() => escritura.ProductosConMovimientosConFechaPasada("1", "3", NUM_ORDEN_GUARDADO, NUM_ORDEN_MAXIMO))
+                .Returns(new List<string> { "41281", "17877", " " });
 
-            SeleccionIncrementalPrecioMedio s = Servicio().SeleccionarProductos("1", "3", MARCA);
+            SeleccionIncrementalPrecioMedio s = Servicio().SeleccionarProductos("1", "3", MARCA, NUM_ORDEN_GUARDADO, NUM_ORDEN_MAXIMO);
 
             CollectionAssert.AreEqual(new[] { "17877", "41281", "45396" }, s.Productos);
             Assert.AreEqual(2, s.PorCompras);
@@ -68,12 +76,31 @@ namespace NestoAPI.Tests.Infrastructure.PreciosMedios
         public void Seleccion_SoloPorMovimientoConFechaPasada_TambienSeRecalcula()
         {
             // Riesgo 2: una regularización con fecha antigua cambia el stock a la fecha de una compra sin tocar LinPedidoCmp.
-            A.CallTo(() => escritura.ProductosConMovimientosConFechaPasada("1", "3", MARCA)).Returns(new List<string> { "16137" });
+            A.CallTo(() => escritura.ProductosConMovimientosConFechaPasada("1", "3", NUM_ORDEN_GUARDADO, NUM_ORDEN_MAXIMO))
+                .Returns(new List<string> { "16137" });
 
             ResumenPasadaIncrementalPrecioMedio r = Servicio().EjecutarPasadaNocturna(AHORA, TimeSpan.FromHours(1), null);
 
             CollectionAssert.Contains(recalculados, "1/3/16137");
             Assert.AreEqual(1, r.Empresas.Single(e => e.Empresa == "1").PorMovimientos);
+        }
+
+        [TestMethod]
+        public void Seleccion_SinNumOrdenPrevio_NoMiraMovimientos()
+        {
+            SeleccionIncrementalPrecioMedio s = Servicio().SeleccionarProductos("1", "3", MARCA, null, NUM_ORDEN_MAXIMO);
+
+            Assert.AreEqual(0, s.PorMovimientos);
+            A.CallTo(() => escritura.ProductosConMovimientosConFechaPasada(A<string>._, A<string>._, A<int>._, A<int>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void Seleccion_SinApuntesNuevos_NoConsultaExtractoProducto()
+        {
+            SeleccionIncrementalPrecioMedio s = Servicio().SeleccionarProductos("1", "3", MARCA, NUM_ORDEN_MAXIMO, NUM_ORDEN_MAXIMO);
+
+            Assert.AreEqual(0, s.PorMovimientos);
+            A.CallTo(() => escritura.ProductosConMovimientosConFechaPasada(A<string>._, A<string>._, A<int>._, A<int>._)).MustNotHaveHappened();
         }
 
         [TestMethod]
@@ -112,6 +139,52 @@ namespace NestoAPI.Tests.Infrastructure.PreciosMedios
         }
 
         [TestMethod]
+        public void Nocturna_MovimientosPorNumOrden_DesdeElGuardadoHastaElMaximoDeTodasLasEmpresasYEspejos_YLoGuarda()
+        {
+            A.CallTo(() => escritura.MaximoNumOrdenExtracto("3")).Returns(NUM_ORDEN_MAXIMO + 5); // la espejo tiene el último apunte
+
+            ResumenPasadaIncrementalPrecioMedio r = Servicio().EjecutarPasadaNocturna(AHORA, TimeSpan.FromHours(1), null);
+
+            Assert.AreEqual(NUM_ORDEN_GUARDADO, r.DesdeNumOrden);
+            Assert.AreEqual(NUM_ORDEN_MAXIMO + 5, r.HastaNumOrden);
+            A.CallTo(() => escritura.MaximoNumOrdenExtracto("1")).MustHaveHappenedOnceExactly();
+            A.CallTo(() => escritura.MaximoNumOrdenExtracto("3")).MustHaveHappenedOnceExactly();
+            A.CallTo(() => escritura.MaximoNumOrdenExtracto("4")).MustHaveHappenedOnceExactly();
+            A.CallTo(() => escritura.MaximoNumOrdenExtracto("5")).MustHaveHappenedOnceExactly();
+            A.CallTo(() => escritura.ProductosConMovimientosConFechaPasada("1", "3", NUM_ORDEN_GUARDADO, NUM_ORDEN_MAXIMO + 5)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => escritura.ProductosConMovimientosConFechaPasada("4", "4", NUM_ORDEN_GUARDADO, NUM_ORDEN_MAXIMO + 5)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => escritura.GuardarUltimoNumOrdenExtracto(NUM_ORDEN_MAXIMO + 5)).MustHaveHappenedOnceExactly();
+            Assert.AreEqual(NUM_ORDEN_MAXIMO + 5, r.NumOrdenGuardado);
+            StringAssert.Contains(r.ToString(), "Nº Orden de ExtractoProducto 4690000 → 4691455; guardado 4691455");
+        }
+
+        [TestMethod]
+        public void Nocturna_SinNumOrdenGuardado_EmpiezaASeguirDesdeElMaximoSinMirarElAtrasado()
+        {
+            A.CallTo(() => escritura.LeerUltimoNumOrdenExtracto()).Returns(null);
+
+            ResumenPasadaIncrementalPrecioMedio r = Servicio().EjecutarPasadaNocturna(AHORA, TimeSpan.FromHours(1), null);
+
+            Assert.IsNull(r.DesdeNumOrden);
+            A.CallTo(() => escritura.ProductosConMovimientosConFechaPasada(A<string>._, A<string>._, A<int>._, A<int>._)).MustNotHaveHappened();
+            A.CallTo(() => escritura.GuardarUltimoNumOrdenExtracto(NUM_ORDEN_MAXIMO)).MustHaveHappenedOnceExactly();
+            StringAssert.Contains(r.ToString(), "SIN marca previa");
+            StringAssert.Contains(r.ToString(), "se empieza a seguir desde 4691450");
+        }
+
+        [TestMethod]
+        public void Nocturna_SinApuntesEnExtracto_NoGuardaNumOrden()
+        {
+            A.CallTo(() => escritura.MaximoNumOrdenExtracto(A<string>._)).Returns(null);
+
+            ResumenPasadaIncrementalPrecioMedio r = Servicio().EjecutarPasadaNocturna(AHORA, TimeSpan.FromHours(1), null);
+
+            Assert.IsNull(r.HastaNumOrden);
+            A.CallTo(() => escritura.GuardarUltimoNumOrdenExtracto(A<int>._)).MustNotHaveHappened();
+            A.CallTo(() => escritura.GuardarUltimaPasada(A<DateTime>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
         public void Nocturna_SinMarca_ParteDelInicioDelSP()
         {
             DateTime inicioSP = new DateTime(2026, 9, 27, 0, 30, 2);
@@ -144,6 +217,8 @@ namespace NestoAPI.Tests.Infrastructure.PreciosMedios
 
             Assert.IsNotNull(r.Aplazada);
             A.CallTo(() => escritura.AhoraServidor()).MustNotHaveHappened();
+            A.CallTo(() => escritura.MaximoNumOrdenExtracto(A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => escritura.GuardarUltimoNumOrdenExtracto(A<int>._)).MustNotHaveHappened();
             A.CallTo(() => escritura.RecalcularYEscribir(A<string>._, A<string>._, A<string>._, A<Func<DatosProductoPrecioMedio, PlanEscrituraPrecioMedio>>._))
                 .MustNotHaveHappened();
             A.CallTo(() => escritura.GuardarUltimaPasada(A<DateTime>._)).MustNotHaveHappened();
@@ -177,6 +252,9 @@ namespace NestoAPI.Tests.Infrastructure.PreciosMedios
             Assert.IsTrue(r.Interrumpida);
             A.CallTo(() => escritura.GuardarUltimaPasada(A<DateTime>._)).MustNotHaveHappened();
             Assert.IsNull(r.MarcaGuardada);
+            A.CallTo(() => escritura.GuardarUltimoNumOrdenExtracto(A<int>._)).MustNotHaveHappened();
+            Assert.IsNull(r.NumOrdenGuardado);
+            StringAssert.Contains(r.ToString(), "NO guardado");
         }
 
         [TestMethod]

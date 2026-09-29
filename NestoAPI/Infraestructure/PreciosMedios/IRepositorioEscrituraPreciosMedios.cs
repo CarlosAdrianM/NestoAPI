@@ -20,11 +20,19 @@ namespace NestoAPI.Infraestructure.PreciosMedios
         IReadOnlyList<string> ProductosConComprasModificadas(string empresa, string empresaEspejo, DateTime desde);
 
         /// <summary>
-        /// Riesgo 2 del plan: productos con apuntes de <c>ExtractoProducto</c> (E + espejo) grabados desde
-        /// <paramref name="desde"/> pero FECHADOS en o antes de alguna compra facturada suya (regularizaciones,
-        /// inventarios, montajes con fecha elegida): cambian el stock «a la fecha» de esa compra y, por tanto, la media.
+        /// Riesgo 2 del plan: productos con apuntes de <c>ExtractoProducto</c> (E + espejo) grabados desde la última
+        /// pasada —<c>[Nº Orden]</c> en (<paramref name="desdeNumOrden"/>, <paramref name="hastaNumOrden"/>]: búsqueda
+        /// por la clave primaria (Empresa, Nº Orden), sin recorrer la tabla— pero FECHADOS en o antes de alguna compra
+        /// facturada suya (regularizaciones, inventarios, montajes con fecha elegida): cambian el stock «a la fecha» de
+        /// esa compra y, por tanto, la media.
         /// </summary>
-        IReadOnlyList<string> ProductosConMovimientosConFechaPasada(string empresa, string empresaEspejo, DateTime desde);
+        IReadOnlyList<string> ProductosConMovimientosConFechaPasada(string empresa, string empresaEspejo, int desdeNumOrden, int hastaNumOrden);
+
+        /// <summary>
+        /// <c>MAX([Nº Orden])</c> de <c>ExtractoProducto</c> de UNA empresa (búsqueda por la clave primaria). Nulo si
+        /// la empresa no tiene apuntes.
+        /// </summary>
+        int? MaximoNumOrdenExtracto(string empresa);
 
         /// <summary>Productos (<c>TipoLínea = 1</c>) de un pedido de compra.</summary>
         IReadOnlyList<string> ProductosDelPedidoCompra(string empresa, int pedido);
@@ -33,6 +41,11 @@ namespace NestoAPI.Infraestructure.PreciosMedios
         DateTime? LeerUltimaPasada();
 
         void GuardarUltimaPasada(DateTime marca);
+
+        /// <summary>Último <c>[Nº Orden]</c> de ExtractoProducto revisado por la última pasada completa. Nulo si no hay (o no se entiende).</summary>
+        int? LeerUltimoNumOrdenExtracto();
+
+        void GuardarUltimoNumOrdenExtracto(int numOrden);
 
         /// <summary>
         /// En UNA transacción y con un bloqueo de aplicación por (empresa, producto): lee el producto en lectura

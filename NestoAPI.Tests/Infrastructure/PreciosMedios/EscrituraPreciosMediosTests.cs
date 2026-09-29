@@ -379,8 +379,9 @@ namespace NestoAPI.Tests.Infrastructure.PreciosMedios
             string sql = RepositorioEscrituraPreciosMediosSql.SQL_PRODUCTOS_MOVIMIENTOS_FECHA_PASADA;
 
             StringAssert.Contains(sql, "FROM ExtractoProducto e WITH (NOLOCK)");
-            StringAssert.Contains(sql, "e.[Fecha Modificación] >= @desde");
-            StringAssert.Contains(sql, "e.Empresa IN (@empresa, @espejo)");
+            StringAssert.Contains(sql, "e.Empresa IN (@empresa, @espejo) AND e.[Nº Orden] > @desdeNumOrden AND e.[Nº Orden] <= @hastaNumOrden",
+                "búsqueda por la clave primaria (Empresa, Nº Orden)");
+            Assert.IsFalse(sql.Contains("Fecha Modificación"), "ExtractoProducto no tiene índice por Fecha Modificación: recorrería la tabla");
             StringAssert.Contains(sql, "l.Estado = 4 AND l.FechaAlbarán >= e.Fecha", "el stock del SP es Fecha <= FechaAlbarán");
             StringAssert.Contains(sql, "l.Producto = e.Número");
         }
@@ -407,7 +408,7 @@ namespace NestoAPI.Tests.Infrastructure.PreciosMedios
                 RepositorioEscrituraPreciosMediosSql.SQL_PRODUCTOS_COMPRAS_MODIFICADAS,
                 RepositorioEscrituraPreciosMediosSql.SQL_PRODUCTOS_MOVIMIENTOS_FECHA_PASADA,
                 RepositorioEscrituraPreciosMediosSql.SQL_PRODUCTOS_PEDIDO, RepositorioEscrituraPreciosMediosSql.SQL_LEER_ULTIMA_PASADA,
-                RepositorioEscrituraPreciosMediosSql.SQL_GUARDAR_ULTIMA_PASADA
+                RepositorioEscrituraPreciosMediosSql.SQL_GUARDAR_ULTIMA_PASADA, RepositorioEscrituraPreciosMediosSql.SQL_MAXIMO_NUM_ORDEN_EXTRACTO
             })
             {
                 Assert.IsFalse(sql.IndexOf("CREATE", StringComparison.OrdinalIgnoreCase) >= 0, sql);
@@ -435,6 +436,27 @@ namespace NestoAPI.Tests.Infrastructure.PreciosMedios
             Assert.AreEqual(marca, RepositorioEscrituraPreciosMediosSql.InterpretarMarca(texto + "      "), "Valor es char(162): viene con relleno");
             Assert.IsNull(RepositorioEscrituraPreciosMediosSql.InterpretarMarca(null));
             Assert.IsNull(RepositorioEscrituraPreciosMediosSql.InterpretarMarca("ayer"));
+        }
+
+        [TestMethod]
+        public void UltimoNumOrdenExtracto_IdaYVuelta_YBasuraEsNula()
+        {
+            string texto = RepositorioEscrituraPreciosMediosSql.FormatearNumOrden(4691450);
+
+            Assert.AreEqual("4691450", texto);
+            Assert.AreEqual(4691450, RepositorioEscrituraPreciosMediosSql.InterpretarNumOrden(texto + "      "), "Valor es char(162): viene con relleno");
+            Assert.IsNull(RepositorioEscrituraPreciosMediosSql.InterpretarNumOrden(null));
+            Assert.IsNull(RepositorioEscrituraPreciosMediosSql.InterpretarNumOrden("-5"));
+            Assert.IsNull(RepositorioEscrituraPreciosMediosSql.InterpretarNumOrden("ayer"));
+        }
+
+        [TestMethod]
+        public void MaximoNumOrdenExtracto_UnaBusquedaPorEmpresa()
+        {
+            string sql = RepositorioEscrituraPreciosMediosSql.SQL_MAXIMO_NUM_ORDEN_EXTRACTO;
+
+            StringAssert.Contains(sql, "SELECT MAX([Nº Orden]) FROM ExtractoProducto WITH (NOLOCK) WHERE Empresa = @empresa");
+            Assert.AreEqual("PreciosMediosUltimoNumOrdenExtracto", NestoAPI.Models.Constantes.ParametrosUsuario.PRECIOS_MEDIOS_ULTIMO_NUM_ORDEN_EXTRACTO);
         }
 
         #endregion

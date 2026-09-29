@@ -28,7 +28,10 @@ namespace NestoAPI.Infraestructure.PreciosMedios
 
         private const int TIMEOUT_ESCRITURA_SEGUNDOS = 120;
 
-        /// <summary>Las selecciones nocturnas recorren LinPedidoCmp y ExtractoProducto enteros (de madrugada).</summary>
+        /// <summary>
+        /// Selecciones nocturnas (de madrugada). ExtractoProducto ya NO se recorre (se busca por Nº Orden, la clave
+        /// primaria); lo que sigue yendo por «Fecha Modificación» es LinPedidoCmp/CabFacturaCmp (compras modificadas).
+        /// </summary>
         private const int TIMEOUT_SELECCION_SEGUNDOS = 900;
 
         /// <summary>Esperar un bloqueo como mucho 10 s: mejor fallar y reintentar que hacer cola delante de un usuario.</summary>
@@ -62,13 +65,20 @@ WHERE c.[Fecha Modificación] >= @desde AND c.Empresa IN (@empresa, @espejo) AND
         // Riesgo 2: apuntes grabados desde la última pasada con fecha en o antes de alguna compra FACTURADA del
         // producto (el stock del SP es sum(Cantidad) con Fecha <= FechaAlbarán, así que un apunte con Fecha igual a la
         // de la compra también la cambia). Una venta de hoy no entra: su fecha es posterior a todas las compras.
+        // «Grabados desde la última pasada» = [Nº Orden] (identidad creciente) mayor que el último revisado: la clave
+        // primaria es (Empresa, Nº Orden), así que es una búsqueda que solo lee las filas nuevas (antes se filtraba por
+        // [Fecha Modificación], sin índice: ~4,7 millones de filas cada noche).
         internal const string SQL_PRODUCTOS_MOVIMIENTOS_FECHA_PASADA = @"
 SELECT DISTINCT RTRIM(e.Número)
 FROM ExtractoProducto e WITH (NOLOCK)
-WHERE e.[Fecha Modificación] >= @desde AND e.Empresa IN (@empresa, @espejo)
+WHERE e.Empresa IN (@empresa, @espejo) AND e.[Nº Orden] > @desdeNumOrden AND e.[Nº Orden] <= @hastaNumOrden
   AND EXISTS (SELECT 1 FROM LinPedidoCmp l WITH (NOLOCK)
               WHERE l.Producto = e.Número AND l.Empresa IN (@empresa, @espejo) AND l.TipoLínea = '1'
                 AND l.Estado = 4 AND l.FechaAlbarán >= e.Fecha)";
+
+        // Una búsqueda por empresa sobre la clave primaria (Empresa, Nº Orden): instantáneo.
+        internal const string SQL_MAXIMO_NUM_ORDEN_EXTRACTO = @"
+SELECT MAX([Nº Orden]) FROM ExtractoProducto WITH (NOLOCK) WHERE Empresa = @empresa";
 
         internal const string SQL_PRODUCTOS_PEDIDO = @"
 SELECT DISTINCT RTRIM(l.Producto)
@@ -127,9 +137,30 @@ IF @@ROWCOUNT = 0
             return LeerProductos(SQL_PRODUCTOS_COMPRAS_MODIFICADAS, empresa, empresaEspejo, desde);
         }
 
-        public IReadOnlyList<string> ProductosConMovimientosConFechaPasada(string empresa, string empresaEspejo, DateTime desde)
+        public IReadOnlyList<string> ProductosConMovimientosConFechaPasada(string empresa, string empresaEspejo, int desdeNumOrden, int hastaNumOrden)
         {
-            return LeerProductos(SQL_PRODUCTOS_MOVIMIENTOS_FECHA_PASADA, empresa, empresaEspejo, desde);
+            List<string> productos = new List<string>();
+            using (SqlConnection conexion = Abrir())
+            using (SqlCommand comando = Comando(conexion, null, SQL_PRODUCTOS_MOVIMIENTOS_FECHA_PASADA, TIMEOUT_SELECCION_SEGUNDOS))
+            {
+                Texto(comando, "@empresa", empresa);
+                Texto(comando, "@espejo", empresaEspejo ?? empresa);
+                comando.Parameters.Add("@desdeNumOrden", SqlDbType.Int).Value = desdeNumOrden;
+                comando.Parameters.Add("@hastaNumOrden", SqlDbType.Int).Value = hastaNumOrden;
+                LeerCadenas(comando, productos);
+            }
+            return productos;
+        }
+
+        public int? MaximoNumOrdenExtracto(string empresa)
+        {
+            using (SqlConnection conexion = Abrir())
+            using (SqlCommand comando = Comando(conexion, null, SQL_MAXIMO_NUM_ORDEN_EXTRACTO, TIMEOUT_ESCRITURA_SEGUNDOS))
+            {
+                Texto(comando, "@empresa", empresa);
+                object valor = comando.ExecuteScalar();
+                return valor == null || valor == DBNull.Value ? (int?)null : Convert.ToInt32(valor, CultureInfo.InvariantCulture);
+            }
         }
 
         public IReadOnlyList<string> ProductosDelPedidoCompra(string empresa, int pedido)
@@ -147,24 +178,56 @@ IF @@ROWCOUNT = 0
 
         public DateTime? LeerUltimaPasada()
         {
-            using (SqlConnection conexion = Abrir())
-            using (SqlCommand comando = Comando(conexion, null, SQL_LEER_ULTIMA_PASADA, TIMEOUT_ESCRITURA_SEGUNDOS))
-            {
-                ParametrosMarca(comando);
-                object valor = comando.ExecuteScalar();
-                return InterpretarMarca(valor == null || valor == DBNull.Value ? null : (string)valor);
-            }
+            return InterpretarMarca(LeerParametro(Constantes.ParametrosUsuario.PRECIOS_MEDIOS_ULTIMA_PASADA_INCREMENTAL));
         }
 
         public void GuardarUltimaPasada(DateTime marca)
         {
+            GuardarParametro(Constantes.ParametrosUsuario.PRECIOS_MEDIOS_ULTIMA_PASADA_INCREMENTAL, FormatearMarca(marca));
+        }
+
+        public int? LeerUltimoNumOrdenExtracto()
+        {
+            return InterpretarNumOrden(LeerParametro(Constantes.ParametrosUsuario.PRECIOS_MEDIOS_ULTIMO_NUM_ORDEN_EXTRACTO));
+        }
+
+        public void GuardarUltimoNumOrdenExtracto(int numOrden)
+        {
+            GuardarParametro(Constantes.ParametrosUsuario.PRECIOS_MEDIOS_ULTIMO_NUM_ORDEN_EXTRACTO, FormatearNumOrden(numOrden));
+        }
+
+        private string LeerParametro(string clave)
+        {
+            using (SqlConnection conexion = Abrir())
+            using (SqlCommand comando = Comando(conexion, null, SQL_LEER_ULTIMA_PASADA, TIMEOUT_ESCRITURA_SEGUNDOS))
+            {
+                ParametrosMarca(comando, clave);
+                object valor = comando.ExecuteScalar();
+                return valor == null || valor == DBNull.Value ? null : (string)valor;
+            }
+        }
+
+        private void GuardarParametro(string clave, string valor)
+        {
             using (SqlConnection conexion = Abrir())
             using (SqlCommand comando = Comando(conexion, null, SQL_GUARDAR_ULTIMA_PASADA, TIMEOUT_ESCRITURA_SEGUNDOS))
             {
-                ParametrosMarca(comando);
-                Texto(comando, "@valor", FormatearMarca(marca));
+                ParametrosMarca(comando, clave);
+                Texto(comando, "@valor", valor);
                 _ = comando.ExecuteNonQuery();
             }
+        }
+
+        internal static string FormatearNumOrden(int numOrden)
+        {
+            return numOrden.ToString(CultureInfo.InvariantCulture);
+        }
+
+        internal static int? InterpretarNumOrden(string valor)
+        {
+            return int.TryParse(valor?.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out int numOrden)
+                ? numOrden
+                : (int?)null;
         }
 
         internal static string FormatearMarca(DateTime marca)
@@ -316,11 +379,11 @@ IF @@ROWCOUNT = 0
             }
         }
 
-        private static void ParametrosMarca(SqlCommand comando)
+        private static void ParametrosMarca(SqlCommand comando, string clave)
         {
             Texto(comando, "@empresa", Constantes.Empresas.EMPRESA_POR_DEFECTO);
             Texto(comando, "@usuario", Constantes.ParametrosUsuario.USUARIO_POR_DEFECTO);
-            Texto(comando, "@clave", Constantes.ParametrosUsuario.PRECIOS_MEDIOS_ULTIMA_PASADA_INCREMENTAL);
+            Texto(comando, "@clave", clave);
         }
 
         private SqlConnection Abrir()

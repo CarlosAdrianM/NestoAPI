@@ -15,7 +15,10 @@ namespace NestoAPI.Infraestructure.PreciosMedios
         /// <summary>Por compras (o facturas de compra) modificadas desde la última pasada.</summary>
         public int PorCompras { get; set; }
 
-        /// <summary>Por movimientos de stock grabados desde la última pasada con fecha anterior a una compra (riesgo 2).</summary>
+        /// <summary>
+        /// Por movimientos de stock grabados desde la última pasada (Nº Orden de ExtractoProducto mayor que el último
+        /// revisado) con fecha en o antes de una compra facturada (riesgo 2).
+        /// </summary>
         public int PorMovimientos { get; set; }
     }
 
@@ -57,6 +60,19 @@ namespace NestoAPI.Infraestructure.PreciosMedios
         /// <summary>Nueva marca guardada (nula si no se ha guardado: pasada interrumpida o aplazada).</summary>
         public DateTime? MarcaGuardada { get; set; }
 
+        /// <summary>
+        /// Riesgo 2: se miran los apuntes de ExtractoProducto con Nº Orden mayor que este (el último revisado por la
+        /// pasada anterior). Nulo si no había marca: esa noche no se miran movimientos y se empieza a seguir desde
+        /// <see cref="HastaNumOrden"/> (lo anterior lo cubre el SP de los domingos).
+        /// </summary>
+        public int? DesdeNumOrden { get; set; }
+
+        /// <summary>Máximo Nº Orden de ExtractoProducto (de las empresas y sus espejos) al empezar la pasada. Nulo si no hay apuntes.</summary>
+        public int? HastaNumOrden { get; set; }
+
+        /// <summary>Nº Orden guardado para la próxima pasada (nulo si no se ha guardado).</summary>
+        public int? NumOrdenGuardado { get; set; }
+
         /// <summary>Motivo por el que no se ha hecho la pasada (p. ej. el SP del domingo sigue corriendo). Nulo si se ha hecho.</summary>
         public string Aplazada { get; set; }
 
@@ -71,14 +87,34 @@ namespace NestoAPI.Infraestructure.PreciosMedios
             {
                 return "Incremental de precios medios APLAZADO: " + Aplazada;
             }
-            return string.Format(CultureInfo.InvariantCulture, "Incremental de precios medios (desde {0:dd/MM/yyyy HH:mm:ss}, {1}; marca {2}): ",
-                    Desde, OrigenDesde, MarcaGuardada.HasValue ? MarcaGuardada.Value.ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture) : "NO guardada") +
+            return string.Format(CultureInfo.InvariantCulture, "Incremental de precios medios (desde {0:dd/MM/yyyy HH:mm:ss}, {1}; marca {2}; {3}): ",
+                    Desde, OrigenDesde, MarcaGuardada.HasValue ? MarcaGuardada.Value.ToString("dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture) : "NO guardada",
+                    TextoNumOrden()) +
                 string.Join(" | ", Empresas.Select(e => string.Format(CultureInfo.InvariantCulture,
                     "empresa {0}: {1}/{2} productos ({3} por compras, {4} por movimientos con fecha pasada) en {5:0}s{6}; con cambios {7}, sin cambios {8}, " +
                     "no procesados {9}, ERRORES {10}; filas Productos {11}, LinPedidoCmp {12}, LinPedidoVta {13}{14}",
                     e.Empresa, e.Revisados, e.Seleccionados, e.PorCompras, e.PorMovimientos, e.Segundos, e.Interrumpida ? " (INTERRUMPIDA por tiempo)" : "",
                     e.ConCambios, e.SinCambios, e.NoProcesados, e.Errores, e.FilasProductos, e.FilasCompras, e.FilasVentas,
                     e.PrimerosErrores.Any() ? "; errores: " + string.Join("; ", e.PrimerosErrores) : "")));
+        }
+
+        private string TextoNumOrden()
+        {
+            string guardado = NumOrdenGuardado.HasValue
+                ? "guardado " + NumOrdenGuardado.Value.ToString(CultureInfo.InvariantCulture)
+                : "NO guardado";
+            if (!HastaNumOrden.HasValue)
+            {
+                return "Nº Orden de ExtractoProducto: sin apuntes, " + guardado;
+            }
+            if (!DesdeNumOrden.HasValue)
+            {
+                return string.Format(CultureInfo.InvariantCulture,
+                    "Nº Orden de ExtractoProducto: SIN marca previa, esta noche no se miran movimientos y se empieza a seguir desde {0} (lo anterior lo cubre el SP); {1}",
+                    HastaNumOrden.Value, guardado);
+            }
+            return string.Format(CultureInfo.InvariantCulture, "Nº Orden de ExtractoProducto {0} → {1}; {2}",
+                DesdeNumOrden.Value, HastaNumOrden.Value, guardado);
         }
     }
 
@@ -141,13 +177,17 @@ namespace NestoAPI.Infraestructure.PreciosMedios
 
         /// <summary>
         /// Productos de la pasada nocturna: compras modificadas desde <paramref name="desde"/> MÁS los que tienen
-        /// movimientos de stock grabados desde entonces con fecha pasada (riesgo 2: cambian el stock a la fecha de una
-        /// compra antigua sin tocar LinPedidoCmp). Unión ordenada, sin repetidos ni espacios.
+        /// movimientos de stock grabados desde la última pasada (Nº Orden en (<paramref name="desdeNumOrden"/>,
+        /// <paramref name="hastaNumOrden"/>]) con fecha pasada (riesgo 2: cambian el stock a la fecha de una compra
+        /// antigua sin tocar LinPedidoCmp). Sin <paramref name="desdeNumOrden"/> (primera noche) no se miran
+        /// movimientos. Unión ordenada, sin repetidos ni espacios.
         /// </summary>
-        public SeleccionIncrementalPrecioMedio SeleccionarProductos(string empresa, string espejo, DateTime desde)
+        public SeleccionIncrementalPrecioMedio SeleccionarProductos(string empresa, string espejo, DateTime desde, int? desdeNumOrden, int? hastaNumOrden)
         {
             List<string> porCompras = Limpiar(escritura.ProductosConComprasModificadas(empresa, espejo, desde));
-            List<string> porMovimientos = Limpiar(escritura.ProductosConMovimientosConFechaPasada(empresa, espejo, desde));
+            List<string> porMovimientos = desdeNumOrden.HasValue && hastaNumOrden.HasValue && hastaNumOrden.Value > desdeNumOrden.Value
+                ? Limpiar(escritura.ProductosConMovimientosConFechaPasada(empresa, espejo, desdeNumOrden.Value, hastaNumOrden.Value))
+                : new List<string>();
             return new SeleccionIncrementalPrecioMedio
             {
                 PorCompras = porCompras.Count,
@@ -204,11 +244,13 @@ namespace NestoAPI.Infraestructure.PreciosMedios
                 resumen.Desde = PreciosMediosJobsService.CorteSP(ahora);
                 resumen.OrigenDesde = "domingo 00:30";
             }
+            resumen.DesdeNumOrden = escritura.LeerUltimoNumOrdenExtracto();
+            resumen.HastaNumOrden = MaximoNumOrdenExtracto();
 
             Stopwatch reloj = Stopwatch.StartNew();
             foreach (string empresa in ServicioSombraPreciosMedios.EMPRESAS)
             {
-                resumen.Empresas.Add(ProcesarEmpresa(empresa, resumen.Desde, reloj, limite, reintentar));
+                resumen.Empresas.Add(ProcesarEmpresa(empresa, resumen.Desde, resumen.DesdeNumOrden, resumen.HastaNumOrden, reloj, limite, reintentar));
                 if (reloj.Elapsed > limite)
                 {
                     break;
@@ -221,17 +263,41 @@ namespace NestoAPI.Infraestructure.PreciosMedios
                 DateTime nueva = resumen.Inicio - MARGEN_MARCA;
                 escritura.GuardarUltimaPasada(nueva);
                 resumen.MarcaGuardada = nueva;
+                if (resumen.HastaNumOrden.HasValue)
+                {
+                    escritura.GuardarUltimoNumOrdenExtracto(resumen.HastaNumOrden.Value);
+                    resumen.NumOrdenGuardado = resumen.HastaNumOrden;
+                }
             }
             return resumen;
         }
 
-        private ResumenEmpresaIncrementalPrecioMedio ProcesarEmpresa(string empresa, DateTime desde, Stopwatch reloj, TimeSpan limite,
-            Action<string, string> reintentar)
+        /// <summary>
+        /// Máximo Nº Orden de ExtractoProducto de las empresas del SP y sus espejos (una búsqueda por empresa sobre la
+        /// clave primaria). Nº Orden es una identidad de toda la tabla, así que vale un único máximo para todas. Los
+        /// apuntes que se graben mientras dura la pasada tendrán un Nº Orden mayor: los recoge la noche siguiente.
+        /// </summary>
+        private int? MaximoNumOrdenExtracto()
+        {
+            int? maximo = null;
+            foreach (string e in ServicioSombraPreciosMedios.EMPRESAS.SelectMany(p => new[] { p, EmpresaEspejo(p) }).Distinct(StringComparer.Ordinal))
+            {
+                int? valor = escritura.MaximoNumOrdenExtracto(e);
+                if (valor.HasValue && (!maximo.HasValue || valor.Value > maximo.Value))
+                {
+                    maximo = valor;
+                }
+            }
+            return maximo;
+        }
+
+        private ResumenEmpresaIncrementalPrecioMedio ProcesarEmpresa(string empresa, DateTime desde, int? desdeNumOrden, int? hastaNumOrden,
+            Stopwatch reloj, TimeSpan limite, Action<string, string> reintentar)
         {
             Stopwatch relojEmpresa = Stopwatch.StartNew();
             string espejo = EmpresaEspejo(empresa);
             ResumenEmpresaIncrementalPrecioMedio r = new ResumenEmpresaIncrementalPrecioMedio { Empresa = empresa, EmpresaEspejo = espejo };
-            SeleccionIncrementalPrecioMedio seleccion = SeleccionarProductos(empresa, espejo, desde);
+            SeleccionIncrementalPrecioMedio seleccion = SeleccionarProductos(empresa, espejo, desde, desdeNumOrden, hastaNumOrden);
             r.PorCompras = seleccion.PorCompras;
             r.PorMovimientos = seleccion.PorMovimientos;
             r.Seleccionados = seleccion.Productos.Count;
