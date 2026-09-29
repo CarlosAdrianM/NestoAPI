@@ -211,6 +211,31 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
         }
 
         [TestMethod]
+        public async Task Reintentar_ClienteConJustificanteProvisional_AvisaDeQueLeLlegaraLaDefinitiva()
+        {
+            // NestoAPI#522 (parte 1): la definitiva la manda el job en su siguiente pasada
+            CabFacturaVta factura = Factura("NV2615001", incidencia: true, fecha: HOY);
+            factura.VerifactuEnviadaProvisional = true;
+            ConFacturas(factura);
+
+            ResultadoReintentoVerifactuDTO resultado = await servicio.Reintentar("1", "NV2615001");
+
+            Assert.IsTrue(resultado.Exitoso);
+            StringAssert.Contains(resultado.Mensaje, "factura definitiva");
+        }
+
+        [TestMethod]
+        public async Task Reintentar_SinJustificanteProvisional_NoHablaDeLaDefinitiva()
+        {
+            ConFacturas(Factura("NV2615001"));
+
+            ResultadoReintentoVerifactuDTO resultado = await servicio.Reintentar("1", "NV2615001");
+
+            Assert.IsTrue(resultado.Exitoso);
+            Assert.IsFalse(resultado.Mensaje.Contains("definitiva"));
+        }
+
+        [TestMethod]
         public async Task Reintentar_IncorrectaEnLaAeat_VaPorLaSubsanacion()
         {
             ConFacturas(Factura("NV2615006", uuid: "u-6", estado: "Incorrecto", error: "AEAT (Incorrecto): NIF"));

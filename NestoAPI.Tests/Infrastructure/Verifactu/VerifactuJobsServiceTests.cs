@@ -471,5 +471,138 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
             Assert.IsFalse(VerifactuJobsService.EsEstadoDeRechazo("AceptadoConErrores"));
             Assert.IsFalse(VerifactuJobsService.EsEstadoDeRechazo("Pendiente"));
         }
+
+        #region NestoAPI#522 (parte 1): factura definitiva tras el justificante provisional
+
+        private List<CabFacturaVta> definitivasEnviadas;
+        private bool resultadoEnvioDefinitiva;
+
+        private VerifactuJobsService JobConEnvioDeDefinitivas()
+        {
+            definitivasEnviadas = new List<CabFacturaVta>();
+            resultadoEnvioDefinitiva = true;
+            return new VerifactuJobsService(db, servicioVerifactu, validacionNif, correo,
+                f =>
+                {
+                    reenviadas.Add(f);
+                    if (respuestaReenvio.Exitoso)
+                    {
+                        f.VerifactuUUID = respuestaReenvio.Uuid;
+                    }
+                    return Task.FromResult(respuestaReenvio);
+                },
+                f => { definitivasEnviadas.Add(f); return Task.FromResult(resultadoEnvioDefinitiva); });
+        }
+
+        private static CabFacturaVta Marcada(string numero, string uuid)
+        {
+            CabFacturaVta factura = Factura(numero, uuid: uuid, estado: uuid == null ? null : "Correcto");
+            factura.VerifactuEnviadaProvisional = true;
+            return factura;
+        }
+
+        [TestMethod]
+        public async Task EnviarDefinitivasTrasProvisional_RegistradaYConJustificanteEnviado_LaMandaYQuitaLaMarca()
+        {
+            // El justificante provisional promete «La recibirá por correo electrónico en cuanto se emita».
+            VerifactuJobsService jobDefinitivas = JobConEnvioDeDefinitivas();
+            CabFacturaVta factura = Marcada("NV2616001", "uuid-registrada");
+            ConFacturas(factura);
+            var resumen = new ResumenJobVerifactu();
+
+            await jobDefinitivas.EnviarDefinitivasTrasProvisional(resumen);
+
+            Assert.AreEqual(1, definitivasEnviadas.Count);
+            Assert.AreEqual(false, factura.VerifactuEnviadaProvisional, "A 0 para no mandarla dos veces");
+            Assert.AreEqual(1, resumen.DefinitivasEnviadas);
+            A.CallTo(() => db.SaveChangesAsync()).MustHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task EnviarDefinitivasTrasProvisional_TodaviaSinRegistrar_NoLaManda()
+        {
+            VerifactuJobsService jobDefinitivas = JobConEnvioDeDefinitivas();
+            CabFacturaVta factura = Marcada("NV2616002", null);
+            ConFacturas(factura);
+
+            await jobDefinitivas.EnviarDefinitivasTrasProvisional(new ResumenJobVerifactu());
+
+            Assert.AreEqual(0, definitivasEnviadas.Count, "Sin registro seguiría saliendo el documento provisional");
+            Assert.AreEqual(true, factura.VerifactuEnviadaProvisional);
+        }
+
+        [TestMethod]
+        public async Task EnviarDefinitivasTrasProvisional_SinMarca_NoLaManda()
+        {
+            // El cliente recibió la factura (registrada a tiempo) o no la recibió por correo: nada que mandar
+            VerifactuJobsService jobDefinitivas = JobConEnvioDeDefinitivas();
+            CabFacturaVta nula = Factura("NV2616003", uuid: "u-3", estado: "Correcto");
+            CabFacturaVta yaEnviada = Factura("NV2616004", uuid: "u-4", estado: "Correcto");
+            yaEnviada.VerifactuEnviadaProvisional = false;
+            ConFacturas(nula, yaEnviada);
+
+            await jobDefinitivas.EnviarDefinitivasTrasProvisional(new ResumenJobVerifactu());
+
+            Assert.AreEqual(0, definitivasEnviadas.Count);
+        }
+
+        [TestMethod]
+        public async Task EnviarDefinitivasTrasProvisional_SiNoSaleElCorreo_ConservaLaMarcaParaLaSiguientePasada()
+        {
+            VerifactuJobsService jobDefinitivas = JobConEnvioDeDefinitivas();
+            resultadoEnvioDefinitiva = false;
+            CabFacturaVta factura = Marcada("NV2616005", "uuid-registrada");
+            ConFacturas(factura);
+            var resumen = new ResumenJobVerifactu();
+
+            await jobDefinitivas.EnviarDefinitivasTrasProvisional(resumen);
+
+            Assert.AreEqual(1, definitivasEnviadas.Count);
+            Assert.AreEqual(true, factura.VerifactuEnviadaProvisional, "Se reintenta en la siguiente pasada");
+            Assert.AreEqual(0, resumen.DefinitivasEnviadas);
+        }
+
+        [TestMethod]
+        public async Task EnviarDefinitivasTrasProvisional_RegistroDelSandboxConElInterruptorEncendido_Espera()
+        {
+            DateTime? original = NestoAPI.Infraestructure.Facturas.GestorFacturas.JustificanteProvisionalDesde;
+            try
+            {
+                NestoAPI.Infraestructure.Facturas.GestorFacturas.JustificanteProvisionalDesde = new DateTime(2026, 7, 20);
+                VerifactuJobsService jobDefinitivas = JobConEnvioDeDefinitivas();
+                CabFacturaVta factura = Marcada("NV2616006", "uuid-sandbox");
+                factura.VerifactuURL = "https://prewww2.aeat.es/wlpl/TIKE-CONT/ValidarQR?nif=B75777847";
+                ConFacturas(factura);
+
+                await jobDefinitivas.EnviarDefinitivasTrasProvisional(new ResumenJobVerifactu());
+
+                Assert.AreEqual(0, definitivasEnviadas.Count, "El PDF seguiría saliendo como documento provisional");
+                Assert.AreEqual(true, factura.VerifactuEnviadaProvisional);
+            }
+            finally
+            {
+                NestoAPI.Infraestructure.Facturas.GestorFacturas.JustificanteProvisionalDesde = original;
+            }
+        }
+
+        [TestMethod]
+        public async Task ProcesarPasada_DeclaraLaFacturaConJustificanteEnviado_YEnLaMismaPasadaMandaLaDefinitiva()
+        {
+            VerifactuJobsService jobDefinitivas = JobConEnvioDeDefinitivas();
+            CabFacturaVta factura = Marcada("NV2616007", null);
+            factura.Fecha = DateTime.Today;
+            factura.VerifactuIncidencia = true;
+            ConFacturas(factura);
+            respuestaReenvio = new VerifactuResponse { Exitoso = true, Uuid = "uuid-tras-la-caida" };
+
+            ResumenJobVerifactu resumen = await jobDefinitivas.ProcesarPasada();
+
+            Assert.AreEqual(1, reenviadas.Count, "Primero se declara");
+            Assert.AreEqual(1, definitivasEnviadas.Count, "Y en la misma pasada sale la definitiva");
+            Assert.AreEqual(false, factura.VerifactuEnviadaProvisional);
+            Assert.AreEqual(1, resumen.DefinitivasEnviadas);
+        }
+
+        #endregion
     }
 }

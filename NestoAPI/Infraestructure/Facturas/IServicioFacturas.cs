@@ -33,5 +33,11 @@ namespace NestoAPI.Infraestructure.Facturas
         // Issue #36: envío a Verifactu de una rectificativa, tras guardar sus vinculaciones.
         // NestoAPI#329: devuelve la respuesta del proveedor (null si no procedía enviar)
         Task<Verifactu.VerifactuResponse> EnviarRectificativaAVerifactu(string empresa, string numeroFactura);
+        // NestoAPI#522 (parte 1): el envío diario le ha mandado al cliente el justificante provisional
+        // (CabFacturaVta.VerifactuEnviadaProvisional = 1); el job le manda la definitiva al registrarla.
+        void MarcarEnviadaProvisional(string empresa, string numeroFactura);
+        // NestoAPI#522 (parte 1): correos de «factura por correo» del cliente de la factura (separados por
+        // comas, como en el envío diario), o null si ya no tiene ninguno.
+        string LeerCorreoFacturas(string empresa, string numeroFactura);
     }
 }

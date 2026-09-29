@@ -22,6 +22,8 @@ namespace NestoAPI.Infraestructure.Verifactu
     ///    para que los avisos al meter pedido y el gate al facturar (#328) se activen solos.
     /// 4. Correo a administración solo cuando hay rechazos o facturas que no se han podido
     ///    declarar (sin ruido en pasadas sin novedades).
+    /// 5. NestoAPI#522 (parte 1): a los clientes que recibieron por correo el justificante provisional
+    ///    (VerifactuEnviadaProvisional = 1) les manda la factura definitiva en cuanto está registrada.
     /// </summary>
     public class VerifactuJobsService
     {
@@ -37,6 +39,7 @@ namespace NestoAPI.Infraestructure.Verifactu
 
         private const int MAX_CONSULTAS_POR_PASADA = 100;
         private const int MAX_REINTENTOS_POR_PASADA = 50;
+        private const int MAX_DEFINITIVAS_POR_PASADA = 50;
         private const string ESTADO_PENDIENTE = "Pendiente";
         // NestoAPI#348: factura nacida por un camino de facturación externo a la API (VB6),
         // sin datos fiscales persistidos: no puede declararse jamás (el nombre del destinatario
@@ -54,10 +57,12 @@ namespace NestoAPI.Infraestructure.Verifactu
         private readonly IServicioValidacionNif servicioValidacionNif;
         private readonly IServicioCorreoElectronico servicioCorreo;
         private readonly Func<CabFacturaVta, Task<VerifactuResponse>> reenviar;
+        private readonly Func<CabFacturaVta, Task<bool>> enviarDefinitiva;
 
         public VerifactuJobsService(NVEntities db = null, IServicioVerifactu servicioVerifactu = null,
             IServicioValidacionNif servicioValidacionNif = null, IServicioCorreoElectronico servicioCorreo = null,
-            Func<CabFacturaVta, Task<VerifactuResponse>> reenviar = null)
+            Func<CabFacturaVta, Task<VerifactuResponse>> reenviar = null,
+            Func<CabFacturaVta, Task<bool>> enviarDefinitiva = null)
         {
             this.db = db ?? new NVEntities();
             // #326: el proveedor lo decide ProveedorVerifactu (antes, un ServicioVerifacti nuevo por job).
@@ -65,6 +70,7 @@ namespace NestoAPI.Infraestructure.Verifactu
             this.servicioValidacionNif = servicioValidacionNif ?? new ServicioValidacionNif(this.db);
             this.servicioCorreo = servicioCorreo ?? new ServicioCorreoElectronico();
             this.reenviar = reenviar ?? ReenviarConServicioFacturas;
+            this.enviarDefinitiva = enviarDefinitiva ?? EnviarDefinitivaConGestorFacturas;
         }
 
         /// <summary>Punto de entrada de Hangfire (patrón del resto de jobs).</summary>
@@ -84,6 +90,8 @@ namespace NestoAPI.Infraestructure.Verifactu
             {
                 await ActualizarEstadosPendientes(resumen);
                 await ReintentarNoDeclaradas(resumen);
+                // Después de los reintentos: una factura declarada en esta misma pasada sale ya con su definitiva.
+                await EnviarDefinitivasTrasProvisional(resumen);
                 EnviarResumenSiProcede(resumen);
             }
             catch (Exception ex)
@@ -243,6 +251,71 @@ namespace NestoAPI.Infraestructure.Verifactu
             }
         }
 
+        /// <summary>
+        /// NestoAPI#522 (parte 1): el justificante provisional prometía «La recibirá por correo electrónico en
+        /// cuanto se emita». Las facturas marcadas (el envío diario les mandó el provisional) que ya tienen
+        /// registro se le mandan al cliente como definitivas y se quita la marca (a 0) para no repetir. Da igual
+        /// quién las registrara (esta pasada, la ventana de administración o la facturación). Si el correo no
+        /// sale, la marca se queda y se reintenta en la siguiente pasada (ELMAH una sola vez por factura).
+        /// Una factura con UUID del sandbox sigue siendo un documento provisional: se espera.
+        /// </summary>
+        internal async Task EnviarDefinitivasTrasProvisional(ResumenJobVerifactu resumen)
+        {
+            DateTime fechaInicio = FechaInicioDeclaracion;
+            List<CabFacturaVta> marcadas = await db.CabsFacturasVtas
+                .Where(f => f.VerifactuEnviadaProvisional == true
+                    && f.VerifactuUUID != null && f.VerifactuUUID != ""
+                    && f.Fecha >= fechaInicio)
+                .OrderBy(f => f.Fecha)
+                .Take(MAX_DEFINITIVAS_POR_PASADA)
+                .ToListAsync().ConfigureAwait(false);
+
+            bool hayCambios = false;
+            foreach (CabFacturaVta factura in marcadas)
+            {
+                if (Facturas.GestorFacturas.EsDocumentoProvisional(factura))
+                {
+                    continue; // registro del sandbox: el PDF todavía saldría como provisional
+                }
+                string claveRuido = $"definitiva|{factura.Empresa?.Trim()}|{factura.Número?.Trim()}";
+                bool enviada;
+                string motivo = null;
+                try
+                {
+                    enviada = await enviarDefinitiva(factura).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    enviada = false;
+                    motivo = ex.Message;
+                }
+                if (!enviada)
+                {
+                    string mensaje = $"[Verifactu job] No se ha podido mandar al cliente la factura definitiva {factura.Número?.Trim()} " +
+                        $"(recibió el justificante provisional): se reintenta en la siguiente pasada (#522). {motivo}".Trim();
+                    if (DeduplicadorErroresVerifactu.EsNovedad(claveRuido, mensaje))
+                    {
+                        ElmahHelper.Log(new Exception(mensaje));
+                    }
+                    continue;
+                }
+                factura.VerifactuEnviadaProvisional = false;
+                hayCambios = true;
+                resumen.DefinitivasEnviadas++;
+                DeduplicadorErroresVerifactu.Limpiar(claveRuido);
+            }
+            if (hayCambios)
+            {
+                _ = await db.SaveChangesAsync().ConfigureAwait(false);
+            }
+        }
+
+        private async Task<bool> EnviarDefinitivaConGestorFacturas(CabFacturaVta factura)
+        {
+            var gestor = new Facturas.GestorFacturas(new Facturas.ServicioFacturas(db));
+            return await gestor.EnviarFacturaDefinitivaTrasProvisional(factura.Empresa, factura.Número).ConfigureAwait(false);
+        }
+
         private async Task<VerifactuResponse> ReenviarConServicioFacturas(CabFacturaVta factura)
         {
             var servicioFacturas = new Facturas.ServicioFacturas(db);
@@ -335,5 +408,7 @@ namespace NestoAPI.Infraestructure.Verifactu
         /// <summary>NestoAPI#522: pendientes por incidencia técnica de otro día, sin reenviar
         /// (a la espera de Verifacti). Visibles en el correo a administración.</summary>
         public List<string> PendientesPorIncidencia { get; } = new List<string>();
+        /// <summary>NestoAPI#522 (parte 1): facturas definitivas mandadas a clientes que recibieron el justificante provisional.</summary>
+        public int DefinitivasEnviadas { get; set; }
     }
 }

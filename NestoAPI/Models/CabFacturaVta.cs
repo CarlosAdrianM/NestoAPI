@@ -56,6 +56,7 @@ namespace NestoAPI.Models
         public string VerifactuUltimoError { get; set; }
         public Nullable<System.DateTime> VerifactuUltimoIntento { get; set; }
         public Nullable<bool> VerifactuIncidencia { get; set; }
+        public Nullable<bool> VerifactuEnviadaProvisional { get; set; }
 
         public virtual CCC CCC1 { get; set; }
         public virtual Cliente Cliente { get; set; }

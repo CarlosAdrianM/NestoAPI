@@ -133,7 +133,11 @@ namespace NestoAPI.Infraestructure.Verifactu
                 resultado.Exitoso = true;
                 resultado.Mensaje = $"La factura {numero} se ha enviado a Verifactu" +
                     (esIncorrectaEnLaAeat ? " como subsanación" : string.Empty) +
-                    ". La AEAT la confirma en unos minutos; si la volviera a rechazar, saldrá otra vez en esta lista con el motivo.";
+                    ". La AEAT la confirma en unos minutos; si la volviera a rechazar, saldrá otra vez en esta lista con el motivo." +
+                    // NestoAPI#522 (parte 1): la definitiva la manda el job en su siguiente pasada
+                    (factura.VerifactuEnviadaProvisional == true
+                        ? " El cliente recibió por correo el justificante provisional: la factura definitiva se le mandará sola en menos de una hora."
+                        : string.Empty);
             }
             else if (respuesta != null)
             {

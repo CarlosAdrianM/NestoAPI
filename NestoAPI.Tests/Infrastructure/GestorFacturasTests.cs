@@ -2183,6 +2183,170 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         #endregion
+
+        #region NestoAPI#522 (parte 1): la factura definitiva tras el justificante provisional
+
+        private static IServicioFacturas ServicioConFacturaDelDia(CabFacturaVta cab, bool smtpOk)
+        {
+            IServicioFacturas servicio = A.Fake<IServicioFacturas>();
+            _ = A.CallTo(() => servicio.LeerFacturasDia(new DateTime(2026, 12, 2)))
+                .Returns(new List<FacturaCorreo> { new FacturaCorreo { Empresa = "1", Factura = "NV11111", Correo = "cliente@correo.es" } });
+            _ = A.CallTo(() => servicio.CargarCabFactura("1", "NV11111")).Returns(cab);
+            _ = A.CallTo(() => servicio.EnviarCorreoSMTP(A<MailMessage>._)).Returns(smtpOk);
+            return servicio;
+        }
+
+        private static async Task ConInterruptorEncendido(Func<Task> prueba)
+        {
+            DateTime? original = GestorFacturas.JustificanteProvisionalDesde;
+            int esperaOriginal = GestorFacturas.EsperaReintentoCorreoMs;
+            try
+            {
+                GestorFacturas.JustificanteProvisionalDesde = FECHA_PRODUCCION_VERIFACTU;
+                GestorFacturas.EsperaReintentoCorreoMs = 0;
+                await prueba();
+            }
+            finally
+            {
+                GestorFacturas.JustificanteProvisionalDesde = original;
+                GestorFacturas.EsperaReintentoCorreoMs = esperaOriginal;
+            }
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturasPorCorreo_JustificanteProvisionalQueSaleBien_MarcaLaFactura()
+        {
+            await ConInterruptorEncendido(async () =>
+            {
+                IServicioFacturas servicio = ServicioConFacturaDelDia(CabSinRegistrar(), smtpOk: true);
+                var gestor = new GestorFacturasPdfControlado(servicio);
+
+                _ = await gestor.EnviarFacturasPorCorreo(new DateTime(2026, 12, 2));
+
+                A.CallTo(() => servicio.MarcarEnviadaProvisional("1", "NV11111")).MustHaveHappenedOnceExactly();
+            });
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturasPorCorreo_FacturaYaRegistrada_NoSeMarca()
+        {
+            await ConInterruptorEncendido(async () =>
+            {
+                CabFacturaVta cab = CabSinRegistrar();
+                cab.VerifactuUUID = "uuid-prod";
+                cab.VerifactuURL = "https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/ValidarQR?nif=A78368255";
+                IServicioFacturas servicio = ServicioConFacturaDelDia(cab, smtpOk: true);
+                var gestor = new GestorFacturasPdfControlado(servicio);
+
+                _ = await gestor.EnviarFacturasPorCorreo(new DateTime(2026, 12, 2));
+
+                A.CallTo(() => servicio.MarcarEnviadaProvisional(A<string>._, A<string>._)).MustNotHaveHappened();
+            });
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturasPorCorreo_JustificanteQueAcabaEnAdministracion_NoSeMarca()
+        {
+            // El cliente no lo ha recibido: administración lo reenvía a mano
+            await ConInterruptorEncendido(async () =>
+            {
+                IServicioFacturas servicio = ServicioConFacturaDelDia(CabSinRegistrar(), smtpOk: false);
+                var gestor = new GestorFacturasPdfControlado(servicio);
+
+                _ = await gestor.EnviarFacturasPorCorreo(new DateTime(2026, 12, 2));
+
+                A.CallTo(() => servicio.MarcarEnviadaProvisional(A<string>._, A<string>._)).MustNotHaveHappened();
+            });
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturasPorCorreo_SiFallaLaMarca_ElEnvioSigue()
+        {
+            await ConInterruptorEncendido(async () =>
+            {
+                IServicioFacturas servicio = ServicioConFacturaDelDia(CabSinRegistrar(), smtpOk: true);
+                _ = A.CallTo(() => servicio.MarcarEnviadaProvisional(A<string>._, A<string>._))
+                    .Throws(new InvalidOperationException("BD caída"));
+                var gestor = new GestorFacturasPdfControlado(servicio);
+
+                IEnumerable<FacturaCorreo> resultado = await gestor.EnviarFacturasPorCorreo(new DateTime(2026, 12, 2));
+
+                Assert.AreEqual(1, resultado.Count());
+                A.CallTo(() => servicio.EnviarCorreoSMTP(A<MailMessage>._)).MustHaveHappenedOnceExactly();
+            });
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturaDefinitivaTrasProvisional_VaAlCorreoDeFacturasDelClienteConLaFactura()
+        {
+            await ConInterruptorEncendido(async () =>
+            {
+                IServicioFacturas servicio = A.Fake<IServicioFacturas>();
+                _ = A.CallTo(() => servicio.LeerCorreoFacturas("1", "NV11111")).Returns("cliente@correo.es, otro@correo.es");
+                MailMessage enviado = null;
+                List<string> destinatarios = null;
+                string nombreAdjunto = null;
+                _ = A.CallTo(() => servicio.EnviarCorreoSMTP(A<MailMessage>._))
+                    .Invokes((MailMessage m) =>
+                    {
+                        enviado = m;
+                        destinatarios = m.To.Select(t => t.Address).ToList();
+                        nombreAdjunto = m.Attachments.Single().Name;
+                    })
+                    .Returns(true);
+                var gestor = new GestorFacturasPdfControlado(servicio);
+
+                bool ok = await gestor.EnviarFacturaDefinitivaTrasProvisional("1", "NV11111");
+
+                Assert.IsTrue(ok);
+                CollectionAssert.AreEquivalent(new[] { "cliente@correo.es", "otro@correo.es" }, destinatarios);
+                Assert.AreEqual("administracion@nuevavision.es", enviado.From.Address, "El remitente de la serie, como el envío diario");
+                StringAssert.Contains(enviado.Subject, "Factura definitiva nº NV11111");
+                StringAssert.Contains(enviado.Body, "sustituye");
+                Assert.AreEqual("NV11111.pdf", nombreAdjunto, "Ya no es _PROVISIONAL");
+            });
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturaDefinitivaTrasProvisional_ClienteSinCorreoDeFacturas_VaAAdministracion()
+        {
+            await ConInterruptorEncendido(async () =>
+            {
+                IServicioFacturas servicio = A.Fake<IServicioFacturas>();
+                _ = A.CallTo(() => servicio.LeerCorreoFacturas("1", "NV11111")).Returns(null);
+                string destinatario = null;
+                string asunto = null;
+                _ = A.CallTo(() => servicio.EnviarCorreoSMTP(A<MailMessage>._))
+                    .Invokes((MailMessage m) => { destinatario = m.To.Single().Address; asunto = m.Subject; })
+                    .Returns(true);
+                var gestor = new GestorFacturasPdfControlado(servicio);
+
+                bool ok = await gestor.EnviarFacturaDefinitivaTrasProvisional("1", "NV11111");
+
+                Assert.IsTrue(ok, "Ha salido (a administración): el job quita la marca");
+                Assert.AreEqual(Constantes.Correos.CORREO_ADMON, destinatario);
+                StringAssert.StartsWith(asunto, "[SIN CORREO DE FACTURAS");
+            });
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturaDefinitivaTrasProvisional_SiNoSaleElCorreo_DevuelveFalseTrasReintentar()
+        {
+            await ConInterruptorEncendido(async () =>
+            {
+                IServicioFacturas servicio = A.Fake<IServicioFacturas>();
+                _ = A.CallTo(() => servicio.LeerCorreoFacturas("1", "NV11111")).Returns("cliente@correo.es");
+                _ = A.CallTo(() => servicio.EnviarCorreoSMTP(A<MailMessage>._)).Returns(false);
+                var gestor = new GestorFacturasPdfControlado(servicio);
+
+                bool ok = await gestor.EnviarFacturaDefinitivaTrasProvisional("1", "NV11111");
+
+                Assert.IsFalse(ok);
+                A.CallTo(() => servicio.EnviarCorreoSMTP(A<MailMessage>._)).MustHaveHappenedTwiceExactly();
+            });
+        }
+
+        #endregion
     }
 
 

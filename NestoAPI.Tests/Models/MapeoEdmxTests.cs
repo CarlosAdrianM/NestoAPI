@@ -225,6 +225,29 @@ namespace NestoAPI.Tests.Models
             Assert.AreEqual(typeof(bool?), typeof(CabFacturaVta).GetProperty("VerifactuIncidencia").PropertyType);
         }
 
+        /// <summary>
+        /// NestoAPI#522 (parte 1): CabFacturaVta.VerifactuEnviadaProvisional (el cliente recibió por correo el
+        /// justificante provisional y hay que mandarle la definitiva) se añadió a mano en las tres capas.
+        /// NULLABLE por lo mismo que VerifactuIncidencia: ALTER instantáneo y los escritores viejos no la conocen.
+        /// </summary>
+        [TestMethod]
+        public void Edmx_VerifactuEnviadaProvisionalDeLaFactura_EstaEnLasTresCapasYEsNullable()
+        {
+            XElement almacen = EntidadesPorNombre(LeerRecurso("ssdl"), SsdlNs)["CabFacturaVta"]
+                .Elements(SsdlNs + "Property").Single(p => p.Attribute("Name").Value == "VerifactuEnviadaProvisional");
+            XElement conceptual = EntidadesPorNombre(LeerRecurso("csdl"), CsdlNs)["CabFacturaVta"]
+                .Elements(CsdlNs + "Property").Single(p => p.Attribute("Name").Value == "VerifactuEnviadaProvisional");
+            bool mapeada = LeerRecurso("msl").Descendants(MslNs + "ScalarProperty")
+                .Any(p => p.Attribute("Name").Value == "VerifactuEnviadaProvisional" && p.Attribute("ColumnName").Value == "VerifactuEnviadaProvisional");
+
+            Assert.AreEqual("bit", (string)almacen.Attribute("Type"));
+            Assert.AreNotEqual("false", (string)almacen.Attribute("Nullable"));
+            Assert.AreEqual("Boolean", (string)conceptual.Attribute("Type"));
+            Assert.AreNotEqual("false", (string)conceptual.Attribute("Nullable"));
+            Assert.IsTrue(mapeada);
+            Assert.AreEqual(typeof(bool?), typeof(CabFacturaVta).GetProperty("VerifactuEnviadaProvisional").PropertyType);
+        }
+
         [TestMethod]
         public void Edmx_NotificacionesBuzon_EstaCompletaEnLasTresCapas()
         {

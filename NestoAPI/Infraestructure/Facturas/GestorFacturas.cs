@@ -1120,7 +1120,8 @@ namespace NestoAPI.Infraestructure.Facturas
                 throw new InvalidOperationException(mensajeError);
             }
 
-            List<MailMessage> listaCorreos = await ConstruirCorreosFacturasDia(facturasCorreo);
+            var provisionalesPorCorreo = new Dictionary<MailMessage, List<FacturaCorreo>>();
+            List<MailMessage> listaCorreos = await ConstruirCorreosFacturasDia(facturasCorreo, provisionalesPorCorreo);
 
             foreach (MailMessage correo in listaCorreos)
             {
@@ -1129,21 +1130,130 @@ namespace NestoAPI.Infraestructure.Facturas
                 // que falle no impide el envío de los demás.
                 if (servicio.EnviarCorreoSMTP(correo))
                 {
+                    MarcarProvisionalesEnviadas(correo, provisionalesPorCorreo);
                     continue;
                 }
-                await Task.Delay(2000);
+                await Task.Delay(Math.Max(0, EsperaReintentoCorreoMs));
                 if (servicio.EnviarCorreoSMTP(correo))
                 {
+                    MarcarProvisionalesEnviadas(correo, provisionalesPorCorreo);
                     continue;
                 }
+                // (Redirigido a administración: el justificante NO le ha llegado al cliente y no se marca;
+                // administración lo reenvía a mano, #522.)
                 correo.To.Clear();
                 correo.To.Add(Constantes.Correos.CORREO_ADMON);
                 correo.Subject = "[ERROR] " + correo.Subject;
-                await Task.Delay(2000);
+                await Task.Delay(Math.Max(0, EsperaReintentoCorreoMs));
                 _ = servicio.EnviarCorreoSMTP(correo);
             }
 
             return facturasCorreo;
+        }
+
+        /// <summary>Espera entre reintentos del SMTP. Internal set para que los tests no esperen.</summary>
+        internal static int EsperaReintentoCorreoMs { get; set; } = 2000;
+
+        /// <summary>
+        /// NestoAPI#522 (parte 1): el correo con justificantes provisionales ha salido bien → se marcan las
+        /// facturas (VerifactuEnviadaProvisional) para que el job de Verifactu le mande al cliente la
+        /// definitiva en cuanto se registren. Best-effort: si la marca falla, el correo ya ha salido; se
+        /// deja en ELMAH para reenviar la definitiva a mano.
+        /// </summary>
+        private void MarcarProvisionalesEnviadas(MailMessage correo, Dictionary<MailMessage, List<FacturaCorreo>> provisionalesPorCorreo)
+        {
+            if (!provisionalesPorCorreo.TryGetValue(correo, out List<FacturaCorreo> provisionales))
+            {
+                return;
+            }
+            foreach (FacturaCorreo fra in provisionales)
+            {
+                try
+                {
+                    servicio.MarcarEnviadaProvisional(fra.Empresa, fra.Factura);
+                }
+                catch (Exception ex)
+                {
+                    ElmahHelper.Log(new Exception(
+                        $"No se pudo marcar la factura {fra.Factura} como enviada con justificante provisional: " +
+                        "cuando se registre en Verifactu no se le mandará sola la definitiva al cliente (#522).", ex),
+                        "Sistema (envío facturas del día)");
+                }
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#522 (parte 1): el cliente recibió por correo el justificante provisional («La recibirá por
+        /// correo electrónico en cuanto se emita») y la factura ya está registrada en Verifactu: se le manda la
+        /// factura definitiva (con QR) por el mismo circuito que el envío diario (remitente de la serie, correos
+        /// de «factura por correo» del cliente). Si el cliente ya no tiene correo de facturas, va a administración
+        /// para que se la haga llegar. Devuelve true si el correo ha salido (a quien sea): el job quita entonces
+        /// la marca. False = se reintenta en la siguiente pasada del job.
+        /// Nota: no mira la marca ni si está registrada (lo hace el job); solo construye y manda el correo.
+        /// </summary>
+        public async Task<bool> EnviarFacturaDefinitivaTrasProvisional(string empresa, string numeroFactura)
+        {
+            string numero = numeroFactura?.Trim();
+            ISerieFactura serieFactura = LeerSerie(numero.Substring(0, 2));
+            MailAddress remitente = serieFactura.CorreoDesdeFactura ?? new MailAddress(Constantes.Correos.CORREO_ADMON);
+            string correoCliente = servicio.LeerCorreoFacturas(empresa, numero);
+
+            using (MailMessage mail = new MailMessage())
+            {
+                mail.From = new MailAddress(remitente.Address);
+                string asunto = $"Factura definitiva nº {numero} (sustituye al documento provisional)";
+                bool sinCorreo = string.IsNullOrWhiteSpace(correoCliente);
+                if (!sinCorreo)
+                {
+                    try
+                    {
+                        mail.To.Add(correoCliente);
+                    }
+                    catch
+                    {
+                        mail.To.Clear();
+                        sinCorreo = true;
+                        asunto = $"[ERROR: {correoCliente}] " + asunto;
+                    }
+                }
+                if (sinCorreo)
+                {
+                    mail.To.Add(new MailAddress(Constantes.Correos.CORREO_ADMON));
+                    if (string.IsNullOrWhiteSpace(correoCliente))
+                    {
+                        asunto = "[SIN CORREO DE FACTURAS: hacédsela llegar al cliente] " + asunto;
+                    }
+                }
+                mail.Subject = asunto;
+                mail.Bcc.Add(new MailAddress("carlosadrian@nuevavision.es"));
+                mail.Bcc.Add(new MailAddress("lauramagan@nuevavision.es"));
+                mail.IsBodyHtml = true;
+                mail.Body = GenerarCorreoDefinitivaHTML(numero, serieFactura);
+
+                ByteArrayContent facturaPdf = FacturaEnPDF(empresa, numero);
+                mail.Attachments.Add(new Attachment(new MemoryStream(await facturaPdf.ReadAsByteArrayAsync()), numero + ".pdf"));
+
+                if (servicio.EnviarCorreoSMTP(mail))
+                {
+                    return true;
+                }
+                await Task.Delay(Math.Max(0, EsperaReintentoCorreoMs));
+                return servicio.EnviarCorreoSMTP(mail);
+            }
+        }
+
+        internal static string GenerarCorreoDefinitivaHTML(string numeroFactura, ISerieFactura serieFactura)
+        {
+            StringBuilder s = new StringBuilder();
+            _ = s.AppendLine($"<p>Adjunto le enviamos la factura definitiva nº {WebUtility.HtmlEncode(numeroFactura)}.</p>");
+            _ = s.AppendLine("<p>Por una incidencia técnica en el sistema de registro de facturación (VERI*FACTU), " +
+                "le enviamos antes un <strong>documento provisional</strong> con este mismo número, que <strong>no era una factura</strong>. " +
+                "Ya se ha podido registrar: esta es la factura válida y <strong>sustituye a aquel documento</strong>, " +
+                "que puede descartar. El número y el importe no cambian.</p>");
+            _ = s.AppendLine("<p>Disculpe las molestias.</p>");
+            _ = s.AppendLine("<br/>");
+            _ = s.AppendLine(serieFactura?.FirmaCorreo);
+            return s.ToString();
         }
 
         /// <summary>
@@ -1151,7 +1261,10 @@ namespace NestoAPI.Infraestructure.Facturas
         /// y adjuntar los PDFs), separada del envío SMTP para poder testear la resiliencia:
         /// una factura que falla al generarse se loguea y NO impide el envío del resto.
         /// </summary>
-        internal async Task<List<MailMessage>> ConstruirCorreosFacturasDia(IEnumerable<FacturaCorreo> facturasCorreo)
+        /// <param name="provisionalesPorCorreo">NestoAPI#522 (parte 1): si se pasa, se rellena con las facturas
+        /// que cada correo lleva como justificante provisional (para marcarlas cuando el correo salga bien).</param>
+        internal async Task<List<MailMessage>> ConstruirCorreosFacturasDia(IEnumerable<FacturaCorreo> facturasCorreo,
+            IDictionary<MailMessage, List<FacturaCorreo>> provisionalesPorCorreo = null)
         {
             List<MailMessage> listaCorreos = new List<MailMessage>();
             string mailAnterior = string.Empty;
@@ -1226,6 +1339,15 @@ namespace NestoAPI.Infraestructure.Facturas
                     mail.Attachments.Add(attachment);
                     // El nº de factura se añade al asunto SOLO si se ha podido adjuntar.
                     mail.Subject += esProvisional ? fra.Factura + " (documento provisional), " : fra.Factura + ", ";
+                    if (esProvisional && provisionalesPorCorreo != null)
+                    {
+                        if (!provisionalesPorCorreo.TryGetValue(mail, out List<FacturaCorreo> provisionales))
+                        {
+                            provisionales = new List<FacturaCorreo>();
+                            provisionalesPorCorreo[mail] = provisionales;
+                        }
+                        provisionales.Add(fra);
+                    }
                 }
                 catch (Exception ex)
                 {

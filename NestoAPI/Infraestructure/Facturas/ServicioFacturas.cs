@@ -352,6 +352,53 @@ namespace NestoAPI.Infraestructure.Facturas
             return facturasSinDeudaVencida;
         }
 
+        /// <summary>
+        /// NestoAPI#522 (parte 1): el justificante provisional le ha llegado al cliente por correo. Cuando la
+        /// factura se registre en Verifactu, el job le manda la definitiva y vuelve a poner la marca a 0.
+        /// </summary>
+        public void MarcarEnviadaProvisional(string empresa, string numeroFactura)
+        {
+            string codigoEmpresa = empresa?.Trim();
+            string numero = numeroFactura?.Trim();
+            CabFacturaVta factura = db.CabsFacturasVtas
+                .FirstOrDefault(f => f.Empresa == codigoEmpresa && f.Número == numero);
+            if (factura == null || factura.VerifactuEnviadaProvisional == true)
+            {
+                return;
+            }
+            factura.VerifactuEnviadaProvisional = true;
+            _ = db.SaveChanges();
+        }
+
+        /// <summary>
+        /// NestoAPI#522 (parte 1): a dónde mandar la factura definitiva. Los mismos correos que el envío
+        /// diario (personas de contacto del cliente/contacto de la factura con el cargo «factura por correo»).
+        /// </summary>
+        public string LeerCorreoFacturas(string empresa, string numeroFactura)
+        {
+            string codigoEmpresa = empresa?.Trim();
+            string numero = numeroFactura?.Trim();
+            var factura = db.CabsFacturasVtas
+                .Where(f => f.Empresa == codigoEmpresa && f.Número == numero)
+                .Select(f => new { f.Empresa, f.Nº_Cliente, f.Contacto })
+                .FirstOrDefault();
+            if (factura == null)
+            {
+                return null;
+            }
+            List<string> correos = db.PersonasContactoClientes
+                .Where(p => p.Empresa == factura.Empresa && p.NºCliente == factura.Nº_Cliente
+                    && p.Contacto == factura.Contacto
+                    && p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO
+                    && p.CorreoElectrónico != null)
+                .Select(p => p.CorreoElectrónico)
+                .ToList()
+                .Select(c => c.Trim())
+                .Where(c => c != string.Empty)
+                .ToList();
+            return correos.Any() ? string.Join(", ", correos) : null;
+        }
+
         public bool EnviarCorreoSMTP(MailMessage mail)
         {
             using (SmtpClient client = new SmtpClient())
