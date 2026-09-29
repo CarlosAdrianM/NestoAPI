@@ -507,6 +507,11 @@
     <Compile Include="Controllers\ContabilidadesController.cs" />
     <Compile Include="Controllers\CorreosPostCompraController.cs" />
     <Compile Include="Controllers\RecordatorioReposicionController.cs" />
+    <Compile Include="Controllers\TraspasosController.cs" />
+    <Compile Include="Infraestructure\Traspasos\RepositorioTraspasos.cs" />
+    <Compile Include="Infraestructure\Traspasos\ServicioTraspasos.cs" />
+    <Compile Include="Models\Traspasos\PropuestaTraspasoDTO.cs" />
+    <Compile Include="Models\Traspasos\Traspaso.cs" />
     <Compile Include="Controllers\ControlesStockController.cs" />
     <Compile Include="Controllers\DepositosController.cs" />
     <Compile Include="Controllers\DiariosProductosController.cs" />
