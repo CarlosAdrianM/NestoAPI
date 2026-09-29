@@ -72,18 +72,39 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
         }
 
         [TestMethod]
-        public void Algete_NadaConStock_NiAhoraLoQueHay_NiSegunVayaEntrandoSiEsUnSoloProducto()
+        public void Algete_NingunaUnidadQueServir_SoloTodoJunto()
         {
-            // NestoAPI#561 (pedido 927293): un solo producto sin stock en ningún almacén; con «ahora lo que hay»
-            // salieron solo los portes. Solo cabe «Todo junto».
-            var uno = ModosServicioPermitidos.Calcular(ModosServicioPermitidos.TipoAlmacen.Central, 0, 0, 1, true);
-            CollectionAssert.AreEqual(new List<byte> { M.TODO_JUNTO }, ModosServicioPermitidos.Permitidos(uno));
-            StringAssert.Contains(uno.Single(m => m.Modo == M.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ).Motivo, "un solo producto");
+            // NestoAPI#561 (pedido 927293): ninguna unidad del pedido en stock; con «ahora lo que hay» salieron solo
+            // los portes. Vale para uno o varios productos.
+            foreach (int rojas in new[] { 1, 2 })
+            {
+                var modos = ModosServicioPermitidos.Calcular(ModosServicioPermitidos.TipoAlmacen.Central, 0, 0, rojas, true, hayAlgoQueServirAhora: false);
+                CollectionAssert.AreEqual(new List<byte> { M.TODO_JUNTO }, ModosServicioPermitidos.Permitidos(modos));
+                StringAssert.Contains(modos.Single(m => m.Modo == M.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ).Motivo, "ninguna unidad");
+            }
+        }
 
-            // Con dos o más productos sin stock, pueden llegar por separado: «Según vaya entrando» sí tiene sentido
-            var dos = ModosServicioPermitidos.Calcular(ModosServicioPermitidos.TipoAlmacen.Central, 0, 0, 2, true);
-            CollectionAssert.AreEqual(new List<byte> { M.TODO_JUNTO, M.SEGUN_VAYA_ENTRANDO }, ModosServicioPermitidos.Permitidos(dos));
-            StringAssert.Contains(dos.Single(m => m.Modo == M.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ).Motivo, "no hay nada que servir");
+        [TestMethod]
+        public void Algete_UnaUnidadDeDos_AhoraLoQueHaySiSePuede()
+        {
+            // Matiz de Carlos (29/09/26): hay 1 unidad y el cliente quiere 2 → sale esa unidad con sus portes y la
+            // otra en una entrega más.
+            CollectionAssert.AreEqual(new List<byte> { M.TODO_JUNTO, M.SEGUN_VAYA_ENTRANDO, M.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ },
+                ModosServicioPermitidos.Permitidos(ModosServicioPermitidos.Calcular(ModosServicioPermitidos.TipoAlmacen.Central, 0, 0, 1, true, hayAlgoQueServirAhora: true)));
+        }
+
+        [TestMethod]
+        public void Sugerir_StockParcial_SugiereAhoraLoQueHay()
+        {
+            A.CallTo(() => stocks.ColorStock("PARCIAL1", A<string>._, A<int>._)).Returns(SugeridorModoServicio.ROJO);
+            A.CallTo(() => stocks.Stock("PARCIAL1", "ALG")).Returns(1);
+            var pedido = Pedido("ALG", "PARCIAL1");
+            pedido.Lineas.First().Cantidad = 2;
+
+            var s = SugeridorModoServicio.Sugerir(pedido, stocks);
+
+            Assert.AreEqual(M.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ, s.Modo);
+            CollectionAssert.Contains(s.ModosPermitidos, M.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ);
         }
 
         [TestMethod]

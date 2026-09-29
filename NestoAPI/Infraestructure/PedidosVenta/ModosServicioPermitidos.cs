@@ -23,9 +23,10 @@ namespace NestoAPI.Infraestructure.PedidosVenta
     /// <item>Pedido de TIENDA (todas sus líneas de producto en Alcobendas o Reina): solo «Según vaya entrando»;
     /// el cliente se lleva lo que hay.</item>
     /// <item>Algete, todo verde: solo «Todo junto» (los demás acaban haciendo lo mismo).</item>
-    /// <item>NestoAPI#561 (pedido 927293): Algete sin nada con stock (ni verdes ni rosas): «Todo junto» y, si hay
-    /// dos o más productos, «Según vaya entrando». «Ahora lo que hay» no serviría nada ahora (solo portes) y
-    /// con un único producto no hay nada que repartir.</item>
+    /// <item>NestoAPI#561 (pedido 927293, matiz de Carlos 29/09/26): Algete sin NINGUNA unidad que servir ahora
+    /// (ni verdes, ni rosas, ni stock parcial de alguna roja): solo «Todo junto». Si alguna línea tiene parte
+    /// del stock (1 de 2), «Ahora lo que hay, el resto de una vez» sí tiene sentido: sale esa unidad con sus
+    /// portes y la otra en una entrega más.</item>
     /// <item>Algete, ninguna rosa: todos menos «Tras reponer de tiendas» (no hay nada que reponer).</item>
     /// <item>Algete con alguna rosa, pedido sin líneas de producto, o almacén de otro tipo (Amazon…): todos.</item>
     /// </list>
@@ -47,8 +48,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         internal const string MOTIVO_TIENDA = "En tienda el cliente se lleva lo que hay: el pedido se sirve según vaya entrando.";
         internal const string MOTIVO_TODO_VERDE = "Todo el pedido tiene stock en Algete: sale todo junto.";
         internal const string MOTIVO_SIN_ROSAS = "No hay nada que traer de las tiendas: esperar a la reposición no cambiaría nada.";
-        internal const string MOTIVO_NADA_CON_STOCK = "Ahora no hay stock de nada del pedido: no hay nada que servir ya.";
-        internal const string MOTIVO_UN_PRODUCTO_SIN_STOCK = "Es un solo producto y no tiene stock: sale entero cuando llegue.";
+        internal const string MOTIVO_NADA_CON_STOCK = "No hay ninguna unidad del pedido en stock: sale todo junto cuando llegue.";
 
         private static readonly byte[] TODOS =
         {
@@ -81,19 +81,23 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         }
 
         /// <summary>El núcleo puro: los cuatro modos con su permiso y el motivo de los que no.</summary>
-        public static List<ModoServicioPermitidoDTO> Calcular(TipoAlmacen tipo, int verdes, int rosas, int rojas, bool hayLineasProducto)
+        /// <param name="hayAlgoQueServirAhora">NestoAPI#561: alguna línea tiene al menos una unidad disponible ya en su
+        /// almacén (verde, o roja con stock parcial). Por defecto true: sin ese dato no se restringe nada.</param>
+        public static List<ModoServicioPermitidoDTO> Calcular(TipoAlmacen tipo, int verdes, int rosas, int rojas, bool hayLineasProducto,
+            bool hayAlgoQueServirAhora = true)
         {
             return TODOS.Select(modo => new ModoServicioPermitidoDTO
             {
                 Modo = modo,
                 Nombre = Constantes.Pedidos.ModosServicio.Nombre(modo),
-                Motivo = MotivoNoPermitido(modo, tipo, verdes, rosas, rojas, hayLineasProducto)
+                Motivo = MotivoNoPermitido(modo, tipo, verdes, rosas, rojas, hayLineasProducto, hayAlgoQueServirAhora)
             })
             .Select(m => { m.Permitido = m.Motivo == null; return m; })
             .ToList();
         }
 
-        private static string MotivoNoPermitido(byte modo, TipoAlmacen tipo, int verdes, int rosas, int rojas, bool hayLineasProducto)
+        private static string MotivoNoPermitido(byte modo, TipoAlmacen tipo, int verdes, int rosas, int rojas, bool hayLineasProducto,
+            bool hayAlgoQueServirAhora)
         {
             if (!hayLineasProducto)
             {
@@ -108,19 +112,14 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     {
                         return modo == Constantes.Pedidos.ModosServicio.TODO_JUNTO ? null : MOTIVO_TODO_VERDE;
                     }
-                    if (verdes == 0 && rosas == 0)
+                    if (verdes == 0 && rosas == 0 && !hayAlgoQueServirAhora)
                     {
-                        // NestoAPI#561: nada con stock ahora
+                        // NestoAPI#561: ninguna unidad que servir ahora: todo junto (si no, salían solo los portes)
                         if (modo == Constantes.Pedidos.ModosServicio.TODO_JUNTO)
                         {
                             return null;
                         }
-                        if (modo == Constantes.Pedidos.ModosServicio.SEGUN_VAYA_ENTRANDO)
-                        {
-                            return rojas >= 2 ? null : MOTIVO_UN_PRODUCTO_SIN_STOCK;
-                        }
-                        return modo == Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS ? MOTIVO_SIN_ROSAS
-                            : rojas >= 2 ? MOTIVO_NADA_CON_STOCK : MOTIVO_UN_PRODUCTO_SIN_STOCK;
+                        return modo == Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS ? MOTIVO_SIN_ROSAS : MOTIVO_NADA_CON_STOCK;
                     }
                     if (rosas == 0)
                     {

@@ -43,6 +43,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             public int LineasVerdes { get; set; }
             public int LineasRosas { get; set; }
             public int LineasRojas { get; set; }
+            /// <summary>NestoAPI#561: alguna línea tiene al menos una unidad libre ya en su almacén (verde, o roja con
+            /// parte del stock). Sin ninguna, el pedido va todo junto.</summary>
+            public bool HayAlgoQueServirAhora { get; set; } = true;
             public string Motivo { get; set; }
             /// <summary>NestoAPI#518: los modos que se pueden elegir para este pedido (el sugerido siempre está).</summary>
             public List<byte> ModosPermitidos { get; set; } = new List<byte>();
@@ -107,13 +110,21 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             int rosas = colores.Count(c => c == ROSA);
             int rojas = colores.Count(c => c != VERDE && c != ROSA);
 
-            return ConModos(Decidir(verdes, rosas, rojas), tipo, hayLineasProducto: true);
+            // NestoAPI#561: una roja puede tener parte del stock (1 de 2). Solo cuando no hay NINGUNA unidad libre
+            // ya en el almacén de la línea el pedido tiene que ir todo junto.
+            bool hayAlgoQueServirAhora = verdes > 0 || productos
+                .GroupBy(l => new { Producto = l.Producto.Trim(), Almacen = l.almacen?.Trim() })
+                .Any(g => stocks.Stock(g.Key.Producto, g.Key.Almacen) - stocks.UnidadesPendientesEntregarAlmacen(g.Key.Producto, g.Key.Almacen) > 0);
+
+            Sugerencia decidida = Decidir(verdes, rosas, rojas, hayAlgoQueServirAhora);
+            return ConModos(decidida, tipo, hayLineasProducto: true);
         }
 
         /// <summary>NestoAPI#518: rellena los modos permitidos con los recuentos ya calculados.</summary>
         private static Sugerencia ConModos(Sugerencia sugerencia, ModosServicioPermitidos.TipoAlmacen tipo, bool hayLineasProducto)
         {
-            sugerencia.Modos = ModosServicioPermitidos.Calcular(tipo, sugerencia.LineasVerdes, sugerencia.LineasRosas, sugerencia.LineasRojas, hayLineasProducto);
+            sugerencia.Modos = ModosServicioPermitidos.Calcular(tipo, sugerencia.LineasVerdes, sugerencia.LineasRosas, sugerencia.LineasRojas, hayLineasProducto,
+                sugerencia.HayAlgoQueServirAhora);
             sugerencia.ModosPermitidos = ModosServicioPermitidos.Permitidos(sugerencia.Modos);
             return sugerencia;
         }
@@ -151,7 +162,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         }
 
         /// <summary>El núcleo puro de la regla, a partir de los recuentos por color.</summary>
-        internal static Sugerencia Decidir(int verdes, int rosas, int rojas)
+        internal static Sugerencia Decidir(int verdes, int rosas, int rojas, bool hayAlgoQueServirAhora = true)
         {
             byte modo;
             string motivo;
@@ -160,12 +171,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 modo = Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS;
                 motivo = $"{rosas} línea{(rosas == 1 ? string.Empty : "s")} hay que traerla{(rosas == 1 ? string.Empty : "s")} de las tiendas: se espera a la reposición.";
             }
-            else if (rojas > 0 && verdes == 0)
+            else if (rojas > 0 && verdes == 0 && !hayAlgoQueServirAhora)
             {
-                // NestoAPI#561 (pedido 927293): sin nada con stock, «ahora lo que hay» no servía nada (salían solo
-                // los portes). Sale todo junto cuando llegue.
+                // NestoAPI#561 (pedido 927293): sin ninguna unidad que servir, «ahora lo que hay» no servía nada
+                // (salían solo los portes). Sale todo junto cuando llegue.
                 modo = Constantes.Pedidos.ModosServicio.TODO_JUNTO;
-                motivo = $"Ahora no hay stock de {(rojas == 1 ? "este producto" : "ninguna de las líneas")}: sale todo junto cuando llegue.";
+                motivo = "No hay ninguna unidad del pedido en stock: sale todo junto cuando llegue.";
             }
             else if (rojas > 0)
             {
@@ -184,6 +195,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 LineasVerdes = verdes,
                 LineasRosas = rosas,
                 LineasRojas = rojas,
+                HayAlgoQueServirAhora = hayAlgoQueServirAhora,
                 Motivo = motivo
             };
         }
