@@ -410,6 +410,7 @@
     <Compile Include="Infrastructure\CrearRemesaServiceTests.cs" />
     <Compile Include="Infrastructure\GestorFacturasRectificativasTests.cs" />
     <Compile Include="Infrastructure\SelectorEfectosCobrablesTests.cs" />
+    <Compile Include="Infrastructure\GatingRetornoFacturasTests.cs" />
     <Compile Include="Infrastructure\SelectorAvisosFacturasVencidasTests.cs" />
     <Compile Include="Infrastructure\AvisosFacturasVencidasJobsServiceTests.cs" />
     <Compile Include="Infrastructure\CadenciaAvisosFacturasVencidasTests.cs" />

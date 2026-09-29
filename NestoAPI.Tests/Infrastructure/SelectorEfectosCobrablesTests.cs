@@ -32,6 +32,7 @@ namespace NestoAPI.Tests.Infrastructure
         private List<string> estadosQueBloquean;
         private List<int> agenciasConSeguimiento;
         private SelectorEfectosCobrables selector;
+        private Dictionary<string, string> parametros;
 
         [TestInitialize]
         public void Setup()
@@ -53,8 +54,9 @@ namespace NestoAPI.Tests.Infrastructure
             // Fallo 20/08/26: el gating solo mira envíos de agencias CON seguimiento. Los envíos
             // de los tests no fijan Agencia (0), así que 0 cuenta como "con seguimiento" aquí.
             agenciasConSeguimiento = new List<int> { 0 };
+            parametros = new Dictionary<string, string>();
             selector = new SelectorEfectosCobrables(db, e => Task.FromResult(estadosQueBloquean),
-                () => agenciasConSeguimiento.ToArray());
+                () => agenciasConSeguimiento.ToArray(), clave => parametros.TryGetValue(clave, out string v) ? v : null);
         }
 
         private static void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class
@@ -520,6 +522,75 @@ namespace NestoAPI.Tests.Infrastructure
 
             Assert.AreEqual(1, errores.Count);
             StringAssert.Contains(errores.Single(), "DE BAJA");
+        }
+
+
+        // NestoAPI#550: recibos de facturas con envío con retorno (cambio / «recoger producto»)
+        private void FacturasConEnvios(params EnviosAgencia[] envios)
+        {
+            ConfigurarFakeDbSet(fakeLineas, new List<LinPedidoVta>
+            {
+                new LinPedidoVta { Empresa = "1", Número = 922001, Nº_Factura = "NV2612001" },
+                new LinPedidoVta { Empresa = "1", Número = 922002, Nº_Factura = "NV2612002" }
+            }.AsQueryable());
+            ConfigurarFakeDbSet(fakeEnvios, envios.AsQueryable());
+        }
+
+        private static EnviosAgencia Envio(int numero, int pedido, short retorno, DateTime? retornoRecibido = null)
+            => new EnviosAgencia
+            {
+                Numero = numero,
+                Pedido = pedido,
+                Estado = Constantes.Agencias.ESTADO_ENTREGADO,
+                Fecha = HOY.AddDays(-3),
+                Retorno = retorno,
+                FechaRetornoRecibido = retornoRecibido
+            };
+
+        [TestMethod]
+        public async Task CandidatosSepa_EnvioConRetornoSinLlegar_RetenidoYForzable()
+        {
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente>
+            {
+                Efecto(id: 1, documento: "NV2612001"),
+                Efecto(id: 2, documento: "NV2612002")
+            }.AsQueryable());
+            FacturasConEnvios(Envio(1, 922001, retorno: 1), Envio(2, 922002, retorno: 0));
+
+            List<EfectoCandidatoDTO> candidatos = await selector.CandidatosSepa("1", HOY);
+
+            EfectoCandidatoDTO conRetorno = candidatos.Single(c => c.Id == 1);
+            Assert.IsFalse(conRetorno.Preseleccionado);
+            StringAssert.Contains(conRetorno.Motivo, "lleva retorno y aún no ha llegado");
+            Assert.IsTrue(conRetorno.Forzable);
+            Assert.IsTrue(candidatos.Single(c => c.Id == 2).Preseleccionado, "Sin retorno, como siempre");
+        }
+
+        [TestMethod]
+        public async Task CandidatosSepa_EnvioConRetornoYRectificativaHecha_PasaALaPuertaDeNeteo()
+        {
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente>
+            {
+                Efecto(id: 1, documento: "NV2612001"),
+                Efecto(id: 2, pendiente: -14.19m, documento: "RV2600046")
+            }.AsQueryable());
+            FacturasConEnvios(Envio(1, 922001, retorno: 1, retornoRecibido: HOY.AddDays(-1)));
+
+            EfectoCandidatoDTO efecto = (await selector.CandidatosSepa("1", HOY)).Single(c => c.Id == 1);
+
+            Assert.IsTrue(efecto.Preseleccionado, efecto.Motivo);
+            Assert.IsTrue(efecto.ClienteConNegativos, "Hay que liquidar la rectificativa antes de girar");
+        }
+
+        [TestMethod]
+        public async Task CandidatosSepa_RetornoConTopeParametrizado_SeLibera()
+        {
+            // Vence ayer; con un tope de 1 día desde el vencimiento, hoy ya sale
+            parametros[Constantes.ParametrosUsuario.REMESA_RETORNO_DIAS_TOPE] = "1";
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente> { Efecto(id: 1, documento: "NV2612001") }.AsQueryable());
+            FacturasConEnvios(Envio(1, 922001, retorno: 1));
+
+            Assert.IsTrue((await selector.CandidatosSepa("1", HOY)).Single().Preseleccionado);
         }
     }
 }

@@ -23,15 +23,34 @@ namespace NestoAPI.Infraestructure.Remesas
         private readonly NVEntities db;
         private readonly Func<string, Task<List<string>>> leerEstadosQueBloquean;
         private readonly GatingEntregaFacturas gatingEntrega;
+        private readonly GatingRetornoFacturas gatingRetorno;
+        private readonly Func<string, string> leerParametro;
 
         public SelectorEfectosCobrables(NVEntities db, Func<string, Task<List<string>>> leerEstadosQueBloquean = null,
-            Func<int[]> leerAgenciasConSeguimiento = null)
+            Func<int[]> leerAgenciasConSeguimiento = null, Func<string, string> leerParametro = null)
         {
             this.db = db;
             this.leerEstadosQueBloquean = leerEstadosQueBloquean ?? (e => LeerEstadosQueBloqueanBd(db, e));
             // El gating de entrega (#172) vive en GatingEntregaFacturas para que lo compartan la
             // remesa y el aviso de facturas vencidas (#534). Agencias con seguimiento inyectables.
             gatingEntrega = new GatingEntregaFacturas(db, leerAgenciasConSeguimiento);
+            // NestoAPI#550: retención por retorno pendiente. Parámetros bajo «(defecto)», inyectables.
+            gatingRetorno = new GatingRetornoFacturas(db);
+            this.leerParametro = leerParametro ?? (clave => Controllers.ParametrosUsuarioController.LeerParametro(
+                Constantes.Empresas.EMPRESA_POR_DEFECTO, Constantes.ParametrosUsuario.USUARIO_POR_DEFECTO, clave));
+        }
+
+        /// <summary>Parámetro entero &gt; 0; sin fila, no válido o si falla la lectura, el valor por defecto.</summary>
+        private int LeerDias(string clave, int porDefecto)
+        {
+            try
+            {
+                return int.TryParse(leerParametro(clave)?.Trim(), out int dias) && dias > 0 ? dias : porDefecto;
+            }
+            catch
+            {
+                return porDefecto;
+            }
         }
 
         // EstadosExtracto no está en el EDMX (SQL crudo, patrón Cargos). Inyectable para tests.
@@ -92,6 +111,15 @@ namespace NestoAPI.Infraestructure.Remesas
                 .PeorEstadoSinEntregarPorFactura(empresa, efectos.Select(e => e.Nº_Documento))
                 .ConfigureAwait(false);
 
+            // NestoAPI#550: facturas con envío con retorno (¿habrá rectificativa?)
+            Dictionary<string, DateTime?> retornoPorFactura = await gatingRetorno
+                .RetornosPorFactura(empresa, efectos.Select(e => e.Nº_Documento))
+                .ConfigureAwait(false);
+            int diasTrasRetorno = LeerDias(Constantes.ParametrosUsuario.REMESA_RETORNO_DIAS_LABORABLES,
+                GatingRetornoFacturas.DIAS_LABORABLES_TRAS_RETORNO_POR_DEFECTO);
+            int diasTope = LeerDias(Constantes.ParametrosUsuario.REMESA_RETORNO_DIAS_TOPE,
+                GatingRetornoFacturas.DIAS_TOPE_TRAS_VENCIMIENTO_POR_DEFECTO);
+
             List<string> clientes = efectos.Select(e => e.Número?.Trim()).Distinct().ToList();
 
             // NestoAPI#381: la ficha bancaria (CCC) de cada efecto, para ADELANTAR la validación
@@ -141,6 +169,13 @@ namespace NestoAPI.Infraestructure.Remesas
                 {
                     motivo = GatingEntregaFacturas.MotivoRetencion(peorEstado);
                     forzable = GatingEntregaFacturas.EsForzable(peorEstado);
+                }
+                if (motivo == null && documento != null
+                    && retornoPorFactura.TryGetValue(documento, out DateTime? retornoRecibido))
+                {
+                    motivo = GatingRetornoFacturas.MotivoRetencion(retornoRecibido, e.FechaVto.Value, fechaHoy,
+                        conNegativos.Contains(cliente ?? string.Empty), diasTrasRetorno, diasTope);
+                    forzable = motivo != null;
                 }
 
                 return new EfectoCandidatoDTO

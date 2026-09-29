@@ -674,6 +674,7 @@
     <Compile Include="Infraestructure\Remesas\CrearRemesaService.cs" />
     <Compile Include="Infraestructure\Remesas\SelectorEfectosCobrables.cs" />
     <Compile Include="Infraestructure\Remesas\GatingEntregaFacturas.cs" />
+    <Compile Include="Infraestructure\Remesas\GatingRetornoFacturas.cs" />
     <Compile Include="Infraestructure\Cobros\AvisosFacturasVencidasJobsService.cs" />
     <Compile Include="Infraestructure\Cobros\LectorDatosPagoEmpresa.cs" />
     <Compile Include="Infraestructure\Cobros\AlmacenAvisosFacturasVencidas.cs" />

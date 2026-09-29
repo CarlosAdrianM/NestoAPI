@@ -782,6 +782,18 @@ namespace NestoAPI.Models
             public const string AVISO_FACTURAS_VENCIDAS_DIAS_TRAS_PAGO = "AvisoFacturasVencidasDiasTrasPago";
 
             /// <summary>
+            /// NestoAPI#550: días laborables que la remesa retiene un recibo después de recibir el
+            /// retorno de su envío, por si hay rectificativa. Sin fila o no válido: 3.
+            /// </summary>
+            public const string REMESA_RETORNO_DIAS_LABORABLES = "RemesaRetornoDiasLaborables";
+
+            /// <summary>
+            /// NestoAPI#550: tope de la retención por retorno, en días desde el vencimiento (sale
+            /// aunque el retorno no haya llegado). Sin fila o no válido: 15.
+            /// </summary>
+            public const string REMESA_RETORNO_DIAS_TOPE = "RemesaRetornoDiasTope";
+
+            /// <summary>
             /// NestoAPI#532: interruptor del recordatorio de reposición (job semanal de Hangfire, jueves
             /// 05:30). Bajo «(defecto)». Sin fila, "0" o cualquier valor que no se reconozca: APAGADO.
             /// "Sombra": calcula a quién se le recordaría reponer qué y lo manda SOLO al equipo interno
