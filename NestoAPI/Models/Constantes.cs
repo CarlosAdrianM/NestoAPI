@@ -815,6 +815,14 @@ namespace NestoAPI.Models
             /// </summary>
             public const string PRECIOS_MEDIOS_SOMBRA = "PreciosMediosSombra";
 
+            /// <summary>
+            /// NestoAPI#547 (corte c): marca (yyyy-MM-ddTHH:mm:ss, hora del servidor de BD) de la última pasada nocturna
+            /// completa del incremental de precios medios, bajo «(defecto)» de la empresa 1. La escribe el propio job; la
+            /// siguiente pasada recalcula lo modificado desde entonces. Para forzar que repase más atrás, poner una fecha
+            /// anterior; sin fila, se parte del inicio de la última pasada del SP de los domingos.
+            /// </summary>
+            public const string PRECIOS_MEDIOS_ULTIMA_PASADA_INCREMENTAL = "PreciosMediosUltimaPasadaIncremental";
+
             /// <summary>Usuario bajo el que viven los parametros que no son de nadie en concreto.</summary>
             public const string USUARIO_POR_DEFECTO = "(defecto)";
 

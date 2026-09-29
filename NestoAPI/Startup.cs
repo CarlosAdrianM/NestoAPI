@@ -525,6 +525,21 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'precios-medios-sombra' configurado (domingo a las 6:30; apagado salvo parámetro)");
 
+            // NestoAPI#547 (corte c): INCREMENTAL de precios medios. Todos los días a las 2:30 recalcula (y ESCRIBE) la
+            // media de los productos con compras modificadas desde la última pasada y de los que tienen movimientos de
+            // stock con fecha pasada. NO HACE NADA salvo con PreciosMedios:EscribirIncremental = true en Web.config; si
+            // el SP del domingo sigue corriendo, se aplaza.
+            RecurringJob.AddOrUpdate(
+                "precios-medios-incremental",
+                () => Infraestructure.PreciosMedios.PreciosMediosIncrementalJobsService.ProcesarPasadaNocturna(),
+                "30 2 * * *", // Cron: todos los días a las 2:30
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'precios-medios-incremental' configurado (diario a las 2:30; apagado salvo Web.config)");
+
             // Poll de seguimiento de envíos (#248). Actualiza Estado (Entregado/Incidentado), el último
             // texto de la agencia (DetalleEstado, de donde sale «en reparto», #516) y FechaEntrega real
             // consultando a cada agencia con gestión remota. Acotado a los envíos desde una fecha de corte

@@ -147,82 +147,103 @@ VALUES (@fechaPasada, @empresa, @producto, @esResumen, @clasificacion, @precioMe
 
         public DatosProductoPrecioMedio LeerDatos(string empresa, string empresaEspejo, string producto, bool conVentas)
         {
+            using (SqlConnection conexion = Abrir())
+            {
+                return LeerDatos(conexion, null, empresa, empresaEspejo, producto, conVentas, lecturaSucia: true);
+            }
+        }
+
+        /// <summary>
+        /// Quita los <c>WITH (NOLOCK)</c> de una consulta. El incremental (corte c) lee con las MISMAS consultas que la
+        /// sombra, pero dentro de su transacción de escritura y en lectura confirmada: no puede calcular una media a
+        /// partir de una factura a medio grabar que luego se deshaga.
+        /// </summary>
+        internal static string SinNolock(string sql)
+        {
+            return sql.Replace(" WITH (NOLOCK)", string.Empty);
+        }
+
+        /// <summary>
+        /// Lectura de un producto sobre una conexión ya abierta (y, si se da, dentro de su transacción). Con
+        /// <paramref name="lecturaSucia"/> = false va sin NOLOCK (ver <see cref="SinNolock"/>).
+        /// </summary>
+        internal static DatosProductoPrecioMedio LeerDatos(SqlConnection conexion, SqlTransaction transaccion, string empresa,
+            string empresaEspejo, string producto, bool conVentas, bool lecturaSucia)
+        {
+            Func<string, string> sql = s => lecturaSucia ? s : SinNolock(s);
             DatosProductoPrecioMedio datos = new DatosProductoPrecioMedio
             {
                 Empresa = empresa,
                 EmpresaEspejo = empresaEspejo,
                 Producto = producto?.Trim()
             };
-            using (SqlConnection conexion = Abrir())
+            using (SqlCommand comando = ComandoProducto(conexion, transaccion, sql(SQL_FICHA), empresa, empresaEspejo, producto))
+            using (SqlDataReader lector = comando.ExecuteReader())
             {
-                using (SqlCommand comando = ComandoProducto(conexion, SQL_FICHA, empresa, empresaEspejo, producto))
-                using (SqlDataReader lector = comando.ExecuteReader())
+                if (lector.Read())
                 {
-                    if (lector.Read())
+                    datos.Ficha = new FichaProductoPrecioMedio
                     {
-                        datos.Ficha = new FichaProductoPrecioMedio
-                        {
-                            PrecioMedio = Nulable<decimal>(lector, 0),
-                            Ficticio = Nulable<bool>(lector, 1)
-                        };
-                    }
+                        PrecioMedio = Nulable<decimal>(lector, 0),
+                        Ficticio = Nulable<bool>(lector, 1)
+                    };
                 }
+            }
 
-                using (SqlCommand comando = ComandoProducto(conexion, SQL_COMPRAS, empresa, empresaEspejo, producto))
+            using (SqlCommand comando = ComandoProducto(conexion, transaccion, sql(SQL_COMPRAS), empresa, empresaEspejo, producto))
+            using (SqlDataReader lector = comando.ExecuteReader())
+            {
+                while (lector.Read())
+                {
+                    datos.Compras.Add(new LineaCompraBDPrecioMedio
+                    {
+                        Empresa = lector.IsDBNull(0) ? null : lector.GetString(0),
+                        NumeroFactura = Nulable<int>(lector, 1),
+                        FechaAlbaran = Nulable<DateTime>(lector, 2),
+                        NumeroAlbaran = Nulable<int>(lector, 3),
+                        NumeroOrden = lector.GetInt32(4),
+                        Cantidad = Nulable<int>(lector, 5),
+                        BaseImponible = Nulable<decimal>(lector, 6),
+                        Coste = Nulable<decimal>(lector, 7),
+                        Estado = Nulable<short>(lector, 8),
+                        FechaModificacionFactura = Nulable<DateTime>(lector, 9)
+                    });
+                }
+            }
+
+            using (SqlCommand comando = ComandoProducto(conexion, transaccion, sql(SQL_MOVIMIENTOS), empresa, empresaEspejo, producto))
+            using (SqlDataReader lector = comando.ExecuteReader())
+            {
+                while (lector.Read())
+                {
+                    datos.Movimientos.Add(new MovimientoStockPrecioMedio
+                    {
+                        Fecha = lector.GetDateTime(0),
+                        Cantidad = lector.GetInt32(1),
+                        EsMontaje = lector.GetInt32(2) == 1,
+                        EsRecepcion = lector.GetInt32(3) == 1
+                    });
+                }
+            }
+
+            if (conVentas)
+            {
+                datos.Ventas = new List<LineaVentaPrecioMedio>();
+                using (SqlCommand comando = ComandoProducto(conexion, transaccion, sql(SQL_VENTAS), empresa, empresaEspejo, producto))
                 using (SqlDataReader lector = comando.ExecuteReader())
                 {
                     while (lector.Read())
                     {
-                        datos.Compras.Add(new LineaCompraBDPrecioMedio
+                        datos.Ventas.Add(new LineaVentaPrecioMedio
                         {
                             Empresa = lector.IsDBNull(0) ? null : lector.GetString(0),
-                            NumeroFactura = Nulable<int>(lector, 1),
-                            FechaAlbaran = Nulable<DateTime>(lector, 2),
-                            NumeroAlbaran = Nulable<int>(lector, 3),
-                            NumeroOrden = lector.GetInt32(4),
-                            Cantidad = Nulable<int>(lector, 5),
-                            BaseImponible = Nulable<decimal>(lector, 6),
-                            Coste = Nulable<decimal>(lector, 7),
-                            Estado = Nulable<short>(lector, 8),
-                            FechaModificacionFactura = Nulable<DateTime>(lector, 9)
+                            Numero = lector.GetInt32(1),
+                            NumeroOrden = lector.GetInt32(2),
+                            Estado = lector.GetInt16(3),
+                            FechaAlbaran = Nulable<DateTime>(lector, 4),
+                            Coste = Nulable<decimal>(lector, 5),
+                            FechaModificacion = Nulable<DateTime>(lector, 6)
                         });
-                    }
-                }
-
-                using (SqlCommand comando = ComandoProducto(conexion, SQL_MOVIMIENTOS, empresa, empresaEspejo, producto))
-                using (SqlDataReader lector = comando.ExecuteReader())
-                {
-                    while (lector.Read())
-                    {
-                        datos.Movimientos.Add(new MovimientoStockPrecioMedio
-                        {
-                            Fecha = lector.GetDateTime(0),
-                            Cantidad = lector.GetInt32(1),
-                            EsMontaje = lector.GetInt32(2) == 1,
-                            EsRecepcion = lector.GetInt32(3) == 1
-                        });
-                    }
-                }
-
-                if (conVentas)
-                {
-                    datos.Ventas = new List<LineaVentaPrecioMedio>();
-                    using (SqlCommand comando = ComandoProducto(conexion, SQL_VENTAS, empresa, empresaEspejo, producto))
-                    using (SqlDataReader lector = comando.ExecuteReader())
-                    {
-                        while (lector.Read())
-                        {
-                            datos.Ventas.Add(new LineaVentaPrecioMedio
-                            {
-                                Empresa = lector.IsDBNull(0) ? null : lector.GetString(0),
-                                Numero = lector.GetInt32(1),
-                                NumeroOrden = lector.GetInt32(2),
-                                Estado = lector.GetInt16(3),
-                                FechaAlbaran = Nulable<DateTime>(lector, 4),
-                                Coste = Nulable<decimal>(lector, 5),
-                                FechaModificacion = Nulable<DateTime>(lector, 6)
-                            });
-                        }
                     }
                 }
             }
@@ -303,9 +324,11 @@ VALUES (@fechaPasada, @empresa, @producto, @esResumen, @clasificacion, @precioMe
             return new SqlCommand(sql, conexion) { CommandTimeout = TIMEOUT_SEGUNDOS };
         }
 
-        private static SqlCommand ComandoProducto(SqlConnection conexion, string sql, string empresa, string espejo, string producto)
+        private static SqlCommand ComandoProducto(SqlConnection conexion, SqlTransaction transaccion, string sql, string empresa, string espejo,
+            string producto)
         {
             SqlCommand comando = Comando(conexion, sql);
+            comando.Transaction = transaccion;
             Texto(comando, "@empresa", empresa);
             Texto(comando, "@espejo", espejo);
             Texto(comando, "@producto", producto?.Trim());

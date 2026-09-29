@@ -543,6 +543,11 @@ namespace NestoAPI.Controllers
                         if (respuesta.Exito)
                         {
                             transaction.Commit();
+                            // NestoAPI#547 (corte c): con la factura ya confirmada, se encola el recálculo del precio
+                            // medio de sus productos (no se calcula aquí: no alarga la contabilización). No hace nada con
+                            // PreciosMedios:EscribirIncremental apagado, y nunca lanza.
+                            Infraestructure.PreciosMedios.PreciosMediosIncrementalJobsService.EncolarTrasFacturarCompra(
+                                pedido.Empresa, pedido.Número);
                         }
                         else
                         {
