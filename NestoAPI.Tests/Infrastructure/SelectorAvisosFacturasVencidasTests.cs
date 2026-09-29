@@ -531,5 +531,87 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.IsFalse(apuntes.Any(a => a.Cliente == "30676"), "Solo los clientes pedidos");
             Assert.AreEqual(0, (await selector.ApuntesNegativos("1", new string[0])).Count);
         }
+
+        // NestoAPI#549: el caso real de la 35544. Tercer plazo de 90,02 € que vencía el 18/09; el 25/09
+        // pagó 40 € del segundo y 10 € a cuenta de este; el 29/09 le llegó el aviso de los 80,02 €.
+        // (En los fakes va con el cliente 15191, que es el que tiene ficha y correo.)
+        private static readonly DateTime HOY_35544 = new DateTime(2026, 9, 29);
+
+        private static ExtractoCliente Pago(int id, string cliente, decimal importe, DateTime fecha, int? remesa = null)
+        {
+            ExtractoCliente pago = Efecto(id: id, cliente: cliente, pendiente: 0, tipoApunte: "3", vencimiento: fecha);
+            pago.Importe = importe;
+            pago.Fecha = fecha;
+            pago.Remesa = remesa;
+            return pago;
+        }
+
+        private static ExtractoCliente PlazoDe35544()
+        {
+            ExtractoCliente plazo = Efecto(id: 1, cliente: "15191", pendiente: 80.02m, vencimiento: new DateTime(2026, 9, 18));
+            plazo.Importe = 90.02m;
+            return plazo;
+        }
+
+        [TestMethod]
+        public async Task Candidatos_ClienteQuePagoHaceCuatroDias_NoSeAvisaYDiceDesdeCuando()
+        {
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente>
+            {
+                PlazoDe35544(),
+                Efecto(id: 2, cliente: "30676", documento: "NV2612001"),
+                Pago(3, "15191", -40m, new DateTime(2026, 9, 25)),
+                Pago(4, "15191", -10m, new DateTime(2026, 9, 25))
+            });
+
+            List<AvisoFacturaVencidaDTO> candidatos = await selector.Candidatos("1", 5, HOY_35544);
+
+            Assert.AreEqual("No se avisa: el cliente ha pagado algo el 25/09/2026; se le puede avisar desde el 02/10/2026.",
+                candidatos.Single(c => c.NOrden == 1).Motivo);
+            Assert.IsTrue(candidatos.Single(c => c.NOrden == 2).SeAvisaria, "Los demás clientes, como siempre");
+        }
+
+        [TestMethod]
+        public async Task Candidatos_PasadosLosSieteDiasDelPago_SeAvisaYLlevaElImporteOriginal()
+        {
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente>
+            {
+                PlazoDe35544(),
+                Pago(3, "15191", -10m, new DateTime(2026, 9, 25))
+            });
+
+            AvisoFacturaVencidaDTO aviso = (await selector.Candidatos("1", 5, new DateTime(2026, 10, 2))).Single();
+
+            Assert.IsTrue(aviso.SeAvisaria, aviso.Motivo);
+            Assert.AreEqual(80.02m, aviso.Importe);
+            Assert.AreEqual(90.02m, aviso.ImporteEfecto);
+            Assert.AreEqual(10m, aviso.ImporteYaPagado);
+        }
+
+        [TestMethod]
+        public async Task Candidatos_EsperaTrasPagoParametrizable()
+        {
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente>
+            {
+                PlazoDe35544(),
+                Pago(3, "15191", -10m, new DateTime(2026, 9, 25))
+            });
+
+            Assert.IsTrue((await selector.Candidatos("1", 5, HOY_35544, diasEsperaTrasPago: 3)).Single().SeAvisaria);
+            Assert.IsFalse((await selector.Candidatos("1", 5, HOY_35544, diasEsperaTrasPago: 10)).Single().SeAvisaria);
+        }
+
+        [TestMethod]
+        public async Task Candidatos_CobroRecienteDeUnaRemesa_NoFrenaElAviso()
+        {
+            // El recibo lo gira el banco: no dice que el cliente esté pagando lo que tiene vencido
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente>
+            {
+                PlazoDe35544(),
+                Pago(3, "15191", -67.82m, new DateTime(2026, 9, 26), remesa: 10945)
+            });
+
+            Assert.IsTrue((await selector.Candidatos("1", 5, HOY_35544)).Single().SeAvisaria);
+        }
     }
 }

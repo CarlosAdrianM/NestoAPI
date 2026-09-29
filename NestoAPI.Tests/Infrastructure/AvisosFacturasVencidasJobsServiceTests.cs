@@ -346,6 +346,43 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void Plantilla_EfectoPagadoEnParte_ReconoceLoRecibido()
+        {
+            // NestoAPI#549: caso 35544
+            AvisoFacturaVencidaDTO plazo = Aviso(factura: "NV2613198", importe: 80.02m, vencimiento: new DateTime(2026, 9, 18));
+            plazo.ImporteEfecto = 90.02m;
+            AvisoClienteFacturasVencidasDTO aviso = AvisoCliente(plazo);
+
+            string texto = PlantillaAvisoFacturaVencida.CuerpoTexto(aviso, null);
+            string html = PlantillaAvisoFacturaVencida.CuerpoHtml(aviso, null);
+
+            string frase = "De la factura NV2613198 (vencimiento 18/09/2026, 90,02 €) ya hemos recibido 10,00 €, gracias. Quedan pendientes 80,02 €.";
+            StringAssert.Contains(texto, frase);
+            StringAssert.Contains(html, frase);
+        }
+
+        [TestMethod]
+        public void Plantilla_EfectoSinPagos_NoMencionaNadaRecibido()
+        {
+            AvisoFacturaVencidaDTO entero = Aviso(importe: 90.02m);
+            entero.ImporteEfecto = 90.02m;
+            AvisoFacturaVencidaDTO sinOriginal = Aviso(factura: "NV2612001", nOrden: 2, importe: 50m); // ImporteEfecto sin rellenar
+
+            string texto = PlantillaAvisoFacturaVencida.CuerpoTexto(AvisoCliente(entero, sinOriginal), null);
+
+            Assert.IsFalse(texto.Contains("ya hemos recibido"));
+        }
+
+        [TestMethod]
+        public void InterpretarDiasTrasPago_SinValorONoValido_Siete()
+        {
+            Assert.AreEqual(7, AvisosFacturasVencidasJobsService.InterpretarDiasTrasPago(null));
+            Assert.AreEqual(7, AvisosFacturasVencidasJobsService.InterpretarDiasTrasPago("0"));
+            Assert.AreEqual(7, AvisosFacturasVencidasJobsService.InterpretarDiasTrasPago("siete"));
+            Assert.AreEqual(3, AvisosFacturasVencidasJobsService.InterpretarDiasTrasPago(" 3 "));
+        }
+
+        [TestMethod]
         public void Plantilla_SegundoAvisoEnAdelante_EsRecordatorio()
         {
             AvisoClienteFacturasVencidasDTO aviso = AvisoCliente(Aviso(numeroAviso: 2));

@@ -776,6 +776,12 @@ namespace NestoAPI.Models
             public const string AVISO_FACTURAS_VENCIDAS_DIAS = "AvisoFacturasVencidasDias";
 
             /// <summary>
+            /// NestoAPI#549: días sin avisar a un cliente después de un pago suyo (entero &gt; 0). Sin
+            /// fila o con un valor no válido, 7 (Carlos, 29/09/26).
+            /// </summary>
+            public const string AVISO_FACTURAS_VENCIDAS_DIAS_TRAS_PAGO = "AvisoFacturasVencidasDiasTrasPago";
+
+            /// <summary>
             /// NestoAPI#532: interruptor del recordatorio de reposición (job semanal de Hangfire, jueves
             /// 05:30). Bajo «(defecto)». Sin fila, "0" o cualquier valor que no se reconozca: APAGADO.
             /// "Sombra": calcula a quién se le recordaría reponer qué y lo manda SOLO al equipo interno

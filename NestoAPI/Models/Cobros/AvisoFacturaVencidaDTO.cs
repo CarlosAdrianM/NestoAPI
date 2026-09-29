@@ -23,6 +23,13 @@ namespace NestoAPI.Models.Cobros
         public DateTime Vencimiento { get; set; }
         /// <summary>Importe PENDIENTE del efecto (lo que se reclama), no el total de la factura.</summary>
         public decimal Importe { get; set; }
+        /// <summary>
+        /// NestoAPI#549: importe ORIGINAL del efecto. Si es mayor que <see cref="Importe"/>, el cliente
+        /// ya ha pagado parte y el correo se lo reconoce.
+        /// </summary>
+        public decimal ImporteEfecto { get; set; }
+        /// <summary>NestoAPI#549: lo que ya ha pagado del efecto (0 si nada o si no se conoce el original).</summary>
+        public decimal ImporteYaPagado => ImporteEfecto > Importe && Importe > 0 ? ImporteEfecto - Importe : 0;
         public int DiasVencida { get; set; }
         /// <summary>Correos a los que iría el aviso, separados por coma. Vacío si la ficha no tiene.</summary>
         public string Destinatarios { get; set; }

@@ -83,12 +83,13 @@ namespace NestoAPI.Infraestructure.Cobros
                     SelectorAvisosFacturasVencidas selector = new SelectorAvisosFacturasVencidas(db, almacen: almacen);
                     ServicioFacturas servicioFacturas = new ServicioFacturas(db);
                     GestorFacturas gestorFacturas = new GestorFacturas(servicioFacturas);
+                    LectorParametrosUsuario lector = new LectorParametrosUsuario();
                     await Procesar(new DependenciasAvisosFacturasVencidas
                     {
-                        Lector = new LectorParametrosUsuario(),
+                        Lector = lector,
                         Correo = new ServicioCorreoElectronico(),
                         Almacen = almacen,
-                        CalcularCandidatos = (dias, hoy) => selector.Candidatos(EMPRESA, dias, hoy),
+                        CalcularCandidatos = (dias, hoy) => selector.Candidatos(EMPRESA, dias, hoy, LeerDiasTrasPago(lector)),
                         LeerApuntesNegativos = clientes => selector.ApuntesNegativos(EMPRESA, clientes),
                         LeerDatosPago = () => new LectorDatosPagoEmpresa(db, servicioFacturas).Leer(EMPRESA),
                         GenerarSaludos = nombres => new GeneradorContenidoCorreoPostCompra(new ServicioOpenAI()).GenerarSaludosAsync(nombres),
@@ -323,6 +324,25 @@ namespace NestoAPI.Infraestructure.Cobros
             => int.TryParse(valor?.Trim(), out int dias) && dias > 0
                 ? dias
                 : SelectorAvisosFacturasVencidas.DIAS_UMBRAL_POR_DEFECTO;
+
+        /// <summary>NestoAPI#549: días de espera tras un pago del cliente. Cualquier fallo = el valor por defecto.</summary>
+        internal static int LeerDiasTrasPago(ILectorParametrosUsuario lector)
+        {
+            try
+            {
+                return InterpretarDiasTrasPago(lector.LeerParametro(EMPRESA, Constantes.ParametrosUsuario.USUARIO_POR_DEFECTO,
+                    Constantes.ParametrosUsuario.AVISO_FACTURAS_VENCIDAS_DIAS_TRAS_PAGO));
+            }
+            catch
+            {
+                return SelectorAvisosFacturasVencidas.DIAS_ESPERA_TRAS_PAGO_POR_DEFECTO;
+            }
+        }
+
+        internal static int InterpretarDiasTrasPago(string valor)
+            => int.TryParse(valor?.Trim(), out int dias) && dias > 0
+                ? dias
+                : SelectorAvisosFacturasVencidas.DIAS_ESPERA_TRAS_PAGO_POR_DEFECTO;
 
         /// <summary>CuentaBancoEmpresa devuelve una cuenta por línea: en el correo van en una frase.</summary>
         internal static string NormalizarIban(string cuentas)

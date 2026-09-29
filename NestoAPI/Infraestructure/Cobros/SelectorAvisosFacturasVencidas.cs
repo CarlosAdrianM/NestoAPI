@@ -24,8 +24,9 @@ namespace NestoAPI.Infraestructure.Cobros
     /// los que no tienen factura, los que tienen un estado del extracto que bloquea la liquidación
     /// (retenido, abogado, rehusado...: los mismos que la remesa), los de clientes con cobros o
     /// abonos pendientes de liquidar (puede que ya hayan pagado), los que la agencia aún no ha
-    /// entregado (el MISMO gating que la remesa, <see cref="GatingEntregaFacturas"/>) y los que no
-    /// tienen correo al que escribir.
+    /// entregado (el MISMO gating que la remesa, <see cref="GatingEntregaFacturas"/>), los de clientes
+    /// que han pagado algo hace poco (NestoAPI#549: quien acaba de pagar una parte está pagando; que
+    /// no le llegue la reclamación del resto al día siguiente) y los que no tienen correo al que escribir.
     ///
     /// Solo lee: no manda nada ni registra nada. NestoAPI#544 (corte 2): además consulta la memoria
     /// (<see cref="IAlmacenAvisosFacturasVencidas"/>) y aplica la cadencia
@@ -35,6 +36,9 @@ namespace NestoAPI.Infraestructure.Cobros
     public class SelectorAvisosFacturasVencidas
     {
         public const int DIAS_UMBRAL_POR_DEFECTO = 5;
+
+        /// <summary>NestoAPI#549: días sin avisar a un cliente después de cualquier pago suyo (Carlos, 29/09/26).</summary>
+        public const int DIAS_ESPERA_TRAS_PAGO_POR_DEFECTO = 7;
 
         /// <summary>Solo se avisan vencimientos desde esta fecha; lo anterior va a mano.</summary>
         public static readonly DateTime FECHA_CORTE_VENCIMIENTOS = new DateTime(2026, 7, 1);
@@ -54,6 +58,7 @@ namespace NestoAPI.Infraestructure.Cobros
         public const string MOTIVO_SIN_FACTURA = "No se avisa: el efecto no tiene una factura asociada.";
         public const string MOTIVO_SIN_CORREO = "No se avisa: la ficha no tiene correo de cobros ni de facturación.";
         public const string MOTIVO_CLIENTE_CON_NEGATIVOS = "No se avisa: el cliente tiene cobros o abonos pendientes de liquidar (puede que ya haya pagado).";
+        public const string MOTIVO_PAGO_RECIENTE_PREFIJO = "No se avisa: el cliente ha pagado algo el ";
 
         private readonly NVEntities db;
         private readonly Func<string, Task<List<string>>> leerEstadosQueBloquean;
@@ -74,12 +79,18 @@ namespace NestoAPI.Infraestructure.Cobros
         /// Todos los efectos que cumplen el criterio, con <c>Motivo</c> null si se avisarían.
         /// </summary>
         /// <param name="hoy">Ancla temporal (solo para tests; por defecto el día real).</param>
-        public async Task<List<AvisoFacturaVencidaDTO>> Candidatos(string empresa, int diasUmbral, DateTime? hoy = null)
+        /// <param name="diasEsperaTrasPago">NestoAPI#549: días sin avisar tras un pago del cliente (&lt; 1 = el valor por defecto).</param>
+        public async Task<List<AvisoFacturaVencidaDTO>> Candidatos(string empresa, int diasUmbral, DateTime? hoy = null,
+            int diasEsperaTrasPago = DIAS_ESPERA_TRAS_PAGO_POR_DEFECTO)
         {
             DateTime fechaHoy = (hoy ?? DateTime.Today).Date;
             if (diasUmbral < 1)
             {
                 diasUmbral = DIAS_UMBRAL_POR_DEFECTO;
+            }
+            if (diasEsperaTrasPago < 1)
+            {
+                diasEsperaTrasPago = DIAS_ESPERA_TRAS_PAGO_POR_DEFECTO;
             }
             DateTime vencidoComoTarde = fechaHoy.AddDays(-diasUmbral);
             DateTime corte = FECHA_CORTE_VENCIMIENTOS;
@@ -154,6 +165,20 @@ namespace NestoAPI.Infraestructure.Cobros
             HashSet<string> conNegativos = new HashSet<string>(
                 conNegativosLista.Select(c => c?.Trim()), StringComparer.OrdinalIgnoreCase);
 
+            // NestoAPI#549: el último pago de cada cliente en la ventana de espera. Solo los pagos que
+            // hace el cliente (transferencia, cajero...): los cobros de una remesa (Remesa rellena) los
+            // gira el banco y no dicen que esté pagando lo vencido.
+            DateTime pagosDesde = fechaHoy.AddDays(-diasEsperaTrasPago);
+            string pago = Constantes.ExtractosCliente.TiposApunte.PAGO;
+            var pagosRecientes = await db.ExtractosCliente
+                .Where(e => e.Empresa == empresa && clientes.Contains(e.Número) && e.TipoApunte == pago
+                    && e.Importe < 0 && e.Remesa == null && e.Fecha > pagosDesde)
+                .Select(e => new { e.Número, e.Fecha })
+                .ToListAsync().ConfigureAwait(false);
+            Dictionary<string, DateTime> ultimoPagoPorCliente = pagosRecientes
+                .GroupBy(p => p.Número?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.Max(p => p.Fecha), StringComparer.OrdinalIgnoreCase);
+
             // NestoAPI#544 (c): la memoria. Si la tabla aún no existe (script sin ejecutar) o falla,
             // se avisa a ELMAH y ese día todos cuentan como primer aviso: mejor eso que no avisar.
             Dictionary<int, AvisoFacturaVencidaRegistrado> ultimos;
@@ -193,6 +218,10 @@ namespace NestoAPI.Infraestructure.Cobros
                 {
                     motivo = MOTIVO_CLIENTE_CON_NEGATIVOS;
                 }
+                else if (ultimoPagoPorCliente.TryGetValue(cliente ?? string.Empty, out DateTime ultimoPago))
+                {
+                    motivo = MotivoPagoReciente(ultimoPago, diasEsperaTrasPago);
+                }
                 else if (peorEstadoPorFactura.TryGetValue(documento, out short peorEstado))
                 {
                     motivo = "No se avisa. " + GatingEntregaFacturas.MotivoRetencion(peorEstado);
@@ -213,6 +242,7 @@ namespace NestoAPI.Infraestructure.Cobros
                     FechaFactura = tieneFactura ? facturaPorNumero[documento].Fecha : (DateTime?)null,
                     Vencimiento = e.FechaVto.Value.Date,
                     Importe = e.ImportePdte,
+                    ImporteEfecto = e.Importe,
                     DiasVencida = (fechaHoy - e.FechaVto.Value.Date).Days,
                     Destinatarios = destinatarios,
                     NombrePersonaContacto = ResolverNombrePersonaContacto(personasDelCliente),
@@ -227,6 +257,11 @@ namespace NestoAPI.Infraestructure.Cobros
             .ThenBy(a => a.Vencimiento)
             .ToList();
         }
+
+        /// <summary>NestoAPI#549: «No se avisa: el cliente ha pagado algo el 25/09/2026; se le puede avisar desde el 02/10/2026.»</summary>
+        public static string MotivoPagoReciente(DateTime ultimoPago, int diasEsperaTrasPago)
+            => MOTIVO_PAGO_RECIENTE_PREFIJO + PlantillaAvisoFacturaVencida.FormatearFecha(ultimoPago.Date) +
+                "; se le puede avisar desde el " + PlantillaAvisoFacturaVencida.FormatearFecha(ultimoPago.Date.AddDays(diasEsperaTrasPago)) + ".";
 
         /// <summary>
         /// NestoAPI#544 (b): los apuntes con pendiente negativo de esos clientes (los que hacen que no

@@ -82,6 +82,11 @@ namespace NestoAPI.Infraestructure.Cobros
             {
                 sb.AppendLine($"Total pendiente: {FormatearImporte(aviso.Total)}");
             }
+            foreach (string frase in FrasesYaPagado(facturas))
+            {
+                sb.AppendLine();
+                sb.AppendLine(frase);
+            }
             sb.AppendLine();
             sb.AppendLine(ParrafoCruce(datos));
             sb.AppendLine();
@@ -129,6 +134,10 @@ namespace NestoAPI.Infraestructure.Cobros
                   .Append(FormatearImporte(aviso.Total)).Append("</td></tr>");
             }
             sb.Append("</table>");
+            foreach (string frase in FrasesYaPagado(facturas))
+            {
+                sb.Append("<p>").Append(PlantillaAvisoFacturaVencida.Html(frase)).Append("</p>");
+            }
             sb.Append("<p>").Append(PlantillaAvisoFacturaVencida.Html(ParrafoCruce(datos))).Append("</p>");
             sb.Append("<div style='border: 1px solid #bbb; background-color: #fafafa; padding: 10px 14px; font-family: Consolas, monospace; font-size: 13px;'>");
             foreach ((string etiqueta, string valor) in BloqueCopiar(aviso, datos))
@@ -146,6 +155,18 @@ namespace NestoAPI.Infraestructure.Cobros
 
         private static List<AvisoFacturaVencidaDTO> FacturasOrdenadas(AvisoClienteFacturasVencidasDTO aviso)
             => (aviso.Facturas ?? new List<AvisoFacturaVencidaDTO>()).OrderBy(f => f.Vencimiento).ThenBy(f => f.Factura).ToList();
+
+        /// <summary>
+        /// NestoAPI#549: una frase por cada efecto pagado en parte, para que se vea que su pago nos ha
+        /// llegado: «De la factura NV2613198 (vencimiento 18/09/2026, 90,02 €) ya hemos recibido
+        /// 10,00 €, gracias. Quedan pendientes 80,02 €.»
+        /// </summary>
+        public static List<string> FrasesYaPagado(IEnumerable<AvisoFacturaVencidaDTO> facturas)
+            => (facturas ?? Enumerable.Empty<AvisoFacturaVencidaDTO>())
+                .Where(f => f.ImporteYaPagado > 0)
+                .Select(f => $"De la factura {f.Factura} (vencimiento {FormatearFecha(f.Vencimiento)}, {FormatearImporte(f.ImporteEfecto)}) " +
+                    $"ya hemos recibido {FormatearImporte(f.ImporteYaPagado)}, gracias. Quedan pendientes {FormatearImporte(f.Importe)}.")
+                .ToList();
 
         private static string Introduccion(int numeroAviso, bool varias)
         {
