@@ -167,8 +167,36 @@ namespace NestoAPI.Infraestructure
 
         }
 
-        internal static void ActualizarVendedorClienteGrupoProducto(NVEntities db, Cliente clienteDB, ClienteDTO cliente)
+        /// <summary>
+        /// Pasa a la fila que ya existe lo que manda el cliente. El usuario de auditoría solo cambia
+        /// si cambia el vendedor; si no, se queda el que había.
+        ///
+        /// <para>ELMAH 29/09/26 (Sancho, tres intentos seguidos de guardar una ficha): se grababa
+        /// el usuario que venía en el DTO, que llegaba vacío, y la columna es obligatoria, así que
+        /// reventaba el guardado entero de la ficha («El campo Usuario es obligatorio»).</para>
+        /// </summary>
+        internal static void AplicarVendedorGrupo(VendedorClienteGrupoProducto actual, VendedorGrupoProductoDTO nuevo, string usuario)
         {
+            if (actual == null || nuevo == null)
+            {
+                // Un cliente que no manda los vendedores por grupo no quiere cambiarlos
+                return;
+            }
+
+            bool cambiaVendedor = actual.Vendedor?.Trim() != nuevo.vendedor?.Trim();
+            if (cambiaVendedor || string.IsNullOrWhiteSpace(actual.Usuario))
+            {
+                actual.Usuario = UsuarioAuditoriaHelper.ParaAuditoria(usuario);
+            }
+            actual.Vendedor = nuevo.vendedor;
+            actual.Estado = nuevo.estado;
+        }
+
+        internal static void ActualizarVendedorClienteGrupoProducto(NVEntities db, Cliente clienteDB, ClienteDTO cliente, string usuarioAuditoria = null)
+        {
+            // El usuario autenticado manda; el del DTO solo cuando no hay otro (tests, llamadas internas)
+            string usuario = string.IsNullOrWhiteSpace(usuarioAuditoria) ? cliente.usuario : usuarioAuditoria;
+
             ICollection<VendedorClienteGrupoProducto> vendedoresActuales = db.VendedoresClientesGruposProductos.Where(v => v.Empresa == clienteDB.Empresa && v.Cliente == clienteDB.Nº_Cliente && v.Contacto == clienteDB.Contacto).ToList();
             if (vendedoresActuales == null)
             {
@@ -176,18 +204,10 @@ namespace NestoAPI.Infraestructure
             }
 
             VendedorClienteGrupoProducto vendedorGrupoActual = vendedoresActuales.FirstOrDefault();
-            VendedorGrupoProductoDTO vendedorGrupoNuevo = cliente.VendedoresGrupoProducto.FirstOrDefault();
+            VendedorGrupoProductoDTO vendedorGrupoNuevo = cliente.VendedoresGrupoProducto?.FirstOrDefault();
             if (vendedorGrupoActual != null)
             {
-                if (vendedorGrupoActual.Vendedor != vendedorGrupoNuevo.vendedor)
-                {
-                    vendedorGrupoActual.Usuario = cliente.usuario;
-                } else
-                {
-                    vendedorGrupoActual.Usuario = vendedorGrupoNuevo.usuario;
-                }
-                vendedorGrupoActual.Vendedor = vendedorGrupoNuevo.vendedor;
-                vendedorGrupoActual.Estado = vendedorGrupoNuevo.estado;
+                AplicarVendedorGrupo(vendedorGrupoActual, vendedorGrupoNuevo, usuario);
             }
             else if (vendedorGrupoNuevo != null && vendedorGrupoNuevo.vendedor != null)
             {
@@ -199,7 +219,7 @@ namespace NestoAPI.Infraestructure
                     GrupoProducto = vendedorGrupoNuevo.grupoProducto,
                     Vendedor = vendedorGrupoNuevo.vendedor,
                     Estado = Constantes.Clientes.Estados.VISITA_PRESENCIAL,
-                    Usuario = cliente.usuario
+                    Usuario = UsuarioAuditoriaHelper.ParaAuditoria(usuario)
                 };
                 db.VendedoresClientesGruposProductos.Add(vendedorGrupoActual);
             }

@@ -466,6 +466,7 @@
     <Compile Include="Infrastructure\ServicioAgenciasTests.cs" />
     <Compile Include="Infrastructure\ContabilidadServiceDeadlockTests.cs" />
     <Compile Include="Infrastructure\GestorComisionesResolverGrupoTests.cs" />
+    <Compile Include="Infrastructure\GestorComisionesVendedorGrupoClienteTests.cs" />
     <Compile Include="Infrastructure\GestorComisionesActualizarVendedorPedidoTests.cs" />
     <Compile Include="Infrastructure\GestorPedidosVentaGanavisionesTests.cs" />
     <Compile Include="Infrastructure\NVEntitiesContadoresTests.cs" />

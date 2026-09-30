@@ -1033,7 +1033,8 @@ namespace NestoAPI.Controllers
             db.Entry(clienteDB).State = System.Data.Entity.EntityState.Modified;
 
             // Carlos 02/03/17: gestionamos el vendedor por grupo de producto
-            GestorComisiones.ActualizarVendedorClienteGrupoProducto(db, clienteDB, cliente);
+            GestorComisiones.ActualizarVendedorClienteGrupoProducto(db, clienteDB, cliente,
+                UsuarioAuditoriaHelper.Resolver(User, cliente.usuario));
 
             try
             {
