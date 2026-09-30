@@ -1,10 +1,10 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.PreparacionAlmacen;
 using NestoAPI.Models.PreparacionAlmacen;
+using NestoAPI.Tests.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Data.Entity;
-using System.Data.SqlClient;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -26,77 +26,16 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         private const int PICKING = 99633;
         private const int PEDIDO = 926940;
 
-        // El app.config de los tests no declara el proveedor de SQL Server: se registra aquí, solo
-        // para este contexto. Como la configuración de EF es única por proceso, estas pruebas se
-        // lanzan solas (con el filtro «Integracion»), no mezcladas con el resto de la suite.
-        private class ConfiguracionSqlServer : DbConfiguration
+        private static DbContext Abrir()
         {
-            public ConfiguracionSqlServer()
-            {
-                // Por reflexión, para no añadir la referencia a EntityFramework.SqlServer al proyecto
-                // de tests solo por esto: se carga el que ya compila NestoAPI
-                Type proveedor = ensambladoProveedor.GetType("System.Data.Entity.SqlServer.SqlProviderServices", true);
-                SetProviderServices("System.Data.SqlClient",
-                    (System.Data.Entity.Core.Common.DbProviderServices)proveedor.GetProperty("Instance").GetValue(null));
-            }
-        }
-
-        private static System.Reflection.Assembly ensambladoProveedor;
-
-        private static bool CargarProveedor()
-        {
-            if (ensambladoProveedor != null)
-            {
-                return true;
-            }
-            string carpeta = AppDomain.CurrentDomain.BaseDirectory;
-            foreach (string ruta in new[]
-            {
-                System.IO.Path.Combine(carpeta, "EntityFramework.SqlServer.dll"),
-                System.IO.Path.GetFullPath(System.IO.Path.Combine(carpeta, "..", "..", "..", "NestoAPI", "bin", "EntityFramework.SqlServer.dll"))
-            })
-            {
-                if (System.IO.File.Exists(ruta))
-                {
-                    ensambladoProveedor = System.Reflection.Assembly.LoadFrom(ruta);
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        [DbConfigurationType(typeof(ConfiguracionSqlServer))]
-        private class ContextoSoloSql : DbContext
-        {
-            static ContextoSoloSql()
-            {
-                Database.SetInitializer<ContextoSoloSql>(null);
-            }
-
-            public ContextoSoloSql(string conexion) : base(new SqlConnection(conexion), true)
-            {
-            }
-        }
-
-        private static ContextoSoloSql Abrir()
-        {
-            string conexion = Environment.GetEnvironmentVariable("NESTO_TEST_BD");
-            if (string.IsNullOrWhiteSpace(conexion))
-            {
-                Assert.Inconclusive("Sin NESTO_TEST_BD: no se prueba contra la base de datos.");
-            }
-            if (!CargarProveedor())
-            {
-                Assert.Inconclusive("No se encuentra EntityFramework.SqlServer.dll (hay que compilar NestoAPI antes).");
-            }
-            return new ContextoSoloSql(conexion);
+            return BaseDeDatosDeIntegracion.AbrirSoloSql();
         }
 
         [TestMethod]
         [TestCategory("Integracion")]
         public async Task Integracion_LeeElPickingYLoOrdena()
         {
-            using (ContextoSoloSql contexto = Abrir())
+            using (DbContext contexto = Abrir())
             {
                 var repositorio = new RepositorioPreparacionAlmacen(contexto.Database);
 
@@ -119,7 +58,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         [TestCategory("Integracion")]
         public async Task Integracion_LeeElPackingElPickingDelPedidoYLaEvidencia()
         {
-            using (ContextoSoloSql contexto = Abrir())
+            using (DbContext contexto = Abrir())
             {
                 var repositorio = new RepositorioPreparacionAlmacen(contexto.Database);
 
@@ -148,7 +87,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         [TestCategory("Integracion")]
         public async Task Integracion_LeeLoPendienteDeUbicarYDondeEstaUnProducto()
         {
-            using (ContextoSoloSql contexto = Abrir())
+            using (DbContext contexto = Abrir())
             {
                 var repositorio = new RepositorioUbicacionesAlmacen(contexto.Database);
 
@@ -174,7 +113,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         [TestCategory("Integracion")]
         public async Task Integracion_LeeLosPedidosDeCompraPendientesYSusLineas()
         {
-            using (ContextoSoloSql contexto = Abrir())
+            using (DbContext contexto = Abrir())
             {
                 var repositorio = new RepositorioRecepcionCompras(contexto.Database);
 
@@ -194,7 +133,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         [TestCategory("Integracion")]
         public async Task Integracion_LeeLasReposicionesPendientesDeCadaAlmacen()
         {
-            using (ContextoSoloSql contexto = Abrir())
+            using (DbContext contexto = Abrir())
             {
                 var repositorio = new RepositorioRecepcionReposiciones(contexto.Database);
 

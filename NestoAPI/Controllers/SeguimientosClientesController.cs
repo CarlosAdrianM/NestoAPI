@@ -379,40 +379,52 @@ namespace NestoAPI.Controllers
             public string Vendedor { get; set; }
         }
 
-        private async Task<string> EnviarCorreoResumenRapportsDia(string empresa, DateTime fecha, string[] vendedores, string correo, bool resto)
+        internal class DatosResumenDia
         {
-            // Resto discrimina entre si vendedores[] son los que enviamos o los que no enviamos
+            public List<ResumenRapportsDia.Rapport> Rapports { get; set; } = new List<ResumenRapportsDia.Rapport>();
+            public IDictionary<string, ResumenRapportsDia.FichaVendedor> Fichas { get; set; }
+            public List<string> Esperados { get; set; } = new List<string>();
+        }
 
-            DateTime fechaSinHora = new DateTime(fecha.Year, fecha.Month, fecha.Day);
+        /// <summary>
+        /// Todo lo que el resumen diario lee de la base de datos, junto y separado del envío para
+        /// poder probarlo contra una base de datos de verdad: los rapports del día con el nombre y
+        /// el vendedor de cada cliente, las fichas de los vendedores y de quién se esperaba rapport.
+        /// </summary>
+        /// <param name="resto">False: los rapports de <paramref name="vendedores"/> (un equipo).
+        /// True: los de todos los demás.</param>
+        internal static DatosResumenDia LeerDatosResumenDia(NVEntities db, string empresa, DateTime dia, string[] vendedores, bool resto)
+        {
+            DateTime fechaSinHora = dia.Date;
             DateTime fechaDiaSiguiente = fechaSinHora.AddDays(1);
-
-            var seguimientos = db.SeguimientosClientes
-                .Where(s => s.Empresa == empresa &&
-                            s.Fecha >= fechaSinHora &&
-                            s.Fecha < fechaDiaSiguiente &&
-                            s.Estado == 0 &&
-                            s.Número != null &&
-                            (resto ? !vendedores.Contains(s.Vendedor) : vendedores.Contains(s.Vendedor)))
-                .Select(s => new ResumenRapportsDia.Rapport
-                {
-                    Vendedor = s.Vendedor,
-                    Cliente = s.Número,
-                    Contacto = s.Contacto,
-                    NombreCliente = s.Cliente.Nombre,
-                    VendedorCliente = s.Cliente.Vendedor,
-                    Tipo = s.Tipo,
-                    Comentarios = s.Comentarios,
-                    Pedido = s.Pedido
-                })
-                .ToList();
-
-
-            if (!seguimientos.Any())
+            var datos = new DatosResumenDia
             {
-                return string.Empty;
+                Rapports = db.SeguimientosClientes
+                    .Where(s => s.Empresa == empresa &&
+                                s.Fecha >= fechaSinHora &&
+                                s.Fecha < fechaDiaSiguiente &&
+                                s.Estado == 0 &&
+                                s.Número != null &&
+                                (resto ? !vendedores.Contains(s.Vendedor) : vendedores.Contains(s.Vendedor)))
+                    .Select(s => new ResumenRapportsDia.Rapport
+                    {
+                        Vendedor = s.Vendedor,
+                        Cliente = s.Número,
+                        Contacto = s.Contacto,
+                        NombreCliente = s.Cliente.Nombre,
+                        VendedorCliente = s.Cliente.Vendedor,
+                        Tipo = s.Tipo,
+                        Comentarios = s.Comentarios,
+                        Pedido = s.Pedido
+                    })
+                    .ToList()
+            };
+            if (!datos.Rapports.Any())
+            {
+                return datos;
             }
 
-            IDictionary<string, ResumenRapportsDia.FichaVendedor> fichas = ResumenRapportsDia.IndexarFichas(
+            datos.Fichas = ResumenRapportsDia.IndexarFichas(
                 db.Vendedores
                     .Where(v => v.Empresa == empresa)
                     .Select(v => new ResumenRapportsDia.FichaVendedor { Numero = v.Número, Nombre = v.Descripción, Estado = v.Estado })
@@ -440,9 +452,27 @@ namespace NestoAPI.Controllers
             {
                 esperados = vendedores.ToList();
             }
-            esperados = esperados
-                .Where(v => v != null && fichas.TryGetValue(v.Trim(), out ResumenRapportsDia.FichaVendedor ficha) && ficha.Estado >= 0)
+            datos.Esperados = esperados
+                .Where(v => v != null && datos.Fichas.TryGetValue(v.Trim(), out ResumenRapportsDia.FichaVendedor ficha) && ficha.Estado >= 0)
                 .ToList();
+            return datos;
+        }
+
+        private async Task<string> EnviarCorreoResumenRapportsDia(string empresa, DateTime fecha, string[] vendedores, string correo, bool resto)
+        {
+            // Resto discrimina entre si vendedores[] son los que enviamos o los que no enviamos
+
+            DateTime fechaSinHora = new DateTime(fecha.Year, fecha.Month, fecha.Day);
+            DateTime fechaDiaSiguiente = fechaSinHora.AddDays(1);
+
+            DatosResumenDia datos = LeerDatosResumenDia(db, empresa, fechaSinHora, vendedores, resto);
+            List<ResumenRapportsDia.Rapport> seguimientos = datos.Rapports;
+            if (!seguimientos.Any())
+            {
+                return string.Empty;
+            }
+            IDictionary<string, ResumenRapportsDia.FichaVendedor> fichas = datos.Fichas;
+            List<string> esperados = datos.Esperados;
 
             string cabecera = ResumenRapportsDia.CabeceraHtml(fechaSinHora, seguimientos, fichas, esperados);
 
