@@ -384,6 +384,7 @@
     <Compile Include="Infrastructure\ResumenRapportsDiaTests.cs" />
     <Compile Include="Helpers\BaseDeDatosDeIntegracion.cs" />
     <Compile Include="Infrastructure\ResumenRapportsDiaIntegracionTests.cs" />
+    <Compile Include="Infrastructure\BuscadorClientesIntegracionTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\CasadorEscaneosTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\RepositorioPreparacionAlmacenIntegracionTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\SasBlobAzureTests.cs" />

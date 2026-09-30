@@ -391,11 +391,7 @@ namespace NestoAPI.Controllers
                 // Un índice de antes de guardar su fecha: se construye cada noche, con ayer sobra
                 DateTime desde = (BuscadorClientes.FechaConstruccion() ?? DateTime.Today.AddDays(-1))
                     .AddMinutes(-MINUTOS_HOLGURA_INDICE);
-                return db.Clientes
-                    .Where(FiltroDeSiempre(empresa, filtro))
-                    .Where(c => c.Fecha_Modificación >= desde || c.Nº_Cliente == filtro)
-                    .Select(PROYECCION_CLIENTE)
-                    .ToList();
+                return ConsultaDeLosQueNoConoceElIndice(db.Clientes, empresa, filtro, desde).ToList();
             }
             catch (Exception ex)
             {
@@ -403,6 +399,16 @@ namespace NestoAPI.Controllers
                     $"[Buscador] No se han podido buscar los clientes posteriores al índice para '{filtro}': {ex.Message}", ex));
                 return new List<ClienteDTO>();
             }
+        }
+
+        /// <summary>La consulta, aparte, para poder probarla contra una base de datos de verdad.</summary>
+        internal static IQueryable<ClienteDTO> ConsultaDeLosQueNoConoceElIndice(
+            IQueryable<Cliente> clientes, string empresa, string filtro, DateTime desde)
+        {
+            return clientes
+                .Where(FiltroDeSiempre(empresa, filtro))
+                .Where(c => c.Fecha_Modificación >= desde || c.Nº_Cliente == filtro)
+                .Select(PROYECCION_CLIENTE);
         }
 
         /// <summary>
