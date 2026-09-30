@@ -530,6 +530,13 @@
     <Compile Include="Controllers\FacturasAmazonController.cs" />
     <Compile Include="Controllers\OfertasCombinadasController.cs" />
     <Compile Include="Controllers\OfertasAutorizadasController.cs" />
+    <Compile Include="Controllers\AlmacenController.cs" />
+    <Compile Include="Infraestructure\PreparacionAlmacen\AlmacenFotosBultos.cs" />
+    <Compile Include="Infraestructure\PreparacionAlmacen\CasadorEscaneos.cs" />
+    <Compile Include="Infraestructure\PreparacionAlmacen\RepositorioPreparacionAlmacen.cs" />
+    <Compile Include="Infraestructure\PreparacionAlmacen\SasBlobAzure.cs" />
+    <Compile Include="Infraestructure\PreparacionAlmacen\ServicioPreparacionAlmacen.cs" />
+    <Compile Include="Models\PreparacionAlmacen\PreparacionAlmacenDTO.cs" />
     <Compile Include="Controllers\OfertasEscalonadasController.cs" />
     <Compile Include="Controllers\OfertasPermitidasProductoController.cs" />
     <Compile Include="Controllers\OfertasPermitidasFamiliaController.cs" />

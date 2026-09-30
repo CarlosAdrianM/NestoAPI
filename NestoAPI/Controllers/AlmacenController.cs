@@ -1,0 +1,182 @@
+using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.PreparacionAlmacen;
+using NestoAPI.Models;
+using NestoAPI.Models.PreparacionAlmacen;
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using System.Web.Http;
+using System.Web.Http.Description;
+
+namespace NestoAPI.Controllers
+{
+    /// <summary>
+    /// NestoAPI#556: la parte de servidor de Ariadna, la app de almacén (MAUI, Android y Windows).
+    /// Preparación de pedidos con lector de códigos: cargar el picking y el packing en el móvil,
+    /// guardar lo que se lee y la foto de cada bulto.
+    ///
+    /// <para>No cambia nada de lo que hay en uso: el picking lo sigue sacando Nesto. Aquí solo se lee
+    /// ese picking y se guarda la evidencia en dos tablas propias (PreparacionEscaneos y
+    /// EnviosAgenciaBultos).</para>
+    ///
+    /// <para>Las rutas van por dominio (api/Almacen), no con el nombre de la app. [Authorize] desde el
+    /// primer día: los mozos entran como los vendedores de NestoApp (/oauth/token).</para>
+    /// </summary>
+    [Authorize]
+    [RoutePrefix("api/Almacen")]
+    public class AlmacenController : ApiController
+    {
+        private readonly IServicioPreparacionAlmacen servicio;
+
+        public AlmacenController(IServicioPreparacionAlmacen servicio)
+        {
+            this.servicio = servicio;
+        }
+
+        // GET api/Almacen/Picking/99633?empresa=1
+        /// <summary>El recorrido del picking: un producto por hueco, ordenado para andar lo menos posible.</summary>
+        [HttpGet]
+        [Route("Picking/{picking:int}")]
+        [ResponseType(typeof(PickingAlmacenDTO))]
+        public async Task<IHttpActionResult> GetPicking(int picking, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            PickingAlmacenDTO resultado = await servicio.LeerPicking(Empresa(empresa), picking).ConfigureAwait(false);
+            return resultado.Lineas.Count == 0 ? (IHttpActionResult)NotFound() : Ok(resultado);
+        }
+
+        // GET api/Almacen/Picking/99633/Packing?empresa=1
+        /// <summary>Lo que hay que meter en cajas de todo un picking, agrupado por entrega y por pedido.</summary>
+        [HttpGet]
+        [Route("Picking/{picking:int}/Packing")]
+        [ResponseType(typeof(PackingAlmacenDTO))]
+        public async Task<IHttpActionResult> GetPackingDelPicking(int picking, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            PackingAlmacenDTO resultado = await servicio.LeerPacking(Empresa(empresa), picking).ConfigureAwait(false);
+            return resultado.Entregas.Count == 0 ? (IHttpActionResult)NotFound() : Ok(resultado);
+        }
+
+        // GET api/Almacen/Pedidos/926940/Packing?empresa=1
+        /// <summary>El packing de un pedido (el que se abre al leer el código del pedido en la mesa).</summary>
+        [HttpGet]
+        [Route("Pedidos/{pedido:int}/Packing")]
+        [ResponseType(typeof(PackingAlmacenDTO))]
+        public async Task<IHttpActionResult> GetPackingDelPedido(int pedido, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            PackingAlmacenDTO resultado = await servicio.LeerPackingDePedido(Empresa(empresa), pedido).ConfigureAwait(false);
+            return resultado == null || resultado.Entregas.Count == 0 ? (IHttpActionResult)NotFound() : Ok(resultado);
+        }
+
+        // GET api/Almacen/Pedidos/926940/Preparacion?empresa=1&picking=99633
+        /// <summary>Lo pedido frente a lo metido en las cajas, y los bultos con su foto.</summary>
+        [HttpGet]
+        [Route("Pedidos/{pedido:int}/Preparacion")]
+        [ResponseType(typeof(EstadoPreparacionPedidoDTO))]
+        public async Task<IHttpActionResult> GetPreparacionDelPedido(int pedido, int? picking = null,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            EstadoPreparacionPedidoDTO resultado = await servicio.LeerEstadoPedido(Empresa(empresa), pedido, picking).ConfigureAwait(false);
+            return resultado == null ? (IHttpActionResult)NotFound() : Ok(resultado);
+        }
+
+        // POST api/Almacen/Escaneos?empresa=1
+        /// <summary>
+        /// Guarda un lote de escaneos de la cola del móvil. Se puede reenviar sin miedo: cada escaneo
+        /// lleva su IdCliente y no se guarda dos veces.
+        /// </summary>
+        [HttpPost]
+        [Route("Escaneos")]
+        [ResponseType(typeof(ResultadoEscaneosAlmacenDTO))]
+        public async Task<IHttpActionResult> PostEscaneos([FromBody] List<EscaneoAlmacenDTO> escaneos,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            if (escaneos == null || escaneos.Count == 0)
+            {
+                return BadRequest("No ha llegado ningún escaneo.");
+            }
+            return Ok(await servicio.GuardarEscaneos(Empresa(empresa), escaneos, Usuario()).ConfigureAwait(false));
+        }
+
+        // POST api/Almacen/Bultos/Foto?idCliente=...&pedido=926940&picking=99633&bulto=1
+        /// <summary>
+        /// La foto de un bulto antes de cerrarlo. El cuerpo de la petición es la imagen (image/jpeg),
+        /// sin envoltorio. Repetir la foto de un bulto sustituye a la anterior.
+        /// </summary>
+        [HttpPost]
+        [Route("Bultos/Foto")]
+        [ResponseType(typeof(BultoAlmacenDTO))]
+        public async Task<IHttpActionResult> PostFotoBulto(Guid idCliente, int pedido, int picking, int bulto,
+            DateTime? fechaFoto = null, string dispositivo = null, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            long? tamano = Request.Content?.Headers?.ContentLength;
+            if (tamano > ServicioPreparacionAlmacen.TAMANO_MAXIMO_FOTO)
+            {
+                return BadRequest($"La foto pesa demasiado (máximo {ServicioPreparacionAlmacen.TAMANO_MAXIMO_FOTO / 1024} KB).");
+            }
+
+            byte[] imagen = Request.Content == null
+                ? null
+                : await Request.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+
+            BultoAlmacenDTO guardado = await servicio.GuardarFotoBulto(new FotoBultoAlmacen
+            {
+                IdCliente = idCliente,
+                Empresa = Empresa(empresa),
+                Pedido = pedido,
+                Picking = picking,
+                Bulto = bulto,
+                Imagen = imagen,
+                FechaFoto = fechaFoto,
+                Dispositivo = dispositivo
+            }, Usuario()).ConfigureAwait(false);
+
+            return Ok(guardado);
+        }
+
+        // GET api/Almacen/Pedidos/926940/Bultos?empresa=1
+        [HttpGet]
+        [Route("Pedidos/{pedido:int}/Bultos")]
+        [ResponseType(typeof(List<BultoAlmacenDTO>))]
+        public async Task<IHttpActionResult> GetBultosDelPedido(int pedido, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            return Ok(await servicio.LeerBultos(Empresa(empresa), pedido).ConfigureAwait(false));
+        }
+
+        // GET api/Almacen/Bultos/17/Foto
+        /// <summary>
+        /// Un enlace temporal para ver la foto. Se devuelve la dirección en vez de redirigir porque una
+        /// etiqueta de imagen no puede mandar el token de la API; el enlace, en cambio, no necesita nada más.
+        /// </summary>
+        [HttpGet]
+        [Route("Bultos/{id:int}/Foto")]
+        [ResponseType(typeof(EnlaceFotoBultoDTO))]
+        public async Task<IHttpActionResult> GetFotoBulto(int id)
+        {
+            Uri enlace = await servicio.EnlaceFotoBulto(id).ConfigureAwait(false);
+            if (enlace == null)
+            {
+                return NotFound();
+            }
+            return Ok(new EnlaceFotoBultoDTO
+            {
+                Url = enlace.AbsoluteUri,
+                MinutosDeVigencia = (int)ServicioPreparacionAlmacen.VIGENCIA_ENLACE_FOTO.TotalMinutes
+            });
+        }
+
+        private static string Empresa(string empresa)
+        {
+            return string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
+        }
+
+        private string Usuario()
+        {
+            return UsuarioAuditoriaHelper.Resolver(User, null);
+        }
+    }
+
+    public class EnlaceFotoBultoDTO
+    {
+        public string Url { get; set; }
+        public int MinutosDeVigencia { get; set; }
+    }
+}
