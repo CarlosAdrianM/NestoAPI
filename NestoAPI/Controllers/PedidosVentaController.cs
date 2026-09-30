@@ -1230,12 +1230,12 @@ namespace NestoAPI.Controllers
                 respuestaValidacion = GestorPrecios.EsPedidoValido(pedido);
             }
 
-            // Issue #130: Impedir añadir prepago si alguna línea ya tiene picking
             bool pedidoTeniaPrepago = cabPedidoVta.Prepagos.Any(p => p.Factura == null);
             bool pedidoQuierePrepago = pedido.Prepagos.Any(p => p.Factura == null);
-            if (!pedidoTeniaPrepago && pedidoQuierePrepago && algunaLineaTienePicking)
+            string motivoNoAnadirPrepago = MotivoParaNoAnadirPrepago(pedidoTeniaPrepago, pedidoQuierePrepago, etiquetaAgencia?.Reembolso);
+            if (motivoNoAnadirPrepago != null)
             {
-                return BadRequest("No se puede añadir prepago porque el pedido ya tiene líneas con picking. Anule el picking primero.");
+                return BadRequest(motivoNoAnadirPrepago);
             }
 
             // Carlos 27/08/20: comprobamos solo un prepago. Para comprobar todos hay que poner Id en PrepagoDTO
@@ -1656,6 +1656,26 @@ namespace NestoAPI.Controllers
                 return Ok(new RespuestaModificacionPedidoDTO { Avisos = avisos });
             }
             return StatusCode(HttpStatusCode.NoContent);
+        }
+
+        /// <summary>
+        /// Por qué no se puede apuntar un prepago nuevo en el pedido, o null si se puede.
+        ///
+        /// La issue #130 lo impedía en cuanto había picking, pensando que el pedido saldría sin
+        /// cobrar. Pero un prepago es dinero ya cobrado: lo que retiene un pedido en el picking son
+        /// los plazos PRE sin prepagos que cubran el total (PedidoPicking.CubiertoPorPrepago), y
+        /// apuntar el cobro de un pedido que ya tiene picking no cambia lo que sale ni lo que se
+        /// factura. Lo único que sí hace daño es que ya esté impresa la etiqueta con reembolso: la
+        /// agencia le cobraría al cliente lo que ya ha pagado.
+        /// </summary>
+        internal static string MotivoParaNoAnadirPrepago(bool pedidoTeniaPrepago, bool pedidoQuierePrepago, decimal? reembolsoEtiquetaImpresa)
+        {
+            if (pedidoTeniaPrepago || !pedidoQuierePrepago || !(reembolsoEtiquetaImpresa > 0))
+            {
+                return null;
+            }
+            return $"No se puede añadir el prepago porque ya hay una etiqueta impresa con {reembolsoEtiquetaImpresa.Value:c} de reembolso " +
+                "y la agencia se lo cobraría otra vez al cliente. Quite primero el reembolso de la etiqueta.";
         }
 
         public void ComprobarSiSePuedenInsertarLineas(PedidoVentaDTO pedido, bool algunaLineaTienePicking, LineaPedidoVentaDTO linea)
