@@ -216,6 +216,7 @@ namespace NestoAPI
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioPreparacionAlmacen, Infraestructure.PreparacionAlmacen.ServicioPreparacionAlmacen>();
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioUbicacionesAlmacen, Infraestructure.PreparacionAlmacen.ServicioUbicacionesAlmacen>();
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioRecepcionCompras, Infraestructure.PreparacionAlmacen.ServicioRecepcionCompras>();
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioRecepcionReposiciones, Infraestructure.PreparacionAlmacen.ServicioRecepcionReposiciones>();
 
             // Ventana de facturas pendientes de Verifactu (NestoAPI#522)
             _ = services.AddScoped<Infraestructure.Verifactu.IServicioFacturasPendientesVerifactu, Infraestructure.Verifactu.ServicioFacturasPendientesVerifactu>();

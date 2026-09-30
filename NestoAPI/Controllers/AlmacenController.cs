@@ -29,13 +29,15 @@ namespace NestoAPI.Controllers
         private readonly IServicioPreparacionAlmacen servicio;
         private readonly IServicioUbicacionesAlmacen ubicaciones;
         private readonly IServicioRecepcionCompras compras;
+        private readonly IServicioRecepcionReposiciones reposiciones;
 
         public AlmacenController(IServicioPreparacionAlmacen servicio, IServicioUbicacionesAlmacen ubicaciones,
-            IServicioRecepcionCompras compras)
+            IServicioRecepcionCompras compras, IServicioRecepcionReposiciones reposiciones)
         {
             this.servicio = servicio;
             this.ubicaciones = ubicaciones;
             this.compras = compras;
+            this.reposiciones = reposiciones;
         }
 
         // GET api/Almacen/Picking/99633?empresa=1
@@ -259,6 +261,43 @@ namespace NestoAPI.Controllers
             string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
         {
             ResultadoRecepcionCompraDTO resultado = await compras.Casar(Empresa(empresa), pedido, lecturas).ConfigureAwait(false);
+            return resultado == null ? (IHttpActionResult)NotFound() : Ok(resultado);
+        }
+
+        // GET api/Almacen/Reposiciones/Pendientes?almacen=REI&empresa=1
+        /// <summary>Las reposiciones que están de camino a un almacén, todavía sin dar entrada (NestoAPI#553).</summary>
+        [HttpGet]
+        [Route("Reposiciones/Pendientes")]
+        [ResponseType(typeof(List<ReposicionPendienteDTO>))]
+        public async Task<IHttpActionResult> GetReposicionesPendientes(string almacen = Constantes.Almacenes.ALGETE,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            return Ok(await reposiciones.LeerPendientes(Empresa(empresa), Almacen(almacen)).ConfigureAwait(false));
+        }
+
+        // GET api/Almacen/Reposiciones/80841?almacen=ALG&empresa=1
+        /// <summary>Lo que trae una reposición, con los códigos de barras para leerlo al recibirla.</summary>
+        [HttpGet]
+        [Route("Reposiciones/{traspaso:int}")]
+        [ResponseType(typeof(RecepcionReposicionDTO))]
+        public async Task<IHttpActionResult> GetReposicion(int traspaso, string almacen = Constantes.Almacenes.ALGETE,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            RecepcionReposicionDTO recepcion = await reposiciones
+                .LeerRecepcion(Empresa(empresa), Almacen(almacen), traspaso).ConfigureAwait(false);
+            return recepcion == null ? (IHttpActionResult)NotFound() : Ok(recepcion);
+        }
+
+        // POST api/Almacen/Reposiciones/80841/Casar?almacen=ALG&empresa=1
+        /// <summary>Compara lo contado al recibir la reposición con lo enviado. No guarda nada.</summary>
+        [HttpPost]
+        [Route("Reposiciones/{traspaso:int}/Casar")]
+        [ResponseType(typeof(ResultadoRecepcionReposicionDTO))]
+        public async Task<IHttpActionResult> PostCasarReposicion(int traspaso, [FromBody] List<LecturaRecepcionDTO> lecturas,
+            string almacen = Constantes.Almacenes.ALGETE, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            ResultadoRecepcionReposicionDTO resultado = await reposiciones
+                .Casar(Empresa(empresa), Almacen(almacen), traspaso, lecturas).ConfigureAwait(false);
             return resultado == null ? (IHttpActionResult)NotFound() : Ok(resultado);
         }
 

@@ -20,6 +20,7 @@ namespace NestoAPI.Tests.Controllers
         private IServicioPreparacionAlmacen servicio;
         private IServicioUbicacionesAlmacen ubicaciones;
         private IServicioRecepcionCompras compras;
+        private IServicioRecepcionReposiciones reposiciones;
         private AlmacenController controller;
 
         [TestInitialize]
@@ -28,7 +29,8 @@ namespace NestoAPI.Tests.Controllers
             servicio = A.Fake<IServicioPreparacionAlmacen>();
             ubicaciones = A.Fake<IServicioUbicacionesAlmacen>();
             compras = A.Fake<IServicioRecepcionCompras>();
-            controller = new AlmacenController(servicio, ubicaciones, compras)
+            reposiciones = A.Fake<IServicioRecepcionReposiciones>();
+            controller = new AlmacenController(servicio, ubicaciones, compras, reposiciones)
             {
                 User = new GenericPrincipal(new GenericIdentity("Andrey", "Bearer"), new string[0]),
                 Request = new HttpRequestMessage()
@@ -174,6 +176,14 @@ namespace NestoAPI.Tests.Controllers
             var respuesta = (OkNegotiatedContentResult<ResultadoRecepcionCompraDTO>)await controller.PostCasarCompra(220438, lecturas);
 
             Assert.AreSame(resultado, respuesta.Content);
+        }
+
+        [TestMethod]
+        public async Task GetReposicion_NoExisteParaEseAlmacen_NotFound()
+        {
+            A.CallTo(() => reposiciones.LeerRecepcion("1", "REI", 80841)).Returns(Task.FromResult<RecepcionReposicionDTO>(null));
+
+            Assert.IsInstanceOfType(await controller.GetReposicion(80841, "rei"), typeof(NotFoundResult));
         }
 
         [TestMethod]

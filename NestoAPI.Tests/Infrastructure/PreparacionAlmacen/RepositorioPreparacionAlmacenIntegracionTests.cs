@@ -189,5 +189,28 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
                 Assert.IsTrue(lineas.All(l => !string.IsNullOrWhiteSpace(l.Producto) && l.Cantidad > 0));
             }
         }
+
+        [TestMethod]
+        [TestCategory("Integracion")]
+        public async Task Integracion_LeeLasReposicionesPendientesDeCadaAlmacen()
+        {
+            using (ContextoSoloSql contexto = Abrir())
+            {
+                var repositorio = new RepositorioRecepcionReposiciones(contexto.Database);
+
+                // Puede no haber ninguna de camino: lo que se comprueba es que las consultas casan con los DTO
+                foreach (string almacen in new[] { "ALG", "REI", "ALC" })
+                {
+                    List<ReposicionPendienteDTO> pendientes = await repositorio.LeerPendientes(EMPRESA, almacen);
+                    Assert.IsTrue(pendientes.All(p => p.Traspaso > 0 && p.Lineas > 0));
+                    if (pendientes.Any())
+                    {
+                        List<FilaReposicion> lineas = await repositorio.LeerLineas(EMPRESA, almacen, pendientes.First().Traspaso);
+                        Assert.IsTrue(lineas.All(l => !string.IsNullOrWhiteSpace(l.Producto)));
+                    }
+                }
+                Assert.AreEqual(0, (await repositorio.LeerLineas(EMPRESA, "ALG", -1)).Count);
+            }
+        }
     }
 }

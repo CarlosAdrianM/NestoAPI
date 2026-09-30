@@ -299,3 +299,45 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public List<DiferenciaPreparacionDTO> Productos { get; set; } = new List<DiferenciaPreparacionDTO>();
     }
 }
+
+namespace NestoAPI.Models.PreparacionAlmacen
+{
+    // NestoAPI#553 (fase 3): recibir una reposición entre almacenes leyendo los productos.
+    // De momento, leer lo que se espera y comparar con lo contado, sin guardar nada.
+
+    public class ReposicionPendienteDTO
+    {
+        /// <summary>PreExtrProducto.NºTraspaso: enlaza la salida del origen con la entrada del destino.</summary>
+        public int Traspaso { get; set; }
+        public int Lineas { get; set; }
+        public int Unidades { get; set; }
+        public DateTime? Fecha { get; set; }
+        public string Usuario { get; set; }
+    }
+
+    public class LineaReposicionDTO
+    {
+        public string Producto { get; set; }
+        public string Descripcion { get; set; }
+        public string CodigoBarras { get; set; }
+        public bool SinCodigo { get; set; }
+        public bool CodigoDuplicado { get; set; }
+        public int Cantidad { get; set; }
+    }
+
+    public class RecepcionReposicionDTO
+    {
+        public string Empresa { get; set; }
+        public string Almacen { get; set; }
+        public int Traspaso { get; set; }
+        public List<LineaReposicionDTO> Lineas { get; set; } = new List<LineaReposicionDTO>();
+    }
+
+    public class ResultadoRecepcionReposicionDTO
+    {
+        public int Traspaso { get; set; }
+        /// <summary>Lo recibido coincide con lo enviado.</summary>
+        public bool Cuadra { get; set; }
+        public List<DiferenciaPreparacionDTO> Productos { get; set; } = new List<DiferenciaPreparacionDTO>();
+    }
+}
