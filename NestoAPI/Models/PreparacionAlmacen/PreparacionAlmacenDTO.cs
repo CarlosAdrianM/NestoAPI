@@ -161,3 +161,64 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public bool TodosLosBultosConFoto { get; set; }
     }
 }
+
+namespace NestoAPI.Models.PreparacionAlmacen
+{
+    // Colocar la mercancía recibida y consultar dónde está un producto: lo que hoy se hace con
+    // Ariadna Vieja (prdUbicar). De momento solo lectura.
+
+    /// <summary>Un hueco de la estantería con lo que hay de un producto.</summary>
+    public class UbicacionAlmacenDTO
+    {
+        public string Pasillo { get; set; }
+        public string Fila { get; set; }
+        public string Columna { get; set; }
+        /// <summary>Pasillo/fila/columna, como se enseña siempre.</summary>
+        public string Ubicacion { get; set; }
+        public int Cantidad { get; set; }
+    }
+
+    /// <summary>De dónde viene lo que está pendiente de colocar.</summary>
+    public class OrigenPendienteDeUbicarDTO
+    {
+        public int? PedidoCompra { get; set; }
+        public int? AlbaranCompra { get; set; }
+        public int? TraspasoReposicion { get; set; }
+        public int Cantidad { get; set; }
+    }
+
+    public class ProductoPendienteDeUbicarDTO
+    {
+        /// <summary>Posición en el recorrido: por el hueco donde ya hay producto (pasillo, columna, fila).</summary>
+        public int Orden { get; set; }
+        public string Producto { get; set; }
+        public string Descripcion { get; set; }
+        public string CodigoBarras { get; set; }
+        public bool SinCodigo { get; set; }
+        /// <summary>Unidades recibidas que todavía no tienen hueco.</summary>
+        public int Cantidad { get; set; }
+        public DateTime? DesdeCuando { get; set; }
+        public List<OrigenPendienteDeUbicarDTO> Origenes { get; set; } = new List<OrigenPendienteDeUbicarDTO>();
+        /// <summary>Dónde hay ya de este producto: la sugerencia de dónde colocarlo.</summary>
+        public List<UbicacionAlmacenDTO> UbicacionesActuales { get; set; } = new List<UbicacionAlmacenDTO>();
+    }
+
+    public class PendienteDeUbicarDTO
+    {
+        public string Empresa { get; set; }
+        public string Almacen { get; set; }
+        public List<ProductoPendienteDeUbicarDTO> Productos { get; set; } = new List<ProductoPendienteDeUbicarDTO>();
+    }
+
+    /// <summary>Un producto encontrado por su código de barras o su número, con dónde está.</summary>
+    public class ProductoAlmacenDTO
+    {
+        public string Producto { get; set; }
+        public string Descripcion { get; set; }
+        public string CodigoBarras { get; set; }
+        public string Almacen { get; set; }
+        public List<UbicacionAlmacenDTO> Ubicaciones { get; set; } = new List<UbicacionAlmacenDTO>();
+        /// <summary>Unidades recibidas sin hueco asignado.</summary>
+        public int PendienteDeUbicar { get; set; }
+    }
+}

@@ -18,13 +18,15 @@ namespace NestoAPI.Tests.Controllers
     public class AlmacenControllerTests
     {
         private IServicioPreparacionAlmacen servicio;
+        private IServicioUbicacionesAlmacen ubicaciones;
         private AlmacenController controller;
 
         [TestInitialize]
         public void Preparar()
         {
             servicio = A.Fake<IServicioPreparacionAlmacen>();
-            controller = new AlmacenController(servicio)
+            ubicaciones = A.Fake<IServicioUbicacionesAlmacen>();
+            controller = new AlmacenController(servicio, ubicaciones)
             {
                 User = new GenericPrincipal(new GenericIdentity("Andrey", "Bearer"), new string[0]),
                 Request = new HttpRequestMessage()
@@ -125,6 +127,31 @@ namespace NestoAPI.Tests.Controllers
 
             Assert.AreEqual("https://cuenta.blob.core.windows.net/bultos/x.jpg?sig=abc", resultado.Content.Url);
             Assert.AreEqual(15, resultado.Content.MinutosDeVigencia);
+        }
+
+        [TestMethod]
+        public async Task GetPendienteDeUbicar_SinAlmacen_EsAlgete()
+        {
+            var pendiente = new PendienteDeUbicarDTO { Almacen = "ALG" };
+            A.CallTo(() => ubicaciones.LeerPendienteDeUbicar("1", "ALG")).Returns(pendiente);
+
+            var resultado = (OkNegotiatedContentResult<PendienteDeUbicarDTO>)await controller.GetPendienteDeUbicar(" ");
+
+            Assert.AreSame(pendiente, resultado.Content);
+        }
+
+        [TestMethod]
+        public async Task GetProductoPorCodigo_SinCodigo_BadRequest()
+        {
+            Assert.IsInstanceOfType(await controller.GetProductoPorCodigo("  "), typeof(BadRequestErrorMessageResult));
+        }
+
+        [TestMethod]
+        public async Task GetProductoPorCodigo_PasaElAlmacenEnMayusculas()
+        {
+            _ = await controller.GetProductoPorCodigo("8436620930427", "rei");
+
+            A.CallTo(() => ubicaciones.BuscarProducto("1", "REI", "8436620930427")).MustHaveHappenedOnceExactly();
         }
 
         [TestMethod]

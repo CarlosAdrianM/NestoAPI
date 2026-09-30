@@ -214,6 +214,7 @@ namespace NestoAPI
 
             // Ariadna, la app de almacén: preparación de pedidos con lector y foto de bultos (NestoAPI#556)
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioPreparacionAlmacen, Infraestructure.PreparacionAlmacen.ServicioPreparacionAlmacen>();
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioUbicacionesAlmacen, Infraestructure.PreparacionAlmacen.ServicioUbicacionesAlmacen>();
 
             // Ventana de facturas pendientes de Verifactu (NestoAPI#522)
             _ = services.AddScoped<Infraestructure.Verifactu.IServicioFacturasPendientesVerifactu, Infraestructure.Verifactu.ServicioFacturasPendientesVerifactu>();

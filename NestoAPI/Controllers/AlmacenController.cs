@@ -27,10 +27,12 @@ namespace NestoAPI.Controllers
     public class AlmacenController : ApiController
     {
         private readonly IServicioPreparacionAlmacen servicio;
+        private readonly IServicioUbicacionesAlmacen ubicaciones;
 
-        public AlmacenController(IServicioPreparacionAlmacen servicio)
+        public AlmacenController(IServicioPreparacionAlmacen servicio, IServicioUbicacionesAlmacen ubicaciones)
         {
             this.servicio = servicio;
+            this.ubicaciones = ubicaciones;
         }
 
         // GET api/Almacen/Picking/99633?empresa=1
@@ -161,6 +163,43 @@ namespace NestoAPI.Controllers
                 Url = enlace.AbsoluteUri,
                 MinutosDeVigencia = (int)ServicioPreparacionAlmacen.VIGENCIA_ENLACE_FOTO.TotalMinutes
             });
+        }
+
+        // GET api/Almacen/PendienteDeUbicar?almacen=ALG&empresa=1
+        /// <summary>
+        /// Lo recibido que todavía no tiene hueco, con la sugerencia de dónde colocarlo (donde ya hay
+        /// de ese producto), ordenado para colocar andando lo menos posible.
+        /// </summary>
+        [HttpGet]
+        [Route("PendienteDeUbicar")]
+        [ResponseType(typeof(PendienteDeUbicarDTO))]
+        public async Task<IHttpActionResult> GetPendienteDeUbicar(string almacen = Constantes.Almacenes.ALGETE,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            return Ok(await ubicaciones.LeerPendienteDeUbicar(Empresa(empresa), Almacen(almacen)).ConfigureAwait(false));
+        }
+
+        // GET api/Almacen/Productos/Buscar?codigo=8436620930427&almacen=ALG&empresa=1
+        /// <summary>
+        /// Un producto por su código de barras o su número, con los huecos donde está. Devuelve una
+        /// lista porque hay códigos de barras que comparten dos productos.
+        /// </summary>
+        [HttpGet]
+        [Route("Productos/Buscar")]
+        [ResponseType(typeof(List<ProductoAlmacenDTO>))]
+        public async Task<IHttpActionResult> GetProductoPorCodigo(string codigo, string almacen = Constantes.Almacenes.ALGETE,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            if (string.IsNullOrWhiteSpace(codigo))
+            {
+                return BadRequest("Falta el código de barras o el número de producto.");
+            }
+            return Ok(await ubicaciones.BuscarProducto(Empresa(empresa), Almacen(almacen), codigo).ConfigureAwait(false));
+        }
+
+        private static string Almacen(string almacen)
+        {
+            return string.IsNullOrWhiteSpace(almacen) ? Constantes.Almacenes.ALGETE : almacen.Trim().ToUpperInvariant();
         }
 
         private static string Empresa(string empresa)

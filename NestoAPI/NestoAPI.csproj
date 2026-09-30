@@ -536,6 +536,7 @@
     <Compile Include="Infraestructure\PreparacionAlmacen\RepositorioPreparacionAlmacen.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\SasBlobAzure.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\ServicioPreparacionAlmacen.cs" />
+    <Compile Include="Infraestructure\PreparacionAlmacen\UbicacionesAlmacen.cs" />
     <Compile Include="Models\PreparacionAlmacen\PreparacionAlmacenDTO.cs" />
     <Compile Include="Controllers\OfertasEscalonadasController.cs" />
     <Compile Include="Controllers\OfertasPermitidasProductoController.cs" />

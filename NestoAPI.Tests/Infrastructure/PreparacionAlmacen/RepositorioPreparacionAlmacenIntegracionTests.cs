@@ -138,5 +138,31 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
                 Assert.IsNull(await repositorio.LeerBultoPorIdCliente(Guid.NewGuid()));
             }
         }
+
+        [TestMethod]
+        [TestCategory("Integracion")]
+        public async Task Integracion_LeeLoPendienteDeUbicarYDondeEstaUnProducto()
+        {
+            using (ContextoSoloSql contexto = Abrir())
+            {
+                var repositorio = new RepositorioUbicacionesAlmacen(contexto.Database);
+
+                List<FilaPendienteDeUbicar> pendiente = await repositorio.LeerPendienteDeUbicar(EMPRESA, "ALG");
+                List<FilaUbicacionProducto> huecos = await repositorio.LeerHuecosDeLoPendiente(EMPRESA, "ALG");
+                List<ProductoPendienteDeUbicarDTO> productos = ServicioUbicacionesAlmacen.MontarPendiente(pendiente, huecos);
+
+                // En Algete siempre hay mercancía recibida por colocar
+                Assert.IsTrue(productos.Count > 0);
+                Assert.IsTrue(productos.All(p => p.Cantidad > 0));
+                Assert.IsTrue(huecos.All(h => h.Estado == 0));
+
+                // Un producto que seguro que existe: el primero de lo pendiente, buscado por su número
+                string numero = productos.First().Producto;
+                List<FilaProductoAlmacen> encontrados = await repositorio.BuscarProductos(EMPRESA, numero);
+                Assert.AreEqual(numero, encontrados.Single().Producto);
+                List<FilaUbicacionProducto> ubicaciones = await repositorio.LeerUbicacionesDelProducto(EMPRESA, "ALG", numero);
+                Assert.IsTrue(ubicaciones.Any(u => u.Estado == 2));
+            }
+        }
     }
 }
