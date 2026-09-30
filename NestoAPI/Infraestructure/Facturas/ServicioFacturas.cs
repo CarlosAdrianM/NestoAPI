@@ -499,6 +499,27 @@ namespace NestoAPI.Infraestructure.Facturas
             // del signo del total: no se toca.
             string avisoSerieRectificativa = null;
             string serieAbono = SerieRectificativaParaAbono(cabPedido.Serie, cabPedido.LinPedidoVtas);
+
+            // NestoAPI#570 (parte 2, decisión de Carlos 30/09/26): la devolución de una venta que
+            // sigue en albarán no se factura. Saldría una rectificativa que no puede decir qué
+            // factura rectifica y que, una vez emitida, es firme (caso RV2600067: venta de fin de
+            // mes en albarán, devolución facturada aparte). Va ANTES del cambio de serie para no
+            // dejar nada tocado si no se factura.
+            if ((serieAbono != null || RegistroSeriesVerifactu.EsSerieRectificativa(cabPedido.Serie))
+                && !PermitirDevolucionDeVentaSinFacturar())
+            {
+                VentaSinFacturar venta = await VentaSinFacturarQueImpideLaDevolucion(empresa, cabPedido);
+                if (venta != null)
+                {
+                    throw new FacturacionException(
+                        MensajeDevolucionDeVentaSinFacturar(pedido, venta),
+                        "FACTURACION_DEVOLUCION_DE_VENTA_SIN_FACTURAR",
+                        empresa: empresa,
+                        pedido: pedido,
+                        usuario: usuario);
+                }
+            }
+
             if (serieAbono != null)
             {
                 // La serie tiene que existir en la tabla Series de ESTA empresa (RV/RC solo
@@ -1387,6 +1408,120 @@ namespace NestoAPI.Infraestructure.Facturas
                 return null;
             }
             return EsAbonoPuro(lineas) ? asociada.Trim() : null;
+        }
+
+        /// <summary>Una venta en albarán, sin facturar, de un producto que se está devolviendo.</summary>
+        internal class VentaSinFacturar
+        {
+            public string Producto { get; set; }
+            public int Pedido { get; set; }
+            public int? Albaran { get; set; }
+        }
+
+        /// <summary>
+        /// Salida de emergencia de NestoAPI#570: con "true" en el appSettings, la devolución de una
+        /// venta sin facturar se factura como antes. Por defecto (sin la clave) no se deja.
+        /// </summary>
+        internal const string CLAVE_PERMITIR_DEVOLUCION_SIN_FACTURAR = "Verifactu:PermitirDevolucionDeVentaSinFacturar";
+
+        private static bool PermitirDevolucionDeVentaSinFacturar()
+        {
+            return string.Equals(
+                System.Configuration.ConfigurationManager.AppSettings[CLAVE_PERMITIR_DEVOLUCION_SIN_FACTURAR]?.Trim(),
+                "true", StringComparison.OrdinalIgnoreCase);
+        }
+
+        internal static string MensajeDevolucionDeVentaSinFacturar(int pedidoDevolucion, VentaSinFacturar venta)
+        {
+            return $"El pedido {pedidoDevolucion} es la devolución de una venta que todavía no está facturada " +
+                $"(producto {venta.Producto?.Trim()}, pedido {venta.Pedido}" +
+                (venta.Albaran.HasValue ? $", albarán {venta.Albaran}" : string.Empty) +
+                "). No se puede facturar antes que la venta: déjelo en albarán y factúrelo después de facturar " +
+                "esa venta (si es de fin de mes, con ella a fin de mes).";
+        }
+
+        /// <summary>
+        /// NestoAPI#570: la parte con reglas, separada de la base de datos para poder probarla.
+        /// Por cada producto devuelto (sumando sus líneas) que no tenga ya su factura de origen
+        /// indicada, mira si hay facturas de venta suficientes; si no las hay y existe una venta
+        /// de ese producto en albarán, devuelve esa venta. Si no hay facturas ni albarán no dice
+        /// nada: ese caso (no ha pasado nunca) se sigue facturando como hasta ahora y el aviso
+        /// de Verifactu lo cuenta.
+        /// </summary>
+        internal static async Task<VentaSinFacturar> BuscarVentaSinFacturar(
+            IEnumerable<LinPedidoVta> lineas, ICollection<int> lineasConFacturaDeOrigen,
+            Func<string, decimal, Task<bool>> hayFacturasDeOrigen,
+            Func<string, Task<VentaSinFacturar>> ventaEnAlbaran)
+        {
+            var devueltos = (lineas ?? Enumerable.Empty<LinPedidoVta>())
+                .Where(l => l.Cantidad < 0
+                    && l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE
+                    && l.Estado <= Constantes.EstadosLineaVenta.ALBARAN
+                    && !string.IsNullOrWhiteSpace(l.Producto)
+                    && (lineasConFacturaDeOrigen == null || !lineasConFacturaDeOrigen.Contains(l.Nº_Orden)))
+                .GroupBy(l => l.Producto)
+                .Select(g => new { Producto = g.Key, Cantidad = -g.Sum(l => (decimal)(l.Cantidad ?? 0)) });
+
+            foreach (var devuelto in devueltos)
+            {
+                if (await hayFacturasDeOrigen(devuelto.Producto, devuelto.Cantidad))
+                {
+                    continue;
+                }
+                VentaSinFacturar venta = await ventaEnAlbaran(devuelto.Producto);
+                if (venta != null)
+                {
+                    return venta;
+                }
+            }
+            return null;
+        }
+
+        private async Task<VentaSinFacturar> VentaSinFacturarQueImpideLaDevolucion(string empresa, CabPedidoVta cabPedido)
+        {
+            try
+            {
+                string cliente = cabPedido.Nº_Cliente;
+                int numeroPedido = cabPedido.Número;
+                // Las líneas de una copia de factura ya saben qué factura rectifican (#87)
+                List<int> conOrigen = (await almacenRectificativasPendientes.LeerPendientes(empresa, numeroPedido))
+                    .Select(p => p.NumeroLinea).ToList();
+                var gestor = new Rectificativas.GestorFacturasRectificativas(db);
+
+                return await BuscarVentaSinFacturar(cabPedido.LinPedidoVtas, conOrigen,
+                    async (producto, cantidad) =>
+                    {
+                        try
+                        {
+                            _ = await gestor.BuscarFacturasOriginales(empresa?.Trim(), cliente?.Trim(), producto, cantidad);
+                            return true;
+                        }
+                        catch (InvalidOperationException ex) when (ex.Message.StartsWith("No se encontraron facturas suficientes"))
+                        {
+                            return false;
+                        }
+                    },
+                    async producto =>
+                    {
+                        var venta = await db.LinPedidoVtas
+                            .Where(l => l.Empresa == empresa && l.Nº_Cliente == cliente && l.Producto == producto
+                                && l.Número != numeroPedido
+                                && l.Estado == Constantes.EstadosLineaVenta.ALBARAN && l.Cantidad > 0)
+                            .OrderByDescending(l => l.Fecha_Albarán)
+                            .Select(l => new { l.Producto, Pedido = l.Número, Albaran = l.Nº_Albarán })
+                            .FirstOrDefaultAsync();
+                        return venta == null
+                            ? null
+                            : new VentaSinFacturar { Producto = venta.Producto, Pedido = venta.Pedido, Albaran = venta.Albaran };
+                    });
+            }
+            catch (Exception ex)
+            {
+                // Si la comprobación falla, no es motivo para dejar de facturar: se factura como antes
+                logService.LogError($"Verifactu #570: no se pudo comprobar si el pedido {cabPedido.Número} devuelve " +
+                    $"una venta sin facturar: {ex.Message}", ex);
+                return null;
+            }
         }
 
         internal async Task VincularRectificativaFacturadaAMano(string empresa, string numeroFactura,
