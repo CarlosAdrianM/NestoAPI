@@ -24,7 +24,6 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         private const string EMPRESA = "1";
         // Un picking ya servido del 24/09/26: 26 paradas, 7 pedidos
         private const int PICKING = 99633;
-        private const int PEDIDO = 926940;
 
         private static DbContext Abrir()
         {
@@ -63,6 +62,9 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
                 var repositorio = new RepositorioPreparacionAlmacen(contexto.Database);
 
                 List<FilaPackingAlmacen> todo = await repositorio.LeerLineasPacking(EMPRESA, PICKING, null);
+                // El pedido se coge del propio picking: los datos de producción se mueven (el 30/09
+                // el pedido que había aquí a fuego dejó de estar en este picking)
+                int PEDIDO = todo.GroupBy(f => f.Pedido).OrderBy(g => g.Count()).First().Key;
                 List<FilaPackingAlmacen> delPedido = await repositorio.LeerLineasPacking(EMPRESA, PICKING, PEDIDO);
                 PackingAlmacenDTO packing = ServicioPreparacionAlmacen.MontarPacking(EMPRESA, PICKING, todo);
 
