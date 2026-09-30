@@ -468,6 +468,77 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
             StringAssert.Contains(enviado.Body, "NV2615700");
         }
 
+        // NestoAPI#570: el correo a administración decía «no se pudo procesar (ver ELMAH)» y
+        // añadía siempre la frase del NIF. Caso real: RV2600067 (29/09/26), la devolución de una
+        // venta de fin de mes que seguía en albarán.
+
+        [TestMethod]
+        public async Task ProcesarPasada_FacturaQueNoSePuedePreparar_ElCorreoCuentaElMotivoSinElmahNiNif()
+        {
+            ConFacturas(Factura("RV2600067", serie: "RV", cliente: "41235", fecha: DateTime.Today));
+            job = new VerifactuJobsService(db, servicioVerifactu, validacionNif, correo,
+                f => Task.FromResult<VerifactuResponse>(null),
+                explicarNoProcesable: f => Task.FromResult("es la devolución de una venta que todavía no está facturada"));
+            System.Net.Mail.MailMessage enviado = null;
+            A.CallTo(() => correo.EnviarCorreoSMTP(A<System.Net.Mail.MailMessage>.Ignored))
+                .Invokes((System.Net.Mail.MailMessage m) => enviado = m)
+                .Returns(true);
+
+            await job.ProcesarPasada();
+
+            Assert.IsNotNull(enviado);
+            StringAssert.Contains(enviado.Body, "RV2600067 (cliente 41235): es la devoluci");
+            Assert.IsFalse(enviado.Body.ToUpperInvariant().Contains("ELMAH"), "Administración no sabe qué es ELMAH");
+            Assert.IsFalse(enviado.Body.Contains("NIF"), "El motivo no es el NIF: la frase del NIF sobra");
+        }
+
+        [TestMethod]
+        public async Task ProcesarPasada_RechazoPorNif_ElCorreoSiLlevaLaNotaDelNif()
+        {
+            ConFacturas(Factura("NV2612489", fecha: DateTime.Today));
+            respuestaReenvio = new VerifactuResponse
+            {
+                Exitoso = false,
+                MensajeError = "El NIF/NOMBRE (90021192/ANA...) del destinatario no se encuentra registrado"
+            };
+            System.Net.Mail.MailMessage enviado = null;
+            A.CallTo(() => correo.EnviarCorreoSMTP(A<System.Net.Mail.MailMessage>.Ignored))
+                .Invokes((System.Net.Mail.MailMessage m) => enviado = m)
+                .Returns(true);
+
+            await job.ProcesarPasada();
+
+            Assert.IsNotNull(enviado);
+            StringAssert.Contains(enviado.Body, "la ficha ya ha quedado marcada como incorrecta");
+        }
+
+        [TestMethod]
+        public void TextoNoProcesable_DevolucionDeVentaEnAlbaran_DiceElPedidoElAlbaranYElPlazo()
+        {
+            string texto = VerifactuJobsService.TextoNoProcesable(true, 926942, 729830, new DateTime(2026, 9, 29), null);
+
+            StringAssert.Contains(texto, "pedido 926942");
+            StringAssert.Contains(texto, "albarán 729830");
+            StringAssert.Contains(texto, "30/09/2026");
+        }
+
+        [TestMethod]
+        public void TextoNoProcesable_DevolucionSinVentaDeOrigen_PideAvisarAInformatica()
+        {
+            string texto = VerifactuJobsService.TextoNoProcesable(true, null, null, new DateTime(2026, 9, 29), null);
+
+            StringAssert.Contains(texto, "no encontramos la factura de la venta");
+        }
+
+        [TestMethod]
+        public void TextoNoProcesable_OtroMotivo_UsaElUltimoErrorOUnTextoQueNoMandaALaHerramienta()
+        {
+            Assert.AreEqual("NIF sin formato válido",
+                VerifactuJobsService.TextoNoProcesable(false, null, null, DateTime.Today, " NIF sin formato válido "));
+            Assert.IsFalse(VerifactuJobsService.TextoNoProcesable(false, null, null, DateTime.Today, null)
+                .ToUpperInvariant().Contains("ELMAH"));
+        }
+
         [TestMethod]
         public void EsRechazoPorNif_DetectaElCasoRealYNoOtrosErrores()
         {

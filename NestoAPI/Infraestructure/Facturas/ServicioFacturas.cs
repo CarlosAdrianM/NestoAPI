@@ -1019,8 +1019,13 @@ namespace NestoAPI.Infraestructure.Facturas
                         }
                         catch (Exception exLifo)
                         {
-                            logService.LogError($"Verifactu #38: auto-curado de vinculaciones fallido " +
-                                $"para la rectificativa {numeroFactura?.Trim()}: {exLifo.Message}", exLifo);
+                            // NestoAPI#570: el job reintenta cada hora; el mismo fallo, una sola ficha
+                            // (RV2600067 dejó 34 en 17 horas)
+                            if (Verifactu.DeduplicadorErroresVerifactu.EsNovedad($"lifo|{numeroFactura?.Trim()}", exLifo.Message))
+                            {
+                                logService.LogError($"Verifactu #38: auto-curado de vinculaciones fallido " +
+                                    $"para la rectificativa {numeroFactura?.Trim()}: {exLifo.Message}", exLifo);
+                            }
                         }
                         facturasRectificadas = await CargarFacturasRectificadas(empresa, numeroFactura);
                     }
@@ -1029,8 +1034,11 @@ namespace NestoAPI.Infraestructure.Facturas
                         // Sin vinculaciones no se puede identificar qué se rectifica: no se envía
                         // (queda con VerifactuUUID null, reintentable). El alta manual de
                         // vinculaciones para rectificativas creadas fuera de CopiarFactura es #38/#87.
-                        logService.LogError($"Verifactu: la rectificativa {numeroFactura} no tiene " +
-                            "vinculaciones en LinFacturaVtaRectificacion; no se envía (pendiente #38/#87)");
+                        if (Verifactu.DeduplicadorErroresVerifactu.EsNovedad($"sinvinculos|{numeroFactura?.Trim()}", "sin vinculaciones"))
+                        {
+                            logService.LogError($"Verifactu: la rectificativa {numeroFactura} no tiene " +
+                                "vinculaciones en LinFacturaVtaRectificacion; no se envía (pendiente #38/#87)");
+                        }
                         return null;
                     }
                 }
@@ -1158,7 +1166,7 @@ namespace NestoAPI.Infraestructure.Facturas
                             Exitoso = false,
                             CodigoError = CODIGO_INCIDENCIA_OTRO_DIA,
                             MensajeError = $"Pendiente por incidencia técnica desde el {factura.Fecha:dd/MM/yyyy}: " +
-                                "Verifacti solo admite reenviarla (create) hasta el día siguiente a su fecha; hay que revisarla a mano (#522). " +
+                                "solo se puede reenviar hasta el día siguiente a su fecha; hay que revisarla a mano. " +
                                 $"Último error: {factura.VerifactuUltimoError?.Trim()}"
                         };
                     }

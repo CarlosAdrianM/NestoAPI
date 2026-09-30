@@ -58,12 +58,15 @@ namespace NestoAPI.Infraestructure.Verifactu
         private readonly IServicioCorreoElectronico servicioCorreo;
         private readonly Func<CabFacturaVta, Task<VerifactuResponse>> reenviar;
         private readonly Func<CabFacturaVta, Task<bool>> enviarDefinitiva;
+        private readonly Func<CabFacturaVta, Task<string>> explicarNoProcesable;
 
         public VerifactuJobsService(NVEntities db = null, IServicioVerifactu servicioVerifactu = null,
             IServicioValidacionNif servicioValidacionNif = null, IServicioCorreoElectronico servicioCorreo = null,
             Func<CabFacturaVta, Task<VerifactuResponse>> reenviar = null,
-            Func<CabFacturaVta, Task<bool>> enviarDefinitiva = null)
+            Func<CabFacturaVta, Task<bool>> enviarDefinitiva = null,
+            Func<CabFacturaVta, Task<string>> explicarNoProcesable = null)
         {
+            this.explicarNoProcesable = explicarNoProcesable ?? ExplicarNoProcesableConBaseDeDatos;
             this.db = db ?? new NVEntities();
             // #326: el proveedor lo decide ProveedorVerifactu (antes, un ServicioVerifacti nuevo por job).
             this.servicioVerifactu = servicioVerifactu ?? ProveedorVerifactu.Actual;
@@ -142,6 +145,7 @@ namespace NestoAPI.Infraestructure.Verifactu
                     {
                         await servicioValidacionNif.MarcarIncorrecto(factura.Nº_Cliente,
                             $"RECHAZO VERIFACTU: {estado.MensajeError}", "VerifactuJob").ConfigureAwait(false);
+                        resumen.FichasMarcadasPorNif = true;
                     }
                 }
             }
@@ -193,12 +197,14 @@ namespace NestoAPI.Infraestructure.Verifactu
                 string claveRuido = $"job|{factura.Empresa?.Trim()}|{factura.Número?.Trim()}";
                 if (respuesta == null)
                 {
-                    // No procedía (p. ej. rectificativa sin vinculaciones) o error inesperado:
-                    // el motivo ya queda en ELMAH dentro de EnviarAVerifactu.
-                    if (DeduplicadorErroresVerifactu.EsNovedad(claveRuido, "no procesable"))
+                    // No procedía (p. ej. rectificativa sin vinculaciones) o error inesperado. El
+                    // detalle técnico queda en ELMAH dentro de EnviarAVerifactu, pero el correo lo
+                    // lee administración: tiene que decir qué pasa y qué hay que hacer (NestoAPI#570;
+                    // antes decía «no se pudo procesar (ver ELMAH)»).
+                    string motivo = await explicarNoProcesable(factura).ConfigureAwait(false);
+                    if (DeduplicadorErroresVerifactu.EsNovedad(claveRuido, motivo))
                     {
-                        resumen.SinDeclarar.Add($"{factura.Número?.Trim()} (cliente {factura.Nº_Cliente?.Trim()}): " +
-                            "no se pudo procesar (ver ELMAH)");
+                        resumen.SinDeclarar.Add($"{factura.Número?.Trim()} (cliente {factura.Nº_Cliente?.Trim()}): {motivo}");
                     }
                     continue;
                 }
@@ -239,6 +245,7 @@ namespace NestoAPI.Infraestructure.Verifactu
                 {
                     await servicioValidacionNif.MarcarIncorrecto(factura.Nº_Cliente,
                         $"RECHAZO VERIFACTU: {respuesta.MensajeError}", "VerifactuJob").ConfigureAwait(false);
+                    resumen.FichasMarcadasPorNif = true;
                     // NestoAPI#383: el rechazo puede ser por el NOMBRE (cambio de apellido) con
                     // el NIF bueno. Si hay un nombre censal verificable, se corrige el persistido
                     // y la siguiente pasada la declara sola.
@@ -325,6 +332,77 @@ namespace NestoAPI.Infraestructure.Verifactu
                 : await servicioFacturas.EnviarFacturaAVerifactu(factura.Empresa, factura.Número).ConfigureAwait(false);
         }
 
+        /// <summary>
+        /// NestoAPI#570: por qué no se ha podido ni preparar el envío de una factura, contado para
+        /// administración. El caso conocido es la devolución facturada antes que su venta
+        /// (RV2600067, 29/09/26: la venta era de fin de mes y seguía en albarán).
+        /// </summary>
+        private async Task<string> ExplicarNoProcesableConBaseDeDatos(CabFacturaVta factura)
+        {
+            try
+            {
+                if (!RegistroSeriesVerifactu.EsSerieRectificativa(factura.Serie))
+                {
+                    return TextoNoProcesable(false, null, null, factura.Fecha, factura.VerifactuUltimoError);
+                }
+
+                string empresa = factura.Empresa?.Trim();
+                string numero = factura.Número?.Trim();
+                bool vinculada = await db.LinFacturaVtaRectificaciones
+                    .AnyAsync(r => r.Empresa == empresa && r.NumeroFactura.Trim() == numero).ConfigureAwait(false);
+                if (vinculada)
+                {
+                    return TextoNoProcesable(false, null, null, factura.Fecha, factura.VerifactuUltimoError);
+                }
+
+                List<string> productos = await db.LinPedidoVtas
+                    .Where(l => l.Empresa == empresa && l.Nº_Factura.Trim() == numero && l.Cantidad < 0)
+                    .Select(l => l.Producto).Distinct().ToListAsync().ConfigureAwait(false);
+                string cliente = factura.Nº_Cliente;
+                var venta = await db.LinPedidoVtas
+                    .Where(l => l.Empresa == empresa && l.Nº_Cliente == cliente && productos.Contains(l.Producto)
+                        && l.Estado == Constantes.EstadosLineaVenta.ALBARAN && l.Cantidad > 0)
+                    .OrderByDescending(l => l.Fecha_Albarán)
+                    .Select(l => new { Pedido = l.Número, Albaran = l.Nº_Albarán })
+                    .FirstOrDefaultAsync().ConfigureAwait(false);
+
+                return TextoNoProcesable(true, venta?.Pedido, venta?.Albaran, factura.Fecha, factura.VerifactuUltimoError);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception(
+                    $"[Verifactu job] No se pudo averiguar por qué no se declara {factura.Número?.Trim()}: {ex.Message}", ex));
+                return TextoNoProcesable(false, null, null, factura.Fecha, null);
+            }
+        }
+
+        /// <summary>
+        /// El texto que lee administración. Sin nombres de herramientas ni de tablas: qué pasa y
+        /// qué hay que hacer.
+        /// </summary>
+        internal static string TextoNoProcesable(bool esDevolucionSinFacturaDeOrigen, int? pedidoVenta, int? albaranVenta,
+            DateTime fechaFactura, string ultimoError)
+        {
+            if (esDevolucionSinFacturaDeOrigen && pedidoVenta.HasValue)
+            {
+                // El alta solo se admite con fecha de hoy o de ayer: de ahí el plazo
+                return $"es la devolución de una venta que todavía no está facturada (pedido {pedidoVenta}, " +
+                    $"albarán {albaranVenta}). Se declarará sola en cuanto se facture esa venta. Como la devolución " +
+                    $"tiene fecha {fechaFactura:dd/MM/yyyy}, hay que facturar la venta como muy tarde el " +
+                    $"{fechaFactura.AddDays(1):dd/MM/yyyy}; si no da tiempo, avisad a Informática.";
+            }
+            if (esDevolucionSinFacturaDeOrigen)
+            {
+                return "es una devolución y no encontramos la factura de la venta que se devuelve. " +
+                    "Hay que indicar a qué factura corresponde: avisad a Informática.";
+            }
+            if (!string.IsNullOrWhiteSpace(ultimoError))
+            {
+                return ultimoError.Trim();
+            }
+            return "no se ha podido preparar para declararla. Informática ya tiene el aviso con el detalle; no hay que hacer nada.";
+        }
+
         private void EnviarResumenSiProcede(ResumenJobVerifactu resumen)
         {
             if (!resumen.Rechazadas.Any() && !resumen.SinDeclarar.Any() && !resumen.PendientesPorIncidencia.Any())
@@ -349,11 +427,14 @@ namespace NestoAPI.Infraestructure.Verifactu
                             : string.Empty) +
                         (resumen.PendientesPorIncidencia.Any()
                             ? "<p><b>Pendientes por incidencia técnica de hace más de un día (sin registrar en Verifactu; " +
-                              "Verifacti solo admite reenviarlas hasta el día siguiente a su fecha: hay que revisarlas a mano, #522):</b></p><ul><li>" +
+                              "solo se pueden reenviar hasta el día siguiente a su fecha: hay que revisarlas a mano):</b></p><ul><li>" +
                               string.Join("</li><li>", resumen.PendientesPorIncidencia.Select(System.Net.WebUtility.HtmlEncode)) + "</li></ul>"
                             : string.Empty) +
-                        "<p>Si el motivo es el NIF del cliente, la ficha ya ha quedado marcada como incorrecta: " +
-                        "corregidlo (se revalida y la factura se declara sola en la siguiente pasada).</p>"
+                        // NestoAPI#570: esta frase salía siempre, aunque el motivo no tuviera nada que ver con el NIF
+                        (resumen.FichasMarcadasPorNif
+                            ? "<p>Cuando el motivo es el NIF del cliente, la ficha ya ha quedado marcada como incorrecta: " +
+                              "corregidlo (se revalida y la factura se declara sola en la siguiente pasada).</p>"
+                            : string.Empty)
                 };
                 mail.To.Add(new MailAddress(Constantes.Correos.CORREO_ADMON));
                 _ = servicioCorreo.EnviarCorreoSMTP(mail);
@@ -406,6 +487,8 @@ namespace NestoAPI.Infraestructure.Verifactu
         public int Declaradas { get; set; }
         public List<string> Rechazadas { get; } = new List<string>();
         public List<string> SinDeclarar { get; } = new List<string>();
+        /// <summary>NestoAPI#570: alguna ficha se ha marcado con NIF incorrecto en esta pasada (para la nota del correo).</summary>
+        public bool FichasMarcadasPorNif { get; set; }
         /// <summary>NestoAPI#522: pendientes por incidencia técnica de otro día, sin reenviar
         /// (a la espera de Verifacti). Visibles en el correo a administración.</summary>
         public List<string> PendientesPorIncidencia { get; } = new List<string>();
