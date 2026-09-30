@@ -117,6 +117,15 @@ namespace NestoAPI.Controllers
 
                 return result;
             }
+            catch (NestoAPI.Infraestructure.Exceptions.NestoBusinessException ex) when ((int)ex.StatusCode < 500)
+            {
+                // NestoAPI#573: pedir una factura que no existe es un aviso, no un fallo: sin ficha en ELMAH
+                return new HttpResponseMessage(ex.StatusCode)
+                {
+                    Content = new StringContent(ex.Message),
+                    ReasonPhrase = "Factura no encontrada"
+                };
+            }
             catch (Exception ex)
             {
                 // NestoAPI#453: sin esto el fallo no dejaba rastro en ningún sitio. El PDF del

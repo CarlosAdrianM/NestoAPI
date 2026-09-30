@@ -224,6 +224,15 @@ namespace NestoAPI.Infraestructure.Facturas
         {
 
             CabFacturaVta cabFactura = servicio.CargarCabFactura(empresa, numeroFactura);
+            if (cabFactura == null)
+            {
+                // NestoAPI#573: pedir la factura «FDM» (lo que enseña un pedido de fin de mes sin
+                // facturar) acababa en una referencia nula. Es un dato que no existe, no un fallo.
+                throw new Exceptions.NestoBusinessException($"No existe la factura {numeroFactura?.Trim()}.")
+                {
+                    StatusCode = System.Net.HttpStatusCode.NotFound
+                };
+            }
             LinPedidoVta primeraLinea = cabFactura.LinPedidoVtas.FirstOrDefault();
             ISerieFactura serieFactura = LeerSerie(cabFactura.Serie);
 
@@ -976,6 +985,11 @@ namespace NestoAPI.Infraestructure.Facturas
                         ? LeerPedido(factura.Empresa, numeroPedido)
                         : LeerFactura(factura.Empresa, factura.Factura);
                     facturas.Add(nuevaFactura);
+                }
+                catch (Exceptions.NestoBusinessException)
+                {
+                    // Un aviso para el usuario (la factura no existe): tal cual, sin envolver
+                    throw;
                 }
                 catch (Exception ex)
                 {

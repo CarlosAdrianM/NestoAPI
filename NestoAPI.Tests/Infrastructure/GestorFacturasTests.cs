@@ -1390,6 +1390,39 @@ namespace NestoAPI.Tests.Infrastructure
 
         #endregion
 
+        #region NestoAPI#573: pedir una factura que no existe
+
+        [TestMethod]
+        public void GestorFacturas_LeerFactura_LaFacturaNoExiste_AvisaEnVezDeReventar()
+        {
+            // ELMAH 30/09/26: se pidió el PDF de la factura «FDM» (lo que enseña un pedido de fin
+            // de mes sin facturar) y acabó en una referencia nula
+            IServicioFacturas servicio = A.Fake<IServicioFacturas>();
+            A.CallTo(() => servicio.CargarCabFactura("1", "FDM")).Returns(null);
+            IGestorFacturas gestor = new GestorFacturas(servicio);
+
+            var ex = Assert.ThrowsException<NestoAPI.Infraestructure.Exceptions.NestoBusinessException>(
+                () => gestor.LeerFactura("1", "FDM"));
+
+            Assert.AreEqual("No existe la factura FDM.", ex.Message);
+            Assert.AreEqual(System.Net.HttpStatusCode.NotFound, ex.StatusCode);
+        }
+
+        [TestMethod]
+        public void GestorFacturas_LeerFacturas_LaFacturaNoExiste_ElAvisoLlegaSinEnvolver()
+        {
+            IServicioFacturas servicio = A.Fake<IServicioFacturas>();
+            A.CallTo(() => servicio.CargarCabFactura("1", "FDM")).Returns(null);
+            IGestorFacturas gestor = new GestorFacturas(servicio);
+
+            var ex = Assert.ThrowsException<NestoAPI.Infraestructure.Exceptions.NestoBusinessException>(
+                () => gestor.LeerFacturas(new List<FacturaLookup> { new FacturaLookup { Empresa = "1", Factura = "FDM" } }));
+
+            Assert.AreEqual("No existe la factura FDM.", ex.Message);
+        }
+
+        #endregion
+
         #region Tests para AplicarImpagados (Issue #96)
 
         [TestMethod]
