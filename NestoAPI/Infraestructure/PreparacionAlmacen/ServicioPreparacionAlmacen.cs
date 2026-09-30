@@ -12,6 +12,9 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     public interface IServicioPreparacionAlmacen
     {
         Task<PickingAlmacenDTO> LeerPicking(string empresa, int picking);
+        Task<List<PickingEnCursoDTO>> LeerPickingsEnCurso(string empresa, string almacen);
+        /// <summary>Cómo va el picking por ola. Null si el picking no tiene líneas.</summary>
+        Task<EstadoPickingDTO> LeerEstadoPicking(string empresa, int picking);
         Task<PackingAlmacenDTO> LeerPacking(string empresa, int picking);
         /// <summary>El packing de un solo pedido, con su picking en curso. Null si el pedido no tiene picking.</summary>
         Task<PackingAlmacenDTO> LeerPackingDePedido(string empresa, int pedido);
@@ -76,6 +79,54 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 Empresa = empresa,
                 Picking = picking,
                 Lineas = CasadorEscaneos.OrdenarRecorrido(lineas)
+            };
+        }
+
+        public Task<List<PickingEnCursoDTO>> LeerPickingsEnCurso(string empresa, string almacen)
+        {
+            return repositorio.LeerPickingsEnCurso(empresa, almacen);
+        }
+
+        public async Task<EstadoPickingDTO> LeerEstadoPicking(string empresa, int picking)
+        {
+            List<LineaPickingAlmacenDTO> lineas = await repositorio.LeerLineasPicking(empresa, picking).ConfigureAwait(false);
+            if (!lineas.Any())
+            {
+                return null;
+            }
+            List<LecturaPickingAlmacen> lecturas = await repositorio.LeerLecturasDelPicking(empresa, picking).ConfigureAwait(false);
+            return MontarEstadoPicking(empresa, picking, lineas, lecturas);
+        }
+
+        /// <summary>
+        /// Un producto puede estar en varios huecos: aquí se mira por producto. «Terminado» es que
+        /// no queda nada por resolver (cogido o dado por falta); «completo», que además no hay
+        /// faltas ni nada de más. Así dos mozos pueden repartirse un picking o retomarlo.
+        /// </summary>
+        internal static EstadoPickingDTO MontarEstadoPicking(string empresa, int picking,
+            IEnumerable<LineaPickingAlmacenDTO> lineas, IEnumerable<LecturaPickingAlmacen> lecturas)
+        {
+            List<LecturaPickingAlmacen> leido = (lecturas ?? Enumerable.Empty<LecturaPickingAlmacen>()).ToList();
+            List<DiferenciaPreparacionDTO> diferencias = CasadorEscaneos.Casar(
+                (lineas ?? Enumerable.Empty<LineaPickingAlmacenDTO>())
+                    .Select(l => new CasadorEscaneos.Cantidad { Producto = l.Producto, Descripcion = l.Descripcion, Unidades = l.Cantidad }),
+                leido.Select(l => new CasadorEscaneos.Cantidad { Producto = l.Producto, Unidades = l.Unidades }));
+
+            Dictionary<string, int> faltas = leido
+                .GroupBy(l => l.Producto?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.Sum(l => l.Faltas), StringComparer.OrdinalIgnoreCase);
+            foreach (DiferenciaPreparacionDTO diferencia in diferencias)
+            {
+                diferencia.Faltas = faltas.TryGetValue(diferencia.Producto, out int unidades) ? unidades : 0;
+            }
+
+            return new EstadoPickingDTO
+            {
+                Empresa = empresa,
+                Picking = picking,
+                Productos = diferencias,
+                Terminado = diferencias.Any() && diferencias.All(d => !d.Ajeno && d.Leido + d.Faltas >= d.Esperado),
+                Completo = CasadorEscaneos.EstaCompleto(diferencias) && diferencias.All(d => d.Faltas == 0)
             };
         }
 

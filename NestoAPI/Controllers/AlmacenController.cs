@@ -49,6 +49,31 @@ namespace NestoAPI.Controllers
             return resultado.Lineas.Count == 0 ? (IHttpActionResult)NotFound() : Ok(resultado);
         }
 
+        // GET api/Almacen/Picking/EnCurso?almacen=ALG&empresa=1
+        /// <summary>Los pickings sacados que todavía tienen líneas sin servir, el más reciente primero.</summary>
+        [HttpGet]
+        [Route("Picking/EnCurso")]
+        [ResponseType(typeof(List<PickingEnCursoDTO>))]
+        public async Task<IHttpActionResult> GetPickingsEnCurso(string almacen = Constantes.Almacenes.ALGETE,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            return Ok(await servicio.LeerPickingsEnCurso(Empresa(empresa), Almacen(almacen)).ConfigureAwait(false));
+        }
+
+        // GET api/Almacen/Picking/99633/Estado?empresa=1
+        /// <summary>
+        /// Cómo va el picking: lo que había que coger frente a lo leído y lo dado por falta. Sirve
+        /// para retomarlo o para que dos mozos se lo repartan.
+        /// </summary>
+        [HttpGet]
+        [Route("Picking/{picking:int}/Estado")]
+        [ResponseType(typeof(EstadoPickingDTO))]
+        public async Task<IHttpActionResult> GetEstadoDelPicking(int picking, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            EstadoPickingDTO estado = await servicio.LeerEstadoPicking(Empresa(empresa), picking).ConfigureAwait(false);
+            return estado == null ? (IHttpActionResult)NotFound() : Ok(estado);
+        }
+
         // GET api/Almacen/Picking/99633/Packing?empresa=1
         /// <summary>Lo que hay que meter en cajas de todo un picking, agrupado por entrega y por pedido.</summary>
         [HttpGet]

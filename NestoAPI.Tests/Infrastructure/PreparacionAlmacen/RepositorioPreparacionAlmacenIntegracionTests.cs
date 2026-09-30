@@ -107,6 +107,11 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
                 Assert.IsTrue(lineas.All(l => l.Cantidad > 0), "Las reservas de ubicación van en negativo: aquí salen en positivo");
                 Assert.IsTrue(lineas.All(l => !string.IsNullOrEmpty(l.Producto)));
                 Assert.AreEqual(1, lineas.First().Orden);
+
+                // Siempre hay algún picking sacado sin servir en Algete
+                List<PickingEnCursoDTO> enCurso = await repositorio.LeerPickingsEnCurso(EMPRESA, "ALG");
+                Assert.IsTrue(enCurso.Count > 0 && enCurso.All(p => p.Picking > 0 && p.Lineas > 0));
+                _ = await repositorio.LeerLecturasDelPicking(EMPRESA, PICKING);
             }
         }
 

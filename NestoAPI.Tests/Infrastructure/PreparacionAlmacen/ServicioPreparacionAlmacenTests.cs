@@ -99,6 +99,58 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             Assert.AreEqual("001/005/016", picking.Lineas[0].Ubicacion);
         }
 
+        private static LineaPickingAlmacenDTO Parada(string producto, int cantidad, string columna = "001")
+        {
+            return new LineaPickingAlmacenDTO { Producto = producto, Cantidad = cantidad, Pasillo = "001", Fila = "001", Columna = columna };
+        }
+
+        private static LecturaPickingAlmacen Leido(string producto, int unidades, int faltas = 0)
+        {
+            return new LecturaPickingAlmacen { Producto = producto, Unidades = unidades, Faltas = faltas };
+        }
+
+        [TestMethod]
+        public void MontarEstadoPicking_TodoCogido_TerminadoYCompleto()
+        {
+            // El producto A está en dos huecos: se mira por producto
+            EstadoPickingDTO estado = ServicioPreparacionAlmacen.MontarEstadoPicking("1", PICKING,
+                new[] { Parada("A", 2, "001"), Parada("A", 1, "002"), Parada("B", 1) },
+                new[] { Leido("A", 3), Leido("B", 1) });
+
+            Assert.IsTrue(estado.Terminado);
+            Assert.IsTrue(estado.Completo);
+        }
+
+        [TestMethod]
+        public void MontarEstadoPicking_UnaFaltaDeclarada_TerminadoPeroNoCompleto()
+        {
+            EstadoPickingDTO estado = ServicioPreparacionAlmacen.MontarEstadoPicking("1", PICKING,
+                new[] { Parada("A", 3), Parada("B", 1) },
+                new[] { Leido("A", 2, faltas: 1), Leido("B", 1) });
+
+            Assert.IsTrue(estado.Terminado, "No queda nada por resolver");
+            Assert.IsFalse(estado.Completo, "Pero ha faltado una unidad");
+            Assert.AreEqual(1, estado.Productos.Single(p => p.Producto == "A").Faltas);
+        }
+
+        [TestMethod]
+        public void MontarEstadoPicking_AMedias_NiTerminadoNiCompleto()
+        {
+            EstadoPickingDTO estado = ServicioPreparacionAlmacen.MontarEstadoPicking("1", PICKING,
+                new[] { Parada("A", 3), Parada("B", 1) }, new[] { Leido("A", 3) });
+
+            Assert.IsFalse(estado.Terminado);
+            Assert.AreEqual(-1, estado.Productos.Single(p => p.Producto == "B").Diferencia);
+        }
+
+        [TestMethod]
+        public async Task LeerEstadoPicking_PickingSinLineas_Null()
+        {
+            A.CallTo(() => repositorio.LeerLineasPicking(EMPRESA, 1)).Returns(new List<LineaPickingAlmacenDTO>());
+
+            Assert.IsNull(await servicio.LeerEstadoPicking(EMPRESA, 1));
+        }
+
         [TestMethod]
         public void MontarPacking_DosPedidosDelMismoClienteYDireccion_VanEnLaMismaEntrega()
         {

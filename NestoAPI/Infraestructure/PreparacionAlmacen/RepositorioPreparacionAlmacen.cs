@@ -35,6 +35,14 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public int Unidades { get; set; }
     }
 
+    /// <summary>Lo leído y lo dado por falta de un producto en el picking por ola.</summary>
+    public class LecturaPickingAlmacen
+    {
+        public string Producto { get; set; }
+        public int Unidades { get; set; }
+        public int Faltas { get; set; }
+    }
+
     /// <summary>
     /// NestoAPI#556: el acceso a datos de la preparación con Ariadna. Separado de las reglas
     /// (<see cref="ServicioPreparacionAlmacen"/>) para poder probarlas sin base de datos.
@@ -42,6 +50,9 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     public interface IRepositorioPreparacionAlmacen
     {
         Task<List<LineaPickingAlmacenDTO>> LeerLineasPicking(string empresa, int picking);
+        /// <summary>Los pickings del almacén con líneas todavía sin servir, el más reciente primero.</summary>
+        Task<List<PickingEnCursoDTO>> LeerPickingsEnCurso(string empresa, string almacen);
+        Task<List<LecturaPickingAlmacen>> LeerLecturasDelPicking(string empresa, int picking);
         /// <param name="pedido">Null = todos los pedidos del picking.</param>
         Task<List<FilaPackingAlmacen>> LeerLineasPacking(string empresa, int picking, int? pedido);
         /// <summary>El picking que tiene ahora mismo el pedido sin servir, o null si no tiene ninguno.</summary>
@@ -95,6 +106,22 @@ FROM LinPedidoVta l
 WHERE l.Empresa = @p0 AND l.Picking = @p1 AND l.TipoLinea = 1
 GROUP BY l.Producto, u.Pasillo, u.Fila, u.Columna
 HAVING ISNULL(SUM(u.Cantidad), ISNULL(SUM(l.Cantidad - l.Recoger), 0)) <> 0";
+
+        internal const string SQL_PICKINGS_EN_CURSO = @"
+SELECT l.Picking AS Picking, COUNT(*) AS Lineas, COUNT(DISTINCT l.[Número]) AS Pedidos,
+       CAST(SUM(ISNULL(l.Cantidad, 0) - ISNULL(l.Recoger, 0)) AS int) AS Unidades
+FROM LinPedidoVta l
+WHERE l.Empresa = @p0 AND l.[Almacén] = @p1 AND l.Estado = 1 AND l.TipoLinea = 1 AND l.Picking > 0
+GROUP BY l.Picking
+ORDER BY l.Picking DESC";
+
+        internal const string SQL_LECTURAS_DEL_PICKING = @"
+SELECT RTRIM(e.Producto) AS Producto,
+       CAST(SUM(CASE WHEN e.Metodo <> 'FALTA' THEN e.Cantidad ELSE 0 END) AS int) AS Unidades,
+       CAST(SUM(CASE WHEN e.Metodo = 'FALTA' THEN e.Cantidad ELSE 0 END) AS int) AS Faltas
+FROM PreparacionEscaneos e
+WHERE e.Empresa = @p0 AND e.Picking = @p1 AND e.Fase = 'PICK'
+GROUP BY e.Producto";
 
         internal const string SQL_LINEAS_PACKING = @"
 SELECT c.[Número] AS Pedido, RTRIM(c.[Nº Cliente]) AS Cliente, RTRIM(c.Contacto) AS Contacto,
@@ -156,6 +183,16 @@ VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10)";
         public Task<List<LineaPickingAlmacenDTO>> LeerLineasPicking(string empresa, int picking)
         {
             return baseDeDatos.SqlQuery<LineaPickingAlmacenDTO>(SQL_LINEAS_PICKING, empresa, picking).ToListAsync();
+        }
+
+        public Task<List<PickingEnCursoDTO>> LeerPickingsEnCurso(string empresa, string almacen)
+        {
+            return baseDeDatos.SqlQuery<PickingEnCursoDTO>(SQL_PICKINGS_EN_CURSO, empresa, almacen).ToListAsync();
+        }
+
+        public Task<List<LecturaPickingAlmacen>> LeerLecturasDelPicking(string empresa, int picking)
+        {
+            return baseDeDatos.SqlQuery<LecturaPickingAlmacen>(SQL_LECTURAS_DEL_PICKING, empresa, picking).ToListAsync();
         }
 
         public Task<List<FilaPackingAlmacen>> LeerLineasPacking(string empresa, int picking, int? pedido)

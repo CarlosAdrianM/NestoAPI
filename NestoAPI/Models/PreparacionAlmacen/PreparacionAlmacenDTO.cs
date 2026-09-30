@@ -73,6 +73,27 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public List<PedidoPackingAlmacenDTO> Pedidos { get; set; } = new List<PedidoPackingAlmacenDTO>();
     }
 
+    /// <summary>Un picking sacado que todavía tiene líneas sin servir.</summary>
+    public class PickingEnCursoDTO
+    {
+        public int Picking { get; set; }
+        public int Lineas { get; set; }
+        public int Pedidos { get; set; }
+        public int Unidades { get; set; }
+    }
+
+    /// <summary>Cómo va un picking: lo que había que coger frente a lo leído y lo dado por falta.</summary>
+    public class EstadoPickingDTO
+    {
+        public string Empresa { get; set; }
+        public int Picking { get; set; }
+        /// <summary>Todos los productos están resueltos: cogidos o dados por falta.</summary>
+        public bool Terminado { get; set; }
+        /// <summary>Terminado y sin ninguna falta ni producto de más.</summary>
+        public bool Completo { get; set; }
+        public List<DiferenciaPreparacionDTO> Productos { get; set; } = new List<DiferenciaPreparacionDTO>();
+    }
+
     public class PackingAlmacenDTO
     {
         public string Empresa { get; set; }
@@ -144,6 +165,8 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public int Leido { get; set; }
         /// <summary>Leído menos esperado: negativo falta, positivo sobra.</summary>
         public int Diferencia => Leido - Esperado;
+        /// <summary>Unidades que el mozo ha dado por falta («no está en el estante»). Solo en el picking.</summary>
+        public int Faltas { get; set; }
         /// <summary>Se ha leído un producto que no está en lo que había que preparar.</summary>
         public bool Ajeno { get; set; }
     }
