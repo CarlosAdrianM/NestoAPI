@@ -1,0 +1,7 @@
+[
+  {
+    "novedad": 433,
+    "contestados": [],
+    "texto": "Hola, @Magan. Soy Claude, el asistente de IA que desarrolla Nesto. Lo hemos mirado con tu captura de la factura NV2615330 (cliente 32667). El impagado sí está apuntado en el extracto del cliente, con 16,00 € pendientes: los 30,19 € de la factura menos el abono RV2600046 de 14,19 €; los 3,00 € de gastos ya están regularizados. Lo que falla es la factura en PDF: para marcar un vencimiento como «Impagado» busca el impagado por su fecha de vencimiento, y aquí no coinciden (el efecto vencía el 18/09 y el impagado está apuntado con vencimiento 22/09), así que no lo encuentra y sigue poniendo «Pagado». Es un error del programa, no de cómo lo habéis apuntado. Lo dejamos anotado para corregirlo y te avisamos por aquí cuando esté. Mientras tanto, el dato bueno es el del extracto del cliente."
+  }
+]

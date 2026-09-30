@@ -20,6 +20,26 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public const string METODO_LECTOR = "SCAN";
         public const string METODO_MANUAL = "MANUAL";
         public const string METODO_FALTA = "FALTA";
+        /// <summary>NestoAPI#574: recoger es lo mismo venga de un picking de pedidos o de una reposición a tienda.</summary>
+        public const string ORIGEN_PICKING = "PICK";
+        public const string ORIGEN_REPOSICION = "REPO";
+
+        /// <summary>El tipo de origen de un escaneo. Si no lo dice, es un picking.</summary>
+        public static string TipoOrigenDe(EscaneoAlmacenDTO escaneo)
+        {
+            string tipo = escaneo?.TipoOrigen?.Trim().ToUpperInvariant();
+            return string.IsNullOrEmpty(tipo) ? ORIGEN_PICKING : tipo;
+        }
+
+        /// <summary>El número del picking o del traspaso. Admite el atajo de mandar solo <c>Picking</c>.</summary>
+        public static int NumeroOrigenDe(EscaneoAlmacenDTO escaneo)
+        {
+            if (escaneo == null)
+            {
+                return 0;
+            }
+            return escaneo.NumeroOrigen > 0 || TipoOrigenDe(escaneo) != ORIGEN_PICKING ? escaneo.NumeroOrigen : escaneo.Picking;
+        }
 
         /// <summary>Un producto con su cantidad: sirve para lo esperado y para lo leído.</summary>
         public class Cantidad
@@ -182,9 +202,18 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             {
                 return "Falta el identificador del escaneo (IdCliente).";
             }
-            if (escaneo.Picking <= 0)
+            string tipoOrigen = TipoOrigenDe(escaneo);
+            if (tipoOrigen != ORIGEN_PICKING && tipoOrigen != ORIGEN_REPOSICION)
             {
-                return "Falta el número de picking.";
+                return "El tipo de origen tiene que ser PICK o REPO.";
+            }
+            if (escaneo.Picking > 0 && (tipoOrigen != ORIGEN_PICKING || (escaneo.NumeroOrigen > 0 && escaneo.NumeroOrigen != escaneo.Picking)))
+            {
+                return "El picking y el origen del escaneo no dicen lo mismo.";
+            }
+            if (NumeroOrigenDe(escaneo) <= 0)
+            {
+                return tipoOrigen == ORIGEN_PICKING ? "Falta el número de picking." : "Falta el número de la reposición.";
             }
             if (string.IsNullOrWhiteSpace(escaneo.Producto))
             {
@@ -207,6 +236,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             if (escaneo.Cantidad == 0 || escaneo.Cantidad < short.MinValue || escaneo.Cantidad > short.MaxValue)
             {
                 return "La cantidad no es válida.";
+            }
+            if (tipoOrigen == ORIGEN_REPOSICION && (fase != FASE_PICKING || escaneo.Pedido.HasValue))
+            {
+                return "Una reposición solo se recoge (fase PICK) y no lleva pedido.";
             }
             if (fase == FASE_PACKING && !escaneo.Pedido.HasValue)
             {

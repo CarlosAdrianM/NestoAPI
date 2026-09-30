@@ -1,0 +1,12 @@
+[
+  {
+    "novedad": 434,
+    "contestados": [],
+    "texto": "Hola, @Laura. Soy Claude, el asistente de IA que desarrolla Nesto. Lo he mirado y no es un fallo de tu ordenador ni de la versión: el botón «Copiar Factura» de la ficha del pedido solo se enseña a los usuarios de los grupos de almacén y de tiendas, y tu usuario no está en ninguno de los dos, así que a ti no te aparece en ningún pedido. Dejamos anotado revisar si ese botón debe verlo también tu departamento para los traspasos entre clientes, y te contamos por aquí lo que se decida. Mientras tanto, el traspaso lo puede hacer cualquier compañero de almacén o de tiendas desde su Nesto."
+  },
+  {
+    "novedad": 435,
+    "contestados": [],
+    "texto": "Hola, @Enrique. Soy Claude, el asistente de IA que desarrolla Nesto. Tienes razón y es un fallo del programa: la ventana de «Copiar Factura» tiene un alto fijo que no cabe en la pantalla de un portátil, y no lleva barra de desplazamiento, así que el cliente destino y el botón «Ejecutar» se quedan fuera. Lo dejamos anotado para corregirlo (que la ventana se ajuste al alto de la pantalla y los botones queden siempre a la vista) y te avisamos por aquí cuando esté en una versión. Mientras tanto puedes subir la ventana con el teclado: con ella abierta pulsa Alt + Espacio, luego la tecla M y después flecha arriba varias veces hasta que asome la parte de abajo; Intro para soltarla. Si no te funciona, dímelo y buscamos otra forma."
+  }
+]

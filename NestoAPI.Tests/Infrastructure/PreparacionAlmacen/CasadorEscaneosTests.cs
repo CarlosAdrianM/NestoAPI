@@ -241,5 +241,75 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             StringAssert.Contains(CasadorEscaneos.MotivoDeRechazo(sinFecha), "fecha");
             Assert.IsNotNull(CasadorEscaneos.MotivoDeRechazo(null));
         }
+
+        #region NestoAPI#574: recoger es lo mismo para un picking y para una reposición
+
+        private static EscaneoAlmacenDTO EscaneoDeReposicion()
+        {
+            return new EscaneoAlmacenDTO
+            {
+                IdCliente = Guid.NewGuid(),
+                TipoOrigen = "REPO",
+                NumeroOrigen = 5012,
+                Producto = "44194",
+                Fase = "PICK",
+                Cantidad = 3,
+                Metodo = "SCAN",
+                FechaEscaneo = new DateTime(2026, 9, 30, 12, 0, 0)
+            };
+        }
+
+        [TestMethod]
+        public void Origen_SoloDiceElPicking_EsUnPickingConEseNumero()
+        {
+            EscaneoAlmacenDTO escaneo = Escaneo();
+
+            Assert.AreEqual("PICK", CasadorEscaneos.TipoOrigenDe(escaneo));
+            Assert.AreEqual(99633, CasadorEscaneos.NumeroOrigenDe(escaneo));
+        }
+
+        [TestMethod]
+        public void Origen_DiceTipoYNumero_SonLosQueValen()
+        {
+            EscaneoAlmacenDTO deReposicion = EscaneoDeReposicion();
+            EscaneoAlmacenDTO dePicking = Escaneo();
+            dePicking.Picking = 0;
+            dePicking.TipoOrigen = " pick ";
+            dePicking.NumeroOrigen = 99700;
+
+            Assert.AreEqual("REPO", CasadorEscaneos.TipoOrigenDe(deReposicion));
+            Assert.AreEqual(5012, CasadorEscaneos.NumeroOrigenDe(deReposicion));
+            Assert.AreEqual("PICK", CasadorEscaneos.TipoOrigenDe(dePicking));
+            Assert.AreEqual(99700, CasadorEscaneos.NumeroOrigenDe(dePicking));
+            Assert.IsNull(CasadorEscaneos.MotivoDeRechazo(dePicking));
+        }
+
+        [TestMethod]
+        public void MotivoDeRechazo_RecogidaDeUnaReposicion_EsValida()
+        {
+            Assert.IsNull(CasadorEscaneos.MotivoDeRechazo(EscaneoDeReposicion()));
+        }
+
+        [TestMethod]
+        public void MotivoDeRechazo_OrigenMalDicho_DiceCual()
+        {
+            EscaneoAlmacenDTO tipoRaro = Escaneo(); tipoRaro.TipoOrigen = "OTRO";
+            EscaneoAlmacenDTO reposicionSinNumero = EscaneoDeReposicion(); reposicionSinNumero.NumeroOrigen = 0;
+            EscaneoAlmacenDTO pickingSinNumero = Escaneo(); pickingSinNumero.Picking = 0;
+            EscaneoAlmacenDTO reposicionConPicking = EscaneoDeReposicion(); reposicionConPicking.Picking = 99633;
+            EscaneoAlmacenDTO numerosDistintos = Escaneo(); numerosDistintos.NumeroOrigen = 99700;
+            EscaneoAlmacenDTO reposicionEmbalada = EscaneoDeReposicion(); reposicionEmbalada.Fase = "PACK";
+            EscaneoAlmacenDTO reposicionConPedido = EscaneoDeReposicion(); reposicionConPedido.Pedido = 926940;
+
+            StringAssert.Contains(CasadorEscaneos.MotivoDeRechazo(tipoRaro), "PICK o REPO");
+            StringAssert.Contains(CasadorEscaneos.MotivoDeRechazo(reposicionSinNumero), "reposición");
+            StringAssert.Contains(CasadorEscaneos.MotivoDeRechazo(pickingSinNumero), "picking");
+            StringAssert.Contains(CasadorEscaneos.MotivoDeRechazo(reposicionConPicking), "no dicen lo mismo");
+            StringAssert.Contains(CasadorEscaneos.MotivoDeRechazo(numerosDistintos), "no dicen lo mismo");
+            StringAssert.Contains(CasadorEscaneos.MotivoDeRechazo(reposicionEmbalada), "solo se recoge");
+            StringAssert.Contains(CasadorEscaneos.MotivoDeRechazo(reposicionConPedido), "solo se recoge");
+        }
+
+        #endregion
     }
 }

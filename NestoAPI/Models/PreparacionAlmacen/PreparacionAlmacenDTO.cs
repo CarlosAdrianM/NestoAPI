@@ -106,11 +106,19 @@ namespace NestoAPI.Models.PreparacionAlmacen
     {
         /// <summary>Lo genera el móvil. Un reenvío de la cola con el mismo valor no se guarda dos veces.</summary>
         public Guid IdCliente { get; set; }
+        /// <summary>
+        /// NestoAPI#574: de dónde sale el trabajo. PICK (picking de pedidos) o REPO (reposición a
+        /// tienda). Si no se dice, es un picking.
+        /// </summary>
+        public string TipoOrigen { get; set; }
+        /// <summary>El número del picking o el del traspaso, según <see cref="TipoOrigen"/>.</summary>
+        public int NumeroOrigen { get; set; }
+        /// <summary>Atajo para el caso de siempre: equivale a TipoOrigen = PICK y NumeroOrigen = el picking.</summary>
         public int Picking { get; set; }
         public int? Pedido { get; set; }
         public int? LineaPedido { get; set; }
         public string Producto { get; set; }
-        /// <summary>PICK o PACK.</summary>
+        /// <summary>PICK (recoger) o PACK (embalar).</summary>
         public string Fase { get; set; }
         /// <summary>Negativa para deshacer una lectura.</summary>
         public int Cantidad { get; set; }

@@ -120,7 +120,7 @@ SELECT RTRIM(e.Producto) AS Producto,
        CAST(SUM(CASE WHEN e.Metodo <> 'FALTA' THEN e.Cantidad ELSE 0 END) AS int) AS Unidades,
        CAST(SUM(CASE WHEN e.Metodo = 'FALTA' THEN e.Cantidad ELSE 0 END) AS int) AS Faltas
 FROM PreparacionEscaneos e
-WHERE e.Empresa = @p0 AND e.Picking = @p1 AND e.Fase = 'PICK'
+WHERE e.Empresa = @p0 AND e.TipoOrigen = 'PICK' AND e.NumeroOrigen = @p1 AND e.Fase = 'PICK'
 GROUP BY e.Producto";
 
         internal const string SQL_LINEAS_PACKING = @"
@@ -149,14 +149,14 @@ SELECT COUNT(*) FROM LinPedidoVta l WHERE l.Empresa = @p0 AND l.[Número] = @p1 
 
         internal const string SQL_INSERTAR_ESCANEO = @"
 INSERT INTO PreparacionEscaneos
-       (IdCliente, Empresa, Picking, Pedido, LineaPedido, Producto, Fase, Cantidad, Metodo, Bulto, Motivo, Usuario, Dispositivo, FechaEscaneo)
-SELECT @p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10, @p11, @p12, @p13
+       (IdCliente, Empresa, NumeroOrigen, Pedido, LineaPedido, Producto, Fase, Cantidad, Metodo, Bulto, Motivo, Usuario, Dispositivo, FechaEscaneo, TipoOrigen)
+SELECT @p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10, @p11, @p12, @p13, @p14
 WHERE NOT EXISTS (SELECT 1 FROM PreparacionEscaneos WHERE IdCliente = @p0)";
 
         internal const string SQL_LECTURAS = @"
 SELECT RTRIM(e.Producto) AS Producto, CAST(SUM(e.Cantidad) AS int) AS Unidades
 FROM PreparacionEscaneos e
-WHERE e.Empresa = @p0 AND e.Pedido = @p1 AND e.Picking = @p2 AND e.Fase = @p3 AND e.Metodo <> 'FALTA'
+WHERE e.Empresa = @p0 AND e.Pedido = @p1 AND e.TipoOrigen = 'PICK' AND e.NumeroOrigen = @p2 AND e.Fase = @p3 AND e.Metodo <> 'FALTA'
 GROUP BY e.Producto";
 
         private const string COLUMNAS_BULTO = @"
@@ -221,7 +221,7 @@ VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10)";
                 int filas = await baseDeDatos.ExecuteSqlCommandAsync(SQL_INSERTAR_ESCANEO,
                     new SqlParameter("@p0", escaneo.IdCliente),
                     new SqlParameter("@p1", empresa),
-                    new SqlParameter("@p2", escaneo.Picking),
+                    new SqlParameter("@p2", CasadorEscaneos.NumeroOrigenDe(escaneo)),
                     Entero("@p3", escaneo.Pedido),
                     Entero("@p4", escaneo.LineaPedido),
                     new SqlParameter("@p5", escaneo.Producto.Trim()),
@@ -232,7 +232,8 @@ VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10)";
                     Texto("@p10", escaneo.Motivo, 100),
                     Texto("@p11", usuario, 50),
                     Texto("@p12", escaneo.Dispositivo, 50),
-                    new SqlParameter("@p13", escaneo.FechaEscaneo)).ConfigureAwait(false);
+                    new SqlParameter("@p13", escaneo.FechaEscaneo),
+                    new SqlParameter("@p14", CasadorEscaneos.TipoOrigenDe(escaneo))).ConfigureAwait(false);
                 return filas > 0;
             }
             catch (SqlException ex) when (ex.Number == 2627 || ex.Number == 2601)
