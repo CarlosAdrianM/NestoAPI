@@ -121,6 +121,104 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             Assert.AreEqual(59, producto.PendienteDeUbicar);
         }
 
+        // Colocar: lo que hoy se hace con Ariadna Vieja (prdUbicar)
+
+        private static UbicarProductoDTO Colocar(int cantidad = 5)
+        {
+            return new UbicarProductoDTO { Producto = " 18004 ", Pasillo = "9", Fila = "3", Columna = "008", Cantidad = cantidad };
+        }
+
+        private static IRepositorioUbicacionesAlmacen RepositorioConPendiente(int pendiente)
+        {
+            var repositorio = A.Fake<IRepositorioUbicacionesAlmacen>();
+            A.CallTo(() => repositorio.LeerUbicacionesDelProducto("1", "ALG", "18004")).Returns(new List<FilaUbicacionProducto>
+            {
+                Hueco("18004", "009", "003", "008", 40),
+                Hueco("18004", null, null, null, pendiente, estado: 2)
+            });
+            return repositorio;
+        }
+
+        [TestMethod]
+        public void PrepararUbicacion_NormalizaElHuecoATresCifrasYElAlmacenPorDefecto()
+        {
+            UbicarProductoDTO ubicar = Colocar();
+
+            string motivo = ServicioUbicacionesAlmacen.PrepararUbicacion(ubicar, out int tipoFiltro, out int? filtro);
+
+            Assert.IsNull(motivo);
+            Assert.AreEqual("18004", ubicar.Producto);
+            Assert.AreEqual("ALG", ubicar.Almacen);
+            Assert.AreEqual("009/003/008", $"{ubicar.Pasillo}/{ubicar.Fila}/{ubicar.Columna}");
+            Assert.AreEqual(0, tipoFiltro);
+            Assert.IsNull(filtro);
+        }
+
+        [TestMethod]
+        public void PrepararUbicacion_ConAlbaranDeCompra_EsElFiltroDosDelProcedimiento()
+        {
+            UbicarProductoDTO ubicar = Colocar();
+            ubicar.AlbaranCompra = 125437;
+
+            Assert.IsNull(ServicioUbicacionesAlmacen.PrepararUbicacion(ubicar, out int tipoFiltro, out int? filtro));
+
+            Assert.AreEqual(2, tipoFiltro);
+            Assert.AreEqual(125437, filtro);
+        }
+
+        [TestMethod]
+        public void PrepararUbicacion_DatosMalos_DiceCual()
+        {
+            UbicarProductoDTO sinCantidad = Colocar(0);
+            UbicarProductoDTO huecoRaro = Colocar(); huecoRaro.Pasillo = "A1";
+            UbicarProductoDTO huecoLargo = Colocar(); huecoLargo.Columna = "1234";
+            UbicarProductoDTO dosOrigenes = Colocar(); dosOrigenes.AlbaranCompra = 1; dosOrigenes.PedidoCompra = 2;
+            UbicarProductoDTO sinProducto = Colocar(); sinProducto.Producto = " ";
+
+            StringAssert.Contains(ServicioUbicacionesAlmacen.PrepararUbicacion(sinCantidad, out _, out _), "cantidad");
+            StringAssert.Contains(ServicioUbicacionesAlmacen.PrepararUbicacion(huecoRaro, out _, out _), "hueco");
+            StringAssert.Contains(ServicioUbicacionesAlmacen.PrepararUbicacion(huecoLargo, out _, out _), "hueco");
+            StringAssert.Contains(ServicioUbicacionesAlmacen.PrepararUbicacion(dosOrigenes, out _, out _), "un origen");
+            StringAssert.Contains(ServicioUbicacionesAlmacen.PrepararUbicacion(sinProducto, out _, out _), "producto");
+            Assert.IsNotNull(ServicioUbicacionesAlmacen.PrepararUbicacion(null, out _, out _));
+        }
+
+        [TestMethod]
+        public async Task Ubicar_HayPendienteSuficiente_LlamaAlProcedimientoConElUsuarioYDevuelveComoQueda()
+        {
+            IRepositorioUbicacionesAlmacen repositorio = RepositorioConPendiente(59);
+            UbicarProductoDTO ubicar = Colocar();
+
+            ProductoAlmacenDTO resultado = await new ServicioUbicacionesAlmacen(repositorio).Ubicar("1", ubicar, "Santiago");
+
+            A.CallTo(() => repositorio.Ubicar("1", ubicar, 0, null, "Santiago")).MustHaveHappenedOnceExactly();
+            Assert.AreEqual("18004", resultado.Producto);
+            Assert.AreEqual("009/003/008", resultado.Ubicaciones.Single().Ubicacion);
+        }
+
+        [TestMethod]
+        public async Task Ubicar_MasDeLoPendiente_AvisaConLoQueHayYNoLlamaAlProcedimiento()
+        {
+            IRepositorioUbicacionesAlmacen repositorio = RepositorioConPendiente(3);
+
+            var ex = await Assert.ThrowsExceptionAsync<NestoAPI.Infraestructure.Exceptions.NestoBusinessException>(
+                () => new ServicioUbicacionesAlmacen(repositorio).Ubicar("1", Colocar(5), "Santiago"));
+
+            StringAssert.Contains(ex.Message, "solo hay 3 unidades pendientes");
+            A.CallTo(() => repositorio.Ubicar(A<string>._, A<UbicarProductoDTO>._, A<int>._, A<int?>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Ubicar_SinNadaPendiente_Avisa()
+        {
+            IRepositorioUbicacionesAlmacen repositorio = RepositorioConPendiente(0);
+
+            var ex = await Assert.ThrowsExceptionAsync<NestoAPI.Infraestructure.Exceptions.NestoBusinessException>(
+                () => new ServicioUbicacionesAlmacen(repositorio).Ubicar("1", Colocar(1), "Santiago"));
+
+            StringAssert.Contains(ex.Message, "no tiene nada pendiente de colocar");
+        }
+
         [TestMethod]
         public async Task BuscarProducto_CodigoVacioODesproporcionado_ListaVaciaSinIrALaBaseDeDatos()
         {

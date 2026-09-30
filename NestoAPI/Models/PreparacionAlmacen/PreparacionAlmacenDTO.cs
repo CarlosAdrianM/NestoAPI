@@ -233,6 +233,23 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public List<ProductoPendienteDeUbicarDTO> Productos { get; set; } = new List<ProductoPendienteDeUbicarDTO>();
     }
 
+    /// <summary>Colocar en un hueco unidades recibidas que están pendientes de ubicar.</summary>
+    public class UbicarProductoDTO
+    {
+        public string Producto { get; set; }
+        /// <summary>Por defecto, Algete.</summary>
+        public string Almacen { get; set; }
+        public string Pasillo { get; set; }
+        public string Fila { get; set; }
+        public string Columna { get; set; }
+        public int Cantidad { get; set; }
+        // Opcional: de qué entrada se descuenta lo pendiente. Como mucho uno; sin ninguno, de la más antigua.
+        public int? PedidoCompra { get; set; }
+        public int? AlbaranCompra { get; set; }
+        public int? TraspasoReposicion { get; set; }
+        public int? PedidoVenta { get; set; }
+    }
+
     /// <summary>Un producto encontrado por su código de barras o su número, con dónde está.</summary>
     public class ProductoAlmacenDTO
     {

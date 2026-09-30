@@ -240,6 +240,20 @@ namespace NestoAPI.Controllers
             return Ok(await ubicaciones.LeerPendienteDeUbicar(Empresa(empresa), Almacen(almacen)).ConfigureAwait(false));
         }
 
+        // POST api/Almacen/Ubicar?empresa=1   { Producto, Almacen, Pasillo, Fila, Columna, Cantidad, AlbaranCompra? ... }
+        /// <summary>
+        /// Coloca en un hueco unidades recibidas que están pendientes de ubicar (lo que hoy se hace con
+        /// Ariadna Vieja; usa el mismo prdUbicar). Devuelve cómo queda el producto.
+        /// </summary>
+        [HttpPost]
+        [Route("Ubicar")]
+        [ResponseType(typeof(ProductoAlmacenDTO))]
+        public async Task<IHttpActionResult> PostUbicar([FromBody] UbicarProductoDTO ubicar,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            return Ok(await ubicaciones.Ubicar(Empresa(empresa), ubicar, Usuario()).ConfigureAwait(false));
+        }
+
         // GET api/Almacen/Productos/Buscar?codigo=8436620930427&almacen=ALG&empresa=1
         /// <summary>
         /// Un producto por su código de barras o su número, con los huecos donde está. Devuelve una

@@ -180,6 +180,18 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public async Task PostUbicar_ColocaConElUsuarioDelToken()
+        {
+            var ubicar = new UbicarProductoDTO { Producto = "18004", Pasillo = "009", Fila = "003", Columna = "008", Cantidad = 5 };
+            var comoQueda = new ProductoAlmacenDTO { Producto = "18004" };
+            A.CallTo(() => ubicaciones.Ubicar("1", ubicar, "Andrey")).Returns(comoQueda);
+
+            var resultado = (OkNegotiatedContentResult<ProductoAlmacenDTO>)await controller.PostUbicar(ubicar);
+
+            Assert.AreSame(comoQueda, resultado.Content);
+        }
+
+        [TestMethod]
         public async Task GetProductoPorCodigo_SinCodigo_BadRequest()
         {
             Assert.IsInstanceOfType(await controller.GetProductoPorCodigo("  "), typeof(BadRequestErrorMessageResult));
