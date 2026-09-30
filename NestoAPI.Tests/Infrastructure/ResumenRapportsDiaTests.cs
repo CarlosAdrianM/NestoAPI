@@ -191,7 +191,7 @@ namespace NestoAPI.Tests.Infrastructure
             string html = ResumenRapportsDia.CabeceraHtml(FECHA, rapports, Fichas(), new[] { "JE" });
 
             Assert.IsFalse(html.Contains("Sin ningún rapport"));
-            Assert.IsFalse(html.Contains("vendedor telefónico"));
+            Assert.IsFalse(html.Contains("clientes de otro vendedor"));
         }
 
         [TestMethod]
@@ -201,7 +201,7 @@ namespace NestoAPI.Tests.Infrastructure
 
             string html = ResumenRapportsDia.CabeceraHtml(FECHA, rapports, Fichas(), new[] { "JE" });
 
-            StringAssert.Contains(html, "Rapports de un vendedor presencial a clientes de un vendedor telefónico");
+            StringAssert.Contains(html, "Rapports a clientes de otro vendedor");
             StringAssert.Contains(html, "cliente 12345/0 CENTRO 12345, que lleva Laura (LHY) (visita, termin&#243; en pedido)");
         }
 
@@ -215,6 +215,89 @@ namespace NestoAPI.Tests.Infrastructure
 
             Assert.IsFalse(html.Contains("<B>"));
             StringAssert.Contains(html, "&lt;B&gt; &amp; CO");
+        }
+
+        // Carlos, 30/09/26: los rapports sin vendedor son los que mete alguien de un cliente que no
+        // lleva él (Daniel, usuario DLopez y vendedor DLS, de un cliente de María José).
+
+        private static readonly Dictionary<string, string> VENDEDOR_POR_USUARIO =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["DLopez"] = "DV ", ["Jesus"] = "JE" };
+
+        [TestMethod]
+        public void DeducirVendedores_RapportSinVendedor_TomaElDelUsuarioQueLoTecleo()
+        {
+            ResumenRapportsDia.Rapport rapport = Rapport(null, "12345", "LHY");
+            rapport.Usuario = @"NUEVAVISION\dlopez";
+
+            ResumenRapportsDia.DeducirVendedores(new[] { rapport }, VENDEDOR_POR_USUARIO);
+
+            Assert.AreEqual("DV", rapport.Vendedor);
+            Assert.IsTrue(rapport.VendedorDeducidoDelUsuario);
+        }
+
+        [TestMethod]
+        public void DeducirVendedores_RapportConVendedor_NoSeToca()
+        {
+            ResumenRapportsDia.Rapport rapport = Rapport("JE ", "12345", "JE ");
+            rapport.Usuario = @"NUEVAVISION\dlopez";
+
+            ResumenRapportsDia.DeducirVendedores(new[] { rapport }, VENDEDOR_POR_USUARIO);
+
+            Assert.AreEqual("JE ", rapport.Vendedor);
+            Assert.IsFalse(rapport.VendedorDeducidoDelUsuario);
+        }
+
+        [TestMethod]
+        public void DeducirVendedores_UsuarioDeOficinaSinVendedor_SeEnsenaSuUsuario()
+        {
+            ResumenRapportsDia.Rapport rapport = Rapport(null, "12345", "NV ");
+            rapport.Usuario = @"NUEVAVISION\Enrique";
+
+            ResumenRapportsDia.DeducirVendedores(new[] { rapport }, VENDEDOR_POR_USUARIO);
+            string html = ResumenRapportsDia.CabeceraHtml(FECHA, new[] { rapport }, Fichas(), new string[0]);
+            string paraLaIA = ResumenRapportsDia.TextoParaIA(FECHA, new[] { rapport }, Fichas());
+
+            Assert.IsNull(rapport.Vendedor);
+            StringAssert.Contains(html, "Enrique (sin vendedor)");
+            StringAssert.Contains(paraLaIA, "Vendedor: Enrique (sin vendedor)");
+        }
+
+        [TestMethod]
+        public void CabeceraHtml_RapportSinVendedorDeUnClienteDeOtro_SaleEnSuVendedorYEnLaListaDeClientesDeOtro()
+        {
+            // Aunque el cliente sea de otro presencial: si se guardó sin vendedor, no era suyo
+            ResumenRapportsDia.Rapport rapport = Rapport(null, "12345", "JE ");
+            rapport.Usuario = "DLopez";
+            ResumenRapportsDia.DeducirVendedores(new[] { rapport }, VENDEDOR_POR_USUARIO);
+
+            string html = ResumenRapportsDia.CabeceraHtml(FECHA, new[] { rapport }, Fichas(), new[] { "DV" });
+
+            StringAssert.Contains(html, "David (DV)");
+            Assert.IsFalse(html.Contains("(sin vendedor)"));
+            StringAssert.Contains(html, "Rapports a clientes de otro vendedor");
+            StringAssert.Contains(html, "que lleva Jes&#250;s (JE)");
+        }
+
+        [TestMethod]
+        public void EsDeClienteDeOtroVendedor_SinVendedorPeroElClienteEsSuyo_False()
+        {
+            // Pasa: María José mete rapports sin vendedor de clientes que sí lleva ella
+            ResumenRapportsDia.Rapport rapport = Rapport(null, "12345", "JE");
+            rapport.Usuario = "Jesus";
+            ResumenRapportsDia.DeducirVendedores(new[] { rapport }, VENDEDOR_POR_USUARIO);
+
+            Assert.IsFalse(ResumenRapportsDia.EsDeClienteDeOtroVendedor(rapport, Fichas()));
+        }
+
+        [TestMethod]
+        public void EsDeClienteDeOtroVendedor_ElClienteEsDelVendedorGeneral_False()
+        {
+            // NV no es «otro vendedor»: es un cliente que no lleva nadie (los de peluquería, en estética)
+            ResumenRapportsDia.Rapport rapport = Rapport(null, "12345", "NV ");
+            rapport.Usuario = "Jesus";
+            ResumenRapportsDia.DeducirVendedores(new[] { rapport }, VENDEDOR_POR_USUARIO);
+
+            Assert.IsFalse(ResumenRapportsDia.EsDeClienteDeOtroVendedor(rapport, Fichas()));
         }
 
         [TestMethod]

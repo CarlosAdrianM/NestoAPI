@@ -34,6 +34,13 @@ namespace NestoAPI.Infraestructure.Rapports
             public string Tipo { get; set; }
             public string Comentarios { get; set; }
             public bool Pedido { get; set; }
+            /// <summary>Quién lo tecleó (usuario de Windows, con o sin dominio).</summary>
+            public string Usuario { get; set; }
+            /// <summary>
+            /// El rapport se guardó sin vendedor y se le ha puesto el de quien lo tecleó. Pasa cuando
+            /// alguien mete un rapport de un cliente que no lleva él (Carlos, 30/09/26).
+            /// </summary>
+            public bool VendedorDeducidoDelUsuario { get; set; }
         }
 
         public class FichaVendedor
@@ -46,6 +53,8 @@ namespace NestoAPI.Infraestructure.Rapports
         public class ActividadVendedor
         {
             public string Vendedor { get; set; }
+            /// <summary>Solo cuando no hay vendedor: el usuario que tecleó esos rapports.</summary>
+            public string Usuario { get; set; }
             public int Rapports { get; set; }
             public int Visitas { get; set; }
             public int Telefono { get; set; }
@@ -73,6 +82,68 @@ namespace NestoAPI.Infraestructure.Rapports
             }
             string nombre = fichas != null && fichas.TryGetValue(codigo, out FichaVendedor ficha) ? ficha.Nombre?.Trim() : null;
             return string.IsNullOrEmpty(nombre) ? codigo : $"{nombre} ({codigo})";
+        }
+
+        public static string SinDominio(string usuario)
+        {
+            string limpio = usuario?.Trim() ?? string.Empty;
+            return limpio.Substring(limpio.LastIndexOf('\\') + 1);
+        }
+
+        /// <summary>
+        /// A los rapports guardados sin vendedor les pone el de quien los tecleó (su parámetro
+        /// «Vendedor»). Sin esto salían todos juntos como «(sin vendedor)» en el correo del resto,
+        /// aunque los hubiera metido un vendedor de un equipo. Si el usuario no es vendedor (alguien
+        /// de oficina), se queda sin vendedor y se enseña su nombre de usuario.
+        /// </summary>
+        public static void DeducirVendedores(IEnumerable<Rapport> rapports, IDictionary<string, string> vendedorPorUsuario)
+        {
+            foreach (Rapport rapport in rapports ?? Enumerable.Empty<Rapport>())
+            {
+                if (!string.IsNullOrWhiteSpace(rapport.Vendedor) || vendedorPorUsuario == null)
+                {
+                    continue;
+                }
+                if (vendedorPorUsuario.TryGetValue(SinDominio(rapport.Usuario), out string vendedor) && !string.IsNullOrWhiteSpace(vendedor))
+                {
+                    rapport.Vendedor = vendedor.Trim();
+                    rapport.VendedorDeducidoDelUsuario = true;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Cómo se llama al autor de un rapport: su vendedor o, si no tiene, el usuario que lo tecleó.
+        /// </summary>
+        public static string NombreAutor(Rapport rapport, IDictionary<string, FichaVendedor> fichas)
+        {
+            if (!string.IsNullOrWhiteSpace(rapport?.Vendedor))
+            {
+                return NombreVendedor(rapport.Vendedor, fichas);
+            }
+            string usuario = SinDominio(rapport?.Usuario);
+            return string.IsNullOrEmpty(usuario) ? "(sin vendedor)" : $"{usuario} (sin vendedor)";
+        }
+
+        /// <summary>
+        /// El rapport es de un cliente que lleva otro vendedor: o lo dice la regla de siempre
+        /// (presencial en cliente de telefónico) o el rapport se guardó sin vendedor y el cliente
+        /// es de otro.
+        /// </summary>
+        public static bool EsDeClienteDeOtroVendedor(Rapport rapport, IDictionary<string, FichaVendedor> fichas)
+        {
+            if (EsDeClienteDeTelefonico(rapport, fichas))
+            {
+                return true;
+            }
+            string autor = rapport?.Vendedor?.Trim();
+            string delCliente = rapport?.VendedorCliente?.Trim();
+            // El vendedor general (NV) no es «otro vendedor»: es un cliente que no lleva nadie en
+            // estética (los de peluquería de Israel, por ejemplo)
+            return rapport != null && rapport.VendedorDeducidoDelUsuario
+                && !string.IsNullOrEmpty(delCliente)
+                && !string.Equals(delCliente, Constantes.Vendedores.VENDEDOR_GENERAL, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(autor, delCliente, StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>«12345/0 NOMBRE DEL CLIENTE». Null-safe: un registro cojo no tumba el correo (NestoAPI#374).</summary>
@@ -107,10 +178,11 @@ namespace NestoAPI.Infraestructure.Rapports
         public static List<ActividadVendedor> Actividad(IEnumerable<Rapport> rapports)
         {
             return (rapports ?? Enumerable.Empty<Rapport>())
-                .GroupBy(r => r.Vendedor?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                .GroupBy(ClaveAutor, StringComparer.OrdinalIgnoreCase)
                 .Select(g => new ActividadVendedor
                 {
-                    Vendedor = g.Key,
+                    Vendedor = g.First().Vendedor?.Trim() ?? string.Empty,
+                    Usuario = string.IsNullOrWhiteSpace(g.First().Vendedor) ? SinDominio(g.First().Usuario) : null,
                     Rapports = g.Count(),
                     Visitas = g.Count(r => r.Tipo?.Trim() == "V"),
                     Telefono = g.Count(r => r.Tipo?.Trim() == "T"),
@@ -118,8 +190,21 @@ namespace NestoAPI.Infraestructure.Rapports
                     ConPedido = g.Count(r => r.Pedido),
                     SinComentario = g.Count(r => !TieneComentarioUtil(r))
                 })
-                .OrderBy(a => a.Vendedor, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(a => string.IsNullOrEmpty(a.Vendedor))
+                .ThenBy(a => a.Vendedor, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(a => a.Usuario, StringComparer.OrdinalIgnoreCase)
                 .ToList();
+        }
+
+        /// <summary>
+        /// Por quién se agrupan los rapports: por su vendedor o, los que siguen sin vendedor (los de
+        /// alguien de oficina), por el usuario que los tecleó.
+        /// </summary>
+        private static string ClaveAutor(Rapport rapport)
+        {
+            return string.IsNullOrWhiteSpace(rapport?.Vendedor)
+                ? "\u0001" + SinDominio(rapport?.Usuario)
+                : rapport.Vendedor.Trim();
         }
 
         /// <summary>
@@ -173,11 +258,13 @@ namespace NestoAPI.Infraestructure.Rapports
             var texto = new StringBuilder();
             _ = texto.Append($"Rapports del día {fecha:dd/MM/yyyy}, agrupados por vendedor.\n\n");
 
+            // Los que siguen sin vendedor, al final
             foreach (var grupo in lista
-                .GroupBy(r => r.Vendedor?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase)
-                .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
+                .GroupBy(ClaveAutor, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(g => string.IsNullOrWhiteSpace(g.First().Vendedor))
+                .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
             {
-                string vendedor = NombreVendedor(grupo.Key, fichas);
+                string vendedor = NombreAutor(grupo.First(), fichas);
                 List<Rapport> utiles = grupo.Where(TieneComentarioUtil).ToList();
                 _ = texto.Append($"=== VENDEDOR: {vendedor}. Rapports: {grupo.Count()}, de ellos con comentario: {utiles.Count} ===\n\n");
 
@@ -186,9 +273,10 @@ namespace NestoAPI.Infraestructure.Rapports
                     _ = texto.Append($"Vendedor: {vendedor}\n");
                     _ = texto.Append($"Cliente: {NombreCliente(rapport)}\n");
                     _ = texto.Append($"Tipo: {TipoEnTexto(rapport.Tipo)}\n");
-                    if (EsDeClienteDeTelefonico(rapport, fichas))
+                    if (EsDeClienteDeOtroVendedor(rapport, fichas))
                     {
-                        _ = texto.Append($"OJO: este cliente no es suyo, lo lleva {NombreVendedor(rapport.VendedorCliente, fichas)}, vendedor telefónico.\n");
+                        _ = texto.Append($"OJO: este cliente no es suyo, lo lleva {NombreVendedor(rapport.VendedorCliente, fichas)}" +
+                            $"{(EsDeClienteDeTelefonico(rapport, fichas) ? ", vendedor telefónico" : string.Empty)}.\n");
                     }
                     _ = texto.Append($"Comentario: {rapport.Comentarios.Trim()}\n");
                     _ = texto.Append($"Terminó en pedido: {(rapport.Pedido ? "Sí" : "No")}\n\n");
@@ -221,7 +309,7 @@ namespace NestoAPI.Infraestructure.Rapports
             foreach (ActividadVendedor actividad in Actividad(lista))
             {
                 _ = html.Append("<tr>");
-                _ = html.Append($"<td style=\"{celda}\">{Html(NombreVendedor(actividad.Vendedor, fichas))}</td>");
+                _ = html.Append($"<td style=\"{celda}\">{Html(NombreAutor(new Rapport { Vendedor = actividad.Vendedor, Usuario = actividad.Usuario }, fichas))}</td>");
                 foreach (int valor in new[] { actividad.Rapports, actividad.Visitas, actividad.Telefono, actividad.WhatsApp, actividad.ConPedido, actividad.SinComentario })
                 {
                     _ = html.Append($"<td style=\"{numero}\">{valor}</td>");
@@ -238,10 +326,10 @@ namespace NestoAPI.Infraestructure.Rapports
                 _ = html.Append(".</p>");
             }
 
-            List<Rapport> deTelefonico = lista.Where(r => EsDeClienteDeTelefonico(r, fichas)).ToList();
+            List<Rapport> deTelefonico = lista.Where(r => EsDeClienteDeOtroVendedor(r, fichas)).ToList();
             if (deTelefonico.Any())
             {
-                _ = html.Append("<p><strong>Rapports de un vendedor presencial a clientes de un vendedor telefónico:</strong></p><ul>");
+                _ = html.Append("<p><strong>Rapports a clientes de otro vendedor:</strong></p><ul>");
                 foreach (Rapport rapport in deTelefonico)
                 {
                     _ = html.Append("<li>");

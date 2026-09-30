@@ -55,6 +55,9 @@ namespace NestoAPI.Tests.Infrastructure
 
                 Assert.IsTrue(datos.Rapports.Count > 0);
                 Assert.IsTrue(datos.Rapports.All(r => equipo.Contains(r.Vendedor.Trim())), "Solo rapports del equipo");
+                // El 29/09 Daniel (usuario dlopez, vendedor DLS) metió uno sin vendedor de un cliente de MPP
+                Assert.IsTrue(datos.Rapports.Any(r => r.VendedorDeducidoDelUsuario && r.Vendedor == "DLS"),
+                    "El rapport sin vendedor de un vendedor del equipo sale en el correo de su equipo");
                 Assert.IsTrue(datos.Rapports.Any(r => !string.IsNullOrWhiteSpace(r.NombreCliente)), "Trae el nombre del cliente");
                 Assert.IsTrue(datos.Rapports.Any(r => !string.IsNullOrWhiteSpace(r.VendedorCliente)), "Trae el vendedor del cliente");
                 Assert.IsTrue(datos.Esperados.All(v => datos.Fichas[v.Trim()].Estado >= 0), "No se espera rapport de quien está de baja");
@@ -85,8 +88,8 @@ namespace NestoAPI.Tests.Infrastructure
                 var datos = SeguimientosClientesController.LeerDatosResumenDia(db, EMPRESA, DIA, equipo, true);
 
                 Assert.IsTrue(datos.Rapports.Count > 0);
-                // OJO: en el «resto» entran también los rapports SIN vendedor (Entity Framework traduce
-                // el «no está en la lista» incluyendo los nulos). El resumen tiene que aguantarlos.
+                // En el «resto» quedan los rapports sin vendedor de quien no es vendedor (alguien de
+                // oficina): se enseñan con su usuario. El resumen tiene que aguantarlos.
                 Assert.IsFalse(datos.Rapports.Any(r => r.Vendedor != null && equipo.Contains(r.Vendedor.Trim())), "Ninguno del equipo");
                 Assert.IsTrue(datos.Esperados.Count > 0);
                 Assert.IsFalse(datos.Esperados.Any(v => equipo.Contains(v.Trim())));
@@ -97,6 +100,8 @@ namespace NestoAPI.Tests.Infrastructure
                 if (datos.Rapports.Any(r => string.IsNullOrWhiteSpace(r.Vendedor)))
                 {
                     StringAssert.Contains(cabecera, "(sin vendedor)");
+                    Assert.IsFalse(cabecera.Contains("<td style=\"border:1px solid #ccc;padding:4px 10px;\">(sin vendedor)</td>"),
+                        "Nunca «(sin vendedor)» a secas: siempre con el usuario que lo metió");
                 }
 
                 Guardar("rapports_resto_cabecera.html", cabecera);

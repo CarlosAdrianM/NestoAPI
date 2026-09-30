@@ -397,26 +397,46 @@ namespace NestoAPI.Controllers
         {
             DateTime fechaSinHora = dia.Date;
             DateTime fechaDiaSiguiente = fechaSinHora.AddDays(1);
+            // Se leen TODOS los del día y se reparten después: los rapports guardados sin vendedor
+            // (alguien mete uno de un cliente que no lleva él) solo se sabe de quién son por el
+            // usuario que los tecleó, y tienen que ir al correo del equipo de ese vendedor.
+            List<ResumenRapportsDia.Rapport> delDia = db.SeguimientosClientes
+                .Where(s => s.Empresa == empresa &&
+                            s.Fecha >= fechaSinHora &&
+                            s.Fecha < fechaDiaSiguiente &&
+                            s.Estado == 0 &&
+                            s.Número != null)
+                .Select(s => new ResumenRapportsDia.Rapport
+                {
+                    Vendedor = s.Vendedor,
+                    Cliente = s.Número,
+                    Contacto = s.Contacto,
+                    NombreCliente = s.Cliente.Nombre,
+                    VendedorCliente = s.Cliente.Vendedor,
+                    Tipo = s.Tipo,
+                    Comentarios = s.Comentarios,
+                    Pedido = s.Pedido,
+                    Usuario = s.Usuario
+                })
+                .ToList();
+
+            if (delDia.Any(r => string.IsNullOrWhiteSpace(r.Vendedor)))
+            {
+                Dictionary<string, string> vendedorPorUsuario = db.ParametrosUsuario
+                    .Where(p => p.Empresa == empresa && p.Clave == "Vendedor" && p.Valor != null)
+                    .Select(p => new { p.Usuario, p.Valor })
+                    .ToList()
+                    .Where(p => !string.IsNullOrWhiteSpace(p.Usuario) && !string.IsNullOrWhiteSpace(p.Valor))
+                    .GroupBy(p => p.Usuario.Trim(), StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(g => g.Key, g => g.First().Valor.Trim(), StringComparer.OrdinalIgnoreCase);
+                ResumenRapportsDia.DeducirVendedores(delDia, vendedorPorUsuario);
+            }
+
+            var delEquipo = new HashSet<string>(vendedores.Select(v => v.Trim()), StringComparer.OrdinalIgnoreCase);
             var datos = new DatosResumenDia
             {
-                Rapports = db.SeguimientosClientes
-                    .Where(s => s.Empresa == empresa &&
-                                s.Fecha >= fechaSinHora &&
-                                s.Fecha < fechaDiaSiguiente &&
-                                s.Estado == 0 &&
-                                s.Número != null &&
-                                (resto ? !vendedores.Contains(s.Vendedor) : vendedores.Contains(s.Vendedor)))
-                    .Select(s => new ResumenRapportsDia.Rapport
-                    {
-                        Vendedor = s.Vendedor,
-                        Cliente = s.Número,
-                        Contacto = s.Contacto,
-                        NombreCliente = s.Cliente.Nombre,
-                        VendedorCliente = s.Cliente.Vendedor,
-                        Tipo = s.Tipo,
-                        Comentarios = s.Comentarios,
-                        Pedido = s.Pedido
-                    })
+                Rapports = delDia
+                    .Where(r => delEquipo.Contains(r.Vendedor?.Trim() ?? string.Empty) != resto)
                     .ToList()
             };
             if (!datos.Rapports.Any())
