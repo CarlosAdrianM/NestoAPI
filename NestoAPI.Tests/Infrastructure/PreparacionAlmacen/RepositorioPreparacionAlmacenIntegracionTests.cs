@@ -164,5 +164,25 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
                 Assert.IsTrue(ubicaciones.Any(u => u.Estado == 2));
             }
         }
+
+        [TestMethod]
+        [TestCategory("Integracion")]
+        public async Task Integracion_LeeLosPedidosDeCompraPendientesYSusLineas()
+        {
+            using (ContextoSoloSql contexto = Abrir())
+            {
+                var repositorio = new RepositorioRecepcionCompras(contexto.Database);
+
+                List<PedidoCompraPendienteDTO> pedidos = await repositorio.LeerPedidosPendientes(EMPRESA, "ALG");
+
+                // Siempre hay pedidos de compra por recibir en Algete
+                Assert.IsTrue(pedidos.Count > 0);
+                Assert.IsTrue(pedidos.All(p => p.Lineas > 0 && p.Unidades > 0));
+
+                List<FilaRecepcionCompra> lineas = await repositorio.LeerLineasPendientes(EMPRESA, pedidos.First().Pedido);
+                Assert.AreEqual(pedidos.First().Lineas, lineas.Count);
+                Assert.IsTrue(lineas.All(l => !string.IsNullOrWhiteSpace(l.Producto) && l.Cantidad > 0));
+            }
+        }
     }
 }

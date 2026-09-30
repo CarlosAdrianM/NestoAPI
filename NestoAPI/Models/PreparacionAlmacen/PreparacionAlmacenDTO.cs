@@ -222,3 +222,57 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public int PendienteDeUbicar { get; set; }
     }
 }
+
+namespace NestoAPI.Models.PreparacionAlmacen
+{
+    // NestoAPI#559: entrada de mercancía de proveedor escaneando contra el pedido de compra.
+    // De momento, leer lo que se espera y comparar con lo leído, sin guardar nada.
+
+    public class PedidoCompraPendienteDTO
+    {
+        public int Pedido { get; set; }
+        public string Proveedor { get; set; }
+        public string NombreProveedor { get; set; }
+        public DateTime? Fecha { get; set; }
+        /// <summary>La fecha de recepción más cercana de sus líneas pendientes.</summary>
+        public DateTime? FechaRecepcion { get; set; }
+        public int Lineas { get; set; }
+        public int Unidades { get; set; }
+    }
+
+    public class LineaRecepcionCompraDTO
+    {
+        /// <summary>LinPedidoCmp.NºOrden.</summary>
+        public int LineaPedido { get; set; }
+        public string Producto { get; set; }
+        public string Descripcion { get; set; }
+        public string CodigoBarras { get; set; }
+        public bool SinCodigo { get; set; }
+        public bool CodigoDuplicado { get; set; }
+        public int Cantidad { get; set; }
+    }
+
+    public class RecepcionCompraDTO
+    {
+        public string Empresa { get; set; }
+        public int Pedido { get; set; }
+        public string Proveedor { get; set; }
+        public string NombreProveedor { get; set; }
+        public List<LineaRecepcionCompraDTO> Lineas { get; set; } = new List<LineaRecepcionCompraDTO>();
+    }
+
+    /// <summary>Lo contado de un producto al recibir.</summary>
+    public class LecturaRecepcionDTO
+    {
+        public string Producto { get; set; }
+        public int Cantidad { get; set; }
+    }
+
+    public class ResultadoRecepcionCompraDTO
+    {
+        public int Pedido { get; set; }
+        /// <summary>Lo recibido coincide con lo pedido: sin faltas, sobras ni productos no pedidos.</summary>
+        public bool Cuadra { get; set; }
+        public List<DiferenciaPreparacionDTO> Productos { get; set; } = new List<DiferenciaPreparacionDTO>();
+    }
+}

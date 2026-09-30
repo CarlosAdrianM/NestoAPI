@@ -386,6 +386,7 @@
     <Compile Include="Infrastructure\PreparacionAlmacen\RepositorioPreparacionAlmacenIntegracionTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\SasBlobAzureTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\ServicioPreparacionAlmacenTests.cs" />
+    <Compile Include="Infrastructure\PreparacionAlmacen\ServicioRecepcionComprasTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\ServicioUbicacionesAlmacenTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfExtractoContableTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfKitsQueSePuedenMontarTests.cs" />

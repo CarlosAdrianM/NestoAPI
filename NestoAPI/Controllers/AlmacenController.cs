@@ -28,11 +28,14 @@ namespace NestoAPI.Controllers
     {
         private readonly IServicioPreparacionAlmacen servicio;
         private readonly IServicioUbicacionesAlmacen ubicaciones;
+        private readonly IServicioRecepcionCompras compras;
 
-        public AlmacenController(IServicioPreparacionAlmacen servicio, IServicioUbicacionesAlmacen ubicaciones)
+        public AlmacenController(IServicioPreparacionAlmacen servicio, IServicioUbicacionesAlmacen ubicaciones,
+            IServicioRecepcionCompras compras)
         {
             this.servicio = servicio;
             this.ubicaciones = ubicaciones;
+            this.compras = compras;
         }
 
         // GET api/Almacen/Picking/99633?empresa=1
@@ -195,6 +198,43 @@ namespace NestoAPI.Controllers
                 return BadRequest("Falta el código de barras o el número de producto.");
             }
             return Ok(await ubicaciones.BuscarProducto(Empresa(empresa), Almacen(almacen), codigo).ConfigureAwait(false));
+        }
+
+        // GET api/Almacen/Compras/Pendientes?almacen=ALG&empresa=1
+        /// <summary>Los pedidos de compra con mercancía por recibir, el más urgente primero (NestoAPI#559).</summary>
+        [HttpGet]
+        [Route("Compras/Pendientes")]
+        [ResponseType(typeof(List<PedidoCompraPendienteDTO>))]
+        public async Task<IHttpActionResult> GetComprasPendientes(string almacen = Constantes.Almacenes.ALGETE,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            return Ok(await compras.LeerPedidosPendientes(Empresa(empresa), Almacen(almacen)).ConfigureAwait(false));
+        }
+
+        // GET api/Almacen/Compras/220438/Recepcion?empresa=1
+        /// <summary>Lo que queda por recibir de un pedido de compra, con los códigos de barras para leerlo.</summary>
+        [HttpGet]
+        [Route("Compras/{pedido:int}/Recepcion")]
+        [ResponseType(typeof(RecepcionCompraDTO))]
+        public async Task<IHttpActionResult> GetRecepcionDeCompra(int pedido, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            RecepcionCompraDTO recepcion = await compras.LeerRecepcion(Empresa(empresa), pedido).ConfigureAwait(false);
+            return recepcion == null ? (IHttpActionResult)NotFound() : Ok(recepcion);
+        }
+
+        // POST api/Almacen/Compras/220438/Casar?empresa=1
+        /// <summary>
+        /// Compara lo contado al recibir con lo que queda por recibir del pedido: de más, de menos y
+        /// productos que no se habían pedido. No guarda nada.
+        /// </summary>
+        [HttpPost]
+        [Route("Compras/{pedido:int}/Casar")]
+        [ResponseType(typeof(ResultadoRecepcionCompraDTO))]
+        public async Task<IHttpActionResult> PostCasarCompra(int pedido, [FromBody] List<LecturaRecepcionDTO> lecturas,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            ResultadoRecepcionCompraDTO resultado = await compras.Casar(Empresa(empresa), pedido, lecturas).ConfigureAwait(false);
+            return resultado == null ? (IHttpActionResult)NotFound() : Ok(resultado);
         }
 
         private static string Almacen(string almacen)

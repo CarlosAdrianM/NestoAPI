@@ -19,6 +19,7 @@ namespace NestoAPI.Tests.Controllers
     {
         private IServicioPreparacionAlmacen servicio;
         private IServicioUbicacionesAlmacen ubicaciones;
+        private IServicioRecepcionCompras compras;
         private AlmacenController controller;
 
         [TestInitialize]
@@ -26,7 +27,8 @@ namespace NestoAPI.Tests.Controllers
         {
             servicio = A.Fake<IServicioPreparacionAlmacen>();
             ubicaciones = A.Fake<IServicioUbicacionesAlmacen>();
-            controller = new AlmacenController(servicio, ubicaciones)
+            compras = A.Fake<IServicioRecepcionCompras>();
+            controller = new AlmacenController(servicio, ubicaciones, compras)
             {
                 User = new GenericPrincipal(new GenericIdentity("Andrey", "Bearer"), new string[0]),
                 Request = new HttpRequestMessage()
@@ -152,6 +154,26 @@ namespace NestoAPI.Tests.Controllers
             _ = await controller.GetProductoPorCodigo("8436620930427", "rei");
 
             A.CallTo(() => ubicaciones.BuscarProducto("1", "REI", "8436620930427")).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task GetRecepcionDeCompra_PedidoSinNadaPendiente_NotFound()
+        {
+            A.CallTo(() => compras.LeerRecepcion("1", 220438)).Returns(Task.FromResult<RecepcionCompraDTO>(null));
+
+            Assert.IsInstanceOfType(await controller.GetRecepcionDeCompra(220438), typeof(NotFoundResult));
+        }
+
+        [TestMethod]
+        public async Task PostCasarCompra_DevuelveLasDiferencias()
+        {
+            var lecturas = new List<LecturaRecepcionDTO> { new LecturaRecepcionDTO { Producto = "37049", Cantidad = 1 } };
+            var resultado = new ResultadoRecepcionCompraDTO { Pedido = 220438, Cuadra = true };
+            A.CallTo(() => compras.Casar("1", 220438, lecturas)).Returns(resultado);
+
+            var respuesta = (OkNegotiatedContentResult<ResultadoRecepcionCompraDTO>)await controller.PostCasarCompra(220438, lecturas);
+
+            Assert.AreSame(resultado, respuesta.Content);
         }
 
         [TestMethod]
