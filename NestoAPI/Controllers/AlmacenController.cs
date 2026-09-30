@@ -40,6 +40,24 @@ namespace NestoAPI.Controllers
             this.reposiciones = reposiciones;
         }
 
+        // GET api/Almacen/Ping
+        /// <summary>
+        /// Para el indicador de conexión de la app: responde sin tocar la base de datos. La hora del
+        /// servidor sirve para detectar un móvil con el reloj mal (los escaneos llevan la hora del móvil).
+        /// </summary>
+        [HttpGet]
+        [Route("Ping")]
+        [ResponseType(typeof(PingAlmacenDTO))]
+        public IHttpActionResult GetPing()
+        {
+            return Ok(new PingAlmacenDTO
+            {
+                HoraServidor = DateTime.Now,
+                Usuario = Usuario(),
+                FotosConfiguradas = servicio.FotosConfiguradas
+            });
+        }
+
         // GET api/Almacen/Picking/99633?empresa=1
         /// <summary>El recorrido del picking: un producto por hueco, ordenado para andar lo menos posible.</summary>
         [HttpGet]
@@ -328,6 +346,14 @@ namespace NestoAPI.Controllers
         {
             return UsuarioAuditoriaHelper.Resolver(User, null);
         }
+    }
+
+    public class PingAlmacenDTO
+    {
+        public DateTime HoraServidor { get; set; }
+        /// <summary>El usuario del token, tal como quedará en los escaneos y las fotos.</summary>
+        public string Usuario { get; set; }
+        public bool FotosConfiguradas { get; set; }
     }
 
     public class EnlaceFotoBultoDTO

@@ -45,6 +45,18 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public void GetPing_DevuelveLaHoraElUsuarioDelTokenYSiHayAlmacenamientoDeFotos()
+        {
+            A.CallTo(() => servicio.FotosConfiguradas).Returns(true);
+
+            PingAlmacenDTO ping = ((OkNegotiatedContentResult<PingAlmacenDTO>)controller.GetPing()).Content;
+
+            Assert.AreEqual("Andrey", ping.Usuario);
+            Assert.IsTrue(ping.FotosConfiguradas);
+            Assert.IsTrue((DateTime.Now - ping.HoraServidor).TotalSeconds < 5);
+        }
+
+        [TestMethod]
         public async Task GetPicking_PickingSinLineas_NotFound()
         {
             A.CallTo(() => servicio.LeerPicking("1", 5)).Returns(new PickingAlmacenDTO());

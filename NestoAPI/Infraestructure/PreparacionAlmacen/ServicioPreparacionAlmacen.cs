@@ -11,6 +11,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 {
     public interface IServicioPreparacionAlmacen
     {
+        /// <summary>Hay almacenamiento para las fotos de los bultos (cadena de conexión puesta).</summary>
+        bool FotosConfiguradas { get; }
         Task<PickingAlmacenDTO> LeerPicking(string empresa, int picking);
         Task<List<PickingEnCursoDTO>> LeerPickingsEnCurso(string empresa, string almacen);
         /// <summary>Cómo va el picking por ola. Null si el picking no tiene líneas.</summary>
@@ -75,6 +77,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             this.repositorio = repositorio;
             this.fotos = fotos;
         }
+
+        public bool FotosConfiguradas => fotos.Configurado;
 
         public async Task<PickingAlmacenDTO> LeerPicking(string empresa, int picking)
         {
