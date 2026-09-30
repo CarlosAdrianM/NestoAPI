@@ -389,6 +389,7 @@
     <Compile Include="Infrastructure\PreparacionAlmacen\CasadorEscaneosTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\RepositorioPreparacionAlmacenIntegracionTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\SasBlobAzureTests.cs" />
+    <Compile Include="Infrastructure\PreparacionAlmacen\EnlacePublicoFotoBultoTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\ServicioPreparacionAlmacenTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\ServicioRecepcionComprasTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\ServicioRecepcionReposicionesTests.cs" />

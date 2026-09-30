@@ -159,6 +159,11 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public int? NumeroEnvio { get; set; }
         public string Usuario { get; set; }
         public DateTime? FechaFoto { get; set; }
+        /// <summary>
+        /// La ruta dentro del API (sin el servidor) para ver la foto sin usuario: para mandársela a
+        /// un cliente o a la agencia. Vale mientras exista la foto. Null si no hay foto.
+        /// </summary>
+        public string RutaFotoPublica { get; set; }
         /// <summary>Solo para uso interno: no viaja al cliente.</summary>
         [Newtonsoft.Json.JsonIgnore]
         public string RutaBlob { get; set; }

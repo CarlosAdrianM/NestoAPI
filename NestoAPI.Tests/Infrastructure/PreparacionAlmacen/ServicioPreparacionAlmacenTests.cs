@@ -407,6 +407,79 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             Assert.IsNull(await servicio.EnlaceFotoBulto(8));
         }
 
+        #region Enlace público a la foto (sin usuario)
+
+        private const string CLAVE_ENLACES = "clave-de-pruebas-de-mas-de-treinta-y-dos-caracteres";
+        private static readonly Guid ID_FOTO = new Guid("0f8fad5b-d9cb-469f-a165-70867728950e");
+
+        [TestMethod]
+        public async Task LeerBultos_ConClaveDeEnlaces_LosBultosConFotoLlevanSuEnlacePublico()
+        {
+            servicio = new ServicioPreparacionAlmacen(repositorio, fotos, CLAVE_ENLACES);
+            A.CallTo(() => repositorio.LeerBultos(EMPRESA, PEDIDO)).Returns(new List<BultoAlmacenDTO>
+            {
+                new BultoAlmacenDTO { Id = 7, IdCliente = ID_FOTO, Bulto = 1, TieneFoto = true, RutaBlob = "x.jpg" },
+                new BultoAlmacenDTO { Id = 8, IdCliente = Guid.NewGuid(), Bulto = 2, TieneFoto = false, RutaBlob = null }
+            });
+
+            List<BultoAlmacenDTO> bultos = await servicio.LeerBultos(EMPRESA, PEDIDO);
+
+            Assert.AreEqual(EnlacePublicoFotoBulto.Ruta(CLAVE_ENLACES, 7, ID_FOTO), bultos[0].RutaFotoPublica);
+            StringAssert.StartsWith(bultos[0].RutaFotoPublica, "api/Almacen/Fotos/7-");
+            Assert.IsNull(bultos[1].RutaFotoPublica);
+        }
+
+        [TestMethod]
+        public async Task LeerBultos_SinClaveDeEnlaces_NoHayEnlacePublico()
+        {
+            A.CallTo(() => repositorio.LeerBultos(EMPRESA, PEDIDO)).Returns(new List<BultoAlmacenDTO>
+            {
+                new BultoAlmacenDTO { Id = 7, IdCliente = ID_FOTO, Bulto = 1, TieneFoto = true, RutaBlob = "x.jpg" }
+            });
+
+            Assert.IsNull((await servicio.LeerBultos(EMPRESA, PEDIDO))[0].RutaFotoPublica);
+        }
+
+        [TestMethod]
+        public async Task EnlaceFotoBultoPublico_ConElEnlaceBueno_DaAccesoDeQuinceMinutos()
+        {
+            servicio = new ServicioPreparacionAlmacen(repositorio, fotos, CLAVE_ENLACES);
+            var enlace = new Uri("https://cuenta.blob.core.windows.net/bultos/x.jpg?sig=abc");
+            A.CallTo(() => repositorio.LeerBulto(7)).Returns(new BultoAlmacenDTO { Id = 7, IdCliente = ID_FOTO, RutaBlob = "x.jpg " });
+            A.CallTo(() => fotos.EnlaceDeLectura("x.jpg", TimeSpan.FromMinutes(15))).Returns(enlace);
+
+            Assert.AreEqual(enlace, await servicio.EnlaceFotoBultoPublico(EnlacePublicoFotoBulto.Token(CLAVE_ENLACES, 7, ID_FOTO)));
+        }
+
+        [TestMethod]
+        public async Task EnlaceFotoBultoPublico_EnlaceDeOtroBultoOInventado_Null()
+        {
+            servicio = new ServicioPreparacionAlmacen(repositorio, fotos, CLAVE_ENLACES);
+            A.CallTo(() => repositorio.LeerBulto(7)).Returns(new BultoAlmacenDTO { Id = 7, IdCliente = ID_FOTO, RutaBlob = "x.jpg" });
+            A.CallTo(() => repositorio.LeerBulto(8)).Returns(new BultoAlmacenDTO { Id = 8, IdCliente = Guid.NewGuid(), RutaBlob = "y.jpg" });
+            A.CallTo(() => repositorio.LeerBulto(9)).Returns(Task.FromResult<BultoAlmacenDTO>(null));
+            string bueno = EnlacePublicoFotoBulto.Token(CLAVE_ENLACES, 7, ID_FOTO);
+
+            // El del 7 con el número cambiado al 8, uno de un bulto que no existe, y basura
+            Assert.IsNull(await servicio.EnlaceFotoBultoPublico("8" + bueno.Substring(1)));
+            Assert.IsNull(await servicio.EnlaceFotoBultoPublico("9" + bueno.Substring(1)));
+            Assert.IsNull(await servicio.EnlaceFotoBultoPublico("7-" + new string('0', 40)));
+            Assert.IsNull(await servicio.EnlaceFotoBultoPublico("lo-que-sea"));
+            Assert.IsNull(await servicio.EnlaceFotoBultoPublico(null));
+            A.CallTo(() => fotos.EnlaceDeLectura(A<string>._, A<TimeSpan>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task EnlaceFotoBultoPublico_SinClaveConfigurada_NoSeAbreNada()
+        {
+            A.CallTo(() => repositorio.LeerBulto(7)).Returns(new BultoAlmacenDTO { Id = 7, IdCliente = ID_FOTO, RutaBlob = "x.jpg" });
+
+            Assert.IsNull(await servicio.EnlaceFotoBultoPublico(EnlacePublicoFotoBulto.Token(CLAVE_ENLACES, 7, ID_FOTO)));
+            A.CallTo(() => repositorio.LeerBulto(A<int>._)).MustNotHaveHappened();
+        }
+
+        #endregion
+
         [TestMethod]
         public async Task LeerEstadoPedido_TodoLeidoYTodosLosBultosConFoto_Completo()
         {

@@ -25,6 +25,11 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         Task<List<BultoAlmacenDTO>> LeerBultos(string empresa, int pedido);
         /// <summary>Enlace temporal a la foto de un bulto. Null si el bulto no existe o no tiene foto.</summary>
         Task<Uri> EnlaceFotoBulto(int idBulto);
+        /// <summary>
+        /// Lo mismo, pero para quien llega con el enlace público (sin usuario). Null si el enlace no
+        /// es bueno, el bulto no existe o no tiene foto: desde fuera no se distingue un caso de otro.
+        /// </summary>
+        Task<Uri> EnlaceFotoBultoPublico(string token);
         /// <summary>Lo pedido frente a lo metido en las cajas, y los bultos con su foto. Null si el pedido no tiene picking.</summary>
         Task<EstadoPreparacionPedidoDTO> LeerEstadoPedido(string empresa, int pedido, int? picking);
     }
@@ -64,18 +69,39 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         private readonly IRepositorioPreparacionAlmacen repositorio;
         private readonly IAlmacenFotosBultos fotos;
         private readonly NVEntities dbPropio;
+        private readonly string claveEnlacesFotos;
 
         public ServicioPreparacionAlmacen()
         {
             dbPropio = new NVEntities();
             repositorio = new RepositorioPreparacionAlmacen(dbPropio);
             fotos = new AlmacenFotosBultosAzure();
+            claveEnlacesFotos = System.Configuration.ConfigurationManager.AppSettings[EnlacePublicoFotoBulto.CLAVE_CONFIGURACION];
         }
 
-        internal ServicioPreparacionAlmacen(IRepositorioPreparacionAlmacen repositorio, IAlmacenFotosBultos fotos)
+        internal ServicioPreparacionAlmacen(IRepositorioPreparacionAlmacen repositorio, IAlmacenFotosBultos fotos, string claveEnlacesFotos = null)
         {
             this.repositorio = repositorio;
             this.fotos = fotos;
+            this.claveEnlacesFotos = claveEnlacesFotos;
+        }
+
+        /// <summary>Pone a cada bulto con foto su enlace público (si hay clave para firmarlo).</summary>
+        private BultoAlmacenDTO ConEnlacePublico(BultoAlmacenDTO bulto)
+        {
+            if (bulto != null)
+            {
+                bulto.RutaFotoPublica = string.IsNullOrWhiteSpace(bulto.RutaBlob) || !fotos.Configurado
+                    ? null
+                    : EnlacePublicoFotoBulto.Ruta(claveEnlacesFotos, bulto.Id, bulto.IdCliente);
+            }
+            return bulto;
+        }
+
+        private List<BultoAlmacenDTO> ConEnlacePublico(List<BultoAlmacenDTO> bultos)
+        {
+            bultos?.ForEach(b => ConEnlacePublico(b));
+            return bultos;
         }
 
         public bool FotosConfiguradas => fotos.Configurado;
@@ -315,7 +341,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 }, hash, foto.Imagen.Length, foto.Dispositivo).ConfigureAwait(false);
             }
 
-            return principal;
+            return ConEnlacePublico(principal);
         }
 
         /// <summary>
@@ -382,9 +408,24 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             }
         }
 
-        public Task<List<BultoAlmacenDTO>> LeerBultos(string empresa, int pedido)
+        public async Task<List<BultoAlmacenDTO>> LeerBultos(string empresa, int pedido)
         {
-            return repositorio.LeerBultos(empresa, pedido);
+            return ConEnlacePublico(await repositorio.LeerBultos(empresa, pedido).ConfigureAwait(false));
+        }
+
+        public async Task<Uri> EnlaceFotoBultoPublico(string token)
+        {
+            if (!EnlacePublicoFotoBulto.ClaveValida(claveEnlacesFotos) || !EnlacePublicoFotoBulto.TryLeerId(token, out int idBulto))
+            {
+                return null;
+            }
+            BultoAlmacenDTO bulto = await repositorio.LeerBulto(idBulto).ConfigureAwait(false);
+            if (bulto == null || string.IsNullOrWhiteSpace(bulto.RutaBlob) || !fotos.Configurado
+                || !EnlacePublicoFotoBulto.EsValido(claveEnlacesFotos, token, bulto.Id, bulto.IdCliente))
+            {
+                return null;
+            }
+            return fotos.EnlaceDeLectura(bulto.RutaBlob.Trim(), VIGENCIA_ENLACE_FOTO);
         }
 
         public async Task<Uri> EnlaceFotoBulto(int idBulto)
@@ -408,8 +449,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             List<FilaPackingAlmacen> lineas = await repositorio.LeerLineasPacking(empresa, pickingDelPedido.Value, pedido).ConfigureAwait(false);
             List<LecturaProductoAlmacen> lecturas = await repositorio
                 .LeerLecturas(empresa, pedido, pickingDelPedido.Value, CasadorEscaneos.FASE_PACKING).ConfigureAwait(false);
-            List<BultoAlmacenDTO> bultos = (await repositorio.LeerBultos(empresa, pedido).ConfigureAwait(false))
-                .Where(b => b.Picking == pickingDelPedido.Value).ToList();
+            List<BultoAlmacenDTO> bultos = ConEnlacePublico((await repositorio.LeerBultos(empresa, pedido).ConfigureAwait(false))
+                .Where(b => b.Picking == pickingDelPedido.Value).ToList());
 
             List<DiferenciaPreparacionDTO> diferencias = CasadorEscaneos.Casar(
                 lineas.Select(l => new CasadorEscaneos.Cantidad { Producto = l.Producto, Descripcion = l.Descripcion, Unidades = l.Cantidad }),

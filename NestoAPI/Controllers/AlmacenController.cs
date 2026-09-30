@@ -226,6 +226,27 @@ namespace NestoAPI.Controllers
             });
         }
 
+        // GET api/Almacen/Fotos/17-3f2a…   (sin usuario)
+        /// <summary>
+        /// La foto de un bulto para quien no tiene usuario (el cliente que reclama, la agencia): el
+        /// enlace lleva una firma que no se puede adivinar y vale mientras exista la foto. Se
+        /// comprueba la firma y se manda al navegador a la imagen con un acceso de unos minutos.
+        /// Anónimo a propósito: lo único que protege la foto es la firma del enlace.
+        /// </summary>
+        [HttpGet]
+        [AllowAnonymous]
+        [Route("Fotos/{token}")]
+        public async Task<IHttpActionResult> GetFotoPublica(string token)
+        {
+            Uri enlace = await servicio.EnlaceFotoBultoPublico(token).ConfigureAwait(false);
+            if (enlace == null)
+            {
+                // El mismo 404 para un enlace malo, un bulto que no existe o uno sin foto
+                return NotFound();
+            }
+            return Redirect(enlace);
+        }
+
         // GET api/Almacen/PendienteDeUbicar?almacen=ALG&empresa=1
         /// <summary>
         /// Lo recibido que todavía no tiene hueco, con la sugerencia de dónde ubicarlo (donde ya hay

@@ -537,6 +537,7 @@
     <Compile Include="Infraestructure\PreparacionAlmacen\RecepcionReposicionesAlmacen.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\RepositorioPreparacionAlmacen.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\SasBlobAzure.cs" />
+    <Compile Include="Infraestructure\PreparacionAlmacen\EnlacePublicoFotoBulto.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\ServicioPreparacionAlmacen.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\UbicacionesAlmacen.cs" />
     <Compile Include="Models\PreparacionAlmacen\PreparacionAlmacenDTO.cs" />
