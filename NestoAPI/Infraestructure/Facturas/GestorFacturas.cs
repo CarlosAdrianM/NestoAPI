@@ -744,31 +744,62 @@ namespace NestoAPI.Infraestructure.Facturas
                 return;
             }
 
-            var impagadosPorFecha = impagados
-                .GroupBy(i => i.FechaVto)
-                .ToDictionary(g => g.Key, g => g.ToList());
-
-            foreach (var vencimiento in vencimientos)
+            // NestoAPI#572: cada impagado se casa con su vencimiento por el número de EFECTO. Antes
+            // se casaba por la fecha de vencimiento, pero el impagado se apunta con la fecha del cargo
+            // de la remesa (caso NV2615330: efecto del 18/09, impagado del 22/09) y, al no coincidir,
+            // la factura seguía diciendo «Pagado». La fecha queda de respaldo para cuando no hay
+            // efecto, y con un solo vencimiento todos los impagados de la factura son suyos.
+            var impagadosPorVencimiento = new Dictionary<VencimientoFactura, List<ImpagadoPendiente>>();
+            foreach (ImpagadoPendiente impagado in impagados)
             {
-                if (!impagadosPorFecha.ContainsKey(vencimiento.Vencimiento))
+                VencimientoFactura suyo = null;
+                string efecto = impagado.Efecto?.Trim();
+                if (!string.IsNullOrEmpty(efecto))
+                {
+                    suyo = vencimientos.FirstOrDefault(v => v.Efecto?.Trim() == efecto);
+                }
+                if (suyo == null)
+                {
+                    suyo = vencimientos.FirstOrDefault(v => v.Vencimiento == impagado.FechaVto);
+                }
+                if (suyo == null && vencimientos.Count == 1)
+                {
+                    suyo = vencimientos[0];
+                }
+                if (suyo == null)
+                {
+                    continue;
+                }
+                if (!impagadosPorVencimiento.TryGetValue(suyo, out List<ImpagadoPendiente> lista))
+                {
+                    lista = new List<ImpagadoPendiente>();
+                    impagadosPorVencimiento[suyo] = lista;
+                }
+                lista.Add(impagado);
+            }
+
+            foreach (var par in impagadosPorVencimiento)
+            {
+                VencimientoFactura vencimiento = par.Key;
+                decimal importePrincipal = par.Value.Where(i => !i.EsGastos).Sum(i => i.ImportePendiente);
+                decimal importeGastos = par.Value.Where(i => i.EsGastos).Sum(i => i.ImportePendiente);
+                if (importePrincipal == 0 && importeGastos == 0)
                 {
                     continue;
                 }
 
-                var impagadosDelVencimiento = impagadosPorFecha[vencimiento.Vencimiento];
-
-                decimal importePrincipal = impagadosDelVencimiento
-                    .Where(i => !i.EsGastos)
-                    .Sum(i => i.ImportePendiente);
-                decimal importeGastos = impagadosDelVencimiento
-                    .Where(i => i.EsGastos)
-                    .Sum(i => i.ImportePendiente);
-
-                if (importePrincipal != 0 || importeGastos != 0)
+                vencimiento.EsImpagado = true;
+                vencimiento.GastosImpagado = importeGastos;
+                if (importePrincipal == vencimiento.Importe)
                 {
-                    vencimiento.EsImpagado = true;
-                    vencimiento.GastosImpagado = importeGastos;
+                    // Impagado entero: como siempre, el importe pasa a llevar los gastos
                     vencimiento.Importe = importePrincipal + importeGastos;
+                    vencimiento.ImportePendiente = importePrincipal + importeGastos;
+                }
+                else
+                {
+                    // Compensado en parte (con un abono, por ejemplo): el vencimiento conserva su
+                    // importe y lo pendiente es lo que queda del impagado (Carlos, 30/09/26)
                     vencimiento.ImportePendiente = importePrincipal + importeGastos;
                 }
             }

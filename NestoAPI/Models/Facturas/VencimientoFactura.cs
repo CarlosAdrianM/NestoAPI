@@ -5,6 +5,8 @@ namespace NestoAPI.Models.Facturas
     public class VencimientoFactura
     {
         public string CCC { get; set; }
+        /// <summary>El número de efecto del extracto (para casar los impagados, NestoAPI#572).</summary>
+        public string Efecto { get; set; }
         public string FormaPago { get; set; }
         public DateTime Vencimiento { get; set; }
         public decimal Importe { get; set; }
@@ -38,6 +40,12 @@ namespace NestoAPI.Models.Facturas
 
                 if (EsImpagado)
                 {
+                    // NestoAPI#572: impagado compensado en parte (con un abono, por ejemplo). El
+                    // importe del vencimiento no cambia y se dice cuánto queda.
+                    if (ImportePendiente != Importe)
+                    {
+                        return string.Format("Impagado, pendientes {0:C2}", ImportePendiente);
+                    }
                     return GastosImpagado > 0
                         ? string.Format("Impagado ({0:C2} + {1:C2} gastos)", Importe - GastosImpagado, GastosImpagado)
                         : "Impagado";

@@ -1499,6 +1499,70 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(223.41M, vencimientos[3].Importe);
         }
 
+        // NestoAPI#572 (Magan, 30/09/26): factura NV2615330, cliente 32667. El recibo del 18/09 se
+        // devolvió y el impagado se apuntó con vencimiento 22/09 (el del cargo de la remesa); además
+        // está compensado en parte con un abono (quedan 16,00 € de 30,19 €). La factura decía «Pagado».
+
+        [TestMethod]
+        public void AplicarImpagados_ElImpagadoTieneOtraFechaQueElEfecto_SeCasaPorElNumeroDeEfecto()
+        {
+            var vencimientos = new List<VencimientoFactura>
+            {
+                new VencimientoFactura { Efecto = "1  ", Importe = 30.19M, ImportePendiente = 0, Vencimiento = new DateTime(2026, 9, 18), FormaPago = "RCB" }
+            };
+            var impagados = new List<ImpagadoPendiente>
+            {
+                new ImpagadoPendiente { Efecto = "1", FechaVto = new DateTime(2026, 9, 22), ImportePendiente = 16.00M, EsGastos = false }
+            };
+
+            GestorFacturas.AplicarImpagados(vencimientos, impagados);
+
+            Assert.IsTrue(vencimientos[0].EsImpagado);
+            Assert.AreEqual(30.19M, vencimientos[0].Importe, "El importe del vencimiento no cambia");
+            Assert.AreEqual(16.00M, vencimientos[0].ImportePendiente);
+            Assert.AreEqual(string.Format("Impagado, pendientes {0:C2}", 16.00M), vencimientos[0].TextoPagado);
+        }
+
+        [TestMethod]
+        public void AplicarImpagados_VariosEfectosYFechasQueNoCoinciden_CadaImpagadoVaASuEfecto()
+        {
+            var vencimientos = new List<VencimientoFactura>
+            {
+                new VencimientoFactura { Efecto = "1", Importe = 100M, ImportePendiente = 0, Vencimiento = new DateTime(2026, 9, 18) },
+                new VencimientoFactura { Efecto = "2", Importe = 100M, ImportePendiente = 0, Vencimiento = new DateTime(2026, 10, 18) }
+            };
+            var impagados = new List<ImpagadoPendiente>
+            {
+                new ImpagadoPendiente { Efecto = "2", FechaVto = new DateTime(2026, 10, 22), ImportePendiente = 100M, EsGastos = false },
+                new ImpagadoPendiente { Efecto = "2", FechaVto = new DateTime(2026, 10, 22), ImportePendiente = 3M, EsGastos = true }
+            };
+
+            GestorFacturas.AplicarImpagados(vencimientos, impagados);
+
+            Assert.IsFalse(vencimientos[0].EsImpagado);
+            Assert.IsTrue(vencimientos[1].EsImpagado);
+            Assert.AreEqual(103M, vencimientos[1].Importe, "Impagado entero: como siempre, con los gastos");
+            Assert.AreEqual(3M, vencimientos[1].GastosImpagado);
+        }
+
+        [TestMethod]
+        public void AplicarImpagados_SinEfectoNiFechaQueCoincida_PeroUnSoloVencimiento_EsSuyo()
+        {
+            var vencimientos = new List<VencimientoFactura>
+            {
+                new VencimientoFactura { Importe = 50M, ImportePendiente = 0, Vencimiento = new DateTime(2026, 9, 18) }
+            };
+            var impagados = new List<ImpagadoPendiente>
+            {
+                new ImpagadoPendiente { FechaVto = new DateTime(2026, 9, 25), ImportePendiente = 50M, EsGastos = false }
+            };
+
+            GestorFacturas.AplicarImpagados(vencimientos, impagados);
+
+            Assert.IsTrue(vencimientos[0].EsImpagado);
+            Assert.AreEqual("Impagado", vencimientos[0].TextoPagado);
+        }
+
         #endregion
 
         #region Tests de TextoPagado con impagados

@@ -160,6 +160,7 @@ namespace NestoAPI.Infraestructure.Facturas
                 .Select(e => new ImpagadoPendiente
                 {
                     FechaVto = e.FechaVto ?? e.Fecha,
+                    Efecto = e.Efecto,
                     ImportePendiente = e.ImportePdte,
                     EsGastos = e.Concepto.Contains("Gastos")
                 })
@@ -211,6 +212,7 @@ namespace NestoAPI.Infraestructure.Facturas
                 VencimientoFactura vencimiento = new VencimientoFactura
                 {
                     CCC = vto.CCC,
+                    Efecto = vto.Efecto,
                     FormaPago = vto.FormaPago,
                     Importe = vto.Importe,
                     ImportePendiente = vto.ImportePdte,
