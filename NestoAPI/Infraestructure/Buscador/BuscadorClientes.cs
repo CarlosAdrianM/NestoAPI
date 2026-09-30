@@ -92,13 +92,51 @@ namespace NestoAPI.Infraestructure.Buscador
         /// <summary>A partir de aquí el puesto ya no suma. Hoy compran unos 3.500 clientes al año.</summary>
         private const double PUESTO_HORIZONTE = 5000;
 
+        /// <summary>
+        /// NestoAPI#566: cuándo se empezó a leer los clientes para construir el índice. Viaja en
+        /// el propio índice (datos del commit), así que no puede descuadrarse con él.
+        /// </summary>
+        internal const string DATO_FECHA_CONSTRUCCION = "FechaConstruccion";
+
         public static void IndexarTodo()
         {
-            Indexar(RutaIndice, ObtenerClientes());
+            // La hora de ANTES de leer: un cliente tocado mientras se construye cuenta como posterior
+            DateTime inicio = DateTime.Now;
+            Indexar(RutaIndice, ObtenerClientes(), inicio);
+        }
+
+        /// <summary>
+        /// NestoAPI#566: desde cuándo puede haber clientes nuevos o modificados que el índice no
+        /// conoce. Null si no hay índice o es de antes de guardar este dato.
+        /// </summary>
+        public static DateTime? FechaConstruccion()
+        {
+            return FechaConstruccionDe(RutaIndice);
+        }
+
+        internal static DateTime? FechaConstruccionDe(string rutaIndice)
+        {
+            using (FSDirectory dir = FSDirectory.Open(rutaIndice))
+            {
+                if (!DirectoryReader.IndexExists(dir))
+                {
+                    return null;
+                }
+                using (DirectoryReader reader = DirectoryReader.Open(dir))
+                {
+                    IDictionary<string, string> datos = reader.IndexCommit.UserData;
+                    return datos != null
+                        && datos.TryGetValue(DATO_FECHA_CONSTRUCCION, out string valor)
+                        && DateTime.TryParse(valor, System.Globalization.CultureInfo.InvariantCulture,
+                            System.Globalization.DateTimeStyles.RoundtripKind, out DateTime fecha)
+                        ? fecha
+                        : (DateTime?)null;
+                }
+            }
         }
 
         // Internal para tests: indexa en una carpeta temporal con datos ya leídos, sin tocar la BD.
-        internal static void Indexar(string rutaIndice, List<ClienteIndexable> clientes)
+        internal static void Indexar(string rutaIndice, List<ClienteIndexable> clientes, DateTime? fechaConstruccion = null)
         {
             IndexWriterConfig config = new IndexWriterConfig(AppLuceneVersion, CrearAnalizadorDeIndexado());
 
@@ -130,6 +168,10 @@ namespace NestoAPI.Infraestructure.Buscador
                     writer.AddDocument(doc);
                 }
 
+                writer.SetCommitData(new Dictionary<string, string>
+                {
+                    { DATO_FECHA_CONSTRUCCION, (fechaConstruccion ?? DateTime.Now).ToString("o") }
+                });
                 writer.Commit();
             }
         }

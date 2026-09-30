@@ -201,4 +201,107 @@ namespace NestoAPI.Tests.Infrastructure
                 "cualquier cosa que no sea true deja la búsqueda de siempre");
         }
     }
+
+    /// <summary>
+    /// NestoAPI#566 (Lidia, 29/09/26): un cliente recién creado no salía hasta el día siguiente,
+    /// ni buscando su número, porque el índice se reconstruye por las noches y, si devolvía
+    /// cualquier otro cliente, ya no se miraba la base de datos.
+    /// </summary>
+    [TestClass]
+    public class BuscadorClientesRecienCreadosTests
+    {
+        private static NestoAPI.Models.ClienteDTO Dto(string cliente, string contacto = "0")
+        {
+            return new NestoAPI.Models.ClienteDTO { cliente = cliente, contacto = contacto };
+        }
+
+        private static List<string> Numeros(IEnumerable<NestoAPI.Models.ClienteDTO> clientes)
+        {
+            return clientes.Select(c => c.cliente + "/" + c.contacto).ToList();
+        }
+
+        [TestMethod]
+        public void Mezclar_ClienteNuevoQueElIndiceNoConoce_SaleDelanteDeLosDelIndice()
+        {
+            // El apellido lo comparten otros clientes ya indexados: el índice devuelve a esos
+            var delIndice = new List<NestoAPI.Models.ClienteDTO> { Dto("100"), Dto("200") };
+            var tocados = new List<NestoAPI.Models.ClienteDTO> { Dto("45001") };
+
+            var resultado = NestoAPI.Controllers.ClientesController
+                .MezclarConLosQueNoConoceElIndice(delIndice, tocados, "GARCIA");
+
+            CollectionAssert.AreEqual(new[] { "45001/0", "100/0", "200/0" }, Numeros(resultado));
+        }
+
+        [TestMethod]
+        public void Mezclar_NumeroExactoDeUnClienteNuevo_VaElPrimero()
+        {
+            // «45001» aparece en la dirección o el CP de otros clientes indexados
+            var delIndice = new List<NestoAPI.Models.ClienteDTO> { Dto("100"), Dto("200") };
+            var tocados = new List<NestoAPI.Models.ClienteDTO> { Dto("777"), Dto("45001") };
+
+            var resultado = NestoAPI.Controllers.ClientesController
+                .MezclarConLosQueNoConoceElIndice(delIndice, tocados, "45001");
+
+            Assert.AreEqual("45001/0", Numeros(resultado).First());
+            Assert.AreEqual(4, resultado.Count);
+        }
+
+        [TestMethod]
+        public void Mezclar_ClienteModificadoHoyQueYaDevuelveElIndice_NoSeRepiteNiCambiaDeSitio()
+        {
+            var delIndice = new List<NestoAPI.Models.ClienteDTO> { Dto("100"), Dto("200"), Dto("300") };
+            var tocados = new List<NestoAPI.Models.ClienteDTO> { Dto("300") };
+
+            var resultado = NestoAPI.Controllers.ClientesController
+                .MezclarConLosQueNoConoceElIndice(delIndice, tocados, "GARCIA");
+
+            CollectionAssert.AreEqual(new[] { "100/0", "200/0", "300/0" }, Numeros(resultado));
+        }
+
+        [TestMethod]
+        public void Mezclar_NumeroExactoDelIndiceConOtrosContactos_SiguenTodosDelante()
+        {
+            var delIndice = new List<NestoAPI.Models.ClienteDTO> { Dto("100"), Dto("15191", "0"), Dto("15191", "1") };
+
+            var resultado = NestoAPI.Controllers.ClientesController
+                .MezclarConLosQueNoConoceElIndice(delIndice, null, "15191");
+
+            CollectionAssert.AreEqual(new[] { "15191/0", "15191/1", "100/0" }, Numeros(resultado));
+        }
+
+        [TestMethod]
+        public void FechaConstruccion_ViajaEnElIndice()
+        {
+            string indice = Path.Combine(Path.GetTempPath(), "nesto_test_clientes_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                DateTime inicio = new DateTime(2026, 9, 30, 2, 30, 0);
+                BuscadorClientes.Indexar(indice, new List<ClienteIndexable>
+                {
+                    new ClienteIndexable { Empresa = "1", Cliente = "100", Contacto = "0", Nombre = "UNO" }
+                }, inicio);
+
+                Assert.AreEqual(inicio, BuscadorClientes.FechaConstruccionDe(indice));
+            }
+            finally
+            {
+                try { Directory.Delete(indice, true); } catch (IOException) { }
+            }
+        }
+
+        [TestMethod]
+        public void FechaConstruccion_SinIndice_EsNull()
+        {
+            string indice = Path.Combine(Path.GetTempPath(), "nesto_test_clientes_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                Assert.IsNull(BuscadorClientes.FechaConstruccionDe(indice));
+            }
+            finally
+            {
+                try { Directory.Delete(indice, true); } catch (IOException) { }
+            }
+        }
+    }
 }

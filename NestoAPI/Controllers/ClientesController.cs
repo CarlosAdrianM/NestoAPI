@@ -325,20 +325,15 @@ namespace NestoAPI.Controllers
             List<ClienteDTO> porIndice = BuscarPorIndice(empresa, filtro);
             if (porIndice != null)
             {
-                return porIndice.AsQueryable();
+                // NestoAPI#566: el índice se reconstruye por las noches, así que un cliente creado
+                // (o recuperado, o al que le han cambiado el nombre) hoy no está en él. Antes, si el
+                // índice devolvía CUALQUIER otra cosa, el nuevo no salía ni buscando su número.
+                return MezclarConLosQueNoConoceElIndice(porIndice, BuscarTocadosDesdeElIndice(empresa, filtro), filtro)
+                    .AsQueryable();
             }
 
             List<ClienteDTO> clientes = db.Clientes
-                .Where(c => c.Empresa == empresa && c.Estado >= 0 &&
-                (
-                    c.Nº_Cliente.Equals(filtro) ||
-                    c.Nombre.Contains(filtro) ||
-                    c.Dirección.Contains(filtro) ||
-                    c.Teléfono.Contains(filtro) ||
-                    c.CIF_NIF.Contains(filtro) ||
-                    c.Población.Contains(filtro) ||
-                    c.Comentarios.Contains(filtro)
-                ))
+                .Where(FiltroDeSiempre(empresa, filtro))
                 .Select(PROYECCION_CLIENTE)
                 .OrderByDescending(o => o.cliente.Equals(filtro))
                 .ToList();
@@ -356,6 +351,80 @@ namespace NestoAPI.Controllers
             }
 
             return clientes.AsQueryable();
+        }
+
+        /// <summary>La búsqueda de siempre, campo a campo, sobre los clientes en activo.</summary>
+        private static Expression<Func<Cliente, bool>> FiltroDeSiempre(string empresa, string filtro)
+        {
+            return c => c.Empresa == empresa && c.Estado >= 0 &&
+                (
+                    c.Nº_Cliente.Equals(filtro) ||
+                    c.Nombre.Contains(filtro) ||
+                    c.Dirección.Contains(filtro) ||
+                    c.Teléfono.Contains(filtro) ||
+                    c.CIF_NIF.Contains(filtro) ||
+                    c.Población.Contains(filtro) ||
+                    c.Comentarios.Contains(filtro)
+                );
+        }
+
+        /// <summary>Holgura por si el reloj del servidor de la API y el de la base de datos no van a la par.</summary>
+        private const int MINUTOS_HOLGURA_INDICE = 10;
+
+        /// <summary>
+        /// NestoAPI#566: lo que el índice puede no conocer y coincide con la búsqueda de siempre:
+        /// los clientes dados de alta desde que se construyó y, siempre, el del número exacto.
+        ///
+        /// <para>«Fecha Modificación» es en la práctica la fecha de ALTA: las modificaciones no la
+        /// tocan (30/09/26: la ficha 3072, recuperada de baja el día antes, seguía con fecha de
+        /// 2002). Por eso una ficha recuperada o renombrada hoy solo está garantizada por su número;
+        /// por nombre sale mañana, con el índice nuevo.</para>
+        ///
+        /// <para>Mira la base de datos y no quién dio el alta, así que vale para cualquier origen
+        /// (Nesto, la app, Nesto viejo). Si falla, lista vacía: la búsqueda por índice no se
+        /// pierde por esto.</para>
+        /// </summary>
+        private List<ClienteDTO> BuscarTocadosDesdeElIndice(string empresa, string filtro)
+        {
+            try
+            {
+                // Un índice de antes de guardar su fecha: se construye cada noche, con ayer sobra
+                DateTime desde = (BuscadorClientes.FechaConstruccion() ?? DateTime.Today.AddDays(-1))
+                    .AddMinutes(-MINUTOS_HOLGURA_INDICE);
+                return db.Clientes
+                    .Where(FiltroDeSiempre(empresa, filtro))
+                    .Where(c => c.Fecha_Modificación >= desde || c.Nº_Cliente == filtro)
+                    .Select(PROYECCION_CLIENTE)
+                    .ToList();
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception(
+                    $"[Buscador] No se han podido buscar los clientes posteriores al índice para '{filtro}': {ex.Message}", ex));
+                return new List<ClienteDTO>();
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#566: a lo que encuentra el índice se le añaden, delante, los clientes tocados
+        /// después de construirlo que el índice no ha devuelto. El número de cliente exacto va
+        /// siempre el primero, venga de donde venga; el resto del índice conserva su orden.
+        /// </summary>
+        internal static List<ClienteDTO> MezclarConLosQueNoConoceElIndice(
+            List<ClienteDTO> delIndice, List<ClienteDTO> tocadosDespues, string filtro)
+        {
+            string Clave(ClienteDTO c) => $"{c.cliente?.Trim()}|{c.contacto?.Trim()}";
+
+            delIndice = delIndice ?? new List<ClienteDTO>();
+            var yaEstan = new HashSet<string>(delIndice.Select(Clave));
+            List<ClienteDTO> nuevos = (tocadosDespues ?? new List<ClienteDTO>())
+                .Where(c => yaEstan.Add(Clave(c)))
+                .ToList();
+
+            // OrderBy es estable: dentro de cada grupo se respeta el orden de llegada
+            return nuevos.Concat(delIndice)
+                .OrderByDescending(c => c.cliente?.Trim() == filtro?.Trim())
+                .ToList();
         }
 
         /// <summary>
