@@ -174,6 +174,68 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual(0m, resultado.Content);
         }
 
+        // ----- SaldoAFavor (Nesto#505: avisar de lo que el cliente tiene a su favor antes de cobrarle) -----
+
+        private static ExtractoCliente APendiente(ExtractoCliente extracto, decimal importePendiente, string concepto = "", string estado = "")
+        {
+            extracto.ImportePdte = importePendiente;
+            extracto.Concepto = concepto;
+            extracto.Estado = estado;
+            return extracto;
+        }
+
+        [TestMethod]
+        public void GetSaldoAFavor_SumaEnPositivoLoPendienteNegativoDeLasEmpresas1Y3()
+        {
+            var entregaACuenta = APendiente(Crear("1", "15191", "3", new DateTime(2026, 9, 12)), -30m, "Entrega a cuenta ");
+            var abono = APendiente(Crear("3", "15191", "1", new DateTime(2026, 8, 1)), -12.50m, "Abono");
+            abono.Contacto = "2  ";
+            var deuda = APendiente(Crear("1", "15191", "1", new DateTime(2026, 9, 20)), 80m);
+            var saldado = APendiente(Crear("1", "15191", "3", new DateTime(2026, 7, 1)), 0m);
+            var otraEmpresa = APendiente(Crear("5", "15191", "3", new DateTime(2026, 9, 1)), -999m);
+            var otroCliente = APendiente(Crear("1", "11111", "3", new DateTime(2026, 9, 1)), -999m);
+            var retenido = APendiente(Crear("1", "15191", "3", new DateTime(2026, 9, 1)), -999m, estado: "RTN");
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente>
+            {
+                entregaACuenta, abono, deuda, saldado, otraEmpresa, otroCliente, retenido
+            }.AsQueryable());
+
+            var resultado = controller.GetSaldoAFavor("15191")
+                as System.Web.Http.Results.OkNegotiatedContentResult<SaldoAFavorClienteDTO>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(42.50m, resultado.Content.Total, "30 + 12,50: la deuda no resta (eso es otra cosa) y lo retenido no cuenta");
+            Assert.AreEqual(80m, resultado.Content.PendienteDePago, "Lo que debe va aparte, para que se vea si lo «a favor» es un cobro sin casar");
+            Assert.AreEqual(2, resultado.Content.Movimientos.Count);
+            MovimientoAFavorDTO primero = resultado.Content.Movimientos[0];
+            Assert.AreEqual(new DateTime(2026, 8, 1), primero.Fecha, "Del más antiguo al más reciente");
+            Assert.AreEqual(12.50m, primero.Importe);
+            Assert.AreEqual("2", primero.Contacto);
+            Assert.AreEqual("3", primero.Empresa);
+            Assert.AreEqual("Entrega a cuenta", resultado.Content.Movimientos[1].Concepto);
+        }
+
+        [TestMethod]
+        public void GetSaldoAFavor_SinNadaAFavor_CeroYListaVacia()
+        {
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente>
+            {
+                APendiente(Crear("1", "15191", "1", new DateTime(2026, 9, 20)), 80m)
+            }.AsQueryable());
+
+            var resultado = controller.GetSaldoAFavor("15191")
+                as System.Web.Http.Results.OkNegotiatedContentResult<SaldoAFavorClienteDTO>;
+
+            Assert.AreEqual(0m, resultado.Content.Total);
+            Assert.AreEqual(0, resultado.Content.Movimientos.Count);
+        }
+
+        [TestMethod]
+        public void GetSaldoAFavor_SinCliente_BadRequest()
+        {
+            Assert.IsInstanceOfType(controller.GetSaldoAFavor(" "), typeof(System.Web.Http.Results.BadRequestErrorMessageResult));
+        }
+
         // ----- PutExtractoCliente (#297: CK_ExtractoCliente = un impagado no puede tener CCC) -----
 
         [TestMethod]

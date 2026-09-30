@@ -171,6 +171,37 @@ namespace NestoAPI.Models
         public bool tieneFacturacionElectronica { get; set; }
         public string nif { get; set; }
     }
+    /// <summary>
+    /// Nesto#505: lo que el cliente tiene a su favor en el extracto (apuntes con importe pendiente
+    /// negativo). Es para INFORMAR a quien va a cobrar: puede ser una entrega a cuenta de otro
+    /// pedido o una reserva para un evento, así que nunca se descuenta solo.
+    /// </summary>
+    public class SaldoAFavorClienteDTO
+    {
+        /// <summary>La suma de lo que hay a favor, en positivo. Cero si no hay nada.</summary>
+        public decimal Total { get; set; }
+        /// <summary>
+        /// Lo que el cliente tiene pendiente de pago en esas mismas empresas. Si no es cero, parte de
+        /// lo que hay «a favor» puede ser un cobro todavía sin casar con su factura.
+        /// </summary>
+        public decimal PendienteDePago { get; set; }
+        public List<MovimientoAFavorDTO> Movimientos { get; set; } = new List<MovimientoAFavorDTO>();
+    }
+
+    public class MovimientoAFavorDTO
+    {
+        /// <summary>ExtractoCliente.[Nº Orden].</summary>
+        public int Id { get; set; }
+        public string Empresa { get; set; }
+        public string Contacto { get; set; }
+        public DateTime Fecha { get; set; }
+        public string Documento { get; set; }
+        public string Concepto { get; set; }
+        public string FormaPago { get; set; }
+        /// <summary>Lo que queda a favor del cliente en este apunte, en positivo.</summary>
+        public decimal Importe { get; set; }
+    }
+
     public class ExtractoClienteDTO
     {
         public int id { get; set; }

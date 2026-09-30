@@ -104,6 +104,55 @@ namespace NestoAPI.Controllers
             return Ok(deuda);
         }
 
+        // GET api/ExtractosCliente/SaldoAFavor?cliente=15191
+        /// <summary>
+        /// Nesto#505 (sugerencia de Paloma, 30/09/26): lo que el cliente tiene a su favor (apuntes con
+        /// importe pendiente negativo, empresas 1 y 3, todos sus contactos), para avisar a quien va a
+        /// mandarle un cobro. Solo informa: el porqué de cada apunte lo mira el usuario en el extracto
+        /// y decide si lo descuenta. Los apuntes retenidos o en deuda vencida no cuentan.
+        /// </summary>
+        [HttpGet]
+        [Authorize]
+        [Route("api/ExtractosCliente/SaldoAFavor")]
+        [ResponseType(typeof(SaldoAFavorClienteDTO))]
+        public IHttpActionResult GetSaldoAFavor(string cliente)
+        {
+            if (string.IsNullOrWhiteSpace(cliente))
+            {
+                return BadRequest("Falta el cliente.");
+            }
+            List<MovimientoAFavorDTO> movimientos = db.ExtractosCliente
+                .Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO)
+                    && e.Número == cliente && e.ImportePdte < 0
+                    && (e.Estado == null || (e.Estado != Constantes.ExtractosCliente.Estados.DEUDA_VENCIDA
+                        && e.Estado != Constantes.ExtractosCliente.Estados.RETENIDO)))
+                .OrderBy(e => e.Fecha).ThenBy(e => e.Nº_Orden)
+                .Select(e => new MovimientoAFavorDTO
+                {
+                    Id = e.Nº_Orden,
+                    Empresa = e.Empresa.Trim(),
+                    Contacto = e.Contacto.Trim(),
+                    Fecha = e.Fecha,
+                    Documento = e.Nº_Documento.Trim(),
+                    Concepto = e.Concepto.Trim(),
+                    FormaPago = e.FormaPago.Trim(),
+                    Importe = -e.ImportePdte
+                })
+                .ToList();
+            decimal pendienteDePago = movimientos.Count == 0 ? 0 : db.ExtractosCliente
+                .Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO)
+                    && e.Número == cliente && e.ImportePdte > 0)
+                .Select(e => (decimal?)e.ImportePdte)
+                .DefaultIfEmpty(0)
+                .Sum() ?? 0;
+            return Ok(new SaldoAFavorClienteDTO
+            {
+                Total = movimientos.Sum(m => m.Importe),
+                PendienteDePago = pendienteDePago,
+                Movimientos = movimientos
+            });
+        }
+
         // GET: api/ExtractosCliente
         public IQueryable<ExtractoClienteDTO> GetExtractosCliente(string cliente)
         {
