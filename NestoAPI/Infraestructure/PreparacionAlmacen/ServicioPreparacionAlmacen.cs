@@ -33,6 +33,11 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public Guid IdCliente { get; set; }
         public string Empresa { get; set; }
         public int Pedido { get; set; }
+        /// <summary>
+        /// Otros pedidos del mismo cliente que van en la misma caja (dos pedidos para tener dos
+        /// facturas, pero un solo bulto). La foto se sube una vez y cada pedido tiene su fila.
+        /// </summary>
+        public List<int> OtrosPedidos { get; set; }
         public int Picking { get; set; }
         public int Bulto { get; set; }
         public byte[] Imagen { get; set; }
@@ -240,42 +245,85 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 throw new NestoBusinessException(motivo);
             }
 
+            List<int> otrosPedidos = (foto.OtrosPedidos ?? new List<int>())
+                .Where(p => p > 0 && p != foto.Pedido).Distinct().ToList();
+            string hash = HashSha256(foto.Imagen);
+            string usuarioAuditoria = UsuarioAuditoriaHelper.ParaAuditoria(usuario);
+
             // Reenvío de la cola del móvil: la foto ya está guardada, no se sube otra vez
-            BultoAlmacenDTO yaGuardado = await repositorio.LeerBultoPorIdCliente(foto.IdCliente).ConfigureAwait(false);
-            if (yaGuardado != null)
+            BultoAlmacenDTO principal = await repositorio.LeerBultoPorIdCliente(foto.IdCliente).ConfigureAwait(false);
+            if (principal == null)
             {
-                return yaGuardado;
-            }
-
-            if (!await repositorio.ExistePedidoEnPicking(foto.Empresa, foto.Pedido, foto.Picking).ConfigureAwait(false))
-            {
-                throw new NestoBusinessException($"El pedido {foto.Pedido} no está en el picking {foto.Picking}.");
-            }
-            if (!fotos.Configurado)
-            {
-                throw new NestoBusinessException("El almacenamiento de las fotos de los bultos no está configurado.")
+                // Todos los pedidos de la caja se comprueban ANTES de subir nada
+                foreach (int pedido in new[] { foto.Pedido }.Concat(otrosPedidos))
                 {
-                    StatusCode = System.Net.HttpStatusCode.ServiceUnavailable
-                };
+                    if (!await repositorio.ExistePedidoEnPicking(foto.Empresa, pedido, foto.Picking).ConfigureAwait(false))
+                    {
+                        throw new NestoBusinessException($"El pedido {pedido} no está en el picking {foto.Picking}.");
+                    }
+                }
+                if (!fotos.Configurado)
+                {
+                    throw new NestoBusinessException("El almacenamiento de las fotos de los bultos no está configurado.")
+                    {
+                        StatusCode = System.Net.HttpStatusCode.ServiceUnavailable
+                    };
+                }
+
+                DateTime fechaFoto = foto.FechaFoto ?? DateTime.Now;
+                string ruta = RutaDeLaFoto(foto.Empresa, foto.Pedido, foto.Picking, foto.Bulto, fechaFoto);
+
+                // Primero la foto y después la fila: una fila sin foto diría que hay evidencia que no existe
+                await fotos.Subir(ruta, foto.Imagen, "image/jpeg").ConfigureAwait(false);
+
+                principal = await repositorio.GuardarBulto(new BultoAlmacenDTO
+                {
+                    IdCliente = foto.IdCliente,
+                    Empresa = foto.Empresa,
+                    Pedido = foto.Pedido,
+                    Picking = foto.Picking,
+                    Bulto = foto.Bulto,
+                    RutaBlob = ruta,
+                    Usuario = usuarioAuditoria,
+                    FechaFoto = fechaFoto
+                }, hash, foto.Imagen.Length, foto.Dispositivo).ConfigureAwait(false);
             }
 
-            DateTime fechaFoto = foto.FechaFoto ?? DateTime.Now;
-            string ruta = RutaDeLaFoto(foto.Empresa, foto.Pedido, foto.Picking, foto.Bulto, fechaFoto);
-
-            // Primero la foto y después la fila: una fila sin foto diría que hay evidencia que no existe
-            await fotos.Subir(ruta, foto.Imagen, "image/jpeg").ConfigureAwait(false);
-
-            return await repositorio.GuardarBulto(new BultoAlmacenDTO
+            // Los demás pedidos de la caja: la misma foto, cada uno con su fila. También en un reenvío,
+            // por si la primera vez se quedó a medias.
+            foreach (int pedido in otrosPedidos)
             {
-                IdCliente = foto.IdCliente,
-                Empresa = foto.Empresa,
-                Pedido = foto.Pedido,
-                Picking = foto.Picking,
-                Bulto = foto.Bulto,
-                RutaBlob = ruta,
-                Usuario = UsuarioAuditoriaHelper.ParaAuditoria(usuario),
-                FechaFoto = fechaFoto
-            }, HashSha256(foto.Imagen), foto.Imagen.Length, foto.Dispositivo).ConfigureAwait(false);
+                Guid idDerivado = IdParaOtroPedido(foto.IdCliente, pedido);
+                if (await repositorio.LeerBultoPorIdCliente(idDerivado).ConfigureAwait(false) != null)
+                {
+                    continue;
+                }
+                _ = await repositorio.GuardarBulto(new BultoAlmacenDTO
+                {
+                    IdCliente = idDerivado,
+                    Empresa = foto.Empresa,
+                    Pedido = pedido,
+                    Picking = foto.Picking,
+                    Bulto = foto.Bulto,
+                    RutaBlob = principal?.RutaBlob,
+                    Usuario = usuarioAuditoria,
+                    FechaFoto = principal?.FechaFoto
+                }, hash, foto.Imagen.Length, foto.Dispositivo).ConfigureAwait(false);
+            }
+
+            return principal;
+        }
+
+        /// <summary>
+        /// El identificador de la fila de otro pedido que comparte la caja: siempre el mismo para la
+        /// misma foto y el mismo pedido, para que un reenvío tampoco la duplique.
+        /// </summary>
+        internal static Guid IdParaOtroPedido(Guid idCliente, int pedido)
+        {
+            using (MD5 md5 = MD5.Create())
+            {
+                return new Guid(md5.ComputeHash(idCliente.ToByteArray().Concat(BitConverter.GetBytes(pedido)).ToArray()));
+            }
         }
 
         internal static string MotivoDeRechazoDeLaFoto(FotoBultoAlmacen foto)

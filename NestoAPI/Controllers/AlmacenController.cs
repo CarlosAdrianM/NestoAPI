@@ -128,17 +128,29 @@ namespace NestoAPI.Controllers
             return Ok(await servicio.GuardarEscaneos(Empresa(empresa), escaneos, Usuario()).ConfigureAwait(false));
         }
 
-        // POST api/Almacen/Bultos/Foto?idCliente=...&pedido=926940&picking=99633&bulto=1
+        // POST api/Almacen/Bultos/Foto?idCliente=...&pedido=926940&picking=99633&bulto=1&otrosPedidos=926941
         /// <summary>
         /// La foto de un bulto antes de cerrarlo. El cuerpo de la petición es la imagen (image/jpeg),
-        /// sin envoltorio. Repetir la foto de un bulto sustituye a la anterior.
+        /// sin envoltorio. Repetir la foto de un bulto sustituye a la anterior. Si en la caja van
+        /// también otros pedidos del mismo cliente, sus números van en otrosPedidos, separados por comas.
         /// </summary>
         [HttpPost]
         [Route("Bultos/Foto")]
         [ResponseType(typeof(BultoAlmacenDTO))]
         public async Task<IHttpActionResult> PostFotoBulto(Guid idCliente, int pedido, int picking, int bulto,
-            DateTime? fechaFoto = null, string dispositivo = null, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+            DateTime? fechaFoto = null, string dispositivo = null, string otrosPedidos = null,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
         {
+            var otros = new List<int>();
+            foreach (string texto in (otrosPedidos ?? string.Empty).Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (!int.TryParse(texto.Trim(), out int otroPedido))
+                {
+                    return BadRequest($"«{texto.Trim()}» no es un número de pedido.");
+                }
+                otros.Add(otroPedido);
+            }
+
             long? tamano = Request.Content?.Headers?.ContentLength;
             if (tamano > ServicioPreparacionAlmacen.TAMANO_MAXIMO_FOTO)
             {
@@ -154,6 +166,7 @@ namespace NestoAPI.Controllers
                 IdCliente = idCliente,
                 Empresa = Empresa(empresa),
                 Pedido = pedido,
+                OtrosPedidos = otros,
                 Picking = picking,
                 Bulto = bulto,
                 Imagen = imagen,

@@ -112,6 +112,29 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public async Task PostFotoBulto_OtrosPedidosDeLaCaja_LleganAlServicio()
+        {
+            controller.Request.Content = new ByteArrayContent(new byte[] { 0xFF, 0xD8, 0xFF });
+            FotoBultoAlmacen recibida = null;
+            A.CallTo(() => servicio.GuardarFotoBulto(A<FotoBultoAlmacen>._, "Andrey"))
+                .Invokes((FotoBultoAlmacen f, string u) => recibida = f)
+                .Returns(new BultoAlmacenDTO());
+
+            _ = await controller.PostFotoBulto(Guid.NewGuid(), 926940, 99633, 1, otrosPedidos: "926941, 926945");
+
+            CollectionAssert.AreEqual(new[] { 926941, 926945 }, recibida.OtrosPedidos);
+        }
+
+        [TestMethod]
+        public async Task PostFotoBulto_OtrosPedidosMalEscritos_BadRequest()
+        {
+            controller.Request.Content = new ByteArrayContent(new byte[] { 0xFF, 0xD8, 0xFF });
+
+            Assert.IsInstanceOfType(await controller.PostFotoBulto(Guid.NewGuid(), 926940, 99633, 1, otrosPedidos: "926941,abc"),
+                typeof(BadRequestErrorMessageResult));
+        }
+
+        [TestMethod]
         public async Task PostFotoBulto_FotoDesproporcionada_NoLlegaAlServicio()
         {
             controller.Request.Content = new ByteArrayContent(new byte[ServicioPreparacionAlmacen.TAMANO_MAXIMO_FOTO + 1]);

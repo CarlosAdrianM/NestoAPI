@@ -270,6 +270,62 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         }
 
         [TestMethod]
+        public async Task GuardarFotoBulto_CajaCompartidaPorDosPedidos_UnaSubidaYUnaFilaPorPedido()
+        {
+            // Dos pedidos del mismo cliente para tener dos facturas, pero un solo bulto
+            FotoBultoAlmacen foto = Foto();
+            foto.OtrosPedidos = new List<int> { 926941, PEDIDO };
+            A.CallTo(() => repositorio.ExistePedidoEnPicking(EMPRESA, 926941, PICKING)).Returns(true);
+            var guardados = new List<BultoAlmacenDTO>();
+            A.CallTo(() => repositorio.GuardarBulto(A<BultoAlmacenDTO>._, A<string>._, A<int>._, A<string>._))
+                .ReturnsLazily((BultoAlmacenDTO b, string h, int t, string d) => { guardados.Add(b); return Task.FromResult(b); });
+
+            _ = await servicio.GuardarFotoBulto(foto, "Andrey");
+
+            A.CallTo(() => fotos.Subir(A<string>._, A<byte[]>._, A<string>._)).MustHaveHappenedOnceExactly();
+            CollectionAssert.AreEqual(new[] { PEDIDO, 926941 }, guardados.Select(b => b.Pedido).ToList());
+            Assert.AreEqual(guardados[0].RutaBlob, guardados[1].RutaBlob, "La misma foto para los dos");
+            Assert.AreNotEqual(guardados[0].IdCliente, guardados[1].IdCliente);
+        }
+
+        [TestMethod]
+        public async Task GuardarFotoBulto_OtroPedidoQueNoEstaEnElPicking_NoSubeNada()
+        {
+            FotoBultoAlmacen foto = Foto();
+            foto.OtrosPedidos = new List<int> { 1 };
+
+            _ = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => servicio.GuardarFotoBulto(foto, "Andrey"));
+
+            A.CallTo(() => fotos.Subir(A<string>._, A<byte[]>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task GuardarFotoBulto_ReenvioDeUnaCajaCompartidaQueSeQuedoAMedias_CompletaLaFilaQueFaltaba()
+        {
+            FotoBultoAlmacen foto = Foto();
+            foto.OtrosPedidos = new List<int> { 926941 };
+            var principal = new BultoAlmacenDTO { Id = 7, IdCliente = foto.IdCliente, Pedido = PEDIDO, RutaBlob = "1/926940/99633/bulto-1-x.jpg" };
+            A.CallTo(() => repositorio.LeerBultoPorIdCliente(foto.IdCliente)).Returns(principal);
+
+            _ = await servicio.GuardarFotoBulto(foto, "Andrey");
+
+            A.CallTo(() => fotos.Subir(A<string>._, A<byte[]>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => repositorio.GuardarBulto(
+                A<BultoAlmacenDTO>.That.Matches(b => b.Pedido == 926941 && b.RutaBlob == principal.RutaBlob),
+                A<string>._, A<int>._, A<string>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public void IdParaOtroPedido_EsSiempreElMismoParaLaMismaFotoYElMismoPedido()
+        {
+            Guid foto = Guid.NewGuid();
+
+            Assert.AreEqual(ServicioPreparacionAlmacen.IdParaOtroPedido(foto, 926941), ServicioPreparacionAlmacen.IdParaOtroPedido(foto, 926941));
+            Assert.AreNotEqual(ServicioPreparacionAlmacen.IdParaOtroPedido(foto, 926941), ServicioPreparacionAlmacen.IdParaOtroPedido(foto, 926942));
+            Assert.AreNotEqual(foto, ServicioPreparacionAlmacen.IdParaOtroPedido(foto, 926941));
+        }
+
+        [TestMethod]
         public async Task GuardarFotoBulto_ReenvioDeLaCola_NoVuelveASubirLaFoto()
         {
             FotoBultoAlmacen foto = Foto();
