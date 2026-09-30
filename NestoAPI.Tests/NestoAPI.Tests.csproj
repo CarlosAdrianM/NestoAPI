@@ -588,6 +588,7 @@
     <Compile Include="Models\EnvioAgenciaDTOCanalesExternosTests.cs" />
     <Compile Include="Infrastructure\Verifactu\ServicioVerifactiHttpTests.cs" />
     <Compile Include="Infrastructure\Verifactu\DevolucionDeVentaSinFacturarTests.cs" />
+    <Compile Include="Infrastructure\Verifactu\DevolucionDeVentaSinFacturarIntegracionTests.cs" />
     <Compile Include="Infrastructure\Verifactu\ServicioFacturasVerifactuTests.cs" />
     <Compile Include="Models\Comisiones\CalculadorProyecciones2019Test.cs" />
     <Compile Include="Models\Comisiones\ComisionesAnualesBaseTests.cs" />

@@ -1477,7 +1477,7 @@ namespace NestoAPI.Infraestructure.Facturas
             return null;
         }
 
-        private async Task<VentaSinFacturar> VentaSinFacturarQueImpideLaDevolucion(string empresa, CabPedidoVta cabPedido)
+        internal async Task<VentaSinFacturar> VentaSinFacturarQueImpideLaDevolucion(string empresa, CabPedidoVta cabPedido)
         {
             try
             {
