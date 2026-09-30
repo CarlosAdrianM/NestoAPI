@@ -451,6 +451,39 @@ namespace NestoAPI.Tests.Controllers
             A.CallTo(() => _servicio.GuardarEnBuzonDeUsuario("NUEVAVISION\\Laura", Constantes.Aplicaciones.NESTO, A<NotificacionPushDTO>._)).MustHaveHappenedOnceExactly();
         }
 
+        // NestoAPI#568: el aviso por tandas (RDS2016 tiene dos núcleos; trece actualizaciones a la vez lo saturaron)
+
+        [TestMethod]
+        public async Task NuevaVersionNesto_SoloListar_DiceQuienTieneNestoAbiertoSinAvisarANadie()
+        {
+            _controller.User = new GenericPrincipal(new GenericIdentity("NUEVAVISION\\Carlos"), new[] { "NUEVAVISION\\Dirección" });
+            _controller.UsuariosConNestoAbierto = () => new System.Collections.Generic.List<string> { "NUEVAVISION\\Alfredo", "NUEVAVISION\\Laura" };
+
+            var resultado = await _controller.NuevaVersionNesto(new NuevaVersionNestoDTO { Version = "1.10.35.0", SoloListar = true });
+
+            Assert.IsNotInstanceOfType(resultado, typeof(StatusCodeResult));
+            A.CallTo(() => _servicio.GuardarEnBuzonDeUsuario(A<string>._, A<string>._, A<NotificacionPushDTO>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task NuevaVersionNesto_ConUnaTanda_SoloAvisaALosDeLaTandaQueSiguenConNestoAbierto()
+        {
+            _controller.User = new GenericPrincipal(new GenericIdentity("NUEVAVISION\\Carlos"), new[] { "NUEVAVISION\\Dirección" });
+            _controller.UsuariosConNestoAbierto = () => new System.Collections.Generic.List<string> { "NUEVAVISION\\Alfredo", "NUEVAVISION\\Laura", "NUEVAVISION\\Paloma" };
+
+            // Laura sin dominio y en minúsculas; Manuel ya no tiene Nesto abierto
+            _ = await _controller.NuevaVersionNesto(new NuevaVersionNestoDTO
+            {
+                Version = "1.10.35.0",
+                Usuarios = new System.Collections.Generic.List<string> { "laura", "NUEVAVISION\\Alfredo", "Manuel" }
+            });
+
+            A.CallTo(() => _servicio.GuardarEnBuzonDeUsuario("NUEVAVISION\\Alfredo", Constantes.Aplicaciones.NESTO, A<NotificacionPushDTO>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _servicio.GuardarEnBuzonDeUsuario("NUEVAVISION\\Laura", Constantes.Aplicaciones.NESTO, A<NotificacionPushDTO>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _servicio.GuardarEnBuzonDeUsuario("NUEVAVISION\\Paloma", A<string>._, A<NotificacionPushDTO>._)).MustNotHaveHappened();
+            A.CallTo(() => _servicio.GuardarEnBuzonDeUsuario(A<string>.That.Contains("Manuel"), A<string>._, A<NotificacionPushDTO>._)).MustNotHaveHappened();
+        }
+
         // 28/09/26: aviso en la campana de Nesto a usuarios concretos (p. ej. Alfredo y la nota de entrega automática)
 
         [TestMethod]

@@ -55,13 +55,36 @@ namespace NestoAPI.Controllers
                 Tipo = TIPO_NUEVA_VERSION_NESTO,
                 Datos = new Dictionary<string, string> { ["tipo"] = TIPO_NUEVA_VERSION_NESTO, ["version"] = version }
             };
-            List<string> usuarios = UsuariosConNestoAbierto() ?? new List<string>();
+            List<string> conectados = UsuariosConNestoAbierto() ?? new List<string>();
+            // NestoAPI#568: RDS2016 tiene dos núcleos y trece actualizaciones a la vez lo saturan. El
+            // script pide primero la lista (SoloListar) y luego avisa por tandas mandando Usuarios.
+            if (dto.SoloListar)
+            {
+                return Ok(new { Version = version, Avisados = 0, Usuarios = conectados });
+            }
+            List<string> usuarios = UsuariosDeLaTanda(conectados, dto.Usuarios);
             foreach (string usuario in usuarios)
             {
                 // El buzón ya avisa por SignalR al guardar: la campana se enciende al momento
                 await _servicio.GuardarEnBuzonDeUsuario(usuario, Aplicaciones.NESTO, notificacion).ConfigureAwait(false);
             }
             return Ok(new { Version = version, Avisados = usuarios.Count, Usuarios = usuarios });
+        }
+
+        /// <summary>
+        /// A quién se avisa en esta llamada: a todos los que tienen Nesto abierto, o solo a los de la
+        /// tanda pedida que lo sigan teniendo abierto (con o sin el dominio delante, sin mirar mayúsculas).
+        /// </summary>
+        internal static List<string> UsuariosDeLaTanda(List<string> conectados, List<string> pedidos)
+        {
+            if (pedidos == null || !pedidos.Any(p => !string.IsNullOrWhiteSpace(p)))
+            {
+                return conectados;
+            }
+            string SinDominio(string usuario) => usuario.Trim().Substring(usuario.Trim().LastIndexOf('\\') + 1);
+            var tanda = new HashSet<string>(
+                pedidos.Where(p => !string.IsNullOrWhiteSpace(p)).Select(SinDominio), StringComparer.OrdinalIgnoreCase);
+            return conectados.Where(c => !string.IsNullOrWhiteSpace(c) && tanda.Contains(SinDominio(c))).ToList();
         }
 
         internal const string TIPO_AVISO_NESTO = "AvisoNesto";

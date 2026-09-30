@@ -24,5 +24,12 @@ namespace NestoAPI.Models
         public string Version { get; set; }
         /// <summary>Opcional: otro texto en vez del de siempre («cerrad Nesto y volved a abrirlo…»).</summary>
         public string Texto { get; set; }
+        /// <summary>
+        /// NestoAPI#568: avisar solo a estos (de los que tienen Nesto abierto), para repartir el aviso
+        /// por tandas. Vacío o null = a todos los que lo tienen abierto, como siempre.
+        /// </summary>
+        public System.Collections.Generic.List<string> Usuarios { get; set; }
+        /// <summary>NestoAPI#568: no avisa a nadie; solo devuelve quién tiene Nesto abierto.</summary>
+        public bool SoloListar { get; set; }
     }
 }
