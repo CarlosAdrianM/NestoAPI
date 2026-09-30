@@ -93,9 +93,11 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
 
                 List<FilaPendienteDeUbicar> pendiente = await repositorio.LeerPendienteDeUbicar(EMPRESA, "ALG");
                 List<FilaUbicacionProducto> huecos = await repositorio.LeerHuecosDeLoPendiente(EMPRESA, "ALG");
+                List<FilaUbicacionProducto> ultimos = await repositorio.LeerUltimoHuecoDeLoPendiente(EMPRESA, "ALG");
+                Assert.IsTrue(ultimos.All(u => u.Cantidad == 0 && !string.IsNullOrWhiteSpace(u.Pasillo)));
                 List<ProductoPendienteDeUbicarDTO> productos = ServicioUbicacionesAlmacen.MontarPendiente(pendiente, huecos);
 
-                // En Algete siempre hay mercancía recibida por colocar
+                // En Algete siempre hay mercancía recibida por ubicar
                 Assert.IsTrue(productos.Count > 0);
                 Assert.IsTrue(productos.All(p => p.Cantidad > 0));
                 Assert.IsTrue(huecos.All(h => h.Estado == 0));

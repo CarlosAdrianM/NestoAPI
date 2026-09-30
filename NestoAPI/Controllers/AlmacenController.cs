@@ -228,8 +228,8 @@ namespace NestoAPI.Controllers
 
         // GET api/Almacen/PendienteDeUbicar?almacen=ALG&empresa=1
         /// <summary>
-        /// Lo recibido que todavía no tiene hueco, con la sugerencia de dónde colocarlo (donde ya hay
-        /// de ese producto), ordenado para colocar andando lo menos posible.
+        /// Lo recibido que todavía no tiene hueco, con la sugerencia de dónde ubicarlo (donde ya hay
+        /// de ese producto), ordenado para ubicar andando lo menos posible.
         /// </summary>
         [HttpGet]
         [Route("PendienteDeUbicar")]
@@ -242,7 +242,7 @@ namespace NestoAPI.Controllers
 
         // POST api/Almacen/Ubicar?empresa=1   { Producto, Almacen, Pasillo, Fila, Columna, Cantidad, AlbaranCompra? ... }
         /// <summary>
-        /// Coloca en un hueco unidades recibidas que están pendientes de ubicar (lo que hoy se hace con
+        /// Ubica en un hueco unidades recibidas que están pendientes de ubicar (lo que hoy se hace con
         /// Ariadna Vieja; usa el mismo prdUbicar). Devuelve cómo queda el producto.
         /// </summary>
         [HttpPost]

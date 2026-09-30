@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 
 namespace NestoAPI.Infraestructure.PreparacionAlmacen
 {
-    /// <summary>Unidades pendientes de colocar de un producto, por su origen.</summary>
+    /// <summary>Unidades pendientes de ubicar de un producto, por su origen.</summary>
     public class FilaPendienteDeUbicar
     {
         public string Producto { get; set; }
@@ -19,6 +19,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public int? PedidoCompra { get; set; }
         public int? AlbaranCompra { get; set; }
         public int? TraspasoReposicion { get; set; }
+        public int? PedidoVenta { get; set; }
+        public int? Traspaso { get; set; }
         public int Cantidad { get; set; }
         public DateTime? DesdeCuando { get; set; }
     }
@@ -44,13 +46,18 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     public interface IRepositorioUbicacionesAlmacen
     {
         Task<List<FilaPendienteDeUbicar>> LeerPendienteDeUbicar(string empresa, string almacen);
-        /// <summary>Los huecos (estado 0) de los productos que tienen algo pendiente de colocar en ese almacén.</summary>
+        /// <summary>Los huecos (estado 0) de los productos que tienen algo pendiente de ubicar en ese almacén.</summary>
         Task<List<FilaUbicacionProducto>> LeerHuecosDeLoPendiente(string empresa, string almacen);
+        /// <summary>
+        /// Para los productos pendientes de los que ahora no queda nada en ningún hueco: el último
+        /// hueco donde estuvieron (cantidad 0).
+        /// </summary>
+        Task<List<FilaUbicacionProducto>> LeerUltimoHuecoDeLoPendiente(string empresa, string almacen);
         Task<List<FilaProductoAlmacen>> BuscarProductos(string empresa, string codigo);
-        /// <summary>Huecos (estado 0) y pendiente de colocar (estado 2) de un producto.</summary>
+        /// <summary>Huecos (estado 0) y pendiente de ubicar (estado 2) de un producto.</summary>
         Task<List<FilaUbicacionProducto>> LeerUbicacionesDelProducto(string empresa, string almacen, string producto);
         /// <summary>
-        /// Coloca con prdUbicar, el mismo procedimiento que usa Ariadna Vieja, y deja anotado quién lo ha hecho.
+        /// Ubica con prdUbicar, el mismo procedimiento que usa Ariadna Vieja, y deja anotado quién lo ha hecho.
         /// </summary>
         /// <param name="tipoFiltro">0 sin filtro, 1 pedido de compra, 2 albarán de compra, 3 reposición, 4 pedido de venta.</param>
         Task Ubicar(string empresa, UbicarProductoDTO ubicar, int tipoFiltro, int? filtro, string usuario);
@@ -58,9 +65,9 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
     /// <summary>
     /// NestoAPI#556/#559: la tabla Ubicaciones para Ariadna. Estados que importan aquí:
-    /// 0 = colocado en un hueco; 2 = recibido y pendiente de colocar (lo deja así el albarán de compra,
-    /// y es lo que hoy se coloca con Ariadna Vieja llamando a prdUbicar); 3 = reservado para un picking.
-    /// Colocar se hace con el mismo prdUbicar: aquí no se escribe nada a mano en Ubicaciones.
+    /// 0 = ubicado en un hueco; 2 = recibido y pendiente de ubicar (lo deja así el albarán de compra,
+    /// y es lo que hoy se ubica con Ariadna Vieja llamando a prdUbicar); 3 = reservado para un picking.
+    /// Ubicar se hace con el mismo prdUbicar: aquí no se escribe nada a mano en Ubicaciones.
     /// </summary>
     public class RepositorioUbicacionesAlmacen : IRepositorioUbicacionesAlmacen
     {
@@ -78,12 +85,30 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         internal const string SQL_PENDIENTE_DE_UBICAR = @"
 SELECT RTRIM(u.[Número]) AS Producto, RTRIM(MAX(p.Nombre)) AS Descripcion, RTRIM(MAX(p.CodBarras)) AS CodigoBarras,
        u.PedidoCmp AS PedidoCompra, u.[AlbaránCmp] AS AlbaranCompra, u.[NºTraspasoRepo] AS TraspasoReposicion,
+       u.PedidoVta AS PedidoVenta, u.[NºTraspaso] AS Traspaso,
        CAST(SUM(u.Cantidad) AS int) AS Cantidad, MIN(u.[FechaCreación]) AS DesdeCuando
 FROM Ubicaciones u
      LEFT JOIN Productos p ON p.Empresa = u.Empresa AND p.[Número] = u.[Número]
 WHERE u.Empresa = @p0 AND u.[Almacén] = @p1 AND u.Estado = 2
-GROUP BY u.[Número], u.PedidoCmp, u.[AlbaránCmp], u.[NºTraspasoRepo]
+GROUP BY u.[Número], u.PedidoCmp, u.[AlbaránCmp], u.[NºTraspasoRepo], u.PedidoVta, u.[NºTraspaso]
 HAVING SUM(u.Cantidad) <> 0";
+
+        // El último hueco donde estuvo (filas ya consumidas o servidas: estados -1 y -3), solo para los
+        // productos pendientes que hoy no tienen ninguno con existencias
+        // OPTIMIZE FOR UNKNOWN: con el plan hecho a la medida de los parámetros tardaba más de 30 s
+        // (agotaba el tiempo de espera); con el plan genérico, unos 300 ms.
+        internal const string SQL_ULTIMO_HUECO_DE_LO_PENDIENTE = @"
+SELECT RTRIM(p.num) AS Producto, -1 AS Estado, RTRIM(h.Pasillo) AS Pasillo, RTRIM(h.Fila) AS Fila, RTRIM(h.Columna) AS Columna,
+       0 AS Cantidad
+FROM (SELECT DISTINCT u.[Número] AS num FROM Ubicaciones u
+      WHERE u.Empresa = @p0 AND u.[Almacén] = @p1 AND u.Estado = 2
+            AND NOT EXISTS (SELECT 1 FROM Ubicaciones a WHERE a.Empresa = @p0 AND a.[Almacén] = @p1 AND a.Estado = 0
+                                                              AND a.[Número] = u.[Número] AND a.Cantidad > 0)) p
+     CROSS APPLY (SELECT TOP 1 x.Pasillo, x.Fila, x.Columna FROM Ubicaciones x
+                  WHERE x.Empresa = @p0 AND x.[Almacén] = @p1 AND x.[Número] = p.num AND x.Estado IN (0, -1, -3)
+                        AND x.Pasillo IS NOT NULL AND RTRIM(x.Pasillo) <> ''
+                  ORDER BY x.[NºOrden] DESC) h
+OPTION (OPTIMIZE FOR UNKNOWN)";
 
         internal const string SQL_HUECOS_DE_LO_PENDIENTE = @"
 SELECT RTRIM(u.[Número]) AS Producto, u.Estado, RTRIM(u.Pasillo) AS Pasillo, RTRIM(u.Fila) AS Fila, RTRIM(u.Columna) AS Columna,
@@ -132,27 +157,42 @@ INSERT INTO Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES (N'Ubicacion
                 new SqlParameter("@p11", usuario)).ConfigureAwait(false);
         }
 
+        /// <summary>
+        /// Los parámetros de texto van como varchar, no como los manda Entity Framework por defecto
+        /// (nvarchar): las columnas son char, y comparar con un nvarchar obliga a convertir la columna
+        /// y SQL Server deja de usar el índice. Con el último hueco conocido (una búsqueda por cada
+        /// producto pendiente) la diferencia era de medio segundo a treinta.
+        /// </summary>
+        private static SqlParameter Texto(string nombre, string valor, int longitud)
+        {
+            return new SqlParameter(nombre, System.Data.SqlDbType.VarChar, longitud) { Value = (object)valor ?? DBNull.Value };
+        }
+
         public Task<List<FilaPendienteDeUbicar>> LeerPendienteDeUbicar(string empresa, string almacen)
         {
-            return baseDeDatos.SqlQuery<FilaPendienteDeUbicar>(SQL_PENDIENTE_DE_UBICAR, empresa, almacen).ToListAsync();
+            return baseDeDatos.SqlQuery<FilaPendienteDeUbicar>(SQL_PENDIENTE_DE_UBICAR, Texto("@p0", empresa, 3), Texto("@p1", almacen, 3)).ToListAsync();
         }
 
         public Task<List<FilaUbicacionProducto>> LeerHuecosDeLoPendiente(string empresa, string almacen)
         {
-            return baseDeDatos.SqlQuery<FilaUbicacionProducto>(SQL_HUECOS_DE_LO_PENDIENTE, empresa, almacen).ToListAsync();
+            return baseDeDatos.SqlQuery<FilaUbicacionProducto>(SQL_HUECOS_DE_LO_PENDIENTE, Texto("@p0", empresa, 3), Texto("@p1", almacen, 3)).ToListAsync();
+        }
+
+        public Task<List<FilaUbicacionProducto>> LeerUltimoHuecoDeLoPendiente(string empresa, string almacen)
+        {
+            return baseDeDatos.SqlQuery<FilaUbicacionProducto>(SQL_ULTIMO_HUECO_DE_LO_PENDIENTE, Texto("@p0", empresa, 3), Texto("@p1", almacen, 3)).ToListAsync();
         }
 
         public Task<List<FilaProductoAlmacen>> BuscarProductos(string empresa, string codigo)
         {
             // char(15) las dos columnas: un parámetro más largo no puede coincidir con nada
             return baseDeDatos.SqlQuery<FilaProductoAlmacen>(SQL_BUSCAR_PRODUCTOS,
-                new SqlParameter("@p0", empresa),
-                new SqlParameter("@p1", System.Data.SqlDbType.VarChar, 15) { Value = codigo }).ToListAsync();
+                Texto("@p0", empresa, 3), Texto("@p1", codigo, 15)).ToListAsync();
         }
 
         public Task<List<FilaUbicacionProducto>> LeerUbicacionesDelProducto(string empresa, string almacen, string producto)
         {
-            return baseDeDatos.SqlQuery<FilaUbicacionProducto>(SQL_UBICACIONES_DEL_PRODUCTO, empresa, almacen, producto).ToListAsync();
+            return baseDeDatos.SqlQuery<FilaUbicacionProducto>(SQL_UBICACIONES_DEL_PRODUCTO, Texto("@p0", empresa, 3), Texto("@p1", almacen, 3), Texto("@p2", producto, 15)).ToListAsync();
         }
     }
 
@@ -160,17 +200,17 @@ INSERT INTO Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES (N'Ubicacion
     {
         Task<PendienteDeUbicarDTO> LeerPendienteDeUbicar(string empresa, string almacen);
         Task<List<ProductoAlmacenDTO>> BuscarProducto(string empresa, string almacen, string codigo);
-        /// <summary>Coloca unidades pendientes en un hueco y devuelve cómo queda el producto.</summary>
+        /// <summary>Ubica unidades pendientes en un hueco y devuelve cómo queda el producto.</summary>
         Task<ProductoAlmacenDTO> Ubicar(string empresa, UbicarProductoDTO ubicar, string usuario);
     }
 
     /// <summary>
-    /// NestoAPI#556/#559: qué hay recibido y sin colocar, con la sugerencia de dónde ponerlo, y dónde
+    /// NestoAPI#556/#559: qué hay recibido y sin ubicar, con la sugerencia de dónde ponerlo, y dónde
     /// está un producto. Es la parte de lectura de lo que hoy hace Ariadna Vieja.
     /// </summary>
     public class ServicioUbicacionesAlmacen : IServicioUbicacionesAlmacen, IDisposable
     {
-        public const int ESTADO_COLOCADO = 0;
+        public const int ESTADO_UBICADO = 0;
         public const int ESTADO_PENDIENTE_DE_UBICAR = 2;
         /// <summary>Un código de barras o un número de producto no pasa de aquí.</summary>
         public const int LONGITUD_MAXIMA_CODIGO = 15;
@@ -192,9 +232,12 @@ INSERT INTO Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES (N'Ubicacion
         public async Task<PendienteDeUbicarDTO> LeerPendienteDeUbicar(string empresa, string almacen)
         {
             List<FilaPendienteDeUbicar> pendiente = await repositorio.LeerPendienteDeUbicar(empresa, almacen).ConfigureAwait(false);
-            List<FilaUbicacionProducto> huecos = pendiente.Any()
-                ? await repositorio.LeerHuecosDeLoPendiente(empresa, almacen).ConfigureAwait(false)
-                : new List<FilaUbicacionProducto>();
+            var huecos = new List<FilaUbicacionProducto>();
+            if (pendiente.Any())
+            {
+                huecos.AddRange(await repositorio.LeerHuecosDeLoPendiente(empresa, almacen).ConfigureAwait(false));
+                huecos.AddRange(await repositorio.LeerUltimoHuecoDeLoPendiente(empresa, almacen).ConfigureAwait(false));
+            }
 
             return new PendienteDeUbicarDTO
             {
@@ -206,15 +249,21 @@ INSERT INTO Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES (N'Ubicacion
 
         /// <summary>
         /// Un producto por fila, con sus orígenes y los huecos donde ya hay de ese producto. Se ordena
-        /// para colocar andando lo menos posible: por el primer hueco de cada producto (pasillo,
+        /// para ubicar andando lo menos posible: por el primer hueco de cada producto (pasillo,
         /// columna, fila); lo que no tiene hueco todavía va al final.
         /// </summary>
         internal static List<ProductoPendienteDeUbicarDTO> MontarPendiente(
             IEnumerable<FilaPendienteDeUbicar> pendiente, IEnumerable<FilaUbicacionProducto> huecos)
         {
-            ILookup<string, FilaUbicacionProducto> huecosPorProducto = (huecos ?? Enumerable.Empty<FilaUbicacionProducto>())
+            List<FilaUbicacionProducto> todos = (huecos ?? Enumerable.Empty<FilaUbicacionProducto>()).ToList();
+            ILookup<string, FilaUbicacionProducto> huecosPorProducto = todos
                 .Where(h => h.Cantidad > 0)
                 .ToLookup(h => h.Producto?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase);
+            // Los que vienen con cantidad 0 son «el último hueco donde estuvo»
+            Dictionary<string, FilaUbicacionProducto> ultimoHueco = todos
+                .Where(h => h.Cantidad <= 0 && !string.IsNullOrWhiteSpace(h.Pasillo))
+                .GroupBy(h => h.Producto?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
             List<ProductoPendienteDeUbicarDTO> productos = (pendiente ?? Enumerable.Empty<FilaPendienteDeUbicar>())
                 .GroupBy(f => f.Producto?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase)
@@ -234,19 +283,36 @@ INSERT INTO Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES (N'Ubicacion
                             PedidoCompra = f.PedidoCompra,
                             AlbaranCompra = f.AlbaranCompra,
                             TraspasoReposicion = f.TraspasoReposicion,
+                            PedidoVenta = f.PedidoVenta,
+                            Traspaso = f.Traspaso,
                             Cantidad = f.Cantidad
                         }).ToList(),
-                        UbicacionesActuales = OrdenarHuecos(huecosPorProducto[g.Key])
+                        UbicacionesActuales = OrdenarHuecos(huecosPorProducto[g.Key]),
+                        UltimaUbicacion = !huecosPorProducto[g.Key].Any() && ultimoHueco.TryGetValue(g.Key, out FilaUbicacionProducto ultimo)
+                            ? CasadorEscaneos.TextoUbicacion(ultimo.Pasillo, ultimo.Fila, ultimo.Columna)
+                            : null
                     };
                 })
                 .Where(p => p.Cantidad > 0)
                 .ToList();
 
+            // El recorrido: por el hueco donde ya hay o, si no queda, por el último donde estuvo
+            // (pasillo, columna, fila). Lo que nunca ha tenido hueco va al final.
+            string[] Hueco(ProductoPendienteDeUbicarDTO p)
+            {
+                UbicacionAlmacenDTO actual = p.UbicacionesActuales.FirstOrDefault();
+                if (actual != null)
+                {
+                    return new[] { actual.Pasillo, actual.Columna, actual.Fila };
+                }
+                string[] partes = p.UltimaUbicacion?.Split('/');   // pasillo/fila/columna
+                return partes != null && partes.Length == 3 ? new[] { partes[0], partes[2], partes[1] } : null;
+            }
             productos = productos
-                .OrderBy(p => !p.UbicacionesActuales.Any())
-                .ThenBy(p => p.UbicacionesActuales.FirstOrDefault()?.Pasillo, StringComparer.Ordinal)
-                .ThenBy(p => p.UbicacionesActuales.FirstOrDefault()?.Columna, StringComparer.Ordinal)
-                .ThenBy(p => p.UbicacionesActuales.FirstOrDefault()?.Fila, StringComparer.Ordinal)
+                .OrderBy(p => Hueco(p) == null)
+                .ThenBy(p => Hueco(p)?[0], StringComparer.Ordinal)
+                .ThenBy(p => Hueco(p)?[1], StringComparer.Ordinal)
+                .ThenBy(p => Hueco(p)?[2], StringComparer.Ordinal)
                 .ThenBy(p => p.Producto, StringComparer.Ordinal)
                 .ToList();
 
@@ -294,7 +360,7 @@ INSERT INTO Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES (N'Ubicacion
                     Descripcion = producto.Descripcion?.Trim(),
                     CodigoBarras = string.IsNullOrWhiteSpace(producto.CodigoBarras) ? null : producto.CodigoBarras.Trim(),
                     Almacen = almacen,
-                    Ubicaciones = OrdenarHuecos(filas.Where(f => f.Estado == ESTADO_COLOCADO && f.Cantidad > 0)),
+                    Ubicaciones = OrdenarHuecos(filas.Where(f => f.Estado == ESTADO_UBICADO && f.Cantidad > 0)),
                     PendienteDeUbicar = filas.Where(f => f.Estado == ESTADO_PENDIENTE_DE_UBICAR).Sum(f => f.Cantidad)
                 });
             }
@@ -302,7 +368,7 @@ INSERT INTO Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES (N'Ubicacion
         }
 
         /// <summary>
-        /// Por qué no se puede colocar, o null si la petición está bien. Normaliza de paso el almacén,
+        /// Por qué no se puede ubicar, o null si la petición está bien. Normaliza de paso el almacén,
         /// el producto y el hueco (tres cifras cada parte, como están todos en la tabla: 001/002/004).
         /// </summary>
         internal static string PrepararUbicacion(UbicarProductoDTO ubicar, out int tipoFiltro, out int? filtro)
@@ -311,7 +377,7 @@ INSERT INTO Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES (N'Ubicacion
             filtro = null;
             if (ubicar == null)
             {
-                return "No ha llegado nada que colocar.";
+                return "No ha llegado nada que ubicar.";
             }
             ubicar.Producto = ubicar.Producto?.Trim();
             if (string.IsNullOrEmpty(ubicar.Producto) || ubicar.Producto.Length > LONGITUD_MAXIMA_CODIGO)
@@ -325,7 +391,7 @@ INSERT INTO Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES (N'Ubicacion
             }
             if (ubicar.Cantidad <= 0)
             {
-                return "La cantidad a colocar tiene que ser mayor que cero.";
+                return "La cantidad a ubicar tiene que ser mayor que cero.";
             }
 
             string pasillo = ParteDelHueco(ubicar.Pasillo);
@@ -385,8 +451,8 @@ INSERT INTO Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES (N'Ubicacion
             if (pendiente < ubicar.Cantidad)
             {
                 throw new NestoBusinessException(pendiente <= 0
-                    ? $"El producto {ubicar.Producto} no tiene nada pendiente de colocar en {ubicar.Almacen}."
-                    : $"Del producto {ubicar.Producto} solo hay {pendiente} unidades pendientes de colocar en {ubicar.Almacen}: no se pueden colocar {ubicar.Cantidad}.");
+                    ? $"El producto {ubicar.Producto} no tiene nada pendiente de ubicar en {ubicar.Almacen}."
+                    : $"Del producto {ubicar.Producto} solo hay {pendiente} unidades pendientes de ubicar en {ubicar.Almacen}: no se pueden ubicar {ubicar.Cantidad}.");
             }
 
             try
@@ -405,7 +471,7 @@ INSERT INTO Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES (N'Ubicacion
             {
                 Producto = ubicar.Producto,
                 Almacen = ubicar.Almacen,
-                Ubicaciones = OrdenarHuecos(despues.Where(f => f.Estado == ESTADO_COLOCADO && f.Cantidad > 0)),
+                Ubicaciones = OrdenarHuecos(despues.Where(f => f.Estado == ESTADO_UBICADO && f.Cantidad > 0)),
                 PendienteDeUbicar = despues.Where(f => f.Estado == ESTADO_PENDIENTE_DE_UBICAR).Sum(f => f.Cantidad)
             };
         }

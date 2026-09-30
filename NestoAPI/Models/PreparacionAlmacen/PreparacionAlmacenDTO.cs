@@ -187,7 +187,7 @@ namespace NestoAPI.Models.PreparacionAlmacen
 
 namespace NestoAPI.Models.PreparacionAlmacen
 {
-    // Colocar la mercancía recibida y consultar dónde está un producto: lo que hoy se hace con
+    // Ubicar la mercancía recibida y consultar dónde está un producto: lo que hoy se hace con
     // Ariadna Vieja (prdUbicar). De momento solo lectura.
 
     /// <summary>Un hueco de la estantería con lo que hay de un producto.</summary>
@@ -201,12 +201,16 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public int Cantidad { get; set; }
     }
 
-    /// <summary>De dónde viene lo que está pendiente de colocar.</summary>
+    /// <summary>De dónde viene lo que está pendiente de ubicar.</summary>
     public class OrigenPendienteDeUbicarDTO
     {
         public int? PedidoCompra { get; set; }
         public int? AlbaranCompra { get; set; }
         public int? TraspasoReposicion { get; set; }
+        /// <summary>Una devolución de un cliente: el género vuelve y hay que darle hueco.</summary>
+        public int? PedidoVenta { get; set; }
+        /// <summary>Otro movimiento entre almacenes (montar o desmontar un kit, por ejemplo).</summary>
+        public int? Traspaso { get; set; }
         public int Cantidad { get; set; }
     }
 
@@ -222,8 +226,13 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public int Cantidad { get; set; }
         public DateTime? DesdeCuando { get; set; }
         public List<OrigenPendienteDeUbicarDTO> Origenes { get; set; } = new List<OrigenPendienteDeUbicarDTO>();
-        /// <summary>Dónde hay ya de este producto: la sugerencia de dónde colocarlo.</summary>
+        /// <summary>Dónde hay ya de este producto: la sugerencia de dónde ubicarlo.</summary>
         public List<UbicacionAlmacenDTO> UbicacionesActuales { get; set; } = new List<UbicacionAlmacenDTO>();
+        /// <summary>
+        /// Cuando ahora mismo no queda de ese producto en ningún hueco: el último donde estuvo
+        /// (pasillo/fila/columna). Null si nunca ha tenido hueco: es un producto nuevo.
+        /// </summary>
+        public string UltimaUbicacion { get; set; }
     }
 
     public class PendienteDeUbicarDTO
@@ -233,7 +242,7 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public List<ProductoPendienteDeUbicarDTO> Productos { get; set; } = new List<ProductoPendienteDeUbicarDTO>();
     }
 
-    /// <summary>Colocar en un hueco unidades recibidas que están pendientes de ubicar.</summary>
+    /// <summary>Ubicar en un hueco unidades recibidas que están pendientes de ubicar.</summary>
     public class UbicarProductoDTO
     {
         public string Producto { get; set; }

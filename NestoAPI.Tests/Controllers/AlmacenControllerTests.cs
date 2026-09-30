@@ -180,7 +180,7 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
-        public async Task PostUbicar_ColocaConElUsuarioDelToken()
+        public async Task PostUbicar_UbicaConElUsuarioDelToken()
         {
             var ubicar = new UbicarProductoDTO { Producto = "18004", Pasillo = "009", Fila = "003", Columna = "008", Cantidad = 5 };
             var comoQueda = new ProductoAlmacenDTO { Producto = "18004" };

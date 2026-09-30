@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
 {
     /// <summary>
-    /// NestoAPI#556/#559: lo recibido pendiente de colocar y la consulta de dónde está un producto
+    /// NestoAPI#556/#559: lo recibido pendiente de ubicar y la consulta de dónde está un producto
     /// (la parte de lectura de lo que hoy hace Ariadna Vieja).
     /// </summary>
     [TestClass]
@@ -71,6 +71,34 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         }
 
         [TestMethod]
+        public void MontarPendiente_SinExistenciasEnNingunHueco_SugiereElUltimoDondeEstuvo()
+        {
+            // Casi la mitad de lo pendiente (142 de 300 productos el 30/09/26) no tiene hoy ningún hueco con género
+            var productos = ServicioUbicacionesAlmacen.MontarPendiente(
+                new[] { Pendiente("AGOTADO", 5), Pendiente("NUEVO", 1), Pendiente("CONSTOCK", 1) },
+                new[] { Hueco("AGOTADO", "002", "007", "008", 0, estado: -1), Hueco("CONSTOCK", "011", "005", "002", 9) });
+
+            Assert.AreEqual("002/007/008", productos.Single(p => p.Producto == "AGOTADO").UltimaUbicacion);
+            Assert.AreEqual(0, productos.Single(p => p.Producto == "AGOTADO").UbicacionesActuales.Count);
+            Assert.IsNull(productos.Single(p => p.Producto == "CONSTOCK").UltimaUbicacion, "Si hay hueco con género, sobra");
+            Assert.IsNull(productos.Single(p => p.Producto == "NUEVO").UltimaUbicacion, "Nunca ha tenido hueco");
+            CollectionAssert.AreEqual(new[] { "AGOTADO", "CONSTOCK", "NUEVO" }, productos.Select(p => p.Producto).ToList(),
+                "El recorrido cuenta con el último hueco; lo nuevo, al final");
+        }
+
+        [TestMethod]
+        public void MontarPendiente_UnaDevolucionDeCliente_DiceDeQuePedidoViene()
+        {
+            FilaPendienteDeUbicar devolucion = Pendiente("18004", 2, albaran: null);
+            devolucion.PedidoVenta = 927377;
+
+            OrigenPendienteDeUbicarDTO origen = ServicioUbicacionesAlmacen.MontarPendiente(new[] { devolucion }, null).Single().Origenes.Single();
+
+            Assert.AreEqual(927377, origen.PedidoVenta);
+            Assert.IsNull(origen.AlbaranCompra);
+        }
+
+        [TestMethod]
         public void MontarPendiente_ProductoSinCodigoDeBarras_QuedaMarcado()
         {
             ProductoPendienteDeUbicarDTO producto = ServicioUbicacionesAlmacen.MontarPendiente(
@@ -98,10 +126,11 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
 
             Assert.AreEqual(0, pendiente.Productos.Count);
             A.CallTo(() => repositorio.LeerHuecosDeLoPendiente(A<string>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => repositorio.LeerUltimoHuecoDeLoPendiente(A<string>._, A<string>._)).MustNotHaveHappened();
         }
 
         [TestMethod]
-        public async Task BuscarProducto_SeparaLosHuecosDeLoPendienteDeColocar()
+        public async Task BuscarProducto_SeparaLosHuecosDeLoPendienteDePeticionDeUbicar()
         {
             var repositorio = A.Fake<IRepositorioUbicacionesAlmacen>();
             A.CallTo(() => repositorio.BuscarProductos("1", "8710505999670")).Returns(new List<FilaProductoAlmacen>
@@ -121,9 +150,9 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             Assert.AreEqual(59, producto.PendienteDeUbicar);
         }
 
-        // Colocar: lo que hoy se hace con Ariadna Vieja (prdUbicar)
+        // Ubicar: lo que hoy se hace con Ariadna Vieja (prdUbicar)
 
-        private static UbicarProductoDTO Colocar(int cantidad = 5)
+        private static UbicarProductoDTO PeticionDeUbicar(int cantidad = 5)
         {
             return new UbicarProductoDTO { Producto = " 18004 ", Pasillo = "9", Fila = "3", Columna = "008", Cantidad = cantidad };
         }
@@ -142,7 +171,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         [TestMethod]
         public void PrepararUbicacion_NormalizaElHuecoATresCifrasYElAlmacenPorDefecto()
         {
-            UbicarProductoDTO ubicar = Colocar();
+            UbicarProductoDTO ubicar = PeticionDeUbicar();
 
             string motivo = ServicioUbicacionesAlmacen.PrepararUbicacion(ubicar, out int tipoFiltro, out int? filtro);
 
@@ -157,7 +186,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         [TestMethod]
         public void PrepararUbicacion_ConAlbaranDeCompra_EsElFiltroDosDelProcedimiento()
         {
-            UbicarProductoDTO ubicar = Colocar();
+            UbicarProductoDTO ubicar = PeticionDeUbicar();
             ubicar.AlbaranCompra = 125437;
 
             Assert.IsNull(ServicioUbicacionesAlmacen.PrepararUbicacion(ubicar, out int tipoFiltro, out int? filtro));
@@ -169,11 +198,11 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         [TestMethod]
         public void PrepararUbicacion_DatosMalos_DiceCual()
         {
-            UbicarProductoDTO sinCantidad = Colocar(0);
-            UbicarProductoDTO huecoRaro = Colocar(); huecoRaro.Pasillo = "A1";
-            UbicarProductoDTO huecoLargo = Colocar(); huecoLargo.Columna = "1234";
-            UbicarProductoDTO dosOrigenes = Colocar(); dosOrigenes.AlbaranCompra = 1; dosOrigenes.PedidoCompra = 2;
-            UbicarProductoDTO sinProducto = Colocar(); sinProducto.Producto = " ";
+            UbicarProductoDTO sinCantidad = PeticionDeUbicar(0);
+            UbicarProductoDTO huecoRaro = PeticionDeUbicar(); huecoRaro.Pasillo = "A1";
+            UbicarProductoDTO huecoLargo = PeticionDeUbicar(); huecoLargo.Columna = "1234";
+            UbicarProductoDTO dosOrigenes = PeticionDeUbicar(); dosOrigenes.AlbaranCompra = 1; dosOrigenes.PedidoCompra = 2;
+            UbicarProductoDTO sinProducto = PeticionDeUbicar(); sinProducto.Producto = " ";
 
             StringAssert.Contains(ServicioUbicacionesAlmacen.PrepararUbicacion(sinCantidad, out _, out _), "cantidad");
             StringAssert.Contains(ServicioUbicacionesAlmacen.PrepararUbicacion(huecoRaro, out _, out _), "hueco");
@@ -187,7 +216,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         public async Task Ubicar_HayPendienteSuficiente_LlamaAlProcedimientoConElUsuarioYDevuelveComoQueda()
         {
             IRepositorioUbicacionesAlmacen repositorio = RepositorioConPendiente(59);
-            UbicarProductoDTO ubicar = Colocar();
+            UbicarProductoDTO ubicar = PeticionDeUbicar();
 
             ProductoAlmacenDTO resultado = await new ServicioUbicacionesAlmacen(repositorio).Ubicar("1", ubicar, "Santiago");
 
@@ -202,7 +231,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             IRepositorioUbicacionesAlmacen repositorio = RepositorioConPendiente(3);
 
             var ex = await Assert.ThrowsExceptionAsync<NestoAPI.Infraestructure.Exceptions.NestoBusinessException>(
-                () => new ServicioUbicacionesAlmacen(repositorio).Ubicar("1", Colocar(5), "Santiago"));
+                () => new ServicioUbicacionesAlmacen(repositorio).Ubicar("1", PeticionDeUbicar(5), "Santiago"));
 
             StringAssert.Contains(ex.Message, "solo hay 3 unidades pendientes");
             A.CallTo(() => repositorio.Ubicar(A<string>._, A<UbicarProductoDTO>._, A<int>._, A<int?>._, A<string>._)).MustNotHaveHappened();
@@ -214,9 +243,9 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             IRepositorioUbicacionesAlmacen repositorio = RepositorioConPendiente(0);
 
             var ex = await Assert.ThrowsExceptionAsync<NestoAPI.Infraestructure.Exceptions.NestoBusinessException>(
-                () => new ServicioUbicacionesAlmacen(repositorio).Ubicar("1", Colocar(1), "Santiago"));
+                () => new ServicioUbicacionesAlmacen(repositorio).Ubicar("1", PeticionDeUbicar(1), "Santiago"));
 
-            StringAssert.Contains(ex.Message, "no tiene nada pendiente de colocar");
+            StringAssert.Contains(ex.Message, "no tiene nada pendiente de ubicar");
         }
 
         [TestMethod]
