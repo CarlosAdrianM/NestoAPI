@@ -260,6 +260,7 @@
     <Compile Include="Controllers\PedidosVentaDatosObligatoriosTests.cs" />
     <Compile Include="Controllers\PedidosVentaPortesTests.cs" />
     <Compile Include="Controllers\PlantillaVentasControllerTests.cs" />
+    <Compile Include="Controllers\AlmacenControllerTests.cs" />
     <Compile Include="Controllers\PedidosVentaPrepagoConPickingTests.cs" />
     <Compile Include="Controllers\PedidosVentaServirJuntoTests.cs" />
     <Compile Include="Controllers\PedidosCompraControllerTests.cs" />
