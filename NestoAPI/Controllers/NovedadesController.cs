@@ -536,6 +536,7 @@ namespace NestoAPI.Controllers
             }
             List<string> avisados = await AvisarALosContestados(id, nuevoId, aGrabar.Texto, contestados).ConfigureAwait(false);
             await AvisarMenciones(id, nuevoId, aGrabar.Texto, aGrabar.NombreVisible, ReglasFeedbackNovedades.USUARIO_ASISTENTE, avisados).ConfigureAwait(false);
+            await AvisarAlSupervisorDeLaRespuestaDelAsistente(id, nuevoId, aGrabar.Texto, avisados).ConfigureAwait(false);
             return Ok(new ComentarioNovedadDTO
             {
                 Id = nuevoId,
@@ -628,6 +629,47 @@ namespace NestoAPI.Controllers
             catch (Exception ex)
             {
                 ElmahHelper.Log(new Exception("Novedades: no se pudo avisar de la actividad al supervisor. " + ex.Message, ex));
+            }
+        }
+
+        /// <summary>
+        /// Carlos, 30/09/26: el asistente contestó a Laura y a Enrique y al supervisor no le llegó
+        /// nada (AvisarActividad no avisa de lo que hace uno mismo, y el asistente contesta con su
+        /// usuario). Lo que dice el asistente a los usuarios le llega también a su campana de Nesto,
+        /// salvo que ya le haya llegado como autor contestado o como @mención. Nunca rompe la respuesta.
+        /// </summary>
+        private async System.Threading.Tasks.Task AvisarAlSupervisorDeLaRespuestaDelAsistente(int novedadId, int comentarioId, string texto, List<string> yaAvisados)
+        {
+            if (Notificaciones == null)
+            {
+                return;
+            }
+            try
+            {
+                string supervisor = SupervisorActividad();
+                if (supervisor == null
+                    || (yaAvisados ?? new List<string>()).Any(a => EsElMismoUsuario(a, supervisor))
+                    || ReglasMenciones.Resolver(ReglasMenciones.Extraer(texto),
+                        new List<MencionableDTO> { new MencionableDTO { Nombre = supervisor, Clave = supervisor } }, null).Any())
+                {
+                    return;
+                }
+                await Notificaciones.GuardarEnBuzonDeUsuario(DOMINIO + supervisor, Constantes.Aplicaciones.NESTO, new NotificacionPushDTO
+                {
+                    Titulo = ReglasFeedbackNovedades.NOMBRE_ASISTENTE + " ha contestado en Novedades",
+                    Cuerpo = texto.Length > 200 ? texto.Substring(0, 197) + "…" : texto,
+                    Tipo = TIPO_NOTIFICACION_RESPUESTA,
+                    Datos = new Dictionary<string, string>
+                    {
+                        ["tipo"] = TIPO_NOTIFICACION_RESPUESTA,
+                        ["novedadId"] = novedadId.ToString(),
+                        ["comentarioId"] = comentarioId.ToString()
+                    }
+                }).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception("Novedades: no se pudo avisar al supervisor de la respuesta del asistente. " + ex.Message, ex));
             }
         }
 

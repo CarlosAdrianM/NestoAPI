@@ -175,5 +175,77 @@ namespace NestoAPI.Tests.Controllers
 
             A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Laura", "Nesto", A<NotificacionPushDTO>._)).MustHaveHappenedOnceExactly();
         }
+
+        // ---- Carlos, 30/09/26: lo que contesta el asistente también le llega al supervisor ----
+
+        private void ComoElAsistente()
+        {
+            // El asistente contesta con el usuario de quien lo lanza (Dirección / Informática)
+            controller.User = new ClaimsPrincipal(new ClaimsIdentity(new[]
+            {
+                new Claim(ClaimTypes.NameIdentifier, "NUEVAVISION\\Carlos"),
+                new Claim(ClaimTypes.Name, "NUEVAVISION\\Carlos"),
+                new Claim(ClaimTypes.AuthenticationMethod, "Windows"),
+                new Claim(ClaimTypes.Role, "NUEVAVISION\\Informatica")
+            }, "Bearer"));
+        }
+
+        [TestMethod]
+        public async Task PostComentarioAsistente_LaRespuestaLlegaTambienALaCampanaDeCarlos()
+        {
+            // Contestó a Laura (434) y a Enrique (435) y Carlos no recibió nada
+            ComoElAsistente();
+            A.CallTo(() => feedback.LeerMencionables(false)).Returns(new List<MencionableDTO>
+            {
+                new MencionableDTO { Nombre = "Laura", Clave = "NUEVAVISION\\Laura", Aplicacion = "Nesto" }
+            });
+
+            _ = await controller.PostComentarioAsistente(350, new NuevoComentarioAsistenteDTO { Texto = "Hola, @Laura. Lo hemos mirado." });
+
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Carlos", "Nesto",
+                A<NotificacionPushDTO>.That.Matches(n => n.Titulo == "Claude (asistente IA) ha contestado en Novedades"
+                    && n.Cuerpo == "Hola, @Laura. Lo hemos mirado." && n.Datos["novedadId"] == "350" && n.Datos["comentarioId"] == "60")))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Laura", "Nesto", A<NotificacionPushDTO>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task PostComentarioAsistente_SiYaLeLlegaComoMencion_NoSeLeAvisaDosVeces()
+        {
+            ComoElAsistente();
+
+            _ = await controller.PostComentarioAsistente(350, new NuevoComentarioAsistenteDTO { Texto = "Hecho, @Carlos." });
+
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Carlos", "Nesto", A<NotificacionPushDTO>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task PostComentarioAsistente_SiYaLeLlegaComoAutorContestado_NoSeLeAvisaDosVeces()
+        {
+            ComoElAsistente();
+            A.CallTo(() => feedback.LeerAutores(A<IEnumerable<int>>._)).Returns(new List<AutorComentarioNovedad>
+            {
+                new AutorComentarioNovedad { Id = 9, NovedadId = 350, Usuario = "NUEVAVISION\\Carlos", NombreVisible = "Carlos", Cliente = "Nesto" }
+            });
+
+            _ = await controller.PostComentarioAsistente(350, new NuevoComentarioAsistenteDTO
+            {
+                Texto = "Anotado.",
+                ComentariosContestados = new List<int> { 9 }
+            });
+
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Carlos", "Nesto", A<NotificacionPushDTO>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task PostComentarioAsistente_SinSupervisor_NoAvisaANadieMas()
+        {
+            ComoElAsistente();
+            A.CallTo(() => lector.LeerParametro(A<string>._, A<string>._, Constantes.ParametrosUsuario.AVISAR_ACTIVIDAD_NOVEDADES_A)).Returns("0");
+
+            _ = await controller.PostComentarioAsistente(350, new NuevoComentarioAsistenteDTO { Texto = "Anotado." });
+
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario(A<string>._, A<string>._, A<NotificacionPushDTO>._)).MustNotHaveHappened();
+        }
     }
 }
