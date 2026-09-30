@@ -130,7 +130,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         }
 
         [TestMethod]
-        public async Task BuscarProducto_SeparaLosHuecosDeLoPendienteDePeticionDeUbicar()
+        public async Task BuscarProducto_SeparaLosHuecosDeLoPendienteDeUbicar()
         {
             var repositorio = A.Fake<IRepositorioUbicacionesAlmacen>();
             A.CallTo(() => repositorio.BuscarProductos("1", "8710505999670")).Returns(new List<FilaProductoAlmacen>
@@ -181,6 +181,52 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             Assert.AreEqual("009/003/008", $"{ubicar.Pasillo}/{ubicar.Fila}/{ubicar.Columna}");
             Assert.AreEqual(0, tipoFiltro);
             Assert.IsNull(filtro);
+        }
+
+        [TestMethod]
+        public void PrepararUbicacion_ConLaEtiquetaDelHuecoLeida_SacaPasilloFilaYColumna()
+        {
+            // La etiqueta de Algete (30/09/26): «Pasillo:002 Fila:004 Columna:001», código de barras 002004001
+            var ubicar = new UbicarProductoDTO { Producto = "18004", Hueco = " 002004001 ", Cantidad = 5 };
+
+            Assert.IsNull(ServicioUbicacionesAlmacen.PrepararUbicacion(ubicar, out _, out _));
+
+            Assert.AreEqual("002", ubicar.Pasillo);
+            Assert.AreEqual("004", ubicar.Fila);
+            Assert.AreEqual("001", ubicar.Columna);
+        }
+
+        [TestMethod]
+        public void PrepararUbicacion_EtiquetaMalLeidaOQueNoCuadraConElHueco_DiceCual()
+        {
+            var malLeida = new UbicarProductoDTO { Producto = "18004", Hueco = "8710505999670", Cantidad = 5 };
+            var noCuadra = new UbicarProductoDTO { Producto = "18004", Hueco = "002004001", Pasillo = "3", Fila = "4", Columna = "1", Cantidad = 5 };
+            var cuadra = new UbicarProductoDTO { Producto = "18004", Hueco = "002004001", Pasillo = "2", Fila = "4", Columna = "1", Cantidad = 5 };
+
+            StringAssert.Contains(ServicioUbicacionesAlmacen.PrepararUbicacion(malLeida, out _, out _), "etiqueta del hueco no es válida");
+            StringAssert.Contains(ServicioUbicacionesAlmacen.PrepararUbicacion(noCuadra, out _, out _), "no son el mismo");
+            Assert.IsNull(ServicioUbicacionesAlmacen.PrepararUbicacion(cuadra, out _, out _));
+        }
+
+        [TestMethod]
+        public void LeerCodigoDeHueco_NueveCifrasOConBarras()
+        {
+            Assert.IsTrue(ServicioUbicacionesAlmacen.LeerCodigoDeHueco("002004001", out string pasillo, out string fila, out string columna));
+            Assert.AreEqual("002/004/001", pasillo + "/" + fila + "/" + columna);
+            Assert.IsTrue(ServicioUbicacionesAlmacen.LeerCodigoDeHueco("2/4/1", out pasillo, out fila, out columna));
+            Assert.AreEqual("002/004/001", pasillo + "/" + fila + "/" + columna);
+            Assert.IsFalse(ServicioUbicacionesAlmacen.LeerCodigoDeHueco("00200400", out _, out _, out _));
+            Assert.IsFalse(ServicioUbicacionesAlmacen.LeerCodigoDeHueco("00200400A", out _, out _, out _));
+            Assert.IsFalse(ServicioUbicacionesAlmacen.LeerCodigoDeHueco("2/4", out _, out _, out _));
+            Assert.IsFalse(ServicioUbicacionesAlmacen.LeerCodigoDeHueco(null, out _, out _, out _));
+        }
+
+        [TestMethod]
+        public void CodigoDeHueco_EsLoQueLlevaLaEtiqueta()
+        {
+            Assert.AreEqual("002004001", new UbicacionAlmacenDTO { Pasillo = "002", Fila = "4 ", Columna = "1" }.Codigo);
+            Assert.IsNull(new UbicacionAlmacenDTO { Pasillo = "A", Fila = "4", Columna = "1" }.Codigo);
+            Assert.IsNull(new UbicacionAlmacenDTO().Codigo);
         }
 
         [TestMethod]

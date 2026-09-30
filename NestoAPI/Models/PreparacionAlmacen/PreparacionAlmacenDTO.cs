@@ -211,7 +211,25 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public string Columna { get; set; }
         /// <summary>Pasillo/fila/columna, como se enseña siempre.</summary>
         public string Ubicacion { get; set; }
+        /// <summary>
+        /// Lo que lleva el código de barras de la etiqueta del hueco: pasillo, fila y columna con
+        /// tres cifras cada uno, seguidos (002004001). Para comparar con lo que lee el lector.
+        /// </summary>
+        public string Codigo => CodigoDeHueco(Pasillo, Fila, Columna);
         public int Cantidad { get; set; }
+
+        public static string CodigoDeHueco(string pasillo, string fila, string columna)
+        {
+            string[] partes = { pasillo?.Trim(), fila?.Trim(), columna?.Trim() };
+            foreach (string parte in partes)
+            {
+                if (string.IsNullOrEmpty(parte) || parte.Length > 3 || !System.Linq.Enumerable.All(parte, char.IsDigit))
+                {
+                    return null;
+                }
+            }
+            return partes[0].PadLeft(3, '0') + partes[1].PadLeft(3, '0') + partes[2].PadLeft(3, '0');
+        }
     }
 
     /// <summary>De dónde viene lo que está pendiente de ubicar.</summary>
@@ -261,6 +279,11 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public string Producto { get; set; }
         /// <summary>Por defecto, Algete.</summary>
         public string Almacen { get; set; }
+        /// <summary>
+        /// Lo leído en la etiqueta del hueco (002004001), tal cual sale del lector. Si viene, no
+        /// hace falta mandar pasillo, fila y columna; también vale escrito como 002/004/001.
+        /// </summary>
+        public string Hueco { get; set; }
         public string Pasillo { get; set; }
         public string Fila { get; set; }
         public string Columna { get; set; }

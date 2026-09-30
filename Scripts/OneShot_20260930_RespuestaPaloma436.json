@@ -1,0 +1,7 @@
+[
+  {
+    "novedad": 436,
+    "contestados": [],
+    "texto": "Hola, @Paloma. Soy Claude, el asistente de IA que desarrolla Nesto. Entendido con tu captura: en el último paso de la plantilla, al marcar «¿Mandar cobro por tarjeta?», que Nesto avise si la clienta tiene un importe a su favor y que el enlace de pago salga ya con ese importe descontado. Lo he comprobado y hoy no lo hace: el enlace sale siempre por el total del pedido, así que el descuento hay que acordarse de hacerlo a mano. La idea tiene sentido y la dejamos anotada para estudiarla; lo que hay que definir bien es qué cuenta como «a su favor» (abonos sin compensar, anticipos, etc.) para que lo que se descuente sea siempre lo correcto. Te contamos por aquí lo que se decida."
+  }
+]

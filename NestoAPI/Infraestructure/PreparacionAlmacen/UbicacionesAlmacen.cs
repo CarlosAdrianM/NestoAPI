@@ -394,6 +394,23 @@ INSERT INTO Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES (N'Ubicacion
                 return "La cantidad a ubicar tiene que ser mayor que cero.";
             }
 
+            if (!string.IsNullOrWhiteSpace(ubicar.Hueco))
+            {
+                if (!LeerCodigoDeHueco(ubicar.Hueco, out string pasilloLeido, out string filaLeida, out string columnaLeida))
+                {
+                    return "La etiqueta del hueco no es válida: tiene que llevar pasillo, fila y columna (002004001).";
+                }
+                if ((!string.IsNullOrWhiteSpace(ubicar.Pasillo) && ParteDelHueco(ubicar.Pasillo) != pasilloLeido)
+                    || (!string.IsNullOrWhiteSpace(ubicar.Fila) && ParteDelHueco(ubicar.Fila) != filaLeida)
+                    || (!string.IsNullOrWhiteSpace(ubicar.Columna) && ParteDelHueco(ubicar.Columna) != columnaLeida))
+                {
+                    return "La etiqueta leída y el hueco indicado no son el mismo.";
+                }
+                ubicar.Pasillo = pasilloLeido;
+                ubicar.Fila = filaLeida;
+                ubicar.Columna = columnaLeida;
+            }
+
             string pasillo = ParteDelHueco(ubicar.Pasillo);
             string fila = ParteDelHueco(ubicar.Fila);
             string columna = ParteDelHueco(ubicar.Columna);
@@ -426,6 +443,32 @@ INSERT INTO Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES (N'Ubicacion
                 filtro = filtros[0].Valor;
             }
             return null;
+        }
+
+        /// <summary>
+        /// Lo que lleva la etiqueta de un hueco: nueve cifras seguidas, tres de pasillo, tres de fila
+        /// y tres de columna (002004001), que es el código de barras de las etiquetas que ya hay
+        /// puestas en Algete. También se admite escrito con barras (002/004/001 o 2/4/1).
+        /// </summary>
+        internal static bool LeerCodigoDeHueco(string codigo, out string pasillo, out string fila, out string columna)
+        {
+            pasillo = fila = columna = null;
+            string limpio = codigo?.Trim();
+            if (string.IsNullOrEmpty(limpio))
+            {
+                return false;
+            }
+            string[] partes = limpio.Contains("/")
+                ? limpio.Split('/')
+                : limpio.Length == 9 ? new[] { limpio.Substring(0, 3), limpio.Substring(3, 3), limpio.Substring(6, 3) } : new string[0];
+            if (partes.Length != 3)
+            {
+                return false;
+            }
+            pasillo = ParteDelHueco(partes[0]);
+            fila = ParteDelHueco(partes[1]);
+            columna = ParteDelHueco(partes[2]);
+            return pasillo != null && fila != null && columna != null;
         }
 
         private static string ParteDelHueco(string parte)
