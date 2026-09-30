@@ -275,33 +275,6 @@ namespace NestoAPI.Controllers
         }
 
         /// <summary>
-        /// NestoAPI#374: formatea un seguimiento para el texto del resumen diario. Null-safe en
-        /// Tipo/Contacto (un solo registro cojo tumbaba el correo de todo el día con un NRE).
-        /// </summary>
-        internal static string FormatearSeguimientoResumen(string tipo, string vendedor, string numero,
-            string contacto, string comentarios, bool pedido)
-        {
-            string pedidoTexto = pedido ? "Sí" : "No";
-            string tipoTexto;
-            switch (tipo?.Trim())
-            {
-                case "V":
-                    tipoTexto = "Tipo: Visita\n";
-                    break;
-                case "T":
-                    tipoTexto = "Tipo: Teléfono\n";
-                    break;
-                case "W":
-                    tipoTexto = "Tipo: WhatsApp\n";
-                    break;
-                default:
-                    tipoTexto = "Tipo: Desconocido\n";
-                    break;
-            }
-            return tipoTexto + $"Vendedor: {vendedor}\nCliente: {numero?.Trim()}/{contacto?.Trim()} \nComentario: {comentarios?.Trim()}\nTerminó en pedido: {pedidoTexto}\n\n";
-        }
-
-        /// <summary>
         /// Cada jefe de ventas con su equipo y su correo, a dia de hoy y sin nombrar a nadie: el
         /// dato sale de EquiposVenta y de la ficha del vendedor.
         ///
@@ -420,7 +393,17 @@ namespace NestoAPI.Controllers
                             s.Estado == 0 &&
                             s.Número != null &&
                             (resto ? !vendedores.Contains(s.Vendedor) : vendedores.Contains(s.Vendedor)))
-                .Select(s => new { s.Vendedor, s.Número, s.Contacto, s.Comentarios, s.Pedido, s.Tipo })
+                .Select(s => new ResumenRapportsDia.Rapport
+                {
+                    Vendedor = s.Vendedor,
+                    Cliente = s.Número,
+                    Contacto = s.Contacto,
+                    NombreCliente = s.Cliente.Nombre,
+                    VendedorCliente = s.Cliente.Vendedor,
+                    Tipo = s.Tipo,
+                    Comentarios = s.Comentarios,
+                    Pedido = s.Pedido
+                })
                 .ToList();
 
 
@@ -429,21 +412,49 @@ namespace NestoAPI.Controllers
                 return string.Empty;
             }
 
-            // Crea el texto de entrada para OpenAI, incluyendo la fecha con cada comentario
-            string textoEntrada = $"Resumen de seguimientos del día {fecha}. Los siguientes son los comentarios:\n\n";
-            foreach (var seguimiento in seguimientos.Where(s => s.Comentarios?.Length >= 10))
+            IDictionary<string, ResumenRapportsDia.FichaVendedor> fichas = ResumenRapportsDia.IndexarFichas(
+                db.Vendedores
+                    .Where(v => v.Empresa == empresa)
+                    .Select(v => new ResumenRapportsDia.FichaVendedor { Numero = v.Número, Nombre = v.Descripción, Estado = v.Estado })
+                    .ToList());
+
+            // De quién se espera rapport, para poder decir quién no ha metido ninguno. En un equipo,
+            // sus vendedores en activo. En el resto no hay equipo que lo diga: los que vienen
+            // metiendo rapports (alguno en los últimos 30 días).
+            List<string> esperados;
+            if (resto)
             {
-                textoEntrada += FormatearSeguimientoResumen(seguimiento.Tipo, seguimiento.Vendedor,
-                    seguimiento.Número, seguimiento.Contacto, seguimiento.Comentarios, seguimiento.Pedido);
+                DateTime haceUnMes = fechaSinHora.AddDays(-30);
+                esperados = db.SeguimientosClientes
+                    .Where(s => s.Empresa == empresa &&
+                                s.Fecha >= haceUnMes &&
+                                s.Fecha < fechaDiaSiguiente &&
+                                s.Estado == 0 &&
+                                s.Vendedor != null &&
+                                !vendedores.Contains(s.Vendedor))
+                    .Select(s => s.Vendedor)
+                    .Distinct()
+                    .ToList();
             }
+            else
+            {
+                esperados = vendedores.ToList();
+            }
+            esperados = esperados
+                .Where(v => v != null && fichas.TryGetValue(v.Trim(), out ResumenRapportsDia.FichaVendedor ficha) && ficha.Estado >= 0)
+                .ToList();
+
+            string cabecera = ResumenRapportsDia.CabeceraHtml(fechaSinHora, seguimientos, fichas, esperados);
 
             // Llama a OpenAI para obtener el resumen
-            string resumen = await GenerarResumenFechaOpenAIAsync(textoEntrada);
+            string resumenIA = ResumenRapportsDia.LimpiarHtmlDeIA(
+                await GenerarResumenFechaOpenAIAsync(ResumenRapportsDia.TextoParaIA(fechaSinHora, seguimientos, fichas)));
 
-            if (string.IsNullOrEmpty(resumen))
-            {
-                return string.Empty;
-            }
+            // Si la IA falla, la cabecera (quién ha trabajado y quién no) se manda igualmente: antes
+            // ese día el jefe de ventas se quedaba sin correo.
+            string resumen = cabecera + (string.IsNullOrEmpty(resumenIA)
+                ? "<p>Hoy no se ha podido generar el resumen de los comentarios.</p>"
+                : resumenIA);
 
             string grupo = resto ? "resto" : "presenciales";
 
@@ -646,20 +657,34 @@ namespace NestoAPI.Controllers
 
                 var payload = new
                 {
-                    model = "gpt-3.5-turbo",
+                    // gpt-4o-mini, el mismo del resumen semanal: gpt-3.5-turbo no seguía la
+                    // instrucción de nombrar siempre al vendedor ni la de no saltarse a ninguno.
+                    model = "gpt-4o-mini",
                     messages = new[]
                     {
                         new {
                             role = "system",
-                            content = "Eres un experto en ventas a nivel mundial, como Og Mandino o Chet Holmes, que analiza los comentarios de clientes que los vendedores de una empresa distribuidora de productos de estética y peluquería meten a su sistema informático para informar y ayudar al jefe de ventas. En primer lugar lee todos y cada uno de los comentarios y muestra al jefe de ventas la información que extraigas de esos comentarios que consideres más importante intentando que haya comentarios de casi todos los vendedores (indicando el cliente y asegúrandote que tu comentario coincide con el cliente que muestras). A continuación identifica posibles ventas que necesitan ayuda para ser cerradas y comentarios más interesantes a nivel comercial, con al menos un comentario por cada vendedor (asegúrate que el cliente coincide con el comentario). Añade tendencias que se repiten en varios clientes. Añade ambién consejos para que el jefe de ventas trasmita a algunos vendedores determinados (indicando para qué vendedor es el consejo y explicando qué clientes han provocado que se le de ese consejo). Añade también productos, eventos, cursos o marcas que se repitan entre varios vendedores. El resultado lo devuelves formateado en HTML para que sea visualmente atractivo y debe ser una lectura de no menos de dos minutos."
+                            content = @"Eres un experto en ventas a nivel mundial, como Og Mandino o Chet Holmes, que analiza los comentarios de clientes (rapports) que los vendedores de una empresa distribuidora de productos de estética y peluquería meten en su sistema informático, para informar y ayudar al jefe de ventas.
+
+Los rapports te llegan agrupados por vendedor. El jefe de ventas no se sabe de memoria los números de cliente ni de qué vendedor es cada uno, así que hay dos reglas que se cumplen SIEMPRE, en todas las secciones:
+- Cada vez que menciones a un cliente, di de qué vendedor es el rapport, con su nombre y su código tal como te llegan, por ejemplo «Jesús (JE)».
+- Al cliente lo citas con su número y su nombre, tal como te llegan. Asegúrate de que lo que cuentas corresponde a ese cliente y a ese vendedor: no mezcles ni inventes nada.
+
+Devuelve estas secciones, en este orden:
+1. «Vendedor por vendedor»: un apartado por CADA vendedor que aparece en los datos, sin saltarte ninguno y en el mismo orden. En cada uno, lo más importante de sus rapports (de dos a cuatro puntos, con el cliente). Si sus rapports no tienen nada que merezca la atención del jefe de ventas, dilo expresamente («13 rapports, sin nada destacable») y explica por qué en una frase (por ejemplo, que casi todos son clientes que no contestan o comentarios sin contenido comercial). Si un rapport lleva una línea que empieza por «OJO», menciónalo en el apartado de ese vendedor.
+2. «Ventas que necesitan ayuda»: posibles ventas que necesitan un empujón para cerrarse, con el vendedor, el cliente y qué ayuda haría falta.
+3. «Tendencias»: lo que se repite en varios clientes, y los productos, marcas, cursos o eventos que aparecen en rapports de varios vendedores, diciendo de qué vendedores.
+4. «Consejos»: consejos para que el jefe de ventas transmita a vendedores concretos, indicando para qué vendedor es cada uno y qué clientes lo han motivado.
+
+No incluyas ninguna tabla con el número de rapports por vendedor: ya va delante de tu texto. Devuelve solo un fragmento de HTML (sin etiquetas html, head ni body y sin bloques de código), visualmente atractivo, que sea una lectura de no menos de dos minutos."
                         },
                         new {
                             role = "user",
                             content = textoEntrada
                         }
                     },
-                    max_tokens = 3000,
-                    temperature = 0.6
+                    max_tokens = 4000,
+                    temperature = 0.4
                 };
 
 

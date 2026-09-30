@@ -841,6 +841,7 @@
     <Compile Include="Infraestructure\PrincipalExtensions.cs" />
     <Compile Include="Infraestructure\Rapports\GestorRapports.cs" />
     <Compile Include="Infraestructure\Rapports\IServicioRapports.cs" />
+    <Compile Include="Infraestructure\Rapports\ResumenRapportsDia.cs" />
     <Compile Include="Infraestructure\Rapports\ServicioRapports.cs" />
     <Compile Include="Infraestructure\RespuestaAgencia.cs" />
     <Compile Include="Infraestructure\ReintentosSql.cs" />
