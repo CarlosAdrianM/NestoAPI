@@ -17,6 +17,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         Task<List<PickingEnCursoDTO>> LeerPickingsEnCurso(string empresa, string almacen);
         /// <summary>Cómo va el picking por ola. Null si el picking no tiene líneas.</summary>
         Task<EstadoPickingDTO> LeerEstadoPicking(string empresa, int picking);
+        /// <summary>NestoAPI#574: lo que hay por recoger en un almacén, sea un picking o una reposición.</summary>
+        Task<List<RecogidaPendienteDTO>> LeerRecogidasPendientes(string empresa, string almacen);
+        /// <summary>El recorrido de una recogida con cómo va. Null si no existe (o es de un tipo que todavía no se ofrece).</summary>
+        Task<RecogidaAlmacenDTO> LeerRecogida(string empresa, string tipo, int numero);
         Task<PackingAlmacenDTO> LeerPacking(string empresa, int picking);
         /// <summary>El packing de un solo pedido, con su picking en curso. Null si el pedido no tiene picking.</summary>
         Task<PackingAlmacenDTO> LeerPackingDePedido(string empresa, int pedido);
@@ -131,6 +135,59 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             }
             List<LecturaPickingAlmacen> lecturas = await repositorio.LeerLecturasDelPicking(empresa, picking).ConfigureAwait(false);
             return MontarEstadoPicking(empresa, picking, lineas, lecturas);
+        }
+
+        public async Task<List<RecogidaPendienteDTO>> LeerRecogidasPendientes(string empresa, string almacen)
+        {
+            // De momento solo los pickings: la reposición a tienda no tiene documento propio hasta
+            // que se genera (#553). Cuando lo tenga, se suma aquí y la app no cambia.
+            return (await repositorio.LeerPickingsEnCurso(empresa, almacen).ConfigureAwait(false))
+                .Select(p => new RecogidaPendienteDTO
+                {
+                    Tipo = CasadorEscaneos.ORIGEN_PICKING,
+                    Numero = p.Picking,
+                    Destino = CasadorEscaneos.DESTINO_PICKING,
+                    Lineas = p.Lineas,
+                    Pedidos = p.Pedidos,
+                    Unidades = p.Unidades
+                })
+                .ToList();
+        }
+
+        public async Task<RecogidaAlmacenDTO> LeerRecogida(string empresa, string tipo, int numero)
+        {
+            if (CasadorEscaneos.NormalizarTipoOrigen(tipo) != CasadorEscaneos.ORIGEN_PICKING)
+            {
+                return null;
+            }
+            List<LineaPickingAlmacenDTO> recorrido = CasadorEscaneos.OrdenarRecorrido(
+                await repositorio.LeerLineasPicking(empresa, numero).ConfigureAwait(false));
+            if (recorrido.Count == 0)
+            {
+                return null;
+            }
+            List<LecturaPickingAlmacen> lecturas = await repositorio.LeerLecturasDelPicking(empresa, numero).ConfigureAwait(false);
+            return MontarRecogida(empresa, CasadorEscaneos.ORIGEN_PICKING, numero, CasadorEscaneos.DESTINO_PICKING, recorrido, lecturas);
+        }
+
+        internal static RecogidaAlmacenDTO MontarRecogida(string empresa, string tipo, int numero, string destino,
+            List<LineaPickingAlmacenDTO> recorrido, List<LecturaPickingAlmacen> lecturas)
+        {
+            EstadoPickingDTO estado = MontarEstadoPicking(empresa, numero, recorrido, lecturas);
+            List<LineaRecogidaDTO> lineas = CasadorEscaneos.RepartirLoResuelto(recorrido,
+                (lecturas ?? new List<LecturaPickingAlmacen>())
+                    .Select(l => new CasadorEscaneos.Cantidad { Producto = l.Producto, Unidades = l.Unidades + l.Faltas }));
+            return new RecogidaAlmacenDTO
+            {
+                Empresa = empresa,
+                Tipo = tipo,
+                Numero = numero,
+                Destino = destino,
+                Lineas = lineas,
+                SiguienteOrden = lineas.Where(l => l.Pendiente > 0).Select(l => (int?)l.Orden).FirstOrDefault(),
+                Terminada = estado.Terminado,
+                Completa = estado.Completo
+            };
         }
 
         /// <summary>

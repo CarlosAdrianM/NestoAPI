@@ -407,6 +407,123 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             Assert.IsNull(await servicio.EnlaceFotoBulto(8));
         }
 
+        #region NestoAPI#574: recoger es lo mismo para un picking y para una reposición
+
+        private static LineaPickingAlmacenDTO Parada(int orden, string producto, int cantidad, string hueco)
+        {
+            return new LineaPickingAlmacenDTO
+            {
+                Orden = orden, Producto = producto, Descripcion = "PRODUCTO " + producto, CodigoBarras = "84" + producto,
+                Cantidad = cantidad, Pasillo = hueco, Fila = "001", Columna = "001", Ubicacion = hueco + "/001/001"
+            };
+        }
+
+        [TestMethod]
+        public async Task LeerRecogidasPendientes_LosPickingsEnCursoSonRecogidasHaciaLaMesaDePacking()
+        {
+            A.CallTo(() => repositorio.LeerPickingsEnCurso(EMPRESA, "ALG")).Returns(new List<PickingEnCursoDTO>
+            {
+                new PickingEnCursoDTO { Picking = 99700, Lineas = 26, Pedidos = 7, Unidades = 80 }
+            });
+
+            RecogidaPendienteDTO recogida = (await servicio.LeerRecogidasPendientes(EMPRESA, "ALG")).Single();
+
+            Assert.AreEqual("PICK", recogida.Tipo);
+            Assert.AreEqual(99700, recogida.Numero);
+            Assert.AreEqual("Mesa de packing", recogida.Destino);
+            Assert.AreEqual(26, recogida.Lineas);
+            Assert.AreEqual(7, recogida.Pedidos);
+            Assert.AreEqual(80, recogida.Unidades);
+        }
+
+        [TestMethod]
+        public void MontarRecogida_AMedias_AbrePorLaPrimeraParadaConAlgoPorCoger()
+        {
+            // El producto A está en dos huecos (3 + 2). Se han leído 4 de A y B se ha dado por falta.
+            var recorrido = new List<LineaPickingAlmacenDTO>
+            {
+                Parada(1, "A", 3, "001"), Parada(2, "B", 1, "002"), Parada(3, "A", 2, "005"), Parada(4, "C", 6, "007")
+            };
+            var lecturas = new List<LecturaPickingAlmacen>
+            {
+                new LecturaPickingAlmacen { Producto = "A ", Unidades = 4 },
+                new LecturaPickingAlmacen { Producto = "B", Faltas = 1 }
+            };
+
+            RecogidaAlmacenDTO recogida = ServicioPreparacionAlmacen.MontarRecogida(EMPRESA, "PICK", PICKING, "Mesa de packing", recorrido, lecturas);
+
+            CollectionAssert.AreEqual(new[] { 3, 1, 1, 0 }, recogida.Lineas.Select(l => l.Resuelto).ToArray());
+            CollectionAssert.AreEqual(new[] { 0, 0, 1, 6 }, recogida.Lineas.Select(l => l.Pendiente).ToArray());
+            Assert.AreEqual(3, recogida.SiguienteOrden);
+            Assert.IsFalse(recogida.Terminada);
+            Assert.AreEqual("005/001/001", recogida.Lineas[2].Ubicacion);
+            Assert.AreEqual("84A", recogida.Lineas[2].CodigoBarras);
+        }
+
+        [TestMethod]
+        public void MontarRecogida_TodoCogido_TerminadaYSinSiguienteParada()
+        {
+            var recorrido = new List<LineaPickingAlmacenDTO> { Parada(1, "A", 3, "001"), Parada(2, "B", 1, "002") };
+            var lecturas = new List<LecturaPickingAlmacen>
+            {
+                // De A se han leído 5: lo de más no se apunta a ninguna parada
+                new LecturaPickingAlmacen { Producto = "A", Unidades = 5 },
+                new LecturaPickingAlmacen { Producto = "B", Unidades = 1 }
+            };
+
+            RecogidaAlmacenDTO recogida = ServicioPreparacionAlmacen.MontarRecogida(EMPRESA, "PICK", PICKING, "Mesa de packing", recorrido, lecturas);
+
+            CollectionAssert.AreEqual(new[] { 3, 1 }, recogida.Lineas.Select(l => l.Resuelto).ToArray());
+            Assert.IsNull(recogida.SiguienteOrden);
+            Assert.IsTrue(recogida.Terminada);
+            Assert.IsFalse(recogida.Completa, "Sobra producto: terminada, pero no completa");
+        }
+
+        [TestMethod]
+        public void MontarRecogida_SinEmpezar_AbrePorLaPrimeraParada()
+        {
+            var recorrido = new List<LineaPickingAlmacenDTO> { Parada(1, "A", 3, "001"), Parada(2, "B", 1, "002") };
+
+            RecogidaAlmacenDTO recogida = ServicioPreparacionAlmacen.MontarRecogida(EMPRESA, "PICK", PICKING, "Mesa de packing", recorrido, null);
+
+            Assert.AreEqual(1, recogida.SiguienteOrden);
+            Assert.IsTrue(recogida.Lineas.All(l => l.Resuelto == 0));
+            Assert.IsFalse(recogida.Terminada);
+        }
+
+        [TestMethod]
+        public async Task LeerRecogida_UnPicking_TraeElRecorridoConLoLeido()
+        {
+            A.CallTo(() => repositorio.LeerLineasPicking(EMPRESA, PICKING)).Returns(new List<LineaPickingAlmacenDTO>
+            {
+                Parada(0, "B", 1, "002"), Parada(0, "A", 3, "001")
+            });
+            A.CallTo(() => repositorio.LeerLecturasDelPicking(EMPRESA, PICKING)).Returns(new List<LecturaPickingAlmacen>
+            {
+                new LecturaPickingAlmacen { Producto = "A", Unidades = 3 }
+            });
+
+            RecogidaAlmacenDTO recogida = await servicio.LeerRecogida(EMPRESA, " pick ", PICKING);
+
+            Assert.AreEqual("PICK", recogida.Tipo);
+            Assert.AreEqual(PICKING, recogida.Numero);
+            Assert.AreEqual("A", recogida.Lineas[0].Producto, "Ordenado por el recorrido: el pasillo 001 antes que el 002");
+            Assert.AreEqual(2, recogida.SiguienteOrden);
+        }
+
+        [TestMethod]
+        public async Task LeerRecogida_PickingSinLineasOReposicion_Null()
+        {
+            A.CallTo(() => repositorio.LeerLineasPicking(EMPRESA, 1)).Returns(new List<LineaPickingAlmacenDTO>());
+
+            Assert.IsNull(await servicio.LeerRecogida(EMPRESA, "PICK", 1));
+            // La reposición todavía no tiene documento que leer (#553)
+            Assert.IsNull(await servicio.LeerRecogida(EMPRESA, "REPO", 5012));
+            Assert.IsNull(await servicio.LeerRecogida(EMPRESA, "OTRO", 5012));
+        }
+
+        #endregion
+
         #region Enlace público a la foto (sin usuario)
 
         private const string CLAVE_ENLACES = "clave-de-pruebas-de-mas-de-treinta-y-dos-caracteres";

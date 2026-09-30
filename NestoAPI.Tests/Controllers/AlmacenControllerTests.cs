@@ -57,6 +57,43 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public async Task GetRecogida_TipoQueNoExiste_BadRequest()
+        {
+            Assert.IsInstanceOfType(await controller.GetRecogida("OTRO", 5), typeof(BadRequestErrorMessageResult));
+            A.CallTo(() => servicio.LeerRecogida(A<string>._, A<string>._, A<int>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task GetRecogida_NoExiste_NotFound()
+        {
+            A.CallTo(() => servicio.LeerRecogida("1", "REPO", 5)).Returns(Task.FromResult<RecogidaAlmacenDTO>(null));
+
+            Assert.IsInstanceOfType(await controller.GetRecogida("REPO", 5), typeof(NotFoundResult));
+        }
+
+        [TestMethod]
+        public async Task GetRecogida_Existe_LaDevuelve()
+        {
+            var recogida = new RecogidaAlmacenDTO { Tipo = "PICK", Numero = 5, SiguienteOrden = 2 };
+            A.CallTo(() => servicio.LeerRecogida("1", "pick", 5)).Returns(recogida);
+
+            IHttpActionResult resultado = await controller.GetRecogida("pick", 5);
+
+            Assert.AreSame(recogida, ((OkNegotiatedContentResult<RecogidaAlmacenDTO>)resultado).Content);
+        }
+
+        [TestMethod]
+        public async Task GetRecogidas_PorDefectoLasDeAlgete()
+        {
+            var lista = new List<RecogidaPendienteDTO> { new RecogidaPendienteDTO { Tipo = "PICK", Numero = 5 } };
+            A.CallTo(() => servicio.LeerRecogidasPendientes("1", "ALG")).Returns(lista);
+
+            IHttpActionResult resultado = await controller.GetRecogidas();
+
+            Assert.AreSame(lista, ((OkNegotiatedContentResult<List<RecogidaPendienteDTO>>)resultado).Content);
+        }
+
+        [TestMethod]
         public async Task GetPicking_PickingSinLineas_NotFound()
         {
             A.CallTo(() => servicio.LeerPicking("1", 5)).Returns(new PickingAlmacenDTO());

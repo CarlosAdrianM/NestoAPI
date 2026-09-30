@@ -94,6 +94,38 @@ namespace NestoAPI.Controllers
             return estado == null ? (IHttpActionResult)NotFound() : Ok(estado);
         }
 
+        // GET api/Almacen/Recogidas?almacen=ALG&empresa=1
+        /// <summary>
+        /// NestoAPI#574: lo que hay por recoger, sea un picking de pedidos o una reposición a tienda.
+        /// Para el mozo es el mismo trabajo y la misma pantalla.
+        /// </summary>
+        [HttpGet]
+        [Route("Recogidas")]
+        [ResponseType(typeof(List<RecogidaPendienteDTO>))]
+        public async Task<IHttpActionResult> GetRecogidas(string almacen = Constantes.Almacenes.ALGETE,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            return Ok(await servicio.LeerRecogidasPendientes(Empresa(empresa), Almacen(almacen)).ConfigureAwait(false));
+        }
+
+        // GET api/Almacen/Recogidas/PICK/99633?empresa=1
+        /// <summary>
+        /// El recorrido de una recogida y cómo va, en una sola llamada: cada parada con lo que ya está
+        /// hecho, y por cuál seguir. Así la app abre donde se dejó sin que el mozo toque nada.
+        /// </summary>
+        [HttpGet]
+        [Route("Recogidas/{tipo}/{numero:int}")]
+        [ResponseType(typeof(RecogidaAlmacenDTO))]
+        public async Task<IHttpActionResult> GetRecogida(string tipo, int numero, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            if (CasadorEscaneos.NormalizarTipoOrigen(tipo) == null)
+            {
+                return BadRequest("El tipo de recogida tiene que ser PICK o REPO.");
+            }
+            RecogidaAlmacenDTO recogida = await servicio.LeerRecogida(Empresa(empresa), tipo, numero).ConfigureAwait(false);
+            return recogida == null ? (IHttpActionResult)NotFound() : Ok(recogida);
+        }
+
         // GET api/Almacen/Picking/99633/Packing?empresa=1
         /// <summary>Lo que hay que meter en cajas de todo un picking, agrupado por entrega y por pedido.</summary>
         [HttpGet]

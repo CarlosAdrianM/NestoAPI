@@ -36,6 +36,51 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public List<LineaPickingAlmacenDTO> Lineas { get; set; } = new List<LineaPickingAlmacenDTO>();
     }
 
+    /// <summary>
+    /// NestoAPI#574: algo que hay por recoger en un almacén, venga de un picking de pedidos o de
+    /// una reposición a tienda. Para el mozo es el mismo trabajo.
+    /// </summary>
+    public class RecogidaPendienteDTO
+    {
+        /// <summary>PICK (picking de pedidos) o REPO (reposición a tienda).</summary>
+        public string Tipo { get; set; }
+        /// <summary>El número del picking o el del traspaso.</summary>
+        public int Numero { get; set; }
+        /// <summary>A dónde va lo recogido: «Mesa de packing», o la tienda.</summary>
+        public string Destino { get; set; }
+        public int Lineas { get; set; }
+        /// <summary>Solo en un picking: cuántos pedidos lleva.</summary>
+        public int? Pedidos { get; set; }
+        public int Unidades { get; set; }
+    }
+
+    /// <summary>Una parada del recorrido con lo que ya está hecho de ella.</summary>
+    public class LineaRecogidaDTO : LineaPickingAlmacenDTO
+    {
+        /// <summary>Unidades de esta parada ya cogidas o dadas por falta.</summary>
+        public int Resuelto { get; set; }
+        public int Pendiente => Math.Max(0, Cantidad - Resuelto);
+    }
+
+    /// <summary>
+    /// El recorrido de una recogida con cómo va, en una sola llamada: la app abre directamente en la
+    /// parada por la que iba (<see cref="SiguienteOrden"/>), sin que el mozo toque nada.
+    /// </summary>
+    public class RecogidaAlmacenDTO
+    {
+        public string Empresa { get; set; }
+        public string Tipo { get; set; }
+        public int Numero { get; set; }
+        public string Destino { get; set; }
+        public List<LineaRecogidaDTO> Lineas { get; set; } = new List<LineaRecogidaDTO>();
+        /// <summary>La primera parada con algo por coger. Null si no queda nada.</summary>
+        public int? SiguienteOrden { get; set; }
+        /// <summary>No queda nada por resolver: todo cogido o dado por falta.</summary>
+        public bool Terminada { get; set; }
+        /// <summary>Terminada y sin faltas ni producto de más.</summary>
+        public bool Completa { get; set; }
+    }
+
     public class LineaPackingAlmacenDTO
     {
         /// <summary>LinPedidoVta.[Nº Orden].</summary>

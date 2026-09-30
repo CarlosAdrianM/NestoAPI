@@ -24,6 +24,54 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public const string ORIGEN_PICKING = "PICK";
         public const string ORIGEN_REPOSICION = "REPO";
 
+        public const string DESTINO_PICKING = "Mesa de packing";
+
+        /// <summary>PICK o REPO, como se escriba. Null si no es ninguno de los dos.</summary>
+        public static string NormalizarTipoOrigen(string tipo)
+        {
+            string limpio = tipo?.Trim().ToUpperInvariant();
+            return limpio == ORIGEN_PICKING || limpio == ORIGEN_REPOSICION ? limpio : null;
+        }
+
+        /// <summary>
+        /// Reparte lo ya resuelto de cada producto (cogido o dado por falta) entre sus paradas, en el
+        /// orden del recorrido: los escaneos dicen el producto, no el hueco, y un producto puede estar
+        /// en varios. Lo leído de más no se apunta a ninguna parada (lo dice el estado).
+        /// </summary>
+        public static List<LineaRecogidaDTO> RepartirLoResuelto(IEnumerable<LineaPickingAlmacenDTO> recorrido, IEnumerable<Cantidad> resuelto)
+        {
+            Dictionary<string, int> quedan = (resuelto ?? Enumerable.Empty<Cantidad>())
+                .GroupBy(r => r.Producto?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => Math.Max(0, g.Sum(r => r.Unidades)), StringComparer.OrdinalIgnoreCase);
+
+            var lineas = new List<LineaRecogidaDTO>();
+            foreach (LineaPickingAlmacenDTO parada in (recorrido ?? Enumerable.Empty<LineaPickingAlmacenDTO>()).OrderBy(l => l.Orden))
+            {
+                string producto = parada.Producto?.Trim() ?? string.Empty;
+                int disponible = quedan.TryGetValue(producto, out int unidades) ? unidades : 0;
+                int hecho = Math.Min(disponible, Math.Max(0, parada.Cantidad));
+                quedan[producto] = disponible - hecho;
+                lineas.Add(new LineaRecogidaDTO
+                {
+                    Orden = parada.Orden,
+                    Producto = parada.Producto,
+                    Descripcion = parada.Descripcion,
+                    CodigoBarras = parada.CodigoBarras,
+                    SinCodigo = parada.SinCodigo,
+                    CodigoDuplicado = parada.CodigoDuplicado,
+                    Cantidad = parada.Cantidad,
+                    Tamano = parada.Tamano,
+                    UnidadMedida = parada.UnidadMedida,
+                    Pasillo = parada.Pasillo,
+                    Fila = parada.Fila,
+                    Columna = parada.Columna,
+                    Ubicacion = parada.Ubicacion,
+                    Resuelto = hecho
+                });
+            }
+            return lineas;
+        }
+
         /// <summary>El tipo de origen de un escaneo. Si no lo dice, es un picking.</summary>
         public static string TipoOrigenDe(EscaneoAlmacenDTO escaneo)
         {
