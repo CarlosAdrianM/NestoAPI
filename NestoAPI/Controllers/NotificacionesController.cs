@@ -126,6 +126,49 @@ namespace NestoAPI.Controllers
             return Ok(new { Avisados = usuarios.Count, Usuarios = usuarios });
         }
 
+        internal const string TIPO_AVISO_ARIADNA = "AvisoAriadna";
+
+        /// <summary>
+        /// NestoAPI#575 (fase 1): un aviso en el buzón de Ariadna, la app de almacén, a usuarios concretos.
+        /// Ruta nueva y aparte: no toca los avisos de Nesto ni de NestoApp. Los usuarios de Ariadna entran
+        /// como los de NestoApp, así que van sin dominio («Santiago»); si llega con dominio, se le quita.
+        /// La app lee su buzón con las rutas de siempre: api/Notificaciones/Buzon?aplicacion=Ariadna.
+        /// Solo Dirección e Informática.
+        /// POST api/Notificaciones/AvisoAriadna  { "Usuarios": ["Santiago"], "Titulo": "...", "Texto": "..." }
+        /// </summary>
+        [HttpPost]
+        [Route("AvisoAriadna")]
+        [Authorize]
+        public async Task<IHttpActionResult> AvisoAriadna([FromBody] AvisoNestoDTO dto)
+        {
+            if (User == null || !(User.IsInRoleSinDominio(GruposSeguridad.DIRECCION) || User.IsInRoleSinDominio(NovedadesController.GRUPO_INFORMATICA)))
+            {
+                return StatusCode(System.Net.HttpStatusCode.Forbidden);
+            }
+            List<string> usuarios = (dto?.Usuarios ?? new List<string>())
+                .Where(u => !string.IsNullOrWhiteSpace(u))
+                .Select(u => u.Trim().Substring(u.Trim().LastIndexOf('\\') + 1).Trim())
+                .Where(u => u.Length > 0)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (usuarios.Count == 0 || string.IsNullOrWhiteSpace(dto.Titulo) || string.IsNullOrWhiteSpace(dto.Texto))
+            {
+                return BadRequest("Faltan los usuarios, el título o el texto del aviso");
+            }
+            var notificacion = new NotificacionPushDTO
+            {
+                Titulo = dto.Titulo.Trim(),
+                Cuerpo = dto.Texto.Trim(),
+                Tipo = TIPO_AVISO_ARIADNA,
+                Datos = new Dictionary<string, string> { ["tipo"] = TIPO_AVISO_ARIADNA }
+            };
+            foreach (string usuario in usuarios)
+            {
+                await _servicio.GuardarEnBuzonDeUsuario(usuario, Aplicaciones.ARIADNA, notificacion).ConfigureAwait(false);
+            }
+            return Ok(new { Avisados = usuarios.Count, Usuarios = usuarios });
+        }
+
         [HttpPost]
         [Route("Dispositivos")]
         [Route("RegistrarDispositivo")]

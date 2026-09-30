@@ -523,6 +523,61 @@ namespace NestoAPI.Tests.Controllers
             A.CallTo(() => _servicio.GuardarEnBuzonDeUsuario("NUEVAVISION\\Laura", Constantes.Aplicaciones.NESTO, A<NotificacionPushDTO>._)).MustHaveHappenedOnceExactly();
         }
 
+        // NestoAPI#575 (fase 1): el buzón de Ariadna, sin tocar el de las otras aplicaciones
+
+        [TestMethod]
+        public async Task AvisoAriadna_SinSerDireccionNiInformatica_Forbidden()
+        {
+            var resultado = await _controller.AvisoAriadna(new AvisoNestoDTO { Usuarios = new System.Collections.Generic.List<string> { "Santiago" }, Titulo = "t", Texto = "x" });
+
+            Assert.IsInstanceOfType(resultado, typeof(StatusCodeResult));
+            A.CallTo(() => _servicio.GuardarEnBuzonDeUsuario(A<string>._, A<string>._, A<NotificacionPushDTO>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task AvisoAriadna_LoGuardaEnElBuzonDeAriadna_SinDominioYSoloAhi()
+        {
+            _controller.User = new GenericPrincipal(new GenericIdentity("NUEVAVISION\\Carlos"), new[] { "NUEVAVISION\\Informatica" });
+
+            var resultado = await _controller.AvisoAriadna(new AvisoNestoDTO
+            {
+                Usuarios = new System.Collections.Generic.List<string> { "Santiago", "NUEVAVISION\\Andre", "santiago", " " },
+                Titulo = "Ariadna ya está lista",
+                Texto = "Desde hoy el picking se prepara con la app"
+            });
+
+            Assert.IsNotInstanceOfType(resultado, typeof(StatusCodeResult));
+            A.CallTo(() => _servicio.GuardarEnBuzonDeUsuario("Santiago", Constantes.Aplicaciones.ARIADNA,
+                A<NotificacionPushDTO>.That.Matches(n => n.Titulo == "Ariadna ya está lista" && n.Cuerpo == "Desde hoy el picking se prepara con la app"
+                    && n.Datos["tipo"] == NotificacionesController.TIPO_AVISO_ARIADNA))).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _servicio.GuardarEnBuzonDeUsuario("Andre", Constantes.Aplicaciones.ARIADNA, A<NotificacionPushDTO>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _servicio.GuardarEnBuzonDeUsuario(A<string>._, Constantes.Aplicaciones.NESTO, A<NotificacionPushDTO>._)).MustNotHaveHappened();
+            A.CallTo(() => _servicio.GuardarEnBuzonDeUsuario(A<string>._, Constantes.Aplicaciones.NESTO_APP, A<NotificacionPushDTO>._)).MustNotHaveHappened();
+            A.CallTo(() => _servicio.EnviarAUsuario(A<string>._, A<string>._, A<NotificacionPushDTO>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task AvisoAriadna_SinUsuariosOTexto_BadRequest()
+        {
+            _controller.User = new GenericPrincipal(new GenericIdentity("NUEVAVISION\\Carlos"), new[] { "NUEVAVISION\\Dirección" });
+
+            Assert.IsInstanceOfType(await _controller.AvisoAriadna(new AvisoNestoDTO { Titulo = "t", Texto = "x" }), typeof(BadRequestErrorMessageResult));
+            Assert.IsInstanceOfType(await _controller.AvisoAriadna(new AvisoNestoDTO { Usuarios = new System.Collections.Generic.List<string> { "Santiago" }, Titulo = "t" }), typeof(BadRequestErrorMessageResult));
+        }
+
+        [TestMethod]
+        public async Task ObtenerBuzon_DeAriadna_PideElBuzonDeEsaAplicacionParaElUsuarioDelToken()
+        {
+            // La app lee su buzón con las rutas de siempre, diciendo que es Ariadna
+            _controller.User = new GenericPrincipal(new GenericIdentity("Santiago"), new string[0]);
+
+            _ = await _controller.ObtenerBuzon(Constantes.Aplicaciones.ARIADNA);
+            _ = await _controller.ContarNoLeidas(Constantes.Aplicaciones.ARIADNA);
+
+            A.CallTo(() => _servicio.ObtenerBuzon("Santiago", "Ariadna", false, 1, 20)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _servicio.ContarNoLeidas("Santiago", "Ariadna")).MustHaveHappenedOnceExactly();
+        }
+
         [TestMethod]
         public void UsuariosConectadosNesto_UnUsuarioConDosNestoCuentaUnaVez_YAlDesconectarseSale()
         {
