@@ -569,6 +569,85 @@ namespace NestoAPI.Tests.Infrastructure
                 "Un país no-UE no se auto-marca (tipo ambiguo): queda para la marca manual");
         }
 
+        // NestoAPI#584 (caso real 01/10/26, Reina): clienta de Venezuela con su cédula. El país fiscal ya lo dice:
+        // documento oficial del país (IDOtro 04) automático, sin censo español ni avisos de NIF incorrecto.
+
+        [TestMethod]
+        public async Task ValidarPrincipal_PaisNoUEConDocumentoQueNoEsNif_ExtranjeroTipo04SinAeat()
+        {
+            ConFicha(Ficha(cliente: "41982", nif: "24241471", nombre: "DAYLIN B. H. M.", pais: "VE"));
+            ConMasFakes();
+            A.CallTo(() => almacen.Leer(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored))
+                .Returns(Task.FromResult<ValidacionNifRegistro>(null));
+
+            var resultado = await servicio.ValidarPrincipal("41982", "carlos");
+
+            Assert.AreEqual(EstadoValidacionNif.Extranjero, resultado.Estado);
+            Assert.AreEqual("04", resultado.TipoIdentificacion, "Documento oficial del país (la cédula)");
+            Assert.AreEqual("VE", resultado.Pais);
+            Assert.IsFalse(resultado.AcabaDeResultarIncorrecto, "Sin aviso de NIF incorrecto");
+            A.CallTo(() => aeat.ComprobarNifNombre(A<string>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task ValidarPrincipal_PaisNoUEConVeredictoIncorrectoCacheado_PasaAExtranjeroTipo04()
+        {
+            // Antes de #584 la cédula se preguntaba al censo español y quedaba cacheada como INCORRECTO.
+            ConFicha(Ficha(cliente: "41797", nif: "aah767225", nombre: "ANA C. G.", pais: "AR"));
+            ConMasFakes();
+            A.CallTo(() => almacen.Leer(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored))
+                .Returns(Task.FromResult(new ValidacionNifRegistro
+                {
+                    Nif = "aah767225",
+                    Nombre = "ANA C. G.",
+                    Estado = ServicioValidacionNif.ESTADO_INCORRECTO,
+                    ResultadoAeat = "NO IDENTIFICADO"
+                }));
+
+            var resultado = await servicio.ValidarPrincipal("41797", "Verifactu");
+
+            Assert.AreEqual(EstadoValidacionNif.Extranjero, resultado.Estado);
+            Assert.AreEqual("04", resultado.TipoIdentificacion);
+            Assert.AreEqual("AR", resultado.Pais);
+        }
+
+        [TestMethod]
+        public async Task ValidarPrincipal_PaisNoUEConMarcaManualDePasaporte_MandaLaMarca()
+        {
+            // Si administración dijo que es un pasaporte (03), no se cambia por el 04 automático.
+            ConFicha(Ficha(cliente: "41959", nif: "G12345678", nombre: "CLAUDIA Z. R.", pais: "MX"));
+            ConMasFakes();
+            A.CallTo(() => almacen.Leer(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored))
+                .Returns(Task.FromResult(new ValidacionNifRegistro
+                {
+                    Nif = "G12345678",
+                    Nombre = "CLAUDIA Z. R.",
+                    Estado = ServicioValidacionNif.ESTADO_EXTRANJERO,
+                    TipoIdentificacion = "03",
+                    Pais = "MX"
+                }));
+
+            var resultado = await servicio.ValidarPrincipal("41959", "Verifactu");
+
+            Assert.AreEqual("03", resultado.TipoIdentificacion);
+        }
+
+        [TestMethod]
+        public async Task ValidarPrincipal_PaisNoUEConNieEspanol_SiPasaPorElCenso()
+        {
+            // Caso real 41756 (VE con NIE Z3809699F): un NIE/DNI español SÍ lo valida la AEAT.
+            ConFicha(Ficha(cliente: "41756", nif: "Z3809699F", nombre: "Y. O. S. S.", pais: "VE"));
+            ConMasFakes();
+            A.CallTo(() => almacen.Leer(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored))
+                .Returns(Task.FromResult<ValidacionNifRegistro>(null));
+            AeatResponde(valido: true, resultado: "IDENTIFICADO");
+
+            var resultado = await servicio.ValidarPrincipal("41756", "Verifactu");
+
+            Assert.AreEqual(EstadoValidacionNif.Correcto, resultado.Estado);
+            A.CallTo(() => aeat.ComprobarNifNombre(A<string>.Ignored, A<string>.Ignored)).MustHaveHappened();
+        }
+
         [TestMethod]
         public async Task MarcarIdentificacionExtranjera_FijaElPaisFiscalDeLaFicha()
         {

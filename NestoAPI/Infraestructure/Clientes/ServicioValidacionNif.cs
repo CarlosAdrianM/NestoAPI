@@ -139,6 +139,15 @@ namespace NestoAPI.Infraestructure.Clientes
                 && PaisesUnionEuropea.Contains(codigo);
         }
 
+        /// <summary>NestoAPI#584: país fiscal informado que no es España ni de la UE (VE, MX, AR, CH, AD...).</summary>
+        internal static bool EsPaisFueraDeLaUnionEuropea(string pais)
+        {
+            string codigo = pais?.Trim();
+            return !string.IsNullOrEmpty(codigo)
+                && !codigo.Equals(PAIS_ESPANA, StringComparison.OrdinalIgnoreCase)
+                && !PaisesUnionEuropea.Contains(codigo);
+        }
+
         // Criterio único en Constantes.ClientesEspeciales (#325/#366): la lista de clientes
         // ficticios de simplificadas ya no vive duplicada aquí (DRY, ajuste 17/08/26 al añadir
         // MATERIALES_CURSOS).
@@ -843,6 +852,21 @@ namespace NestoAPI.Infraestructure.Clientes
                 resultado.TipoIdentificacion = TIPO_NIF_IVA;
                 resultado.Pais = ficha.Pais?.Trim().ToUpperInvariant();
                 resultado.ResultadoAeat = $"IDOtro tipo {TIPO_NIF_IVA} ({resultado.Pais}) por país fiscal";
+                return resultado;
+            }
+
+            // 2b. NestoAPI#584: país fiscal de FUERA de la UE con un documento que no es un NIF español (cédula,
+            // DNI del país...) → documento oficial del país (IDOtro 04) AUTOMÁTICO. El censo español nunca puede
+            // validarlo: preguntarle solo daba un INCORRECTO falso, con avisos a tienda, administración y vendedor,
+            // y la factura rechazada por Verifactu (caso real 01/10/26, cliente 41982 de Venezuela). Un pasaporte
+            // (03) lo sigue marcando administración a mano, y la marca manual manda (paso 1). Con un NIE/DNI
+            // español la AEAT sí puede validarlo: sigue por el censo.
+            if (EsPaisFueraDeLaUnionEuropea(ficha.Pais) && !TieneFormatoNif(nif))
+            {
+                resultado.Estado = EstadoValidacionNif.Extranjero;
+                resultado.TipoIdentificacion = TIPO_DOC_OFICIAL_PAIS;
+                resultado.Pais = ficha.Pais?.Trim().ToUpperInvariant();
+                resultado.ResultadoAeat = $"IDOtro tipo {TIPO_DOC_OFICIAL_PAIS} ({resultado.Pais}) por país fiscal";
                 return resultado;
             }
 
