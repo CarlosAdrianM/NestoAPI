@@ -562,6 +562,35 @@ namespace NestoAPI.Controllers
         /// recalcula como si hubiera nacido para él (condiciones de pago, CCC, IVA, vendedor, ruta, precios,
         /// portes...). Ver <see cref="GestorCambioClientePedido"/>. 400 con el motivo si no se puede.
         /// </summary>
+        /// <summary>
+        /// NestoAPI#582: las notas de entrega de ese pedido que siguen sin fecha de entrega (la nota automática nace
+        /// sin fecha para no colarse en el picking del día). Nesto lo pregunta tras hacer el albarán desde el detalle.
+        /// </summary>
+        [HttpGet]
+        [Route("api/PedidosVenta/{empresa}/{pedido:int}/NotasEntregaSinFecha")]
+        [ResponseType(typeof(List<Infraestructure.NotasEntrega.NotaEntregaSinFechaDTO>))]
+        public async Task<IHttpActionResult> GetNotasEntregaSinFecha(string empresa, int pedido)
+        {
+            string empresaPedido = string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
+            return Ok(await new Infraestructure.NotasEntrega.GestorFechaEntregaNotas(db).NotasSinFecha(empresaPedido, pedido).ConfigureAwait(false));
+        }
+
+        /// <summary>NestoAPI#582: pone la fecha de entrega a una nota de entrega (sus líneas pendientes, sin picking).</summary>
+        [HttpPost]
+        [Route("api/PedidosVenta/{empresa}/{nota:int}/FechaEntrega")]
+        public async Task<IHttpActionResult> PostFechaEntregaNota(string empresa, int nota, [FromBody] FechaEntregaNotaRequest peticion)
+        {
+            if (peticion == null || peticion.FechaEntrega == default)
+            {
+                return BadRequest("Falta la fecha de entrega.");
+            }
+            string empresaPedido = string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, peticion.Usuario);
+            string error = await new Infraestructure.NotasEntrega.GestorFechaEntregaNotas(db)
+                .PonerFecha(empresaPedido, nota, peticion.FechaEntrega, usuario).ConfigureAwait(false);
+            return error == null ? (IHttpActionResult)Ok() : BadRequest(error);
+        }
+
         [HttpPost]
         [Route("api/PedidosVenta/{empresa}/{numero:int}/CambiarCliente")]
         [ResponseType(typeof(CambiarClientePedidoRespuesta))]

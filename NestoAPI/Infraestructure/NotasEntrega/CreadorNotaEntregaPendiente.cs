@@ -35,6 +35,15 @@ namespace NestoAPI.Infraestructure.NotasEntrega
         internal const string VALOR_ENCENDIDO = "1";
         internal const string MARCA = "NestoAPI#542";
 
+        /// <summary>
+        /// NestoAPI#582: lo que se deja en carpeta casi nunca se entrega el mismo día (y a veces ni se sabe cuándo).
+        /// La nota nace con esta fecha para que no entre en el picking hasta que alguien ponga la de verdad (Nesto la
+        /// pregunta al hacer el albarán desde el detalle; si no, se cambia a mano).
+        /// </summary>
+        public static readonly DateTime FECHA_ENTREGA_SIN_DETERMINAR = new DateTime(2099, 12, 31);
+
+        internal const string AVISO_SIN_FECHA = "SIN FECHA DE ENTREGA: ponla cuando se sepa cuándo se entrega (hasta entonces no sale en el picking).";
+
         private readonly NVEntities db;
         private readonly GestorPedidosVenta gestorPedidos;
         private readonly Action<Exception, string> registrar;
@@ -166,7 +175,7 @@ WHERE l.Empresa = @p0 AND l.Pedido = @p1 AND l.Estado = 0 AND l.Banco = @p2 AND 
             db.CabPedidoVtas.Add(nota);
             foreach (LinPedidoVta pendiente in pendientes)
             {
-                LinPedidoVta linea = ConstruirLinea(pendiente, nota, usuario, DateTime.Today);
+                LinPedidoVta linea = ConstruirLinea(pendiente, nota, usuario);
                 linea.Nº_Cliente = nota.Nº_Cliente;
                 linea.Contacto = nota.Contacto;
                 gestorPedidos.CalcularImportesLinea(linea, nota.IVA);
@@ -245,7 +254,7 @@ WHERE l.Empresa = @p0 AND l.Pedido = @p1 AND l.Estado = 0 AND l.Banco = @p2 AND 
 
         internal static string ComentarioNota(string comentarioOriginal, int pedido, int albaran)
         {
-            string etiqueta = $"NOTA DE ENTREGA: pendiente de entregar del pedido {pedido} (albarán {albaran})";
+            string etiqueta = $"NOTA DE ENTREGA: pendiente de entregar del pedido {pedido} (albarán {albaran})\r\n{AVISO_SIN_FECHA}";
             string original = comentarioOriginal?.Trim();
             return string.IsNullOrEmpty(original) ? etiqueta : original + "\r\n" + etiqueta;
         }
@@ -256,7 +265,7 @@ WHERE l.Empresa = @p0 AND l.Pedido = @p1 AND l.Estado = 0 AND l.Banco = @p2 AND 
         /// fecha de modificación del original: el cliente ya ha pagado esas unidades, y esa fecha es la
         /// antigüedad con la que el picking reparte el stock.
         /// </summary>
-        internal static LinPedidoVta ConstruirLinea(LinPedidoVta original, CabPedidoVta nota, string usuario, DateTime hoy)
+        internal static LinPedidoVta ConstruirLinea(LinPedidoVta original, CabPedidoVta nota, string usuario)
         {
             LinPedidoVta linea = original.ClonarParaEmpresa(nota.Empresa, nota.Número);
             linea.Nº_Orden = 0; // identidad: lo pone la BD
@@ -269,7 +278,7 @@ WHERE l.Empresa = @p0 AND l.Pedido = @p1 AND l.Estado = 0 AND l.Banco = @p2 AND 
             linea.Fecha_Albarán = null;
             linea.Nº_Factura = null;
             linea.Fecha_Factura = null;
-            linea.Fecha_Entrega = hoy;
+            linea.Fecha_Entrega = FECHA_ENTREGA_SIN_DETERMINAR;
             linea.LineaParcial = false;
             linea.VtoBueno = true;
             linea.Usuario = usuario;

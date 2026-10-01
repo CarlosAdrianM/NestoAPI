@@ -156,7 +156,8 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual("2", nota.Contacto);
             Assert.AreEqual("Frágil", nota.ComentarioPicking);
             Assert.AreEqual("PO-77", nota.SuPedido);
-            Assert.AreEqual("Horario de 10 a 14\r\nNOTA DE ENTREGA: pendiente de entregar del pedido 926346 (albarán 729667)", nota.Comentarios);
+            Assert.AreEqual("Horario de 10 a 14\r\nNOTA DE ENTREGA: pendiente de entregar del pedido 926346 (albarán 729667)\r\n" +
+                CreadorNotaEntregaPendiente.AVISO_SIN_FECHA, nota.Comentarios);
             Assert.AreEqual("NUEVAVISION\\Alfredo", nota.Usuario);
             Assert.IsFalse(nota.MantenerJunto);
             Assert.IsNull(nota.ModoFacturacion, "Una nota no se factura");
@@ -190,7 +191,7 @@ namespace NestoAPI.Tests.Infrastructure
             original.Cantidad = 2;
             original.Recoger = 1; // se entregó 1 y queda 1
 
-            LinPedidoVta linea = CreadorNotaEntregaPendiente.ConstruirLinea(original, nota, "NUEVAVISION\\Alfredo", new DateTime(2026, 9, 22));
+            LinPedidoVta linea = CreadorNotaEntregaPendiente.ConstruirLinea(original, nota, "NUEVAVISION\\Alfredo");
 
             Assert.AreEqual(926777, linea.Número);
             Assert.AreEqual(0, linea.Nº_Orden, "Identidad: la pone la BD");
@@ -203,7 +204,8 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.IsNull(linea.Fecha_Albarán);
             Assert.IsNull(linea.Nº_Factura);
             Assert.IsNull(linea.Fecha_Factura);
-            Assert.AreEqual(new DateTime(2026, 9, 22), linea.Fecha_Entrega);
+            // NestoAPI#582: lo que se deja en carpeta casi nunca se entrega hoy: sin fecha hasta que alguien la ponga
+            Assert.AreEqual(CreadorNotaEntregaPendiente.FECHA_ENTREGA_SIN_DETERMINAR, linea.Fecha_Entrega);
             Assert.AreEqual(315, linea.Precio);
             Assert.AreEqual(0.1M, linea.DescuentoCliente);
             Assert.AreEqual("38709", linea.Producto);
