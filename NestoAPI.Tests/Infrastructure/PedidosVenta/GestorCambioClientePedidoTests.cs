@@ -170,6 +170,69 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             Assert.AreEqual("10000", cab.Nº_Cliente);
         }
 
+        // NestoAPI#582: la nota de entrega 927519 salió a nombre de Grenke y había que pasarla al cliente final, pero
+        // el cambio de cliente rechazaba las notas. Una nota ya está facturada (YaFacturado) y solo mueve
+        // mercancía: se cambian cliente, contacto y ruta, y NADA más (ni condiciones, ni precios, ni portes, ni PUT).
+        private void ConvertirEnNotaDeEntrega()
+        {
+            cab.NotaEntrega = true;
+            foreach (LinPedidoVta linea in lineas)
+            {
+                linea.YaFacturado = true;
+            }
+        }
+
+        [TestMethod]
+        public async Task CambiarCliente_NotaDeEntrega_SoloCambiaClienteContactoYRuta_SinRecalcularNada()
+        {
+            ConvertirEnNotaDeEntrega();
+            condiciones.Clear(); // en una nota no hacen falta
+
+            ResultadoCambioClientePedido resultado = await gestor.CambiarCliente(EMPRESA, NUMERO,
+                new CambiarClientePedidoRequest { Cliente = "20000" }, "NUEVAVISION\\Alfredo");
+
+            Assert.IsNull(resultado.Error);
+            Assert.AreEqual("20000", cab.Nº_Cliente);
+            Assert.AreEqual("0", cab.Contacto);
+            Assert.AreEqual("AT ", cab.Ruta);
+            Assert.AreEqual("EFC", cab.Forma_Pago, "Las condiciones de la nota no se tocan");
+            Assert.AreEqual("G21", cab.IVA);
+            Assert.IsTrue(lineas.All(l => l.Nº_Cliente == "20000" && l.Contacto == "0"));
+            Assert.AreEqual(10M, lineas[0].Precio, "Ni precios");
+            Assert.AreEqual(0, importesCalculados.Count, "Ni importes");
+            Assert.AreEqual(0, guardados.Count, "Ni el PUT (portes, correo)");
+            Assert.AreEqual(1, modificaciones.Count);
+            StringAssert.Contains(modificaciones[0].Nuevo, "nota de entrega");
+            A.CallTo(() => db.SaveChangesAsync()).MustHaveHappenedTwiceExactly();
+            Assert.AreEqual("10000", resultado.Respuesta.ClienteAnterior);
+            Assert.AreEqual("20000", resultado.Respuesta.Cliente);
+        }
+
+        [TestMethod]
+        public async Task CambiarCliente_NotaDeEntregaConPicking_Rechaza()
+        {
+            ConvertirEnNotaDeEntrega();
+            lineas[0].Picking = 99700;
+
+            ResultadoCambioClientePedido resultado = await gestor.CambiarCliente(EMPRESA, NUMERO, new CambiarClientePedidoRequest { Cliente = "20000" }, "u");
+
+            StringAssert.Contains(resultado.Error, "picking");
+            Assert.AreEqual("10000", cab.Nº_Cliente);
+            A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task CambiarCliente_NotaDeEntregaConEnvio_Rechaza()
+        {
+            ConvertirEnNotaDeEntrega();
+            envios.Add(new EnviosAgencia { Empresa = EMPRESA, Pedido = NUMERO, Numero = 249001, Estado = 0 });
+
+            ResultadoCambioClientePedido resultado = await gestor.CambiarCliente(EMPRESA, NUMERO, new CambiarClientePedidoRequest { Cliente = "20000" }, "u");
+
+            StringAssert.Contains(resultado.Error, "249001");
+            Assert.AreEqual("10000", cab.Nº_Cliente);
+        }
+
         [TestMethod]
         public async Task CambiarCliente_SinPicking_CambiaYRecalculaTodoConElClienteNuevo()
         {

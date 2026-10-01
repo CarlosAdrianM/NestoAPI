@@ -105,6 +105,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 return Error($"El pedido {numero} ya es del cliente {clienteAnterior}/{contactoAnterior}.");
             }
 
+            if (cab.NotaEntrega)
+            {
+                return await CambiarClienteNotaEntrega(cab, ficha, clienteAnterior, contactoAnterior, usuario).ConfigureAwait(false);
+            }
+
             string motivo = await MotivoNoSePuede(cab).ConfigureAwait(false);
             if (motivo != null)
             {
@@ -252,6 +257,81 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     Cliente = ficha.Nº_Cliente.Trim(),
                     Contacto = ficha.Contacto.Trim(),
                     Cambios = cambios
+                }
+            };
+        }
+
+        /// <summary>
+        /// NestoAPI#582: una nota de entrega ya está facturada y solo mueve mercancía (p. ej. la de un renting que
+        /// salió a nombre de la financiera y hay que llevar al cliente final). Se cambian cliente, contacto y ruta;
+        /// nada de condiciones, precios, importes, portes ni el PUT (que mandaría el correo de modificación).
+        /// </summary>
+        private async Task<ResultadoCambioClientePedido> CambiarClienteNotaEntrega(CabPedidoVta cab, Cliente ficha,
+            string clienteAnterior, string contactoAnterior, string usuario)
+        {
+            string empresa = cab.Empresa;
+            int numero = cab.Número;
+            List<int> envios = await db.EnviosAgencias
+                .Where(e => e.Empresa == empresa && e.Pedido == numero)
+                .Select(e => e.Numero)
+                .ToListAsync().ConfigureAwait(false);
+            string motivo = CambioClientePedido.MotivoNoSePuedeNotaEntrega(numero, cab.LinPedidoVtas, envios);
+            if (motivo != null)
+            {
+                return Error(motivo);
+            }
+
+            string usuarioAuditoria = UsuarioAuditoriaHelper.ParaAuditoria(usuario);
+            string anteriorParaAuditoria = JsonConvert.SerializeObject(Resumen(cab));
+            foreach (LinPedidoVta linea in cab.LinPedidoVtas)
+            {
+                linea.Nº_Cliente = ficha.Nº_Cliente;
+                linea.Contacto = ficha.Contacto;
+            }
+
+            using (TransactionScope transaccion = UsarTransaccion
+                ? new TransactionScope(TransactionScopeOption.Required, new TransactionOptions { Timeout = TimeSpan.FromMinutes(5) }, TransactionScopeAsyncFlowOption.Enabled)
+                : null)
+            {
+                // 1. Las líneas primero: trgCabPedidoVtaUpd no deja cambiar el cliente de la cabecera con líneas de otro
+                _ = await db.SaveChangesAsync().ConfigureAwait(true);
+
+                // 2. La cabecera: solo quién recibe y por qué ruta
+                cab.Nº_Cliente = ficha.Nº_Cliente;
+                cab.Contacto = ficha.Contacto;
+                if (!string.IsNullOrWhiteSpace(ficha.Ruta))
+                {
+                    cab.Ruta = ficha.Ruta;
+                }
+                cab.Usuario = usuarioAuditoria;
+                cab.Fecha_Modificación = Ahora();
+                _ = db.Modificaciones.Add(new Modificacion
+                {
+                    Tabla = "Pedidos",
+                    Anterior = anteriorParaAuditoria,
+                    Nuevo = JsonConvert.SerializeObject(new { Operacion = "CambiarCliente de una nota de entrega (#582)", Datos = Resumen(cab) }),
+                    Usuario = usuarioAuditoria,
+                    Fecha = Ahora()
+                });
+                _ = await db.SaveChangesAsync().ConfigureAwait(true);
+                transaccion?.Complete();
+            }
+
+            string cambio = "Nota de entrega: se cambian cliente, contacto y ruta; no se recalcula nada porque ya está facturada.";
+            RegistrarEnElmah(new Exception($"[Cambio de cliente #582] Nota de entrega {empresa}/{numero}: {clienteAnterior}/{contactoAnterior} → " +
+                $"{ficha.Nº_Cliente.Trim()}/{ficha.Contacto.Trim()} por {usuarioAuditoria}."));
+
+            return new ResultadoCambioClientePedido
+            {
+                Respuesta = new CambiarClientePedidoRespuesta
+                {
+                    Empresa = empresa,
+                    Numero = numero,
+                    ClienteAnterior = clienteAnterior,
+                    ContactoAnterior = contactoAnterior,
+                    Cliente = ficha.Nº_Cliente.Trim(),
+                    Contacto = ficha.Contacto.Trim(),
+                    Cambios = new List<string> { cambio }
                 }
             };
         }

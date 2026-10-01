@@ -85,6 +85,41 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             return null;
         }
 
+        /// <summary>
+        /// NestoAPI#582: por qué no se puede cambiar el cliente de una NOTA DE ENTREGA, o null si se puede. Una nota
+        /// ya está facturada (sus líneas llevan YaFacturado: eso es lo normal y no bloquea); lo que la ata al cliente
+        /// actual es que ya haya empezado a salir: picking, albarán o factura propia, o un envío de agencia.
+        /// </summary>
+        internal static string MotivoNoSePuedeNotaEntrega(int numero, IEnumerable<LinPedidoVta> lineas, IEnumerable<int> enviosAgencia)
+        {
+            string prefijo = $"No se puede cambiar el cliente de la nota de entrega {numero}: ";
+            List<LinPedidoVta> todas = lineas?.ToList() ?? new List<LinPedidoVta>();
+
+            List<LinPedidoVta> conFactura = todas.Where(l => l.Estado == Constantes.EstadosLineaVenta.FACTURA || !string.IsNullOrWhiteSpace(l.Nº_Factura)).ToList();
+            if (conFactura.Any())
+            {
+                return prefijo + $"{DescribirLineas(conFactura)} ya {(conFactura.Count == 1 ? "tiene" : "tienen")} factura.";
+            }
+            List<LinPedidoVta> enAlbaran = todas.Where(l => l.Estado >= Constantes.EstadosLineaVenta.ALBARAN || l.Nº_Albarán != null).ToList();
+            if (enAlbaran.Any())
+            {
+                return prefijo + $"{DescribirLineas(enAlbaran)} ya {(enAlbaran.Count == 1 ? "tiene" : "tienen")} albarán.";
+            }
+            List<LinPedidoVta> conPicking = todas.Where(l => (l.Picking ?? 0) != 0).ToList();
+            if (conPicking.Any())
+            {
+                return prefijo + $"{DescribirLineas(conPicking)} ya {(conPicking.Count == 1 ? "tiene" : "tienen")} picking. " +
+                    "Hay que quitar el picking antes de cambiar el cliente.";
+            }
+            List<int> envios = enviosAgencia?.ToList() ?? new List<int>();
+            if (envios.Any())
+            {
+                return prefijo + $"tiene {(envios.Count == 1 ? "el envío de agencia" : "los envíos de agencia")} " +
+                    $"{string.Join(", ", envios)} a nombre del cliente actual. Hay que borrarlo antes de cambiar el cliente.";
+            }
+            return null;
+        }
+
         private static bool EstaFacturada(LinPedidoVta linea)
         {
             return linea.Estado == Constantes.EstadosLineaVenta.FACTURA
