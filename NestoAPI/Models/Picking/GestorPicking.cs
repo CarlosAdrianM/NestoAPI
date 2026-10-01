@@ -14,6 +14,7 @@ namespace NestoAPI.Models.Picking
         // NestoAPI#362: pedidos retirados porque la entrega caería en día que el cliente cierra
         private List<PedidoPicking> sinSalirPorCierreCliente;
         private DateTime diaEntregaPicking;
+        private bool ignorarCierreCliente;
         private NVEntities db = new NVEntities();
 
         public GestorPicking(ModulosPicking modulos)
@@ -64,8 +65,12 @@ namespace NestoAPI.Models.Picking
             });
         }
 
-        public void SacarPicking(string empresa, int numeroPedido)
+        /// <param name="ignorarCierreCliente">El usuario ha confirmado «¿Aún así quieres asignarle picking?» después de
+        /// que el pedido no saliera porque el cliente cierra el día de la entrega (01/10/26). Solo en el picking de UN
+        /// pedido: en los de cliente y de rutas la regla se aplica siempre.</param>
+        public void SacarPicking(string empresa, int numeroPedido, bool ignorarCierreCliente = false)
         {
+            this.ignorarCierreCliente = ignorarCierreCliente;
             EnExclusiva(() =>
             {
                 candidatos = modulos.rellenadorPicking.Rellenar(empresa, numeroPedido);
@@ -166,7 +171,7 @@ namespace NestoAPI.Models.Picking
             // el cliente cierra, el pedido no sale en esta pasada; se reevalúa en la siguiente.
             DateTime diaEntrega = GestorDiasEnServir.CalcularDiaEntrega(fechaPicking,
                 f => GestorFestivos.EsFestivo(f, Constantes.Almacenes.ALGETE));
-            sinSalirPorCierreCliente = GestorDiasEnServir.RetirarPedidosDeClientesCerrados(candidatos, diaEntrega);
+            sinSalirPorCierreCliente = GestorDiasEnServir.RetirarPedidosDeClientesCerrados(candidatos, diaEntrega, ignorarCierreCliente);
             diaEntregaPicking = diaEntrega;
 
             // NestoAPI#542: los pedidos que se facturan «todo ahora» convierten lo que falta en Recoger, antes
@@ -208,14 +213,22 @@ namespace NestoAPI.Models.Picking
 
             // Si no se ha asignado picking a nada, damos error de NEGOCIO (400, no 500):
             // es un resultado esperable (sin stock o nada que sacar), no un fallo del sistema.
+            // 01/10/26: si lo que lo ha dejado vacío es el cierre del cliente, se dice (y el correo de #362, que iba
+            // después de este punto, sale antes de cortar).
             if (candidatos.Count == 0)
             {
-                throw new Infraestructure.Exceptions.NestoBusinessException(
-                    "No hay stock suficiente para asignar picking a ninguna línea",
-                    new Infraestructure.Exceptions.ErrorContext { ErrorCode = Constantes.Picking.ERROR_SIN_STOCK })
+                if (sinSalirPorCierreCliente.Count > 0)
                 {
-                    IsWarning = true
-                };
+                    try
+                    {
+                        GestorDiasEnServir.EnviarCorreo(sinSalirPorCierreCliente, diaEntregaPicking);
+                    }
+                    catch (Exception)
+                    {
+                        // Un fallo de correo no debe tapar el motivo
+                    }
+                }
+                throw GestorDiasEnServir.ErrorSinPicking(sinSalirPorCierreCliente, diaEntregaPicking);
             }
 
             // Mandamos el correo con los pedidos que van por debajo del margen

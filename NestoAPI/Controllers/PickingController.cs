@@ -12,13 +12,15 @@ namespace NestoAPI.Controllers
     public class PickingController : ApiController
     {
         private GestorPicking gestorPicking;
-        // GET: api/Picking/1/654321
+        // GET: api/Picking?empresa=1&numeroPedido=654321[&ignorarCierreCliente=true]
+        /// <param name="ignorarCierreCliente">El usuario ha confirmado en Nesto «¿Aún así quieres asignarle picking?»
+        /// tras el aviso de que el cliente cierra el día de la entrega (error PICKING_CLIENTE_CERRADO).</param>
         [HttpGet]
         [ResponseType(typeof(string))]
-        public async Task<IHttpActionResult> SacarPicking(string empresa, int numeroPedido)
+        public async Task<IHttpActionResult> SacarPicking(string empresa, int numeroPedido, bool ignorarCierreCliente = false)
         {
             crearModulos();
-            await Task.Run(() => gestorPicking.SacarPicking(empresa, numeroPedido));
+            await Task.Run(() => gestorPicking.SacarPicking(empresa, numeroPedido, ignorarCierreCliente));
 
             return Ok(gestorPicking.PedidosEnPicking());
         }

@@ -1075,6 +1075,11 @@ namespace NestoAPI.Models
             /// (correo tranquilizador en vez de alarma en el picking automatico).
             /// </summary>
             public const string ERROR_SIN_STOCK = "PICKING_SIN_STOCK";
+            /// <summary>
+            /// Todos los pedidos se han quedado fuera porque el cliente cierra el día de la entrega (NestoAPI#362).
+            /// Nesto lo reconoce en el picking de UN pedido para preguntar «¿Aún así quieres asignarle picking?».
+            /// </summary>
+            public const string ERROR_CLIENTE_CERRADO = "PICKING_CLIENTE_CERRADO";
         }
 
         public static class ClientesEspeciales

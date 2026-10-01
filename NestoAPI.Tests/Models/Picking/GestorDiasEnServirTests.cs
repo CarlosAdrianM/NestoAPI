@@ -234,6 +234,64 @@ namespace NestoAPI.Tests.Models.Picking
             Assert.AreEqual("<td>Abierto</td><td>Abierto</td><td>Abierto</td><td style='background-color:#fde2e2'><strong>Cerrado</strong></td><td>Abierto</td>", celdas);
         }
 
+        // Caso real 01/10/26 (Alfredo, cliente 5057 «LOS LUNES CIERRA»): un jueves por la tarde el picking es
+        // para el viernes y la entrega el lunes; el picking se quedaba vacío y decía «No hay stock suficiente…».
+
+        [TestMethod]
+        public void ErrorSinPicking_TodosRetiradosPorCierre_DiceQueElClienteCierraYCuandoSale()
+        {
+            DateTime lunes05 = new DateTime(2026, 10, 5);
+            var retirados = new List<PedidoPicking> { PedidoConDias(927586, "5057      ", "01111") };
+
+            var ex = GestorDiasEnServir.ErrorSinPicking(retirados, lunes05);
+
+            Assert.AreEqual(NestoAPI.Models.Constantes.Picking.ERROR_CLIENTE_CERRADO, ex.GetErrorCode());
+            StringAssert.Contains(ex.Message, "927586");
+            StringAssert.Contains(ex.Message, "5057");
+            StringAssert.Contains(ex.Message, "lunes 05/10/2026");
+            StringAssert.Contains(ex.Message, "cierra");
+            Assert.IsFalse(ex.Message.Contains("stock"), "No es un problema de stock");
+            Assert.IsTrue(ex.IsWarning);
+        }
+
+        [TestMethod]
+        public void ErrorSinPicking_SinRetiradosPorCierre_EsElDeSiempreDeStock()
+        {
+            var ex = GestorDiasEnServir.ErrorSinPicking(new List<PedidoPicking>(), new DateTime(2026, 10, 5));
+
+            Assert.AreEqual(NestoAPI.Models.Constantes.Picking.ERROR_SIN_STOCK, ex.GetErrorCode());
+            Assert.AreEqual("No hay stock suficiente para asignar picking a ninguna línea", ex.Message);
+        }
+
+        [TestMethod]
+        public void ErrorSinPicking_VariosPedidos_LosNombraTodos()
+        {
+            var retirados = new List<PedidoPicking>
+            {
+                PedidoConDias(927519, "5057", "01111"),
+                PedidoConDias(927586, "5057", "01111")
+            };
+
+            var ex = GestorDiasEnServir.ErrorSinPicking(retirados, new DateTime(2026, 10, 5));
+
+            StringAssert.Contains(ex.Message, "927519");
+            StringAssert.Contains(ex.Message, "927586");
+        }
+
+        [TestMethod]
+        public void RetirarPedidosDeClientesCerrados_SiSePideIgnorarElCierre_NoRetiraNada()
+        {
+            // Picking de UN pedido: el usuario ha confirmado «¿Aún así quieres asignarle picking?».
+            var pedido = PedidoConDias(927586, "5057", "01111");
+            pedido.Lineas = new List<LineaPedidoPicking> { new LineaPedidoPicking { Id = 1, Cantidad = 1 } };
+
+            List<PedidoPicking> retirados = GestorDiasEnServir.RetirarPedidosDeClientesCerrados(
+                new List<PedidoPicking> { pedido }, new DateTime(2026, 10, 5), ignorarCierre: true);
+
+            Assert.AreEqual(0, retirados.Count);
+            Assert.AreEqual(1, pedido.Lineas.Count);
+        }
+
         [TestMethod]
         public void CeldasDias_DatoRaro_SinDatoEnVezDeInventarse()
         {

@@ -102,9 +102,15 @@ namespace NestoAPI.Models.Picking
         /// queda pendiente y se reevalúa en la siguiente pasada). Devuelve los retirados para el
         /// aviso: un pedido que no sale sin decir por qué parece un cuelgue.
         /// </summary>
+        /// <param name="ignorarCierre">Picking de UN pedido en el que el usuario ha confirmado «¿Aún así quieres
+        /// asignarle picking?» (01/10/26): no se retira nada.</param>
         internal static List<PedidoPicking> RetirarPedidosDeClientesCerrados(
-            List<PedidoPicking> candidatos, DateTime diaEntrega)
+            List<PedidoPicking> candidatos, DateTime diaEntrega, bool ignorarCierre = false)
         {
+            if (ignorarCierre)
+            {
+                return new List<PedidoPicking>();
+            }
             List<PedidoPicking> retirados = candidatos
                 .Where(p => p.Lineas != null && p.Lineas.Count > 0 && !EstaAbierto(p.DiasEnServir, diaEntrega))
                 .ToList();
@@ -113,6 +119,39 @@ namespace NestoAPI.Models.Picking
                 pedido.Lineas.Clear();
             }
             return retirados;
+        }
+
+        /// <summary>
+        /// El error de negocio cuando el picking se queda sin nada. Si lo que lo ha vaciado es el cierre del cliente,
+        /// lo dice (caso real 01/10/26, Alfredo, cliente 5057 «LOS LUNES CIERRA»: salía «No hay stock suficiente…»
+        /// con stock de sobra y no se entendía nada).
+        /// </summary>
+        internal static Infraestructure.Exceptions.NestoBusinessException ErrorSinPicking(List<PedidoPicking> retiradosPorCierre, DateTime diaEntrega)
+        {
+            if (retiradosPorCierre == null || retiradosPorCierre.Count == 0)
+            {
+                return new Infraestructure.Exceptions.NestoBusinessException(
+                    "No hay stock suficiente para asignar picking a ninguna línea",
+                    new Infraestructure.Exceptions.ErrorContext { ErrorCode = Constantes.Picking.ERROR_SIN_STOCK })
+                {
+                    IsWarning = true
+                };
+            }
+
+            var cultura = new System.Globalization.CultureInfo("es-ES");
+            string dia = $"{diaEntrega.ToString("dddd", cultura)} {diaEntrega:dd/MM/yyyy}";
+            string pedidos = string.Join(", ", retiradosPorCierre.Select(p => p.Id).Distinct());
+            string clientes = string.Join(", ", retiradosPorCierre.Select(p => p.Cliente?.Trim()).Where(c => !string.IsNullOrEmpty(c)).Distinct());
+            string mensaje = retiradosPorCierre.Select(p => p.Id).Distinct().Count() == 1
+                ? $"El pedido {pedidos} no sale: la entrega de este picking sería el {dia} y el cliente {clientes} cierra ese día. " +
+                  "Saldrá solo en el primer picking cuya entrega caiga en un día que abra."
+                : $"Los pedidos {pedidos} no salen: la entrega de este picking sería el {dia} y el cliente ({clientes}) cierra ese día. " +
+                  "Saldrán solos en el primer picking cuya entrega caiga en un día que abra.";
+            return new Infraestructure.Exceptions.NestoBusinessException(mensaje,
+                new Infraestructure.Exceptions.ErrorContext { ErrorCode = Constantes.Picking.ERROR_CLIENTE_CERRADO })
+            {
+                IsWarning = true
+            };
         }
 
         /// <summary>
