@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.NotasEntrega;
@@ -32,6 +32,7 @@ namespace NestoAPI.Tests.Infrastructure
         private List<LinPedidoVta> lineasAnadidas;
         private List<string> registrado;
         private CreadorNotaEntregaPendiente creador;
+        private IServicioPedidosVenta servicioPedidos;
 
         [TestInitialize]
         public void Setup()
@@ -52,7 +53,7 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => db.SaveChangesAsync()).Returns(Task.FromResult(1));
             A.CallTo(() => db.SaveChangesAsync(A<CancellationToken>._)).Returns(Task.FromResult(1));
 
-            IServicioPedidosVenta servicioPedidos = A.Fake<IServicioPedidosVenta>();
+            servicioPedidos = A.Fake<IServicioPedidosVenta>();
             A.CallTo(() => servicioPedidos.LeerParametroIVA(A<string>._, A<string>._, A<string>._))
                 .Returns(new ParametroIVA { C__IVA = 21, C__RE = 0 });
             creador = new CreadorNotaEntregaPendiente(db, new GestorPedidosVenta(servicioPedidos), (ex, usuario) => registrado.Add(ex.Message));
@@ -211,6 +212,56 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(new DateTime(2026, 9, 16, 11, 40, 45), linea.Fecha_Modificación, "Conserva la antigüedad: el cliente ya pagó");
             Assert.AreEqual("NUEVAVISION\\Alfredo", linea.Usuario);
             Assert.IsTrue(linea.VtoBueno);
+        }
+
+        // NestoAPI#582: en un renting/leasing se factura a la financiera (Grenke) pero se entrega al cliente
+        // final, que está en la tabla Leasing (la misma regla que prdCrearAlbaránVta usa desde 2005). La nota
+        // del 927116 salió a nombre de Grenke y tenía que ir a 5057 (Cristina Aracil).
+        [TestMethod]
+        public async Task Crear_PedidoDeLeasing_LaNotaVaAlClienteFinalConSuRuta()
+        {
+            CabPedidoVta original = Original926346();
+            original.Nº_Cliente = "30722     ";
+            original.Contacto = "0  ";
+            LinPedidoVta linea = LineaFacturada(1, "44276", 1, recoger: 1, precio: 8095.63M);
+            linea.Nº_Cliente = "30722     ";
+            linea.Contacto = "0  ";
+            var buscados = new List<string>();
+            creador = new CreadorNotaEntregaPendiente(db, new GestorPedidosVenta(servicioPedidos), (ex, usuario) => registrado.Add(ex.Message),
+                (empresa, pedido, banco, contactoBanco) =>
+                {
+                    buscados.Add($"{empresa}|{pedido}|{banco}|{contactoBanco}");
+                    return Task.FromResult(new ClienteFinalLeasing { Cliente = "5057", Contacto = "0", Ruta = "AT" });
+                });
+
+            CabPedidoVta nota = await creador.Crear("1", 926346, ALBARAN, "NUEVAVISION\\Alfredo", ModoNotaEntregaAutomatica.Encendido);
+
+            CollectionAssert.AreEqual(new[] { "1|926346|30722|0" }, buscados, "Busca el leasing de ESE pedido y ESA financiera");
+            Assert.AreEqual("5057", nota.Nº_Cliente);
+            Assert.AreEqual("0", nota.Contacto);
+            Assert.AreEqual("AT", nota.Ruta);
+            StringAssert.Contains(nota.Comentarios, "LEASING");
+            StringAssert.Contains(nota.Comentarios, "30722");
+            LinPedidoVta lineaNota = lineasAnadidas.Single();
+            Assert.AreEqual("5057", lineaNota.Nº_Cliente);
+            Assert.AreEqual("0", lineaNota.Contacto);
+        }
+
+        [TestMethod]
+        public async Task Crear_PedidoSinLeasing_LaNotaSigueSiendoDelMismoCliente()
+        {
+            Original926346();
+            LineaFacturada(1, "38932", 1, recoger: 1, precio: 134);
+            creador = new CreadorNotaEntregaPendiente(db, new GestorPedidosVenta(servicioPedidos), (ex, usuario) => registrado.Add(ex.Message),
+                (empresa, pedido, banco, contactoBanco) => Task.FromResult<ClienteFinalLeasing>(null));
+
+            CabPedidoVta nota = await creador.Crear("1", 926346, ALBARAN, "NUEVAVISION\\Alfredo", ModoNotaEntregaAutomatica.Encendido);
+
+            Assert.AreEqual("41223", nota.Nº_Cliente);
+            Assert.AreEqual("2", nota.Contacto);
+            Assert.AreEqual("FW", nota.Ruta);
+            Assert.IsFalse(nota.Comentarios.Contains("LEASING"));
+            Assert.AreEqual("41223", lineasAnadidas.Single().Nº_Cliente);
         }
 
         [TestMethod]

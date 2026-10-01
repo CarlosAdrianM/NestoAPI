@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure.PedidosVenta;
+﻿using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
@@ -38,17 +38,39 @@ namespace NestoAPI.Infraestructure.NotasEntrega
         private readonly NVEntities db;
         private readonly GestorPedidosVenta gestorPedidos;
         private readonly Action<Exception, string> registrar;
+        private readonly Func<string, int, string, string, Task<ClienteFinalLeasing>> buscarLeasing;
 
-        public CreadorNotaEntregaPendiente(NVEntities db, GestorPedidosVenta gestorPedidos) : this(db, gestorPedidos, null)
+        public CreadorNotaEntregaPendiente(NVEntities db, GestorPedidosVenta gestorPedidos)
+            : this(db, gestorPedidos, null, (empresa, pedido, banco, contactoBanco) => BuscarEnTablaLeasing(db, empresa, pedido, banco, contactoBanco))
         {
         }
 
-        /// <summary>El registro (ELMAH) es sustituible en tests para comprobar la sombra.</summary>
-        internal CreadorNotaEntregaPendiente(NVEntities db, GestorPedidosVenta gestorPedidos, Action<Exception, string> registrar)
+        /// <summary>
+        /// El registro (ELMAH) y la consulta de la tabla Leasing son sustituibles en tests. Sin consulta, ningún
+        /// pedido es de leasing.
+        /// </summary>
+        internal CreadorNotaEntregaPendiente(NVEntities db, GestorPedidosVenta gestorPedidos, Action<Exception, string> registrar,
+            Func<string, int, string, string, Task<ClienteFinalLeasing>> buscarLeasing = null)
         {
             this.db = db ?? throw new ArgumentNullException(nameof(db));
             this.gestorPedidos = gestorPedidos ?? throw new ArgumentNullException(nameof(gestorPedidos));
             this.registrar = registrar ?? ElmahHelper.Log;
+            this.buscarLeasing = buscarLeasing ?? ((empresa, pedido, banco, contactoBanco) => Task.FromResult<ClienteFinalLeasing>(null));
+        }
+
+        /// <summary>
+        /// NestoAPI#582: el cliente final de un pedido facturado a una financiera (renting/leasing), con la
+        /// MISMA condición que usa prdCrearAlbaránVta desde 2005 para apuntarle lo recogido: fila viva
+        /// (Estado = 0) de ese pedido con el banco y contacto del pedido. La tabla no está en el EDMX.
+        /// </summary>
+        internal static async Task<ClienteFinalLeasing> BuscarEnTablaLeasing(NVEntities db, string empresa, int pedido, string banco, string contactoBanco)
+        {
+            const string sql = @"SELECT TOP 1 RTRIM(l.[NºCliente]) AS Cliente, RTRIM(l.Contacto) AS Contacto, RTRIM(c.Ruta) AS Ruta
+FROM Leasing l
+LEFT JOIN Clientes c ON c.Empresa = l.Empresa AND c.[Nº Cliente] = l.[NºCliente] AND c.Contacto = l.Contacto
+WHERE l.Empresa = @p0 AND l.Pedido = @p1 AND l.Estado = 0 AND l.Banco = @p2 AND l.ContactoBanco = @p3";
+            return await db.Database.SqlQuery<ClienteFinalLeasing>(sql, empresa, pedido, banco, contactoBanco)
+                .FirstOrDefaultAsync().ConfigureAwait(false);
         }
 
         /// <summary>
@@ -136,15 +158,40 @@ namespace NestoAPI.Infraestructure.NotasEntrega
 
             int numero = db.TomarSiguienteNumeroPedido();
             CabPedidoVta nota = ConstruirCabecera(original, numero, albaran, usuario, DateTime.Today);
+            ClienteFinalLeasing leasing = await buscarLeasing(empresa, pedido, original.Nº_Cliente?.Trim(), original.Contacto?.Trim()).ConfigureAwait(false);
+            if (leasing != null)
+            {
+                EntregarAlClienteFinal(nota, original, leasing);
+            }
             db.CabPedidoVtas.Add(nota);
             foreach (LinPedidoVta pendiente in pendientes)
             {
                 LinPedidoVta linea = ConstruirLinea(pendiente, nota, usuario, DateTime.Today);
+                linea.Nº_Cliente = nota.Nº_Cliente;
+                linea.Contacto = nota.Contacto;
                 gestorPedidos.CalcularImportesLinea(linea, nota.IVA);
                 db.LinPedidoVtas.Add(linea);
             }
             _ = await db.SaveChangesAsync().ConfigureAwait(false);
             return nota;
+        }
+
+        /// <summary>
+        /// NestoAPI#582: el pedido se facturó a una financiera (renting/leasing) pero la mercancía es del
+        /// cliente final de la tabla Leasing: la nota (que no se factura) va a su nombre, a su dirección (el
+        /// contacto) y con la ruta de su ficha, y el comentario dice de dónde viene.
+        /// </summary>
+        internal static void EntregarAlClienteFinal(CabPedidoVta nota, CabPedidoVta original, ClienteFinalLeasing leasing)
+        {
+            nota.Nº_Cliente = leasing.Cliente?.Trim();
+            nota.Contacto = leasing.Contacto?.Trim();
+            if (!string.IsNullOrWhiteSpace(leasing.Ruta))
+            {
+                nota.Ruta = leasing.Ruta.Trim();
+            }
+            nota.Comentarios = nota.Comentarios + "\r\n" +
+                $"LEASING: facturado a {original.Nº_Cliente?.Trim()}/{original.Contacto?.Trim()} en el pedido {original.Número}; " +
+                $"se entrega al cliente final {nota.Nº_Cliente}/{nota.Contacto}";
         }
 
         /// <summary>Las líneas de producto de ESE albarán que se facturaron con unidades sin entregar.</summary>
@@ -235,5 +282,14 @@ namespace NestoAPI.Infraestructure.NotasEntrega
             string lineas = string.Join(", ", pendientes.Select(l => $"{l.Producto?.Trim()} × {l.Recoger}"));
             return $"[Nota de entrega automática #542] {que} la nota con lo pendiente del pedido {pedido} (albarán {albaran}): {lineas}.";
         }
+    }
+
+    /// <summary>NestoAPI#582: a quién se entrega de verdad un pedido de renting/leasing (tabla Leasing).</summary>
+    public class ClienteFinalLeasing
+    {
+        public string Cliente { get; set; }
+        public string Contacto { get; set; }
+        /// <summary>La ruta de su ficha (null si la ficha no existe).</summary>
+        public string Ruta { get; set; }
     }
 }
