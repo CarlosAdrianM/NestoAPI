@@ -170,6 +170,36 @@ namespace NestoAPI.Tests.Infrastructure
             // Assert - Excepción esperada
         }
 
+        // Regresión ELMAH 01/10/26 (Alfredo, NV2616079): una factura de 0 € (muestras, regalos) no
+        // genera efecto porque no hay nada que cobrar. Lanzar aquí hacía que la facturación de rutas
+        // la diera por FALLIDA y no imprimiera la factura. Sin importe no hay cobro para el repartidor.
+        [TestMethod]
+        public async Task InsertarDesdeFactura_FacturaDeCeroEurosSinEfecto_NoLanzaNiInserta()
+        {
+            var pedido = CrearPedidoPrueba();
+            var extractoFactura = new ExtractoCliente
+            {
+                Empresa = pedido.Empresa,
+                Nº_Orden = 3053429,
+                Número = pedido.Nº_Cliente,
+                Contacto = pedido.Contacto,
+                Nº_Documento = "NV2616079",
+                TipoApunte = "1",
+                Fecha = DateTime.Now,
+                Importe = 0m,
+                ImportePdte = 0m
+            };
+            var mockExtractosCliente = A.Fake<DbSet<ExtractoCliente>>(opt => opt.Implements<IQueryable<ExtractoCliente>>().Implements<IDbAsyncEnumerable<ExtractoCliente>>());
+            A.CallTo(() => _db.ExtractosCliente).Returns(mockExtractosCliente);
+            ConfigurarDbSetFalso(mockExtractosCliente, new List<ExtractoCliente> { extractoFactura });
+            var mockExtractoRutas = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>().Implements<IDbAsyncEnumerable<ExtractoRuta>>());
+            A.CallTo(() => _db.ExtractoRutas).Returns(mockExtractoRutas);
+
+            await _servicio.InsertarDesdeFactura(pedido, "NV2616079", "Alfredo");
+
+            A.CallTo(() => mockExtractoRutas.Add(A<ExtractoRuta>._)).MustNotHaveHappened();
+        }
+
         [TestMethod]
         public async Task InsertarDesdeFactura_ConVariosEfectos_UsaPrimerEfecto()
         {

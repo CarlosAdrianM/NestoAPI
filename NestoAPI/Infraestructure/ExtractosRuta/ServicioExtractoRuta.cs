@@ -55,6 +55,20 @@ namespace NestoAPI.Infraestructure.ExtractosRuta
 
             if (extractoEfecto == null)
             {
+                // Una factura de 0 € (muestras, regalos) no genera efecto: no hay nada que cobrar, así
+                // que tampoco hay cobro para el repartidor. No es un error (ELMAH 01/10/26, NV2616079:
+                // la facturación de rutas la daba por fallida y no la imprimía).
+                bool facturaDeCeroEuros = await db.ExtractosCliente
+                    .AnyAsync(e => e.Empresa == empresaBusqueda &&
+                                   e.Número == pedido.Nº_Cliente &&
+                                   e.Contacto == pedido.Contacto &&
+                                   e.Nº_Documento == numeroFactura.Trim() &&
+                                   e.TipoApunte == Constantes.Clientes.TiposExtracto.TIPO_FACTURA &&
+                                   e.Importe == 0);
+                if (facturaDeCeroEuros)
+                {
+                    return;
+                }
                 throw new InvalidOperationException(
                     $"No se encontró el efecto en ExtractoCliente para la factura {numeroFactura}. " +
                     "La factura debe estar contabilizada antes de insertar en ExtractoRuta.");
