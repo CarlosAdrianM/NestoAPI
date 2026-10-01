@@ -519,6 +519,19 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'comparativa-agencia-sombra' configurado (diario a las 6:30)");
 
+            // NestoAPI#552 (fase 1, sombra): diario a las 6:45 compara las peticiones a GLS de AYER que mandó Nesto
+            // con las que construiría la API. Solo lee; solo escribe en ELMAH si alguna no coincide.
+            RecurringJob.AddOrUpdate(
+                "sombra-peticiones-gls",
+                () => Infraestructure.Agencias.Gls.SombraPeticionesGls.ProcesarSombraDiaria(),
+                "45 6 * * *",
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'sombra-peticiones-gls' configurado (diario a las 6:45)");
+
             // NestoAPI#547 (corte b): SOMBRA de los precios medios. Domingo a las 6:30, después del SP «Precios
             // Medios» de msdb (00:30): calcula la media en C# y la compara al diezmilésimo con lo que ha dejado el SP.
             // Solo lee (lo único que escribe es la tabla de diagnóstico PreciosMediosSombra). NO HACE NADA salvo con

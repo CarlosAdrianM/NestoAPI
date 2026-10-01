@@ -134,6 +134,73 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         }
 
         [TestMethod]
+        public void Comparar_CampoCambiadoAManoDespuesDeTramitar_NoEsDiferenciaPeroSeCuenta()
+        {
+            // Caso real: el reembolso del envío 248269 se cambió el 15/09 en la ventana de Agencias,
+            // después de tramitarlo (EnviosHistoria). La petición de Nesto era correcta en su momento.
+            EnviosAgencia hoy = Envio(19);
+            hoy.Reembolso = 199.66M;
+            EnviosAgencia comoLaMandoNesto = Envio(19);
+            comoLaMandoNesto.Reembolso = 190.66M;
+
+            ResultadoSombraGls resultado = SombraPeticionesGls.Comparar(
+                new[] { Guardada(14, comoLaMandoNesto) }, Buscador(hoy),
+                (envio, fecha) => envio == 19 ? new HashSet<string> { "Envio/Importes/Reembolso" } : new HashSet<string>());
+
+            Assert.AreEqual(1, resultado.Iguales);
+            Assert.AreEqual(1, resultado.CambiadasDespues);
+            Assert.AreEqual(0, resultado.Detalle.Count);
+        }
+
+        [TestMethod]
+        public void Comparar_CampoCambiadoDespuesPeroOtraDiferencia_SigueSaliendoLaOtra()
+        {
+            EnviosAgencia hoy = Envio(20);
+            hoy.Reembolso = 10M;
+            hoy.Bultos = 4;
+
+            ResultadoSombraGls resultado = SombraPeticionesGls.Comparar(
+                new[] { Guardada(15, Envio(20)) }, Buscador(hoy),
+                (envio, fecha) => new HashSet<string> { "Envio/Importes/Reembolso" });
+
+            Assert.AreEqual("Envio/Bultos", resultado.Detalle.Single().Diferencias.Single().Campo);
+        }
+
+        [DataTestMethod]
+        [DataRow("Reembolso", "Envio/Importes/Reembolso")]
+        [DataRow("Retorno", "Envio/Retorno")]
+        [DataRow("Estado", null)]
+        public void CampoDeLaPeticion_TraduceElCampoDeEnviosHistoria(string campoHistoria, string campoPeticion)
+        {
+            Assert.AreEqual(campoPeticion, SombraPeticionesGls.CampoDeLaPeticion(campoHistoria));
+        }
+
+        [TestMethod]
+        public void Resumen_SinDiferencias_EsNull()
+        {
+            ResultadoSombraGls resultado = SombraPeticionesGls.Comparar(new[] { Guardada(1, Envio(10)) }, Buscador(Envio(10)));
+
+            Assert.IsNull(SombraPeticionesGls.ResumenParaAviso(resultado, new DateTime(2026, 9, 30)));
+        }
+
+        [TestMethod]
+        public void Resumen_ConDiferencias_DiceCuantasYQueCamposYLasPrimerasLlamadas()
+        {
+            EnviosAgencia hoy = Envio(11);
+            hoy.CodPostal = "28002";
+            ResultadoSombraGls resultado = SombraPeticionesGls.Comparar(new[] { Guardada(7, Envio(11)) }, Buscador(hoy));
+
+            string resumen = SombraPeticionesGls.ResumenParaAviso(resultado, new DateTime(2026, 9, 30));
+
+            StringAssert.Contains(resumen, "#552");
+            StringAssert.Contains(resumen, "30/09/2026");
+            StringAssert.Contains(resumen, "1 de 1");
+            StringAssert.Contains(resumen, "Envio/Destinatario/CP");
+            StringAssert.Contains(resumen, "llamada 7");
+            StringAssert.Contains(resumen, "envío 11");
+        }
+
+        [TestMethod]
         public void Comparar_PeticionSinEnvioEnLaBaseDeDatos_SeCuentaAparte()
         {
             ResultadoSombraGls resultado = SombraPeticionesGls.Comparar(new[] { Guardada(3, Envio(12)) }, Buscador());

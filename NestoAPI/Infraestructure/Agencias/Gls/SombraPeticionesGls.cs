@@ -49,6 +49,11 @@ namespace NestoAPI.Infraestructure.Agencias.Gls
         /// (TramitacionEnviosService), así que si Nesto mandó otra (el envío se creó antes) no se puede comparar.
         /// </summary>
         public int FechasReescritasAlTramitar { get; set; }
+        /// <summary>
+        /// Peticiones en las que algún campo se cambió a mano DESPUÉS de tramitar (EnviosHistoria: reembolso, retorno):
+        /// lo que mandó Nesto era correcto en su momento, así que esas diferencias no cuentan.
+        /// </summary>
+        public int CambiadasDespues { get; set; }
         /// <summary>Cuántas peticiones difieren en cada campo: lo primero que hay que mirar.</summary>
         public Dictionary<string, int> CamposConDiferencias { get; set; } = new Dictionary<string, int>();
         /// <summary>Solo las que no coinciden (o no tienen envío).</summary>
@@ -102,6 +107,15 @@ namespace NestoAPI.Infraestructure.Agencias.Gls
                 .GroupBy(e => e.CodigoBarras.Trim())
                 .ToDictionary(g => g.Key, g => g.OrderByDescending(e => e.Numero).First());
 
+            List<int> numerosEnvio = envios.Select(e => e.Numero).ToList();
+            var historia = numerosEnvio.Count == 0
+                ? new List<(int Envio, string Campo, DateTime Fecha)>()
+                : (await _db.EnviosHistorias.AsNoTracking()
+                    .Where(h => numerosEnvio.Contains(h.NumeroEnvio))
+                    .Select(h => new { h.NumeroEnvio, h.Campo, h.FechaModificacion })
+                    .ToListAsync().ConfigureAwait(false))
+                    .Select(h => (Envio: h.NumeroEnvio, Campo: h.Campo, Fecha: h.FechaModificacion)).ToList();
+
             return Comparar(peticiones, codigo =>
             {
                 if (!enviosPorCodigo.TryGetValue(codigo, out EnviosAgencia envio) ||
@@ -111,7 +125,63 @@ namespace NestoAPI.Infraestructure.Agencias.Gls
                 }
                 identificadores.TryGetValue(envio.Agencia, out string identificador);
                 return new EnvioParaPeticionGls { Envio = envio, Empresa = empresa, IdentificadorAgencia = identificador };
-            });
+            }, (envio, fechaLlamada) => new HashSet<string>(historia
+                .Where(h => h.Envio == envio && h.Fecha > fechaLlamada)
+                .Select(h => CampoDeLaPeticion(h.Campo))
+                .Where(c => c != null)));
+        }
+
+        /// <summary>El campo de la petición GLS que corresponde a un cambio registrado en EnviosHistoria, o null.</summary>
+        public static string CampoDeLaPeticion(string campoHistoria)
+        {
+            switch (campoHistoria?.Trim())
+            {
+                case "Reembolso": return "Envio/Importes/Reembolso";
+                case "Retorno": return "Envio/Retorno";
+                default: return null;
+            }
+        }
+
+        /// <summary>
+        /// Punto de entrada de Hangfire: compara las peticiones a GLS de AYER y, solo si hay diferencias o peticiones
+        /// sin envío, deja un aviso en ELMAH. Sin diferencias no escribe nada.
+        /// </summary>
+        public static void ProcesarSombraDiaria()
+        {
+            DateTime ayer = DateTime.Today.AddDays(-1);
+            using (var db = new NVEntities())
+            {
+                ResultadoSombraGls resultado = new SombraPeticionesGls(db).Ejecutar(ayer, DateTime.Today).GetAwaiter().GetResult();
+                string resumen = ResumenParaAviso(resultado, ayer);
+                if (resumen != null)
+                {
+                    ElmahHelper.Log(new Exception(resumen));
+                }
+            }
+        }
+
+        /// <summary>Texto del aviso para ELMAH, o null si la API construyó todas las peticiones igual que Nesto.</summary>
+        public static string ResumenParaAviso(ResultadoSombraGls resultado, DateTime dia)
+        {
+            if (resultado == null || (resultado.ConDiferencias == 0 && resultado.SinEnvio == 0))
+            {
+                return null;
+            }
+            var texto = new System.Text.StringBuilder();
+            texto.Append($"[Sombra GLS #552] {dia:dd/MM/yyyy}: {resultado.ConDiferencias + resultado.SinEnvio} de {resultado.Peticiones} ")
+                .Append("peticiones a GLS no coinciden con las que construiría la API");
+            if (resultado.SinEnvio > 0)
+            {
+                texto.Append($" ({resultado.SinEnvio} sin envío en la BD)");
+            }
+            texto.Append(". Campos: ")
+                .Append(string.Join(", ", resultado.CamposConDiferencias.OrderByDescending(c => c.Value).Select(c => $"{c.Key} ({c.Value})")))
+                .Append(". Primeras: ")
+                .Append(string.Join("; ", resultado.Detalle.Take(5).Select(d =>
+                    $"llamada {d.Llamada}, envío {(d.Envio.HasValue ? d.Envio.Value.ToString() : "?")}: " +
+                    string.Join(", ", d.Diferencias.Select(x => x.ToString())))))
+                .Append(". Detalle: GET api/EnviosAgencias/SombraGls?desde=").Append(dia.ToString("yyyy-MM-dd"));
+            return texto.ToString();
         }
 
         public static List<string> CodigosDeBarras(IEnumerable<PeticionGlsGuardada> peticiones)
@@ -123,7 +193,10 @@ namespace NestoAPI.Infraestructure.Agencias.Gls
                 .ToList();
         }
 
-        public static ResultadoSombraGls Comparar(IEnumerable<PeticionGlsGuardada> peticiones, Func<string, EnvioParaPeticionGls> buscarEnvio)
+        /// <param name="camposCambiadosDespues">(envío, fecha de la llamada) → campos de la petición que se cambiaron a
+        /// mano después de esa llamada. Opcional.</param>
+        public static ResultadoSombraGls Comparar(IEnumerable<PeticionGlsGuardada> peticiones, Func<string, EnvioParaPeticionGls> buscarEnvio,
+            Func<int, DateTime, ISet<string>> camposCambiadosDespues = null)
         {
             var resultado = new ResultadoSombraGls();
             foreach (PeticionGlsGuardada peticion in peticiones)
@@ -158,6 +231,11 @@ namespace NestoAPI.Infraestructure.Agencias.Gls
                 if (comparacion.Diferencias.RemoveAll(d => EsFechaReescritaAlTramitar(d, peticion.Fecha)) > 0)
                 {
                     resultado.FechasReescritasAlTramitar++;
+                }
+                ISet<string> cambiados = camposCambiadosDespues?.Invoke(datos.Envio.Numero, peticion.Fecha);
+                if (cambiados != null && cambiados.Count > 0 && comparacion.Diferencias.RemoveAll(d => cambiados.Contains(d.Campo)) > 0)
+                {
+                    resultado.CambiadasDespues++;
                 }
                 if (comparacion.Diferencias.Count == 0)
                 {
