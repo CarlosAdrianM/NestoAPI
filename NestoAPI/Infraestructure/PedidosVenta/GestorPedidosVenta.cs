@@ -1008,7 +1008,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 }
                 catch (HttpResponseException ex)
                 {
-                    throw new Exception(ex.Response.ReasonPhrase, ex);
+                    throw new Exception(MensajeDeRechazo(ex), ex);
                 }
                 catch (Exception ex) when (!(ex is NestoBusinessException))
                 {
@@ -1022,7 +1022,27 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             return pedidoOriginal;
         }
 
-        private const string MENSAJE_REINTENTAR_UNION = " Vuelva a intentarlo en unos minutos; si el problema persiste, avise a informática.";
+        /// <summary>
+        /// Motivo de un rechazo del PUT durante la unión. PutPedidoVenta rechaza con errorPersonalizado
+        /// (403 con el motivo en el CUERPO); el ReasonPhrase solo dice "Forbidden". Caso real 01/10/26
+        /// (Jesus): unir sobre una nota de entrega llegaba como "Forbidden", el usuario reintentó tres
+        /// veces y dos reintentos simultáneos se interbloquearon.
+        /// </summary>
+        internal static string MensajeDeRechazo(HttpResponseException ex)
+        {
+            string cuerpo = null;
+            try
+            {
+                cuerpo = ex.Response?.Content?.ReadAsStringAsync().GetAwaiter().GetResult();
+            }
+            catch (Exception)
+            {
+                // Sin cuerpo legible: se queda el ReasonPhrase
+            }
+            return string.IsNullOrWhiteSpace(cuerpo) ? ex.Response?.ReasonPhrase : cuerpo.Trim();
+        }
+
+        private const string MENSAJE_REINTENTAR_UNION =" Vuelva a intentarlo en unos minutos; si el problema persiste, avise a informática.";
 
         /// <summary>
         /// NestoAPI#323: ¿la excepción viene de un TransactionScope caducado a mitad de operación?

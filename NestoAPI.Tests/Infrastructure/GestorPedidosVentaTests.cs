@@ -562,6 +562,34 @@ namespace NestoAPI.Tests.Infrastructure
 
         #endregion
 
+        #region Motivo de un rechazo del PUT al unir - ELMAH 01/10/26
+
+        [TestMethod]
+        public void MensajeDeRechazo_ErrorPersonalizado_DevuelveElTextoYNoElForbidden()
+        {
+            // Caso real (Jesus, 01/10/26 13:20): unir sobre una nota de entrega. El PUT rechaza con
+            // errorPersonalizado (403 con el motivo en el cuerpo) y al usuario le llegaba "Forbidden",
+            // así que reintentó tres veces y dos de los reintentos se interbloquearon.
+            var respuesta = new System.Net.Http.HttpResponseMessage(HttpStatusCode.Forbidden)
+            {
+                Content = new System.Net.Http.StringContent("No se puede ampliar una nota de entrega")
+            };
+
+            string mensaje = GestorPedidosVenta.MensajeDeRechazo(new HttpResponseException(respuesta));
+
+            Assert.AreEqual("No se puede ampliar una nota de entrega", mensaje);
+        }
+
+        [TestMethod]
+        public void MensajeDeRechazo_SinCuerpo_DevuelveElReasonPhrase()
+        {
+            var respuesta = new System.Net.Http.HttpResponseMessage(HttpStatusCode.Forbidden);
+
+            Assert.AreEqual("Forbidden", GestorPedidosVenta.MensajeDeRechazo(new HttpResponseException(respuesta)));
+        }
+
+        #endregion
+
         #region PersistirUnion comprueba el resultado del guardado - NestoAPI#468
 
         [TestMethod]
