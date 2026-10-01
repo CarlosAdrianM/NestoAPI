@@ -15,11 +15,16 @@ namespace NestoAPI.Controllers
 {
     public class InventariosController : ApiController
     {
-        private NVEntities db = new NVEntities();
+        private NVEntities db;
         
         // Carlos 07/12/15: lo pongo para desactivar el Lazy Loading
-        public InventariosController()
+        public InventariosController() : this(new NVEntities())
         {
+        }
+
+        internal InventariosController(NVEntities db)
+        {
+            this.db = db;
             db.Configuration.LazyLoadingEnabled = false;
         }
 
@@ -45,7 +50,9 @@ namespace NestoAPI.Controllers
             }
 
             DateTime fechaMasUno = fecha.AddDays(1);
-            Inventario inventario = await db.Inventarios.SingleAsync(i => i.Empresa == empresa && i.Almacén == almacen && i.Fecha >= fecha && i.Fecha < fechaMasUno && i.Número == productoEncontrado.Número && i.Estado == ESTADO_INVENTARIO_SIN_CONTABILIZAR);
+            // Un producto que aún no se ha contado ese día no tiene línea: es un 404 (Nesto lo trata
+            // como «no hay línea»), no un 500 de SingleAsync que ensucie ELMAH.
+            Inventario inventario = await db.Inventarios.SingleOrDefaultAsync(i => i.Empresa == empresa && i.Almacén == almacen && i.Fecha >= fecha && i.Fecha < fechaMasUno && i.Número == productoEncontrado.Número && i.Estado == ESTADO_INVENTARIO_SIN_CONTABILIZAR);
             if (inventario == null)
             {
                 return NotFound();

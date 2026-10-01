@@ -281,6 +281,7 @@
     <Compile Include="Controllers\EnviosAgenciasCatalogoServiciosTests.cs" />
     <Compile Include="Controllers\PlazosPagoControllerTests.cs" />
     <Compile Include="Controllers\CabRemesasPagoControllerTests.cs" />
+    <Compile Include="Controllers\InventariosControllerTests.cs" />
     <Compile Include="Controllers\FamiliasControllerTests.cs" />
     <Compile Include="Controllers\EquiposDeVentasResumenTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\VigenciaCampanasJobsServiceTests.cs" />
