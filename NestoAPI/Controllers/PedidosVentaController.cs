@@ -1611,6 +1611,12 @@ namespace NestoAPI.Controllers
                     message = recorremosExcepcion.Message + ". " + recorremosExcepcion.InnerException.Message;
                     recorremosExcepcion = recorremosExcepcion.InnerException;
                 }
+                // Que el usuario vea también qué campo no pasa la validación.
+                string detalleValidacion = DetalleValidacion(e);
+                if (detalleValidacion != null)
+                {
+                    message += Environment.NewLine + detalleValidacion;
+                }
                 // NestoAPI#323: PutPedidoVenta también se invoca INTERNAMENTE (UnirPedidos →
                 // PersistirUnion instancia el controller a mano, sin Request). Aquí Request es null
                 // y el CreateErrorResponse explotaba con "ArgumentNullException: request",
@@ -3306,6 +3312,32 @@ namespace NestoAPI.Controllers
         /// Esto permite copiar el JSON desde ELMAH y pegarlo en la PlantillaVenta
         /// para reproducir el error exactamente como ocurrió.
         /// </summary>
+        internal static string MensajeElmahPedido(string contexto, string pedidoJson, Exception excepcionOriginal)
+        {
+            string mensaje = $@"{contexto}
+
+===== JSON DEL PEDIDO (para copiar y pegar en PlantillaVenta) =====
+
+{pedidoJson}
+
+===== FIN JSON DEL PEDIDO =====
+
+Error original: {excepcionOriginal.Message}";
+            string detalle = DetalleValidacion(excepcionOriginal);
+            return detalle == null ? mensaje : mensaje + Environment.NewLine + Environment.NewLine + detalle;
+        }
+
+        /// <summary>
+        /// ELMAH 01/10/26 (pedido 927471): «Validation failed for one or more entities» no dice qué
+        /// campo falla. El PUT loguea él mismo (no pasa por el GlobalExceptionFilter de #309), así
+        /// que el detalle (entidad, propiedad, motivo) se añade aquí. Null si no es de validación.
+        /// </summary>
+        internal static string DetalleValidacion(Exception excepcion)
+        {
+            var validacion = Infraestructure.Filters.GlobalExceptionFilter.BuscarValidationException(excepcion);
+            return validacion == null ? null : Infraestructure.Filters.GlobalExceptionFilter.ResumenErroresValidacion(validacion);
+        }
+
         private void LoguearPedidoEnElmah(PedidoVentaDTO pedido, Exception excepcionOriginal, string contexto)
         {
             try
@@ -3316,15 +3348,7 @@ namespace NestoAPI.Controllers
                     NullValueHandling = NullValueHandling.Include
                 });
 
-                var mensajeCompleto = $@"{contexto}
-
-===== JSON DEL PEDIDO (para copiar y pegar en PlantillaVenta) =====
-
-{pedidoJson}
-
-===== FIN JSON DEL PEDIDO =====
-
-Error original: {excepcionOriginal.Message}";
+                var mensajeCompleto = MensajeElmahPedido(contexto, pedidoJson, excepcionOriginal);
 
                 var excepcionConPedido = new Exception(mensajeCompleto, excepcionOriginal);
                 excepcionConPedido.Data["Cliente"] = pedido?.cliente;

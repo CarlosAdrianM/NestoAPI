@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Data.Entity;
 using System.Data.Entity.Infrastructure;
@@ -490,6 +490,30 @@ namespace NestoAPI.Tests.Controllers
             PedidosVentaController.NormalizarPedidoSiIvaNull(pedido, empresa);
 
             Assert.AreEqual("FDM", pedido.periodoFacturacion);
+        }
+    
+        // ELMAH 01/10/26 (Javier, pedido 927471): el PUT falló con «Validation failed for one or more
+        // entities» y la ficha de ELMAH no decía qué campo: el PUT loguea él mismo (no pasa por el
+        // GlobalExceptionFilter de #309). El detalle tiene que ir en el mensaje.
+        [TestMethod]
+        public void MensajeElmahPedido_ConErrorDeValidacionDeEf_IncluyeElDetalle()
+        {
+            var validacion = new System.Data.Entity.Validation.DbEntityValidationException("Validation failed");
+            var envuelta = new Exception("capa", validacion);
+
+            string mensaje = PedidosVentaController.MensajeElmahPedido("Exception al modificar pedido", "{}", envuelta);
+
+            StringAssert.Contains(mensaje, "Error de validación de Entity Framework");
+            StringAssert.Contains(mensaje, "Exception al modificar pedido");
+        }
+
+        [TestMethod]
+        public void MensajeElmahPedido_SinErrorDeValidacion_NoAnadeNada()
+        {
+            string mensaje = PedidosVentaController.MensajeElmahPedido("Exception al modificar pedido", "{}", new InvalidOperationException("otro"));
+
+            Assert.IsFalse(mensaje.Contains("Entity Framework"));
+            StringAssert.Contains(mensaje, "Error original: otro");
         }
     }
 }
