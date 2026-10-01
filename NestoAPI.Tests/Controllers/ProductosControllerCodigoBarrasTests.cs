@@ -124,6 +124,23 @@ namespace NestoAPI.Tests.Controllers
             Assert.IsInstanceOfType(resultado, typeof(NotFoundResult));
         }
 
+        // NestoAPI#583: la importación de PrestaShop necesita el IVA de la ficha (los cursos son EX) en vez de
+        // deducirlo del precio de la tienda.
+        [TestMethod]
+        public async Task GetProducto_PorEmpresaYNumero_DevuelveElIvaDeLaFicha()
+        {
+            Producto curso = CrearProducto("90004", null, "CURSO DE DEPILACION ELECTRICA");
+            curso.IVA_Repercutido = "EX ";
+            curso.PVP = 165;
+            ConfigurarProductos(curso);
+
+            IHttpActionResult resultado = await controller.GetProducto("1", "90004");
+
+            var ok = resultado as OkNegotiatedContentResult<ProductoPlantillaDTO>;
+            Assert.IsNotNull(ok);
+            Assert.AreEqual("EX", ok.Content.iva);
+        }
+
         private void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class
         {
             A.CallTo(() => ((IDbAsyncEnumerable<T>)fakeDbSet).GetAsyncEnumerator())

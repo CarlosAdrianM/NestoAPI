@@ -63,7 +63,9 @@ namespace NestoAPI.Controllers
                 producto = producto.Número,
                 nombre = producto.Nombre,
                 precio = (decimal)producto.PVP,
-                aplicarDescuento = producto.Aplicar_Dto
+                aplicarDescuento = producto.Aplicar_Dto,
+                // NestoAPI#583: la importación de PrestaShop toma de aquí el IVA de la ficha (los cursos son EX)
+                iva = producto.IVA_Repercutido?.Trim()
             };
 
             return Ok(productoDTO);
