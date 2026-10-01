@@ -82,6 +82,63 @@ namespace NestoAPI.Tests.Models.Picking
             Assert.IsFalse(new GestorStocksPicking(pedido).HayStockDeAlgo());
         }
 
+        // Incidencia 451 de Novedades (Lidia, pedido 926495, 18/09/26), modo «según vaya entrando»: la colección
+        // semipermanente (de pago) no tenía stock y el picking sacó solo los dos regalos de Ganavisiones (base 0)
+        // con los portes y el reembolso: el cliente pagó 10 € por recibir solo los regalos.
+        [TestMethod]
+        public void GestorStock_HayStockDeAlgo_siSoloTienenStockLosRegalos_NoSaleMientrasLoDePagoEstePendiente()
+        {
+            PedidoPicking pedido = new PedidoPicking
+            {
+                Id = 926495,
+                EsNotaEntrega = false,
+                Lineas = new List<LineaPedidoPicking>
+                {
+                    new LineaPedidoPicking { Id = 1, TipoLinea = Constantes.TiposLineaVenta.PRODUCTO, Producto = "45921", Cantidad = 1, BaseImponible = 87.84M, CantidadReservada = 0, FechaEntrega = new DateTime() },
+                    new LineaPedidoPicking { Id = 2, TipoLinea = Constantes.TiposLineaVenta.PRODUCTO, Producto = "40133", Cantidad = 4, BaseImponible = 0, CantidadReservada = 4, FechaEntrega = new DateTime() },
+                    new LineaPedidoPicking { Id = 3, TipoLinea = Constantes.TiposLineaVenta.PRODUCTO, Producto = "39951", Cantidad = 2, BaseImponible = 0, CantidadReservada = 2, FechaEntrega = new DateTime() },
+                    new LineaPedidoPicking { Id = 4, TipoLinea = Constantes.TiposLineaVenta.CUENTA_CONTABLE, Producto = "62400005", Cantidad = 1, BaseImponible = 7, CantidadReservada = 1, FechaEntrega = new DateTime() }
+                }
+            };
+
+            Assert.IsFalse(new GestorStocksPicking(pedido).HayStockDeAlgo());
+        }
+
+        [TestMethod]
+        public void GestorStock_HayStockDeAlgo_unPedidoQueSoloLlevaRegalos_SiSale()
+        {
+            // Un canje de Ganavisiones o un envío de material promocional: no hay nada de pago que esperar.
+            PedidoPicking pedido = new PedidoPicking
+            {
+                Id = 2,
+                EsNotaEntrega = false,
+                Lineas = new List<LineaPedidoPicking>
+                {
+                    new LineaPedidoPicking { Id = 1, TipoLinea = Constantes.TiposLineaVenta.PRODUCTO, Producto = "40133", Cantidad = 4, BaseImponible = 0, CantidadReservada = 4, FechaEntrega = new DateTime() }
+                }
+            };
+
+            Assert.IsTrue(new GestorStocksPicking(pedido).HayStockDeAlgo());
+        }
+
+        [TestMethod]
+        public void GestorStock_HayStockDeAlgo_siTieneStockAlgoDePago_SaleAunqueLleveRegalos()
+        {
+            PedidoPicking pedido = new PedidoPicking
+            {
+                Id = 3,
+                EsNotaEntrega = false,
+                Lineas = new List<LineaPedidoPicking>
+                {
+                    new LineaPedidoPicking { Id = 1, TipoLinea = Constantes.TiposLineaVenta.PRODUCTO, Producto = "45921", Cantidad = 1, BaseImponible = 87.84M, CantidadReservada = 0, FechaEntrega = new DateTime() },
+                    new LineaPedidoPicking { Id = 2, TipoLinea = Constantes.TiposLineaVenta.PRODUCTO, Producto = "41060", Cantidad = 2, BaseImponible = 20, CantidadReservada = 2, FechaEntrega = new DateTime() },
+                    new LineaPedidoPicking { Id = 3, TipoLinea = Constantes.TiposLineaVenta.PRODUCTO, Producto = "40133", Cantidad = 4, BaseImponible = 0, CantidadReservada = 4, FechaEntrega = new DateTime() }
+                }
+            };
+
+            Assert.IsTrue(new GestorStocksPicking(pedido).HayStockDeAlgo());
+        }
+
         [TestMethod]
         public void GestorStock_HayStockDeAlgo_siAlgunProductoTieneStock_SaleConSusPortes()
         {

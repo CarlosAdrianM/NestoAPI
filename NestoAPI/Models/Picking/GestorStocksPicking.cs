@@ -54,16 +54,22 @@ namespace NestoAPI.Models.Picking
                 // no son «lo que hay»: tiene que salir algún producto (o inmovilizado). Si no, en los modos que
                 // sirven lo que haya salía un envío con solo los portes. Un pedido SOLO de cuentas contables
                 // (un cargo) sigue saliendo como siempre.
-                bool tieneProductos = pedido.Lineas.Any(l => l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO
-                    || l.TipoLinea == Constantes.TiposLineaVenta.INMOVILIZADO);
+                bool tieneProductos = pedido.Lineas.Any(EsProductoOInmovilizado);
+                // Incidencia 451 (Lidia, pedido 926495): lo mismo con los regalos (base 0: Ganavisiones, regalo por
+                // importe, material promocional). Si el pedido tiene algo de pago, tiene que salir algo de pago; si
+                // no, salían solo los regalos con sus portes. Un pedido que solo lleva regalos sigue saliendo.
+                bool tieneProductosDePago = pedido.Lineas.Any(l => EsProductoOInmovilizado(l) && l.BaseImponible != 0);
                 lineaEncontrada = pedido.Lineas.Any(
-                    l => (l.CantidadReservada > 0 || (l.CantidadRecogida > 0 && l.Cantidad == l.CantidadReservada) || (l.Cantidad == l.CantidadReservada && l.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE)) && 
-                    (l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO || l.TipoLinea == Constantes.TiposLineaVenta.INMOVILIZADO
+                    l => (l.CantidadReservada > 0 || (l.CantidadRecogida > 0 && l.Cantidad == l.CantidadReservada) || (l.Cantidad == l.CantidadReservada && l.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE)) &&
+                    ((EsProductoOInmovilizado(l) && (!tieneProductosDePago || l.BaseImponible != 0))
                         || (l.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE && !tieneProductos))
                 );
             }
             return lineaEncontrada;
         }
+
+        private static bool EsProductoOInmovilizado(LineaPedidoPicking linea)
+            => linea.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO || linea.TipoLinea == Constantes.TiposLineaVenta.INMOVILIZADO;
 
         public bool TodoLoQueTieneStockEsSobrePedido()
         {
