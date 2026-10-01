@@ -885,6 +885,8 @@
     <Compile Include="Infraestructure\NotasEntrega\ServicioNotasEntrega.cs" />
     <Compile Include="Infraestructure\NotasEntrega\CreadorNotaEntregaPendiente.cs" />
     <Compile Include="Infraestructure\NotasEntrega\GestorFechaEntregaNotas.cs" />
+    <Compile Include="Infraestructure\Reposiciones\ServicioPropuestaReposicion.cs" />
+    <Compile Include="Controllers\ReposicionesController.cs" />
     <Compile Include="Infraestructure\ExtractosRuta\ServicioExtractoRuta.cs" />
     <Compile Include="Infraestructure\Alquileres\IProductosAlquilerService.cs" />
     <Compile Include="Infraestructure\Alquileres\ProductosAlquilerService.cs" />

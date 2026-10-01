@@ -312,6 +312,7 @@
     <Compile Include="Infrastructure\ServicioNotasEntregaTests.cs" />
     <Compile Include="Infrastructure\CreadorNotaEntregaPendienteTests.cs" />
     <Compile Include="Infrastructure\FechaEntregaNotasTests.cs" />
+    <Compile Include="Infrastructure\ServicioPropuestaReposicionTests.cs" />
     <Compile Include="Infrastructure\ServicioTraspasoEmpresaTests.cs" />
     <Compile Include="Models\Picking\GestorAvisosPickingTests.cs" />
     <Compile Include="Infraestructure\TelefonoTests.cs" />
