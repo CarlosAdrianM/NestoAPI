@@ -620,6 +620,9 @@
     <Compile Include="Infraestructure\Agencias\Innovatrans\MapeadorTipoServicioDataTrans.cs" />
     <Compile Include="Infraestructure\Agencias\Innovatrans\AgenciaRemotaInnovatrans.cs" />
     <Compile Include="Infraestructure\Agencias\Gls\AgenciaRemotaGls.cs" />
+    <Compile Include="Infraestructure\Agencias\Gls\ComparadorPeticionesGls.cs" />
+    <Compile Include="Infraestructure\Agencias\Gls\PeticionGls.cs" />
+    <Compile Include="Infraestructure\Agencias\Gls\SombraPeticionesGls.cs" />
     <Compile Include="Infraestructure\Agencias\IAgenciaRemota.cs" />
     <Compile Include="Infraestructure\Agencias\RegistroIntercambiosRemotos.cs" />
     <Compile Include="Infraestructure\Agencias\FabricaAgenciasRemotas.cs" />

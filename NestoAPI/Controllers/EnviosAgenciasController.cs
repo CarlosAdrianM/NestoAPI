@@ -445,6 +445,21 @@ namespace NestoAPI.Controllers
             return fecha.HasValue ? (int)(hoy.Date - fecha.Value.Date).TotalDays : 0;
         }
 
+        // GET api/EnviosAgencias/SombraGls?desde=2026-09-24&hasta=2026-10-01
+        /// <summary>
+        /// NestoAPI#552 (fase 1, sombra): compara las peticiones a GLS que mandó Nesto en el periodo (AgenciasLlamadasWeb)
+        /// con las que construiría la API para esos mismos envíos. Solo lee; no manda nada a GLS. Máximo 31 días.
+        /// </summary>
+        [HttpGet]
+        [Route("api/EnviosAgencias/SombraGls")]
+        [ResponseType(typeof(Infraestructure.Agencias.Gls.ResultadoSombraGls))]
+        public async Task<IHttpActionResult> GetSombraGls(DateTime desde, DateTime? hasta = null)
+        {
+            var resultado = await new Infraestructure.Agencias.Gls.SombraPeticionesGls(db)
+                .Ejecutar(desde, hasta ?? DateTime.Now).ConfigureAwait(false);
+            return Ok(resultado);
+        }
+
         /// <summary>
         /// Tramitados (Estado &gt;= 1, que incluye Entregado e Incidentado, #387) con las tres
         /// búsquedas de la pestaña: por agencia+fecha, por cliente o por texto (nombre,
