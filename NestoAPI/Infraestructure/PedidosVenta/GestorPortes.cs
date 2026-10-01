@@ -412,6 +412,19 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         }
 
         /// <summary>
+        /// NestoAPI#580: la línea de la que copia almacén, delegación, forma de venta, ESTADO y fecha una
+        /// línea de cuenta contable nueva (portes o comisión contra reembolso): la primera que aún queda
+        /// por servir (presupuesto, pendiente o en curso). Null si ya no queda ninguna: entonces no hay
+        /// nada que enviar ni portes que cobrar.
+        ///
+        /// Antes se copiaba de la primera línea del pedido, fuera cual fuera. En el pedido 926291 esa
+        /// línea ya estaba en albarán, los portes nacieron en estado 2 SIN albarán, la agrupación de fin
+        /// de mes (que une por Nº Albarán) los dejó solos y se facturaron sin albarán (NV2616067).
+        /// </summary>
+        public static Models.PedidosVenta.LineaPedidoVentaDTO LineaReferenciaCuentaContable(IEnumerable<Models.PedidosVenta.LineaPedidoVentaDTO> lineas)
+            => lineas?.FirstOrDefault(l => EsEstadoVivoCuentaContable(l.estado));
+
+        /// <summary>
         /// Gestiona las líneas de portes y comisión reembolso en un pedido DTO.
         /// Añade o quita líneas según corresponda.
         /// Devuelve true si se modificaron las líneas.
@@ -446,7 +459,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             {
                 if (lineaPortesExistente == null)
                 {
-                    var lineaReferencia = lineas.FirstOrDefault();
+                    var lineaReferencia = LineaReferenciaCuentaContable(lineas);
                     if (lineaReferencia != null)
                     {
                         var lineaPortes = CrearLineaPortes(resultado, lineaReferencia, iva, parametrosIva);
@@ -470,7 +483,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             {
                 if (lineaReembolsoExistente == null)
                 {
-                    var lineaReferencia = lineas.FirstOrDefault();
+                    var lineaReferencia = LineaReferenciaCuentaContable(lineas);
                     if (lineaReferencia != null)
                     {
                         var lineaReembolso = CrearLineaReembolso(resultado, lineaReferencia, iva, parametrosIva);

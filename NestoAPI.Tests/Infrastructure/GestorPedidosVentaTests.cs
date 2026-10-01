@@ -1025,6 +1025,25 @@ namespace NestoAPI.Tests.Infrastructure
             };
         }
 
+        // NestoAPI#580: una línea solo llega a albarán (2) o factura (4) por los procedimientos de
+        // albarán y factura, que le ponen el número. Si NestoAPI la insertara ya en ese estado
+        // quedaría sin albarán y se podría facturar sin él (pedido 926291, NV2616067).
+        [DataTestMethod]
+        [DataRow(Constantes.EstadosLineaVenta.ALBARAN)]
+        [DataRow(Constantes.EstadosLineaVenta.FACTURA)]
+        public void CrearLineaVta_EnEstadoDeAlbaranOFactura_NoSeCrea(int estado)
+        {
+            var gestor = new GestorPedidosVenta(ServicioParaInmovilizado());
+            var plazoPago = new PlazoPago { DtoProntoPago = 0 };
+            LineaPedidoVentaDTO linea = LineaInmovilizado();
+            linea.estado = (short)estado;
+
+            var ex = Assert.ThrowsException<InvalidOperationException>(() =>
+                gestor.CrearLineaVta(linea, PEDIDO, EMPRESA, "G21", plazoPago, "12786", "0", "FW", "MRM"));
+
+            StringAssert.Contains(ex.Message, PEDIDO.ToString());
+        }
+
         [TestMethod]
         public void CrearLineaVta_DtoConVistoBuenoFalse_LaLineaSaleConVistoBueno()
         {

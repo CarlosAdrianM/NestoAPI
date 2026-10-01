@@ -1425,7 +1425,8 @@ namespace NestoAPI.Controllers
 
                     if (resultadoPortesPut.EsContraReembolso && resultadoPortesPut.ComisionReembolso > 0 && !yaLlevaReembolsoBD)
                     {
-                        var lineaRefReemb = pedido.Lineas.FirstOrDefault();
+                        // NestoAPI#580: de una línea que aún queda por servir, nunca de una ya en albarán.
+                        var lineaRefReemb = GestorPortes.LineaReferenciaCuentaContable(pedido.Lineas);
                         if (lineaRefReemb != null)
                         {
                             var lineaReembolso = new LineaPedidoVentaDTO

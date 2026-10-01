@@ -393,6 +393,18 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         // productos marcados. Con null no se convierte nada (queda el grupo de la ficha).
         public LinPedidoVta CrearLineaVta(LineaPedidoVentaDTO linea, int numeroPedido, string empresa, string iva, PlazoPago plazoPago, string cliente, string contacto, string ruta, string vendedor, string usuarioPedido = null)
         {
+            // NestoAPI#580: una línea solo llega a albarán o factura por prdCrearAlbaránVta y
+            // prdCrearFacturaVta, que le ponen el número. Insertarla ya en ese estado la dejaría sin
+            // albarán y se podría facturar sin él (pedido 926291). Es un fallo del programa, no del
+            // usuario: excepción de las que van a ELMAH. La BD lo impide además con
+            // CK_LinPedidoVta_AlbaranYFacturaExigenNumeroAlbaran.
+            if (linea.estado >= Constantes.EstadosLineaVenta.ALBARAN)
+            {
+                throw new InvalidOperationException(
+                    $"No se puede crear la línea {linea.Producto?.Trim()} del pedido {numeroPedido} en estado {linea.estado}: " +
+                    "una línea solo pasa a albarán o factura al crear el albarán o la factura");
+            }
+
             string tipoExclusiva, grupo, subGrupo, familia;
             decimal coste, precioTarifa;
             short estadoProducto;

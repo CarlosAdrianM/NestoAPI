@@ -1081,6 +1081,87 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
             Assert.AreEqual(Constantes.EstadosLineaVenta.PRESUPUESTO, lineaPortes.estado);
         }
 
+        // NestoAPI#580: regresión del pedido 926291. Marta lo guardó cuando sus líneas ya estaban en
+        // albarán; los portes copiaron el estado de la primera línea y nacieron en estado 2 SIN
+        // albarán. La agrupación de fin de mes (que une por Nº Albarán) los dejó solos y se facturaron
+        // sin albarán (NV2616067). Si no queda nada por servir, no hay portes que cobrar.
+        private static LineaPedidoVentaDTO LineaProducto(short estado, string producto = "PROD1")
+        {
+            return new LineaPedidoVentaDTO
+            {
+                tipoLinea = Constantes.TiposLineaVenta.PRODUCTO, Producto = producto, PrecioUnitario = 10, Cantidad = 1,
+                almacen = "ALG", delegacion = "ALG", formaVenta = "EFC",
+                estado = estado, usuario = "test", fechaEntrega = System.DateTime.Today
+            };
+        }
+
+        [TestMethod]
+        public void GestorPortes_GestionarLineasPortes_TodasLasLineasYaEnAlbaran_NoAnadePortes()
+        {
+            var lineas = new HashSet<LineaPedidoVentaDTO>
+            {
+                LineaProducto(Constantes.EstadosLineaVenta.ALBARAN, "38272"),
+                LineaProducto(Constantes.EstadosLineaVenta.ALBARAN, "38201")
+            };
+            var resultado = new ResultadoPortes { ImportePortes = 3.5M, PortesGratis = false, CuentaPortes = "62400002" };
+
+            var resultadoGestion = GestorPortes.GestionarLineasPortes(lineas, resultado, "G21", null);
+
+            Assert.IsFalse(resultadoGestion.Modificado);
+            Assert.IsFalse(lineas.Any(l => l.Producto == "62400002"), "Con todo en albarán no queda nada por servir: no hay portes");
+        }
+
+        [TestMethod]
+        public void GestorPortes_GestionarLineasPortes_PrimeraLineaEnAlbaranYOtraEnCurso_PortesNacenEnCurso()
+        {
+            var lineas = new List<LineaPedidoVentaDTO>
+            {
+                LineaProducto(Constantes.EstadosLineaVenta.ALBARAN, "38272"),
+                LineaProducto(Constantes.EstadosLineaVenta.EN_CURSO, "38100")
+            };
+            var resultado = new ResultadoPortes { ImportePortes = 3.5M, PortesGratis = false, CuentaPortes = "62400002" };
+
+            _ = GestorPortes.GestionarLineasPortes(lineas, resultado, "G21", null);
+
+            var lineaPortes = lineas.Single(l => l.Producto == "62400002");
+            Assert.AreEqual(Constantes.EstadosLineaVenta.EN_CURSO, lineaPortes.estado, "Los portes van con lo que queda por servir, nunca en albarán");
+        }
+
+        [TestMethod]
+        public void GestorPortes_GestionarLineasPortes_TodasLasLineasYaEnAlbaran_NoAnadeComisionReembolso()
+        {
+            var lineas = new HashSet<LineaPedidoVentaDTO>
+            {
+                LineaProducto(Constantes.EstadosLineaVenta.ALBARAN)
+            };
+            var resultado = new ResultadoPortes
+            {
+                ImportePortes = 0, PortesGratis = true, EsContraReembolso = true, ComisionReembolso = 2M,
+                CuentaReembolso = Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL
+            };
+
+            var resultadoGestion = GestorPortes.GestionarLineasPortes(lineas, resultado, "G21", null);
+
+            Assert.IsFalse(resultadoGestion.Modificado);
+            Assert.AreEqual(1, lineas.Count);
+        }
+
+        [TestMethod]
+        public void GestorPortes_LineaReferenciaCuentaContable_EsLaPrimeraQueQuedaPorServir()
+        {
+            var enCurso = LineaProducto(Constantes.EstadosLineaVenta.EN_CURSO, "B");
+            var lineas = new List<LineaPedidoVentaDTO>
+            {
+                LineaProducto(Constantes.EstadosLineaVenta.FACTURA, "A"),
+                LineaProducto(Constantes.EstadosLineaVenta.ALBARAN, "C"),
+                enCurso
+            };
+
+            Assert.AreSame(enCurso, GestorPortes.LineaReferenciaCuentaContable(lineas));
+            Assert.IsNull(GestorPortes.LineaReferenciaCuentaContable(lineas.Take(2)));
+            Assert.IsNull(GestorPortes.LineaReferenciaCuentaContable(null));
+        }
+
         #endregion
 
         #region AnadirPortes
