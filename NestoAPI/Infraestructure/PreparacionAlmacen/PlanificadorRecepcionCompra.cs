@@ -4,9 +4,13 @@ using System.Linq;
 
 namespace NestoAPI.Infraestructure.PreparacionAlmacen
 {
-    /// <summary>Una línea de producto de un pedido de compra todavía por recibir (estado 1).</summary>
+    /// <summary>
+    /// Una línea de producto de un pedido de compra todavía por recibir (estado 1) o que se dio por no servida hace
+    /// poco (-99, proveedor sin control de pendientes) y aún se puede recuperar si llega.
+    /// </summary>
     public class LineaCompraPendiente
     {
+        public short Estado { get; set; } = 1;
         public int Pedido { get; set; }
         public DateTime FechaPedido { get; set; }
         /// <summary>LinPedidoCmp.NºOrden.</summary>
@@ -42,6 +46,20 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public DateTime FechaResto { get; set; }
         /// <summary>El visto bueno con el que queda lo recibido.</summary>
         public bool VistoBueno { get; set; }
+        /// <summary>Era una línea en -99 (dada por no servida) que vuelve a estado 1 para recibirse con su pedido.</summary>
+        public bool Reactivada { get; set; }
+    }
+
+    /// <summary>Lo que ha llegado de una línea que se había dado por no servida: para decírselo a quien recibe.</summary>
+    public class LineaRecuperada
+    {
+        public int Pedido { get; set; }
+        public int NumeroOrden { get; set; }
+        public string Producto { get; set; }
+        public int Cantidad { get; set; }
+        public DateTime FechaNoServido { get; set; }
+        public string Texto => $"{Cantidad} ud. de {Producto} eran del pedido {Pedido}, que se dio por no servido el " +
+            $"{FechaNoServido:dd/MM}: entran con ese pedido.";
     }
 
     /// <summary>Unidades de más sobre lo pedido: van en una línea nueva, copia de otra del mismo producto.</summary>
@@ -74,6 +92,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public DateTime FechaAplazadas { get; set; }
         public List<ExcesoRecepcion> Excesos { get; } = new List<ExcesoRecepcion>();
         public List<ProductoNoPedido> NoPedidos { get; } = new List<ProductoNoPedido>();
+        /// <summary>Lo que llega de líneas -99 recientes: entra con su pedido (no es exceso ni pide aprobación).</summary>
+        public List<LineaRecuperada> Recuperadas { get; } = new List<LineaRecuperada>();
         public List<int> PedidosAAlbaranear { get; } = new List<int>();
         /// <summary>Lo que tiene que ver alguien de Compras (exceso o líneas sin visto bueno recibidas por almacén).</summary>
         public List<string> AvisosParaCompras { get; } = new List<string>();
@@ -89,6 +109,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     {
         public const short ESTADO_PENDIENTE = 1;
         public const short ESTADO_ANULADA = -99;
+        /// <summary>Hasta cuántos días atrás (por FechaRecepción) se recupera una línea -99.</summary>
+        public const int DIAS_RECUPERABLE = 30;
 
         public static PlanRecepcionCompra Planificar(IEnumerable<LineaCompraPendiente> lineas, IDictionary<string, int> lecturas,
             DateTime hoy, bool esCompras)
@@ -97,9 +119,18 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             var plan = new PlanRecepcionCompra { FechaAplazadas = hoy.AddDays(1) };
 
             // Del pedido más antiguo al más reciente; dentro del pedido, en el orden de sus líneas
-            List<LineaCompraPendiente> ordenadas = (lineas ?? Enumerable.Empty<LineaCompraPendiente>())
+            List<LineaCompraPendiente> validas = (lineas ?? Enumerable.Empty<LineaCompraPendiente>())
                 .Where(l => l != null && l.Cantidad > 0 && !string.IsNullOrWhiteSpace(l.Producto))
+                .ToList();
+            List<LineaCompraPendiente> ordenadas = validas
+                .Where(l => l.Estado == ESTADO_PENDIENTE)
                 .OrderBy(l => l.FechaPedido).ThenBy(l => l.Pedido).ThenBy(l => l.NumeroOrden)
+                .ToList();
+            // Decisión de Carlos: sin control de pendientes, lo que se dio por no servido (-99) hace poco se recupera si
+            // llega, ANTES de tratarlo como exceso o no pedido; la más antigua primero
+            List<LineaCompraPendiente> recuperables = validas
+                .Where(l => l.Estado == ESTADO_ANULADA && !l.ControlPendientes && l.FechaRecepcion.Date >= hoy.AddDays(-DIAS_RECUPERABLE))
+                .OrderBy(l => l.FechaRecepcion).ThenBy(l => l.Pedido).ThenBy(l => l.NumeroOrden)
                 .ToList();
 
             Dictionary<string, int> leido = (lecturas ?? new Dictionary<string, int>())
@@ -112,7 +143,9 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             var recibidoPorLinea = new Dictionary<int, int>();
             foreach (KeyValuePair<string, int> lectura in leido)
             {
-                List<LineaCompraPendiente> delProducto = ordenadas.Where(l => Normalizar(l.Producto) == lectura.Key).ToList();
+                List<LineaCompraPendiente> delProducto = ordenadas.Where(l => Normalizar(l.Producto) == lectura.Key)
+                    .Concat(recuperables.Where(l => Normalizar(l.Producto) == lectura.Key))
+                    .ToList();
                 if (!delProducto.Any())
                 {
                     plan.NoPedidos.Add(new ProductoNoPedido { Producto = lectura.Key, Cantidad = lectura.Value });
@@ -154,10 +187,24 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 }
             }
 
-            var pedidosConAlgoRecibido = new HashSet<int>(ordenadas.Where(l => recibidoPorLinea.ContainsKey(l.NumeroOrden)).Select(l => l.Pedido));
+            List<LineaCompraPendiente> recuperadas = recuperables.Where(l => recibidoPorLinea.ContainsKey(l.NumeroOrden)).ToList();
+            foreach (LineaCompraPendiente linea in recuperadas)
+            {
+                plan.Recuperadas.Add(new LineaRecuperada
+                {
+                    Pedido = linea.Pedido,
+                    NumeroOrden = linea.NumeroOrden,
+                    Producto = linea.Producto?.Trim(),
+                    Cantidad = recibidoPorLinea[linea.NumeroOrden],
+                    FechaNoServido = linea.FechaRecepcion.Date
+                });
+            }
+
+            List<LineaCompraPendiente> recibibles = ordenadas.Concat(recuperadas).ToList();
+            var pedidosConAlgoRecibido = new HashSet<int>(recibibles.Where(l => recibidoPorLinea.ContainsKey(l.NumeroOrden)).Select(l => l.Pedido));
             var pedidosAAlbaranear = new HashSet<int>();
 
-            foreach (LineaCompraPendiente linea in ordenadas.Where(l => pedidosConAlgoRecibido.Contains(l.Pedido)))
+            foreach (LineaCompraPendiente linea in recibibles.Where(l => pedidosConAlgoRecibido.Contains(l.Pedido)))
             {
                 if (recibidoPorLinea.TryGetValue(linea.NumeroOrden, out int recibido))
                 {
@@ -172,7 +219,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                         Resto = resto,
                         EstadoResto = linea.ControlPendientes ? ESTADO_PENDIENTE : ESTADO_ANULADA,
                         FechaResto = plan.FechaAplazadas,
-                        VistoBueno = vistoBueno
+                        VistoBueno = vistoBueno,
+                        Reactivada = linea.Estado == ESTADO_ANULADA
                     });
                     if (vistoBueno)
                     {

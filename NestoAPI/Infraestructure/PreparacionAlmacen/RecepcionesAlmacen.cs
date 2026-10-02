@@ -127,7 +127,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 Tipo = origen.Tipo,
                 Documento = esperado.Documento ?? documento,
                 Productos = diferencias,
-                Cuadra = CasadorEscaneos.EstaCompleto(diferencias)
+                Cuadra = CasadorEscaneos.EstaCompleto(diferencias),
+                Recuperadas = TextosRecuperadas(esperado, diferencias)
             };
         }
 
@@ -176,6 +177,38 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 Principal = usuario,
                 Dispositivo = terminar.Dispositivo
             }).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Lo que sobra de un producto que se dio por no servido hace poco: entra con ese pedido, la línea más antigua
+        /// primero (como lo reparte después PlanificadorRecepcionCompra).
+        /// </summary>
+        internal static List<string> TextosRecuperadas(RecepcionDTO esperado, IEnumerable<DiferenciaPreparacionDTO> diferencias)
+        {
+            var textos = new List<string>();
+            foreach (DiferenciaPreparacionDTO diferencia in diferencias.Where(d => d.Diferencia > 0))
+            {
+                LineaRecepcionDTO linea = esperado.Lineas.FirstOrDefault(l =>
+                    string.Equals(l.Producto?.Trim(), diferencia.Producto, StringComparison.OrdinalIgnoreCase));
+                int sobra = diferencia.Diferencia;
+                foreach (RecuperableRecepcionDTO recuperable in linea?.Recuperables ?? new List<RecuperableRecepcionDTO>())
+                {
+                    if (sobra == 0)
+                    {
+                        break;
+                    }
+                    int entra = Math.Min(sobra, recuperable.Cantidad);
+                    sobra -= entra;
+                    textos.Add(new LineaRecuperada
+                    {
+                        Pedido = recuperable.Pedido,
+                        Producto = diferencia.Producto,
+                        Cantidad = entra,
+                        FechaNoServido = recuperable.FechaNoServido
+                    }.Texto);
+                }
+            }
+            return textos;
         }
 
         private IOrigenRecepcion Origen(string tipo)

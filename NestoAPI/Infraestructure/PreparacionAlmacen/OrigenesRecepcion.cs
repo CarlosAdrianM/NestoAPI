@@ -35,6 +35,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// <summary>Lo recibido queda en la línea con fecha de hoy; si falta algo, va en una línea nueva (Resto).</summary>
         Task RecibirLinea(string empresa, LineaCompraPendiente linea, LineaRecibida recibida, DateTime hoy, string usuario);
         Task Anular(string empresa, int numeroOrden, string usuario);
+        /// <summary>Una línea -99 vuelve a estado 1 para recibirse con su pedido (el paso inverso de prdDeshacerAlbaránCmp).</summary>
+        Task Reactivar(string empresa, int numeroOrden, string usuario);
         Task CrearExceso(string empresa, LineaCompraPendiente copiaDe, ExcesoRecepcion exceso, DateTime hoy, string usuario);
         /// <summary>Cambia la fecha de recepción de líneas en curso (lo que hace prdInsertarLineaCmp con el resto del pedido).</summary>
         Task Aplazar(string empresa, IEnumerable<int> numerosOrden, DateTime fechaRecepcion);
@@ -134,7 +136,12 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     Producto = g.Key,
                     Descripcion = g.Select(f => f.Descripcion?.Trim()).FirstOrDefault(d => !string.IsNullOrEmpty(d)),
                     Codigo = g.Select(f => f.CodigoBarras?.Trim()).FirstOrDefault(c => !string.IsNullOrEmpty(c)),
-                    Cantidad = g.Sum(f => f.Cantidad)
+                    Cantidad = g.Where(f => f.Estado == PlanificadorRecepcionCompra.ESTADO_PENDIENTE).Sum(f => f.Cantidad),
+                    // Lo dado por no servido hace poco: si llega, entra con su pedido (la más antigua primero)
+                    Recuperables = g.Where(f => f.Estado == PlanificadorRecepcionCompra.ESTADO_ANULADA)
+                        .OrderBy(f => f.FechaRecepcion).ThenBy(f => f.Pedido)
+                        .Select(f => new RecuperableRecepcionDTO { Pedido = f.Pedido, Cantidad = f.Cantidad, FechaNoServido = (f.FechaRecepcion ?? DateTime.Today).Date })
+                        .ToList()
                 })
                 .ToList();
             // Un código es duplicado si lo comparten productos distintos (no por estar el producto en dos pedidos)
@@ -155,7 +162,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     CodigoBarras = p.Codigo,
                     SinCodigo = p.Codigo == null,
                     CodigoDuplicado = p.Codigo != null && duplicados.Contains(p.Codigo),
-                    Cantidad = p.Cantidad
+                    Cantidad = p.Cantidad,
+                    Recuperables = p.Recuperables
                 }).ToList()
             };
         }
@@ -192,6 +200,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 Dictionary<int, LineaCompraPendiente> porOrden = lineas.ToDictionary(l => l.NumeroOrden);
                 foreach (LineaRecibida recibida in plan.Recibidas)
                 {
+                    if (recibida.Reactivada)
+                    {
+                        await transaccion.Reactivar(solicitud.Empresa, recibida.NumeroOrden, solicitud.Usuario).ConfigureAwait(false);
+                    }
                     await transaccion.RecibirLinea(solicitud.Empresa, porOrden[recibida.NumeroOrden], recibida, fecha, solicitud.Usuario).ConfigureAwait(false);
                 }
                 foreach (int anulada in plan.Anuladas)
@@ -235,7 +247,15 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     NoEsperados = plan.NoPedidos
                         .Select(n => new DiferenciaPreparacionDTO { Producto = n.Producto, Leido = n.Cantidad, Ajeno = true })
                         .ToList(),
-                    Avisos = plan.AvisosParaCompras.ToList()
+                    Avisos = plan.AvisosParaCompras.ToList(),
+                    Recuperadas = plan.Recuperadas.Select(r => new LineaRecuperadaDTO
+                    {
+                        Pedido = r.Pedido,
+                        Producto = r.Producto,
+                        Cantidad = r.Cantidad,
+                        FechaNoServido = r.FechaNoServido,
+                        Texto = r.Texto
+                    }).ToList()
                 };
             }).ConfigureAwait(false);
 

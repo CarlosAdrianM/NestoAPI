@@ -230,5 +230,96 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             Assert.AreEqual(101, plan.PedidoDeProducto["B"]);
             Assert.IsFalse(plan.PedidoDeProducto.ContainsKey("Z"));
         }
+
+        // Decisión de Carlos (02/10/26): sin control de pendientes, lo que falta pasa a -99 (hay que volver a pedirlo),
+        // pero si llega después (28 pedidos / 48 productos de 19 proveedores sin control en 90 días mandaron el resto
+        // ~6 días después), se casa con esas líneas -99 recientes ANTES de tratarlo como exceso o no pedido.
+        private static LineaCompraPendiente Anulada(int pedido, int orden, string producto, int cantidad, int diasAtras, bool control = false)
+        {
+            LineaCompraPendiente linea = Linea(pedido, orden, producto, cantidad, control: control, fechaRecepcion: HOY.AddDays(-diasAtras));
+            linea.Estado = PlanificadorRecepcionCompra.ESTADO_ANULADA;
+            return linea;
+        }
+
+        [TestMethod]
+        public void SinControl_LoQueLlegaDeMas_CasaConLos99RecientesAntesQueComoExceso()
+        {
+            var plan = PlanificadorRecepcionCompra.Planificar(
+                new[] { Linea(200, 5, "A", 5, control: false), Anulada(150, 9, "A", 3, diasAtras: 6) },
+                Leido(("A", 7)), HOY, esCompras: false);
+
+            Assert.AreEqual(0, plan.Excesos.Count);
+            Assert.AreEqual(0, plan.AvisosParaCompras.Count, "No es un exceso: no hay que pedir aprobación a Compras");
+            LineaRecibida recuperada = plan.Recibidas.Single(r => r.NumeroOrden == 9);
+            Assert.IsTrue(recuperada.Reactivada);
+            Assert.AreEqual(2, recuperada.Recibido);
+            Assert.AreEqual(1, recuperada.Resto);
+            Assert.AreEqual(PlanificadorRecepcionCompra.ESTADO_ANULADA, recuperada.EstadoResto, "Lo que sigue sin llegar se queda en -99");
+            CollectionAssert.AreEquivalent(new[] { 150, 200 }, plan.PedidosAAlbaranear);
+        }
+
+        [TestMethod]
+        public void Recuperada_SeInformaConElPedidoYLaFechaEnQueSeDioPorNoServido()
+        {
+            var plan = PlanificadorRecepcionCompra.Planificar(new[] { Anulada(220396, 9, "45915", 3, diasAtras: 7) },
+                Leido(("45915", 3)), HOY, esCompras: false);
+
+            LineaRecuperada recuperada = plan.Recuperadas.Single();
+            Assert.AreEqual(220396, recuperada.Pedido);
+            Assert.AreEqual(3, recuperada.Cantidad);
+            Assert.AreEqual(HOY.AddDays(-7), recuperada.FechaNoServido);
+            StringAssert.Contains(recuperada.Texto, "220396");
+            StringAssert.Contains(recuperada.Texto, "no servido");
+            Assert.AreEqual(0, plan.NoPedidos.Count, "Estaba pedido: no es un producto no pedido");
+        }
+
+        [TestMethod]
+        public void Varias99_SeRecuperaPrimeroLaMasAntigua()
+        {
+            var plan = PlanificadorRecepcionCompra.Planificar(
+                new[] { Anulada(160, 2, "A", 2, diasAtras: 3), Anulada(150, 1, "A", 2, diasAtras: 10) },
+                Leido(("A", 2)), HOY, false);
+
+            Assert.AreEqual(1, plan.Recibidas.Single().NumeroOrden);
+        }
+
+        [TestMethod]
+        public void Una99DeHaceMasDe30Dias_NoSeRecupera()
+        {
+            var plan = PlanificadorRecepcionCompra.Planificar(new[] { Anulada(150, 1, "A", 2, diasAtras: 31) }, Leido(("A", 2)), HOY, false);
+
+            Assert.AreEqual(0, plan.Recibidas.Count);
+            Assert.AreEqual("A", plan.NoPedidos.Single().Producto);
+        }
+
+        [TestMethod]
+        public void Una99DeUnProveedorConControl_NoSeRecupera()
+        {
+            var plan = PlanificadorRecepcionCompra.Planificar(new[] { Anulada(150, 1, "A", 2, diasAtras: 5, control: true) }, Leido(("A", 2)), HOY, false);
+
+            Assert.AreEqual(0, plan.Recibidas.Count);
+        }
+
+        [TestMethod]
+        public void Una99QueNoLlega_NoSeToca()
+        {
+            var plan = PlanificadorRecepcionCompra.Planificar(
+                new[] { Linea(150, 1, "A", 2, control: false), Anulada(150, 2, "B", 3, diasAtras: 4) },
+                Leido(("A", 2)), HOY, false);
+
+            Assert.IsFalse(plan.Anuladas.Contains(2));
+            Assert.IsFalse(plan.Aplazadas.Contains(2));
+            Assert.IsFalse(plan.Recibidas.Any(r => r.NumeroOrden == 2));
+        }
+
+        [TestMethod]
+        public void MasDeLoQueFaltaba_LoQueSobraDespuesDeRecuperarEsExceso()
+        {
+            var plan = PlanificadorRecepcionCompra.Planificar(new[] { Anulada(150, 1, "A", 2, diasAtras: 4) }, Leido(("A", 5)), HOY, esCompras: true);
+
+            Assert.AreEqual(2, plan.Recibidas.Single().Recibido);
+            Assert.AreEqual(3, plan.Excesos.Single().Cantidad);
+            Assert.AreEqual(1, plan.Excesos.Single().CopiaDe);
+        }
     }
 }

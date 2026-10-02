@@ -363,6 +363,57 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         }
 
         [TestMethod]
+        public async Task Terminar_Recuperada_SeReactivaAntesDeRecibirlaYSeDevuelveSinAvisarACompras()
+        {
+            LineaCompraPendiente anulada = Linea(150, 9, "A", 3, control: false);
+            anulada.Estado = PlanificadorRecepcionCompra.ESTADO_ANULADA;
+            anulada.FechaRecepcion = HOY.AddDays(-6);
+            LineasDelProveedor(anulada);
+            A.CallTo(() => transaccion.Reactivar("1", 9, "Pedro")).Invokes(() => llamadas.Add("reactivar 9"));
+            A.CallTo(() => transaccion.RecibirLinea("1", A<LineaCompraPendiente>.Ignored, A<LineaRecibida>.Ignored, HOY, "Pedro"))
+                .Invokes(() => llamadas.Add("recibir"));
+
+            ResultadoTerminarRecepcionDTO resultado = await compras.Terminar(Solicitud(Usuario("Pedro", "Almacén"), ("A", 3)));
+
+            CollectionAssert.AreEqual(new[] { "reactivar 9", "recibir", "albarán 150" }, llamadas);
+            LineaRecuperadaDTO recuperada = resultado.Recuperadas.Single();
+            Assert.AreEqual(150, recuperada.Pedido);
+            StringAssert.Contains(recuperada.Texto, "no servido");
+            A.CallTo(() => avisador.Avisar(A<string>.Ignored, A<IEnumerable<string>>.Ignored)).MustNotHaveHappened();
+            Assert.AreEqual(0, resultado.Avisos.Count);
+        }
+
+        [TestMethod]
+        public async Task LeerEsperado_Las99RecientesSeVenComoRecuperables()
+        {
+            A.CallTo(() => repositorio.LeerLineasPendientesProveedor("1", "ALG", "65")).Returns(new List<FilaRecepcionCompra>
+            {
+                new FilaRecepcionCompra { Pedido = 200, LineaPedido = 5, Proveedor = "65", Producto = "A", Cantidad = 5, Estado = 1, FechaRecepcion = HOY },
+                new FilaRecepcionCompra { Pedido = 150, LineaPedido = 9, Proveedor = "65", Producto = "A", Cantidad = 3, Estado = -99, FechaRecepcion = HOY.AddDays(-6) },
+                new FilaRecepcionCompra { Pedido = 150, LineaPedido = 10, Proveedor = "65", Producto = "Q", Cantidad = 2, Estado = -99, FechaRecepcion = HOY.AddDays(-6) }
+            });
+
+            RecepcionDTO recepcion = await compras.LeerEsperado("1", "ALG", "65");
+
+            LineaRecepcionDTO a = recepcion.Lineas.Single(l => l.Producto == "A");
+            Assert.AreEqual(5, a.Cantidad, "Lo -99 no es lo esperado: se puede recuperar si llega");
+            Assert.AreEqual(3, a.Recuperables.Single().Cantidad);
+            Assert.AreEqual(150, a.Recuperables.Single().Pedido);
+            Assert.AreEqual(HOY.AddDays(-6), a.Recuperables.Single().FechaNoServido);
+            LineaRecepcionDTO q = recepcion.Lineas.Single(l => l.Producto == "Q");
+            Assert.AreEqual(0, q.Cantidad);
+            Assert.AreEqual(2, q.Recuperables.Single().Cantidad);
+        }
+
+        [TestMethod]
+        public async Task LeerPendientes_UnProveedorConSoloLineas99_NoSaleComoPendiente()
+        {
+            A.CallTo(() => repositorio.LeerPedidosPendientes("1", "ALG")).Returns(new List<PedidoCompraPendienteDTO>());
+
+            Assert.AreEqual(0, (await compras.LeerPendientes("1", "ALG")).Count);
+        }
+
+        [TestMethod]
         public async Task LeerEsperado_SinNadaPendiente_Null()
         {
             A.CallTo(() => repositorio.LeerLineasPendientesProveedor("1", "ALG", "65")).Returns(new List<FilaRecepcionCompra>());

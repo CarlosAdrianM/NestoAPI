@@ -17,6 +17,9 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public int LineaPedido { get; set; }
         /// <summary>El pedido de compra de la línea (en la recepción por proveedor hay varios).</summary>
         public int Pedido { get; set; }
+        /// <summary>1 pendiente; -99 dada por no servida hace poco (recuperable si llega).</summary>
+        public short Estado { get; set; } = 1;
+        public DateTime? FechaRecepcion { get; set; }
         public string Proveedor { get; set; }
         public string NombreProveedor { get; set; }
         public string Producto { get; set; }
@@ -94,10 +97,15 @@ WHERE l.Empresa = @p0 AND l.[Almacén] = @p1 AND " + FILTRO_LINEAS_DE_PRODUCTO +
 GROUP BY l.[Número]
 ORDER BY MIN(l.[FechaRecepción]), l.[Número]";
 
+        // Sin control de pendientes, lo dado por no servido (-99) en los últimos 30 días se puede recuperar si llega
+        internal const string FILTRO_RECUPERABLES =
+            "l.Estado = -99 AND ISNULL(pr.ControlPendientes, 1) = 0 AND l.[FechaRecepción] >= DATEADD(day, -30, CAST(GETDATE() AS date)) " +
+            "AND l.[TipoLínea] = '1' AND l.Cantidad > 0 AND l.Producto IS NOT NULL AND RTRIM(l.Producto) <> ''";
+
         private const string COLUMNAS_LINEA = @"
 SELECT l.[NºOrden] AS LineaPedido, l.[Número] AS Pedido, RTRIM(l.[NºProveedor]) AS Proveedor, RTRIM(pr.Nombre) AS NombreProveedor,
        RTRIM(l.Producto) AS Producto, RTRIM(l.Texto) AS Descripcion, RTRIM(p.CodBarras) AS CodigoBarras,
-       CAST(l.Cantidad AS int) AS Cantidad
+       CAST(l.Cantidad AS int) AS Cantidad, l.Estado AS Estado, l.[FechaRecepción] AS FechaRecepcion
 FROM LinPedidoCmp l
      LEFT JOIN Productos p ON p.Empresa = l.Empresa AND p.[Número] = l.Producto
      LEFT JOIN Proveedores pr ON pr.Empresa = l.Empresa AND pr.[Número] = l.[NºProveedor] AND pr.Contacto = l.Contacto";
@@ -115,7 +123,8 @@ WHERE l.Empresa = @p0 AND l.[Almacén] = @p1 AND (l.Producto = @p2 OR p.CodBarra
 
         // NestoAPI#559: la recepción es por proveedor (todos sus pedidos abiertos en el almacén)
         internal const string SQL_LINEAS_PENDIENTES_PROVEEDOR = COLUMNAS_LINEA + @"
-WHERE l.Empresa = @p0 AND l.[Almacén] = @p1 AND l.[NºProveedor] = @p2 AND " + FILTRO_LINEAS_DE_PRODUCTO + @"
+WHERE l.Empresa = @p0 AND l.[Almacén] = @p1 AND l.[NºProveedor] = @p2
+  AND ((" + FILTRO_LINEAS_DE_PRODUCTO + @") OR (" + FILTRO_RECUPERABLES + @"))
 ORDER BY l.[Número], l.[NºOrden]";
 
         public Task<List<PedidoCompraPendienteDTO>> LeerPedidosPendientes(string empresa, string almacen)

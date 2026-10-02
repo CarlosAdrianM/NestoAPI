@@ -33,7 +33,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         }
 
         internal const string SQL_LINEAS_BLOQUEANDO = @"
-SELECT l.[Número] AS Pedido, CAST(ISNULL(c.Fecha, l.[FechaRecepción]) AS datetime) AS FechaPedido, l.[NºOrden] AS NumeroOrden,
+SELECT l.Estado AS Estado, l.[Número] AS Pedido, CAST(ISNULL(c.Fecha, l.[FechaRecepción]) AS datetime) AS FechaPedido, l.[NºOrden] AS NumeroOrden,
        RTRIM(l.Producto) AS Producto, CAST(l.Cantidad AS int) AS Cantidad,
        CAST(ISNULL(l.[FechaRecepción], GETDATE()) AS datetime) AS FechaRecepcion,
        l.VistoBueno AS VistoBueno, CAST(ISNULL(pr.ControlPendientes, 1) AS bit) AS ControlPendientes,
@@ -43,7 +43,7 @@ FROM LinPedidoCmp l WITH (UPDLOCK, ROWLOCK)
      JOIN CabPedidoCmp c ON c.Empresa = l.Empresa AND c.[Número] = l.[Número]
      LEFT JOIN Proveedores pr ON pr.Empresa = l.Empresa AND pr.[Número] = l.[NºProveedor] AND pr.Contacto = l.Contacto
 WHERE l.Empresa = @p0 AND l.[Almacén] = @p1 AND l.[NºProveedor] = @p2
-  AND " + RepositorioRecepcionCompras.FILTRO_LINEAS_DE_PRODUCTO;
+  AND ((" + RepositorioRecepcionCompras.FILTRO_LINEAS_DE_PRODUCTO + @") OR (" + RepositorioRecepcionCompras.FILTRO_RECUPERABLES + @"))";
 
         // Copia de una línea con otra cantidad, fecha, estado y visto bueno (NºOrden es identidad)
         internal const string SQL_COPIAR_LINEA = @"
@@ -98,6 +98,16 @@ UPDATE LinPedidoCmp SET [FechaRecepción] = @p2 WHERE Empresa = @p0 AND [NºOrde
             await Ejecutar(SQL_RECIBIR_LINEA, $"recibir la línea {linea.NumeroOrden}", empresa, linea.NumeroOrden, (short)recibida.Recibido,
                 hoy.Date, recibido.Bruto, recibido.ImporteDto, recibido.BaseImponible, recibido.ImporteIva, recibido.ImporteRe, recibido.Total,
                 recibida.VistoBueno, auditoria).ConfigureAwait(false);
+        }
+
+        // Vuelve a estado 1 (no a -1 como prdDeshacerAlbaránCmp: aquí se recibe ya, y prdCrearAlbaránCmp solo coge estado 1)
+        internal const string SQL_REACTIVAR = @"
+UPDATE LinPedidoCmp SET Estado = 1, Usuario = @p2, [Fecha Modificación] = GETDATE()
+WHERE Empresa = @p0 AND [NºOrden] = @p1 AND Estado = -99";
+
+        public Task Reactivar(string empresa, int numeroOrden, string usuario)
+        {
+            return Ejecutar(SQL_REACTIVAR, $"recuperar la línea {numeroOrden}", empresa, numeroOrden, UsuarioAuditoriaHelper.ParaAuditoria(usuario));
         }
 
         public Task Anular(string empresa, int numeroOrden, string usuario)

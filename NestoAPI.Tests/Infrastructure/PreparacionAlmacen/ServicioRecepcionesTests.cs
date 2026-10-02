@@ -101,6 +101,20 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         }
 
         [TestMethod]
+        public async Task Casar_LoQueSobraYSeDioPorNoServidoHacePoco_SeDiceConSuPedido()
+        {
+            RecepcionDTO esperado = Esperado(("A", 2));
+            esperado.Lineas[0].Recuperables.Add(new RecuperableRecepcionDTO { Pedido = 220396, Cantidad = 3, FechaNoServido = new DateTime(2026, 9, 28) });
+            A.CallTo(() => compras.LeerEsperado("1", "ALG", "65")).Returns(esperado);
+
+            ResultadoCasarRecepcionDTO resultado = await servicio.Casar("COMP", "1", "ALG", "65",
+                new List<LecturaRecepcionDTO> { new LecturaRecepcionDTO { Producto = "A", Cantidad = 4 } });
+
+            StringAssert.Contains(resultado.Recuperadas.Single(), "2 ud. de A eran del pedido 220396");
+            StringAssert.Contains(resultado.Recuperadas.Single(), "28/09");
+        }
+
+        [TestMethod]
         public async Task TipoDesconocido_ErrorDeNegocio()
         {
             NestoBusinessException ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() =>

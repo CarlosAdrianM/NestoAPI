@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace NestoAPI.Models.PreparacionAlmacen
@@ -33,6 +33,29 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public bool CodigoDuplicado { get; set; }
         /// <summary>Unidades que se esperan de ese producto (sumadas de todas sus líneas).</summary>
         public int Cantidad { get; set; }
+        /// <summary>
+        /// Lo que se dio por no servido hace poco (-99) y entra con su pedido si llega, en vez de contar como exceso
+        /// (compras de proveedores sin control de pendientes).
+        /// </summary>
+        public List<RecuperableRecepcionDTO> Recuperables { get; set; } = new List<RecuperableRecepcionDTO>();
+    }
+
+    public class RecuperableRecepcionDTO
+    {
+        public int Pedido { get; set; }
+        public int Cantidad { get; set; }
+        public DateTime FechaNoServido { get; set; }
+    }
+
+    /// <summary>Lo que ha llegado de algo que se había dado por no servido y entra con su pedido.</summary>
+    public class LineaRecuperadaDTO
+    {
+        public int Pedido { get; set; }
+        public string Producto { get; set; }
+        public int Cantidad { get; set; }
+        public DateTime FechaNoServido { get; set; }
+        /// <summary>Para enseñarlo tal cual: «3 ud. de 45915 eran del pedido 220396, que se dio por no servido el 28/09…».</summary>
+        public string Texto { get; set; }
     }
 
     public class RecepcionDTO
@@ -57,6 +80,8 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public bool Cuadra { get; set; }
         /// <summary>Esperado frente a leído por producto. Ajeno = no se esperaba (no pedido / no enviado).</summary>
         public List<DiferenciaPreparacionDTO> Productos { get; set; } = new List<DiferenciaPreparacionDTO>();
+        /// <summary>Lo que sobra y en realidad es lo que se dio por no servido hace poco: entrará con su pedido.</summary>
+        public List<string> Recuperadas { get; set; } = new List<string>();
     }
 
     /// <summary>Lo que se manda para terminar una recepción. Vale igual desde Ariadna o desde Nesto.</summary>
@@ -91,5 +116,7 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public List<DiferenciaPreparacionDTO> NoEsperados { get; set; } = new List<DiferenciaPreparacionDTO>();
         /// <summary>Lo que tiene que saber quien recibe (y, en compras, lo que se ha avisado a Compras).</summary>
         public List<string> Avisos { get; set; } = new List<string>();
+        /// <summary>Lo que ha entrado con un pedido que se había dado por no servido (no es exceso).</summary>
+        public List<LineaRecuperadaDTO> Recuperadas { get; set; } = new List<LineaRecuperadaDTO>();
     }
 }
