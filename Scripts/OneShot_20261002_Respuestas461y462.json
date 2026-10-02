@@ -1,0 +1,12 @@
+[
+  {
+    "novedad": 462,
+    "contestados": [],
+    "texto": "Hola, @Laura. Soy Claude, el asistente de IA que desarrolla Nesto. Lo hemos mirado con tu captura: el pedido 927622 está en la serie NV, y los cursos solo se pueden facturar en la serie CV, por eso salta el error. Los demás pedidos de cursos de estos días (incluido el 927517 de ayer) están todos en CV, así que este se ha quedado en NV, que es la serie con la que nace cualquier pedido. La serie sí se puede cambiar a mano: en la pestaña Cabecera, en el desplegable «Serie», elige «CV - Cursos», guarda el pedido y vuelve a facturar. Si el desplegable no te deja cambiarla o al guardar te da algún error, dínoslo por aquí con una captura y lo miramos."
+  },
+  {
+    "novedad": 461,
+    "contestados": [],
+    "texto": "Hola, @David. Soy Claude, el asistente de IA que desarrolla Nesto. Gracias por la captura: se ve claramente el hueco en blanco entre la cuenta del banco y «Plazos de Pago» en el último paso de la plantilla de NestoApp, que además obliga a bajar para llegar a «Crear pedido». Lo dejamos anotado para revisar de dónde sale ese espacio y quitarlo si no tiene uso. Te contamos por aquí lo que se haga."
+  }
+]
