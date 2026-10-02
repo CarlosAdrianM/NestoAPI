@@ -26,5 +26,13 @@ namespace NestoAPI.Infraestructure.Pedidos
         Task<List<CabPedidoVta>> ObtenerPedidosParaFacturar(
             string tipoRutaId,
             DateTime fechaEntregaDesde);
+
+        /// <summary>
+        /// El pedido indicado si tiene algo que facturar con EXACTAMENTE la misma condición que
+        /// <see cref="ObtenerPedidosParaFacturar"/> (sin filtrar por ruta); null si no.
+        /// Lo usa «Facturar al imprimir etiqueta» de Agencias, que tiene que seguir el mismo camino
+        /// que la facturación de rutas.
+        /// </summary>
+        Task<CabPedidoVta> ObtenerPedidoParaFacturar(string empresa, int numero, DateTime fechaEntregaDesde);
     }
 }

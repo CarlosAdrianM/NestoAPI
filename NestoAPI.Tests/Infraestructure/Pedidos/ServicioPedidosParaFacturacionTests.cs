@@ -199,5 +199,39 @@ namespace NestoAPI.Tests.Infraestructure.Pedidos
         }
 
         #endregion
+
+        #region ObtenerPedidoParaFacturar (Agencias: facturar al imprimir la etiqueta)
+
+        [TestMethod]
+        public async Task ObtenerPedidoParaFacturar_PedidoConLineaLista_LoDevuelveSeaCualSeaLaRuta()
+        {
+            pedidos.AddRange(new[] { Pedido(301, "FW", Hoy, LineaLista()), Pedido(302, "GLV", Hoy, LineaLista()) });
+
+            CabPedidoVta resultado = await servicio.ObtenerPedidoParaFacturar("1  ", 302, Hoy);
+
+            Assert.AreEqual(302, resultado?.Número, "Sin filtro de ruta y con la empresa sin espacios");
+        }
+
+        [TestMethod]
+        public async Task ObtenerPedidoParaFacturar_MismaCondicionQueLasRutas_SinPickingOConFechaPosteriorNoDevuelveNada()
+        {
+            pedidos.AddRange(new[]
+            {
+                Pedido(401, "FW", Hoy, Linea(Constantes.EstadosLineaVenta.EN_CURSO, null, Hoy)),
+                Pedido(402, "FW", Hoy, Linea(Constantes.EstadosLineaVenta.EN_CURSO, 0, Hoy)),
+                Pedido(403, "FW", Hoy, Linea(Constantes.EstadosLineaVenta.EN_CURSO, 5, Hoy.AddDays(1))),
+                Pedido(404, "FW", Hoy, Linea(Constantes.EstadosLineaVenta.PENDIENTE, 5, Hoy)),
+                Pedido(405, "FW", Hoy, Linea(Constantes.EstadosLineaVenta.ALBARAN, 5, Hoy))
+            });
+
+            Assert.IsNull(await servicio.ObtenerPedidoParaFacturar("1", 401, Hoy), "Sin picking");
+            Assert.IsNull(await servicio.ObtenerPedidoParaFacturar("1", 402, Hoy), "Picking 0");
+            Assert.IsNull(await servicio.ObtenerPedidoParaFacturar("1", 403, Hoy), "Fecha de entrega posterior");
+            Assert.IsNull(await servicio.ObtenerPedidoParaFacturar("1", 404, Hoy), "Pendiente");
+            Assert.IsNotNull(await servicio.ObtenerPedidoParaFacturar("1", 405, Hoy), "En albarán sin factura sí");
+            Assert.IsNull(await servicio.ObtenerPedidoParaFacturar("1", 999, Hoy), "No existe");
+        }
+
+        #endregion
     }
 }

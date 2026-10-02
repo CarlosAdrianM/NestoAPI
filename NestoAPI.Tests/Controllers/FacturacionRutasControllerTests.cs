@@ -1,6 +1,7 @@
 using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
+using NestoAPI.Infraestructure.Facturas;
 using NestoAPI.Infraestructure.Facturas.Agrupacion;
 using NestoAPI.Infraestructure.Pedidos;
 using NestoAPI.Models;
@@ -254,6 +255,62 @@ namespace NestoAPI.Tests.Controllers
 
             Assert.IsNotNull(fechaCapturada);
             Assert.AreEqual(DateTime.Today, fechaCapturada.Value.Date);
+        }
+
+        #endregion
+
+        #region FacturarPedido (Agencias: mismo camino que la facturación de rutas)
+
+        private FacturacionRutasController ControllerConGestor(IGestorFacturacionRutas gestor)
+            => new FacturacionRutasController(db, servicioPedidos, servicioAgruparPorPO, () => gestor);
+
+        [TestMethod]
+        public async Task FacturarPedido_PedidoConAlgoQueFacturar_LoProcesaConElMismoNucleoQueLasRutas()
+        {
+            var gestor = A.Fake<IGestorFacturacionRutas>();
+            var pedido = new CabPedidoVta { Empresa = "1", Número = 927519 };
+            var respuesta = new FacturarRutasResponseDTO();
+            A.CallTo(() => servicioPedidos.ObtenerPedidoParaFacturar("1", 927519, DateTime.Today)).Returns(pedido);
+            A.CallTo(() => gestor.FacturarRutas(A<List<CabPedidoVta>>._, A<string>._, A<DateTime>._)).Returns(respuesta);
+            controller = ControllerConGestor(gestor);
+            ConfigurarUsuario(Constantes.GruposSeguridad.ALMACEN, "Andre");
+
+            var resultado = await controller.FacturarPedido(new FacturarPedidoRequestDTO { Empresa = "1", Pedido = 927519 })
+                as OkNegotiatedContentResult<FacturarRutasResponseDTO>;
+
+            Assert.AreSame(respuesta, resultado?.Content);
+            A.CallTo(() => gestor.FacturarRutas(
+                    A<List<CabPedidoVta>>.That.Matches(l => l.Count == 1 && l[0] == pedido),
+                    "Andre",
+                    DateTime.Today))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => servicioAgruparPorPO.EvaluarYProcesar(A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task FacturarPedido_SinNadaQueFacturar_DevuelveUnErrorClaroSinLlamarAlGestor()
+        {
+            var gestor = A.Fake<IGestorFacturacionRutas>();
+            A.CallTo(() => servicioPedidos.ObtenerPedidoParaFacturar(A<string>._, A<int>._, A<DateTime>._)).Returns((CabPedidoVta)null);
+            controller = ControllerConGestor(gestor);
+            ConfigurarUsuario(Constantes.GruposSeguridad.ALMACEN);
+
+            var resultado = await controller.FacturarPedido(new FacturarPedidoRequestDTO { Empresa = "1", Pedido = 5 })
+                as OkNegotiatedContentResult<FacturarRutasResponseDTO>;
+
+            Assert.AreEqual(1, resultado.Content.PedidosConErrores.Count);
+            StringAssert.Contains(resultado.Content.PedidosConErrores[0].MensajeError, "no tiene líneas para facturar");
+            A.CallTo(() => gestor.FacturarRutas(A<List<CabPedidoVta>>._, A<string>._, A<DateTime>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task FacturarPedido_SinPermisos_DevuelveForbidden()
+        {
+            ConfigurarUsuario("Tiendas");
+
+            var resultado = await controller.FacturarPedido(new FacturarPedidoRequestDTO { Empresa = "1", Pedido = 5 });
+
+            Assert.AreEqual(HttpStatusCode.Forbidden, (resultado as StatusCodeResult)?.StatusCode);
         }
 
         #endregion

@@ -47,11 +47,38 @@ namespace NestoAPI.Controllers
         internal FacturacionRutasController(
             NVEntities db,
             IServicioPedidosParaFacturacion servicioPedidos,
-            IServicioAgruparPorPO servicioAgruparPorPO = null)
+            IServicioAgruparPorPO servicioAgruparPorPO = null,
+            Func<IGestorFacturacionRutas> fabricaGestor = null)
         {
             this.db = db ?? throw new ArgumentNullException(nameof(db));
             this.servicioPedidos = servicioPedidos ?? throw new ArgumentNullException(nameof(servicioPedidos));
             this.servicioAgruparPorPO = servicioAgruparPorPO ?? CrearServicioAgruparPorPO(db);
+            this.fabricaGestor = fabricaGestor;
+        }
+
+        // Para tests: sustituye el gestor real (con sus servicios) por uno falso.
+        private readonly Func<IGestorFacturacionRutas> fabricaGestor;
+
+        /// <summary>
+        /// El gestor de facturación de rutas con TODOS sus servicios sobre el MISMO db (si cada servicio
+        /// tuviera su contexto, los SPs y los cambios de EF chocarían). Lo comparten «Facturar» (rutas) y
+        /// «FacturarPedido» (Agencias): el mismo núcleo para los dos caminos.
+        /// </summary>
+        private IGestorFacturacionRutas CrearGestor()
+        {
+            if (fabricaGestor != null)
+            {
+                return fabricaGestor();
+            }
+            var servicioFacturas = new ServicioFacturas(db);
+            return new GestorFacturacionRutas(
+                db,
+                new ServicioAlbaranesVenta(db),
+                servicioFacturas,
+                new GestorFacturas(servicioFacturas),
+                new ServicioTraspasoEmpresa(db),
+                new ServicioNotasEntrega(db),
+                new ServicioExtractoRuta(db));
         }
 
         // NestoAPI#195 (Fase 3): construye el orquestador de agrupación por PO con el mismo
@@ -196,26 +223,7 @@ namespace NestoAPI.Controllers
                 }
 
                 // 2. Procesar facturación
-                // IMPORTANTE: Pasar el db a TODOS los servicios para evitar conflictos de concurrencia
-                // Cada servicio que ejecuta SPs o modifica datos debe usar el MISMO contexto
-                var servicioAlbaranes = new ServicioAlbaranesVenta(db);
-                var servicioFacturas = new ServicioFacturas(db);
-                var gestorFacturas = new GestorFacturas(servicioFacturas);
-                var servicioTraspaso = new ServicioTraspasoEmpresa(db);
-                var servicioNotasEntrega = new ServicioNotasEntrega(db);
-                var servicioExtractoRuta = new ServicioExtractoRuta(db);
-
-                var gestor = new GestorFacturacionRutas(
-                    db,
-                    servicioAlbaranes,
-                    servicioFacturas,
-                    gestorFacturas,
-                    servicioTraspaso,
-                    servicioNotasEntrega,
-                    servicioExtractoRuta
-                );
-
-                var response = await gestor.FacturarRutas(pedidos, usuario, fechaDesde);
+                var response = await CrearGestor().FacturarRutas(pedidos, usuario, fechaDesde);
                 VolcarResultadoPO(resultadoPO, response);
 
                 return Ok(response);
@@ -223,6 +231,61 @@ namespace NestoAPI.Controllers
             catch (Exception ex)
             {
                 ElmahHelper.Log(ex); // 28/09/26: InternalServerError se salta el GlobalExceptionFilter
+                return InternalServerError(ex);
+            }
+        }
+
+        /// <summary>
+        /// Factura UN pedido exactamente igual que la facturación de rutas (mismo núcleo,
+        /// GestorFacturacionRutas.ProcesarPedido): visto bueno, nota de entrega (estado -2 y baja de stock
+        /// de lo «de carpeta»), albarán, traspaso, factura según el periodo, extracto de ruta y documentos
+        /// para imprimir. Lo usa «Facturar al imprimir etiqueta» de Agencias en Nesto: si un pedido se
+        /// factura al imprimir la etiqueta ya no lo coge la facturación de rutas, y al revés.
+        /// </summary>
+        /// <remarks>
+        /// PERMISOS REQUERIDOS: Almacén o Dirección (los mismos que «Facturar»).
+        /// Si el pedido no tiene nada que facturar (líneas en curso o en albarán con picking y fecha de
+        /// entrega hasta hoy) se devuelve con un error en PedidosConErrores, no un 500.
+        /// </remarks>
+        [HttpPost]
+        [Route("FacturarPedido")]
+        public async Task<IHttpActionResult> FacturarPedido([FromBody] FacturarPedidoRequestDTO request)
+        {
+            if (request == null || string.IsNullOrWhiteSpace(request.Empresa) || request.Pedido <= 0)
+                return BadRequest("Hay que indicar la empresa y el pedido");
+
+            if (!TienePermisosFacturacion())
+                return StatusCode(HttpStatusCode.Forbidden);
+
+            try
+            {
+                string usuario = ObtenerUsuarioActual();
+                if (string.IsNullOrEmpty(usuario))
+                    return Unauthorized();
+
+                var fechaDesde = request.FechaEntregaDesde ?? DateTime.Today;
+                var pedido = await servicioPedidos.ObtenerPedidoParaFacturar(request.Empresa, request.Pedido, fechaDesde);
+                if (pedido == null)
+                {
+                    var sinNada = new FacturarRutasResponseDTO();
+                    sinNada.PedidosConErrores.Add(new PedidoConErrorDTO
+                    {
+                        Empresa = request.Empresa.Trim(),
+                        NumeroPedido = request.Pedido,
+                        TipoError = "Sin líneas para facturar",
+                        MensajeError = $"El pedido {request.Pedido} no tiene líneas para facturar: tienen que estar en curso o en albarán, con picking y con fecha de entrega hasta el {fechaDesde:dd/MM/yy}.",
+                        FechaEntrega = fechaDesde
+                    });
+                    return Ok(sinNada);
+                }
+
+                var response = await CrearGestor().FacturarRutas(
+                    new System.Collections.Generic.List<CabPedidoVta> { pedido }, usuario, fechaDesde);
+                return Ok(response);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(ex);
                 return InternalServerError(ex);
             }
         }

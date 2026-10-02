@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Data.Entity;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Threading.Tasks;
 
 namespace NestoAPI.Infraestructure.Pedidos
@@ -55,17 +56,41 @@ namespace NestoAPI.Infraestructure.Pedidos
                 .Include(p => p.LinPedidoVtas)
                 .Include(p => p.Cliente)
                 .Where(p => rutasABuscar.Contains(p.Ruta))
-                .Where(p => p.LinPedidoVtas.Any(l =>
-                    (l.Estado == Constantes.EstadosLineaVenta.EN_CURSO ||
-                     l.Estado == Constantes.EstadosLineaVenta.ALBARAN) &&
-                    l.Picking != null &&
-                    l.Picking > 0 &&
-                    l.Fecha_Entrega <= fechaEntregaDesde))
+                .Where(TieneLineasParaFacturar(fechaEntregaDesde))
                 .OrderBy(p => p.Fecha)
                 .ThenBy(p => p.Número)
                 .ToListAsync();
 
             return pedidos;
+        }
+
+        public async Task<CabPedidoVta> ObtenerPedidoParaFacturar(string empresa, int numero, DateTime fechaEntregaDesde)
+        {
+            if (string.IsNullOrWhiteSpace(empresa))
+                throw new ArgumentException("La empresa no puede ser null o vacía", nameof(empresa));
+
+            string empresaBuscada = empresa.Trim();
+            return await db.CabPedidoVtas
+                .Include(p => p.LinPedidoVtas)
+                .Include(p => p.Cliente)
+                .Where(p => p.Empresa == empresaBuscada && p.Número == numero)
+                .Where(TieneLineasParaFacturar(fechaEntregaDesde))
+                .FirstOrDefaultAsync();
+        }
+
+        /// <summary>
+        /// Condición única de «este pedido tiene algo que facturar»: líneas EN_CURSO (sin albarán) o
+        /// ALBARAN (con albarán pero sin factura, para re-facturar NRM), con picking y con fecha de
+        /// entrega hasta la indicada. La comparten la facturación de rutas y Agencias.
+        /// </summary>
+        private static Expression<Func<CabPedidoVta, bool>> TieneLineasParaFacturar(DateTime fechaEntregaDesde)
+        {
+            return p => p.LinPedidoVtas.Any(l =>
+                (l.Estado == Constantes.EstadosLineaVenta.EN_CURSO ||
+                 l.Estado == Constantes.EstadosLineaVenta.ALBARAN) &&
+                l.Picking != null &&
+                l.Picking > 0 &&
+                l.Fecha_Entrega <= fechaEntregaDesde);
         }
     }
 }

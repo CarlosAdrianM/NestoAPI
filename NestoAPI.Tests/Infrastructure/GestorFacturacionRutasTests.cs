@@ -1334,5 +1334,33 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         #endregion
+
+        [TestMethod]
+        public async Task FacturarRutas_NotaEntrega_PasaPorServicioNotasEntregaYNoCreaAlbaran()
+        {
+            // El mismo núcleo lo usan la facturación de rutas y «Facturar al imprimir etiqueta» de
+            // Agencias: una nota de entrega se procesa como tal (estado -2 y baja de stock de lo «de
+            // carpeta») y nunca intenta crear albarán (antes Agencias daba «El pedido es nota de entrega»).
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 927519,
+                Ruta = "FW",
+                NotaEntrega = true,
+                LinPedidoVtas = new List<LinPedidoVta>
+                {
+                    new LinPedidoVta { Estado = Constantes.EstadosLineaVenta.EN_CURSO, Picking = 5, VtoBueno = true, YaFacturado = true }
+                }
+            };
+            A.CallTo(() => servicioNotasEntrega.ProcesarNotaEntrega(pedido, "Andre"))
+                .Returns(new NotaEntregaCreadaDTO { NumeroPedido = 927519, NumeroLineas = 1 });
+
+            var respuesta = await gestor.FacturarRutas(new List<CabPedidoVta> { pedido }, "Andre", DateTime.Today);
+
+            A.CallTo(() => servicioNotasEntrega.ProcesarNotaEntrega(pedido, "Andre")).MustHaveHappenedOnceExactly();
+            A.CallTo(() => servicioAlbaranes.CrearAlbaran(A<string>._, A<int>._, A<string>._, A<DateTime?>._)).MustNotHaveHappened();
+            Assert.AreEqual(1, respuesta.NotasEntregaCreadas);
+            Assert.AreEqual(0, respuesta.PedidosConErrores.Count);
+        }
     }
 }

@@ -559,6 +559,10 @@ namespace NestoAPI.Infraestructure.Facturas
 
                 // Agregar factura creada al response
                 var facturaCreada = CrearFacturaCreadaDTO(pedido, resultadoFactura.NumeroFactura);
+                if (resultadoFactura.Avisos != null)
+                {
+                    facturaCreada.Avisos.AddRange(resultadoFactura.Avisos);
+                }
                 response.Facturas.Add(facturaCreada);
 
                 // Insertar en ExtractoRuta desde factura SOLO si el tipo de ruta lo requiere (Ruta Propia SÍ, Agencia NO)
