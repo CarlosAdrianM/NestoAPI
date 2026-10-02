@@ -175,7 +175,7 @@ namespace NestoAPI.Infraestructure.NotasEntrega
                     Fecha = DateTime.Now,
                     Nº_Documento = numeroNotaEntrega.ToString().PadLeft(10),
                     Efecto = null,
-                    Concepto = pedido.Comentarios,
+                    Concepto = ExtractosRuta.ServicioExtractoRuta.ConceptoDesdeComentarios(pedido.Comentarios),
                     Importe = 0,
                     ImportePdte = 0,
                     Delegación = primeraLinea.Delegación,

@@ -85,7 +85,7 @@ namespace NestoAPI.Infraestructure.ExtractosRuta
                 Fecha = extractoEfecto.Fecha,
                 Nº_Documento = numeroFactura.Trim().PadRight(10),
                 Efecto = extractoEfecto.Efecto,
-                Concepto = pedido.Comentarios,
+                Concepto = ConceptoDesdeComentarios(pedido.Comentarios),
                 Importe = extractoEfecto.Importe,
                 ImportePdte = extractoEfecto.Importe, // ImportePdte = Importe del efecto (pendiente de cobro)
                 Delegación = extractoEfecto.Delegación,
@@ -150,7 +150,7 @@ namespace NestoAPI.Infraestructure.ExtractosRuta
                 Fecha = DateTime.Now,
                 Nº_Documento = numeroAlbaran.ToString().PadLeft(10),
                 Efecto = null,
-                Concepto = pedido.Comentarios,
+                Concepto = ConceptoDesdeComentarios(pedido.Comentarios),
                 Importe = 0, // Los albaranes no tienen importe hasta que se facturen
                 ImportePdte = 0,
                 Delegación = primeraLinea.Delegación,
@@ -171,6 +171,26 @@ namespace NestoAPI.Infraestructure.ExtractosRuta
             {
                 await db.SaveChangesAsync();
             }
+        }
+
+        private const int LONGITUD_CONCEPTO = 50;
+
+        /// <summary>
+        /// ExtractoRuta.Concepto es char(50) y los comentarios del pedido no tienen límite: con unos
+        /// comentarios largos EF no dejaba guardar (ELMAH 02/10/26, notas de entrega de #542 con
+        /// «NOTA DE ENTREGA: pendiente de entregar del pedido ...»). Se pasa a una línea y se recorta.
+        /// Lo usan también las notas de entrega (ServicioNotasEntrega).
+        /// </summary>
+        internal static string ConceptoDesdeComentarios(string comentarios)
+        {
+            if (comentarios == null)
+            {
+                return null;
+            }
+            string enUnaLinea = string.Join(" ", comentarios.Split(new[] { "\r\n", "\n", "\r" }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(l => l.Trim())
+                .Where(l => l.Length > 0));
+            return enUnaLinea.Length > LONGITUD_CONCEPTO ? enUnaLinea.Substring(0, LONGITUD_CONCEPTO) : enUnaLinea;
         }
     }
 }

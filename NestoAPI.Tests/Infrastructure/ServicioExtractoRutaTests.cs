@@ -82,6 +82,32 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public async Task InsertarDesdeFactura_ComentarioLargo_ElConceptoCabeEn50()
+        {
+            // ExtractoRuta.Concepto es char(50) y los comentarios del pedido no tienen límite: EF no
+            // dejaba guardar (visto en ELMAH el 02/10/26 con las notas de entrega de #542).
+            var pedido = CrearPedidoPrueba();
+            pedido.Comentarios = "Cerrado de 14h a 16:30h\r\nLlamar antes de ir, el timbre no funciona y hay que avisar al encargado";
+            var mockExtractosCliente = A.Fake<DbSet<ExtractoCliente>>(opt => opt.Implements<IQueryable<ExtractoCliente>>().Implements<IDbAsyncEnumerable<ExtractoCliente>>());
+            A.CallTo(() => _db.ExtractosCliente).Returns(mockExtractosCliente);
+            ConfigurarDbSetFalso(mockExtractosCliente, new List<ExtractoCliente>
+            {
+                new ExtractoCliente { Empresa = pedido.Empresa, Nº_Orden = 1, Número = pedido.Nº_Cliente, Contacto = pedido.Contacto,
+                    Nº_Documento = "FV123", TipoApunte = "2", Efecto = "1", Fecha = DateTime.Now, Importe = 100m, FormaPago = "EFC" }
+            });
+            var mockExtractoRutas = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>().Implements<IDbAsyncEnumerable<ExtractoRuta>>());
+            A.CallTo(() => _db.ExtractoRutas).Returns(mockExtractoRutas);
+            ExtractoRuta insertado = null;
+            A.CallTo(() => mockExtractoRutas.Add(A<ExtractoRuta>._)).Invokes((ExtractoRuta e) => insertado = e);
+
+            await _servicio.InsertarDesdeFactura(pedido, "FV123", "testuser", autoSave: true);
+
+            Assert.IsNotNull(insertado);
+            Assert.IsTrue(insertado.Concepto.Length <= 50, $"Concepto de {insertado.Concepto.Length} caracteres");
+            StringAssert.StartsWith(insertado.Concepto, "Cerrado de 14h a 16:30h Llamar antes");
+        }
+
+        [TestMethod]
         public async Task InsertarDesdeFactura_ConAutoSaveFalse_NoGuardaCambios()
         {
             // Arrange

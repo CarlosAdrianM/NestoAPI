@@ -143,6 +143,38 @@ namespace NestoAPI.Tests.Infrastructure
 
         #endregion
 
+        [TestMethod]
+        public async Task ProcesarNotaEntrega_RutaPropiaConComentarioLargo_ElConceptoDelExtractoRutaCabeEn50()
+        {
+            // ELMAH 02/10/26 (Alfredo, facturar rutas): la nota de entrega automática (#542) nace con
+            // «NOTA DE ENTREGA: pendiente de entregar del pedido ... (albarán ...)» en los comentarios
+            // y ExtractoRuta.Concepto es char(50): EF no dejaba guardar y la nota 927285 (ruta 16) no salía.
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 927285,
+                Nº_Cliente = "17765",
+                Contacto = "0",
+                NotaEntrega = true,
+                Ruta = "16",
+                Comentarios = "Cerrado de 14h a 16:30h\r\nNOTA DE ENTREGA: pendiente de entregar del pedido 927053 (albarán 730100)",
+                LinPedidoVtas = new List<LinPedidoVta>
+                {
+                    new LinPedidoVta { Nº_Orden = 1, Estado = Constantes.EstadosLineaVenta.EN_CURSO, Base_Imponible = 10m, Producto = "PROD001" }
+                }
+            };
+            A.CallTo(() => db.Clientes.Find("1", "17765", "0")).Returns(new Cliente { Nombre = "Cliente Test" });
+            ExtractoRuta insertado = null;
+            var extractos = db.ExtractoRutas;
+            A.CallTo(() => extractos.Add(A<ExtractoRuta>._)).Invokes((ExtractoRuta e) => insertado = e);
+
+            await servicio.ProcesarNotaEntrega(pedido, "testuser");
+
+            Assert.IsNotNull(insertado, "La ruta 16 es propia: tiene que apuntarse en ExtractoRuta");
+            Assert.IsTrue(insertado.Concepto.Length <= 50, $"Concepto de {insertado.Concepto.Length} caracteres");
+            StringAssert.StartsWith(insertado.Concepto, "Cerrado de 14h a 16:30h");
+        }
+
         #region ProcesarNotaEntrega - Líneas YA Facturadas
 
         [TestMethod]
