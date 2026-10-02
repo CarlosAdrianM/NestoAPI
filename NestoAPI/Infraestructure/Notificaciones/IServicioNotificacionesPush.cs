@@ -8,6 +8,12 @@ namespace NestoAPI.Infraestructure.Notificaciones
     {
         Task<DispositivoNotificacion> RegistrarDispositivo(RegistrarDispositivoDTO registro, string usuario);
         Task<bool> DesregistrarDispositivo(string token);
+
+        /// <summary>
+        /// NestoAPI#575: quita a UN usuario del token (un mozo que se borra de una PDA de Ariadna); los demás que
+        /// comparten ese aparato siguen recibiendo.
+        /// </summary>
+        Task<bool> DesregistrarDispositivoDeUsuario(string token, string usuario);
         Task<List<DispositivoNotificacion>> ObtenerDispositivosUsuario(string usuario, string aplicacion);
         Task<List<DispositivoNotificacion>> ObtenerDispositivosVendedor(string empresa, string vendedor, string aplicacion);
         Task<List<DispositivoNotificacion>> ObtenerDispositivosCliente(string empresa, string cliente, string aplicacion);
@@ -19,6 +25,7 @@ namespace NestoAPI.Infraestructure.Notificaciones
         /// <summary>
         /// Nesto#477: deja la notificación en el buzón de un usuario SIN mandar push (Nesto de
         /// escritorio no tiene dispositivos registrados; la ve en la campana).
+        /// NestoAPI#575: en Ariadna, además, manda una push de datos a las PDA donde ha entrado ese mozo.
         /// </summary>
         Task GuardarEnBuzonDeUsuario(string usuario, string aplicacion, NotificacionPushDTO notificacion);
 

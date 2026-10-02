@@ -12,8 +12,9 @@ namespace NestoAPI.Models
             /// <summary>Nesto#477: el escritorio no recibe push; solo buzón (campana en la barra).</summary>
             public const string NESTO = "Nesto";
             /// <summary>
-            /// NestoAPI#575: la app de almacén. Fase 1: solo buzón (api/Notificaciones/Buzon?aplicacion=Ariadna);
-            /// todavía sin push ni aviso en tiempo real.
+            /// NestoAPI#575: la app de almacén. Buzón (api/Notificaciones/Buzon?aplicacion=Ariadna) y, desde la fase 3,
+            /// push SOLO de datos (proyecto Firebase NestoTiendas) a las PDA donde ha entrado el mozo: el token de una PDA
+            /// lo comparten varios mozos y la app decide si enseña el aviso o se lo guarda al que no está dentro.
             /// </summary>
             public const string ARIADNA = "Ariadna";
         }

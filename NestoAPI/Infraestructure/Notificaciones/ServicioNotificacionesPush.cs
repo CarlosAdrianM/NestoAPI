@@ -25,7 +25,9 @@ namespace NestoAPI.Infraestructure.Notificaciones
         private static readonly Dictionary<string, string> _credencialesPorAplicacion = new Dictionary<string, string>
         {
             { Constantes.Aplicaciones.NESTO_APP, "firebase-adminsdk-nestoapp.json" },
-            { Constantes.Aplicaciones.NESTO_TIENDAS, "firebase-adminsdk-nestotiendas.json" }
+            { Constantes.Aplicaciones.NESTO_TIENDAS, "firebase-adminsdk-nestotiendas.json" },
+            // NestoAPI#575: Ariadna está en el proyecto Firebase de NestoTiendas (misma credencial, otra app Android)
+            { Constantes.Aplicaciones.ARIADNA, "firebase-adminsdk-nestotiendas.json" }
         };
 
         private readonly Func<NVEntities> _crearContexto;
@@ -37,11 +39,18 @@ namespace NestoAPI.Infraestructure.Notificaciones
         /// <summary>NestoAPI#536: el aviso en tiempo real a Nesto (SignalR). Sustituible en tests.</summary>
         internal IAvisosTiempoReal AvisosTiempoReal { get; set; } = new AvisosTiempoReal();
 
+        /// <summary>
+        /// NestoAPI#575: manda una push SOLO de datos (tokens, datos, aplicación) y devuelve cuántas salieron. Sustituible
+        /// en tests (Firebase no se inicializa en ellos).
+        /// </summary>
+        internal Func<IReadOnlyList<string>, Dictionary<string, string>, string, Task<int>> EnviadorDatos { get; set; }
+
         // Internal para tests (InternalsVisibleTo("NestoAPI.Tests")): permite inyectar un contexto
         // falso y comprobar que el buzón se guarda y se lee bien sin tocar la base de datos.
         internal ServicioNotificacionesPush(Func<NVEntities> crearContexto)
         {
             _crearContexto = crearContexto;
+            EnviadorDatos = EnviarDatosConFirebase;
             InicializarFirebase();
         }
 
@@ -153,8 +162,15 @@ namespace NestoAPI.Infraestructure.Notificaciones
                     dispositivo.Activo = true;
                 }
 
+                // NestoAPI#575: en Ariadna el token es del aparato y lo comparten los mozos de la PDA (una fila por
+                // mozo). En el resto, un token es de un solo usuario y el último en entrar se lo queda (como siempre).
+                bool compartido = TokenCompartidoPorVariosUsuarios(registro.Aplicacion);
+                System.Linq.Expressions.Expression<Func<DispositivoNotificacion, bool>> suyo = compartido
+                    ? (d => d.Token == registro.Token && d.Usuario == usuario)
+                    : (System.Linq.Expressions.Expression<Func<DispositivoNotificacion, bool>>)(d => d.Token == registro.Token);
+
                 var existente = await db.DispositivosNotificaciones
-                    .FirstOrDefaultAsync(d => d.Token == registro.Token)
+                    .FirstOrDefaultAsync(suyo)
                     .ConfigureAwait(false);
 
                 if (existente != null)
@@ -185,8 +201,19 @@ namespace NestoAPI.Infraestructure.Notificaciones
                     // existe (la creó la otra petición): se actualiza y en paz.
                     db.Entry(nuevo).State = System.Data.Entity.EntityState.Detached;
                     var ganador = await db.DispositivosNotificaciones
-                        .FirstOrDefaultAsync(d => d.Token == registro.Token)
+                        .FirstOrDefaultAsync(suyo)
                         .ConfigureAwait(false);
+                    if (ganador == null && compartido)
+                    {
+                        // Sin Scripts/Issue575_DispositivosVariosUsuarios.sql la base de datos sigue con un usuario
+                        // por token: el mozo se queda el token (como en NestoApp) y se avisa para lanzar el script.
+                        ganador = await db.DispositivosNotificaciones
+                            .FirstOrDefaultAsync(d => d.Token == registro.Token)
+                            .ConfigureAwait(false);
+                        LogearEnElmah(new Exception(
+                            "[Push] Ariadna: el token de esta PDA ya era de otro mozo y la base de datos no deja compartirlo. " +
+                            "Falta lanzar Scripts/Issue575_DispositivosVariosUsuarios.sql: hasta entonces, solo el último mozo recibe avisos."));
+                    }
                     if (ganador == null)
                     {
                         throw; // no era la carrera del token duplicado
@@ -207,20 +234,61 @@ namespace NestoAPI.Infraestructure.Notificaciones
 
             using (NVEntities db = _crearContexto())
             {
-                var dispositivo = await db.DispositivosNotificaciones
-                    .FirstOrDefaultAsync(d => d.Token == token)
+                // NestoAPI#575: en una PDA de Ariadna el token tiene una fila por mozo. Si el token ya no vale
+                // (Firebase dice Unregistered, o se desinstala la app), no vale para ninguno.
+                List<DispositivoNotificacion> filas = await db.DispositivosNotificaciones
+                    .Where(d => d.Token == token)
+                    .ToListAsync()
                     .ConfigureAwait(false);
 
-                if (dispositivo == null)
+                if (filas.Count == 0)
                 {
                     return false;
                 }
 
-                dispositivo.Activo = false;
+                foreach (DispositivoNotificacion dispositivo in filas)
+                {
+                    dispositivo.Activo = false;
+                }
                 await db.SaveChangesAsync().ConfigureAwait(false);
                 return true;
             }
         }
+
+        public async Task<bool> DesregistrarDispositivoDeUsuario(string token, string usuario)
+        {
+            if (string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(usuario))
+            {
+                return false;
+            }
+
+            using (NVEntities db = _crearContexto())
+            {
+                List<DispositivoNotificacion> filas = await db.DispositivosNotificaciones
+                    .Where(d => d.Token == token && d.Usuario == usuario)
+                    .ToListAsync()
+                    .ConfigureAwait(false);
+
+                if (filas.Count == 0)
+                {
+                    return false;
+                }
+
+                foreach (DispositivoNotificacion dispositivo in filas)
+                {
+                    dispositivo.Activo = false;
+                }
+                await db.SaveChangesAsync().ConfigureAwait(false);
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#575: la PDA de Ariadna la comparten varios mozos, así que su token puede estar a nombre de varios a la
+        /// vez. En NestoApp y TNV el móvil es de una persona: un token, un usuario.
+        /// </summary>
+        internal static bool TokenCompartidoPorVariosUsuarios(string aplicacion)
+            => string.Equals(aplicacion?.Trim(), Constantes.Aplicaciones.ARIADNA, StringComparison.OrdinalIgnoreCase);
 
         public async Task<List<DispositivoNotificacion>> ObtenerDispositivosUsuario(string usuario, string aplicacion)
         {
@@ -266,6 +334,91 @@ namespace NestoAPI.Infraestructure.Notificaciones
             {
                 new DispositivoNotificacion { Usuario = usuario.Trim(), Aplicacion = aplicacion }
             }, notificacion, aplicacion).ConfigureAwait(false);
+
+            // NestoAPI#575: a Ariadna, además, una push de DATOS que despierta la PDA. El buzón sigue siendo la verdad.
+            if (TokenCompartidoPorVariosUsuarios(aplicacion))
+            {
+                await AvisarDispositivosDeAriadna(usuario.Trim(), notificacion).ConfigureAwait(false);
+            }
+        }
+
+        private async Task AvisarDispositivosDeAriadna(string usuario, NotificacionPushDTO notificacion)
+        {
+            try
+            {
+                List<DispositivoNotificacion> dispositivos = await ObtenerDispositivosUsuario(usuario, Constantes.Aplicaciones.ARIADNA).ConfigureAwait(false);
+                List<string> tokens = dispositivos.Select(d => d.Token).Where(t => !string.IsNullOrWhiteSpace(t)).Distinct().ToList();
+                if (tokens.Count == 0)
+                {
+                    return;
+                }
+                _ = await EnviadorDatos(tokens, DatosPushAriadna(usuario, notificacion), Constantes.Aplicaciones.ARIADNA).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // La push es un extra: el aviso ya está en el buzón y la PDA lo verá al abrir o al volver a la app.
+                LogearEnElmah(new Exception($"[Push] Ariadna: no se pudo avisar a {usuario}: {ex.Message}", ex));
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#575: lo que lleva la push de Ariadna. Es SOLO de datos (sin el bloque de notificación) para que la PDA
+        /// decida: si el mozo que está dentro es <c>usuarioDestino</c>, la enseña; si no, se la guarda a ese mozo.
+        /// FCM no admite valores nulos, así que lo que falte va vacío.
+        /// </summary>
+        internal static Dictionary<string, string> DatosPushAriadna(string usuario, NotificacionPushDTO notificacion)
+        {
+            var datos = new Dictionary<string, string>();
+            if (notificacion?.Datos != null)
+            {
+                foreach (KeyValuePair<string, string> par in notificacion.Datos)
+                {
+                    datos[par.Key] = par.Value ?? string.Empty;
+                }
+            }
+            datos["usuarioDestino"] = usuario ?? string.Empty;
+            datos["titulo"] = notificacion?.Titulo ?? string.Empty;
+            datos["cuerpo"] = notificacion?.Cuerpo ?? string.Empty;
+            if (!datos.ContainsKey("tipo") || string.IsNullOrEmpty(datos["tipo"]))
+            {
+                datos["tipo"] = notificacion?.Tipo ?? string.Empty;
+            }
+            return datos;
+        }
+
+        /// <summary>
+        /// NestoAPI#575: push SOLO de datos (prioridad alta para que llegue con la PDA en reposo). Si Firebase dice que un
+        /// token ya no existe, se apaga en todas sus filas.
+        /// </summary>
+        private async Task<int> EnviarDatosConFirebase(IReadOnlyList<string> tokens, Dictionary<string, string> datos, string aplicacion)
+        {
+            if (tokens == null || tokens.Count == 0 || !_firebaseInitialized)
+            {
+                return 0;
+            }
+
+            FirebaseMessaging messaging = ObtenerMessaging(aplicacion);
+            if (messaging == null)
+            {
+                LogearEnElmah(new Exception($"[Push] No hay instancia Firebase para aplicación: {aplicacion}"));
+                return 0;
+            }
+
+            var mensaje = new MulticastMessage
+            {
+                Tokens = tokens.ToList(),
+                Data = datos,
+                Android = new AndroidConfig { Priority = Priority.High }
+            };
+            BatchResponse respuesta = await messaging.SendEachForMulticastAsync(mensaje).ConfigureAwait(false);
+            for (int i = 0; i < respuesta.Responses.Count; i++)
+            {
+                if (!respuesta.Responses[i].IsSuccess && respuesta.Responses[i].Exception?.MessagingErrorCode == MessagingErrorCode.Unregistered)
+                {
+                    _ = await DesregistrarDispositivo(tokens[i]).ConfigureAwait(false);
+                }
+            }
+            return respuesta.SuccessCount;
         }
 
         public async Task<int> EnviarAUsuario(string usuario, string aplicacion, NotificacionPushDTO notificacion)

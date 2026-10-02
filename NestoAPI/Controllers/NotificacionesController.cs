@@ -218,6 +218,30 @@ namespace NestoAPI.Controllers
             return Ok();
         }
 
+        /// <summary>
+        /// NestoAPI#575: el usuario que llama deja de recibir avisos en este aparato (un mozo que se quita de una PDA de
+        /// Ariadna). Los demás que comparten el token siguen recibiendo.
+        /// </summary>
+        [HttpDelete]
+        [Route("Dispositivos/Mio")]
+        [Authorize]
+        public async Task<IHttpActionResult> DesregistrarMiDispositivo([FromBody] string token)
+        {
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                return BadRequest("El token es obligatorio");
+            }
+
+            string usuario = User?.Identity?.Name;
+            if (string.IsNullOrWhiteSpace(usuario))
+            {
+                return Unauthorized();
+            }
+
+            bool desregistrado = await _servicio.DesregistrarDispositivoDeUsuario(token, usuario).ConfigureAwait(false);
+            return desregistrado ? (IHttpActionResult)Ok() : NotFound();
+        }
+
         [HttpGet]
         [Route("Dispositivos")]
         [Authorize]

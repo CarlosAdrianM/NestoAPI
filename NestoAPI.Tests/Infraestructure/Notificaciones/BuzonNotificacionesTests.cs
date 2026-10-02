@@ -383,4 +383,247 @@ namespace NestoAPI.Tests.Infraestructure.Notificaciones
             A.CallTo(() => ((IQueryable<T>)fakeDbSet).GetEnumerator()).Returns(data.GetEnumerator());
         }
     }
+
+    /// <summary>
+    /// NestoAPI#575 (fase 3): push de Ariadna. Una PDA la comparten varios mozos, así que el mismo token de Firebase
+    /// queda registrado para cada mozo que entra en ella (una fila por mozo). La push es de DATOS con el destinatario:
+    /// la PDA decide si la enseña (es el mozo que está dentro) o se la guarda para cuando entre. NestoApp y TNV siguen
+    /// igual que siempre: un token, una fila, y el último en entrar se lo queda.
+    /// </summary>
+    [TestClass]
+    public class PushAriadnaTests
+    {
+        private NVEntities db;
+        private DbSet<NotificacionBuzon> fakeBuzon;
+        private DbSet<DispositivoNotificacion> fakeDispositivos;
+        private ServicioNotificacionesPush servicio;
+        private List<DispositivoNotificacion> dispositivos;
+        private List<DispositivoNotificacion> annadidos;
+        private List<EnvioDatosCapturado> enviosDeDatos;
+
+        private const string TOKEN_PDA = "token-de-la-pda";
+
+        private class EnvioDatosCapturado
+        {
+            public List<string> Tokens;
+            public Dictionary<string, string> Datos;
+            public string Aplicacion;
+        }
+
+        [TestInitialize]
+        public void Inicializar()
+        {
+            db = A.Fake<NVEntities>();
+            fakeBuzon = A.Fake<DbSet<NotificacionBuzon>>(o => o.Implements<IQueryable<NotificacionBuzon>>().Implements<IDbAsyncEnumerable<NotificacionBuzon>>());
+            fakeDispositivos = A.Fake<DbSet<DispositivoNotificacion>>(o => o.Implements<IQueryable<DispositivoNotificacion>>().Implements<IDbAsyncEnumerable<DispositivoNotificacion>>());
+            A.CallTo(() => db.NotificacionesBuzon).Returns(fakeBuzon);
+            A.CallTo(() => db.DispositivosNotificaciones).Returns(fakeDispositivos);
+            ConfigurarFakeDbSet(fakeBuzon, new List<NotificacionBuzon>());
+
+            dispositivos = new List<DispositivoNotificacion>();
+            ConfigurarFakeDbSet(fakeDispositivos, dispositivos);
+            annadidos = new List<DispositivoNotificacion>();
+            A.CallTo(() => fakeDispositivos.Add(A<DispositivoNotificacion>._))
+                .Invokes((DispositivoNotificacion d) => annadidos.Add(d));
+
+            servicio = new ServicioNotificacionesPush(() => db);
+            enviosDeDatos = new List<EnvioDatosCapturado>();
+            servicio.EnviadorDatos = (tokens, datos, aplicacion) =>
+            {
+                enviosDeDatos.Add(new EnvioDatosCapturado { Tokens = tokens.ToList(), Datos = datos, Aplicacion = aplicacion });
+                return Task.FromResult(tokens.Count);
+            };
+        }
+
+        private static DispositivoNotificacion Registrado(string usuario, string token, string aplicacion, bool activo = true)
+        {
+            return new DispositivoNotificacion
+            {
+                Usuario = usuario,
+                Token = token,
+                Aplicacion = aplicacion,
+                Plataforma = "Android",
+                Activo = activo,
+                FechaRegistro = new DateTime(2026, 10, 1),
+                FechaUltimaActividad = new DateTime(2026, 10, 1)
+            };
+        }
+
+        private static RegistrarDispositivoDTO Registro(string token, string aplicacion)
+        {
+            return new RegistrarDispositivoDTO { Token = token, Plataforma = "Android", Aplicacion = aplicacion };
+        }
+
+        // ---- Registro: un token, varios mozos ----
+
+        [TestMethod]
+        public async Task Registrar_OtroMozoEnLaMismaPda_AnnadeSuFilaYNoQuitaLaDelPrimero()
+        {
+            DispositivoNotificacion dePedro = Registrado("Pedro", TOKEN_PDA, "Ariadna");
+            dispositivos.Add(dePedro);
+
+            _ = await servicio.RegistrarDispositivo(Registro(TOKEN_PDA, "Ariadna"), "Andre");
+
+            Assert.AreEqual(1, annadidos.Count, "Andre tiene su propia fila con el token de la PDA");
+            Assert.AreEqual("Andre", annadidos[0].Usuario);
+            Assert.AreEqual(TOKEN_PDA, annadidos[0].Token);
+            Assert.AreEqual("Pedro", dePedro.Usuario, "La fila de Pedro sigue siendo de Pedro: le siguen llegando sus avisos");
+            Assert.IsTrue(dePedro.Activo);
+        }
+
+        [TestMethod]
+        public async Task Registrar_ElMismoMozoOtraVez_ActualizaSuFilaSinDuplicar()
+        {
+            DispositivoNotificacion deAndre = Registrado("Andre", TOKEN_PDA, "Ariadna", activo: false);
+            dispositivos.Add(deAndre);
+
+            DispositivoNotificacion resultado = await servicio.RegistrarDispositivo(Registro(TOKEN_PDA, "Ariadna"), "Andre");
+
+            Assert.AreEqual(0, annadidos.Count);
+            Assert.AreSame(deAndre, resultado);
+            Assert.IsTrue(deAndre.Activo, "Volver a entrar la reactiva");
+        }
+
+        [TestMethod]
+        public async Task Registrar_NestoApp_ElTokenSigueSiendoDeUnSoloUsuarioComoSiempre()
+        {
+            // Compatibilidad: en el móvil de NestoApp el último en entrar se queda el token (una fila por token).
+            DispositivoNotificacion delAnterior = Registrado("Laura", "token-movil", "NestoApp");
+            dispositivos.Add(delAnterior);
+
+            DispositivoNotificacion resultado = await servicio.RegistrarDispositivo(Registro("token-movil", "NestoApp"), "Marta");
+
+            Assert.AreEqual(0, annadidos.Count, "NestoApp no crea una segunda fila para el mismo token");
+            Assert.AreSame(delAnterior, resultado);
+            Assert.AreEqual("Marta", delAnterior.Usuario);
+        }
+
+        // ---- Desregistro ----
+
+        [TestMethod]
+        public async Task Desregistrar_TokenCaducado_ApagaTodasSusFilas()
+        {
+            // Firebase dice que el token ya no existe (app desinstalada): no vale para ningún mozo.
+            DispositivoNotificacion dePedro = Registrado("Pedro", TOKEN_PDA, "Ariadna");
+            DispositivoNotificacion deAndre = Registrado("Andre", TOKEN_PDA, "Ariadna");
+            dispositivos.AddRange(new[] { dePedro, deAndre });
+
+            bool resultado = await servicio.DesregistrarDispositivo(TOKEN_PDA);
+
+            Assert.IsTrue(resultado);
+            Assert.IsFalse(dePedro.Activo);
+            Assert.IsFalse(deAndre.Activo);
+        }
+
+        [TestMethod]
+        public async Task DesregistrarDeUsuario_QuitarUnMozoDeLaPda_SoloApagaLaSuya()
+        {
+            DispositivoNotificacion dePedro = Registrado("Pedro", TOKEN_PDA, "Ariadna");
+            DispositivoNotificacion deAndre = Registrado("Andre", TOKEN_PDA, "Ariadna");
+            dispositivos.AddRange(new[] { dePedro, deAndre });
+
+            bool resultado = await servicio.DesregistrarDispositivoDeUsuario(TOKEN_PDA, "Andre");
+
+            Assert.IsTrue(resultado);
+            Assert.IsFalse(deAndre.Activo);
+            Assert.IsTrue(dePedro.Activo, "Pedro sigue recibiendo en esta PDA");
+        }
+
+        [TestMethod]
+        public async Task DesregistrarDeUsuario_SinFila_DevuelveFalse()
+        {
+            Assert.IsFalse(await servicio.DesregistrarDispositivoDeUsuario(TOKEN_PDA, "Andre"));
+            Assert.IsFalse(await servicio.DesregistrarDispositivoDeUsuario(" ", "Andre"));
+        }
+
+        // ---- Envío: lo que llega al buzón de Ariadna despierta a la PDA ----
+
+        [TestMethod]
+        public async Task BuzonDeAriadna_MandaPushDeDatosConElDestinatarioALosTokensDelMozo()
+        {
+            dispositivos.AddRange(new[]
+            {
+                Registrado("Andre", TOKEN_PDA, "Ariadna"),
+                Registrado("Andre", "token-otra-pda", "Ariadna"),
+                Registrado("Andre", "token-apagado", "Ariadna", activo: false),
+                Registrado("Pedro", TOKEN_PDA, "Ariadna"),
+                Registrado("Andre", "token-nestoapp", "NestoApp")
+            });
+
+            await servicio.GuardarEnBuzonDeUsuario("Andre", "Ariadna", new NotificacionPushDTO
+            {
+                Titulo = "Te han contestado",
+                Cuerpo = "Ya está arreglado",
+                Datos = new Dictionary<string, string> { ["tipo"] = "respuestaNovedad", ["novedadId"] = "463" }
+            });
+
+            Assert.AreEqual(1, enviosDeDatos.Count);
+            CollectionAssert.AreEquivalent(new[] { TOKEN_PDA, "token-otra-pda" }, enviosDeDatos[0].Tokens,
+                "Solo los tokens activos de Andre en Ariadna (no los de NestoApp ni los apagados)");
+            Assert.AreEqual("Ariadna", enviosDeDatos[0].Aplicacion);
+            Dictionary<string, string> datos = enviosDeDatos[0].Datos;
+            Assert.AreEqual("Andre", datos["usuarioDestino"], "La PDA filtra por el mozo que está dentro");
+            Assert.AreEqual("Te han contestado", datos["titulo"]);
+            Assert.AreEqual("Ya está arreglado", datos["cuerpo"]);
+            Assert.AreEqual("respuestaNovedad", datos["tipo"]);
+            Assert.AreEqual("463", datos["novedadId"]);
+        }
+
+        [TestMethod]
+        public async Task BuzonDeAriadna_SinDispositivos_NoMandaNadaPeroGuardaElAviso()
+        {
+            var annadidasAlBuzon = new List<NotificacionBuzon>();
+            A.CallTo(() => fakeBuzon.Add(A<NotificacionBuzon>._)).Invokes((NotificacionBuzon n) => annadidasAlBuzon.Add(n));
+
+            await servicio.GuardarEnBuzonDeUsuario("Andre", "Ariadna", new NotificacionPushDTO { Titulo = "Aviso" });
+
+            Assert.AreEqual(0, enviosDeDatos.Count);
+            Assert.AreEqual(1, annadidasAlBuzon.Count, "El buzón del servidor sigue siendo la verdad");
+        }
+
+        [TestMethod]
+        public async Task BuzonDeNesto_NoMandaPush()
+        {
+            dispositivos.Add(Registrado(@"NUEVAVISION\Alfredo", "token-x", "Nesto"));
+            servicio.AvisosTiempoReal = A.Fake<IAvisosTiempoReal>();
+
+            await servicio.GuardarEnBuzonDeUsuario(@"NUEVAVISION\Alfredo", "Nesto", new NotificacionPushDTO { Titulo = "Aviso" });
+
+            Assert.AreEqual(0, enviosDeDatos.Count);
+        }
+
+        [TestMethod]
+        public async Task BuzonDeAriadna_SiFallaElEnvio_NoRompeNada()
+        {
+            dispositivos.Add(Registrado("Andre", TOKEN_PDA, "Ariadna"));
+            servicio.EnviadorDatos = (tokens, datos, aplicacion) => throw new InvalidOperationException("Firebase caído");
+
+            await servicio.GuardarEnBuzonDeUsuario("Andre", "Ariadna", new NotificacionPushDTO { Titulo = "Aviso" });
+            // Sin excepción: la push es un extra; el aviso está en el buzón.
+        }
+
+        [TestMethod]
+        public void DatosParaAriadna_SinDatosOriginales_LlevaDestinatarioTituloYCuerpo()
+        {
+            Dictionary<string, string> datos = ServicioNotificacionesPush.DatosPushAriadna("Andre",
+                new NotificacionPushDTO { Titulo = "Hola", Cuerpo = null, Tipo = "avisoAriadna" });
+
+            Assert.AreEqual("Andre", datos["usuarioDestino"]);
+            Assert.AreEqual("Hola", datos["titulo"]);
+            Assert.AreEqual(string.Empty, datos["cuerpo"], "FCM no admite valores nulos en los datos");
+            Assert.AreEqual("avisoAriadna", datos["tipo"]);
+        }
+
+        private static void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, List<T> lista) where T : class
+        {
+            // Perezoso: cada consulta ve la lista tal como está en ese momento (varias consultas por prueba).
+            A.CallTo(() => ((IDbAsyncEnumerable<T>)fakeDbSet).GetAsyncEnumerator())
+                .ReturnsLazily(() => new TestDbAsyncEnumerator<T>(lista.AsQueryable().GetEnumerator()));
+            A.CallTo(() => ((IQueryable<T>)fakeDbSet).Provider)
+                .ReturnsLazily(() => new TestDbAsyncQueryProvider<T>(lista.AsQueryable().Provider));
+            A.CallTo(() => ((IQueryable<T>)fakeDbSet).Expression).ReturnsLazily(() => lista.AsQueryable().Expression);
+            A.CallTo(() => ((IQueryable<T>)fakeDbSet).ElementType).Returns(typeof(T));
+            A.CallTo(() => ((IQueryable<T>)fakeDbSet).GetEnumerator()).ReturnsLazily(() => lista.GetEnumerator());
+        }
+    }
 }

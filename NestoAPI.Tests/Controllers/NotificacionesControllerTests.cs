@@ -121,6 +121,36 @@ namespace NestoAPI.Tests.Controllers
             Assert.IsInstanceOfType(resultado, typeof(OkResult));
         }
 
+        // NestoAPI#575: un mozo que se quita de una PDA de Ariadna deja de recibir en ella; los demás, no.
+        [TestMethod]
+        public async Task DesregistrarMiDispositivo_QuitaSoloAlUsuarioQueLlama()
+        {
+            A.CallTo(() => _servicio.DesregistrarDispositivoDeUsuario("token-pda", "testuser")).Returns(true);
+
+            var resultado = await _controller.DesregistrarMiDispositivo("token-pda");
+
+            Assert.IsInstanceOfType(resultado, typeof(OkResult));
+            A.CallTo(() => _servicio.DesregistrarDispositivo(A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task DesregistrarMiDispositivo_SinToken_DevuelveBadRequest()
+        {
+            var resultado = await _controller.DesregistrarMiDispositivo(" ");
+
+            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+        }
+
+        [TestMethod]
+        public async Task DesregistrarMiDispositivo_SinFila_DevuelveNotFound()
+        {
+            A.CallTo(() => _servicio.DesregistrarDispositivoDeUsuario("token-pda", "testuser")).Returns(false);
+
+            var resultado = await _controller.DesregistrarMiDispositivo("token-pda");
+
+            Assert.IsInstanceOfType(resultado, typeof(NotFoundResult));
+        }
+
         [TestMethod]
         public async Task RegistrarDispositivo_TiendasNuevaVision_IncluyeEmpresaClienteContacto()
         {
