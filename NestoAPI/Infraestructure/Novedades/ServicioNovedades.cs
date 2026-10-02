@@ -19,7 +19,7 @@ namespace NestoAPI.Infraestructure.Novedades
     public class ServicioNovedades : IServicioNovedades
     {
         private const string COLUMNAS_SUGERENCIA =
-            "Id, Version, Fecha, Categoria, Titulo, Descripcion, Ambito, TextoOriginal, SugeridaNombre, SugeridaFecha, Estado, " +
+            "Id, Version, Fecha, Categoria, Titulo, Descripcion, Ambito, TextoOriginal, SugeridaNombre, SugeridaFecha, Estado, SugeridaPor, " +
             "CAST(CASE WHEN Imagen IS NULL THEN 0 ELSE 1 END AS bit) AS TieneImagen, " +
             // NestoAPI#558 (Scripts/Issue558_IncidenciasNovedades.sql)
             "Contexto";

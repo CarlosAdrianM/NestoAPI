@@ -1769,6 +1769,7 @@
     </Compile>
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Providers\CustomJwtFormat.cs" />
+    <Compile Include="Providers\AplicacionClienteOAuth.cs" />
     <Compile Include="Providers\CustomOAuthProvider.cs" />
     <Compile Include="Providers\IRefreshTokenStore.cs" />
     <Compile Include="Providers\SimpleRefreshTokenProvider.cs" />

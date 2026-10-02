@@ -18,6 +18,10 @@ namespace NestoAPI.Infraestructure.Novedades
         public const string CLIENTE_NESTO = "Nesto";
         public const string CLIENTE_NESTOAPP = "NestoApp";
         public const string CLIENTE_TIENDA = "TiendaOnline";
+        /// <summary>NestoAPI#575: la app del almacén (token de /oauth/token con el claim «app» = Ariadna).</summary>
+        public const string CLIENTE_ARIADNA = "Ariadna";
+        /// <summary>El claim que pone CustomOAuthProvider a los tokens de Ariadna (AplicacionClienteOAuth.TIPO_CLAIM).</summary>
+        public const string CLAIM_APLICACION = "app";
 
         /// <summary>
         /// NestoAPI#531: el asistente IA (Claude) contesta con su propio nombre, no con el de quien
@@ -71,6 +75,11 @@ namespace NestoAPI.Infraestructure.Novedades
             if (principal?.Claims.Any(c => c.Type == "cliente") == true)
             {
                 return CLIENTE_TIENDA;
+            }
+            // NestoAPI#575: Ariadna entra por /oauth/token como NestoApp, pero su token lleva «app» = Ariadna.
+            if (string.Equals(principal?.FindFirst(CLAIM_APLICACION)?.Value, CLIENTE_ARIADNA, StringComparison.OrdinalIgnoreCase))
+            {
+                return CLIENTE_ARIADNA;
             }
             return CLIENTE_NESTOAPP;
         }

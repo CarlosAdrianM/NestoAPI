@@ -57,6 +57,8 @@ namespace NestoAPI.Controllers
         // GET api/Novedades?ambito=NestoApp (NestoAPI#489: solo las de ese producto; sin él, las del
         //     escritorio: Nesto y NestoAPI, que es lo que pide el Nesto publicado, que no manda ámbito)
         internal const string AMBITO_NESTOAPP = "NestoApp";
+        /// <summary>NestoAPI#575: la app del almacén. Se pide siempre con ?ambito=Ariadna.</summary>
+        internal const string AMBITO_ARIADNA = "Ariadna";
 
         internal static bool EsLlamadaDesdeNavegador(HttpRequestMessage request)
         {
@@ -120,14 +122,25 @@ namespace NestoAPI.Controllers
 
         /// <summary>
         /// Con ámbito, solo las de ese producto. Sin ámbito (Nesto de escritorio, que solo manda
-        /// desdeVersion=1.10.x): todo MENOS las de la app. El 17/09/26 se colaron las 2.20.x de
-        /// NestoApp en el popup de Nesto porque 2.20 > 1.10.
+        /// desdeVersion=1.10.x): todo MENOS las de las apps (NestoApp y, desde NestoAPI#575, Ariadna).
+        /// El 17/09/26 se colaron las 2.20.x de NestoApp en el popup de Nesto porque 2.20 > 1.10.
         /// </summary>
         internal static bool EsDelAmbito(string ambitoNovedad, string ambito)
         {
             return !string.IsNullOrWhiteSpace(ambito)
                 ? string.Equals(ambitoNovedad?.Trim(), ambito.Trim(), StringComparison.OrdinalIgnoreCase)
-                : !string.Equals(ambitoNovedad?.Trim(), AMBITO_NESTOAPP, StringComparison.OrdinalIgnoreCase);
+                : !string.Equals(ambitoNovedad?.Trim(), AMBITO_NESTOAPP, StringComparison.OrdinalIgnoreCase)
+                  && !string.Equals(ambitoNovedad?.Trim(), AMBITO_ARIADNA, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>El ámbito de lo que se crea desde cada programa.</summary>
+        internal static string AmbitoDelCliente(string cliente)
+        {
+            if (cliente == ReglasFeedbackNovedades.CLIENTE_NESTOAPP)
+            {
+                return AMBITO_NESTOAPP;
+            }
+            return cliente == ReglasFeedbackNovedades.CLIENTE_ARIADNA ? AMBITO_ARIADNA : "Nesto";
         }
 
         #region NestoAPI#526/#527: sugerencias de los usuarios y buscador
@@ -140,8 +153,15 @@ namespace NestoAPI.Controllers
         public IHttpActionResult GetSugerencias(string ambito = null, bool incluirCerradas = false)
         {
             string ambitoEfectivo = AmbitoEfectivo(ambito);
-            List<SugerenciaNovedadDTO> sugerencias = servicio.LeerSugerencias(incluirCerradas)
+            // NestoAPI#575: en Ariadna, quien sugirió algo sigue viendo su sugerencia descartada (y la
+            // respuesta de por qué). En Nesto y NestoApp, sin cambios hasta la tanda de quick wins.
+            bool descartadasDelAutor = !incluirCerradas && EsDeAriadna(ambitoEfectivo);
+            string usuario = descartadasDelAutor ? ReglasFeedbackNovedades.ClaveUsuario(User) : null;
+            List<SugerenciaNovedadDTO> sugerencias = servicio.LeerSugerencias(incluirCerradas || descartadasDelAutor)
                 .Where(s => EsDelAmbito(s.Ambito, ambitoEfectivo))
+                .Where(s => !descartadasDelAutor || ReglasSugerenciasNovedades.EstaAbierta(s.Estado)
+                    || (s.Estado == ReglasSugerenciasNovedades.ESTADO_DESCARTADA && usuario != null
+                        && string.Equals(s.SugeridaPor?.Trim(), usuario, StringComparison.OrdinalIgnoreCase)))
                 .Select(s => s.ADto())
                 .ToList();
             OcultarContextoSiNoRevisa(sugerencias);
@@ -179,7 +199,7 @@ namespace NestoAPI.Controllers
             }
             var aGrabar = new SugerenciaNovedadAGrabar
             {
-                Ambito = cliente == ReglasFeedbackNovedades.CLIENTE_NESTOAPP ? AMBITO_NESTOAPP : "Nesto",
+                Ambito = AmbitoDelCliente(cliente),
                 Titulo = ReglasSugerenciasNovedades.TituloDesde(sugerencia.Texto),
                 TextoOriginal = sugerencia.Texto.Trim(),
                 Imagen = imagen,
@@ -720,6 +740,12 @@ namespace NestoAPI.Controllers
                         await Notificaciones.GuardarEnBuzonDeUsuario(autor.Usuario, Constantes.Aplicaciones.NESTO, notificacion).ConfigureAwait(false);
                         avisados.Add(autor.Usuario);
                     }
+                    else if (autor.Cliente == ReglasFeedbackNovedades.CLIENTE_ARIADNA)
+                    {
+                        // NestoAPI#575: a la campana de Ariadna (sin push). El buzón va por el UserName.
+                        await Notificaciones.GuardarEnBuzonDeUsuario(autor.NombreVisible, Constantes.Aplicaciones.ARIADNA, notificacion).ConfigureAwait(false);
+                        avisados.Add(autor.NombreVisible);
+                    }
                 }
             }
             catch (Exception ex)
@@ -751,6 +777,9 @@ namespace NestoAPI.Controllers
 
         private static bool EsDeNestoApp(string ambito) =>
             string.Equals(ambito?.Trim(), AMBITO_NESTOAPP, StringComparison.OrdinalIgnoreCase);
+
+        private static bool EsDeAriadna(string ambito) =>
+            string.Equals(ambito?.Trim(), AMBITO_ARIADNA, StringComparison.OrdinalIgnoreCase);
 
         /// <summary>
         /// NestoAPI#537: a cada @mencionado le llega «X te ha mencionado en Novedades», con el mismo

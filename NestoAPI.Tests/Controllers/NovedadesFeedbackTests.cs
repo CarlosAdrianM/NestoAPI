@@ -378,6 +378,32 @@ namespace NestoAPI.Tests.Controllers
             A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("Claude", A<string>._, A<NestoAPI.Models.NotificacionPushDTO>._)).MustNotHaveHappened();
         }
 
+        [TestMethod]
+        public async System.Threading.Tasks.Task PostComentarioAsistente_AvisaAlAutorDeAriadna_EnElBuzonDeAriadna()
+        {
+            // NestoAPI#575: el mozo lee el aviso en la campana de Ariadna (el buzón va por el UserName)
+            ComoUsuarioDeNesto("NUEVAVISION\\Carlos", "NUEVAVISION\\Informatica");
+            var notificaciones = A.Fake<NestoAPI.Infraestructure.Notificaciones.IServicioNotificacionesPush>();
+            controller.Notificaciones = notificaciones;
+            A.CallTo(() => feedback.ExisteNovedad(7)).Returns(true);
+            A.CallTo(() => feedback.CrearComentario(A<ComentarioNovedadAGrabar>._)).Returns(50);
+            A.CallTo(() => feedback.LeerAutores(A<IEnumerable<int>>._)).Returns(new List<AutorComentarioNovedad>
+            {
+                new AutorComentarioNovedad { Id = 1, NovedadId = 7, Usuario = "9a2b-guid", NombreVisible = "Santiago", Cliente = "Ariadna" }
+            });
+
+            _ = await controller.PostComentarioAsistente(7, new NuevoComentarioAsistenteDTO
+            {
+                Texto = "Hecho: el lector ya salta al siguiente hueco.",
+                ComentariosContestados = new List<int> { 1 }
+            });
+
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("Santiago", "Ariadna",
+                A<NestoAPI.Models.NotificacionPushDTO>.That.Matches(n => n.Datos["novedadId"] == "7" && n.Datos["comentarioId"] == "50")))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => notificaciones.EnviarAUsuario(A<string>._, A<string>._, A<NestoAPI.Models.NotificacionPushDTO>._)).MustNotHaveHappened();
+        }
+
         // ---- Reglas puras ----
 
         [TestMethod]

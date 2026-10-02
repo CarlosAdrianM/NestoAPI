@@ -331,5 +331,116 @@ namespace NestoAPI.Tests.Controllers
         {
             Assert.AreEqual("%100[%] [_]x[[]%", ReglasSugerenciasNovedades.PatronLike("100% _x["));
         }
+
+        // ---- NestoAPI#575: Ariadna, la app del almacén ----
+
+        private void ComoMozoDeAriadna(string usuario = "Santiago", string id = "9a2b-guid")
+        {
+            controller.User = new ClaimsPrincipal(new ClaimsIdentity(new[]
+            {
+                new Claim(ClaimTypes.NameIdentifier, id),
+                new Claim(ClaimTypes.Name, usuario),
+                new Claim("app", "Ariadna")
+            }, "Bearer"));
+        }
+
+        [TestMethod]
+        public void Cliente_TokenDeAriadna_EsAriadna_YElDeNestoAppSigueSiendoNestoApp()
+        {
+            ComoMozoDeAriadna();
+            Assert.AreEqual(ReglasFeedbackNovedades.CLIENTE_ARIADNA, ReglasFeedbackNovedades.Cliente(controller.User));
+
+            ComoVendedorDeLaApp();
+            Assert.AreEqual(ReglasFeedbackNovedades.CLIENTE_NESTOAPP, ReglasFeedbackNovedades.Cliente(controller.User));
+        }
+
+        [TestMethod]
+        public async System.Threading.Tasks.Task PostSugerencia_DesdeAriadna_EsDeAriadna()
+        {
+            ComoMozoDeAriadna();
+            SugerenciaNovedadAGrabar grabada = null;
+            A.CallTo(() => servicio.CrearSugerencia(A<SugerenciaNovedadAGrabar>._)).Invokes((SugerenciaNovedadAGrabar s) => grabada = s);
+
+            _ = await controller.PostSugerencia(new NuevaSugerenciaNovedadDTO { Texto = "Que el lector salte al siguiente hueco" });
+
+            Assert.AreEqual("Ariadna", grabada.Ambito);
+            Assert.AreEqual("9a2b-guid", grabada.SugeridaPor);
+            Assert.AreEqual("Santiago", grabada.SugeridaNombre);
+        }
+
+        [TestMethod]
+        public void EsDelAmbito_SinAmbito_NestoNoVeLasDeLaAppNiLasDeAriadna()
+        {
+            Assert.IsTrue(NovedadesController.EsDelAmbito("Nesto", null));
+            Assert.IsTrue(NovedadesController.EsDelAmbito("NestoAPI", null));
+            Assert.IsTrue(NovedadesController.EsDelAmbito(null, null), "lo que no tiene ámbito es del escritorio, como siempre");
+            Assert.IsFalse(NovedadesController.EsDelAmbito("NestoApp", null));
+            Assert.IsFalse(NovedadesController.EsDelAmbito("Ariadna", null));
+        }
+
+        [TestMethod]
+        public void EsDelAmbito_ConAmbito_SoloLasDeEseProducto()
+        {
+            Assert.IsTrue(NovedadesController.EsDelAmbito("Ariadna", "Ariadna"));
+            Assert.IsFalse(NovedadesController.EsDelAmbito("NestoApp", "Ariadna"));
+            Assert.IsFalse(NovedadesController.EsDelAmbito("Ariadna", "NestoApp"));
+            Assert.IsTrue(NovedadesController.EsDelAmbito("NestoApp", "NestoApp"));
+        }
+
+        [TestMethod]
+        public void GetSugerencias_SinAmbito_NoSalenLasDeAriadna()
+        {
+            A.CallTo(() => servicio.LeerSugerencias(false)).Returns(new List<NovedadConSugerenciaFila>
+            {
+                Sugerencia(1, "Nesto"),
+                Sugerencia(2, "Ariadna")
+            });
+
+            var resultado = controller.GetSugerencias() as OkNegotiatedContentResult<List<SugerenciaNovedadDTO>>;
+
+            CollectionAssert.AreEqual(new[] { 1 }, resultado.Content.Select(s => s.Id).ToArray());
+        }
+
+        [TestMethod]
+        public void GetSugerencias_DeAriadna_SusDescartadasLasSigueViendoSuAutor()
+        {
+            // Quick win apuntado de Nesto, aquí bien desde el principio: el mozo no se entera de que
+            // le han descartado la sugerencia (ni de por qué) si deja de verla.
+            ComoMozoDeAriadna();
+            NovedadConSugerenciaFila descartadaMia = Sugerencia(11, "Ariadna", "Mía descartada");
+            descartadaMia.Estado = ReglasSugerenciasNovedades.ESTADO_DESCARTADA;
+            descartadaMia.SugeridaPor = "9a2b-guid";
+            NovedadConSugerenciaFila descartadaDeOtro = Sugerencia(12, "Ariadna", "De otro descartada");
+            descartadaDeOtro.Estado = ReglasSugerenciasNovedades.ESTADO_DESCARTADA;
+            descartadaDeOtro.SugeridaPor = "otro-guid";
+            NovedadConSugerenciaFila implementada = Sugerencia(13, "Ariadna", "Hecha");
+            implementada.Estado = ReglasSugerenciasNovedades.ESTADO_IMPLEMENTADA;
+            implementada.SugeridaPor = "9a2b-guid";
+            A.CallTo(() => servicio.LeerSugerencias(true)).Returns(new List<NovedadConSugerenciaFila>
+            {
+                Sugerencia(10, "Ariadna", "Abierta"),
+                descartadaMia,
+                descartadaDeOtro,
+                implementada,
+                Sugerencia(14, "Nesto", "Del escritorio")
+            });
+
+            var resultado = controller.GetSugerencias("Ariadna") as OkNegotiatedContentResult<List<SugerenciaNovedadDTO>>;
+
+            CollectionAssert.AreEquivalent(new[] { 10, 11 }, resultado.Content.Select(s => s.Id).ToArray());
+        }
+
+        [TestMethod]
+        public void GetSugerencias_DeNestoYNestoApp_SiguenSinLasDescartadas()
+        {
+            // Sin cambios para Nesto ni NestoApp: lo suyo se arregla en la tanda de quick wins.
+            ComoUsuarioDeNesto();
+            A.CallTo(() => servicio.LeerSugerencias(false)).Returns(new List<NovedadConSugerenciaFila> { Sugerencia(1, "Nesto") });
+
+            _ = controller.GetSugerencias();
+            _ = controller.GetSugerencias("NestoApp");
+
+            A.CallTo(() => servicio.LeerSugerencias(true)).MustNotHaveHappened();
+        }
     }
 }

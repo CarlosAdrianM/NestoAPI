@@ -160,6 +160,22 @@ namespace NestoAPI.Tests.Providers
             Assert.AreEqual(esperado, SimpleRefreshTokenProvider.HashToken("abc"));
         }
 
+        [TestMethod]
+        public async Task CreateAsync_DeAriadna_GuardaAriadnaComoCliente()
+        {
+            // NestoAPI#575: el refresh_token de Ariadna se guarda como suyo, no como de NestoApp
+            RefreshToken capturado = null;
+            A.CallTo(() => _store.AddAsync(A<RefreshToken>._))
+                .Invokes(call => capturado = call.GetArgument<RefreshToken>(0))
+                .Returns(Task.FromResult(0));
+            AuthenticationTokenCreateContext contexto = CrearContextoCreate("Santiago");
+            AplicacionClienteOAuth.Marcar((ClaimsIdentity)contexto.Ticket.Identity, contexto.Ticket.Properties, "Ariadna");
+
+            await _provider.CreateAsync(contexto);
+
+            Assert.AreEqual("Ariadna", capturado.ClientId);
+        }
+
         private AuthenticationTokenCreateContext CrearContextoCreate(string userName)
         {
             AuthenticationTicket ticket = TicketConIdentidad(userName);

@@ -63,6 +63,8 @@ namespace NestoAPI.Models.Novedades
         public string Estado { get; set; }
         public bool TieneImagen { get; set; }
         public string Contexto { get; set; }
+        /// <summary>NestoAPI#575: clave del autor (para que siga viendo sus descartadas). No sale en el DTO.</summary>
+        public string SugeridaPor { get; set; }
 
         public SugerenciaNovedadDTO ADto() => new SugerenciaNovedadDTO
         {

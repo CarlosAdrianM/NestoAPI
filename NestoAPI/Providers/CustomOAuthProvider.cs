@@ -14,7 +14,18 @@ namespace NestoAPI.Providers
 
         public override Task ValidateClientAuthentication(OAuthValidateClientAuthenticationContext context)
         {
-            _ = context.Validated();
+            // NestoAPI#575: solo Ariadna deja su client_id (para saber desde qué app se entra). Todo lo
+            // demás —NestoApp entra sin client_id y renueva con client_id=NestoApp— sigue como siempre.
+            // Ojo: NO usar TryGetFormCredentials, que deja el ClientId en el contexto también para NestoApp.
+            string aplicacion = AplicacionClienteOAuth.Reconocida(context.Parameters?.Get("client_id"));
+            if (aplicacion != null)
+            {
+                _ = context.Validated(aplicacion);
+            }
+            else
+            {
+                _ = context.Validated();
+            }
             return Task.FromResult<object>(null);
         }
 
@@ -42,7 +53,17 @@ namespace NestoAPI.Providers
 
             ClaimsIdentity oAuthIdentity = await ConstruirIdentity(user, userManager);
 
-            var ticket = new AuthenticationTicket(oAuthIdentity, null);
+            // NestoAPI#575: con Ariadna, claim «app» y propiedad para que el refresh_token lo recuerde.
+            // Sin aplicación reconocida (NestoApp), el ticket se crea exactamente igual que antes.
+            string aplicacion = AplicacionClienteOAuth.Reconocida(context.ClientId);
+            AuthenticationProperties propiedades = null;
+            if (aplicacion != null)
+            {
+                propiedades = new AuthenticationProperties();
+                AplicacionClienteOAuth.Marcar(oAuthIdentity, propiedades, aplicacion);
+            }
+
+            var ticket = new AuthenticationTicket(oAuthIdentity, propiedades);
 
             _ = context.Validated(ticket);
 
@@ -71,6 +92,9 @@ namespace NestoAPI.Providers
             }
 
             ClaimsIdentity nuevaIdentity = await ConstruirIdentity(user, userManager);
+            // NestoAPI#575: la aplicación se saca del ticket con el que se entró (no de la petición), así
+            // que Ariadna sigue siendo Ariadna al renovar; los refresh_token de NestoApp no la llevan.
+            AplicacionClienteOAuth.AñadirClaim(nuevaIdentity, AplicacionClienteOAuth.DelTicket(context.Ticket.Properties));
 
             // Importante: limpiar IssuedUtc/ExpiresUtc del ticket deserializado (tienen la
             // fecha del refresh_token, 90 días). Al pasar null, OWIN las recalcula usando
