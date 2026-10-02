@@ -478,6 +478,14 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
 
             // 3. No sugerir lo que el pedido rechazaría al guardar.
             PedidoVentaDTO hipotetico = ConSugerenciaAplicada(pedido, lineas, mejor);
+            // NestoAPI#589 (927595): lo cobrado tiene que ir a tarifa y sin descuento, la misma regla que el validador.
+            // Se mira aparte porque una combinada o el material promocional pueden dar por bueno el pedido aunque el
+            // N+M no se cumpla, y entonces se proponía un 6+1 sobre líneas con precio rebajado o con descuento.
+            if (ReglasOfertasPermitidas.MotivoCobradoFueraDeTarifa(
+                    GestorOfertasPedido.MontarOfertaPedido(numeroProducto, hipotetico, servicio), producto) != null)
+            {
+                return null;
+            }
             RespuestaValidacion validacion = validar(hipotetico);
             return validacion != null && validacion.ValidacionSuperada ? mejor : null;
         }

@@ -55,5 +55,27 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
         /// <summary>La denegación que prohíbe esta oferta (N+M o múltiplo), o null.</summary>
         public static OfertaPermitida DenegacionQueLaProhibe(IEnumerable<OfertaPermitida> reglas, Producto producto, int cantidadCobrada, int cantidadRegalada)
             => Denegaciones(reglas, producto).FirstOrDefault(d => EsMultiplo(d, cantidadCobrada, cantidadRegalada));
+
+        /// <summary>
+        /// Un N+M (unidades regaladas del mismo producto) exige cobrar las demás a precio de tarifa y sin descuento: o
+        /// precio especial o descuento, o la oferta, nunca las dos. Devuelve el motivo si no se cumple, o null. Lo usan
+        /// la validación y la sugerencia (NestoAPI#589, pedido 927595: no se sugería un 6+1 que no se aceptaría).
+        /// </summary>
+        public static string MotivoCobradoFueraDeTarifa(PrecioDescuentoProducto oferta, Producto producto)
+        {
+            if (oferta == null || producto == null || oferta.cantidadOferta == 0)
+            {
+                return null;
+            }
+            if (oferta.cantidad > 0 && oferta.precioCalculado < producto.PVP)
+            {
+                return "Oferta a precio inferior al de ficha en el producto " + producto.Número.Trim();
+            }
+            if (oferta.descuentoCalculado > 0)
+            {
+                return "Oferta no puede llevar descuento en el producto " + producto.Número.Trim();
+            }
+            return null;
+        }
     }
 }

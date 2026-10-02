@@ -84,6 +84,35 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(GestorSugerenciasOfertas.TIPO_OFERTA_NO_APLICADA, s.Single().Tipo);
         }
 
+        // NestoAPI#589 (927595, Marta): el 6+1 solo con lo cobrado a tarifa y sin descuento. La validación del pedido
+        // puede darlo por bueno por otro camino (una combinada laxa, material promocional): aquí se acepta todo y aun
+        // así no se sugiere.
+        [TestMethod]
+        public void LineaPorDebajoDeTarifa_NoSeLeSugiereElNMasM()
+        {
+            Assert.AreEqual(0, GestorSugerenciasOfertas.Calcular(Pedido(Linea("38093", 6, 8)), servicio, Acepta).Count);
+            Assert.AreEqual(0, GestorSugerenciasOfertas.Calcular(Pedido(Linea("38093", 4, 8)), servicio, Acepta).Count, "Ni el «con 2 más»");
+        }
+
+        [TestMethod]
+        public void LineaConDescuento_NoSeLeSugiereElNMasM()
+        {
+            LineaPedidoVentaDTO conDescuentoDeProducto = Linea("38093", 6, 10);
+            conDescuentoDeProducto.AplicarDescuento = true;
+            conDescuentoDeProducto.DescuentoProducto = 0.15M;
+            LineaPedidoVentaDTO conDescuentoDeLinea = Linea("38093", 6, 10);
+            conDescuentoDeLinea.DescuentoLinea = 0.10M;
+
+            Assert.AreEqual(0, GestorSugerenciasOfertas.Calcular(Pedido(conDescuentoDeProducto), servicio, Acepta).Count);
+            Assert.AreEqual(0, GestorSugerenciasOfertas.Calcular(Pedido(conDescuentoDeLinea), servicio, Acepta).Count);
+        }
+
+        [TestMethod]
+        public void LineaATarifaSinDescuento_SiSeLeSugiereElNMasM()
+        {
+            Assert.AreEqual(1, GestorSugerenciasOfertas.Calcular(Pedido(Linea("38093", 6, 10)), servicio, Acepta).Count);
+        }
+
         [TestMethod]
         public void ProductoSinDescuentoConOfertaExpresaSuya_SiSeSugiere()
         {

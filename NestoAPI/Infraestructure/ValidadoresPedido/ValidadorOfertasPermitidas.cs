@@ -141,22 +141,13 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             }
 
             // Validaciones específicas de ofertas
-            if (oferta.cantidadOferta != 0 && oferta.precioCalculado < producto.PVP && oferta.cantidad > 0)
+            string fueraDeTarifa = ReglasOfertasPermitidas.MotivoCobradoFueraDeTarifa(oferta, producto);
+            if (fueraDeTarifa != null)
             {
                 return new RespuestaValidacion
                 {
                     ValidacionSuperada = false,
-                    Motivo = "Oferta a precio inferior al de ficha en el producto " + producto.Número.Trim(),
-                    ProductoId = producto.Número.Trim()
-                };
-            }
-
-            if (oferta.cantidadOferta != 0 && oferta.descuentoCalculado > 0)
-            {
-                return new RespuestaValidacion
-                {
-                    ValidacionSuperada = false,
-                    Motivo = "Oferta no puede llevar descuento en el producto " + producto.Número.Trim(),
+                    Motivo = fueraDeTarifa,
                     ProductoId = producto.Número.Trim()
                 };
             }
