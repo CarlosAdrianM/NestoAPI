@@ -20,9 +20,11 @@ namespace NestoAPI.Controllers
     /// EnviosAgenciaBultos).</para>
     ///
     /// <para>Las rutas van por dominio (api/Almacen), no con el nombre de la app. [Authorize] desde el
-    /// primer día: los mozos entran como los vendedores de NestoApp (/oauth/token).</para>
+    /// primer día: los mozos entran como los vendedores de NestoApp (/oauth/token). Leer basta con estar
+    /// identificado; escribir (todo lo que no es GET) pide Almacén o Dirección (EscrituraSoloAlmacen),
+    /// para que el usuario de revisión de Google Play no toque datos reales.</para>
     /// </summary>
-    [Authorize]
+    [EscrituraSoloAlmacen]
     [RoutePrefix("api/Almacen")]
     public class AlmacenController : ApiController
     {

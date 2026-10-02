@@ -393,6 +393,7 @@
     <Compile Include="Infrastructure\FacturaConImpagadoIntegracionTests.cs" />
     <Compile Include="Infrastructure\ValidadorOfertasCombinadasMismaCantidadTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\CasadorEscaneosTests.cs" />
+    <Compile Include="Infrastructure\PreparacionAlmacen\EscrituraSoloAlmacenAttributeTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\RepositorioPreparacionAlmacenIntegracionTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\SasBlobAzureTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\EnlacePublicoFotoBultoTests.cs" />

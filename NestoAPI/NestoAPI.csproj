@@ -533,6 +533,7 @@
     <Compile Include="Controllers\AlmacenController.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\AlmacenFotosBultos.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\CasadorEscaneos.cs" />
+    <Compile Include="Infraestructure\PreparacionAlmacen\EscrituraSoloAlmacenAttribute.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\RecepcionComprasAlmacen.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\RecepcionReposicionesAlmacen.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\RepositorioPreparacionAlmacen.cs" />
