@@ -185,6 +185,24 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual(0.1m, linea.DescuentoProducto);
         }
 
+        [TestMethod]
+        public async Task Ampliar_ConVariosTramos_AplicaElMayorTramoQueAlcanzaLaCantidad()
+        {
+            // Con 10 unidades se alcanzan los tramos de 1 y de 6: manda el de 6, como en Nesto
+            // (antes la API se quedaba con el más bajo y la línea salía a 10 € sin descuento).
+            ConfigurarProductos(CrearProducto(PRODUCTO));
+            ConfigurarControles(new ControlStock { Empresa = EMPRESA, Almacén = "ALG", Número = PRODUCTO, StockMáximo = 10, Múltiplos = 1 });
+            ConfigurarDescuentos(
+                new DescuentosProducto { Empresa = EMPRESA, NºProveedor = PROVEEDOR, Nº_Producto = PRODUCTO, CantidadMínima = 1, Descuento = 0m, Precio = 10m },
+                new DescuentosProducto { Empresa = EMPRESA, NºProveedor = PROVEEDOR, Nº_Producto = PRODUCTO, CantidadMínima = 6, Descuento = 0.1m, Precio = 5m });
+
+            PedidoCompraDTO resultado = await Ampliar();
+
+            LineaPedidoCompraDTO linea = resultado.Lineas.Single();
+            Assert.AreEqual(5m, linea.PrecioUnitario);
+            Assert.AreEqual(0.1m, linea.DescuentoProducto);
+        }
+
         private Producto CrearProducto(string numero)
         {
             var producto = new Producto

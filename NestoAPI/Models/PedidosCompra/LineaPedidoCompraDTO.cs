@@ -22,8 +22,10 @@ namespace NestoAPI.Models.PedidosCompra
             set {
                 if (Descuentos != null && Descuentos.Any())
                 {
-                    var descuentoActual = Descuentos.Where(d => d.CantidadMinima <= _cantidad).OrderBy(d => d.CantidadMinima).FirstOrDefault();
-                    var descuentoNuevo = Descuentos.Where(d => d.CantidadMinima <= value).OrderBy(d => d.CantidadMinima).FirstOrDefault();
+                    // Manda el tramo más alto que alcanza la cantidad, igual que en el DTO de Nesto
+                    // (con OrderBy se cogía el más bajo y la línea salía a precio del primer tramo).
+                    var descuentoActual = Descuentos.Where(d => d.CantidadMinima <= _cantidad).OrderByDescending(d => d.CantidadMinima).FirstOrDefault();
+                    var descuentoNuevo = Descuentos.Where(d => d.CantidadMinima <= value).OrderByDescending(d => d.CantidadMinima).FirstOrDefault();
 
                     if (descuentoNuevo == null)
                     {
