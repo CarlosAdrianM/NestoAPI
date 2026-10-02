@@ -548,10 +548,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 // POST y al AMPLIAR un pedido (PUT, líneas nuevas) Nesto las mandaba a false: 921722
                 // (ALC, 01/09/26) se quedó con 3 líneas sin poder facturar. Aquí lo cubren todos los caminos.
                 VtoBueno = true,
-                // ELMAH 02/10/26 (927535): las líneas nuevas de un PUT pueden llegar sin usuario y
-                // la columna es obligatoria → el del pedido; si tampoco hay, DESCONOCIDO.
-                Usuario = UsuarioAuditoriaHelper.ParaAuditoria(
-                    string.IsNullOrWhiteSpace(linea.usuario) ? usuarioPedido : linea.usuario),
+                Usuario = linea.usuario,
                 Almacén = linea.almacen,
                 IVA = linea.iva,
                 Grupo = grupo,
