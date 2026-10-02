@@ -20,7 +20,8 @@ namespace NestoAPI.Infraestructure.AlbaranesVenta
             }
             catch (Exception ex)
             {
-                throw new Exception("Error al crear el albarán", ex);
+                // El procedimiento no dice de qué pedido habla: sin esto ELMAH no permite saber a cuál le pasó.
+                throw new Exception($"Error al crear el albarán del pedido {empresa?.Trim()}/{pedido}", ex);
             }
         }
     }

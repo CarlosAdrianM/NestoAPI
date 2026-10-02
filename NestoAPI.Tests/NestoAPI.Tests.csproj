@@ -535,6 +535,7 @@
     <Compile Include="Infrastructure\PedidosVenta\ModosFacturacionPermitidosTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\GestorPortesLineasVivasTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\FechaEntregaLineasProtegidasTests.cs" />
+    <Compile Include="Infrastructure\GestorAlbaranesVentaTests.cs" />
     <Compile Include="Infrastructure\GestorPedidosVentaTests.cs" />
     <Compile Include="Infrastructure\Domiciliaciones\GestorDomiciliacionesTests.cs" />
     <Compile Include="Infrastructure\Rectificativas\GestorCopiaPedidosTests.cs" />
