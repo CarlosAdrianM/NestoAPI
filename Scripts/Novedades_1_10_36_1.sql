@@ -29,6 +29,8 @@ DECLARE @fecha DATE = '2026-10-02';
 DECLARE @novedades TABLE (Categoria nvarchar(40), Titulo nvarchar(400), Descripcion nvarchar(2000));
 
 INSERT INTO @novedades (Categoria, Titulo, Descripcion) VALUES
+    ('Mejorado', N'Facturar al imprimir la etiqueta hace lo mismo que Facturar rutas',
+     N'Con la casilla «Facturar al imprimir etiqueta» marcada, el pedido se factura exactamente igual que desde Facturar rutas: mismas comprobaciones, mismo albarán y factura, y mismos documentos impresos. Las notas de entrega ya no dan el error «El pedido es nota de entrega»: se procesan como en Facturar rutas y, si el producto estaba «en carpeta», se descuenta del stock. Lo que se factura por un camino ya no lo vuelve a coger el otro.'),
     ('Mejorado', N'Si el cliente cierra el día de la entrega, el picking lo dice',
      N'Cuando un pedido no entraba en el picking porque el cliente cierra el día en que se le entregaría (por ejemplo, un cliente que cierra los lunes), Nesto decía que no había stock suficiente aunque lo hubiera. Ahora avisa de que el cliente cierra ese día y, en el picking de un solo pedido, pregunta «¿Aún así quieres asignarle picking?» por si se quiere sacar igualmente.'),
     ('Corregido', N'Facturar rutas ya no falla con las notas de entrega de ruta propia',
@@ -47,6 +49,6 @@ WHERE NOT EXISTS (SELECT 1 FROM Novedades x WHERE x.Version = @version AND x.Tit
 
 SELECT @@ROWCOUNT AS NovedadesInsertadasAhora;
 
--- Comprobación: deben salir 5 filas de este script (más la 462 de Laura cuando se lance el paso 5), sin repetidos.
+-- Comprobación: deben salir 6 filas de este script (más la 462 de Laura cuando se lance el paso 5), sin repetidos.
 SELECT Id, Version, Categoria, Titulo, Ambito, Publicada
 FROM Novedades WHERE Version = @version ORDER BY Id;
