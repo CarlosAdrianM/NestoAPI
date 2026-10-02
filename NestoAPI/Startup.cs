@@ -217,6 +217,14 @@ namespace NestoAPI
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioUbicacionesAlmacen, Infraestructure.PreparacionAlmacen.ServicioUbicacionesAlmacen>();
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioRecepcionCompras, Infraestructure.PreparacionAlmacen.ServicioRecepcionCompras>();
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioRecepcionReposiciones, Infraestructure.PreparacionAlmacen.ServicioRecepcionReposiciones>();
+            // Recibir mercancía, un núcleo y una estrategia por tipo (NestoAPI#559 compras, #553 reposiciones)
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioRecepcionCompras>(_ => Infraestructure.PreparacionAlmacen.RepositorioRecepcionCompras.ConContextoPropio());
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IAvisadorCompras, Infraestructure.PreparacionAlmacen.AvisadorCompras>();
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IOrigenRecepcion>(sp => new Infraestructure.PreparacionAlmacen.OrigenRecepcionCompras(
+                sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IRepositorioRecepcionCompras>(),
+                sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IAvisadorCompras>()));
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IOrigenRecepcion, Infraestructure.PreparacionAlmacen.OrigenRecepcionReposiciones>();
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioRecepciones, Infraestructure.PreparacionAlmacen.ServicioRecepciones>();
 
             // Ventana de facturas pendientes de Verifactu (NestoAPI#522)
             _ = services.AddScoped<Infraestructure.Verifactu.IServicioFacturasPendientesVerifactu, Infraestructure.Verifactu.ServicioFacturasPendientesVerifactu>();

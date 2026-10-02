@@ -531,9 +531,15 @@
     <Compile Include="Controllers\OfertasCombinadasController.cs" />
     <Compile Include="Controllers\OfertasAutorizadasController.cs" />
     <Compile Include="Controllers\AlmacenController.cs" />
+    <Compile Include="Controllers\RecepcionesController.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\AlmacenFotosBultos.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\CasadorEscaneos.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\EscrituraSoloAlmacenAttribute.cs" />
+    <Compile Include="Infraestructure\PreparacionAlmacen\PlanificadorRecepcionCompra.cs" />
+    <Compile Include="Infraestructure\PreparacionAlmacen\AvisadorCompras.cs" />
+    <Compile Include="Infraestructure\PreparacionAlmacen\OrigenesRecepcion.cs" />
+    <Compile Include="Infraestructure\PreparacionAlmacen\TransaccionRecepcionCompras.cs" />
+    <Compile Include="Infraestructure\PreparacionAlmacen\RecepcionesAlmacen.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\RecepcionComprasAlmacen.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\RecepcionReposicionesAlmacen.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\RepositorioPreparacionAlmacen.cs" />
@@ -542,6 +548,7 @@
     <Compile Include="Infraestructure\PreparacionAlmacen\ServicioPreparacionAlmacen.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\UbicacionesAlmacen.cs" />
     <Compile Include="Models\PreparacionAlmacen\PreparacionAlmacenDTO.cs" />
+    <Compile Include="Models\PreparacionAlmacen\RecepcionesDTO.cs" />
     <Compile Include="Controllers\OfertasEscalonadasController.cs" />
     <Compile Include="Controllers\OfertasPermitidasProductoController.cs" />
     <Compile Include="Controllers\OfertasPermitidasFamiliaController.cs" />

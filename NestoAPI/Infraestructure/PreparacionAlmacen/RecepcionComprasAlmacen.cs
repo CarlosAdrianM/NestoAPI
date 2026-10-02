@@ -1,8 +1,11 @@
+﻿using NestoAPI.Infraestructure.Exceptions;
+using NestoAPI.Infraestructure.PedidosCompra;
 using NestoAPI.Models;
 using NestoAPI.Models.PreparacionAlmacen;
 using System;
 using System.Collections.Generic;
 using System.Data.Entity;
+using System.Data.SqlClient;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -12,6 +15,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     public class FilaRecepcionCompra
     {
         public int LineaPedido { get; set; }
+        /// <summary>El pedido de compra de la línea (en la recepción por proveedor hay varios).</summary>
+        public int Pedido { get; set; }
         public string Proveedor { get; set; }
         public string NombreProveedor { get; set; }
         public string Producto { get; set; }
@@ -24,6 +29,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     {
         Task<List<PedidoCompraPendienteDTO>> LeerPedidosPendientes(string empresa, string almacen);
         Task<List<FilaRecepcionCompra>> LeerLineasPendientes(string empresa, int pedido);
+        /// <summary>NestoAPI#559: las líneas pendientes de todos los pedidos de un proveedor en un almacén.</summary>
+        Task<List<FilaRecepcionCompra>> LeerLineasPendientesProveedor(string empresa, string almacen, string proveedor);
+        /// <summary>NestoAPI#559: terminar una recepción, todo o nada.</summary>
+        Task<ResultadoTerminarRecepcionDTO> EnTransaccion(Func<ITransaccionRecepcionCompra, Task<ResultadoTerminarRecepcionDTO>> trabajo);
     }
 
     /// <summary>
@@ -31,12 +40,35 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     /// de recibir» = línea de producto en estado 1 (las mismas que después albaranea
     /// prdCrearAlbaránCmp, que además exige el visto bueno). Solo lectura.
     /// </summary>
-    public class RepositorioRecepcionCompras : IRepositorioRecepcionCompras
+    public class RepositorioRecepcionCompras : IRepositorioRecepcionCompras, IDisposable
     {
         private readonly Database baseDeDatos;
+        private readonly NVEntities db;
+        private readonly IPedidosCompraService pedidosCompra;
+        private bool contextoPropio;
 
-        public RepositorioRecepcionCompras(NVEntities db) : this(db.Database)
+        public RepositorioRecepcionCompras(NVEntities db) : this(db, null)
         {
+        }
+
+        internal RepositorioRecepcionCompras(NVEntities db, IPedidosCompraService pedidosCompra) : this(db.Database)
+        {
+            this.db = db;
+            this.pedidosCompra = pedidosCompra ?? new PedidosCompraService();
+        }
+
+        /// <summary>Para el contenedor de dependencias: crea su contexto y lo libera al acabar la petición.</summary>
+        public static RepositorioRecepcionCompras ConContextoPropio()
+        {
+            return new RepositorioRecepcionCompras(new NVEntities()) { contextoPropio = true };
+        }
+
+        public void Dispose()
+        {
+            if (contextoPropio)
+            {
+                db?.Dispose();
+            }
         }
 
         internal RepositorioRecepcionCompras(Database baseDeDatos)
@@ -44,9 +76,11 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             this.baseDeDatos = baseDeDatos;
         }
 
-        // Hay líneas de tipo producto sin producto (un comentario tecleado): no son mercancía
-        private const string FILTRO_LINEAS_DE_PRODUCTO =
-            "l.Estado = 1 AND l.[TipoLínea] = '1' AND l.Cantidad > 0 AND l.Producto IS NOT NULL AND RTRIM(l.Producto) <> ''";
+        // Hay líneas de tipo producto sin producto (un comentario tecleado): no son mercancía.
+        // NestoAPI#559: sin visto bueno no se espera (está pendiente de Compras, p. ej. un exceso recibido por
+        // almacén) y prdCrearAlbaránCmp tampoco la albaranea.
+        internal const string FILTRO_LINEAS_DE_PRODUCTO =
+            "l.Estado = 1 AND l.VistoBueno = 1 AND l.[TipoLínea] = '1' AND l.Cantidad > 0 AND l.Producto IS NOT NULL AND RTRIM(l.Producto) <> ''";
 
         internal const string SQL_PEDIDOS_PENDIENTES = @"
 SELECT l.[Número] AS Pedido, RTRIM(MAX(l.[NºProveedor])) AS Proveedor, RTRIM(MAX(pr.Nombre)) AS NombreProveedor,
@@ -59,15 +93,22 @@ WHERE l.Empresa = @p0 AND l.[Almacén] = @p1 AND " + FILTRO_LINEAS_DE_PRODUCTO +
 GROUP BY l.[Número]
 ORDER BY MIN(l.[FechaRecepción]), l.[Número]";
 
-        internal const string SQL_LINEAS_PENDIENTES = @"
-SELECT l.[NºOrden] AS LineaPedido, RTRIM(l.[NºProveedor]) AS Proveedor, RTRIM(pr.Nombre) AS NombreProveedor,
+        private const string COLUMNAS_LINEA = @"
+SELECT l.[NºOrden] AS LineaPedido, l.[Número] AS Pedido, RTRIM(l.[NºProveedor]) AS Proveedor, RTRIM(pr.Nombre) AS NombreProveedor,
        RTRIM(l.Producto) AS Producto, RTRIM(l.Texto) AS Descripcion, RTRIM(p.CodBarras) AS CodigoBarras,
        CAST(l.Cantidad AS int) AS Cantidad
 FROM LinPedidoCmp l
      LEFT JOIN Productos p ON p.Empresa = l.Empresa AND p.[Número] = l.Producto
-     LEFT JOIN Proveedores pr ON pr.Empresa = l.Empresa AND pr.[Número] = l.[NºProveedor] AND pr.Contacto = l.Contacto
+     LEFT JOIN Proveedores pr ON pr.Empresa = l.Empresa AND pr.[Número] = l.[NºProveedor] AND pr.Contacto = l.Contacto";
+
+        internal const string SQL_LINEAS_PENDIENTES = COLUMNAS_LINEA + @"
 WHERE l.Empresa = @p0 AND l.[Número] = @p1 AND " + FILTRO_LINEAS_DE_PRODUCTO + @"
 ORDER BY l.[NºOrden]";
+
+        // NestoAPI#559: la recepción es por proveedor (todos sus pedidos abiertos en el almacén)
+        internal const string SQL_LINEAS_PENDIENTES_PROVEEDOR = COLUMNAS_LINEA + @"
+WHERE l.Empresa = @p0 AND l.[Almacén] = @p1 AND l.[NºProveedor] = @p2 AND " + FILTRO_LINEAS_DE_PRODUCTO + @"
+ORDER BY l.[Número], l.[NºOrden]";
 
         public Task<List<PedidoCompraPendienteDTO>> LeerPedidosPendientes(string empresa, string almacen)
         {
@@ -77,6 +118,67 @@ ORDER BY l.[NºOrden]";
         public Task<List<FilaRecepcionCompra>> LeerLineasPendientes(string empresa, int pedido)
         {
             return baseDeDatos.SqlQuery<FilaRecepcionCompra>(SQL_LINEAS_PENDIENTES, empresa, pedido).ToListAsync();
+        }
+
+        public Task<List<FilaRecepcionCompra>> LeerLineasPendientesProveedor(string empresa, string almacen, string proveedor)
+        {
+            return baseDeDatos.SqlQuery<FilaRecepcionCompra>(SQL_LINEAS_PENDIENTES_PROVEEDOR, empresa, almacen, proveedor).ToListAsync();
+        }
+
+        /// <summary>
+        /// Todo o nada. prdCrearAlbaránCmp abre y cierra su propia transacción (anidada en esta) y, si falla, hace
+        /// ROLLBACK de todo: entonces no queda transacción que deshacer y el error del procedimiento es lo que se cuenta.
+        /// </summary>
+        public async Task<ResultadoTerminarRecepcionDTO> EnTransaccion(Func<ITransaccionRecepcionCompra, Task<ResultadoTerminarRecepcionDTO>> trabajo)
+        {
+            if (db == null)
+            {
+                throw new InvalidOperationException("Para terminar una recepción hace falta el contexto de datos completo.");
+            }
+            using (DbContextTransaction transaccion = db.Database.BeginTransaction())
+            {
+                try
+                {
+                    ResultadoTerminarRecepcionDTO resultado = await trabajo(new TransaccionRecepcionComprasSql(db, pedidosCompra)).ConfigureAwait(false);
+                    transaccion.Commit();
+                    return resultado;
+                }
+                catch (Exception ex)
+                {
+                    Deshacer(transaccion);
+                    SqlException sql = BuscarSqlException(ex);
+                    if (sql != null && sql.Class >= 11 && sql.Class <= 16)
+                    {
+                        // Avisos del propio procedimiento («No hay líneas para albaranear», ubicaciones…) o de una restricción
+                        throw new NestoBusinessException(TransaccionRecepcionComprasSql.Traducir(sql), ex);
+                    }
+                    throw;
+                }
+            }
+        }
+
+        private static void Deshacer(DbContextTransaction transaccion)
+        {
+            try
+            {
+                transaccion.Rollback();
+            }
+            catch (Exception)
+            {
+                // El ROLLBACK del procedimiento ya la ha deshecho: no queda nada que deshacer
+            }
+        }
+
+        private static SqlException BuscarSqlException(Exception ex)
+        {
+            for (Exception actual = ex; actual != null; actual = actual.InnerException)
+            {
+                if (actual is SqlException sql)
+                {
+                    return sql;
+                }
+            }
+            return null;
         }
     }
 

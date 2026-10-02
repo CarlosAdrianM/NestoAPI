@@ -135,6 +135,33 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
 
         [TestMethod]
         [TestCategory("Integracion")]
+        public async Task Integracion_RecepcionPorProveedor_LasConsultasCasanConLosDTO()
+        {
+            // NestoAPI#559: solo lectura. La de LeerLineasBloqueando se lanza dentro de una transacción que se deshace
+            // (el UPDLOCK no deja nada bloqueado al salir).
+            using (DbContext contexto = Abrir())
+            {
+                var repositorio = new RepositorioRecepcionCompras(contexto.Database);
+                PedidoCompraPendienteDTO pedido = (await repositorio.LeerPedidosPendientes(EMPRESA, "ALG")).First();
+
+                List<FilaRecepcionCompra> delProveedor = await repositorio.LeerLineasPendientesProveedor(EMPRESA, "ALG", pedido.Proveedor);
+                Assert.IsTrue(delProveedor.Any(l => l.Pedido == pedido.Pedido));
+                Assert.IsTrue(delProveedor.All(l => l.Proveedor == pedido.Proveedor && l.Cantidad > 0));
+
+                using (DbContextTransaction transaccion = contexto.Database.BeginTransaction())
+                {
+                    List<LineaCompraPendiente> lineas = await contexto.Database.SqlQuery<LineaCompraPendiente>(
+                        TransaccionRecepcionComprasSql.SQL_LINEAS_BLOQUEANDO, EMPRESA, "ALG", pedido.Proveedor).ToListAsync();
+                    transaccion.Rollback();
+
+                    Assert.AreEqual(delProveedor.Count, lineas.Count);
+                    Assert.IsTrue(lineas.All(l => l.VistoBueno && l.Precio >= 0 && l.FechaPedido.Year > 2000));
+                }
+            }
+        }
+
+        [TestMethod]
+        [TestCategory("Integracion")]
         public async Task Integracion_LeeLasReposicionesPendientesDeCadaAlmacen()
         {
             using (DbContext contexto = Abrir())
