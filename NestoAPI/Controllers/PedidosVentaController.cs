@@ -1579,6 +1579,10 @@ namespace NestoAPI.Controllers
                 errorPersonalizado("No se pueden mezclar pedidos con presupuestos: el guardado dejaría líneas en presupuesto junto a líneas pendientes");
             }
 
+            // Sugerencia 462: un pedido que solo lleva cursos va en CV o no se puede facturar
+            cabPedidoVta.Serie = SerieSegunLineas.Resolver(cabPedidoVta.Serie, cabPedidoVta.Empresa, lineasVivasTrasElPut);
+            pedido.serie = cabPedidoVta.Serie;
+
             // Validación: verificar que ninguna línea tenga TipoLinea NULL
             var lineasConTipoNull = cabPedidoVta.LinPedidoVtas
                 .Where(l => l.TipoLinea == null
@@ -2051,6 +2055,10 @@ namespace NestoAPI.Controllers
             }
 
             _ = db.LinPedidoVtas.AddRange(lineasPedidoInsertar);
+
+            // Sugerencia 462: un pedido que solo lleva cursos va en CV o no se puede facturar
+            cabecera.Serie = SerieSegunLineas.Resolver(cabecera.Serie, cabecera.Empresa, lineasPedidoInsertar);
+            pedido.serie = cabecera.Serie;
 
             // Actualizamos el contador de ofertas
             if ((int)maxNumeroOferta != 0)

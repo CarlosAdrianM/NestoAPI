@@ -522,6 +522,7 @@
     <Compile Include="Infrastructure\PedidosVenta\GestorPortesTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\SelectorAlmacenTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\TransicionPresupuestoTests.cs" />
+    <Compile Include="Infrastructure\PedidosVenta\SerieSegunLineasTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\SugeridorModoServicioTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\ModosServicioPermitidosTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\ClasificadorCausasModoServicioTests.cs" />
