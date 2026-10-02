@@ -1,6 +1,7 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.NotasEntrega;
+using NestoAPI.Infraestructure.ExtractosProducto;
 using NestoAPI.Models;
 using NestoAPI.Tests.Helpers;
 using System;
@@ -24,7 +25,7 @@ namespace NestoAPI.Tests.Infrastructure
         private List<ExtractoRuta> extractosRuta;
         private List<Ubicacion> ubicacionesBd;
         // prdExtrProducto no se puede lanzar sin BD: se registra la llamada.
-        private List<(SqlParameter Empresa, SqlParameter Diario)> llamadasPrdExtrProducto;
+        private List<(string Empresa, string Diario)> llamadasPrdExtrProducto;
 
         [TestInitialize]
         public void Setup()
@@ -33,15 +34,21 @@ namespace NestoAPI.Tests.Infrastructure
             contadores = new List<ContadorGlobal> { new ContadorGlobal { NotaEntrega = 1000, TraspasoAlmacén = 5000 } };
             extractosRuta = new List<ExtractoRuta>();
             ubicacionesBd = new List<Ubicacion>();
-            llamadasPrdExtrProducto = new List<(SqlParameter, SqlParameter)>();
+            llamadasPrdExtrProducto = new List<(string, string)>();
             A.CallTo(() => db.ContadoresGlobales).Returns(DbSetCon(contadores));
             A.CallTo(() => db.ExtractoRutas).Returns(DbSetCon(extractosRuta));
             A.CallTo(() => db.Ubicaciones).Returns(DbSetCon(ubicacionesBd));
-            servicio = new ServicioNotasEntrega(db, (empresa, diario) =>
-            {
-                llamadasPrdExtrProducto.Add((empresa, diario));
-                return Task.FromResult(1);
-            });
+            // El servicio de extractos de verdad añade las líneas; solo el procedimiento se registra en vez de lanzarlo
+            var extractos = A.Fake<IServicioExtractoProducto>();
+            A.CallTo(() => extractos.CrearLineas(A<NVEntities>.Ignored, A<List<PreExtrProducto>>.Ignored))
+                .ReturnsLazily((NVEntities d, List<PreExtrProducto> l) => new ServicioExtractoProducto().CrearLineas(d, l));
+            A.CallTo(() => extractos.ContabilizarDiario(A<NVEntities>.Ignored, A<string>.Ignored, A<string>.Ignored, A<string>.Ignored))
+                .ReturnsLazily((NVEntities d, string empresa, string diario, string u) =>
+                {
+                    llamadasPrdExtrProducto.Add((empresa, diario));
+                    return Task.FromResult(1);
+                });
+            servicio = new ServicioNotasEntrega(db, extractos);
         }
 
         private static DbSet<T> DbSetCon<T>(List<T> datos) where T : class
@@ -766,8 +773,8 @@ namespace NestoAPI.Tests.Infrastructure
 
             // Verificar que prdExtrProducto se ejecutó con los parámetros correctos
             Assert.AreEqual(1, llamadasPrdExtrProducto.Count, "prdExtrProducto una vez");
-            Assert.AreEqual("1", llamadasPrdExtrProducto[0].Empresa.Value.ToString());
-            Assert.AreEqual(Constantes.DiariosProducto.ENTREGA_FACTURADA, llamadasPrdExtrProducto[0].Diario.Value.ToString());
+            Assert.AreEqual("1", llamadasPrdExtrProducto[0].Empresa.Trim());
+            Assert.AreEqual(Constantes.DiariosProducto.ENTREGA_FACTURADA, llamadasPrdExtrProducto[0].Diario);
         }
 
         [TestMethod]

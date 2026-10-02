@@ -994,6 +994,7 @@
     <Compile Include="Infraestructure\Direcciones\ServicioDireccionesGoogle.cs" />
     <Compile Include="Models\Direcciones\DireccionesDTO.cs" />
     <Compile Include="Infraestructure\UsuarioAuditoriaHelper.cs" />
+    <Compile Include="Infraestructure\ExtractosProducto\ServicioExtractoProducto.cs" />
     <Compile Include="Infraestructure\ElmahHelper.cs" />
     <Compile Include="Infraestructure\ServirJunto\IServicioValidarServirJunto.cs" />
     <Compile Include="Infraestructure\ServirJunto\ServicioValidarServirJunto.cs" />

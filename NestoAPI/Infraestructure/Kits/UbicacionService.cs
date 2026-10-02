@@ -1,4 +1,5 @@
-﻿using NestoAPI.Models;
+﻿using NestoAPI.Infraestructure.ExtractosProducto;
+using NestoAPI.Models;
 using NestoAPI.Models.Kits;
 using System;
 using System.Collections.Generic;
@@ -12,6 +13,17 @@ namespace NestoAPI.Infraestructure.Kits
 {
     public class UbicacionService : IUbicacionService
     {
+        private readonly IServicioExtractoProducto extractos;
+
+        public UbicacionService() : this(null)
+        {
+        }
+
+        internal UbicacionService(IServicioExtractoProducto extractos)
+        {
+            this.extractos = extractos ?? new ServicioExtractoProducto();
+        }
+
         public async Task<int> PersistirMontarKit(List<PreExtractoProductoDTO> preExtractosUbicados)
         {
             using (var db = new NVEntities())
@@ -39,7 +51,7 @@ namespace NestoAPI.Infraestructure.Kits
                             {
                                 if (ubicacion.Estado == Constantes.Ubicaciones.ESTADO_REGISTRO_MONTAR_KITS)
                                 {
-                                    db.PreExtrProductos.Add(new PreExtrProducto
+                                    _ = await extractos.CrearLineas(db, new List<PreExtrProducto> { new PreExtrProducto
                                     {
                                         Empresa = preExtracto.Empresa,
                                         Diario = preExtracto.Diario,
@@ -59,7 +71,7 @@ namespace NestoAPI.Infraestructure.Kits
                                         Texto = preExtracto.Texto,
                                         Usuario = preExtracto.Usuario,
                                         Fecha_Modificación = DateTime.Now
-                                    });
+                                    } });
                                 }
                                 if (ubicacion.Id == 0 && elAlmacenTieneControlDeUbicaciones)
                                 {
@@ -128,17 +140,9 @@ namespace NestoAPI.Infraestructure.Kits
                         }
                         db.SaveChanges();
 
-                        // Parte 2: Ejecutar el procedimiento almacenado
-                        var empresaParametro = new SqlParameter("@Empresa", SqlDbType.Char, 3)
-                        {
-                            Value = preExtractosUbicados[0].Empresa
-                        };
-
-                        var diarioParametro = new SqlParameter("@Diario", SqlDbType.Char, 10)
-                        {
-                            Value = preExtractosUbicados[0].Diario
-                        };
-                        var resultadoProcedimiento = await db.Database.ExecuteSqlCommandAsync("EXEC prdExtrProducto @Empresa, @Diario", empresaParametro, diarioParametro);
+                        // Parte 2: contabilizar el diario (prdExtrProducto, por su único punto de llamada)
+                        var resultadoProcedimiento = await extractos.ContabilizarDiario(db,
+                            preExtractosUbicados[0].Empresa, preExtractosUbicados[0].Diario, null);
 
                         // Verificar el resultado del procedimiento almacenado si es necesario
                         if (resultadoProcedimiento <= 0)

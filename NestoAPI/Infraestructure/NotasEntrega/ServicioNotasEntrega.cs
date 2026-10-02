@@ -1,6 +1,8 @@
+﻿using NestoAPI.Infraestructure.ExtractosProducto;
 using NestoAPI.Models;
 using NestoAPI.Models.Facturas;
 using System;
+using System.Collections.Generic;
 using System.Data.Entity;
 using System.Data.SqlClient;
 using System.Data;
@@ -16,21 +18,20 @@ namespace NestoAPI.Infraestructure.NotasEntrega
     public class ServicioNotasEntrega : IServicioNotasEntrega
     {
         private readonly NVEntities db;
-        private readonly Func<SqlParameter, SqlParameter, Task<int>> ejecutarPrdExtrProducto;
+        private readonly IServicioExtractoProducto extractos;
 
         public ServicioNotasEntrega(NVEntities db) : this(db, null)
         {
         }
 
         /// <summary>
-        /// NestoAPI#313: prdExtrProducto se lanza por <c>db.Database</c>, que no es virtual y no se puede
-        /// falsear; los tests pasan aquí su propia forma de "ejecutarlo". En producción (null) es la de siempre.
+        /// NestoAPI#313: prdExtrProducto se lanza por db.Database, que no es virtual y no se puede falsear; los tests
+        /// pasan aquí su propio servicio de extractos. En producción (null), el de siempre (único punto de llamada).
         /// </summary>
-        internal ServicioNotasEntrega(NVEntities db, Func<SqlParameter, SqlParameter, Task<int>> ejecutarPrdExtrProducto)
+        internal ServicioNotasEntrega(NVEntities db, IServicioExtractoProducto extractos)
         {
             this.db = db ?? throw new ArgumentNullException(nameof(db));
-            this.ejecutarPrdExtrProducto = ejecutarPrdExtrProducto
-                ?? ((empresa, diario) => this.db.Database.ExecuteSqlCommandAsync("EXEC prdExtrProducto @Empresa, @Diario", empresa, diario));
+            this.extractos = extractos ?? new ServicioExtractoProducto();
         }
 
         /// <summary>
@@ -223,16 +224,7 @@ namespace NestoAPI.Infraestructure.NotasEntrega
                 System.Diagnostics.Debug.WriteLine($"     [ServicioNotasEntrega] Ejecutando prdExtrProducto para reducir stock (diario={Constantes.DiariosProducto.ENTREGA_FACTURADA})");
                 try
                 {
-                    var empresaParametro = new SqlParameter("@Empresa", SqlDbType.Char, 2)
-                    {
-                        Value = pedido.Empresa
-                    };
-                    var diarioParametro = new SqlParameter("@Diario", SqlDbType.Char, 10)
-                    {
-                        Value = Constantes.DiariosProducto.ENTREGA_FACTURADA
-                    };
-
-                    var resultadoProcedimiento = await ejecutarPrdExtrProducto(empresaParametro, diarioParametro);
+                    var resultadoProcedimiento = await extractos.ContabilizarDiario(db, pedido.Empresa, Constantes.DiariosProducto.ENTREGA_FACTURADA, null);
 
                     System.Diagnostics.Debug.WriteLine($"     [ServicioNotasEntrega] prdExtrProducto ejecutado correctamente. Filas afectadas: {resultadoProcedimiento}");
                 }
@@ -276,7 +268,7 @@ namespace NestoAPI.Infraestructure.NotasEntrega
                 Estado = 0 // Pendiente de procesar
             };
 
-            _ = db.PreExtrProductos.Add(preExtr);
+            _ = await extractos.CrearLineas(db, new List<PreExtrProducto> { preExtr });
 
             // Nota: prdExtrProducto se ejecutará automáticamente al finalizar el procesamiento de la nota de entrega
             // para procesar todos los registros de PreExtrProducto con diario _EntregFac y actualizar el stock.

@@ -201,6 +201,8 @@ namespace NestoAPI
             _ = services.AddScoped<IServicioReclamacionDeuda, ServicioReclamacionDeuda>();
             _ = services.AddScoped<IServicioPagos, ServicioPagos>();
             _ = services.AddScoped<IContabilidadService, ContabilidadService>();
+            // prdExtrProducto y PreExtrProducto, con la misma filosofía que ContabilidadService (un único punto de llamada)
+            _ = services.AddScoped<Infraestructure.ExtractosProducto.IServicioExtractoProducto, Infraestructure.ExtractosProducto.ServicioExtractoProducto>();
             _ = services.AddScoped<ILectorParametrosUsuario, LectorParametrosUsuario>();
 
             // Registro centralizado de errores de clientes en ELMAH (ErroresController)
