@@ -1,4 +1,4 @@
-<#
+﻿<#
     Ariadna: crea el rol «Almacén» en Identity (si no existe) y mete en él a los usuarios que se
     indiquen. Desde la API con el permiso de escritura (EscrituraSoloAlmacenAttribute), en api/Almacen
     leer basta con estar identificado, pero ESCRIBIR (escaneos, fotos de bultos, ubicar…) pide el rol
@@ -27,7 +27,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 if ($Usuarios -contains "RevisionGoogle") {
-    throw "RevisionGoogle no puede tener el rol $Rol: es el usuario de los revisores de Google Play (solo lectura)."
+    throw "RevisionGoogle no puede tener el rol ${Rol}: es el usuario de los revisores de Google Play (solo lectura)."
 }
 
 if ($Simular) {
