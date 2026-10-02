@@ -247,6 +247,29 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             }
         }
 
+        /// <summary>
+        /// Parte una línea en dos: la original se queda con <paramref name="cantidad"/> y la nueva (añadida al contexto) con
+        /// el resto, las dos con sus importes recalculados. Null si no queda nada que partir. Es el único sitio que parte
+        /// líneas: lo usan el picking (GeneradorPendientes) y la salida de Ariadna al quitar lo que falta (NestoAPI#556).
+        /// </summary>
+        public LinPedidoVta DividirLinea(NVEntities db, LinPedidoVta linea, short cantidad)
+        {
+            if (linea.Cantidad <= cantidad)
+            {
+                return null; // no podemos dejar una cantidad mayor de la que ya hay
+            }
+
+            LinPedidoVta lineaNueva = (LinPedidoVta)db.Entry(linea).CurrentValues.ToObject();
+            lineaNueva.Cantidad -= cantidad;
+            CalcularImportesLinea(lineaNueva);
+            _ = db.LinPedidoVtas.Add(lineaNueva);
+
+            linea.Cantidad = cantidad;
+            CalcularImportesLinea(linea);
+
+            return lineaNueva;
+        }
+
         // Si pongo public, lo confunde con el método POST, porque solo llevan un parámetro
         public void CalcularImportesLinea(LinPedidoVta linea)
         {

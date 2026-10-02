@@ -2291,20 +2291,7 @@ namespace NestoAPI.Controllers
 
         public LinPedidoVta dividirLinea(NVEntities db, LinPedidoVta linea, short cantidad)
         {
-            if (linea.Cantidad <= cantidad)
-            {
-                return null; // no podemos dejar una cantidad mayor de la que ya hay
-            }
-
-            LinPedidoVta lineaNueva = (LinPedidoVta)db.Entry(linea).CurrentValues.ToObject();
-            lineaNueva.Cantidad -= cantidad;
-            gestor.CalcularImportesLinea(lineaNueva);
-            _ = db.LinPedidoVtas.Add(lineaNueva);
-
-            linea.Cantidad = cantidad;
-            gestor.CalcularImportesLinea(linea);
-
-            return lineaNueva;
+            return gestor.DividirLinea(db, linea, cantidad);
         }
 
         [HttpPost]
