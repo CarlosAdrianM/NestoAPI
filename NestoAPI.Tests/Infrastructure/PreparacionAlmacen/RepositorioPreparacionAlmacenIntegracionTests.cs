@@ -1,4 +1,4 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.PreparacionAlmacen;
 using NestoAPI.Models.PreparacionAlmacen;
 using NestoAPI.Tests.Helpers;
@@ -180,6 +180,32 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
                     }
                 }
                 Assert.AreEqual(0, (await repositorio.LeerLineas(EMPRESA, "ALG", -1)).Count);
+            }
+        }
+
+        [TestMethod]
+        [TestCategory("Integracion")]
+        public async Task Integracion_LeeLasReposicionesPorSalirYSuRecorrido()
+        {
+            // NestoAPI#556: la salida de un traspaso (diario de salida del origen) y sus huecos reservados (estado 4).
+            // El diario «General» de Algete solo tiene filas mientras un traspaso está sin contabilizar: puede salir
+            // vacío; lo que se comprueba es que las consultas casan con la base de datos y con los DTO.
+            using (DbContext contexto = Abrir())
+            {
+                var repositorio = new RepositorioPreparacionAlmacen(contexto.Database);
+
+                List<ReposicionPorSalir> porSalir = await repositorio.LeerReposicionesPorSalir(EMPRESA, "ALG");
+                Assert.IsTrue(porSalir.All(r => r.Traspaso > 0 && r.Lineas > 0 && r.Unidades > 0));
+                foreach (ReposicionPorSalir reposicion in porSalir.Take(2))
+                {
+                    ReposicionSalida salida = await repositorio.LeerReposicionSalida(EMPRESA, reposicion.Traspaso);
+                    Assert.IsNotNull(salida);
+                    Assert.IsTrue(salida.Lineas.All(l => l.Cantidad > 0 && !string.IsNullOrEmpty(l.Producto)));
+                }
+                // Un traspaso ya contabilizado (02/10/26, ALG → REI): no queda nada por sacar
+                Assert.IsNull(await repositorio.LeerReposicionSalida(EMPRESA, 80872));
+                _ = await repositorio.LeerLecturasDeSalida(EMPRESA, "REPO", 80872);
+                _ = await repositorio.LeerLecturasDeSalida(EMPRESA, "PICK", PICKING);
             }
         }
     }

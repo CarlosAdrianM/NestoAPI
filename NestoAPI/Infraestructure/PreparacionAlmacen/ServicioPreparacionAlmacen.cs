@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure.Exceptions;
+﻿using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Models;
 using NestoAPI.Models.PreparacionAlmacen;
 using System;
@@ -21,6 +21,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         Task<List<RecogidaPendienteDTO>> LeerRecogidasPendientes(string empresa, string almacen);
         /// <summary>El recorrido de una recogida con cómo va. Null si no existe (o es de un tipo que todavía no se ofrece).</summary>
         Task<RecogidaAlmacenDTO> LeerRecogida(string empresa, string tipo, int numero);
+        /// <summary>NestoAPI#556: da por terminada una salida (picking o reposición) si no queda nada sin resolver.</summary>
+        Task<ResultadoTerminarSalida> TerminarRecogida(string empresa, string tipo, int numero, System.Security.Principal.IPrincipal usuario);
         Task<PackingAlmacenDTO> LeerPacking(string empresa, int picking);
         /// <summary>El packing de un solo pedido, con su picking en curso. Null si el pedido no tiene picking.</summary>
         Task<PackingAlmacenDTO> LeerPackingDePedido(string empresa, int pedido);
@@ -74,6 +76,14 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         private readonly IAlmacenFotosBultos fotos;
         private readonly NVEntities dbPropio;
         private readonly string claveEnlacesFotos;
+        private ServicioSalidas salidas;
+
+        /// <summary>NestoAPI#556: recoger es una salida de mercancía; el núcleo y sus estrategias, espejo de la recepción.</summary>
+        private ServicioSalidas Salidas => salidas ?? (salidas = new ServicioSalidas(new IOrigenSalida[]
+        {
+            new OrigenSalidaPicking(repositorio),
+            new OrigenSalidaReposicion(repositorio)
+        }));
 
         public ServicioPreparacionAlmacen()
         {
@@ -137,37 +147,19 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             return MontarEstadoPicking(empresa, picking, lineas, lecturas);
         }
 
-        public async Task<List<RecogidaPendienteDTO>> LeerRecogidasPendientes(string empresa, string almacen)
+        public Task<List<RecogidaPendienteDTO>> LeerRecogidasPendientes(string empresa, string almacen)
         {
-            // De momento solo los pickings: la reposición a tienda no tiene documento propio hasta
-            // que se genera (#553). Cuando lo tenga, se suma aquí y la app no cambia.
-            return (await repositorio.LeerPickingsEnCurso(empresa, almacen).ConfigureAwait(false))
-                .Select(p => new RecogidaPendienteDTO
-                {
-                    Tipo = CasadorEscaneos.ORIGEN_PICKING,
-                    Numero = p.Picking,
-                    Destino = CasadorEscaneos.DESTINO_PICKING,
-                    Lineas = p.Lineas,
-                    Pedidos = p.Pedidos,
-                    Unidades = p.Unidades
-                })
-                .ToList();
+            return Salidas.LeerPendientes(empresa, almacen);
         }
 
-        public async Task<RecogidaAlmacenDTO> LeerRecogida(string empresa, string tipo, int numero)
+        public Task<RecogidaAlmacenDTO> LeerRecogida(string empresa, string tipo, int numero)
         {
-            if (CasadorEscaneos.NormalizarTipoOrigen(tipo) != CasadorEscaneos.ORIGEN_PICKING)
-            {
-                return null;
-            }
-            List<LineaPickingAlmacenDTO> recorrido = CasadorEscaneos.OrdenarRecorrido(
-                await repositorio.LeerLineasPicking(empresa, numero).ConfigureAwait(false));
-            if (recorrido.Count == 0)
-            {
-                return null;
-            }
-            List<LecturaPickingAlmacen> lecturas = await repositorio.LeerLecturasDelPicking(empresa, numero).ConfigureAwait(false);
-            return MontarRecogida(empresa, CasadorEscaneos.ORIGEN_PICKING, numero, CasadorEscaneos.DESTINO_PICKING, recorrido, lecturas);
+            return Salidas.LeerRecogida(empresa, tipo, numero);
+        }
+
+        public Task<ResultadoTerminarSalida> TerminarRecogida(string empresa, string tipo, int numero, System.Security.Principal.IPrincipal usuario)
+        {
+            return Salidas.Terminar(empresa, tipo, numero, usuario);
         }
 
         internal static RecogidaAlmacenDTO MontarRecogida(string empresa, string tipo, int numero, string destino,

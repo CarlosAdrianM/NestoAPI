@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure.PreparacionAlmacen;
@@ -276,6 +276,63 @@ namespace NestoAPI.Tests.Controllers
             A.CallTo(() => servicio.EnlaceFotoBulto(7)).Returns(Task.FromResult<Uri>(null));
 
             Assert.IsInstanceOfType(await controller.GetFotoBulto(7), typeof(NotFoundResult));
+        }
+
+        // ---- NestoAPI#556: terminar una salida (picking o reposición) ----
+
+        private void TerminarDevuelve(EstadoTerminarSalida estado, string mensaje = "motivo")
+        {
+            A.CallTo(() => servicio.TerminarRecogida("1", "PICK", 99700, A<IPrincipal>._)).Returns(new ResultadoTerminarSalida
+            {
+                Estado = estado,
+                Mensaje = mensaje,
+                Salida = estado == EstadoTerminarSalida.Terminada ? new ResultadoTerminarSalidaDTO { Tipo = "PICK", Numero = 99700, Terminada = true } : null
+            });
+        }
+
+        [TestMethod]
+        public async Task PostTerminarRecogida_Terminada_DevuelveElResumen()
+        {
+            TerminarDevuelve(EstadoTerminarSalida.Terminada);
+
+            IHttpActionResult resultado = await controller.PostTerminarRecogida("PICK", 99700);
+
+            Assert.IsTrue(((OkNegotiatedContentResult<ResultadoTerminarSalidaDTO>)resultado).Content.Terminada);
+            A.CallTo(() => servicio.TerminarRecogida("1", "PICK", 99700, controller.User)).MustHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task PostTerminarRecogida_SinPermiso_403ConElMotivo()
+        {
+            TerminarDevuelve(EstadoTerminarSalida.SinPermiso, "sin permiso");
+
+            var resultado = (NegotiatedContentResult<string>)await controller.PostTerminarRecogida("PICK", 99700);
+
+            Assert.AreEqual(System.Net.HttpStatusCode.Forbidden, resultado.StatusCode);
+            Assert.AreEqual("sin permiso", resultado.Content);
+        }
+
+        [TestMethod]
+        public async Task PostTerminarRecogida_ConParadasSinResolver_409()
+        {
+            TerminarDevuelve(EstadoTerminarSalida.SinTerminar, "Quedan 2 unidades");
+
+            var resultado = (NegotiatedContentResult<string>)await controller.PostTerminarRecogida("PICK", 99700);
+
+            Assert.AreEqual(System.Net.HttpStatusCode.Conflict, resultado.StatusCode);
+        }
+
+        [TestMethod]
+        public async Task PostTerminarRecogida_NoExiste_404_YTipoMalONoSeTerminaAqui_400()
+        {
+            TerminarDevuelve(EstadoTerminarSalida.NoExiste);
+            Assert.IsInstanceOfType(await controller.PostTerminarRecogida("PICK", 99700), typeof(NotFoundResult));
+
+            TerminarDevuelve(EstadoTerminarSalida.TipoNoValido);
+            Assert.IsInstanceOfType(await controller.PostTerminarRecogida("PICK", 99700), typeof(BadRequestErrorMessageResult));
+
+            TerminarDevuelve(EstadoTerminarSalida.NoSeTerminaAqui);
+            Assert.IsInstanceOfType(await controller.PostTerminarRecogida("PICK", 99700), typeof(BadRequestErrorMessageResult));
         }
     }
 }

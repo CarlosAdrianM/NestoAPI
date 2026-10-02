@@ -1,9 +1,10 @@
-using NestoAPI.Infraestructure;
+﻿using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.PreparacionAlmacen;
 using NestoAPI.Models;
 using NestoAPI.Models.PreparacionAlmacen;
 using System;
 using System.Collections.Generic;
+using System.Net;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
@@ -126,6 +127,32 @@ namespace NestoAPI.Controllers
             }
             RecogidaAlmacenDTO recogida = await servicio.LeerRecogida(Empresa(empresa), tipo, numero).ConfigureAwait(false);
             return recogida == null ? (IHttpActionResult)NotFound() : Ok(recogida);
+        }
+
+        // POST api/Almacen/Recogidas/PICK/99633/Terminar?empresa=1
+        /// <summary>
+        /// NestoAPI#556: el mozo da por terminada una salida (picking o reposición): todo cogido o dado por falta. Lo que
+        /// se hace al terminar depende del tipo; si no queda resuelto, 409 con lo que falta. Sin permiso, 403 con el motivo.
+        /// </summary>
+        [HttpPost]
+        [Route("Recogidas/{tipo}/{numero:int}/Terminar")]
+        [ResponseType(typeof(ResultadoTerminarSalidaDTO))]
+        public async Task<IHttpActionResult> PostTerminarRecogida(string tipo, int numero, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            ResultadoTerminarSalida resultado = await servicio.TerminarRecogida(Empresa(empresa), tipo, numero, User).ConfigureAwait(false);
+            switch (resultado.Estado)
+            {
+                case EstadoTerminarSalida.Terminada:
+                    return Ok(resultado.Salida);
+                case EstadoTerminarSalida.SinPermiso:
+                    return Content(HttpStatusCode.Forbidden, resultado.Mensaje);
+                case EstadoTerminarSalida.SinTerminar:
+                    return Content(HttpStatusCode.Conflict, resultado.Mensaje);
+                case EstadoTerminarSalida.NoExiste:
+                    return NotFound();
+                default:
+                    return BadRequest(resultado.Mensaje);
+            }
         }
 
         // GET api/Almacen/Picking/99633/Packing?empresa=1

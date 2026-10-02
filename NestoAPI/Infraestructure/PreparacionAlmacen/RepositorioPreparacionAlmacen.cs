@@ -1,4 +1,4 @@
-using NestoAPI.Models;
+﻿using NestoAPI.Models;
 using NestoAPI.Models.PreparacionAlmacen;
 using System;
 using System.Collections.Generic;
@@ -53,6 +53,12 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// <summary>Los pickings del almacén con líneas todavía sin servir, el más reciente primero.</summary>
         Task<List<PickingEnCursoDTO>> LeerPickingsEnCurso(string empresa, string almacen);
         Task<List<LecturaPickingAlmacen>> LeerLecturasDelPicking(string empresa, int picking);
+        /// <summary>Lo leído y dado por falta al sacar un documento de cualquier tipo (PICK, REPO).</summary>
+        Task<List<LecturaPickingAlmacen>> LeerLecturasDeSalida(string empresa, string tipoOrigen, int numero);
+        /// <summary>Los traspasos de reposición con la salida del almacén aún sin contabilizar.</summary>
+        Task<List<ReposicionPorSalir>> LeerReposicionesPorSalir(string empresa, string almacen);
+        /// <summary>Lo que sale del almacén de origen en un traspaso, con sus huecos. Null si no queda nada por sacar.</summary>
+        Task<ReposicionSalida> LeerReposicionSalida(string empresa, int traspaso);
         /// <param name="pedido">Null = todos los pedidos del picking.</param>
         Task<List<FilaPackingAlmacen>> LeerLineasPacking(string empresa, int picking, int? pedido);
         /// <summary>El picking que tiene ahora mismo el pedido sin servir, o null si no tiene ninguno.</summary>
@@ -122,6 +128,51 @@ SELECT RTRIM(e.Producto) AS Producto,
 FROM PreparacionEscaneos e
 WHERE e.Empresa = @p0 AND e.TipoOrigen = 'PICK' AND e.NumeroOrigen = @p1 AND e.Fase = 'PICK'
 GROUP BY e.Producto";
+
+        internal const string SQL_LECTURAS_DE_SALIDA = @"
+SELECT RTRIM(e.Producto) AS Producto,
+       CAST(SUM(CASE WHEN e.Metodo <> 'FALTA' THEN e.Cantidad ELSE 0 END) AS int) AS Unidades,
+       CAST(SUM(CASE WHEN e.Metodo = 'FALTA' THEN e.Cantidad ELSE 0 END) AS int) AS Faltas
+FROM PreparacionEscaneos e
+WHERE e.Empresa = @p0 AND e.TipoOrigen = @p1 AND e.NumeroOrigen = @p2 AND e.Fase = 'PICK'
+GROUP BY e.Producto";
+
+        // NestoAPI#556: la salida de un traspaso de reposición son sus filas de PreExtrProducto en el diario de salida
+        // del almacén de origen (Almacenes.DiarioSalidaRep; «General» en Algete), con NºTraspaso y cantidad negativa,
+        // hasta que se contabilizan. El destino es el almacén de las filas de entrada (cantidad positiva) del traspaso.
+        internal const string SQL_REPOSICIONES_POR_SALIR = @"
+SELECT s.[NºTraspaso] AS Traspaso,
+       (SELECT TOP 1 RTRIM(e.[Almacén]) FROM PreExtrProducto e
+        WHERE e.Empresa = s.Empresa AND e.[NºTraspaso] = s.[NºTraspaso] AND e.Cantidad > 0) AS Destino,
+       COUNT(*) AS Lineas, CAST(-SUM(s.Cantidad) AS int) AS Unidades
+FROM PreExtrProducto s
+     INNER JOIN Almacenes a ON a.Empresa = s.Empresa AND a.[Número] = s.[Almacén]
+WHERE s.Empresa = @p0 AND s.[Almacén] = @p1 AND s.Diario = a.DiarioSalidaRep AND s.[NºTraspaso] > 0 AND s.Cantidad < 0
+GROUP BY s.Empresa, s.[NºTraspaso]
+ORDER BY s.[NºTraspaso] DESC";
+
+        internal const string SQL_DESTINO_REPOSICION = @"
+SELECT TOP 1 RTRIM(e.[Almacén]) FROM PreExtrProducto e
+WHERE e.Empresa = @p0 AND e.[NºTraspaso] = @p1 AND e.Cantidad > 0";
+
+        // El hueco sale de la reserva que hace prdUbicarReposicion (Ubicaciones en estado 4 enlazadas por NºOrdenRepo con
+        // la fila de PreExtrProducto); si aún no se ha reservado, la parada va sin hueco. Mismas columnas que SQL_LINEAS_PICKING.
+        internal const string SQL_LINEAS_REPOSICION_SALIDA = @"
+SELECT 0 AS Orden, CAST(0 AS bit) AS SinCodigo, CAST(0 AS bit) AS CodigoDuplicado, CAST(NULL AS varchar(11)) AS Ubicacion,
+       RTRIM(s.[Número]) AS Producto,
+       RTRIM(MAX(p.Nombre)) AS Descripcion,
+       RTRIM(MAX(p.CodBarras)) AS CodigoBarras,
+       MAX(p.[Tamaño]) AS Tamano,
+       RTRIM(MAX(p.UnidadMedida)) AS UnidadMedida,
+       CAST(ABS(ISNULL(SUM(u.Cantidad), SUM(s.Cantidad))) AS int) AS Cantidad,
+       RTRIM(u.Pasillo) AS Pasillo, RTRIM(u.Fila) AS Fila, RTRIM(u.Columna) AS Columna
+FROM PreExtrProducto s
+     INNER JOIN Almacenes a ON a.Empresa = s.Empresa AND a.[Número] = s.[Almacén]
+     LEFT JOIN Ubicaciones u ON u.[NºOrdenRepo] = s.[Nº Orden] AND u.Estado = 4
+     LEFT JOIN Productos p ON p.Empresa = s.Empresa AND p.[Número] = s.[Número]
+WHERE s.Empresa = @p0 AND s.[NºTraspaso] = @p1 AND s.Diario = a.DiarioSalidaRep AND s.Cantidad < 0
+GROUP BY s.[Número], u.Pasillo, u.Fila, u.Columna
+HAVING ISNULL(SUM(u.Cantidad), SUM(s.Cantidad)) <> 0";
 
         internal const string SQL_LINEAS_PACKING = @"
 SELECT c.[Número] AS Pedido, RTRIM(c.[Nº Cliente]) AS Cliente, RTRIM(c.Contacto) AS Contacto,
@@ -193,6 +244,29 @@ VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10)";
         public Task<List<LecturaPickingAlmacen>> LeerLecturasDelPicking(string empresa, int picking)
         {
             return baseDeDatos.SqlQuery<LecturaPickingAlmacen>(SQL_LECTURAS_DEL_PICKING, empresa, picking).ToListAsync();
+        }
+
+        public Task<List<LecturaPickingAlmacen>> LeerLecturasDeSalida(string empresa, string tipoOrigen, int numero)
+        {
+            return baseDeDatos.SqlQuery<LecturaPickingAlmacen>(SQL_LECTURAS_DE_SALIDA, empresa, tipoOrigen, numero).ToListAsync();
+        }
+
+        public Task<List<ReposicionPorSalir>> LeerReposicionesPorSalir(string empresa, string almacen)
+        {
+            return baseDeDatos.SqlQuery<ReposicionPorSalir>(SQL_REPOSICIONES_POR_SALIR, empresa, almacen).ToListAsync();
+        }
+
+        public async Task<ReposicionSalida> LeerReposicionSalida(string empresa, int traspaso)
+        {
+            List<LineaPickingAlmacenDTO> lineas = await baseDeDatos.SqlQuery<LineaPickingAlmacenDTO>(SQL_LINEAS_REPOSICION_SALIDA, empresa, traspaso)
+                .ToListAsync().ConfigureAwait(false);
+            if (lineas.Count == 0)
+            {
+                return null;
+            }
+            string destino = (await baseDeDatos.SqlQuery<string>(SQL_DESTINO_REPOSICION, empresa, traspaso).ToListAsync().ConfigureAwait(false))
+                .FirstOrDefault();
+            return new ReposicionSalida { Destino = destino, Lineas = lineas };
         }
 
         public Task<List<FilaPackingAlmacen>> LeerLineasPacking(string empresa, int picking, int? pedido)

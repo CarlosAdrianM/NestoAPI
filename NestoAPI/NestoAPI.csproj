@@ -541,6 +541,7 @@
     <Compile Include="Infraestructure\PreparacionAlmacen\OrigenesRecepcion.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\TransaccionRecepcionCompras.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\RecepcionesAlmacen.cs" />
+    <Compile Include="Infraestructure\PreparacionAlmacen\SalidasAlmacen.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\RecepcionComprasAlmacen.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\RecepcionReposicionesAlmacen.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\RepositorioPreparacionAlmacen.cs" />
@@ -550,6 +551,7 @@
     <Compile Include="Infraestructure\PreparacionAlmacen\UbicacionesAlmacen.cs" />
     <Compile Include="Models\PreparacionAlmacen\PreparacionAlmacenDTO.cs" />
     <Compile Include="Models\PreparacionAlmacen\RecepcionesDTO.cs" />
+    <Compile Include="Models\PreparacionAlmacen\SalidasDTO.cs" />
     <Compile Include="Controllers\OfertasEscalonadasController.cs" />
     <Compile Include="Controllers\OfertasPermitidasProductoController.cs" />
     <Compile Include="Controllers\OfertasPermitidasFamiliaController.cs" />
