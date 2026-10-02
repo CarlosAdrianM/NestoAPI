@@ -1088,6 +1088,47 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void CrearLineaVta_LineaSinUsuario_TomaElUsuarioDelPedido()
+        {
+            // Regresión ELMAH 02/10/26 (Javier, pedido 927535): al ampliar el pedido llegaron dos
+            // líneas nuevas con usuario null y EF las rechazó («El campo Usuario es obligatorio»).
+            var gestor = new GestorPedidosVenta(ServicioParaInmovilizado());
+            var plazoPago = new PlazoPago { DtoProntoPago = 0 };
+            LineaPedidoVentaDTO linea = LineaInmovilizado();
+            linea.usuario = null;
+
+            LinPedidoVta resultado = gestor.CrearLineaVta(linea, PEDIDO, EMPRESA, "G21", plazoPago, "12786", "0", "FW", "MRM", @"NUEVAVISION\Javier");
+
+            Assert.AreEqual(@"NUEVAVISION\Javier", resultado.Usuario);
+        }
+
+        [TestMethod]
+        public void CrearLineaVta_SinUsuarioNiEnLineaNiEnPedido_NoQuedaVacio()
+        {
+            var gestor = new GestorPedidosVenta(ServicioParaInmovilizado());
+            var plazoPago = new PlazoPago { DtoProntoPago = 0 };
+            LineaPedidoVentaDTO linea = LineaInmovilizado();
+            linea.usuario = "  ";
+
+            LinPedidoVta resultado = gestor.CrearLineaVta(linea, PEDIDO, EMPRESA, "G21", plazoPago, "12786", "0", "FW", "MRM");
+
+            Assert.AreEqual(UsuarioAuditoriaHelper.DESCONOCIDO, resultado.Usuario);
+        }
+
+        [TestMethod]
+        public void CrearLineaVta_LineaConUsuario_ConservaElDeLaLinea()
+        {
+            var gestor = new GestorPedidosVenta(ServicioParaInmovilizado());
+            var plazoPago = new PlazoPago { DtoProntoPago = 0 };
+            LineaPedidoVentaDTO linea = LineaInmovilizado();
+            linea.usuario = @"NUEVAVISION\Alfredo";
+
+            LinPedidoVta resultado = gestor.CrearLineaVta(linea, PEDIDO, EMPRESA, "G21", plazoPago, "12786", "0", "FW", "MRM", @"NUEVAVISION\Javier");
+
+            Assert.AreEqual(@"NUEVAVISION\Alfredo", resultado.Usuario);
+        }
+
+        [TestMethod]
         public void CrearLineaVta_LineaInmovilizadoConTextoNull_NoLanzaNRE()
         {
             // NestoAPI#352 parte 1: el inicializador de LinPedidoVta reventaba con
