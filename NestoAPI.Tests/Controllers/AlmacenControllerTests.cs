@@ -282,7 +282,7 @@ namespace NestoAPI.Tests.Controllers
 
         private void TerminarDevuelve(EstadoTerminarSalida estado, string mensaje = "motivo")
         {
-            A.CallTo(() => servicio.TerminarRecogida("1", "PICK", 99700, A<IPrincipal>._)).Returns(new ResultadoTerminarSalida
+            A.CallTo(() => servicio.TerminarRecogida("1", "PICK", 99700, A<IPrincipal>._, A<bool>._)).Returns(new ResultadoTerminarSalida
             {
                 Estado = estado,
                 Mensaje = mensaje,
@@ -298,7 +298,18 @@ namespace NestoAPI.Tests.Controllers
             IHttpActionResult resultado = await controller.PostTerminarRecogida("PICK", 99700);
 
             Assert.IsTrue(((OkNegotiatedContentResult<ResultadoTerminarSalidaDTO>)resultado).Content.Terminada);
-            A.CallTo(() => servicio.TerminarRecogida("1", "PICK", 99700, controller.User)).MustHaveHappened();
+            A.CallTo(() => servicio.TerminarRecogida("1", "PICK", 99700, controller.User, false)).MustHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task PostTerminarRecogida_ConEnsayo_PasaElEnsayoAlServicio()
+        {
+            TerminarDevuelve(EstadoTerminarSalida.Terminada);
+
+            IHttpActionResult resultado = await controller.PostTerminarRecogida("PICK", 99700, ensayo: true);
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<ResultadoTerminarSalidaDTO>));
+            A.CallTo(() => servicio.TerminarRecogida("1", "PICK", 99700, controller.User, true)).MustHaveHappened();
         }
 
         [TestMethod]

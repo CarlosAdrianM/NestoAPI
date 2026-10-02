@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.PreparacionAlmacen;
 using NestoAPI.Models.PreparacionAlmacen;
@@ -20,17 +20,19 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
     {
         private const string EMPRESA = "1";
         private IRepositorioPreparacionAlmacen repositorio;
+        private RepositorioSalidasFalso escrituras;
         private ServicioSalidas servicio;
 
         [TestInitialize]
         public void Preparar()
         {
             repositorio = A.Fake<IRepositorioPreparacionAlmacen>();
+            escrituras = new RepositorioSalidasFalso();
             servicio = new ServicioSalidas(new IOrigenSalida[]
             {
                 new OrigenSalidaPicking(repositorio),
                 new OrigenSalidaReposicion(repositorio)
-            });
+            }, escrituras);
         }
 
         private static IPrincipal Usuario(params string[] grupos)
@@ -134,11 +136,21 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         }
 
         [TestMethod]
-        public async Task Terminar_UnPickingConFaltas_SeTerminaYDiceQueHayQueQuitarlasDelPedido()
+        public async Task Terminar_UnPickingConFaltas_SeTerminaYLasQuitaDeLosPedidos()
         {
             PickingConLecturas(99700,
                 new LecturaPickingAlmacen { Producto = "A", Unidades = 2, Faltas = 1 },
                 new LecturaPickingAlmacen { Producto = "B", Faltas = 1 });
+            escrituras.Transaccion.Faltas = new List<FaltaSalida>
+            {
+                new FaltaSalida { Producto = "A", Cantidad = 1 },
+                new FaltaSalida { Producto = "B", Cantidad = 1 }
+            };
+            escrituras.Transaccion.PiezasPicking = new List<PiezaSalida>
+            {
+                new PiezaSalida { Linea = 1, Pedido = 927600, Ubicacion = 11, Producto = "A", Hueco = "001001001", Cantidad = 3 },
+                new PiezaSalida { Linea = 2, Pedido = 927600, Ubicacion = 12, Producto = "B", Hueco = "002001001", Cantidad = 1 }
+            };
 
             ResultadoTerminarSalida resultado = await servicio.Terminar(EMPRESA, "PICK", 99700, Usuario("Almacén"));
 
@@ -147,6 +159,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             Assert.AreEqual(2, resultado.Salida.UnidadesEnFalta);
             CollectionAssert.AreEquivalent(new[] { "A", "B" }, resultado.Salida.Productos.Where(p => p.Faltas > 0).Select(p => p.Producto).ToList());
             StringAssert.Contains(resultado.Salida.Mensaje, "falta");
+            Assert.AreEqual(2, escrituras.Transaccion.SacadoDePedidos.Count);
         }
 
         [TestMethod]
@@ -174,7 +187,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         }
 
         [TestMethod]
-        public async Task Terminar_UnaReposicion_TodaviaSeCierraEnNesto()
+        public async Task Terminar_UnaReposicion_YaSeTerminaDesdeAqui()
         {
             A.CallTo(() => repositorio.LeerReposicionSalida(EMPRESA, 80872)).Returns(new ReposicionSalida
             {
@@ -186,10 +199,12 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
                 new LecturaPickingAlmacen { Producto = "A", Unidades = 3 }
             });
 
+            escrituras.Transaccion.TraspasosDelDiario = new List<int> { 80872 };
+
             ResultadoTerminarSalida resultado = await servicio.Terminar(EMPRESA, "REPO", 80872, Usuario("Almacén"));
 
-            Assert.AreEqual(EstadoTerminarSalida.NoSeTerminaAqui, resultado.Estado);
-            StringAssert.Contains(resultado.Mensaje, "Nesto");
+            Assert.AreEqual(EstadoTerminarSalida.Terminada, resultado.Estado);
+            Assert.AreEqual(1, escrituras.Transaccion.Contabilizados.Count);
         }
 
         [TestMethod]

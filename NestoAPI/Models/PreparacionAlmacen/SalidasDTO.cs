@@ -18,5 +18,27 @@ namespace NestoAPI.Models.PreparacionAlmacen
         /// <summary>Qué pasa ahora, para enseñárselo al mozo tal cual.</summary>
         public string Mensaje { get; set; }
         public List<DiferenciaPreparacionDTO> Productos { get; set; } = new List<DiferenciaPreparacionDTO>();
+        /// <summary>Lo que se ha cambiado al terminar (o se cambiaría, en un ensayo), una frase por cambio.</summary>
+        public List<string> Cambios { get; set; } = new List<string>();
+
+        /// <summary>
+        /// Ensayo (?ensayo=true, solo Admin o Dirección): el mismo código, dentro de una transacción que se deshace
+        /// siempre. No se ha guardado nada.
+        /// </summary>
+        public bool Ensayo { get; set; }
+        /// <summary>Las filas implicadas antes de terminar (solo en un ensayo).</summary>
+        public List<FilaEnsayoDTO> FilasAntes { get; set; }
+        /// <summary>Las mismas filas justo antes de deshacer (solo en un ensayo que ha ido bien).</summary>
+        public List<FilaEnsayoDTO> FilasDespues { get; set; }
+        /// <summary>El error real (procedimiento, trigger o restricción) si el ensayo ha fallado.</summary>
+        public string ErrorEnsayo { get; set; }
+    }
+
+    /// <summary>Una fila de una tabla en un ensayo, con las columnas que importan en texto.</summary>
+    public class FilaEnsayoDTO
+    {
+        public string Tabla { get; set; }
+        public string Clave { get; set; }
+        public string Datos { get; set; }
     }
 }

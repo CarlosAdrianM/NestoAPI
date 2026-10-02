@@ -22,7 +22,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// <summary>El recorrido de una recogida con cómo va. Null si no existe (o es de un tipo que todavía no se ofrece).</summary>
         Task<RecogidaAlmacenDTO> LeerRecogida(string empresa, string tipo, int numero);
         /// <summary>NestoAPI#556: da por terminada una salida (picking o reposición) si no queda nada sin resolver.</summary>
-        Task<ResultadoTerminarSalida> TerminarRecogida(string empresa, string tipo, int numero, System.Security.Principal.IPrincipal usuario);
+        Task<ResultadoTerminarSalida> TerminarRecogida(string empresa, string tipo, int numero, System.Security.Principal.IPrincipal usuario, bool ensayo = false);
         Task<PackingAlmacenDTO> LeerPacking(string empresa, int picking);
         /// <summary>El packing de un solo pedido, con su picking en curso. Null si el pedido no tiene picking.</summary>
         Task<PackingAlmacenDTO> LeerPackingDePedido(string empresa, int pedido);
@@ -83,12 +83,16 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         {
             new OrigenSalidaPicking(repositorio),
             new OrigenSalidaReposicion(repositorio)
-        }));
+        }, escriturasSalida));
+
+        /// <summary>Dónde escribe la salida al terminar (en las pruebas del servicio, nada: no termina salidas).</summary>
+        private readonly IRepositorioSalidas escriturasSalida;
 
         public ServicioPreparacionAlmacen()
         {
             dbPropio = new NVEntities();
             repositorio = new RepositorioPreparacionAlmacen(dbPropio);
+            escriturasSalida = new RepositorioSalidasSql(dbPropio);
             fotos = new AlmacenFotosBultosAzure();
             claveEnlacesFotos = System.Configuration.ConfigurationManager.AppSettings[EnlacePublicoFotoBulto.CLAVE_CONFIGURACION];
         }
@@ -157,9 +161,9 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             return Salidas.LeerRecogida(empresa, tipo, numero);
         }
 
-        public Task<ResultadoTerminarSalida> TerminarRecogida(string empresa, string tipo, int numero, System.Security.Principal.IPrincipal usuario)
+        public Task<ResultadoTerminarSalida> TerminarRecogida(string empresa, string tipo, int numero, System.Security.Principal.IPrincipal usuario, bool ensayo = false)
         {
-            return Salidas.Terminar(empresa, tipo, numero, usuario);
+            return Salidas.Terminar(empresa, tipo, numero, usuario, ensayo);
         }
 
         internal static RecogidaAlmacenDTO MontarRecogida(string empresa, string tipo, int numero, string destino,

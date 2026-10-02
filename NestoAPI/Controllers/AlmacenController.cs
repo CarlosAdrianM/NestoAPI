@@ -137,9 +137,9 @@ namespace NestoAPI.Controllers
         [HttpPost]
         [Route("Recogidas/{tipo}/{numero:int}/Terminar")]
         [ResponseType(typeof(ResultadoTerminarSalidaDTO))]
-        public async Task<IHttpActionResult> PostTerminarRecogida(string tipo, int numero, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        public async Task<IHttpActionResult> PostTerminarRecogida(string tipo, int numero, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO, bool ensayo = false)
         {
-            ResultadoTerminarSalida resultado = await servicio.TerminarRecogida(Empresa(empresa), tipo, numero, User).ConfigureAwait(false);
+            ResultadoTerminarSalida resultado = await servicio.TerminarRecogida(Empresa(empresa), tipo, numero, User, ensayo).ConfigureAwait(false);
             switch (resultado.Estado)
             {
                 case EstadoTerminarSalida.Terminada:

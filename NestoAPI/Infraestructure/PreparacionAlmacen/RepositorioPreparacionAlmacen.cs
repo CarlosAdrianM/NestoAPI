@@ -155,8 +155,9 @@ ORDER BY s.[NºTraspaso] DESC";
 SELECT TOP 1 RTRIM(e.[Almacén]) FROM PreExtrProducto e
 WHERE e.Empresa = @p0 AND e.[NºTraspaso] = @p1 AND e.Cantidad > 0";
 
-        // El hueco sale de la reserva que hace prdUbicarReposicion (Ubicaciones en estado 4 enlazadas por NºOrdenRepo con
-        // la fila de PreExtrProducto); si aún no se ha reservado, la parada va sin hueco. Mismas columnas que SQL_LINEAS_PICKING.
+        // El hueco sale del registro que deja Nesto viejo al crear el traspaso (Ubicaciones en estado -4, ya quitado del hueco)
+        // o de la reserva de prdUbicarReposicion (estado 4), enlazados por NºOrdenRepo con la fila de PreExtrProducto; si no
+        // hay, la parada va sin hueco. Mismas columnas que SQL_LINEAS_PICKING.
         internal const string SQL_LINEAS_REPOSICION_SALIDA = @"
 SELECT 0 AS Orden, CAST(0 AS bit) AS SinCodigo, CAST(0 AS bit) AS CodigoDuplicado, CAST(NULL AS varchar(11)) AS Ubicacion,
        RTRIM(s.[Número]) AS Producto,
@@ -168,7 +169,7 @@ SELECT 0 AS Orden, CAST(0 AS bit) AS SinCodigo, CAST(0 AS bit) AS CodigoDuplicad
        RTRIM(u.Pasillo) AS Pasillo, RTRIM(u.Fila) AS Fila, RTRIM(u.Columna) AS Columna
 FROM PreExtrProducto s
      INNER JOIN Almacenes a ON a.Empresa = s.Empresa AND a.[Número] = s.[Almacén]
-     LEFT JOIN Ubicaciones u ON u.[NºOrdenRepo] = s.[Nº Orden] AND u.Estado = 4
+     LEFT JOIN Ubicaciones u ON u.[NºOrdenRepo] = s.[Nº Orden] AND u.Estado IN (4, -4)
      LEFT JOIN Productos p ON p.Empresa = s.Empresa AND p.[Número] = s.[Número]
 WHERE s.Empresa = @p0 AND s.[NºTraspaso] = @p1 AND s.Diario = a.DiarioSalidaRep AND s.Cantidad < 0
 GROUP BY s.[Número], u.Pasillo, u.Fila, u.Columna
