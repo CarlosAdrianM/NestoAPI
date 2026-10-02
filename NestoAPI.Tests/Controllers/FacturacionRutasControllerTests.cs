@@ -306,11 +306,24 @@ namespace NestoAPI.Tests.Controllers
         [TestMethod]
         public async Task FacturarPedido_SinPermisos_DevuelveForbidden()
         {
-            ConfigurarUsuario("Tiendas");
+            ConfigurarUsuario("Comerciales");
 
             var resultado = await controller.FacturarPedido(new FacturarPedidoRequestDTO { Empresa = "1", Pedido = 5 });
 
             Assert.AreEqual(HttpStatusCode.Forbidden, (resultado as StatusCodeResult)?.StatusCode);
+        }
+
+        [DataTestMethod]
+        [DataRow("Administración")]
+        [DataRow("Tiendas")]
+        public async Task FacturarPedido_AdministracionYTiendas_PuedenFacturar(string grupo)
+        {
+            // Aida (Administración) factura desde la etiqueta: con los permisos de «Facturar» se quedaba en 403.
+            ConfigurarUsuario(grupo);
+
+            var resultado = await controller.FacturarPedido(new FacturarPedidoRequestDTO { Empresa = "1", Pedido = 5 });
+
+            Assert.AreNotEqual(HttpStatusCode.Forbidden, (resultado as StatusCodeResult)?.StatusCode);
         }
 
         #endregion

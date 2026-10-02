@@ -243,7 +243,9 @@ namespace NestoAPI.Controllers
         /// factura al imprimir la etiqueta ya no lo coge la facturación de rutas, y al revés.
         /// </summary>
         /// <remarks>
-        /// PERMISOS REQUERIDOS: Almacén o Dirección (los mismos que «Facturar»).
+        /// PERMISOS REQUERIDOS: Almacén, Tiendas, Administración o Dirección. Son los grupos que Nesto deja
+        /// facturar desde el detalle del pedido (EsGrupoQuePuedeFacturar). Antes la etiqueta llamaba a
+        /// CrearAlbaran/CrearFactura, que no miran el grupo, y Aida (Administración) factura desde ahí.
         /// Si el pedido no tiene nada que facturar (líneas en curso o en albarán con picking y fecha de
         /// entrega hasta hoy) se devuelve con un error en PedidosConErrores, no un 500.
         /// </remarks>
@@ -254,7 +256,7 @@ namespace NestoAPI.Controllers
             if (request == null || string.IsNullOrWhiteSpace(request.Empresa) || request.Pedido <= 0)
                 return BadRequest("Hay que indicar la empresa y el pedido");
 
-            if (!TienePermisosFacturacion())
+            if (!TienePermisosFacturarPedido())
                 return StatusCode(HttpStatusCode.Forbidden);
 
             try
@@ -404,6 +406,21 @@ namespace NestoAPI.Controllers
                 ElmahHelper.Log(ex); // 28/09/26: InternalServerError se salta el GlobalExceptionFilter
                 return InternalServerError(ex);
             }
+        }
+
+        /// <summary>
+        /// Facturar UN pedido (FacturarPedido): los grupos que pueden facturar desde el detalle del pedido
+        /// en Nesto, más Dirección.
+        /// </summary>
+        private bool TienePermisosFacturarPedido()
+        {
+            var user = User as ClaimsPrincipal;
+            if (user == null)
+                return false;
+
+            return TienePermisosFacturacion() ||
+                   user.IsInRoleSinDominio(Constantes.GruposSeguridad.TIENDAS) ||
+                   user.IsInRoleSinDominio(Constantes.GruposSeguridad.ADMINISTRACION);
         }
 
         /// <summary>
