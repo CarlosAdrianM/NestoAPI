@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure.Exceptions;
+﻿using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Infrastructure;
 using NestoAPI.Models;
 using NestoAPI.Models.PreparacionAlmacen;
@@ -36,7 +36,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         Task RecibirLinea(string empresa, LineaCompraPendiente linea, LineaRecibida recibida, DateTime hoy, string usuario);
         Task Anular(string empresa, int numeroOrden, string usuario);
         Task CrearExceso(string empresa, LineaCompraPendiente copiaDe, ExcesoRecepcion exceso, DateTime hoy, string usuario);
-        Task CambiarVistoBueno(string empresa, IEnumerable<int> numerosOrden, bool vistoBueno);
+        /// <summary>Cambia la fecha de recepción de líneas en curso (lo que hace prdInsertarLineaCmp con el resto del pedido).</summary>
+        Task Aplazar(string empresa, IEnumerable<int> numerosOrden, DateTime fechaRecepcion);
         /// <summary>prdCrearAlbaránCmp por su único punto de llamada (PedidosCompraService).</summary>
         Task<int> CrearAlbaran(int pedido, string usuario);
         Task RegistrarEvidencia(string empresa, IEnumerable<EvidenciaRecepcion> filas);
@@ -79,7 +80,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public string Tipo => TIPO;
         public bool SeTerminaDesdeAqui => true;
 
-        public bool PuedeTerminar(IPrincipal usuario)
+        public bool PuedeTerminar(IPrincipal usuario, string empresa, string almacen)
         {
             return usuario != null && gruposQuePuedenTerminar.Any(g => usuario.IsInRoleSinDominio(g));
         }
@@ -102,6 +103,17 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     Unidades = g.Sum(p => p.Unidades)
                 })
                 .ToList();
+        }
+
+        public async Task<List<RecepcionPendienteDTO>> BuscarPorCodigo(string empresa, string almacen, string codigo)
+        {
+            List<string> proveedores = await repositorio.ProveedoresConPendiente(empresa, almacen, codigo).ConfigureAwait(false) ?? new List<string>();
+            if (!proveedores.Any())
+            {
+                return new List<RecepcionPendienteDTO>();
+            }
+            var buscados = new HashSet<string>(proveedores.Select(p => p?.Trim()), StringComparer.OrdinalIgnoreCase);
+            return (await LeerPendientes(empresa, almacen).ConfigureAwait(false)).Where(r => buscados.Contains(r.Documento)).ToList();
         }
 
         public async Task<RecepcionDTO> LeerEsperado(string empresa, string almacen, string documento)
@@ -192,20 +204,16 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 }
 
                 // prdCrearAlbaránCmp se lleva todo lo del pedido en estado 1, con visto bueno y fecha de hoy o antes:
-                // lo que sigue pendiente se aparta (sin visto bueno) mientras se crean los albaranes y se le devuelve
-                var documentos = new List<DocumentoRecepcionDTO>();
-                if (plan.Apartadas.Any())
+                // lo que sigue pendiente pasa a mañana, como hace prdInsertarLineaCmp
+                if (plan.Aplazadas.Any())
                 {
-                    await transaccion.CambiarVistoBueno(solicitud.Empresa, plan.Apartadas, false).ConfigureAwait(false);
+                    await transaccion.Aplazar(solicitud.Empresa, plan.Aplazadas, plan.FechaAplazadas).ConfigureAwait(false);
                 }
+                var documentos = new List<DocumentoRecepcionDTO>();
                 foreach (int pedido in plan.PedidosAAlbaranear)
                 {
                     int albaran = await transaccion.CrearAlbaran(pedido, solicitud.Usuario).ConfigureAwait(false);
                     documentos.Add(new DocumentoRecepcionDTO { Pedido = pedido, Albaran = albaran });
-                }
-                if (plan.Apartadas.Any())
-                {
-                    await transaccion.CambiarVistoBueno(solicitud.Empresa, plan.Apartadas, true).ConfigureAwait(false);
                 }
 
                 await transaccion.RegistrarEvidencia(solicitud.Empresa, solicitud.Lecturas.Select(l => new EvidenciaRecepcion
@@ -252,49 +260,55 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// El IdCliente de la evidencia de un producto en una recepción: siempre el mismo para la misma recepción y
         /// producto, así un reenvío se reconoce y no se recibe dos veces.
         /// </summary>
-        public static Guid IdEvidencia(Guid idRecepcion, string producto)
-        {
-            using (MD5 md5 = MD5.Create())
-            {
-                byte[] datos = idRecepcion.ToByteArray()
-                    .Concat(Encoding.UTF8.GetBytes(PlanificadorRecepcionCompra.Normalizar(producto) ?? string.Empty))
-                    .ToArray();
-                return new Guid(md5.ComputeHash(datos));
-            }
-        }
+        public static Guid IdEvidencia(Guid idRecepcion, string producto) => EvidenciasRecepcionSql.IdEvidencia(idRecepcion, producto);
     }
 
     /// <summary>
-    /// NestoAPI#553: recibir una reposición entre almacenes (el documento es el número de traspaso). Leer y comparar
-    /// ya funciona; terminar NO: dar entrada a la reposición se sigue haciendo como hasta ahora (contabilizando el
-    /// diario de entrada de reposiciones desde Nesto viejo) y no está decidido qué tiene que hacer aquí.
+    /// NestoAPI#553: recibir una reposición entre almacenes (el documento es el número de traspaso). Terminar es lo que
+    /// hace hoy Nesto viejo al dar la entrada: contabilizar con prdExtrProducto el diario de entrada de reposiciones del
+    /// almacén de destino (Almacenes.DiarioEntradaRep), con el usuario que la da. Ese procedimiento contabiliza el diario
+    /// ENTERO: si hay otras reposiciones en él, entran también (como hoy) y se dice.
+    ///
+    /// <para>Quién: hoy la entrada la da siempre alguien cuyo AlmacénPedidoVta es el almacén de destino (60 días: Reina →
+    /// REI, Paloma → ALC, Andre/Alfredo/Santiago → ALG). Se exige lo mismo.</para>
     /// </summary>
     public class OrigenRecepcionReposiciones : IOrigenRecepcion
     {
         public const string TIPO = "REPO";
-
-        // Las tiendas reciben sus reposiciones (desde Nesto). Pendiente (#553): solo la tienda DESTINO del traspaso.
-        private static readonly string[] gruposQuePuedenTerminar =
-        {
-            Constantes.GruposSeguridad.ALMACEN,
-            Constantes.GruposSeguridad.COMPRAS,
-            Constantes.GruposSeguridad.DIRECCION,
-            Constantes.GruposSeguridad.TIENDAS
-        };
+        private const string CLAVE_ALMACEN_USUARIO = "AlmacénPedidoVta";
 
         private readonly IServicioRecepcionReposiciones reposiciones;
+        private readonly IRepositorioCierreReposiciones cierre;
+        private readonly Func<string, string, string> almacenDelUsuario;
 
-        public OrigenRecepcionReposiciones(IServicioRecepcionReposiciones reposiciones)
+        public OrigenRecepcionReposiciones(IServicioRecepcionReposiciones reposiciones, IRepositorioCierreReposiciones cierre)
+            : this(reposiciones, cierre, null)
+        {
+        }
+
+        /// <param name="almacenDelUsuario">(empresa, usuario sin dominio) → su AlmacénPedidoVta.</param>
+        internal OrigenRecepcionReposiciones(IServicioRecepcionReposiciones reposiciones, IRepositorioCierreReposiciones cierre,
+            Func<string, string, string> almacenDelUsuario)
         {
             this.reposiciones = reposiciones;
+            this.cierre = cierre;
+            this.almacenDelUsuario = almacenDelUsuario
+                ?? ((empresa, usuario) => Controllers.ParametrosUsuarioController.LeerParametro(empresa, usuario, CLAVE_ALMACEN_USUARIO));
         }
 
         public string Tipo => TIPO;
-        public bool SeTerminaDesdeAqui => false;
+        public bool SeTerminaDesdeAqui => true;
 
-        public bool PuedeTerminar(IPrincipal usuario)
+        public bool PuedeTerminar(IPrincipal usuario, string empresa, string almacen)
         {
-            return usuario != null && gruposQuePuedenTerminar.Any(g => usuario.IsInRoleSinDominio(g));
+            string nombre = usuario?.Identity?.IsAuthenticated == true ? usuario.Identity.Name : null;
+            if (string.IsNullOrWhiteSpace(nombre) || string.IsNullOrWhiteSpace(almacen))
+            {
+                return false;
+            }
+            string sinDominio = nombre.Contains("\\") ? nombre.Substring(nombre.LastIndexOf('\\') + 1) : nombre;
+            string suyo = almacenDelUsuario(empresa, sinDominio.Trim());
+            return !string.IsNullOrWhiteSpace(suyo) && string.Equals(suyo.Trim(), almacen.Trim(), StringComparison.OrdinalIgnoreCase);
         }
 
         public async Task<List<RecepcionPendienteDTO>> LeerPendientes(string empresa, string almacen)
@@ -310,6 +324,22 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 Lineas = r.Lineas,
                 Unidades = r.Unidades
             }).ToList();
+        }
+
+        public async Task<List<RecepcionPendienteDTO>> BuscarPorCodigo(string empresa, string almacen, string codigo)
+        {
+            var encontradas = new List<RecepcionPendienteDTO>();
+            foreach (RecepcionPendienteDTO pendiente in await LeerPendientes(empresa, almacen).ConfigureAwait(false))
+            {
+                RecepcionDTO esperado = await LeerEsperado(empresa, almacen, pendiente.Documento).ConfigureAwait(false);
+                if (esperado != null && esperado.Lineas.Any(l =>
+                    string.Equals(l.Producto?.Trim(), codigo, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(l.CodigoBarras?.Trim(), codigo, StringComparison.OrdinalIgnoreCase)))
+                {
+                    encontradas.Add(pendiente);
+                }
+            }
+            return encontradas;
         }
 
         public async Task<RecepcionDTO> LeerEsperado(string empresa, string almacen, string documento)
@@ -340,8 +370,51 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
         public Task<ResultadoTerminarRecepcionDTO> Terminar(SolicitudTerminarRecepcion solicitud)
         {
-            // El núcleo no llega aquí (SeTerminaDesdeAqui = false)
-            throw new NotSupportedException("Terminar una reposición todavía no se hace desde aquí (NestoAPI#553).");
+            if (!int.TryParse(solicitud.Documento?.Trim(), out int traspaso))
+            {
+                throw new NestoBusinessException($"«{solicitud.Documento}» no es un número de traspaso.");
+            }
+            return cierre.EnTransaccion(async transaccion =>
+            {
+                List<Guid> ids = solicitud.Lecturas.Keys.Select(p => EvidenciasRecepcionSql.IdEvidencia(solicitud.IdRecepcion, p)).ToList();
+                if (await transaccion.YaRegistrada(solicitud.Empresa, ids).ConfigureAwait(false))
+                {
+                    return new ResultadoTerminarRecepcionDTO { Tipo = TIPO, Documento = solicitud.Documento, YaEstabaTerminada = true };
+                }
+
+                string diario = await transaccion.DiarioDeEntrada(solicitud.Empresa, solicitud.Almacen).ConfigureAwait(false);
+                if (string.IsNullOrWhiteSpace(diario))
+                {
+                    throw new NestoBusinessException($"El almacén {solicitud.Almacen} no tiene diario de entrada de reposiciones.");
+                }
+                List<int> enDiario = await transaccion.TraspasosEnDiario(solicitud.Empresa, solicitud.Almacen, diario).ConfigureAwait(false)
+                    ?? new List<int>();
+                if (!enDiario.Contains(traspaso))
+                {
+                    throw new NestoBusinessException($"La reposición {traspaso} ya no está pendiente de entrar en {solicitud.Almacen}.");
+                }
+
+                await transaccion.Contabilizar(solicitud.Empresa, diario, solicitud.Usuario).ConfigureAwait(false);
+                await transaccion.RegistrarEvidencia(solicitud.Empresa, solicitud.Lecturas.Select(l => new EvidenciaRecepcion
+                {
+                    IdCliente = EvidenciasRecepcionSql.IdEvidencia(solicitud.IdRecepcion, l.Key),
+                    IdRecepcion = solicitud.IdRecepcion,
+                    NumeroOrigen = traspaso,
+                    Producto = l.Key,
+                    Cantidad = l.Value,
+                    Usuario = solicitud.Usuario,
+                    Dispositivo = solicitud.Dispositivo
+                }).ToList()).ConfigureAwait(false);
+
+                var avisos = new List<string>();
+                List<int> otras = enDiario.Where(t => t != traspaso).Distinct().OrderBy(t => t).ToList();
+                if (otras.Any())
+                {
+                    avisos.Add($"También ha entrado {(otras.Count == 1 ? "la reposición" : "las reposiciones")} {string.Join(", ", otras)}: " +
+                        "van en el mismo diario de entrada y se contabiliza entero, como en Nesto.");
+                }
+                return new ResultadoTerminarRecepcionDTO { Tipo = TIPO, Documento = traspaso.ToString(), Avisos = avisos };
+            });
         }
     }
 }

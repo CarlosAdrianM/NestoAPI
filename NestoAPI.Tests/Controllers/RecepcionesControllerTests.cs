@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure.PreparacionAlmacen;
@@ -78,6 +78,20 @@ namespace NestoAPI.Tests.Controllers
             Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<ResultadoTerminarRecepcionDTO>));
             A.CallTo(() => servicio.Terminar("REPO", "1", "REI", "80841", A<TerminarRecepcionDTO>.Ignored,
                 A<IPrincipal>.That.Matches(u => u.Identity.Name == "Lidia"))).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Buscar_SinCodigo_400YConCodigoLoQueEncuentre()
+        {
+            Assert.IsInstanceOfType(await controller.GetBuscar(" "), typeof(BadRequestErrorMessageResult));
+
+            A.CallTo(() => servicio.Buscar("1", "ALG", "8436620930427"))
+                .Returns(new List<RecepcionPendienteDTO> { new RecepcionPendienteDTO { Tipo = "COMP", Documento = "65" } });
+
+            IHttpActionResult resultado = await controller.GetBuscar(" 8436620930427 ");
+
+            var ok = (OkNegotiatedContentResult<List<RecepcionPendienteDTO>>)resultado;
+            Assert.AreEqual("65", ok.Content.Single().Documento);
         }
 
         [TestMethod]

@@ -225,7 +225,10 @@ namespace NestoAPI
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IOrigenRecepcion>(sp => new Infraestructure.PreparacionAlmacen.OrigenRecepcionCompras(
                 sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IRepositorioRecepcionCompras>(),
                 sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IAvisadorCompras>()));
-            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IOrigenRecepcion, Infraestructure.PreparacionAlmacen.OrigenRecepcionReposiciones>();
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioCierreReposiciones>(_ => Infraestructure.PreparacionAlmacen.RepositorioCierreReposiciones.ConContextoPropio());
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IOrigenRecepcion>(sp => new Infraestructure.PreparacionAlmacen.OrigenRecepcionReposiciones(
+                sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IServicioRecepcionReposiciones>(),
+                sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IRepositorioCierreReposiciones>()));
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioRecepciones, Infraestructure.PreparacionAlmacen.ServicioRecepciones>();
 
             // Ventana de facturas pendientes de Verifactu (NestoAPI#522)

@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Infraestructure.PreparacionAlmacen;
@@ -41,8 +41,8 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             A.CallTo(() => repositorio.EnTransaccion(A<Func<ITransaccionRecepcionCompra, Task<ResultadoTerminarRecepcionDTO>>>.Ignored))
                 .ReturnsLazily((Func<ITransaccionRecepcionCompra, Task<ResultadoTerminarRecepcionDTO>> trabajo) => trabajo(transaccion));
             A.CallTo(() => transaccion.YaRegistrada(A<string>.Ignored, A<IEnumerable<Guid>>.Ignored)).Returns(false);
-            A.CallTo(() => transaccion.CambiarVistoBueno(A<string>.Ignored, A<IEnumerable<int>>.Ignored, A<bool>.Ignored))
-                .Invokes((string e, IEnumerable<int> o, bool vb) => llamadas.Add(vb ? "devolver visto bueno" : "apartar"));
+            A.CallTo(() => transaccion.Aplazar(A<string>.Ignored, A<IEnumerable<int>>.Ignored, A<DateTime>.Ignored))
+                .Invokes((string e, IEnumerable<int> o, DateTime f) => llamadas.Add("aplazar al " + f.ToString("dd/MM")));
             A.CallTo(() => transaccion.CrearAlbaran(A<int>.Ignored, A<string>.Ignored))
                 .ReturnsLazily((int pedido, string u) => { llamadas.Add("albarán " + pedido); return 9000 + pedido % 100; });
             compras = new OrigenRecepcionCompras(repositorio, avisador, () => HOY);
@@ -80,37 +80,128 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         [DataRow("Administración", false)]
         public void Compras_QuienPuedeTerminar(string grupo, bool puede)
         {
-            Assert.AreEqual(puede, compras.PuedeTerminar(Usuario("x", grupo)));
+            Assert.AreEqual(puede, compras.PuedeTerminar(Usuario("x", grupo), "1", "ALG"));
+        }
+
+        // Reposiciones: hoy da la entrada quien tiene el almacén de destino en AlmacénPedidoVta
+        // (60 días: Reina → REI, Paloma → ALC, Andre/Alfredo/Santiago → ALG)
+        private static OrigenRecepcionReposiciones Reposiciones(IRepositorioCierreReposiciones cierre = null)
+        {
+            var almacenes = new Dictionary<string, string> { ["Reina"] = "REI", ["Paloma"] = "ALC", ["Andre"] = "ALG" };
+            return new OrigenRecepcionReposiciones(A.Fake<IServicioRecepcionReposiciones>(), cierre ?? A.Fake<IRepositorioCierreReposiciones>(),
+                (empresa, usuario) => almacenes.TryGetValue(usuario, out string a) ? a : null);
+        }
+
+        private static (IRepositorioCierreReposiciones Cierre, ITransaccionCierreReposicion Transaccion) CierreFalso(params int[] traspasosEnDiario)
+        {
+            var cierre = A.Fake<IRepositorioCierreReposiciones>();
+            var transaccion = A.Fake<ITransaccionCierreReposicion>();
+            A.CallTo(() => cierre.EnTransaccion(A<Func<ITransaccionCierreReposicion, Task<ResultadoTerminarRecepcionDTO>>>.Ignored))
+                .ReturnsLazily((Func<ITransaccionCierreReposicion, Task<ResultadoTerminarRecepcionDTO>> t) => t(transaccion));
+            A.CallTo(() => transaccion.YaRegistrada(A<string>.Ignored, A<IEnumerable<Guid>>.Ignored)).Returns(false);
+            A.CallTo(() => transaccion.DiarioDeEntrada("1", "REI")).Returns("PendRepo");
+            A.CallTo(() => transaccion.TraspasosEnDiario("1", "REI", "PendRepo")).Returns(traspasosEnDiario.ToList());
+            return (cierre, transaccion);
+        }
+
+        private static SolicitudTerminarRecepcion SolicitudReposicion(string documento = "80862")
+        {
+            return new SolicitudTerminarRecepcion
+            {
+                Empresa = "1", Almacen = "REI", Documento = documento, IdRecepcion = Guid.NewGuid(),
+                Lecturas = new Dictionary<string, int> { ["A"] = 2 }, Usuario = "NUEVAVISION\\Reina", Principal = Usuario("NUEVAVISION\\Reina", "Tiendas")
+            };
         }
 
         [DataTestMethod]
-        [DataRow("Almacén", true)]
-        [DataRow("Compras", true)]
-        [DataRow("Dirección", true)]
-        [DataRow("Tiendas", true)]
-        [DataRow("Administración", false)]
-        public void Reposiciones_QuienPuedeTerminar_TambienLasTiendas(string grupo, bool puede)
+        [DataRow("NUEVAVISION\\Reina", "REI", true)]
+        [DataRow("Reina", "rei ", true)]
+        [DataRow("NUEVAVISION\\Reina", "ALG", false)]
+        [DataRow("NUEVAVISION\\Paloma", "ALC", true)]
+        [DataRow("Andre", "REI", false)]
+        [DataRow("Desconocido", "ALG", false)]
+        public void Reposiciones_SoloDaEntradaQuienTieneElAlmacenDeDestino(string usuario, string almacen, bool puede)
         {
-            var reposiciones = new OrigenRecepcionReposiciones(A.Fake<IServicioRecepcionReposiciones>());
-
-            Assert.AreEqual(puede, reposiciones.PuedeTerminar(Usuario("x", grupo)));
+            Assert.AreEqual(puede, Reposiciones().PuedeTerminar(Usuario(usuario, "Tiendas"), "1", almacen));
         }
 
         [TestMethod]
-        public void Reposiciones_TodaviaNoSeTerminanDesdeAqui()
+        public void Reposiciones_SeTerminanDesdeAqui()
         {
-            Assert.IsFalse(new OrigenRecepcionReposiciones(A.Fake<IServicioRecepcionReposiciones>()).SeTerminaDesdeAqui);
-            Assert.IsTrue(compras.SeTerminaDesdeAqui);
+            Assert.IsTrue(Reposiciones().SeTerminaDesdeAqui);
         }
 
         [TestMethod]
-        public async Task Terminar_ApartaLoQueSigue_CreaElAlbaranYDevuelveElVistoBueno_EnEseOrden()
+        public async Task Reposiciones_Terminar_ContabilizaElDiarioDeEntradaDelDestinoConElUsuario()
         {
+            var (cierre, transaccion) = CierreFalso(80862);
+
+            ResultadoTerminarRecepcionDTO resultado = await Reposiciones(cierre).Terminar(SolicitudReposicion());
+
+            A.CallTo(() => transaccion.Contabilizar("1", "PendRepo", "NUEVAVISION\\Reina")).MustHaveHappenedOnceExactly();
+            A.CallTo(() => transaccion.RegistrarEvidencia("1", A<IEnumerable<EvidenciaRecepcion>>.That.Matches(e => e.Single().NumeroOrigen == 80862)))
+                .MustHaveHappenedOnceExactly();
+            Assert.IsFalse(resultado.YaEstabaTerminada);
+        }
+
+        [TestMethod]
+        public async Task Reposiciones_Terminar_OtrasDelMismoDiarioEntranTambienYSeDice()
+        {
+            // prdExtrProducto contabiliza el diario entero: hoy a veces entran dos traspasos juntos
+            var (cierre, _) = CierreFalso(80862, 80863);
+
+            ResultadoTerminarRecepcionDTO resultado = await Reposiciones(cierre).Terminar(SolicitudReposicion());
+
+            StringAssert.Contains(string.Join(" ", resultado.Avisos), "80863");
+        }
+
+        [TestMethod]
+        public async Task Reposiciones_Terminar_YaNoEstaEnElDiario_ErrorYNoSeContabilizaNada()
+        {
+            var (cierre, transaccion) = CierreFalso(80863);
+
+            _ = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Reposiciones(cierre).Terminar(SolicitudReposicion()));
+
+            A.CallTo(() => transaccion.Contabilizar(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Reposiciones_Terminar_Reenvio_NoContabilizaOtraVez()
+        {
+            var (cierre, transaccion) = CierreFalso(80862);
+            A.CallTo(() => transaccion.YaRegistrada(A<string>.Ignored, A<IEnumerable<Guid>>.Ignored)).Returns(true);
+
+            ResultadoTerminarRecepcionDTO resultado = await Reposiciones(cierre).Terminar(SolicitudReposicion());
+
+            Assert.IsTrue(resultado.YaEstabaTerminada);
+            A.CallTo(() => transaccion.Contabilizar(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Compras_BuscarPorCodigo_ElProveedorDeLoQueTienePendiente()
+        {
+            // 02/10/26: los 441 productos pendientes de recibir en ALG tienen un solo proveedor cada uno
+            A.CallTo(() => repositorio.ProveedoresConPendiente("1", "ALG", "8436620930427")).Returns(new List<string> { "65" });
+            A.CallTo(() => repositorio.LeerPedidosPendientes("1", "ALG")).Returns(new List<PedidoCompraPendienteDTO>
+            {
+                new PedidoCompraPendienteDTO { Pedido = 100, Proveedor = "65", NombreProveedor = "MAYSTAR", Lineas = 1, Unidades = 4 },
+                new PedidoCompraPendienteDTO { Pedido = 102, Proveedor = "16", NombreProveedor = "DRV", Lineas = 1, Unidades = 1 }
+            });
+
+            List<RecepcionPendienteDTO> encontradas = await compras.BuscarPorCodigo("1", "ALG", "8436620930427");
+
+            Assert.AreEqual("MAYSTAR", encontradas.Single().Titulo);
+        }
+
+        [TestMethod]
+        public async Task Terminar_LoQueSiguePasaAMananaAntesDelAlbaran_SinTocarElVistoBueno()
+        {
+            // Lo de siempre (prdInsertarLineaCmp): lo que no se recibe hoy se mueve de fecha; el visto bueno no se toca
             LineasDelProveedor(Linea(100, 1, "A", 5), Linea(100, 2, "B", 3));
 
             ResultadoTerminarRecepcionDTO resultado = await compras.Terminar(Solicitud(Usuario("Pedro", "Almacén"), ("A", 5)));
 
-            CollectionAssert.AreEqual(new[] { "apartar", "albarán 100", "devolver visto bueno" }, llamadas);
+            CollectionAssert.AreEqual(new[] { "aplazar al 06/10", "albarán 100" }, llamadas);
             Assert.AreEqual(100, resultado.Documentos.Single().Pedido);
             Assert.AreEqual(9000, resultado.Documentos.Single().Albaran);
             A.CallTo(() => transaccion.RecibirLinea("1", A<LineaCompraPendiente>.That.Matches(l => l.NumeroOrden == 1),

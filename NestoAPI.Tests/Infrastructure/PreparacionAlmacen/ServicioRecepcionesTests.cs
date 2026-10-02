@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Infraestructure.PreparacionAlmacen;
@@ -67,7 +67,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         public async Task LeerEsperado_DiceSiQuienPreguntaPuedeTerminar()
         {
             A.CallTo(() => compras.LeerEsperado("1", "ALG", "65")).Returns(Esperado(("A", 2)));
-            A.CallTo(() => compras.PuedeTerminar(usuario)).Returns(true);
+            A.CallTo(() => compras.PuedeTerminar(usuario, A<string>.Ignored, A<string>.Ignored)).Returns(true);
 
             RecepcionDTO recepcion = await servicio.LeerEsperado("comp", "1", "ALG", "65", usuario);
 
@@ -89,6 +89,18 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         }
 
         [TestMethod]
+        public async Task Buscar_JuntaLoQueEncuentraCadaTipo()
+        {
+            A.CallTo(() => compras.BuscarPorCodigo("1", "ALG", "8436620930427"))
+                .Returns(new List<RecepcionPendienteDTO> { new RecepcionPendienteDTO { Tipo = "COMP", Documento = "65" } });
+            A.CallTo(() => reposiciones.BuscarPorCodigo("1", "ALG", "8436620930427")).Returns(new List<RecepcionPendienteDTO>());
+
+            List<RecepcionPendienteDTO> encontradas = await servicio.Buscar("1", "ALG", " 8436620930427 ");
+
+            Assert.AreEqual("65", encontradas.Single().Documento);
+        }
+
+        [TestMethod]
         public async Task TipoDesconocido_ErrorDeNegocio()
         {
             NestoBusinessException ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() =>
@@ -100,7 +112,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         [TestMethod]
         public async Task SinPermisoParaEseTipo_NoSeTermina()
         {
-            A.CallTo(() => compras.PuedeTerminar(usuario)).Returns(false);
+            A.CallTo(() => compras.PuedeTerminar(usuario, A<string>.Ignored, A<string>.Ignored)).Returns(false);
 
             _ = await Assert.ThrowsExceptionAsync<UnauthorizedAccessException>(() =>
                 servicio.Terminar("COMP", "1", "ALG", "65", Terminar(("A", 1)), usuario));
@@ -110,7 +122,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         [TestMethod]
         public async Task TipoQueTodaviaNoSeTerminaDesdeAqui_LoDiceYNoHaceNada()
         {
-            A.CallTo(() => reposiciones.PuedeTerminar(usuario)).Returns(true);
+            A.CallTo(() => reposiciones.PuedeTerminar(usuario, A<string>.Ignored, A<string>.Ignored)).Returns(true);
             A.CallTo(() => reposiciones.SeTerminaDesdeAqui).Returns(false);
 
             NestoBusinessException ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() =>
@@ -123,7 +135,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         [TestMethod]
         public async Task SinIdDeRecepcion_NoSeTermina()
         {
-            A.CallTo(() => compras.PuedeTerminar(usuario)).Returns(true);
+            A.CallTo(() => compras.PuedeTerminar(usuario, A<string>.Ignored, A<string>.Ignored)).Returns(true);
             TerminarRecepcionDTO terminar = Terminar(("A", 1));
             terminar.IdRecepcion = Guid.Empty;
 
@@ -133,7 +145,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         [TestMethod]
         public async Task SinNadaLeido_NoSeTermina()
         {
-            A.CallTo(() => compras.PuedeTerminar(usuario)).Returns(true);
+            A.CallTo(() => compras.PuedeTerminar(usuario, A<string>.Ignored, A<string>.Ignored)).Returns(true);
 
             _ = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() =>
                 servicio.Terminar("COMP", "1", "ALG", "65", Terminar(("A", 0)), usuario));
@@ -143,7 +155,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         public async Task SinUsuarioIdentificado_NoSeTermina_NuncaSeInventa()
         {
             var anonimo = new ClaimsPrincipal(new ClaimsIdentity());
-            A.CallTo(() => compras.PuedeTerminar(anonimo)).Returns(true);
+            A.CallTo(() => compras.PuedeTerminar(anonimo, A<string>.Ignored, A<string>.Ignored)).Returns(true);
 
             _ = await Assert.ThrowsExceptionAsync<UnauthorizedAccessException>(() =>
                 servicio.Terminar("COMP", "1", "ALG", "65", Terminar(("A", 1)), anonimo));
@@ -152,7 +164,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         [TestMethod]
         public async Task Terminar_PasaLoLeidoSumadoPorProductoYElUsuarioDelToken()
         {
-            A.CallTo(() => compras.PuedeTerminar(usuario)).Returns(true);
+            A.CallTo(() => compras.PuedeTerminar(usuario, A<string>.Ignored, A<string>.Ignored)).Returns(true);
             SolicitudTerminarRecepcion recibida = null;
             A.CallTo(() => compras.Terminar(A<SolicitudTerminarRecepcion>.Ignored))
                 .Invokes((SolicitudTerminarRecepcion s) => recibida = s)

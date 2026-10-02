@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure.Exceptions;
+﻿using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Models.PreparacionAlmacen;
 using System;
 using System.Collections.Generic;
@@ -34,8 +34,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         string Tipo { get; }
         /// <summary>False mientras un tipo solo se pueda leer y comparar (su cierre sigue en otro sitio).</summary>
         bool SeTerminaDesdeAqui { get; }
-        /// <summary>Quién puede terminar este tipo de recepción (los grupos dependen del tipo).</summary>
-        bool PuedeTerminar(IPrincipal usuario);
+        /// <summary>Quién puede terminar este tipo de recepción en ese almacén (lo decide cada tipo).</summary>
+        bool PuedeTerminar(IPrincipal usuario, string empresa, string almacen);
+        /// <summary>Lo pendiente de este tipo que contiene ese producto (número o código de barras).</summary>
+        Task<List<RecepcionPendienteDTO>> BuscarPorCodigo(string empresa, string almacen, string codigo);
         Task<List<RecepcionPendienteDTO>> LeerPendientes(string empresa, string almacen);
         /// <summary>Null si no hay nada pendiente de recibir con ese documento.</summary>
         Task<RecepcionDTO> LeerEsperado(string empresa, string almacen, string documento);
@@ -45,6 +47,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     public interface IServicioRecepciones
     {
         Task<List<RecepcionPendienteDTO>> LeerPendientes(string empresa, string almacen);
+        /// <summary>Lo pendiente que contiene un producto leído: para empezar a recibir sin elegir de la lista.</summary>
+        Task<List<RecepcionPendienteDTO>> Buscar(string empresa, string almacen, string codigo);
         Task<RecepcionDTO> LeerEsperado(string tipo, string empresa, string almacen, string documento, IPrincipal usuario);
         Task<ResultadoCasarRecepcionDTO> Casar(string tipo, string empresa, string almacen, string documento, IEnumerable<LecturaRecepcionDTO> lecturas);
         Task<ResultadoTerminarRecepcionDTO> Terminar(string tipo, string empresa, string almacen, string documento,
@@ -76,6 +80,21 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             return pendientes.OrderBy(p => p.Fecha ?? DateTime.MaxValue).ThenBy(p => p.Tipo).ThenBy(p => p.Documento).ToList();
         }
 
+        public async Task<List<RecepcionPendienteDTO>> Buscar(string empresa, string almacen, string codigo)
+        {
+            string limpio = codigo?.Trim();
+            var encontradas = new List<RecepcionPendienteDTO>();
+            if (string.IsNullOrEmpty(limpio))
+            {
+                return encontradas;
+            }
+            foreach (IOrigenRecepcion origen in origenes.Values)
+            {
+                encontradas.AddRange(await origen.BuscarPorCodigo(empresa, almacen, limpio).ConfigureAwait(false) ?? new List<RecepcionPendienteDTO>());
+            }
+            return encontradas;
+        }
+
         public async Task<RecepcionDTO> LeerEsperado(string tipo, string empresa, string almacen, string documento, IPrincipal usuario)
         {
             IOrigenRecepcion origen = Origen(tipo);
@@ -84,7 +103,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             {
                 recepcion.Tipo = origen.Tipo;
                 recepcion.SeTerminaDesdeAqui = origen.SeTerminaDesdeAqui;
-                recepcion.PuedeTerminar = origen.SeTerminaDesdeAqui && origen.PuedeTerminar(usuario);
+                recepcion.PuedeTerminar = origen.SeTerminaDesdeAqui && origen.PuedeTerminar(usuario, empresa, almacen);
             }
             return recepcion;
         }
@@ -127,7 +146,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 // Quién recibe queda grabado: sin usuario no se inventa uno
                 throw new UnauthorizedAccessException("Para terminar una recepción hay que estar identificado.");
             }
-            if (!origen.PuedeTerminar(usuario))
+            if (!origen.PuedeTerminar(usuario, empresa?.Trim(), almacen?.Trim()))
             {
                 throw new UnauthorizedAccessException($"No tienes permiso para terminar recepciones de tipo {origen.Tipo}.");
             }

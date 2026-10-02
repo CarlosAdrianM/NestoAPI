@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure.PreparacionAlmacen;
+﻿using NestoAPI.Infraestructure.PreparacionAlmacen;
 using NestoAPI.Models;
 using NestoAPI.Models.PreparacionAlmacen;
 using System;
@@ -17,8 +17,8 @@ namespace NestoAPI.Controllers
     /// Recogidas/{tipo}/{numero}. Lo usan Ariadna y Nesto (por ejemplo, las tiendas para recibir sus reposiciones).
     ///
     /// <para>Va en un controlador propio, SIN el filtro EscrituraSoloAlmacen del resto de api/Almacen: aquí quién
-    /// puede terminar lo decide el tipo de recepción (compras: Almacén, Compras o Dirección; reposiciones: además
-    /// las tiendas). Leer y comparar basta con estar identificado; comparar no guarda nada.</para>
+    /// puede terminar lo decide el tipo de recepción (compras: Almacén, Compras o Dirección; reposiciones: quien tiene el
+    /// almacén de destino en AlmacénPedidoVta, como hoy). Leer y comparar basta con estar identificado.</para>
     /// </summary>
     [Authorize]
     [RoutePrefix("api/Almacen/Recepciones")]
@@ -40,6 +40,21 @@ namespace NestoAPI.Controllers
             string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
         {
             return Ok(await servicio.LeerPendientes(Empresa(empresa), Almacen(almacen)).ConfigureAwait(false));
+        }
+
+        // GET api/Almacen/Recepciones/Buscar?codigo=8436620930427&almacen=ALG&empresa=1
+        /// <summary>Lo pendiente de recibir que contiene un producto leído (hoy cada producto pendiente es de un solo proveedor).</summary>
+        [HttpGet]
+        [Route("Buscar")]
+        [ResponseType(typeof(List<RecepcionPendienteDTO>))]
+        public async Task<IHttpActionResult> GetBuscar(string codigo, string almacen = Constantes.Almacenes.ALGETE,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            if (string.IsNullOrWhiteSpace(codigo))
+            {
+                return BadRequest("Falta el código de barras o el número de producto.");
+            }
+            return Ok(await servicio.Buscar(Empresa(empresa), Almacen(almacen), codigo.Trim()).ConfigureAwait(false));
         }
 
         // GET api/Almacen/Recepciones/COMP/65?almacen=ALG&empresa=1

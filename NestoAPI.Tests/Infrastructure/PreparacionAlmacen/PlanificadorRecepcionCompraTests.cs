@@ -1,4 +1,4 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.PreparacionAlmacen;
 using System;
 using System.Collections.Generic;
@@ -59,13 +59,13 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         }
 
         [TestMethod]
-        public void ParcialConControl_FechaFuturaSeConserva()
+        public void ParcialConControl_LoQueFaltaPasaAMananaAunqueSeEsperaraMasTarde()
         {
-            DateTime dentroDeUnaSemana = HOY.AddDays(7);
+            // Como prdInsertarLineaCmp: fecharecepción = dateadd(d,1,hoy) para todo lo que sigue en curso
             var plan = PlanificadorRecepcionCompra.Planificar(
-                new[] { Linea(100, 1, "A", 10, control: true, fechaRecepcion: dentroDeUnaSemana) }, Leido(("A", 4)), HOY, false);
+                new[] { Linea(100, 1, "A", 10, control: true, fechaRecepcion: HOY.AddDays(7)) }, Leido(("A", 4)), HOY, false);
 
-            Assert.AreEqual(dentroDeUnaSemana, plan.Recibidas.Single().FechaResto);
+            Assert.AreEqual(HOY.AddDays(1), plan.Recibidas.Single().FechaResto);
         }
 
         [TestMethod]
@@ -90,13 +90,15 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         }
 
         [TestMethod]
-        public void SinControl_LineaNoRecibidaQueSeEsperaMasAdelante_NoSeAnula()
+        public void SinControl_LineaNoRecibidaQueSeEsperaMasAdelante_NoSeAnulaYPasaAManana()
         {
+            // Los -99 históricos son de líneas esperadas hasta el día del albarán (816 de 817 desde 2020)
             var plan = PlanificadorRecepcionCompra.Planificar(
                 new[] { Linea(100, 1, "A", 5, control: false), Linea(100, 2, "B", 3, control: false, fechaRecepcion: HOY.AddDays(10)) },
                 Leido(("A", 5)), HOY, false);
 
             Assert.AreEqual(0, plan.Anuladas.Count);
+            CollectionAssert.AreEqual(new[] { 2 }, plan.Aplazadas);
         }
 
         [TestMethod]
@@ -108,7 +110,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
 
             Assert.AreEqual(0, plan.Anuladas.Count);
             Assert.AreEqual(1, plan.Recibidas.Count);
-            CollectionAssert.AreEqual(new[] { 2 }, plan.Apartadas, "Hay que apartarla para que el albarán de hoy no se la lleve");
+            CollectionAssert.AreEqual(new[] { 2 }, plan.Aplazadas, "Pasa a mañana para que el albarán de hoy no se la lleve");
         }
 
         [TestMethod]
@@ -119,7 +121,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
                 Leido(("A", 5)), HOY, false);
 
             Assert.AreEqual(0, plan.Anuladas.Count);
-            Assert.AreEqual(0, plan.Apartadas.Count);
+            Assert.AreEqual(0, plan.Aplazadas.Count);
             CollectionAssert.AreEqual(new[] { 100 }, plan.PedidosAAlbaranear);
         }
 

@@ -31,6 +31,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         Task<List<FilaRecepcionCompra>> LeerLineasPendientes(string empresa, int pedido);
         /// <summary>NestoAPI#559: las líneas pendientes de todos los pedidos de un proveedor en un almacén.</summary>
         Task<List<FilaRecepcionCompra>> LeerLineasPendientesProveedor(string empresa, string almacen, string proveedor);
+        /// <summary>NestoAPI#559: los proveedores con algo pendiente de recibir de ese producto (por número o código de barras).</summary>
+        Task<List<string>> ProveedoresConPendiente(string empresa, string almacen, string codigo);
         /// <summary>NestoAPI#559: terminar una recepción, todo o nada.</summary>
         Task<ResultadoTerminarRecepcionDTO> EnTransaccion(Func<ITransaccionRecepcionCompra, Task<ResultadoTerminarRecepcionDTO>> trabajo);
     }
@@ -76,11 +78,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             this.baseDeDatos = baseDeDatos;
         }
 
-        // Hay líneas de tipo producto sin producto (un comentario tecleado): no son mercancía.
-        // NestoAPI#559: sin visto bueno no se espera (está pendiente de Compras, p. ej. un exceso recibido por
-        // almacén) y prdCrearAlbaránCmp tampoco la albaranea.
+        // Hay líneas de tipo producto sin producto (un comentario tecleado): no son mercancía. El visto bueno no
+        // filtra: tampoco lo hace lo pendiente de recibir del resto del sistema (ProductoService.PendienteRecibir).
         internal const string FILTRO_LINEAS_DE_PRODUCTO =
-            "l.Estado = 1 AND l.VistoBueno = 1 AND l.[TipoLínea] = '1' AND l.Cantidad > 0 AND l.Producto IS NOT NULL AND RTRIM(l.Producto) <> ''";
+            "l.Estado = 1 AND l.[TipoLínea] = '1' AND l.Cantidad > 0 AND l.Producto IS NOT NULL AND RTRIM(l.Producto) <> ''";
 
         internal const string SQL_PEDIDOS_PENDIENTES = @"
 SELECT l.[Número] AS Pedido, RTRIM(MAX(l.[NºProveedor])) AS Proveedor, RTRIM(MAX(pr.Nombre)) AS NombreProveedor,
@@ -105,6 +106,13 @@ FROM LinPedidoCmp l
 WHERE l.Empresa = @p0 AND l.[Número] = @p1 AND " + FILTRO_LINEAS_DE_PRODUCTO + @"
 ORDER BY l.[NºOrden]";
 
+        // NestoAPI#559: de qué proveedor es un producto que se lee (hoy cada producto pendiente es de un solo proveedor)
+        internal const string SQL_PROVEEDORES_DEL_CODIGO = @"
+SELECT DISTINCT RTRIM(l.[NºProveedor])
+FROM LinPedidoCmp l
+     LEFT JOIN Productos p ON p.Empresa = l.Empresa AND p.[Número] = l.Producto
+WHERE l.Empresa = @p0 AND l.[Almacén] = @p1 AND (l.Producto = @p2 OR p.CodBarras = @p2) AND " + FILTRO_LINEAS_DE_PRODUCTO;
+
         // NestoAPI#559: la recepción es por proveedor (todos sus pedidos abiertos en el almacén)
         internal const string SQL_LINEAS_PENDIENTES_PROVEEDOR = COLUMNAS_LINEA + @"
 WHERE l.Empresa = @p0 AND l.[Almacén] = @p1 AND l.[NºProveedor] = @p2 AND " + FILTRO_LINEAS_DE_PRODUCTO + @"
@@ -123,6 +131,11 @@ ORDER BY l.[Número], l.[NºOrden]";
         public Task<List<FilaRecepcionCompra>> LeerLineasPendientesProveedor(string empresa, string almacen, string proveedor)
         {
             return baseDeDatos.SqlQuery<FilaRecepcionCompra>(SQL_LINEAS_PENDIENTES_PROVEEDOR, empresa, almacen, proveedor).ToListAsync();
+        }
+
+        public Task<List<string>> ProveedoresConPendiente(string empresa, string almacen, string codigo)
+        {
+            return baseDeDatos.SqlQuery<string>(SQL_PROVEEDORES_DEL_CODIGO, empresa, almacen, codigo).ToListAsync();
         }
 
         /// <summary>
@@ -150,7 +163,7 @@ ORDER BY l.[Número], l.[NºOrden]";
                     if (sql != null && sql.Class >= 11 && sql.Class <= 16)
                     {
                         // Avisos del propio procedimiento («No hay líneas para albaranear», ubicaciones…) o de una restricción
-                        throw new NestoBusinessException(TransaccionRecepcionComprasSql.Traducir(sql), ex);
+                        throw new NestoBusinessException(EvidenciasRecepcionSql.Traducir(sql), ex);
                     }
                     throw;
                 }

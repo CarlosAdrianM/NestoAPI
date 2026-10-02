@@ -23,9 +23,6 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     /// </summary>
     public class TransaccionRecepcionComprasSql : ITransaccionRecepcionCompra
     {
-        public const string TIPO_ORIGEN_EVIDENCIA = "COMP";
-        public const string FASE_EVIDENCIA = "RECE";
-
         private readonly NVEntities db;
         private readonly IPedidosCompraService pedidosCompra;
 
@@ -73,30 +70,12 @@ WHERE Empresa = @p0 AND [NºOrden] = @p1 AND Estado = 1";
 UPDATE LinPedidoCmp SET Estado = -99, Usuario = @p2, [Fecha Modificación] = GETDATE()
 WHERE Empresa = @p0 AND [NºOrden] = @p1 AND Estado = 1";
 
-        internal const string SQL_VISTO_BUENO = @"
-UPDATE LinPedidoCmp SET VistoBueno = @p2 WHERE Empresa = @p0 AND [NºOrden] = @p1 AND Estado = 1";
+        internal const string SQL_APLAZAR = @"
+UPDATE LinPedidoCmp SET [FechaRecepción] = @p2 WHERE Empresa = @p0 AND [NºOrden] = @p1 AND Estado = 1";
 
-        internal const string SQL_YA_REGISTRADA = @"
-SELECT COUNT(*) FROM PreparacionEscaneos WHERE IdCliente IN ({0})";
-
-        internal const string SQL_EVIDENCIA = @"
-INSERT INTO PreparacionEscaneos
-       (IdCliente, Empresa, NumeroOrigen, Pedido, LineaPedido, Producto, Fase, Cantidad, Metodo, Bulto, Motivo, Usuario, Dispositivo, FechaEscaneo, TipoOrigen)
-SELECT @p0, @p1, @p2, NULL, NULL, @p3, '" + FASE_EVIDENCIA + @"', @p4, 'SCAN', NULL, @p5, @p6, @p7, GETDATE(), '" + TIPO_ORIGEN_EVIDENCIA + @"'
-WHERE NOT EXISTS (SELECT 1 FROM PreparacionEscaneos WHERE IdCliente = @p0)";
-
-        public async Task<bool> YaRegistrada(string empresa, IEnumerable<Guid> idsEvidencia)
+        public Task<bool> YaRegistrada(string empresa, IEnumerable<Guid> idsEvidencia)
         {
-            List<Guid> ids = (idsEvidencia ?? Enumerable.Empty<Guid>()).Distinct().ToList();
-            if (!ids.Any())
-            {
-                return false;
-            }
-            string parametros = string.Join(", ", ids.Select((id, i) => "@p" + i));
-            int encontrados = await db.Database
-                .SqlQuery<int>(string.Format(SQL_YA_REGISTRADA, parametros), ids.Cast<object>().ToArray())
-                .SingleAsync().ConfigureAwait(false);
-            return encontrados > 0;
+            return EvidenciasRecepcionSql.YaRegistrada(db, idsEvidencia);
         }
 
         public Task<List<LineaCompraPendiente>> LeerLineasBloqueando(string empresa, string almacen, string proveedor)
@@ -134,11 +113,11 @@ WHERE NOT EXISTS (SELECT 1 FROM PreparacionEscaneos WHERE IdCliente = @p0)";
                 importes.Total, PlanificadorRecepcionCompra.ESTADO_PENDIENTE, exceso.VistoBueno, UsuarioAuditoriaHelper.ParaAuditoria(usuario));
         }
 
-        public async Task CambiarVistoBueno(string empresa, IEnumerable<int> numerosOrden, bool vistoBueno)
+        public async Task Aplazar(string empresa, IEnumerable<int> numerosOrden, DateTime fechaRecepcion)
         {
             foreach (int numeroOrden in numerosOrden ?? Enumerable.Empty<int>())
             {
-                await Ejecutar(SQL_VISTO_BUENO, $"cambiar el visto bueno de la línea {numeroOrden}", empresa, numeroOrden, vistoBueno)
+                await Ejecutar(SQL_APLAZAR, $"pasar a mañana la línea {numeroOrden}", empresa, numeroOrden, fechaRecepcion.Date)
                     .ConfigureAwait(false);
             }
         }
@@ -153,15 +132,9 @@ WHERE NOT EXISTS (SELECT 1 FROM PreparacionEscaneos WHERE IdCliente = @p0)";
             return albaran;
         }
 
-        public async Task RegistrarEvidencia(string empresa, IEnumerable<EvidenciaRecepcion> filas)
+        public Task RegistrarEvidencia(string empresa, IEnumerable<EvidenciaRecepcion> filas)
         {
-            foreach (EvidenciaRecepcion fila in filas ?? Enumerable.Empty<EvidenciaRecepcion>())
-            {
-                _ = await db.Database.ExecuteSqlCommandAsync(SQL_EVIDENCIA, fila.IdCliente, empresa, fila.NumeroOrigen, fila.Producto,
-                    (short)Math.Min(fila.Cantidad, short.MaxValue), $"Recepción {fila.IdRecepcion}",
-                    Recortar(UsuarioAuditoriaHelper.ParaAuditoria(fila.Usuario), 50), (object)Recortar(fila.Dispositivo, 50) ?? DBNull.Value)
-                    .ConfigureAwait(false);
-            }
+            return EvidenciasRecepcionSql.Registrar(db, empresa, OrigenRecepcionCompras.TIPO, filas);
         }
 
         private async Task Ejecutar(string sql, string que, params object[] parametros)
@@ -199,11 +172,6 @@ WHERE NOT EXISTS (SELECT 1 FROM PreparacionEscaneos WHERE IdCliente = @p0)";
             };
         }
 
-        private static string Recortar(string texto, int maximo)
-        {
-            return texto == null ? null : (texto.Length > maximo ? texto.Substring(0, maximo) : texto);
-        }
-
         internal class Importes
         {
             public decimal Bruto { get; set; }
@@ -214,16 +182,5 @@ WHERE NOT EXISTS (SELECT 1 FROM PreparacionEscaneos WHERE IdCliente = @p0)";
             public decimal Total { get; set; }
         }
 
-        /// <summary>Un error de SQL de la recepción, en palabras del almacén.</summary>
-        internal static string Traducir(SqlException ex)
-        {
-            string mensaje = ex?.Message ?? string.Empty;
-            if (mensaje.Contains("CK_PreparacionEscaneos"))
-            {
-                return "La base de datos todavía no admite la evidencia de las recepciones: falta lanzar el script " +
-                    "Scripts/Issue559_Ariadna_RecepcionCompras.sql. No se ha recibido nada.";
-            }
-            return mensaje;
-        }
     }
 }

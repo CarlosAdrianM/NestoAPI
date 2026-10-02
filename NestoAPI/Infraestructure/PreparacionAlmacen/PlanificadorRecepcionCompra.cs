@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -38,6 +38,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public int Resto { get; set; }
         /// <summary>1 si lo que falta sigue pendiente (proveedor con control de pendientes); -99 si no.</summary>
         public short EstadoResto { get; set; }
+        /// <summary>Mañana, como prdInsertarLineaCmp (dateadd(d,1,hoy)), para que el albarán de hoy no se lo lleve.</summary>
         public DateTime FechaResto { get; set; }
         /// <summary>El visto bueno con el que queda lo recibido.</summary>
         public bool VistoBueno { get; set; }
@@ -65,10 +66,12 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// <summary>NºOrden de líneas no recibidas que pasan a -99 (proveedor sin control de pendientes).</summary>
         public List<int> Anuladas { get; } = new List<int>();
         /// <summary>
-        /// NºOrden de líneas que siguen pendientes y que prdCrearAlbaránCmp se llevaría (estado 1, visto bueno y
-        /// fecha de recepción de hoy o antes): se les quita el visto bueno mientras se crea el albarán y se les devuelve.
+        /// NºOrden de las demás líneas en curso de los pedidos que se albaranean hoy: pasan a mañana, igual que hace
+        /// prdInsertarLineaCmp (fecharecepción = dateadd(d,1,hoy) para el resto de líneas en curso del pedido). Así
+        /// prdCrearAlbaránCmp, que solo coge fecharecepción &lt;= hoy, no se las lleva. El visto bueno no se toca.
         /// </summary>
-        public List<int> Apartadas { get; } = new List<int>();
+        public List<int> Aplazadas { get; } = new List<int>();
+        public DateTime FechaAplazadas { get; set; }
         public List<ExcesoRecepcion> Excesos { get; } = new List<ExcesoRecepcion>();
         public List<ProductoNoPedido> NoPedidos { get; } = new List<ProductoNoPedido>();
         public List<int> PedidosAAlbaranear { get; } = new List<int>();
@@ -90,8 +93,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public static PlanRecepcionCompra Planificar(IEnumerable<LineaCompraPendiente> lineas, IDictionary<string, int> lecturas,
             DateTime hoy, bool esCompras)
         {
-            var plan = new PlanRecepcionCompra();
             hoy = hoy.Date;
+            var plan = new PlanRecepcionCompra { FechaAplazadas = hoy.AddDays(1) };
 
             // Del pedido más antiguo al más reciente; dentro del pedido, en el orden de sus líneas
             List<LineaCompraPendiente> ordenadas = (lineas ?? Enumerable.Empty<LineaCompraPendiente>())
@@ -168,8 +171,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                         Recibido = recibido,
                         Resto = resto,
                         EstadoResto = linea.ControlPendientes ? ESTADO_PENDIENTE : ESTADO_ANULADA,
-                        // Lo que sigue pendiente no puede tener fecha de hoy: el albarán de hoy se lo llevaría
-                        FechaResto = linea.FechaRecepcion.Date > hoy ? linea.FechaRecepcion.Date : hoy.AddDays(1),
+                        FechaResto = plan.FechaAplazadas,
                         VistoBueno = vistoBueno
                     });
                     if (vistoBueno)
@@ -184,18 +186,15 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     continue;
                 }
 
-                bool laEsperabaHoy = linea.FechaRecepcion.Date <= hoy;
-                if (!laEsperabaHoy)
+                // Sin control de pendientes, lo que se esperaba hasta hoy y no llega pasa a -99 (los -99 históricos son
+                // de líneas esperadas hasta el día del albarán: 816 de 817 desde 2020). Lo demás pasa a mañana.
+                if (!linea.ControlPendientes && linea.FechaRecepcion.Date <= hoy)
                 {
-                    continue; // Se espera más adelante: ni se anula ni la coge el albarán de hoy
+                    plan.Anuladas.Add(linea.NumeroOrden);
                 }
-                if (!linea.ControlPendientes)
+                else
                 {
-                    plan.Anuladas.Add(linea.NumeroOrden); // Sin control de pendientes, lo que no llega se vuelve a pedir
-                }
-                else if (linea.VistoBueno)
-                {
-                    plan.Apartadas.Add(linea.NumeroOrden);
+                    plan.Aplazadas.Add(linea.NumeroOrden);
                 }
             }
 
