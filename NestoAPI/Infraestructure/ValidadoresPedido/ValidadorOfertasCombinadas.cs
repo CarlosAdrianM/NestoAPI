@@ -195,15 +195,29 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             // únicamente lo cubre un filtro, cantidadOferta sería 0 y el control es FiltroSobresurtido)
             if (ofertaCumplida != null)
             {
-                var cantidadLineas = pedido.Lineas.Where(l => l.Producto == numeroProducto).Sum(l => l.Cantidad);
-                var cantidadOferta = ofertaCumplida.OfertasCombinadasDetalles.Where(o => o.Producto == numeroProducto).Sum(o => o.Cantidad);
-                if (cantidadOferta > 0 && cantidadLineas > cantidadOferta)
+                // Oferta 263 (02/10/26): los productos del detalle vienen de BD con el relleno del char(15), así que
+                // se compara sin espacios (antes cantidadOferta salía 0 y el control no saltaba nunca).
+                // Si el producto está en varias ofertas (el masajeador de las Modellare 239-242), lo que manda es el
+                // reparto entre todas (ConsumoExactoFactible, más abajo): mirando una sola oferta, las unidades de las
+                // otras parecerían de más.
+                string productoValidado = numeroProducto?.Trim();
+                bool compartidoConOtrasOfertas = ofertasCombinadas.Count(o => o.OfertasCombinadasDetalles
+                    .Any(d => d.Cantidad > 0 && d.GrupoAlternativa == null && d.Producto?.Trim() == productoValidado)) > 1;
+                var cantidadLineas = pedido.Lineas.Where(l => l.Producto?.Trim() == productoValidado).Sum(l => l.Cantidad);
+                var cantidadOferta = ofertaCumplida.OfertasCombinadasDetalles.Where(o => o.Producto?.Trim() == productoValidado).Sum(o => o.Cantidad);
+                if (!compartidoConOtrasOfertas && cantidadOferta > 0 && cantidadLineas > cantidadOferta)
                 {
                     IEnumerable<LineaPedidoVentaDTO> lineasOfertaPedido = pedido.Lineas.Where(l =>
-                        ofertaCumplida.OfertasCombinadasDetalles.Where(o => !o.PermitirCantidadMenor && (float)l.Cantidad / o.Cantidad < (float)cantidadLineas / cantidadOferta).Select(d => d.Producto).Contains(l.Producto)
+                        ofertaCumplida.OfertasCombinadasDetalles
+                            .Where(o => o.Cantidad > 0 && !o.PermitirCantidadMenor && (float)l.Cantidad / o.Cantidad < (float)cantidadLineas / cantidadOferta)
+                            .Select(d => d.Producto?.Trim())
+                            .Contains(l.Producto?.Trim())
                     );
                     if (lineasOfertaPedido != null && lineasOfertaPedido.Count() > 0)
                     {
+                        // Si la rama del importe mínimo ya la había dado por buena, hay que deshacerlo: si no, el
+                        // rechazo se quedaba en el motivo y la respuesta salía válida (1 juego + 6 diademas en la 263).
+                        respuesta.ValidacionSuperada = false;
                         respuesta.Motivo = "Está ofertando más cantidad de la permitida en el producto " + numeroProducto + " para que la oferta " + ofertaCumplida.Id.ToString() + " sea válida";
                         respuesta.MotivoEspecifico = true;
                         ofertaCumplida = null;
