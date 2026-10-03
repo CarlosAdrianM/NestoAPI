@@ -42,6 +42,26 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         }
 
         [TestMethod]
+        public async Task Completar_TambienLaFoto_AunqueElProductoNoTengaFicha()
+        {
+            IFotosProductoAlmacen fotos = A.Fake<IFotosProductoAlmacen>();
+            A.CallTo(() => fotos.Urls(A<IEnumerable<string>>._)).Returns(new Dictionary<string, string>
+            {
+                ["22624"] = "https://tienda/22624-home_default/lata-cera-oro.jpg",
+                ["18004"] = null
+            });
+            ConFichas();
+            var conFoto = new LineaRecogidaDTO { Producto = "22624 " };
+            var sinFoto = new LineaRecogidaDTO { Producto = "18004" };
+
+            await new FichasProductoAlmacen(repositorio, fotos).Completar("1", new[] { conFoto, sinFoto });
+
+            Assert.AreEqual("https://tienda/22624-home_default/lata-cera-oro.jpg", conFoto.UrlFoto);
+            Assert.IsNull(sinFoto.UrlFoto);
+            A.CallTo(() => fotos.Urls(A<IEnumerable<string>>.That.Matches(p => p.Count() == 2))).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
         public async Task Completar_UnaSolaConsultaConCadaProductoUnaVez()
         {
             ConFichas();

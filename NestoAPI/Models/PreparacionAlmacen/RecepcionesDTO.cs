@@ -32,6 +32,7 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public string Subgrupo { get; set; }
         public short? Tamano { get; set; }
         public string UnidadMedida { get; set; }
+        public string UrlFoto { get; set; }
         public string CodigoBarras { get; set; }
         public bool SinCodigo { get; set; }
         public bool CodigoDuplicado { get; set; }

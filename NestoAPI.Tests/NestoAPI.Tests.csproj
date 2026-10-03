@@ -398,6 +398,7 @@
     <Compile Include="Infrastructure\ValidadorOfertasCombinadasMismaCantidadTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\CasadorEscaneosTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\FichasProductoAlmacenTests.cs" />
+    <Compile Include="Infrastructure\PreparacionAlmacen\FotosProductoAlmacenTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\EscrituraSoloAlmacenAttributeTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\RepositorioPreparacionAlmacenIntegracionTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\SasBlobAzureTests.cs" />

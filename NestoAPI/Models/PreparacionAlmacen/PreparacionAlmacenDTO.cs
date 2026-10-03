@@ -20,6 +20,8 @@ namespace NestoAPI.Models.PreparacionAlmacen
         string Subgrupo { get; set; }
         short? Tamano { get; set; }
         string UnidadMedida { get; set; }
+        /// <summary>Ariadna#2: la foto del producto (la de la tienda). Null si no tiene: la app no enseña nada.</summary>
+        string UrlFoto { get; set; }
     }
 
     /// <summary>Una parada del picking: un producto en un hueco de la estantería.</summary>
@@ -74,6 +76,7 @@ namespace NestoAPI.Models.PreparacionAlmacen
     {
         public string Familia { get; set; }
         public string Subgrupo { get; set; }
+        public string UrlFoto { get; set; }
         /// <summary>Unidades de esta parada ya cogidas o dadas por falta.</summary>
         public int Resuelto { get; set; }
         public int Pendiente => Math.Max(0, Cantidad - Resuelto);
@@ -317,6 +320,7 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public string Subgrupo { get; set; }
         public short? Tamano { get; set; }
         public string UnidadMedida { get; set; }
+        public string UrlFoto { get; set; }
         public string CodigoBarras { get; set; }
         public bool SinCodigo { get; set; }
         /// <summary>Unidades recibidas que todavía no tienen hueco.</summary>
@@ -370,6 +374,7 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public string Subgrupo { get; set; }
         public short? Tamano { get; set; }
         public string UnidadMedida { get; set; }
+        public string UrlFoto { get; set; }
         public string CodigoBarras { get; set; }
         public string Almacen { get; set; }
         public List<UbicacionAlmacenDTO> Ubicaciones { get; set; } = new List<UbicacionAlmacenDTO>();

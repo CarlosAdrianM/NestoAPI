@@ -26,7 +26,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
     public interface IFichasProductoAlmacen
     {
-        /// <summary>Rellena familia, subgrupo, tamaño y unidad de medida de todos los productos con una sola consulta.</summary>
+        /// <summary>
+        /// Rellena familia, subgrupo, tamaño y unidad de medida de todos los productos con una sola consulta, y la foto
+        /// (Ariadna#2) con su caché.
+        /// </summary>
         Task Completar(string empresa, IEnumerable<IConFichaProducto> productos);
     }
 
@@ -38,10 +41,13 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     public class FichasProductoAlmacen : IFichasProductoAlmacen
     {
         private readonly IRepositorioFichasProducto repositorio;
+        private readonly IFotosProductoAlmacen fotos;
 
-        public FichasProductoAlmacen(IRepositorioFichasProducto repositorio)
+        /// <param name="fotos">Sin él, sin foto.</param>
+        public FichasProductoAlmacen(IRepositorioFichasProducto repositorio, IFotosProductoAlmacen fotos = null)
         {
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
+            this.fotos = fotos;
         }
 
         public async Task Completar(string empresa, IEnumerable<IConFichaProducto> productos)
@@ -57,13 +63,23 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 return;
             }
 
+            // La foto va a la tienda: se pregunta a la vez que se lee la ficha
+            Task<IDictionary<string, string>> urls = fotos == null
+                ? Task.FromResult<IDictionary<string, string>>(new Dictionary<string, string>())
+                : fotos.Urls(numeros);
             Dictionary<string, FichaProductoAlmacen> fichas = (await repositorio.LeerFichas(empresa, numeros).ConfigureAwait(false) ?? new List<FichaProductoAlmacen>())
                 .Where(f => !string.IsNullOrWhiteSpace(f?.Producto))
                 .GroupBy(f => f.Producto.Trim(), StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
+            IDictionary<string, string> fotosPorProducto = await urls.ConfigureAwait(false) ?? new Dictionary<string, string>();
+
             foreach (IConFichaProducto producto in lista)
             {
+                if (producto.Producto != null && fotosPorProducto.TryGetValue(producto.Producto.Trim(), out string url))
+                {
+                    producto.UrlFoto = url;
+                }
                 if (producto.Producto == null || !fichas.TryGetValue(producto.Producto.Trim(), out FichaProductoAlmacen ficha))
                 {
                     continue;

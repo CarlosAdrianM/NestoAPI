@@ -232,6 +232,7 @@ namespace NestoAPI
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioRecepciones, Infraestructure.PreparacionAlmacen.ServicioRecepciones>();
             // Lo que ve el mozo de cada producto además del nombre: familia, subgrupo, tamaño y unidad (un solo sitio)
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioFichasProducto>(_ => Infraestructure.PreparacionAlmacen.RepositorioFichasProducto.ConContextoPropio());
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IFotosProductoAlmacen, Infraestructure.PreparacionAlmacen.FotosProductoAlmacen>();
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IFichasProductoAlmacen, Infraestructure.PreparacionAlmacen.FichasProductoAlmacen>();
 
             // Ventana de facturas pendientes de Verifactu (NestoAPI#522)
