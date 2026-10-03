@@ -33,14 +33,17 @@ namespace NestoAPI.Controllers
         private readonly IServicioUbicacionesAlmacen ubicaciones;
         private readonly IServicioRecepcionCompras compras;
         private readonly IServicioRecepcionReposiciones reposiciones;
+        private readonly IFichasProductoAlmacen fichas;
 
+        /// <param name="fichas">Familia, subgrupo, tamaño y unidad de cada producto que ve el mozo. Sin él, solo el nombre.</param>
         public AlmacenController(IServicioPreparacionAlmacen servicio, IServicioUbicacionesAlmacen ubicaciones,
-            IServicioRecepcionCompras compras, IServicioRecepcionReposiciones reposiciones)
+            IServicioRecepcionCompras compras, IServicioRecepcionReposiciones reposiciones, IFichasProductoAlmacen fichas = null)
         {
             this.servicio = servicio;
             this.ubicaciones = ubicaciones;
             this.compras = compras;
             this.reposiciones = reposiciones;
+            this.fichas = fichas;
         }
 
         // GET api/Almacen/Ping
@@ -126,7 +129,12 @@ namespace NestoAPI.Controllers
                 return BadRequest("El tipo de recogida tiene que ser PICK o REPO.");
             }
             RecogidaAlmacenDTO recogida = await servicio.LeerRecogida(Empresa(empresa), tipo, numero).ConfigureAwait(false);
-            return recogida == null ? (IHttpActionResult)NotFound() : Ok(recogida);
+            if (recogida == null)
+            {
+                return NotFound();
+            }
+            await CompletarFichas(Empresa(empresa), recogida.Lineas).ConfigureAwait(false);
+            return Ok(recogida);
         }
 
         // POST api/Almacen/Recogidas/PICK/99633/Terminar?empresa=1
@@ -319,7 +327,9 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> GetPendienteDeUbicar(string almacen = Constantes.Almacenes.ALGETE,
             string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
         {
-            return Ok(await ubicaciones.LeerPendienteDeUbicar(Empresa(empresa), Almacen(almacen)).ConfigureAwait(false));
+            PendienteDeUbicarDTO pendiente = await ubicaciones.LeerPendienteDeUbicar(Empresa(empresa), Almacen(almacen)).ConfigureAwait(false);
+            await CompletarFichas(Empresa(empresa), pendiente?.Productos).ConfigureAwait(false);
+            return Ok(pendiente);
         }
 
         // POST api/Almacen/Ubicar?empresa=1   { Producto, Almacen, Pasillo, Fila, Columna, Cantidad, AlbaranCompra? ... }
@@ -333,7 +343,9 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> PostUbicar([FromBody] UbicarProductoDTO ubicar,
             string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
         {
-            return Ok(await ubicaciones.Ubicar(Empresa(empresa), ubicar, Usuario()).ConfigureAwait(false));
+            ProductoAlmacenDTO producto = await ubicaciones.Ubicar(Empresa(empresa), ubicar, Usuario()).ConfigureAwait(false);
+            await CompletarFichas(Empresa(empresa), new[] { producto }).ConfigureAwait(false);
+            return Ok(producto);
         }
 
         // GET api/Almacen/Productos/Buscar?codigo=8436620930427&almacen=ALG&empresa=1
@@ -351,7 +363,9 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest("Falta el código de barras o el número de producto.");
             }
-            return Ok(await ubicaciones.BuscarProducto(Empresa(empresa), Almacen(almacen), codigo).ConfigureAwait(false));
+            List<ProductoAlmacenDTO> productos = await ubicaciones.BuscarProducto(Empresa(empresa), Almacen(almacen), codigo).ConfigureAwait(false);
+            await CompletarFichas(Empresa(empresa), productos).ConfigureAwait(false);
+            return Ok(productos);
         }
 
         // GET api/Almacen/Compras/Pendientes?almacen=ALG&empresa=1
@@ -436,6 +450,11 @@ namespace NestoAPI.Controllers
         private static string Empresa(string empresa)
         {
             return string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
+        }
+
+        private Task CompletarFichas(string empresa, IEnumerable<IConFichaProducto> productos)
+        {
+            return fichas == null || productos == null ? Task.CompletedTask : fichas.Completar(empresa, productos);
         }
 
         private string Usuario()

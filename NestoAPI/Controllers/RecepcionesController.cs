@@ -25,10 +25,13 @@ namespace NestoAPI.Controllers
     public class RecepcionesController : ApiController
     {
         private readonly IServicioRecepciones servicio;
+        private readonly IFichasProductoAlmacen fichas;
 
-        public RecepcionesController(IServicioRecepciones servicio)
+        /// <param name="fichas">Familia, subgrupo, tamaño y unidad de cada producto que ve el mozo. Sin él, solo el nombre.</param>
+        public RecepcionesController(IServicioRecepciones servicio, IFichasProductoAlmacen fichas = null)
         {
             this.servicio = servicio;
+            this.fichas = fichas;
         }
 
         // GET api/Almacen/Recepciones?almacen=ALG&empresa=1
@@ -66,7 +69,15 @@ namespace NestoAPI.Controllers
             string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
         {
             RecepcionDTO recepcion = await servicio.LeerEsperado(tipo, Empresa(empresa), Almacen(almacen), documento?.Trim(), User).ConfigureAwait(false);
-            return recepcion == null ? (IHttpActionResult)NotFound() : Ok(recepcion);
+            if (recepcion == null)
+            {
+                return NotFound();
+            }
+            if (fichas != null)
+            {
+                await fichas.Completar(Empresa(empresa), recepcion.Lineas).ConfigureAwait(false);
+            }
+            return Ok(recepcion);
         }
 
         // POST api/Almacen/Recepciones/COMP/65/Casar?almacen=ALG&empresa=1   [{ Producto, Cantidad }]

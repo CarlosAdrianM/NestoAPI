@@ -7,6 +7,21 @@ namespace NestoAPI.Models.PreparacionAlmacen
     // con lector de códigos: el picking por ubicación, el packing por pedido, los escaneos y los
     // bultos con su foto.
 
+    /// <summary>
+    /// Ariadna (03/10/26): lo que hace falta ver para no equivocarse de producto, además del nombre: la familia, el
+    /// subgrupo, el tamaño y la unidad de medida. Lo rellena siempre <c>FichasProductoAlmacen</c> (un solo sitio).
+    /// </summary>
+    public interface IConFichaProducto
+    {
+        string Producto { get; }
+        /// <summary>El nombre de la familia (Familias.Descripción), no su código.</summary>
+        string Familia { get; set; }
+        /// <summary>El nombre del subgrupo (SubGruposProducto.Descripción), no su código.</summary>
+        string Subgrupo { get; set; }
+        short? Tamano { get; set; }
+        string UnidadMedida { get; set; }
+    }
+
     /// <summary>Una parada del picking: un producto en un hueco de la estantería.</summary>
     public class LineaPickingAlmacenDTO
     {
@@ -55,8 +70,10 @@ namespace NestoAPI.Models.PreparacionAlmacen
     }
 
     /// <summary>Una parada del recorrido con lo que ya está hecho de ella.</summary>
-    public class LineaRecogidaDTO : LineaPickingAlmacenDTO
+    public class LineaRecogidaDTO : LineaPickingAlmacenDTO, IConFichaProducto
     {
+        public string Familia { get; set; }
+        public string Subgrupo { get; set; }
         /// <summary>Unidades de esta parada ya cogidas o dadas por falta.</summary>
         public int Resuelto { get; set; }
         public int Pendiente => Math.Max(0, Cantidad - Resuelto);
@@ -290,12 +307,16 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public int Cantidad { get; set; }
     }
 
-    public class ProductoPendienteDeUbicarDTO
+    public class ProductoPendienteDeUbicarDTO : IConFichaProducto
     {
         /// <summary>Posición en el recorrido: por el hueco donde ya hay producto (pasillo, columna, fila).</summary>
         public int Orden { get; set; }
         public string Producto { get; set; }
         public string Descripcion { get; set; }
+        public string Familia { get; set; }
+        public string Subgrupo { get; set; }
+        public short? Tamano { get; set; }
+        public string UnidadMedida { get; set; }
         public string CodigoBarras { get; set; }
         public bool SinCodigo { get; set; }
         /// <summary>Unidades recibidas que todavía no tienen hueco.</summary>
@@ -341,10 +362,14 @@ namespace NestoAPI.Models.PreparacionAlmacen
     }
 
     /// <summary>Un producto encontrado por su código de barras o su número, con dónde está.</summary>
-    public class ProductoAlmacenDTO
+    public class ProductoAlmacenDTO : IConFichaProducto
     {
         public string Producto { get; set; }
         public string Descripcion { get; set; }
+        public string Familia { get; set; }
+        public string Subgrupo { get; set; }
+        public short? Tamano { get; set; }
+        public string UnidadMedida { get; set; }
         public string CodigoBarras { get; set; }
         public string Almacen { get; set; }
         public List<UbicacionAlmacenDTO> Ubicaciones { get; set; } = new List<UbicacionAlmacenDTO>();

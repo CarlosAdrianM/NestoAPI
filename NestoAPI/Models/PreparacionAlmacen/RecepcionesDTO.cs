@@ -24,10 +24,14 @@ namespace NestoAPI.Models.PreparacionAlmacen
     }
 
     /// <summary>Un producto que se espera recibir.</summary>
-    public class LineaRecepcionDTO
+    public class LineaRecepcionDTO : IConFichaProducto
     {
         public string Producto { get; set; }
         public string Descripcion { get; set; }
+        public string Familia { get; set; }
+        public string Subgrupo { get; set; }
+        public short? Tamano { get; set; }
+        public string UnidadMedida { get; set; }
         public string CodigoBarras { get; set; }
         public bool SinCodigo { get; set; }
         public bool CodigoDuplicado { get; set; }

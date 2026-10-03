@@ -534,6 +534,7 @@
     <Compile Include="Controllers\RecepcionesController.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\AlmacenFotosBultos.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\CasadorEscaneos.cs" />
+    <Compile Include="Infraestructure\PreparacionAlmacen\FichasProductoAlmacen.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\EscrituraSoloAlmacenAttribute.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\PlanificadorRecepcionCompra.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\AvisadorCompras.cs" />

@@ -105,6 +105,25 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public async Task LeerEsperado_CompletaLaFichaDeCadaLinea()
+        {
+            IFichasProductoAlmacen fichas = A.Fake<IFichasProductoAlmacen>();
+            var conFichas = new RecepcionesController(servicio, fichas)
+            {
+                Request = new HttpRequestMessage(),
+                Configuration = new HttpConfiguration(),
+                User = Usuario("Lidia", "Tiendas")
+            };
+            var recepcion = new RecepcionDTO { Tipo = "COMP", Documento = "65", Lineas = new List<LineaRecepcionDTO> { new LineaRecepcionDTO { Producto = "37049" } } };
+            A.CallTo(() => servicio.LeerEsperado("COMP", "1", "ALG", "65", A<IPrincipal>.Ignored)).Returns(recepcion);
+
+            IHttpActionResult resultado = await conFichas.GetRecepcion("COMP", "65");
+
+            Assert.AreSame(recepcion, ((OkNegotiatedContentResult<RecepcionDTO>)resultado).Content);
+            A.CallTo(() => fichas.Completar("1", recepcion.Lineas)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
         public async Task Casar_SinNadaPendiente_404()
         {
             A.CallTo(() => servicio.Casar("COMP", "1", "ALG", "65", A<IEnumerable<LecturaRecepcionDTO>>.Ignored))

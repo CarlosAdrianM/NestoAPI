@@ -345,5 +345,57 @@ namespace NestoAPI.Tests.Controllers
             TerminarDevuelve(EstadoTerminarSalida.NoSeTerminaAqui);
             Assert.IsInstanceOfType(await controller.PostTerminarRecogida("PICK", 99700), typeof(BadRequestErrorMessageResult));
         }
+
+        private AlmacenController ConFichas(IFichasProductoAlmacen fichas)
+        {
+            return new AlmacenController(servicio, ubicaciones, compras, reposiciones, fichas)
+            {
+                User = new GenericPrincipal(new GenericIdentity("Andrey", "Bearer"), new string[0]),
+                Request = new HttpRequestMessage()
+            };
+        }
+
+        [TestMethod]
+        public async Task GetRecogida_CompletaLaFichaDeCadaParada()
+        {
+            IFichasProductoAlmacen fichas = A.Fake<IFichasProductoAlmacen>();
+            var recogida = new RecogidaAlmacenDTO { Tipo = "PICK", Numero = 99739, Lineas = new List<LineaRecogidaDTO> { new LineaRecogidaDTO { Producto = "22624" } } };
+            A.CallTo(() => servicio.LeerRecogida("1", "PICK", 99739)).Returns(recogida);
+
+            _ = await ConFichas(fichas).GetRecogida("PICK", 99739);
+
+            A.CallTo(() => fichas.Completar("1", recogida.Lineas)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task GetPendienteDeUbicar_CompletaLaFichaDeCadaProducto()
+        {
+            IFichasProductoAlmacen fichas = A.Fake<IFichasProductoAlmacen>();
+            var pendiente = new PendienteDeUbicarDTO { Productos = new List<ProductoPendienteDeUbicarDTO> { new ProductoPendienteDeUbicarDTO { Producto = "18004" } } };
+            A.CallTo(() => ubicaciones.LeerPendienteDeUbicar("1", "ALG")).Returns(pendiente);
+
+            _ = await ConFichas(fichas).GetPendienteDeUbicar();
+
+            A.CallTo(() => fichas.Completar("1", pendiente.Productos)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task GetProductoPorCodigo_YPostUbicar_CompletanLaFicha()
+        {
+            IFichasProductoAlmacen fichas = A.Fake<IFichasProductoAlmacen>();
+            var encontrados = new List<ProductoAlmacenDTO> { new ProductoAlmacenDTO { Producto = "18004" } };
+            var ubicar = new UbicarProductoDTO { Producto = "18004", Hueco = "009003008", Cantidad = 1 };
+            var comoQueda = new ProductoAlmacenDTO { Producto = "18004" };
+            A.CallTo(() => ubicaciones.BuscarProducto("1", "ALG", "18004")).Returns(encontrados);
+            A.CallTo(() => ubicaciones.Ubicar("1", ubicar, "Andrey")).Returns(comoQueda);
+            AlmacenController conFichas = ConFichas(fichas);
+
+            _ = await conFichas.GetProductoPorCodigo("18004");
+            _ = await conFichas.PostUbicar(ubicar);
+
+            A.CallTo(() => fichas.Completar("1", encontrados)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => fichas.Completar("1", A<IEnumerable<IConFichaProducto>>.That.Matches(p => System.Linq.Enumerable.Single(p) == comoQueda)))
+                .MustHaveHappenedOnceExactly();
+        }
     }
 }
