@@ -30,10 +30,10 @@ $ErrorActionPreference = "Stop"
 
 # Rellenar los correos antes de lanzarlo
 $mozos = @(
-    @{ Usuario = "Santiago"; Nombre = "Santiago"; Apellidos = "Almacén"; Correo = "" },
-    @{ Usuario = "Alfredo";  Nombre = "Alfredo";  Apellidos = "Almacén"; Correo = "" },
-    @{ Usuario = "Pedro";    Nombre = "Pedro";    Apellidos = "Almacén"; Correo = "" },
-    @{ Usuario = "Andre";    Nombre = "Andre";    Apellidos = "Almacén"; Correo = "" }
+    @{ Usuario = "Santiago"; Nombre = "Santiago"; Apellidos = "Almacén"; Correo = "santiagocampillo@nuevavision.es" },
+    @{ Usuario = "Alfredo";  Nombre = "Alfredo";  Apellidos = "Almacén"; Correo = "alfredo@nuevavision.es" },
+    @{ Usuario = "Pedro";    Nombre = "Pedro";    Apellidos = "Jurado Lara"; Correo = "pjuradolara@gmail.com" },
+    @{ Usuario = "Andre";    Nombre = "Andre";    Apellidos = "Kuznetsov"; Correo = "andrekuznetson@nuevavision.es" }
 )
 
 $sinCorreo = @($mozos | Where-Object { -not $_.Correo })
