@@ -552,6 +552,7 @@
     <Compile Include="Infrastructure\PedidosVenta\GestorPortesLineasVivasTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\FechaEntregaLineasProtegidasTests.cs" />
     <Compile Include="Infrastructure\ServicioExtractoProductoTests.cs" />
+    <Compile Include="Infrastructure\AlbaranFaltasAriadnaTests.cs" />
     <Compile Include="Infrastructure\GestorAlbaranesVentaTests.cs" />
     <Compile Include="Infrastructure\GestorPedidosVentaTests.cs" />
     <Compile Include="Infrastructure\Domiciliaciones\GestorDomiciliacionesTests.cs" />

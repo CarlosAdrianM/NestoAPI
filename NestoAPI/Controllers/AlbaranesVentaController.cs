@@ -67,6 +67,12 @@ namespace NestoAPI.Controllers
                 int albaran = await _gestor.CrearAlbaran(empresa, pedido, usuario);
                 return Ok(albaran);
             }
+            catch (Infraestructure.Exceptions.NestoBusinessException)
+            {
+                // Nesto#508 (faltas de Ariadna sin quitar…): lo formatea GlobalExceptionFilter con su código y su
+                // mensaje, para que Nesto lo enseñe tal cual.
+                throw;
+            }
             catch (System.Exception ex)
             {
                 ElmahHelper.Log(ex); // 28/09/26: InternalServerError se salta el GlobalExceptionFilter
