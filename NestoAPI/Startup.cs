@@ -234,6 +234,10 @@ namespace NestoAPI
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioFichasProducto>(_ => Infraestructure.PreparacionAlmacen.RepositorioFichasProducto.ConContextoPropio());
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IFotosProductoAlmacen, Infraestructure.PreparacionAlmacen.FotosProductoAlmacen>();
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IFichasProductoAlmacen, Infraestructure.PreparacionAlmacen.FichasProductoAlmacen>();
+            // Ariadna#8: el mozo informa de un dato mal de la ficha (foto → Tienda online; lo demás → Compras)
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioAvisosFicha>(_ => Infraestructure.PreparacionAlmacen.RepositorioAvisosFichaSql.ConContextoPropio());
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IAvisadorFichaProducto, Infraestructure.PreparacionAlmacen.AvisadorFichaProducto>();
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioAvisosFicha, Infraestructure.PreparacionAlmacen.ServicioAvisosFicha>();
 
             // Ventana de facturas pendientes de Verifactu (NestoAPI#522)
             _ = services.AddScoped<Infraestructure.Verifactu.IServicioFacturasPendientesVerifactu, Infraestructure.Verifactu.ServicioFacturasPendientesVerifactu>();
@@ -697,6 +701,19 @@ namespace NestoAPI
                 }
             );
             Console.WriteLine("✅ Job recurrente 'cobros-carrito-huerfanos' configurado (cada hora)");
+
+            // Ariadna#8: un aviso de dato mal se cierra solo («Cambiado») cuando el dato ya no es el que había al avisar.
+            // Cada hora es de sobra: lo normal es que lo cierren a mano con el botón del correo.
+            RecurringJob.AddOrUpdate(
+                "avisos-ficha-producto",
+                () => Infraestructure.PreparacionAlmacen.AvisosFichaProductoJobsService.RevisarCambios(),
+                "25 * * * *", // Cron: cada hora, en el minuto 25
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'avisos-ficha-producto' configurado (cada hora)");
 
             // NestoAPI#402 (16/09/26): la sincronización de clientes pasa a Hangfire. Hasta hoy la
             // lanzaba la tarea «Nesto_sync Clientes» del Task Scheduler de RDS2016 (cada 5 minutos,

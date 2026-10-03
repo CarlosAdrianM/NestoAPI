@@ -12,6 +12,12 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     {
         /// <summary>La URL de la foto de cada producto (la de la tienda); null si no tiene o no se ha podido saber.</summary>
         Task<IDictionary<string, string>> Urls(IEnumerable<string> productos);
+
+        /// <summary>Ariadna#8: la foto que tiene la tienda AHORA (sin mirar la caché, que se pone al día). Null si no tiene o no contesta.</summary>
+        Task<string> UrlActual(string producto);
+
+        /// <summary>Ariadna#8: la foto se ha corregido: la próxima vez se pregunta a la tienda.</summary>
+        void Olvidar(string producto);
     }
 
     /// <summary>
@@ -87,6 +93,20 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             return resultado;
         }
 
+        public Task<string> UrlActual(string producto)
+        {
+            string limpio = producto?.Trim();
+            return string.IsNullOrEmpty(limpio) ? Task.FromResult<string>(null) : Buscar(limpio);
+        }
+
+        public void Olvidar(string producto)
+        {
+            if (!string.IsNullOrWhiteSpace(producto))
+            {
+                cache.Olvidar(producto.Trim());
+            }
+        }
+
         private async Task<string> Buscar(string producto)
         {
             string ruta;
@@ -139,6 +159,11 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public void Guardar(string producto, string url, DateTime caduca)
         {
             fotos[producto] = (url, caduca);
+        }
+
+        public void Olvidar(string producto)
+        {
+            _ = fotos.TryRemove(producto, out _);
         }
     }
 }

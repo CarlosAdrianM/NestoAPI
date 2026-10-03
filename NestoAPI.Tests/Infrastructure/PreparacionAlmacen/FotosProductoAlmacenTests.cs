@@ -145,5 +145,37 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
                 }
             }
         }
+    
+
+        [TestMethod]
+        public async Task Olvidar_LaSiguienteVezVuelveAPreguntarALaTienda()
+        {
+            // Ariadna#8: al corregir la foto, el mozo la ve nueva sin esperar 12 horas
+            var cache = new CacheFotosProducto();
+            FotosProductoAlmacen servicio = Fotos(cache);
+            _ = await servicio.Urls(new[] { "22624" });
+
+            servicio.Olvidar("22624 ");
+            _ = await servicio.Urls(new[] { "22624" });
+
+            Assert.AreEqual(2, preguntas["22624"]);
+        }
+
+        [TestMethod]
+        public async Task UrlActual_PreguntaALaTiendaAunqueEsteEnLaCacheYLaPoneAlDia()
+        {
+            // Ariadna#8: para saber si la foto ha cambiado no vale la caché
+            var cache = new CacheFotosProducto();
+            FotosProductoAlmacen servicio = Fotos(cache);
+            _ = await servicio.Urls(new[] { "22624" });
+            tienda = p => Task.FromResult("https://tienda.es/" + p + "-home_default/nueva.jpg");
+
+            string actual = await servicio.UrlActual("22624");
+            IDictionary<string, string> urls = await servicio.Urls(new[] { "22624" });
+
+            Assert.AreEqual("https://tienda.es/22624-home_default/nueva.jpg", actual);
+            Assert.AreEqual(actual, urls["22624"]);
+            Assert.AreEqual(2, preguntas["22624"]);
+        }
     }
 }
