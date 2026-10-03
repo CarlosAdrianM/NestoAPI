@@ -22,12 +22,21 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
     public class RepositorioPreparacionAlmacenIntegracionTests
     {
         private const string EMPRESA = "1";
-        // Un picking ya servido del 24/09/26: 26 paradas, 7 pedidos
-        private const int PICKING = 99633;
-
         private static DbContext Abrir()
         {
             return BaseDeDatosDeIntegracion.AbrirSoloSql();
+        }
+
+        // Un picking servido ya no sale (solo las líneas en Estado 1): se coge uno en curso de Algete con varios pedidos
+        private static async Task<int> PickingEnCurso(RepositorioPreparacionAlmacen repositorio)
+        {
+            List<PickingEnCursoDTO> enCurso = await repositorio.LeerPickingsEnCurso(EMPRESA, "ALG");
+            PickingEnCursoDTO conVarios = enCurso.FirstOrDefault(p => p.Pedidos > 1);
+            if (conVarios == null)
+            {
+                Assert.Inconclusive("No hay ningún picking en curso con varios pedidos en Algete.");
+            }
+            return conVarios.Picking;
         }
 
         [TestMethod]
@@ -37,6 +46,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             using (DbContext contexto = Abrir())
             {
                 var repositorio = new RepositorioPreparacionAlmacen(contexto.Database);
+                int PICKING = await PickingEnCurso(repositorio);
 
                 List<LineaPickingAlmacenDTO> lineas = CasadorEscaneos.OrdenarRecorrido(
                     await repositorio.LeerLineasPicking(EMPRESA, PICKING));
@@ -60,6 +70,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             using (DbContext contexto = Abrir())
             {
                 var repositorio = new RepositorioPreparacionAlmacen(contexto.Database);
+                int PICKING = await PickingEnCurso(repositorio);
 
                 List<FilaPackingAlmacen> todo = await repositorio.LeerLineasPacking(EMPRESA, PICKING, null);
                 // El pedido se coge del propio picking: los datos de producción se mueven (el 30/09
@@ -74,8 +85,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
 
                 Assert.IsTrue(await repositorio.ExistePedidoEnPicking(EMPRESA, PEDIDO, PICKING));
                 Assert.IsFalse(await repositorio.ExistePedidoEnPicking(EMPRESA, PEDIDO, 1));
-                // Ya está servido: no tiene picking en curso, y eso es un null, no un error
-                _ = await repositorio.PickingEnCursoDelPedido(EMPRESA, PEDIDO);
+                Assert.AreEqual(PICKING, await repositorio.PickingEnCursoDelPedido(EMPRESA, PEDIDO));
 
                 // Las tablas nuevas: que las consultas casen con los DTO aunque no haya filas
                 _ = await repositorio.LeerLecturas(EMPRESA, PEDIDO, PICKING, CasadorEscaneos.FASE_PACKING);
@@ -205,7 +215,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
                 // Un traspaso ya contabilizado (02/10/26, ALG → REI): no queda nada por sacar
                 Assert.IsNull(await repositorio.LeerReposicionSalida(EMPRESA, 80872));
                 _ = await repositorio.LeerLecturasDeSalida(EMPRESA, "REPO", 80872);
-                _ = await repositorio.LeerLecturasDeSalida(EMPRESA, "PICK", PICKING);
+                _ = await repositorio.LeerLecturasDeSalida(EMPRESA, "PICK", 99633);
             }
         }
     }

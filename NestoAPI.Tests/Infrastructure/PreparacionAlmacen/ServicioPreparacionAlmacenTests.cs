@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Infraestructure.PreparacionAlmacen;
@@ -638,6 +638,16 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             Assert.IsFalse(estado.Completo);
             Assert.AreEqual(-2, estado.Productos.Single().Diferencia);
             Assert.IsFalse(estado.TodosLosBultosConFoto);
+        }
+
+        [TestMethod]
+        public void LineasPickingYPacking_SoloLasQueSiguenEnElPicking_ComoAlTerminar()
+        {
+            // Picking 99648 (03/10/26): enseñaba líneas albaranadas el 25/09 que conservan el número de picking,
+            // el mozo las daba por «No está» y la salida no se podía terminar (Terminar solo mira Estado 1)
+            StringAssert.Contains(TransaccionSalidaSql.SQL_PIEZAS_PICKING, "l.Estado = 1");
+            StringAssert.Contains(RepositorioPreparacionAlmacen.SQL_LINEAS_PICKING, "l.Estado = 1");
+            StringAssert.Contains(RepositorioPreparacionAlmacen.SQL_LINEAS_PACKING, "l.Estado = 1");
         }
     }
 }

@@ -92,9 +92,11 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             this.baseDeDatos = baseDeDatos;
         }
 
-        // La cantidad sale de las ubicaciones reservadas para el picking (estado 3; -3 cuando ya se
-        // ha servido), que guardan la reserva en negativo; si la línea no tiene ubicación, de la
-        // propia línea menos lo que el cliente recoge. Es la misma cuenta que prdInformePickingAgrupado.
+        // La cantidad sale de las ubicaciones reservadas para el picking (estado 3), que guardan la
+        // reserva en negativo; si la línea no tiene ubicación, de la propia línea menos lo que el
+        // cliente recoge. Es la misma cuenta que prdInformePickingAgrupado.
+        // Solo las líneas que siguen en el picking (Estado 1), igual que EscriturasSalida.SQL_PIEZAS_PICKING:
+        // las ya albaranadas o facturadas conservan el número de picking y no hay que recogerlas (picking 99648, 03/10/26).
         // Las cuatro columnas fijas del principio son las que rellena después CasadorEscaneos.OrdenarRecorrido:
         // SqlQuery exige una columna por cada propiedad del DTO.
         internal const string SQL_LINEAS_PICKING = @"
@@ -107,9 +109,9 @@ SELECT 0 AS Orden, CAST(0 AS bit) AS SinCodigo, CAST(0 AS bit) AS CodigoDuplicad
        CAST(ABS(ISNULL(SUM(u.Cantidad), ISNULL(SUM(l.Cantidad - l.Recoger), 0))) AS int) AS Cantidad,
        RTRIM(u.Pasillo) AS Pasillo, RTRIM(u.Fila) AS Fila, RTRIM(u.Columna) AS Columna
 FROM LinPedidoVta l
-     LEFT JOIN Ubicaciones u ON l.[Número] = u.PedidoVta AND l.[Nº Orden] = u.[NºOrdenVta] AND u.Estado IN (3, -3)
+     LEFT JOIN Ubicaciones u ON l.[Número] = u.PedidoVta AND l.[Nº Orden] = u.[NºOrdenVta] AND u.Estado = 3
      LEFT JOIN Productos p ON p.Empresa = l.Empresa AND p.[Número] = l.Producto
-WHERE l.Empresa = @p0 AND l.Picking = @p1 AND l.TipoLinea = 1
+WHERE l.Empresa = @p0 AND l.Picking = @p1 AND l.TipoLinea = 1 AND l.Estado = 1
 GROUP BY l.Producto, u.Pasillo, u.Fila, u.Columna
 HAVING ISNULL(SUM(u.Cantidad), ISNULL(SUM(l.Cantidad - l.Recoger), 0)) <> 0";
 
@@ -187,7 +189,7 @@ FROM LinPedidoVta l
      JOIN CabPedidoVta c ON c.Empresa = l.Empresa AND c.[Número] = l.[Número]
      LEFT JOIN Clientes cl ON cl.Empresa = c.Empresa AND cl.[Nº Cliente] = c.[Nº Cliente] AND cl.Contacto = c.Contacto
      LEFT JOIN Productos p ON p.Empresa = l.Empresa AND p.[Número] = l.Producto
-WHERE l.Empresa = @p0 AND l.Picking = @p1 AND l.TipoLinea = 1
+WHERE l.Empresa = @p0 AND l.Picking = @p1 AND l.TipoLinea = 1 AND l.Estado = 1
       AND (@p2 IS NULL OR l.[Número] = @p2)
       AND ISNULL(l.Cantidad, 0) - ISNULL(l.Recoger, 0) <> 0
 ORDER BY c.[Nº Cliente], c.Contacto, c.[Número], l.[Nº Orden]";
