@@ -386,6 +386,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 RecorteSalida primero = linea.First();
                 cambios.Add($"Pedido {primero.Pieza.Pedido}: {ServicioSalidas.Unidades(cantidad)} de {primero.Pieza.Producto} queda pendiente para otra entrega.");
             }
+            cambios.AddRange(await SacarLoQueSeQuedaSinProducto(empresa, numero, solos.Select(r => r.Pieza.Pedido).Distinct().ToList(), tx).ConfigureAwait(false));
             foreach (RecorteSalida recorte in aMano)
             {
                 cambios.Add($"Pedido {recorte.Pieza.Pedido}: {ServicioSalidas.Unidades(recorte.Cantidad)} de {recorte.Pieza.Producto} " +
@@ -406,6 +407,37 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             ResultadoTerminarSalidaDTO resumen = ServicioSalidas.Resumen(Tipo, numero, estado, mensaje);
             resumen.Cambios = cambios;
             return resumen;
+        }
+
+        /// <summary>
+        /// Regla aprobada por Carlos (03/10/26): si a un pedido, después de quitar las faltas, no le queda NINGUNA línea de
+        /// producto en el picking, sus líneas sin producto (portes, cuentas…) tampoco salen: pasan enteras a pendiente y sin
+        /// picking (por el mismo SacarDelPedido que las faltas) y esperan con el resto del pedido. Si le queda algún
+        /// producto, se quedan. Solo se miran los pedidos a los que se ha quitado algo.
+        /// </summary>
+        private static async Task<List<string>> SacarLoQueSeQuedaSinProducto(string empresa, int numero, IReadOnlyCollection<int> pedidos, ITransaccionSalida tx)
+        {
+            var cambios = new List<string>();
+            if (pedidos.Count == 0)
+            {
+                return cambios;
+            }
+            List<LineaEnPickingSalida> siguen = await tx.LineasQueSiguenEnElPicking(empresa, numero, pedidos).ConfigureAwait(false)
+                ?? new List<LineaEnPickingSalida>();
+            foreach (IGrouping<int, LineaEnPickingSalida> pedido in siguen.GroupBy(l => l.Pedido).OrderBy(g => g.Key))
+            {
+                if (pedido.Any(l => l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO))
+                {
+                    continue;
+                }
+                foreach (LineaEnPickingSalida linea in pedido)
+                {
+                    await tx.SacarDelPedido(linea.Linea, linea.Cantidad).ConfigureAwait(false);
+                }
+                cambios.Add($"Pedido {pedido.Key}: los portes esperan con el resto ({string.Join(", ", pedido.Select(l => l.Producto?.Trim()))}): " +
+                    "no le queda ningún producto en este picking.");
+            }
+            return cambios;
         }
     }
 

@@ -20,6 +20,9 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         public List<PiezaSalida> PiezasReposicion { get; set; } = new List<PiezaSalida>();
         public DiarioSalidaReposicion Diario { get; set; } = new DiarioSalidaReposicion { Almacen = "ALG", Diario = "General", Destino = "REI" };
         public List<int> TraspasosDelDiario { get; set; } = new List<int>();
+        /// <summary>Las líneas que siguen en el picking después de quitar las faltas (lo que leería la base de datos).</summary>
+        public List<LineaEnPickingSalida> LineasQueSiguen { get; set; } = new List<LineaEnPickingSalida>();
+        public List<IReadOnlyCollection<int>> PedidosMirados { get; } = new List<IReadOnlyCollection<int>>();
         public Exception FallarAlContabilizar { get; set; }
 
         public List<(PiezaSalida Pieza, int Cantidad, string Usuario)> QuitadoDeReservas { get; } = new List<(PiezaSalida, int, string)>();
@@ -42,6 +45,12 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         {
             SacadoDePedidos.Add((lineaPedido, cantidadQueFalta));
             return Task.CompletedTask;
+        }
+
+        public Task<List<LineaEnPickingSalida>> LineasQueSiguenEnElPicking(string empresa, int picking, IReadOnlyCollection<int> pedidos)
+        {
+            PedidosMirados.Add(pedidos);
+            return Task.FromResult(LineasQueSiguen.Where(l => pedidos.Contains(l.Pedido)).ToList());
         }
 
         public Task<List<PiezaSalida>> LeerPiezasReposicion(string empresa, int traspaso) => Task.FromResult(PiezasReposicion);
@@ -188,6 +197,75 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
 
             Assert.AreEqual(EstadoTerminarSalida.Terminada, resultado.Estado);
             Assert.AreEqual(0, tx.QuitadoDeReservas.Count + tx.SacadoDePedidos.Count);
+        }
+
+        [TestMethod]
+        public async Task Terminar_PedidoSinNingunProductoEnElPicking_SusPortesEsperanConElResto()
+        {
+            // Caso real: picking 99739, pedido 927646 con 22624 (falta entera) y sus portes 62400003 (línea 328685800)
+            PickingConUnaFaltaDeA();
+            tx.LineasQueSiguen = new List<LineaEnPickingSalida>
+            {
+                new LineaEnPickingSalida { Linea = 328685800, Pedido = 927700, Producto = "62400003", TipoLinea = 2, Cantidad = 1 },
+                new LineaEnPickingSalida { Linea = 5001, Pedido = 927600, Producto = "A", TipoLinea = 1, Cantidad = 2 }
+            };
+
+            ResultadoTerminarSalida resultado = await servicio.Terminar(EMPRESA, "PICK", 99700, Usuario("Almacén"));
+
+            CollectionAssert.AreEqual(new[] { (5002, 1), (328685800, 1) }, tx.SacadoDePedidos.ToArray(),
+                "Primero la falta y después, con el mismo sitio de escritura, los portes enteros");
+            CollectionAssert.AreEquivalent(new[] { 927700 }, tx.PedidosMirados.Single().ToArray(), "Solo los pedidos a los que se ha quitado algo");
+            Assert.IsTrue(resultado.Salida.Cambios.Any(c => c.Contains("Pedido 927700") && c.Contains("los portes esperan con el resto")));
+        }
+
+        [TestMethod]
+        public async Task Terminar_PedidoQueSigueConAlgunProducto_SusPortesSeQuedan()
+        {
+            PickingConUnaFaltaDeA();
+            tx.LineasQueSiguen = new List<LineaEnPickingSalida>
+            {
+                new LineaEnPickingSalida { Linea = 328685800, Pedido = 927700, Producto = "62400003", TipoLinea = 2, Cantidad = 1 },
+                new LineaEnPickingSalida { Linea = 5003, Pedido = 927700, Producto = "B", TipoLinea = 1, Cantidad = 1 }
+            };
+
+            ResultadoTerminarSalida resultado = await servicio.Terminar(EMPRESA, "PICK", 99700, Usuario("Almacén"));
+
+            Assert.AreEqual((5002, 1), tx.SacadoDePedidos.Single());
+            Assert.IsFalse(resultado.Salida.Cambios.Any(c => c.Contains("portes")));
+        }
+
+        [TestMethod]
+        public async Task Terminar_FaltaSoloEnLineaEnCarpeta_NoSeMiranLosPortes()
+        {
+            PickingConUnaFaltaDeA();
+            tx.PiezasPicking = new List<PiezaSalida>
+            {
+                new PiezaSalida { Linea = 5002, Pedido = 927700, Ubicacion = 78, Producto = "A", Hueco = "001001001", Cantidad = 3, QuitarAMano = true }
+            };
+            tx.LineasQueSiguen = new List<LineaEnPickingSalida>
+            {
+                new LineaEnPickingSalida { Linea = 328685800, Pedido = 927700, Producto = "62400003", TipoLinea = 2, Cantidad = 1 }
+            };
+
+            _ = await servicio.Terminar(EMPRESA, "PICK", 99700, Usuario("Almacén"));
+
+            Assert.AreEqual(0, tx.SacadoDePedidos.Count, "La línea en carpeta no se ha quitado: el pedido sigue con producto");
+        }
+
+        [TestMethod]
+        public async Task Ensayo_LosPortesQueEsperanTambienSalenEnLosCambios()
+        {
+            PickingConUnaFaltaDeA();
+            tx.LineasQueSiguen = new List<LineaEnPickingSalida>
+            {
+                new LineaEnPickingSalida { Linea = 328685800, Pedido = 927700, Producto = "62400003", TipoLinea = 2, Cantidad = 1 }
+            };
+
+            ResultadoTerminarSalida resultado = await servicio.Terminar(EMPRESA, "PICK", 99700, Usuario("Dirección"), ensayo: true);
+
+            Assert.IsTrue(resultado.Salida.Ensayo);
+            Assert.AreEqual("Escrituras=3", resultado.Salida.FilasDespues.Single().Datos, "Reserva, falta y portes");
+            Assert.IsTrue(resultado.Salida.Cambios.Any(c => c.Contains("Pedido 927700: los portes esperan con el resto")));
         }
 
         [TestMethod]

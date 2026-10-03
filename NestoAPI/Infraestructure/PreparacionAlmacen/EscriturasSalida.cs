@@ -39,6 +39,20 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public bool QuitarAMano { get; set; }
     }
 
+    /// <summary>
+    /// Una línea de un pedido que sigue en el picking (estado 1) después de quitar las faltas: de producto (TipoLinea 1)
+    /// o no (portes, cuentas…). Para saber si a un pedido le queda algo que salga.
+    /// </summary>
+    public class LineaEnPickingSalida
+    {
+        public int Linea { get; set; }
+        public int Pedido { get; set; }
+        public string Producto { get; set; }
+        public short TipoLinea { get; set; }
+        /// <summary>Lo que sale de la línea (cantidad menos lo que el cliente se lleva «en carpeta»).</summary>
+        public int Cantidad { get; set; }
+    }
+
     public class RecorteSalida
     {
         public PiezaSalida Pieza { get; set; }
@@ -167,6 +181,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// pasa a pendiente.
         /// </summary>
         Task SacarDelPedido(int lineaPedido, int cantidadQueFalta);
+        /// <summary>Las líneas de esos pedidos que siguen en el picking (estado 1), de cualquier tipo.</summary>
+        Task<List<LineaEnPickingSalida>> LineasQueSiguenEnElPicking(string empresa, int picking, IReadOnlyCollection<int> pedidos);
 
         Task<List<PiezaSalida>> LeerPiezasReposicion(string empresa, int traspaso);
         /// <summary>Lo que no sale: menos en la salida del origen, menos en la entrada del destino y a «pendiente de ubicar».</summary>
@@ -270,6 +286,12 @@ WHERE l.Empresa = @p0 AND l.Picking = @p1 AND l.TipoLinea = 1 AND l.Estado = 1";
 
         internal const string SQL_PEDIDOS_DEL_PICKING = @"
 SELECT DISTINCT l.[Número] FROM LinPedidoVta l WHERE l.Empresa = @p0 AND l.Picking = @p1";
+
+        internal const string SQL_LINEAS_QUE_SIGUEN_EN_EL_PICKING = @"
+SELECT l.[Nº Orden] AS Linea, l.[Número] AS Pedido, RTRIM(l.Producto) AS Producto, CAST(ISNULL(l.TipoLinea, 0) AS smallint) AS TipoLinea,
+       CAST(ISNULL(l.Cantidad, 0) - ISNULL(l.Recoger, 0) AS int) AS Cantidad
+FROM LinPedidoVta l WITH (UPDLOCK)
+WHERE l.Empresa = @p0 AND l.Picking = @p1 AND l.Estado = 1 AND l.[Número] IN ({0})";
 
         // Lo que no estaba en el hueco no sale: pasa a «pendiente de ubicar» (sin hueco), como deja las reservas
         // prdDeshacerUbicacionPicking con @Reubicar = 0. Primero la fila nueva (copiando de la reserva), luego la resta.
@@ -402,6 +424,13 @@ WHERE u.[NºTraspasoRepo] = @p1
         public Task<List<int>> PedidosDelPicking(string empresa, int picking)
         {
             return db.Database.SqlQuery<int>(SQL_PEDIDOS_DEL_PICKING, empresa, picking).ToListAsync();
+        }
+
+        public Task<List<LineaEnPickingSalida>> LineasQueSiguenEnElPicking(string empresa, int picking, IReadOnlyCollection<int> pedidos)
+        {
+            var parametros = new List<object> { empresa, picking };
+            string listaPedidos = Lista(parametros, (pedidos ?? new int[0]).Cast<object>(), 0);
+            return db.Database.SqlQuery<LineaEnPickingSalida>(string.Format(SQL_LINEAS_QUE_SIGUEN_EN_EL_PICKING, listaPedidos), parametros.ToArray()).ToListAsync();
         }
 
         public async Task QuitarDeLaReserva(PiezaSalida pieza, int cantidad, string usuario)
