@@ -46,6 +46,24 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         NoSeTerminaAqui
     }
 
+    /// <summary>Ariadna#6: cómo ha ido anular lo que un mozo ha leído en una salida.</summary>
+    public enum EstadoAnularLecturas
+    {
+        Anuladas,
+        SinPermiso,
+        /// <summary>La salida ya se terminó: lo que faltaba ya se quitó del pedido y no se puede deshacer desde aquí.</summary>
+        YaTerminada,
+        NoValido
+    }
+
+    public class ResultadoAnularLecturas
+    {
+        public EstadoAnularLecturas Estado { get; set; }
+        public string Mensaje { get; set; }
+        /// <summary>Las lecturas en negativo añadidas (0 si ese mozo no tenía nada subido).</summary>
+        public int Filas { get; set; }
+    }
+
     public class ResultadoTerminarSalida
     {
         public EstadoTerminarSalida Estado { get; set; }
@@ -86,6 +104,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         Task<List<RecogidaPendienteDTO>> LeerPendientes(string empresa, string almacen);
         Task<RecogidaAlmacenDTO> LeerRecogida(string empresa, string tipo, int numero);
         Task<ResultadoTerminarSalida> Terminar(string empresa, string tipo, int numero, IPrincipal usuario, bool ensayo = false);
+        Task<ResultadoAnularLecturas> AnularLecturas(string empresa, string tipo, int numero, string usuarioLecturas, IPrincipal usuario);
     }
 
     /// <summary>
@@ -98,12 +117,14 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     {
         private readonly Dictionary<string, IOrigenSalida> origenes;
         private readonly IRepositorioSalidas escrituras;
+        private readonly IRepositorioAnulacionLecturas anulaciones;
 
-        public ServicioSalidas(IEnumerable<IOrigenSalida> origenes, IRepositorioSalidas escrituras = null)
+        public ServicioSalidas(IEnumerable<IOrigenSalida> origenes, IRepositorioSalidas escrituras = null, IRepositorioAnulacionLecturas anulaciones = null)
         {
             this.origenes = (origenes ?? Enumerable.Empty<IOrigenSalida>())
                 .ToDictionary(o => o.Tipo.Trim().ToUpperInvariant(), o => o);
             this.escrituras = escrituras;
+            this.anulaciones = anulaciones;
         }
 
         private IOrigenSalida Origen(string tipo)
@@ -186,9 +207,68 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 Estado = EstadoTerminarSalida.Terminada,
                 Salida = ensayo
                     ? await Ensayar(origen, empresa, numero, estado, usuario).ConfigureAwait(false)
-                    : await escrituras.EnTransaccion(tx => origen.Terminar(empresa, numero, estado, usuario, tx), false).ConfigureAwait(false)
+                    : await escrituras.EnTransaccion(tx => TerminarYApuntar(origen, empresa, numero, estado, usuario, tx), false).ConfigureAwait(false)
             };
         }
+
+        /// <summary>Lo que hace el tipo al terminar y, en la misma transacción, la marca de terminada (Ariadna#6).</summary>
+        private static async Task<ResultadoTerminarSalidaDTO> TerminarYApuntar(IOrigenSalida origen, string empresa, int numero, EstadoPickingDTO estado,
+            IPrincipal usuario, ITransaccionSalida tx)
+        {
+            ResultadoTerminarSalidaDTO hecho = await origen.Terminar(empresa, numero, estado, usuario, tx).ConfigureAwait(false);
+            await tx.ApuntarTerminada(empresa, origen.Tipo, numero, NombreUsuario(usuario)).ConfigureAwait(false);
+            return hecho;
+        }
+
+        /// <summary>
+        /// Ariadna#6: descarta lo que un mozo ha leído en una salida (una prueba olvidada en la cola de su PDA). Siempre TODO
+        /// lo de ese mozo en esa salida, nunca lecturas sueltas (un «Deshacer» es la misma lectura en negativo: quitar una
+        /// sola podría dejar una falta sin su deshacer). Solo Admin o Dirección, y nunca en una salida ya terminada.
+        /// </summary>
+        public async Task<ResultadoAnularLecturas> AnularLecturas(string empresa, string tipo, int numero, string usuarioLecturas, IPrincipal usuario)
+        {
+            IOrigenSalida origen = Origen(tipo);
+            if (origen == null)
+            {
+                return new ResultadoAnularLecturas
+                {
+                    Estado = EstadoAnularLecturas.NoValido,
+                    Mensaje = $"El tipo de salida tiene que ser {string.Join(" o ", origenes.Keys)}."
+                };
+            }
+            string mozo = usuarioLecturas?.Trim();
+            if (string.IsNullOrEmpty(mozo))
+            {
+                return new ResultadoAnularLecturas { Estado = EstadoAnularLecturas.NoValido, Mensaje = "Falta de qué mozo son las lecturas." };
+            }
+            if (!PuedeEnsayar(usuario))
+            {
+                return new ResultadoAnularLecturas { Estado = EstadoAnularLecturas.SinPermiso, Mensaje = MENSAJE_ANULAR_SIN_PERMISO };
+            }
+            if (anulaciones == null)
+            {
+                throw new InvalidOperationException("ServicioSalidas sin dónde anular: no puede anular lecturas.");
+            }
+            int? filas = await anulaciones.Anular(empresa, origen.Tipo, numero, mozo, NombreUsuario(usuario)).ConfigureAwait(false);
+            if (filas == null)
+            {
+                return new ResultadoAnularLecturas
+                {
+                    Estado = EstadoAnularLecturas.YaTerminada,
+                    Mensaje = $"{origen.Tipo} {numero} ya está terminada: lo que faltaba ya se quitó del pedido y las lecturas de {mozo} no se pueden anular desde aquí."
+                };
+            }
+            return new ResultadoAnularLecturas
+            {
+                Estado = EstadoAnularLecturas.Anuladas,
+                Filas = filas.Value,
+                Mensaje = filas.Value == 0
+                    ? $"{mozo} no tenía nada subido en {origen.Tipo} {numero}."
+                    : $"Anuladas las lecturas de {mozo} en {origen.Tipo} {numero}: lo suyo queda a cero, como si lo hubiera deshecho."
+            };
+        }
+
+        public const string MENSAJE_ANULAR_SIN_PERMISO = "Descartar lo leído por un mozo solo lo pueden hacer Admin o Dirección.";
 
         public const string MENSAJE_ENSAYO_SIN_PERMISO = "El ensayo solo lo pueden lanzar Admin o Dirección.";
 
@@ -216,7 +296,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 {
                     FotoSalida foto = await origen.PrepararFoto(tx, empresa, numero).ConfigureAwait(false);
                     antes = await foto().ConfigureAwait(false);
-                    ResultadoTerminarSalidaDTO hecho = await origen.Terminar(empresa, numero, estado, usuario, tx).ConfigureAwait(false);
+                    ResultadoTerminarSalidaDTO hecho = await TerminarYApuntar(origen, empresa, numero, estado, usuario, tx).ConfigureAwait(false);
                     despues = await foto().ConfigureAwait(false);
                     return hecho;
                 }, true).ConfigureAwait(false);

@@ -41,4 +41,17 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public string Clave { get; set; }
         public string Datos { get; set; }
     }
+
+    /// <summary>Ariadna#6: de qué mozo son las lecturas que se anulan.</summary>
+    public class AnularLecturasDTO
+    {
+        public string Usuario { get; set; }
+    }
+
+    public class ResultadoAnularLecturasDTO
+    {
+        /// <summary>Las lecturas en negativo añadidas (0 si ese mozo no tenía nada subido).</summary>
+        public int Filas { get; set; }
+        public string Mensaje { get; set; }
+    }
 }

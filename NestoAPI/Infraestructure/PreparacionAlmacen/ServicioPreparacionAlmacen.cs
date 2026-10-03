@@ -23,6 +23,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         Task<RecogidaAlmacenDTO> LeerRecogida(string empresa, string tipo, int numero);
         /// <summary>NestoAPI#556: da por terminada una salida (picking o reposición) si no queda nada sin resolver.</summary>
         Task<ResultadoTerminarSalida> TerminarRecogida(string empresa, string tipo, int numero, System.Security.Principal.IPrincipal usuario, bool ensayo = false);
+        /// <summary>Ariadna#6: anula todo lo que un mozo ha leído en una salida (solo Admin o Dirección, y sin terminar).</summary>
+        Task<ResultadoAnularLecturas> AnularLecturasRecogida(string empresa, string tipo, int numero, string usuarioLecturas, System.Security.Principal.IPrincipal usuario);
         Task<PackingAlmacenDTO> LeerPacking(string empresa, int picking);
         /// <summary>El packing de un solo pedido, con su picking en curso. Null si el pedido no tiene picking.</summary>
         Task<PackingAlmacenDTO> LeerPackingDePedido(string empresa, int pedido);
@@ -83,16 +85,19 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         {
             new OrigenSalidaPicking(repositorio),
             new OrigenSalidaReposicion(repositorio)
-        }, escriturasSalida));
+        }, escriturasSalida, anulacionesLecturas));
 
         /// <summary>Dónde escribe la salida al terminar (en las pruebas del servicio, nada: no termina salidas).</summary>
         private readonly IRepositorioSalidas escriturasSalida;
+        /// <summary>Ariadna#6: dónde se anula lo leído por un mozo (en las pruebas del servicio, nada).</summary>
+        private readonly IRepositorioAnulacionLecturas anulacionesLecturas;
 
         public ServicioPreparacionAlmacen()
         {
             dbPropio = new NVEntities();
             repositorio = new RepositorioPreparacionAlmacen(dbPropio);
             escriturasSalida = new RepositorioSalidasSql(dbPropio);
+            anulacionesLecturas = new RepositorioAnulacionLecturasSql(dbPropio);
             fotos = new AlmacenFotosBultosAzure();
             claveEnlacesFotos = System.Configuration.ConfigurationManager.AppSettings[EnlacePublicoFotoBulto.CLAVE_CONFIGURACION];
         }
@@ -164,6 +169,11 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public Task<ResultadoTerminarSalida> TerminarRecogida(string empresa, string tipo, int numero, System.Security.Principal.IPrincipal usuario, bool ensayo = false)
         {
             return Salidas.Terminar(empresa, tipo, numero, usuario, ensayo);
+        }
+
+        public Task<ResultadoAnularLecturas> AnularLecturasRecogida(string empresa, string tipo, int numero, string usuarioLecturas, System.Security.Principal.IPrincipal usuario)
+        {
+            return Salidas.AnularLecturas(empresa, tipo, numero, usuarioLecturas, usuario);
         }
 
         internal static RecogidaAlmacenDTO MontarRecogida(string empresa, string tipo, int numero, string destino,

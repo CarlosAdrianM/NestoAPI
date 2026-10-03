@@ -30,6 +30,14 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         public List<(PiezaSalida Pieza, int Cantidad)> QuitadoDeReposicion { get; } = new List<(PiezaSalida, int)>();
         public List<(string Diario, string Usuario)> Contabilizados { get; } = new List<(string, string)>();
         public int Fotos { get; private set; }
+        /// <summary>Ariadna#6: las salidas apuntadas como terminadas (para no anular después lo leído).</summary>
+        public List<(string Tipo, int Numero, string Usuario)> Terminadas { get; } = new List<(string, int, string)>();
+
+        public Task ApuntarTerminada(string empresa, string tipo, int numero, string usuario)
+        {
+            Terminadas.Add((tipo, numero, usuario));
+            return Task.CompletedTask;
+        }
 
         public Task<List<FaltaSalida>> LeerFaltas(string empresa, string tipoOrigen, int numero) => Task.FromResult(Faltas);
         public Task<List<PiezaSalida>> LeerPiezasPicking(string empresa, int picking) => Task.FromResult(PiezasPicking);

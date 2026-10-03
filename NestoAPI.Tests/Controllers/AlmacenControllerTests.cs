@@ -333,6 +333,43 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual(System.Net.HttpStatusCode.Conflict, resultado.StatusCode);
         }
 
+        private void AnularDevuelve(EstadoAnularLecturas estado, string mensaje = "motivo")
+        {
+            A.CallTo(() => servicio.AnularLecturasRecogida("1", "PICK", 99739, "Pedro", A<IPrincipal>._))
+                .Returns(new ResultadoAnularLecturas { Estado = estado, Mensaje = mensaje, Filas = 3 });
+        }
+
+        [TestMethod]
+        public async Task PostAnularLecturas_Anuladas_DevuelveCuantasYElMensaje()
+        {
+            // Ariadna#6: descartar lo que un mozo leyó en una recogida (una prueba olvidada en la cola de la PDA)
+            AnularDevuelve(EstadoAnularLecturas.Anuladas, "Anuladas las lecturas de Pedro");
+
+            IHttpActionResult resultado = await controller.PostAnularLecturas("PICK", 99739, new AnularLecturasDTO { Usuario = "Pedro" });
+
+            ResultadoAnularLecturasDTO contenido = ((OkNegotiatedContentResult<ResultadoAnularLecturasDTO>)resultado).Content;
+            Assert.AreEqual(3, contenido.Filas);
+            Assert.AreEqual("Anuladas las lecturas de Pedro", contenido.Mensaje);
+            A.CallTo(() => servicio.AnularLecturasRecogida("1", "PICK", 99739, "Pedro", controller.User)).MustHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task PostAnularLecturas_SinPermiso403_YaTerminada409_NoValido400()
+        {
+            AnularDevuelve(EstadoAnularLecturas.SinPermiso, "solo Dirección");
+            var sinPermiso = (NegotiatedContentResult<string>)await controller.PostAnularLecturas("PICK", 99739, new AnularLecturasDTO { Usuario = "Pedro" });
+            Assert.AreEqual(System.Net.HttpStatusCode.Forbidden, sinPermiso.StatusCode);
+            Assert.AreEqual("solo Dirección", sinPermiso.Content);
+
+            AnularDevuelve(EstadoAnularLecturas.YaTerminada, "ya terminada");
+            var terminada = (NegotiatedContentResult<string>)await controller.PostAnularLecturas("PICK", 99739, new AnularLecturasDTO { Usuario = "Pedro" });
+            Assert.AreEqual(System.Net.HttpStatusCode.Conflict, terminada.StatusCode);
+
+            AnularDevuelve(EstadoAnularLecturas.NoValido, "falta el mozo");
+            Assert.IsInstanceOfType(await controller.PostAnularLecturas("PICK", 99739, new AnularLecturasDTO { Usuario = "Pedro" }), typeof(BadRequestErrorMessageResult));
+            Assert.IsInstanceOfType(await controller.PostAnularLecturas("PICK", 99739, null), typeof(BadRequestErrorMessageResult));
+        }
+
         [TestMethod]
         public async Task PostTerminarRecogida_NoExiste_404_YTipoMalONoSeTerminaAqui_400()
         {

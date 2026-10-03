@@ -194,8 +194,68 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         Task Contabilizar(string empresa, string diario, string usuario);
 
         Task<DateTime> AhoraEnBaseDeDatos();
+        /// <summary>
+        /// Ariadna#6: la salida queda apuntada como terminada (PreparacionSalidasTerminadas). Después ya no se puede anular
+        /// lo leído en ella: lo que faltaba ya se ha quitado del pedido.
+        /// </summary>
+        Task ApuntarTerminada(string empresa, string tipo, int numero, string usuario);
         Task<List<FilaEnsayoDTO>> FotoPicking(string empresa, IReadOnlyCollection<int> pedidos, IReadOnlyCollection<string> productos, DateTime desde);
         Task<List<FilaEnsayoDTO>> FotoReposicion(string empresa, int traspaso, IReadOnlyCollection<string> productos, DateTime desde);
+    }
+
+    /// <summary>
+    /// Ariadna#6: anula TODO lo que un mozo ha leído en una salida (una prueba olvidada en la cola de la PDA), nunca
+    /// lecturas sueltas. Anular es lo mismo que si el mozo hubiera pulsado «Deshacer» en todo: por cada grupo de lecturas
+    /// (producto, método, hueco…) que no esté a cero, una lectura en negativo a su nombre. Así lo leído de ese mozo queda
+    /// en cero sin borrar la evidencia, y se apunta quién lo anuló y cuándo (PreparacionAnulacionesLecturas).
+    /// </summary>
+    public interface IRepositorioAnulacionLecturas
+    {
+        /// <returns>Las lecturas en negativo que se han añadido, o null si la salida ya está terminada (no se toca nada).</returns>
+        Task<int?> Anular(string empresa, string tipo, int numero, string usuarioLecturas, string anuladoPor);
+    }
+
+    public class RepositorioAnulacionLecturasSql : IRepositorioAnulacionLecturas
+    {
+        // Todo en una transacción: comprobar que no está terminada, compensar y apuntar quién. UPDLOCK+HOLDLOCK para que
+        // un «Terminar» o una subida de la cola a la vez no se cuele entre medias. -1 = ya terminada.
+        internal const string SQL_ANULAR = @"
+SET XACT_ABORT ON;
+BEGIN TRANSACTION;
+DECLARE @filas int = -1;
+IF NOT EXISTS (SELECT 1 FROM dbo.PreparacionSalidasTerminadas WITH (UPDLOCK, HOLDLOCK)
+               WHERE Empresa = @p0 AND TipoOrigen = @p1 AND NumeroOrigen = @p2)
+BEGIN
+    INSERT INTO dbo.PreparacionEscaneos (IdCliente, Empresa, TipoOrigen, NumeroOrigen, Pedido, LineaPedido, Producto, Fase,
+                                         Cantidad, Metodo, Bulto, Motivo, Usuario, Dispositivo, FechaEscaneo)
+    SELECT NEWID(), e.Empresa, e.TipoOrigen, e.NumeroOrigen, e.Pedido, e.LineaPedido, e.Producto, e.Fase,
+           CAST(-SUM(e.Cantidad) AS smallint), e.Metodo, e.Bulto, e.Motivo, e.Usuario, @p4, GETDATE()
+    FROM dbo.PreparacionEscaneos e WITH (UPDLOCK, HOLDLOCK)
+    WHERE e.Empresa = @p0 AND e.TipoOrigen = @p1 AND e.NumeroOrigen = @p2 AND e.Fase = 'PICK' AND RTRIM(e.Usuario) = @p3
+    GROUP BY e.Empresa, e.TipoOrigen, e.NumeroOrigen, e.Pedido, e.LineaPedido, e.Producto, e.Fase, e.Metodo, e.Bulto, e.Motivo, e.Usuario
+    HAVING SUM(e.Cantidad) <> 0;
+    SET @filas = @@ROWCOUNT;
+    INSERT INTO dbo.PreparacionAnulacionesLecturas (Empresa, TipoOrigen, NumeroOrigen, UsuarioLecturas, AnuladoPor, Filas)
+    VALUES (@p0, @p1, @p2, @p3, @p5, @filas);
+END
+COMMIT TRANSACTION;
+SELECT @filas;";
+
+        private readonly NVEntities db;
+
+        public RepositorioAnulacionLecturasSql(NVEntities db)
+        {
+            this.db = db;
+        }
+
+        public async Task<int?> Anular(string empresa, string tipo, int numero, string usuarioLecturas, string anuladoPor)
+        {
+            string quien = UsuarioAuditoriaHelper.ParaAuditoria(anuladoPor);
+            string dispositivo = ("Anulado por " + quien).Length > 50 ? ("Anulado por " + quien).Substring(0, 50) : "Anulado por " + quien;
+            int filas = await db.Database.SqlQuery<int>(SQL_ANULAR, empresa, tipo, numero, usuarioLecturas, dispositivo, quien)
+                .SingleAsync().ConfigureAwait(false);
+            return filas < 0 ? (int?)null : filas;
+        }
     }
 
     public interface IRepositorioSalidas
@@ -532,6 +592,17 @@ WHERE u.[NºTraspasoRepo] = @p1
         public Task<DateTime> AhoraEnBaseDeDatos()
         {
             return db.Database.SqlQuery<DateTime>("SELECT GETDATE()").SingleAsync();
+        }
+
+        // Si la tabla aún no existe (script de Ariadna#6 sin lanzar), terminar sigue funcionando igual que antes
+        internal const string SQL_APUNTAR_TERMINADA = @"
+IF OBJECT_ID('dbo.PreparacionSalidasTerminadas') IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM dbo.PreparacionSalidasTerminadas WHERE Empresa = @p0 AND TipoOrigen = @p1 AND NumeroOrigen = @p2)
+    INSERT INTO dbo.PreparacionSalidasTerminadas (Empresa, TipoOrigen, NumeroOrigen, Usuario) VALUES (@p0, @p1, @p2, @p3);";
+
+        public async Task ApuntarTerminada(string empresa, string tipo, int numero, string usuario)
+        {
+            _ = await db.Database.ExecuteSqlCommandAsync(SQL_APUNTAR_TERMINADA, empresa, tipo, numero, Usuario(usuario)).ConfigureAwait(false);
         }
 
         public Task<List<FilaEnsayoDTO>> FotoPicking(string empresa, IReadOnlyCollection<int> pedidos, IReadOnlyCollection<string> productos, DateTime desde)

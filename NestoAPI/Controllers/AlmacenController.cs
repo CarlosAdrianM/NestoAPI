@@ -163,6 +163,36 @@ namespace NestoAPI.Controllers
             }
         }
 
+        // POST api/Almacen/Recogidas/PICK/99739/AnularLecturas?empresa=1   { "Usuario": "Pedro" }
+        /// <summary>
+        /// Ariadna#6: descarta TODO lo que un mozo ha leído en una salida (una prueba olvidada en la cola de su PDA), como si
+        /// lo hubiera deshecho. Solo Admin o Dirección (403); si la salida ya está terminada, 409 y no se toca nada.
+        /// </summary>
+        [HttpPost]
+        [Route("Recogidas/{tipo}/{numero:int}/AnularLecturas")]
+        [ResponseType(typeof(ResultadoAnularLecturasDTO))]
+        public async Task<IHttpActionResult> PostAnularLecturas(string tipo, int numero, [FromBody] AnularLecturasDTO peticion,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            if (string.IsNullOrWhiteSpace(peticion?.Usuario))
+            {
+                return BadRequest("Falta de qué mozo son las lecturas.");
+            }
+            ResultadoAnularLecturas resultado = await servicio.AnularLecturasRecogida(Empresa(empresa), tipo, numero, peticion.Usuario.Trim(), User)
+                .ConfigureAwait(false);
+            switch (resultado.Estado)
+            {
+                case EstadoAnularLecturas.Anuladas:
+                    return Ok(new ResultadoAnularLecturasDTO { Filas = resultado.Filas, Mensaje = resultado.Mensaje });
+                case EstadoAnularLecturas.SinPermiso:
+                    return Content(HttpStatusCode.Forbidden, resultado.Mensaje);
+                case EstadoAnularLecturas.YaTerminada:
+                    return Content(HttpStatusCode.Conflict, resultado.Mensaje);
+                default:
+                    return BadRequest(resultado.Mensaje);
+            }
+        }
+
         // GET api/Almacen/Picking/99633/Packing?empresa=1
         /// <summary>Lo que hay que meter en cajas de todo un picking, agrupado por entrega y por pedido.</summary>
         [HttpGet]
