@@ -72,10 +72,31 @@ $cabeceras = @{ Authorization = "Bearer $token" }
 $credencialSmtp = $null
 if ($ServidorSmtp) {
     if (-not $Remitente) { throw "Con -ServidorSmtp hace falta -Remitente." }
-    $credencialSmtp = Get-Credential -Message "Cuenta de correo para mandar las contraseñas ($Remitente)"
+    $credencialSmtp = Get-Credential -UserName $Remitente -Message "Contraseña de la cuenta de correo que manda las contraseñas ($Remitente)"
+    # Antes de crear a nadie: si la cuenta de correo no vale, que no quede ningún usuario creado con una contraseña
+    # que nadie ha visto (03/10/26: se creó Santiago y falló el correo)
+    try {
+        Send-MailMessage -SmtpServer $ServidorSmtp -Port $PuertoSmtp -UseSsl -Credential $credencialSmtp -From $Remitente -To $Remitente `
+            -Subject "Prueba: alta de usuarios de Ariadna" -Body "Prueba antes de dar de alta a los mozos. Se puede borrar." -Encoding ([System.Text.Encoding]::UTF8)
+    } catch {
+        throw "No se puede mandar correo con $Remitente ($($_.Exception.Message)). No se ha creado nadie: revisa la contraseña o lánzalo sin -ServidorSmtp."
+    }
 }
 
 foreach ($m in $mozos) {
+    # Si ya existe (Alfredo, que también usa NestoApp; Santiago, creado el 03/10 cuando falló el correo) no se toca:
+    # entra con la contraseña que ya tiene o la cambia con «He olvidado mi contraseña»
+    $existe = $true
+    try {
+        $null = Invoke-RestMethod -Method Get -Uri "$Api/api/accounts/user/$([uri]::EscapeDataString($m.Usuario))" -Headers $cabeceras
+    } catch {
+        if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 404) { $existe = $false } else { throw }
+    }
+    if ($existe) {
+        "Ya existe $($m.Usuario): no se toca. Si no sabe su contraseña, «He olvidado mi contraseña» con $($m.Correo)."
+        continue
+    }
+
     $contrasena = Nueva-Contrasena
     $cuerpo = @{
         Email = $m.Correo; Username = $m.Usuario; FirstName = $m.Nombre; LastName = $m.Apellidos
@@ -102,9 +123,15 @@ Si quieres cambiarla, pulsa «He olvidado mi contraseña» en la pantalla de ent
 Cualquier cosa que no funcione o que se te ocurra para mejorarla, dínoslo desde la propia
 aplicación, en Novedades («Algo no funciona» o «Sugerencia»).
 "@
-        Send-MailMessage -SmtpServer $ServidorSmtp -Port $PuertoSmtp -UseSsl -Credential $credencialSmtp `
-            -From $Remitente -To $m.Correo -Subject "Tu usuario de Ariadna" -Body $texto -Encoding ([System.Text.Encoding]::UTF8)
-        "Creado $($m.Usuario) y enviada la contraseña a $($m.Correo)."
+        try {
+            Send-MailMessage -SmtpServer $ServidorSmtp -Port $PuertoSmtp -UseSsl -Credential $credencialSmtp `
+                -From $Remitente -To $m.Correo -Subject "Tu usuario de Ariadna" -Body $texto -Encoding ([System.Text.Encoding]::UTF8)
+            "Creado $($m.Usuario) y enviada la contraseña a $($m.Correo)."
+        } catch {
+            # El usuario ya está creado: que la contraseña no se pierda
+            Write-Warning "Creado $($m.Usuario) pero NO se ha podido mandar el correo ($($_.Exception.Message))."
+            "Contraseña de $($m.Usuario): $contrasena   (apúntala ahora y dásela en mano: no queda guardada en ningún sitio)"
+        }
     } else {
         "Creado $($m.Usuario). Contraseña: $contrasena   (apúntala ahora: no queda guardada en ningún sitio)"
     }
