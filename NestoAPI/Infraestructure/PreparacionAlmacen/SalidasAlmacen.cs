@@ -211,10 +211,19 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             };
         }
 
-        /// <summary>Lo que hace el tipo al terminar y, en la misma transacción, la marca de terminada (Ariadna#6).</summary>
+        /// <summary>
+        /// Lo que hace el tipo al terminar y, en la misma transacción, la marca de terminada (Ariadna#6). Si ya estaba
+        /// terminada no se hace nada más: repetirlo quitaría otra vez las faltas, ahora de lo que sí se ha cogido (Ariadna
+        /// termina antes de empaquetar, y el picking pudo terminarse en otra PDA o en otra sesión).
+        /// </summary>
         private static async Task<ResultadoTerminarSalidaDTO> TerminarYApuntar(IOrigenSalida origen, string empresa, int numero, EstadoPickingDTO estado,
             IPrincipal usuario, ITransaccionSalida tx)
         {
+            if (await tx.EstaTerminada(empresa, origen.Tipo, numero).ConfigureAwait(false))
+            {
+                string documento = origen.Tipo == CasadorEscaneos.ORIGEN_PICKING ? $"El picking {numero} ya estaba terminado" : $"{origen.Tipo} {numero} ya estaba terminada";
+                return Resumen(origen.Tipo, numero, estado, $"{documento}: no se ha vuelto a tocar nada.");
+            }
             ResultadoTerminarSalidaDTO hecho = await origen.Terminar(empresa, numero, estado, usuario, tx).ConfigureAwait(false);
             await tx.ApuntarTerminada(empresa, origen.Tipo, numero, NombreUsuario(usuario)).ConfigureAwait(false);
             return hecho;

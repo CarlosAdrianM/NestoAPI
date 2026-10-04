@@ -199,6 +199,11 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// lo leído en ella: lo que faltaba ya se ha quitado del pedido.
         /// </summary>
         Task ApuntarTerminada(string empresa, string tipo, int numero, string usuario);
+        /// <summary>
+        /// Ya está apuntada como terminada: no se vuelve a hacer nada (las faltas se quitarían dos veces). Bloquea la marca
+        /// hasta el final de la transacción para que dos «Terminar» a la vez no pasen los dos.
+        /// </summary>
+        Task<bool> EstaTerminada(string empresa, string tipo, int numero);
         Task<List<FilaEnsayoDTO>> FotoPicking(string empresa, IReadOnlyCollection<int> pedidos, IReadOnlyCollection<string> productos, DateTime desde);
         Task<List<FilaEnsayoDTO>> FotoReposicion(string empresa, int traspaso, IReadOnlyCollection<string> productos, DateTime desde);
     }
@@ -603,6 +608,19 @@ IF OBJECT_ID('dbo.PreparacionSalidasTerminadas') IS NOT NULL
         public async Task ApuntarTerminada(string empresa, string tipo, int numero, string usuario)
         {
             _ = await db.Database.ExecuteSqlCommandAsync(SQL_APUNTAR_TERMINADA, empresa, tipo, numero, Usuario(usuario)).ConfigureAwait(false);
+        }
+
+        // UPDLOCK+HOLDLOCK: un segundo «Terminar» a la vez espera a que el primero acabe y entonces ya la ve terminada
+        internal const string SQL_ESTA_TERMINADA = @"
+IF OBJECT_ID('dbo.PreparacionSalidasTerminadas') IS NULL
+    SELECT CAST(0 AS bit)
+ELSE
+    SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.PreparacionSalidasTerminadas WITH (UPDLOCK, HOLDLOCK)
+                                  WHERE Empresa = @p0 AND TipoOrigen = @p1 AND NumeroOrigen = @p2) THEN 1 ELSE 0 END AS bit)";
+
+        public async Task<bool> EstaTerminada(string empresa, string tipo, int numero)
+        {
+            return await db.Database.SqlQuery<bool>(SQL_ESTA_TERMINADA, empresa, tipo, numero).FirstAsync().ConfigureAwait(false);
         }
 
         public Task<List<FilaEnsayoDTO>> FotoPicking(string empresa, IReadOnlyCollection<int> pedidos, IReadOnlyCollection<string> productos, DateTime desde)

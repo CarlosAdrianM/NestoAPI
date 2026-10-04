@@ -39,6 +39,9 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             return Task.CompletedTask;
         }
 
+        public Task<bool> EstaTerminada(string empresa, string tipo, int numero)
+            => Task.FromResult(Terminadas.Any(t => t.Tipo == tipo && t.Numero == numero));
+
         public Task<List<FaltaSalida>> LeerFaltas(string empresa, string tipoOrigen, int numero) => Task.FromResult(Faltas);
         public Task<List<PiezaSalida>> LeerPiezasPicking(string empresa, int picking) => Task.FromResult(PiezasPicking);
         public Task<List<int>> PedidosDelPicking(string empresa, int picking) => Task.FromResult(PiezasPicking.Select(p => p.Pedido).Distinct().ToList());
@@ -350,6 +353,23 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             Assert.AreEqual(System.Net.HttpStatusCode.Conflict, ex.StatusCode);
             StringAssert.Contains(ex.Message, "avisa a Andre");
             StringAssert.Contains(ex.Message, "lo leído sigue guardado");
+        }
+
+        [TestMethod]
+        public async Task Terminar_UnPickingYaTerminado_NoVuelveAQuitarLasFaltas()
+        {
+            // Ariadna: «Empaquetar» termina antes el picking; si ya estaba terminado (otra PDA, otra sesión), no se repite
+            PickingConUnaFaltaDeA();
+            _ = await servicio.Terminar(EMPRESA, "PICK", 99700, Usuario("Almacén"));
+
+            ResultadoTerminarSalida segunda = await servicio.Terminar(EMPRESA, "PICK", 99700, Usuario("Almacén"));
+
+            Assert.AreEqual(EstadoTerminarSalida.Terminada, segunda.Estado);
+            Assert.IsTrue(segunda.Salida.Terminada);
+            Assert.AreEqual(1, tx.QuitadoDeReservas.Count, "La falta se quitó la primera vez y no se vuelve a quitar");
+            Assert.AreEqual(1, tx.SacadoDePedidos.Count);
+            Assert.AreEqual(1, tx.Terminadas.Count);
+            StringAssert.Contains(segunda.Salida.Mensaje, "ya estaba terminado");
         }
 
         [TestMethod]
