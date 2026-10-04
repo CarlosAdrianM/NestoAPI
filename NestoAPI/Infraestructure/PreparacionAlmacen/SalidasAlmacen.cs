@@ -593,8 +593,16 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 .Where(t => t != numero).Distinct().ToList();
             if (otros.Any())
             {
-                throw new NestoBusinessException($"En el diario de salida {diario.Diario} de {diario.Almacen} está también el traspaso " +
-                    $"{string.Join(", ", otros)}: contabilizar sacaría los dos juntos. Termina primero ese. No se ha hecho nada.");
+                // NestoAPI#553: ALG→REI y ALG→ALC comparten el diario «General». Contabilizar saca el diario entero, así
+                // que con dos traspasos dentro no se termina ninguno desde aquí (el otro choca con este igual). Lo que se
+                // hace con eso lo decide Carlos; mientras, el mozo tiene que saber qué pasa y a quién llamar.
+                string cuales = otros.Count == 1 ? $"la reposición {otros[0]}" : $"las reposiciones {string.Join(", ", otros)}";
+                throw new NestoBusinessException($"No se puede terminar la reposición {numero} todavía: en el diario «{diario.Diario?.Trim()}» " +
+                    $"de {diario.Almacen?.Trim()} está también {cuales}, y al terminar saldrían juntas. Mientras estén juntas, " +
+                    "ninguna se puede terminar desde Ariadna: avisa a Andre para que las saque en Nesto. No se ha hecho nada y lo leído sigue guardado.")
+                {
+                    StatusCode = System.Net.HttpStatusCode.Conflict
+                };
             }
 
             string nombreUsuario = ServicioSalidas.NombreUsuario(usuario);

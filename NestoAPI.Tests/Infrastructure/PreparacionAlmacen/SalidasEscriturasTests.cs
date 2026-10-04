@@ -346,6 +346,10 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
 
             StringAssert.Contains(ex.Message, "80880");
             Assert.AreEqual(0, tx.Contabilizados.Count);
+            // Lo ve el mozo tal cual: qué pasa y qué hacer (con dos traspasos en el diario, ninguno se termina desde Ariadna)
+            Assert.AreEqual(System.Net.HttpStatusCode.Conflict, ex.StatusCode);
+            StringAssert.Contains(ex.Message, "avisa a Andre");
+            StringAssert.Contains(ex.Message, "lo leído sigue guardado");
         }
 
         [TestMethod]
