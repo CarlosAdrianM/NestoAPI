@@ -467,6 +467,38 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             Assert.IsTrue(resultado.NoEsperados.Single().Ajeno);
         }
 
+        // Decisión 3 de #559: lo que llega sin estar pedido no entra (falta decidir cómo se reconocen regalos y muestras),
+        // pero se avisa a Compras igual que del exceso sin visto bueno: proveedor, producto, cantidad y quién lo recibió
+        [TestMethod]
+        public async Task Terminar_NoPedido_SeAvisaACompras_ConProveedorProductoCantidadYQuienLoRecibio()
+        {
+            LineasDelProveedor(Linea(100, 1, "A", 5));
+            IEnumerable<string> avisados = null;
+            string titulo = null;
+            A.CallTo(() => avisador.Avisar(A<string>.Ignored, A<IEnumerable<string>>.Ignored))
+                .Invokes((string t, IEnumerable<string> a) => { titulo = t; avisados = a.ToList(); });
+
+            ResultadoTerminarRecepcionDTO resultado = await compras.Terminar(Solicitud(Usuario("Pedro", "Almacén"), ("A", 5), ("Z", 2)));
+
+            string aviso = avisados.Single();
+            StringAssert.Contains(aviso, "Z");
+            StringAssert.Contains(aviso, "2 ud.");
+            StringAssert.Contains(aviso, "65");
+            StringAssert.Contains(aviso, "Pedro");
+            StringAssert.Contains(titulo, "65");
+            StringAssert.Contains(string.Join(" ", resultado.Avisos), "Compras");
+        }
+
+        [TestMethod]
+        public async Task Terminar_NoPedidoRecibidoPorCompras_NoSeAvisaANadie()
+        {
+            LineasDelProveedor(Linea(100, 1, "A", 5));
+
+            _ = await compras.Terminar(Solicitud(Usuario("Andre", "Compras"), ("A", 5), ("Z", 2)));
+
+            A.CallTo(() => avisador.Avisar(A<string>.Ignored, A<IEnumerable<string>>.Ignored)).MustNotHaveHappened();
+        }
+
         [TestMethod]
         public async Task LeerPendientes_UnaRecepcionPorProveedorConSusPedidos()
         {

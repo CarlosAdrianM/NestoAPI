@@ -259,7 +259,9 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     NoEsperados = plan.NoPedidos
                         .Select(n => new DiferenciaPreparacionDTO { Producto = n.Producto, Leido = n.Cantidad, Ajeno = true })
                         .ToList(),
-                    Avisos = plan.AvisosParaCompras.ToList(),
+                    Avisos = plan.AvisosParaCompras
+                        .Concat(!esCompras && plan.NoPedidos.Any() ? new[] { "Compras está avisado de lo que no estaba pedido." } : new string[0])
+                        .ToList(),
                     Recuperadas = plan.Recuperadas.Select(r => new LineaRecuperadaDTO
                     {
                         Pedido = r.Pedido,
@@ -272,11 +274,12 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             }, solicitud.Ensayo != null).ConfigureAwait(false);
 
             // Después de confirmar: un fallo al avisar no deshace la recepción. En un ensayo no se avisa a nadie
-            if (plan != null && plan.AvisosParaCompras.Any() && !resultado.YaEstabaTerminada && solicitud.Ensayo == null)
+            List<string> paraCompras = plan == null ? new List<string>() : AvisosParaCompras(plan, solicitud, esCompras);
+            if (paraCompras.Any() && !resultado.YaEstabaTerminada && solicitud.Ensayo == null)
             {
                 try
                 {
-                    await avisador.Avisar($"Recepción del proveedor {solicitud.Documento} ({solicitud.Usuario})", plan.AvisosParaCompras)
+                    await avisador.Avisar($"Recepción del proveedor {solicitud.Documento} ({solicitud.Usuario})", paraCompras)
                         .ConfigureAwait(false);
                 }
                 catch (Exception ex)
@@ -286,6 +289,23 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 }
             }
             return resultado;
+        }
+
+        /// <summary>
+        /// Lo que tiene que ver Compras: lo del plan (exceso y líneas sin visto bueno) y, decisión 3 de #559, lo que ha llegado
+        /// sin estar pedido, que no entra (regalos y muestras, sin decidir aún cómo se reconocen: solo el aviso). Igual que
+        /// el exceso, si lo recibe alguien de Compras no se avisa.
+        /// </summary>
+        private static List<string> AvisosParaCompras(PlanRecepcionCompra plan, SolicitudTerminarRecepcion solicitud, bool esCompras)
+        {
+            var avisos = plan.AvisosParaCompras.ToList();
+            if (!esCompras)
+            {
+                avisos.AddRange(plan.NoPedidos.Select(n =>
+                    $"Del producto {n.Producto} han llegado {n.Cantidad} ud. que no están pedidas al proveedor {solicitud.Documento}: " +
+                    $"no han entrado (las ha recibido {solicitud.Usuario})."));
+            }
+            return avisos;
         }
 
         /// <summary>
