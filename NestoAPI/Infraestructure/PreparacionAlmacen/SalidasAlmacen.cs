@@ -322,7 +322,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         }
 
         /// <summary>El mensaje con los de dentro (el del procedimiento suele ir en la excepción interna).</summary>
-        private static string MensajeCompleto(Exception ex)
+        internal static string MensajeCompleto(Exception ex)
         {
             var mensajes = new List<string>();
             for (Exception e = ex; e != null; e = e.InnerException)

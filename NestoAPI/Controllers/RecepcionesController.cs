@@ -98,16 +98,18 @@ namespace NestoAPI.Controllers
         /// Da por recibido lo contado (todo o nada). Compras: reparte entre los pedidos del proveedor, del más
         /// antiguo al más reciente, y crea los albaranes. Reenviar el mismo IdRecepcion no recibe dos veces.
         /// 403 si quien llama no puede terminar ese tipo de recepción.
+        /// <para>?ensayo=true (solo Admin o Dirección): lo mismo dentro de una transacción que se deshace SIEMPRE, con las filas
+        /// implicadas antes y después y el error real si falla. No guarda nada ni avisa a nadie (Scripts/Issue559_EnsayoRecepcion_Lanzar.ps1).</para>
         /// </summary>
         [HttpPost]
         [Route("{tipo}/{documento}/Terminar")]
         [ResponseType(typeof(ResultadoTerminarRecepcionDTO))]
         public async Task<IHttpActionResult> PostTerminar(string tipo, string documento, [FromBody] TerminarRecepcionDTO terminar,
-            string almacen = Constantes.Almacenes.ALGETE, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+            string almacen = Constantes.Almacenes.ALGETE, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO, bool ensayo = false)
         {
             try
             {
-                return Ok(await servicio.Terminar(tipo, Empresa(empresa), Almacen(almacen), documento?.Trim(), terminar, User).ConfigureAwait(false));
+                return Ok(await servicio.Terminar(tipo, Empresa(empresa), Almacen(almacen), documento?.Trim(), terminar, User, ensayo).ConfigureAwait(false));
             }
             catch (UnauthorizedAccessException ex)
             {

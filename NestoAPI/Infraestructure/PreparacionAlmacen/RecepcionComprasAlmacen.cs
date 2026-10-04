@@ -36,8 +36,11 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         Task<List<FilaRecepcionCompra>> LeerLineasPendientesProveedor(string empresa, string almacen, string proveedor);
         /// <summary>NestoAPI#559: los proveedores con algo pendiente de recibir de ese producto (por número o código de barras).</summary>
         Task<List<string>> ProveedoresConPendiente(string empresa, string almacen, string codigo);
-        /// <summary>NestoAPI#559: terminar una recepción, todo o nada.</summary>
-        Task<ResultadoTerminarRecepcionDTO> EnTransaccion(Func<ITransaccionRecepcionCompra, Task<ResultadoTerminarRecepcionDTO>> trabajo);
+        /// <summary>
+        /// NestoAPI#559: terminar una recepción, todo o nada. Con <paramref name="deshacerSiempre"/> (el ensayo) se deshace
+        /// SIEMPRE, también si ha ido bien: el ensayo y lo de verdad son el mismo código y solo cambia quién cierra.
+        /// </summary>
+        Task<ResultadoTerminarRecepcionDTO> EnTransaccion(Func<ITransaccionRecepcionCompra, Task<ResultadoTerminarRecepcionDTO>> trabajo, bool deshacerSiempre);
     }
 
     /// <summary>
@@ -151,7 +154,8 @@ ORDER BY l.[Número], l.[NºOrden]";
         /// Todo o nada. prdCrearAlbaránCmp abre y cierra su propia transacción (anidada en esta) y, si falla, hace
         /// ROLLBACK de todo: entonces no queda transacción que deshacer y el error del procedimiento es lo que se cuenta.
         /// </summary>
-        public async Task<ResultadoTerminarRecepcionDTO> EnTransaccion(Func<ITransaccionRecepcionCompra, Task<ResultadoTerminarRecepcionDTO>> trabajo)
+        public async Task<ResultadoTerminarRecepcionDTO> EnTransaccion(Func<ITransaccionRecepcionCompra, Task<ResultadoTerminarRecepcionDTO>> trabajo,
+            bool deshacerSiempre)
         {
             if (db == null)
             {
@@ -162,7 +166,14 @@ ORDER BY l.[Número], l.[NºOrden]";
                 try
                 {
                     ResultadoTerminarRecepcionDTO resultado = await trabajo(new TransaccionRecepcionComprasSql(db, pedidosCompra)).ConfigureAwait(false);
-                    transaccion.Commit();
+                    if (deshacerSiempre)
+                    {
+                        transaccion.Rollback();
+                    }
+                    else
+                    {
+                        transaccion.Commit();
+                    }
                     return resultado;
                 }
                 catch (Exception ex)
@@ -175,6 +186,14 @@ ORDER BY l.[Número], l.[NºOrden]";
                         throw new NestoBusinessException(EvidenciasRecepcionSql.Traducir(sql), ex);
                     }
                     throw;
+                }
+                finally
+                {
+                    // Lo que EF tenga en memoria de esta transacción no vale si se ha deshecho
+                    foreach (System.Data.Entity.Infrastructure.DbEntityEntry entrada in db.ChangeTracker.Entries().ToList())
+                    {
+                        entrada.State = EntityState.Detached;
+                    }
                 }
             }
         }

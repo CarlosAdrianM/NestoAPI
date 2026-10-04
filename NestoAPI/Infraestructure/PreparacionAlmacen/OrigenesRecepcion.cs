@@ -44,6 +44,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// <summary>prdCrearAlbaránCmp por su único punto de llamada (PedidosCompraService).</summary>
         Task<int> CrearAlbaran(int pedido, string usuario);
         Task RegistrarEvidencia(string empresa, IEnumerable<EvidenciaRecepcion> filas);
+        /// <summary>Para el ensayo: cómo leer las filas que toca terminar (antes y después), con los pedidos fijados antes.</summary>
+        Task<Func<Task<List<FilaEnsayoDTO>>>> PrepararFoto(string empresa, IReadOnlyCollection<int> pedidos);
     }
 
     /// <summary>Avisar a los de Compras (buzón y campana de Nesto). Nunca debe romper la recepción.</summary>
@@ -190,6 +192,11 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 {
                     throw new NestoBusinessException($"El proveedor {solicitud.Documento} no tiene nada pendiente de recibir en {solicitud.Almacen}.");
                 }
+                if (solicitud.Ensayo != null)
+                {
+                    await solicitud.Ensayo.Empezar(await transaccion.PrepararFoto(solicitud.Empresa,
+                        lineas.Select(l => l.Pedido).Distinct().ToList()).ConfigureAwait(false)).ConfigureAwait(false);
+                }
 
                 plan = PlanificadorRecepcionCompra.Planificar(lineas, solicitud.Lecturas, fecha, esCompras);
                 if (!plan.Recibidas.Any())
@@ -239,6 +246,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     Usuario = solicitud.Usuario,
                     Dispositivo = solicitud.Dispositivo
                 }).ToList()).ConfigureAwait(false);
+                if (solicitud.Ensayo != null)
+                {
+                    await solicitud.Ensayo.Acabar().ConfigureAwait(false);
+                }
 
                 return new ResultadoTerminarRecepcionDTO
                 {
@@ -258,10 +269,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                         Texto = r.Texto
                     }).ToList()
                 };
-            }).ConfigureAwait(false);
+            }, solicitud.Ensayo != null).ConfigureAwait(false);
 
-            // Después de confirmar: un fallo al avisar no deshace la recepción
-            if (plan != null && plan.AvisosParaCompras.Any() && !resultado.YaEstabaTerminada)
+            // Después de confirmar: un fallo al avisar no deshace la recepción. En un ensayo no se avisa a nadie
+            if (plan != null && plan.AvisosParaCompras.Any() && !resultado.YaEstabaTerminada && solicitud.Ensayo == null)
             {
                 try
                 {
@@ -414,6 +425,11 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 {
                     throw new NestoBusinessException($"La reposición {traspaso} ya no está pendiente de entrar en {solicitud.Almacen}.");
                 }
+                if (solicitud.Ensayo != null)
+                {
+                    await solicitud.Ensayo.Empezar(await transaccion.PrepararFoto(solicitud.Empresa, diario, enDiario).ConfigureAwait(false))
+                        .ConfigureAwait(false);
+                }
 
                 // Provisional (#553, 04/10/26): qué hacer con las diferencias (ajuste en origen, diario _ErrRepo…) está sin
                 // decidir. Mientras, solo entra desde aquí lo que coincide EXACTAMENTE con lo enviado; lo demás, en Nesto viejo
@@ -453,8 +469,12 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     avisos.Add($"También ha entrado {(otras.Count == 1 ? "la reposición" : "las reposiciones")} {string.Join(", ", otras)}: " +
                         "van en el mismo diario de entrada y se contabiliza entero, como en Nesto.");
                 }
+                if (solicitud.Ensayo != null)
+                {
+                    await solicitud.Ensayo.Acabar().ConfigureAwait(false);
+                }
                 return new ResultadoTerminarRecepcionDTO { Tipo = TIPO, Documento = traspaso.ToString(), Avisos = avisos };
-            });
+            }, solicitud.Ensayo != null);
         }
 
         internal const string HAZLA_EN_NESTO_VIEJO = "haz esta entrada en Nesto viejo o avisa a Andre.";

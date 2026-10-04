@@ -36,6 +36,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// <summary>prdExtrProducto del diario entero, como hoy desde Nesto viejo.</summary>
         Task Contabilizar(string empresa, string diario, string usuario);
         Task RegistrarEvidencia(string empresa, IEnumerable<EvidenciaRecepcion> filas);
+        /// <summary>Para el ensayo: cómo leer las filas que toca dar entrada al diario (antes y después).</summary>
+        Task<Func<Task<List<FilaEnsayoDTO>>>> PrepararFoto(string empresa, string diario, IReadOnlyCollection<int> traspasos);
     }
 
     /// <summary>Lo que quedará pendiente de ubicar al dar entrada a un diario de reposiciones.</summary>
@@ -57,7 +59,11 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
     public interface IRepositorioCierreReposiciones
     {
-        Task<ResultadoTerminarRecepcionDTO> EnTransaccion(Func<ITransaccionCierreReposicion, Task<ResultadoTerminarRecepcionDTO>> trabajo);
+        /// <summary>
+        /// Todo o nada. Con <paramref name="deshacerSiempre"/> (el ensayo) se deshace SIEMPRE, también si ha ido bien: el
+        /// ensayo y lo de verdad son el mismo código y solo cambia quién cierra.
+        /// </summary>
+        Task<ResultadoTerminarRecepcionDTO> EnTransaccion(Func<ITransaccionCierreReposicion, Task<ResultadoTerminarRecepcionDTO>> trabajo, bool deshacerSiempre);
     }
 
     /// <summary>
@@ -80,14 +86,22 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             return new RepositorioCierreReposiciones(new NVEntities()) { contextoPropio = true };
         }
 
-        public async Task<ResultadoTerminarRecepcionDTO> EnTransaccion(Func<ITransaccionCierreReposicion, Task<ResultadoTerminarRecepcionDTO>> trabajo)
+        public async Task<ResultadoTerminarRecepcionDTO> EnTransaccion(Func<ITransaccionCierreReposicion, Task<ResultadoTerminarRecepcionDTO>> trabajo,
+            bool deshacerSiempre)
         {
             using (DbContextTransaction transaccion = db.Database.BeginTransaction())
             {
                 try
                 {
                     ResultadoTerminarRecepcionDTO resultado = await trabajo(new TransaccionCierreReposicionSql(db)).ConfigureAwait(false);
-                    transaccion.Commit();
+                    if (deshacerSiempre)
+                    {
+                        transaccion.Rollback();
+                    }
+                    else
+                    {
+                        transaccion.Commit();
+                    }
                     return resultado;
                 }
                 catch (Exception ex)
@@ -237,6 +251,79 @@ SELECT @puestas;";
         public Task RegistrarEvidencia(string empresa, IEnumerable<EvidenciaRecepcion> filas)
         {
             return EvidenciasRecepcionSql.Registrar(db, empresa, OrigenRecepcionReposiciones.TIPO, filas);
+        }
+
+        internal const string UBICACIONES_DE_REPOSICIONES = "u.Empresa = @p0 AND u.Estado = 2 AND u.[NºTraspasoRepo] IN ({LISTA})";
+
+        public Task<Func<Task<List<FilaEnsayoDTO>>>> PrepararFoto(string empresa, string diario, IReadOnlyCollection<int> traspasos)
+        {
+            return FotosEnsayoRecepcionSql.Preparar(db.Database, empresa, diario, null, UBICACIONES_DE_REPOSICIONES, traspasos);
+        }
+    }
+
+    /// <summary>
+    /// Las filas que enseña el ensayo de una recepción, comunes a todos los tipos: el diario de producto que se contabiliza,
+    /// los apuntes nuevos del extracto y las ubicaciones nuevas (por encima de los últimos números de antes de empezar) más
+    /// las «pendientes de ubicar» de lo que se recibe. Cada tipo añade las suyas.
+    /// </summary>
+    public static class FotosEnsayoRecepcionSql
+    {
+        public class Marcas
+        {
+            public int UltimaUbicacion { get; set; }
+            public int UltimoExtracto { get; set; }
+            public int UltimoAlbaranCmp { get; set; }
+        }
+
+        internal const string SQL_MARCAS = @"
+SELECT CAST(ISNULL((SELECT MAX([NºOrden]) FROM Ubicaciones), 0) AS int) AS UltimaUbicacion,
+       CAST(ISNULL((SELECT MAX([Nº Orden]) FROM ExtractoProducto WHERE Empresa = @p0), 0) AS int) AS UltimoExtracto,
+       CAST(ISNULL((SELECT MAX([Número]) FROM [CabAlbaránCmp] WHERE Empresa = @p0), 0) AS int) AS UltimoAlbaranCmp";
+
+        // @p0 empresa, @p1 diario, @p2 último extracto, @p3 última ubicación, @p4 último albarán de compra, @p5… la lista
+        internal const string SQL_FILAS_COMUNES = @"
+SELECT 'PreExtrProducto' AS Tabla, CAST(p.[Nº Orden] AS varchar(20)) AS Clave,
+       CONCAT('Diario=', RTRIM(p.Diario), '; Almacén=', RTRIM(p.[Almacén]), '; Producto=', RTRIM(p.[Número]), '; Cantidad=', p.Cantidad,
+              '; Estado=', p.Estado, '; Traspaso=', p.[NºTraspaso], '; LinPedido=', p.LinPedido) AS Datos
+FROM PreExtrProducto p WHERE p.Empresa = @p0 AND p.Diario = @p1
+UNION ALL
+SELECT 'ExtractoProducto', CAST(e.[Nº Orden] AS varchar(20)),
+       CONCAT('Diario=', RTRIM(e.Diario), '; Almacén=', RTRIM(e.[Almacén]), '; Producto=', RTRIM(e.[Número]), '; Cantidad=', e.Cantidad,
+              '; Traspaso=', e.[NºTraspaso], '; Pedido=', e.[NºPedido], '; LinPedido=', e.LinPedido, '; Usuario=', RTRIM(e.Usuario))
+FROM ExtractoProducto e WHERE e.Empresa = @p0 AND e.[Nº Orden] > @p2
+UNION ALL
+SELECT 'Ubicaciones', CAST(u.[NºOrden] AS varchar(20)),
+       CONCAT('Almacén=', RTRIM(u.[Almacén]), '; Producto=', RTRIM(u.[Número]), '; Estado=', u.Estado, '; Cantidad=', u.Cantidad,
+              '; Hueco=', ISNULL(RTRIM(u.Pasillo) + '/' + RTRIM(u.Fila) + '/' + RTRIM(u.Columna), '-'), '; NºTraspasoRepo=', u.[NºTraspasoRepo],
+              '; PedidoCmp=', u.PedidoCmp, '; AlbaránCmp=', u.[AlbaránCmp], '; NºOrdenCmp=', u.[NºOrdenCmp], '; Usuario=', RTRIM(u.Usuario))
+FROM Ubicaciones u WHERE u.[NºOrden] > @p3 OR ({UBICACIONES})";
+
+        /// <summary>
+        /// Fija las marcas y la lista ANTES de tocar nada y devuelve cómo leer las filas (se llama antes y después).
+        /// </summary>
+        /// <param name="sqlPropio">Las filas propias del tipo (o null), con {LISTA} donde va la lista de números.</param>
+        /// <param name="condicionUbicaciones">Qué ubicaciones de antes enseñar además de las nuevas, con {LISTA}.</param>
+        public static async Task<Func<Task<List<FilaEnsayoDTO>>>> Preparar(Database baseDeDatos, string empresa, string diario,
+            string sqlPropio, string condicionUbicaciones, IEnumerable<int> numeros)
+        {
+            Marcas marcas = await baseDeDatos.SqlQuery<Marcas>(SQL_MARCAS, empresa).SingleAsync().ConfigureAwait(false);
+            string sql = Montar(sqlPropio, condicionUbicaciones, numeros, out List<object> lista);
+            var parametros = new List<object> { empresa, diario, marcas.UltimoExtracto, marcas.UltimaUbicacion, marcas.UltimoAlbaranCmp };
+            parametros.AddRange(lista);
+            object[] valores = parametros.ToArray();
+            return () => baseDeDatos.SqlQuery<FilaEnsayoDTO>(sql, valores).ToListAsync();
+        }
+
+        internal static string Montar(string sqlPropio, string condicionUbicaciones, IEnumerable<int> numeros, out List<object> lista)
+        {
+            lista = (numeros ?? Enumerable.Empty<int>()).Distinct().Cast<object>().ToList();
+            if (lista.Count == 0)
+            {
+                lista.Add(-1);
+            }
+            string enLista = string.Join(", ", lista.Select((n, i) => "@p" + (5 + i)));
+            string comunes = SQL_FILAS_COMUNES.Replace("{UBICACIONES}", (condicionUbicaciones ?? "1 = 0").Replace("{LISTA}", enLista));
+            return string.IsNullOrWhiteSpace(sqlPropio) ? comunes : sqlPropio.Replace("{LISTA}", enLista) + Environment.NewLine + "UNION ALL" + comunes;
         }
     }
 

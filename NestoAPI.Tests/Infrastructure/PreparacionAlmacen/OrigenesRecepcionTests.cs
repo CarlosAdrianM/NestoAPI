@@ -38,8 +38,8 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             repositorio = A.Fake<IRepositorioRecepcionCompras>();
             transaccion = A.Fake<ITransaccionRecepcionCompra>();
             avisador = A.Fake<IAvisadorCompras>();
-            A.CallTo(() => repositorio.EnTransaccion(A<Func<ITransaccionRecepcionCompra, Task<ResultadoTerminarRecepcionDTO>>>.Ignored))
-                .ReturnsLazily((Func<ITransaccionRecepcionCompra, Task<ResultadoTerminarRecepcionDTO>> trabajo) => trabajo(transaccion));
+            A.CallTo(() => repositorio.EnTransaccion(A<Func<ITransaccionRecepcionCompra, Task<ResultadoTerminarRecepcionDTO>>>.Ignored, A<bool>.Ignored))
+                .ReturnsLazily((Func<ITransaccionRecepcionCompra, Task<ResultadoTerminarRecepcionDTO>> trabajo, bool deshacer) => trabajo(transaccion));
             A.CallTo(() => transaccion.YaRegistrada(A<string>.Ignored, A<IEnumerable<Guid>>.Ignored)).Returns(false);
             A.CallTo(() => transaccion.Aplazar(A<string>.Ignored, A<IEnumerable<int>>.Ignored, A<DateTime>.Ignored))
                 .Invokes((string e, IEnumerable<int> o, DateTime f) => llamadas.Add("aplazar al " + f.ToString("dd/MM")));
@@ -96,8 +96,8 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         {
             var cierre = A.Fake<IRepositorioCierreReposiciones>();
             var transaccion = A.Fake<ITransaccionCierreReposicion>();
-            A.CallTo(() => cierre.EnTransaccion(A<Func<ITransaccionCierreReposicion, Task<ResultadoTerminarRecepcionDTO>>>.Ignored))
-                .ReturnsLazily((Func<ITransaccionCierreReposicion, Task<ResultadoTerminarRecepcionDTO>> t) => t(transaccion));
+            A.CallTo(() => cierre.EnTransaccion(A<Func<ITransaccionCierreReposicion, Task<ResultadoTerminarRecepcionDTO>>>.Ignored, A<bool>.Ignored))
+                .ReturnsLazily((Func<ITransaccionCierreReposicion, Task<ResultadoTerminarRecepcionDTO>> t, bool deshacer) => t(transaccion));
             A.CallTo(() => transaccion.YaRegistrada(A<string>.Ignored, A<IEnumerable<Guid>>.Ignored)).Returns(false);
             A.CallTo(() => transaccion.DiarioDeEntrada("1", "REI")).Returns("PendRepo");
             A.CallTo(() => transaccion.TraspasosEnDiario("1", "REI", "PendRepo")).Returns(traspasosEnDiario.ToList());
@@ -251,6 +251,73 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
 
             Assert.IsTrue(resultado.YaEstabaTerminada);
             A.CallTo(() => transaccion.Contabilizar(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
+        }
+
+        private static Func<Task<List<FilaEnsayoDTO>>> FotoQueCuenta(List<string> llamadas)
+        {
+            return () =>
+            {
+                llamadas.Add("foto");
+                return Task.FromResult(new List<FilaEnsayoDTO>());
+            };
+        }
+
+        [TestMethod]
+        public async Task Reposiciones_DeVerdad_SeGuarda()
+        {
+            var (cierre, _) = CierreFalso(80862);
+
+            _ = await Reposiciones(cierre).Terminar(SolicitudReposicion());
+
+            A.CallTo(() => cierre.EnTransaccion(A<Func<ITransaccionCierreReposicion, Task<ResultadoTerminarRecepcionDTO>>>.Ignored, false))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Reposiciones_Ensayo_DeshaceSiempreYFotografiaAntesYDespuesDeContabilizar()
+        {
+            var (cierre, transaccion) = CierreFalso(80862);
+            var pasos = new List<string>();
+            A.CallTo(() => transaccion.PrepararFoto("1", "PendRepo", A<IReadOnlyCollection<int>>.That.Contains(80862)))
+                .Returns(FotoQueCuenta(pasos));
+            A.CallTo(() => transaccion.Contabilizar("1", "PendRepo", A<string>.Ignored)).Invokes(() => pasos.Add("contabilizar"));
+            SolicitudTerminarRecepcion solicitud = SolicitudReposicion();
+            solicitud.Ensayo = new RegistroEnsayoRecepcion();
+
+            _ = await Reposiciones(cierre).Terminar(solicitud);
+
+            A.CallTo(() => cierre.EnTransaccion(A<Func<ITransaccionCierreReposicion, Task<ResultadoTerminarRecepcionDTO>>>.Ignored, true))
+                .MustHaveHappenedOnceExactly();
+            CollectionAssert.AreEqual(new[] { "foto", "contabilizar", "foto" }, pasos);
+            Assert.IsNotNull(solicitud.Ensayo.Despues);
+        }
+
+        [TestMethod]
+        public async Task Compras_DeVerdad_SeGuarda()
+        {
+            LineasDelProveedor(Linea(100, 1, "A", 5));
+
+            _ = await compras.Terminar(Solicitud(Usuario("Pedro", "Almacén"), ("A", 5)));
+
+            A.CallTo(() => repositorio.EnTransaccion(A<Func<ITransaccionRecepcionCompra, Task<ResultadoTerminarRecepcionDTO>>>.Ignored, false))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Compras_Ensayo_DeshaceSiempreFotografiaYNoAvisaACompras()
+        {
+            LineasDelProveedor(Linea(100, 1, "A", 5));
+            var pasos = new List<string>();
+            A.CallTo(() => transaccion.PrepararFoto("1", A<IReadOnlyCollection<int>>.That.Contains(100))).Returns(FotoQueCuenta(pasos));
+            SolicitudTerminarRecepcion solicitud = Solicitud(Usuario("Pedro", "Almacén"), ("A", 7), ("Z", 1));
+            solicitud.Ensayo = new RegistroEnsayoRecepcion();
+
+            _ = await compras.Terminar(solicitud);
+
+            A.CallTo(() => repositorio.EnTransaccion(A<Func<ITransaccionRecepcionCompra, Task<ResultadoTerminarRecepcionDTO>>>.Ignored, true))
+                .MustHaveHappenedOnceExactly();
+            CollectionAssert.AreEqual(new[] { "foto", "foto" }, pasos);
+            A.CallTo(() => avisador.Avisar(A<string>.Ignored, A<IEnumerable<string>>.Ignored)).MustNotHaveHappened();
         }
 
         [TestMethod]

@@ -175,6 +175,90 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
                 servicio.Terminar("COMP", "1", "ALG", "65", Terminar(("A", 1)), anonimo));
         }
 
+        private static IPrincipal Con(string nombre, params string[] grupos)
+        {
+            var claims = new List<Claim> { new Claim(ClaimTypes.Name, nombre) };
+            claims.AddRange(grupos.Select(g => new Claim(ClaimTypes.Role, g)));
+            return new ClaimsPrincipal(new ClaimsIdentity(claims, "prueba"));
+        }
+
+        // Modo ensayo (como el de las salidas): el mismo código, en una transacción que se deshace siempre. Solo Admin o Dirección
+        [TestMethod]
+        public async Task Ensayo_SinSerAdminNiDireccion_NoSeEnsaya()
+        {
+            A.CallTo(() => compras.PuedeTerminar(usuario, A<string>.Ignored, A<string>.Ignored)).Returns(true);
+
+            UnauthorizedAccessException ex = await Assert.ThrowsExceptionAsync<UnauthorizedAccessException>(() =>
+                servicio.Terminar("COMP", "1", "ALG", "65", Terminar(("A", 1)), usuario, ensayo: true));
+
+            StringAssert.Contains(ex.Message, "ensayo");
+            A.CallTo(() => compras.Terminar(A<SolicitudTerminarRecepcion>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Ensayo_AdminSinPermisoDelTipo_SeEnsayaYDevuelveLasFilasAntesYDespues()
+        {
+            IPrincipal carlos = Con("NUEVAVISION\\Carlos", "Admin");
+            A.CallTo(() => reposiciones.SeTerminaDesdeAqui).Returns(true);
+            A.CallTo(() => reposiciones.PuedeTerminar(carlos, A<string>.Ignored, A<string>.Ignored)).Returns(false);
+            SolicitudTerminarRecepcion recibida = null;
+            A.CallTo(() => reposiciones.Terminar(A<SolicitudTerminarRecepcion>.Ignored)).ReturnsLazily(async (SolicitudTerminarRecepcion s) =>
+            {
+                recibida = s;
+                int vez = 0;
+                await s.Ensayo.Empezar(() => Task.FromResult(new List<FilaEnsayoDTO> { new FilaEnsayoDTO { Tabla = "T", Clave = "1", Datos = "vez " + ++vez } }));
+                await s.Ensayo.Acabar();
+                return new ResultadoTerminarRecepcionDTO { Tipo = "REPO", Documento = "80871" };
+            });
+
+            ResultadoTerminarRecepcionDTO resultado = await servicio.Terminar("REPO", "1", "ALG", "80871", Terminar(("A", 1)), carlos, ensayo: true);
+
+            Assert.IsNotNull(recibida.Ensayo, "La estrategia tiene que saber que es un ensayo (deshace siempre)");
+            Assert.IsTrue(resultado.Ensayo);
+            Assert.AreEqual("vez 1", resultado.FilasAntes.Single().Datos);
+            Assert.AreEqual("vez 2", resultado.FilasDespues.Single().Datos);
+            Assert.IsNull(resultado.ErrorEnsayo);
+            StringAssert.Contains(resultado.Avisos.First(), "ENSAYO");
+        }
+
+        [TestMethod]
+        public async Task Ensayo_SiFalla_DevuelveElErrorRealConLasFilasDeAntesYNoLanza()
+        {
+            IPrincipal carlos = Con("Carlos", "NUEVAVISION\\Dirección");
+            A.CallTo(() => compras.Terminar(A<SolicitudTerminarRecepcion>.Ignored)).ReturnsLazily(async (SolicitudTerminarRecepcion s) =>
+            {
+                await s.Ensayo.Empezar(() => Task.FromResult(new List<FilaEnsayoDTO> { new FilaEnsayoDTO { Tabla = "LinPedidoCmp", Clave = "7" } }));
+                if (s.Ensayo != null)
+                {
+                    throw new NestoBusinessException("No se pudo determinar la ubicacion", new Exception("detalle del procedimiento"));
+                }
+                return new ResultadoTerminarRecepcionDTO();
+            });
+
+            ResultadoTerminarRecepcionDTO resultado = await servicio.Terminar("COMP", "1", "ALG", "65", Terminar(("A", 1)), carlos, ensayo: true);
+
+            Assert.IsTrue(resultado.Ensayo);
+            StringAssert.Contains(resultado.ErrorEnsayo, "No se pudo determinar la ubicacion");
+            StringAssert.Contains(resultado.ErrorEnsayo, "detalle del procedimiento");
+            Assert.AreEqual("7", resultado.FilasAntes.Single().Clave);
+            Assert.IsNull(resultado.FilasDespues);
+        }
+
+        [TestMethod]
+        public async Task DeVerdad_NoEsUnEnsayo()
+        {
+            A.CallTo(() => compras.PuedeTerminar(usuario, A<string>.Ignored, A<string>.Ignored)).Returns(true);
+            SolicitudTerminarRecepcion recibida = null;
+            A.CallTo(() => compras.Terminar(A<SolicitudTerminarRecepcion>.Ignored))
+                .Invokes((SolicitudTerminarRecepcion s) => recibida = s)
+                .Returns(new ResultadoTerminarRecepcionDTO());
+
+            ResultadoTerminarRecepcionDTO resultado = await servicio.Terminar("COMP", "1", "ALG", "65", Terminar(("A", 1)), usuario);
+
+            Assert.IsNull(recibida.Ensayo);
+            Assert.IsFalse(resultado.Ensayo);
+        }
+
         [TestMethod]
         public async Task Terminar_PasaLoLeidoSumadoPorProductoYElUsuarioDelToken()
         {

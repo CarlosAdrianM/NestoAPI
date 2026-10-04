@@ -57,7 +57,7 @@ namespace NestoAPI.Tests.Controllers
         [TestMethod]
         public async Task Terminar_SinPermisoParaEseTipo_403ConElMotivo()
         {
-            A.CallTo(() => servicio.Terminar("COMP", "1", "ALG", "65", A<TerminarRecepcionDTO>.Ignored, A<IPrincipal>.Ignored))
+            A.CallTo(() => servicio.Terminar("COMP", "1", "ALG", "65", A<TerminarRecepcionDTO>.Ignored, A<IPrincipal>.Ignored, false))
                 .Throws(new UnauthorizedAccessException("No tienes permiso para terminar recepciones de tipo COMP."));
 
             IHttpActionResult resultado = await controller.PostTerminar("COMP", "65", new TerminarRecepcionDTO());
@@ -70,14 +70,25 @@ namespace NestoAPI.Tests.Controllers
         [TestMethod]
         public async Task Terminar_PasaElUsuarioDelToken()
         {
-            A.CallTo(() => servicio.Terminar("REPO", "1", "REI", "80841", A<TerminarRecepcionDTO>.Ignored, A<IPrincipal>.Ignored))
+            A.CallTo(() => servicio.Terminar("REPO", "1", "REI", "80841", A<TerminarRecepcionDTO>.Ignored, A<IPrincipal>.Ignored, false))
                 .Returns(new ResultadoTerminarRecepcionDTO { Tipo = "REPO" });
 
             IHttpActionResult resultado = await controller.PostTerminar("REPO", "80841", new TerminarRecepcionDTO(), almacen: "rei");
 
             Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<ResultadoTerminarRecepcionDTO>));
             A.CallTo(() => servicio.Terminar("REPO", "1", "REI", "80841", A<TerminarRecepcionDTO>.Ignored,
-                A<IPrincipal>.That.Matches(u => u.Identity.Name == "Lidia"))).MustHaveHappenedOnceExactly();
+                A<IPrincipal>.That.Matches(u => u.Identity.Name == "Lidia"), false)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Terminar_ConEnsayo_LoPasaAlServicio()
+        {
+            A.CallTo(() => servicio.Terminar("REPO", "1", "ALG", "80871", A<TerminarRecepcionDTO>.Ignored, A<IPrincipal>.Ignored, true))
+                .Returns(new ResultadoTerminarRecepcionDTO { Tipo = "REPO", Ensayo = true });
+
+            IHttpActionResult resultado = await controller.PostTerminar("REPO", "80871", new TerminarRecepcionDTO(), ensayo: true);
+
+            Assert.IsTrue(((OkNegotiatedContentResult<ResultadoTerminarRecepcionDTO>)resultado).Content.Ensayo);
         }
 
         [TestMethod]

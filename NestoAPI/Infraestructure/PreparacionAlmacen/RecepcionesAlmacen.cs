@@ -21,6 +21,38 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public string Usuario { get; set; }
         public IPrincipal Principal { get; set; }
         public string Dispositivo { get; set; }
+        /// <summary>
+        /// Null de verdad. En un ensayo, la estrategia hace lo mismo pero en una transacción que se deshace SIEMPRE, apunta
+        /// aquí las filas que toca antes y después y no avisa a nadie.
+        /// </summary>
+        public RegistroEnsayoRecepcion Ensayo { get; set; }
+    }
+
+    /// <summary>
+    /// El ensayo de una recepción (como el de las salidas, NestoAPI#556): las filas que toca, leídas DENTRO de la transacción
+    /// que se va a deshacer, antes de escribir nada y al acabar. Si falla a medias, se queda con las de antes.
+    /// </summary>
+    public class RegistroEnsayoRecepcion
+    {
+        private Func<Task<List<FilaEnsayoDTO>>> foto;
+
+        public List<FilaEnsayoDTO> Antes { get; private set; }
+        public List<FilaEnsayoDTO> Despues { get; private set; }
+
+        /// <param name="foto">Cómo leer las filas implicadas (las claves se fijan antes de tocar nada).</param>
+        public async Task Empezar(Func<Task<List<FilaEnsayoDTO>>> foto)
+        {
+            this.foto = foto;
+            Antes = foto == null ? null : await foto().ConfigureAwait(false);
+        }
+
+        public async Task Acabar()
+        {
+            if (foto != null)
+            {
+                Despues = await foto().ConfigureAwait(false);
+            }
+        }
     }
 
     /// <summary>
@@ -51,8 +83,9 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         Task<List<RecepcionPendienteDTO>> Buscar(string empresa, string almacen, string codigo);
         Task<RecepcionDTO> LeerEsperado(string tipo, string empresa, string almacen, string documento, IPrincipal usuario);
         Task<ResultadoCasarRecepcionDTO> Casar(string tipo, string empresa, string almacen, string documento, IEnumerable<LecturaRecepcionDTO> lecturas);
+        /// <param name="ensayo">Solo Admin o Dirección: lo mismo, pero se deshace siempre y devuelve las filas antes y después.</param>
         Task<ResultadoTerminarRecepcionDTO> Terminar(string tipo, string empresa, string almacen, string documento,
-            TerminarRecepcionDTO terminar, IPrincipal usuario);
+            TerminarRecepcionDTO terminar, IPrincipal usuario, bool ensayo = false);
     }
 
     /// <summary>
@@ -133,7 +166,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         }
 
         public async Task<ResultadoTerminarRecepcionDTO> Terminar(string tipo, string empresa, string almacen, string documento,
-            TerminarRecepcionDTO terminar, IPrincipal usuario)
+            TerminarRecepcionDTO terminar, IPrincipal usuario, bool ensayo = false)
         {
             IOrigenRecepcion origen = Origen(tipo);
             if (!origen.SeTerminaDesdeAqui)
@@ -147,7 +180,12 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 // Quién recibe queda grabado: sin usuario no se inventa uno
                 throw new UnauthorizedAccessException("Para terminar una recepción hay que estar identificado.");
             }
-            if (!origen.PuedeTerminar(usuario, empresa?.Trim(), almacen?.Trim()))
+            if (ensayo && !ServicioSalidas.PuedeEnsayar(usuario))
+            {
+                throw new UnauthorizedAccessException(ServicioSalidas.MENSAJE_ENSAYO_SIN_PERMISO);
+            }
+            // Quien ensaya (Admin o Dirección) no tiene por qué poder terminar de verdad ese tipo: como en las salidas
+            if (!ensayo && !origen.PuedeTerminar(usuario, empresa?.Trim(), almacen?.Trim()))
             {
                 throw new UnauthorizedAccessException($"No tienes permiso para terminar recepciones de tipo {origen.Tipo}.");
             }
@@ -166,7 +204,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 throw new NestoBusinessException("No se ha recibido nada: no hay ninguna cantidad mayor que cero.");
             }
 
-            return await origen.Terminar(new SolicitudTerminarRecepcion
+            var solicitud = new SolicitudTerminarRecepcion
             {
                 Empresa = Limpio(empresa),
                 Almacen = Limpio(almacen)?.ToUpperInvariant(),
@@ -176,7 +214,44 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 Usuario = nombre.Trim(),
                 Principal = usuario,
                 Dispositivo = terminar.Dispositivo
-            }).ConfigureAwait(false);
+            };
+            return ensayo
+                ? await Ensayar(origen, solicitud).ConfigureAwait(false)
+                : await origen.Terminar(solicitud).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// El ensayo: EXACTAMENTE lo mismo que terminar de verdad (C#, triggers, procedimientos y restricciones), en una
+        /// transacción que la estrategia deshace siempre, con las filas implicadas antes y después. Si algo falla, no lanza:
+        /// devuelve el error real para verlo.
+        /// </summary>
+        private static async Task<ResultadoTerminarRecepcionDTO> Ensayar(IOrigenRecepcion origen, SolicitudTerminarRecepcion solicitud)
+        {
+            var registro = new RegistroEnsayoRecepcion();
+            solicitud.Ensayo = registro;
+            try
+            {
+                ResultadoTerminarRecepcionDTO resultado = await origen.Terminar(solicitud).ConfigureAwait(false);
+                resultado.Ensayo = true;
+                resultado.FilasAntes = registro.Antes;
+                resultado.FilasDespues = registro.Despues;
+                resultado.Avisos = resultado.Avisos ?? new List<string>();
+                resultado.Avisos.Insert(0, "ENSAYO: no se ha guardado nada ni se ha avisado a nadie.");
+                return resultado;
+            }
+            catch (Exception ex)
+            {
+                string error = ServicioSalidas.MensajeCompleto(ex);
+                return new ResultadoTerminarRecepcionDTO
+                {
+                    Tipo = origen.Tipo,
+                    Documento = solicitud.Documento,
+                    Ensayo = true,
+                    FilasAntes = registro.Antes,
+                    ErrorEnsayo = error,
+                    Avisos = new List<string> { "ENSAYO: ha fallado y no se ha guardado nada. " + error }
+                };
+            }
         }
 
         /// <summary>

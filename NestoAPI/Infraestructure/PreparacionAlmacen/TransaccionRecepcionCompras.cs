@@ -2,6 +2,7 @@
 using NestoAPI.Infraestructure.PedidosCompra;
 using NestoAPI.Models;
 using NestoAPI.Models.PedidosCompra;
+using NestoAPI.Models.PreparacionAlmacen;
 using System;
 using System.Collections.Generic;
 using System.Data.Entity;
@@ -145,6 +146,27 @@ WHERE Empresa = @p0 AND [NºOrden] = @p1 AND Estado = -99";
         public Task RegistrarEvidencia(string empresa, IEnumerable<EvidenciaRecepcion> filas)
         {
             return EvidenciasRecepcionSql.Registrar(db, empresa, OrigenRecepcionCompras.TIPO, filas);
+        }
+
+        // Ensayo: las líneas de los pedidos del proveedor (todas, también las que se crean al partir) y los albaranes nuevos
+        internal const string SQL_FOTO_COMPRAS = @"
+SELECT 'LinPedidoCmp' AS Tabla, CAST(l.[NºOrden] AS varchar(20)) AS Clave,
+       CONCAT('Pedido=', l.[Número], '; Producto=', RTRIM(l.Producto), '; Cantidad=', l.Cantidad, '; Estado=', l.Estado,
+              '; VistoBueno=', l.VistoBueno, '; Recepción=', CONVERT(varchar(10), l.[FechaRecepción], 120), '; Albarán=', l.[NºAlbarán],
+              '; Base=', l.BaseImponible, '; Total=', l.Total, '; Usuario=', RTRIM(l.Usuario)) AS Datos
+FROM LinPedidoCmp l WHERE l.Empresa = @p0 AND l.[Número] IN ({LISTA})
+UNION ALL
+SELECT 'CabAlbaránCmp', CAST(c.[Número] AS varchar(20)),
+       CONCAT('Proveedor=', RTRIM(c.[NºProveedor]), '; Fecha=', CONVERT(varchar(19), c.Fecha, 120), '; Usuario=', RTRIM(c.Usuario))
+FROM [CabAlbaránCmp] c WHERE c.Empresa = @p0 AND c.[Número] > @p4";
+
+        internal const string UBICACIONES_DE_COMPRAS = @"u.Empresa = @p0 AND u.Estado = 2
+    AND u.[NºOrdenCmp] IN (SELECT x.[NºOrden] FROM LinPedidoCmp x WHERE x.Empresa = @p0 AND x.[Número] IN ({LISTA}))";
+
+        public Task<Func<Task<List<FilaEnsayoDTO>>>> PrepararFoto(string empresa, IReadOnlyCollection<int> pedidos)
+        {
+            // prdCrearAlbaránCmp pasa las líneas al extracto por el diario _ALBCOMP
+            return FotosEnsayoRecepcionSql.Preparar(db.Database, empresa, "_ALBCOMP", SQL_FOTO_COMPRAS, UBICACIONES_DE_COMPRAS, pedidos);
         }
 
         private async Task Ejecutar(string sql, string que, params object[] parametros)

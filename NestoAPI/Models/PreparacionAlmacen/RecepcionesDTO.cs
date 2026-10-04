@@ -123,5 +123,17 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public List<string> Avisos { get; set; } = new List<string>();
         /// <summary>Lo que ha entrado con un pedido que se había dado por no servido (no es exceso).</summary>
         public List<LineaRecuperadaDTO> Recuperadas { get; set; } = new List<LineaRecuperadaDTO>();
+
+        /// <summary>
+        /// Ensayo (?ensayo=true, solo Admin o Dirección): el mismo código que al terminar de verdad, dentro de una
+        /// transacción que se deshace SIEMPRE. No se ha guardado nada ni se ha avisado a nadie.
+        /// </summary>
+        public bool Ensayo { get; set; }
+        /// <summary>Las filas implicadas antes de terminar (solo en un ensayo).</summary>
+        public List<FilaEnsayoDTO> FilasAntes { get; set; }
+        /// <summary>Las mismas filas justo antes de deshacer (solo en un ensayo que ha ido bien).</summary>
+        public List<FilaEnsayoDTO> FilasDespues { get; set; }
+        /// <summary>El error real (procedimiento, trigger, restricción o motivo de negocio) si el ensayo ha fallado.</summary>
+        public string ErrorEnsayo { get; set; }
     }
 }
