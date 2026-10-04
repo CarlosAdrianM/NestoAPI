@@ -25,7 +25,7 @@ INSERT INTO @novedades (Orden, Categoria, Titulo, Descripcion) VALUES
     (3, 'Nuevo', N'Packing con la foto de cada bulto',
      N'Con el botón «Empaquetar» del inicio (o al terminar el picking) haces una foto de cada caja que cierras. Vale también para lo recogido en papel: tecleas el número del picking o del pedido, o lo eliges de la lista de pendientes. Las fotos quedan con el pedido y en Agencias se ven al preparar el envío.'),
     (4, 'Nuevo', N'Entradas: recibir la mercancía',
-     N'Una sola pantalla para lo que llega. Lees un producto y se abre su recepción; si es de un pedido que se había dado por no servido, Ariadna te dice de qué pedido es en vez de tratarlo como sobrante.'),
+     N'Una sola pantalla para lo que llega. Lees un producto y se abre su recepción; si es de un pedido que se había dado por no servido, Ariadna te dice de qué pedido es en vez de tratarlo como sobrante. En una reposición entra lo que lees: si no coincide con lo enviado, Ariadna te enseña las diferencias y se avisa a quien la hizo.'),
     (5, 'Nuevo', N'Ubicar lo que está pendiente de ubicar',
      N'Lees el producto y la etiqueta del hueco donde lo dejas, y queda ubicado.'),
     (6, 'Nuevo', N'Con el lector, con la cámara o con el dedo',
