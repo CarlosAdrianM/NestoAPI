@@ -192,6 +192,9 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         Task<List<int>> TraspasosEnDiario(string empresa, string almacen, string diario);
         /// <summary>prdExtrProducto del diario, por el único punto de llamada (ServicioExtractoProducto).</summary>
         Task Contabilizar(string empresa, string diario, string usuario);
+        /// <summary>NestoAPI#553: aparta del diario lo que no es de este traspaso (ver ApartadoTraspasosSql).</summary>
+        Task<List<int>> ApartarOtros(string empresa, string diario, int traspaso);
+        Task DevolverApartadas(string empresa, string diario, IReadOnlyCollection<int> apartadas);
 
         Task<DateTime> AhoraEnBaseDeDatos();
         /// <summary>
@@ -592,6 +595,16 @@ WHERE u.[NºTraspasoRepo] = @p1
         public Task Contabilizar(string empresa, string diario, string usuario)
         {
             return extractos.ContabilizarDiario(db, empresa, diario, Usuario(usuario));
+        }
+
+        public Task<List<int>> ApartarOtros(string empresa, string diario, int traspaso)
+        {
+            return ApartadoTraspasosSql.Apartar(db, empresa, diario, traspaso);
+        }
+
+        public Task DevolverApartadas(string empresa, string diario, IReadOnlyCollection<int> apartadas)
+        {
+            return ApartadoTraspasosSql.Devolver(db, empresa, diario, apartadas);
         }
 
         public Task<DateTime> AhoraEnBaseDeDatos()

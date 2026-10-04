@@ -598,22 +598,6 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             {
                 throw new NestoBusinessException($"El traspaso {numero} ya no tiene salida pendiente: ¿ya se ha sacado?");
             }
-            List<int> otros = (await tx.TraspasosEnDiario(empresa, diario.Almacen, diario.Diario).ConfigureAwait(false) ?? new List<int>())
-                .Where(t => t != numero).Distinct().ToList();
-            if (otros.Any())
-            {
-                // NestoAPI#553: ALG→REI y ALG→ALC comparten el diario «General». Contabilizar saca el diario entero, así
-                // que con dos traspasos dentro no se termina ninguno desde aquí (el otro choca con este igual). Lo que se
-                // hace con eso lo decide Carlos; mientras, el mozo tiene que saber qué pasa y a quién llamar.
-                string cuales = otros.Count == 1 ? $"la reposición {otros[0]}" : $"las reposiciones {string.Join(", ", otros)}";
-                throw new NestoBusinessException($"No se puede terminar la reposición {numero} todavía: en el diario «{diario.Diario?.Trim()}» " +
-                    $"de {diario.Almacen?.Trim()} está también {cuales}, y al terminar saldrían juntas. Mientras estén juntas, " +
-                    "ninguna se puede terminar desde Ariadna: avisa a Andre para que las saque en Nesto. No se ha hecho nada y lo leído sigue guardado.")
-                {
-                    StatusCode = System.Net.HttpStatusCode.Conflict
-                };
-            }
-
             string nombreUsuario = ServicioSalidas.NombreUsuario(usuario);
             List<FaltaSalida> faltas = PlanificadorFaltasSalida.AgruparFaltas(await tx.LeerFaltas(empresa, Tipo, numero).ConfigureAwait(false));
             int unidades = faltas.Sum(f => f.Cantidad);
@@ -642,8 +626,12 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 return nada;
             }
 
+            // NestoAPI#553: ALG→REI y ALG→ALC comparten el diario «General» y prdExtrProducto lo contabiliza entero. Se apartan
+            // las demás (como se hacía a mano con «RepoEscond») para que solo salga esta y se puede ir a las dos tiendas el mismo día
+            List<int> apartadas = await tx.ApartarOtros(empresa, diario.Diario, numero).ConfigureAwait(false) ?? new List<int>();
             await tx.Contabilizar(empresa, diario.Diario, nombreUsuario).ConfigureAwait(false);
-            cambios.Add($"Contabilizada la salida del diario {diario.Diario} de {diario.Almacen}.");
+            await tx.DevolverApartadas(empresa, diario.Diario, apartadas).ConfigureAwait(false);
+            cambios.Add($"Contabilizada la salida de la reposición {numero} (diario {diario.Diario} de {diario.Almacen}).");
             string mensaje = $"Reposición {numero} sacada de {diario.Almacen} hacia {diario.Destino}.";
             if (unidades > 0)
             {

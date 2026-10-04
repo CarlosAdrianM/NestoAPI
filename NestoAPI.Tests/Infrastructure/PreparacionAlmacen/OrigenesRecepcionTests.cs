@@ -118,6 +118,27 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             return solicitud;
         }
 
+        [TestMethod]
+        public async Task Reposiciones_Terminar_ConOtraEnElDiario_EntraSoloLaLeidaYLaOtraVuelveAlDiario()
+        {
+            // NestoAPI#553: el diario de entrada se contabiliza entero; las demás se apartan antes de leer lo pendiente de ubicar
+            var (cierre, transaccion) = CierreFalso(80862, 80870);
+            var pasos = new List<string>();
+            A.CallTo(() => transaccion.ApartarOtros("1", "PendRepo", 80862))
+                .Invokes(() => pasos.Add("apartar")).Returns(new List<int> { 701 });
+            A.CallTo(() => transaccion.LeerPendientesDeUbicar("1", "PendRepo")).Invokes(() => pasos.Add("leer pendientes"));
+            A.CallTo(() => transaccion.Contabilizar("1", "PendRepo", A<string>.Ignored)).Invokes(() => pasos.Add("contabilizar"));
+            A.CallTo(() => transaccion.DevolverApartadas("1", "PendRepo", A<IReadOnlyCollection<int>>.That.IsSameSequenceAs(new[] { 701 })))
+                .Invokes(() => pasos.Add("devolver"));
+            A.CallTo(() => transaccion.DejarPendientesDeUbicar("1", A<PendientesDeUbicarEntrada>.Ignored, A<string>.Ignored))
+                .Invokes(() => pasos.Add("dejar pendientes"));
+
+            ResultadoTerminarRecepcionDTO resultado = await Reposiciones(cierre).Terminar(SolicitudReposicion());
+
+            CollectionAssert.AreEqual(new[] { "apartar", "leer pendientes", "contabilizar", "devolver", "dejar pendientes" }, pasos);
+            Assert.IsFalse(resultado.Avisos.Any(a => a.Contains("80870")), "La otra reposición no ha entrado");
+        }
+
         // Carlos (04/10/26, #553): «si damos de alta el producto debe ser de lo leído». Se termina igualmente y en el destino
         // entra EXACTAMENTE lo leído (de menos, de más o productos que no venían), ajustando el diario de entrada antes de
         // contabilizar; la salida del origen no se toca. Y se informa de cada diferencia.
@@ -327,18 +348,6 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             A.CallTo(() => transaccion.RegistrarEvidencia("1", A<IEnumerable<EvidenciaRecepcion>>.That.Matches(e => e.Single().NumeroOrigen == 80862)))
                 .MustHaveHappenedOnceExactly();
             Assert.IsFalse(resultado.YaEstabaTerminada);
-        }
-
-        [TestMethod]
-        public async Task Reposiciones_Terminar_OtrasDelMismoDiarioEntranTambienYSeDice()
-        {
-            // prdExtrProducto contabiliza el diario entero: hoy a veces entran dos traspasos juntos (lo leído se compara
-            // solo con el que se recibe)
-            var (cierre, _) = CierreFalso(80862, 80863);
-
-            ResultadoTerminarRecepcionDTO resultado = await Reposiciones(cierre).Terminar(SolicitudReposicion());
-
-            StringAssert.Contains(string.Join(" ", resultado.Avisos), "80863");
         }
 
         [TestMethod]

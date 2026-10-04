@@ -454,10 +454,14 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 {
                     throw new NestoBusinessException($"La reposición {traspaso} ya no está pendiente de entrar en {solicitud.Almacen}.");
                 }
+                // NestoAPI#553: el diario de entrada se contabiliza entero; las demás reposiciones (y cualquier otra línea) se
+                // apartan para que entre solo la que se ha leído, y se devuelven después (como se hacía a mano con «RepoEscond»)
+                List<int> apartadas = await transaccion.ApartarOtros(solicitud.Empresa, diario, traspaso).ConfigureAwait(false)
+                    ?? new List<int>();
                 if (solicitud.Ensayo != null)
                 {
-                    await solicitud.Ensayo.Empezar(await transaccion.PrepararFoto(solicitud.Empresa, diario, enDiario).ConfigureAwait(false))
-                        .ConfigureAwait(false);
+                    await solicitud.Ensayo.Empezar(await transaccion.PrepararFoto(solicitud.Empresa, diario, new List<int> { traspaso })
+                        .ConfigureAwait(false)).ConfigureAwait(false);
                 }
                 if (await transaccion.FilasQueSoloSabeNestoViejo(solicitud.Empresa, diario).ConfigureAwait(false) > 0)
                 {
@@ -491,6 +495,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 // se calcula antes igual que él (ya con lo leído) y se pone después, en la misma transacción
                 PendientesDeUbicarEntrada pendientesDeUbicar = await transaccion.LeerPendientesDeUbicar(solicitud.Empresa, diario).ConfigureAwait(false);
                 await transaccion.Contabilizar(solicitud.Empresa, diario, solicitud.Usuario).ConfigureAwait(false);
+                await transaccion.DevolverApartadas(solicitud.Empresa, diario, apartadas).ConfigureAwait(false);
                 _ = await transaccion.DejarPendientesDeUbicar(solicitud.Empresa, pendientesDeUbicar, solicitud.Usuario).ConfigureAwait(false);
                 await transaccion.RegistrarEvidencia(solicitud.Empresa, solicitud.Lecturas.Select(l => new EvidenciaRecepcion
                 {
@@ -504,12 +509,6 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 }).ToList()).ConfigureAwait(false);
 
                 var avisos = new List<string>();
-                List<int> otras = enDiario.Where(t => t != traspaso).Distinct().OrderBy(t => t).ToList();
-                if (otras.Any())
-                {
-                    avisos.Add($"También ha entrado {(otras.Count == 1 ? "la reposición" : "las reposiciones")} {string.Join(", ", otras)}: " +
-                        "van en el mismo diario de entrada y se contabiliza entero, como en Nesto.");
-                }
                 if (solicitud.Ensayo != null)
                 {
                     await solicitud.Ensayo.Acabar().ConfigureAwait(false);

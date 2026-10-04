@@ -43,6 +43,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         Task<int> DejarPendientesDeUbicar(string empresa, PendientesDeUbicarEntrada pendientes, string usuario);
         /// <summary>prdExtrProducto del diario entero, como hoy desde Nesto viejo.</summary>
         Task Contabilizar(string empresa, string diario, string usuario);
+        /// <summary>NestoAPI#553: aparta del diario lo que no es de este traspaso (ver <see cref="ApartadoTraspasosSql"/>).</summary>
+        Task<List<int>> ApartarOtros(string empresa, string diario, int traspaso);
+        /// <summary>Devuelve al diario lo apartado con <see cref="ApartarOtros"/>.</summary>
+        Task DevolverApartadas(string empresa, string diario, IReadOnlyCollection<int> apartadas);
         Task RegistrarEvidencia(string empresa, IEnumerable<EvidenciaRecepcion> filas);
         /// <summary>Para el ensayo: cómo leer las filas que toca dar entrada al diario (antes y después).</summary>
         Task<Func<Task<List<FilaEnsayoDTO>>>> PrepararFoto(string empresa, string diario, IReadOnlyCollection<int> traspasos);
@@ -148,6 +152,47 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             if (contextoPropio)
             {
                 db?.Dispose();
+            }
+        }
+    }
+
+    /// <summary>
+    /// NestoAPI#553: contabilizar UN traspaso aunque su diario tenga otros. prdExtrProducto contabiliza el diario entero y
+    /// ALG saca hacia REI y hacia ALC por el mismo («General»), así que hoy no se puede ir a las dos tiendas el mismo día.
+    /// Lo que se hacía a mano: esconder la otra en el diario «RepoEscond» (Reposición escondida, creado para eso en 2023,
+    /// nunca contabilizado), contabilizar y devolverla. Aquí, dentro de la misma transacción: se apartan las filas del
+    /// diario que no son del traspaso, se contabiliza y se devuelven (por su [Nº Orden], que es identidad: no chocan).
+    /// </summary>
+    internal static class ApartadoTraspasosSql
+    {
+        internal const string DIARIO_APARTADO = "RepoEscond";
+
+        internal const string SQL_APARTAR = @"
+UPDATE PreExtrProducto SET Diario = @p2
+OUTPUT inserted.[Nº Orden]
+WHERE Empresa = @p0 AND Diario = @p1 AND ISNULL([NºTraspaso], 0) <> @p3";
+
+        internal const string SQL_DEVOLVER = @"
+UPDATE PreExtrProducto SET Diario = @p1
+WHERE Empresa = @p0 AND Diario = @p2 AND [Nº Orden] IN ({LISTA})";
+
+        internal static async Task<List<int>> Apartar(NVEntities db, string empresa, string diario, int traspaso)
+        {
+            return await db.Database.SqlQuery<int>(SQL_APARTAR, empresa, diario, DIARIO_APARTADO, traspaso).ToListAsync().ConfigureAwait(false);
+        }
+
+        internal static async Task Devolver(NVEntities db, string empresa, string diario, IReadOnlyCollection<int> apartadas)
+        {
+            if (apartadas == null || apartadas.Count == 0)
+            {
+                return;
+            }
+            string sql = SQL_DEVOLVER.Replace("{LISTA}", string.Join(",", apartadas));
+            int devueltas = await db.Database.ExecuteSqlCommandAsync(sql, empresa, diario, DIARIO_APARTADO).ConfigureAwait(false);
+            if (devueltas != apartadas.Count)
+            {
+                throw new NestoBusinessException($"Al devolver al diario {diario} las {apartadas.Count} líneas de otros traspasos " +
+                    $"apartadas en {DIARIO_APARTADO}, solo se han encontrado {devueltas}. No se ha hecho nada.");
             }
         }
     }
@@ -342,6 +387,16 @@ SELECT @puestas;";
         public Task Contabilizar(string empresa, string diario, string usuario)
         {
             return extractos.ContabilizarDiario(db, empresa, diario, UsuarioAuditoriaHelper.ParaAuditoria(usuario));
+        }
+
+        public Task<List<int>> ApartarOtros(string empresa, string diario, int traspaso)
+        {
+            return ApartadoTraspasosSql.Apartar(db, empresa, diario, traspaso);
+        }
+
+        public Task DevolverApartadas(string empresa, string diario, IReadOnlyCollection<int> apartadas)
+        {
+            return ApartadoTraspasosSql.Devolver(db, empresa, diario, apartadas);
         }
 
         public Task RegistrarEvidencia(string empresa, IEnumerable<EvidenciaRecepcion> filas)

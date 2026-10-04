@@ -82,6 +82,23 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
                 throw FallarAlContabilizar;
             }
             Contabilizados.Add((diario, usuario));
+            Pasos.Add("contabilizar " + diario);
+            return Task.CompletedTask;
+        }
+
+        /// <summary>NestoAPI#553: las líneas de otros traspasos que hay en el diario (las que se apartan).</summary>
+        public List<int> LineasDeOtrosEnElDiario { get; set; } = new List<int>();
+        public List<string> Pasos { get; } = new List<string>();
+
+        public Task<List<int>> ApartarOtros(string empresa, string diario, int traspaso)
+        {
+            Pasos.Add($"apartar de {diario} lo que no es {traspaso}");
+            return Task.FromResult(LineasDeOtrosEnElDiario.ToList());
+        }
+
+        public Task DevolverApartadas(string empresa, string diario, IReadOnlyCollection<int> apartadas)
+        {
+            Pasos.Add($"devolver a {diario} {string.Join(",", apartadas)}");
             return Task.CompletedTask;
         }
 
@@ -339,20 +356,22 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         }
 
         [TestMethod]
-        public async Task Terminar_UnaReposicionConOtroTraspasoEnElDiario_NoSeHaceNada()
+        public async Task Terminar_UnaReposicionConOtroTraspasoEnElDiario_SaleSoloEsaYLaOtraSeQuedaEnElDiario()
         {
+            // NestoAPI#553: ALG→REI y ALG→ALC comparten «General»; ir a las dos tiendas el mismo día no puede bloquear
             ReposicionRecogida(new LecturaPickingAlmacen { Producto = "A", Unidades = 3 });
             tx.TraspasosDelDiario = new List<int> { 80872, 80880 };
+            tx.LineasDeOtrosEnElDiario = new List<int> { 501, 502 };
 
-            NestoBusinessException ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(
-                () => servicio.Terminar(EMPRESA, "REPO", 80872, Usuario("Almacén")));
+            ResultadoTerminarSalida resultado = await servicio.Terminar(EMPRESA, "REPO", 80872, Usuario("Almacén"));
 
-            StringAssert.Contains(ex.Message, "80880");
-            Assert.AreEqual(0, tx.Contabilizados.Count);
-            // Lo ve el mozo tal cual: qué pasa y qué hacer (con dos traspasos en el diario, ninguno se termina desde Ariadna)
-            Assert.AreEqual(System.Net.HttpStatusCode.Conflict, ex.StatusCode);
-            StringAssert.Contains(ex.Message, "avisa a Andre");
-            StringAssert.Contains(ex.Message, "lo leído sigue guardado");
+            Assert.AreEqual(EstadoTerminarSalida.Terminada, resultado.Estado);
+            CollectionAssert.AreEqual(new[]
+            {
+                "apartar de General lo que no es 80872",
+                "contabilizar General",
+                "devolver a General 501,502"
+            }, tx.Pasos);
         }
 
         [TestMethod]
