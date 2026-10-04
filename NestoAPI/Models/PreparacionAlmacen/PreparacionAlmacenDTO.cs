@@ -99,6 +99,33 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public bool Terminada { get; set; }
         /// <summary>Terminada y sin faltas ni producto de más.</summary>
         public bool Completa { get; set; }
+        /// <summary>Ya se ha terminado en el servidor (PreparacionSalidasTerminadas): no hay que volver a pulsar Terminar.</summary>
+        public bool Cerrada { get; set; }
+        /// <summary>Lo dado por falta en el servidor (por cualquier PDA) cuando se ha leído la recogida.</summary>
+        public int UnidadesEnFalta { get; set; }
+    }
+
+    /// <summary>
+    /// Ariadna: un picking con alguna entrega (cliente + dirección) sin empaquetar, para la lista de «Empaquetar».
+    /// Criterio exacto, el mismo que la pantalla de packing: el picking tiene líneas que siguen en él (estado 1, de
+    /// producto, con algo que meter en la caja: Cantidad − Recoger ≠ 0) y alguna de sus entregas no tiene bultos o tiene
+    /// alguno sin foto (EnviosAgenciaBultos de ese picking). Da igual cómo se recogió (Ariadna o papel). Al hacer la
+    /// etiqueta en Agencias se hace el albarán y las líneas dejan el estado 1: el picking sale de la lista.
+    /// </summary>
+    public class PackingPendienteDTO
+    {
+        public int Picking { get; set; }
+        /// <summary>Las entregas del picking (lo que va a un mismo cliente y dirección).</summary>
+        public int Entregas { get; set; }
+        public int EntregasSinEmpaquetar { get; set; }
+        public int Pedidos { get; set; }
+        public int Unidades { get; set; }
+        /// <summary>Los bultos ya hechos en el picking.</summary>
+        public int Bultos { get; set; }
+        /// <summary>El nombre del cliente de la primera entrega sin empaquetar.</summary>
+        public string Nombre { get; set; }
+        /// <summary>Se recogió con Ariadna y se terminó (si no, se recogió en papel o aún no se ha recogido).</summary>
+        public bool RecogidoEnAriadna { get; set; }
     }
 
     public class LineaPackingAlmacenDTO

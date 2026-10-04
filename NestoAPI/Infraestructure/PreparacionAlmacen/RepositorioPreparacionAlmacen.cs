@@ -28,6 +28,23 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public int Cantidad { get; set; }
     }
 
+    /// <summary>Ariadna: una entrega (cliente + dirección) de un picking en curso con cuántos bultos tiene ya.</summary>
+    public class EntregaPorEmpaquetar
+    {
+        public int Picking { get; set; }
+        public string Cliente { get; set; }
+        public string Contacto { get; set; }
+        public string Nombre { get; set; }
+        public int PrimerPedido { get; set; }
+        public int Pedidos { get; set; }
+        public int Unidades { get; set; }
+        /// <summary>Números de bulto distintos con foto (un bulto compartido por dos pedidos cuenta una vez).</summary>
+        public int BultosConFoto { get; set; }
+        public int BultosSinFoto { get; set; }
+        /// <summary>El picking se terminó en Ariadna (PreparacionSalidasTerminadas).</summary>
+        public bool Terminado { get; set; }
+    }
+
     /// <summary>Lo leído de un producto (suma de sus lecturas y toques, sin las faltas).</summary>
     public class LecturaProductoAlmacen
     {
@@ -71,6 +88,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         Task<BultoAlmacenDTO> LeerBulto(int id);
         Task<List<BultoAlmacenDTO>> LeerBultos(string empresa, int pedido);
         Task<BultoAlmacenDTO> GuardarBulto(BultoAlmacenDTO bulto, string hashSha256, int tamanoBytes, string dispositivo);
+        /// <summary>La salida se terminó en el servidor (PreparacionSalidasTerminadas).</summary>
+        Task<bool> SalidaTerminada(string empresa, string tipo, int numero);
+        /// <summary>Ariadna: las entregas de los pickings en curso del almacén, con sus bultos (para «Empaquetar»).</summary>
+        Task<List<EntregaPorEmpaquetar>> LeerEntregasPorEmpaquetar(string empresa, string almacen);
     }
 
     /// <summary>
@@ -233,6 +254,54 @@ WHERE Empresa = @p1 AND Pedido = @p2 AND Picking = @p3 AND Bulto = @p4";
         internal const string SQL_INSERTAR_BULTO = @"
 INSERT INTO EnviosAgenciaBultos (IdCliente, Empresa, Pedido, Picking, Bulto, RutaBlob, HashSha256, TamanoBytes, Usuario, Dispositivo, FechaFoto)
 VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10)";
+
+        // Si la tabla aún no existe (script de Ariadna#6 sin lanzar), ninguna salida está terminada
+        internal const string SQL_SALIDA_TERMINADA = @"
+IF OBJECT_ID('dbo.PreparacionSalidasTerminadas') IS NULL
+    SELECT CAST(0 AS bit)
+ELSE
+    SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.PreparacionSalidasTerminadas
+                                  WHERE Empresa = @p0 AND TipoOrigen = @p1 AND NumeroOrigen = @p2) THEN 1 ELSE 0 END AS bit)";
+
+        // Ariadna («Empaquetar»): las entregas de los pickings en curso del almacén. Mismas líneas que SQL_LINEAS_PACKING
+        // (siguen en el picking y llevan algo a la caja) y mismas entregas que MontarPacking (cliente + contacto); los
+        // bultos, los de EnviosAgenciaBultos de ese picking y de los pedidos de la entrega, contando cada número una vez
+        // (un bulto compartido tiene una fila por pedido). Comprobado en producción el 04/10/26: 10 entregas, al momento.
+        internal const string SQL_ENTREGAS_POR_EMPAQUETAR = @"
+WITH lineas AS (
+    SELECT l.Picking, l.[Número] AS Pedido, c.[Nº Cliente] AS Cliente, c.Contacto,
+           ISNULL(l.Cantidad, 0) - ISNULL(l.Recoger, 0) AS Unidades
+    FROM LinPedidoVta l
+         JOIN CabPedidoVta c ON c.Empresa = l.Empresa AND c.[Número] = l.[Número]
+    WHERE l.Empresa = @p0 AND l.[Almacén] = @p1 AND l.Estado = 1 AND l.TipoLinea = 1 AND l.Picking > 0
+          AND ISNULL(l.Cantidad, 0) - ISNULL(l.Recoger, 0) <> 0
+), entregas AS (
+    SELECT Picking, Cliente, Contacto, MIN(Pedido) AS PrimerPedido, COUNT(DISTINCT Pedido) AS Pedidos, SUM(Unidades) AS Unidades
+    FROM lineas GROUP BY Picking, Cliente, Contacto
+)
+SELECT e.Picking, RTRIM(e.Cliente) AS Cliente, RTRIM(e.Contacto) AS Contacto, RTRIM(cl.Nombre) AS Nombre, e.PrimerPedido, e.Pedidos,
+       CAST(e.Unidades AS int) AS Unidades,
+       (SELECT COUNT(DISTINCT b.Bulto) FROM EnviosAgenciaBultos b
+        WHERE b.Empresa = @p0 AND b.Picking = e.Picking AND b.RutaBlob IS NOT NULL
+              AND b.Pedido IN (SELECT li.Pedido FROM lineas li WHERE li.Picking = e.Picking AND li.Cliente = e.Cliente AND li.Contacto = e.Contacto)) AS BultosConFoto,
+       (SELECT COUNT(*) FROM EnviosAgenciaBultos b
+        WHERE b.Empresa = @p0 AND b.Picking = e.Picking AND b.RutaBlob IS NULL
+              AND b.Pedido IN (SELECT li.Pedido FROM lineas li WHERE li.Picking = e.Picking AND li.Cliente = e.Cliente AND li.Contacto = e.Contacto)) AS BultosSinFoto,
+       CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.PreparacionSalidasTerminadas t
+                              WHERE t.Empresa = @p0 AND t.TipoOrigen = 'PICK' AND t.NumeroOrigen = e.Picking) THEN 1 ELSE 0 END AS bit) AS Terminado
+FROM entregas e
+     LEFT JOIN Clientes cl ON cl.Empresa = @p0 AND cl.[Nº Cliente] = e.Cliente AND cl.Contacto = e.Contacto
+ORDER BY e.Picking DESC, e.Cliente, e.Contacto";
+
+        public async Task<bool> SalidaTerminada(string empresa, string tipo, int numero)
+        {
+            return await baseDeDatos.SqlQuery<bool>(SQL_SALIDA_TERMINADA, empresa, tipo, numero).FirstAsync().ConfigureAwait(false);
+        }
+
+        public Task<List<EntregaPorEmpaquetar>> LeerEntregasPorEmpaquetar(string empresa, string almacen)
+        {
+            return baseDeDatos.SqlQuery<EntregaPorEmpaquetar>(SQL_ENTREGAS_POR_EMPAQUETAR, empresa, almacen).ToListAsync();
+        }
 
         public Task<List<LineaPickingAlmacenDTO>> LeerLineasPicking(string empresa, int picking)
         {

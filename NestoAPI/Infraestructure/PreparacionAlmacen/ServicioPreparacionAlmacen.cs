@@ -26,6 +26,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// <summary>Ariadna#6: anula todo lo que un mozo ha leído en una salida (solo Admin o Dirección, y sin terminar).</summary>
         Task<ResultadoAnularLecturas> AnularLecturasRecogida(string empresa, string tipo, int numero, string usuarioLecturas, System.Security.Principal.IPrincipal usuario);
         Task<PackingAlmacenDTO> LeerPacking(string empresa, int picking);
+        /// <summary>Ariadna: los pickings del almacén con alguna entrega sin empaquetar (ver <see cref="PackingPendienteDTO"/>).</summary>
+        Task<List<PackingPendienteDTO>> LeerPackingsPendientes(string empresa, string almacen);
         /// <summary>El packing de un solo pedido, con su picking en curso. Null si el pedido no tiene picking.</summary>
         Task<PackingAlmacenDTO> LeerPackingDePedido(string empresa, int pedido);
         Task<ResultadoEscaneosAlmacenDTO> GuardarEscaneos(string empresa, IEnumerable<EscaneoAlmacenDTO> escaneos, string usuario);
@@ -161,9 +163,45 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             return Salidas.LeerPendientes(empresa, almacen);
         }
 
-        public Task<RecogidaAlmacenDTO> LeerRecogida(string empresa, string tipo, int numero)
+        public async Task<RecogidaAlmacenDTO> LeerRecogida(string empresa, string tipo, int numero)
         {
-            return Salidas.LeerRecogida(empresa, tipo, numero);
+            RecogidaAlmacenDTO recogida = await Salidas.LeerRecogida(empresa, tipo, numero).ConfigureAwait(false);
+            if (recogida != null)
+            {
+                // Ariadna: al volver a abrirla no se vuelve a pedir Terminar (y Empaquetar va directo al packing)
+                recogida.Cerrada = await repositorio.SalidaTerminada(empresa, recogida.Tipo, numero).ConfigureAwait(false);
+            }
+            return recogida;
+        }
+
+        public async Task<List<PackingPendienteDTO>> LeerPackingsPendientes(string empresa, string almacen)
+        {
+            return MontarPackingsPendientes(await repositorio.LeerEntregasPorEmpaquetar(empresa, almacen).ConfigureAwait(false));
+        }
+
+        /// <summary>
+        /// Una entrega está empaquetada si tiene algún bulto y todos con foto (lo mismo que «TodosConFoto» en la pantalla
+        /// de packing de Ariadna); un picking está pendiente si le queda alguna entrega sin empaquetar.
+        /// </summary>
+        internal static List<PackingPendienteDTO> MontarPackingsPendientes(IEnumerable<EntregaPorEmpaquetar> entregas)
+        {
+            bool Empaquetada(EntregaPorEmpaquetar e) => e.BultosConFoto > 0 && e.BultosSinFoto == 0;
+            return (entregas ?? Enumerable.Empty<EntregaPorEmpaquetar>())
+                .GroupBy(e => e.Picking)
+                .Where(g => g.Any(e => !Empaquetada(e)))
+                .OrderByDescending(g => g.Key)
+                .Select(g => new PackingPendienteDTO
+                {
+                    Picking = g.Key,
+                    Entregas = g.Count(),
+                    EntregasSinEmpaquetar = g.Count(e => !Empaquetada(e)),
+                    Pedidos = g.Sum(e => e.Pedidos),
+                    Unidades = g.Sum(e => e.Unidades),
+                    Bultos = g.Sum(e => e.BultosConFoto + e.BultosSinFoto),
+                    Nombre = g.First(e => !Empaquetada(e)).Nombre?.Trim(),
+                    RecogidoEnAriadna = g.Any(e => e.Terminado)
+                })
+                .ToList();
         }
 
         public Task<ResultadoTerminarSalida> TerminarRecogida(string empresa, string tipo, int numero, System.Security.Principal.IPrincipal usuario, bool ensayo = false)
@@ -192,7 +230,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 Lineas = lineas,
                 SiguienteOrden = lineas.Where(l => l.Pendiente > 0).Select(l => (int?)l.Orden).FirstOrDefault(),
                 Terminada = estado.Terminado,
-                Completa = estado.Completo
+                Completa = estado.Completo,
+                UnidadesEnFalta = estado.Productos.Sum(p => p.Faltas)
             };
         }
 

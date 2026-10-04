@@ -204,6 +204,20 @@ namespace NestoAPI.Controllers
             return resultado.Entregas.Count == 0 ? (IHttpActionResult)NotFound() : Ok(resultado);
         }
 
+        // GET api/Almacen/Packing/Pendientes?almacen=ALG&empresa=1
+        /// <summary>
+        /// Ariadna («Empaquetar»): los pickings del almacén con alguna entrega (cliente + dirección) sin sus bultos con
+        /// foto, el más reciente primero, se hayan recogido con Ariadna o en papel. El criterio está en <see cref="PackingPendienteDTO"/>.
+        /// </summary>
+        [HttpGet]
+        [Route("Packing/Pendientes")]
+        [ResponseType(typeof(List<PackingPendienteDTO>))]
+        public async Task<IHttpActionResult> GetPackingsPendientes(string almacen = Constantes.Almacenes.ALGETE,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            return Ok(await servicio.LeerPackingsPendientes(Empresa(empresa), Almacen(almacen)).ConfigureAwait(false));
+        }
+
         // GET api/Almacen/Pedidos/926940/Packing?empresa=1
         /// <summary>El packing de un pedido (el que se abre al leer el código del pedido en la mesa).</summary>
         [HttpGet]

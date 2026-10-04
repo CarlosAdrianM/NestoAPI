@@ -94,6 +94,17 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public async Task GetPackingsPendientes_PorDefectoLosDeAlgete()
+        {
+            var lista = new List<PackingPendienteDTO> { new PackingPendienteDTO { Picking = 99739 } };
+            A.CallTo(() => servicio.LeerPackingsPendientes("1", "ALG")).Returns(lista);
+
+            IHttpActionResult resultado = await controller.GetPackingsPendientes();
+
+            Assert.AreSame(lista, ((OkNegotiatedContentResult<List<PackingPendienteDTO>>)resultado).Content);
+        }
+
+        [TestMethod]
         public async Task GetPicking_PickingSinLineas_NotFound()
         {
             A.CallTo(() => servicio.LeerPicking("1", 5)).Returns(new PickingAlmacenDTO());

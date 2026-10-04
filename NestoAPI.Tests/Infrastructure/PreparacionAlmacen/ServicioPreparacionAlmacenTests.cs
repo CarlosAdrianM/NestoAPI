@@ -437,6 +437,88 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         }
 
         [TestMethod]
+        public async Task LeerRecogida_DiceSiYaSeTerminoYCuantoSeDioPorFalta()
+        {
+            // Ariadna: al volver a abrir un picking terminado no se vuelve a pedir Terminar, y la confirmación cuenta
+            // también las faltas que dio otra PDA
+            A.CallTo(() => repositorio.LeerLineasPicking(EMPRESA, PICKING)).Returns(new List<LineaPickingAlmacenDTO>
+            {
+                Parada(1, "A", 3, "001"), Parada(2, "B", 2, "002")
+            });
+            A.CallTo(() => repositorio.LeerLecturasDelPicking(EMPRESA, PICKING)).Returns(new List<LecturaPickingAlmacen>
+            {
+                new LecturaPickingAlmacen { Producto = "A", Unidades = 3 },
+                new LecturaPickingAlmacen { Producto = "B", Unidades = 1, Faltas = 1 }
+            });
+            A.CallTo(() => repositorio.SalidaTerminada(EMPRESA, "PICK", PICKING)).Returns(true);
+
+            RecogidaAlmacenDTO recogida = await servicio.LeerRecogida(EMPRESA, "PICK", PICKING);
+
+            Assert.IsTrue(recogida.Cerrada);
+            Assert.AreEqual(1, recogida.UnidadesEnFalta);
+        }
+
+        [TestMethod]
+        public async Task LeerRecogida_SinTerminar_NoEstaCerrada()
+        {
+            A.CallTo(() => repositorio.LeerLineasPicking(EMPRESA, PICKING)).Returns(new List<LineaPickingAlmacenDTO> { Parada(1, "A", 3, "001") });
+            A.CallTo(() => repositorio.SalidaTerminada(EMPRESA, "PICK", PICKING)).Returns(false);
+
+            RecogidaAlmacenDTO recogida = await servicio.LeerRecogida(EMPRESA, "PICK", PICKING);
+
+            Assert.IsFalse(recogida.Cerrada);
+            Assert.AreEqual(0, recogida.UnidadesEnFalta);
+        }
+
+        private static EntregaPorEmpaquetar Entrega(int picking, string cliente, int bultosConFoto, int bultosSinFoto = 0, bool terminado = false,
+            int pedidos = 1, int unidades = 2)
+        {
+            return new EntregaPorEmpaquetar
+            {
+                Picking = picking, Cliente = cliente, Contacto = "0", Nombre = "CLIENTE " + cliente, PrimerPedido = 927000 + picking % 100,
+                Pedidos = pedidos, Unidades = unidades, BultosConFoto = bultosConFoto, BultosSinFoto = bultosSinFoto, Terminado = terminado
+            };
+        }
+
+        [TestMethod]
+        public async Task LeerPackingsPendientes_SoloLosPickingsConAlgunaEntregaSinSusBultosConFoto_ElMasRecientePrimero()
+        {
+            // Criterio exacto: el mismo que la pantalla de packing. Una entrega está empaquetada si tiene algún bulto y
+            // todos con foto; un picking sale si le queda alguna entrega sin empaquetar.
+            A.CallTo(() => repositorio.LeerEntregasPorEmpaquetar(EMPRESA, "ALG")).Returns(new List<EntregaPorEmpaquetar>
+            {
+                Entrega(99700, "100", bultosConFoto: 2),                       // todo empaquetado: no sale
+                Entrega(99739, "200", bultosConFoto: 1),
+                Entrega(99739, "300", bultosConFoto: 0, terminado: true, pedidos: 2, unidades: 5),
+                Entrega(99739, "400", bultosConFoto: 1, bultosSinFoto: 1, terminado: true),
+                Entrega(99710, "500", bultosConFoto: 0)
+            });
+
+            List<PackingPendienteDTO> pendientes = await servicio.LeerPackingsPendientes(EMPRESA, "ALG");
+
+            CollectionAssert.AreEqual(new[] { 99739, 99710 }, pendientes.Select(p => p.Picking).ToArray());
+            PackingPendienteDTO primero = pendientes[0];
+            Assert.AreEqual(3, primero.Entregas);
+            Assert.AreEqual(2, primero.EntregasSinEmpaquetar);
+            Assert.AreEqual(4, primero.Pedidos);
+            Assert.AreEqual(9, primero.Unidades);
+            Assert.AreEqual(3, primero.Bultos, "Los bultos ya hechos (con o sin foto)");
+            Assert.IsTrue(primero.RecogidoEnAriadna);
+            Assert.AreEqual("CLIENTE 300", primero.Nombre, "El nombre de la primera entrega que falta");
+            Assert.IsFalse(pendientes[1].RecogidoEnAriadna);
+        }
+
+        [TestMethod]
+        public void SqlEntregasPorEmpaquetar_MismasLineasQueElPacking()
+        {
+            // Las mismas líneas que SQL_LINEAS_PACKING (siguen en el picking y algo que meter en la caja), del almacén
+            StringAssert.Contains(RepositorioPreparacionAlmacen.SQL_ENTREGAS_POR_EMPAQUETAR, "l.Estado = 1");
+            StringAssert.Contains(RepositorioPreparacionAlmacen.SQL_ENTREGAS_POR_EMPAQUETAR, "l.TipoLinea = 1");
+            StringAssert.Contains(RepositorioPreparacionAlmacen.SQL_ENTREGAS_POR_EMPAQUETAR, "ISNULL(l.Cantidad, 0) - ISNULL(l.Recoger, 0) <> 0");
+            StringAssert.Contains(RepositorioPreparacionAlmacen.SQL_ENTREGAS_POR_EMPAQUETAR, "l.[Almacén] = @p1");
+        }
+
+        [TestMethod]
         public void MontarRecogida_AMedias_AbrePorLaPrimeraParadaConAlgoPorCoger()
         {
             // El producto A está en dos huecos (3 + 2). Se han leído 4 de A y B se ha dado por falta.
