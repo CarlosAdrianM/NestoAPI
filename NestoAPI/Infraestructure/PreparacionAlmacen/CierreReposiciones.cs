@@ -19,9 +19,40 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         Task<string> DiarioDeEntrada(string empresa, string almacen);
         /// <summary>Los traspasos que hay en ese diario del almacén, pendientes de contabilizar.</summary>
         Task<List<int>> TraspasosEnDiario(string empresa, string almacen, string diario);
+        /// <summary>Lo enviado en ese traspaso y pendiente de entrar (lo mismo que ve el mozo).</summary>
+        Task<List<FilaReposicion>> LeerLineas(string empresa, string almacen, int traspaso);
+        /// <summary>
+        /// Filas del diario que prdExtrProducto trataría distinto llamado desde la API que desde Nesto viejo (con hueco o en
+        /// negativo: van por bloques del procedimiento que dependen del almacén del usuario). 0 en el día a día.
+        /// </summary>
+        Task<int> FilasQueSoloSabeNestoViejo(string empresa, string diario);
+        /// <summary>
+        /// Lo que prdExtrProducto deja «pendiente de ubicar» (Ubicaciones estado 2 con NºTraspasoRepo) al contabilizar el
+        /// diario de entrada de reposiciones, calculado ANTES de contabilizar (después ya no está en PreExtrProducto).
+        /// </summary>
+        Task<PendientesDeUbicarEntrada> LeerPendientesDeUbicar(string empresa, string diario);
+        /// <summary>Lo deja pendiente de ubicar, salvo lo que ya haya dejado el procedimiento. Devuelve las filas puestas.</summary>
+        Task<int> DejarPendientesDeUbicar(string empresa, PendientesDeUbicarEntrada pendientes, string usuario);
         /// <summary>prdExtrProducto del diario entero, como hoy desde Nesto viejo.</summary>
         Task Contabilizar(string empresa, string diario, string usuario);
         Task RegistrarEvidencia(string empresa, IEnumerable<EvidenciaRecepcion> filas);
+    }
+
+    /// <summary>Lo que quedará pendiente de ubicar al dar entrada a un diario de reposiciones.</summary>
+    public class PendientesDeUbicarEntrada
+    {
+        /// <summary>El NºOrden más alto de Ubicaciones antes de contabilizar: lo que el procedimiento ponga irá por encima.</summary>
+        public int UltimaUbicacion { get; set; }
+        public List<PendienteDeUbicarEntrada> Filas { get; set; } = new List<PendienteDeUbicarEntrada>();
+    }
+
+    /// <summary>Una fila de Ubicaciones en estado 2, como la pone prdExtrProducto (agrupada por almacén, producto y traspaso).</summary>
+    public class PendienteDeUbicarEntrada
+    {
+        public string Almacen { get; set; }
+        public string Producto { get; set; }
+        public int Cantidad { get; set; }
+        public int? Traspaso { get; set; }
     }
 
     public interface IRepositorioCierreReposiciones
@@ -121,6 +152,81 @@ WHERE p.Empresa = @p0 AND p.[Almacén] = @p1 AND p.Diario = @p2 AND p.[NºTraspa
         public Task<List<int>> TraspasosEnDiario(string empresa, string almacen, string diario)
         {
             return db.Database.SqlQuery<int>(SQL_TRASPASOS_EN_DIARIO, empresa, almacen, diario).ToListAsync();
+        }
+
+        public Task<List<FilaReposicion>> LeerLineas(string empresa, string almacen, int traspaso)
+        {
+            return db.Database.SqlQuery<FilaReposicion>(RepositorioRecepcionReposiciones.SQL_LINEAS, empresa, almacen, traspaso).ToListAsync();
+        }
+
+        // Lo que prdExtrProducto hace con estas filas depende del almacén del usuario (bloques de «salidas sin ubicación» y
+        // de «más cantidad en la línea que en la ubicación», y el UPDATE/INSERT de huecos con pasillo): desde la API, no
+        internal const string SQL_FILAS_QUE_SOLO_SABE_NESTO_VIEJO = @"
+SELECT COUNT(*) FROM PreExtrProducto p
+WHERE p.Empresa = @p0 AND p.Diario = @p1 AND p.Estado >= 0 AND (p.Pasillo IS NOT NULL OR p.Cantidad < 0)";
+
+        public Task<int> FilasQueSoloSabeNestoViejo(string empresa, string diario)
+        {
+            return db.Database.SqlQuery<int>(SQL_FILAS_QUE_SOLO_SABE_NESTO_VIEJO, empresa, diario).SingleAsync();
+        }
+
+        // COPIA EXACTA del SELECT del INSERT de prdExtrProducto para el diario de entrada de reposiciones del almacén del
+        // usuario (bloque «David Sanchez 20/06/05», líneas ~431-439): mismos filtros, misma agrupación. Desde la API
+        // prdExtrProducto busca el AlmacénPedidoVta de SYSTEM_USER (RDS2016$, que no tiene), @DiarioEntradaRepo queda NULL,
+        // «@diario <> @diariorepo» es UNKNOWN y se salta el bloque entero: lo recibido no quedaba pendiente de ubicar.
+        internal const string SQL_PENDIENTES_DE_UBICAR = @"
+SELECT RTRIM(p.[Almacén]) AS Almacen, RTRIM(p.[Número]) AS Producto, CAST(SUM(p.Cantidad) AS int) AS Cantidad, p.[NºTraspaso] AS Traspaso
+FROM PreExtrProducto AS p INNER JOIN Almacenes AS a
+     ON p.Empresa = a.Empresa AND p.[Almacén] = a.[Número]
+     INNER JOIN Productos AS pr ON p.Empresa = pr.Empresa AND p.[Número] = pr.[Número]
+WHERE p.Estado >= 0 AND p.Empresa = @p0 AND a.ControlUbicaciones = 1 AND p.Cantidad > 0 AND p.Diario = @p1
+  AND (p.LinPedido IS NULL OR (p.LinPedido IS NOT NULL AND p.Diario = '_EntregFac' AND p.[Albarán] IS NULL)
+       OR (p.LinPedido IS NOT NULL AND p.Diario = '_EntFacCmp' AND p.[Albarán] IS NULL)
+       OR (p.LinPedido IS NOT NULL AND p.Diario = '_RecogFac' AND p.[Albarán] IS NULL))
+  AND p.Pasillo IS NULL AND pr.Ubicar = 1
+GROUP BY p.[Almacén], p.[Número], p.[NºTraspaso]";
+
+        internal const string SQL_ULTIMA_UBICACION = "SELECT ISNULL(MAX([NºOrden]), 0) FROM Ubicaciones";
+
+        // La misma fila que pone el procedimiento (empresa, almacén, número, cantidad, estado 2, NºTraspasoRepo, usuario),
+        // salvo que ya la haya puesto él (si algún día encuentra el almacén del usuario): así nunca hay dos
+        internal const string SQL_DEJAR_PENDIENTE_DE_UBICAR = @"
+DECLARE @puestas int = 0;
+IF NOT EXISTS (SELECT 1 FROM Ubicaciones
+               WHERE [NºOrden] > @p0 AND Empresa = @p1 AND [Almacén] = @p2 AND [Número] = @p3 AND Estado = 2 AND Pasillo IS NULL
+                 AND ([NºTraspasoRepo] = @p5 OR ([NºTraspasoRepo] IS NULL AND @p5 IS NULL)))
+BEGIN
+    INSERT INTO Ubicaciones (Empresa, [Almacén], [Número], Cantidad, Estado, [NºTraspasoRepo], Usuario)
+    VALUES (@p1, @p2, @p3, @p4, 2, @p5, @p6);
+    SET @puestas = @@ROWCOUNT;
+END
+SELECT @puestas;";
+
+        public async Task<PendientesDeUbicarEntrada> LeerPendientesDeUbicar(string empresa, string diario)
+        {
+            return new PendientesDeUbicarEntrada
+            {
+                UltimaUbicacion = await db.Database.SqlQuery<int>(SQL_ULTIMA_UBICACION).SingleAsync().ConfigureAwait(false),
+                Filas = await db.Database.SqlQuery<PendienteDeUbicarEntrada>(SQL_PENDIENTES_DE_UBICAR, empresa, diario).ToListAsync().ConfigureAwait(false)
+            };
+        }
+
+        public async Task<int> DejarPendientesDeUbicar(string empresa, PendientesDeUbicarEntrada pendientes, string usuario)
+        {
+            int puestas = 0;
+            foreach (PendienteDeUbicarEntrada fila in pendientes?.Filas ?? new List<PendienteDeUbicarEntrada>())
+            {
+                puestas += await db.Database.SqlQuery<int>(SQL_DEJAR_PENDIENTE_DE_UBICAR,
+                    new SqlParameter("@p0", System.Data.SqlDbType.Int) { Value = pendientes.UltimaUbicacion },
+                    new SqlParameter("@p1", System.Data.SqlDbType.Char, 3) { Value = empresa },
+                    new SqlParameter("@p2", System.Data.SqlDbType.Char, 3) { Value = fila.Almacen },
+                    new SqlParameter("@p3", System.Data.SqlDbType.Char, 15) { Value = fila.Producto },
+                    new SqlParameter("@p4", System.Data.SqlDbType.Int) { Value = fila.Cantidad },
+                    new SqlParameter("@p5", System.Data.SqlDbType.Int) { Value = (object)fila.Traspaso ?? DBNull.Value },
+                    new SqlParameter("@p6", System.Data.SqlDbType.VarChar, 30) { Value = UsuarioAuditoriaHelper.ParaAuditoria(usuario) })
+                    .SingleAsync().ConfigureAwait(false);
+            }
+            return puestas;
         }
 
         public Task Contabilizar(string empresa, string diario, string usuario)

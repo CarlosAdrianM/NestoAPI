@@ -101,7 +101,82 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             A.CallTo(() => transaccion.YaRegistrada(A<string>.Ignored, A<IEnumerable<Guid>>.Ignored)).Returns(false);
             A.CallTo(() => transaccion.DiarioDeEntrada("1", "REI")).Returns("PendRepo");
             A.CallTo(() => transaccion.TraspasosEnDiario("1", "REI", "PendRepo")).Returns(traspasosEnDiario.ToList());
+            // Lo enviado en la 80862 es justo lo que lee SolicitudReposicion (2 de A)
+            A.CallTo(() => transaccion.LeerLineas("1", "REI", 80862)).Returns(new List<FilaReposicion>
+            {
+                new FilaReposicion { Producto = "A", Descripcion = "Producto A", Cantidad = 2 }
+            });
             return (cierre, transaccion);
+        }
+
+        private static SolicitudTerminarRecepcion SolicitudReposicionLeyendo(params (string producto, int cantidad)[] lecturas)
+        {
+            SolicitudTerminarRecepcion solicitud = SolicitudReposicion();
+            solicitud.Lecturas = lecturas.ToDictionary(l => l.producto, l => l.cantidad);
+            return solicitud;
+        }
+
+        // Decisión provisional (04/10/26, #553): hasta que Carlos decida qué se hace con las diferencias, una reposición solo
+        // se termina desde aquí si lo leído coincide EXACTAMENTE con lo enviado; si no, 409 y se hace en Nesto viejo
+        [DataTestMethod]
+        [DataRow("A", 1, "falta 1 de A")]
+        [DataRow("A", 3, "sobra 1 de A")]
+        public async Task Reposiciones_Terminar_LoLeidoNoCoincideConLoEnviado_409YNoSeContabilizaNada(string producto, int cantidad, string motivo)
+        {
+            var (cierre, transaccion) = CierreFalso(80862);
+
+            NestoBusinessException ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() =>
+                Reposiciones(cierre).Terminar(SolicitudReposicionLeyendo((producto, cantidad))));
+
+            Assert.AreEqual(System.Net.HttpStatusCode.Conflict, ex.StatusCode);
+            StringAssert.Contains(ex.Message, motivo);
+            StringAssert.Contains(ex.Message, "Nesto");
+            A.CallTo(() => transaccion.Contabilizar(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
+            A.CallTo(() => transaccion.RegistrarEvidencia(A<string>.Ignored, A<IEnumerable<EvidenciaRecepcion>>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Reposiciones_Terminar_ProductoQueNoVeniaEnLaReposicion_409()
+        {
+            var (cierre, transaccion) = CierreFalso(80862);
+
+            NestoBusinessException ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() =>
+                Reposiciones(cierre).Terminar(SolicitudReposicionLeyendo(("A", 2), ("Z", 1))));
+
+            Assert.AreEqual(System.Net.HttpStatusCode.Conflict, ex.StatusCode);
+            StringAssert.Contains(ex.Message, "Z");
+            A.CallTo(() => transaccion.Contabilizar(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Reposiciones_Terminar_DiarioConFilasQueSoloTrataBienNestoViejo_409()
+        {
+            // Con hueco o en negativo: prdExtrProducto llamado desde la API no hace con ellas lo que hace desde Nesto viejo
+            var (cierre, transaccion) = CierreFalso(80862);
+            A.CallTo(() => transaccion.FilasQueSoloSabeNestoViejo("1", "PendRepo")).Returns(1);
+
+            NestoBusinessException ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() =>
+                Reposiciones(cierre).Terminar(SolicitudReposicion()));
+
+            Assert.AreEqual(System.Net.HttpStatusCode.Conflict, ex.StatusCode);
+            A.CallTo(() => transaccion.Contabilizar(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Reposiciones_Terminar_LoQueEntraQuedaPendienteDeUbicar_LeidoAntesYPuestoDespuesDeContabilizar()
+        {
+            // Regresión 04/10/26: desde la API prdExtrProducto no encuentra el almacén del usuario (busca el de SYSTEM_USER,
+            // RDS2016$) y se salta el INSERT en Ubicaciones (estado 2, NºTraspasoRepo): nada quedaba «pendiente de ubicar»
+            var (cierre, transaccion) = CierreFalso(80862);
+            var llamadasCierre = new List<string>();
+            var pendientes = new PendientesDeUbicarEntrada { UltimaUbicacion = 322200201 };
+            A.CallTo(() => transaccion.LeerPendientesDeUbicar("1", "PendRepo")).Invokes(() => llamadasCierre.Add("leer pendientes")).Returns(pendientes);
+            A.CallTo(() => transaccion.Contabilizar("1", "PendRepo", A<string>.Ignored)).Invokes(() => llamadasCierre.Add("contabilizar"));
+            A.CallTo(() => transaccion.DejarPendientesDeUbicar("1", pendientes, "NUEVAVISION\\Reina")).Invokes(() => llamadasCierre.Add("dejar pendientes"));
+
+            _ = await Reposiciones(cierre).Terminar(SolicitudReposicion());
+
+            CollectionAssert.AreEqual(new[] { "leer pendientes", "contabilizar", "dejar pendientes" }, llamadasCierre);
         }
 
         private static SolicitudTerminarRecepcion SolicitudReposicion(string documento = "80862")
@@ -147,7 +222,8 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         [TestMethod]
         public async Task Reposiciones_Terminar_OtrasDelMismoDiarioEntranTambienYSeDice()
         {
-            // prdExtrProducto contabiliza el diario entero: hoy a veces entran dos traspasos juntos
+            // prdExtrProducto contabiliza el diario entero: hoy a veces entran dos traspasos juntos (lo leído se compara
+            // solo con el que se recibe)
             var (cierre, _) = CierreFalso(80862, 80863);
 
             ResultadoTerminarRecepcionDTO resultado = await Reposiciones(cierre).Terminar(SolicitudReposicion());
