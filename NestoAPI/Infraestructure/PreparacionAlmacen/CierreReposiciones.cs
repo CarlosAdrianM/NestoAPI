@@ -26,6 +26,14 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// negativo: van por bloques del procedimiento que dependen del almacén del usuario). 0 en el día a día.
         /// </summary>
         Task<int> FilasQueSoloSabeNestoViejo(string empresa, string diario);
+        /// <summary>De dónde viene el traspaso y quién lo creó, según sus filas del diario de entrada.</summary>
+        Task<DatosTraspasoReposicion> LeerDatosTraspaso(string empresa, string almacen, string diario, int traspaso);
+        /// <summary>
+        /// Deja el producto en el diario de entrada de ese traspaso con EXACTAMENTE <paramref name="cantidad"/> (lo leído): si
+        /// tiene filas, en la primera (las demás se quitan; con 0, se quitan todas); si no venía, una fila nueva copiada de
+        /// otra del mismo traspaso. Lanza si el producto no existe.
+        /// </summary>
+        Task AjustarALoLeido(string empresa, string almacen, string diario, int traspaso, string producto, int cantidad);
         /// <summary>
         /// Lo que prdExtrProducto deja «pendiente de ubicar» (Ubicaciones estado 2 con NºTraspasoRepo) al contabilizar el
         /// diario de entrada de reposiciones, calculado ANTES de contabilizar (después ya no está en PreExtrProducto).
@@ -38,6 +46,17 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         Task RegistrarEvidencia(string empresa, IEnumerable<EvidenciaRecepcion> filas);
         /// <summary>Para el ensayo: cómo leer las filas que toca dar entrada al diario (antes y después).</summary>
         Task<Func<Task<List<FilaEnsayoDTO>>>> PrepararFoto(string empresa, string diario, IReadOnlyCollection<int> traspasos);
+    }
+
+    /// <summary>
+    /// Lo que se sabe de un traspaso por sus filas del diario de entrada (las crea Nesto viejo al hacer la reposición): el
+    /// almacén de origen va en Delegación y quien lo creó en Usuario (comprobado con 80867, 80871 y 80872).
+    /// </summary>
+    public class DatosTraspasoReposicion
+    {
+        public string Origen { get; set; }
+        /// <summary>Con dominio, como se graba («NUEVAVISION\Andre»). Null si no se sabe.</summary>
+        public string Creador { get; set; }
     }
 
     /// <summary>Lo que quedará pendiente de ubicar al dar entrada a un diario de reposiciones.</summary>
@@ -182,6 +201,83 @@ WHERE p.Empresa = @p0 AND p.Diario = @p1 AND p.Estado >= 0 AND (p.Pasillo IS NOT
         public Task<int> FilasQueSoloSabeNestoViejo(string empresa, string diario)
         {
             return db.Database.SqlQuery<int>(SQL_FILAS_QUE_SOLO_SABE_NESTO_VIEJO, empresa, diario).SingleAsync();
+        }
+
+        internal const string SQL_DATOS_TRASPASO = @"
+SELECT RTRIM(MAX(p.[Delegación])) AS Origen, RTRIM(MAX(p.Usuario)) AS Creador
+FROM PreExtrProducto p
+WHERE p.Empresa = @p0 AND p.[Almacén] = @p1 AND p.Diario = @p2 AND p.[NºTraspaso] = @p3";
+
+        public async Task<DatosTraspasoReposicion> LeerDatosTraspaso(string empresa, string almacen, string diario, int traspaso)
+        {
+            DatosTraspasoReposicion datos = await db.Database.SqlQuery<DatosTraspasoReposicion>(SQL_DATOS_TRASPASO,
+                ParametroChar("@p0", empresa, 3), ParametroChar("@p1", almacen, 3), ParametroChar("@p2", diario, 10),
+                new SqlParameter("@p3", System.Data.SqlDbType.Int) { Value = traspaso })
+                .FirstOrDefaultAsync().ConfigureAwait(false);
+            return datos ?? new DatosTraspasoReposicion();
+        }
+
+        // #553 (Carlos, 04/10/26): lo que entra es lo leído. Lo que haría a mano quien da la entrada en Nesto viejo: cambiar la
+        // cantidad de la fila del diario antes de contabilizar. Si el producto tiene varias filas en el traspaso (raro: 2 en
+        // 120 días), queda una con todo. Lo que no venía, una fila nueva igual que las demás del traspaso (Fecha, Texto,
+        // Almacén, Delegación = origen, Forma Venta, Asiento Automático, Vendedor, Estado, NºTraspaso, Usuario = quien lo
+        // creó…) con el Grupo del producto (en los datos siempre coincide con Productos.Grupo). Coste e Importe van a NULL
+        // como en todas las filas de entrada de reposiciones (120 días: ninguna con valor). Devuelve las filas que quedan
+        // del producto (0 si no existe el producto).
+        internal const string SQL_AJUSTAR_A_LO_LEIDO = @"
+DECLARE @primera int, @quedan int = 0;
+SELECT @primera = MIN([Nº Orden]) FROM PreExtrProducto WITH (UPDLOCK, HOLDLOCK)
+WHERE Empresa = @p0 AND [Almacén] = @p1 AND Diario = @p2 AND [NºTraspaso] = @p3 AND [Número] = @p4;
+IF @primera IS NULL
+BEGIN
+    IF @p5 > 0
+    BEGIN
+        INSERT INTO PreExtrProducto (Empresa, Diario, [Número], Fecha, [Nº Cliente], ContactoCliente, [NºProveedor], ContactoProveedor,
+            [Albarán], Factura, Texto, [Almacén], Grupo, Cantidad, Coste, Importe, [Delegación], [Forma Venta], [Asiento Automático],
+            LinPedido, Vendedor, Estado, [NºTraspaso], [NºPedido], Pasillo, Fila, Columna, CentroCoste, Departamento, Usuario)
+        SELECT TOP 1 m.Empresa, m.Diario, pr.[Número], m.Fecha, m.[Nº Cliente], m.ContactoCliente, m.[NºProveedor], m.ContactoProveedor,
+            m.[Albarán], m.Factura, m.Texto, m.[Almacén], pr.Grupo, @p5, NULL, NULL, m.[Delegación], m.[Forma Venta], m.[Asiento Automático],
+            m.LinPedido, m.Vendedor, m.Estado, m.[NºTraspaso], m.[NºPedido], m.Pasillo, m.Fila, m.Columna, m.CentroCoste, m.Departamento, m.Usuario
+        FROM PreExtrProducto m INNER JOIN Productos pr ON pr.Empresa = m.Empresa AND pr.[Número] = @p4
+        WHERE m.Empresa = @p0 AND m.[Almacén] = @p1 AND m.Diario = @p2 AND m.[NºTraspaso] = @p3
+        ORDER BY m.[Nº Orden];
+        SET @quedan = @@ROWCOUNT;
+    END
+END
+ELSE
+BEGIN
+    DELETE FROM PreExtrProducto
+    WHERE Empresa = @p0 AND [Almacén] = @p1 AND Diario = @p2 AND [NºTraspaso] = @p3 AND [Número] = @p4
+      AND ([Nº Orden] <> @primera OR @p5 = 0);
+    IF @p5 > 0
+    BEGIN
+        UPDATE PreExtrProducto SET Cantidad = @p5 WHERE Empresa = @p0 AND Diario = @p2 AND [Nº Orden] = @primera;
+        SET @quedan = 1;
+    END
+END
+SELECT @quedan;";
+
+        public async Task AjustarALoLeido(string empresa, string almacen, string diario, int traspaso, string producto, int cantidad)
+        {
+            if (cantidad < 0 || cantidad > short.MaxValue)
+            {
+                throw new NestoBusinessException($"No se pueden recibir {cantidad} unidades de {producto} en una línea. No se ha recibido nada.");
+            }
+            int quedan = await db.Database.SqlQuery<int>(SQL_AJUSTAR_A_LO_LEIDO,
+                ParametroChar("@p0", empresa, 3), ParametroChar("@p1", almacen, 3), ParametroChar("@p2", diario, 10),
+                new SqlParameter("@p3", System.Data.SqlDbType.Int) { Value = traspaso },
+                ParametroChar("@p4", producto, 15),
+                new SqlParameter("@p5", System.Data.SqlDbType.SmallInt) { Value = (short)cantidad })
+                .SingleAsync().ConfigureAwait(false);
+            if (cantidad > 0 && quedan == 0)
+            {
+                throw new NestoBusinessException($"El producto {producto} no existe: no se puede dar entrada a lo leído. No se ha recibido nada.");
+            }
+        }
+
+        private static SqlParameter ParametroChar(string nombre, string valor, int longitud)
+        {
+            return new SqlParameter(nombre, System.Data.SqlDbType.Char, longitud) { Value = (object)valor ?? DBNull.Value };
         }
 
         // COPIA EXACTA del SELECT del INSERT de prdExtrProducto para el diario de entrada de reposiciones del almacén del

@@ -85,11 +85,11 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
 
         // Reposiciones: hoy da la entrada quien tiene el almacén de destino en AlmacénPedidoVta
         // (60 días: Reina → REI, Paloma → ALC, Andre/Alfredo/Santiago → ALG)
-        private static OrigenRecepcionReposiciones Reposiciones(IRepositorioCierreReposiciones cierre = null)
+        private static OrigenRecepcionReposiciones Reposiciones(IRepositorioCierreReposiciones cierre = null, IAvisadorReposiciones avisador = null)
         {
             var almacenes = new Dictionary<string, string> { ["Reina"] = "REI", ["Paloma"] = "ALC", ["Andre"] = "ALG" };
             return new OrigenRecepcionReposiciones(A.Fake<IServicioRecepcionReposiciones>(), cierre ?? A.Fake<IRepositorioCierreReposiciones>(),
-                (empresa, usuario) => almacenes.TryGetValue(usuario, out string a) ? a : null);
+                avisador ?? A.Fake<IAvisadorReposiciones>(), (empresa, usuario) => almacenes.TryGetValue(usuario, out string a) ? a : null);
         }
 
         private static (IRepositorioCierreReposiciones Cierre, ITransaccionCierreReposicion Transaccion) CierreFalso(params int[] traspasosEnDiario)
@@ -106,6 +106,8 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             {
                 new FilaReposicion { Producto = "A", Descripcion = "Producto A", Cantidad = 2 }
             });
+            A.CallTo(() => transaccion.LeerDatosTraspaso("1", "REI", "PendRepo", 80862))
+                .Returns(new DatosTraspasoReposicion { Origen = "ALG", Creador = "NUEVAVISION\\Andre" });
             return (cierre, transaccion);
         }
 
@@ -116,36 +118,144 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             return solicitud;
         }
 
-        // Decisión provisional (04/10/26, #553): hasta que Carlos decida qué se hace con las diferencias, una reposición solo
-        // se termina desde aquí si lo leído coincide EXACTAMENTE con lo enviado; si no, 409 y se hace en Nesto viejo
+        // Carlos (04/10/26, #553): «si damos de alta el producto debe ser de lo leído». Se termina igualmente y en el destino
+        // entra EXACTAMENTE lo leído (de menos, de más o productos que no venían), ajustando el diario de entrada antes de
+        // contabilizar; la salida del origen no se toca. Y se informa de cada diferencia.
         [DataTestMethod]
-        [DataRow("A", 1, "falta 1 de A")]
-        [DataRow("A", 3, "sobra 1 de A")]
-        public async Task Reposiciones_Terminar_LoLeidoNoCoincideConLoEnviado_409YNoSeContabilizaNada(string producto, int cantidad, string motivo)
+        [DataRow("A", 1, -1)]
+        [DataRow("A", 3, 1)]
+        public async Task Reposiciones_Terminar_LoLeidoNoCoincide_EntraLoLeidoYSeDevuelveLaDiferencia(string producto, int cantidad, int diferencia)
         {
             var (cierre, transaccion) = CierreFalso(80862);
+            var pasos = new List<string>();
+            A.CallTo(() => transaccion.AjustarALoLeido("1", "REI", "PendRepo", 80862, A<string>.Ignored, A<int>.Ignored))
+                .Invokes((string e, string a, string d, int t, string p, int c) => pasos.Add($"ajustar {p} a {c}"));
+            A.CallTo(() => transaccion.LeerPendientesDeUbicar("1", "PendRepo")).Invokes(() => pasos.Add("leer pendientes"));
+            A.CallTo(() => transaccion.Contabilizar("1", "PendRepo", A<string>.Ignored)).Invokes(() => pasos.Add("contabilizar"));
 
-            NestoBusinessException ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() =>
-                Reposiciones(cierre).Terminar(SolicitudReposicionLeyendo((producto, cantidad))));
+            ResultadoTerminarRecepcionDTO resultado = await Reposiciones(cierre).Terminar(SolicitudReposicionLeyendo((producto, cantidad)));
 
-            Assert.AreEqual(System.Net.HttpStatusCode.Conflict, ex.StatusCode);
-            StringAssert.Contains(ex.Message, motivo);
-            StringAssert.Contains(ex.Message, "Nesto");
-            A.CallTo(() => transaccion.Contabilizar(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
-            A.CallTo(() => transaccion.RegistrarEvidencia(A<string>.Ignored, A<IEnumerable<EvidenciaRecepcion>>.Ignored)).MustNotHaveHappened();
+            CollectionAssert.AreEqual(new[] { $"ajustar A a {cantidad}", "leer pendientes", "contabilizar" }, pasos);
+            DiferenciaPreparacionDTO fila = resultado.Diferencias.Single();
+            Assert.AreEqual("A", fila.Producto);
+            Assert.AreEqual(2, fila.Esperado);
+            Assert.AreEqual(cantidad, fila.Leido);
+            Assert.AreEqual(diferencia, fila.Diferencia);
+            Assert.IsFalse(fila.Ajeno);
+            A.CallTo(() => transaccion.RegistrarEvidencia("1", A<IEnumerable<EvidenciaRecepcion>>.Ignored)).MustHaveHappenedOnceExactly();
         }
 
         [TestMethod]
-        public async Task Reposiciones_Terminar_ProductoQueNoVeniaEnLaReposicion_409()
+        public async Task Reposiciones_Terminar_ProductoQueNoVenia_EntraTambienPrimeroYSeDiceQueEsAjeno()
+        {
+            // Lo que no venía se añade antes de tocar lo que sí venía: así hay siempre una fila del traspaso que copiar
+            var (cierre, transaccion) = CierreFalso(80862);
+            var ajustes = new List<string>();
+            A.CallTo(() => transaccion.AjustarALoLeido("1", "REI", "PendRepo", 80862, A<string>.Ignored, A<int>.Ignored))
+                .Invokes((string e, string a, string d, int t, string p, int c) => ajustes.Add($"{p}={c}"));
+
+            ResultadoTerminarRecepcionDTO resultado = await Reposiciones(cierre).Terminar(SolicitudReposicionLeyendo(("Z", 1)));
+
+            CollectionAssert.AreEqual(new[] { "Z=1", "A=0" }, ajustes);
+            Assert.IsTrue(resultado.Diferencias.Single(d => d.Producto == "Z").Ajeno);
+            Assert.AreEqual(-2, resultado.Diferencias.Single(d => d.Producto == "A").Diferencia);
+            Assert.AreEqual(0, resultado.NoEsperados.Count, "En una reposición lo que no venía SÍ entra");
+            A.CallTo(() => transaccion.Contabilizar("1", "PendRepo", A<string>.Ignored)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Reposiciones_Terminar_Coincide_NoSeAjustaNadaNiSeAvisa()
         {
             var (cierre, transaccion) = CierreFalso(80862);
+            var avisador = A.Fake<IAvisadorReposiciones>();
 
-            NestoBusinessException ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() =>
-                Reposiciones(cierre).Terminar(SolicitudReposicionLeyendo(("A", 2), ("Z", 1))));
+            ResultadoTerminarRecepcionDTO resultado = await Reposiciones(cierre, avisador).Terminar(SolicitudReposicion());
 
-            Assert.AreEqual(System.Net.HttpStatusCode.Conflict, ex.StatusCode);
-            StringAssert.Contains(ex.Message, "Z");
-            A.CallTo(() => transaccion.Contabilizar(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
+            A.CallTo(() => transaccion.AjustarALoLeido(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored, A<int>.Ignored, A<string>.Ignored, A<int>.Ignored))
+                .MustNotHaveHappened();
+            Assert.AreEqual(0, resultado.Diferencias.Count);
+            Assert.IsNull(resultado.AvisadoA);
+            A.CallTo(() => avisador.Avisar(A<string>.Ignored, A<string>.Ignored, A<IEnumerable<string>>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Reposiciones_Terminar_ConDiferencias_SeAvisaAQuienCreoElTraspasoConEnviadoLeidoYDiferencia()
+        {
+            var (cierre, _) = CierreFalso(80862);
+            var avisador = A.Fake<IAvisadorReposiciones>();
+            string titulo = null;
+            List<string> lineas = null;
+            A.CallTo(() => avisador.Avisar("NUEVAVISION\\Andre", A<string>.Ignored, A<IEnumerable<string>>.Ignored))
+                .Invokes((string d, string t, IEnumerable<string> l) => { titulo = t; lineas = l.ToList(); });
+
+            ResultadoTerminarRecepcionDTO resultado = await Reposiciones(cierre, avisador).Terminar(SolicitudReposicionLeyendo(("A", 1), ("Z", 3)));
+
+            StringAssert.Contains(titulo, "80862");
+            StringAssert.Contains(titulo, "ALG → REI");
+            string texto = string.Join("\n", lineas);
+            StringAssert.Contains(texto, "A: enviado 2, leído 1, diferencia -1");
+            StringAssert.Contains(texto, "Z: no venía, leído 3, diferencia +3");
+            StringAssert.Contains(texto, "NUEVAVISION\\Reina");
+            StringAssert.Contains(string.Join(" ", resultado.Avisos), "Andre");
+            Assert.AreEqual("NUEVAVISION\\Andre", resultado.AvisadoA);
+        }
+
+        [TestMethod]
+        public async Task Reposiciones_Terminar_SinSaberQuienLoCreo_SeAvisaAlGrupoAlmacen()
+        {
+            var (cierre, transaccion) = CierreFalso(80862);
+            A.CallTo(() => transaccion.LeerDatosTraspaso("1", "REI", "PendRepo", 80862)).Returns(new DatosTraspasoReposicion { Origen = "ALG" });
+            var avisador = A.Fake<IAvisadorReposiciones>();
+
+            ResultadoTerminarRecepcionDTO resultado = await Reposiciones(cierre, avisador).Terminar(SolicitudReposicionLeyendo(("A", 1)));
+
+            A.CallTo(() => avisador.Avisar(null, A<string>.Ignored, A<IEnumerable<string>>.Ignored)).MustHaveHappenedOnceExactly();
+            StringAssert.Contains(string.Join(" ", resultado.Avisos), "Almacén");
+            Assert.AreEqual("Almacén", resultado.AvisadoA);
+        }
+
+        [TestMethod]
+        public async Task Reposiciones_Terminar_SiFallaElAviso_LaEntradaSeQuedaHecha()
+        {
+            var (cierre, transaccion) = CierreFalso(80862);
+            var avisador = A.Fake<IAvisadorReposiciones>();
+            A.CallTo(() => avisador.Avisar(A<string>.Ignored, A<string>.Ignored, A<IEnumerable<string>>.Ignored)).Throws(new Exception("sin buzón"));
+
+            ResultadoTerminarRecepcionDTO resultado = await Reposiciones(cierre, avisador).Terminar(SolicitudReposicionLeyendo(("A", 1)));
+
+            Assert.AreEqual(1, resultado.Diferencias.Count);
+            A.CallTo(() => transaccion.Contabilizar("1", "PendRepo", A<string>.Ignored)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Reposiciones_Ensayo_EnsenaElDiarioAjustadoYNoAvisa()
+        {
+            var (cierre, transaccion) = CierreFalso(80862);
+            var pasos = new List<string>();
+            A.CallTo(() => transaccion.PrepararFoto("1", "PendRepo", A<IReadOnlyCollection<int>>.Ignored)).Returns(FotoQueCuenta(pasos));
+            A.CallTo(() => transaccion.AjustarALoLeido("1", "REI", "PendRepo", 80862, "A", 1)).Invokes(() => pasos.Add("ajustar"));
+            A.CallTo(() => transaccion.Contabilizar("1", "PendRepo", A<string>.Ignored)).Invokes(() => pasos.Add("contabilizar"));
+            var avisador = A.Fake<IAvisadorReposiciones>();
+            SolicitudTerminarRecepcion solicitud = SolicitudReposicionLeyendo(("A", 1));
+            solicitud.Ensayo = new RegistroEnsayoRecepcion();
+
+            _ = await Reposiciones(cierre, avisador).Terminar(solicitud);
+
+            CollectionAssert.AreEqual(new[] { "foto", "ajustar", "foto", "contabilizar", "foto" }, pasos);
+            Assert.IsNotNull(solicitud.Ensayo.TrasAjustar);
+            A.CallTo(() => avisador.Avisar(A<string>.Ignored, A<string>.Ignored, A<IEnumerable<string>>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Reposiciones_Terminar_DiarioConHueco_409AntesDeAjustarNada()
+        {
+            var (cierre, transaccion) = CierreFalso(80862);
+            A.CallTo(() => transaccion.FilasQueSoloSabeNestoViejo("1", "PendRepo")).Returns(1);
+
+            _ = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Reposiciones(cierre).Terminar(SolicitudReposicionLeyendo(("A", 1))));
+
+            A.CallTo(() => transaccion.AjustarALoLeido(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored, A<int>.Ignored, A<string>.Ignored, A<int>.Ignored))
+                .MustNotHaveHappened();
         }
 
         [TestMethod]

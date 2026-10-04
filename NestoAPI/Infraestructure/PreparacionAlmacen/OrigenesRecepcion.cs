@@ -321,6 +321,9 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     /// almacén de destino (Almacenes.DiarioEntradaRep), con el usuario que la da. Ese procedimiento contabiliza el diario
     /// ENTERO: si hay otras reposiciones en él, entran también (como hoy) y se dice.
     ///
+    /// <para>Diferencias (Carlos, 04/10/26): entra en el destino EXACTAMENTE lo leído (se ajusta el diario de entrada antes de
+    /// contabilizar) y se informa a quien creó el traspaso (o al grupo Almacén) y en la respuesta (Diferencias, AvisadoA).</para>
+    ///
     /// <para>Quién: hoy la entrada la da siempre alguien cuyo AlmacénPedidoVta es el almacén de destino (60 días: Reina →
     /// REI, Paloma → ALC, Andre/Alfredo/Santiago → ALG). Se exige lo mismo.</para>
     /// </summary>
@@ -331,19 +334,22 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
         private readonly IServicioRecepcionReposiciones reposiciones;
         private readonly IRepositorioCierreReposiciones cierre;
+        private readonly IAvisadorReposiciones avisador;
         private readonly Func<string, string, string> almacenDelUsuario;
 
-        public OrigenRecepcionReposiciones(IServicioRecepcionReposiciones reposiciones, IRepositorioCierreReposiciones cierre)
-            : this(reposiciones, cierre, null)
+        public OrigenRecepcionReposiciones(IServicioRecepcionReposiciones reposiciones, IRepositorioCierreReposiciones cierre,
+            IAvisadorReposiciones avisador)
+            : this(reposiciones, cierre, avisador, null)
         {
         }
 
         /// <param name="almacenDelUsuario">(empresa, usuario sin dominio) → su AlmacénPedidoVta.</param>
         internal OrigenRecepcionReposiciones(IServicioRecepcionReposiciones reposiciones, IRepositorioCierreReposiciones cierre,
-            Func<string, string, string> almacenDelUsuario)
+            IAvisadorReposiciones avisador, Func<string, string, string> almacenDelUsuario)
         {
             this.reposiciones = reposiciones;
             this.cierre = cierre;
+            this.avisador = avisador;
             this.almacenDelUsuario = almacenDelUsuario
                 ?? ((empresa, usuario) => Controllers.ParametrosUsuarioController.LeerParametro(empresa, usuario, CLAVE_ALMACEN_USUARIO));
         }
@@ -420,13 +426,16 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             };
         }
 
-        public Task<ResultadoTerminarRecepcionDTO> Terminar(SolicitudTerminarRecepcion solicitud)
+        public async Task<ResultadoTerminarRecepcionDTO> Terminar(SolicitudTerminarRecepcion solicitud)
         {
             if (!int.TryParse(solicitud.Documento?.Trim(), out int traspaso))
             {
                 throw new NestoBusinessException($"«{solicitud.Documento}» no es un número de traspaso.");
             }
-            return cierre.EnTransaccion(async transaccion =>
+            List<DiferenciaPreparacionDTO> diferencias = new List<DiferenciaPreparacionDTO>();
+            DatosTraspasoReposicion datos = null;
+
+            ResultadoTerminarRecepcionDTO resultado = await cierre.EnTransaccion(async transaccion =>
             {
                 List<Guid> ids = solicitud.Lecturas.Keys.Select(p => EvidenciasRecepcionSql.IdEvidencia(solicitud.IdRecepcion, p)).ToList();
                 if (await transaccion.YaRegistrada(solicitud.Empresa, ids).ConfigureAwait(false))
@@ -450,24 +459,36 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     await solicitud.Ensayo.Empezar(await transaccion.PrepararFoto(solicitud.Empresa, diario, enDiario).ConfigureAwait(false))
                         .ConfigureAwait(false);
                 }
-
-                // Provisional (#553, 04/10/26): qué hacer con las diferencias (ajuste en origen, diario _ErrRepo…) está sin
-                // decidir. Mientras, solo entra desde aquí lo que coincide EXACTAMENTE con lo enviado; lo demás, en Nesto viejo
-                List<FilaReposicion> enviado = await transaccion.LeerLineas(solicitud.Empresa, solicitud.Almacen, traspaso).ConfigureAwait(false)
-                    ?? new List<FilaReposicion>();
-                string noCuadra = MotivoNoCuadra(traspaso, enviado, solicitud.Lecturas);
-                if (noCuadra != null)
-                {
-                    throw new NestoBusinessException(noCuadra) { StatusCode = HttpStatusCode.Conflict };
-                }
                 if (await transaccion.FilasQueSoloSabeNestoViejo(solicitud.Empresa, diario).ConfigureAwait(false) > 0)
                 {
                     throw new NestoBusinessException($"El diario de entrada {diario} tiene líneas con hueco o en negativo, que desde aquí no se " +
                         $"tratarían como en Nesto viejo. No se ha recibido nada: {HAZLA_EN_NESTO_VIEJO}") { StatusCode = HttpStatusCode.Conflict };
                 }
 
+                // #553 (Carlos, 04/10/26): «si damos de alta el producto debe ser de lo leído». Lo que entra en el destino es
+                // EXACTAMENTE lo leído: se ajusta el diario de entrada de este traspaso antes de contabilizar (lo que no venía,
+                // primero: así siempre queda una fila del traspaso que copiar). La salida del origen, ya contabilizada, no se
+                // toca (ajustes en origen o el diario _ErrRepo, sin decidir): solo se informa
+                List<FilaReposicion> enviado = await transaccion.LeerLineas(solicitud.Empresa, solicitud.Almacen, traspaso).ConfigureAwait(false)
+                    ?? new List<FilaReposicion>();
+                diferencias = Diferencias(enviado, solicitud.Lecturas);
+                if (diferencias.Any())
+                {
+                    datos = await transaccion.LeerDatosTraspaso(solicitud.Empresa, solicitud.Almacen, diario, traspaso).ConfigureAwait(false)
+                        ?? new DatosTraspasoReposicion();
+                    foreach (DiferenciaPreparacionDTO diferencia in diferencias.OrderByDescending(d => d.Ajeno))
+                    {
+                        await transaccion.AjustarALoLeido(solicitud.Empresa, solicitud.Almacen, diario, traspaso, diferencia.Producto, diferencia.Leido)
+                            .ConfigureAwait(false);
+                    }
+                    if (solicitud.Ensayo != null)
+                    {
+                        await solicitud.Ensayo.FotografiarTrasAjustar().ConfigureAwait(false);
+                    }
+                }
+
                 // prdExtrProducto, llamado desde la API, no deja nada pendiente de ubicar (busca el almacén de SYSTEM_USER):
-                // se calcula antes igual que él y se pone después, en la misma transacción
+                // se calcula antes igual que él (ya con lo leído) y se pone después, en la misma transacción
                 PendientesDeUbicarEntrada pendientesDeUbicar = await transaccion.LeerPendientesDeUbicar(solicitud.Empresa, diario).ConfigureAwait(false);
                 await transaccion.Contabilizar(solicitud.Empresa, diario, solicitud.Usuario).ConfigureAwait(false);
                 _ = await transaccion.DejarPendientesDeUbicar(solicitud.Empresa, pendientesDeUbicar, solicitud.Usuario).ConfigureAwait(false);
@@ -493,35 +514,68 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 {
                     await solicitud.Ensayo.Acabar().ConfigureAwait(false);
                 }
-                return new ResultadoTerminarRecepcionDTO { Tipo = TIPO, Documento = traspaso.ToString(), Avisos = avisos };
-            }, solicitud.Ensayo != null);
+                return new ResultadoTerminarRecepcionDTO
+                {
+                    Tipo = TIPO,
+                    Documento = traspaso.ToString(),
+                    Avisos = avisos,
+                    Diferencias = diferencias
+                };
+            }, solicitud.Ensayo != null).ConfigureAwait(false);
+
+            if (resultado.YaEstabaTerminada || !diferencias.Any())
+            {
+                return resultado;
+            }
+
+            string destinatario = string.IsNullOrWhiteSpace(datos?.Creador) ? null : datos.Creador.Trim();
+            string nombre = destinatario == null ? "el grupo " + Constantes.GruposSeguridad.ALMACEN
+                : destinatario.Substring(destinatario.LastIndexOf('\\') + 1);
+            resultado.Avisos = resultado.Avisos ?? new List<string>();
+            if (solicitud.Ensayo != null)
+            {
+                resultado.Avisos.Add($"Lo leído no coincide con lo enviado: entraría lo leído y se avisaría a {nombre} (en un ensayo no se avisa a nadie).");
+                return resultado;
+            }
+            resultado.Avisos.Add($"Lo leído no coincide con lo enviado: ha entrado lo leído y {nombre} está avisado de las diferencias.");
+            resultado.AvisadoA = destinatario ?? Constantes.GruposSeguridad.ALMACEN;
+
+            // Después de confirmar: un fallo al avisar no deshace la entrada
+            string origen = string.IsNullOrWhiteSpace(datos?.Origen) ? "¿?" : datos.Origen.Trim();
+            try
+            {
+                await avisador.Avisar(destinatario, $"Reposición {traspaso} ({origen} → {solicitud.Almacen}): lo recibido no coincide con lo enviado",
+                    LineasAviso(diferencias, origen, solicitud)).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Recepción reposiciones] No se pudo avisar de las diferencias de la reposición {traspaso}: {ex.Message}", ex));
+            }
+            return resultado;
         }
 
         internal const string HAZLA_EN_NESTO_VIEJO = "haz esta entrada en Nesto viejo o avisa a Andre.";
 
         /// <summary>
-        /// Null si lo leído es EXACTAMENTE lo enviado (ni de más, ni de menos, ni productos que no venían); si no, qué
-        /// difiere, en palabras del almacén.
+        /// Solo los productos en que lo leído no es lo enviado (de menos, de más, o que no venían), con lo enviado en Esperado.
+        /// Vacía si coincide exactamente.
         /// </summary>
-        internal static string MotivoNoCuadra(int traspaso, IEnumerable<FilaReposicion> enviado, IDictionary<string, int> leido)
+        internal static List<DiferenciaPreparacionDTO> Diferencias(IEnumerable<FilaReposicion> enviado, IDictionary<string, int> leido)
         {
-            List<DiferenciaPreparacionDTO> diferencias = CasadorEscaneos.Casar(
+            return CasadorEscaneos.Casar(
                 (enviado ?? Enumerable.Empty<FilaReposicion>()).Select(f => new CasadorEscaneos.Cantidad { Producto = f.Producto, Descripcion = f.Descripcion, Unidades = f.Cantidad }),
-                (leido ?? new Dictionary<string, int>()).Select(l => new CasadorEscaneos.Cantidad { Producto = l.Key, Unidades = l.Value }));
-            if (CasadorEscaneos.EstaCompleto(diferencias))
-            {
-                return null;
-            }
-            List<string> partes = diferencias.Where(d => d.Ajeno || d.Diferencia != 0).Select(d =>
-                d.Ajeno ? $"{d.Producto} no venía en ella ({d.Leido} leído{(d.Leido == 1 ? "" : "s")})"
-                : d.Diferencia < 0 ? $"falta{(d.Diferencia == -1 ? "" : "n")} {-d.Diferencia} de {d.Producto}"
-                : $"sobra{(d.Diferencia == 1 ? "" : "n")} {d.Diferencia} de {d.Producto}").ToList();
-            if (!partes.Any())
-            {
-                partes.Add("no se ha leído nada de lo enviado");
-            }
-            return $"Lo leído no coincide con lo enviado en la reposición {traspaso}: {string.Join(", ", partes)}. " +
-                $"De momento, desde aquí solo se puede terminar si coincide exactamente. No se ha recibido nada: {HAZLA_EN_NESTO_VIEJO}";
+                (leido ?? new Dictionary<string, int>()).Select(l => new CasadorEscaneos.Cantidad { Producto = l.Key, Unidades = l.Value }))
+                .Where(d => d.Ajeno || d.Diferencia != 0)
+                .ToList();
+        }
+
+        private static List<string> LineasAviso(IEnumerable<DiferenciaPreparacionDTO> diferencias, string origen, SolicitudTerminarRecepcion solicitud)
+        {
+            List<string> lineas = diferencias.Select(d =>
+                $"{d.Producto}: {(d.Ajeno ? "no venía" : $"enviado {d.Esperado}")}, leído {d.Leido}, diferencia {(d.Diferencia > 0 ? "+" : "")}{d.Diferencia}" +
+                (string.IsNullOrWhiteSpace(d.Descripcion) ? "" : $" ({d.Descripcion})")).ToList();
+            lineas.Add($"Ha entrado en {solicitud.Almacen} lo leído (lo ha recibido {solicitud.Usuario}). La salida de {origen} no se ha tocado.");
+            return lineas;
         }
     }
 }

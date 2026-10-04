@@ -543,6 +543,7 @@
     <Compile Include="Infraestructure\PreparacionAlmacen\EscrituraSoloAlmacenAttribute.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\PlanificadorRecepcionCompra.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\AvisadorCompras.cs" />
+    <Compile Include="Infraestructure\PreparacionAlmacen\AvisadorReposiciones.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\CierreReposiciones.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\OrigenesRecepcion.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\TransaccionRecepcionCompras.cs" />

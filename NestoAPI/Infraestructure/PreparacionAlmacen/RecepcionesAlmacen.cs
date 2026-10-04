@@ -38,12 +38,22 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
         public List<FilaEnsayoDTO> Antes { get; private set; }
         public List<FilaEnsayoDTO> Despues { get; private set; }
+        /// <summary>Las filas a mitad de camino, cuando la estrategia ajusta algo antes de contabilizar (REPO con diferencias).</summary>
+        public List<FilaEnsayoDTO> TrasAjustar { get; private set; }
 
         /// <param name="foto">Cómo leer las filas implicadas (las claves se fijan antes de tocar nada).</param>
         public async Task Empezar(Func<Task<List<FilaEnsayoDTO>>> foto)
         {
             this.foto = foto;
             Antes = foto == null ? null : await foto().ConfigureAwait(false);
+        }
+
+        public async Task FotografiarTrasAjustar()
+        {
+            if (foto != null)
+            {
+                TrasAjustar = await foto().ConfigureAwait(false);
+            }
         }
 
         public async Task Acabar()
@@ -235,6 +245,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 resultado.Ensayo = true;
                 resultado.FilasAntes = registro.Antes;
                 resultado.FilasDespues = registro.Despues;
+                resultado.FilasTrasAjustar = registro.TrasAjustar;
                 resultado.Avisos = resultado.Avisos ?? new List<string>();
                 resultado.Avisos.Insert(0, "ENSAYO: no se ha guardado nada ni se ha avisado a nadie.");
                 return resultado;
@@ -248,6 +259,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     Documento = solicitud.Documento,
                     Ensayo = true,
                     FilasAntes = registro.Antes,
+                    FilasTrasAjustar = registro.TrasAjustar,
                     ErrorEnsayo = error,
                     Avisos = new List<string> { "ENSAYO: ha fallado y no se ha guardado nada. " + error }
                 };

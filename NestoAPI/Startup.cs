@@ -226,9 +226,11 @@ namespace NestoAPI
                 sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IRepositorioRecepcionCompras>(),
                 sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IAvisadorCompras>()));
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioCierreReposiciones>(_ => Infraestructure.PreparacionAlmacen.RepositorioCierreReposiciones.ConContextoPropio());
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IAvisadorReposiciones, Infraestructure.PreparacionAlmacen.AvisadorReposiciones>();
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IOrigenRecepcion>(sp => new Infraestructure.PreparacionAlmacen.OrigenRecepcionReposiciones(
                 sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IServicioRecepcionReposiciones>(),
-                sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IRepositorioCierreReposiciones>()));
+                sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IRepositorioCierreReposiciones>(),
+                sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IAvisadorReposiciones>()));
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioRecepciones, Infraestructure.PreparacionAlmacen.ServicioRecepciones>();
             // Lo que ve el mozo de cada producto además del nombre: familia, subgrupo, tamaño y unidad (un solo sitio)
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioFichasProducto>(_ => Infraestructure.PreparacionAlmacen.RepositorioFichasProducto.ConContextoPropio());

@@ -9,8 +9,8 @@
     fila a fila.
 
     Lo leído: si no se pasa -Lecturas, se usa LO ESPERADO (lo que enseña Ariadna: todo cuadra). Para ensayar diferencias,
-    -Lecturas @{ "44725" = 2; "43890" = 1 } (producto = unidades). En una REPO que no cuadre, el ensayo devuelve el 409 de
-    «hazla en Nesto viejo» como ErrorEnsayo.
+    -Lecturas @{ "44725" = 2; "43890" = 1 } (producto = unidades). En una REPO que no cuadre entra lo leído (04/10/26): se
+    enseñan las diferencias y el diario de entrada (PreExtrProducto) antes y tras ajustarlo a lo leído.
 
     Entra con tu usuario de Windows (api/auth/windows-token, como Nesto): no pide contraseña. Solo pueden ensayar
     Admin o Dirección (no hace falta tener el almacén de destino ni ser de Almacén o Compras).
@@ -76,32 +76,44 @@ if ($r.ErrorEnsayo) {
 foreach ($d in @($r.Documentos)) { if ($d) { Write-Host "  Albarán $($d.Albaran) del pedido $($d.Pedido)" -ForegroundColor Yellow } }
 foreach ($n in @($r.NoEsperados)) { if ($n) { Write-Host "  No esperado (no entra): $($n.Producto) x$($n.Leido)" -ForegroundColor Yellow } }
 foreach ($x in @($r.Recuperadas)) { if ($x) { Write-Host "  $($x.Texto)" -ForegroundColor Yellow } }
-
-$antes = @{}
-foreach ($f in @($r.FilasAntes)) { if ($f) { $antes["$($f.Tabla) $($f.Clave)"] = $f.Datos } }
-$despues = @{}
-foreach ($f in @($r.FilasDespues)) { if ($f) { $despues["$($f.Tabla) $($f.Clave)"] = $f.Datos } }
-
-Write-Host ""
-Write-Host "Filas que cambiarían ($($antes.Count) antes, $($despues.Count) después):" -ForegroundColor Yellow
-$claves = @($antes.Keys) + @($despues.Keys) | Sort-Object -Unique
-$hay = $false
-foreach ($clave in $claves) {
-    $a = $antes[$clave]
-    $d = $despues[$clave]
-    if ($a -eq $d) { continue }
-    $hay = $true
-    if ($null -eq $a) {
-        Write-Host "  + $clave  $d" -ForegroundColor Green
-    } elseif ($null -eq $d) {
-        Write-Host "  - $clave  $a" -ForegroundColor Red
-    } else {
-        Write-Host "  ~ $clave"
-        Write-Host "      antes:   $a"
-        Write-Host "      después: $d"
+foreach ($x in @($r.Diferencias)) {
+    if ($x) {
+        $enviado = if ($x.Ajeno) { "no venía" } else { "enviado $($x.Esperado)" }
+        Write-Host "  Diferencia (entra lo leído): $($x.Producto): $enviado, leído $($x.Leido), diferencia $($x.Diferencia)" -ForegroundColor Yellow
     }
 }
-if (-not $hay) { Write-Host "  (ninguna)" }
+
+function Comparar($filasAntes, $filasDespues, $titulo, $soloTabla) {
+    $antes = @{}
+    foreach ($f in @($filasAntes)) { if ($f -and (-not $soloTabla -or $f.Tabla -eq $soloTabla)) { $antes["$($f.Tabla) $($f.Clave)"] = $f.Datos } }
+    $despues = @{}
+    foreach ($f in @($filasDespues)) { if ($f -and (-not $soloTabla -or $f.Tabla -eq $soloTabla)) { $despues["$($f.Tabla) $($f.Clave)"] = $f.Datos } }
+    Write-Host ""
+    Write-Host "$titulo ($($antes.Count) antes, $($despues.Count) después):" -ForegroundColor Yellow
+    $claves = @($antes.Keys) + @($despues.Keys) | Sort-Object -Unique
+    $hay = $false
+    foreach ($clave in $claves) {
+        $a = $antes[$clave]
+        $d = $despues[$clave]
+        if ($a -eq $d) { continue }
+        $hay = $true
+        if ($null -eq $a) {
+            Write-Host "  + $clave  $d" -ForegroundColor Green
+        } elseif ($null -eq $d) {
+            Write-Host "  - $clave  $a" -ForegroundColor Red
+        } else {
+            Write-Host "  ~ $clave"
+            Write-Host "      antes:   $a"
+            Write-Host "      después: $d"
+        }
+    }
+    if (-not $hay) { Write-Host "  (ninguna)" }
+}
+
+if ($r.FilasTrasAjustar) {
+    Comparar $r.FilasAntes $r.FilasTrasAjustar "Diario de entrada ajustado a lo leído, antes de contabilizar" "PreExtrProducto"
+}
+Comparar $r.FilasAntes $r.FilasDespues "Filas que cambiarían" $null
 Write-Host ""
 if ($Tipo -eq "REPO") {
     Write-Host "En una REPO de ALG tiene que salir una fila «+ Ubicaciones … Estado=2; Hueco=-; NºTraspasoRepo=$Documento» por producto (pendiente de ubicar)." -ForegroundColor Cyan

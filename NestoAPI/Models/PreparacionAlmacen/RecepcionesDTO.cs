@@ -123,6 +123,17 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public List<string> Avisos { get; set; } = new List<string>();
         /// <summary>Lo que ha entrado con un pedido que se había dado por no servido (no es exceso).</summary>
         public List<LineaRecuperadaDTO> Recuperadas { get; set; } = new List<LineaRecuperadaDTO>();
+        /// <summary>
+        /// REPO (#553): los productos en que lo leído NO coincide con lo enviado. Ha entrado en el destino lo leído, también
+        /// lo que no venía; la salida del origen no se ha tocado. Esperado = enviado, Leido = lo que ha entrado, Diferencia =
+        /// Leido − Esperado (negativo: falta; positivo: sobra) y Ajeno = no venía en la reposición. Vacía si coincide.
+        /// </summary>
+        public List<DiferenciaPreparacionDTO> Diferencias { get; set; } = new List<DiferenciaPreparacionDTO>();
+        /// <summary>
+        /// REPO (#553): a quién se ha informado de las diferencias (quien creó el traspaso, p. ej. «NUEVAVISION\Andre», o
+        /// «Almacén» si no se sabe). Null si no había diferencias (o en un ensayo: no se avisa a nadie).
+        /// </summary>
+        public string AvisadoA { get; set; }
 
         /// <summary>
         /// Ensayo (?ensayo=true, solo Admin o Dirección): el mismo código que al terminar de verdad, dentro de una
@@ -133,6 +144,11 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public List<FilaEnsayoDTO> FilasAntes { get; set; }
         /// <summary>Las mismas filas justo antes de deshacer (solo en un ensayo que ha ido bien).</summary>
         public List<FilaEnsayoDTO> FilasDespues { get; set; }
+        /// <summary>
+        /// REPO con diferencias (solo en un ensayo): las mismas filas después de ajustar el diario de entrada a lo leído y
+        /// antes de contabilizarlo (después de contabilizar ya no están en PreExtrProducto).
+        /// </summary>
+        public List<FilaEnsayoDTO> FilasTrasAjustar { get; set; }
         /// <summary>El error real (procedimiento, trigger, restricción o motivo de negocio) si el ensayo ha fallado.</summary>
         public string ErrorEnsayo { get; set; }
     }
