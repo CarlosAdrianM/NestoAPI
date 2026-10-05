@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace NestoAPI.Models.PreparacionAlmacen
@@ -140,6 +140,14 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public bool CodigoDuplicado { get; set; }
         /// <summary>Lo que va en la caja: la cantidad de la línea menos lo que el cliente recoge.</summary>
         public int Cantidad { get; set; }
+        /// <summary>
+        /// Lo ya metido en la caja de este pedido (lecturas del packing, fase PACK), para seguir el packing desde
+        /// otra PDA o con otro mozo. Si el pedido lleva el producto en varias líneas, se reparte por orden y lo que
+        /// sobra va a la última.
+        /// </summary>
+        public int Metidas { get; set; }
+        /// <summary>Lo dado por falta en el packing: no aparece en la mesa después de buscarlo (se avisa a Compras).</summary>
+        public int Faltas { get; set; }
     }
 
     public class PedidoPackingAlmacenDTO

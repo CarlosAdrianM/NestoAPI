@@ -52,6 +52,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     public interface IAvisadorCompras
     {
         Task Avisar(string titulo, IEnumerable<string> avisos);
+        /// <summary>Lo mismo con otro tipo de notificación (p. ej. una falta del packing, que no es una recepción).</summary>
+        Task Avisar(string titulo, IEnumerable<string> avisos, string tipo);
     }
 
     /// <summary>

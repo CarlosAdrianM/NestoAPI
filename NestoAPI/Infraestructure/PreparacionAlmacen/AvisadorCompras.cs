@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure.Notificaciones;
+﻿using NestoAPI.Infraestructure.Notificaciones;
 using NestoAPI.Infraestructure.Verifactu;
 using NestoAPI.Models;
 using System;
@@ -16,6 +16,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     public class AvisadorCompras : IAvisadorCompras
     {
         public const string TIPO_NOTIFICACION = "RecepcionCompras";
+        /// <summary>NestoAPI#556: un producto que no aparece en la mesa de packing (o que aparece después).</summary>
+        public const string TIPO_PACKING_FALTA = "PackingFalta";
         private const string DOMINIO = "NUEVAVISION\\";
 
         private readonly IServicioNotificacionesPush notificaciones;
@@ -31,8 +33,14 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             this.usuariosDeCompras = usuariosDeCompras ?? (() => MiembrosGrupoDominio.Leer(Constantes.GruposSeguridad.COMPRAS));
         }
 
-        public async Task Avisar(string titulo, IEnumerable<string> avisos)
+        public Task Avisar(string titulo, IEnumerable<string> avisos)
         {
+            return Avisar(titulo, avisos, TIPO_NOTIFICACION);
+        }
+
+        public async Task Avisar(string titulo, IEnumerable<string> avisos, string tipo)
+        {
+            tipo = string.IsNullOrWhiteSpace(tipo) ? TIPO_NOTIFICACION : tipo;
             List<string> lista = (avisos ?? Enumerable.Empty<string>()).Where(a => !string.IsNullOrWhiteSpace(a)).ToList();
             if (!lista.Any())
             {
@@ -46,7 +54,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 .ToList();
             if (!usuarios.Any())
             {
-                ElmahHelper.Log(new Exception($"[Recepción compras] No hay a quién avisar en Compras: {titulo}. {string.Join(" ", lista)}"));
+                ElmahHelper.Log(new Exception($"[Avisos a Compras] No hay a quién avisar en Compras: {titulo}. {string.Join(" ", lista)}"));
                 return;
             }
 
@@ -54,8 +62,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             {
                 Titulo = titulo,
                 Cuerpo = string.Join(Environment.NewLine, lista),
-                Tipo = TIPO_NOTIFICACION,
-                Datos = new Dictionary<string, string> { ["tipo"] = TIPO_NOTIFICACION }
+                Tipo = tipo,
+                Datos = new Dictionary<string, string> { ["tipo"] = tipo }
             };
             foreach (string usuario in usuarios)
             {

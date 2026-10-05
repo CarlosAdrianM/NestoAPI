@@ -52,6 +52,15 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public int Unidades { get; set; }
     }
 
+    /// <summary>NestoAPI#556: lo metido en la caja y lo dado por falta de un producto de un pedido en el packing.</summary>
+    public class LecturaPackingAlmacen
+    {
+        public int Pedido { get; set; }
+        public string Producto { get; set; }
+        public int Metidas { get; set; }
+        public int Faltas { get; set; }
+    }
+
     /// <summary>Lo leído y lo dado por falta de un producto en el picking por ola.</summary>
     public class LecturaPickingAlmacen
     {
@@ -78,6 +87,9 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         Task<ReposicionSalida> LeerReposicionSalida(string empresa, int traspaso);
         /// <param name="pedido">Null = todos los pedidos del picking.</param>
         Task<List<FilaPackingAlmacen>> LeerLineasPacking(string empresa, int picking, int? pedido);
+        /// <summary>Lo metido y lo dado por falta en el packing del picking, por pedido y producto.</summary>
+        /// <param name="pedido">Null = todos los pedidos del picking.</param>
+        Task<List<LecturaPackingAlmacen>> LeerLecturasPacking(string empresa, int picking, int? pedido);
         /// <summary>El picking que tiene ahora mismo el pedido sin servir, o null si no tiene ninguno.</summary>
         Task<int?> PickingEnCursoDelPedido(string empresa, int pedido);
         Task<bool> ExistePedidoEnPicking(string empresa, int pedido, int picking);
@@ -215,6 +227,17 @@ WHERE l.Empresa = @p0 AND l.Picking = @p1 AND l.TipoLinea = 1 AND l.Estado = 1
       AND ISNULL(l.Cantidad, 0) - ISNULL(l.Recoger, 0) <> 0
 ORDER BY c.[Nº Cliente], c.Contacto, c.[Número], l.[Nº Orden]";
 
+        // NestoAPI#556: lo ya metido en las cajas del picking (y lo que no apareció en la mesa), para retomar el packing.
+        // Va por IX_PreparacionEscaneos_Origen (Empresa, TipoOrigen, NumeroOrigen, Fase), del script #574.
+        internal const string SQL_LECTURAS_PACKING = @"
+SELECT e.Pedido AS Pedido, RTRIM(e.Producto) AS Producto,
+       CAST(SUM(CASE WHEN e.Metodo <> 'FALTA' THEN e.Cantidad ELSE 0 END) AS int) AS Metidas,
+       CAST(SUM(CASE WHEN e.Metodo = 'FALTA' THEN e.Cantidad ELSE 0 END) AS int) AS Faltas
+FROM PreparacionEscaneos e
+WHERE e.Empresa = @p0 AND e.TipoOrigen = 'PICK' AND e.NumeroOrigen = @p1 AND e.Fase = 'PACK' AND e.Pedido IS NOT NULL
+      AND (@p2 IS NULL OR e.Pedido = @p2)
+GROUP BY e.Pedido, e.Producto";
+
         internal const string SQL_PICKING_EN_CURSO = @"
 SELECT MAX(l.Picking) FROM LinPedidoVta l
 WHERE l.Empresa = @p0 AND l.[Número] = @p1 AND l.Estado = 1 AND l.Picking > 0";
@@ -339,6 +362,13 @@ ORDER BY e.Picking DESC, e.Cliente, e.Contacto";
             string destino = (await baseDeDatos.SqlQuery<string>(SQL_DESTINO_REPOSICION, empresa, traspaso).ToListAsync().ConfigureAwait(false))
                 .FirstOrDefault();
             return new ReposicionSalida { Destino = destino, Lineas = lineas };
+        }
+
+        public Task<List<LecturaPackingAlmacen>> LeerLecturasPacking(string empresa, int picking, int? pedido)
+        {
+            return baseDeDatos.SqlQuery<LecturaPackingAlmacen>(SQL_LECTURAS_PACKING,
+                new SqlParameter("@p0", empresa), new SqlParameter("@p1", picking),
+                new SqlParameter("@p2", System.Data.SqlDbType.Int) { Value = (object)pedido ?? DBNull.Value }).ToListAsync();
         }
 
         public Task<List<FilaPackingAlmacen>> LeerLineasPacking(string empresa, int picking, int? pedido)

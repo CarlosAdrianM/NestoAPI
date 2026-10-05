@@ -80,6 +80,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         private readonly IAlmacenFotosBultos fotos;
         private readonly NVEntities dbPropio;
         private readonly string claveEnlacesFotos;
+        /// <summary>NestoAPI#556: a quién se avisa de un producto que no aparece en la mesa de packing (null = a nadie).</summary>
+        private readonly IAvisadorCompras avisadorCompras;
         private ServicioSalidas salidas;
 
         /// <summary>NestoAPI#556: recoger es una salida de mercancía; el núcleo y sus estrategias, espejo de la recepción.</summary>
@@ -104,11 +106,19 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             claveEnlacesFotos = System.Configuration.ConfigurationManager.AppSettings[EnlacePublicoFotoBulto.CLAVE_CONFIGURACION];
         }
 
-        internal ServicioPreparacionAlmacen(IRepositorioPreparacionAlmacen repositorio, IAlmacenFotosBultos fotos, string claveEnlacesFotos = null)
+        /// <summary>El que usa la API (inyección de dependencias): con el buzón de Compras para las faltas del packing.</summary>
+        public ServicioPreparacionAlmacen(IAvisadorCompras avisadorCompras) : this()
+        {
+            this.avisadorCompras = avisadorCompras;
+        }
+
+        internal ServicioPreparacionAlmacen(IRepositorioPreparacionAlmacen repositorio, IAlmacenFotosBultos fotos, string claveEnlacesFotos = null,
+            IAvisadorCompras avisadorCompras = null)
         {
             this.repositorio = repositorio;
             this.fotos = fotos;
             this.claveEnlacesFotos = claveEnlacesFotos;
+            this.avisadorCompras = avisadorCompras;
         }
 
         /// <summary>Pone a cada bulto con foto su enlace público (si hay clave para firmarlo).</summary>
@@ -270,7 +280,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public async Task<PackingAlmacenDTO> LeerPacking(string empresa, int picking)
         {
             List<FilaPackingAlmacen> filas = await repositorio.LeerLineasPacking(empresa, picking, null).ConfigureAwait(false);
-            return MontarPacking(empresa, picking, filas);
+            List<LecturaPackingAlmacen> lecturas = await repositorio.LeerLecturasPacking(empresa, picking, null).ConfigureAwait(false);
+            return MontarPacking(empresa, picking, filas, lecturas);
         }
 
         public async Task<PackingAlmacenDTO> LeerPackingDePedido(string empresa, int pedido)
@@ -281,14 +292,17 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 return null;
             }
             List<FilaPackingAlmacen> filas = await repositorio.LeerLineasPacking(empresa, picking.Value, pedido).ConfigureAwait(false);
-            return MontarPacking(empresa, picking.Value, filas);
+            List<LecturaPackingAlmacen> lecturas = await repositorio.LeerLecturasPacking(empresa, picking.Value, pedido).ConfigureAwait(false);
+            return MontarPacking(empresa, picking.Value, filas, lecturas);
         }
 
         /// <summary>
         /// Agrupa las líneas como el packing list de hoy: por cliente y dirección de entrega, y dentro
-        /// por pedido. Un código es «duplicado» si lo comparten dos productos de la misma entrega.
+        /// por pedido. Un código es «duplicado» si lo comparten dos productos de la misma entrega. Cada línea lleva lo
+        /// ya metido en la caja de su pedido y lo dado por falta (<paramref name="lecturas"/>, fase PACK).
         /// </summary>
-        internal static PackingAlmacenDTO MontarPacking(string empresa, int picking, IEnumerable<FilaPackingAlmacen> filas)
+        internal static PackingAlmacenDTO MontarPacking(string empresa, int picking, IEnumerable<FilaPackingAlmacen> filas,
+            IEnumerable<LecturaPackingAlmacen> lecturas = null)
         {
             var packing = new PackingAlmacenDTO { Empresa = empresa, Picking = picking };
 
@@ -329,7 +343,49 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     }).ToList()
                 });
             }
+            RepartirLecturasPacking(packing, lecturas);
             return packing;
+        }
+
+        /// <summary>
+        /// Lo leído va por pedido y producto: si el pedido lleva el producto en varias líneas, se llena cada una por
+        /// orden hasta su cantidad y lo que sobre va a la última (así se ve que hay de más).
+        /// </summary>
+        private static void RepartirLecturasPacking(PackingAlmacenDTO packing, IEnumerable<LecturaPackingAlmacen> lecturas)
+        {
+            Dictionary<(int, string), LecturaPackingAlmacen> porPedidoYProducto = (lecturas ?? Enumerable.Empty<LecturaPackingAlmacen>())
+                .GroupBy(l => (l.Pedido, l.Producto?.Trim().ToUpperInvariant() ?? string.Empty))
+                .ToDictionary(g => g.Key, g => new LecturaPackingAlmacen
+                {
+                    Pedido = g.Key.Item1,
+                    Producto = g.Key.Item2,
+                    Metidas = g.Sum(l => l.Metidas),
+                    Faltas = g.Sum(l => l.Faltas)
+                });
+
+            foreach (PedidoPackingAlmacenDTO pedido in packing.Entregas.SelectMany(e => e.Pedidos))
+            {
+                foreach (var lineasDelProducto in pedido.Lineas.GroupBy(l => l.Producto?.Trim().ToUpperInvariant() ?? string.Empty))
+                {
+                    if (!porPedidoYProducto.TryGetValue((pedido.Pedido, lineasDelProducto.Key), out LecturaPackingAlmacen lectura))
+                    {
+                        continue;
+                    }
+                    List<LineaPackingAlmacenDTO> lineas = lineasDelProducto.ToList();
+                    int metidas = Math.Max(0, lectura.Metidas);
+                    int faltas = Math.Max(0, lectura.Faltas);
+                    for (int i = 0; i < lineas.Count; i++)
+                    {
+                        bool ultima = i == lineas.Count - 1;
+                        int cabenMetidas = ultima ? metidas : Math.Min(metidas, Math.Max(0, lineas[i].Cantidad));
+                        lineas[i].Metidas = cabenMetidas;
+                        metidas -= cabenMetidas;
+                        int cabenFaltas = ultima ? faltas : Math.Min(faltas, Math.Max(0, lineas[i].Cantidad - lineas[i].Metidas));
+                        lineas[i].Faltas = cabenFaltas;
+                        faltas -= cabenFaltas;
+                    }
+                }
+            }
         }
 
         public async Task<ResultadoEscaneosAlmacenDTO> GuardarEscaneos(string empresa, IEnumerable<EscaneoAlmacenDTO> escaneos, string usuario)
@@ -360,6 +416,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 if (await repositorio.InsertarEscaneo(empresa, escaneo, UsuarioAuditoriaHelper.ParaAuditoria(usuario)).ConfigureAwait(false))
                 {
                     resultado.Guardados++;
+                    if (EsFaltaDePacking(escaneo))
+                    {
+                        await AvisarFaltaDePacking(empresa, escaneo, UsuarioAuditoriaHelper.ParaAuditoria(usuario)).ConfigureAwait(false);
+                    }
                 }
                 else
                 {
@@ -367,6 +427,62 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 }
             }
             return resultado;
+        }
+
+        private static bool EsFaltaDePacking(EscaneoAlmacenDTO escaneo)
+        {
+            return string.Equals(escaneo.Fase?.Trim(), CasadorEscaneos.FASE_PACKING, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(escaneo.Metodo?.Trim(), CasadorEscaneos.METODO_FALTA, StringComparison.OrdinalIgnoreCase)
+                && escaneo.Pedido.HasValue;
+        }
+
+        /// <summary>
+        /// NestoAPI#556 (Carlos): un producto que el picking dio por recogido y no aparece en la mesa de packing es raro y
+        /// grave; el mozo lo busca (casi seguro está en la caja de otro cliente) y, si no aparece, decide Compras. Deshacer
+        /// la falta (cantidad negativa) es que ha aparecido. El aviso nunca impide guardar el escaneo.
+        /// </summary>
+        private async Task AvisarFaltaDePacking(string empresa, EscaneoAlmacenDTO escaneo, string mozo)
+        {
+            if (avisadorCompras == null)
+            {
+                return;
+            }
+            try
+            {
+                int picking = CasadorEscaneos.NumeroOrigenDe(escaneo);
+                int pedido = escaneo.Pedido.Value;
+                string producto = escaneo.Producto.Trim();
+                FilaPackingAlmacen linea = null;
+                try
+                {
+                    linea = (await repositorio.LeerLineasPacking(empresa, picking, pedido).ConfigureAwait(false))?
+                        .FirstOrDefault(l => string.Equals(l.Producto?.Trim(), producto, StringComparison.OrdinalIgnoreCase));
+                }
+                catch (Exception ex)
+                {
+                    // Sin el nombre del cliente se avisa igual: con el pedido basta
+                    ElmahHelper.Log(ex);
+                }
+
+                bool haAparecido = escaneo.Cantidad < 0;
+                int unidades = Math.Abs(escaneo.Cantidad);
+                string cliente = linea == null ? null : $"{linea.Nombre?.Trim()} ({linea.Cliente?.Trim()}/{linea.Contacto?.Trim()})";
+                string descripcion = string.IsNullOrWhiteSpace(linea?.Descripcion) ? string.Empty : " " + linea.Descripcion.Trim();
+                var avisos = new List<string>
+                {
+                    $"Picking {picking} · pedido {pedido}" + (cliente == null ? string.Empty : " · " + cliente),
+                    $"Producto {producto}{descripcion}: {unidades} {(unidades == 1 ? "ud" : "uds")}",
+                    haAparecido
+                        ? $"Ha aparecido: {mozo} ha deshecho la falta en el packing. Ya no hace falta decidir nada sobre este producto."
+                        : $"{mozo} lo ha buscado en la mesa de packing y no lo encuentra (lo más probable es que esté en la caja de otro cliente). Decidid cómo seguimos."
+                };
+                await avisadorCompras.Avisar(haAparecido ? "Packing: ha aparecido un producto" : "Packing: no aparece un producto",
+                    avisos, AvisadorCompras.TIPO_PACKING_FALTA).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(ex);
+            }
         }
 
         public async Task<BultoAlmacenDTO> GuardarFotoBulto(FotoBultoAlmacen foto, string usuario)

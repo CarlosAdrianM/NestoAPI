@@ -185,6 +185,193 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         }
 
         [TestMethod]
+        public void MontarPacking_ConLecturas_CadaLineaLlevaLoMetidoYLasFaltas()
+        {
+            // Para seguir un packing desde otra PDA: lo ya metido en la caja de cada pedido
+            PackingAlmacenDTO packing = ServicioPreparacionAlmacen.MontarPacking(EMPRESA, PICKING, new[]
+            {
+                Fila(926940, 1, "17404", "111", 1),
+                Fila(926940, 2, "40057", "222", 1),
+                Fila(926941, 3, "17404", "111", 1)
+            }, new[]
+            {
+                new LecturaPackingAlmacen { Pedido = 926940, Producto = "17404", Metidas = 1 },
+                new LecturaPackingAlmacen { Pedido = 926941, Producto = "17404 ", Faltas = 1 }
+            });
+
+            List<LineaPackingAlmacenDTO> primero = packing.Entregas.Single().Pedidos.Single(p => p.Pedido == 926940).Lineas;
+            LineaPackingAlmacenDTO delSegundo = packing.Entregas.Single().Pedidos.Single(p => p.Pedido == 926941).Lineas.Single();
+            Assert.AreEqual(1, primero.Single(l => l.Producto == "17404").Metidas);
+            Assert.AreEqual(0, primero.Single(l => l.Producto == "40057").Metidas);
+            Assert.AreEqual(0, delSegundo.Metidas, "Lo metido de un pedido no cuenta en otro aunque sea el mismo producto");
+            Assert.AreEqual(1, delSegundo.Faltas);
+        }
+
+        [TestMethod]
+        public void MontarPacking_MismoProductoEnDosLineasDelPedido_SeRepartePorOrdenYLoQueSobraALaUltima()
+        {
+            PackingAlmacenDTO packing = ServicioPreparacionAlmacen.MontarPacking(EMPRESA, PICKING, new[]
+            {
+                Fila(926940, 7, "17404", "111", 2),
+                Fila(926940, 3, "17404", "111", 1)
+            }, new[] { new LecturaPackingAlmacen { Pedido = 926940, Producto = "17404", Metidas = 4, Faltas = 2 } });
+
+            List<LineaPackingAlmacenDTO> lineas = packing.Entregas.Single().Pedidos.Single().Lineas;
+            Assert.AreEqual(3, lineas[0].LineaPedido);
+            Assert.AreEqual(1, lineas[0].Metidas);
+            Assert.AreEqual(3, lineas[1].Metidas, "Lo que sobra va a la última línea");
+            Assert.AreEqual(0, lineas[0].Faltas, "La primera ya está llena con lo metido");
+            Assert.AreEqual(2, lineas[1].Faltas);
+        }
+
+        [TestMethod]
+        public void MontarPacking_SinLecturas_TodoACero()
+        {
+            PackingAlmacenDTO packing = ServicioPreparacionAlmacen.MontarPacking(EMPRESA, PICKING, new[] { Fila(926940, 1, "A", "111", 2) });
+
+            LineaPackingAlmacenDTO linea = packing.Entregas.Single().Pedidos.Single().Lineas.Single();
+            Assert.AreEqual(0, linea.Metidas);
+            Assert.AreEqual(0, linea.Faltas);
+        }
+
+        [TestMethod]
+        public async Task LeerPacking_TraeLoMetidoDelPicking()
+        {
+            A.CallTo(() => repositorio.LeerLineasPacking(EMPRESA, PICKING, null)).Returns(new List<FilaPackingAlmacen> { Fila(PEDIDO, 1, "A", "111", 2) });
+            A.CallTo(() => repositorio.LeerLecturasPacking(EMPRESA, PICKING, null))
+                .Returns(new List<LecturaPackingAlmacen> { new LecturaPackingAlmacen { Pedido = PEDIDO, Producto = "A", Metidas = 2 } });
+
+            PackingAlmacenDTO packing = await servicio.LeerPacking(EMPRESA, PICKING);
+
+            Assert.AreEqual(2, packing.Entregas.Single().Pedidos.Single().Lineas.Single().Metidas);
+        }
+
+        [TestMethod]
+        public async Task LeerPackingDePedido_TraeLoMetidoSoloDeEsePedido()
+        {
+            A.CallTo(() => repositorio.PickingEnCursoDelPedido(EMPRESA, PEDIDO)).Returns(Task.FromResult<int?>(PICKING));
+            A.CallTo(() => repositorio.LeerLineasPacking(EMPRESA, PICKING, PEDIDO)).Returns(new List<FilaPackingAlmacen> { Fila(PEDIDO, 1, "A", "111", 2) });
+            A.CallTo(() => repositorio.LeerLecturasPacking(EMPRESA, PICKING, PEDIDO))
+                .Returns(new List<LecturaPackingAlmacen> { new LecturaPackingAlmacen { Pedido = PEDIDO, Producto = "A", Metidas = 1 } });
+
+            PackingAlmacenDTO packing = await servicio.LeerPackingDePedido(EMPRESA, PEDIDO);
+
+            Assert.AreEqual(1, packing.Entregas.Single().Pedidos.Single().Lineas.Single().Metidas);
+        }
+
+        private EscaneoAlmacenDTO FaltaDePacking(int cantidad = 1)
+        {
+            EscaneoAlmacenDTO falta = Escaneo();
+            falta.Metodo = "FALTA";
+            falta.Cantidad = cantidad;
+            falta.Producto = "17404";
+            return falta;
+        }
+
+        private ServicioPreparacionAlmacen ServicioConAvisador(IAvisadorCompras avisador)
+        {
+            A.CallTo(() => repositorio.LeerLineasPacking(EMPRESA, PICKING, PEDIDO)).Returns(new List<FilaPackingAlmacen>
+            {
+                Fila(PEDIDO, 1, "17404", "111", 2)
+            });
+            return new ServicioPreparacionAlmacen(repositorio, fotos, avisadorCompras: avisador);
+        }
+
+        [TestMethod]
+        public async Task GuardarEscaneos_FaltaEnElPacking_AvisaACompras()
+        {
+            // Carlos: raro y grave; si después de buscarla no aparece, que decida Compras
+            var avisador = A.Fake<IAvisadorCompras>();
+            ServicioPreparacionAlmacen conAvisador = ServicioConAvisador(avisador);
+            A.CallTo(() => repositorio.InsertarEscaneo(EMPRESA, A<EscaneoAlmacenDTO>._, A<string>._)).Returns(true);
+
+            ResultadoEscaneosAlmacenDTO resultado = await conAvisador.GuardarEscaneos(EMPRESA, new[] { FaltaDePacking(2) }, "Pedro");
+
+            Assert.AreEqual(1, resultado.Guardados);
+            A.CallTo(() => avisador.Avisar("Packing: no aparece un producto",
+                A<IEnumerable<string>>.That.Matches(a => string.Join(" ", a).Contains(PICKING.ToString())
+                    && string.Join(" ", a).Contains(PEDIDO.ToString())
+                    && string.Join(" ", a).Contains("CLIENTE 40182")
+                    && string.Join(" ", a).Contains("17404")
+                    && string.Join(" ", a).Contains("PRODUCTO 17404")
+                    && string.Join(" ", a).Contains("2 uds")
+                    && string.Join(" ", a).Contains("Pedro")
+                    && string.Join(" ", a).Contains("Decidid cómo seguimos")),
+                AvisadorCompras.TIPO_PACKING_FALTA)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task GuardarEscaneos_DeshacerUnaFaltaDelPacking_AvisaDeQueHaAparecido()
+        {
+            var avisador = A.Fake<IAvisadorCompras>();
+            ServicioPreparacionAlmacen conAvisador = ServicioConAvisador(avisador);
+            A.CallTo(() => repositorio.InsertarEscaneo(EMPRESA, A<EscaneoAlmacenDTO>._, A<string>._)).Returns(true);
+
+            _ = await conAvisador.GuardarEscaneos(EMPRESA, new[] { FaltaDePacking(-1) }, "Pedro");
+
+            A.CallTo(() => avisador.Avisar("Packing: ha aparecido un producto",
+                A<IEnumerable<string>>.That.Matches(a => string.Join(" ", a).Contains("Ha aparecido") && string.Join(" ", a).Contains("1 ud")),
+                AvisadorCompras.TIPO_PACKING_FALTA)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task GuardarEscaneos_FaltaDelPackingRepetida_NoVuelveAAvisar()
+        {
+            // Un reenvío de la cola de la PDA no es otra falta
+            var avisador = A.Fake<IAvisadorCompras>();
+            ServicioPreparacionAlmacen conAvisador = ServicioConAvisador(avisador);
+            A.CallTo(() => repositorio.InsertarEscaneo(EMPRESA, A<EscaneoAlmacenDTO>._, A<string>._)).Returns(false);
+
+            _ = await conAvisador.GuardarEscaneos(EMPRESA, new[] { FaltaDePacking() }, "Pedro");
+
+            A.CallTo(() => avisador.Avisar(A<string>._, A<IEnumerable<string>>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task GuardarEscaneos_FaltaDelPickingOLecturaDelPacking_NoAvisaACompras()
+        {
+            var avisador = A.Fake<IAvisadorCompras>();
+            ServicioPreparacionAlmacen conAvisador = ServicioConAvisador(avisador);
+            A.CallTo(() => repositorio.InsertarEscaneo(EMPRESA, A<EscaneoAlmacenDTO>._, A<string>._)).Returns(true);
+            EscaneoAlmacenDTO faltaDelPicking = FaltaDePacking();
+            faltaDelPicking.Fase = "PICK";
+            faltaDelPicking.Pedido = null;
+
+            _ = await conAvisador.GuardarEscaneos(EMPRESA, new[] { faltaDelPicking, Escaneo() }, "Pedro");
+
+            A.CallTo(() => avisador.Avisar(A<string>._, A<IEnumerable<string>>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task GuardarEscaneos_FallaElAvisoACompras_LaFaltaQuedaGuardada()
+        {
+            var avisador = A.Fake<IAvisadorCompras>();
+            A.CallTo(() => avisador.Avisar(A<string>._, A<IEnumerable<string>>._, A<string>._)).Throws(new InvalidOperationException("sin buzón"));
+            ServicioPreparacionAlmacen conAvisador = ServicioConAvisador(avisador);
+            A.CallTo(() => repositorio.InsertarEscaneo(EMPRESA, A<EscaneoAlmacenDTO>._, A<string>._)).Returns(true);
+
+            ResultadoEscaneosAlmacenDTO resultado = await conAvisador.GuardarEscaneos(EMPRESA, new[] { FaltaDePacking() }, "Pedro");
+
+            Assert.AreEqual(1, resultado.Guardados);
+            Assert.AreEqual(0, resultado.Rechazados.Count);
+        }
+
+        [TestMethod]
+        public async Task GuardarEscaneos_SinLaLineaAMano_AvisaIgualConElPedido()
+        {
+            var avisador = A.Fake<IAvisadorCompras>();
+            A.CallTo(() => repositorio.LeerLineasPacking(EMPRESA, PICKING, PEDIDO)).Throws(new InvalidOperationException("sin BD"));
+            var conAvisador = new ServicioPreparacionAlmacen(repositorio, fotos, avisadorCompras: avisador);
+            A.CallTo(() => repositorio.InsertarEscaneo(EMPRESA, A<EscaneoAlmacenDTO>._, A<string>._)).Returns(true);
+
+            _ = await conAvisador.GuardarEscaneos(EMPRESA, new[] { FaltaDePacking() }, "Pedro");
+
+            A.CallTo(() => avisador.Avisar("Packing: no aparece un producto",
+                A<IEnumerable<string>>.That.Matches(a => string.Join(" ", a).Contains(PEDIDO.ToString()) && string.Join(" ", a).Contains("17404")),
+                AvisadorCompras.TIPO_PACKING_FALTA)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
         public async Task LeerPackingDePedido_SinPickingEnCurso_Null()
         {
             A.CallTo(() => repositorio.PickingEnCursoDelPedido(EMPRESA, PEDIDO)).Returns(Task.FromResult<int?>(null));
