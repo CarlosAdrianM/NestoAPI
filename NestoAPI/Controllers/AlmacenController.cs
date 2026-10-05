@@ -34,16 +34,20 @@ namespace NestoAPI.Controllers
         private readonly IServicioRecepcionCompras compras;
         private readonly IServicioRecepcionReposiciones reposiciones;
         private readonly IFichasProductoAlmacen fichas;
+        private readonly IServicioEtiquetasHueco etiquetas;
 
         /// <param name="fichas">Familia, subgrupo, tamaño y unidad de cada producto que ve el mozo. Sin él, solo el nombre.</param>
+        /// <param name="etiquetas">Imprimir etiquetas de hueco (Nesto y Ariadna).</param>
         public AlmacenController(IServicioPreparacionAlmacen servicio, IServicioUbicacionesAlmacen ubicaciones,
-            IServicioRecepcionCompras compras, IServicioRecepcionReposiciones reposiciones, IFichasProductoAlmacen fichas = null)
+            IServicioRecepcionCompras compras, IServicioRecepcionReposiciones reposiciones, IFichasProductoAlmacen fichas = null,
+            IServicioEtiquetasHueco etiquetas = null)
         {
             this.servicio = servicio;
             this.ubicaciones = ubicaciones;
             this.compras = compras;
             this.reposiciones = reposiciones;
             this.fichas = fichas;
+            this.etiquetas = etiquetas;
         }
 
         // GET api/Almacen/Ping
@@ -390,6 +394,38 @@ namespace NestoAPI.Controllers
             ProductoAlmacenDTO producto = await ubicaciones.Ubicar(Empresa(empresa), ubicar, Usuario()).ConfigureAwait(false);
             await CompletarFichas(Empresa(empresa), new[] { producto }).ConfigureAwait(false);
             return Ok(producto);
+        }
+
+        // POST api/Almacen/EtiquetasHueco/Imprimir?empresa=1&almacen=ALG&ensayo=false
+        /// <summary>
+        /// Etiquetas de hueco (30×20 mm, el código PPPFFFCCC que lee Ariadna) en la impresora de etiquetas de producto del
+        /// usuario (ImpresoraCodBarras). Huecos sueltos o un rango de un pasillo; SoloEnUso, solo los que tienen algo.
+        /// Con ensayo=true no imprime: dice qué huecos y en qué impresora (vista previa). La impresión la hace el servidor.
+        /// 400 si lo pedido no vale o el usuario no tiene impresora; 502 si Windows no deja imprimir.
+        /// </summary>
+        [HttpPost]
+        [Route("EtiquetasHueco/Imprimir")]
+        [ResponseType(typeof(ResultadoEtiquetasHuecoDTO))]
+        public async Task<IHttpActionResult> PostImprimirEtiquetasHueco([FromBody] EtiquetasHuecoDTO peticion,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO, string almacen = Constantes.Almacenes.ALGETE, bool ensayo = false)
+        {
+            if (etiquetas == null)
+            {
+                return Content(HttpStatusCode.ServiceUnavailable, "La impresión de etiquetas de hueco no está configurada en el servidor.");
+            }
+            try
+            {
+                return Ok(await etiquetas.Imprimir(Empresa(empresa), Almacen(almacen), peticion, Usuario(), ensayo).ConfigureAwait(false));
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+            catch (ImpresionEtiquetasException ex)
+            {
+                ElmahHelper.Log(ex);
+                return Content(HttpStatusCode.BadGateway, ex.Message);
+            }
         }
 
         // GET api/Almacen/Productos/Buscar?codigo=8436620930427&almacen=ALG&empresa=1

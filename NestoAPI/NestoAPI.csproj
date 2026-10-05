@@ -557,6 +557,8 @@
     <Compile Include="Infraestructure\PreparacionAlmacen\EnlacePublicoFotoBulto.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\ServicioPreparacionAlmacen.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\UbicacionesAlmacen.cs" />
+    <Compile Include="Infraestructure\PreparacionAlmacen\EtiquetasHuecoAlmacen.cs" />
+    <Compile Include="Models\PreparacionAlmacen\EtiquetasHuecoDTO.cs" />
     <Compile Include="Models\PreparacionAlmacen\PreparacionAlmacenDTO.cs" />
     <Compile Include="Models\PreparacionAlmacen\RecepcionesDTO.cs" />
     <Compile Include="Models\PreparacionAlmacen\SalidasDTO.cs" />

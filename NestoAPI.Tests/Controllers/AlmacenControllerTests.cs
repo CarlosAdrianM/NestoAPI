@@ -445,5 +445,53 @@ namespace NestoAPI.Tests.Controllers
             A.CallTo(() => fichas.Completar("1", A<IEnumerable<IConFichaProducto>>.That.Matches(p => System.Linq.Enumerable.Single(p) == comoQueda)))
                 .MustHaveHappenedOnceExactly();
         }
+
+        // ---- Etiquetas de hueco ----
+
+        private AlmacenController ConEtiquetas(IServicioEtiquetasHueco etiquetas)
+            => new AlmacenController(servicio, ubicaciones, compras, reposiciones, etiquetas: etiquetas)
+            {
+                User = new GenericPrincipal(new GenericIdentity(@"NUEVAVISION\Carlos", "Bearer"), new string[0]),
+                Request = new HttpRequestMessage()
+            };
+
+        [TestMethod]
+        public async Task PostImprimirEtiquetasHueco_ImprimeAlNombreDelUsuarioDelToken()
+        {
+            var etiquetas = A.Fake<IServicioEtiquetasHueco>();
+            var peticion = new EtiquetasHuecoDTO { Huecos = new List<string> { "002004001" } };
+            var resultado = new ResultadoEtiquetasHuecoDTO { Impresas = 1 };
+            A.CallTo(() => etiquetas.Imprimir("1", "ALG", peticion, @"NUEVAVISION\Carlos", true)).Returns(resultado);
+
+            IHttpActionResult respuesta = await ConEtiquetas(etiquetas).PostImprimirEtiquetasHueco(peticion, "1", "alg", ensayo: true);
+
+            Assert.AreSame(resultado, ((OkNegotiatedContentResult<ResultadoEtiquetasHuecoDTO>)respuesta).Content);
+        }
+
+        [TestMethod]
+        public async Task PostImprimirEtiquetasHueco_LoQueNoVale_BadRequestConElMotivo()
+        {
+            var etiquetas = A.Fake<IServicioEtiquetasHueco>();
+            A.CallTo(() => etiquetas.Imprimir(A<string>._, A<string>._, A<EtiquetasHuecoDTO>._, A<string>._, A<bool>._))
+                .ThrowsAsync(new ArgumentException("«x» no es un hueco"));
+
+            IHttpActionResult respuesta = await ConEtiquetas(etiquetas).PostImprimirEtiquetasHueco(new EtiquetasHuecoDTO());
+
+            Assert.AreEqual("«x» no es un hueco", ((BadRequestErrorMessageResult)respuesta).Message);
+        }
+
+        [TestMethod]
+        public async Task PostImprimirEtiquetasHueco_WindowsNoDejaImprimir_502ConElMotivo()
+        {
+            var etiquetas = A.Fake<IServicioEtiquetasHueco>();
+            A.CallTo(() => etiquetas.Imprimir(A<string>._, A<string>._, A<EtiquetasHuecoDTO>._, A<string>._, A<bool>._))
+                .ThrowsAsync(new ImpresionEtiquetasException("No se puede abrir la impresora (error de Windows 5)."));
+
+            IHttpActionResult respuesta = await ConEtiquetas(etiquetas).PostImprimirEtiquetasHueco(new EtiquetasHuecoDTO());
+
+            var contenido = (NegotiatedContentResult<string>)respuesta;
+            Assert.AreEqual(System.Net.HttpStatusCode.BadGateway, contenido.StatusCode);
+            StringAssert.Contains(contenido.Content, "error de Windows 5");
+        }
     }
 }

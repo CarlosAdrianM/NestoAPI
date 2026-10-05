@@ -240,6 +240,11 @@ namespace NestoAPI
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioAvisosFicha>(_ => Infraestructure.PreparacionAlmacen.RepositorioAvisosFichaSql.ConContextoPropio());
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IAvisadorFichaProducto, Infraestructure.PreparacionAlmacen.AvisadorFichaProducto>();
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioAvisosFicha, Infraestructure.PreparacionAlmacen.ServicioAvisosFicha>();
+            // Etiquetas de hueco: un solo sitio que imprime, en el servidor, para Nesto y Ariadna (05/10/26)
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioEtiquetasHueco>(sp => new Infraestructure.PreparacionAlmacen.ServicioEtiquetasHueco(
+                Infraestructure.PreparacionAlmacen.RepositorioEtiquetasHuecoSql.ConContextoPropio(),
+                sp.GetRequiredService<ILectorParametrosUsuario>(),
+                new Infraestructure.PreparacionAlmacen.ImpresoraEtiquetasWindows()));
 
             // Ventana de facturas pendientes de Verifactu (NestoAPI#522)
             _ = services.AddScoped<Infraestructure.Verifactu.IServicioFacturasPendientesVerifactu, Infraestructure.Verifactu.ServicioFacturasPendientesVerifactu>();
