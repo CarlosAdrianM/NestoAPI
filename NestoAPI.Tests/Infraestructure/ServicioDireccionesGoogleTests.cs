@@ -195,5 +195,107 @@ namespace NestoAPI.Tests.Infraestructure
 
             Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
         }
+
+        // ---- NestoAPI#578: dirección a partir de unas coordenadas (para que NestoApp deje nativegeocoder) ----
+
+        private const string JSON_INVERSA = @"{
+            ""status"": ""OK"",
+            ""results"": [
+                { ""types"": [""plus_code""], ""formatted_address"": ""H4X2+5F Algete"",
+                  ""address_components"": [ { ""long_name"": ""Algete"", ""short_name"": ""Algete"", ""types"": [""locality"", ""political""] } ] },
+                { ""types"": [""street_address""], ""formatted_address"": ""Calle de la Industria, 12, 28110 Algete, Madrid, España"",
+                  ""address_components"": [
+                    { ""long_name"": ""12"", ""short_name"": ""12"", ""types"": [""street_number""] },
+                    { ""long_name"": ""Calle de la Industria"", ""short_name"": ""C. de la Industria"", ""types"": [""route""] },
+                    { ""long_name"": ""Algete"", ""short_name"": ""Algete"", ""types"": [""locality"", ""political""] },
+                    { ""long_name"": ""Madrid"", ""short_name"": ""M"", ""types"": [""administrative_area_level_2"", ""political""] },
+                    { ""long_name"": ""España"", ""short_name"": ""ES"", ""types"": [""country"", ""political""] },
+                    { ""long_name"": ""28110"", ""short_name"": ""28110"", ""types"": [""postal_code""] } ] }
+            ]}";
+
+        [TestMethod]
+        public void ParsearGeocodificacionInversa_SeQuedaConLaDireccionDeCalle()
+        {
+            DireccionDetalleDTO detalle = ServicioDireccionesGoogle.ParsearGeocodificacionInversa(JSON_INVERSA);
+
+            Assert.AreEqual("Calle de la Industria", detalle.Calle);
+            Assert.AreEqual("12", detalle.Numero);
+            Assert.AreEqual("28110", detalle.CodigoPostal);
+            Assert.AreEqual("Algete", detalle.Poblacion);
+            Assert.AreEqual("Madrid", detalle.Provincia);
+            Assert.AreEqual("ES", detalle.PaisIso);
+            Assert.AreEqual("Calle de la Industria, 12, 28110 Algete, Madrid, España", detalle.DireccionFormateada);
+        }
+
+        [TestMethod]
+        public void ParsearGeocodificacionInversa_SinDireccionDeCalle_ElPrimeroConCodigoPostal()
+        {
+            string json = @"{ ""status"": ""OK"", ""results"": [
+                { ""types"": [""locality""], ""formatted_address"": ""Algete"",
+                  ""address_components"": [ { ""long_name"": ""Algete"", ""short_name"": ""Algete"", ""types"": [""locality""] } ] },
+                { ""types"": [""postal_code""], ""formatted_address"": ""28110 Algete"",
+                  ""address_components"": [ { ""long_name"": ""28110"", ""short_name"": ""28110"", ""types"": [""postal_code""] } ] } ] }";
+
+            DireccionDetalleDTO detalle = ServicioDireccionesGoogle.ParsearGeocodificacionInversa(json);
+
+            Assert.AreEqual("28110", detalle.CodigoPostal);
+        }
+
+        [TestMethod]
+        public void ParsearGeocodificacionInversa_ZeroResults_Null()
+        {
+            Assert.IsNull(ServicioDireccionesGoogle.ParsearGeocodificacionInversa(@"{ ""status"": ""ZERO_RESULTS"", ""results"": [] }"));
+        }
+
+        [TestMethod]
+        public async Task GetDesdeCoordenadas_CoordenadasValidas_DevuelveLaDireccion()
+        {
+            IServicioDireccionesGoogle servicio = A.Fake<IServicioDireccionesGoogle>();
+            var direccion = new DireccionDetalleDTO { CodigoPostal = "28110", Calle = "Calle de la Industria" };
+            A.CallTo(() => servicio.LeerDesdeCoordenadas(40.5605, -3.4702)).Returns(Task.FromResult(direccion));
+            var controller = new DireccionesController(servicio);
+
+            var resultado = await controller.GetDesdeCoordenadas(40.5605, -3.4702);
+
+            Assert.AreSame(direccion, ((OkNegotiatedContentResult<DireccionDetalleDTO>)resultado).Content);
+        }
+
+        [TestMethod]
+        public async Task GetDesdeCoordenadas_SinResultados_NotFound()
+        {
+            IServicioDireccionesGoogle servicio = A.Fake<IServicioDireccionesGoogle>();
+            A.CallTo(() => servicio.LeerDesdeCoordenadas(A<double>._, A<double>._)).Returns(Task.FromResult<DireccionDetalleDTO>(null));
+            var controller = new DireccionesController(servicio);
+
+            var resultado = await controller.GetDesdeCoordenadas(40.5605, -3.4702);
+
+            Assert.IsInstanceOfType(resultado, typeof(NotFoundResult));
+        }
+
+        [TestMethod]
+        public async Task GetDesdeCoordenadas_FueraDeRango_BadRequestSinLlamarAGoogle()
+        {
+            IServicioDireccionesGoogle servicio = A.Fake<IServicioDireccionesGoogle>();
+            var controller = new DireccionesController(servicio);
+
+            Assert.IsInstanceOfType(await controller.GetDesdeCoordenadas(91, 0), typeof(BadRequestErrorMessageResult));
+            Assert.IsInstanceOfType(await controller.GetDesdeCoordenadas(0, -181), typeof(BadRequestErrorMessageResult));
+            Assert.IsInstanceOfType(await controller.GetDesdeCoordenadas(null, 3), typeof(BadRequestErrorMessageResult));
+            A.CallTo(() => servicio.LeerDesdeCoordenadas(A<double>._, A<double>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task GetDesdeCoordenadas_FallaGoogle_NoEsUn500Mudo()
+        {
+            IServicioDireccionesGoogle servicio = A.Fake<IServicioDireccionesGoogle>();
+            A.CallTo(() => servicio.LeerDesdeCoordenadas(A<double>._, A<double>._)).Throws(new Exception("Google Places devolvió OVER_QUERY_LIMIT: "));
+            var controller = new DireccionesController(servicio);
+
+            var resultado = await controller.GetDesdeCoordenadas(40.5605, -3.4702);
+
+            var contenido = (NegotiatedContentResult<string>)resultado;
+            Assert.AreEqual(System.Net.HttpStatusCode.BadGateway, contenido.StatusCode);
+            StringAssert.Contains(contenido.Content, "OVER_QUERY_LIMIT");
+        }
     }
 }

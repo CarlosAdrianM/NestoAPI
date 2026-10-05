@@ -61,5 +61,39 @@ namespace NestoAPI.Controllers
             DireccionDetalleDTO detalle = await servicio.LeerDetalle(placeId, sessionToken);
             return Ok(detalle);
         }
+
+        // GET: api/Direcciones/DesdeCoordenadas?latitud=40.5605&longitud=-3.4702
+        /// <summary>
+        /// NestoAPI#578: la dirección de la ubicación del móvil, para que NestoApp deje el plugin
+        /// nativegeocoder (alta de cliente y códigos postales de Rapports). 404 si Google no encuentra
+        /// nada; 400 si faltan las coordenadas o están fuera de rango; si Google falla, 502 con el motivo
+        /// (la app lo trata como «no se ha podido» y deja los campos como estaban).
+        /// </summary>
+        [HttpGet]
+        [Authorize]
+        [Route("api/Direcciones/DesdeCoordenadas")]
+        [ResponseType(typeof(DireccionDetalleDTO))]
+        public async Task<IHttpActionResult> GetDesdeCoordenadas(double? latitud = null, double? longitud = null)
+        {
+            if (!latitud.HasValue || !longitud.HasValue)
+            {
+                return BadRequest("Faltan la latitud y la longitud");
+            }
+            if (latitud < -90 || latitud > 90 || longitud < -180 || longitud > 180)
+            {
+                return BadRequest("Las coordenadas están fuera de rango (latitud -90..90, longitud -180..180)");
+            }
+
+            DireccionDetalleDTO detalle;
+            try
+            {
+                detalle = await servicio.LeerDesdeCoordenadas(latitud.Value, longitud.Value);
+            }
+            catch (System.Exception ex)
+            {
+                return Content(System.Net.HttpStatusCode.BadGateway, "No se ha podido sacar la dirección de esas coordenadas: " + ex.Message);
+            }
+            return detalle == null ? (IHttpActionResult)NotFound() : Ok(detalle);
+        }
     }
 }

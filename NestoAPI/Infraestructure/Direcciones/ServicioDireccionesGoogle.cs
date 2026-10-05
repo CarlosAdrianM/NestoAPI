@@ -21,6 +21,11 @@ namespace NestoAPI.Infraestructure.Direcciones
         /// de la dirección puede no ser España). Null o vacío = España.</param>
         Task<List<Models.Direcciones.SugerenciaDireccionDTO>> BuscarSugerencias(string texto, string sessionToken, string pais = null);
         Task<Models.Direcciones.DireccionDetalleDTO> LeerDetalle(string placeId, string sessionToken);
+        /// <summary>
+        /// NestoAPI#578: la dirección de unas coordenadas (geocodificación inversa de Google). Null si
+        /// Google no encuentra nada.
+        /// </summary>
+        Task<Models.Direcciones.DireccionDetalleDTO> LeerDesdeCoordenadas(double latitud, double longitud);
     }
 
     public class ServicioDireccionesGoogle : IServicioDireccionesGoogle
@@ -53,6 +58,53 @@ namespace NestoAPI.Infraestructure.Direcciones
                 string json = await client.GetStringAsync(url).ConfigureAwait(false);
                 return ParsearDetalle(json);
             }
+        }
+
+        public async Task<Models.Direcciones.DireccionDetalleDTO> LeerDesdeCoordenadas(double latitud, double longitud)
+        {
+            var cultura = System.Globalization.CultureInfo.InvariantCulture;
+            string url = "https://maps.googleapis.com/maps/api/geocode/json" +
+                "?latlng=" + latitud.ToString(cultura) + "," + longitud.ToString(cultura) +
+                "&language=es" +
+                "&key=" + ConfigurationManager.AppSettings["GoogleMapsApiKey"];
+
+            using (HttpClient client = new HttpClient())
+            {
+                string json = await client.GetStringAsync(url).ConfigureAwait(false);
+                return ParsearGeocodificacionInversa(json);
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#578: de los resultados de la geocodificación inversa, el primero que es una dirección de
+        /// calle (street_address/premise); si no hay, el primero con código postal; si tampoco, el primero.
+        /// ZERO_RESULTS → null (no es un error).
+        /// </summary>
+        internal static Models.Direcciones.DireccionDetalleDTO ParsearGeocodificacionInversa(string json)
+        {
+            JObject respuesta = JObject.Parse(json);
+            string status = (string)respuesta["status"];
+            if (status == "ZERO_RESULTS")
+            {
+                return null;
+            }
+            if (status != "OK")
+            {
+                throw new Exception($"Google Geocoding devolvió {status}: {(string)respuesta["error_message"]}");
+            }
+
+            List<JToken> resultados = (respuesta["results"] ?? new JArray()).ToList();
+            if (resultados.Count == 0)
+            {
+                return null;
+            }
+            bool EsDeTipo(JToken r, params string[] tipos) => (r["types"] ?? new JArray()).Any(t => tipos.Contains((string)t));
+            bool TieneCodigoPostal(JToken r) => (r["address_components"] ?? new JArray()).Any(c => EsDeTipo(c, "postal_code"));
+
+            JToken elegido = resultados.FirstOrDefault(r => EsDeTipo(r, "street_address", "premise"))
+                ?? resultados.FirstOrDefault(TieneCodigoPostal)
+                ?? resultados[0];
+            return LeerComponentes(elegido);
         }
 
         /// <summary>
@@ -105,7 +157,12 @@ namespace NestoAPI.Infraestructure.Direcciones
                 throw new Exception($"Google Places devolvió {status}: {(string)respuesta["error_message"]}");
             }
 
-            JToken resultado = respuesta["result"];
+            return LeerComponentes(respuesta["result"]);
+        }
+
+        /// <summary>Los componentes de un resultado de Places o de Geocoding (tienen la misma forma).</summary>
+        private static Models.Direcciones.DireccionDetalleDTO LeerComponentes(JToken resultado)
+        {
             var detalle = new Models.Direcciones.DireccionDetalleDTO
             {
                 DireccionFormateada = (string)resultado["formatted_address"]
