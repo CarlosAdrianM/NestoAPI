@@ -1356,6 +1356,7 @@
     <Compile Include="Models\Facturas\DocumentoImprimibleDTO.cs" />
     <Compile Include="Models\Facturas\DocumentoParaImprimir.cs" />
     <Compile Include="Models\Facturas\FacturaCorreo.cs" />
+    <Compile Include="Models\Facturas\EnvioFacturasCorreoDTO.cs" />
     <Compile Include="Models\Facturas\FacturaPendienteVerifactuDTO.cs" />
     <Compile Include="Models\Facturas\FacturaCreadaDTO.cs" />
     <Compile Include="Models\Facturas\FacturaLookup.cs" />

@@ -2444,6 +2444,183 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         #endregion
+
+        #region Nesto#259: enviar facturas marcadas a un correo, desde la ficha comercial
+
+        private static IServicioFacturas ServicioConFacturasDelCliente(params string[] facturas)
+        {
+            IServicioFacturas servicio = A.Fake<IServicioFacturas>();
+            foreach (string factura in facturas)
+            {
+                CabFacturaVta cab = A.Fake<CabFacturaVta>();
+                cab.Empresa = "1  ";
+                cab.Número = factura;
+                cab.Nº_Cliente = "15191     ";
+                _ = A.CallTo(() => servicio.CargarCabFactura("1", factura)).Returns(cab);
+            }
+            _ = A.CallTo(() => servicio.EnviarCorreoSMTP(A<MailMessage>._)).Returns(true);
+            return servicio;
+        }
+
+        private static async Task SinEsperas(Func<Task> prueba)
+        {
+            int esperaOriginal = GestorFacturas.EsperaReintentoCorreoMs;
+            try
+            {
+                GestorFacturas.EsperaReintentoCorreoMs = 0;
+                await prueba();
+            }
+            finally
+            {
+                GestorFacturas.EsperaReintentoCorreoMs = esperaOriginal;
+            }
+        }
+
+        [TestMethod]
+        public void NormalizarCorreos_SeparaPorPuntoYComaYComaQuitaEspaciosYRepetidos()
+        {
+            List<string> correos = GestorFacturas.NormalizarCorreos(new[] { " cliente@correo.es; otro@correo.es ,cliente@correo.es", "" });
+
+            CollectionAssert.AreEqual(new[] { "cliente@correo.es", "otro@correo.es" }, correos);
+        }
+
+        [TestMethod]
+        public void NormalizarCorreos_UnCorreoMal_DiceCualEs()
+        {
+            var ex = Assert.ThrowsException<NestoAPI.Infraestructure.Exceptions.NestoBusinessException>(
+                () => GestorFacturas.NormalizarCorreos(new[] { "cliente@correo.es; clientecorreo.es" }));
+
+            StringAssert.Contains(ex.Message, "clientecorreo.es");
+        }
+
+        [TestMethod]
+        public void NormalizarCorreos_SinNinguno_SeRechaza()
+        {
+            _ = Assert.ThrowsException<NestoAPI.Infraestructure.Exceptions.NestoBusinessException>(
+                () => GestorFacturas.NormalizarCorreos(new[] { " ; " }));
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturasACorreo_UnCorreoConTodasLasFacturasAlCorreoEscrito()
+        {
+            await SinEsperas(async () =>
+            {
+                IServicioFacturas servicio = ServicioConFacturasDelCliente("NV11111", "NV22222");
+                MailMessage enviado = null;
+                List<string> destinatarios = null;
+                List<string> adjuntos = null;
+                _ = A.CallTo(() => servicio.EnviarCorreoSMTP(A<MailMessage>._))
+                    .Invokes((MailMessage m) =>
+                    {
+                        enviado = m;
+                        destinatarios = m.To.Select(t => t.Address).ToList();
+                        adjuntos = m.Attachments.Select(a => a.Name).ToList();
+                    })
+                    .Returns(true);
+                var gestor = new GestorFacturasPdfControlado(servicio);
+
+                ResultadoEnvioFacturasCorreoDTO resultado = await gestor.EnviarFacturasACorreo("1",
+                    new[] { "NV11111", " NV22222 " }, new[] { "gestoria@correo.es; cliente@correo.es" }, "NUEVAVISION\\Manuel");
+
+                Assert.IsTrue(resultado.Enviado);
+                CollectionAssert.AreEqual(new[] { "NV11111", "NV22222" }, resultado.Facturas);
+                A.CallTo(() => servicio.EnviarCorreoSMTP(A<MailMessage>._)).MustHaveHappenedOnceExactly();
+                CollectionAssert.AreEqual(new[] { "gestoria@correo.es", "cliente@correo.es" }, destinatarios);
+                CollectionAssert.AreEqual(new[] { "NV11111.pdf", "NV22222.pdf" }, adjuntos);
+                Assert.AreEqual("administracion@nuevavision.es", enviado.From.Address, "El remitente de la serie, como el envío diario");
+                StringAssert.Contains(enviado.Subject, "NV11111");
+                StringAssert.Contains(enviado.Subject, "NV22222");
+                Assert.IsFalse(enviado.Body.Contains("generado hoy"), "No es la facturación del día: puede ser una factura antigua");
+            });
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturasACorreo_FacturaDeOtroCliente_SeRechazaSinEnviarNada()
+        {
+            IServicioFacturas servicio = ServicioConFacturasDelCliente("NV11111");
+            CabFacturaVta otra = A.Fake<CabFacturaVta>();
+            otra.Nº_Cliente = "99999";
+            _ = A.CallTo(() => servicio.CargarCabFactura("1", "NV33333")).Returns(otra);
+            var gestor = new GestorFacturasPdfControlado(servicio);
+
+            var ex = await Assert.ThrowsExceptionAsync<NestoAPI.Infraestructure.Exceptions.NestoBusinessException>(
+                () => gestor.EnviarFacturasACorreo("1", new[] { "NV11111", "NV33333" }, new[] { "cliente@correo.es" }, "Manuel"));
+
+            StringAssert.Contains(ex.Message, "mismo cliente");
+            A.CallTo(() => servicio.EnviarCorreoSMTP(A<MailMessage>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturasACorreo_FacturaQueNoExiste_DiceCual()
+        {
+            IServicioFacturas servicio = ServicioConFacturasDelCliente("NV11111");
+            _ = A.CallTo(() => servicio.CargarCabFactura("1", "NV44444")).Returns(null);
+            var gestor = new GestorFacturasPdfControlado(servicio);
+
+            var ex = await Assert.ThrowsExceptionAsync<NestoAPI.Infraestructure.Exceptions.NestoBusinessException>(
+                () => gestor.EnviarFacturasACorreo("1", new[] { "NV11111", "NV44444" }, new[] { "cliente@correo.es" }, "Manuel"));
+
+            StringAssert.Contains(ex.Message, "NV44444");
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturasACorreo_MasDelMaximo_SeRechaza()
+        {
+            IServicioFacturas servicio = ServicioConFacturasDelCliente();
+            var gestor = new GestorFacturasPdfControlado(servicio);
+            IEnumerable<string> muchas = Enumerable.Range(1, GestorFacturas.MAXIMO_FACTURAS_POR_CORREO + 1).Select(i => "NV" + (10000 + i));
+
+            _ = await Assert.ThrowsExceptionAsync<NestoAPI.Infraestructure.Exceptions.NestoBusinessException>(
+                () => gestor.EnviarFacturasACorreo("1", muchas, new[] { "cliente@correo.es" }, "Manuel"));
+
+            A.CallTo(() => servicio.CargarCabFactura(A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturasACorreo_SinFacturas_SeRechaza()
+        {
+            var gestor = new GestorFacturasPdfControlado(ServicioConFacturasDelCliente());
+
+            _ = await Assert.ThrowsExceptionAsync<NestoAPI.Infraestructure.Exceptions.NestoBusinessException>(
+                () => gestor.EnviarFacturasACorreo("1", new string[0], new[] { "cliente@correo.es" }, "Manuel"));
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturasACorreo_SiNoSaleElCorreo_LoDiceYNoLoRedirigeAAdministracion()
+        {
+            // Lo ha pedido una persona que está delante: mejor que lo sepa y lo vuelva a intentar
+            await SinEsperas(async () =>
+            {
+                IServicioFacturas servicio = ServicioConFacturasDelCliente("NV11111");
+                var destinatarios = new List<string>();
+                _ = A.CallTo(() => servicio.EnviarCorreoSMTP(A<MailMessage>._))
+                    .Invokes((MailMessage m) => destinatarios.Add(string.Join(",", m.To.Select(t => t.Address))))
+                    .Returns(false);
+                var gestor = new GestorFacturasPdfControlado(servicio);
+
+                ResultadoEnvioFacturasCorreoDTO resultado = await gestor.EnviarFacturasACorreo("1",
+                    new[] { "NV11111" }, new[] { "cliente@correo.es" }, "Manuel");
+
+                Assert.IsFalse(resultado.Enviado);
+                CollectionAssert.AreEqual(new[] { "cliente@correo.es", "cliente@correo.es" }, destinatarios, "Un reintento, sin redirigir");
+                StringAssert.Contains(resultado.Mensaje, "no se ha podido enviar");
+            });
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturasACorreo_SiNingunaSePuedeGenerar_LoDice()
+        {
+            IServicioFacturas servicio = ServicioConFacturasDelCliente("NV11111");
+            var gestor = new GestorFacturasPdfControlado(servicio, "NV11111");
+
+            var ex = await Assert.ThrowsExceptionAsync<NestoAPI.Infraestructure.Exceptions.NestoBusinessException>(
+                () => gestor.EnviarFacturasACorreo("1", new[] { "NV11111" }, new[] { "cliente@correo.es" }, "Manuel"));
+
+            StringAssert.Contains(ex.Message, "NV11111");
+            A.CallTo(() => servicio.EnviarCorreoSMTP(A<MailMessage>._)).MustNotHaveHappened();
+        }
+
+        #endregion
     }
 
 

@@ -1,6 +1,7 @@
 ﻿using Microsoft.Reporting.WebForms;
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Facturas;
+using NestoAPI.Models;
 using NestoAPI.Models.Facturas;
 using System;
 using System.Collections.Generic;
@@ -157,6 +158,52 @@ namespace NestoAPI.Controllers
             IEnumerable<FacturaCorreo> respuesta = await gestor.EnviarFacturasPorCorreo(DateTime.Today);
 
             return Ok(respuesta.ToList());
+        }
+
+        // POST api/Facturas/EnviarPorCorreo   { "Empresa": "1", "Facturas": ["NV2616199"], "Correos": ["cliente@correo.es"] }
+        /// <summary>
+        /// Nesto#259 (Manuel, 05/10/26): las facturas marcadas en la ficha comercial del cliente, en un solo correo, a
+        /// los correos que escribe el usuario («;» o «,» para varios). Todas del mismo cliente y como mucho
+        /// <see cref="GestorFacturas.MAXIMO_FACTURAS_POR_CORREO"/>. 400 con el motivo si lo pedido no vale; 502 si el
+        /// servidor de correo no lo acepta (con el mensaje para el usuario).
+        /// </summary>
+        [HttpPost]
+        [Authorize]
+        [Route("api/Facturas/EnviarPorCorreo")]
+        [ResponseType(typeof(ResultadoEnvioFacturasCorreoDTO))]
+        public async Task<IHttpActionResult> EnviarPorCorreo([FromBody] EnvioFacturasCorreoDTO envio)
+        {
+            if (envio == null)
+            {
+                return BadRequest("Faltan las facturas y el correo.");
+            }
+            try
+            {
+                ResultadoEnvioFacturasCorreoDTO resultado = await gestor.EnviarFacturasACorreo(envio.Empresa, envio.Facturas,
+                    envio.Correos, User?.Identity?.Name).ConfigureAwait(false);
+                return resultado.Enviado ? (IHttpActionResult)Ok(resultado) : Content(HttpStatusCode.BadGateway, resultado);
+            }
+            catch (NestoAPI.Infraestructure.Exceptions.NestoBusinessException ex) when ((int)ex.StatusCode < 500)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+
+        // GET api/Facturas/CorreoFacturas?empresa=1&numeroFactura=NV2616199
+        /// <summary>Nesto#259: el correo de facturas del cliente de esa factura, para proponerlo al mandarla. Vacío si no tiene.</summary>
+        [HttpGet]
+        [Authorize]
+        [Route("api/Facturas/CorreoFacturas")]
+        [ResponseType(typeof(CorreoFacturasDTO))]
+        public IHttpActionResult GetCorreoFacturas(string empresa, string numeroFactura)
+        {
+            if (string.IsNullOrWhiteSpace(numeroFactura))
+            {
+                return BadRequest("Falta la factura.");
+            }
+            string correo = servicio.LeerCorreoFacturas(string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim(),
+                numeroFactura.Trim());
+            return Ok(new CorreoFacturasDTO { Correo = correo?.Trim() ?? string.Empty });
         }
 
         [HttpGet]

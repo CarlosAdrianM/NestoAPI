@@ -19,6 +19,12 @@ using Elmah;
 
 namespace NestoAPI.Infraestructure.Facturas
 {
+    /// <summary>Nesto#259: constancia en ELMAH (informativa, no es un error) de las facturas mandadas a mano por correo.</summary>
+    public class FacturasEnviadasPorCorreoInfo : Exception
+    {
+        public FacturasEnviadasPorCorreoInfo(string mensaje) : base(mensaje) { }
+    }
+
     public class GestorFacturas : IGestorFacturas
     {
         private readonly IServicioFacturas servicio;
@@ -1173,13 +1179,7 @@ namespace NestoAPI.Infraestructure.Facturas
                 // A veces no conecta a la primera: reintento a los 2s y, si sigue fallando, el
                 // correo se redirige a administración para que la factura no se pierda. Un correo
                 // que falle no impide el envío de los demás.
-                if (servicio.EnviarCorreoSMTP(correo))
-                {
-                    MarcarProvisionalesEnviadas(correo, provisionalesPorCorreo);
-                    continue;
-                }
-                await Task.Delay(Math.Max(0, EsperaReintentoCorreoMs));
-                if (servicio.EnviarCorreoSMTP(correo))
+                if (await EnviarConReintento(correo))
                 {
                     MarcarProvisionalesEnviadas(correo, provisionalesPorCorreo);
                     continue;
@@ -1198,6 +1198,161 @@ namespace NestoAPI.Infraestructure.Facturas
 
         /// <summary>Espera entre reintentos del SMTP. Internal set para que los tests no esperen.</summary>
         internal static int EsperaReintentoCorreoMs { get; set; } = 2000;
+
+        /// <summary>El SMTP a veces no conecta a la primera: un intento y, si falla, otro a los 2 s.</summary>
+        private async Task<bool> EnviarConReintento(MailMessage correo)
+        {
+            if (servicio.EnviarCorreoSMTP(correo))
+            {
+                return true;
+            }
+            await Task.Delay(Math.Max(0, EsperaReintentoCorreoMs));
+            return servicio.EnviarCorreoSMTP(correo);
+        }
+
+        /// <summary>Nesto#259: cuántas facturas caben en un envío a mano (un solo correo con todas adjuntas).</summary>
+        public const int MAXIMO_FACTURAS_POR_CORREO = 20;
+
+        /// <summary>
+        /// Nesto#259: los correos que escribe el usuario, separados por «;» o «,» (en una o varias cadenas), sin
+        /// espacios ni repetidos. Si alguno no es un correo válido, o no hay ninguno, se rechaza diciendo cuál.
+        /// </summary>
+        internal static List<string> NormalizarCorreos(IEnumerable<string> correos)
+        {
+            var resultado = new List<string>();
+            var malos = new List<string>();
+            foreach (string trozo in (correos ?? Enumerable.Empty<string>())
+                .SelectMany(c => (c ?? string.Empty).Split(new[] { ';', ',' }, StringSplitOptions.RemoveEmptyEntries))
+                .Select(c => c.Trim())
+                .Where(c => c.Length > 0))
+            {
+                if (!EsCorreoValido(trozo))
+                {
+                    malos.Add(trozo);
+                }
+                else if (!resultado.Contains(trozo, StringComparer.OrdinalIgnoreCase))
+                {
+                    resultado.Add(trozo);
+                }
+            }
+            if (malos.Any())
+            {
+                throw new NestoBusinessException($"No es un correo válido: {string.Join(", ", malos)}.");
+            }
+            if (!resultado.Any())
+            {
+                throw new NestoBusinessException("Falta el correo al que se mandan las facturas.");
+            }
+            return resultado;
+        }
+
+        private static bool EsCorreoValido(string correo)
+        {
+            try
+            {
+                var direccion = new MailAddress(correo);
+                return string.Equals(direccion.Address, correo, StringComparison.OrdinalIgnoreCase) && correo.Contains(".");
+            }
+            catch (FormatException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Nesto#259 (Manuel, 05/10/26): manda las facturas marcadas en la ficha comercial a los correos que escribe el
+        /// usuario, en un solo correo con todas adjuntas. Mismo circuito que el envío diario (remitente y firma de la
+        /// serie, PDF, justificante provisional de #522, copia oculta), con su propio texto: puede ser una factura
+        /// antigua. Si el correo no sale (ni al reintentar), se dice: lo ha pedido alguien que está delante y lo puede
+        /// volver a intentar, así que NO se redirige a administración como el envío diario.
+        /// </summary>
+        /// <exception cref="NestoBusinessException">Lo pedido no vale (sin facturas, demasiadas, de varios clientes,
+        /// alguna que no existe, correos mal escritos o ninguna factura que se pueda generar).</exception>
+        public async Task<ResultadoEnvioFacturasCorreoDTO> EnviarFacturasACorreo(string empresa, IEnumerable<string> facturas,
+            IEnumerable<string> correos, string usuario)
+        {
+            List<string> numeros = (facturas ?? Enumerable.Empty<string>())
+                .Select(f => f?.Trim())
+                .Where(f => !string.IsNullOrEmpty(f))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (!numeros.Any())
+            {
+                throw new NestoBusinessException("No se ha marcado ninguna factura.");
+            }
+            if (numeros.Count > MAXIMO_FACTURAS_POR_CORREO)
+            {
+                throw new NestoBusinessException(
+                    $"Se pueden mandar como mucho {MAXIMO_FACTURAS_POR_CORREO} facturas en un correo (has marcado {numeros.Count}).");
+            }
+            List<string> destinatarios = NormalizarCorreos(correos);
+            string empresaLimpia = string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
+
+            var clientes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var inexistentes = new List<string>();
+            foreach (string numero in numeros)
+            {
+                CabFacturaVta cab = servicio.CargarCabFactura(empresaLimpia, numero);
+                if (cab == null)
+                {
+                    inexistentes.Add(numero);
+                    continue;
+                }
+                _ = clientes.Add(cab.Nº_Cliente?.Trim() ?? string.Empty);
+            }
+            if (inexistentes.Any())
+            {
+                throw new NestoBusinessException($"No existe la factura {string.Join(", ", inexistentes)}.");
+            }
+            if (clientes.Count > 1)
+            {
+                throw new NestoBusinessException("Todas las facturas de un correo tienen que ser del mismo cliente.");
+            }
+
+            string paraCorreo = string.Join(",", destinatarios);
+            List<FacturaCorreo> lista = numeros.Select(n => new FacturaCorreo { Empresa = empresaLimpia, Factura = n, Correo = paraCorreo }).ToList();
+            var provisionalesPorCorreo = new Dictionary<MailMessage, List<FacturaCorreo>>();
+            List<MailMessage> mensajes = await ConstruirCorreosFacturasDia(lista, provisionalesPorCorreo, envioAMano: true);
+            MailMessage correo = mensajes.SingleOrDefault();
+            List<string> adjuntas = correo == null
+                ? new List<string>()
+                : numeros.Where(n => correo.Attachments.Any(a => a.Name.StartsWith(n, StringComparison.OrdinalIgnoreCase))).ToList();
+            if (correo == null || !adjuntas.Any())
+            {
+                throw new NestoBusinessException(
+                    $"No se ha podido preparar ninguna de las facturas ({string.Join(", ", numeros)}): o su serie no se puede mandar por correo o ha fallado su PDF.");
+            }
+
+            var resultado = new ResultadoEnvioFacturasCorreoDTO
+            {
+                Facturas = adjuntas,
+                Omitidas = numeros.Except(adjuntas, StringComparer.OrdinalIgnoreCase).ToList(),
+                Correos = destinatarios
+            };
+            using (correo)
+            {
+                resultado.Enviado = await EnviarConReintento(correo);
+                if (resultado.Enviado)
+                {
+                    MarcarProvisionalesEnviadas(correo, provisionalesPorCorreo);
+                }
+            }
+
+            string quien = UsuarioAuditoriaHelper.ParaAuditoria(usuario);
+            if (resultado.Enviado)
+            {
+                resultado.Mensaje = $"Enviada{(adjuntas.Count == 1 ? "" : "s")} {string.Join(", ", adjuntas)} a {string.Join(", ", destinatarios)}."
+                    + (resultado.Omitidas.Any() ? $" No se han podido adjuntar: {string.Join(", ", resultado.Omitidas)}." : string.Empty);
+                // Constancia de quién mandó qué y a quién (no hay tabla de envíos de facturas)
+                ElmahHelper.Log(new FacturasEnviadasPorCorreoInfo(
+                    $"[Nesto#259] {quien} ha enviado {string.Join(", ", adjuntas)} (empresa {empresaLimpia}, cliente {clientes.Single()}) a {string.Join(", ", destinatarios)}."), quien);
+            }
+            else
+            {
+                resultado.Mensaje = "El correo no se ha podido enviar (el servidor de correo no responde). Vuelve a intentarlo en un rato.";
+            }
+            return resultado;
+        }
 
         /// <summary>
         /// NestoAPI#522 (parte 1): el correo con justificantes provisionales ha salido bien → se marcan las
@@ -1278,12 +1433,7 @@ namespace NestoAPI.Infraestructure.Facturas
                 ByteArrayContent facturaPdf = FacturaEnPDF(empresa, numero);
                 mail.Attachments.Add(new Attachment(new MemoryStream(await facturaPdf.ReadAsByteArrayAsync()), numero + ".pdf"));
 
-                if (servicio.EnviarCorreoSMTP(mail))
-                {
-                    return true;
-                }
-                await Task.Delay(Math.Max(0, EsperaReintentoCorreoMs));
-                return servicio.EnviarCorreoSMTP(mail);
+                return await EnviarConReintento(mail);
             }
         }
 
@@ -1308,8 +1458,10 @@ namespace NestoAPI.Infraestructure.Facturas
         /// </summary>
         /// <param name="provisionalesPorCorreo">NestoAPI#522 (parte 1): si se pasa, se rellena con las facturas
         /// que cada correo lleva como justificante provisional (para marcarlas cuando el correo salga bien).</param>
+        /// <param name="envioAMano">Nesto#259: lo manda una persona desde la ficha del cliente (no es la facturación del
+        /// día): cambia el texto del correo.</param>
         internal async Task<List<MailMessage>> ConstruirCorreosFacturasDia(IEnumerable<FacturaCorreo> facturasCorreo,
-            IDictionary<MailMessage, List<FacturaCorreo>> provisionalesPorCorreo = null)
+            IDictionary<MailMessage, List<FacturaCorreo>> provisionalesPorCorreo = null, bool envioAMano = false)
         {
             List<MailMessage> listaCorreos = new List<MailMessage>();
             string mailAnterior = string.Empty;
@@ -1367,7 +1519,7 @@ namespace NestoAPI.Infraestructure.Facturas
                     mail.Bcc.Add(new MailAddress("carlosadrian@nuevavision.es"));
                     mail.Bcc.Add(new MailAddress("lauramagan@nuevavision.es"));
 
-                    mail.Body = (await GenerarCorreoHTML(fra)).ToString();
+                    mail.Body = (await GenerarCorreoHTML(fra, envioAMano)).ToString();
                     mail.IsBodyHtml = true;
                 }
                 try
@@ -1561,15 +1713,24 @@ namespace NestoAPI.Infraestructure.Facturas
             return clientesCorreo;
         }
 
-        private async Task<StringBuilder> GenerarCorreoHTML(FacturaCorreo fra)
+        private async Task<StringBuilder> GenerarCorreoHTML(FacturaCorreo fra, bool envioAMano = false)
         {
             ISerieFactura serieFactura = LeerSerie(fra.Factura.Substring(0, 2));
             StringBuilder s = new StringBuilder();
 
-            _ = s.AppendLine("<p>Adjunto le enviamos su facturación del día.</p>");
-            _ = s.AppendLine("<br/>");
-            _ = s.AppendLine("<p>La factura se ha generado hoy mismo, por lo que <strong>es lógico que aún no haya recibido los productos</strong>, pero se la adelantamos para que pueda llevar los controles pertinentes.</p>");
-            _ = s.AppendLine("<br/>");
+            if (envioAMano)
+            {
+                // Nesto#259: la puede pedir el cliente (o su gestoría) de cualquier fecha
+                _ = s.AppendLine("<p>Adjunto le enviamos las facturas que nos ha solicitado.</p>");
+                _ = s.AppendLine("<br/>");
+            }
+            else
+            {
+                _ = s.AppendLine("<p>Adjunto le enviamos su facturación del día.</p>");
+                _ = s.AppendLine("<br/>");
+                _ = s.AppendLine("<p>La factura se ha generado hoy mismo, por lo que <strong>es lógico que aún no haya recibido los productos</strong>, pero se la adelantamos para que pueda llevar los controles pertinentes.</p>");
+                _ = s.AppendLine("<br/>");
+            }
             _ = s.AppendLine("<p>¿Qué es la factura electrónica?</p>");
             _ = s.AppendLine("<ul><li>Una factura electrónica es, ante todo, una factura. Es decir, tiene los mismos efectos legales que una factura en papel.</li>");
             _ = s.AppendLine("<li>Recordemos que una factura es un justificante de la entrega de bienes o la prestación de servicios.</li>");

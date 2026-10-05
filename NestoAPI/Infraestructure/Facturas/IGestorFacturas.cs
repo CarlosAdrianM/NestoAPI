@@ -25,5 +25,7 @@ namespace NestoAPI.Infraestructure.Facturas
         List<VencimientoFactura> VencimientosFactura(Factura factura);
         List<VendedorFactura> VendedoresFactura(Factura factura);
         Task<CrearFacturaResponseDTO> CrearFactura(string empresa, int pedido, string usuario, string usuarioAutenticado = null);
+        /// <summary>Nesto#259: las facturas marcadas, en un solo correo, a los correos que escribe el usuario.</summary>
+        Task<ResultadoEnvioFacturasCorreoDTO> EnviarFacturasACorreo(string empresa, IEnumerable<string> facturas, IEnumerable<string> correos, string usuario);
     }
 }
