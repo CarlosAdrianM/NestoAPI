@@ -26,6 +26,21 @@ namespace NestoAPI.Controllers
             gestor = new GestorFacturas(servicio);
         }
 
+        internal FacturasController(IServicioFacturas servicio, IGestorFacturas gestor)
+        {
+            this.servicio = servicio;
+            this.gestor = gestor;
+        }
+
+        internal const string MOTIVO_SOLO_EMPLEADOS_CORREO = "Solo los empleados pueden enviar facturas por correo.";
+
+        /// <summary>
+        /// Nesto#259: mandar facturas a una dirección cualquiera (y ver el correo de facturas de un cliente) es solo para
+        /// empleados (token de Nesto con IsEmployee=true). Una clienta de TNV o un vendedor de NestoApp no puede.
+        /// </summary>
+        private bool EsEmpleado()
+            => (User?.Identity as System.Security.Claims.ClaimsIdentity)?.FindFirst("IsEmployee")?.Value == "true";
+
         // GET api/Facturas
         [HttpGet]
         [Route("api/Facturas/FacturaJson")]
@@ -173,6 +188,10 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(ResultadoEnvioFacturasCorreoDTO))]
         public async Task<IHttpActionResult> EnviarPorCorreo([FromBody] EnvioFacturasCorreoDTO envio)
         {
+            if (!EsEmpleado())
+            {
+                return Content(HttpStatusCode.Forbidden, MOTIVO_SOLO_EMPLEADOS_CORREO);
+            }
             if (envio == null)
             {
                 return BadRequest("Faltan las facturas y el correo.");
@@ -197,6 +216,10 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(CorreoFacturasDTO))]
         public IHttpActionResult GetCorreoFacturas(string empresa, string numeroFactura)
         {
+            if (!EsEmpleado())
+            {
+                return Content(HttpStatusCode.Forbidden, MOTIVO_SOLO_EMPLEADOS_CORREO);
+            }
             if (string.IsNullOrWhiteSpace(numeroFactura))
             {
                 return BadRequest("Falta la factura.");

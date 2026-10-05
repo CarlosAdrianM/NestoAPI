@@ -328,6 +328,7 @@
     <Compile Include="Controllers\AlquileresControllerTests.cs" />
     <Compile Include="Controllers\RemesasControllerTests.cs" />
     <Compile Include="Controllers\ComisionesControllerTests.cs" />
+    <Compile Include="Controllers\FacturasControllerEnvioCorreoTests.cs" />
     <Compile Include="Controllers\VideosProductosControllerTests.cs" />
     <Compile Include="Controllers\VideosControllerBorrarTests.cs" />
     <Compile Include="Infraestructure\Videos\GestorBorradoVideosTests.cs" />
