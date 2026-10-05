@@ -456,6 +456,20 @@ namespace NestoAPI.Infraestructure.Notificaciones
             return await EnviarYGuardar(dispositivos, notificacion, aplicacion).ConfigureAwait(false);
         }
 
+        public async Task<List<string>> UsuariosConDispositivoActivo(string aplicacion)
+        {
+            using (NVEntities db = _crearContexto())
+            {
+                List<string> usuarios = await db.DispositivosNotificaciones
+                    .Where(d => d.Aplicacion == aplicacion && d.Activo && d.Usuario != null)
+                    .Select(d => d.Usuario)
+                    .Distinct()
+                    .ToListAsync()
+                    .ConfigureAwait(false);
+                return usuarios.Select(u => u.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(u => u).ToList();
+            }
+        }
+
         /// <summary>
         /// Guarda SIEMPRE en el buzón antes de enviar: si FCM falla o el usuario descarta la
         /// notificación del sistema, el buzón es la red de seguridad (#387).

@@ -71,6 +71,77 @@ namespace NestoAPI.Controllers
             return Ok(new { Version = version, Avisados = usuarios.Count, Usuarios = usuarios });
         }
 
+        internal const string TIPO_NUEVA_VERSION_NESTO_APP = "NuevaVersionNestoApp";
+
+        /// <summary>
+        /// NestoAPI#579, gemelo de <see cref="NuevaVersionNesto"/> para NestoApp: tras promocionar una versión a
+        /// Production en AppFlow, una push a todos los móviles con NestoApp diciendo cómo estrenarla. Sin tandas
+        /// (cada móvil se actualiza solo). Con <c>Usuarios</c>, solo a esos (para probar primero); con
+        /// <c>SoloListar</c>, no manda nada y dice a quién mandaría. Solo Dirección e Informática.
+        /// POST api/Notificaciones/NuevaVersionNestoApp  { "Version": "2.22.0", "Texto": null, "SoloListar": false, "Usuarios": null }
+        /// </summary>
+        [HttpPost]
+        [Route("NuevaVersionNestoApp")]
+        [Authorize]
+        public async Task<IHttpActionResult> NuevaVersionNestoApp([FromBody] NuevaVersionNestoDTO dto)
+        {
+            if (User == null || !(User.IsInRoleSinDominio(GruposSeguridad.DIRECCION) || User.IsInRoleSinDominio(NovedadesController.GRUPO_INFORMATICA)))
+            {
+                return StatusCode(System.Net.HttpStatusCode.Forbidden);
+            }
+            string version = dto?.Version?.Trim();
+            if (string.IsNullOrWhiteSpace(version) || !System.Version.TryParse(version, out _))
+            {
+                return BadRequest("Falta la versión (por ejemplo, 2.22.0)");
+            }
+            // Live Updates está en modo background: descarga al arrancar en frío y la estrena en el SIGUIENTE
+            // arranque en frío. De ahí los dos cierres (probado el 30/09/26 con la 2.22.0).
+            var notificacion = new NotificacionPushDTO
+            {
+                Titulo = $"NestoApp {version} ya está disponible",
+                Cuerpo = string.IsNullOrWhiteSpace(dto.Texto)
+                    ? "Para estrenarla: cierra la app del todo (quítala de las apps recientes), ábrela con conexión y espera " +
+                      "unos segundos. Luego ciérrala del todo otra vez y vuelve a abrirla. " +
+                      $"En tu perfil verás «Versión actualización {version}»."
+                    : dto.Texto.Trim(),
+                Tipo = TIPO_NUEVA_VERSION_NESTO_APP,
+                Datos = new Dictionary<string, string>
+                {
+                    ["tipo"] = TIPO_NUEVA_VERSION_NESTO_APP,
+                    ["version"] = version,
+                    ["ruta"] = "/profile"
+                }
+            };
+
+            List<string> activos = await _servicio.UsuariosConDispositivoActivo(Aplicaciones.NESTO_APP).ConfigureAwait(false)
+                ?? new List<string>();
+            if (dto.SoloListar)
+            {
+                return Ok(new { Version = version, Avisados = 0, Usuarios = activos });
+            }
+
+            List<string> pedidos = (dto.Usuarios ?? new List<string>())
+                .Where(u => !string.IsNullOrWhiteSpace(u))
+                .Select(u => u.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (pedidos.Count == 0)
+            {
+                int dispositivos = await _servicio.EnviarATodosDeAplicacion(Aplicaciones.NESTO_APP, notificacion).ConfigureAwait(false);
+                return Ok(new { Version = version, Avisados = activos.Count, Usuarios = activos, Dispositivos = dispositivos });
+            }
+
+            var avisados = new List<string>();
+            foreach (string usuario in pedidos)
+            {
+                if (await _servicio.EnviarAUsuario(usuario, Aplicaciones.NESTO_APP, notificacion).ConfigureAwait(false) > 0)
+                {
+                    avisados.Add(usuario);
+                }
+            }
+            return Ok(new { Version = version, Avisados = avisados.Count, Usuarios = avisados });
+        }
+
         /// <summary>
         /// A quién se avisa en esta llamada: a todos los que tienen Nesto abierto, o solo a los de la
         /// tanda pedida que lo sigan teniendo abierto (con o sin el dominio delante, sin mirar mayúsculas).

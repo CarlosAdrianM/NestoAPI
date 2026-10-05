@@ -21,6 +21,8 @@ namespace NestoAPI.Infraestructure.Notificaciones
         Task<int> EnviarAVendedor(string empresa, string vendedor, NotificacionPushDTO notificacion);
         Task<int> EnviarACliente(string empresa, string cliente, NotificacionPushDTO notificacion);
         Task<int> EnviarATodosDeAplicacion(string aplicacion, NotificacionPushDTO notificacion);
+        /// <summary>NestoAPI#579: los usuarios (sin repetir) con algún dispositivo activo de esa aplicación.</summary>
+        Task<List<string>> UsuariosConDispositivoActivo(string aplicacion);
 
         /// <summary>
         /// Nesto#477: deja la notificación en el buzón de un usuario SIN mandar push (Nesto de

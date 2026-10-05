@@ -514,6 +514,79 @@ namespace NestoAPI.Tests.Controllers
             A.CallTo(() => _servicio.GuardarEnBuzonDeUsuario(A<string>.That.Contains("Manuel"), A<string>._, A<NotificacionPushDTO>._)).MustNotHaveHappened();
         }
 
+        // NestoAPI#579: aviso de versión nueva de NestoApp por push, gemelo de NuevaVersionNesto
+
+        private void ComoDireccion() =>
+            _controller.User = new GenericPrincipal(new GenericIdentity("NUEVAVISION\\Carlos"), new[] { "NUEVAVISION\\Dirección" });
+
+        [TestMethod]
+        public async Task NuevaVersionNestoApp_SinSerDireccionNiInformatica_Forbidden()
+        {
+            var resultado = await _controller.NuevaVersionNestoApp(new NuevaVersionNestoDTO { Version = "2.22.0" });
+
+            Assert.IsInstanceOfType(resultado, typeof(StatusCodeResult));
+            A.CallTo(() => _servicio.EnviarATodosDeAplicacion(A<string>._, A<NotificacionPushDTO>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task NuevaVersionNestoApp_SinVersionValida_BadRequest()
+        {
+            ComoDireccion();
+
+            Assert.IsInstanceOfType(await _controller.NuevaVersionNestoApp(new NuevaVersionNestoDTO { Version = "" }), typeof(BadRequestErrorMessageResult));
+            Assert.IsInstanceOfType(await _controller.NuevaVersionNestoApp(new NuevaVersionNestoDTO { Version = "nueva" }), typeof(BadRequestErrorMessageResult));
+            Assert.IsInstanceOfType(await _controller.NuevaVersionNestoApp(null), typeof(BadRequestErrorMessageResult));
+        }
+
+        [TestMethod]
+        public async Task NuevaVersionNestoApp_SoloListar_DiceAQuienSinMandarNada()
+        {
+            ComoDireccion();
+            A.CallTo(() => _servicio.UsuariosConDispositivoActivo(Constantes.Aplicaciones.NESTO_APP))
+                .Returns(Task.FromResult(new System.Collections.Generic.List<string> { "Jesus", "David" }));
+
+            var resultado = await _controller.NuevaVersionNestoApp(new NuevaVersionNestoDTO { Version = "2.22.0", SoloListar = true });
+
+            Assert.IsNotInstanceOfType(resultado, typeof(StatusCodeResult));
+            A.CallTo(() => _servicio.EnviarATodosDeAplicacion(A<string>._, A<NotificacionPushDTO>._)).MustNotHaveHappened();
+            A.CallTo(() => _servicio.EnviarAUsuario(A<string>._, A<string>._, A<NotificacionPushDTO>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task NuevaVersionNestoApp_SinUsuarios_PushATodosLosDeNestoAppConElTextoDeSiempre()
+        {
+            ComoDireccion();
+
+            _ = await _controller.NuevaVersionNestoApp(new NuevaVersionNestoDTO { Version = " 2.22.0 " });
+
+            A.CallTo(() => _servicio.EnviarATodosDeAplicacion(Constantes.Aplicaciones.NESTO_APP,
+                A<NotificacionPushDTO>.That.Matches(n => n.Titulo == "NestoApp 2.22.0 ya está disponible"
+                    && n.Cuerpo.Contains("cierra la app del todo")
+                    && n.Cuerpo.Contains("«Versión actualización 2.22.0»")
+                    && n.Tipo == NotificacionesController.TIPO_NUEVA_VERSION_NESTO_APP
+                    && n.Datos["tipo"] == NotificacionesController.TIPO_NUEVA_VERSION_NESTO_APP
+                    && n.Datos["version"] == "2.22.0"
+                    && n.Datos["ruta"] == "/profile"))).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task NuevaVersionNestoApp_ConUsuarios_SoloAEsosYConSuTexto()
+        {
+            ComoDireccion();
+
+            _ = await _controller.NuevaVersionNestoApp(new NuevaVersionNestoDTO
+            {
+                Version = "2.22.0",
+                Texto = "Prueba",
+                Usuarios = new System.Collections.Generic.List<string> { "Carlos", " " }
+            });
+
+            A.CallTo(() => _servicio.EnviarAUsuario("Carlos", Constantes.Aplicaciones.NESTO_APP,
+                A<NotificacionPushDTO>.That.Matches(n => n.Cuerpo == "Prueba"))).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _servicio.EnviarAUsuario(A<string>._, A<string>._, A<NotificacionPushDTO>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _servicio.EnviarATodosDeAplicacion(A<string>._, A<NotificacionPushDTO>._)).MustNotHaveHappened();
+        }
+
         // 28/09/26: aviso en la campana de Nesto a usuarios concretos (p. ej. Alfredo y la nota de entrega automática)
 
         [TestMethod]
