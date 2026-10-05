@@ -416,6 +416,54 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public async Task GetPackingDelPicking_CompletaLaFichaDeTodasLasLineas()
+        {
+            // Ariadna#9: en el packing también se ve la ficha y la foto de lo que se mete en la caja
+            IFichasProductoAlmacen fichas = A.Fake<IFichasProductoAlmacen>();
+            var lata = new LineaPackingAlmacenDTO { Producto = "22624" };
+            var cera = new LineaPackingAlmacenDTO { Producto = "18004" };
+            A.CallTo(() => servicio.LeerPacking("1", 99633)).Returns(PackingCon(lata, cera));
+
+            _ = await ConFichas(fichas).GetPackingDelPicking(99633);
+
+            A.CallTo(() => fichas.Completar("1", A<IEnumerable<IConFichaProducto>>.That.IsSameSequenceAs(new[] { lata, cera })))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task GetPackingDelPedido_CompletaLaFichaDeTodasLasLineas()
+        {
+            IFichasProductoAlmacen fichas = A.Fake<IFichasProductoAlmacen>();
+            var lata = new LineaPackingAlmacenDTO { Producto = "22624" };
+            var cera = new LineaPackingAlmacenDTO { Producto = "18004" };
+            A.CallTo(() => servicio.LeerPackingDePedido("1", 926940)).Returns(PackingCon(lata, cera));
+
+            _ = await ConFichas(fichas).GetPackingDelPedido(926940);
+
+            A.CallTo(() => fichas.Completar("1", A<IEnumerable<IConFichaProducto>>.That.IsSameSequenceAs(new[] { lata, cera })))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        /// <summary>Un packing con una entrega de dos pedidos, cada uno con una línea.</summary>
+        private static PackingAlmacenDTO PackingCon(LineaPackingAlmacenDTO una, LineaPackingAlmacenDTO otra)
+        {
+            return new PackingAlmacenDTO
+            {
+                Entregas = new List<EntregaPackingAlmacenDTO>
+                {
+                    new EntregaPackingAlmacenDTO
+                    {
+                        Pedidos = new List<PedidoPackingAlmacenDTO>
+                        {
+                            new PedidoPackingAlmacenDTO { Pedido = 1, Lineas = new List<LineaPackingAlmacenDTO> { una } },
+                            new PedidoPackingAlmacenDTO { Pedido = 2, Lineas = new List<LineaPackingAlmacenDTO> { otra } }
+                        }
+                    }
+                }
+            };
+        }
+
+        [TestMethod]
         public async Task GetPendienteDeUbicar_CompletaLaFichaDeCadaProducto()
         {
             IFichasProductoAlmacen fichas = A.Fake<IFichasProductoAlmacen>();

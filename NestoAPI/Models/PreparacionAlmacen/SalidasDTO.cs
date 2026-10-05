@@ -54,4 +54,33 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public int Filas { get; set; }
         public string Mensaje { get; set; }
     }
+
+    /// <summary>Ariadna#12: otro hueco donde hay libre del producto que no estaba en el de la parada.</summary>
+    public class HuecoAlternativoDTO
+    {
+        /// <summary>Como se enseña: 003/001/002.</summary>
+        public string Ubicacion { get; set; }
+        /// <summary>Como la etiqueta: 003001002.</summary>
+        public string Codigo { get; set; }
+        /// <summary>Unidades libres (sin reservar) en ese hueco.</summary>
+        public int Cantidad { get; set; }
+    }
+
+    /// <summary>POST api/Almacen/Picking/{picking}/CambiarHueco: lo que no estaba en un hueco se coge de otro.</summary>
+    public class CambiarHuecoPickingDTO
+    {
+        public string Producto { get; set; }
+        /// <summary>El hueco de la parada, donde no estaba (001/007/002 o 001007002).</summary>
+        public string HuecoOrigen { get; set; }
+        /// <summary>El hueco de donde se va a coger.</summary>
+        public string HuecoDestino { get; set; }
+        public int Cantidad { get; set; }
+    }
+
+    public class ResultadoCambiarHuecoDTO
+    {
+        /// <summary>Unidades cuya reserva ha pasado al otro hueco (puede ser menos de lo pedido).</summary>
+        public int Movidas { get; set; }
+        public string Mensaje { get; set; }
+    }
 }

@@ -4,6 +4,7 @@ using NestoAPI.Models;
 using NestoAPI.Models.PreparacionAlmacen;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
 using System.Web.Http;
@@ -35,13 +36,16 @@ namespace NestoAPI.Controllers
         private readonly IServicioRecepcionReposiciones reposiciones;
         private readonly IFichasProductoAlmacen fichas;
         private readonly IServicioEtiquetasHueco etiquetas;
+        private readonly IServicioCambioHuecoPicking cambioHueco;
 
         /// <param name="fichas">Familia, subgrupo, tamaño y unidad de cada producto que ve el mozo. Sin él, solo el nombre.</param>
         /// <param name="etiquetas">Imprimir etiquetas de hueco (Nesto y Ariadna).</param>
+        /// <param name="cambioHueco">Ariadna#12: coger de otro hueco lo que no estaba en el de la parada.</param>
         public AlmacenController(IServicioPreparacionAlmacen servicio, IServicioUbicacionesAlmacen ubicaciones,
             IServicioRecepcionCompras compras, IServicioRecepcionReposiciones reposiciones, IFichasProductoAlmacen fichas = null,
-            IServicioEtiquetasHueco etiquetas = null)
+            IServicioEtiquetasHueco etiquetas = null, IServicioCambioHuecoPicking cambioHueco = null)
         {
+            this.cambioHueco = cambioHueco;
             this.servicio = servicio;
             this.ubicaciones = ubicaciones;
             this.compras = compras;
@@ -167,6 +171,50 @@ namespace NestoAPI.Controllers
             }
         }
 
+        // GET api/Almacen/Picking/99633/Alternativas?producto=22624&hueco=001007002&empresa=1
+        /// <summary>
+        /// Ariadna#12: el mozo no encuentra el producto en el hueco de la parada. Los otros huecos del almacén donde hay
+        /// libre de ese producto, en el orden del recorrido (lista vacía si no hay ninguno: entonces es una falta).
+        /// </summary>
+        [HttpGet]
+        [Route("Picking/{picking:int}/Alternativas")]
+        [ResponseType(typeof(List<HuecoAlternativoDTO>))]
+        public async Task<IHttpActionResult> GetAlternativasDelPicking(int picking, string producto, string hueco = null,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            return cambioHueco == null
+                ? Ok(new List<HuecoAlternativoDTO>())
+                : Ok(await cambioHueco.LeerAlternativas(Empresa(empresa), picking, producto, hueco).ConfigureAwait(false));
+        }
+
+        // POST api/Almacen/Picking/99633/CambiarHueco?empresa=1   { "Producto": "22624", "HuecoOrigen": "001007002", "HuecoDestino": "003001002", "Cantidad": 2 }
+        /// <summary>
+        /// Ariadna#12: lo que no estaba en el hueco de la parada se coge de otro: la reserva del picking pasa a ese hueco
+        /// (y lo que no estaba queda «pendiente de ubicar», como en una falta). La línea del pedido no cambia. Si ya no
+        /// hay nada que cambiar (otro mozo se ha adelantado), 409 con el motivo.
+        /// </summary>
+        [HttpPost]
+        [Route("Picking/{picking:int}/CambiarHueco")]
+        [ResponseType(typeof(ResultadoCambiarHuecoDTO))]
+        public async Task<IHttpActionResult> PostCambiarHueco(int picking, [FromBody] CambiarHuecoPickingDTO cambio,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            if (cambioHueco == null)
+            {
+                return BadRequest("Este servidor todavía no sabe cambiar de hueco.");
+            }
+            ResultadoCambioHueco resultado = await cambioHueco.Cambiar(Empresa(empresa), picking, cambio, Usuario()).ConfigureAwait(false);
+            switch (resultado.Estado)
+            {
+                case EstadoCambioHueco.Cambiado:
+                    return Ok(new ResultadoCambiarHuecoDTO { Movidas = resultado.Movidas, Mensaje = resultado.Mensaje });
+                case EstadoCambioHueco.NoSePuede:
+                    return Content(HttpStatusCode.Conflict, resultado.Mensaje);
+                default:
+                    return BadRequest(resultado.Mensaje);
+            }
+        }
+
         // POST api/Almacen/Recogidas/PICK/99739/AnularLecturas?empresa=1   { "Usuario": "Pedro" }
         /// <summary>
         /// Ariadna#6: descarta TODO lo que un mozo ha leído en una salida (una prueba olvidada en la cola de su PDA), como si
@@ -205,6 +253,7 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> GetPackingDelPicking(int picking, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
         {
             PackingAlmacenDTO resultado = await servicio.LeerPacking(Empresa(empresa), picking).ConfigureAwait(false);
+            await CompletarFichas(Empresa(empresa), LineasDe(resultado)).ConfigureAwait(false);
             return resultado.Entregas.Count == 0 ? (IHttpActionResult)NotFound() : Ok(resultado);
         }
 
@@ -230,6 +279,7 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> GetPackingDelPedido(int pedido, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
         {
             PackingAlmacenDTO resultado = await servicio.LeerPackingDePedido(Empresa(empresa), pedido).ConfigureAwait(false);
+            await CompletarFichas(Empresa(empresa), LineasDe(resultado)).ConfigureAwait(false);
             return resultado == null || resultado.Entregas.Count == 0 ? (IHttpActionResult)NotFound() : Ok(resultado);
         }
 
@@ -530,6 +580,15 @@ namespace NestoAPI.Controllers
         private static string Empresa(string empresa)
         {
             return string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
+        }
+
+        /// <summary>Todas las líneas de un packing (de todas sus entregas y pedidos), para completar su ficha de una vez.</summary>
+        private static List<LineaPackingAlmacenDTO> LineasDe(PackingAlmacenDTO packing)
+        {
+            return packing?.Entregas?
+                .SelectMany(e => e.Pedidos ?? new List<PedidoPackingAlmacenDTO>())
+                .SelectMany(p => p.Lineas ?? new List<LineaPackingAlmacenDTO>())
+                .ToList();
         }
 
         private Task CompletarFichas(string empresa, IEnumerable<IConFichaProducto> productos)

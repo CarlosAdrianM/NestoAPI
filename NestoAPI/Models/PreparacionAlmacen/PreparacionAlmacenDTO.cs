@@ -128,12 +128,18 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public bool RecogidoEnAriadna { get; set; }
     }
 
-    public class LineaPackingAlmacenDTO
+    public class LineaPackingAlmacenDTO : IConFichaProducto
     {
         /// <summary>LinPedidoVta.[Nº Orden].</summary>
         public int LineaPedido { get; set; }
         public string Producto { get; set; }
         public string Descripcion { get; set; }
+        // Ariadna#9: en el packing se ve el producto como en el resto de pantallas (ficha y foto)
+        public string Familia { get; set; }
+        public string Subgrupo { get; set; }
+        public short? Tamano { get; set; }
+        public string UnidadMedida { get; set; }
+        public string UrlFoto { get; set; }
         public string CodigoBarras { get; set; }
         public bool SinCodigo { get; set; }
         /// <summary>Otro producto del mismo grupo de pedidos comparte el código.</summary>
