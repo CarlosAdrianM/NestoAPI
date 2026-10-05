@@ -85,15 +85,18 @@ FROM eventos
 ORDER BY momento_utc;
 
 -- Resumen: qué procedimientos y funciones han intervenido (si no sale ninguno, el informe lee las tablas a pelo)
+-- (Los valores del XML se sacan primero: SQL Server no admite métodos XML en el GROUP BY, error 4148.)
 ;WITH eventos AS (
     SELECT CAST(f.event_data AS xml) AS x
     FROM sys.fn_xe_file_target_read_file(N'Issue567_ImpresionNestoViejo*.xel', NULL, NULL, NULL) f
+), valores AS (
+    SELECT x.value('(event/@name)[1]', 'nvarchar(60)')                            AS evento,
+           x.value('(event/data[@name="object_name"]/value)[1]', 'nvarchar(200)') AS objeto
+    FROM eventos
 )
-SELECT x.value('(event/@name)[1]', 'nvarchar(60)')                            AS evento,
-       x.value('(event/data[@name="object_name"]/value)[1]', 'nvarchar(200)') AS objeto,
-       COUNT(*)                                                               AS veces
-FROM eventos
-GROUP BY x.value('(event/@name)[1]', 'nvarchar(60)'), x.value('(event/data[@name="object_name"]/value)[1]', 'nvarchar(200)')
+SELECT evento, objeto, COUNT(*) AS veces
+FROM valores
+GROUP BY evento, objeto
 ORDER BY veces DESC;
 GO
 
