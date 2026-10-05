@@ -1,4 +1,5 @@
-﻿using NestoAPI.Infraestructure.ExtractosProducto;
+﻿using NestoAPI.Infraestructure.Contadores;
+using NestoAPI.Infraestructure.ExtractosProducto;
 using NestoAPI.Models;
 using NestoAPI.Models.Facturas;
 using System;
@@ -19,6 +20,7 @@ namespace NestoAPI.Infraestructure.NotasEntrega
     {
         private readonly NVEntities db;
         private readonly IServicioExtractoProducto extractos;
+        private readonly INumeradorTraspasos numeradorTraspasos;
 
         public ServicioNotasEntrega(NVEntities db) : this(db, null)
         {
@@ -26,12 +28,14 @@ namespace NestoAPI.Infraestructure.NotasEntrega
 
         /// <summary>
         /// NestoAPI#313: prdExtrProducto se lanza por db.Database, que no es virtual y no se puede falsear; los tests
-        /// pasan aquí su propio servicio de extractos. En producción (null), el de siempre (único punto de llamada).
+        /// pasan aquí su propio servicio de extractos (y el numerador de traspasos, que también va por db.Database).
+        /// En producción (null), los de siempre (único punto de llamada).
         /// </summary>
-        internal ServicioNotasEntrega(NVEntities db, IServicioExtractoProducto extractos)
+        internal ServicioNotasEntrega(NVEntities db, IServicioExtractoProducto extractos, INumeradorTraspasos numeradorTraspasos = null)
         {
             this.db = db ?? throw new ArgumentNullException(nameof(db));
             this.extractos = extractos ?? new ServicioExtractoProducto();
+            this.numeradorTraspasos = numeradorTraspasos ?? new NumeradorTraspasosSql();
         }
 
         /// <summary>
@@ -110,12 +114,13 @@ namespace NestoAPI.Infraestructure.NotasEntrega
             contador.NotaEntrega = numeroNotaEntrega + 1;
             System.Diagnostics.Debug.WriteLine($"     [ServicioNotasEntrega] Número de nota de entrega asignado: {numeroNotaEntrega}");
 
-            // Obtener y actualizar número de traspaso para PreExtrProducto (si hay líneas ya facturadas)
+            // Número de traspaso para PreExtrProducto (si hay líneas ya facturadas). ContadoresGlobales.TraspasoAlmacén
+            // guarda el ÚLTIMO usado: antes se cogía tal cual y la nota repetía el traspaso anterior (05/10/26). Se
+            // reserva en BD con el numerador común (UPDATE…OUTPUT); la entidad no se toca para que el SaveChanges no lo pise.
             int numeroTraspaso = 0;
             if (hayLineasYaFacturadas)
             {
-                numeroTraspaso = contador.TraspasoAlmacén;
-                contador.TraspasoAlmacén = numeroTraspaso + 1;
+                numeroTraspaso = await numeradorTraspasos.Siguiente(db).ConfigureAwait(false);
                 System.Diagnostics.Debug.WriteLine($"     [ServicioNotasEntrega] Número de traspaso asignado: {numeroTraspaso}");
             }
 

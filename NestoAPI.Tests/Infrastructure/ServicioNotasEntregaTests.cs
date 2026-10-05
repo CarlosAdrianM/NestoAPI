@@ -1,5 +1,6 @@
 ﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NestoAPI.Infraestructure.Contadores;
 using NestoAPI.Infraestructure.NotasEntrega;
 using NestoAPI.Infraestructure.ExtractosProducto;
 using NestoAPI.Models;
@@ -26,6 +27,9 @@ namespace NestoAPI.Tests.Infrastructure
         private List<Ubicacion> ubicacionesBd;
         // prdExtrProducto no se puede lanzar sin BD: se registra la llamada.
         private List<(string Empresa, string Diario)> llamadasPrdExtrProducto;
+        // El siguiente traspaso sale de BD (UPDATE…OUTPUT por db.Database, que no se puede falsear): numerador falso.
+        private INumeradorTraspasos numerador;
+        private int siguienteTraspaso;
 
         [TestInitialize]
         public void Setup()
@@ -48,7 +52,10 @@ namespace NestoAPI.Tests.Infrastructure
                     llamadasPrdExtrProducto.Add((empresa, diario));
                     return Task.FromResult(1);
                 });
-            servicio = new ServicioNotasEntrega(db, extractos);
+            siguienteTraspaso = 5001;
+            numerador = A.Fake<INumeradorTraspasos>();
+            A.CallTo(() => numerador.Siguiente(A<NVEntities>.Ignored)).ReturnsLazily(() => Task.FromResult(siguienteTraspaso));
+            servicio = new ServicioNotasEntrega(db, extractos, numerador);
         }
 
         private static DbSet<T> DbSetCon<T>(List<T> datos) where T : class
@@ -531,8 +538,10 @@ namespace NestoAPI.Tests.Infrastructure
             var fakeCliente = new Cliente { Nombre = "Cliente Test Traspaso" };
             A.CallTo(() => db.Clientes.Find("1", "1007", "0")).Returns(fakeCliente);
 
+            // ContadoresGlobales.TraspasoAlmacén guarda el ÚLTIMO usado (7777): la nota lleva el siguiente (7778)
             var fakeContador = new ContadorGlobal { NotaEntrega = 1000, TraspasoAlmacén = 7777 };
             UsarContador(fakeContador);
+            siguienteTraspaso = 7778;
 
             var fakePreExtr = A.Fake<System.Data.Entity.DbSet<PreExtrProducto>>();
             A.CallTo(() => db.PreExtrProductos).Returns(fakePreExtr);
@@ -543,9 +552,10 @@ namespace NestoAPI.Tests.Infrastructure
             // Assert
             Assert.IsTrue(resultado.TeniaLineasYaFacturadas);
 
-            // Verificar que se insertó en PreExtrProducto con NºTraspaso de ContadoresGlobales
+            // Regresión (05/10/26): antes llevaba el 7777, el número del traspaso ANTERIOR (nota del 29/09 con el 80829
+            // de una reposición). Tiene que llevar el siguiente, el que reserva el numerador.
             A.CallTo(() => fakePreExtr.Add(A<PreExtrProducto>.That.Matches(p =>
-                p.NºTraspaso == 7777 && // Campo Traspaso debe venir de ContadoresGlobales.TraspasoAlmacén
+                p.NºTraspaso == 7778 &&
                 p.NºPedido == 88888 &&
                 p.Número == "PROD011"
             ))).MustHaveHappenedOnceExactly();
@@ -593,9 +603,20 @@ namespace NestoAPI.Tests.Infrastructure
             await servicio.ProcesarNotaEntrega(pedido, "NUEVAVISION\\Carlos");
 
             // Assert
-            // Verificar que el contador de TraspasoAlmacén se incrementó en 1
-            Assert.AreEqual(5001, fakeContador.TraspasoAlmacén, "ContadoresGlobales.TraspasoAlmacén debe incrementarse en 1");
-            Assert.AreEqual(1001, fakeContador.NotaEntrega, "ContadoresGlobales.NotaEntrega también debe incrementarse");
+            // El traspaso se reserva en BD con el numerador (una sola vez); la entidad no se toca, para que el
+            // SaveChanges no pise el valor que ha dejado el UPDATE…OUTPUT
+            A.CallTo(() => numerador.Siguiente(db)).MustHaveHappenedOnceExactly();
+            Assert.AreEqual(5000, fakeContador.TraspasoAlmacén, "El contador de traspasos no se toca en la entidad");
+            Assert.AreEqual(1001, fakeContador.NotaEntrega, "ContadoresGlobales.NotaEntrega sí se incrementa (guarda el siguiente)");
+        }
+
+        [TestMethod]
+        public void NumeradorTraspasosSql_SubeElContadorYDevuelveElValorNuevoEnUnaSolaSentencia()
+        {
+            // El contador guarda el último usado: el siguiente es el valor DESPUÉS de sumar 1, y sube y se lee de una
+            // vez (UPDATE…OUTPUT) para que dos operaciones a la vez no se lleven el mismo número
+            StringAssert.Contains(NumeradorTraspasosSql.SQL_SIGUIENTE, "SET TraspasoAlmacén = TraspasoAlmacén + 1");
+            StringAssert.Contains(NumeradorTraspasosSql.SQL_SIGUIENTE, "OUTPUT inserted.TraspasoAlmacén");
         }
 
         [TestMethod]
@@ -658,6 +679,7 @@ namespace NestoAPI.Tests.Infrastructure
 
             var fakeContador = new ContadorGlobal { NotaEntrega = 1000, TraspasoAlmacén = 9000 };
             UsarContador(fakeContador);
+            siguienteTraspaso = 9001;
 
             var fakePreExtr = A.Fake<System.Data.Entity.DbSet<PreExtrProducto>>();
             A.CallTo(() => db.PreExtrProductos).Returns(fakePreExtr);
@@ -666,21 +688,21 @@ namespace NestoAPI.Tests.Infrastructure
             await servicio.ProcesarNotaEntrega(pedido, "NUEVAVISION\\Carlos");
 
             // Assert
-            // Verificar que TODAS las líneas usaron el MISMO número de traspaso (9000)
+            // Verificar que TODAS las líneas usaron el MISMO número de traspaso (el siguiente: 9001)
             A.CallTo(() => fakePreExtr.Add(A<PreExtrProducto>.That.Matches(p =>
-                p.NºTraspaso == 9000 && p.Número == "PROD013"
+                p.NºTraspaso == 9001 && p.Número == "PROD013"
             ))).MustHaveHappenedOnceExactly();
 
             A.CallTo(() => fakePreExtr.Add(A<PreExtrProducto>.That.Matches(p =>
-                p.NºTraspaso == 9000 && p.Número == "PROD014"
+                p.NºTraspaso == 9001 && p.Número == "PROD014"
             ))).MustHaveHappenedOnceExactly();
 
             A.CallTo(() => fakePreExtr.Add(A<PreExtrProducto>.That.Matches(p =>
-                p.NºTraspaso == 9000 && p.Número == "PROD015"
+                p.NºTraspaso == 9001 && p.Número == "PROD015"
             ))).MustHaveHappenedOnceExactly();
 
-            // Verificar que el contador solo se incrementó UNA VEZ (no 3 veces)
-            Assert.AreEqual(9001, fakeContador.TraspasoAlmacén, "Contador debe incrementarse solo una vez por pedido, no por línea");
+            // Un solo número por pedido, no uno por línea
+            A.CallTo(() => numerador.Siguiente(A<NVEntities>.Ignored)).MustHaveHappenedOnceExactly();
         }
 
         [TestMethod]
@@ -718,6 +740,7 @@ namespace NestoAPI.Tests.Infrastructure
 
             // Assert
             // Verificar que el contador de TraspasoAlmacén NO se incrementó (porque YaFacturado=false)
+            A.CallTo(() => numerador.Siguiente(A<NVEntities>.Ignored)).MustNotHaveHappened();
             Assert.AreEqual(5000, fakeContador.TraspasoAlmacén, "TraspasoAlmacén NO debe incrementarse si no hay líneas YaFacturado=true");
             Assert.AreEqual(1001, fakeContador.NotaEntrega, "NotaEntrega sí debe incrementarse siempre");
         }

@@ -1,4 +1,5 @@
-﻿using NestoAPI.Infraestructure.ExtractosProducto;
+﻿using NestoAPI.Infraestructure.Contadores;
+using NestoAPI.Infraestructure.ExtractosProducto;
 using NestoAPI.Models;
 using NestoAPI.Models.Kits;
 using System;
@@ -14,14 +15,16 @@ namespace NestoAPI.Infraestructure.Kits
     public class UbicacionService : IUbicacionService
     {
         private readonly IServicioExtractoProducto extractos;
+        private readonly INumeradorTraspasos numeradorTraspasos;
 
         public UbicacionService() : this(null)
         {
         }
 
-        internal UbicacionService(IServicioExtractoProducto extractos)
+        internal UbicacionService(IServicioExtractoProducto extractos, INumeradorTraspasos numeradorTraspasos = null)
         {
             this.extractos = extractos ?? new ServicioExtractoProducto();
+            this.numeradorTraspasos = numeradorTraspasos ?? new NumeradorTraspasosSql();
         }
 
         public async Task<int> PersistirMontarKit(List<PreExtractoProductoDTO> preExtractosUbicados)
@@ -30,8 +33,9 @@ namespace NestoAPI.Infraestructure.Kits
             {
                 using (var transaction = db.Database.BeginTransaction())
                 {
-                    var contador = db.ContadoresGlobales.Single();
-                    var traspaso = ++contador.TraspasoAlmacén;
+                    // El mismo número que antes (último usado + 1), pero reservado en BD de una vez y dentro de la
+                    // transacción: dos montajes a la vez ya no se llevan el mismo
+                    var traspaso = await numeradorTraspasos.Siguiente(db).ConfigureAwait(false);
 
                     try
                     {
