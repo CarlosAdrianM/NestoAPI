@@ -41,6 +41,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         List<LinPedidoVta> CargarLineasPedidoPendientes(int pedido);
         List<LinPedidoVta> CargarLineasPedidoSinPicking(int pedido);
         List<EfectoPedidoVenta> CargarEfectosPedido(string empresa, int pedido);
+        /// <summary>NestoAPI#569: los prepagos del pedido (facturados o no).</summary>
+        List<Prepago> CargarPrepagosPedido(string empresa, int pedido);
         /// <summary>NestoAPI#513: números de factura (distintos, recortados) de las líneas del pedido; vacío si no está facturado.</summary>
         List<string> FacturasDelPedido(string empresa, int pedido);
         /// <summary>

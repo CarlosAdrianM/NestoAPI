@@ -406,6 +406,20 @@ namespace NestoAPI.Infraestructure.Agencias
         }
 
         /// <summary>
+        /// NestoAPI#569: lo que el cliente ya ha pagado por adelantado en el pedido (prepagos aún sin facturar).
+        /// <see cref="ImporteReembolso(CabPedidoVta, IEnumerable{LinPedidoVta}, IServicioPedidosVenta)"/> NO lo resta
+        /// (decisión de Carlos 05/10/26): se informa a quien hace la etiqueta y decide él si lo descuenta.
+        /// </summary>
+        public static decimal ImportePrepagosPendientes(IEnumerable<Prepago> prepagos)
+        {
+            decimal total = (prepagos ?? Enumerable.Empty<Prepago>())
+                .Where(p => string.IsNullOrWhiteSpace(p.Factura))
+                .Sum(p => p.Importe);
+            total = RoundingHelper.DosDecimalesRound(total);
+            return total < 0 ? 0 : total;
+        }
+
+        /// <summary>
         /// Issue #250 / NestoAPI#513: si el pedido tiene efectos manuales, mandan ellos (y no la forma de
         /// pago): se cobra la suma de los que son en efectivo. Si el pedido ya está facturado, esos
         /// efectos pueden estar cobrados (entrada pagada por adelantado, 925835): manda lo que quede

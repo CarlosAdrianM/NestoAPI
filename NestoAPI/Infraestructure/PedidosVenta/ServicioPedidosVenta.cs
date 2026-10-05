@@ -312,5 +312,15 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     .ToList();
             }
         }
+
+        public List<Prepago> CargarPrepagosPedido(string empresa, int pedido)
+        {
+            using (var db = new NVEntities())
+            {
+                return db.Prepagos
+                    .Where(p => p.Empresa == empresa && p.Pedido == pedido)
+                    .ToList();
+            }
+        }
     }
 }

@@ -945,6 +945,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 servicio);
         }
 
+        /// <summary>NestoAPI#569: prepagos del pedido sin facturar (para avisar al hacer la etiqueta).</summary>
+        internal decimal ImportePrepagosPendientes(string empresa, int pedido)
+        {
+            return GestorEnviosAgencia.ImportePrepagosPendientes(servicio.CargarPrepagosPedido(empresa, pedido));
+        }
+
         internal async Task<PedidoVentaDTO> UnirPedidos(string empresa, int numeroPedidoOriginal, int numeroPedidoAmpliacion, bool sinPasarValidacion = false)
         {
             PedidoVentaDTO pedidoOriginal = await LeerPedido(empresa, numeroPedidoOriginal).ConfigureAwait(false);

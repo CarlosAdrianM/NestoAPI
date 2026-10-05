@@ -65,6 +65,43 @@ namespace NestoAPI.Tests.Infrastructure
 
         #endregion
 
+        #region ImportePrepagosPendientes - NestoAPI#569 (se informa, no se descuenta del reembolso)
+
+        [TestMethod]
+        public void ImportePrepagosPendientes_SumaSoloLosPrepagosSinFacturar()
+        {
+            var servicio = A.Fake<IServicioPedidosVenta>();
+            A.CallTo(() => servicio.CargarPrepagosPedido(EMPRESA, PEDIDO)).Returns(new List<Prepago>
+            {
+                new Prepago { Empresa = EMPRESA, Pedido = PEDIDO, Importe = 50m },
+                new Prepago { Empresa = EMPRESA, Pedido = PEDIDO, Importe = 20.255m, Factura = "  " },
+                new Prepago { Empresa = EMPRESA, Pedido = PEDIDO, Importe = 100m, Factura = "NV2616038 " }
+            });
+
+            Assert.AreEqual(70.26m, new GestorPedidosVenta(servicio).ImportePrepagosPendientes(EMPRESA, PEDIDO),
+                "El facturado ya no cuenta; redondeo a 2 decimales");
+        }
+
+        [TestMethod]
+        public void ImportePrepagosPendientes_SinPrepagos_DevuelveCero()
+        {
+            var servicio = A.Fake<IServicioPedidosVenta>();
+            A.CallTo(() => servicio.CargarPrepagosPedido(EMPRESA, PEDIDO)).Returns(new List<Prepago>());
+
+            Assert.AreEqual(0m, new GestorPedidosVenta(servicio).ImportePrepagosPendientes(EMPRESA, PEDIDO));
+        }
+
+        [TestMethod]
+        public void ImportePrepagosPendientes_NoCambiaElReembolso()
+        {
+            // Decisión de Carlos (05/10/26): el reembolso de la etiqueta sigue sin descontar los prepagos;
+            // Agencias de Nesto avisa y quien hace la etiqueta decide.
+            Assert.AreEqual(0m, GestorEnviosAgencia.ImportePrepagosPendientes(null));
+            Assert.AreEqual(0m, GestorEnviosAgencia.ImportePrepagosPendientes(new[] { new Prepago { Importe = -5m } }), "Nunca negativo");
+        }
+
+        #endregion
+
         #region ImporteReembolso - NestoAPI#513 (efectos manuales EFC ya cobrados)
 
         private static (GestorPedidosVenta gestor, IServicioPedidosVenta servicio) GestorCon925835()

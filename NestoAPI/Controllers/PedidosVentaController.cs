@@ -2341,6 +2341,19 @@ namespace NestoAPI.Controllers
             return Ok(importeReembolso);
         }
 
+        // GET: api/PedidosVenta/PrepagosPendientes?empresa=1&pedido=927700
+        /// <summary>
+        /// NestoAPI#569: lo ya pagado por adelantado en el pedido (prepagos sin facturar). El reembolso
+        /// (ImporteReembolso) NO lo descuenta: Agencias de Nesto avisa y quien hace la etiqueta decide.
+        /// </summary>
+        [HttpGet]
+        [ResponseType(typeof(decimal))]
+        [Route("api/PedidosVenta/PrepagosPendientes")]
+        public IHttpActionResult PrepagosPendientes(string empresa, int pedido)
+        {
+            return Ok(gestor.ImportePrepagosPendientes(empresa, pedido));
+        }
+
         // GET: api/PedidosVenta/PorReferenciaCanal
         // Nesto#340: nº del pedido Nesto cuyos Comentarios EMPIEZAN por la referencia del canal
         // externo (Prestashop la escribe en la primera línea al crear el pedido). Antes
