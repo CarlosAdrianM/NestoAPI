@@ -50,7 +50,8 @@ namespace NestoAPI.Infraestructure.Facturas
         public ServicioFacturas(NVEntities dbExterno, Verifactu.IServicioVerifactu servicioVerifactu, ILogService logService = null,
             Rectificativas.IAlmacenRectificativasPendientes almacenRectificativasPendientes = null,
             Clientes.IServicioValidacionNif servicioValidacionNif = null,
-            Clientes.NotificadorNifIncorrecto notificadorNif = null)
+            Clientes.NotificadorNifIncorrecto notificadorNif = null,
+            ChequesRegalo.IGeneradorChequesRegalo generadorChequesRegalo = null)
         {
             if (dbExterno != null)
             {
@@ -71,8 +72,12 @@ namespace NestoAPI.Infraestructure.Facturas
             // NestoAPI#327: validación del NIF contra la AEAT al facturar
             this.servicioValidacionNif = servicioValidacionNif ?? new Clientes.ServicioValidacionNif(db);
             this.notificadorNif = notificadorNif ?? new Clientes.NotificadorNifIncorrecto(db);
+            // NestoAPI#593: cheque regalo de la primera factura de la campaña (apagado salvo ChequesRegalo:Generar)
+            this.generadorChequesRegalo = generadorChequesRegalo
+                ?? new ChequesRegalo.GeneradorChequesRegalo(new ChequesRegalo.RepositorioChequesRegalo(db));
         }
 
+        private readonly ChequesRegalo.IGeneradorChequesRegalo generadorChequesRegalo;
         private readonly Rectificativas.IAlmacenRectificativasPendientes almacenRectificativasPendientes;
         private readonly Clientes.IServicioValidacionNif servicioValidacionNif;
         private readonly Clientes.NotificadorNifIncorrecto notificadorNif;
@@ -753,6 +758,11 @@ namespace NestoAPI.Infraestructure.Facturas
                     }
                 }
 
+                // NestoAPI#593: la primera factura de venta normal de la campaña genera el cheque regalo. Best-effort:
+                // la factura ya está creada y nunca se tumba por esto.
+                await AnadirChequeRegalo(generadorChequesRegalo, respuestaFactura, cabPedido.Nº_Cliente, DateTime.Today,
+                    usuarioAutenticado ?? usuario);
+
                 return respuestaFactura;
             }
             catch (SqlException sqlEx)
@@ -781,6 +791,30 @@ namespace NestoAPI.Infraestructure.Facturas
                     pedido: pedido,
                     usuario: usuario)
                     .WithData("SeAplicoAutoFixPreventivo", seAplicoAutoFix);
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#593: si la factura genera el cheque regalo de la campaña, el aviso va a quien factura. Un fallo
+        /// (tablas sin crear, red…) va a ELMAH y la factura sigue adelante: ya está creada.
+        /// </summary>
+        internal static async Task AnadirChequeRegalo(ChequesRegalo.IGeneradorChequesRegalo generador,
+            CrearFacturaResponseDTO respuesta, string cliente, DateTime fechaFactura, string usuario)
+        {
+            if (generador == null || respuesta == null)
+            {
+                return;
+            }
+            try
+            {
+                List<string> avisos = await generador.GenerarPorFactura(respuesta.Empresa?.Trim(), respuesta.NumeroFactura?.Trim(),
+                    cliente?.Trim(), fechaFactura, usuario).ConfigureAwait(false);
+                respuesta.Avisos.AddRange(avisos ?? new List<string>());
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Cheques regalo #593] No se pudo generar el cheque de la factura " +
+                    $"{respuesta.NumeroFactura?.Trim()} (cliente {cliente?.Trim()}): {ex.Message}", ex));
             }
         }
 

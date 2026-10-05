@@ -750,6 +750,7 @@
     <Compile Include="Infraestructure\Domiciliaciones\ServicioDomiciliaciones.cs" />
     <Compile Include="Infraestructure\GestorAgenciasGlovo.cs" />
     <Compile Include="Infraestructure\GeneradorPdfModelo347.cs" />
+    <Compile Include="Infraestructure\ChequesRegalo\ChequesRegalo.cs" />
     <Compile Include="Infraestructure\Clientes\NotificadorNifIncorrecto.cs" />
     <Compile Include="Infraestructure\Clientes\ConsultasClientePrincipal.cs" />
     <Compile Include="Infraestructure\Productos\FamiliasRestringidas.cs" />

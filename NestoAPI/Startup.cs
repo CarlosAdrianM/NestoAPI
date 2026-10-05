@@ -784,6 +784,21 @@ namespace NestoAPI
                 }
             );
             Console.WriteLine("✅ Job recurrente 'aviso-facturas-vencidas' configurado (L-V a las 7:45; apagado salvo parámetro)");
+
+            // NestoAPI#593: cheques regalo de las facturas hechas fuera de la API (Nesto viejo, facturación
+            // agrupada…). La API ya los genera al facturar; esto recoge lo que se le escape. Todos los días a
+            // las 21:30, con la facturación del día cerrada. No hace nada salvo ChequesRegalo:Generar = true y
+            // una campaña Activa en su ventana (más 7 días).
+            RecurringJob.AddOrUpdate(
+                "cheques-regalo-reconciliacion",
+                () => Infraestructure.ChequesRegalo.ChequesRegaloJobsService.Reconciliar(),
+                "30 21 * * *", // Cron: todos los días a las 21:30
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'cheques-regalo-reconciliacion' configurado (diario a las 21:30; apagado salvo interruptor)");
         }
     }
 
