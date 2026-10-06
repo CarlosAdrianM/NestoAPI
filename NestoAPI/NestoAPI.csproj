@@ -918,6 +918,9 @@
     <Compile Include="Infraestructure\Reposiciones\ServicioPropuestaReposicion.cs" />
     <Compile Include="Infraestructure\Reposiciones\PreparacionReposicion.cs" />
     <Compile Include="Infraestructure\Reposiciones\UbicacionesReposicion.cs" />
+    <Compile Include="Infraestructure\Ubicaciones\PlanificadorReservaHuecos.cs" />
+    <Compile Include="Infraestructure\Ubicaciones\PuertaUbicaciones.cs" />
+    <Compile Include="Infraestructure\Ubicaciones\PuertaUbicacionesSql.cs" />
     <Compile Include="Controllers\ReposicionesController.cs" />
     <Compile Include="Infraestructure\ExtractosRuta\ServicioExtractoRuta.cs" />
     <Compile Include="Infraestructure\Alquileres\IProductosAlquilerService.cs" />
