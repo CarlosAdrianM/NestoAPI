@@ -688,6 +688,9 @@ namespace NestoAPI.Controllers
                 return BadRequest();
             }
 
+            // NestoAPI#596: el CP se graba canónico («4480 670» -> «4480-670»).
+            enviosAgencia.CodPostal = CodigoPostalEnvio(enviosAgencia.CodPostal, Infraestructure.Direcciones.CodigoPostal.PaisIso(enviosAgencia.Pais));
+
             // Issue #135: Si la etiqueta pasa a estado >= en_curso, convertir el sentinel
             // de reembolso a 0 para evitar enviar valores negativos a la agencia
             if (enviosAgencia.Estado >= Constantes.Agencias.ESTADO_EN_CURSO && enviosAgencia.Reembolso < 0)
@@ -1146,7 +1149,8 @@ namespace NestoAPI.Controllers
         {
             if (!string.IsNullOrWhiteSpace(datos.Nombre)) datosRemotos.Nombre = datos.Nombre.Trim();
             if (!string.IsNullOrWhiteSpace(datos.Direccion)) datosRemotos.Direccion = datos.Direccion.Trim();
-            if (!string.IsNullOrWhiteSpace(datos.CodigoPostal)) datosRemotos.CodigoPostal = datos.CodigoPostal.Trim();
+            // NestoAPI#596: canónico, tanto para la agencia como para lo que se graba después.
+            if (!string.IsNullOrWhiteSpace(datos.CodigoPostal)) datosRemotos.CodigoPostal = CodigoPostalEnvio(datos.CodigoPostal, Infraestructure.Direcciones.CodigoPostal.PaisIso(datosRemotos.Pais));
             if (!string.IsNullOrWhiteSpace(datos.Poblacion)) datosRemotos.Poblacion = datos.Poblacion.Trim();
             if (!string.IsNullOrWhiteSpace(datos.Telefono)) datosRemotos.Telefono = datos.Telefono.Trim();
             if (!string.IsNullOrWhiteSpace(datos.Movil)) datosRemotos.Movil = datos.Movil.Trim();
@@ -1390,6 +1394,21 @@ namespace NestoAPI.Controllers
             {
                 return null;
             }
+        }
+
+        /// <summary>
+        /// NestoAPI#596: el CP que se graba en un envío, en el canónico de Direcciones.CodigoPostal
+        /// («4480 670» o «4480670» -> «4480-670»). Con UNA excepción: un CP de 4 cifras no se rellena
+        /// con el cero aunque el país diga España. Los envíos copian el CP de la ficha, y en una ficha un
+        /// CP español de 4 cifras no puede existir (la FK con CódigosPostales obliga a 5): esos son de
+        /// Bélgica, Suiza o Portugal con el país mal puesto (hay decenas así en Clientes con país ES).
+        /// Nunca rechaza nada; null queda en "".
+        /// </summary>
+        internal static string CodigoPostalEnvio(string codigoPostal, string paisIso)
+        {
+            string tecleado = codigoPostal?.Trim() ?? string.Empty;
+            string canonico = Infraestructure.Direcciones.CodigoPostal.Normalizar(tecleado, paisIso) ?? string.Empty;
+            return canonico.Length == 5 && tecleado.Length == 4 ? tecleado : canonico;
         }
 
         private static DatosEnvioRemoto MapearEnvioRemoto(EnviosAgencia envio) => new DatosEnvioRemoto
@@ -1690,6 +1709,9 @@ namespace NestoAPI.Controllers
 
             enviosAgencia.Usuario = Infraestructure.UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
             RecortarTextosLibres(enviosAgencia);
+            // NestoAPI#596: el CP se graba canónico («4480 670» -> «4480-670»). También cubre la
+            // importación de Canales Externos, que entra por aquí.
+            enviosAgencia.CodPostal = CodigoPostalEnvio(enviosAgencia.CodPostal, Infraestructure.Direcciones.CodigoPostal.PaisIso(enviosAgencia.Pais));
             db.EnviosAgencias.Add(enviosAgencia);
             await db.SaveChangesAsync();
 
@@ -1803,17 +1825,20 @@ namespace NestoAPI.Controllers
                 return BadRequest("No se encontró la dirección del contacto del pedido");
             }
 
+            // NestoAPI#596: el CP de la ficha, canónico, para elegir agencia, validar y grabar.
+            string codPostalFicha = CodigoPostalEnvio(direccion.CodPostal, direccion.Pais);
+
             // NestoAPI#494 (28/09/26): «Recoger producto» ya no fija GLS; la agencia la elige el comparador
             // igual que la de un envío, en el modo del retorno. Sin agencia con precio, GLS como siempre.
             if (request.Agencia <= 0)
             {
-                request.Agencia = ElegirAgenciaPendiente(request, direccion.CodPostal?.Trim() ?? "",
+                request.Agencia = ElegirAgenciaPendiente(request, codPostalFicha,
                     request.CobrarReembolso ? request.ImporteReembolso ?? 0m : 0m);
             }
 
             // NestoAPI#204: validar combinación agencia + destino antes de crear la etiqueta.
             var errorAgencia = ValidarAgenciaCompatibleConDestino(
-                request.Agencia, direccion.CodPostal?.Trim() ?? "", pedido, request.CobrarReembolso);
+                request.Agencia, codPostalFicha, pedido, request.CobrarReembolso);
             if (errorAgencia != null)
             {
                 return BadRequest(errorAgencia);
@@ -1822,7 +1847,7 @@ namespace NestoAPI.Controllers
             // Cobertura de tarifa: una agencia del comparador (GLS/Innovatrans) no puede tramitar una
             // zona en la que NO tiene tarifa (p.ej. GLS a Portugal). Mismo criterio que el comparador
             // de Nesto, para que los 3 clientes (Nesto, NestoApp, TiendasNuevaVision) se comporten igual.
-            var errorCobertura = ValidarCoberturaTarifa(request.Agencia, direccion.CodPostal?.Trim() ?? "", request.Empresa);
+            var errorCobertura = ValidarCoberturaTarifa(request.Agencia, codPostalFicha, request.Empresa);
             if (errorCobertura != null)
             {
                 return BadRequest(errorCobertura);
@@ -1849,7 +1874,7 @@ namespace NestoAPI.Controllers
                 reembolso = GestorEnviosAgencia.ImporteReembolso(pedido, pedido.LinPedidoVtas, ServicioPedidosVenta);
             }
 
-            var codPostal = direccion.CodPostal?.Trim() ?? "";
+            var codPostal = codPostalFicha;
             var defaultsAgencia = ObtenerDefaultsAgencia(request.Agencia, codPostal);
 
             // NestoAPI#310: red de seguridad — la casilla "Recoger producto" (Nesto/NestoApp) crea
@@ -2074,7 +2099,7 @@ namespace NestoAPI.Controllers
             envio.Contacto = request.Contacto;
             envio.Nombre = direccion.Nombre?.Trim() ?? "";
             envio.Direccion = direccion.Dirección?.Trim() ?? "";
-            envio.CodPostal = direccion.CodPostal?.Trim() ?? "";
+            envio.CodPostal = CodigoPostalEnvio(direccion.CodPostal, direccion.Pais); // NestoAPI#596
             envio.Poblacion = direccion.Población?.Trim() ?? "";
             envio.Provincia = direccion.Provincia?.Trim() ?? "";
             envio.Telefono = telefono.FijoUnico();

@@ -95,12 +95,13 @@ namespace NestoAPI.Tests.Infraestructure.Direcciones
         }
 
         [TestMethod]
-        public void PaisIso_Numerico_SoloEspanaYPortugal()
+        public void PaisIso_Numerico_EspanaPortugalYElRestoTalCual()
         {
             Assert.AreEqual("PT", CP.PaisIso(351));
             Assert.AreEqual("ES", CP.PaisIso(34));
-            Assert.AreEqual(string.Empty, CP.PaisIso(0));
-            Assert.AreEqual(string.Empty, CP.PaisIso(2));
+            Assert.AreEqual(string.Empty, CP.PaisIso(0), "Sin informar: se deduce del CP");
+            Assert.AreEqual("32", CP.PaisIso(32), "Otro país: su CP no se rellena como si fuera español");
+            Assert.AreEqual("2000", CP.Normalizar("2000", CP.PaisIso(32)));
         }
 
         // ---- Regresión: los parsers delegan y aceptan los cuatro formatos ----

@@ -57,12 +57,12 @@ namespace NestoAPI.Infraestructure.Direcciones
             }
         }
 
-        /// <summary>EnviosAgencia.Pais (numérico) → ISO-2. 34/724 = ES, 351/620 = PT; otro = "" (se deduce del CP).</summary>
+        /// <summary>
+        /// EnviosAgencia.Pais (numérico) → ISO-2. 34/724 = ES, 351/620 = PT; 0 (sin informar) = "" (se deduce
+        /// del CP); cualquier otro número se devuelve tal cual: es otro país y su CP no se toca.
+        /// </summary>
         public static string PaisIso(int pais)
-        {
-            string iso = PaisIso(pais.ToString());
-            return iso == ESPANA || iso == PORTUGAL ? iso : string.Empty;
-        }
+            => pais == 0 ? string.Empty : PaisIso(pais.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
         /// <summary>Solo las cifras del texto ("" si es null).</summary>
         public static string Digitos(string texto)

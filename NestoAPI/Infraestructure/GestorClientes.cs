@@ -58,6 +58,10 @@ namespace NestoAPI.Infraestructure
                 throw new ArgumentException("El código postal no puede estar en blanco");
             }
 
+            // NestoAPI#596: el usuario teclea el CP como quiere («4480 670», «8850»); se busca y se
+            // devuelve el canónico, que es el que acabará grabado en la ficha.
+            codigoPostal = await CodigoPostalParaGuardar(Constantes.Empresas.EMPRESA_POR_DEFECTO, codigoPostal, pais).ConfigureAwait(false);
+
             RespuestaDatosGeneralesClientes respuesta;
             if (EsPaisExtranjero(pais))
             {
@@ -128,7 +132,9 @@ namespace NestoAPI.Infraestructure
             // y el INSERT (que sí hacía Trim) chocaba con PK_CódigosPostales (caso real: CAP
             // 16145 de Génova vs CP 16145 de Cuenca ya en la tabla). Búsqueda e insert deben
             // usar el mismo valor normalizado.
-            codigoPostal = codigoPostal?.Trim();
+            // NestoAPI#596: además, en su formato canónico («4480 670» -> «4480-670») para que la tabla no
+            // siga acumulando el mismo CP en tres formatos (CodigoPostalParaGuardar ya hace el Trim).
+            codigoPostal = await CodigoPostalParaGuardar(empresa, codigoPostal, pais).ConfigureAwait(false);
             CodigoPostal cpDb = await servicio.BuscarCodigoPostal(empresa, codigoPostal).ConfigureAwait(false);
             if (cpDb != null)
             {
@@ -188,6 +194,32 @@ namespace NestoAPI.Infraestructure
             };
             _ = db.CodigosPostales.Add(cpDb);
             return (cpDb, true);
+        }
+
+        /// <summary>
+        /// NestoAPI#596: el CP que se graba en la ficha (y en CódigosPostales). El canónico de
+        /// <see cref="Direcciones.CodigoPostal.Normalizar"/> según el país (ISO-2; vacío = se deduce del
+        /// formato). Mientras la limpieza de la BD (paso 4) no fusione los duplicados, si la tabla solo
+        /// tiene el CP en el formato tecleado y no en el canónico, se queda el tecleado: si no, la FK
+        /// FK_Clientes_CódigosPostales rompería (español) o se crearía otra fila (extranjero).
+        /// Nunca rechaza nada por formato.
+        /// </summary>
+        internal async Task<string> CodigoPostalParaGuardar(string empresa, string codigoPostal, string pais)
+        {
+            string tecleado = codigoPostal?.Trim();
+            string canonico = Direcciones.CodigoPostal.Normalizar(codigoPostal, pais);
+            if (string.IsNullOrEmpty(canonico) || canonico == tecleado)
+            {
+                return canonico;
+            }
+            empresa = empresa ?? Constantes.Empresas.EMPRESA_POR_DEFECTO;
+            if (await servicio.BuscarCodigoPostal(empresa, canonico).ConfigureAwait(false) != null)
+            {
+                return canonico;
+            }
+            return await servicio.BuscarCodigoPostal(empresa, tecleado).ConfigureAwait(false) != null
+                ? tecleado
+                : canonico;
         }
 
         /// <summary>
@@ -1037,6 +1069,14 @@ namespace NestoAPI.Infraestructure
             }
             clienteDB.Nombre = clienteModificar.Nombre;
             clienteDB.Dirección = clienteModificar.Direccion;
+            // NestoAPI#596: si el CP cambia, se graba canónico («4480 670» -> «4480-670», «8850» en
+            // España -> «08850»). Si el usuario no lo ha tocado se deja como está: lo que ya hay en la
+            // BD lo limpia el script del paso 4, no una edición de otro campo (hay CPs de 4 cifras de
+            // Bélgica o Suiza en fichas con país ES que no deben convertirse en uno español).
+            if (clienteDB.CodPostal?.Trim() != clienteModificar.CodigoPostal?.Trim())
+            {
+                clienteModificar.CodigoPostal = await CodigoPostalParaGuardar(clienteModificar.Empresa, clienteModificar.CodigoPostal, clienteDB.Pais).ConfigureAwait(false);
+            }
             // Aquí hay que modificar la población y la provincia si el código postal ha cambiado
             if (clienteDB.CodPostal?.Trim() != clienteModificar.CodigoPostal)
             {
@@ -1290,6 +1330,10 @@ namespace NestoAPI.Infraestructure
                 clienteCrear.Estado = Constantes.Clientes.Estados.VISITA_TELEFONICA;
             }
 
+            // NestoAPI#596: el CP se graba canónico («4480 670» -> «4480-670», «8850» en España -> «08850»).
+            string paisCliente = string.IsNullOrWhiteSpace(clienteCrear.Pais) ? "ES" : clienteCrear.Pais.Trim().ToUpper();
+            clienteCrear.CodigoPostal = await CodigoPostalParaGuardar(Constantes.Empresas.EMPRESA_POR_DEFECTO, clienteCrear.CodigoPostal, paisCliente).ConfigureAwait(false);
+
             Cliente cliente = new Cliente
             {
                 Empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO,
@@ -1299,7 +1343,7 @@ namespace NestoAPI.Infraestructure
                 AlbaranValorado = true,
                 CIF_NIF = clienteCrear.Nif,
                 // NestoAPI#355: país ISO-2; sin indicar = ES (default de la casa para el histórico).
-                Pais = string.IsNullOrWhiteSpace(clienteCrear.Pais) ? "ES" : clienteCrear.Pais.Trim().ToUpper(),
+                Pais = paisCliente,
                 ClientePrincipal = !clienteCrear.EsContacto,
                 CodPostal = clienteCrear.CodigoPostal?.Trim(),
                 Comentarios = clienteCrear.Comentarios,
