@@ -164,6 +164,56 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             Assert.AreEqual("C48", (string)m["shipping_type_code"]);
         }
 
+        [DataTestMethod]
+        [DataRow("4480 670", 351)]
+        [DataRow("4480670", 351)]
+        [DataRow("4480-670 ", 0)]
+        [DataRow("4480 670", 34)] // envío 249519: dado de alta con país España
+        public void ConstruirManifiesto_PortugalEnCualquierFormato_MandaElCPConGuion(string cp, int pais)
+        {
+            // NestoAPI#596: a CTT siempre con guion (lo que usa su propia colección Postman).
+            var agencia = new AgenciaRemotaCTT(new FakeClienteRest(), Config());
+            DatosEnvioRemoto envio = EnvioMadrid();
+            envio.CodigoPostal = cp;
+            envio.Pais = pais;
+            envio.Poblacion = "VILA DO CONDE";
+
+            JObject m = agencia.ConstruirManifiesto(envio);
+
+            Assert.AreEqual("4480-670", (string)m["recipient_postal_code"]);
+            Assert.AreEqual("PT", (string)m["recipient_country_code"]);
+            Assert.AreEqual("C48", (string)m["shipping_type_code"]);
+            Assert.AreEqual("28110", (string)m["sender_postal_code"]);
+        }
+
+        [TestMethod]
+        public void ConstruirManifiesto_PortugalSoloCuatroCifrasConPaisPortugal_EsPortugal()
+        {
+            var agencia = new AgenciaRemotaCTT(new FakeClienteRest(), Config());
+            DatosEnvioRemoto envio = EnvioMadrid();
+            envio.CodigoPostal = "4480";
+            envio.Pais = 351;
+
+            JObject m = agencia.ConstruirManifiesto(envio);
+
+            Assert.AreEqual("PT", (string)m["recipient_country_code"]);
+            Assert.AreEqual("4480", (string)m["recipient_postal_code"]);
+        }
+
+        [TestMethod]
+        public void ConstruirManifiesto_EspanaSinElCero_MandaCincoCifras()
+        {
+            var agencia = new AgenciaRemotaCTT(new FakeClienteRest(), Config());
+            DatosEnvioRemoto envio = EnvioMadrid();
+            envio.CodigoPostal = "8850";
+            envio.Pais = 34;
+
+            JObject m = agencia.ConstruirManifiesto(envio);
+
+            Assert.AreEqual("08850", (string)m["recipient_postal_code"]);
+            Assert.AreEqual("ES", (string)m["recipient_country_code"]);
+        }
+
         [TestMethod]
         public void ConstruirManifiesto_ServicioUrgenteForzado_MandaEl24h()
         {
