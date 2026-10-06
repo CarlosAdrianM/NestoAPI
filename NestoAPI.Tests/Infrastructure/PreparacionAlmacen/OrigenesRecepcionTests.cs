@@ -714,5 +714,57 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
 
             Assert.IsNull(await compras.LeerEsperado("1", "ALG", "65"));
         }
+
+        // Carlos (06/10/26): en Entradas se ve de dónde viene cada reposición («Reposición 80905 desde Alcobendas»)
+        private static IServicioRecepcionReposiciones ServicioReposicionesConPendientes(params ReposicionPendienteDTO[] pendientes)
+        {
+            var servicio = A.Fake<IServicioRecepcionReposiciones>();
+            A.CallTo(() => servicio.LeerPendientes("1", "ALG")).Returns(pendientes.ToList());
+            return servicio;
+        }
+
+        private static OrigenRecepcionReposiciones Reposiciones(IServicioRecepcionReposiciones servicio)
+        {
+            return new OrigenRecepcionReposiciones(servicio, A.Fake<IRepositorioCierreReposiciones>(), A.Fake<IAvisadorReposiciones>(), (e, u) => null);
+        }
+
+        [TestMethod]
+        public async Task Reposiciones_LeerPendientes_ElTituloDiceDesdeDondeViene()
+        {
+            IServicioRecepcionReposiciones servicio = ServicioReposicionesConPendientes(
+                new ReposicionPendienteDTO { Traspaso = 80905, Origen = "ALC", NombreOrigen = "Alcobendas", Lineas = 1, Unidades = 1 },
+                new ReposicionPendienteDTO { Traspaso = 80906, Origen = "REI", Lineas = 2, Unidades = 3 },
+                new ReposicionPendienteDTO { Traspaso = 80907, Lineas = 1, Unidades = 1 });
+
+            List<RecepcionPendienteDTO> pendientes = await Reposiciones(servicio).LeerPendientes("1", "ALG");
+
+            CollectionAssert.AreEqual(
+                new[] { "Reposición 80905 desde Alcobendas", "Reposición 80906 desde REI", "Reposición 80907" },
+                pendientes.Select(p => p.Titulo).ToArray());
+            Assert.IsTrue(pendientes.All(p => p.Tipo == "REPO"));
+            Assert.AreEqual("80905", pendientes[0].Documento);
+        }
+
+        [TestMethod]
+        public async Task Reposiciones_LeerEsperado_LlevaElMismoTituloQueLaLista()
+        {
+            IServicioRecepcionReposiciones servicio = ServicioReposicionesConPendientes(
+                new ReposicionPendienteDTO { Traspaso = 80905, Origen = "ALC", NombreOrigen = "Alcobendas", Lineas = 1, Unidades = 1 });
+            A.CallTo(() => servicio.LeerRecepcion("1", "ALG", 80905)).Returns(new RecepcionReposicionDTO
+            {
+                Empresa = "1",
+                Almacen = "ALG",
+                Traspaso = 80905,
+                Lineas = new List<LineaReposicionDTO> { new LineaReposicionDTO { Producto = "A", Descripcion = "Producto A", Cantidad = 1 } }
+            });
+
+            RecepcionDTO recepcion = await Reposiciones(servicio).LeerEsperado("1", "ALG", "80905");
+
+            Assert.AreEqual("Reposición 80905 desde Alcobendas", recepcion.Titulo);
+            Assert.AreEqual(1, recepcion.Lineas.Count);
+            // Si la reposición ya no está en la lista (carrera), el título no se queda sin número
+            A.CallTo(() => servicio.LeerPendientes("1", "ALG")).Returns(new List<ReposicionPendienteDTO>());
+            Assert.AreEqual("Reposición 80905", (await Reposiciones(servicio).LeerEsperado("1", "ALG", "80905")).Titulo);
+        }
     }
 }

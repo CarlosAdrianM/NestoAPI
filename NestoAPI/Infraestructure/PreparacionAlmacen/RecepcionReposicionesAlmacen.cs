@@ -42,14 +42,18 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             this.baseDeDatos = baseDeDatos;
         }
 
+        // El almacén de origen va en Delegación de las filas de entrada (lo ponen igual Nesto viejo y POST api/Reposiciones;
+        // comprobado con 80893 y 80905); su nombre, en Almacenes.Descripción («Alcobendas»).
         private const string ORIGEN_Y_FILTRO = @"
 FROM PreExtrProducto p
      JOIN Almacenes a ON a.Empresa = p.Empresa AND a.[Número] = p.[Almacén] AND a.DiarioEntradaRep = p.Diario
+     LEFT JOIN Almacenes o ON o.Empresa = p.Empresa AND o.[Número] = p.[Delegación]
 WHERE p.Empresa = @p0 AND p.[Almacén] = @p1 AND p.[NºTraspaso] > 0";
 
         internal const string SQL_PENDIENTES = @"
 SELECT p.[NºTraspaso] AS Traspaso, COUNT(*) AS Lineas, CAST(SUM(p.Cantidad) AS int) AS Unidades,
-       MIN(p.Fecha) AS Fecha, RTRIM(MAX(p.Usuario)) AS Usuario" + ORIGEN_Y_FILTRO + @"
+       MIN(p.Fecha) AS Fecha, RTRIM(MAX(p.Usuario)) AS Usuario,
+       RTRIM(MAX(p.[Delegación])) AS Origen, RTRIM(MAX(o.[Descripción])) AS NombreOrigen" + ORIGEN_Y_FILTRO + @"
 GROUP BY p.[NºTraspaso]
 ORDER BY p.[NºTraspaso]";
 

@@ -359,6 +359,20 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public string Tipo => TIPO;
         public bool SeTerminaDesdeAqui => true;
 
+        /// <summary>
+        /// «Reposición 80905 desde Alcobendas» (Carlos, 06/10/26): en Entradas se ve de dónde viene cada una. Sin origen
+        /// conocido (no debería pasar: Delegación va siempre), «Reposición 80905».
+        /// </summary>
+        internal static string Titulo(int traspaso, ReposicionPendienteDTO reposicion)
+        {
+            string origen = reposicion?.NombreOrigen?.Trim();
+            if (string.IsNullOrWhiteSpace(origen))
+            {
+                origen = reposicion?.Origen?.Trim();
+            }
+            return string.IsNullOrWhiteSpace(origen) ? $"Reposición {traspaso}" : $"Reposición {traspaso} desde {origen}";
+        }
+
         public bool PuedeTerminar(IPrincipal usuario, string empresa, string almacen)
         {
             string nombre = usuario?.Identity?.IsAuthenticated == true ? usuario.Identity.Name : null;
@@ -379,7 +393,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             {
                 Tipo = TIPO,
                 Documento = r.Traspaso.ToString(),
-                Titulo = $"Reposición {r.Traspaso}",
+                Titulo = Titulo(r.Traspaso, r),
                 Fecha = r.Fecha,
                 Lineas = r.Lineas,
                 Unidades = r.Unidades
@@ -409,11 +423,18 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 throw new NestoBusinessException($"«{documento}» no es un número de traspaso.");
             }
             RecepcionReposicionDTO recepcion = await reposiciones.LeerRecepcion(empresa, almacen, traspaso).ConfigureAwait(false);
-            return recepcion == null ? null : new RecepcionDTO
+            if (recepcion == null)
+            {
+                return null;
+            }
+            // El origen sale de la lista de pendientes (PreExtrProducto es pequeña: dos filas hoy); el mismo título que en la lista
+            ReposicionPendienteDTO pendiente = (await reposiciones.LeerPendientes(empresa, almacen).ConfigureAwait(false) ?? new List<ReposicionPendienteDTO>())
+                .FirstOrDefault(r => r.Traspaso == traspaso);
+            return new RecepcionDTO
             {
                 Tipo = TIPO,
                 Documento = traspaso.ToString(),
-                Titulo = $"Reposición {traspaso}",
+                Titulo = Titulo(traspaso, pendiente),
                 Empresa = recepcion.Empresa,
                 Almacen = recepcion.Almacen,
                 Lineas = recepcion.Lineas.Select(l => new LineaRecepcionDTO

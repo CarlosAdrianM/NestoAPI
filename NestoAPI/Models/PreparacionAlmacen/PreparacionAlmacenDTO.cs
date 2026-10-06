@@ -491,6 +491,10 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public int Unidades { get; set; }
         public DateTime? Fecha { get; set; }
         public string Usuario { get; set; }
+        /// <summary>El almacén del que viene (PreExtrProducto.Delegación de las filas de entrada), p. ej. «ALC».</summary>
+        public string Origen { get; set; }
+        /// <summary>Almacenes.Descripción del origen («Alcobendas»), para el título.</summary>
+        public string NombreOrigen { get; set; }
     }
 
     public class LineaReposicionDTO
