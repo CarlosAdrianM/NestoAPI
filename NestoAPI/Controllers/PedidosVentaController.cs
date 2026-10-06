@@ -64,6 +64,14 @@ namespace NestoAPI.Controllers
         private readonly IServicioVendedores servicioVendedores;
         private readonly IServicioValidarServirJunto servicioValidarServirJunto;
         private readonly GestorPedidosVenta gestor;
+
+        /// <summary>Nesto#510: (empresa, pedido) → su picking en curso. Null = PickingEnCursoDelPedido contra la BD. Para tests.</summary>
+        internal Func<string, int, Task<int?>> LeerPickingEnCurso { get; set; }
+
+        private Task<int?> LeerPickingEnCursoDeBD(string empresa, int pedido)
+        {
+            return new Infraestructure.PreparacionAlmacen.RepositorioPreparacionAlmacen(db).PickingEnCursoDelPedido(empresa, pedido);
+        }
         // Carlos 04/09/15: lo pongo para desactivar el Lazy Loading
         public PedidosVentaController()
         {
@@ -816,6 +824,22 @@ namespace NestoAPI.Controllers
             //bool algunaLineaTienePicking = estaImpresaLaEtiqueta || cabPedidoVta.LinPedidoVtas.FirstOrDefault(l => l.Estado >= ESTADO_LINEA_PENDIENTE && l.Estado <= ESTADO_LINEA_EN_CURSO && l.Picking > 0) != null;
             bool algunaLineaTienePicking = cabPedidoVta.LinPedidoVtas.Any(l => l.Estado >= ESTADO_LINEA_PENDIENTE && l.Estado <= ESTADO_LINEA_EN_CURSO && l.Picking > 0);
 
+            // Nesto#510: el almacén de las líneas solo se cambia (en cualquier serie) si todo el pedido está sin picking,
+            // sin albarán ni factura, sin nota de entrega, fuera de un picking en curso y sin etiqueta de agencia viva.
+            bool cambiaAlmacen = Infraestructure.PedidosVenta.CambioAlmacenPedido.CambiaAlmacen(cabPedidoVta.LinPedidoVtas, pedido.Lineas);
+            if (cambiaAlmacen)
+            {
+                List<EnviosAgencia> enviosPedido = db.EnviosAgencias
+                    .Where(e => e.Empresa == pedido.empresa && e.Pedido == pedido.numero).ToList();
+                int? pickingEnCurso = await (LeerPickingEnCurso ?? LeerPickingEnCursoDeBD)(pedido.empresa, pedido.numero).ConfigureAwait(false);
+                string motivoAlmacen = Infraestructure.PedidosVenta.CambioAlmacenPedido.Motivo(
+                    cabPedidoVta.LinPedidoVtas, cabPedidoVta.NotaEntrega, enviosPedido, pickingEnCurso);
+                if (motivoAlmacen != null)
+                {
+                    return BadRequest(motivoAlmacen);
+                }
+            }
+
 
             // Son diferentes, porque el del pedido está con trim
             // Comprobar si en SQL los da por iguales y no hace update si solo cambia esto
@@ -1108,6 +1132,13 @@ namespace NestoAPI.Controllers
                     if (linea.Fecha_Entrega != lineaEncontrada.fechaEntrega)
                     {
                         linea.Fecha_Entrega = lineaEncontrada.fechaEntrega;
+                        modificado = true;
+                    }
+                    // Nesto#510: ya validado arriba (cambiaAlmacen) que se puede
+                    if (cambiaAlmacen && !string.IsNullOrWhiteSpace(lineaEncontrada.almacen)
+                        && !string.Equals(linea.Almacén?.Trim(), lineaEncontrada.almacen.Trim(), StringComparison.OrdinalIgnoreCase))
+                    {
+                        linea.Almacén = lineaEncontrada.almacen.Trim();
                         modificado = true;
                     }
                     //if (linea.Grupo != lineaEncontrada.GrupoProducto)

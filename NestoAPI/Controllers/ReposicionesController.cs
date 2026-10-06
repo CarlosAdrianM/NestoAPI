@@ -24,6 +24,7 @@ namespace NestoAPI.Controllers
     {
         private readonly NVEntities db;
         private readonly IServicioPreparacionReposicion preparacion;
+        private readonly IServicioTransitoReposiciones transito;
 
         public ReposicionesController() : this(new NVEntities())
         {
@@ -33,10 +34,28 @@ namespace NestoAPI.Controllers
         {
         }
 
-        internal ReposicionesController(NVEntities db, IServicioPreparacionReposicion preparacion)
+        internal ReposicionesController(NVEntities db, IServicioPreparacionReposicion preparacion,
+            IServicioTransitoReposiciones transito = null)
         {
             this.db = db;
             this.preparacion = preparacion;
+            this.transito = transito; // null = el de la BD, creado al usarlo (los tests del resto no pasan db)
+        }
+
+        // GET api/Reposiciones/EnTransito?empresa=1&almacen=ALC&productos=45146,45148
+        /// <summary>
+        /// Nesto#510: por producto, las unidades que viajan HACIA <paramref name="almacen"/> en una reposición: pendientes de
+        /// recibir en su diario de entrada (con número de traspaso) o en una reposición en preparación hacia él (Traspaso null).
+        /// Solo lectura. Lista vacía si no hay nada en camino.
+        /// </summary>
+        [HttpGet]
+        [Route("EnTransito")]
+        [ResponseType(typeof(List<ProductoEnTransitoDTO>))]
+        public async Task<IHttpActionResult> GetEnTransito(string almacen, string productos = null,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            IServicioTransitoReposiciones servicio = transito ?? new ServicioTransitoReposiciones(db);
+            return Ok(await servicio.LeerEnTransito(empresa, almacen, productos).ConfigureAwait(false));
         }
 
         // GET api/Reposiciones/Propuesta?origen=ALG&destino=REI&empresa=1

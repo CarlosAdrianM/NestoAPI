@@ -857,6 +857,7 @@
     <Compile Include="Infraestructure\PedidosVenta\GestorPedidosVenta.cs" />
     <Compile Include="Infraestructure\PedidosVenta\CambioClientePedido.cs" />
     <Compile Include="Infraestructure\PedidosVenta\CambioModoConPicking.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\CambioAlmacenPedido.cs" />
     <Compile Include="Infraestructure\PedidosVenta\GestorCambioClientePedido.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ServicioDatosTransferenciaPedido.cs" />
     <Compile Include="Models\PedidosVenta\DatosTransferenciaPedidoDTO.cs" />
@@ -918,6 +919,7 @@
     <Compile Include="Infraestructure\Reposiciones\ServicioPropuestaReposicion.cs" />
     <Compile Include="Infraestructure\Reposiciones\PreparacionReposicion.cs" />
     <Compile Include="Infraestructure\Reposiciones\UbicacionesReposicion.cs" />
+    <Compile Include="Infraestructure\Reposiciones\TransitoReposiciones.cs" />
     <Compile Include="Infraestructure\Ubicaciones\PlanificadorReservaHuecos.cs" />
     <Compile Include="Infraestructure\Ubicaciones\PuertaUbicaciones.cs" />
     <Compile Include="Infraestructure\Ubicaciones\PuertaUbicacionesSql.cs" />
