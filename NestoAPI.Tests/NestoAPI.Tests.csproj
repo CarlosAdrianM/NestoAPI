@@ -284,6 +284,7 @@
     <Compile Include="Controllers\TramitarEnvioTests.cs" />
     <Compile Include="Controllers\EnviosAgenciasCatalogoServiciosTests.cs" />
     <Compile Include="Controllers\PropuestaEnvioControllerTests.cs" />
+    <Compile Include="Controllers\ImprimirEtiquetaEnvioTests.cs" />
     <Compile Include="Controllers\PlazosPagoControllerTests.cs" />
     <Compile Include="Controllers\CabRemesasPagoControllerTests.cs" />
     <Compile Include="Controllers\InventariosControllerTests.cs" />

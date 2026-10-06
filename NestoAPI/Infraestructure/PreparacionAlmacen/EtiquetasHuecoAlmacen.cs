@@ -265,7 +265,14 @@ HAVING SUM(u.Cantidad) > 0";
 
         private static string Etiquetas(int n) => n == 1 ? "1 etiqueta" : $"{n} etiquetas";
 
-        private string ImpresoraDe(string empresa, string usuario)
+        private string ImpresoraDe(string empresa, string usuario) => ImpresoraDelUsuario(parametros, empresa, usuario);
+
+        /// <summary>
+        /// La impresora de etiquetas del usuario (ParámetrosUsuario ImpresoraCodBarras, sin el dominio; si no tiene, la de
+        /// «(defecto)»). Un solo sitio: lo usan las etiquetas de hueco y la etiqueta de agencia (NestoAPI#595).
+        /// </summary>
+        /// <exception cref="ArgumentException">El usuario no tiene impresora de etiquetas: el motivo es para el usuario.</exception>
+        public static string ImpresoraDelUsuario(ILectorParametrosUsuario parametros, string empresa, string usuario)
         {
             string sinDominio = (usuario ?? string.Empty).Substring((usuario ?? string.Empty).IndexOf('\\') + 1).Trim();
             string destino = string.IsNullOrEmpty(sinDominio) ? null : parametros.LeerParametro(empresa, sinDominio, PARAMETRO_IMPRESORA);

@@ -45,6 +45,25 @@ namespace NestoAPI.Controllers
     }
 
     /// <summary>
+    /// NestoAPI#595 (slice 4): cuerpo opcional de POST api/EnviosAgencias/{id}/ImprimirEtiqueta. Sin impresora, la de
+    /// etiquetas del usuario que llama (ParámetrosUsuario ImpresoraCodBarras).
+    /// </summary>
+    public class ImprimirEtiquetaEnvioDTO
+    {
+        public string Impresora { get; set; }
+    }
+
+    /// <summary>NestoAPI#595 (slice 4): resultado de imprimir la etiqueta de un envío en el servidor.</summary>
+    public class ImprimirEtiquetaEnvioResultadoDTO
+    {
+        public int Envio { get; set; }
+        public string CodigoBarras { get; set; }
+        public int Bultos { get; set; }
+        public string Impresora { get; set; }
+        public bool Reimpresion { get; set; }
+    }
+
+    /// <summary>
     /// Datos corregidos para modificar un envío YA registrado en la agencia (#317). Solo se pisan
     /// los campos informados (null/vacío = conservar el valor actual del envío). La provincia solo
     /// se persiste en BD (las agencias la derivan del CP).
@@ -204,6 +223,11 @@ namespace NestoAPI.Controllers
 
         /// <summary>Dónde se registran la sombra de la propuesta y sus fallos (ELMAH; sustituible en los tests).</summary>
         internal Action<Exception> RegistrarEnElmah { get; set; } = ex => ElmahHelper.Log(ex);
+
+        // NestoAPI#595 (slice 4): la etiqueta se imprime en el servidor con el mismo mecanismo que las etiquetas de hueco.
+        internal ILectorParametrosUsuario LectorParametros { get; set; } = new LectorParametrosUsuario();
+        internal Infraestructure.PreparacionAlmacen.IImpresoraEtiquetas ImpresoraEtiquetas { get; set; } =
+            new Infraestructure.PreparacionAlmacen.ImpresoraEtiquetasWindows();
 
         // ========== Nesto#340 (Agencias, slice A1): listados de la ventana de Agencias ==========
         // Cada endpoint replica el filtro EXACTO del método EF de AgenciaService en el cliente,
@@ -836,6 +860,115 @@ namespace NestoAPI.Controllers
             await AuditarTramitacion(envio, agencia, true, null);
 
             return Ok(AResultado(envio, resultado.Albaran, (short)resultado.Bultos, resultado.Etiqueta, reimpresion: false));
+        }
+
+        // POST: api/EnviosAgencias/5/ImprimirEtiqueta   { "impresora": "nombre" } (opcional)
+        /// <summary>
+        /// NestoAPI#595 (slice 4): imprime EN EL SERVIDOR la etiqueta de un envío ya tramitado (reimpresión = este mismo
+        /// endpoint). Pide la ZPL a la agencia (ReimprimirAsync, como la rama idempotente de Tramitar) y la manda a la
+        /// impresora indicada o, si no viene, a la de etiquetas del usuario (ImpresoraCodBarras, igual que las etiquetas de
+        /// hueco). No tramita: sin código de barras, 409. Agencias sin gestión remota en el servidor (GLS, Correos Express,
+        /// Canteras): 400, su etiqueta sigue saliendo de Nesto (#552).
+        /// </summary>
+        [HttpPost]
+        [Authorize]
+        [Route("api/EnviosAgencias/{id:int}/ImprimirEtiqueta")]
+        [ResponseType(typeof(ImprimirEtiquetaEnvioResultadoDTO))]
+        public async Task<IHttpActionResult> ImprimirEtiqueta(int id, [FromBody] ImprimirEtiquetaEnvioDTO peticion = null)
+        {
+            EnviosAgencia envio = await db.EnviosAgencias.FindAsync(id);
+            if (envio == null)
+            {
+                return NotFound();
+            }
+
+            IAgenciaRemota agencia = fabricaAgenciasRemotas.Crear(envio.Agencia);
+            if (agencia == null)
+            {
+                string nombre = await NombreAgenciaDe(envio);
+                return BadRequest($"La etiqueta de {(string.IsNullOrWhiteSpace(nombre) ? $"la agencia {envio.Agencia}" : nombre)} todavía se imprime desde Nesto (#552).");
+            }
+
+            if (string.IsNullOrWhiteSpace(envio.CodigoBarras))
+            {
+                return Content(HttpStatusCode.Conflict, "Primero hay que tramitar el envío.");
+            }
+
+            string impresora = peticion?.Impresora?.Trim();
+            if (string.IsNullOrEmpty(impresora))
+            {
+                try
+                {
+                    impresora = Infraestructure.PreparacionAlmacen.ServicioEtiquetasHueco.ImpresoraDelUsuario(LectorParametros,
+                        Constantes.Empresas.EMPRESA_POR_DEFECTO, UsuarioAuditoriaHelper.Resolver(User, null));
+                }
+                catch (ArgumentException ex)
+                {
+                    return BadRequest(ex.Message);
+                }
+            }
+
+            string albaran = envio.CodigoBarras.Trim();
+            EtiquetaDataTrans etiqueta = await ReimprimirSeguro(agencia, albaran);
+            string zpl = etiqueta != null && etiqueta.Exito && etiqueta.EsZpl ? ZplParaImprimir(etiqueta) : null;
+            if (zpl == null)
+            {
+                await AuditarOperacion(envio, agencia, false, "No se pudo reimprimir la etiqueta.", OPERACION_IMPRIMIR_ETIQUETA);
+                // Nesto#412: el mismo mensaje que Tramitar cuando el albarán no es de esta agencia.
+                return Content(HttpStatusCode.BadGateway,
+                    $"No se pudo reimprimir la etiqueta del albarán {albaran}. " +
+                    "Si ese código no es un albarán de esta agencia (p. ej. viene de una etiqueta de otra agencia), " +
+                    "borra el código de barras del envío para que se registre de nuevo con albarán propio.");
+            }
+
+            try
+            {
+                ImpresoraEtiquetas.Imprimir(impresora, zpl, $"Etiqueta envío {envio.Numero}");
+            }
+            catch (Infraestructure.PreparacionAlmacen.ImpresionEtiquetasException ex)
+            {
+                ElmahHelper.Log(ex);
+                await AuditarOperacion(envio, agencia, false, ex.Message, OPERACION_IMPRIMIR_ETIQUETA);
+                return Content(HttpStatusCode.BadGateway, ex.Message);
+            }
+
+            await AuditarOperacion(envio, agencia, true, null, OPERACION_IMPRIMIR_ETIQUETA);
+            return Ok(new ImprimirEtiquetaEnvioResultadoDTO
+            {
+                Envio = envio.Numero,
+                CodigoBarras = albaran,
+                Bultos = envio.Bultos,
+                Impresora = impresora,
+                Reimpresion = true
+            });
+        }
+
+        /// <summary>Operación con la que queda en AgenciasLlamadasWeb (reimpresión de la etiqueta en el servidor).</summary>
+        internal const string OPERACION_IMPRIMIR_ETIQUETA = "Imprimir etiqueta (reimpresión)";
+
+        /// <summary>
+        /// La ZPL que va a la Zebra: la agencia la da en crudo («^XA...») o en base64. Los bytes se pasan a texto en
+        /// ANSI 1252, que es como los vuelve a escribir ImpresoraEtiquetasWindows (ida y vuelta sin pérdida).
+        /// </summary>
+        internal static string ZplParaImprimir(EtiquetaDataTrans etiqueta)
+        {
+            string contenido = etiqueta?.Contenido?.Trim();
+            if (string.IsNullOrEmpty(contenido))
+            {
+                return null;
+            }
+            if (contenido.StartsWith("^XA", StringComparison.Ordinal))
+            {
+                return contenido;
+            }
+            try
+            {
+                return Encoding.GetEncoding(1252).GetString(Convert.FromBase64String(contenido));
+            }
+            catch (FormatException)
+            {
+                return null;
+            }
         }
 
         // POST: api/EnviosAgencias/5/Anular
