@@ -42,7 +42,8 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
 
                 bool esProductoRegalo = producto.Ficticio
                     && producto.Familia != null
-                    && producto.Familia.Trim() == Constantes.Productos.FAMILIA_BONIFICACION;
+                    && producto.Familia.Trim() == Constantes.Productos.FAMILIA_BONIFICACION
+                    && !SeCobra(linea);
 
                 if (esProductoRegalo)
                 {
@@ -101,6 +102,17 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             }
 
             return respuesta;
+        }
+
+        // Incidencia 501 (06/10/26): TiCKET es un ficticio de la familia Bonificación que se usa para dos
+        // cosas. Con cantidad -1 y precio positivo es un cupón que resta; con cantidad +1 y precio 50 € es
+        // una masterclass que el cliente paga (y luego se le descuenta). Pedidos 926327, 926852 y 927068.
+        // Un pedido de la tienda con solo ese TiCKET cobrado fallaba con «es un regalo pero el pedido no
+        // tiene productos». Una línea que se cobra es una venta: va con las normales y suma al importe.
+        // BaseImponible se calcula en LineaPedidoBase a partir de PrecioUnitario, Cantidad y descuentos.
+        private static bool SeCobra(LineaPedidoVentaDTO linea)
+        {
+            return linea.Cantidad > 0 && linea.BaseImponible > 0;
         }
     }
 }

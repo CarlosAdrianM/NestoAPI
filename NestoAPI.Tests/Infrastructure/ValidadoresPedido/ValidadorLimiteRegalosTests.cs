@@ -211,6 +211,84 @@ namespace NestoAPI.Tests.Infrastructure.ValidadoresPedido
             Assert.IsTrue(resultado.ValidacionSuperada);
         }
 
+        // Incidencia 501 (06/10/26): TiCKET es ficticio de la familia Bonificación y se usa para dos cosas.
+        // Con cantidad -1 es un cupón (resta); con cantidad +1 y precio 50 € es una masterclass que se cobra
+        // (pedidos 926327, 926852, 927068). Una línea que se cobra es una venta, no un regalo.
+        [TestMethod]
+        public void EsPedidoValido_SoloTicketQueSeCobra_RetornaValido()
+        {
+            var pedido = new PedidoVentaDTO
+            {
+                Lineas = new List<LineaPedidoVentaDTO>
+                {
+                    new LineaPedidoVentaDTO { Producto = "TiCKET", tipoLinea = 1, Cantidad = 1, PrecioUnitario = 50m, precioTarifa = 50m }
+                }
+            };
+            ConfigurarProductoRegalo("TiCKET");
+
+            var resultado = _validador.EsPedidoValido(pedido, _servicioPrecios);
+
+            Assert.IsTrue(resultado.ValidacionSuperada, resultado.Motivo);
+        }
+
+        [TestMethod]
+        public void EsPedidoValido_SoloTicketCupon_RetornaInvalido()
+        {
+            var pedido = new PedidoVentaDTO
+            {
+                Lineas = new List<LineaPedidoVentaDTO>
+                {
+                    new LineaPedidoVentaDTO { Producto = "TiCKET", tipoLinea = 1, Cantidad = -1, PrecioUnitario = 50m, precioTarifa = 50m }
+                }
+            };
+            ConfigurarProductoRegalo("TiCKET");
+
+            var resultado = _validador.EsPedidoValido(pedido, _servicioPrecios);
+
+            Assert.IsFalse(resultado.ValidacionSuperada);
+            Assert.IsTrue(resultado.Motivo.Contains("sin productos"));
+        }
+
+        [TestMethod]
+        public void EsPedidoValido_ProductoNormalYTicketCuponQueSuperaElLimite_RetornaInvalido()
+        {
+            // Pedido de 100 € con un TiCKET regalado (precio 0, tarifa 50 €): sigue siendo regalo y supera el 10 %
+            var pedido = new PedidoVentaDTO
+            {
+                Lineas = new List<LineaPedidoVentaDTO>
+                {
+                    new LineaPedidoVentaDTO { Producto = "PROD01", tipoLinea = 1, Cantidad = 1, PrecioUnitario = 100m },
+                    new LineaPedidoVentaDTO { Producto = "TiCKET", tipoLinea = 1, Cantidad = 1, PrecioUnitario = 0m, precioTarifa = 50m }
+                }
+            };
+            ConfigurarProductoNormal("PROD01");
+            ConfigurarProductoRegalo("TiCKET");
+
+            var resultado = _validador.EsPedidoValido(pedido, _servicioPrecios);
+
+            Assert.IsFalse(resultado.ValidacionSuperada);
+        }
+
+        [TestMethod]
+        public void EsPedidoValido_ProductoNormalYTicketQueSeCobra_RetornaValidoYNoCuentaComoRegalo()
+        {
+            // 10 € de producto + TiCKET cobrado a 50 €: si contara como regalo (50 € > 10 % de 10 €) fallaría
+            var pedido = new PedidoVentaDTO
+            {
+                Lineas = new List<LineaPedidoVentaDTO>
+                {
+                    new LineaPedidoVentaDTO { Producto = "PROD01", tipoLinea = 1, Cantidad = 1, PrecioUnitario = 10m },
+                    new LineaPedidoVentaDTO { Producto = "TiCKET", tipoLinea = 1, Cantidad = 1, PrecioUnitario = 50m, precioTarifa = 50m }
+                }
+            };
+            ConfigurarProductoNormal("PROD01");
+            ConfigurarProductoRegalo("TiCKET");
+
+            var resultado = _validador.EsPedidoValido(pedido, _servicioPrecios);
+
+            Assert.IsTrue(resultado.ValidacionSuperada, resultado.Motivo);
+        }
+
         #region Helpers
 
         private PedidoVentaDTO CrearPedidoConProductosNormales(decimal importe)
