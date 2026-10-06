@@ -14,8 +14,9 @@ namespace NestoAPI.Controllers
     /// NestoAPI#553: reposición de tiendas desde Nesto y Ariadna (sacarla de Nesto viejo), por fases. Fase 1: la propuesta
     /// (lectura) y crear, preparar y terminar la reposición escribiendo lo mismo que Nesto viejo. Leer basta con estar
     /// identificado; escribir (crear, cambiar cantidades, terminar) lo puede hacer quien tiene el almacén de origen en
-    /// AlmacénPedidoVta, Almacén o Dirección (403 si no). Un origen con control de ubicaciones (Algete) da 400 hasta
-    /// NestoAPI#594.
+    /// AlmacénPedidoVta, Almacén o Dirección (403 si no). Desde un origen con control de ubicaciones (Algete), solo
+    /// Almacén y Dirección: el POST reserva los huecos (puerta única de Ubicaciones, NestoAPI#594) y la deja cerrada, lista
+    /// para recoger en Ariadna; el DELETE la anula mientras nadie la haya empezado a recoger.
     /// </summary>
     [Authorize]
     [RoutePrefix("api/Reposiciones")]
@@ -56,9 +57,11 @@ namespace NestoAPI.Controllers
 
         // POST api/Reposiciones   { Empresa, Origen, Destino, Fecha?, Lineas?: [{ Producto, Cantidad }] }
         /// <summary>
-        /// Crea la reposición y la deja en preparación en el diario de salida del origen. Sin líneas, usa la propuesta.
-        /// 409 si el origen tiene un inventario en curso o ya tiene una reposición en preparación; 400 si el origen tiene
-        /// control de ubicaciones (todavía en Nesto viejo); 403 si quien llama no es de ese almacén.
+        /// Crea la reposición en el diario de salida del origen. Sin líneas, usa la propuesta (prdRellenarReposicionStock).
+        /// Desde una tienda la deja en preparación (NumTraspaso null, hasta Terminar). Desde Algete (control de ubicaciones)
+        /// reserva los huecos y la cierra sin contabilizar: devuelve NumTraspaso y, por línea, Hueco / SinHueco; sale en
+        /// GET api/Almacen/Recogidas (REPO). 409 si el origen tiene un inventario en curso o ya tiene una reposición en
+        /// preparación; 403 si quien llama no puede (Algete: Almacén o Dirección).
         /// </summary>
         [HttpPost]
         [Route("")]
@@ -122,6 +125,27 @@ namespace NestoAPI.Controllers
             try
             {
                 return Ok(await preparacion.Terminar(empresa, origen, User).ConfigureAwait(false));
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Prohibido(ex);
+            }
+        }
+
+        // DELETE api/Reposiciones/80901?empresa=1
+        /// <summary>
+        /// Anula una reposición ya cerrada que aún no se ha recogido ni contabilizado (las de Algete creadas por el POST):
+        /// devuelve las unidades a sus huecos y borra la salida y la entrada. 409 si ya tiene lecturas en Ariadna o está
+        /// contabilizada; 404 si no hay ninguna por salir con ese número; 403 si no es de Almacén o Dirección.
+        /// </summary>
+        [HttpDelete]
+        [Route("{numTraspaso:int}")]
+        [ResponseType(typeof(ResultadoAnularReposicionDTO))]
+        public async Task<IHttpActionResult> DeleteAnular(int numTraspaso, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            try
+            {
+                return Ok(await preparacion.Anular(empresa, numTraspaso, User).ConfigureAwait(false));
             }
             catch (UnauthorizedAccessException ex)
             {

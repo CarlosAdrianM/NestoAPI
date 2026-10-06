@@ -2,7 +2,9 @@ using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure.Exceptions;
+using NestoAPI.Infraestructure.PreparacionAlmacen;
 using NestoAPI.Infraestructure.Reposiciones;
+using NestoAPI.Infraestructure.Ubicaciones;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -29,6 +31,7 @@ namespace NestoAPI.Tests.Infrastructure
         private List<string> propuestasPedidas;
         private List<LineaPropuestaReposicionDTO> propuesta;
         private IUbicacionesReposicion huecos;
+        private IUbicacionesReposicion huecosAlgete;
         private Dictionary<string, string> almacenesDeUsuario;
 
         [TestInitialize]
@@ -38,6 +41,38 @@ namespace NestoAPI.Tests.Infrastructure
             propuestasPedidas = new List<string>();
             propuesta = new List<LineaPropuestaReposicionDTO>();
             huecos = A.Fake<IUbicacionesReposicion>();
+            huecosAlgete = A.Fake<IUbicacionesReposicion>();
+            // En Algete: el primer producto cabe en el hueco 002/002/004; el resto, sin nada libre
+            A.CallTo(() => huecosAlgete.Reservar(A<string>._, A<string>._, A<IReadOnlyList<LineaReservaReposicion>>._, A<string>._))
+                .ReturnsLazily((string e, string o, IReadOnlyList<LineaReservaReposicion> lineas, string u) =>
+                {
+                    repositorio.Llamadas.Add("HUECOS reservar " + string.Join(", ", lineas.Select(l => $"{l.Producto}#{l.NumeroOrdenEntrada} x{l.Cantidad}")));
+                    var resumen = new ResumenUbicaciones();
+                    foreach (LineaReservaReposicion linea in lineas)
+                    {
+                        var reserva = new ReservaLineaReposicion { NumeroOrdenEntrada = linea.NumeroOrdenEntrada, Producto = linea.Producto, Pedida = linea.Cantidad };
+                        if (linea == lineas.First())
+                        {
+                            reserva.Piezas.Add(new PiezaReservada { NumeroOrdenUbicacion = 322243201, Hueco = HuecoUbicacion.De("002", "002", "004"), Cantidad = linea.Cantidad });
+                        }
+                        resumen.Reservas.Add(reserva);
+                    }
+                    return Task.FromResult(resumen);
+                });
+            A.CallTo(() => huecosAlgete.DescontarAlTerminar(A<string>._, A<IReadOnlyList<int>>._, A<int>._, A<string>._))
+                .ReturnsLazily((string e, IReadOnlyList<int> lineas, int traspaso, string u) =>
+                {
+                    repositorio.Llamadas.Add($"HUECOS descontar {traspaso} [{string.Join(",", lineas)}] {u}");
+                    return Task.FromResult(new ResumenUbicaciones());
+                });
+            A.CallTo(() => huecosAlgete.AnularSalida(A<string>._, A<string>._, A<int>._, A<string>._))
+                .ReturnsLazily((string e, string o, int traspaso, string u) =>
+                {
+                    repositorio.Llamadas.Add($"HUECOS anular {o} {traspaso} {u}");
+                    var resumen = new ResumenUbicaciones();
+                    resumen.Movimientos.Add(new MovimientoUbicacion { HuecoDestino = HuecoUbicacion.De("002", "002", "004"), Cantidad = 7 });
+                    return Task.FromResult(resumen);
+                });
             almacenesDeUsuario = new Dictionary<string, string> { ["Paloma"] = "ALC", ["Patricia"] = "REI" };
         }
 
@@ -45,7 +80,7 @@ namespace NestoAPI.Tests.Infrastructure
         {
             return new ServicioPreparacionReposicion(repositorio,
                 (empresa, origen, destino) => { propuestasPedidas.Add($"{empresa}|{origen}|{destino}"); return Task.FromResult(propuesta); },
-                (origen, control) => control ? throw new NestoBusinessException(string.Format(UbicacionesReposicion.MENSAJE_NO_DISPONIBLE, origen)) : huecos,
+                (origen, control) => control ? huecosAlgete : huecos,
                 (empresa, usuario) => almacenesDeUsuario.TryGetValue(usuario, out string almacen) ? almacen : null,
                 () => AHORA);
         }
@@ -58,6 +93,7 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         private static IPrincipal Paloma => Usuario("NUEVAVISION\\Paloma", "Tiendas");
+        private static IPrincipal Andre => Usuario("NUEVAVISION\\Andre", "Almacén");
 
         private static CrearReposicionDTO Peticion(params (string producto, int cantidad)[] lineas)
         {
@@ -83,7 +119,10 @@ namespace NestoAPI.Tests.Infrastructure
                 "INSERT RepoAlcAlg 41980 x7 ALC→ALG 06/10/2026 NV NUEVAVISION\\Paloma",
                 "COMMIT"
             }, repositorio.Llamadas);
-            A.CallTo(() => huecos.ReservarAlImprimir("1", "RepoAlcAlg", "ALG")).MustHaveHappenedOnceExactly();
+            A.CallTo(() => huecos.Reservar("1", "ALC", A<IReadOnlyList<LineaReservaReposicion>>.That.Matches(l => l.Count == 2), "NUEVAVISION\\Paloma"))
+                .MustHaveHappenedOnceExactly();
+            Assert.IsNull(creada.NumTraspaso, "Desde una tienda queda en preparación hasta Terminar");
+            Assert.IsTrue(creada.Lineas.All(l => l.Hueco == null && !l.SinHueco), "Las tiendas no tienen huecos");
             Assert.AreEqual("ALC", creada.Origen);
             Assert.AreEqual("ALG", creada.Destino);
             Assert.AreEqual("RepoAlcAlg", creada.Diario);
@@ -131,17 +170,195 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(0, repositorio.Llamadas.Count);
         }
 
-        [TestMethod]
-        public async Task Crear_DesdeAlmacenConControlDeUbicaciones_Es400HastaLaPuertaUnicaDeUbicaciones()
-        {
-            NestoBusinessException error = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() =>
-                Servicio().Crear(new CrearReposicionDTO { Origen = "ALG", Destino = "ALC", Lineas = Peticion(("41980", 5)).Lineas },
-                    Usuario("NUEVAVISION\\Andre", "Almacén")));
+        // ---------------------------------------------------------------- Crear desde Algete (control de ubicaciones)
 
-            Assert.AreEqual(HttpStatusCode.BadRequest, error.StatusCode);
-            StringAssert.Contains(error.Message, "Nesto viejo");
-            StringAssert.Contains(error.Message, "#594");
+        private static CrearReposicionDTO PeticionAlgete(params (string producto, int cantidad)[] lineas)
+        {
+            return new CrearReposicionDTO
+            {
+                Empresa = "1", Origen = "ALG", Destino = "REI",
+                Lineas = lineas.Select(l => new LineaCrearReposicionDTO { Producto = l.producto, Cantidad = l.cantidad }).ToList()
+            };
+        }
+
+        [TestMethod]
+        public async Task Crear_DesdeAlgete_CreaReservaHuecosYLaCierraSinContabilizarEnUnaTransaccion()
+        {
+            repositorio.UltimoTraspaso = 80900;
+
+            ReposicionEnPreparacionDTO creada = await Servicio().Crear(PeticionAlgete(("41980", 7), ("21116", 2)), Andre);
+
+            CollectionAssert.AreEqual(new[]
+            {
+                "TRAN",
+                "INSERT General 21116 x2 ALG→REI 06/10/2026 NV NUEVAVISION\\Andre",
+                "INSERT General 41980 x7 ALG→REI 06/10/2026 NV NUEVAVISION\\Andre",
+                // prdUbicarReposicion: la reserva va contra la línea de ENTRADA (su Nº Orden es el NºOrdenRepo)
+                "HUECOS reservar 21116#900000000 x2, 41980#900000001 x7",
+                // en «General» conviven las salidas de otros traspasos por recoger: solo cuentan las líneas sin número
+                "COUNT otros General <>REI sin traspaso",
+                "CONTADOR → 80901",
+                "DELETE a cero General REI → 0",
+                "UPDATE traspaso 80901 fecha 06/10/2026 9:32 General REI → 2",
+                "UPDATE pedidosespeciales General REI",
+                "HUECOS descontar 80901 [900000000,900000001] NUEVAVISION\\Andre",
+                "INSERT salida General ALG -REI 06/10/2026 9:32 NUEVAVISION\\Andre → 2",
+                "UPDATE entrada General REI → PendRepo → 2",
+                "COMMIT"
+            }, repositorio.Llamadas, "Sin prdExtrProducto: la salida la contabiliza Ariadna al terminar la recogida");
+            Assert.AreEqual(80901, creada.NumTraspaso);
+            Assert.AreEqual("ALG", creada.Origen);
+            Assert.AreEqual("REI", creada.Destino);
+            Assert.AreEqual("General", creada.Diario);
+            Assert.AreEqual(9, creada.Unidades);
+            LineaReposicionEnPreparacionDTO conHueco = creada.Lineas.Single(l => l.Producto == "21116");
+            Assert.AreEqual("002/002/004", conHueco.Hueco);
+            Assert.IsFalse(conHueco.SinHueco);
+            LineaReposicionEnPreparacionDTO sinHueco = creada.Lineas.Single(l => l.Producto == "41980");
+            Assert.IsNull(sinHueco.Hueco);
+            Assert.IsTrue(sinHueco.SinHueco);
+            Assert.AreEqual(7, sinHueco.UnidadesSinHueco);
+            // Lo que queda: la entrada en el diario del destino con su traspaso (pendiente de recibir) y nada en preparación
+            Assert.IsTrue(repositorio.Estado2.All(e => e.Diario == "PendRepo" && e.Traspaso == 80901));
+            Assert.IsNull(await Servicio().LeerEnPreparacion("1", "ALG"));
+        }
+
+        [TestMethod]
+        public async Task Crear_DesdeAlgete_SiFallaLaReserva_NoQuedaNadaNiSeGastaNumero()
+        {
+            A.CallTo(() => huecosAlgete.Reservar(A<string>._, A<string>._, A<IReadOnlyList<LineaReservaReposicion>>._, A<string>._))
+                .Throws(new NestoBusinessException("El hueco ha cambiado mientras se reservaba") { StatusCode = HttpStatusCode.Conflict });
+
+            NestoBusinessException error = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().Crear(PeticionAlgete(("41980", 7)), Andre));
+
+            Assert.AreEqual(HttpStatusCode.Conflict, error.StatusCode);
+            Assert.AreEqual("ROLLBACK", repositorio.Llamadas.Last());
+            Assert.IsFalse(repositorio.Llamadas.Any(l => l.StartsWith("CONTADOR")));
+            Assert.AreEqual(0, repositorio.Lineas.Count);
+        }
+
+        [TestMethod]
+        public async Task Crear_DesdeAlgete_SoloAlmacenODireccion_AunqueTengaAlgeteComoAlmacenDePedidos()
+        {
+            almacenesDeUsuario["Beatriz"] = "ALG";
+
+            _ = await Assert.ThrowsExceptionAsync<UnauthorizedAccessException>(() =>
+                Servicio().Crear(PeticionAlgete(("41980", 7)), Usuario("NUEVAVISION\\Beatriz", "Tiendas")));
+
             Assert.AreEqual(0, repositorio.Llamadas.Count);
+            Assert.IsTrue(Servicio().PuedeEscribir(Usuario("NUEVAVISION\\Beatriz", "Tiendas"), "1", "ALG", controlUbicaciones: false));
+            Assert.IsFalse(Servicio().PuedeEscribir(Usuario("NUEVAVISION\\Beatriz", "Tiendas"), "1", "ALG", controlUbicaciones: true));
+            Assert.IsTrue(Servicio().PuedeEscribir(Usuario("NUEVAVISION\\Carlos", "Dirección"), "1", "ALG", controlUbicaciones: true));
+        }
+
+        // ---------------------------------------------------------------- Anular (DELETE)
+
+        private void TraspasoPorSalir()
+        {
+            repositorio.Traspaso.Add(new FilaTraspasoReposicion { NumeroOrden = 1001, Producto = "41980", Cantidad = -7, Almacen = "ALG", Diario = "General", Estado = 1 });
+            repositorio.Traspaso.Add(new FilaTraspasoReposicion { NumeroOrden = 900000001, Producto = "41980", Cantidad = 7, Almacen = "REI", Diario = "PendRepo", Estado = 3 });
+        }
+
+        [TestMethod]
+        public async Task Anular_DevuelveLosHuecosYBorraSalidaYEntrada()
+        {
+            TraspasoPorSalir();
+
+            ResultadoAnularReposicionDTO anulada = await Servicio().Anular("1", 80901, Andre);
+
+            CollectionAssert.AreEqual(new[]
+            {
+                "TRAN",
+                "HUECOS anular ALG 80901 NUEVAVISION\\Andre",
+                "UPDATE pedidosespeciales quitar 80901",
+                "DELETE traspaso 80901 → 2",
+                "COMMIT"
+            }, repositorio.Llamadas);
+            Assert.AreEqual("ALG", anulada.Origen);
+            Assert.AreEqual("REI", anulada.Destino);
+            Assert.AreEqual(2, anulada.LineasBorradas);
+            Assert.AreEqual(1, anulada.FilasUbicacionesDevueltas);
+            CollectionAssert.AreEqual(new[] { "002/002/004" }, anulada.Huecos);
+        }
+
+        [TestMethod]
+        public async Task Anular_ConLecturasEnAriadna_Es409SinTocarNada()
+        {
+            TraspasoPorSalir();
+            repositorio.Lecturas = 3;
+
+            NestoBusinessException error = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().Anular("1", 80901, Andre));
+
+            Assert.AreEqual(HttpStatusCode.Conflict, error.StatusCode);
+            StringAssert.Contains(error.Message, "Ariadna");
+            Assert.AreEqual("ROLLBACK", repositorio.Llamadas.Last());
+            Assert.IsFalse(repositorio.Llamadas.Any(l => l.StartsWith("HUECOS") || l.StartsWith("DELETE")));
+            Assert.AreEqual(2, repositorio.Traspaso.Count);
+        }
+
+        [TestMethod]
+        public async Task Anular_YaContabilizado_Es409()
+        {
+            TraspasoPorSalir();
+            repositorio.Contabilizado = true;
+
+            NestoBusinessException error = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().Anular("1", 80901, Andre));
+
+            Assert.AreEqual(HttpStatusCode.Conflict, error.StatusCode);
+            Assert.IsFalse(repositorio.Llamadas.Any(l => l.StartsWith("HUECOS")));
+        }
+
+        [TestMethod]
+        public async Task Anular_SinSalidaPendiente_Es404()
+        {
+            NestoBusinessException error = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().Anular("1", 80901, Andre));
+
+            Assert.AreEqual(HttpStatusCode.NotFound, error.StatusCode);
+        }
+
+        [TestMethod]
+        public async Task Anular_SinAlmacenNiDireccion_EsUnauthorizedSinTransaccion()
+        {
+            TraspasoPorSalir();
+
+            _ = await Assert.ThrowsExceptionAsync<UnauthorizedAccessException>(() => Servicio().Anular("1", 80901, Paloma));
+
+            Assert.AreEqual(0, repositorio.Llamadas.Count);
+        }
+
+        [TestMethod]
+        public async Task Controlador_Anular_SinPermiso_Es403()
+        {
+            IServicioPreparacionReposicion servicio = A.Fake<IServicioPreparacionReposicion>();
+            A.CallTo(() => servicio.Anular("1", 80901, A<IPrincipal>.Ignored)).Throws(new UnauthorizedAccessException("no"));
+            var controlador = new ReposicionesController(null, servicio) { Request = new HttpRequestMessage(), User = Paloma };
+
+            IHttpActionResult resultado = await controlador.DeleteAnular(80901);
+
+            Assert.AreEqual(HttpStatusCode.Forbidden, ((ResponseMessageResult)resultado).Response.StatusCode);
+        }
+
+        [TestMethod]
+        public void Sql_LoQueDejaElPostEsLoQueAriadnaListaPorSalir()
+        {
+            // El POST deja la salida en el diario de salida del origen, con Almacén = origen, cantidad negativa y NºTraspaso…
+            string salida = RepositorioPreparacionReposicionSql.SQL_INSERTAR_SALIDA;
+            StringAssert.Contains(salida, "SELECT p.Empresa, p.Diario, p.[Número], @p3, p.Texto, @p4, p.Grupo, -p.Cantidad");
+            StringAssert.Contains(salida, "p.[NºTraspaso]");
+            // … que es justo lo que Ariadna lista en Recoger (REPO) mientras no se contabiliza
+            string porSalir = RepositorioPreparacionAlmacen.SQL_REPOSICIONES_POR_SALIR;
+            StringAssert.Contains(porSalir, "s.[Almacén] = @p1 AND s.Diario = a.DiarioSalidaRep AND s.[NºTraspaso] > 0 AND s.Cantidad < 0");
+            // y en el diario compartido solo se miran las líneas sin número
+            StringAssert.Contains(RepositorioPreparacionReposicionSql.SQL_LINEAS_DE_OTRO_ALMACEN, "(@p3 = 0 OR ISNULL([NºTraspaso], 0) = 0)");
+        }
+
+        [TestMethod]
+        public void Sql_AnularBorraElTraspasoEnteroYLoQuitaDePedidosEspeciales()
+        {
+            StringAssert.Contains(RepositorioPreparacionReposicionSql.SQL_TRASPASO, "WITH (UPDLOCK, HOLDLOCK)");
+            StringAssert.Contains(RepositorioPreparacionReposicionSql.SQL_BORRAR_TRASPASO, "WHERE Empresa = @p0 AND [NºTraspaso] = @p1");
+            StringAssert.Contains(RepositorioPreparacionReposicionSql.SQL_QUITAR_TRASPASO_PEDIDOS_ESPECIALES, "SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0");
+            StringAssert.Contains(RepositorioPreparacionReposicionSql.SQL_LECTURAS_DEL_TRASPASO, "TipoOrigen = 'REPO'");
         }
 
         [TestMethod]
@@ -198,7 +415,7 @@ namespace NestoAPI.Tests.Infrastructure
         public async Task CambiarCantidad_ABajar_DevuelveElSobranteAlHuecoYDespuesCambiaLaLinea()
         {
             repositorio.Lineas.Add(Fila(561483500, "41980", 5));
-            A.CallTo(() => huecos.DevolverSobrante("1", 561483500, 3)).Invokes(() => repositorio.Llamadas.Add("HUECOS devolver 561483500 → 3"));
+            A.CallTo(() => huecos.DevolverSobrante("1", "ALC", 561483500, "41980", 3, "NUEVAVISION\\Paloma")).Invokes(() => repositorio.Llamadas.Add("HUECOS devolver 561483500 → 3"));
 
             ReposicionEnPreparacionDTO reposicion = await Servicio().CambiarCantidad("1", "ALC", 561483500, 3, Paloma);
 
@@ -248,7 +465,8 @@ namespace NestoAPI.Tests.Infrastructure
             repositorio.Lineas.Add(Fila(561483500, "41980", 3));
             repositorio.Lineas.Add(Fila(561483600, "21116", 1));
             repositorio.UltimoTraspaso = 80892;
-            A.CallTo(() => huecos.DescontarAlTerminar("1", "RepoAlcAlg", "ALG", 80893)).Invokes(() => repositorio.Llamadas.Add("HUECOS descontar 80893"));
+            A.CallTo(() => huecos.DescontarAlTerminar("1", A<IReadOnlyList<int>>.That.IsSameSequenceAs(new[] { 561483500, 561483600 }), 80893, "NUEVAVISION\\Paloma"))
+                .Invokes(() => repositorio.Llamadas.Add("HUECOS descontar 80893"));
 
             ResultadoTerminarReposicionDTO resultado = await Servicio().Terminar("1", "ALC", Paloma);
 
@@ -456,10 +674,34 @@ namespace NestoAPI.Tests.Infrastructure
                 return Task.FromResult(Lineas.Where(l => Estado(l).Diario == diario && Estado(l).Traspaso == 0 && l.Almacen != origen).ToList());
             }
 
-            public Task<int> ContarLineasDeOtroAlmacen(string empresa, string diario, string destino)
+            public Task<int> ContarLineasDeOtroAlmacen(string empresa, string diario, string destino, bool soloSinTraspaso)
             {
-                Llamadas.Add($"COUNT otros {diario} <>{destino}");
+                Llamadas.Add($"COUNT otros {diario} <>{destino}{(soloSinTraspaso ? " sin traspaso" : string.Empty)}");
                 return Task.FromResult(LineasDeOtroAlmacen);
+            }
+
+            public readonly List<FilaTraspasoReposicion> Traspaso = new List<FilaTraspasoReposicion>();
+            public bool Contabilizado;
+            public int Lecturas;
+
+            public Task<List<FilaTraspasoReposicion>> LeerTraspaso(string empresa, int numeroTraspaso) => Task.FromResult(Traspaso.ToList());
+
+            public Task<bool> TraspasoContabilizado(string empresa, int numeroTraspaso) => Task.FromResult(Contabilizado);
+
+            public Task<int> ContarLecturas(string empresa, int numeroTraspaso) => Task.FromResult(Lecturas);
+
+            public Task<int> BorrarTraspaso(string empresa, int numeroTraspaso)
+            {
+                int borradas = Traspaso.Count;
+                Traspaso.Clear();
+                Llamadas.Add($"DELETE traspaso {numeroTraspaso} → {borradas}");
+                return Task.FromResult(borradas);
+            }
+
+            public Task<int> QuitarTraspasoDePedidosEspeciales(int numeroTraspaso)
+            {
+                Llamadas.Add($"UPDATE pedidosespeciales quitar {numeroTraspaso}");
+                return Task.FromResult(0);
             }
 
             public Task<int> InsertarLineaPreparacion(string empresa, string diario, string origen, string destino, string producto, int cantidad,

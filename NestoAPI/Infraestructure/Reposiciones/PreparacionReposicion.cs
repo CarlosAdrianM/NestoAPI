@@ -1,6 +1,8 @@
 using NestoAPI.Infraestructure.Contadores;
 using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Infraestructure.ExtractosProducto;
+using NestoAPI.Infraestructure.PreparacionAlmacen;
+using NestoAPI.Infraestructure.Ubicaciones;
 using NestoAPI.Infrastructure;
 using NestoAPI.Models;
 using System;
@@ -50,6 +52,14 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public int Cantidad { get; set; }
         /// <summary>Stock actual del producto en el almacén de origen (lo que la tienda tiene para mandar).</summary>
         public int StockOrigen { get; set; }
+        /// <summary>
+        /// Origen con control de ubicaciones: el hueco (o huecos, «002/002/004 (3), 008/004/001 (2)») de donde sale lo
+        /// reservado. Null en las tiendas o si no se ha podido reservar nada en un hueco.
+        /// </summary>
+        public string Hueco { get; set; }
+        /// <summary>Origen con control de ubicaciones: alguna unidad no tiene hueco (no había libre o estaba pendiente de ubicar).</summary>
+        public bool SinHueco { get; set; }
+        public int UnidadesSinHueco { get; set; }
     }
 
     /// <summary>La reposición que un almacén tiene en preparación (como mucho una a la vez).</summary>
@@ -62,6 +72,11 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public string Diario { get; set; }
         public DateTime Fecha { get; set; }
         public string Usuario { get; set; }
+        /// <summary>
+        /// Null mientras está en preparación (las tiendas, hasta Terminar). Desde un origen con control de ubicaciones
+        /// (Algete) la API la deja ya cerrada, con su número de traspaso, lista para recoger en Ariadna (Recoger, REPO).
+        /// </summary>
+        public int? NumTraspaso { get; set; }
         public List<LineaReposicionEnPreparacionDTO> Lineas { get; set; } = new List<LineaReposicionEnPreparacionDTO>();
         public int Unidades => Lineas.Sum(l => l.Cantidad);
     }
@@ -76,6 +91,19 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public string Producto { get; set; }
         public string Nombre { get; set; }
         public int Cantidad { get; set; }
+    }
+
+    /// <summary>Lo que ha deshecho DELETE api/Reposiciones/{numTraspaso}.</summary>
+    public class ResultadoAnularReposicionDTO
+    {
+        public int NumTraspaso { get; set; }
+        public string Origen { get; set; }
+        public string Destino { get; set; }
+        /// <summary>Filas de PreExtrProducto borradas (salida y entrada).</summary>
+        public int LineasBorradas { get; set; }
+        /// <summary>Filas de Ubicaciones que han vuelto a su hueco (o a pendiente de ubicar).</summary>
+        public int FilasUbicacionesDevueltas { get; set; }
+        public List<string> Huecos { get; set; } = new List<string>();
     }
 
     public class ResultadoTerminarReposicionDTO
@@ -118,6 +146,17 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public string Usuario { get; set; }
     }
 
+    /// <summary>Una fila de PreExtrProducto de un traspaso de reposición ya numerado (salida o entrada).</summary>
+    public class FilaTraspasoReposicion
+    {
+        public int NumeroOrden { get; set; }
+        public string Producto { get; set; }
+        public int Cantidad { get; set; }
+        public string Almacen { get; set; }
+        public string Diario { get; set; }
+        public int Estado { get; set; }
+    }
+
     /// <summary>
     /// NestoAPI#553: las escrituras de una reposición en preparación, una a una, en el orden en que las hace Nesto viejo
     /// (traza real ALC → ALG del 06/10/26, traspaso 80893, comentada en la issue). Cada método lleva la sentencia original.
@@ -130,8 +169,12 @@ namespace NestoAPI.Infraestructure.Reposiciones
         Task<bool> HayInventarioEnCurso(string empresa, string almacen);
         /// <summary>Las líneas del diario de salida del origen que van a OTRO almacén, sin número de traspaso todavía.</summary>
         Task<List<FilaReposicionEnPreparacion>> LeerLineasEnPreparacion(string empresa, string diario, string origen);
-        /// <summary>Líneas del diario de salida con estado ≥ 0 que NO son del destino (Nesto viejo no termina si las hay).</summary>
-        Task<int> ContarLineasDeOtroAlmacen(string empresa, string diario, string destino);
+        /// <summary>
+        /// Líneas del diario de salida con estado ≥ 0 que NO son del destino (Nesto viejo no termina si las hay). Con
+        /// <paramref name="soloSinTraspaso"/>, solo las que aún no tienen número: en «General» de Algete conviven las salidas
+        /// de otros traspasos por recoger, que se contabilizan aparte (Ariadna aparta las demás al terminar cada una).
+        /// </summary>
+        Task<int> ContarLineasDeOtroAlmacen(string empresa, string diario, string destino, bool soloSinTraspaso);
         /// <summary>Una línea de preparación. Devuelve las filas insertadas (0 si el producto no existe).</summary>
         Task<int> InsertarLineaPreparacion(string empresa, string diario, string origen, string destino, string producto, int cantidad,
             DateTime fecha, string texto, string vendedor, string usuario);
@@ -145,6 +188,14 @@ namespace NestoAPI.Infraestructure.Reposiciones
         Task Contabilizar(string empresa, string diario, string usuario);
         Task<int> MarcarRestoEstado1(string empresa, string diario);
         Task<int> NuevoNumeroTraspaso();
+        /// <summary>Las filas de PreExtrProducto de un traspaso (salida y entrada), bloqueadas hasta el final de la transacción.</summary>
+        Task<List<FilaTraspasoReposicion>> LeerTraspaso(string empresa, int numeroTraspaso);
+        /// <summary>¿Hay algo de ese traspaso en ExtractoProducto (salida o entrada contabilizada)?</summary>
+        Task<bool> TraspasoContabilizado(string empresa, int numeroTraspaso);
+        /// <summary>Lecturas de Ariadna (PreparacionEscaneos, REPO) de ese traspaso: si hay, alguien ya lo está recogiendo o recibiendo.</summary>
+        Task<int> ContarLecturas(string empresa, int numeroTraspaso);
+        Task<int> BorrarTraspaso(string empresa, int numeroTraspaso);
+        Task<int> QuitarTraspasoDePedidosEspeciales(int numeroTraspaso);
         /// <summary>Todo lo de dentro va en una transacción: si algo falla, no queda nada a medias.</summary>
         Task<T> EnTransaccion<T>(Func<Task<T>> trabajo);
     }
@@ -187,7 +238,8 @@ ORDER BY pr.SubGrupo, p.[Número]";
         // Nesto viejo (07:32:16): select empresa from vstreposiciónAlmacénAbajo where diario='RepoAlcAlg' and empresa=1
         //                        and almacén<>'ALG' and estado>=0
         internal const string SQL_LINEAS_DE_OTRO_ALMACEN = @"
-SELECT COUNT(*) FROM PreExtrProducto WHERE Empresa = @p0 AND Diario = @p1 AND [Almacén] <> @p2 AND Estado >= 0";
+SELECT COUNT(*) FROM PreExtrProducto WHERE Empresa = @p0 AND Diario = @p1 AND [Almacén] <> @p2 AND Estado >= 0
+  AND (@p3 = 0 OR ISNULL([NºTraspaso], 0) = 0)";
 
         // Nesto viejo (07:18:51), en dos pasos por _REPPROD que aquí sobran: Insert into preextrproducto(Vendedor,Empresa,
         // Diario,Número,Fecha,Texto,Almacén,Grupo,Cantidad,Delegación,[Forma Venta],[Asiento Automático]) select 'NV ','1 ',
@@ -245,6 +297,26 @@ UPDATE PreExtrProducto SET Diario = @p3 WHERE Empresa = @p0 AND Diario = @p1 AND
         internal const string SQL_MARCAR_RESTO = @"
 UPDATE PreExtrProducto SET Estado = 1 WHERE [Número] <> 'R' AND Empresa = @p0 AND Diario = @p1";
 
+        // DELETE api/Reposiciones/{n}: el traspaso entero, bloqueado
+        internal const string SQL_TRASPASO = @"
+SELECT p.[Nº Orden] AS NumeroOrden, RTRIM(p.[Número]) AS Producto, CAST(p.Cantidad AS int) AS Cantidad, RTRIM(p.[Almacén]) AS Almacen,
+       RTRIM(p.Diario) AS Diario, CAST(p.Estado AS int) AS Estado
+FROM PreExtrProducto p WITH (UPDLOCK, HOLDLOCK)
+WHERE p.Empresa = @p0 AND p.[NºTraspaso] = @p1";
+
+        internal const string SQL_TRASPASO_CONTABILIZADO = @"
+SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM ExtractoProducto WHERE Empresa = @p0 AND [NºTraspaso] = @p1) THEN 1 ELSE 0 END AS bit)";
+
+        internal const string SQL_LECTURAS_DEL_TRASPASO = @"
+SELECT COUNT(*) FROM PreparacionEscaneos WHERE Empresa = @p0 AND TipoOrigen = 'REPO' AND NumeroOrigen = @p1";
+
+        internal const string SQL_BORRAR_TRASPASO = @"
+DELETE FROM PreExtrProducto WHERE Empresa = @p0 AND [NºTraspaso] = @p1";
+
+        // Lo contrario de SQL_PEDIDOS_ESPECIALES (sin filtro de empresa, como aquel)
+        internal const string SQL_QUITAR_TRASPASO_PEDIDOS_ESPECIALES = @"
+UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
+
         public async Task<DatosAlmacenReposicion> LeerAlmacen(string empresa, string almacen)
         {
             return await db.Database.SqlQuery<DatosAlmacenReposicion>(SQL_ALMACEN, Char("@p0", empresa, 3), Char("@p1", almacen, 3))
@@ -264,10 +336,11 @@ UPDATE PreExtrProducto SET Estado = 1 WHERE [Número] <> 'R' AND Empresa = @p0 A
                 Char("@p0", empresa, 3), Char("@p1", diario, 10), Char("@p2", origen, 3)).ToListAsync();
         }
 
-        public Task<int> ContarLineasDeOtroAlmacen(string empresa, string diario, string destino)
+        public Task<int> ContarLineasDeOtroAlmacen(string empresa, string diario, string destino, bool soloSinTraspaso)
         {
             return db.Database.SqlQuery<int>(SQL_LINEAS_DE_OTRO_ALMACEN,
-                Char("@p0", empresa, 3), Char("@p1", diario, 10), Char("@p2", destino, 3)).SingleAsync();
+                Char("@p0", empresa, 3), Char("@p1", diario, 10), Char("@p2", destino, 3),
+                new SqlParameter("@p3", SqlDbType.Bit) { Value = soloSinTraspaso }).SingleAsync();
         }
 
         public Task<int> InsertarLineaPreparacion(string empresa, string diario, string origen, string destino, string producto, int cantidad,
@@ -350,6 +423,36 @@ UPDATE PreExtrProducto SET Estado = 1 WHERE [Número] <> 'R' AND Empresa = @p0 A
             return numerador.Siguiente(db);
         }
 
+        public Task<List<FilaTraspasoReposicion>> LeerTraspaso(string empresa, int numeroTraspaso)
+        {
+            return db.Database.SqlQuery<FilaTraspasoReposicion>(SQL_TRASPASO, Char("@p0", empresa, 3), Traspaso("@p1", numeroTraspaso)).ToListAsync();
+        }
+
+        public Task<bool> TraspasoContabilizado(string empresa, int numeroTraspaso)
+        {
+            return db.Database.SqlQuery<bool>(SQL_TRASPASO_CONTABILIZADO, Char("@p0", empresa, 3), Traspaso("@p1", numeroTraspaso)).SingleAsync();
+        }
+
+        public Task<int> ContarLecturas(string empresa, int numeroTraspaso)
+        {
+            return db.Database.SqlQuery<int>(SQL_LECTURAS_DEL_TRASPASO, Char("@p0", empresa, 3), Traspaso("@p1", numeroTraspaso)).SingleAsync();
+        }
+
+        public Task<int> BorrarTraspaso(string empresa, int numeroTraspaso)
+        {
+            return db.Database.ExecuteSqlCommandAsync(SQL_BORRAR_TRASPASO, Char("@p0", empresa, 3), Traspaso("@p1", numeroTraspaso));
+        }
+
+        public Task<int> QuitarTraspasoDePedidosEspeciales(int numeroTraspaso)
+        {
+            return db.Database.ExecuteSqlCommandAsync(SQL_QUITAR_TRASPASO_PEDIDOS_ESPECIALES, Traspaso("@p0", numeroTraspaso));
+        }
+
+        private static SqlParameter Traspaso(string nombre, int numero)
+        {
+            return new SqlParameter(nombre, SqlDbType.Int) { Value = numero };
+        }
+
         public async Task<T> EnTransaccion<T>(Func<Task<T>> trabajo)
         {
             using (DbContextTransaction transaccion = db.Database.BeginTransaction())
@@ -397,7 +500,11 @@ UPDATE PreExtrProducto SET Estado = 1 WHERE [Número] <> 'R' AND Empresa = @p0 A
 
     public interface IServicioPreparacionReposicion
     {
-        /// <summary>Crea la reposición y la deja en preparación. 409 si hay inventario en curso o ya hay una en preparación.</summary>
+        /// <summary>
+        /// Crea la reposición. Desde una tienda la deja en preparación (hasta Terminar); desde un origen con control de
+        /// ubicaciones (Algete) reserva los huecos y la cierra ya, sin contabilizar, lista para recoger en Ariadna.
+        /// 409 si hay inventario en curso o ya hay una en preparación.
+        /// </summary>
         Task<ReposicionEnPreparacionDTO> Crear(CrearReposicionDTO peticion, IPrincipal usuario);
         /// <summary>La que el origen tiene en preparación, o null.</summary>
         Task<ReposicionEnPreparacionDTO> LeerEnPreparacion(string empresa, string origen);
@@ -405,17 +512,28 @@ UPDATE PreExtrProducto SET Estado = 1 WHERE [Número] <> 'R' AND Empresa = @p0 A
         Task<ReposicionEnPreparacionDTO> CambiarCantidad(string empresa, string origen, int numeroOrden, int cantidad, IPrincipal usuario);
         /// <summary>Da la reposición por preparada: contabiliza la salida del origen y deja la entrada pendiente de recibir en el destino.</summary>
         Task<ResultadoTerminarReposicionDTO> Terminar(string empresa, string origen, IPrincipal usuario);
+        /// <summary>
+        /// Anula un traspaso cerrado que aún no se ha recogido ni contabilizado: devuelve lo reservado a los huecos y borra
+        /// la salida y la entrada. 409 si ya tiene lecturas en Ariadna o está contabilizado; 404 si no existe.
+        /// </summary>
+        Task<ResultadoAnularReposicionDTO> Anular(string empresa, int numeroTraspaso, IPrincipal usuario);
     }
 
     /// <summary>
-    /// NestoAPI#553 (fase 1, corte 1): crear, preparar y terminar una reposición desde la API haciendo EXACTAMENTE las
-    /// escrituras de Nesto viejo (traza real de Paloma, ALC → ALG, 06/10/26). Mientras se prepara, la reposición son las
-    /// líneas del diario de SALIDA del origen con Almacén = destino y cantidad positiva (así las ve «pendiente de
-    /// reposición» en todo el programa cuando tengan NºTraspaso). Al terminar: salida negativa en el origen contabilizada
-    /// ya, y entrada positiva movida al diario de ENTRADA del destino, pendiente de recibir (RecepcionReposicionesAlmacen).
+    /// NestoAPI#553: crear, preparar y terminar una reposición desde la API haciendo EXACTAMENTE las escrituras de Nesto
+    /// viejo (traza real de Paloma, ALC → ALG, 06/10/26; datos del traspaso 80885 de Andre, ALG → ALC, 05/10/26). Mientras
+    /// se prepara, la reposición son las líneas del diario de SALIDA del origen con Almacén = destino y cantidad positiva.
+    /// Al cerrar: número de traspaso, salida negativa en el origen y entrada movida al diario de ENTRADA del destino,
+    /// pendiente de recibir (RecepcionReposicionesAlmacen).
     ///
-    /// <para>Pensado para tienda → Algete. Un origen con control de ubicaciones (Algete) se rechaza hasta NestoAPI#594:
-    /// ver <see cref="UbicacionesReposicion"/>.</para>
+    /// <para>Dos caminos según el origen:</para>
+    /// <list type="bullet">
+    /// <item>Tienda (sin control de ubicaciones): Crear la deja en preparación; la tienda baja cantidades y Terminar la
+    /// cierra Y contabiliza la salida (prdExtrProducto), como Nesto viejo.</item>
+    /// <item>Algete (con control de ubicaciones): Crear, en una transacción, crea las líneas, reserva los huecos por la
+    /// puerta única de Ubicaciones (NestoAPI#594) y la cierra SIN contabilizar: queda «por salir» en Recoger de Ariadna
+    /// (REPO), que la contabiliza al terminar la recogida. Se anula con <see cref="Anular"/> mientras nadie la recoja.</item>
+    /// </list>
     /// </summary>
     public class ServicioPreparacionReposicion : IServicioPreparacionReposicion, IDisposable
     {
@@ -442,7 +560,7 @@ UPDATE PreExtrProducto SET Estado = 1 WHERE [Número] <> 'R' AND Empresa = @p0 A
         public ServicioPreparacionReposicion(NVEntities db)
             : this(new RepositorioPreparacionReposicionSql(db),
                 (empresa, origen, destino) => new ServicioPropuestaReposicion(db).CalcularPropuesta(empresa, origen, destino),
-                UbicacionesReposicion.Para,
+                (origen, control) => UbicacionesReposicion.Para(origen, control, () => new PuertaUbicacionesSql(db)),
                 (empresa, usuario) => Controllers.ParametrosUsuarioController.LeerParametro(empresa, usuario, CLAVE_ALMACEN_USUARIO),
                 () => DateTime.Now)
         {
@@ -460,7 +578,7 @@ UPDATE PreExtrProducto SET Estado = 1 WHERE [Número] <> 'R' AND Empresa = @p0 A
         {
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
             this.propuesta = propuesta ?? throw new ArgumentNullException(nameof(propuesta));
-            this.ubicaciones = ubicaciones ?? UbicacionesReposicion.Para;
+            this.ubicaciones = ubicaciones ?? throw new ArgumentNullException(nameof(ubicaciones));
             this.almacenDelUsuario = almacenDelUsuario ?? ((e, u) => null);
             this.ahora = ahora ?? (() => DateTime.Now);
         }
@@ -475,11 +593,11 @@ UPDATE PreExtrProducto SET Estado = 1 WHERE [Número] <> 'R' AND Empresa = @p0 A
             string origen = Almacen(peticion.Origen);
             string destino = Almacen(peticion.Destino);
             ComprobarAlmacenes(origen, destino);
-            ComprobarPuedeEscribir(usuario, empresa, origen);
 
             DatosAlmacenReposicion almacenOrigen = await AlmacenConDiario(empresa, origen, a => a.DiarioSalidaRep, "de salida").ConfigureAwait(false);
+            ComprobarPuedeEscribir(usuario, empresa, origen, almacenOrigen.ControlUbicaciones);
             // El destino tiene que poder recibirla (su DiarioEntradaRep): mejor saberlo ahora que al terminar
-            _ = await AlmacenConDiario(empresa, destino, a => a.DiarioEntradaRep, "de entrada").ConfigureAwait(false);
+            DatosAlmacenReposicion almacenDestino = await AlmacenConDiario(empresa, destino, a => a.DiarioEntradaRep, "de entrada").ConfigureAwait(false);
             IUbicacionesReposicion huecos = ubicaciones(origen, almacenOrigen.ControlUbicaciones);
             string diario = almacenOrigen.DiarioSalidaRep;
 
@@ -504,7 +622,10 @@ UPDATE PreExtrProducto SET Estado = 1 WHERE [Número] <> 'R' AND Empresa = @p0 A
             DateTime fecha = peticion.Fecha ?? ahora().Date;
             string texto = Texto(origen, destino);
             string quien = UsuarioAuditoriaHelper.Resolver(usuario, null);
-            _ = await repositorio.EnTransaccion(async () =>
+            bool cerrarYa = almacenOrigen.ControlUbicaciones;
+            List<FilaReposicionEnPreparacion> creadas = null;
+            ResumenUbicaciones reservas = null;
+            int? numeroTraspaso = await repositorio.EnTransaccion<int?>(async () =>
             {
                 foreach (LineaCrearReposicionDTO linea in lineas)
                 {
@@ -515,11 +636,27 @@ UPDATE PreExtrProducto SET Estado = 1 WHERE [Número] <> 'R' AND Empresa = @p0 A
                         throw new NestoBusinessException($"El producto {linea.Producto} no existe en la empresa {empresa}. No se ha creado la reposición.");
                     }
                 }
-                await huecos.ReservarAlImprimir(empresa, diario, destino).ConfigureAwait(false);
-                return lineas.Count;
+                // Con su [Nº Orden]: es el NºOrdenRepo de la reserva (prdUbicarReposicion lo enlaza con la línea de ENTRADA)
+                creadas = await repositorio.LeerLineasEnPreparacion(empresa, diario, origen).ConfigureAwait(false);
+                reservas = await huecos.Reservar(empresa, origen, creadas
+                    .Select(f => new LineaReservaReposicion { NumeroOrdenEntrada = f.NumeroOrden, Producto = f.Producto, Cantidad = f.Cantidad })
+                    .ToList(), quien).ConfigureAwait(false);
+                if (!cerrarYa)
+                {
+                    return null;
+                }
+                return await CerrarPreparacion(empresa, origen, destino, diario, almacenDestino, creadas.Where(f => f.Cantidad > 0).ToList(),
+                    huecos, quien, contabilizar: false).ConfigureAwait(false);
             }).ConfigureAwait(false);
 
-            return await LeerEnPreparacion(empresa, origen, almacenOrigen).ConfigureAwait(false);
+            if (!cerrarYa)
+            {
+                return await LeerEnPreparacion(empresa, origen, almacenOrigen).ConfigureAwait(false);
+            }
+            // Ya no está «en preparación» (tiene traspaso): se devuelve lo que se ha creado, con dónde está cada cosa
+            ReposicionEnPreparacionDTO creada = Dto(empresa, origen, diario, creadas, reservas);
+            creada.NumTraspaso = numeroTraspaso;
+            return creada;
         }
 
         public async Task<ReposicionEnPreparacionDTO> LeerEnPreparacion(string empresa, string origen)
@@ -538,12 +675,12 @@ UPDATE PreExtrProducto SET Estado = 1 WHERE [Número] <> 'R' AND Empresa = @p0 A
         {
             empresa = Empresa(empresa);
             origen = Almacen(origen);
-            ComprobarPuedeEscribir(usuario, empresa, origen);
             if (cantidad < 0 || cantidad > short.MaxValue)
             {
                 throw new NestoBusinessException($"La cantidad {cantidad} no vale: tiene que estar entre 0 y {short.MaxValue}.");
             }
             DatosAlmacenReposicion almacen = await AlmacenConDiario(empresa, origen, a => a.DiarioSalidaRep, "de salida").ConfigureAwait(false);
+            ComprobarPuedeEscribir(usuario, empresa, origen, almacen.ControlUbicaciones);
             IUbicacionesReposicion huecos = ubicaciones(origen, almacen.ControlUbicaciones);
             List<FilaReposicionEnPreparacion> filas = await repositorio.LeerLineasEnPreparacion(empresa, almacen.DiarioSalidaRep, origen).ConfigureAwait(false);
             FilaReposicionEnPreparacion fila = filas.FirstOrDefault(f => f.NumeroOrden == numeroOrden);
@@ -560,10 +697,11 @@ UPDATE PreExtrProducto SET Estado = 1 WHERE [Número] <> 'R' AND Empresa = @p0 A
                 throw new NestoBusinessException($"No se puede poner una cantidad mayor que la preparada ({fila.Cantidad}) en {fila.Producto}: " +
                     "si hace falta más, crea otra reposición cuando termine esta.");
             }
+            string quien = UsuarioAuditoriaHelper.Resolver(usuario, null);
             _ = await repositorio.EnTransaccion(async () =>
             {
                 // Nesto viejo primero devuelve el sobrante al hueco (prdCambiarCantidadReposicion) y después cambia la línea
-                await huecos.DevolverSobrante(empresa, numeroOrden, cantidad).ConfigureAwait(false);
+                _ = await huecos.DevolverSobrante(empresa, origen, numeroOrden, fila.Producto, cantidad, quien).ConfigureAwait(false);
                 int cambiadas = await repositorio.CambiarCantidad(empresa, almacen.DiarioSalidaRep, numeroOrden, cantidad).ConfigureAwait(false);
                 if (cambiadas != 1)
                 {
@@ -578,9 +716,9 @@ UPDATE PreExtrProducto SET Estado = 1 WHERE [Número] <> 'R' AND Empresa = @p0 A
         {
             empresa = Empresa(empresa);
             origen = Almacen(origen);
-            ComprobarPuedeEscribir(usuario, empresa, origen);
             // (1) Nesto viejo: select DiarioEntradaRep from almacenes where número='ALG'; select controlubicaciones,DiarioSalidaRep … 'ALC'
             DatosAlmacenReposicion almacenOrigen = await AlmacenConDiario(empresa, origen, a => a.DiarioSalidaRep, "de salida").ConfigureAwait(false);
+            ComprobarPuedeEscribir(usuario, empresa, origen, almacenOrigen.ControlUbicaciones);
             IUbicacionesReposicion huecos = ubicaciones(origen, almacenOrigen.ControlUbicaciones);
             string diario = almacenOrigen.DiarioSalidaRep;
 
@@ -604,49 +742,8 @@ UPDATE PreExtrProducto SET Estado = 1 WHERE [Número] <> 'R' AND Empresa = @p0 A
             }
             string quien = UsuarioAuditoriaHelper.Resolver(usuario, null);
 
-            int numeroTraspaso = await repositorio.EnTransaccion(async () =>
-            {
-                // (2) Nesto viejo: select empresa from vstreposiciónAlmacénAbajo where diario=… and almacén<>'ALG' and estado>=0 → tiene que ser 0
-                int deOtroAlmacen = await repositorio.ContarLineasDeOtroAlmacen(empresa, diario, destino).ConfigureAwait(false);
-                if (deOtroAlmacen > 0)
-                {
-                    throw Conflicto($"En el diario {diario} de {origen} hay {deOtroAlmacen} líneas que no son de la reposición a {destino}: " +
-                        "hay que contabilizarlas o quitarlas desde Nesto viejo antes de terminar.");
-                }
-                // (3) select traspasoalmacén from contadoresglobales → +1; update contadoresglobales set traspasoalmacén=80893
-                int numero = await repositorio.NuevoNumeroTraspaso().ConfigureAwait(false);
-                DateTime momento = ahora();
-                // (4) delete … and cantidad=0
-                _ = await repositorio.BorrarLineasACero(empresa, diario, destino).ConfigureAwait(false);
-                // (5) update … set nºtraspaso=80893, fecha=ahora
-                int numeradas = await repositorio.AsignarTraspaso(empresa, diario, destino, numero, momento).ConfigureAwait(false);
-                if (numeradas != conCantidad.Count)
-                {
-                    throw Conflicto($"La reposición de {origen} ha cambiado mientras tanto ({numeradas} líneas numeradas, {conCantidad.Count} esperadas): " +
-                        "vuelve a cargarla.");
-                }
-                // (6) update pedidosespeciales set NºTraspaso=… (líneas «Compra», sin vendedor)
-                _ = await repositorio.ActualizarPedidosEspeciales(empresa, diario, destino).ConfigureAwait(false);
-                // (7) update ubicaciones set cantidad=-cantidad, estado=-4, nºtraspasorepo=… (solo con control de ubicaciones)
-                await huecos.DescontarAlTerminar(empresa, diario, destino, numero).ConfigureAwait(false);
-                // (8) la SALIDA: las mismas líneas con Almacén = origen y cantidad negativa
-                int salidas = await repositorio.InsertarSalida(empresa, diario, origen, destino, momento, quien).ConfigureAwait(false);
-                if (salidas != numeradas)
-                {
-                    throw new NestoBusinessException($"Al crear la salida de {origen} se han insertado {salidas} líneas y había {numeradas}. No se ha hecho nada.");
-                }
-                // (9) la ENTRADA al diario de entrada del destino (sigue con Estado 3 y NºTraspaso: pendiente de recibir)
-                int movidas = await repositorio.MoverEntradaADiario(empresa, diario, destino, almacenDestino.DiarioEntradaRep).ConfigureAwait(false);
-                if (movidas != numeradas)
-                {
-                    throw new NestoBusinessException($"Al pasar la entrada al diario {almacenDestino.DiarioEntradaRep} se han movido {movidas} líneas y había {numeradas}. No se ha hecho nada.");
-                }
-                // (10) Nesto viejo llama a prdExtrProducto('1','RepoAlcAlg'): la salida pasa al extracto
-                await repositorio.Contabilizar(empresa, diario, quien).ConfigureAwait(false);
-                // (11) update preextrproducto set estado=1 where número<>'R ' and diario=… (0 filas; por fidelidad)
-                _ = await repositorio.MarcarRestoEstado1(empresa, diario).ConfigureAwait(false);
-                return numero;
-            }).ConfigureAwait(false);
+            int numeroTraspaso = await repositorio.EnTransaccion(() =>
+                CerrarPreparacion(empresa, origen, destino, diario, almacenDestino, conCantidad, huecos, quien, contabilizar: true)).ConfigureAwait(false);
 
             return new ResultadoTerminarReposicionDTO
             {
@@ -659,11 +756,66 @@ UPDATE PreExtrProducto SET Estado = 1 WHERE [Número] <> 'R' AND Empresa = @p0 A
             };
         }
 
+        public async Task<ResultadoAnularReposicionDTO> Anular(string empresa, int numeroTraspaso, IPrincipal usuario)
+        {
+            empresa = Empresa(empresa);
+            if (!EscrituraSoloAlmacenAttribute.PuedeEscribir(usuario))
+            {
+                throw new UnauthorizedAccessException("Una reposición ya cerrada solo la pueden anular Almacén y Dirección.");
+            }
+            string quien = UsuarioAuditoriaHelper.Resolver(usuario, null);
+            return await repositorio.EnTransaccion(async () =>
+            {
+                List<FilaTraspasoReposicion> filas = await repositorio.LeerTraspaso(empresa, numeroTraspaso).ConfigureAwait(false) ?? new List<FilaTraspasoReposicion>();
+                List<FilaTraspasoReposicion> salidas = filas.Where(f => f.Cantidad < 0).ToList();
+                bool contabilizado = await repositorio.TraspasoContabilizado(empresa, numeroTraspaso).ConfigureAwait(false);
+                if (contabilizado)
+                {
+                    throw Conflicto($"El traspaso {numeroTraspaso} ya está contabilizado (salida o entrada): no se puede anular.");
+                }
+                if (!salidas.Any())
+                {
+                    throw new NestoBusinessException($"No hay ninguna reposición por salir con el traspaso {numeroTraspaso}.") { StatusCode = HttpStatusCode.NotFound };
+                }
+                int lecturas = await repositorio.ContarLecturas(empresa, numeroTraspaso).ConfigureAwait(false);
+                if (lecturas > 0)
+                {
+                    throw Conflicto($"El traspaso {numeroTraspaso} ya se está recogiendo en Ariadna ({lecturas} lecturas): no se puede anular.");
+                }
+                string origen = salidas.First().Almacen;
+                string destino = filas.Where(f => f.Cantidad > 0).Select(f => f.Almacen).FirstOrDefault();
+                DatosAlmacenReposicion almacenOrigen = await repositorio.LeerAlmacen(empresa, origen).ConfigureAwait(false);
+                IUbicacionesReposicion huecos = ubicaciones(origen, almacenOrigen?.ControlUbicaciones == true);
+
+                // (1) lo que salió de cada hueco vuelve a él (-4 → 0/2)
+                ResumenUbicaciones devuelto = await huecos.AnularSalida(empresa, origen, numeroTraspaso, quien).ConfigureAwait(false);
+                // (2) lo contrario de «update pedidosespeciales set NºTraspaso=…»
+                _ = await repositorio.QuitarTraspasoDePedidosEspeciales(numeroTraspaso).ConfigureAwait(false);
+                // (3) fuera la salida y la entrada
+                int borradas = await repositorio.BorrarTraspaso(empresa, numeroTraspaso).ConfigureAwait(false);
+                if (borradas != filas.Count)
+                {
+                    throw Conflicto($"El traspaso {numeroTraspaso} ha cambiado mientras tanto ({borradas} líneas borradas, {filas.Count} esperadas): vuelve a intentarlo.");
+                }
+                return new ResultadoAnularReposicionDTO
+                {
+                    NumTraspaso = numeroTraspaso,
+                    Origen = origen,
+                    Destino = destino,
+                    LineasBorradas = borradas,
+                    FilasUbicacionesDevueltas = devuelto.Movimientos.Count,
+                    Huecos = devuelto.Huecos.ToList()
+                };
+            }).ConfigureAwait(false);
+        }
+
         /// <summary>
         /// Quién puede crear, cambiar y terminar la reposición de un origen: quien tiene ese almacén en AlmacénPedidoVta (la
-        /// tienda) y, además, Almacén y Dirección. El mismo criterio que para recibirla (OrigenRecepcionReposiciones).
+        /// tienda) y, además, Almacén y Dirección. El mismo criterio que para recibirla (OrigenRecepcionReposiciones). Desde
+        /// un origen con control de ubicaciones (Algete), solo Almacén y Dirección: es quien la recoge en Ariadna
+        /// (OrigenSalidaReposicion.PuedeTerminar).
         /// </summary>
-        public bool PuedeEscribir(IPrincipal usuario, string empresa, string origen)
+        public bool PuedeEscribir(IPrincipal usuario, string empresa, string origen, bool controlUbicaciones = false)
         {
             if (usuario?.Identity?.IsAuthenticated != true || string.IsNullOrWhiteSpace(usuario.Identity.Name))
             {
@@ -672,6 +824,10 @@ UPDATE PreExtrProducto SET Estado = 1 WHERE [Número] <> 'R' AND Empresa = @p0 A
             if (usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.ALMACEN) || usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION))
             {
                 return true;
+            }
+            if (controlUbicaciones)
+            {
+                return false;
             }
             string nombre = usuario.Identity.Name;
             string sinDominio = nombre.Contains("\\") ? nombre.Substring(nombre.LastIndexOf('\\') + 1) : nombre;
@@ -686,12 +842,67 @@ UPDATE PreExtrProducto SET Estado = 1 WHERE [Número] <> 'R' AND Empresa = @p0 A
 
         // ---- privados ----
 
-        private void ComprobarPuedeEscribir(IPrincipal usuario, string empresa, string origen)
+        /// <summary>
+        /// Cerrar la preparación, los pasos de «Contabilizar» de Nesto viejo en su orden. Con <paramref name="contabilizar"/>
+        /// (tiendas) termina con prdExtrProducto del diario de salida; sin él (Algete) la salida queda en PreExtrProducto
+        /// «por salir» y la contabiliza Ariadna al terminar la recogida. Va dentro de la transacción del llamante.
+        /// </summary>
+        private async Task<int> CerrarPreparacion(string empresa, string origen, string destino, string diario, DatosAlmacenReposicion almacenDestino,
+            List<FilaReposicionEnPreparacion> conCantidad, IUbicacionesReposicion huecos, string quien, bool contabilizar)
         {
-            if (!PuedeEscribir(usuario, empresa, origen))
+            // (2) Nesto viejo: select empresa from vstreposiciónAlmacénAbajo where diario=… and almacén<>'ALG' and estado>=0 → tiene que ser 0
+            int deOtroAlmacen = await repositorio.ContarLineasDeOtroAlmacen(empresa, diario, destino, soloSinTraspaso: !contabilizar).ConfigureAwait(false);
+            if (deOtroAlmacen > 0)
             {
-                throw new UnauthorizedAccessException($"Las reposiciones de {origen} las prepara la gente de ese almacén " +
-                    "(o Almacén y Dirección). Tu usuario no tiene ese almacén como almacén de pedidos.");
+                throw Conflicto($"En el diario {diario} de {origen} hay {deOtroAlmacen} líneas que no son de la reposición a {destino}: " +
+                    "hay que contabilizarlas o quitarlas desde Nesto viejo antes de terminar.");
+            }
+            // (3) select traspasoalmacén from contadoresglobales → +1; update contadoresglobales set traspasoalmacén=80893
+            int numero = await repositorio.NuevoNumeroTraspaso().ConfigureAwait(false);
+            DateTime momento = ahora();
+            // (4) delete … and cantidad=0
+            _ = await repositorio.BorrarLineasACero(empresa, diario, destino).ConfigureAwait(false);
+            // (5) update … set nºtraspaso=80893, fecha=ahora
+            int numeradas = await repositorio.AsignarTraspaso(empresa, diario, destino, numero, momento).ConfigureAwait(false);
+            if (numeradas != conCantidad.Count)
+            {
+                throw Conflicto($"La reposición de {origen} ha cambiado mientras tanto ({numeradas} líneas numeradas, {conCantidad.Count} esperadas): " +
+                    "vuelve a cargarla.");
+            }
+            // (6) update pedidosespeciales set NºTraspaso=… (líneas «Compra», sin vendedor)
+            _ = await repositorio.ActualizarPedidosEspeciales(empresa, diario, destino).ConfigureAwait(false);
+            // (7) update ubicaciones set cantidad=-cantidad, estado=-4, nºtraspasorepo=… (solo con control de ubicaciones)
+            _ = await huecos.DescontarAlTerminar(empresa, conCantidad.Select(f => f.NumeroOrden).ToList(), numero, quien).ConfigureAwait(false);
+            // (8) la SALIDA: las mismas líneas con Almacén = origen y cantidad negativa
+            int salidas = await repositorio.InsertarSalida(empresa, diario, origen, destino, momento, quien).ConfigureAwait(false);
+            if (salidas != numeradas)
+            {
+                throw new NestoBusinessException($"Al crear la salida de {origen} se han insertado {salidas} líneas y había {numeradas}. No se ha hecho nada.");
+            }
+            // (9) la ENTRADA al diario de entrada del destino (sigue con Estado 3 y NºTraspaso: pendiente de recibir)
+            int movidas = await repositorio.MoverEntradaADiario(empresa, diario, destino, almacenDestino.DiarioEntradaRep).ConfigureAwait(false);
+            if (movidas != numeradas)
+            {
+                throw new NestoBusinessException($"Al pasar la entrada al diario {almacenDestino.DiarioEntradaRep} se han movido {movidas} líneas y había {numeradas}. No se ha hecho nada.");
+            }
+            if (contabilizar)
+            {
+                // (10) Nesto viejo llama a prdExtrProducto('1','RepoAlcAlg'): la salida pasa al extracto
+                await repositorio.Contabilizar(empresa, diario, quien).ConfigureAwait(false);
+                // (11) update preextrproducto set estado=1 where número<>'R ' and diario=… (0 filas; por fidelidad)
+                _ = await repositorio.MarcarRestoEstado1(empresa, diario).ConfigureAwait(false);
+            }
+            return numero;
+        }
+
+        private void ComprobarPuedeEscribir(IPrincipal usuario, string empresa, string origen, bool controlUbicaciones)
+        {
+            if (!PuedeEscribir(usuario, empresa, origen, controlUbicaciones))
+            {
+                throw new UnauthorizedAccessException(controlUbicaciones
+                    ? $"Las reposiciones desde {origen} las preparan Almacén y Dirección."
+                    : $"Las reposiciones de {origen} las prepara la gente de ese almacén (o Almacén y Dirección). " +
+                      "Tu usuario no tiene ese almacén como almacén de pedidos.");
             }
         }
 
@@ -746,26 +957,40 @@ UPDATE PreExtrProducto SET Estado = 1 WHERE [Número] <> 'R' AND Empresa = @p0 A
         private async Task<ReposicionEnPreparacionDTO> LeerEnPreparacion(string empresa, string origen, DatosAlmacenReposicion almacen)
         {
             List<FilaReposicionEnPreparacion> filas = await repositorio.LeerLineasEnPreparacion(empresa, almacen.DiarioSalidaRep, origen).ConfigureAwait(false);
-            if (!filas.Any())
-            {
-                return null;
-            }
+            return filas.Any() ? Dto(empresa, origen, almacen.DiarioSalidaRep, filas, null) : null;
+        }
+
+        private static ReposicionEnPreparacionDTO Dto(string empresa, string origen, string diario, List<FilaReposicionEnPreparacion> filas, ResumenUbicaciones reservas)
+        {
+            Dictionary<int, ReservaLineaReposicion> porLinea = (reservas?.Reservas ?? new List<ReservaLineaReposicion>())
+                .GroupBy(r => r.NumeroOrdenEntrada).ToDictionary(g => g.Key, g => g.First());
             return new ReposicionEnPreparacionDTO
             {
                 Empresa = empresa,
                 Origen = origen,
                 Destino = filas.First().Almacen?.Trim(),
-                Diario = almacen.DiarioSalidaRep,
+                Diario = diario,
                 Fecha = filas.Min(f => f.Fecha),
                 Usuario = filas.First().Usuario,
-                Lineas = filas.Select(f => new LineaReposicionEnPreparacionDTO
+                Lineas = filas.Select(f =>
                 {
-                    NumeroOrden = f.NumeroOrden,
-                    Producto = f.Producto,
-                    Nombre = f.Nombre,
-                    CodigoBarras = f.CodigoBarras,
-                    Cantidad = f.Cantidad,
-                    StockOrigen = f.StockOrigen
+                    var linea = new LineaReposicionEnPreparacionDTO
+                    {
+                        NumeroOrden = f.NumeroOrden,
+                        Producto = f.Producto,
+                        Nombre = f.Nombre,
+                        CodigoBarras = f.CodigoBarras,
+                        Cantidad = f.Cantidad,
+                        StockOrigen = f.StockOrigen
+                    };
+                    if (reservas != null)
+                    {
+                        porLinea.TryGetValue(f.NumeroOrden, out ReservaLineaReposicion reserva);
+                        linea.Hueco = UbicacionesReposicion.Huecos(reserva);
+                        linea.UnidadesSinHueco = reserva?.UnidadesSinHueco ?? f.Cantidad;
+                        linea.SinHueco = linea.UnidadesSinHueco > 0;
+                    }
+                    return linea;
                 }).ToList()
             };
         }

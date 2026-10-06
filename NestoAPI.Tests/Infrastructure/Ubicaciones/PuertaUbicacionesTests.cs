@@ -1,5 +1,6 @@
 using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NestoAPI.Infraestructure.Reposiciones;
 using NestoAPI.Infraestructure.Ubicaciones;
 using NestoAPI.Models;
 using System;
@@ -109,6 +110,70 @@ namespace NestoAPI.Tests.Infrastructure.Ubicaciones
 
                 A.CallTo(() => registro.Registrar(A<MovimientoUbicacion>.That.Matches(m => m.Momento == momento && m.Producto == "12291"))).MustHaveHappenedOnceExactly();
             }
+        }
+
+        // ---------------------------------------------------------------- Reposición sobre la puerta
+
+        [TestMethod]
+        public void Para_SinControlNoHaceNadaYConControlVaPorLaPuerta()
+        {
+            IPuertaUbicaciones puerta = A.Fake<IPuertaUbicaciones>();
+
+            Assert.IsInstanceOfType(UbicacionesReposicion.Para("ALC", false, () => puerta), typeof(SinControlUbicaciones));
+            Assert.IsInstanceOfType(UbicacionesReposicion.Para("ALG", true, () => puerta), typeof(ConControlUbicaciones));
+        }
+
+        [TestMethod]
+        public async Task ConControl_ReservaEnLaEmpresaYSuEspejoYDescuentaConElTraspaso()
+        {
+            IPuertaUbicaciones puerta = A.Fake<IPuertaUbicaciones>();
+            var huecos = new ConControlUbicaciones(puerta);
+            var lineas = new[] { new LineaReservaReposicion { NumeroOrdenEntrada = 561465600, Producto = "12291", Cantidad = 4 } };
+
+            _ = await huecos.Reservar("1", "ALG", lineas, "NUEVAVISION\\Andre");
+            _ = await huecos.DescontarAlTerminar("1", new[] { 561465600 }, 80885, "NUEVAVISION\\Andre");
+            _ = await huecos.AnularSalida("1", "ALG", 80885, "NUEVAVISION\\Andre");
+
+            A.CallTo(() => puerta.ReservarParaReposicion("1", Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO, "ALG", lineas, "NUEVAVISION\\Andre")).MustHaveHappenedOnceExactly();
+            A.CallTo(() => puerta.SalidaDeReposicion("1", A<IReadOnlyList<int>>.That.IsSameSequenceAs(new[] { 561465600 }), 80885, "NUEVAVISION\\Andre")).MustHaveHappenedOnceExactly();
+            A.CallTo(() => puerta.AnularSalidaDeReposicion("1", "ALG", 80885, "NUEVAVISION\\Andre")).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task ConControl_BajarCantidad_LiberaLaReservaYVuelveAReservarLaNueva()
+        {
+            IPuertaUbicaciones puerta = A.Fake<IPuertaUbicaciones>();
+            var huecos = new ConControlUbicaciones(puerta);
+
+            _ = await huecos.DevolverSobrante("1", "ALG", 561465600, "12291", 2, "u");
+
+            A.CallTo(() => puerta.LiberarReservaReposicion("1", 561465600, "u")).MustHaveHappenedOnceExactly()
+                .Then(A.CallTo(() => puerta.ReservarParaReposicion("1", A<string>._, "ALG",
+                    A<IReadOnlyList<LineaReservaReposicion>>.That.Matches(l => l.Single().Cantidad == 2 && l.Single().NumeroOrdenEntrada == 561465600), "u"))
+                    .MustHaveHappenedOnceExactly());
+        }
+
+        [TestMethod]
+        public async Task ConControl_BajarACero_SoloLibera()
+        {
+            IPuertaUbicaciones puerta = A.Fake<IPuertaUbicaciones>();
+
+            _ = await new ConControlUbicaciones(puerta).DevolverSobrante("1", "ALG", 561465600, "12291", 0, "u");
+
+            A.CallTo(() => puerta.ReservarParaReposicion(A<string>._, A<string>._, A<string>._, A<IReadOnlyList<LineaReservaReposicion>>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void Huecos_DeUnaLineaParaEnsenarlos()
+        {
+            var reserva = new ReservaLineaReposicion { Pedida = 7 };
+            Assert.IsNull(UbicacionesReposicion.Huecos(reserva));
+            reserva.Piezas.Add(new PiezaReservada { Hueco = HuecoUbicacion.De("002", "002", "004"), Cantidad = 3 });
+            Assert.AreEqual("002/002/004", UbicacionesReposicion.Huecos(reserva));
+            reserva.Piezas.Add(new PiezaReservada { Hueco = HuecoUbicacion.De("008", "004", "001"), Cantidad = 2 });
+            reserva.Piezas.Add(new PiezaReservada { Hueco = HuecoUbicacion.De(null, null, null), Cantidad = 1 });
+            Assert.AreEqual("002/002/004 (3), 008/004/001 (2)", UbicacionesReposicion.Huecos(reserva));
+            Assert.AreEqual(2, reserva.UnidadesSinHueco, "1 de pendiente de ubicar y 1 sin reservar");
         }
     }
 }
