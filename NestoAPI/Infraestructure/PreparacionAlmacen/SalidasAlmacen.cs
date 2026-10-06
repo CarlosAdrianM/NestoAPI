@@ -531,10 +531,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     }
 
     /// <summary>
-    /// REPO: la salida de un traspaso de reposición desde el almacén de origen. Hoy el traspaso lo crea Nesto viejo:
-    /// deja la salida en PreExtrProducto (diario Almacenes.DiarioSalidaRep del origen, «General» en Algete) y la entrada
-    /// en el diario de entrada del destino, y quita ya la mercancía de los huecos dejando su registro en Ubicaciones
-    /// (estado -4, NºOrdenRepo = la fila de la salida). Una vez recogida, la salida se contabiliza (prdExtrProducto del
+    /// REPO: la salida de un traspaso de reposición desde el almacén de origen. El traspaso lo crea Nesto viejo o
+    /// POST api/Reposiciones (NestoAPI#553): deja la salida en PreExtrProducto (diario Almacenes.DiarioSalidaRep del
+    /// origen, «General» en Algete) y la entrada en el diario de entrada del destino, y quita ya la mercancía de los huecos
+    /// dejando su registro en Ubicaciones (estado -4 con NºTraspasoRepo; su NºOrdenRepo es la línea de entrada). Una vez recogida, la salida se contabiliza (prdExtrProducto del
     /// diario de salida; en los datos, unos 11 minutos después de crearla). Eso es terminar: lo que se ha dado por falta
     /// sale antes de la salida, de la entrada del destino y del registro del hueco, y pasa a «pendiente de ubicar».
     /// En 60 días, cada vez que se contabilizó la salida había un solo traspaso en el diario: si hay otro, no se termina.

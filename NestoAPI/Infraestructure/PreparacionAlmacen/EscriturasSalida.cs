@@ -383,19 +383,32 @@ UPDATE Ubicaciones SET [NºOrdenVta] = NULL WHERE [NºOrdenVta] = @p0 AND Estado
 UPDATE Ubicaciones SET [NºOrdenVta] = @p0 WHERE [NºOrden] = @p1";
 
         // La salida de un traspaso de reposición: sus filas de PreExtrProducto en el diario de salida del origen, con el
-        // registro de lo que salió de cada hueco. Nesto viejo, al crear el traspaso, ya quita la mercancía del hueco y
-        // deja ese registro en estado -4 (NºOrdenRepo = la fila de la salida); el estado 4 es la reserva de
-        // prdUbicarReposicion, que hoy casi no se usa.
+        // registro de lo que salió de cada hueco. Al cerrar el traspaso (Nesto viejo o POST api/Reposiciones) la reserva
+        // (estado 4) pasa a -4 con el NºTraspasoRepo, ya quitada del hueco. Su NºOrdenRepo es la línea de ENTRADA, no la de
+        // salida: se localiza por NºTraspasoRepo + producto + almacén de origen. Lo que la salida tiene de más sobre esos
+        // registros (no había nada libre al reservar, o un almacén sin control de ubicaciones) es una pieza sin hueco.
         internal const string SQL_PIEZAS_REPOSICION = @"
 SELECT s.[Nº Orden] AS Linea, 0 AS Pedido, u.[NºOrden] AS Ubicacion, RTRIM(s.[Número]) AS Producto,
        CASE WHEN u.Pasillo IS NULL OR u.Fila IS NULL OR u.Columna IS NULL THEN NULL
             ELSE RTRIM(u.Pasillo) + RTRIM(u.Fila) + RTRIM(u.Columna) END AS Hueco,
-       CAST(ABS(ISNULL(u.Cantidad, s.Cantidad)) AS int) AS Cantidad,
+       CAST(ABS(u.Cantidad) AS int) AS Cantidad,
        CAST(0 AS bit) AS QuitarAMano
 FROM PreExtrProducto s WITH (UPDLOCK)
      INNER JOIN Almacenes a ON a.Empresa = s.Empresa AND a.[Número] = s.[Almacén]
-     LEFT JOIN Ubicaciones u WITH (UPDLOCK) ON u.[NºOrdenRepo] = s.[Nº Orden] AND u.Estado IN (4, -4)
-WHERE s.Empresa = @p0 AND s.[NºTraspaso] = @p1 AND s.Diario = a.DiarioSalidaRep AND s.Cantidad < 0";
+     INNER JOIN Ubicaciones u WITH (UPDLOCK) ON u.[NºTraspasoRepo] = s.[NºTraspaso] AND u.[Número] = s.[Número] AND u.[Almacén] = s.[Almacén]
+                                           AND u.Estado IN (4, -4)
+WHERE s.Empresa = @p0 AND s.[NºTraspaso] = @p1 AND s.Diario = a.DiarioSalidaRep AND s.Cantidad < 0
+UNION ALL
+SELECT s.[Nº Orden], 0, NULL, RTRIM(s.[Número]), NULL,
+       CAST(-s.Cantidad - ISNULL(r.Cantidad, 0) AS int),
+       CAST(0 AS bit)
+FROM PreExtrProducto s WITH (UPDLOCK)
+     INNER JOIN Almacenes a ON a.Empresa = s.Empresa AND a.[Número] = s.[Almacén]
+     OUTER APPLY (SELECT SUM(ABS(u.Cantidad)) AS Cantidad FROM Ubicaciones u WITH (UPDLOCK)
+                  WHERE u.[NºTraspasoRepo] = s.[NºTraspaso] AND u.[Número] = s.[Número] AND u.[Almacén] = s.[Almacén]
+                    AND u.Estado IN (4, -4)) r
+WHERE s.Empresa = @p0 AND s.[NºTraspaso] = @p1 AND s.Diario = a.DiarioSalidaRep AND s.Cantidad < 0
+  AND -s.Cantidad > ISNULL(r.Cantidad, 0)";
 
         internal const string SQL_DIARIO_SALIDA = @"
 SELECT TOP 1 RTRIM(s.[Almacén]) AS Almacen, RTRIM(s.Diario) AS Diario,

@@ -190,25 +190,43 @@ ORDER BY s.[NºTraspaso] DESC";
 SELECT TOP 1 RTRIM(e.[Almacén]) FROM PreExtrProducto e
 WHERE e.Empresa = @p0 AND e.[NºTraspaso] = @p1 AND e.Cantidad > 0";
 
-        // El hueco sale del registro que deja Nesto viejo al crear el traspaso (Ubicaciones en estado -4, ya quitado del hueco)
-        // o de la reserva de prdUbicarReposicion (estado 4), enlazados por NºOrdenRepo con la fila de PreExtrProducto; si no
-        // hay, la parada va sin hueco. Mismas columnas que SQL_LINEAS_PICKING.
+        // El hueco sale del registro que queda en Ubicaciones al cerrar el traspaso (Nesto viejo o POST api/Reposiciones):
+        // la reserva de prdUbicarReposicion / la puerta de Ubicaciones pasada a -4 con el NºTraspasoRepo, ya quitada del
+        // hueco. OJO: su NºOrdenRepo apunta a la línea de ENTRADA (la que había al reservar), no a la de salida, y la entrada
+        // se va al diario del destino (y ExtractoProducto no conserva su Nº Orden): por eso se localiza por NºTraspasoRepo +
+        // producto + almacén de origen (traspaso 80885, 05/10/26: 53 de 53 filas así). Lo que no tiene registro (no había
+        // nada libre al reservar, o un almacén sin control de ubicaciones) va en una parada sin hueco. Una línea de salida
+        // por producto (Nesto viejo y la API consolidan). Mismas columnas que SQL_LINEAS_PICKING.
         internal const string SQL_LINEAS_REPOSICION_SALIDA = @"
+WITH Salida AS (
+    SELECT s.Empresa, s.[Almacén], s.[NºTraspaso], s.[Número], CAST(-SUM(s.Cantidad) AS int) AS Cantidad
+    FROM PreExtrProducto s
+         INNER JOIN Almacenes a ON a.Empresa = s.Empresa AND a.[Número] = s.[Almacén]
+    WHERE s.Empresa = @p0 AND s.[NºTraspaso] = @p1 AND s.Diario = a.DiarioSalidaRep AND s.Cantidad < 0
+    GROUP BY s.Empresa, s.[Almacén], s.[NºTraspaso], s.[Número]
+), Huecos AS (
+    SELECT x.[Número], CAST(ABS(u.Cantidad) AS int) AS Cantidad, RTRIM(u.Pasillo) AS Pasillo, RTRIM(u.Fila) AS Fila, RTRIM(u.Columna) AS Columna
+    FROM Salida x
+         INNER JOIN Ubicaciones u ON u.[NºTraspasoRepo] = x.[NºTraspaso] AND u.[Número] = x.[Número] AND u.[Almacén] = x.[Almacén]
+                                 AND u.Estado IN (4, -4)
+), Paradas AS (
+    SELECT [Número], Cantidad, Pasillo, Fila, Columna FROM Huecos
+    UNION ALL
+    SELECT x.[Número], x.Cantidad - ISNULL((SELECT SUM(h.Cantidad) FROM Huecos h WHERE h.[Número] = x.[Número]), 0), NULL, NULL, NULL
+    FROM Salida x
+)
 SELECT 0 AS Orden, CAST(0 AS bit) AS SinCodigo, CAST(0 AS bit) AS CodigoDuplicado, CAST(NULL AS varchar(11)) AS Ubicacion,
-       RTRIM(s.[Número]) AS Producto,
+       RTRIM(t.[Número]) AS Producto,
        RTRIM(MAX(p.Nombre)) AS Descripcion,
        RTRIM(MAX(p.CodBarras)) AS CodigoBarras,
        MAX(p.[Tamaño]) AS Tamano,
        RTRIM(MAX(p.UnidadMedida)) AS UnidadMedida,
-       CAST(ABS(ISNULL(SUM(u.Cantidad), SUM(s.Cantidad))) AS int) AS Cantidad,
-       RTRIM(u.Pasillo) AS Pasillo, RTRIM(u.Fila) AS Fila, RTRIM(u.Columna) AS Columna
-FROM PreExtrProducto s
-     INNER JOIN Almacenes a ON a.Empresa = s.Empresa AND a.[Número] = s.[Almacén]
-     LEFT JOIN Ubicaciones u ON u.[NºOrdenRepo] = s.[Nº Orden] AND u.Estado IN (4, -4)
-     LEFT JOIN Productos p ON p.Empresa = s.Empresa AND p.[Número] = s.[Número]
-WHERE s.Empresa = @p0 AND s.[NºTraspaso] = @p1 AND s.Diario = a.DiarioSalidaRep AND s.Cantidad < 0
-GROUP BY s.[Número], u.Pasillo, u.Fila, u.Columna
-HAVING ISNULL(SUM(u.Cantidad), SUM(s.Cantidad)) <> 0";
+       CAST(SUM(t.Cantidad) AS int) AS Cantidad,
+       t.Pasillo, t.Fila, t.Columna
+FROM Paradas t
+     LEFT JOIN Productos p ON p.Empresa = @p0 AND p.[Número] = t.[Número]
+GROUP BY t.[Número], t.Pasillo, t.Fila, t.Columna
+HAVING SUM(t.Cantidad) > 0";
 
         internal const string SQL_LINEAS_PACKING = @"
 SELECT c.[Número] AS Pedido, RTRIM(c.[Nº Cliente]) AS Cliente, RTRIM(c.Contacto) AS Contacto,
