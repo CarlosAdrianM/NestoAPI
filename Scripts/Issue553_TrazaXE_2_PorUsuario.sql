@@ -71,6 +71,31 @@ ORDER BY momento_utc;
 GO
 
 ------------------------------------------------------------------------------------------------
+-- PASO 3b. Volcar el detalle a una tabla de NV para que Claude lo lea con su login (sin CSV).
+--          La tabla se puede borrar después (DROP TABLE dbo.Issue553_Traza).
+------------------------------------------------------------------------------------------------
+IF OBJECT_ID('dbo.Issue553_Traza') IS NOT NULL DROP TABLE dbo.Issue553_Traza;
+;WITH eventos AS (
+    SELECT CAST(f.event_data AS xml) AS x
+    FROM sys.fn_xe_file_target_read_file(N'Issue553_CrearReposicionPorUsuario*.xel', NULL, NULL, NULL) f
+)
+SELECT x.value('(event/@timestamp)[1]', 'datetime2(3)')                                AS momento_utc,
+       x.value('(event/@name)[1]', 'nvarchar(60)')                                    AS evento,
+       x.value('(event/action[@name="client_app_name"]/value)[1]', 'nvarchar(200)')   AS programa,
+       x.value('(event/action[@name="server_principal_name"]/value)[1]', 'nvarchar(128)') AS usuario,
+       x.value('(event/action[@name="session_id"]/value)[1]', 'int')                  AS sesion,
+       x.value('(event/data[@name="object_name"]/value)[1]', 'nvarchar(200)')         AS objeto,
+       x.value('(event/data[@name="row_count"]/value)[1]', 'bigint')                  AS filas,
+       x.value('(event/data[@name="duration"]/value)[1]', 'bigint')                   AS duracion_us,
+       COALESCE(x.value('(event/data[@name="batch_text"]/value)[1]', 'nvarchar(max)'),
+                x.value('(event/data[@name="statement"]/value)[1]', 'nvarchar(max)'))   AS texto
+INTO dbo.Issue553_Traza
+FROM eventos;
+GRANT SELECT ON dbo.Issue553_Traza TO nuevavision;
+SELECT COUNT(*) AS eventos_volcados FROM dbo.Issue553_Traza;
+GO
+
+------------------------------------------------------------------------------------------------
 -- PASO 4. Borrar la traza.
 ------------------------------------------------------------------------------------------------
 IF EXISTS (SELECT 1 FROM sys.server_event_sessions WHERE name = N'Issue553_CrearReposicionPorUsuario')
