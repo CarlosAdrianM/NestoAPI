@@ -304,6 +304,23 @@ namespace NestoAPI.Tests.Controllers
             StringAssert.Contains(auditoria.CuerpoLlamada, "Modificar");
         }
 
+        // NestoAPI#597: CTT no modifica, anula y registra otro albarán. La BD se quedaba con el anulado.
+        [TestMethod]
+        public async Task Modificar_AgenciaDevuelveAlbaranNuevo_LoGuardaEnElEnvio()
+        {
+            var envio = EnvioEnCurso();
+            ConEnvio(envio);
+            A.CallTo(() => fakeAgencia.ModificarYEtiquetarAsync(A<DatosEnvioRemoto>.Ignored, "6522393001"))
+                .Returns(Task.FromResult(new ResultadoTramitacionRemota
+                {
+                    Exito = true, Albaran = "0082800099999", Bultos = 1, Etiqueta = EtiquetaZpl()
+                }));
+
+            _ = await controller.ModificarEnvio(1, new ModificarEnvioAgenciaDTO { Poblacion = "MADRID" });
+
+            Assert.AreEqual("0082800099999", envio.CodigoBarras);
+        }
+
         [TestMethod]
         public async Task Modificar_AgenciaRechaza_NoPersisteNadaYDevuelveElMotivo()
         {

@@ -1,6 +1,7 @@
 ﻿using System.Collections.Generic;
 using System.Threading.Tasks;
 using NestoAPI.Infraestructure.Agencias.Innovatrans;
+using NestoAPI.Models;
 
 namespace NestoAPI.Infraestructure.Agencias
 {
@@ -47,6 +48,30 @@ namespace NestoAPI.Infraestructure.Agencias
         public short Retorno { get; set; }
         /// <summary>NestoAPI#494: día pedido para la recogida (EnviosAgencia.Fecha). Si es pasado, hoy.</summary>
         public System.DateTime? FechaRecogida { get; set; }
+
+        /// <summary>
+        /// Los datos remotos de un envío de nuestra BD, tal cual están grabados. Un único mapeo para
+        /// /Modificar (#317, dirección) y ModificarDatos (NestoAPI#597, retorno/reembolso/servicio).
+        /// </summary>
+        public static DatosEnvioRemoto DesdeEnvio(EnviosAgencia envio) => new DatosEnvioRemoto
+        {
+            Referencia = envio.Pedido?.ToString(),
+            Nombre = envio.Nombre?.Trim(),
+            Telefono = envio.Telefono?.Trim(),
+            Movil = envio.Movil?.Trim(),
+            Email = envio.Email?.Trim(),
+            CodigoPostal = envio.CodPostal?.Trim(),
+            Pais = envio.Pais,
+            Poblacion = envio.Poblacion?.Trim(),
+            Direccion = envio.Direccion?.Trim(),
+            Peso = envio.Peso,
+            Bultos = envio.Bultos,
+            Reembolso = envio.Reembolso,
+            Observaciones = envio.Observaciones?.Trim(),
+            Servicio = envio.Servicio,
+            Retorno = envio.Retorno,
+            FechaRecogida = envio.Fecha
+        };
     }
 
     /// <summary>

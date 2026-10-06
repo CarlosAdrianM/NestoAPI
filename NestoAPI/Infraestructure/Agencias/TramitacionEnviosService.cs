@@ -32,9 +32,23 @@ namespace NestoAPI.Infraestructure.Agencias
         private readonly Func<DateTime> _hoy;
         private readonly IProcedimientosExtractoCliente _procedimientos;
         private readonly IAmbitoTransaccion _transaccion;
+        private readonly IFabricaAgenciasRemotas _fabricaAgencias;
+        private readonly Func<EnviosAgencia, IAgenciaRemota, bool, string, Task> _auditarOperacionRemota;
 
         public TramitacionEnviosService(NVEntities db)
-            : this(db, new ContabilidadService(), () => DateTime.Today)
+            : this(db, new FabricaAgenciasRemotas(db), null)
+        {
+        }
+
+        /// <summary>
+        /// NestoAPI#597: con la fábrica de agencias remotas, ModificarDatosAsync reenvía a la agencia los
+        /// cambios de una etiqueta viva. El auditor (el AuditarOperacion del controlador, que escribe en
+        /// AgenciasLlamadasWeb) recibe cada llamada a la agencia, aceptada o no.
+        /// </summary>
+        public TramitacionEnviosService(NVEntities db, IFabricaAgenciasRemotas fabricaAgencias,
+            Func<EnviosAgencia, IAgenciaRemota, bool, string, Task> auditarOperacionRemota)
+            : this(db, new ContabilidadService(), () => DateTime.Today, new ProcedimientosExtractoCliente(), new AmbitoTransaccionDb(),
+                  fabricaAgencias, auditarOperacionRemota)
         {
         }
 
@@ -49,12 +63,21 @@ namespace NestoAPI.Infraestructure.Agencias
         // ModificarDatosAsync entero con dobles en memoria (TramitarAsync no pudo).
         public TramitacionEnviosService(NVEntities db, IContabilidadService contabilidad, Func<DateTime> hoy,
             IProcedimientosExtractoCliente procedimientos, IAmbitoTransaccion transaccion)
+            : this(db, contabilidad, hoy, procedimientos, transaccion, null, null)
+        {
+        }
+
+        public TramitacionEnviosService(NVEntities db, IContabilidadService contabilidad, Func<DateTime> hoy,
+            IProcedimientosExtractoCliente procedimientos, IAmbitoTransaccion transaccion,
+            IFabricaAgenciasRemotas fabricaAgencias, Func<EnviosAgencia, IAgenciaRemota, bool, string, Task> auditarOperacionRemota)
         {
             _db = db;
             _contabilidad = contabilidad;
             _hoy = hoy;
             _procedimientos = procedimientos;
             _transaccion = transaccion;
+            _fabricaAgencias = fabricaAgencias;
+            _auditarOperacionRemota = auditarOperacionRemota;
         }
 
         /// <summary>
@@ -418,9 +441,44 @@ namespace NestoAPI.Infraestructure.Agencias
                 throw new NestoBusinessException("No se puede modificar este envío, porque ya está cobrado");
             }
 
+            // NestoAPI#597: qué pasa con la agencia ANTES de tocar nada (409 entregado, 502 rechazo).
+            ReenvioAgencia reenvio = await ResolverAgenciaAsync(envio, datos).ConfigureAwait(false);
+
             decimal reembolsoAnterior = envio.Reembolso;
             List<EnvioHistoria> historia = ConstruirHistoria(envio, datos, usuario, DateTime.Now);
+            string albaranNuevo = reenvio.Resultado?.Albaran?.Trim();
+            string albaranAnterior = envio.CodigoBarras?.Trim();
+            if (!string.IsNullOrEmpty(albaranNuevo) && albaranNuevo != albaranAnterior)
+            {
+                // CTT: el albarán anterior queda anulado en la agencia; que quede rastro de cuál era.
+                historia.Add(FilaHistoria(envio, datos, usuario, DateTime.Now, "CodigoBarras", albaranAnterior));
+            }
 
+            try
+            {
+                return await GuardarModificacionAsync(envio, datos, usuario, reembolsoAnterior, historia, reenvio, albaranNuevo).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (reenvio.Resultado != null)
+            {
+                // La agencia YA tiene el cambio (CTT: el albarán viejo está anulado) y nuestra BD no:
+                // no se puede deshacer allí, así que se avisa alto y claro con los dos albaranes.
+                string mensaje = $"{reenvio.NombreAgencia} ya tiene el cambio del envío {envio.Numero} (albarán {albaranNuevo}), " +
+                    $"pero no se pudo guardar en Nesto, que sigue con el albarán {albaranAnterior}: {ex.Message}";
+                try
+                {
+                    Elmah.ErrorLog.GetDefault(null)?.Log(new Elmah.Error(new Exception(mensaje, ex)));
+                }
+                catch
+                {
+                    // El logueo nunca debe tapar el error real.
+                }
+                throw new NestoBusinessException(mensaje, ex) { StatusCode = System.Net.HttpStatusCode.InternalServerError, RegistrarEnLog = true };
+            }
+        }
+
+        private async Task<ResultadoModificacionEnvio> GuardarModificacionAsync(EnviosAgencia envio, ModificarDatosEnvioDTO datos, string usuario,
+            decimal reembolsoAnterior, List<EnvioHistoria> historia, ReenvioAgencia reenvio, string albaranNuevo)
+        {
             return await _transaccion.EjecutarAsync(_db, async () =>
             {
                 foreach (EnvioHistoria fila in historia)
@@ -428,6 +486,10 @@ namespace NestoAPI.Infraestructure.Agencias
                     _ = _db.EnviosHistorias.Add(fila);
                 }
                 AplicarCambios(envio, datos);
+                if (!string.IsNullOrEmpty(albaranNuevo))
+                {
+                    envio.CodigoBarras = albaranNuevo;
+                }
                 if (historia.Count > 0)
                 {
                     _ = await _db.SaveChangesAsync().ConfigureAwait(false);
@@ -453,6 +515,7 @@ namespace NestoAPI.Infraestructure.Agencias
                     rehusado = true;
                 }
 
+                ResultadoTramitacionRemota remoto = reenvio.Resultado;
                 return new ResultadoModificacionEnvio
                 {
                     Numero = envio.Numero,
@@ -461,10 +524,180 @@ namespace NestoAPI.Infraestructure.Agencias
                     Rehusado = rehusado,
                     Mensaje = historia.Count == 0 && !rehusado
                         ? $"El envío {envio.Numero} no tenía nada que modificar."
-                        : $"Envío {envio.Numero} modificado ({string.Join(", ", historia.Select(h => h.Campo))}{(rehusado ? ", rehusado" : string.Empty)})."
+                        : $"Envío {envio.Numero} modificado ({string.Join(", ", historia.Select(h => h.Campo))}{(rehusado ? ", rehusado" : string.Empty)}).",
+                    Aviso = reenvio.Aviso,
+                    ReenviadoAAgencia = remoto != null,
+                    Albaran = remoto != null ? albaranNuevo : null,
+                    Bultos = remoto?.Bultos ?? 0,
+                    Reimpresion = remoto != null && !reenvio.AlbaranNuevo,
+                    EtiquetaTipo = remoto?.Etiqueta?.Tipo,
+                    EtiquetaCodificacion = remoto?.Etiqueta?.Codificacion,
+                    EtiquetaContenido = remoto?.Etiqueta?.Contenido
                 };
             }).ConfigureAwait(false);
         }
+
+        /// <summary>Lo que ha pasado con la agencia al modificar (NestoAPI#597).</summary>
+        private class ReenvioAgencia
+        {
+            /// <summary>Respuesta de ModificarYEtiquetarAsync si se reenvió y la agencia lo aceptó; null si no se llamó.</summary>
+            public ResultadoTramitacionRemota Resultado { get; set; }
+            public bool AlbaranNuevo { get; set; }
+            public string NombreAgencia { get; set; }
+            public string Aviso { get; set; }
+        }
+
+        /// <summary>
+        /// NestoAPI#597 (regla de Carlos, 06/10/26). Retorno, reembolso y servicio son lo que la agencia leyó al
+        /// registrar el envío; estado, fecha de entrega y observaciones son nuestros y siguen libres. Si cambia
+        /// alguno de los tres:
+        /// <list type="number">
+        /// <item>Entregado, devuelto o con el retorno ya recibido → 409, sin tocar nada.</item>
+        /// <item>Etiqueta pendiente (Estado &lt; 0 o sin código de barras) → libre, como siempre.</item>
+        /// <item>Agencia con gestión remota (Innovatrans, CTT) → se reenvía con ModificarYEtiquetarAsync (el camino de
+        /// /Modificar); si rechaza, 502 y nada guardado.</item>
+        /// <item>Agencia que tramita al cerrar (GLS…): En curso (0) = aún no se ha mandado → libre, viaja en el cierre;
+        /// Tramitado o más = ya cerrado → solo en Nesto, y hay que pedírselo a la agencia.</item>
+        /// </list>
+        /// «Rehusar» queda fuera: el paquete ya lo tiene la agencia de vuelta y es una operación de contabilidad.
+        /// </summary>
+        private async Task<ReenvioAgencia> ResolverAgenciaAsync(EnviosAgencia envio, ModificarDatosEnvioDTO datos)
+        {
+            ReenvioAgencia sinLlamada = new ReenvioAgencia();
+            if (datos.Rehusar || !CambiaLoQueLeyoLaAgencia(envio, datos))
+            {
+                return sinLlamada;
+            }
+            if (EstaEntregadoORecogido(envio))
+            {
+                throw new NestoBusinessException($"El envío {envio.Numero} ya está entregado/recogido: el siguiente albarán crea un envío " +
+                    "nuevo con su propio retorno/reembolso.") { StatusCode = System.Net.HttpStatusCode.Conflict };
+            }
+            if (!TieneEtiquetaViva(envio))
+            {
+                return sinLlamada;
+            }
+
+            IAgenciaRemota agencia = _fabricaAgencias?.Crear(envio.Agencia);
+            string nombre = NombreAgencia(envio);
+            if (agencia == null)
+            {
+                return new ReenvioAgencia
+                {
+                    NombreAgencia = nombre,
+                    Aviso = envio.Estado == Constantes.Agencias.ESTADO_EN_CURSO
+                        ? $"El cambio viajará a {nombre} en el cierre del día"
+                        : AVISO_PEDIR_A_LA_AGENCIA
+                };
+            }
+
+            // Lo que más falla al contabilizar se mira ANTES de llamar: con la agencia ya cambiada no hay vuelta atrás.
+            if (datos.Reembolso != envio.Reembolso && string.IsNullOrWhiteSpace(envio.AgenciasTransporte?.CuentaReembolsos))
+            {
+                throw new NestoBusinessException("Esta agencia no tiene establecida una cuenta de reembolsos. No se puede contabilizar.");
+            }
+
+            DatosEnvioRemoto remotos = DatosEnvioRemoto.DesdeEnvio(envio);
+            remotos.Reembolso = datos.Reembolso;
+            remotos.Retorno = datos.Retorno;
+            remotos.Servicio = datos.Servicio ?? envio.Servicio;
+            string albaranAnterior = envio.CodigoBarras.Trim();
+
+            ResultadoTramitacionRemota resultado;
+            try
+            {
+                resultado = await agencia.ModificarYEtiquetarAsync(remotos, albaranAnterior).ConfigureAwait(false);
+            }
+            catch (AgenciaRemotaException ex)
+            {
+                await AuditarAsync(envio, agencia, false, ex.Message).ConfigureAwait(false);
+                throw new NestoBusinessException($"{nombre} no ha aceptado el cambio del envío {envio.Numero}: {ex.Message}")
+                { StatusCode = System.Net.HttpStatusCode.BadGateway };
+            }
+            if (resultado == null || string.IsNullOrWhiteSpace(resultado.Albaran))
+            {
+                string motivo = resultado?.Error ?? "sin respuesta";
+                await AuditarAsync(envio, agencia, false, motivo).ConfigureAwait(false);
+                throw new NestoBusinessException($"{nombre} no ha aceptado el cambio del envío {envio.Numero}: {motivo}")
+                { StatusCode = System.Net.HttpStatusCode.BadGateway };
+            }
+            // Con albarán la agencia SÍ lo aplicó, aunque la etiqueta fallara (igual que en /Modificar).
+            await AuditarAsync(envio, agencia, resultado.Exito, resultado.Exito ? null : resultado.Error).ConfigureAwait(false);
+
+            bool albaranNuevo = resultado.Albaran.Trim() != albaranAnterior;
+            string aviso = albaranNuevo
+                ? $"Reenviado a {nombre} con albarán nuevo {resultado.Albaran.Trim()} (el {albaranAnterior} queda anulado): pega la etiqueta nueva en el paquete"
+                : $"Modificado en {nombre} (albarán {albaranAnterior}): pega la etiqueta reimpresa en el paquete";
+            if (!resultado.Exito || string.IsNullOrEmpty(resultado.Etiqueta?.Contenido))
+            {
+                aviso += $". {nombre} no ha devuelto la etiqueta: reimprímela desde Agencias" +
+                    (string.IsNullOrWhiteSpace(resultado.Error) ? string.Empty : $" ({resultado.Error})");
+            }
+            return new ReenvioAgencia { Resultado = resultado, AlbaranNuevo = albaranNuevo, NombreAgencia = nombre, Aviso = aviso };
+        }
+
+        /// <summary>El texto de siempre de Nesto (#512): en una agencia sin modificación remota el cambio solo queda en Nesto.</summary>
+        internal const string AVISO_PEDIR_A_LA_AGENCIA = "El cambio solo se ha guardado en Nesto: NO se avisa a la agencia ni se modifica " +
+            "nada en su sistema. Pídeselo a la agencia por correo o por teléfono.";
+
+        /// <summary>Retorno, reembolso o servicio: lo que la agencia leyó al registrar el envío.</summary>
+        internal static bool CambiaLoQueLeyoLaAgencia(EnviosAgencia envio, ModificarDatosEnvioDTO datos)
+            => envio.Reembolso != datos.Reembolso
+            || envio.Retorno != datos.Retorno
+            || (datos.Servicio.HasValue && datos.Servicio.Value != envio.Servicio);
+
+        /// <summary>
+        /// Entregado (2) o devuelto a origen (4) según el Estado grabado (lo pone el poll de seguimiento o el
+        /// usuario), o con el retorno ya recibido en el almacén (FechaRetornoRecibido). Se mira el estado
+        /// ANTERIOR al cambio: marcar a la vez «entregado» y otro retorno no se bloquea a sí mismo.
+        /// </summary>
+        internal static bool EstaEntregadoORecogido(EnviosAgencia envio)
+            => envio.Estado == Constantes.Agencias.ESTADO_ENTREGADO
+            || envio.Estado == Constantes.Agencias.ESTADO_DEVUELTO
+            || envio.FechaRetornoRecibido.HasValue;
+
+        /// <summary>Etiqueta viva: registrada (código de barras y Estado ≥ 0) y no entregada ni recogida.</summary>
+        internal static bool TieneEtiquetaViva(EnviosAgencia envio)
+            => !string.IsNullOrWhiteSpace(envio.CodigoBarras)
+            && envio.Estado >= Constantes.Agencias.ESTADO_EN_CURSO
+            && !EstaEntregadoORecogido(envio);
+
+        private static string NombreAgencia(EnviosAgencia envio)
+        {
+            if (envio.Agencia == Constantes.Agencias.AGENCIA_GLS)
+            {
+                return "GLS";
+            }
+            string nombre = envio.AgenciasTransporte?.Nombre?.Trim();
+            return string.IsNullOrEmpty(nombre) ? "la agencia" : nombre;
+        }
+
+        private async Task AuditarAsync(EnviosAgencia envio, IAgenciaRemota agencia, bool exito, string error)
+        {
+            if (_auditarOperacionRemota == null)
+            {
+                return;
+            }
+            try
+            {
+                await _auditarOperacionRemota(envio, agencia, exito, error).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Best-effort, como AuditarOperacion: la auditoría nunca cambia el resultado.
+            }
+        }
+
+        private static EnvioHistoria FilaHistoria(EnviosAgencia envio, ModificarDatosEnvioDTO datos, string usuario, DateTime ahora, string campo, string valorAnterior)
+            => new EnvioHistoria
+            {
+                NumeroEnvio = envio.Numero,
+                Campo = campo,
+                ValorAnterior = valorAnterior,
+                Observaciones = datos.Observaciones,
+                Usuario = usuario,
+                FechaModificacion = ahora
+            };
 
         /// <summary>Una fila de EnviosHistoria por campo que cambia, con el valor ANTERIOR en el formato del cliente.</summary>
         internal static List<EnvioHistoria> ConstruirHistoria(EnviosAgencia envio, ModificarDatosEnvioDTO datos, string usuario, DateTime ahora)
@@ -472,15 +705,7 @@ namespace NestoAPI.Infraestructure.Agencias
             List<EnvioHistoria> historia = new List<EnvioHistoria>();
             void Anotar(string campo, string valorAnterior)
             {
-                historia.Add(new EnvioHistoria
-                {
-                    NumeroEnvio = envio.Numero,
-                    Campo = campo,
-                    ValorAnterior = valorAnterior,
-                    Observaciones = datos.Observaciones,
-                    Usuario = usuario,
-                    FechaModificacion = ahora
-                });
+                historia.Add(FilaHistoria(envio, datos, usuario, ahora, campo, valorAnterior));
             }
             if (envio.Reembolso != datos.Reembolso)
             {
@@ -498,6 +723,10 @@ namespace NestoAPI.Infraestructure.Agencias
             {
                 Anotar("FechaEntrega", envio.FechaEntrega?.ToString(CASTELLANO));
             }
+            if (datos.Servicio.HasValue && datos.Servicio.Value != envio.Servicio)
+            {
+                Anotar("Servicio", envio.Servicio.ToString());
+            }
             return historia;
         }
 
@@ -507,6 +736,10 @@ namespace NestoAPI.Infraestructure.Agencias
             envio.Retorno = datos.Retorno;
             envio.Estado = datos.Estado;
             envio.FechaEntrega = datos.FechaEntrega;
+            if (datos.Servicio.HasValue)
+            {
+                envio.Servicio = datos.Servicio.Value;
+            }
         }
 
         /// <summary>
@@ -791,6 +1024,8 @@ namespace NestoAPI.Infraestructure.Agencias
         /// <summary>«Rehusar»: además de los cambios, el efecto de la factura en el extracto pasa a RHS.</summary>
         public bool Rehusar { get; set; }
         public string Observaciones { get; set; }
+        /// <summary>NestoAPI#597: servicio nuevo (códigos de cada agencia). Null = no se cambia (Nesto aún no lo manda).</summary>
+        public short? Servicio { get; set; }
     }
 
     public class ResultadoModificacionEnvio
@@ -800,6 +1035,22 @@ namespace NestoAPI.Infraestructure.Agencias
         public int Asiento { get; set; }
         public bool Rehusado { get; set; }
         public string Mensaje { get; set; }
+        /// <summary>
+        /// NestoAPI#597: lo que ha pasado con la agencia, para enseñárselo al usuario tal cual: reenviado (y qué
+        /// etiqueta pegar), «viajará en el cierre del día» o «pídeselo a la agencia». Null si no aplica.
+        /// </summary>
+        public string Aviso { get; set; }
+        /// <summary>NestoAPI#597: true si el cambio se reenvió a la agencia y esta lo aceptó.</summary>
+        public bool ReenviadoAAgencia { get; set; }
+        /// <summary>Albarán con el que queda el envío tras reenviarlo (en CTT, uno nuevo). Null si no se reenvió.</summary>
+        public string Albaran { get; set; }
+        public int Bultos { get; set; }
+        /// <summary>True si la agencia mantuvo el albarán (Innovatrans) y la etiqueta es una reimpresión; false si es un albarán nuevo (CTT).</summary>
+        public bool Reimpresion { get; set; }
+        /// <summary>Etiqueta nueva, como en TramitarEnvioResultadoDTO (ZPL, normalmente en base64). Null si no hay.</summary>
+        public string EtiquetaTipo { get; set; }
+        public string EtiquetaCodificacion { get; set; }
+        public string EtiquetaContenido { get; set; }
     }
 
     /// <summary>

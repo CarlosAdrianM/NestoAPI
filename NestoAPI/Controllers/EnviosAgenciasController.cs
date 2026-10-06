@@ -1116,6 +1116,9 @@ namespace NestoAPI.Controllers
                 {
                     envio.Provincia = datos.Provincia.Trim();
                 }
+                // NestoAPI#597: CTT no modifica, anula y registra un albarán NUEVO; sin esto la BD se
+                // quedaba con el anulado (en Innovatrans es el mismo y no cambia nada).
+                envio.CodigoBarras = resultado.Albaran;
                 envio.Usuario = User?.Identity?.Name ?? "NestoAPI";
                 try
                 {
@@ -1276,14 +1279,20 @@ namespace NestoAPI.Controllers
                 return BadRequest("Faltan los datos a modificar.");
             }
             string usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
-            ITramitacionEnviosService servicio = tramitacionEnviosService ?? new TramitacionEnviosService(db);
+            // NestoAPI#597: con la fábrica de agencias remotas, para reenviar a Innovatrans/CTT los cambios
+            // de retorno, reembolso o servicio de una etiqueta viva; auditado como /Modificar.
+            ITramitacionEnviosService servicio = tramitacionEnviosService ?? new TramitacionEnviosService(db, fabricaAgenciasRemotas,
+                (envio, agencia, exito, error) => AuditarOperacion(envio, agencia, exito, error, "ModificarDatos"));
             try
             {
                 return Ok(await servicio.ModificarDatosAsync(id, datos, usuario));
             }
             catch (NestoBusinessException ex)
             {
-                return BadRequest(ex.Message);
+                // 409: entregado/recogido; 502: la agencia lo rechaza; 500: la agencia lo aceptó y la BD no.
+                return ex.StatusCode == HttpStatusCode.BadRequest
+                    ? BadRequest(ex.Message)
+                    : (IHttpActionResult)Content(ex.StatusCode, ex.Message);
             }
         }
 
@@ -1411,25 +1420,7 @@ namespace NestoAPI.Controllers
             return canonico.Length == 5 && tecleado.Length == 4 ? tecleado : canonico;
         }
 
-        private static DatosEnvioRemoto MapearEnvioRemoto(EnviosAgencia envio) => new DatosEnvioRemoto
-        {
-            Referencia = envio.Pedido?.ToString(),
-            Nombre = envio.Nombre?.Trim(),
-            Telefono = envio.Telefono?.Trim(),
-            Movil = envio.Movil?.Trim(),
-            Email = envio.Email?.Trim(),
-            CodigoPostal = envio.CodPostal?.Trim(),
-            Pais = envio.Pais,
-            Poblacion = envio.Poblacion?.Trim(),
-            Direccion = envio.Direccion?.Trim(),
-            Peso = envio.Peso,
-            Bultos = envio.Bultos,
-            Reembolso = envio.Reembolso,
-            Observaciones = envio.Observaciones?.Trim(),
-            Servicio = envio.Servicio,
-            Retorno = envio.Retorno,
-            FechaRecogida = envio.Fecha
-        };
+        private static DatosEnvioRemoto MapearEnvioRemoto(EnviosAgencia envio) => DatosEnvioRemoto.DesdeEnvio(envio);
 
         private Task AuditarTramitacion(EnviosAgencia envio, IAgenciaRemota agencia, bool exito, string error)
             => AuditarOperacion(envio, agencia, exito, error, "Tramitar");

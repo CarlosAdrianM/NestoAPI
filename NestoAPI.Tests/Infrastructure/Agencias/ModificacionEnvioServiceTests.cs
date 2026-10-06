@@ -315,9 +315,9 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         public void ModificarDatosEnvioDTO_ContratoDelJson_NombresQueMandaNesto()
         {
             string[] propiedades = typeof(ModificarDatosEnvioDTO).GetProperties().Select(p => p.Name).OrderBy(n => n).ToArray();
-            CollectionAssert.AreEqual(new[] { "Estado", "FechaEntrega", "Observaciones", "Reembolso", "Rehusar", "Retorno", "RetornoAnteriorDescripcion" }, propiedades);
+            CollectionAssert.AreEqual(new[] { "Estado", "FechaEntrega", "Observaciones", "Reembolso", "Rehusar", "Retorno", "RetornoAnteriorDescripcion", "Servicio" }, propiedades);
             string[] respuesta = typeof(ResultadoModificacionEnvio).GetProperties().Select(p => p.Name).OrderBy(n => n).ToArray();
-            CollectionAssert.AreEqual(new[] { "Asiento", "CamposModificados", "Mensaje", "Numero", "Rehusado" }, respuesta);
+            CollectionAssert.AreEqual(new[] { "Albaran", "Asiento", "Aviso", "Bultos", "CamposModificados", "EtiquetaCodificacion", "EtiquetaContenido", "EtiquetaTipo", "Mensaje", "Numero", "ReenviadoAAgencia", "Rehusado", "Reimpresion" }, respuesta);
         }
     }
 
