@@ -388,8 +388,8 @@ namespace NestoAPI.Infraestructure.Agencias
             {
                 return "PT";
             }
-            string cp = codPostal?.Trim() ?? string.Empty;
-            return cp.Length > 0 && PerfilAgenciaCorreosExpress.EsCodigoPostalPortugues(cp) ? "PT" : "ES";
+            // NestoAPI#596: la forma portuguesa la decide Direcciones.CodigoPostal (con o sin guion/espacio).
+            return PerfilAgenciaCorreosExpress.EsCodigoPostalPortugues(codPostal) ? "PT" : "ES";
         }
 
         /// <summary>CorreoCliente (el mismo criterio que Nesto, VB 3321-3338): primero el de agencia, luego cualquiera.</summary>

@@ -279,6 +279,8 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
             }
 
             string cp = (envio.CodigoPostal ?? string.Empty).Trim();
+            // NestoAPI#596: el país del envío (351 → PT) también cuenta, no solo la forma del CP.
+            string paisIso = Direcciones.CodigoPostal.PaisIso(envio.Pais);
             int bultos = Math.Max(1, envio.Bultos);
             decimal pesoBulto = Math.Max(0.01m, Math.Round(envio.Peso / bultos, 2, MidpointRounding.AwayFromZero));
             decimal largo = envio.Largo > 0 ? envio.Largo : LARGO_POR_DEFECTO;
@@ -301,7 +303,7 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
             {
                 ["client_center_code"] = _config.ClientCenterCode,
                 // NestoAPI#505: el servicio elegido (48 h por defecto, 24 h si el usuario lo fuerza).
-                ["shipping_type_code"] = MapeadorTipoServicioCTT.TipoServicio(envio.Servicio, cp),
+                ["shipping_type_code"] = MapeadorTipoServicioCTT.TipoServicio(envio.Servicio, cp, paisIso),
                 ["client_references"] = new JArray(Acotar(envio.Referencia, 30) ?? string.Empty, string.Empty),
                 ["shipping_weight_declared"] = Math.Round(envio.Peso, 2, MidpointRounding.AwayFromZero),
                 ["item_count"] = bultos,
@@ -312,7 +314,7 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
                 ["sender_town"] = _config.Remitente.Poblacion,
                 ["sender_phones"] = Telefonos(_config.Remitente.Telefono, null),
                 ["recipient_name"] = Acotar(envio.Nombre, 60),
-                ["recipient_country_code"] = MapeadorTipoServicioCTT.PaisDesdeCodigoPostal(cp),
+                ["recipient_country_code"] = MapeadorTipoServicioCTT.PaisDesdeCodigoPostal(cp, paisIso),
                 ["recipient_postal_code"] = cp,
                 ["recipient_address"] = Acotar(envio.Direccion, 100),
                 ["recipient_town"] = Acotar(envio.Poblacion, 60),
@@ -399,6 +401,7 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
         internal JObject ConstruirManifiestoRecogida(DatosEnvioRemoto envio)
         {
             string cpOrigen = (envio.CodigoPostal ?? string.Empty).Trim();
+            string paisIso = Direcciones.CodigoPostal.PaisIso(envio.Pais);
             int bultos = Math.Max(1, envio.Bultos);
             decimal pesoBulto = Math.Max(0.01m, Math.Round(envio.Peso / bultos, 2, MidpointRounding.AwayFromZero));
             decimal largo = envio.Largo > 0 ? envio.Largo : LARGO_POR_DEFECTO;
@@ -425,12 +428,12 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
             var manifiesto = new JObject
             {
                 ["client_center_code"] = _config.ClientCenterCode,
-                ["shipping_type_code"] = MapeadorTipoServicioCTT.TipoServicio(envio.Servicio, cpOrigen),
+                ["shipping_type_code"] = MapeadorTipoServicioCTT.TipoServicio(envio.Servicio, cpOrigen, paisIso),
                 ["client_references"] = new JArray(Acotar(envio.Referencia, 30) ?? string.Empty, string.Empty),
                 ["shipping_weight_declared"] = Math.Round(envio.Peso, 2, MidpointRounding.AwayFromZero),
                 ["item_count"] = bultos,
                 ["sender_name"] = Acotar(envio.Nombre, 60),
-                ["sender_country_code"] = MapeadorTipoServicioCTT.PaisDesdeCodigoPostal(cpOrigen),
+                ["sender_country_code"] = MapeadorTipoServicioCTT.PaisDesdeCodigoPostal(cpOrigen, paisIso),
                 ["sender_postal_code"] = cpOrigen,
                 ["sender_address"] = Acotar(envio.Direccion, 100),
                 ["sender_town"] = Acotar(envio.Poblacion, 60),

@@ -1,5 +1,6 @@
 using System;
 using NestoAPI.Infraestructure.Agencias.Perfiles;
+using NestoAPI.Infraestructure.Direcciones;
 using NestoAPI.Infraestructure.PedidosVenta;
 
 namespace NestoAPI.Infraestructure.Agencias.CTT
@@ -42,7 +43,12 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
         /// 24, el urgente. Cualquier otro valor se rechaza con un mensaje claro, igual que una zona que
         /// no tarificamos: nunca se manda a CTT un servicio que no hemos elegido.
         /// </summary>
-        public static string TipoServicio(short servicio, string codigoPostal)
+        /// <remarks>
+        /// NestoAPI#596: <paramref name="paisIso"/> es el país del envío (EnviosAgencia.Pais traducido con
+        /// Direcciones.CodigoPostal.PaisIso: 351 → "PT"). Con PT es Portugal venga el CP como venga; sin
+        /// país se deduce del CP en cualquier formato («4480 670», «4480670», «4480-670», «4480»).
+        /// </remarks>
+        public static string TipoServicio(short servicio, string codigoPostal, string paisIso = null)
         {
             bool urgente;
             if (servicio == 0 || servicio == SERVICIO_ID_48H)
@@ -59,18 +65,33 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
             }
 
             string cp = (codigoPostal ?? string.Empty).Trim();
-            if (EsPortugal(cp)) return urgente ? SERVICIO_24H : SERVICIO_48H;
+            if (EsPortugal(cp, paisIso)) return urgente ? SERVICIO_24H : SERVICIO_48H;
+            string iso = CodigoPostal.PaisIso(paisIso);
+            cp = CodigoPostal.Normalizar(cp, iso.Length == 0 ? CodigoPostal.ESPANA : iso);
             if (GestorPortes.EsCanarias(cp)) return urgente ? SERVICIO_CANARIAS_AEREO_24H : SERVICIO_CANARIAS_AEREO_48H;
             if (GestorPortes.EsBaleares(cp)) return urgente ? SERVICIO_BALEARES_EXPRESS : SERVICIO_BALEARES_ECONOMY;
-            if (PerfilAgenciaCorreosExpress.EsCodigoPostalEspanol(cp) && !EsCeutaOMelilla(cp)) return urgente ? SERVICIO_24H : SERVICIO_48H;
-            throw new ArgumentException($"CTT: el código postal '{cp}' no está en las zonas que tarificamos (península, Baleares, Canarias y Portugal).");
+            if (CodigoPostal.EsEspanol(cp, iso) && !EsCeutaOMelilla(cp)) return urgente ? SERVICIO_24H : SERVICIO_48H;
+            throw new ArgumentException($"CTT: el código postal '{(codigoPostal ?? string.Empty).Trim()}' no está en las zonas que tarificamos (península, Baleares, Canarias y Portugal).");
         }
 
-        /// <summary>Código ISO alpha-2 del país del destinatario, deducido del código postal.</summary>
-        public static string PaisDesdeCodigoPostal(string codigoPostal)
-            => EsPortugal((codigoPostal ?? string.Empty).Trim()) ? "PT" : "ES";
+        /// <summary>
+        /// Código ISO alpha-2 del país del destinatario: el del envío si es España o Portugal, y si no
+        /// viene, deducido del código postal (NestoAPI#596: en cualquier formato).
+        /// </summary>
+        public static string PaisDesdeCodigoPostal(string codigoPostal, string paisIso = null)
+            => EsPortugal(codigoPostal, paisIso) ? CodigoPostal.PORTUGAL : CodigoPostal.ESPANA;
 
-        public static bool EsPortugal(string cp) => PerfilAgenciaCorreosExpress.EsCodigoPostalPortugues(cp);
+        /// <summary>
+        /// NestoAPI#596: país PT manda; sin país, la forma del CP (4 o 7 cifras, con o sin guion/espacio);
+        /// con España, solo un CP de 7 cifras (un español nunca las tiene: el envío 249519 iba con «4480 670»).
+        /// </summary>
+        public static bool EsPortugal(string cp, string paisIso = null)
+        {
+            string iso = CodigoPostal.PaisIso(paisIso);
+            if (iso == CodigoPostal.PORTUGAL) return true;
+            if (iso.Length == 0) return PerfilAgenciaCorreosExpress.EsCodigoPostalPortugues(cp);
+            return CodigoPostal.EsPortugues(cp, iso);
+        }
 
         private static bool EsCeutaOMelilla(string cp) => cp.StartsWith("51") || cp.StartsWith("52");
     }

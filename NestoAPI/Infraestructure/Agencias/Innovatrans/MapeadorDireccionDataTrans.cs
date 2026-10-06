@@ -108,13 +108,7 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
             return digitos.Length < 4 ? codigoPostal?.Trim() : "6" + digitos.Substring(0, 4);
         }
 
-        private static string SoloDigitos(string texto)
-        {
-            if (string.IsNullOrWhiteSpace(texto))
-            {
-                return string.Empty;
-            }
-            return new string(texto.Where(char.IsDigit).ToArray());
-        }
+        // NestoAPI#596: las cifras las saca Direcciones.CodigoPostal (el único que entiende el CP).
+        private static string SoloDigitos(string texto) => Direcciones.CodigoPostal.Digitos(texto);
     }
 }

@@ -38,12 +38,13 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
         // tarifas nacionales no cubren -> Extranjero (sin tramos -> coste MaxValue).
         internal static ZonasEnvioAgencia ZonaNacional(string codigoPostal, string paisIso)
         {
-            string iso = (paisIso ?? string.Empty).Trim().ToUpperInvariant();
-            if (iso == "PT")
+            // NestoAPI#596: el país lo traduce Direcciones.CodigoPostal (acepta también "PRT", 351...).
+            string iso = Direcciones.CodigoPostal.PaisIso(paisIso);
+            if (iso == Direcciones.CodigoPostal.PORTUGAL)
             {
                 return ZonasEnvioAgencia.Portugal;
             }
-            if (iso.Length == 0 || iso == "ES")
+            if (iso.Length == 0 || iso == Direcciones.CodigoPostal.ESPANA)
             {
                 return CalculadoraZonaEnvio.CalcularZona(codigoPostal);
             }

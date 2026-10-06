@@ -1400,6 +1400,7 @@ namespace NestoAPI.Controllers
             Movil = envio.Movil?.Trim(),
             Email = envio.Email?.Trim(),
             CodigoPostal = envio.CodPostal?.Trim(),
+            Pais = envio.Pais,
             Poblacion = envio.Poblacion?.Trim(),
             Direccion = envio.Direccion?.Trim(),
             Peso = envio.Peso,

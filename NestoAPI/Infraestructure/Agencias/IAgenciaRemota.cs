@@ -19,6 +19,12 @@ namespace NestoAPI.Infraestructure.Agencias
         /// <summary>NestoAPI#493: email del destinatario para los avisos de la agencia (entrega prevista, entrega hoy, incidencia, punto de recogida). CTT lo usa; Innovatrans lo ignora.</summary>
         public string Email { get; set; }
         public string CodigoPostal { get; set; }
+        /// <summary>
+        /// NestoAPI#596: EnviosAgencia.Pais tal cual (34 España, 351 Portugal; 0 = no informado). CTT lo
+        /// usa para saber que es Portugal aunque el CP venga en otro formato; Innovatrans lo ignora (su
+        /// país va en la petición de DataTrans).
+        /// </summary>
+        public int Pais { get; set; }
         public string Poblacion { get; set; }
         public string Direccion { get; set; }
         public decimal Peso { get; set; }

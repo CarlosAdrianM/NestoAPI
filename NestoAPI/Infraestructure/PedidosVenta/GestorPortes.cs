@@ -280,21 +280,21 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         }
 
         public static bool EsBaleares(string codigoPostal)
-        {
-            if (string.IsNullOrEmpty(codigoPostal))
-                return false;
-
-            return codigoPostal.StartsWith("07");
-        }
+            => ProvinciaEspanola(codigoPostal) == "07";
 
         public static bool EsCanarias(string codigoPostal)
         {
-            if (string.IsNullOrEmpty(codigoPostal))
-                return false;
-
-            return codigoPostal.StartsWith("35") ||
-                   codigoPostal.StartsWith("38");
+            string provincia = ProvinciaEspanola(codigoPostal);
+            return provincia == "35" || provincia == "38";
         }
+
+        // NestoAPI#596: las dos primeras cifras del CP español canónico (Direcciones.CodigoPostal), o
+        // null si no es español. Así «3500-001» (Viseu, Portugal) ya no cuenta como Canarias, y el CP
+        // con blancos o sin el cero a la izquierda se reconoce igual.
+        private static string ProvinciaEspanola(string codigoPostal)
+            => Direcciones.CodigoPostal.EsEspanol(codigoPostal)
+                ? Direcciones.CodigoPostal.Normalizar(codigoPostal, Direcciones.CodigoPostal.ESPANA).Substring(0, 2)
+                : null;
 
         /// <summary>
         /// Obtiene el umbral de importe a partir del cual los portes son gratis,

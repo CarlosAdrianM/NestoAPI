@@ -1,5 +1,4 @@
 using System.Linq;
-using System.Text.RegularExpressions;
 
 namespace NestoAPI.Infraestructure.Agencias.Tarifas
 {
@@ -9,11 +8,6 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
     /// </summary>
     public static class CalculadoraZonaEnvio
     {
-        // CP portugués NNNN-NNN: el separador (guion o espacio) es OPCIONAL, para reconocerlo venga
-        // como venga de la BD ("1000-001", "1000 001" o junto "1000001"); si no, "1000001" se tomaría
-        // como Extranjero y no se enrutaría a Innovatrans Portugal.
-        private static readonly Regex CodigoPostalPortugal = new Regex(@"^\d{4}[ -]?\d{3}$");
-
         // Islas "mayores" = capitales y poblaciones grandes (tarifa distinta a las "menores").
         private static readonly string[] CodigosMallorcaMayores =
         {
@@ -39,7 +33,10 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
             }
             codigoPostal = codigoPostal.Trim();
 
-            if (CodigoPostalPortugal.IsMatch(codigoPostal))
+            // CP portugués NNNN-NNN venga como venga de la BD ("1000-001", "1000 001" o junto
+            // "1000001"); si no, "1000001" se tomaría como Extranjero y no se enrutaría a Innovatrans
+            // Portugal. NestoAPI#596: lo decide Direcciones.CodigoPostal (sin país: solo 7 cifras).
+            if (Direcciones.CodigoPostal.EsPortugues(codigoPostal))
             {
                 return ZonasEnvioAgencia.Portugal;
             }

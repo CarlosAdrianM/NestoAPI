@@ -171,18 +171,14 @@ namespace NestoAPI.Infraestructure.Agencias.Perfiles
             return (Servicio: 90, Horario: 0, Pais: 724); // Internacional monobulto
         }
 
+        // NestoAPI#596: alias de Direcciones.CodigoPostal, el único que entiende el CP.
         internal static bool EsCodigoPostalEspanol(string codPostal)
-        {
-            return codPostal.Length == 5 && int.TryParse(codPostal, out int cp) && cp >= 1000 && cp <= 52999;
-        }
+            => Direcciones.CodigoPostal.EsEspanol(codPostal);
 
+        // NestoAPI#596: «1000», «1000-001», «1000 001» o «1000001» (antes solo los dos primeros:
+        // «4480 670» se rechazaba en CTT). Sin país, 4 cifras siguen contando como Portugal.
         internal static bool EsCodigoPostalPortugues(string codPostal)
-        {
-            // Formato portugués: 4 dígitos o 4 dígitos-3 dígitos (ej: "1000" o "1000-001")
-            string sinGuion = codPostal.Replace("-", "");
-            return (codPostal.Length == 4 || codPostal.Length == 8)
-                && int.TryParse(sinGuion, out int cp) && cp >= 1000 && cp <= 9999999;
-        }
+            => Direcciones.CodigoPostal.TieneFormatoPortugues(codPostal);
     }
 
     /// <summary>Sending: en cuarentena (no se tramita), pero conserva sus defaults de envío.</summary>
