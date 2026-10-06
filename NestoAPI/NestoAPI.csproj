@@ -623,6 +623,7 @@
       <DependentUpon>Global.asax</DependentUpon>
     </Compile>
     <Compile Include="Infraestructure\Agencias\GestorEnviosAgencia.cs" />
+    <Compile Include="Infraestructure\Agencias\PropuestaEnvioService.cs" />
     <Compile Include="Infraestructure\Agencias\ReglasEnReparto.cs" />
     <Compile Include="Infraestructure\Agencias\AgenciaRemotaException.cs" />
     <Compile Include="Infraestructure\Agencias\CTT\AgenciaRemotaCTT.cs" />
@@ -766,6 +767,7 @@
     <Compile Include="Models\PedidosVenta\SituacionLineasPedidoDTO.cs" />
     <Compile Include="Models\Agencias\EnvioHistoriaDTO.cs" />
     <Compile Include="Models\Agencias\EnvioRetrasadoDTO.cs" />
+    <Compile Include="Models\Agencias\PropuestaEnvioDTO.cs" />
     <Compile Include="Infraestructure\Clientes\NombreFiscalPlaceholder.cs" />
     <Compile Include="Infraestructure\Clientes\GuardiaAnulacionCliente.cs" />
     <Compile Include="Infraestructure\Clientes\CambioDiasEnServirConPicking.cs" />

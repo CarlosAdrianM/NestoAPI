@@ -193,6 +193,18 @@ namespace NestoAPI.Controllers
             set => servicioPedidosVenta = value;
         }
 
+        // NestoAPI#595 (slice 1): la propuesta de envío del servidor. Perezosa e inyectable para los tests (sin
+        // constructor nuevo: AddControllersAsServices elige constructor por parámetros resolubles).
+        private IPropuestaEnvioService propuestaEnvio;
+        internal IPropuestaEnvioService PropuestaEnvio
+        {
+            get => propuestaEnvio ?? (propuestaEnvio = new PropuestaEnvioService(new DatosPropuestaEnvioEF(db, () => ServicioPedidosVenta)));
+            set => propuestaEnvio = value;
+        }
+
+        /// <summary>Dónde se registran la sombra de la propuesta y sus fallos (ELMAH; sustituible en los tests).</summary>
+        internal Action<Exception> RegistrarEnElmah { get; set; } = ex => ElmahHelper.Log(ex);
+
         // ========== Nesto#340 (Agencias, slice A1): listados de la ventana de Agencias ==========
         // Cada endpoint replica el filtro EXACTO del método EF de AgenciaService en el cliente,
         // para que la migración por pestañas sea un cambio de origen de datos sin cambio de
@@ -1454,6 +1466,73 @@ namespace NestoAPI.Controllers
             EtiquetaContenido = etiqueta?.Contenido
         };
 
+        // GET: api/EnviosAgencias/Propuesta?empresa=1&pedido=927700&bultos=2&peso=3.5
+        /// <summary>
+        /// NestoAPI#595 (slice 1): el envío que grabaría Agencias de Nesto para este pedido (destino, agencia, servicio,
+        /// reembolso, coste...), con los avisos que Nesto pregunta antes de insertar y de dónde sale (nuevo, pendiente
+        /// reutilizado o ampliación). Solo lectura. 404 si el pedido no existe.
+        /// </summary>
+        [HttpGet]
+        [Authorize]
+        [Route("api/EnviosAgencias/Propuesta")]
+        [ResponseType(typeof(PropuestaEnvioDTO))]
+        public async Task<IHttpActionResult> GetPropuestaEnvio(string empresa, int pedido, short? bultos = null, decimal? peso = null)
+        {
+            if (string.IsNullOrWhiteSpace(empresa))
+            {
+                return BadRequest("Hay que indicar la empresa.");
+            }
+            PropuestaEnvioDTO propuesta = await PropuestaEnvio.Calcular(empresa.Trim(), pedido, bultos, peso).ConfigureAwait(false);
+            if (propuesta == null)
+            {
+                return NotFound();
+            }
+            return Ok(propuesta);
+        }
+
+        /// <summary>
+        /// NestoAPI#595 (slice 1, sombra): tras grabar un envío NUEVO de un pedido (Estado ≥ 0, lo que inserta Agencias
+        /// de Nesto; las etiquetas pendientes no), calcula la propuesta del servidor con los bultos y el peso grabados y
+        /// la compara campo a campo. Si difiere, PropuestaEnvioDifiereInfo a ELMAH; si coincide, nada. Best-effort:
+        /// cualquier fallo se registra y NUNCA hace fallar el POST.
+        /// </summary>
+        internal async Task SombraPropuestaEnvio(EnviosAgencia envio)
+        {
+            if (envio == null || !envio.Pedido.HasValue || envio.Estado < Constantes.Agencias.ESTADO_EN_CURSO)
+            {
+                return;
+            }
+            try
+            {
+                PropuestaEnvioDTO propuesta = await PropuestaEnvio.Calcular(envio.Empresa?.Trim(), envio.Pedido.Value,
+                    envio.Bultos, envio.Peso, excluirEnvio: envio.Numero).ConfigureAwait(false);
+                List<string> diferencias = propuesta == null
+                    ? new List<string> { "pedido: la propuesta no encuentra el pedido" }
+                    : ComparadorPropuestaEnvio.Diferencias(envio, propuesta);
+                if (diferencias.Count > 0)
+                {
+                    Registrar(PropuestaEnvioDifiereInfo.Crear(envio, diferencias));
+                }
+            }
+            catch (Exception ex)
+            {
+                Registrar(new Exception($"[Propuesta de envío #595] No se pudo comparar el envío {envio.Numero} (pedido {envio.Pedido}) " +
+                    $"con la propuesta del servidor: {ex.Message}", ex));
+            }
+        }
+
+        private void Registrar(Exception ex)
+        {
+            try
+            {
+                RegistrarEnElmah?.Invoke(ex);
+            }
+            catch
+            {
+                // El registro de la sombra nunca rompe la operación.
+            }
+        }
+
         // POST: api/EnviosAgencias
         [ResponseType(typeof(EnviosAgencia))]
         public async Task<IHttpActionResult> PostEnviosAgencia(EnviosAgencia enviosAgencia)
@@ -1479,6 +1558,9 @@ namespace NestoAPI.Controllers
             RecortarTextosLibres(enviosAgencia);
             db.EnviosAgencias.Add(enviosAgencia);
             await db.SaveChangesAsync();
+
+            // NestoAPI#595: sombra de la propuesta de envío (solo lectura + log; nunca hace fallar el alta).
+            await SombraPropuestaEnvio(enviosAgencia);
 
             return CreatedAtRoute("DefaultApi", new { id = enviosAgencia.Numero }, enviosAgencia);
         }
