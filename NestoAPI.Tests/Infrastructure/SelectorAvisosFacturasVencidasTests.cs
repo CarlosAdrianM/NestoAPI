@@ -566,7 +566,7 @@ namespace NestoAPI.Tests.Infrastructure
 
             List<AvisoFacturaVencidaDTO> candidatos = await selector.Candidatos("1", 5, HOY_35544);
 
-            Assert.AreEqual("No se avisa: el cliente ha pagado algo el 25/09/2026; se le puede avisar desde el 02/10/2026.",
+            Assert.AreEqual("No se avisa: pago reciente el 25/09/2026; se le puede avisar desde el 02/10/2026.",
                 candidatos.Single(c => c.NOrden == 1).Motivo);
             Assert.IsTrue(candidatos.Single(c => c.NOrden == 2).SeAvisaria, "Los demás clientes, como siempre");
         }
@@ -586,6 +586,39 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(80.02m, aviso.Importe);
             Assert.AreEqual(90.02m, aviso.ImporteEfecto);
             Assert.AreEqual(10m, aviso.ImporteYaPagado);
+        }
+
+        [TestMethod]
+        public async Task Candidatos_35544_El03DeOctubreSeAvisaYElCorreoDiceLoYaRecibido()
+        {
+            // Pagó 40 € (de otro plazo) y 10 € a cuenta de este el 25/09: el 29/09 no; el 03/10 sí
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente>
+            {
+                PlazoDe35544(),
+                Pago(3, "15191", -40m, new DateTime(2026, 9, 25)),
+                Pago(4, "15191", -10m, new DateTime(2026, 9, 25))
+            });
+
+            Assert.IsFalse((await selector.Candidatos("1", 5, HOY_35544)).Single().SeAvisaria);
+            AvisoFacturaVencidaDTO aviso = (await selector.Candidatos("1", 5, new DateTime(2026, 10, 3))).Single();
+
+            Assert.IsTrue(aviso.SeAvisaria, aviso.Motivo);
+            string texto = PlantillaAvisoFacturaVencida.CuerpoTexto(
+                AvisosFacturasVencidasJobsService.AgruparPorCliente(new[] { aviso }).Single(), null);
+            StringAssert.Contains(texto, "De este importe de 90,02 € ya hemos recibido 10,00 €, gracias. Quedan pendientes 80,02 €.");
+        }
+
+        [TestMethod]
+        public async Task Candidatos_EsperaTrasPagoACero_NoEspera()
+        {
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente>
+            {
+                PlazoDe35544(),
+                Pago(3, "15191", -10m, new DateTime(2026, 9, 28))
+            });
+
+            Assert.IsTrue((await selector.Candidatos("1", 5, HOY_35544, diasEsperaTrasPago: 0)).Single().SeAvisaria);
+            Assert.IsFalse((await selector.Candidatos("1", 5, HOY_35544)).Single().SeAvisaria, "Por defecto, 7 días");
         }
 
         [TestMethod]

@@ -325,7 +325,10 @@ namespace NestoAPI.Infraestructure.Cobros
                 ? dias
                 : SelectorAvisosFacturasVencidas.DIAS_UMBRAL_POR_DEFECTO;
 
-        /// <summary>NestoAPI#549: días de espera tras un pago del cliente. Cualquier fallo = el valor por defecto.</summary>
+        /// <summary>
+        /// NestoAPI#549: días de espera tras un pago del cliente. Sin fila, valor no válido, negativo o
+        /// cualquier fallo = el valor por defecto (7); "0" = sin espera.
+        /// </summary>
         internal static int LeerDiasTrasPago(ILectorParametrosUsuario lector)
         {
             try
@@ -340,7 +343,7 @@ namespace NestoAPI.Infraestructure.Cobros
         }
 
         internal static int InterpretarDiasTrasPago(string valor)
-            => int.TryParse(valor?.Trim(), out int dias) && dias > 0
+            => int.TryParse(valor?.Trim(), out int dias) && dias >= 0
                 ? dias
                 : SelectorAvisosFacturasVencidas.DIAS_ESPERA_TRAS_PAGO_POR_DEFECTO;
 

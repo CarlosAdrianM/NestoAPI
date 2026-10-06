@@ -58,7 +58,7 @@ namespace NestoAPI.Infraestructure.Cobros
         public const string MOTIVO_SIN_FACTURA = "No se avisa: el efecto no tiene una factura asociada.";
         public const string MOTIVO_SIN_CORREO = "No se avisa: la ficha no tiene correo de cobros ni de facturación.";
         public const string MOTIVO_CLIENTE_CON_NEGATIVOS = "No se avisa: el cliente tiene cobros o abonos pendientes de liquidar (puede que ya haya pagado).";
-        public const string MOTIVO_PAGO_RECIENTE_PREFIJO = "No se avisa: el cliente ha pagado algo el ";
+        public const string MOTIVO_PAGO_RECIENTE_PREFIJO = "No se avisa: pago reciente el ";
 
         private readonly NVEntities db;
         private readonly Func<string, Task<List<string>>> leerEstadosQueBloquean;
@@ -79,7 +79,7 @@ namespace NestoAPI.Infraestructure.Cobros
         /// Todos los efectos que cumplen el criterio, con <c>Motivo</c> null si se avisarían.
         /// </summary>
         /// <param name="hoy">Ancla temporal (solo para tests; por defecto el día real).</param>
-        /// <param name="diasEsperaTrasPago">NestoAPI#549: días sin avisar tras un pago del cliente (&lt; 1 = el valor por defecto).</param>
+        /// <param name="diasEsperaTrasPago">NestoAPI#549: días sin avisar tras un pago del cliente (0 = sin espera; negativo = el valor por defecto).</param>
         public async Task<List<AvisoFacturaVencidaDTO>> Candidatos(string empresa, int diasUmbral, DateTime? hoy = null,
             int diasEsperaTrasPago = DIAS_ESPERA_TRAS_PAGO_POR_DEFECTO)
         {
@@ -88,7 +88,7 @@ namespace NestoAPI.Infraestructure.Cobros
             {
                 diasUmbral = DIAS_UMBRAL_POR_DEFECTO;
             }
-            if (diasEsperaTrasPago < 1)
+            if (diasEsperaTrasPago < 0)
             {
                 diasEsperaTrasPago = DIAS_ESPERA_TRAS_PAGO_POR_DEFECTO;
             }
@@ -170,14 +170,19 @@ namespace NestoAPI.Infraestructure.Cobros
             // gira el banco y no dicen que esté pagando lo vencido.
             DateTime pagosDesde = fechaHoy.AddDays(-diasEsperaTrasPago);
             string pago = Constantes.ExtractosCliente.TiposApunte.PAGO;
-            var pagosRecientes = await db.ExtractosCliente
-                .Where(e => e.Empresa == empresa && clientes.Contains(e.Número) && e.TipoApunte == pago
-                    && e.Importe < 0 && e.Remesa == null && e.Fecha > pagosDesde)
-                .Select(e => new { e.Número, e.Fecha })
-                .ToListAsync().ConfigureAwait(false);
-            Dictionary<string, DateTime> ultimoPagoPorCliente = pagosRecientes
-                .GroupBy(p => p.Número?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, g => g.Max(p => p.Fecha), StringComparer.OrdinalIgnoreCase);
+            // Con 0 días (parámetro a 0) no hay espera: ni se consulta.
+            Dictionary<string, DateTime> ultimoPagoPorCliente = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+            if (diasEsperaTrasPago > 0)
+            {
+                var pagosRecientes = await db.ExtractosCliente
+                    .Where(e => e.Empresa == empresa && clientes.Contains(e.Número) && e.TipoApunte == pago
+                        && e.Importe < 0 && e.Remesa == null && e.Fecha > pagosDesde)
+                    .Select(e => new { e.Número, e.Fecha })
+                    .ToListAsync().ConfigureAwait(false);
+                ultimoPagoPorCliente = pagosRecientes
+                    .GroupBy(p => p.Número?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(g => g.Key, g => g.Max(p => p.Fecha), StringComparer.OrdinalIgnoreCase);
+            }
 
             // NestoAPI#544 (c): la memoria. Si la tabla aún no existe (script sin ejecutar) o falla,
             // se avisa a ELMAH y ese día todos cuentan como primer aviso: mejor eso que no avisar.
@@ -258,7 +263,7 @@ namespace NestoAPI.Infraestructure.Cobros
             .ToList();
         }
 
-        /// <summary>NestoAPI#549: «No se avisa: el cliente ha pagado algo el 25/09/2026; se le puede avisar desde el 02/10/2026.»</summary>
+        /// <summary>NestoAPI#549: «No se avisa: pago reciente el 25/09/2026; se le puede avisar desde el 02/10/2026.»</summary>
         public static string MotivoPagoReciente(DateTime ultimoPago, int diasEsperaTrasPago)
             => MOTIVO_PAGO_RECIENTE_PREFIJO + PlantillaAvisoFacturaVencida.FormatearFecha(ultimoPago.Date) +
                 "; se le puede avisar desde el " + PlantillaAvisoFacturaVencida.FormatearFecha(ultimoPago.Date.AddDays(diasEsperaTrasPago)) + ".";

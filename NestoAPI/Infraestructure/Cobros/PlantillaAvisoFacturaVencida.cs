@@ -77,15 +77,15 @@ namespace NestoAPI.Infraestructure.Cobros
             {
                 sb.AppendLine($"{(f.Factura ?? string.Empty).PadRight(12)} {FormatearFecha(f.FechaFactura).PadRight(12)} " +
                     $"{FormatearFecha(f.Vencimiento).PadRight(12)} {FormatearImporte(f.Importe)}");
+                string yaPagado = FraseYaPagado(f);
+                if (yaPagado != null)
+                {
+                    sb.AppendLine("             " + yaPagado);
+                }
             }
             if (varias)
             {
                 sb.AppendLine($"Total pendiente: {FormatearImporte(aviso.Total)}");
-            }
-            foreach (string frase in FrasesYaPagado(facturas))
-            {
-                sb.AppendLine();
-                sb.AppendLine(frase);
             }
             sb.AppendLine();
             sb.AppendLine(ParrafoCruce(datos));
@@ -127,6 +127,12 @@ namespace NestoAPI.Infraestructure.Cobros
                   .Append("<td>").Append(FormatearFecha(f.Vencimiento)).Append("</td>")
                   .Append("<td align='right'>").Append(FormatearImporte(f.Importe)).Append("</td>")
                   .Append("</tr>");
+                string yaPagado = FraseYaPagado(f);
+                if (yaPagado != null)
+                {
+                    sb.Append("<tr><td></td><td colspan='3' style='font-style: italic; color: #555;'>")
+                      .Append(PlantillaAvisoFacturaVencida.Html(yaPagado)).Append("</td></tr>");
+                }
             }
             if (varias)
             {
@@ -134,10 +140,6 @@ namespace NestoAPI.Infraestructure.Cobros
                   .Append(FormatearImporte(aviso.Total)).Append("</td></tr>");
             }
             sb.Append("</table>");
-            foreach (string frase in FrasesYaPagado(facturas))
-            {
-                sb.Append("<p>").Append(PlantillaAvisoFacturaVencida.Html(frase)).Append("</p>");
-            }
             sb.Append("<p>").Append(PlantillaAvisoFacturaVencida.Html(ParrafoCruce(datos))).Append("</p>");
             sb.Append("<div style='border: 1px solid #bbb; background-color: #fafafa; padding: 10px 14px; font-family: Consolas, monospace; font-size: 13px;'>");
             foreach ((string etiqueta, string valor) in BloqueCopiar(aviso, datos))
@@ -157,16 +159,14 @@ namespace NestoAPI.Infraestructure.Cobros
             => (aviso.Facturas ?? new List<AvisoFacturaVencidaDTO>()).OrderBy(f => f.Vencimiento).ThenBy(f => f.Factura).ToList();
 
         /// <summary>
-        /// NestoAPI#549: una frase por cada efecto pagado en parte, para que se vea que su pago nos ha
-        /// llegado: «De la factura NV2613198 (vencimiento 18/09/2026, 90,02 €) ya hemos recibido
-        /// 10,00 €, gracias. Quedan pendientes 80,02 €.»
+        /// NestoAPI#549: si el efecto está pagado en parte, la nota que va justo debajo de su línea en
+        /// la tabla, para que se vea que su pago nos ha llegado: «De este importe de 90,02 € ya hemos
+        /// recibido 10,00 €, gracias. Quedan pendientes 80,02 €.» Null si no ha pagado nada de él.
         /// </summary>
-        public static List<string> FrasesYaPagado(IEnumerable<AvisoFacturaVencidaDTO> facturas)
-            => (facturas ?? Enumerable.Empty<AvisoFacturaVencidaDTO>())
-                .Where(f => f.ImporteYaPagado > 0)
-                .Select(f => $"De la factura {f.Factura} (vencimiento {FormatearFecha(f.Vencimiento)}, {FormatearImporte(f.ImporteEfecto)}) " +
-                    $"ya hemos recibido {FormatearImporte(f.ImporteYaPagado)}, gracias. Quedan pendientes {FormatearImporte(f.Importe)}.")
-                .ToList();
+        public static string FraseYaPagado(AvisoFacturaVencidaDTO factura)
+            => factura == null || factura.ImporteYaPagado <= 0 ? null
+                : $"De este importe de {FormatearImporte(factura.ImporteEfecto)} ya hemos recibido {FormatearImporte(factura.ImporteYaPagado)}, gracias. " +
+                    $"Quedan pendientes {FormatearImporte(factura.Importe)}.";
 
         private static string Introduccion(int numeroAviso, bool varias)
         {

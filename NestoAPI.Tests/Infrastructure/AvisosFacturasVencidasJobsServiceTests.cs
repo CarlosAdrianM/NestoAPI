@@ -356,9 +356,62 @@ namespace NestoAPI.Tests.Infrastructure
             string texto = PlantillaAvisoFacturaVencida.CuerpoTexto(aviso, null);
             string html = PlantillaAvisoFacturaVencida.CuerpoHtml(aviso, null);
 
-            string frase = "De la factura NV2613198 (vencimiento 18/09/2026, 90,02 €) ya hemos recibido 10,00 €, gracias. Quedan pendientes 80,02 €.";
+            string frase = "De este importe de 90,02 € ya hemos recibido 10,00 €, gracias. Quedan pendientes 80,02 €.";
             StringAssert.Contains(texto, frase);
             StringAssert.Contains(html, frase);
+            // En la línea de la factura: justo debajo de su fila, no en un párrafo aparte
+            string[] lineas = texto.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+            int fila = Array.FindIndex(lineas, l => l.StartsWith("NV2613198"));
+            StringAssert.Contains(lineas[fila + 1], frase);
+            Assert.IsTrue(html.IndexOf(frase) < html.IndexOf("</table>"), "En el HTML va dentro de la tabla");
+        }
+
+        [TestMethod]
+        public void Plantilla_EfectoPagadoEnParte_Cliente20547()
+        {
+            // NestoAPI#549: 72,34 € pagados de 285,79 €
+            AvisoFacturaVencidaDTO efecto = Aviso(factura: "NV2613951", importe: 213.45m);
+            efecto.ImporteEfecto = 285.79m;
+
+            string texto = PlantillaAvisoFacturaVencida.CuerpoTexto(AvisoCliente(efecto), null);
+
+            StringAssert.Contains(texto, "De este importe de 285,79 € ya hemos recibido 72,34 €, gracias. Quedan pendientes 213,45 €.");
+        }
+
+        [TestMethod]
+        public void Plantilla_VariasFacturas_LaNotaVaSoloEnLaParcialYDebajoDeSuLinea()
+        {
+            AvisoFacturaVencidaDTO entera = Aviso(factura: "NV2612001", nOrden: 2, importe: 50m, vencimiento: new DateTime(2026, 9, 1));
+            entera.ImporteEfecto = 50m;
+            AvisoFacturaVencidaDTO parcial = Aviso(factura: "NV2613198", importe: 80.02m, vencimiento: new DateTime(2026, 9, 18));
+            parcial.ImporteEfecto = 90.02m;
+            AvisoFacturaVencidaDTO otraParcial = Aviso(factura: "NV2613951", nOrden: 3, importe: 213.45m, vencimiento: new DateTime(2026, 9, 20));
+            otraParcial.ImporteEfecto = 285.79m;
+
+            string texto = PlantillaAvisoFacturaVencida.CuerpoTexto(AvisoCliente(entera, parcial, otraParcial), null);
+            string html = PlantillaAvisoFacturaVencida.CuerpoHtml(AvisoCliente(entera, parcial, otraParcial), null);
+
+            string[] lineas = texto.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+            int filaEntera = Array.FindIndex(lineas, l => l.StartsWith("NV2612001"));
+            int filaParcial = Array.FindIndex(lineas, l => l.StartsWith("NV2613198"));
+            int filaOtra = Array.FindIndex(lineas, l => l.StartsWith("NV2613951"));
+            Assert.AreEqual(filaEntera + 1, filaParcial, "La entera no lleva nota");
+            StringAssert.Contains(lineas[filaParcial + 1], "De este importe de 90,02 € ya hemos recibido 10,00 €");
+            StringAssert.Contains(lineas[filaOtra + 1], "De este importe de 285,79 € ya hemos recibido 72,34 €");
+            Assert.AreEqual(2, System.Text.RegularExpressions.Regex.Matches(texto, "ya hemos recibido").Count);
+            Assert.AreEqual(2, System.Text.RegularExpressions.Regex.Matches(html, "ya hemos recibido").Count);
+        }
+
+        [TestMethod]
+        public void Plantilla_SinColetillaDeCorreoAutomatico()
+        {
+            AvisoClienteFacturasVencidasDTO aviso = AvisoCliente(Aviso());
+            string texto = PlantillaAvisoFacturaVencida.CuerpoTexto(aviso, new DatosPagoAviso { Iban = IBAN });
+            string html = PlantillaAvisoFacturaVencida.CuerpoHtml(aviso, new DatosPagoAviso { Iban = IBAN });
+
+            Assert.IsFalse(texto.IndexOf("automático", StringComparison.OrdinalIgnoreCase) >= 0);
+            Assert.IsFalse(html.IndexOf("automático", StringComparison.OrdinalIgnoreCase) >= 0);
+            Assert.IsFalse(texto.IndexOf("no respondas", StringComparison.OrdinalIgnoreCase) >= 0);
         }
 
         [TestMethod]
@@ -374,12 +427,41 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
-        public void InterpretarDiasTrasPago_SinValorONoValido_Siete()
+        public void InterpretarDiasTrasPago_SinValorONoValido_Siete_YCeroEsSinEspera()
         {
             Assert.AreEqual(7, AvisosFacturasVencidasJobsService.InterpretarDiasTrasPago(null));
-            Assert.AreEqual(7, AvisosFacturasVencidasJobsService.InterpretarDiasTrasPago("0"));
             Assert.AreEqual(7, AvisosFacturasVencidasJobsService.InterpretarDiasTrasPago("siete"));
+            Assert.AreEqual(7, AvisosFacturasVencidasJobsService.InterpretarDiasTrasPago("-2"));
+            Assert.AreEqual(0, AvisosFacturasVencidasJobsService.InterpretarDiasTrasPago("0"));
             Assert.AreEqual(3, AvisosFacturasVencidasJobsService.InterpretarDiasTrasPago(" 3 "));
+        }
+
+        [TestMethod]
+        public void LeerDiasTrasPago_DeParametrosUsuarioDefecto()
+        {
+            Assert.AreEqual(7, AvisosFacturasVencidasJobsService.LeerDiasTrasPago(lector), "Sin parámetro, 7");
+
+            Parametro(Constantes.ParametrosUsuario.AVISO_FACTURAS_VENCIDAS_DIAS_TRAS_PAGO, "0");
+            Assert.AreEqual(0, AvisosFacturasVencidasJobsService.LeerDiasTrasPago(lector), "0 = sin espera");
+
+            A.CallTo(() => lector.LeerParametro(A<string>._, A<string>._, A<string>._)).Throws(new Exception("BD caída"));
+            Assert.AreEqual(7, AvisosFacturasVencidasJobsService.LeerDiasTrasPago(lector), "Si falla la lectura, 7");
+        }
+
+        [TestMethod]
+        public async Task Procesar_EnSombra_ElPagoRecienteSaleComoMotivoEnElResumen()
+        {
+            Parametro(Constantes.ParametrosUsuario.AVISO_FACTURAS_VENCIDAS, "Sombra");
+            string motivo = SelectorAvisosFacturasVencidas.MotivoPagoReciente(new DateTime(2026, 9, 25), 7);
+
+            await Ejecutar(new List<AvisoFacturaVencidaDTO>
+            {
+                Aviso(factura: "NV2613198", cliente: "35544", importe: 80.02m, motivo: motivo)
+            });
+
+            string body = enviados.Single().Body;
+            StringAssert.Contains(body, "NV2613198");
+            StringAssert.Contains(body, "No se avisa: pago reciente el 25/09/2026; se le puede avisar desde el 02/10/2026.");
         }
 
         [TestMethod]
