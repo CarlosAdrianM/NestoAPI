@@ -87,6 +87,19 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public int Unidades => Lineas.Sum(l => l.Cantidad);
     }
 
+    /// <summary>
+    /// NestoAPI#600: GET api/Reposiciones/Ruta, los nombres de los dos almacenes y el título de la reposición
+    /// («De Algete a Alcobendas»), una sola vez, para titular la pantalla antes de crearla (también si no hay nada que reponer).
+    /// </summary>
+    public class RutaReposicionDTO
+    {
+        public string Origen { get; set; }
+        public string Destino { get; set; }
+        public string NombreOrigen { get; set; }
+        public string NombreDestino { get; set; }
+        public string Titulo { get; set; }
+    }
+
     public class CambiarCantidadReposicionDTO
     {
         public int Cantidad { get; set; }
@@ -521,6 +534,9 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
         Task<ReposicionEnPreparacionDTO> Crear(CrearReposicionDTO peticion, IPrincipal usuario);
         /// <summary>La que el origen tiene en preparación, o null.</summary>
         Task<ReposicionEnPreparacionDTO> LeerEnPreparacion(string empresa, string origen);
+
+        /// <summary>NestoAPI#600: nombres y título de la ruta origen → destino. Null si alguno de los almacenes no existe.</summary>
+        Task<RutaReposicionDTO> LeerRuta(string empresa, string origen, string destino);
         /// <summary>Baja (o deja a 0) la cantidad de una línea. 400 si se intenta subir.</summary>
         Task<ReposicionEnPreparacionDTO> CambiarCantidad(string empresa, string origen, int numeroOrden, int cantidad, IPrincipal usuario);
         /// <summary>Da la reposición por preparada: contabiliza la salida del origen y deja la entrada pendiente de recibir en el destino.</summary>
@@ -682,6 +698,29 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
                 return null;
             }
             return await LeerEnPreparacion(empresa, origen, almacen).ConfigureAwait(false);
+        }
+
+        public async Task<RutaReposicionDTO> LeerRuta(string empresa, string origen, string destino)
+        {
+            empresa = Empresa(empresa);
+            origen = Almacen(origen);
+            destino = Almacen(destino);
+            ComprobarAlmacenes(origen, destino);
+            if (await repositorio.LeerAlmacen(empresa, origen).ConfigureAwait(false) == null
+                || await repositorio.LeerAlmacen(empresa, destino).ConfigureAwait(false) == null)
+            {
+                return null;
+            }
+            string nombreOrigen = await repositorio.LeerNombreAlmacen(empresa, origen).ConfigureAwait(false);
+            string nombreDestino = await repositorio.LeerNombreAlmacen(empresa, destino).ConfigureAwait(false);
+            return new RutaReposicionDTO
+            {
+                Origen = origen,
+                Destino = destino,
+                NombreOrigen = nombreOrigen,
+                NombreDestino = nombreDestino,
+                Titulo = ServicioPropuestaReposicion.TituloReposicion(origen, nombreOrigen, destino, nombreDestino)
+            };
         }
 
         public async Task<ReposicionEnPreparacionDTO> CambiarCantidad(string empresa, string origen, int numeroOrden, int cantidad, IPrincipal usuario)

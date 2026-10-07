@@ -238,6 +238,71 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public async Task LeerRuta_DevuelveLosNombresYElTituloUnaSolaVez()
+        {
+            RutaReposicionDTO ruta = await Servicio().LeerRuta("1", " alg ", "rei");
+
+            Assert.AreEqual("ALG", ruta.Origen);
+            Assert.AreEqual("REI", ruta.Destino);
+            Assert.AreEqual("Algete", ruta.NombreOrigen);
+            Assert.AreEqual("Reina", ruta.NombreDestino);
+            Assert.AreEqual("De Algete a Reina", ruta.Titulo);
+            Assert.AreEqual(0, repositorio.Llamadas.Count, "Solo lee");
+        }
+
+        [TestMethod]
+        public async Task LeerRuta_SinNombreEnAlmacenes_UsaElCodigo()
+        {
+            repositorio.Nombres.Remove("ALC");
+
+            RutaReposicionDTO ruta = await Servicio().LeerRuta("1", "ALG", "ALC");
+
+            Assert.IsNull(ruta.NombreDestino);
+            Assert.AreEqual("De Algete a ALC", ruta.Titulo);
+        }
+
+        [TestMethod]
+        public async Task LeerRuta_AlmacenQueNoExiste_EsNull()
+        {
+            repositorio.QuitarAlmacen("REI");
+
+            Assert.IsNull(await Servicio().LeerRuta("1", "ALG", "REI"));
+        }
+
+        [DataTestMethod]
+        [DataRow("ALG", "ALG")]
+        [DataRow("ALG", "XYZ")]
+        public async Task LeerRuta_ConAlmacenesNoValidos_Es400(string origen, string destino)
+        {
+            _ = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().LeerRuta("1", origen, destino));
+        }
+
+        [TestMethod]
+        public async Task Controlador_Ruta_DevuelveLaRuta()
+        {
+            IServicioPreparacionReposicion servicio = A.Fake<IServicioPreparacionReposicion>();
+            A.CallTo(() => servicio.LeerRuta("1", "ALG", "ALC"))
+                .Returns(new RutaReposicionDTO { Origen = "ALG", Destino = "ALC", NombreOrigen = "Algete", NombreDestino = "Alcobendas", Titulo = "De Algete a Alcobendas" });
+            var controlador = new ReposicionesController(null, servicio) { Request = new HttpRequestMessage(), User = Andre };
+
+            var ok = (OkNegotiatedContentResult<RutaReposicionDTO>)await controlador.GetRuta("ALG", "ALC");
+
+            Assert.AreEqual("De Algete a Alcobendas", ok.Content.Titulo);
+        }
+
+        [TestMethod]
+        public async Task Controlador_Ruta_AlmacenQueNoExiste_Es404()
+        {
+            IServicioPreparacionReposicion servicio = A.Fake<IServicioPreparacionReposicion>();
+            A.CallTo(() => servicio.LeerRuta(A<string>._, A<string>._, A<string>._)).Returns((RutaReposicionDTO)null);
+            var controlador = new ReposicionesController(null, servicio) { Request = new HttpRequestMessage(), User = Andre };
+
+            var resultado = (NegotiatedContentResult<string>)await controlador.GetRuta("ALG", "REI");
+
+            Assert.AreEqual(HttpStatusCode.NotFound, resultado.StatusCode);
+        }
+
+        [TestMethod]
         public async Task LeerEnPreparacion_LlevaElTituloConLosNombres_YSinNombreUsaElCodigo()
         {
             _ = await Servicio().Crear(Peticion(("41980", 5)), Paloma);
@@ -701,6 +766,8 @@ namespace NestoAPI.Tests.Infrastructure
             {
                 ["ALG"] = "Algete", ["REI"] = "Reina", ["ALC"] = "Alcobendas"
             };
+
+            public void QuitarAlmacen(string almacen) => almacenes.Remove(almacen);
 
             public Task<string> LeerNombreAlmacen(string empresa, string almacen)
             {

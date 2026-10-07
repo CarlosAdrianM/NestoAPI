@@ -118,6 +118,26 @@ namespace NestoAPI.Controllers
             return Ok(await servicio.LeerEnTransito(empresa, almacen, productos).ConfigureAwait(false));
         }
 
+        // GET api/Reposiciones/Ruta?origen=ALG&destino=REI&empresa=1
+        /// <summary>
+        /// NestoAPI#600: los nombres de los dos almacenes (Almacenes.Descripción) y el título de la reposición, «De Algete
+        /// a Reina», una sola vez: con ellos se titula la pantalla de crearla. 400 si los almacenes no valen para una
+        /// reposición; 404 si alguno no existe.
+        /// </summary>
+        [HttpGet]
+        [Route("Ruta")]
+        [ResponseType(typeof(RutaReposicionDTO))]
+        public async Task<IHttpActionResult> GetRuta(string origen, string destino, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            RutaReposicionDTO ruta = await preparacion.LeerRuta(empresa, origen, destino).ConfigureAwait(false);
+            if (ruta == null)
+            {
+                return Content(HttpStatusCode.NotFound,
+                    $"El almacén {origen?.Trim().ToUpperInvariant()} o el {destino?.Trim().ToUpperInvariant()} no existe en la empresa {empresa?.Trim()}.");
+            }
+            return Ok(ruta);
+        }
+
         // GET api/Reposiciones/Propuesta?origen=ALG&destino=REI&empresa=1
         /// <summary>
         /// Qué habría que mandar de <paramref name="origen"/> a <paramref name="destino"/> (stock máximo, pendientes
