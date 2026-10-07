@@ -43,11 +43,19 @@ namespace NestoAPI.Controllers
             => (User?.Identity as System.Security.Claims.ClaimsIdentity)?.FindFirst("IsEmployee")?.Value == "true";
 
         // GET api/Facturas
+        // NestoAPI#601: exige token y un cliente de la tienda solo ve las suyas (antes era anónimo)
         [HttpGet]
+        [Authorize]
         [Route("api/Facturas/FacturaJson")]
         [ResponseType(typeof(Factura))]
         public async Task<IHttpActionResult> GetFacturaJson(string empresa, string numeroFactura)
         {
+            string clienteTienda = ClienteDelToken();
+            if (clienteTienda != null && !FacturaEsDelCliente(clienteTienda, empresa, numeroFactura))
+            {
+                return Content(HttpStatusCode.Forbidden, MOTIVO_SOLO_FACTURAS_PROPIAS_VER);
+            }
+
             // CONTROL DE SEGURIDAD: Bloquear acceso a facturas de series que no permiten descarga
             // (series con CorreoDesdeFactura == null no se pueden descargar)
             if (numeroFactura.Length >= 2)
@@ -77,9 +85,21 @@ namespace NestoAPI.Controllers
         }
 
         // GET api/Facturas
+        // NestoAPI#601: exige token y un cliente de la tienda solo descarga las suyas (antes cualquiera con la URL
+        // descargaba cualquier factura cambiando el número, que es correlativo)
         [HttpGet]
+        [Authorize]
         public async Task<HttpResponseMessage> GetFactura(string empresa, string numeroFactura, bool papelConMembrete = false, bool mostrarImagenes = false)
         {
+            string clienteTienda = ClienteDelToken();
+            if (clienteTienda != null && !FacturaEsDelCliente(clienteTienda, empresa, numeroFactura))
+            {
+                return new HttpResponseMessage(HttpStatusCode.Forbidden)
+                {
+                    Content = new StringContent(MOTIVO_SOLO_FACTURAS_PROPIAS_VER)
+                };
+            }
+
             try
             {
                 // CONTROL DE SEGURIDAD: Bloquear descarga de PDFs de series que no permiten descarga
@@ -163,6 +183,9 @@ namespace NestoAPI.Controllers
             }
         }
 
+        // Sin [Authorize] a propósito (NestoAPI#601): no tienen llamante en Nesto, NestoApp ni TNV ni job de Hangfire;
+        // si se lanzan solas será desde fuera del repo (Task Scheduler de RDS2016) y sin token. Confirmarlo antes de
+        // protegerlas (#402 / #190).
         [HttpGet]
         [Route("api/Facturas/EnviarFacturasDia")]
         // GET: api/Clientes/5
@@ -221,6 +244,7 @@ namespace NestoAPI.Controllers
         }
 
         internal const string MOTIVO_SOLO_FACTURAS_PROPIAS = "Solo puedes enviar por correo tus propias facturas.";
+        internal const string MOTIVO_SOLO_FACTURAS_PROPIAS_VER = "Solo puedes ver tus propias facturas.";
         internal const string MOTIVO_DEMASIADOS_ENVIOS = "Has enviado muchas facturas por correo en poco rato. Vuelve a intentarlo más tarde.";
 
         /// <summary>TNV: el número de cliente del token de la tienda (claim "cliente"), o null si no es un cliente.</summary>
@@ -248,11 +272,9 @@ namespace NestoAPI.Controllers
                 // El gestor lo rechaza (400) antes de leer nada: no hace falta mirar de quién son
                 return null;
             }
-            string empresa = string.IsNullOrWhiteSpace(envio.Empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : envio.Empresa.Trim();
             foreach (string numero in numeros)
             {
-                CabFacturaVta cab = servicio.CargarCabFactura(empresa, numero);
-                if (cab == null || !string.Equals(cab.Nº_Cliente?.Trim(), cliente, StringComparison.OrdinalIgnoreCase))
+                if (!FacturaEsDelCliente(cliente, envio.Empresa, numero))
                 {
                     return Content(HttpStatusCode.Forbidden, MOTIVO_SOLO_FACTURAS_PROPIAS);
                 }
@@ -262,6 +284,21 @@ namespace NestoAPI.Controllers
                 return Content((HttpStatusCode)429, MOTIVO_DEMASIADOS_ENVIOS);
             }
             return null;
+        }
+
+        /// <summary>
+        /// TNV / NestoAPI#601: si la factura es de ese cliente (CabFacturaVta.Nº_Cliente). Inexistente = no es suya, para
+        /// no desvelar qué facturas existen.
+        /// </summary>
+        private bool FacturaEsDelCliente(string cliente, string empresa, string numeroFactura)
+        {
+            if (string.IsNullOrWhiteSpace(numeroFactura))
+            {
+                return false;
+            }
+            string empresaFactura = string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
+            CabFacturaVta cab = servicio.CargarCabFactura(empresaFactura, numeroFactura.Trim());
+            return cab != null && string.Equals(cab.Nº_Cliente?.Trim(), cliente, StringComparison.OrdinalIgnoreCase);
         }
 
         // GET api/Facturas/CorreoFacturas?empresa=1&numeroFactura=NV2616199
@@ -285,6 +322,9 @@ namespace NestoAPI.Controllers
             return Ok(new CorreoFacturasDTO { Correo = correo?.Trim() ?? string.Empty });
         }
 
+        // Sin [Authorize] a propósito (NestoAPI#601): no tienen llamante en Nesto, NestoApp ni TNV ni job de Hangfire;
+        // si se lanzan solas será desde fuera del repo (Task Scheduler de RDS2016) y sin token. Confirmarlo antes de
+        // protegerlas (#402 / #190).
         [HttpGet]
         [Route("api/Facturas/EnviarFacturasTrimestre")]
         // GET: api/Clientes/5
