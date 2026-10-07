@@ -80,6 +80,7 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> GetPicking(int picking, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
         {
             PickingAlmacenDTO resultado = await servicio.LeerPicking(Empresa(empresa), picking).ConfigureAwait(false);
+            await CompletarCodigos(Empresa(empresa), resultado?.Lineas).ConfigureAwait(false);
             return resultado.Lineas.Count == 0 ? (IHttpActionResult)NotFound() : Ok(resultado);
         }
 
@@ -517,6 +518,7 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> GetRecepcionDeCompra(int pedido, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
         {
             RecepcionCompraDTO recepcion = await compras.LeerRecepcion(Empresa(empresa), pedido).ConfigureAwait(false);
+            await CompletarCodigos(Empresa(empresa), recepcion?.Lineas).ConfigureAwait(false);
             return recepcion == null ? (IHttpActionResult)NotFound() : Ok(recepcion);
         }
 
@@ -556,6 +558,7 @@ namespace NestoAPI.Controllers
         {
             RecepcionReposicionDTO recepcion = await reposiciones
                 .LeerRecepcion(Empresa(empresa), Almacen(almacen), traspaso).ConfigureAwait(false);
+            await CompletarCodigos(Empresa(empresa), recepcion?.Lineas).ConfigureAwait(false);
             return recepcion == null ? (IHttpActionResult)NotFound() : Ok(recepcion);
         }
 
@@ -594,6 +597,12 @@ namespace NestoAPI.Controllers
         private Task CompletarFichas(string empresa, IEnumerable<IConFichaProducto> productos)
         {
             return fichas == null || productos == null ? Task.CompletedTask : fichas.Completar(empresa, productos);
+        }
+
+        /// <summary>NestoAPI#605: todos los códigos activos de cada producto, para las líneas que no llevan ficha.</summary>
+        private Task CompletarCodigos(string empresa, IEnumerable<IConCodigosBarras> lineas)
+        {
+            return fichas == null || lineas == null ? Task.CompletedTask : fichas.CompletarCodigos(empresa, lineas);
         }
 
         private string Usuario()

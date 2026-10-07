@@ -942,6 +942,8 @@
     <Compile Include="Infraestructure\Eventos\ServicioEventos.cs" />
     <Compile Include="Infraestructure\Eventos\SenalesEventosJobsService.cs" />
     <Compile Include="Infraestructure\Reposiciones\CalculadoraFechaReposicion.cs" />
+    <Compile Include="Infraestructure\Productos\CodigosBarrasProductos.cs" />
+    <Compile Include="Controllers\ProductosCodigosBarrasController.cs" />
     <Compile Include="Infraestructure\Reposiciones\CalendarioReposiciones.cs" />
     <Compile Include="Infraestructure\Ubicaciones\PlanificadorReservaHuecos.cs" />
     <Compile Include="Infraestructure\Ubicaciones\PuertaUbicaciones.cs" />
@@ -1234,6 +1236,9 @@
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\SugerenciaContacto.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\ProductoCodigoBarras.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\ReposicionCalendario.cs">

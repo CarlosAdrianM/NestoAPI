@@ -152,11 +152,14 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     public class ServicioRecepciones : IServicioRecepciones
     {
         private readonly Dictionary<string, IOrigenRecepcion> origenes;
+        private readonly Productos.IRepositorioCodigosBarras codigos;
 
-        public ServicioRecepciones(IEnumerable<IOrigenRecepcion> origenes)
+        /// <param name="codigos">NestoAPI#605: para buscar también por los códigos alternativos. Sin él, solo número y principal.</param>
+        public ServicioRecepciones(IEnumerable<IOrigenRecepcion> origenes, Productos.IRepositorioCodigosBarras codigos = null)
         {
             this.origenes = (origenes ?? Enumerable.Empty<IOrigenRecepcion>())
                 .ToDictionary(o => o.Tipo.Trim().ToUpperInvariant(), o => o);
+            this.codigos = codigos;
         }
 
         public async Task<List<RecepcionPendienteDTO>> LeerPendientes(string empresa, string almacen)
@@ -177,9 +180,27 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             {
                 return encontradas;
             }
+            // NestoAPI#605: un código alternativo se busca por el número de los productos que lo tienen (cada tipo busca por número)
+            var buscados = new List<string> { limpio };
+            if (codigos != null)
+            {
+                buscados.AddRange((await codigos.ProductosConCodigo(empresa, limpio).ConfigureAwait(false) ?? new List<Productos.ProductoPorCodigoBarrasDTO>())
+                    .Select(p => p.Producto?.Trim())
+                    .Where(p => !string.IsNullOrEmpty(p)));
+            }
+            var vistas = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (IOrigenRecepcion origen in origenes.Values)
             {
-                encontradas.AddRange(Completar(origen, await origen.BuscarPorCodigo(empresa, almacen, limpio).ConfigureAwait(false)));
+                foreach (string buscado in buscados.Distinct(StringComparer.OrdinalIgnoreCase))
+                {
+                    foreach (RecepcionPendienteDTO pendiente in Completar(origen, await origen.BuscarPorCodigo(empresa, almacen, buscado).ConfigureAwait(false)))
+                    {
+                        if (vistas.Add($"{pendiente.Tipo}|{pendiente.Documento}"))
+                        {
+                            encontradas.Add(pendiente);
+                        }
+                    }
+                }
             }
             return encontradas;
         }

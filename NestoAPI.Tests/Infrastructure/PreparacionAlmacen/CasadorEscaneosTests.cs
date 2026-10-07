@@ -29,6 +29,82 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             return new LineaPickingAlmacenDTO { Producto = producto, Pasillo = pasillo, Fila = fila, Columna = columna, CodigoBarras = codigo, Cantidad = 1 };
         }
 
+        #region NestoAPI#605: varios códigos por producto
+
+        private static LineaPickingAlmacenDTO ConCodigos(string producto, string principal, params string[] alternativos)
+        {
+            return new LineaPickingAlmacenDTO
+            {
+                Producto = producto,
+                CodigoBarras = principal,
+                CodigosBarras = new[] { principal }.Concat(alternativos).Where(c => c != null).ToList(),
+                Cantidad = 1
+            };
+        }
+
+        [TestMethod]
+        public void ResolverCodigo_PorUnCodigoAlternativo_CasaConSuProducto()
+        {
+            var resolucion = CasadorEscaneos.ResolverCodigo("8437017506362", new[]
+            {
+                ConCodigos("32565", "8437017506379", "8437017506362"),
+                ConCodigos("18004", "8400000000002")
+            });
+
+            Assert.AreEqual(CasadorEscaneos.TipoResolucion.Unico, resolucion.Tipo);
+            CollectionAssert.AreEqual(new[] { "32565" }, resolucion.Productos);
+        }
+
+        [TestMethod]
+        public void ResolverCodigo_CodigoEnDosProductosDelCatalogoPeroSoloUnoEnLaLista_LoResuelveElContexto()
+        {
+            // Los guantes: 8437017506362 es el principal de la talla P (32564) y alternativo de la M (32565); en este
+            // picking solo está la M, así que la lectura es de la M.
+            var resolucion = CasadorEscaneos.ResolverCodigo("8437017506362", new[]
+            {
+                ConCodigos("32565", "8437017506379", "8437017506362"),
+                ConCodigos("44194", "8436620930427")
+            });
+
+            Assert.AreEqual(CasadorEscaneos.TipoResolucion.Unico, resolucion.Tipo);
+            CollectionAssert.AreEqual(new[] { "32565" }, resolucion.Productos);
+        }
+
+        [TestMethod]
+        public void ResolverCodigo_CodigoEnDosProductosDeLaMismaLista_EsDuplicadoYElMozoElige()
+        {
+            var resolucion = CasadorEscaneos.ResolverCodigo("8437017506362", new[]
+            {
+                ConCodigos("32564", "8437017506362"),
+                ConCodigos("32565", "8437017506379", "8437017506362")
+            });
+
+            Assert.AreEqual(CasadorEscaneos.TipoResolucion.Duplicado, resolucion.Tipo);
+            CollectionAssert.AreEquivalent(new[] { "32564", "32565" }, resolucion.Productos);
+        }
+
+        [TestMethod]
+        public void ResolverCodigo_SinCodigosBarras_SigueCasandoPorElPrincipal()
+        {
+            var linea = new LineaPickingAlmacenDTO { Producto = "44194", CodigoBarras = "8436620930427", CodigosBarras = null };
+
+            var resolucion = CasadorEscaneos.ResolverCodigo("8436620930427", new[] { linea });
+
+            Assert.AreEqual(CasadorEscaneos.TipoResolucion.Unico, resolucion.Tipo);
+        }
+
+        [TestMethod]
+        public void RepartirLoResuelto_CopiaLosCodigosAlternativos()
+        {
+            LineaPickingAlmacenDTO parada = ConCodigos("32565", "8437017506379", "8437017506362");
+
+            var lineas = CasadorEscaneos.RepartirLoResuelto(new[] { parada }, new[] { C("32565", 1) });
+
+            CollectionAssert.AreEqual(new[] { "8437017506379", "8437017506362" }, lineas.Single().CodigosBarras);
+        }
+
+        #endregion
+
         [TestMethod]
         public void Casar_TodoLeido_EstaCompleto()
         {

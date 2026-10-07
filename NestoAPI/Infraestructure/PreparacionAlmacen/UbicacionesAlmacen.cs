@@ -122,7 +122,8 @@ HAVING SUM(u.Cantidad) <> 0";
         internal const string SQL_BUSCAR_PRODUCTOS = @"
 SELECT RTRIM(p.[Número]) AS Producto, RTRIM(p.Nombre) AS Descripcion, RTRIM(p.CodBarras) AS CodigoBarras
 FROM Productos p
-WHERE p.Empresa = @p0 AND (p.CodBarras = @p1 OR p.[Número] = @p1)";
+WHERE p.Empresa = @p0 AND (p.CodBarras = @p1 OR p.[Número] = @p1
+      OR EXISTS (SELECT 1 FROM ProductosCodigosBarras c WHERE c.Empresa = p.Empresa AND c.Producto = p.[Número] AND c.Codigo = @p1 AND c.Activo = 1))";
 
         internal const string SQL_UBICACIONES_DEL_PRODUCTO = @"
 SELECT RTRIM(u.[Número]) AS Producto, u.Estado, RTRIM(u.Pasillo) AS Pasillo, RTRIM(u.Fila) AS Fila, RTRIM(u.Columna) AS Columna,
@@ -344,7 +345,7 @@ INSERT INTO Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES (N'Ubicacion
         public async Task<List<ProductoAlmacenDTO>> BuscarProducto(string empresa, string almacen, string codigo)
         {
             string limpio = codigo?.Trim();
-            if (string.IsNullOrEmpty(limpio) || limpio.Length > LONGITUD_MAXIMA_CODIGO)
+            if (string.IsNullOrEmpty(limpio) || limpio.Length > Productos.ServicioCodigosBarras.LONGITUD_MAXIMA)
             {
                 return new List<ProductoAlmacenDTO>();
             }

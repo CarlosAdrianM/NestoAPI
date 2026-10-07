@@ -355,6 +355,17 @@ namespace NestoAPI.Tests.Models
             Assert.AreEqual(typeof(DateTime?), typeof(SugerenciaContacto).GetProperty("FechaAtendida").PropertyType);
         }
 
+        /// <summary>NestoAPI#605: códigos de barras por producto añadidos a mano; Proveedor admite null y Cantidad es int.</summary>
+        [TestMethod]
+        public void Edmx_ProductosCodigosBarras_EstaCompletaEnLasTresCapas()
+        {
+            ComprobarTresCapas("ProductoCodigoBarras", "ProductosCodigosBarras",
+                "Id", "Empresa", "Producto", "Codigo", "Cantidad", "Proveedor", "Principal", "Origen", "Usuario", "Fecha", "Activo");
+            XElement almacen = EntidadesPorNombre(LeerRecurso("ssdl"), SsdlNs)["ProductosCodigosBarras"];
+            Assert.AreEqual("true", (string)almacen.Elements(SsdlNs + "Property").Single(p => p.Attribute("Name").Value == "Proveedor").Attribute("Nullable"));
+            Assert.AreEqual(typeof(int), typeof(ProductoCodigoBarras).GetProperty("Cantidad").PropertyType);
+        }
+
         private static void ComprobarTresCapas(string entidad, string conjunto, params string[] esperadas)
         {
             XElement conceptual = EntidadesPorNombre(LeerRecurso("csdl"), CsdlNs)[entidad];

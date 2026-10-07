@@ -1054,6 +1054,22 @@
           <Property Name="RapportId" Type="int" />
           <Property Name="FechaAtendida" Type="datetime" />
         </EntityType>
+        <EntityType Name="ProductosCodigosBarras">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Producto" Type="char" MaxLength="15" Nullable="false" />
+          <Property Name="Codigo" Type="varchar" MaxLength="20" Nullable="false" />
+          <Property Name="Cantidad" Type="int" Nullable="false" />
+          <Property Name="Proveedor" Type="char" MaxLength="10" Nullable="true" />
+          <Property Name="Principal" Type="bit" Nullable="false" />
+          <Property Name="Origen" Type="varchar" MaxLength="10" Nullable="false" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
+          <Property Name="Fecha" Type="datetime" Nullable="false" />
+          <Property Name="Activo" Type="bit" Nullable="false" />
+        </EntityType>
         <EntityType Name="ReposicionesCalendario">
           <Key>
             <PropertyRef Name="Id" />
@@ -5812,6 +5828,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="Eventos" EntityType="Self.Eventos" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="EventosSenales" EntityType="Self.EventosSenales" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="SugerenciasContacto" EntityType="Self.SugerenciasContacto" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="ProductosCodigosBarras" EntityType="Self.ProductosCodigosBarras" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ReposicionesCalendario" EntityType="Self.ReposicionesCalendario" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="FicheroCuaderno43" EntityType="Self.FicheroCuaderno43" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="FormasPago" EntityType="Self.FormasPago" Schema="dbo" store:Type="Tables" />
@@ -7026,6 +7043,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="Eventos" EntityType="NVModel.Evento" />
           <EntitySet Name="EventosSenales" EntityType="NVModel.EventoSenal" />
           <EntitySet Name="SugerenciasContacto" EntityType="NVModel.SugerenciaContacto" />
+          <EntitySet Name="ProductosCodigosBarras" EntityType="NVModel.ProductoCodigoBarras" />
           <EntitySet Name="ReposicionesCalendario" EntityType="NVModel.ReposicionCalendario" />
           <EntitySet Name="SubGruposProductoes" EntityType="NVModel.SubGruposProducto" />
           <AssociationSet Name="FK_Familias_Empresas" Association="NVModel.FK_Familias_Empresas">
@@ -8758,6 +8776,22 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="Atendida" Type="Boolean" Nullable="false" />
           <Property Name="RapportId" Type="Int32" />
           <Property Name="FechaAtendida" Type="DateTime" Precision="3" />
+        </EntityType>
+        <EntityType Name="ProductoCodigoBarras">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Producto" Type="String" Nullable="false" MaxLength="15" FixedLength="true" Unicode="false" />
+          <Property Name="Codigo" Type="String" Nullable="false" MaxLength="20" FixedLength="false" Unicode="false" />
+          <Property Name="Cantidad" Type="Int32" Nullable="false" />
+          <Property Name="Proveedor" Type="String" Nullable="true" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Principal" Type="Boolean" Nullable="false" />
+          <Property Name="Origen" Type="String" Nullable="false" MaxLength="10" FixedLength="false" Unicode="false" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="Fecha" Type="DateTime" Nullable="false" Precision="3" />
+          <Property Name="Activo" Type="Boolean" Nullable="false" />
         </EntityType>
         <EntityType Name="ReposicionCalendario">
           <Key>
@@ -16561,6 +16595,23 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
                 <ScalarProperty Name="Atendida" ColumnName="Atendida" />
                 <ScalarProperty Name="RapportId" ColumnName="RapportId" />
                 <ScalarProperty Name="FechaAtendida" ColumnName="FechaAtendida" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="ProductosCodigosBarras">
+            <EntityTypeMapping TypeName="NVModel.ProductoCodigoBarras">
+              <MappingFragment StoreEntitySet="ProductosCodigosBarras">
+                <ScalarProperty Name="Id" ColumnName="Id" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+                <ScalarProperty Name="Producto" ColumnName="Producto" />
+                <ScalarProperty Name="Codigo" ColumnName="Codigo" />
+                <ScalarProperty Name="Cantidad" ColumnName="Cantidad" />
+                <ScalarProperty Name="Proveedor" ColumnName="Proveedor" />
+                <ScalarProperty Name="Principal" ColumnName="Principal" />
+                <ScalarProperty Name="Origen" ColumnName="Origen" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="Fecha" ColumnName="Fecha" />
+                <ScalarProperty Name="Activo" ColumnName="Activo" />
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>

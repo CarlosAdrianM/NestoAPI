@@ -57,6 +57,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     Producto = parada.Producto,
                     Descripcion = parada.Descripcion,
                     CodigoBarras = parada.CodigoBarras,
+                    CodigosBarras = parada.CodigosBarras ?? new List<string>(),
                     SinCodigo = parada.SinCodigo,
                     CodigoDuplicado = parada.CodigoDuplicado,
                     Cantidad = parada.Cantidad,
@@ -181,6 +182,33 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 ? TipoResolucion.Ajeno
                 : resolucion.Productos.Count == 1 ? TipoResolucion.Unico : TipoResolucion.Duplicado;
             return resolucion;
+        }
+
+        /// <summary>
+        /// NestoAPI#605: lo mismo, casando por CUALQUIER código activo de cada línea (CodigosBarras, además del principal).
+        /// Un código que esté en varios productos del catálogo se resuelve por el contexto: solo cuentan los productos de
+        /// esta lista; si quedan dos, es Duplicado (el mozo elige), como siempre.
+        /// </summary>
+        public static Resolucion ResolverCodigo(string codigoLeido, IEnumerable<IConCodigosBarras> lineas)
+        {
+            return ResolverCodigo(codigoLeido, ParesProductoCodigo(lineas));
+        }
+
+        /// <summary>NestoAPI#605: un par (producto, código) por cada código de cada línea: el principal y los alternativos.</summary>
+        public static IEnumerable<KeyValuePair<string, string>> ParesProductoCodigo(IEnumerable<IConCodigosBarras> lineas)
+        {
+            foreach (IConCodigosBarras linea in lineas ?? Enumerable.Empty<IConCodigosBarras>())
+            {
+                if (linea == null)
+                {
+                    continue;
+                }
+                yield return new KeyValuePair<string, string>(linea.Producto, linea.CodigoBarras);
+                foreach (string codigo in linea.CodigosBarras ?? new List<string>())
+                {
+                    yield return new KeyValuePair<string, string>(linea.Producto, codigo);
+                }
+            }
         }
 
         /// <summary>

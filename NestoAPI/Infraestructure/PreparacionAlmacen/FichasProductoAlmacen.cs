@@ -31,6 +31,9 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// (Ariadna#2) con su caché.
         /// </summary>
         Task Completar(string empresa, IEnumerable<IConFichaProducto> productos);
+
+        /// <summary>NestoAPI#605: solo los códigos de barras activos de cada línea (para las que no llevan ficha).</summary>
+        Task CompletarCodigos(string empresa, IEnumerable<IConCodigosBarras> lineas);
     }
 
     /// <summary>
@@ -42,12 +45,21 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     {
         private readonly IRepositorioFichasProducto repositorio;
         private readonly IFotosProductoAlmacen fotos;
+        private readonly Productos.IRepositorioCodigosBarras codigos;
 
         /// <param name="fotos">Sin él, sin foto.</param>
-        public FichasProductoAlmacen(IRepositorioFichasProducto repositorio, IFotosProductoAlmacen fotos = null)
+        /// <param name="codigos">NestoAPI#605: sin él, CodigosBarras lleva solo el principal.</param>
+        public FichasProductoAlmacen(IRepositorioFichasProducto repositorio, IFotosProductoAlmacen fotos = null,
+            Productos.IRepositorioCodigosBarras codigos = null)
         {
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
             this.fotos = fotos;
+            this.codigos = codigos;
+        }
+
+        public Task CompletarCodigos(string empresa, IEnumerable<IConCodigosBarras> lineas)
+        {
+            return Productos.CompletadorCodigosBarras.Completar(codigos, empresa, lineas);
         }
 
         public async Task Completar(string empresa, IEnumerable<IConFichaProducto> productos)
@@ -62,6 +74,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             {
                 return;
             }
+            await CompletarCodigos(empresa, lista.OfType<IConCodigosBarras>()).ConfigureAwait(false);
 
             // La foto va a la tienda: se pregunta a la vez que se lee la ficha
             Task<IDictionary<string, string>> urls = fotos == null

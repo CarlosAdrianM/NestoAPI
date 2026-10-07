@@ -11,6 +11,15 @@ namespace NestoAPI.Models.PreparacionAlmacen
     /// Ariadna (03/10/26): lo que hace falta ver para no equivocarse de producto, además del nombre: la familia, el
     /// subgrupo, el tamaño y la unidad de medida. Lo rellena siempre <c>FichasProductoAlmacen</c> (un solo sitio).
     /// </summary>
+    /// <summary>NestoAPI#605: una línea que se casa por código de barras. CodigoBarras es el principal (el de la ficha);
+    /// CodigosBarras, todos los activos del producto (el principal, el primero), para casar por cualquiera.</summary>
+    public interface IConCodigosBarras
+    {
+        string Producto { get; }
+        string CodigoBarras { get; }
+        List<string> CodigosBarras { get; set; }
+    }
+
     public interface IConFichaProducto
     {
         string Producto { get; }
@@ -25,7 +34,7 @@ namespace NestoAPI.Models.PreparacionAlmacen
     }
 
     /// <summary>Una parada del picking: un producto en un hueco de la estantería.</summary>
-    public class LineaPickingAlmacenDTO
+    public class LineaPickingAlmacenDTO : IConCodigosBarras
     {
         /// <summary>Posición en el recorrido (1, 2, 3…): pasillo, columna, fila.</summary>
         public int Orden { get; set; }
@@ -33,6 +42,8 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public string Descripcion { get; set; }
         /// <summary>Null si el producto no tiene código: se prepara con toque + cantidad.</summary>
         public string CodigoBarras { get; set; }
+        /// <summary>NestoAPI#605: todos los códigos activos del producto (el principal, el primero). Vacía si no tiene.</summary>
+        public List<string> CodigosBarras { get; set; } = new List<string>();
         public bool SinCodigo { get; set; }
         /// <summary>Otro producto de este mismo picking comparte el código: hay que elegir a mano.</summary>
         public bool CodigoDuplicado { get; set; }
@@ -163,7 +174,7 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public bool RecogidoEnAriadna { get; set; }
     }
 
-    public class LineaPackingAlmacenDTO : IConFichaProducto
+    public class LineaPackingAlmacenDTO : IConFichaProducto, IConCodigosBarras
     {
         /// <summary>LinPedidoVta.[Nº Orden].</summary>
         public int LineaPedido { get; set; }
@@ -176,6 +187,8 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public string UnidadMedida { get; set; }
         public string UrlFoto { get; set; }
         public string CodigoBarras { get; set; }
+        /// <summary>NestoAPI#605: todos los códigos activos del producto (el principal, el primero). Vacía si no tiene.</summary>
+        public List<string> CodigosBarras { get; set; } = new List<string>();
         public bool SinCodigo { get; set; }
         /// <summary>Otro producto del mismo grupo de pedidos comparte el código.</summary>
         public bool CodigoDuplicado { get; set; }
@@ -386,7 +399,7 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public int Cantidad { get; set; }
     }
 
-    public class ProductoPendienteDeUbicarDTO : IConFichaProducto
+    public class ProductoPendienteDeUbicarDTO : IConFichaProducto, IConCodigosBarras
     {
         /// <summary>Posición en el recorrido: por el hueco donde ya hay producto (pasillo, columna, fila).</summary>
         public int Orden { get; set; }
@@ -398,6 +411,8 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public string UnidadMedida { get; set; }
         public string UrlFoto { get; set; }
         public string CodigoBarras { get; set; }
+        /// <summary>NestoAPI#605: todos los códigos activos del producto (el principal, el primero). Vacía si no tiene.</summary>
+        public List<string> CodigosBarras { get; set; } = new List<string>();
         public bool SinCodigo { get; set; }
         /// <summary>Unidades recibidas que todavía no tienen hueco.</summary>
         public int Cantidad { get; set; }
@@ -442,7 +457,7 @@ namespace NestoAPI.Models.PreparacionAlmacen
     }
 
     /// <summary>Un producto encontrado por su código de barras o su número, con dónde está.</summary>
-    public class ProductoAlmacenDTO : IConFichaProducto
+    public class ProductoAlmacenDTO : IConFichaProducto, IConCodigosBarras
     {
         public string Producto { get; set; }
         public string Descripcion { get; set; }
@@ -452,6 +467,8 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public string UnidadMedida { get; set; }
         public string UrlFoto { get; set; }
         public string CodigoBarras { get; set; }
+        /// <summary>NestoAPI#605: todos los códigos activos del producto (el principal, el primero). Vacía si no tiene.</summary>
+        public List<string> CodigosBarras { get; set; } = new List<string>();
         public string Almacen { get; set; }
         public List<UbicacionAlmacenDTO> Ubicaciones { get; set; } = new List<UbicacionAlmacenDTO>();
         /// <summary>Unidades recibidas sin hueco asignado.</summary>
@@ -476,13 +493,15 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public int Unidades { get; set; }
     }
 
-    public class LineaRecepcionCompraDTO
+    public class LineaRecepcionCompraDTO : IConCodigosBarras
     {
         /// <summary>LinPedidoCmp.NºOrden.</summary>
         public int LineaPedido { get; set; }
         public string Producto { get; set; }
         public string Descripcion { get; set; }
         public string CodigoBarras { get; set; }
+        /// <summary>NestoAPI#605: todos los códigos activos del producto (el principal, el primero). Vacía si no tiene.</summary>
+        public List<string> CodigosBarras { get; set; } = new List<string>();
         public bool SinCodigo { get; set; }
         public bool CodigoDuplicado { get; set; }
         public int Cantidad { get; set; }
@@ -532,11 +551,13 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public string NombreOrigen { get; set; }
     }
 
-    public class LineaReposicionDTO
+    public class LineaReposicionDTO : IConCodigosBarras
     {
         public string Producto { get; set; }
         public string Descripcion { get; set; }
         public string CodigoBarras { get; set; }
+        /// <summary>NestoAPI#605: todos los códigos activos del producto (el principal, el primero). Vacía si no tiene.</summary>
+        public List<string> CodigosBarras { get; set; } = new List<string>();
         public bool SinCodigo { get; set; }
         public bool CodigoDuplicado { get; set; }
         public int Cantidad { get; set; }

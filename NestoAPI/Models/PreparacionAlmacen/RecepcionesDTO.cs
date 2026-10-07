@@ -29,7 +29,7 @@ namespace NestoAPI.Models.PreparacionAlmacen
     }
 
     /// <summary>Un producto que se espera recibir.</summary>
-    public class LineaRecepcionDTO : IConFichaProducto
+    public class LineaRecepcionDTO : IConFichaProducto, IConCodigosBarras
     {
         public string Producto { get; set; }
         public string Descripcion { get; set; }
@@ -39,6 +39,8 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public string UnidadMedida { get; set; }
         public string UrlFoto { get; set; }
         public string CodigoBarras { get; set; }
+        /// <summary>NestoAPI#605: todos los códigos activos del producto (el principal, el primero). Vacía si no tiene.</summary>
+        public List<string> CodigosBarras { get; set; } = new List<string>();
         public bool SinCodigo { get; set; }
         public bool CodigoDuplicado { get; set; }
         /// <summary>Unidades que se esperan de ese producto (sumadas de todas sus líneas).</summary>

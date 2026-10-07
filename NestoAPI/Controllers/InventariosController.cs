@@ -182,6 +182,19 @@ namespace NestoAPI.Controllers
             }
             if (productoEncontrado == null)
             {
+                // NestoAPI#605: un código alternativo activo (ProductosCodigosBarras)
+                string alternativo = db.ProductosCodigosBarras
+                    .Where(c => c.Empresa == empresa && c.Codigo == producto && c.Activo)
+                    .OrderByDescending(c => c.Principal)
+                    .Select(c => c.Producto)
+                    .FirstOrDefault();
+                if (alternativo != null)
+                {
+                    productoEncontrado = db.Productos.SingleOrDefault(p => p.Empresa == empresa && p.Número == alternativo);
+                }
+            }
+            if (productoEncontrado == null)
+            {
                 productoEncontrado = db.Productos.FirstOrDefault(p => p.Empresa == empresa && p.Estado >= 0 && p.CodBarras.Contains(producto));
             }
             if (productoEncontrado == null)

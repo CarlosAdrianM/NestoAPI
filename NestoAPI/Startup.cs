@@ -235,6 +235,9 @@ namespace NestoAPI
             // Lo que ve el mozo de cada producto además del nombre: familia, subgrupo, tamaño y unidad (un solo sitio)
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioFichasProducto>(_ => Infraestructure.PreparacionAlmacen.RepositorioFichasProducto.ConContextoPropio());
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IFotosProductoAlmacen, Infraestructure.PreparacionAlmacen.FotosProductoAlmacen>();
+            // NestoAPI#605: varios códigos de barras por producto
+            _ = services.AddScoped<Infraestructure.Productos.IRepositorioCodigosBarras>(_ => Infraestructure.Productos.RepositorioCodigosBarras.ConContextoPropio());
+            _ = services.AddScoped<Infraestructure.Productos.IServicioCodigosBarras, Infraestructure.Productos.ServicioCodigosBarras>();
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IFichasProductoAlmacen, Infraestructure.PreparacionAlmacen.FichasProductoAlmacen>();
             // Ariadna#12: coger de otro hueco lo que no estaba en el de la parada
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioCambioHueco>(_ => Infraestructure.PreparacionAlmacen.RepositorioCambioHuecoSql.ConContextoPropio());

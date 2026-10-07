@@ -31,6 +31,12 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
                 .Select(f => new ProductoConCodigo { Producto = f.Producto, Nombre = f.Nombre })
                 .FirstOrDefault());
 
+        /// <summary>NestoAPI#605: códigos activos de cada producto en ProductosCodigosBarras, como «producto|código».</summary>
+        public HashSet<string> CodigosDelProducto { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        public Task<bool> EsCodigoDelProducto(string empresa, string producto, string codigo)
+            => Task.FromResult(CodigosDelProducto.Contains($"{producto?.Trim()}|{codigo?.Trim()}"));
+
         public Task<List<string>> LeerFasesAManoHoy(string empresa, string producto)
             => Task.FromResult(FasesAManoHoy.TryGetValue(producto?.Trim() ?? string.Empty, out List<string> fases) ? fases : new List<string>());
 
@@ -138,9 +144,24 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             ResultadoInformarDatoMal resultado = await InformarCodigo("8437017506362", true, confirmado: false);
 
             Assert.AreEqual(EstadoInformarDatoMal.Comprobar, resultado.Estado);
-            Assert.AreEqual("Ese código es del producto 32564 GUANTES NITRILO NEGROS S/ TALCO T/P 3,5G. Comprueba el hueco: puede que esté ese producto en vez del 32565. Si aun así quieres avisar a Compras, vuelve a enviar.", resultado.Mensaje);
+            Assert.AreEqual("Ese código es del producto 32564 GUANTES NITRILO NEGROS S/ TALCO T/P 3,5G. Comprueba el hueco: puede que esté ese producto en vez del 32565. Si este envase es del 32565, en Ariadna puedes añadirlo como código de este producto. Si aun así quieres avisar a Compras, vuelve a enviar.", resultado.Mensaje);
             Assert.AreEqual(0, repositorio.Avisos.Count);
             A.CallTo(() => avisador.AvisarEquipo(A<AvisoFicha>._, A<DatosFichaActual>._, A<IReadOnlyCollection<string>>._)).MustNotHaveHappened();
+        }
+
+        /// <summary>NestoAPI#605: si el código leído ya es un código alternativo del producto, no es «de otro producto»: está bien.</summary>
+        [TestMethod]
+        public async Task CodigoAlternativoDelProducto_NoEsDeOtroProductoSinoCorrecto()
+        {
+            FichasGuantes();
+            repositorio.CodigosDelProducto.Add("32565|8437017506362");
+
+            ResultadoInformarDatoMal resultado = await InformarCodigo("8437017506362", true, confirmado: false);
+
+            Assert.AreEqual(EstadoInformarDatoMal.Comprobar, resultado.Estado);
+            Assert.AreEqual("Ese código ya es uno de los códigos de este producto: el código de barras está bien. Si aun así quieres avisar, vuelve a enviar.", resultado.Mensaje);
+            StringAssert.DoesNotMatch(resultado.Mensaje, new System.Text.RegularExpressions.Regex("32564"));
+            Assert.AreEqual(0, repositorio.Avisos.Count);
         }
 
         [TestMethod]

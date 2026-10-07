@@ -271,9 +271,7 @@ namespace NestoAPI.Controllers
             {
                 // El código de barras puede estar compartido por varios productos: en ese caso
                 // devolvemos la lista (409) para que el cliente deje elegir, en vez de lanzar 500.
-                List<Producto> porCodigoBarras = await db.Productos
-                    .Where(p => p.Empresa == empresa && p.CodBarras == id)
-                    .ToListAsync();
+                List<Producto> porCodigoBarras = await BuscarPorCodigoBarras(empresa, id, incluirNumero: false).ConfigureAwait(false);
                 if (porCodigoBarras.Count == 0)
                 {
                     return NotFound();
@@ -674,9 +672,7 @@ namespace NestoAPI.Controllers
             }
 
             codigoBarras = codigoBarras.Trim();
-            List<Producto> coincidencias = await db.Productos
-                .Where(p => p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && (p.CodBarras == codigoBarras || p.Número.Trim() == codigoBarras))
-                .ToListAsync().ConfigureAwait(false);
+            List<Producto> coincidencias = await BuscarPorCodigoBarras(Constantes.Empresas.EMPRESA_POR_DEFECTO, codigoBarras, incluirNumero: true).ConfigureAwait(false);
             if (coincidencias.Count == 0)
             {
                 return NotFound();
@@ -691,6 +687,48 @@ namespace NestoAPI.Controllers
             IHttpActionResult actionResult = await GetProducto(producto.Empresa, producto.Número, true);
 
             return actionResult;
+        }
+
+        /// <summary>
+        /// NestoAPI#605: los productos con ese código, en la ficha (el principal) o en ProductosCodigosBarras (cualquier
+        /// código activo). Si salen varios y solo uno lo tiene de principal (o es su número), ese: primero el principal.
+        /// Si no, todos (el llamante devuelve 409 con la lista para que se elija).
+        /// </summary>
+        internal async Task<List<Producto>> BuscarPorCodigoBarras(string empresa, string codigo, bool incluirNumero)
+        {
+            List<Producto> coincidencias = await db.Productos
+                .Where(p => p.Empresa == empresa && (p.CodBarras == codigo || (incluirNumero && p.Número.Trim() == codigo)))
+                .ToListAsync().ConfigureAwait(false);
+            if (codigo.Length <= Infraestructure.Productos.ServicioCodigosBarras.LONGITUD_MAXIMA && db.ProductosCodigosBarras != null)
+            {
+                List<string> alternativos = (await db.ProductosCodigosBarras
+                        .Where(c => c.Empresa == empresa && c.Codigo == codigo && c.Activo)
+                        .Select(c => c.Producto)
+                        .ToListAsync().ConfigureAwait(false))
+                    .Where(p => !string.IsNullOrWhiteSpace(p))
+                    .Select(p => p.Trim())
+                    .Where(p => !coincidencias.Any(c => string.Equals(c.Número?.Trim(), p, StringComparison.OrdinalIgnoreCase)))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                if (alternativos.Count > 0)
+                {
+                    coincidencias.AddRange(await db.Productos
+                        .Where(p => p.Empresa == empresa && alternativos.Contains(p.Número) && p.Estado >= 0)
+                        .ToListAsync().ConfigureAwait(false));
+                }
+            }
+            if (coincidencias.Count > 1)
+            {
+                List<Producto> principales = coincidencias
+                    .Where(p => string.Equals(p.CodBarras?.Trim(), codigo, StringComparison.OrdinalIgnoreCase)
+                        || (incluirNumero && string.Equals(p.Número?.Trim(), codigo, StringComparison.OrdinalIgnoreCase)))
+                    .ToList();
+                if (principales.Count == 1)
+                {
+                    return principales;
+                }
+            }
+            return coincidencias;
         }
 
         private static List<ProductoCodigoBarrasDuplicadoDTO> ListarDuplicadosCodigoBarras(IEnumerable<Producto> productos)

@@ -167,6 +167,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     public class InfoCodigoLeido
     {
         public bool EsElDeLaFicha { get; set; }
+        /// <summary>NestoAPI#605: es un código alternativo activo del propio producto (ProductosCodigosBarras): está bien.</summary>
+        public bool EsCodigoAlternativo { get; set; }
         /// <summary>El otro producto activo que lleva ese código; null si no es de ninguno (o es el de la ficha).</summary>
         public ProductoConCodigo OtroProducto { get; set; }
         /// <summary>Si es el de la ficha: hoy se ha recogido a mano (MANUAL en la fase PICK) ese producto.</summary>
@@ -193,6 +195,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         Task<T> EnTransaccion<T>(Func<ITransaccionAvisosFicha, Task<T>> trabajo);
         /// <summary>NestoAPI#604: el producto activo (que no sea <paramref name="salvo"/>) con ese código; null si no hay.</summary>
         Task<ProductoConCodigo> LeerProductoConCodigo(string empresa, string codigo, string salvo);
+        /// <summary>NestoAPI#605: el código es uno de los códigos activos del producto (ProductosCodigosBarras).</summary>
+        Task<bool> EsCodigoDelProducto(string empresa, string producto, string codigo);
         /// <summary>NestoAPI#604: las fases (PICK, PACK) en las que hoy se ha tocado a mano (MANUAL) el producto.</summary>
         Task<List<string>> LeerFasesAManoHoy(string empresa, string producto);
         Task<List<AvisoFicha>> LeerAbiertos();
@@ -365,6 +369,11 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     EmpaquetadoAManoHoy = fases.Any(f => string.Equals(f?.Trim(), "PACK", StringComparison.OrdinalIgnoreCase))
                 };
             }
+            // NestoAPI#605: un código alternativo del propio producto no es «de otro producto»: es correcto
+            if (await repositorio.EsCodigoDelProducto(empresa, producto, codigo).ConfigureAwait(false))
+            {
+                return new InfoCodigoLeido { EsCodigoAlternativo = true };
+            }
             return new InfoCodigoLeido
             {
                 OtroProducto = await repositorio.LeerProductoConCodigo(empresa, codigo, producto).ConfigureAwait(false)
@@ -383,7 +392,11 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             }
             if (info.OtroProducto != null)
             {
-                return $"Ese código es del producto {info.OtroProducto.Producto} {info.OtroProducto.Nombre}. Comprueba el hueco: puede que esté ese producto en vez del {producto}. Si aun así quieres avisar a Compras, vuelve a enviar.";
+                return $"Ese código es del producto {info.OtroProducto.Producto} {info.OtroProducto.Nombre}. Comprueba el hueco: puede que esté ese producto en vez del {producto}. Si este envase es del {producto}, en Ariadna puedes añadirlo como código de este producto. Si aun así quieres avisar a Compras, vuelve a enviar.";
+            }
+            if (info.EsCodigoAlternativo)
+            {
+                return "Ese código ya es uno de los códigos de este producto: el código de barras está bien. Si aun así quieres avisar, vuelve a enviar.";
             }
             if (!info.EsElDeLaFicha)
             {
@@ -630,12 +643,27 @@ WHERE Id = @id AND Estado = 'Abierto'";
 UPDATE dbo.AvisosFichaProducto SET Estado = @estado, CerradoPor = @cerradoPor, FechaCierre = GETDATE(), FechaModificacion = GETDATE()
 WHERE Id = @id AND Estado = 'Abierto'";
 
-        // NestoAPI#604: el producto activo (Estado >= 0) que lleva ese código en la ficha, salvo el del aviso
+        // NestoAPI#604: el producto activo (Estado >= 0) que lleva ese código en la ficha, salvo el del aviso.
+        // NestoAPI#605: o como código activo en ProductosCodigosBarras (la ficha manda si están los dos).
         internal const string SQL_PRODUCTO_CON_CODIGO = @"
-SELECT TOP 1 RTRIM(p.[Número]) AS Producto, RTRIM(p.Nombre) AS Nombre
-FROM Productos p
-WHERE p.Empresa = @empresa AND p.CodBarras = @codigo AND p.Estado >= 0 AND p.[Número] <> @producto
-ORDER BY p.[Número]";
+SELECT TOP 1 x.Producto, x.Nombre
+FROM (SELECT RTRIM(p.[Número]) AS Producto, RTRIM(p.Nombre) AS Nombre, 0 AS Orden
+      FROM Productos p
+      WHERE p.Empresa = @empresa AND p.CodBarras = @codigo AND p.Estado >= 0 AND p.[Número] <> @producto
+      UNION ALL
+      SELECT RTRIM(p.[Número]), RTRIM(p.Nombre), 1
+      FROM ProductosCodigosBarras c
+           JOIN Productos p ON p.Empresa = c.Empresa AND p.[Número] = c.Producto
+      WHERE c.Empresa = @empresa AND c.Codigo = @codigo AND c.Activo = 1 AND p.Estado >= 0 AND c.Producto <> @producto) x
+ORDER BY x.Orden, x.Producto";
+
+        // NestoAPI#605: el código es uno de los activos del producto
+        internal const string SQL_ES_CODIGO_DEL_PRODUCTO = @"
+SELECT COUNT(*) FROM ProductosCodigosBarras c
+WHERE c.Empresa = @empresa AND c.Producto = @producto AND c.Codigo = @codigo AND c.Activo = 1";
+
+        /// <summary>NestoAPI#605: ProductosCodigosBarras.Codigo es varchar(20).</summary>
+        internal const int LONGITUD_CODIGO_TABLA = 20;
 
         // NestoAPI#604: va por IX_PreparacionEscaneos_Producto (Empresa, Producto, FechaEscaneo), del script #604
         internal const string SQL_FASES_A_MANO_HOY = @"
@@ -663,12 +691,28 @@ WHERE e.Empresa = @empresa AND e.Producto = @producto AND e.Metodo = 'MANUAL'
         public async Task<ProductoConCodigo> LeerProductoConCodigo(string empresa, string codigo, string salvo)
         {
             string limpio = codigo?.Trim();
-            if (string.IsNullOrEmpty(limpio) || limpio.Length > LONGITUD_CODIGO_BARRAS)
+            if (string.IsNullOrEmpty(limpio) || limpio.Length > LONGITUD_CODIGO_TABLA)
             {
                 return null;
             }
+            // varchar: casa con el char(13) de la ficha y el varchar(20) de la tabla (un código de 14+ no casa con la ficha)
             return await db.Database.SqlQuery<ProductoConCodigo>(SQL_PRODUCTO_CON_CODIGO, Char("@empresa", empresa, 3),
-                Char("@codigo", limpio, LONGITUD_CODIGO_BARRAS), Char("@producto", salvo?.Trim(), 15)).FirstOrDefaultAsync().ConfigureAwait(false);
+                new SqlParameter("@codigo", System.Data.SqlDbType.VarChar, LONGITUD_CODIGO_TABLA) { Value = limpio },
+                Char("@producto", salvo?.Trim(), 15)).FirstOrDefaultAsync().ConfigureAwait(false);
+        }
+
+        public async Task<bool> EsCodigoDelProducto(string empresa, string producto, string codigo)
+        {
+            string limpio = codigo?.Trim();
+            if (string.IsNullOrEmpty(limpio) || limpio.Length > LONGITUD_CODIGO_TABLA || string.IsNullOrWhiteSpace(producto))
+            {
+                return false;
+            }
+            int veces = await db.Database.SqlQuery<int>(SQL_ES_CODIGO_DEL_PRODUCTO, Char("@empresa", empresa, 3),
+                Char("@producto", producto.Trim(), 15),
+                new SqlParameter("@codigo", System.Data.SqlDbType.VarChar, LONGITUD_CODIGO_TABLA) { Value = limpio })
+                .FirstOrDefaultAsync().ConfigureAwait(false);
+            return veces > 0;
         }
 
         public Task<List<string>> LeerFasesAManoHoy(string empresa, string producto)

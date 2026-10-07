@@ -21,6 +21,7 @@ namespace NestoAPI.Tests.Controllers
     {
         private NVEntities db;
         private DbSet<Producto> fakeProductos;
+        private DbSet<ProductoCodigoBarras> fakeCodigos;
         private ProductosController controller;
 
         [TestInitialize]
@@ -30,6 +31,9 @@ namespace NestoAPI.Tests.Controllers
             fakeProductos = A.Fake<DbSet<Producto>>(o => o.Implements<IQueryable<Producto>>().Implements<IDbAsyncEnumerable<Producto>>());
             A.CallTo(() => fakeProductos.Include(A<string>.Ignored)).Returns(fakeProductos);
             A.CallTo(() => db.Productos).Returns(fakeProductos);
+            fakeCodigos = A.Fake<DbSet<ProductoCodigoBarras>>(o => o.Implements<IQueryable<ProductoCodigoBarras>>().Implements<IDbAsyncEnumerable<ProductoCodigoBarras>>());
+            A.CallTo(() => db.ProductosCodigosBarras).Returns(fakeCodigos);
+            ConfigurarCodigos();
             controller = new ProductosController(db, A.Fake<IGestorSincronizacion>());
         }
 
@@ -47,6 +51,53 @@ namespace NestoAPI.Tests.Controllers
         private void ConfigurarProductos(params Producto[] productos)
         {
             ConfigurarFakeDbSet(fakeProductos, productos.AsQueryable());
+        }
+
+        private void ConfigurarCodigos(params ProductoCodigoBarras[] codigos)
+        {
+            ConfigurarFakeDbSet(fakeCodigos, codigos.AsQueryable());
+        }
+
+        private static ProductoCodigoBarras Alternativo(string producto, string codigo, bool activo = true)
+            => new ProductoCodigoBarras { Empresa = "1", Producto = producto, Codigo = codigo, Cantidad = 1, Activo = activo, Origen = "Almacen" };
+
+        /// <summary>NestoAPI#605: el código leído es un código alternativo (activo) de un producto, no el de su ficha.</summary>
+        [TestMethod]
+        public async Task GetProductoPorCodigoBarras_CodigoAlternativo_EncuentraElProducto()
+        {
+            Producto guantes = CrearProducto("32565", "8437017506379", "GUANTES T/M");
+            guantes.Estado = 0;
+            ConfigurarProductos(guantes);
+            ConfigurarCodigos(Alternativo("32565", "8437017509999"));
+
+            List<Producto> encontrados = await controller.BuscarPorCodigoBarras("1", "8437017509999", incluirNumero: false);
+
+            Assert.AreEqual("32565", encontrados.Single().Número);
+        }
+
+        /// <summary>NestoAPI#605: si un producto lo tiene de principal (ficha) y otro de alternativo, primero el principal.</summary>
+        [TestMethod]
+        public async Task GetProductoPorCodigoBarras_PrincipalEnUnoYAlternativoEnOtro_DevuelveElPrincipalSin409()
+        {
+            Producto tallaP = CrearProducto("32564", "8437017506362", "GUANTES T/P");
+            Producto tallaM = CrearProducto("32565", "8437017506379", "GUANTES T/M");
+            ConfigurarProductos(tallaP, tallaM);
+            ConfigurarCodigos(Alternativo("32565", "8437017506362"));
+
+            List<Producto> encontrados = await controller.BuscarPorCodigoBarras("1", "8437017506362", incluirNumero: true);
+
+            Assert.AreEqual("32564", encontrados.Single().Número);
+        }
+
+        [TestMethod]
+        public async Task GetProductoPorCodigoBarras_CodigoAlternativoDeBaja_NoEncuentraNada()
+        {
+            ConfigurarProductos(CrearProducto("32565", "8437017506379", "GUANTES T/M"));
+            ConfigurarCodigos(Alternativo("32565", "8437017509999", activo: false));
+
+            IHttpActionResult resultado = await controller.GetProducto("8437017509999");
+
+            Assert.IsInstanceOfType(resultado, typeof(NotFoundResult));
         }
 
         [TestMethod]

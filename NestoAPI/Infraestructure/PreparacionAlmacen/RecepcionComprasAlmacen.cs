@@ -122,7 +122,9 @@ ORDER BY l.[NºOrden]";
 SELECT DISTINCT RTRIM(l.[NºProveedor])
 FROM LinPedidoCmp l
      LEFT JOIN Productos p ON p.Empresa = l.Empresa AND p.[Número] = l.Producto
-WHERE l.Empresa = @p0 AND l.[Almacén] = @p1 AND (l.Producto = @p2 OR p.CodBarras = @p2) AND " + FILTRO_LINEAS_DE_PRODUCTO;
+WHERE l.Empresa = @p0 AND l.[Almacén] = @p1 AND (l.Producto = @p2 OR p.CodBarras = @p2
+      OR EXISTS (SELECT 1 FROM ProductosCodigosBarras c WHERE c.Empresa = l.Empresa AND c.Producto = l.Producto AND c.Codigo = @p2 AND c.Activo = 1))
+  AND " + FILTRO_LINEAS_DE_PRODUCTO;
 
         // NestoAPI#559: la recepción es por proveedor (todos sus pedidos abiertos en el almacén)
         internal const string SQL_LINEAS_PENDIENTES_PROVEEDOR = COLUMNAS_LINEA + @"
