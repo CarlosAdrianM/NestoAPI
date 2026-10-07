@@ -922,6 +922,8 @@
     <Compile Include="Infraestructure\Reposiciones\PreparacionReposicion.cs" />
     <Compile Include="Infraestructure\Reposiciones\UbicacionesReposicion.cs" />
     <Compile Include="Infraestructure\Reposiciones\TransitoReposiciones.cs" />
+    <Compile Include="Infraestructure\Reposiciones\CalculadoraFechaReposicion.cs" />
+    <Compile Include="Infraestructure\Reposiciones\CalendarioReposiciones.cs" />
     <Compile Include="Infraestructure\Ubicaciones\PlanificadorReservaHuecos.cs" />
     <Compile Include="Infraestructure\Ubicaciones\PuertaUbicaciones.cs" />
     <Compile Include="Infraestructure\Ubicaciones\PuertaUbicacionesSql.cs" />
@@ -1203,6 +1205,9 @@
     <Compile Include="Models\Alquileres\MovimientoAlquilerDTO.cs" />
     <Compile Include="Models\Alquileres\ProductoAlquilerDTO.cs" />
     <Compile Include="Models\ProductoCategoriaSecundaria.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\ReposicionCalendario.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\FamiliaIncompatibilidad.cs">

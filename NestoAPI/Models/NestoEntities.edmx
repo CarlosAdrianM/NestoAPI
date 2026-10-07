@@ -1009,6 +1009,21 @@
           <Property Name="VentaPausadaEnTienda" Type="bit" Nullable="false" />
           <Property Name="SoloVentaPresencial" Type="bit" Nullable="false" />
         </EntityType>
+        <EntityType Name="ReposicionesCalendario">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="AlmacenOrigen" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="AlmacenDestino" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="DiaSemana" Type="tinyint" Nullable="false" />
+          <Property Name="HoraCierre" Type="time" Precision="0" Nullable="false" />
+          <Property Name="HoraLlegadaHabitual" Type="time" Precision="0" Nullable="false" />
+          <Property Name="Activo" Type="bit" Nullable="false" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
+          <Property Name="FechaModificacion" Type="datetime" Nullable="false" />
+        </EntityType>
         <EntityType Name="FamiliasIncompatibles">
           <Key>
             <PropertyRef Name="Id" />
@@ -5749,6 +5764,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="ExtractoRuta" EntityType="Self.ExtractoRuta" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Familias" EntityType="Self.Familias" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="FamiliasIncompatibles" EntityType="Self.FamiliasIncompatibles" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="ReposicionesCalendario" EntityType="Self.ReposicionesCalendario" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="FicheroCuaderno43" EntityType="Self.FicheroCuaderno43" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="FormasPago" EntityType="Self.FormasPago" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="FormasVenta" EntityType="Self.FormasVenta" Schema="dbo" store:Type="Tables" />
@@ -6959,6 +6975,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           </AssociationSet>
           <EntitySet Name="Familias" EntityType="NVModel.Familia" />
           <EntitySet Name="FamiliasIncompatibles" EntityType="NVModel.FamiliaIncompatibilidad" />
+          <EntitySet Name="ReposicionesCalendario" EntityType="NVModel.ReposicionCalendario" />
           <EntitySet Name="SubGruposProductoes" EntityType="NVModel.SubGruposProducto" />
           <AssociationSet Name="FK_Familias_Empresas" Association="NVModel.FK_Familias_Empresas">
             <End Role="Empresa" EntitySet="Empresas" />
@@ -8645,6 +8662,21 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="Productos" Relationship="NVModel.FK_Productos_Familias" FromRole="Familia" ToRole="Producto" />
           <NavigationProperty Name="DescuentosProductoes" Relationship="NVModel.FK_DescuentosProducto_Familias" FromRole="Familia" ToRole="DescuentosProducto" />
           <NavigationProperty Name="Inventarios" Relationship="NVModel.FK_Inventarios_Familias" FromRole="Familia" ToRole="Inventario" />
+        </EntityType>
+        <EntityType Name="ReposicionCalendario">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="AlmacenOrigen" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="AlmacenDestino" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="DiaSemana" Type="Byte" Nullable="false" />
+          <Property Name="HoraCierre" Type="Time" Nullable="false" Precision="0" />
+          <Property Name="HoraLlegadaHabitual" Type="Time" Nullable="false" Precision="0" />
+          <Property Name="Activo" Type="Boolean" Nullable="false" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="FechaModificacion" Type="DateTime" Nullable="false" Precision="3" />
         </EntityType>
         <EntityType Name="FamiliaIncompatibilidad">
           <Key>
@@ -16385,6 +16417,22 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
                 <ScalarProperty Name="Orden" ColumnName="Orden" />
                 <ScalarProperty Name="Número" ColumnName="Número" />
                 <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="ReposicionesCalendario">
+            <EntityTypeMapping TypeName="NVModel.ReposicionCalendario">
+              <MappingFragment StoreEntitySet="ReposicionesCalendario">
+                <ScalarProperty Name="Id" ColumnName="Id" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+                <ScalarProperty Name="AlmacenOrigen" ColumnName="AlmacenOrigen" />
+                <ScalarProperty Name="AlmacenDestino" ColumnName="AlmacenDestino" />
+                <ScalarProperty Name="DiaSemana" ColumnName="DiaSemana" />
+                <ScalarProperty Name="HoraCierre" ColumnName="HoraCierre" />
+                <ScalarProperty Name="HoraLlegadaHabitual" ColumnName="HoraLlegadaHabitual" />
+                <ScalarProperty Name="Activo" ColumnName="Activo" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="FechaModificacion" ColumnName="FechaModificacion" />
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>

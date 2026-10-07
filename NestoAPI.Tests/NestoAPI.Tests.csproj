@@ -515,6 +515,8 @@
     <Compile Include="Infrastructure\CambioModoConPickingTests.cs" />
     <Compile Include="Infrastructure\CambioAlmacenPedidoTests.cs" />
     <Compile Include="Infrastructure\Reposiciones\ServicioTransitoReposicionesTests.cs" />
+    <Compile Include="Infrastructure\Reposiciones\CalculadoraFechaReposicionTests.cs" />
+    <Compile Include="Infrastructure\Reposiciones\ServicioCalendarioReposicionesTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\CorreoConfirmacionPedidoClienteTests.cs" />
     <Compile Include="Infrastructure\PoliticaPagoCanalTests.cs" />
     <Compile Include="Infrastructure\ServicioAgenciasTests.cs" />

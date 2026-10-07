@@ -1,3 +1,4 @@
+using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Reposiciones;
 using NestoAPI.Models;
 using System;
@@ -25,6 +26,7 @@ namespace NestoAPI.Controllers
         private readonly NVEntities db;
         private readonly IServicioPreparacionReposicion preparacion;
         private readonly IServicioTransitoReposiciones transito;
+        private readonly IServicioCalendarioReposiciones calendario;
 
         public ReposicionesController() : this(new NVEntities())
         {
@@ -35,11 +37,69 @@ namespace NestoAPI.Controllers
         }
 
         internal ReposicionesController(NVEntities db, IServicioPreparacionReposicion preparacion,
-            IServicioTransitoReposiciones transito = null)
+            IServicioTransitoReposiciones transito = null, IServicioCalendarioReposiciones calendario = null)
         {
             this.db = db;
             this.preparacion = preparacion;
             this.transito = transito; // null = el de la BD, creado al usarlo (los tests del resto no pasan db)
+            this.calendario = calendario; // ídem
+        }
+
+        private IServicioCalendarioReposiciones Calendario => calendario ?? new ServicioCalendarioReposiciones(db);
+
+        // GET api/Reposiciones/ProximaLlegada?origen=REI&destino=ALG&empresa=1
+        /// <summary>
+        /// NestoAPI#577: la próxima reposición de <paramref name="origen"/> a <paramref name="destino"/> según el calendario
+        /// (ReposicionesCalendario), los festivos de los dos almacenes y la hora de corte del picking (parámetro
+        /// «HoraCortePicking», 11:00 si no está): cuándo cierra, cuándo llega y qué día saldría el pedido que la espera.
+        /// 404 si la ruta no tiene calendario activo.
+        /// </summary>
+        [HttpGet]
+        [Route("ProximaLlegada")]
+        [ResponseType(typeof(ProximaReposicionDTO))]
+        public async Task<IHttpActionResult> GetProximaLlegada(string origen, string destino,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            ProximaReposicionDTO proxima = await Calendario.LeerProximaLlegada(empresa, origen, destino).ConfigureAwait(false);
+            if (proxima == null)
+            {
+                return Content(HttpStatusCode.NotFound,
+                    $"No hay calendario de reposiciones activo de {origen?.Trim().ToUpperInvariant()} a {destino?.Trim().ToUpperInvariant()}.");
+            }
+            return Ok(proxima);
+        }
+
+        // GET api/Reposiciones/Calendario?empresa=1
+        /// <summary>NestoAPI#577: el calendario de reposiciones (todas las rutas, activas o no), por ruta, día y hora.</summary>
+        [HttpGet]
+        [Route("Calendario")]
+        [ResponseType(typeof(List<ReposicionCalendarioDTO>))]
+        public async Task<IHttpActionResult> GetCalendario(string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            return Ok(await Calendario.LeerCalendario(empresa).ConfigureAwait(false));
+        }
+
+        // PUT api/Reposiciones/Calendario   { Empresa?, Origen?, Destino?, Filas: [{ Id?, Origen, Destino, DiaSemana, HoraCierre, HoraLlegadaHabitual, Activo }] }
+        /// <summary>
+        /// NestoAPI#577: guarda el calendario. Con Origen y Destino, Filas es la lista completa de esa ruta (lo que no venga se
+        /// borra); sin ellos, filas sueltas (crear o cambiar). Devuelve el calendario entero. Solo Almacén, Dirección e
+        /// Informática (403 si no); 400 si una fila no vale.
+        /// </summary>
+        [HttpPut]
+        [Route("Calendario")]
+        [ResponseType(typeof(List<ReposicionCalendarioDTO>))]
+        public async Task<IHttpActionResult> PutCalendario([FromBody] GuardarCalendarioReposicionesDTO peticion)
+        {
+            if (!ServicioCalendarioReposiciones.PuedeMantener(User))
+            {
+                return Prohibido(new UnauthorizedAccessException(ServicioCalendarioReposiciones.MENSAJE_SIN_PERMISO));
+            }
+            if (peticion == null)
+            {
+                return BadRequest("Faltan las filas del calendario.");
+            }
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, null);
+            return Ok(await Calendario.Guardar(peticion, usuario).ConfigureAwait(false));
         }
 
         // GET api/Reposiciones/EnTransito?empresa=1&almacen=ALC&productos=45146,45148

@@ -35,6 +35,7 @@ namespace NestoAPI.Models
         public virtual DbSet<Producto> Productos { get; set; }
         public virtual DbSet<Familia> Familias { get; set; }
         public virtual DbSet<FamiliaIncompatibilidad> FamiliasIncompatibles { get; set; }
+        public virtual DbSet<ReposicionCalendario> ReposicionesCalendario { get; set; }
         public virtual DbSet<SubGruposProducto> SubGruposProductoes { get; set; }
         public virtual DbSet<CondPagoCliente> CondPagoClientes { get; set; }
         public virtual DbSet<DescuentosCliente> DescuentosClientes { get; set; }

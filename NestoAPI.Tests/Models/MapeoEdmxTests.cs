@@ -292,5 +292,32 @@ namespace NestoAPI.Tests.Models
             CollectionAssert.AreEquivalent(esperadas,
                 mapeo.Descendants(MslNs + "ScalarProperty").Select(p => p.Attribute("Name").Value).ToArray());
         }
+
+        /// <summary>NestoAPI#577: calendario de reposiciones añadido a mano; las horas son time ↔ Time ↔ TimeSpan.</summary>
+        [TestMethod]
+        public void Edmx_ReposicionesCalendario_EstaCompletaEnLasTresCapasConLasHorasComoTime()
+        {
+            string[] esperadas =
+            {
+                "Id", "Empresa", "AlmacenOrigen", "AlmacenDestino", "DiaSemana", "HoraCierre", "HoraLlegadaHabitual",
+                "Activo", "Usuario", "FechaModificacion"
+            };
+
+            XElement conceptual = EntidadesPorNombre(LeerRecurso("csdl"), CsdlNs)["ReposicionCalendario"];
+            XElement almacen = EntidadesPorNombre(LeerRecurso("ssdl"), SsdlNs)["ReposicionesCalendario"];
+            XElement mapeo = LeerRecurso("msl").Descendants(MslNs + "EntitySetMapping")
+                .Single(m => m.Attribute("Name").Value == "ReposicionesCalendario");
+
+            CollectionAssert.AreEquivalent(esperadas,
+                conceptual.Elements(CsdlNs + "Property").Select(p => p.Attribute("Name").Value).ToArray());
+            CollectionAssert.AreEquivalent(esperadas,
+                almacen.Elements(SsdlNs + "Property").Select(p => p.Attribute("Name").Value).ToArray());
+            CollectionAssert.AreEquivalent(esperadas,
+                mapeo.Descendants(MslNs + "ScalarProperty").Select(p => p.Attribute("Name").Value).ToArray());
+            Assert.AreEqual("time", (string)almacen.Elements(SsdlNs + "Property").Single(p => p.Attribute("Name").Value == "HoraCierre").Attribute("Type"));
+            Assert.AreEqual("Time", (string)conceptual.Elements(CsdlNs + "Property").Single(p => p.Attribute("Name").Value == "HoraCierre").Attribute("Type"));
+            Assert.AreEqual(typeof(TimeSpan), typeof(ReposicionCalendario).GetProperty("HoraCierre").PropertyType);
+            Assert.AreEqual(typeof(byte), typeof(ReposicionCalendario).GetProperty("DiaSemana").PropertyType);
+        }
     }
 }
