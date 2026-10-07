@@ -273,6 +273,36 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
             Assert.AreEqual(0, pa.RapportsTotales);
         }
 
+        // ---------------- Caché del modelo ----------------
+
+        [TestMethod]
+        public void ProbabilidadesModelo_LaConsultaSeCacheaSoloPorVendedorYTipo()
+        {
+            Assert.AreEqual(ProbabilidadesContactoModelo.ClaveCacheConsulta("mpp", ""), ProbabilidadesContactoModelo.ClaveCacheConsulta("MPP ", "Teléfono"),
+                "vacío y Teléfono son Llamada");
+            Assert.AreNotEqual(ProbabilidadesContactoModelo.ClaveCacheConsulta("MPP", "Llamada"), ProbabilidadesContactoModelo.ClaveCacheConsulta("MPP", "Visita"));
+            Assert.AreNotEqual(ProbabilidadesContactoModelo.ClaveCache("MPP", "Llamada", "COSCRE"), ProbabilidadesContactoModelo.ClaveCache("MPP", "Llamada", "PELTIN"));
+        }
+
+        [TestMethod]
+        public void ProbabilidadesModelo_AplicarGrupoSubgrupo_CopiaSinTocarLasFilasCacheadas()
+        {
+            var cacheadas = new List<NestoAPI.Models.Clientes.ClienteInteraccion>
+            {
+                new NestoAPI.Models.Clientes.ClienteInteraccion { ClienteId = "1/0", GrupoSubgrupoMasVendido = "COSCRE", DiasDesdeUltimoPedido = 12, FrecuenciaPedidosUltimoAnno = 10 }
+            };
+
+            var conGrupo = ProbabilidadesContactoModelo.AplicarGrupoSubgrupo(cacheadas, "PELTIN");
+            var sinGrupo = ProbabilidadesContactoModelo.AplicarGrupoSubgrupo(cacheadas, "");
+
+            Assert.AreEqual("PELTIN", conGrupo[0].GrupoSubgrupoMasVendido);
+            Assert.AreEqual(12, conGrupo[0].DiasDesdeUltimoPedido);
+            Assert.AreEqual(10, conGrupo[0].FrecuenciaPedidosUltimoAnno);
+            Assert.AreEqual("COSCRE", sinGrupo[0].GrupoSubgrupoMasVendido);
+            Assert.AreEqual("COSCRE", cacheadas[0].GrupoSubgrupoMasVendido, "la caché no se pisa");
+            Assert.AreNotSame(cacheadas[0], sinGrupo[0]);
+        }
+
         // ---------------- Controlador ----------------
 
         [TestMethod]

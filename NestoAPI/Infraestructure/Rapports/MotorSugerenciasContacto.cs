@@ -57,7 +57,7 @@ namespace NestoAPI.Infraestructure.Rapports
     /// <item><b>No se propone</b> si se habló con él hace menos que su cadencia, si no contestó hace menos de 2 días o si
     /// pidió hace menos de 6.</item>
     /// <item><b>Máxima</b>: buen cliente (≥ 3 pedidos en 12 meses), probabilidad ≥ 0,6 y ya le toca por cadencia.
-    /// <b>Alta</b>: buen cliente y ≥ 30 días sin contacto. <b>Media</b>: compras en 12 meses y ≥ 30 días sin contacto.
+    /// <b>Alta</b>: buen cliente al que ya le toca por cadencia (probabilidad &lt; 0,6) o con ≥ 30 días sin contacto. <b>Media</b>: compras en 12 meses y ≥ 30 días sin contacto.
     /// <b>Baja</b>: solo compras en 24 meses y ≥ 30 días sin contacto. Si no cumple ninguna, todavía no le toca.</item>
     /// <item><b>Orden</b>: prioridad; dentro, probabilidad desc y días sin contacto desc (nunca contactado, el primero).</item>
     /// </list>
@@ -107,7 +107,9 @@ namespace NestoAPI.Infraestructure.Rapports
             {
                 return PrioridadesContacto.MAXIMA;
             }
-            if (bueno && repaso)
+            // Un buen cliente al que ya le toca por cadencia (y ≥ 30 días lo implica: la cadencia nunca pasa de 30) es Alta:
+            // el que compra cada semana necesita una llamada cada semana aunque el modelo no lo vea claro.
+            if (bueno)
             {
                 return PrioridadesContacto.ALTA;
             }
@@ -186,7 +188,9 @@ namespace NestoAPI.Infraestructure.Rapports
                     texto = $"{frecuencia} y {contacto}; probabilidad de pedido del {Math.Round(c.Probabilidad * 100, MidpointRounding.AwayFromZero)} %";
                     break;
                 case PrioridadesContacto.ALTA:
-                    texto = $"Buen cliente ({Pedidos(c.Pedidos12Meses)} en el último año), {SinContactoDesde(c.UltimoContacto, hoy)}";
+                    texto = Cadencia(c) < UmbralesSugerenciasContacto.CADENCIA_MAXIMA_DIAS && diasContacto.HasValue
+                        ? $"Compra cada {Cadencia(c)} días y lleva {diasContacto.Value} {(diasContacto.Value == 1 ? "día" : "días")} sin hablar contigo"
+                        : $"Buen cliente ({Pedidos(c.Pedidos12Meses)} en el último año), {SinContactoDesde(c.UltimoContacto, hoy)}";
                     break;
                 case PrioridadesContacto.MEDIA:
                     texto = $"Ha comprado {Veces(c.Pedidos12Meses)} en el último año (la última {EnMes(c.UltimoPedido, hoy)}) y {SinContactoDesde(c.UltimoContacto, hoy)}: toca el repaso mensual";

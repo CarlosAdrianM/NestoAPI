@@ -77,10 +77,14 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
         }
 
         [TestMethod]
-        public void Prioridad_BuenoFrecuenteConProbabilidadBajaYMenosDe30Dias_Nada()
+        public void Prioridad_BuenoFrecuenteAlQueLeTocaConProbabilidadBaja_AltaAunqueNoLleve30Dias()
         {
-            // Le toca por cadencia (7) pero no llega a Máxima (probabilidad) ni a Alta (30 días).
-            Assert.IsNull(MotorSugerenciasContacto.Prioridad(Cliente("a", 52, diasContacto: 15, probabilidad: 0.3f), HOY));
+            // Compra cada semana (cadencia 7): a los 7 días ya le toca, aunque el modelo no llegue a 0,6.
+            Assert.AreEqual(PrioridadesContacto.ALTA, MotorSugerenciasContacto.Prioridad(Cliente("a", 52, diasContacto: 15, probabilidad: 0.3f), HOY));
+            Assert.AreEqual(PrioridadesContacto.ALTA, MotorSugerenciasContacto.Prioridad(Cliente("a", 52, diasContacto: 7, probabilidad: 0.3f), HOY));
+            Assert.IsNull(MotorSugerenciasContacto.Prioridad(Cliente("a", 52, diasContacto: 6, probabilidad: 0.3f), HOY));
+            // Cadencia 10 (36 pedidos): a los 12 días le toca.
+            Assert.AreEqual(PrioridadesContacto.ALTA, MotorSugerenciasContacto.Prioridad(Cliente("a", 36, diasContacto: 12, probabilidad: 0.1f), HOY));
         }
 
         [TestMethod]
@@ -168,6 +172,10 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
 
             cliente.UltimoContacto = null;
             StringAssert.EndsWith(MotorSugerenciasContacto.Motivo(cliente, PrioridadesContacto.ALTA, HOY), "sin ningún contacto registrado");
+
+            // Comprador frecuente al que le toca por cadencia antes de los 30 días.
+            Assert.AreEqual("Compra cada 7 días y lleva 15 días sin hablar contigo",
+                MotorSugerenciasContacto.Motivo(Cliente("b", 52, diasContacto: 15, probabilidad: 0.3f), PrioridadesContacto.ALTA, HOY));
         }
 
         [TestMethod]
