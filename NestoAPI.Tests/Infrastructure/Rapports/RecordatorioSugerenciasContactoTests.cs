@@ -31,6 +31,8 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
         private Dictionary<string, DateTime?> ultimoAviso;
         private Dictionary<string, List<string>> usuarios;
         private PendientesVendedor pendientes;
+        private HashSet<string> sinActividad;
+        private DateTime? desdeActividad;
 
         [TestInitialize]
         public void Preparar()
@@ -52,6 +54,9 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
             A.CallTo(() => repositorio.ContarAtendidas(A<string>._, A<DateTime>._)).ReturnsLazily((string v, DateTime d) => Task.FromResult(atendidas.TryGetValue(v, out int n) ? n : 0));
             A.CallTo(() => repositorio.LeerUltimoAviso(A<string>._)).ReturnsLazily((string v) => Task.FromResult(ultimoAviso.TryGetValue(v, out DateTime? f) ? f : null));
             A.CallTo(() => repositorio.LeerPendientes(A<string>._, A<DateTime>._)).ReturnsLazily(() => Task.FromResult(pendientes));
+            sinActividad = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            A.CallTo(() => repositorio.FiltrarUsuariosActivos(A<IEnumerable<string>>._, A<DateTime>._))
+                .ReturnsLazily((IEnumerable<string> u, DateTime d) => { desdeActividad = d; return Task.FromResult(u.Where(x => !sinActividad.Contains(x)).ToList()); });
             notificaciones = A.Fake<IServicioNotificacionesPush>();
         }
 
@@ -163,6 +168,38 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
 
             A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Mariajose", A<string>._, A<NotificacionPushDTO>._)).MustHaveHappenedOnceExactly();
             A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Ayudante", A<string>._, A<NotificacionPushDTO>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task DosUsuariosDelMismoVendedor_SoloSeAvisaAlQueTieneRapportsEn90Dias()
+        {
+            // Elena ya no está en la empresa, pero su usuario sigue con Vendedor = PA.
+            lista = "PA";
+            usuarios["PA"] = new List<string> { "Paloma", "Elena" };
+            sinActividad.Add("Elena");
+
+            ResultadoRecordatorioSugerenciasDTO pa = De(await Recordatorio().Ejecutar(soloListar: false), "PA");
+
+            Assert.AreEqual(EstadosRecordatorioSugerencias.AVISADO, pa.Estado);
+            CollectionAssert.AreEqual(new[] { "Paloma" }, pa.Usuarios);
+            CollectionAssert.AreEqual(new[] { "Elena" }, pa.UsuariosInactivos);
+            Assert.AreEqual(AHORA.Date.AddDays(-90), desdeActividad);
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Paloma", A<string>._, A<NotificacionPushDTO>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Elena", A<string>._, A<NotificacionPushDTO>._)).MustNotHaveHappened();
+            A.CallTo(() => repositorio.GuardarAviso("PA", A<IEnumerable<string>>.That.IsSameSequenceAs(new[] { "Paloma" }), A<DateTime>._, A<string>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task NingunUsuarioConActividadReciente_SinUsuarioActivoYNoSeAvisa()
+        {
+            sinActividad.Add("Mariajose");
+
+            ResultadoRecordatorioSugerenciasDTO mpp = De(await Recordatorio().Ejecutar(soloListar: false), "MPP");
+
+            Assert.AreEqual(EstadosRecordatorioSugerencias.SIN_USUARIO_ACTIVO, mpp.Estado);
+            CollectionAssert.AreEqual(new[] { "Mariajose" }, mpp.UsuariosInactivos);
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Mariajose", A<string>._, A<NotificacionPushDTO>._)).MustNotHaveHappened();
+            A.CallTo(() => repositorio.GuardarAviso("MPP", A<IEnumerable<string>>._, A<DateTime>._, A<string>._)).MustNotHaveHappened();
         }
 
         [TestMethod]

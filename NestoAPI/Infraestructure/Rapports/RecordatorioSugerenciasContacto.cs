@@ -26,6 +26,8 @@ namespace NestoAPI.Infraestructure.Rapports
         public const string SIN_PENDIENTES = "SinPendientes";
         /// <summary>Ningún usuario tiene este vendedor en el parámetro Vendedor.</summary>
         public const string SIN_USUARIO = "SinUsuario";
+        /// <summary>Tiene usuarios, pero ninguno con rapports en los últimos 90 días (p. ej. ya no está en la empresa).</summary>
+        public const string SIN_USUARIO_ACTIVO = "SinUsuarioActivo";
         /// <summary>No se pudo mandar a ninguno de sus usuarios (queda en ELMAH).</summary>
         public const string ERROR = "Error";
     }
@@ -34,7 +36,10 @@ namespace NestoAPI.Infraestructure.Rapports
     public class ResultadoRecordatorioSugerenciasDTO
     {
         public string Vendedor { get; set; }
+        /// <summary>Usuarios del vendedor con actividad reciente (a los que llega el aviso).</summary>
         public List<string> Usuarios { get; set; } = new List<string>();
+        /// <summary>Usuarios con el parámetro Vendedor pero sin rapports en los últimos 90 días: no se les avisa.</summary>
+        public List<string> UsuariosInactivos { get; set; } = new List<string>();
         public string Estado { get; set; }
         /// <summary>Sugerencias atendidas desde <see cref="Desde"/>.</summary>
         public int Atendidas { get; set; }
@@ -63,6 +68,9 @@ namespace NestoAPI.Infraestructure.Rapports
         Task<string> LeerListaAvisar();
         /// <summary>Usuarios (sin dominio) con el parámetro Vendedor = <paramref name="vendedor"/>.</summary>
         Task<List<string>> LeerUsuarios(string vendedor);
+        /// <summary>De <paramref name="usuarios"/> (sin dominio), los que tienen algún rapport (SeguimientoCliente.Usuario,
+        /// con o sin dominio) desde <paramref name="desde"/>.</summary>
+        Task<List<string>> FiltrarUsuariosActivos(IEnumerable<string> usuarios, DateTime desde);
         Task<int> ContarAtendidas(string vendedor, DateTime desde);
         Task<DateTime?> LeerUltimoAviso(string vendedor);
         Task GuardarAviso(string vendedor, IEnumerable<string> usuarios, DateTime fecha, string texto);
@@ -85,6 +93,8 @@ namespace NestoAPI.Infraestructure.Rapports
         public const string TIPO_NOTIFICACION = "RecordatorioSugerenciasContacto";
         public const int DIAS_LABORABLES_SIN_USO = 7;
         public const int DIAS_ENTRE_AVISOS = 7;
+        /// <summary>Solo se avisa a usuarios con algún rapport en estos días (Elena seguía con Vendedor = PA sin estar ya).</summary>
+        public const int DIAS_ACTIVIDAD_USUARIO = 90;
         private const string DOMINIO = "NUEVAVISION\\";
 
         private readonly IRepositorioRecordatorioSugerencias repositorio;
@@ -202,6 +212,15 @@ namespace NestoAPI.Infraestructure.Rapports
                     if (!resultado.Usuarios.Any())
                     {
                         resultado.Estado = EstadosRecordatorioSugerencias.SIN_USUARIO;
+                        continue;
+                    }
+                    List<string> activos = await repositorio.FiltrarUsuariosActivos(resultado.Usuarios, hoy.AddDays(-DIAS_ACTIVIDAD_USUARIO)).ConfigureAwait(false)
+                        ?? new List<string>();
+                    resultado.UsuariosInactivos = resultado.Usuarios.Where(u => !activos.Contains(u, StringComparer.OrdinalIgnoreCase)).ToList();
+                    resultado.Usuarios = resultado.Usuarios.Where(u => activos.Contains(u, StringComparer.OrdinalIgnoreCase)).ToList();
+                    if (!resultado.Usuarios.Any())
+                    {
+                        resultado.Estado = EstadosRecordatorioSugerencias.SIN_USUARIO_ACTIVO;
                         continue;
                     }
                     PendientesVendedor pendientes = await repositorio.LeerPendientes(vendedor, hoy).ConfigureAwait(false) ?? new PendientesVendedor();
@@ -329,6 +348,43 @@ namespace NestoAPI.Infraestructure.Rapports
                     }
                 }
                 return usuarios;
+            });
+        }
+
+        public Task<List<string>> FiltrarUsuariosActivos(IEnumerable<string> usuarios, DateTime desde)
+        {
+            List<string> lista = (usuarios ?? Enumerable.Empty<string>()).Where(u => !string.IsNullOrWhiteSpace(u)).Select(u => u.Trim()).Distinct().ToList();
+            if (!lista.Any())
+            {
+                return Task.FromResult(new List<string>());
+            }
+            return Task.Run(() =>
+            {
+                var activos = new List<string>();
+                string parametros = string.Join(", ", lista.Select((u, i) => "@U" + i));
+                string sql = @"
+                    SELECT DISTINCT RTRIM(SUBSTRING(s.Usuario, CHARINDEX('\', s.Usuario) + 1, 100))
+                    FROM SeguimientoCliente s WITH (NOLOCK)
+                    WHERE s.Fecha >= @Desde AND RTRIM(SUBSTRING(s.Usuario, CHARINDEX('\', s.Usuario) + 1, 100)) IN (" + parametros + ");";
+                using (SqlConnection conexion = ConexionSql.Abrir())
+                using (var comando = new SqlCommand(sql, conexion) { CommandTimeout = TIMEOUT_SEGUNDOS })
+                {
+                    _ = comando.Parameters.Add(new SqlParameter("@Desde", SqlDbType.DateTime) { Value = desde.Date });
+                    for (int i = 0; i < lista.Count; i++)
+                    {
+                        _ = comando.Parameters.Add(new SqlParameter("@U" + i, SqlDbType.VarChar, 30) { Value = lista[i] });
+                    }
+                    using (SqlDataReader lector = comando.ExecuteReader())
+                    {
+                        while (lector.Read())
+                        {
+                            string activo = lector[0].ToString().Trim();
+                            // La BD no distingue mayúsculas: se devuelve el usuario tal como venía en la lista.
+                            activos.AddRange(lista.Where(u => string.Equals(u, activo, StringComparison.OrdinalIgnoreCase)));
+                        }
+                    }
+                }
+                return activos.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             });
         }
 
