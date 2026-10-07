@@ -1009,6 +1009,33 @@
           <Property Name="VentaPausadaEnTienda" Type="bit" Nullable="false" />
           <Property Name="SoloVentaPresencial" Type="bit" Nullable="false" />
         </EntityType>
+        <EntityType Name="Eventos">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Titulo" Type="nvarchar" MaxLength="100" Nullable="false" />
+          <Property Name="Fecha" Type="date" Nullable="false" />
+          <Property Name="ImporteSenal" Type="decimal" Precision="18" Scale="2" Nullable="false" />
+          <Property Name="Activo" Type="bit" Nullable="false" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
+          <Property Name="FechaModificacion" Type="datetime" Nullable="false" />
+        </EntityType>
+        <EntityType Name="EventosSenales">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="EventoId" Type="int" Nullable="false" />
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Cliente" Type="char" MaxLength="10" Nullable="false" />
+          <Property Name="Contacto" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="NumOrdenExtracto" Type="int" Nullable="false" />
+          <Property Name="Importe" Type="decimal" Precision="18" Scale="2" Nullable="false" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
+          <Property Name="FechaModificacion" Type="datetime" Nullable="false" />
+        </EntityType>
         <EntityType Name="ReposicionesCalendario">
           <Key>
             <PropertyRef Name="Id" />
@@ -5764,6 +5791,8 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="ExtractoRuta" EntityType="Self.ExtractoRuta" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Familias" EntityType="Self.Familias" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="FamiliasIncompatibles" EntityType="Self.FamiliasIncompatibles" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="Eventos" EntityType="Self.Eventos" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="EventosSenales" EntityType="Self.EventosSenales" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ReposicionesCalendario" EntityType="Self.ReposicionesCalendario" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="FicheroCuaderno43" EntityType="Self.FicheroCuaderno43" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="FormasPago" EntityType="Self.FormasPago" Schema="dbo" store:Type="Tables" />
@@ -6975,6 +7004,8 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           </AssociationSet>
           <EntitySet Name="Familias" EntityType="NVModel.Familia" />
           <EntitySet Name="FamiliasIncompatibles" EntityType="NVModel.FamiliaIncompatibilidad" />
+          <EntitySet Name="Eventos" EntityType="NVModel.Evento" />
+          <EntitySet Name="EventosSenales" EntityType="NVModel.EventoSenal" />
           <EntitySet Name="ReposicionesCalendario" EntityType="NVModel.ReposicionCalendario" />
           <EntitySet Name="SubGruposProductoes" EntityType="NVModel.SubGruposProducto" />
           <AssociationSet Name="FK_Familias_Empresas" Association="NVModel.FK_Familias_Empresas">
@@ -8662,6 +8693,33 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="Productos" Relationship="NVModel.FK_Productos_Familias" FromRole="Familia" ToRole="Producto" />
           <NavigationProperty Name="DescuentosProductoes" Relationship="NVModel.FK_DescuentosProducto_Familias" FromRole="Familia" ToRole="DescuentosProducto" />
           <NavigationProperty Name="Inventarios" Relationship="NVModel.FK_Inventarios_Familias" FromRole="Familia" ToRole="Inventario" />
+        </EntityType>
+        <EntityType Name="Evento">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Titulo" Type="String" Nullable="false" MaxLength="100" FixedLength="false" Unicode="true" />
+          <Property Name="Fecha" Type="DateTime" Nullable="false" Precision="0" />
+          <Property Name="ImporteSenal" Type="Decimal" Nullable="false" Precision="18" Scale="2" />
+          <Property Name="Activo" Type="Boolean" Nullable="false" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="FechaModificacion" Type="DateTime" Nullable="false" Precision="3" />
+        </EntityType>
+        <EntityType Name="EventoSenal">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="EventoId" Type="Int32" Nullable="false" />
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Cliente" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Contacto" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="NumOrdenExtracto" Type="Int32" Nullable="false" />
+          <Property Name="Importe" Type="Decimal" Nullable="false" Precision="18" Scale="2" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="FechaModificacion" Type="DateTime" Nullable="false" Precision="3" />
         </EntityType>
         <EntityType Name="ReposicionCalendario">
           <Key>
@@ -16417,6 +16475,35 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
                 <ScalarProperty Name="Orden" ColumnName="Orden" />
                 <ScalarProperty Name="Número" ColumnName="Número" />
                 <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="Eventos">
+            <EntityTypeMapping TypeName="NVModel.Evento">
+              <MappingFragment StoreEntitySet="Eventos">
+                <ScalarProperty Name="Id" ColumnName="Id" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+                <ScalarProperty Name="Titulo" ColumnName="Titulo" />
+                <ScalarProperty Name="Fecha" ColumnName="Fecha" />
+                <ScalarProperty Name="ImporteSenal" ColumnName="ImporteSenal" />
+                <ScalarProperty Name="Activo" ColumnName="Activo" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="FechaModificacion" ColumnName="FechaModificacion" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="EventosSenales">
+            <EntityTypeMapping TypeName="NVModel.EventoSenal">
+              <MappingFragment StoreEntitySet="EventosSenales">
+                <ScalarProperty Name="Id" ColumnName="Id" />
+                <ScalarProperty Name="EventoId" ColumnName="EventoId" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+                <ScalarProperty Name="Cliente" ColumnName="Cliente" />
+                <ScalarProperty Name="Contacto" ColumnName="Contacto" />
+                <ScalarProperty Name="NumOrdenExtracto" ColumnName="NumOrdenExtracto" />
+                <ScalarProperty Name="Importe" ColumnName="Importe" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="FechaModificacion" ColumnName="FechaModificacion" />
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>

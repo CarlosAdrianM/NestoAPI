@@ -788,6 +788,19 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'aviso-facturas-vencidas' configurado (L-V a las 7:45; apagado salvo parámetro)");
 
+            // NestoAPI#591: correo a administración el día del evento con las señales liberadas y las que llevan
+            // 15 días sin compra. El lunes recoge también lo del fin de semana. Si no hay nada nuevo, no manda nada.
+            RecurringJob.AddOrUpdate(
+                "senales-eventos",
+                () => Infraestructure.Eventos.SenalesEventosJobsService.Procesar(),
+                "50 7 * * 1-5", // Cron: de lunes a viernes a las 7:50
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'senales-eventos' configurado (L-V a las 7:50)");
+
             // NestoAPI#593: cheques regalo de las facturas hechas fuera de la API (Nesto viejo, facturación
             // agrupada…). La API ya los genera al facturar; esto recoge lo que se le escape. Todos los días a
             // las 21:30, con la facturación del día cerrada. No hace nada salvo ChequesRegalo:Generar = true y

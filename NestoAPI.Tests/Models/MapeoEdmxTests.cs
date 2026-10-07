@@ -319,5 +319,41 @@ namespace NestoAPI.Tests.Models
             Assert.AreEqual(typeof(TimeSpan), typeof(ReposicionCalendario).GetProperty("HoraCierre").PropertyType);
             Assert.AreEqual(typeof(byte), typeof(ReposicionCalendario).GetProperty("DiaSemana").PropertyType);
         }
+
+        /// <summary>NestoAPI#591: eventos y señales añadidos a mano; la fecha del evento es date ↔ DateTime y los importes decimal(18,2).</summary>
+        [TestMethod]
+        public void Edmx_EventosYEventosSenales_EstanCompletasEnLasTresCapas()
+        {
+            ComprobarTresCapas("Evento", "Eventos",
+                "Id", "Empresa", "Titulo", "Fecha", "ImporteSenal", "Activo", "Usuario", "FechaModificacion");
+            ComprobarTresCapas("EventoSenal", "EventosSenales",
+                "Id", "EventoId", "Empresa", "Cliente", "Contacto", "NumOrdenExtracto", "Importe", "Usuario", "FechaModificacion");
+
+            XElement almacenEvento = EntidadesPorNombre(LeerRecurso("ssdl"), SsdlNs)["Eventos"];
+            XElement almacenSenal = EntidadesPorNombre(LeerRecurso("ssdl"), SsdlNs)["EventosSenales"];
+            Assert.AreEqual("date", (string)almacenEvento.Elements(SsdlNs + "Property").Single(p => p.Attribute("Name").Value == "Fecha").Attribute("Type"));
+            Assert.AreEqual("nvarchar", (string)almacenEvento.Elements(SsdlNs + "Property").Single(p => p.Attribute("Name").Value == "Titulo").Attribute("Type"));
+            Assert.AreEqual("decimal", (string)almacenSenal.Elements(SsdlNs + "Property").Single(p => p.Attribute("Name").Value == "Importe").Attribute("Type"));
+            Assert.AreEqual(typeof(DateTime), typeof(Evento).GetProperty("Fecha").PropertyType);
+            Assert.AreEqual(typeof(decimal), typeof(EventoSenal).GetProperty("Importe").PropertyType);
+            Assert.AreEqual(typeof(int), typeof(EventoSenal).GetProperty("NumOrdenExtracto").PropertyType);
+        }
+
+        private static void ComprobarTresCapas(string entidad, string conjunto, params string[] esperadas)
+        {
+            XElement conceptual = EntidadesPorNombre(LeerRecurso("csdl"), CsdlNs)[entidad];
+            XElement almacen = EntidadesPorNombre(LeerRecurso("ssdl"), SsdlNs)[conjunto];
+            XElement mapeo = LeerRecurso("msl").Descendants(MslNs + "EntitySetMapping")
+                .Single(m => m.Attribute("Name").Value == conjunto);
+
+            CollectionAssert.AreEquivalent(esperadas,
+                conceptual.Elements(CsdlNs + "Property").Select(p => p.Attribute("Name").Value).ToArray());
+            CollectionAssert.AreEquivalent(esperadas,
+                almacen.Elements(SsdlNs + "Property").Select(p => p.Attribute("Name").Value).ToArray());
+            CollectionAssert.AreEquivalent(esperadas,
+                mapeo.Descendants(MslNs + "ScalarProperty").Select(p => p.Attribute("Name").Value).ToArray());
+            CollectionAssert.AreEquivalent(esperadas,
+                typeof(NVEntities).Assembly.GetType("NestoAPI.Models." + entidad).GetProperties().Select(p => p.Name).ToArray());
+        }
     }
 }
