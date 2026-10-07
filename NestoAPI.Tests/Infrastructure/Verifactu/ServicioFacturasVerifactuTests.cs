@@ -1034,6 +1034,134 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
             Assert.AreEqual("02", enviado.IdOtro.IdType, "Sin OSS se mantiene el NIF-IVA tipo 02");
         }
 
+        // NestoAPI#599 (caso real NV2616366, cliente 41990 de Vila do Conde, 06/10/26): la ficha dice PT
+        // y el NIF viene sin prefijo («311482473»). Se declaraba con IDOtro 02 pero con el número pelado
+        // y Verifacti lo rechazaba («El IVA (311482473) no tiene un formato valido»): el NIF-IVA lleva
+        // SIEMPRE el prefijo del país.
+        private VerifactuFacturaRequest EnviarConValidacion(string cifNif,
+            NestoAPI.Infraestructure.Clientes.ResultadoValidacionNif resultado)
+        {
+            var factura = ConfigurarFactura();
+            factura.CifNif = cifNif;
+            var validacion = A.Fake<NestoAPI.Infraestructure.Clientes.IServicioValidacionNif>();
+            _ = A.CallTo(() => validacion.ValidarPrincipal(A<string>.Ignored, A<string>.Ignored)).Returns(resultado);
+            VerifactuFacturaRequest enviado = null;
+            _ = A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored))
+                .Invokes((VerifactuFacturaRequest r) => enviado = r)
+                .Returns(new VerifactuResponse { Exitoso = true, Uuid = "uuid-599" });
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService,
+                almacenRectificativasPendientes: null, servicioValidacionNif: validacion);
+            servicio.EnviarFacturaAVerifactu("1", "NV2600123").GetAwaiter().GetResult();
+            return enviado;
+        }
+
+        private static NestoAPI.Infraestructure.Clientes.ResultadoValidacionNif Extranjero(string tipo, string pais)
+            => new NestoAPI.Infraestructure.Clientes.ResultadoValidacionNif
+            {
+                Estado = NestoAPI.Infraestructure.Clientes.EstadoValidacionNif.Extranjero,
+                TipoIdentificacion = tipo,
+                Pais = pais
+            };
+
+        [TestMethod]
+        public void EnviarFacturaAVerifactu_ClientePortugalConNifSinPrefijo_IdOtro02ConPrefijoPT()
+        {
+            // Lo que devuelve ServicioValidacionNif para una ficha con Pais = PT (#354)
+            VerifactuFacturaRequest enviado = EnviarConValidacion("311482473", Extranjero("02", "PT"));
+
+            Assert.IsTrue(string.IsNullOrEmpty(enviado.NifDestinatario), "Con IDOtro no puede viajar nif");
+            Assert.IsNotNull(enviado.IdOtro);
+            Assert.AreEqual("02", enviado.IdOtro.IdType);
+            Assert.AreEqual("PT", enviado.IdOtro.CodigoPais);
+            Assert.AreEqual("PT311482473", enviado.IdOtro.Id, "El NIF-IVA lleva el prefijo del país");
+        }
+
+        [TestMethod]
+        public void EnviarFacturaAVerifactu_ClientePortugalConNifConPrefijo_NoDuplicaElPrefijo()
+        {
+            VerifactuFacturaRequest enviado = EnviarConValidacion("PT311482473", Extranjero("02", "PT"));
+
+            Assert.IsTrue(string.IsNullOrEmpty(enviado.NifDestinatario));
+            Assert.AreEqual("02", enviado.IdOtro.IdType);
+            Assert.AreEqual("PT", enviado.IdOtro.CodigoPais);
+            Assert.AreEqual("PT311482473", enviado.IdOtro.Id);
+        }
+
+        [TestMethod]
+        public void EnviarFacturaAVerifactu_ClienteEspanol_SigueYendoConNif()
+        {
+            VerifactuFacturaRequest enviado = EnviarConValidacion("12345678Z",
+                new NestoAPI.Infraestructure.Clientes.ResultadoValidacionNif
+                {
+                    Estado = NestoAPI.Infraestructure.Clientes.EstadoValidacionNif.Correcto
+                });
+
+            Assert.AreEqual("12345678Z", enviado.NifDestinatario);
+            Assert.IsNull(enviado.IdOtro);
+        }
+
+        [TestMethod]
+        public void EnviarFacturaAVerifactu_ClienteFueraDeLaUe_IdOtro04ConSuPais()
+        {
+            // #584: país de fuera de la UE con un documento que no es un NIF español → 04 automático
+            VerifactuFacturaRequest enviado = EnviarConValidacion("AB123456", Extranjero("04", "MA"));
+
+            Assert.IsTrue(string.IsNullOrEmpty(enviado.NifDestinatario));
+            Assert.AreEqual("04", enviado.IdOtro.IdType);
+            Assert.AreEqual("MA", enviado.IdOtro.CodigoPais);
+            Assert.AreEqual("AB123456", enviado.IdOtro.Id, "Fuera de la UE no se añade prefijo");
+        }
+
+        [TestMethod]
+        public void IdentificacionDestinatario_Tipo02QueNoPareceNifIva_PasaA04()
+        {
+            VerifactuIdOtro idOtro = IdentificacionDestinatarioVerifactu.Construir("02", "PT", "AB12C");
+
+            Assert.AreEqual("04", idOtro.IdType);
+            Assert.AreEqual("PT", idOtro.CodigoPais);
+            Assert.AreEqual("AB12C", idOtro.Id);
+        }
+
+        [TestMethod]
+        public void IdentificacionDestinatario_Tipo02_NormalizaSeparadoresYMinusculas()
+        {
+            VerifactuIdOtro idOtro = IdentificacionDestinatarioVerifactu.Construir("02", "pt ", " pt 311.482-473 ");
+
+            Assert.AreEqual("02", idOtro.IdType);
+            Assert.AreEqual("PT", idOtro.CodigoPais);
+            Assert.AreEqual("PT311482473", idOtro.Id);
+        }
+
+        [TestMethod]
+        public void IdentificacionDestinatario_Grecia_UsaElPrefijoEL()
+        {
+            Assert.AreEqual("EL123456789", IdentificacionDestinatarioVerifactu.Construir("02", "GR", "123456789").Id);
+            Assert.AreEqual("EL123456789", IdentificacionDestinatarioVerifactu.Construir("02", "GR", "EL123456789").Id);
+        }
+
+        [TestMethod]
+        public void IdentificacionDestinatario_PrefijoDeOtroPaisUe_MandaElPaisDelPrefijo()
+        {
+            VerifactuIdOtro idOtro = IdentificacionDestinatarioVerifactu.Construir("02", "PT", "FR12345678901");
+
+            Assert.AreEqual("02", idOtro.IdType);
+            Assert.AreEqual("FR", idOtro.CodigoPais, "El país del IDOtro 02 tiene que casar con el prefijo");
+            Assert.AreEqual("FR12345678901", idOtro.Id);
+        }
+
+        [TestMethod]
+        public void IdentificacionDestinatario_OtrosTipos_NoCambian()
+        {
+            VerifactuIdOtro noCensado = IdentificacionDestinatarioVerifactu.Construir("07", "ES", "12345678Z");
+            Assert.AreEqual("07", noCensado.IdType);
+            Assert.AreEqual("ES", noCensado.CodigoPais);
+            Assert.AreEqual("12345678Z", noCensado.Id);
+
+            VerifactuIdOtro ossItalia = IdentificacionDestinatarioVerifactu.Construir("04", "IT", "IT06207160489");
+            Assert.AreEqual("04", ossItalia.IdType);
+            Assert.AreEqual("IT06207160489", ossItalia.Id);
+        }
+
         [TestMethod]
         public async Task EnviarFacturaAVerifactu_PaisPersistidoExtranjero_MandaSobreLaHeuristica()
         {

@@ -1176,12 +1176,11 @@ namespace NestoAPI.Infraestructure.Facturas
                                 _ = await db.SaveChangesAsync();
                                 return null;
                             }
-                            request.IdOtro = new Verifactu.VerifactuIdOtro
-                            {
-                                CodigoPais = marca.Pais,
-                                IdType = tipoIdentificacion,
-                                Id = request.NifDestinatario
-                            };
+                            // NestoAPI#599 (NV2616366, cliente PT con NIF «311482473»): el tipo 02
+                            // (NIF-IVA) lleva SIEMPRE el prefijo del país; si la ficha lo trae pelado se
+                            // le añade, y si no parece un NIF-IVA va como 04. Los demás tipos, tal cual.
+                            request.IdOtro = Verifactu.IdentificacionDestinatarioVerifactu.Construir(
+                                tipoIdentificacion, marca.Pais, request.NifDestinatario);
                             request.NifDestinatario = null;
                         }
                     }

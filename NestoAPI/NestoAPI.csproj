@@ -760,6 +760,7 @@
     <Compile Include="Infraestructure\Verifactu\ServicioFacturasPendientesVerifactu.cs" />
     <Compile Include="Infraestructure\Verifactu\AvisoFacturasPendientesVerifactuJobsService.cs" />
     <Compile Include="Infraestructure\Verifactu\DeduplicadorErroresVerifactu.cs" />
+    <Compile Include="Infraestructure\Verifactu\IdentificacionDestinatarioVerifactu.cs" />
     <Compile Include="Infraestructure\Clientes\ProveedorCertificadoAeat.cs" />
     <Compile Include="Infraestructure\Remesas\ResolutorSecuenciasCcc.cs" />
     <Compile Include="Infraestructure\PedidosVenta\GestorPedidoParaAgencia.cs" />
