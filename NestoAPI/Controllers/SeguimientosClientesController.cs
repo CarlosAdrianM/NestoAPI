@@ -400,11 +400,13 @@ namespace NestoAPI.Controllers
             // Se leen TODOS los del día y se reparten después: los rapports guardados sin vendedor
             // (alguien mete uno de un cliente que no lleva él) solo se sabe de quién son por el
             // usuario que los tecleó, y tienen que ir al correo del equipo de ese vendedor.
+            // Vigentes (0) y no contactados (1): estos últimos solo van a su columna de la tabla
+            // (sugerencia 520); todo lo demás del correo sigue siendo de los vigentes.
             List<ResumenRapportsDia.Rapport> delDia = db.SeguimientosClientes
                 .Where(s => s.Empresa == empresa &&
                             s.Fecha >= fechaSinHora &&
                             s.Fecha < fechaDiaSiguiente &&
-                            s.Estado == 0 &&
+                            (s.Estado == ResumenRapportsDia.ESTADO_VIGENTE || s.Estado == ResumenRapportsDia.ESTADO_NO_CONTACTADO) &&
                             s.Número != null)
                 .Select(s => new ResumenRapportsDia.Rapport
                 {
@@ -416,7 +418,8 @@ namespace NestoAPI.Controllers
                     Tipo = s.Tipo,
                     Comentarios = s.Comentarios,
                     Pedido = s.Pedido,
-                    Usuario = s.Usuario
+                    Usuario = s.Usuario,
+                    Estado = s.Estado
                 })
                 .ToList();
 
@@ -496,15 +499,25 @@ namespace NestoAPI.Controllers
 
             string cabecera = ResumenRapportsDia.CabeceraHtml(fechaSinHora, seguimientos, fichas, esperados);
 
-            // Llama a OpenAI para obtener el resumen
-            string resumenIA = ResumenRapportsDia.LimpiarHtmlDeIA(
-                await GenerarResumenFechaOpenAIAsync(ResumenRapportsDia.TextoParaIA(fechaSinHora, seguimientos, fichas)));
+            // Si ese día solo hay llamadas no contactadas no hay conversaciones que resumir: no se
+            // llama a la IA (sugerencia 520)
+            string resumen;
+            if (!seguimientos.Any(ResumenRapportsDia.EsVigente))
+            {
+                resumen = cabecera + "<p>Este día no hay rapports en los que se hablara con la clienta.</p>";
+            }
+            else
+            {
+                // Llama a OpenAI para obtener el resumen
+                string resumenIA = ResumenRapportsDia.LimpiarHtmlDeIA(
+                    await GenerarResumenFechaOpenAIAsync(ResumenRapportsDia.TextoParaIA(fechaSinHora, seguimientos, fichas)));
 
-            // Si la IA falla, la cabecera (quién ha trabajado y quién no) se manda igualmente: antes
-            // ese día el jefe de ventas se quedaba sin correo.
-            string resumen = cabecera + (string.IsNullOrEmpty(resumenIA)
-                ? "<p>Hoy no se ha podido generar el resumen de los comentarios.</p>"
-                : resumenIA);
+                // Si la IA falla, la cabecera (quién ha trabajado y quién no) se manda igualmente: antes
+                // ese día el jefe de ventas se quedaba sin correo.
+                resumen = cabecera + (string.IsNullOrEmpty(resumenIA)
+                    ? "<p>Hoy no se ha podido generar el resumen de los comentarios.</p>"
+                    : resumenIA);
+            }
 
             string grupo = resto ? "resto" : "presenciales";
 

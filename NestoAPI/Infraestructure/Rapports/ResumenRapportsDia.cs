@@ -41,6 +41,11 @@ namespace NestoAPI.Infraestructure.Rapports
             /// alguien mete un rapport de un cliente que no lleva él (Carlos, 30/09/26).
             /// </summary>
             public bool VendedorDeducidoDelUsuario { get; set; }
+            /// <summary>
+            /// Estado del seguimiento: 0 = vigente (se habló con la clienta), 1 = no contactado (se
+            /// llamó y no lo cogió). Solo los vigentes cuentan como rapport (sugerencia 520).
+            /// </summary>
+            public short Estado { get; set; }
         }
 
         public class FichaVendedor
@@ -62,6 +67,11 @@ namespace NestoAPI.Infraestructure.Rapports
             public int ConPedido { get; set; }
             /// <summary>Rapports sin comentario útil: son los que la IA no llega a leer.</summary>
             public int SinComentario { get; set; }
+            /// <summary>
+            /// Llamadas en las que no se pudo hablar con la clienta (Estado 1). No entran en ninguna
+            /// de las otras columnas, que son solo de los rapports vigentes (sugerencia 520).
+            /// </summary>
+            public int NoContactado { get; set; }
         }
 
         public static IDictionary<string, FichaVendedor> IndexarFichas(IEnumerable<FichaVendedor> fichas)
@@ -169,26 +179,46 @@ namespace NestoAPI.Infraestructure.Rapports
             }
         }
 
+        public const short ESTADO_VIGENTE = 0;
+        public const short ESTADO_NO_CONTACTADO = 1;
+
+        /// <summary>
+        /// Se habló con la clienta. Solo estos son rapports: los no contactados se cuentan aparte
+        /// y nada más (sugerencia 520).
+        /// </summary>
+        public static bool EsVigente(Rapport rapport)
+        {
+            return rapport != null && rapport.Estado == ESTADO_VIGENTE;
+        }
+
         public static bool TieneComentarioUtil(Rapport rapport)
         {
             return rapport?.Comentarios != null && rapport.Comentarios.Length >= LONGITUD_MINIMA_COMENTARIO;
         }
 
-        /// <summary>Una fila por vendedor con rapports ese día, ordenadas por código.</summary>
+        /// <summary>
+        /// Una fila por vendedor con rapports (o llamadas no contactadas) ese día, ordenadas por
+        /// código. Todas las columnas cuentan solo los vigentes, menos NoContactado.
+        /// </summary>
         public static List<ActividadVendedor> Actividad(IEnumerable<Rapport> rapports)
         {
             return (rapports ?? Enumerable.Empty<Rapport>())
                 .GroupBy(ClaveAutor, StringComparer.OrdinalIgnoreCase)
-                .Select(g => new ActividadVendedor
+                .Select(g =>
                 {
-                    Vendedor = g.First().Vendedor?.Trim() ?? string.Empty,
-                    Usuario = string.IsNullOrWhiteSpace(g.First().Vendedor) ? SinDominio(g.First().Usuario) : null,
-                    Rapports = g.Count(),
-                    Visitas = g.Count(r => r.Tipo?.Trim() == "V"),
-                    Telefono = g.Count(r => r.Tipo?.Trim() == "T"),
-                    WhatsApp = g.Count(r => r.Tipo?.Trim() == "W"),
-                    ConPedido = g.Count(r => r.Pedido),
-                    SinComentario = g.Count(r => !TieneComentarioUtil(r))
+                    List<Rapport> vigentes = g.Where(EsVigente).ToList();
+                    return new ActividadVendedor
+                    {
+                        Vendedor = g.First().Vendedor?.Trim() ?? string.Empty,
+                        Usuario = string.IsNullOrWhiteSpace(g.First().Vendedor) ? SinDominio(g.First().Usuario) : null,
+                        Rapports = vigentes.Count,
+                        Visitas = vigentes.Count(r => r.Tipo?.Trim() == "V"),
+                        Telefono = vigentes.Count(r => r.Tipo?.Trim() == "T"),
+                        WhatsApp = vigentes.Count(r => r.Tipo?.Trim() == "W"),
+                        ConPedido = vigentes.Count(r => r.Pedido),
+                        SinComentario = vigentes.Count(r => !TieneComentarioUtil(r)),
+                        NoContactado = g.Count(r => r.Estado == ESTADO_NO_CONTACTADO)
+                    };
                 })
                 .OrderBy(a => string.IsNullOrEmpty(a.Vendedor))
                 .ThenBy(a => a.Vendedor, StringComparer.OrdinalIgnoreCase)
@@ -209,7 +239,8 @@ namespace NestoAPI.Infraestructure.Rapports
 
         /// <summary>
         /// De los vendedores de los que se espera rapport, los que no han metido ninguno. Es lo que
-        /// distingue «no ha trabajado» de «ha trabajado pero no había nada que destacar».
+        /// distingue «no ha trabajado» de «ha trabajado pero no había nada que destacar». Quien solo
+        /// tiene llamadas no contactadas también ha trabajado y no sale aquí.
         /// </summary>
         public static List<string> SinRapports(IEnumerable<string> esperados, IEnumerable<Rapport> rapports)
         {
@@ -250,11 +281,12 @@ namespace NestoAPI.Infraestructure.Rapports
         /// <summary>
         /// Lo que lee la IA: los rapports agrupados por vendedor, cada uno con el nombre del vendedor
         /// y del cliente. Los vendedores sin ningún comentario útil también salen, para que la IA
-        /// pueda decir que no hay nada que destacar en vez de callárselos.
+        /// pueda decir que no hay nada que destacar en vez de callárselos. Solo los vigentes: los no
+        /// contactados no tienen conversación que resumir.
         /// </summary>
         public static string TextoParaIA(DateTime fecha, IEnumerable<Rapport> rapports, IDictionary<string, FichaVendedor> fichas)
         {
-            List<Rapport> lista = (rapports ?? Enumerable.Empty<Rapport>()).ToList();
+            List<Rapport> lista = (rapports ?? Enumerable.Empty<Rapport>()).Where(EsVigente).ToList();
             var texto = new StringBuilder();
             _ = texto.Append($"Rapports del día {fecha:dd/MM/yyyy}, agrupados por vendedor.\n\n");
 
@@ -301,7 +333,7 @@ namespace NestoAPI.Infraestructure.Rapports
             _ = html.Append("<div style=\"font-family:Segoe UI,Arial,sans-serif;font-size:14px;\">");
             _ = html.Append($"<h2>Actividad del día {fecha:dd/MM/yyyy}</h2>");
             _ = html.Append("<table style=\"border-collapse:collapse;\"><tr style=\"background:#eee;\">");
-            foreach (string titulo in new[] { "Vendedor", "Rapports", "Visitas", "Teléfono", "WhatsApp", "Con pedido", "Sin comentario" })
+            foreach (string titulo in new[] { "Vendedor", "Rapports", "No contactado", "Visitas", "Teléfono", "WhatsApp", "Con pedido", "Sin comentario" })
             {
                 _ = html.Append($"<th style=\"{celda}\">{titulo}</th>");
             }
@@ -310,13 +342,15 @@ namespace NestoAPI.Infraestructure.Rapports
             {
                 _ = html.Append("<tr>");
                 _ = html.Append($"<td style=\"{celda}\">{Html(NombreAutor(new Rapport { Vendedor = actividad.Vendedor, Usuario = actividad.Usuario }, fichas))}</td>");
-                foreach (int valor in new[] { actividad.Rapports, actividad.Visitas, actividad.Telefono, actividad.WhatsApp, actividad.ConPedido, actividad.SinComentario })
+                foreach (int valor in new[] { actividad.Rapports, actividad.NoContactado, actividad.Visitas, actividad.Telefono, actividad.WhatsApp, actividad.ConPedido, actividad.SinComentario })
                 {
                     _ = html.Append($"<td style=\"{numero}\">{valor}</td>");
                 }
                 _ = html.Append("</tr>");
             }
             _ = html.Append("</table>");
+            _ = html.Append("<p style=\"font-size:12px;color:#666;\">Rapports: se habló con la clienta (las columnas siguientes, " +
+                "salvo «No contactado», cuentan solo estos). No contactado: se llamó y no lo cogió.</p>");
 
             List<string> sinRapports = SinRapports(esperados, lista);
             if (sinRapports.Any())
@@ -326,7 +360,7 @@ namespace NestoAPI.Infraestructure.Rapports
                 _ = html.Append(".</p>");
             }
 
-            List<Rapport> deTelefonico = lista.Where(r => EsDeClienteDeOtroVendedor(r, fichas)).ToList();
+            List<Rapport> deTelefonico = lista.Where(r => EsVigente(r) && EsDeClienteDeOtroVendedor(r, fichas)).ToList();
             if (deTelefonico.Any())
             {
                 _ = html.Append("<p><strong>Rapports a clientes de otro vendedor:</strong></p><ul>");

@@ -107,6 +107,33 @@ namespace NestoAPI.Tests.Infrastructure
             ComprobarCabeceraPdf(bytes);
         }
 
+        // Sugerencia 520 (Sancho, 07/10/26): el 06/10 Iñaki hizo 25 llamadas, 16 hablando con la clienta
+        // (EstadoRapport 0, 4 con pedido) y 9 sin que le cogieran (EstadoRapport 1). El PDF decía
+        // «Total llamadas: 25» sin decir cuántas fueron con la clienta, que es el dato que importa.
+        [TestMethod]
+        public void LineasTotales_DistingueLasContactadasDeTodasLasLlamadas()
+        {
+            var rapports = new List<DetalleRapportsDTO>();
+            for (int i = 0; i < 16; i++)
+            {
+                rapports.Add(new DetalleRapportsDTO { Usuario = "IM", Tipo = "T", Pedido = i < 4, EstadoRapport = 0 });
+            }
+            for (int i = 0; i < 9; i++)
+            {
+                rapports.Add(new DetalleRapportsDTO { Usuario = "IM", Tipo = "T", Pedido = false, EstadoRapport = 1 });
+            }
+
+            List<string> lineas = GeneradorPdfDetalleRapports.LineasTotales(rapports);
+
+            Assert.AreEqual("Total llamadas: 25", lineas[0]);
+            Assert.AreEqual("Total contactadas: 16 (4)", lineas[1]);
+            CollectionAssert.Contains(lineas, "Total visitas telefónicas: 25 (4)");
+            CollectionAssert.Contains(lineas, "Total pedidos: 4");
+
+            byte[] bytes = _generador.GenerarPdf(FechaDesde, FechaHasta, rapports).ReadAsByteArrayAsync().Result;
+            ComprobarCabeceraPdf(bytes);
+        }
+
         // Los PDF empiezan por la firma "%PDF" (0x25 0x50 0x44 0x46).
         private static void ComprobarCabeceraPdf(byte[] bytes)
         {

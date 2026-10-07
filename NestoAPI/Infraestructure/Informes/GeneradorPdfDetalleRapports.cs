@@ -149,20 +149,40 @@ namespace NestoAPI.Infraestructure.Informes
 
         private static void ComponerTotales(IContainer container, List<DetalleRapportsDTO> lineas)
         {
+            container.AlignLeft().Width(9, Unit.Centimetre).Border(1).Padding(5).Column(column =>
+            {
+                foreach (string linea in LineasTotales(lineas))
+                {
+                    column.Item().Text(linea).Bold();
+                }
+            });
+        }
+
+        /// <summary>
+        /// Las líneas del cuadro de totales, separadas del dibujo para poder probarlas.
+        /// </summary>
+        internal static List<string> LineasTotales(List<DetalleRapportsDTO> lineas)
+        {
+            lineas = lineas ?? new List<DetalleRapportsDTO>();
             int totalLlamadas = lineas.Count;
             int presenciales = ContarPorTipo(lineas, "V", out int presencialesConPedido);
             int telefonicas = ContarPorTipo(lineas, "T", out int telefonicasConPedido);
             int whatsapp = ContarPorTipo(lineas, "W", out int whatsappConPedido);
             int totalPedidos = lineas.Count(l => l.Pedido == true);
+            // Sugerencia 520: las llamadas en las que se habló con la clienta (EstadoRapport 0). Las
+            // de EstadoRapport 1 son las que no le cogieron.
+            List<DetalleRapportsDTO> contactadas = lineas.Where(l => l.EstadoRapport == 0).ToList();
+            int contactadasConPedido = contactadas.Count(l => l.Pedido == true);
 
-            container.AlignLeft().Width(9, Unit.Centimetre).Border(1).Padding(5).Column(column =>
+            return new List<string>
             {
-                column.Item().Text($"Total llamadas: {totalLlamadas}").Bold();
-                column.Item().Text($"Total visitas presenciales: {presenciales} ({presencialesConPedido})").Bold();
-                column.Item().Text($"Total visitas telefónicas: {telefonicas} ({telefonicasConPedido})").Bold();
-                column.Item().Text($"Total visitas WhatsApp: {whatsapp} ({whatsappConPedido})").Bold();
-                column.Item().Text($"Total pedidos: {totalPedidos}").Bold();
-            });
+                $"Total llamadas: {totalLlamadas}",
+                $"Total contactadas: {contactadas.Count} ({contactadasConPedido})",
+                $"Total visitas presenciales: {presenciales} ({presencialesConPedido})",
+                $"Total visitas telefónicas: {telefonicas} ({telefonicasConPedido})",
+                $"Total visitas WhatsApp: {whatsapp} ({whatsappConPedido})",
+                $"Total pedidos: {totalPedidos}"
+            };
         }
 
         private static int ContarPorTipo(List<DetalleRapportsDTO> lineas, string tipo, out int conPedido)

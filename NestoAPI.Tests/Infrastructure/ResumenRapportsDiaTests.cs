@@ -160,6 +160,98 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(1, je.SinComentario);
         }
 
+        // Sugerencia 520 (Sancho, 07/10/26): el 06/10 Iñaki grabó 25 rapports telefónicos, 16 con la
+        // clienta (Estado 0) y 9 en los que no le cogieron (Estado 1). El correo decía «16 rapports»
+        // y el PDF «25 llamadas». Los No contactados van en su propia columna y no se cuelan en las
+        // demás.
+        private static ResumenRapportsDia.Rapport NoContactado(string vendedor, string cliente)
+        {
+            ResumenRapportsDia.Rapport rapport = Rapport(vendedor, cliente, vendedor, comentarios: "Le dejo WhatsApp", tipo: "T");
+            rapport.Estado = 1;
+            return rapport;
+        }
+
+        private static List<ResumenRapportsDia.Rapport> DiaDeInaki()
+        {
+            var rapports = new List<ResumenRapportsDia.Rapport>();
+            for (int i = 0; i < 16; i++)
+            {
+                rapports.Add(Rapport("IM ", (1000 + i).ToString(), "IM ", tipo: "T"));
+            }
+            for (int i = 0; i < 9; i++)
+            {
+                rapports.Add(NoContactado("IM ", (2000 + i).ToString()));
+            }
+            return rapports;
+        }
+
+        [TestMethod]
+        public void Actividad_NoContactadosEnSuColumnaYFueraDeLasDemas()
+        {
+            ResumenRapportsDia.ActividadVendedor im = ResumenRapportsDia.Actividad(DiaDeInaki()).Single();
+
+            Assert.AreEqual(16, im.Rapports);
+            Assert.AreEqual(16, im.Telefono);
+            Assert.AreEqual(0, im.Visitas);
+            Assert.AreEqual(0, im.WhatsApp);
+            Assert.AreEqual(0, im.SinComentario);
+            Assert.AreEqual(9, im.NoContactado);
+        }
+
+        [TestMethod]
+        public void CabeceraHtml_NoContactados_TienenSuColumna()
+        {
+            string html = ResumenRapportsDia.CabeceraHtml(FECHA, DiaDeInaki(), Fichas(), new[] { "IM" });
+
+            StringAssert.Contains(html, ">No contactado</th>");
+            const string numero = "border:1px solid #ccc;padding:4px 10px;text-align:right;";
+            // Vendedor | Rapports | No contactado | Visitas | Teléfono | WhatsApp | Con pedido | Sin comentario
+            StringAssert.Contains(html, $">IM</td><td style=\"{numero}\">16</td><td style=\"{numero}\">9</td>" +
+                $"<td style=\"{numero}\">0</td><td style=\"{numero}\">16</td>");
+        }
+
+        [TestMethod]
+        public void CabeceraHtml_VendedorSoloConNoContactados_SaleConCeroRapportsYNoEnSinRapports()
+        {
+            var rapports = new[] { Rapport("JE ", "1", "JE "), NoContactado("DV ", "2"), NoContactado("DV ", "3") };
+
+            ResumenRapportsDia.ActividadVendedor dv = ResumenRapportsDia.Actividad(rapports).Single(a => a.Vendedor == "DV");
+            string html = ResumenRapportsDia.CabeceraHtml(FECHA, rapports, Fichas(), new[] { "JE", "DV" });
+
+            Assert.AreEqual(0, dv.Rapports);
+            Assert.AreEqual(2, dv.NoContactado);
+            Assert.AreEqual(0, dv.Telefono);
+            Assert.AreEqual(0, dv.SinComentario);
+            CollectionAssert.DoesNotContain(ResumenRapportsDia.SinRapports(new[] { "JE", "DV" }, rapports), "DV");
+            StringAssert.Contains(html, "David (DV)");
+            Assert.IsFalse(html.Contains("Sin ningún rapport"));
+        }
+
+        [TestMethod]
+        public void TextoParaIA_NoContactados_NoSeLeenNiCuentan()
+        {
+            var rapports = new List<ResumenRapportsDia.Rapport> { Rapport("JE ", "1", "JE ") };
+            ResumenRapportsDia.Rapport noContactado = NoContactado("JE ", "2");
+            noContactado.Comentarios = "No lo coge, le dejo un WhatsApp";
+            rapports.Add(noContactado);
+
+            string texto = ResumenRapportsDia.TextoParaIA(FECHA, rapports, Fichas());
+
+            StringAssert.Contains(texto, "Rapports: 1, de ellos con comentario: 1");
+            Assert.IsFalse(texto.Contains("No lo coge"));
+        }
+
+        [TestMethod]
+        public void CabeceraHtml_NoContactadoEnClienteDeTelefonico_NoSeLista()
+        {
+            ResumenRapportsDia.Rapport rapport = Rapport("JE ", "12345", "LHY");
+            rapport.Estado = 1;
+
+            string html = ResumenRapportsDia.CabeceraHtml(FECHA, new[] { rapport }, Fichas(), new[] { "JE" });
+
+            Assert.IsFalse(html.Contains("clientes de otro vendedor"));
+        }
+
         [TestMethod]
         public void SinRapports_DevuelveLosEsperadosQueNoHanMetidoNinguno()
         {
