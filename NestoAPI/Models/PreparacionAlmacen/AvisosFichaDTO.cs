@@ -14,6 +14,16 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public string Comentario { get; set; }
         /// <summary>El código que ha leído el mozo si no casa con el producto (para darlo de alta o corregirlo).</summary>
         public string CodigoLeido { get; set; }
+        /// <summary>
+        /// NestoAPI#604: true si CodigoLeido entró por el escáner (de golpe), false si se tecleó; null si la app no lo
+        /// dice (versiones antiguas de Ariadna).
+        /// </summary>
+        public bool? CodigoLeidoConEscaner { get; set; }
+        /// <summary>
+        /// NestoAPI#604: el mozo ya ha visto el aviso de «comprueba» (el código es de otro producto o el de la ficha) y
+        /// quiere avisar igual. Sin él, en esos casos no se crea el aviso: se le devuelve Comprobar = true.
+        /// </summary>
+        public bool Confirmado { get; set; }
         /// <summary>La foto que ha visto el mozo (si no viene, la que tenga la tienda ahora).</summary>
         public string UrlFoto { get; set; }
         public string Dispositivo { get; set; }
@@ -22,6 +32,11 @@ namespace NestoAPI.Models.PreparacionAlmacen
     public class ResultadoInformarDatoMalDTO
     {
         public string Mensaje { get; set; }
+        /// <summary>
+        /// NestoAPI#604: no se ha avisado a nadie. El Mensaje le dice al mozo qué comprobar; si quiere avisar igual,
+        /// vuelve a enviar con Confirmado = true.
+        /// </summary>
+        public bool Comprobar { get; set; }
         /// <summary>Los avisos creados o a los que se ha sumado (uno por equipo: Tienda online y/o Compras).</summary>
         public List<int> Avisos { get; set; } = new List<int>();
     }

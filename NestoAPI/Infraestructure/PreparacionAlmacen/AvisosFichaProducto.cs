@@ -136,6 +136,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public List<string> Campos { get; set; } = new List<string>();
         public string Comentarios { get; set; }
         public string CodigoLeido { get; set; }
+        /// <summary>NestoAPI#604: true = leído con el escáner, false = tecleado, null = no se sabe.</summary>
+        public bool? CodigoLeidoConEscaner { get; set; }
+        /// <summary>NestoAPI#604: de quién es el código leído, para decírselo al equipo. No se guarda: se mira al avisar.</summary>
+        public InfoCodigoLeido InfoCodigo { get; set; }
         public string UrlFoto { get; set; }
         /// <summary>El valor de cada campo marcado cuando se avisó: si cambia, el aviso se cierra solo.</summary>
         public Dictionary<string, string> Huella { get; set; } = new Dictionary<string, string>();
@@ -147,6 +151,30 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public DateTime FechaCreacion { get; set; }
         public DateTime? FechaCierre { get; set; }
         public string CerradoPor { get; set; }
+    }
+
+    /// <summary>Un producto activo que lleva en la ficha un código de barras.</summary>
+    public class ProductoConCodigo
+    {
+        public string Producto { get; set; }
+        public string Nombre { get; set; }
+    }
+
+    /// <summary>
+    /// NestoAPI#604 (caso 32565/32564 y 40510, 07/10/26): lo que se sabe del código que ha mandado el mozo. Es el de
+    /// la ficha (el envase no se lee con el escáner), el de otro producto (en el hueco hay otra cosa) o el de ninguno.
+    /// </summary>
+    public class InfoCodigoLeido
+    {
+        public bool EsElDeLaFicha { get; set; }
+        /// <summary>El otro producto activo que lleva ese código; null si no es de ninguno (o es el de la ficha).</summary>
+        public ProductoConCodigo OtroProducto { get; set; }
+        /// <summary>Si es el de la ficha: hoy se ha recogido a mano (MANUAL en la fase PICK) ese producto.</summary>
+        public bool RecogidoAManoHoy { get; set; }
+        /// <summary>Si es el de la ficha: hoy se ha empaquetado a mano (MANUAL en la fase PACK) ese producto.</summary>
+        public bool EmpaquetadoAManoHoy { get; set; }
+        /// <summary>El mozo ha avisado igual después de que Ariadna le dijera qué comprobar.</summary>
+        public bool ConfirmadoTrasAviso { get; set; }
     }
 
     public interface ITransaccionAvisosFicha
@@ -163,6 +191,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// <summary>Null si el producto no existe.</summary>
         Task<DatosFichaActual> LeerFicha(string empresa, string producto);
         Task<T> EnTransaccion<T>(Func<ITransaccionAvisosFicha, Task<T>> trabajo);
+        /// <summary>NestoAPI#604: el producto activo (que no sea <paramref name="salvo"/>) con ese código; null si no hay.</summary>
+        Task<ProductoConCodigo> LeerProductoConCodigo(string empresa, string codigo, string salvo);
+        /// <summary>NestoAPI#604: las fases (PICK, PACK) en las que hoy se ha tocado a mano (MANUAL) el producto.</summary>
+        Task<List<string>> LeerFasesAManoHoy(string empresa, string producto);
         Task<List<AvisoFicha>> LeerAbiertos();
         Task<AvisoFicha> LeerPorId(int id);
         Task<AvisoFicha> LeerPorClave(Guid clave);
@@ -181,7 +213,9 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     public enum EstadoInformarDatoMal
     {
         Guardado,
-        NoValido
+        NoValido,
+        /// <summary>NestoAPI#604: no se ha creado nada; el mozo tiene que comprobar el código y, si quiere, confirmar.</summary>
+        Comprobar
     }
 
     public class ResultadoInformarDatoMal
@@ -259,6 +293,17 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             {
                 ficha.UrlFoto = await fotos.UrlActual(producto).ConfigureAwait(false);
             }
+            InfoCodigoLeido infoCodigo = await QueEsElCodigo(empresa, producto, ficha, Limpio(peticion.CodigoLeido)).ConfigureAwait(false);
+            string comprobar = QueComprobar(infoCodigo, peticion.CodigoLeidoConEscaner, producto);
+            if (comprobar != null)
+            {
+                if (!peticion.Confirmado)
+                {
+                    // NestoAPI#604: antes del correo, que el mozo mire el hueco o el envase
+                    return new ResultadoInformarDatoMal { Estado = EstadoInformarDatoMal.Comprobar, Mensaje = comprobar };
+                }
+                infoCodigo.ConfirmadoTrasAviso = true;
+            }
 
             string quien = usuario?.Trim() ?? string.Empty;
             var resultado = new ResultadoInformarDatoMal { Estado = EstadoInformarDatoMal.Guardado };
@@ -280,6 +325,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     return existente;
                 }).ConfigureAwait(false);
 
+                if (infoCodigo != null)
+                {
+                    aviso.InfoCodigo = infoCodigo;
+                }
                 resultado.Avisos.Add(aviso.Id);
                 string equipo = DestinosAvisoFicha.Nombre(grupo.Key);
                 if (nuevos.Count > 0)
@@ -296,6 +345,55 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             return resultado;
         }
 
+        /// <summary>
+        /// NestoAPI#604: si el código es el de la ficha, el envase no se lee (y se mira si hoy se ha tocado a mano); si
+        /// es el de otro producto, probablemente en el hueco hay ese otro. Null si no viene código.
+        /// </summary>
+        private async Task<InfoCodigoLeido> QueEsElCodigo(string empresa, string producto, DatosFichaActual ficha, string codigo)
+        {
+            if (codigo == null)
+            {
+                return null;
+            }
+            if (string.Equals(codigo, ficha.CodigoBarras?.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                List<string> fases = await repositorio.LeerFasesAManoHoy(empresa, producto).ConfigureAwait(false) ?? new List<string>();
+                return new InfoCodigoLeido
+                {
+                    EsElDeLaFicha = true,
+                    RecogidoAManoHoy = fases.Any(f => string.Equals(f?.Trim(), "PICK", StringComparison.OrdinalIgnoreCase)),
+                    EmpaquetadoAManoHoy = fases.Any(f => string.Equals(f?.Trim(), "PACK", StringComparison.OrdinalIgnoreCase))
+                };
+            }
+            return new InfoCodigoLeido
+            {
+                OtroProducto = await repositorio.LeerProductoConCodigo(empresa, codigo, producto).ConfigureAwait(false)
+            };
+        }
+
+        /// <summary>
+        /// NestoAPI#604 (Carlos, 07/10/26): lo que tiene que comprobar el mozo antes de que se avise a nadie, o null si el
+        /// código no es de ninguna ficha (o no viene): eso sí es para Compras.
+        /// </summary>
+        internal static string QueComprobar(InfoCodigoLeido info, bool? conEscaner, string producto)
+        {
+            if (info == null)
+            {
+                return null;
+            }
+            if (info.OtroProducto != null)
+            {
+                return $"Ese código es del producto {info.OtroProducto.Producto} {info.OtroProducto.Nombre}. Comprueba el hueco: puede que esté ese producto en vez del {producto}. Si aun así quieres avisar a Compras, vuelve a enviar.";
+            }
+            if (!info.EsElDeLaFicha)
+            {
+                return null;
+            }
+            return conEscaner == true
+                ? "Ese es el código de la ficha y lo has leído con el escáner: el código de barras está bien. Si aun así quieres avisar, vuelve a enviar."
+                : "Ese es el código de la ficha. Lee con el escáner el código del envase, o deja el cuadro vacío y haz una foto. Si aun así quieres avisar, vuelve a enviar.";
+        }
+
         private static ResultadoInformarDatoMal NoValido(string mensaje)
             => new ResultadoInformarDatoMal { Estado = EstadoInformarDatoMal.NoValido, Mensaje = mensaje };
 
@@ -310,6 +408,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 Campos = campos.ToList(),
                 Comentarios = LineaComentario(usuario, peticion.Comentario),
                 CodigoLeido = Limpio(peticion.CodigoLeido),
+                CodigoLeidoConEscaner = Limpio(peticion.CodigoLeido) == null ? null : peticion.CodigoLeidoConEscaner,
                 UrlFoto = campos.Contains(CamposFicha.FOTO) ? Limpio(peticion.UrlFoto) ?? ficha.UrlFoto : null,
                 Informantes = new List<string> { usuario },
                 Dispositivo = Limpio(peticion.Dispositivo),
@@ -333,7 +432,11 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             {
                 aviso.Comentarios = string.IsNullOrEmpty(aviso.Comentarios) ? linea : aviso.Comentarios + Environment.NewLine + linea;
             }
-            aviso.CodigoLeido = Limpio(peticion.CodigoLeido) ?? aviso.CodigoLeido;
+            if (Limpio(peticion.CodigoLeido) != null)
+            {
+                aviso.CodigoLeido = Limpio(peticion.CodigoLeido);
+                aviso.CodigoLeidoConEscaner = peticion.CodigoLeidoConEscaner;
+            }
             if (nuevos.Contains(CamposFicha.FOTO))
             {
                 aviso.UrlFoto = Limpio(peticion.UrlFoto) ?? ficha.UrlFoto;
@@ -508,24 +611,41 @@ FROM Productos p
 WHERE p.Empresa = @empresa AND p.[Número] = @producto";
 
         internal const string SQL_AVISOS = @"
-SELECT Id, Clave, RTRIM(Empresa) AS Empresa, RTRIM(Producto) AS Producto, Destino, Campos, Comentarios, CodigoLeido, UrlFoto, Huella,
+SELECT Id, Clave, RTRIM(Empresa) AS Empresa, RTRIM(Producto) AS Producto, Destino, Campos, Comentarios, CodigoLeido, CodigoLeidoConEscaner, UrlFoto, Huella,
        Informantes, Dispositivo, Veces, Estado, FechaCreacion, FechaCierre, CerradoPor
 FROM dbo.AvisosFichaProducto";
 
         internal const string SQL_INSERTAR = @"
-INSERT INTO dbo.AvisosFichaProducto (Empresa, Producto, Destino, Campos, Comentarios, CodigoLeido, UrlFoto, Huella, Informantes, Dispositivo, Veces)
+INSERT INTO dbo.AvisosFichaProducto (Empresa, Producto, Destino, Campos, Comentarios, CodigoLeido, CodigoLeidoConEscaner, UrlFoto, Huella, Informantes, Dispositivo, Veces)
 OUTPUT INSERTED.Id, INSERTED.Clave, INSERTED.FechaCreacion
-VALUES (@empresa, @producto, @destino, @campos, @comentarios, @codigoLeido, @urlFoto, @huella, @informantes, @dispositivo, @veces)";
+VALUES (@empresa, @producto, @destino, @campos, @comentarios, @codigoLeido, @conEscaner, @urlFoto, @huella, @informantes, @dispositivo, @veces)";
 
         internal const string SQL_ACTUALIZAR = @"
 UPDATE dbo.AvisosFichaProducto
-SET Campos = @campos, Comentarios = @comentarios, CodigoLeido = @codigoLeido, UrlFoto = @urlFoto, Huella = @huella,
+SET Campos = @campos, Comentarios = @comentarios, CodigoLeido = @codigoLeido, CodigoLeidoConEscaner = @conEscaner, UrlFoto = @urlFoto, Huella = @huella,
     Informantes = @informantes, Veces = @veces, FechaModificacion = GETDATE()
 WHERE Id = @id AND Estado = 'Abierto'";
 
         internal const string SQL_CERRAR = @"
 UPDATE dbo.AvisosFichaProducto SET Estado = @estado, CerradoPor = @cerradoPor, FechaCierre = GETDATE(), FechaModificacion = GETDATE()
 WHERE Id = @id AND Estado = 'Abierto'";
+
+        // NestoAPI#604: el producto activo (Estado >= 0) que lleva ese código en la ficha, salvo el del aviso
+        internal const string SQL_PRODUCTO_CON_CODIGO = @"
+SELECT TOP 1 RTRIM(p.[Número]) AS Producto, RTRIM(p.Nombre) AS Nombre
+FROM Productos p
+WHERE p.Empresa = @empresa AND p.CodBarras = @codigo AND p.Estado >= 0 AND p.[Número] <> @producto
+ORDER BY p.[Número]";
+
+        // NestoAPI#604: va por IX_PreparacionEscaneos_Producto (Empresa, Producto, FechaEscaneo), del script #604
+        internal const string SQL_FASES_A_MANO_HOY = @"
+SELECT DISTINCT RTRIM(e.Fase) AS Fase
+FROM PreparacionEscaneos e
+WHERE e.Empresa = @empresa AND e.Producto = @producto AND e.Metodo = 'MANUAL'
+  AND e.FechaEscaneo >= CAST(GETDATE() AS date)";
+
+        /// <summary>Productos.CodBarras es char(13): un código más largo no puede ser de ninguna ficha.</summary>
+        internal const int LONGITUD_CODIGO_BARRAS = 13;
 
         private readonly NVEntities db;
         private bool contextoPropio;
@@ -539,6 +659,20 @@ WHERE Id = @id AND Estado = 'Abierto'";
 
         public Task<DatosFichaActual> LeerFicha(string empresa, string producto)
             => db.Database.SqlQuery<DatosFichaActual>(SQL_FICHA, Char("@empresa", empresa, 3), Char("@producto", producto?.Trim(), 15)).FirstOrDefaultAsync();
+
+        public async Task<ProductoConCodigo> LeerProductoConCodigo(string empresa, string codigo, string salvo)
+        {
+            string limpio = codigo?.Trim();
+            if (string.IsNullOrEmpty(limpio) || limpio.Length > LONGITUD_CODIGO_BARRAS)
+            {
+                return null;
+            }
+            return await db.Database.SqlQuery<ProductoConCodigo>(SQL_PRODUCTO_CON_CODIGO, Char("@empresa", empresa, 3),
+                Char("@codigo", limpio, LONGITUD_CODIGO_BARRAS), Char("@producto", salvo?.Trim(), 15)).FirstOrDefaultAsync().ConfigureAwait(false);
+        }
+
+        public Task<List<string>> LeerFasesAManoHoy(string empresa, string producto)
+            => db.Database.SqlQuery<string>(SQL_FASES_A_MANO_HOY, Char("@empresa", empresa, 3), Char("@producto", producto?.Trim(), 15)).ToListAsync();
 
         public async Task<T> EnTransaccion<T>(Func<ITransaccionAvisosFicha, Task<T>> trabajo)
         {
@@ -571,6 +705,7 @@ WHERE Id = @id AND Estado = 'Abierto'";
             FilaInsertada fila = await db.Database.SqlQuery<FilaInsertada>(SQL_INSERTAR,
                 Char("@empresa", aviso.Empresa, 3), Char("@producto", aviso.Producto, 15), Texto("@destino", aviso.Destino),
                 Texto("@campos", string.Join(",", aviso.Campos)), Texto("@comentarios", aviso.Comentarios), Texto("@codigoLeido", aviso.CodigoLeido),
+                Bit("@conEscaner", aviso.CodigoLeidoConEscaner),
                 Texto("@urlFoto", aviso.UrlFoto), Texto("@huella", JsonConvert.SerializeObject(aviso.Huella)),
                 Texto("@informantes", string.Join(",", aviso.Informantes)), Texto("@dispositivo", aviso.Dispositivo), new SqlParameter("@veces", aviso.Veces))
                 .SingleAsync().ConfigureAwait(false);
@@ -583,7 +718,7 @@ WHERE Id = @id AND Estado = 'Abierto'";
         public Task Actualizar(AvisoFicha aviso)
         {
             return db.Database.ExecuteSqlCommandAsync(SQL_ACTUALIZAR,
-                Texto("@campos", string.Join(",", aviso.Campos)), Texto("@comentarios", aviso.Comentarios), Texto("@codigoLeido", aviso.CodigoLeido),
+                Texto("@campos", string.Join(",", aviso.Campos)), Texto("@comentarios", aviso.Comentarios), Texto("@codigoLeido", aviso.CodigoLeido), Bit("@conEscaner", aviso.CodigoLeidoConEscaner),
                 Texto("@urlFoto", aviso.UrlFoto), Texto("@huella", JsonConvert.SerializeObject(aviso.Huella)),
                 Texto("@informantes", string.Join(",", aviso.Informantes)), new SqlParameter("@veces", aviso.Veces), new SqlParameter("@id", aviso.Id));
         }
@@ -615,6 +750,9 @@ WHERE Id = @id AND Estado = 'Abierto'";
         private static SqlParameter Texto(string nombre, string valor)
             => new SqlParameter(nombre, System.Data.SqlDbType.NVarChar, -1) { Value = (object)valor ?? DBNull.Value };
 
+        private static SqlParameter Bit(string nombre, bool? valor)
+            => new SqlParameter(nombre, System.Data.SqlDbType.Bit) { Value = valor.HasValue ? (object)valor.Value : DBNull.Value };
+
         public void Dispose()
         {
             if (contextoPropio)
@@ -640,6 +778,7 @@ WHERE Id = @id AND Estado = 'Abierto'";
             public string Campos { get; set; }
             public string Comentarios { get; set; }
             public string CodigoLeido { get; set; }
+            public bool? CodigoLeidoConEscaner { get; set; }
             public string UrlFoto { get; set; }
             public string Huella { get; set; }
             public string Informantes { get; set; }
@@ -660,6 +799,7 @@ WHERE Id = @id AND Estado = 'Abierto'";
                 Campos = Lista(Campos),
                 Comentarios = Comentarios,
                 CodigoLeido = CodigoLeido,
+                CodigoLeidoConEscaner = CodigoLeidoConEscaner,
                 UrlFoto = UrlFoto,
                 Huella = string.IsNullOrWhiteSpace(Huella) ? new Dictionary<string, string>() : JsonConvert.DeserializeObject<Dictionary<string, string>>(Huella),
                 Informantes = Lista(Informantes),
@@ -685,6 +825,8 @@ WHERE Id = @id AND Estado = 'Abierto'";
     {
         public const string TIPO_NOTIFICACION = "AvisoFichaProducto";
         public const string RUTA_ENLACE = "api/Almacen/AvisosFicha/Enlace/";
+        /// <summary>NestoAPI#604: Ariadna le ha dicho qué comprobar y ha vuelto a enviar.</summary>
+        public const string CONFIRMADO_TRAS_AVISO = "El mozo lo ha confirmado tras el aviso de Ariadna (se le pidió comprobar el hueco o el envase).";
         private const string DOMINIO = "NUEVAVISION\\";
         private const string URL_API = "https://api.nuevavision.es/";
 
@@ -722,6 +864,18 @@ WHERE Id = @id AND Estado = 'Abierto'";
             {
                 // Sin enlace a la tienda el aviso sale igual
             }
+            string enlaceOtro = null;
+            if (aviso.InfoCodigo?.OtroProducto != null)
+            {
+                try
+                {
+                    enlaceOtro = await enlaceFicha(aviso.InfoCodigo.OtroProducto.Producto).ConfigureAwait(false);
+                }
+                catch (Exception)
+                {
+                    // Igual que el del producto del aviso
+                }
+            }
 
             try
             {
@@ -730,7 +884,7 @@ WHERE Id = @id AND Estado = 'Abierto'";
                     From = new MailAddress("nesto@nuevavision.es"),
                     Subject = titulo,
                     IsBodyHtml = true,
-                    Body = CuerpoCorreo(aviso, ficha, camposNuevos, enlace)
+                    Body = CuerpoCorreo(aviso, ficha, camposNuevos, enlace, enlaceOtro)
                 };
                 mail.To.Add(new MailAddress(DestinosAvisoFicha.Correo(aviso.Destino)));
                 _ = correo.EnviarCorreoSMTP(mail);
@@ -793,7 +947,16 @@ WHERE Id = @id AND Estado = 'Abierto'";
             }
             if (!string.IsNullOrWhiteSpace(aviso.CodigoLeido))
             {
-                _ = texto.AppendLine($"Código leído por el mozo: {aviso.CodigoLeido}");
+                _ = texto.AppendLine($"Código que ha enviado el mozo: {aviso.CodigoLeido}{ComoSeLeyo(aviso)}");
+                string queEs = QueEsElCodigo(aviso);
+                if (queEs != null)
+                {
+                    _ = texto.AppendLine(queEs);
+                }
+                if (aviso.InfoCodigo?.ConfirmadoTrasAviso == true)
+                {
+                    _ = texto.AppendLine(CONFIRMADO_TRAS_AVISO);
+                }
             }
             if (!string.IsNullOrWhiteSpace(aviso.Comentarios))
             {
@@ -802,7 +965,39 @@ WHERE Id = @id AND Estado = 'Abierto'";
             return texto.ToString().TrimEnd();
         }
 
-        private static string CuerpoCorreo(AvisoFicha aviso, DatosFichaActual ficha, IReadOnlyCollection<string> campos, string enlaceFicha)
+        /// <summary>NestoAPI#604: « (leído con el escáner)», « (tecleado)» o nada si la app no lo dice.</summary>
+        internal static string ComoSeLeyo(AvisoFicha aviso)
+            => aviso.CodigoLeidoConEscaner == true ? " (leído con el escáner)" : aviso.CodigoLeidoConEscaner == false ? " (tecleado)" : string.Empty;
+
+        /// <summary>NestoAPI#604: qué quiere decir el código que ha enviado el mozo; null si no se ha mirado.</summary>
+        internal static string QueEsElCodigo(AvisoFicha aviso)
+        {
+            InfoCodigoLeido info = aviso.InfoCodigo;
+            if (info == null || string.IsNullOrWhiteSpace(aviso.CodigoLeido))
+            {
+                return null;
+            }
+            if (info.OtroProducto != null)
+            {
+                return $"Ese código es del producto {info.OtroProducto.Producto} {info.OtroProducto.Nombre}: probablemente en el hueco hay ese producto, no un error de la ficha.";
+            }
+            if (!info.EsElDeLaFicha)
+            {
+                return "Ese código no está en ninguna ficha.";
+            }
+            if (aviso.CodigoLeidoConEscaner == true)
+            {
+                return "El código que ha leído el mozo con el escáner es el mismo de la ficha: el código de barras de la ficha casa con el envase; mira el comentario para saber qué está mal.";
+            }
+            string aMano = info.RecogidoAManoHoy && info.EmpaquetadoAManoHoy ? " Hoy se ha recogido y empaquetado a mano."
+                : info.RecogidoAManoHoy ? " Hoy se ha recogido a mano."
+                : info.EmpaquetadoAManoHoy ? " Hoy se ha empaquetado a mano."
+                : string.Empty;
+            return "El código que ha enviado el mozo es el mismo de la ficha: el envase no se ha podido leer con el escáner." + aMano
+                + " Pídele una foto del código del envase o el número que lleva impreso.";
+        }
+
+        private static string CuerpoCorreo(AvisoFicha aviso, DatosFichaActual ficha, IReadOnlyCollection<string> campos, string enlaceFicha, string enlaceOtro)
         {
             string H(string s) => WebUtility.HtmlEncode(s ?? string.Empty);
             var html = new StringBuilder();
@@ -817,7 +1012,21 @@ WHERE Id = @id AND Estado = 'Abierto'";
             _ = html.Append("</ul>");
             if (!string.IsNullOrWhiteSpace(aviso.CodigoLeido))
             {
-                _ = html.Append($"<p>Código que ha leído: <b>{H(aviso.CodigoLeido)}</b></p>");
+                _ = html.Append($"<p>Código que ha enviado: <b>{H(aviso.CodigoLeido)}</b>{H(ComoSeLeyo(aviso))}</p>");
+                string queEs = QueEsElCodigo(aviso);
+                if (queEs != null)
+                {
+                    _ = html.Append($"<p><b>{H(queEs)}</b>");
+                    if (!string.IsNullOrWhiteSpace(enlaceOtro))
+                    {
+                        _ = html.Append($"<br/><a href=\"{H(enlaceOtro)}\">Ver el {H(aviso.InfoCodigo.OtroProducto.Producto)} en la tienda</a>");
+                    }
+                    _ = html.Append("</p>");
+                }
+                if (aviso.InfoCodigo?.ConfirmadoTrasAviso == true)
+                {
+                    _ = html.Append($"<p>{H(CONFIRMADO_TRAS_AVISO)}</p>");
+                }
             }
             if (!string.IsNullOrWhiteSpace(aviso.Comentarios))
             {

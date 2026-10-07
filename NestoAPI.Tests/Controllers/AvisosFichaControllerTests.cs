@@ -56,6 +56,19 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public async Task PostInformar_Comprobar_200SinAvisosYConElMensajeParaElMozo()
+        {
+            A.CallTo(() => servicio.Informar(A<string>._, A<InformarDatoMalDTO>._, A<string>._))
+                .Returns(new ResultadoInformarDatoMal { Estado = EstadoInformarDatoMal.Comprobar, Mensaje = "Ese es el código de la ficha." });
+
+            var resultado = (OkNegotiatedContentResult<ResultadoInformarDatoMalDTO>)await controller.PostInformar(new InformarDatoMalDTO { Producto = "40510" });
+
+            Assert.IsTrue(resultado.Content.Comprobar);
+            Assert.AreEqual("Ese es el código de la ficha.", resultado.Content.Mensaje);
+            Assert.AreEqual(0, resultado.Content.Avisos.Count);
+        }
+
+        [TestMethod]
         public async Task PostInformar_NoValido_400()
         {
             A.CallTo(() => servicio.Informar(A<string>._, A<InformarDatoMalDTO>._, A<string>._))

@@ -38,6 +38,10 @@ namespace NestoAPI.Controllers
                 return Content(HttpStatusCode.Forbidden, EscrituraSoloAlmacenAttribute.MENSAJE_SIN_PERMISO);
             }
             ResultadoInformarDatoMal resultado = await servicio.Informar(Empresa(empresa), peticion, User?.Identity?.Name).ConfigureAwait(false);
+            if (resultado.Estado == EstadoInformarDatoMal.Comprobar)
+            {
+                return Ok(new ResultadoInformarDatoMalDTO { Mensaje = resultado.Mensaje, Comprobar = true });
+            }
             if (resultado.Estado != EstadoInformarDatoMal.Guardado)
             {
                 return BadRequest(resultado.Mensaje);

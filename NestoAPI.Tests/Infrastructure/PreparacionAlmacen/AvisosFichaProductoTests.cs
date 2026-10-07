@@ -22,6 +22,18 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
 
         public Task<T> EnTransaccion<T>(Func<ITransaccionAvisosFicha, Task<T>> trabajo) => trabajo(this);
 
+        /// <summary>NestoAPI#604: las fases en las que hoy se ha tocado a mano cada producto.</summary>
+        public Dictionary<string, List<string>> FasesAManoHoy { get; } = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+
+        public Task<ProductoConCodigo> LeerProductoConCodigo(string empresa, string codigo, string salvo)
+            => Task.FromResult(Fichas.Values
+                .Where(f => f.CodigoBarras?.Trim() == codigo?.Trim() && !string.Equals(f.Producto?.Trim(), salvo?.Trim(), StringComparison.OrdinalIgnoreCase))
+                .Select(f => new ProductoConCodigo { Producto = f.Producto, Nombre = f.Nombre })
+                .FirstOrDefault());
+
+        public Task<List<string>> LeerFasesAManoHoy(string empresa, string producto)
+            => Task.FromResult(FasesAManoHoy.TryGetValue(producto?.Trim() ?? string.Empty, out List<string> fases) ? fases : new List<string>());
+
         public Task<AvisoFicha> LeerAbierto(string empresa, string producto, string destino)
             => Task.FromResult(Avisos.SingleOrDefault(a => a.Producto == producto && a.Destino == destino && a.Estado == EstadosAvisoFicha.ABIERTO));
 
@@ -106,6 +118,142 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             Assert.AreEqual("https://tienda.es/101089-home_default/lata.jpg", aviso.UrlFoto);
             CollectionAssert.AreEqual(new[] { "Pedro" }, aviso.Informantes);
             A.CallTo(() => avisador.AvisarEquipo(aviso, A<DatosFichaActual>._, A<IReadOnlyCollection<string>>.That.Contains("Foto"))).MustHaveHappenedOnceExactly();
+        }
+
+        private Task<ResultadoInformarDatoMal> InformarCodigo(string codigo, bool? conEscaner, bool confirmado = true)
+            => servicio.Informar(EMPRESA, new InformarDatoMalDTO
+            {
+                Producto = "32565",
+                Campos = new List<string> { "CodigoBarras" },
+                CodigoLeido = codigo,
+                CodigoLeidoConEscaner = conEscaner,
+                Confirmado = confirmado
+            }, "Alfredo");
+
+        [TestMethod]
+        public async Task CodigoDeOtroProductoSinConfirmar_NoCreaNiAvisaYLeDiceAlMozoQueCompruebeElHueco()
+        {
+            FichasGuantes();
+
+            ResultadoInformarDatoMal resultado = await InformarCodigo("8437017506362", true, confirmado: false);
+
+            Assert.AreEqual(EstadoInformarDatoMal.Comprobar, resultado.Estado);
+            Assert.AreEqual("Ese código es del producto 32564 GUANTES NITRILO NEGROS S/ TALCO T/P 3,5G. Comprueba el hueco: puede que esté ese producto en vez del 32565. Si aun así quieres avisar a Compras, vuelve a enviar.", resultado.Mensaje);
+            Assert.AreEqual(0, repositorio.Avisos.Count);
+            A.CallTo(() => avisador.AvisarEquipo(A<AvisoFicha>._, A<DatosFichaActual>._, A<IReadOnlyCollection<string>>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task CodigoDeLaFichaSinConfirmar_NoCreaNiAvisaYLePideLeerElEnvaseOUnaFoto()
+        {
+            FichasGuantes();
+
+            ResultadoInformarDatoMal resultado = await InformarCodigo("8437017506379", false, confirmado: false);
+
+            Assert.AreEqual(EstadoInformarDatoMal.Comprobar, resultado.Estado);
+            Assert.AreEqual("Ese es el código de la ficha. Lee con el escáner el código del envase, o deja el cuadro vacío y haz una foto. Si aun así quieres avisar, vuelve a enviar.", resultado.Mensaje);
+            Assert.AreEqual(0, repositorio.Avisos.Count);
+            A.CallTo(() => avisador.AvisarEquipo(A<AvisoFicha>._, A<DatosFichaActual>._, A<IReadOnlyCollection<string>>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Confirmado_CreaElAvisoYDiceQueLoHaConfirmado()
+        {
+            FichasGuantes();
+
+            ResultadoInformarDatoMal resultado = await InformarCodigo("8437017506379", false, confirmado: true);
+
+            Assert.AreEqual(EstadoInformarDatoMal.Guardado, resultado.Estado);
+            AvisoFicha aviso = repositorio.Avisos.Single();
+            Assert.IsTrue(aviso.InfoCodigo.ConfirmadoTrasAviso);
+            A.CallTo(() => avisador.AvisarEquipo(aviso, A<DatosFichaActual>._, A<IReadOnlyCollection<string>>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task CodigoDeNingunaFichaSinConfirmar_SeAvisaDirectamente()
+        {
+            FichasGuantes();
+
+            ResultadoInformarDatoMal resultado = await InformarCodigo("1234567890123", true, confirmado: false);
+
+            Assert.AreEqual(EstadoInformarDatoMal.Guardado, resultado.Estado);
+            Assert.IsFalse(repositorio.Avisos.Single().InfoCodigo.ConfirmadoTrasAviso);
+        }
+
+        private void FichasGuantes()
+        {
+            repositorio.Fichas["32565"] = new DatosFichaActual { Producto = "32565", Nombre = "GUANTES NITRILO NEGROS S/ TALCO T/M 3,5G", CodigoBarras = "8437017506379" };
+            repositorio.Fichas["32564"] = new DatosFichaActual { Producto = "32564", Nombre = "GUANTES NITRILO NEGROS S/ TALCO T/P 3,5G", CodigoBarras = "8437017506362" };
+        }
+
+        [TestMethod]
+        public async Task CodigoDeOtroProducto_ElAvisoSabeDeQuienEs()
+        {
+            FichasGuantes();
+
+            await InformarCodigo("8437017506362", true);
+
+            AvisoFicha aviso = repositorio.Avisos.Single();
+            Assert.AreEqual("32564", aviso.InfoCodigo.OtroProducto.Producto);
+            Assert.IsFalse(aviso.InfoCodigo.EsElDeLaFicha);
+            Assert.AreEqual(true, aviso.CodigoLeidoConEscaner);
+            A.CallTo(() => avisador.AvisarEquipo(A<AvisoFicha>.That.Matches(a => a.InfoCodigo.OtroProducto.Producto == "32564"), A<DatosFichaActual>._, A<IReadOnlyCollection<string>>._))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task CodigoIgualAlDeLaFicha_SeMiraSiHoySeHaTocadoAMano()
+        {
+            FichasGuantes();
+            repositorio.FasesAManoHoy["32565"] = new List<string> { "PICK", "PACK" };
+
+            await InformarCodigo(" 8437017506379 ", false);
+
+            AvisoFicha aviso = repositorio.Avisos.Single();
+            Assert.IsTrue(aviso.InfoCodigo.EsElDeLaFicha);
+            Assert.IsNull(aviso.InfoCodigo.OtroProducto);
+            Assert.IsTrue(aviso.InfoCodigo.RecogidoAManoHoy);
+            Assert.IsTrue(aviso.InfoCodigo.EmpaquetadoAManoHoy);
+            Assert.AreEqual(false, aviso.CodigoLeidoConEscaner);
+        }
+
+        [TestMethod]
+        public async Task CodigoDeNingunaFicha_NiEsElDeLaFichaNiDeOtro()
+        {
+            FichasGuantes();
+
+            await InformarCodigo("1234567890123", null);
+
+            AvisoFicha aviso = repositorio.Avisos.Single();
+            Assert.IsFalse(aviso.InfoCodigo.EsElDeLaFicha);
+            Assert.IsNull(aviso.InfoCodigo.OtroProducto);
+            Assert.IsNull(aviso.CodigoLeidoConEscaner);
+        }
+
+        [TestMethod]
+        public async Task SinCodigo_NoSeMiraNadaNiSeGuardaElFlag()
+        {
+            FichasGuantes();
+
+            await InformarCodigo(" ", true);
+
+            AvisoFicha aviso = repositorio.Avisos.Single();
+            Assert.IsNull(aviso.InfoCodigo);
+            Assert.IsNull(aviso.CodigoLeidoConEscaner);
+        }
+
+        [TestMethod]
+        public async Task AvisoSumadoConOtroCodigo_SeQuedaElUltimoCodigoYSuFlag()
+        {
+            FichasGuantes();
+            await InformarCodigo("8437017506362", true);
+
+            await InformarCodigo("8437017506379", false);
+
+            AvisoFicha aviso = repositorio.Avisos.Single();
+            Assert.AreEqual("8437017506379", aviso.CodigoLeido);
+            Assert.AreEqual(false, aviso.CodigoLeidoConEscaner);
+            Assert.IsTrue(aviso.InfoCodigo.EsElDeLaFicha);
         }
 
         [TestMethod]
@@ -323,6 +471,106 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             StringAssert.Contains(enviado.Body, "8.74");
             A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario(@"NUEVAVISION\Manuel", "Nesto", A<NestoAPI.Models.NotificacionPushDTO>._))
                 .MustHaveHappenedOnceExactly();
+        }
+
+        private AvisoFicha AvisoCodigo(string codigo, bool? conEscaner, InfoCodigoLeido info)
+        {
+            AvisoFicha aviso = Aviso(DestinosAvisoFicha.COMPRAS, "CodigoBarras");
+            aviso.Producto = "32565";
+            aviso.UrlFoto = null;
+            aviso.Comentarios = null;
+            aviso.CodigoLeido = codigo;
+            aviso.CodigoLeidoConEscaner = conEscaner;
+            aviso.InfoCodigo = info;
+            return aviso;
+        }
+
+        private Func<NestoAPI.Models.NotificacionPushDTO> CapturarBuzonNesto()
+        {
+            NestoAPI.Models.NotificacionPushDTO guardada = null;
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario(A<string>._, "Nesto", A<NestoAPI.Models.NotificacionPushDTO>._))
+                .Invokes((string u, string app, NestoAPI.Models.NotificacionPushDTO n) => guardada = n);
+            return () => guardada;
+        }
+
+        [TestMethod]
+        public async Task CodigoDeOtroProducto_ElCorreoYElBuzonDicenDeCualEsConSuEnlace()
+        {
+            Func<NestoAPI.Models.NotificacionPushDTO> buzon = CapturarBuzonNesto();
+            AvisoFicha aviso = AvisoCodigo("8437017506362", true, new InfoCodigoLeido
+            {
+                OtroProducto = new ProductoConCodigo { Producto = "32564", Nombre = "GUANTES NITRILO NEGROS S/ TALCO T/P 3,5G" }
+            });
+            var avisadorConEnlaces = new AvisadorFichaProducto(correo, notificaciones, _ => new List<string> { "Manuel" },
+                producto => Task.FromResult("https://tienda.es/" + producto));
+
+            await avisadorConEnlaces.AvisarEquipo(aviso, new DatosFichaActual { Producto = "32565", CodigoBarras = "8437017506379" }, new[] { "CodigoBarras" });
+
+            const string esperado = "Ese código es del producto 32564 GUANTES NITRILO NEGROS S/ TALCO T/P 3,5G: probablemente en el hueco hay ese producto, no un error de la ficha.";
+            StringAssert.Contains(enviado.Body, System.Net.WebUtility.HtmlEncode(esperado));
+            StringAssert.Contains(enviado.Body, "https://tienda.es/32564");
+            StringAssert.Contains(enviado.Body, "https://tienda.es/32565");
+            StringAssert.Contains(enviado.Body, System.Net.WebUtility.HtmlEncode("(leído con el escáner)"));
+            StringAssert.Contains(buzon().Cuerpo, esperado);
+            StringAssert.Contains(buzon().Cuerpo, "8437017506362 (leído con el escáner)");
+        }
+
+        [TestMethod]
+        public async Task CodigoIgualAlDeLaFichaTecleado_PideUnaFotoYDiceQueHoySeHaHechoAMano()
+        {
+            Func<NestoAPI.Models.NotificacionPushDTO> buzon = CapturarBuzonNesto();
+            AvisoFicha aviso = AvisoCodigo("1200140020015", false, new InfoCodigoLeido { EsElDeLaFicha = true, RecogidoAManoHoy = true, EmpaquetadoAManoHoy = true });
+
+            await avisador.AvisarEquipo(aviso, new DatosFichaActual { Producto = "40510", CodigoBarras = "1200140020015" }, new[] { "CodigoBarras" });
+
+            StringAssert.Contains(buzon().Cuerpo, "1200140020015 (tecleado)");
+            StringAssert.Contains(buzon().Cuerpo, "El código que ha enviado el mozo es el mismo de la ficha: el envase no se ha podido leer con el escáner.");
+            StringAssert.Contains(buzon().Cuerpo, "Hoy se ha recogido y empaquetado a mano.");
+            StringAssert.Contains(buzon().Cuerpo, "Pídele una foto del código del envase o el número que lleva impreso.");
+            StringAssert.Contains(enviado.Body, "(tecleado)");
+            StringAssert.Contains(enviado.Body, System.Net.WebUtility.HtmlEncode("Pídele una foto del código del envase"));
+            Assert.IsFalse(buzon().Cuerpo.Contains("confirmado"));
+        }
+
+        [TestMethod]
+        public async Task ConfirmadoTrasElAviso_ElCorreoYElBuzonLoDicen()
+        {
+            Func<NestoAPI.Models.NotificacionPushDTO> buzon = CapturarBuzonNesto();
+            AvisoFicha aviso = AvisoCodigo("1200140020015", false, new InfoCodigoLeido { EsElDeLaFicha = true, ConfirmadoTrasAviso = true });
+
+            await avisador.AvisarEquipo(aviso, new DatosFichaActual { Producto = "40510", CodigoBarras = "1200140020015" }, new[] { "CodigoBarras" });
+
+            StringAssert.Contains(buzon().Cuerpo, AvisadorFichaProducto.CONFIRMADO_TRAS_AVISO);
+            StringAssert.Contains(enviado.Body, System.Net.WebUtility.HtmlEncode(AvisadorFichaProducto.CONFIRMADO_TRAS_AVISO));
+        }
+
+        [TestMethod]
+        public void CodigoIgualAlDeLaFicha_SinNadaAManoNoLoDiceYSoloEmpaquetadoLoDiceAsi()
+        {
+            string sinNada = AvisadorFichaProducto.QueEsElCodigo(AvisoCodigo("1200140020015", null, new InfoCodigoLeido { EsElDeLaFicha = true }));
+            string soloPack = AvisadorFichaProducto.QueEsElCodigo(AvisoCodigo("1200140020015", null, new InfoCodigoLeido { EsElDeLaFicha = true, EmpaquetadoAManoHoy = true }));
+
+            Assert.IsFalse(sinNada.Contains("a mano"));
+            StringAssert.Contains(soloPack, "Hoy se ha empaquetado a mano.");
+        }
+
+        [TestMethod]
+        public async Task CodigoDeNingunaFicha_LoDice()
+        {
+            Func<NestoAPI.Models.NotificacionPushDTO> buzon = CapturarBuzonNesto();
+
+            await avisador.AvisarEquipo(AvisoCodigo("1234567890123", true, new InfoCodigoLeido()), new DatosFichaActual { Producto = "32565" }, new[] { "CodigoBarras" });
+
+            StringAssert.Contains(buzon().Cuerpo, "Ese código no está en ninguna ficha.");
+            StringAssert.Contains(enviado.Body, System.Net.WebUtility.HtmlEncode("no está en ninguna ficha"));
+        }
+
+        [TestMethod]
+        public void SinFlag_NoSeDiceComoSeLeyo()
+        {
+            Assert.AreEqual(string.Empty, AvisadorFichaProducto.ComoSeLeyo(AvisoCodigo("1", null, null)));
+            Assert.AreEqual(" (tecleado)", AvisadorFichaProducto.ComoSeLeyo(AvisoCodigo("1", false, null)));
+            Assert.IsNull(AvisadorFichaProducto.QueEsElCodigo(AvisoCodigo("1", false, null)));
         }
 
         [TestMethod]
