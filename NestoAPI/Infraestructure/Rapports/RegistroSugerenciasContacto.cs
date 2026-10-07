@@ -2,6 +2,7 @@ using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
 using System.Data.Entity;
+using System.Data.Entity.Infrastructure;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -17,12 +18,19 @@ namespace NestoAPI.Infraestructure.Rapports
         public const int LONGITUD_USUARIO = 30;
 
         private readonly NVEntities db;
+        private readonly IBloqueoSugerenciasDelDia bloqueo;
 
-        public RegistroSugerenciasContacto(NVEntities db)
+        /// <param name="bloqueo">Serializa el registro del día de un vendedor. Null = sp_getapplock en la BD.</param>
+        public RegistroSugerenciasContacto(NVEntities db, IBloqueoSugerenciasDelDia bloqueo = null)
         {
             this.db = db ?? throw new ArgumentNullException(nameof(db));
+            this.bloqueo = bloqueo ?? new BloqueoSqlSugerenciasDelDia(db);
         }
 
+        /// <summary>
+        /// Las sugerencias del día del vendedor, una por cliente/contacto: si hubiera duplicados (los de antes del fix de
+        /// la carrera de NestoAPI#603) se devuelve la de menor Id y la otra no sale.
+        /// </summary>
         public async Task<List<SugerenciaContacto>> LeerDelDia(string vendedor, DateTime dia)
         {
             string vendedorLimpio = vendedor?.Trim();
@@ -31,7 +39,54 @@ namespace NestoAPI.Infraestructure.Rapports
             List<SugerenciaContacto> filas = await db.SugerenciasContacto
                 .Where(s => s.Vendedor == vendedorLimpio && s.Fecha >= desde && s.Fecha < hasta)
                 .ToListAsync().ConfigureAwait(false);
-            return filas.OrderBy(s => s.Orden).ToList();
+            return filas
+                .GroupBy(s => ClienteCarteraContacto.ClaveDe(s.Cliente, s.Contacto), StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.OrderBy(s => s.Id).First())
+                .OrderBy(s => s.Orden)
+                .ThenBy(s => s.Id)
+                .ToList();
+        }
+
+        /// <summary>
+        /// NestoAPI#603: completa la lista del día de forma atómica. Nesto abre Rapports con dos llamadas casi a la vez y,
+        /// sin bloqueo, las dos veían la lista vacía e insertaban la lista entera. Dentro del bloqueo (applock por
+        /// vendedor y día) se vuelve a leer lo que hay y solo se añade lo que <paramref name="elegirNuevas"/> diga que
+        /// falta. Si aun así salta el índice único (UX_SugerenciasContacto_Dia), es que otro ya lo registró: se
+        /// descarta lo nuestro y se devuelve lo guardado. Guarda también los cambios pendientes (atendidas).
+        /// </summary>
+        public async Task<List<SugerenciaContacto>> CompletarDelDia(string vendedor, DateTime dia,
+            Func<List<SugerenciaContacto>, List<SugerenciaContacto>> elegirNuevas)
+        {
+            List<SugerenciaContacto> anadidas = new List<SugerenciaContacto>();
+            using (IBloqueoDelDia bloqueoDelDia = await bloqueo.Bloquear(vendedor?.Trim(), dia.Date).ConfigureAwait(false))
+            {
+                List<SugerenciaContacto> delDia = await LeerDelDia(vendedor, dia).ConfigureAwait(false);
+                _ = await ConciliarAtendidas(delDia, dia).ConfigureAwait(false);
+                anadidas = elegirNuevas(delDia) ?? new List<SugerenciaContacto>();
+                try
+                {
+                    _ = await db.SaveChangesAsync().ConfigureAwait(false);
+                    bloqueoDelDia.Confirmar();
+                    delDia.AddRange(anadidas);
+                    return delDia;
+                }
+                catch (DbUpdateException ex) when (EsViolacionDeIndiceUnico(ex))
+                {
+                    // Al salir del using se deshace la transacción: lo nuestro no se guardó y se quita del contexto.
+                }
+            }
+            foreach (SugerenciaContacto fila in anadidas)
+            {
+                _ = db.SugerenciasContacto.Remove(fila);
+            }
+            return await LeerDelDia(vendedor, dia).ConfigureAwait(false);
+        }
+
+        // 2601 (índice único) y 2627 (constraint única) de SQL Server.
+        private static bool EsViolacionDeIndiceUnico(DbUpdateException ex)
+        {
+            Exception raiz = ex.GetBaseException();
+            return raiz is System.Data.SqlClient.SqlException sql && (sql.Number == 2601 || sql.Number == 2627);
         }
 
         /// <summary>
@@ -135,5 +190,65 @@ namespace NestoAPI.Infraestructure.Rapports
         }
 
         internal static string Recortar(string texto, int longitud) => texto.Length > longitud ? texto.Substring(0, longitud) : texto;
+    }
+
+    /// <summary>NestoAPI#603: serializa el registro de la lista del día de un vendedor.</summary>
+    public interface IBloqueoSugerenciasDelDia
+    {
+        Task<IBloqueoDelDia> Bloquear(string vendedor, DateTime dia);
+    }
+
+    /// <summary>El bloqueo abierto (una transacción): Confirmar = commit; Dispose sin confirmar = rollback.</summary>
+    public interface IBloqueoDelDia : IDisposable
+    {
+        void Confirmar();
+    }
+
+    /// <summary>
+    /// sp_getapplock ligado a una transacción (se libera solo en commit/rollback), recurso
+    /// SugerenciasContacto:{empresa}:{vendedor}:{yyyyMMdd}, espera máxima 10 s.
+    /// </summary>
+    internal sealed class BloqueoSqlSugerenciasDelDia : IBloqueoSugerenciasDelDia
+    {
+        private readonly NVEntities db;
+
+        public BloqueoSqlSugerenciasDelDia(NVEntities db)
+        {
+            this.db = db;
+        }
+
+        public async Task<IBloqueoDelDia> Bloquear(string vendedor, DateTime dia)
+        {
+            string recurso = $"SugerenciasContacto:{Constantes.Empresas.EMPRESA_POR_DEFECTO}:{vendedor}:{dia:yyyyMMdd}";
+            DbContextTransaction transaccion = db.Database.BeginTransaction();
+            try
+            {
+                _ = await db.Database.ExecuteSqlCommandAsync(
+                    @"DECLARE @resultado int;
+                      EXEC @resultado = sp_getapplock @Resource = @p0, @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 10000;
+                      IF @resultado < 0 RAISERROR('No se pudo obtener el bloqueo de las sugerencias de contacto del día; reintente en unos segundos.', 16, 1);",
+                    recurso).ConfigureAwait(false);
+            }
+            catch
+            {
+                transaccion.Dispose();
+                throw;
+            }
+            return new Transaccion(transaccion);
+        }
+
+        private sealed class Transaccion : IBloqueoDelDia
+        {
+            private readonly DbContextTransaction transaccion;
+
+            public Transaccion(DbContextTransaction transaccion)
+            {
+                this.transaccion = transaccion;
+            }
+
+            public void Confirmar() => transaccion.Commit();
+
+            public void Dispose() => transaccion.Dispose();
+        }
     }
 }

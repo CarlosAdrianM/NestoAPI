@@ -34,6 +34,9 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
         private IProbabilidadesContacto probabilidades;
         private List<ClienteCarteraContacto> cartera;
         private string delegacionConsultada;
+        private IBloqueoSugerenciasDelDia bloqueo;
+        private IBloqueoDelDia bloqueoAbierto;
+        private Action alBloquear;
 
         [TestInitialize]
         public void Preparar()
@@ -57,6 +60,15 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
             });
             A.CallTo(() => db.SugerenciasContacto).Returns(fakeSugerencias);
             A.CallTo(() => db.SeguimientosClientes).Returns(fakeRapports);
+
+            alBloquear = null;
+            bloqueoAbierto = A.Fake<IBloqueoDelDia>();
+            bloqueo = A.Fake<IBloqueoSugerenciasDelDia>();
+            A.CallTo(() => bloqueo.Bloquear(A<string>._, A<DateTime>._)).ReturnsLazily(() =>
+            {
+                alBloquear?.Invoke();
+                return Task.FromResult(bloqueoAbierto);
+            });
 
             cartera = new List<ClienteCarteraContacto>
             {
@@ -95,7 +107,7 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
             .GetMethod("MemberwiseClone", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(c, null);
 
         private ServicioSugerenciasContacto Servicio() => new ServicioSugerenciasContacto(db, repositorio, probabilidades, () => AHORA,
-            (d, delegacion) => { delegacionConsultada = delegacion; return false; });
+            (d, delegacion) => { delegacionConsultada = delegacion; return false; }, null, bloqueo);
 
         private static IPrincipal Usuario(string nombre, params string[] grupos)
         {
@@ -197,6 +209,62 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
 
             CollectionAssert.AreEqual(new[] { "1001", "1002" }, respuesta.Sugerencias.Select(s => s.Cliente).ToArray());
             Assert.AreEqual(4, sugerencias.Count);
+        }
+
+        [TestMethod]
+        public async Task Leer_DosAperturasALaVez_LaSegundaEncuentraLaListaDentroDelBloqueoYNoDuplica()
+        {
+            // NestoAPI#603 (07/10/26): Nesto abre Rapports con dos llamadas casi a la vez. Las dos leen la lista vacía;
+            // mientras esta espera el bloqueo, la otra registra la lista entera. Dentro del bloqueo hay que volver a leer.
+            alBloquear = () =>
+            {
+                if (!sugerencias.Any())
+                {
+                    sugerencias.Add(new SugerenciaContacto { Id = 1, Vendedor = "MPP", Cliente = "1001", Contacto = "0", Fecha = AHORA, Prioridad = "Máxima", Orden = 1, Motivo = "x" });
+                    sugerencias.Add(new SugerenciaContacto { Id = 2, Vendedor = "MPP", Cliente = "1002", Contacto = "0", Fecha = AHORA, Prioridad = "Alta", Orden = 2, Motivo = "x" });
+                    sugerencias.Add(new SugerenciaContacto { Id = 3, Vendedor = "MPP", Cliente = "1003", Contacto = "0", Fecha = AHORA, Prioridad = "Media", Orden = 3, Motivo = "x" });
+                }
+            };
+
+            SugerenciasContactoDTO respuesta = await Servicio().Leer("MPP", "Llamada", 3, "", "u");
+
+            Assert.AreEqual(3, sugerencias.Count, "una sola lista en la tabla");
+            CollectionAssert.AreEqual(new[] { 1, 2, 3 }, respuesta.Sugerencias.Select(s => s.SugerenciaId).ToArray());
+            A.CallTo(() => fakeSugerencias.Add(A<SugerenciaContacto>._)).MustNotHaveHappened();
+            A.CallTo(() => bloqueo.Bloquear("MPP", HOY)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Leer_PrimeraVezDelDia_RegistraDentroDelBloqueoYLoConfirma()
+        {
+            await Servicio().Leer("MPP", "Llamada", 3, "", "u");
+
+            Assert.AreEqual(3, sugerencias.Count);
+            A.CallTo(() => bloqueo.Bloquear("MPP", HOY)).MustHaveHappenedOnceExactly()
+                .Then(A.CallTo(() => db.SaveChangesAsync()).MustHaveHappenedOnceExactly())
+                .Then(A.CallTo(() => bloqueoAbierto.Confirmar()).MustHaveHappenedOnceExactly())
+                .Then(A.CallTo(() => bloqueoAbierto.Dispose()).MustHaveHappenedOnceExactly());
+        }
+
+        [TestMethod]
+        public async Task Leer_ConDuplicadosHistoricos_DevuelveCadaClienteUnaVezConLaFilaDeMenorId()
+        {
+            // Lo que quedó en la tabla el 07/10/26 antes del fix: la lista entera dos veces, con el mismo Orden.
+            int id = 0;
+            foreach (int vuelta in new[] { 1, 2 })
+            {
+                int orden = 0;
+                foreach (string cliente in new[] { "1001", "1002", "1003" })
+                {
+                    sugerencias.Add(new SugerenciaContacto { Id = ++id, Vendedor = "MPP", Cliente = cliente, Contacto = "0", Fecha = AHORA, Prioridad = "Alta", Orden = ++orden, Motivo = "x" });
+                }
+            }
+
+            SugerenciasContactoDTO respuesta = await Servicio().Leer("MPP", "Llamada", 3, "", "u");
+
+            CollectionAssert.AreEqual(new[] { "1001", "1002", "1003" }, respuesta.Sugerencias.Select(s => s.Cliente).ToArray());
+            CollectionAssert.AreEqual(new[] { 1, 2, 3 }, respuesta.Sugerencias.Select(s => s.SugerenciaId).ToArray());
+            A.CallTo(() => fakeSugerencias.Add(A<SugerenciaContacto>._)).MustNotHaveHappened();
         }
 
         [TestMethod]

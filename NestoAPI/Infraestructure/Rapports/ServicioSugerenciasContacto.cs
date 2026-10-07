@@ -34,6 +34,7 @@ namespace NestoAPI.Infraestructure.Rapports
         private readonly Func<DateTime> reloj;
         private readonly Func<DateTime, string, bool> esFestivo;
         private readonly IServicioFrasesRitmo frases;
+        private readonly IBloqueoSugerenciasDelDia bloqueo;
 
         public ServicioSugerenciasContacto(NVEntities db)
             : this(db, new RepositorioCarteraContactoSql(), new ProbabilidadesContactoModelo(), () => DateTime.Now, GestorFestivos.EsFestivo,
@@ -43,8 +44,10 @@ namespace NestoAPI.Infraestructure.Rapports
 
         /// <param name="frases">NestoAPI#603 (corte 4): la frase del ritmo. Null = la plantilla fija del corte 1.</param>
         internal ServicioSugerenciasContacto(NVEntities db, IRepositorioCarteraContacto repositorio, IProbabilidadesContacto probabilidades,
-            Func<DateTime> reloj, Func<DateTime, string, bool> esFestivo, IServicioFrasesRitmo frases = null)
+            Func<DateTime> reloj, Func<DateTime, string, bool> esFestivo, IServicioFrasesRitmo frases = null,
+            IBloqueoSugerenciasDelDia bloqueo = null)
         {
+            this.bloqueo = bloqueo;
             this.frases = frases;
             this.db = db;
             this.repositorio = repositorio;
@@ -86,24 +89,29 @@ namespace NestoAPI.Infraestructure.Rapports
                 ritmo.Frase = await frases.Generar(vendedorLimpio, ritmo, ahora, d => !esFestivo(d, delegacion)).ConfigureAwait(false);
             }
 
-            var registro = new RegistroSugerenciasContacto(db);
+            var registro = new RegistroSugerenciasContacto(db, bloqueo);
             List<SugerenciaContacto> delDia = await registro.LeerDelDia(vendedorLimpio, hoy).ConfigureAwait(false);
             bool cambios = await registro.ConciliarAtendidas(delDia, hoy).ConfigureAwait(false);
             if (delDia.Count < numero)
             {
-                var yaSugeridos = new HashSet<string>(delDia.Select(s => ClienteCarteraContacto.ClaveDe(s.Cliente, s.Contacto)), StringComparer.OrdinalIgnoreCase);
-                List<SugerenciaContactoDTO> nuevas = pendientes
-                    .Where(p => !yaSugeridos.Contains(ClienteCarteraContacto.ClaveDe(p.Cliente, p.Contacto)))
-                    .Take(numero - delDia.Count)
-                    .ToList();
-                if (nuevas.Any())
+                // NestoAPI#603: bajo bloqueo por vendedor y día (dos llamadas a la vez no duplican la lista). Dentro se
+                // vuelve a leer: si la otra llamada ya la registró, no se añade nada.
+                delDia = await registro.CompletarDelDia(vendedorLimpio, hoy, actuales =>
                 {
-                    int ultimoOrden = delDia.Any() ? delDia.Max(s => s.Orden) : 0;
-                    delDia.AddRange(registro.Anadir(nuevas, ultimoOrden, vendedorLimpio, usuario, ahora));
-                    cambios = true;
-                }
+                    if (actuales.Count >= numero)
+                    {
+                        return new List<SugerenciaContacto>();
+                    }
+                    var yaSugeridos = new HashSet<string>(actuales.Select(s => ClienteCarteraContacto.ClaveDe(s.Cliente, s.Contacto)), StringComparer.OrdinalIgnoreCase);
+                    List<SugerenciaContactoDTO> nuevas = pendientes
+                        .Where(p => !yaSugeridos.Contains(ClienteCarteraContacto.ClaveDe(p.Cliente, p.Contacto)))
+                        .Take(numero - actuales.Count)
+                        .ToList();
+                    int ultimoOrden = actuales.Any() ? actuales.Max(s => s.Orden) : 0;
+                    return registro.Anadir(nuevas, ultimoOrden, vendedorLimpio, usuario, ahora);
+                }).ConfigureAwait(false);
             }
-            if (cambios)
+            else if (cambios)
             {
                 _ = await registro.Guardar().ConfigureAwait(false);
             }
