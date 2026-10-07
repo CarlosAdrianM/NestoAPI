@@ -66,6 +66,50 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     }
 
     /// <summary>
+    /// NestoAPI#600: lo que dice al mozo un tipo de recepción, para que las apps (Ariadna, Nesto) no miren el código del
+    /// tipo. Cada estrategia devuelve el suyo (una clase que hereda de esta y cambia lo que haga falta); lo que no cambia
+    /// se queda con el texto genérico de aquí, así que un tipo nuevo sale completo sin tocar nada más. El núcleo
+    /// (<see cref="ServicioRecepciones"/>) lo copia a los DTO. El título de cada recepción depende de sus datos (el nombre
+    /// del proveedor, el almacén de origen): lo pone la estrategia al leerla; si no lo pone, el núcleo usa «TIPO documento».
+    /// </summary>
+    public class TextosTipoRecepcion
+    {
+        /// <summary>Los textos genéricos (los de un tipo que no dice nada propio).</summary>
+        public static readonly TextosTipoRecepcion Genericos = new TextosTipoRecepcion();
+
+        /// <summary>La línea de debajo del título en la lista: «2 líneas · 3 ud. · 06/10».</summary>
+        public virtual string Detalle(RecepcionPendienteDTO pendiente)
+        {
+            return Juntar(Contar(pendiente.Lineas, "línea", "líneas"), $"{pendiente.Unidades} ud.", Fecha(pendiente.Fecha));
+        }
+
+        /// <summary>El encabezado de la confirmación antes de terminar.</summary>
+        public virtual string TituloConfirmacion(RecepcionDTO recepcion) => "¿Terminar la recepción con esto?";
+
+        /// <summary>Confirmación: lo leído coincide con lo esperado (sin faltas, sobras ni productos que no tocan).</summary>
+        public virtual string AvisoCoincide => "Lo leído coincide con lo esperado.";
+        /// <summary>Confirmación: lo leído no coincide (hay faltas, sobras o productos que no tocan).</summary>
+        public virtual string AvisoNoCoincide => "Lo leído no coincide con lo esperado.";
+        /// <summary>Confirmación, además, si falta algo. Null: nada que añadir.</summary>
+        public virtual string AvisoConFaltas => null;
+        /// <summary>Confirmación, además, si sobra algo (lo que no es recuperado). Null: nada que añadir.</summary>
+        public virtual string AvisoConSobras => null;
+        /// <summary>Confirmación, además, si algo de lo que sobra es lo dado por no servido hace poco. Null: nada que añadir.</summary>
+        public virtual string AvisoConRecuperadas => null;
+        /// <summary>Confirmación, además, si se ha leído algo que no se esperaba. Null: nada que añadir.</summary>
+        public virtual string AvisoConAjenos => null;
+
+        /// <summary>Al terminar: qué va a aparecer en Ubicar. Null si el tipo no dice nada.</summary>
+        public virtual string AvisoUbicar(ResultadoTerminarRecepcionDTO resultado) => null;
+
+        internal static string Contar(int n, string singular, string plural) => $"{n} {(n == 1 ? singular : plural)}";
+
+        internal static string Fecha(DateTime? fecha) => fecha?.ToString("dd/MM", System.Globalization.CultureInfo.InvariantCulture);
+
+        internal static string Juntar(params string[] partes) => string.Join(" · ", partes.Where(p => !string.IsNullOrWhiteSpace(p)));
+    }
+
+    /// <summary>
     /// NestoAPI#559/#553: un TIPO de cosa que se recibe en el almacén (pedidos de compra de un proveedor,
     /// reposiciones entre almacenes…). El núcleo (<see cref="ServicioRecepciones"/>) es el mismo para todos:
     /// cada tipo dice qué se espera, quién puede terminar la recepción y qué significa terminarla.
@@ -74,6 +118,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     {
         /// <summary>COMP, REPO… (4 letras, como TipoOrigen de los escaneos).</summary>
         string Tipo { get; }
+        /// <summary>NestoAPI#600: lo que dice este tipo al mozo (lo copia el núcleo a los DTO). Null = los genéricos.</summary>
+        TextosTipoRecepcion Textos { get; }
         /// <summary>False mientras un tipo solo se pueda leer y comparar (su cierre sigue en otro sitio).</summary>
         bool SeTerminaDesdeAqui { get; }
         /// <summary>Quién puede terminar este tipo de recepción en ese almacén (lo decide cada tipo).</summary>
@@ -118,7 +164,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             var pendientes = new List<RecepcionPendienteDTO>();
             foreach (IOrigenRecepcion origen in origenes.Values)
             {
-                pendientes.AddRange(await origen.LeerPendientes(empresa, almacen).ConfigureAwait(false) ?? new List<RecepcionPendienteDTO>());
+                pendientes.AddRange(Completar(origen, await origen.LeerPendientes(empresa, almacen).ConfigureAwait(false)));
             }
             return pendientes.OrderBy(p => p.Fecha ?? DateTime.MaxValue).ThenBy(p => p.Tipo).ThenBy(p => p.Documento).ToList();
         }
@@ -133,7 +179,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             }
             foreach (IOrigenRecepcion origen in origenes.Values)
             {
-                encontradas.AddRange(await origen.BuscarPorCodigo(empresa, almacen, limpio).ConfigureAwait(false) ?? new List<RecepcionPendienteDTO>());
+                encontradas.AddRange(Completar(origen, await origen.BuscarPorCodigo(empresa, almacen, limpio).ConfigureAwait(false)));
             }
             return encontradas;
         }
@@ -147,8 +193,110 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 recepcion.Tipo = origen.Tipo;
                 recepcion.SeTerminaDesdeAqui = origen.SeTerminaDesdeAqui;
                 recepcion.PuedeTerminar = origen.SeTerminaDesdeAqui && origen.PuedeTerminar(usuario, empresa, almacen);
+                Completar(origen, recepcion);
             }
             return recepcion;
+        }
+
+        /// <summary>
+        /// NestoAPI#600: el título y el detalle de cada recepción de la lista, ya resueltos. Lo que la estrategia no ha
+        /// puesto, de sus <see cref="IOrigenRecepcion.Textos"/> (o los genéricos).
+        /// </summary>
+        private static List<RecepcionPendienteDTO> Completar(IOrigenRecepcion origen, List<RecepcionPendienteDTO> pendientes)
+        {
+            TextosTipoRecepcion textos = TextosDe(origen);
+            foreach (RecepcionPendienteDTO pendiente in pendientes ?? new List<RecepcionPendienteDTO>())
+            {
+                pendiente.Tipo = string.IsNullOrWhiteSpace(pendiente.Tipo) ? origen.Tipo : pendiente.Tipo;
+                pendiente.Titulo = Limpio(pendiente.Titulo) is string titulo && titulo.Length > 0 ? titulo : $"{pendiente.Tipo} {pendiente.Documento}";
+                pendiente.Detalle = Limpio(pendiente.Detalle) is string detalle && detalle.Length > 0
+                    ? detalle
+                    : Texto(textos, t => t.Detalle(pendiente));
+            }
+            return pendientes ?? new List<RecepcionPendienteDTO>();
+        }
+
+        /// <summary>NestoAPI#600: los textos del documento abierto (título y confirmación por caso), de su tipo.</summary>
+        private static void Completar(IOrigenRecepcion origen, RecepcionDTO recepcion)
+        {
+            TextosTipoRecepcion textos = TextosDe(origen);
+            recepcion.Titulo = Limpio(recepcion.Titulo) is string titulo && titulo.Length > 0 ? titulo : $"{recepcion.Tipo} {recepcion.Documento}";
+            recepcion.TituloConfirmacion = Texto(textos, t => t.TituloConfirmacion(recepcion));
+            recepcion.AvisoCoincide = Texto(textos, t => t.AvisoCoincide);
+            recepcion.AvisoNoCoincide = Texto(textos, t => t.AvisoNoCoincide);
+            recepcion.AvisoConFaltas = Texto(textos, t => t.AvisoConFaltas);
+            recepcion.AvisoConSobras = Texto(textos, t => t.AvisoConSobras);
+            recepcion.AvisoConRecuperadas = Texto(textos, t => t.AvisoConRecuperadas);
+            recepcion.AvisoConAjenos = Texto(textos, t => t.AvisoConAjenos);
+        }
+
+        /// <summary>
+        /// NestoAPI#600: lo que se le enseña al mozo al terminar, entero: qué ha entrado, lo que no, las diferencias, los
+        /// avisos y qué va a aparecer en Ubicar (de su tipo). La app lo enseña tal cual.
+        /// </summary>
+        private static ResultadoTerminarRecepcionDTO Completar(IOrigenRecepcion origen, ResultadoTerminarRecepcionDTO resultado)
+        {
+            if (resultado == null)
+            {
+                return null;
+            }
+            resultado.Tipo = string.IsNullOrWhiteSpace(resultado.Tipo) ? origen.Tipo : resultado.Tipo;
+            if (!resultado.YaEstabaTerminada && resultado.ErrorEnsayo == null && string.IsNullOrWhiteSpace(resultado.AvisoUbicar))
+            {
+                resultado.AvisoUbicar = Texto(TextosDe(origen), t => t.AvisoUbicar(resultado));
+            }
+            resultado.Mensaje = MensajeTerminada(resultado);
+            return resultado;
+        }
+
+        internal static string MensajeTerminada(ResultadoTerminarRecepcionDTO resultado)
+        {
+            if (resultado.YaEstabaTerminada)
+            {
+                return "Esta recepción ya estaba terminada: no se ha repetido nada.";
+            }
+            List<string> avisos = resultado.Avisos ?? new List<string>();
+            if (resultado.ErrorEnsayo != null)
+            {
+                return string.Join(Environment.NewLine, avisos);
+            }
+            List<DocumentoRecepcionDTO> documentos = resultado.Documentos ?? new List<DocumentoRecepcionDTO>();
+            var lineas = new List<string>
+            {
+                documentos.Count == 0
+                    ? "Recepción terminada."
+                    : "Recibido. " + string.Join(", ", documentos.Select(d => $"albarán {d.Albaran} (pedido {d.Pedido})")) + "."
+            };
+            List<DiferenciaPreparacionDTO> noEsperados = resultado.NoEsperados ?? new List<DiferenciaPreparacionDTO>();
+            if (noEsperados.Count > 0)
+            {
+                lineas.Add("No han entrado (no se esperaban): " + string.Join(", ", noEsperados.Select(n => $"{n.Producto} ({n.Leido})")) + ".");
+            }
+            List<DiferenciaPreparacionDTO> diferencias = resultado.Diferencias ?? new List<DiferenciaPreparacionDTO>();
+            if (diferencias.Count > 0)
+            {
+                lineas.Add("No coincide con lo enviado:");
+                lineas.AddRange(diferencias.Select(d => d.Ajeno
+                    ? $"  {d.Producto}: no venía, leído {d.Leido}"
+                    : $"  {d.Producto}: enviado {d.Esperado}, leído {d.Leido} ({(d.Leido > d.Esperado ? "sobra" : "falta")} {Math.Abs(d.Leido - d.Esperado)})"));
+            }
+            lineas.AddRange((resultado.Recuperadas ?? new List<LineaRecuperadaDTO>())
+                .Select(r => r.Texto ?? $"{r.Cantidad} ud. de {r.Producto} eran del pedido {r.Pedido}: entran con ese pedido."));
+            lineas.AddRange(avisos);
+            if (!string.IsNullOrWhiteSpace(resultado.AvisoUbicar))
+            {
+                lineas.Add(resultado.AvisoUbicar);
+            }
+            return string.Join(Environment.NewLine, lineas);
+        }
+
+        private static TextosTipoRecepcion TextosDe(IOrigenRecepcion origen) => origen.Textos ?? TextosTipoRecepcion.Genericos;
+
+        /// <summary>El texto del tipo; si no dice nada (null o en blanco), el genérico (que también puede ser null).</summary>
+        private static string Texto(TextosTipoRecepcion textos, Func<TextosTipoRecepcion, string> leer)
+        {
+            string propio = Limpio(leer(textos));
+            return string.IsNullOrEmpty(propio) ? Limpio(leer(TextosTipoRecepcion.Genericos)) is string generico && generico.Length > 0 ? generico : null : propio;
         }
 
         public async Task<ResultadoCasarRecepcionDTO> Casar(string tipo, string empresa, string almacen, string documento,
@@ -225,9 +373,9 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 Principal = usuario,
                 Dispositivo = terminar.Dispositivo
             };
-            return ensayo
+            return Completar(origen, ensayo
                 ? await Ensayar(origen, solicitud).ConfigureAwait(false)
-                : await origen.Terminar(solicitud).ConfigureAwait(false);
+                : await origen.Terminar(solicitud).ConfigureAwait(false));
         }
 
         /// <summary>

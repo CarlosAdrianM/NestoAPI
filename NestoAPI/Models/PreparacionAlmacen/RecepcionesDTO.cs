@@ -14,8 +14,13 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public string Tipo { get; set; }
         /// <summary>COMP: el proveedor. REPO: el número de traspaso.</summary>
         public string Documento { get; set; }
-        /// <summary>Lo que se enseña: el nombre del proveedor o «Reposición 80841».</summary>
+        /// <summary>Lo que se enseña: el nombre del proveedor o «Reposición 80841 desde Alcobendas». Siempre viene.</summary>
         public string Titulo { get; set; }
+        /// <summary>
+        /// NestoAPI#600: la línea de debajo del título, ya resuelta por el tipo («Proveedor 65 · 2 pedidos · 40 ud. · 01/10»,
+        /// «1 línea · 1 ud. · 06/10»). Siempre viene: la app la enseña tal cual.
+        /// </summary>
+        public string Detalle { get; set; }
         public DateTime? Fecha { get; set; }
         /// <summary>COMP: los pedidos de compra que tiene pendientes. REPO: vacío.</summary>
         public List<int> Pedidos { get; set; } = new List<int>();
@@ -75,6 +80,28 @@ namespace NestoAPI.Models.PreparacionAlmacen
         /// <summary>Hay tipos que de momento solo se pueden leer y comparar (sin terminar).</summary>
         public bool SeTerminaDesdeAqui { get; set; }
         public List<LineaRecepcionDTO> Lineas { get; set; } = new List<LineaRecepcionDTO>();
+
+        // NestoAPI#600: los textos de la confirmación antes de terminar, de su tipo, para que la app no mire el código del
+        // tipo. La app sabe lo que se ha leído y elige el caso; el texto es del servidor. Cómo se monta la confirmación:
+        // TituloConfirmacion de encabezado; después el resumen de lo leído (de la app); después AvisoCoincide si no falta ni
+        // sobra nada ni hay productos que no tocan, o AvisoNoCoincide si no; y, por este orden, AvisoConFaltas si falta algo,
+        // AvisoConRecuperadas si algo de lo que sobra es lo dado por no servido, AvisoConSobras si sobra algo más y
+        // AvisoConAjenos si se ha leído algo que no se esperaba. Los Aviso* null no se enseñan.
+
+        /// <summary>El encabezado de la confirmación: «¿Terminar la recepción con esto?», «¿Terminar la reposición 80905 con esto?».</summary>
+        public string TituloConfirmacion { get; set; }
+        /// <summary>Lo leído coincide con lo esperado. Siempre viene.</summary>
+        public string AvisoCoincide { get; set; }
+        /// <summary>Lo leído no coincide (faltas, sobras o productos que no tocan). Siempre viene.</summary>
+        public string AvisoNoCoincide { get; set; }
+        /// <summary>Además, si falta algo. Null: nada que añadir.</summary>
+        public string AvisoConFaltas { get; set; }
+        /// <summary>Además, si sobra algo que no es recuperado. Null: nada que añadir.</summary>
+        public string AvisoConSobras { get; set; }
+        /// <summary>Además, si algo de lo que sobra es lo dado por no servido hace poco (entra con su pedido). Null: nada que añadir.</summary>
+        public string AvisoConRecuperadas { get; set; }
+        /// <summary>Además, si se ha leído algo que no se esperaba. Null: nada que añadir.</summary>
+        public string AvisoConAjenos { get; set; }
     }
 
     public class ResultadoCasarRecepcionDTO
@@ -134,6 +161,13 @@ namespace NestoAPI.Models.PreparacionAlmacen
         /// «Almacén» si no se sabe). Null si no había diferencias (o en un ensayo: no se avisa a nadie).
         /// </summary>
         public string AvisadoA { get; set; }
+        /// <summary>NestoAPI#600: qué va a aparecer en Ubicar («Lo recibido ya aparece en Ubicar»). Null si el tipo no dice nada.</summary>
+        public string AvisoUbicar { get; set; }
+        /// <summary>
+        /// NestoAPI#600: todo lo que hay que enseñar al mozo al terminar, ya montado (lo que ha entrado, lo que no, las
+        /// diferencias, lo recuperado, los avisos y <see cref="AvisoUbicar"/>), una cosa por línea. La app lo enseña tal cual.
+        /// </summary>
+        public string Mensaje { get; set; }
 
         /// <summary>
         /// Ensayo (?ensayo=true, solo Admin o Dirección): el mismo código que al terminar de verdad, dentro de una

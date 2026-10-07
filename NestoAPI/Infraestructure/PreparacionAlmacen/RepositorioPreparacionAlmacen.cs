@@ -179,6 +179,9 @@ GROUP BY e.Producto";
 SELECT s.[NºTraspaso] AS Traspaso,
        (SELECT TOP 1 RTRIM(e.[Almacén]) FROM PreExtrProducto e
         WHERE e.Empresa = s.Empresa AND e.[NºTraspaso] = s.[NºTraspaso] AND e.Cantidad > 0) AS Destino,
+       (SELECT TOP 1 RTRIM(d.[Descripción]) FROM PreExtrProducto e
+        INNER JOIN Almacenes d ON d.Empresa = e.Empresa AND d.[Número] = e.[Almacén]
+        WHERE e.Empresa = s.Empresa AND e.[NºTraspaso] = s.[NºTraspaso] AND e.Cantidad > 0) AS NombreDestino,
        COUNT(*) AS Lineas, CAST(-SUM(s.Cantidad) AS int) AS Unidades
 FROM PreExtrProducto s
      INNER JOIN Almacenes a ON a.Empresa = s.Empresa AND a.[Número] = s.[Almacén]
@@ -189,6 +192,10 @@ ORDER BY s.[NºTraspaso] DESC";
         internal const string SQL_DESTINO_REPOSICION = @"
 SELECT TOP 1 RTRIM(e.[Almacén]) FROM PreExtrProducto e
 WHERE e.Empresa = @p0 AND e.[NºTraspaso] = @p1 AND e.Cantidad > 0";
+
+        /// <summary>NestoAPI#600: el nombre de un almacén para enseñarlo («Reina»).</summary>
+        internal const string SQL_NOMBRE_ALMACEN = @"
+SELECT TOP 1 RTRIM([Descripción]) FROM Almacenes WHERE Empresa = @p0 AND [Número] = @p1";
 
         // El hueco sale del registro que queda en Ubicaciones al cerrar el traspaso (Nesto viejo o POST api/Reposiciones):
         // la reserva de prdUbicarReposicion / la puerta de Ubicaciones pasada a -4 con el NºTraspasoRepo, ya quitada del
@@ -379,7 +386,9 @@ ORDER BY e.Picking DESC, e.Cliente, e.Contacto";
             }
             string destino = (await baseDeDatos.SqlQuery<string>(SQL_DESTINO_REPOSICION, empresa, traspaso).ToListAsync().ConfigureAwait(false))
                 .FirstOrDefault();
-            return new ReposicionSalida { Destino = destino, Lineas = lineas };
+            string nombreDestino = string.IsNullOrWhiteSpace(destino) ? null
+                : (await baseDeDatos.SqlQuery<string>(SQL_NOMBRE_ALMACEN, empresa, destino).ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+            return new ReposicionSalida { Destino = destino, NombreDestino = nombreDestino, Lineas = lineas };
         }
 
         public Task<List<LecturaPackingAlmacen>> LeerLecturasPacking(string empresa, int picking, int? pedido)

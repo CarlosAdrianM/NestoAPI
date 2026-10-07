@@ -86,6 +86,35 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
         public string Tipo => TIPO;
         public bool SeTerminaDesdeAqui => true;
+        public TextosTipoRecepcion Textos { get; } = new TextosCompras();
+
+        /// <summary>NestoAPI#600: lo que se le dice al mozo al recibir de un proveedor (antes estaba en Ariadna).</summary>
+        internal class TextosCompras : TextosTipoRecepcion
+        {
+            public override string Detalle(RecepcionPendienteDTO pendiente)
+            {
+                int pedidos = pendiente.Pedidos?.Count ?? 0;
+                return Juntar($"Proveedor {pendiente.Documento}", pedidos > 0 ? Contar(pedidos, "pedido", "pedidos") : null,
+                    $"{pendiente.Unidades} ud.", Fecha(pendiente.Fecha));
+            }
+
+            public override string AvisoCoincide => ENTRA_EN_LOS_PEDIDOS;
+            public override string AvisoNoCoincide => ENTRA_EN_LOS_PEDIDOS;
+            public override string AvisoConFaltas => "Lo que falta sigue pendiente o, si el proveedor no deja pendientes, se da por no servido.";
+            public override string AvisoConRecuperadas => "Lo que se dio por no servido hace poco entra con su pedido.";
+            public override string AvisoConSobras => "Lo que sobra entra de más, a la espera del visto bueno de Compras.";
+            public override string AvisoConAjenos => "Lo que no se esperaba no entra: se avisa a Compras.";
+
+            /// <summary>Solo va a Ubicar lo que entra en un albarán (con visto bueno).</summary>
+            public override string AvisoUbicar(ResultadoTerminarRecepcionDTO resultado)
+            {
+                return (resultado.Documentos?.Count ?? 0) == 0
+                    ? "Todavía no aparece en Ubicar: aparecerá cuando Compras le dé el visto bueno y se haga el albarán."
+                    : "Lo que ha entrado en los albaranes ya aparece en Ubicar.";
+            }
+
+            private const string ENTRA_EN_LOS_PEDIDOS = "Lo leído entra en los pedidos del proveedor, del más antiguo al más reciente, y se hacen los albaranes.";
+        }
 
         public bool PuedeTerminar(IPrincipal usuario, string empresa, string almacen)
         {
@@ -358,6 +387,23 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
         public string Tipo => TIPO;
         public bool SeTerminaDesdeAqui => true;
+        public TextosTipoRecepcion Textos { get; } = new TextosReposiciones();
+
+        /// <summary>
+        /// NestoAPI#600: lo que se le dice al mozo al recibir una reposición (antes estaba en Ariadna). El detalle de la lista
+        /// es el genérico («1 línea · 1 ud. · 06/10»): «Reposición» ya va en el título.
+        /// </summary>
+        internal class TextosReposiciones : TextosTipoRecepcion
+        {
+            public override string TituloConfirmacion(RecepcionDTO recepcion) => $"¿Terminar la reposición {recepcion.Documento} con esto?";
+
+            // #553 (Carlos, 04/10): entra exactamente lo leído y, si no coincide, se avisa a quien hizo el traspaso
+            public override string AvisoCoincide => "Entra la reposición entera en el almacén y queda pendiente de ubicar.";
+            public override string AvisoNoCoincide =>
+                "Lo leído no coincide con lo enviado: entra lo leído (no lo enviado), queda pendiente de ubicar y se avisa a quien hizo la reposición.";
+
+            public override string AvisoUbicar(ResultadoTerminarRecepcionDTO resultado) => "Lo recibido ya aparece en Ubicar.";
+        }
 
         /// <summary>
         /// «Reposición 80905 desde Alcobendas» (Carlos, 06/10/26): en Entradas se ve de dónde viene cada una. Sin origen

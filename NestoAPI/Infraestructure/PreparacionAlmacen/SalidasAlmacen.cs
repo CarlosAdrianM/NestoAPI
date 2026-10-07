@@ -14,6 +14,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     public class RecorridoSalida
     {
         public string Destino { get; set; }
+        /// <summary>NestoAPI#600: el nombre del destino para enseñarlo («Reina», «Mesa de packing»). Null: el propio Destino.</summary>
+        public string NombreDestino { get; set; }
         public List<LineaPickingAlmacenDTO> Lineas { get; set; } = new List<LineaPickingAlmacenDTO>();
         public List<LecturaPickingAlmacen> Lecturas { get; set; } = new List<LecturaPickingAlmacen>();
     }
@@ -23,6 +25,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     {
         public int Traspaso { get; set; }
         public string Destino { get; set; }
+        /// <summary>NestoAPI#600: Almacenes.Descripción del destino («Reina»).</summary>
+        public string NombreDestino { get; set; }
         public int Lineas { get; set; }
         public int Unidades { get; set; }
     }
@@ -31,6 +35,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     public class ReposicionSalida
     {
         public string Destino { get; set; }
+        /// <summary>NestoAPI#600: Almacenes.Descripción del destino («Reina»).</summary>
+        public string NombreDestino { get; set; }
         public List<LineaPickingAlmacenDTO> Lineas { get; set; } = new List<LineaPickingAlmacenDTO>();
     }
 
@@ -73,6 +79,58 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     }
 
     /// <summary>
+    /// NestoAPI#600: lo que dice al mozo un tipo de salida y lo que se puede hacer con él, para que las apps (Ariadna,
+    /// Nesto) no miren el código del tipo. Cada estrategia devuelve el suyo (una clase que hereda de esta y cambia lo que
+    /// haga falta); lo que no cambia se queda con lo genérico de aquí, así que un tipo nuevo sale completo sin tocar nada
+    /// más. El núcleo (<see cref="ServicioSalidas"/>) lo copia a los DTO. <c>nombreDestino</c> es el nombre ya resuelto
+    /// («Reina», «Mesa de packing»), nunca el código del almacén.
+    /// </summary>
+    public class TextosTipoSalida
+    {
+        /// <summary>Los textos genéricos (los de un tipo que no dice nada propio).</summary>
+        public static readonly TextosTipoSalida Genericos = new TextosTipoSalida();
+
+        /// <summary>Lo recogido se empaqueta después (hoy, el picking): la app ofrece el packing.</summary>
+        public virtual bool TienePacking => false;
+        /// <summary>Si no está en el hueco, se puede ofrecer cogerlo de otro (api/Almacen/Picking/{n}/Alternativas y CambiarHueco).</summary>
+        public virtual bool PermiteCambiarHueco => false;
+
+        /// <summary>El título en la lista y en el recorrido: «Reposición 80905 hacia Reina».</summary>
+        public virtual string Titulo(string tipo, int numero, string nombreDestino)
+        {
+            return string.IsNullOrWhiteSpace(nombreDestino) ? $"{tipo} {numero}" : $"{tipo} {numero} hacia {nombreDestino}";
+        }
+
+        /// <summary>La línea de debajo del título en la lista: «4 pedidos · 12 líneas · 30 uds».</summary>
+        public virtual string Detalle(RecogidaPendienteDTO recogida)
+        {
+            var partes = new List<string>();
+            if (recogida.Pedidos.HasValue)
+            {
+                partes.Add(Contar(recogida.Pedidos.Value, "pedido", "pedidos"));
+            }
+            partes.Add(Contar(recogida.Lineas, "línea", "líneas"));
+            partes.Add(Contar(recogida.Unidades, "ud", "uds"));
+            return string.Join(" · ", partes);
+        }
+
+        /// <summary>El encabezado de la confirmación antes de terminar.</summary>
+        public virtual string TituloConfirmacion(string tipo, int numero) => $"¿Terminar {tipo} {numero}?";
+        /// <summary>Confirmación, si no hay nada en falta.</summary>
+        public virtual string AvisoSinFaltas => "Sin faltas.";
+        /// <summary>Confirmación, detrás de «En falta: N unidades.»: qué se hace con lo que falta.</summary>
+        public virtual string AvisoConFaltas => "Lo que falta no sale.";
+        /// <summary>Confirmación, siempre al final: lo que pasa al terminar que el mozo tiene que saber. Null: nada.</summary>
+        public virtual string AvisoAlTerminar(string nombreDestino) => null;
+        /// <summary>Al abrir una salida que ya está terminada en el servidor.</summary>
+        public virtual string AvisoCerrada(string tipo, int numero) => $"{tipo} {numero} ya está terminada.";
+        /// <summary>Al terminar otra vez algo ya terminado (va seguido de «: no se ha vuelto a tocar nada.»).</summary>
+        public virtual string YaEstabaTerminada(string tipo, int numero) => $"{tipo} {numero} ya estaba terminada";
+
+        internal static string Contar(int n, string singular, string plural) => $"{n} {(n == 1 ? singular : plural)}";
+    }
+
+    /// <summary>
     /// NestoAPI#556: una estrategia de salida de mercancía, espejo de <see cref="IOrigenRecepcion"/>. Cada tipo dice qué
     /// hay por sacar, de dónde sale cada cosa, quién puede terminarlo y qué se hace al terminar; leer, casar lo leído,
     /// faltas y deshacer son comunes (<see cref="ServicioSalidas"/>).
@@ -81,6 +139,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     {
         /// <summary>PICK, REPO… (4 letras, como TipoOrigen de los escaneos).</summary>
         string Tipo { get; }
+        /// <summary>NestoAPI#600: lo que dice este tipo al mozo y lo que se puede hacer con él (lo copia el núcleo a los DTO). Null = lo genérico.</summary>
+        TextosTipoSalida Textos { get; }
         /// <summary>False mientras el cierre de este tipo siga en otro sitio (se puede leer y casar, no terminar).</summary>
         bool SeTerminaDesdeAqui { get; }
         bool PuedeTerminar(IPrincipal usuario, string empresa);
@@ -138,9 +198,60 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             var pendientes = new List<RecogidaPendienteDTO>();
             foreach (IOrigenSalida origen in origenes.Values)
             {
-                pendientes.AddRange(await origen.LeerPendientes(empresa, almacen).ConfigureAwait(false) ?? new List<RecogidaPendienteDTO>());
+                foreach (RecogidaPendienteDTO pendiente in await origen.LeerPendientes(empresa, almacen).ConfigureAwait(false) ?? new List<RecogidaPendienteDTO>())
+                {
+                    pendientes.Add(Completar(origen, pendiente));
+                }
             }
             return pendientes;
+        }
+
+        /// <summary>NestoAPI#600: el título, el detalle y las capacidades de cada salida de la lista, de su tipo.</summary>
+        private static RecogidaPendienteDTO Completar(IOrigenSalida origen, RecogidaPendienteDTO recogida)
+        {
+            TextosTipoSalida textos = TextosDe(origen);
+            recogida.Tipo = string.IsNullOrWhiteSpace(recogida.Tipo) ? origen.Tipo : recogida.Tipo;
+            recogida.NombreDestino = NombreDestino(recogida.NombreDestino, recogida.Destino);
+            recogida.Titulo = Texto(textos, t => t.Titulo(recogida.Tipo, recogida.Numero, recogida.NombreDestino));
+            recogida.Detalle = Texto(textos, t => t.Detalle(recogida));
+            recogida.TienePacking = textos.TienePacking;
+            return recogida;
+        }
+
+        /// <summary>NestoAPI#600: los textos del recorrido abierto (título, confirmación por caso, ya terminada) y sus capacidades.</summary>
+        private static RecogidaAlmacenDTO Completar(IOrigenSalida origen, RecogidaAlmacenDTO recogida, string nombreDestino)
+        {
+            TextosTipoSalida textos = TextosDe(origen);
+            recogida.NombreDestino = NombreDestino(nombreDestino, recogida.Destino);
+            recogida.Titulo = Texto(textos, t => t.Titulo(recogida.Tipo, recogida.Numero, recogida.NombreDestino));
+            recogida.TituloConfirmacion = Texto(textos, t => t.TituloConfirmacion(recogida.Tipo, recogida.Numero));
+            recogida.AvisoSinFaltas = Texto(textos, t => t.AvisoSinFaltas);
+            recogida.AvisoConFaltas = Texto(textos, t => t.AvisoConFaltas);
+            recogida.AvisoAlTerminar = Texto(textos, t => t.AvisoAlTerminar(recogida.NombreDestino));
+            recogida.AvisoCerrada = Texto(textos, t => t.AvisoCerrada(recogida.Tipo, recogida.Numero));
+            recogida.TienePacking = textos.TienePacking;
+            recogida.PermiteCambiarHueco = textos.PermiteCambiarHueco;
+            return recogida;
+        }
+
+        private static string NombreDestino(string nombre, string destino)
+        {
+            string limpio = nombre?.Trim();
+            return string.IsNullOrEmpty(limpio) ? destino?.Trim() : limpio;
+        }
+
+        private static TextosTipoSalida TextosDe(IOrigenSalida origen) => origen.Textos ?? TextosTipoSalida.Genericos;
+
+        /// <summary>El texto del tipo; si no dice nada (null o en blanco), el genérico (que también puede ser null).</summary>
+        private static string Texto(TextosTipoSalida textos, Func<TextosTipoSalida, string> leer)
+        {
+            string propio = leer(textos)?.Trim();
+            if (!string.IsNullOrEmpty(propio))
+            {
+                return propio;
+            }
+            string generico = leer(TextosTipoSalida.Genericos)?.Trim();
+            return string.IsNullOrEmpty(generico) ? null : generico;
         }
 
         public async Task<RecogidaAlmacenDTO> LeerRecogida(string empresa, string tipo, int numero)
@@ -153,7 +264,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             RecorridoSalida recorrido = await LeerRecorridoOrdenado(origen, empresa, numero).ConfigureAwait(false);
             return recorrido == null
                 ? null
-                : ServicioPreparacionAlmacen.MontarRecogida(empresa, origen.Tipo, numero, recorrido.Destino, recorrido.Lineas, recorrido.Lecturas);
+                : Completar(origen, ServicioPreparacionAlmacen.MontarRecogida(empresa, origen.Tipo, numero, recorrido.Destino, recorrido.Lineas, recorrido.Lecturas),
+                    recorrido.NombreDestino);
         }
 
         public async Task<ResultadoTerminarSalida> Terminar(string empresa, string tipo, int numero, IPrincipal usuario, bool ensayo = false)
@@ -221,7 +333,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         {
             if (await tx.EstaTerminada(empresa, origen.Tipo, numero).ConfigureAwait(false))
             {
-                string documento = origen.Tipo == CasadorEscaneos.ORIGEN_PICKING ? $"El picking {numero} ya estaba terminado" : $"{origen.Tipo} {numero} ya estaba terminada";
+                string documento = Texto(TextosDe(origen), t => t.YaEstabaTerminada(origen.Tipo, numero));
                 return Resumen(origen.Tipo, numero, estado, $"{documento}: no se ha vuelto a tocar nada.");
             }
             ResultadoTerminarSalidaDTO hecho = await origen.Terminar(empresa, numero, estado, usuario, tx).ConfigureAwait(false);
@@ -402,6 +514,29 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
         public string Tipo => CasadorEscaneos.ORIGEN_PICKING;
 
+        public TextosTipoSalida Textos { get; } = new TextosPicking();
+
+        /// <summary>NestoAPI#600: lo que se le dice al mozo de un picking (antes estaba en Ariadna). Se empaqueta después.</summary>
+        internal class TextosPicking : TextosTipoSalida
+        {
+            public override bool TienePacking => true;
+            // Ariadna#12: la reserva de un picking se puede pasar a otro hueco
+            public override bool PermiteCambiarHueco => true;
+            // El destino (la mesa de packing) es siempre el mismo: va en el detalle, no en el título
+            public override string Titulo(string tipo, int numero, string nombreDestino) => $"Picking {numero}";
+
+            public override string Detalle(RecogidaPendienteDTO recogida)
+            {
+                string detalle = base.Detalle(recogida);
+                return string.IsNullOrWhiteSpace(recogida.NombreDestino) ? detalle : $"{detalle} → {recogida.NombreDestino}";
+            }
+
+            public override string TituloConfirmacion(string tipo, int numero) => $"¿Terminar el picking {numero}?";
+            public override string AvisoConFaltas => "Se quitan de sus pedidos y quedan pendientes para otra entrega.";
+            public override string AvisoCerrada(string tipo, int numero) => "Este picking ya está terminado. Pulsa Packing (o Intro) para preparar los pedidos.";
+            public override string YaEstabaTerminada(string tipo, int numero) => $"El picking {numero} ya estaba terminado";
+        }
+
         public bool SeTerminaDesdeAqui => true;
 
         public bool PuedeTerminar(IPrincipal usuario, string empresa) => ServicioSalidas.EsDeAlmacenODireccion(usuario);
@@ -414,6 +549,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     Tipo = Tipo,
                     Numero = p.Picking,
                     Destino = CasadorEscaneos.DESTINO_PICKING,
+                    NombreDestino = CasadorEscaneos.DESTINO_PICKING,
                     Lineas = p.Lineas,
                     Pedidos = p.Pedidos,
                     Unidades = p.Unidades
@@ -431,6 +567,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             return new RecorridoSalida
             {
                 Destino = CasadorEscaneos.DESTINO_PICKING,
+                NombreDestino = CasadorEscaneos.DESTINO_PICKING,
                 Lineas = lineas,
                 Lecturas = await repositorio.LeerLecturasDelPicking(empresa, numero).ConfigureAwait(false)
             };
@@ -550,6 +687,26 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
         public string Tipo => CasadorEscaneos.ORIGEN_REPOSICION;
 
+        public TextosTipoSalida Textos { get; } = new TextosReposicion();
+
+        /// <summary>NestoAPI#600: lo que se le dice al mozo de la salida de una reposición (antes estaba en Ariadna).</summary>
+        internal class TextosReposicion : TextosTipoSalida
+        {
+            // NestoAPI#553/#594 (Carlos 06/10/26): el destino es el almacén y va en el título, con su nombre
+            public override string Titulo(string tipo, int numero, string nombreDestino) =>
+                string.IsNullOrWhiteSpace(nombreDestino) ? $"Reposición {numero}" : $"Reposición {numero} hacia {nombreDestino}";
+
+            public override string TituloConfirmacion(string tipo, int numero) => $"¿Terminar la reposición {numero}?";
+            public override string AvisoConFaltas => "No salen: se quitan también de la entrada y pasan a «pendiente de ubicar».";
+
+            public override string AvisoAlTerminar(string nombreDestino) =>
+                $"Se contabiliza la salida del traspaso{(string.IsNullOrWhiteSpace(nombreDestino) ? string.Empty : " hacia " + nombreDestino)}: " +
+                "la mercancía deja de estar en este almacén y no se puede deshacer desde Ariadna.";
+
+            public override string AvisoCerrada(string tipo, int numero) => "Esta reposición ya está terminada.";
+            public override string YaEstabaTerminada(string tipo, int numero) => $"La reposición {numero} ya estaba terminada";
+        }
+
         public bool SeTerminaDesdeAqui => true;
 
         public bool PuedeTerminar(IPrincipal usuario, string empresa) => ServicioSalidas.EsDeAlmacenODireccion(usuario);
@@ -562,6 +719,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     Tipo = Tipo,
                     Numero = r.Traspaso,
                     Destino = r.Destino,
+                    NombreDestino = r.NombreDestino,
                     Lineas = r.Lineas,
                     Unidades = r.Unidades
                 })
@@ -578,6 +736,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             return new RecorridoSalida
             {
                 Destino = salida.Destino,
+                NombreDestino = salida.NombreDestino,
                 Lineas = salida.Lineas,
                 Lecturas = await repositorio.LeerLecturasDeSalida(empresa, Tipo, numero).ConfigureAwait(false)
             };

@@ -428,6 +428,7 @@
     <Compile Include="Infrastructure\PreparacionAlmacen\AvisadorReposicionesTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\OrigenesRecepcionTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\ServicioRecepcionesTests.cs" />
+    <Compile Include="Infrastructure\PreparacionAlmacen\TextosTipoAlmacenTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\ServicioRecepcionComprasTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\ServicioRecepcionReposicionesTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\ServicioUbicacionesAlmacenTests.cs" />

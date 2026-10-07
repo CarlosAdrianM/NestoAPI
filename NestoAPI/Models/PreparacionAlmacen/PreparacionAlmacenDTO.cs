@@ -63,12 +63,23 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public string Tipo { get; set; }
         /// <summary>El número del picking o el del traspaso.</summary>
         public int Numero { get; set; }
-        /// <summary>A dónde va lo recogido: «Mesa de packing», o la tienda.</summary>
+        /// <summary>A dónde va lo recogido: «Mesa de packing», o la tienda (el código del almacén: REI).</summary>
         public string Destino { get; set; }
         public int Lineas { get; set; }
         /// <summary>Solo en un picking: cuántos pedidos lleva.</summary>
         public int? Pedidos { get; set; }
         public int Unidades { get; set; }
+
+        // NestoAPI#600: lo que depende del tipo, ya resuelto por su estrategia (la app no mira el código del tipo)
+
+        /// <summary>El nombre del destino para enseñarlo: «Mesa de packing», «Reina» (Almacenes.Descripción). Nunca el código.</summary>
+        public string NombreDestino { get; set; }
+        /// <summary>«Picking 99757», «Reposición 80905 hacia Reina». Siempre viene.</summary>
+        public string Titulo { get; set; }
+        /// <summary>La línea de debajo del título: «4 pedidos · 12 líneas · 30 uds → Mesa de packing». Siempre viene.</summary>
+        public string Detalle { get; set; }
+        /// <summary>Lo recogido se empaqueta después (hoy, el picking): la app ofrece el packing (F2) y lo pinta como «Packing».</summary>
+        public bool TienePacking { get; set; }
     }
 
     /// <summary>Una parada del recorrido con lo que ya está hecho de ella.</summary>
@@ -103,6 +114,30 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public bool Cerrada { get; set; }
         /// <summary>Lo dado por falta en el servidor (por cualquier PDA) cuando se ha leído la recogida.</summary>
         public int UnidadesEnFalta { get; set; }
+
+        // NestoAPI#600: lo que depende del tipo, ya resuelto por su estrategia (la app no mira el código del tipo). La
+        // confirmación antes de terminar se monta así: TituloConfirmacion de encabezado; «Cogido: N unidades.» (de la app);
+        // AvisoSinFaltas si no hay nada en falta, o «En falta: N unidades. » + AvisoConFaltas si lo hay; y AvisoAlTerminar
+        // al final, si viene.
+
+        /// <summary>El nombre del destino para enseñarlo: «Mesa de packing», «Reina» (Almacenes.Descripción). Nunca el código.</summary>
+        public string NombreDestino { get; set; }
+        /// <summary>«Picking 99757», «Reposición 80905 hacia Reina». Siempre viene.</summary>
+        public string Titulo { get; set; }
+        /// <summary>«¿Terminar el picking 99757?», «¿Terminar la reposición 80905?». Siempre viene.</summary>
+        public string TituloConfirmacion { get; set; }
+        /// <summary>Confirmación sin nada en falta: «Sin faltas.». Siempre viene.</summary>
+        public string AvisoSinFaltas { get; set; }
+        /// <summary>Confirmación con faltas, detrás de «En falta: N unidades.»: qué se hace con ellas. Siempre viene.</summary>
+        public string AvisoConFaltas { get; set; }
+        /// <summary>Confirmación, siempre al final: lo que pasa al terminar (en una reposición, que se contabiliza la salida). Null: nada.</summary>
+        public string AvisoAlTerminar { get; set; }
+        /// <summary>Lo que se le dice al abrirla si ya está terminada en el servidor (<see cref="Cerrada"/>). Siempre viene.</summary>
+        public string AvisoCerrada { get; set; }
+        /// <summary>Lo recogido se empaqueta después (hoy, el picking): al terminar se ofrece el packing.</summary>
+        public bool TienePacking { get; set; }
+        /// <summary>Si no está en el hueco, se puede ofrecer cogerlo de otro (Ariadna#12: api/Almacen/Picking/{n}/Alternativas).</summary>
+        public bool PermiteCambiarHueco { get; set; }
     }
 
     /// <summary>
