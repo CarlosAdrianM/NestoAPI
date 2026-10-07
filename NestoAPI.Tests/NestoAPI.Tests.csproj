@@ -346,7 +346,6 @@
     <Compile Include="Controllers\NotificacionesControllerTests.cs" />
     <Compile Include="Controllers\PedidosVentaJefeEquipoTests.cs" />
     <Compile Include="Controllers\PedidosVentaListadoTests.cs" />
-    <Compile Include="Infrastructure\GestorClientesObtenerClientesTests.cs" />
     <Compile Include="Controllers\PedidosVentaPorCanalExternoTests.cs" />
     <Compile Include="Controllers\PagoRedirectControllerTests.cs" />
     <Compile Include="Infraestructure\Notificaciones\BuzonNotificacionesTests.cs" />
@@ -523,6 +522,7 @@
     <Compile Include="Infrastructure\Rapports\GeneradorFrasesRitmoTests.cs" />
     <Compile Include="Infrastructure\Rapports\ServicioFrasesRitmoTests.cs" />
     <Compile Include="Infrastructure\Rapports\RecordatorioSugerenciasContactoTests.cs" />
+    <Compile Include="Infrastructure\Rapports\ModeloContactoTests.cs" />
     <Compile Include="Infrastructure\Reposiciones\CalculadoraFechaReposicionTests.cs" />
     <Compile Include="Infrastructure\Reposiciones\ServicioCalendarioReposicionesTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\CorreoConfirmacionPedidoClienteTests.cs" />
@@ -719,6 +719,9 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
+    <None Include="Recursos\modelo_llamadas_muestra_MPP_36m.zip">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Infrastructure\Contabilidad\" />

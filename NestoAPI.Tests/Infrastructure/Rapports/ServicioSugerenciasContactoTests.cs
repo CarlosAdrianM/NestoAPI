@@ -276,31 +276,19 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
         // ---------------- Caché del modelo ----------------
 
         [TestMethod]
-        public void ProbabilidadesModelo_LaConsultaSeCacheaSoloPorVendedorYTipo()
+        public void ProbabilidadesModelo_LaConsultaSeCacheaPorVendedorYDia_ElTipoYElGrupoSoloEnLaPrediccion()
         {
-            Assert.AreEqual(ProbabilidadesContactoModelo.ClaveCacheConsulta("mpp", ""), ProbabilidadesContactoModelo.ClaveCacheConsulta("MPP ", "Teléfono"),
+            var manana = new DateTime(2026, 10, 7, 10, 0, 0);
+            var tarde = new DateTime(2026, 10, 7, 16, 0, 0);
+            Assert.AreEqual(ProbabilidadesContactoModelo.ClaveCacheConsulta("mpp", manana), ProbabilidadesContactoModelo.ClaveCacheConsulta("MPP ", tarde),
+                "el tipo de interacción y la hora ya no cambian la consulta");
+            Assert.AreNotEqual(ProbabilidadesContactoModelo.ClaveCacheConsulta("MPP", manana), ProbabilidadesContactoModelo.ClaveCacheConsulta("MPP", manana.AddDays(1)));
+            Assert.AreEqual(ProbabilidadesContactoModelo.ClaveCache("MPP", "", "", manana), ProbabilidadesContactoModelo.ClaveCache("MPP", "Teléfono", "", manana),
                 "vacío y Teléfono son Llamada");
-            Assert.AreNotEqual(ProbabilidadesContactoModelo.ClaveCacheConsulta("MPP", "Llamada"), ProbabilidadesContactoModelo.ClaveCacheConsulta("MPP", "Visita"));
-            Assert.AreNotEqual(ProbabilidadesContactoModelo.ClaveCache("MPP", "Llamada", "COSCRE"), ProbabilidadesContactoModelo.ClaveCache("MPP", "Llamada", "PELTIN"));
-        }
-
-        [TestMethod]
-        public void ProbabilidadesModelo_AplicarGrupoSubgrupo_CopiaSinTocarLasFilasCacheadas()
-        {
-            var cacheadas = new List<NestoAPI.Models.Clientes.ClienteInteraccion>
-            {
-                new NestoAPI.Models.Clientes.ClienteInteraccion { ClienteId = "1/0", GrupoSubgrupoMasVendido = "COSCRE", DiasDesdeUltimoPedido = 12, FrecuenciaPedidosUltimoAnno = 10 }
-            };
-
-            var conGrupo = ProbabilidadesContactoModelo.AplicarGrupoSubgrupo(cacheadas, "PELTIN");
-            var sinGrupo = ProbabilidadesContactoModelo.AplicarGrupoSubgrupo(cacheadas, "");
-
-            Assert.AreEqual("PELTIN", conGrupo[0].GrupoSubgrupoMasVendido);
-            Assert.AreEqual(12, conGrupo[0].DiasDesdeUltimoPedido);
-            Assert.AreEqual(10, conGrupo[0].FrecuenciaPedidosUltimoAnno);
-            Assert.AreEqual("COSCRE", sinGrupo[0].GrupoSubgrupoMasVendido);
-            Assert.AreEqual("COSCRE", cacheadas[0].GrupoSubgrupoMasVendido, "la caché no se pisa");
-            Assert.AreNotSame(cacheadas[0], sinGrupo[0]);
+            Assert.AreNotEqual(ProbabilidadesContactoModelo.ClaveCache("MPP", "Llamada", "", manana), ProbabilidadesContactoModelo.ClaveCache("MPP", "Visita", "", manana));
+            Assert.AreNotEqual(ProbabilidadesContactoModelo.ClaveCache("MPP", "Llamada", "COSCRE", manana), ProbabilidadesContactoModelo.ClaveCache("MPP", "Llamada", "PELTIN", manana));
+            Assert.AreNotEqual(ProbabilidadesContactoModelo.ClaveCache("MPP", "Llamada", "", manana), ProbabilidadesContactoModelo.ClaveCache("MPP", "Llamada", "", tarde),
+                "EsPorLaTarde es feature: por la tarde se vuelve a puntuar");
         }
 
         // ---------------- Controlador ----------------

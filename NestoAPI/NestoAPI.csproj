@@ -255,6 +255,9 @@
     <Reference Include="Microsoft.ML.FastTree, Version=1.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
       <HintPath>..\packages\Microsoft.ML.FastTree.4.0.2\lib\netstandard2.0\Microsoft.ML.FastTree.dll</HintPath>
     </Reference>
+    <Reference Include="Microsoft.ML.LightGbm, Version=1.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
+      <HintPath>..\packages\Microsoft.ML.LightGbm.4.0.2\lib\netstandard2.0\Microsoft.ML.LightGbm.dll</HintPath>
+    </Reference>
     <Reference Include="Microsoft.ML.KMeansClustering, Version=1.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
       <HintPath>..\packages\Microsoft.ML.4.0.2\lib\netstandard2.0\Microsoft.ML.KMeansClustering.dll</HintPath>
     </Reference>
@@ -932,6 +935,9 @@
     <Compile Include="Infraestructure\Rapports\GeneradorFrasesRitmo.cs" />
     <Compile Include="Infraestructure\Rapports\ServicioFrasesRitmo.cs" />
     <Compile Include="Infraestructure\Rapports\RecordatorioSugerenciasContacto.cs" />
+    <Compile Include="Infraestructure\Rapports\CalculadoraFeaturesContacto.cs" />
+    <Compile Include="Infraestructure\Rapports\ModeloContacto.cs" />
+    <Compile Include="Infraestructure\Rapports\RepositorioFeaturesContactoSql.cs" />
     <Compile Include="Controllers\SugerenciasContactoController.cs" />
     <Compile Include="Infraestructure\Eventos\ServicioEventos.cs" />
     <Compile Include="Infraestructure\Eventos\SenalesEventosJobsService.cs" />
@@ -1194,11 +1200,11 @@
     <Compile Include="Models\Clientes\SolicitudAltaClienteDTO.cs" />
     <Compile Include="Models\Clientes\PaisDTO.cs" />
     <Compile Include="Models\CodigosPostales\CodigoPostalMantenimientoDTO.cs" />
-    <Compile Include="Models\Clientes\ClienteInteraccion.cs" />
     <Compile Include="Models\Clientes\ClienteProbabilidadVenta.cs" />
     <Compile Include="Models\Clientes\Iban.cs" />
     <Compile Include="Models\Clientes\Mandato.cs" />
     <Compile Include="Models\Clientes\PrediccionModelo.cs" />
+    <Compile Include="Models\Clientes\ModeloContactoEntrada.cs" />
     <Compile Include="Models\Clientes\RespuestasCliente.cs" />
     <Compile Include="Models\CodigoPostal.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>

@@ -1,5 +1,5 @@
 ﻿using NestoAPI.Infraestructure.Clientes;
-using Microsoft.ML;
+using NestoAPI.Infraestructure.Rapports;
 using Microsoft.Reporting.WebForms;
 using NestoAPI.Infraestructure.Sincronizacion;
 using NestoAPI.Models;
@@ -1516,43 +1516,13 @@ namespace NestoAPI.Infraestructure
 
         public async Task<List<ClienteProbabilidadVenta>> BuscarClientesPorProbabilidadVenta(string vendedor, int numeroClientes, string tipoInteraccion, string grupoSubgrupo = "")
         {
-            var mlContext = new MLContext();
-
-            ITransformer model;
-            using (var fileStream = new FileStream(AppDomain.CurrentDomain.BaseDirectory + "\\ModelsIA\\modelo_llamadas.zip", FileMode.Open, FileAccess.Read, FileShare.Read))
-            {
-                model = mlContext.Model.Load(fileStream, out var modelInputSchema);
-            }
-
-            // #288 punto 2: lectura pesada (CTEs a 5 años sobre SeguimientoCliente/LinPedidoVta) que
-            // sale elegida víctima de deadlock/timeout en horas de carga (casos 14/07 y #271); es una
-            // consulta pura, así que se reintenta con la policy común de deadlocks.
-            List<ClienteInteraccion> clientes = ReintentosSql.ReintentarSiDeadlock(
-                () => ObtenerClientes(vendedor, tipoInteraccion));
-
-            if (!string.IsNullOrEmpty(grupoSubgrupo))
-            {
-                foreach (var cliente in clientes)
-                {
-                    cliente.GrupoSubgrupoMasVendido = grupoSubgrupo;
-                }
-            }
-
-            // Convertir clientes a IDataView para aplicar el modelo de ML
-            IDataView clientesData = mlContext.Data.LoadFromEnumerable(clientes);
-
-            // Predecir usando el modelo de ML
-            var predictions = model.Transform(clientesData);
-
-            // Extraer resultados de predicción
-            var predictionResults = mlContext.Data.CreateEnumerable<PrediccionModelo>(predictions, reuseRowObject: false);
-
-            // Seleccionar mejores clientes basados en la probabilidad
-            var mejoresClientes = predictionResults
-                .Select((pred, index) => new { Cliente = clientes[index], Probabilidad = pred.Probability })
-                .OrderByDescending(c => c.Probabilidad)
-                .Take(numeroClientes)
-                .ToList();
+            // NestoAPI#603 c3b: el mismo modelo (y el mismo zip) que las sugerencias de contacto, con la entrada nueva
+            // calculada como en el entrenamiento. La consulta no se cachea aquí (como antes): quien acaba de ser contactado
+            // tiene que salir del filtro de 7 días.
+            DateTime ahora = DateTime.Now;
+            List<HistorialContacto> historiales = await Task.Run(() => new RepositorioFeaturesContactoSql().Leer(vendedor, ahora.Date)).ConfigureAwait(false);
+            List<ClientePuntuadoAntiguo> mejoresClientes = PuntuarParaEndpointAntiguo(historiales, ahora, tipoInteraccion, grupoSubgrupo, numeroClientes,
+                entradas => ModeloContacto.Puntuar(entradas));
 
             // Preparar lista de clientes con probabilidad de venta
             List<ClienteProbabilidadVenta> clientesProbabilidadVenta = new List<ClienteProbabilidadVenta>();
@@ -1561,7 +1531,7 @@ namespace NestoAPI.Infraestructure
             foreach (var item in mejoresClientes)
             {
                 // Dividir el ClienteId para obtener Cliente y Contacto
-                string[] clienteParts = item.Cliente.ClienteId.Split('/');
+                string[] clienteParts = item.ClienteId.Split('/');
                 string clienteId = clienteParts[0];   // Cliente
                 string contacto = clienteParts.Length > 1 ? clienteParts[1] : string.Empty; // Contacto
 
@@ -1603,8 +1573,8 @@ namespace NestoAPI.Infraestructure
                         vendedor = clienteEncontrado.Vendedor,
                         web = clienteEncontrado.Web,
                         Probabilidad = item.Probabilidad,
-                        DiasDesdeUltimaInteraccion = (int)item.Cliente.DiasDesdeUltimaInteraccion,
-                        DiasDesdeUltimoPedido = (int)item.Cliente.DiasDesdeUltimoPedido
+                        DiasDesdeUltimaInteraccion = item.DiasDesdeUltimaInteraccion,
+                        DiasDesdeUltimoPedido = item.DiasDesdeUltimoPedido
                     };
 
                     // Agregar el cliente a la lista final
@@ -1615,166 +1585,60 @@ namespace NestoAPI.Infraestructure
             return clientesProbabilidadVenta;
         }
 
+        /// <summary>NestoAPI#603 c3b: un cliente puntuado para GetClientesProbabilidadVenta.</summary>
+        internal class ClientePuntuadoAntiguo
+        {
+            public string ClienteId { get; set; }
+            public float Probabilidad { get; set; }
+            /// <summary>Días desde el último rapport Estado 0 sin pedido (cualquier tipo); 9999 si no hay.</summary>
+            public int DiasDesdeUltimaInteraccion { get; set; }
+            /// <summary>La feature del modelo (1000 si no hay pedido en 24 meses).</summary>
+            public int DiasDesdeUltimoPedido { get; set; }
+        }
 
+        internal const int DIAS_MINIMOS_DESDE_INTERACCION_ANTIGUO = 7;
+        internal const int DIAS_MINIMOS_DESDE_PEDIDO_ANTIGUO = 6;
+        internal const int SIN_INTERACCION_ANTIGUO = 9999;
 
         /// <summary>
-        /// NestoAPI#401: la consulta del modelo de probabilidad de venta (primera pantalla del comercial
-        /// por la mañana). Mismo resultado que antes, pero:
-        /// <list type="bullet">
-        /// <item>Las interacciones y los pedidos de 5 años se MATERIALIZAN en temporales, filtradas por
-        /// los clientes del vendedor, con índice. Antes eran CTEs sin filtrar por vendedor usadas en cuatro
-        /// subconsultas correlacionadas por cliente: una CTE no se materializa, así que el join de 5 años
-        /// de CabPedidoVta con LinPedidoVta se recalculaba hasta 3·N veces (N = clientes del vendedor).</item>
-        /// <item><c>vendedor</c> y <c>tipoInteraccion</c> van como parámetros: antes se interpolaban en el
-        /// SQL y eran inyectables desde la query string.</item>
-        /// <item>CommandTimeout de 120 s (antes los 30 por defecto). ReintentosSql solo reintenta deadlocks,
-        /// no timeouts, así que no multiplica la carga.</item>
-        /// </list>
+        /// NestoAPI#603 c3b: lo que hacía el endpoint antiguo, con la entrada nueva: filtro fijo de salida (≥ 7 días desde la
+        /// última interacción y ≥ 6 desde el último pedido), el grupo/subgrupo pisado en todas, y los <paramref name="numero"/>
+        /// de más probabilidad.
         /// </summary>
-        internal const string SQL_OBTENER_CLIENTES = @"
-            DECLARE @FechaHoy datetime = GETDATE();
-            DECLARE @FechaHace11Meses datetime = DATEADD(month, -11, @FechaHoy);
-            DECLARE @FechaHace12Meses datetime = DATEADD(yy, -1, @FechaHoy);
-            DECLARE @FechaHace5Anos datetime = DATEADD(yy, -5, @FechaHoy);
-
-            select row_number() over (partition by l.[nº cliente], l.contacto order by sum(cantidad) desc) rn, L.[Nº Cliente] Cliente, L.Contacto, L.Grupo + Subgrupo GrupoSubgrupo, sum(Cantidad) Ventas
-            into #Gruposubgrupo
-            from LinPedidoVta l inner join Clientes c
-            on l.[Nº Cliente] = c.[Nº Cliente] and l.Contacto = c.Contacto
-            where c.Vendedor = @Vendedor AND [Fecha Factura] >= @FechaHace5Anos and SubGrupo != 'MMP' and L.Estado = 4
-            group by l.[Nº Cliente], l.Contacto, DATEPART(month, [Fecha Factura]), DATEPART(YEAR, [Fecha Factura]), l.Grupo + Subgrupo;
-
-            SELECT
-                TRIM([nº cliente]) + '/' + TRIM(contacto) AS ClienteId,
-                [nº Cliente] Cliente,
-                Contacto,
-                Nombre AS NombreCliente
-            INTO #Clientes
-            FROM Clientes c
-            WHERE empresa = '1'
-                AND estado >= 0
-                AND Estado not in (7, 67)
-                AND vendedor = @Vendedor;
-
-            -- Solo las interacciones de los clientes del vendedor: son las únicas que leen las
-            -- subconsultas (correlacionan por cliente y contacto).
-            SELECT
-                s.Número Cliente,
-                s.Contacto,
-                DATEADD(HOUR, -1, s.Fecha) AS FechaInteraccion
-            INTO #Interacciones
-            FROM SeguimientoCliente s
-            WHERE s.Fecha >= @FechaHace5Anos
-                AND s.Estado = 0 AND s.Pedido = 0
-                AND EXISTS (SELECT 1 FROM #Clientes x WHERE x.Cliente = s.Número AND x.Contacto = s.Contacto);
-            CREATE CLUSTERED INDEX IX_Interacciones ON #Interacciones (Cliente, Contacto, FechaInteraccion);
-
-            SELECT
-                c.[Nº Cliente] Cliente,
-                c.Contacto,
-                c.Número AS PedidoId,
-                CASE
-                    WHEN c.[Periodo Facturacion] = 'FDM' THEN l.[Fecha Modificacion]
-                    ELSE c.[Fecha Modificación]
-                END AS FechaPedido
-            INTO #Pedidos
-            FROM CabPedidoVta c
-            INNER JOIN LinPedidoVta l ON c.empresa = l.empresa AND c.número = l.número
-            WHERE TipoLinea = 1 and Estado >= -1 AND c.NotaEntrega = 0
-                AND [base imponible] > 0
-                AND c.Fecha >= @FechaHace5Anos
-                AND EXISTS (SELECT 1 FROM #Clientes x WHERE x.Cliente = c.[Nº Cliente] AND x.Contacto = c.Contacto);
-            CREATE CLUSTERED INDEX IX_Pedidos ON #Pedidos (Cliente, Contacto, FechaPedido);
-
-            SELECT
-                c.ClienteId,
-                @TipoInteraccion AS TipoInteraccion,
-                DATEPART(MONTH, @FechaHoy) AS MesActual,
-                DATEPART(WEEKDAY, @FechaHoy) AS DiaDeLaSemana,
-                CASE WHEN DATEPART(HOUR, @FechaHoy) > 14 THEN 1 ELSE 0 END AS EsPorLaTarde,
-                ISNULL(DATEDIFF(DAY, (SELECT MAX(FechaInteraccion) FROM #Interacciones i WHERE i.Cliente = c.Cliente and i.Contacto = c.Contacto), @FechaHoy), 9999) AS DiasDesdeUltimaInteraccion,
-                ISNULL(DATEDIFF(DAY, (SELECT MAX(FechaPedido) FROM #Pedidos p WHERE p.Cliente = c.Cliente and p.Contacto = c.Contacto), @FechaHoy), 9999) AS DiasDesdeUltimoPedido,
-                isnull((SELECT ISNULL(365 / NULLIF(COUNT(DISTINCT CAST(FechaPedido AS date)), 0), 0) FROM #Pedidos p WHERE p.Cliente = c.Cliente and p.Contacto = c.Contacto AND p.FechaPedido >= @FechaHace12Meses), 0) AS FrecuenciaPedidosUltimoAnno,
-                ISNULL((SELECT COUNT(*) FROM #Interacciones p WHERE p.Cliente = c.Cliente and p.Contacto = c.Contacto AND p.FechaInteraccion >= @FechaHace12Meses), 0) AS InteraccionesUltimos12Meses,
-                isnull((SELECT COUNT(distinct(cast(FechaPedido as DATE))) FROM #Pedidos p WHERE p.Cliente = c.Cliente and p.Contacto = c.Contacto AND p.FechaPedido >= @FechaHace12Meses AND p.FechaPedido < @FechaHace11Meses), 0) AS PedidosMesAnnoAnterior,
-                isnull((select GrupoSubgrupo from #Gruposubgrupo g where rn = 1 and g.Cliente = c.Cliente and g.Contacto= c.Contacto), 'NADA') GrupoSubgrupoMasVendido,
-                0 AS target
-            FROM #Clientes c
-            ORDER BY c.ClienteId;
-            ";
-
-        internal const int TIMEOUT_OBTENER_CLIENTES_SEGUNDOS = 120;
+        internal static List<ClientePuntuadoAntiguo> PuntuarParaEndpointAntiguo(IEnumerable<HistorialContacto> historiales, DateTime ahora,
+            string tipoInteraccion, string grupoSubgrupo, int numero, Func<IList<ModeloContactoEntrada>, List<float>> puntuar)
+        {
+            var candidatos = historiales
+                .Select(h => new
+                {
+                    Entrada = CalculadoraFeaturesContacto.Calcular(h, ahora, NormalizarTipoInteraccion(tipoInteraccion)),
+                    DiasInteraccion = h.UltimaInteraccion.HasValue ? (ahora.Date - h.UltimaInteraccion.Value.Date).Days : SIN_INTERACCION_ANTIGUO
+                })
+                .Where(c => c.DiasInteraccion >= DIAS_MINIMOS_DESDE_INTERACCION_ANTIGUO && c.Entrada.DiasDesdeUltimoPedido >= DIAS_MINIMOS_DESDE_PEDIDO_ANTIGUO)
+                .ToList();
+            if (!candidatos.Any())
+            {
+                return new List<ClientePuntuadoAntiguo>();
+            }
+            List<ModeloContactoEntrada> entradas = ModeloContacto.ConGrupoSubgrupo(candidatos.Select(c => c.Entrada), grupoSubgrupo);
+            List<float> probabilidades = puntuar(entradas);
+            return candidatos
+                .Select((c, i) => new ClientePuntuadoAntiguo
+                {
+                    ClienteId = c.Entrada.ClienteId,
+                    Probabilidad = probabilidades[i],
+                    DiasDesdeUltimaInteraccion = c.DiasInteraccion,
+                    DiasDesdeUltimoPedido = (int)c.Entrada.DiasDesdeUltimoPedido
+                })
+                .OrderByDescending(c => c.Probabilidad)
+                .Take(numero)
+                .ToList();
+        }
 
         /// <summary>El tipo de interacción por defecto del modelo es la llamada.</summary>
         internal static string NormalizarTipoInteraccion(string tipoInteraccion)
         {
             return string.IsNullOrEmpty(tipoInteraccion) || tipoInteraccion == "Teléfono" ? "Llamada" : tipoInteraccion;
-        }
-
-        internal static SqlCommand CrearComandoObtenerClientes(SqlConnection connection, string vendedor, string tipoInteraccion)
-        {
-            SqlCommand command = new SqlCommand(SQL_OBTENER_CLIENTES, connection)
-            {
-                CommandTimeout = TIMEOUT_OBTENER_CLIENTES_SEGUNDOS
-            };
-            _ = command.Parameters.Add(new SqlParameter("@Vendedor", SqlDbType.VarChar, 10) { Value = (object)vendedor?.Trim() ?? DBNull.Value });
-            _ = command.Parameters.Add(new SqlParameter("@TipoInteraccion", SqlDbType.VarChar, 20) { Value = NormalizarTipoInteraccion(tipoInteraccion) });
-            return command;
-        }
-
-        private static List<ClienteInteraccion> ObtenerClientes(string vendedor, string tipoInteraccion)
-        {
-            return ObtenerClientesParaModelo(vendedor, tipoInteraccion)
-                .Where(c => c.DiasDesdeUltimaInteraccion >= 7 && c.DiasDesdeUltimoPedido >= 6).ToList();
-        }
-
-        /// <summary>
-        /// Las features del modelo para TODOS los clientes del vendedor, sin el filtro fijo de 7 días del endpoint antiguo
-        /// (NestoAPI#603: las sugerencias de contacto lo sustituyen por la cadencia de cada cliente).
-        /// </summary>
-        internal static List<ClienteInteraccion> ObtenerClientesParaModelo(string vendedor, string tipoInteraccion)
-        {
-            using (var context = new NVEntities())
-            {
-                var connectionString = context.Database.Connection.ConnectionString;
-
-                using (SqlConnection connection = new SqlConnection(connectionString))
-                using (SqlCommand command = CrearComandoObtenerClientes(connection, vendedor, tipoInteraccion))
-                {
-                    connection.Open();
-                    List<ClienteInteraccion> clientes = new List<ClienteInteraccion>();
-                    using (SqlDataReader reader = command.ExecuteReader())
-                    {
-                        while (reader.Read())
-                        {
-                            try
-                            {
-                                clientes.Add(new ClienteInteraccion
-                                {
-                                    ClienteId = reader["ClienteId"].ToString(),
-                                    TipoInteraccion = reader["TipoInteraccion"].ToString(),
-                                    MesActual = reader["MesActual"].ToString(),
-                                    DiaDeLaSemana = reader["DiaDeLaSemana"].ToString(),
-                                    GrupoSubgrupoMasVendido = reader["GrupoSubgrupoMasVendido"].ToString(),
-                                    EsPorLaTarde = Convert.ToSingle(reader["EsPorLaTarde"]),
-                                    DiasDesdeUltimaInteraccion = Convert.ToSingle(reader["DiasDesdeUltimaInteraccion"]),
-                                    DiasDesdeUltimoPedido = Convert.ToSingle(reader["DiasDesdeUltimoPedido"]),
-                                    FrecuenciaPedidosUltimoAnno = Convert.ToSingle(reader["FrecuenciaPedidosUltimoAnno"]),
-                                    InteraccionesUltimos12Meses = Convert.ToSingle(reader["InteraccionesUltimos12Meses"]),
-                                    PedidosMesAnnoAnterior = Convert.ToSingle(reader["PedidosMesAnnoAnterior"]),
-                                    Target = Convert.ToBoolean(reader["target"])
-                                });
-                            }
-                            catch (Exception ex)
-                            {
-                                throw new Exception("No se pudo leer los datos del modele", ex);
-                            }
-                        }
-                    }
-
-                    return clientes;
-                }
-            }
         }
 
         public async Task<Cliente> ModificarCliente(ClienteCrear clienteCrear, NVEntities db)

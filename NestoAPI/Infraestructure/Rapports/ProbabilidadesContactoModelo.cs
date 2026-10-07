@@ -1,8 +1,6 @@
-using Microsoft.ML;
 using NestoAPI.Models.Clientes;
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Runtime.Caching;
 using System.Threading.Tasks;
@@ -16,11 +14,15 @@ namespace NestoAPI.Infraestructure.Rapports
     }
 
     /// <summary>
-    /// NestoAPI#603: el modelo actual (ModelsIA/modelo_llamadas.zip sobre SQL_OBTENER_CLIENTES, igual que
-    /// GET api/Clientes/GetClientesProbabilidadVenta) para toda la cartera del vendedor, sin el filtro fijo de 7 días.
-    /// La consulta es la pesada (#401): sus filas se cachean 2 h solo por vendedor y tipo de interacción, y el grupo/subgrupo
-    /// se aplica en memoria sobre una copia antes del modelo (cada grupo no lanza otra consulta). Las predicciones de cada
-    /// grupo también se cachean 2 h.
+    /// NestoAPI#603 c3b: el modelo de contactos (ModelsIA/modelo_llamadas.zip, entrada <see cref="ModeloContactoEntrada"/>) para
+    /// toda la cartera del vendedor. Las features se calculan como en el entrenamiento (<see cref="CalculadoraFeaturesContacto"/>,
+    /// con ahora como momento del contacto) sobre los datos crudos de <see cref="IRepositorioFeaturesContacto"/>.
+    /// <list type="bullet">
+    /// <item>La consulta se cachea 2 h por vendedor y día: el tipo de interacción y el grupo/subgrupo ya no la cambian (son
+    /// features que se ponen en memoria), así que cambiar de tipo o de grupo no lanza otra.</item>
+    /// <item>Las predicciones se cachean 2 h por vendedor, tipo, grupo/subgrupo, día y mañana/tarde (EsPorLaTarde es feature).</item>
+    /// <item>El grupo/subgrupo que se pregunta sustituye a GrupoSubgrupoMasVendido en una copia; el que se devuelve es el real.</item>
+    /// </list>
     /// Si el modelo falla se registra en ELMAH y se devuelve vacío (todas las probabilidades a 0: sin prioridad Máxima,
     /// pero la lista sale) y no se cachea.
     /// </summary>
@@ -29,60 +31,51 @@ namespace NestoAPI.Infraestructure.Rapports
         public static readonly TimeSpan DURACION_CACHE = TimeSpan.FromHours(2);
         private static readonly MemoryCache cache = MemoryCache.Default;
 
-        internal static string ClaveCacheConsulta(string vendedor, string tipoInteraccion) =>
-            $"SugerenciasContacto:Consulta:{vendedor?.Trim().ToUpperInvariant()}:{GestorClientes.NormalizarTipoInteraccion(tipoInteraccion)}";
+        private readonly IRepositorioFeaturesContacto repositorio;
+        private readonly Func<DateTime> ahora;
+        private readonly string rutaModelo;
 
-        internal static string ClaveCache(string vendedor, string tipoInteraccion, string grupoSubgrupo) =>
-            $"SugerenciasContacto:Prediccion:{vendedor?.Trim().ToUpperInvariant()}:{GestorClientes.NormalizarTipoInteraccion(tipoInteraccion)}:{grupoSubgrupo?.Trim().ToUpperInvariant()}";
-
-        /// <summary>Las filas de SQL_OBTENER_CLIENTES del vendedor y tipo, de la caché o de la BD (la consulta pesada, una vez cada 2 h).</summary>
-        private static List<ClienteInteraccion> ConsultaCacheada(string vendedor, string tipoInteraccion)
+        public ProbabilidadesContactoModelo() : this(new RepositorioFeaturesContactoSql(), () => DateTime.Now, null)
         {
-            string clave = ClaveCacheConsulta(vendedor, tipoInteraccion);
-            if (cache.Get(clave) is List<ClienteInteraccion> enCache)
+        }
+
+        internal ProbabilidadesContactoModelo(IRepositorioFeaturesContacto repositorio, Func<DateTime> ahora, string rutaModelo)
+        {
+            this.repositorio = repositorio;
+            this.ahora = ahora;
+            this.rutaModelo = rutaModelo;
+        }
+
+        internal static string ClaveCacheConsulta(string vendedor, DateTime ahora) =>
+            $"SugerenciasContacto:Historial:{vendedor?.Trim().ToUpperInvariant()}:{ahora:yyyyMMdd}";
+
+        internal static string ClaveCache(string vendedor, string tipoInteraccion, string grupoSubgrupo, DateTime ahora) =>
+            $"SugerenciasContacto:Prediccion:{vendedor?.Trim().ToUpperInvariant()}:{GestorClientes.NormalizarTipoInteraccion(tipoInteraccion)}:{grupoSubgrupo?.Trim().ToUpperInvariant()}:{ahora:yyyyMMdd}:{(ahora.Hour >= CalculadoraFeaturesContacto.HORA_TARDE ? "T" : "M")}";
+
+        /// <summary>El historial de la cartera del vendedor, de la caché o de la BD (una vez cada 2 h).</summary>
+        private List<HistorialContacto> ConsultaCacheada(string vendedor, DateTime momento)
+        {
+            string clave = ClaveCacheConsulta(vendedor, momento);
+            if (cache.Get(clave) is List<HistorialContacto> enCache)
             {
                 return enCache;
             }
-            List<ClienteInteraccion> clientes = ReintentosSql.ReintentarSiDeadlock(
-                () => GestorClientes.ObtenerClientesParaModelo(vendedor, tipoInteraccion));
-            _ = cache.Add(clave, clientes, DateTimeOffset.Now.Add(DURACION_CACHE));
-            return clientes;
-        }
-
-        /// <summary>
-        /// Copia de las filas con el grupo/subgrupo que se pregunta (como el endpoint antiguo, que lo pisaba en todas). Nunca se
-        /// tocan las filas cacheadas.
-        /// </summary>
-        internal static List<ClienteInteraccion> AplicarGrupoSubgrupo(IEnumerable<ClienteInteraccion> clientes, string grupoSubgrupo)
-        {
-            bool pisar = !string.IsNullOrEmpty(grupoSubgrupo);
-            return clientes.Select(c => new ClienteInteraccion
-            {
-                ClienteId = c.ClienteId,
-                TipoInteraccion = c.TipoInteraccion,
-                MesActual = c.MesActual,
-                DiaDeLaSemana = c.DiaDeLaSemana,
-                GrupoSubgrupoMasVendido = pisar ? grupoSubgrupo : c.GrupoSubgrupoMasVendido,
-                EsPorLaTarde = c.EsPorLaTarde,
-                DiasDesdeUltimaInteraccion = c.DiasDesdeUltimaInteraccion,
-                DiasDesdeUltimoPedido = c.DiasDesdeUltimoPedido,
-                FrecuenciaPedidosUltimoAnno = c.FrecuenciaPedidosUltimoAnno,
-                InteraccionesUltimos12Meses = c.InteraccionesUltimos12Meses,
-                PedidosMesAnnoAnterior = c.PedidosMesAnnoAnterior,
-                Target = c.Target
-            }).ToList();
+            List<HistorialContacto> historiales = repositorio.Leer(vendedor, momento.Date);
+            _ = cache.Add(clave, historiales, DateTimeOffset.Now.Add(DURACION_CACHE));
+            return historiales;
         }
 
         public async Task<Dictionary<string, PrediccionContacto>> Leer(string vendedor, string tipoInteraccion, string grupoSubgrupo)
         {
-            string clave = ClaveCache(vendedor, tipoInteraccion, grupoSubgrupo);
+            DateTime momento = ahora();
+            string clave = ClaveCache(vendedor, tipoInteraccion, grupoSubgrupo, momento);
             if (cache.Get(clave) is Dictionary<string, PrediccionContacto> enCache)
             {
                 return enCache;
             }
             try
             {
-                Dictionary<string, PrediccionContacto> resultado = await Task.Run(() => Calcular(vendedor, tipoInteraccion, grupoSubgrupo)).ConfigureAwait(false);
+                Dictionary<string, PrediccionContacto> resultado = await Task.Run(() => Calcular(vendedor, tipoInteraccion, grupoSubgrupo, momento)).ConfigureAwait(false);
                 _ = cache.Add(clave, resultado, DateTimeOffset.Now.Add(DURACION_CACHE));
                 return resultado;
             }
@@ -101,37 +94,27 @@ namespace NestoAPI.Infraestructure.Rapports
             }
         }
 
-        private static Dictionary<string, PrediccionContacto> Calcular(string vendedor, string tipoInteraccion, string grupoSubgrupo)
+        internal Dictionary<string, PrediccionContacto> Calcular(string vendedor, string tipoInteraccion, string grupoSubgrupo, DateTime momento)
         {
-            List<ClienteInteraccion> cacheados = ConsultaCacheada(vendedor, tipoInteraccion);
-            if (!cacheados.Any())
+            List<HistorialContacto> historiales = ConsultaCacheada(vendedor, momento);
+            if (!historiales.Any())
             {
                 return new Dictionary<string, PrediccionContacto>();
             }
 
-            // Lo que más compra el cliente, antes de pisarlo con el grupo/subgrupo que se pregunta.
-            List<string> grupoReal = cacheados.Select(c => c.GrupoSubgrupoMasVendido).ToList();
-            List<ClienteInteraccion> clientes = AplicarGrupoSubgrupo(cacheados, grupoSubgrupo);
-
-            var mlContext = new MLContext();
-            ITransformer modelo;
-            using (var fichero = new FileStream(AppDomain.CurrentDomain.BaseDirectory + "\\ModelsIA\\modelo_llamadas.zip", FileMode.Open, FileAccess.Read, FileShare.Read))
-            {
-                modelo = mlContext.Model.Load(fichero, out _);
-            }
-            IDataView datos = mlContext.Data.LoadFromEnumerable(clientes);
-            List<PrediccionModelo> predicciones = mlContext.Data
-                .CreateEnumerable<PrediccionModelo>(modelo.Transform(datos), reuseRowObject: false)
-                .ToList();
+            List<ModeloContactoEntrada> reales = ModeloContacto.Entradas(historiales, momento, tipoInteraccion);
+            List<ModeloContactoEntrada> entradas = ModeloContacto.ConGrupoSubgrupo(reales, grupoSubgrupo);
+            List<float> probabilidades = ModeloContacto.Puntuar(entradas, rutaModelo);
 
             var resultado = new Dictionary<string, PrediccionContacto>(StringComparer.OrdinalIgnoreCase);
-            for (int i = 0; i < clientes.Count && i < predicciones.Count; i++)
+            for (int i = 0; i < reales.Count && i < probabilidades.Count; i++)
             {
-                string grupo = grupoReal[i];
-                resultado[clientes[i].ClienteId.Trim()] = new PrediccionContacto
+                // Lo que más compra el cliente de verdad, no el grupo que se pregunta.
+                string grupo = reales[i].GrupoSubgrupoMasVendido;
+                resultado[reales[i].ClienteId.Trim()] = new PrediccionContacto
                 {
-                    Probabilidad = predicciones[i].Probability,
-                    GrupoSubgrupoMasVendido = string.IsNullOrWhiteSpace(grupo) || grupo == "NADA" ? null : grupo.Trim()
+                    Probabilidad = probabilidades[i],
+                    GrupoSubgrupoMasVendido = string.IsNullOrWhiteSpace(grupo) || grupo == CalculadoraFeaturesContacto.SIN_GRUPO ? null : grupo.Trim()
                 };
             }
             return resultado;
