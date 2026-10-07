@@ -19,23 +19,32 @@
 --   2. sin cliente, sin contacto o sin plazos de pago (las del Nesto viejo; las que tienen todos los
 --      datos y se han quedado sin líneas por otros motivos —unir pedidos, borrar las líneas a mano—
 --      NO se tocan: eso está pendiente de decidir en la issue),
---   3. con la fecha y la última modificación de hace más de @Dias días (nadie las está editando),
+--   3. con la fecha y la última modificación de hace más de @DiasAntiguedad días (nadie las está
+--      editando),
 --   4. y que no tengan NADA colgando: efectos, prepagos, vendedores por grupo, envíos de agencia,
 --      movimientos de stock, ubicaciones, pedidos especiales, notas de entrega, alquileres, comisiones,
 --      rectificativas pendientes, notificaciones, Modificaciones, etc. (ver la lista de abajo).
 --
 -- Cómo lanzarlo: como sa en SSMS, mejor fuera de horario (recorre LinPedidoVta y ExtractoProducto
--- por número de pedido). Con @Borrar = 0 (por defecto) solo enseña lo que borraría y deshace el
--- DELETE; con @Borrar = 1 lo confirma. Recuento del 25/09/26: 5.849 cabeceras (70 de 2026), de las
--- que solo 2 tienen algo colgando (movimientos en ExtractoProducto) y se quedan.
+-- por número de pedido). Con @SoloSimular = 1 (por defecto) enseña lo que borraría, hace el DELETE
+-- y lo deshace (ROLLBACK); con @SoloSimular = 0 lo confirma (COMMIT). Se puede relanzar cuando haga
+-- falta: cada pasada solo encuentra las nuevas.
+--
+-- Recuentos (cabeceras vacías, sin mirar todavía lo que tienen colgando):
+--   · 25/09/26: 5.849 (70 de 2026); solo 2 tenían algo colgando (movimientos en ExtractoProducto).
+--   · 07/10/26: 5.857 (78 de 2026), 5.853 con más de 7 días. Por empresa: 1 → 5.600, 2 → 175,
+--     4 → 66, 5 → 16. Todas con Origen 1. Siguen saliendo: 927497/927498 (Alfredo, 01/10, a 25 s),
+--     927803 (manuel, 05/10) y 927902 (reina\Laura, 06/10).
+--
+-- (Antes se llamaba Issue538_LimpiarCabecerasVacias.sql, con @Dias y @Borrar.)
 
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
 
-DECLARE @Dias int = 7;
-DECLARE @Borrar bit = 0;   -- 0 = solo ver (ROLLBACK); 1 = borrar (COMMIT)
+DECLARE @DiasAntiguedad int = 7;
+DECLARE @SoloSimular bit = 1;   -- 1 = solo ver (ROLLBACK); 0 = borrar (COMMIT)
 
-DECLARE @Limite datetime = DATEADD(DAY, -@Dias, GETDATE());
+DECLARE @Limite datetime = DATEADD(DAY, -@DiasAntiguedad, GETDATE());
 
 -------------------------------------------------------------------------------------------------
 -- 1. Candidatas
@@ -148,7 +157,7 @@ DECLARE @Borradas int = @@ROWCOUNT;
 SELECT @Borradas AS CabecerasBorradas,
        (SELECT COUNT(*) FROM #Candidatas) - @Borradas AS CandidatasQueYaNoCumplian;
 
-IF @Borrar = 1
+IF @SoloSimular = 0
 BEGIN
     COMMIT TRANSACTION;
     PRINT CONCAT('NestoAPI#538: borradas ', @Borradas, ' cabeceras vacías (COMMIT).');
@@ -156,5 +165,5 @@ END
 ELSE
 BEGIN
     ROLLBACK TRANSACTION;
-    PRINT CONCAT('NestoAPI#538: se borrarían ', @Borradas, ' cabeceras vacías. Deshecho (ROLLBACK): pon @Borrar = 1 para borrarlas de verdad.');
+    PRINT CONCAT('NestoAPI#538: se borrarían ', @Borradas, ' cabeceras vacías. Deshecho (ROLLBACK): pon @SoloSimular = 0 para borrarlas de verdad.');
 END
