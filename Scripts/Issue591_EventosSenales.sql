@@ -52,7 +52,7 @@ BEGIN
         Cliente char(10) NOT NULL,                      -- ExtractoCliente.Número
         Contacto char(3) NOT NULL,                      -- ExtractoCliente.Contacto
         NumOrdenExtracto int NOT NULL,                  -- ExtractoCliente.[Nº Orden] del apunte a favor que es la señal
-        Importe decimal(18, 2) NOT NULL,                -- lo que estaba a favor al marcarla (positivo)
+        Importe decimal(18, 2) NOT NULL,                -- importe original del apunte a favor (positivo); lo pendiente se lee de ExtractoCliente
         Usuario varchar(30) NOT NULL CONSTRAINT DF_EventosSenales_Usuario DEFAULT (SUSER_SNAME()),
         FechaModificacion datetime NOT NULL CONSTRAINT DF_EventosSenales_Fecha DEFAULT (GETDATE()),
         CONSTRAINT PK_EventosSenales PRIMARY KEY (Id),

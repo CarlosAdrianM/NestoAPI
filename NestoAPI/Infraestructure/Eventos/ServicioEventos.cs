@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure.Exceptions;
+﻿using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Infrastructure;
 using NestoAPI.Models;
 using Newtonsoft.Json;
@@ -58,7 +58,7 @@ namespace NestoAPI.Infraestructure.Eventos
         public DateTime? FechaApunte { get; set; }
         public string Documento { get; set; }
         public string Concepto { get; set; }
-        /// <summary>Lo que estaba a favor al marcarla (positivo).</summary>
+        /// <summary>Importe original del apunte a favor (positivo).</summary>
         public decimal Importe { get; set; }
         /// <summary>Lo que el apunte sigue teniendo a favor hoy (positivo; 0 = consumida).</summary>
         public decimal ImportePendiente { get; set; }
@@ -306,7 +306,8 @@ namespace NestoAPI.Infraestructure.Eventos
                 Cliente = clienteApunte,
                 Contacto = contactoApunte,
                 NumOrdenExtracto = numOrden,
-                Importe = Math.Round(-apunte.ImportePdte, 2, MidpointRounding.AwayFromZero),
+                // Carlos (07/10/26): el importe ORIGINAL del cobro a favor; lo pendiente se calcula al leer.
+                Importe = Math.Round(apunte.Importe < 0 ? -apunte.Importe : -apunte.ImportePdte, 2, MidpointRounding.AwayFromZero),
                 Usuario = UsuarioAuditoriaHelper.ParaAuditoria(usuario),
                 FechaModificacion = reloj()
             };

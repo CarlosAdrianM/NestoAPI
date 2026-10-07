@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure;
@@ -168,20 +168,21 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         public async Task MarcarSenal_ApunteAFavorDelCliente_GuardaConElPendienteYElUsuario()
         {
             eventos.Add(Evento(1, "Masterclass Cloasma", new DateTime(2026, 10, 20)));
-            extracto.Add(Apunte(3054909, "15191     ", "0  ", -50, -50));
+            extracto.Add(Apunte(3054909, "15191     ", "0  ", -80, -50)); // cobro de 80, ya se han gastado 30
 
             SenalEventoDTO senal = await Servicio().MarcarSenal(1,
                 new MarcarSenalEventoDTO { Empresa = "1", NumOrdenExtracto = 3054909, Cliente = "15191", Contacto = "0" }, "NUEVAVISION\\Admin");
 
             A.CallTo(() => fakeSenales.Add(A<EventoSenal>.That.Matches(s =>
                 s.EventoId == 1 && s.Empresa == "1" && s.Cliente == "15191" && s.Contacto == "0" && s.NumOrdenExtracto == 3054909
-                && s.Importe == 50 && s.Usuario == "NUEVAVISION\\Admin" && s.FechaModificacion == HOY)))
+                && s.Importe == 80 && s.Usuario == "NUEVAVISION\\Admin" && s.FechaModificacion == HOY)))
                 .MustHaveHappenedOnceExactly();
             A.CallTo(() => db.SaveChangesAsync()).MustHaveHappenedOnceExactly();
             Assert.AreEqual(EstadoSenalEvento.Pendiente, senal.Estado);
             Assert.AreEqual("Masterclass Cloasma", senal.Evento);
             Assert.AreEqual("CENTRO DE ESTÉTICA LUNA", senal.Nombre);
-            Assert.AreEqual(50, senal.ImportePendiente);
+            Assert.AreEqual(80, senal.Importe, "El importe original del apunte");
+            Assert.AreEqual(50, senal.ImportePendiente, "Lo que queda a favor");
         }
 
         [TestMethod]
