@@ -1201,11 +1201,12 @@ namespace NestoAPI.Infraestructure
         /// <param name="colspan">Número de columnas de la tabla, para el colspan</param>
         /// <summary>
         /// NestoAPI#482: la fila del correo con el modo de entrega («Modo de entrega: Tras reponer de
-        /// tiendas») y, si procede, «Marcado mantener junto». Antes solo salía cuando la casilla
+        /// tiendas») y el de facturación («Modo de facturación: Al completar el pedido», NestoAPI#598,
+        /// resuelto con ModosFacturacion.Efectivo; sustituye al antiguo «Marcado mantener junto»). Antes solo salía cuando la casilla
         /// «Servir junto» estaba desmarcada o «Mantener junto» marcada, y hablaba de casillas.
         /// Va en rojo con «¡¡¡ ATENCIÓN !!!» cuando no falta stock de nada pero hay algo por traer de
         /// una tienda y el modo va a partir el pedido en varias entregas (2 «Según vaya entrando» y 4
-        /// «Ahora lo que hay, el resto de una vez»), no es de fin de mes y no lleva mantener junto.
+        /// «Ahora lo que hay, el resto de una vez»), no es de fin de mes y no se factura «al completar».
         /// Carlos, 17/09/26 (pedido 926430): en «Tras reponer de tiendas» NO se avisa, porque ese modo
         /// espera la reposición y sale en una sola entrega; avisar en rojo de una forma correcta de
         /// servir era muy llamativo. «Todo junto» tampoco avisa nunca.
@@ -1215,22 +1216,20 @@ namespace NestoAPI.Infraestructure
         internal static string GenerarHtmlModoServicio(PedidoVentaDTO pedido, bool faltaStockDeAlgo, bool tieneQueVenirAlgunProducto, int colspan)
         {
             byte modo = Constantes.Pedidos.ModosServicio.Efectivo(pedido.modoServicio, pedido.servirJunto);
+            byte modoFacturacion = Constantes.Pedidos.ModosFacturacion.Efectivo(pedido.modoFacturacion, pedido.mantenerJunto);
 
             string color = "black";
             string texto = string.Empty;
             if (!faltaStockDeAlgo && tieneQueVenirAlgunProducto
                 && Constantes.Pedidos.ModosServicio.SaleEnVariasEntregasSiHayQueReponer(modo)
-                && pedido.periodoFacturacion != Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES && !pedido.mantenerJunto
+                && pedido.periodoFacturacion != Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES && !Constantes.Pedidos.ModosFacturacion.EsAlCompletar(modoFacturacion)
                 && !EsPedidoDeTienda(pedido))
             {
                 color = "red";
                 texto = "¡¡¡ ATENCIÓN !!! ";
             }
             texto += "Modo de entrega: " + Constantes.Pedidos.ModosServicio.Nombre(modo);
-            if (pedido.mantenerJunto)
-            {
-                texto += ". Marcado mantener junto";
-            }
+            texto += ". Modo de facturación: " + Constantes.Pedidos.ModosFacturacion.Nombre(modoFacturacion);
 
             StringBuilder s = new StringBuilder();
             _ = s.AppendLine("<tr style=\"color: " + color + ";\">");

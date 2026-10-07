@@ -1082,14 +1082,60 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
-        public void GenerarHtmlModoServicio_MantenerJunto_SeAnadeYQuitaElAviso()
+        public void GenerarHtmlModoServicio_MantenerJunto_DiceAlCompletarYQuitaElAviso()
         {
+            // NestoAPI#598: el bit antiguo sin modo de facturación se lee como «al completar» (Efectivo).
             PedidoVentaDTO pedido = new PedidoVentaDTO { modoServicio = 4, servirJunto = false, mantenerJunto = true, periodoFacturacion = "NRM" };
 
             string html = GestorPresupuestos.GenerarHtmlModoServicio(pedido, faltaStockDeAlgo: false, tieneQueVenirAlgunProducto: true, colspan: 6);
 
-            StringAssert.Contains(html, "Modo de entrega: Ahora lo que hay, el resto de una vez. Marcado mantener junto");
+            StringAssert.Contains(html, "Modo de entrega: Ahora lo que hay, el resto de una vez. Modo de facturación: Al completar el pedido");
             StringAssert.Contains(html, "color: black");
+        }
+
+        // NestoAPI#598 (Carlos, 06/10/26): el correo dice el modo de facturación igual que dice el de
+        // entrega, resuelto con ModosFacturacion.Efectivo para los clientes que solo mandan el bit.
+        // «Marcado mantener junto» desaparece: queda dicho por «Al completar el pedido».
+
+        [TestMethod]
+        [DataRow((byte)1, false, "Por entregas")]
+        [DataRow((byte)2, true, "Al completar el pedido")]
+        [DataRow((byte)3, false, "Todo ahora, lo pendiente se entrega después")]
+        public void GenerarHtmlModoServicio_NombraElModoDeFacturacion(byte modoFacturacion, bool mantenerJunto, string nombre)
+        {
+            PedidoVentaDTO pedido = new PedidoVentaDTO { modoServicio = 1, servirJunto = true, modoFacturacion = modoFacturacion, mantenerJunto = mantenerJunto, periodoFacturacion = "NRM" };
+
+            string html = GestorPresupuestos.GenerarHtmlModoServicio(pedido, faltaStockDeAlgo: false, tieneQueVenirAlgunProducto: false, colspan: 6);
+
+            StringAssert.Contains(html, "Modo de entrega: Todo junto. Modo de facturación: " + nombre);
+            Assert.IsFalse(html.Contains("Marcado mantener junto"), html);
+        }
+
+        [TestMethod]
+        [DataRow(false, "Por entregas")]
+        [DataRow(true, "Al completar el pedido")]
+        public void GenerarHtmlModoServicio_SinModoDeFacturacion_LoDeduceDelBitAntiguo(bool mantenerJunto, string nombre)
+        {
+            // NestoApp y el Nesto viejo solo mandan mantenerJunto.
+            PedidoVentaDTO pedido = new PedidoVentaDTO { modoServicio = 1, servirJunto = true, modoFacturacion = null, mantenerJunto = mantenerJunto, periodoFacturacion = "NRM" };
+
+            string html = GestorPresupuestos.GenerarHtmlModoServicio(pedido, faltaStockDeAlgo: false, tieneQueVenirAlgunProducto: false, colspan: 6);
+
+            StringAssert.Contains(html, "Modo de facturación: " + nombre);
+            Assert.IsFalse(html.Contains("Marcado mantener junto"), html);
+        }
+
+        [TestMethod]
+        public void GenerarHtmlModoServicio_TodoAhora_SinBit_SigueAvisandoEnRojo()
+        {
+            // El criterio del aviso no cambia: solo «al completar» lo quita; el 3 se factura entero
+            // pero se entrega a trozos, así que sigue avisando como antes (bit desmarcado).
+            PedidoVentaDTO pedido = new PedidoVentaDTO { modoServicio = 2, servirJunto = false, modoFacturacion = 3, mantenerJunto = false, periodoFacturacion = "NRM" };
+
+            string html = GestorPresupuestos.GenerarHtmlModoServicio(pedido, faltaStockDeAlgo: false, tieneQueVenirAlgunProducto: true, colspan: 6);
+
+            StringAssert.Contains(html, "color: red");
+            StringAssert.Contains(html, "¡¡¡ ATENCIÓN !!! Modo de entrega: Según vaya entrando. Modo de facturación: Todo ahora, lo pendiente se entrega después");
         }
 
         [TestMethod]
