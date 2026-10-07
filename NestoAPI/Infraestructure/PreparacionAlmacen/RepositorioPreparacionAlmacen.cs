@@ -386,9 +386,23 @@ ORDER BY e.Picking DESC, e.Cliente, e.Contacto";
             }
             string destino = (await baseDeDatos.SqlQuery<string>(SQL_DESTINO_REPOSICION, empresa, traspaso).ToListAsync().ConfigureAwait(false))
                 .FirstOrDefault();
-            string nombreDestino = string.IsNullOrWhiteSpace(destino) ? null
-                : (await baseDeDatos.SqlQuery<string>(SQL_NOMBRE_ALMACEN, empresa, destino).ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+            string nombreDestino = await LeerNombreAlmacen(baseDeDatos, empresa, destino).ConfigureAwait(false);
             return new ReposicionSalida { Destino = destino, NombreDestino = nombreDestino, Lineas = lineas };
+        }
+
+        /// <summary>
+        /// NestoAPI#600: el nombre de un almacén para enseñarlo («Reina», Almacenes.Descripción); null si no hay código o no
+        /// existe. El único sitio que lee SQL_NOMBRE_ALMACEN (también lo usan las reposiciones).
+        /// </summary>
+        internal static async Task<string> LeerNombreAlmacen(Database baseDeDatos, string empresa, string almacen)
+        {
+            if (string.IsNullOrWhiteSpace(almacen))
+            {
+                return null;
+            }
+            string nombre = (await baseDeDatos.SqlQuery<string>(SQL_NOMBRE_ALMACEN, empresa?.Trim(), almacen.Trim()).ToListAsync().ConfigureAwait(false))
+                .FirstOrDefault();
+            return string.IsNullOrWhiteSpace(nombre) ? null : nombre.Trim();
         }
 
         public Task<List<LecturaPackingAlmacen>> LeerLecturasPacking(string empresa, int picking, int? pedido)

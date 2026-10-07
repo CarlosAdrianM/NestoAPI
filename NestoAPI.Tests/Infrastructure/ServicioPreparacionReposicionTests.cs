@@ -224,6 +224,33 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public async Task Crear_DesdeAlgete_LlevaLosNombresDeOrigenYDestinoYElTituloDelServidor()
+        {
+            ReposicionEnPreparacionDTO creada = await Servicio().Crear(new CrearReposicionDTO
+            {
+                Empresa = "1", Origen = "ALG", Destino = "ALC",
+                Lineas = new List<LineaCrearReposicionDTO> { new LineaCrearReposicionDTO { Producto = "41980", Cantidad = 7 } }
+            }, Andre);
+
+            Assert.AreEqual("Algete", creada.NombreOrigen);
+            Assert.AreEqual("Alcobendas", creada.NombreDestino);
+            Assert.AreEqual("De Algete a Alcobendas", creada.Titulo, "NestoAPI#600: el título lo resuelve el servidor, no la app");
+        }
+
+        [TestMethod]
+        public async Task LeerEnPreparacion_LlevaElTituloConLosNombres_YSinNombreUsaElCodigo()
+        {
+            _ = await Servicio().Crear(Peticion(("41980", 5)), Paloma);
+            repositorio.Nombres.Remove("ALG");
+
+            ReposicionEnPreparacionDTO enPreparacion = await Servicio().LeerEnPreparacion("1", "ALC");
+
+            Assert.AreEqual("Alcobendas", enPreparacion.NombreOrigen);
+            Assert.IsNull(enPreparacion.NombreDestino);
+            Assert.AreEqual("De Alcobendas a ALG", enPreparacion.Titulo);
+        }
+
+        [TestMethod]
         public async Task Crear_DesdeAlgete_SiFallaLaReserva_NoQuedaNadaNiSeGastaNumero()
         {
             A.CallTo(() => huecosAlgete.Reservar(A<string>._, A<string>._, A<IReadOnlyList<LineaReservaReposicion>>._, A<string>._))
@@ -668,6 +695,17 @@ namespace NestoAPI.Tests.Infrastructure
             }
 
             public Task<bool> HayInventarioEnCurso(string empresa, string almacen) => Task.FromResult(InventariosEnCurso.Contains(almacen));
+
+            /// <summary>Almacenes.Descripción.</summary>
+            public readonly Dictionary<string, string> Nombres = new Dictionary<string, string>
+            {
+                ["ALG"] = "Algete", ["REI"] = "Reina", ["ALC"] = "Alcobendas"
+            };
+
+            public Task<string> LeerNombreAlmacen(string empresa, string almacen)
+            {
+                return Task.FromResult(almacen != null && Nombres.TryGetValue(almacen, out string nombre) ? nombre : null);
+            }
 
             public Task<List<FilaReposicionEnPreparacion>> LeerLineasEnPreparacion(string empresa, string diario, string origen)
             {

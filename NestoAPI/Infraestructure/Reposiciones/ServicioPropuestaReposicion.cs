@@ -1,4 +1,5 @@
 using NestoAPI.Infraestructure.Exceptions;
+using NestoAPI.Infraestructure.PreparacionAlmacen;
 using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
@@ -37,6 +38,16 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public int PendienteServirOrigen { get; set; }
         public int PendienteServirDestino { get; set; }
         public int CantidadReposicion { get; set; }
+
+        /// <summary>
+        /// NestoAPI#600: el nombre del almacén de origen («Algete», Almacenes.Descripción). Va en cada línea porque la
+        /// respuesta es una lista (la Ariadna publicada lee un array): el mismo valor en todas.
+        /// </summary>
+        public string NombreOrigen { get; set; }
+        /// <summary>NestoAPI#600: el nombre del almacén de destino («Alcobendas»).</summary>
+        public string NombreDestino { get; set; }
+        /// <summary>NestoAPI#600: el título de la reposición tal como se enseña: «De Algete a Alcobendas».</summary>
+        public string Titulo { get; set; }
     }
 
     /// <summary>
@@ -53,15 +64,31 @@ namespace NestoAPI.Infraestructure.Reposiciones
         };
 
         private readonly Func<string, string, string, Task<List<FilaPropuestaReposicion>>> ejecutar;
+        private readonly Func<string, string, Task<string>> nombreAlmacen;
 
-        public ServicioPropuestaReposicion(NVEntities db) : this((empresa, origen, destino) => EjecutarProcedimiento(db, empresa, origen, destino))
+        public ServicioPropuestaReposicion(NVEntities db) : this((empresa, origen, destino) => EjecutarProcedimiento(db, empresa, origen, destino),
+            (empresa, almacen) => RepositorioPreparacionAlmacen.LeerNombreAlmacen(db.Database, empresa, almacen))
         {
         }
 
         /// <param name="ejecutar">Llama al procedimiento (empresa, origen, destino). Sustituible en las pruebas.</param>
-        internal ServicioPropuestaReposicion(Func<string, string, string, Task<List<FilaPropuestaReposicion>>> ejecutar)
+        /// <param name="nombreAlmacen">(empresa, almacén) → su nombre (Almacenes.Descripción); null = sin nombre (se usa el código).</param>
+        internal ServicioPropuestaReposicion(Func<string, string, string, Task<List<FilaPropuestaReposicion>>> ejecutar,
+            Func<string, string, Task<string>> nombreAlmacen = null)
         {
             this.ejecutar = ejecutar ?? throw new ArgumentNullException(nameof(ejecutar));
+            this.nombreAlmacen = nombreAlmacen ?? ((empresa, almacen) => Task.FromResult<string>(null));
+        }
+
+        /// <summary>
+        /// NestoAPI#600: el título de una reposición, «De Algete a Alcobendas», con los nombres de Almacenes (o el código
+        /// si no lo hay). Lo usan la propuesta y la reposición creada / en preparación.
+        /// </summary>
+        public static string TituloReposicion(string origen, string nombreOrigen, string destino, string nombreDestino)
+        {
+            string de = string.IsNullOrWhiteSpace(nombreOrigen) ? origen?.Trim() : nombreOrigen.Trim();
+            string a = string.IsNullOrWhiteSpace(nombreDestino) ? destino?.Trim() : nombreDestino.Trim();
+            return $"De {de} a {a}";
         }
 
         public async Task<List<LineaPropuestaReposicionDTO>> CalcularPropuesta(string empresa, string origen, string destino)
@@ -78,6 +105,9 @@ namespace NestoAPI.Infraestructure.Reposiciones
             }
 
             List<FilaPropuestaReposicion> filas = await ejecutar(empresa?.Trim(), almacenOrigen, almacenDestino).ConfigureAwait(false);
+            string nombreOrigen = filas.Count == 0 ? null : await nombreAlmacen(empresa?.Trim(), almacenOrigen).ConfigureAwait(false);
+            string nombreDestino = filas.Count == 0 ? null : await nombreAlmacen(empresa?.Trim(), almacenDestino).ConfigureAwait(false);
+            string titulo = TituloReposicion(almacenOrigen, nombreOrigen, almacenDestino, nombreDestino);
             return filas
                 .Select(f => new LineaPropuestaReposicionDTO
                 {
@@ -89,7 +119,10 @@ namespace NestoAPI.Infraestructure.Reposiciones
                     StockMaximoDestino = f.CantidadMaximaDestino,
                     PendienteServirOrigen = f.CantidadPendienteServirOrigen,
                     PendienteServirDestino = f.CantidadPendienteServirDestino,
-                    CantidadReposicion = f.CantidadReposicion
+                    CantidadReposicion = f.CantidadReposicion,
+                    NombreOrigen = nombreOrigen,
+                    NombreDestino = nombreDestino,
+                    Titulo = titulo
                 })
                 .OrderBy(l => l.Producto, StringComparer.Ordinal)
                 .ToList();

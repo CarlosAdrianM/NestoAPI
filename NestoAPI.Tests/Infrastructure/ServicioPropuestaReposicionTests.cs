@@ -47,6 +47,48 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(4, lineas[1].StockMaximoDestino);
         }
 
+        [TestMethod]
+        public async Task Propuesta_CadaLineaLlevaLosNombresDeOrigenYDestinoYElTitulo()
+        {
+            var nombresPedidos = new List<string>();
+            var servicio = new ServicioPropuestaReposicion(
+                (empresa, origen, destino) => Task.FromResult(new List<FilaPropuestaReposicion>
+                {
+                    new FilaPropuestaReposicion { Número = "41060", CantidadReposicion = 3 },
+                    new FilaPropuestaReposicion { Número = "38272", CantidadReposicion = 6 }
+                }),
+                (empresa, almacen) =>
+                {
+                    nombresPedidos.Add($"{empresa}|{almacen}");
+                    return Task.FromResult(almacen == "ALG" ? "Algete" : almacen == "ALC" ? "Alcobendas" : null);
+                });
+
+            List<LineaPropuestaReposicionDTO> lineas = await servicio.CalcularPropuesta("1", "alg", "alc");
+
+            CollectionAssert.AreEqual(new[] { "1|ALG", "1|ALC" }, nombresPedidos, "Un nombre por almacén, no por línea");
+            Assert.IsTrue(lineas.All(l => l.NombreOrigen == "Algete" && l.NombreDestino == "Alcobendas"));
+            Assert.IsTrue(lineas.All(l => l.Titulo == "De Algete a Alcobendas"));
+        }
+
+        [TestMethod]
+        public async Task Propuesta_SinNombreEnAlmacenes_ElTituloUsaElCodigo()
+        {
+            List<LineaPropuestaReposicionDTO> lineas = await Servicio(new FilaPropuestaReposicion { Número = "41060", CantidadReposicion = 3 })
+                .CalcularPropuesta("1", "ALG", "REI");
+
+            Assert.IsNull(lineas[0].NombreOrigen);
+            Assert.AreEqual("De ALG a REI", lineas[0].Titulo);
+        }
+
+        [DataTestMethod]
+        [DataRow("Algete", "Reina", "De Algete a Reina")]
+        [DataRow("  Reina  ", "Algete", "De Reina a Algete")]
+        [DataRow(null, " ", "De ALG a REI")]
+        public void TituloReposicion_UsaLosNombresOElCodigo(string nombreOrigen, string nombreDestino, string esperado)
+        {
+            Assert.AreEqual(esperado, ServicioPropuestaReposicion.TituloReposicion("ALG", nombreOrigen, "REI", nombreDestino));
+        }
+
         [DataTestMethod]
         [DataRow("ALG", "ALG")]
         [DataRow("ALG", "XYZ")]

@@ -68,6 +68,12 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public string Empresa { get; set; }
         public string Origen { get; set; }
         public string Destino { get; set; }
+        /// <summary>NestoAPI#600: el nombre del almacén de origen («Algete», Almacenes.Descripción).</summary>
+        public string NombreOrigen { get; set; }
+        /// <summary>NestoAPI#600: el nombre del almacén de destino («Alcobendas»).</summary>
+        public string NombreDestino { get; set; }
+        /// <summary>NestoAPI#600: el título tal como se enseña: «De Algete a Alcobendas».</summary>
+        public string Titulo { get; set; }
         /// <summary>Diario de salida del origen (Almacenes.DiarioSalidaRep), donde viven las líneas hasta terminar.</summary>
         public string Diario { get; set; }
         public DateTime Fecha { get; set; }
@@ -165,6 +171,8 @@ namespace NestoAPI.Infraestructure.Reposiciones
     {
         /// <summary>Null si el almacén no existe en la empresa.</summary>
         Task<DatosAlmacenReposicion> LeerAlmacen(string empresa, string almacen);
+        /// <summary>NestoAPI#600: el nombre del almacén (Almacenes.Descripción); null si no lo tiene.</summary>
+        Task<string> LeerNombreAlmacen(string empresa, string almacen);
         /// <summary>Nesto viejo, antes de rellenar: <c>select [nºtraspaso] from inventarios where empresa='1 ' and almacen='ALC' and estado=3</c>.</summary>
         Task<bool> HayInventarioEnCurso(string empresa, string almacen);
         /// <summary>Las líneas del diario de salida del origen que van a OTRO almacén, sin número de traspaso todavía.</summary>
@@ -321,6 +329,11 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
         {
             return await db.Database.SqlQuery<DatosAlmacenReposicion>(SQL_ALMACEN, Char("@p0", empresa, 3), Char("@p1", almacen, 3))
                 .FirstOrDefaultAsync().ConfigureAwait(false);
+        }
+
+        public Task<string> LeerNombreAlmacen(string empresa, string almacen)
+        {
+            return RepositorioPreparacionAlmacen.LeerNombreAlmacen(db.Database, empresa, almacen);
         }
 
         public async Task<bool> HayInventarioEnCurso(string empresa, string almacen)
@@ -656,7 +669,7 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
             // Ya no está «en preparación» (tiene traspaso): se devuelve lo que se ha creado, con dónde está cada cosa
             ReposicionEnPreparacionDTO creada = Dto(empresa, origen, diario, creadas, reservas);
             creada.NumTraspaso = numeroTraspaso;
-            return creada;
+            return await ConNombres(creada).ConfigureAwait(false);
         }
 
         public async Task<ReposicionEnPreparacionDTO> LeerEnPreparacion(string empresa, string origen)
@@ -957,7 +970,17 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
         private async Task<ReposicionEnPreparacionDTO> LeerEnPreparacion(string empresa, string origen, DatosAlmacenReposicion almacen)
         {
             List<FilaReposicionEnPreparacion> filas = await repositorio.LeerLineasEnPreparacion(empresa, almacen.DiarioSalidaRep, origen).ConfigureAwait(false);
-            return filas.Any() ? Dto(empresa, origen, almacen.DiarioSalidaRep, filas, null) : null;
+            return filas.Any() ? await ConNombres(Dto(empresa, origen, almacen.DiarioSalidaRep, filas, null)).ConfigureAwait(false) : null;
+        }
+
+        /// <summary>NestoAPI#600: los nombres de origen y destino y el título («De Algete a Alcobendas»), resueltos aquí.</summary>
+        private async Task<ReposicionEnPreparacionDTO> ConNombres(ReposicionEnPreparacionDTO reposicion)
+        {
+            reposicion.NombreOrigen = await repositorio.LeerNombreAlmacen(reposicion.Empresa, reposicion.Origen).ConfigureAwait(false);
+            reposicion.NombreDestino = await repositorio.LeerNombreAlmacen(reposicion.Empresa, reposicion.Destino).ConfigureAwait(false);
+            reposicion.Titulo = ServicioPropuestaReposicion.TituloReposicion(reposicion.Origen, reposicion.NombreOrigen,
+                reposicion.Destino, reposicion.NombreDestino);
+            return reposicion;
         }
 
         private static ReposicionEnPreparacionDTO Dto(string empresa, string origen, string diario, List<FilaReposicionEnPreparacion> filas, ResumenUbicaciones reservas)
