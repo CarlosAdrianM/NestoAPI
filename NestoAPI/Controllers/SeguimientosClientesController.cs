@@ -1103,8 +1103,40 @@ El mensaje resultante es importante que lo devuelvas en HTML para poner en el cu
                 throw new Exception("No se ha podido guardar el seguimiento", ex);
             }
 
+            await MarcarSugerenciaAtendidaAsync(seguimientoCliente).ConfigureAwait(false);
+
             return CreatedAtRoute("DefaultApi", new { id = seguimientoCliente.NºOrden }, seguimientoCliente);
             } // using transaccion
+        }
+
+        /// <summary>
+        /// NestoAPI#603: si el cliente tenía sugerencia de contacto ese día, queda atendida con este rapport. El rapport ya
+        /// está guardado: si esto falla no se deshace nada, se registra en ELMAH (y el GET de sugerencias lo concilia).
+        /// </summary>
+        private async Task MarcarSugerenciaAtendidaAsync(SeguimientoCliente rapport)
+        {
+            try
+            {
+                // Contexto propio: el del controller sigue dentro del using de la transacción ya confirmada.
+                using (var contexto = new NVEntities())
+                {
+                    _ = await new RegistroSugerenciasContacto(contexto)
+                        .MarcarAtendidaPorRapport(rapport.Número, rapport.Contacto, rapport.Fecha, rapport.NºOrden)
+                        .ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                try
+                {
+                    Elmah.ErrorLog.GetDefault(null)?.Log(new Elmah.Error(new Exception(
+                        $"NestoAPI#603: no se pudo marcar como atendida la sugerencia del cliente {rapport.Número?.Trim()}/{rapport.Contacto?.Trim()} (rapport {rapport.NºOrden})", ex)));
+                }
+                catch
+                {
+                    // Sin ELMAH: no tumbar el POST de un rapport ya guardado.
+                }
+            }
         }
 
         /// <summary>

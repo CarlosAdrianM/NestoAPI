@@ -518,6 +518,8 @@
     <Compile Include="Infrastructure\Reposiciones\ServicioTransitoReposicionesTests.cs" />
     <Compile Include="Infrastructure\Eventos\EstadoSenalEventoTests.cs" />
     <Compile Include="Infrastructure\Eventos\ServicioEventosTests.cs" />
+    <Compile Include="Infrastructure\Rapports\MotorSugerenciasContactoTests.cs" />
+    <Compile Include="Infrastructure\Rapports\ServicioSugerenciasContactoTests.cs" />
     <Compile Include="Infrastructure\Reposiciones\CalculadoraFechaReposicionTests.cs" />
     <Compile Include="Infrastructure\Reposiciones\ServicioCalendarioReposicionesTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\CorreoConfirmacionPedidoClienteTests.cs" />

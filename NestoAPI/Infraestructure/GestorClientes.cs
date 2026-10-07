@@ -1724,6 +1724,16 @@ namespace NestoAPI.Infraestructure
 
         private static List<ClienteInteraccion> ObtenerClientes(string vendedor, string tipoInteraccion)
         {
+            return ObtenerClientesParaModelo(vendedor, tipoInteraccion)
+                .Where(c => c.DiasDesdeUltimaInteraccion >= 7 && c.DiasDesdeUltimoPedido >= 6).ToList();
+        }
+
+        /// <summary>
+        /// Las features del modelo para TODOS los clientes del vendedor, sin el filtro fijo de 7 días del endpoint antiguo
+        /// (NestoAPI#603: las sugerencias de contacto lo sustituyen por la cadencia de cada cliente).
+        /// </summary>
+        internal static List<ClienteInteraccion> ObtenerClientesParaModelo(string vendedor, string tipoInteraccion)
+        {
             using (var context = new NVEntities())
             {
                 var connectionString = context.Database.Connection.ConnectionString;
@@ -1762,7 +1772,7 @@ namespace NestoAPI.Infraestructure
                         }
                     }
 
-                    return clientes.Where(c => c.DiasDesdeUltimaInteraccion >= 7 && c.DiasDesdeUltimoPedido >= 6).ToList();
+                    return clientes;
                 }
             }
         }

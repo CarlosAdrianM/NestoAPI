@@ -339,6 +339,22 @@ namespace NestoAPI.Tests.Models
             Assert.AreEqual(typeof(int), typeof(EventoSenal).GetProperty("NumOrdenExtracto").PropertyType);
         }
 
+        /// <summary>NestoAPI#603: registro de sugerencias de contacto añadido a mano; Probabilidad es real ↔ float y RapportId/FechaAtendida admiten null.</summary>
+        [TestMethod]
+        public void Edmx_SugerenciasContacto_EstaCompletaEnLasTresCapas()
+        {
+            ComprobarTresCapas("SugerenciaContacto", "SugerenciasContacto",
+                "Id", "Fecha", "Vendedor", "Usuario", "Cliente", "Contacto", "Prioridad", "Orden", "Probabilidad", "Motivo",
+                "Atendida", "RapportId", "FechaAtendida");
+
+            XElement almacen = EntidadesPorNombre(LeerRecurso("ssdl"), SsdlNs)["SugerenciasContacto"];
+            Assert.AreEqual("real", (string)almacen.Elements(SsdlNs + "Property").Single(p => p.Attribute("Name").Value == "Probabilidad").Attribute("Type"));
+            Assert.AreEqual("nvarchar", (string)almacen.Elements(SsdlNs + "Property").Single(p => p.Attribute("Name").Value == "Motivo").Attribute("Type"));
+            Assert.AreEqual(typeof(float), typeof(SugerenciaContacto).GetProperty("Probabilidad").PropertyType);
+            Assert.AreEqual(typeof(int?), typeof(SugerenciaContacto).GetProperty("RapportId").PropertyType);
+            Assert.AreEqual(typeof(DateTime?), typeof(SugerenciaContacto).GetProperty("FechaAtendida").PropertyType);
+        }
+
         private static void ComprobarTresCapas(string entidad, string conjunto, params string[] esperadas)
         {
             XElement conceptual = EntidadesPorNombre(LeerRecurso("csdl"), CsdlNs)[entidad];

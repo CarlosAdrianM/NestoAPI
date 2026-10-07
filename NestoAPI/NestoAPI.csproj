@@ -923,6 +923,13 @@
     <Compile Include="Infraestructure\Reposiciones\UbicacionesReposicion.cs" />
     <Compile Include="Infraestructure\Reposiciones\TransitoReposiciones.cs" />
     <Compile Include="Infraestructure\Eventos\EstadoSenalEvento.cs" />
+    <Compile Include="Infraestructure\Rapports\MotorSugerenciasContacto.cs" />
+    <Compile Include="Infraestructure\Rapports\SugerenciasContactoDTO.cs" />
+    <Compile Include="Infraestructure\Rapports\ServicioSugerenciasContacto.cs" />
+    <Compile Include="Infraestructure\Rapports\RegistroSugerenciasContacto.cs" />
+    <Compile Include="Infraestructure\Rapports\RepositorioCarteraContactoSql.cs" />
+    <Compile Include="Infraestructure\Rapports\ProbabilidadesContactoModelo.cs" />
+    <Compile Include="Controllers\SugerenciasContactoController.cs" />
     <Compile Include="Infraestructure\Eventos\ServicioEventos.cs" />
     <Compile Include="Infraestructure\Eventos\SenalesEventosJobsService.cs" />
     <Compile Include="Infraestructure\Reposiciones\CalculadoraFechaReposicion.cs" />
@@ -1215,6 +1222,9 @@
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\EventoSenal.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\SugerenciaContacto.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\ReposicionCalendario.cs">
