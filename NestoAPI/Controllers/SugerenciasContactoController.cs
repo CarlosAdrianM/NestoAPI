@@ -22,20 +22,24 @@ namespace NestoAPI.Controllers
     public class SugerenciasContactoController : ApiController
     {
         public const string MENSAJE_SIN_PERMISO_USO = "El uso de las sugerencias de contacto solo lo pueden consultar Dirección e Informática.";
+        public const string MENSAJE_SIN_PERMISO_RECORDAR = "El recordatorio de las sugerencias de contacto solo lo pueden lanzar Dirección e Informática.";
 
         private static readonly string[] gruposUso = { Constantes.GruposSeguridad.DIRECCION, Constantes.GruposSeguridad.INFORMATICA };
 
         private readonly NVEntities db;
         private readonly IServicioSugerenciasContacto servicio;
+        private readonly Func<IRecordatorioSugerenciasContacto> crearRecordatorio;
 
         public SugerenciasContactoController() : this(new NVEntities())
         {
         }
 
-        internal SugerenciasContactoController(NVEntities db, IServicioSugerenciasContacto servicio = null)
+        internal SugerenciasContactoController(NVEntities db, IServicioSugerenciasContacto servicio = null,
+            IRecordatorioSugerenciasContacto recordatorio = null)
         {
             this.db = db;
             this.servicio = servicio ?? new ServicioSugerenciasContacto(db);
+            crearRecordatorio = recordatorio != null ? (Func<IRecordatorioSugerenciasContacto>)(() => recordatorio) : () => new RecordatorioSugerenciasContacto();
         }
 
         // GET api/Clientes/SugerenciasContacto?vendedor=MPP&tipoInteraccion=Llamada&numero=20&grupoSubgrupo=
@@ -71,6 +75,24 @@ namespace NestoAPI.Controllers
                 return BadRequest("La fecha hasta no puede ser anterior a la fecha desde.");
             }
             return Ok(await servicio.LeerUso(inicio, fin).ConfigureAwait(false));
+        }
+
+        // POST api/Clientes/SugerenciasContacto/Recordar?soloListar=true
+        /// <summary>
+        /// NestoAPI#603 (corte 5): lo mismo que el job «recordatorio-sugerencias-contacto», a mano. Con soloListar (por
+        /// defecto) solo dice a quién se avisaría y con qué texto; con soloListar=false manda los avisos y los registra.
+        /// Solo Dirección e Informática.
+        /// </summary>
+        [HttpPost]
+        [Route("Recordar")]
+        [ResponseType(typeof(List<ResultadoRecordatorioSugerenciasDTO>))]
+        public async Task<IHttpActionResult> PostRecordar(bool soloListar = true)
+        {
+            if (User == null || !gruposUso.Any(g => User.IsInRoleSinDominio(g)))
+            {
+                return ResponseMessage(Request.CreateErrorResponse(HttpStatusCode.Forbidden, MENSAJE_SIN_PERMISO_RECORDAR));
+            }
+            return Ok(await crearRecordatorio().Ejecutar(soloListar).ConfigureAwait(false));
         }
 
         protected override void Dispose(bool disposing)

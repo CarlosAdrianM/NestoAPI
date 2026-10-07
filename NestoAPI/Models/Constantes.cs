@@ -757,6 +757,13 @@ namespace NestoAPI.Models
             /// </summary>
             public const string AVISAR_ACTIVIDAD_NOVEDADES_A = "AvisarActividadNovedadesA";
 
+            /// <summary>
+            /// NestoAPI#603 (corte 5): vendedores (Vendedores.Número separados por comas) a los que el job
+            /// «recordatorio-sugerencias-contacto» avisa en la campana de Nesto si en 7 días laborables no han atendido
+            /// ninguna sugerencia. Bajo «(defecto)»: sin fila, vacío o "0" = a nadie. Se lee en cada ejecución.
+            /// </summary>
+            public const string SUGERENCIAS_CONTACTO_AVISAR_A = "SugerenciasContactoAvisarA";
+
 
             /// <summary>
             /// NestoAPI#542: interruptor de la nota de entrega automática con lo pendiente de un albarán

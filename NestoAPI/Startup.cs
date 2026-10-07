@@ -801,6 +801,20 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'senales-eventos' configurado (L-V a las 7:50)");
 
+            // NestoAPI#603 (corte 5): aviso en la campana de Nesto a los vendedores de SugerenciasContactoAvisarA que en 7
+            // días laborables no han atendido ninguna sugerencia de contacto, con los clientes que les esperan. Como mucho
+            // uno por semana a cada uno; a quien usa la lista, nada. Se prueba antes con POST .../Recordar?soloListar=true.
+            RecurringJob.AddOrUpdate(
+                "recordatorio-sugerencias-contacto",
+                () => Infraestructure.Rapports.RecordatorioSugerenciasContactoJobsService.Procesar(),
+                "30 9 * * 1-5", // Cron: de lunes a viernes a las 9:30
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'recordatorio-sugerencias-contacto' configurado (L-V a las 9:30)");
+
             // NestoAPI#593: cheques regalo de las facturas hechas fuera de la API (Nesto viejo, facturación
             // agrupada…). La API ya los genera al facturar; esto recoge lo que se le escape. Todos los días a
             // las 21:30, con la facturación del día cerrada. No hace nada salvo ChequesRegalo:Generar = true y
