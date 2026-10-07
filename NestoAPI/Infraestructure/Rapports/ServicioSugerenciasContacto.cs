@@ -33,15 +33,19 @@ namespace NestoAPI.Infraestructure.Rapports
         private readonly MotorSugerenciasContacto motor;
         private readonly Func<DateTime> reloj;
         private readonly Func<DateTime, string, bool> esFestivo;
+        private readonly IServicioFrasesRitmo frases;
 
         public ServicioSugerenciasContacto(NVEntities db)
-            : this(db, new RepositorioCarteraContactoSql(), new ProbabilidadesContactoModelo(), () => DateTime.Now, GestorFestivos.EsFestivo)
+            : this(db, new RepositorioCarteraContactoSql(), new ProbabilidadesContactoModelo(), () => DateTime.Now, GestorFestivos.EsFestivo,
+                  new ServicioFrasesRitmo())
         {
         }
 
+        /// <param name="frases">NestoAPI#603 (corte 4): la frase del ritmo. Null = la plantilla fija del corte 1.</param>
         internal ServicioSugerenciasContacto(NVEntities db, IRepositorioCarteraContacto repositorio, IProbabilidadesContacto probabilidades,
-            Func<DateTime> reloj, Func<DateTime, string, bool> esFestivo)
+            Func<DateTime> reloj, Func<DateTime, string, bool> esFestivo, IServicioFrasesRitmo frases = null)
         {
+            this.frases = frases;
             this.db = db;
             this.repositorio = repositorio;
             this.probabilidades = probabilidades;
@@ -77,6 +81,10 @@ namespace NestoAPI.Infraestructure.Rapports
             ContactosVendedor contactos = await repositorio.LeerContactos(vendedorLimpio, hoy).ConfigureAwait(false);
             string delegacion = await repositorio.LeerDelegacion(vendedorLimpio).ConfigureAwait(false) ?? Constantes.Almacenes.ALGETE;
             RitmoContactosDTO ritmo = motor.CalcularRitmo(cartera, contactos, pendientes, hoy, d => !esFestivo(d, delegacion));
+            if (frases != null)
+            {
+                ritmo.Frase = await frases.Generar(vendedorLimpio, ritmo, ahora, d => !esFestivo(d, delegacion)).ConfigureAwait(false);
+            }
 
             var registro = new RegistroSugerenciasContacto(db);
             List<SugerenciaContacto> delDia = await registro.LeerDelDia(vendedorLimpio, hoy).ConfigureAwait(false);

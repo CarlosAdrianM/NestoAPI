@@ -929,6 +929,8 @@
     <Compile Include="Infraestructure\Rapports\RegistroSugerenciasContacto.cs" />
     <Compile Include="Infraestructure\Rapports\RepositorioCarteraContactoSql.cs" />
     <Compile Include="Infraestructure\Rapports\ProbabilidadesContactoModelo.cs" />
+    <Compile Include="Infraestructure\Rapports\GeneradorFrasesRitmo.cs" />
+    <Compile Include="Infraestructure\Rapports\ServicioFrasesRitmo.cs" />
     <Compile Include="Controllers\SugerenciasContactoController.cs" />
     <Compile Include="Infraestructure\Eventos\ServicioEventos.cs" />
     <Compile Include="Infraestructure\Eventos\SenalesEventosJobsService.cs" />
