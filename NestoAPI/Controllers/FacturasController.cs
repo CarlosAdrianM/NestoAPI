@@ -33,6 +33,7 @@ namespace NestoAPI.Controllers
         }
 
         internal const string MOTIVO_SOLO_EMPLEADOS_CORREO = "Solo los empleados pueden enviar facturas por correo.";
+        // (TNV 07/10/26: y el cliente de la tienda, solo las suyas; ver ComprobarEnvioDelCliente)
 
         /// <summary>
         /// Nesto#259: mandar facturas a una dirección cualquiera (y ver el correo de facturas de un cliente) es solo para
@@ -188,13 +189,24 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(ResultadoEnvioFacturasCorreoDTO))]
         public async Task<IHttpActionResult> EnviarPorCorreo([FromBody] EnvioFacturasCorreoDTO envio)
         {
-            if (!EsEmpleado())
+            // TNV (07/10/26): el cliente de la tienda (token con claim "cliente") también se puede mandar sus facturas a
+            // donde quiera (su gestoría), pero SOLO las suyas. Empleados, como hasta ahora; vendedores y demás, no.
+            string clienteTienda = ClienteDelToken();
+            if (clienteTienda == null && !EsEmpleado())
             {
                 return Content(HttpStatusCode.Forbidden, MOTIVO_SOLO_EMPLEADOS_CORREO);
             }
             if (envio == null)
             {
                 return BadRequest("Faltan las facturas y el correo.");
+            }
+            if (clienteTienda != null)
+            {
+                IHttpActionResult rechazo = ComprobarEnvioDelCliente(clienteTienda, envio);
+                if (rechazo != null)
+                {
+                    return rechazo;
+                }
             }
             try
             {
@@ -206,6 +218,50 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest(ex.Message);
             }
+        }
+
+        internal const string MOTIVO_SOLO_FACTURAS_PROPIAS = "Solo puedes enviar por correo tus propias facturas.";
+        internal const string MOTIVO_DEMASIADOS_ENVIOS = "Has enviado muchas facturas por correo en poco rato. Vuelve a intentarlo más tarde.";
+
+        /// <summary>TNV: el número de cliente del token de la tienda (claim "cliente"), o null si no es un cliente.</summary>
+        private string ClienteDelToken()
+        {
+            string cliente = (User?.Identity as System.Security.Claims.ClaimsIdentity)?.FindFirst("cliente")?.Value?.Trim();
+            return string.IsNullOrEmpty(cliente) ? null : cliente;
+        }
+
+        /// <summary>
+        /// TNV (07/10/26): un cliente solo manda facturas suyas. Si alguna no es suya (o no existe) → 403 con el mismo
+        /// texto, sin decir cuál, para no desvelar qué facturas existen. Además, un tope de envíos por hora y cliente
+        /// (<see cref="LimitadorEnviosFacturasCliente"/>). Null si se puede seguir. Lo demás (máximo de facturas,
+        /// correos bien escritos, mismo cliente…) lo sigue validando <see cref="IGestorFacturas.EnviarFacturasACorreo"/>.
+        /// </summary>
+        private IHttpActionResult ComprobarEnvioDelCliente(string cliente, EnvioFacturasCorreoDTO envio)
+        {
+            List<string> numeros = (envio.Facturas ?? Enumerable.Empty<string>())
+                .Select(f => f?.Trim())
+                .Where(f => !string.IsNullOrEmpty(f))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (numeros.Count > GestorFacturas.MAXIMO_FACTURAS_POR_CORREO)
+            {
+                // El gestor lo rechaza (400) antes de leer nada: no hace falta mirar de quién son
+                return null;
+            }
+            string empresa = string.IsNullOrWhiteSpace(envio.Empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : envio.Empresa.Trim();
+            foreach (string numero in numeros)
+            {
+                CabFacturaVta cab = servicio.CargarCabFactura(empresa, numero);
+                if (cab == null || !string.Equals(cab.Nº_Cliente?.Trim(), cliente, StringComparison.OrdinalIgnoreCase))
+                {
+                    return Content(HttpStatusCode.Forbidden, MOTIVO_SOLO_FACTURAS_PROPIAS);
+                }
+            }
+            if (numeros.Any() && !LimitadorEnviosFacturasCliente.Permitir(cliente))
+            {
+                return Content((HttpStatusCode)429, MOTIVO_DEMASIADOS_ENVIOS);
+            }
+            return null;
         }
 
         // GET api/Facturas/CorreoFacturas?empresa=1&numeroFactura=NV2616199

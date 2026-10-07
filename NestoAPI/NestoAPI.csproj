@@ -827,6 +827,7 @@
     <Compile Include="Infraestructure\IGestorProductos.cs" />
     <Compile Include="Infraestructure\IGestorSincronizacion.cs" />
     <Compile Include="Infraestructure\Facturas\IGestorFacturas.cs" />
+    <Compile Include="Infraestructure\Facturas\LimitadorEnviosFacturasCliente.cs" />
     <Compile Include="Infraestructure\IGestorStocks.cs" />
     <Compile Include="Infraestructure\IServicioAgencias.cs" />
     <Compile Include="Infraestructure\Facturas\IServicioFacturas.cs" />
