@@ -674,6 +674,8 @@ namespace NestoAPI
             RecurringJob.AddOrUpdate(
                 "picking-cierre-diario",
                 () => PickingJobsService.SacarPickingDeCierreJob(),
+                // NestoAPI#577: el cron no puede leer el parámetro «(defecto)» HoraCortePicking (Models/Picking/HoraCortePicking.cs).
+                // Si se cambia la hora de corte en ese parámetro, hay que cambiar también esta hora a mano.
                 "0 11 * * 1-5", // Cron: de lunes a viernes a las 11:00
                 new RecurringJobOptions
                 {

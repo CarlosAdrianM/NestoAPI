@@ -1076,7 +1076,7 @@ namespace NestoAPI.Models
 
         public static class Picking
         {
-            public const int HORA_MAXIMA_AMPLIAR_PEDIDOS = 11;
+            // NestoAPI#577: la hora de corte (antes HORA_MAXIMA_AMPLIAR_PEDIDOS = 11) vive en Picking.HoraCortePicking.
 
             /// <summary>
             /// NestoAPI#361: "no habia nada que sacar" es un resultado NORMAL del picking, no un

@@ -82,11 +82,11 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
         [TestMethod]
         public void InterpretarHoraCorte_SinParametroOIlegible_LasOnce()
         {
-            Assert.AreEqual(new TimeSpan(11, 0, 0), ServicioCalendarioReposiciones.InterpretarHoraCorte(null));
-            Assert.AreEqual(new TimeSpan(11, 0, 0), ServicioCalendarioReposiciones.InterpretarHoraCorte(" "));
-            Assert.AreEqual(new TimeSpan(11, 0, 0), ServicioCalendarioReposiciones.InterpretarHoraCorte("once"));
-            Assert.AreEqual(new TimeSpan(11, 0, 0), ServicioCalendarioReposiciones.InterpretarHoraCorte("25:00"));
-            Assert.AreEqual(new TimeSpan(10, 30, 0), ServicioCalendarioReposiciones.InterpretarHoraCorte(" 10:30 "));
+            Assert.AreEqual(new TimeSpan(11, 0, 0), NestoAPI.Models.Picking.HoraCortePicking.Interpretar(null));
+            Assert.AreEqual(new TimeSpan(11, 0, 0), NestoAPI.Models.Picking.HoraCortePicking.Interpretar(" "));
+            Assert.AreEqual(new TimeSpan(11, 0, 0), NestoAPI.Models.Picking.HoraCortePicking.Interpretar("once"));
+            Assert.AreEqual(new TimeSpan(11, 0, 0), NestoAPI.Models.Picking.HoraCortePicking.Interpretar("25:00"));
+            Assert.AreEqual(new TimeSpan(10, 30, 0), NestoAPI.Models.Picking.HoraCortePicking.Interpretar(" 10:30 "));
         }
 
         [TestMethod]

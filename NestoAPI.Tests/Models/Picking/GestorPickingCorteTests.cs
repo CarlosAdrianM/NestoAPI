@@ -1,5 +1,4 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using NestoAPI.Models;
 using NestoAPI.Models.Picking;
 using System;
 
@@ -21,6 +20,8 @@ namespace NestoAPI.Tests.Models.Picking
     [TestClass]
     public class GestorPickingCorteTests
     {
+        private static readonly TimeSpan CORTE_11 = HoraCortePicking.POR_DEFECTO;
+
         private static DateTime Hoy(int hora, int minuto, int segundo)
         {
             return new DateTime(2026, 8, 24, hora, minuto, segundo);
@@ -31,29 +32,95 @@ namespace NestoAPI.Tests.Models.Picking
         [TestMethod]
         public void CorteDelDiaSuperado_UnSegundoAntesDeLasOnce_TodaviaNo()
         {
-            Assert.IsFalse(GestorPicking.CorteDelDiaSuperado(Hoy(10, 59, 59)));
+            Assert.IsFalse(GestorPicking.CorteDelDiaSuperado(Hoy(10, 59, 59), CORTE_11));
         }
 
         [TestMethod]
         public void CorteDelDiaSuperado_LasOnceEnPunto_YaSi()
         {
-            Assert.IsTrue(GestorPicking.CorteDelDiaSuperado(Hoy(11, 0, 0)));
+            Assert.IsTrue(GestorPicking.CorteDelDiaSuperado(Hoy(11, 0, 0), CORTE_11));
         }
 
         [TestMethod]
         public void CorteDelDiaSuperado_UnSegundoDespues_YaSi()
         {
-            Assert.IsTrue(GestorPicking.CorteDelDiaSuperado(Hoy(11, 0, 1)));
+            Assert.IsTrue(GestorPicking.CorteDelDiaSuperado(Hoy(11, 0, 1), CORTE_11));
         }
 
         [TestMethod]
-        public void CorteDelDiaSuperado_ElCorteSonLasOnce_NoUnNumeroSuelto()
+        public void CorteDelDiaSuperado_ElCorteSaleDelParametro_NoDeUnOnceFijo()
         {
-            // Si algún día se mueve la hora de corte, este test lo sigue cubriendo.
-            int corte = Constantes.Picking.HORA_MAXIMA_AMPLIAR_PEDIDOS;
+            // NestoAPI#577: con el parámetro HoraCortePicking a las 12:30 el corte se mueve.
+            TimeSpan corte = new TimeSpan(12, 30, 0);
 
-            Assert.IsFalse(GestorPicking.CorteDelDiaSuperado(Hoy(corte - 1, 59, 59)));
-            Assert.IsTrue(GestorPicking.CorteDelDiaSuperado(Hoy(corte, 0, 0)));
+            Assert.IsFalse(GestorPicking.CorteDelDiaSuperado(Hoy(11, 0, 0), corte));
+            Assert.IsFalse(GestorPicking.CorteDelDiaSuperado(Hoy(12, 29, 59), corte));
+            Assert.IsTrue(GestorPicking.CorteDelDiaSuperado(Hoy(12, 30, 0), corte));
+        }
+
+        [TestMethod]
+        public void CalcularFechaPicking_ConCorteALasDoceYMedia_A_LasOnceYMediaSirveHoy()
+        {
+            TimeSpan corte = new TimeSpan(12, 30, 0);
+
+            Assert.AreEqual(new DateTime(2026, 8, 24), GestorPicking.CalcularFechaPicking(Hoy(11, 30, 0), corte));
+            Assert.AreNotEqual(new DateTime(2026, 8, 24), GestorPicking.CalcularFechaPicking(Hoy(12, 30, 0), corte));
+        }
+
+        // ===== De dónde sale la hora de corte =====
+
+        [TestMethod]
+        public void HoraCortePicking_SinParametro_LasOnce()
+        {
+            Func<string, string> original = HoraCortePicking.LectorValor;
+            try
+            {
+                HoraCortePicking.LimpiarCache();
+                HoraCortePicking.LectorValor = empresa => null;
+                Assert.AreEqual(new TimeSpan(11, 0, 0), HoraCortePicking.Leer("9"));
+            }
+            finally
+            {
+                HoraCortePicking.LectorValor = original;
+                HoraCortePicking.LimpiarCache();
+            }
+        }
+
+        [TestMethod]
+        public void HoraCortePicking_ConParametro_LeeElParametroDeLaEmpresa()
+        {
+            Func<string, string> original = HoraCortePicking.LectorValor;
+            try
+            {
+                HoraCortePicking.LimpiarCache();
+                string empresaLeida = null;
+                HoraCortePicking.LectorValor = empresa => { empresaLeida = empresa; return "12:30"; };
+
+                Assert.AreEqual(new TimeSpan(12, 30, 0), HoraCortePicking.Leer("9  "));
+                Assert.AreEqual("9", empresaLeida);
+            }
+            finally
+            {
+                HoraCortePicking.LectorValor = original;
+                HoraCortePicking.LimpiarCache();
+            }
+        }
+
+        [TestMethod]
+        public void HoraCortePicking_SiFallaLaLectura_LasOnce()
+        {
+            Func<string, string> original = HoraCortePicking.LectorValor;
+            try
+            {
+                HoraCortePicking.LimpiarCache();
+                HoraCortePicking.LectorValor = empresa => throw new InvalidOperationException("sin BD");
+                Assert.AreEqual(new TimeSpan(11, 0, 0), HoraCortePicking.Leer("9"));
+            }
+            finally
+            {
+                HoraCortePicking.LectorValor = original;
+                HoraCortePicking.LimpiarCache();
+            }
         }
 
         // ===== El horizonte deducido del reloj (picking interactivo) =====
@@ -61,15 +128,15 @@ namespace NestoAPI.Tests.Models.Picking
         [TestMethod]
         public void CalcularFechaPicking_AntesDelCorte_SirveHoy()
         {
-            Assert.AreEqual(new DateTime(2026, 8, 24), GestorPicking.CalcularFechaPicking(Hoy(10, 59, 59)));
-            Assert.AreEqual(new DateTime(2026, 8, 24), GestorPicking.CalcularFechaPicking(Hoy(8, 0, 0)));
+            Assert.AreEqual(new DateTime(2026, 8, 24), GestorPicking.CalcularFechaPicking(Hoy(10, 59, 59), CORTE_11));
+            Assert.AreEqual(new DateTime(2026, 8, 24), GestorPicking.CalcularFechaPicking(Hoy(8, 0, 0), CORTE_11));
         }
 
         [TestMethod]
         public void CalcularFechaPicking_AntesDelCorte_QuitaLaHora()
         {
             // El horizonte se compara contra FechaEntrega, que no lleva hora.
-            DateTime resultado = GestorPicking.CalcularFechaPicking(Hoy(10, 30, 45));
+            DateTime resultado = GestorPicking.CalcularFechaPicking(Hoy(10, 30, 45), CORTE_11);
 
             Assert.AreEqual(TimeSpan.Zero, resultado.TimeOfDay);
         }
@@ -84,8 +151,8 @@ namespace NestoAPI.Tests.Models.Picking
             // de diferencia. Ahora el picking de cierre pasa DateTime.Today como dato y ni
             // siquiera llama a CalcularFechaPicking, así que arranque cuando arranque sirve hoy.
             Assert.AreNotEqual(
-                GestorPicking.CorteDelDiaSuperado(Hoy(10, 59, 59)),
-                GestorPicking.CorteDelDiaSuperado(Hoy(11, 0, 1)),
+                GestorPicking.CorteDelDiaSuperado(Hoy(10, 59, 59), CORTE_11),
+                GestorPicking.CorteDelDiaSuperado(Hoy(11, 0, 1), CORTE_11),
                 "Este es el salto que hacía frágil al picking automático: dos segundos cambiaban el horizonte");
 
             // El horizonte que declara el picking de cierre es siempre el mismo, sin reloj de por medio.

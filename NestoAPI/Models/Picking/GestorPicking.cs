@@ -26,7 +26,7 @@ namespace NestoAPI.Models.Picking
         /// </summary>
         public void SacarPicking()
         {
-            SacarPicking(CalcularFechaPicking(DateTime.Now));
+            SacarPicking(FechaPickingAhora(Constantes.Empresas.EMPRESA_POR_DEFECTO));
         }
 
         /// <summary>
@@ -61,7 +61,7 @@ namespace NestoAPI.Models.Picking
             EnExclusiva(() =>
             {
                 candidatos = modulos.rellenadorPicking.Rellenar(rutas);
-                Ejecutar(CalcularFechaPicking(DateTime.Now));
+                Ejecutar(FechaPickingAhora(Constantes.Empresas.EMPRESA_POR_DEFECTO));
             });
         }
 
@@ -74,7 +74,7 @@ namespace NestoAPI.Models.Picking
             EnExclusiva(() =>
             {
                 candidatos = modulos.rellenadorPicking.Rellenar(empresa, numeroPedido);
-                Ejecutar(CalcularFechaPicking(DateTime.Now));
+                Ejecutar(FechaPickingAhora(empresa));
             });
         }
 
@@ -83,7 +83,7 @@ namespace NestoAPI.Models.Picking
             EnExclusiva(() =>
             {
                 candidatos = modulos.rellenadorPicking.Rellenar(cliente);
-                Ejecutar(CalcularFechaPicking(DateTime.Now));
+                Ejecutar(FechaPickingAhora(Constantes.Empresas.EMPRESA_POR_DEFECTO));
             });
         }
 
@@ -253,32 +253,39 @@ namespace NestoAPI.Models.Picking
             
         }
 
+        /// <summary>Horizonte del picking interactivo según el reloj y la hora de corte de la empresa.</summary>
+        private static DateTime FechaPickingAhora(string empresa)
+        {
+            return CalcularFechaPicking(DateTime.Now, HoraCortePicking.Leer(empresa));
+        }
+
         /// <summary>
         /// NestoAPI#361: ¿el instante dado está ya pasado el corte del día? Se extrae para poder
         /// testear el límite exacto, que antes vivía enterrado en una comparación con
-        /// DateTime.Now y era intestable sin congelar el reloj. El corte son las 11:00:00 EN
-        /// PUNTO: a las 10:59:59 todavía se sirve hoy.
+        /// DateTime.Now y era intestable sin congelar el reloj. El corte es EN PUNTO: con corte a
+        /// las 11:00, a las 10:59:59 todavía se sirve hoy. NestoAPI#577: la hora de corte ya no es
+        /// un 11 fijo, sale de <see cref="HoraCortePicking.Leer"/>.
         /// </summary>
-        internal static bool CorteDelDiaSuperado(DateTime instante)
+        internal static bool CorteDelDiaSuperado(DateTime instante, TimeSpan horaCorte)
         {
-            return instante.Hour >= Constantes.Picking.HORA_MAXIMA_AMPLIAR_PEDIDOS;
+            return instante.TimeOfDay >= horaCorte;
         }
 
         /// <summary>
         /// Deduce el horizonte de entrega a partir de la hora. Lo usa el picking INTERACTIVO; el
         /// de cierre recibe el horizonte como dato (ver SacarPicking(DateTime)).
         /// </summary>
-        internal static DateTime CalcularFechaPicking(DateTime fechaConHora)
+        internal static DateTime CalcularFechaPicking(DateTime fechaConHora, TimeSpan horaCorte)
         {
             DateTime fechaSinHora = new DateTime(fechaConHora.Year, fechaConHora.Month, fechaConHora.Day);
 
-            // Si es antes de las 11h devuelve la fecha de hoy (sin hora)
-            if (!CorteDelDiaSuperado(fechaConHora))
+            // Si es antes del corte devuelve la fecha de hoy (sin hora)
+            if (!CorteDelDiaSuperado(fechaConHora, horaCorte))
             {
                 return fechaSinHora;
             }
 
-            // Si es después de las 11h devolvemos el siguiente día laboral            
+            // Si es después del corte devolvemos el siguiente día laboral            
             var fechaDevolver = fechaSinHora.AddDays(1);
             while (GestorFestivos.EsFestivo(fechaDevolver, Constantes.Almacenes.ALGETE))
             {

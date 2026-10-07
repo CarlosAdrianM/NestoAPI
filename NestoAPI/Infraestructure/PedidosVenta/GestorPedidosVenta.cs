@@ -694,7 +694,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             return new GrupoSubgrupoLinea { Grupo = grupoResuelto, SubGrupo = subGrupoConvertido };
         }
 
-        // A las 11h de la mañana se cierra la ruta y los pedidos que se metan son ya para el día siguiente
+        // A la hora de corte del picking (HoraCortePicking, 11:00 por defecto) se cierra la ruta y los pedidos que se metan son ya para el día siguiente
         internal DateTime FechaEntregaAjustada(DateTime fecha, string ruta, string almacen = "")
         {
             fecha = new DateTime(fecha.Year, fecha.Month, fecha.Day);
@@ -708,7 +708,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             {
                 var diaActual = DateTime.Today.DayOfWeek;
                 var diasSiguienteRuta = (diaActual == DayOfWeek.Friday) ? 3 : (diaActual == DayOfWeek.Saturday) ? 2 : 1;
-                fechaMinima = DateTime.Now.Hour < Constantes.Picking.HORA_MAXIMA_AMPLIAR_PEDIDOS ? DateTime.Today : DateTime.Today.AddDays(diasSiguienteRuta);
+                fechaMinima = DateTime.Now.TimeOfDay < Models.Picking.HoraCortePicking.Leer(Constantes.Empresas.EMPRESA_POR_DEFECTO) ? DateTime.Today : DateTime.Today.AddDays(diasSiguienteRuta);
             }
             else
             {

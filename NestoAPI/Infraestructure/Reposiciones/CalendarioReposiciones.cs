@@ -1,6 +1,7 @@
 using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Infrastructure;
 using NestoAPI.Models;
+using NestoAPI.Models.Picking;
 using System;
 using System.Collections.Generic;
 using System.Data.Entity;
@@ -58,10 +59,6 @@ namespace NestoAPI.Infraestructure.Reposiciones
     /// </summary>
     public class ServicioCalendarioReposiciones : IServicioCalendarioReposiciones
     {
-        /// <summary>Parámetro de usuario «(defecto)» con la hora de corte del picking del destino ("11:00").</summary>
-        public const string CLAVE_HORA_CORTE_PICKING = "HoraCortePicking";
-        public static readonly TimeSpan HORA_CORTE_PICKING_POR_DEFECTO = new TimeSpan(11, 0, 0);
-
         public const string MENSAJE_SIN_PERMISO =
             "El calendario de reposiciones lo mantiene Almacén. Pídeselo a informática si necesitas cambiarlo.";
 
@@ -92,15 +89,6 @@ namespace NestoAPI.Infraestructure.Reposiciones
             return usuario != null && gruposQuePuedenMantener.Any(g => usuario.IsInRoleSinDominio(g));
         }
 
-        /// <summary>"11:00" → 11:00; vacío o ilegible → <see cref="HORA_CORTE_PICKING_POR_DEFECTO"/>.</summary>
-        public static TimeSpan InterpretarHoraCorte(string valor)
-        {
-            return TimeSpan.TryParse(valor?.Trim(), CultureInfo.InvariantCulture, out TimeSpan hora)
-                && hora > TimeSpan.Zero && hora < TimeSpan.FromDays(1)
-                ? hora
-                : HORA_CORTE_PICKING_POR_DEFECTO;
-        }
-
         public async Task<ProximaReposicionDTO> LeerProximaLlegada(string empresa, string origen, string destino)
         {
             string empresaLimpia = EmpresaOPorDefecto(empresa);
@@ -111,10 +99,10 @@ namespace NestoAPI.Infraestructure.Reposiciones
                 .Where(f => f.Empresa == empresaLimpia && f.AlmacenOrigen == origenLimpio && f.AlmacenDestino == destinoLimpio && f.Activo)
                 .ToListAsync().ConfigureAwait(false);
             ParametroUsuario parametro = await db.ParametrosUsuario
-                .FirstOrDefaultAsync(p => p.Empresa == empresaLimpia && p.Usuario == "(defecto)" && p.Clave == CLAVE_HORA_CORTE_PICKING)
+                .FirstOrDefaultAsync(p => p.Empresa == empresaLimpia && p.Usuario == "(defecto)" && p.Clave == HoraCortePicking.CLAVE)
                 .ConfigureAwait(false);
 
-            return calculadora.Calcular(filas, origenLimpio, destinoLimpio, InterpretarHoraCorte(parametro?.Valor), reloj(), empresaLimpia);
+            return calculadora.Calcular(filas, origenLimpio, destinoLimpio, HoraCortePicking.Interpretar(parametro?.Valor), reloj(), empresaLimpia);
         }
 
         public async Task<List<ReposicionCalendarioDTO>> LeerCalendario(string empresa)

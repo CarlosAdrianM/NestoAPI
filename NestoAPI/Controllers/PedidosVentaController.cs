@@ -1751,9 +1751,10 @@ namespace NestoAPI.Controllers
 
         public void ComprobarSiSePuedenInsertarLineas(PedidoVentaDTO pedido, bool algunaLineaTienePicking, LineaPedidoVentaDTO linea)
         {
-            if (algunaLineaTienePicking && gestor.FechaEntregaAjustada(linea.fechaEntrega, pedido.ruta, linea.almacen) <= DateTime.Today && DateTime.Now.Hour >= Constantes.Picking.HORA_MAXIMA_AMPLIAR_PEDIDOS)
+            TimeSpan horaCorte = Models.Picking.HoraCortePicking.Leer(pedido.empresa);
+            if (algunaLineaTienePicking && gestor.FechaEntregaAjustada(linea.fechaEntrega, pedido.ruta, linea.almacen) <= DateTime.Today && DateTime.Now.TimeOfDay >= horaCorte)
             {
-                errorPersonalizado("No se pueden insertar líneas porque son más de las " + Constantes.Picking.HORA_MAXIMA_AMPLIAR_PEDIDOS.ToString() + "h. y tiene fecha de entrega " + linea.fechaEntrega.ToShortDateString());
+                errorPersonalizado("No se pueden insertar líneas porque son más de las " + horaCorte.ToString(@"hh\:mm") + " y tiene fecha de entrega " + linea.fechaEntrega.ToShortDateString());
             }
         }
 
