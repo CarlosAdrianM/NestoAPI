@@ -356,5 +356,18 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
             Assert.AreEqual(Dia.AddDays(-20), uno.UltimaInteraccion);
             Assert.AreEqual(0, historiales.Single(h => h.ClienteId == "2/0").Pedidos.Count);
         }
+
+        [TestMethod]
+        public void Cartera_LosPedidosSeCuentanPorNumeroDePedidoYSuFecha_NoPorDiasDeAlbaran()
+        {
+            // 31931 (JGP): un pedido servido en dos entregas contaba dos veces y el «último pedido» era el último albarán.
+            string sql = RepositorioCarteraContactoSql.SQL_CARTERA;
+
+            Assert.IsFalse(sql.Contains("[Fecha Albarán]"), "los días de albarán ya no cuentan como pedidos");
+            StringAssert.Contains(sql, "INNER JOIN CabPedidoVta cab WITH (NOLOCK) ON cab.Empresa = l.Empresa AND cab.Número = l.Número");
+            StringAssert.Contains(sql, "GROUP BY l.[Nº Cliente], l.Contacto, l.Número, CAST(cab.Fecha AS date)");
+            StringAssert.Contains(sql, "AND cab.Fecha >= @Hace24Meses", "la ventana va por la fecha del pedido");
+            StringAssert.Contains(sql, "l.Estado = 4 AND l.[Base Imponible] > 0 AND l.SubGrupo <> 'MMP'", "mismos filtros de línea facturada");
+        }
     }
 }

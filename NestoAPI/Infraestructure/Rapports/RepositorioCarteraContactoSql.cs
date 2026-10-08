@@ -40,17 +40,24 @@ namespace NestoAPI.Infraestructure.Rapports
             WHERE c.Empresa = '1' AND c.Estado >= 0 AND c.Estado NOT IN (7, 67) AND c.Vendedor = @Vendedor;
             CREATE CLUSTERED INDEX IX_Cartera ON #Cartera (Cliente, Contacto);
 
-            -- Compras facturadas: un pedido = un día distinto con albarán (la fecha de factura agrupa el mes en los FDM).
-            SELECT l.[Nº Cliente] Cliente, l.Contacto, CAST(ISNULL(l.[Fecha Albarán], l.[Fecha Factura]) AS date) Dia,
+            -- Compras facturadas: un pedido = un Número de pedido con alguna línea facturada, con la fecha del pedido
+            -- (CabPedidoVta.Fecha), como #EnCurso. Antes era un día distinto con albarán (no la fecha de factura, que en
+            -- los FDM agrupa todo el mes en un día), pero un pedido servido en dos entregas contaba dos veces y el
+            -- «último pedido» salía con la fecha del último albarán (31931: 22 días de albarán por 20 pedidos; el
+            -- albarán del 28/09 era del pedido del 08/09 y el último pedido era del 17/09). La ventana va por la fecha
+            -- del pedido; [Fecha Factura] >= @Hace24Meses queda solo como prefiltro (se factura después de pedir).
+            SELECT l.[Nº Cliente] Cliente, l.Contacto, l.Número Pedido, CAST(cab.Fecha AS date) Dia,
                 SUM(l.[Base Imponible]) Importe
             INTO #Compras
             FROM LinPedidoVta l WITH (NOLOCK)
+            INNER JOIN CabPedidoVta cab WITH (NOLOCK) ON cab.Empresa = l.Empresa AND cab.Número = l.Número
             INNER JOIN #Cartera x ON x.Cliente = l.[Nº Cliente] AND x.Contacto = l.Contacto
             WHERE l.Empresa = '1' AND l.Estado = 4 AND l.[Base Imponible] > 0 AND l.SubGrupo <> 'MMP'
-                AND l.[Fecha Factura] >= @Hace24Meses
-            GROUP BY l.[Nº Cliente], l.Contacto, CAST(ISNULL(l.[Fecha Albarán], l.[Fecha Factura]) AS date);
+                AND l.[Fecha Factura] >= @Hace24Meses AND cab.Fecha >= @Hace24Meses
+            GROUP BY l.[Nº Cliente], l.Contacto, l.Número, CAST(cab.Fecha AS date);
 
-            -- Pedidos todavía sin facturar (pendiente, en curso, albarán): solo cuentan para «pidió hace poco».
+            -- Pedidos todavía sin facturar (pendiente, en curso, albarán): solo cuentan para «pidió hace poco», con la
+            -- misma fecha del pedido que #Compras.
             SELECT l.[Nº Cliente] Cliente, l.Contacto, MAX(CAST(cab.Fecha AS date)) Dia
             INTO #EnCurso
             FROM LinPedidoVta l WITH (NOLOCK)
@@ -72,7 +79,7 @@ namespace NestoAPI.Infraestructure.Rapports
             SELECT x.Cliente, x.Contacto, x.Nombre, x.Direccion, x.CodPostal, x.Poblacion, x.Provincia, x.Telefono,
                 SUM(CASE WHEN cp.Dia >= @Hace12Meses THEN 1 ELSE 0 END) Pedidos12Meses,
                 SUM(CASE WHEN cp.Dia >= @Hace12Meses THEN cp.Importe ELSE 0 END) Importe12Meses,
-                COUNT(cp.Dia) Pedidos24Meses,
+                COUNT(cp.Pedido) Pedidos24Meses,
                 MAX(cp.Dia) UltimaCompra,
                 MAX(ec.Dia) UltimoEnCurso,
                 MAX(r.UltimoContacto) UltimoContacto,
