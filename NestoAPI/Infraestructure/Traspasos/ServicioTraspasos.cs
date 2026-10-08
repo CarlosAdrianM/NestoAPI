@@ -11,8 +11,8 @@ namespace NestoAPI.Infraestructure.Traspasos
     {
         /// <summary>
         /// NestoAPI#553: propuesta de reposición (solo lectura). Lanza <see cref="ArgumentException"/>
-        /// si los parámetros no son válidos y <see cref="ReposicionPendienteException"/> si el destino
-        /// tiene una reposición sin contabilizar.
+        /// si los parámetros no son válidos. NestoAPI#577: una reposición anterior sin recibir en el destino ya
+        /// no impide calcularla (prdRellenarReposicionStock2 la cuenta como stock en camino).
         /// </summary>
         Task<PropuestaTraspasoDTO> LeerPropuesta(string empresa, string origen, string destino);
     }

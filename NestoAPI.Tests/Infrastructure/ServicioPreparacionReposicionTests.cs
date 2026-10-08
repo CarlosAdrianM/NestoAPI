@@ -79,7 +79,11 @@ namespace NestoAPI.Tests.Infrastructure
         private ServicioPreparacionReposicion Servicio()
         {
             return new ServicioPreparacionReposicion(repositorio,
-                (empresa, origen, destino) => { propuestasPedidas.Add($"{empresa}|{origen}|{destino}"); return Task.FromResult(propuesta); },
+                (empresa, origen, destino, corte) =>
+                {
+                    propuestasPedidas.Add($"{empresa}|{origen}|{destino}" + (corte.HasValue ? $"|{corte:dd/MM/yyyy HH:mm}" : string.Empty));
+                    return Task.FromResult(propuesta);
+                },
                 (origen, control) => control ? huecosAlgete : huecos,
                 (empresa, usuario) => almacenesDeUsuario.TryGetValue(usuario, out string almacen) ? almacen : null,
                 () => AHORA);
@@ -145,6 +149,18 @@ namespace NestoAPI.Tests.Infrastructure
             CollectionAssert.AreEqual(new[] { "1|ALC|ALG" }, propuestasPedidas);
             CollectionAssert.AreEqual(new[] { "21116", "38744" }, creada.Lineas.Select(l => l.Producto).ToArray());
             Assert.AreEqual(3, creada.Unidades);
+        }
+
+        [TestMethod]
+        public async Task Crear_SinLineasConHoraDeCorte_PideLaPropuestaConEseCorte()
+        {
+            // NestoAPI#577 (corte 3a): el job rellena con el instante del calendario; a mano (sin corte) se piden todos los pedidos
+            propuesta.Add(new LineaPropuestaReposicionDTO { Producto = "21116", CantidadReposicion = 1 });
+            var corte = new DateTime(2026, 10, 9, 10, 0, 0);
+
+            _ = await Servicio().Crear(new CrearReposicionDTO { Origen = "ALC", Destino = "ALG" }, Paloma, corte);
+
+            CollectionAssert.AreEqual(new[] { "1|ALC|ALG|09/10/2026 10:00" }, propuestasPedidas);
         }
 
         [TestMethod]

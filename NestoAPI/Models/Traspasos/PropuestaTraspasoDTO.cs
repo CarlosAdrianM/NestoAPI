@@ -5,7 +5,7 @@ namespace NestoAPI.Models.Traspasos
 {
     /// <summary>
     /// NestoAPI#553 (fase 1, corte a): propuesta de reposición de un almacén a otro, tal y como la
-    /// calcula prdRellenarReposicionStock. Es de SOLO LECTURA: no crea el traspaso ni escribe en
+    /// calcula prdRellenarReposicionStock2 (NestoAPI#577). Es de SOLO LECTURA: no crea el traspaso ni escribe en
     /// PreExtrProducto (eso llega en el siguiente corte).
     /// </summary>
     public class PropuestaTraspasoDTO
@@ -32,7 +32,7 @@ namespace NestoAPI.Models.Traspasos
     }
 
     /// <summary>
-    /// Fila cruda del SELECT final de prdRellenarReposicionStock (NestoAPI#553). Los nombres tienen
+    /// Fila cruda del SELECT final de prdRellenarReposicionStock2 (NestoAPI#553, #577: mismas columnas que el viejo). Los nombres tienen
     /// que coincidir con las columnas del SP porque Database.SqlQuery mapea por nombre; por eso
     /// «Número» lleva tilde. Los tipos: smallint en las cantidades calculadas y int en las constantes.
     /// Columnas que el SP devuelve y no se usan (cantidadReponer duplicada, PedidoPor, StockIntermedio,

@@ -31,7 +31,7 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public DateTime? Fecha { get; set; }
         /// <summary>
         /// Las líneas ya revisadas por el usuario. Si no vienen, se calculan con la propuesta
-        /// (prdRellenarReposicionStock), como hace el botón «Rellenar» de Nesto viejo.
+        /// (prdRellenarReposicionStock2), como hace el botón «Rellenar» de Nesto viejo.
         /// </summary>
         public List<LineaCrearReposicionDTO> Lineas { get; set; }
     }
@@ -576,7 +576,7 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
         };
 
         private readonly IRepositorioPreparacionReposicion repositorio;
-        private readonly Func<string, string, string, Task<List<LineaPropuestaReposicionDTO>>> propuesta;
+        private readonly Func<string, string, string, DateTime?, Task<List<LineaPropuestaReposicionDTO>>> propuesta;
         private readonly Func<string, bool, IUbicacionesReposicion> ubicaciones;
         private readonly Func<string, string, string> almacenDelUsuario;
         private readonly Func<DateTime> ahora;
@@ -588,7 +588,7 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
 
         public ServicioPreparacionReposicion(NVEntities db)
             : this(new RepositorioPreparacionReposicionSql(db),
-                (empresa, origen, destino) => new ServicioPropuestaReposicion(db).CalcularPropuesta(empresa, origen, destino),
+                (empresa, origen, destino, corte) => new ServicioPropuestaReposicion(db).CalcularPropuesta(empresa, origen, destino, corte),
                 (origen, control) => UbicacionesReposicion.Para(origen, control, () => new PuertaUbicacionesSql(db)),
                 (empresa, usuario) => Controllers.ParametrosUsuarioController.LeerParametro(empresa, usuario, CLAVE_ALMACEN_USUARIO),
                 () => DateTime.Now)
@@ -596,11 +596,11 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
             dbPropio = db;
         }
 
-        /// <param name="propuesta">(empresa, origen, destino) → la propuesta de prdRellenarReposicionStock.</param>
+        /// <param name="propuesta">(empresa, origen, destino, corte) → la propuesta de prdRellenarReposicionStock2.</param>
         /// <param name="ubicaciones">(origen, controlUbicaciones) → qué hacer con los huecos del origen.</param>
         /// <param name="almacenDelUsuario">(empresa, usuario sin dominio) → su AlmacénPedidoVta.</param>
         internal ServicioPreparacionReposicion(IRepositorioPreparacionReposicion repositorio,
-            Func<string, string, string, Task<List<LineaPropuestaReposicionDTO>>> propuesta,
+            Func<string, string, string, DateTime?, Task<List<LineaPropuestaReposicionDTO>>> propuesta,
             Func<string, bool, IUbicacionesReposicion> ubicaciones,
             Func<string, string, string> almacenDelUsuario,
             Func<DateTime> ahora)
@@ -612,7 +612,16 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
             this.ahora = ahora ?? (() => DateTime.Now);
         }
 
-        public async Task<ReposicionEnPreparacionDTO> Crear(CrearReposicionDTO peticion, IPrincipal usuario)
+        public Task<ReposicionEnPreparacionDTO> Crear(CrearReposicionDTO peticion, IPrincipal usuario)
+        {
+            return Crear(peticion, usuario, corte: null);
+        }
+
+        /// <param name="corte">
+        /// NestoAPI#577: el instante de corte con el que se rellena (el job del corte 3b: día + HoraCierre del calendario).
+        /// Sin líneas en la petición, de los pedidos pendientes solo cuentan los creados antes. Null: a mano (todos).
+        /// </param>
+        public async Task<ReposicionEnPreparacionDTO> Crear(CrearReposicionDTO peticion, IPrincipal usuario, DateTime? corte)
         {
             if (peticion == null)
             {
@@ -642,7 +651,7 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
                     "termínala antes de crear otra.");
             }
 
-            List<LineaCrearReposicionDTO> lineas = await LineasACrear(peticion, empresa, origen, destino).ConfigureAwait(false);
+            List<LineaCrearReposicionDTO> lineas = await LineasACrear(peticion, empresa, origen, destino, corte).ConfigureAwait(false);
             if (!lineas.Any())
             {
                 throw new NestoBusinessException($"No hay nada que reponer de {origen} a {destino}.");
@@ -984,7 +993,8 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
             return datos;
         }
 
-        private async Task<List<LineaCrearReposicionDTO>> LineasACrear(CrearReposicionDTO peticion, string empresa, string origen, string destino)
+        private async Task<List<LineaCrearReposicionDTO>> LineasACrear(CrearReposicionDTO peticion, string empresa, string origen, string destino,
+            DateTime? corte)
         {
             IEnumerable<LineaCrearReposicionDTO> origenLineas;
             if (peticion.Lineas != null && peticion.Lineas.Any())
@@ -993,8 +1003,8 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
             }
             else
             {
-                // El botón «Rellenar» de Nesto viejo: lo que dice prdRellenarReposicionStock (solo «Venta»; las de «Compra» no salen hoy)
-                List<LineaPropuestaReposicionDTO> calculada = await propuesta(empresa, origen, destino).ConfigureAwait(false);
+                // El botón «Rellenar» de Nesto viejo: lo que dice prdRellenarReposicionStock2 (solo «Venta»; las de «Compra» no salen hoy)
+                List<LineaPropuestaReposicionDTO> calculada = await propuesta(empresa, origen, destino, corte).ConfigureAwait(false);
                 origenLineas = calculada.Select(l => new LineaCrearReposicionDTO { Producto = l.Producto, Cantidad = l.CantidadReposicion });
             }
             // Nesto viejo consolida por producto (group by producto, grupo … sum(cantidad))

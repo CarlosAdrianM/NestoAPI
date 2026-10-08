@@ -109,39 +109,6 @@ namespace NestoAPI.Tests.Infrastructure.Traspasos
             await AssertLanzaArgumentException(() => servicio.LeerPropuesta("1234", "ALG", "REI"));
         }
 
-        [TestMethod]
-        public async Task LeerPropuesta_ReposicionPendiente_SePropaga()
-        {
-            A.CallTo(() => repositorio.LeerPropuesta(A<string>._, A<string>._, A<string>._))
-                .ThrowsAsync(new ReposicionPendienteException(null));
-
-            try
-            {
-                await servicio.LeerPropuesta("1", "ALG", "REI");
-                Assert.Fail("Tenía que lanzar ReposicionPendienteException");
-            }
-            catch (ReposicionPendienteException)
-            {
-            }
-        }
-
-        [TestMethod]
-        public void EsMensajeReposicionPendiente_ReconoceElRaiserrorDelSP()
-        {
-            Assert.IsTrue(RepositorioTraspasos.EsMensajeReposicionPendiente(
-                "No se puede rellenar porque hay una reposición anterior pendiente de contabilizar"));
-            Assert.IsFalse(RepositorioTraspasos.EsMensajeReposicionPendiente("Timeout expired"));
-            Assert.IsFalse(RepositorioTraspasos.EsMensajeReposicionPendiente(null));
-        }
-
-        [TestMethod]
-        public void EsErrorReposicionPendiente_SinSqlException_NoLoConfunde()
-        {
-            // Un error nuestro con el mismo texto no es el raiserror del SP.
-            Assert.IsFalse(RepositorioTraspasos.EsErrorReposicionPendiente(
-                new InvalidOperationException("reposición anterior pendiente de contabilizar")));
-        }
-
         // ---------- Controlador ----------
 
         [TestMethod]
@@ -161,22 +128,6 @@ namespace NestoAPI.Tests.Infrastructure.Traspasos
             IHttpActionResult resultado = await controller.GetPropuesta("1", "ALG", "REI");
 
             Assert.AreSame(propuesta, ((OkNegotiatedContentResult<PropuestaTraspasoDTO>)resultado).Content);
-        }
-
-        [TestMethod]
-        public async Task GetPropuesta_ReposicionPendiente_Devuelve409ConMensajeClaro()
-        {
-            var fake = A.Fake<IServicioTraspasos>();
-            A.CallTo(() => fake.LeerPropuesta(A<string>._, A<string>._, A<string>._))
-                .ThrowsAsync(new ReposicionPendienteException(null));
-            var controller = new TraspasosController(fake);
-
-            IHttpActionResult resultado = await controller.GetPropuesta("1", "ALG", "REI");
-
-            var conflicto = resultado as NegotiatedContentResult<HttpError>;
-            Assert.IsNotNull(conflicto, "Tenía que devolver un 409");
-            Assert.AreEqual(HttpStatusCode.Conflict, conflicto.StatusCode);
-            StringAssert.Contains(conflicto.Content.Message, "pendiente de contabilizar");
         }
 
         [TestMethod]

@@ -141,8 +141,9 @@ namespace NestoAPI.Controllers
         // GET api/Reposiciones/Propuesta?origen=ALG&destino=REI&empresa=1
         /// <summary>
         /// Qué habría que mandar de <paramref name="origen"/> a <paramref name="destino"/> (stock máximo, pendientes
-        /// y stock de los dos almacenes). 400 si los almacenes no valen o si en el destino hay una reposición
-        /// anterior sin contabilizar (el procedimiento no deja mezclarlas).
+        /// y stock de los dos almacenes), con prdRellenarReposicionStock2. 400 si los almacenes no valen. NestoAPI#577:
+        /// una reposición anterior sin recibir ya no lo impide: lo que va hacia el destino cuenta como su stock y lo
+        /// comprometido para salir del origen se le resta. Sin hora de corte (todos los pedidos pendientes).
         /// </summary>
         [HttpGet]
         [Route("Propuesta")]
@@ -156,7 +157,7 @@ namespace NestoAPI.Controllers
 
         // POST api/Reposiciones   { Empresa, Origen, Destino, Fecha?, Lineas?: [{ Producto, Cantidad }] }
         /// <summary>
-        /// Crea la reposición en el diario de salida del origen. Sin líneas, usa la propuesta (prdRellenarReposicionStock).
+        /// Crea la reposición en el diario de salida del origen. Sin líneas, usa la propuesta (prdRellenarReposicionStock2).
         /// Desde una tienda la deja en preparación (NumTraspaso null, hasta Terminar). Desde Algete (control de ubicaciones)
         /// reserva los huecos y la cierra sin contabilizar: devuelve NumTraspaso y, por línea, Hueco / SinHueco; sale en
         /// GET api/Almacen/Recogidas (REPO). 409 si el origen tiene un inventario en curso o ya tiene una reposición en

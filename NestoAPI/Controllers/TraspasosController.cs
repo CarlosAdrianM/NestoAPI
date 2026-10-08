@@ -2,7 +2,6 @@ using NestoAPI.Infraestructure.Traspasos;
 using NestoAPI.Models;
 using NestoAPI.Models.Traspasos;
 using System;
-using System.Net;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
@@ -30,8 +29,9 @@ namespace NestoAPI.Controllers
 
         /// <summary>
         /// Propuesta de reposición de <paramref name="origen"/> a <paramref name="destino"/> calculada
-        /// por prdRellenarReposicionStock (solo las líneas con CantidadReposicion &gt; 0).
-        /// 400 si los almacenes no son válidos; 409 si el destino tiene una reposición sin contabilizar.
+        /// por prdRellenarReposicionStock2 (solo las líneas con CantidadReposicion &gt; 0). 400 si los almacenes no son
+        /// válidos. NestoAPI#577: ya no hay 409 por una reposición anterior sin contabilizar en el destino (el
+        /// procedimiento nuevo no tiene ese freno; cuenta lo que ya está en camino).
         /// </summary>
         [HttpGet]
         [Route("Propuesta")]
@@ -47,10 +47,6 @@ namespace NestoAPI.Controllers
             catch (ArgumentException ex)
             {
                 return BadRequest(ex.Message);
-            }
-            catch (ReposicionPendienteException ex)
-            {
-                return Content(HttpStatusCode.Conflict, new HttpError(ex.Message));
             }
         }
     }

@@ -3,15 +3,18 @@ using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Infraestructure.Reposiciones;
 using System;
 using System.Collections.Generic;
+using System.Data;
+using System.Data.SqlClient;
 using System.Linq;
 using System.Threading.Tasks;
 
 namespace NestoAPI.Tests.Infrastructure
 {
     /// <summary>
-    /// NestoAPI#553 (fase 1, lectura): la propuesta de reposición de una tienda la sigue calculando
-    /// prdRellenarReposicionStock (solo calcula, con variables de tabla); aquí se valida la petición y se
-    /// traduce su salida a un DTO limpio para Nesto.
+    /// NestoAPI#553 (fase 1, lectura): la propuesta de reposición de una tienda la calcula un procedimiento (solo
+    /// calcula, con variables de tabla); aquí se valida la petición y se traduce su salida a un DTO limpio para Nesto.
+    /// NestoAPI#577 (corte 3a): el procedimiento es prdRellenarReposicionStock2 (sin el freno de «reposición anterior
+    /// pendiente», con hora de corte para los pedidos).
     /// </summary>
     [TestClass]
     public class ServicioPropuestaReposicionTests
@@ -20,9 +23,9 @@ namespace NestoAPI.Tests.Infrastructure
 
         private ServicioPropuestaReposicion Servicio(params FilaPropuestaReposicion[] filas)
         {
-            return new ServicioPropuestaReposicion((empresa, origen, destino) =>
+            return new ServicioPropuestaReposicion((empresa, origen, destino, corte) =>
             {
-                llamadas.Add($"{empresa}|{origen}|{destino}");
+                llamadas.Add($"{empresa}|{origen}|{destino}" + (corte.HasValue ? $"|{corte:dd/MM/yyyy HH:mm}" : string.Empty));
                 return Task.FromResult(filas.ToList());
             });
         }
@@ -70,18 +73,53 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
-        public void ErrorDelProcedimiento_ReposicionPendiente_SeConvierteEnErrorDeNegocioConSuTexto()
+        public void ErrorDelProcedimiento_UnRaiserror_SeConvierteEnErrorDeNegocioConSuTexto()
         {
-            var ex = ServicioPropuestaReposicion.ComoErrorDeNegocio(50000, "No se puede rellenar porque hay una reposición anterior pendiente de contabilizar");
+            var ex = ProcedimientoPropuestaReposicion.ComoErrorDeNegocio(50000, "Un aviso del procedimiento");
 
             Assert.IsInstanceOfType(ex, typeof(NestoBusinessException));
-            StringAssert.Contains(ex.Message, "reposición anterior pendiente de contabilizar");
+            StringAssert.Contains(ex.Message, "Un aviso del procedimiento");
         }
 
         [TestMethod]
         public void ErrorDelProcedimiento_OtroErrorDeSql_NoSeConvierte()
         {
-            Assert.IsNull(ServicioPropuestaReposicion.ComoErrorDeNegocio(1205, "interbloqueo"));
+            Assert.IsNull(ProcedimientoPropuestaReposicion.ComoErrorDeNegocio(1205, "interbloqueo"));
+        }
+
+        // ---------------------------------------------------------------- NestoAPI#577 (corte 3a)
+
+        [TestMethod]
+        public async Task Propuesta_SinCorte_PideTodosLosPedidos_YConCorte_LoPasaAlProcedimiento()
+        {
+            ServicioPropuestaReposicion servicio = Servicio();
+
+            _ = await servicio.CalcularPropuesta("1", "ALG", "ALC");
+            _ = await servicio.CalcularPropuesta("1", "ALG", "ALC", new DateTime(2026, 10, 9, 10, 0, 0));
+
+            CollectionAssert.AreEqual(new[] { "1|ALG|ALC", "1|ALG|ALC|09/10/2026 10:00" }, llamadas);
+        }
+
+        /// <summary>
+        /// Regresión del 08/10/26: Alfredo no pudo calcular ALG → ALC porque la 80915 (ALG → ALC) seguía sin recibir y
+        /// prdRellenarReposicionStock hacía raiserror («hay una reposición anterior pendiente de contabilizar»). La API
+        /// llama ya al procedimiento nuevo, sin ese freno, por su único punto de llamada y con los cuatro parámetros tipados.
+        /// </summary>
+        [TestMethod]
+        public void Procedimiento_EsElNuevoSinFreno_ConCorteTipadoYNuloSiNoHay()
+        {
+            Assert.AreEqual("prdRellenarReposicionStock2", ProcedimientoPropuestaReposicion.PROCEDIMIENTO);
+            Assert.AreEqual("EXEC prdRellenarReposicionStock2 @Empresa, @AlmacenOrigen, @AlmacenDestino, @Corte", ProcedimientoPropuestaReposicion.SQL);
+
+            SqlParameter[] sinCorte = ProcedimientoPropuestaReposicion.Parametros("1", "ALG", "ALC", null);
+            SqlParameter[] conCorte = ProcedimientoPropuestaReposicion.Parametros("1", "ALG", "ALC", new DateTime(2026, 10, 9, 10, 0, 0));
+
+            CollectionAssert.AreEqual(new[] { "@Empresa", "@AlmacenOrigen", "@AlmacenDestino", "@Corte" }, sinCorte.Select(p => p.ParameterName).ToArray());
+            Assert.AreEqual(SqlDbType.Char, sinCorte[1].SqlDbType);
+            Assert.AreEqual(3, sinCorte[2].Size);
+            Assert.AreEqual(SqlDbType.DateTime, sinCorte[3].SqlDbType);
+            Assert.AreEqual(DBNull.Value, sinCorte[3].Value);
+            Assert.AreEqual(new DateTime(2026, 10, 9, 10, 0, 0), conCorte[3].Value);
         }
     }
 }
