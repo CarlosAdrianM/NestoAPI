@@ -153,15 +153,14 @@ namespace NestoAPI.Controllers
         public IHttpActionResult GetSugerencias(string ambito = null, bool incluirCerradas = false)
         {
             string ambitoEfectivo = AmbitoEfectivo(ambito);
-            // NestoAPI#575: en Ariadna, quien sugirió algo sigue viendo su sugerencia descartada (y la
-            // respuesta de por qué). En Nesto y NestoApp, sin cambios hasta la tanda de quick wins.
-            bool descartadasDelAutor = !incluirCerradas && EsDeAriadna(ambitoEfectivo);
-            string usuario = descartadasDelAutor ? ReglasFeedbackNovedades.ClaveUsuario(User) : null;
+            // NestoAPI#575 (Ariadna) y quick win de Nesto/NestoApp: quien sugirió algo sigue viendo su
+            // sugerencia descartada (y la respuesta de por qué) 30 días desde la última actividad.
+            string usuario = incluirCerradas ? null : ReglasFeedbackNovedades.ClaveUsuario(User);
+            bool descartadasDelAutor = usuario != null;
+            DateTime ahora = DateTime.Now;
             List<SugerenciaNovedadDTO> sugerencias = servicio.LeerSugerencias(incluirCerradas || descartadasDelAutor)
                 .Where(s => EsDelAmbito(s.Ambito, ambitoEfectivo))
-                .Where(s => !descartadasDelAutor || ReglasSugerenciasNovedades.EstaAbierta(s.Estado)
-                    || (s.Estado == ReglasSugerenciasNovedades.ESTADO_DESCARTADA && usuario != null
-                        && string.Equals(s.SugeridaPor?.Trim(), usuario, StringComparison.OrdinalIgnoreCase)))
+                .Where(s => incluirCerradas || ReglasSugerenciasNovedades.SeVeEnLaLista(s, usuario, ahora))
                 .Select(s => s.ADto())
                 .ToList();
             OcultarContextoSiNoRevisa(sugerencias);
@@ -777,9 +776,6 @@ namespace NestoAPI.Controllers
 
         private static bool EsDeNestoApp(string ambito) =>
             string.Equals(ambito?.Trim(), AMBITO_NESTOAPP, StringComparison.OrdinalIgnoreCase);
-
-        private static bool EsDeAriadna(string ambito) =>
-            string.Equals(ambito?.Trim(), AMBITO_ARIADNA, StringComparison.OrdinalIgnoreCase);
 
         /// <summary>
         /// NestoAPI#537: a cada @mencionado le llega «X te ha mencionado en Novedades», con el mismo

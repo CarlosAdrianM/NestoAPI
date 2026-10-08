@@ -65,6 +65,10 @@ namespace NestoAPI.Models.Novedades
         public string Contexto { get; set; }
         /// <summary>NestoAPI#575: clave del autor (para que siga viendo sus descartadas). No sale en el DTO.</summary>
         public string SugeridaPor { get; set; }
+        /// <summary>Novedades.Fecha_Modificación: la toca cada cambio nuestro (descartarla incluida). No sale en el DTO.</summary>
+        public DateTime? FechaModificacion { get; set; }
+        /// <summary>El comentario (no borrado) más reciente, o null. No sale en el DTO.</summary>
+        public DateTime? FechaUltimoComentario { get; set; }
 
         public SugerenciaNovedadDTO ADto() => new SugerenciaNovedadDTO
         {

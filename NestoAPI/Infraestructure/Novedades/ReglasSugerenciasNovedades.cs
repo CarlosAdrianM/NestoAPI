@@ -62,6 +62,37 @@ namespace NestoAPI.Infraestructure.Novedades
             string.Equals(estado, ESTADO_PENDIENTE, StringComparison.OrdinalIgnoreCase)
             || string.Equals(estado, ESTADO_ACEPTADA, StringComparison.OrdinalIgnoreCase);
 
+        /// <summary>Días que el autor sigue viendo su sugerencia descartada desde la última actividad.</summary>
+        public const int DIAS_DESCARTADA_VISIBLE_PARA_SU_AUTOR = 30;
+
+        /// <summary>
+        /// Quick win (sugerencia 460): si la descartada deja de verse, su autor no lee la respuesta. Salen las
+        /// abiertas y, para su autor, sus descartadas durante <see cref="DIAS_DESCARTADA_VISIBLE_PARA_SU_AUTOR"/>
+        /// días desde la última actividad: el último cambio nuestro (Fecha_Modificación, que es cuando se
+        /// descartó si no se ha vuelto a tocar) o el último comentario, lo que sea más reciente. No hay una
+        /// fecha de cambio de estado propiamente dicha; si faltaran las dos, la de la sugerencia.
+        /// </summary>
+        public static bool SeVeEnLaLista(NovedadConSugerenciaFila sugerencia, string usuario, DateTime ahora)
+        {
+            if (sugerencia == null)
+            {
+                return false;
+            }
+            if (EstaAbierta(sugerencia.Estado))
+            {
+                return true;
+            }
+            if (!string.Equals(sugerencia.Estado, ESTADO_DESCARTADA, StringComparison.OrdinalIgnoreCase)
+                || string.IsNullOrWhiteSpace(usuario)
+                || !string.Equals(sugerencia.SugeridaPor?.Trim(), usuario.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+            DateTime? ultimaActividad = new[] { sugerencia.FechaModificacion, sugerencia.FechaUltimoComentario }
+                .Where(f => f.HasValue).Max() ?? sugerencia.SugeridaFecha;
+            return ultimaActividad.HasValue && ultimaActividad.Value >= ahora.AddDays(-DIAS_DESCARTADA_VISIBLE_PARA_SU_AUTOR);
+        }
+
         /// <summary>
         /// Valida y normaliza un cambio nuestro. Devuelve el motivo si no vale, o null. Con versión,
         /// la sugerencia pasa a Implementada (se ha hecho en esa versión).

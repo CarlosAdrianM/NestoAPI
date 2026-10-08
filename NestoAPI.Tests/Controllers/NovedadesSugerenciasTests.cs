@@ -430,17 +430,68 @@ namespace NestoAPI.Tests.Controllers
             CollectionAssert.AreEquivalent(new[] { 10, 11 }, resultado.Content.Select(s => s.Id).ToArray());
         }
 
+        /// <summary>
+        /// Quick win (sugerencia 460): en Nesto y NestoApp la descartada dejaba de verse y su autor no leía la
+        /// respuesta. Ahora la sigue viendo su autor 30 días desde la última actividad (cambio o comentario).
+        /// </summary>
         [TestMethod]
-        public void GetSugerencias_DeNestoYNestoApp_SiguenSinLasDescartadas()
+        public void GetSugerencias_DeNesto_SuAutorSigueViendoSuDescartadaTreintaDias()
         {
-            // Sin cambios para Nesto ni NestoApp: lo suyo se arregla en la tanda de quick wins.
             ComoUsuarioDeNesto();
-            A.CallTo(() => servicio.LeerSugerencias(false)).Returns(new List<NovedadConSugerenciaFila> { Sugerencia(1, "Nesto") });
+            NovedadConSugerenciaFila descartadaHoy = Sugerencia(460, "Nesto", "Descartada hoy", DateTime.Today.AddDays(-90));
+            descartadaHoy.Estado = ReglasSugerenciasNovedades.ESTADO_DESCARTADA;
+            descartadaHoy.SugeridaPor = @"NUEVAVISION\Alfredo";
+            descartadaHoy.FechaModificacion = DateTime.Now.AddHours(-2);
+            NovedadConSugerenciaFila comentadaHaceUnaSemana = Sugerencia(461, "Nesto", "Comentada hace poco", DateTime.Today.AddDays(-90));
+            comentadaHaceUnaSemana.Estado = ReglasSugerenciasNovedades.ESTADO_DESCARTADA;
+            comentadaHaceUnaSemana.SugeridaPor = @"NUEVAVISION\Alfredo";
+            comentadaHaceUnaSemana.FechaModificacion = DateTime.Now.AddDays(-60);
+            comentadaHaceUnaSemana.FechaUltimoComentario = DateTime.Now.AddDays(-7);
+            NovedadConSugerenciaFila antigua = Sugerencia(462, "Nesto", "Descartada hace dos meses", DateTime.Today.AddDays(-90));
+            antigua.Estado = ReglasSugerenciasNovedades.ESTADO_DESCARTADA;
+            antigua.SugeridaPor = @"NUEVAVISION\Alfredo";
+            antigua.FechaModificacion = DateTime.Now.AddDays(-31);
+            antigua.FechaUltimoComentario = DateTime.Now.AddDays(-45);
+            NovedadConSugerenciaFila deOtro = Sugerencia(463, "Nesto", "De otro", DateTime.Today.AddDays(-90));
+            deOtro.Estado = ReglasSugerenciasNovedades.ESTADO_DESCARTADA;
+            deOtro.SugeridaPor = @"NUEVAVISION\Laura";
+            deOtro.FechaModificacion = DateTime.Now.AddHours(-2);
+            A.CallTo(() => servicio.LeerSugerencias(true)).Returns(new List<NovedadConSugerenciaFila>
+            {
+                Sugerencia(1, "Nesto", "Abierta"), descartadaHoy, comentadaHaceUnaSemana, antigua, deOtro
+            });
 
-            _ = controller.GetSugerencias();
-            _ = controller.GetSugerencias("NestoApp");
+            var resultado = controller.GetSugerencias() as OkNegotiatedContentResult<List<SugerenciaNovedadDTO>>;
 
-            A.CallTo(() => servicio.LeerSugerencias(true)).MustNotHaveHappened();
+            CollectionAssert.AreEquivalent(new[] { 1, 460, 461 }, resultado.Content.Select(s => s.Id).ToArray());
+        }
+
+        [TestMethod]
+        public void GetSugerencias_DeNestoApp_SuAutorSigueViendoSuDescartada()
+        {
+            ComoVendedorDeLaApp();
+            NovedadConSugerenciaFila descartada = Sugerencia(470, "NestoApp", "Mía descartada");
+            descartada.Estado = ReglasSugerenciasNovedades.ESTADO_DESCARTADA;
+            descartada.SugeridaPor = "5f1c-guid";
+            descartada.FechaModificacion = DateTime.Now.AddDays(-3);
+            A.CallTo(() => servicio.LeerSugerencias(true)).Returns(new List<NovedadConSugerenciaFila> { descartada });
+
+            var resultado = controller.GetSugerencias("NestoApp") as OkNegotiatedContentResult<List<SugerenciaNovedadDTO>>;
+
+            CollectionAssert.AreEqual(new[] { 470 }, resultado.Content.Select(s => s.Id).ToArray());
+        }
+
+        [TestMethod]
+        public void SeVeEnLaLista_DescartadaSinFechasDeActividad_UsaLaDeLaSugerencia()
+        {
+            NovedadConSugerenciaFila descartada = Sugerencia(1, "Nesto", fecha: DateTime.Today.AddDays(-40));
+            descartada.Estado = ReglasSugerenciasNovedades.ESTADO_DESCARTADA;
+            descartada.SugeridaPor = "yo";
+
+            Assert.IsFalse(ReglasSugerenciasNovedades.SeVeEnLaLista(descartada, "yo", DateTime.Now));
+            descartada.SugeridaFecha = DateTime.Today.AddDays(-5);
+            Assert.IsTrue(ReglasSugerenciasNovedades.SeVeEnLaLista(descartada, "yo", DateTime.Now));
+            Assert.IsFalse(ReglasSugerenciasNovedades.SeVeEnLaLista(descartada, null, DateTime.Now), "sin usuario, no");
         }
     }
 }

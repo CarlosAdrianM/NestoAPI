@@ -22,7 +22,11 @@ namespace NestoAPI.Infraestructure.Novedades
             "Id, Version, Fecha, Categoria, Titulo, Descripcion, Ambito, TextoOriginal, SugeridaNombre, SugeridaFecha, Estado, SugeridaPor, " +
             "CAST(CASE WHEN Imagen IS NULL THEN 0 ELSE 1 END AS bit) AS TieneImagen, " +
             // NestoAPI#558 (Scripts/Issue558_IncidenciasNovedades.sql)
-            "Contexto";
+            "Contexto, " +
+            // Quick win (descartadas invisibles): la última actividad, para que el autor siga viendo su
+            // descartada 30 días (ReglasSugerenciasNovedades.SeVeEnLaLista)
+            "Fecha_Modificación AS FechaModificacion, " +
+            "(SELECT MAX(c.Fecha) FROM NovedadesComentarios c WHERE c.NovedadId = Novedades.Id AND c.Borrado = 0) AS FechaUltimoComentario";
 
         public List<NovedadDTO> LeerNovedadesPublicadas()
         {
