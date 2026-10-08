@@ -254,6 +254,7 @@
     <Compile Include="Controllers\PedidosVentaBuscarLineasTests.cs" />
     <Compile Include="Controllers\OfertasPermitidasFamiliaControllerTests.cs" />
     <Compile Include="Helpers\TestDbAsyncQueryProvider.cs" />
+    <Compile Include="Controllers\ComisionAnualDetallesControllerTests.cs" />
     <Compile Include="Controllers\OfertasPermitidasProductoControllerTests.cs" />
     <Compile Include="Controllers\CampanasControllerTests.cs" />
     <Compile Include="Controllers\AgenciasTarifasControllerTests.cs" />

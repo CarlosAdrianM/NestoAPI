@@ -8,7 +8,31 @@ namespace NestoAPI.Controllers
 {
     public class ComisionAnualDetallesController : ApiController
     {
-        private readonly NVEntities db = new NVEntities();
+        private readonly NVEntities db;
+
+        public ComisionAnualDetallesController()
+        {
+            db = new NVEntities();
+        }
+
+        internal ComisionAnualDetallesController(NVEntities db)
+        {
+            this.db = db;
+        }
+
+        /// <summary>
+        /// Sugerencia 541 (Marta): lo más reciente arriba, para no tener que arrastrar hasta el final del mes.
+        /// Las líneas sin fecha de factura (albaranes aún sin facturar) van las primeras, como antes; a igual
+        /// fecha, el pedido más alto primero para que el orden sea estable. El único llamante es la lista de
+        /// NestoApp (comisiones-detalle), que no acumula ni agrupa: solo pinta las filas.
+        /// </summary>
+        internal static IQueryable<vstLinPedidoVtaComisionesDetalle> MasRecientesPrimero(IQueryable<vstLinPedidoVtaComisionesDetalle> detalle)
+        {
+            return detalle
+                .OrderBy(v => v.Fecha_Factura == null ? 0 : 1)
+                .ThenByDescending(v => v.Fecha_Factura)
+                .ThenByDescending(v => v.Pedido);
+        }
 
         // GET: api/ComisionAnualDetalles
         public IQueryable<vstLinPedidoVtaComisionesDetalle> GetComisionesAnualesDetalles(string vendedor, int anno, int mes, bool incluirAlbaranes, string etiqueta)
@@ -25,7 +49,7 @@ namespace NestoAPI.Controllers
                 IComisionesAnuales comisiones = ServicioSelectorTipoComisionesAnualesVendedor.ComisionesVendedor(vendedor, anno, mes);
                 var etiquetaServicio = comisiones.Etiquetas.Single(s => s.Nombre == etiqueta) as IEtiquetaComisionVenta;
                 var detalleComisiones = etiquetaServicio.LeerVentaMesDetalle(vendedor, anno, mes, incluirAlbaranes, etiqueta, incluirPicking).ToList();
-                return detalleComisiones.Select(c =>
+                return MasRecientesPrimero(detalleComisiones.Select(c =>
                     new vstLinPedidoVtaComisionesDetalle
                     {
                         Vendedor = vendedor,
@@ -38,12 +62,12 @@ namespace NestoAPI.Controllers
                         Empresa = c.Empresa,
                         Pedido = c.Número
                     }
-                    ).OrderBy(c => c.Fecha_Factura).AsQueryable();
+                    ).AsQueryable());
             }
 
-            var detalle = db.vstLinPedidoVtaComisionesDetalles.Where(v => v.Vendedor == vendedor && v.Anno == anno && v.Mes == mes && v.Etiqueta == etiqueta).OrderBy(v => v.Fecha_Factura);
+            var detalle = db.vstLinPedidoVtaComisionesDetalles.Where(v => v.Vendedor == vendedor && v.Anno == anno && v.Mes == mes && v.Etiqueta == etiqueta);
 
-            return detalle;
+            return MasRecientesPrimero(detalle);
         }
 
         /*
