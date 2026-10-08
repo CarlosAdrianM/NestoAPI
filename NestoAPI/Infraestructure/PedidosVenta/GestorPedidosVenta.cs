@@ -697,27 +697,39 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         // A la hora de corte del picking (HoraCortePicking, 11:00 por defecto) se cierra la ruta y los pedidos que se metan son ya para el día siguiente
         internal DateTime FechaEntregaAjustada(DateTime fecha, string ruta, string almacen = "")
         {
+            return FechaEntregaAjustada(fecha, ruta, almacen, DateTime.Now,
+                Models.Picking.HoraCortePicking.Leer(Constantes.Empresas.EMPRESA_POR_DEFECTO), GestorFestivos.EsFestivo);
+        }
+
+        /// <summary>
+        /// NestoAPI#606: la misma regla, sin reloj ni BD (el instante, la hora de corte y los festivos como dato), para que
+        /// la calculadora de la fecha de entrega a la agencia use EXACTAMENTE la regla de la fecha mínima de los pedidos.
+        /// </summary>
+        internal static DateTime FechaEntregaAjustada(DateTime fecha, string ruta, string almacen, DateTime ahora, TimeSpan horaCorte,
+            Func<DateTime, string, bool> esFestivo)
+        {
             fecha = new DateTime(fecha.Year, fecha.Month, fecha.Day);
             if (string.IsNullOrEmpty(almacen))
             {
                 almacen = Constantes.Almacenes.ALGETE;
             }
+            DateTime hoy = ahora.Date;
             DateTime fechaMinima;
 
             if (ruta != Constantes.Pedidos.RUTA_GLOVO && GestorImportesMinimos.esRutaConPortes(ruta) && almacen == Constantes.Almacenes.ALGETE)
             {
-                var diaActual = DateTime.Today.DayOfWeek;
+                var diaActual = hoy.DayOfWeek;
                 var diasSiguienteRuta = (diaActual == DayOfWeek.Friday) ? 3 : (diaActual == DayOfWeek.Saturday) ? 2 : 1;
-                fechaMinima = DateTime.Now.TimeOfDay < Models.Picking.HoraCortePicking.Leer(Constantes.Empresas.EMPRESA_POR_DEFECTO) ? DateTime.Today : DateTime.Today.AddDays(diasSiguienteRuta);
+                fechaMinima = ahora.TimeOfDay < horaCorte ? hoy : hoy.AddDays(diasSiguienteRuta);
             }
             else
             {
-                fechaMinima = DateTime.Today;
+                fechaMinima = hoy;
             }
 
             var fechaDevolver = fechaMinima < fecha ? fecha : fechaMinima;
 
-            while (GestorFestivos.EsFestivo(fechaDevolver, almacen))
+            while (esFestivo(fechaDevolver, almacen))
             {
                 fechaDevolver = fechaDevolver.AddDays(1);
             }
