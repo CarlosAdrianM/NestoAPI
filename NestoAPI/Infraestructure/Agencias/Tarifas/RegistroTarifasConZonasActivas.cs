@@ -120,19 +120,28 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
 
     /// <summary>
     /// Único sitio que compone el comparador para SELECCIONAR agencia (MasEconomica, Coste, cobertura
-    /// al crear la etiqueta): agencias dadas de alta, sombras excluidas de la elección y freno por
-    /// zonas de CTT. Antes estaba copiado en tres controladores.
+    /// al crear la etiqueta, etiquetas pendientes y propuesta de envío): agencias dadas de alta, sombras
+    /// y agencias en cuarentena (NestoAPI#607, parámetro AgenciasEnCuarentena, el mismo que la puerta de
+    /// perfiles) excluidas de la elección y freno por zonas de CTT. Antes estaba copiado en tres
+    /// controladores.
+    ///
+    /// La cuarentena NO quita la tarifa del registro (a diferencia de las agencias sin alta): como las
+    /// sombra, una agencia en cuarentena nunca sale en MasEconomica, pero CosteDeAgencia sí la calcula
+    /// (ImporteGasto de un envío que ya va por ella). El job de la comparativa sombra no usa este
+    /// factory: no aplica ni la cuarentena ni el freno por zonas, y sigue midiendo a todas.
     /// </summary>
     public static class ComparadorAgenciasFactory
     {
         public static ComparadorAgencias ParaSeleccion(NVEntities db)
         {
-            var numerosExistentes = db.AgenciasTransportes.Select(a => a.Numero).Distinct().ToList();
-            var idsSombra = db.AgenciasTransportes.Where(a => a.EsSombra).Select(a => a.Numero).ToList();
+            List<AgenciaTransporte> agencias = db.AgenciasTransportes.ToList();
+            var numerosExistentes = agencias.Select(a => a.Numero).Distinct().ToList();
+            var idsSombra = agencias.Where(a => a.EsSombra).Select(a => a.Numero).ToList();
+            ISet<int> idsCuarentena = CuarentenaAgencias.Numeros(agencias, CuarentenaAgencias.LeerValor(db));
             IRegistroTarifas registro = new RegistroTarifasExistentes(new RegistroTarifas(), numerosExistentes);
             registro = new RegistroTarifasConZonasActivas(registro, Constantes.Agencias.AGENCIA_CTT,
                 ZonasActivasAgencia.Parsear(ZonasActivasAgencia.LeerValorCTT(db)));
-            return new ComparadorAgencias(registro, new ProveedorRecargoCombustibleEF(db), idsSombra);
+            return new ComparadorAgencias(registro, new ProveedorRecargoCombustibleEF(db), idsSombra, idsCuarentena);
         }
     }
 }

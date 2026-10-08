@@ -56,6 +56,9 @@ namespace NestoAPI.Infraestructure.Agencias
                 return 0; // No hay agencias sombra: nada que medir.
             }
 
+            // NO usa ComparadorAgenciasFactory.ParaSeleccion a propósito: mide el potencial completo, sin
+            // freno por zonas (NestoAPI#493) ni cuarentena (NestoAPI#607). Una sombra en cuarentena se
+            // sigue midiendo, y un envío real por una agencia en cuarentena conserva su coste real.
             var numerosExistentes = _db.AgenciasTransportes.Select(a => a.Numero).Distinct().ToList();
             var registro = new RegistroTarifasExistentes(new RegistroTarifas(), numerosExistentes);
             var comparador = new ComparadorAgencias(registro, new ProveedorRecargoCombustibleEF(_db), idsSombra);

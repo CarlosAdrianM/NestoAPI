@@ -33,8 +33,8 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
                 : new[] { new ParametroUsuario
                     {
                         Empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO,
-                        Usuario = GateAgenciasActivasPorCuarentena.USUARIO_GENERAL,
-                        Clave = GateAgenciasActivasPorCuarentena.CLAVE_CUARENTENA,
+                        Usuario = CuarentenaAgencias.USUARIO_GENERAL,
+                        Clave = CuarentenaAgencias.CLAVE,
                         Valor = valorCuarentena
                     } };
             var fakeParametros = A.Fake<DbSet<ParametroUsuario>>(o => o.Implements<IQueryable<ParametroUsuario>>().Implements<IDbAsyncEnumerable<ParametroUsuario>>());

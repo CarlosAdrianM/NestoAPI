@@ -20,18 +20,22 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
 
         private readonly IRegistroTarifas _registro;
         private readonly IProveedorRecargoCombustible _recargoCombustible;
-        private readonly HashSet<int> _agenciasSombra;
+        // Agencias que compiten (Ranking, CosteDeAgencia) pero NO se eligen en MasEconomica: las sombra
+        // (NestoAPI#493) y las que están en cuarentena (NestoAPI#607).
+        private readonly HashSet<int> _noSeleccionables;
 
         public ComparadorAgencias(IRegistroTarifas registro, IProveedorRecargoCombustible recargoCombustible,
-            IEnumerable<int> agenciasSombra = null)
+            IEnumerable<int> agenciasSombra = null, IEnumerable<int> agenciasEnCuarentena = null)
         {
             _registro = registro;
             _recargoCombustible = recargoCombustible;
-            _agenciasSombra = new HashSet<int>(agenciasSombra ?? Enumerable.Empty<int>());
+            _noSeleccionables = new HashSet<int>((agenciasSombra ?? Enumerable.Empty<int>())
+                .Concat(agenciasEnCuarentena ?? Enumerable.Empty<int>()));
         }
 
         /// <summary>
-        /// La opción más barata que SÍ se puede seleccionar (excluye las agencias sombra). Null si
+        /// La opción más barata que SÍ se puede seleccionar (excluye las agencias sombra y las que están
+        /// en cuarentena, NestoAPI#607: sale la siguiente aunque sea más cara). Null si
         /// ninguna agencia seleccionable cubre el destino. NestoAPI#494: con <paramref name="modo"/>
         /// Retorno / EnvioYRetorno subasta la recogida (sola o junto al envío); solo compiten las
         /// agencias con precio de retorno (<see cref="ITarifaConRetorno"/>).
@@ -40,7 +44,7 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
             ModoComparacionAgencia modo = ModoComparacionAgencia.Envio)
         {
             return Opciones(empresa, codigoPostal, peso, reembolso, paisIso, incluirSoloAPeticion: false, modo: modo)
-                .FirstOrDefault(o => !_agenciasSombra.Contains(o.AgenciaId));
+                .FirstOrDefault(o => !_noSeleccionables.Contains(o.AgenciaId));
         }
 
         /// <summary>
@@ -52,7 +56,10 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
         /// Coste de UNA agencia concreta (y, opcionalmente, de un servicio concreto) para el destino,
         /// con su recargo de combustible. A diferencia de <see cref="MasEconomica"/> NO elige la más
         /// barata: devuelve el coste de la agencia indicada (la realmente usada en el envío), para
-        /// rellenar <c>EnviosAgencia.ImporteGasto</c> (NestoAPI#238). Incluye agencias sombra. Si no se
+        /// rellenar <c>EnviosAgencia.ImporteGasto</c> (NestoAPI#238). Incluye agencias sombra y en
+        /// cuarentena (NestoAPI#607): la cuarentena impide ELEGIRLA, pero un envío que ya va por ella
+        /// (pendiente anterior a la cuarentena o forzado a mano) cuesta lo que cuesta, y la cobertura
+        /// de su etiqueta no debe rechazarse como «sin tarifa para la zona». Si no se
         /// indica servicio, devuelve el más barato de esa agencia. Null si esa agencia/servicio no
         /// cubre el destino o no tiene tarifa portada.
         /// </summary>

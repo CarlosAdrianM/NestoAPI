@@ -43,7 +43,7 @@ namespace NestoAPI.Controllers
     /// <summary>
     /// Mantenimiento de agencias de transporte server-side (Nesto#340): alta/edición de agencias
     /// (incluido el recargo de combustible, editable mensual) y comparador "agencia más económica"
-    /// para un pedido. La cuarentena se gestiona en el cliente vía el parámetro AgenciasEnCuarentena.
+    /// para un pedido. El comparador respeta el parámetro AgenciasEnCuarentena (NestoAPI#607).
     /// No hay borrado: las agencias tienen movimientos (FK), no se pueden eliminar.
     /// </summary>
     public class AgenciasTarifasController : ApiController
@@ -151,6 +151,7 @@ namespace NestoAPI.Controllers
             ModoComparacionAgencia modo = ModoComparacionAgencia.Envio)
         {
             // NestoAPI#493: agencias de alta, sombras fuera de la elección y freno por zonas (CTT).
+            // NestoAPI#607: las agencias en cuarentena tampoco se eligen.
             // NestoAPI#494: modo=Retorno|EnvioYRetorno subasta la recogida (solo agencias con precio de retorno).
             var comparador = ComparadorAgenciasFactory.ParaSeleccion(db);
             OpcionEnvioAgencia mejor = comparador.MasEconomica(empresa, codigoPostal, peso, reembolso, pais, modo);
@@ -174,6 +175,7 @@ namespace NestoAPI.Controllers
             ModoComparacionAgencia modo = ModoComparacionAgencia.Envio)
         {
             // NestoAPI#493: agencias de alta, sombras fuera de la elección y freno por zonas (CTT).
+            // NestoAPI#607: una agencia en cuarentena SÍ tiene coste (no se elige, pero un envío puede ir por ella).
             var comparador = ComparadorAgenciasFactory.ParaSeleccion(db);
             OpcionEnvioAgencia opcion = comparador.CosteDeAgencia(empresa, codigoPostal, peso, reembolso, numero, servicioId, pais, modo);
 

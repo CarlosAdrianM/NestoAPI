@@ -108,6 +108,33 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             Assert.AreEqual(0, comparativas.Count);
         }
 
+        [TestMethod]
+        public void RegistrarComparativas_ConAgenciasEnCuarentena_SigueMidiendoLaSombraYElCosteReal()
+        {
+            // NestoAPI#607: la cuarentena solo afecta a la SELECCIÓN. La comparativa mide el potencial
+            // completo: la sombra en cuarentena compite y la agencia real conserva su coste.
+            var parametros = new List<ParametroUsuario>
+            {
+                new ParametroUsuario
+                {
+                    Empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO,
+                    Usuario = CuarentenaAgencias.USUARIO_GENERAL,
+                    Clave = CuarentenaAgencias.CLAVE,
+                    Valor = "CTT, GLS"
+                }
+            };
+            A.CallTo(() => db.ParametrosUsuario).Returns(FakeSet(parametros));
+            envios.Add(EnvioPeninsular(100, Constantes.Agencias.ESTADO_EN_CURSO, peso: 3m));
+
+            int insertados = new ComparativaAgenciaSombraJobsService(db).RegistrarComparativas(30);
+
+            Assert.AreEqual(1, insertados);
+            var fila = comparativas.Single();
+            Assert.AreEqual(13, fila.AgenciaSombraId, "CTT en cuarentena se sigue midiendo");
+            Assert.IsNotNull(fila.CosteReal, "GLS en cuarentena conserva su coste real");
+            Assert.IsNotNull(fila.CosteSombra);
+        }
+
         // Fake de DbSet en memoria, solo síncrono (el job no usa async), con enumeración perezosa
         // para soportar múltiples recorridos y reflejar los Add.
         private static DbSet<T> FakeSet<T>(List<T> data) where T : class

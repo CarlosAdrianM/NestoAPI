@@ -653,6 +653,7 @@
     <Compile Include="Infraestructure\Agencias\RegistroIntercambiosRemotos.cs" />
     <Compile Include="Infraestructure\Agencias\FabricaAgenciasRemotas.cs" />
     <Compile Include="Infraestructure\Agencias\Perfiles\IPerfilAgencia.cs" />
+    <Compile Include="Infraestructure\Agencias\CuarentenaAgencias.cs" />
     <Compile Include="Infraestructure\Agencias\Perfiles\GateAgenciasActivas.cs" />
     <Compile Include="Infraestructure\Agencias\Perfiles\RegistroAgencias.cs" />
     <Compile Include="Infraestructure\Agencias\Perfiles\PerfilesAgencias.cs" />
