@@ -682,13 +682,75 @@ namespace NestoAPI.Tests.Infrastructure
             IServicioPreparacionReposicion servicio = A.Fake<IServicioPreparacionReposicion>();
             var peticion = new CrearReposicionDTO { Origen = "ALC", Destino = "ALG" };
             A.CallTo(() => servicio.Crear(peticion, A<IPrincipal>.Ignored)).Returns(new ReposicionEnPreparacionDTO { Origen = "ALC", Destino = "ALG" });
-            var controlador = new ReposicionesController(null, servicio) { Request = new HttpRequestMessage(), User = Paloma };
+            var controlador = new ReposicionesController(null, servicio, permisoManual: PermisoManual(null))
+            {
+                Request = new HttpRequestMessage(), User = Usuario("NUEVAVISION\\Alfredo", "Almacén")
+            };
 
             IHttpActionResult resultado = await controlador.PostCrear(peticion);
 
             var creado = (NegotiatedContentResult<ReposicionEnPreparacionDTO>)resultado;
             Assert.AreEqual(HttpStatusCode.Created, creado.StatusCode);
             Assert.AreEqual("ALG", creado.Content.Destino);
+        }
+
+        // ---------------------------------------------------------------- NestoAPI#577 (corte 3b): rellenar a mano, solo con permiso
+
+        private static PermisoRellenarReposicionManual PermisoManual(string valorParametro) =>
+            new PermisoRellenarReposicionManual(() => valorParametro);
+
+        [TestMethod]
+        public async Task Controlador_Crear_QuienNoEstaEnLaLista_Es403YNoSeCrea()
+        {
+            // Decisión de Carlos (08/10/26): solo el proceso automático rellena; a mano, solo Manuel, Alfredo y Carlos
+            IServicioPreparacionReposicion servicio = A.Fake<IServicioPreparacionReposicion>();
+            var controlador = new ReposicionesController(null, servicio, permisoManual: PermisoManual(null))
+            {
+                Request = new HttpRequestMessage(), User = Paloma
+            };
+
+            IHttpActionResult resultado = await controlador.PostCrear(new CrearReposicionDTO { Origen = "ALC", Destino = "ALG" });
+
+            HttpResponseMessage respuesta = ((ResponseMessageResult)resultado).Response;
+            Assert.AreEqual(HttpStatusCode.Forbidden, respuesta.StatusCode);
+            StringAssert.Contains(await respuesta.Content.ReadAsStringAsync(),
+                "Solo el proceso automático y las personas autorizadas pueden rellenar reposiciones a mano.");
+            A.CallTo(() => servicio.Crear(A<CrearReposicionDTO>._, A<IPrincipal>._)).MustNotHaveHappened();
+        }
+
+        [DataTestMethod]
+        [DataRow(null, "NUEVAVISION\\Alfredo", true, DisplayName = "Sin parámetro: la lista por defecto")]
+        [DataRow(null, "manuel", true, DisplayName = "Ariadna (sin dominio) y sin distinguir mayúsculas")]
+        [DataRow(null, "NUEVAVISION\\Carlos", true)]
+        [DataRow(null, "NUEVAVISION\\Paloma", false)]
+        [DataRow(null, "Andre", false)]
+        [DataRow("Manuel; Alfredo ,Carlos,Andre", "Andre", true, DisplayName = "Separada por comas o punto y coma, con espacios")]
+        [DataRow("Manuel, Carlos", "NUEVAVISION\\Alfredo", false)]
+        [DataRow("", "NUEVAVISION\\Carlos", false, DisplayName = "Parámetro vacío: nadie")]
+        [DataRow(null, "NUEVAVISION\\Carlosito", false, DisplayName = "Nombre completo, no prefijo")]
+        public void PuedeRellenarManual_SegunLaLista(string valorParametro, string usuario, bool puede)
+        {
+            Assert.AreEqual(puede, PermisoManual(valorParametro).Puede(Usuario(usuario)));
+        }
+
+        [TestMethod]
+        public void PuedeRellenarManual_SinUsuario_No()
+        {
+            Assert.IsFalse(PermisoManual(null).Puede(null));
+            Assert.IsFalse(PermisoManual(null).Puede(new ClaimsPrincipal(new ClaimsIdentity())));
+        }
+
+        [TestMethod]
+        public void Controlador_PuedeRellenarManual_DevuelveElBoolDelUsuarioActual()
+        {
+            var controlador = new ReposicionesController(null, A.Fake<IServicioPreparacionReposicion>(), permisoManual: PermisoManual(null))
+            {
+                Request = new HttpRequestMessage(), User = Usuario("Manuel")
+            };
+
+            Assert.IsTrue(((OkNegotiatedContentResult<bool>)controlador.GetPuedeRellenarManual()).Content);
+            controlador.User = Paloma;
+            Assert.IsFalse(((OkNegotiatedContentResult<bool>)controlador.GetPuedeRellenarManual()).Content);
         }
 
         [TestMethod]

@@ -947,6 +947,7 @@
     <Compile Include="Infraestructure\Reposiciones\CalendarioReposiciones.cs" />
     <Compile Include="Infraestructure\Reposiciones\RegistroReposicionesTraspasos.cs" />
     <Compile Include="Infraestructure\Reposiciones\ReposicionAutomatica.cs" />
+    <Compile Include="Infraestructure\Reposiciones\PermisoRellenarReposicionManual.cs" />
     <Compile Include="Infraestructure\Ubicaciones\PlanificadorReservaHuecos.cs" />
     <Compile Include="Infraestructure\Ubicaciones\PuertaUbicaciones.cs" />
     <Compile Include="Infraestructure\Ubicaciones\PuertaUbicacionesSql.cs" />

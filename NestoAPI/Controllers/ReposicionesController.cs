@@ -39,13 +39,32 @@ namespace NestoAPI.Controllers
 
         internal ReposicionesController(NVEntities db, IServicioPreparacionReposicion preparacion,
             IServicioTransitoReposiciones transito = null, IServicioCalendarioReposiciones calendario = null,
-            IServicioReposicionAutomatica automatica = null)
+            IServicioReposicionAutomatica automatica = null, IPermisoRellenarReposicionManual permisoManual = null)
         {
             this.db = db;
             this.preparacion = preparacion;
             this.transito = transito; // null = el de la BD, creado al usarlo (los tests del resto no pasan db)
             this.calendario = calendario; // ídem
             this.automatica = automatica; // ídem
+            this.permisoManual = permisoManual; // ídem
+        }
+
+        private readonly IPermisoRellenarReposicionManual permisoManual;
+
+        private IPermisoRellenarReposicionManual PermisoManual => permisoManual ?? new PermisoRellenarReposicionManual(db);
+
+        // GET api/Reposiciones/PuedeRellenarManual
+        /// <summary>
+        /// NestoAPI#577 (corte 3b): si el usuario actual puede crear (rellenar) reposiciones a mano con POST api/Reposiciones
+        /// (parámetro «UsuariosRellenarReposicionManual» de la fila «(defecto)»; hoy Manuel, Alfredo y Carlos). Para que Nesto
+        /// y Ariadna escondan el botón a los demás.
+        /// </summary>
+        [HttpGet]
+        [Route("PuedeRellenarManual")]
+        [ResponseType(typeof(bool))]
+        public IHttpActionResult GetPuedeRellenarManual()
+        {
+            return Ok(PermisoManual.Puede(User));
         }
 
         private IServicioCalendarioReposiciones Calendario => calendario ?? new ServicioCalendarioReposiciones(db);
@@ -187,13 +206,19 @@ namespace NestoAPI.Controllers
         /// Desde una tienda la deja en preparación (NumTraspaso null, hasta Terminar). Desde Algete (control de ubicaciones)
         /// reserva los huecos y la cierra sin contabilizar: devuelve NumTraspaso y, por línea, Hueco / SinHueco; sale en
         /// GET api/Almacen/Recogidas (REPO). 409 si el origen tiene un inventario en curso o ya tiene una reposición en
-        /// preparación; 403 si quien llama no puede (Algete: Almacén o Dirección).
+        /// preparación; 403 si quien llama no puede (Algete: Almacén o Dirección). NestoAPI#577 (corte 3b): las rellena el
+        /// job a la hora de cierre del calendario; a mano, solo quien esté en el parámetro «UsuariosRellenarReposicionManual»
+        /// (403 con <see cref="PermisoRellenarReposicionManual.MENSAJE_SIN_PERMISO"/>; ver GET PuedeRellenarManual).
         /// </summary>
         [HttpPost]
         [Route("")]
         [ResponseType(typeof(ReposicionEnPreparacionDTO))]
         public async Task<IHttpActionResult> PostCrear([FromBody] CrearReposicionDTO peticion)
         {
+            if (!PermisoManual.Puede(User))
+            {
+                return Prohibido(new UnauthorizedAccessException(PermisoRellenarReposicionManual.MENSAJE_SIN_PERMISO));
+            }
             try
             {
                 ReposicionEnPreparacionDTO creada = await preparacion.Crear(peticion, User).ConfigureAwait(false);
