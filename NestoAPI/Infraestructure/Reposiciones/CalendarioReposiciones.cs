@@ -20,12 +20,17 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public string Empresa { get; set; }
         public string Origen { get; set; }
         public string Destino { get; set; }
-        /// <summary>1 lunes … 7 domingo.</summary>
+        /// <summary>1 lunes … 7 domingo: el día de LLEGADA (el de la ruta).</summary>
         public byte DiaSemana { get; set; }
         /// <summary>"10:00:00": a esa hora se rellena sola la reposición y la tienda la prepara.</summary>
         public TimeSpan HoraCierre { get; set; }
         /// <summary>"13:30:00": a qué hora suele entrar en el destino.</summary>
         public TimeSpan HoraLlegadaHabitual { get; set; }
+        /// <summary>
+        /// NestoAPI#577 (corte 3d): cuántos laborables del origen antes del día de llegada se cierra, a HoraCierre. 0 = el
+        /// mismo día (tienda → Algete); 1 = el laborable anterior (Algete → tienda: la del lunes cierra el viernes).
+        /// </summary>
+        public byte LaborablesAntelacionCierre { get; set; }
         public bool Activo { get; set; } = true;
         /// <summary>Solo lectura (la API pone el del Identity).</summary>
         public string Usuario { get; set; }
@@ -61,6 +66,9 @@ namespace NestoAPI.Infraestructure.Reposiciones
     {
         public const string MENSAJE_SIN_PERMISO =
             "El calendario de reposiciones lo mantiene Almacén. Pídeselo a informática si necesitas cambiarlo.";
+
+        /// <summary>NestoAPI#577 (corte 3d): como el CHECK de la columna LaborablesAntelacionCierre.</summary>
+        public const byte MAXIMO_LABORABLES_ANTELACION = 5;
 
         private static readonly string[] gruposQuePuedenMantener =
         {
@@ -164,6 +172,7 @@ namespace NestoAPI.Infraestructure.Reposiciones
                 entidad.DiaSemana = fila.DiaSemana;
                 entidad.HoraCierre = fila.HoraCierre;
                 entidad.HoraLlegadaHabitual = fila.HoraLlegadaHabitual;
+                entidad.LaborablesAntelacionCierre = fila.LaborablesAntelacionCierre;
                 entidad.Activo = fila.Activo;
                 entidad.Usuario = usuarioAuditoria;
                 entidad.FechaModificacion = ahora;
@@ -205,9 +214,14 @@ namespace NestoAPI.Infraestructure.Reposiciones
             {
                 throw new NestoBusinessException("Las horas tienen que estar entre las 00:00 y las 23:59.");
             }
-            if (fila.HoraLlegadaHabitual < fila.HoraCierre)
+            if (fila.LaborablesAntelacionCierre > MAXIMO_LABORABLES_ANTELACION)
             {
-                throw new NestoBusinessException("La hora de llegada no puede ser anterior a la hora de cierre (la reposición llega el mismo día).");
+                throw new NestoBusinessException($"La reposición no se puede cerrar más de {MAXIMO_LABORABLES_ANTELACION} laborables antes de que llegue.");
+            }
+            if (fila.LaborablesAntelacionCierre == 0 && fila.HoraLlegadaHabitual < fila.HoraCierre)
+            {
+                throw new NestoBusinessException("La hora de llegada no puede ser anterior a la hora de cierre (la reposición llega el mismo día). " +
+                    "Si se cierra el día antes, pon los laborables de antelación.");
             }
             return new ReposicionCalendarioDTO
             {
@@ -217,6 +231,7 @@ namespace NestoAPI.Infraestructure.Reposiciones
                 DiaSemana = fila.DiaSemana,
                 HoraCierre = new TimeSpan(fila.HoraCierre.Hours, fila.HoraCierre.Minutes, 0),
                 HoraLlegadaHabitual = new TimeSpan(fila.HoraLlegadaHabitual.Hours, fila.HoraLlegadaHabitual.Minutes, 0),
+                LaborablesAntelacionCierre = fila.LaborablesAntelacionCierre,
                 Activo = fila.Activo
             };
         }
@@ -241,6 +256,7 @@ namespace NestoAPI.Infraestructure.Reposiciones
                 DiaSemana = f.DiaSemana,
                 HoraCierre = f.HoraCierre,
                 HoraLlegadaHabitual = f.HoraLlegadaHabitual,
+                LaborablesAntelacionCierre = f.LaborablesAntelacionCierre,
                 Activo = f.Activo,
                 Usuario = f.Usuario?.Trim(),
                 FechaModificacion = f.FechaModificacion

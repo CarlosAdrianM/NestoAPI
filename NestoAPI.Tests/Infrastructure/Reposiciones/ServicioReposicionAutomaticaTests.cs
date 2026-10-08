@@ -73,13 +73,136 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
                 ex => avisos.Add(ex));
         }
 
-        private static ReposicionCalendario Fila(string origen, string destino, byte dia, string cierre = "10:00", string llegada = "13:30")
+        private static ReposicionCalendario Fila(string origen, string destino, byte dia, string cierre = "10:00", string llegada = "13:30",
+            byte antelacion = 0)
         {
             return new ReposicionCalendario
             {
                 Empresa = "1  ", AlmacenOrigen = origen, AlmacenDestino = destino, DiaSemana = dia,
-                HoraCierre = TimeSpan.Parse(cierre), HoraLlegadaHabitual = TimeSpan.Parse(llegada), Activo = true
+                HoraCierre = TimeSpan.Parse(cierre), HoraLlegadaHabitual = TimeSpan.Parse(llegada), LaborablesAntelacionCierre = antelacion,
+                Activo = true
             };
+        }
+
+        // ---------------------------------------------------------------- NestoAPI#577 (corte 3d): cierre el laborable anterior
+
+        private static readonly DateTime VIERNES_ANTERIOR = LUNES.AddDays(-3);
+
+        /// <summary>Algete → Reina llega el lunes a las 11:00 y se cierra el laborable anterior (el viernes) a las 13:00.</summary>
+        private void SoloAlgeteReinaDelLunes()
+        {
+            repositorio.Calendario.Clear();
+            repositorio.Calendario.Add(Fila("ALG", "REI", 1, "13:00", "11:00", antelacion: 1));
+        }
+
+        [TestMethod]
+        public async Task Job_ConAntelacion_ElViernesALas13RellenaLaDelLunesConElCorteDelViernes()
+        {
+            SoloAlgeteReinaDelLunes();
+            ahora = VIERNES_ANTERIOR.AddHours(13).AddSeconds(4);
+
+            List<ResultadoReposicionAutomaticaDTO> resultados = await Servicio().RellenarPendientes();
+
+            Assert.AreEqual(VIERNES_ANTERIOR.AddHours(13), creadas.Single().Corte, "El instante de cierre real: el viernes a las 13:00");
+            Assert.AreEqual(ResultadosReposicionAutomatica.CREADA, resultados.Single().Resultado);
+            CollectionAssert.AreEqual(new[]
+            {
+                "bloquear 1 ALG 16/10/2026",
+                "¿hay? ALG→REI 16/10/2026 13:00 contando omitidas",
+                "crear ALG→REI",
+                "soltar 1 ALG 16/10/2026"
+            }, repositorio.Pasos);
+        }
+
+        [TestMethod]
+        public async Task Job_ConAntelacion_ElViernesAntesDeLas13_NoHaceNada()
+        {
+            SoloAlgeteReinaDelLunes();
+            ahora = VIERNES_ANTERIOR.AddHours(12).AddMinutes(59);
+
+            List<ResultadoReposicionAutomaticaDTO> resultados = await Servicio().RellenarPendientes();
+
+            Assert.AreEqual(0, resultados.Count);
+            Assert.AreEqual(0, creadas.Count);
+        }
+
+        [TestMethod]
+        public async Task Job_ConAntelacion_ElLunesYaRellenadaElViernes_NoLaDuplica()
+        {
+            SoloAlgeteReinaDelLunes();
+            repositorio.Hechas.Add("ALG→REI 16/10/2026 13:00");
+            ahora = LUNES.AddHours(6);
+
+            List<ResultadoReposicionAutomaticaDTO> resultados = await Servicio().RellenarPendientes();
+
+            Assert.AreEqual(0, creadas.Count);
+            Assert.AreEqual(0, resultados.Count);
+            CollectionAssert.Contains(repositorio.Pasos, "bloquear 1 ALG 16/10/2026", "Misma clave de bloqueo (el día del corte) que el viernes");
+        }
+
+        [TestMethod]
+        public async Task Job_ConAntelacion_SiElViernesNoSeRellenó_ElLunesAntesDeLlegarSeRellenaConElCorteDelViernes()
+        {
+            SoloAlgeteReinaDelLunes();
+            ahora = LUNES.AddHours(6).AddMinutes(5);
+
+            _ = await Servicio().RellenarPendientes();
+
+            Assert.AreEqual(VIERNES_ANTERIOR.AddHours(13), creadas.Single().Corte);
+            Assert.AreEqual(0, avisos.Count);
+        }
+
+        [TestMethod]
+        public async Task Job_ConAntelacion_ElLunesPasadaLaLlegadaSinRellenar_FueraDePlazo()
+        {
+            SoloAlgeteReinaDelLunes();
+            ahora = LUNES.AddHours(11);
+
+            List<ResultadoReposicionAutomaticaDTO> resultados = await Servicio().RellenarPendientes();
+
+            Assert.AreEqual(0, creadas.Count);
+            Assert.AreEqual(ResultadosReposicionAutomatica.FUERA_DE_PLAZO, resultados.Single().Resultado);
+            Assert.AreEqual(VIERNES_ANTERIOR.AddHours(13), repositorio.Omitidas.Single().Cabecera.FechaCorte);
+            Assert.AreEqual(1, avisos.Count);
+        }
+
+        [TestMethod]
+        public async Task Job_ConAntelacion_FestivoEnAlgeteElViernes_SeRellenaElJueves()
+        {
+            SoloAlgeteReinaDelLunes();
+            festivos.Add($"ALG|{VIERNES_ANTERIOR:yyyyMMdd}");
+            ahora = VIERNES_ANTERIOR.AddDays(-1).AddHours(13).AddMinutes(1);
+
+            _ = await Servicio().RellenarPendientes();
+
+            Assert.AreEqual(VIERNES_ANTERIOR.AddDays(-1).AddHours(13), creadas.Single().Corte);
+        }
+
+        [TestMethod]
+        public async Task Relanzar_ConAntelacion_ElLunesRelanzaLaDelLunesConElCorteDelViernes()
+        {
+            SoloAlgeteReinaDelLunes();
+            ahora = LUNES.AddHours(8);
+
+            ResultadoReposicionAutomaticaDTO resultado = await Servicio().RellenarRuta("1", "ALG", "REI", Usuario("Carlos", "Informática"));
+
+            Assert.AreEqual(ResultadosReposicionAutomatica.CREADA, resultado.Resultado);
+            Assert.AreEqual(VIERNES_ANTERIOR.AddHours(13), creadas.Single().Corte);
+            CollectionAssert.Contains(repositorio.Pasos, "bloquear 1 ALG 16/10/2026");
+        }
+
+        [TestMethod]
+        public async Task Relanzar_ConAntelacion_YaRellenada_409DiceElDiaDelCorte()
+        {
+            SoloAlgeteReinaDelLunes();
+            repositorio.Hechas.Add("ALG→REI 16/10/2026 13:00");
+            ahora = LUNES.AddHours(8);
+
+            NestoBusinessException error = await Assert.ThrowsExceptionAsync<NestoBusinessException>(
+                () => Servicio().RellenarRuta("1", "ALG", "REI", Usuario("Carlos", "Informática")));
+
+            Assert.AreEqual(HttpStatusCode.Conflict, error.StatusCode);
+            StringAssert.Contains(error.Message, "de las 13:00 del 16/10");
         }
 
         private static IPrincipal Usuario(string nombre, params string[] grupos)

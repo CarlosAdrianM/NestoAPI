@@ -34,7 +34,7 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
         private void Festivo(string almacen, DateTime dia) => festivos.Add($"{almacen}|{dia:yyyyMMdd}");
 
         private static ReposicionCalendario Fila(string origen, byte dia, string cierre = "10:00", string llegada = "13:30",
-            bool activo = true, string destino = "ALG")
+            bool activo = true, string destino = "ALG", byte antelacion = 0)
         {
             return new ReposicionCalendario
             {
@@ -44,6 +44,7 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
                 DiaSemana = dia,
                 HoraCierre = TimeSpan.Parse(cierre),
                 HoraLlegadaHabitual = TimeSpan.Parse(llegada),
+                LaborablesAntelacionCierre = antelacion,
                 Activo = activo
             };
         }
@@ -292,6 +293,137 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
 
             Assert.AreEqual(0, calculadora.CortesDelDia(calendario, LUNES.AddDays(5)).Count);
             Assert.AreEqual(0, calculadora.CortesDelDia(calendario, LUNES.AddDays(6)).Count);
+        }
+
+        // ---------------------------------------------------------------- NestoAPI#577 (corte 3d): cierre N laborables antes
+
+        /// <summary>Decisión de Carlos (08/10): Algete → Reina llega L/X/V a las 11:00 y se cierra el laborable anterior a las 13:00.</summary>
+        private static List<ReposicionCalendario> AlgeteReina() => new List<ReposicionCalendario>
+        {
+            Fila("ALG", 1, "13:00", "11:00", destino: "REI", antelacion: 1),
+            Fila("ALG", 3, "13:00", "11:00", destino: "REI", antelacion: 1),
+            Fila("ALG", 5, "13:00", "11:00", destino: "REI", antelacion: 1)
+        };
+
+        private ProximaReposicionDTO AlgeteAReina(DateTime ahora) =>
+            calculadora.Calcular(AlgeteReina(), "ALG", "REI", CORTE_11, ahora);
+
+        [TestMethod]
+        public void Calcular_ConAntelacion1_LaDelLunesCierraElViernesALas13()
+        {
+            ProximaReposicionDTO proxima = AlgeteAReina(VIERNES.AddHours(12));
+
+            Assert.AreEqual(VIERNES.AddHours(13), proxima.CierraEl, "Cierra el viernes (el laborable anterior al lunes) a las 13:00");
+            Assert.AreEqual(LUNES_SIGUIENTE.AddHours(11), proxima.LlegaEl, "Llega el lunes a las 11:00");
+        }
+
+        [TestMethod]
+        public void Calcular_ConAntelacion1_PasadoElCierreDelViernes_LaProximaEsLaDelMiercolesQueCierraElMartes()
+        {
+            ProximaReposicionDTO proxima = AlgeteAReina(VIERNES.AddHours(13));
+
+            Assert.AreEqual(LUNES_SIGUIENTE.AddDays(1).AddHours(13), proxima.CierraEl);
+            Assert.AreEqual(LUNES_SIGUIENTE.AddDays(2).AddHours(11), proxima.LlegaEl);
+        }
+
+        [TestMethod]
+        public void Calcular_ConAntelacion1_ElLunesAntesDeLlegar_LaDelLunesYaHaCerrado()
+        {
+            ProximaReposicionDTO proxima = AlgeteAReina(LUNES.AddHours(8));
+
+            Assert.AreEqual(MARTES.AddHours(13), proxima.CierraEl, "La del lunes cerró el viernes: la próxima abierta es la del miércoles");
+            Assert.AreEqual(MIERCOLES.AddHours(11), proxima.LlegaEl);
+        }
+
+        [TestMethod]
+        public void Calcular_ConAntelacion1_FestivoEnAlgeteElViernes_LaDelLunesCierraElJueves()
+        {
+            Festivo("ALG", VIERNES);
+
+            ProximaReposicionDTO proxima = AlgeteAReina(MIERCOLES.AddHours(14));
+
+            Assert.AreEqual(VIERNES.AddDays(-1).AddHours(13), proxima.CierraEl,
+                "El viernes no es laborable en Algete: la del lunes se cierra el jueves (y la del viernes, que también cerraría el jueves, no hay: es festivo)");
+            Assert.AreEqual(LUNES_SIGUIENTE.AddHours(11), proxima.LlegaEl);
+        }
+
+        [TestMethod]
+        public void Calcular_ConAntelacion0_IgualQueAntes()
+        {
+            var calendario = new List<ReposicionCalendario> { Fila("REI", 1, antelacion: 0), Fila("REI", 3, antelacion: 0) };
+
+            ProximaReposicionDTO proxima = Rei(LUNES.AddHours(9), calendario);
+
+            Assert.AreEqual(LUNES.AddHours(10), proxima.CierraEl);
+            Assert.AreEqual(LUNES.AddHours(13).AddMinutes(30), proxima.LlegaEl);
+        }
+
+        [TestMethod]
+        public void DiaCierre_SaltaFinesDeSemanaYFestivosDelOrigen()
+        {
+            Festivo("ALG", VIERNES);
+
+            Assert.AreEqual(LUNES_SIGUIENTE, calculadora.DiaCierre(LUNES_SIGUIENTE, 0, "ALG"));
+            Assert.AreEqual(VIERNES.AddDays(-1), calculadora.DiaCierre(LUNES_SIGUIENTE, 1, "ALG"));
+            Assert.AreEqual(MIERCOLES, calculadora.DiaCierre(LUNES_SIGUIENTE, 2, "ALG"));
+            Assert.AreEqual(VIERNES, calculadora.DiaCierre(LUNES_SIGUIENTE, 1, "REI"), "Festivo solo en Algete: en Reina el viernes es laborable");
+        }
+
+        [TestMethod]
+        public void CortesDelDia_ConAntelacion_ElViernesDevuelveLaDelLunesConSuLlegada()
+        {
+            var calendario = AlgeteReina();
+            calendario.Add(Fila("REI", 5));
+
+            List<CorteReposicion> cortes = calculadora.CortesDelDia(calendario, VIERNES);
+
+            Assert.AreEqual(2, cortes.Count, "REI → ALG del viernes (cierra hoy) y ALG → REI del lunes (cierra hoy); la ALG → REI del viernes cerró el jueves");
+            CorteReposicion algRei = cortes.Single(c => c.Origen == "ALG");
+            Assert.AreEqual(VIERNES.AddHours(13), algRei.Corte);
+            Assert.AreEqual(LUNES_SIGUIENTE.AddHours(11), algRei.Llegada);
+        }
+
+        [TestMethod]
+        public void CortesDelDia_ConAntelacion_ElJuevesDevuelveLaDelViernes_YElLunesNinguna()
+        {
+            var calendario = AlgeteReina();
+
+            CorteReposicion jueves = calculadora.CortesDelDia(calendario, VIERNES.AddDays(-1)).Single();
+            Assert.AreEqual(VIERNES.AddDays(-1).AddHours(13), jueves.Corte);
+            Assert.AreEqual(VIERNES.AddHours(11), jueves.Llegada);
+            Assert.AreEqual(0, calculadora.CortesDelDia(calendario, LUNES).Count, "El lunes no cierra ninguna (la del martes no existe)");
+        }
+
+        [TestMethod]
+        public void CortesDelDia_ConAntelacion_FestivoEnElDestinoElDiaDeLlegada_NoSeCierra()
+        {
+            Festivo("REI", LUNES_SIGUIENTE);
+
+            Assert.AreEqual(0, calculadora.CortesDelDia(AlgeteReina(), VIERNES).Count,
+                "El lunes Reina no recibe: no hay reposición del lunes y el viernes no se cierra nada");
+        }
+
+        [TestMethod]
+        public void CortesQueLleganElDia_LaDelLunesConElCorteDelViernes()
+        {
+            CorteReposicion corte = calculadora.CortesQueLleganElDia(AlgeteReina(), LUNES_SIGUIENTE).Single();
+
+            Assert.AreEqual(VIERNES.AddHours(13), corte.Corte);
+            Assert.AreEqual(LUNES_SIGUIENTE.AddHours(11), corte.Llegada);
+        }
+
+        [TestMethod]
+        public void CortesDeHoy_LasQueCierranYLasQueLlegan_SinRepetirLasDeAntelacion0()
+        {
+            var calendario = AlgeteReina();
+            calendario.Add(Fila("REI", 1));
+
+            List<CorteReposicion> cortes = calculadora.CortesDeHoy(calendario, LUNES_SIGUIENTE);
+
+            Assert.AreEqual(2, cortes.Count, "REI → ALG (cierra y llega hoy: una sola vez) y ALG → REI que llega hoy (cerró el viernes)");
+            Assert.AreEqual(VIERNES.AddHours(13), cortes[0].Corte);
+            Assert.AreEqual("ALG", cortes[0].Origen);
+            Assert.AreEqual(LUNES_SIGUIENTE.AddHours(10), cortes[1].Corte);
         }
     }
 }

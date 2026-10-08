@@ -1,90 +1,106 @@
 /*
-    NestoAPI#577 (corte 3b): calendario de reposiciones en los dos sentidos (decisión de Carlos, 08/10/26).
+    NestoAPI#577 (corte 3b, 3d): calendario de reposiciones en los dos sentidos (decisiones de Carlos, 08/10/26).
 
-      - Algete → Reina y Reina → Algete: lunes, miércoles y viernes.
-      - Algete → Alcobendas: lunes, martes y jueves (los mismos días que tenía Alcobendas → Algete: la furgoneta deja una
-        y recoge otra).
-      - Alcobendas → Algete: de lunes a viernes (dos días a la semana recoge sin dejar).
+      - Reina → Algete: lunes, miércoles y viernes. Cierre 10:00, llega a Algete a las 13:30 el MISMO día (antelación 0).
+      - Alcobendas → Algete: de lunes a viernes. Cierre 10:00, llega a las 13:30 el mismo día (antelación 0).
+      - Algete → Reina: llega lunes, miércoles y viernes sobre las 11:00. Se CIERRA EL LABORABLE ANTERIOR a las 13:00
+        (antelación 1): la del lunes, el viernes; la del miércoles, el martes; la del viernes, el jueves.
+      - Algete → Alcobendas: llega lunes, martes y jueves a las 10:00. Se cierra el laborable anterior a las 13:00
+        (antelación 1): la del lunes, el viernes; la del martes, el lunes; la del jueves, el miércoles.
+
+    Modelo (corte 3d): DiaSemana es el día de LLEGADA (el de la ruta); LaborablesAntelacionCierre, cuántos laborables del
+    origen antes se cierra a HoraCierre (con festivos en el origen, el laborable anterior). A la hora de cierre el job
+    «reposiciones-automaticas» rellena la reposición sola (desde Algete nace cerrada, con los huecos reservados, por
+    recoger en Ariadna), con ese instante como corte. Las horas de cierre (10:00 y 13:00) caen dentro del cron del job
+    (L-V de 6:00 a 21:55).
 
     Lo que había (Scripts/Issue577_ReposicionesCalendario.sql, ya en producción): REI → ALG 1/3/5 y ALC → ALG 1/2/4, cierre
-    10:00 y llegada 13:30. Este script AÑADE las filas que faltan:
-      - ALC → ALG: miércoles (3) y viernes (5).
-      - ALG → REI: 1, 3, 5.
-      - ALG → ALC: 1, 2, 4.
+    10:00 y llegada 13:30. Este script AÑADE las filas que faltan (ALC → ALG 3 y 5; ALG → REI 1/3/5; ALG → ALC 1/2/4).
 
-    NestoAPI#606 (decisión de Carlos, 08/10/26): HORA DE LLEGADA POR FILA. Cada reposición (origen → destino × día) tiene su
-    propia hora de llegada (ReposicionesCalendario.HoraLlegadaHabitual): Alcobendas puede llegar a otra hora que Reina, y el
-    lunes a otra hora que el viernes en la misma tienda. La API la lee de la fila, no hay ninguna hora fija en el código:
+    NestoAPI#606: la hora de llegada es POR FILA (ReposicionesCalendario.HoraLlegadaHabitual); la API la lee de la fila:
       - Tienda → Algete: si la fila llega ANTES de la hora de corte del picking (parámetro «(defecto)» HoraCortePicking,
-        11:00, la única fuente), las unidades salen en el picking de ese mismo día; si llega a esa hora o después, en el
-        del laborable siguiente (CalculadoraFechaReposicion, fecha de entrega a la agencia de #606).
-      - Algete → tienda: es la hora a la que el job «reposiciones-automaticas» deja de reintentar y avisa.
-    La tabla @Filas de abajo tiene una fila por reposición con SU hora de llegada: ponerlas aquí antes de lanzar (o después,
-    desde el mantenimiento del calendario / PUT api/Reposiciones/Calendario). Hoy todas valen 13:30, que es lo que había;
-    PENDIENTE DE CONFIRMAR con Almacén la de cada una.
+        11:00), las unidades salen en el picking de ese mismo día; si llega a esa hora o después, en el del laborable
+        siguiente.
+      - Algete → tienda: es la hora a la que el job deja de reintentar y avisa (fuera de plazo).
 
     Qué hace:
-      1) INSERTA las filas de @Filas que no existan (misma ruta, día y hora de cierre), con su hora de llegada.
-      2) ACTUALIZA la hora de llegada de las filas que ya existen y siguen como las dejó el script (Usuario = 'NestoAPI#577'),
-         si en @Filas pone otra. Las que alguien ya ha cambiado desde el mantenimiento (otro Usuario) no se tocan.
+      1) INSERTA las filas de @Filas cuya ruta y día (de llegada) no tengan ya fila.
+      2) ACTUALIZA hora de cierre, hora de llegada y antelación de las filas que siguen como las dejó el script
+         (Usuario = 'NestoAPI#577') si en @Filas pone otra cosa. Las que alguien ya ha cambiado desde el mantenimiento
+         (otro Usuario) no se tocan.
 
-    Horas de cierre de las rutas nuevas (@HoraCierre): 10:00, como las de tienda → Algete. A esa hora el job
-    «reposiciones-automaticas» rellena la reposición sola (desde Algete nace cerrada, con los huecos reservados, por recoger
-    en Ariadna). Tiene que caer dentro del cron del job (L-V de 6:00 a 21:55).
-
-    Idempotente. Ejecutar en SSMS contra NV (como sa o con un login que pueda escribir en ReposicionesCalendario). Se puede
-    lanzar antes o después del deploy; el job solo rellena si también están los scripts del corte 3a (ReposicionesTraspasos
-    con la columna Omitida, LinPedidoVta.FechaCreacion y prdRellenarReposicionStock2).
+    ORDEN: DESPUÉS de Scripts/Issue577_CalendarioCierreAntelacion.sql (la columna LaborablesAntelacionCierre). Si falta,
+    no hace nada. Idempotente. Ejecutar en SSMS contra NV (como sa o con un login que pueda escribir en
+    ReposicionesCalendario). El job solo rellena si también están los scripts del corte 3a (ReposicionesTraspasos con la
+    columna Omitida, LinPedidoVta.FechaCreacion y prdRellenarReposicionStock2).
 */
 
 SET NOCOUNT ON;
 USE NV;
 GO
 
-DECLARE @HoraCierre time(0) = '10:00';     -- cierre de las reposiciones (las que ya existen se buscan por esta hora)
-
--- Una fila por reposición, con SU hora de llegada. PENDIENTE DE CONFIRMAR con Almacén cada una (hoy, 13:30 todas).
-DECLARE @Filas TABLE (Origen char(3), Destino char(3), DiaSemana tinyint, Llegada time(0));
-INSERT INTO @Filas (Origen, Destino, DiaSemana, Llegada)
-VALUES
-    -- Reina → Algete (lunes, miércoles y viernes)
-    ('REI', 'ALG', 1, '13:30'), ('REI', 'ALG', 3, '13:30'), ('REI', 'ALG', 5, '13:30'),
-    -- Alcobendas → Algete (de lunes a viernes)
-    ('ALC', 'ALG', 1, '13:30'), ('ALC', 'ALG', 2, '13:30'), ('ALC', 'ALG', 3, '13:30'), ('ALC', 'ALG', 4, '13:30'), ('ALC', 'ALG', 5, '13:30'),
-    -- Algete → Reina (lunes, miércoles y viernes)
-    ('ALG', 'REI', 1, '13:30'), ('ALG', 'REI', 3, '13:30'), ('ALG', 'REI', 5, '13:30'),
-    -- Algete → Alcobendas (lunes, martes y jueves)
-    ('ALG', 'ALC', 1, '13:30'), ('ALG', 'ALC', 2, '13:30'), ('ALG', 'ALC', 4, '13:30');
-
-IF EXISTS (SELECT 1 FROM @Filas WHERE Llegada < @HoraCierre)
+IF COL_LENGTH('dbo.ReposicionesCalendario', 'LaborablesAntelacionCierre') IS NULL
 BEGIN
-    RAISERROR('Hay una hora de llegada anterior a la de cierre: revisar @Filas. No se ha hecho nada.', 16, 1);
+    RAISERROR('Falta la columna LaborablesAntelacionCierre: lanzar antes Scripts/Issue577_CalendarioCierreAntelacion.sql. No se ha hecho nada.', 16, 1);
+    SET NOEXEC ON;
+END
+GO
+
+-- Una fila por reposición (día de LLEGADA), con SU hora de cierre, de llegada y los laborables de antelación del cierre.
+DECLARE @Filas TABLE (Origen char(3), Destino char(3), DiaSemana tinyint, Cierre time(0), Llegada time(0), Antelacion tinyint);
+INSERT INTO @Filas (Origen, Destino, DiaSemana, Cierre, Llegada, Antelacion)
+VALUES
+    -- Reina → Algete (lunes, miércoles y viernes): cierra 10:00, llega 13:30 el mismo día
+    ('REI', 'ALG', 1, '10:00', '13:30', 0), ('REI', 'ALG', 3, '10:00', '13:30', 0), ('REI', 'ALG', 5, '10:00', '13:30', 0),
+    -- Alcobendas → Algete (de lunes a viernes): cierra 10:00, llega 13:30 el mismo día
+    ('ALC', 'ALG', 1, '10:00', '13:30', 0), ('ALC', 'ALG', 2, '10:00', '13:30', 0), ('ALC', 'ALG', 3, '10:00', '13:30', 0),
+    ('ALC', 'ALG', 4, '10:00', '13:30', 0), ('ALC', 'ALG', 5, '10:00', '13:30', 0),
+    -- Algete → Reina (llega lunes, miércoles y viernes a las 11:00): cierra el laborable anterior a las 13:00
+    ('ALG', 'REI', 1, '13:00', '11:00', 1), ('ALG', 'REI', 3, '13:00', '11:00', 1), ('ALG', 'REI', 5, '13:00', '11:00', 1),
+    -- Algete → Alcobendas (llega lunes, martes y jueves a las 10:00): cierra el laborable anterior a las 13:00
+    ('ALG', 'ALC', 1, '13:00', '10:00', 1), ('ALG', 'ALC', 2, '13:00', '10:00', 1), ('ALG', 'ALC', 4, '13:00', '10:00', 1);
+
+-- Con antelación 0 llega el mismo día: la llegada no puede ser anterior al cierre (como el CHECK de la tabla).
+IF EXISTS (SELECT 1 FROM @Filas WHERE Antelacion = 0 AND Llegada < Cierre)
+BEGIN
+    RAISERROR('Hay una fila que llega el mismo día (antelación 0) antes de cerrarse: revisar @Filas. No se ha hecho nada.', 16, 1);
     RETURN;
 END
 
-INSERT INTO dbo.ReposicionesCalendario (Empresa, AlmacenOrigen, AlmacenDestino, DiaSemana, HoraCierre, HoraLlegadaHabitual, Activo, Usuario, FechaModificacion)
-SELECT '1', f.Origen, f.Destino, f.DiaSemana, @HoraCierre, f.Llegada, 1, 'NestoAPI#577', GETDATE()
+INSERT INTO dbo.ReposicionesCalendario (Empresa, AlmacenOrigen, AlmacenDestino, DiaSemana, HoraCierre, HoraLlegadaHabitual,
+    LaborablesAntelacionCierre, Activo, Usuario, FechaModificacion)
+SELECT '1', f.Origen, f.Destino, f.DiaSemana, f.Cierre, f.Llegada, f.Antelacion, 1, 'NestoAPI#577', GETDATE()
 FROM @Filas f
 WHERE NOT EXISTS (SELECT 1 FROM dbo.ReposicionesCalendario c
                   WHERE c.Empresa = '1' AND c.AlmacenOrigen = f.Origen AND c.AlmacenDestino = f.Destino
-                    AND c.DiaSemana = f.DiaSemana AND c.HoraCierre = @HoraCierre);
+                    AND c.DiaSemana = f.DiaSemana);
 
 PRINT CONCAT('Filas añadidas: ', @@ROWCOUNT);
 
 UPDATE c
-SET c.HoraLlegadaHabitual = f.Llegada, c.FechaModificacion = GETDATE()
+SET c.HoraCierre = f.Cierre, c.HoraLlegadaHabitual = f.Llegada, c.LaborablesAntelacionCierre = f.Antelacion,
+    c.FechaModificacion = GETDATE()
 FROM dbo.ReposicionesCalendario c
      JOIN @Filas f ON c.AlmacenOrigen = f.Origen AND c.AlmacenDestino = f.Destino AND c.DiaSemana = f.DiaSemana
-WHERE c.Empresa = '1' AND c.HoraCierre = @HoraCierre AND c.Usuario = 'NestoAPI#577' AND c.HoraLlegadaHabitual <> f.Llegada;
+WHERE c.Empresa = '1' AND c.Usuario = 'NestoAPI#577'
+  AND (c.HoraCierre <> f.Cierre OR c.HoraLlegadaHabitual <> f.Llegada OR c.LaborablesAntelacionCierre <> f.Antelacion)
+  -- una sola fila de esa ruta y día (si hubiera dos, con horas de cierre distintas, se dejan como están)
+  AND (SELECT COUNT(*) FROM dbo.ReposicionesCalendario o
+       WHERE o.Empresa = c.Empresa AND o.AlmacenOrigen = c.AlmacenOrigen AND o.AlmacenDestino = c.AlmacenDestino
+         AND o.DiaSemana = c.DiaSemana) = 1;
 
-PRINT CONCAT('Horas de llegada cambiadas: ', @@ROWCOUNT);
+PRINT CONCAT('Filas cambiadas: ', @@ROWCOUNT);
+GO
+
+SET NOEXEC OFF;
 GO
 
 ------------------------------------------------------------------------------------------------
--- VERIFICACIÓN: 14 filas activas, cada una con su hora de llegada
---   ALC→ALG 1-5 · ALG→ALC 1/2/4 · ALG→REI 1/3/5 · REI→ALG 1/3/5
+-- VERIFICACIÓN: 14 filas activas
+--   ALC→ALG 1-5 y REI→ALG 1/3/5: 10:00 → 13:30, antelación 0
+--   ALG→REI 1/3/5: 13:00 → 11:00, antelación 1 · ALG→ALC 1/2/4: 13:00 → 10:00, antelación 1
 ------------------------------------------------------------------------------------------------
-SELECT AlmacenOrigen, AlmacenDestino, DiaSemana, HoraCierre, HoraLlegadaHabitual, Activo, Usuario
+SELECT AlmacenOrigen, AlmacenDestino, DiaSemana, HoraCierre, HoraLlegadaHabitual, LaborablesAntelacionCierre, Activo, Usuario
 FROM dbo.ReposicionesCalendario
 WHERE Empresa = '1'
 ORDER BY AlmacenOrigen, AlmacenDestino, DiaSemana, HoraCierre;

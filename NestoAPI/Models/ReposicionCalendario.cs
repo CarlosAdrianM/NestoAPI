@@ -21,6 +21,7 @@ namespace NestoAPI.Models
         public byte DiaSemana { get; set; }
         public System.TimeSpan HoraCierre { get; set; }
         public System.TimeSpan HoraLlegadaHabitual { get; set; }
+        public byte LaborablesAntelacionCierre { get; set; }
         public bool Activo { get; set; }
         public string Usuario { get; set; }
         public System.DateTime FechaModificacion { get; set; }

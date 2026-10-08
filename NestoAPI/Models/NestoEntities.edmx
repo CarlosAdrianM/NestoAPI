@@ -1081,6 +1081,7 @@
           <Property Name="DiaSemana" Type="tinyint" Nullable="false" />
           <Property Name="HoraCierre" Type="time" Precision="0" Nullable="false" />
           <Property Name="HoraLlegadaHabitual" Type="time" Precision="0" Nullable="false" />
+          <Property Name="LaborablesAntelacionCierre" Type="tinyint" Nullable="false" />
           <Property Name="Activo" Type="bit" Nullable="false" />
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="FechaModificacion" Type="datetime" Nullable="false" />
@@ -8825,6 +8826,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="DiaSemana" Type="Byte" Nullable="false" />
           <Property Name="HoraCierre" Type="Time" Nullable="false" Precision="0" />
           <Property Name="HoraLlegadaHabitual" Type="Time" Nullable="false" Precision="0" />
+          <Property Name="LaborablesAntelacionCierre" Type="Byte" Nullable="false" />
           <Property Name="Activo" Type="Boolean" Nullable="false" />
           <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
           <Property Name="FechaModificacion" Type="DateTime" Nullable="false" Precision="3" />
@@ -16665,6 +16667,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
                 <ScalarProperty Name="DiaSemana" ColumnName="DiaSemana" />
                 <ScalarProperty Name="HoraCierre" ColumnName="HoraCierre" />
                 <ScalarProperty Name="HoraLlegadaHabitual" ColumnName="HoraLlegadaHabitual" />
+                <ScalarProperty Name="LaborablesAntelacionCierre" ColumnName="LaborablesAntelacionCierre" />
                 <ScalarProperty Name="Activo" ColumnName="Activo" />
                 <ScalarProperty Name="Usuario" ColumnName="Usuario" />
                 <ScalarProperty Name="FechaModificacion" ColumnName="FechaModificacion" />

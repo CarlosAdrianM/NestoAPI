@@ -690,7 +690,8 @@ namespace NestoAPI
 
             // NestoAPI#577 (corte 3b): las reposiciones se rellenan solas a la hora de cierre de su fila del calendario
             // (ReposicionesCalendario, lo mantiene Almacén). Como el picking de cierre (#361), el corte es un DATO: cada
-            // pasada mira qué filas de HOY tienen ya su día + HoraCierre en el pasado y aún no están hechas
+            // pasada mira qué reposiciones que cierran o llegan HOY tienen ya su día de cierre + HoraCierre en el pasado
+            // (corte 3d: Algete → tienda cierra el laborable anterior a las 13:00) y aún no están hechas
             // (ReposicionesTraspasos: Herramienta 'Automatico' + FechaCorte) y las rellena con ESE instante, no con el
             // reloj. Por eso basta un cron frecuente y llegar unos segundos o minutos tarde no cambia nada. Las horas de
             // cierre del calendario tienen que caer dentro del cron (ReposicionesAutomaticasJobsService.CRON).

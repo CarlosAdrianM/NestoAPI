@@ -124,7 +124,7 @@ namespace NestoAPI.Controllers
             return Ok(await Calendario.LeerCalendario(empresa).ConfigureAwait(false));
         }
 
-        // PUT api/Reposiciones/Calendario   { Empresa?, Origen?, Destino?, Filas: [{ Id?, Origen, Destino, DiaSemana, HoraCierre, HoraLlegadaHabitual, Activo }] }
+        // PUT api/Reposiciones/Calendario   { Empresa?, Origen?, Destino?, Filas: [{ Id?, Origen, Destino, DiaSemana, HoraCierre, HoraLlegadaHabitual, LaborablesAntelacionCierre?, Activo }] }
         /// <summary>
         /// NestoAPI#577: guarda el calendario. Con Origen y Destino, Filas es la lista completa de esa ruta (lo que no venga se
         /// borra); sin ellos, filas sueltas (crear o cambiar). Devuelve el calendario entero. Solo Almacén, Dirección e

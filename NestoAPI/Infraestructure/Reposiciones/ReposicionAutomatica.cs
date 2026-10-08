@@ -72,15 +72,24 @@ namespace NestoAPI.Infraestructure.Reposiciones
     /// <summary>
     /// NestoAPI#577 (corte 3b): rellena cada reposición del calendario (ReposicionesCalendario) a su hora de corte.
     ///
-    /// <para><b>El corte es un dato</b>, como el horizonte del picking de cierre (NestoAPI#361): para cada fila activa de
-    /// HOY se calcula el instante día + HoraCierre y, si ya ha pasado y esa ruta no tiene todavía cabecera del job para
+    /// <para><b>El corte es un dato</b>, como el horizonte del picking de cierre (NestoAPI#361): para cada reposición
+    /// que cierra (o llega) HOY se calcula el instante día de cierre + HoraCierre y, si ya ha pasado y esa ruta no tiene todavía cabecera del job para
     /// ese instante (ReposicionesTraspasos: Herramienta 'Automatico' + FechaCorte), se llama a
     /// <see cref="ServicioPreparacionReposicion.Crear(CrearReposicionDTO, IPrincipal, DateTime?)"/> con ESE instante (no
     /// con DateTime.Now): solo cuentan las líneas de pedido anteriores. Da igual que Hangfire arranque a las 10:00:03 o a
     /// las 10:05: el resultado es el mismo. Festivos y fines de semana como <see cref="CalculadoraFechaReposicion"/>.</para>
     ///
-    /// <para><b>Exclusión</b>: applock por ORIGEN y día (no por ruta): Algete → Reina y Algete → Alcobendas escriben en el
-    /// mismo diario de salida de Algete y no deben solaparse. Dentro del bloqueo se vuelve a mirar si ya está hecha.</para>
+    /// <para><b>Cierre con antelación</b> (corte 3d, decisión de Carlos 08/10): la fila es la del día de LLEGADA y se cierra
+    /// LaborablesAntelacionCierre laborables del origen antes (Algete → tienda: el laborable anterior a las 13:00; la del
+    /// lunes, el viernes). Cada pasada mira <see cref="CalculadoraFechaReposicion.CortesDeHoy"/>: las que cierran hoy (la
+    /// del lunes se rellena el viernes a las 13:00, con ese instante como corte) y las que llegan hoy (si el viernes no se
+    /// rellenó, el lunes aún se rellena, con el corte del viernes, hasta la hora de llegada; después, fuera de plazo). La
+    /// cabecera se identifica por ruta + instante de corte (FechaCorte), así que las dos vías no duplican.</para>
+    ///
+    /// <para><b>Exclusión</b>: applock por ORIGEN y día DE CIERRE (el del instante de corte, no por ruta): Algete → Reina y
+    /// Algete → Alcobendas escriben en el mismo diario de salida de Algete y no deben solaparse. El job y el endpoint manual
+    /// usan la misma clave (el día del corte), así que una misma reposición siempre se bloquea con el mismo recurso. Dentro
+    /// del bloqueo se vuelve a mirar si ya está hecha.</para>
     ///
     /// <para><b>Qué se apunta</b> (para no reintentar cada 5 minutos): la reposición creada lleva su cabecera; si no se crea
     /// por un motivo de negocio, una marca en ReposicionesTraspasos sin número y con Omitida = el motivo:
@@ -150,7 +159,7 @@ namespace NestoAPI.Infraestructure.Reposiciones
             List<ReposicionCalendario> calendario = await repositorio.LeerCalendario(empresa).ConfigureAwait(false);
             IPrincipal automatico = Principal(USUARIO_AUTOMATICO);
 
-            foreach (CorteReposicion corte in calculadora.CortesDelDia(calendario, ahora).Where(c => c.Corte <= ahora))
+            foreach (CorteReposicion corte in calculadora.CortesDeHoy(calendario, ahora).Where(c => c.Corte <= ahora))
             {
                 try
                 {
@@ -184,7 +193,8 @@ namespace NestoAPI.Infraestructure.Reposiciones
 
         /// <summary>
         /// POST api/Reposiciones/RellenarAutomatica: relanza a mano la de hoy de una ruta, con el corte del calendario (el
-        /// último de hoy que ya ha pasado). 404 si hoy no toca (o es festivo); 409 si aún no ha llegado la hora de cierre,
+        /// último que ya ha pasado de las que cierran o llegan hoy: con antelación, el lunes relanza la del lunes con el corte
+        /// del viernes). 404 si hoy no toca (o es festivo); 409 si aún no ha llegado la hora de cierre,
         /// si ya está rellena (una marca sin reposición no cuenta: se puede relanzar) o si la tienda ya tiene una en
         /// preparación. Escribe con el nombre de quien lo lanza y Herramienta 'Automatico'.
         /// </summary>
@@ -202,7 +212,7 @@ namespace NestoAPI.Infraestructure.Reposiciones
             }
             DateTime ahora = reloj();
             List<ReposicionCalendario> calendario = await repositorio.LeerCalendario(empresaLimpia).ConfigureAwait(false);
-            List<CorteReposicion> deHoy = calculadora.CortesDelDia(calendario, ahora)
+            List<CorteReposicion> deHoy = calculadora.CortesDeHoy(calendario, ahora)
                 .Where(c => c.Empresa == empresaLimpia && c.Origen == origenLimpio && c.Destino == destinoLimpio)
                 .ToList();
             if (!deHoy.Any())
@@ -215,7 +225,7 @@ namespace NestoAPI.Infraestructure.Reposiciones
             CorteReposicion corte = deHoy.Where(c => c.Corte <= ahora).OrderByDescending(c => c.Corte).FirstOrDefault();
             if (corte == null)
             {
-                throw new NestoBusinessException($"La reposición de hoy de {origenLimpio} a {destinoLimpio} cierra a las {deHoy.First().Corte:HH:mm}: " +
+                throw new NestoBusinessException($"La reposición de hoy de {origenLimpio} a {destinoLimpio} cierra a las {deHoy.Where(c => c.Corte > ahora).Min(c => c.Corte):HH:mm}: " +
                     "se rellenará sola a esa hora.")
                 {
                     StatusCode = HttpStatusCode.Conflict
@@ -227,7 +237,7 @@ namespace NestoAPI.Infraestructure.Reposiciones
             {
                 if (await repositorio.HayCabecera(corte.Empresa, corte.Origen, corte.Destino, corte.Corte, contarOmitidas: false).ConfigureAwait(false))
                 {
-                    throw new NestoBusinessException($"La reposición de {origenLimpio} a {destinoLimpio} de las {corte.Corte:HH:mm} de hoy ya está rellena.")
+                    throw new NestoBusinessException($"La reposición de {origenLimpio} a {destinoLimpio} de las {corte.Corte:HH:mm} {DiaDelCorte(corte, ahora)} ya está rellena.")
                     {
                         StatusCode = HttpStatusCode.Conflict
                     };
@@ -284,6 +294,11 @@ namespace NestoAPI.Infraestructure.Reposiciones
                 FechaCreacion = reloj(),
                 FechaCorte = corte.Corte
             }, motivo);
+        }
+
+        private static string DiaDelCorte(CorteReposicion corte, DateTime ahora)
+        {
+            return corte.Corte.Date == ahora.Date ? "de hoy" : string.Format(CultureInfo.InvariantCulture, "del {0:dd/MM}", corte.Corte);
         }
 
         private static string Prefijo(CorteReposicion corte)

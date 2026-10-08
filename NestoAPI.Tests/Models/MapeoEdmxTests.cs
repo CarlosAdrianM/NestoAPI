@@ -299,7 +299,7 @@ namespace NestoAPI.Tests.Models
         {
             string[] esperadas =
             {
-                "Id", "Empresa", "AlmacenOrigen", "AlmacenDestino", "DiaSemana", "HoraCierre", "HoraLlegadaHabitual",
+                "Id", "Empresa", "AlmacenOrigen", "AlmacenDestino", "DiaSemana", "HoraCierre", "HoraLlegadaHabitual", "LaborablesAntelacionCierre",
                 "Activo", "Usuario", "FechaModificacion"
             };
 
@@ -318,6 +318,7 @@ namespace NestoAPI.Tests.Models
             Assert.AreEqual("Time", (string)conceptual.Elements(CsdlNs + "Property").Single(p => p.Attribute("Name").Value == "HoraCierre").Attribute("Type"));
             Assert.AreEqual(typeof(TimeSpan), typeof(ReposicionCalendario).GetProperty("HoraCierre").PropertyType);
             Assert.AreEqual(typeof(byte), typeof(ReposicionCalendario).GetProperty("DiaSemana").PropertyType);
+            Assert.AreEqual(typeof(byte), typeof(ReposicionCalendario).GetProperty("LaborablesAntelacionCierre").PropertyType, "NestoAPI#577 (corte 3d): tinyint");
         }
 
         /// <summary>NestoAPI#591: eventos y señales añadidos a mano; la fecha del evento es date ↔ DateTime y los importes decimal(18,2).</summary>

@@ -268,7 +268,27 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
             await Falla(new ReposicionCalendarioDTO { Origen = "", Destino = "ALG", DiaSemana = 1, HoraCierre = diez, HoraLlegadaHabitual = unaYMedia });
             await Falla(new ReposicionCalendarioDTO { Origen = "ALC", Destino = "ALG", DiaSemana = 1, HoraCierre = diez, HoraLlegadaHabitual = unaYMedia }, "REI", "ALG");
             await Falla(new ReposicionCalendarioDTO { Id = 99, Origen = "REI", Destino = "ALG", DiaSemana = 1, HoraCierre = diez, HoraLlegadaHabitual = unaYMedia });
+            await Falla(new ReposicionCalendarioDTO { Origen = "ALG", Destino = "REI", DiaSemana = 1, HoraCierre = diez, HoraLlegadaHabitual = unaYMedia, LaborablesAntelacionCierre = 6 });
             A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Guardar_ConAntelacion_LaLlegadaPuedeSerAnteriorAlCierreYSeGuardaLaAntelacion()
+        {
+            List<ReposicionCalendarioDTO> leidas = await Servicio().Guardar(new GuardarCalendarioReposicionesDTO
+            {
+                Filas = new List<ReposicionCalendarioDTO>
+                {
+                    new ReposicionCalendarioDTO { Origen = "ALG", Destino = "REI", DiaSemana = 1, HoraCierre = TimeSpan.Parse("13:00"),
+                        HoraLlegadaHabitual = TimeSpan.Parse("11:00"), LaborablesAntelacionCierre = 1, Activo = true }
+                }
+            }, "x");
+
+            A.CallTo(() => fakeCalendario.Add(A<ReposicionCalendario>.That.Matches(f =>
+                f.AlmacenOrigen == "ALG" && f.AlmacenDestino == "REI" && f.LaborablesAntelacionCierre == 1
+                && f.HoraCierre == TimeSpan.Parse("13:00") && f.HoraLlegadaHabitual == TimeSpan.Parse("11:00"))))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => db.SaveChangesAsync()).MustHaveHappenedOnceExactly();
         }
 
         [TestMethod]
