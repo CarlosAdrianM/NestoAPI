@@ -192,6 +192,36 @@ namespace NestoAPI.Tests.Controllers
             Assert.IsNull(MensajeDe(resultado), "Una oferta que empieza cuando acaba la otra no se solapa");
         }
 
+        /// <summary>
+        /// Sugerencia 542 (Manuel): ofertas DISTINTAS del mismo producto conviven (en producción 44731
+        /// tiene un 6+1 denegado y un 10+1; 45305, un 6+1 y un 6+2). Solo choca la misma oferta.
+        /// </summary>
+        [TestMethod]
+        public async Task Post_OtraOfertaDistintaDelMismoProducto_NoEsDuplicada()
+        {
+            OfertaPermitida seisMasUno = Oferta(792, "44724");
+            seisMasUno.CantidadRegalo = 1;
+            OfertaPermitida diezMasUno = Oferta(793, "44724");
+            diezMasUno.CantidadConPrecio = 10;
+            diezMasUno.CantidadRegalo = 1;
+            diezMasUno.Denegar = true;
+            Configurar(seisMasUno, diezMasUno);
+
+            Assert.IsNull(MensajeDe(await controller.PostOfertaPermitidaProducto(Nueva())),
+                "Un 6+2 no es la misma oferta que un 6+1 ni que un 10+1");
+        }
+
+        /// <summary>La misma oferta, aunque una deniegue y la otra autorice, sí choca: se contradicen.</summary>
+        [TestMethod]
+        public async Task Post_MismaOfertaDenegadaYSolapada_Rechaza()
+        {
+            OfertaPermitida denegada = Oferta(792, "44724");
+            denegada.Denegar = true;
+            Configurar(denegada);
+
+            StringAssert.Contains(MensajeDe(await controller.PostOfertaPermitidaProducto(Nueva())), "se solapan");
+        }
+
         [TestMethod]
         public async Task Post_DistintoFiltroDeProducto_NoEsDuplicada()
         {

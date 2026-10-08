@@ -209,9 +209,12 @@ namespace NestoAPI.Controllers
         }
 
         /// <summary>
-        /// Dos ofertas del mismo producto y mismo filtro vigentes A LA VEZ son ambiguas: el
-        /// validador de pedidos las recorre y aplicaría una cualquiera. Encadenarlas (una acaba, la
-        /// siguiente empieza) sí vale, que es justo para lo que están las fechas.
+        /// Dos filas de la MISMA oferta (mismo producto, mismo filtro y mismo N+M) vigentes A LA VEZ
+        /// son ambiguas: sobran o se contradicen (una autoriza y otra deniega el mismo N+M). Encadenarlas
+        /// (una acaba, la siguiente empieza) sí vale, que es justo para lo que están las fechas.
+        /// <para>Sugerencia 542 (Manuel): ofertas DISTINTAS del mismo producto sí conviven (44731 tiene un
+        /// 6+1 denegado y un 10+1; 45305, un 6+1 y un 6+2): las reglas se combinan por N+M en
+        /// ReglasOfertasPermitidas, así que no hay ambigüedad.</para>
         /// </summary>
         private async Task<string> ValidarDuplicada(OfertaPermitidaProductoCreateDTO dto, int? idQueSeEdita)
         {
@@ -224,12 +227,14 @@ namespace NestoAPI.Controllers
                 o.NºOrden != (idQueSeEdita ?? 0)
                 && o.Número?.Trim() == producto
                 && (o.FiltroProducto?.Trim() ?? string.Empty) == (filtro ?? string.Empty)
+                && o.CantidadConPrecio == dto.CantidadConPrecio
+                && o.CantidadRegalo == dto.CantidadRegalo
                 && SeSolapan(o.FechaDesde, o.FechaHasta, dto.FechaDesde, dto.FechaHasta));
 
             return choca == null
                 ? null
-                : $"Ya hay otra oferta del producto {producto} cuyas fechas se solapan (nº {choca.NºOrden}). " +
-                  "Dos ofertas vigentes a la vez sobre el mismo producto dejan el pedido a merced de cuál se lea primero";
+                : $"Ya hay otra oferta {dto.CantidadConPrecio}+{dto.CantidadRegalo} del producto {producto} cuyas fechas se solapan (nº {choca.NºOrden}). " +
+                  "La misma oferta dos veces vigente a la vez sobra o se contradice";
         }
 
         /// <summary>Dos rangos con extremos abiertos (null = sin límite) se solapan si cada uno
