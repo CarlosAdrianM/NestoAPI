@@ -27,6 +27,13 @@ namespace NestoAPI.Infraestructure.Rapports
     {
         internal const int TIMEOUT_SEGUNDOS = 60;
 
+        /// <summary>
+        /// Estados de cliente que nunca entran en la cartera de sugerencias (ni en la cartera ni en la inferencia del
+        /// modelo, <see cref="RepositorioFeaturesContactoSql"/>): 7 = <see cref="Constantes.Clientes.Estados.COMISIONA_SIN_VISITA"/>,
+        /// 67 y 95 = <see cref="Constantes.Clientes.Estados.UNA_SOLA_COMPRA_AMAZON"/>. Única fuente: las dos consultas lo concatenan.
+        /// </summary>
+        internal const string ESTADOS_EXCLUIDOS_SQL = "7, 67, 95";
+
         internal const string SQL_CARTERA = @"
             SET NOCOUNT ON;
             DECLARE @Hace12Meses date = DATEADD(month, -12, @Hoy);
@@ -37,7 +44,7 @@ namespace NestoAPI.Infraestructure.Rapports
                 c.Provincia, c.Teléfono Telefono
             INTO #Cartera
             FROM Clientes c WITH (NOLOCK)
-            WHERE c.Empresa = '1' AND c.Estado >= 0 AND c.Estado NOT IN (7, 67) AND c.Vendedor = @Vendedor;
+            WHERE c.Empresa = '1' AND c.Estado >= 0 AND c.Estado NOT IN (" + ESTADOS_EXCLUIDOS_SQL + @") AND c.Vendedor = @Vendedor;
             CREATE CLUSTERED INDEX IX_Cartera ON #Cartera (Cliente, Contacto);
 
             -- Compras facturadas: un pedido = un Número de pedido con alguna línea facturada, con la fecha del pedido

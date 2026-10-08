@@ -106,6 +106,9 @@ namespace NestoAPI.Models
                 public const short SIN_ACCION_COMERCIAL_SOLO_ESTETICA = 93;
                 public const short SIN_ACCION_COMERCIAL_SOLO_PELUQUERIA = 11;
                 public const short SIN_ACCION_COMERCIAL_ESTETICA_Y_PELUQUERIA = 22;
+                /// <summary>Una sola compra, por Amazon: no es cartera del vendedor y no se le sugiere llamar
+                /// (motor de sugerencias de contacto, NestoAPI#603).</summary>
+                public const short UNA_SOLA_COMPRA_AMAZON = 95;
             }
 
             public static class EstadosMandatos

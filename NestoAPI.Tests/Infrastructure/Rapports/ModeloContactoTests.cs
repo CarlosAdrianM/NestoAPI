@@ -369,5 +369,16 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
             StringAssert.Contains(sql, "AND cab.Fecha >= @Hace24Meses", "la ventana va por la fecha del pedido");
             StringAssert.Contains(sql, "l.Estado = 4 AND l.[Base Imponible] > 0 AND l.SubGrupo <> 'MMP'", "mismos filtros de línea facturada");
         }
+
+        [TestMethod]
+        public void CarteraYModelo_ExcluyenLosClientesDeUnaSolaCompraPorAmazon()
+        {
+            // Estado 95 («Una sola compra, por Amazon»): no es cartera del vendedor, no se sugiere llamarlo.
+            const string filtro = "c.Estado NOT IN (7, 67, 95)";
+
+            StringAssert.Contains(RepositorioCarteraContactoSql.SQL_CARTERA, filtro);
+            StringAssert.Contains(RepositorioFeaturesContactoSql.SQL, filtro);
+            Assert.AreEqual(95, NestoAPI.Models.Constantes.Clientes.Estados.UNA_SOLA_COMPRA_AMAZON);
+        }
     }
 }

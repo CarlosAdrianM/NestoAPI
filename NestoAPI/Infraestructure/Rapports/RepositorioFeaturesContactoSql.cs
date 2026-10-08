@@ -19,7 +19,8 @@ namespace NestoAPI.Infraestructure.Rapports
     /// SQL del entrenamiento (ModeloLlamadaPedido\Datos\RepositorioDatosSql.cs) con hoy como día del contacto: solo trae
     /// datos crudos y las features se calculan en C# con <see cref="CalculadoraFeaturesContacto"/>, igual que al entrenar.
     /// <list type="bullet">
-    /// <item>Clientes = los activos del vendedor (empresa 1, Estado ≥ 0, no 7/67), materializados en #Clientes con índice;
+    /// <item>Clientes = los activos del vendedor (empresa 1, Estado ≥ 0, sin los de
+    /// <see cref="RepositorioCarteraContactoSql.ESTADOS_EXCLUIDOS_SQL"/>), materializados en #Clientes con índice;
     /// todo lo demás se filtra contra ellos (patrón de #401).</item>
     /// <item>Pedidos = días distintos de CabPedidoVta.Fecha con líneas TipoLinea 1, base &gt; 0, NotaEntrega 0 y Estado ≥ -1
     /// (no solo lo facturado), de los últimos 24 meses y anteriores a hoy.</item>
@@ -40,7 +41,7 @@ namespace NestoAPI.Infraestructure.Rapports
             SELECT c.[Nº Cliente] Cliente, c.Contacto
             INTO #Clientes
             FROM Clientes c WITH (NOLOCK)
-            WHERE c.Empresa = '1' AND c.Estado >= 0 AND c.Estado NOT IN (7, 67) AND c.Vendedor = @Vendedor;
+            WHERE c.Empresa = '1' AND c.Estado >= 0 AND c.Estado NOT IN (" + RepositorioCarteraContactoSql.ESTADOS_EXCLUIDOS_SQL + @") AND c.Vendedor = @Vendedor;
             CREATE CLUSTERED INDEX IX_Clientes ON #Clientes (Cliente, Contacto);
 
             -- 0. Los clientes (también los que no tienen historial)
