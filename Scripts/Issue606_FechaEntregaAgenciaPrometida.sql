@@ -6,7 +6,8 @@
     FechaEntregaAgencia) que se mueve con el stock, las reposiciones y los cambios del pedido. Esta columna guarda la que
     se prometió al crearlo y no se vuelve a tocar; la real está en el albarán. Con las tres se mide si acertamos.
 
-    Quién la escribe: SOLO PostPedidoVenta (Nesto, NestoApp y TiendasNuevaVision vía PedidosClienteController), una vez,
+    Quién la escribe: PostPedidoVenta (Nesto, NestoApp y TiendasNuevaVision vía PedidosClienteController) y, al ACEPTAR un
+    presupuesto (PUT que lo pasa a pedido), PutPedidoVenta; una vez,
     con un UPDATE ... WHERE FechaEntregaAgenciaPrometida IS NULL justo después de grabar el pedido. Los presupuestos no.
     NULL = pedido anterior a la columna, presupuesto, o pedido que nació sin fecha (algo sin stock ni fecha de llegada).
 
@@ -66,4 +67,23 @@ WHERE c.object_id = OBJECT_ID('dbo.CabPedidoVta') AND c.name = 'FechaEntregaAgen
 SELECT TOP 10 Empresa, Número, Fecha, ModoServicio, ModoFacturacion, Ruta, FechaEntregaAgenciaPrometida
 FROM dbo.CabPedidoVta WITH (NOLOCK)
 ORDER BY Número DESC;
+GO
+
+------------------------------------------------------------------------------------------------
+-- NestoAPI#606 (08/10/26): quién recibe en la campana de Nesto el aviso de «pedido a proveedor con la fecha prevista
+-- vencida y pedidos de clientes esperándolo» (decisión de Carlos: Santiago y Manuel). La API lee SOLO la fila
+-- «(defecto)» de la empresa 1: lista separada por comas, nombre de usuario SIN dominio. Sin la fila, la API usa
+-- «Santiago, Manuel»; con la fila vacía, no avisa a nadie (y lo deja en ELMAH). El correo diario va a compras@ (constante).
+--
+-- Para cambiarlo: UPDATE ParametrosUsuario SET Valor = 'Santiago, Manuel, Fulano' WHERE Empresa = '1'
+-- AND Usuario = '(defecto)' AND Clave = 'UsuariosAvisoProveedorVencido';
+------------------------------------------------------------------------------------------------
+IF NOT EXISTS (SELECT 1 FROM ParametrosUsuario WHERE Empresa = '1' AND Clave = 'UsuariosAvisoProveedorVencido' AND Usuario = '(defecto)')
+BEGIN
+    INSERT INTO ParametrosUsuario (Empresa, Clave, Usuario, Valor, Usuario2, [Fecha Modificación])
+    VALUES ('1', 'UsuariosAvisoProveedorVencido', '(defecto)', 'Santiago, Manuel', 'NestoAPI', GETDATE());
+END
+GO
+
+SELECT Empresa, Clave, Usuario, Valor FROM ParametrosUsuario WHERE Clave = 'UsuariosAvisoProveedorVencido';
 GO

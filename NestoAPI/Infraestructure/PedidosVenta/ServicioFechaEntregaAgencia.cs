@@ -1,3 +1,4 @@
+using NestoAPI.Infraestructure.PedidosCompra;
 using NestoAPI.Infraestructure.Reposiciones;
 using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
@@ -62,20 +63,22 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         private readonly Func<DateTime> reloj;
         private readonly Func<DateTime, string, bool> esFestivo;
         private readonly Action<Exception> registrar;
+        private readonly IAvisadorProveedorVencido avisadorProveedorVencido;
 
         public ServicioFechaEntregaAgencia(NVEntities db)
             : this(new RepositorioFechaEntregaAgencia(db), () => DateTime.Now, GestorFestivos.EsFestivo,
-                  ex => ElmahHelper.Log(ex))
+                  ex => ElmahHelper.Log(ex), new AvisadorProveedorVencido())
         {
         }
 
         internal ServicioFechaEntregaAgencia(IRepositorioFechaEntregaAgencia repositorio, Func<DateTime> reloj,
-            Func<DateTime, string, bool> esFestivo, Action<Exception> registrar)
+            Func<DateTime, string, bool> esFestivo, Action<Exception> registrar, IAvisadorProveedorVencido avisadorProveedorVencido = null)
         {
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
             this.reloj = reloj ?? (() => DateTime.Now);
             this.esFestivo = esFestivo ?? GestorFestivos.EsFestivo;
             this.registrar = registrar ?? (_ => { });
+            this.avisadorProveedorVencido = avisadorProveedorVencido;
         }
 
         public async Task<FechaEntregaAgenciaDTO> CalcularPedido(string empresa, int numero)
@@ -89,7 +92,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             FechaEntregaAgenciaDTO dto = await Calcular(empresaLimpia, numero, pedido.Ruta,
                 Constantes.Pedidos.ModosServicio.Efectivo(pedido.ModoServicio, pedido.ServirJunto),
                 Constantes.Pedidos.ModosFacturacion.Efectivo(pedido.ModoFacturacion, pedido.MantenerJunto),
-                pedido.DiasEnServir, pedido.TieneLineasServidas, pedido.Lineas).ConfigureAwait(false);
+                pedido.DiasEnServir, pedido.TieneLineasServidas, pedido.Lineas, $"el pedido {numero}").ConfigureAwait(false);
             dto.FechaPrometida = await repositorio.LeerPrometida(empresaLimpia, numero).ConfigureAwait(false);
             return dto;
         }
@@ -127,7 +130,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 ? pedido.modoFacturacion.Value
                 : Constantes.Pedidos.ModosFacturacion.Efectivo(null, pedido.mantenerJunto);
             return await Calcular(empresa, pedido.numero > 0 ? pedido.numero : (int?)null, pedido.ruta, modoServicio, modoFacturacion,
-                diasEnServir, tieneLineasServidas, lineas).ConfigureAwait(false);
+                diasEnServir, tieneLineasServidas, lineas, QuienEspera(pedido)).ConfigureAwait(false);
         }
 
         public async Task<DateTime?> GuardarPrometidaAlCrear(string empresa, int numero)
@@ -188,7 +191,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         }
 
         private async Task<FechaEntregaAgenciaDTO> Calcular(string empresa, int? pedidoExcluir, string ruta, byte modoServicio, byte modoFacturacion,
-            string diasEnServir, bool tieneLineasServidas, List<LineaPedidoFechaEntregaAgencia> lineas)
+            string diasEnServir, bool tieneLineasServidas, List<LineaPedidoFechaEntregaAgencia> lineas, string quienEspera)
         {
             DateTime ahora = reloj();
             List<LineaPedidoFechaEntregaAgencia> deAlgete = (lineas ?? new List<LineaPedidoFechaEntregaAgencia>())
@@ -203,10 +206,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             List<ReposicionCalendario> calendario = await repositorio.LeerCalendario(empresa).ConfigureAwait(false) ?? new List<ReposicionCalendario>();
             TimeSpan horaCorte = repositorio.LeerHoraCorte(empresa);
 
-            var calculadoraReposicion = new CalculadoraFechaReposicion(esFestivo);
-            List<string> tiendasPorOrden = RepartidorStockFechaEntregaAgencia.TIENDAS
-                .OrderBy(t => calculadoraReposicion.Calcular(calendario, t, Constantes.Almacenes.ALGETE, horaCorte, ahora, empresa)?.PedidoSaleEl ?? DateTime.MaxValue)
-                .ToList();
+            List<string> tiendasPorOrden = TiendasPorOrden(new CalculadoraFechaReposicion(esFestivo), calendario, horaCorte, ahora, empresa);
 
             var entrada = new EntradaFechaEntregaAgencia
             {
@@ -222,6 +222,14 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 Calendario = calendario
             };
             ResultadoFechaEntregaAgencia resultado = new CalculadoraFechaEntregaAgencia(esFestivo).Calcular(entrada);
+
+            // Decisión de Carlos (08/10): si la fecha depende de un pedido a proveedor con la fecha prevista vencida, aviso en la
+            // campana a Compras (deduplicado por línea y día; nunca lanza).
+            if (avisadorProveedorVencido != null && resultado.ProveedorVencido.Any())
+            {
+                await avisadorProveedorVencido.Avisar(empresa, resultado.ProveedorVencido, quienEspera).ConfigureAwait(false);
+            }
+
             return new FechaEntregaAgenciaDTO
             {
                 PrimeraEntrega = resultado.PrimeraEntrega,
@@ -229,8 +237,42 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 FechaEntregaAgencia = resultado.FechaQueAplica,
                 Aplica = resultado.AplicaCompleta ? FechaEntregaAgenciaDTO.APLICA_COMPLETA : FechaEntregaAgenciaDTO.APLICA_PRIMERA,
                 Entregas = resultado.Entregas,
-                Motivo = resultado.Motivo
+                Motivo = resultado.Motivo,
+                Aviso = resultado.Aviso
             };
+        }
+
+        /// <summary>
+        /// Decisión de Carlos (08/10): las unidades de las tiendas se cogen primero de la tienda cuya reposición deja salir antes
+        /// el pedido y, a igualdad de día, de la que LLEGA antes a Algete (cada fila del calendario tiene su hora de llegada).
+        /// Una tienda sin calendario va la última.
+        /// </summary>
+        internal static List<string> TiendasPorOrden(CalculadoraFechaReposicion calculadora, IEnumerable<ReposicionCalendario> calendario,
+            TimeSpan horaCorte, DateTime ahora, string empresa)
+        {
+            return RepartidorStockFechaEntregaAgencia.TIENDAS
+                .Select((tienda, indice) => new
+                {
+                    Tienda = tienda,
+                    Indice = indice,
+                    Reposicion = calculadora.Calcular(calendario, tienda, Constantes.Almacenes.ALGETE, horaCorte, ahora, empresa)
+                })
+                .OrderBy(t => t.Reposicion?.PedidoSaleEl ?? DateTime.MaxValue)
+                .ThenBy(t => t.Reposicion?.LlegaEl ?? DateTime.MaxValue)
+                .ThenBy(t => t.Indice)
+                .Select(t => t.Tienda)
+                .ToList();
+        }
+
+        private static string QuienEspera(PedidoVentaDTO pedido)
+        {
+            if (pedido.numero > 0)
+            {
+                return $"el pedido {pedido.numero}, que se está modificando en la plantilla";
+            }
+            return string.IsNullOrWhiteSpace(pedido.cliente)
+                ? "un pedido que se está montando en la plantilla de venta"
+                : $"un pedido del cliente {pedido.cliente.Trim()} que se está montando en la plantilla de venta";
         }
 
         private static string Empresa(string empresa) =>

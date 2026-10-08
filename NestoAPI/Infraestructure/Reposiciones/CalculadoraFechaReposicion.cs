@@ -105,6 +105,9 @@ namespace NestoAPI.Infraestructure.Reposiciones
                     continue;
                 }
 
+                // NestoAPI#606 (decisión de Carlos, 08/10): la hora de llegada es la de ESTA fila (cada reposición la suya), y el
+                // umbral es la hora de corte del picking (parámetro HoraCortePicking, 11:00, única fuente): lo que llega antes
+                // sale en el picking de ese día; a esa hora o después, en el del laborable siguiente.
                 DateTime llegaEl = dia + fila.HoraLlegadaHabitual;
                 DateTime pedidoSaleEl = fila.HoraLlegadaHabitual < horaCortePicking
                     ? dia

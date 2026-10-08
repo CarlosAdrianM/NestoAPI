@@ -1,7 +1,9 @@
 using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.PedidosCompra;
 using NestoAPI.Infraestructure.PedidosVenta;
+using NestoAPI.Infraestructure.Reposiciones;
 using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
 using System;
@@ -202,6 +204,136 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             Assert.AreEqual(1, registradas.Count, "Como mucho un aviso cada media hora");
             StringAssert.Contains(registradas[0].Message, "927000");
         }
+
+        #region Decisiones de Carlos (08/10)
+
+        private static DatosSombraModoServicio ConPedidoAProveedor(string producto, DateTime fechaPrevista)
+        {
+            DatosSombraModoServicio datos = ConStockEnAlgete("A", 10);
+            string clave = ResumenStocksProductos.Clave(producto, "ALG");
+            datos.PendienteRecibir[clave] = 5;
+            datos.FechaPrevista[clave] = fechaPrevista;
+            return datos;
+        }
+
+        private static PedidoFechaEntregaAgencia PedidoConB(byte modoServicio)
+        {
+            PedidoFechaEntregaAgencia pedido = Pedido(modoServicio);
+            pedido.Lineas.Add(new LineaPedidoFechaEntregaAgencia { Producto = "B", Almacen = "ALG", Cantidad = 1, BaseImponible = 10 });
+            return pedido;
+        }
+
+        [TestMethod]
+        public async Task CalcularPedido_ProveedorConFechaVencida_AvisaAComprasConElPedidoQueLoEspera()
+        {
+            var avisador = A.Fake<IAvisadorProveedorVencido>();
+            servicio = new ServicioFechaEntregaAgencia(repositorio, () => AHORA, EsFestivo, registradas.Add, avisador);
+            A.CallTo(() => repositorio.LeerPedido("1", 927000)).Returns(Task.FromResult(PedidoConB(1)));
+            A.CallTo(() => repositorio.LeerStock(A<string>._, A<int?>._, A<IEnumerable<string>>._)).Returns(ConPedidoAProveedor("B", new DateTime(2026, 10, 9)));
+
+            FechaEntregaAgenciaDTO dto = await servicio.CalcularPedido("1", 927000);
+
+            Assert.AreEqual(new DateTime(2026, 10, 15), dto.FechaEntregaAgencia, "Se supone que llega el miércoles 14 y sale el jueves 15");
+            StringAssert.Contains(dto.Motivo, "puede retrasarse");
+            A.CallTo(() => avisador.Avisar("1", A<IEnumerable<ProveedorVencidoFechaEntregaAgencia>>.That.Matches(v => v.Single().Producto == "B"),
+                "el pedido 927000")).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task CalcularPlantilla_ProveedorConFechaVencida_DiceQueEsUnaPlantilla()
+        {
+            var avisador = A.Fake<IAvisadorProveedorVencido>();
+            servicio = new ServicioFechaEntregaAgencia(repositorio, () => AHORA, EsFestivo, registradas.Add, avisador);
+            A.CallTo(() => repositorio.LeerStock(A<string>._, A<int?>._, A<IEnumerable<string>>._)).Returns(ConPedidoAProveedor("B", new DateTime(2026, 10, 9)));
+            var pedido = new PedidoVentaDTO
+            {
+                empresa = "1",
+                cliente = "15191",
+                ruta = "FW",
+                modoServicio = 2,
+                Lineas = new List<LineaPedidoVentaDTO>
+                {
+                    new LineaPedidoVentaDTO { Producto = "B", almacen = "ALG", Cantidad = 1, PrecioUnitario = 10, tipoLinea = 1, estado = -1 }
+                }
+            };
+
+            _ = await servicio.CalcularPlantilla(pedido);
+
+            A.CallTo(() => avisador.Avisar("1", A<IEnumerable<ProveedorVencidoFechaEntregaAgencia>>._,
+                A<string>.That.Contains("cliente 15191"))).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task CalcularPedido_ProveedorConFechaFutura_NoAvisa()
+        {
+            var avisador = A.Fake<IAvisadorProveedorVencido>();
+            servicio = new ServicioFechaEntregaAgencia(repositorio, () => AHORA, EsFestivo, registradas.Add, avisador);
+            A.CallTo(() => repositorio.LeerPedido("1", 927000)).Returns(Task.FromResult(PedidoConB(1)));
+            A.CallTo(() => repositorio.LeerStock(A<string>._, A<int?>._, A<IEnumerable<string>>._)).Returns(ConPedidoAProveedor("B", new DateTime(2026, 10, 16)));
+
+            _ = await servicio.CalcularPedido("1", 927000);
+
+            A.CallTo(() => avisador.Avisar(A<string>._, A<IEnumerable<ProveedorVencidoFechaEntregaAgencia>>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task CalcularPedido_TodoJuntoYTodoAhoraConAlgoQueFalta_TraeElAviso()
+        {
+            PedidoFechaEntregaAgencia pedido = PedidoConB(1);
+            pedido.ModoFacturacion = Constantes.Pedidos.ModosFacturacion.TODO_AHORA_Y_LO_PENDIENTE_DESPUES;
+            A.CallTo(() => repositorio.LeerPedido("1", 927000)).Returns(Task.FromResult(pedido));
+
+            FechaEntregaAgenciaDTO dto = await servicio.CalcularPedido("1", 927000);
+
+            Assert.IsNull(dto.FechaEntregaAgencia);
+            StringAssert.Contains(dto.Aviso, "Con «Todo junto» el pedido no sale hasta que esté todo");
+            StringAssert.Contains(dto.Aviso, "martes 13/10");
+        }
+
+        [TestMethod]
+        public async Task CalcularPedido_SinNadaQueAvisar_AvisoNull()
+        {
+            A.CallTo(() => repositorio.LeerPedido("1", 927000)).Returns(Task.FromResult(Pedido()));
+
+            Assert.IsNull((await servicio.CalcularPedido("1", 927000)).Aviso);
+        }
+
+        private static ReposicionCalendario Fila(string origen, byte dia, string llegada) => new ReposicionCalendario
+        {
+            Empresa = "1",
+            AlmacenOrigen = origen,
+            AlmacenDestino = "ALG",
+            DiaSemana = dia,
+            HoraCierre = new TimeSpan(9, 0, 0),
+            HoraLlegadaHabitual = TimeSpan.Parse(llegada),
+            Activo = true
+        };
+
+        [TestMethod]
+        public void TiendasPorOrden_MismoDiaDeSalida_PrimeroLaQueLlegaAntes()
+        {
+            // Miércoles 14: las dos salen el jueves 15 (llegan después del corte), pero Alcobendas llega a las 12:00 y Reina a las 14:00.
+            var calendario = new List<ReposicionCalendario> { Fila("REI", 3, "14:00"), Fila("ALC", 3, "12:00") };
+
+            List<string> orden = ServicioFechaEntregaAgencia.TiendasPorOrden(new CalculadoraFechaReposicion(EsFestivo), calendario,
+                new TimeSpan(11, 0, 0), AHORA, "1");
+
+            CollectionAssert.AreEqual(new[] { "ALC", "REI" }, orden);
+        }
+
+        [TestMethod]
+        public void TiendasPorOrden_LaQueDejaSalirAntesVaPrimero_SinCalendarioLaUltima()
+        {
+            // Reina llega el miércoles a las 10:00 (antes del corte: sale el 14); Alcobendas no tiene calendario.
+            var calendario = new List<ReposicionCalendario> { Fila("REI", 3, "10:00") };
+
+            List<string> orden = ServicioFechaEntregaAgencia.TiendasPorOrden(new CalculadoraFechaReposicion(EsFestivo), calendario,
+                new TimeSpan(11, 0, 0), AHORA, "1");
+
+            CollectionAssert.AreEqual(new[] { "REI", "ALC" }, orden);
+        }
+
+        #endregion
 
         [TestMethod]
         public async Task GuardarPrometidaAlCrear_SiFallaAlLeer_NoLanza()

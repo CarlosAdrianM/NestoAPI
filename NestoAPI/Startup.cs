@@ -823,6 +823,20 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'senales-eventos' configurado (L-V a las 7:50)");
 
+            // NestoAPI#606 (decisión de Carlos, 08/10/26): correo a Compras con los pedidos a proveedor enviados, sin recibir y con
+            // la fecha prevista ya pasada, primero los que tienen clientes esperando. Se calcula al mandarlo: lo que ya han
+            // actualizado no sale. Sin nada vencido, no manda nada.
+            RecurringJob.AddOrUpdate(
+                "proveedores-fecha-vencida",
+                () => Infraestructure.PedidosCompra.ProveedoresVencidosJobsService.Procesar(),
+                Infraestructure.PedidosCompra.ProveedoresVencidosJobsService.CRON, // Cron: de lunes a viernes a las 8:00
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'proveedores-fecha-vencida' configurado (L-V a las 8:00)");
+
             // NestoAPI#603 (corte 5): aviso en la campana de Nesto a los vendedores de SugerenciasContactoAvisarA que en 7
             // días laborables no han atendido ninguna sugerencia de contacto, con los clientes que les esperan. Como mucho
             // uno por semana a cada uno; a quien usa la lista, nada. Se prueba antes con POST .../Recordar?soloListar=true.

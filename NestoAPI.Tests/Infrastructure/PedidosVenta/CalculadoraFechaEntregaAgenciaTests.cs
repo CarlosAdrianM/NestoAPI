@@ -553,12 +553,52 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
         }
 
         [TestMethod]
-        public void ProveedorConFechaPrevistaYaPasada_SinFecha()
+        public void ProveedorConFechaPrevistaVencida_SuponeQueLlegaMananaYSaleElLaborableSiguiente()
         {
+            // Decisión de Carlos (08/10): martes 13, prevista el viernes 09 y sin recibir → se supone que llega el miércoles 14
+            // y sale en el picking del jueves 15. Antes: sin fecha.
             ResultadoFechaEntregaAgencia resultado = Calcular("2026-10-13 10:30:00", 1, 1, LineaA(), BDelProveedor("2026-10-09"));
 
-            Assert.IsNull(resultado.EntregaCompleta);
-            StringAssert.Contains(resultado.Motivo, "pasada");
+            Assert.AreEqual(new DateTime(2026, 10, 15), resultado.PrimeraEntrega);
+            Assert.AreEqual(new DateTime(2026, 10, 15), resultado.EntregaCompleta);
+            StringAssert.Contains(resultado.Motivo, "fecha prevista del proveedor (09/10) ya pasó");
+            StringAssert.Contains(resultado.Motivo, "miércoles 14/10");
+            StringAssert.Contains(resultado.Motivo, "puede retrasarse");
+            Assert.AreEqual(1, resultado.ProveedorVencido.Count);
+            Assert.AreEqual("B", resultado.ProveedorVencido[0].Producto);
+            Assert.AreEqual(new DateTime(2026, 10, 9), resultado.ProveedorVencido[0].FechaPrevista);
+            Assert.AreEqual(new DateTime(2026, 10, 14), resultado.ProveedorVencido[0].LlegadaSupuesta);
+        }
+
+        [TestMethod]
+        public void ProveedorConFechaPrevistaVencida_ViernesAntesDeFestivo_SaltaLosDiasSinTrabajo()
+        {
+            // Viernes 09, prevista el miércoles 07: «mañana» es el martes 13 (lunes 12 festivo) y sale el miércoles 14.
+            ResultadoFechaEntregaAgencia resultado = Calcular("2026-10-09 10:30:00", 2, 1, LineaA(), BDelProveedor("2026-10-07"));
+
+            Assert.AreEqual(new DateTime(2026, 10, 9), resultado.PrimeraEntrega);
+            Assert.AreEqual(new DateTime(2026, 10, 14), resultado.EntregaCompleta);
+            Assert.AreEqual(new DateTime(2026, 10, 13), resultado.ProveedorVencido.Single().LlegadaSupuesta);
+        }
+
+        [TestMethod]
+        public void ProveedorConFechaPrevistaHoy_SaleElLaborableSiguiente_NoElMismoDia()
+        {
+            // Decisión de Carlos (08/10): LinPedidoCmp.FechaRecepción es solo fecha (sin hora), así que aunque llegue a primera
+            // hora no se sabe si es antes del corte: sale el laborable siguiente. Y hoy no está vencida: no se avisa.
+            ResultadoFechaEntregaAgencia resultado = Calcular("2026-10-13 08:00:00", 1, 1, LineaA(), BDelProveedor("2026-10-13"));
+
+            Assert.AreEqual(new DateTime(2026, 10, 14), resultado.EntregaCompleta);
+            Assert.AreEqual(0, resultado.ProveedorVencido.Count);
+            Assert.IsFalse(resultado.Motivo.Contains("ya pasó"), resultado.Motivo);
+        }
+
+        [TestMethod]
+        public void ProveedorConFechaFutura_NoEsVencido()
+        {
+            ResultadoFechaEntregaAgencia resultado = Calcular("2026-10-13 10:30:00", 1, 1, LineaA(), BDelProveedor("2026-10-16"));
+
+            Assert.AreEqual(0, resultado.ProveedorVencido.Count);
         }
 
         [TestMethod]
@@ -684,6 +724,125 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             ResultadoFechaEntregaAgencia resultado = Calcular("2026-10-13 10:30:00", 1, 3, LineaA(), BEnReina());
 
             StringAssert.Contains(resultado.Motivo, "nota de entrega");
+        }
+
+        #endregion
+
+        #region Aviso «Todo junto» + «todo ahora» (decisión de Carlos, 08/10)
+
+        [TestMethod]
+        public void Aviso_TodoJuntoYTodoAhoraConAlgoQueFalta_DiceCuandoSaldriaLaPrimeraParteConElModo4()
+        {
+            ResultadoFechaEntregaAgencia resultado = Calcular("2026-10-13 10:30:00", 1, 3, LineaA(), BEnReina());
+
+            Assert.IsNull(resultado.PrimeraEntrega);
+            Assert.IsNotNull(resultado.Aviso);
+            StringAssert.Contains(resultado.Aviso, "Con «Todo junto» el pedido no sale hasta que esté todo");
+            StringAssert.Contains(resultado.Aviso, "«" + Constantes.Pedidos.ModosServicio.Nombre(4) + "»");
+            StringAssert.Contains(resultado.Aviso, "la primera parte sale el martes 13/10");
+        }
+
+        [TestMethod]
+        public void Aviso_SinNadaQuePuedaSalir_TextoSinFecha()
+        {
+            ResultadoFechaEntregaAgencia resultado = Calcular("2026-10-13 10:30:00", 1, 3, BSinStock());
+
+            Assert.IsNotNull(resultado.Aviso);
+            Assert.IsFalse(resultado.Aviso.Contains("sale el"), resultado.Aviso);
+        }
+
+        [DataTestMethod]
+        [DataRow((byte)1, (byte)1)]
+        [DataRow((byte)1, (byte)2)]
+        [DataRow((byte)2, (byte)3)]
+        [DataRow((byte)3, (byte)3)]
+        [DataRow((byte)4, (byte)3)]
+        public void Aviso_OtrasCombinaciones_NoHay(byte servicio, byte facturacion)
+        {
+            ResultadoFechaEntregaAgencia resultado = Calcular("2026-10-13 10:30:00", servicio, facturacion, LineaA(), BEnReina());
+
+            Assert.IsNull(resultado.Aviso);
+        }
+
+        [TestMethod]
+        public void Aviso_TodoJuntoYTodoAhoraConTodoEnAlgete_NoHay()
+        {
+            ResultadoFechaEntregaAgencia resultado = Calcular("2026-10-13 10:30:00", 1, 3, LineaA(), BEnAlgete());
+
+            Assert.IsNull(resultado.Aviso);
+        }
+
+        #endregion
+
+        #region Hora de llegada de cada reposición (decisión de Carlos, 08/10)
+
+        private static ReposicionCalendario FilaConLlegada(string origen, byte dia, string llegada)
+        {
+            ReposicionCalendario fila = Fila(origen, dia);
+            fila.HoraLlegadaHabitual = TimeSpan.Parse(llegada, CultureInfo.InvariantCulture);
+            return fila;
+        }
+
+        private static ResultadoFechaEntregaAgencia CalcularConCalendario(string ahora, byte servicio, List<ReposicionCalendario> calendario,
+            params LineaFechaEntregaAgencia[] lineas)
+        {
+            return new CalculadoraFechaEntregaAgencia(EsFestivo).Calcular(new EntradaFechaEntregaAgencia
+            {
+                Lineas = lineas.ToList(),
+                ModoServicio = servicio,
+                ModoFacturacion = 1,
+                Ruta = "FW",
+                Ahora = Instante(ahora),
+                HoraCorte = new TimeSpan(11, 0, 0),
+                Calendario = calendario
+            });
+        }
+
+        [TestMethod]
+        public void ReposicionQueLlegaAAlgeteAntesDelCorte_SaleEseMismoDia()
+        {
+            // Reina → Algete el miércoles 14 llega a las 10:30, antes del picking de las 11:00: sale el miércoles 14.
+            var calendario = new List<ReposicionCalendario> { FilaConLlegada("REI", 3, "10:30") };
+
+            ResultadoFechaEntregaAgencia resultado = CalcularConCalendario("2026-10-13 10:30:00", 1, calendario, LineaA(), BEnReina());
+
+            Assert.AreEqual(new DateTime(2026, 10, 14), resultado.EntregaCompleta);
+        }
+
+        [TestMethod]
+        public void ReposicionQueLlegaJustoALaHoraDelCorte_SaleElLaborableSiguiente()
+        {
+            var calendario = new List<ReposicionCalendario> { FilaConLlegada("REI", 3, "11:00") };
+
+            ResultadoFechaEntregaAgencia resultado = CalcularConCalendario("2026-10-13 10:30:00", 1, calendario, LineaA(), BEnReina());
+
+            Assert.AreEqual(new DateTime(2026, 10, 15), resultado.EntregaCompleta);
+        }
+
+        [TestMethod]
+        public void LaMismaTiendaConHorasDeLlegadaDistintasSegunElDia_UsaLaDeLaFilaQueToca()
+        {
+            // Reina: miércoles llega a las 13:30 (después del corte) y viernes a las 9:30 (antes). Jueves 15: la próxima es la
+            // del viernes 16, que llega antes del corte → sale el viernes 16.
+            var calendario = new List<ReposicionCalendario> { FilaConLlegada("REI", 3, "13:30"), FilaConLlegada("REI", 5, "09:30") };
+
+            ResultadoFechaEntregaAgencia jueves = CalcularConCalendario("2026-10-15 10:30:00", 1, calendario, LineaA(), BEnReina());
+            ResultadoFechaEntregaAgencia martes = CalcularConCalendario("2026-10-13 10:30:00", 1, calendario, LineaA(), BEnReina());
+
+            Assert.AreEqual(new DateTime(2026, 10, 16), jueves.EntregaCompleta);
+            Assert.AreEqual(new DateTime(2026, 10, 15), martes.EntregaCompleta, "La del miércoles 14 llega a las 13:30: sale el jueves 15.");
+        }
+
+        [TestMethod]
+        public void DosTiendasConHorasDistintas_CadaUnaConLaSuya()
+        {
+            // Miércoles 14: Reina llega a las 10:00 (sale el 14) y Alcobendas a las 12:00 (sale el jueves 15).
+            var calendario = new List<ReposicionCalendario> { FilaConLlegada("REI", 3, "10:00"), FilaConLlegada("ALC", 3, "12:00") };
+            var c = new LineaFechaEntregaAgencia { Producto = "C", Cantidad = 1, BaseImponible = 5, EnTiendas = new Dictionary<string, int> { { "ALC", 1 } } };
+
+            ResultadoFechaEntregaAgencia resultado = CalcularConCalendario("2026-10-13 10:30:00", 2, calendario, LineaA(), BEnReina(), c);
+
+            CollectionAssert.AreEqual(new[] { new DateTime(2026, 10, 13), new DateTime(2026, 10, 14), new DateTime(2026, 10, 15) }, resultado.Entregas);
         }
 
         #endregion

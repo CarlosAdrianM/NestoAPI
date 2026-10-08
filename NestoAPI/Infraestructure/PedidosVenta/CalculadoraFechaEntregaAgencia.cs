@@ -71,6 +71,25 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         public DateTime? FechaQueAplica => AplicaCompleta ? EntregaCompleta : PrimeraEntrega;
         /// <summary>Por qué, en castellano, para el tooltip.</summary>
         public string Motivo { get; set; }
+        /// <summary>
+        /// NestoAPI#606 (08/10): aviso para la plantilla cuando la combinación de modos deja el pedido sin salir («Todo junto» +
+        /// «todo ahora» con algo que falta), con la alternativa. Null si no hay nada que avisar.
+        /// </summary>
+        public string Aviso { get; set; }
+        /// <summary>
+        /// NestoAPI#606 (08/10): productos cuyo pedido al proveedor tiene la fecha prevista VENCIDA (ya pasó y no ha llegado):
+        /// se ha supuesto que llegan el laborable siguiente a hoy. Quien llama avisa a Compras.
+        /// </summary>
+        public List<ProveedorVencidoFechaEntregaAgencia> ProveedorVencido { get; set; } = new List<ProveedorVencidoFechaEntregaAgencia>();
+    }
+
+    /// <summary>NestoAPI#606 (08/10): un producto que espera un pedido a proveedor con la fecha prevista ya pasada.</summary>
+    public class ProveedorVencidoFechaEntregaAgencia
+    {
+        public string Producto { get; set; }
+        public DateTime FechaPrevista { get; set; }
+        /// <summary>El día que se ha supuesto que llega (el laborable siguiente a hoy).</summary>
+        public DateTime LlegadaSupuesta { get; set; }
     }
 
     /// <summary>
@@ -82,9 +101,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
     /// portes, festivos de Algete, su fecha de entrega si es futura). Antes de ese día la línea no está en el picking
     /// (<c>BorrarLineasEntregaFutura</c>).</item>
     /// <item>Cuándo está cada unidad en Algete: libres → ya; en una tienda → el día en que sale el pedido que espera la
-    /// próxima reposición de esa tienda (<see cref="CalculadoraFechaReposicion"/>); en camino desde una tienda → el
-    /// laborable siguiente a hoy; del proveedor → el laborable siguiente a su fecha prevista (fecha ya pasada = sin fecha);
-    /// el resto, sin fecha.</item>
+    /// próxima reposición de esa tienda (<see cref="CalculadoraFechaReposicion"/>: sale ese mismo día si la fila del
+    /// calendario llega a Algete ANTES de la hora de corte del picking, <see cref="HoraCortePicking"/>; si no, el laborable
+    /// siguiente); en camino desde una tienda → el laborable siguiente a hoy; del proveedor → el laborable siguiente a su
+    /// fecha prevista (la fecha no tiene hora); con la fecha prevista vencida, se supone que llega el laborable siguiente a
+    /// hoy y sale el laborable siguiente a ese (<see cref="ResultadoFechaEntregaAgencia.ProveedorVencido"/>); el resto, sin
+    /// fecha.</item>
     /// <item>Cada día: si la entrega (el laborable siguiente) cae en un día que el cliente cierra, no sale
     /// (<see cref="GestorDiasEnServir"/>). Modo 3: no sale mientras le quede algo por llegar de las tiendas
     /// (<see cref="GestorReposicionTiendas"/>). Exige tenerlo todo el modo 1, el 4 tras la primera entrega y cualquier
@@ -242,7 +264,50 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             resultado.PrimeraEntrega = entregas.Any() ? entregas.Min : (DateTime?)null;
             resultado.EntregaCompleta = entregas.Any() && lotes.All(l => l.Enviado) ? entregas.Max : (DateTime?)null;
             resultado.Motivo = Motivo(entrada, resultado, lotes, avisos, esperoTiendas, esperoRegalos, fueANota, todoANota, diasCerrados);
+            resultado.ProveedorVencido = lotes
+                .Where(l => l.LlegadaSupuesta.HasValue && l.FechaProveedor.HasValue)
+                .GroupBy(l => l.Producto, StringComparer.OrdinalIgnoreCase)
+                .Select(g => new ProveedorVencidoFechaEntregaAgencia
+                {
+                    Producto = g.Key,
+                    FechaPrevista = g.Min(l => l.FechaProveedor.Value),
+                    LlegadaSupuesta = g.Min(l => l.LlegadaSupuesta.Value)
+                })
+                .ToList();
+            if (todoANota && servicio == Constantes.Pedidos.ModosServicio.TODO_JUNTO)
+            {
+                resultado.Aviso = AvisoTodoJuntoYTodoAhora(entrada);
+            }
             return resultado;
+        }
+
+        /// <summary>
+        /// NestoAPI#606 (08/10): con «Todo junto» y «todo ahora», si falta algo no sale nada (todo pasa a la nota de entrega, que
+        /// nace sin fecha). Se calcula la alternativa con «Ahora lo que hay, el resto de una vez» (misma facturación) para
+        /// decirle al usuario cuándo saldría la primera parte. Barato: el mismo cálculo sin BD.
+        /// </summary>
+        private string AvisoTodoJuntoYTodoAhora(EntradaFechaEntregaAgencia entrada)
+        {
+            const byte alternativo = Constantes.Pedidos.ModosServicio.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ;
+            string inicio = $"Con «{Constantes.Pedidos.ModosServicio.Nombre(Constantes.Pedidos.ModosServicio.TODO_JUNTO)}» el pedido no sale " +
+                "hasta que esté todo";
+            ResultadoFechaEntregaAgencia otro = Calcular(new EntradaFechaEntregaAgencia
+            {
+                Empresa = entrada.Empresa,
+                Lineas = entrada.Lineas,
+                ModoServicio = alternativo,
+                ModoFacturacion = entrada.ModoFacturacion,
+                Ruta = entrada.Ruta,
+                DiasEnServir = entrada.DiasEnServir,
+                TieneLineasServidas = entrada.TieneLineasServidas,
+                Ahora = entrada.Ahora,
+                HoraCorte = entrada.HoraCorte,
+                Calendario = entrada.Calendario
+            });
+            string nombre = Constantes.Pedidos.ModosServicio.Nombre(alternativo);
+            return otro.PrimeraEntrega.HasValue
+                ? $"{inicio}; si eliges «{nombre}», la primera parte sale el {Dia(otro.PrimeraEntrega.Value)}."
+                : $"{inicio}; si eliges «{nombre}», sale una primera parte en cuanto haya algo (ahora mismo no hay nada que pueda salir).";
         }
 
         private static bool EstaEnAlgete(Lote lote, DateTime dia) => lote.Disponible.HasValue && lote.Disponible.Value <= dia;
@@ -327,15 +392,27 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     DateTime? prevista = linea.FechaProveedor?.Date;
                     if (prevista.HasValue && prevista.Value >= hoy)
                     {
+                        // Decisión de Carlos (08/10): LinPedidoCmp.FechaRecepción es solo FECHA (sin hora), así que lo que
+                        // llega del proveedor el día F sale en el picking del laborable SIGUIENTE a F, nunca el mismo F
+                        // (no sabemos si llega antes de la hora de corte).
                         Lote lote = Nuevo(proveedor, SiguienteLaborable(prevista.Value), ORIGEN_PROVEEDOR);
                         lote.FechaProveedor = prevista;
                         lotes.Add(lote);
                     }
+                    else if (prevista.HasValue)
+                    {
+                        // Decisión de Carlos (08/10): fecha prevista VENCIDA (ya pasó y no ha llegado) → se supone que llega
+                        // mañana (el laborable siguiente a hoy) y sale en el picking del laborable siguiente a ese. El motivo
+                        // lo advierte y quien llama avisa a Compras.
+                        DateTime llegada = SiguienteLaborable(hoy);
+                        Lote lote = Nuevo(proveedor, SiguienteLaborable(llegada), ORIGEN_PROVEEDOR);
+                        lote.FechaProveedor = prevista;
+                        lote.LlegadaSupuesta = llegada;
+                        lotes.Add(lote);
+                    }
                     else
                     {
-                        lotes.Add(Nuevo(proveedor, null, ORIGEN_PROVEEDOR, sinFecha: prevista.HasValue
-                            ? $"el pedido al proveedor tenía fecha prevista el {prevista.Value.ToString("dd/MM", castellano)}, ya pasada"
-                            : "el pedido al proveedor no tiene fecha prevista"));
+                        lotes.Add(Nuevo(proveedor, null, ORIGEN_PROVEEDOR, sinFecha: "el pedido al proveedor no tiene fecha prevista"));
                     }
                 }
                 if (resto > 0)
@@ -398,8 +475,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             }
             // Una frase por producto, origen y día (dos líneas del mismo producto no repiten frase).
             var grupos = lotes.Where(l => l.Origen != ORIGEN_ALGETE && l.Origen != ORIGEN_PICKING)
-                .GroupBy(l => new { l.Origen, l.Producto, l.Tienda, l.Disponible, l.FechaProveedor, l.MotivoSinFecha })
-                .Select(g => new { g.Key.Origen, g.Key.Producto, g.Key.Tienda, g.Key.Disponible, g.Key.FechaProveedor, g.Key.MotivoSinFecha, Unidades = g.Sum(l => l.Unidades) })
+                .GroupBy(l => new { l.Origen, l.Producto, l.Tienda, l.Disponible, l.FechaProveedor, l.LlegadaSupuesta, l.MotivoSinFecha })
+                .Select(g => new { g.Key.Origen, g.Key.Producto, g.Key.Tienda, g.Key.Disponible, g.Key.FechaProveedor, g.Key.LlegadaSupuesta, g.Key.MotivoSinFecha, Unidades = g.Sum(l => l.Unidades) })
                 .ToList();
             foreach (var g in grupos.Where(g => g.Disponible.HasValue))
             {
@@ -412,6 +489,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         break;
                     case ORIGEN_EN_CAMINO:
                         frases.Add($"{cuantas} ya viene{n} de camino desde una tienda: puede{n} salir el {Dia(g.Disponible.Value)}.");
+                        break;
+                    case ORIGEN_PROVEEDOR when g.LlegadaSupuesta.HasValue:
+                        frases.Add($"{cuantas} del proveedor: la fecha prevista del proveedor ({g.FechaProveedor.Value.ToString("dd/MM", castellano)}) " +
+                            $"ya pasó y no ha llegado; suponemos que llega{n} el {Dia(g.LlegadaSupuesta.Value)} y puede{n} salir el {Dia(g.Disponible.Value)}, " +
+                            "pero puede retrasarse.");
                         break;
                     case ORIGEN_PROVEEDOR:
                         frases.Add($"{cuantas} del proveedor (prevista el {g.FechaProveedor.Value.ToString("dd/MM", castellano)}): puede{n} salir el {Dia(g.Disponible.Value)}.");
@@ -517,6 +599,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             public bool EsRegalo { get; set; }
             public bool YaEnPicking { get; set; }
             public DateTime? FechaProveedor { get; set; }
+            /// <summary>Solo si la fecha prevista del proveedor está vencida: el día que se supone que llega.</summary>
+            public DateTime? LlegadaSupuesta { get; set; }
             public string MotivoSinFecha { get; set; }
             public bool Enviado { get; set; }
             /// <summary>Facturado «todo ahora» y pasado a la nota de entrega sin fecha.</summary>

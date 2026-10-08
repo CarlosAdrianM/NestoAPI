@@ -25,6 +25,12 @@ namespace NestoAPI.Models.PedidosVenta
         /// <summary>La fecha que se dio al crear el pedido (CabPedidoVta.FechaEntregaAgenciaPrometida). Null en la plantilla,
         /// en los pedidos anteriores a la columna y en los que nacieron sin fecha.</summary>
         public DateTime? FechaPrometida { get; set; }
+        /// <summary>
+        /// NestoAPI#606 (08/10): aviso para la plantilla, null si no hay. Hoy solo con «Todo junto» + «Todo ahora, lo pendiente se
+        /// entrega después» y algo que falta (el pedido no sale: todo va a una nota de entrega sin fecha), con la alternativa:
+        /// «Con «Todo junto» el pedido no sale hasta que esté todo; si eliges «…», la primera parte sale el jueves 15/10.»
+        /// </summary>
+        public string Aviso { get; set; }
 
         public const string APLICA_PRIMERA = "Primera";
         public const string APLICA_COMPLETA = "Completa";
