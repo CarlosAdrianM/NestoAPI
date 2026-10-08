@@ -128,6 +128,13 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         }
 
         /// <summary>
+        /// NestoAPI#606 (decisión de Carlos, 08/10): tras guardar el PUT, ¿hay que escribir la fecha de entrega a la agencia
+        /// prometida? Solo al ACEPTAR un presupuesto (pasa a pedido y «nace» ahora); el resto de modificaciones no la tocan,
+        /// y pasar a presupuesto tampoco (no va al picking). Si ya tenía, no se pisa (el UPDATE lleva IS NULL).
+        /// </summary>
+        public static bool TocaGuardarFechaEntregaAgenciaPrometida(Decision decision) => decision?.EsAceptarPresupuesto == true;
+
+        /// <summary>
         /// NestoAPI#503: estado con el que debe nacer una línea NUEVA en el PUT, para que no pueda
         /// mezclarse presupuesto con pedido:
         /// <list type="bullet">

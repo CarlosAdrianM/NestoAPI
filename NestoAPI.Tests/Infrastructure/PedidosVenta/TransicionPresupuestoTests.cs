@@ -410,6 +410,36 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             Assert.IsFalse(TransicionPresupuesto.HayMezclaPresupuesto(null));
         }
 
+        // ----- NestoAPI#606: fecha de entrega a la agencia prometida al aceptar un presupuesto -----
+
+        [TestMethod]
+        public void TocaGuardarFechaEntregaAgenciaPrometida_AlAceptarUnPresupuesto_Si()
+        {
+            var lineasBD = new List<LinPedidoVta> { LineaBD(1, Constantes.EstadosLineaVenta.PRESUPUESTO, picking: 0) };
+            var dto = DtoConLineasYEsPresupuesto(false, LineaDto(1, Constantes.EstadosLineaVenta.PENDIENTE));
+
+            Assert.IsTrue(TransicionPresupuesto.TocaGuardarFechaEntregaAgenciaPrometida(TransicionPresupuesto.Decidir(lineasBD, dto)));
+        }
+
+        [TestMethod]
+        public void TocaGuardarFechaEntregaAgenciaPrometida_AlPasarAPresupuesto_No()
+        {
+            var lineasBD = new List<LinPedidoVta> { LineaBD(1, Constantes.EstadosLineaVenta.PENDIENTE, picking: 0) };
+            var dto = DtoConLineas(LineaDto(1, Constantes.EstadosLineaVenta.PRESUPUESTO));
+
+            Assert.IsFalse(TransicionPresupuesto.TocaGuardarFechaEntregaAgenciaPrometida(TransicionPresupuesto.Decidir(lineasBD, dto)));
+        }
+
+        [TestMethod]
+        public void TocaGuardarFechaEntregaAgenciaPrometida_ModificarUnPedidoNormal_No()
+        {
+            var lineasBD = new List<LinPedidoVta> { LineaBD(1, Constantes.EstadosLineaVenta.PENDIENTE, picking: 0) };
+            var dto = DtoConLineas(LineaDto(1, Constantes.EstadosLineaVenta.PENDIENTE));
+
+            Assert.IsFalse(TransicionPresupuesto.TocaGuardarFechaEntregaAgenciaPrometida(TransicionPresupuesto.Decidir(lineasBD, dto)));
+            Assert.IsFalse(TransicionPresupuesto.TocaGuardarFechaEntregaAgenciaPrometida(null));
+        }
+
         // ----- helpers -----
 
         private static LinPedidoVta LineaBD(int numeroOrden, short estado, int picking)

@@ -1730,6 +1730,14 @@ namespace NestoAPI.Controllers
                 throw new HttpResponseException(Request.CreateErrorResponse(HttpStatusCode.NotAcceptable, message));
             }
 
+            // NestoAPI#606 (decisión de Carlos, 08/10): un presupuesto que se convierte en pedido «nace» ahora como pedido: se le
+            // da la fecha de entrega a la agencia prometida como al crearlo (solo si aún no tiene: el UPDATE lleva IS NULL).
+            // Nunca lanza.
+            if (TransicionPresupuesto.TocaGuardarFechaEntregaAgenciaPrometida(transicion))
+            {
+                _ = await ServicioFechaEntregaAgencia.GuardarPrometidaAlCrear(pedido.empresa, pedido.numero);
+            }
+
             // Carlos 02/12/25: Red de seguridad - cargar ParametrosIva si no viene para que el correo muestre IVA correcto (Issue #46)
             if (pedido.iva != null && (pedido.ParametrosIva == null || !pedido.ParametrosIva.Any()))
             {
