@@ -2292,6 +2292,15 @@ namespace NestoAPI.Controllers
                     $"tras crear el pedido {pedido.numero}: {exNif.Message}", exNif));
             }
 
+            // NestoAPI#606: la fecha de entrega a la agencia que se le da al usuario al crear el pedido, para medir después si
+            // acertamos (frente a la del albarán). Se escribe UNA vez y no se toca más. Todos los caminos de creación pasan
+            // por aquí (Nesto, NestoApp y TiendasNuevaVision vía PedidosClienteController). Los presupuestos no: no van al
+            // picking. Nunca lanza: si falla (o la columna aún no existe), el pedido se crea igual.
+            if (!pedido.EsPresupuesto)
+            {
+                _ = await ServicioFechaEntregaAgencia.GuardarPrometidaAlCrear(pedido.empresa, pedido.numero);
+            }
+
             // NestoAPI#563: sombra del sugeridor por causas con el pedido recién creado (en segundo plano; apagada salvo
             // parámetro; nunca cambia la respuesta ni la retrasa). Excluye sus propias líneas de los pendientes.
             SombraModoServicio.Registrar(SombraModoServicio.ORIGEN_CREAR, pedido, pedido.modoServicio);
