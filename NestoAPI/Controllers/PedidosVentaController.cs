@@ -599,6 +599,44 @@ namespace NestoAPI.Controllers
             return error == null ? (IHttpActionResult)Ok() : BadRequest(error);
         }
 
+        /// <summary>NestoAPI#606: el servicio de la fecha de entrega a la agencia. Sustituible en los tests.</summary>
+        internal IServicioFechaEntregaAgencia ServicioFechaEntregaAgencia
+        {
+            get => servicioFechaEntregaAgencia ?? (servicioFechaEntregaAgencia = new ServicioFechaEntregaAgencia(db));
+            set => servicioFechaEntregaAgencia = value;
+        }
+        private IServicioFechaEntregaAgencia servicioFechaEntregaAgencia;
+
+        /// <summary>
+        /// NestoAPI#606: qué día entregamos el pedido a la agencia (primera entrega y entrega completa), calculado ahora con el
+        /// stock, las reposiciones, los modos y el corte del picking, y la fecha que se prometió al crearlo. Detalle del pedido.
+        /// </summary>
+        [HttpGet]
+        [Route("api/PedidosVenta/{empresa}/{numero:int}/FechaEntregaAgencia")]
+        [ResponseType(typeof(FechaEntregaAgenciaDTO))]
+        public async Task<IHttpActionResult> GetFechaEntregaAgencia(string empresa, int numero)
+        {
+            FechaEntregaAgenciaDTO fecha = await ServicioFechaEntregaAgencia.CalcularPedido(empresa, numero).ConfigureAwait(false);
+            return fecha == null ? (IHttpActionResult)NotFound() : Ok(fecha);
+        }
+
+        /// <summary>
+        /// NestoAPI#606: lo mismo para la plantilla, sin pedido creado: recibe el pedido que se está montando (líneas, ruta,
+        /// cliente/contacto para sus días de servir, modo de servicio y de facturación). Si trae número (modificar un pedido
+        /// desde la plantilla), sus líneas grabadas no cuentan como pendientes de otros.
+        /// </summary>
+        [HttpPost]
+        [Route("api/PedidosVenta/FechaEntregaAgencia")]
+        [ResponseType(typeof(FechaEntregaAgenciaDTO))]
+        public async Task<IHttpActionResult> PostFechaEntregaAgencia([FromBody] PedidoVentaDTO pedido)
+        {
+            if (pedido == null)
+            {
+                return BadRequest("Falta el pedido.");
+            }
+            return Ok(await ServicioFechaEntregaAgencia.CalcularPlantilla(pedido).ConfigureAwait(false));
+        }
+
         [HttpPost]
         [Route("api/PedidosVenta/{empresa}/{numero:int}/CambiarCliente")]
         [ResponseType(typeof(CambiarClientePedidoRespuesta))]

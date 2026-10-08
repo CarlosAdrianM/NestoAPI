@@ -879,6 +879,8 @@
     <Compile Include="Infraestructure\PedidosVenta\ClasificadorCausasModoServicio.cs" />
     <Compile Include="Infraestructure\PedidosVenta\CalculadoraFechaEntregaAgencia.cs" />
     <Compile Include="Infraestructure\PedidosVenta\RepartidorStockFechaEntregaAgencia.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\RepositorioFechaEntregaAgencia.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\ServicioFechaEntregaAgencia.cs" />
     <Compile Include="Infraestructure\PedidosVenta\SombraModoServicio.cs" />
     <Compile Include="Infraestructure\PedidosVenta\RepositorioSombraModoServicioSql.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ModosFacturacionPermitidos.cs" />
@@ -1592,6 +1594,7 @@
     <Compile Include="Models\PedidosVenta\SerieDTO.cs" />
     <Compile Include="Models\PedidosVenta\CambiarClientePedidoDTO.cs" />
     <Compile Include="Models\PedidosVenta\EfectoPedidoVentaDTO.cs" />
+    <Compile Include="Models\PedidosVenta\FechaEntregaAgenciaDTO.cs" />
     <Compile Include="Models\PedidosVenta\ResumenPedidoVentaCanalExternoDTO.cs" />
     <Compile Include="Models\CanalesExternos\AmazonSpApiCredencial.cs" />
     <Compile Include="Models\CanalesExternos\AmazonFacturaSubida.cs" />
