@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Reposiciones que se rellenan solas</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  body { font-family: "Segoe UI", Arial, sans-serif; font-size: 11.5pt; color: #1a1a1a; line-height: 1.45; }
+  h1 { font-size: 20pt; margin: 0 0 4px; color: #1f3a5f; }
+  .sub { color: #555; margin: 0 0 18px; font-size: 10.5pt; }
+  h2 { font-size: 14pt; color: #1f3a5f; border-bottom: 2px solid #1f3a5f; padding-bottom: 3px; margin: 22px 0 8px; }
+  h3 { font-size: 12pt; margin: 14px 0 4px; color: #333; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0 10px; font-size: 10.5pt; }
+  th, td { border: 1px solid #bbb; padding: 5px 7px; text-align: left; vertical-align: top; }
+  th { background: #e8eef6; }
+  .box { background: #f4f7fb; border-left: 4px solid #1f3a5f; padding: 8px 12px; margin: 10px 0; }
+  .ojo { background: #fff7e6; border-left: 4px solid #e08a00; padding: 8px 12px; margin: 10px 0; }
+  ol li, ul li { margin: 3px 0; }
+  kbd { font-family: Consolas, monospace; background: #eee; border: 1px solid #ccc; border-radius: 3px; padding: 0 4px; font-size: 10pt; }
+  .pie { color: #777; font-size: 9.5pt; margin-top: 26px; border-top: 1px solid #ccc; padding-top: 6px; }
+</style>
+</head>
+<body>
+<h1>Reposiciones que se rellenan solas</h1>
+<p class="sub">Guía para las tiendas (Nesto) y el almacén (Ariadna) · Nesto 1.10.39.0 y Ariadna 2.3 · octubre de 2026</p>
+
+<div class="box">
+<b>Qué cambia.</b> Hasta ahora alguien tenía que calcular la propuesta de cada reposición y rellenarla. Desde esta versión, <b>cada reposición del calendario se rellena sola a su hora de corte</b>, con lo que hace falta en ese momento. Tiendas y almacén solo tienen que <b>prepararla, mandarla y recibirla</b>. Rellenar una a mano queda reservado a Manuel, Alfredo y Carlos.
+</div>
+
+<h2>1. El calendario</h2>
+<table>
+<tr><th>Reposición</th><th>Días</th><th>Se rellena sola</th><th>Llega</th></tr>
+<tr><td>Reina → Algete</td><td>Lunes, miércoles y viernes</td><td>A las 10:00 del mismo día</td><td>A Algete a las 13:30</td></tr>
+<tr><td>Alcobendas → Algete</td><td>De lunes a viernes</td><td>A las 10:00 del mismo día</td><td>A Algete a las 13:30</td></tr>
+<tr><td>Algete → Reina</td><td>Lunes, miércoles y viernes</td><td>A las 13:00 del día laborable anterior (la del lunes, el viernes)</td><td>A Reina sobre las 11:00</td></tr>
+<tr><td>Algete → Alcobendas</td><td>Lunes, martes y jueves</td><td>A las 13:00 del día laborable anterior (la del lunes, el viernes)</td><td>A Alcobendas a las 10:00</td></tr>
+</table>
+<p>Si el día en que toca rellenarla es festivo en Algete, se rellena el laborable anterior. Lo que llega a Algete de las tiendas <b>antes de las 11:00</b> sale en el picking de ese mismo día; lo que llega después, al día siguiente.</p>
+
+<h2>2. En las tiendas, con Nesto</h2>
+
+<h3>Mandar producto a Algete: «Enviar reposición»</h3>
+<ol>
+<li>A las 10:00 la reposición del día aparece <b>ya rellena y en preparación</b>. Si entras antes, la pantalla dice <i>«Se rellena sola el lunes a las 10:00»</i>: no hay nada que hacer todavía.</li>
+<li>Ve leyendo con el lector los productos que metes en la caja. Cada lectura suma una unidad; si un producto no tiene código, teclea su referencia en el cuadro «Lector» y pulsa <kbd>Intro</kbd>, o escribe directamente la cantidad en la columna «Leído».</li>
+<li>Cuando esté todo, pulsa <b>«Terminar y mandar a Algete»</b>. Nesto resume cuántas unidades y productos van y pide confirmar.</li>
+</ol>
+<p>El botón <b>«Preparar reposición»</b> solo lo ven Manuel, Alfredo y Carlos: es para rellenar una a mano fuera de hora. Si la reposición del día ya está rellena, Nesto lo avisa y no crea otra.</p>
+
+<h3>Recibir lo que llega de Algete: «Recibir reposición»</h3>
+<ol>
+<li>Abre la reposición que ha llegado (Reina: lunes, miércoles y viernes sobre las 11:00; Alcobendas: lunes, martes y jueves a las 10:00).</li>
+<li>Lee los productos con el lector. Vale <b>cualquiera de los códigos de barras</b> del producto, no solo el de la ficha.</li>
+<li>Si un producto no entra por el lector, escribe su nombre en el cuadro «Lector» y elígelo en la lista: cuenta como una lectura. Con el cuadro <b>«Buscar»</b> filtras la lista por nombre o referencia para escribir la cantidad en «Leído».</li>
+<li>La columna de estado va en colores: <b>verde</b> = bien, <b>ámbar</b> = faltan o sobran unidades, <b>rojo</b> = no venía en la reposición.</li>
+<li>Pulsa <b>«Terminar»</b>. Si hay diferencias, Nesto las enseña antes de cerrar.</li>
+</ol>
+
+<h2>3. En el almacén, con Ariadna</h2>
+
+<h3>Preparar lo que va a las tiendas: «Salidas»</h3>
+<ol>
+<li>La reposición a Reina o a Alcobendas aparece en Salidas <b>ya rellena</b> el día laborable anterior a las 13:00 (la del lunes, el viernes a las 13:00), con sus huecos reservados, como un picking más.</li>
+<li>Recógela por el recorrido, leyendo cada producto en su hueco, y termínala como cualquier salida.</li>
+</ol>
+<p><kbd>F7</kbd> y <kbd>F8</kbd> (<i>reponer tienda</i>) abren «Reposición a tienda» para rellenar una a mano, y solo las tienen Manuel, Alfredo y Carlos. Para el resto, Salidas lo dice así: <i>«Las reposiciones se rellenan solas a su hora; aparecerán aquí ya preparadas para recoger»</i>.</p>
+
+<h3>Recibir lo que llega de las tiendas: «Entradas»</h3>
+<ol>
+<li>Hacia las 13:30 llega lo que han mandado Reina y Alcobendas. La reposición está en Entradas con lo que la tienda ha leído al mandarla.</li>
+<li>Lee los productos según los sacas de la caja y termina la entrada. Si falta o sobra algo, Ariadna lo marca.</li>
+<li>Lo recibido queda disponible para el picking: si ha entrado antes de las 11:00 sale ese mismo día.</li>
+</ol>
+
+<h2>4. Preguntas frecuentes</h2>
+<ul>
+<li><b>Son las 10:05 y en Enviar reposición no hay nada.</b> Mira si es un día de ruta de tu tienda (tabla de arriba). Si lo es y sigue vacía pasados unos minutos, avísanos desde Novedades → «Algo no funciona».</li>
+<li><b>Tenemos una reposición sin recibir y toca otra.</b> Ya no bloquea: la nueva se rellena igual y lo que está de camino no se vuelve a proponer.</li>
+<li><b>Hay que mandar algo urgente fuera de hora.</b> Pídeselo a Manuel, Alfredo o Carlos: son quienes pueden rellenar una reposición a mano.</li>
+<li><b>¿Cuándo le llega al cliente lo que está en una tienda?</b> La plantilla de venta lo calcula sola con este calendario y lo enseña como «Se entrega a la agencia el …».</li>
+</ul>
+
+<p class="pie">Nueva Visión · Guía de reposiciones automáticas · Si algo de esta guía no coincide con lo que ves en pantalla, dínoslo en Novedades.</p>
+</body>
+</html>
