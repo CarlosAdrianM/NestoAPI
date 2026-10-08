@@ -27,5 +27,6 @@ namespace NestoAPI.Models
         public Nullable<System.DateTime> FechaPreparada { get; set; }
         public string UsuarioRecepcion { get; set; }
         public Nullable<System.DateTime> FechaRecibida { get; set; }
+        public string Omitida { get; set; }
     }
 }

@@ -530,6 +530,23 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
     // Servicio
     // ------------------------------------------------------------------------------------------------------------------
 
+    /// <summary>NestoAPI#577 (corte 3b): el origen ya tiene una reposición en preparación (409). El job la distingue de un fallo.</summary>
+    public class ReposicionYaEnPreparacionException : NestoBusinessException
+    {
+        public ReposicionYaEnPreparacionException(string mensaje) : base(mensaje)
+        {
+            StatusCode = HttpStatusCode.Conflict;
+        }
+    }
+
+    /// <summary>NestoAPI#577 (corte 3b): la propuesta no tiene nada que mandar (400). Para el job es un resultado normal.</summary>
+    public class ReposicionVaciaException : NestoBusinessException
+    {
+        public ReposicionVaciaException(string mensaje) : base(mensaje)
+        {
+        }
+    }
+
     public interface IServicioPreparacionReposicion
     {
         /// <summary>
@@ -660,14 +677,14 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
             if (existentes.Any())
             {
                 string destinoExistente = existentes.First().Almacen;
-                throw Conflicto($"Ya hay una reposición en preparación de {origen} a {destinoExistente} con {existentes.Count} líneas: " +
+                throw new ReposicionYaEnPreparacionException($"Ya hay una reposición en preparación de {origen} a {destinoExistente} con {existentes.Count} líneas: " +
                     "termínala antes de crear otra.");
             }
 
             List<LineaCrearReposicionDTO> lineas = await LineasACrear(peticion, empresa, origen, destino, corte).ConfigureAwait(false);
             if (!lineas.Any())
             {
-                throw new NestoBusinessException($"No hay nada que reponer de {origen} a {destino}.");
+                throw new ReposicionVaciaException($"No hay nada que reponer de {origen} a {destino}.");
             }
 
             DateTime fecha = peticion.Fecha ?? ahora().Date;

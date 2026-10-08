@@ -27,6 +27,7 @@ namespace NestoAPI.Controllers
         private readonly IServicioPreparacionReposicion preparacion;
         private readonly IServicioTransitoReposiciones transito;
         private readonly IServicioCalendarioReposiciones calendario;
+        private readonly IServicioReposicionAutomatica automatica;
 
         public ReposicionesController() : this(new NVEntities())
         {
@@ -37,15 +38,40 @@ namespace NestoAPI.Controllers
         }
 
         internal ReposicionesController(NVEntities db, IServicioPreparacionReposicion preparacion,
-            IServicioTransitoReposiciones transito = null, IServicioCalendarioReposiciones calendario = null)
+            IServicioTransitoReposiciones transito = null, IServicioCalendarioReposiciones calendario = null,
+            IServicioReposicionAutomatica automatica = null)
         {
             this.db = db;
             this.preparacion = preparacion;
             this.transito = transito; // null = el de la BD, creado al usarlo (los tests del resto no pasan db)
             this.calendario = calendario; // ídem
+            this.automatica = automatica; // ídem
         }
 
         private IServicioCalendarioReposiciones Calendario => calendario ?? new ServicioCalendarioReposiciones(db);
+
+        // POST api/Reposiciones/RellenarAutomatica?origen=REI&destino=ALG&empresa=1
+        /// <summary>
+        /// NestoAPI#577 (corte 3b): relanza a mano la reposición automática de hoy de una ruta, con el corte del calendario
+        /// (el último de hoy que ya ha pasado), como si fuera el job: Herramienta «Automatico», sin líneas (la propuesta con
+        /// el corte) y con el usuario de quien lo lanza. Solo Almacén, Dirección e Informática (403). 404 si hoy no toca esa
+        /// ruta; 409 si aún no ha llegado la hora de cierre, si ya está rellena o si el origen ya tiene una en preparación.
+        /// 200 con el resultado («Creada» o «Vacia») en los demás casos.
+        /// </summary>
+        [HttpPost]
+        [Route("RellenarAutomatica")]
+        [ResponseType(typeof(ResultadoReposicionAutomaticaDTO))]
+        public async Task<IHttpActionResult> PostRellenarAutomatica(string origen, string destino,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            if (!ServicioCalendarioReposiciones.PuedeMantener(User))
+            {
+                return Prohibido(new UnauthorizedAccessException(
+                    "Relanzar la reposición automática lo pueden hacer Almacén, Dirección e Informática."));
+            }
+            IServicioReposicionAutomatica servicio = automatica ?? new ServicioReposicionAutomatica(db);
+            return Ok(await servicio.RellenarRuta(empresa, origen, destino, User).ConfigureAwait(false));
+        }
 
         // GET api/Reposiciones/ProximaLlegada?origen=REI&destino=ALG&empresa=1
         /// <summary>

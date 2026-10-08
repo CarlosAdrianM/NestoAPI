@@ -114,7 +114,8 @@ IF OBJECT_ID('dbo.ReposicionesTraspasos') IS NOT NULL
     INSERT INTO dbo.ReposicionesTraspasos (Empresa, NumTraspaso, Origen, Destino, Herramienta, UsuarioCreacion, FechaCreacion, FechaCorte)
     VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7)";
 
-        // La abierta del origen y destino: sin número y sin preparar. Si hubiera varias (no debería: una por diario de salida;
+        // La abierta del origen y destino: sin número y sin preparar (y que no sea una marca del job sin reposición, corte 3b:
+        // Omitida con el motivo). Si hubiera varias (no debería: una por diario de salida;
         // las que terminó Nesto viejo se quedan abiertas), la más reciente, que es la de la preparación en curso.
         internal const string SQL_NUMERAR_ABIERTA = @"
 IF OBJECT_ID('dbo.ReposicionesTraspasos') IS NOT NULL
@@ -123,6 +124,7 @@ IF OBJECT_ID('dbo.ReposicionesTraspasos') IS NOT NULL
     WHERE r.Id = (SELECT TOP 1 a.Id FROM dbo.ReposicionesTraspasos a WITH (UPDLOCK, HOLDLOCK)
                   WHERE a.Empresa = @p0 AND a.Origen = @p1 AND a.Destino = @p2
                     AND a.NumTraspaso IS NULL AND a.FechaPreparada IS NULL
+                    AND a.Omitida IS NULL
                   ORDER BY a.FechaCreacion DESC, a.Id DESC)";
 
         internal const string SQL_MARCAR_PREPARADA = @"

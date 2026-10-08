@@ -30,8 +30,13 @@
     FechaCorte: el instante de corte con el que el job rellenó la reposición (día + HoraCierre del calendario). NULL si se
     hizo a mano.
 
+    Omitida (corte 3b): el job que rellena las reposiciones a la hora de corte apunta aquí también las veces que NO crea
+    ninguna (propuesta vacía, la tienda ya tenía una en preparación hecha a mano, otro motivo de negocio o fuera de plazo),
+    con el motivo en Omitida, NumTraspaso NULL, Herramienta 'Automatico' y su FechaCorte, para no reintentar ese corte cada
+    5 minutos. Esas filas no son la cabecera abierta de ninguna reposición (Terminar las ignora).
+
     ORDEN: independiente de los otros dos scripts del corte 3a. Mejor ANTES del deploy (la tabla está en el EDMX; sin ella
-    la API funciona pero no apunta nada). Idempotente.
+    la API funciona pero no apunta nada y el job de reposiciones automáticas no hace nada). Idempotente.
 
     Ejecutar en SSMS contra NV como sa (crea una tabla: el login nuevavision no tiene ALTER).
 
@@ -64,11 +69,17 @@ BEGIN
         FechaPreparada datetime NULL,
         UsuarioRecepcion varchar(30) NULL,              -- quien la recibió en el destino (Ariadna, Entradas)
         FechaRecibida datetime NULL,
+        Omitida varchar(300) NULL,                      -- corte 3b: marca del job SIN reposición (motivo); NULL en las de verdad
         CONSTRAINT PK_ReposicionesTraspasos PRIMARY KEY (Id),
         CONSTRAINT CK_ReposicionesTraspasos_Almacenes CHECK (Origen <> Destino),
         CONSTRAINT CK_ReposicionesTraspasos_Herramienta CHECK (Herramienta IN ('Nesto', 'Ariadna', 'Automatico'))
     );
 END
+GO
+
+-- Por si la tabla se hubiera creado con una versión anterior de este script (sin Omitida)
+IF COL_LENGTH('dbo.ReposicionesTraspasos', 'Omitida') IS NULL
+    ALTER TABLE dbo.ReposicionesTraspasos ADD Omitida varchar(300) NULL;
 GO
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID('dbo.ReposicionesTraspasos') AND name = 'UX_ReposicionesTraspasos_Traspaso')

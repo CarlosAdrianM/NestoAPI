@@ -376,7 +376,9 @@ namespace NestoAPI.Tests.Models
         {
             ComprobarTresCapas("ReposicionTraspaso", "ReposicionesTraspasos",
                 "Id", "Empresa", "NumTraspaso", "Origen", "Destino", "Herramienta", "UsuarioCreacion", "FechaCreacion", "FechaCorte",
-                "UsuarioPreparacion", "FechaPreparada", "UsuarioRecepcion", "FechaRecibida");
+                "UsuarioPreparacion", "FechaPreparada", "UsuarioRecepcion", "FechaRecibida",
+                // corte 3b: marca del job sin reposición
+                "Omitida");
 
             XElement conceptual = EntidadesPorNombre(LeerRecurso("csdl"), CsdlNs)["ReposicionTraspaso"];
             XElement almacen = EntidadesPorNombre(LeerRecurso("ssdl"), SsdlNs)["ReposicionesTraspasos"];

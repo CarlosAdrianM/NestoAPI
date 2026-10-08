@@ -1102,6 +1102,7 @@
           <Property Name="FechaPreparada" Type="datetime" />
           <Property Name="UsuarioRecepcion" Type="varchar" MaxLength="30" />
           <Property Name="FechaRecibida" Type="datetime" />
+          <Property Name="Omitida" Type="varchar" MaxLength="300" />
         </EntityType>
         <EntityType Name="FamiliasIncompatibles">
           <Key>
@@ -8845,6 +8846,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="FechaPreparada" Type="DateTime" Precision="3" />
           <Property Name="UsuarioRecepcion" Type="String" MaxLength="30" FixedLength="false" Unicode="false" />
           <Property Name="FechaRecibida" Type="DateTime" Precision="3" />
+          <Property Name="Omitida" Type="String" MaxLength="300" FixedLength="false" Unicode="false" />
         </EntityType>
         <EntityType Name="FamiliaIncompatibilidad">
           <Key>
@@ -16685,6 +16687,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
                 <ScalarProperty Name="FechaPreparada" ColumnName="FechaPreparada" />
                 <ScalarProperty Name="UsuarioRecepcion" ColumnName="UsuarioRecepcion" />
                 <ScalarProperty Name="FechaRecibida" ColumnName="FechaRecibida" />
+                <ScalarProperty Name="Omitida" ColumnName="Omitida" />
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>

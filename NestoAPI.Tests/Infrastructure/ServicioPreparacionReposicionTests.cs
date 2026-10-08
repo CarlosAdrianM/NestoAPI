@@ -179,11 +179,27 @@ namespace NestoAPI.Tests.Infrastructure
         {
             repositorio.Lineas.Add(Fila(561483000, "21116", 1));
 
-            NestoBusinessException error = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().Crear(Peticion(("41980", 5)), Paloma));
+            NestoBusinessException error = await Assert.ThrowsExceptionAsync<ReposicionYaEnPreparacionException>(() => Servicio().Crear(Peticion(("41980", 5)), Paloma));
 
             Assert.AreEqual(HttpStatusCode.Conflict, error.StatusCode);
             StringAssert.Contains(error.Message, "Ya hay una reposición en preparación de ALC a ALG");
             Assert.AreEqual(0, repositorio.Llamadas.Count);
+        }
+
+        [TestMethod]
+        public async Task Crear_PropuestaVacia_EsUnaReposicionVaciaSinEscribir()
+        {
+            // NestoAPI#577 (corte 3b): tipo propio para que el job distinga «nada que mandar» (normal) de un error
+            CrearReposicionDTO peticion = Peticion();
+            peticion.Lineas = null;
+
+            ReposicionVaciaException error = await Assert.ThrowsExceptionAsync<ReposicionVaciaException>(
+                () => Servicio().Crear(peticion, Paloma, new DateTime(2026, 10, 6, 10, 0, 0)));
+
+            Assert.AreEqual(HttpStatusCode.BadRequest, error.StatusCode);
+            StringAssert.Contains(error.Message, "No hay nada que reponer de ALC a ALG");
+            Assert.AreEqual(0, repositorio.Llamadas.Count);
+            CollectionAssert.AreEqual(new[] { "1|ALC|ALG|06/10/2026 10:00" }, propuestasPedidas, "La propuesta con el corte del job");
         }
 
         // ---------------------------------------------------------------- Crear desde Algete (control de ubicaciones)

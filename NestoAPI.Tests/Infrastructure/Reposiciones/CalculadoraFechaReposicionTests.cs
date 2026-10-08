@@ -250,5 +250,48 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
             Assert.IsNull(CalculadoraFechaReposicion.MasTardia(null));
             Assert.IsNull(CalculadoraFechaReposicion.MasTardia(Enumerable.Empty<ProximaReposicionDTO>()));
         }
+
+        // ---------------------------------------------------------------- NestoAPI#577 (corte 3b): los cortes de un día (job)
+
+        [TestMethod]
+        public void CortesDelDia_LasFilasActivasDeEseDiaDeLaSemana_ConElInstanteDeCorteYDeLlegada()
+        {
+            var calendario = new List<ReposicionCalendario>
+            {
+                Fila("REI", 1), Fila("ALC", 1, "09:30", "12:00"), Fila("ALC", 2), Fila("REI", 1, "16:00", "18:00", activo: false),
+                Fila("ALG", 1, destino: "REI")
+            };
+
+            List<CorteReposicion> cortes = calculadora.CortesDelDia(calendario, LUNES.AddHours(15));
+
+            Assert.AreEqual(3, cortes.Count);
+            CorteReposicion alc = cortes.Single(c => c.Origen == "ALC");
+            Assert.AreEqual("1", alc.Empresa);
+            Assert.AreEqual("ALG", alc.Destino);
+            Assert.AreEqual(LUNES.AddHours(9).AddMinutes(30), alc.Corte, "El corte es un DATO: el día + HoraCierre, no la hora a la que se mira");
+            Assert.AreEqual(LUNES.AddHours(12), alc.Llegada);
+            Assert.IsTrue(cortes.Any(c => c.Origen == "ALG" && c.Destino == "REI" && c.Corte == LUNES.AddHours(10)));
+        }
+
+        [TestMethod]
+        public void CortesDelDia_FestivoEnElOrigenOEnElDestino_NoHayRecogida()
+        {
+            var calendario = new List<ReposicionCalendario> { Fila("REI", 1), Fila("ALC", 1), Fila("ALG", 1, destino: "ALC") };
+            Festivo("REI", LUNES);
+            Festivo("ALC", LUNES);
+
+            List<CorteReposicion> cortes = calculadora.CortesDelDia(calendario, LUNES);
+
+            Assert.AreEqual(0, cortes.Count, "REI y ALC festivos: ni las que salen de ellas ni la que va a ALC");
+        }
+
+        [TestMethod]
+        public void CortesDelDia_EnFinDeSemana_Ninguno()
+        {
+            var calendario = new List<ReposicionCalendario> { Fila("REI", 6), Fila("REI", 7) };
+
+            Assert.AreEqual(0, calculadora.CortesDelDia(calendario, LUNES.AddDays(5)).Count);
+            Assert.AreEqual(0, calculadora.CortesDelDia(calendario, LUNES.AddDays(6)).Count);
+        }
     }
 }

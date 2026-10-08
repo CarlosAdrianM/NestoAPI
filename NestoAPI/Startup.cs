@@ -688,6 +688,23 @@ namespace NestoAPI
 
             Console.WriteLine("✅ Job recurrente 'picking-cierre-diario' configurado (L-V a las 11:00)");
 
+            // NestoAPI#577 (corte 3b): las reposiciones se rellenan solas a la hora de cierre de su fila del calendario
+            // (ReposicionesCalendario, lo mantiene Almacén). Como el picking de cierre (#361), el corte es un DATO: cada
+            // pasada mira qué filas de HOY tienen ya su día + HoraCierre en el pasado y aún no están hechas
+            // (ReposicionesTraspasos: Herramienta 'Automatico' + FechaCorte) y las rellena con ESE instante, no con el
+            // reloj. Por eso basta un cron frecuente y llegar unos segundos o minutos tarde no cambia nada. Las horas de
+            // cierre del calendario tienen que caer dentro del cron (ReposicionesAutomaticasJobsService.CRON).
+            RecurringJob.AddOrUpdate(
+                "reposiciones-automaticas",
+                () => Infraestructure.Reposiciones.ReposicionesAutomaticasJobsService.RellenarPendientes(),
+                Infraestructure.Reposiciones.ReposicionesAutomaticasJobsService.CRON, // Cron: cada 5 min, L-V de 6:00 a 21:55
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'reposiciones-automaticas' configurado (cada 5 min, L-V de 6:00 a 21:55)");
+
             // NestoAPI#402: el reindexado del buscador, que antes dependía de una tarea fuera del
             // repo. A las 20:30 porque prdActualizarClasificacionProductos (más vendidos) corre a
             // las 20:00 y tarda unos 5 minutos, y el índice guarda esa posición para ponderar.

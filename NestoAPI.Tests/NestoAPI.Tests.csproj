@@ -525,6 +525,7 @@
     <Compile Include="Infrastructure\Rapports\ModeloContactoTests.cs" />
     <Compile Include="Infrastructure\Reposiciones\CalculadoraFechaReposicionTests.cs" />
     <Compile Include="Infrastructure\Reposiciones\ServicioCalendarioReposicionesTests.cs" />
+    <Compile Include="Infrastructure\Reposiciones\ServicioReposicionAutomaticaTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\CorreoConfirmacionPedidoClienteTests.cs" />
     <Compile Include="Infrastructure\PoliticaPagoCanalTests.cs" />
     <Compile Include="Infrastructure\ServicioAgenciasTests.cs" />

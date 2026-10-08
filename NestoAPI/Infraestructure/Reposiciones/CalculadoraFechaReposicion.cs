@@ -24,6 +24,18 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public int DiasHastaSalida { get; set; }
     }
 
+    /// <summary>NestoAPI#577 (corte 3b): una reposición del calendario en un día concreto, con su instante de corte.</summary>
+    public class CorteReposicion
+    {
+        public string Empresa { get; set; }
+        public string Origen { get; set; }
+        public string Destino { get; set; }
+        /// <summary>Día + HoraCierre: a esa hora se rellena sola (solo cuentan los pedidos anteriores).</summary>
+        public DateTime Corte { get; set; }
+        /// <summary>Día + HoraLlegadaHabitual.</summary>
+        public DateTime Llegada { get; set; }
+    }
+
     /// <summary>
     /// NestoAPI#577 (corte 1): clase pura (sin BD) que predice la próxima reposición de una ruta a partir del calendario
     /// (tabla ReposicionesCalendario), los festivos de cada almacén y la hora de corte del picking del destino.
@@ -108,6 +120,29 @@ namespace NestoAPI.Infraestructure.Reposiciones
                 };
             }
             return null;
+        }
+
+        /// <summary>
+        /// NestoAPI#577 (corte 3b): las reposiciones que tocan el día de <paramref name="dia"/> (la hora no cuenta), con su
+        /// instante de corte (día + HoraCierre) y de llegada. Las mismas reglas que <see cref="Calcular"/>: ni sábados ni
+        /// domingos ni festivos del origen (no hay recogida) o del destino (no hay recepción).
+        /// </summary>
+        public List<CorteReposicion> CortesDelDia(IEnumerable<ReposicionCalendario> calendario, DateTime dia)
+        {
+            DateTime fecha = dia.Date;
+            return (calendario ?? Enumerable.Empty<ReposicionCalendario>())
+                .Where(f => f != null && f.Activo && f.DiaSemana == DiaSemana(fecha))
+                .Select(f => new CorteReposicion
+                {
+                    Empresa = Limpiar(f.Empresa) ?? Constantes.Empresas.EMPRESA_POR_DEFECTO,
+                    Origen = Limpiar(f.AlmacenOrigen),
+                    Destino = Limpiar(f.AlmacenDestino),
+                    Corte = fecha + f.HoraCierre,
+                    Llegada = fecha + f.HoraLlegadaHabitual
+                })
+                .Where(c => c.Origen != null && c.Destino != null && EsLaborable(fecha, c.Origen) && EsLaborable(fecha, c.Destino))
+                .OrderBy(c => c.Corte).ThenBy(c => c.Origen).ThenBy(c => c.Destino)
+                .ToList();
         }
 
         /// <summary>
