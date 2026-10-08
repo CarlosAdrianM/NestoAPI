@@ -217,17 +217,41 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
         }
 
         [DataTestMethod]
-        [DataRow(52, -1, 4, DisplayName = "semanal: 52 / 12 = 4,3 → 4")]
-        [DataRow(24, -1, 2, DisplayName = "quincenal: 24 / 12 = 2")]
-        [DataRow(17, -1, 1, DisplayName = "17 / 12 = 1,4 → 1")]
-        [DataRow(6, -1, 1, DisplayName = "6 / 12 = 0,5 → 1 (y mínimo 1)")]
-        [DataRow(0, 2, 1, DisplayName = "solo compró en 24 meses → 1")]
-        [DataRow(100, -1, 4, DisplayName = "100 / 12 = 8,3 → tope 4")]
-        public void ObjetivoMes_PedidosDelAnoEntreDoceConMinimoUnoYMaximoCuatro(int pedidos12, int pedidos24, int esperado)
+        [DataRow(52, -1, 4, DisplayName = "semanal: cada 7 días, 31 / 7 = 4,4 → 4")]
+        [DataRow(24, -1, 2, DisplayName = "quincenal: cada 15 días, 31 / 15 = 2,1 → 2")]
+        [DataRow(42, -1, 3, DisplayName = "cada 9 días: 31 / 9 = 3,4 → 3 (con pedidos / 12 salían 4)")]
+        [DataRow(17, -1, 1, DisplayName = "cada 21 días: 31 / 21 = 1,5 → 1")]
+        [DataRow(6, -1, 1, DisplayName = "cada 30 días (tope): 31 / 30 = 1")]
+        [DataRow(0, 2, 1, DisplayName = "solo compró en 24 meses (cada 30 días) → 1")]
+        [DataRow(100, -1, 4, DisplayName = "cada 7 días (tope): 4")]
+        public void ObjetivoMes_DiasNaturalesDelMesEntreCadenciaConMinimoUnoYMaximoCuatro(int pedidos12, int pedidos24, int esperado)
         {
             var cartera = new List<ClienteCarteraContacto> { Cliente("c", pedidos12, pedidos24: pedidos24) };
 
-            Assert.AreEqual(esperado, MotorSugerenciasContacto.ObjetivoMes(cartera));
+            // Octubre de 2026: 31 días naturales.
+            Assert.AreEqual(esperado, MotorSugerenciasContacto.ObjetivoMes(cartera, HOY));
+        }
+
+        [DataTestMethod]
+        [DataRow(2026, 10, DisplayName = "octubre, 31 días")]
+        [DataRow(2026, 11, DisplayName = "noviembre, 30 días")]
+        [DataRow(2027, 2, DisplayName = "febrero, 28 días")]
+        public void ObjetivoMes_ClienteSemanal_CuatroLlamadasAunqueElMesTengaUnos21Laborables(int ano, int mes)
+        {
+            // El fallo de partida: 21 laborables / cadencia de 7 días naturales = 3 llamadas a quien pide cada semana.
+            var cartera = new List<ClienteCarteraContacto> { Cliente("semanal", 52) };
+
+            Assert.AreEqual(4, MotorSugerenciasContacto.ObjetivoMes(cartera, new DateTime(ano, mes, 15)));
+        }
+
+        [TestMethod]
+        public void ObjetivoMes_DependeDeLosDiasNaturalesDelMes()
+        {
+            // 30 pedidos al año: cada 12 días. Octubre: 31 / 12 = 2,6 → 3; febrero: 28 / 12 = 2,3 → 2.
+            var cartera = new List<ClienteCarteraContacto> { Cliente("c", 30) };
+
+            Assert.AreEqual(3, MotorSugerenciasContacto.ObjetivoMes(cartera, HOY));
+            Assert.AreEqual(2, MotorSugerenciasContacto.ObjetivoMes(cartera, new DateTime(2027, 2, 10)));
         }
 
         [TestMethod]
@@ -244,7 +268,30 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
                 Cliente("fuera", 0, pedidos24: 0)    // ni en 12 ni en 24 meses: no cuenta
             };
 
-            Assert.AreEqual(9, MotorSugerenciasContacto.ObjetivoMes(cartera));
+            Assert.AreEqual(9, MotorSugerenciasContacto.ObjetivoMes(cartera, HOY));
+        }
+
+        [TestMethod]
+        public void CalcularRitmo_ElObjetivoDelMesSeRepartePorLosLaborablesQueQuedan()
+        {
+            // 21 clientes semanales: 84 llamadas en octubre (31 días naturales). Sin llamadas aún el jueves 1, quedan los 21
+            // laborables (22 de lunes a viernes menos el festivo del 12) → 84 / 21 = 4 al día. Sábados, domingos y festivos no
+            // reparten: el sábado 3 no hay objetivo, y el lunes 5 (19 laborables por delante) tocan ⌈84 / 19⌉ = 5.
+            List<ClienteCarteraContacto> cartera = Enumerable.Range(1, 21).Select(i => Cliente("s" + i, 52)).ToList();
+            var motor = new MotorSugerenciasContacto();
+            var sinContactos = new ContactosVendedor();
+            var pendientes = new List<SugerenciaContactoDTO>();
+
+            RitmoContactosDTO dia1 = motor.CalcularRitmo(cartera, sinContactos, pendientes, new DateTime(2026, 10, 1), laborable);
+            RitmoContactosDTO sabado = motor.CalcularRitmo(cartera, sinContactos, pendientes, new DateTime(2026, 10, 3), laborable);
+            RitmoContactosDTO lunes = motor.CalcularRitmo(cartera, sinContactos, pendientes, new DateTime(2026, 10, 5), laborable);
+
+            Assert.AreEqual(84, dia1.ObjetivoMes);
+            Assert.AreEqual(21, dia1.DiasLaborablesRestantesMes);
+            Assert.AreEqual(4, dia1.ObjetivoHoy);
+            Assert.AreEqual(19, sabado.DiasLaborablesRestantesMes, "el sábado no cuenta, pero sí todo lo que queda");
+            Assert.AreEqual(19, lunes.DiasLaborablesRestantesMes);
+            Assert.AreEqual(5, lunes.ObjetivoHoy);
         }
 
         [TestMethod]

@@ -261,21 +261,26 @@ namespace NestoAPI.Infraestructure.Rapports
         }
 
         /// <summary>
-        /// Σ por cliente con compras en 24 meses de min(4, max(1, redondeo(pedidos en 12 meses / 12))): las llamadas al mes
-        /// son sus pedidos al mes. No depende de los laborables (antes, laborables / cadencia en días naturales hacía que
-        /// quien pide cada 15 días sumara 1 en vez de 2).
+        /// Σ por cliente con compras en 24 meses de min(4, max(1, redondeo(días NATURALES del mes / cadencia))): la cadencia va
+        /// en días naturales, así que el mes también (decisión de Carlos, 08/10/26). Antes se dividían los laborables (≈21)
+        /// entre la cadencia y el cliente semanal sumaba 3 en vez de 4; luego (9f38ed86) pedidos del año / 12, que no
+        /// casaba con la cadencia con la que se le propone (42 pedidos: cada 9 días, 3 llamadas en un mes de 31, no 4).
+        /// Lo que el vendedor hace en laborables es el REPARTO: <see cref="CalcularRitmo"/> divide lo que falta entre los
+        /// laborables que quedan.
         /// </summary>
-        public static int ObjetivoMes(IEnumerable<ClienteCarteraContacto> cartera)
+        public static int ObjetivoMes(IEnumerable<ClienteCarteraContacto> cartera, DateTime hoy)
         {
+            int diasDelMes = DateTime.DaysInMonth(hoy.Year, hoy.Month);
             return cartera
                 .Where(c => c.Pedidos24Meses > 0 || c.Pedidos12Meses > 0)
-                .Sum(c => LlamadasMes(c));
+                .Sum(c => LlamadasMes(c, diasDelMes));
         }
 
-        public static int LlamadasMes(ClienteCarteraContacto c)
+        /// <summary>min(4, max(1, redondeo(días naturales del mes / cadencia))).</summary>
+        public static int LlamadasMes(ClienteCarteraContacto c, int diasDelMes)
         {
-            int pedidosMes = (int)Math.Round(Math.Max(0, c.Pedidos12Meses) / 12.0, MidpointRounding.AwayFromZero);
-            return Math.Min(UmbralesSugerenciasContacto.LLAMADAS_MES_MAXIMAS, Math.Max(UmbralesSugerenciasContacto.LLAMADAS_MES_MINIMAS, pedidosMes));
+            int llamadas = (int)Math.Round((double)diasDelMes / Cadencia(c), MidpointRounding.AwayFromZero);
+            return Math.Min(UmbralesSugerenciasContacto.LLAMADAS_MES_MAXIMAS, Math.Max(UmbralesSugerenciasContacto.LLAMADAS_MES_MINIMAS, llamadas));
         }
 
         public RitmoContactosDTO CalcularRitmo(IList<ClienteCarteraContacto> cartera, ContactosVendedor contactos,
@@ -283,8 +288,10 @@ namespace NestoAPI.Infraestructure.Rapports
         {
             contactos = contactos ?? new ContactosVendedor();
             int restantes = DiasLaborablesRestantes(hoy, esLaborable);
-            int objetivoMes = ObjetivoMes(cartera);
+            int objetivoMes = ObjetivoMes(cartera, hoy);
             int faltan = Math.Max(0, objetivoMes - contactos.Mes);
+            // El vendedor solo llama en laborables (lunes a viernes sin festivos; los viernes de reunión, de momento,
+            // cuentan como uno más): lo que falta del mes se reparte entre los que quedan, hoy incluido.
             int objetivoHoy = restantes > 0 ? (int)Math.Ceiling((double)faltan / restantes) : 0;
 
             return new RitmoContactosDTO
