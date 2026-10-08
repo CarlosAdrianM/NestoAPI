@@ -1,4 +1,5 @@
-using System;
+﻿using System;
+using System.Collections.Generic;
 
 namespace NestoAPI.Models.Novedades
 {
@@ -18,6 +19,37 @@ namespace NestoAPI.Models.Novedades
         public string Descripcion { get; set; }
         /// <summary>Nesto / NestoAPI (informativo; el usuario ve un único changelog)</summary>
         public string Ambito { get; set; }
+        /// <summary>
+        /// NestoAPI#616: los PDF e imágenes colgados en la novedad (sin el contenido), por su Orden.
+        /// Lista vacía si no hay (o si la tabla aún no existe).
+        /// </summary>
+        public List<AdjuntoNovedadResumenDTO> Adjuntos { get; set; } = new List<AdjuntoNovedadResumenDTO>();
+    }
+
+    /// <summary>
+    /// Fila de la consulta del changelog. Clase aparte porque SqlQuery solo debe rellenar columnas
+    /// (Adjuntos se rellena después, NestoAPI#616).
+    /// </summary>
+    public class NovedadFila
+    {
+        public int Id { get; set; }
+        public string Version { get; set; }
+        public DateTime Fecha { get; set; }
+        public string Categoria { get; set; }
+        public string Titulo { get; set; }
+        public string Descripcion { get; set; }
+        public string Ambito { get; set; }
+
+        public NovedadDTO ADto() => new NovedadDTO
+        {
+            Id = Id,
+            Version = Version,
+            Fecha = Fecha,
+            Categoria = Categoria,
+            Titulo = Titulo,
+            Descripcion = Descripcion,
+            Ambito = Ambito
+        };
     }
 
     /// <summary>
@@ -42,7 +74,8 @@ namespace NestoAPI.Models.Novedades
             Categoria = n.Categoria,
             Titulo = n.Titulo,
             Descripcion = n.Descripcion,
-            Ambito = n.Ambito
+            Ambito = n.Ambito,
+            Adjuntos = n.Adjuntos ?? new List<AdjuntoNovedadResumenDTO>()
         };
     }
 }

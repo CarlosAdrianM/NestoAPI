@@ -1,4 +1,4 @@
-using NestoAPI.Models;
+﻿using NestoAPI.Models;
 using NestoAPI.Models.Novedades;
 using System;
 using System.Collections.Generic;
@@ -33,9 +33,10 @@ namespace NestoAPI.Infraestructure.Novedades
             using (NVEntities db = new NVEntities())
             {
                 // NestoAPI#526: sin versión es una sugerencia; nunca sale en el changelog ni en el popup
-                return db.Database.SqlQuery<NovedadDTO>(
+                return db.Database.SqlQuery<NovedadFila>(
                     "SELECT Id, Version, Fecha, Categoria, Titulo, Descripcion, Ambito " +
-                    "FROM Novedades WHERE Publicada = 1 AND Version IS NOT NULL").ToList();
+                    "FROM Novedades WHERE Publicada = 1 AND Version IS NOT NULL").ToList()
+                    .Select(f => f.ADto()).ToList();
             }
         }
 

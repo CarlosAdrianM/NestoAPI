@@ -798,10 +798,13 @@
     <Compile Include="Infraestructure\Novedades\ReglasFeedbackNovedades.cs" />
     <Compile Include="Infraestructure\Novedades\ReglasSugerenciasNovedades.cs" />
     <Compile Include="Infraestructure\Novedades\ReglasMenciones.cs" />
+    <Compile Include="Infraestructure\Novedades\ReglasAdjuntosNovedades.cs" />
+    <Compile Include="Infraestructure\Novedades\ServicioAdjuntosNovedades.cs" />
     <Compile Include="Infraestructure\Notificaciones\AvisosTiempoReal.cs" />
     <Compile Include="Models\Novedades\FeedbackNovedadesDTO.cs" />
     <Compile Include="Models\Novedades\SugerenciaNovedadDTO.cs" />
     <Compile Include="Models\Novedades\NovedadDTO.cs" />
+    <Compile Include="Models\Novedades\AdjuntoNovedadDTO.cs" />
     <Compile Include="Controllers\NovedadesController.cs" />
     <Compile Include="Infraestructure\Exceptions\PedidoValidacionException.cs" />
     <Compile Include="Infraestructure\Exceptions\TraspasoEmpresaException.cs" />

@@ -30,7 +30,11 @@ namespace NestoAPI.Controllers
         {
             Notificaciones = new Infraestructure.Notificaciones.ServicioNotificacionesPush();
             LectorParametros = new LectorParametrosUsuario();
+            Adjuntos = new ServicioAdjuntosNovedades();
         }
+
+        /// <summary>NestoAPI#616: los PDF e imágenes de las novedades. null = sin adjuntos (listas vacías).</summary>
+        internal IServicioAdjuntosNovedades Adjuntos { get; set; }
 
         /// <summary>
         /// Carlos, 28/09/26: de dónde se lee a quién avisar de la actividad de Novedades. null = no se
@@ -92,7 +96,9 @@ namespace NestoAPI.Controllers
                 .ThenBy(n => n.Id)
                 .ToList();
 
-            return Ok(OrdenarPorReacciones(ConFeedback(ordenadas)));
+            List<NovedadDTO> resultado = OrdenarPorReacciones(ConFeedback(ordenadas));
+            RellenarAdjuntos(resultado);
+            return Ok(resultado);
         }
 
         /// <summary>
@@ -165,6 +171,7 @@ namespace NestoAPI.Controllers
                 .ToList();
             OcultarContextoSiNoRevisa(sugerencias);
             _ = RellenarFeedback(sugerencias);
+            RellenarAdjuntos(sugerencias);
             return Ok(sugerencias
                 .OrderByDescending(s => (s.VotosPositivos ?? 0) - (s.VotosNegativos ?? 0))
                 .ThenByDescending(s => s.SugeridaFecha)
@@ -351,7 +358,163 @@ namespace NestoAPI.Controllers
                 .ToList();
             OcultarContextoSiNoRevisa(encontradas);
             _ = RellenarFeedback(encontradas);
+            RellenarAdjuntos(encontradas);
             return Ok(encontradas);
+        }
+
+        #endregion
+
+        #region NestoAPI#616: adjuntos (PDF e imágenes)
+
+        private static int adjuntosFalloRegistrado;
+
+        /// <summary>
+        /// NestoAPI#616: la lista de adjuntos (sin contenido) de cada novedad, con UNA consulta para todas.
+        /// Si falla, las novedades salen igual con la lista vacía y el fallo va a ELMAH una sola vez.
+        /// </summary>
+        internal void RellenarAdjuntos<T>(List<T> novedades) where T : NovedadDTO
+        {
+            if (novedades == null || novedades.Count == 0)
+            {
+                return;
+            }
+            foreach (T novedad in novedades)
+            {
+                novedad.Adjuntos = new List<AdjuntoNovedadResumenDTO>();
+            }
+            if (Adjuntos == null)
+            {
+                return;
+            }
+            List<AdjuntoNovedadFila> filas;
+            try
+            {
+                filas = Adjuntos.LeerResumen(novedades.Select(n => n.Id)) ?? new List<AdjuntoNovedadFila>();
+            }
+            catch (Exception ex)
+            {
+                if (Interlocked.Exchange(ref adjuntosFalloRegistrado, 1) == 0)
+                {
+                    RegistrarSinRomper(new Exception("Novedades (#616): no se pudieron leer los adjuntos; se sirven sin ellos. " + ex.Message, ex));
+                }
+                return;
+            }
+            Dictionary<int, List<AdjuntoNovedadResumenDTO>> porNovedad = filas
+                .GroupBy(f => f.NovedadId)
+                .ToDictionary(g => g.Key, g => g.OrderBy(f => f.Orden).ThenBy(f => f.Id).Select(f => f.AResumen()).ToList());
+            foreach (T novedad in novedades)
+            {
+                if (porNovedad.TryGetValue(novedad.Id, out List<AdjuntoNovedadResumenDTO> adjuntos))
+                {
+                    novedad.Adjuntos = adjuntos;
+                }
+            }
+        }
+
+        // GET api/Novedades/5/Adjuntos  → [{ Id, Nombre, Tipo, Tamano, Orden }] (sin el contenido)
+        // Misma autorización que leer las novedades.
+        [HttpGet]
+        [Route("api/Novedades/{id:int}/Adjuntos")]
+        [ResponseType(typeof(List<AdjuntoNovedadDTO>))]
+        public IHttpActionResult GetAdjuntos(int id)
+        {
+            if (Adjuntos == null)
+            {
+                return Ok(new List<AdjuntoNovedadDTO>());
+            }
+            return Ok((Adjuntos.LeerResumen(new[] { id }) ?? new List<AdjuntoNovedadFila>())
+                .Where(f => f.NovedadId == id)
+                .OrderBy(f => f.Orden).ThenBy(f => f.Id)
+                .Select(f => f.ADto())
+                .ToList());
+        }
+
+        // GET api/Novedades/Adjuntos/7  → el fichero, para guardarlo o abrirlo con el visor del sistema
+        [HttpGet]
+        [Authorize]
+        [Route("api/Novedades/Adjuntos/{id:int}")]
+        public HttpResponseMessage GetAdjunto(int id)
+        {
+            AdjuntoNovedadContenido adjunto = Adjuntos?.Leer(id);
+            if (adjunto?.Contenido == null)
+            {
+                return Request.CreateResponse(HttpStatusCode.NotFound);
+            }
+            var respuesta = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(adjunto.Contenido)
+            };
+            respuesta.Content.Headers.ContentType = new MediaTypeHeaderValue(
+                string.IsNullOrWhiteSpace(adjunto.Tipo) ? "application/octet-stream" : adjunto.Tipo.Trim());
+            string nombre = string.IsNullOrWhiteSpace(adjunto.Nombre) ? "adjunto" : adjunto.Nombre.Trim();
+            // filename="..." en ASCII (sin tildes) para los clientes viejos y filename* (RFC 5987, UTF-8)
+            // con el nombre tal cual: «Normas cupón.pdf» llega con su tilde.
+            respuesta.Content.Headers.ContentDisposition = new ContentDispositionHeaderValue("attachment")
+            {
+                FileName = "\"" + ReglasAdjuntosNovedades.NombreAscii(nombre) + "\"",
+                FileNameStar = nombre
+            };
+            respuesta.Content.Headers.ContentLength = adjunto.Contenido.Length;
+            return respuesta;
+        }
+
+        // POST api/Novedades/5/Adjuntos  multipart/form-data, el fichero en el campo «fichero» (uno o varios)
+        // → 201 con los adjuntos creados. Solo Dirección / Informática.
+        [HttpPost]
+        [Authorize]
+        [Route("api/Novedades/{id:int}/Adjuntos")]
+        [ResponseType(typeof(List<AdjuntoNovedadDTO>))]
+        public async System.Threading.Tasks.Task<IHttpActionResult> PostAdjuntos(int id)
+        {
+            if (!PuedeRevisarFeedback())
+            {
+                return StatusCode(HttpStatusCode.Forbidden);
+            }
+            if (Request.Content == null || !Request.Content.IsMimeMultipartContent())
+            {
+                return Content(HttpStatusCode.UnsupportedMediaType, new HttpError(
+                    $"Envía los ficheros como multipart/form-data en el campo «{ReglasAdjuntosNovedades.CAMPO_FICHERO}»."));
+            }
+            if (!Adjuntos.ExisteNovedad(id))
+            {
+                return NotFound();
+            }
+            MultipartMemoryStreamProvider partes = await Request.Content.ReadAsMultipartAsync(new MultipartMemoryStreamProvider()).ConfigureAwait(false);
+            var ficheros = new List<(string Nombre, string Tipo, byte[] Contenido)>();
+            foreach (HttpContent parte in partes.Contents)
+            {
+                ContentDispositionHeaderValue disposicion = parte.Headers.ContentDisposition;
+                string campo = disposicion?.Name?.Trim('"');
+                string nombre = disposicion?.FileNameStar ?? disposicion?.FileName?.Trim('"');
+                if (!string.Equals(campo, ReglasAdjuntosNovedades.CAMPO_FICHERO, StringComparison.OrdinalIgnoreCase) && string.IsNullOrEmpty(nombre))
+                {
+                    continue; // otros campos del formulario
+                }
+                byte[] contenido = await parte.ReadAsByteArrayAsync().ConfigureAwait(false);
+                ficheros.Add((nombre, parte.Headers.ContentType?.MediaType, contenido));
+            }
+            ValidacionAdjuntosNovedad validacion = ReglasAdjuntosNovedades.Validar(ficheros);
+            if (validacion.Error != null)
+            {
+                return validacion.TipoNoPermitido
+                    ? Content(HttpStatusCode.UnsupportedMediaType, new HttpError(validacion.Error))
+                    : (IHttpActionResult)BadRequest(validacion.Error);
+            }
+            List<AdjuntoNovedadDTO> creados = Adjuntos.Crear(id, validacion.Adjuntos, User?.Identity?.Name);
+            return Content(HttpStatusCode.Created, creados);
+        }
+
+        // DELETE api/Novedades/Adjuntos/7  → 204. Solo Dirección / Informática.
+        [HttpDelete]
+        [Authorize]
+        [Route("api/Novedades/Adjuntos/{id:int}")]
+        public IHttpActionResult DeleteAdjunto(int id)
+        {
+            if (!PuedeRevisarFeedback())
+            {
+                return StatusCode(HttpStatusCode.Forbidden);
+            }
+            return Adjuntos.Borrar(id) ? (IHttpActionResult)StatusCode(HttpStatusCode.NoContent) : NotFound();
         }
 
         #endregion
