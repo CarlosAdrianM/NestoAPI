@@ -18,10 +18,30 @@ namespace NestoAPI.Controllers
     public class PagosController : ApiController
     {
         private readonly IServicioPagos _servicioPagos;
+        private readonly IRevisorConcepto _revisorConcepto;
 
-        public PagosController(IServicioPagos servicioPagos)
+        public PagosController(IServicioPagos servicioPagos, IRevisorConcepto revisorConcepto = null)
         {
             _servicioPagos = servicioPagos;
+            _revisorConcepto = revisorConcepto ?? new RevisorConcepto();
+        }
+
+        /// <summary>
+        /// NestoAPI#609: propuesta de corrección (ortografía, tildes, nombres propios) del concepto de un enlace de pago,
+        /// antes de crearlo. No cambia nada: el cliente (Nesto, NestoApp#216) enseña «¿Quisiste decir…?» si HayCambios y
+        /// el usuario decide. Si la IA tarda o falla, devuelve solo lo determinista. <c>POST api/Pagos</c> no cambia.
+        /// </summary>
+        [HttpPost]
+        [Route("RevisarConcepto")]
+        [Authorize]
+        public async Task<IHttpActionResult> RevisarConcepto([FromBody] SolicitudRevisarConcepto solicitud)
+        {
+            if (solicitud == null)
+            {
+                return BadRequest("La solicitud es obligatoria");
+            }
+            RespuestaRevisarConcepto respuesta = await _revisorConcepto.Revisar(solicitud).ConfigureAwait(false);
+            return Ok(respuesta);
         }
 
         [HttpPost]

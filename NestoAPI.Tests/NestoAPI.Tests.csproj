@@ -166,6 +166,7 @@
     <Reference Include="System.Runtime.CompilerServices.Unsafe, Version=6.0.1.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
       <HintPath>..\packages\System.Runtime.CompilerServices.Unsafe.6.1.0\lib\net462\System.Runtime.CompilerServices.Unsafe.dll</HintPath>
     </Reference>
+    <Reference Include="System.Runtime.Caching" />
     <Reference Include="System.Runtime.Serialization" />
     <Reference Include="System.Threading.Tasks.Extensions, Version=4.2.0.1, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
       <HintPath>..\packages\System.Threading.Tasks.Extensions.4.5.4\lib\net461\System.Threading.Tasks.Extensions.dll</HintPath>
@@ -642,6 +643,7 @@
     <Compile Include="Infrastructure\Pagos\ServicioReclamacionDeudaTests.cs" />
     <Compile Include="Infrastructure\Pagos\AvisoCobroNestoPagoTests.cs" />
     <Compile Include="Infrastructure\Pagos\AuditoriaPagosTPVTests.cs" />
+    <Compile Include="Infrastructure\Pagos\RevisorConceptoTests.cs" />
     <Compile Include="Infrastructure\Pagos\ServicioPagosTests.cs" />
     <Compile Include="Infrastructure\Pagos\TarjetasClientesTests.cs" />
     <Compile Include="Infrastructure\Pagos\CobroCarritoTests.cs" />

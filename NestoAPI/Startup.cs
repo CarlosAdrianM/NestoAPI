@@ -200,6 +200,8 @@ namespace NestoAPI
             _ = services.AddScoped<IRedsysService, RedsysService>();
             _ = services.AddScoped<IServicioReclamacionDeuda, ServicioReclamacionDeuda>();
             _ = services.AddScoped<IServicioPagos, ServicioPagos>();
+            // NestoAPI#609: revisión (propuesta) del concepto de los enlaces de pago
+            _ = services.AddScoped<IRevisorConcepto, RevisorConcepto>();
             _ = services.AddScoped<IContabilidadService, ContabilidadService>();
             // prdExtrProducto y PreExtrProducto, con la misma filosofía que ContabilidadService (un único punto de llamada)
             _ = services.AddScoped<Infraestructure.ExtractosProducto.IServicioExtractoProducto, Infraestructure.ExtractosProducto.ServicioExtractoProducto>();

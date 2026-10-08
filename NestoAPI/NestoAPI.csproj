@@ -970,6 +970,8 @@
     <Compile Include="Infraestructure\PlanesVentajas\PlanesVentajasService.cs" />
     <Compile Include="Infraestructure\Agencias\ReintentosAgenciaRemota.cs" />
     <Compile Include="Infraestructure\Pagos\FormateadorConcepto.cs" />
+    <Compile Include="Infraestructure\Pagos\ReglasRevisionConcepto.cs" />
+    <Compile Include="Infraestructure\Pagos\RevisorConcepto.cs" />
     <Compile Include="Infraestructure\TransaccionesSeguras.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfControlPedidos.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfDetalleRapports.cs" />
@@ -1745,6 +1747,7 @@
     <Compile Include="Models\Pagos\EfectoAPagar.cs" />
     <Compile Include="Models\Pagos\EfectoTPVDTO.cs" />
     <Compile Include="Models\Pagos\SolicitudPagoTPV.cs" />
+    <Compile Include="Models\Pagos\RevisionConcepto.cs" />
     <Compile Include="Models\Pagos\TarjetaCliente.cs" />
     <Compile Include="Models\Pagos\CobroTarjetaGuardada.cs" />
     <Compile Include="Models\PagoTPV_Efecto.cs">
