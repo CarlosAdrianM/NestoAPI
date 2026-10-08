@@ -15,6 +15,9 @@ namespace NestoAPI.Models.Picking
         private List<PedidoPicking> sinSalirPorCierreCliente;
         private DateTime diaEntregaPicking;
         private bool ignorarCierreCliente;
+        // NestoAPI#608: el pedido del picking de UN pedido (null en los de cliente y rutas), para explicar por qué no sale
+        private int? pedidoUnico;
+        private string empresaPedidoUnico;
         private NVEntities db = new NVEntities();
 
         public GestorPicking(ModulosPicking modulos)
@@ -71,6 +74,8 @@ namespace NestoAPI.Models.Picking
         public void SacarPicking(string empresa, int numeroPedido, bool ignorarCierreCliente = false)
         {
             this.ignorarCierreCliente = ignorarCierreCliente;
+            pedidoUnico = numeroPedido;
+            empresaPedidoUnico = empresa;
             EnExclusiva(() =>
             {
                 candidatos = modulos.rellenadorPicking.Rellenar(empresa, numeroPedido);
@@ -182,10 +187,11 @@ namespace NestoAPI.Models.Picking
             for (int i = 0; i < candidatos.Count(); i++)
             {
                 PedidoPicking pedido = candidatos[i];
-                GestorStocksPicking gestorStocks = new GestorStocksPicking(pedido);
-                if (!pedido.saleEnPicking() || pedido.Lineas.Count == 0 || !gestorStocks.HayStockDeAlgo())
+                if (!DecidirSiSale(pedido))
                 {
                     pedido.Borrar = true;
+                    // NestoAPI#608: el motivo, también en los picking de varios pedidos
+                    System.Diagnostics.Trace.WriteLine($"[Picking#608] Pedido {pedido.Id} no sale: {pedido.MotivoNoSale}");
                 }
                 else
                 {
@@ -202,6 +208,7 @@ namespace NestoAPI.Models.Picking
             generadorPendientes.Ejecutar();
 
             retenidosPorPrepago = candidatos.Where(c => c.RetenidoPorPrepago).ToList();
+            List<PedidoPicking> descartados = candidatos.Where(c => c.Borrar).ToList();
             candidatos.RemoveAll(c => c.Borrar);
 
             // Asignar Picking
@@ -228,7 +235,7 @@ namespace NestoAPI.Models.Picking
                         // Un fallo de correo no debe tapar el motivo
                     }
                 }
-                throw GestorDiasEnServir.ErrorSinPicking(sinSalirPorCierreCliente, diaEntregaPicking);
+                throw ErrorSinPicking(descartados);
             }
 
             // Mandamos el correo con los pedidos que van por debajo del margen
@@ -251,6 +258,102 @@ namespace NestoAPI.Models.Picking
                     new Infraestructure.Notificaciones.ServicioNotificacionesPush()));
             }
             
+        }
+
+        /// <summary>
+        /// La decisión de siempre (saleEnPicking, que le quede alguna línea y que haya stock de algo), dejando en
+        /// <see cref="PedidoPicking.MotivoNoSale"/> por qué no sale (NestoAPI#608). No cambia ninguna regla.
+        /// </summary>
+        internal static bool DecidirSiSale(PedidoPicking pedido)
+        {
+            bool sale = Decidir(pedido);
+            pedido.LineasQueFaltanAlDecidir = sale ? null : ExplicadorPedidoSinPicking.LineasQueFaltan(pedido);
+            return sale;
+        }
+
+        private static bool Decidir(PedidoPicking pedido)
+        {
+            if (!pedido.saleEnPicking())
+            {
+                return false;
+            }
+            if (pedido.Lineas.Count == 0)
+            {
+                pedido.MotivoNoSale = MotivoNoSalePicking.SinLineas;
+                return false;
+            }
+            if (!new GestorStocksPicking(pedido).HayStockDeAlgo())
+            {
+                pedido.MotivoNoSale = MotivoNoSalePicking.SinStockDePago;
+                return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// El error cuando no sale nada. Manda el cierre del cliente (01/10/26); si no, en el picking de UN pedido,
+        /// el motivo concreto (NestoAPI#608); si no, el genérico de stock.
+        /// </summary>
+        private Infraestructure.Exceptions.NestoBusinessException ErrorSinPicking(List<PedidoPicking> descartados)
+        {
+            if (sinSalirPorCierreCliente.Count == 0 && pedidoUnico.HasValue)
+            {
+                PedidoPicking pedido = descartados.FirstOrDefault(p => p.Id == pedidoUnico.Value);
+                if (pedido != null)
+                {
+                    try
+                    {
+                        List<string> productos = ExplicadorPedidoSinPicking.ProductosANombrar(pedido);
+                        var error = ExplicadorPedidoSinPicking.Error(pedido,
+                            NombresProductos(empresaPedidoUnico, productos), ComprasPendientes(empresaPedidoUnico, productos));
+                        if (error != null)
+                        {
+                            return error;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        // Explicar es cortesía: si falla la consulta, el mensaje de siempre
+                        System.Diagnostics.Trace.WriteLine($"[Picking#608] No se pudo explicar el pedido {pedido.Id}: {ex.Message}");
+                    }
+                }
+            }
+            return GestorDiasEnServir.ErrorSinPicking(sinSalirPorCierreCliente, diaEntregaPicking);
+        }
+
+        private Dictionary<string, string> NombresProductos(string empresa, List<string> productos)
+        {
+            if (productos.Count == 0)
+            {
+                return new Dictionary<string, string>();
+            }
+            return db.Productos
+                .Where(p => p.Empresa == empresa && productos.Contains(p.Número))
+                .Select(p => new { p.Número, p.Nombre })
+                .ToList()
+                .GroupBy(p => p.Número.Trim())
+                .ToDictionary(g => g.Key, g => g.First().Nombre?.Trim());
+        }
+
+        /// <summary>El primer pedido a proveedor enviado y sin recibir de cada producto (mismo filtro que la sombra del modo de servicio).</summary>
+        private Dictionary<string, CompraPendientePicking> ComprasPendientes(string empresa, List<string> productos)
+        {
+            if (productos.Count == 0)
+            {
+                return new Dictionary<string, CompraPendientePicking>();
+            }
+            string espejo = Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO;
+            return db.LinPedidoCmps
+                .Where(c => (c.Empresa == empresa || c.Empresa == espejo) && productos.Contains(c.Producto)
+                    && (c.Estado == Constantes.EstadosLineaVenta.PENDIENTE || c.Estado == Constantes.EstadosLineaVenta.EN_CURSO) && c.Enviado)
+                .Select(c => new { c.Producto, c.Número, c.FechaRecepción })
+                .ToList()
+                .GroupBy(c => c.Producto.Trim())
+                .ToDictionary(g => g.Key, g =>
+                {
+                    var primera = g.OrderBy(c => c.FechaRecepción ?? DateTime.MaxValue).ThenBy(c => c.Número).First();
+                    return new CompraPendientePicking { Pedido = primera.Número, FechaPrevista = primera.FechaRecepción };
+                });
         }
 
         /// <summary>Horizonte del picking interactivo según el reloj y la hora de corte de la empresa.</summary>

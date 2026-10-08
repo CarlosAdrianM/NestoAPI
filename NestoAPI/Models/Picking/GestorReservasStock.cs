@@ -65,6 +65,12 @@ namespace NestoAPI.Models.Picking
         {
             foreach (PedidoPicking pedido in candidatos)
             {
+                // NestoAPI#608: se apunta la primera, para poder decir cuándo sale si se queda sin nada
+                List<LineaPedidoPicking> futuras = pedido.Lineas.Where(l => l.FechaEntrega > fechaPicking).ToList();
+                if (futuras.Count > 0)
+                {
+                    pedido.PrimeraEntregaFuturaQuitada = futuras.Min(l => l.FechaEntrega);
+                }
                 pedido.Lineas.RemoveAll(l => l.FechaEntrega > fechaPicking);
             }
         }

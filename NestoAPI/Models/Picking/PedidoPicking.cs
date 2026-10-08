@@ -118,20 +118,62 @@ namespace NestoAPI.Models.Picking
             }
         }
 
+        /// <summary>NestoAPI#608: por qué no ha salido en la última evaluación (lo rellenan saleEnPicking y GestorPicking).</summary>
+        public MotivoNoSalePicking MotivoNoSale { get; set; }
+
+        /// <summary>NestoAPI#608: la primera fecha de entrega de las líneas que se han quitado por ser posteriores al
+        /// horizonte de este picking (GestorReservasStock.BorrarLineasEntregaFutura). Null = no se quitó ninguna.</summary>
+        public DateTime? PrimeraEntregaFuturaQuitada { get; set; }
+
+        /// <summary>NestoAPI#608: lo que había disponible para cubrir el prepago la última vez que se miró.</summary>
+        public decimal ImporteDisponiblePrepago { get; private set; }
+        /// <summary>NestoAPI#608: el total que había que cubrir con el prepago la última vez que se miró.</summary>
+        public decimal ImporteTotalPrepago { get; private set; }
+
+        /// <summary>NestoAPI#608: las líneas que no tenían todo su stock cuando se decidió que no sale. Se guardan
+        /// entonces porque GeneradorPendientes quita después de <see cref="Lineas"/> las que no tienen nada reservado.</summary>
+        public List<LineaPedidoPicking> LineasQueFaltanAlDecidir { get; set; }
+
         public bool saleEnPicking()
         {
+            MotivoNoSale = MotivoNoSalePicking.Ninguno;
             if (ModoServicioEfectivo == Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS && EsperaReposicionDeTiendas)
             {
+                MotivoNoSale = MotivoNoSalePicking.EsperaReposicionDeTiendas;
+                return false;
+            }
+            if (this.Lineas == null || this.Lineas.Count == 0)
+            {
+                MotivoNoSale = MotivoNoSalePicking.SinLineas;
                 return false;
             }
             GestorStocksPicking gestorStocks = new GestorStocksPicking(this);
-            bool salePorStock = this.Lineas != null && this.Lineas.Count > 0 && (!ExigeStockDeTodo() || gestorStocks.HayStockDeTodo());
-            if (!salePorStock)
+            if (ExigeStockDeTodo() && !gestorStocks.HayStockDeTodo())
             {
+                MotivoNoSale = MotivoPorFaltaDeStockDeTodo();
                 return false;
             }
 
-            return CubiertoPorPrepago();
+            if (!CubiertoPorPrepago())
+            {
+                MotivoNoSale = MotivoNoSalePicking.RetenidoPorPrepago;
+                return false;
+            }
+            return true;
+        }
+
+        /// <summary>NestoAPI#608: el mismo orden que <see cref="ExigeStockDeTodo"/>, para decir cuál de sus reglas manda.</summary>
+        private MotivoNoSalePicking MotivoPorFaltaDeStockDeTodo()
+        {
+            switch (ModoServicioEfectivo)
+            {
+                case Constantes.Pedidos.ModosServicio.TODO_JUNTO:
+                    return MotivoNoSalePicking.TodoJuntoSinStock;
+                case Constantes.Pedidos.ModosServicio.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ when TieneLineasServidas:
+                    return MotivoNoSalePicking.RestoDeUnaVezSinStock;
+                default:
+                    return MotivoNoSalePicking.EsperaSoloRegalos;
+            }
         }
 
         /// <summary>
@@ -163,6 +205,8 @@ namespace NestoAPI.Models.Picking
 
                 // Sumar prepagos + saldo a favor - deuda vencida
                 var importeTotalDisponible = importePrepagos + saldoAFavor - deudaVencida;
+                ImporteDisponiblePrepago = importeTotalDisponible;
+                ImporteTotalPrepago = total;
 
                 if (importeTotalDisponible >= total - DESCUADRE_PERMITIDO)
                 {
