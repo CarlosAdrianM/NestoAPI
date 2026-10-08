@@ -345,6 +345,24 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
         }
 
         [TestMethod]
+        public async Task Leer_ElObjetivoDeHoyBajaTrasRegistrarLaLista_SeSiguenDevolviendoTodasLasRegistradas()
+        {
+            CarteraConObjetivoHoy(144); // a las 9: 576 / 18 → 32
+            await Servicio().Leer("MPP", "Llamada", 20, "", "u");
+            Assert.AreEqual(32, sugerencias.Count);
+            Fake.ClearRecordedCalls(fakeSugerencias);
+
+            // A las 12 ya ha hecho 72 contactos este mes: (576 − 72) / 18 → 28.
+            A.CallTo(() => repositorio.LeerContactos(A<string>._, A<DateTime>._)).Returns(Task.FromResult(new ContactosVendedor { Mes = 72 }));
+            SugerenciasContactoDTO respuesta = await Servicio().Leer("MPP", "Llamada", 20, "", "u");
+
+            Assert.AreEqual(28, respuesta.Ritmo.ObjetivoHoy);
+            Assert.AreEqual(32, respuesta.Sugerencias.Count, "lo registrado en el día no desaparece");
+            Assert.AreEqual(32, sugerencias.Count);
+            A.CallTo(() => fakeSugerencias.Add(A<SugerenciaContacto>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
         public async Task Leer_SinVendedor_ArgumentException()
         {
             _ = await Assert.ThrowsExceptionAsync<ArgumentException>(() => Servicio().Leer(" ", "Llamada", 20, "", "u"));

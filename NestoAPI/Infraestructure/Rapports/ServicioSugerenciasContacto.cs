@@ -126,9 +126,10 @@ namespace NestoAPI.Infraestructure.Rapports
                 Vendedor = vendedorLimpio,
                 Fecha = ahora,
                 Ritmo = ritmo,
+                // Lo ya registrado en el día no desaparece aunque el objetivo de hoy baje al ir llamando.
                 Sugerencias = delDia
                     .OrderBy(s => s.Orden)
-                    .Take(numero)
+                    .Take(Math.Min(NUMERO_MAXIMO, Math.Max(numero, delDia.Count)))
                     .Select(s => ADTO(s, porClave, hoy))
                     .ToList()
             };
