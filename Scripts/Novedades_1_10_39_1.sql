@@ -1,6 +1,6 @@
-/*
-    Novedades de la versión 1.10.39.0 de Nesto (08/10/2026) y de la 2.3 de Ariadna.
-    Versión de la ClickOnce: 1.10.39.0 (pubxml 1.10.39.* en revisión 0). Ariadna: ApplicationDisplayVersion 2.3.
+﻿/*
+    Novedades de la versión 1.10.39.1 de Nesto (08/10/2026; la 1.10.39.0 se publicó la misma tarde y el .1 solo quita el botón «Adjuntar…») y de la 2.3 de Ariadna.
+    Versión de la ClickOnce: 1.10.39.1 (pubxml 1.10.39.* en revisión 1). Ariadna: ApplicationDisplayVersion 2.3.
 
     Tanda: NestoAPI (reposiciones automáticas #577 c3a-3d, fecha de entrega a la agencia #606, comparador y cuarentena #607,
     sugerencias de contacto #603, motivo del picking #608, corrector del concepto de los enlaces de pago #609, adjuntos en
@@ -22,7 +22,7 @@
       5) Marcar implementadas por la API (PUT api/Novedades/Sugerencias/{id}), NO se insertan aquí para no duplicarlas:
          542 (Manuel, ofertas 6+1 y 10+1), 543 (Paloma, colores en Recibir), 545 (Paloma, buscador y cualquier código de
          barras en Recibir), 544 (Aida, reembolso de un envío devuelto), 547 (Alfredo, motivo del picking), 548 (Enrique,
-         Amazon con cantidad 0) → 1.10.39.0. 541 (Marta, comisiones) → 2.23.0 de NestoApp (hecho 08/10).
+         Amazon con cantidad 0) → 1.10.39.1 (hecho por la API el 08/10). 541 (Marta, comisiones) → 2.23.0 de NestoApp (hecho 08/10).
          Tras publicar la API: `UPDATE AgenciasTransporte SET EsSombra = 0 WHERE Numero = 12` (sa) para que Innovatrans vuelva
          a medirse en sombra; la cuarentena ya la respeta el comparador (#607).
 
@@ -39,7 +39,7 @@
 SET NOCOUNT ON;
 USE NV;
 
-DECLARE @version VARCHAR(23) = '1.10.39.0'; -- <-- AJUSTAR si se publica otra versión
+DECLARE @version VARCHAR(23) = '1.10.39.1'; -- 1.10.39.1: hotfix sin el botón «Adjuntar…»; quien ya vio la 1.10.39.0 (vacía) vuelve a verlas al subir
 DECLARE @fecha DATE = '2026-10-08';
 
 DECLARE @novedades TABLE (Categoria nvarchar(40), Titulo nvarchar(400), Descripcion nvarchar(2000));
