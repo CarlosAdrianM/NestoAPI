@@ -24,7 +24,7 @@ namespace NestoAPI.Infraestructure.Rapports
         public int ContactosSemana { get; set; }
         /// <summary>Ídem, del día 1 a hoy.</summary>
         public int ContactosMes { get; set; }
-        /// <summary>Σ por cliente de la cartera de max(1, redondeo(días laborables del mes / cadencia)).</summary>
+        /// <summary>Σ por cliente de la cartera de min(4, max(1, redondeo(pedidos en 12 meses / 12))).</summary>
         public int ObjetivoMes { get; set; }
         /// <summary>max(0, ObjetivoMes − ContactosMes) / días laborables que quedan (hoy incluido), redondeado hacia arriba.</summary>
         public int ObjetivoHoy { get; set; }

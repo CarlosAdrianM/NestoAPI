@@ -216,25 +216,41 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
             Assert.AreEqual(0, MotorSugerenciasContacto.DiasLaborablesRestantes(new DateTime(2026, 10, 31), laborable));
         }
 
-        [TestMethod]
-        public void ObjetivoMes_LaborablesEntreCadenciaConMinimoUnoPorCliente()
+        [DataTestMethod]
+        [DataRow(52, -1, 4, DisplayName = "semanal: 52 / 12 = 4,3 → 4")]
+        [DataRow(24, -1, 2, DisplayName = "quincenal: 24 / 12 = 2")]
+        [DataRow(17, -1, 1, DisplayName = "17 / 12 = 1,4 → 1")]
+        [DataRow(6, -1, 1, DisplayName = "6 / 12 = 0,5 → 1 (y mínimo 1)")]
+        [DataRow(0, 2, 1, DisplayName = "solo compró en 24 meses → 1")]
+        [DataRow(100, -1, 4, DisplayName = "100 / 12 = 8,3 → tope 4")]
+        public void ObjetivoMes_PedidosDelAnoEntreDoceConMinimoUnoYMaximoCuatro(int pedidos12, int pedidos24, int esperado)
         {
+            var cartera = new List<ClienteCarteraContacto> { Cliente("c", pedidos12, pedidos24: pedidos24) };
+
+            Assert.AreEqual(esperado, MotorSugerenciasContacto.ObjetivoMes(cartera));
+        }
+
+        [TestMethod]
+        public void ObjetivoMes_SumaLaCarteraYNoDependeDeLosLaborables()
+        {
+            // Antes (laborables / cadencia en días naturales) quien pide cada 15 días sumaba 1 en un mes de 21 laborables.
             var cartera = new List<ClienteCarteraContacto>
             {
-                Cliente("semanal", 52),          // 21 / 7 = 3
-                Cliente("diez", 36),             // 21 / 10 = 2,1 → 2
-                Cliente("bueno", 5),             // 21 / 30 = 0,7 → 1
-                Cliente("poco", 1),              // → 1
-                Cliente("antiguo", 0, pedidos24: 2) // 24 meses, cadencia 30 → 1
+                Cliente("semanal", 52),          // 4
+                Cliente("quincenal", 24),        // 2
+                Cliente("bueno", 5),             // 1
+                Cliente("poco", 1),              // 1
+                Cliente("antiguo", 0, pedidos24: 2), // 1
+                Cliente("fuera", 0, pedidos24: 0)    // ni en 12 ni en 24 meses: no cuenta
             };
 
-            Assert.AreEqual(8, MotorSugerenciasContacto.ObjetivoMes(cartera, 21));
+            Assert.AreEqual(9, MotorSugerenciasContacto.ObjetivoMes(cartera));
         }
 
         [TestMethod]
         public void CalcularRitmo_ObjetivoDeHoyConLoQueFaltaEntreLosDiasQueQuedan()
         {
-            // 30 clientes semanales: objetivo 30 × 3 = 90. Llevan 22 este mes: faltan 68 en 17 días → 4 al día.
+            // 30 clientes semanales: objetivo 30 × 4 = 120. Llevan 22 este mes: faltan 98 en 17 días → 5,8 → 6 al día.
             List<ClienteCarteraContacto> cartera = Enumerable.Range(1, 30).Select(i => Cliente("s" + i, 52, diasContacto: 3)).ToList();
             var pendientes = new List<SugerenciaContactoDTO>
             {
@@ -250,14 +266,14 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
             Assert.AreEqual(9, ritmo.ContactosHoy);
             Assert.AreEqual(14, ritmo.ContactosSemana);
             Assert.AreEqual(22, ritmo.ContactosMes);
-            Assert.AreEqual(90, ritmo.ObjetivoMes);
+            Assert.AreEqual(120, ritmo.ObjetivoMes);
             Assert.AreEqual(17, ritmo.DiasLaborablesRestantesMes);
-            Assert.AreEqual(4, ritmo.ObjetivoHoy);
+            Assert.AreEqual(6, ritmo.ObjetivoHoy);
             Assert.AreEqual(1, ritmo.PendientesMaxima);
             Assert.AreEqual(2, ritmo.PendientesAlta);
             Assert.AreEqual(0, ritmo.PendientesMedia);
             Assert.AreEqual(1, ritmo.PendientesBaja);
-            Assert.AreEqual("Llevas 9 contactos hoy; para cubrir la cartera este mes necesitas 4 al día.", ritmo.Frase);
+            Assert.AreEqual("Llevas 9 contactos hoy; para cubrir la cartera este mes necesitas 6 al día.", ritmo.Frase);
         }
 
         [TestMethod]

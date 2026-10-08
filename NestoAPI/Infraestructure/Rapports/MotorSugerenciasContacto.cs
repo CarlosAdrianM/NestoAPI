@@ -27,6 +27,10 @@ namespace NestoAPI.Infraestructure.Rapports
         public const int DIAS_TRAS_PEDIDO = 6;
         /// <summary>Meses hacia atrás de compras para entrar en la cartera (prioridad Baja).</summary>
         public const int MESES_CARTERA = 24;
+        /// <summary>Llamadas al mes que suma al objetivo cualquier cliente de la cartera, aunque compre poco…</summary>
+        public const int LLAMADAS_MES_MINIMAS = 1;
+        /// <summary>… y como mucho una por semana, aunque compre más.</summary>
+        public const int LLAMADAS_MES_MAXIMAS = 4;
     }
 
     public static class PrioridadesContacto
@@ -256,21 +260,30 @@ namespace NestoAPI.Infraestructure.Rapports
             return n;
         }
 
-        /// <summary>Σ por cliente de max(1, redondeo(laborables del mes / cadencia)).</summary>
-        public static int ObjetivoMes(IEnumerable<ClienteCarteraContacto> cartera, int diasLaborablesMes)
+        /// <summary>
+        /// Σ por cliente con compras en 24 meses de min(4, max(1, redondeo(pedidos en 12 meses / 12))): las llamadas al mes
+        /// son sus pedidos al mes. No depende de los laborables (antes, laborables / cadencia en días naturales hacía que
+        /// quien pide cada 15 días sumara 1 en vez de 2).
+        /// </summary>
+        public static int ObjetivoMes(IEnumerable<ClienteCarteraContacto> cartera)
         {
             return cartera
                 .Where(c => c.Pedidos24Meses > 0 || c.Pedidos12Meses > 0)
-                .Sum(c => Math.Max(1, (int)Math.Round((double)diasLaborablesMes / Cadencia(c), MidpointRounding.AwayFromZero)));
+                .Sum(c => LlamadasMes(c));
+        }
+
+        public static int LlamadasMes(ClienteCarteraContacto c)
+        {
+            int pedidosMes = (int)Math.Round(Math.Max(0, c.Pedidos12Meses) / 12.0, MidpointRounding.AwayFromZero);
+            return Math.Min(UmbralesSugerenciasContacto.LLAMADAS_MES_MAXIMAS, Math.Max(UmbralesSugerenciasContacto.LLAMADAS_MES_MINIMAS, pedidosMes));
         }
 
         public RitmoContactosDTO CalcularRitmo(IList<ClienteCarteraContacto> cartera, ContactosVendedor contactos,
             IList<SugerenciaContactoDTO> pendientes, DateTime hoy, Func<DateTime, bool> esLaborable)
         {
             contactos = contactos ?? new ContactosVendedor();
-            int laborablesMes = DiasLaborablesDelMes(hoy, esLaborable);
             int restantes = DiasLaborablesRestantes(hoy, esLaborable);
-            int objetivoMes = ObjetivoMes(cartera, laborablesMes);
+            int objetivoMes = ObjetivoMes(cartera);
             int faltan = Math.Max(0, objetivoMes - contactos.Mes);
             int objetivoHoy = restantes > 0 ? (int)Math.Ceiling((double)faltan / restantes) : 0;
 

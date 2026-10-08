@@ -271,7 +271,7 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
 
         /// <summary>
         /// Octubre de 2026 tiene 18 laborables del 7 al 30: n clientes que compran cada semana (52 pedidos, cadencia 7)
-        /// suman 3 contactos al mes cada uno, sin contactos todavía → ObjetivoHoy = ⌈3n / 18⌉.
+        /// suman 4 llamadas al mes cada uno, sin contactos todavía → ObjetivoHoy = ⌈4n / 18⌉.
         /// </summary>
         private void CarteraConObjetivoHoy(int clientes)
         {
@@ -282,7 +282,7 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
         [TestMethod]
         public async Task Leer_ObjetivoHoyMayorQueElNumeroPedido_RegistraYDevuelveElObjetivo()
         {
-            CarteraConObjetivoHoy(187); // 561 / 18 → 32
+            CarteraConObjetivoHoy(144); // 576 / 18 → 32
 
             SugerenciasContactoDTO respuesta = await Servicio().Leer("MPP", "Llamada", 20, "", "u");
 
@@ -294,7 +294,7 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
         [TestMethod]
         public async Task Leer_ObjetivoHoyMenorQueElNumeroPedido_SeQuedaElNumeroPedido()
         {
-            CarteraConObjetivoHoy(55); // 165 / 18 → 10
+            CarteraConObjetivoHoy(45); // 180 / 18 → 10
 
             SugerenciasContactoDTO respuesta = await Servicio().Leer("MPP", "Llamada", 20, "", "u");
 
@@ -319,7 +319,7 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
         [TestMethod]
         public async Task Leer_ObjetivoHoyPorEncimaDelMaximo_SeQuedaEnElMaximo()
         {
-            CarteraConObjetivoHoy(1250); // 3750 / 18 → 209
+            CarteraConObjetivoHoy(940); // 3760 / 18 → 209
 
             SugerenciasContactoDTO respuesta = await Servicio().Leer("MPP", "Llamada", 20, "", "u");
 
@@ -331,11 +331,11 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
         [TestMethod]
         public async Task Leer_ElObjetivoDeHoySubeTrasRegistrarLaLista_LaCompletaSinRepetir()
         {
-            CarteraConObjetivoHoy(55); // 10: se registran las 20 pedidas
+            CarteraConObjetivoHoy(45); // 10: se registran las 20 pedidas
             await Servicio().Leer("MPP", "Llamada", 20, "", "u");
             Assert.AreEqual(20, sugerencias.Count);
 
-            CarteraConObjetivoHoy(187); // 32
+            CarteraConObjetivoHoy(144); // 32
             SugerenciasContactoDTO respuesta = await Servicio().Leer("MPP", "Llamada", 20, "", "u");
 
             Assert.AreEqual(32, respuesta.Sugerencias.Count);
