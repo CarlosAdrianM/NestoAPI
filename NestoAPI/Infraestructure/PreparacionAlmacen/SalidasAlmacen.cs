@@ -790,6 +790,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             List<int> apartadas = await tx.ApartarOtros(empresa, diario.Diario, numero).ConfigureAwait(false) ?? new List<int>();
             await tx.Contabilizar(empresa, diario.Diario, nombreUsuario).ConfigureAwait(false);
             await tx.DevolverApartadas(empresa, diario.Diario, apartadas).ConfigureAwait(false);
+            // NestoAPI#577: quién y cuándo la ha sacado, en su cabecera (si la creó la API)
+            await tx.MarcarReposicionPreparada(empresa, numero, nombreUsuario).ConfigureAwait(false);
             cambios.Add($"Contabilizada la salida de la reposición {numero} (diario {diario.Diario} de {diario.Almacen}).");
             string mensaje = $"Reposición {numero} sacada de {diario.Almacen} hacia {diario.Destino}.";
             if (unidades > 0)

@@ -195,6 +195,11 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// <summary>NestoAPI#553: aparta del diario lo que no es de este traspaso (ver ApartadoTraspasosSql).</summary>
         Task<List<int>> ApartarOtros(string empresa, string diario, int traspaso);
         Task DevolverApartadas(string empresa, string diario, IReadOnlyCollection<int> apartadas);
+        /// <summary>
+        /// NestoAPI#577: la reposición ya ha salido (cabecera ReposicionesTraspasos: quién y cuándo). Sin cabecera (de Nesto
+        /// viejo), no hace nada.
+        /// </summary>
+        Task MarcarReposicionPreparada(string empresa, int traspaso, string usuario);
 
         Task<DateTime> AhoraEnBaseDeDatos();
         /// <summary>
@@ -618,6 +623,11 @@ WHERE u.[NºTraspasoRepo] = @p1
         public Task DevolverApartadas(string empresa, string diario, IReadOnlyCollection<int> apartadas)
         {
             return ApartadoTraspasosSql.Devolver(db, empresa, diario, apartadas);
+        }
+
+        public Task MarcarReposicionPreparada(string empresa, int traspaso, string usuario)
+        {
+            return Reposiciones.RegistroReposicionesTraspasosSql.MarcarPreparada(db, empresa, traspaso, usuario);
         }
 
         public Task<DateTime> AhoraEnBaseDeDatos()

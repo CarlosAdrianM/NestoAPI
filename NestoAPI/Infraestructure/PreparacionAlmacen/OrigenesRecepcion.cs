@@ -566,6 +566,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 await transaccion.Contabilizar(solicitud.Empresa, diario, solicitud.Usuario).ConfigureAwait(false);
                 await transaccion.DevolverApartadas(solicitud.Empresa, diario, apartadas).ConfigureAwait(false);
                 _ = await transaccion.DejarPendientesDeUbicar(solicitud.Empresa, pendientesDeUbicar, solicitud.Usuario).ConfigureAwait(false);
+                // NestoAPI#577: quién y cuándo la ha recibido, en su cabecera (si la creó la API)
+                await transaccion.MarcarReposicionRecibida(solicitud.Empresa, traspaso, solicitud.Usuario).ConfigureAwait(false);
                 await transaccion.RegistrarEvidencia(solicitud.Empresa, solicitud.Lecturas.Select(l => new EvidenciaRecepcion
                 {
                     IdCliente = EvidenciasRecepcionSql.IdEvidencia(solicitud.IdRecepcion, l.Key),

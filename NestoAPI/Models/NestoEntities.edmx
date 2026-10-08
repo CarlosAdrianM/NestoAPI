@@ -1085,6 +1085,24 @@
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="FechaModificacion" Type="datetime" Nullable="false" />
         </EntityType>
+        <EntityType Name="ReposicionesTraspasos">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="NumTraspaso" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="NumTraspaso" Type="int" Nullable="false" />
+          <Property Name="Origen" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Destino" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Herramienta" Type="varchar" MaxLength="20" Nullable="false" />
+          <Property Name="UsuarioCreacion" Type="varchar" MaxLength="30" Nullable="false" />
+          <Property Name="FechaCreacion" Type="datetime" Nullable="false" />
+          <Property Name="FechaCorte" Type="datetime" />
+          <Property Name="UsuarioPreparacion" Type="varchar" MaxLength="30" />
+          <Property Name="FechaPreparada" Type="datetime" />
+          <Property Name="UsuarioRecepcion" Type="varchar" MaxLength="30" />
+          <Property Name="FechaRecibida" Type="datetime" />
+        </EntityType>
         <EntityType Name="FamiliasIncompatibles">
           <Key>
             <PropertyRef Name="Id" />
@@ -5830,6 +5848,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="SugerenciasContacto" EntityType="Self.SugerenciasContacto" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ProductosCodigosBarras" EntityType="Self.ProductosCodigosBarras" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ReposicionesCalendario" EntityType="Self.ReposicionesCalendario" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="ReposicionesTraspasos" EntityType="Self.ReposicionesTraspasos" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="FicheroCuaderno43" EntityType="Self.FicheroCuaderno43" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="FormasPago" EntityType="Self.FormasPago" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="FormasVenta" EntityType="Self.FormasVenta" Schema="dbo" store:Type="Tables" />
@@ -7045,6 +7064,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="SugerenciasContacto" EntityType="NVModel.SugerenciaContacto" />
           <EntitySet Name="ProductosCodigosBarras" EntityType="NVModel.ProductoCodigoBarras" />
           <EntitySet Name="ReposicionesCalendario" EntityType="NVModel.ReposicionCalendario" />
+          <EntitySet Name="ReposicionesTraspasos" EntityType="NVModel.ReposicionTraspaso" />
           <EntitySet Name="SubGruposProductoes" EntityType="NVModel.SubGruposProducto" />
           <AssociationSet Name="FK_Familias_Empresas" Association="NVModel.FK_Familias_Empresas">
             <End Role="Empresa" EntitySet="Empresas" />
@@ -8807,6 +8827,24 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="Activo" Type="Boolean" Nullable="false" />
           <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
           <Property Name="FechaModificacion" Type="DateTime" Nullable="false" Precision="3" />
+        </EntityType>
+        <EntityType Name="ReposicionTraspaso">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="NumTraspaso" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="NumTraspaso" Type="Int32" Nullable="false" />
+          <Property Name="Origen" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Destino" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Herramienta" Type="String" Nullable="false" MaxLength="20" FixedLength="false" Unicode="false" />
+          <Property Name="UsuarioCreacion" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="FechaCreacion" Type="DateTime" Nullable="false" Precision="3" />
+          <Property Name="FechaCorte" Type="DateTime" Precision="3" />
+          <Property Name="UsuarioPreparacion" Type="String" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="FechaPreparada" Type="DateTime" Precision="3" />
+          <Property Name="UsuarioRecepcion" Type="String" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="FechaRecibida" Type="DateTime" Precision="3" />
         </EntityType>
         <EntityType Name="FamiliaIncompatibilidad">
           <Key>
@@ -16628,6 +16666,24 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
                 <ScalarProperty Name="Activo" ColumnName="Activo" />
                 <ScalarProperty Name="Usuario" ColumnName="Usuario" />
                 <ScalarProperty Name="FechaModificacion" ColumnName="FechaModificacion" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="ReposicionesTraspasos">
+            <EntityTypeMapping TypeName="NVModel.ReposicionTraspaso">
+              <MappingFragment StoreEntitySet="ReposicionesTraspasos">
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+                <ScalarProperty Name="NumTraspaso" ColumnName="NumTraspaso" />
+                <ScalarProperty Name="Origen" ColumnName="Origen" />
+                <ScalarProperty Name="Destino" ColumnName="Destino" />
+                <ScalarProperty Name="Herramienta" ColumnName="Herramienta" />
+                <ScalarProperty Name="UsuarioCreacion" ColumnName="UsuarioCreacion" />
+                <ScalarProperty Name="FechaCreacion" ColumnName="FechaCreacion" />
+                <ScalarProperty Name="FechaCorte" ColumnName="FechaCorte" />
+                <ScalarProperty Name="UsuarioPreparacion" ColumnName="UsuarioPreparacion" />
+                <ScalarProperty Name="FechaPreparada" ColumnName="FechaPreparada" />
+                <ScalarProperty Name="UsuarioRecepcion" ColumnName="UsuarioRecepcion" />
+                <ScalarProperty Name="FechaRecibida" ColumnName="FechaRecibida" />
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>

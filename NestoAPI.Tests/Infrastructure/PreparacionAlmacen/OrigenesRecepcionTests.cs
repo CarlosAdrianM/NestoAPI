@@ -351,6 +351,20 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         }
 
         [TestMethod]
+        public async Task Reposiciones_Terminar_ApuntaEnLaCabeceraQuienLaRecibeDespuesDeContabilizar()
+        {
+            // NestoAPI#577 (corte 3a): ReposicionesTraspasos.UsuarioRecepcion / FechaRecibida, en la misma transacción
+            var (cierre, transaccion) = CierreFalso(80862);
+            var pasos = new List<string>();
+            A.CallTo(() => transaccion.Contabilizar("1", "PendRepo", A<string>.Ignored)).Invokes(() => pasos.Add("contabilizar"));
+            A.CallTo(() => transaccion.MarcarReposicionRecibida("1", 80862, "NUEVAVISION\\Reina")).Invokes(() => pasos.Add("cabecera recibida"));
+
+            _ = await Reposiciones(cierre).Terminar(SolicitudReposicion());
+
+            CollectionAssert.AreEqual(new[] { "contabilizar", "cabecera recibida" }, pasos);
+        }
+
+        [TestMethod]
         public async Task Reposiciones_Terminar_YaNoEstaEnElDiario_ErrorYNoSeContabilizaNada()
         {
             var (cierre, transaccion) = CierreFalso(80863);
@@ -358,6 +372,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             _ = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Reposiciones(cierre).Terminar(SolicitudReposicion()));
 
             A.CallTo(() => transaccion.Contabilizar(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
+            A.CallTo(() => transaccion.MarcarReposicionRecibida(A<string>.Ignored, A<int>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
         }
 
         [TestMethod]

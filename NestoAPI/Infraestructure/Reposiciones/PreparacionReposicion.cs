@@ -34,6 +34,12 @@ namespace NestoAPI.Infraestructure.Reposiciones
         /// (prdRellenarReposicionStock2), como hace el botón «Rellenar» de Nesto viejo.
         /// </summary>
         public List<LineaCrearReposicionDTO> Lineas { get; set; }
+        /// <summary>
+        /// NestoAPI#577 (corte 3a): con qué se crea, para la cabecera ReposicionesTraspasos: «Nesto», «Ariadna» o
+        /// «Automatico» (el job). Opcional: si no viene, se deduce del usuario (con dominio, Nesto; sin dominio, Ariadna).
+        /// Ver <see cref="HerramientasReposicion.Resolver"/>.
+        /// </summary>
+        public string Herramienta { get; set; }
     }
 
     public class LineaCrearReposicionDTO
@@ -580,6 +586,7 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
         private readonly Func<string, bool, IUbicacionesReposicion> ubicaciones;
         private readonly Func<string, string, string> almacenDelUsuario;
         private readonly Func<DateTime> ahora;
+        private readonly IRegistroReposicionesTraspasos registro;
         private readonly NVEntities dbPropio;
 
         public ServicioPreparacionReposicion() : this(new NVEntities())
@@ -591,7 +598,8 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
                 (empresa, origen, destino, corte) => new ServicioPropuestaReposicion(db).CalcularPropuesta(empresa, origen, destino, corte),
                 (origen, control) => UbicacionesReposicion.Para(origen, control, () => new PuertaUbicacionesSql(db)),
                 (empresa, usuario) => Controllers.ParametrosUsuarioController.LeerParametro(empresa, usuario, CLAVE_ALMACEN_USUARIO),
-                () => DateTime.Now)
+                () => DateTime.Now,
+                new RegistroReposicionesTraspasosSql(db))
         {
             dbPropio = db;
         }
@@ -599,12 +607,15 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
         /// <param name="propuesta">(empresa, origen, destino, corte) → la propuesta de prdRellenarReposicionStock2.</param>
         /// <param name="ubicaciones">(origen, controlUbicaciones) → qué hacer con los huecos del origen.</param>
         /// <param name="almacenDelUsuario">(empresa, usuario sin dominio) → su AlmacénPedidoVta.</param>
+        /// <param name="registro">NestoAPI#577: la cabecera ReposicionesTraspasos. Null: no se apunta (pruebas que no la miran).</param>
         internal ServicioPreparacionReposicion(IRepositorioPreparacionReposicion repositorio,
             Func<string, string, string, DateTime?, Task<List<LineaPropuestaReposicionDTO>>> propuesta,
             Func<string, bool, IUbicacionesReposicion> ubicaciones,
             Func<string, string, string> almacenDelUsuario,
-            Func<DateTime> ahora)
+            Func<DateTime> ahora,
+            IRegistroReposicionesTraspasos registro = null)
         {
+            this.registro = registro ?? SinRegistroReposicionesTraspasos.Instancia;
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
             this.propuesta = propuesta ?? throw new ArgumentNullException(nameof(propuesta));
             this.ubicaciones = ubicaciones ?? throw new ArgumentNullException(nameof(ubicaciones));
@@ -631,6 +642,8 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
             string origen = Almacen(peticion.Origen);
             string destino = Almacen(peticion.Destino);
             ComprobarAlmacenes(origen, destino);
+            // NestoAPI#577: antes de escribir nada, para que una herramienta que no existe sea un 400 limpio
+            string herramienta = HerramientasReposicion.Resolver(peticion.Herramienta, usuario);
 
             DatosAlmacenReposicion almacenOrigen = await AlmacenConDiario(empresa, origen, a => a.DiarioSalidaRep, "de salida").ConfigureAwait(false);
             ComprobarPuedeEscribir(usuario, empresa, origen, almacenOrigen.ControlUbicaciones);
@@ -679,12 +692,22 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
                 reservas = await huecos.Reservar(empresa, origen, creadas
                     .Select(f => new LineaReservaReposicion { NumeroOrdenEntrada = f.NumeroOrden, Producto = f.Producto, Cantidad = f.Cantidad })
                     .ToList(), quien).ConfigureAwait(false);
+                var cabecera = new CabeceraReposicionTraspaso
+                {
+                    Empresa = empresa, Origen = origen, Destino = destino, Herramienta = herramienta,
+                    UsuarioCreacion = quien, FechaCreacion = ahora(), FechaCorte = corte
+                };
                 if (!cerrarYa)
                 {
+                    // NestoAPI#577: la tienda la prepara sin número (hasta Terminar): se reserva ya para guardar la cabecera
+                    _ = await registro.Reservar(cabecera).ConfigureAwait(false);
                     return null;
                 }
-                return await CerrarPreparacion(empresa, origen, destino, diario, almacenDestino, creadas.Where(f => f.Cantidad > 0).ToList(),
+                int numero = await CerrarPreparacion(empresa, origen, destino, diario, almacenDestino, creadas.Where(f => f.Cantidad > 0).ToList(),
                     huecos, quien, contabilizar: false).ConfigureAwait(false);
+                cabecera.NumTraspaso = numero;
+                await registro.Crear(cabecera).ConfigureAwait(false);
+                return numero;
             }).ConfigureAwait(false);
 
             if (!cerrarYa)
@@ -803,8 +826,15 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
             }
             string quien = UsuarioAuditoriaHelper.Resolver(usuario, null);
 
-            int numeroTraspaso = await repositorio.EnTransaccion(() =>
-                CerrarPreparacion(empresa, origen, destino, diario, almacenDestino, conCantidad, huecos, quien, contabilizar: true)).ConfigureAwait(false);
+            int numeroTraspaso = await repositorio.EnTransaccion(async () =>
+            {
+                // NestoAPI#577: el número que se reservó al crearla desde la API (con su cabecera); si la creó Nesto viejo, uno nuevo
+                int? reservado = await registro.LeerReserva(empresa, origen, destino, conCantidad.First().Usuario).ConfigureAwait(false);
+                int numero = await CerrarPreparacion(empresa, origen, destino, diario, almacenDestino, conCantidad, huecos, quien,
+                    contabilizar: true, numeroReservado: reservado).ConfigureAwait(false);
+                await registro.MarcarPreparada(empresa, numero, quien).ConfigureAwait(false);
+                return numero;
+            }).ConfigureAwait(false);
 
             return new ResultadoTerminarReposicionDTO
             {
@@ -858,6 +888,8 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
                 {
                     throw Conflicto($"El traspaso {numeroTraspaso} ha cambiado mientras tanto ({borradas} líneas borradas, {filas.Count} esperadas): vuelve a intentarlo.");
                 }
+                // (4) NestoAPI#577: y su cabecera (el traspaso ya no existe)
+                await registro.Borrar(empresa, numeroTraspaso).ConfigureAwait(false);
                 return new ResultadoAnularReposicionDTO
                 {
                     NumTraspaso = numeroTraspaso,
@@ -908,8 +940,9 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
         /// (tiendas) termina con prdExtrProducto del diario de salida; sin él (Algete) la salida queda en PreExtrProducto
         /// «por salir» y la contabiliza Ariadna al terminar la recogida. Va dentro de la transacción del llamante.
         /// </summary>
+        /// <param name="numeroReservado">NestoAPI#577: el número reservado al crearla (tiendas); null = uno nuevo del contador.</param>
         private async Task<int> CerrarPreparacion(string empresa, string origen, string destino, string diario, DatosAlmacenReposicion almacenDestino,
-            List<FilaReposicionEnPreparacion> conCantidad, IUbicacionesReposicion huecos, string quien, bool contabilizar)
+            List<FilaReposicionEnPreparacion> conCantidad, IUbicacionesReposicion huecos, string quien, bool contabilizar, int? numeroReservado = null)
         {
             // (2) Nesto viejo: select empresa from vstreposiciónAlmacénAbajo where diario=… and almacén<>'ALG' and estado>=0 → tiene que ser 0
             int deOtroAlmacen = await repositorio.ContarLineasDeOtroAlmacen(empresa, diario, destino, soloSinTraspaso: !contabilizar).ConfigureAwait(false);
@@ -919,7 +952,8 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
                     "hay que contabilizarlas o quitarlas desde Nesto viejo antes de terminar.");
             }
             // (3) select traspasoalmacén from contadoresglobales → +1; update contadoresglobales set traspasoalmacén=80893
-            int numero = await repositorio.NuevoNumeroTraspaso().ConfigureAwait(false);
+            //     NestoAPI#577: salvo que ya se reservara al crearla desde la API (tiendas), para su cabecera
+            int numero = numeroReservado ?? await repositorio.NuevoNumeroTraspaso().ConfigureAwait(false);
             DateTime momento = ahora();
             // (4) delete … and cantidad=0
             _ = await repositorio.BorrarLineasACero(empresa, diario, destino).ConfigureAwait(false);

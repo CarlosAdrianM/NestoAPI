@@ -102,6 +102,15 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             return Task.CompletedTask;
         }
 
+        /// <summary>NestoAPI#577: las reposiciones marcadas como preparadas en su cabecera (ReposicionesTraspasos).</summary>
+        public List<(int Traspaso, string Usuario)> ReposicionesPreparadas { get; } = new List<(int, string)>();
+
+        public Task MarcarReposicionPreparada(string empresa, int traspaso, string usuario)
+        {
+            ReposicionesPreparadas.Add((traspaso, usuario));
+            return Task.CompletedTask;
+        }
+
         public Task<DateTime> AhoraEnBaseDeDatos() => Task.FromResult(new DateTime(2026, 10, 3, 10, 0, 0));
 
         public Task<List<FilaEnsayoDTO>> FotoPicking(string empresa, IReadOnlyCollection<int> pedidos, IReadOnlyCollection<string> productos, DateTime desde)
@@ -353,6 +362,20 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             Assert.AreEqual(3, tx.QuitadoDeReposicion.Single().Cantidad);
             Assert.AreEqual(0, tx.Contabilizados.Count);
             StringAssert.Contains(resultado.Salida.Mensaje, "No ha salido nada");
+            Assert.AreEqual(0, tx.ReposicionesPreparadas.Count, "NestoAPI#577: no ha salido, no se da por preparada");
+        }
+
+        [TestMethod]
+        public async Task Terminar_UnaReposicion_ApuntaEnLaCabeceraQuienLaHaSacado()
+        {
+            // NestoAPI#577 (corte 3a): ReposicionesTraspasos.UsuarioPreparacion / FechaPreparada (Algete, recogida en Ariadna)
+            ReposicionRecogida(new LecturaPickingAlmacen { Producto = "A", Unidades = 3 });
+
+            _ = await servicio.Terminar(EMPRESA, "REPO", 80872, Usuario("Almacén"));
+
+            Assert.AreEqual(1, tx.Contabilizados.Count);
+            Assert.AreEqual(80872, tx.ReposicionesPreparadas.Single().Traspaso);
+            Assert.AreEqual(tx.Contabilizados.Single().Usuario, tx.ReposicionesPreparadas.Single().Usuario);
         }
 
         [TestMethod]

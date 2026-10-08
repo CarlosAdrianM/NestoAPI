@@ -366,6 +366,33 @@ namespace NestoAPI.Tests.Models
             Assert.AreEqual(typeof(int), typeof(ProductoCodigoBarras).GetProperty("Cantidad").PropertyType);
         }
 
+        /// <summary>
+        /// NestoAPI#577 (corte 3a): cabecera de trazabilidad de los traspasos de reposición añadida a mano; clave compuesta
+        /// (Empresa, NumTraspaso) sin identidad (el número sale del contador compartido) y las fechas de los pasos admiten null.
+        /// </summary>
+        [TestMethod]
+        public void Edmx_ReposicionesTraspasos_EstaCompletaEnLasTresCapasConClaveEmpresaYNumTraspaso()
+        {
+            ComprobarTresCapas("ReposicionTraspaso", "ReposicionesTraspasos",
+                "Empresa", "NumTraspaso", "Origen", "Destino", "Herramienta", "UsuarioCreacion", "FechaCreacion", "FechaCorte",
+                "UsuarioPreparacion", "FechaPreparada", "UsuarioRecepcion", "FechaRecibida");
+
+            XElement conceptual = EntidadesPorNombre(LeerRecurso("csdl"), CsdlNs)["ReposicionTraspaso"];
+            XElement almacen = EntidadesPorNombre(LeerRecurso("ssdl"), SsdlNs)["ReposicionesTraspasos"];
+            CollectionAssert.AreEqual(new[] { "Empresa", "NumTraspaso" },
+                almacen.Element(SsdlNs + "Key").Elements(SsdlNs + "PropertyRef").Select(p => p.Attribute("Name").Value).ToArray());
+            CollectionAssert.AreEqual(new[] { "Empresa", "NumTraspaso" },
+                conceptual.Element(CsdlNs + "Key").Elements(CsdlNs + "PropertyRef").Select(p => p.Attribute("Name").Value).ToArray());
+            Assert.IsNull(almacen.Elements(SsdlNs + "Property").Single(p => p.Attribute("Name").Value == "NumTraspaso").Attribute("StoreGeneratedPattern"),
+                "NumTraspaso no es identidad: sale de ContadoresGlobales.TraspasoAlmacén");
+            Assert.AreEqual("varchar", (string)almacen.Elements(SsdlNs + "Property").Single(p => p.Attribute("Name").Value == "Herramienta").Attribute("Type"));
+            Assert.AreEqual(typeof(int), typeof(ReposicionTraspaso).GetProperty("NumTraspaso").PropertyType);
+            Assert.AreEqual(typeof(DateTime), typeof(ReposicionTraspaso).GetProperty("FechaCreacion").PropertyType);
+            Assert.AreEqual(typeof(DateTime?), typeof(ReposicionTraspaso).GetProperty("FechaCorte").PropertyType);
+            Assert.AreEqual(typeof(DateTime?), typeof(ReposicionTraspaso).GetProperty("FechaPreparada").PropertyType);
+            Assert.AreEqual(typeof(DateTime?), typeof(ReposicionTraspaso).GetProperty("FechaRecibida").PropertyType);
+        }
+
         private static void ComprobarTresCapas(string entidad, string conjunto, params string[] esperadas)
         {
             XElement conceptual = EntidadesPorNombre(LeerRecurso("csdl"), CsdlNs)[entidad];

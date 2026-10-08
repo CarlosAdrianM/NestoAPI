@@ -48,6 +48,11 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// <summary>Devuelve al diario lo apartado con <see cref="ApartarOtros"/>.</summary>
         Task DevolverApartadas(string empresa, string diario, IReadOnlyCollection<int> apartadas);
         Task RegistrarEvidencia(string empresa, IEnumerable<EvidenciaRecepcion> filas);
+        /// <summary>
+        /// NestoAPI#577: la reposición ya ha entrado en el destino (cabecera ReposicionesTraspasos: quién y cuándo). Sin
+        /// cabecera (de Nesto viejo), no hace nada.
+        /// </summary>
+        Task MarcarReposicionRecibida(string empresa, int traspaso, string usuario);
         /// <summary>Para el ensayo: cómo leer las filas que toca dar entrada al diario (antes y después).</summary>
         Task<Func<Task<List<FilaEnsayoDTO>>>> PrepararFoto(string empresa, string diario, IReadOnlyCollection<int> traspasos);
     }
@@ -402,6 +407,11 @@ SELECT @puestas;";
         public Task RegistrarEvidencia(string empresa, IEnumerable<EvidenciaRecepcion> filas)
         {
             return EvidenciasRecepcionSql.Registrar(db, empresa, OrigenRecepcionReposiciones.TIPO, filas);
+        }
+
+        public Task MarcarReposicionRecibida(string empresa, int traspaso, string usuario)
+        {
+            return Reposiciones.RegistroReposicionesTraspasosSql.MarcarRecibida(db, empresa, traspaso, usuario);
         }
 
         internal const string UBICACIONES_DE_REPOSICIONES = "u.Empresa = @p0 AND u.Estado = 2 AND u.[NºTraspasoRepo] IN ({LISTA})";
