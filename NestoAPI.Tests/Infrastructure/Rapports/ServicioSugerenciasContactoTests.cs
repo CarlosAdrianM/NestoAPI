@@ -267,6 +267,83 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
             A.CallTo(() => fakeSugerencias.Add(A<SugerenciaContacto>._)).MustNotHaveHappened();
         }
 
+        // ---------------- Número del día: al menos el objetivo de hoy ----------------
+
+        /// <summary>
+        /// Octubre de 2026 tiene 18 laborables del 7 al 30: n clientes que compran cada semana (52 pedidos, cadencia 7)
+        /// suman 3 contactos al mes cada uno, sin contactos todavía → ObjetivoHoy = ⌈3n / 18⌉.
+        /// </summary>
+        private void CarteraConObjetivoHoy(int clientes)
+        {
+            cartera = Enumerable.Range(1, clientes).Select(i => Cliente((20000 + i).ToString(), 52, null)).ToList();
+            A.CallTo(() => repositorio.LeerContactos(A<string>._, A<DateTime>._)).Returns(Task.FromResult(new ContactosVendedor()));
+        }
+
+        [TestMethod]
+        public async Task Leer_ObjetivoHoyMayorQueElNumeroPedido_RegistraYDevuelveElObjetivo()
+        {
+            CarteraConObjetivoHoy(187); // 561 / 18 → 32
+
+            SugerenciasContactoDTO respuesta = await Servicio().Leer("MPP", "Llamada", 20, "", "u");
+
+            Assert.AreEqual(32, respuesta.Ritmo.ObjetivoHoy);
+            Assert.AreEqual(32, respuesta.Sugerencias.Count);
+            Assert.AreEqual(32, sugerencias.Count);
+        }
+
+        [TestMethod]
+        public async Task Leer_ObjetivoHoyMenorQueElNumeroPedido_SeQuedaElNumeroPedido()
+        {
+            CarteraConObjetivoHoy(55); // 165 / 18 → 10
+
+            SugerenciasContactoDTO respuesta = await Servicio().Leer("MPP", "Llamada", 20, "", "u");
+
+            Assert.AreEqual(10, respuesta.Ritmo.ObjetivoHoy);
+            Assert.AreEqual(20, respuesta.Sugerencias.Count);
+            Assert.AreEqual(20, sugerencias.Count);
+        }
+
+        [TestMethod]
+        public async Task Leer_ObjetivoHoyCero_SeQuedaElNumeroPedido()
+        {
+            CarteraConObjetivoHoy(30);
+            A.CallTo(() => repositorio.LeerContactos(A<string>._, A<DateTime>._)).Returns(Task.FromResult(new ContactosVendedor { Mes = 500 }));
+
+            SugerenciasContactoDTO respuesta = await Servicio().Leer("MPP", "Llamada", 20, "", "u");
+
+            Assert.AreEqual(0, respuesta.Ritmo.ObjetivoHoy);
+            Assert.AreEqual(20, respuesta.Sugerencias.Count);
+            Assert.AreEqual(20, sugerencias.Count);
+        }
+
+        [TestMethod]
+        public async Task Leer_ObjetivoHoyPorEncimaDelMaximo_SeQuedaEnElMaximo()
+        {
+            CarteraConObjetivoHoy(1250); // 3750 / 18 → 209
+
+            SugerenciasContactoDTO respuesta = await Servicio().Leer("MPP", "Llamada", 20, "", "u");
+
+            Assert.AreEqual(209, respuesta.Ritmo.ObjetivoHoy);
+            Assert.AreEqual(ServicioSugerenciasContacto.NUMERO_MAXIMO, respuesta.Sugerencias.Count);
+            Assert.AreEqual(ServicioSugerenciasContacto.NUMERO_MAXIMO, sugerencias.Count);
+        }
+
+        [TestMethod]
+        public async Task Leer_ElObjetivoDeHoySubeTrasRegistrarLaLista_LaCompletaSinRepetir()
+        {
+            CarteraConObjetivoHoy(55); // 10: se registran las 20 pedidas
+            await Servicio().Leer("MPP", "Llamada", 20, "", "u");
+            Assert.AreEqual(20, sugerencias.Count);
+
+            CarteraConObjetivoHoy(187); // 32
+            SugerenciasContactoDTO respuesta = await Servicio().Leer("MPP", "Llamada", 20, "", "u");
+
+            Assert.AreEqual(32, respuesta.Sugerencias.Count);
+            Assert.AreEqual(32, sugerencias.Count);
+            Assert.AreEqual(32, sugerencias.Select(s => s.Cliente).Distinct().Count());
+            CollectionAssert.AreEqual(Enumerable.Range(1, 32).ToArray(), sugerencias.Select(s => s.Orden).ToArray());
+        }
+
         [TestMethod]
         public async Task Leer_SinVendedor_ArgumentException()
         {

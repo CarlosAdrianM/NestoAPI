@@ -18,7 +18,7 @@ namespace NestoAPI.Infraestructure.Rapports
     /// NestoAPI#603 (corte 1): junta la cartera (<see cref="IRepositorioCarteraContacto"/>), la probabilidad del modelo
     /// (<see cref="IProbabilidadesContacto"/>), el motor (<see cref="MotorSugerenciasContacto"/>) y el registro del día
     /// (<see cref="RegistroSugerenciasContacto"/>).
-    /// <para>La primera consulta del día de un vendedor fija su lista: se guardan las <c>numero</c> primeras y las consultas
+    /// <para>La primera consulta del día de un vendedor fija su lista: se guardan las max(<c>numero</c>, objetivo de hoy) primeras y las consultas
     /// siguientes devuelven esas mismas (con Atendida al día y los datos del cliente frescos). Si piden más de las que
     /// hay, se añaden las siguientes de la lista viva que no estuvieran ya. El ritmo y los pendientes se calculan siempre
     /// en vivo.</para>
@@ -88,6 +88,7 @@ namespace NestoAPI.Infraestructure.Rapports
             {
                 ritmo.Frase = await frases.Generar(vendedorLimpio, ritmo, ahora, d => !esFestivo(d, delegacion)).ConfigureAwait(false);
             }
+            numero = NumeroDelDia(numero, ritmo.ObjetivoHoy);
 
             var registro = new RegistroSugerenciasContacto(db, bloqueo);
             List<SugerenciaContacto> delDia = await registro.LeerDelDia(vendedorLimpio, hoy).ConfigureAwait(false);
@@ -131,6 +132,15 @@ namespace NestoAPI.Infraestructure.Rapports
                     .Select(s => ADTO(s, porClave, hoy))
                     .ToList()
             };
+        }
+
+        /// <summary>
+        /// NestoAPI#603: la lista del día tiene al menos el objetivo de llamadas de hoy (Nesto pide 20 fijo), sin pasar de
+        /// <see cref="NUMERO_MAXIMO"/>. Si el objetivo sube después de registrar la lista, la siguiente consulta la completa.
+        /// </summary>
+        internal static int NumeroDelDia(int numeroPedido, int objetivoHoy)
+        {
+            return Math.Min(NUMERO_MAXIMO, Math.Max(numeroPedido, objetivoHoy));
         }
 
         private static SugerenciaContactoDTO ADTO(SugerenciaContacto fila, Dictionary<string, ClienteCarteraContacto> cartera, DateTime hoy)
