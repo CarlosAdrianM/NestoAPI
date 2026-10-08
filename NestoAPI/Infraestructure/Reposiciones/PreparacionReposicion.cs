@@ -699,8 +699,8 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
                 };
                 if (!cerrarYa)
                 {
-                    // NestoAPI#577: la tienda la prepara sin número (hasta Terminar): se reserva ya para guardar la cabecera
-                    _ = await registro.Reservar(cabecera).ConfigureAwait(false);
+                    // NestoAPI#577: la tienda la prepara sin número (hasta Terminar): la cabecera también nace sin él
+                    await registro.Crear(cabecera).ConfigureAwait(false);
                     return null;
                 }
                 int numero = await CerrarPreparacion(empresa, origen, destino, diario, almacenDestino, creadas.Where(f => f.Cantidad > 0).ToList(),
@@ -828,11 +828,10 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
 
             int numeroTraspaso = await repositorio.EnTransaccion(async () =>
             {
-                // NestoAPI#577: el número que se reservó al crearla desde la API (con su cabecera); si la creó Nesto viejo, uno nuevo
-                int? reservado = await registro.LeerReserva(empresa, origen, destino, conCantidad.First().Usuario).ConfigureAwait(false);
                 int numero = await CerrarPreparacion(empresa, origen, destino, diario, almacenDestino, conCantidad, huecos, quien,
-                    contabilizar: true, numeroReservado: reservado).ConfigureAwait(false);
-                await registro.MarcarPreparada(empresa, numero, quien).ConfigureAwait(false);
+                    contabilizar: true).ConfigureAwait(false);
+                // NestoAPI#577: el número va a la cabecera abierta de la reposición (si la creó la API; Nesto viejo no la tiene)
+                await registro.NumerarYMarcarPreparada(empresa, origen, destino, numero, quien).ConfigureAwait(false);
                 return numero;
             }).ConfigureAwait(false);
 
@@ -940,9 +939,8 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
         /// (tiendas) termina con prdExtrProducto del diario de salida; sin él (Algete) la salida queda en PreExtrProducto
         /// «por salir» y la contabiliza Ariadna al terminar la recogida. Va dentro de la transacción del llamante.
         /// </summary>
-        /// <param name="numeroReservado">NestoAPI#577: el número reservado al crearla (tiendas); null = uno nuevo del contador.</param>
         private async Task<int> CerrarPreparacion(string empresa, string origen, string destino, string diario, DatosAlmacenReposicion almacenDestino,
-            List<FilaReposicionEnPreparacion> conCantidad, IUbicacionesReposicion huecos, string quien, bool contabilizar, int? numeroReservado = null)
+            List<FilaReposicionEnPreparacion> conCantidad, IUbicacionesReposicion huecos, string quien, bool contabilizar)
         {
             // (2) Nesto viejo: select empresa from vstreposiciónAlmacénAbajo where diario=… and almacén<>'ALG' and estado>=0 → tiene que ser 0
             int deOtroAlmacen = await repositorio.ContarLineasDeOtroAlmacen(empresa, diario, destino, soloSinTraspaso: !contabilizar).ConfigureAwait(false);
@@ -952,8 +950,7 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
                     "hay que contabilizarlas o quitarlas desde Nesto viejo antes de terminar.");
             }
             // (3) select traspasoalmacén from contadoresglobales → +1; update contadoresglobales set traspasoalmacén=80893
-            //     NestoAPI#577: salvo que ya se reservara al crearla desde la API (tiendas), para su cabecera
-            int numero = numeroReservado ?? await repositorio.NuevoNumeroTraspaso().ConfigureAwait(false);
+            int numero = await repositorio.NuevoNumeroTraspaso().ConfigureAwait(false);
             DateTime momento = ahora();
             // (4) delete … and cantidad=0
             _ = await repositorio.BorrarLineasACero(empresa, diario, destino).ConfigureAwait(false);

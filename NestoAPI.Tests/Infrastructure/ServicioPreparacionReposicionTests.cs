@@ -733,19 +733,21 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
-        public async Task Crear_DesdeUnaTienda_ReservaElNumeroYGuardaLaCabeceraDentroDeLaTransaccion()
+        public async Task Crear_DesdeUnaTienda_GuardaLaCabeceraSinNumeroDentroDeLaTransaccion_YNoGastaNumeroDelContador()
         {
-            // En la tienda la reposición se queda en preparación SIN número (hasta Terminar): se reserva para la cabecera
+            // NestoAPI#577 (08/10/26, Carlos): no se reservan números. En la tienda la reposición se queda en preparación SIN
+            // número (hasta Terminar) y su cabecera también: el número lo pone Terminar.
             ReposicionEnPreparacionDTO creada = await ServicioConCabecera().Crear(Peticion(("41980", 5)), Paloma);
 
             CollectionAssert.AreEqual(new[]
             {
                 "TRAN",
                 "INSERT RepoAlcAlg 41980 x5 ALC→ALG 06/10/2026 NV NUEVAVISION\\Paloma",
-                "CABECERA reservar 80950 ALC→ALG Nesto NUEVAVISION\\Paloma 06/10/2026 9:32 corte -",
+                "CABECERA crear - ALC→ALG Nesto NUEVAVISION\\Paloma 06/10/2026 9:32 corte -",
                 "COMMIT"
             }, repositorio.Llamadas);
-            Assert.IsNull(creada.NumTraspaso, "Para Nesto sigue en preparación: el número reservado no se enseña");
+            Assert.IsNull(creada.NumTraspaso);
+            Assert.IsNull(registro.Cabeceras.Single().NumTraspaso);
         }
 
         [TestMethod]
@@ -802,35 +804,19 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
-        public async Task Terminar_ConLaReservaHechaAlCrear_UsaEseNumeroSinGastarOtroYLaMarcaPreparada()
-        {
-            repositorio.Lineas.Add(Fila(561483500, "41980", 3));
-            repositorio.UltimoTraspaso = 80960;
-            ServicioPreparacionReposicion servicio = ServicioConCabecera();
-            registro.Reserva = 80950;
-
-            ResultadoTerminarReposicionDTO resultado = await servicio.Terminar("1", "ALC", Usuario("NUEVAVISION\\Andre", "Almacén"));
-
-            Assert.AreEqual(80950, resultado.NumTraspaso);
-            Assert.AreEqual("CABECERA reserva ALC→ALG de NUEVAVISION\\Paloma", repositorio.Llamadas[1], "La de quien grabó las líneas, no la de quien termina");
-            Assert.IsFalse(repositorio.Llamadas.Any(l => l.StartsWith("CONTADOR")), "No se gasta otro número del contador");
-            CollectionAssert.Contains(repositorio.Llamadas, "UPDATE traspaso 80950 fecha 06/10/2026 9:32 RepoAlcAlg ALG → 1");
-            Assert.AreEqual("CABECERA preparada 80950 NUEVAVISION\\Andre", repositorio.Llamadas[repositorio.Llamadas.Count - 2]);
-            Assert.AreEqual("COMMIT", repositorio.Llamadas.Last());
-        }
-
-        [TestMethod]
-        public async Task Terminar_SinReserva_LaCreoNestoViejo_CogeUnNumeroNuevo()
+        public async Task Terminar_CogeElNumeroDelContador_YSeLoPoneALaCabeceraAbiertaDelOrigenAlMarcarlaPreparada()
         {
             repositorio.Lineas.Add(Fila(561483500, "41980", 3));
             repositorio.UltimoTraspaso = 80960;
 
-            ResultadoTerminarReposicionDTO resultado = await ServicioConCabecera().Terminar("1", "ALC", Paloma);
+            ResultadoTerminarReposicionDTO resultado = await ServicioConCabecera().Terminar("1", "ALC", Usuario("NUEVAVISION\\Andre", "Almacén"));
 
             Assert.AreEqual(80961, resultado.NumTraspaso);
             CollectionAssert.Contains(repositorio.Llamadas, "CONTADOR → 80961");
-            // Sin cabecera no hace nada (el UPDATE no encuentra fila): un traspaso sin cabecera es de Nesto viejo
-            CollectionAssert.Contains(repositorio.Llamadas, "CABECERA preparada 80961 NUEVAVISION\\Paloma");
+            CollectionAssert.Contains(repositorio.Llamadas, "UPDATE traspaso 80961 fecha 06/10/2026 9:32 RepoAlcAlg ALG → 1");
+            // La cabecera abierta (sin número ni preparada) de ALC → ALG: si no hay (la creó Nesto viejo), no hace nada
+            Assert.AreEqual("CABECERA numerar ALC→ALG 80961 NUEVAVISION\\Andre", repositorio.Llamadas[repositorio.Llamadas.Count - 2]);
+            Assert.AreEqual("COMMIT", repositorio.Llamadas.Last());
         }
 
         [TestMethod]
@@ -858,7 +844,7 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
-        public void Sql_LaCabeceraNoFallaSinLaTabla_YLaReservaEsLaQueNoTieneFilasEnPreExtrProducto()
+        public void Sql_LaCabeceraNoFallaSinLaTabla_YTerminarNumeraLaAbiertaMasReciente()
         {
             StringAssert.Contains(RegistroReposicionesTraspasosSql.SQL_CREAR, "IF OBJECT_ID('dbo.ReposicionesTraspasos') IS NOT NULL");
             StringAssert.Contains(RegistroReposicionesTraspasosSql.SQL_MARCAR_PREPARADA, "IF OBJECT_ID('dbo.ReposicionesTraspasos') IS NOT NULL");
@@ -866,12 +852,10 @@ namespace NestoAPI.Tests.Infrastructure
             StringAssert.Contains(RegistroReposicionesTraspasosSql.SQL_BORRAR, "IF OBJECT_ID('dbo.ReposicionesTraspasos') IS NOT NULL");
             StringAssert.Contains(RegistroReposicionesTraspasosSql.SQL_MARCAR_PREPARADA, "FechaPreparada IS NULL");
             StringAssert.Contains(RegistroReposicionesTraspasosSql.SQL_MARCAR_RECIBIDA, "FechaRecibida IS NULL");
-            foreach (string sql in new[] { RegistroReposicionesTraspasosSql.SQL_RESERVA_DEL_ORIGEN, RegistroReposicionesTraspasosSql.SQL_LEER_RESERVA })
-            {
-                StringAssert.Contains(sql, "FechaPreparada IS NULL AND r.FechaRecibida IS NULL");
-                StringAssert.Contains(sql, "NOT EXISTS (SELECT 1 FROM PreExtrProducto p WHERE p.Empresa = r.Empresa AND p.[NºTraspaso] = r.NumTraspaso)");
-            }
-            StringAssert.Contains(RegistroReposicionesTraspasosSql.SQL_LEER_RESERVA, "r.UsuarioCreacion = @p3");
+            StringAssert.Contains(RegistroReposicionesTraspasosSql.SQL_NUMERAR_ABIERTA, "IF OBJECT_ID('dbo.ReposicionesTraspasos') IS NOT NULL");
+            // La abierta: sin número y sin preparar, del origen y destino; si hubiera varias (no debería), la más reciente
+            StringAssert.Contains(RegistroReposicionesTraspasosSql.SQL_NUMERAR_ABIERTA, "a.NumTraspaso IS NULL AND a.FechaPreparada IS NULL");
+            StringAssert.Contains(RegistroReposicionesTraspasosSql.SQL_NUMERAR_ABIERTA, "ORDER BY a.FechaCreacion DESC, a.Id DESC");
         }
 
         /// <summary>La cabecera en memoria: apunta en las mismas Llamadas del repositorio para ver que va dentro de la transacción.</summary>
@@ -879,9 +863,6 @@ namespace NestoAPI.Tests.Infrastructure
         {
             private readonly RepositorioEnMemoria repositorio;
             public readonly List<CabeceraReposicionTraspaso> Cabeceras = new List<CabeceraReposicionTraspaso>();
-            /// <summary>Lo que devuelve LeerReserva.</summary>
-            public int? Reserva;
-            public int SiguienteReserva = 80950;
 
             public RegistroEnMemoria(RepositorioEnMemoria repositorio)
             {
@@ -889,7 +870,7 @@ namespace NestoAPI.Tests.Infrastructure
             }
 
             private static string Texto(string accion, CabeceraReposicionTraspaso c) =>
-                $"CABECERA {accion} {c.NumTraspaso} {c.Origen}→{c.Destino} {c.Herramienta} {c.UsuarioCreacion} {c.FechaCreacion:dd/MM/yyyy H:mm} " +
+                $"CABECERA {accion} {(c.NumTraspaso.HasValue ? c.NumTraspaso.ToString() : "-")} {c.Origen}→{c.Destino} {c.Herramienta} {c.UsuarioCreacion} {c.FechaCreacion:dd/MM/yyyy H:mm} " +
                 $"corte {(c.FechaCorte.HasValue ? c.FechaCorte.Value.ToString("dd/MM/yyyy H:mm") : "-")}";
 
             public Task Crear(CabeceraReposicionTraspaso cabecera)
@@ -899,18 +880,10 @@ namespace NestoAPI.Tests.Infrastructure
                 return Task.CompletedTask;
             }
 
-            public Task<int?> Reservar(CabeceraReposicionTraspaso cabecera)
+            public Task NumerarYMarcarPreparada(string empresa, string origen, string destino, int numTraspaso, string usuario)
             {
-                cabecera.NumTraspaso = SiguienteReserva;
-                Cabeceras.Add(cabecera);
-                repositorio.Llamadas.Add(Texto("reservar", cabecera));
-                return Task.FromResult<int?>(SiguienteReserva);
-            }
-
-            public Task<int?> LeerReserva(string empresa, string origen, string destino, string usuarioCreacion)
-            {
-                repositorio.Llamadas.Add($"CABECERA reserva {origen}→{destino} de {usuarioCreacion}");
-                return Task.FromResult(Reserva);
+                repositorio.Llamadas.Add($"CABECERA numerar {origen}→{destino} {numTraspaso} {usuario}");
+                return Task.CompletedTask;
             }
 
             public Task MarcarPreparada(string empresa, int numTraspaso, string usuario)

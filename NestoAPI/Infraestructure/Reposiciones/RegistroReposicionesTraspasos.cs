@@ -1,9 +1,7 @@
-using NestoAPI.Infraestructure.Contadores;
 using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Models;
 using System;
 using System.Data;
-using System.Data.Entity;
 using System.Data.SqlClient;
 using System.Linq;
 using System.Security.Principal;
@@ -50,8 +48,11 @@ namespace NestoAPI.Infraestructure.Reposiciones
     public class CabeceraReposicionTraspaso
     {
         public string Empresa { get; set; }
-        /// <summary>Al reservar (tiendas) no se usa: lo pone el registro.</summary>
-        public int NumTraspaso { get; set; }
+        /// <summary>
+        /// El del traspaso si nace numerada (Algete). Null si se queda en preparación en una tienda: lo pone Terminar
+        /// (<see cref="IRegistroReposicionesTraspasos.NumerarYMarcarPreparada"/>).
+        /// </summary>
+        public int? NumTraspaso { get; set; }
         public string Origen { get; set; }
         public string Destino { get; set; }
         public string Herramienta { get; set; }
@@ -67,30 +68,28 @@ namespace NestoAPI.Infraestructure.Reposiciones
     /// es de Nesto viejo. Todo va dentro de la transacción del llamante. Si la tabla aún no existe (script sin lanzar),
     /// no se apunta nada y lo demás sigue igual.
     ///
-    /// <para>Desde una tienda, la reposición queda en preparación SIN número de traspaso hasta Terminar (como en Nesto
-    /// viejo). Para no perder quién y con qué la creó, al crearla se RESERVA ya el número (<see cref="Reservar"/>) y
-    /// Terminar lo usa (<see cref="LeerReserva"/>). Una reserva es una cabecera sin preparar y sin ninguna fila en
-    /// PreExtrProducto con su número. Si la reposición la termina Nesto viejo (que coge otro número), la reserva se queda
-    /// así y la siguiente que se cree desde ese origen la reutiliza (no se queman números del contador).</para>
+    /// <para>Clave propia (Id). Decisión de Carlos (08/10/26): NO se reservan números del contador. Desde una tienda la
+    /// reposición queda en preparación SIN número de traspaso hasta Terminar (como en Nesto viejo) y su cabecera nace con
+    /// NumTraspaso NULL; Terminar coge el número del contador, como siempre, y se lo pone a la cabecera ABIERTA (sin
+    /// número y sin preparar) de ese origen y destino. Como mucho hay una reposición en preparación por diario de salida
+    /// del origen, así que hay como mucho una abierta; si hubiera varias (una que terminó Nesto viejo, que no toca la
+    /// cabecera, se queda abierta para siempre), se coge la más reciente, que es la de la preparación en curso.</para>
     /// </summary>
     public interface IRegistroReposicionesTraspasos
     {
-        /// <summary>Desde Algete: la reposición nace ya numerada (y cerrada, por recoger en Ariadna).</summary>
+        /// <summary>
+        /// La cabecera al crear la reposición: con su número desde Algete (nace numerada y cerrada, por recoger en Ariadna) o
+        /// sin él desde una tienda (se queda en preparación hasta Terminar).
+        /// </summary>
         Task Crear(CabeceraReposicionTraspaso cabecera);
 
         /// <summary>
-        /// Desde una tienda: reserva el número del traspaso para la reposición que se queda en preparación (o reutiliza la
-        /// reserva que el origen tenga sin usar). Null si no hay tabla.
+        /// Al terminar en la tienda: el número recién sacado del contador va a la cabecera abierta de ese origen y destino,
+        /// que queda preparada. Sin cabecera abierta (la creó Nesto viejo), no hace nada.
         /// </summary>
-        Task<int?> Reservar(CabeceraReposicionTraspaso cabecera);
+        Task NumerarYMarcarPreparada(string empresa, string origen, string destino, int numTraspaso, string usuario);
 
-        /// <summary>
-        /// Al terminar en la tienda: el número reservado al crear ESTA preparación (mismo origen, destino y usuario que
-        /// grabó las líneas). Null si no hay (la creó Nesto viejo o es anterior a la cabecera): se coge uno nuevo.
-        /// </summary>
-        Task<int?> LeerReserva(string empresa, string origen, string destino, string usuarioCreacion);
-
-        /// <summary>Terminada la salida (Terminar en la tienda o recogida en Ariadna). Sin cabecera, no hace nada.</summary>
+        /// <summary>Terminada la salida (recogida en Ariadna, Algete). Sin cabecera, no hace nada.</summary>
         Task MarcarPreparada(string empresa, int numTraspaso, string usuario);
 
         /// <summary>Anulada (DELETE api/Reposiciones/{n}): fuera la cabecera.</summary>
@@ -103,46 +102,28 @@ namespace NestoAPI.Infraestructure.Reposiciones
         internal static readonly SinRegistroReposicionesTraspasos Instancia = new SinRegistroReposicionesTraspasos();
 
         public Task Crear(CabeceraReposicionTraspaso cabecera) => Task.CompletedTask;
-        public Task<int?> Reservar(CabeceraReposicionTraspaso cabecera) => Task.FromResult<int?>(null);
-        public Task<int?> LeerReserva(string empresa, string origen, string destino, string usuarioCreacion) => Task.FromResult<int?>(null);
+        public Task NumerarYMarcarPreparada(string empresa, string origen, string destino, int numTraspaso, string usuario) => Task.CompletedTask;
         public Task MarcarPreparada(string empresa, int numTraspaso, string usuario) => Task.CompletedTask;
         public Task Borrar(string empresa, int numTraspaso) => Task.CompletedTask;
     }
 
     public class RegistroReposicionesTraspasosSql : IRegistroReposicionesTraspasos
     {
-        internal const string SQL_EXISTE_TABLA =
-            "SELECT CAST(CASE WHEN OBJECT_ID('dbo.ReposicionesTraspasos') IS NULL THEN 0 ELSE 1 END AS bit)";
-
         internal const string SQL_CREAR = @"
 IF OBJECT_ID('dbo.ReposicionesTraspasos') IS NOT NULL
     INSERT INTO dbo.ReposicionesTraspasos (Empresa, NumTraspaso, Origen, Destino, Herramienta, UsuarioCreacion, FechaCreacion, FechaCorte)
     VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7)";
 
-        // Reserva sin usar: ni preparada ni recibida, y su número no está en ninguna fila de PreExtrProducto (las líneas en
-        // preparación no llevan número; en cuanto se numeran, Terminar la marca preparada). PreExtrProducto es pequeña.
-        private const string SIN_USAR = @"
-  AND r.FechaPreparada IS NULL AND r.FechaRecibida IS NULL
-  AND NOT EXISTS (SELECT 1 FROM PreExtrProducto p WHERE p.Empresa = r.Empresa AND p.[NºTraspaso] = r.NumTraspaso)";
-
-        internal const string SQL_RESERVA_DEL_ORIGEN = @"
-SELECT TOP 1 r.NumTraspaso FROM dbo.ReposicionesTraspasos r WITH (UPDLOCK, HOLDLOCK)
-WHERE r.Empresa = @p0 AND r.Origen = @p1" + SIN_USAR + @"
-ORDER BY r.FechaCreacion DESC";
-
-        internal const string SQL_REUTILIZAR = @"
-UPDATE dbo.ReposicionesTraspasos
-SET Destino = @p2, Herramienta = @p3, UsuarioCreacion = @p4, FechaCreacion = @p5, FechaCorte = @p6
-WHERE Empresa = @p0 AND NumTraspaso = @p1";
-
-        internal const string SQL_INSERTAR_RESERVA = @"
-INSERT INTO dbo.ReposicionesTraspasos (Empresa, NumTraspaso, Origen, Destino, Herramienta, UsuarioCreacion, FechaCreacion, FechaCorte)
-VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7)";
-
-        internal const string SQL_LEER_RESERVA = @"
-SELECT TOP 1 r.NumTraspaso FROM dbo.ReposicionesTraspasos r WITH (UPDLOCK, HOLDLOCK)
-WHERE r.Empresa = @p0 AND r.Origen = @p1 AND r.Destino = @p2 AND r.UsuarioCreacion = @p3" + SIN_USAR + @"
-ORDER BY r.FechaCreacion DESC";
+        // La abierta del origen y destino: sin número y sin preparar. Si hubiera varias (no debería: una por diario de salida;
+        // las que terminó Nesto viejo se quedan abiertas), la más reciente, que es la de la preparación en curso.
+        internal const string SQL_NUMERAR_ABIERTA = @"
+IF OBJECT_ID('dbo.ReposicionesTraspasos') IS NOT NULL
+    UPDATE r SET NumTraspaso = @p3, UsuarioPreparacion = @p4, FechaPreparada = GETDATE()
+    FROM dbo.ReposicionesTraspasos r
+    WHERE r.Id = (SELECT TOP 1 a.Id FROM dbo.ReposicionesTraspasos a WITH (UPDLOCK, HOLDLOCK)
+                  WHERE a.Empresa = @p0 AND a.Origen = @p1 AND a.Destino = @p2
+                    AND a.NumTraspaso IS NULL AND a.FechaPreparada IS NULL
+                  ORDER BY a.FechaCreacion DESC, a.Id DESC)";
 
         internal const string SQL_MARCAR_PREPARADA = @"
 IF OBJECT_ID('dbo.ReposicionesTraspasos') IS NOT NULL
@@ -159,49 +140,25 @@ IF OBJECT_ID('dbo.ReposicionesTraspasos') IS NOT NULL
     DELETE FROM dbo.ReposicionesTraspasos WHERE Empresa = @p0 AND NumTraspaso = @p1";
 
         private readonly NVEntities db;
-        private readonly INumeradorTraspasos numerador;
 
-        public RegistroReposicionesTraspasosSql(NVEntities db, INumeradorTraspasos numerador = null)
+        public RegistroReposicionesTraspasosSql(NVEntities db)
         {
             this.db = db ?? throw new ArgumentNullException(nameof(db));
-            this.numerador = numerador ?? new NumeradorTraspasosSql();
         }
 
         public Task Crear(CabeceraReposicionTraspaso cabecera)
         {
-            return db.Database.ExecuteSqlCommandAsync(SQL_CREAR, ParametrosCabecera(cabecera, cabecera.NumTraspaso));
+            return db.Database.ExecuteSqlCommandAsync(SQL_CREAR,
+                Char("@p0", cabecera.Empresa, 3), EnteroONulo("@p1", cabecera.NumTraspaso), Char("@p2", cabecera.Origen, 3), Char("@p3", cabecera.Destino, 3),
+                VarChar("@p4", cabecera.Herramienta, 20), VarChar("@p5", UsuarioAuditoriaHelper.ParaAuditoria(cabecera.UsuarioCreacion), 30),
+                Fecha("@p6", cabecera.FechaCreacion), Fecha("@p7", cabecera.FechaCorte));
         }
 
-        public async Task<int?> Reservar(CabeceraReposicionTraspaso cabecera)
+        public Task NumerarYMarcarPreparada(string empresa, string origen, string destino, int numTraspaso, string usuario)
         {
-            if (!await ExisteTabla().ConfigureAwait(false))
-            {
-                return null;
-            }
-            int? sinUsar = (await db.Database.SqlQuery<int>(SQL_RESERVA_DEL_ORIGEN, Char("@p0", cabecera.Empresa, 3), Char("@p1", cabecera.Origen, 3))
-                .ToListAsync().ConfigureAwait(false)).Cast<int?>().FirstOrDefault();
-            if (sinUsar.HasValue)
-            {
-                _ = await db.Database.ExecuteSqlCommandAsync(SQL_REUTILIZAR,
-                    Char("@p0", cabecera.Empresa, 3), Entero("@p1", sinUsar.Value), Char("@p2", cabecera.Destino, 3),
-                    VarChar("@p3", cabecera.Herramienta, 20), VarChar("@p4", UsuarioAuditoriaHelper.ParaAuditoria(cabecera.UsuarioCreacion), 30),
-                    Fecha("@p5", cabecera.FechaCreacion), Fecha("@p6", cabecera.FechaCorte)).ConfigureAwait(false);
-                return sinUsar;
-            }
-            int numero = await numerador.Siguiente(db).ConfigureAwait(false);
-            _ = await db.Database.ExecuteSqlCommandAsync(SQL_INSERTAR_RESERVA, ParametrosCabecera(cabecera, numero)).ConfigureAwait(false);
-            return numero;
-        }
-
-        public async Task<int?> LeerReserva(string empresa, string origen, string destino, string usuarioCreacion)
-        {
-            if (!await ExisteTabla().ConfigureAwait(false))
-            {
-                return null;
-            }
-            return (await db.Database.SqlQuery<int>(SQL_LEER_RESERVA, Char("@p0", empresa, 3), Char("@p1", origen, 3), Char("@p2", destino, 3),
-                    VarChar("@p3", UsuarioAuditoriaHelper.ParaAuditoria(usuarioCreacion), 30))
-                .ToListAsync().ConfigureAwait(false)).Cast<int?>().FirstOrDefault();
+            return db.Database.ExecuteSqlCommandAsync(SQL_NUMERAR_ABIERTA,
+                Char("@p0", empresa, 3), Char("@p1", origen, 3), Char("@p2", destino, 3), EnteroONulo("@p3", numTraspaso),
+                VarChar("@p4", UsuarioAuditoriaHelper.ParaAuditoria(usuario), 30));
         }
 
         public Task MarcarPreparada(string empresa, int numTraspaso, string usuario)
@@ -211,54 +168,39 @@ IF OBJECT_ID('dbo.ReposicionesTraspasos') IS NOT NULL
 
         public Task Borrar(string empresa, int numTraspaso)
         {
-            return db.Database.ExecuteSqlCommandAsync(SQL_BORRAR, Char("@p0", empresa, 3), Entero("@p1", numTraspaso));
+            return db.Database.ExecuteSqlCommandAsync(SQL_BORRAR, Char("@p0", empresa, 3), EnteroONulo("@p1", numTraspaso));
         }
 
         /// <summary>Para las transacciones de Ariadna (Salidas), que llevan su propio contexto.</summary>
         internal static Task MarcarPreparada(NVEntities db, string empresa, int numTraspaso, string usuario)
         {
-            return db.Database.ExecuteSqlCommandAsync(SQL_MARCAR_PREPARADA, Char("@p0", empresa, 3), Entero("@p1", numTraspaso),
+            return db.Database.ExecuteSqlCommandAsync(SQL_MARCAR_PREPARADA, Char("@p0", empresa, 3), EnteroONulo("@p1", numTraspaso),
                 VarChar("@p2", UsuarioAuditoriaHelper.ParaAuditoria(usuario), 30));
         }
 
         /// <summary>Para la transacción de Ariadna que recibe la reposición (Entradas). Sin cabecera, no hace nada.</summary>
         internal static Task MarcarRecibida(NVEntities db, string empresa, int numTraspaso, string usuario)
         {
-            return db.Database.ExecuteSqlCommandAsync(SQL_MARCAR_RECIBIDA, Char("@p0", empresa, 3), Entero("@p1", numTraspaso),
+            return db.Database.ExecuteSqlCommandAsync(SQL_MARCAR_RECIBIDA, Char("@p0", empresa, 3), EnteroONulo("@p1", numTraspaso),
                 VarChar("@p2", UsuarioAuditoriaHelper.ParaAuditoria(usuario), 30));
         }
 
-        private Task<bool> ExisteTabla()
-        {
-            return db.Database.SqlQuery<bool>(SQL_EXISTE_TABLA).SingleAsync();
-        }
-
-        private static object[] ParametrosCabecera(CabeceraReposicionTraspaso cabecera, int numero)
-        {
-            return new object[]
-            {
-                Char("@p0", cabecera.Empresa, 3), Entero("@p1", numero), Char("@p2", cabecera.Origen, 3), Char("@p3", cabecera.Destino, 3),
-                VarChar("@p4", cabecera.Herramienta, 20), VarChar("@p5", UsuarioAuditoriaHelper.ParaAuditoria(cabecera.UsuarioCreacion), 30),
-                Fecha("@p6", cabecera.FechaCreacion), Fecha("@p7", cabecera.FechaCorte)
-            };
-        }
-
-        private static SqlParameter Char(string nombre, string valor, int longitud)
+        internal static SqlParameter Char(string nombre, string valor, int longitud)
         {
             return new SqlParameter(nombre, SqlDbType.Char, longitud) { Value = (object)valor?.Trim() ?? DBNull.Value };
         }
 
-        private static SqlParameter VarChar(string nombre, string valor, int longitud)
+        internal static SqlParameter VarChar(string nombre, string valor, int longitud)
         {
             return new SqlParameter(nombre, SqlDbType.VarChar, longitud) { Value = (object)valor ?? DBNull.Value };
         }
 
-        private static SqlParameter Entero(string nombre, int valor)
+        internal static SqlParameter EnteroONulo(string nombre, int? valor)
         {
-            return new SqlParameter(nombre, SqlDbType.Int) { Value = valor };
+            return new SqlParameter(nombre, SqlDbType.Int) { Value = valor.HasValue ? (object)valor.Value : DBNull.Value };
         }
 
-        private static SqlParameter Fecha(string nombre, DateTime? valor)
+        internal static SqlParameter Fecha(string nombre, DateTime? valor)
         {
             return new SqlParameter(nombre, SqlDbType.DateTime) { Value = valor.HasValue ? (object)valor.Value : DBNull.Value };
         }

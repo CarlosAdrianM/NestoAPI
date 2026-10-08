@@ -14,8 +14,9 @@ namespace NestoAPI.Models
 
     public partial class ReposicionTraspaso
     {
+        public int Id { get; set; }
         public string Empresa { get; set; }
-        public int NumTraspaso { get; set; }
+        public Nullable<int> NumTraspaso { get; set; }
         public string Origen { get; set; }
         public string Destino { get; set; }
         public string Herramienta { get; set; }

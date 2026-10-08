@@ -367,26 +367,30 @@ namespace NestoAPI.Tests.Models
         }
 
         /// <summary>
-        /// NestoAPI#577 (corte 3a): cabecera de trazabilidad de los traspasos de reposición añadida a mano; clave compuesta
-        /// (Empresa, NumTraspaso) sin identidad (el número sale del contador compartido) y las fechas de los pasos admiten null.
+        /// NestoAPI#577 (corte 3a): cabecera de trazabilidad de los traspasos de reposición añadida a mano. Decisión de Carlos
+        /// (08/10/26): clave propia Id (identidad) y NumTraspaso NULL hasta que la tienda termina (no se reservan números del
+        /// contador); único por Empresa + NumTraspaso solo en la BD (índice filtrado).
         /// </summary>
         [TestMethod]
-        public void Edmx_ReposicionesTraspasos_EstaCompletaEnLasTresCapasConClaveEmpresaYNumTraspaso()
+        public void Edmx_ReposicionesTraspasos_EstaCompletaEnLasTresCapasConIdDeIdentidadYNumTraspasoOpcional()
         {
             ComprobarTresCapas("ReposicionTraspaso", "ReposicionesTraspasos",
-                "Empresa", "NumTraspaso", "Origen", "Destino", "Herramienta", "UsuarioCreacion", "FechaCreacion", "FechaCorte",
+                "Id", "Empresa", "NumTraspaso", "Origen", "Destino", "Herramienta", "UsuarioCreacion", "FechaCreacion", "FechaCorte",
                 "UsuarioPreparacion", "FechaPreparada", "UsuarioRecepcion", "FechaRecibida");
 
             XElement conceptual = EntidadesPorNombre(LeerRecurso("csdl"), CsdlNs)["ReposicionTraspaso"];
             XElement almacen = EntidadesPorNombre(LeerRecurso("ssdl"), SsdlNs)["ReposicionesTraspasos"];
-            CollectionAssert.AreEqual(new[] { "Empresa", "NumTraspaso" },
+            CollectionAssert.AreEqual(new[] { "Id" },
                 almacen.Element(SsdlNs + "Key").Elements(SsdlNs + "PropertyRef").Select(p => p.Attribute("Name").Value).ToArray());
-            CollectionAssert.AreEqual(new[] { "Empresa", "NumTraspaso" },
+            CollectionAssert.AreEqual(new[] { "Id" },
                 conceptual.Element(CsdlNs + "Key").Elements(CsdlNs + "PropertyRef").Select(p => p.Attribute("Name").Value).ToArray());
-            Assert.IsNull(almacen.Elements(SsdlNs + "Property").Single(p => p.Attribute("Name").Value == "NumTraspaso").Attribute("StoreGeneratedPattern"),
-                "NumTraspaso no es identidad: sale de ContadoresGlobales.TraspasoAlmacén");
+            Assert.AreEqual("Identity", (string)almacen.Elements(SsdlNs + "Property").Single(p => p.Attribute("Name").Value == "Id").Attribute("StoreGeneratedPattern"));
+            XElement numTraspaso = almacen.Elements(SsdlNs + "Property").Single(p => p.Attribute("Name").Value == "NumTraspaso");
+            Assert.IsNull(numTraspaso.Attribute("StoreGeneratedPattern"), "NumTraspaso sale de ContadoresGlobales.TraspasoAlmacén al terminar");
+            Assert.AreNotEqual("false", (string)numTraspaso.Attribute("Nullable"));
             Assert.AreEqual("varchar", (string)almacen.Elements(SsdlNs + "Property").Single(p => p.Attribute("Name").Value == "Herramienta").Attribute("Type"));
-            Assert.AreEqual(typeof(int), typeof(ReposicionTraspaso).GetProperty("NumTraspaso").PropertyType);
+            Assert.AreEqual(typeof(int), typeof(ReposicionTraspaso).GetProperty("Id").PropertyType);
+            Assert.AreEqual(typeof(int?), typeof(ReposicionTraspaso).GetProperty("NumTraspaso").PropertyType);
             Assert.AreEqual(typeof(DateTime), typeof(ReposicionTraspaso).GetProperty("FechaCreacion").PropertyType);
             Assert.AreEqual(typeof(DateTime?), typeof(ReposicionTraspaso).GetProperty("FechaCorte").PropertyType);
             Assert.AreEqual(typeof(DateTime?), typeof(ReposicionTraspaso).GetProperty("FechaPreparada").PropertyType);

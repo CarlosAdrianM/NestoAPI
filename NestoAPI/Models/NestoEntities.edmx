@@ -1087,11 +1087,11 @@
         </EntityType>
         <EntityType Name="ReposicionesTraspasos">
           <Key>
-            <PropertyRef Name="Empresa" />
-            <PropertyRef Name="NumTraspaso" />
+            <PropertyRef Name="Id" />
           </Key>
+          <Property Name="Id" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
           <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
-          <Property Name="NumTraspaso" Type="int" Nullable="false" />
+          <Property Name="NumTraspaso" Type="int" />
           <Property Name="Origen" Type="char" MaxLength="3" Nullable="false" />
           <Property Name="Destino" Type="char" MaxLength="3" Nullable="false" />
           <Property Name="Herramienta" Type="varchar" MaxLength="20" Nullable="false" />
@@ -8830,11 +8830,11 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
         </EntityType>
         <EntityType Name="ReposicionTraspaso">
           <Key>
-            <PropertyRef Name="Empresa" />
-            <PropertyRef Name="NumTraspaso" />
+            <PropertyRef Name="Id" />
           </Key>
+          <Property Name="Id" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
           <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
-          <Property Name="NumTraspaso" Type="Int32" Nullable="false" />
+          <Property Name="NumTraspaso" Type="Int32" />
           <Property Name="Origen" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
           <Property Name="Destino" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
           <Property Name="Herramienta" Type="String" Nullable="false" MaxLength="20" FixedLength="false" Unicode="false" />
@@ -16672,6 +16672,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySetMapping Name="ReposicionesTraspasos">
             <EntityTypeMapping TypeName="NVModel.ReposicionTraspaso">
               <MappingFragment StoreEntitySet="ReposicionesTraspasos">
+                <ScalarProperty Name="Id" ColumnName="Id" />
                 <ScalarProperty Name="Empresa" ColumnName="Empresa" />
                 <ScalarProperty Name="NumTraspaso" ColumnName="NumTraspaso" />
                 <ScalarProperty Name="Origen" ColumnName="Origen" />
