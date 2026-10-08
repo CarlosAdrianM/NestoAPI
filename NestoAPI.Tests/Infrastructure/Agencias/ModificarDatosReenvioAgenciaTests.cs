@@ -365,6 +365,133 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             A.CallTo(() => ctt.ModificarYEtiquetarAsync(A<DatosEnvioRemoto>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
         }
 
+        // ===== Sugerencia 544 (Aida, 08/10/26): un envío devuelto nunca cobra el reembolso =====
+
+        private EnviosAgencia EnvioCttDevuelto(decimal reembolso = 147.09M)
+        {
+            EnviosAgencia envio = Envio(Constantes.Agencias.AGENCIA_CTT, Constantes.Agencias.ESTADO_DEVUELTO, ALBARAN_CTT, "CTT", reembolso);
+            envio.Numero = 249193;
+            envio.Pedido = 927159;
+            return envio;
+        }
+
+        [TestMethod]
+        public async Task Devuelto_QuitaReembolso_SinLlamarALaAgenciaYContabiliza()
+        {
+            // El caso de Aida: envío 249193 de CTT devuelto con 147,09 de reembolso. Antes, 409.
+            EnviosAgencia envio = EnvioCttDevuelto();
+            ModificarDatosEnvioDTO datos = SinCambios(envio);
+            datos.Reembolso = 0M;
+
+            ResultadoModificacionEnvio resultado = await servicio.ModificarDatosAsync(envio.Numero, datos, USUARIO);
+
+            Assert.AreEqual(0M, envio.Reembolso);
+            Assert.AreEqual(90001, resultado.Asiento, "se deshace el reembolso en _Reembolso, como en cualquier cambio manual");
+            CollectionAssert.AreEqual(new[] { "Reembolso" }, resultado.CamposModificados);
+            Assert.AreEqual(TramitacionEnviosService.AVISO_REEMBOLSO_DEVUELTO, resultado.Aviso);
+            Assert.IsFalse(resultado.ReenviadoAAgencia);
+            Assert.AreEqual(ALBARAN_CTT, envio.CodigoBarras, "sin albarán nuevo: la etiqueta ya no está viva");
+            A.CallTo(() => ctt.ModificarYEtiquetarAsync(A<DatosEnvioRemoto>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
+            Assert.AreEqual(0, auditorias.Count);
+            A.CallTo(() => contabilidad.CrearLineas(db, A<List<PreContabilidad>>.That.Matches(l =>
+                l.Count == 1 && l[0].Debe == 147.09M && l[0].Concepto.StartsWith("Deshago Reembolso 927159")))).MustHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Devuelto_ConRetornoYaRecibido_TambienDejaQuitarElReembolso()
+        {
+            EnviosAgencia envio = EnvioCttDevuelto();
+            envio.FechaRetornoRecibido = HOY;
+            ModificarDatosEnvioDTO datos = SinCambios(envio);
+            datos.Reembolso = 0M;
+
+            _ = await servicio.ModificarDatosAsync(envio.Numero, datos, USUARIO);
+
+            Assert.AreEqual(0M, envio.Reembolso);
+        }
+
+        [TestMethod]
+        public async Task Devuelto_CambiaRetorno_Sigue409()
+        {
+            EnviosAgencia envio = EnvioCttDevuelto();
+            ModificarDatosEnvioDTO datos = SinCambios(envio);
+            datos.Retorno = 1;
+
+            NestoBusinessException ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => servicio.ModificarDatosAsync(envio.Numero, datos, USUARIO));
+
+            Assert.AreEqual(HttpStatusCode.Conflict, ex.StatusCode);
+            Assert.AreEqual(0, envio.Retorno);
+        }
+
+        [TestMethod]
+        public async Task Devuelto_CambiaReembolsoYRetornoALaVez_Sigue409()
+        {
+            EnviosAgencia envio = EnvioCttDevuelto();
+            ModificarDatosEnvioDTO datos = SinCambios(envio);
+            datos.Reembolso = 0M;
+            datos.Retorno = 1;
+
+            NestoBusinessException ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => servicio.ModificarDatosAsync(envio.Numero, datos, USUARIO));
+
+            Assert.AreEqual(HttpStatusCode.Conflict, ex.StatusCode);
+            Assert.AreEqual(147.09M, envio.Reembolso);
+        }
+
+        [TestMethod]
+        public async Task Entregado_CambiaReembolso_Sigue409()
+        {
+            EnviosAgencia envio = Envio(Constantes.Agencias.AGENCIA_CTT, Constantes.Agencias.ESTADO_ENTREGADO, ALBARAN_CTT, "CTT", 50M);
+            ModificarDatosEnvioDTO datos = SinCambios(envio);
+            datos.Reembolso = 0M;
+
+            NestoBusinessException ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => servicio.ModificarDatosAsync(envio.Numero, datos, USUARIO));
+
+            Assert.AreEqual(HttpStatusCode.Conflict, ex.StatusCode);
+            Assert.AreEqual(50M, envio.Reembolso);
+        }
+
+        [TestMethod]
+        public async Task QuitarReembolsoDevuelto_PorLaViaManualConElUsuarioDelSistema()
+        {
+            EnviosAgencia envio = EnvioCttDevuelto();
+            const string SISTEMA = "SeguimientoEnvios";
+            A.CallTo(() => contabilidad.ContabilizarDiario(db, "1", "_Reembolso", SISTEMA)).Returns(Task.FromResult(90002));
+
+            ResultadoModificacionEnvio resultado = await servicio.QuitarReembolsoDevueltoAsync(envio.Numero, SISTEMA);
+
+            Assert.AreEqual(0M, envio.Reembolso);
+            Assert.AreEqual(Constantes.Agencias.ESTADO_DEVUELTO, envio.Estado, "el estado no se toca");
+            Assert.AreEqual(90002, resultado.Asiento);
+            EnvioHistoria fila = historiaGuardada.Single();
+            Assert.AreEqual("Reembolso", fila.Campo);
+            Assert.AreEqual(SISTEMA, fila.Usuario);
+            Assert.AreEqual(TramitacionEnviosService.OBSERVACIONES_REEMBOLSO_DEVUELTO, fila.Observaciones);
+            A.CallTo(() => contabilidad.CrearLineas(db, A<List<PreContabilidad>>.That.Matches(l => l.Single().Usuario == SISTEMA))).MustHaveHappened();
+            A.CallTo(() => ctt.ModificarYEtiquetarAsync(A<DatosEnvioRemoto>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task QuitarReembolsoDevuelto_NoDevueltoSinReembolsoOYaPagado_NoHaceNada()
+        {
+            EnviosAgencia entregado = Envio(Constantes.Agencias.AGENCIA_CTT, Constantes.Agencias.ESTADO_ENTREGADO, ALBARAN_CTT, "CTT", 50M);
+            entregado.Numero = 1;
+            EnviosAgencia sinReembolso = Envio(Constantes.Agencias.AGENCIA_CTT, Constantes.Agencias.ESTADO_DEVUELTO, ALBARAN_CTT, "CTT", 0M);
+            sinReembolso.Numero = 2;
+            EnviosAgencia pagado = Envio(Constantes.Agencias.AGENCIA_CTT, Constantes.Agencias.ESTADO_DEVUELTO, ALBARAN_CTT, "CTT", 30M);
+            pagado.Numero = 3;
+            pagado.FechaPagoReembolso = HOY;
+
+            Assert.IsNull(await servicio.QuitarReembolsoDevueltoAsync(1, USUARIO));
+            Assert.IsNull(await servicio.QuitarReembolsoDevueltoAsync(2, USUARIO));
+            Assert.IsNull(await servicio.QuitarReembolsoDevueltoAsync(3, USUARIO));
+            Assert.IsNull(await servicio.QuitarReembolsoDevueltoAsync(99, USUARIO));
+
+            Assert.AreEqual(50M, entregado.Reembolso);
+            Assert.AreEqual(30M, pagado.Reembolso);
+            A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
+            A.CallTo(() => contabilidad.CrearLineas(A<NVEntities>.Ignored, A<List<PreContabilidad>>.Ignored)).MustNotHaveHappened();
+        }
+
         [TestMethod]
         public async Task CttViva_AceptaPeroFallaLaBd_500ConLosDosAlbaranes()
         {

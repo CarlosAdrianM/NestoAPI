@@ -1372,9 +1372,27 @@ namespace NestoAPI.Controllers
                 return Content(HttpStatusCode.BadGateway, $"No se pudo consultar el seguimiento en la agencia: {ex.Message}");
             }
 
+            bool eraDevuelto = envio.Estado == Constantes.Agencias.ESTADO_DEVUELTO;
             SeguimientoEnviosJobsService.AplicarSeguimiento(envio, seguimiento);
             await db.SaveChangesAsync();                            // persiste el nuevo estado (lo importante) antes de auditar
             await AuditarSeguimiento(envio, agencia, true, null);   // audita la llamada (best-effort; captura denegaciones suaves)
+
+            // Sugerencia 544: igual que el poll, si el envío acaba de pasar a DEVUELTO se le quita el reembolso
+            // (ningún devuelto lo cobra), por la vía del cambio manual y con el usuario del proceso automático.
+            if (!eraDevuelto && TramitacionEnviosService.DebeQuitarseReembolsoPorDevuelto(envio))
+            {
+                try
+                {
+                    ITramitacionEnviosService servicio = tramitacionEnviosService ?? new TramitacionEnviosService(db);
+                    _ = await servicio.QuitarReembolsoDevueltoAsync(envio.Numero, SeguimientoEnviosJobsService.USUARIO_REEMBOLSO_DEVUELTO);
+                }
+                catch (System.Exception ex)
+                {
+                    // El estado ya está guardado: el reembolso se puede quitar a mano desde Agencias.
+                    ElmahHelper.Log(new System.Exception($"No se pudo quitar el reembolso del envío {envio.Numero}, devuelto a origen: {ex.Message}", ex),
+                        "Sistema (seguimiento de envíos)");
+                }
+            }
             return Ok(seguimiento);
         }
 

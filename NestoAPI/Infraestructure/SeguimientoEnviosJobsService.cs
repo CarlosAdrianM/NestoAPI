@@ -56,9 +56,16 @@ namespace NestoAPI.Infraestructure
         private readonly Action _programarReintento;
         private readonly Action<Exception> _avisar;
         private readonly Func<DateTime> _hoy;
+        private readonly Func<int, Task> _quitarReembolsoDevuelto;
+
+        /// <summary>
+        /// Sugerencia 544: usuario de la historia del envío y de los apuntes cuando el seguimiento quita el
+        /// reembolso de un devuelto (PreContabilidad.Usuario es varchar(30); mismo estilo que «ReposicionAutomatica»).
+        /// </summary>
+        public const string USUARIO_REEMBOLSO_DEVUELTO = "SeguimientoEnvios";
 
         public SeguimientoEnviosJobsService(NVEntities db, IFabricaAgenciasRemotas fabrica, Action programarReintento = null,
-            Action<Exception> avisar = null, Func<DateTime> hoy = null)
+            Action<Exception> avisar = null, Func<DateTime> hoy = null, Func<int, Task> quitarReembolsoDevuelto = null)
         {
             _db = db;
             _fabrica = fabrica;
@@ -67,6 +74,23 @@ namespace NestoAPI.Infraestructure
             // saber que no hay una persona a quien preguntar (ver ElmahHelper).
             _avisar = avisar ?? (ex => ElmahHelper.Log(ex, "Sistema (seguimiento de envíos)"));
             _hoy = hoy ?? (() => DateTime.Today);
+            _quitarReembolsoDevuelto = quitarReembolsoDevuelto;
+        }
+
+        /// <summary>
+        /// Sugerencia 544: quita el reembolso de un envío que el seguimiento acaba de pasar a DEVUELTO, con un
+        /// contexto PROPIO por envío. Así su transacción (historia + asiento de _Reembolso) no arrastra los
+        /// cambios de estado del resto de la pasada, y un fallo en un envío no deja nada a medias en otro.
+        /// </summary>
+        public static async Task QuitarReembolsoDevueltoAsync(int numeroEnvio)
+        {
+            using (var db = new NVEntities())
+            {
+                db.Configuration.LazyLoadingEnabled = false;
+                _ = await new TramitacionEnviosService(db)
+                    .QuitarReembolsoDevueltoAsync(numeroEnvio, USUARIO_REEMBOLSO_DEVUELTO)
+                    .ConfigureAwait(false);
+            }
         }
 
         // NestoAPI#516: horario de reparto (lunes a sábado, de 8:00 a 20:00). En él el job pasa cada 30 min
@@ -105,7 +129,8 @@ namespace NestoAPI.Infraestructure
             return new SeguimientoEnviosJobsService(db, new FabricaAgenciasRemotas(db),
                     programarReintento: () => Hangfire.BackgroundJob.Schedule(
                         () => ProcesarSeguimientosReintentoAsync(),
-                        TimeSpan.FromMinutes(REINTENTO_TRAS_MINUTOS)))
+                        TimeSpan.FromMinutes(REINTENTO_TRAS_MINUTOS)),
+                    quitarReembolsoDevuelto: QuitarReembolsoDevueltoAsync)
                 .ActualizarSeguimientosAsync(FECHA_CORTE);
         }
 
@@ -117,7 +142,8 @@ namespace NestoAPI.Infraestructure
         {
             var db = new NVEntities();
             db.Configuration.LazyLoadingEnabled = false;
-            return new SeguimientoEnviosJobsService(db, new FabricaAgenciasRemotas(db))
+            return new SeguimientoEnviosJobsService(db, new FabricaAgenciasRemotas(db),
+                    quitarReembolsoDevuelto: QuitarReembolsoDevueltoAsync)
                 .ActualizarSeguimientosAsync(FECHA_CORTE, esReintento: true);
         }
 
@@ -169,6 +195,8 @@ namespace NestoAPI.Infraestructure
             // envíos nuevos. Con el aviso a ciegas estuvimos 10 días sin saber que GLS no encontraba
             // NINGUNA expedición desde el servidor.
             Dictionary<string, int> motivosDesconocido = new Dictionary<string, int>();
+            // Sugerencia 544: envíos que esta pasada deja DEVUELTOS con un reembolso que ya no se cobrará.
+            List<EnviosAgencia> devueltosConReembolso = new List<EnviosAgencia>();
             // NestoAPI#264: Desconocido = la agencia no devolvió datos del envío. Algún suelto es normal
             // (envío recién creado aún no registrado), pero MUCHOS a la vez delatan un problema
             // (rate-limit de GLS por ráfaga, uid mal, WS caído) que antes pasaba desapercibido porque se
@@ -181,9 +209,14 @@ namespace NestoAPI.Infraestructure
                     string motivo = string.IsNullOrWhiteSpace(seguimiento.Detalle) ? "(sin detalle)" : seguimiento.Detalle.Trim();
                     motivosDesconocido[motivo] = motivosDesconocido.TryGetValue(motivo, out int veces) ? veces + 1 : 1;
                 }
+                bool eraDevuelto = envio.Estado == Constantes.Agencias.ESTADO_DEVUELTO;
                 if (AplicarSeguimiento(envio, seguimiento))
                 {
                     actualizados++;
+                    if (!eraDevuelto && TramitacionEnviosService.DebeQuitarseReembolsoPorDevuelto(envio))
+                    {
+                        devueltosConReembolso.Add(envio);
+                    }
                 }
             }
 
@@ -262,6 +295,9 @@ namespace NestoAPI.Infraestructure
                 await _db.SaveChangesAsync().ConfigureAwait(false);
             }
 
+            // Sugerencia 544: DESPUÉS de guardar los estados (la vía manual exige el envío ya devuelto en la BD).
+            await QuitarReembolsosDevueltosAsync(devueltosConReembolso).ConfigureAwait(false);
+
             // NestoAPI#264: si una parte grande de los envíos no devuelve estado (Desconocido), casi seguro
             // es un fallo de configuración de seguimiento (uid mal, WS caído), no que todos sean nuevos.
             if (desconocidos >= 10 || (envios.Count > 0 && desconocidos > envios.Count / 2))
@@ -292,6 +328,32 @@ namespace NestoAPI.Infraestructure
                 }
             }
             return actualizados;
+        }
+
+        /// <summary>
+        /// Sugerencia 544 (decisión de Carlos, 08/10/26): ningún envío devuelto va a cobrar reembolso. Best-effort
+        /// por envío, como el resto del poll: si uno falla (p. ej. agencia sin cuenta de reembolsos), se avisa y
+        /// el envío queda devuelto con su reembolso para quitarlo a mano (que ya lo permite).
+        /// </summary>
+        private async Task QuitarReembolsosDevueltosAsync(List<EnviosAgencia> devueltos)
+        {
+            if (_quitarReembolsoDevuelto == null)
+            {
+                return;
+            }
+            foreach (EnviosAgencia envio in devueltos)
+            {
+                try
+                {
+                    await _quitarReembolsoDevuelto(envio.Numero).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _avisar(new Exception(
+                        $"No se pudo quitar el reembolso ({envio.Reembolso:N2} €) del envío {envio.Numero} (pedido {envio.Pedido}), " +
+                        $"devuelto a origen: {ex.Message}. Hay que quitarlo a mano desde Agencias.", ex));
+                }
+            }
         }
 
         private void AvisarCupoAgotado(int agenciaId, int sinConsultar, CupoAgenciaAgotadoException ex)

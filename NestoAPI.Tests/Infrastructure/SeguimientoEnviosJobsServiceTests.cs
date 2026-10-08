@@ -189,6 +189,75 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(2, actualizados, "Los dos envíos deben pasar a Entregado");
         }
 
+        // ===== Sugerencia 544: al pasar a DEVUELTO se quita el reembolso, que ya no se cobrará =====
+
+        private static EnviosAgencia EnvioConReembolso(int numero, string albaran, decimal reembolso, short estado = Constantes.Agencias.ESTADO_TRAMITADO)
+        {
+            EnviosAgencia envio = Envio(numero, albaran, new DateTime(2026, 9, 28));
+            envio.Reembolso = reembolso;
+            envio.Estado = estado;
+            return envio;
+        }
+
+        private void Respuestas(params (string Albaran, EstadoEnvioSeguimiento Estado)[] respuestas)
+        {
+            foreach (var r in respuestas)
+            {
+                A.CallTo(() => _seguimiento.ConsultarSeguimientoAsync(r.Albaran))
+                    .Returns(Task.FromResult(new SeguimientoEnvioRemoto { Estado = r.Estado, Detalle = "DEVOLUCIÓN" }));
+            }
+        }
+
+        [TestMethod]
+        public async Task PasaADevueltoConReembolso_QuitaElReembolsoDespuesDeGuardarElEstado()
+        {
+            EnviosEnVuelo(
+                EnvioConReembolso(249193, "ALB1", 147.09M),
+                EnvioConReembolso(2, "ALB2", 50M),
+                EnvioConReembolso(3, "ALB3", 0M),
+                EnvioConReembolso(4, "ALB4", 20M, Constantes.Agencias.ESTADO_INCIDENTADO));
+            Respuestas(("ALB1", EstadoEnvioSeguimiento.Devuelto), ("ALB2", EstadoEnvioSeguimiento.Entregado),
+                ("ALB3", EstadoEnvioSeguimiento.Devuelto), ("ALB4", EstadoEnvioSeguimiento.Devuelto));
+            var orden = new List<string>();
+            A.CallTo(() => _db.SaveChangesAsync()).Invokes(() => orden.Add("guardar")).Returns(Task.FromResult(1));
+            var servicio = new SeguimientoEnviosJobsService(_db, _fabrica,
+                quitarReembolsoDevuelto: numero => { orden.Add($"quitar {numero}"); return Task.CompletedTask; });
+
+            _ = await servicio.ActualizarSeguimientosAsync(new DateTime(2026, 6, 1));
+
+            // Entregado (2) no; devuelto sin reembolso (3) no; incidentado que pasa a devuelto (4) sí.
+            CollectionAssert.AreEqual(new[] { "guardar", "quitar 249193", "quitar 4" }, orden);
+        }
+
+        [TestMethod]
+        public async Task PasaADevuelto_FallaQuitarElReembolso_AvisaYSigueConElResto()
+        {
+            EnviosEnVuelo(
+                EnvioConReembolso(1, "ALB1", 10M),
+                EnvioConReembolso(2, "ALB2", 20M));
+            Respuestas(("ALB1", EstadoEnvioSeguimiento.Devuelto), ("ALB2", EstadoEnvioSeguimiento.Devuelto));
+            var quitados = new List<int>();
+            var avisos = new List<Exception>();
+            var servicio = new SeguimientoEnviosJobsService(_db, _fabrica, avisar: avisos.Add,
+                quitarReembolsoDevuelto: numero =>
+                {
+                    if (numero == 1)
+                    {
+                        throw new InvalidOperationException("Esta agencia no tiene establecida una cuenta de reembolsos.");
+                    }
+                    quitados.Add(numero);
+                    return Task.CompletedTask;
+                });
+
+            int actualizados = await servicio.ActualizarSeguimientosAsync(new DateTime(2026, 6, 1));
+
+            Assert.AreEqual(2, actualizados);
+            CollectionAssert.AreEqual(new[] { 2 }, quitados);
+            Assert.AreEqual(1, avisos.Count);
+            StringAssert.Contains(avisos[0].Message, "envío 1");
+            StringAssert.Contains(avisos[0].Message, "cuenta de reembolsos");
+        }
+
         // ===== NestoAPI#259: la etiqueta del estado (texto de la agencia) se persiste =====
 
         [TestMethod]

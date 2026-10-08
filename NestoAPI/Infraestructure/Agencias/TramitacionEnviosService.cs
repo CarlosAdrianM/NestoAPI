@@ -568,6 +568,13 @@ namespace NestoAPI.Infraestructure.Agencias
             {
                 return sinLlamada;
             }
+            if (EsCambioSoloDeReembolsoDeUnDevuelto(envio, datos))
+            {
+                // Sugerencia 544 (Aida, 08/10/26): un envío devuelto a origen nunca va a cobrar el reembolso,
+                // así que quitarlo (o cambiarlo) es contabilidad nuestra: sin llamar a la agencia, cuya
+                // etiqueta ya no está viva.
+                return new ReenvioAgencia { NombreAgencia = NombreAgencia(envio), Aviso = AVISO_REEMBOLSO_DEVUELTO };
+            }
             if (EstaEntregadoORecogido(envio))
             {
                 throw new NestoBusinessException($"El envío {envio.Numero} ya está entregado/recogido: el siguiente albarán crea un envío " +
@@ -639,6 +646,63 @@ namespace NestoAPI.Infraestructure.Agencias
         /// <summary>El texto de siempre de Nesto (#512): en una agencia sin modificación remota el cambio solo queda en Nesto.</summary>
         internal const string AVISO_PEDIR_A_LA_AGENCIA = "El cambio solo se ha guardado en Nesto: NO se avisa a la agencia ni se modifica " +
             "nada en su sistema. Pídeselo a la agencia por correo o por teléfono.";
+
+        /// <summary>Sugerencia 544: lo que se le dice al usuario al cambiar el reembolso de un envío devuelto.</summary>
+        internal const string AVISO_REEMBOLSO_DEVUELTO = "Envío devuelto: el reembolso se cambia solo en Nesto, sin avisar a la agencia.";
+
+        /// <summary>Sugerencia 544: lo que queda en la historia cuando el seguimiento quita el reembolso de un devuelto.</summary>
+        internal const string OBSERVACIONES_REEMBOLSO_DEVUELTO = "Reembolso quitado automáticamente: envío devuelto a origen";
+
+        /// <summary>
+        /// Sugerencia 544 (decisión de Carlos, 08/10/26): en un envío DEVUELTO (Estado 4) se puede cambiar el
+        /// reembolso, y solo el reembolso: retorno y servicio siguen bloqueados como en entregados y recogidos.
+        /// Se mira el Estado grabado (no FechaRetornoRecibido): un devuelto cuyo paquete ya ha vuelto al almacén
+        /// sigue sin cobrar nada.
+        /// </summary>
+        internal static bool EsCambioSoloDeReembolsoDeUnDevuelto(EnviosAgencia envio, ModificarDatosEnvioDTO datos)
+            => envio.Estado == Constantes.Agencias.ESTADO_DEVUELTO
+            && envio.Reembolso != datos.Reembolso
+            && envio.Retorno == datos.Retorno
+            && (!datos.Servicio.HasValue || datos.Servicio.Value == envio.Servicio);
+
+        /// <summary>
+        /// Sugerencia 544: un envío devuelto a origen con reembolso pendiente de cobrar (positivo y sin pagar
+        /// por la agencia) es un reembolso que no llegará nunca.
+        /// </summary>
+        internal static bool DebeQuitarseReembolsoPorDevuelto(EnviosAgencia envio)
+            => envio != null
+            && envio.Estado == Constantes.Agencias.ESTADO_DEVUELTO
+            && envio.Reembolso > 0
+            && !envio.FechaPagoReembolso.HasValue;
+
+        /// <summary>
+        /// Sugerencia 544: el seguimiento ha pasado el envío a DEVUELTO y ningún devuelto cobra reembolso, así
+        /// que se quita por la MISMA vía que el cambio manual (<see cref="ModificarDatosAsync"/>: historia,
+        /// desliquidar el S/Pago si liquidaba algo, «Deshago» en _Reembolso y prdContabilizar), sin llamar a
+        /// la agencia. Devuelve null si el envío no está en ese caso (no existe, no está devuelto, no tiene
+        /// reembolso positivo o ya está pagado por la agencia).
+        /// </summary>
+        public async Task<ResultadoModificacionEnvio> QuitarReembolsoDevueltoAsync(int numeroEnvio, string usuario)
+        {
+            List<EnviosAgencia> envios = await _db.EnviosAgencias
+                .Where(e => e.Numero == numeroEnvio)
+                .ToListAsync()
+                .ConfigureAwait(false);
+            EnviosAgencia envio = envios.SingleOrDefault();
+            if (!DebeQuitarseReembolsoPorDevuelto(envio))
+            {
+                return null;
+            }
+            ModificarDatosEnvioDTO datos = new ModificarDatosEnvioDTO
+            {
+                Reembolso = 0,
+                Retorno = envio.Retorno,
+                Estado = envio.Estado,
+                FechaEntrega = envio.FechaEntrega,
+                Observaciones = OBSERVACIONES_REEMBOLSO_DEVUELTO
+            };
+            return await ModificarDatosAsync(numeroEnvio, datos, usuario).ConfigureAwait(false);
+        }
 
         /// <summary>Retorno, reembolso o servicio: lo que la agencia leyó al registrar el envío.</summary>
         internal static bool CambiaLoQueLeyoLaAgencia(EnviosAgencia envio, ModificarDatosEnvioDTO datos)
@@ -1138,5 +1202,6 @@ namespace NestoAPI.Infraestructure.Agencias
         Task<int> ContabilizarReembolsoAsync(EnviosAgencia envio, string usuario);
         Task<ResultadoPagoReembolsos> PagarReembolsosAsync(PagoReembolsosDTO datos, string usuario);
         Task<ResultadoModificacionEnvio> ModificarDatosAsync(int numeroEnvio, ModificarDatosEnvioDTO datos, string usuario);
+        Task<ResultadoModificacionEnvio> QuitarReembolsoDevueltoAsync(int numeroEnvio, string usuario);
     }
 }
