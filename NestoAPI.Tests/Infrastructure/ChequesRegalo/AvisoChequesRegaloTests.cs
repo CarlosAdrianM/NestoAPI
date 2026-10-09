@@ -41,12 +41,12 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
         private static readonly byte[] IMAGEN = { 0xFF, 0xD8, 0xFF, 0xE0 };
 
         [TestMethod]
-        public void ElCorreoLlevaNombreImporteMinimoYFechaDeLaCampana()
+        public void ElCorreoLlevaNombreDePilaImporteMinimoYFechaDeLaCampana()
         {
-            CorreoChequeRegalo correo = PlantillaCorreoChequeRegalo.Componer(Campana(), "Centro Lola", IMAGEN, "cid:cheque-regalo");
+            CorreoChequeRegalo correo = PlantillaCorreoChequeRegalo.Componer(Campana(), "Lola", IMAGEN, "cid:cheque-regalo");
 
             Assert.AreEqual("Con tu factura, 50 € de descuento para tu próximo pedido", correo.Asunto);
-            StringAssert.Contains(correo.Html, "Hola, Centro Lola:");
+            StringAssert.Contains(correo.Html, "Hola, Lola:");
             StringAssert.Contains(correo.Html, "un cheque regalo de 50 € de descuento para tu próximo pedido.");
             StringAssert.Contains(correo.Html, "desde el día de hoy hasta el 7 de noviembre en un pedido de productos computables superior a 250 €, después de los descuentos habituales.");
             StringAssert.Contains(correo.Html, "¿Qué necesitas para tu centro? Contacta con tu comercial o con nuestra tienda");
@@ -61,7 +61,7 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
             CampanaCorreoChequeRegalo febrero = Campana(importe: 30, minimo: 150);
             febrero.CanjeHasta = new DateTime(2027, 2, 26);
 
-            CorreoChequeRegalo correo = PlantillaCorreoChequeRegalo.Componer(febrero, "Centro Lola", null, null);
+            CorreoChequeRegalo correo = PlantillaCorreoChequeRegalo.Componer(febrero, "Lola", null, null);
 
             StringAssert.StartsWith(correo.Asunto, "Con tu factura, 30 €");
             StringAssert.Contains(correo.Html, "hasta el 26 de febrero");
@@ -73,7 +73,7 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
         [TestMethod]
         public void LaImagenVaArribaEnLineaConTextoAlternativo_YAnchoDeMovil()
         {
-            CorreoChequeRegalo correo = PlantillaCorreoChequeRegalo.Componer(Campana(), "Centro Lola", IMAGEN, "cid:cheque-regalo");
+            CorreoChequeRegalo correo = PlantillaCorreoChequeRegalo.Componer(Campana(), "Lola", IMAGEN, "cid:cheque-regalo");
 
             StringAssert.Contains(correo.Html, "src=\"cid:cheque-regalo\"");
             StringAssert.Contains(correo.Html, "alt=\"Cheque regalo de 50 € de descuento para tu próximo pedido, hasta el 7 de noviembre\"");
@@ -86,7 +86,7 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
         [TestMethod]
         public void LaLetraPequenaVaEnTamanoMenor()
         {
-            CorreoChequeRegalo correo = PlantillaCorreoChequeRegalo.Componer(Campana(), "Centro Lola", IMAGEN, "cid:cheque-regalo");
+            CorreoChequeRegalo correo = PlantillaCorreoChequeRegalo.Componer(Campana(), "Lola", IMAGEN, "cid:cheque-regalo");
 
             int letra = correo.Html.IndexOf("Letra pequeña", StringComparison.Ordinal);
             int celda = correo.Html.LastIndexOf("<td", letra, StringComparison.Ordinal);
@@ -96,7 +96,7 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
         [TestMethod]
         public void SinImagen_NoHayEtiquetaImg()
         {
-            CorreoChequeRegalo correo = PlantillaCorreoChequeRegalo.Componer(Campana(imagen: null), "Centro Lola", null, "cid:cheque-regalo");
+            CorreoChequeRegalo correo = PlantillaCorreoChequeRegalo.Componer(Campana(imagen: null), "Lola", null, "cid:cheque-regalo");
 
             Assert.IsFalse(correo.Html.Contains("<img"));
             Assert.IsNull(correo.Imagen);
@@ -105,19 +105,39 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
         [TestMethod]
         public void ElTextoPlanoDiceLoMismoSinHtml()
         {
-            CorreoChequeRegalo correo = PlantillaCorreoChequeRegalo.Componer(Campana(), "Centro Lola", IMAGEN, "cid:cheque-regalo");
+            CorreoChequeRegalo correo = PlantillaCorreoChequeRegalo.Componer(Campana(), "Lola", IMAGEN, "cid:cheque-regalo");
 
-            StringAssert.StartsWith(correo.Texto, "Hola, Centro Lola:");
+            StringAssert.StartsWith(correo.Texto, "Hola, Lola:");
             StringAssert.Contains(correo.Texto, "hasta el 7 de noviembre");
             StringAssert.Contains(correo.Texto, "Letra pequeña: Importes expresados en base imponible");
             Assert.IsFalse(correo.Texto.Contains("<"));
         }
 
         [TestMethod]
-        public void ElNombreSeEscapaEnElHtml_YSinNombreSaleElGenerico()
+        public void ElNombreSeEscapaEnElHtml_YSinNombreDePilaSoloHola()
         {
-            Assert.IsTrue(PlantillaCorreoChequeRegalo.Componer(Campana(), "Pérez & Hijos", null, null).Html.Contains("Hola, Pérez &amp; Hijos:"));
-            Assert.IsTrue(PlantillaCorreoChequeRegalo.Componer(Campana(), "  ", null, null).Html.Contains("Hola, Nombre del cliente:"));
+            Assert.IsTrue(PlantillaCorreoChequeRegalo.Componer(Campana(), "Ana & Eva", null, null).Html.Contains("Hola, Ana &amp; Eva:"));
+            CorreoChequeRegalo sinNombre = PlantillaCorreoChequeRegalo.Componer(Campana(), "  ", null, null);
+            StringAssert.Contains(sinNombre.Html, ">Hola:</p>");
+            StringAssert.StartsWith(sinNombre.Texto, "Hola:");
+            StringAssert.StartsWith(PlantillaCorreoChequeRegalo.Componer(Campana(), null, null, null).Texto, "Hola:");
+        }
+
+        [TestMethod]
+        public void LaFirmaVaAlFinal_DespuesDeLaLetraPequena_EnHtmlYTexto()
+        {
+            // Como el texto de Alberto: «…Un solo uso por código de cliente.» y debajo «El equipo de Nueva Visión.»
+            CorreoChequeRegalo correo = PlantillaCorreoChequeRegalo.Componer(Campana(), "Lola", IMAGEN, "cid:cheque-regalo");
+
+            int letraHtml = correo.Html.IndexOf("Letra pequeña", StringComparison.Ordinal);
+            int firmaHtml = correo.Html.IndexOf("El equipo de Nueva Visión.", StringComparison.Ordinal);
+            Assert.IsTrue(letraHtml > 0 && firmaHtml > letraHtml, "En el HTML la firma va después de la letra pequeña");
+            Assert.AreEqual(firmaHtml, correo.Html.LastIndexOf("El equipo de Nueva Visión.", StringComparison.Ordinal), "Una sola firma");
+            int celdaFirma = correo.Html.LastIndexOf("<td", firmaHtml, StringComparison.Ordinal);
+            StringAssert.Contains(correo.Html.Substring(celdaFirma, firmaHtml - celdaFirma), "font-size:16px", "La firma, con el tamaño normal");
+
+            StringAssert.EndsWith(correo.Texto, "Un solo uso por código de cliente." + Environment.NewLine +
+                "El equipo de Nueva Visión." + Environment.NewLine);
         }
 
         [TestMethod]
@@ -165,7 +185,7 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
         [TestMethod]
         public void ElMensajeLlevaTextoPlanoYHtmlConLaImagenEnLinea()
         {
-            CorreoChequeRegalo correo = PlantillaCorreoChequeRegalo.Componer(Campana(), "Centro Lola", IMAGEN, "cid:cheque-regalo");
+            CorreoChequeRegalo correo = PlantillaCorreoChequeRegalo.Componer(Campana(), "Lola", IMAGEN, "cid:cheque-regalo");
 
             using (MailMessage mail = AvisadorChequesRegalo.CrearMensaje(correo, new[] { "lola@centro.es" }, copiaOculta: true))
             {
@@ -189,6 +209,8 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
         private IServicioCorreoElectronico servicioCorreo;
         private List<Exception> errores;
         private List<(string Para, string Asunto, int Imagenes, string Bcc)> enviados;
+        private List<string> htmls;
+        private List<List<string>> pedidosAlModelo;
 
         [TestInitialize]
         public void Preparar()
@@ -197,6 +219,8 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
             servicioCorreo = A.Fake<IServicioCorreoElectronico>();
             errores = new List<Exception>();
             enviados = new List<(string, string, int, string)>();
+            htmls = new List<string>();
+            pedidosAlModelo = new List<List<string>>();
             A.CallTo(() => repositorio.ColumnasDisponibles()).Returns(Task.FromResult(true));
             A.CallTo(() => repositorio.LeerCampana(A<string>._)).Returns(Task.FromResult<CampanaCorreoChequeRegalo>(null));
             A.CallTo(() => repositorio.LeerDestinatario(A<string>._, A<string>._, A<string>._))
@@ -205,13 +229,145 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
             A.CallTo(() => repositorio.LeerDestinatario("15000", "1", "NV2600001"))
                 .Returns(Task.FromResult(new DestinatarioChequeRegalo { Nombre = "CENTRO LOLA", Correos = "lola@centro.es, mal correo" }));
             A.CallTo(() => servicioCorreo.EnviarCorreoSMTP(A<MailMessage>._))
-                .Invokes((MailMessage m) => enviados.Add((string.Join(",", m.To.Select(t => t.Address)), m.Subject,
-                    m.AlternateViews.Sum(v => v.LinkedResources.Count), string.Join(",", m.Bcc.Select(b => b.Address)))))
+                .Invokes((MailMessage m) =>
+                {
+                    enviados.Add((string.Join(",", m.To.Select(t => t.Address)), m.Subject,
+                        m.AlternateViews.Sum(v => v.LinkedResources.Count), string.Join(",", m.Bcc.Select(b => b.Address))));
+                    htmls.Add(Html(m));
+                })
                 .Returns(true);
         }
 
         private AvisadorChequesRegalo Nuevo() => new AvisadorChequesRegalo(repositorio, servicioCorreo,
             leerImagen: n => n == null ? null : new byte[] { 0xFF, 0xD8 }, registrarError: errores.Add);
+
+        /// <summary>Con un «modelo» que contesta lo que le digamos (lo que no esté, «Hola», como el de verdad).</summary>
+        private AvisadorChequesRegalo ConModelo(Dictionary<string, string> respuestas, TimeSpan? tope = null)
+            => new AvisadorChequesRegalo(repositorio, servicioCorreo,
+                leerImagen: n => n == null ? null : new byte[] { 0xFF, 0xD8 }, registrarError: errores.Add,
+                generarSaludos: nombres =>
+                {
+                    pedidosAlModelo.Add(nombres);
+                    return Task.FromResult(nombres.ToDictionary(n => n, n => respuestas.TryGetValue(n, out string r) ? r : "Hola",
+                        StringComparer.OrdinalIgnoreCase));
+                },
+                topeSaludoEnLinea: tope);
+
+        private static string Html(MailMessage mail)
+        {
+            AlternateView html = mail.AlternateViews.Single(v => v.ContentType.MediaType == "text/html");
+            html.ContentStream.Position = 0;
+            return new StreamReader(html.ContentStream).ReadToEnd();
+        }
+
+        private void Destinatario15000(string nombre, string personaContacto)
+            => A.CallTo(() => repositorio.LeerDestinatario("15000", "1", "NV2600001"))
+                .Returns(Task.FromResult(new DestinatarioChequeRegalo { Nombre = nombre, NombrePersonaContacto = personaContacto, Correos = "lola@centro.es" }));
+
+        [TestMethod]
+        public async Task Saludo_ConLaPersonaDeContacto_HolaPepita()
+        {
+            Destinatario15000("CENTRO DE ESTÉTICA LUNA", "Pepita");
+            ChequesSinAviso("15000", Cheque());
+
+            List<AvisoChequeRegalo> avisos = await ConModelo(new Dictionary<string, string> { ["Pepita"] = "¡Hola Pepita!" }).AvisarCliente("15000");
+
+            Assert.AreEqual(ResultadoAvisoChequeRegalo.Enviado, avisos.Single().Resultado);
+            StringAssert.Contains(htmls.Single(), ">Hola, Pepita:</p>");
+            CollectionAssert.AreEqual(new[] { "Pepita" }, pedidosAlModelo.Single(), "Se saluda a la persona de contacto, no a la razón social");
+            Assert.AreEqual(0, errores.Count);
+        }
+
+        [TestMethod]
+        public async Task Saludo_SinPersonaDeContacto_ElNombreDelClienteSiEsDePersona()
+        {
+            Destinatario15000("ROSA MARTÍNEZ GARCÍA", null);
+            ChequesSinAviso("15000", Cheque());
+
+            _ = await ConModelo(new Dictionary<string, string> { ["ROSA MARTÍNEZ GARCÍA"] = "Hola Rosa" }).AvisarCliente("15000");
+
+            StringAssert.Contains(htmls.Single(), ">Hola, Rosa:</p>");
+        }
+
+        [TestMethod]
+        public async Task Saludo_EmpresaConSiglas_SoloHola_AunqueElModeloSeEquivoque()
+        {
+            Destinatario15000("ESTÉTICA LUNA S.L.", null);
+            ChequesSinAviso("15000", Cheque());
+
+            _ = await ConModelo(new Dictionary<string, string> { ["ESTÉTICA LUNA S.L."] = "Hola Estética Luna S.L." }).AvisarCliente("15000");
+
+            StringAssert.Contains(htmls.Single(), ">Hola:</p>");
+            Assert.IsFalse(htmls[0].Contains("Hola, "));
+        }
+
+        [TestMethod]
+        public async Task Saludo_CentroDeNombreLargo_SoloHola_AunqueElModeloSeEquivoque()
+        {
+            Destinatario15000("CENTRO DE ESTÉTICA LUNA", null);
+            ChequesSinAviso("15000", Cheque());
+
+            _ = await ConModelo(new Dictionary<string, string> { ["CENTRO DE ESTÉTICA LUNA"] = "Hola Centro De Estética Luna" }).AvisarCliente("15000");
+
+            StringAssert.Contains(htmls.Single(), ">Hola:</p>");
+        }
+
+        [TestMethod]
+        public async Task Saludo_SiElModeloFalla_HolaYElCorreoSale()
+        {
+            Destinatario15000("CENTRO LUNA", "Pepita");
+            ChequesSinAviso("15000", Cheque());
+            var avisador = new AvisadorChequesRegalo(repositorio, servicioCorreo,
+                leerImagen: n => new byte[] { 0xFF, 0xD8 }, registrarError: errores.Add,
+                generarSaludos: nombres => throw new InvalidOperationException("OpenAI caído"));
+
+            List<AvisoChequeRegalo> avisos = await avisador.AvisarCliente("15000");
+
+            Assert.AreEqual(ResultadoAvisoChequeRegalo.Enviado, avisos.Single().Resultado);
+            StringAssert.Contains(htmls.Single(), ">Hola:</p>");
+            StringAssert.Contains(errores.Single().Message, "OpenAI caído");
+        }
+
+        [TestMethod]
+        public async Task Saludo_SiElModeloTardaMasDelTope_HolaYLaFacturaNoSeQuedaEsperando()
+        {
+            Destinatario15000("CENTRO LUNA", "Pepita");
+            ChequesSinAviso("15000", Cheque());
+            var nuncaContesta = new TaskCompletionSource<Dictionary<string, string>>();
+            var avisador = new AvisadorChequesRegalo(repositorio, servicioCorreo,
+                leerImagen: n => new byte[] { 0xFF, 0xD8 }, registrarError: errores.Add,
+                generarSaludos: nombres => nuncaContesta.Task, topeSaludoEnLinea: TimeSpan.FromMilliseconds(100));
+
+            Task<List<AvisoChequeRegalo>> tarea = avisador.AvisarCliente("15000");
+            Assert.AreSame(tarea, await Task.WhenAny(tarea, Task.Delay(TimeSpan.FromSeconds(10))), "No espera al modelo más del tope");
+
+            Assert.AreEqual(ResultadoAvisoChequeRegalo.Enviado, (await tarea).Single().Resultado);
+            StringAssert.Contains(htmls.Single(), ">Hola:</p>");
+            Assert.IsInstanceOfType(errores.Single().InnerException, typeof(TimeoutException));
+        }
+
+        [TestMethod]
+        public void ElTopeEnLineaEsCorto()
+        {
+            Assert.AreEqual(TimeSpan.FromSeconds(3), AvisadorChequesRegalo.TOPE_SALUDO_EN_LINEA);
+        }
+
+        [TestMethod]
+        public async Task LaReconciliacion_PideTodosLosSaludosDeUnaVez()
+        {
+            Destinatario15000("CENTRO LUNA", "Pepita");
+            A.CallTo(() => repositorio.LeerDestinatario("16000", "1", "NV2600002"))
+                .Returns(Task.FromResult(new DestinatarioChequeRegalo { Nombre = "ROSA MARTÍNEZ", Correos = "rosa@centro.es" }));
+            ChequesSinAviso(null, Cheque(), Cheque(id: 9, cliente: "16000", factura: "NV2600002"));
+
+            int avisados = await ConModelo(new Dictionary<string, string> { ["Pepita"] = "Hola Pepita", ["ROSA MARTÍNEZ"] = "¡Hola Rosa!" })
+                .AvisarPendientes();
+
+            Assert.AreEqual(2, avisados);
+            CollectionAssert.AreEquivalent(new[] { "Pepita", "ROSA MARTÍNEZ" }, pedidosAlModelo.Single(), "Una sola llamada en lote");
+            Assert.IsTrue(htmls.Any(h => h.Contains(">Hola, Pepita:</p>")));
+            Assert.IsTrue(htmls.Any(h => h.Contains(">Hola, Rosa:</p>")));
+        }
 
         internal static ChequeRegaloSinAviso Cheque(int id = 7, string cliente = "15000", string factura = "NV2600001", string correoAviso = null)
             => new ChequeRegaloSinAviso
@@ -352,17 +508,37 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
         }
 
         [TestMethod]
-        public async Task Previsualizar_ConLaImagenDentroYElNombreDelCliente()
+        public async Task Previsualizar_ConLaImagenDentroYElMismoSaludoQueRecibiraElCliente()
         {
             A.CallTo(() => repositorio.LeerCampana("CHEQUE50_OCT_2026")).Returns(Task.FromResult(PlantillaCorreoChequeRegaloTests.Campana()));
             A.CallTo(() => repositorio.LeerDestinatario("15000", null, null))
-                .Returns(Task.FromResult(new DestinatarioChequeRegalo { Nombre = "CENTRO LOLA", Correos = "lola@centro.es" }));
+                .Returns(Task.FromResult(new DestinatarioChequeRegalo { Nombre = "CENTRO LOLA", NombrePersonaContacto = "Pepita", Correos = "lola@centro.es" }));
+            A.CallTo(() => repositorio.LeerDestinatario("16000", null, null))
+                .Returns(Task.FromResult(new DestinatarioChequeRegalo { Nombre = "CENTRO DE ESTÉTICA LUNA", Correos = "luna@centro.es" }));
+            AvisadorChequesRegalo avisador = ConModelo(new Dictionary<string, string> { ["Pepita"] = "Hola Pepita" });
 
-            CorreoChequeRegalo correo = await Nuevo().Previsualizar("CHEQUE50_OCT_2026", "15000");
+            CorreoChequeRegalo correo = await avisador.Previsualizar("CHEQUE50_OCT_2026", "15000");
 
             StringAssert.Contains(correo.Html, "src=\"data:image/jpeg;base64,");
-            StringAssert.Contains(correo.Html, "Hola, CENTRO LOLA:");
+            StringAssert.Contains(correo.Html, ">Hola, Pepita:</p>");
+            StringAssert.Contains((await avisador.Previsualizar("CHEQUE50_OCT_2026", "16000")).Html, ">Hola:</p>");
+            StringAssert.Contains((await avisador.Previsualizar("CHEQUE50_OCT_2026", null)).Html, ">Hola:</p>");
             Assert.AreEqual(0, enviados.Count, "Previsualizar no manda nada");
+        }
+
+        [TestMethod]
+        public async Task EnviarPrueba_ConCliente_ElMismoSaludoQueRecibiraElCliente()
+        {
+            A.CallTo(() => repositorio.LeerCampana("CHEQUE50_OCT_2026")).Returns(Task.FromResult(PlantillaCorreoChequeRegaloTests.Campana()));
+            A.CallTo(() => repositorio.LeerDestinatario("15000", null, null))
+                .Returns(Task.FromResult(new DestinatarioChequeRegalo { Nombre = "CENTRO LOLA", NombrePersonaContacto = "Pepita", Correos = "lola@centro.es" }));
+
+            bool? enviado = await ConModelo(new Dictionary<string, string> { ["Pepita"] = "¡Hola Pepita!" })
+                .EnviarPrueba("CHEQUE50_OCT_2026", "alberto@nuevavision.es", "15000");
+
+            Assert.AreEqual(true, enviado);
+            Assert.AreEqual("alberto@nuevavision.es", enviados.Single().Para);
+            StringAssert.Contains(htmls.Single(), ">Hola, Pepita:</p>");
         }
 
         [TestMethod]

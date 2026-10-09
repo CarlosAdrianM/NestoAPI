@@ -1,3 +1,5 @@
+using NestoAPI.Infraestructure.CorreosPostCompra;
+using NestoAPI.Infraestructure.OpenAI;
 using NestoAPI.Models;
 using System;
 using System.Collections.Concurrent;
@@ -70,10 +72,14 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
         public DateTime? FechaAvisoCorreo { get; set; }
     }
 
-    /// <summary>A quién se manda: el nombre del cliente y los correos de las facturas (cargo 22), separados por comas.</summary>
+    /// <summary>
+    /// A quién se manda: el nombre del cliente, el de la persona de contacto que recibe las facturas (su Saludo si lo
+    /// tiene, si no su Nombre; null si no hay) y los correos de las facturas (cargo 22), separados por comas.
+    /// </summary>
     public class DestinatarioChequeRegalo
     {
         public string Nombre { get; set; }
+        public string NombrePersonaContacto { get; set; }
         public string Correos { get; set; }
     }
 
@@ -129,7 +135,6 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
     public static class PlantillaCorreoChequeRegalo
     {
         internal const string ID_IMAGEN = "cheque-regalo";
-        internal const string NOMBRE_POR_DEFECTO = "Nombre del cliente";
 
         private static readonly CultureInfo es = CultureInfo.GetCultureInfo("es-ES");
 
@@ -167,9 +172,16 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
             "Navidad «PACK 26». Estos productos sí pueden incluirse en el pedido y beneficiarse del descuento. Un solo uso por " +
             "código de cliente.";
 
-        private static List<string> Parrafos(CampanaCorreoChequeRegalo campana, string nombre) => new List<string>
+        /// <summary>
+        /// «Hola, Pepita:» con nombre de pila; «Hola:» sin él (empresa, centro, fallo del modelo o sin nombre), como el
+        /// correo post-compra.
+        /// </summary>
+        internal static string Saludo(string nombreDePila)
+            => string.IsNullOrWhiteSpace(nombreDePila) ? "Hola:" : $"Hola, {nombreDePila.Trim()}:";
+
+        private static List<string> Parrafos(CampanaCorreoChequeRegalo campana, string nombreDePila) => new List<string>
         {
-            $"Hola, {nombre}:",
+            Saludo(nombreDePila),
             "Gracias por confiar en Nueva Visión. Junto con tu factura te damos una sorpresa: un cheque regalo de " +
                 $"{Euros(campana.ImporteBase)} € de descuento para tu próximo pedido.",
             "Aprovéchalo para reponer tus imprescindibles o probar esa novedad que tienes en mente. " + Uso(campana),
@@ -179,14 +191,14 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
         private const string FIRMA = "El equipo de Nueva Visión.";
 
         /// <summary>
-        /// El correo. <paramref name="srcImagen"/>: «cid:…» para mandarlo (imagen en línea) o un data URI para
-        /// previsualizarlo en el navegador; null = sin imagen.
+        /// El correo. <paramref name="nombreDePila"/>: el de la persona a la que se saluda, ya decidido (null o vacío =
+        /// «Hola:»). <paramref name="srcImagen"/>: «cid:…» para mandarlo (imagen en línea) o un data URI para
+        /// previsualizarlo en el navegador; null = sin imagen. La firma va al final, después de la letra pequeña.
         /// </summary>
-        public static CorreoChequeRegalo Componer(CampanaCorreoChequeRegalo campana, string nombreCliente, byte[] imagen, string srcImagen)
+        public static CorreoChequeRegalo Componer(CampanaCorreoChequeRegalo campana, string nombreDePila, byte[] imagen, string srcImagen)
         {
-            string nombre = string.IsNullOrWhiteSpace(nombreCliente) ? NOMBRE_POR_DEFECTO : nombreCliente.Trim();
             string asunto = Asunto(campana);
-            List<string> parrafos = Parrafos(campana, nombre);
+            List<string> parrafos = Parrafos(campana, nombreDePila);
             bool conImagen = imagen != null && imagen.Length > 0 && !string.IsNullOrEmpty(srcImagen);
 
             const string FUENTE = "font-family:Arial,Helvetica,sans-serif;";
@@ -213,10 +225,12 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
             {
                 _ = h.AppendLine($"<p style=\"margin:0 0 16px 0;\">{Html(parrafo)}</p>");
             }
-            _ = h.AppendLine($"<p style=\"margin:0 0 8px 0;\">{Html(FIRMA)}</p>");
             _ = h.AppendLine("</td></tr>");
-            _ = h.AppendLine($"<tr><td style=\"padding:8px 24px 24px 24px;{FUENTE}font-size:12px;line-height:1.4;color:#666666;\">");
+            _ = h.AppendLine($"<tr><td style=\"padding:8px 24px 16px 24px;{FUENTE}font-size:12px;line-height:1.4;color:#666666;\">");
             _ = h.AppendLine($"<p style=\"margin:0;\"><strong>Letra pequeña:</strong> {Html(LETRA_PEQUENA)}</p>");
+            _ = h.AppendLine("</td></tr>");
+            _ = h.AppendLine($"<tr><td style=\"padding:0 24px 24px 24px;{FUENTE}font-size:16px;line-height:1.5;color:#222222;\">");
+            _ = h.AppendLine($"<p style=\"margin:0;\">{Html(FIRMA)}</p>");
             _ = h.AppendLine("</td></tr>");
             _ = h.AppendLine("</table>");
             _ = h.AppendLine("</td></tr>");
@@ -229,8 +243,8 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
             {
                 _ = t.AppendLine(parrafo).AppendLine();
             }
-            _ = t.AppendLine(FIRMA).AppendLine();
             _ = t.AppendLine("Letra pequeña: " + LETRA_PEQUENA);
+            _ = t.AppendLine(FIRMA);
 
             return new CorreoChequeRegalo
             {
@@ -335,23 +349,36 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
         internal const string REMITENTE_POR_DEFECTO = "nuevavision@nuevavision.es";
         internal const string NOMBRE_REMITENTE = "Nueva Visión";
         internal const string COPIA_OCULTA_POR_DEFECTO = Constantes.Correos.INFORMATICA;
+        internal const string CONTEXTO_ERROR_SALUDO = "[Cheques regalo #593] No se ha podido decidir el saludo del correo; sale «Hola:»";
+        /// <summary>
+        /// El correo sale en línea durante la facturación (y en la previsualización): si el modelo no decide el saludo
+        /// en este tiempo, «Hola:» y la factura sigue. La reconciliación de la noche lo hace en lote y sin tope.
+        /// </summary>
+        internal static readonly TimeSpan TOPE_SALUDO_EN_LINEA = TimeSpan.FromSeconds(3);
 
         private readonly IRepositorioAvisoChequesRegalo repositorio;
         private readonly IServicioCorreoElectronico servicioCorreo;
         private readonly Func<string, byte[]> leerImagen;
         private readonly Action<Exception> registrarError;
+        private readonly Func<List<string>, Task<Dictionary<string, string>>> generarSaludos;
+        private readonly TimeSpan topeSaludoEnLinea;
 
+        /// <param name="generarSaludos">Nombres → saludo (el modelo del correo post-compra). Null = siempre «Hola:».</param>
         public AvisadorChequesRegalo(IRepositorioAvisoChequesRegalo repositorio, IServicioCorreoElectronico servicioCorreo,
-            Func<string, byte[]> leerImagen = null, Action<Exception> registrarError = null)
+            Func<string, byte[]> leerImagen = null, Action<Exception> registrarError = null,
+            Func<List<string>, Task<Dictionary<string, string>>> generarSaludos = null, TimeSpan? topeSaludoEnLinea = null)
         {
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
             this.servicioCorreo = servicioCorreo ?? throw new ArgumentNullException(nameof(servicioCorreo));
             this.leerImagen = leerImagen ?? ImagenesChequeRegalo.Leer;
             this.registrarError = registrarError ?? (ex => ElmahHelper.Log(ex));
+            this.generarSaludos = generarSaludos;
+            this.topeSaludoEnLinea = topeSaludoEnLinea ?? TOPE_SALUDO_EN_LINEA;
         }
 
         public static AvisadorChequesRegalo Crear(NVEntities db)
-            => new AvisadorChequesRegalo(new RepositorioAvisoChequesRegalo(db), new ServicioCorreoElectronico());
+            => new AvisadorChequesRegalo(new RepositorioAvisoChequesRegalo(db), new ServicioCorreoElectronico(),
+                generarSaludos: nombres => new GeneradorContenidoCorreoPostCompra(new ServicioOpenAI()).GenerarSaludosAsync(nombres));
 
         /// <summary>appSetting ChequesRegalo:Remitente (por defecto nuevavision@, como los correos post-compra).</summary>
         internal static string Remitente
@@ -368,9 +395,17 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
             {
                 return avisos;
             }
+            var conDestinatario = new List<(ChequeRegaloSinAviso Cheque, DestinatarioChequeRegalo Destinatario)>();
             foreach (ChequeRegaloSinAviso cheque in await repositorio.LeerChequesSinAviso(cliente.Trim()).ConfigureAwait(false))
             {
-                avisos.Add(await Avisar(cheque).ConfigureAwait(false));
+                conDestinatario.Add((cheque, await LeerDestinatario(cheque).ConfigureAwait(false)));
+            }
+            // En línea, durante la facturación: con tope corto
+            Dictionary<string, string> nombresDePila = await NombresDePila(conDestinatario.Select(c => c.Destinatario), topeSaludoEnLinea)
+                .ConfigureAwait(false);
+            foreach ((ChequeRegaloSinAviso cheque, DestinatarioChequeRegalo destinatario) in conDestinatario)
+            {
+                avisos.Add(await Avisar(cheque, destinatario, nombresDePila).ConfigureAwait(false));
             }
             return avisos;
         }
@@ -381,21 +416,35 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
             {
                 return 0;
             }
-            int enviados = 0;
+            var conDestinatario = new List<(ChequeRegaloSinAviso Cheque, DestinatarioChequeRegalo Destinatario)>();
             foreach (ChequeRegaloSinAviso cheque in await repositorio.LeerChequesSinAviso(null).ConfigureAwait(false))
             {
                 try
                 {
-                    if ((await Avisar(cheque).ConfigureAwait(false)).Resultado == ResultadoAvisoChequeRegalo.Enviado)
+                    conDestinatario.Add((cheque, await LeerDestinatario(cheque).ConfigureAwait(false)));
+                }
+                catch (Exception ex)
+                {
+                    // Uno que falle no para los demás
+                    RegistrarFalloAviso(cheque, ex);
+                }
+            }
+            // El job: todos los saludos en lote y sin tope
+            Dictionary<string, string> nombresDePila = await NombresDePila(conDestinatario.Select(c => c.Destinatario), null)
+                .ConfigureAwait(false);
+            int enviados = 0;
+            foreach ((ChequeRegaloSinAviso cheque, DestinatarioChequeRegalo destinatario) in conDestinatario)
+            {
+                try
+                {
+                    if ((await Avisar(cheque, destinatario, nombresDePila).ConfigureAwait(false)).Resultado == ResultadoAvisoChequeRegalo.Enviado)
                     {
                         enviados++;
                     }
                 }
                 catch (Exception ex)
                 {
-                    // Uno que falle no para los demás
-                    registrarError(new Exception($"[Cheques regalo #593] No se pudo avisar del cheque {cheque.Id} " +
-                        $"(cliente {cheque.Cliente?.Trim()}): {ex.Message}", ex));
+                    RegistrarFalloAviso(cheque, ex);
                 }
             }
             return enviados;
@@ -411,9 +460,10 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
             DestinatarioChequeRegalo destinatario = string.IsNullOrWhiteSpace(cliente)
                 ? null
                 : await repositorio.LeerDestinatario(cliente.Trim(), null, null).ConfigureAwait(false);
+            string nombreDePila = await NombreDePilaEnLinea(destinatario).ConfigureAwait(false);
             byte[] imagen = leerImagen(leida.ImagenCorreo);
             string src = imagen == null ? null : $"data:{ImagenesChequeRegalo.TipoMime(leida.ImagenCorreo)};base64,{Convert.ToBase64String(imagen)}";
-            return PlantillaCorreoChequeRegalo.Componer(leida, destinatario?.Nombre, imagen, src);
+            return PlantillaCorreoChequeRegalo.Componer(leida, nombreDePila, imagen, src);
         }
 
         public async Task<bool?> EnviarPrueba(string campana, string correo, string cliente)
@@ -426,7 +476,7 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
             DestinatarioChequeRegalo destinatario = string.IsNullOrWhiteSpace(cliente)
                 ? null
                 : await repositorio.LeerDestinatario(cliente.Trim(), null, null).ConfigureAwait(false);
-            CorreoChequeRegalo compuesto = ComponerParaEnviar(leida, destinatario?.Nombre);
+            CorreoChequeRegalo compuesto = ComponerParaEnviar(leida, await NombreDePilaEnLinea(destinatario).ConfigureAwait(false));
             using (MailMessage mail = CrearMensaje(compuesto, new List<string> { correo.Trim() }, copiaOculta: false))
             {
                 mail.Subject = "[PRUEBA] " + mail.Subject;
@@ -434,13 +484,46 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
             }
         }
 
-        private CorreoChequeRegalo ComponerParaEnviar(CampanaCorreoChequeRegalo campana, string nombre)
-            => PlantillaCorreoChequeRegalo.Componer(campana, nombre, leerImagen(campana.ImagenCorreo), "cid:" + PlantillaCorreoChequeRegalo.ID_IMAGEN);
+        private CorreoChequeRegalo ComponerParaEnviar(CampanaCorreoChequeRegalo campana, string nombreDePila)
+            => PlantillaCorreoChequeRegalo.Componer(campana, nombreDePila, leerImagen(campana.ImagenCorreo), "cid:" + PlantillaCorreoChequeRegalo.ID_IMAGEN);
 
-        private async Task<AvisoChequeRegalo> Avisar(ChequeRegaloSinAviso cheque)
+        private Task<DestinatarioChequeRegalo> LeerDestinatario(ChequeRegaloSinAviso cheque)
+            => repositorio.LeerDestinatario(cheque.Cliente?.Trim(), cheque.EmpresaFactura?.Trim(), cheque.FacturaOrigen?.Trim());
+
+        private void RegistrarFalloAviso(ChequeRegaloSinAviso cheque, Exception ex)
+            => registrarError(new Exception($"[Cheques regalo #593] No se pudo avisar del cheque {cheque.Id} " +
+                $"(cliente {cheque.Cliente?.Trim()}): {ex.Message}", ex));
+
+        /// <summary>
+        /// A quién se saluda, como en el aviso de facturas vencidas: la persona de contacto que recibe las facturas si
+        /// tiene nombre; si no, el cliente. Null si no hay ninguno.
+        /// </summary>
+        internal static string NombreParaSaludar(DestinatarioChequeRegalo destinatario)
+            => destinatario == null ? null : SaludoPorNombreDePila.NombreParaSaludar(destinatario.NombrePersonaContacto, destinatario.Nombre);
+
+        /// <summary>
+        /// Nombre → nombre de pila, con el modelo del correo post-compra (solo de los que tienen correo: a los demás no
+        /// se les escribe). Nunca lanza: con fallo o tiempo agotado, vacío («Hola:») y ELMAH.
+        /// </summary>
+        private Task<Dictionary<string, string>> NombresDePila(IEnumerable<DestinatarioChequeRegalo> destinatarios, TimeSpan? tope)
+            => SaludoPorNombreDePila.NombresDePila(
+                destinatarios.Where(d => d != null && CorreosValidos(d.Correos).Any()).Select(NombreParaSaludar),
+                generarSaludos, tope, registrarError, CONTEXTO_ERROR_SALUDO);
+
+        /// <summary>Para la previsualización y el correo de prueba: el mismo saludo que recibirá el cliente.</summary>
+        private async Task<string> NombreDePilaEnLinea(DestinatarioChequeRegalo destinatario)
+            => NombreDePila(destinatario, await SaludoPorNombreDePila.NombresDePila(new[] { NombreParaSaludar(destinatario) },
+                generarSaludos, topeSaludoEnLinea, registrarError, CONTEXTO_ERROR_SALUDO).ConfigureAwait(false));
+
+        private static string NombreDePila(DestinatarioChequeRegalo destinatario, Dictionary<string, string> nombresDePila)
         {
-            DestinatarioChequeRegalo destinatario = await repositorio
-                .LeerDestinatario(cheque.Cliente?.Trim(), cheque.EmpresaFactura?.Trim(), cheque.FacturaOrigen?.Trim()).ConfigureAwait(false);
+            string nombre = NombreParaSaludar(destinatario);
+            return nombre != null && nombresDePila.TryGetValue(nombre, out string pila) ? pila : null;
+        }
+
+        private async Task<AvisoChequeRegalo> Avisar(ChequeRegaloSinAviso cheque, DestinatarioChequeRegalo destinatario,
+            Dictionary<string, string> nombresDePila)
+        {
             List<string> correos = CorreosValidos(destinatario?.Correos);
             if (!correos.Any())
             {
@@ -463,7 +546,7 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
             bool enviado;
             try
             {
-                CorreoChequeRegalo compuesto = ComponerParaEnviar(cheque.Campana(), destinatario.Nombre);
+                CorreoChequeRegalo compuesto = ComponerParaEnviar(cheque.Campana(), NombreDePila(destinatario, nombresDePila));
                 using (MailMessage mail = CrearMensaje(compuesto, correos, copiaOculta: true))
                 {
                     enviado = servicioCorreo.EnviarCorreoSMTP(mail);
@@ -583,11 +666,18 @@ WHERE Codigo = @p0";
 
         // Los correos de las facturas (cargo 22, como el envío diario de ServicioFacturas.LeerFacturasDia): primero un
         // contacto que los tenga, y de ellos el de la factura y luego el principal. Los clientes viven en la empresa 1
-        // aunque la factura sea de la espejo.
+        // aunque la factura sea de la espejo. NombrePersonaContacto, para el saludo: la primera persona activa que
+        // recibe las facturas con Saludo o Nombre (como SelectorAvisosFacturasVencidas.ResolverNombrePersonaContacto).
         internal const string SQL_DESTINATARIO = @"
-SELECT TOP 1 RTRIM(x.Nombre) AS Nombre, x.Correos
+SELECT TOP 1 RTRIM(x.Nombre) AS Nombre, x.NombrePersonaContacto, x.Correos
 FROM (
     SELECT cl.Nombre, cl.Contacto, cl.ClientePrincipal,
+           (SELECT TOP 1 COALESCE(NULLIF(RTRIM(p.Saludo), ''), RTRIM(p.Nombre))
+            FROM dbo.PersonasContactoCliente p
+            WHERE p.Empresa = cl.Empresa AND p.[NºCliente] = cl.[Nº Cliente] AND p.Contacto = cl.Contacto
+                  AND p.Cargo = @p2 AND p.Estado >= 0 AND p.[CorreoElectrónico] IS NOT NULL AND RTRIM(p.[CorreoElectrónico]) <> ''
+                  AND (RTRIM(p.Saludo) <> '' OR RTRIM(p.Nombre) <> '')
+            ORDER BY p.[Número]) AS NombrePersonaContacto,
            STUFF((SELECT ', ' + RTRIM(p.[CorreoElectrónico])
                   FROM dbo.PersonasContactoCliente p
                   WHERE p.Empresa = cl.Empresa AND p.[NºCliente] = cl.[Nº Cliente] AND p.Contacto = cl.Contacto

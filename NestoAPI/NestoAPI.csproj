@@ -1134,6 +1134,7 @@
     <Compile Include="Infraestructure\CorreosPostCompra\RecordatorioReposicionJobsService.cs" />
     <Compile Include="Infraestructure\CorreosPostCompra\SelectorRecordatoriosReposicion.cs" />
     <Compile Include="Infraestructure\CorreosPostCompra\GeneradorContenidoCorreoPostCompra.cs" />
+    <Compile Include="Infraestructure\CorreosPostCompra\SaludoPorNombreDePila.cs" />
     <Compile Include="Infraestructure\CorreosPostCompra\IServicioRecomendacionesPostCompra.cs" />
     <Compile Include="Infraestructure\CorreosPostCompra\RecomendacionPostCompraDTO.cs" />
     <Compile Include="Infraestructure\CorreosPostCompra\ServicioRecomendacionesPostCompra.cs" />

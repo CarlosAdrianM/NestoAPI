@@ -247,37 +247,20 @@ namespace NestoAPI.Infraestructure.Cobros
         /// </summary>
         internal static async Task ResolverSaludos(List<AvisoClienteFacturasVencidasDTO> avisos, DependenciasAvisosFacturasVencidas deps)
         {
-            Dictionary<string, string> saludos = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            List<string> nombres = avisos
-                .Select(a => NombreParaSaludar(a))
-                .Where(n => !string.IsNullOrWhiteSpace(n))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
-            if (nombres.Any() && deps.GenerarSaludos != null)
-            {
-                try
-                {
-                    saludos = await deps.GenerarSaludos(nombres).ConfigureAwait(false)
-                        ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                }
-                catch (Exception ex)
-                {
-                    ElmahHelper.Log(new Exception("[Aviso facturas vencidas #544] No se han podido generar los saludos; salen genéricos: " + ex.Message, ex));
-                }
-            }
+            Dictionary<string, string> nombresDePila = await SaludoPorNombreDePila.NombresDePila(
+                avisos.Select(a => NombreParaSaludar(a)), deps.GenerarSaludos, tope: null,
+                ex => ElmahHelper.Log(ex), "[Aviso facturas vencidas #544] No se han podido generar los saludos; salen genéricos")
+                .ConfigureAwait(false);
             foreach (AvisoClienteFacturasVencidasDTO aviso in avisos)
             {
                 string nombre = NombreParaSaludar(aviso);
-                string nombrePila = nombre != null && saludos.TryGetValue(nombre, out string saludo)
-                    ? GeneradorContenidoCorreoPostCompra.NombreDelSaludo(saludo)
-                    : null;
+                string nombrePila = nombre != null && nombresDePila.TryGetValue(nombre, out string pila) ? pila : null;
                 aviso.Saludo = PlantillaAvisoFacturaVencida.Saludo(nombrePila, deps.Ahora);
             }
         }
 
         internal static string NombreParaSaludar(AvisoClienteFacturasVencidasDTO aviso)
-            => !string.IsNullOrWhiteSpace(aviso.NombrePersonaContacto) ? aviso.NombrePersonaContacto.Trim()
-                : !string.IsNullOrWhiteSpace(aviso.Nombre) ? aviso.Nombre.Trim() : null;
+            => SaludoPorNombreDePila.NombreParaSaludar(aviso.NombrePersonaContacto, aviso.Nombre);
 
         /// <summary>Cualquier fallo al leer el parámetro cuenta como apagado.</summary>
         internal static ModoAvisoFacturasVencidas LeerModo(ILectorParametrosUsuario lector)
