@@ -521,6 +521,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     ?? new List<int>();
                 if (!enDiario.Contains(traspaso))
                 {
+                    // NestoAPI#577: rellenada en el origen pero sin salir todavía (sin contabilizar la salida): 409
+                    await reposiciones.ComprobarQueHaSalido(solicitud.Empresa, solicitud.Almacen, traspaso).ConfigureAwait(false);
                     throw new NestoBusinessException($"La reposición {traspaso} ya no está pendiente de entrar en {solicitud.Almacen}.");
                 }
                 // NestoAPI#553: el diario de entrada se contabiliza entero; las demás reposiciones (y cualquier otra línea) se

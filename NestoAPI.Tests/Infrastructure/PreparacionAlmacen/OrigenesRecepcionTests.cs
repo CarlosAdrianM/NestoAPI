@@ -85,10 +85,11 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
 
         // Reposiciones: hoy da la entrada quien tiene el almacén de destino en AlmacénPedidoVta
         // (60 días: Reina → REI, Paloma → ALC, Andre/Alfredo/Santiago → ALG)
-        private static OrigenRecepcionReposiciones Reposiciones(IRepositorioCierreReposiciones cierre = null, IAvisadorReposiciones avisador = null)
+        private static OrigenRecepcionReposiciones Reposiciones(IRepositorioCierreReposiciones cierre = null, IAvisadorReposiciones avisador = null,
+            IServicioRecepcionReposiciones servicio = null)
         {
             var almacenes = new Dictionary<string, string> { ["Reina"] = "REI", ["Paloma"] = "ALC", ["Andre"] = "ALG" };
-            return new OrigenRecepcionReposiciones(A.Fake<IServicioRecepcionReposiciones>(), cierre ?? A.Fake<IRepositorioCierreReposiciones>(),
+            return new OrigenRecepcionReposiciones(servicio ?? A.Fake<IServicioRecepcionReposiciones>(), cierre ?? A.Fake<IRepositorioCierreReposiciones>(),
                 avisador ?? A.Fake<IAvisadorReposiciones>(), (empresa, usuario) => almacenes.TryGetValue(usuario, out string a) ? a : null);
         }
 
@@ -362,6 +363,25 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             _ = await Reposiciones(cierre).Terminar(SolicitudReposicion());
 
             CollectionAssert.AreEqual(new[] { "contabilizar", "cabecera recibida" }, pasos);
+        }
+
+        [TestMethod]
+        public async Task Reposiciones_Terminar_TodaviaNoHaSalidoDelOrigen_409YNoSeContabilizaNada()
+        {
+            // NestoAPI#577: la 80932, rellenada en Algete y con la salida sin contabilizar, no está en el diario de entrada de
+            // Reina para la API (SQL_TRASPASOS_EN_DIARIO la excluye) y quien la intente recibir por número se entera de por qué
+            var (cierre, transaccion) = CierreFalso();
+            var servicio = A.Fake<IServicioRecepcionReposiciones>();
+            A.CallTo(() => servicio.ComprobarQueHaSalido("1", "REI", 80932))
+                .Throws(SalidaReposicionSql.NoHaSalido(80932, "Algete"));
+
+            NestoBusinessException ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() =>
+                Reposiciones(cierre, servicio: servicio).Terminar(SolicitudReposicion("80932")));
+
+            Assert.AreEqual(System.Net.HttpStatusCode.Conflict, ex.StatusCode);
+            StringAssert.StartsWith(ex.Message, "La reposición 80932 todavía no ha salido de Algete");
+            A.CallTo(() => transaccion.ApartarOtros(A<string>.Ignored, A<string>.Ignored, A<int>.Ignored)).MustNotHaveHappened();
+            A.CallTo(() => transaccion.Contabilizar(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
         }
 
         [TestMethod]

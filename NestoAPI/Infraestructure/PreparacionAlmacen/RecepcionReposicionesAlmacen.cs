@@ -1,9 +1,11 @@
+using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Models;
 using NestoAPI.Models.PreparacionAlmacen;
 using System;
 using System.Collections.Generic;
 using System.Data.Entity;
 using System.Linq;
+using System.Net;
 using System.Threading.Tasks;
 
 namespace NestoAPI.Infraestructure.PreparacionAlmacen
@@ -21,6 +23,45 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     {
         Task<List<ReposicionPendienteDTO>> LeerPendientes(string empresa, string almacen);
         Task<List<FilaReposicion>> LeerLineas(string empresa, string almacen, int traspaso);
+        /// <summary>
+        /// NestoAPI#577: si el traspaso está en el diario de entrada del almacén pero su salida del origen sigue sin
+        /// contabilizar, el nombre del origen («Algete»); si no, null.
+        /// </summary>
+        Task<string> LeerOrigenSinSalir(string empresa, string almacen, int traspaso);
+    }
+
+    /// <summary>
+    /// NestoAPI#577 (Carlos, 09/10/26): «La repo se rellena en Algete para enviar a Reina. Solo se debería ver en Algete en
+    /// ese momento. Cuando se contabiliza, se deja de ver en Algete y se comienza a ver en Reina.» Desde Algete (con control
+    /// de ubicaciones) la API cierra la reposición al crearla (para reservar los huecos): le pone número de traspaso y deja
+    /// la entrada en el diario de entrada del destino (PendRepo, RepoAlgAlc…) mientras la salida negativa sigue en el
+    /// diario de salida del origen («General») hasta que Ariadna termina la recogida y la contabiliza. En Nesto viejo la
+    /// entrada no llegaba al destino hasta contabilizar la salida. Por eso, un traspaso NO está pendiente de recibir
+    /// mientras queden en PreExtrProducto líneas suyas de salida (cantidad negativa) en el diario de salida de reposiciones
+    /// (Almacenes.DiarioSalidaRep) del almacén de origen (Delegación de la entrada). Un único predicado para todos los
+    /// lectores de «pendiente de recibir» (lista, líneas, terminar). PreExtrProducto es pequeña (~200 filas).
+    /// </summary>
+    internal static class SalidaReposicionSql
+    {
+        /// <summary>Para el WHERE de una consulta sobre las filas de ENTRADA con alias <c>p</c>.</summary>
+        internal const string YA_HA_SALIDO = @"NOT EXISTS (SELECT 1 FROM PreExtrProducto s
+         JOIN Almacenes so ON so.Empresa = s.Empresa AND so.[Número] = s.[Almacén] AND so.DiarioSalidaRep = s.Diario
+    WHERE s.Empresa = p.Empresa AND s.[NºTraspaso] = p.[NºTraspaso] AND s.[Almacén] = p.[Delegación] AND s.Cantidad < 0)";
+
+        internal const string SQL_ORIGEN_SIN_SALIR = @"
+SELECT TOP 1 COALESCE(NULLIF(RTRIM(o.[Descripción]), ''), NULLIF(RTRIM(p.[Delegación]), ''), 'su almacén de origen')
+FROM PreExtrProducto p
+     JOIN Almacenes a ON a.Empresa = p.Empresa AND a.[Número] = p.[Almacén] AND a.DiarioEntradaRep = p.Diario
+     LEFT JOIN Almacenes o ON o.Empresa = p.Empresa AND o.[Número] = p.[Delegación]
+WHERE p.Empresa = @p0 AND p.[Almacén] = @p1 AND p.[NºTraspaso] = @p2 AND NOT " + YA_HA_SALIDO;
+
+        /// <summary>409: «La reposición 80932 todavía no ha salido de Algete».</summary>
+        internal static NestoBusinessException NoHaSalido(int traspaso, string origen)
+        {
+            string de = string.IsNullOrWhiteSpace(origen) ? "su almacén de origen" : origen.Trim();
+            return new NestoBusinessException($"La reposición {traspaso} todavía no ha salido de {de}: se podrá recibir cuando " +
+                "terminen de prepararla allí.") { StatusCode = HttpStatusCode.Conflict };
+        }
     }
 
     /// <summary>
@@ -48,7 +89,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 FROM PreExtrProducto p
      JOIN Almacenes a ON a.Empresa = p.Empresa AND a.[Número] = p.[Almacén] AND a.DiarioEntradaRep = p.Diario
      LEFT JOIN Almacenes o ON o.Empresa = p.Empresa AND o.[Número] = p.[Delegación]
-WHERE p.Empresa = @p0 AND p.[Almacén] = @p1 AND p.[NºTraspaso] > 0";
+WHERE p.Empresa = @p0 AND p.[Almacén] = @p1 AND p.[NºTraspaso] > 0
+  AND " + SalidaReposicionSql.YA_HA_SALIDO;
 
         internal const string SQL_PENDIENTES = @"
 SELECT p.[NºTraspaso] AS Traspaso, COUNT(*) AS Lineas, CAST(SUM(p.Cantidad) AS int) AS Unidades,
@@ -64,6 +106,7 @@ FROM PreExtrProducto p
      JOIN Almacenes a ON a.Empresa = p.Empresa AND a.[Número] = p.[Almacén] AND a.DiarioEntradaRep = p.Diario
      LEFT JOIN Productos pr ON pr.Empresa = p.Empresa AND pr.[Número] = p.[Número]
 WHERE p.Empresa = @p0 AND p.[Almacén] = @p1 AND p.[NºTraspaso] = @p2
+  AND " + SalidaReposicionSql.YA_HA_SALIDO + @"
 GROUP BY p.[Número]
 HAVING SUM(p.Cantidad) <> 0
 ORDER BY p.[Número]";
@@ -77,6 +120,11 @@ ORDER BY p.[Número]";
         {
             return baseDeDatos.SqlQuery<FilaReposicion>(SQL_LINEAS, empresa, almacen, traspaso).ToListAsync();
         }
+
+        public Task<string> LeerOrigenSinSalir(string empresa, string almacen, int traspaso)
+        {
+            return baseDeDatos.SqlQuery<string>(SalidaReposicionSql.SQL_ORIGEN_SIN_SALIR, empresa, almacen, traspaso).FirstOrDefaultAsync();
+        }
     }
 
     public interface IServicioRecepcionReposiciones
@@ -86,6 +134,11 @@ ORDER BY p.[Número]";
         Task<RecepcionReposicionDTO> LeerRecepcion(string empresa, string almacen, int traspaso);
         /// <summary>Compara lo contado con lo enviado. No guarda nada. Null si no existe la reposición.</summary>
         Task<ResultadoRecepcionReposicionDTO> Casar(string empresa, string almacen, int traspaso, IEnumerable<LecturaRecepcionDTO> lecturas);
+        /// <summary>
+        /// NestoAPI#577: lanza 409 («La reposición 80932 todavía no ha salido de Algete») si el traspaso va a ese almacén
+        /// pero su salida del origen sigue sin contabilizar. Si no, no hace nada.
+        /// </summary>
+        Task ComprobarQueHaSalido(string empresa, string almacen, int traspaso);
     }
 
     /// <summary>
@@ -117,8 +170,9 @@ ORDER BY p.[Número]";
         public async Task<RecepcionReposicionDTO> LeerRecepcion(string empresa, string almacen, int traspaso)
         {
             List<FilaReposicion> filas = await repositorio.LeerLineas(empresa, almacen, traspaso).ConfigureAwait(false);
-            if (!filas.Any())
+            if (filas == null || !filas.Any())
             {
+                await ComprobarQueHaSalido(empresa, almacen, traspaso).ConfigureAwait(false);
                 return null;
             }
 
@@ -150,8 +204,9 @@ ORDER BY p.[Número]";
             IEnumerable<LecturaRecepcionDTO> lecturas)
         {
             List<FilaReposicion> filas = await repositorio.LeerLineas(empresa, almacen, traspaso).ConfigureAwait(false);
-            if (!filas.Any())
+            if (filas == null || !filas.Any())
             {
+                await ComprobarQueHaSalido(empresa, almacen, traspaso).ConfigureAwait(false);
                 return null;
             }
 
@@ -167,6 +222,15 @@ ORDER BY p.[Número]";
                 Productos = diferencias,
                 Cuadra = CasadorEscaneos.EstaCompleto(diferencias)
             };
+        }
+
+        public async Task ComprobarQueHaSalido(string empresa, string almacen, int traspaso)
+        {
+            string origen = await repositorio.LeerOrigenSinSalir(empresa, almacen, traspaso).ConfigureAwait(false);
+            if (!string.IsNullOrEmpty(origen))
+            {
+                throw SalidaReposicionSql.NoHaSalido(traspaso, origen);
+            }
         }
 
         public void Dispose()

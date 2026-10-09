@@ -190,6 +190,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
                     }
                 }
                 Assert.AreEqual(0, (await repositorio.LeerLineas(EMPRESA, "ALG", -1)).Count);
+                Assert.IsNull(await repositorio.LeerOrigenSinSalir(EMPRESA, "ALG", -1));
             }
         }
 

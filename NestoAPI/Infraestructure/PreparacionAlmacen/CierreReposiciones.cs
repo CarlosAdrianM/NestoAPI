@@ -207,10 +207,12 @@ WHERE Empresa = @p0 AND Diario = @p2 AND [Nº Orden] IN ({LISTA})";
         internal const string SQL_DIARIO_ENTRADA = @"
 SELECT RTRIM(DiarioEntradaRep) FROM Almacenes WHERE Empresa = @p0 AND [Número] = @p1";
 
-        // El mismo origen que la lectura de lo pendiente (RepositorioRecepcionReposiciones)
+        // El mismo origen que la lectura de lo pendiente (RepositorioRecepcionReposiciones), sin los que aún no han salido
+        // del origen (NestoAPI#577)
         internal const string SQL_TRASPASOS_EN_DIARIO = @"
 SELECT DISTINCT p.[NºTraspaso] FROM PreExtrProducto p WITH (UPDLOCK)
-WHERE p.Empresa = @p0 AND p.[Almacén] = @p1 AND p.Diario = @p2 AND p.[NºTraspaso] > 0";
+WHERE p.Empresa = @p0 AND p.[Almacén] = @p1 AND p.Diario = @p2 AND p.[NºTraspaso] > 0
+  AND " + SalidaReposicionSql.YA_HA_SALIDO;
 
         private readonly NVEntities db;
         private readonly IServicioExtractoProducto extractos;
