@@ -322,6 +322,13 @@ namespace NestoAPI.Models.PedidosVenta
         /// </summary>
         public List<ProductoSinStockEnTiendaDTO> ProductosSinStockEnTienda { get; set; }
             = new List<ProductoSinStockEnTiendaDTO>();
+
+        /// <summary>
+        /// NestoAPI#593 (TNV): el cheque regalo del carrito, si la petición lleva su línea. Con <c>Aplicado</c>, el
+        /// total ya lo lleva descontado; si no, el carrito está calculado SIN el cheque y <c>Codigo</c>/<c>Mensaje</c>
+        /// dicen por qué (<c>Falta</c> con el mínimo no superado). Null si no lleva cheque.
+        /// </summary>
+        public Infraestructure.ChequesRegalo.ChequeRegaloCarritoDTO ChequeRegalo { get; set; }
     }
 
     public class LineaPedidoClienteResponse

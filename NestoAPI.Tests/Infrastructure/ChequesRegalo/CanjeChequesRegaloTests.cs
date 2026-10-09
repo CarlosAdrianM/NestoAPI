@@ -661,44 +661,6 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
             Assert.AreEqual(HttpStatusCode.Forbidden, resultado.StatusCode);
         }
 
-        [TestMethod]
-        public async Task PedidosCliente_ConLaLineaDelCheque_NoSeCreaTodavia()
-        {
-            // El canje en la app de clientas y en la tienda online va aparte (febrero)
-            var controller = new PedidosClienteController(A.Fake<NVEntities>(), A.Fake<IServicioPagos>())
-            {
-                RequestContext = new HttpRequestContext { Principal = new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim("cliente", CLIENTE) }, "JWT")) },
-                LeerProductosChequeRegalo = () => Task.FromResult(new List<string> { PRODUCTO_CHEQUE })
-            };
-            var peticion = new PedidoClienteRequest
-            {
-                Lineas = new List<LineaPedidoClienteRequest>
-                {
-                    new LineaPedidoClienteRequest { Producto = "12345", Cantidad = 1 },
-                    new LineaPedidoClienteRequest { Producto = "cheque50_oct26", Cantidad = 1 }
-                }
-            };
-
-            var resultado = await controller.PostPedidoCliente(peticion) as BadRequestErrorMessageResult;
-
-            Assert.IsNotNull(resultado);
-            Assert.AreEqual(PedidosClienteController.MENSAJE_CHEQUE_REGALO_NO_DISPONIBLE, resultado.Message);
-        }
-
-        [TestMethod]
-        public async Task PedidosCliente_SinLaLineaDelCheque_NoLoBloquea()
-        {
-            var controller = new PedidosClienteController(A.Fake<NVEntities>(), A.Fake<IServicioPagos>())
-            {
-                LeerProductosChequeRegalo = () => Task.FromResult(new List<string> { PRODUCTO_CHEQUE })
-            };
-
-            Assert.IsFalse(await controller.LlevaChequeRegalo(new PedidoClienteRequest
-            {
-                Lineas = new List<LineaPedidoClienteRequest> { new LineaPedidoClienteRequest { Producto = "12345", Cantidad = 1 } }
-            }));
-        }
-
         private static void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class
         {
             A.CallTo(() => ((IDbAsyncEnumerable<T>)fakeDbSet).GetAsyncEnumerator())

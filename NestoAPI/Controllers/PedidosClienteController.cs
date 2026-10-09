@@ -1,4 +1,5 @@
 ﻿using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.ChequesRegalo;
 using NestoAPI.Infraestructure.Clientes;
 using NestoAPI.Infraestructure.Contabilidad;
 using NestoAPI.Infraestructure.Exceptions;
@@ -128,6 +129,11 @@ namespace NestoAPI.Controllers
             {
                 return preparado.Error;
             }
+            // NestoAPI#593 (TNV): un cheque que no se puede usar no llega ni al cobro
+            if (preparado.ChequeRegalo?.Error != null)
+            {
+                throw preparado.ChequeRegalo.Error;
+            }
 
             // NestoAPI#178/#181: el pedido lo hace el CLIENTE con su tarjeta guardada, así que es
             // un CIT sobre credencial en fichero y hay que autenticarlo. Se crea el pedido y el
@@ -205,6 +211,12 @@ namespace NestoAPI.Controllers
                 // decir nada es peor que un error: el cliente se entera de por qué.
                 return await NoSeHaCreado(cobroCarrito, MotivoParaElCliente(ex)).ConfigureAwait(false);
             }
+            catch (NestoBusinessException ex) when (CarritoChequesRegalo.EsErrorDelCheque(ex))
+            {
+                // NestoAPI#593 (TNV): PostPedidoVenta vuelve a comprobar el cheque al guardar (y lo reserva): si otro
+                // pedido lo ha cogido a la vez, aquí llega CHEQUE_REGALO_YA_USADO
+                return await NoSeHaCreadoPorElCheque(cobroCarrito, ex).ConfigureAwait(false);
+            }
             catch (NestoBusinessException ex)
             {
                 return await NoSeHaCreado(cobroCarrito, ex.Message).ConfigureAwait(false);
@@ -224,6 +236,11 @@ namespace NestoAPI.Controllers
 
             PedidoClienteResponse respuesta = ConstruirRespuesta(
                 preparado.Pedido, preparado.FormaPago, preparado.PlazosPago, yaCobrado: cobroCarrito != null);
+
+            if (preparado.ChequeRegalo?.Aplicado == true)
+            {
+                respuesta.Avisos.Add(CarritoChequesRegalo.MensajeAplicado(preparado.ChequeRegalo.Importe));
+            }
 
             if (sinPrecios)
             {
@@ -251,38 +268,56 @@ namespace NestoAPI.Controllers
         /// <summary>NestoAPI#444: cómo se encola el correo al cliente (Hangfire); sustituible en tests.</summary>
         internal Action<CorreoConfirmacionPedidoDTO> EncolarCorreoCliente { get; set; }
 
-        /// <summary>NestoAPI#593 (c4): los productos de cheque regalo de las campañas. Null = de la BD. Para tests.</summary>
-        internal Func<Task<List<string>>> LeerProductosChequeRegalo { get; set; }
-
-        internal const string MENSAJE_CHEQUE_REGALO_NO_DISPONIBLE = "El cheque regalo todavía no se puede usar desde la app: " +
-            "pídele a tu comercial o llámanos y te lo aplicamos en el pedido.";
+        /// <summary>
+        /// NestoAPI#593 (TNV): el canje del cheque regalo, el MISMO servicio que usa POST/PUT de api/PedidosVenta (se le
+        /// pasa al controller de pedidos en <see cref="CrearControllerPedidos"/>, así que las campañas se leen una vez
+        /// por petición). Sustituible en tests.
+        /// </summary>
+        private IServicioCanjeChequesRegalo servicioCanje;
+        internal IServicioCanjeChequesRegalo ServicioCanje
+        {
+            get => servicioCanje ?? (servicioCanje = new ServicioCanjeChequesRegalo(new RepositorioCanjeChequesRegalo(db)));
+            set => servicioCanje = value;
+        }
 
         /// <summary>
-        /// NestoAPI#593 (c4): el canje del cheque regalo en la app de clientas y en la tienda online va aparte (épica,
-        /// febrero). Mientras tanto, un pedido de aquí con la línea del cheque no se crea: se le dice cómo usarlo.
+        /// NestoAPI#593 (TNV): los productos de cheque regalo de las campañas (activas o no). Si no se pueden leer, la
+        /// línea se trata como un producto más y el pedido no sale (sin precio, o lo rechaza PostPedidoVenta).
         /// </summary>
-        internal async Task<bool> LlevaChequeRegalo(PedidoClienteRequest peticion)
+        internal async Task<List<string>> LeerProductosCheque(PedidoClienteRequest peticion)
         {
             if (peticion?.Lineas == null || !peticion.Lineas.Any(l => !string.IsNullOrWhiteSpace(l?.Producto)))
             {
-                return false;
+                return new List<string>();
             }
-            List<string> productosCheque;
             try
             {
-                productosCheque = await (LeerProductosChequeRegalo ?? (() =>
-                    new Infraestructure.ChequesRegalo.ServicioCanjeChequesRegalo(
-                        new Infraestructure.ChequesRegalo.RepositorioCanjeChequesRegalo(db)).ProductosCheque()))().ConfigureAwait(false);
+                return await ServicioCanje.ProductosCheque().ConfigureAwait(false) ?? new List<string>();
             }
             catch (Exception ex)
             {
-                // Es una puerta de canal, no la regla del canje: si no se puede leer, sigue (POST api/PedidosVenta
-                // tampoco podría leer las campañas y no crearía el pedido)
                 System.Diagnostics.Trace.WriteLine($"[Cheque regalo #593] No se pudieron leer las campañas: {ex.Message}");
-                return false;
+                return new List<string>();
             }
-            return productosCheque != null && peticion.Lineas.Any(l => l?.Producto != null
-                && productosCheque.Any(p => string.Equals(p, l.Producto.Trim(), StringComparison.OrdinalIgnoreCase)));
+        }
+
+        /// <summary>
+        /// NestoAPI#593 (TNV): el pedido no se ha creado por el cheque regalo. Si se había cobrado por adelantado, el
+        /// dinero vuelve, y el error sale con su código CHEQUE_REGALO_* y sus detalles (GlobalExceptionFilter:
+        /// <c>{"error":{"code","message","details"}}</c>) para que la app sepa, por ejemplo, cuánto falta para el mínimo.
+        /// </summary>
+        private async Task<IHttpActionResult> NoSeHaCreadoPorElCheque(ReservaCobroCarrito cobroCarrito, NestoBusinessException ex)
+        {
+            NestoBusinessException paraLaClienta = CarritoChequesRegalo.ParaLaClienta(ex);
+            if (cobroCarrito == null)
+            {
+                throw paraLaClienta;
+            }
+            bool devuelto = await DevolverCobroDelCarrito(cobroCarrito, "el pedido no se ha podido crear (cheque regalo)")
+                .ConfigureAwait(false);
+            throw new NestoBusinessException(paraLaClienta.Message + (devuelto
+                ? " No te hemos cobrado nada: el pago se ha devuelto."
+                : " El pago se te devolverá; si en unos días no lo ves, llámanos."), ex.Context, ex);
         }
 
         /// <summary>
@@ -380,7 +415,9 @@ namespace NestoAPI.Controllers
             PedidosVentaController controllerPedidos = new PedidosVentaController(db)
             {
                 // El principal viaja en el RequestContext: el pedido lo crea el cliente del JWT.
-                RequestContext = RequestContext
+                RequestContext = RequestContext,
+                // NestoAPI#593 (TNV): el mismo canje que ha preparado el carrito
+                ServicioCanje = ServicioCanje
             };
             if (Request != null)
             {
@@ -471,6 +508,12 @@ namespace NestoAPI.Controllers
             {
                 return preparado.Error;
             }
+            // NestoAPI#593 (TNV): si el cheque no se puede usar, el carrito se calcula sin él y se dice por qué (con
+            // cuánto falta para el mínimo); el pedido, si lo confirma así, no se crearía.
+            if (preparado.ChequeRegalo?.Error != null)
+            {
+                CarritoChequesRegalo.QuitarLineasCheque(preparado.Pedido);
+            }
 
             // TNV#68: el total va aquí porque es el número que el carrito le enseña al cliente, y
             // tiene que ser el mismo que se le va a cobrar. La app lo calculaba por su cuenta
@@ -489,7 +532,8 @@ namespace NestoAPI.Controllers
                 TotalConIva = carrito.Total,
                 ComisionReembolso = portes.ComisionReembolso,
                 // TNV#70: con la tienda elegida, el mismo cálculo dice ya qué no está allí
-                ProductosSinStockEnTienda = LoQueNoHayEnLaTienda(preparado.Pedido, preparado.Tienda)
+                ProductosSinStockEnTienda = LoQueNoHayEnLaTienda(preparado.Pedido, preparado.Tienda),
+                ChequeRegalo = preparado.ChequeRegalo?.ParaElCarrito()
             });
         }
 
@@ -513,6 +557,10 @@ namespace NestoAPI.Controllers
             if (preparado.Error != null)
             {
                 return preparado.Error;
+            }
+            if (preparado.ChequeRegalo?.Error != null)
+            {
+                CarritoChequesRegalo.QuitarLineasCheque(preparado.Pedido); // como en los portes: sin el cheque
             }
 
             PedidoVentaDTO pedido = preparado.Pedido;
@@ -786,6 +834,11 @@ namespace NestoAPI.Controllers
             {
                 return preparado.Error;
             }
+            // NestoAPI#593 (TNV): no se cobra un carrito con un cheque que no se puede usar
+            if (preparado.ChequeRegalo?.Error != null)
+            {
+                throw preparado.ChequeRegalo.Error;
+            }
 
             if (!PoliticaPagoCanal.SeCobraEnElMomento(preparado.FormaPago, preparado.PlazosPago))
             {
@@ -923,6 +976,9 @@ namespace NestoAPI.Controllers
 
             /// <summary>TNV#70: la tienda donde lo va a recoger, o null si se lo mandamos.</summary>
             public TiendasRecogida.Tienda Tienda { get; set; }
+
+            /// <summary>NestoAPI#593 (TNV): el cheque regalo del carrito (normalizado y comprobado). Nunca null.</summary>
+            public ResultadoChequeCarrito ChequeRegalo { get; set; } = new ResultadoChequeCarrito();
         }
 
         private async Task<PedidoPreparado> PrepararPedido(PedidoClienteRequest peticion)
@@ -949,11 +1005,8 @@ namespace NestoAPI.Controllers
             {
                 return new PedidoPreparado { Error = BadRequest(errorPeticion) };
             }
-            // NestoAPI#593 (c4): aquí todavía no se canjea el cheque regalo
-            if (await LlevaChequeRegalo(peticion).ConfigureAwait(false))
-            {
-                return new PedidoPreparado { Error = BadRequest(MENSAJE_CHEQUE_REGALO_NO_DISPONIBLE) };
-            }
+            // NestoAPI#593 (TNV): la línea del cheque regalo no lleva precio de cliente: la monta el servicio del canje
+            List<string> productosCheque = await LeerProductosCheque(peticion).ConfigureAwait(false);
 
             string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO;
 
@@ -1019,7 +1072,13 @@ namespace NestoAPI.Controllers
             //    que GET api/Productos?cliente=&contacto=&cantidad=
             //    NestoAPI#530: los regalos de Ganavisiones no tienen precio de cliente: van a tarifa
             //    con el 100 % de descuento, como en Nesto.
-            List<LineaPedidoClienteRequest> compradas = peticion.Lineas.Where(l => !l.EsRegaloGanavisiones).ToList();
+            foreach (LineaPedidoClienteRequest lineaCheque in peticion.Lineas.Where(l => CarritoChequesRegalo.EsLineaCheque(l.Producto, productosCheque)))
+            {
+                lineaCheque.EsRegaloGanavisiones = false; // el cheque es el cheque, venga como venga
+            }
+            List<LineaPedidoClienteRequest> compradas = peticion.Lineas
+                .Where(l => !l.EsRegaloGanavisiones && !CarritoChequesRegalo.EsLineaCheque(l.Producto, productosCheque))
+                .ToList();
             Dictionary<string, ProductoPlantillaDTO> precios;
             try
             {
@@ -1048,10 +1107,19 @@ namespace NestoAPI.Controllers
                 return new PedidoPreparado { Error = BadRequest($"El regalo {regaloDesconocido} ya no está disponible. Quítalo del carrito y elige otro.") };
             }
 
+            PedidoVentaDTO pedido = ConstructorPedidoCliente.Construir(
+                peticion, fichaCliente, precios, formaPago, plazosPago, DateTime.Today, tienda, regalos);
+
+            // NestoAPI#593 (TNV): la línea del cheque, normalizada y comprobada con las reglas de POST api/PedidosVenta
+            // (que las vuelve a mirar al crear el pedido, y reserva el cheque). Así el total del carrito, y lo que se
+            // cobra por adelantado, ya llevan el cheque descontado.
+            ResultadoChequeCarrito cheque = await new CarritoChequesRegalo(ServicioCanje)
+                .Preparar(pedido, productosCheque).ConfigureAwait(false);
+
             return new PedidoPreparado
             {
-                Pedido = ConstructorPedidoCliente.Construir(
-                    peticion, fichaCliente, precios, formaPago, plazosPago, DateTime.Today, tienda, regalos),
+                Pedido = pedido,
+                ChequeRegalo = cheque,
                 FormaPago = formaPago,
                 PlazosPago = plazosPago,
                 CodigoPostal = fichaCliente.codigoPostal?.Trim() ?? string.Empty,

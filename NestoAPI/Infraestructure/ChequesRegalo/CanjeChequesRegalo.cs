@@ -173,6 +173,7 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
             linea.oferta = null;
             linea.texto = TextoLinea(campana);
             linea.EsFicticio = true;
+            linea.EsChequeRegalo = true;
             if (pedidoConIva && !string.IsNullOrWhiteSpace(ivaProducto))
             {
                 linea.iva = ivaProducto.Trim();

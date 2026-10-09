@@ -879,6 +879,21 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'cheques-regalo-reconciliacion' configurado (diario a las 21:30; apagado salvo interruptor)");
 
+            // NestoAPI#593 (TNV): push a las clientas con la app de la tienda: la del aviso que falte (cheques de la
+            // reconciliación de la noche, o de quien ha instalado la app después) y el recordatorio, una sola vez, cuando
+            // faltan DiasRecordatorioPush días (5) para CanjeHasta y el cheque sigue sin usar. Por la mañana, no de noche.
+            // Ligero (dos consultas y unas pocas push): el servidor principal tiene un solo hilo.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.ChequesRegalo.ChequesRegaloPushJobsService.ID_JOB,
+                () => Infraestructure.ChequesRegalo.ChequesRegaloPushJobsService.EnviarPushDelDia(),
+                Infraestructure.ChequesRegalo.ChequesRegaloPushJobsService.CRON, // Cron: todos los días a las 10:00
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'cheques-regalo-push' configurado (diario a las 10:00; solo con campaña activa)");
+
             // NestoAPI#619: reentrenamiento mensual del modelo de llamadas de Rapports (antes, tarea del Task Scheduler + consola
             // ModeloLlamadaPedido + commit del zip). Primer sábado de cada mes a las 02:30: el cron no sabe de «primer sábado»,
             // así que corre todos los sábados y el job sale si el día pasa de 7. No el domingo: de madrugada corre 5 horas el SP

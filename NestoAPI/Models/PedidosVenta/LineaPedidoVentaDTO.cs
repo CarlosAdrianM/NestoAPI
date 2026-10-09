@@ -49,6 +49,13 @@ namespace NestoAPI.Models.PedidosVenta
         // cuáles MMP/regalos por importe. Solo se rellena en el GET; en escrituras se ignora (derivado).
         public bool EsBonificadoGanavisiones { get; set; }
 
+        /// <summary>
+        /// NestoAPI#593 (TNV): la línea es la del cheque regalo (la marca ReglasCanjeChequeRegalo.Normalizar). No va en el
+        /// JSON: es derivada. La usa GestorPortes para que el cheque no baje la base de los portes ni del envío gratis.
+        /// </summary>
+        [JsonIgnore]
+        public bool EsChequeRegalo { get; set; }
+
         // Carlos 23/10/25: para controlar en modificaciones qué líneas son nuevas o tienen cantidad modificada
         [JsonIgnore]
         public int? CantidadAnterior { get; set; }

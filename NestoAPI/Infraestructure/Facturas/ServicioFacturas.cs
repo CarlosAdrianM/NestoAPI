@@ -52,7 +52,8 @@ namespace NestoAPI.Infraestructure.Facturas
             Clientes.IServicioValidacionNif servicioValidacionNif = null,
             Clientes.NotificadorNifIncorrecto notificadorNif = null,
             ChequesRegalo.IGeneradorChequesRegalo generadorChequesRegalo = null,
-            ChequesRegalo.IAvisadorChequesRegalo avisadorChequesRegalo = null)
+            ChequesRegalo.IAvisadorChequesRegalo avisadorChequesRegalo = null,
+            ChequesRegalo.IAvisadorPushChequesRegalo avisadorPushChequesRegalo = null)
         {
             if (dbExterno != null)
             {
@@ -78,7 +79,13 @@ namespace NestoAPI.Infraestructure.Facturas
                 ?? new ChequesRegalo.GeneradorChequesRegalo(new ChequesRegalo.RepositorioChequesRegalo(db));
             // NestoAPI#593 (aviso): el correo al cliente con su cheque
             this.avisadorChequesRegalo = avisadorChequesRegalo ?? ChequesRegalo.AvisadorChequesRegalo.Crear(db);
+            // NestoAPI#593 (TNV): la push a la clienta. Perezosa: el servicio de push arranca Firebase al construirse
+            this.avisadorPushChequesRegalo = avisadorPushChequesRegalo != null
+                ? new Lazy<ChequesRegalo.IAvisadorPushChequesRegalo>(() => avisadorPushChequesRegalo)
+                : new Lazy<ChequesRegalo.IAvisadorPushChequesRegalo>(() => ChequesRegalo.AvisadorPushChequesRegalo.Crear(db));
         }
+
+        private readonly Lazy<ChequesRegalo.IAvisadorPushChequesRegalo> avisadorPushChequesRegalo;
 
         private readonly ChequesRegalo.IGeneradorChequesRegalo generadorChequesRegalo;
         private readonly ChequesRegalo.IAvisadorChequesRegalo avisadorChequesRegalo;
@@ -765,7 +772,7 @@ namespace NestoAPI.Infraestructure.Facturas
                 // NestoAPI#593: la primera factura de venta normal de la campaña genera el cheque regalo. Best-effort:
                 // la factura ya está creada y nunca se tumba por esto.
                 await AnadirChequeRegalo(generadorChequesRegalo, respuestaFactura, cabPedido.Nº_Cliente, DateTime.Today,
-                    usuarioAutenticado ?? usuario, avisadorChequesRegalo);
+                    usuarioAutenticado ?? usuario, avisadorChequesRegalo, avisadorPushChequesRegalo);
 
                 return respuestaFactura;
             }
@@ -805,7 +812,8 @@ namespace NestoAPI.Infraestructure.Facturas
         /// </summary>
         internal static async Task AnadirChequeRegalo(ChequesRegalo.IGeneradorChequesRegalo generador,
             CrearFacturaResponseDTO respuesta, string cliente, DateTime fechaFactura, string usuario,
-            ChequesRegalo.IAvisadorChequesRegalo avisador = null)
+            ChequesRegalo.IAvisadorChequesRegalo avisador = null,
+            Lazy<ChequesRegalo.IAvisadorPushChequesRegalo> avisadorPush = null)
         {
             if (generador == null || respuesta == null)
             {
@@ -824,7 +832,41 @@ namespace NestoAPI.Infraestructure.Facturas
                     $"{respuesta.NumeroFactura?.Trim()} (cliente {cliente?.Trim()}): {ex.Message}", ex));
                 return;
             }
-            if (avisador == null || !avisos.Any())
+            if (!avisos.Any())
+            {
+                return;
+            }
+            await AvisarChequeRegaloPorCorreo(avisador, respuesta, cliente).ConfigureAwait(false);
+            // NestoAPI#593 (TNV): justo después del correo, la push a la app de la clienta (si la tiene)
+            await AvisarChequeRegaloPorPush(avisadorPush, respuesta, cliente).ConfigureAwait(false);
+        }
+
+        private static async Task AvisarChequeRegaloPorPush(Lazy<ChequesRegalo.IAvisadorPushChequesRegalo> avisadorPush,
+            CrearFacturaResponseDTO respuesta, string cliente)
+        {
+            if (avisadorPush == null)
+            {
+                return;
+            }
+            try
+            {
+                if (await avisadorPush.Value.AvisarCliente(cliente?.Trim()).ConfigureAwait(false) > 0)
+                {
+                    respuesta.Avisos.Add("Le ha llegado también un aviso del cheque a la app de la tienda.");
+                }
+            }
+            catch (Exception ex)
+            {
+                // Sin aviso a quien factura: lo vuelve a intentar el job de la mañana
+                ElmahHelper.Log(new Exception($"[Cheques regalo #593] No se pudo mandar la push del cheque de la factura " +
+                    $"{respuesta.NumeroFactura?.Trim()} (cliente {cliente?.Trim()}): {ex.Message}", ex));
+            }
+        }
+
+        private static async Task AvisarChequeRegaloPorCorreo(ChequesRegalo.IAvisadorChequesRegalo avisador,
+            CrearFacturaResponseDTO respuesta, string cliente)
+        {
+            if (avisador == null)
             {
                 return;
             }

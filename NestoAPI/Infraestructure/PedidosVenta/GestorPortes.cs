@@ -656,10 +656,14 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         }
 
         // Líneas que entran en la base de portes: productos y cuentas contables que NO son portes/reembolso.
+        // NestoAPI#593 (TNV): tampoco la línea del cheque regalo. El cheque es un descuento sobre un pedido que ya supera
+        // el mínimo del canje (250 €); si restara de la base, un pedido que llega justo al envío gratis (400 € en
+        // Canarias) pasaría a pagar portes por usar el cheque. Vale igual para el carrito de la app, POST y PUT.
         private static IEnumerable<Models.PedidosVenta.LineaPedidoVentaDTO> LineasParaBasePortes(
             IEnumerable<Models.PedidosVenta.LineaPedidoVentaDTO> lineas)
         {
             return lineas
+                .Where(l => !l.EsChequeRegalo)
                 .Where(l => l.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO ||
                            (l.tipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE &&
                             l.Producto != null &&

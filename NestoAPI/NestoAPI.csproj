@@ -759,6 +759,8 @@
     <Compile Include="Infraestructure\GestorAgenciasGlovo.cs" />
     <Compile Include="Infraestructure\GeneradorPdfModelo347.cs" />
     <Compile Include="Infraestructure\ChequesRegalo\CanjeChequesRegalo.cs" />
+    <Compile Include="Infraestructure\ChequesRegalo\CarritoChequesRegalo.cs" />
+    <Compile Include="Infraestructure\ChequesRegalo\PushChequesRegalo.cs" />
     <Compile Include="Infraestructure\ChequesRegalo\ChequesRegalo.cs" />
     <Compile Include="Infraestructure\ChequesRegalo\AvisoChequesRegalo.cs" />
     <Compile Include="Infraestructure\Clientes\NotificadorNifIncorrecto.cs" />
