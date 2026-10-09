@@ -675,7 +675,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
                     ("0082800082809772570062", "2100", "2026-09-23T11:30:00Z", null))));
             var agencia = new AgenciaRemotaCTT(fake, Config());
 
-            IReadOnlyDictionary<string, SeguimientoEnvioRemoto> estados = await agencia.ConsultarSeguimientosAsync(new DateTime(2026, 9, 15), new DateTime(2026, 9, 23));
+            IReadOnlyDictionary<string, SeguimientoEnvioRemoto> estados = await agencia.ConsultarSeguimientosAsync(new DateTime(2026, 9, 15), new DateTime(2026, 9, 23), null);
 
             Assert.AreEqual(2, fake.Llamadas.Count, "Una llamada por página, no una por envío");
             StringAssert.Contains(fake.Llamadas[0].Ruta, "page_offsets=1");
@@ -745,6 +745,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         {
             var fake = new FakeClienteRest();
             fake.Responder("Seguimiento", 429, @"{""statusCode"": 429, ""message"": ""Quota has been exceeded""}");
+            fake.Responder("SeguimientoPorFechas", 429, @"{""error"": ""Quota has been exceeded""}");
             var agencia = new AgenciaRemotaCTT(fake, Config());
 
             CupoAgenciaAgotadoException ex = await Assert.ThrowsExceptionAsync<CupoAgenciaAgotadoException>(
@@ -761,7 +762,124 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             var agencia = new AgenciaRemotaCTT(fake, Config());
 
             _ = await Assert.ThrowsExceptionAsync<CupoAgenciaAgotadoException>(
-                () => agencia.ConsultarSeguimientosAsync(new DateTime(2026, 9, 15), new DateTime(2026, 9, 23)));
+                () => agencia.ConsultarSeguimientosAsync(new DateTime(2026, 9, 15), new DateTime(2026, 9, 23), null));
+        }
+
+        // ===== NestoAPI#602: no gastar cupo de más y «Actualizar estado» cuando CTT corta =====
+
+        [TestMethod]
+        public async Task SeguimientoPorFechas_ConBuscados_ParaEnCuantoLosTieneTodos()
+        {
+            // El poll leía todas las páginas del rango (~7 cada media hora); lo que está en vuelo es casi todo
+            // de los últimos días y el listado va de lo más nuevo a lo más viejo: basta con la primera.
+            var fake = new FakeClienteRest();
+            fake.ResponderSecuencia("SeguimientoPorFechas",
+                (200, RespPorFechas(1, 2, 3, ("0082800082809772517327", "0900", "2026-10-08T16:00:00Z", null),
+                                             ("0082800082809772528136", "2100", "2026-10-08T12:00:00Z", null))),
+                (200, RespPorFechas(2, 3, 3, ("0082800082809772570062", "2100", "2026-10-01T11:30:00Z", null))),
+                (200, RespPorFechas(3, null, 3, ("0082800082809772570063", "2100", "2026-09-30T11:30:00Z", null))));
+            var agencia = new AgenciaRemotaCTT(fake, Config());
+
+            IReadOnlyDictionary<string, SeguimientoEnvioRemoto> estados = await agencia.ConsultarSeguimientosAsync(
+                new DateTime(2026, 9, 22), new DateTime(2026, 10, 9), new[] { "0082800082809772517327 ", "0082800082809772528136" });
+
+            Assert.AreEqual(1, fake.Llamadas.Count, "Con los dos en la primera página no hace falta pedir más");
+            Assert.AreEqual(EstadoEnvioSeguimiento.Tramitado, estados["0082800082809772517327"].Estado);
+        }
+
+        [TestMethod]
+        public async Task SeguimientoPorFechas_ConBuscadoQueNoAparece_SigueHastaElTopeConfigurado()
+        {
+            var fake = new FakeClienteRest();
+            fake.ResponderSecuencia("SeguimientoPorFechas",
+                (200, RespPorFechas(1, 2, 3, ("0082800082809772517327", "0900", "2026-10-08T16:00:00Z", null))),
+                (200, RespPorFechas(2, 3, 3, ("0082800082809772570062", "2100", "2026-10-01T11:30:00Z", null))),
+                (200, RespPorFechas(3, null, 3, ("0082800082809772570063", "2100", "2026-09-30T11:30:00Z", null))));
+            ConfiguracionCTT config = Config();
+            config.MaxPaginasSeguimiento = 2;
+            var agencia = new AgenciaRemotaCTT(fake, config);
+
+            IReadOnlyDictionary<string, SeguimientoEnvioRemoto> estados = await agencia.ConsultarSeguimientosAsync(
+                new DateTime(2026, 9, 1), new DateTime(2026, 10, 9), new[] { "NO_ESTA" });
+
+            Assert.AreEqual(2, fake.Llamadas.Count, "Nunca más páginas que el tope, aunque falte alguno");
+            Assert.AreEqual(2, estados.Count);
+        }
+
+        [TestMethod]
+        public void MaxPaginasSeguimiento_PorDefecto10_YLaClaveSoloSiEsUnEnteroPositivo()
+        {
+            Assert.AreEqual(10, ConfiguracionCTT.MAX_PAGINAS_SEGUIMIENTO_POR_DEFECTO);
+            Assert.AreEqual(10, Config().MaxPaginasSeguimiento, "Sin clave en Web.config, el valor del código");
+            Assert.AreEqual(10, ConfiguracionCTT.LeerMaxPaginasSeguimiento(null));
+            Assert.AreEqual(10, ConfiguracionCTT.LeerMaxPaginasSeguimiento("abc"));
+            Assert.AreEqual(10, ConfiguracionCTT.LeerMaxPaginasSeguimiento("0"));
+            Assert.AreEqual(3, ConfiguracionCTT.LeerMaxPaginasSeguimiento(" 3 "));
+            Assert.AreEqual(AgenciaRemotaCTT.MAX_PAGINAS, ConfiguracionCTT.LeerMaxPaginasSeguimiento("500"));
+        }
+
+        [TestMethod]
+        public async Task SeguimientoIndividual_Cupo429_BuscaElEnvioEnElListadoPorFechas()
+        {
+            // 02/10 y 07/10: «Actualizar estado» se quedaba sin estado por el 429 de item-history. El listado
+            // por fechas (web-tracking, el del poll) nunca ha cortado: se busca ahí, desde 30 días atrás.
+            var fake = new FakeClienteRest();
+            fake.Responder("Seguimiento", 429, @"{""error"": ""Quota has been exceeded""}");
+            fake.Responder("SeguimientoPorFechas", 200, RespPorFechas(1, 2, 5,
+                ("0082800082809772517327", "0900", "2026-10-08T16:00:00Z", null),
+                (ALBARAN, "1600", "2026-10-08T12:00:00Z", "Ausente")));
+            var agencia = new AgenciaRemotaCTT(fake, Config(), hoy: () => new DateTime(2026, 10, 9));
+
+            SeguimientoEnvioRemoto seguimiento = await agencia.ConsultarSeguimientoAsync(ALBARAN);
+
+            Assert.AreEqual(EstadoEnvioSeguimiento.Incidentado, seguimiento.Estado);
+            StringAssert.Contains(seguimiento.Detalle, "Ausente");
+            Assert.AreEqual(2, fake.Llamadas.Count, "El individual y una sola página del listado (ya lo trae)");
+            StringAssert.Contains(fake.Llamadas[1].Ruta, "shipping_date=2026-09-09[range]2026-10-09");
+        }
+
+        [TestMethod]
+        public async Task SeguimientoIndividual_Cupo429_YElListadoNoLoTrae_LanzaCupoAgotadoConLaEspera()
+        {
+            var fake = new FakeClienteRest();
+            fake.Responder("Seguimiento", 429, @"{""error"": ""Quota has been exceeded""}", TimeSpan.FromMinutes(5));
+            fake.Responder("SeguimientoPorFechas", 200, RespPorFechas(1, null, 1, ("0082800082809772517327", "0900", "2026-10-08T16:00:00Z", null)));
+            var agencia = new AgenciaRemotaCTT(fake, Config(), hoy: () => new DateTime(2026, 10, 9));
+
+            CupoAgenciaAgotadoException ex = await Assert.ThrowsExceptionAsync<CupoAgenciaAgotadoException>(
+                () => agencia.ConsultarSeguimientoAsync(ALBARAN));
+
+            Assert.AreEqual(TimeSpan.FromMinutes(5), ex.ReintentarTras);
+            StringAssert.Contains(ex.Message, "Quota has been exceeded");
+        }
+
+        [TestMethod]
+        public async Task SeguimientoIndividual_Cupo429SinCentroDeCliente_NoBuscaEnElListado()
+        {
+            var fake = new FakeClienteRest();
+            fake.Responder("Seguimiento", 429, @"{""error"": ""Quota has been exceeded""}");
+            var config = new ConfiguracionCTT("https://api-test.cttexpress.com/integrations/", "id", "secreto", null, new RemitenteCTT());
+            var agencia = new AgenciaRemotaCTT(fake, config);
+
+            _ = await Assert.ThrowsExceptionAsync<CupoAgenciaAgotadoException>(() => agencia.ConsultarSeguimientoAsync(ALBARAN));
+
+            Assert.AreEqual(1, fake.Llamadas.Count);
+        }
+
+        [TestMethod]
+        public void CabecerasDeCupo_RecogeRetryAfterYRateLimit_OAvisaDeQueNoHay()
+        {
+            var http = new HttpResponseMessage((System.Net.HttpStatusCode)429);
+            http.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.FromSeconds(60));
+            http.Headers.TryAddWithoutValidation("X-RateLimit-Remaining", "0");
+            http.Headers.TryAddWithoutValidation("X-Request-Id", "abc");
+
+            string cabeceras = ClienteRestCTT.CabecerasDeCupo(http);
+
+            StringAssert.Contains(cabeceras, "Retry-After=60");
+            StringAssert.Contains(cabeceras, "X-RateLimit-Remaining=0");
+            Assert.IsFalse(cabeceras.Contains("X-Request-Id"));
+            Assert.AreEqual("[sin cabeceras de cupo]", ClienteRestCTT.CabecerasDeCupo(new HttpResponseMessage((System.Net.HttpStatusCode)429)));
         }
 
         [TestMethod]
@@ -810,7 +928,13 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             private readonly Dictionary<string, Queue<(int codigo, string cuerpo)>> _secuencias = new Dictionary<string, Queue<(int, string)>>();
             public readonly List<Llamada> Llamadas = new List<Llamada>();
 
-            public void Responder(string operacion, int codigo, string cuerpo) => _respuestas[operacion] = (codigo, cuerpo);
+            private readonly Dictionary<string, TimeSpan?> _esperas = new Dictionary<string, TimeSpan?>();
+
+            public void Responder(string operacion, int codigo, string cuerpo, TimeSpan? reintentarTras = null)
+            {
+                _respuestas[operacion] = (codigo, cuerpo);
+                _esperas[operacion] = reintentarTras;
+            }
 
             /// <summary>Respuestas distintas en llamadas sucesivas a la misma operación (paginación).</summary>
             public void ResponderSecuencia(string operacion, params (int codigo, string cuerpo)[] respuestas)
@@ -828,7 +952,8 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
                 {
                     throw new InvalidOperationException("El test no preparó respuesta para " + operacion);
                 }
-                return Task.FromResult(new RespuestaCTT { Codigo = r.codigo, Cuerpo = r.cuerpo });
+                _esperas.TryGetValue(operacion, out TimeSpan? espera);
+                return Task.FromResult(new RespuestaCTT { Codigo = r.codigo, Cuerpo = r.cuerpo, ReintentarTras = espera });
             }
         }
     }

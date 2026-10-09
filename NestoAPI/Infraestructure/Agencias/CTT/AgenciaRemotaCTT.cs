@@ -41,7 +41,15 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
         // por consulta: 40 x 50 = 2.000 envíos, muy por encima de lo que tenemos en vuelo, y un límite
         // duro para que un fallo de paginación nunca se convierta en una ráfaga contra el cupo.
         internal const int REGISTROS_POR_PAGINA = 50;
+        // NestoAPI#602: el tope que se usa de verdad es ConfiguracionCTT.MaxPaginasSeguimiento (10 por
+        // defecto, configurable); este es el techo que la configuración nunca puede superar.
         internal const int MAX_PAGINAS = 40;
+        /// <summary>
+        /// NestoAPI#602: días hacia atrás del listado por fechas con el que «Actualizar estado» busca un envío
+        /// cuando el seguimiento individual (item-history) corta por cupo. El listado va de lo más nuevo a lo
+        /// más viejo y para en cuanto lo encuentra, así que casi siempre es una sola llamada.
+        /// </summary>
+        internal const int DIAS_LISTADO_SI_CUPO_AGOTADO = 30;
         internal const string CLAVE_YA_ANULADO = "ALREADY_NULLED_SHIPPING";
 
         // NestoAPI#494: tipos de retorno de CTT (EnviosAgencia.Retorno), los que ofrece Nesto en su lista.
@@ -186,7 +194,10 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
 
             RespuestaCTT respuesta = await _cliente.EnviarAsync(HttpMethod.Get,
                 RUTA_SEGUIMIENTO + albaran.Trim() + "?view=APITRACK&showItems=false", null, "Seguimiento").ConfigureAwait(false);
-            LanzarSiCupoAgotado(respuesta, "Seguimiento");
+            if (respuesta != null && respuesta.CupoAgotado)
+            {
+                return await BuscarEnListadoTrasCupoAgotadoAsync(albaran.Trim(), CrearCupoAgotado(respuesta, "Seguimiento")).ConfigureAwait(false);
+            }
             if (respuesta.Codigo == (int)HttpStatusCode.NotFound)
             {
                 // Aún no registrado en CTT o código que no es suyo: no es un estado real (NestoAPI#264).
@@ -202,11 +213,48 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
         }
 
         /// <summary>
+        /// NestoAPI#602: el seguimiento individual (item-history) cortó por cupo. Es otra API que el listado por
+        /// fechas (web-tracking), que el poll usa cada media hora y nunca ha devuelto 429, así que se busca ahí
+        /// el envío (de lo más nuevo a lo más viejo, parando en cuanto aparece). Si el listado tampoco deja o no
+        /// lo trae, sube el corte por cupo para que el usuario reciba el aviso de «vuelve a intentarlo».
+        /// </summary>
+        private async Task<SeguimientoEnvioRemoto> BuscarEnListadoTrasCupoAgotadoAsync(string albaran, CupoAgenciaAgotadoException cupo)
+        {
+            if (string.IsNullOrWhiteSpace(_config.ClientCenterCode))
+            {
+                throw cupo;
+            }
+            IReadOnlyDictionary<string, SeguimientoEnvioRemoto> estados;
+            try
+            {
+                DateTime hoy = _hoy().Date;
+                estados = await ConsultarSeguimientosAsync(hoy.AddDays(-DIAS_LISTADO_SI_CUPO_AGOTADO), hoy, new[] { albaran }).ConfigureAwait(false);
+            }
+            catch (CupoAgenciaAgotadoException cupoListado)
+            {
+                // Si el listado dice cuánto esperar y el individual no, vale más su espera.
+                throw cupo.ReintentarTras.HasValue || !cupoListado.ReintentarTras.HasValue ? cupo : cupoListado;
+            }
+            catch (AgenciaRemotaException)
+            {
+                throw cupo;
+            }
+            if (estados != null && estados.TryGetValue(albaran, out SeguimientoEnvioRemoto seguimiento))
+            {
+                return seguimiento;
+            }
+            throw cupo;
+        }
+
+        /// <summary>
         /// 23/09/26: todos los envíos del centro con fecha de envío en el rango, en una o pocas llamadas
         /// (páginas de <see cref="REGISTROS_POR_PAGINA"/>). Es lo que usa el poll: preguntar envío a envío
         /// agotaba el cupo de CTT (429 a partir de la 11ª consulta de la pasada de las 10:00).
+        /// NestoAPI#602: como mucho <see cref="ConfiguracionCTT.MaxPaginasSeguimiento"/> páginas por consulta, y
+        /// con <paramref name="buscados"/> se para en cuanto están todos (el listado va de lo más nuevo a lo más
+        /// viejo y casi todo lo que está en vuelo es de los últimos días: una o dos páginas en vez de siete).
         /// </summary>
-        public async Task<IReadOnlyDictionary<string, SeguimientoEnvioRemoto>> ConsultarSeguimientosAsync(DateTime desde, DateTime hasta)
+        public async Task<IReadOnlyDictionary<string, SeguimientoEnvioRemoto>> ConsultarSeguimientosAsync(DateTime desde, DateTime hasta, IReadOnlyCollection<string> buscados)
         {
             if (string.IsNullOrWhiteSpace(_config.ClientCenterCode))
             {
@@ -215,8 +263,14 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
 
             var resultado = new Dictionary<string, SeguimientoEnvioRemoto>(StringComparer.OrdinalIgnoreCase);
             string rango = $"{desde:yyyy-MM-dd}[range]{hasta:yyyy-MM-dd}";
+            List<string> pendientes = buscados?
+                .Where(b => !string.IsNullOrWhiteSpace(b))
+                .Select(b => b.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            int maxPaginas = Math.Max(1, Math.Min(MAX_PAGINAS, _config.MaxPaginasSeguimiento));
             int pagina = 1;
-            for (int llamadas = 0; llamadas < MAX_PAGINAS; llamadas++)
+            for (int llamadas = 0; llamadas < maxPaginas; llamadas++)
             {
                 string ruta = $"{RUTA_SEGUIMIENTO_POR_FECHAS}?page_limit={REGISTROS_POR_PAGINA}&page_offsets={pagina}" +
                     $"&mapping_table_code=APITRACK&order_by=-shipping_date&client_center_code={_config.ClientCenterCode}&shipping_date={rango}";
@@ -239,6 +293,11 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
                     }
                 }
 
+                if (pendientes != null && pendientes.TrueForAll(resultado.ContainsKey))
+                {
+                    break;
+                }
+
                 int? siguiente = LeerEntero(respuesta.Json?["pagination"]?["page_offsets"]?["next"]);
                 int? ultima = LeerEntero(respuesta.Json?["pagination"]?["page_offsets"]?["last"]);
                 if (!siguiente.HasValue || siguiente.Value <= pagina || (ultima.HasValue && pagina >= ultima.Value))
@@ -254,11 +313,16 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
         {
             if (respuesta != null && respuesta.CupoAgotado)
             {
-                string espera = respuesta.ReintentarTras.HasValue
-                    ? $" CTT pide esperar {Math.Ceiling(respuesta.ReintentarTras.Value.TotalMinutes)} min."
-                    : string.Empty;
-                throw new CupoAgenciaAgotadoException($"Cupo de la API de CTT agotado ({operacion}).{espera} {respuesta.Error}", respuesta.ReintentarTras);
+                throw CrearCupoAgotado(respuesta, operacion);
             }
+        }
+
+        private static CupoAgenciaAgotadoException CrearCupoAgotado(RespuestaCTT respuesta, string operacion)
+        {
+            string espera = respuesta.ReintentarTras.HasValue
+                ? $" CTT pide esperar {Math.Ceiling(respuesta.ReintentarTras.Value.TotalMinutes)} min."
+                : string.Empty;
+            return new CupoAgenciaAgotadoException($"Cupo de la API de CTT agotado ({operacion}).{espera} {respuesta.Error}", respuesta.ReintentarTras);
         }
 
         private static int? LeerEntero(JToken token)

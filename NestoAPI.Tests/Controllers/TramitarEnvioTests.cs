@@ -171,6 +171,62 @@ namespace NestoAPI.Tests.Controllers
             StringAssert.Contains(auditoria.TextoRespuestaError, "denegó");
         }
 
+        // ===== NestoAPI#602: la agencia limita las consultas (CTT: 429 «Quota has been exceeded») =====
+
+        private async Task<System.Net.Http.HttpResponseMessage> ActualizarSeguimientoConCupoAgotado(System.TimeSpan? reintentarTras)
+        {
+            var envio = EnvioTramitado();
+            envio.AgenciasTransporte = new AgenciaTransporte { Numero = envio.Agencia, Nombre = "CTT  " };
+            ConEnvio(envio);
+            var fakeSeguimiento = A.Fake<ISeguimientoAgenciaRemota>();
+            A.CallTo(() => fakeSeguimiento.ConsultarSeguimientoAsync(A<string>._))
+                .ThrowsAsync(new CupoAgenciaAgotadoException("Cupo de la API de CTT agotado (Seguimiento). CTT respondió 429: Quota has been exceeded", reintentarTras));
+            A.CallTo(() => fakeFabrica.CrearSeguimiento(envio.Agencia)).Returns(fakeSeguimiento);
+
+            var resultado = await controller.ActualizarSeguimiento(envio.Numero);
+
+            Assert.IsInstanceOfType(resultado, typeof(ResponseMessageResult), "Un corte por cupo no es un 502 genérico");
+            return ((ResponseMessageResult)resultado).Response;
+        }
+
+        [TestMethod]
+        public async Task ActualizarSeguimiento_CupoAgotadoConRetryAfter_Devuelve429ConMinutosYCodigo()
+        {
+            System.Net.Http.HttpResponseMessage respuesta = await ActualizarSeguimientoConCupoAgotado(System.TimeSpan.FromSeconds(150));
+
+            Assert.AreEqual(429, (int)respuesta.StatusCode);
+            Assert.AreEqual(System.TimeSpan.FromSeconds(150), respuesta.Headers.RetryAfter.Delta);
+            var cuerpo = Newtonsoft.Json.Linq.JObject.Parse(await respuesta.Content.ReadAsStringAsync());
+            Assert.AreEqual(EnviosAgenciasController.CODIGO_CUPO_AGENCIA_AGOTADO, (string)cuerpo["Codigo"]);
+            Assert.AreEqual(3, (int)cuerpo["ReintentarEnMinutos"], "150 s = 3 minutos, redondeando hacia arriba");
+            StringAssert.StartsWith((string)cuerpo["Message"], "CTT limita las consultas de seguimiento");
+            StringAssert.Contains((string)cuerpo["Message"], "vuelve a intentarlo en 3 minutos");
+            // Queda en AgenciasLlamadasWeb como fallo (para la traza), aunque no vaya a ELMAH.
+            Assert.IsNotNull(auditoria);
+            Assert.IsFalse(auditoria.Exito);
+            StringAssert.Contains(auditoria.TextoRespuestaError, "Quota has been exceeded");
+        }
+
+        [TestMethod]
+        public async Task ActualizarSeguimiento_CupoAgotadoSinRetryAfter_Devuelve429ConMensajeGenericoYCodigo()
+        {
+            System.Net.Http.HttpResponseMessage respuesta = await ActualizarSeguimientoConCupoAgotado(null);
+
+            Assert.AreEqual(429, (int)respuesta.StatusCode);
+            Assert.IsNull(respuesta.Headers.RetryAfter);
+            var cuerpo = Newtonsoft.Json.Linq.JObject.Parse(await respuesta.Content.ReadAsStringAsync());
+            Assert.AreEqual(EnviosAgenciasController.CODIGO_CUPO_AGENCIA_AGOTADO, (string)cuerpo["Codigo"]);
+            Assert.IsNull(cuerpo["ReintentarEnMinutos"]);
+            StringAssert.Contains((string)cuerpo["Message"], "vuelve a intentarlo dentro de un rato");
+        }
+
+        [TestMethod]
+        public void MensajeCupoAgenciaAgotado_UnMinutoEnSingularYSinAgenciaGenerico()
+        {
+            StringAssert.Contains(EnviosAgenciasController.MensajeCupoAgenciaAgotado("CTT", System.TimeSpan.FromSeconds(20)), "en 1 minuto.");
+            StringAssert.StartsWith(EnviosAgenciasController.MensajeCupoAgenciaAgotado(null, null), "La agencia limita");
+        }
+
         [TestMethod]
         public async Task Tramitar_AgenciaSinGestionRemota_DevuelveBadRequest()
         {

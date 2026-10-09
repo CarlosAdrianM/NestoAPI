@@ -237,7 +237,10 @@ namespace NestoAPI.Infraestructure
                     try
                     {
                         DateTime desde = enviosAgencia.Min(e => e.Fecha).Date.AddDays(-MARGEN_DIAS_LOTES);
-                        estados = await lotes.ConsultarSeguimientosAsync(desde, _hoy().Date).ConfigureAwait(false);
+                        // NestoAPI#602: con los albaranes en vuelo la agencia deja de pedir páginas en cuanto
+                        // los tiene todos (CTT corta por cupo; antes se leía el rango entero en cada pasada).
+                        List<string> albaranes = enviosAgencia.Select(e => e.CodigoBarras.Trim()).ToList();
+                        estados = await lotes.ConsultarSeguimientosAsync(desde, _hoy().Date, albaranes).ConfigureAwait(false);
                     }
                     catch (CupoAgenciaAgotadoException ex)
                     {

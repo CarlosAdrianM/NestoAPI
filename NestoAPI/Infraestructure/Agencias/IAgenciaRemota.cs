@@ -166,8 +166,11 @@ namespace NestoAPI.Infraestructure.Agencias
         /// <paramref name="hasta"/> (ambos incluidos), por albarán (clave sin espacios). Un envío que no
         /// viene en el diccionario es que la agencia no lo devolvió: quien llama decide (Desconocido).
         /// Lanza <see cref="CupoAgenciaAgotadoException"/> si la agencia corta por cupo.
+        /// NestoAPI#602: con <paramref name="buscados"/> (los albaranes que interesan) la agencia deja de
+        /// pedir páginas en cuanto los tiene todos; null = todas las páginas, hasta el tope de la agencia.
+        /// Cada página es una llamada que gasta cupo de su API.
         /// </summary>
-        Task<IReadOnlyDictionary<string, SeguimientoEnvioRemoto>> ConsultarSeguimientosAsync(System.DateTime desde, System.DateTime hasta);
+        Task<IReadOnlyDictionary<string, SeguimientoEnvioRemoto>> ConsultarSeguimientosAsync(System.DateTime desde, System.DateTime hasta, IReadOnlyCollection<string> buscados);
     }
 
     /// <summary>

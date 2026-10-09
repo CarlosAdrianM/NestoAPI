@@ -94,8 +94,8 @@ namespace NestoAPI.Infraestructure.Agencias
             _politicaLotes = politica ?? PoliticasAgenciasRemotas.CrearPoliticaTransitorios();
         }
 
-        public Task<IReadOnlyDictionary<string, SeguimientoEnvioRemoto>> ConsultarSeguimientosAsync(DateTime desde, DateTime hasta)
-            => _politicaLotes.ExecuteAsync(() => _lotes.ConsultarSeguimientosAsync(desde, hasta));
+        public Task<IReadOnlyDictionary<string, SeguimientoEnvioRemoto>> ConsultarSeguimientosAsync(DateTime desde, DateTime hasta, IReadOnlyCollection<string> buscados)
+            => _politicaLotes.ExecuteAsync(() => _lotes.ConsultarSeguimientosAsync(desde, hasta, buscados));
     }
 
     /// <summary>

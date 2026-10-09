@@ -1365,6 +1365,13 @@ namespace NestoAPI.Controllers
             {
                 seguimiento = await agencia.ConsultarSeguimientoAsync(envio.CodigoBarras.Trim());
             }
+            catch (CupoAgenciaAgotadoException ex)
+            {
+                // NestoAPI#602: la agencia limita las consultas (CTT: 429). Es esperable, no un fallo nuestro: queda
+                // en AgenciasLlamadasWeb pero NO en ELMAH, y el usuario recibe cuándo volver a intentarlo.
+                await AuditarSeguimiento(envio, agencia, false, ex.Message, avisarElmah: false);
+                return RespuestaCupoAgenciaAgotado(await NombreAgenciaDe(envio), ex.ReintentarTras);
+            }
             catch (System.Exception ex)
             {
                 // AuditarSeguimiento registra el fallo en AgenciasLlamadasWeb (con el SOAP crudo) y en ELMAH.
@@ -1394,6 +1401,55 @@ namespace NestoAPI.Controllers
                 }
             }
             return Ok(seguimiento);
+        }
+
+        /// <summary>
+        /// NestoAPI#602: código propio del error de «Actualizar estado» cuando la agencia limita las consultas
+        /// (va en el cuerpo, campo «Codigo», junto a «Message» y, si se sabe, «ReintentarEnMinutos»).
+        /// </summary>
+        public const string CODIGO_CUPO_AGENCIA_AGOTADO = "CUPO_AGENCIA_AGOTADO";
+
+        /// <summary>
+        /// NestoAPI#602: 429 con el mensaje para el usuario, el código propio y, si la agencia dijo cuánto
+        /// esperar, la cabecera Retry-After y los minutos en el cuerpo.
+        /// </summary>
+        private IHttpActionResult RespuestaCupoAgenciaAgotado(string agencia, TimeSpan? reintentarTras)
+        {
+            int? minutos = MinutosParaReintentar(reintentarTras);
+            var error = new HttpError(MensajeCupoAgenciaAgotado(agencia, reintentarTras))
+            {
+                ["Codigo"] = CODIGO_CUPO_AGENCIA_AGOTADO
+            };
+            if (minutos.HasValue)
+            {
+                error["ReintentarEnMinutos"] = minutos.Value;
+            }
+            var respuesta = new HttpResponseMessage((HttpStatusCode)429)
+            {
+                Content = new ObjectContent<HttpError>(error, new System.Net.Http.Formatting.JsonMediaTypeFormatter())
+            };
+            if (reintentarTras.HasValue)
+            {
+                respuesta.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(
+                    TimeSpan.FromSeconds(Math.Max(1, Math.Ceiling(reintentarTras.Value.TotalSeconds))));
+            }
+            return ResponseMessage(respuesta);
+        }
+
+        /// <summary>NestoAPI#602: minutos enteros (hacia arriba, como poco 1) de la espera que pide la agencia.</summary>
+        internal static int? MinutosParaReintentar(TimeSpan? reintentarTras)
+            => reintentarTras.HasValue ? Math.Max(1, (int)Math.Ceiling(reintentarTras.Value.TotalMinutes)) : (int?)null;
+
+        /// <summary>NestoAPI#602: lo que lee el usuario cuando la agencia no deja consultar más el seguimiento.</summary>
+        internal static string MensajeCupoAgenciaAgotado(string agencia, TimeSpan? reintentarTras)
+        {
+            string nombre = string.IsNullOrWhiteSpace(agencia) ? "La agencia" : agencia.Trim();
+            int? minutos = MinutosParaReintentar(reintentarTras);
+            string cuando = minutos.HasValue
+                ? $"vuelve a intentarlo en {minutos.Value} {(minutos.Value == 1 ? "minuto" : "minutos")}"
+                : "vuelve a intentarlo dentro de un rato";
+            return $"{nombre} limita las consultas de seguimiento y ahora mismo no deja hacer más; {cuando}. " +
+                "Mientras tanto, el estado se sigue actualizando solo en las pasadas automáticas.";
         }
 
         // Extrae el detalle de los ValidationErrors de EF (campo + mensaje); el Message genérico de
@@ -1486,9 +1542,9 @@ namespace NestoAPI.Controllers
         // denegaciones "suaves" de la agencia (p.ej. respuesta=400 con HTTP 200, que NO lanzan excepción).
         // En fallo, además loguea en ELMAH (gobernado por LoggingDetallado de la agencia). Best-effort:
         // la auditoría nunca debe romper la operación.
-        private async Task AuditarSeguimiento(EnviosAgencia envio, ISeguimientoAgenciaRemota agencia, bool exito, string error)
+        private async Task AuditarSeguimiento(EnviosAgencia envio, ISeguimientoAgenciaRemota agencia, bool exito, string error, bool avisarElmah = true)
         {
-            if (!exito && agencia?.LoggingDetallado == true)
+            if (!exito && avisarElmah && agencia?.LoggingDetallado == true)
             {
                 try
                 {

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -277,7 +278,10 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
             }
 
             int codigo = (int)http.StatusCode;
-            _registro?.Registrar(operacion, url, peticionJson, $"HTTP {codigo}: {cuerpoRespuesta}");
+            // NestoAPI#602: en un 429 se guardan también las cabeceras del cupo (Retry-After, X-RateLimit-*...),
+            // que es lo único que puede decirnos el cupo real; CTT no lo documenta.
+            string cabecerasCupo = codigo == 429 ? " " + CabecerasDeCupo(http) : string.Empty;
+            _registro?.Registrar(operacion, url, peticionJson, $"HTTP {codigo}: {cuerpoRespuesta}{cabecerasCupo}");
 
             if (codigo >= 500)
             {
@@ -285,6 +289,33 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
             }
 
             return new RespuestaCTT { Codigo = codigo, Cuerpo = cuerpoRespuesta, ReintentarTras = LeerRetryAfter(http) };
+        }
+
+        /// <summary>
+        /// NestoAPI#602: las cabeceras de la respuesta que hablan del cupo (Retry-After y las que contienen
+        /// «ratelimit», «quota» o «retry»), como «[cabeceras de cupo: Retry-After=60; X-RateLimit-Remaining=0]»,
+        /// o «[sin cabeceras de cupo]».
+        /// </summary>
+        internal static string CabecerasDeCupo(HttpResponseMessage http)
+        {
+            var encontradas = new List<string>();
+            IEnumerable<KeyValuePair<string, IEnumerable<string>>> todas = http?.Headers ?? Enumerable.Empty<KeyValuePair<string, IEnumerable<string>>>();
+            if (http?.Content?.Headers != null)
+            {
+                todas = todas.Concat(http.Content.Headers);
+            }
+            foreach (KeyValuePair<string, IEnumerable<string>> cabecera in todas)
+            {
+                string nombre = cabecera.Key ?? string.Empty;
+                string minusculas = nombre.ToLowerInvariant();
+                if (minusculas.Contains("ratelimit") || minusculas.Contains("quota") || minusculas.Contains("retry"))
+                {
+                    encontradas.Add($"{nombre}={string.Join(",", cabecera.Value ?? Enumerable.Empty<string>())}");
+                }
+            }
+            return encontradas.Count == 0
+                ? "[sin cabeceras de cupo]"
+                : "[cabeceras de cupo: " + string.Join("; ", encontradas) + "]";
         }
 
         internal static TimeSpan? LeerRetryAfter(HttpResponseMessage http)

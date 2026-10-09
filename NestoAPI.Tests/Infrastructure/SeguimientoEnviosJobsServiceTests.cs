@@ -86,13 +86,14 @@ namespace NestoAPI.Tests.Infrastructure
                 ["ALB1"] = new SeguimientoEnvioRemoto { Estado = EstadoEnvioSeguimiento.Entregado, FechaEntrega = new DateTime(2026, 9, 23), Detalle = "ENTREGADO" },
                 ["ALB2"] = new SeguimientoEnvioRemoto { Estado = EstadoEnvioSeguimiento.Tramitado, Detalle = "EN REPARTO" }
             };
-            A.CallTo(() => ((ISeguimientoPorLotes)porLotes).ConsultarSeguimientosAsync(A<DateTime>._, A<DateTime>._)).Returns(Task.FromResult(estados));
+            A.CallTo(() => ((ISeguimientoPorLotes)porLotes).ConsultarSeguimientosAsync(A<DateTime>._, A<DateTime>._, A<IReadOnlyCollection<string>>._)).Returns(Task.FromResult(estados));
             var servicio = new SeguimientoEnviosJobsService(_db, _fabrica, avisar: _ => { }, hoy: () => new DateTime(2026, 9, 23));
 
             int actualizados = await servicio.ActualizarSeguimientosAsync(new DateTime(2026, 6, 1));
 
             A.CallTo(() => ((ISeguimientoPorLotes)porLotes).ConsultarSeguimientosAsync(
-                new DateTime(2026, 9, 21).AddDays(-SeguimientoEnviosJobsService.MARGEN_DIAS_LOTES), new DateTime(2026, 9, 23)))
+                new DateTime(2026, 9, 21).AddDays(-SeguimientoEnviosJobsService.MARGEN_DIAS_LOTES), new DateTime(2026, 9, 23),
+                A<IReadOnlyCollection<string>>.That.Matches(b => b.Count == 3 && b.Contains("ALB1") && b.Contains("ALB2") && b.Contains("ALB3"))))
                 .MustHaveHappenedOnceExactly();
             A.CallTo(() => porLotes.ConsultarSeguimientoAsync(A<string>._)).MustNotHaveHappened();
             Assert.AreEqual(2, actualizados, "ALB1 entregado y ALB2 con su detalle; ALB3 no viene y no se toca");
@@ -104,7 +105,7 @@ namespace NestoAPI.Tests.Infrastructure
             ISeguimientoAgenciaRemota porLotes = A.Fake<ISeguimientoAgenciaRemota>(o => o.Implements<ISeguimientoPorLotes>());
             A.CallTo(() => _fabrica.CrearSeguimiento(AGENCIA_GLS)).Returns(porLotes);
             EnviosEnVuelo(Envio(1, "ALB1", new DateTime(2026, 9, 22)), Envio(2, "ALB2", new DateTime(2026, 9, 22)));
-            A.CallTo(() => ((ISeguimientoPorLotes)porLotes).ConsultarSeguimientosAsync(A<DateTime>._, A<DateTime>._))
+            A.CallTo(() => ((ISeguimientoPorLotes)porLotes).ConsultarSeguimientosAsync(A<DateTime>._, A<DateTime>._, A<IReadOnlyCollection<string>>._))
                 .ThrowsAsync(new CupoAgenciaAgotadoException("Cupo de la API de CTT agotado"));
             var avisos = new List<Exception>();
             var servicio = new SeguimientoEnviosJobsService(_db, _fabrica, avisar: avisos.Add, hoy: () => new DateTime(2026, 9, 23));

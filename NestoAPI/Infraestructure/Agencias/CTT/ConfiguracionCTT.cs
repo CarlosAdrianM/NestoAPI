@@ -51,6 +51,33 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
                     Email = ConfigurationManager.AppSettings["CTT:Remitente:Email"]
                 })
         {
+            MaxPaginasSeguimiento = LeerMaxPaginasSeguimiento(ConfigurationManager.AppSettings[CLAVE_MAX_PAGINAS_SEGUIMIENTO]);
+        }
+
+        /// <summary>
+        /// NestoAPI#602: clave OPCIONAL de Web.config con el tope de páginas (de 50 envíos) por consulta del
+        /// listado de seguimiento por fechas. No hace falta ponerla: sin ella vale
+        /// <see cref="MAX_PAGINAS_SEGUIMIENTO_POR_DEFECTO"/> (y lo que se añade a mano en el servidor se pierde
+        /// al publicar).
+        /// </summary>
+        public const string CLAVE_MAX_PAGINAS_SEGUIMIENTO = "CTT:MaxPaginasSeguimiento";
+
+        /// <summary>
+        /// NestoAPI#602: 10 páginas x 50 = 500 envíos, unas dos semanas y media de CTT (~30 envíos al día).
+        /// Cada página es una llamada a la API de CTT, que corta por cupo (429); antes eran hasta 40 y el
+        /// poll pedía todas las del rango en cada pasada (~7 cada media hora).
+        /// </summary>
+        public const int MAX_PAGINAS_SEGUIMIENTO_POR_DEFECTO = 10;
+
+        /// <summary>Tope de páginas del listado de seguimiento por consulta (ver <see cref="CLAVE_MAX_PAGINAS_SEGUIMIENTO"/>).</summary>
+        public int MaxPaginasSeguimiento { get; set; } = MAX_PAGINAS_SEGUIMIENTO_POR_DEFECTO;
+
+        /// <summary>El valor de la clave si es un entero positivo (sin pasar de <see cref="AgenciaRemotaCTT.MAX_PAGINAS"/>); si no, el de por defecto.</summary>
+        internal static int LeerMaxPaginasSeguimiento(string valor)
+        {
+            return int.TryParse(valor?.Trim(), out int paginas) && paginas > 0
+                ? Math.Min(paginas, AgenciaRemotaCTT.MAX_PAGINAS)
+                : MAX_PAGINAS_SEGUIMIENTO_POR_DEFECTO;
         }
 
         public ConfiguracionCTT(string urlBase, string clientId, string clientSecret, string clientCenterCode, RemitenteCTT remitente)
