@@ -124,18 +124,36 @@ namespace NestoAPI.Controllers
             return Ok(await Calendario.LeerCalendario(empresa).ConfigureAwait(false));
         }
 
+        // GET api/Reposiciones/Calendario/PuedeEditar
+        /// <summary>
+        /// NestoAPI#577 (09/10/26): si el usuario actual puede cambiar el calendario (PUT Calendario). Son las mismas personas
+        /// que pueden rellenar reposiciones a mano (parámetro «UsuariosRellenarReposicionManual» de la fila «(defecto)»; hoy
+        /// Manuel, Alfredo y Carlos). Para que Nesto enseñe la ventana en solo lectura a los demás.
+        /// </summary>
+        [HttpGet]
+        [Route("Calendario/PuedeEditar")]
+        [ResponseType(typeof(bool))]
+        public IHttpActionResult GetPuedeEditarCalendario()
+        {
+            return Ok(PermisoManual.Puede(User));
+        }
+
         // PUT api/Reposiciones/Calendario   { Empresa?, Origen?, Destino?, Filas: [{ Id?, Origen, Destino, DiaSemana, HoraCierre, HoraLlegadaHabitual, LaborablesAntelacionCierre?, Activo }] }
         /// <summary>
         /// NestoAPI#577: guarda el calendario. Con Origen y Destino, Filas es la lista completa de esa ruta (lo que no venga se
-        /// borra); sin ellos, filas sueltas (crear o cambiar). Devuelve el calendario entero. Solo Almacén, Dirección e
-        /// Informática (403 si no); 400 si una fila no vale.
+        /// desactiva; nunca se borra); sin ellos, filas sueltas (crear o cambiar; una fila sin Id de un día que ya existe
+        /// cambia esa). Devuelve el calendario entero. Solo quien está en «UsuariosRellenarReposicionManual» (403 si no; ver
+        /// GET Calendario/PuedeEditar); 400 con el motivo si una fila no vale (almacenes, día 1-7, antelación 0-5, horas,
+        /// día repetido en la ruta, antelaciones distintas en la misma ruta). Usuario (sin dominio) y FechaModificacion en
+        /// cada fila que cambia. Cambiar la hora de cierre de un viaje que ya se ha rellenado no lo repite: vale desde el
+        /// siguiente (ver ServicioReposicionAutomatica).
         /// </summary>
         [HttpPut]
         [Route("Calendario")]
         [ResponseType(typeof(List<ReposicionCalendarioDTO>))]
         public async Task<IHttpActionResult> PutCalendario([FromBody] GuardarCalendarioReposicionesDTO peticion)
         {
-            if (!ServicioCalendarioReposiciones.PuedeMantener(User))
+            if (!PermisoManual.Puede(User))
             {
                 return Prohibido(new UnauthorizedAccessException(ServicioCalendarioReposiciones.MENSAJE_SIN_PERMISO));
             }

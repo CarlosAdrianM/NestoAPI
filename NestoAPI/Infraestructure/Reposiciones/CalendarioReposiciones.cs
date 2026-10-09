@@ -40,8 +40,9 @@ namespace NestoAPI.Infraestructure.Reposiciones
 
     /// <summary>
     /// NestoAPI#577: PUT api/Reposiciones/Calendario. Con <see cref="Origen"/> y <see cref="Destino"/> es la lista COMPLETA de
-    /// esa ruta: las filas de la ruta que no vengan se borran. Sin ellos son filas sueltas: se crean o se cambian y no se
-    /// borra nada. Cada fila se busca por Id y, si no trae, por (empresa, origen, destino, día, hora de cierre).
+    /// esa ruta: las filas de la ruta que no vengan se DESACTIVAN (nunca se borran). Sin ellos son filas sueltas: se crean o
+    /// se cambian y no se toca nada más. Cada fila se busca por Id y, si no trae, por (empresa, origen, destino, día de
+    /// llegada): «añadir» un día que ya existe desactivado lo vuelve a activar con lo que venga.
     /// </summary>
     public class GuardarCalendarioReposicionesDTO
     {
@@ -60,12 +61,21 @@ namespace NestoAPI.Infraestructure.Reposiciones
 
     /// <summary>
     /// NestoAPI#577 (corte 1): lee el calendario, los festivos y la hora de corte del picking y se lo pasa a
-    /// <see cref="CalculadoraFechaReposicion"/>; y mantiene el calendario (solo Almacén, Dirección e Informática).
+    /// <see cref="CalculadoraFechaReposicion"/>; y mantiene el calendario. Desde el 09/10/26 lo mantienen desde Nesto las
+    /// mismas personas que pueden rellenar reposiciones a mano (<see cref="PermisoRellenarReposicionManual"/>; el
+    /// controlador lo comprueba).
+    ///
+    /// <para>Reglas de una ruta (además de las de cada fila): una sola fila por día de llegada (activa o no) y todas sus
+    /// filas activas con la misma antelación de cierre. Con eso, el día de cierre identifica el viaje, que es lo que mira
+    /// el job para no repetir una reposición cuando se cambia la hora de cierre el mismo día
+    /// (<see cref="ServicioReposicionAutomatica"/>, «día ya tratado»).</para>
     /// </summary>
     public class ServicioCalendarioReposiciones : IServicioCalendarioReposiciones
     {
         public const string MENSAJE_SIN_PERMISO =
-            "El calendario de reposiciones lo mantiene Almacén. Pídeselo a informática si necesitas cambiarlo.";
+            "El calendario de reposiciones solo lo pueden cambiar las personas autorizadas a rellenar reposiciones a mano.";
+
+        private static readonly string[] nombresDias = { "lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo" };
 
         /// <summary>NestoAPI#577 (corte 3d): como el CHECK de la columna LaborablesAntelacionCierre.</summary>
         public const byte MAXIMO_LABORABLES_ANTELACION = 5;
@@ -92,6 +102,7 @@ namespace NestoAPI.Infraestructure.Reposiciones
             this.reloj = reloj;
         }
 
+        /// <summary>Relanzar la reposición automática (POST RellenarAutomatica): Almacén, Dirección e Informática.</summary>
         public static bool PuedeMantener(IPrincipal usuario)
         {
             return usuario != null && gruposQuePuedenMantener.Any(g => usuario.IsInRoleSinDominio(g));
@@ -140,15 +151,16 @@ namespace NestoAPI.Infraestructure.Reposiciones
             IGrouping<string, ReposicionCalendarioDTO> repetida = filas.GroupBy(Clave).FirstOrDefault(g => g.Count() > 1);
             if (repetida != null)
             {
-                throw new NestoBusinessException($"La reposición {repetida.Key} está repetida.");
+                throw new NestoBusinessException($"La reposición {repetida.Key} viene repetida.");
             }
 
             List<ReposicionCalendario> existentes = await db.ReposicionesCalendario
                 .Where(f => f.Empresa == empresa)
                 .ToListAsync().ConfigureAwait(false);
             DateTime ahora = reloj();
-            string usuarioAuditoria = UsuarioAuditoriaHelper.ParaAuditoria(usuario);
+            string usuarioAuditoria = UsuarioAuditoriaHelper.ParaAuditoria(SinDominio(usuario));
             var tocadas = new HashSet<ReposicionCalendario>();
+            var nuevas = new List<ReposicionCalendario>();
 
             foreach (ReposicionCalendarioDTO fila in filas)
             {
@@ -165,7 +177,7 @@ namespace NestoAPI.Infraestructure.Reposiciones
                 if (entidad == null)
                 {
                     entidad = new ReposicionCalendario { Empresa = empresa };
-                    db.ReposicionesCalendario.Add(entidad);
+                    nuevas.Add(entidad);
                 }
                 entidad.AlmacenOrigen = fila.Origen;
                 entidad.AlmacenDestino = fila.Destino;
@@ -182,17 +194,52 @@ namespace NestoAPI.Infraestructure.Reposiciones
             if (rutaCompleta)
             {
                 List<ReposicionCalendario> sobrantes = existentes
-                    .Where(e => !tocadas.Contains(e) && Limpiar(e.AlmacenOrigen) == origenRuta && Limpiar(e.AlmacenDestino) == destinoRuta)
+                    .Where(e => !tocadas.Contains(e) && e.Activo && Limpiar(e.AlmacenOrigen) == origenRuta && Limpiar(e.AlmacenDestino) == destinoRuta)
                     .ToList();
                 foreach (ReposicionCalendario sobrante in sobrantes)
                 {
-                    db.ReposicionesCalendario.Remove(sobrante);
+                    sobrante.Activo = false;
+                    sobrante.Usuario = usuarioAuditoria;
+                    sobrante.FechaModificacion = ahora;
                 }
             }
 
+            ComprobarRutas(existentes.Concat(nuevas).ToList());
+            foreach (ReposicionCalendario nueva in nuevas)
+            {
+                db.ReposicionesCalendario.Add(nueva);
+            }
             await db.SaveChangesAsync().ConfigureAwait(false);
             return await LeerCalendario(empresa).ConfigureAwait(false);
         }
+
+        /// <summary>
+        /// Las reglas que miran la ruta entera, sobre cómo quedaría el calendario: una fila por día de llegada y la misma
+        /// antelación en todas las activas.
+        /// </summary>
+        private static void ComprobarRutas(List<ReposicionCalendario> calendario)
+        {
+            foreach (var ruta in calendario.GroupBy(e => new { Origen = Limpiar(e.AlmacenOrigen), Destino = Limpiar(e.AlmacenDestino) }))
+            {
+                IGrouping<byte, ReposicionCalendario> repetido = ruta.GroupBy(e => e.DiaSemana).FirstOrDefault(g => g.Count() > 1);
+                if (repetido != null)
+                {
+                    bool hayDesactivada = repetido.Any(e => !e.Activo);
+                    throw new NestoBusinessException($"Ya hay una reposición de {ruta.Key.Origen} a {ruta.Key.Destino} que llega el {NombreDia(repetido.Key)}" +
+                        (hayDesactivada ? " (está desactivada: actívala en vez de crear otra)." : "."));
+                }
+                List<byte> antelaciones = ruta.Where(e => e.Activo).Select(e => e.LaborablesAntelacionCierre).Distinct().ToList();
+                if (antelaciones.Count > 1)
+                {
+                    throw new NestoBusinessException($"Todos los días de la reposición de {ruta.Key.Origen} a {ruta.Key.Destino} se tienen que cerrar con " +
+                        "la misma antelación (el mismo día, o los mismos laborables antes). Cámbiala en todos a la vez.");
+                }
+            }
+        }
+
+        internal static string NombreDia(byte diaSemana) => diaSemana >= 1 && diaSemana <= 7 ? nombresDias[diaSemana - 1] : diaSemana.ToString(CultureInfo.InvariantCulture);
+
+        private static string SinDominio(string usuario) => usuario?.Substring(usuario.LastIndexOf('\\') + 1);
 
         private static ReposicionCalendarioDTO Validar(ReposicionCalendarioDTO fila, string origenRuta, string destinoRuta)
         {
@@ -201,6 +248,10 @@ namespace NestoAPI.Infraestructure.Reposiciones
             if (origenRuta != null && (origen != origenRuta || destino != destinoRuta))
             {
                 throw new NestoBusinessException($"La fila {origen}→{destino} no es de la ruta {origenRuta}→{destinoRuta}.");
+            }
+            if (!ServicioPreparacionReposicion.ALMACENES_REPOSICION.Contains(origen) || !ServicioPreparacionReposicion.ALMACENES_REPOSICION.Contains(destino))
+            {
+                throw new NestoBusinessException($"Los almacenes de una reposición tienen que ser {string.Join(", ", ServicioPreparacionReposicion.ALMACENES_REPOSICION)}.");
             }
             if (origen == destino)
             {
@@ -238,12 +289,12 @@ namespace NestoAPI.Infraestructure.Reposiciones
 
         private static bool EsHoraDelDia(TimeSpan hora) => hora >= TimeSpan.Zero && hora < TimeSpan.FromDays(1);
 
-        private static string Clave(ReposicionCalendarioDTO f) => Clave(f.Origen, f.Destino, f.DiaSemana, f.HoraCierre);
+        private static string Clave(ReposicionCalendarioDTO f) => Clave(f.Origen, f.Destino, f.DiaSemana);
 
-        private static string Clave(ReposicionCalendario f) => Clave(Limpiar(f.AlmacenOrigen), Limpiar(f.AlmacenDestino), f.DiaSemana, f.HoraCierre);
+        private static string Clave(ReposicionCalendario f) => Clave(Limpiar(f.AlmacenOrigen), Limpiar(f.AlmacenDestino), f.DiaSemana);
 
-        private static string Clave(string origen, string destino, byte dia, TimeSpan hora) =>
-            string.Format(CultureInfo.InvariantCulture, "{0}→{1} día {2} a las {3:hh\\:mm}", origen, destino, dia, hora);
+        private static string Clave(string origen, string destino, byte dia) =>
+            string.Format(CultureInfo.InvariantCulture, "de {0} a {1} que llega el {2}", origen, destino, NombreDia(dia));
 
         private static ReposicionCalendarioDTO ADTO(ReposicionCalendario f)
         {

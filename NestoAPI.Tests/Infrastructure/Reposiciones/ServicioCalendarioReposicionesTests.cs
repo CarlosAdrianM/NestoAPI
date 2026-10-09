@@ -49,13 +49,15 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
             A.CallTo(() => db.ParametrosUsuario).Returns(fakeParametros);
         }
 
-        private static ReposicionCalendario Fila(int id, string origen, byte dia, string cierre = "10:00", string llegada = "13:30") =>
+        private static ReposicionCalendario Fila(int id, string origen, byte dia, string cierre = "10:00", string llegada = "13:30",
+            string destino = "ALG", byte antelacion = 0) =>
             new ReposicionCalendario
             {
                 Id = id,
                 Empresa = "1",
                 AlmacenOrigen = origen,
-                AlmacenDestino = "ALG",
+                AlmacenDestino = destino,
+                LaborablesAntelacionCierre = antelacion,
                 DiaSemana = dia,
                 HoraCierre = TimeSpan.Parse(cierre),
                 HoraLlegadaHabitual = TimeSpan.Parse(llegada),
@@ -76,6 +78,23 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
 
         private ReposicionesController Controlador(IPrincipal usuario, IServicioCalendarioReposiciones servicio = null) =>
             new ReposicionesController(db, null, null, servicio ?? Servicio()) { Request = new HttpRequestMessage(), User = usuario };
+
+        private static ReposicionCalendarioDTO Dto(string origen, string destino, byte dia, string cierre = "10:00", string llegada = "13:30",
+            byte antelacion = 0, int? id = null, bool activo = true) =>
+            new ReposicionCalendarioDTO
+            {
+                Id = id, Origen = origen, Destino = destino, DiaSemana = dia, HoraCierre = TimeSpan.Parse(cierre),
+                HoraLlegadaHabitual = TimeSpan.Parse(llegada), LaborablesAntelacionCierre = antelacion, Activo = activo
+            };
+
+        private async Task<NestoBusinessException> GuardarFalla(params ReposicionCalendarioDTO[] filasPeticion)
+        {
+            NestoBusinessException error = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().Guardar(
+                new GuardarCalendarioReposicionesDTO { Filas = filasPeticion.ToList() }, "x"));
+            Assert.AreEqual(HttpStatusCode.BadRequest, error.StatusCode);
+            A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
+            return error;
+        }
 
         // ---------------- Hora de corte del picking ----------------
 
@@ -161,30 +180,67 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
         }
 
         [TestMethod]
-        public async Task PutCalendario_SinGrupoDeAlmacenDireccionNiInformatica_403YNoGuarda()
+        public async Task PutCalendario_FueraDeLaListaDeRellenarAMano_403YNoGuarda()
         {
             var servicio = A.Fake<IServicioCalendarioReposiciones>();
-            var controlador = Controlador(Usuario("NUEVAVISION\\Paloma", "Tiendas"), servicio);
+            var controlador = Controlador(Usuario("NUEVAVISION\\Paloma", "Almacén"), servicio);
 
             var resultado = await controlador.PutCalendario(new GuardarCalendarioReposicionesDTO { Filas = new List<ReposicionCalendarioDTO>() })
                 as ResponseMessageResult;
 
             Assert.IsNotNull(resultado);
-            Assert.AreEqual(HttpStatusCode.Forbidden, resultado.Response.StatusCode);
+            Assert.AreEqual(HttpStatusCode.Forbidden, resultado.Response.StatusCode, "Ser de Almacén ya no basta: la misma lista que rellenar a mano");
+            StringAssert.Contains(await resultado.Response.Content.ReadAsStringAsync(), "personas autorizadas");
             A.CallTo(() => servicio.Guardar(A<GuardarCalendarioReposicionesDTO>._, A<string>._)).MustNotHaveHappened();
         }
 
         [TestMethod]
-        public async Task PutCalendario_DeInformatica_GuardaConElUsuarioDelIdentity()
+        public async Task PutCalendario_DeLaListaDeRellenarAMano_GuardaConElUsuarioDelIdentity()
         {
             var servicio = A.Fake<IServicioCalendarioReposiciones>();
             var peticion = new GuardarCalendarioReposicionesDTO { Filas = new List<ReposicionCalendarioDTO>() };
 
-            var resultado = await Controlador(Usuario("NUEVAVISION\\Carlos", "Informática"), servicio).PutCalendario(peticion)
+            var resultado = await Controlador(Usuario("NUEVAVISION\\Alfredo"), servicio).PutCalendario(peticion)
                 as OkNegotiatedContentResult<List<ReposicionCalendarioDTO>>;
 
-            Assert.IsNotNull(resultado);
-            A.CallTo(() => servicio.Guardar(peticion, "NUEVAVISION\\Carlos")).MustHaveHappenedOnceExactly();
+            Assert.IsNotNull(resultado, "Alfredo está en la lista por defecto (sin fila del parámetro) aunque no tenga grupos");
+            A.CallTo(() => servicio.Guardar(peticion, "NUEVAVISION\\Alfredo")).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task PutCalendario_ListaDelParametroDefecto_SoloLosQueEstan()
+        {
+            parametros.Add(new ParametroUsuario { Empresa = "1", Usuario = "(defecto)", Clave = PermisoRellenarReposicionManual.CLAVE, Valor = "Manuel" });
+            var servicio = A.Fake<IServicioCalendarioReposiciones>();
+            var peticion = new GuardarCalendarioReposicionesDTO { Filas = new List<ReposicionCalendarioDTO>() };
+
+            var deCarlos = await Controlador(Usuario("NUEVAVISION\\Carlos", "Informática"), servicio).PutCalendario(peticion) as ResponseMessageResult;
+            var deManuel = await Controlador(Usuario("manuel"), servicio).PutCalendario(peticion) as OkNegotiatedContentResult<List<ReposicionCalendarioDTO>>;
+
+            Assert.AreEqual(HttpStatusCode.Forbidden, deCarlos.Response.StatusCode);
+            Assert.IsNotNull(deManuel);
+        }
+
+        [TestMethod]
+        public void GetPuedeEditarCalendario_LaListaDeRellenarAMano()
+        {
+            var si = Controlador(Usuario("NUEVAVISION\\Manuel")).GetPuedeEditarCalendario() as OkNegotiatedContentResult<bool>;
+            var no = Controlador(Usuario("NUEVAVISION\\Paloma", "Almacén", "Dirección")).GetPuedeEditarCalendario() as OkNegotiatedContentResult<bool>;
+
+            Assert.IsTrue(si.Content);
+            Assert.IsFalse(no.Content);
+        }
+
+        [TestMethod]
+        public async Task GetCalendario_CualquierIdentificadoLoLee()
+        {
+            filas.Add(Fila(1, "REI", 1));
+
+            var resultado = await Controlador(Usuario("NUEVAVISION\\Paloma", "Tiendas")).GetCalendario("1")
+                as OkNegotiatedContentResult<List<ReposicionCalendarioDTO>>;
+
+            Assert.AreEqual(1, resultado.Content.Single().Id);
+            Assert.AreEqual("REI", resultado.Content.Single().Origen);
         }
 
         [TestMethod]
@@ -198,7 +254,7 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
         }
 
         [TestMethod]
-        public async Task Guardar_RutaCompleta_CambiaLaQueCoincideCreaLaNuevaYBorraLaQueSobra()
+        public async Task Guardar_RutaCompleta_CambiaLaQueCoincideCreaLaNuevaYDesactivaLaQueSobra()
         {
             ReposicionCalendario lunes = Fila(1, "REI", 1);
             ReposicionCalendario miercoles = Fila(2, "REI", 3);
@@ -216,14 +272,18 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
                 }
             }, "NUEVAVISION\\Almacen1");
 
-            Assert.AreEqual(TimeSpan.Parse("14:00"), lunes.HoraLlegadaHabitual, "La del lunes coincide por día y hora de cierre: se cambia");
-            Assert.AreEqual("NUEVAVISION\\Almacen1", lunes.Usuario);
+            Assert.AreEqual(TimeSpan.Parse("14:00"), lunes.HoraLlegadaHabitual, "La del lunes coincide por día: se cambia");
+            Assert.AreEqual("Almacen1", lunes.Usuario, "Usuario sin dominio");
             Assert.AreEqual(LUNES_0900, lunes.FechaModificacion);
             A.CallTo(() => fakeCalendario.Add(A<ReposicionCalendario>.That.Matches(f =>
-                f.DiaSemana == 5 && f.AlmacenOrigen == "REI" && f.AlmacenDestino == "ALG" && f.Empresa == "1" && f.Usuario == "NUEVAVISION\\Almacen1")))
+                f.DiaSemana == 5 && f.AlmacenOrigen == "REI" && f.AlmacenDestino == "ALG" && f.Empresa == "1" && f.Usuario == "Almacen1")))
                 .MustHaveHappenedOnceExactly();
-            A.CallTo(() => fakeCalendario.Remove(miercoles)).MustHaveHappenedOnceExactly();
-            A.CallTo(() => fakeCalendario.Remove(deAlcobendas)).MustNotHaveHappened();
+            A.CallTo(() => fakeCalendario.Remove(A<ReposicionCalendario>._)).MustNotHaveHappened();
+            Assert.IsFalse(miercoles.Activo, "La que sobra se desactiva, no se borra");
+            Assert.AreEqual("Almacen1", miercoles.Usuario);
+            Assert.AreEqual(LUNES_0900, miercoles.FechaModificacion);
+            Assert.IsTrue(deAlcobendas.Activo);
+            Assert.AreEqual("sa", deAlcobendas.Usuario, "Las demás rutas no se tocan");
             A.CallTo(() => db.SaveChangesAsync()).MustHaveHappenedOnceExactly();
         }
 
@@ -298,6 +358,129 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
 
             await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().Guardar(
                 new GuardarCalendarioReposicionesDTO { Filas = new List<ReposicionCalendarioDTO> { fila, fila } }, "x"));
+        }
+
+        [TestMethod]
+        public async Task Guardar_CambiarLaHoraDeUnaFila_LaMismaFilaConUsuarioYFecha()
+        {
+            ReposicionCalendario lunes = Fila(1, "REI", 1);
+            filas.Add(lunes);
+
+            await Servicio().Guardar(new GuardarCalendarioReposicionesDTO
+            {
+                Filas = new List<ReposicionCalendarioDTO> { Dto("REI", "ALG", 1, cierre: "09:00", id: 1) }
+            }, "NUEVAVISION\\Carlos");
+
+            Assert.AreEqual(TimeSpan.Parse("09:00"), lunes.HoraCierre);
+            Assert.AreEqual("Carlos", lunes.Usuario);
+            Assert.AreEqual(LUNES_0900, lunes.FechaModificacion);
+            A.CallTo(() => fakeCalendario.Add(A<ReposicionCalendario>._)).MustNotHaveHappened();
+            A.CallTo(() => db.SaveChangesAsync()).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Guardar_AnadirUnDiaQueEstabaDesactivado_LoReactivaSinCrearOtro()
+        {
+            ReposicionCalendario martes = Fila(1, "REI", 2);
+            martes.Activo = false;
+            filas.Add(martes);
+
+            await Servicio().Guardar(new GuardarCalendarioReposicionesDTO
+            {
+                Filas = new List<ReposicionCalendarioDTO> { Dto("REI", "ALG", 2, cierre: "09:30") }
+            }, "Alfredo");
+
+            Assert.IsTrue(martes.Activo);
+            Assert.AreEqual(TimeSpan.Parse("09:30"), martes.HoraCierre);
+            A.CallTo(() => fakeCalendario.Add(A<ReposicionCalendario>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Guardar_AnadirUnDiaNuevo_LoCrea()
+        {
+            filas.Add(Fila(1, "REI", 1));
+
+            await Servicio().Guardar(new GuardarCalendarioReposicionesDTO
+            {
+                Filas = new List<ReposicionCalendarioDTO> { Dto("REI", "ALG", 2) }
+            }, "Alfredo");
+
+            A.CallTo(() => fakeCalendario.Add(A<ReposicionCalendario>.That.Matches(f => f.DiaSemana == 2 && f.Activo && f.Usuario == "Alfredo")))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Guardar_MoverUnaFilaAUnDiaQueYaTieneLaRuta_400()
+        {
+            filas.Add(Fila(1, "REI", 1));
+            filas.Add(Fila(2, "REI", 3));
+
+            NestoBusinessException error = await GuardarFalla(Dto("REI", "ALG", 3, id: 1));
+
+            Assert.AreEqual("Ya hay una reposición de REI a ALG que llega el miércoles.", error.Message);
+        }
+
+        [TestMethod]
+        public async Task Guardar_MoverUnaFilaAUnDiaDesactivado_400DiceQueLaActive()
+        {
+            filas.Add(Fila(1, "REI", 1));
+            ReposicionCalendario miercoles = Fila(2, "REI", 3);
+            miercoles.Activo = false;
+            filas.Add(miercoles);
+
+            NestoBusinessException error = await GuardarFalla(Dto("REI", "ALG", 3, id: 1));
+
+            StringAssert.Contains(error.Message, "actívala en vez de crear otra");
+        }
+
+        [TestMethod]
+        public async Task Guardar_AntelacionDistintaEnLaMismaRuta_400()
+        {
+            filas.Add(Fila(1, "ALG", 1, "13:00", "11:00", destino: "REI", antelacion: 1));
+            filas.Add(Fila(2, "ALG", 3, "13:00", "11:00", destino: "REI", antelacion: 1));
+
+            NestoBusinessException error = await GuardarFalla(Dto("ALG", "REI", 1, "13:00", "11:00", antelacion: 2, id: 1));
+
+            StringAssert.Contains(error.Message, "la misma antelación");
+        }
+
+        [TestMethod]
+        public async Task Guardar_AntelacionCambiadaEnTodaLaRutaALaVez_SeGuarda()
+        {
+            ReposicionCalendario lunes = Fila(1, "ALG", 1, "13:00", "11:00", destino: "REI", antelacion: 1);
+            ReposicionCalendario miercoles = Fila(2, "ALG", 3, "13:00", "11:00", destino: "REI", antelacion: 1);
+            ReposicionCalendario viernes = Fila(3, "ALG", 5, "13:00", "11:00", destino: "REI", antelacion: 1);
+            viernes.Activo = false; // las desactivadas no cuentan
+            filas.AddRange(new[] { lunes, miercoles, viernes });
+
+            await Servicio().Guardar(new GuardarCalendarioReposicionesDTO
+            {
+                Filas = new List<ReposicionCalendarioDTO>
+                {
+                    Dto("ALG", "REI", 1, "13:00", "11:00", antelacion: 2, id: 1),
+                    Dto("ALG", "REI", 3, "13:00", "11:00", antelacion: 2, id: 2)
+                }
+            }, "Carlos");
+
+            Assert.AreEqual(2, lunes.LaborablesAntelacionCierre);
+            Assert.AreEqual(2, miercoles.LaborablesAntelacionCierre);
+            A.CallTo(() => db.SaveChangesAsync()).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Guardar_AlmacenQueNoHaceReposiciones_400()
+        {
+            NestoBusinessException error = await GuardarFalla(Dto("MAD", "ALG", 1));
+
+            StringAssert.Contains(error.Message, "ALG, REI, ALC");
+        }
+
+        [TestMethod]
+        public async Task Guardar_ConAntelacionCeroElCierreDespuesDeLaLlegada_400ConMensajeClaro()
+        {
+            NestoBusinessException error = await GuardarFalla(Dto("REI", "ALG", 1, cierre: "14:00", llegada: "13:30"));
+
+            StringAssert.Contains(error.Message, "La hora de llegada no puede ser anterior a la hora de cierre");
         }
 
         private static void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, List<T> datos) where T : class

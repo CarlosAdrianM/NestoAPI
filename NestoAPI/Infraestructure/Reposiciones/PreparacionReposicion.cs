@@ -593,7 +593,7 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
         public const string VENDEDOR_VENTA = "NV";
         public const string FORMA_VENTA = "TIE";
 
-        private static readonly string[] ALMACENES_REPOSICION =
+        internal static readonly string[] ALMACENES_REPOSICION =
         {
             Constantes.Almacenes.ALGETE, Constantes.Almacenes.REINA, Constantes.Almacenes.ALCOBENDAS
         };
