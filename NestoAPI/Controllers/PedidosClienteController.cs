@@ -251,6 +251,40 @@ namespace NestoAPI.Controllers
         /// <summary>NestoAPI#444: cómo se encola el correo al cliente (Hangfire); sustituible en tests.</summary>
         internal Action<CorreoConfirmacionPedidoDTO> EncolarCorreoCliente { get; set; }
 
+        /// <summary>NestoAPI#593 (c4): los productos de cheque regalo de las campañas. Null = de la BD. Para tests.</summary>
+        internal Func<Task<List<string>>> LeerProductosChequeRegalo { get; set; }
+
+        internal const string MENSAJE_CHEQUE_REGALO_NO_DISPONIBLE = "El cheque regalo todavía no se puede usar desde la app: " +
+            "pídele a tu comercial o llámanos y te lo aplicamos en el pedido.";
+
+        /// <summary>
+        /// NestoAPI#593 (c4): el canje del cheque regalo en la app de clientas y en la tienda online va aparte (épica,
+        /// febrero). Mientras tanto, un pedido de aquí con la línea del cheque no se crea: se le dice cómo usarlo.
+        /// </summary>
+        internal async Task<bool> LlevaChequeRegalo(PedidoClienteRequest peticion)
+        {
+            if (peticion?.Lineas == null || !peticion.Lineas.Any(l => !string.IsNullOrWhiteSpace(l?.Producto)))
+            {
+                return false;
+            }
+            List<string> productosCheque;
+            try
+            {
+                productosCheque = await (LeerProductosChequeRegalo ?? (() =>
+                    new Infraestructure.ChequesRegalo.ServicioCanjeChequesRegalo(
+                        new Infraestructure.ChequesRegalo.RepositorioCanjeChequesRegalo(db)).ProductosCheque()))().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // Es una puerta de canal, no la regla del canje: si no se puede leer, sigue (POST api/PedidosVenta
+                // tampoco podría leer las campañas y no crearía el pedido)
+                System.Diagnostics.Trace.WriteLine($"[Cheque regalo #593] No se pudieron leer las campañas: {ex.Message}");
+                return false;
+            }
+            return productosCheque != null && peticion.Lineas.Any(l => l?.Producto != null
+                && productosCheque.Any(p => string.Equals(p, l.Producto.Trim(), StringComparison.OrdinalIgnoreCase)));
+        }
+
         /// <summary>
         /// TNV#68: el pedido no se ha creado. Si se había cobrado por adelantado, el dinero vuelve
         /// antes de contestar: un cobro sin pedido no puede esperar a que alguien lo vea.
@@ -914,6 +948,11 @@ namespace NestoAPI.Controllers
             if (errorPeticion != null)
             {
                 return new PedidoPreparado { Error = BadRequest(errorPeticion) };
+            }
+            // NestoAPI#593 (c4): aquí todavía no se canjea el cheque regalo
+            if (await LlevaChequeRegalo(peticion).ConfigureAwait(false))
+            {
+                return new PedidoPreparado { Error = BadRequest(MENSAJE_CHEQUE_REGALO_NO_DISPONIBLE) };
             }
 
             string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO;

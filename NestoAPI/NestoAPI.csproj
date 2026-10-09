@@ -502,6 +502,7 @@
     <Compile Include="Controllers\BaseApiController.cs" />
     <Compile Include="Controllers\BuscadorController.cs" />
     <Compile Include="Controllers\CabRemesasPagoController.cs" />
+    <Compile Include="Controllers\ChequesRegaloController.cs" />
     <Compile Include="Controllers\ClientesController.cs" />
     <Compile Include="Controllers\AlquileresController.cs" />
     <Compile Include="Controllers\RemesasController.cs" />
@@ -756,6 +757,7 @@
     <Compile Include="Infraestructure\Domiciliaciones\ServicioDomiciliaciones.cs" />
     <Compile Include="Infraestructure\GestorAgenciasGlovo.cs" />
     <Compile Include="Infraestructure\GeneradorPdfModelo347.cs" />
+    <Compile Include="Infraestructure\ChequesRegalo\CanjeChequesRegalo.cs" />
     <Compile Include="Infraestructure\ChequesRegalo\ChequesRegalo.cs" />
     <Compile Include="Infraestructure\Clientes\NotificadorNifIncorrecto.cs" />
     <Compile Include="Infraestructure\Clientes\ConsultasClientePrincipal.cs" />

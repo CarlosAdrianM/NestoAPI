@@ -72,6 +72,42 @@ namespace NestoAPI.Controllers
         {
             return new Infraestructure.PreparacionAlmacen.RepositorioPreparacionAlmacen(db).PickingEnCursoDelPedido(empresa, pedido);
         }
+
+        // NestoAPI#593 (c4): el canje del cheque regalo (reglas duras fuera del pipeline de validación). Para tests.
+        private Infraestructure.ChequesRegalo.IServicioCanjeChequesRegalo servicioCanje;
+        internal Infraestructure.ChequesRegalo.IServicioCanjeChequesRegalo ServicioCanje
+        {
+            get => servicioCanje ?? (servicioCanje = new Infraestructure.ChequesRegalo.ServicioCanjeChequesRegalo(
+                new Infraestructure.ChequesRegalo.RepositorioCanjeChequesRegalo(db)));
+            set => servicioCanje = value;
+        }
+
+        /// <summary>
+        /// NestoAPI#593 (c4): guarda el pedido y, en la MISMA transacción, reserva el cheque regalo (UPDATE condicionado:
+        /// si otro pedido lo ha cogido a la vez, no se guarda nada y sale CHEQUE_REGALO_YA_USADO) y suelta los que ya no le
+        /// tocan. Dentro de un TransactionScope (UnirPedidos) se usa ese; si no, se abre una aquí. Sin nada que hacer con
+        /// cheques, el SaveChanges de siempre.
+        /// </summary>
+        private async Task GuardarConChequeRegalo(Infraestructure.ChequesRegalo.PlanCanjeChequeRegalo plan)
+        {
+            if (plan == null || !plan.HayQueTocarCheques)
+            {
+                _ = await db.SaveChangesAsync();
+                return;
+            }
+            DbContextTransaction transaccion = System.Transactions.Transaction.Current == null ? db.Database.BeginTransaction() : null;
+            try
+            {
+                await ServicioCanje.Reservar(plan).ConfigureAwait(true);
+                _ = await db.SaveChangesAsync();
+                await ServicioCanje.LiberarOtros(plan).ConfigureAwait(true);
+                transaccion?.Commit();
+            }
+            finally
+            {
+                transaccion?.Dispose();
+            }
+        }
         // Carlos 04/09/15: lo pongo para desactivar el Lazy Loading
         public PedidosVentaController()
         {
@@ -752,6 +788,10 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest();
             }
+
+            // NestoAPI#593 (c4): la línea del cheque regalo la pone el servidor, venga como venga (cantidad −1, importe de
+            // la campaña, sin descuentos), antes de tocar las líneas y de validar
+            await ServicioCanje.NormalizarLineas(pedido).ConfigureAwait(true);
 
             // NestoAPI#449: descuentos fuera de 0-100 % con mensaje claro, no con el CHECK de SQL
             string fueraDeRango = ValidarRangosLineas(pedido);
@@ -1652,6 +1692,12 @@ namespace NestoAPI.Controllers
             cabPedidoVta.Serie = SerieSegunLineas.Resolver(cabPedidoVta.Serie, cabPedidoVta.Empresa, lineasVivasTrasElPut);
             pedido.serie = cabPedidoVta.Serie;
 
+            // NestoAPI#593 (c4): el cheque regalo es regla dura (no se la salta nadie, tampoco al borrar líneas o cambiar
+            // de cliente). Se mira sobre las líneas que quedan de verdad en el pedido, también las ya servidas.
+            Infraestructure.ChequesRegalo.PlanCanjeChequeRegalo planChequeRegalo = await ServicioCanje.Comprobar(
+                pedido.empresa, pedido.numero, pedido.cliente, lineasVivasTrasElPut.ToList(), pedido.iva,
+                l => this.gestor.CalcularImportesLinea(l, pedido.iva), pedido.Usuario, pedidoNuevo: false).ConfigureAwait(true);
+
             // Validación: verificar que ninguna línea tenga TipoLinea NULL
             var lineasConTipoNull = cabPedidoVta.LinPedidoVtas
                 .Where(l => l.TipoLinea == null
@@ -1688,7 +1734,11 @@ namespace NestoAPI.Controllers
 
             try
             {
-                _ = await db.SaveChangesAsync();
+                await GuardarConChequeRegalo(planChequeRegalo).ConfigureAwait(true);
+            }
+            catch (NestoBusinessException)
+            {
+                throw; // NestoAPI#593: el cheque lo ha cogido otro pedido a la vez (400 con su código)
             }
             catch (DbUpdateConcurrencyException)
             {
@@ -1847,6 +1897,10 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest(faltanDatos);
             }
+
+            // NestoAPI#593 (c4): la línea del cheque regalo la pone el servidor, venga como venga (NestoApp mandaría +1
+            // o +50): cantidad −1, importe de la campaña, sin descuentos. Antes de crear las líneas y de validar.
+            await ServicioCanje.NormalizarLineas(pedido).ConfigureAwait(true);
 
             // NestoAPI#482: sin modo informado el pedido NACE en el modo por defecto, no en el ServirJunto
             // de la ficha del cliente. NestoAPI#506: ese defecto es el que fuerce el parámetro
@@ -2190,6 +2244,11 @@ namespace NestoAPI.Controllers
             // Carlos 07/10/15:
             // ahora ya tenemos el importe del pedido, hay que mirar si los plazos de pago cambian
 
+            // NestoAPI#593 (c4): el cheque regalo es regla dura, FUERA del pipeline de validación (que se puede saltar)
+            Infraestructure.ChequesRegalo.PlanCanjeChequeRegalo planChequeRegalo = await ServicioCanje.Comprobar(
+                pedido.empresa, pedido.numero, pedido.cliente, lineasPedidoInsertar, pedido.iva,
+                l => this.gestor.CalcularImportesLinea(l, pedido.iva), pedido.Usuario, pedidoNuevo: true).ConfigureAwait(true);
+
             // Carlos 04/01/18: comprobamos que las ofertas del pedido sean todas válidas
             // Siempre calculamos la validación para incluirla en el correo, aunque no la bloqueemos
             RespuestaValidacion respuestaValidacion = GestorPrecios.EsPedidoValido(pedido);
@@ -2227,7 +2286,11 @@ namespace NestoAPI.Controllers
 
             try
             {
-                _ = await db.SaveChangesAsync();
+                await GuardarConChequeRegalo(planChequeRegalo).ConfigureAwait(true);
+            }
+            catch (NestoBusinessException)
+            {
+                throw; // NestoAPI#593: el cheque lo ha cogido otro pedido a la vez (400 con su código)
             }
             catch (DbUpdateException e)
             {
@@ -2357,6 +2420,17 @@ namespace NestoAPI.Controllers
 
             db.CabPedidoVtas.Remove(cabPedidoVta);
             await db.SaveChangesAsync();
+
+            // NestoAPI#593 (c4): el cheque regalo que estuviera en el pedido vuelve a estar libre. Best-effort: si falla,
+            // el cheque se da por libre igual (su pedido ya no tiene la línea) y se cura al volver a usarlo.
+            try
+            {
+                await ServicioCanje.LiberarPedido(numero, User?.Identity?.Name).ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Cheque regalo #593] No se pudo soltar el cheque del pedido {numero} al borrarlo: {ex.Message}", ex));
+            }
 
             return Ok(cabPedidoVta);
         }
