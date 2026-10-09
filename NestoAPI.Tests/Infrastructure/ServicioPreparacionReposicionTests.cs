@@ -524,6 +524,19 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(esperado, Servicio().PuedeEscribir(Usuario(nombre, grupo), "1", "ALC"));
         }
 
+        // Ariadna para tiendas (09/10/26): desde el móvil la tienda entra por /oauth/token, sin dominio y sin grupos de
+        // Windows (y sin el rol «Almacén», que le abriría todo api/Almacen). Prepara y termina la de SU tienda por su
+        // AlmacénPedidoVta, igual que desde Nesto; la de otra tienda o la de Algete, no.
+        [DataTestMethod]
+        [DataRow("Paloma", "ALC", false, true)]
+        [DataRow("Paloma", "REI", false, false)]
+        [DataRow("Paloma", "ALG", true, false)]
+        [DataRow("Patricia", "REI", false, true)]
+        public void PuedeEscribir_UsuarioDeAriadnaSinDominioNiRoles_SoloSuTienda(string nombre, string origen, bool controlUbicaciones, bool esperado)
+        {
+            Assert.AreEqual(esperado, Servicio().PuedeEscribir(Usuario(nombre), "1", origen, controlUbicaciones));
+        }
+
         [TestMethod]
         public async Task Crear_SinPermisoSobreElOrigen_EsUnauthorizedAccessSinEscribir()
         {

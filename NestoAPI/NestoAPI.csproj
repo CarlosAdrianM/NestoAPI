@@ -536,6 +536,7 @@
     <Compile Include="Controllers\OfertasCombinadasController.cs" />
     <Compile Include="Controllers\OfertasAutorizadasController.cs" />
     <Compile Include="Controllers\AlmacenController.cs" />
+    <Compile Include="Controllers\PerfilAlmacenController.cs" />
     <Compile Include="Controllers\RecepcionesController.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\AlmacenFotosBultos.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\CasadorEscaneos.cs" />
@@ -546,6 +547,7 @@
     <Compile Include="Controllers\AvisosFichaController.cs" />
     <Compile Include="Models\PreparacionAlmacen\AvisosFichaDTO.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\EscrituraSoloAlmacenAttribute.cs" />
+    <Compile Include="Infraestructure\PreparacionAlmacen\PerfilAlmacen.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\PlanificadorRecepcionCompra.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\AvisadorCompras.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\AvisadorReposiciones.cs" />
