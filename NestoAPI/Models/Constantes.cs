@@ -67,6 +67,8 @@ namespace NestoAPI.Models
             public const string SERIE_POR_DEFECTO = "NV";
             public const string SERIE_CURSOS = "CV";
             public const string SERIE_UNION_LASER = "UL";
+            /// <summary>Nesto#520: pedidos de la tienda de Eva Visnú (evavisnu.com).</summary>
+            public const string SERIE_EVA_VISNU = "EV";
         }
 
         public static class Clientes

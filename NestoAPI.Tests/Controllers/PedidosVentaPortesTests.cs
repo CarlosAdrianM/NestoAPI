@@ -68,5 +68,30 @@ namespace NestoAPI.Tests.Controllers
             // el DTO trae AnadirPortes=true por defecto → comportamiento de siempre.
             Assert.IsTrue(PedidosVentaController.DebeAnadirPortes(puedeSuprimirPortes: true, anadirPortesSolicitado: true, almacen: ALG));
         }
+            // --- Nesto#520: la tienda de Eva Visnú (serie EV) es canal externo igual que la de Nueva Visión (NV) ---
+
+        [TestMethod]
+        public void EsCanalExternoParaPortes_SerieEVConFormaVentaWeb_EsCanalExterno()
+        {
+            Assert.IsTrue(PedidosVentaController.EsCanalExternoParaPortes("EV", "", new[] { "WEB" }));
+        }
+
+        [TestMethod]
+        public void EsCanalExternoParaPortes_SerieNVConFormaVentaWeb_EsCanalExterno()
+        {
+            Assert.IsTrue(PedidosVentaController.EsCanalExternoParaPortes("NV ", "", new[] { "WEB" }));
+        }
+
+        [TestMethod]
+        public void EsCanalExternoParaPortes_SerieCursosConFormaVentaWeb_NoEsCanalExterno()
+        {
+            Assert.IsFalse(PedidosVentaController.EsCanalExternoParaPortes("CV", "", new[] { "WEB" }));
+        }
+
+        [TestMethod]
+        public void EsCanalExternoParaPortes_SerieEVSinFormaVentaDeCanalNiGlovo_NoEsCanalExterno()
+        {
+            Assert.IsFalse(PedidosVentaController.EsCanalExternoParaPortes("EV", "", new[] { "VAR" }));
+        }
     }
 }

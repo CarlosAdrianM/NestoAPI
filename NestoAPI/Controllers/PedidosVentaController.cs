@@ -2465,6 +2465,19 @@ namespace NestoAPI.Controllers
         }
 
         [HttpPost]
+        /// <summary>
+        /// Si el pedido cuenta como canal externo al calcular los portes: serie de tienda online (NV, o EV de la tienda de
+        /// Eva Visnú desde Nesto#520) y ruta Glovo o alguna línea con forma de venta de canal externo.
+        /// </summary>
+        internal static bool EsCanalExternoParaPortes(string serie, string ruta, IEnumerable<string> formasVenta)
+        {
+            string serieLimpia = serie?.Trim();
+            bool serieDeTienda = serieLimpia == Constantes.Series.SERIE_POR_DEFECTO || serieLimpia == Constantes.Series.SERIE_EVA_VISNU;
+            return serieDeTienda &&
+                (ruta?.Trim() == Constantes.Pedidos.RUTA_GLOVO ||
+                 (formasVenta ?? Enumerable.Empty<string>()).Any(Constantes.FormasVenta.EsCanalExterno));
+        }
+
         [ResponseType(typeof(ResultadoPortes))]
         [Route("api/PedidosVenta/CalcularPortes")]
         public IHttpActionResult CalcularPortes(PedidoPortesInput input)
@@ -2493,9 +2506,7 @@ namespace NestoAPI.Controllers
                 c.Empresa == empresa && c.Nº_Cliente == cabecera.Nº_Cliente && c.Contacto == cabecera.Contacto);
             string codigoPostal = cliente?.CodPostal?.Trim() ?? "";
 
-            bool esCanalExterno = cabecera.Serie != null && cabecera.Serie.Trim() == "NV" &&
-                (cabecera.Ruta?.Trim() == Constantes.Pedidos.RUTA_GLOVO ||
-                 cabecera.LinPedidoVtas.Any(l => Constantes.FormasVenta.EsCanalExterno(l.Forma_Venta)));
+            bool esCanalExterno = EsCanalExternoParaPortes(cabecera.Serie, cabecera.Ruta, cabecera.LinPedidoVtas.Select(l => l.Forma_Venta));
 
             // Excluir líneas sobre-pedido (EstadoProducto != 0 y no parcial) y líneas de portes/reembolso
             decimal baseImponibleProductos = cabecera.LinPedidoVtas
