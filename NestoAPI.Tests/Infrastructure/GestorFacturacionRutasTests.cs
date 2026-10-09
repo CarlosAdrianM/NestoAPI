@@ -113,6 +113,32 @@ namespace NestoAPI.Tests.Infrastructure
         #region Grupo 1: Detección de comentarios de impresión
 
         [TestMethod]
+        public void DebeImprimirDocumento_PedidoConFacturaFisicaEnComentarioPicking_RetornaTrue()
+        {
+            // Sugerencia 565: la frase viene de la ficha del cliente al comentario de picking, no a los comentarios
+            var pedido = new CabPedidoVta { Comentarios = "Llamar antes de ir", ComentarioPicking = "FACTURA FÍSICA. Horario de 10 a 14" };
+
+            Assert.IsTrue(gestor.DebeImprimirDocumento(pedido));
+        }
+
+        [TestMethod]
+        public void DebeImprimirDocumento_PedidoConFacturaFisicaEnComentarios_RetornaTrue()
+        {
+            var pedido = new CabPedidoVta { Comentarios = "Factura en papel, por favor", ComentarioPicking = null };
+
+            Assert.IsTrue(gestor.DebeImprimirDocumento(pedido));
+        }
+
+        [TestMethod]
+        public void DebeImprimirDocumento_PedidoSinFraseEnNinguno_RetornaFalse()
+        {
+            var pedido = new CabPedidoVta { Comentarios = "Dejar en recepción", ComentarioPicking = "Horario de mañana" };
+
+            Assert.IsFalse(gestor.DebeImprimirDocumento(pedido));
+            Assert.IsFalse(gestor.DebeImprimirDocumento((CabPedidoVta)null));
+        }
+
+        [TestMethod]
         public void DebeImprimirDocumento_FacturaFisica_RetornaTrue()
         {
             // Arrange

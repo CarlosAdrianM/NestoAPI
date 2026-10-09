@@ -57,6 +57,18 @@ namespace NestoAPI.Infraestructure.Facturas
         /// - "Factura en papel"
         /// - "Albarán físico"
         /// </summary>
+        public bool DebeImprimirDocumento(CabPedidoVta pedido)
+        {
+            // Sugerencia 565 (Alfredo, 09/10/26): la frase («Factura física»…) casi siempre está en el comentario de picking,
+            // que viene de la ficha del cliente, no en los comentarios del pedido. La pantalla de Agencias de Nesto ya miraba
+            // los dos (Issue #284); al facturar desde la etiqueta por este camino (#592, 02/10/26) solo se miraban los
+            // comentarios y las facturas físicas dejaron de imprimirse solas.
+            return pedido != null && DebeImprimirDocumento($"{pedido.Comentarios} {pedido.ComentarioPicking}");
+        }
+
+        /// <summary>
+        /// Detecta en un texto las frases que piden imprimir el documento (ver la sobrecarga del pedido).
+        /// </summary>
         public bool DebeImprimirDocumento(string comentarios)
         {
             if (string.IsNullOrWhiteSpace(comentarios))
@@ -324,7 +336,7 @@ namespace NestoAPI.Infraestructure.Facturas
                     {
                         // Determinar tipo de ruta y si debe generar PDF
                         var tipoRuta = TipoRutaFactory.ObtenerPorNumeroRuta(pedido.Ruta);
-                        bool debeImprimir = DebeImprimirDocumento(pedido.Comentarios);
+                        bool debeImprimir = DebeImprimirDocumento(pedido);
 
                         // Obtener número de copias según el tipo de ruta
                         int numeroCopias = tipoRuta != null
@@ -529,7 +541,7 @@ namespace NestoAPI.Infraestructure.Facturas
                     NivelSeveridad.Warning);
 
                 // En este caso, si tiene comentario de impresión, generar PDF del ALBARÁN
-                if (DebeImprimirDocumento(pedido.Comentarios))
+                if (DebeImprimirDocumento(pedido))
                 {
                     try
                     {
@@ -577,7 +589,7 @@ namespace NestoAPI.Infraestructure.Facturas
                 }
 
                 // Determinar si debe generar PDF según el tipo de ruta
-                bool debeImprimir = DebeImprimirDocumento(pedido.Comentarios);
+                bool debeImprimir = DebeImprimirDocumento(pedido);
                 int numeroCopias = tipoRuta != null
                     ? tipoRuta.ObtenerNumeroCopias(pedido, debeImprimir, Constantes.Empresas.EMPRESA_POR_DEFECTO)
                     : 0;
@@ -605,7 +617,7 @@ namespace NestoAPI.Infraestructure.Facturas
                 RegistrarError(pedido, "Factura", ex, response);
 
                 // Si falla la factura pero tiene comentario, generar PDF del albarán
-                if (DebeImprimirDocumento(pedido.Comentarios))
+                if (DebeImprimirDocumento(pedido))
                 {
                     try
                     {
@@ -631,7 +643,7 @@ namespace NestoAPI.Infraestructure.Facturas
         {
             // Determinar si debe generar PDF según el tipo de ruta
             var tipoRuta = TipoRutaFactory.ObtenerPorNumeroRuta(pedido.Ruta);
-            bool debeImprimir = DebeImprimirDocumento(pedido.Comentarios);
+            bool debeImprimir = DebeImprimirDocumento(pedido);
             int numeroCopias = tipoRuta != null
                 ? tipoRuta.ObtenerNumeroCopias(pedido, debeImprimir, Constantes.Empresas.EMPRESA_POR_DEFECTO)
                 : 0;
@@ -667,7 +679,7 @@ namespace NestoAPI.Infraestructure.Facturas
 
             // Determinar tipo de ruta y obtener configuración de impresión
             var tipoRuta = TipoRutaFactory.ObtenerPorNumeroRuta(pedido.Ruta);
-            bool debeImprimir = DebeImprimirDocumento(pedido.Comentarios);
+            bool debeImprimir = DebeImprimirDocumento(pedido);
 
             // Si la ruta no está manejada por ningún tipo, no imprimir
             int numeroCopias = tipoRuta != null
@@ -698,7 +710,7 @@ namespace NestoAPI.Infraestructure.Facturas
 
             // Determinar tipo de ruta y obtener configuración de impresión
             var tipoRuta = TipoRutaFactory.ObtenerPorNumeroRuta(pedido.Ruta);
-            bool debeImprimir = DebeImprimirDocumento(pedido.Comentarios);
+            bool debeImprimir = DebeImprimirDocumento(pedido);
 
             // Si la ruta no está manejada por ningún tipo, no imprimir
             int numeroCopias = tipoRuta != null
@@ -730,7 +742,7 @@ namespace NestoAPI.Infraestructure.Facturas
 
             // Determinar tipo de ruta y obtener configuración de impresión
             var tipoRuta = TipoRutaFactory.ObtenerPorNumeroRuta(pedido.Ruta);
-            bool debeImprimir = DebeImprimirDocumento(pedido.Comentarios);
+            bool debeImprimir = DebeImprimirDocumento(pedido);
 
             // Si la ruta no está manejada por ningún tipo, no imprimir
             int numeroCopias = tipoRuta != null
