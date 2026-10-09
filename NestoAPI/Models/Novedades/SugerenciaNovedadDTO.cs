@@ -1,3 +1,4 @@
+﻿using System.Collections.Generic;
 using System;
 
 namespace NestoAPI.Models.Novedades
@@ -120,5 +121,10 @@ namespace NestoAPI.Models.Novedades
         /// (NestoAPI#558) pasa a Corregido. Incidencia sirve para reclasificar una que aún no tiene versión.
         /// </summary>
         public string Categoria { get; set; }
+        /// <summary>
+        /// Sugerencia 551: a quién afecta cuando pasa a ser novedad (Vendedores, Almacén, Tiendas, Administración).
+        /// null = no se toca; vacía o con «Todos» = para todos.
+        /// </summary>
+        public List<string> Perfiles { get; set; }
     }
 }

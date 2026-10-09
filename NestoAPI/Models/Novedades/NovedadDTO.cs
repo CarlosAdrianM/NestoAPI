@@ -24,6 +24,24 @@ namespace NestoAPI.Models.Novedades
         /// Lista vacía si no hay (o si la tabla aún no existe).
         /// </summary>
         public List<AdjuntoNovedadResumenDTO> Adjuntos { get; set; } = new List<AdjuntoNovedadResumenDTO>();
+        /// <summary>
+        /// Sugerencia 551: a quién afecta (Vendedores, Almacén, Tiendas, Administración). null = a todos (las
+        /// novedades sin perfiles, las sugerencias y si la columna aún no existe).
+        /// </summary>
+        public List<string> Perfiles { get; set; }
+    }
+
+    /// <summary>Sugerencia 551: PUT api/Novedades/{id}/Perfiles. Vacía, null o con «Todos» = para todos.</summary>
+    public class PerfilesNovedadDTO
+    {
+        public List<string> Perfiles { get; set; }
+    }
+
+    /// <summary>Sugerencia 551: fila de la consulta de perfiles (solo las novedades que los tienen).</summary>
+    public class PerfilesNovedadFila
+    {
+        public int Id { get; set; }
+        public string Perfiles { get; set; }
     }
 
     /// <summary>
@@ -75,7 +93,8 @@ namespace NestoAPI.Models.Novedades
             Titulo = n.Titulo,
             Descripcion = n.Descripcion,
             Ambito = n.Ambito,
-            Adjuntos = n.Adjuntos ?? new List<AdjuntoNovedadResumenDTO>()
+            Adjuntos = n.Adjuntos ?? new List<AdjuntoNovedadResumenDTO>(),
+            Perfiles = n.Perfiles
         };
     }
 }

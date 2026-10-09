@@ -40,6 +40,36 @@ namespace NestoAPI.Infraestructure.Novedades
             }
         }
 
+        public Dictionary<int, string> LeerPerfiles()
+        {
+            // Sugerencia 551: consulta aparte (y no una columna más en la de arriba) para que, mientras no se
+            // lance el script de la columna, las novedades sigan saliendo, para todos.
+            using (NVEntities db = new NVEntities())
+            {
+                return db.Database.SqlQuery<PerfilesNovedadFila>(
+                    "SELECT Id, Perfiles FROM Novedades WHERE Perfiles IS NOT NULL AND LTRIM(RTRIM(Perfiles)) <> N''")
+                    .ToList()
+                    .GroupBy(f => f.Id)
+                    .ToDictionary(g => g.Key, g => g.First().Perfiles);
+            }
+        }
+
+        public bool GuardarPerfiles(int novedadId, string perfiles, string usuario)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                return db.Database.ExecuteSqlCommand(@"
+                    UPDATE Novedades SET
+                        Perfiles = @perfiles,
+                        Usuario = @usuario,
+                        Fecha_Modificación = GETDATE()
+                    WHERE Id = @id;",
+                    new SqlParameter("@perfiles", SqlDbType.NVarChar, ReglasPerfilesNovedades.LONGITUD_COLUMNA) { Value = (object)perfiles ?? DBNull.Value },
+                    new SqlParameter("@usuario", SqlDbType.NVarChar, 50) { Value = Recortar(usuario, 50) },
+                    new SqlParameter("@id", novedadId)) > 0;
+            }
+        }
+
         public List<NovedadConSugerenciaFila> LeerSugerencias(bool incluirCerradas)
         {
             string filtroEstado = incluirCerradas ? string.Empty : " AND Estado IN ('Pendiente', 'Aceptada')";

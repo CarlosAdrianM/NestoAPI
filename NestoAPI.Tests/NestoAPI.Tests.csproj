@@ -508,6 +508,7 @@
     <Compile Include="Controllers\NovedadesSugerenciasTests.cs" />
     <Compile Include="Controllers\NovedadesActividadSupervisorTests.cs" />
     <Compile Include="Controllers\NovedadesMencionesTests.cs" />
+    <Compile Include="Controllers\NovedadesPerfilesTests.cs" />
     <Compile Include="Controllers\NovedadesAdjuntosTests.cs" />
     <Compile Include="Infrastructure\VigenciaDescuentosTests.cs" />
     <Compile Include="Infrastructure\GestorPreciosCalcularDescuentoProductoTests.cs" />

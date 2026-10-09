@@ -9,6 +9,16 @@ namespace NestoAPI.Infraestructure.Novedades
         /// <summary>Las del changelog: publicadas y con versión (las sugerencias no, #526).</summary>
         List<NovedadDTO> LeerNovedadesPublicadas();
 
+        /// <summary>
+        /// Sugerencia 551: el valor de la columna Perfiles de las novedades que lo tienen (Id → «Almacén,Tiendas»).
+        /// Lanza si la columna aún no existe (Scripts/Sugerencia551_NovedadesPerfiles.sql): el controlador lo
+        /// trata como «todas para todos».
+        /// </summary>
+        Dictionary<int, string> LeerPerfiles();
+
+        /// <summary>Sugerencia 551: a quién afecta la novedad (null = a todos). false si no existe.</summary>
+        bool GuardarPerfiles(int novedadId, string perfiles, string usuario);
+
         /// <summary>NestoAPI#526: las sugerencias (sin versión). Sin cerradas, solo pendientes y aceptadas.</summary>
         List<NovedadConSugerenciaFila> LeerSugerencias(bool incluirCerradas);
 

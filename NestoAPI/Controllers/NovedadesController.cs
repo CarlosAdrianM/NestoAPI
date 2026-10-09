@@ -71,8 +71,10 @@ namespace NestoAPI.Controllers
                 && userAgent.IndexOf("Mozilla", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
+        // GET api/Novedades?todas=true (sugerencia 551: sin él, solo las de los perfiles de quien pregunta;
+        //     ver ReglasPerfilesNovedades. Dirección, Informática y quien no tiene perfil conocido ven todas)
         [ResponseType(typeof(List<NovedadDTO>))]
-        public IHttpActionResult GetNovedades(string desdeVersion = null, string ambito = null)
+        public IHttpActionResult GetNovedades(string desdeVersion = null, string ambito = null, bool todas = false)
         {
             List<NovedadDTO> novedades = servicio.LeerNovedadesPublicadas();
 
@@ -81,6 +83,15 @@ namespace NestoAPI.Controllers
             // descartaría o colaría entradas del otro.
             string ambitoEfectivo = AmbitoEfectivo(ambito);
             novedades = novedades.Where(n => EsDelAmbito(n.Ambito, ambitoEfectivo)).ToList();
+
+            // Sugerencia 551: a quién afecta cada una y, salvo que pida todas, solo las suyas. El popup de
+            // arranque (desdeVersion) y la campana cuentan así solo las de su perfil.
+            RellenarPerfiles(novedades);
+            if (!todas)
+            {
+                PerfilesUsuarioNovedades perfilesUsuario = ReglasPerfilesNovedades.DeducirPerfiles(User);
+                novedades = novedades.Where(n => ReglasPerfilesNovedades.EsParaElUsuario(n.Perfiles, perfilesUsuario)).ToList();
+            }
 
             if (Version.TryParse(desdeVersion, out Version versionVista))
             {
@@ -148,6 +159,77 @@ namespace NestoAPI.Controllers
             }
             return cliente == ReglasFeedbackNovedades.CLIENTE_ARIADNA ? AMBITO_ARIADNA : "Nesto";
         }
+
+        #region Sugerencia 551: novedades por perfil (a quién afecta cada una)
+
+        private static int perfilesFalloRegistrado;
+
+        /// <summary>
+        /// Sugerencia 551: los perfiles de cada novedad, con UNA consulta para todas. Si falla (p. ej. la columna aún
+        /// no existe), las novedades salen sin perfiles, es decir, para todos, y el fallo va a ELMAH una sola vez.
+        /// </summary>
+        internal void RellenarPerfiles<T>(List<T> novedades) where T : NovedadDTO
+        {
+            if (novedades == null || novedades.Count == 0)
+            {
+                return;
+            }
+            Dictionary<int, string> perfiles;
+            try
+            {
+                perfiles = servicio.LeerPerfiles() ?? new Dictionary<int, string>();
+            }
+            catch (Exception ex)
+            {
+                if (Interlocked.Exchange(ref perfilesFalloRegistrado, 1) == 0)
+                {
+                    RegistrarSinRomper(new Exception("Novedades (sugerencia 551): no se pudieron leer los perfiles; se enseñan todas a todos. " + ex.Message, ex));
+                }
+                return;
+            }
+            foreach (T novedad in novedades)
+            {
+                novedad.Perfiles = perfiles.TryGetValue(novedad.Id, out string columna)
+                    ? ReglasPerfilesNovedades.Parsear(columna)
+                    : null;
+            }
+        }
+
+        // GET api/Novedades/MisPerfiles  → { "Perfiles": ["Almacén"], "VeTodas": false, "PuedeEditar": false,
+        //                                    "Disponibles": ["Vendedores", "Almacén", "Tiendas", "Administración"] }
+        // Con qué perfiles se filtran por defecto las novedades de quien pregunta (para decírselo y ofrecer «Ver todas»).
+        [HttpGet]
+        [Route("api/Novedades/MisPerfiles")]
+        [ResponseType(typeof(PerfilesUsuarioNovedades))]
+        public IHttpActionResult GetMisPerfiles()
+        {
+            PerfilesUsuarioNovedades perfiles = ReglasPerfilesNovedades.DeducirPerfiles(User);
+            perfiles.PuedeEditar = ReglasPerfilesNovedades.EsDireccionOInformatica(User);
+            return Ok(perfiles);
+        }
+
+        // PUT api/Novedades/7/Perfiles  { "Perfiles": ["Almacén", "Tiendas"] }   ([] o ["Todos"] = para todos)
+        // Dirección / Informática: a quién afecta una novedad ya publicada.
+        [HttpPut]
+        [Authorize]
+        [Route("api/Novedades/{id:int}/Perfiles")]
+        public IHttpActionResult PutPerfiles(int id, [FromBody] PerfilesNovedadDTO cambios)
+        {
+            if (!PuedeRevisarFeedback())
+            {
+                return StatusCode(HttpStatusCode.Forbidden);
+            }
+            string columna = ReglasPerfilesNovedades.ValorColumna(cambios?.Perfiles, out string error);
+            if (error != null)
+            {
+                return BadRequest(error);
+            }
+            return servicio.GuardarPerfiles(id, columna, User?.Identity?.Name)
+                ? (IHttpActionResult)StatusCode(HttpStatusCode.NoContent)
+                : NotFound();
+        }
+
+        #endregion
 
         #region NestoAPI#526/#527: sugerencias de los usuarios y buscador
 
@@ -333,9 +415,25 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest(error);
             }
-            return servicio.ActualizarSugerencia(id, cambios, User?.Identity?.Name)
-                ? (IHttpActionResult)StatusCode(HttpStatusCode.NoContent)
-                : NotFound();
+            // Sugerencia 551: al implementarla se puede decir ya a quién afecta la novedad en que se convierte.
+            string perfiles = null;
+            if (cambios.Perfiles != null)
+            {
+                perfiles = ReglasPerfilesNovedades.ValorColumna(cambios.Perfiles, out error);
+                if (error != null)
+                {
+                    return BadRequest(error);
+                }
+            }
+            if (!servicio.ActualizarSugerencia(id, cambios, User?.Identity?.Name))
+            {
+                return NotFound();
+            }
+            if (cambios.Perfiles != null)
+            {
+                _ = servicio.GuardarPerfiles(id, perfiles, User?.Identity?.Name);
+            }
+            return StatusCode(HttpStatusCode.NoContent);
         }
 
         // GET api/Novedades/Buscar?texto=reembolso envío&ambito=NestoApp
