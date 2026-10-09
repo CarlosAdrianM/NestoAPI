@@ -491,6 +491,7 @@
     <Compile Include="Models\NormalizarCodigoBarrasTests.cs" />
     <Compile Include="Infrastructure\SuPedidoTests.cs" />
     <Compile Include="Infrastructure\ChequesRegalo\CanjeChequesRegaloTests.cs" />
+    <Compile Include="Infrastructure\ChequesRegalo\AvisoChequesRegaloTests.cs" />
     <Compile Include="Infrastructure\ChequesRegalo\ChequesRegaloTests.cs" />
     <Compile Include="Infrastructure\GestorFacturasTests.cs" />
     <Compile Include="Infrastructure\GestorFacturasMotorSelectionTests.cs" />

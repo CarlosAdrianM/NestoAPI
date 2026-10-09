@@ -111,6 +111,21 @@ namespace NestoAPI.Infraestructure.Facturas
                 $"emitirse. Se emitirá con este mismo número en cuanto se restablezca el servicio. {comoObtenerla}";
         }
 
+        /// <summary>NestoAPI#593 (aviso): la nota del cheque regalo nunca rompe el PDF de la factura.</summary>
+        private string LeerNotaChequeRegalo(string empresa, string numeroFactura)
+        {
+            try
+            {
+                return servicio.LeerNotaChequeRegalo(empresa?.Trim(), numeroFactura?.Trim());
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Cheques regalo #593] No se pudo leer la nota del cheque de la factura " +
+                    $"{numeroFactura?.Trim()}: {ex.Message}", ex));
+                return null;
+            }
+        }
+
         public GestorFacturas()
         {
             servicio = new ServicioFacturas();
@@ -452,6 +467,17 @@ namespace NestoAPI.Infraestructure.Facturas
                 {
                     notasAlPie.AddRange(serieFactura.Notas);
                 }
+            }
+
+            // NestoAPI#593 (aviso): la factura que generó un cheque regalo lo dice al pie (lista nueva: no se toca
+            // la de la serie)
+            string notaChequeRegalo = LeerNotaChequeRegalo(cabFactura.Empresa, cabFactura.Número);
+            if (!string.IsNullOrWhiteSpace(notaChequeRegalo))
+            {
+                notasAlPie = new List<NotaFactura>(notasAlPie ?? new List<NotaFactura>())
+                {
+                    new NotaFactura { Nota = notaChequeRegalo }
+                };
             }
 
 

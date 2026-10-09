@@ -51,7 +51,8 @@ namespace NestoAPI.Infraestructure.Facturas
             Rectificativas.IAlmacenRectificativasPendientes almacenRectificativasPendientes = null,
             Clientes.IServicioValidacionNif servicioValidacionNif = null,
             Clientes.NotificadorNifIncorrecto notificadorNif = null,
-            ChequesRegalo.IGeneradorChequesRegalo generadorChequesRegalo = null)
+            ChequesRegalo.IGeneradorChequesRegalo generadorChequesRegalo = null,
+            ChequesRegalo.IAvisadorChequesRegalo avisadorChequesRegalo = null)
         {
             if (dbExterno != null)
             {
@@ -75,9 +76,12 @@ namespace NestoAPI.Infraestructure.Facturas
             // NestoAPI#593: cheque regalo de la primera factura de la campaña (apagado salvo ChequesRegalo:Generar)
             this.generadorChequesRegalo = generadorChequesRegalo
                 ?? new ChequesRegalo.GeneradorChequesRegalo(new ChequesRegalo.RepositorioChequesRegalo(db));
+            // NestoAPI#593 (aviso): el correo al cliente con su cheque
+            this.avisadorChequesRegalo = avisadorChequesRegalo ?? ChequesRegalo.AvisadorChequesRegalo.Crear(db);
         }
 
         private readonly ChequesRegalo.IGeneradorChequesRegalo generadorChequesRegalo;
+        private readonly ChequesRegalo.IAvisadorChequesRegalo avisadorChequesRegalo;
         private readonly Rectificativas.IAlmacenRectificativasPendientes almacenRectificativasPendientes;
         private readonly Clientes.IServicioValidacionNif servicioValidacionNif;
         private readonly Clientes.NotificadorNifIncorrecto notificadorNif;
@@ -761,7 +765,7 @@ namespace NestoAPI.Infraestructure.Facturas
                 // NestoAPI#593: la primera factura de venta normal de la campaña genera el cheque regalo. Best-effort:
                 // la factura ya está creada y nunca se tumba por esto.
                 await AnadirChequeRegalo(generadorChequesRegalo, respuestaFactura, cabPedido.Nº_Cliente, DateTime.Today,
-                    usuarioAutenticado ?? usuario);
+                    usuarioAutenticado ?? usuario, avisadorChequesRegalo);
 
                 return respuestaFactura;
             }
@@ -795,26 +799,71 @@ namespace NestoAPI.Infraestructure.Facturas
         }
 
         /// <summary>
-        /// NestoAPI#593: si la factura genera el cheque regalo de la campaña, el aviso va a quien factura. Un fallo
-        /// (tablas sin crear, red…) va a ELMAH y la factura sigue adelante: ya está creada.
+        /// NestoAPI#593: si la factura genera el cheque regalo de la campaña, el aviso va a quien factura y el correo
+        /// al cliente (diciendo a quien factura si le ha llegado). Un fallo (tablas sin crear, red, SMTP…) va a ELMAH
+        /// y la factura sigue adelante: ya está creada. El correo que no salga lo manda la reconciliación de la noche.
         /// </summary>
         internal static async Task AnadirChequeRegalo(ChequesRegalo.IGeneradorChequesRegalo generador,
-            CrearFacturaResponseDTO respuesta, string cliente, DateTime fechaFactura, string usuario)
+            CrearFacturaResponseDTO respuesta, string cliente, DateTime fechaFactura, string usuario,
+            ChequesRegalo.IAvisadorChequesRegalo avisador = null)
         {
             if (generador == null || respuesta == null)
             {
                 return;
             }
+            List<string> avisos;
             try
             {
-                List<string> avisos = await generador.GenerarPorFactura(respuesta.Empresa?.Trim(), respuesta.NumeroFactura?.Trim(),
-                    cliente?.Trim(), fechaFactura, usuario).ConfigureAwait(false);
-                respuesta.Avisos.AddRange(avisos ?? new List<string>());
+                avisos = await generador.GenerarPorFactura(respuesta.Empresa?.Trim(), respuesta.NumeroFactura?.Trim(),
+                    cliente?.Trim(), fechaFactura, usuario).ConfigureAwait(false) ?? new List<string>();
+                respuesta.Avisos.AddRange(avisos);
             }
             catch (Exception ex)
             {
                 ElmahHelper.Log(new Exception($"[Cheques regalo #593] No se pudo generar el cheque de la factura " +
                     $"{respuesta.NumeroFactura?.Trim()} (cliente {cliente?.Trim()}): {ex.Message}", ex));
+                return;
+            }
+            if (avisador == null || !avisos.Any())
+            {
+                return;
+            }
+            try
+            {
+                foreach (ChequesRegalo.AvisoChequeRegalo aviso in await avisador.AvisarCliente(cliente?.Trim()).ConfigureAwait(false)
+                    ?? new List<ChequesRegalo.AvisoChequeRegalo>())
+                {
+                    if (!string.IsNullOrEmpty(aviso.TextoParaQuienFactura))
+                    {
+                        respuesta.Avisos.Add(aviso.TextoParaQuienFactura);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                respuesta.Avisos.Add("No se ha podido mandar el correo del cheque (se vuelve a intentar esta noche): si puedes, avísale tú.");
+                ElmahHelper.Log(new Exception($"[Cheques regalo #593] No se pudo mandar el correo del cheque de la factura " +
+                    $"{respuesta.NumeroFactura?.Trim()} (cliente {cliente?.Trim()}): {ex.Message}", ex));
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#593 (aviso): la nota al pie de la factura que generó un cheque regalo (aún sin canjear y en plazo).
+        /// Null si no generó ninguno. Nunca rompe el PDF: un fallo es como no tener cheque.
+        /// </summary>
+        public string LeerNotaChequeRegalo(string empresa, string numeroFactura)
+        {
+            try
+            {
+                ChequesRegalo.ChequeRegaloDeFactura cheque = new ChequesRegalo.RepositorioAvisoChequesRegalo(db)
+                    .LeerChequeDeFactura(empresa, numeroFactura);
+                return cheque == null ? null : ChequesRegalo.PlantillaCorreoChequeRegalo.NotaAlPie(cheque);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Cheques regalo #593] No se pudo leer el cheque de la factura " +
+                    $"{numeroFactura?.Trim()} para su nota al pie: {ex.Message}", ex));
+                return null;
             }
         }
 

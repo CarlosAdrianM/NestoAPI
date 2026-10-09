@@ -161,8 +161,8 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
         public static string TextoAviso(CampanaChequeRegalo campana, string cliente)
         {
             CultureInfo es = CultureInfo.GetCultureInfo("es-ES");
-            return $"Cheque regalo: el cliente {cliente?.Trim()} tiene un cheque de {campana.ImporteBase.ToString("0.##", es)} € + IVA " +
-                $"para un pedido de más de {campana.MinimoCanje.ToString("0.##", es)} € de producto, " +
+            return $"El cliente {cliente?.Trim()} ha recibido un cheque regalo de {campana.ImporteBase.ToString("0.##", es)} € + IVA " +
+                $"para su próximo pedido de más de {campana.MinimoCanje.ToString("0.##", es)} € de producto computable, " +
                 $"hasta el {campana.CanjeHasta.ToString("dd/MM/yyyy", es)}" +
                 (campana.DiasEsperaTrasEntrega > 0
                     ? $" (se puede usar {campana.DiasEsperaTrasEntrega} días después de entregarle entero este pedido)."
@@ -417,7 +417,10 @@ WHERE f.Empresa IN (@p0, @p1) AND f.Fecha >= @p2 AND f.Fecha < @p3
                 {
                     int generados = await new GeneradorChequesRegalo(new RepositorioChequesRegalo(db))
                         .Reconciliar(DateTime.Today, USUARIO_RECONCILIACION).ConfigureAwait(false);
-                    Console.WriteLine($"✅ [Hangfire] Cheques regalo: {generados} generados en la reconciliación");
+                    // NestoAPI#593 (aviso): el correo de los generados ahora y de los que se quedaron sin él
+                    // (fallo del SMTP al facturar, o cliente al que le han puesto el correo después)
+                    int avisados = await AvisadorChequesRegalo.Crear(db).AvisarPendientes().ConfigureAwait(false);
+                    Console.WriteLine($"✅ [Hangfire] Cheques regalo: {generados} generados y {avisados} correos en la reconciliación");
                 }
             }
             catch (Exception ex)

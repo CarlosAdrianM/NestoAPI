@@ -39,5 +39,8 @@ namespace NestoAPI.Infraestructure.Facturas
         // NestoAPI#522 (parte 1): correos de «factura por correo» del cliente de la factura (separados por
         // comas, como en el envío diario), o null si ya no tiene ninguno.
         string LeerCorreoFacturas(string empresa, string numeroFactura);
+        // NestoAPI#593 (aviso): nota al pie de la factura que generó un cheque regalo (sin canjear y en plazo);
+        // null o vacío si no generó ninguno.
+        string LeerNotaChequeRegalo(string empresa, string numeroFactura);
     }
 }
