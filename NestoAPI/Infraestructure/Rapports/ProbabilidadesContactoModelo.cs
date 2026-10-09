@@ -1,4 +1,5 @@
 using NestoAPI.Models.Clientes;
+using ModeloContactoEntrada = ModeloLlamadaPedido.Features.ModeloContactoEntrada;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -14,7 +15,7 @@ namespace NestoAPI.Infraestructure.Rapports
     }
 
     /// <summary>
-    /// NestoAPI#603 c3b: el modelo de contactos (ModelsIA/modelo_llamadas.zip, entrada <see cref="ModeloContactoEntrada"/>) para
+    /// NestoAPI#603 c3b: el modelo de contactos (<see cref="ModeloContacto.RutaPorDefecto"/>, entrada <see cref="ModeloContactoEntrada"/>) para
     /// toda la cartera del vendedor. Las features se calculan como en el entrenamiento (<see cref="CalculadoraFeaturesContacto"/>,
     /// con ahora como momento del contacto) sobre los datos crudos de <see cref="IRepositorioFeaturesContacto"/>.
     /// <list type="bullet">

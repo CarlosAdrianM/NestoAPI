@@ -1,6 +1,7 @@
 using Microsoft.ML;
-using Microsoft.ML.Trainers.LightGbm;
+using ModeloLlamadaPedido.Entrenamiento;
 using NestoAPI.Models.Clientes;
+using ModeloContactoEntrada = ModeloLlamadaPedido.Features.ModeloContactoEntrada;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -9,10 +10,10 @@ using System.Linq;
 namespace NestoAPI.Infraestructure.Rapports
 {
     /// <summary>
-    /// NestoAPI#603 c3b: carga y puntuación del modelo de contactos (ModelsIA/modelo_llamadas.zip, entrada
+    /// NestoAPI#603 c3b: carga y puntuación del modelo de contactos (<see cref="RutaPorDefecto"/>, entrada
     /// <see cref="ModeloContactoEntrada"/>). Lo usan las sugerencias de contacto y el endpoint antiguo
     /// GetClientesProbabilidadVenta: un solo zip para los dos.
-    /// <para>El modelo se entrena con LightGBM (repo ModeloLlamadaPedido). Para puntuar basta el ensamblado gestionado
+    /// <para>El modelo se entrena con LightGBM (núcleo ModeloLlamadaPedido.Nucleo; cada mes, el job de NestoAPI#619). Para puntuar basta el ensamblado gestionado
     /// Microsoft.ML.LightGbm (el árbol se evalúa en .NET; la librería nativa lib_lightgbm solo hace falta para entrenar), pero
     /// hay que registrarlo en el catálogo: si no, ML.NET no reconoce el cargador del zip.</para>
     /// </summary>
@@ -24,18 +25,16 @@ namespace NestoAPI.Infraestructure.Rapports
         private static ITransformer modeloCargado;
         private static MLContext contextoCargado;
 
-        // TODO NestoAPI#603 c3b: copiar modelo_llamadas_AAAAMMDD.zip (ejecución completa de ModeloLlamadaPedido) a
-        // ModelsIA/modelo_llamadas.zip EN EL MISMO DEPLOY que este código. El zip que hay ahora es el de nov-2024 (entrada
-        // ClienteInteraccion) y no es compatible: hasta cambiarlo, el modelo falla, se registra en ELMAH, las sugerencias
-        // salen sin probabilidad y GetClientesProbabilidadVenta da error.
-        public static string RutaPorDefecto => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ModelsIA", "modelo_llamadas.zip");
+        /// <summary>El zip que va en el deploy (ModelsIA del proyecto).</summary>
+        public static string RutaDelDeploy => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ModelsIA", "modelo_llamadas.zip");
 
-        internal static MLContext CrearContexto()
-        {
-            var ml = new MLContext(seed: 603);
-            ml.ComponentCatalog.RegisterAssembly(typeof(LightGbmBinaryModelParameters).Assembly);
-            return ml;
-        }
+        /// <summary>
+        /// NestoAPI#619: el que reentrena el job mensual (fuera de la carpeta publicada, <see cref="AlmacenModeloLlamadas"/>) si
+        /// existe; si no, el del deploy. Se mira en cada llamada: al promover, la siguiente puntuación ya carga el nuevo.
+        /// </summary>
+        public static string RutaPorDefecto => AlmacenModeloLlamadas.Produccion().RutaModeloActivo ?? RutaDelDeploy;
+
+        internal static MLContext CrearContexto() => Entrenador.CrearContexto();
 
         /// <summary>
         /// El modelo del zip con su contexto; se guarda en memoria hasta que cambie el fichero (cargarlo cuesta más que puntuar).
@@ -52,10 +51,8 @@ namespace NestoAPI.Infraestructure.Rapports
                 if (modeloCargado == null || rutaCargada != ruta || fechaCargada != fecha)
                 {
                     MLContext nuevo = CrearContexto();
-                    using (var fichero = new FileStream(ruta, FileMode.Open, FileAccess.Read, FileShare.Read))
-                    {
-                        modeloCargado = nuevo.Model.Load(fichero, out _);
-                    }
+                    // FileShare.Delete: el job de reentrenamiento puede cambiar el zip (File.Replace) mientras se lee.
+                    modeloCargado = Entrenador.Cargar(nuevo, ruta);
                     contextoCargado = nuevo;
                     rutaCargada = ruta;
                     fechaCargada = fecha;

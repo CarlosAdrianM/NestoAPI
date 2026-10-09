@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    NestoAPI#619: núcleo del modelo de llamadas de Rapports (lectura de datos, features, dataset, partición, entrenamiento,
+    métricas, puerta de calidad y ModeloContactoEntrada). Lo usan la API (.NET Framework 4.8: job de Hangfire que reentrena
+    cada mes y puntuación de las sugerencias de contacto) y la consola ModeloLlamadaPedido (.NET 8, para lanzarlo a mano),
+    que lo referencia por ruta relativa. netstandard2.0 para que valga en los dos.
+    Microsoft.ML en la MISMA versión que NestoAPI/packages.config (4.0.2): la API trae esos ensamblados por HintPath y aquí
+    solo se compila contra ellos. Sin dependencia de SqlClient: la lectura recibe la conexión (System.Data.Common).
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <RootNamespace>ModeloLlamadaPedido</RootNamespace>
+    <AssemblyName>ModeloLlamadaPedido.Nucleo</AssemblyName>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Using Include="System" />
+    <Using Include="System.Collections.Generic" />
+    <Using Include="System.IO" />
+    <Using Include="System.Linq" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.ML" Version="4.0.2" />
+    <PackageReference Include="Microsoft.ML.FastTree" Version="4.0.2" />
+    <PackageReference Include="Microsoft.ML.LightGbm" Version="4.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ModeloLlamadaPedido.Tests" />
+  </ItemGroup>
+
+</Project>

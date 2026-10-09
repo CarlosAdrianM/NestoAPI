@@ -354,6 +354,16 @@ namespace NestoAPI
                     WorkerCount = 1 // Solo un worker para evitar procesamiento duplicado
                 });
 
+                // NestoAPI#619: servidor aparte, de un hilo y solo para la cola «entrenamiento» (reentrenar el modelo de
+                // llamadas tarda; en el servidor de arriba dejaría parados los jobs de cada 5 minutos). El de arriba solo
+                // atiende la cola «default», así que no hay doble procesamiento.
+                app.UseHangfireServer(new BackgroundJobServerOptions
+                {
+                    ServerName = Environment.MachineName + ":" + Infraestructure.Rapports.ReentrenamientoModeloLlamadasJobsService.COLA,
+                    WorkerCount = 1,
+                    Queues = new[] { Infraestructure.Rapports.ReentrenamientoModeloLlamadasJobsService.COLA }
+                });
+
                 // Configurar jobs recurrentes
                 ConfigurarJobsRecurrentes();
 
@@ -868,6 +878,22 @@ namespace NestoAPI
                 }
             );
             Console.WriteLine("✅ Job recurrente 'cheques-regalo-reconciliacion' configurado (diario a las 21:30; apagado salvo interruptor)");
+
+            // NestoAPI#619: reentrenamiento mensual del modelo de llamadas de Rapports (antes, tarea del Task Scheduler + consola
+            // ModeloLlamadaPedido + commit del zip). Primer sábado de cada mes a las 02:30: el cron no sabe de «primer sábado»,
+            // así que corre todos los sábados y el job sale si el día pasa de 7. No el domingo: de madrugada corre 5 horas el SP
+            // de precios medios, que bloquea LinPedidoVta. Solo promueve si el modelo nuevo pasa la puerta de calidad; avisa
+            // en la campana de Nesto. Va en la cola «entrenamiento», con su propio servidor de un hilo (arriba).
+            RecurringJob.AddOrUpdate(
+                Infraestructure.Rapports.ReentrenamientoModeloLlamadasJobsService.ID_JOB,
+                () => Infraestructure.Rapports.ReentrenamientoModeloLlamadasJobsService.ReentrenarProgramado(),
+                Infraestructure.Rapports.ReentrenamientoModeloLlamadasJobsService.CRON, // Cron: sábados a las 2:30 (solo el primero del mes)
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'reentrenar-modelo-llamadas' configurado (primer sábado de cada mes a las 2:30)");
         }
     }
 

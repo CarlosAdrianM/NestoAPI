@@ -2,6 +2,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Rapports;
 using NestoAPI.Models.Clientes;
+using ModeloContactoEntrada = ModeloLlamadaPedido.Features.ModeloContactoEntrada;
 using System;
 using System.Collections.Generic;
 using System.Data;

@@ -5,6 +5,7 @@ using NestoAPI.Infraestructure.Sincronizacion;
 using NestoAPI.Models;
 using NestoAPI.Models.Picking;
 using NestoAPI.Models.Clientes;
+using ModeloContactoEntrada = ModeloLlamadaPedido.Features.ModeloContactoEntrada;
 using NestoAPI.Models.Sincronizacion;
 using System;
 using System.Collections.Generic;

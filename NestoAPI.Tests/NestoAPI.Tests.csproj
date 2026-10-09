@@ -528,6 +528,8 @@
     <Compile Include="Infrastructure\Rapports\ServicioFrasesRitmoTests.cs" />
     <Compile Include="Infrastructure\Rapports\RecordatorioSugerenciasContactoTests.cs" />
     <Compile Include="Infrastructure\Rapports\ModeloContactoTests.cs" />
+    <Compile Include="Infrastructure\Rapports\ReentrenamientoModeloLlamadasTests.cs" />
+    <Compile Include="Controllers\RapportsControllerTests.cs" />
     <Compile Include="Infrastructure\Reposiciones\CalculadoraFechaReposicionTests.cs" />
     <Compile Include="Infrastructure\Reposiciones\ServicioCalendarioReposicionesTests.cs" />
     <Compile Include="Infrastructure\Reposiciones\ServicioReposicionAutomaticaTests.cs" />
@@ -710,6 +712,10 @@
       <Project>{6789673D-EE07-4FEB-9848-C74FE9D1137A}</Project>
       <Name>NestoAPI</Name>
     </ProjectReference>
+    <ProjectReference Include="..\ModeloLlamadaPedido.Nucleo\ModeloLlamadaPedido.Nucleo.csproj">
+      <Project>{756C9B13-8724-4C0D-9CAB-5F5E45B0CE4F}</Project>
+      <Name>ModeloLlamadaPedido.Nucleo</Name>
+    </ProjectReference>
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Infrastructure\PreciosMedios\Fixtures\16137.json" />
@@ -773,6 +779,9 @@
       <DependenciasQuestPdf Include="$(MSBuildProjectDirectory)\..\NestoAPI\bin\SkiaSharp.dll" />
       <DependenciasQuestPdf Include="$(MSBuildProjectDirectory)\..\NestoAPI\bin\SkiaSharp.HarfBuzz.dll" />
       <DependenciasQuestPdf Include="$(MSBuildProjectDirectory)\..\NestoAPI\bin\HarfBuzzSharp.dll" />
+      <!-- NestoAPI#619: el núcleo del modelo de llamadas entrena con ensamblados de ML.NET que NestoAPI.dll no usa
+           (Transforms, KMeans, PCA) y que por eso no llegan solos al output de los tests. -->
+      <DependenciasQuestPdf Include="$(MSBuildProjectDirectory)\..\NestoAPI\bin\Microsoft.ML*.dll" />
     </ItemGroup>
     <Copy SourceFiles="@(DependenciasQuestPdf)"
           DestinationFolder="$(OutputPath)"

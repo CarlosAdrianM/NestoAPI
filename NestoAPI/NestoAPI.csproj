@@ -947,6 +947,10 @@
     <Compile Include="Infraestructure\Rapports\CalculadoraFeaturesContacto.cs" />
     <Compile Include="Infraestructure\Rapports\ModeloContacto.cs" />
     <Compile Include="Infraestructure\Rapports\RepositorioFeaturesContactoSql.cs" />
+    <Compile Include="Infraestructure\Rapports\AlmacenModeloLlamadas.cs" />
+    <Compile Include="Infraestructure\Rapports\CargadorLightGbmNativo.cs" />
+    <Compile Include="Infraestructure\Rapports\ReentrenamientoModeloLlamadasJobsService.cs" />
+    <Compile Include="Controllers\RapportsController.cs" />
     <Compile Include="Controllers\SugerenciasContactoController.cs" />
     <Compile Include="Infraestructure\Eventos\ServicioEventos.cs" />
     <Compile Include="Infraestructure\Eventos\SenalesEventosJobsService.cs" />
@@ -1221,7 +1225,6 @@
     <Compile Include="Models\Clientes\Iban.cs" />
     <Compile Include="Models\Clientes\Mandato.cs" />
     <Compile Include="Models\Clientes\PrediccionModelo.cs" />
-    <Compile Include="Models\Clientes\ModeloContactoEntrada.cs" />
     <Compile Include="Models\Clientes\RespuestasCliente.cs" />
     <Compile Include="Models\CodigoPostal.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
@@ -1914,6 +1917,14 @@
     </Content>
     <Content Include="Connected Services\Application Insights\ConnectedService.json" />
     <Content Include="ModelsIA\modelo_llamadas.zip" />
+    <!-- NestoAPI#619: librería nativa de LightGBM (x64), necesaria para ENTRENAR el modelo de llamadas en el job mensual.
+         El paquete LightGBM solo la copia con PlatformTarget x64 y la API es AnyCPU; CargadorLightGbmNativo la carga desde
+         bin (o la raíz) antes de entrenar. Al publicar queda en bin\ y en la raíz del sitio. -->
+    <Content Include="..\packages\LightGBM.3.3.5\runtimes\win-x64\native\lib_lightgbm.dll">
+      <Link>lib_lightgbm.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Visible>false</Visible>
+    </Content>
     <Content Include="Content\bootstrap.rtl.min.css.map" />
     <Content Include="Content\bootstrap.rtl.css.map" />
     <Content Include="Content\bootstrap.min.css.map" />
@@ -2177,6 +2188,14 @@
     <VisualStudioVersion Condition="'$(VisualStudioVersion)' == ''">10.0</VisualStudioVersion>
     <VSToolsPath Condition="'$(VSToolsPath)' == ''">$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)</VSToolsPath>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- NestoAPI#619: núcleo del modelo de llamadas (netstandard2.0; también lo usa la consola ModeloLlamadaPedido). Sus
+         dependencias (Microsoft.ML 4.0.2) ya están arriba por HintPath, en la misma versión. -->
+    <ProjectReference Include="..\ModeloLlamadaPedido.Nucleo\ModeloLlamadaPedido.Nucleo.csproj">
+      <Project>{756C9B13-8724-4C0D-9CAB-5F5E45B0CE4F}</Project>
+      <Name>ModeloLlamadaPedido.Nucleo</Name>
+    </ProjectReference>
+  </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\TypeScript\Microsoft.TypeScript.targets" Condition="Exists('$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\TypeScript\Microsoft.TypeScript.targets')" />
   <Import Project="$(VSToolsPath)\WebApplications\Microsoft.WebApplication.targets" Condition="'$(VSToolsPath)' != ''" />
