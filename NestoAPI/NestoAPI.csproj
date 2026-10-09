@@ -957,6 +957,8 @@
     <Compile Include="Infraestructure\Reposiciones\CalculadoraFechaReposicion.cs" />
     <Compile Include="Infraestructure\Productos\CodigosBarrasProductos.cs" />
     <Compile Include="Controllers\ProductosCodigosBarrasController.cs" />
+    <Compile Include="Infraestructure\Productos\SustitucionesProducto.cs" />
+    <Compile Include="Controllers\ProductosSustitucionesController.cs" />
     <Compile Include="Infraestructure\Reposiciones\CalendarioReposiciones.cs" />
     <Compile Include="Infraestructure\Reposiciones\RegistroReposicionesTraspasos.cs" />
     <Compile Include="Infraestructure\Reposiciones\ReposicionAutomatica.cs" />
