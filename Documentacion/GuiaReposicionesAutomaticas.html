@@ -2,33 +2,47 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<title>Reposiciones que se rellenan solas</title>
+<title>Guía de reposiciones</title>
 <style>
-  @page { size: A4; margin: 18mm 16mm; }
-  body { font-family: "Segoe UI", Arial, sans-serif; font-size: 11.5pt; color: #1a1a1a; line-height: 1.45; }
+  @page { size: A4; margin: 16mm 15mm; }
+  body { font-family: "Segoe UI", Arial, sans-serif; font-size: 11pt; color: #1a1a1a; line-height: 1.42; }
   h1 { font-size: 20pt; margin: 0 0 4px; color: #1f3a5f; }
-  .sub { color: #555; margin: 0 0 18px; font-size: 10.5pt; }
-  h2 { font-size: 14pt; color: #1f3a5f; border-bottom: 2px solid #1f3a5f; padding-bottom: 3px; margin: 22px 0 8px; }
-  h3 { font-size: 12pt; margin: 14px 0 4px; color: #333; }
-  table { border-collapse: collapse; width: 100%; margin: 8px 0 10px; font-size: 10.5pt; }
-  th, td { border: 1px solid #bbb; padding: 5px 7px; text-align: left; vertical-align: top; }
+  .sub { color: #555; margin: 0 0 14px; font-size: 10.5pt; }
+  h2 { font-size: 14pt; color: #1f3a5f; border-bottom: 2px solid #1f3a5f; padding-bottom: 3px; margin: 20px 0 8px; break-after: avoid; }
+  h3 { font-size: 12pt; margin: 14px 0 4px; color: #333; break-after: avoid; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0 10px; font-size: 10pt; break-inside: avoid; }
+  th, td { border: 1px solid #bbb; padding: 4px 7px; text-align: left; vertical-align: top; }
   th { background: #e8eef6; }
-  .box { background: #f4f7fb; border-left: 4px solid #1f3a5f; padding: 8px 12px; margin: 10px 0; }
-  .ojo { background: #fff7e6; border-left: 4px solid #e08a00; padding: 8px 12px; margin: 10px 0; }
-  ol li, ul li { margin: 3px 0; }
-  kbd { font-family: Consolas, monospace; background: #eee; border: 1px solid #ccc; border-radius: 3px; padding: 0 4px; font-size: 10pt; }
-  .pie { color: #777; font-size: 9.5pt; margin-top: 26px; border-top: 1px solid #ccc; padding-top: 6px; }
+  td.tema { font-weight: 600; background: #f7f7f7; width: 18%; }
+  .escaneo { break-inside: auto; font-size: 9.8pt; }
+  .escaneo tr { break-inside: avoid; }
+  .escaneo th { font-size: 10.5pt; }
+  .escaneo td { width: 41%; }
+  .escaneo td.tema { width: 18%; }
+  .box { background: #f4f7fb; border-left: 4px solid #1f3a5f; padding: 7px 12px; margin: 10px 0; break-inside: avoid; }
+  .ojo { background: #fff7e6; border-left: 4px solid #e08a00; padding: 7px 12px; margin: 10px 0; break-inside: avoid; }
+  .box p, .ojo p { margin: 3px 0; }
+  ol, ul { margin: 4px 0 6px; padding-left: 22px; }
+  ol li, ul li { margin: 2px 0; }
+  kbd { font-family: Consolas, monospace; background: #eee; border: 1px solid #ccc; border-radius: 3px; padding: 0 4px; font-size: 9.5pt; white-space: nowrap; }
+  .pie { color: #777; font-size: 9pt; margin-top: 22px; border-top: 1px solid #ccc; padding-top: 6px; }
 </style>
 </head>
 <body>
-<h1>Reposiciones que se rellenan solas</h1>
-<p class="sub">Guía para las tiendas (Nesto) y el almacén (Ariadna) · Nesto 1.10.39.0 y Ariadna 2.3 · octubre de 2026</p>
+<h1>Reposiciones: guía para tiendas y almacén</h1>
+<p class="sub">Para Nesto 1.10.40 y Ariadna 2.4 · octubre de 2026</p>
 
 <div class="box">
-<b>Qué cambia.</b> Hasta ahora alguien tenía que calcular la propuesta de cada reposición y rellenarla. Desde esta versión, <b>cada reposición del calendario se rellena sola a su hora de corte</b>, con lo que hace falta en ese momento. Tiendas y almacén solo tienen que <b>prepararla, mandarla y recibirla</b>. Rellenar una a mano queda reservado a Manuel, Alfredo y Carlos.
+<p><b>En resumen.</b> Las reposiciones <b>se rellenan solas a su hora</b>: nadie tiene que calcularlas. Lo que queda es <b>prepararlas, enviarlas y recibirlas</b>.</p>
+<ul>
+<li><b>Tiendas:</b> envían su reposición a Algete con <b>Nesto y el lector de códigos</b> o con <b>Ariadna en el móvil</b>, y reciben lo que llega de Algete (apartados 2 y 3).</li>
+<li><b>Algete:</b> prepara y recibe con <b>Ariadna en la PDA</b> (apartado 4).</li>
+<li><b>Ojo:</b> en Ariadna, una salida y una entrada se escanean de forma muy distinta (apartado 5).</li>
+</ul>
 </div>
 
-<h2>1. El calendario</h2>
+<h2>1. Cómo funciona</h2>
+<p>Cada reposición del calendario se rellena sola a su hora de cierre, con lo que hace falta en ese momento. El horario de ahora es este:</p>
 <table>
 <tr><th>Reposición</th><th>Días</th><th>Se rellena sola</th><th>Llega</th></tr>
 <tr><td>Reina → Algete</td><td>Lunes, miércoles y viernes</td><td>A las 10:00 del mismo día</td><td>A Algete a las 13:30</td></tr>
@@ -36,51 +50,110 @@
 <tr><td>Algete → Reina</td><td>Lunes, miércoles y viernes</td><td>A las 13:00 del día laborable anterior (la del lunes, el viernes)</td><td>A Reina sobre las 11:00</td></tr>
 <tr><td>Algete → Alcobendas</td><td>Lunes, martes y jueves</td><td>A las 13:00 del día laborable anterior (la del lunes, el viernes)</td><td>A Alcobendas a las 10:00</td></tr>
 </table>
-<p>Si el día en que toca rellenarla es festivo en Algete, se rellena el laborable anterior. Lo que llega a Algete de las tiendas <b>antes de las 11:00</b> sale en el picking de ese mismo día; lo que llega después, al día siguiente.</p>
-
-<h2>2. En las tiendas, con Nesto</h2>
-
-<h3>Mandar producto a Algete: «Enviar reposición»</h3>
-<ol>
-<li>A las 10:00 la reposición del día aparece <b>ya rellena y en preparación</b>. Si entras antes, la pantalla dice <i>«Se rellena sola el lunes a las 10:00»</i>: no hay nada que hacer todavía.</li>
-<li>Ve leyendo con el lector los productos que metes en la caja. Cada lectura suma una unidad; si un producto no tiene código, teclea su referencia en el cuadro «Lector» y pulsa <kbd>Intro</kbd>, o escribe directamente la cantidad en la columna «Leído».</li>
-<li>Cuando esté todo, pulsa <b>«Terminar y mandar a Algete»</b>. Nesto resume cuántas unidades y productos van y pide confirmar.</li>
-</ol>
-<p>El botón <b>«Preparar reposición»</b> solo lo ven Manuel, Alfredo y Carlos: es para rellenar una a mano fuera de hora. Si la reposición del día ya está rellena, Nesto lo avisa y no crea otra.</p>
-
-<h3>Recibir lo que llega de Algete: «Recibir reposición»</h3>
-<ol>
-<li>Abre la reposición que ha llegado (Reina: lunes, miércoles y viernes sobre las 11:00; Alcobendas: lunes, martes y jueves a las 10:00).</li>
-<li>Lee los productos con el lector. Vale <b>cualquiera de los códigos de barras</b> del producto, no solo el de la ficha.</li>
-<li>Si un producto no entra por el lector, escribe su nombre en el cuadro «Lector» y elígelo en la lista: cuenta como una lectura. Con el cuadro <b>«Buscar»</b> filtras la lista por nombre o referencia para escribir la cantidad en «Leído».</li>
-<li>La columna de estado va en colores: <b>verde</b> = bien, <b>ámbar</b> = faltan o sobran unidades, <b>rojo</b> = no venía en la reposición.</li>
-<li>Pulsa <b>«Terminar»</b>. Si hay diferencias, Nesto las enseña antes de cerrar.</li>
-</ol>
-
-<h2>3. En el almacén, con Ariadna</h2>
-
-<h3>Preparar lo que va a las tiendas: «Salidas»</h3>
-<ol>
-<li>La reposición a Reina o a Alcobendas aparece en Salidas <b>ya rellena</b> el día laborable anterior a las 13:00 (la del lunes, el viernes a las 13:00), con sus huecos reservados, como un picking más.</li>
-<li>Recógela por el recorrido, leyendo cada producto en su hueco, y termínala como cualquier salida.</li>
-</ol>
-<p><kbd>F7</kbd> y <kbd>F8</kbd> (<i>reponer tienda</i>) abren «Reposición a tienda» para rellenar una a mano, y solo las tienen Manuel, Alfredo y Carlos. Para el resto, Salidas lo dice así: <i>«Las reposiciones se rellenan solas a su hora; aparecerán aquí ya preparadas para recoger»</i>.</p>
-
-<h3>Recibir lo que llega de las tiendas: «Entradas»</h3>
-<ol>
-<li>Hacia las 13:30 llega lo que han mandado Reina y Alcobendas. La reposición está en Entradas con lo que la tienda ha leído al mandarla.</li>
-<li>Lee los productos según los sacas de la caja y termina la entrada. Si falta o sobra algo, Ariadna lo marca.</li>
-<li>Lo recibido queda disponible para el picking: si ha entrado antes de las 11:00 sale ese mismo día.</li>
-</ol>
-
-<h2>4. Preguntas frecuentes</h2>
 <ul>
-<li><b>Son las 10:05 y en Enviar reposición no hay nada.</b> Mira si es un día de ruta de tu tienda (tabla de arriba). Si lo es y sigue vacía pasados unos minutos, avísanos desde Novedades → «Algo no funciona».</li>
-<li><b>Tenemos una reposición sin recibir y toca otra.</b> Ya no bloquea: la nueva se rellena igual y lo que está de camino no se vuelve a proponer.</li>
-<li><b>Hay que mandar algo urgente fuera de hora.</b> Pídeselo a Manuel, Alfredo o Carlos: son quienes pueden rellenar una reposición a mano.</li>
-<li><b>¿Cuándo le llega al cliente lo que está en una tienda?</b> La plantilla de venta lo calcula sola con este calendario y lo enseña como «Se entrega a la agencia el …».</li>
+<li>El horario puede cambiar. Siempre está al día en <b>Nesto › Productos › Reposición › Calendario</b>. Todos lo pueden ver; cambiarlo, solo Manuel, Alfredo y Carlos. Cambiar la hora de cierre de hoy no repite la reposición de hoy: la hora nueva vale desde la siguiente.</li>
+<li>Si el día en que toca rellenarla es festivo en Algete, se rellena el laborable anterior.</li>
+<li>Lo que llega a Algete de las tiendas <b>antes de las 11:00</b> sale en el picking de ese mismo día; lo que llega después, al día siguiente.</li>
+<li><b>Rellenar una reposición a mano</b> (algo urgente fuera de hora) solo lo pueden hacer Manuel, Alfredo y Carlos.</li>
+<li>La reposición de Algete a una tienda <b>no aparece en «Recibir» de la tienda hasta que sale de Algete</b>, es decir, hasta que Algete termina de prepararla.</li>
+<li>Una reposición sin recibir no bloquea la siguiente: la nueva se rellena igual y lo que está de camino no se vuelve a pedir.</li>
 </ul>
 
-<p class="pie">Nueva Visión · Guía de reposiciones automáticas · Si algo de esta guía no coincide con lo que ves en pantalla, dínoslo en Novedades.</p>
+<h2>2. En la tienda: enviar la reposición a Algete</h2>
+<p>Hay dos formas de hacerlo. Elige una y <b>usa la misma de principio a fin en cada reposición</b>.</p>
+
+<h3>Forma A: Nesto con el lector de códigos (de cable o inalámbrico)</h3>
+<ol>
+<li>Abre <b>Productos › Reposición › Enviar</b>. A las 10:00 la reposición del día aparece ya rellena. Si entras antes, Nesto dice, por ejemplo, <i>«Todavía no hay reposición para Algete. Se rellena sola hoy a las 10:00»</i>.</li>
+<li>Si vas a preparar lejos del ordenador, pulsa <b>«Imprimir»</b>. Sale un listado con ubicación, referencia, código de barras, descripción, cantidad y una casilla para marcar, en el orden de recorrer la tienda.</li>
+<li>El cursor está en el cuadro <b>«Leer código»</b>. Lee el producto que metes en la caja. Si está en la reposición, suena el <b>pitido de confirmación</b> y Nesto salta a su línea, a la columna «Cantidad».</li>
+<li>La cantidad ya viene puesta. Si mandas todas, pulsa <kbd>Intro</kbd>. Si mandas menos, teclea cuántas y <kbd>Intro</kbd> (<b>0</b> si no mandas ninguna). Solo se puede bajar, nunca subir. Con <kbd>Intro</kbd> el cursor vuelve a «Leer código» para el siguiente.</li>
+<li>Basta con leer <b>una vez</b> cada producto: en Nesto el lector no cuenta unidades, solo te lleva a la línea para que confirmes la cantidad.</li>
+<li>Si un producto no tiene código de barras, teclea su referencia en «Leer código» y pulsa <kbd>Intro</kbd>.</li>
+</ol>
+<table>
+<tr><th style="width:30%">Lo que suena</th><th>Lo que dice Nesto abajo</th><th style="width:30%">Qué hacer</th></tr>
+<tr><td><b>Pitido corto y suave</b> (confirmación)</td><td>Nada: va a la línea del producto.</td><td>Confirma la cantidad con <kbd>Intro</kbd> o tecléala.</td></tr>
+<tr><td rowspan="3"><b>Sonido de error de Windows</b> (más fuerte y distinto)</td><td>«El código … no está en esta reposición.»</td><td>Ese producto no va: apártalo.</td></tr>
+<tr><td>«El código … lo comparten varios productos: elige en la lista el que es.»</td><td>Busca su línea en la lista y pon la cantidad a mano.</td></tr>
+<tr><td>«Todavía no hay reposición para Algete…» (no hay reposición abierta)</td><td>Espera a la hora de cierre y pulsa «Actualizar».</td></tr>
+</table>
+<div class="ojo"><p><b>Antes de terminar, repasa la lista.</b> Nesto manda lo que pone la columna «Cantidad», <b>hayas leído el producto o no</b>. Lo que no metes en la caja tiene que quedar a 0. Abajo se ve el total de unidades y productos.</p></div>
+<ol start="7">
+<li>Pulsa <b>«Terminar y mandar a Algete»</b>. Nesto pregunta <i>«Se mandan N unidades de M productos a Algete. ¿Terminar?»</i> y, al aceptar, la reposición sale de la tienda y aparece en las Entradas de Algete.</li>
+</ol>
+
+<h3>Forma B: Ariadna en el móvil (modo tienda)</h3>
+<ol>
+<li>Entra en Ariadna con tu usuario. Ariadna sabe que eres una tienda y solo enseña <b>Salidas</b> (enviar tu reposición a Algete) y <b>Entradas</b> (recibir las de Algete), además de Novedades y Sugerencias.</li>
+<li>Pulsa <b>«Salidas»</b>. Ariadna marca el <b>producto que toca</b> (el primero que queda por preparar). Coge <b>ese</b> producto, pulsa <b>«📷 Leer»</b> y enfoca su código de barras.</li>
+<li>Si es el que toca: pitido y cuenta una. Si es otro: <i>«No coincide…»</i>, tono de error y vibración, y <b>no cuenta</b>.</li>
+<li>Para mandar más unidades, léelas una a una o, después de la primera lectura, teclea las que quedan en el cuadro de lectura y pulsa <kbd>Intro</kbd>. «+1» suma una y «−1» quita una.</li>
+<li>Cuando un producto está completo, Ariadna pasa sola al siguiente.</li>
+<li>Si no hay o hay menos de lo que pide: <b>«No está»</b>. Se manda lo leído y pasa al siguiente.</li>
+<li>Al acabar, <b>«Enviar a Algete»</b>. Ariadna enseña un resumen: <b>lo que no se ha leído no se manda</b> (se quita de la reposición). «Sí, enviar» o «Seguir leyendo».</li>
+</ol>
+<p>Lo leído se guarda en el móvil: si se cierra la aplicación o se va la conexión, no se pierde. Los detalles del escaneo, en el apartado 5 (columna SALIDA).</p>
+<div class="ojo"><p><b>Diferencia importante entre las dos formas:</b> en Nesto se manda lo que pone la columna «Cantidad» aunque no lo hayas leído; en Ariadna solo se manda lo que has leído.</p></div>
+
+<h2>3. En la tienda: recibir la reposición de Algete</h2>
+<h3>Con Nesto: «Recibir reposición»</h3>
+<ol>
+<li>Abre <b>Productos › Reposición › Recibir</b> y haz doble clic en la reposición que ha llegado (solo aparece cuando ha salido de Algete).</li>
+<li>Lee los productos <b>en cualquier orden</b>. <b>Cada lectura suma una unidad</b> en la columna «Leído». Vale cualquiera de los códigos de barras del producto.</li>
+<li>Sin código: teclea la referencia, o escribe el nombre en el cuadro «Lector» y elígelo en la lista; cuenta como una lectura.</li>
+<li>Muchas unidades del mismo: escribe la cantidad directamente en «Leído». El cuadro <b>«Buscar»</b> filtra la lista por nombre o referencia.</li>
+<li>Colores: <b>verde</b> «Bien», <b>ámbar</b> «Faltan N» o «Sobran N», <b>rojo</b> «No venía».</li>
+<li>Pitido corto = bien. Sonido de error cuando el producto <b>no venía</b> en la reposición (se apunta aparte), cuando <b>ya estaba leído todo lo enviado</b> de ese producto (se suma igual: «ahora sobran N»), cuando el código <b>lo comparten varios productos</b> (escribe la cantidad en «Leído» del que es) o si <b>no has abierto</b> ninguna reposición.</li>
+<li>«Imprimir» saca un listado de lo que llega para comprobarlo a mano.</li>
+<li>Pulsa <b>«Terminar»</b>. Nesto enseña lo que falta, sobra o no venía. <b>Entra lo leído, no lo enviado</b>, y las diferencias se avisan a quien hizo la reposición.</li>
+</ol>
+<h3>Con Ariadna: «Entradas»</h3>
+<p>En Entradas solo salen las reposiciones que llegan a tu tienda. Ábrela y lee lo que sacas de la caja, en cualquier orden: cada lectura suma una unidad. Al acabar, «Terminar recepción». Los detalles, en el apartado 5 (columna ENTRADA).</p>
+
+<h2>4. En Algete, con Ariadna en la PDA</h2>
+<h3>Preparar lo que va a las tiendas: «Salidas»</h3>
+<ol>
+<li>La reposición a Reina o a Alcobendas aparece en Salidas <b>ya rellena</b> (el laborable anterior a las 13:00), con sus huecos reservados, como un picking más.</li>
+<li>Recógela por el recorrido, en orden de huecos, comprobando cada producto con su código (apartado 5, SALIDA).</li>
+<li>Para terminar, todo tiene que estar cogido o dado por falta. Al terminarla, sale de Algete y aparece en «Recibir» de la tienda.</li>
+</ol>
+<p><kbd>F7</kbd> y <kbd>F8</kbd> (rellenar una reposición a tienda a mano) solo las tienen Manuel, Alfredo y Carlos.</p>
+<h3>Recibir lo que llega de las tiendas: «Entradas»</h3>
+<p>Hacia las 13:30 llega lo que han mandado Reina y Alcobendas; está en Entradas con lo que la tienda ha enviado. Léelo según lo sacas de la caja (apartado 5, ENTRADA) y termina la entrada. Lo que entra antes de las 11:00 sale en el picking de ese mismo día.</p>
+
+<h2>5. Cómo escanear en Ariadna: salida o entrada</h2>
+<div class="box">
+<p><b>La regla:</b> en una <b>SALIDA</b>, Ariadna te dice qué producto coger y el código <b>comprueba</b> que es ese. En una <b>ENTRADA</b>, tú lees lo que sacas, en cualquier orden, y Ariadna lo <b>busca</b> en la lista.</p>
+</div>
+<table class="escaneo">
+<thead><tr><th></th><th>SALIDA<br><span style="font-weight:normal;font-size:9.5pt">Preparar una reposición (Algete y tiendas) y el picking de pedidos</span></th><th>ENTRADA<br><span style="font-weight:normal;font-size:9.5pt">Recibir una reposición (Algete y tiendas) o una compra</span></th></tr></thead>
+<tr><td class="tema">Quién elige el producto</td><td><b>Ariadna.</b> Toca el primero que queda (en Algete, en orden de huecos). Ve al hueco y coge <b>ese</b> producto.</td><td><b>Tú.</b> Lee lo que sacas de la caja, en el orden que quieras.</td></tr>
+<tr><td class="tema">Qué hace la lectura</td><td>Comprueba que lo que tienes en la mano es el producto que toca y cuenta <b>1</b>. No busca en la lista.</td><td>Busca el producto en la lista y le suma <b>1</b>. Vale cualquiera de sus códigos.</td></tr>
+<tr><td class="tema">Si lees otro producto</td><td><i>«No coincide: has leído … y toca …»</i>, tono de error. <b>No cuenta</b> y no cambia de producto.</td><td>Si no venía: se apunta aparte como «No se esperaba», con tono de error. Si ya estaba completo, se suma igual y suena el error (sobra).</td></tr>
+<tr><td class="tema">Antes de comprobar</td><td><b>No deja meter cantidad</b> (ni <kbd>F1</kbd>, ni «+1», ni <kbd>#</kbd>). Primero hay que leer el código.</td><td>No hace falta comprobar nada.</td></tr>
+<tr><td class="tema">Cantidad 1</td><td>La lectura basta: pasa sola al siguiente producto.</td><td>La lectura basta.</td></tr>
+<tr><td class="tema">Cantidad mayor</td><td>Lee cada unidad, o lee una y teclea <b>las que quedan</b> + <kbd>ENT</kbd> (o <kbd>F1</kbd>). En Algete, <kbd>#</kbd> + <kbd>ENT</kbd> coge todo lo que queda. Nunca más de lo que pide. Completo, pasa solo al siguiente.</td><td>Lee cada unidad, o lee una y teclea <b>las que faltan</b> + <kbd>F1</kbd> (o en el cuadro «Cant.» y <kbd>ENT</kbd> o «+»). Se suman al producto elegido: el último leído o el que tocas en la lista.</td></tr>
+<tr><td class="tema">Ojo con el número + <kbd>ENT</kbd></td><td>Con el producto comprobado, un número corto + <kbd>ENT</kbd> en el cuadro de lectura es la cantidad.</td><td>Un número + <kbd>ENT</kbd> en el cuadro de lectura <b>no es una cantidad</b>: se toma como referencia de producto. La cantidad va con <kbd>F1</kbd> o en «Cant.».</td></tr>
+<tr><td class="tema">Sin código de barras</td><td>Teclea su referencia + <kbd>ENT</kbd> para comprobarlo. Si tiene código, la referencia no vale: hay que leerlo.</td><td>Tócalo en la lista (o elígelo con <kbd>↑</kbd><kbd>↓</kbd>) y teclea la cantidad + <kbd>F1</kbd>.</td></tr>
+<tr><td class="tema">No está o hay menos</td><td><kbd>F3</kbd> «No está»: lo que falta no sale y pasa al siguiente. En Algete, si hay de ese producto en otro hueco, Ariadna lo ofrece: <kbd>ENT</kbd> para ir allí o <kbd>F3</kbd> otra vez para darlo por falta.</td><td>No hay que hacer nada: al terminar, Ariadna marca lo que falta.</td></tr>
+<tr><td class="tema">Me he equivocado</td><td><kbd>F2</kbd>: en Algete deshace lo último; en la tienda («−1») quita una del producto elegido.</td><td><kbd>F2</kbd> («−1») quita una del producto elegido.</td></tr>
+<tr><td class="tema">Terminar</td><td>Algete: <kbd>F4</kbd> «Terminar» o <kbd>ENT</kbd> sin nada, con todo cogido o en falta. Tienda: <kbd>F4</kbd> «Enviar a Algete» o <kbd>Intro</kbd> sin nada. Después, <kbd>ENT</kbd> confirma.</td><td><kbd>F3</kbd> «Terminar recepción» o <kbd>ENT</kbd> sin nada. Después, <kbd>ENT</kbd> confirma.</td></tr>
+</table>
+<div class="box">
+<p><b>Teclas de la PDA:</b> <kbd>F1</kbd> a <kbd>F4</kbd> = tecla roja + <kbd>1</kbd> a <kbd>4</kbd>. <kbd>ENT</kbd> es el <kbd>Intro</kbd>. <kbd>#</kbd> es una tecla directa (abajo a la derecha). Para volver atrás, el botón «atrás» de Android.</p>
+<p><b>En el móvil, sin teclado:</b> «📷 Leer» abre la cámara, que hace lo mismo que el lector. Cada botón lleva entre paréntesis su tecla de la PDA: «No está (F3)», «Enviar a Algete (F4)», «Terminar recepción (F3)», «−1 F2» y, en las entradas, «+ F1». En la salida de la tienda, «+1» suma una al producto ya comprobado. Para teclear una cantidad, escríbela en el cuadro de lectura (salida) o en «Cant.» (entrada) con el teclado del móvil.</p>
+</div>
+
+<h2>6. Si algo falla</h2>
+<ul>
+<li><b>En Nesto:</b> Novedades → <b>«Algo no funciona»</b>, con una captura de la pantalla.</li>
+<li><b>En Ariadna:</b> el <b>⚠</b> de arriba a la derecha («Algo no funciona»). La captura de la pantalla la hace sola.</li>
+<li><b>Sin conexión al enviar o terminar:</b> lo leído sigue guardado. Comprueba la conexión y vuelve a confirmar.</li>
+<li><b>Son las 10:05 y no hay reposición que enviar:</b> mira si hoy es día de ruta de tu tienda. Si lo es y sigue vacía pasados unos minutos, avísanos.</li>
+<li><b>Hay que mandar algo urgente fuera de hora:</b> pídeselo a Manuel, Alfredo o Carlos.</li>
+</ul>
+
+<p class="pie">Nueva Visión · Guía de reposiciones · Si algo de esta guía no coincide con lo que ves en pantalla, dínoslo en Novedades.</p>
 </body>
 </html>
