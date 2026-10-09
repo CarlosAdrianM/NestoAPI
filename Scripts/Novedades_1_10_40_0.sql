@@ -9,7 +9,7 @@
     físicas, portes de la serie EV, #593 Cheque Regalo c4 canje + aviso por correo + app de clientas, Ariadna para tiendas)
     + Nesto (Nesto#520 Eva Visnú, Nesto#521 desplegable de vendedor, #490 7.º tramo y 4C.2, mensaje del cupo de CTT,
     calendario de reposiciones, sustitución de referencias, novedades por perfil, imprimir y sonido en reposiciones, #593 c5
-    cheque regalo en plantilla y pedido)
+    cheque regalo en plantilla y pedido, Nesto#522 fotos del packing en el detalle)
     + Ariadna 2.4 (salida guiada: el código comprueba el producto que toca; modo tienda para Reina y Alcobendas).
 
     ORDEN:
@@ -58,6 +58,9 @@ INSERT INTO @novedades (Categoria, Titulo, Descripcion, Perfiles) VALUES
     ('Nuevo', N'Sustitución temporal de referencias',
      N'Compras puede indicar en la ficha de un producto (pestaña «Sustitución») que, mientras no haya stock o hasta una fecha, se sirva otro producto en su lugar, con el motivo. Al meter ese producto en la plantilla o en un pedido, Nesto pregunta «¿Poner la 45685 en su lugar?»: con «Sí» cambia las unidades al sustituto; con «No», no vuelve a preguntar por ese producto con ese cliente. La ficha enseña a todos la sustitución vigente.',
      N'Vendedores,Tiendas,Administración'),
+    ('Nuevo', N'Las fotos de los bultos en el detalle del pedido',
+     N'En la pestaña del seguimiento de la agencia del detalle del pedido salen los bultos que se prepararon con Ariadna: número, peso, quién lo cerró y cuándo. Si el bulto tiene foto (la que hace el almacén antes de cerrarlo), puedes verla, descargarla o copiar un enlace para mandárselo al cliente si reclama; cualquiera con ese enlace ve la foto.',
+     N'Vendedores,Tiendas,Administración,Almacén'),
     ('Nuevo', N'Calendario de reposiciones desde Nesto',
      N'En Productos › Reposición, el botón «Calendario» enseña a qué hora se cierra y llega cada reposición entre Algete y las tiendas. Alfredo, Manuel y Carlos pueden cambiar las horas, añadir días y desactivar rutas; el resto lo ve. Cambiar la hora de cierre de hoy no repite la reposición de hoy: vale desde la siguiente.',
      N'Almacén,Tiendas'),
