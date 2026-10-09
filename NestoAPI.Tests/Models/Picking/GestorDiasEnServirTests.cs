@@ -299,5 +299,180 @@ namespace NestoAPI.Tests.Models.Picking
             Assert.AreEqual(5, System.Text.RegularExpressions.Regex.Matches(GestorDiasEnServir.CeldasDias("1x111", JUEVES), "Sin dato").Count);
         }
 
+        // ===== NestoAPI#588: el día de entrega depende de si va por nuestra ruta o por agencia =====
+        // Caso real 01/10/26 (jueves por la tarde, pasado el corte): cliente 5057 «LOS LUNES CIERRA», pedidos 927519 y
+        // 927586. Picking para el viernes 02/10: por agencia se entregaría el lunes 05/10 (cerrado); por nuestra ruta,
+        // el viernes 02/10 (abierto).
+        private static readonly DateTime JUEVES_01_10 = new DateTime(2026, 10, 1);
+        private static readonly DateTime VIERNES_02_10 = new DateTime(2026, 10, 2);
+        private static readonly DateTime LUNES_05_10 = new DateTime(2026, 10, 5);
+
+        private static PedidoPicking PedidoConRuta(int id, string ruta, string dias) => new PedidoPicking
+        {
+            Id = id,
+            Cliente = "5057      ",
+            Ruta = ruta,
+            DiasEnServir = dias,
+            Lineas = new List<LineaPedidoPicking> { new LineaPedidoPicking { Id = 1, Cantidad = 1 } }
+        };
+
+        [TestMethod]
+        public void CalcularDiaEntregaRutaPropia_JuevesPasadoElCorte_EsElViernesYNoElLunesDeLaAgencia()
+        {
+            Assert.AreEqual(VIERNES_02_10, GestorDiasEnServir.CalcularDiaEntregaRutaPropia(JUEVES_01_10, VIERNES_02_10, SoloFinde));
+            Assert.AreEqual(LUNES_05_10, GestorDiasEnServir.CalcularDiaEntrega(VIERNES_02_10, SoloFinde), "la agencia, como siempre");
+        }
+
+        [TestMethod]
+        public void CalcularDiaEntregaRutaPropia_AntesDelCorte_CoincideConLaAgencia()
+        {
+            // Jueves por la mañana: el picking es para hoy; los dos entregan el viernes
+            Assert.AreEqual(VIERNES_02_10, GestorDiasEnServir.CalcularDiaEntregaRutaPropia(JUEVES_01_10, JUEVES_01_10, SoloFinde));
+            Assert.AreEqual(VIERNES_02_10, GestorDiasEnServir.CalcularDiaEntrega(JUEVES_01_10, SoloFinde));
+        }
+
+        [TestMethod]
+        public void CalcularDiaEntregaRutaPropia_ConFestivo_SaltaElFestivo()
+        {
+            // Jueves por la tarde con el viernes festivo: el picking es para el lunes y por ruta también se entrega el lunes
+            bool FindeOViernesFestivo(DateTime f) => SoloFinde(f) || f == VIERNES_02_10;
+            Assert.AreEqual(LUNES_05_10, GestorDiasEnServir.CalcularDiaEntregaRutaPropia(JUEVES_01_10, LUNES_05_10, FindeOViernesFestivo));
+        }
+
+        [TestMethod]
+        public void EsRutaPropia_16YATSonNuestrasElRestoAgencia()
+        {
+            Assert.IsTrue(GestorDiasEnServir.EsRutaPropia("16"));
+            Assert.IsTrue(GestorDiasEnServir.EsRutaPropia("AT "), "char con relleno");
+            Assert.IsTrue(GestorDiasEnServir.EsRutaPropia("at"));
+            Assert.IsFalse(GestorDiasEnServir.EsRutaPropia("FW "));
+            Assert.IsFalse(GestorDiasEnServir.EsRutaPropia("00"));
+            Assert.IsFalse(GestorDiasEnServir.EsRutaPropia("AM"));
+            Assert.IsFalse(GestorDiasEnServir.EsRutaPropia(null), "sin ruta = agencia, como hasta ahora");
+        }
+
+        [TestMethod]
+        public void Retirar_PorNuestraRutaYClienteQueCierraLunes_JuevesPorLaTardeSale()
+        {
+            // El caso del 5057 con la ruta propia puesta: se entrega el viernes, que abre
+            PedidoPicking pedido = PedidoConRuta(927586, "AT ", "01111");
+
+            List<PedidoPicking> retirados = GestorDiasEnServir.RetirarPedidosDeClientesCerrados(
+                new List<PedidoPicking> { pedido }, LUNES_05_10, VIERNES_02_10);
+
+            Assert.AreEqual(0, retirados.Count, "por nuestra ruta se entrega el viernes: el cliente abre");
+            Assert.AreEqual(1, pedido.Lineas.Count);
+            Assert.IsNull(pedido.DiaEntregaRetiradoPorCierre);
+        }
+
+        [TestMethod]
+        public void Retirar_PorAgenciaYClienteQueCierraLunes_SeRetiraConLaPistaDeNuestraRuta()
+        {
+            // El 5057 tal y como estaba al sacar el picking (ruta FW): sigue sin salir (la regla de #362 no cambia),
+            // pero se sabe que por nuestra ruta llegaría el viernes con el cliente abierto
+            PedidoPicking pedido = PedidoConRuta(927586, "FW ", "01111");
+
+            List<PedidoPicking> retirados = GestorDiasEnServir.RetirarPedidosDeClientesCerrados(
+                new List<PedidoPicking> { pedido }, LUNES_05_10, VIERNES_02_10);
+
+            Assert.AreEqual(1, retirados.Count);
+            Assert.AreEqual(0, pedido.Lineas.Count);
+            Assert.AreEqual(LUNES_05_10, pedido.DiaEntregaRetiradoPorCierre);
+            Assert.AreEqual(VIERNES_02_10, pedido.DiaEntregaSiVaPorNuestraRuta);
+
+            var ex = GestorDiasEnServir.ErrorSinPicking(retirados, LUNES_05_10);
+            Assert.AreEqual(NestoAPI.Models.Constantes.Picking.ERROR_CLIENTE_CERRADO, ex.GetErrorCode());
+            StringAssert.Contains(ex.Message, "lunes 05/10/2026");
+            StringAssert.Contains(ex.Message, "viernes 02/10/2026");
+            StringAssert.Contains(ex.Message, "ruta propia (16 o AT)");
+        }
+
+        [TestMethod]
+        public void Retirar_PorNuestraRutaYClienteQueCierraViernes_JuevesPorLaTardeNoSale()
+        {
+            // Por agencia (lunes) saldría; por nuestra ruta se entregaría el viernes, que cierra
+            PedidoPicking pedido = PedidoConRuta(1, "16", "11110");
+
+            List<PedidoPicking> retirados = GestorDiasEnServir.RetirarPedidosDeClientesCerrados(
+                new List<PedidoPicking> { pedido }, LUNES_05_10, VIERNES_02_10);
+
+            Assert.AreEqual(1, retirados.Count);
+            Assert.AreEqual(VIERNES_02_10, pedido.DiaEntregaRetiradoPorCierre);
+            Assert.IsNull(pedido.DiaEntregaSiVaPorNuestraRuta);
+            StringAssert.Contains(GestorDiasEnServir.ErrorSinPicking(retirados, LUNES_05_10).Message, "viernes 02/10/2026");
+        }
+
+        [TestMethod]
+        public void Retirar_PorAgenciaYClienteQueCierraLosDosDias_SinPista()
+        {
+            PedidoPicking pedido = PedidoConRuta(1, "00", "01110"); // cierra lunes y viernes
+
+            List<PedidoPicking> retirados = GestorDiasEnServir.RetirarPedidosDeClientesCerrados(
+                new List<PedidoPicking> { pedido }, LUNES_05_10, VIERNES_02_10);
+
+            Assert.AreEqual(1, retirados.Count);
+            Assert.IsNull(pedido.DiaEntregaSiVaPorNuestraRuta, "por nuestra ruta también estaría cerrado");
+            Assert.IsFalse(GestorDiasEnServir.ErrorSinPicking(retirados, LUNES_05_10).Message.Contains("ruta propia"));
+        }
+
+        [TestMethod]
+        public void Retirar_AntesDelCorteLosDosDiasCoinciden_SinPista()
+        {
+            // Viernes por la mañana: agencia y ruta entregan el lunes; nada que sugerir
+            PedidoPicking pedido = PedidoConRuta(1, "FW", "01111");
+
+            List<PedidoPicking> retirados = GestorDiasEnServir.RetirarPedidosDeClientesCerrados(
+                new List<PedidoPicking> { pedido }, LUNES_05_10, LUNES_05_10);
+
+            Assert.AreEqual(1, retirados.Count);
+            Assert.IsNull(pedido.DiaEntregaSiVaPorNuestraRuta);
+        }
+
+        [TestMethod]
+        public void Retirar_ClienteQueAbreTodo_NadaPorNingunaRuta()
+        {
+            var candidatos = new List<PedidoPicking> { PedidoConRuta(1, "AT", "11111"), PedidoConRuta(2, "FW", "11111") };
+
+            Assert.AreEqual(0, GestorDiasEnServir.RetirarPedidosDeClientesCerrados(candidatos, LUNES_05_10, VIERNES_02_10).Count);
+        }
+
+        [TestMethod]
+        public void ErrorSinPicking_RetiradosEnDiasDistintos_DiceElDiaDeCadaUno()
+        {
+            PedidoPicking porRuta = PedidoConRuta(927519, "AT", "11110");
+            PedidoPicking porAgencia = PedidoConRuta(927586, "FW", "01110");
+            List<PedidoPicking> retirados = GestorDiasEnServir.RetirarPedidosDeClientesCerrados(
+                new List<PedidoPicking> { porRuta, porAgencia }, LUNES_05_10, VIERNES_02_10);
+
+            var ex = GestorDiasEnServir.ErrorSinPicking(retirados, LUNES_05_10);
+
+            Assert.AreEqual(2, retirados.Count);
+            StringAssert.Contains(ex.Message, "927519 el viernes 02/10/2026");
+            StringAssert.Contains(ex.Message, "927586 el lunes 05/10/2026");
+        }
+
+        [TestMethod]
+        public void PendientesDeAvisar_UsaElDiaDeEntregaDeCadaPedido()
+        {
+            PedidoPicking pedido = PedidoConRuta(927519, "16", "11110");
+            _ = GestorDiasEnServir.RetirarPedidosDeClientesCerrados(new List<PedidoPicking> { pedido }, LUNES_05_10, VIERNES_02_10);
+            var avisados = new Dictionary<string, DateTime>();
+
+            _ = GestorDiasEnServir.PendientesDeAvisar(new List<PedidoPicking> { pedido }, LUNES_05_10, avisados);
+
+            Assert.IsTrue(avisados.ContainsKey($"927519|{VIERNES_02_10:yyyyMMdd}"));
+        }
+
+        [TestMethod]
+        public void GenerarCuerpo_PedidoQuePorNuestraRutaSaldria_LlevaLaPista()
+        {
+            PedidoPicking pedido = PedidoConRuta(927586, "FW", "01111");
+            _ = GestorDiasEnServir.RetirarPedidosDeClientesCerrados(new List<PedidoPicking> { pedido }, LUNES_05_10, VIERNES_02_10);
+
+            string cuerpo = GestorDiasEnServir.GenerarCuerpo(new List<PedidoPicking> { pedido }, LUNES_05_10);
+
+            StringAssert.Contains(cuerpo, "ruta propia (16 o AT)");
+            StringAssert.Contains(cuerpo, "viernes 02/10/2026");
+        }
     }
 }

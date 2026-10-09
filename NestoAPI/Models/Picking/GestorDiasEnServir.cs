@@ -25,6 +25,11 @@ namespace NestoAPI.Models.Picking
     ///
     /// <para>Ante un dato raro (null, longitud distinta de 5, caracteres que no son 0/1) se
     /// considera ABIERTO: un dato defectuoso no debe dejar pedidos sin salir.</para>
+    ///
+    /// <para>NestoAPI#588: lo anterior es el plazo de la AGENCIA. Por nuestra ruta lo que se prepara hoy se entrega
+    /// mañana. Si el pedido ya lleva ruta propia (16, AT) al sacar el picking, se mira ese día; si no, el de la
+    /// agencia, como siempre (almacén suele decidir ruta o agencia después del picking). Al retirado que por nuestra
+    /// ruta llegaría con el cliente abierto, el aviso le dice que con una ruta propia sale.</para>
     /// </summary>
     public static class GestorDiasEnServir
     {
@@ -41,6 +46,34 @@ namespace NestoAPI.Models.Picking
             }
             return entrega;
         }
+
+        /// <summary>
+        /// NestoAPI#588: el día de entrega si el pedido va por NUESTRA ruta. Lo que se prepara hoy se entrega mañana
+        /// (el laborable siguiente al día en que se prepara), sea antes o después del corte. Por agencia, en cambio,
+        /// lo que se prepara pasado el corte sale el día siguiente y se entrega el laborable de después
+        /// (<see cref="CalcularDiaEntrega"/> desde fechaPicking). Antes del corte los dos coinciden; pasado el corte,
+        /// el de nuestra ruta es un laborable antes (jueves por la tarde: viernes por ruta, lunes por agencia).
+        /// </summary>
+        /// <param name="hoy">El día en que se saca el picking (se prepara).</param>
+        /// <param name="fechaPicking">El horizonte del picking (día de salida por agencia).</param>
+        internal static DateTime CalcularDiaEntregaRutaPropia(DateTime hoy, DateTime fechaPicking, Func<DateTime, bool> esFestivo)
+        {
+            DateTime diaPreparacion = hoy.Date < fechaPicking.Date ? hoy.Date : fechaPicking.Date;
+            return CalcularDiaEntrega(diaPreparacion, esFestivo);
+        }
+
+        /// <summary>
+        /// NestoAPI#588: ¿la ruta del pedido es de las nuestras (16 «Ruta diaria», AT)? La misma lista que usa la
+        /// facturación de rutas (<see cref="Facturas.RutaPropia"/>). Medido en producción (jul-oct/26): de los 68
+        /// pedidos servidos con ruta 16 o AT, solo 2 tienen envío de agencia; de los 2.861 con 00 o FW, el 98 % sí.
+        /// Una ruta vacía, de agencia o cualquier otra cuenta como agencia, que es lo que se hacía hasta ahora.
+        /// </summary>
+        internal static bool EsRutaPropia(string ruta)
+        {
+            return RUTA_PROPIA.ContieneRuta(ruta);
+        }
+
+        private static readonly Facturas.RutaPropia RUTA_PROPIA = new Facturas.RutaPropia();
 
         /// <summary>NestoAPI#471: 5 caracteres, cada uno '0' o '1'.</summary>
         public static bool EsFormatoValido(string diasEnServir)
@@ -107,18 +140,73 @@ namespace NestoAPI.Models.Picking
         internal static List<PedidoPicking> RetirarPedidosDeClientesCerrados(
             List<PedidoPicking> candidatos, DateTime diaEntrega, bool ignorarCierre = false)
         {
+            return RetirarPedidosDeClientesCerrados(candidatos, diaEntrega, diaEntrega, ignorarCierre);
+        }
+
+        /// <summary>
+        /// NestoAPI#588: el día de entrega depende de por dónde va el pedido. Si su ruta ya es propia (16, AT), se mira
+        /// el día de nuestra ruta; si no (lo normal al sacar el picking: almacén decide ruta o agencia después), el de
+        /// la agencia, como hasta ahora. A los retirados que van por agencia pero cuyo cliente abre el día de nuestra
+        /// ruta se les deja ese día en <see cref="PedidoPicking.DiaEntregaSiVaPorNuestraRuta"/>, para decirlo en el
+        /// aviso: con una ruta propia en el pedido, el siguiente picking lo saca.
+        /// </summary>
+        internal static List<PedidoPicking> RetirarPedidosDeClientesCerrados(
+            List<PedidoPicking> candidatos, DateTime diaEntregaAgencia, DateTime diaEntregaRutaPropia, bool ignorarCierre = false)
+        {
             if (ignorarCierre)
             {
                 return new List<PedidoPicking>();
             }
-            List<PedidoPicking> retirados = candidatos
-                .Where(p => p.Lineas != null && p.Lineas.Count > 0 && !EstaAbierto(p.DiasEnServir, diaEntrega))
-                .ToList();
-            foreach (PedidoPicking pedido in retirados)
+            List<PedidoPicking> retirados = new List<PedidoPicking>();
+            foreach (PedidoPicking pedido in candidatos.Where(p => p.Lineas != null && p.Lineas.Count > 0))
             {
+                bool porNuestraRuta = EsRutaPropia(pedido.Ruta);
+                DateTime diaEntrega = porNuestraRuta ? diaEntregaRutaPropia : diaEntregaAgencia;
+                if (EstaAbierto(pedido.DiasEnServir, diaEntrega))
+                {
+                    continue;
+                }
+                pedido.DiaEntregaRetiradoPorCierre = diaEntrega;
+                pedido.DiaEntregaSiVaPorNuestraRuta = !porNuestraRuta && diaEntregaRutaPropia != diaEntregaAgencia
+                    && EstaAbierto(pedido.DiasEnServir, diaEntregaRutaPropia)
+                    ? diaEntregaRutaPropia
+                    : (DateTime?)null;
                 pedido.Lineas.Clear();
+                retirados.Add(pedido);
             }
             return retirados;
+        }
+
+        /// <summary>NestoAPI#588: el día con el que se retiró cada pedido (el del picking si no lo trae).</summary>
+        private static DateTime DiaDe(PedidoPicking pedido, DateTime diaPorDefecto)
+        {
+            return pedido.DiaEntregaRetiradoPorCierre ?? diaPorDefecto;
+        }
+
+        /// <summary>
+        /// NestoAPI#588: la pista para almacén cuando algún pedido retirado se podría entregar por nuestra ruta en un día
+        /// que el cliente abre. Vacío si no hay ninguno.
+        /// </summary>
+        internal static string PistaRutaPropia(IEnumerable<PedidoPicking> retirados)
+        {
+            List<PedidoPicking> conPista = (retirados ?? Enumerable.Empty<PedidoPicking>())
+                .Where(p => p.DiaEntregaSiVaPorNuestraRuta.HasValue)
+                .ToList();
+            if (conPista.Count == 0)
+            {
+                return string.Empty;
+            }
+            var cultura = new System.Globalization.CultureInfo("es-ES");
+            IEnumerable<string> partes = conPista
+                .GroupBy(p => p.DiaEntregaSiVaPorNuestraRuta.Value)
+                .Select(g =>
+                {
+                    string ids = string.Join(", ", g.Select(p => p.Id).Distinct());
+                    return $"{ids} el {g.Key.ToString("dddd", cultura)} {g.Key:dd/MM/yyyy}";
+                });
+            string pedidos = conPista.Select(p => p.Id).Distinct().Count() == 1 ? "el pedido" : "los pedidos";
+            return $"Ese día es el de la agencia. Si va por nuestra ruta, se entregaría antes, con el cliente abierto ({pedidos} {string.Join("; ", partes)}): " +
+                "pon en el pedido una ruta propia (16 o AT) y vuelve a sacarle el picking.";
         }
 
         /// <summary>
@@ -139,14 +227,35 @@ namespace NestoAPI.Models.Picking
             }
 
             var cultura = new System.Globalization.CultureInfo("es-ES");
-            string dia = $"{diaEntrega.ToString("dddd", cultura)} {diaEntrega:dd/MM/yyyy}";
-            string pedidos = string.Join(", ", retiradosPorCierre.Select(p => p.Id).Distinct());
+            string Dia(DateTime d) => $"{d.ToString("dddd", cultura)} {d:dd/MM/yyyy}";
+            List<DateTime> dias = retiradosPorCierre.Select(p => DiaDe(p, diaEntrega)).Distinct().OrderBy(d => d).ToList();
             string clientes = string.Join(", ", retiradosPorCierre.Select(p => p.Cliente?.Trim()).Where(c => !string.IsNullOrEmpty(c)).Distinct());
-            string mensaje = retiradosPorCierre.Select(p => p.Id).Distinct().Count() == 1
-                ? $"El pedido {pedidos} no sale: la entrega de este picking sería el {dia} y el cliente {clientes} cierra ese día. " +
-                  "Saldrá solo en el primer picking cuya entrega caiga en un día que abra."
-                : $"Los pedidos {pedidos} no salen: la entrega de este picking sería el {dia} y el cliente ({clientes}) cierra ese día. " +
-                  "Saldrán solos en el primer picking cuya entrega caiga en un día que abra.";
+            string mensaje;
+            if (dias.Count == 1)
+            {
+                string dia = Dia(dias[0]);
+                string pedidos = string.Join(", ", retiradosPorCierre.Select(p => p.Id).Distinct());
+                mensaje = retiradosPorCierre.Select(p => p.Id).Distinct().Count() == 1
+                    ? $"El pedido {pedidos} no sale: la entrega de este picking sería el {dia} y el cliente {clientes} cierra ese día. " +
+                      "Saldrá solo en el primer picking cuya entrega caiga en un día que abra."
+                    : $"Los pedidos {pedidos} no salen: la entrega de este picking sería el {dia} y el cliente ({clientes}) cierra ese día. " +
+                      "Saldrán solos en el primer picking cuya entrega caiga en un día que abra.";
+            }
+            else
+            {
+                // NestoAPI#588: los que van por nuestra ruta y los que van por agencia se entregan en días distintos
+                string detalle = string.Join("; ", retiradosPorCierre
+                    .GroupBy(p => DiaDe(p, diaEntrega))
+                    .OrderBy(g => g.Key)
+                    .Select(g => $"{string.Join(", ", g.Select(p => p.Id).Distinct())} el {Dia(g.Key)}"));
+                mensaje = $"Los pedidos no salen porque el cliente ({clientes}) cierra el día en que se entregarían ({detalle}). " +
+                    "Saldrán solos en el primer picking cuya entrega caiga en un día que abra.";
+            }
+            string pista = PistaRutaPropia(retiradosPorCierre);
+            if (pista.Length > 0)
+            {
+                mensaje += " " + pista;
+            }
             return new Infraestructure.Exceptions.NestoBusinessException(mensaje,
                 new Infraestructure.Exceptions.ErrorContext { ErrorCode = Constantes.Picking.ERROR_CLIENTE_CERRADO })
             {
@@ -167,7 +276,7 @@ namespace NestoAPI.Models.Picking
             List<PedidoPicking> nuevos = new List<PedidoPicking>();
             foreach (PedidoPicking pedido in pedidosRetirados)
             {
-                string clave = $"{pedido.Id}|{diaEntrega:yyyyMMdd}";
+                string clave = $"{pedido.Id}|{DiaDe(pedido, diaEntrega):yyyyMMdd}";
                 if (yaAvisados.ContainsKey(clave))
                 {
                     continue;
@@ -223,7 +332,11 @@ namespace NestoAPI.Models.Picking
                 }
                 mail.CC.Add(new MailAddress(Constantes.Correos.ALMACEN));
                 mail.Subject = "Pedidos sin picking: el cliente cierra el día de la entrega";
-                mail.Body = GenerarCuerpo(pedidosRetirados, diaEntrega);
+                // NestoAPI#588: por nuestra ruta y por agencia el día de entrega puede ser distinto; una tabla por día
+                mail.Body = string.Concat(pedidosRetirados
+                    .GroupBy(p => DiaDe(p, diaEntrega))
+                    .OrderBy(g => g.Key)
+                    .Select(g => GenerarCuerpo(g.ToList(), g.Key)));
                 mail.IsBodyHtml = true;
                 try
                 {
@@ -271,6 +384,12 @@ namespace NestoAPI.Models.Picking
                 _ = s.Append("</tr>");
             }
             _ = s.Append("</table>");
+            // NestoAPI#588
+            string pista = PistaRutaPropia(pedidos);
+            if (pista.Length > 0)
+            {
+                _ = s.Append($"<p><strong>{System.Net.WebUtility.HtmlEncode(pista)}</strong></p>");
+            }
             _ = s.Append("<p style='color:#666;font-size:90%'>Abierto = el cliente recibe ese día; Cerrado = no. ");
             _ = s.Append("Se cambia en la ficha del cliente (días de servir).</p>");
             return s.ToString();

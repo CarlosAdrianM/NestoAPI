@@ -51,6 +51,12 @@ namespace NestoAPI.Models.Picking
         /// día). Null o formato raro = abierto. Lo usa GestorDiasEnServir para no sacar picking
         /// de pedidos cuya entrega caería en día cerrado.</summary>
         public string DiasEnServir { get; set; }
+        /// <summary>NestoAPI#588: el día de entrega con el que se ha retirado el pedido por el cierre del cliente
+        /// (el de nuestra ruta si la ruta del pedido es propia, si no el de la agencia). Null = no se ha retirado.</summary>
+        public DateTime? DiaEntregaRetiradoPorCierre { get; set; }
+        /// <summary>NestoAPI#588: pedido retirado que va por agencia, pero que por nuestra ruta se entregaría este
+        /// día, que el cliente abre. Es la pista para almacén: con una ruta propia en el pedido, sale.</summary>
+        public DateTime? DiaEntregaSiVaPorNuestraRuta { get; set; }
         public List<PrepagoDTO> Prepagos { get; set; }
         public List<ExtractoClienteDTO> ExtractosPendientes { get; set; }
         public decimal ImporteTotalConIVA
