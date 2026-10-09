@@ -187,6 +187,9 @@ namespace NestoAPI.Models.Picking
             // de que las reglas de abajo decidan qué sale.
             GestorFacturarTodoAhora.Aplicar(candidatos);
 
+            // NestoAPI#593 (c4): la línea del cheque regalo solo sale en la entrega con la que se supera el mínimo
+            GestorReservasStock.ReservarChequesRegalo(candidatos);
+
             // Recorrer Candidatos (quitamos los que no tienen que salir)
             for (int i = 0; i < candidatos.Count(); i++)
             {

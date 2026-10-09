@@ -28,6 +28,11 @@ namespace NestoAPI.Models.Picking
         /// escribe GeneradorPendientes en LinPedidoVta.Recoger si el pedido sale.
         /// </summary>
         public int CantidadARecoger { get; set; }
+        /// <summary>NestoAPI#593 (c4): es la línea (−1) del cheque regalo de una campaña. Lo pone el rellenador.</summary>
+        public bool EsChequeRegalo { get; set; }
+        /// <summary>NestoAPI#593 (c4): suma para el mínimo del cheque regalo (producto no ficticio, sin los prefijos ni
+        /// los grupos excluidos de la campaña). Solo se rellena en los pedidos que llevan cheque.</summary>
+        public bool ComputaMinimoChequeRegalo { get; set; }
         public decimal BaseImponibleEntrega {
             get
             {

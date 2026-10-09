@@ -55,6 +55,59 @@ namespace NestoAPI.Models.Picking
             }
         }
 
+        /// <summary>
+        /// NestoAPI#593 (c4), pedido servido por partes (decisión del tablero): el cheque regalo se descuenta en la entrega
+        /// con la que lo entregado del pedido SUPERA el mínimo de la campaña (base computable: sin cuentas contables,
+        /// ficticios, «PACK 26» ni peluquería). Lo entregado = lo ya albaranado o facturado, más lo que tiene picking de
+        /// una pasada anterior, más lo que sale en esta (lo reservado y, en «facturar todo ahora», lo que pasa a Recoger,
+        /// que también se factura ahora). Si no lo supera, la línea −1 sale de este picking y se queda en el pedido como
+        /// estaba, para la siguiente entrega; si el pedido nunca llega, el cheque no se descuenta. Si lo supera, sale
+        /// entera aunque esta entrega sea pequeña: su factura puede quedar en negativo.
+        ///
+        /// <para>Hasta ahora una línea con cantidad −1 se reservaba siempre en el primer picking (Reservar la da por
+        /// servida porque no necesita stock). Va DESPUÉS de BorrarLineasQueNoDebenSalir y de GestorFacturarTodoAhora,
+        /// para mirar solo lo que de verdad sale, y ANTES de decidir qué pedidos salen, para que el prepago y los portes
+        /// vean la entrega sin el cheque cuando no toca.</para>
+        /// </summary>
+        public static void ReservarChequesRegalo(List<PedidoPicking> candidatos)
+        {
+            foreach (PedidoPicking pedido in candidatos.Where(p => !p.EsNotaEntrega && p.ChequeRegalo != null && p.Lineas != null))
+            {
+                if (!pedido.Lineas.Any(l => l.EsChequeRegalo))
+                {
+                    continue;
+                }
+                decimal entregado = pedido.ChequeRegalo.BaseComputableYaEntregada
+                    + pedido.Lineas.Where(l => l.ComputaMinimoChequeRegalo && !l.EsChequeRegalo).Sum(BaseComputableQueSale);
+                pedido.ChequeRegalo.BaseComputableConEstaEntrega = entregado;
+                if (entregado > pedido.ChequeRegalo.MinimoCanje)
+                {
+                    foreach (LineaPedidoPicking cheque in pedido.Lineas.Where(l => l.EsChequeRegalo))
+                    {
+                        cheque.CantidadReservada = cheque.Cantidad;
+                    }
+                    pedido.ChequeRegalo.Retenido = false;
+                }
+                else
+                {
+                    _ = pedido.Lineas.RemoveAll(l => l.EsChequeRegalo);
+                    pedido.ChequeRegalo.Retenido = true;
+                }
+            }
+        }
+
+        /// <summary>NestoAPI#593: la parte de la base de la línea que sale (y se factura) en esta pasada.</summary>
+        internal static decimal BaseComputableQueSale(LineaPedidoPicking linea)
+        {
+            int unidadesLinea = linea.Cantidad + linea.CantidadRecogida;
+            int unidadesQueSalen = linea.CantidadReservada + linea.CantidadARecoger;
+            if (unidadesLinea == 0 || unidadesQueSalen == 0)
+            {
+                return 0;
+            }
+            return linea.BaseImponible * unidadesQueSalen / unidadesLinea;
+        }
+
         public static void BorrarLineasQueNoDebenSalir(List<PedidoPicking> candidatos, DateTime fechaPicking)
         {
             BorrarLineasEntregaFutura(candidatos, fechaPicking);

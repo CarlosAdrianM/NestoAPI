@@ -1657,6 +1657,7 @@
     <Compile Include="Models\Picking\GestorAvisosPicking.cs" />
     <Compile Include="Models\Picking\GestorPrepagos.cs" />
     <Compile Include="Models\Picking\GestorReservasStock.cs" />
+    <Compile Include="Models\Picking\ChequesRegaloPicking.cs" />
     <Compile Include="Models\Picking\ExplicadorPedidoSinPicking.cs" />
     <Compile Include="Models\Picking\MotivoNoSalePicking.cs" />
     <Compile Include="Models\Picking\GestorReposicionTiendas.cs" />

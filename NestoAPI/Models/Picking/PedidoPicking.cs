@@ -7,6 +7,20 @@ using System.Web;
 namespace NestoAPI.Models.Picking
 {
     
+    /// <summary>NestoAPI#593 (c4): lo que necesita el picking para decidir si el cheque regalo sale en esta entrega.</summary>
+    public class ChequeRegaloPicking
+    {
+        public string Campana { get; set; }
+        /// <summary>Lo entregado tiene que SUPERARLO para que salga la línea del cheque.</summary>
+        public decimal MinimoCanje { get; set; }
+        /// <summary>Base computable de las líneas del pedido ya en albarán o factura, o con picking de una pasada anterior.</summary>
+        public decimal BaseComputableYaEntregada { get; set; }
+        /// <summary>Lo ya entregado más lo que sale en esta pasada (lo calcula ReservarChequesRegalo).</summary>
+        public decimal BaseComputableConEstaEntrega { get; set; }
+        /// <summary>True si en esta pasada no se ha llegado al mínimo y la línea del cheque se queda en el pedido.</summary>
+        public bool Retenido { get; set; }
+    }
+
     public class PedidoPicking
     {
         private const string PREFIJO_PORTES = "624";
@@ -76,6 +90,10 @@ namespace NestoAPI.Models.Picking
         
         public List<LineaPedidoPicking> Lineas { get; set; }
        
+
+        /// <summary>NestoAPI#593 (c4): el pedido lleva la línea de un cheque regalo (null si no). Lo rellena
+        /// RellenadorPickingService y lo usa GestorReservasStock.ReservarChequesRegalo.</summary>
+        public ChequeRegaloPicking ChequeRegalo { get; set; }
 
         /// <summary>NestoAPI#482: modo de servicio informado (null = manda ServirJunto).</summary>
         public byte? ModoServicio { get; set; }

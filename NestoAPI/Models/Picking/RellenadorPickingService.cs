@@ -151,7 +151,7 @@ namespace NestoAPI.Models.Picking
                     $"Líneas afectadas: {errores}");
             }
 
-            return pedidos.Select(p => new PedidoPicking
+            List<PedidoPicking> resultado = pedidos.Select(p => new PedidoPicking
             {
                 Empresa = p.Empresa,
                 Id = p.Número,
@@ -202,6 +202,56 @@ namespace NestoAPI.Models.Picking
                     EsPedidoEspecial = l.TipoLinea == Constantes.TiposLineaVenta.TEXTO && db.PedidosEspeciales.FirstOrDefault(e => e.NºOrdenVta == l.Nº_Orden) != null
                 }).ToList()
             }).ToList();
+
+            RellenarChequesRegalo(resultado);
+            return resultado;
+        }
+
+        /// <summary>
+        /// NestoAPI#593 (c4): marca la línea del cheque regalo y lo que suma para su mínimo en los pedidos que lo llevan, y
+        /// lee lo que ya se les ha entregado. Si falla, el picking sigue como antes (la línea saldría en esta pasada) y
+        /// queda en ELMAH.
+        /// </summary>
+        private void RellenarChequesRegalo(List<PedidoPicking> pedidosPicking)
+        {
+            try
+            {
+                List<Infraestructure.ChequesRegalo.CampanaCanjeChequeRegalo> campanas =
+                    new Infraestructure.ChequesRegalo.RepositorioCanjeChequesRegalo(db).LeerCampanasSincrono();
+                ChequesRegaloPicking.Rellenar(pedidosPicking, campanas, LeerProductosChequeRegalo, LeerLineasYaEntregadas);
+            }
+            catch (Exception ex)
+            {
+                Infraestructure.ElmahHelper.Log(new Exception(
+                    $"[Cheque regalo #593] No se pudo preparar el cheque regalo en el picking: {ex.Message}", ex), "Sistema (picking)");
+            }
+        }
+
+        private Dictionary<string, Infraestructure.ChequesRegalo.ProductoParaChequeRegalo> LeerProductosChequeRegalo(string empresa, List<string> productos)
+        {
+            var filas = db.Productos
+                .Where(p => p.Empresa == empresa && productos.Contains(p.Número))
+                .Select(p => new { p.Número, p.Nombre, p.Grupo, p.Ficticio })
+                .ToList();
+            return Infraestructure.ChequesRegalo.RepositorioCanjeChequesRegalo.Diccionario(filas.Select(p =>
+                new Infraestructure.ChequesRegalo.ProductoParaChequeRegalo
+                {
+                    Numero = p.Número?.Trim(),
+                    Nombre = p.Nombre?.Trim(),
+                    Grupo = p.Grupo?.Trim(),
+                    Ficticio = p.Ficticio
+                }));
+        }
+
+        /// <summary>Líneas de producto del pedido ya en albarán o factura, o con picking de una pasada anterior.</summary>
+        private List<LineaEntregadaChequeRegalo> LeerLineasYaEntregadas(PedidoPicking pedido)
+        {
+            return db.LinPedidoVtas
+                .Where(l => l.Número == pedido.Id && l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO
+                    && (l.Estado >= Constantes.EstadosLineaVenta.ALBARAN
+                        || (l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO && l.Picking > 0)))
+                .Select(l => new LineaEntregadaChequeRegalo { Empresa = l.Empresa, Producto = l.Producto, BaseImponible = l.Base_Imponible })
+                .ToList();
         }
     }
 }
