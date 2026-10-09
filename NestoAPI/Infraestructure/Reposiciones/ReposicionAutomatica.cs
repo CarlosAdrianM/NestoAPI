@@ -24,6 +24,11 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public const string VACIA = "Vacia";
         /// <summary>El origen ya tenía una en preparación hecha a mano: no se crea otra. Se apunta y se avisa.</summary>
         public const string YA_EN_PREPARACION = "YaEnPreparacion";
+        /// <summary>
+        /// Esa ruta ya tiene un traspaso de reposición creado después del corte, con cualquier herramienta (Nesto viejo
+        /// incluido), en preparación, salido o recibido: alguien ya la ha rellenado. Se apunta sin aviso (es normal).
+        /// </summary>
+        public const string YA_CUBIERTA = "YaCubierta";
         /// <summary>Otro motivo de negocio (inventario en curso, almacén sin diario…). Se apunta y se avisa.</summary>
         public const string NO_SE_PUEDE = "NoSePuede";
         /// <summary>A la hora de llegada habitual aún no se había rellenado: ese viaje ya ha pasado. Se apunta y se avisa.</summary>
@@ -47,6 +52,17 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public string Mensaje { get; set; }
     }
 
+    /// <summary>NestoAPI#577: un traspaso de reposición de la ruta creado después del corte (ver <see cref="IRepositorioReposicionAutomatica.BuscarTraspasoQueCubre"/>).</summary>
+    public class TraspasoReposicionExistente
+    {
+        /// <summary>Null si aún está en preparación en una tienda (sin número hasta terminarla).</summary>
+        public int? NumTraspaso { get; set; }
+        /// <summary>Quién la creó. Null si no se sabe (ya recibida: en ExtractoProducto el usuario es el de la recepción).</summary>
+        public string Usuario { get; set; }
+        /// <summary>Cuándo se creó (ver el SQL: cada estado guarda el instante en un sitio).</summary>
+        public DateTime Fecha { get; set; }
+    }
+
     public interface IServicioReposicionAutomatica
     {
         /// <summary>Ver <see cref="ServicioReposicionAutomatica.RellenarRuta"/>.</summary>
@@ -63,6 +79,12 @@ namespace NestoAPI.Infraestructure.Reposiciones
         /// <paramref name="contarOmitidas"/>, también las marcas sin reposición (vacía, ya había una, fuera de plazo…).
         /// </summary>
         Task<bool> HayCabecera(string empresa, string origen, string destino, DateTime corte, bool contarOmitidas);
+        /// <summary>
+        /// NestoAPI#577: el traspaso de reposición de esa ruta (mismo origen y destino) creado en <paramref name="corte"/> o
+        /// después, con cualquier herramienta, en preparación, salido o recibido (el más antiguo), o null si no hay. Con uno,
+        /// el corte ya está cubierto y el job no rellena otro (09/10/26: la 80932 duplicó la 80929 de Andre en Nesto viejo).
+        /// </summary>
+        Task<TraspasoReposicionExistente> BuscarTraspasoQueCubre(string empresa, string origen, string destino, DateTime corte);
         /// <summary>Marca sin reposición (NumTraspaso NULL, Omitida = motivo) para no reintentar ese corte.</summary>
         Task ApuntarOmitida(CabeceraReposicionTraspaso cabecera, string motivo);
         /// <summary>Exclusión entre ejecuciones (job, endpoint, dos servidores): applock por origen y día. Dispose lo suelta.</summary>
@@ -167,6 +189,16 @@ namespace NestoAPI.Infraestructure.Reposiciones
                     {
                         if (await repositorio.HayCabecera(corte.Empresa, corte.Origen, corte.Destino, corte.Corte, contarOmitidas: true).ConfigureAwait(false))
                         {
+                            continue;
+                        }
+                        // NestoAPI#577: alguien ya la ha rellenado después del corte (Nesto viejo no escribe cabecera). Antes que
+                        // el fuera de plazo: si ya está hecha, no hay nada que avisar.
+                        TraspasoReposicionExistente cubre = await repositorio.BuscarTraspasoQueCubre(corte.Empresa, corte.Origen, corte.Destino, corte.Corte).ConfigureAwait(false);
+                        if (cubre != null)
+                        {
+                            string motivo = MotivoCubierta(cubre);
+                            await Apuntar(corte, automatico, motivo).ConfigureAwait(false);
+                            resultados.Add(Resultado(corte, ResultadosReposicionAutomatica.YA_CUBIERTA, motivo));
                             continue;
                         }
                         if (ahora >= corte.Llegada)
@@ -296,6 +328,22 @@ namespace NestoAPI.Infraestructure.Reposiciones
             }, motivo);
         }
 
+        /// <summary>«Ya la rellenó Andre el 08/10 13:55 (traspaso 80929)», recortado a los 300 de ReposicionesTraspasos.Omitida.</summary>
+        internal static string MotivoCubierta(TraspasoReposicionExistente traspaso)
+        {
+            string usuario = traspaso.Usuario?.Trim();
+            if (!string.IsNullOrEmpty(usuario) && usuario.Contains("\\"))
+            {
+                usuario = usuario.Substring(usuario.LastIndexOf('\\') + 1);
+            }
+            string quien = string.IsNullOrEmpty(usuario) ? "Ya se rellenó" : "Ya la rellenó " + usuario;
+            string cual = traspaso.NumTraspaso.HasValue
+                ? string.Format(CultureInfo.InvariantCulture, "traspaso {0}", traspaso.NumTraspaso.Value)
+                : "en preparación, aún sin número de traspaso";
+            string motivo = string.Format(CultureInfo.InvariantCulture, "{0} el {1:dd/MM HH:mm} ({2})", quien, traspaso.Fecha, cual);
+            return motivo.Length > 300 ? motivo.Substring(0, 300) : motivo;
+        }
+
         private static string DiaDelCorte(CorteReposicion corte, DateTime ahora)
         {
             return corte.Corte.Date == ahora.Date ? "de hoy" : string.Format(CultureInfo.InvariantCulture, "del {0:dd/MM}", corte.Corte);
@@ -332,6 +380,42 @@ SELECT CAST(CASE WHEN EXISTS (
     SELECT 1 FROM dbo.ReposicionesTraspasos
     WHERE Empresa = @p0 AND Origen = @p1 AND Destino = @p2 AND Herramienta = 'Automatico' AND FechaCorte = @p3
       AND (@p4 = 1 OR Omitida IS NULL)) THEN 1 ELSE 0 END AS bit)";
+
+        /// <summary>
+        /// NestoAPI#577: ¿hay ya un traspaso de reposición de la ruta @p1 → @p2 creado en @p3 (el corte) o después? Con
+        /// cualquier herramienta: las nuevas dejan cabecera en ReposicionesTraspasos, Nesto viejo no. Las líneas se reconocen
+        /// por el almacén destino y el texto que ponen las dos herramientas («Traspaso por reposición de almacén ALG a REI»,
+        /// @p4), en los diarios de reposición de la tabla Almacenes:
+        /// <list type="bullet">
+        /// <item>ReposicionesTraspasos (no Omitida): FechaCreacion.</item>
+        /// <item>PreExtrProducto en el diario de salida del origen (en preparación, o en Algete por recoger) o en el de entrada
+        /// del destino (salida, pendiente de recibir; p. ej. PendRepo): MIN([Fecha Modificación]), el instante en que se
+        /// insertaron las líneas. Fecha no vale: en preparación es solo el día, y al terminar se pisa con la hora de salida
+        /// (80929: líneas a las 13:55, Fecha 15:20).</item>
+        /// <item>ExtractoProducto en el diario de entrada del destino (ya recibida): Fecha, la de salida que trae de
+        /// PreExtrProducto ([Fecha Modificación] y Usuario ahí son los de la recepción, por eso Usuario va NULL). Acotada por
+        /// Diario (índice) y Fecha &gt;= corte: nunca un barrido de la tabla.</item>
+        /// </list>
+        /// </summary>
+        internal const string SQL_TRASPASO_QUE_CUBRE = @"
+DECLARE @salida char(10) = (SELECT DiarioSalidaRep FROM Almacenes WHERE Empresa = @p0 AND [Número] = @p1);
+DECLARE @entrada char(10) = (SELECT DiarioEntradaRep FROM Almacenes WHERE Empresa = @p0 AND [Número] = @p2);
+SELECT TOP 1 x.NumTraspaso, x.Usuario, x.Fecha FROM (
+    SELECT r.NumTraspaso, CAST(RTRIM(r.UsuarioCreacion) AS varchar(30)) AS Usuario, r.FechaCreacion AS Fecha
+    FROM dbo.ReposicionesTraspasos r
+    WHERE r.Empresa = @p0 AND r.Origen = @p1 AND r.Destino = @p2 AND r.Omitida IS NULL AND r.FechaCreacion >= @p3
+    UNION ALL
+    SELECT p.[NºTraspaso], MIN(RTRIM(p.Usuario)), MIN(p.[Fecha Modificación])
+    FROM PreExtrProducto p
+    WHERE p.Empresa = @p0 AND p.Diario IN (@salida, @entrada) AND p.[Almacén] = @p2 AND p.Texto = @p4 AND p.Estado >= 0
+    GROUP BY p.[NºTraspaso]
+    HAVING MIN(p.[Fecha Modificación]) >= @p3
+    UNION ALL
+    SELECT e.[NºTraspaso], CAST(NULL AS varchar(30)), MIN(e.Fecha)
+    FROM ExtractoProducto e
+    WHERE e.Diario = @entrada AND e.Fecha >= @p3 AND e.Empresa = @p0 AND e.[Almacén] = @p2 AND e.Texto = @p4
+    GROUP BY e.[NºTraspaso]
+) x ORDER BY x.Fecha";
 
         internal const string SQL_APUNTAR_OMITIDA = @"
 INSERT INTO dbo.ReposicionesTraspasos (Empresa, NumTraspaso, Origen, Destino, Herramienta, UsuarioCreacion, FechaCreacion, FechaCorte, Omitida)
@@ -376,6 +460,16 @@ IF @resultado < 0 RAISERROR('Otra ejecución está rellenando las reposiciones d
                 RegistroReposicionesTraspasosSql.Char("@p0", empresa, 3), RegistroReposicionesTraspasosSql.Char("@p1", origen, 3),
                 RegistroReposicionesTraspasosSql.Char("@p2", destino, 3), RegistroReposicionesTraspasosSql.Fecha("@p3", corte),
                 new System.Data.SqlClient.SqlParameter("@p4", SqlDbType.Bit) { Value = contarOmitidas }).SingleAsync();
+        }
+
+        public async Task<TraspasoReposicionExistente> BuscarTraspasoQueCubre(string empresa, string origen, string destino, DateTime corte)
+        {
+            List<TraspasoReposicionExistente> filas = await db.Database.SqlQuery<TraspasoReposicionExistente>(SQL_TRASPASO_QUE_CUBRE,
+                RegistroReposicionesTraspasosSql.Char("@p0", empresa, 3), RegistroReposicionesTraspasosSql.Char("@p1", origen, 3),
+                RegistroReposicionesTraspasosSql.Char("@p2", destino, 3), RegistroReposicionesTraspasosSql.Fecha("@p3", corte),
+                RegistroReposicionesTraspasosSql.Char("@p4", ServicioPreparacionReposicion.Texto(origen?.Trim(), destino?.Trim()), 50))
+                .ToListAsync().ConfigureAwait(false);
+            return filas.FirstOrDefault();
         }
 
         public Task ApuntarOmitida(CabeceraReposicionTraspaso cabecera, string motivo)

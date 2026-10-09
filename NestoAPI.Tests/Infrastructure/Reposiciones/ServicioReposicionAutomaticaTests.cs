@@ -483,6 +483,122 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
             Assert.AreSame(esperado, respuesta.Content);
         }
 
+        // ---------------------------------------------------------------- NestoAPI#577: corte ya cubierto por otro traspaso
+
+        /// <summary>
+        /// Caso real del 09/10/26: Andre rellenó ALG → REI desde Nesto viejo a las 13:55 (traspaso 80929, sin cabecera en
+        /// ReposicionesTraspasos) y el job, con el corte de las 13:00, creó otra (80932). Aquí, con REI → ALG del lunes.
+        /// </summary>
+        [TestMethod]
+        public async Task Job_LaRutaYaTieneUnTraspasoCreadoDespuesDelCorte_SeApuntaOmitidaSinCrearNiAvisar()
+        {
+            repositorio.Existentes.Add(("REI", "ALG", new TraspasoReposicionExistente
+            {
+                NumTraspaso = 80929, Usuario = "NUEVAVISION\\Andre", Fecha = CORTE_LUNES.AddMinutes(1)
+            }));
+            ahora = CORTE_LUNES.AddMinutes(5);
+
+            List<ResultadoReposicionAutomaticaDTO> resultados = await Servicio().RellenarPendientes();
+
+            ResultadoReposicionAutomaticaDTO rei = resultados.Single(r => r.Origen == "REI");
+            Assert.AreEqual(ResultadosReposicionAutomatica.YA_CUBIERTA, rei.Resultado);
+            Assert.AreEqual("Ya la rellenó Andre el 19/10 10:01 (traspaso 80929)", rei.Mensaje);
+            Assert.IsFalse(creadas.Any(c => c.Peticion.Origen == "REI"), "No se crea otra");
+            CollectionAssert.DoesNotContain(repositorio.Pasos, "crear REI→ALG");
+            (CabeceraReposicionTraspaso cabecera, string motivo) = repositorio.Omitidas.Single();
+            Assert.AreEqual("REI", cabecera.Origen);
+            Assert.AreEqual(CORTE_LUNES, cabecera.FechaCorte);
+            Assert.AreEqual("Ya la rellenó Andre el 19/10 10:01 (traspaso 80929)", motivo);
+            Assert.AreEqual(0, avisos.Count, "Que alguien ya la haya hecho es normal: sin aviso a ELMAH");
+            Assert.AreEqual(ResultadosReposicionAutomatica.CREADA, resultados.Single(r => r.Origen == "ALG").Resultado, "Las demás rutas, como siempre");
+        }
+
+        [TestMethod]
+        public async Task Job_LaRutaTieneUnTraspasoCreadoAntesDelCorte_SeRellenaComoSiempre()
+        {
+            repositorio.Existentes.Add(("REI", "ALG", new TraspasoReposicionExistente
+            {
+                NumTraspaso = 80931, Usuario = "NUEVAVISION\\Reina", Fecha = CORTE_LUNES.AddMinutes(-35)
+            }));
+
+            List<ResultadoReposicionAutomaticaDTO> resultados = await Servicio().RellenarPendientes();
+
+            Assert.AreEqual(ResultadosReposicionAutomatica.CREADA, resultados.Single(r => r.Origen == "REI").Resultado);
+            Assert.IsTrue(creadas.Any(c => c.Peticion.Origen == "REI" && c.Corte == CORTE_LUNES));
+            Assert.AreEqual(0, repositorio.Omitidas.Count);
+        }
+
+        [TestMethod]
+        public async Task Job_TraspasoDeOtraRutaDelMismoOrigenDespuesDelCorte_NoLaCubre()
+        {
+            repositorio.Existentes.Add(("ALG", "REI", new TraspasoReposicionExistente
+            {
+                NumTraspaso = 80929, Usuario = "NUEVAVISION\\Andre", Fecha = CORTE_LUNES.AddMinutes(1)
+            }));
+            ahora = CORTE_LUNES.AddMinutes(5);
+
+            List<ResultadoReposicionAutomaticaDTO> resultados = await Servicio().RellenarPendientes();
+
+            Assert.AreEqual(ResultadosReposicionAutomatica.CREADA, resultados.Single(r => r.Origen == "ALG" && r.Destino == "ALC").Resultado);
+            Assert.IsTrue(creadas.Any(c => c.Peticion.Origen == "ALG" && c.Peticion.Destino == "ALC"));
+        }
+
+        [TestMethod]
+        public async Task Job_TraspasoDeOtraRutaDelMismoOrigenEnPreparacion_SigueSaltandoYaEnPreparacion()
+        {
+            repositorio.Existentes.Add(("ALG", "REI", new TraspasoReposicionExistente
+            {
+                NumTraspaso = null, Usuario = "NUEVAVISION\\Andre", Fecha = CORTE_LUNES.AddMinutes(1)
+            }));
+            fallo = p => p.Origen == "ALG"
+                ? new ReposicionYaEnPreparacionException("Ya hay una reposición en preparación de ALG a REI con 62 líneas: termínala antes de crear otra.")
+                : null;
+            ahora = CORTE_LUNES.AddMinutes(5);
+
+            List<ResultadoReposicionAutomaticaDTO> resultados = await Servicio().RellenarPendientes();
+
+            Assert.AreEqual(ResultadosReposicionAutomatica.YA_EN_PREPARACION, resultados.Single(r => r.Origen == "ALG").Resultado);
+            StringAssert.Contains(avisos.Single().Message, "ALG → ALC");
+        }
+
+        [TestMethod]
+        public async Task Job_CubiertaYFueraDePlazo_GanaCubiertaSinAviso()
+        {
+            repositorio.Existentes.Add(("REI", "ALG", new TraspasoReposicionExistente
+            {
+                NumTraspaso = 80929, Usuario = "Andre", Fecha = CORTE_LUNES.AddMinutes(1)
+            }));
+            ahora = LUNES.AddHours(14);
+
+            List<ResultadoReposicionAutomaticaDTO> resultados = await Servicio().RellenarPendientes();
+
+            Assert.AreEqual(ResultadosReposicionAutomatica.YA_CUBIERTA, resultados.Single(r => r.Origen == "REI").Resultado);
+            Assert.IsFalse(avisos.Any(a => a.Message.Contains("REI → ALG")));
+        }
+
+        [TestMethod]
+        public void MotivoCubierta_EnPreparacionYSinUsuario()
+        {
+            Assert.AreEqual("Ya la rellenó Paloma el 19/10 10:01 (en preparación, aún sin número de traspaso)",
+                ServicioReposicionAutomatica.MotivoCubierta(new TraspasoReposicionExistente { Usuario = "NUEVAVISION\\Paloma", Fecha = CORTE_LUNES.AddMinutes(1) }));
+            Assert.AreEqual("Ya se rellenó el 19/10 10:01 (traspaso 80919)",
+                ServicioReposicionAutomatica.MotivoCubierta(new TraspasoReposicionExistente { NumTraspaso = 80919, Fecha = CORTE_LUNES.AddMinutes(1) }));
+            string largo = ServicioReposicionAutomatica.MotivoCubierta(new TraspasoReposicionExistente { NumTraspaso = 1, Usuario = new string('x', 400), Fecha = CORTE_LUNES });
+            Assert.AreEqual(300, largo.Length);
+        }
+
+        [TestMethod]
+        public void Sql_TraspasoQueCubre_LasTresFuentesPorRutaYCreadoDespuesDelCorte()
+        {
+            string sql = RepositorioReposicionAutomaticaSql.SQL_TRASPASO_QUE_CUBRE;
+            StringAssert.Contains(sql, "r.Origen = @p1 AND r.Destino = @p2 AND r.Omitida IS NULL AND r.FechaCreacion >= @p3");
+            StringAssert.Contains(sql, "p.Diario IN (@salida, @entrada) AND p.[Almacén] = @p2 AND p.Texto = @p4");
+            StringAssert.Contains(sql, "HAVING MIN(p.[Fecha Modificación]) >= @p3", "En PreExtrProducto, Fecha se pisa al terminar: cuenta cuándo se insertaron las líneas");
+            StringAssert.Contains(sql, "e.Diario = @entrada AND e.Fecha >= @p3", "ExtractoProducto, siempre acotado por diario y fecha");
+            Assert.AreEqual("Traspaso por reposición de almacén ALG a REI", ServicioPreparacionReposicion.Texto("ALG", "REI"),
+                "El texto que ponen Nesto viejo y la API (y por el que se reconocen las líneas)");
+        }
+
         // ---------------------------------------------------------------- SQL
 
         [TestMethod]
@@ -509,6 +625,8 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
             /// <summary>Ídem, marcas sin reposición (vacía, ya había una…).</summary>
             public readonly HashSet<string> HechasOmitidas = new HashSet<string>();
             public readonly List<(CabeceraReposicionTraspaso Cabecera, string Motivo)> Omitidas = new List<(CabeceraReposicionTraspaso, string)>();
+            /// <summary>Traspasos de reposición ya hechos (cualquier herramienta), por ruta.</summary>
+            public readonly List<(string Origen, string Destino, TraspasoReposicionExistente Traspaso)> Existentes = new List<(string, string, TraspasoReposicionExistente)>();
 
             public Task<bool> TablaPreparada() => Task.FromResult(TablaLista);
 
@@ -519,6 +637,16 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
                 string clave = $"{origen}→{destino} {corte:dd/MM/yyyy HH:mm}";
                 Pasos.Add($"¿hay? {clave} {(contarOmitidas ? "contando omitidas" : "sin contar omitidas")}");
                 return Task.FromResult(Hechas.Contains(clave) || (contarOmitidas && HechasOmitidas.Contains(clave)));
+            }
+
+            // Sin paso: lo mismo que el SQL (misma ruta, creado en el corte o después, el más antiguo)
+            public Task<TraspasoReposicionExistente> BuscarTraspasoQueCubre(string empresa, string origen, string destino, DateTime corte)
+            {
+                return Task.FromResult(Existentes
+                    .Where(e => e.Origen == origen && e.Destino == destino && e.Traspaso.Fecha >= corte)
+                    .Select(e => e.Traspaso)
+                    .OrderBy(t => t.Fecha)
+                    .FirstOrDefault());
             }
 
             public Task ApuntarOmitida(CabeceraReposicionTraspaso cabecera, string motivo)
