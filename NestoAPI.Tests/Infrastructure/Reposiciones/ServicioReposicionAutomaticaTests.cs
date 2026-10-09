@@ -108,7 +108,7 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
             CollectionAssert.AreEqual(new[]
             {
                 "bloquear 1 ALG 16/10/2026",
-                "¿hay? ALG→REI 16/10/2026 13:00 contando omitidas",
+                "¿hay? ALG→REI 16/10/2026 contando omitidas",
                 "crear ALG→REI",
                 "soltar 1 ALG 16/10/2026"
             }, repositorio.Pasos);
@@ -257,7 +257,7 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
             CollectionAssert.AreEqual(new[]
             {
                 "bloquear 1 REI 19/10/2026",
-                "¿hay? REI→ALG 19/10/2026 10:00 contando omitidas",
+                "¿hay? REI→ALG 19/10/2026 contando omitidas",
                 "crear REI→ALG",
                 "soltar 1 REI 19/10/2026"
             }, repositorio.Pasos);
@@ -372,6 +372,99 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
             Assert.AreEqual(0, resultados.Count);
         }
 
+        // ---------------------------------------------------------------- NestoAPI#577: cambiar el calendario el mismo día
+
+        /// <summary>
+        /// 09/10/26: con el calendario editable desde Nesto, cambiar hoy la hora de cierre de una ruta ya rellenada no puede
+        /// hacer que el job vea un corte nuevo (sin cabecera) y la rellene otra vez o avise de fuera de plazo.
+        /// </summary>
+        [TestMethod]
+        public async Task Job_CambiarHoyLaHoraDeCierreAMasTardeDeUnaRutaYaRellenada_NoRellenaOtraNiAvisa()
+        {
+            repositorio.Hechas.Add("REI→ALG 19/10/2026 10:00");
+            repositorio.Calendario.Single(f => f.AlmacenOrigen == "REI").HoraCierre = TimeSpan.Parse("11:00");
+            ahora = LUNES.AddHours(11).AddMinutes(5);
+
+            List<ResultadoReposicionAutomaticaDTO> resultados = await Servicio().RellenarPendientes();
+
+            Assert.IsFalse(creadas.Any(c => c.Peticion.Origen == "REI"), "Ya se rellenó a las 10:00: la hora nueva vale desde el siguiente viaje");
+            Assert.IsFalse(resultados.Any(r => r.Origen == "REI"));
+            Assert.AreEqual(0, repositorio.Omitidas.Count);
+            Assert.AreEqual(0, avisos.Count);
+        }
+
+        [TestMethod]
+        public async Task Job_CambiarHoyLaHoraDeCierreAMasTempranoDeUnaRutaYaTratada_NoApuntaNadaNuevo()
+        {
+            repositorio.HechasOmitidas.Add("REI→ALG 19/10/2026 10:00"); // salió vacía a las 10:00
+            repositorio.Calendario.Single(f => f.AlmacenOrigen == "REI").HoraCierre = TimeSpan.Parse("09:00");
+            ahora = LUNES.AddHours(10).AddMinutes(30);
+
+            List<ResultadoReposicionAutomaticaDTO> resultados = await Servicio().RellenarPendientes();
+
+            Assert.IsFalse(creadas.Any(c => c.Peticion.Origen == "REI"));
+            Assert.IsFalse(resultados.Any(r => r.Origen == "REI"));
+            Assert.AreEqual(0, repositorio.Omitidas.Count);
+        }
+
+        [TestMethod]
+        public async Task Job_CambiarHoyLaHoraDeUnaRutaYaRellenada_PasadaLaLlegadaNueva_NoAvisaDeFueraDePlazo()
+        {
+            repositorio.Hechas.Add("REI→ALG 19/10/2026 10:00");
+            ReposicionCalendario rei = repositorio.Calendario.Single(f => f.AlmacenOrigen == "REI");
+            rei.HoraCierre = TimeSpan.Parse("11:00");
+            rei.HoraLlegadaHabitual = TimeSpan.Parse("12:00");
+            ahora = LUNES.AddHours(12).AddMinutes(30);
+
+            List<ResultadoReposicionAutomaticaDTO> resultados = await Servicio().RellenarPendientes();
+
+            Assert.IsFalse(resultados.Any(r => r.Origen == "REI"));
+            Assert.IsFalse(avisos.Any(a => a.Message.Contains("REI → ALG")));
+        }
+
+        [TestMethod]
+        public async Task Job_RutaDeHoySinRellenarConLaHoraCambiada_SeRellenaALaHoraNueva()
+        {
+            repositorio.Calendario.Single(f => f.AlmacenOrigen == "REI").HoraCierre = TimeSpan.Parse("11:00");
+            ahora = LUNES.AddHours(10).AddMinutes(30);
+
+            _ = await Servicio().RellenarPendientes();
+            Assert.IsFalse(creadas.Any(c => c.Peticion.Origen == "REI"), "A las 10:30 aún no ha llegado la hora nueva");
+
+            ahora = LUNES.AddHours(11).AddSeconds(3);
+            _ = await Servicio().RellenarPendientes();
+
+            Assert.AreEqual(LUNES.AddHours(11), creadas.Single(c => c.Peticion.Origen == "REI").Corte);
+        }
+
+        [TestMethod]
+        public async Task Job_ConAntelacion_ElViernesRellenadaYElLunesConLaHoraCambiada_NoLaDuplica()
+        {
+            SoloAlgeteReinaDelLunes();
+            repositorio.Hechas.Add("ALG→REI 16/10/2026 13:00");
+            repositorio.Calendario.Single().HoraCierre = TimeSpan.Parse("14:00");
+            ahora = LUNES.AddHours(6);
+
+            List<ResultadoReposicionAutomaticaDTO> resultados = await Servicio().RellenarPendientes();
+
+            Assert.AreEqual(0, creadas.Count, "La del lunes es el viaje que se cerró el viernes, aunque ahora cierre a las 14:00");
+            Assert.AreEqual(0, resultados.Count);
+        }
+
+        [TestMethod]
+        public async Task Relanzar_ConLaHoraCambiadaDespuesDeRellenarla_409()
+        {
+            repositorio.Hechas.Add("REI→ALG 19/10/2026 10:00");
+            repositorio.Calendario.Single(f => f.AlmacenOrigen == "REI").HoraCierre = TimeSpan.Parse("11:00");
+            ahora = LUNES.AddHours(11).AddMinutes(5);
+
+            NestoBusinessException error = await Assert.ThrowsExceptionAsync<NestoBusinessException>(
+                () => Servicio().RellenarRuta("1", "REI", "ALG", Usuario("Carlos", "Informática")));
+
+            Assert.AreEqual(HttpStatusCode.Conflict, error.StatusCode);
+            Assert.AreEqual(0, creadas.Count);
+        }
+
         // ---------------------------------------------------------------- endpoint manual
 
         [TestMethod]
@@ -387,7 +480,7 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
             Assert.AreEqual(HerramientasReposicion.AUTOMATICO, creadas.Single().Peticion.Herramienta);
             Assert.AreEqual("NUEVAVISION\\Alfredo", creadas.Single().Usuario.Identity.Name);
             Assert.IsTrue(creadas.Single().Usuario.IsInRoleSinDominio("Almacén"));
-            CollectionAssert.Contains(repositorio.Pasos, "¿hay? REI→ALG 19/10/2026 10:00 sin contar omitidas");
+            CollectionAssert.Contains(repositorio.Pasos, "¿hay? REI→ALG 19/10/2026 sin contar omitidas");
         }
 
         [TestMethod]
@@ -602,10 +695,11 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
         // ---------------------------------------------------------------- SQL
 
         [TestMethod]
-        public void Sql_LaCabeceraDelCorteEsLaDelJobDeEsaRutaYEseInstante()
+        public void Sql_LaCabeceraDelCorteEsLaDelJobDeEsaRutaYEseDia()
         {
             StringAssert.Contains(RepositorioReposicionAutomaticaSql.SQL_HAY_CABECERA, "Herramienta = 'Automatico'");
-            StringAssert.Contains(RepositorioReposicionAutomaticaSql.SQL_HAY_CABECERA, "FechaCorte = @p3");
+            StringAssert.Contains(RepositorioReposicionAutomaticaSql.SQL_HAY_CABECERA, "FechaCorte >= @p3 AND FechaCorte < DATEADD(day, 1, @p3)",
+                "El día del corte entero: cambiar la hora de cierre no hace un corte nuevo");
             StringAssert.Contains(RepositorioReposicionAutomaticaSql.SQL_HAY_CABECERA, "(@p4 = 1 OR Omitida IS NULL)");
             StringAssert.Contains(RepositorioReposicionAutomaticaSql.SQL_BLOQUEAR, "@LockOwner = 'Session'");
             StringAssert.Contains(RegistroReposicionesTraspasosSql.SQL_NUMERAR_ABIERTA, "a.Omitida IS NULL",
@@ -632,11 +726,13 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
 
             public Task<List<ReposicionCalendario>> LeerCalendario(string empresa) => Task.FromResult(Calendario.ToList());
 
-            public Task<bool> HayCabecera(string empresa, string origen, string destino, DateTime corte, bool contarOmitidas)
+            // Lo mismo que el SQL: misma ruta y FechaCorte en ese día, a cualquier hora
+            public Task<bool> HayCabeceraDelDia(string empresa, string origen, string destino, DateTime diaCorte, bool contarOmitidas)
             {
-                string clave = $"{origen}→{destino} {corte:dd/MM/yyyy HH:mm}";
-                Pasos.Add($"¿hay? {clave} {(contarOmitidas ? "contando omitidas" : "sin contar omitidas")}");
-                return Task.FromResult(Hechas.Contains(clave) || (contarOmitidas && HechasOmitidas.Contains(clave)));
+                string prefijo = $"{origen}→{destino} {diaCorte:dd/MM/yyyy}";
+                Pasos.Add($"¿hay? {prefijo} {(contarOmitidas ? "contando omitidas" : "sin contar omitidas")}");
+                Assert.AreEqual(diaCorte.Date, diaCorte, "Se pasa el día, sin hora");
+                return Task.FromResult(Hechas.Any(h => h.StartsWith(prefijo + " ")) || (contarOmitidas && HechasOmitidas.Any(h => h.StartsWith(prefijo + " "))));
             }
 
             // Sin paso: lo mismo que el SQL (misma ruta, creado en el corte o después, el más antiguo)

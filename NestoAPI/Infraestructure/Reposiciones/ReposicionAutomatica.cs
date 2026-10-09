@@ -75,10 +75,11 @@ namespace NestoAPI.Infraestructure.Reposiciones
         Task<bool> TablaPreparada();
         Task<List<ReposicionCalendario>> LeerCalendario(string empresa);
         /// <summary>
-        /// ¿Hay ya una cabecera del job (Herramienta 'Automatico') para esa ruta y ese instante de corte? Con
-        /// <paramref name="contarOmitidas"/>, también las marcas sin reposición (vacía, ya había una, fuera de plazo…).
+        /// ¿Hay ya una cabecera del job (Herramienta 'Automatico') para esa ruta con el corte (FechaCorte) en el día
+        /// <paramref name="diaCorte"/>, a cualquier hora? Con <paramref name="contarOmitidas"/>, también las marcas sin
+        /// reposición (vacía, ya había una, fuera de plazo…). Ver <see cref="ServicioReposicionAutomatica"/>, «día ya tratado».
         /// </summary>
-        Task<bool> HayCabecera(string empresa, string origen, string destino, DateTime corte, bool contarOmitidas);
+        Task<bool> HayCabeceraDelDia(string empresa, string origen, string destino, DateTime diaCorte, bool contarOmitidas);
         /// <summary>
         /// NestoAPI#577: el traspaso de reposición de esa ruta (mismo origen y destino) creado en <paramref name="corte"/> o
         /// después, con cualquier herramienta, en preparación, salido o recibido (el más antiguo), o null si no hay. Con uno,
@@ -95,8 +96,8 @@ namespace NestoAPI.Infraestructure.Reposiciones
     /// NestoAPI#577 (corte 3b): rellena cada reposición del calendario (ReposicionesCalendario) a su hora de corte.
     ///
     /// <para><b>El corte es un dato</b>, como el horizonte del picking de cierre (NestoAPI#361): para cada reposición
-    /// que cierra (o llega) HOY se calcula el instante día de cierre + HoraCierre y, si ya ha pasado y esa ruta no tiene todavía cabecera del job para
-    /// ese instante (ReposicionesTraspasos: Herramienta 'Automatico' + FechaCorte), se llama a
+    /// que cierra (o llega) HOY se calcula el instante día de cierre + HoraCierre y, si ya ha pasado y esa ruta no tiene todavía cabecera del job con el corte
+    /// ese día (ReposicionesTraspasos: Herramienta 'Automatico' + FechaCorte), se llama a
     /// <see cref="ServicioPreparacionReposicion.Crear(CrearReposicionDTO, IPrincipal, DateTime?)"/> con ESE instante (no
     /// con DateTime.Now): solo cuentan las líneas de pedido anteriores. Da igual que Hangfire arranque a las 10:00:03 o a
     /// las 10:05: el resultado es el mismo. Festivos y fines de semana como <see cref="CalculadoraFechaReposicion"/>.</para>
@@ -106,7 +107,17 @@ namespace NestoAPI.Infraestructure.Reposiciones
     /// lunes, el viernes). Cada pasada mira <see cref="CalculadoraFechaReposicion.CortesDeHoy"/>: las que cierran hoy (la
     /// del lunes se rellena el viernes a las 13:00, con ese instante como corte) y las que llegan hoy (si el viernes no se
     /// rellenó, el lunes aún se rellena, con el corte del viernes, hasta la hora de llegada; después, fuera de plazo). La
-    /// cabecera se identifica por ruta + instante de corte (FechaCorte), así que las dos vías no duplican.</para>
+    /// cabecera se identifica por ruta + día del corte (FechaCorte), así que las dos vías no duplican.</para>
+    ///
+    /// <para><b>Día ya tratado</b> (09/10/26, al poder cambiar el calendario desde Nesto): una ruta se da por tratada para
+    /// un viaje si ya hay CUALQUIER cabecera del job de esa ruta (empresa, origen, destino) con el corte en el mismo DÍA DE
+    /// CIERRE que el corte de ahora, sea cual sea la hora. Antes se buscaba el instante exacto, y cambiar hoy la hora de
+    /// cierre de una ruta ya rellenada hacía que el job viera un corte nuevo sin cabecera y la rellenara otra vez (o avisara
+    /// de fuera de plazo). Se compara el día de cierre y no el de llegada porque la cabecera solo guarda FechaCorte; con
+    /// antelación es el mismo viaje: la del lunes se cierra el viernes, y el lunes (vía «las que llegan hoy») su corte
+    /// vuelve a ser del viernes, que es donde está la cabecera. Dentro de una ruta, día de cierre y día de llegada se
+    /// corresponden uno a uno porque todas sus filas activas tienen la misma antelación y una sola fila por día de llegada
+    /// (lo exige <see cref="ServicioCalendarioReposiciones"/>). La hora nueva vale desde el siguiente viaje.</para>
     ///
     /// <para><b>Exclusión</b>: applock por ORIGEN y día DE CIERRE (el del instante de corte, no por ruta): Algete → Reina y
     /// Algete → Alcobendas escriben en el mismo diario de salida de Algete y no deben solaparse. El job y el endpoint manual
@@ -187,7 +198,7 @@ namespace NestoAPI.Infraestructure.Reposiciones
                 {
                     using (await repositorio.Bloquear(corte.Empresa, corte.Origen, corte.Corte.Date).ConfigureAwait(false))
                     {
-                        if (await repositorio.HayCabecera(corte.Empresa, corte.Origen, corte.Destino, corte.Corte, contarOmitidas: true).ConfigureAwait(false))
+                        if (await repositorio.HayCabeceraDelDia(corte.Empresa, corte.Origen, corte.Destino, corte.Corte.Date, contarOmitidas: true).ConfigureAwait(false))
                         {
                             continue;
                         }
@@ -267,7 +278,7 @@ namespace NestoAPI.Infraestructure.Reposiciones
             IPrincipal quien = Principal(string.IsNullOrWhiteSpace(nombre) ? USUARIO_AUTOMATICO : nombre);
             using (await repositorio.Bloquear(corte.Empresa, corte.Origen, corte.Corte.Date).ConfigureAwait(false))
             {
-                if (await repositorio.HayCabecera(corte.Empresa, corte.Origen, corte.Destino, corte.Corte, contarOmitidas: false).ConfigureAwait(false))
+                if (await repositorio.HayCabeceraDelDia(corte.Empresa, corte.Origen, corte.Destino, corte.Corte.Date, contarOmitidas: false).ConfigureAwait(false))
                 {
                     throw new NestoBusinessException($"La reposición de {origenLimpio} a {destinoLimpio} de las {corte.Corte:HH:mm} {DiaDelCorte(corte, ahora)} ya está rellena.")
                     {
@@ -378,7 +389,8 @@ namespace NestoAPI.Infraestructure.Reposiciones
         internal const string SQL_HAY_CABECERA = @"
 SELECT CAST(CASE WHEN EXISTS (
     SELECT 1 FROM dbo.ReposicionesTraspasos
-    WHERE Empresa = @p0 AND Origen = @p1 AND Destino = @p2 AND Herramienta = 'Automatico' AND FechaCorte = @p3
+    WHERE Empresa = @p0 AND Origen = @p1 AND Destino = @p2 AND Herramienta = 'Automatico'
+      AND FechaCorte >= @p3 AND FechaCorte < DATEADD(day, 1, @p3)
       AND (@p4 = 1 OR Omitida IS NULL)) THEN 1 ELSE 0 END AS bit)";
 
         /// <summary>
@@ -454,11 +466,11 @@ IF @resultado < 0 RAISERROR('Otra ejecución está rellenando las reposiciones d
                 .ToListAsync().ConfigureAwait(false);
         }
 
-        public Task<bool> HayCabecera(string empresa, string origen, string destino, DateTime corte, bool contarOmitidas)
+        public Task<bool> HayCabeceraDelDia(string empresa, string origen, string destino, DateTime diaCorte, bool contarOmitidas)
         {
             return db.Database.SqlQuery<bool>(SQL_HAY_CABECERA,
                 RegistroReposicionesTraspasosSql.Char("@p0", empresa, 3), RegistroReposicionesTraspasosSql.Char("@p1", origen, 3),
-                RegistroReposicionesTraspasosSql.Char("@p2", destino, 3), RegistroReposicionesTraspasosSql.Fecha("@p3", corte),
+                RegistroReposicionesTraspasosSql.Char("@p2", destino, 3), RegistroReposicionesTraspasosSql.Fecha("@p3", diaCorte.Date),
                 new System.Data.SqlClient.SqlParameter("@p4", SqlDbType.Bit) { Value = contarOmitidas }).SingleAsync();
         }
 
