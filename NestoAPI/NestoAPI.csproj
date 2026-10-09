@@ -936,6 +936,7 @@
     <Compile Include="Infraestructure\NotasEntrega\CreadorNotaEntregaPendiente.cs" />
     <Compile Include="Infraestructure\NotasEntrega\GestorFechaEntregaNotas.cs" />
     <Compile Include="Infraestructure\Reposiciones\ServicioPropuestaReposicion.cs" />
+    <Compile Include="Infraestructure\Reposiciones\ListadoReposicion.cs" />
     <Compile Include="Infraestructure\Reposiciones\PreparacionReposicion.cs" />
     <Compile Include="Infraestructure\Reposiciones\UbicacionesReposicion.cs" />
     <Compile Include="Infraestructure\Reposiciones\TransitoReposiciones.cs" />
@@ -997,6 +998,7 @@
     <Compile Include="Infraestructure\Informes\GeneradorPdfMontarKitProductos.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfResumenVentas.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfPicking.cs" />
+    <Compile Include="Infraestructure\Informes\GeneradorPdfReposicion.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfPacking.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfUbicacionesInventario.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfManifiestoAgencia.cs" />

@@ -535,6 +535,7 @@
     <Compile Include="Controllers\RapportsControllerTests.cs" />
     <Compile Include="Infrastructure\Reposiciones\CalculadoraFechaReposicionTests.cs" />
     <Compile Include="Infrastructure\Reposiciones\ServicioCalendarioReposicionesTests.cs" />
+    <Compile Include="Infrastructure\Reposiciones\ListadoReposicionTests.cs" />
     <Compile Include="Infrastructure\Reposiciones\ServicioReposicionAutomaticaTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\CorreoConfirmacionPedidoClienteTests.cs" />
     <Compile Include="Infrastructure\PoliticaPagoCanalTests.cs" />

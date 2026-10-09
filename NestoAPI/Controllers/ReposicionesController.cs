@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
@@ -39,7 +40,8 @@ namespace NestoAPI.Controllers
 
         internal ReposicionesController(NVEntities db, IServicioPreparacionReposicion preparacion,
             IServicioTransitoReposiciones transito = null, IServicioCalendarioReposiciones calendario = null,
-            IServicioReposicionAutomatica automatica = null, IPermisoRellenarReposicionManual permisoManual = null)
+            IServicioReposicionAutomatica automatica = null, IPermisoRellenarReposicionManual permisoManual = null,
+            IServicioListadoReposicion listado = null)
         {
             this.db = db;
             this.preparacion = preparacion;
@@ -47,7 +49,12 @@ namespace NestoAPI.Controllers
             this.calendario = calendario; // ídem
             this.automatica = automatica; // ídem
             this.permisoManual = permisoManual; // ídem
+            this.listado = listado; // ídem
         }
+
+        private readonly IServicioListadoReposicion listado;
+
+        private IServicioListadoReposicion Listado => listado ?? new ServicioListadoReposicion(db);
 
         private readonly IPermisoRellenarReposicionManual permisoManual;
 
@@ -257,6 +264,47 @@ namespace NestoAPI.Controllers
         {
             ReposicionEnPreparacionDTO reposicion = await preparacion.LeerEnPreparacion(empresa, origen).ConfigureAwait(false);
             return reposicion == null ? (IHttpActionResult)NotFound() : Ok(reposicion);
+        }
+
+        // GET api/Reposiciones/EnPreparacion/Pdf?origen=ALC&empresa=1
+        /// <summary>
+        /// Sugerencia 564: la reposición en preparación en papel, para prepararla a mano (las tiendas, hasta tener Ariadna):
+        /// ubicación si la hay, referencia, código de barras, descripción, cantidad y una casilla para marcar, en el orden del
+        /// recorrido (por ubicación; sin ella, por familia y descripción). Sin las líneas a 0. 404 si no hay ninguna.
+        /// </summary>
+        [HttpGet]
+        [Route("EnPreparacion/Pdf")]
+        public async Task<HttpResponseMessage> GetEnPreparacionPdf(string origen, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            ListadoReposicionDTO datos = await Listado.LeerEnPreparacion(empresa, origen).ConfigureAwait(false);
+            return datos == null
+                ? Request.CreateErrorResponse(HttpStatusCode.NotFound, $"{origen?.Trim()} no tiene ninguna reposición en preparación.")
+                : Pdf(datos);
+        }
+
+        // GET api/Reposiciones/Recepcion/80893/Pdf?almacen=ALG&empresa=1
+        /// <summary>
+        /// Sugerencia 564: lo que llega con una reposición pendiente de recibir en el almacén, en papel, para comprobarlo a
+        /// mano. Mismo formato que la de preparar, con las ubicaciones del almacén que la recibe. 404 si no está pendiente ahí.
+        /// </summary>
+        [HttpGet]
+        [Route("Recepcion/{numTraspaso:int}/Pdf")]
+        public async Task<HttpResponseMessage> GetRecepcionPdf(int numTraspaso, string almacen, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            ListadoReposicionDTO datos = await Listado.LeerRecepcion(empresa, almacen, numTraspaso).ConfigureAwait(false);
+            return datos == null
+                ? Request.CreateErrorResponse(HttpStatusCode.NotFound, $"La reposición {numTraspaso} no está pendiente de recibir en {almacen?.Trim()}.")
+                : Pdf(datos);
+        }
+
+        private static HttpResponseMessage Pdf(ListadoReposicionDTO datos)
+        {
+            var respuesta = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new Infraestructure.Informes.GeneradorPdfReposicion().GenerarPdf(datos)
+            };
+            respuesta.Content.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
+            return respuesta;
         }
 
         // PUT api/Reposiciones/EnPreparacion/Lineas/561483500?origen=ALC&empresa=1   { Cantidad }
