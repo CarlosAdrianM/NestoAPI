@@ -253,6 +253,31 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
         }
 
         [TestMethod]
+        public async Task Leer_UnJefeMiraLaListaDeOtroVendedor_EsLaMismaListaDelDiaYNoMarcaNadaComoAtendido()
+        {
+            // Nesto#521: la clave es vendedor + día. Si Alberto (ASH) abre la de David (DV) antes que él, se registra LA DE
+            // DAVID (Usuario = quien la pidió) y David ve después esa misma, sin otra lista ni atendidas. A ASH no se le crea nada.
+            SugerenciasContactoDTO delJefe = await Servicio().Leer("DV", "Llamada", 3, "", "NUEVAVISION\\Sancho");
+            A.CallTo(() => db.SaveChangesAsync()).MustHaveHappenedOnceExactly();
+            Fake.ClearRecordedCalls(db);
+            Fake.ClearRecordedCalls(fakeSugerencias);
+
+            SugerenciasContactoDTO delVendedor = await Servicio().Leer("DV", "Llamada", 3, "", "NUEVAVISION\\David");
+            SugerenciasContactoDTO otraVezDelJefe = await Servicio().Leer("dv", "Llamada", 3, "", "NUEVAVISION\\Sancho");
+
+            Assert.AreEqual(3, sugerencias.Count, "una sola lista");
+            Assert.IsTrue(sugerencias.All(s => s.Vendedor == "DV" && s.Usuario == "NUEVAVISION\\Sancho"), "la de David, pedida por Sancho");
+            Assert.IsTrue(sugerencias.All(s => !s.Atendida && s.RapportId == null), "mirarla no la atiende");
+            CollectionAssert.AreEqual(delJefe.Sugerencias.Select(s => s.SugerenciaId).ToArray(), delVendedor.Sugerencias.Select(s => s.SugerenciaId).ToArray());
+            CollectionAssert.AreEqual(delJefe.Sugerencias.Select(s => s.SugerenciaId).ToArray(), otraVezDelJefe.Sugerencias.Select(s => s.SugerenciaId).ToArray());
+            Assert.IsTrue(delVendedor.Sugerencias.All(s => !s.Atendida));
+            A.CallTo(() => fakeSugerencias.Add(A<SugerenciaContacto>._)).MustNotHaveHappened();
+            A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
+            A.CallTo(() => bloqueo.Bloquear("DV", HOY)).MustHaveHappenedOnceOrMore();
+            A.CallTo(() => bloqueo.Bloquear(A<string>.That.Matches(v => v != "DV"), A<DateTime>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
         public async Task Leer_DosAperturasALaVez_LaSegundaEncuentraLaListaDentroDelBloqueoYNoDuplica()
         {
             // NestoAPI#603 (07/10/26): Nesto abre Rapports con dos llamadas casi a la vez. Las dos leen la lista vacía;
@@ -511,7 +536,10 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
         [TestMethod]
         public async Task Controlador_ConVendedor_200ConLaFormaDelContrato()
         {
-            var controlador = new SugerenciasContactoController(db, Servicio()) { Request = new HttpRequestMessage(), User = Usuario("NUEVAVISION\\MariaJose") };
+            // Nesto#521: el permiso sobre el vendedor se prueba en ServicioVendedoresVisiblesTests; aquí se deja pasar.
+            var visibles = A.Fake<NestoAPI.Infraestructure.Vendedores.IServicioVendedoresVisibles>();
+            A.CallTo(() => visibles.PuedeVer(A<IPrincipal>._, A<string>._, A<string>._)).Returns(Task.FromResult(true));
+            var controlador = new SugerenciasContactoController(db, Servicio(), null, visibles) { Request = new HttpRequestMessage(), User = Usuario("NUEVAVISION\\MariaJose") };
 
             var resultado = await controlador.GetSugerenciasContacto("MPP", "Llamada", 2) as OkNegotiatedContentResult<SugerenciasContactoDTO>;
 

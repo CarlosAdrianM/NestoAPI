@@ -1087,6 +1087,7 @@
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorDescuentoTiendaOnline.cs" />
     <Compile Include="Infraestructure\Vendedores\IServicioVendedores.cs" />
     <Compile Include="Infraestructure\Vendedores\ServicioVendedores.cs" />
+    <Compile Include="Infraestructure\Vendedores\ServicioVendedoresVisibles.cs" />
     <Compile Include="Infraestructure\Ventas\GestorVentasCliente.cs" />
     <Compile Include="Infraestructure\Videos\DescripcionFichaVideo.cs" />
     <Compile Include="Infraestructure\Videos\CoincidenciaProductoVideo.cs" />

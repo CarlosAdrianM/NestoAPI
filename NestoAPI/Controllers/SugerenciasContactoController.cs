@@ -1,5 +1,6 @@
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Rapports;
+using NestoAPI.Infraestructure.Vendedores;
 using NestoAPI.Infrastructure;
 using NestoAPI.Models;
 using System;
@@ -29,15 +30,17 @@ namespace NestoAPI.Controllers
         private readonly NVEntities db;
         private readonly IServicioSugerenciasContacto servicio;
         private readonly Func<IRecordatorioSugerenciasContacto> crearRecordatorio;
+        private readonly IServicioVendedoresVisibles vendedoresVisibles;
 
         public SugerenciasContactoController() : this(new NVEntities())
         {
         }
 
         internal SugerenciasContactoController(NVEntities db, IServicioSugerenciasContacto servicio = null,
-            IRecordatorioSugerenciasContacto recordatorio = null)
+            IRecordatorioSugerenciasContacto recordatorio = null, IServicioVendedoresVisibles vendedoresVisibles = null)
         {
             this.db = db;
+            this.vendedoresVisibles = vendedoresVisibles ?? new ServicioVendedoresVisibles(db);
             this.servicio = servicio ?? new ServicioSugerenciasContacto(db);
             crearRecordatorio = recordatorio != null ? (Func<IRecordatorioSugerenciasContacto>)(() => recordatorio) : () => new RecordatorioSugerenciasContacto();
         }
@@ -51,6 +54,11 @@ namespace NestoAPI.Controllers
             if (string.IsNullOrWhiteSpace(vendedor))
             {
                 return BadRequest("Hay que indicar el vendedor.");
+            }
+            // Nesto#521: el propio, los de su equipo (jefes de ventas) o cualquiera (Dirección). Si no, 403.
+            if (!await vendedoresVisibles.PuedeVer(User, Constantes.Empresas.EMPRESA_POR_DEFECTO, vendedor).ConfigureAwait(false))
+            {
+                return ResponseMessage(Request.CreateErrorResponse(HttpStatusCode.Forbidden, ServicioVendedoresVisibles.MENSAJE_SIN_PERMISO));
             }
             string usuario = UsuarioAuditoriaHelper.Resolver(User, null);
             return Ok(await servicio.Leer(vendedor, tipoInteraccion, numero, grupoSubgrupo, usuario).ConfigureAwait(false));

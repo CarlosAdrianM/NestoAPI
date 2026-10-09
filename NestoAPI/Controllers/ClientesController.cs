@@ -36,7 +36,8 @@ namespace NestoAPI.Controllers
         private readonly IGestorSincronizacion _gestorSincronizacion;
         // Carlos 06/07/15: lo pongo para desactivar el Lazy Loading
         public ClientesController(IGestorClientes gestorClientes, IServicioVendedores servicioVendedores, IGestorSincronizacion gestorSincronizacion = null,
-            Infraestructure.Clientes.IServicioValidacionNif servicioValidacionNif = null, NVEntities dbInyectada = null)
+            Infraestructure.Clientes.IServicioValidacionNif servicioValidacionNif = null, NVEntities dbInyectada = null,
+            IServicioVendedoresVisibles vendedoresVisibles = null)
         {
             // NestoAPI#473: inyectable para los tests que necesitan que SaveChanges falle como falla
             // un trigger; en producción sigue siendo el contexto propio del controller.
@@ -47,7 +48,11 @@ namespace NestoAPI.Controllers
             _gestorSincronizacion = gestorSincronizacion ?? new GestorSincronizacion(db);
             // NestoAPI#327: inyectable para tests; por defecto usa el db del controller
             _servicioValidacionNif = servicioValidacionNif ?? new Infraestructure.Clientes.ServicioValidacionNif(db);
+            // Nesto#521: la misma regla que GET api/Clientes/SugerenciasContacto, para GetClientesProbabilidadVenta.
+            _vendedoresVisibles = vendedoresVisibles ?? new ServicioVendedoresVisibles(db, servicioVendedores);
         }
+
+        private readonly IServicioVendedoresVisibles _vendedoresVisibles;
 
         private readonly Infraestructure.Clientes.IServicioValidacionNif _servicioValidacionNif;
 
@@ -551,6 +556,13 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(List<ClienteProbabilidadVenta>))]
         public async Task<IHttpActionResult> GetClientesProbabilidadVenta(string vendedor, int numeroClientes = 20, string tipoInteraccion = "", string grupoSubgrupo = "")
         {
+            // Nesto#521: el propio, los de su equipo (jefes de ventas) o cualquiera (Dirección). Sin vendedor se deja como
+            // estaba: no hay de quién comprobar nada.
+            if (!string.IsNullOrWhiteSpace(vendedor)
+                && !await _vendedoresVisibles.PuedeVer(User, Constantes.Empresas.EMPRESA_POR_DEFECTO, vendedor).ConfigureAwait(false))
+            {
+                return ResponseMessage(Request.CreateErrorResponse(HttpStatusCode.Forbidden, ServicioVendedoresVisibles.MENSAJE_SIN_PERMISO));
+            }
             List<ClienteProbabilidadVenta> respuesta = await _gestorClientes.BuscarClientesPorProbabilidadVenta(vendedor, numeroClientes, tipoInteraccion, grupoSubgrupo);
 
             return Ok(respuesta);
