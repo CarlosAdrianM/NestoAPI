@@ -579,6 +579,7 @@
     <Compile Include="Infrastructure\PedidosVenta\ClasificadorCausasModoServicioTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\CalculadoraFechaEntregaAgenciaTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\RepartidorStockFechaEntregaAgenciaTests.cs" />
+    <Compile Include="Infrastructure\PedidosVenta\CorreoFechaEntregaAgenciaTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\ServicioFechaEntregaAgenciaTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\ProveedorVencidoTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\SombraModoServicioTests.cs" />

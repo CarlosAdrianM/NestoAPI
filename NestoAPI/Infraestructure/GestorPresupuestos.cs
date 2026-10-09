@@ -3,6 +3,7 @@ using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Net.Mail;
@@ -46,6 +47,18 @@ namespace NestoAPI.Infraestructure
         /// destacados al principio del correo para que el usuario pueda controlar el cambio.
         /// </summary>
         public List<string> Avisos { get; } = new List<string>();
+
+        /// <summary>
+        /// NestoAPI#606 (09/10): la fecha de entrega a la agencia del pedido (la calcula el controlador con
+        /// <c>IServicioFechaEntregaAgencia</c>, la MISMA que se guarda como prometida en el alta). Null = el correo sale sin la sección.
+        /// </summary>
+        public FechaEntregaAgenciaDTO FechaEntregaAgencia { get; set; }
+
+        /// <summary>
+        /// NestoAPI#606: la prometida se acaba de dar en esta operación (alta, o presupuesto que pasa a pedido): el correo la
+        /// enseña como la que se le ha dicho al cliente, sin «antes → ahora».
+        /// </summary>
+        public bool FechaEntregaAgenciaRecienPrometida { get; set; }
 
         /// <summary>
         /// Genera el bloque HTML de avisos destacados (amarillo). Estático y puro para poder
@@ -718,6 +731,9 @@ namespace NestoAPI.Infraestructure
             // líneas difieren no sale nada aquí: cada una lleva la suya en la columna F. Entrega).
             int colspanFechaEntrega = 6 + (hayDescuentos ? 1 : 0) + (hayLineasConReservas ? 1 : 0) + (hayFechasEntregaDistintas ? 1 : 0);
             _ = s.Append(GenerarHtmlFechaEntregaComun(pedido.Lineas, colspanFechaEntrega));
+            // NestoAPI#606 (09/10): la fecha de entrega a la agencia que se le ha dicho al cliente y por qué.
+            _ = s.Append(GenerarHtmlFechaEntregaAgencia(FechaEntregaAgencia, pedido.EsPresupuesto,
+                tipoCorreo == "Modificación" && !FechaEntregaAgenciaRecienPrometida, pedido.Lineas, colspanFechaEntrega));
 
             // Carlos 01/12/25: Refactorizado para usar método testeable (Issue #48)
             int colspanValidacion = 6 + (hayDescuentos ? 1 : 0) + (hayLineasConReservas ? 1 : 0) + (hayFechasEntregaDistintas ? 1 : 0);
@@ -1243,6 +1259,153 @@ namespace NestoAPI.Infraestructure
             string almacen = pedido.Lineas?.FirstOrDefault()?.almacen?.Trim();
             return almacen == Constantes.Almacenes.REINA || almacen == Constantes.Almacenes.ALCOBENDAS;
         }
+
+        private static readonly CultureInfo castellano = new CultureInfo("es-ES");
+
+        /// <summary>
+        /// NestoAPI#606 (petición de Carlos, 09/10/26): en el correo, la fecha de entrega a la agencia que se le ha dicho al
+        /// cliente y el desglose de por qué (stock, reposición de tienda con su ruta y llegada, pedido a proveedor con su número
+        /// y fecha prevista, sin fecha). En la modificación, la prometida al crearlo frente a la de ahora, resaltada si cambia.
+        /// Pura: todo sale de <paramref name="fecha"/> (<see cref="Infraestructure.PedidosVenta.CalculadoraFechaEntregaAgencia"/>),
+        /// aquí solo se pinta. Vacía en presupuestos, sin cálculo (falló) o sin nada que decir.
+        /// </summary>
+        internal static string GenerarHtmlFechaEntregaAgencia(FechaEntregaAgenciaDTO fecha, bool esPresupuesto, bool esModificacion,
+            IEnumerable<LineaPedidoVentaDTO> lineas, int colspan)
+        {
+            if (fecha == null || esPresupuesto)
+            {
+                return string.Empty;
+            }
+            List<PartidaFechaEntregaAgenciaDTO> desglose = fecha.Desglose ?? new List<PartidaFechaEntregaAgenciaDTO>();
+            DateTime? ahora = fecha.FechaEntregaAgencia?.Date;
+            DateTime? prometida = fecha.FechaPrometida?.Date;
+            if (!ahora.HasValue && !desglose.Any() && !(esModificacion && prometida.HasValue))
+            {
+                return string.Empty; // Nada sale de Algete por agencia (p. ej. pedido de tienda): nada que decir.
+            }
+
+            Dictionary<string, string> descripciones = (lineas ?? Enumerable.Empty<LineaPedidoVentaDTO>())
+                .Where(l => l != null && !string.IsNullOrWhiteSpace(l.Producto) && !string.IsNullOrWhiteSpace(l.texto))
+                .GroupBy(l => l.Producto.Trim(), StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First().texto.Trim(), StringComparer.OrdinalIgnoreCase);
+
+            StringBuilder s = new StringBuilder();
+            _ = s.AppendLine("<tr>");
+            _ = s.Append($"<td colspan='{colspan}' style=\"text-align:left\">");
+
+            string textoAhora = ahora.HasValue ? DiaCorreo(ahora.Value) : "sin fecha";
+            if (esModificacion && prometida.HasValue && prometida != ahora)
+            {
+                _ = s.Append("<p style=\"background-color:#fff3cd; border:2px solid #ffc107; padding:6px; margin:0 0 4px 0\"><b>&#9888; Cambia la fecha de " +
+                    $"entrega a la agencia. Antes: {DiaCorreo(prometida.Value)} &rarr; Ahora: {textoAhora}</b></p>");
+            }
+            else if (esModificacion && prometida.HasValue)
+            {
+                _ = s.Append($"<b>Entrega a la agencia: {textoAhora}</b> (la misma que se le dijo al cliente al crear el pedido)<br>");
+            }
+            else if (esModificacion)
+            {
+                _ = s.Append($"<b>Entrega a la agencia: {textoAhora}</b> (el pedido no tiene fecha prometida guardada: es anterior o nació sin fecha)<br>");
+            }
+            else
+            {
+                _ = s.Append($"<b>Entrega a la agencia: {textoAhora}</b>" + (ahora.HasValue ? " (la que se le ha dicho al cliente)" : string.Empty) + "<br>");
+            }
+
+            if (ahora.HasValue && fecha.Aplica == FechaEntregaAgenciaDTO.APLICA_PRIMERA && fecha.EntregaCompleta?.Date != ahora)
+            {
+                _ = s.Append(fecha.EntregaCompleta.HasValue
+                    ? $"Es la primera entrega; el pedido queda completo el {DiaCorreo(fecha.EntregaCompleta.Value)}.<br>"
+                    : "Es la primera entrega; lo que falta aún no tiene fecha.<br>");
+            }
+
+            if (desglose.Any())
+            {
+                _ = s.Append(esModificacion && prometida.HasValue && prometida != ahora
+                    ? $"Por qué sale {(ahora.HasValue ? "el " + textoAhora : "sin fecha")} con el pedido como queda:"
+                    : "Por qué:");
+                _ = s.Append("<ul style=\"margin:2px 0 2px 0\">");
+                foreach (string item in ItemsDesglose(desglose, descripciones))
+                {
+                    _ = s.Append(item);
+                }
+                _ = s.Append("</ul>");
+            }
+            if (!string.IsNullOrWhiteSpace(fecha.Aviso))
+            {
+                _ = s.Append("<i>" + EscaparHtml(fecha.Aviso.Trim()) + "</i>");
+            }
+            _ = s.AppendLine("</td>");
+            _ = s.AppendLine("</tr>");
+            return s.ToString();
+        }
+
+        private static IEnumerable<string> ItemsDesglose(List<PartidaFechaEntregaAgenciaDTO> desglose, Dictionary<string, string> descripciones)
+        {
+            string Producto(PartidaFechaEntregaAgenciaDTO p)
+            {
+                string codigo = p.Producto?.Trim();
+                string texto = codigo != null && descripciones.TryGetValue(codigo, out string descripcion) ? $"{codigo} {descripcion}" : codigo;
+                return EscaparHtml(texto) + $" ({p.Unidades} {(p.Unidades == 1 ? "ud." : "uds.")})";
+            }
+            string Lista(IEnumerable<PartidaFechaEntregaAgenciaDTO> partidas) => string.Join(", ", partidas.Select(Producto));
+            string PuedeSalir(PartidaFechaEntregaAgenciaDTO p) => p.PuedeSalirEl.HasValue ? $"puede salir el {DiaCorreo(p.PuedeSalirEl.Value)}" : "sin fecha";
+
+            List<PartidaFechaEntregaAgenciaDTO> enPicking = desglose.Where(p => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_PICKING).ToList();
+            if (enPicking.Any())
+            {
+                yield return $"<li>Ya en el picking (sale hoy): {Lista(enPicking)}.</li>";
+            }
+            List<PartidaFechaEntregaAgenciaDTO> conStock = desglose.Where(p => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_ALGETE).ToList();
+            foreach (var grupo in conStock.GroupBy(p => p.PuedeSalirEl))
+            {
+                yield return $"<li>Con stock en Algete ({PuedeSalir(grupo.First())}): {Lista(grupo)}.</li>";
+            }
+            foreach (var grupo in desglose.Where(p => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_TIENDA)
+                .GroupBy(p => new { p.Tienda, p.LlegaAAlgete, p.PuedeSalirEl }))
+            {
+                string tienda = EscaparHtml(Infraestructure.PedidosVenta.CalculadoraFechaEntregaAgencia.NombreAlmacen(grupo.Key.Tienda));
+                string llegada = grupo.Key.LlegaAAlgete.HasValue
+                    ? $"llega a Algete el {DiaCorreo(grupo.Key.LlegaAAlgete.Value)} hacia las {grupo.Key.LlegaAAlgete.Value.ToString("HH:mm", castellano)}; "
+                    : string.Empty;
+                string sinCalendario = grupo.Key.PuedeSalirEl.HasValue ? string.Empty : $" ({EscaparHtml(grupo.First().MotivoSinFecha)})";
+                yield return $"<li>Reposición {tienda} &rarr; Algete ({llegada}{PuedeSalir(grupo.First())}{sinCalendario}): {Lista(grupo)}.</li>";
+            }
+            foreach (var grupo in desglose.Where(p => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_EN_CAMINO).GroupBy(p => p.PuedeSalirEl))
+            {
+                yield return $"<li>Ya viene de camino desde una tienda ({PuedeSalir(grupo.First())}): {Lista(grupo)}.</li>";
+            }
+            foreach (PartidaFechaEntregaAgenciaDTO p in desglose.Where(p => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_PROVEEDOR))
+            {
+                string pedidoProveedor = p.PedidoProveedor.HasValue ? $"Pedido a proveedor {p.PedidoProveedor.Value}" : "Pedido a proveedor";
+                if (!p.FechaPrevistaProveedor.HasValue)
+                {
+                    yield return $"<li>{pedidoProveedor} sin fecha prevista: {Producto(p)}.</li>";
+                }
+                else if (p.LlegadaSupuesta.HasValue)
+                {
+                    yield return $"<li style=\"color:red\">{pedidoProveedor}, prevista el {DiaCorreo(p.FechaPrevistaProveedor.Value)}: {Producto(p)}. " +
+                        $"La fecha prevista ya pasó y no ha llegado; suponemos que llega el {DiaCorreo(p.LlegadaSupuesta.Value)} y {PuedeSalir(p)}, " +
+                        "pero puede retrasarse.</li>";
+                }
+                else
+                {
+                    yield return $"<li>{pedidoProveedor}, prevista el {DiaCorreo(p.FechaPrevistaProveedor.Value)} ({PuedeSalir(p)}): {Producto(p)}.</li>";
+                }
+            }
+            foreach (PartidaFechaEntregaAgenciaDTO p in desglose.Where(p => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_SIN_STOCK))
+            {
+                string motivo = string.IsNullOrWhiteSpace(p.MotivoSinFecha) ? "no hay stock ni fecha de llegada" : p.MotivoSinFecha.Trim();
+                yield return $"<li>Sin fecha: {Producto(p)}: {EscaparHtml(motivo)}.</li>";
+            }
+        }
+
+        /// <summary>Solo &amp; &lt; &gt; y comillas: las tildes se quedan como están (WebUtility.HtmlEncode las convierte en &amp;#250;).</summary>
+        private static string EscaparHtml(string texto) => (texto ?? string.Empty)
+            .Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;").Replace("\"", "&quot;");
+
+        /// <summary>«jueves 15/10/2026».</summary>
+        internal static string DiaCorreo(DateTime dia) => dia.ToString("dddd dd/MM/yyyy", castellano);
 
         internal static string GenerarHtmlFechaEntregaComun(IEnumerable<LineaPedidoVentaDTO> lineas, int colspan)
         {

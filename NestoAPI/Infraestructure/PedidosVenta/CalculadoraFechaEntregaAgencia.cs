@@ -1,5 +1,6 @@
 using NestoAPI.Infraestructure.Reposiciones;
 using NestoAPI.Models;
+using NestoAPI.Models.PedidosVenta;
 using NestoAPI.Models.Picking;
 using NestoAPI.Models.RecursosHumanos;
 using System;
@@ -33,6 +34,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// <summary>Unidades de un pedido a proveedor enviado (LinPedidoCmp) con su fecha prevista.</summary>
         public int DelProveedor { get; set; }
         public DateTime? FechaProveedor { get; set; }
+        /// <summary>NestoAPI#606 (correo del pedido): número del pedido a proveedor de esa fecha prevista. Opcional.</summary>
+        public int? PedidoProveedor { get; set; }
         /// <summary>Texto que acompaña a lo que no tiene fecha (p. ej. «sobre pedido»). Opcional.</summary>
         public string MotivoSinFecha { get; set; }
     }
@@ -81,6 +84,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// se ha supuesto que llegan el laborable siguiente a hoy. Quien llama avisa a Compras.
         /// </summary>
         public List<ProveedorVencidoFechaEntregaAgencia> ProveedorVencido { get; set; } = new List<ProveedorVencidoFechaEntregaAgencia>();
+        /// <summary>
+        /// NestoAPI#606 (correo del pedido, 09/10): de dónde sale cada producto (stock, reposición de tienda, proveedor, sin
+        /// fecha), agrupado como las frases de <see cref="Motivo"/>, para que quien lo enseñe no tenga que recalcular nada.
+        /// </summary>
+        public List<PartidaFechaEntregaAgenciaDTO> Desglose { get; set; } = new List<PartidaFechaEntregaAgenciaDTO>();
     }
 
     /// <summary>NestoAPI#606 (08/10): un producto que espera un pedido a proveedor con la fecha prevista ya pasada.</summary>
@@ -264,6 +272,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             resultado.PrimeraEntrega = entregas.Any() ? entregas.Min : (DateTime?)null;
             resultado.EntregaCompleta = entregas.Any() && lotes.All(l => l.Enviado) ? entregas.Max : (DateTime?)null;
             resultado.Motivo = Motivo(entrada, resultado, lotes, avisos, esperoTiendas, esperoRegalos, fueANota, todoANota, diasCerrados);
+            resultado.Desglose = Desglose(lotes);
             resultado.ProveedorVencido = lotes
                 .Where(l => l.LlegadaSupuesta.HasValue && l.FechaProveedor.HasValue)
                 .GroupBy(l => l.Producto, StringComparer.OrdinalIgnoreCase)
@@ -310,12 +319,44 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 : $"{inicio}; si eliges «{nombre}», sale una primera parte en cuanto haya algo (ahora mismo no hay nada que pueda salir).";
         }
 
+        /// <summary>
+        /// NestoAPI#606 (correo del pedido): los lotes agrupados por producto y origen, en el orden en que se explican. Puede
+        /// salir el = el día en que está en Algete, pero nunca antes de que la línea entre en el picking.
+        /// </summary>
+        private static List<PartidaFechaEntregaAgenciaDTO> Desglose(List<Lote> lotes)
+        {
+            return lotes
+                .Select(l => new
+                {
+                    Lote = l,
+                    PuedeSalirEl = l.Disponible.HasValue ? (l.Disponible.Value > l.Elegible ? l.Disponible.Value : l.Elegible) : (DateTime?)null
+                })
+                .GroupBy(x => new { x.Lote.Origen, x.Lote.Producto, x.Lote.Tienda, x.PuedeSalirEl, x.Lote.LlegaAAlgete, x.Lote.FechaProveedor, x.Lote.LlegadaSupuesta, x.Lote.PedidoProveedor, x.Lote.MotivoSinFecha })
+                .Select(g => new PartidaFechaEntregaAgenciaDTO
+                {
+                    Origen = g.Key.Origen,
+                    Producto = g.Key.Producto,
+                    Unidades = g.Sum(x => x.Lote.Unidades),
+                    Tienda = g.Key.Tienda,
+                    LlegaAAlgete = g.Key.LlegaAAlgete,
+                    PuedeSalirEl = g.Key.PuedeSalirEl,
+                    FechaPrevistaProveedor = g.Key.FechaProveedor,
+                    LlegadaSupuesta = g.Key.LlegadaSupuesta,
+                    PedidoProveedor = g.Key.PedidoProveedor,
+                    MotivoSinFecha = g.Key.MotivoSinFecha
+                })
+                .OrderBy(p => Array.IndexOf(PartidaFechaEntregaAgenciaDTO.ORDEN_ORIGENES, p.Origen))
+                .ThenBy(p => p.PuedeSalirEl ?? DateTime.MaxValue)
+                .ThenBy(p => p.Producto, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
         private static bool EstaEnAlgete(Lote lote, DateTime dia) => lote.Disponible.HasValue && lote.Disponible.Value <= dia;
 
         private List<Lote> CrearLotes(EntradaFechaEntregaAgencia entrada, DateTime hoy, List<string> avisos)
         {
             var lotes = new List<Lote>();
-            var salidaPorTienda = new Dictionary<string, DateTime?>(StringComparer.OrdinalIgnoreCase);
+            var reposicionPorTienda = new Dictionary<string, ProximaReposicionDTO>(StringComparer.OrdinalIgnoreCase);
             foreach (LineaFechaEntregaAgencia linea in (entrada.Lineas ?? new List<LineaFechaEntregaAgencia>()).Where(l => l != null && l.Cantidad > 0))
             {
                 DateTime fechaLinea = linea.FechaEntrega.HasValue && linea.FechaEntrega.Value > DateTime.MinValue ? linea.FechaEntrega.Value : hoy;
@@ -368,15 +409,17 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         continue;
                     }
                     string codigo = tienda.Key?.Trim().ToUpperInvariant();
-                    if (!salidaPorTienda.TryGetValue(codigo, out DateTime? sale))
+                    if (!reposicionPorTienda.TryGetValue(codigo, out ProximaReposicionDTO reposicion))
                     {
-                        sale = calculadoraReposicion.Calcular(entrada.Calendario, codigo, Constantes.Almacenes.ALGETE, entrada.HoraCorte,
-                            entrada.Ahora, entrada.Empresa)?.PedidoSaleEl.Date;
-                        salidaPorTienda[codigo] = sale;
+                        reposicion = calculadoraReposicion.Calcular(entrada.Calendario, codigo, Constantes.Almacenes.ALGETE, entrada.HoraCorte,
+                            entrada.Ahora, entrada.Empresa);
+                        reposicionPorTienda[codigo] = reposicion;
                     }
+                    DateTime? sale = reposicion?.PedidoSaleEl.Date;
                     Lote lote = Nuevo(unidades, sale, ORIGEN_TIENDA, codigo,
                         sale.HasValue ? null : $"no hay calendario de reposición desde {NombreAlmacen(codigo)}");
                     lote.DeTienda = true;
+                    lote.LlegaAAlgete = reposicion?.LlegaEl;
                     lotes.Add(lote);
                 }
                 int enCamino = Tomar(linea.EnCaminoDeTiendas);
@@ -397,6 +440,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         // (no sabemos si llega antes de la hora de corte).
                         Lote lote = Nuevo(proveedor, SiguienteLaborable(prevista.Value), ORIGEN_PROVEEDOR);
                         lote.FechaProveedor = prevista;
+                        lote.PedidoProveedor = linea.PedidoProveedor;
                         lotes.Add(lote);
                     }
                     else if (prevista.HasValue)
@@ -408,6 +452,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         Lote lote = Nuevo(proveedor, SiguienteLaborable(llegada), ORIGEN_PROVEEDOR);
                         lote.FechaProveedor = prevista;
                         lote.LlegadaSupuesta = llegada;
+                        lote.PedidoProveedor = linea.PedidoProveedor;
                         lotes.Add(lote);
                     }
                     else
@@ -577,12 +622,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             return siguiente;
         }
 
-        private const string ORIGEN_PICKING = "Picking";
-        private const string ORIGEN_ALGETE = "Algete";
-        private const string ORIGEN_TIENDA = "Tienda";
-        private const string ORIGEN_EN_CAMINO = "EnCamino";
-        private const string ORIGEN_PROVEEDOR = "Proveedor";
-        private const string ORIGEN_SIN_STOCK = "SinStock";
+        private const string ORIGEN_PICKING = PartidaFechaEntregaAgenciaDTO.ORIGEN_PICKING;
+        private const string ORIGEN_ALGETE = PartidaFechaEntregaAgenciaDTO.ORIGEN_ALGETE;
+        private const string ORIGEN_TIENDA = PartidaFechaEntregaAgenciaDTO.ORIGEN_TIENDA;
+        private const string ORIGEN_EN_CAMINO = PartidaFechaEntregaAgenciaDTO.ORIGEN_EN_CAMINO;
+        private const string ORIGEN_PROVEEDOR = PartidaFechaEntregaAgenciaDTO.ORIGEN_PROVEEDOR;
+        private const string ORIGEN_SIN_STOCK = PartidaFechaEntregaAgenciaDTO.ORIGEN_SIN_STOCK;
 
         /// <summary>Unidades de una línea que llegan a Algete el mismo día.</summary>
         private class Lote
@@ -601,6 +646,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             public DateTime? FechaProveedor { get; set; }
             /// <summary>Solo si la fecha prevista del proveedor está vencida: el día que se supone que llega.</summary>
             public DateTime? LlegadaSupuesta { get; set; }
+            public int? PedidoProveedor { get; set; }
+            /// <summary>Solo de una tienda: día y hora a la que suele llegar a Algete su próxima reposición.</summary>
+            public DateTime? LlegaAAlgete { get; set; }
             public string MotivoSinFecha { get; set; }
             public bool Enviado { get; set; }
             /// <summary>Facturado «todo ahora» y pasado a la nota de entrega sin fecha.</summary>

@@ -94,6 +94,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         YaEnPicking = linea.YaEnPicking,
                         EnAlgete = Tomar(ref libres),
                         FechaProveedor = causas.FechaPrevista,
+                        PedidoProveedor = PedidoProveedor(datos, producto, causas.FechaPrevista),
                         MotivoSinFecha = motivoSinFecha
                     };
                     for (int i = 0; i < porTienda.Count && resto > 0; i++)
@@ -113,6 +114,15 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             }
 
             return deAlgete.Select(l => repartidas[l]).ToList();
+        }
+
+        /// <summary>NestoAPI#606 (correo del pedido): el pedido a proveedor de la fecha prevista más temprana de Algete.</summary>
+        private static int? PedidoProveedor(DatosSombraModoServicio datos, string producto, DateTime? fechaPrevista)
+        {
+            return fechaPrevista.HasValue
+                && datos.PedidoCompraPrevisto.TryGetValue(ResumenStocksProductos.Clave(producto, Constantes.Almacenes.ALGETE), out int pedido)
+                ? pedido
+                : (int?)null;
         }
     }
 }

@@ -20,6 +20,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         public Dictionary<string, int> PendienteRecibir { get; } = new Dictionary<string, int>();
         /// <summary>Fecha de recepción más temprana de esos pedidos (clave producto|almacén).</summary>
         public Dictionary<string, DateTime> FechaPrevista { get; } = new Dictionary<string, DateTime>();
+        /// <summary>NestoAPI#606: número del pedido a proveedor con esa fecha más temprana (clave producto|almacén).</summary>
+        public Dictionary<string, int> PedidoCompraPrevisto { get; } = new Dictionary<string, int>();
     }
 
     /// <summary>

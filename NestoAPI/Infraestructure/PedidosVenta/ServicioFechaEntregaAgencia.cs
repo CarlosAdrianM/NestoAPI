@@ -51,6 +51,17 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         Task<FechaEntregaAgenciaDTO> CalcularPlantilla(PedidoVentaDTO pedido);
         /// <summary>Al crear el pedido: calcula y guarda la prometida. NUNCA lanza (crear el pedido no puede fallar por esto).</summary>
         Task<DateTime?> GuardarPrometidaAlCrear(string empresa, int numero);
+        /// <summary>
+        /// NestoAPI#606 (correo del pedido, 09/10): lo mismo que <see cref="GuardarPrometidaAlCrear"/>, pero devuelve el cálculo
+        /// entero (fecha, desglose y, si se ha podido guardar, la prometida) para enseñarlo en el correo del alta. Si el cálculo
+        /// falla devuelve null; si solo falla al guardar, el cálculo sin prometida. NUNCA lanza.
+        /// </summary>
+        Task<FechaEntregaAgenciaDTO> CalcularYGuardarPrometidaAlCrear(string empresa, int numero);
+        /// <summary>
+        /// NestoAPI#606 (correo del pedido, 09/10): <see cref="CalcularPedido"/> para el correo de la modificación (con la
+        /// prometida de la columna). Null si falla (a ELMAH, como mucho una vez cada media hora). NUNCA lanza.
+        /// </summary>
+        Task<FechaEntregaAgenciaDTO> CalcularPedidoParaCorreo(string empresa, int numero);
     }
 
     /// <summary>
@@ -135,31 +146,78 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
         public async Task<DateTime?> GuardarPrometidaAlCrear(string empresa, int numero)
         {
+            (FechaEntregaAgenciaDTO dto, bool fallo) = await CalcularYGuardar(empresa, numero).ConfigureAwait(false);
+            return fallo ? null : dto?.FechaEntregaAgencia;
+        }
+
+        public async Task<FechaEntregaAgenciaDTO> CalcularYGuardarPrometidaAlCrear(string empresa, int numero)
+        {
+            return (await CalcularYGuardar(empresa, numero).ConfigureAwait(false)).dto;
+        }
+
+        public async Task<FechaEntregaAgenciaDTO> CalcularPedidoParaCorreo(string empresa, int numero)
+        {
             try
             {
-                FechaEntregaAgenciaDTO dto = await CalcularPedido(empresa, numero).ConfigureAwait(false);
-                DateTime? fecha = dto?.FechaEntregaAgencia;
-                if (fecha.HasValue)
-                {
-                    _ = await repositorio.GuardarPrometida(Empresa(empresa), numero, fecha.Value.Date).ConfigureAwait(false);
-                }
-                return fecha;
+                return await CalcularPedido(empresa, numero).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                try
-                {
-                    if (TocaRegistrar(reloj()))
-                    {
-                        registrar(new Exception($"NestoAPI#606: no se ha podido guardar la fecha de entrega a la agencia prometida del pedido {numero} " +
-                            $"(se avisa como mucho una vez cada {INTERVALO_AVISOS.TotalMinutes:0} minutos): {ex.Message}", ex));
-                    }
-                }
-                catch
-                {
-                    // Ni el registro puede romper la creación del pedido.
-                }
+                Registrar($"no se ha podido calcular la fecha de entrega a la agencia del pedido {numero} para el correo de la modificación " +
+                    "(el correo sale sin ella)", ex);
                 return null;
+            }
+        }
+
+        /// <summary>
+        /// Calcula y guarda la prometida (una sola vez: el UPDATE lleva IS NULL). <c>fallo</c> = algo ha ido mal (calcular o
+        /// guardar); si solo ha fallado al guardar, el cálculo se devuelve igual (sin prometida) para el correo.
+        /// </summary>
+        private async Task<(FechaEntregaAgenciaDTO dto, bool fallo)> CalcularYGuardar(string empresa, int numero)
+        {
+            FechaEntregaAgenciaDTO dto;
+            try
+            {
+                dto = await CalcularPedido(empresa, numero).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Registrar($"no se ha podido calcular ni guardar la fecha de entrega a la agencia prometida del pedido {numero}", ex);
+                return (null, true);
+            }
+            DateTime? fecha = dto?.FechaEntregaAgencia;
+            if (!fecha.HasValue)
+            {
+                return (dto, false);
+            }
+            try
+            {
+                if (await repositorio.GuardarPrometida(Empresa(empresa), numero, fecha.Value.Date).ConfigureAwait(false))
+                {
+                    dto.FechaPrometida = fecha.Value.Date;
+                }
+                return (dto, false);
+            }
+            catch (Exception ex)
+            {
+                Registrar($"no se ha podido guardar la fecha de entrega a la agencia prometida del pedido {numero}", ex);
+                return (dto, true);
+            }
+        }
+
+        /// <summary>A ELMAH como mucho una vez cada <see cref="INTERVALO_AVISOS"/>. Nunca lanza.</summary>
+        private void Registrar(string que, Exception ex)
+        {
+            try
+            {
+                if (TocaRegistrar(reloj()))
+                {
+                    registrar(new Exception($"NestoAPI#606: {que} (se avisa como mucho una vez cada {INTERVALO_AVISOS.TotalMinutes:0} minutos): {ex.Message}", ex));
+                }
+            }
+            catch
+            {
+                // Ni el registro puede romper la creación del pedido ni su correo.
             }
         }
 
@@ -238,7 +296,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 Aplica = resultado.AplicaCompleta ? FechaEntregaAgenciaDTO.APLICA_COMPLETA : FechaEntregaAgenciaDTO.APLICA_PRIMERA,
                 Entregas = resultado.Entregas,
                 Motivo = resultado.Motivo,
-                Aviso = resultado.Aviso
+                Aviso = resultado.Aviso,
+                Desglose = resultado.Desglose
             };
         }
 

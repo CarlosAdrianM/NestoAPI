@@ -1733,9 +1733,16 @@ namespace NestoAPI.Controllers
             // NestoAPI#606 (decisión de Carlos, 08/10): un presupuesto que se convierte en pedido «nace» ahora como pedido: se le
             // da la fecha de entrega a la agencia prometida como al crearlo (solo si aún no tiene: el UPDATE lleva IS NULL).
             // Nunca lanza.
-            if (TransicionPresupuesto.TocaGuardarFechaEntregaAgenciaPrometida(transicion))
+            // NestoAPI#606 (09/10): el correo de la modificación enseña la prometida (la de la columna) frente a la de ahora.
+            FechaEntregaAgenciaDTO fechaEntregaAgencia = null;
+            bool fechaEntregaAgenciaRecienPrometida = TransicionPresupuesto.TocaGuardarFechaEntregaAgenciaPrometida(transicion);
+            if (fechaEntregaAgenciaRecienPrometida)
             {
-                _ = await ServicioFechaEntregaAgencia.GuardarPrometidaAlCrear(pedido.empresa, pedido.numero);
+                fechaEntregaAgencia = await ServicioFechaEntregaAgencia.CalcularYGuardarPrometidaAlCrear(pedido.empresa, pedido.numero);
+            }
+            else if (!pedido.EsPresupuesto)
+            {
+                fechaEntregaAgencia = await ServicioFechaEntregaAgencia.CalcularPedidoParaCorreo(pedido.empresa, pedido.numero);
             }
 
             // Carlos 02/12/25: Red de seguridad - cargar ParametrosIva si no viene para que el correo muestre IVA correcto (Issue #46)
@@ -1764,7 +1771,11 @@ namespace NestoAPI.Controllers
             }
 
             // Carlos 01/12/25: Pasar respuestaValidacion al GestorPresupuestos para incluirla en el correo (Issue #48)
-            GestorPresupuestos gestor = new GestorPresupuestos(pedido, respuestaValidacion);
+            GestorPresupuestos gestor = new GestorPresupuestos(pedido, respuestaValidacion)
+            {
+                FechaEntregaAgencia = fechaEntregaAgencia,
+                FechaEntregaAgenciaRecienPrometida = fechaEntregaAgenciaRecienPrometida
+            };
             gestor.Avisos.AddRange(avisosCorreoModificacion);
             await gestor.EnviarCorreo("Modificación");
 
@@ -2249,7 +2260,22 @@ namespace NestoAPI.Controllers
                 throw new HttpResponseException(Request.CreateErrorResponse(HttpStatusCode.NotAcceptable, message));
             }
 
-            GestorPresupuestos gestor = new GestorPresupuestos(pedido, respuestaValidacion);
+            // NestoAPI#606: la fecha de entrega a la agencia que se le da al usuario al crear el pedido, para medir después si
+            // acertamos (frente a la del albarán). Se escribe UNA vez y no se toca más. Todos los caminos de creación pasan
+            // por aquí (Nesto, NestoApp y TiendasNuevaVision vía PedidosClienteController). Los presupuestos no: no van al
+            // picking. Nunca lanza: si falla (o la columna aún no existe), el pedido se crea igual.
+            // 09/10: ANTES del correo, que enseña esa misma fecha y su desglose (si el cálculo falla, el correo sale sin ella).
+            FechaEntregaAgenciaDTO fechaEntregaAgencia = null;
+            if (!pedido.EsPresupuesto)
+            {
+                fechaEntregaAgencia = await ServicioFechaEntregaAgencia.CalcularYGuardarPrometidaAlCrear(pedido.empresa, pedido.numero);
+            }
+
+            GestorPresupuestos gestor = new GestorPresupuestos(pedido, respuestaValidacion)
+            {
+                FechaEntregaAgencia = fechaEntregaAgencia,
+                FechaEntregaAgenciaRecienPrometida = true
+            };
             await gestor.EnviarCorreo();
 
             // NestoAPI#327: al meter un pedido de un cliente sin validar, se valida su NIF
@@ -2298,15 +2324,6 @@ namespace NestoAPI.Controllers
                 ElmahHelper.Log(new Exception(
                     $"ValidacionNif: fallo best-effort al validar el NIF del cliente {pedido.cliente?.Trim()} " +
                     $"tras crear el pedido {pedido.numero}: {exNif.Message}", exNif));
-            }
-
-            // NestoAPI#606: la fecha de entrega a la agencia que se le da al usuario al crear el pedido, para medir después si
-            // acertamos (frente a la del albarán). Se escribe UNA vez y no se toca más. Todos los caminos de creación pasan
-            // por aquí (Nesto, NestoApp y TiendasNuevaVision vía PedidosClienteController). Los presupuestos no: no van al
-            // picking. Nunca lanza: si falla (o la columna aún no existe), el pedido se crea igual.
-            if (!pedido.EsPresupuesto)
-            {
-                _ = await ServicioFechaEntregaAgencia.GuardarPrometidaAlCrear(pedido.empresa, pedido.numero);
             }
 
             // NestoAPI#563: sombra del sugeridor por causas con el pedido recién creado (en segundo plano; apagada salvo
