@@ -167,6 +167,47 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
         }
 
         [TestMethod]
+        public async Task Leer_CambiaElTipoDeInteraccion_MismaListaDelDiaConPorcentajesYOrdenDelNuevoFiltro()
+        {
+            // NestoAPI#617: la lista del día es fija, pero porcentajes, motivo y orden siguen al filtro de cada llamada.
+            cartera = new List<ClienteCarteraContacto> { Cliente("1001", 40, null), Cliente("1002", 6, null), Cliente("1006", 6, null) };
+            A.CallTo(() => probabilidades.Leer(A<string>._, A<string>._, A<string>._)).ReturnsLazily((string v, string tipo, string grupo) =>
+                Task.FromResult(tipo == "Visita"
+                    ? new Dictionary<string, PrediccionContacto>
+                    {
+                        ["1001/0"] = new PrediccionContacto { Probabilidad = 0.8f },
+                        ["1002/0"] = new PrediccionContacto { Probabilidad = 0.3f },
+                        ["1006/0"] = new PrediccionContacto { Probabilidad = 0.1f }
+                    }
+                    : new Dictionary<string, PrediccionContacto>
+                    {
+                        ["1001/0"] = new PrediccionContacto { Probabilidad = 0.7f, GrupoSubgrupoMasVendido = "COSCRE" },
+                        ["1002/0"] = new PrediccionContacto { Probabilidad = 0.1f },
+                        ["1006/0"] = new PrediccionContacto { Probabilidad = 0.4f }
+                    }));
+
+            SugerenciasContactoDTO visita = await Servicio().Leer("MPP", "Visita", 3, "", "u");
+            var filasAntes = sugerencias.Select(s => new { s.Id, s.Orden, s.Probabilidad, s.Motivo }).ToList();
+            SugerenciasContactoDTO telefono = await Servicio().Leer("MPP", "Teléfono", 3, "", "u");
+
+            CollectionAssert.AreEqual(new[] { "1001", "1002", "1006" }, visita.Sugerencias.Select(s => s.Cliente).ToArray());
+            CollectionAssert.AreEqual(new[] { "1001", "1006", "1002" }, telefono.Sugerencias.Select(s => s.Cliente).ToArray());
+            CollectionAssert.AreEqual(new[] { 1, 2, 3 }, telefono.Sugerencias.Select(s => s.Orden).ToArray());
+            CollectionAssert.AreEquivalent(visita.Sugerencias.Select(s => s.SugerenciaId).ToArray(), telefono.Sugerencias.Select(s => s.SugerenciaId).ToArray());
+            CollectionAssert.AreEqual(new[] { "Máxima", "Alta", "Alta" }, telefono.Sugerencias.Select(s => s.Prioridad).ToArray());
+            CollectionAssert.AreEqual(new[] { 0.7f, 0.4f, 0.1f }, telefono.Sugerencias.Select(s => s.Probabilidad).ToArray());
+            Assert.AreEqual("COSCRE", telefono.Sugerencias[0].GrupoSubgrupoMasVendido);
+            StringAssert.Contains(visita.Sugerencias[0].Motivo, "80 %");
+            StringAssert.Contains(telefono.Sugerencias[0].Motivo, "70 %");
+
+            // La BD no cambia: ni se añade nadie ni se toca el Orden ni la Probabilidad registrados.
+            Assert.AreEqual(3, sugerencias.Count);
+            CollectionAssert.AreEqual(filasAntes.Select(f => f.Id + "|" + f.Orden + "|" + f.Probabilidad + "|" + f.Motivo).ToArray(),
+                sugerencias.Select(s => s.Id + "|" + s.Orden + "|" + s.Probabilidad + "|" + s.Motivo).ToArray());
+            A.CallTo(() => db.SaveChangesAsync()).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
         public async Task Leer_SegundaVezConRapportDeHoy_LaMarcaAtendidaYDesapareceDeLaListaViva()
         {
             await Servicio().Leer("MPP", "Llamada", 3, "", "u");

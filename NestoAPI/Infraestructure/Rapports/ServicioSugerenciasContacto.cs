@@ -127,12 +127,33 @@ namespace NestoAPI.Infraestructure.Rapports
                 Fecha = ahora,
                 Ritmo = ritmo,
                 // Lo ya registrado en el día no desaparece aunque el objetivo de hoy baje al ir llamando.
-                Sugerencias = delDia
+                Sugerencias = Ordenar(delDia
                     .OrderBy(s => s.Orden)
                     .Take(Math.Min(NUMERO_MAXIMO, Math.Max(numero, delDia.Count)))
                     .Select(s => ADTO(s, porClave, hoy))
-                    .ToList()
+                    .ToList())
             };
+        }
+
+        /// <summary>
+        /// NestoAPI#617: quién entra en la lista lo fija el registro del día (orden registrado), pero el orden de la
+        /// respuesta sigue al filtro de esta llamada, con el mismo criterio que <see cref="MotorSugerenciasContacto.Priorizar"/>:
+        /// prioridad (la registrada) y probabilidad desc; el Orden registrado desempata. Orden = 1..n en la respuesta (en BD no cambia).
+        /// </summary>
+        private static List<SugerenciaContactoDTO> Ordenar(List<SugerenciaContactoDTO> registradas)
+        {
+            List<SugerenciaContactoDTO> ordenadas = registradas
+                .Select((s, i) => new { Sugerencia = s, Registrado = i })
+                .OrderBy(x => PrioridadesContacto.Rango(x.Sugerencia.Prioridad))
+                .ThenByDescending(x => x.Sugerencia.Probabilidad)
+                .ThenBy(x => x.Registrado)
+                .Select(x => x.Sugerencia)
+                .ToList();
+            for (int i = 0; i < ordenadas.Count; i++)
+            {
+                ordenadas[i].Orden = i + 1;
+            }
+            return ordenadas;
         }
 
         /// <summary>
@@ -146,15 +167,27 @@ namespace NestoAPI.Infraestructure.Rapports
 
         private static SugerenciaContactoDTO ADTO(SugerenciaContacto fila, Dictionary<string, ClienteCarteraContacto> cartera, DateTime hoy)
         {
-            SugerenciaContactoDTO dto = cartera.TryGetValue(ClienteCarteraContacto.ClaveDe(fila.Cliente, fila.Contacto), out ClienteCarteraContacto cliente)
+            bool enCartera = cartera.TryGetValue(ClienteCarteraContacto.ClaveDe(fila.Cliente, fila.Contacto), out ClienteCarteraContacto cliente);
+            SugerenciaContactoDTO dto = enCartera
                 ? MotorSugerenciasContacto.ADTO(cliente, hoy)
                 : new SugerenciaContactoDTO { Cliente = fila.Cliente?.Trim(), Contacto = fila.Contacto?.Trim(), DiasDesdeUltimoPedido = 9999 };
             dto.SugerenciaId = fila.Id;
             dto.Prioridad = fila.Prioridad?.Trim();
             dto.Orden = fila.Orden;
-            dto.Motivo = fila.Motivo;
-            dto.Probabilidad = fila.Probabilidad;
             dto.Atendida = fila.Atendida;
+            // NestoAPI#617: la lista del día (quién y con qué prioridad) es fija, pero la probabilidad (y el motivo, que en
+            // Máxima la lleva) siguen al tipo de interacción y al subgrupo de ESTA llamada: la cartera ya trae la predicción
+            // del filtro actual (y ADTO la ha copiado). Lo guardado era la del filtro con que se registró. Si el cliente ya no
+            // está en la cartera, se queda lo guardado.
+            if (enCartera)
+            {
+                dto.Motivo = MotorSugerenciasContacto.Motivo(cliente, dto.Prioridad, hoy);
+            }
+            else
+            {
+                dto.Motivo = fila.Motivo;
+                dto.Probabilidad = fila.Probabilidad;
+            }
             return dto;
         }
 
