@@ -378,9 +378,9 @@ GROUP BY f.Empresa, f.[Número], f.Fecha, f.Serie, f.[Nº Cliente]";
 SELECT RTRIM(f.Empresa) AS Empresa, RTRIM(f.[Número]) AS Numero, l.TipoLinea, RTRIM(l.Producto) AS Producto,
        RTRIM(p.Nombre) AS Nombre, RTRIM(p.Grupo) AS Grupo, CAST(ISNULL(p.Ficticio, 0) AS bit) AS Ficticio,
        CAST(SUM(l.[Base Imponible]) AS decimal(18,4)) AS BaseImponible
-FROM CabFacturaVta f
-     INNER JOIN LinPedidoVta l ON l.Empresa = f.Empresa AND l.[Nº Factura] = f.[Número]
-     LEFT JOIN Productos p ON p.Empresa = l.Empresa AND p.[Número] = l.Producto
+FROM CabFacturaVta f WITH (NOLOCK)
+     INNER JOIN LinPedidoVta l WITH (NOLOCK) ON l.Empresa = f.Empresa AND l.[Nº Factura] = f.[Número]
+     LEFT JOIN Productos p WITH (NOLOCK) ON p.Empresa = l.Empresa AND p.[Número] = l.Producto
 WHERE f.Empresa IN (@p0, @p1) AND f.[Nº Cliente] = @p2 AND f.Fecha >= @p3 AND f.Fecha < @p4 AND l.TipoLinea = 1
 GROUP BY f.Empresa, f.[Número], l.TipoLinea, l.Producto, p.Nombre, p.Grupo, p.Ficticio";
 

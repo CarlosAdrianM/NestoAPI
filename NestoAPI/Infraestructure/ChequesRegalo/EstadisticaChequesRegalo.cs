@@ -516,31 +516,31 @@ ELSE
 SELECT c.Id, RTRIM(c.Campana) AS Campana, RTRIM(c.Empresa) AS Empresa, RTRIM(c.Cliente) AS Cliente,
        RTRIM(c.EmpresaFactura) AS EmpresaFactura, RTRIM(c.FacturaOrigen) AS FacturaOrigen, c.FechaFactura, c.FechaGeneracion,
        c.FechaActivacion, RTRIM(c.Estado) AS Estado, RTRIM(c.EmpresaCanje) AS EmpresaCanje, c.PedidoCanje, c.FechaCanje,
-       CAST(CASE WHEN c.PedidoCanje IS NOT NULL AND EXISTS (SELECT 1 FROM dbo.LinPedidoVta l WHERE l.[Número] = c.PedidoCanje AND l.Producto = k.Producto)
+       CAST(CASE WHEN c.PedidoCanje IS NOT NULL AND EXISTS (SELECT 1 FROM dbo.LinPedidoVta l WITH (NOLOCK) WHERE l.[Número] = c.PedidoCanje AND l.Producto = k.Producto)
                  THEN 1 ELSE 0 END AS bit) AS PedidoCanjeTieneLaLinea,
-       CAST(CASE WHEN c.PedidoCanje IS NOT NULL AND EXISTS (SELECT 1 FROM dbo.LinPedidoVta l WHERE l.[Número] = c.PedidoCanje AND l.Producto = k.Producto AND l.Estado >= 2)
+       CAST(CASE WHEN c.PedidoCanje IS NOT NULL AND EXISTS (SELECT 1 FROM dbo.LinPedidoVta l WITH (NOLOCK) WHERE l.[Número] = c.PedidoCanje AND l.Producto = k.Producto AND l.Estado >= 2)
                  THEN 1 ELSE 0 END AS bit) AS LineaChequeServida,
        CAST(0 AS bit) AS EsPedidoDeLaFacturaOrigen,
        RTRIM(cl.Contacto) AS Contacto, RTRIM(cl.Vendedor) AS Vendedor, RTRIM(v.[Descripción]) AS NombreVendedor,
        RTRIM(cl.Nombre) AS Nombre, RTRIM(cl.[Dirección]) AS Direccion, RTRIM(cl.CodPostal) AS CodigoPostal,
        RTRIM(cl.[Población]) AS Poblacion, RTRIM(cl.Provincia) AS Provincia, RTRIM(cl.[Teléfono]) AS Telefono,
-       (SELECT TOP 1 COALESCE(NULLIF(RTRIM(p.Saludo), ''), RTRIM(p.Nombre)) FROM dbo.PersonasContactoCliente p
+       (SELECT TOP 1 COALESCE(NULLIF(RTRIM(p.Saludo), ''), RTRIM(p.Nombre)) FROM dbo.PersonasContactoCliente p WITH (NOLOCK)
         WHERE p.Empresa = cl.Empresa AND p.[NºCliente] = cl.[Nº Cliente] AND p.Contacto = cl.Contacto AND p.Estado >= 0
               AND (RTRIM(p.Saludo) <> '' OR RTRIM(p.Nombre) <> '') ORDER BY p.[Número]) AS PersonaContacto,
        f.BaseImponibleFactura, f.TotalFactura,
        s.UltimoContacto, s.UltimoIntento
-FROM dbo.ChequesRegalo c
-     INNER JOIN dbo.ChequesRegaloCampanas k ON k.Codigo = c.Campana
+FROM dbo.ChequesRegalo c WITH (NOLOCK)
+     INNER JOIN dbo.ChequesRegaloCampanas k WITH (NOLOCK) ON k.Codigo = c.Campana
      OUTER APPLY (SELECT TOP 1 x.Empresa, x.[Nº Cliente], x.Contacto, x.Vendedor, x.Nombre, x.[Dirección], x.CodPostal, x.[Población], x.Provincia, x.[Teléfono]
-                  FROM dbo.Clientes x
+                  FROM dbo.Clientes x WITH (NOLOCK)
                   WHERE x.Empresa = c.Empresa AND x.[Nº Cliente] = c.Cliente
-                  ORDER BY CASE WHEN x.Contacto = (SELECT cf.Contacto FROM dbo.CabFacturaVta cf WHERE cf.Empresa = c.EmpresaFactura AND cf.[Número] = c.FacturaOrigen) THEN 0 ELSE 1 END,
+                  ORDER BY CASE WHEN x.Contacto = (SELECT cf.Contacto FROM dbo.CabFacturaVta cf WITH (NOLOCK) WHERE cf.Empresa = c.EmpresaFactura AND cf.[Número] = c.FacturaOrigen) THEN 0 ELSE 1 END,
                            CASE WHEN x.ClientePrincipal = 1 THEN 0 ELSE 1 END, x.Contacto) cl
-     LEFT JOIN dbo.Vendedores v ON v.Empresa = c.Empresa AND v.[Número] = cl.Vendedor
+     LEFT JOIN dbo.Vendedores v WITH (NOLOCK) ON v.Empresa = c.Empresa AND v.[Número] = cl.Vendedor
      OUTER APPLY (SELECT SUM(l.[Base Imponible]) AS BaseImponibleFactura, SUM(l.Total) AS TotalFactura
-                  FROM dbo.LinPedidoVta l WHERE l.Empresa = c.EmpresaFactura AND l.[Nº Factura] = c.FacturaOrigen) f
+                  FROM dbo.LinPedidoVta l WITH (NOLOCK) WHERE l.Empresa = c.EmpresaFactura AND l.[Nº Factura] = c.FacturaOrigen) f
      OUTER APPLY (SELECT MAX(CASE WHEN sc.Estado = 0 THEN sc.Fecha END) AS UltimoContacto, MAX(CASE WHEN sc.Estado = 1 THEN sc.Fecha END) AS UltimoIntento
-                  FROM dbo.SeguimientoCliente sc
+                  FROM dbo.SeguimientoCliente sc WITH (NOLOCK)
                   WHERE sc.[Número] = c.Cliente AND sc.Estado IN (0, 1) AND sc.Tipo IN ('T', 'V', 'W') AND sc.Fecha >= c.FechaGeneracion - 60) s
 WHERE c.Campana = @p0";
 

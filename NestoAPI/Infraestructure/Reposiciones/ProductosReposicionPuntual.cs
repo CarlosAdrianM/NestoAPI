@@ -57,13 +57,13 @@ namespace NestoAPI.Infraestructure.Reposiciones
 SELECT RTRIM(pr.[Número]) AS Producto, RTRIM(pr.Nombre) AS Nombre, RTRIM(pr.CodBarras) AS CodigoBarras, 1 AS UnidadesPorLectura,
        s.StockOrigen, c.Comprometido,
        CASE WHEN s.StockOrigen - c.Comprometido > 0 THEN s.StockOrigen - c.Comprometido ELSE 0 END AS Disponible
-FROM Productos pr
-     CROSS APPLY (SELECT CAST(ISNULL((SELECT SUM(e.Cantidad) FROM ExtractoProducto e
+FROM Productos pr WITH (NOLOCK)
+     CROSS APPLY (SELECT CAST(ISNULL((SELECT SUM(e.Cantidad) FROM ExtractoProducto e WITH (NOLOCK)
                                       WHERE e.Empresa = pr.Empresa AND e.[Número] = pr.[Número] AND e.[Almacén] = @p1), 0) AS int) AS StockOrigen) s
-     CROSS APPLY (SELECT CAST(ISNULL((SELECT SUM(l.Cantidad) FROM LinPedidoVta l
-                                      WHERE l.Empresa IN (pr.Empresa, (SELECT em.[IVA por defecto] FROM Empresas em WHERE em.[Número] = pr.Empresa))
+     CROSS APPLY (SELECT CAST(ISNULL((SELECT SUM(l.Cantidad) FROM LinPedidoVta l WITH (NOLOCK)
+                                      WHERE l.Empresa IN (pr.Empresa, (SELECT em.[IVA por defecto] FROM Empresas em WITH (NOLOCK) WHERE em.[Número] = pr.Empresa))
                                         AND l.Producto = pr.[Número] AND l.[Almacén] = @p1 AND l.Estado BETWEEN -1 AND 1), 0)
-                            + ISNULL((SELECT -SUM(p.Cantidad) FROM PreExtrProducto p
+                            + ISNULL((SELECT -SUM(p.Cantidad) FROM PreExtrProducto p WITH (NOLOCK)
                                       WHERE p.Empresa = pr.Empresa AND p.[Número] = pr.[Número] AND p.[Almacén] = @p1
                                         AND ISNULL(p.[NºTraspaso], 0) <> 0 AND p.Cantidad < 0), 0) AS int) AS Comprometido) c
 WHERE pr.Empresa = @p0 AND pr.[Número] = @p2 AND pr.Estado >= 0";
