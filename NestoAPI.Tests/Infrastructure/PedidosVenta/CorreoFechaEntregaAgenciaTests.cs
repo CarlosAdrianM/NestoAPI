@@ -477,5 +477,136 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             StringAssert.Contains(html, "Es la primera entrega; el pedido queda completo el jueves 15/10/2026.");
             StringAssert.Contains(html, "Aviso &lt;de&gt; prueba");
         }
+
+        /// <summary>
+        /// Pedido 928335 (13/10/26, 13:55, pasado el corte de las 11:00), «Ahora lo que hay, el resto de una vez»: casi todo en
+        /// Algete (y 1 ud. de 45916), otra de 45916 en Alcobendas y otra en Reina (sus reposiciones llegan el miércoles a las
+        /// 13:30: salen el jueves) y 45912/45913/45914 del pedido a proveedor 220338, previsto el miércoles (salen el jueves).
+        /// </summary>
+        private static FechaEntregaAgenciaDTO Calcular928335(byte modoFacturacion)
+        {
+            ReposicionCalendario Miercoles(string origen) => new ReposicionCalendario
+            {
+                Empresa = "1", AlmacenOrigen = origen, AlmacenDestino = "ALG", DiaSemana = 3,
+                HoraCierre = new TimeSpan(10, 0, 0), HoraLlegadaHabitual = new TimeSpan(13, 30, 0), Activo = true
+            };
+            LineaFechaEntregaAgencia DelProveedor(string producto, int cantidad) => new LineaFechaEntregaAgencia
+            {
+                Producto = producto, Cantidad = cantidad, BaseImponible = 10 * cantidad,
+                DelProveedor = cantidad, FechaProveedor = new DateTime(2026, 10, 14), PedidoProveedor = 220338
+            };
+            var lineas = new List<LineaFechaEntregaAgencia>
+            {
+                new LineaFechaEntregaAgencia
+                {
+                    Producto = "45916", Cantidad = 3, BaseImponible = 30, EnAlgete = 1,
+                    EnTiendas = new Dictionary<string, int> { { "ALC", 1 }, { "REI", 1 } }
+                },
+                DelProveedor("45912", 2),
+                DelProveedor("45913", 3),
+                DelProveedor("45914", 3)
+            };
+            for (int i = 1; i <= 14; i++)
+            {
+                lineas.Add(new LineaFechaEntregaAgencia { Producto = "P" + i, Cantidad = 1, BaseImponible = i == 14 ? 0 : 10, EnAlgete = 1 });
+            }
+            ResultadoFechaEntregaAgencia resultado = new CalculadoraFechaEntregaAgencia(EsFestivo).Calcular(new EntradaFechaEntregaAgencia
+            {
+                Lineas = lineas,
+                ModoServicio = Constantes.Pedidos.ModosServicio.AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ,
+                ModoFacturacion = modoFacturacion,
+                Ruta = "FW",
+                DiasEnServir = "11111",
+                Ahora = new DateTime(2026, 10, 13, 13, 55, 0),
+                HoraCorte = new TimeSpan(11, 0, 0),
+                Calendario = new List<ReposicionCalendario> { Miercoles("ALC"), Miercoles("REI") }
+            });
+            return new FechaEntregaAgenciaDTO
+            {
+                PrimeraEntrega = resultado.PrimeraEntrega,
+                EntregaCompleta = resultado.EntregaCompleta,
+                FechaEntregaAgencia = resultado.FechaQueAplica,
+                Aplica = resultado.AplicaCompleta ? FechaEntregaAgenciaDTO.APLICA_COMPLETA : FechaEntregaAgenciaDTO.APLICA_PRIMERA,
+                Entregas = resultado.Entregas,
+                Motivo = resultado.Motivo,
+                Aviso = resultado.Aviso,
+                Desglose = resultado.Desglose
+            };
+        }
+
+        [TestMethod]
+        public void Pedido928335_PorEntregas_PrimeraElMiercolesYCompletoElJueves()
+        {
+            FechaEntregaAgenciaDTO fecha = Calcular928335(Constantes.Pedidos.ModosFacturacion.POR_ENTREGAS);
+
+            Assert.AreEqual(new DateTime(2026, 10, 14), fecha.PrimeraEntrega, fecha.Motivo);
+            Assert.AreEqual(JUEVES, fecha.EntregaCompleta, fecha.Motivo);
+            string html = Html(fecha);
+            StringAssert.Contains(html, "Entrega a la agencia: miércoles 14/10/2026");
+            StringAssert.Contains(html, "Es la primera entrega; el pedido queda completo el jueves 15/10/2026.");
+            Assert.IsFalse(html.Contains("no tiene fecha"), html);
+        }
+
+        /// <summary>
+        /// Regresión (Carlos, 13/10/26): el correo de 928335 (facturación «Todo ahora, lo pendiente se entrega después») decía
+        /// «Es la primera entrega; lo que falta aún no tiene fecha» con un desglose en el que todo podía salir el jueves. La
+        /// nota de entrega nace sin fecha de verdad (NestoAPI#582), pero el correo tiene que decir por qué y cuándo podría salir.
+        /// </summary>
+        [TestMethod]
+        public void Pedido928335_TodoAhora_ElRestoVaALaNotaSinFechaYElCorreoLoExplica()
+        {
+            FechaEntregaAgenciaDTO fecha = Calcular928335(Constantes.Pedidos.ModosFacturacion.TODO_AHORA_Y_LO_PENDIENTE_DESPUES);
+
+            Assert.AreEqual(new DateTime(2026, 10, 14), fecha.PrimeraEntrega, fecha.Motivo);
+            Assert.IsNull(fecha.EntregaCompleta, "La nota de entrega nace sin fecha: " + fecha.Motivo);
+            Assert.IsTrue(fecha.Desglose.Where(p => p.Origen != PartidaFechaEntregaAgenciaDTO.ORIGEN_ALGETE).All(p => p.ANotaDeEntrega && p.PuedeSalirEl == JUEVES));
+            Assert.IsFalse(fecha.Desglose.Where(p => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_ALGETE).Any(p => p.ANotaDeEntrega));
+            string html = Html(fecha);
+            StringAssert.Contains(html, "Entrega a la agencia: miércoles 14/10/2026");
+            StringAssert.Contains(html, "Es la primera entrega; se factura todo ahora y lo que falta pasa a una nota de entrega que nace sin fecha " +
+                "(la pone almacén): podría salir el jueves 15/10/2026.");
+            Assert.IsFalse(html.Contains("lo que falta aún no tiene fecha"), html);
+        }
+
+        [TestMethod]
+        public void PrimeraEntrega_RestoSinFechaDeLlegada_DiceQueNoTieneFecha()
+        {
+            var fecha = new FechaEntregaAgenciaDTO
+            {
+                FechaEntregaAgencia = MARTES,
+                PrimeraEntrega = MARTES,
+                Aplica = FechaEntregaAgenciaDTO.APLICA_PRIMERA,
+                Desglose = new List<PartidaFechaEntregaAgenciaDTO>
+                {
+                    EnAlgete("A"),
+                    new PartidaFechaEntregaAgenciaDTO { Origen = PartidaFechaEntregaAgenciaDTO.ORIGEN_SIN_STOCK, Producto = "B", Unidades = 1, MotivoSinFecha = "sobre pedido" }
+                }
+            };
+
+            string html = Html(fecha);
+
+            StringAssert.Contains(html, "Es la primera entrega; lo que falta aún no tiene fecha.");
+            StringAssert.Contains(html, "Sin fecha");
+        }
+
+        [TestMethod]
+        public void PrimeraEntrega_TodoAhoraConAlgoSinFechaDeLlegada_LoDice()
+        {
+            var fecha = new FechaEntregaAgenciaDTO
+            {
+                FechaEntregaAgencia = MARTES,
+                PrimeraEntrega = MARTES,
+                Aplica = FechaEntregaAgenciaDTO.APLICA_PRIMERA,
+                Desglose = new List<PartidaFechaEntregaAgenciaDTO>
+                {
+                    EnAlgete("A"),
+                    new PartidaFechaEntregaAgenciaDTO { Origen = PartidaFechaEntregaAgenciaDTO.ORIGEN_SIN_STOCK, Producto = "B", Unidades = 1, ANotaDeEntrega = true }
+                }
+            };
+
+            string html = Html(fecha);
+
+            StringAssert.Contains(html, "pasa a una nota de entrega que nace sin fecha (la pone almacén): parte de lo que falta aún no tiene fecha de llegada.");
+        }
     }
 }

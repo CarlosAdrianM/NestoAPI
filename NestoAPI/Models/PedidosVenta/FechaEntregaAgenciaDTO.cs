@@ -83,5 +83,10 @@ namespace NestoAPI.Models.PedidosVenta
         public int? PedidoProveedor { get; set; }
         /// <summary>Por qué no tiene fecha.</summary>
         public string MotivoSinFecha { get; set; }
+        /// <summary>
+        /// NestoAPI#606 (pedido 928335, 13/10/26): facturación «todo ahora» y no sale en la primera entrega: se factura ya y pasa
+        /// a la nota de entrega, que nace SIN fecha (la pone almacén). <see cref="PuedeSalirEl"/> sigue diciendo cuándo podría salir.
+        /// </summary>
+        public bool ANotaDeEntrega { get; set; }
     }
 }

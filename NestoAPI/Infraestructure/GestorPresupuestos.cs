@@ -1314,9 +1314,7 @@ namespace NestoAPI.Infraestructure
 
             if (ahora.HasValue && fecha.Aplica == FechaEntregaAgenciaDTO.APLICA_PRIMERA && fecha.EntregaCompleta?.Date != ahora)
             {
-                _ = s.Append(fecha.EntregaCompleta.HasValue
-                    ? $"Es la primera entrega; el pedido queda completo el {DiaCorreo(fecha.EntregaCompleta.Value)}.<br>"
-                    : "Es la primera entrega; lo que falta aún no tiene fecha.<br>");
+                _ = s.Append(FraseRestoPrimeraEntrega(fecha.EntregaCompleta, desglose) + "<br>");
             }
 
             if (desglose.Any())
@@ -1348,6 +1346,30 @@ namespace NestoAPI.Infraestructure
             _ = s.AppendLine("</td>");
             _ = s.AppendLine("</tr>");
             return s.ToString();
+        }
+
+        /// <summary>
+        /// La frase tras «Entrega a la agencia» cuando esa es solo la primera entrega. Carlos (13/10/26, pedido 928335): con
+        /// facturación «todo ahora» lo que no sale en la primera entrega se factura ya y pasa a la nota de entrega, que nace SIN
+        /// fecha (NestoAPI#582: la pone almacén). Decir solo «lo que falta aún no tiene fecha» junto a un desglose con todas las
+        /// fechas («puede salir el jueves») se contradecía: se dice por qué no tiene fecha y cuándo podría salir.
+        /// </summary>
+        internal static string FraseRestoPrimeraEntrega(DateTime? entregaCompleta, List<PartidaFechaEntregaAgenciaDTO> desglose)
+        {
+            if (entregaCompleta.HasValue)
+            {
+                return $"Es la primera entrega; el pedido queda completo el {DiaCorreo(entregaCompleta.Value)}.";
+            }
+            List<PartidaFechaEntregaAgenciaDTO> aNota = (desglose ?? new List<PartidaFechaEntregaAgenciaDTO>()).Where(p => p.ANotaDeEntrega).ToList();
+            if (!aNota.Any())
+            {
+                return "Es la primera entrega; lo que falta aún no tiene fecha.";
+            }
+            string inicio = "Es la primera entrega; se factura todo ahora y lo que falta pasa a una nota de entrega que nace sin fecha " +
+                "(la pone almacén)";
+            return aNota.All(p => p.PuedeSalirEl.HasValue)
+                ? $"{inicio}: podría salir el {DiaCorreo(aNota.Max(p => p.PuedeSalirEl.Value))}."
+                : $"{inicio}: parte de lo que falta aún no tiene fecha de llegada.";
         }
 
         /// <summary>Un motivo del desglose: los productos que salen por la misma razón el mismo día.</summary>

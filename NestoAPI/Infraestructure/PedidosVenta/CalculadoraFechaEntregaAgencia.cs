@@ -336,7 +336,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     Lote = l,
                     PuedeSalirEl = l.Disponible.HasValue ? (l.Disponible.Value > l.Elegible ? l.Disponible.Value : l.Elegible) : (DateTime?)null
                 })
-                .GroupBy(x => new { x.Lote.Origen, x.Lote.Producto, x.Lote.Tienda, x.Lote.Kit, x.PuedeSalirEl, x.Lote.LlegaAAlgete, x.Lote.FechaProveedor, x.Lote.LlegadaSupuesta, x.Lote.PedidoProveedor, x.Lote.MotivoSinFecha })
+                .GroupBy(x => new { x.Lote.Origen, x.Lote.Producto, x.Lote.Tienda, x.Lote.Kit, x.PuedeSalirEl, x.Lote.LlegaAAlgete, x.Lote.FechaProveedor, x.Lote.LlegadaSupuesta, x.Lote.PedidoProveedor, x.Lote.MotivoSinFecha, x.Lote.ANota })
                 .Select(g => new PartidaFechaEntregaAgenciaDTO
                 {
                     Origen = g.Key.Origen,
@@ -349,7 +349,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     FechaPrevistaProveedor = g.Key.FechaProveedor,
                     LlegadaSupuesta = g.Key.LlegadaSupuesta,
                     PedidoProveedor = g.Key.PedidoProveedor,
-                    MotivoSinFecha = g.Key.MotivoSinFecha
+                    MotivoSinFecha = g.Key.MotivoSinFecha,
+                    ANotaDeEntrega = g.Key.ANota
                 })
                 .OrderBy(p => Array.IndexOf(PartidaFechaEntregaAgenciaDTO.ORDEN_ORIGENES, p.Origen))
                 .ThenBy(p => p.PuedeSalirEl ?? DateTime.MaxValue)
