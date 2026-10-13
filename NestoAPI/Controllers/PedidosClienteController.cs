@@ -1169,7 +1169,7 @@ namespace NestoAPI.Controllers
             // entrega única), igual que hará PostPedidoVenta tras normalizar.
             // NestoAPI#506: el mismo modo que pondrá PostPedidoVenta si el pedido llega sin él: el que
             // dicta el stock real de las líneas (el cliente de la tienda no tiene parámetro de usuario).
-            byte modoAlCrear = pedido.modoServicio ?? SugeridorModoServicio.Sugerir(pedido, new GestorStocks()).Modo;
+            byte modoAlCrear = pedido.modoServicio ?? SugeridorModoServicio.Sugerir(pedido, new GestorStocks(), new FuenteKitsModoServicioSql()).Modo;
             decimal baseImponibleProductos = GestorPortes.CalcularBaseImponibleProductos(
                 pedido.Lineas, Constantes.Pedidos.ModosServicio.EsEntregaUnica(modoAlCrear), new GestorStocks());
             PedidoPortesInput input = GestorPortes.ConstruirInput(

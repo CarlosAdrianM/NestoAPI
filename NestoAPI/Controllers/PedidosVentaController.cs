@@ -484,7 +484,7 @@ namespace NestoAPI.Controllers
             SugeridorModoServicio.Sugerencia sugerencia = CachePorHuellaPedido.ObtenerOCalcular(CachePorHuellaPedido.ESPACIO_MODO_SERVICIO, pedido,
                 () =>
                 {
-                    SugeridorModoServicio.Sugerencia calculada = SugeridorModoServicio.Sugerir(pedido, StocksPrecargados(pedido));
+                    SugeridorModoServicio.Sugerencia calculada = SugeridorModoServicio.Sugerir(pedido, StocksPrecargados(pedido), KitsParaSugerir());
                     // NestoAPI#563: sombra del sugeridor por causas (en segundo plano; apagada salvo parámetro, no toca la respuesta).
                     SombraModoServicio.Registrar(SombraModoServicio.ORIGEN_PLANTILLA, pedido, calculada.Modo);
                     return calculada;
@@ -3133,6 +3133,16 @@ namespace NestoAPI.Controllers
         internal Func<IGestorStocks> Stocks { get; set; } = () => new GestorStocks();
 
         /// <summary>
+        /// NestoAPI#606 (kits, Carlos 13/10/26): de dónde lee la sugerencia del modo de servicio los kits que se pueden
+        /// desmontar en Algete (sustituible en tests). Sin sustituir, solo con el lector de stocks real: con un doble de
+        /// <see cref="Stocks"/> (tests) no se va a la BD a por los kits.
+        /// </summary>
+        internal Func<IFuenteKitsModoServicio> FuenteKits { get; set; }
+
+        private IFuenteKitsModoServicio KitsParaSugerir()
+            => FuenteKits != null ? FuenteKits() : (Stocks() is GestorStocks ? new FuenteKitsModoServicioSql() : null);
+
+        /// <summary>
         /// NestoAPI#506: el modo con el que nace un pedido que no lo informa: el que fuerce el parámetro
         /// del usuario o, si no hay, el que dicta el stock real del pedido (<see cref="SugeridorModoServicio"/>).
         /// </summary>
@@ -3191,7 +3201,7 @@ namespace NestoAPI.Controllers
             byte? forzado = ModoServicioForzadoPorParametro();
             try
             {
-                SugeridorModoServicio.Sugerencia sugerencia = SugeridorModoServicio.Sugerir(pedido, Stocks());
+                SugeridorModoServicio.Sugerencia sugerencia = SugeridorModoServicio.Sugerir(pedido, Stocks(), KitsParaSugerir());
                 // NestoAPI#518: el modo forzado por parámetro solo si tiene sentido para el pedido (en tienda, siempre 2).
                 return forzado.HasValue ? SugeridorModoServicio.AplicarForzado(sugerencia, forzado.Value).Modo : sugerencia.Modo;
             }

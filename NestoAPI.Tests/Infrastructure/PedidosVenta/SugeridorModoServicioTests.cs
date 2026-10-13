@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Linq;
 using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
@@ -164,6 +165,144 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             Assert.IsNull(Constantes.Pedidos.ModosServicio.ParsearModoForzado(null));
             Assert.IsNull(Constantes.Pedidos.ModosServicio.ParsearModoForzado("stock"));
             Assert.IsNull(Constantes.Pedidos.ModosServicio.ParsearModoForzado("7"));
+        }
+
+        // ----- NestoAPI#606 (kits, Carlos 13/10/26): «Sí, contar kits también ahí» -----
+
+        /// <summary>
+        /// Pedido 928288: 70 × 43192 con 64 en Algete y 10 en Reina (rosa: «Tras reponer de tiendas»), pero el kit 43191
+        /// (70 × 43192) tiene 11 libres en Algete: desmontando uno sale todo hoy. Mismos datos que la fecha de entrega.
+        /// </summary>
+        private static DatosSombraModoServicio Datos928288(int stockKit = 11, int pendientesKit = 0)
+        {
+            var datos = new DatosSombraModoServicio();
+            ResumenStocksProductos.Sumar(datos.Resumen.StockAlmacen, ResumenStocksProductos.Clave("43192", "ALG"), 64);
+            ResumenStocksProductos.Sumar(datos.Resumen.StockAlmacen, ResumenStocksProductos.Clave("43192", "REI"), 10);
+            ResumenStocksProductos.Sumar(datos.Resumen.StockSedes, ResumenStocksProductos.Clave("43192"), 74);
+            ResumenStocksProductos.Sumar(datos.Resumen.StockAlmacen, ResumenStocksProductos.Clave("43191", "ALG"), stockKit);
+            ResumenStocksProductos.Sumar(datos.Resumen.PendienteEntregarAlmacen, ResumenStocksProductos.Clave("43191", "ALG"), pendientesKit);
+            datos.Kits.Add(new ComponenteKitFechaEntregaAgencia { Kit = "43191", Componente = "43192", Cantidad = 70 });
+            return datos;
+        }
+
+        private static PedidoVentaDTO Pedido928288()
+        {
+            PedidoVentaDTO pedido = Pedido("43192");
+            pedido.Lineas.First().Cantidad = 70;
+            return pedido;
+        }
+
+        private static IFuenteKitsModoServicio Fuente(DatosSombraModoServicio datos)
+        {
+            IFuenteKitsModoServicio fuente = A.Fake<IFuenteKitsModoServicio>();
+            A.CallTo(() => fuente.LeerConKits(A<string>._, A<int?>._, A<IEnumerable<string>>._)).Returns(datos);
+            return fuente;
+        }
+
+        [TestMethod]
+        public void Kits_928288_SinKitsTrasReponer_ConKitsTodoJunto()
+        {
+            DatosSombraModoServicio datos = Datos928288();
+            IGestorStocks colores = new GestorStocksSombra(datos.Resumen);
+
+            SugeridorModoServicio.Sugerencia sinKits = SugeridorModoServicio.Sugerir(Pedido928288(), colores);
+            SugeridorModoServicio.Sugerencia conKits = SugeridorModoServicio.Sugerir(Pedido928288(), colores, Fuente(datos));
+
+            Assert.AreEqual(Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS, sinKits.Modo, "Sin kits, lo de siempre");
+            Assert.AreEqual(Constantes.Pedidos.ModosServicio.TODO_JUNTO, conKits.Modo);
+            Assert.AreEqual(1, conKits.LineasVerdes);
+            Assert.AreEqual(0, conKits.LineasRosas);
+            StringAssert.EndsWith(conKits.Motivo, SugeridorModoServicio.MOTIVO_CON_KITS);
+            CollectionAssert.AreEqual(new List<byte> { Constantes.Pedidos.ModosServicio.TODO_JUNTO }, conKits.ModosPermitidos,
+                "Sale todo hoy: como cualquier pedido todo verde");
+        }
+
+        [TestMethod]
+        public void Kits_LosDebenOtrosPedidos_NoCuentan()
+        {
+            DatosSombraModoServicio datos = Datos928288(stockKit: 11, pendientesKit: 11);
+
+            SugeridorModoServicio.Sugerencia s = SugeridorModoServicio.Sugerir(Pedido928288(), new GestorStocksSombra(datos.Resumen), Fuente(datos));
+
+            Assert.AreEqual(Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS, s.Modo);
+            Assert.IsFalse(s.Motivo.Contains(SugeridorModoServicio.MOTIVO_CON_KITS));
+        }
+
+        [TestMethod]
+        public void Kits_SiFallaLaLectura_LaSugerenciaDeSiempre()
+        {
+            DatosSombraModoServicio datos = Datos928288();
+            IFuenteKitsModoServicio fuente = A.Fake<IFuenteKitsModoServicio>();
+            A.CallTo(() => fuente.LeerConKits(A<string>._, A<int?>._, A<IEnumerable<string>>._)).Throws(new System.InvalidOperationException("BD caída"));
+
+            SugeridorModoServicio.Sugerencia s = SugeridorModoServicio.Sugerir(Pedido928288(), new GestorStocksSombra(datos.Resumen), fuente);
+
+            Assert.AreEqual(Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS, s.Modo);
+        }
+
+        [TestMethod]
+        public void Kits_TodoVerdeOFueraDeAlgete_NoSeLeen()
+        {
+            IFuenteKitsModoServicio fuente = A.Fake<IFuenteKitsModoServicio>();
+            PedidoVentaDTO mixto = Pedido("VERDE", "ROSA");
+            mixto.Lineas.Last().almacen = "AMZ";
+
+            _ = SugeridorModoServicio.Sugerir(Pedido("VERDE1", "VERDE2"), stocks, fuente);
+            _ = SugeridorModoServicio.Sugerir(mixto, stocks, fuente);
+
+            A.CallTo(() => fuente.LeerConKits(A<string>._, A<int?>._, A<IEnumerable<string>>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void Kits_SoloLeeLasLineasDeAlgeteSinStock_YExcluyeElPropioPedido()
+        {
+            DatosSombraModoServicio datos = Datos928288();
+            IFuenteKitsModoServicio fuente = Fuente(datos);
+            PedidoVentaDTO pedido = Pedido928288();
+            pedido.numero = 928288;
+            pedido.Lineas.Add(new LineaPedidoVentaDTO { id = 2, Producto = "VERDE", Cantidad = 1, PrecioUnitario = 10, almacen = "ALG", tipoLinea = Constantes.TiposLineaVenta.PRODUCTO });
+            IGestorStocks colores = A.Fake<IGestorStocks>();
+            A.CallTo(() => colores.ColorStock("VERDE", A<string>._, A<int>._)).Returns(SugeridorModoServicio.VERDE);
+            A.CallTo(() => colores.ColorStock("43192", A<string>._, 70)).Returns(SugeridorModoServicio.ROSA);
+            A.CallTo(() => colores.ColorStock("43192", A<string>._, 64)).Returns(SugeridorModoServicio.VERDE);
+
+            SugeridorModoServicio.Sugerencia s = SugeridorModoServicio.Sugerir(pedido, colores, fuente);
+
+            Assert.AreEqual(Constantes.Pedidos.ModosServicio.TODO_JUNTO, s.Modo);
+            A.CallTo(() => fuente.LeerConKits("1", 928288, A<IEnumerable<string>>.That.IsSameSequenceAs(new[] { "43192" }))).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public void Kits_LaPlantillaYElPedidoSinModo_CuentanLosKits()
+        {
+            DatosSombraModoServicio datos = Datos928288();
+            var controller = new NestoAPI.Controllers.PedidosVentaController(A.Fake<NVEntities>())
+            {
+                LectorParametros = A.Fake<ILectorParametrosUsuario>(),
+                Stocks = () => new GestorStocksSombra(datos.Resumen),
+                FuenteKits = () => Fuente(datos)
+            };
+            PedidoVentaDTO pedido = Pedido928288();
+            pedido.cliente = "KITS606"; // sin caché por huella compartida con otros tests
+
+            var respuesta = controller.PostModoServicioSugerido(pedido) as System.Web.Http.Results.OkNegotiatedContentResult<SugeridorModoServicio.Sugerencia>;
+
+            Assert.IsNotNull(respuesta);
+            Assert.AreEqual(Constantes.Pedidos.ModosServicio.TODO_JUNTO, respuesta.Content.Modo, "Plantilla");
+            Assert.AreEqual(Constantes.Pedidos.ModosServicio.TODO_JUNTO, controller.ModoServicioAlCrear(Pedido928288()), "PostPedidoVenta sin modo");
+        }
+
+        [TestMethod]
+        public void Kits_ConUnDobleDeStocks_ElControladorNoVaALaBD()
+        {
+            DatosSombraModoServicio datos = Datos928288();
+            var controller = new NestoAPI.Controllers.PedidosVentaController(A.Fake<NVEntities>())
+            {
+                LectorParametros = A.Fake<ILectorParametrosUsuario>(),
+                Stocks = () => new GestorStocksSombra(datos.Resumen)
+            };
+
+            Assert.AreEqual(Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS, controller.ModoServicioAlCrear(Pedido928288()));
         }
     }
 }

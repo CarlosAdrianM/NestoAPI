@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Transactions;
 using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
 
@@ -53,7 +54,17 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             public List<ModoServicioPermitidoDTO> Modos { get; set; } = new List<ModoServicioPermitidoDTO>();
         }
 
-        public static Sugerencia Sugerir(PedidoVentaDTO pedido, IGestorStocks stocks)
+        public static Sugerencia Sugerir(PedidoVentaDTO pedido, IGestorStocks stocks) => Sugerir(pedido, stocks, null);
+
+        /// <summary>
+        /// NestoAPI#606 (kits, Carlos 13/10/26): con <paramref name="kits"/>, lo que falta en Algete y sale desmontando un kit
+        /// libre en Algete cuenta como stock, con las MISMAS cuentas que la fecha de entrega a la agencia
+        /// (<see cref="RepartidorStockFechaEntregaAgencia.BolsaKitsAlgete"/> sobre
+        /// <see cref="RepositorioSombraModoServicioSql.LeerDatosConKits"/>): si no, la plantilla proponía «Tras reponer de
+        /// tiendas» con un pedido que sale entero hoy desmontando un kit (928288). Solo se leen los kits si alguna línea de
+        /// Algete no es verde; si la lectura falla, la sugerencia es la de siempre (sin kits).
+        /// </summary>
+        public static Sugerencia Sugerir(PedidoVentaDTO pedido, IGestorStocks stocks, IFuenteKitsModoServicio kits)
         {
             if (stocks == null)
             {
@@ -102,22 +113,105 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             //     hay que descontarlas a mano (si no, 7 en el almacén salen verdes aunque se pidan 8);
             //   - dos líneas del mismo producto y almacén (la normal y la de regalo de una oferta) consumen
             //     el mismo stock: se suman y se pide un solo color, o se contaría dos veces.
-            var colores = productos
+            List<GrupoColor> grupos = productos
                 .GroupBy(l => new { Producto = l.Producto.Trim(), Almacen = l.almacen?.Trim() })
-                .Select(g => stocks.ColorStock(g.Key.Producto, g.Key.Almacen, g.Sum(l => l.Cantidad)))
+                .Select(g => new GrupoColor
+                {
+                    Producto = g.Key.Producto,
+                    Almacen = g.Key.Almacen,
+                    Cantidad = g.Sum(l => l.Cantidad),
+                    Color = stocks.ColorStock(g.Key.Producto, g.Key.Almacen, g.Sum(l => l.Cantidad))
+                })
                 .ToList();
-            int verdes = colores.Count(c => c == VERDE);
-            int rosas = colores.Count(c => c == ROSA);
-            int rojas = colores.Count(c => c != VERDE && c != ROSA);
+            // NestoAPI#606 (kits): lo que sale desmontando un kit en Algete cuenta como stock (el color se recalcula con
+            // las unidades que quedan después de los kits).
+            bool conKits = kits != null && CubrirConKits(pedido, grupos, kits, stocks);
+            int verdes = grupos.Count(g => g.Color == VERDE);
+            int rosas = grupos.Count(g => g.Color == ROSA);
+            int rojas = grupos.Count(g => g.Color != VERDE && g.Color != ROSA);
 
             // NestoAPI#561: una roja puede tener parte del stock (1 de 2). Solo cuando no hay NINGUNA unidad libre
-            // ya en el almacén de la línea el pedido tiene que ir todo junto.
-            bool hayAlgoQueServirAhora = verdes > 0 || productos
-                .GroupBy(l => new { Producto = l.Producto.Trim(), Almacen = l.almacen?.Trim() })
-                .Any(g => stocks.Stock(g.Key.Producto, g.Key.Almacen) - stocks.UnidadesPendientesEntregarAlmacen(g.Key.Producto, g.Key.Almacen) > 0);
+            // ya en el almacén de la línea el pedido tiene que ir todo junto. NestoAPI#606: lo que sale de un kit, también.
+            bool hayAlgoQueServirAhora = verdes > 0 || conKits || grupos
+                .Any(g => stocks.Stock(g.Producto, g.Almacen) - stocks.UnidadesPendientesEntregarAlmacen(g.Producto, g.Almacen) > 0);
 
             Sugerencia decidida = Decidir(verdes, rosas, rojas, hayAlgoQueServirAhora);
+            if (conKits)
+            {
+                decidida.Motivo = decidida.Motivo.TrimEnd('.') + " " + MOTIVO_CON_KITS;
+            }
             return ConModos(decidida, tipo, hayLineasProducto: true);
+        }
+
+        /// <summary>NestoAPI#606 (kits): coletilla del motivo cuando algún kit cambia el color de una línea.</summary>
+        internal const string MOTIVO_CON_KITS = "(contando los kits que se pueden desmontar en Algete).";
+
+        private class GrupoColor
+        {
+            public string Producto { get; set; }
+            public string Almacen { get; set; }
+            public int Cantidad { get; set; }
+            public string Color { get; set; }
+        }
+
+        /// <summary>
+        /// NestoAPI#606 (kits): a cada grupo de Algete que no es verde le quita lo que sale desmontando kits libres en Algete
+        /// (<see cref="RepartidorStockFechaEntregaAgencia.BolsaKitsAlgete"/>: kits que deben otros pedidos y los que pide
+        /// este, deuda previa del componente, sobras de un kit ya desmontado, primero el kit que más lleva) y recalcula su
+        /// color con lo que queda. Las libres y los kits salen de la misma lectura que la fecha de entrega (pendientes sin el
+        /// propio pedido). Devuelve si algún grupo ha sacado algo de un kit.
+        /// </summary>
+        private static bool CubrirConKits(PedidoVentaDTO pedido, List<GrupoColor> grupos, IFuenteKitsModoServicio fuente, IGestorStocks stocks)
+        {
+            List<GrupoColor> sinStock = grupos
+                .Where(g => g.Color != VERDE && RepartidorStockFechaEntregaAgencia.EsDeAlgete(g.Almacen))
+                .ToList();
+            if (!sinStock.Any())
+            {
+                return false;
+            }
+            DatosSombraModoServicio datos;
+            try
+            {
+                string empresa = string.IsNullOrWhiteSpace(pedido?.empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : pedido.empresa.Trim();
+                int? pedidoExcluir = pedido != null && pedido.numero > 0 ? pedido.numero : (int?)null;
+                datos = fuente.LeerConKits(empresa, pedidoExcluir, sinStock.Select(g => g.Producto).Distinct(StringComparer.OrdinalIgnoreCase).ToList());
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"NestoAPI#606: no se pudieron leer los kits para el modo de servicio; se sugiere sin ellos ({ex.Message})", ex));
+                return false;
+            }
+            if (datos == null || !datos.Kits.Any())
+            {
+                return false;
+            }
+
+            List<LineaPedidoFechaEntregaAgencia> lineasAlgete = grupos
+                .Where(g => RepartidorStockFechaEntregaAgencia.EsDeAlgete(g.Almacen))
+                .Select(g => new LineaPedidoFechaEntregaAgencia { Producto = g.Producto, Almacen = g.Almacen, Cantidad = g.Cantidad })
+                .ToList();
+            var bolsa = new RepartidorStockFechaEntregaAgencia.BolsaKitsAlgete(datos, lineasAlgete);
+            bool alguno = false;
+            foreach (GrupoColor grupo in sinStock)
+            {
+                string clave = ResumenStocksProductos.Clave(grupo.Producto, Constantes.Almacenes.ALGETE);
+                int libres = Math.Max(0, ResumenStocksProductos.Valor(datos.Resumen.StockAlmacen, clave)
+                    - ResumenStocksProductos.Valor(datos.Resumen.PendienteEntregarAlmacen, clave));
+                int faltan = grupo.Cantidad - libres;
+                if (faltan <= 0)
+                {
+                    continue;
+                }
+                int deKits = bolsa.Tomar(grupo.Producto, faltan).Values.Sum();
+                if (deKits <= 0)
+                {
+                    continue;
+                }
+                alguno = true;
+                grupo.Color = stocks.ColorStock(grupo.Producto, grupo.Almacen, grupo.Cantidad - deKits);
+            }
+            return alguno;
         }
 
         /// <summary>NestoAPI#518: rellena los modos permitidos con los recuentos ya calculados.</summary>
@@ -198,6 +292,33 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 HayAlgoQueServirAhora = hayAlgoQueServirAhora,
                 Motivo = motivo
             };
+        }
+    }
+
+    /// <summary>
+    /// NestoAPI#606 (kits, 13/10/26): de dónde lee <see cref="SugeridorModoServicio"/> los kits que llevan los productos y
+    /// su stock (los mismos datos que la fecha de entrega a la agencia).
+    /// </summary>
+    public interface IFuenteKitsModoServicio
+    {
+        DatosSombraModoServicio LeerConKits(string empresa, int? pedidoExcluir, IEnumerable<string> productos);
+    }
+
+    /// <summary>
+    /// NestoAPI#606 (kits): <see cref="RepositorioSombraModoServicioSql.LeerDatosConKits"/> fuera de cualquier transacción
+    /// ambiente (como <c>ServicioFechaEntregaAgencia</c>, sugerencia 579: la conexión propia dentro de una transacción la
+    /// escalaría a distribuida). Lecturas con NOLOCK.
+    /// </summary>
+    public class FuenteKitsModoServicioSql : IFuenteKitsModoServicio
+    {
+        public DatosSombraModoServicio LeerConKits(string empresa, int? pedidoExcluir, IEnumerable<string> productos)
+        {
+            using (var sinTransaccion = new TransactionScope(TransactionScopeOption.Suppress))
+            {
+                DatosSombraModoServicio datos = RepositorioSombraModoServicioSql.DesdeConfiguracion().LeerDatosConKits(empresa, pedidoExcluir, productos);
+                sinTransaccion.Complete();
+                return datos;
+            }
         }
     }
 }
