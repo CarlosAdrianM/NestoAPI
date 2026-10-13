@@ -1669,6 +1669,9 @@
     <Compile Include="Models\Picking\HoraCortePicking.cs" />
     <Compile Include="Models\Picking\AvisadorPickingAutomatico.cs" />
     <Compile Include="Infraestructure\Picking\PickingJobsService.cs" />
+    <Compile Include="Infraestructure\Picking\ReglasRutaPropia.cs" />
+    <Compile Include="Infraestructure\Picking\GestorSugerenciasRuta.cs" />
+    <Compile Include="Infraestructure\Picking\RepositorioSugerenciasRutaSql.cs" />
     <Compile Include="Models\Picking\GestorAvisosPicking.cs" />
     <Compile Include="Models\Picking\GestorPrepagos.cs" />
     <Compile Include="Models\Picking\GestorReservasStock.cs" />

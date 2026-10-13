@@ -1,5 +1,8 @@
-﻿using NestoAPI.Models.Picking;
+﻿using NestoAPI.Infraestructure.Picking;
+using NestoAPI.Models;
+using NestoAPI.Models.Picking;
 using System;
+using System.Net;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -67,6 +70,67 @@ namespace NestoAPI.Controllers
                 () => Infraestructure.Picking.PickingJobsService.SacarPickingDeCierre());
 
             return Ok(pedidos);
+        }
+
+        /// <summary>Sugerencia 575: el gestor de las sugerencias de ruta propia. Sustituible en los tests.</summary>
+        internal Func<GestorSugerenciasRuta> CrearGestorSugerenciasRuta { get; set; } =
+            () => new GestorSugerenciasRuta(new RepositorioSugerenciasRutaSql(new NVEntities()));
+
+        /// <summary>Sugerencia 575: el horizonte del picking interactivo (el mismo que usará el picking). Sustituible en los tests.</summary>
+        internal Func<DateTime> FechaPicking { get; set; } =
+            () => GestorPicking.CalcularFechaPicking(DateTime.Now, HoraCortePicking.Leer(Constantes.Empresas.EMPRESA_POR_DEFECTO));
+
+        /// <summary>
+        /// Sugerencia 575 (Alfredo, almacén): antes de sacar el picking, los pedidos que van por OnTime y que seguramente
+        /// saldrán por nuestra ruta (AT/16), con la ruta propuesta y el motivo. Lo pide el popup del picking de Nesto con el
+        /// mismo alcance que el picking: un pedido (empresa + numeroPedido), un cliente o, sin nada, el de rutas.
+        /// Solo para almacén: quien mete el pedido no ve esta sugerencia en ningún sitio.
+        /// GET api/Picking/SugerenciasRuta[?empresa=1&amp;numeroPedido=928241 | ?cliente=5825]
+        /// </summary>
+        [HttpGet]
+        [Authorize]
+        [Route("api/Picking/SugerenciasRuta")]
+        [ResponseType(typeof(List<SugerenciaRutaPedidoDTO>))]
+        public async Task<IHttpActionResult> GetSugerenciasRuta(string empresa = null, int numeroPedido = 0, string cliente = null)
+        {
+            if (EsClienteDeTienda())
+            {
+                return StatusCode(HttpStatusCode.Forbidden);
+            }
+            List<SugerenciaRutaPedidoDTO> sugerencias = await CrearGestorSugerenciasRuta()
+                .LeerSugerencias(empresa, numeroPedido > 0 ? numeroPedido : (int?)null, cliente, FechaPicking()).ConfigureAwait(false);
+            return Ok(sugerencias);
+        }
+
+        /// <summary>
+        /// Sugerencia 575: almacén pasa a nuestra ruta (AT o 16) los pedidos que ha marcado en el aviso del picking. Solo se
+        /// cambia si el pedido sigue con la ruta que se vio; queda en LogModificaciones quién y cuándo (usuario del JWT).
+        /// POST api/Picking/CambiarRuta  { "Cambios": [ { "Empresa": "3", "Pedido": 928241, "RutaAnterior": "FW", "RutaNueva": "16" } ] }
+        /// </summary>
+        [HttpPost]
+        [Authorize]
+        [Route("api/Picking/CambiarRuta")]
+        [ResponseType(typeof(List<ResultadoCambioRutaDTO>))]
+        public async Task<IHttpActionResult> PostCambiarRuta([FromBody] CambiarRutaPedidosRequest peticion)
+        {
+            if (EsClienteDeTienda())
+            {
+                return StatusCode(HttpStatusCode.Forbidden);
+            }
+            if (peticion?.Cambios == null || !peticion.Cambios.Any())
+            {
+                return BadRequest("No hay ningún pedido al que cambiar la ruta.");
+            }
+            string usuario = Infraestructure.UsuarioAuditoriaHelper.Resolver(User, peticion.Usuario);
+            List<ResultadoCambioRutaDTO> resultados = await CrearGestorSugerenciasRuta()
+                .CambiarRutas(peticion.Cambios, usuario).ConfigureAwait(false);
+            return Ok(resultados);
+        }
+
+        // Un cliente de la tienda (JWT con claim "cliente") no ve ni cambia rutas de pedidos.
+        private bool EsClienteDeTienda()
+        {
+            return (User?.Identity as System.Security.Claims.ClaimsIdentity)?.FindFirst("cliente") != null;
         }
 
         private void crearModulos()
