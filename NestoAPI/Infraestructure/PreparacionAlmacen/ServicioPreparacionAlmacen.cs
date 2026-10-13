@@ -231,6 +231,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             List<LineaRecogidaDTO> lineas = CasadorEscaneos.RepartirLoResuelto(recorrido,
                 (lecturas ?? new List<LecturaPickingAlmacen>())
                     .Select(l => new CasadorEscaneos.Cantidad { Producto = l.Producto, Unidades = l.Unidades + l.Faltas }));
+            RepartirLasFaltas(lineas, lecturas);
             return new RecogidaAlmacenDTO
             {
                 Empresa = empresa,
@@ -243,6 +244,31 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 Completa = estado.Completo,
                 UnidadesEnFalta = estado.Productos.Sum(p => p.Faltas)
             };
+        }
+
+        /// <summary>
+        /// Ariadna «La encontré» (Carlos 13/10/26): de lo resuelto de cada parada, cuánto está en falta, para que la app
+        /// pueda deshacer una falta dada en otra sesión u otra PDA (sube la FALTA en negativo, como el Deshacer). Las
+        /// lecturas dicen el producto, no el hueco: las faltas de un producto van a sus últimas paradas, sin pasar nunca de
+        /// lo resuelto en cada una (lo que se coge, se coge en orden). Al terminar manda el total por producto
+        /// (<see cref="PlanificadorFaltasSalida.AgruparFaltas"/>), así que el hueco elegido aquí no cambia lo que se quita.
+        /// </summary>
+        internal static void RepartirLasFaltas(List<LineaRecogidaDTO> lineas, IEnumerable<LecturaPickingAlmacen> lecturas)
+        {
+            Dictionary<string, int> faltas = (lecturas ?? Enumerable.Empty<LecturaPickingAlmacen>())
+                .GroupBy(l => l.Producto?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => Math.Max(0, g.Sum(l => l.Faltas)), StringComparer.OrdinalIgnoreCase);
+            for (int i = lineas.Count - 1; i >= 0; i--)
+            {
+                LineaRecogidaDTO linea = lineas[i];
+                string producto = linea.Producto?.Trim() ?? string.Empty;
+                if (!faltas.TryGetValue(producto, out int quedan) || quedan <= 0)
+                {
+                    continue;
+                }
+                linea.Faltas = Math.Min(quedan, Math.Max(0, linea.Resuelto));
+                faltas[producto] = quedan - linea.Faltas;
+            }
         }
 
         /// <summary>

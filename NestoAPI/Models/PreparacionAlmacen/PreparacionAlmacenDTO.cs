@@ -101,6 +101,11 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public string UrlFoto { get; set; }
         /// <summary>Unidades de esta parada ya cogidas o dadas por falta.</summary>
         public int Resuelto { get; set; }
+        /// <summary>
+        /// De lo resuelto, lo dado por falta (Ariadna «La encontré», Carlos 13/10/26): la app lo puede deshacer aunque la
+        /// falta se diera en otra sesión u otra PDA.
+        /// </summary>
+        public int Faltas { get; set; }
         public int Pendiente => Math.Max(0, Cantidad - Resuelto);
     }
 

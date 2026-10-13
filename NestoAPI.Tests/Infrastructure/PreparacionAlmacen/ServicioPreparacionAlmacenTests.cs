@@ -730,6 +730,43 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         }
 
         [TestMethod]
+        public void MontarRecogida_DiceCuantoDeLoResueltoDeCadaParadaEstaEnFalta()
+        {
+            // Ariadna «La encontré» (Carlos 13/10/26): la app necesita saber qué está en falta para poder deshacerlo aunque
+            // la falta se diera en otra sesión u otra PDA. A en dos huecos (3 + 2): 3 cogidas y 2 en falta; B en falta.
+            var recorrido = new List<LineaPickingAlmacenDTO>
+            {
+                Parada(1, "A", 3, "001"), Parada(2, "B", 1, "002"), Parada(3, "A", 2, "005"), Parada(4, "C", 6, "007")
+            };
+            var lecturas = new List<LecturaPickingAlmacen>
+            {
+                new LecturaPickingAlmacen { Producto = "A", Unidades = 3, Faltas = 2 },
+                new LecturaPickingAlmacen { Producto = "B", Faltas = 1 },
+                new LecturaPickingAlmacen { Producto = "C", Unidades = 2 }
+            };
+
+            RecogidaAlmacenDTO recogida = ServicioPreparacionAlmacen.MontarRecogida(EMPRESA, "PICK", PICKING, "Mesa de packing", recorrido, lecturas);
+
+            CollectionAssert.AreEqual(new[] { 3, 1, 2, 2 }, recogida.Lineas.Select(l => l.Resuelto).ToArray());
+            CollectionAssert.AreEqual(new[] { 0, 1, 2, 0 }, recogida.Lineas.Select(l => l.Faltas).ToArray(),
+                "Las faltas de un producto, en sus últimas paradas y nunca más de lo resuelto en cada una");
+            Assert.AreEqual(3, recogida.UnidadesEnFalta);
+        }
+
+        [TestMethod]
+        public void MontarRecogida_UnaFaltaDeshecha_NoQuedaEnFalta()
+        {
+            // La falta y su deshacer («La encontré»): la suma de las FALTA es 0
+            var recorrido = new List<LineaPickingAlmacenDTO> { Parada(1, "A", 2, "001") };
+            var lecturas = new List<LecturaPickingAlmacen> { new LecturaPickingAlmacen { Producto = "A", Unidades = 1, Faltas = 0 } };
+
+            RecogidaAlmacenDTO recogida = ServicioPreparacionAlmacen.MontarRecogida(EMPRESA, "PICK", PICKING, "Mesa de packing", recorrido, lecturas);
+
+            Assert.AreEqual(0, recogida.Lineas[0].Faltas);
+            Assert.AreEqual(1, recogida.Lineas[0].Pendiente);
+        }
+
+        [TestMethod]
         public void MontarRecogida_TodoCogido_TerminadaYSinSiguienteParada()
         {
             var recorrido = new List<LineaPickingAlmacenDTO> { Parada(1, "A", 3, "001"), Parada(2, "B", 1, "002") };
