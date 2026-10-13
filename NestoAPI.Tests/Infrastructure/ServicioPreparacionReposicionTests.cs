@@ -1369,7 +1369,7 @@ namespace NestoAPI.Tests.Infrastructure
 
             NestoBusinessException error = await PuntualRechazada(ServicioPuntual());
 
-            Assert.AreEqual("Todavía no se ha rellenado la de hoy (se rellena sola a las 09:00).", error.Message);
+            Assert.AreEqual("Todavía no se ha rellenado la de hoy (se rellena sola a las 9:00).", error.Message);
             CollectionAssert.AreEqual(new[] { "1 ALC→ALG 06/10/2026" }, viajes.Lecturas, "Mira la cabecera del job del día del corte");
         }
 
@@ -1381,7 +1381,7 @@ namespace NestoAPI.Tests.Infrastructure
 
             NestoBusinessException error = await PuntualRechazada(ServicioPuntual());
 
-            Assert.AreEqual("El repartidor ya se ha llevado la reposición de hoy (a las 09:15): lo que quede va en la siguiente.", error.Message);
+            Assert.AreEqual("El repartidor ya se ha llevado la reposición de hoy (a las 9:15): lo que quede va en la siguiente.", error.Message);
             Assert.AreEqual(0, repositorio.Llamadas.Count);
         }
 
@@ -1392,7 +1392,7 @@ namespace NestoAPI.Tests.Infrastructure
 
             NestoBusinessException error = await PuntualRechazada(ServicioPuntual());
 
-            StringAssert.StartsWith(error.Message, "El repartidor ya se ha llevado la reposición de hoy (a las 09:32)");
+            StringAssert.StartsWith(error.Message, "El repartidor ya se ha llevado la reposición de hoy (a las 9:32)");
             CollectionAssert.AreEqual(new[] { "BLOQUEO 1 ALC 06/10/2026", "SOLTAR" }, repositorio.Llamadas);
         }
 
@@ -1432,7 +1432,7 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.IsFalse(recogida.SePuede);
             Assert.AreEqual(new DateTime(2026, 10, 6, 9, 20, 0), recogida.FechaRecogida);
             Assert.AreEqual("NUEVAVISION\\Paloma", recogida.UsuarioRecogida);
-            StringAssert.Contains(recogida.Motivo, "(a las 09:20)");
+            StringAssert.Contains(recogida.Motivo, "(a las 9:20)");
 
             viajes.FechaRecogida = null;
             viajes.HayCabecera = false;
@@ -1469,7 +1469,7 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(SituacionesReposicionPuntual.RECOGIDA, estado.Situacion);
             Assert.AreEqual(AHORA, estado.FechaRecogida);
             Assert.AreEqual("NUEVAVISION\\Paloma", estado.UsuarioRecogida);
-            Assert.AreEqual("El repartidor ya se ha llevado la reposición de hoy (a las 09:32): lo que quede va en la siguiente.", estado.Motivo);
+            Assert.AreEqual("El repartidor ya se ha llevado la reposición de hoy (a las 9:32): lo que quede va en la siguiente.", estado.Motivo);
 
             NestoBusinessException error = await PuntualRechazada(ServicioPuntual());
             Assert.AreEqual(estado.Motivo, error.Message);
@@ -1484,7 +1484,7 @@ namespace NestoAPI.Tests.Infrastructure
                 () => ServicioPuntual().MarcarRecogida(Recogida(), Paloma));
 
             Assert.AreEqual(HttpStatusCode.Conflict, error.StatusCode);
-            StringAssert.Contains(error.Message, "(a las 09:10)");
+            StringAssert.Contains(error.Message, "(a las 9:10)");
             Assert.AreEqual(0, viajes.Marcas.Count);
         }
 
@@ -1503,7 +1503,7 @@ namespace NestoAPI.Tests.Infrastructure
 
         [DataTestMethod]
         [DataRow("sinViaje", "Hoy no hay viaje de Alcobendas a Algete.")]
-        [DataRow("sinRellenar", "Todavía no se ha rellenado la de hoy (se rellena sola a las 09:00).")]
+        [DataRow("sinRellenar", "Todavía no se ha rellenado la de hoy (se rellena sola a las 9:00).")]
         [DataRow("sinColumna", "falta lanzar Scripts/Issue581_ReposicionesTraspasos_Recogida.sql")]
         public async Task Recogida_CuandoNoToca_Es409(string caso, string mensaje)
         {

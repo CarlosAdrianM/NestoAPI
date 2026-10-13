@@ -246,10 +246,10 @@ IF COL_LENGTH('dbo.ReposicionesTraspasos', 'FechaRecogida') IS NOT NULL AND COL_
         }
 
         public static string TextoSinRellenar(DateTime corte)
-            => $"Todavía no se ha rellenado la de hoy (se rellena sola a las {corte:HH:mm}).";
+            => $"Todavía no se ha rellenado la de hoy (se rellena sola a las {corte:H:mm}).";
 
         public static string TextoRecogida(DateTime fechaRecogida)
-            => $"El repartidor ya se ha llevado la reposición de hoy (a las {fechaRecogida:HH:mm}): lo que quede va en la siguiente.";
+            => $"El repartidor ya se ha llevado la reposición de hoy (a las {fechaRecogida:H:mm}): lo que quede va en la siguiente.";
 
         private static EstadoReposicionPuntualDTO Con(EstadoReposicionPuntualDTO estado, string situacion, string motivo)
         {
