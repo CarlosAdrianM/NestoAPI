@@ -821,8 +821,10 @@ namespace NestoAPI.Controllers
                 await AuditarTramitacion(envio, agencia, false, ex.Message);
                 if (FallosAgenciaRemota.NoResponde(ex))
                 {
-                    // Sugerencia 507: «CTT no responde…» en vez de «CTT (Insertar) respondió HTTP 500: …».
-                    return RespuestaAgenciaNoResponde(await NombreAgenciaDe(envio), ex, envio, "Tramitar");
+                    // Sugerencia 507: «CTT no responde…» en vez de «CTT (Insertar) respondió HTTP 500: …». Con un timeout
+                    // en el alta CTT pudo crearlo sin que llegara la respuesta: se avisa de mirarlo antes de reintentar.
+                    return RespuestaAgenciaNoResponde(await NombreAgenciaDe(envio), ex, envio, "Tramitar",
+                        puedeHaberseCreado: FallosAgenciaRemota.EsTimeout(ex));
                 }
                 return Content(HttpStatusCode.BadGateway, ex.Message);
             }
@@ -1037,6 +1039,11 @@ namespace NestoAPI.Controllers
             catch (AgenciaRemotaException ex)
             {
                 await AuditarOperacion(envio, agencia, false, ex.Message, "Anular");
+                if (FallosAgenciaRemota.NoResponde(ex))
+                {
+                    // Sugerencia 507: el mismo aviso que al tramitar, en vez de «CTT (Anular) respondió HTTP 500: …».
+                    return RespuestaAgenciaNoResponde(await NombreAgenciaDe(envio), ex, envio, "Anular");
+                }
                 return Content(HttpStatusCode.BadGateway, ex.Message);
             }
 
@@ -1114,6 +1121,11 @@ namespace NestoAPI.Controllers
             catch (AgenciaRemotaException ex)
             {
                 await AuditarOperacion(envio, agencia, false, ex.Message, "Modificar");
+                if (FallosAgenciaRemota.NoResponde(ex))
+                {
+                    // Sugerencia 507: el mismo aviso que al tramitar.
+                    return RespuestaAgenciaNoResponde(await NombreAgenciaDe(envio), ex, envio, "Modificar");
+                }
                 return Content(HttpStatusCode.BadGateway, ex.Message);
             }
 
@@ -1304,6 +1316,11 @@ namespace NestoAPI.Controllers
             {
                 return Ok(await servicio.ModificarDatosAsync(id, datos, usuario));
             }
+            catch (NestoBusinessException ex) when (ex.GetErrorCode() == CODIGO_AGENCIA_NO_RESPONDE)
+            {
+                // Sugerencia 507: la agencia no responde al reenviarle el cambio; mismo 502 que al tramitar.
+                return Respuesta502AgenciaNoResponde(ex.Message, ex.InnerException?.Message, ex);
+            }
             catch (NestoBusinessException ex)
             {
                 // 409: entregado/recogido; 502: la agencia lo rechaza; 500: la agencia lo aceptó y la BD no.
@@ -1458,20 +1475,31 @@ namespace NestoAPI.Controllers
         /// timeout, sin conexión). Va en el cuerpo, campo «Codigo», junto a «Message» (para el usuario) y «Detalle» (lo que
         /// contestó la agencia, para diagnosticar).
         /// </summary>
-        public const string CODIGO_AGENCIA_NO_RESPONDE = "AGENCIA_NO_RESPONDE";
+        public const string CODIGO_AGENCIA_NO_RESPONDE = FallosAgenciaRemota.CODIGO_NO_RESPONDE;
 
         /// <summary>
         /// Sugerencia 507: 502 con el mensaje claro («CTT no responde ahora mismo… sácalo por GLS»), el código propio y el
         /// detalle crudo. Se loguea a ELMAH con la respuesta de la agencia.
         /// </summary>
-        private IHttpActionResult RespuestaAgenciaNoResponde(string agencia, Exception ex, EnviosAgencia envio, string operacion)
+        private IHttpActionResult RespuestaAgenciaNoResponde(string agencia, Exception ex, EnviosAgencia envio, string operacion,
+            bool puedeHaberseCreado = false)
         {
             string nombre = string.IsNullOrWhiteSpace(agencia) ? "La agencia" : agencia.Trim();
             ElmahHelper.Log(new Exception($"{nombre} no responde ({operacion} del envío {envio?.Numero}): {ex?.Message}", ex));
-            var error = new HttpError(FallosAgenciaRemota.MensajeNoResponde(agencia))
+            return Respuesta502AgenciaNoResponde(FallosAgenciaRemota.MensajeNoResponde(agencia, puedeHaberseCreado), ex?.Message);
+        }
+
+        /// <summary>Sugerencia 507: el 502 con «Message», «Codigo» = AGENCIA_NO_RESPONDE y «Detalle» (lo crudo).</summary>
+        private IHttpActionResult Respuesta502AgenciaNoResponde(string mensaje, string detalle, Exception paraElmah = null)
+        {
+            if (paraElmah != null)
+            {
+                ElmahHelper.Log(paraElmah);
+            }
+            var error = new HttpError(mensaje)
             {
                 ["Codigo"] = CODIGO_AGENCIA_NO_RESPONDE,
-                ["Detalle"] = ex?.Message
+                ["Detalle"] = detalle
             };
             return ResponseMessage(new HttpResponseMessage(HttpStatusCode.BadGateway)
             {

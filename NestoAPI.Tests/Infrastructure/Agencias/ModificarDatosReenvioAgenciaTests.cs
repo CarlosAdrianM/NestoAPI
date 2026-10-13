@@ -227,6 +227,26 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         }
 
         [TestMethod]
+        public async Task CttViva_NoResponde_MensajeClaroConElCodigoYLoCrudoDentro()
+        {
+            // Sugerencia 507: el mismo aviso que al tramitar, en vez de «CTT no ha aceptado el cambio…: … HTTP 500 …».
+            EnviosAgencia envio = EnvioCtt();
+            var crudo = new AgenciaRemotaException("CTT (Manifiesto) respondió HTTP 500: CONNECTIVITY") { EsTransitoria = true };
+            A.CallTo(() => ctt.ModificarYEtiquetarAsync(A<DatosEnvioRemoto>.Ignored, A<string>.Ignored)).ThrowsAsync(crudo);
+            ModificarDatosEnvioDTO datos = SinCambios(envio);
+            datos.Retorno = 1;
+
+            NestoBusinessException ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => servicio.ModificarDatosAsync(envio.Numero, datos, USUARIO));
+
+            Assert.AreEqual(HttpStatusCode.BadGateway, ex.StatusCode);
+            Assert.AreEqual(FallosAgenciaRemota.CODIGO_NO_RESPONDE, ex.GetErrorCode());
+            Assert.AreEqual(FallosAgenciaRemota.MensajeNoResponde("CTT"), ex.Message);
+            Assert.AreSame(crudo, ex.InnerException);
+            Assert.AreEqual(0, envio.Retorno);
+            Assert.IsFalse(auditorias.Single().Exito);
+        }
+
+        [TestMethod]
         public async Task CttViva_SoloObservacionesEstadoYFecha_NoLlamaALaAgencia()
         {
             EnviosAgencia envio = EnvioCtt();
@@ -537,6 +557,25 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             Assert.IsNotNull(resultado);
             Assert.AreEqual(codigo, resultado.StatusCode);
             Assert.AreEqual("motivo", resultado.Content);
+        }
+
+        [TestMethod]
+        public async Task ModificarDatosEnvio_AgenciaNoResponde_502ConMessageCodigoYDetalle()
+        {
+            A.CallTo(() => fakeServicio.ModificarDatosAsync(A<int>.Ignored, A<ModificarDatosEnvioDTO>.Ignored, A<string>.Ignored))
+                .Throws(new NestoBusinessException(FallosAgenciaRemota.MensajeNoResponde("CTT"),
+                    new ErrorContext { ErrorCode = FallosAgenciaRemota.CODIGO_NO_RESPONDE },
+                    new AgenciaRemotaException("CTT (Manifiesto) respondió HTTP 500: CONNECTIVITY") { EsTransitoria = true })
+                { StatusCode = HttpStatusCode.BadGateway });
+
+            var resultado = await controller.ModificarDatosEnvio(1, new ModificarDatosEnvioDTO()) as ResponseMessageResult;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(HttpStatusCode.BadGateway, resultado.Response.StatusCode);
+            var cuerpo = Newtonsoft.Json.Linq.JObject.Parse(await resultado.Response.Content.ReadAsStringAsync());
+            Assert.AreEqual(EnviosAgenciasController.CODIGO_AGENCIA_NO_RESPONDE, (string)cuerpo["Codigo"]);
+            Assert.AreEqual(FallosAgenciaRemota.MensajeNoResponde("CTT"), (string)cuerpo["Message"]);
+            StringAssert.Contains((string)cuerpo["Detalle"], "CONNECTIVITY");
         }
     }
 }

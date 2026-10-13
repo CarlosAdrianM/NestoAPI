@@ -529,5 +529,76 @@ namespace NestoAPI.Tests.Controllers
             StringAssert.StartsWith(FallosAgenciaRemota.MensajeNoResponde(null), "La agencia no responde ahora mismo");
             StringAssert.EndsWith(FallosAgenciaRemota.MensajeNoResponde("GLS"), "sácalo por otra agencia.");
         }
+
+        // ===== Sugerencia 507 (seguimiento 13/10/26): timeout en el alta = CTT pudo crearlo sin que llegara la respuesta =====
+
+        private const string AVISO_COMPROBAR_CTT = "Antes de reintentar, comprueba en la web de CTT que no se ha creado ya.";
+
+        [TestMethod]
+        public async Task Tramitar_TimeoutEnElAlta_AvisaDeComprobarEnLaWebAntesDeReintentar()
+        {
+            var timeout = new AgenciaRemotaException("CTT (Manifiesto): la petición agotó el tiempo de espera.", new TaskCanceledException()) { EsTransitoria = true };
+            System.Net.Http.HttpResponseMessage respuesta = await TramitarCttQueLanza(timeout);
+
+            Assert.AreEqual(System.Net.HttpStatusCode.BadGateway, respuesta.StatusCode);
+            var cuerpo = Newtonsoft.Json.Linq.JObject.Parse(await respuesta.Content.ReadAsStringAsync());
+            Assert.AreEqual(EnviosAgenciasController.CODIGO_AGENCIA_NO_RESPONDE, (string)cuerpo["Codigo"]);
+            Assert.AreEqual("CTT no responde ahora mismo (error de su servidor). Vuelve a intentarlo en unos minutos o, si es urgente, " +
+                "sácalo por GLS. " + AVISO_COMPROBAR_CTT, (string)cuerpo["Message"]);
+        }
+
+        [TestMethod]
+        public async Task Tramitar_SinConexionEnElAlta_NoAvisaDeComprobar()
+        {
+            // Sin conexión la petición no llegó a CTT: no puede haberlo creado.
+            var sinConexion = new AgenciaRemotaException("CTT (Manifiesto): no se pudo conectar: reset",
+                new System.Net.Http.HttpRequestException("reset")) { EsTransitoria = true };
+            System.Net.Http.HttpResponseMessage respuesta = await TramitarCttQueLanza(sinConexion);
+
+            var cuerpo = Newtonsoft.Json.Linq.JObject.Parse(await respuesta.Content.ReadAsStringAsync());
+            Assert.AreEqual(EnviosAgenciasController.CODIGO_AGENCIA_NO_RESPONDE, (string)cuerpo["Codigo"]);
+            Assert.IsFalse(((string)cuerpo["Message"]).Contains("Antes de reintentar"));
+        }
+
+        [TestMethod]
+        public async Task Tramitar_TimeoutEnLaReimpresion_NoAvisaDeComprobar()
+        {
+            // Reimprimir no crea nada: el aviso solo va en el alta.
+            EnviosAgencia envio = EnvioTramitado();
+            envio.Agencia = Constantes.Agencias.AGENCIA_CTT;
+            envio.AgenciasTransporte = new AgenciaTransporte { Numero = envio.Agencia, Nombre = "CTT" };
+            ConEnvio(envio);
+            A.CallTo(() => fakeFabrica.Crear(Constantes.Agencias.AGENCIA_CTT)).Returns(fakeAgencia);
+            A.CallTo(() => fakeAgencia.ReimprimirAsync(A<string>._, A<int?>._, A<int?>._))
+                .ThrowsAsync(new AgenciaRemotaException("CTT (Etiqueta): la petición agotó el tiempo de espera.", new TaskCanceledException()) { EsTransitoria = true });
+
+            var resultado = await controller.TramitarEnvio(1) as ResponseMessageResult;
+
+            Assert.IsNotNull(resultado);
+            var cuerpo = Newtonsoft.Json.Linq.JObject.Parse(await resultado.Response.Content.ReadAsStringAsync());
+            Assert.AreEqual(EnviosAgenciasController.CODIGO_AGENCIA_NO_RESPONDE, (string)cuerpo["Codigo"]);
+            Assert.IsFalse(((string)cuerpo["Message"]).Contains("Antes de reintentar"));
+        }
+
+        [TestMethod]
+        public void EsTimeout_SoloLasPeticionesSinRespuestaATiempo()
+        {
+            Assert.IsTrue(FallosAgenciaRemota.EsTimeout(new AgenciaRemotaException("timeout", new TaskCanceledException()) { EsTransitoria = true }));
+            Assert.IsTrue(FallosAgenciaRemota.EsTimeout(new System.TimeoutException()));
+            Assert.IsTrue(FallosAgenciaRemota.EsTimeout(new System.Net.WebException("timeout", System.Net.WebExceptionStatus.Timeout)));
+            Assert.IsFalse(FallosAgenciaRemota.EsTimeout(new AgenciaRemotaException("HTTP 500") { EsTransitoria = true }), "Con un 5xx CTT contestó: no lo creó");
+            Assert.IsFalse(FallosAgenciaRemota.EsTimeout(new System.Net.WebException("Unable to connect", System.Net.WebExceptionStatus.ConnectFailure)));
+            Assert.IsFalse(FallosAgenciaRemota.EsTimeout(new System.Net.Http.HttpRequestException("reset")));
+            Assert.IsFalse(FallosAgenciaRemota.EsTimeout(null));
+        }
+
+        [TestMethod]
+        public void MensajeNoResponde_PuedeHaberseCreado_SinNombreHablaDeLaWebDeLaAgencia()
+        {
+            StringAssert.EndsWith(FallosAgenciaRemota.MensajeNoResponde(" CTT ", puedeHaberseCreado: true), " " + AVISO_COMPROBAR_CTT);
+            StringAssert.EndsWith(FallosAgenciaRemota.MensajeNoResponde(null, puedeHaberseCreado: true),
+                "Antes de reintentar, comprueba en la web de la agencia que no se ha creado ya.");
+            Assert.AreEqual(FallosAgenciaRemota.MensajeNoResponde("CTT"), FallosAgenciaRemota.MensajeNoResponde("CTT", puedeHaberseCreado: false));
+        }
     }
 }

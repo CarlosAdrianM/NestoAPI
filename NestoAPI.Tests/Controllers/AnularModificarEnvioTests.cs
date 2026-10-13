@@ -241,6 +241,31 @@ namespace NestoAPI.Tests.Controllers
             Assert.IsFalse(auditoria.Exito);
         }
 
+        [TestMethod]
+        public async Task Anular_CttNoResponde_502ConElMensajeClaroYElCodigo()
+        {
+            // Sugerencia 507: como al tramitar, en vez de «CTT (Anular) respondió HTTP 500: …».
+            var envio = EnvioEnCurso();
+            envio.Agencia = Constantes.Agencias.AGENCIA_CTT;
+            envio.AgenciasTransporte = new AgenciaTransporte { Numero = envio.Agencia, Nombre = "CTT" };
+            ConEnvio(envio);
+            A.CallTo(() => fakeFabrica.Crear(Constantes.Agencias.AGENCIA_CTT)).Returns(fakeAgencia);
+            A.CallTo(() => fakeAgencia.AnularAsync(A<string>.Ignored))
+                .ThrowsAsync(new AgenciaRemotaException("CTT (Anular) respondió HTTP 500: CONNECTIVITY") { EsTransitoria = true });
+
+            var resultado = await controller.AnularEnvio(1) as ResponseMessageResult;
+
+            Assert.IsNotNull(resultado, "Que la agencia no responda no es el 502 con el texto crudo");
+            Assert.AreEqual(System.Net.HttpStatusCode.BadGateway, resultado.Response.StatusCode);
+            var cuerpo = Newtonsoft.Json.Linq.JObject.Parse(await resultado.Response.Content.ReadAsStringAsync());
+            Assert.AreEqual(EnviosAgenciasController.CODIGO_AGENCIA_NO_RESPONDE, (string)cuerpo["Codigo"]);
+            Assert.AreEqual(FallosAgenciaRemota.MensajeNoResponde("CTT"), (string)cuerpo["Message"]);
+            StringAssert.Contains((string)cuerpo["Detalle"], "CONNECTIVITY");
+            Assert.AreEqual("6522393001", envio.CodigoBarras, "La BD queda intacta.");
+            Assert.IsFalse(auditoria.Exito);
+            StringAssert.Contains(auditoria.TextoRespuestaError, "CONNECTIVITY");
+        }
+
         #endregion
 
         #region Modificar (#317)
@@ -340,6 +365,27 @@ namespace NestoAPI.Tests.Controllers
             StringAssert.Contains(contenido.Content, "Excedido el tiempo");
             Assert.AreEqual("28925", envio.CodPostal, "Si la agencia rechaza, la BD conserva la dirección original.");
             Assert.IsNotNull(auditoria);
+            Assert.IsFalse(auditoria.Exito);
+        }
+
+        [TestMethod]
+        public async Task Modificar_AgenciaNoContestaATiempo_502ConElMensajeClaroYBdIntacta()
+        {
+            // Sugerencia 507: mismo aviso que al tramitar (sin el «comprueba en la web», que es solo del alta).
+            var envio = EnvioEnCurso();
+            envio.AgenciasTransporte = new AgenciaTransporte { Numero = envio.Agencia, Nombre = "Innovatrans" };
+            ConEnvio(envio);
+            A.CallTo(() => fakeAgencia.ModificarYEtiquetarAsync(A<DatosEnvioRemoto>.Ignored, A<string>.Ignored))
+                .ThrowsAsync(new AgenciaRemotaException("timeout", new TaskCanceledException()) { EsTransitoria = true });
+
+            var resultado = await controller.ModificarEnvio(1, new ModificarEnvioAgenciaDTO { CodigoPostal = "28001" }) as ResponseMessageResult;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(System.Net.HttpStatusCode.BadGateway, resultado.Response.StatusCode);
+            var cuerpo = Newtonsoft.Json.Linq.JObject.Parse(await resultado.Response.Content.ReadAsStringAsync());
+            Assert.AreEqual(EnviosAgenciasController.CODIGO_AGENCIA_NO_RESPONDE, (string)cuerpo["Codigo"]);
+            Assert.AreEqual(FallosAgenciaRemota.MensajeNoResponde("Innovatrans"), (string)cuerpo["Message"]);
+            Assert.AreEqual("28925", envio.CodPostal);
             Assert.IsFalse(auditoria.Exito);
         }
 

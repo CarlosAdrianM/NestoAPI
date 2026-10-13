@@ -618,6 +618,13 @@ namespace NestoAPI.Infraestructure.Agencias
             catch (AgenciaRemotaException ex)
             {
                 await AuditarAsync(envio, agencia, false, ex.Message).ConfigureAwait(false);
+                if (FallosAgenciaRemota.NoResponde(ex))
+                {
+                    // Sugerencia 507: «CTT no responde ahora mismo…» (Codigo AGENCIA_NO_RESPONDE) en vez del texto crudo.
+                    throw new NestoBusinessException(FallosAgenciaRemota.MensajeNoResponde(nombre),
+                        new ErrorContext { ErrorCode = FallosAgenciaRemota.CODIGO_NO_RESPONDE, Empresa = envio.Empresa?.Trim() }, ex)
+                    { StatusCode = System.Net.HttpStatusCode.BadGateway };
+                }
                 throw new NestoBusinessException($"{nombre} no ha aceptado el cambio del envío {envio.Numero}: {ex.Message}")
                 { StatusCode = System.Net.HttpStatusCode.BadGateway };
             }
