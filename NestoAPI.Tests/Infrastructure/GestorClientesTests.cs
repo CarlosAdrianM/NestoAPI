@@ -2861,6 +2861,17 @@ namespace NestoAPI.Tests.Infrastructure
             };
         }
 
+        // Una cuenta con todo lo obligatorio (NOT NULL en la tabla CCC), para los tests que miran otra cosa.
+        private static CCCDTO CuentaCompleta(string numero) => new CCCDTO
+        {
+            numero = numero,
+            entidad = "2100",
+            oficina = "1234",
+            dc = "56",
+            numeroCuenta = "1234567890",
+            secuencia = "FRST"
+        };
+
         [TestMethod]
         public void GuardarCCCs_CCCNuevo_LoAnadeConLosDatosYElUsuario()
         {
@@ -2914,6 +2925,10 @@ namespace NestoAPI.Tests.Infrastructure
             GuardarCCCsRequest peticion = CrearRequestCCC("1", new CCCDTO
             {
                 numero = "1",
+                entidad = "2100",
+                oficina = "1234",
+                dc = "56",
+                numeroCuenta = "1234567890",
                 estado = 1,
                 tipoMandato = 2,
                 fechaMandato = new DateTime(2026, 7, 16),
@@ -2946,7 +2961,7 @@ namespace NestoAPI.Tests.Infrastructure
             };
             NVEntities dbFake = CrearDbParaCCCs(new List<CCC>(), extractos);
             GestorClientes gestor = CrearGestorClientes();
-            GuardarCCCsRequest peticion = CrearRequestCCC("1", new CCCDTO { numero = "1" });
+            GuardarCCCsRequest peticion = CrearRequestCCC("1", CuentaCompleta("1"));
 
             GuardarCCCsRespuesta respuesta = gestor.GuardarCCCs(dbFake, peticion, "usuario").Result;
 
@@ -2976,7 +2991,7 @@ namespace NestoAPI.Tests.Infrastructure
             };
             NVEntities dbFake = CrearDbParaCCCs(new List<CCC>(), null, cabeceras, lineas);
             GestorClientes gestor = CrearGestorClientes();
-            GuardarCCCsRequest peticion = CrearRequestCCC("1", new CCCDTO { numero = "1" });
+            GuardarCCCsRequest peticion = CrearRequestCCC("1", CuentaCompleta("1"));
 
             GuardarCCCsRespuesta respuesta = gestor.GuardarCCCs(dbFake, peticion, "usuario").Result;
 
@@ -2994,12 +3009,60 @@ namespace NestoAPI.Tests.Infrastructure
             };
             NVEntities dbFake = CrearDbParaCCCs(new List<CCC>(), extractos);
             GestorClientes gestor = CrearGestorClientes();
-            GuardarCCCsRequest peticion = CrearRequestCCC(null, new CCCDTO { numero = "1" });
+            GuardarCCCsRequest peticion = CrearRequestCCC(null, CuentaCompleta("1"));
 
             GuardarCCCsRespuesta respuesta = gestor.GuardarCCCs(dbFake, peticion, "usuario").Result;
 
             Assert.AreEqual(0, respuesta.extractoOtroCCC.Count);
             Assert.AreEqual(0, respuesta.pedidosOtroCCC.Count);
+        }
+
+        // Incidente 13/10/26 (Laura Magán): una cuenta nueva sin entidad, oficina, DC ni número de cuenta
+        // llegaba a SaveChanges y EF lanzaba DbEntityValidationException (500 sin explicación). Ahora es
+        // un ArgumentException (400 en el controller) que dice qué falta y en qué cuenta.
+        [TestMethod]
+        public void GuardarCCCs_CuentaSinDatosObligatorios_LanzaArgumentExceptionConLoQueFalta()
+        {
+            NVEntities dbFake = CrearDbParaCCCs(new List<CCC>());
+            GestorClientes gestor = CrearGestorClientes();
+            GuardarCCCsRequest peticion = CrearRequestCCC("2", CuentaCompleta("1"),
+                new CCCDTO { numero = "2  ", estado = 0, secuencia = "FRST" });
+
+            AggregateException ex = Assert.ThrowsException<AggregateException>(
+                () => gestor.GuardarCCCs(dbFake, peticion, "usuario").Result);
+
+            Assert.IsInstanceOfType(ex.InnerException, typeof(ArgumentException));
+            Assert.AreEqual("La cuenta 2 no se puede guardar: falta la entidad, la oficina, el DC y el número de cuenta.",
+                ex.InnerException.Message);
+            A.CallTo(() => dbFake.CCCs.Add(A<CCC>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void GuardarCCCs_CampoMasLargoQueLaColumna_LanzaArgumentExceptionConElMaximo()
+        {
+            NVEntities dbFake = CrearDbParaCCCs(new List<CCC>());
+            GestorClientes gestor = CrearGestorClientes();
+            CCCDTO cuenta = CuentaCompleta("1");
+            cuenta.entidad = "21001";
+            cuenta.bic = "CAIXESBBXXXX";
+            GuardarCCCsRequest peticion = CrearRequestCCC("1", cuenta);
+
+            AggregateException ex = Assert.ThrowsException<AggregateException>(
+                () => gestor.GuardarCCCs(dbFake, peticion, "usuario").Result);
+
+            Assert.AreEqual("La cuenta 1 no se puede guardar: la entidad no puede tener más de 4 caracteres; el BIC no puede tener más de 11 caracteres.",
+                ex.InnerException.Message);
+        }
+
+        [TestMethod]
+        public void GuardarCCCs_SinSecuenciaNiNumero_LoDiceSinNumeroDeCuenta()
+        {
+            CCCDTO cuenta = CuentaCompleta(null);
+            cuenta.secuencia = null;
+
+            string errores = GestorClientes.ValidarCCCs(new List<CCCDTO> { cuenta });
+
+            Assert.AreEqual("Una de las cuentas no se puede guardar: falta el número de la cuenta y la secuencia.", errores);
         }
 
         [TestMethod]

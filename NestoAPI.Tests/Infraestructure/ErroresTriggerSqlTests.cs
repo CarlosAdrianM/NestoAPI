@@ -99,6 +99,24 @@ namespace NestoAPI.Tests.Infraestructure
             Assert.AreEqual(MENSAJE_IBAN, resultado.Message);
         }
 
+        // Incidente 13/10/26 (Laura Magán): si EF rechaza algo que GuardarCCCs no haya validado, 400 con
+        // el motivo en vez de un 500 sin explicación.
+        [TestMethod]
+        public async Task PutCCCs_ErrorDeValidacionDeEF_Devuelve400()
+        {
+            var db = A.Fake<NVEntities>();
+            A.CallTo(() => db.SaveChangesAsync()).Throws(new System.Data.Entity.Validation.DbEntityValidationException(
+                "El campo Usuario es obligatorio", new System.Collections.Generic.List<System.Data.Entity.Validation.DbEntityValidationResult>()));
+            var gestor = A.Fake<IGestorClientes>();
+            A.CallTo(() => gestor.GuardarCCCs(A<NVEntities>._, A<GuardarCCCsRequest>._, A<string>._)).Returns(new GuardarCCCsRespuesta());
+            var controller = new ClientesController(gestor, A.Fake<IServicioVendedores>(), A.Fake<IGestorSincronizacion>(), null, db);
+
+            var resultado = await controller.PutCCCs(new GuardarCCCsRequest { empresa = "1", cliente = "38077", contacto = "2" }) as BadRequestErrorMessageResult;
+
+            Assert.IsNotNull(resultado, "antes era un 500 con DbEntityValidationException");
+            Assert.AreEqual("No se han podido guardar las cuentas: El campo Usuario es obligatorio", resultado.Message);
+        }
+
         // Mismo helper de reflexión que DiagnosticoBloqueosTests: SqlException no tiene constructor
         // público. Aquí además se fija el texto de cada error, que es lo que se traduce.
         private static SqlException CrearSqlException(params (int Number, string Message)[] errores)

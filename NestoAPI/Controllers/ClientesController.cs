@@ -874,6 +874,17 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest(ErroresTriggerSql.MensajeDeValidacion(ex));
             }
+            // Incidente 13/10/26 (Laura Magán): GuardarCCCs ya valida lo que falta en cada cuenta; si
+            // aun así EF rechaza algo, que sea un 400 con su motivo y no un 500 sin explicación.
+            catch (System.Data.Entity.Validation.DbEntityValidationException ex)
+            {
+                List<string> motivos = ex.EntityValidationErrors
+                    .SelectMany(r => r.ValidationErrors)
+                    .Select(e => e.ErrorMessage)
+                    .ToList();
+                return BadRequest("No se han podido guardar las cuentas: " +
+                    (motivos.Any() ? string.Join("; ", motivos) : ex.Message));
+            }
 
             return Ok(respuesta);
         }

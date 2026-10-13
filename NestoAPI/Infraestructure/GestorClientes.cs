@@ -763,6 +763,11 @@ namespace NestoAPI.Infraestructure
             {
                 throw new ArgumentException("No se ha recibido ningún CCC para guardar");
             }
+            string erroresCCCs = ValidarCCCs(peticion.cccs);
+            if (erroresCCCs != null)
+            {
+                throw new ArgumentException(erroresCCCs);
+            }
 
             foreach (CCCDTO dto in peticion.cccs)
             {
@@ -832,6 +837,58 @@ namespace NestoAPI.Infraestructure
             }
 
             return respuesta;
+        }
+
+        // Incidente 13/10/26 (Laura Magán): una cuenta nueva sin entidad, oficina, DC o número de cuenta
+        // (NOT NULL en la tabla CCC) llegaba a SaveChanges y EF lanzaba DbEntityValidationException: un 500
+        // sin explicación. Se comprueba antes con las mismas reglas del modelo (obligatorio = no null, como
+        // EF; longitud máxima de cada columna) y se dice qué falta en cada cuenta, en palabras del usuario.
+        private static readonly (string Nombre, Func<CCCDTO, string> Valor, bool Obligatorio, int Maximo)[] CamposCCC =
+        {
+            ("el número de la cuenta", d => d.numero, true, 3),
+            ("el país", d => d.pais, false, 2),
+            ("el DC del IBAN", d => d.dcIban, false, 2),
+            ("la entidad", d => d.entidad, true, 4),
+            ("la oficina", d => d.oficina, true, 4),
+            ("el DC", d => d.dc, true, 2),
+            ("el número de cuenta", d => d.numeroCuenta, true, 10),
+            ("el BIC", d => d.bic, false, 11),
+            ("la secuencia", d => d.secuencia, true, 4)
+        };
+
+        internal static string ValidarCCCs(IEnumerable<CCCDTO> cccs)
+        {
+            List<string> errores = new List<string>();
+            foreach (CCCDTO dto in cccs)
+            {
+                if (dto == null)
+                {
+                    continue;
+                }
+                List<string> faltan = CamposCCC.Where(c => c.Obligatorio && c.Valor(dto) == null).Select(c => c.Nombre).ToList();
+                List<string> largos = CamposCCC.Where(c => c.Valor(dto) != null && c.Valor(dto).Length > c.Maximo)
+                    .Select(c => $"{c.Nombre} no puede tener más de {c.Maximo} caracteres").ToList();
+                if (!faltan.Any() && !largos.Any())
+                {
+                    continue;
+                }
+                List<string> partes = new List<string>();
+                if (faltan.Any())
+                {
+                    partes.Add("falta " + UnirConY(faltan));
+                }
+                partes.AddRange(largos);
+                string cuenta = string.IsNullOrWhiteSpace(dto.numero) ? "Una de las cuentas" : $"La cuenta {dto.numero.Trim()}";
+                errores.Add($"{cuenta} no se puede guardar: {string.Join("; ", partes)}.");
+            }
+            return errores.Any() ? string.Join(" ", errores) : null;
+        }
+
+        private static string UnirConY(List<string> elementos)
+        {
+            return elementos.Count == 1
+                ? elementos[0]
+                : string.Join(", ", elementos.Take(elementos.Count - 1)) + " y " + elementos.Last();
         }
 
         public async Task<ClienteTelefonoLookup> BuscarClientePorEmail(string email)
