@@ -1,5 +1,5 @@
 ﻿/*
-    Novedades de la versión 1.10.41.0 de Nesto (13/10/2026). Ariadna sigue en 2.5 (nueva compilación: marca «Puntual» en Entradas).
+    Novedades de la versión 1.10.41.0 de Nesto (13/10/2026). Ariadna 2.6 (publicada 13/10 en Play interna y Windows; ver el bloque de Ariadna al final).
     Versión de la ClickOnce: 1.10.41.0 (pubxml 1.10.41.* en revisión 0).
 
     Tanda: NestoAPI (579 unir pedidos/MSDTC [publicado 9:23], domiciliaciones sin remesa, #606 «Por qué» del correo resumido y
@@ -13,7 +13,8 @@
     + Nesto (bucle de errores en Clientes › cuentas, «CTT no responde» al tramitar/anular/modificar, pestaña «Cheques regalo» en
     Rapports, reposición puntual y «El repartidor ya se la ha llevado», aviso de kits y de rutas al sacar el picking, 582 en
     Rapports, #490 4C.2 punto 2 completo)
-    + Ariadna (marca «Puntual» en Entradas).
+    + Ariadna 2.6 (referencia en las salidas, «La encontré», «Quedan: x/y», «* Dato mal» en PDA y tiendas, marca «Puntual»)
+    + cheques: una factura sin producto que cuente (solo peluquería o «PACK 26») no genera; correo del pedido con «Todo ahora» (928335).
 
     ORDEN:
       1) Scripts sa (da igual antes o después de la API; todos idempotentes):
@@ -23,7 +24,7 @@
          - Issue575_RutasPropiasActivasEmpresa3.sql                 (AT y 16 activas en la empresa 3)
          - Issue593_ChequesRegalo_DiasImpulsoLlamadas.sql           (OPCIONAL: sin él, 10 días)
       2) Publicar NestoAPI (Web.config del repo: ChequesRegalo:CopiaOculta vacío = sin copia oculta).
-      3) Publicar la ClickOnce (Clean + Rebuild). Ariadna: workflows de Play interna y Windows (2.5, nueva compilación).
+      3) Publicar la ClickOnce (Clean + Rebuild). Ariadna 2.6 ya publicada (13/10, tarde); pasarla a prueba cerrada si va bien.
       4) DESPUÉS: ESTE script (idempotente: compara por Versión + Título).
       5) Scripts/OneShot_20261013_CerrarSugerencias_1_10_41_0.ps1: pone versión y perfiles a las sugerencias 507, 580, 581 y 582,
          y contesta en cada hilo como «Claude (asistente IA)».
@@ -66,7 +67,10 @@ INSERT INTO @novedades (Categoria, Titulo, Descripcion, Perfiles) VALUES
      N'Administración'),
     ('Corregido', N'Clientes › cuentas bancarias: ya no se queda Nesto lleno de errores',
      N'Al cambiar a un cliente sin direcciones de entrega activas en la pantalla de cuentas bancarias, Nesto podía quedarse sacando el mismo error sin parar y no dejaba ni cerrarlo. Ya no pasa. Además, al guardar una cuenta incompleta, Nesto dice qué falta (por ejemplo, «falta la entidad, la oficina, el DC y el número de cuenta») en vez de un error sin explicación.',
-     N'Administración');
+     N'Administración'),
+    ('Mejorado', N'El cheque regalo solo para quien lo puede gastar',
+     N'Una factura que solo lleva productos de peluquería o packs «PACK 26» (que no cuentan para los 250 € del cheque) ya no genera el cheque regalo: el cliente no podría gastarlo comprando lo mismo. Si ese cliente hace después, hasta el 29 de octubre, una factura con producto que sí cuente, esa le genera el cheque. Los cheques ya generados no cambian.',
+     N'Vendedores,Tiendas,Administración');
 
 INSERT INTO Novedades (Version, Fecha, Categoria, Titulo, Descripcion, Ambito, Publicada, Usuario, Perfiles)
 SELECT @version, @fecha, n.Categoria, n.Titulo, n.Descripcion, 'Nesto', 1, 'sa', n.Perfiles
@@ -74,3 +78,25 @@ FROM @novedades n
 WHERE NOT EXISTS (SELECT 1 FROM Novedades x WHERE x.Version = @version AND x.Titulo = n.Titulo);
 
 SELECT @@ROWCOUNT AS NovedadesNestoInsertadasAhora;
+
+-- Ariadna 2.6
+DECLARE @ariadna TABLE (Categoria nvarchar(40), Titulo nvarchar(400), Descripcion nvarchar(2000));
+
+INSERT INTO @ariadna (Categoria, Titulo, Descripcion) VALUES
+    ('Mejorado', N'En las salidas vale la referencia aunque el producto tenga código',
+     N'Al preparar un picking o una reposición, si el código de barras de un producto no se lee bien, se puede leer la etiqueta de la balda (la de la referencia) o teclear la referencia y ENT: comprueba el producto igual que el código.'),
+    ('Nuevo', N'«La encontré»: recuperar lo que se dio por falta',
+     N'Si diste un producto por falta («No está») y luego lo encuentras, léelo (o teclea su referencia): Ariadna pregunta «¿La has encontrado?» y con ENT lo cuenta y deja de estar en falta, para que salga. Con Esc sigue en falta.'),
+    ('Mejorado', N'«Quedan: 1/2»: lo que queda y el total',
+     N'Arriba a la derecha, además de lo que queda, sale cuánto había en total de ese producto (por ejemplo, «Quedan: 1/2»), en las salidas y en las entradas.'),
+    ('Mejorado', N'Avisar de un código mal, también en la PDA y en las tiendas',
+     N'El botón «* Dato mal» se ve ahora en la PDA y en «Enviar reposición» de las tiendas. Si un código no se reconoce, el aviso dice «Pulsa * + ENT para avisar de que el código está mal», con el código leído ya puesto.'),
+    ('Nuevo', N'Reposiciones puntuales de las tiendas',
+     N'En Entradas, una reposición que una tienda manda aparte de la del calendario sale como «Reposición puntual … desde …» con la nota «Puntual». Se recibe igual que las demás.');
+
+INSERT INTO Novedades (Version, Fecha, Categoria, Titulo, Descripcion, Ambito, Publicada, Usuario)
+SELECT '2.6', @fecha, a.Categoria, a.Titulo, a.Descripcion, 'Ariadna', 1, 'sa'
+FROM @ariadna a
+WHERE NOT EXISTS (SELECT 1 FROM Novedades x WHERE x.Ambito = 'Ariadna' AND x.Titulo = a.Titulo);
+
+SELECT @@ROWCOUNT AS NovedadesAriadnaInsertadasAhora;
