@@ -51,6 +51,37 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
         public decimal BaseTotal { get; set; }
         /// <summary>Lleva alguna línea de producto (no ficticio) en negativo: es un cambio o una devolución.</summary>
         public bool TieneDevolucion { get; set; }
+        /// <summary>
+        /// Las líneas de producto (TipoLinea 1) con lo que hace falta para saber si cuentan para el cheque: lo mismo
+        /// que el mínimo del canje (ReglasCanjeChequeRegalo.ComputaParaMinimo).
+        /// </summary>
+        public List<LineaFacturaParaChequeRegalo> LineasDeProducto { get; set; } = new List<LineaFacturaParaChequeRegalo>();
+    }
+
+    /// <summary>Una línea de producto de una factura (sumada por producto), para la base computable.</summary>
+    public class LineaFacturaParaChequeRegalo
+    {
+        public string Empresa { get; set; }
+        public string Numero { get; set; }
+        public byte? TipoLinea { get; set; }
+        public string Producto { get; set; }
+        public string Nombre { get; set; }
+        public string Grupo { get; set; }
+        public bool Ficticio { get; set; }
+        public decimal BaseImponible { get; set; }
+    }
+
+    /// <summary>La cabecera de FacturaParaChequeRegalo tal como sale del SQL (SqlQuery: una columna por propiedad).</summary>
+    internal class FilaFacturaParaChequeRegalo
+    {
+        public string Empresa { get; set; }
+        public string Numero { get; set; }
+        public DateTime Fecha { get; set; }
+        public string Serie { get; set; }
+        public string Cliente { get; set; }
+        public decimal BaseProducto { get; set; }
+        public decimal BaseTotal { get; set; }
+        public bool TieneDevolucion { get; set; }
     }
 
     public class DecisionChequeRegalo
@@ -111,14 +142,42 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
             return null;
         }
 
+        internal const string MOTIVO_SIN_PRODUCTO_COMPUTABLE =
+            "no lleva producto que cuente para el cheque (solo peluquería o packs de Navidad)";
+
+        /// <summary>
+        /// Base imponible de las líneas de la factura que cuentan para el cheque, con la misma regla que el mínimo del
+        /// canje: sin cuentas contables, ficticios, nombres que empiezan por los prefijos de la campaña («PACK 26») ni
+        /// grupos excluidos («PEL»).
+        /// </summary>
+        public static decimal BaseComputable(FacturaParaChequeRegalo f, CampanaCanjeChequeRegalo campana)
+            => (f.LineasDeProducto ?? new List<LineaFacturaParaChequeRegalo>())
+                .Where(l => ReglasCanjeChequeRegalo.ComputaParaMinimo(l.TipoLinea, new ProductoParaChequeRegalo
+                {
+                    Numero = l.Producto,
+                    Nombre = l.Nombre,
+                    Grupo = l.Grupo,
+                    Ficticio = l.Ficticio
+                }, campana))
+                .Sum(l => l.BaseImponible);
+
+        /// <summary>
+        /// Por qué esta factura no genera el cheque (null si lo genera): no es de venta normal o no lleva nada que
+        /// cuente para el mínimo del canje (un cliente que solo compra peluquería no podría gastarlo). Como con las
+        /// rectificativas, esa factura no cuenta y lo puede generar una posterior del cliente dentro de la ventana.
+        /// </summary>
+        public static string MotivoNoGenera(FacturaParaChequeRegalo f, CampanaCanjeChequeRegalo campana)
+            => MotivoNoEsVentaNormal(f) ?? (BaseComputable(f, campana) <= 0 ? MOTIVO_SIN_PRODUCTO_COMPUTABLE : null);
+
         public static bool DentroDeLaVentana(CampanaChequeRegalo campana, DateTime fecha)
             => fecha.Date >= campana.GeneraDesde.Date && fecha.Date <= campana.GeneraHasta.Date;
 
         /// <summary>
         /// La primera factura de venta normal del cliente dentro de la ventana es la que decide: si no llega al mínimo,
-        /// ese cliente no genera (no se busca otra que llegue).
+        /// ese cliente no genera (no se busca otra que llegue). Las que no llevan nada que cuente para el cheque (solo
+        /// peluquería o packs de Navidad) no cuentan: decide la siguiente.
         /// </summary>
-        public static DecisionChequeRegalo Decidir(CampanaChequeRegalo campana, string cliente, bool clienteFinDeMes,
+        public static DecisionChequeRegalo Decidir(CampanaCanjeChequeRegalo campana, string cliente, bool clienteFinDeMes,
             IEnumerable<FacturaParaChequeRegalo> facturasDelCliente)
         {
             if (campana == null || !campana.Activa)
@@ -138,10 +197,10 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
                 .Where(f => DentroDeLaVentana(campana, f.Fecha))
                 .OrderBy(f => f.Fecha.Date)
                 .ThenBy(f => f.Numero, StringComparer.Ordinal)
-                .FirstOrDefault(f => MotivoNoEsVentaNormal(f) == null);
+                .FirstOrDefault(f => MotivoNoGenera(f, campana) == null);
             if (primera == null)
             {
-                return DecisionChequeRegalo.No("no tiene ninguna factura de venta normal en la ventana de la campaña");
+                return DecisionChequeRegalo.No("no tiene ninguna factura de venta normal con producto que cuente para el cheque en la ventana de la campaña");
             }
             if (primera.BaseProducto < campana.MinimoFacturaQueGenera)
             {
@@ -172,8 +231,10 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
 
     public interface IRepositorioChequesRegalo
     {
-        Task<List<CampanaChequeRegalo>> LeerCampanasActivas();
-        /// <summary>Facturas del cliente (empresa normal y espejo) con fecha entre los dos días, ambos incluidos.</summary>
+        /// <summary>Con las exclusiones del mínimo del canje: también deciden qué factura genera.</summary>
+        Task<List<CampanaCanjeChequeRegalo>> LeerCampanasActivas();
+        /// <summary>Facturas del cliente (empresa normal y espejo) con fecha entre los dos días, ambos incluidos, con
+        /// sus líneas de producto.</summary>
         Task<List<FacturaParaChequeRegalo>> LeerFacturasDelCliente(string cliente, DateTime desde, DateTime hasta);
         /// <summary>Algún contacto del cliente factura a fin de mes (el control es por código de cliente).</summary>
         Task<bool> EsClienteFinDeMes(string cliente);
@@ -222,7 +283,7 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
             {
                 return avisos;
             }
-            foreach (CampanaChequeRegalo campana in (await repositorio.LeerCampanasActivas().ConfigureAwait(false))
+            foreach (CampanaCanjeChequeRegalo campana in (await repositorio.LeerCampanasActivas().ConfigureAwait(false))
                 .Where(c => ReglasChequeRegalo.DentroDeLaVentana(c, fechaFactura)))
             {
                 ChequeRegaloNuevo generado = await GenerarSiToca(campana, cliente.Trim(), usuario).ConfigureAwait(false);
@@ -242,7 +303,7 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
                 return 0;
             }
             int generados = 0;
-            foreach (CampanaChequeRegalo campana in (await repositorio.LeerCampanasActivas().ConfigureAwait(false))
+            foreach (CampanaCanjeChequeRegalo campana in (await repositorio.LeerCampanasActivas().ConfigureAwait(false))
                 .Where(c => hoy.Date >= c.GeneraDesde.Date && hoy.Date <= c.GeneraHasta.Date.AddDays(DIAS_RECONCILIACION_TRAS_VENTANA)))
             {
                 foreach (string cliente in await repositorio.LeerClientesSinCheque(campana).ConfigureAwait(false))
@@ -258,7 +319,7 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
         }
 
         /// <summary>El cheque generado ahora, o null si no tocaba o ya lo tenía.</summary>
-        private async Task<ChequeRegaloNuevo> GenerarSiToca(CampanaChequeRegalo campana, string cliente, string usuario)
+        private async Task<ChequeRegaloNuevo> GenerarSiToca(CampanaCanjeChequeRegalo campana, string cliente, string usuario)
         {
             if (await repositorio.TieneCheque(campana.Codigo, campana.Empresa, cliente).ConfigureAwait(false))
             {
@@ -299,20 +360,6 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
             this.db = db ?? throw new ArgumentNullException(nameof(db));
         }
 
-        // Si las tablas aún no existen (script sin lanzar), no hay campañas: no se genera nada
-        internal const string SQL_CAMPANAS_ACTIVAS = @"
-IF OBJECT_ID('dbo.ChequesRegaloCampanas') IS NULL
-    SELECT CAST(NULL AS varchar(20)) AS Codigo, CAST(NULL AS char(3)) AS Empresa, CAST(NULL AS char(15)) AS Producto,
-           CAST(0 AS decimal(10,2)) AS ImporteBase, GETDATE() AS GeneraDesde, GETDATE() AS GeneraHasta, GETDATE() AS CanjeHasta,
-           CAST(0 AS decimal(10,2)) AS MinimoFacturaQueGenera, CAST(0 AS decimal(10,2)) AS MinimoCanje, 0 AS DiasEsperaTrasEntrega,
-           CAST(0 AS bit) AS Activa
-    WHERE 1 = 0
-ELSE
-    SELECT RTRIM(Codigo) AS Codigo, RTRIM(Empresa) AS Empresa, RTRIM(Producto) AS Producto, ImporteBase, GeneraDesde, GeneraHasta, CanjeHasta,
-           MinimoFacturaQueGenera, MinimoCanje, DiasEsperaTrasEntrega, Activa
-    FROM dbo.ChequesRegaloCampanas
-    WHERE Activa = 1";
-
         // Empresa normal y espejo (la serie GB se factura en la espejo). Productos.Ficticio por empresa de la línea.
         internal const string SQL_FACTURAS_DEL_CLIENTE = @"
 SELECT RTRIM(f.Empresa) AS Empresa, RTRIM(f.[Número]) AS Numero, f.Fecha, RTRIM(f.Serie) AS Serie, RTRIM(f.[Nº Cliente]) AS Cliente,
@@ -324,6 +371,18 @@ FROM CabFacturaVta f
      LEFT JOIN Productos p ON p.Empresa = l.Empresa AND p.[Número] = l.Producto
 WHERE f.Empresa IN (@p0, @p1) AND f.[Nº Cliente] = @p2 AND f.Fecha >= @p3 AND f.Fecha < @p4
 GROUP BY f.Empresa, f.[Número], f.Fecha, f.Serie, f.[Nº Cliente]";
+
+        // Las líneas de producto de esas facturas, sumadas por producto, con nombre, grupo y ficticio de la ficha: lo
+        // que mira ReglasCanjeChequeRegalo.ComputaParaMinimo para saber si cuentan para el cheque.
+        internal const string SQL_LINEAS_DE_PRODUCTO_DEL_CLIENTE = @"
+SELECT RTRIM(f.Empresa) AS Empresa, RTRIM(f.[Número]) AS Numero, l.TipoLinea, RTRIM(l.Producto) AS Producto,
+       RTRIM(p.Nombre) AS Nombre, RTRIM(p.Grupo) AS Grupo, CAST(ISNULL(p.Ficticio, 0) AS bit) AS Ficticio,
+       CAST(SUM(l.[Base Imponible]) AS decimal(18,4)) AS BaseImponible
+FROM CabFacturaVta f
+     INNER JOIN LinPedidoVta l ON l.Empresa = f.Empresa AND l.[Nº Factura] = f.[Número]
+     LEFT JOIN Productos p ON p.Empresa = l.Empresa AND p.[Número] = l.Producto
+WHERE f.Empresa IN (@p0, @p1) AND f.[Nº Cliente] = @p2 AND f.Fecha >= @p3 AND f.Fecha < @p4 AND l.TipoLinea = 1
+GROUP BY f.Empresa, f.[Número], l.TipoLinea, l.Producto, p.Nombre, p.Grupo, p.Ficticio";
 
         internal const string SQL_CLIENTE_FIN_DE_MES = @"
 SELECT COUNT(*) FROM Clientes WHERE Empresa = @p0 AND [Nº Cliente] = @p1 AND PeriodoFacturación = @p2";
@@ -345,16 +404,53 @@ WHERE f.Empresa IN (@p0, @p1) AND f.Fecha >= @p2 AND f.Fecha < @p3
       AND RTRIM(f.[Nº Cliente]) NOT IN ('10458', '31517', '9500', '31794', '32624')
       AND NOT EXISTS (SELECT 1 FROM dbo.ChequesRegalo c WHERE c.Campana = @p4 AND c.Empresa = @p5 AND c.Cliente = RTRIM(f.[Nº Cliente]))";
 
-        public async Task<List<CampanaChequeRegalo>> LeerCampanasActivas()
-            => await db.Database.SqlQuery<CampanaChequeRegalo>(SQL_CAMPANAS_ACTIVAS).ToListAsync().ConfigureAwait(false);
+        // Las mismas campañas que el canje, con sus exclusiones (sin tablas no hay campañas: no se genera nada; sin las
+        // columnas de c4, salen sin exclusiones)
+        public async Task<List<CampanaCanjeChequeRegalo>> LeerCampanasActivas()
+            => (await db.Database.SqlQuery<CampanaCanjeChequeRegalo>(RepositorioCanjeChequesRegalo.SQL_CAMPANAS)
+                .ToListAsync().ConfigureAwait(false))
+                .Where(c => c.Activa)
+                .ToList();
 
         public async Task<List<FacturaParaChequeRegalo>> LeerFacturasDelCliente(string cliente, DateTime desde, DateTime hasta)
-            => await db.Database.SqlQuery<FacturaParaChequeRegalo>(SQL_FACTURAS_DEL_CLIENTE,
-                new SqlParameter("@p0", Constantes.Empresas.EMPRESA_POR_DEFECTO),
-                new SqlParameter("@p1", Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO),
-                new SqlParameter("@p2", cliente),
-                new SqlParameter("@p3", desde.Date),
-                new SqlParameter("@p4", hasta.Date.AddDays(1))).ToListAsync().ConfigureAwait(false);
+        {
+            List<FilaFacturaParaChequeRegalo> cabeceras = await db.Database.SqlQuery<FilaFacturaParaChequeRegalo>(
+                SQL_FACTURAS_DEL_CLIENTE, ParametrosFacturasDelCliente(cliente, desde, hasta)).ToListAsync().ConfigureAwait(false);
+            List<LineaFacturaParaChequeRegalo> lineas = await db.Database.SqlQuery<LineaFacturaParaChequeRegalo>(
+                SQL_LINEAS_DE_PRODUCTO_DEL_CLIENTE, ParametrosFacturasDelCliente(cliente, desde, hasta)).ToListAsync().ConfigureAwait(false);
+            return Juntar(cabeceras, lineas);
+        }
+
+        // Cada consulta necesita sus propios SqlParameter (no se pueden reutilizar entre comandos)
+        private static object[] ParametrosFacturasDelCliente(string cliente, DateTime desde, DateTime hasta) => new object[]
+        {
+            new SqlParameter("@p0", Constantes.Empresas.EMPRESA_POR_DEFECTO),
+            new SqlParameter("@p1", Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO),
+            new SqlParameter("@p2", cliente),
+            new SqlParameter("@p3", desde.Date),
+            new SqlParameter("@p4", hasta.Date.AddDays(1))
+        };
+
+        internal static List<FacturaParaChequeRegalo> Juntar(IEnumerable<FilaFacturaParaChequeRegalo> cabeceras,
+            IEnumerable<LineaFacturaParaChequeRegalo> lineas)
+        {
+            ILookup<string, LineaFacturaParaChequeRegalo> porFactura = (lineas ?? Enumerable.Empty<LineaFacturaParaChequeRegalo>())
+                .ToLookup(l => Clave(l.Empresa, l.Numero));
+            return (cabeceras ?? Enumerable.Empty<FilaFacturaParaChequeRegalo>()).Select(c => new FacturaParaChequeRegalo
+            {
+                Empresa = c.Empresa,
+                Numero = c.Numero,
+                Fecha = c.Fecha,
+                Serie = c.Serie,
+                Cliente = c.Cliente,
+                BaseProducto = c.BaseProducto,
+                BaseTotal = c.BaseTotal,
+                TieneDevolucion = c.TieneDevolucion,
+                LineasDeProducto = porFactura[Clave(c.Empresa, c.Numero)].ToList()
+            }).ToList();
+        }
+
+        private static string Clave(string empresa, string numero) => $"{empresa?.Trim()}|{numero?.Trim()}";
 
         public async Task<bool> EsClienteFinDeMes(string cliente)
             => await db.Database.SqlQuery<int>(SQL_CLIENTE_FIN_DE_MES,

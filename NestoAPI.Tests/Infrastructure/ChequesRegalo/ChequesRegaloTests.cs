@@ -18,7 +18,7 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
     [TestClass]
     public class ReglasChequeRegaloTests
     {
-        internal static CampanaChequeRegalo Campana(decimal minimoFactura = 0, int diasEspera = 0, bool activa = true) => new CampanaChequeRegalo
+        internal static CampanaCanjeChequeRegalo Campana(decimal minimoFactura = 0, int diasEspera = 0, bool activa = true) => new CampanaCanjeChequeRegalo
         {
             Codigo = "CHEQUE50_OCT_2026",
             Empresa = "1",
@@ -30,7 +30,9 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
             MinimoFacturaQueGenera = minimoFactura,
             MinimoCanje = 250,
             DiasEsperaTrasEntrega = diasEspera,
-            Activa = activa
+            Activa = activa,
+            PrefijosNombreExcluidosMinimo = "PACK 26",
+            GruposExcluidosMinimo = "PEL"
         };
 
         internal static FacturaParaChequeRegalo Factura(string numero, int dia, decimal baseProducto = 100, decimal? baseTotal = null,
@@ -43,10 +45,138 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
             Cliente = cliente,
             BaseProducto = baseProducto,
             BaseTotal = baseTotal ?? baseProducto,
-            TieneDevolucion = devolucion
+            TieneDevolucion = devolucion,
+            // Por defecto, todo el producto es de estética (cuenta para el cheque)
+            LineasDeProducto = new List<LineaFacturaParaChequeRegalo> { Linea(numero, empresa, "CREMA", "COS", baseProducto) }
         };
 
-        private static DecisionChequeRegalo Decidir(CampanaChequeRegalo campana, params FacturaParaChequeRegalo[] facturas)
+        internal static LineaFacturaParaChequeRegalo Linea(string factura, string empresa, string nombre, string grupo, decimal baseImponible,
+            bool ficticio = false) => new LineaFacturaParaChequeRegalo
+        {
+            Empresa = empresa,
+            Numero = factura,
+            TipoLinea = 1,
+            Producto = nombre,
+            Nombre = nombre,
+            Grupo = grupo,
+            Ficticio = ficticio,
+            BaseImponible = baseImponible
+        };
+
+        private static FacturaParaChequeRegalo ConLineas(FacturaParaChequeRegalo f, params (string nombre, string grupo, decimal baseImponible)[] lineas)
+        {
+            f.LineasDeProducto = lineas.Select(l => Linea(f.Numero, f.Empresa, l.nombre, l.grupo, l.baseImponible)).ToList();
+            f.BaseProducto = lineas.Sum(l => l.baseImponible);
+            f.BaseTotal = f.BaseProducto;
+            return f;
+        }
+
+        [TestMethod]
+        public void UnaFacturaSoloDePeluqueriaNoGenera()
+        {
+            // NestoAPI#593: la peluquería no cuenta para los 250 € del canje; un cliente que solo compra peluquería no
+            // podría gastar el cheque
+            DecisionChequeRegalo d = Decidir(Campana(),
+                ConLineas(Factura("NV2600001", 13), ("CHAMPU", "PEL", 120), ("TINTE", "pel", 30)));
+
+            Assert.IsFalse(d.Genera);
+        }
+
+        [TestMethod]
+        public void UnaFacturaSoloDePacksDeNavidadNoGenera()
+        {
+            DecisionChequeRegalo d = Decidir(Campana(),
+                ConLineas(Factura("NV2600001", 13), ("PACK 26 NAVIDAD ROSA", "COS", 34)));
+
+            Assert.IsFalse(d.Genera);
+        }
+
+        [TestMethod]
+        public void UnaFacturaSoloDePeluqueriaYPacksNoGenera_ElMotivoLoDice()
+        {
+            FacturaParaChequeRegalo f = ConLineas(Factura("NV2600001", 13), ("CHAMPU", "PEL", 120), ("PACK 26 NAVIDAD", "COS", 34));
+
+            Assert.AreEqual("no lleva producto que cuente para el cheque (solo peluquería o packs de Navidad)",
+                ReglasChequeRegalo.MotivoNoGenera(f, Campana()));
+        }
+
+        [TestMethod]
+        public void UnaFacturaMixtaSiGenera()
+        {
+            DecisionChequeRegalo d = Decidir(Campana(),
+                ConLineas(Factura("NV2600001", 13), ("CHAMPU", "PEL", 200), ("PACK 26 NAVIDAD", "COS", 34), ("CREMA", "COS", 0.5m)));
+
+            Assert.IsTrue(d.Genera, d.Motivo);
+            Assert.AreEqual("NV2600001", d.Factura.Numero);
+        }
+
+        [TestMethod]
+        public void SiLaPrimeraEsSoloDePeluqueria_GeneraLaSiguienteConProductoQueCuenta()
+        {
+            // Como una rectificativa: esa factura no cuenta, y si luego compra estética el cheque lo puede gastar
+            DecisionChequeRegalo d = Decidir(Campana(),
+                ConLineas(Factura("NV2600001", 13), ("CHAMPU", "PEL", 300)),
+                ConLineas(Factura("NV2600002", 15), ("CREMA", "COS", 40)));
+
+            Assert.IsTrue(d.Genera, d.Motivo);
+            Assert.AreEqual("NV2600002", d.Factura.Numero);
+        }
+
+        [TestMethod]
+        public void LosFicticiosNoCuentanParaGenerar()
+        {
+            FacturaParaChequeRegalo f = Factura("NV2600001", 13);
+            f.LineasDeProducto = new List<LineaFacturaParaChequeRegalo> { Linea("NV2600001", "1", "CUOTA", "COS", 100, ficticio: true) };
+
+            Assert.IsFalse(Decidir(Campana(), f).Genera);
+        }
+
+        [TestMethod]
+        public void SinLasColumnasDeExclusiones_LaPeluqueriaSiGenera()
+        {
+            // Script c4 sin lanzar: la campaña sale sin exclusiones, como en el canje
+            CampanaCanjeChequeRegalo campana = Campana();
+            campana.GruposExcluidosMinimo = null;
+            campana.PrefijosNombreExcluidosMinimo = null;
+
+            Assert.IsTrue(Decidir(campana, ConLineas(Factura("NV2600001", 13), ("CHAMPU", "PEL", 120))).Genera);
+        }
+
+        [TestMethod]
+        public void Juntar_CadaFacturaLlevaSusLineas()
+        {
+            List<FacturaParaChequeRegalo> facturas = RepositorioChequesRegalo.Juntar(
+                new[]
+                {
+                    new FilaFacturaParaChequeRegalo { Empresa = "1", Numero = "NV2600001", BaseProducto = 120, BaseTotal = 126 },
+                    new FilaFacturaParaChequeRegalo { Empresa = "3", Numero = "GB2600001", BaseProducto = 40, BaseTotal = 40 },
+                    new FilaFacturaParaChequeRegalo { Empresa = "1", Numero = "NV2600002", BaseProducto = 0, BaseTotal = 6 }
+                },
+                new[]
+                {
+                    Linea("NV2600001", "1", "CHAMPU", "PEL", 120),
+                    Linea("GB2600001", "3", "CREMA", "COS", 40)
+                });
+
+            Assert.AreEqual(3, facturas.Count);
+            Assert.AreEqual("PEL", facturas[0].LineasDeProducto.Single().Grupo);
+            Assert.AreEqual(126, facturas[0].BaseTotal);
+            Assert.AreEqual("CREMA", facturas[1].LineasDeProducto.Single().Nombre);
+            Assert.AreEqual(0, facturas[2].LineasDeProducto.Count);
+        }
+
+        [TestMethod]
+        public void ElSqlDeLineasTraeNombreGrupoYFicticio()
+        {
+            string sql = RepositorioChequesRegalo.SQL_LINEAS_DE_PRODUCTO_DEL_CLIENTE;
+
+            StringAssert.Contains(sql, "p.Nombre");
+            StringAssert.Contains(sql, "p.Grupo");
+            StringAssert.Contains(sql, "p.Ficticio");
+            StringAssert.Contains(sql, "l.TipoLinea = 1");
+        }
+
+        private static DecisionChequeRegalo Decidir(CampanaCanjeChequeRegalo campana, params FacturaParaChequeRegalo[] facturas)
             => ReglasChequeRegalo.Decidir(campana, "15000", clienteFinDeMes: false, facturas);
 
         [TestMethod]
@@ -194,7 +324,7 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
         {
             repositorio = A.Fake<IRepositorioChequesRegalo>();
             A.CallTo(() => repositorio.LeerCampanasActivas())
-                .Returns(Task.FromResult(new List<CampanaChequeRegalo> { ReglasChequeRegaloTests.Campana() }));
+                .Returns(Task.FromResult(new List<CampanaCanjeChequeRegalo> { ReglasChequeRegaloTests.Campana() }));
             A.CallTo(() => repositorio.InsertarCheque(A<ChequeRegaloNuevo>._)).Returns(Task.FromResult(true));
         }
 
