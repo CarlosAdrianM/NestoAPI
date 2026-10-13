@@ -294,5 +294,51 @@ namespace NestoAPI.Tests.Infrastructure
 
             Assert.AreEqual(TARJETA, PoliticaPagoCanal.ResolverFormaPago(condiciones, EFECTIVO));
         }
+
+        // --- NestoAPI#593 (TNV): el pronto pago solo para quien lo tiene en su ficha ---
+
+        private static CondicionesPagoResponse ConProntoPago(bool conDeuda)
+        {
+            CondicionesPagoResponse condiciones = CondicionesGenerales(conDeuda);
+            PlazoPagoDTO pp = Plazo("PP", 1, 0, 0);
+            pp.descuentoPP = 0.03M;
+            PlazoPagoDTO pp5 = Plazo("PP5", 1, 0, 0);
+            pp5.descuentoPP = 0.05M;
+            condiciones.PlazosPago.Add(pp);
+            condiciones.PlazosPago.Add(pp5);
+            return condiciones;
+        }
+
+        [TestMethod]
+        public void ResolverPlazosPago_PideProntoPagoSinTenerloEnLaFicha_SeQuedaEnPrepago()
+        {
+            // PP5 es al contado (un plazo, 0 días), y por eso se colaba: cualquiera se ponía un 5 % pidiéndolo
+            CondicionesPagoResponse condiciones = PoliticaPagoCanal.AplicarPoliticaApp(
+                ConProntoPago(conDeuda: false), Ficha(RECIBO, "30/60/90"));
+
+            Assert.IsFalse(condiciones.PlazosPago.Any(p => p.descuentoPP > 0), "No se le ofrece un descuento que no tiene");
+            Assert.AreEqual(Constantes.PlazosPago.PREPAGO, PoliticaPagoCanal.ResolverPlazosPago(condiciones, "PP5"));
+        }
+
+        [TestMethod]
+        public void ResolverPlazosPago_PideSuProntoPago_SeLeRespeta()
+        {
+            CondicionesPagoResponse condiciones = PoliticaPagoCanal.AplicarPoliticaApp(
+                ConProntoPago(conDeuda: false), Ficha(RECIBO, "PP"));
+
+            Assert.AreEqual("PP", PoliticaPagoCanal.ResolverPlazosPago(condiciones, "PP"));
+            Assert.AreEqual(Constantes.PlazosPago.PREPAGO, PoliticaPagoCanal.ResolverPlazosPago(condiciones, "PP5"),
+                "El suyo, no uno mayor");
+        }
+
+        [TestMethod]
+        public void AplicarPoliticaApp_ClienteConDeuda_ElProntoPagoAjenoTampoco()
+        {
+            CondicionesPagoResponse condiciones = PoliticaPagoCanal.AplicarPoliticaApp(
+                ConProntoPago(conDeuda: true), Ficha(RECIBO, "30/60/90"));
+
+            Assert.IsFalse(condiciones.PlazosPago.Any(p => p.descuentoPP > 0));
+            Assert.IsTrue(condiciones.PlazosPago.Any(p => p.plazoPago == Constantes.PlazosPago.PREPAGO));
+        }
     }
 }

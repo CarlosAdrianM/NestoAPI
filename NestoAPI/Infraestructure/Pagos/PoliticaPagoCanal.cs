@@ -113,13 +113,18 @@ namespace NestoAPI.Infraestructure.Pagos
             {
                 return new List<PlazoPagoDTO>();
             }
+            HashSet<string> deLaFicha = Normalizar(plazosPagoFicha);
+            // NestoAPI#593 (TNV): los de pronto pago (PP, PP2, PP5) también son al contado, pero llevan un descuento:
+            // solo para quien lo tiene en su ficha. Antes valían para cualquiera que los pidiera en la petición.
+            List<PlazoPagoDTO> sinDescuentoAjeno = plazosPago
+                .Where(p => p.descuentoPP <= 0 || deLaFicha.Contains(Normalizar(p.plazoPago)))
+                .ToList();
             // Con deuda, nada de financiación: solo lo que se cobra en el momento del pedido.
             if (tieneDeuda)
             {
-                return plazosPago.Where(EsAlContado).ToList();
+                return sinDescuentoAjeno.Where(EsAlContado).ToList();
             }
-            HashSet<string> deLaFicha = Normalizar(plazosPagoFicha);
-            return plazosPago
+            return sinDescuentoAjeno
                 .Where(p => EsAlContado(p) || deLaFicha.Contains(Normalizar(p.plazoPago)))
                 .ToList();
         }
