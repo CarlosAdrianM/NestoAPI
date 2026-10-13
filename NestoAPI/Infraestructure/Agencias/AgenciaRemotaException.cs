@@ -38,4 +38,54 @@ namespace NestoAPI.Infraestructure.Agencias
         /// <summary>Lo que la agencia pide esperar (Retry-After), si lo dice.</summary>
         public System.TimeSpan? ReintentarTras { get; }
     }
+
+    /// <summary>
+    /// Sugerencia 507 (Alfredo, 06/10/26): CTT estuvo un rato contestando HTTP 500 «CONNECTIVITY» y en Nesto solo se veía
+    /// «HTTP 500». Distingue el fallo «la agencia no responde» (su servidor caído o lento) del resto, para decirle al
+    /// usuario lo que puede hacer: reintentar en unos minutos o sacarlo por otra agencia.
+    /// </summary>
+    public static class FallosAgenciaRemota
+    {
+        /// <summary>
+        /// True si el fallo es de la agencia que no responde: HTTP 5xx, timeout o no se pudo conectar (las
+        /// <see cref="AgenciaRemotaException"/> transitorias, y WebException / HttpRequestException /
+        /// TaskCanceledException sueltas o envueltas). El cupo agotado (429) NO: tiene su propio aviso (#602).
+        /// Un rechazo de negocio o una respuesta que no se entiende, tampoco.
+        /// </summary>
+        public static bool NoResponde(Exception ex)
+        {
+            for (Exception actual = ex; actual != null; actual = actual.InnerException)
+            {
+                if (actual is CupoAgenciaAgotadoException)
+                {
+                    return false;
+                }
+                if (actual is AgenciaRemotaException remota && remota.EsTransitoria)
+                {
+                    return true;
+                }
+                if (actual is System.Net.WebException
+                    || actual is System.Net.Http.HttpRequestException
+                    || actual is System.Threading.Tasks.TaskCanceledException
+                    || actual is TimeoutException)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Lo que lee el usuario cuando la agencia no responde: «CTT no responde ahora mismo (error de su servidor).
+        /// Vuelve a intentarlo en unos minutos o, si es urgente, sácalo por GLS.» Sin nombre, «La agencia…»; si la que
+        /// falla es GLS, la alternativa es «otra agencia».
+        /// </summary>
+        public static string MensajeNoResponde(string agencia)
+        {
+            string nombre = string.IsNullOrWhiteSpace(agencia) ? "La agencia" : agencia.Trim();
+            string alternativa = nombre.IndexOf("GLS", StringComparison.OrdinalIgnoreCase) >= 0 ? "otra agencia" : "GLS";
+            return $"{nombre} no responde ahora mismo (error de su servidor). " +
+                $"Vuelve a intentarlo en unos minutos o, si es urgente, sácalo por {alternativa}.";
+        }
+    }
 }

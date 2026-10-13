@@ -782,8 +782,14 @@ namespace NestoAPI.Controllers
             // Idempotencia: si ya hay albarán, "tramitar" = reimprimir (no reinsertar).
             if (!string.IsNullOrWhiteSpace(envio.CodigoBarras))
             {
-                EtiquetaDataTrans reimpresion = await ReimprimirSeguro(agencia, envio.CodigoBarras.Trim());
+                (EtiquetaDataTrans reimpresion, AgenciaRemotaException errorReimpresion) = await ReimprimirSeguro(agencia, envio.CodigoBarras.Trim());
                 bool reimpresionOk = reimpresion != null && reimpresion.Exito && reimpresion.EsZpl;
+                if (FallosAgenciaRemota.NoResponde(errorReimpresion))
+                {
+                    // Sugerencia 507: con la agencia caída, el aviso de Nesto#412 (borrar el código de barras) despistaría.
+                    await AuditarTramitacion(envio, agencia, false, errorReimpresion.Message);
+                    return RespuestaAgenciaNoResponde(await NombreAgenciaDe(envio), errorReimpresion, envio, "Tramitar (reimpresión)");
+                }
                 await AuditarTramitacion(envio, agencia, reimpresionOk, reimpresionOk ? null : "No se pudo reimprimir la etiqueta.");
                 if (!reimpresionOk)
                 {
@@ -813,6 +819,11 @@ namespace NestoAPI.Controllers
             catch (AgenciaRemotaException ex)
             {
                 await AuditarTramitacion(envio, agencia, false, ex.Message);
+                if (FallosAgenciaRemota.NoResponde(ex))
+                {
+                    // Sugerencia 507: «CTT no responde…» en vez de «CTT (Insertar) respondió HTTP 500: …».
+                    return RespuestaAgenciaNoResponde(await NombreAgenciaDe(envio), ex, envio, "Tramitar");
+                }
                 return Content(HttpStatusCode.BadGateway, ex.Message);
             }
 
@@ -912,7 +923,13 @@ namespace NestoAPI.Controllers
             }
 
             string albaran = envio.CodigoBarras.Trim();
-            EtiquetaDataTrans etiqueta = await ReimprimirSeguro(agencia, albaran);
+            (EtiquetaDataTrans etiqueta, AgenciaRemotaException errorAgencia) = await ReimprimirSeguro(agencia, albaran);
+            if (FallosAgenciaRemota.NoResponde(errorAgencia))
+            {
+                // Sugerencia 507: la agencia no responde; el aviso de Nesto#412 (borrar el código de barras) despistaría.
+                await AuditarOperacion(envio, agencia, false, errorAgencia.Message, OPERACION_IMPRIMIR_ETIQUETA);
+                return RespuestaAgenciaNoResponde(await NombreAgenciaDe(envio), errorAgencia, envio, OPERACION_IMPRIMIR_ETIQUETA);
+            }
             string zpl = etiqueta != null && etiqueta.Exito && etiqueta.EsZpl ? ZplParaImprimir(etiqueta) : null;
             if (zpl == null)
             {
@@ -1436,6 +1453,32 @@ namespace NestoAPI.Controllers
             return ResponseMessage(respuesta);
         }
 
+        /// <summary>
+        /// Sugerencia 507: código propio del error de tramitar / imprimir la etiqueta cuando la agencia no responde (HTTP 5xx,
+        /// timeout, sin conexión). Va en el cuerpo, campo «Codigo», junto a «Message» (para el usuario) y «Detalle» (lo que
+        /// contestó la agencia, para diagnosticar).
+        /// </summary>
+        public const string CODIGO_AGENCIA_NO_RESPONDE = "AGENCIA_NO_RESPONDE";
+
+        /// <summary>
+        /// Sugerencia 507: 502 con el mensaje claro («CTT no responde ahora mismo… sácalo por GLS»), el código propio y el
+        /// detalle crudo. Se loguea a ELMAH con la respuesta de la agencia.
+        /// </summary>
+        private IHttpActionResult RespuestaAgenciaNoResponde(string agencia, Exception ex, EnviosAgencia envio, string operacion)
+        {
+            string nombre = string.IsNullOrWhiteSpace(agencia) ? "La agencia" : agencia.Trim();
+            ElmahHelper.Log(new Exception($"{nombre} no responde ({operacion} del envío {envio?.Numero}): {ex?.Message}", ex));
+            var error = new HttpError(FallosAgenciaRemota.MensajeNoResponde(agencia))
+            {
+                ["Codigo"] = CODIGO_AGENCIA_NO_RESPONDE,
+                ["Detalle"] = ex?.Message
+            };
+            return ResponseMessage(new HttpResponseMessage(HttpStatusCode.BadGateway)
+            {
+                Content = new ObjectContent<HttpError>(error, new System.Net.Http.Formatting.JsonMediaTypeFormatter())
+            });
+        }
+
         /// <summary>NestoAPI#602: minutos enteros (hacia arriba, como poco 1) de la espera que pide la agencia.</summary>
         internal static int? MinutosParaReintentar(TimeSpan? reintentarTras)
             => reintentarTras.HasValue ? Math.Max(1, (int)Math.Ceiling(reintentarTras.Value.TotalMinutes)) : (int?)null;
@@ -1467,15 +1510,16 @@ namespace NestoAPI.Controllers
             return string.IsNullOrEmpty(campos) ? ex.Message : campos;
         }
 
-        private static async Task<EtiquetaDataTrans> ReimprimirSeguro(IAgenciaRemota agencia, string albaran)
+        // Sin etiqueta (null) si la agencia falla; el error se devuelve para distinguir «no responde» (sugerencia 507).
+        private static async Task<(EtiquetaDataTrans Etiqueta, AgenciaRemotaException Error)> ReimprimirSeguro(IAgenciaRemota agencia, string albaran)
         {
             try
             {
-                return await agencia.ReimprimirAsync(albaran);
+                return (await agencia.ReimprimirAsync(albaran), null);
             }
-            catch (AgenciaRemotaException)
+            catch (AgenciaRemotaException ex)
             {
-                return null;
+                return (null, ex);
             }
         }
 

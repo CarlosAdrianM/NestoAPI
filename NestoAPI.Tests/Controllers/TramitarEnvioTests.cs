@@ -423,5 +423,111 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual((short)Constantes.Agencias.ESTADO_PENDIENTE, envio.Estado, "El envío queda pendiente, no a medias.");
             A.CallTo(() => fakeLlamadas.Add(A<AgenciaLlamadaWeb>.That.Matches(l => !l.Exito))).MustHaveHappened();
         }
+
+        // ===== Sugerencia 507 (Alfredo, 06/10/26): CTT contestaba HTTP 500 «CONNECTIVITY» y Nesto solo enseñaba «HTTP 500» =====
+
+        private async Task<System.Net.Http.HttpResponseMessage> TramitarCttQueLanza(System.Exception fallo)
+        {
+            EnviosAgencia envio = EnvioPendiente();
+            envio.Agencia = Constantes.Agencias.AGENCIA_CTT;
+            envio.AgenciasTransporte = new AgenciaTransporte { Numero = envio.Agencia, Nombre = "CTT  " };
+            ConEnvio(envio);
+            A.CallTo(() => fakeFabrica.Crear(Constantes.Agencias.AGENCIA_CTT)).Returns(fakeAgencia);
+            A.CallTo(() => fakeAgencia.InsertarYEtiquetarAsync(A<DatosEnvioRemoto>.Ignored)).ThrowsAsync(fallo);
+
+            var resultado = await controller.TramitarEnvio(1);
+
+            Assert.IsNull(envio.CodigoBarras, "Sin respuesta de la agencia no se guarda albarán.");
+            Assert.IsInstanceOfType(resultado, typeof(ResponseMessageResult), "Que la agencia no responda no es el 502 genérico con el texto crudo");
+            return ((ResponseMessageResult)resultado).Response;
+        }
+
+        [TestMethod]
+        public async Task Tramitar_CttRespondeHttp500_502ConMensajeClaroYCodigo()
+        {
+            const string crudo = "CTT (Insertar) respondió HTTP 500: {\"error\":\"CONNECTIVITY\"}";
+            System.Net.Http.HttpResponseMessage respuesta = await TramitarCttQueLanza(new AgenciaRemotaException(crudo) { EsTransitoria = true });
+
+            Assert.AreEqual(System.Net.HttpStatusCode.BadGateway, respuesta.StatusCode);
+            var cuerpo = Newtonsoft.Json.Linq.JObject.Parse(await respuesta.Content.ReadAsStringAsync());
+            Assert.AreEqual(EnviosAgenciasController.CODIGO_AGENCIA_NO_RESPONDE, (string)cuerpo["Codigo"]);
+            Assert.AreEqual("CTT no responde ahora mismo (error de su servidor). Vuelve a intentarlo en unos minutos o, si es urgente, sácalo por GLS.",
+                (string)cuerpo["Message"]);
+            Assert.AreEqual(crudo, (string)cuerpo["Detalle"], "La respuesta cruda de CTT va aparte, para diagnosticar");
+            // Queda auditado con lo que contestó CTT, como antes.
+            Assert.IsFalse(auditoria.Exito);
+            StringAssert.Contains(auditoria.TextoRespuestaError, "CONNECTIVITY");
+        }
+
+        [TestMethod]
+        public async Task Tramitar_CttNoContestaATiempo_502ConMensajeClaro()
+        {
+            var timeout = new AgenciaRemotaException("CTT (Insertar): la petición agotó el tiempo de espera.", new TaskCanceledException()) { EsTransitoria = true };
+            System.Net.Http.HttpResponseMessage respuesta = await TramitarCttQueLanza(timeout);
+
+            var cuerpo = Newtonsoft.Json.Linq.JObject.Parse(await respuesta.Content.ReadAsStringAsync());
+            Assert.AreEqual(EnviosAgenciasController.CODIGO_AGENCIA_NO_RESPONDE, (string)cuerpo["Codigo"]);
+            StringAssert.StartsWith((string)cuerpo["Message"], "CTT no responde ahora mismo");
+        }
+
+        [TestMethod]
+        public async Task Tramitar_RespuestaQueNoSeEntiende_SigueComoAntes502ConElTexto()
+        {
+            EnviosAgencia envio = EnvioPendiente();
+            ConEnvio(envio);
+            A.CallTo(() => fakeFabrica.Crear(Constantes.Agencias.AGENCIA_INNOVATRANS)).Returns(fakeAgencia);
+            A.CallTo(() => fakeAgencia.InsertarYEtiquetarAsync(A<DatosEnvioRemoto>.Ignored))
+                .ThrowsAsync(new AgenciaRemotaException("CTT aceptó el envío pero la respuesta no trae shipping_code: {}"));
+
+            var resultado = await controller.TramitarEnvio(1) as NegotiatedContentResult<string>;
+
+            Assert.IsNotNull(resultado, "Un error que no es «no responde» sigue saliendo como siempre");
+            Assert.AreEqual(System.Net.HttpStatusCode.BadGateway, resultado.StatusCode);
+            StringAssert.Contains(resultado.Content, "shipping_code");
+        }
+
+        [TestMethod]
+        public async Task Tramitar_ReimpresionConLaAgenciaCaida_MensajeClaroEnVezDeBorrarElCodigo()
+        {
+            EnviosAgencia envio = EnvioTramitado();
+            envio.Agencia = Constantes.Agencias.AGENCIA_CTT;
+            envio.AgenciasTransporte = new AgenciaTransporte { Numero = envio.Agencia, Nombre = "CTT" };
+            ConEnvio(envio);
+            A.CallTo(() => fakeFabrica.Crear(Constantes.Agencias.AGENCIA_CTT)).Returns(fakeAgencia);
+            A.CallTo(() => fakeAgencia.ReimprimirAsync(A<string>._, A<int?>._, A<int?>._))
+                .ThrowsAsync(new AgenciaRemotaException("CTT (Etiqueta) respondió HTTP 503: Service Unavailable") { EsTransitoria = true });
+
+            var resultado = await controller.TramitarEnvio(1);
+
+            Assert.IsInstanceOfType(resultado, typeof(ResponseMessageResult));
+            var cuerpo = Newtonsoft.Json.Linq.JObject.Parse(await ((ResponseMessageResult)resultado).Response.Content.ReadAsStringAsync());
+            Assert.AreEqual(EnviosAgenciasController.CODIGO_AGENCIA_NO_RESPONDE, (string)cuerpo["Codigo"]);
+            Assert.AreEqual("6522393001", envio.CodigoBarras, "El albarán no se toca");
+            Assert.IsFalse(auditoria.Exito);
+            StringAssert.Contains(auditoria.TextoRespuestaError, "HTTP 503");
+        }
+
+        [TestMethod]
+        public void NoResponde_ClasificaCaidaTimeoutYConexionPeroNoCupoNiNegocio()
+        {
+            Assert.IsTrue(FallosAgenciaRemota.NoResponde(new AgenciaRemotaException("HTTP 500") { EsTransitoria = true }));
+            Assert.IsTrue(FallosAgenciaRemota.NoResponde(new DataTransException("No se pudo conectar con DataTrans") { EsTransitoria = true }));
+            Assert.IsTrue(FallosAgenciaRemota.NoResponde(new System.Net.WebException("Unable to connect")));
+            Assert.IsTrue(FallosAgenciaRemota.NoResponde(new System.Net.Http.HttpRequestException("reset")));
+            Assert.IsTrue(FallosAgenciaRemota.NoResponde(new TaskCanceledException()));
+            Assert.IsTrue(FallosAgenciaRemota.NoResponde(new AgenciaRemotaException("envuelta", new System.Net.WebException("timeout"))));
+            Assert.IsFalse(FallosAgenciaRemota.NoResponde(new CupoAgenciaAgotadoException("429")), "El cupo tiene su propio aviso (#602)");
+            Assert.IsFalse(FallosAgenciaRemota.NoResponde(new AgenciaRemotaException("respuesta que no se entiende")));
+            Assert.IsFalse(FallosAgenciaRemota.NoResponde(null));
+        }
+
+        [TestMethod]
+        public void MensajeNoResponde_ConElNombreDeLaAgenciaYSinNombreGenerico()
+        {
+            Assert.AreEqual("CTT no responde ahora mismo (error de su servidor). Vuelve a intentarlo en unos minutos o, si es urgente, sácalo por GLS.",
+                FallosAgenciaRemota.MensajeNoResponde(" CTT "));
+            StringAssert.StartsWith(FallosAgenciaRemota.MensajeNoResponde(null), "La agencia no responde ahora mismo");
+            StringAssert.EndsWith(FallosAgenciaRemota.MensajeNoResponde("GLS"), "sácalo por otra agencia.");
+        }
     }
 }

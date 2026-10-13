@@ -195,5 +195,27 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual(HttpStatusCode.BadGateway, resultado.StatusCode);
             StringAssert.Contains(resultado.Content, "error de Windows 5");
         }
+
+        [TestMethod]
+        public async Task LaAgenciaNoResponde_502ConMensajeClaroYNoImprime()
+        {
+            // Sugerencia 507: con CTT caído, el aviso de borrar el código de barras (Nesto#412) despistaba.
+            EnviosAgencia envio = ConEnvio(Constantes.Agencias.AGENCIA_CTT, "CTT123");
+            envio.AgenciasTransporte = new AgenciaTransporte { Numero = envio.Agencia, Nombre = "CTT" };
+            A.CallTo(() => parametros.LeerParametro("1", "Alfredo", "ImpresoraCodBarras")).Returns("ZEBRA-EXPEDICION");
+            A.CallTo(() => fakeAgencia.ReimprimirAsync("CTT123", null, null))
+                .ThrowsAsync(new AgenciaRemotaException("CTT (Etiqueta) respondió HTTP 500: CONNECTIVITY") { EsTransitoria = true });
+
+            var resultado = await controller.ImprimirEtiqueta(250100) as ResponseMessageResult;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(HttpStatusCode.BadGateway, resultado.Response.StatusCode);
+            var cuerpo = Newtonsoft.Json.Linq.JObject.Parse(await resultado.Response.Content.ReadAsStringAsync());
+            Assert.AreEqual(EnviosAgenciasController.CODIGO_AGENCIA_NO_RESPONDE, (string)cuerpo["Codigo"]);
+            StringAssert.StartsWith((string)cuerpo["Message"], "CTT no responde ahora mismo");
+            A.CallTo(() => impresora.Imprimir(A<string>._, A<string>._, A<string>._)).MustNotHaveHappened();
+            Assert.IsFalse(auditoria.Exito);
+            StringAssert.Contains(auditoria.TextoRespuestaError, "CONNECTIVITY");
+        }
     }
 }
