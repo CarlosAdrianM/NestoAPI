@@ -953,8 +953,14 @@ namespace NestoAPI.Tests.Infrastructure
 
         private readonly List<string> bloqueos = new List<string>();
 
-        private ServicioPreparacionReposicion ServicioPuntual(IHorasRecogidaReposiciones horasRecogida = null,
-            IStockLibreReposicionPuntual stockLibre = null)
+        /// <summary>Sugerencia 581: el viaje de hoy (por defecto, con viaje, relleno y sin recoger). Se crea en cada prueba.</summary>
+        private ViajesEnMemoria viajes = new ViajesEnMemoria();
+
+        /// <summary>Lo que pasa mientras la puntual espera el bloqueo (otra petición que se adelanta).</summary>
+        private Action alBloquear;
+
+        private ServicioPreparacionReposicion ServicioPuntual(IStockLibreReposicionPuntual stockLibre = null,
+            CalculadoraFechaReposicion calculadora = null)
         {
             registro = new RegistroEnMemoria(repositorio);
             return new ServicioPreparacionReposicion(repositorio,
@@ -971,10 +977,12 @@ namespace NestoAPI.Tests.Infrastructure
                 {
                     repositorio.Llamadas.Add($"BLOQUEO {empresa} {origen} {dia:dd/MM/yyyy}");
                     bloqueos.Add($"{origen} {dia:dd/MM/yyyy}");
+                    alBloquear?.Invoke();
                     return Task.FromResult<IDisposable>(new Soltar(() => repositorio.Llamadas.Add("SOLTAR")));
                 },
-                horasRecogida,
-                stockLibre);
+                viajes,
+                stockLibre,
+                calculadora);
         }
 
         private sealed class Soltar : IDisposable
@@ -1039,6 +1047,7 @@ namespace NestoAPI.Tests.Infrastructure
 
             Assert.AreEqual(HttpStatusCode.Conflict, error.StatusCode);
             StringAssert.Contains(error.Message, "en preparación");
+            StringAssert.StartsWith(error.Message, "Primero envía la de hoy.");
             CollectionAssert.AreEqual(new[] { "BLOQUEO 1 ALC 06/10/2026", "SOLTAR" }, repositorio.Llamadas, "Se mira dentro del bloqueo y no se escribe nada");
             Assert.AreEqual(3, repositorio.Lineas.Single().Cantidad);
         }
@@ -1258,94 +1267,311 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(0, vacio.Count);
         }
 
-        // ---------------------------------------------------------------- Sugerencia 581 (Carlos, 13/10/26): hasta la recogida
+        // ---------------------------------------------------------------- Sugerencia 581 (Carlos, 13/10/26): días con viaje, rellena, enviada y hasta la recogida
 
-        /// <summary>El repartidor de hoy (AHORA es martes 06/10/26 9:32) pasa por Alcobendas a <paramref name="hora"/>.</summary>
-        private static IHorasRecogidaReposiciones RepartidorDeHoy(string hora)
+        /// <summary>
+        /// El viaje de hoy en memoria. AHORA es martes 06/10/26 9:32: por defecto hay viaje de Alcobendas y de Reina a Algete
+        /// los martes (cierre 9:00), el job ya lo ha rellenado y nadie ha marcado la recogida.
+        /// </summary>
+        private sealed class ViajesEnMemoria : IViajesReposicionPuntual
         {
-            IHorasRecogidaReposiciones horas = A.Fake<IHorasRecogidaReposiciones>();
-            A.CallTo(() => horas.DelDia("1", "ALC", "ALG", 2)).Returns(hora == null ? (TimeSpan?)null : TimeSpan.Parse(hora));
-            return horas;
+            public readonly List<NestoAPI.Models.ReposicionCalendario> Calendario = new List<NestoAPI.Models.ReposicionCalendario>
+            {
+                Fila("ALC", 2, "09:00"), Fila("REI", 2, "09:00"), Fila("REI", 1, "09:00")
+            };
+            public bool HayCabecera = true;
+            public bool HayColumna = true;
+            public DateTime? FechaRecogida;
+            public string UsuarioRecogida;
+            public readonly List<string> Marcas = new List<string>();
+            public readonly List<string> Lecturas = new List<string>();
+
+            public static NestoAPI.Models.ReposicionCalendario Fila(string origen, byte dia, string cierre, bool activo = true) =>
+                new NestoAPI.Models.ReposicionCalendario
+                {
+                    Empresa = "1  ", AlmacenOrigen = origen, AlmacenDestino = "ALG", DiaSemana = dia,
+                    HoraCierre = TimeSpan.Parse(cierre), HoraLlegadaHabitual = new TimeSpan(13, 30, 0), Activo = activo
+                };
+
+            public Task<List<NestoAPI.Models.ReposicionCalendario>> LeerCalendario(string empresa) => Task.FromResult(Calendario.ToList());
+
+            public Task<ViajeReposicionDelDia> LeerViajeDelDia(string empresa, string origen, string destino, DateTime diaCorte)
+            {
+                Lecturas.Add($"{empresa} {origen}→{destino} {diaCorte:dd/MM/yyyy}");
+                return Task.FromResult(new ViajeReposicionDelDia
+                {
+                    HayCabecera = HayCabecera, HayColumnaRecogida = HayColumna, FechaRecogida = FechaRecogida, UsuarioRecogida = UsuarioRecogida
+                });
+            }
+
+            public Task MarcarRecogida(string empresa, string origen, string destino, DateTime diaCorte, DateTime fecha, string usuario)
+            {
+                Marcas.Add($"{empresa} {origen}→{destino} {diaCorte:dd/MM/yyyy} {fecha:HH:mm} {usuario}");
+                FechaRecogida = fecha;
+                UsuarioRecogida = usuario;
+                return Task.CompletedTask;
+            }
+        }
+
+        private static CalculadoraFechaReposicion FestivoEn(string almacen) =>
+            new CalculadoraFechaReposicion((dia, a) => a == almacen && dia.Date == AHORA.Date);
+
+        private async Task<NestoBusinessException> PuntualRechazada(ServicioPreparacionReposicion servicio)
+        {
+            repositorio.Stocks["41980"] = 5;
+            NestoBusinessException error = await Assert.ThrowsExceptionAsync<NestoBusinessException>(
+                () => servicio.CrearPuntual(Peticion(("41980", 1)), Paloma));
+            Assert.AreEqual(HttpStatusCode.Conflict, error.StatusCode);
+            return error;
         }
 
         [TestMethod]
-        public async Task Puntual_PasadoElRepartidorDeHoy_Es409SinBloqueoNiEscrituras()
+        public async Task Puntual_HoyNoHayViajeDeLaTiendaAAlgete_Es409SinBloqueoNiEscrituras()
         {
-            repositorio.Stocks["41980"] = 5;
+            viajes.Calendario.RemoveAll(f => f.AlmacenOrigen == "ALC");
+            viajes.Calendario.Add(ViajesEnMemoria.Fila("ALC", 1, "09:00"));
+            viajes.Calendario.Add(ViajesEnMemoria.Fila("ALC", 2, "09:00", activo: false));
 
-            NestoBusinessException error = await Assert.ThrowsExceptionAsync<NestoBusinessException>(
-                () => ServicioPuntual(RepartidorDeHoy("09:30")).CrearPuntual(Peticion(("41980", 1)), Paloma));
+            NestoBusinessException error = await PuntualRechazada(ServicioPuntual());
 
-            Assert.AreEqual(HttpStatusCode.Conflict, error.StatusCode);
-            Assert.AreEqual("Ya ha pasado el repartidor de hoy (09:30): la reposición puntual ya no sale hoy.", error.Message);
+            Assert.AreEqual("Hoy no hay viaje de Alcobendas a Algete.", error.Message);
             Assert.AreEqual(0, repositorio.Llamadas.Count, "No se bloquea ni se escribe nada");
         }
 
-        [TestMethod]
-        public async Task Puntual_JustoALaHoraDelRepartidor_YaNoSale()
+        [DataTestMethod]
+        [DataRow("ALC", DisplayName = "Festivo en la tienda")]
+        [DataRow("ALG", DisplayName = "Festivo en Algete")]
+        public async Task Puntual_DiaFestivo_NoHayViaje_Es409(string almacenFestivo)
         {
-            repositorio.Stocks["41980"] = 5;
+            NestoBusinessException error = await PuntualRechazada(ServicioPuntual(calculadora: FestivoEn(almacenFestivo)));
 
-            NestoBusinessException error = await Assert.ThrowsExceptionAsync<NestoBusinessException>(
-                () => ServicioPuntual(RepartidorDeHoy("09:32")).CrearPuntual(Peticion(("41980", 1)), Paloma));
-
-            Assert.AreEqual(HttpStatusCode.Conflict, error.StatusCode);
+            Assert.AreEqual("Hoy no hay viaje de Alcobendas a Algete: es festivo.", error.Message);
+            Assert.AreEqual(0, repositorio.Llamadas.Count);
         }
 
-        [DataTestMethod]
-        [DataRow("09:33", DisplayName = "Antes de que pase")]
-        [DataRow(null, DisplayName = "Sin hora en el calendario (o sin la columna, o sin viaje hoy): sin límite")]
-        public async Task Puntual_AntesDelRepartidorOSinHora_SeManda(string hora)
+        [TestMethod]
+        public async Task Puntual_AntesDeLaHoraDeCierre_TodaviaNoSeHaRellenado_Es409ConLaHora()
+        {
+            // Se rellena a las 10:00 y son las 9:32: lo que se mande ahora podría ir en la automática
+            viajes.Calendario.RemoveAll(f => f.AlmacenOrigen == "ALC");
+            viajes.Calendario.Add(ViajesEnMemoria.Fila("ALC", 2, "10:00"));
+
+            NestoBusinessException error = await PuntualRechazada(ServicioPuntual());
+
+            Assert.AreEqual("Todavía no se ha rellenado la de hoy (se rellena sola a las 10:00).", error.Message);
+            Assert.AreEqual(0, repositorio.Llamadas.Count);
+        }
+
+        [TestMethod]
+        public async Task Puntual_PasadoElCierrePeroElJobAunNoLaHaRellenado_Es409()
+        {
+            viajes.HayCabecera = false;
+
+            NestoBusinessException error = await PuntualRechazada(ServicioPuntual());
+
+            Assert.AreEqual("Todavía no se ha rellenado la de hoy (se rellena sola a las 09:00).", error.Message);
+            CollectionAssert.AreEqual(new[] { "1 ALC→ALG 06/10/2026" }, viajes.Lecturas, "Mira la cabecera del job del día del corte");
+        }
+
+        [TestMethod]
+        public async Task Puntual_ElRepartidorYaSeLaHaLlevado_Es409SinBloqueoNiEscrituras()
+        {
+            viajes.FechaRecogida = new DateTime(2026, 10, 6, 9, 15, 0);
+            viajes.UsuarioRecogida = "NUEVAVISION\\Paloma";
+
+            NestoBusinessException error = await PuntualRechazada(ServicioPuntual());
+
+            Assert.AreEqual("El repartidor ya se ha llevado la reposición de hoy (a las 09:15): lo que quede va en la siguiente.", error.Message);
+            Assert.AreEqual(0, repositorio.Llamadas.Count);
+        }
+
+        [TestMethod]
+        public async Task Puntual_SiMarcanLaRecogidaMientrasEsperaElBloqueo_Es409SinEscribirNada()
+        {
+            alBloquear = () => viajes.FechaRecogida = new DateTime(2026, 10, 6, 9, 32, 0);
+
+            NestoBusinessException error = await PuntualRechazada(ServicioPuntual());
+
+            StringAssert.StartsWith(error.Message, "El repartidor ya se ha llevado la reposición de hoy (a las 09:32)");
+            CollectionAssert.AreEqual(new[] { "BLOQUEO 1 ALC 06/10/2026", "SOLTAR" }, repositorio.Llamadas);
+        }
+
+        [TestMethod]
+        public async Task Puntual_DiaConViaje_YaRellenaEnviadaYSinRecoger_SeManda()
         {
             repositorio.Stocks["41980"] = 5;
 
-            ResultadoTerminarReposicionDTO resultado = await ServicioPuntual(RepartidorDeHoy(hora)).CrearPuntual(Peticion(("41980", 1)), Paloma);
+            ResultadoTerminarReposicionDTO resultado = await ServicioPuntual().CrearPuntual(Peticion(("41980", 1)), Paloma);
 
             Assert.IsTrue(resultado.NumTraspaso > 0);
         }
 
         [TestMethod]
-        public async Task LimitePuntual_DiceLaHoraYSiYaHaPasado()
+        public async Task EstadoPuntual_CadaSituacionConSuMotivo()
         {
-            LimiteReposicionPuntualDTO antes = await ServicioPuntual(RepartidorDeHoy("11:30")).LeerLimitePuntual("1", " alc ");
-            LimiteReposicionPuntualDTO despues = await ServicioPuntual(RepartidorDeHoy("09:00")).LeerLimitePuntual(null, "ALC");
-            LimiteReposicionPuntualDTO sinHora = await ServicioPuntual(RepartidorDeHoy(null)).LeerLimitePuntual("1", "ALC");
+            EstadoReposicionPuntualDTO abierta = await ServicioPuntual().LeerEstadoPuntual(" 1 ", " alc ");
+            Assert.AreEqual(SituacionesReposicionPuntual.ABIERTA, abierta.Situacion);
+            Assert.IsTrue(abierta.SePuede);
+            Assert.IsNull(abierta.Motivo);
+            Assert.IsTrue(abierta.PuedeMarcarRecogida);
+            Assert.AreEqual(new DateTime(2026, 10, 6, 9, 0, 0), abierta.CierreHoy);
+            Assert.AreEqual("ALC", abierta.Origen);
+            Assert.AreEqual("ALG", abierta.Destino);
 
-            Assert.AreEqual(new TimeSpan(11, 30, 0), antes.HoraRecogida);
-            Assert.IsFalse(antes.YaHaPasado);
-            Assert.IsNull(antes.Mensaje);
-            Assert.AreEqual("ALC", antes.Origen);
-            Assert.AreEqual("ALG", antes.Destino);
-            Assert.IsTrue(despues.YaHaPasado);
-            Assert.AreEqual("Ya ha pasado el repartidor de hoy (09:00): la reposición puntual ya no sale hoy.", despues.Mensaje);
-            Assert.IsNull(sinHora.HoraRecogida);
-            Assert.IsFalse(sinHora.YaHaPasado);
-        }
+            repositorio.Lineas.Add(Fila(561483500, "41980", 3));
+            EstadoReposicionPuntualDTO sinEnviar = await ServicioPuntual().LeerEstadoPuntual("1", "ALC");
+            Assert.AreEqual(SituacionesReposicionPuntual.SIN_ENVIAR, sinEnviar.Situacion);
+            Assert.AreEqual("Primero envía la de hoy.", sinEnviar.Motivo);
+            Assert.IsFalse(sinEnviar.PuedeMarcarRecogida);
+            repositorio.Lineas.Clear();
 
-        [DataTestMethod]
-        [DataRow(2026, 10, 12, 1)]
-        [DataRow(2026, 10, 13, 2)]
-        [DataRow(2026, 10, 17, 6)]
-        [DataRow(2026, 10, 18, 7)]
-        public void LimitePuntual_DiaSemanaComoElCalendario(int anno, int mes, int dia, int esperado)
-        {
-            Assert.AreEqual((byte)esperado, LimiteRecogidaPuntual.DiaSemana(new DateTime(anno, mes, dia, 10, 0, 0)));
+            viajes.FechaRecogida = new DateTime(2026, 10, 6, 9, 20, 0);
+            viajes.UsuarioRecogida = "NUEVAVISION\\Paloma";
+            EstadoReposicionPuntualDTO recogida = await ServicioPuntual().LeerEstadoPuntual("1", "ALC");
+            Assert.AreEqual(SituacionesReposicionPuntual.RECOGIDA, recogida.Situacion);
+            Assert.IsFalse(recogida.SePuede);
+            Assert.AreEqual(new DateTime(2026, 10, 6, 9, 20, 0), recogida.FechaRecogida);
+            Assert.AreEqual("NUEVAVISION\\Paloma", recogida.UsuarioRecogida);
+            StringAssert.Contains(recogida.Motivo, "(a las 09:20)");
+
+            viajes.FechaRecogida = null;
+            viajes.HayCabecera = false;
+            EstadoReposicionPuntualDTO sinRellenar = await ServicioPuntual().LeerEstadoPuntual("1", "ALC");
+            Assert.AreEqual(SituacionesReposicionPuntual.SIN_RELLENAR, sinRellenar.Situacion);
+
+            EstadoReposicionPuntualDTO sinViaje = await ServicioPuntual(calculadora: FestivoEn("ALC")).LeerEstadoPuntual("1", "ALC");
+            Assert.AreEqual(SituacionesReposicionPuntual.SIN_VIAJE, sinViaje.Situacion);
+            Assert.IsNull(sinViaje.CierreHoy);
         }
 
         [TestMethod]
-        public void Sql_HoraRecogida_NoFallaSinLaColumna()
+        public async Task EstadoPuntual_SinElScriptDeLaRecogida_SeHacePeroNoSeMarca()
         {
-            // La columna no está en el EDMX y puede no existir: nada que la nombre fuera de sp_executesql
-            foreach (string sql in new[] { HorasRecogidaReposicionesSql.SQL_LEER, HorasRecogidaReposicionesSql.SQL_DEL_DIA, HorasRecogidaReposicionesSql.SQL_GUARDAR })
+            viajes.HayColumna = false;
+
+            EstadoReposicionPuntualDTO estado = await ServicioPuntual().LeerEstadoPuntual("1", "ALC");
+
+            Assert.IsTrue(estado.SePuede, "Sin la columna, como hasta ahora: sin información de recogida");
+            Assert.IsFalse(estado.PuedeMarcarRecogida);
+        }
+
+        // ---- Marcar la recogida
+
+        private static MarcarRecogidaReposicionDTO Recogida(string origen = "ALC") => new MarcarRecogidaReposicionDTO { Empresa = "1", Origen = origen };
+
+        [TestMethod]
+        public async Task Recogida_ApuntaQuienYCuando_DentroDelBloqueo_YDesdeEntoncesNoHayPuntual()
+        {
+            EstadoReposicionPuntualDTO estado = await ServicioPuntual().MarcarRecogida(Recogida(), Paloma);
+
+            CollectionAssert.AreEqual(new[] { "1 ALC→ALG 06/10/2026 09:32 NUEVAVISION\\Paloma" }, viajes.Marcas);
+            CollectionAssert.AreEqual(new[] { "BLOQUEO 1 ALC 06/10/2026", "SOLTAR" }, repositorio.Llamadas, "El mismo bloqueo que la puntual y el job");
+            Assert.AreEqual(SituacionesReposicionPuntual.RECOGIDA, estado.Situacion);
+            Assert.AreEqual(AHORA, estado.FechaRecogida);
+            Assert.AreEqual("NUEVAVISION\\Paloma", estado.UsuarioRecogida);
+            Assert.AreEqual("El repartidor ya se ha llevado la reposición de hoy (a las 09:32): lo que quede va en la siguiente.", estado.Motivo);
+
+            NestoBusinessException error = await PuntualRechazada(ServicioPuntual());
+            Assert.AreEqual(estado.Motivo, error.Message);
+        }
+
+        [TestMethod]
+        public async Task Recogida_YaMarcada_Es409SinVolverAApuntar()
+        {
+            viajes.FechaRecogida = new DateTime(2026, 10, 6, 9, 10, 0);
+
+            NestoBusinessException error = await Assert.ThrowsExceptionAsync<NestoBusinessException>(
+                () => ServicioPuntual().MarcarRecogida(Recogida(), Paloma));
+
+            Assert.AreEqual(HttpStatusCode.Conflict, error.StatusCode);
+            StringAssert.Contains(error.Message, "(a las 09:10)");
+            Assert.AreEqual(0, viajes.Marcas.Count);
+        }
+
+        [TestMethod]
+        public async Task Recogida_ConLaDeHoySinEnviar_Es409PrimeroEnviala()
+        {
+            repositorio.Lineas.Add(Fila(561483500, "41980", 3));
+
+            NestoBusinessException error = await Assert.ThrowsExceptionAsync<NestoBusinessException>(
+                () => ServicioPuntual().MarcarRecogida(Recogida(), Paloma));
+
+            Assert.AreEqual(HttpStatusCode.Conflict, error.StatusCode);
+            Assert.AreEqual("Primero envía la de hoy.", error.Message);
+            Assert.AreEqual(0, viajes.Marcas.Count);
+        }
+
+        [DataTestMethod]
+        [DataRow("sinViaje", "Hoy no hay viaje de Alcobendas a Algete.")]
+        [DataRow("sinRellenar", "Todavía no se ha rellenado la de hoy (se rellena sola a las 09:00).")]
+        [DataRow("sinColumna", "falta lanzar Scripts/Issue581_ReposicionesTraspasos_Recogida.sql")]
+        public async Task Recogida_CuandoNoToca_Es409(string caso, string mensaje)
+        {
+            if (caso == "sinViaje")
             {
-                StringAssert.Contains(sql, "COL_LENGTH('dbo.ReposicionesCalendario', 'HoraRecogida')");
-                StringAssert.Contains(sql, "EXEC sp_executesql N'");
-                // Fuera del texto dinámico solo puede salir como alias (AS HoraRecogida) o dentro de COL_LENGTH
-                string fuera = sql.Substring(0, sql.IndexOf("EXEC sp_executesql", StringComparison.Ordinal))
-                    .Replace("'HoraRecogida')", string.Empty).Replace("AS HoraRecogida", string.Empty);
-                Assert.IsFalse(fuera.Contains("HoraRecogida"), sql);
+                viajes.Calendario.RemoveAll(f => f.AlmacenOrigen == "ALC");
             }
-            StringAssert.Contains(HorasRecogidaReposicionesSql.SQL_DEL_DIA, "Activo = 1");
+            viajes.HayCabecera = caso != "sinRellenar";
+            viajes.HayColumna = caso != "sinColumna";
+
+            NestoBusinessException error = await Assert.ThrowsExceptionAsync<NestoBusinessException>(
+                () => ServicioPuntual().MarcarRecogida(Recogida(), Paloma));
+
+            Assert.AreEqual(HttpStatusCode.Conflict, error.StatusCode);
+            StringAssert.Contains(error.Message, mensaje);
+            Assert.AreEqual(0, viajes.Marcas.Count);
+        }
+
+        [TestMethod]
+        public async Task Recogida_DeOtraTienda_EsUnauthorized_YAlmacenSiPuede()
+        {
+            _ = await Assert.ThrowsExceptionAsync<UnauthorizedAccessException>(() => ServicioPuntual().MarcarRecogida(Recogida("REI"), Paloma));
+            Assert.AreEqual(0, viajes.Marcas.Count);
+
+            // Pensado para que más adelante lo marque el repartidor (Ariadna) con un usuario de Almacén
+            EstadoReposicionPuntualDTO estado = await ServicioPuntual().MarcarRecogida(Recogida("REI"), Andre);
+            Assert.AreEqual(SituacionesReposicionPuntual.RECOGIDA, estado.Situacion);
+        }
+
+        [TestMethod]
+        public async Task Recogida_DesdeAlgeteOAOtraTienda_Es400()
+        {
+            NestoBusinessException desdeAlgete = await Assert.ThrowsExceptionAsync<NestoBusinessException>(
+                () => ServicioPuntual().MarcarRecogida(Recogida("ALG"), Andre));
+            NestoBusinessException aReina = await Assert.ThrowsExceptionAsync<NestoBusinessException>(
+                () => ServicioPuntual().MarcarRecogida(new MarcarRecogidaReposicionDTO { Origen = "ALC", Destino = "REI" }, Andre));
+
+            Assert.AreEqual(HttpStatusCode.BadRequest, desdeAlgete.StatusCode);
+            Assert.AreEqual(HttpStatusCode.BadRequest, aReina.StatusCode);
+            Assert.AreEqual(0, viajes.Marcas.Count);
+        }
+
+        [TestMethod]
+        public void Sql_Recogida_NoFallaSinLasColumnas_YMarcaElViajeYLasPuntualesDeHoy()
+        {
+            foreach (string sql in new[] { ViajesReposicionPuntualSql.SQL_VIAJE_DEL_DIA, ViajesReposicionPuntualSql.SQL_MARCAR_RECOGIDA })
+            {
+                StringAssert.Contains(sql, "COL_LENGTH('dbo.ReposicionesTraspasos', 'FechaRecogida')");
+                // Antes del texto dinámico las columnas solo salen dentro de COL_LENGTH
+                string fuera = sql.Substring(0, sql.IndexOf("EXEC sp_executesql", StringComparison.Ordinal))
+                    .Replace("'FechaRecogida')", string.Empty).Replace("'UsuarioRecogida')", string.Empty);
+                Assert.IsFalse(fuera.Contains("FechaRecogida") || fuera.Contains("UsuarioRecogida"), sql);
+            }
+            StringAssert.Contains(ViajesReposicionPuntualSql.SQL_VIAJE_DEL_DIA, "Herramienta = 'Automatico'");
+            StringAssert.Contains(ViajesReposicionPuntualSql.SQL_MARCAR_RECOGIDA, "Herramienta = ''Puntual'' AND FechaCreacion >= @hoy");
+            StringAssert.Contains(ViajesReposicionPuntualSql.SQL_MARCAR_RECOGIDA, "AND FechaRecogida IS NULL");
+        }
+
+        [TestMethod]
+        public void Reglas_LaRecogidaMandaSobreSinEnviar_YSinViajeNoMiraNadaMas()
+        {
+            var viaje = new CorteReposicion { Origen = "ALC", Destino = "ALG", Corte = new DateTime(2026, 10, 6, 9, 0, 0) };
+            var recogido = new ViajeReposicionDelDia { HayCabecera = true, HayColumnaRecogida = true, FechaRecogida = new DateTime(2026, 10, 6, 9, 5, 0) };
+
+            Assert.AreEqual(SituacionesReposicionPuntual.RECOGIDA,
+                ReglasReposicionPuntual.Calcular("ALC", "ALG", null, null, viaje, false, recogido, enPreparacion: true, AHORA).Situacion);
+            EstadoReposicionPuntualDTO sinViaje = ReglasReposicionPuntual.Calcular("ALC", "ALG", null, null, null, false, null, false, AHORA);
+            Assert.AreEqual("Hoy no hay viaje de ALC a ALG.", sinViaje.Motivo, "Sin nombre, el código");
         }
 
         // ---------------------------------------------------------------- Sugerencia 581 (Carlos, 13/10/26): lo de sus pedidos no se manda
@@ -1409,15 +1635,37 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
-        public async Task Controlador_LimitePuntual_DevuelveLoDelServicio()
+        public async Task Controlador_EstadoPuntual_DevuelveLoDelServicio()
         {
             IServicioPreparacionReposicion servicio = A.Fake<IServicioPreparacionReposicion>();
-            A.CallTo(() => servicio.LeerLimitePuntual("1", "ALC")).Returns(new LimiteReposicionPuntualDTO { YaHaPasado = true, Mensaje = "Ya ha pasado" });
+            A.CallTo(() => servicio.LeerEstadoPuntual("1", "ALC")).Returns(new EstadoReposicionPuntualDTO
+            {
+                Situacion = SituacionesReposicionPuntual.SIN_VIAJE, Motivo = "Hoy no hay viaje de Alcobendas a Algete."
+            });
             var controlador = new ReposicionesController(null, servicio) { Request = new HttpRequestMessage(), User = Paloma };
 
-            IHttpActionResult resultado = await controlador.GetLimitePuntual("ALC");
+            IHttpActionResult resultado = await controlador.GetEstadoPuntual("ALC");
 
-            Assert.IsTrue(((OkNegotiatedContentResult<LimiteReposicionPuntualDTO>)resultado).Content.YaHaPasado);
+            Assert.AreEqual(SituacionesReposicionPuntual.SIN_VIAJE, ((OkNegotiatedContentResult<EstadoReposicionPuntualDTO>)resultado).Content.Situacion);
+        }
+
+        [TestMethod]
+        public async Task Controlador_Recogida_DevuelveElEstadoNuevo_Y403SinPermiso()
+        {
+            IServicioPreparacionReposicion servicio = A.Fake<IServicioPreparacionReposicion>();
+            var deAlcobendas = new MarcarRecogidaReposicionDTO { Origen = "ALC" };
+            var deReina = new MarcarRecogidaReposicionDTO { Origen = "REI" };
+            A.CallTo(() => servicio.MarcarRecogida(deAlcobendas, A<IPrincipal>._)).Returns(new EstadoReposicionPuntualDTO { Situacion = SituacionesReposicionPuntual.RECOGIDA });
+            A.CallTo(() => servicio.MarcarRecogida(deReina, A<IPrincipal>._)).Throws(new UnauthorizedAccessException("no"));
+            var controlador = new ReposicionesController(null, servicio) { Request = new HttpRequestMessage(), User = Paloma };
+
+            IHttpActionResult ok = await controlador.PostRecogida(deAlcobendas);
+            IHttpActionResult prohibido = await controlador.PostRecogida(deReina);
+            IHttpActionResult sinCuerpo = await controlador.PostRecogida(null);
+
+            Assert.AreEqual(SituacionesReposicionPuntual.RECOGIDA, ((OkNegotiatedContentResult<EstadoReposicionPuntualDTO>)ok).Content.Situacion);
+            Assert.AreEqual(HttpStatusCode.Forbidden, ((ResponseMessageResult)prohibido).Response.StatusCode);
+            Assert.IsInstanceOfType(sinCuerpo, typeof(BadRequestErrorMessageResult));
         }
 
         [TestMethod]

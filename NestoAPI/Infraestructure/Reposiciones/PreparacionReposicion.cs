@@ -575,10 +575,17 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
         /// </summary>
         Task<ResultadoTerminarReposicionDTO> CrearPuntual(CrearReposicionDTO peticion, IPrincipal usuario);
         /// <summary>
-        /// Sugerencia 581 (Carlos, 13/10/26): hasta qué hora se puede hacer hoy la puntual de <paramref name="origen"/> (la del
-        /// repartidor, ReposicionesCalendario.HoraRecogida) y si ya ha pasado. Para que Nesto lo diga antes de empezar.
+        /// Sugerencia 581 (Carlos, 13/10/26): si hoy se puede hacer la puntual de <paramref name="origen"/> a Algete y, si no, por
+        /// qué (sin viaje hoy, la de hoy sin rellenar o sin enviar, o el repartidor ya se la ha llevado). Para que Nesto lo diga
+        /// antes de empezar y sepa si puede marcar la recogida.
         /// </summary>
-        Task<LimiteReposicionPuntualDTO> LeerLimitePuntual(string empresa, string origen);
+        Task<EstadoReposicionPuntualDTO> LeerEstadoPuntual(string empresa, string origen);
+        /// <summary>
+        /// Sugerencia 581 (Carlos, 13/10/26): el repartidor ya se ha llevado la reposición de hoy de la tienda a Algete. Desde ese
+        /// momento no se puede hacer otra puntual hoy. 409 si hoy no hay viaje, la de hoy no está rellena o enviada, ya estaba
+        /// marcada o falta el script; 403 sin permiso.
+        /// </summary>
+        Task<EstadoReposicionPuntualDTO> MarcarRecogida(MarcarRecogidaReposicionDTO peticion, IPrincipal usuario);
     }
 
     /// <summary>
@@ -615,7 +622,8 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
         private readonly Func<DateTime> ahora;
         private readonly IRegistroReposicionesTraspasos registro;
         private readonly Func<string, string, DateTime, Task<IDisposable>> bloquear;
-        private readonly IHorasRecogidaReposiciones horasRecogida;
+        private readonly IViajesReposicionPuntual viajes;
+        private readonly CalculadoraFechaReposicion calculadora;
         private readonly IStockLibreReposicionPuntual stockLibre;
         private readonly NVEntities dbPropio;
 
@@ -631,8 +639,9 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
                 () => DateTime.Now,
                 new RegistroReposicionesTraspasosSql(db),
                 (empresa, origen, dia) => new RepositorioReposicionAutomaticaSql(db).Bloquear(empresa, origen, dia),
-                new HorasRecogidaReposicionesSql(db),
-                new StockLibreReposicionPuntualSql(db))
+                new ViajesReposicionPuntualSql(db),
+                new StockLibreReposicionPuntualSql(db),
+                new CalculadoraFechaReposicion())
         {
             dbPropio = db;
         }
@@ -645,8 +654,12 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
         /// Sugerencia 581: (empresa, origen, día) → el mismo applock que el job de las reposiciones automáticas, para que una
         /// puntual no se cruce con el job escribiendo en el mismo diario de salida. Null: sin bloqueo (pruebas).
         /// </param>
-        /// <param name="horasRecogida">Sugerencia 581: la hora del repartidor de cada viaje del calendario. Null: sin límite (pruebas).</param>
+        /// <param name="viajes">
+        /// Sugerencia 581: el calendario, si el job ya ha rellenado la de hoy y si el repartidor se la ha llevado. Null: viaje
+        /// todos los laborables, ya relleno y sin recoger (pruebas que no lo miran).
+        /// </param>
         /// <param name="stockLibre">Sugerencia 581: lo que la tienda puede mandar sin dejar sin servir sus pedidos. Null: no se mira (pruebas).</param>
+        /// <param name="calculadora">Sugerencia 581: festivos y viaje de hoy, como el job. Null: sin festivos (pruebas).</param>
         internal ServicioPreparacionReposicion(IRepositorioPreparacionReposicion repositorio,
             Func<string, string, string, DateTime?, Task<List<LineaPropuestaReposicionDTO>>> propuesta,
             Func<string, bool, IUbicacionesReposicion> ubicaciones,
@@ -654,10 +667,12 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
             Func<DateTime> ahora,
             IRegistroReposicionesTraspasos registro = null,
             Func<string, string, DateTime, Task<IDisposable>> bloquear = null,
-            IHorasRecogidaReposiciones horasRecogida = null,
-            IStockLibreReposicionPuntual stockLibre = null)
+            IViajesReposicionPuntual viajes = null,
+            IStockLibreReposicionPuntual stockLibre = null,
+            CalculadoraFechaReposicion calculadora = null)
         {
-            this.horasRecogida = horasRecogida ?? SinHorasRecogidaReposiciones.Instancia;
+            this.viajes = viajes ?? ViajesReposicionPuntualSinControl.Instancia;
+            this.calculadora = calculadora ?? new CalculadoraFechaReposicion((dia, almacen) => false);
             this.stockLibre = stockLibre ?? SinStockLibreReposicionPuntual.Instancia;
             this.registro = registro ?? SinRegistroReposicionesTraspasos.Instancia;
             this.bloquear = bloquear ?? ((e, o, d) => Task.FromResult<IDisposable>(new SinBloqueo()));
@@ -963,6 +978,9 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
         /// el job se salte el siguiente viaje (YaEnPreparacion). Algete la recibe como cualquier otra (Ariadna Entradas, Nesto
         /// Recibir).</item>
         /// <item>Si la tienda tiene una reposición en preparación (la del calendario sin enviar), 409: que la envíe antes.</item>
+        /// <item>Carlos, 13/10/26 (409 con el motivo, <see cref="ReglasReposicionPuntual"/>): solo los días con viaje de la tienda a
+        /// Algete (si no, no la recoge nadie), cuando el job ya ha rellenado la de hoy (antes, esos productos pueden ir en la
+        /// automática) y hasta que la tienda marca que el repartidor se la ha llevado (<see cref="MarcarRecogida"/>).</item>
         /// <item>Cada producto tiene que tener stock en la tienda (400 con la lista; prdExtrProducto también lo impediría).</item>
         /// <item>Cabecera ReposicionesTraspasos con Herramienta «Puntual», número, quién y cuándo, ya preparada y sin FechaCorte:
         /// no cubre el viaje del calendario (el job la descarta en BuscarTraspasoQueCubre), no es «abierta» (Terminar no la
@@ -1013,11 +1031,12 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
                     "Tu usuario no tiene ese almacén como almacén de pedidos.");
             }
             DateTime momento = ahora();
-            // Sugerencia 581 (Carlos, 13/10/26: «hasta la recogida»): pasado el repartidor de hoy ya no sale hoy → 409
-            LimiteReposicionPuntualDTO limite = await LimitePuntual(empresa, origen, destino, momento).ConfigureAwait(false);
-            if (limite.YaHaPasado)
+            // Sugerencia 581 (Carlos, 13/10/26): solo los días con viaje, con la de hoy ya rellena y hasta que la tienda marca que
+            // el repartidor se la ha llevado → 409. Lo de «enviada» se mira dentro del bloqueo (el job puede estar rellenándola).
+            EstadoReposicionPuntualDTO estado = await CalcularEstadoPuntual(empresa, origen, destino, momento, enPreparacion: false).ConfigureAwait(false);
+            if (!estado.SePuede)
             {
-                throw Conflicto(limite.Mensaje);
+                throw Conflicto(estado.Motivo);
             }
             DatosAlmacenReposicion almacenDestino = await AlmacenConDiario(empresa, destino, a => a.DiarioEntradaRep, "de entrada").ConfigureAwait(false);
             if (await repositorio.HayInventarioEnCurso(empresa, origen).ConfigureAwait(false))
@@ -1037,8 +1056,14 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
                 List<FilaReposicionEnPreparacion> existentes = await repositorio.LeerLineasEnPreparacion(empresa, diario, origen).ConfigureAwait(false);
                 if (existentes.Any())
                 {
-                    throw new ReposicionYaEnPreparacionException($"{origen} tiene una reposición a {existentes.First().Almacen?.Trim()} en preparación " +
-                        $"({existentes.Count} líneas) sin enviar: termínala antes de hacer una puntual.");
+                    throw new ReposicionYaEnPreparacionException($"{ReglasReposicionPuntual.TEXTO_SIN_ENVIAR} {origen} tiene una reposición a " +
+                        $"{existentes.First().Almacen?.Trim()} en preparación ({existentes.Count} líneas) sin enviar: termínala antes de hacer una puntual.");
+                }
+                // Y que no se haya marcado la recogida mientras tanto (MarcarRecogida usa el mismo bloqueo)
+                ViajeReposicionDelDia viajeAhora = await viajes.LeerViajeDelDia(empresa, origen, destino, estado.CierreHoy.Value.Date).ConfigureAwait(false);
+                if (viajeAhora?.FechaRecogida != null)
+                {
+                    throw Conflicto(ReglasReposicionPuntual.TextoRecogida(viajeAhora.FechaRecogida.Value));
                 }
                 await ComprobarQueNoFaltaParaSusPedidos(empresa, origen, lineas).ConfigureAwait(false);
                 numeroTraspaso = await repositorio.EnTransaccion(async () =>
@@ -1089,16 +1114,97 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
             };
         }
 
-        public async Task<LimiteReposicionPuntualDTO> LeerLimitePuntual(string empresa, string origen)
+        public async Task<EstadoReposicionPuntualDTO> LeerEstadoPuntual(string empresa, string origen)
         {
-            return await LimitePuntual(Empresa(empresa), Almacen(origen), Constantes.Almacenes.ALGETE, ahora()).ConfigureAwait(false);
+            empresa = Empresa(empresa);
+            origen = Almacen(origen);
+            string destino = Constantes.Almacenes.ALGETE;
+            ComprobarAlmacenes(origen, destino);
+            DatosAlmacenReposicion almacenOrigen = await AlmacenConDiario(empresa, origen, a => a.DiarioSalidaRep, "de salida").ConfigureAwait(false);
+            bool enPreparacion = (await repositorio.LeerLineasEnPreparacion(empresa, almacenOrigen.DiarioSalidaRep, origen).ConfigureAwait(false)).Any();
+            return await CalcularEstadoPuntual(empresa, origen, destino, ahora(), enPreparacion).ConfigureAwait(false);
         }
 
-        /// <summary>Sugerencia 581: la hora del repartidor del viaje de HOY de la ruta (origen → Algete) y si ya ha pasado.</summary>
-        private async Task<LimiteReposicionPuntualDTO> LimitePuntual(string empresa, string origen, string destino, DateTime momento)
+        /// <summary>
+        /// Sugerencia 581 (Carlos, 13/10/26: «no pasa todos los días a la misma hora, no sé fijarlo salvo que el usuario informe
+        /// cuando pasa»): la tienda (o, más adelante, el repartidor desde Ariadna) marca que el repartidor ya se ha llevado la
+        /// reposición de hoy. Se apunta quién y cuándo en ReposicionesTraspasos (FechaRecogida, UsuarioRecogida) del viaje de hoy
+        /// (las cabeceras del job con el corte de hoy) y en las puntuales que ya se hayan mandado hoy. Desde entonces la puntual da
+        /// 409: lo que quede va en la siguiente. Con el mismo applock que la puntual y el job (origen + día).
+        /// </summary>
+        public async Task<EstadoReposicionPuntualDTO> MarcarRecogida(MarcarRecogidaReposicionDTO peticion, IPrincipal usuario)
         {
-            TimeSpan? hora = await horasRecogida.DelDia(empresa, origen, destino, LimiteRecogidaPuntual.DiaSemana(momento)).ConfigureAwait(false);
-            return LimiteRecogidaPuntual.Calcular(origen, destino, hora, momento);
+            if (peticion == null)
+            {
+                throw new NestoBusinessException("Falta la reposición de la que se marca la recogida.");
+            }
+            string empresa = Empresa(peticion.Empresa);
+            string origen = Almacen(peticion.Origen);
+            string destino = string.IsNullOrWhiteSpace(peticion.Destino) ? Constantes.Almacenes.ALGETE : Almacen(peticion.Destino);
+            ComprobarAlmacenes(origen, destino);
+            if (destino != Constantes.Almacenes.ALGETE)
+            {
+                throw new NestoBusinessException("De momento la recogida solo se marca en las reposiciones de una tienda a Algete.");
+            }
+            DatosAlmacenReposicion almacenOrigen = await AlmacenConDiario(empresa, origen, a => a.DiarioSalidaRep, "de salida").ConfigureAwait(false);
+            if (almacenOrigen.ControlUbicaciones)
+            {
+                throw new NestoBusinessException($"De momento la recogida solo se marca en las reposiciones de una tienda a Algete: desde {origen} no.");
+            }
+            if (!PuedeEscribir(usuario, empresa, origen))
+            {
+                throw new UnauthorizedAccessException($"La recogida de la reposición de {origen} solo la puede marcar la gente de esa tienda (o Almacén y Dirección). " +
+                    "Tu usuario no tiene ese almacén como almacén de pedidos.");
+            }
+            DateTime momento = ahora();
+            string quien = UsuarioAuditoriaHelper.Resolver(usuario, null);
+            using (await bloquear(empresa, origen, momento.Date).ConfigureAwait(false))
+            {
+                bool enPreparacion = (await repositorio.LeerLineasEnPreparacion(empresa, almacenOrigen.DiarioSalidaRep, origen).ConfigureAwait(false)).Any();
+                EstadoReposicionPuntualDTO estado = await CalcularEstadoPuntual(empresa, origen, destino, momento, enPreparacion).ConfigureAwait(false);
+                if (estado.Situacion != SituacionesReposicionPuntual.ABIERTA)
+                {
+                    throw Conflicto(estado.Motivo);
+                }
+                if (!estado.PuedeMarcarRecogida)
+                {
+                    throw Conflicto("Todavía no se puede marcar la recogida: falta lanzar Scripts/Issue581_ReposicionesTraspasos_Recogida.sql en la base de datos.");
+                }
+                await viajes.MarcarRecogida(empresa, origen, destino, estado.CierreHoy.Value.Date, momento, quien).ConfigureAwait(false);
+                return await CalcularEstadoPuntual(empresa, origen, destino, momento, enPreparacion).ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>
+        /// Sugerencia 581: el viaje de HOY de la ruta (el que llega hoy, laborable en los dos almacenes, como el job), si el job ya
+        /// lo ha rellenado y si el repartidor ya se lo ha llevado. Ver <see cref="ReglasReposicionPuntual"/>.
+        /// </summary>
+        private async Task<EstadoReposicionPuntualDTO> CalcularEstadoPuntual(string empresa, string origen, string destino, DateTime momento, bool enPreparacion)
+        {
+            List<ReposicionCalendario> deLaRuta = ((await viajes.LeerCalendario(empresa).ConfigureAwait(false)) ?? new List<ReposicionCalendario>())
+                .Where(f => f != null && f.Activo
+                    && string.Equals(f.Empresa?.Trim(), empresa, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(f.AlmacenOrigen?.Trim(), origen, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(f.AlmacenDestino?.Trim(), destino, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            CorteReposicion viajeHoy = calculadora.CortesQueLleganElDia(deLaRuta, momento).FirstOrDefault();
+            ViajeReposicionDelDia viaje = null;
+            string nombreOrigen = null;
+            string nombreDestino = null;
+            bool festivo = false;
+            if (viajeHoy != null)
+            {
+                viaje = await viajes.LeerViajeDelDia(empresa, origen, destino, viajeHoy.Corte.Date).ConfigureAwait(false);
+            }
+            else
+            {
+                // Hay fila para hoy (lunes a viernes) pero no viaje: festivo en la tienda o en Algete
+                festivo = momento.DayOfWeek != DayOfWeek.Saturday && momento.DayOfWeek != DayOfWeek.Sunday
+                    && deLaRuta.Any(f => f.DiaSemana == CalculadoraFechaReposicion.DiaSemana(momento));
+                nombreOrigen = await repositorio.LeerNombreAlmacen(empresa, origen).ConfigureAwait(false);
+                nombreDestino = await repositorio.LeerNombreAlmacen(empresa, destino).ConfigureAwait(false);
+            }
+            return ReglasReposicionPuntual.Calcular(origen, destino, nombreOrigen, nombreDestino, viajeHoy, festivo, viaje, enPreparacion, momento);
         }
 
         /// <summary>

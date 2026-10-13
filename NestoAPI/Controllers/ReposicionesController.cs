@@ -71,18 +71,45 @@ namespace NestoAPI.Controllers
             return Ok(await ProductosPuntual.Buscar(empresa, origen, codigo).ConfigureAwait(false));
         }
 
-        // GET api/Reposiciones/Puntual/Limite?origen=ALC&empresa=1
+        // GET api/Reposiciones/Puntual/Estado?origen=ALC&empresa=1
         /// <summary>
-        /// Sugerencia 581 (Carlos, 13/10/26): hasta qué hora se puede hacer hoy la reposición puntual de <paramref name="origen"/>
-        /// a Algete (la del repartidor de hoy, ReposicionesCalendario.HoraRecogida) y si ya ha pasado, con el mensaje. Sin viaje
-        /// hoy o sin hora puesta: sin límite.
+        /// Sugerencia 581 (Carlos, 13/10/26): si hoy se puede hacer la reposición puntual de <paramref name="origen"/> a Algete y,
+        /// si no, el motivo (el mismo texto que daría el 409): hoy no hay viaje, la de hoy aún no se ha rellenado, no se ha
+        /// enviado o el repartidor ya se la ha llevado (con quién lo marcó y cuándo). También si se puede marcar la recogida.
         /// </summary>
         [HttpGet]
-        [Route("Puntual/Limite")]
-        [ResponseType(typeof(LimiteReposicionPuntualDTO))]
-        public async Task<IHttpActionResult> GetLimitePuntual(string origen, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        [Route("Puntual/Estado")]
+        [ResponseType(typeof(EstadoReposicionPuntualDTO))]
+        public async Task<IHttpActionResult> GetEstadoPuntual(string origen, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
         {
-            return Ok(await preparacion.LeerLimitePuntual(empresa, origen).ConfigureAwait(false));
+            return Ok(await preparacion.LeerEstadoPuntual(empresa, origen).ConfigureAwait(false));
+        }
+
+        // POST api/Reposiciones/Recogida   { Empresa, Origen, Destino? (ALG) }
+        /// <summary>
+        /// Sugerencia 581 (Carlos, 13/10/26): el repartidor ya se ha llevado la reposición de hoy de la tienda a Algete (lo marca
+        /// la tienda desde Nesto; más adelante podrá marcarlo el repartidor desde Ariadna con un usuario de Almacén). Apunta quién
+        /// y cuándo y, desde ese momento, la puntual de hoy da 409. Devuelve el estado nuevo. 409 si hoy no hay viaje, la de hoy
+        /// no está rellena o enviada, ya estaba marcada o falta el script; 403 sin permiso. Ver
+        /// <see cref="ServicioPreparacionReposicion.MarcarRecogida"/>.
+        /// </summary>
+        [HttpPost]
+        [Route("Recogida")]
+        [ResponseType(typeof(EstadoReposicionPuntualDTO))]
+        public async Task<IHttpActionResult> PostRecogida([FromBody] MarcarRecogidaReposicionDTO peticion)
+        {
+            if (peticion == null)
+            {
+                return BadRequest("Falta la reposición de la que se marca la recogida.");
+            }
+            try
+            {
+                return Ok(await preparacion.MarcarRecogida(peticion, User).ConfigureAwait(false));
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Prohibido(ex);
+            }
         }
 
         // POST api/Reposiciones/Puntual   { Empresa, Origen, Destino? (ALG), Lineas: [{ Producto, Cantidad }] }
@@ -91,7 +118,8 @@ namespace NestoAPI.Controllers
         /// aparte de la del calendario, para cuando alguien pide que se mande algo concreto después de la hora de cierre. Se
         /// crea y se termina de una vez: devuelve el traspaso como Terminar, ya pendiente de recibir en Algete. No necesita estar
         /// en «UsuariosRellenarReposicionManual»: basta con tener esa tienda como almacén de pedidos (o Almacén y Dirección);
-        /// 403 si no. 409 si la tienda tiene una reposición en preparación sin enviar o un inventario en curso; 400 si falta
+        /// 403 si no. 409 si hoy no hay viaje a Algete, la de hoy aún no se ha rellenado o no se ha enviado, el repartidor ya se
+        /// la ha llevado (POST Recogida) o hay un inventario en curso; 400 si falta
         /// stock en la tienda, si no hay líneas o si no es de una tienda a Algete. Ver
         /// <see cref="ServicioPreparacionReposicion.CrearPuntual"/>.
         /// </summary>
