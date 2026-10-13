@@ -4,7 +4,9 @@ using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Data.Entity;
 using System.Data.SqlClient;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace NestoAPI.Infraestructure.AlbaranesVenta
@@ -113,6 +115,17 @@ namespace NestoAPI.Infraestructure.AlbaranesVenta
                 // Obtener el valor de retorno del parámetro
                 resultadoProcedimiento = (int)resultadoParametro.Value;
             }
+            catch (SqlException ex) when (EsSinLineasParaAlbaranear(ex))
+            {
+                // Carlos 13/10/26: el SP corta con «No hay líneas para albaranear» cuando el pedido ya está facturado o lo que
+                // queda aún no se puede servir; el usuario veía el error del SQL y reintentaba (Santiago, cuatro veces).
+                // Se le dice por qué, con un mensaje de negocio que Nesto enseña tal cual.
+                List<LineaParaAlbaranear> lineas = await LeerLineasParaAlbaranear(empresa, pedido).ConfigureAwait(false);
+                throw new NestoBusinessException(MotivoSinLineasParaAlbaranear(pedido, lineas, DateTime.Today), ex)
+                {
+                    StatusCode = System.Net.HttpStatusCode.Conflict
+                };
+            }
             catch (Exception ex)
             {
                 throw new Exception("Error al crear el albarán", ex);
@@ -124,6 +137,56 @@ namespace NestoAPI.Infraestructure.AlbaranesVenta
                 await trasAlbaran(empresa, pedido, resultadoProcedimiento, usuario).ConfigureAwait(false);
             }
             return resultadoProcedimiento;
+        }
+
+        internal const string TEXTO_SQL_SIN_LINEAS = "No hay líneas para albaranear";
+
+        internal static bool EsSinLineasParaAlbaranear(SqlException ex)
+            => ex?.Message != null && ex.Message.IndexOf(TEXTO_SQL_SIN_LINEAS, StringComparison.OrdinalIgnoreCase) >= 0;
+
+        /// <summary>Una línea del pedido, lo justo para explicar por qué no hay nada que albaranear.</summary>
+        internal class LineaParaAlbaranear
+        {
+            public short Estado { get; set; }
+            public DateTime? FechaEntrega { get; set; }
+        }
+
+        /// <summary>
+        /// Por qué prdCrearAlbaránVta no ha encontrado nada que albaranear: todo servido o facturado, lo que queda tiene la
+        /// fecha de entrega más adelante, o lo que queda aún no está en curso (sin picking).
+        /// </summary>
+        internal static string MotivoSinLineasParaAlbaranear(int pedido, IEnumerable<LineaParaAlbaranear> lineas, DateTime hoy)
+        {
+            List<LineaParaAlbaranear> todas = (lineas ?? Enumerable.Empty<LineaParaAlbaranear>()).ToList();
+            List<LineaParaAlbaranear> pendientes = todas.Where(l => l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE
+                && l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO).ToList();
+            if (!pendientes.Any())
+            {
+                return todas.Any(l => l.Estado >= Constantes.EstadosLineaVenta.ALBARAN)
+                    ? $"El pedido {pedido} ya está albaranado o facturado: no le queda nada que albaranear."
+                    : $"El pedido {pedido} no tiene líneas que albaranear.";
+            }
+            List<DateTime> futuras = pendientes.Where(l => l.FechaEntrega.HasValue && l.FechaEntrega.Value.Date > hoy.Date)
+                .Select(l => l.FechaEntrega.Value.Date).ToList();
+            if (futuras.Count == pendientes.Count)
+            {
+                return $"Lo que le queda al pedido {pedido} tiene fecha de entrega a partir del {futuras.Min():dd/MM/yyyy}: hasta entonces no hay nada que albaranear.";
+            }
+            return $"Lo que le queda al pedido {pedido} todavía no está listo para albaranear (tiene que estar en curso y con picking).";
+        }
+
+        private async Task<List<LineaParaAlbaranear>> LeerLineasParaAlbaranear(string empresa, int pedido)
+        {
+            try
+            {
+                return await db.Database.SqlQuery<LineaParaAlbaranear>(
+                    "SELECT Estado, [Fecha Entrega] AS FechaEntrega FROM LinPedidoVta WITH (NOLOCK) WHERE Empresa = @p0 AND [Número] = @p1",
+                    new SqlParameter("@p0", empresa), new SqlParameter("@p1", pedido)).ToListAsync().ConfigureAwait(false);
+            }
+            catch
+            {
+                return new List<LineaParaAlbaranear>(); // el mensaje genérico vale; nunca tapar el error de verdad
+            }
         }
     }
 }
