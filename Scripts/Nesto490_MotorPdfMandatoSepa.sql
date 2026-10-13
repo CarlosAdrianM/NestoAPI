@@ -14,10 +14,10 @@ BEGIN
 END
 GO
 
--- Piloto (descomentar y poner el usuario de Windows tal como aparece en ParametrosUsuario):
--- IF NOT EXISTS (SELECT 1 FROM ParametrosUsuario WHERE Empresa = '1' AND Clave = 'MotorPdfMandatoSepa' AND Usuario = 'NUEVAVISION\Carlos')
---     INSERT INTO ParametrosUsuario (Empresa, Clave, Usuario, Valor, Usuario2, [Fecha Modificación])
---     VALUES ('1', 'MotorPdfMandatoSepa', 'NUEVAVISION\Carlos', 'QuestPDF', 'NestoAPI', GETDATE());
+-- Piloto (Carlos, 13/10/26): solo él con QuestPDF; usuario como lo guardan los demás MotorPdf* («Carlos», sin dominio).
+IF NOT EXISTS (SELECT 1 FROM ParametrosUsuario WHERE Empresa = '1' AND Clave = 'MotorPdfMandatoSepa' AND Usuario = 'Carlos')
+    INSERT INTO ParametrosUsuario (Empresa, Clave, Usuario, Valor, Usuario2, [Fecha Modificación])
+    VALUES ('1', 'MotorPdfMandatoSepa', 'Carlos', 'QuestPDF', 'NestoAPI', GETDATE());
 -- GO
 
 -- VERIFICACIÓN:
