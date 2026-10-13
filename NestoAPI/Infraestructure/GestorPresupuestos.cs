@@ -1340,6 +1340,24 @@ namespace NestoAPI.Infraestructure
             return s.ToString();
         }
 
+        /// <summary>Un motivo del desglose: los productos que salen por la misma razón el mismo día.</summary>
+        private sealed class BloqueDesglose
+        {
+            public string Cabecera;
+            /// <summary>Lo que va tras la lista (o tras la cabecera si no se lista), antes del punto.</summary>
+            public string Detalle = string.Empty;
+            /// <summary>Lo que va tras el punto (el aviso del proveedor vencido).</summary>
+            public string Coletilla = string.Empty;
+            public string Estilo = string.Empty;
+            public List<PartidaFechaEntregaAgenciaDTO> Partidas;
+        }
+
+        /// <summary>
+        /// Carlos (13/10/26, quejas de varios compañeros): el motivo de la fecha tiene que leerse de un vistazo. Si todo sale
+        /// por la misma razón no se lista nada («Todo el pedido: con stock en Algete…»); si no, el motivo con más productos
+        /// (al menos dos y más que cualquier otro) va al final sin lista («El resto: …») y solo se listan las excepciones: de
+        /// diez productos, si falta uno se nombra el que falta, y si faltan nueve, el que hay.
+        /// </summary>
         private static IEnumerable<string> ItemsDesglose(List<PartidaFechaEntregaAgenciaDTO> desglose, Dictionary<string, string> descripciones)
         {
             string Producto(PartidaFechaEntregaAgenciaDTO p)
@@ -1349,17 +1367,37 @@ namespace NestoAPI.Infraestructure
                 return EscaparHtml(texto) + $" ({p.Unidades} {(p.Unidades == 1 ? "ud." : "uds.")})";
             }
             string Lista(IEnumerable<PartidaFechaEntregaAgenciaDTO> partidas) => string.Join(", ", partidas.Select(Producto));
+
+            List<BloqueDesglose> bloques = BloquesDesglose(desglose);
+            BloqueDesglose resumido = bloques
+                .Where(b => b.Partidas.Count >= 2 && bloques.All(o => o == b || o.Partidas.Count < b.Partidas.Count))
+                .FirstOrDefault();
+
+            foreach (BloqueDesglose b in bloques.Where(b => b != resumido))
+            {
+                yield return $"<li{b.Estilo}>{b.Cabecera}: {Lista(b.Partidas)}{b.Detalle}.{b.Coletilla}</li>";
+            }
+            if (resumido != null)
+            {
+                string prefijo = bloques.Count == 1 ? "Todo el pedido" : "El resto";
+                string cabecera = char.ToLower(resumido.Cabecera[0], castellano) + resumido.Cabecera.Substring(1);
+                yield return $"<li{resumido.Estilo}>{prefijo}: {cabecera}{resumido.Detalle}.{resumido.Coletilla}</li>";
+            }
+        }
+
+        private static List<BloqueDesglose> BloquesDesglose(List<PartidaFechaEntregaAgenciaDTO> desglose)
+        {
             string PuedeSalir(PartidaFechaEntregaAgenciaDTO p) => p.PuedeSalirEl.HasValue ? $"puede salir el {DiaCorreo(p.PuedeSalirEl.Value)}" : "sin fecha";
+            var bloques = new List<BloqueDesglose>();
 
             List<PartidaFechaEntregaAgenciaDTO> enPicking = desglose.Where(p => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_PICKING).ToList();
             if (enPicking.Any())
             {
-                yield return $"<li>Ya en el picking (sale hoy): {Lista(enPicking)}.</li>";
+                bloques.Add(new BloqueDesglose { Cabecera = "Ya en el picking (sale hoy)", Partidas = enPicking });
             }
-            List<PartidaFechaEntregaAgenciaDTO> conStock = desglose.Where(p => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_ALGETE).ToList();
-            foreach (var grupo in conStock.GroupBy(p => p.PuedeSalirEl))
+            foreach (var grupo in desglose.Where(p => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_ALGETE).GroupBy(p => p.PuedeSalirEl))
             {
-                yield return $"<li>Con stock en Algete ({PuedeSalir(grupo.First())}): {Lista(grupo)}.</li>";
+                bloques.Add(new BloqueDesglose { Cabecera = $"Con stock en Algete ({PuedeSalir(grupo.First())})", Partidas = grupo.ToList() });
             }
             foreach (var grupo in desglose.Where(p => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_TIENDA)
                 .GroupBy(p => new { p.Tienda, p.LlegaAAlgete, p.PuedeSalirEl }))
@@ -1369,35 +1407,45 @@ namespace NestoAPI.Infraestructure
                     ? $"llega a Algete el {DiaCorreo(grupo.Key.LlegaAAlgete.Value)} hacia las {grupo.Key.LlegaAAlgete.Value.ToString("HH:mm", castellano)}; "
                     : string.Empty;
                 string sinCalendario = grupo.Key.PuedeSalirEl.HasValue ? string.Empty : $" ({EscaparHtml(grupo.First().MotivoSinFecha)})";
-                yield return $"<li>Reposición {tienda} &rarr; Algete ({llegada}{PuedeSalir(grupo.First())}{sinCalendario}): {Lista(grupo)}.</li>";
+                bloques.Add(new BloqueDesglose
+                {
+                    Cabecera = $"Reposición {tienda} &rarr; Algete ({llegada}{PuedeSalir(grupo.First())}{sinCalendario})",
+                    Partidas = grupo.ToList()
+                });
             }
             foreach (var grupo in desglose.Where(p => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_EN_CAMINO).GroupBy(p => p.PuedeSalirEl))
             {
-                yield return $"<li>Ya viene de camino desde una tienda ({PuedeSalir(grupo.First())}): {Lista(grupo)}.</li>";
+                bloques.Add(new BloqueDesglose { Cabecera = $"Ya viene de camino desde una tienda ({PuedeSalir(grupo.First())})", Partidas = grupo.ToList() });
             }
-            foreach (PartidaFechaEntregaAgenciaDTO p in desglose.Where(p => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_PROVEEDOR))
+            foreach (var grupo in desglose.Where(p => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_PROVEEDOR)
+                .GroupBy(p => new { p.PedidoProveedor, p.FechaPrevistaProveedor, p.LlegadaSupuesta, p.PuedeSalirEl }))
             {
+                PartidaFechaEntregaAgenciaDTO p = grupo.First();
                 string pedidoProveedor = p.PedidoProveedor.HasValue ? $"Pedido a proveedor {p.PedidoProveedor.Value}" : "Pedido a proveedor";
+                var bloque = new BloqueDesglose { Partidas = grupo.ToList() };
                 if (!p.FechaPrevistaProveedor.HasValue)
                 {
-                    yield return $"<li>{pedidoProveedor} sin fecha prevista: {Producto(p)}.</li>";
+                    bloque.Cabecera = $"{pedidoProveedor} sin fecha prevista";
                 }
                 else if (p.LlegadaSupuesta.HasValue)
                 {
-                    yield return $"<li style=\"color:red\">{pedidoProveedor}, prevista el {DiaCorreo(p.FechaPrevistaProveedor.Value)}: {Producto(p)}. " +
-                        $"La fecha prevista ya pasó y no ha llegado; suponemos que llega el {DiaCorreo(p.LlegadaSupuesta.Value)} y {PuedeSalir(p)}, " +
-                        "pero puede retrasarse.</li>";
+                    bloque.Cabecera = $"{pedidoProveedor}, prevista el {DiaCorreo(p.FechaPrevistaProveedor.Value)}";
+                    bloque.Coletilla = $" La fecha prevista ya pasó y no ha llegado; suponemos que llega el {DiaCorreo(p.LlegadaSupuesta.Value)} y {PuedeSalir(p)}, " +
+                        "pero puede retrasarse.";
+                    bloque.Estilo = " style=\"color:red\"";
                 }
                 else
                 {
-                    yield return $"<li>{pedidoProveedor}, prevista el {DiaCorreo(p.FechaPrevistaProveedor.Value)} ({PuedeSalir(p)}): {Producto(p)}.</li>";
+                    bloque.Cabecera = $"{pedidoProveedor}, prevista el {DiaCorreo(p.FechaPrevistaProveedor.Value)} ({PuedeSalir(p)})";
                 }
+                bloques.Add(bloque);
             }
-            foreach (PartidaFechaEntregaAgenciaDTO p in desglose.Where(p => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_SIN_STOCK))
+            foreach (var grupo in desglose.Where(p => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_SIN_STOCK)
+                .GroupBy(p => string.IsNullOrWhiteSpace(p.MotivoSinFecha) ? "no hay stock ni fecha de llegada" : p.MotivoSinFecha.Trim()))
             {
-                string motivo = string.IsNullOrWhiteSpace(p.MotivoSinFecha) ? "no hay stock ni fecha de llegada" : p.MotivoSinFecha.Trim();
-                yield return $"<li>Sin fecha: {Producto(p)}: {EscaparHtml(motivo)}.</li>";
+                bloques.Add(new BloqueDesglose { Cabecera = "Sin fecha", Detalle = ": " + EscaparHtml(grupo.Key), Partidas = grupo.ToList() });
             }
+            return bloques;
         }
 
         /// <summary>Solo &amp; &lt; &gt; y comillas: las tildes se quedan como están (WebUtility.HtmlEncode las convierte en &amp;#250;).</summary>

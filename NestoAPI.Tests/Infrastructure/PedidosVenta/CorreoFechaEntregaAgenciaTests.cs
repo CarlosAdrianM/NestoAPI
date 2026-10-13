@@ -6,6 +6,7 @@ using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace NestoAPI.Tests.Infrastructure.PedidosVenta
@@ -105,6 +106,82 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
 
         private static string Html(FechaEntregaAgenciaDTO fecha, bool esModificacion = false, bool esPresupuesto = false) =>
             GestorPresupuestos.GenerarHtmlFechaEntregaAgencia(fecha, esPresupuesto, esModificacion, LineasCorreo(), 6);
+
+        // Carlos (13/10/26): el motivo de la fecha, de un vistazo. No se listan los productos del motivo mayoritario.
+        private static readonly DateTime MARTES = new DateTime(2026, 10, 13);
+        private static readonly DateTime JUEVES = new DateTime(2026, 10, 15);
+
+        private static PartidaFechaEntregaAgenciaDTO EnAlgete(string producto) => new PartidaFechaEntregaAgenciaDTO
+        {
+            Origen = PartidaFechaEntregaAgenciaDTO.ORIGEN_ALGETE, Producto = producto, Unidades = 1, PuedeSalirEl = MARTES
+        };
+
+        private static PartidaFechaEntregaAgenciaDTO DeReina(string producto) => new PartidaFechaEntregaAgenciaDTO
+        {
+            Origen = PartidaFechaEntregaAgenciaDTO.ORIGEN_TIENDA, Producto = producto, Unidades = 1, Tienda = "REI",
+            LlegaAAlgete = new DateTime(2026, 10, 14, 13, 30, 0), PuedeSalirEl = JUEVES
+        };
+
+        private static string HtmlDesglose(DateTime fecha, params PartidaFechaEntregaAgenciaDTO[] partidas) =>
+            GestorPresupuestos.GenerarHtmlFechaEntregaAgencia(
+                new FechaEntregaAgenciaDTO { FechaEntregaAgencia = fecha, Desglose = partidas.ToList() }, false, false,
+                partidas.Select(p => new LineaPedidoVentaDTO { Producto = p.Producto, texto = "Producto " + p.Producto, tipoLinea = 1 }), 6);
+
+        [TestMethod]
+        public void Desglose_TodoConStockEnAlgete_NoListaLosProductos()
+        {
+            string html = HtmlDesglose(MARTES, EnAlgete("P1"), EnAlgete("P2"), EnAlgete("P3"), EnAlgete("P4"), EnAlgete("P5"), EnAlgete("P6"));
+
+            StringAssert.Contains(html, "<li>Todo el pedido: con stock en Algete (puede salir el martes 13/10/2026).</li>");
+            Assert.IsFalse(html.Contains("P1"), "No repite uno a uno los productos");
+        }
+
+        [TestMethod]
+        public void Desglose_FaltaUnoDeVarios_SoloNombraElQueFaltaYElRestoSinLista()
+        {
+            string html = HtmlDesglose(JUEVES, EnAlgete("P1"), EnAlgete("P2"), EnAlgete("P3"), DeReina("P4"));
+
+            StringAssert.Contains(html, "<li>Reposición Reina &rarr; Algete (llega a Algete el miércoles 14/10/2026 hacia las 13:30; " +
+                "puede salir el jueves 15/10/2026): P4 Producto P4 (1 ud.).</li>");
+            StringAssert.Contains(html, "<li>El resto: con stock en Algete (puede salir el martes 13/10/2026).</li>");
+            Assert.IsFalse(html.Contains("P1"));
+            Assert.IsTrue(html.IndexOf("P4", StringComparison.Ordinal) < html.IndexOf("El resto", StringComparison.Ordinal), "Primero la excepción");
+        }
+
+        [TestMethod]
+        public void Desglose_FaltanCasiTodos_SoloNombraElQueHay()
+        {
+            string html = HtmlDesglose(JUEVES, EnAlgete("P1"), DeReina("P2"), DeReina("P3"), DeReina("P4"));
+
+            StringAssert.Contains(html, "<li>Con stock en Algete (puede salir el martes 13/10/2026): P1 Producto P1 (1 ud.).</li>");
+            StringAssert.Contains(html, "<li>El resto: reposición Reina &rarr; Algete (llega a Algete el miércoles 14/10/2026 hacia las 13:30; " +
+                "puede salir el jueves 15/10/2026).</li>");
+            Assert.IsFalse(html.Contains("P2"));
+        }
+
+        [TestMethod]
+        public void Desglose_DosMotivosIgualDeGrandes_ListaLosDos()
+        {
+            string html = HtmlDesglose(JUEVES, EnAlgete("P1"), EnAlgete("P2"), DeReina("P3"), DeReina("P4"));
+
+            StringAssert.Contains(html, "P1 Producto P1 (1 ud.), P2 Producto P2 (1 ud.)");
+            StringAssert.Contains(html, "P3 Producto P3 (1 ud.), P4 Producto P4 (1 ud.)");
+            Assert.IsFalse(html.Contains("El resto"));
+        }
+
+        [TestMethod]
+        public void Desglose_SinFechaElMayoritario_ElRestoConSuMotivo()
+        {
+            var sinStock = new[] { "P2", "P3" }.Select(p => new PartidaFechaEntregaAgenciaDTO
+            {
+                Origen = PartidaFechaEntregaAgenciaDTO.ORIGEN_SIN_STOCK, Producto = p, Unidades = 1
+            });
+
+            string html = HtmlDesglose(MARTES, new[] { EnAlgete("P1") }.Concat(sinStock).ToArray());
+
+            StringAssert.Contains(html, "<li>El resto: sin fecha: no hay stock ni fecha de llegada.</li>");
+            StringAssert.Contains(html, "P1 Producto P1 (1 ud.)");
+        }
 
         [TestMethod]
         public async Task Alta_ConStock_LaFechaPrometidaYQueSaleConStock()
