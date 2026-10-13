@@ -85,6 +85,38 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public async Task ModificarYEtiquetar_AgenciaQueCreaEnvioNuevo_TimeoutNoReintenta()
+        {
+            // Sugerencia 507 (CTT): modificar = anular + crear albarán nuevo. Reintentar tras un
+            // timeout podría crear dos envíos.
+            var envio = new DatosEnvioRemoto { Referencia = "98765" };
+            A.CallTo(() => interior.ModificarCreaEnvioNuevo).Returns(true);
+            A.CallTo(() => interior.ModificarYEtiquetarAsync(envio, "123"))
+                .Throws(new TaskCanceledException("timeout"));
+
+            await Assert.ThrowsExceptionAsync<TaskCanceledException>(
+                () => decorador.ModificarYEtiquetarAsync(envio, "123"));
+
+            A.CallTo(() => interior.ModificarYEtiquetarAsync(envio, "123")).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task ModificarYEtiquetar_AgenciaQueModificaElMismoAlbaran_TimeoutReintenta()
+        {
+            var envio = new DatosEnvioRemoto { Referencia = "98765" };
+            var resultadoEsperado = new ResultadoTramitacionRemota();
+            A.CallTo(() => interior.ModificarCreaEnvioNuevo).Returns(false);
+            A.CallTo(() => interior.ModificarYEtiquetarAsync(envio, "123"))
+                .Throws(new TaskCanceledException("timeout")).Once()
+                .Then.Returns(Task.FromResult(resultadoEsperado));
+
+            var resultado = await decorador.ModificarYEtiquetarAsync(envio, "123");
+
+            Assert.AreSame(resultadoEsperado, resultado);
+            A.CallTo(() => interior.ModificarYEtiquetarAsync(envio, "123")).MustHaveHappenedTwiceExactly();
+        }
+
+        [TestMethod]
         public async Task Reimprimir_TimeoutUnaVez_ReintentaYDevuelveLaEtiqueta()
         {
             var etiqueta = new EtiquetaDataTrans();

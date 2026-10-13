@@ -67,10 +67,15 @@ namespace NestoAPI.Infraestructure.Agencias
         public Task<ResultadoOperacionRemota> AnularAsync(string albaran)
             => _interior.AnularAsync(albaran);
 
-        // Idempotente (#317): modificar dos veces con los mismos datos deja el envío igual, así que
-        // los transitorios sí se reintentan.
+        // Idempotente (#317) SOLO si la agencia modifica el mismo albarán (Innovatrans): modificar dos
+        // veces con los mismos datos deja el envío igual, así que los transitorios sí se reintentan.
+        // Si modificar = anular + crear un albarán nuevo (CTT, ModificarCreaEnvioNuevo, sugerencia 507)
+        // NO se reintenta: tras un timeout la agencia puede haber creado ya el envío nuevo y repetir
+        // duplicaría expediciones. El usuario recibe el aviso «comprueba en la web de CTT…».
         public Task<ResultadoTramitacionRemota> ModificarYEtiquetarAsync(DatosEnvioRemoto envio, string albaran)
-            => _politica.ExecuteAsync(() => _interior.ModificarYEtiquetarAsync(envio, albaran));
+            => _interior.ModificarCreaEnvioNuevo
+                ? _interior.ModificarYEtiquetarAsync(envio, albaran)
+                : _politica.ExecuteAsync(() => _interior.ModificarYEtiquetarAsync(envio, albaran));
 
         public Task<EtiquetaDataTrans> ReimprimirAsync(string albaran, int? desdeBulto = null, int? hastaBulto = null)
             => _politica.ExecuteAsync(() => _interior.ReimprimirAsync(albaran, desdeBulto, hastaBulto));
