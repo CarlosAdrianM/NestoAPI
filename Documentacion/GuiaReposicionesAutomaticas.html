@@ -30,7 +30,7 @@
 </head>
 <body>
 <h1>Reposiciones: guía para tiendas y almacén</h1>
-<p class="sub">Para Nesto 1.10.40 y Ariadna 2.4 · octubre de 2026</p>
+<p class="sub">Para Nesto 1.10.41 y Ariadna 2.5 · octubre de 2026</p>
 
 <div class="box">
 <p><b>En resumen.</b> Las reposiciones <b>se rellenan solas a su hora</b>: nadie tiene que calcularlas. Lo que queda es <b>prepararlas, enviarlas y recibirlas</b>.</p>
@@ -45,8 +45,8 @@
 <p>Cada reposición del calendario se rellena sola a su hora de cierre, con lo que hace falta en ese momento. El horario de ahora es este:</p>
 <table>
 <tr><th>Reposición</th><th>Días</th><th>Se rellena sola</th><th>Llega</th></tr>
-<tr><td>Reina → Algete</td><td>Lunes, miércoles y viernes</td><td>A las 10:00 del mismo día</td><td>A Algete a las 13:30</td></tr>
-<tr><td>Alcobendas → Algete</td><td>De lunes a viernes</td><td>A las 10:00 del mismo día</td><td>A Algete a las 13:30</td></tr>
+<tr><td>Reina → Algete</td><td>Lunes, miércoles y viernes</td><td>A las 9:00 del mismo día</td><td>A Algete a las 13:30</td></tr>
+<tr><td>Alcobendas → Algete</td><td>De lunes a viernes</td><td>A las 9:00 del mismo día</td><td>A Algete a las 13:30</td></tr>
 <tr><td>Algete → Reina</td><td>Lunes, miércoles y viernes</td><td>A las 13:00 del día laborable anterior (la del lunes, el viernes)</td><td>A Reina sobre las 11:00</td></tr>
 <tr><td>Algete → Alcobendas</td><td>Lunes, martes y jueves</td><td>A las 13:00 del día laborable anterior (la del lunes, el viernes)</td><td>A Alcobendas a las 10:00</td></tr>
 </table>
@@ -54,7 +54,7 @@
 <li>El horario puede cambiar. Siempre está al día en <b>Nesto › Productos › Reposición › Calendario</b>. Todos lo pueden ver; cambiarlo, solo Manuel, Alfredo y Carlos. Cambiar la hora de cierre de hoy no repite la reposición de hoy: la hora nueva vale desde la siguiente.</li>
 <li>Si el día en que toca rellenarla es festivo en Algete, se rellena el laborable anterior.</li>
 <li>Lo que llega a Algete de las tiendas <b>antes de las 11:00</b> sale en el picking de ese mismo día; lo que llega después, al día siguiente.</li>
-<li><b>Rellenar una reposición a mano</b> (algo urgente fuera de hora) solo lo pueden hacer Manuel, Alfredo y Carlos.</li>
+<li><b>Rellenar una reposición a mano</b> (algo urgente fuera de hora) solo lo pueden hacer Manuel, Alfredo y Carlos. Si a una tienda le piden <b>algún producto suelto después</b> de enviar la del día, lo manda ella con una <b>reposición puntual</b> (apartado 2, forma C).</li>
 <li>La reposición de Algete a una tienda <b>no aparece en «Recibir» de la tienda hasta que sale de Algete</b>, es decir, hasta que Algete termina de prepararla.</li>
 <li>Una reposición sin recibir no bloquea la siguiente: la nueva se rellena igual y lo que está de camino no se vuelve a pedir.</li>
 </ul>
@@ -65,7 +65,7 @@
 <h3>Forma A: Nesto, en el ordenador</h3>
 <div class="ojo"><p><b>Con Nesto no se prepara lejos del ordenador.</b> Al leer un código, Nesto salta a la línea del producto y deja el cursor en la cantidad. Hay que pulsar <kbd>Intro</kbd> en el teclado del ordenador. Con solo el lector en la mano no funciona.</p></div>
 <ol>
-<li>Abre <b>Productos › Reposición › Enviar</b>. A las 10:00 la reposición del día aparece ya rellena. Si entras antes, Nesto dice, por ejemplo, <i>«Todavía no hay reposición para Algete. Se rellena sola hoy a las 10:00»</i>.</li>
+<li>Abre <b>Productos › Reposición › Enviar</b>. A las 9:00 la reposición del día aparece ya rellena. Si entras antes, Nesto dice, por ejemplo, <i>«Todavía no hay reposición para Algete. Se rellena sola hoy a las 9:00»</i>.</li>
 <li>Pulsa <b>«Imprimir»</b>. Sale un listado con ubicación, referencia, código de barras, descripción, cantidad y una casilla, en el orden de recorrer la tienda.</li>
 <li>Recorre las estanterías con el papel. <b>Marca en la casilla</b> lo que coges. <b>Apunta</b> lo que falta y lo que va de menos.</li>
 <li>Vuelve al ordenador con los productos. Para cada producto:
@@ -107,6 +107,16 @@
 <p>Lo leído se guarda en el móvil: si se cierra la aplicación o se va la conexión, no se pierde. Los detalles del escaneo, en el apartado 5 (columna SALIDA).</p>
 <div class="ojo"><p><b>La gran diferencia:</b> en Nesto se manda la cantidad de cada línea <b>aunque no la leas</b>; en Ariadna <b>solo se manda lo que has leído</b>.</p></div>
 
+<h3>Forma C: algo suelto después, con una reposición puntual (Nesto)</h3>
+<p>Para cuando, <b>después de enviar la del día</b>, alguien te pide que mandes a Algete un producto concreto y el repartidor todavía no ha pasado. Es una excepción: la reposición del calendario sigue siendo la de siempre.</p>
+<ol>
+<li>En <b>Productos › Reposición › Enviar</b>, pulsa <b>«Reposición puntual…»</b> (<kbd>Alt</kbd>+<kbd>P</kbd>). Solo sale cuando la del día ya está enviada (no mientras la estás preparando).</li>
+<li>Lee el código de cada producto (o teclea su referencia y <kbd>Intro</kbd>). Cada lectura suma; el código de una caja suma sus unidades. La cantidad se puede cambiar en la lista y «Quitar» (o <kbd>Supr</kbd>) quita una línea.</li>
+<li>Nesto enseña cuánto hay en la tienda, cuánto necesitan <b>«Para sus pedidos»</b> los pedidos de la tienda y cuánto <b>«Se puede mandar»</b>. Lo que necesitan vuestros pedidos no se puede mandar: si pides de más, la línea sale en negrita con el aviso y no deja mandarla.</li>
+<li>Pulsa <b>«Mandar a Algete»</b> (<kbd>Alt</kbd>+<kbd>M</kbd>) y confirma. Nesto dice el número de traspaso. Sale de la tienda en ese momento y en Algete la ven como <b>«Reposición puntual … desde …»</b>.</li>
+</ol>
+<div class="ojo"><p><b>Solo hasta que pasa el repartidor.</b> Junto al botón, Nesto dice hasta qué hora se puede (por ejemplo, <i>«Hasta las 11:30, cuando pasa el repartidor»</i>). Pasada esa hora, el botón se desactiva: lo que quede, en la reposición del día siguiente.</p></div>
+
 <h2>3. En la tienda: recibir la reposición de Algete</h2>
 <h3>Con Nesto: «Recibir reposición»</h3>
 <ol>
@@ -134,6 +144,7 @@
 <p><kbd>F7</kbd> y <kbd>F8</kbd> (rellenar una reposición a tienda a mano) solo las tienen Manuel, Alfredo y Carlos.</p>
 <h3>Recibir lo que llega de las tiendas: «Entradas»</h3>
 <p>Hacia las 13:30 llega lo que han mandado Reina y Alcobendas; está en Entradas con lo que la tienda ha enviado. Léelo según lo sacas de la caja (apartado 5, ENTRADA) y termina la entrada. Lo que entra antes de las 11:00 sale en el picking de ese mismo día.</p>
+<p>Si una tienda ha mandado algo aparte, sale como <b>«Reposición puntual … desde …»</b> con la nota <i>«Puntual: la tienda la ha mandado aparte de la del calendario»</i>. Se recibe igual que las demás.</p>
 
 <h2>5. Cómo escanear en Ariadna: salida o entrada</h2>
 <div class="box">
@@ -163,8 +174,8 @@
 <li><b>En Nesto:</b> Novedades → <b>«Algo no funciona»</b>, con una captura de la pantalla.</li>
 <li><b>En Ariadna:</b> el <b>⚠</b> de arriba a la derecha («Algo no funciona»). La captura de la pantalla la hace sola.</li>
 <li><b>Sin conexión al enviar o terminar:</b> lo leído sigue guardado. Comprueba la conexión y vuelve a confirmar.</li>
-<li><b>Son las 10:05 y no hay reposición que enviar:</b> mira si hoy es día de ruta de tu tienda. Si lo es y sigue vacía pasados unos minutos, avísanos.</li>
-<li><b>Hay que mandar algo urgente fuera de hora:</b> pídeselo a Manuel, Alfredo o Carlos.</li>
+<li><b>Son las 9:05 y no hay reposición que enviar:</b> mira si hoy es día de ruta de tu tienda. Si lo es y sigue vacía pasados unos minutos, avísanos.</li>
+<li><b>Hay que mandar algo suelto después de enviar la del día:</b> reposición puntual (apartado 2, forma C), hasta que pase el repartidor. Para algo urgente de Algete a una tienda, pídeselo a Manuel, Alfredo o Carlos.</li>
 </ul>
 
 <p class="pie">Nueva Visión · Guía de reposiciones · Si algo de esta guía no coincide con lo que ves en pantalla, dínoslo en Novedades.</p>
