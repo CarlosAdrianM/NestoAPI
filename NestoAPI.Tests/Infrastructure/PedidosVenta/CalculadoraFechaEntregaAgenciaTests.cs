@@ -904,5 +904,17 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
         }
 
         #endregion
+
+        // Carlos (13/10/26): lo del grupo MTP (materias primas) es la lista de materiales de fabricación de Eva Visnú, no un
+        // kit que se pueda desmontar: esos «kits» no cuentan para la fecha ni para el modo de servicio.
+        [TestMethod]
+        public void SqlKits_NoCuentaLosKitsConMateriasPrimas()
+        {
+            string sql = RepositorioSombraModoServicioSql.SQL_KITS;
+
+            StringAssert.Contains(sql, "NOT EXISTS");
+            StringAssert.Contains(sql, "pm.Grupo = 'MTP'");
+            Assert.AreEqual("MTP", RepositorioSombraModoServicioSql.GRUPO_MATERIAS_PRIMAS);
+        }
     }
 }

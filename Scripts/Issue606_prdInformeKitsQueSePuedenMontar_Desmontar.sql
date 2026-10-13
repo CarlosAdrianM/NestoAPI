@@ -272,6 +272,9 @@ insert into #DComponentes (kit,componente,cantidad)
 select k.numero,k.numeroasociado,sum(cast(k.cantidad as int)) from kits as k
 	where k.empresa=@empresa and k.numeroasociado<>k.numero
 	and k.numero in (select a.numero from kits as a where a.empresa=@empresa and a.numeroasociado in (select producto from #DFaltan))
+	-- Fuera los «kits» con materias primas (grupo MTP): lista de materiales de fabricacion, no se desmontan (Carlos 13/10/26)
+	and not exists (select 1 from kits as m inner join productos as pm on pm.empresa=m.empresa and pm.numero=m.numeroasociado
+		where m.empresa=k.empresa and m.numero=k.numero and pm.grupo='MTP')
 	group by k.numero,k.numeroasociado
 	having sum(cast(k.cantidad as int))>0
 

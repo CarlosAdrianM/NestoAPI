@@ -53,12 +53,21 @@ FROM LinPedidoCmp c WITH (NOLOCK)
 WHERE c.Empresa IN (@empresa, @espejo) AND c.Producto IN ({0}) AND c.Estado IN (-1, 1) AND c.Enviado = 1
 GROUP BY c.Producto, c.Almacén, c.Número";
 
-        /// <summary>NestoAPI#606 (kits): todos los componentes de los kits que llevan alguno de los productos.</summary>
+        /// <summary>
+        /// NestoAPI#606 (kits): todos los componentes de los kits que llevan alguno de los productos. Fuera los «kits» con algún
+        /// componente del grupo MTP (materias primas): son la lista de materiales de fabricación de Eva Visnú, productos acabados
+        /// que no se pueden desmontar (Carlos, 13/10/26).
+        /// </summary>
         internal const string SQL_KITS = @"
 SELECT RTRIM(k.Número), RTRIM(k.NúmeroAsociado), CAST(k.Cantidad AS int)
 FROM Kits k WITH (NOLOCK)
 WHERE k.Empresa = @empresa
-  AND k.Número IN (SELECT a.Número FROM Kits a WITH (NOLOCK) WHERE a.Empresa = @empresa AND a.NúmeroAsociado IN ({0}))";
+  AND k.Número IN (SELECT a.Número FROM Kits a WITH (NOLOCK) WHERE a.Empresa = @empresa AND a.NúmeroAsociado IN ({0}))
+  AND NOT EXISTS (SELECT 1 FROM Kits m WITH (NOLOCK) INNER JOIN Productos pm WITH (NOLOCK) ON pm.Empresa = m.Empresa AND pm.Número = m.NúmeroAsociado
+                  WHERE m.Empresa = k.Empresa AND m.Número = k.Número AND pm.Grupo = '" + GRUPO_MATERIAS_PRIMAS + @"')";
+
+        /// <summary>Grupo de las materias primas de fabricación: un kit que las lleva no se desmonta.</summary>
+        internal const string GRUPO_MATERIAS_PRIMAS = "MTP";
 
         internal const string SQL_GUARDAR = @"
 INSERT INTO dbo.ModoServicioSombra (Origen, Empresa, Pedido, EsPresupuesto, Cliente, Contacto, Usuario, ModoPedido,
