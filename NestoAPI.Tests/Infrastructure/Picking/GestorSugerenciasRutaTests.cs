@@ -182,9 +182,13 @@ namespace NestoAPI.Tests.Infrastructure.Picking
 
         // ===== Controller
 
-        private PickingController Controller(string usuario = @"NUEVAVISION\Alfredo", bool esCliente = false)
+        private PickingController Controller(string usuario = @"NUEVAVISION\Alfredo", bool esCliente = false, bool deAlmacen = true)
         {
             var claims = new List<Claim> { new Claim(ClaimTypes.Name, usuario) };
+            if (deAlmacen)
+            {
+                claims.Add(new Claim(ClaimTypes.Role, @"NUEVAVISION\" + NestoAPI.Models.Constantes.GruposSeguridad.ALMACEN));
+            }
             if (esCliente)
             {
                 claims.Add(new Claim("cliente", "15191"));
@@ -225,6 +229,21 @@ namespace NestoAPI.Tests.Infrastructure.Picking
         {
             var lectura = await Controller(esCliente: true).GetSugerenciasRuta() as StatusCodeResult;
             var cambio = await Controller(esCliente: true).PostCambiarRuta(new CambiarRutaPedidosRequest
+            {
+                Cambios = new List<CambioRutaPedidoRequest> { Cambio(928241, "16") }
+            }) as StatusCodeResult;
+
+            Assert.AreEqual(System.Net.HttpStatusCode.Forbidden, lectura?.StatusCode);
+            Assert.AreEqual(System.Net.HttpStatusCode.Forbidden, cambio?.StatusCode);
+            A.CallTo(repo).MustNotHaveHappened();
+        }
+
+        // Revisión 13/10/26: un vendedor (sin el grupo Almacén ni Dirección) no ve la propuesta ni cambia rutas.
+        [TestMethod]
+        public async Task Controller_UnVendedorSinPermisoDeAlmacen_NoVeNiCambiaRutas()
+        {
+            var lectura = await Controller(@"NUEVAVISION\Javier", deAlmacen: false).GetSugerenciasRuta() as StatusCodeResult;
+            var cambio = await Controller(@"NUEVAVISION\Javier", deAlmacen: false).PostCambiarRuta(new CambiarRutaPedidosRequest
             {
                 Cambios = new List<CambioRutaPedidoRequest> { Cambio(928241, "16") }
             }) as StatusCodeResult;

@@ -93,7 +93,7 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(List<SugerenciaRutaPedidoDTO>))]
         public async Task<IHttpActionResult> GetSugerenciasRuta(string empresa = null, int numeroPedido = 0, string cliente = null)
         {
-            if (EsClienteDeTienda())
+            if (!EsDeAlmacen())
             {
                 return StatusCode(HttpStatusCode.Forbidden);
             }
@@ -113,7 +113,7 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(List<ResultadoCambioRutaDTO>))]
         public async Task<IHttpActionResult> PostCambiarRuta([FromBody] CambiarRutaPedidosRequest peticion)
         {
-            if (EsClienteDeTienda())
+            if (!EsDeAlmacen())
             {
                 return StatusCode(HttpStatusCode.Forbidden);
             }
@@ -126,6 +126,10 @@ namespace NestoAPI.Controllers
                 .CambiarRutas(peticion.Cambios, usuario).ConfigureAwait(false);
             return Ok(resultados);
         }
+
+        // Sugerencia 575 (revisión 13/10/26): solo almacén (o dirección) ve la propuesta y cambia rutas. Antes bastaba con estar
+        // identificado: cualquier vendedor de NestoApp podía pasar a AT/16 la ruta de un pedido ajeno.
+        private bool EsDeAlmacen() => !EsClienteDeTienda() && Infraestructure.PreparacionAlmacen.EscrituraSoloAlmacenAttribute.PuedeEscribir(User);
 
         // Un cliente de la tienda (JWT con claim "cliente") no ve ni cambia rutas de pedidos.
         private bool EsClienteDeTienda()
