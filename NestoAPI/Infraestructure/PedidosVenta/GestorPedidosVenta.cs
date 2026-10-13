@@ -344,6 +344,27 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             linea.ImporteIVA = importeIVA;
             linea.ImporteRE = importeRE;
         }
+        /// <summary>
+        /// Código del error (400) al guardar un pedido con una línea de un producto que no existe en la empresa.
+        /// </summary>
+        public const string CODIGO_PRODUCTO_NO_EXISTE = "PRODUCTO_NO_EXISTE";
+
+        /// <summary>
+        /// La ficha del producto de una línea; si no existe en la empresa, NestoBusinessException (400) «El producto X no
+        /// existe.» en vez de la NullReferenceException (500) de usar la ficha nula (Issue #280; ELMAH 13/10/26, PUT de
+        /// NestoApp). Todos los caminos de CrearLineaVta pasan por aquí.
+        /// </summary>
+        private Producto LeerProductoQueExiste(string empresa, string numeroProducto)
+        {
+            Producto producto = servicio.LeerProducto(empresa, numeroProducto);
+            if (producto == null)
+            {
+                throw new NestoBusinessException($"El producto {numeroProducto?.Trim()} no existe.",
+                    new ErrorContext { ErrorCode = CODIGO_PRODUCTO_NO_EXISTE, Empresa = empresa?.Trim() });
+            }
+            return producto;
+        }
+
         public LinPedidoVta CrearLineaVta(string empresa, int numeroPedido, byte tipoLinea, string producto, short cantidad, decimal precio, string usuario)
         {
             string delegacion = CalcularDelegacion(usuario, empresa, numeroPedido);
@@ -358,7 +379,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     texto = texto.Substring(0, 50);
                     break;
                 case Constantes.TiposLineaVenta.PRODUCTO:
-                    texto = servicio.LeerProducto(empresa, producto).Nombre;
+                    texto = LeerProductoQueExiste(empresa, producto).Nombre;
                     break;
                 case Constantes.TiposLineaVenta.INMOVILIZADO:
                     texto = servicio.LeerInmovilizado(empresa, producto).Descripción;
@@ -396,7 +417,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             PlazoPago plazo = servicio.LeerPlazosPago(pedido.Empresa, pedido.PlazosPago);
             if (pedido.IVA != null && linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
             {
-                Producto producto = servicio.LeerProducto(empresa, linea.Producto);
+                // ELMAH 13/10/26 (Inaki, NestoApp, PUT): con un producto que no existe, NullReferenceException aquí.
+                Producto producto = LeerProductoQueExiste(empresa, linea.Producto);
                 linea.iva = producto.IVA_Repercutido;
             }
             else if (pedido.IVA != null && linea.tipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE)
@@ -451,14 +473,10 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     {
                         throw new NestoBusinessException("No se pueden crear líneas de producto con cantidad 0");
                     }
-                    Producto producto = servicio.LeerProducto(empresa, linea.Producto);
                     // Issue #280: LeerProducto usa SingleOrDefault → null si el producto no existe en
-                    // la empresa (código inexistente, descatalogado, empresa equivocada). Sin este guard,
+                    // la empresa (código inexistente, descatalogado, empresa equivocada). Sin el guard,
                     // producto.Estado lanzaba una NullReferenceException opaca en vez de un mensaje útil.
-                    if (producto == null)
-                    {
-                        throw new NestoBusinessException($"No existe el producto {linea.Producto?.Trim()} en la empresa {empresa?.Trim()}");
-                    }
+                    Producto producto = LeerProductoQueExiste(empresa, linea.Producto);
                     if (producto.Estado < Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO)
                     {
                         throw new NestoBusinessException($"El producto {producto.Número.Trim()} ({producto.Nombre?.Trim()}) está en un estado nulo ({producto.Estado})");

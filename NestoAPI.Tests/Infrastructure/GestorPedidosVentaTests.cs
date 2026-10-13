@@ -1015,8 +1015,35 @@ namespace NestoAPI.Tests.Infrastructure
 
             Assert.IsNotNull(excepcion, "Debe lanzar una excepción cuando el producto no existe");
             Assert.IsFalse(excepcion is NullReferenceException, "No debe ser una NullReferenceException opaca");
-            StringAssert.Contains(excepcion.Message, "99999999");
             Assert.IsInstanceOfType(excepcion, typeof(NestoBusinessException), "Es de negocio: 400, no 500");
+            Assert.AreEqual("El producto 99999999 no existe.", excepcion.Message);
+        }
+
+        [TestMethod]
+        public void CrearLineaVta_PorElPutConIva_ProductoNoExiste_400ConMensajeClaroNoNRE()
+        {
+            // ELMAH 13/10/26 10:00 (Inaki, NestoApp, PUT api/PedidosVenta): una línea nueva de un producto que no existe
+            // reventaba con NullReferenceException al leer el IVA del producto (linea.iva = producto.IVA_Repercutido),
+            // antes de llegar a la guarda del #280. Es el camino del PUT (y de portes/reembolso): cabecera con IVA.
+            var servicio = A.Fake<IServicioPedidosVenta>();
+            A.CallTo(() => servicio.LeerCabPedidoVta(EMPRESA, PEDIDO))
+                .Returns(new CabPedidoVta { Empresa = EMPRESA, Número = PEDIDO, IVA = "G21", PlazosPago = "CONTADO", Nº_Cliente = "12786", Contacto = "0", Vendedor = "MRM" });
+            A.CallTo(() => servicio.LeerPlazosPago(A<string>._, A<string>._)).Returns(new PlazoPago { DtoProntoPago = 0 });
+            A.CallTo(() => servicio.LeerProducto(A<string>._, A<string>._)).Returns(null);
+            var gestor = new GestorPedidosVenta(servicio);
+            var linea = new LineaPedidoVentaDTO
+            {
+                tipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "12345678  ",
+                Cantidad = 1,
+                fechaEntrega = DateTime.Today
+            };
+
+            NestoBusinessException excepcion = Assert.ThrowsException<NestoBusinessException>(() => gestor.CrearLineaVta(linea, EMPRESA, PEDIDO));
+
+            Assert.AreEqual("El producto 12345678 no existe.", excepcion.Message);
+            Assert.AreEqual(HttpStatusCode.BadRequest, excepcion.StatusCode);
+            Assert.AreEqual(GestorPedidosVenta.CODIGO_PRODUCTO_NO_EXISTE, excepcion.GetErrorCode());
         }
 
         [TestMethod]
