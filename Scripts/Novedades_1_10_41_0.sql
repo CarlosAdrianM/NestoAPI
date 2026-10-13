@@ -70,7 +70,10 @@ INSERT INTO @novedades (Categoria, Titulo, Descripcion, Perfiles) VALUES
      N'Administración'),
     ('Mejorado', N'El cheque regalo solo para quien lo puede gastar',
      N'Una factura que solo lleva productos de peluquería o packs «PACK 26» (que no cuentan para los 250 € del cheque) ya no genera el cheque regalo: el cliente no podría gastarlo comprando lo mismo. Si ese cliente hace después, hasta el 29 de octubre, una factura con producto que sí cuente, esa le genera el cheque. Los cheques ya generados no cambian.',
-     N'Vendedores,Tiendas,Administración');
+     N'Vendedores,Tiendas,Administración'),
+    ('Mejorado', N'«No hay líneas para albaranear» ahora dice por qué',
+     N'Al albaranear un pedido que no tiene nada que albaranear, en vez del error «No hay líneas para albaranear» Nesto dice por qué: que ya está albaranado o facturado, que lo que queda tiene fecha de entrega más adelante (y desde cuándo) o que lo que queda aún no está en curso con su picking.',
+     N'Almacén,Tiendas,Administración');
 
 INSERT INTO Novedades (Version, Fecha, Categoria, Titulo, Descripcion, Ambito, Publicada, Usuario, Perfiles)
 SELECT @version, @fecha, n.Categoria, n.Titulo, n.Descripcion, 'Nesto', 1, 'sa', n.Perfiles
