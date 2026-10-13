@@ -1,3 +1,5 @@
+using Elmah;
+using NestoAPI.Infraestructure.ChequesRegalo;
 using NestoAPI.Models;
 using NestoAPI.Models.RecursosHumanos;
 using System;
@@ -35,18 +37,22 @@ namespace NestoAPI.Infraestructure.Rapports
         private readonly Func<DateTime, string, bool> esFestivo;
         private readonly IServicioFrasesRitmo frases;
         private readonly IBloqueoSugerenciasDelDia bloqueo;
+        private readonly IChequesRegaloParaSugerencias chequesRegalo;
 
         public ServicioSugerenciasContacto(NVEntities db)
             : this(db, new RepositorioCarteraContactoSql(), new ProbabilidadesContactoModelo(), () => DateTime.Now, GestorFestivos.EsFestivo,
-                  new ServicioFrasesRitmo())
+                  new ServicioFrasesRitmo(), null, new ServicioEstadisticaChequesRegalo(new RepositorioEstadisticaChequesRegalo(db)))
         {
         }
 
         /// <param name="frases">NestoAPI#603 (corte 4): la frase del ritmo. Null = la plantilla fija del corte 1.</param>
+        /// <param name="chequesRegalo">NestoAPI#593: los clientes con el cheque sin usar en los últimos días de la campaña
+        /// (<see cref="ImpulsoChequesRegaloContacto"/>). Null = sin impulso.</param>
         internal ServicioSugerenciasContacto(NVEntities db, IRepositorioCarteraContacto repositorio, IProbabilidadesContacto probabilidades,
             Func<DateTime> reloj, Func<DateTime, string, bool> esFestivo, IServicioFrasesRitmo frases = null,
-            IBloqueoSugerenciasDelDia bloqueo = null)
+            IBloqueoSugerenciasDelDia bloqueo = null, IChequesRegaloParaSugerencias chequesRegalo = null)
         {
+            this.chequesRegalo = chequesRegalo;
             this.bloqueo = bloqueo;
             this.frases = frases;
             this.db = db;
@@ -80,7 +86,10 @@ namespace NestoAPI.Infraestructure.Rapports
                 }
             }
 
-            List<SugerenciaContactoDTO> pendientes = motor.Priorizar(cartera, hoy);
+            // NestoAPI#593: los del cheque regalo sin usar, delante (regla después del motor; el modelo no se toca).
+            Dictionary<string, ClienteConChequeRegalo> conCheque = ImpulsoChequesRegaloContacto.Asignar(cartera,
+                await LeerImpulsosChequeRegalo(vendedorLimpio, hoy).ConfigureAwait(false), hoy);
+            List<SugerenciaContactoDTO> pendientes = ImpulsoChequesRegaloContacto.Aplicar(motor.Priorizar(cartera, hoy), conCheque, hoy);
             ContactosVendedor contactos = await repositorio.LeerContactos(vendedorLimpio, hoy).ConfigureAwait(false);
             string delegacion = await repositorio.LeerDelegacion(vendedorLimpio).ConfigureAwait(false) ?? Constantes.Almacenes.ALGETE;
             RitmoContactosDTO ritmo = motor.CalcularRitmo(cartera, contactos, pendientes, hoy, d => !esFestivo(d, delegacion));
@@ -130,7 +139,7 @@ namespace NestoAPI.Infraestructure.Rapports
                 Sugerencias = Ordenar(delDia
                     .OrderBy(s => s.Orden)
                     .Take(Math.Min(NUMERO_MAXIMO, Math.Max(numero, delDia.Count)))
-                    .Select(s => ADTO(s, porClave, hoy))
+                    .Select(s => ADTO(s, porClave, conCheque, hoy))
                     .ToList())
             };
         }
@@ -145,6 +154,7 @@ namespace NestoAPI.Infraestructure.Rapports
             List<SugerenciaContactoDTO> ordenadas = registradas
                 .Select((s, i) => new { Sugerencia = s, Registrado = i })
                 .OrderBy(x => PrioridadesContacto.Rango(x.Sugerencia.Prioridad))
+                .ThenByDescending(x => x.Sugerencia.TieneChequeRegalo)
                 .ThenByDescending(x => x.Sugerencia.Probabilidad)
                 .ThenBy(x => x.Registrado)
                 .Select(x => x.Sugerencia)
@@ -165,7 +175,30 @@ namespace NestoAPI.Infraestructure.Rapports
             return Math.Min(NUMERO_MAXIMO, Math.Max(numeroPedido, objetivoHoy));
         }
 
-        private static SugerenciaContactoDTO ADTO(SugerenciaContacto fila, Dictionary<string, ClienteCarteraContacto> cartera, DateTime hoy)
+        /// <summary>
+        /// NestoAPI#593: los clientes con el cheque sin usar, si la campaña está en sus últimos días. Si falla, la lista sale
+        /// igual, sin impulso (y queda en ELMAH).
+        /// </summary>
+        private async Task<List<ChequeRegaloImpulso>> LeerImpulsosChequeRegalo(string vendedor, DateTime hoy)
+        {
+            if (chequesRegalo == null)
+            {
+                return new List<ChequeRegaloImpulso>();
+            }
+            try
+            {
+                return await chequesRegalo.LeerImpulsos(vendedor, hoy).ConfigureAwait(false) ?? new List<ChequeRegaloImpulso>();
+            }
+            catch (Exception ex)
+            {
+                ErrorLog.GetDefault(null)?.Log(new Error(new Exception(
+                    $"NestoAPI#593: no se han podido leer los cheques regalo para las sugerencias de {vendedor}; la lista sale sin impulso", ex)));
+                return new List<ChequeRegaloImpulso>();
+            }
+        }
+
+        private static SugerenciaContactoDTO ADTO(SugerenciaContacto fila, Dictionary<string, ClienteCarteraContacto> cartera,
+            Dictionary<string, ClienteConChequeRegalo> conCheque, DateTime hoy)
         {
             bool enCartera = cartera.TryGetValue(ClienteCarteraContacto.ClaveDe(fila.Cliente, fila.Contacto), out ClienteCarteraContacto cliente);
             SugerenciaContactoDTO dto = enCartera
@@ -179,7 +212,18 @@ namespace NestoAPI.Infraestructure.Rapports
             // Máxima la lleva) siguen al tipo de interacción y al subgrupo de ESTA llamada: la cartera ya trae la predicción
             // del filtro actual (y ADTO la ha copiado). Lo guardado era la del filtro con que se registró. Si el cliente ya no
             // está en la cartera, se queda lo guardado.
-            if (enCartera)
+            if (enCartera && conCheque != null && conCheque.TryGetValue(cliente.Clave, out ClienteConChequeRegalo con))
+            {
+                // NestoAPI#593: con el cheque sin usar, la frase del cheque delante; si sube por el cheque, en Máxima
+                // aunque se registrara antes con otra prioridad.
+                dto.TieneChequeRegalo = true;
+                dto.Motivo = ImpulsoChequesRegaloContacto.Motivo(con, hoy);
+                if (!con.Excluido)
+                {
+                    dto.Prioridad = PrioridadesContacto.MAXIMA;
+                }
+            }
+            else if (enCartera)
             {
                 dto.Motivo = MotorSugerenciasContacto.Motivo(cliente, dto.Prioridad, hoy);
             }

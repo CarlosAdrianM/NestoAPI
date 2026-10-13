@@ -1,6 +1,7 @@
 using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
+using NestoAPI.Infraestructure.ChequesRegalo;
 using NestoAPI.Infraestructure.Rapports;
 using NestoAPI.Models;
 using NestoAPI.Tests.Helpers;
@@ -331,6 +332,67 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
             CollectionAssert.AreEqual(new[] { "1001", "1002", "1003" }, respuesta.Sugerencias.Select(s => s.Cliente).ToArray());
             CollectionAssert.AreEqual(new[] { 1, 2, 3 }, respuesta.Sugerencias.Select(s => s.SugerenciaId).ToArray());
             A.CallTo(() => fakeSugerencias.Add(A<SugerenciaContacto>._)).MustNotHaveHappened();
+        }
+
+        // ---------------- NestoAPI#593: cheque regalo sin usar en los últimos días ----------------
+
+        private ServicioSugerenciasContacto ServicioConCheques(IChequesRegaloParaSugerencias cheques) => new ServicioSugerenciasContacto(db, repositorio,
+            probabilidades, () => AHORA, (d, delegacion) => false, null, bloqueo, cheques);
+
+        private static IChequesRegaloParaSugerencias ChequesDe(params string[] clientes)
+        {
+            IChequesRegaloParaSugerencias cheques = A.Fake<IChequesRegaloParaSugerencias>();
+            A.CallTo(() => cheques.LeerImpulsos("MPP", HOY)).Returns(Task.FromResult(clientes.Select(c => new ChequeRegaloImpulso
+            {
+                Cliente = c,
+                Contacto = "0",
+                InicioImpulso = HOY.AddDays(-2),
+                CanjeHasta = HOY.AddDays(7),
+                Frase = "Tiene un cheque de 50 € sin usar hasta el 14/10"
+            }).ToList()));
+            return cheques;
+        }
+
+        [TestMethod]
+        public async Task Leer_ClienteConChequeSinUsar_SaleElPrimeroEnMaximaConLaFraseAunqueNoLeTocara()
+        {
+            SugerenciasContactoDTO respuesta = await ServicioConCheques(ChequesDe("1005")).Leer("mpp", "Llamada", 3, "", "u");
+
+            CollectionAssert.AreEqual(new[] { "1005", "1001", "1002" }, respuesta.Sugerencias.Select(s => s.Cliente).ToArray());
+            SugerenciaContactoDTO conCheque = respuesta.Sugerencias[0];
+            Assert.AreEqual("Máxima", conCheque.Prioridad);
+            Assert.IsTrue(conCheque.TieneChequeRegalo);
+            Assert.AreEqual("Tiene un cheque de 50 € sin usar hasta el 14/10", conCheque.Motivo);
+            Assert.AreEqual(1, conCheque.Orden);
+            Assert.AreEqual("1005", sugerencias.Single(s => s.Orden == 1).Cliente, "registrada la primera de la lista del día");
+            Assert.AreEqual(2, respuesta.Ritmo.PendientesMaxima);
+
+            // Segunda apertura: la lista del día es la misma y sigue delante, con la frase.
+            SugerenciasContactoDTO segunda = await ServicioConCheques(ChequesDe("1005")).Leer("MPP", "Llamada", 3, "", "u");
+            Assert.AreEqual("1005", segunda.Sugerencias[0].Cliente);
+            Assert.IsTrue(segunda.Sugerencias[0].TieneChequeRegalo);
+            Assert.AreEqual(3, sugerencias.Count);
+        }
+
+        [TestMethod]
+        public async Task Leer_ClienteConChequeAlQueYaLeTocaba_DelanteDeLasOtrasMaximaYConLaFraseDelante()
+        {
+            SugerenciasContactoDTO respuesta = await ServicioConCheques(ChequesDe("1003")).Leer("MPP", "Llamada", 4, "", "u");
+
+            CollectionAssert.AreEqual(new[] { "1003", "1001", "1002", "1004" }, respuesta.Sugerencias.Select(s => s.Cliente).ToArray());
+            StringAssert.StartsWith(respuesta.Sugerencias[0].Motivo, "Tiene un cheque de 50 € sin usar hasta el 14/10. Ha comprado");
+        }
+
+        [TestMethod]
+        public async Task Leer_FallanLosCheques_LaListaSaleIgualSinImpulso()
+        {
+            IChequesRegaloParaSugerencias cheques = A.Fake<IChequesRegaloParaSugerencias>();
+            A.CallTo(() => cheques.LeerImpulsos(A<string>._, A<DateTime>._)).ThrowsAsync(new InvalidOperationException("sin BD"));
+
+            SugerenciasContactoDTO respuesta = await ServicioConCheques(cheques).Leer("MPP", "Llamada", 3, "", "u");
+
+            CollectionAssert.AreEqual(new[] { "1001", "1002", "1003" }, respuesta.Sugerencias.Select(s => s.Cliente).ToArray());
+            Assert.IsFalse(respuesta.Sugerencias.Any(s => s.TieneChequeRegalo));
         }
 
         // ---------------- Número del día: al menos el objetivo de hoy ----------------

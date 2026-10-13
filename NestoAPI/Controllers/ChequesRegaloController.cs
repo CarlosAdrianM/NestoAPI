@@ -1,6 +1,9 @@
 ﻿using NestoAPI.Infraestructure.ChequesRegalo;
+using NestoAPI.Infraestructure.Vendedores;
 using NestoAPI.Infrastructure;
 using NestoAPI.Models;
+using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Net.Mail;
 using System.Net;
@@ -52,6 +55,116 @@ namespace NestoAPI.Controllers
         }
 
         internal Func<DateTime> Ahora { get; set; } = () => DateTime.Now;
+
+        private ServicioEstadisticaChequesRegalo servicioEstadistica;
+        internal ServicioEstadisticaChequesRegalo ServicioEstadistica
+        {
+            get => servicioEstadistica ?? (servicioEstadistica = new ServicioEstadisticaChequesRegalo(new RepositorioEstadisticaChequesRegalo(db)));
+            set => servicioEstadistica = value;
+        }
+
+        private IServicioVendedoresVisibles vendedoresVisibles;
+        internal IServicioVendedoresVisibles VendedoresVisibles
+        {
+            get => vendedoresVisibles ?? (vendedoresVisibles = new ServicioVendedoresVisibles(db));
+            set => vendedoresVisibles = value;
+        }
+
+        public const string MENSAJE_SIN_PERMISO_ESTADISTICA = "Solo puedes ver los cheques regalo de tu vendedor o de los vendedores de tu equipo.";
+
+        /// <summary>
+        /// NestoAPI#593 (estadística): GET api/ChequesRegalo/Resumen?campana=CHEQUE50_OCT_2026&amp;vendedor=JGP — por
+        /// vendedor (el de estética de la ficha del cliente), cuántos cheques se han generado, usado (en pedido o ya
+        /// servidos), quedan pendientes y han caducado, con el total. Sin campaña, la última en curso (404 si no hay). Sin
+        /// vendedor: Dirección ve todos; un jefe de ventas, el suyo y los de su equipo; el resto, el suyo (las mismas reglas
+        /// que «clientes para contactar», <see cref="IServicioVendedoresVisibles"/>). Con un vendedor que no puede ver, 403.
+        /// </summary>
+        [HttpGet]
+        [Authorize]
+        [Route("Resumen")]
+        [ResponseType(typeof(ResumenChequesRegaloDTO))]
+        public async Task<IHttpActionResult> GetResumen(string campana = null, string vendedor = null, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            empresa = EmpresaOPorDefecto(empresa);
+            AlcanceEstadistica alcance = await LeerAlcance(empresa, vendedor).ConfigureAwait(false);
+            if (alcance == null)
+            {
+                return ResponseMessage(Request.CreateErrorResponse(HttpStatusCode.Forbidden, MENSAJE_SIN_PERMISO_ESTADISTICA));
+            }
+            ResumenChequesRegaloDTO resumen = await ServicioEstadistica.LeerResumen(empresa, campana, alcance.Visibles, Ahora()).ConfigureAwait(false);
+            if (resumen == null)
+            {
+                return NotFound();
+            }
+            return Ok(resumen);
+        }
+
+        /// <summary>
+        /// NestoAPI#593 (estadística): GET api/ChequesRegalo/Pendientes?campana=&amp;vendedor=JGP&amp;todos=false — los
+        /// cheques sin usar (Disponible o PendienteDeActivar), para la barrida telefónica: cliente, contacto, teléfonos,
+        /// dirección, días que quedan, la factura que lo generó (con su importe) y el último contacto. Con todos=true, todos
+        /// los cheques con su estado. Mismas reglas de visibilidad que <see cref="GetResumen"/>.
+        /// </summary>
+        [HttpGet]
+        [Authorize]
+        [Route("Pendientes")]
+        [ResponseType(typeof(List<ChequeRegaloPendienteDTO>))]
+        public async Task<IHttpActionResult> GetPendientes(string campana = null, string vendedor = null, bool todos = false,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            empresa = EmpresaOPorDefecto(empresa);
+            AlcanceEstadistica alcance = await LeerAlcance(empresa, vendedor).ConfigureAwait(false);
+            if (alcance == null)
+            {
+                return ResponseMessage(Request.CreateErrorResponse(HttpStatusCode.Forbidden, MENSAJE_SIN_PERMISO_ESTADISTICA));
+            }
+            ISet<string> vendedores = alcance.Visibles == null
+                ? null
+                : new HashSet<string>(alcance.Visibles.Select(v => ReglasEstadisticaChequesRegalo.Vendedor(v.Vendedor)), StringComparer.OrdinalIgnoreCase);
+            List<ChequeRegaloPendienteDTO> pendientes = await ServicioEstadistica.LeerPendientes(empresa, campana, vendedores, todos, Ahora()).ConfigureAwait(false);
+            if (pendientes == null)
+            {
+                return NotFound();
+            }
+            return Ok(pendientes);
+        }
+
+        private class AlcanceEstadistica
+        {
+            /// <summary>Null = todos (Dirección sin pedir vendedor).</summary>
+            public List<VendedorVisibleDTO> Visibles { get; set; }
+        }
+
+        /// <summary>Null si no puede ver lo que pide (o es un cliente de la tienda).</summary>
+        private async Task<AlcanceEstadistica> LeerAlcance(string empresa, string vendedor)
+        {
+            if ((User?.Identity as ClaimsIdentity)?.FindFirst("cliente") != null)
+            {
+                return null;
+            }
+            if (!string.IsNullOrWhiteSpace(vendedor))
+            {
+                if (!await VendedoresVisibles.PuedeVer(User, empresa, vendedor).ConfigureAwait(false))
+                {
+                    return null;
+                }
+                return new AlcanceEstadistica
+                {
+                    Visibles = new List<VendedorVisibleDTO> { new VendedorVisibleDTO { Vendedor = ReglasEstadisticaChequesRegalo.Vendedor(vendedor) } }
+                };
+            }
+            if (ServicioVendedoresVisibles.EsDireccion(User))
+            {
+                return new AlcanceEstadistica { Visibles = null };
+            }
+            return new AlcanceEstadistica
+            {
+                Visibles = await VendedoresVisibles.LeerVisibles(User, empresa).ConfigureAwait(false) ?? new List<VendedorVisibleDTO>()
+            };
+        }
+
+        private static string EmpresaOPorDefecto(string empresa)
+            => string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
 
         /// <summary>
         /// GET api/ChequesRegalo/Cliente?empresa=1&amp;cliente=15191 → el cheque del cliente en una campaña activa (el que

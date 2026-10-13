@@ -765,6 +765,7 @@
     <Compile Include="Infraestructure\ChequesRegalo\PushChequesRegalo.cs" />
     <Compile Include="Infraestructure\ChequesRegalo\ChequesRegalo.cs" />
     <Compile Include="Infraestructure\ChequesRegalo\AvisoChequesRegalo.cs" />
+    <Compile Include="Infraestructure\ChequesRegalo\EstadisticaChequesRegalo.cs" />
     <Compile Include="Infraestructure\Clientes\NotificadorNifIncorrecto.cs" />
     <Compile Include="Infraestructure\Clientes\ConsultasClientePrincipal.cs" />
     <Compile Include="Infraestructure\Productos\FamiliasRestringidas.cs" />
@@ -946,6 +947,7 @@
     <Compile Include="Infraestructure\Reposiciones\TransitoReposiciones.cs" />
     <Compile Include="Infraestructure\Eventos\EstadoSenalEvento.cs" />
     <Compile Include="Infraestructure\Rapports\MotorSugerenciasContacto.cs" />
+    <Compile Include="Infraestructure\Rapports\ImpulsoChequesRegaloContacto.cs" />
     <Compile Include="Infraestructure\Rapports\SugerenciasContactoDTO.cs" />
     <Compile Include="Infraestructure\Rapports\ServicioSugerenciasContacto.cs" />
     <Compile Include="Infraestructure\Rapports\RegistroSugerenciasContacto.cs" />

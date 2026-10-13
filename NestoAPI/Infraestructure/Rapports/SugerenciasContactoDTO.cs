@@ -73,6 +73,9 @@ namespace NestoAPI.Infraestructure.Rapports
         public string GrupoSubgrupoMasVendido { get; set; }
         /// <summary>True si ya hay un rapport de este cliente hoy.</summary>
         public bool Atendida { get; set; }
+        /// <summary>NestoAPI#593: en los últimos días de una campaña, el cliente tiene el cheque regalo sin usar (el motivo
+        /// empieza por «Tiene un cheque de 50 € sin usar hasta el 07/11»). Ver <see cref="ImpulsoChequesRegaloContacto"/>.</summary>
+        public bool TieneChequeRegalo { get; set; }
     }
 
     /// <summary>NestoAPI#603: GET api/Clientes/SugerenciasContacto/Uso, una fila por vendedor.</summary>
