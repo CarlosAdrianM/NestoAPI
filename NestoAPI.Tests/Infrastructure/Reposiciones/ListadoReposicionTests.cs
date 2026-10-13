@@ -231,6 +231,33 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
         }
 
         [TestMethod]
+        public async Task Sugerencia580_ElTamanoDelProductoLlegaDeLaFichaAlaFilaDelPapel()
+        {
+            A.CallTo(() => preparacion.LeerEnPreparacion("1", "ALC")).Returns(EnPreparacion());
+            A.CallTo(() => repositorio.LeerFichas("1", "ALC", A<IReadOnlyCollection<string>>._)).Returns(new List<FichaListadoReposicion>
+            {
+                new FichaListadoReposicion { Producto = "17404", Familia = "Depilación", Tamano = 100, UnidadMedida = "ml " },
+                new FichaListadoReposicion { Producto = "25539", Familia = "Cosmética", Tamano = 0, UnidadMedida = "ml" }
+            });
+
+            ListadoReposicionDTO listado = await servicio.LeerEnPreparacion("1", "ALC");
+            List<FilaPdfReposicion> filas = GeneradorPdfReposicion.Filas(listado);
+
+            Assert.AreEqual("100 ml", filas.Single(f => f.Producto == "17404").Tamano);
+            Assert.AreEqual(string.Empty, filas.Single(f => f.Producto == "25539").Tamano, "Sin tamaño (0) no se pinta «0 ml»");
+        }
+
+        [TestMethod]
+        public void Sugerencia580_TamanoConUnidad_ConYSinUnidadYSinTamano()
+        {
+            Assert.AreEqual("500 g", new LineaListadoReposicionDTO { Tamano = 500, UnidadMedida = " g " }.TamanoConUnidad);
+            Assert.AreEqual("12", new LineaListadoReposicionDTO { Tamano = 12, UnidadMedida = null }.TamanoConUnidad);
+            Assert.AreEqual(string.Empty, new LineaListadoReposicionDTO { Tamano = null, UnidadMedida = "ml" }.TamanoConUnidad);
+            StringAssert.Contains(RepositorioListadoReposicionSql.SQL_FICHAS, "p.[Tamaño] AS Tamano");
+            StringAssert.Contains(RepositorioListadoReposicionSql.SQL_FICHAS, "RTRIM(p.UnidadMedida) AS UnidadMedida");
+        }
+
+        [TestMethod]
         public void LineaDatos_ConNumeroDiaYCorte_YSinNumeroNiCorte()
         {
             Assert.AreEqual("Traspaso 80893 · Día 08/10/2026 · Corte 07/10/2026 18:00", GeneradorPdfReposicion.LineaDatos(new ListadoReposicionDTO
@@ -250,7 +277,7 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
                 Lineas = Enumerable.Range(1, 120).Select(i => new LineaListadoReposicionDTO
                 {
                     Producto = i.ToString(), Descripcion = "Producto con una descripción bastante larga para que ocupe dos líneas " + i,
-                    CodigoBarras = "84" + i, Cantidad = i, Pasillo = i % 2 == 0 ? "001" : null, Fila = "001", Columna = "001"
+                    CodigoBarras = "84" + i, Cantidad = i, Tamano = (short)(i * 10), UnidadMedida = "ml", Pasillo = i % 2 == 0 ? "001" : null, Fila = "001", Columna = "001"
                 }).ToList()
             };
             var sinUbicacion = new ListadoReposicionDTO

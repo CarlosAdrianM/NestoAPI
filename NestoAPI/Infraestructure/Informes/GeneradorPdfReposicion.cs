@@ -16,6 +16,8 @@ namespace NestoAPI.Infraestructure.Informes
         public string Producto { get; set; }
         public string CodigoBarras { get; set; }
         public string Descripcion { get; set; }
+        /// <summary>Sugerencia 580: «100 ml» (vacío si el producto no tiene tamaño).</summary>
+        public string Tamano { get; set; }
         public string Familia { get; set; }
         public int Cantidad { get; set; }
     }
@@ -23,7 +25,7 @@ namespace NestoAPI.Infraestructure.Informes
     /// <summary>
     /// Sugerencia 564 (Paloma): la reposición en papel, para prepararla (o comprobar lo que llega) a mano mientras las
     /// tiendas no tienen Ariadna. Una fila por producto con ubicación (si la hay), referencia, código de barras,
-    /// descripción, cantidad y una casilla en blanco para marcarla; en el orden de <see cref="ServicioListadoReposicion.OrdenarParaRecorrer"/>.
+    /// descripción, tamaño (sugerencia 580), cantidad y una casilla en blanco para marcarla; en el orden de <see cref="ServicioListadoReposicion.OrdenarParaRecorrer"/>.
     /// </summary>
     public class GeneradorPdfReposicion
     {
@@ -63,6 +65,7 @@ namespace NestoAPI.Infraestructure.Informes
                     Producto = l.Producto?.Trim() ?? string.Empty,
                     CodigoBarras = l.CodigoBarras?.Trim() ?? string.Empty,
                     Descripcion = l.Descripcion?.Trim() ?? string.Empty,
+                    Tamano = l.TamanoConUnidad ?? string.Empty,
                     Familia = l.Familia?.Trim() ?? string.Empty,
                     Cantidad = l.Cantidad
                 })
@@ -113,6 +116,7 @@ namespace NestoAPI.Infraestructure.Informes
                     columns.ConstantColumn(48);          // Ref.
                     columns.ConstantColumn(88);          // Código de barras
                     columns.RelativeColumn(3f);          // Descripción
+                    columns.ConstantColumn(52);          // Tamaño (sugerencia 580)
                     columns.RelativeColumn(1.4f);        // Familia
                     columns.ConstantColumn(40);          // Cant.
                 });
@@ -127,6 +131,7 @@ namespace NestoAPI.Infraestructure.Informes
                     CeldaCabecera(header.Cell(), "Ref.", alinearDerecha: false);
                     CeldaCabecera(header.Cell(), "Código de barras", alinearDerecha: false);
                     CeldaCabecera(header.Cell(), "Descripción", alinearDerecha: false);
+                    CeldaCabecera(header.Cell(), "Tamaño", alinearDerecha: false);
                     CeldaCabecera(header.Cell(), "Familia", alinearDerecha: false);
                     CeldaCabecera(header.Cell(), "Cant.", alinearDerecha: true);
                 });
@@ -143,6 +148,7 @@ namespace NestoAPI.Infraestructure.Informes
                     CeldaDato(table.Cell(), fila.Producto, alinearDerecha: false);
                     CeldaDato(table.Cell(), fila.CodigoBarras, alinearDerecha: false);
                     CeldaDato(table.Cell(), fila.Descripcion, alinearDerecha: false);
+                    CeldaDato(table.Cell(), fila.Tamano, alinearDerecha: false);
                     CeldaDato(table.Cell(), fila.Familia, alinearDerecha: false, tamano: 8);
                     CeldaDato(table.Cell(), fila.Cantidad.ToString(), alinearDerecha: true, negrita: true);
                 }

@@ -30,6 +30,12 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public string Pasillo { get; set; }
         public string Fila { get; set; }
         public string Columna { get; set; }
+        /// <summary>Sugerencia 580 (Paloma): el tamaño del envase (Productos.Tamaño) y su unidad, para saber cuál es.</summary>
+        public short? Tamano { get; set; }
+        public string UnidadMedida { get; set; }
+
+        /// <summary>«100 ml», «500 g», o vacío si el producto no tiene tamaño (0 o null), como el pedido de compra.</summary>
+        public string TamanoConUnidad => Infraestructure.PedidosCompra.GeneradorPdfPedidoCompra.FormatoTamanno(Tamano, UnidadMedida);
 
         /// <summary>«002/004/001» o null.</summary>
         public string Ubicacion => string.IsNullOrWhiteSpace(Pasillo) ? null
@@ -78,6 +84,8 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public string Pasillo { get; set; }
         public string Fila { get; set; }
         public string Columna { get; set; }
+        public short? Tamano { get; set; }
+        public string UnidadMedida { get; set; }
     }
 
     public interface IRepositorioListadoReposicion
@@ -100,6 +108,7 @@ namespace NestoAPI.Infraestructure.Reposiciones
         // en el orden del recorrido (pasillo, columna, fila). En la empresa y en su espejo, como prdUbicarReposicion.
         internal const string SQL_FICHAS = @"
 SELECT RTRIM(p.[Número]) AS Producto, RTRIM(f.[Descripción]) AS Familia,
+       p.[Tamaño] AS Tamano, RTRIM(p.UnidadMedida) AS UnidadMedida,
        RTRIM(u.Pasillo) AS Pasillo, RTRIM(u.Fila) AS Fila, RTRIM(u.Columna) AS Columna
 FROM Productos p
      LEFT JOIN Familias f ON f.Empresa = p.Empresa AND f.[Número] = p.Familia
@@ -302,6 +311,8 @@ ELSE
                     linea.Pasillo = Limpio(ficha.Pasillo);
                     linea.Fila = Limpio(ficha.Fila);
                     linea.Columna = Limpio(ficha.Columna);
+                    linea.Tamano = ficha.Tamano;
+                    linea.UnidadMedida = Limpio(ficha.UnidadMedida);
                 }
             }
             listado.Lineas = OrdenarParaRecorrer(listado.Lineas);
