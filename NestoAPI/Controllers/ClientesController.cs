@@ -1307,8 +1307,8 @@ namespace NestoAPI.Controllers
 
         [HttpGet]
         [Route("api/Clientes/MandatoPDF")]
-        //http://localhost:53364/api/Clientes/MandatoPDF?empresa=1&cliente=1&contacto=1&ccc=1
-        public async Task<HttpResponseMessage> GetMandato(string empresa, string cliente, string contacto, string ccc)
+        //http://localhost:53364/api/Clientes/MandatoPDF?empresa=1&cliente=1&contacto=1&ccc=1  (Nesto#490: &motor=QuestPDF usa el generador nuevo; sin motor, RDLC)
+        public async Task<HttpResponseMessage> GetMandato(string empresa, string cliente, string contacto, string ccc, string motor = null)
         {
             Mandato mandato = await _gestorClientes.LeerMandato(empresa, cliente, contacto, ccc).ConfigureAwait(true);
             if (!mandato.Iban.EsValido)
@@ -1319,7 +1319,7 @@ namespace NestoAPI.Controllers
 
             HttpResponseMessage result = new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = _gestorClientes.MandatoEnPDF(mandatos)
+                Content = _gestorClientes.MandatoEnPDF(mandatos, motor)
             };
             //result.Content.Headers.ContentDisposition =
             //    new ContentDispositionHeaderValue("attachment")

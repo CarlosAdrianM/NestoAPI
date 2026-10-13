@@ -25,7 +25,7 @@ namespace NestoAPI.Infraestructure
         Task<Cliente> ModificarCliente(ClienteCrear clienteCrear, NVEntities db);
         Task<Cliente> CrearCliente(ClienteCrear clienteCrear, NVEntities db);
         Task<Mandato> LeerMandato(string empresa, string cliente, string contacto, string ccc);
-        ByteArrayContent MandatoEnPDF(List<Mandato> mandatos);
+        ByteArrayContent MandatoEnPDF(List<Mandato> mandatos, string motor = null);
         Task<ClienteTelefonoLookup> BuscarClientePorEmail(string email);
         Task<ClienteDTO> BuscarClientePorEmailNif(string email, string nif);
         Task<ResultadoCopiaDatosPrincipal> CopiarDatosDelPrincipal(string empresa, string cliente, string contactoDestino, string usuario);

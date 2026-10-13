@@ -1,4 +1,5 @@
 ﻿using NestoAPI.Infraestructure.Clientes;
+using NestoAPI.Infraestructure.Informes;
 using NestoAPI.Infraestructure.Rapports;
 using Microsoft.Reporting.WebForms;
 using NestoAPI.Infraestructure.Sincronizacion;
@@ -1522,8 +1523,17 @@ namespace NestoAPI.Infraestructure
         }
 
 
-        public ByteArrayContent MandatoEnPDF(List<Mandato> mandatos)
+        /// <summary>
+        /// Nesto#490 / Nesto#340: con motor = "QuestPDF" el mandato sale del generador QuestPDF
+        /// (GeneradorPdfMandatoSepa); con cualquier otro valor, del RDLC de siempre. El mandato va al
+        /// cliente, así que el cambio va detrás del parámetro por usuario MotorPdfMandatoSepa de Nesto.
+        /// </summary>
+        public ByteArrayContent MandatoEnPDF(List<Mandato> mandatos, string motor = null)
         {
+            if (EsMotorQuestPdf(motor))
+            {
+                return new GeneradorPdfMandatoSepa().GenerarPdf(mandatos);
+            }
 
             ReportViewer viewer = new ReportViewer();
             viewer.LocalReport.ReportPath = @"Models\Clientes\MandatoCoreSEPA.rdlc";
@@ -1537,6 +1547,11 @@ namespace NestoAPI.Infraestructure
             viewer.Dispose();
 
             return new ByteArrayContent(bytes);
+        }
+
+        internal static bool EsMotorQuestPdf(string motor)
+        {
+            return string.Equals(motor?.Trim(), "QuestPDF", StringComparison.OrdinalIgnoreCase);
         }
 
         public async Task<Mandato> LeerMandato(string empresa, string cliente, string contacto, string ccc)
