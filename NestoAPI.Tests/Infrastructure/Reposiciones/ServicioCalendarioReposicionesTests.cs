@@ -483,6 +483,106 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
             StringAssert.Contains(error.Message, "La hora de llegada no puede ser anterior a la hora de cierre");
         }
 
+        // ---------------------------------------------------------------- Sugerencia 581: hora de recogida (fuera del EDMX)
+
+        private IHorasRecogidaReposiciones HorasRecogida(bool hayColumna, params (int id, string hora)[] horas)
+        {
+            IHorasRecogidaReposiciones fake = A.Fake<IHorasRecogidaReposiciones>();
+            A.CallTo(() => fake.HayColumna()).Returns(hayColumna);
+            A.CallTo(() => fake.Leer("1")).Returns(horas.ToDictionary(h => h.id, h => h.hora == null ? (TimeSpan?)null : TimeSpan.Parse(h.hora)));
+            return fake;
+        }
+
+        private ServicioCalendarioReposiciones Servicio(IHorasRecogidaReposiciones horas) =>
+            new ServicioCalendarioReposiciones(db, new CalculadoraFechaReposicion((d, a) => false), () => LUNES_0900, horas);
+
+        [TestMethod]
+        public async Task LeerCalendario_ConLaHoraDeRecogidaDeCadaFila()
+        {
+            filas.Add(Fila(1, "REI", 1));
+            filas.Add(Fila(2, "ALC", 1));
+
+            List<ReposicionCalendarioDTO> calendario = await Servicio(HorasRecogida(true, (1, "11:00"), (2, null))).LeerCalendario("1");
+
+            Assert.AreEqual(TimeSpan.Parse("11:00"), calendario.Single(f => f.Id == 1).HoraRecogida);
+            Assert.IsNull(calendario.Single(f => f.Id == 2).HoraRecogida);
+        }
+
+        [TestMethod]
+        public async Task Guardar_ConHoraDeRecogida_LaEscribeDespuesDeGuardarSinSegundos()
+        {
+            filas.Add(Fila(1, "REI", 1));
+            IHorasRecogidaReposiciones horas = HorasRecogida(true);
+            ReposicionCalendarioDTO dto = Dto("REI", "ALG", 1, id: 1);
+            dto.HoraRecogida = new TimeSpan(11, 30, 45);
+
+            _ = await Servicio(horas).Guardar(new GuardarCalendarioReposicionesDTO { Filas = new List<ReposicionCalendarioDTO> { dto } }, "Carlos");
+
+            A.CallTo(() => db.SaveChangesAsync()).MustHaveHappenedOnceExactly()
+                .Then(A.CallTo(() => horas.Guardar(A<IReadOnlyDictionary<int, TimeSpan?>>.That.Matches(d =>
+                    d.Count == 1 && d[1] == new TimeSpan(11, 30, 0)))).MustHaveHappenedOnceExactly());
+        }
+
+        [TestMethod]
+        public async Task Guardar_QuitarLaHoraDeRecogida_LaPoneANull()
+        {
+            filas.Add(Fila(1, "REI", 1));
+            IHorasRecogidaReposiciones horas = HorasRecogida(true, (1, "11:00"));
+            ReposicionCalendarioDTO dto = Dto("REI", "ALG", 1, id: 1);
+            dto.HoraRecogida = null;
+
+            _ = await Servicio(horas).Guardar(new GuardarCalendarioReposicionesDTO { Filas = new List<ReposicionCalendarioDTO> { dto } }, "Carlos");
+
+            A.CallTo(() => horas.Guardar(A<IReadOnlyDictionary<int, TimeSpan?>>.That.Matches(d => d.Count == 1 && d[1] == null)))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Guardar_UnNestoQueNoMandaLaHoraDeRecogida_NoLaToca()
+        {
+            filas.Add(Fila(1, "REI", 1));
+            IHorasRecogidaReposiciones horas = HorasRecogida(true, (1, "11:00"));
+            // El JSON de un Nesto anterior: sin la propiedad
+            ReposicionCalendarioDTO dto = Newtonsoft.Json.JsonConvert.DeserializeObject<ReposicionCalendarioDTO>(
+                "{\"Id\":1,\"Origen\":\"REI\",\"Destino\":\"ALG\",\"DiaSemana\":1,\"HoraCierre\":\"09:00:00\",\"HoraLlegadaHabitual\":\"13:30:00\",\"Activo\":true}");
+
+            _ = await Servicio(horas).Guardar(new GuardarCalendarioReposicionesDTO { Filas = new List<ReposicionCalendarioDTO> { dto } }, "Carlos");
+
+            Assert.IsFalse(dto.HoraRecogidaInformada);
+            A.CallTo(() => horas.Guardar(A<IReadOnlyDictionary<int, TimeSpan?>>._)).MustNotHaveHappened();
+            Assert.IsTrue(Newtonsoft.Json.JsonConvert.DeserializeObject<ReposicionCalendarioDTO>("{\"HoraRecogida\":null}").HoraRecogidaInformada,
+                "Con la propiedad a null sí se quita");
+            Assert.AreEqual(new TimeSpan(11, 30, 0),
+                Newtonsoft.Json.JsonConvert.DeserializeObject<ReposicionCalendarioDTO>("{\"HoraRecogida\":\"11:30:00\"}").HoraRecogida);
+        }
+
+        [TestMethod]
+        public async Task Guardar_ConHoraDeRecogidaSinLaColumnaTodavia_400SinGuardarNada()
+        {
+            filas.Add(Fila(1, "REI", 1));
+            IHorasRecogidaReposiciones horas = HorasRecogida(false);
+            ReposicionCalendarioDTO dto = Dto("REI", "ALG", 1, cierre: "08:00", id: 1);
+            dto.HoraRecogida = TimeSpan.Parse("11:00");
+
+            NestoBusinessException error = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() =>
+                Servicio(horas).Guardar(new GuardarCalendarioReposicionesDTO { Filas = new List<ReposicionCalendarioDTO> { dto } }, "Carlos"));
+
+            StringAssert.Contains(error.Message, "Issue581_ReposicionesCalendario_HoraRecogida.sql");
+            A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
+            A.CallTo(() => horas.Guardar(A<IReadOnlyDictionary<int, TimeSpan?>>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Guardar_HoraDeRecogidaFueraDelDia_400()
+        {
+            ReposicionCalendarioDTO dto = Dto("REI", "ALG", 1);
+            dto.HoraRecogida = TimeSpan.FromHours(25);
+
+            NestoBusinessException error = await GuardarFalla(dto);
+
+            StringAssert.Contains(error.Message, "Las horas tienen que estar entre las 00:00 y las 23:59");
+        }
+
         private static void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, List<T> datos) where T : class
         {
             A.CallTo(() => ((IDbAsyncEnumerable<T>)fakeDbSet).GetAsyncEnumerator())

@@ -801,5 +801,39 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             A.CallTo(() => servicio.LeerPendientes("1", "ALG")).Returns(new List<ReposicionPendienteDTO>());
             Assert.AreEqual("Reposición 80905", (await Reposiciones(servicio).LeerEsperado("1", "ALG", "80905")).Titulo);
         }
+
+        // Sugerencia 581 (Carlos, 13/10/26): en Algete la puntual se distingue de la del calendario al recibirla
+        [TestMethod]
+        public async Task Reposiciones_LaPuntualSeMarcaEnLaListaYAlAbrirla()
+        {
+            IServicioRecepcionReposiciones servicio = ServicioReposicionesConPendientes(
+                new ReposicionPendienteDTO { Traspaso = 80947, Origen = "ALC", NombreOrigen = "Alcobendas", Lineas = 14, Unidades = 42 },
+                new ReposicionPendienteDTO { Traspaso = 80951, Origen = "ALC", NombreOrigen = "Alcobendas", Lineas = 1, Unidades = 4, EsPuntual = true });
+            A.CallTo(() => servicio.LeerRecepcion("1", "ALG", 80951)).Returns(new RecepcionReposicionDTO
+            {
+                Empresa = "1",
+                Almacen = "ALG",
+                Traspaso = 80951,
+                Lineas = new List<LineaReposicionDTO> { new LineaReposicionDTO { Producto = "41980", Cantidad = 4 } }
+            });
+
+            List<RecepcionPendienteDTO> pendientes = await Reposiciones(servicio).LeerPendientes("1", "ALG");
+            RecepcionDTO puntual = await Reposiciones(servicio).LeerEsperado("1", "ALG", "80951");
+
+            CollectionAssert.AreEqual(new[] { "Reposición 80947 desde Alcobendas", "Reposición puntual 80951 desde Alcobendas" },
+                pendientes.Select(p => p.Titulo).ToArray());
+            CollectionAssert.AreEqual(new[] { false, true }, pendientes.Select(p => p.EsPuntual).ToArray());
+            Assert.AreEqual("Reposición puntual 80951 desde Alcobendas", puntual.Titulo);
+            Assert.IsTrue(puntual.EsPuntual);
+        }
+
+        [TestMethod]
+        public void Reposiciones_SqlPendientes_EsPuntualPorLaCabeceraFueraDelAgrupado()
+        {
+            string sql = RepositorioRecepcionReposiciones.SQL_PENDIENTES;
+            StringAssert.Contains(sql, "t.NumTraspaso = x.Traspaso AND t.Herramienta = 'Puntual'");
+            StringAssert.Contains(sql, "AS EsPuntual");
+            Assert.IsTrue(sql.IndexOf("GROUP BY p.[NºTraspaso]") < sql.IndexOf(") x"), "El EXISTS va fuera del agregado");
+        }
     }
 }

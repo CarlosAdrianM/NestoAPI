@@ -27,6 +27,14 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public int UnidadesPorLectura { get; set; } = 1;
         /// <summary>Stock del producto en la tienda (ExtractoProducto del almacén de origen).</summary>
         public int StockOrigen { get; set; }
+        /// <summary>
+        /// Sugerencia 581 (Carlos, 13/10/26): lo que la tienda necesita para lo suyo y no puede mandar: sus líneas de pedido
+        /// pendientes en ese almacén (Estado -1 a 1, empresa y su espejo) y lo que ya ha salido numerado sin contabilizar. El
+        /// mismo criterio que la propuesta de reposición (prdRellenarReposicionStock2) para el stock del origen.
+        /// </summary>
+        public int Comprometido { get; set; }
+        /// <summary>Sugerencia 581: lo que de verdad se puede mandar: StockOrigen − Comprometido (nunca negativo).</summary>
+        public int Disponible { get; set; }
     }
 
     public interface IProductosReposicionPuntual
@@ -43,11 +51,21 @@ namespace NestoAPI.Infraestructure.Reposiciones
     public class ProductosReposicionPuntual : IProductosReposicionPuntual
     {
         // Ficha y stock en la tienda (índice extractoproducto11: Empresa, Número, Almacén, Cantidad). Solo productos activos.
+        // Sugerencia 581: y lo comprometido (pedidos pendientes de la tienda y salidas numeradas sin contabilizar), con lo que
+        // queda libre para mandar. Comprobada contra NV el 13/10/26 (94 ms).
         internal const string SQL_FICHA = @"
 SELECT RTRIM(pr.[Número]) AS Producto, RTRIM(pr.Nombre) AS Nombre, RTRIM(pr.CodBarras) AS CodigoBarras, 1 AS UnidadesPorLectura,
-       CAST(ISNULL((SELECT SUM(e.Cantidad) FROM ExtractoProducto e
-                    WHERE e.Empresa = pr.Empresa AND e.[Número] = pr.[Número] AND e.[Almacén] = @p1), 0) AS int) AS StockOrigen
+       s.StockOrigen, c.Comprometido,
+       CASE WHEN s.StockOrigen - c.Comprometido > 0 THEN s.StockOrigen - c.Comprometido ELSE 0 END AS Disponible
 FROM Productos pr
+     CROSS APPLY (SELECT CAST(ISNULL((SELECT SUM(e.Cantidad) FROM ExtractoProducto e
+                                      WHERE e.Empresa = pr.Empresa AND e.[Número] = pr.[Número] AND e.[Almacén] = @p1), 0) AS int) AS StockOrigen) s
+     CROSS APPLY (SELECT CAST(ISNULL((SELECT SUM(l.Cantidad) FROM LinPedidoVta l
+                                      WHERE l.Empresa IN (pr.Empresa, (SELECT em.[IVA por defecto] FROM Empresas em WHERE em.[Número] = pr.Empresa))
+                                        AND l.Producto = pr.[Número] AND l.[Almacén] = @p1 AND l.Estado BETWEEN -1 AND 1), 0)
+                            + ISNULL((SELECT -SUM(p.Cantidad) FROM PreExtrProducto p
+                                      WHERE p.Empresa = pr.Empresa AND p.[Número] = pr.[Número] AND p.[Almacén] = @p1
+                                        AND ISNULL(p.[NºTraspaso], 0) <> 0 AND p.Cantidad < 0), 0) AS int) AS Comprometido) c
 WHERE pr.Empresa = @p0 AND pr.[Número] = @p2 AND pr.Estado >= 0";
 
         private readonly Func<string, string, string, Task<ProductoReposicionPuntualDTO>> leerFicha;
@@ -101,7 +119,7 @@ WHERE pr.Empresa = @p0 AND pr.[Número] = @p2 AND pr.Estado >= 0";
             return encontrados;
         }
 
-        private static async Task<ProductoReposicionPuntualDTO> LeerFicha(NVEntities db, string empresa, string origen, string producto)
+        internal static async Task<ProductoReposicionPuntualDTO> LeerFicha(NVEntities db, string empresa, string origen, string producto)
         {
             if (string.IsNullOrWhiteSpace(producto) || producto.Length > 15)
             {
@@ -112,6 +130,53 @@ WHERE pr.Empresa = @p0 AND pr.[Número] = @p2 AND pr.Estado >= 0";
                     new SqlParameter("@p1", SqlDbType.Char, 3) { Value = (object)origen ?? DBNull.Value },
                     new SqlParameter("@p2", SqlDbType.Char, 15) { Value = producto })
                 .FirstOrDefaultAsync().ConfigureAwait(false);
+        }
+    }
+    /// <summary>
+    /// Sugerencia 581 (Carlos, 13/10/26): lo que una tienda puede mandar de cada producto en una reposición puntual sin
+    /// dejar sin servir sus propios pedidos (<see cref="ProductoReposicionPuntualDTO.Disponible"/>).
+    /// </summary>
+    public interface IStockLibreReposicionPuntual
+    {
+        /// <summary>Producto → su ficha con stock, comprometido y disponible en <paramref name="origen"/>. Los que no existen no vienen.</summary>
+        Task<Dictionary<string, ProductoReposicionPuntualDTO>> Leer(string empresa, string origen, IEnumerable<string> productos);
+    }
+
+    /// <summary>Sin comprobar lo comprometido (pruebas que no lo miran): no viene ninguno.</summary>
+    public sealed class SinStockLibreReposicionPuntual : IStockLibreReposicionPuntual
+    {
+        public static readonly SinStockLibreReposicionPuntual Instancia = new SinStockLibreReposicionPuntual();
+
+        private SinStockLibreReposicionPuntual()
+        {
+        }
+
+        public Task<Dictionary<string, ProductoReposicionPuntualDTO>> Leer(string empresa, string origen, IEnumerable<string> productos) =>
+            Task.FromResult(new Dictionary<string, ProductoReposicionPuntualDTO>(StringComparer.OrdinalIgnoreCase));
+    }
+
+    /// <summary>La misma consulta que la pantalla (<see cref="ProductosReposicionPuntual.SQL_FICHA"/>), producto a producto (una puntual tiene pocos).</summary>
+    public class StockLibreReposicionPuntualSql : IStockLibreReposicionPuntual
+    {
+        private readonly NVEntities db;
+
+        public StockLibreReposicionPuntualSql(NVEntities db)
+        {
+            this.db = db ?? throw new ArgumentNullException(nameof(db));
+        }
+
+        public async Task<Dictionary<string, ProductoReposicionPuntualDTO>> Leer(string empresa, string origen, IEnumerable<string> productos)
+        {
+            var leidos = new Dictionary<string, ProductoReposicionPuntualDTO>(StringComparer.OrdinalIgnoreCase);
+            foreach (string producto in (productos ?? Enumerable.Empty<string>()).Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p.Trim()).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                ProductoReposicionPuntualDTO ficha = await ProductosReposicionPuntual.LeerFicha(db, empresa, origen, producto).ConfigureAwait(false);
+                if (ficha != null)
+                {
+                    leidos[producto] = ficha;
+                }
+            }
+            return leidos;
         }
     }
 }

@@ -21,6 +21,12 @@ namespace NestoAPI.Models.PreparacionAlmacen
         /// «1 línea · 1 ud. · 06/10»). Siempre viene: la app la enseña tal cual.
         /// </summary>
         public string Detalle { get; set; }
+        /// <summary>
+        /// Sugerencia 581: REPO que una tienda ha mandado aparte a Algete con solo unos productos (ReposicionesTraspasos.Herramienta
+        /// «Puntual»), no la del calendario. Ya va en el título («Reposición puntual 80951 desde Alcobendas»); esto es para
+        /// marcarla además. False en los demás tipos.
+        /// </summary>
+        public bool EsPuntual { get; set; }
         public DateTime? Fecha { get; set; }
         /// <summary>COMP: los pedidos de compra que tiene pendientes. REPO: vacío.</summary>
         public List<int> Pedidos { get; set; } = new List<int>();
@@ -75,6 +81,12 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public string Tipo { get; set; }
         public string Documento { get; set; }
         public string Titulo { get; set; }
+        /// <summary>
+        /// Sugerencia 581: REPO que una tienda ha mandado aparte a Algete con solo unos productos (ReposicionesTraspasos.Herramienta
+        /// «Puntual»), no la del calendario. Ya va en el título («Reposición puntual 80951 desde Alcobendas»); esto es para
+        /// marcarla además. False en los demás tipos.
+        /// </summary>
+        public bool EsPuntual { get; set; }
         public string Empresa { get; set; }
         public string Almacen { get; set; }
         /// <summary>Si quien pregunta puede terminar esta recepción (depende del tipo).</summary>

@@ -31,6 +31,31 @@ namespace NestoAPI.Infraestructure.Reposiciones
         /// mismo día (tienda → Algete); 1 = el laborable anterior (Algete → tienda: la del lunes cierra el viernes).
         /// </summary>
         public byte LaborablesAntelacionCierre { get; set; }
+
+        private TimeSpan? horaRecogida;
+
+        /// <summary>
+        /// Sugerencia 581 (Carlos, 13/10/26): «11:30:00»: a qué hora pasa el repartidor a recogerla en el origen ese día. Hasta
+        /// entonces la tienda puede hacer una reposición puntual a Algete; después, no (409). Null: sin límite. Columna
+        /// ReposicionesCalendario.HoraRecogida (Scripts/Issue581_ReposicionesCalendario_HoraRecogida.sql), fuera del EDMX.
+        /// </summary>
+        public TimeSpan? HoraRecogida
+        {
+            get => horaRecogida;
+            set
+            {
+                horaRecogida = value;
+                HoraRecogidaInformada = true;
+            }
+        }
+
+        /// <summary>
+        /// Si la petición trae HoraRecogida (aunque sea null, para quitarla). Un Nesto anterior no la manda y entonces no se
+        /// toca: así no se borra al cambiar otra cosa de la fila.
+        /// </summary>
+        [Newtonsoft.Json.JsonIgnore]
+        public bool HoraRecogidaInformada { get; private set; }
+
         public bool Activo { get; set; } = true;
         /// <summary>Solo lectura (la API pone el del Identity).</summary>
         public string Usuario { get; set; }
@@ -90,16 +115,21 @@ namespace NestoAPI.Infraestructure.Reposiciones
         private readonly NVEntities db;
         private readonly CalculadoraFechaReposicion calculadora;
         private readonly Func<DateTime> reloj;
+        private readonly IHorasRecogidaReposiciones horasRecogida;
 
-        public ServicioCalendarioReposiciones(NVEntities db) : this(db, new CalculadoraFechaReposicion(), () => DateTime.Now)
+        public ServicioCalendarioReposiciones(NVEntities db)
+            : this(db, new CalculadoraFechaReposicion(), () => DateTime.Now, new HorasRecogidaReposicionesSql(db))
         {
         }
 
-        internal ServicioCalendarioReposiciones(NVEntities db, CalculadoraFechaReposicion calculadora, Func<DateTime> reloj)
+        /// <param name="horasRecogida">Sugerencia 581: la columna HoraRecogida (fuera del EDMX). Null: sin columna (pruebas que no la miran).</param>
+        internal ServicioCalendarioReposiciones(NVEntities db, CalculadoraFechaReposicion calculadora, Func<DateTime> reloj,
+            IHorasRecogidaReposiciones horasRecogida = null)
         {
             this.db = db;
             this.calculadora = calculadora;
             this.reloj = reloj;
+            this.horasRecogida = horasRecogida ?? SinHorasRecogidaReposiciones.Instancia;
         }
 
         /// <summary>Relanzar la reposición automática (POST RellenarAutomatica): Almacén, Dirección e Informática.</summary>
@@ -130,9 +160,15 @@ namespace NestoAPI.Infraestructure.Reposiciones
             List<ReposicionCalendario> filas = await db.ReposicionesCalendario
                 .Where(f => f.Empresa == empresaLimpia)
                 .ToListAsync().ConfigureAwait(false);
+            Dictionary<int, TimeSpan?> horas = await horasRecogida.Leer(empresaLimpia).ConfigureAwait(false) ?? new Dictionary<int, TimeSpan?>();
             return filas
                 .OrderBy(f => f.AlmacenOrigen).ThenBy(f => f.AlmacenDestino).ThenBy(f => f.DiaSemana).ThenBy(f => f.HoraCierre)
-                .Select(ADTO)
+                .Select(f =>
+                {
+                    ReposicionCalendarioDTO dto = ADTO(f);
+                    dto.HoraRecogida = horas.TryGetValue(f.Id, out TimeSpan? hora) ? hora : null;
+                    return dto;
+                })
                 .ToList();
         }
 
@@ -161,6 +197,8 @@ namespace NestoAPI.Infraestructure.Reposiciones
             string usuarioAuditoria = UsuarioAuditoriaHelper.ParaAuditoria(SinDominio(usuario));
             var tocadas = new HashSet<ReposicionCalendario>();
             var nuevas = new List<ReposicionCalendario>();
+            // Sugerencia 581: la hora de recogida va aparte (fuera del EDMX); se escribe después de guardar (las nuevas aún no tienen Id)
+            var conHoraRecogida = new List<KeyValuePair<ReposicionCalendario, TimeSpan?>>();
 
             foreach (ReposicionCalendarioDTO fila in filas)
             {
@@ -189,6 +227,10 @@ namespace NestoAPI.Infraestructure.Reposiciones
                 entidad.Usuario = usuarioAuditoria;
                 entidad.FechaModificacion = ahora;
                 tocadas.Add(entidad);
+                if (fila.HoraRecogidaInformada)
+                {
+                    conHoraRecogida.Add(new KeyValuePair<ReposicionCalendario, TimeSpan?>(entidad, fila.HoraRecogida));
+                }
             }
 
             if (rutaCompleta)
@@ -205,11 +247,20 @@ namespace NestoAPI.Infraestructure.Reposiciones
             }
 
             ComprobarRutas(existentes.Concat(nuevas).ToList());
+            if (conHoraRecogida.Any(h => h.Value.HasValue) && !await horasRecogida.HayColumna().ConfigureAwait(false))
+            {
+                throw new NestoBusinessException("La hora de recogida todavía no se puede guardar: falta lanzar en la base de datos " +
+                    "Scripts/Issue581_ReposicionesCalendario_HoraRecogida.sql. No se ha guardado nada.");
+            }
             foreach (ReposicionCalendario nueva in nuevas)
             {
                 db.ReposicionesCalendario.Add(nueva);
             }
             await db.SaveChangesAsync().ConfigureAwait(false);
+            if (conHoraRecogida.Any())
+            {
+                await horasRecogida.Guardar(conHoraRecogida.ToDictionary(h => h.Key.Id, h => h.Value)).ConfigureAwait(false);
+            }
             return await LeerCalendario(empresa).ConfigureAwait(false);
         }
 
@@ -261,7 +312,8 @@ namespace NestoAPI.Infraestructure.Reposiciones
             {
                 throw new NestoBusinessException("El día de la semana va del 1 (lunes) al 7 (domingo).");
             }
-            if (!EsHoraDelDia(fila.HoraCierre) || !EsHoraDelDia(fila.HoraLlegadaHabitual))
+            if (!EsHoraDelDia(fila.HoraCierre) || !EsHoraDelDia(fila.HoraLlegadaHabitual)
+                || (fila.HoraRecogida.HasValue && !EsHoraDelDia(fila.HoraRecogida.Value)))
             {
                 throw new NestoBusinessException("Las horas tienen que estar entre las 00:00 y las 23:59.");
             }
@@ -274,7 +326,7 @@ namespace NestoAPI.Infraestructure.Reposiciones
                 throw new NestoBusinessException("La hora de llegada no puede ser anterior a la hora de cierre (la reposición llega el mismo día). " +
                     "Si se cierra el día antes, pon los laborables de antelación.");
             }
-            return new ReposicionCalendarioDTO
+            var validada = new ReposicionCalendarioDTO
             {
                 Id = fila.Id,
                 Origen = origen,
@@ -285,6 +337,13 @@ namespace NestoAPI.Infraestructure.Reposiciones
                 LaborablesAntelacionCierre = fila.LaborablesAntelacionCierre,
                 Activo = fila.Activo
             };
+            if (fila.HoraRecogidaInformada)
+            {
+                validada.HoraRecogida = fila.HoraRecogida.HasValue
+                    ? new TimeSpan(fila.HoraRecogida.Value.Hours, fila.HoraRecogida.Value.Minutes, 0)
+                    : (TimeSpan?)null;
+            }
+            return validada;
         }
 
         private static bool EsHoraDelDia(TimeSpan hora) => hora >= TimeSpan.Zero && hora < TimeSpan.FromDays(1);

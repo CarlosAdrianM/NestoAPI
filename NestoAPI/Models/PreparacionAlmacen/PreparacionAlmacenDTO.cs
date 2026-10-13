@@ -549,6 +549,11 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public string Origen { get; set; }
         /// <summary>Almacenes.Descripción del origen («Alcobendas»), para el título.</summary>
         public string NombreOrigen { get; set; }
+        /// <summary>
+        /// Sugerencia 581: la ha mandado la tienda aparte, con solo unos productos (ReposicionesTraspasos.Herramienta «Puntual»),
+        /// no es la del calendario.
+        /// </summary>
+        public bool EsPuntual { get; set; }
     }
 
     public class LineaReposicionDTO : IConCodigosBarras

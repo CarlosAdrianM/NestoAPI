@@ -71,6 +71,20 @@ namespace NestoAPI.Controllers
             return Ok(await ProductosPuntual.Buscar(empresa, origen, codigo).ConfigureAwait(false));
         }
 
+        // GET api/Reposiciones/Puntual/Limite?origen=ALC&empresa=1
+        /// <summary>
+        /// Sugerencia 581 (Carlos, 13/10/26): hasta qué hora se puede hacer hoy la reposición puntual de <paramref name="origen"/>
+        /// a Algete (la del repartidor de hoy, ReposicionesCalendario.HoraRecogida) y si ya ha pasado, con el mensaje. Sin viaje
+        /// hoy o sin hora puesta: sin límite.
+        /// </summary>
+        [HttpGet]
+        [Route("Puntual/Limite")]
+        [ResponseType(typeof(LimiteReposicionPuntualDTO))]
+        public async Task<IHttpActionResult> GetLimitePuntual(string origen, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            return Ok(await preparacion.LeerLimitePuntual(empresa, origen).ConfigureAwait(false));
+        }
+
         // POST api/Reposiciones/Puntual   { Empresa, Origen, Destino? (ALG), Lineas: [{ Producto, Cantidad }] }
         /// <summary>
         /// Sugerencia 581 (Paloma): una reposición PUNTUAL de una tienda a Algete con solo los productos que dice la petición,

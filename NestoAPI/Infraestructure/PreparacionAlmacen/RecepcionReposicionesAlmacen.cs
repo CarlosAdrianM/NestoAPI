@@ -92,12 +92,19 @@ FROM PreExtrProducto p
 WHERE p.Empresa = @p0 AND p.[Almacén] = @p1 AND p.[NºTraspaso] > 0
   AND " + SalidaReposicionSql.YA_HA_SALIDO;
 
+        // Sugerencia 581: EsPuntual por la cabecera ReposicionesTraspasos (Herramienta 'Puntual'); fuera del GROUP BY porque
+        // un EXISTS no puede ir dentro de un agregado.
         internal const string SQL_PENDIENTES = @"
+SELECT x.Traspaso, x.Lineas, x.Unidades, x.Fecha, x.Usuario, x.Origen, x.NombreOrigen,
+       CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.ReposicionesTraspasos t
+                              WHERE t.Empresa = @p0 AND t.NumTraspaso = x.Traspaso AND t.Herramienta = 'Puntual') THEN 1 ELSE 0 END AS bit) AS EsPuntual
+FROM (
 SELECT p.[NºTraspaso] AS Traspaso, COUNT(*) AS Lineas, CAST(SUM(p.Cantidad) AS int) AS Unidades,
        MIN(p.Fecha) AS Fecha, RTRIM(MAX(p.Usuario)) AS Usuario,
        RTRIM(MAX(p.[Delegación])) AS Origen, RTRIM(MAX(o.[Descripción])) AS NombreOrigen" + ORIGEN_Y_FILTRO + @"
 GROUP BY p.[NºTraspaso]
-ORDER BY p.[NºTraspaso]";
+) x
+ORDER BY x.Traspaso";
 
         internal const string SQL_LINEAS = @"
 SELECT RTRIM(p.[Número]) AS Producto, RTRIM(MAX(pr.Nombre)) AS Descripcion, RTRIM(MAX(pr.CodBarras)) AS CodigoBarras,

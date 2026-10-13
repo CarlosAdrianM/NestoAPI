@@ -953,7 +953,8 @@ namespace NestoAPI.Tests.Infrastructure
 
         private readonly List<string> bloqueos = new List<string>();
 
-        private ServicioPreparacionReposicion ServicioPuntual()
+        private ServicioPreparacionReposicion ServicioPuntual(IHorasRecogidaReposiciones horasRecogida = null,
+            IStockLibreReposicionPuntual stockLibre = null)
         {
             registro = new RegistroEnMemoria(repositorio);
             return new ServicioPreparacionReposicion(repositorio,
@@ -971,7 +972,9 @@ namespace NestoAPI.Tests.Infrastructure
                     repositorio.Llamadas.Add($"BLOQUEO {empresa} {origen} {dia:dd/MM/yyyy}");
                     bloqueos.Add($"{origen} {dia:dd/MM/yyyy}");
                     return Task.FromResult<IDisposable>(new Soltar(() => repositorio.Llamadas.Add("SOLTAR")));
-                });
+                },
+                horasRecogida,
+                stockLibre);
         }
 
         private sealed class Soltar : IDisposable
@@ -1253,6 +1256,168 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(6, porCodigo[0].UnidadesPorLectura, "El código de la caja vale 6");
             Assert.AreEqual(0, ninguno.Count);
             Assert.AreEqual(0, vacio.Count);
+        }
+
+        // ---------------------------------------------------------------- Sugerencia 581 (Carlos, 13/10/26): hasta la recogida
+
+        /// <summary>El repartidor de hoy (AHORA es martes 06/10/26 9:32) pasa por Alcobendas a <paramref name="hora"/>.</summary>
+        private static IHorasRecogidaReposiciones RepartidorDeHoy(string hora)
+        {
+            IHorasRecogidaReposiciones horas = A.Fake<IHorasRecogidaReposiciones>();
+            A.CallTo(() => horas.DelDia("1", "ALC", "ALG", 2)).Returns(hora == null ? (TimeSpan?)null : TimeSpan.Parse(hora));
+            return horas;
+        }
+
+        [TestMethod]
+        public async Task Puntual_PasadoElRepartidorDeHoy_Es409SinBloqueoNiEscrituras()
+        {
+            repositorio.Stocks["41980"] = 5;
+
+            NestoBusinessException error = await Assert.ThrowsExceptionAsync<NestoBusinessException>(
+                () => ServicioPuntual(RepartidorDeHoy("09:30")).CrearPuntual(Peticion(("41980", 1)), Paloma));
+
+            Assert.AreEqual(HttpStatusCode.Conflict, error.StatusCode);
+            Assert.AreEqual("Ya ha pasado el repartidor de hoy (09:30): la reposición puntual ya no sale hoy.", error.Message);
+            Assert.AreEqual(0, repositorio.Llamadas.Count, "No se bloquea ni se escribe nada");
+        }
+
+        [TestMethod]
+        public async Task Puntual_JustoALaHoraDelRepartidor_YaNoSale()
+        {
+            repositorio.Stocks["41980"] = 5;
+
+            NestoBusinessException error = await Assert.ThrowsExceptionAsync<NestoBusinessException>(
+                () => ServicioPuntual(RepartidorDeHoy("09:32")).CrearPuntual(Peticion(("41980", 1)), Paloma));
+
+            Assert.AreEqual(HttpStatusCode.Conflict, error.StatusCode);
+        }
+
+        [DataTestMethod]
+        [DataRow("09:33", DisplayName = "Antes de que pase")]
+        [DataRow(null, DisplayName = "Sin hora en el calendario (o sin la columna, o sin viaje hoy): sin límite")]
+        public async Task Puntual_AntesDelRepartidorOSinHora_SeManda(string hora)
+        {
+            repositorio.Stocks["41980"] = 5;
+
+            ResultadoTerminarReposicionDTO resultado = await ServicioPuntual(RepartidorDeHoy(hora)).CrearPuntual(Peticion(("41980", 1)), Paloma);
+
+            Assert.IsTrue(resultado.NumTraspaso > 0);
+        }
+
+        [TestMethod]
+        public async Task LimitePuntual_DiceLaHoraYSiYaHaPasado()
+        {
+            LimiteReposicionPuntualDTO antes = await ServicioPuntual(RepartidorDeHoy("11:30")).LeerLimitePuntual("1", " alc ");
+            LimiteReposicionPuntualDTO despues = await ServicioPuntual(RepartidorDeHoy("09:00")).LeerLimitePuntual(null, "ALC");
+            LimiteReposicionPuntualDTO sinHora = await ServicioPuntual(RepartidorDeHoy(null)).LeerLimitePuntual("1", "ALC");
+
+            Assert.AreEqual(new TimeSpan(11, 30, 0), antes.HoraRecogida);
+            Assert.IsFalse(antes.YaHaPasado);
+            Assert.IsNull(antes.Mensaje);
+            Assert.AreEqual("ALC", antes.Origen);
+            Assert.AreEqual("ALG", antes.Destino);
+            Assert.IsTrue(despues.YaHaPasado);
+            Assert.AreEqual("Ya ha pasado el repartidor de hoy (09:00): la reposición puntual ya no sale hoy.", despues.Mensaje);
+            Assert.IsNull(sinHora.HoraRecogida);
+            Assert.IsFalse(sinHora.YaHaPasado);
+        }
+
+        [DataTestMethod]
+        [DataRow(2026, 10, 12, 1)]
+        [DataRow(2026, 10, 13, 2)]
+        [DataRow(2026, 10, 17, 6)]
+        [DataRow(2026, 10, 18, 7)]
+        public void LimitePuntual_DiaSemanaComoElCalendario(int anno, int mes, int dia, int esperado)
+        {
+            Assert.AreEqual((byte)esperado, LimiteRecogidaPuntual.DiaSemana(new DateTime(anno, mes, dia, 10, 0, 0)));
+        }
+
+        [TestMethod]
+        public void Sql_HoraRecogida_NoFallaSinLaColumna()
+        {
+            // La columna no está en el EDMX y puede no existir: nada que la nombre fuera de sp_executesql
+            foreach (string sql in new[] { HorasRecogidaReposicionesSql.SQL_LEER, HorasRecogidaReposicionesSql.SQL_DEL_DIA, HorasRecogidaReposicionesSql.SQL_GUARDAR })
+            {
+                StringAssert.Contains(sql, "COL_LENGTH('dbo.ReposicionesCalendario', 'HoraRecogida')");
+                StringAssert.Contains(sql, "EXEC sp_executesql N'");
+                // Fuera del texto dinámico solo puede salir como alias (AS HoraRecogida) o dentro de COL_LENGTH
+                string fuera = sql.Substring(0, sql.IndexOf("EXEC sp_executesql", StringComparison.Ordinal))
+                    .Replace("'HoraRecogida')", string.Empty).Replace("AS HoraRecogida", string.Empty);
+                Assert.IsFalse(fuera.Contains("HoraRecogida"), sql);
+            }
+            StringAssert.Contains(HorasRecogidaReposicionesSql.SQL_DEL_DIA, "Activo = 1");
+        }
+
+        // ---------------------------------------------------------------- Sugerencia 581 (Carlos, 13/10/26): lo de sus pedidos no se manda
+
+        private static IStockLibreReposicionPuntual Libres(params (string producto, int stock, int comprometido)[] productos)
+        {
+            IStockLibreReposicionPuntual libres = A.Fake<IStockLibreReposicionPuntual>();
+            A.CallTo(() => libres.Leer(A<string>._, A<string>._, A<IEnumerable<string>>._))
+                .Returns(productos.ToDictionary(p => p.producto, p => new ProductoReposicionPuntualDTO
+                {
+                    Producto = p.producto,
+                    StockOrigen = p.stock,
+                    Comprometido = p.comprometido,
+                    Disponible = Math.Max(0, p.stock - p.comprometido)
+                }, StringComparer.OrdinalIgnoreCase));
+            return libres;
+        }
+
+        [TestMethod]
+        public async Task Puntual_LoQueNecesitanSusPedidos_NoSeManda_400ConPidesYPuedesMandar()
+        {
+            repositorio.Stocks["41980"] = 5;
+            repositorio.Stocks["36385"] = 3;
+            repositorio.Stocks["17004"] = 2;
+            IStockLibreReposicionPuntual libres = Libres(("41980", 5, 4), ("36385", 3, 0), ("17004", 2, 3));
+
+            NestoBusinessException error = await Assert.ThrowsExceptionAsync<NestoBusinessException>(
+                () => ServicioPuntual(stockLibre: libres).CrearPuntual(Peticion(("41980", 2), ("36385", 3), ("17004", 1)), Paloma));
+
+            Assert.AreEqual(HttpStatusCode.BadRequest, error.StatusCode);
+            StringAssert.Contains(error.Message, "41980 (pides 2, puedes mandar 1)");
+            StringAssert.Contains(error.Message, "17004 (pides 1, puedes mandar 0)");
+            Assert.IsFalse(error.Message.Contains("36385"), "De ese no tiene nada comprometido");
+            StringAssert.Contains(error.Message, "sus propios pedidos pendientes");
+            CollectionAssert.AreEqual(new[] { "BLOQUEO 1 ALC 06/10/2026", "SOLTAR" }, repositorio.Llamadas, "Se mira dentro del bloqueo y no se escribe nada");
+            A.CallTo(() => libres.Leer("1", "ALC", A<IEnumerable<string>>.That.Matches(p => p.OrderBy(x => x).SequenceEqual(new[] { "17004", "36385", "41980" }))))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Puntual_HastaLoLibre_SeManda()
+        {
+            repositorio.Stocks["41980"] = 5;
+
+            ResultadoTerminarReposicionDTO resultado = await ServicioPuntual(stockLibre: Libres(("41980", 5, 4))).CrearPuntual(Peticion(("41980", 1)), Paloma);
+
+            Assert.AreEqual(1, resultado.Unidades);
+        }
+
+        [TestMethod]
+        public void Sql_FichaPuntual_ComprometidoComoLaPropuesta()
+        {
+            string sql = ProductosReposicionPuntual.SQL_FICHA;
+            // Pedidos pendientes de la tienda (empresa y su espejo), como prdRellenarReposicionStock2
+            StringAssert.Contains(sql, "l.[Almacén] = @p1 AND l.Estado BETWEEN -1 AND 1");
+            StringAssert.Contains(sql, "[IVA por defecto]");
+            // Salidas numeradas sin contabilizar
+            StringAssert.Contains(sql, "ISNULL(p.[NºTraspaso], 0) <> 0 AND p.Cantidad < 0");
+            StringAssert.Contains(sql, "AS Comprometido");
+            StringAssert.Contains(sql, "ELSE 0 END AS Disponible");
+        }
+
+        [TestMethod]
+        public async Task Controlador_LimitePuntual_DevuelveLoDelServicio()
+        {
+            IServicioPreparacionReposicion servicio = A.Fake<IServicioPreparacionReposicion>();
+            A.CallTo(() => servicio.LeerLimitePuntual("1", "ALC")).Returns(new LimiteReposicionPuntualDTO { YaHaPasado = true, Mensaje = "Ya ha pasado" });
+            var controlador = new ReposicionesController(null, servicio) { Request = new HttpRequestMessage(), User = Paloma };
+
+            IHttpActionResult resultado = await controlador.GetLimitePuntual("ALC");
+
+            Assert.IsTrue(((OkNegotiatedContentResult<LimiteReposicionPuntualDTO>)resultado).Content.YaHaPasado);
         }
 
         [TestMethod]

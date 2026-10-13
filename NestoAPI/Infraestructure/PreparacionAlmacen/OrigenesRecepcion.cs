@@ -408,6 +408,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// <summary>
         /// «Reposición 80905 desde Alcobendas» (Carlos, 06/10/26): en Entradas se ve de dónde viene cada una. Sin origen
         /// conocido (no debería pasar: Delegación va siempre), «Reposición 80905».
+        /// <para>Sugerencia 581: la puntual (la que una tienda manda aparte con solo unos productos), «Reposición puntual 80951
+        /// desde Alcobendas»: así se distingue en Ariadna y en Nesto aunque no miren <see cref="RecepcionPendienteDTO.EsPuntual"/>.</para>
         /// </summary>
         internal static string Titulo(int traspaso, ReposicionPendienteDTO reposicion)
         {
@@ -416,7 +418,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             {
                 origen = reposicion?.Origen?.Trim();
             }
-            return string.IsNullOrWhiteSpace(origen) ? $"Reposición {traspaso}" : $"Reposición {traspaso} desde {origen}";
+            string reposicionN = reposicion?.EsPuntual == true ? $"Reposición puntual {traspaso}" : $"Reposición {traspaso}";
+            return string.IsNullOrWhiteSpace(origen) ? reposicionN : $"{reposicionN} desde {origen}";
         }
 
         public bool PuedeTerminar(IPrincipal usuario, string empresa, string almacen)
@@ -440,6 +443,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 Tipo = TIPO,
                 Documento = r.Traspaso.ToString(),
                 Titulo = Titulo(r.Traspaso, r),
+                EsPuntual = r.EsPuntual,
                 Fecha = r.Fecha,
                 Lineas = r.Lineas,
                 Unidades = r.Unidades
@@ -481,6 +485,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 Tipo = TIPO,
                 Documento = traspaso.ToString(),
                 Titulo = Titulo(traspaso, pendiente),
+                EsPuntual = pendiente?.EsPuntual == true,
                 Empresa = recepcion.Empresa,
                 Almacen = recepcion.Almacen,
                 Lineas = recepcion.Lineas.Select(l => new LineaRecepcionDTO

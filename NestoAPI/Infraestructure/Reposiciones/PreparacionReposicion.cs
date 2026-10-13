@@ -574,6 +574,11 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
         /// de una vez (número, salida contabilizada y entrada pendiente de recibir en Algete), sin tocar la del calendario.
         /// </summary>
         Task<ResultadoTerminarReposicionDTO> CrearPuntual(CrearReposicionDTO peticion, IPrincipal usuario);
+        /// <summary>
+        /// Sugerencia 581 (Carlos, 13/10/26): hasta qué hora se puede hacer hoy la puntual de <paramref name="origen"/> (la del
+        /// repartidor, ReposicionesCalendario.HoraRecogida) y si ya ha pasado. Para que Nesto lo diga antes de empezar.
+        /// </summary>
+        Task<LimiteReposicionPuntualDTO> LeerLimitePuntual(string empresa, string origen);
     }
 
     /// <summary>
@@ -610,6 +615,8 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
         private readonly Func<DateTime> ahora;
         private readonly IRegistroReposicionesTraspasos registro;
         private readonly Func<string, string, DateTime, Task<IDisposable>> bloquear;
+        private readonly IHorasRecogidaReposiciones horasRecogida;
+        private readonly IStockLibreReposicionPuntual stockLibre;
         private readonly NVEntities dbPropio;
 
         public ServicioPreparacionReposicion() : this(new NVEntities())
@@ -623,7 +630,9 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
                 (empresa, usuario) => Controllers.ParametrosUsuarioController.LeerParametro(empresa, usuario, CLAVE_ALMACEN_USUARIO),
                 () => DateTime.Now,
                 new RegistroReposicionesTraspasosSql(db),
-                (empresa, origen, dia) => new RepositorioReposicionAutomaticaSql(db).Bloquear(empresa, origen, dia))
+                (empresa, origen, dia) => new RepositorioReposicionAutomaticaSql(db).Bloquear(empresa, origen, dia),
+                new HorasRecogidaReposicionesSql(db),
+                new StockLibreReposicionPuntualSql(db))
         {
             dbPropio = db;
         }
@@ -636,14 +645,20 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
         /// Sugerencia 581: (empresa, origen, día) → el mismo applock que el job de las reposiciones automáticas, para que una
         /// puntual no se cruce con el job escribiendo en el mismo diario de salida. Null: sin bloqueo (pruebas).
         /// </param>
+        /// <param name="horasRecogida">Sugerencia 581: la hora del repartidor de cada viaje del calendario. Null: sin límite (pruebas).</param>
+        /// <param name="stockLibre">Sugerencia 581: lo que la tienda puede mandar sin dejar sin servir sus pedidos. Null: no se mira (pruebas).</param>
         internal ServicioPreparacionReposicion(IRepositorioPreparacionReposicion repositorio,
             Func<string, string, string, DateTime?, Task<List<LineaPropuestaReposicionDTO>>> propuesta,
             Func<string, bool, IUbicacionesReposicion> ubicaciones,
             Func<string, string, string> almacenDelUsuario,
             Func<DateTime> ahora,
             IRegistroReposicionesTraspasos registro = null,
-            Func<string, string, DateTime, Task<IDisposable>> bloquear = null)
+            Func<string, string, DateTime, Task<IDisposable>> bloquear = null,
+            IHorasRecogidaReposiciones horasRecogida = null,
+            IStockLibreReposicionPuntual stockLibre = null)
         {
+            this.horasRecogida = horasRecogida ?? SinHorasRecogidaReposiciones.Instancia;
+            this.stockLibre = stockLibre ?? SinStockLibreReposicionPuntual.Instancia;
             this.registro = registro ?? SinRegistroReposicionesTraspasos.Instancia;
             this.bloquear = bloquear ?? ((e, o, d) => Task.FromResult<IDisposable>(new SinBloqueo()));
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
@@ -997,6 +1012,13 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
                 throw new UnauthorizedAccessException($"Una reposición puntual de {origen} solo la puede hacer la gente de esa tienda (o Almacén y Dirección). " +
                     "Tu usuario no tiene ese almacén como almacén de pedidos.");
             }
+            DateTime momento = ahora();
+            // Sugerencia 581 (Carlos, 13/10/26: «hasta la recogida»): pasado el repartidor de hoy ya no sale hoy → 409
+            LimiteReposicionPuntualDTO limite = await LimitePuntual(empresa, origen, destino, momento).ConfigureAwait(false);
+            if (limite.YaHaPasado)
+            {
+                throw Conflicto(limite.Mensaje);
+            }
             DatosAlmacenReposicion almacenDestino = await AlmacenConDiario(empresa, destino, a => a.DiarioEntradaRep, "de entrada").ConfigureAwait(false);
             if (await repositorio.HayInventarioEnCurso(empresa, origen).ConfigureAwait(false))
             {
@@ -1006,7 +1028,6 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
             string diario = almacenOrigen.DiarioSalidaRep;
             string texto = Texto(origen, destino);
             string quien = UsuarioAuditoriaHelper.Resolver(usuario, null);
-            DateTime momento = ahora();
             List<FilaReposicionEnPreparacion> creadas = null;
             int numeroTraspaso;
 
@@ -1019,6 +1040,7 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
                     throw new ReposicionYaEnPreparacionException($"{origen} tiene una reposición a {existentes.First().Almacen?.Trim()} en preparación " +
                         $"({existentes.Count} líneas) sin enviar: termínala antes de hacer una puntual.");
                 }
+                await ComprobarQueNoFaltaParaSusPedidos(empresa, origen, lineas).ConfigureAwait(false);
                 numeroTraspaso = await repositorio.EnTransaccion(async () =>
                 {
                     foreach (LineaCrearReposicionDTO linea in lineas)
@@ -1065,6 +1087,41 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
                 DiarioEntrada = almacenDestino.DiarioEntradaRep,
                 Lineas = creadas.Select(f => new LineaTraspasoTerminadoDTO { Producto = f.Producto, Nombre = f.Nombre, Cantidad = f.Cantidad }).ToList()
             };
+        }
+
+        public async Task<LimiteReposicionPuntualDTO> LeerLimitePuntual(string empresa, string origen)
+        {
+            return await LimitePuntual(Empresa(empresa), Almacen(origen), Constantes.Almacenes.ALGETE, ahora()).ConfigureAwait(false);
+        }
+
+        /// <summary>Sugerencia 581: la hora del repartidor del viaje de HOY de la ruta (origen → Algete) y si ya ha pasado.</summary>
+        private async Task<LimiteReposicionPuntualDTO> LimitePuntual(string empresa, string origen, string destino, DateTime momento)
+        {
+            TimeSpan? hora = await horasRecogida.DelDia(empresa, origen, destino, LimiteRecogidaPuntual.DiaSemana(momento)).ConfigureAwait(false);
+            return LimiteRecogidaPuntual.Calcular(origen, destino, hora, momento);
+        }
+
+        /// <summary>
+        /// Sugerencia 581 (Carlos, 13/10/26): la puntual no se lleva a Algete lo que necesitan los pedidos pendientes de la propia
+        /// tienda (<see cref="ProductoReposicionPuntualDTO.Disponible"/>). 400 con cada producto: «pides X, puedes mandar Y».
+        /// </summary>
+        private async Task ComprobarQueNoFaltaParaSusPedidos(string empresa, string origen, List<LineaCrearReposicionDTO> lineas)
+        {
+            Dictionary<string, ProductoReposicionPuntualDTO> libres = await stockLibre.Leer(empresa, origen, lineas.Select(l => l.Producto)).ConfigureAwait(false)
+                ?? new Dictionary<string, ProductoReposicionPuntualDTO>();
+            var demasiado = new List<string>();
+            foreach (LineaCrearReposicionDTO linea in lineas)
+            {
+                if (libres.TryGetValue(linea.Producto, out ProductoReposicionPuntualDTO libre) && linea.Cantidad > libre.Disponible)
+                {
+                    demasiado.Add($"{linea.Producto} (pides {linea.Cantidad}, puedes mandar {Math.Max(0, libre.Disponible)})");
+                }
+            }
+            if (demasiado.Any())
+            {
+                throw new NestoBusinessException($"{origen} no puede mandar tanto: lo necesitan sus propios pedidos pendientes. " +
+                    string.Join(", ", demasiado) + ". No se ha mandado nada.");
+            }
         }
 
         private sealed class SinBloqueo : IDisposable
