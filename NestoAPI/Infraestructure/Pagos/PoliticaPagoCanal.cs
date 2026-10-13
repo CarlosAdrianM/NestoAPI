@@ -162,6 +162,78 @@ namespace NestoAPI.Infraestructure.Pagos
         }
 
         /// <summary>
+        /// TNV#55: plazos con los que se crea el pedido de la app cuando el cliente paga con una forma de
+        /// su ficha («Recibo bancario»). La app manda como plazos el <c>PlazoPagoRecomendado</c>, que en
+        /// el canal APP es siempre PRE (el de la tarjeta), así que el pedido salía RCB/PRE: sin su pronto
+        /// pago y con <c>RequierePago</c>, es decir, a la pasarela aunque hubiera elegido el recibo.
+        ///
+        /// <para>Ahora, si la forma no es tarjeta y los plazos se quedan en PRE, se usan <b>sus plazos
+        /// habituales</b> para esa forma de pago (los de su ficha, como si hubiera llamado a su
+        /// vendedor): <see cref="PlazosHabituales"/>. Solo si están entre los que la política del canal
+        /// le deja (<paramref name="condiciones"/>): nada de esto amplía quién paga con recibo ni con
+        /// qué plazos. Si para ese importe su ficha no tiene ninguno (el umbral de la única fila es
+        /// mayor que el pedido), al contado domiciliado (CONTADO), sin financiación ni descuento.</para>
+        /// </summary>
+        public static string ResolverPlazosPago(CondicionesPagoResponse condiciones, string formaPago,
+            string plazosPagoSolicitados, IEnumerable<CondPagoCliente> ficha, string contacto, decimal totalPedido)
+        {
+            string plazos = ResolverPlazosPago(condiciones, plazosPagoSolicitados);
+            if (EsTarjeta(formaPago) || string.IsNullOrWhiteSpace(formaPago)
+                || Normalizar(plazos) != Normalizar(Constantes.PlazosPago.PREPAGO))
+            {
+                return plazos;
+            }
+            string habituales = PlazosHabituales(ficha, formaPago, contacto, totalPedido);
+            if (EstaPermitido(condiciones, habituales))
+            {
+                return habituales.Trim();
+            }
+            return EstaPermitido(condiciones, Constantes.PlazosPago.CONTADO)
+                ? Constantes.PlazosPago.CONTADO
+                : plazos;
+        }
+
+        /// <summary>
+        /// TNV#55: los plazos habituales del cliente para una forma de pago y un importe, con la regla con
+        /// la que nace un pedido en Nesto (<c>PlantillaVentas/DireccionesEntrega</c>,
+        /// <c>CambioClientePedido.ResolverCondicionesPago</c>): de las filas de CondPagoClientes de esa
+        /// forma, la de mayor <c>ImporteMínimo</c> que no supere el total (el ImporteMínimo es un UMBRAL).
+        /// Las filas son por contacto: primero las de la dirección del pedido; si esa dirección no tiene
+        /// ninguna de esa forma, las del resto de su ficha. Null si ninguna vale para ese importe.
+        /// </summary>
+        public static string PlazosHabituales(IEnumerable<CondPagoCliente> ficha, string formaPago, string contacto, decimal totalPedido)
+        {
+            List<CondPagoCliente> deLaForma = (ficha ?? Enumerable.Empty<CondPagoCliente>())
+                .Where(c => c != null && !string.IsNullOrWhiteSpace(c.PlazosPago)
+                    && Normalizar(c.FormaPago) == Normalizar(formaPago))
+                .ToList();
+            List<CondPagoCliente> delContacto = deLaForma
+                .Where(c => Normalizar(c.Contacto) == Normalizar(contacto))
+                .ToList();
+            IEnumerable<CondPagoCliente> candidatas = delContacto.Any() ? delContacto : deLaForma;
+            return candidatas
+                .OrderByDescending(c => c.ImporteMínimo)
+                .FirstOrDefault(c => c.ImporteMínimo <= totalPedido)
+                ?.PlazosPago?.Trim();
+        }
+
+        /// <summary>
+        /// TNV#55: el importe con el que se eligen los plazos habituales, el mismo que manda la plantilla de Nesto
+        /// (<c>PlantillaVentaViewModel.totalPedido</c>): la base imponible sin portes, con el 21 % si el cliente
+        /// lleva IVA. El umbral de CondPagoClientes se puso pensando en ese número.
+        /// </summary>
+        public static decimal ImporteParaPlazos(decimal baseImponible, string ivaCliente)
+        {
+            return string.IsNullOrWhiteSpace(ivaCliente) ? baseImponible : baseImponible * 1.21M;
+        }
+
+        private static bool EstaPermitido(CondicionesPagoResponse condiciones, string plazos)
+        {
+            return !string.IsNullOrWhiteSpace(plazos) && condiciones?.PlazosPago != null
+                && condiciones.PlazosPago.Any(p => Normalizar(p.plazoPago) == Normalizar(plazos));
+        }
+
+        /// <summary>
         /// ¿El pedido se cobra en el momento? Es lo que decide si la app tiene que llevar al
         /// cliente a la pasarela nada más crearlo.
         /// </summary>

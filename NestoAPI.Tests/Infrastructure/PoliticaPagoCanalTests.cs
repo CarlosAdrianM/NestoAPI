@@ -340,5 +340,146 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.IsFalse(condiciones.PlazosPago.Any(p => p.descuentoPP > 0));
             Assert.IsTrue(condiciones.PlazosPago.Any(p => p.plazoPago == Constantes.PlazosPago.PREPAGO));
         }
+
+        // --- TNV#55: con «Recibo bancario», sus plazos habituales y sin pasarela ---
+
+        private static CondPagoCliente Fila(string formaPago, string plazosPago, decimal importeMinimo = 0, string contacto = "0  ")
+        {
+            // Como vienen de la BD: char de longitud fija, rellenos de espacios
+            return new CondPagoCliente
+            {
+                Empresa = "1  ",
+                Nº_Cliente = "15191     ",
+                Contacto = contacto,
+                FormaPago = formaPago + " ",
+                PlazosPago = plazosPago.PadRight(10),
+                ImporteMínimo = importeMinimo
+            };
+        }
+
+        private static CondicionesPagoResponse CondicionesAppConRecibo(params CondPagoCliente[] filas)
+        {
+            CondicionesPagoResponse generales = ConProntoPago(conDeuda: false);
+            generales.PlazosPago.Add(Plazo("1/30", 1, 30, 0));
+            generales.PlazosPago.Add(Plazo("2/30", 2, 30, 0));
+            return PoliticaPagoCanal.AplicarPoliticaApp(generales, new PoliticaPagoCanal.CondicionesFicha
+            {
+                FormasPago = filas.Select(f => f.FormaPago).ToList(),
+                PlazosPago = filas.Select(f => f.PlazosPago).ToList(),
+                Ccc = "1"
+            });
+        }
+
+        [TestMethod]
+        public void ResolverPlazosPago_ReciboConProntoPagoEnLaFicha_ElPedidoVaConSuProntoPagoYSinPasarela()
+        {
+            // TNV manda PlazosPago = PlazoPagoRecomendado, que en el canal APP es PRE
+            CondPagoCliente[] ficha = { Fila(RECIBO, "PP") };
+            CondicionesPagoResponse condiciones = CondicionesAppConRecibo(ficha);
+
+            string forma = PoliticaPagoCanal.ResolverFormaPago(condiciones, RECIBO);
+            string plazos = PoliticaPagoCanal.ResolverPlazosPago(condiciones, forma, condiciones.PlazoPagoRecomendado, ficha, "0", 300);
+
+            Assert.AreEqual(RECIBO, forma);
+            Assert.AreEqual("PP", plazos, "Sus plazos habituales, con su pronto pago");
+            Assert.AreEqual(0.03M, condiciones.PlazosPago.Single(p => p.plazoPago == plazos).descuentoPP);
+            Assert.IsFalse(PoliticaPagoCanal.SeCobraEnElMomento(forma, plazos), "Con recibo no se abre la pasarela");
+        }
+
+        [TestMethod]
+        public void ResolverPlazosPago_ReciboHabitualA30Dias_VaA30DiasSinPasarela()
+        {
+            CondPagoCliente[] ficha = { Fila(RECIBO, "1/30") };
+            CondicionesPagoResponse condiciones = CondicionesAppConRecibo(ficha);
+
+            string plazos = PoliticaPagoCanal.ResolverPlazosPago(condiciones, RECIBO, Constantes.PlazosPago.PREPAGO, ficha, "0", 50);
+
+            Assert.AreEqual("1/30", plazos);
+            Assert.IsFalse(PoliticaPagoCanal.SeCobraEnElMomento(RECIBO, plazos));
+        }
+
+        [TestMethod]
+        public void ResolverPlazosPago_ConTarjeta_SigueEnPrepagoYConPasarela()
+        {
+            CondPagoCliente[] ficha = { Fila(RECIBO, "PP") };
+            CondicionesPagoResponse condiciones = CondicionesAppConRecibo(ficha);
+
+            string forma = PoliticaPagoCanal.ResolverFormaPago(condiciones, TARJETA);
+            string plazos = PoliticaPagoCanal.ResolverPlazosPago(condiciones, forma, Constantes.PlazosPago.PREPAGO, ficha, "0", 300);
+
+            Assert.AreEqual(TARJETA, forma);
+            Assert.AreEqual(Constantes.PlazosPago.PREPAGO, plazos);
+            Assert.IsTrue(PoliticaPagoCanal.SeCobraEnElMomento(forma, plazos));
+        }
+
+        [TestMethod]
+        public void ResolverPlazosPago_ReciboConUmbrales_ElDeMayorImporteMinimoQueNoSupereElPedido()
+        {
+            // Como el 16686: CONTADO desde 0, 1/30 desde 100 y 2/30 desde 200. El ImporteMínimo es un UMBRAL.
+            CondPagoCliente[] ficha = { Fila(RECIBO, "CONTADO"), Fila(RECIBO, "1/30", 100), Fila(RECIBO, "2/30", 200) };
+            CondicionesPagoResponse condiciones = CondicionesAppConRecibo(ficha);
+
+            Assert.AreEqual("CONTADO", PoliticaPagoCanal.ResolverPlazosPago(condiciones, RECIBO, "PRE", ficha, "0", 99.99M));
+            Assert.AreEqual("1/30", PoliticaPagoCanal.ResolverPlazosPago(condiciones, RECIBO, "PRE", ficha, "0", 100));
+            Assert.AreEqual("1/30", PoliticaPagoCanal.ResolverPlazosPago(condiciones, RECIBO, "PRE", ficha, "0", 199.99M));
+            Assert.AreEqual("2/30", PoliticaPagoCanal.ResolverPlazosPago(condiciones, RECIBO, "PRE", ficha, "0", 500));
+        }
+
+        [TestMethod]
+        public void ResolverPlazosPago_ReciboConUmbralPorEncimaDelPedido_AlContadoDomiciliadoSinFinanciarNiPasarela()
+        {
+            // Como el 15176: solo 1/30 desde 150. Un pedido de 100 € no llega: no se financia, pero tampoco a la pasarela
+            CondPagoCliente[] ficha = { Fila(RECIBO, "1/30", 150) };
+            CondicionesPagoResponse condiciones = CondicionesAppConRecibo(ficha);
+
+            string plazos = PoliticaPagoCanal.ResolverPlazosPago(condiciones, RECIBO, "PRE", ficha, "0", 100);
+
+            Assert.AreEqual(Constantes.PlazosPago.CONTADO, plazos);
+            Assert.IsFalse(PoliticaPagoCanal.SeCobraEnElMomento(RECIBO, plazos));
+        }
+
+        [TestMethod]
+        public void PlazosHabituales_FilasPorContacto_LasDeLaDireccionDelPedidoYSiNoTieneLasDeLaFicha()
+        {
+            CondPagoCliente[] ficha = { Fila(RECIBO, "1/30", contacto: "0  "), Fila(RECIBO, "PP", contacto: "1  "), Fila(EFECTIVO, "CONTADO", contacto: "2  ") };
+
+            Assert.AreEqual("PP", PoliticaPagoCanal.PlazosHabituales(ficha, RECIBO, "1", 100));
+            Assert.AreEqual("1/30", PoliticaPagoCanal.PlazosHabituales(ficha, RECIBO, "0", 100));
+            Assert.AreEqual("1/30", PoliticaPagoCanal.PlazosHabituales(ficha, RECIBO, "2", 100),
+                "La dirección 2 no tiene recibo: la de mayor umbral que valga del resto de la ficha (empate: la primera)");
+            Assert.IsNull(PoliticaPagoCanal.PlazosHabituales(ficha, TRANSFERENCIA, "0", 100));
+        }
+
+        [TestMethod]
+        public void ResolverPlazosPago_ReciboQueLaPoliticaNoDeja_NoSeAmplia()
+        {
+            // Con deuda solo hay tarjeta: el recibo de su ficha no se resucita por la puerta de los plazos
+            CondPagoCliente[] ficha = { Fila(RECIBO, "PP") };
+            CondicionesPagoResponse condiciones = PoliticaPagoCanal.AplicarPoliticaApp(
+                ConProntoPago(conDeuda: true), Ficha(RECIBO, "PP"));
+
+            string forma = PoliticaPagoCanal.ResolverFormaPago(condiciones, RECIBO);
+            string plazos = PoliticaPagoCanal.ResolverPlazosPago(condiciones, forma, "PRE", ficha, "0", 300);
+
+            Assert.AreEqual(TARJETA, forma);
+            Assert.AreEqual(Constantes.PlazosPago.PREPAGO, plazos);
+        }
+
+        [TestMethod]
+        public void ResolverPlazosPago_PideUnosPlazosDeSuFichaQueNoSonPrepago_SeLeRespetan()
+        {
+            CondPagoCliente[] ficha = { Fila(RECIBO, "PP"), Fila(RECIBO, "1/30") };
+            CondicionesPagoResponse condiciones = CondicionesAppConRecibo(ficha);
+
+            Assert.AreEqual("1/30", PoliticaPagoCanal.ResolverPlazosPago(condiciones, RECIBO, "1/30", ficha, "0", 300));
+        }
+
+        [TestMethod]
+        public void ImporteParaPlazos_ComoLaPlantillaDeNesto_ConIvaPor121YSinIvaLaBase()
+        {
+            Assert.AreEqual(121M, PoliticaPagoCanal.ImporteParaPlazos(100M, "G21"));
+            Assert.AreEqual(100M, PoliticaPagoCanal.ImporteParaPlazos(100M, null));
+            Assert.AreEqual(100M, PoliticaPagoCanal.ImporteParaPlazos(100M, "   "));
+        }
     }
 }

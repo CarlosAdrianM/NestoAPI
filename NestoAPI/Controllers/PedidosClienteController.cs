@@ -1114,6 +1114,22 @@ namespace NestoAPI.Controllers
                 return new PedidoPreparado { Error = BadRequest($"El regalo {regaloDesconocido} ya no está disponible. Quítalo del carrito y elige otro.") };
             }
 
+            // TNV#55: con «Recibo bancario» (o cualquier forma de su ficha que no sea tarjeta) la app manda los plazos
+            // recomendados del canal, que son PRE: el pedido salía sin su pronto pago y a la pasarela. Van sus plazos
+            // habituales para esa forma y ese importe, como si hubiera llamado a su vendedor. El importe, el que mira
+            // la plantilla de Nesto para elegirlos (PoliticaPagoCanal.ImporteParaPlazos).
+            if (!PoliticaPreciosOcultos.OcultaImportes(identity))
+            {
+                List<CondPagoCliente> condicionesFicha = await db.CondPagoClientes
+                    .Where(c => c.Empresa == empresa && c.Nº_Cliente == cliente)
+                    .ToListAsync()
+                    .ConfigureAwait(false);
+                decimal baseImponible = ConstructorPedidoCliente.Construir(
+                    peticion, fichaCliente, precios, formaPago, plazosPago, DateTime.Today, tienda, regalos).BaseImponible;
+                plazosPago = PoliticaPagoCanal.ResolverPlazosPago(condiciones, formaPago, plazosPagoSolicitados,
+                    condicionesFicha, fichaCliente.contacto, PoliticaPagoCanal.ImporteParaPlazos(baseImponible, fichaCliente.iva));
+            }
+
             // NestoAPI#593 (TNV): el pronto pago de esos plazos, como lo graba CrearLineaVta y lo factura el SP (también en
             // el cheque y los portes). Con tarjeta los plazos son PRE: 0 %.
             decimal descuentoPP = await LeerDescuentoProntoPago(empresa, plazosPago).ConfigureAwait(false);
