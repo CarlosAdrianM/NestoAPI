@@ -123,8 +123,11 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
         };
 
         private static string HtmlDesglose(DateTime fecha, params PartidaFechaEntregaAgenciaDTO[] partidas) =>
+            HtmlDesglose(fecha, null, partidas);
+
+        private static string HtmlDesglose(DateTime fecha, string aplica, params PartidaFechaEntregaAgenciaDTO[] partidas) =>
             GestorPresupuestos.GenerarHtmlFechaEntregaAgencia(
-                new FechaEntregaAgenciaDTO { FechaEntregaAgencia = fecha, Desglose = partidas.ToList() }, false, false,
+                new FechaEntregaAgenciaDTO { FechaEntregaAgencia = fecha, Aplica = aplica, Desglose = partidas.ToList() }, false, false,
                 partidas.Select(p => new LineaPedidoVentaDTO { Producto = p.Producto, texto = "Producto " + p.Producto, tipoLinea = 1 }), 6);
 
         [TestMethod]
@@ -157,6 +160,28 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             StringAssert.Contains(html, "<li>El resto: reposición Reina &rarr; Algete (llega a Algete el miércoles 14/10/2026 hacia las 13:30; " +
                 "puede salir el jueves 15/10/2026).</li>");
             Assert.IsFalse(html.Contains("P2"));
+        }
+
+        // Carlos (13/10/26): con «Todo junto» el resto no sale el martes aunque tenga stock: espera al jueves.
+        [TestMethod]
+        public void Desglose_TodoJunto_SoloLlevaFechaLoQueLaMarca()
+        {
+            string html = HtmlDesglose(JUEVES, FechaEntregaAgenciaDTO.APLICA_COMPLETA, EnAlgete("P1"), EnAlgete("P2"), EnAlgete("P3"), DeReina("P4"));
+
+            StringAssert.Contains(html, "Por qué (va todo junto: sale cuando esté todo):");
+            StringAssert.Contains(html, "<li>Reposición Reina &rarr; Algete (llega a Algete el miércoles 14/10/2026 hacia las 13:30; " +
+                "puede salir el jueves 15/10/2026): P4 Producto P4 (1 ud.).</li>");
+            StringAssert.Contains(html, "<li>El resto: con stock en Algete.</li>");
+            Assert.IsFalse(html.Contains("martes"), "Nada dice que salga antes del jueves");
+        }
+
+        [TestMethod]
+        public void Desglose_PorPartes_CadaParteConSuFecha()
+        {
+            string html = HtmlDesglose(MARTES, FechaEntregaAgenciaDTO.APLICA_PRIMERA, EnAlgete("P1"), EnAlgete("P2"), EnAlgete("P3"), DeReina("P4"));
+
+            StringAssert.Contains(html, "Por qué:");
+            StringAssert.Contains(html, "<li>El resto: con stock en Algete (puede salir el martes 13/10/2026).</li>");
         }
 
         [TestMethod]

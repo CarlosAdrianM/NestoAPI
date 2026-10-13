@@ -1321,11 +1321,15 @@ namespace NestoAPI.Infraestructure
 
             if (desglose.Any())
             {
+                // Carlos (13/10/26): con «Todo junto» nada sale antes que el pedido entero; la fecha de lo que podría salir antes
+                // confunde («el resto puede salir el martes» y no sale hasta el jueves). Solo lleva fecha lo que la marca.
+                DateTime? esperaHasta = fecha.Aplica == FechaEntregaAgenciaDTO.APLICA_COMPLETA ? ahora : null;
+                bool algunoEspera = esperaHasta.HasValue && desglose.Any(p => p.PuedeSalirEl.HasValue && p.PuedeSalirEl.Value.Date < esperaHasta.Value);
                 _ = s.Append(esModificacion && prometida.HasValue && prometida != ahora
                     ? $"Por qué sale {(ahora.HasValue ? "el " + textoAhora : "sin fecha")} con el pedido como queda:"
-                    : "Por qué:");
+                    : algunoEspera ? "Por qué (va todo junto: sale cuando esté todo):" : "Por qué:");
                 _ = s.Append("<ul style=\"margin:2px 0 2px 0\">");
-                foreach (string item in ItemsDesglose(desglose, descripciones))
+                foreach (string item in ItemsDesglose(desglose, descripciones, esperaHasta))
                 {
                     _ = s.Append(item);
                 }
@@ -1358,7 +1362,8 @@ namespace NestoAPI.Infraestructure
         /// (al menos dos y más que cualquier otro) va al final sin lista («El resto: …») y solo se listan las excepciones: de
         /// diez productos, si falta uno se nombra el que falta, y si faltan nueve, el que hay.
         /// </summary>
-        private static IEnumerable<string> ItemsDesglose(List<PartidaFechaEntregaAgenciaDTO> desglose, Dictionary<string, string> descripciones)
+        private static IEnumerable<string> ItemsDesglose(List<PartidaFechaEntregaAgenciaDTO> desglose, Dictionary<string, string> descripciones,
+            DateTime? esperaHasta)
         {
             string Producto(PartidaFechaEntregaAgenciaDTO p)
             {
@@ -1368,7 +1373,7 @@ namespace NestoAPI.Infraestructure
             }
             string Lista(IEnumerable<PartidaFechaEntregaAgenciaDTO> partidas) => string.Join(", ", partidas.Select(Producto));
 
-            List<BloqueDesglose> bloques = BloquesDesglose(desglose);
+            List<BloqueDesglose> bloques = BloquesDesglose(desglose, esperaHasta);
             BloqueDesglose resumido = bloques
                 .Where(b => b.Partidas.Count >= 2 && bloques.All(o => o == b || o.Partidas.Count < b.Partidas.Count))
                 .FirstOrDefault();
@@ -1385,9 +1390,17 @@ namespace NestoAPI.Infraestructure
             }
         }
 
-        private static List<BloqueDesglose> BloquesDesglose(List<PartidaFechaEntregaAgenciaDTO> desglose)
+        /// <param name="esperaHasta">Con «Todo junto», el día en que sale el pedido: lo que podría salir antes no lleva fecha.</param>
+        private static List<BloqueDesglose> BloquesDesglose(List<PartidaFechaEntregaAgenciaDTO> desglose, DateTime? esperaHasta)
         {
-            string PuedeSalir(PartidaFechaEntregaAgenciaDTO p) => p.PuedeSalirEl.HasValue ? $"puede salir el {DiaCorreo(p.PuedeSalirEl.Value)}" : "sin fecha";
+            string PuedeSalirSiempre(PartidaFechaEntregaAgenciaDTO p) => p.PuedeSalirEl.HasValue ? $"puede salir el {DiaCorreo(p.PuedeSalirEl.Value)}" : "sin fecha";
+            string PuedeSalir(PartidaFechaEntregaAgenciaDTO p) =>
+                esperaHasta.HasValue && p.PuedeSalirEl.HasValue && p.PuedeSalirEl.Value.Date < esperaHasta.Value ? null : PuedeSalirSiempre(p);
+            string Parentesis(params string[] partes)
+            {
+                string dentro = string.Join("; ", partes.Where(t => !string.IsNullOrEmpty(t)));
+                return dentro.Length == 0 ? string.Empty : $" ({dentro})";
+            }
             var bloques = new List<BloqueDesglose>();
 
             List<PartidaFechaEntregaAgenciaDTO> enPicking = desglose.Where(p => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_PICKING).ToList();
@@ -1395,27 +1408,28 @@ namespace NestoAPI.Infraestructure
             {
                 bloques.Add(new BloqueDesglose { Cabecera = "Ya en el picking (sale hoy)", Partidas = enPicking });
             }
-            foreach (var grupo in desglose.Where(p => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_ALGETE).GroupBy(p => p.PuedeSalirEl))
+            foreach (var grupo in desglose.Where(p => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_ALGETE).GroupBy(p => PuedeSalir(p)))
             {
-                bloques.Add(new BloqueDesglose { Cabecera = $"Con stock en Algete ({PuedeSalir(grupo.First())})", Partidas = grupo.ToList() });
+                bloques.Add(new BloqueDesglose { Cabecera = $"Con stock en Algete{Parentesis(PuedeSalir(grupo.First()))}", Partidas = grupo.ToList() });
             }
             foreach (var grupo in desglose.Where(p => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_TIENDA)
                 .GroupBy(p => new { p.Tienda, p.LlegaAAlgete, p.PuedeSalirEl }))
             {
                 string tienda = EscaparHtml(Infraestructure.PedidosVenta.CalculadoraFechaEntregaAgencia.NombreAlmacen(grupo.Key.Tienda));
                 string llegada = grupo.Key.LlegaAAlgete.HasValue
-                    ? $"llega a Algete el {DiaCorreo(grupo.Key.LlegaAAlgete.Value)} hacia las {grupo.Key.LlegaAAlgete.Value.ToString("HH:mm", castellano)}; "
-                    : string.Empty;
+                    ? $"llega a Algete el {DiaCorreo(grupo.Key.LlegaAAlgete.Value)} hacia las {grupo.Key.LlegaAAlgete.Value.ToString("HH:mm", castellano)}"
+                    : null;
                 string sinCalendario = grupo.Key.PuedeSalirEl.HasValue ? string.Empty : $" ({EscaparHtml(grupo.First().MotivoSinFecha)})";
+                string salida = PuedeSalir(grupo.First());
                 bloques.Add(new BloqueDesglose
                 {
-                    Cabecera = $"Reposición {tienda} &rarr; Algete ({llegada}{PuedeSalir(grupo.First())}{sinCalendario})",
+                    Cabecera = $"Reposición {tienda} &rarr; Algete{Parentesis(llegada, salida == null ? null : salida + sinCalendario)}",
                     Partidas = grupo.ToList()
                 });
             }
-            foreach (var grupo in desglose.Where(p => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_EN_CAMINO).GroupBy(p => p.PuedeSalirEl))
+            foreach (var grupo in desglose.Where(p => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_EN_CAMINO).GroupBy(p => PuedeSalir(p)))
             {
-                bloques.Add(new BloqueDesglose { Cabecera = $"Ya viene de camino desde una tienda ({PuedeSalir(grupo.First())})", Partidas = grupo.ToList() });
+                bloques.Add(new BloqueDesglose { Cabecera = $"Ya viene de camino desde una tienda{Parentesis(PuedeSalir(grupo.First()))}", Partidas = grupo.ToList() });
             }
             foreach (var grupo in desglose.Where(p => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_PROVEEDOR)
                 .GroupBy(p => new { p.PedidoProveedor, p.FechaPrevistaProveedor, p.LlegadaSupuesta, p.PuedeSalirEl }))
@@ -1430,13 +1444,13 @@ namespace NestoAPI.Infraestructure
                 else if (p.LlegadaSupuesta.HasValue)
                 {
                     bloque.Cabecera = $"{pedidoProveedor}, prevista el {DiaCorreo(p.FechaPrevistaProveedor.Value)}";
-                    bloque.Coletilla = $" La fecha prevista ya pasó y no ha llegado; suponemos que llega el {DiaCorreo(p.LlegadaSupuesta.Value)} y {PuedeSalir(p)}, " +
+                    bloque.Coletilla = $" La fecha prevista ya pasó y no ha llegado; suponemos que llega el {DiaCorreo(p.LlegadaSupuesta.Value)} y {PuedeSalirSiempre(p)}, " +
                         "pero puede retrasarse.";
                     bloque.Estilo = " style=\"color:red\"";
                 }
                 else
                 {
-                    bloque.Cabecera = $"{pedidoProveedor}, prevista el {DiaCorreo(p.FechaPrevistaProveedor.Value)} ({PuedeSalir(p)})";
+                    bloque.Cabecera = $"{pedidoProveedor}, prevista el {DiaCorreo(p.FechaPrevistaProveedor.Value)}{Parentesis(PuedeSalir(p))}";
                 }
                 bloques.Add(bloque);
             }
