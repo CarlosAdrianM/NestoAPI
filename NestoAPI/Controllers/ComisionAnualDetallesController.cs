@@ -34,6 +34,28 @@ namespace NestoAPI.Controllers
                 .ThenByDescending(v => v.Pedido);
         }
 
+        /// <summary>
+        /// Una línea del mes en curso en el formato del detalle. Sugerencia 566: con la fecha del albarán, para que NestoApp
+        /// diga «Servido el 02/10, pendiente de facturar» en vez de dejar la fecha vacía.
+        /// </summary>
+        internal static vstLinPedidoVtaComisionesDetalle Detalle(vstLinPedidoVtaComisione c, string vendedor, int anno, int mes)
+        {
+            return new vstLinPedidoVtaComisionesDetalle
+            {
+                Vendedor = vendedor,
+                Anno = (short)anno,
+                Mes = (byte)mes,
+                Nombre = c.Nombre,
+                Direccion = c.Dirección,
+                BaseImponible = c.Base_Imponible,
+                Fecha_Factura = c.Fecha_Factura,
+                FechaAlbaran = c.Fecha_Albarán,
+                EstaServida = c.Fecha_Albarán.HasValue || c.Estado >= Constantes.EstadosLineaVenta.ALBARAN,
+                Empresa = c.Empresa,
+                Pedido = c.Número
+            };
+        }
+
         // GET: api/ComisionAnualDetalles
         public IQueryable<vstLinPedidoVtaComisionesDetalle> GetComisionesAnualesDetalles(string vendedor, int anno, int mes, bool incluirAlbaranes, string etiqueta)
         {
@@ -49,20 +71,7 @@ namespace NestoAPI.Controllers
                 IComisionesAnuales comisiones = ServicioSelectorTipoComisionesAnualesVendedor.ComisionesVendedor(vendedor, anno, mes);
                 var etiquetaServicio = comisiones.Etiquetas.Single(s => s.Nombre == etiqueta) as IEtiquetaComisionVenta;
                 var detalleComisiones = etiquetaServicio.LeerVentaMesDetalle(vendedor, anno, mes, incluirAlbaranes, etiqueta, incluirPicking).ToList();
-                return MasRecientesPrimero(detalleComisiones.Select(c =>
-                    new vstLinPedidoVtaComisionesDetalle
-                    {
-                        Vendedor = vendedor,
-                        Anno = (short)anno,
-                        Mes = (byte)mes,
-                        Nombre = c.Nombre,
-                        Direccion = c.Dirección,
-                        BaseImponible = c.Base_Imponible,
-                        Fecha_Factura = c.Fecha_Factura,
-                        Empresa = c.Empresa,
-                        Pedido = c.Número
-                    }
-                    ).AsQueryable());
+                return MasRecientesPrimero(detalleComisiones.Select(c => Detalle(c, vendedor, anno, mes)).AsQueryable());
             }
 
             var detalle = db.vstLinPedidoVtaComisionesDetalles.Where(v => v.Vendedor == vendedor && v.Anno == anno && v.Mes == mes && v.Etiqueta == etiqueta);

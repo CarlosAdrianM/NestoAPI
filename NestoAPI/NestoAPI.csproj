@@ -1529,6 +1529,7 @@
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\LinPedidoVta.Partial.cs" />
+    <Compile Include="Models\vstLinPedidoVtaComisionesDetalle.Partial.cs" />
     <Compile Include="Models\LogVideoProducto.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
