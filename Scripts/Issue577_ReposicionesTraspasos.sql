@@ -72,7 +72,7 @@ BEGIN
         Omitida varchar(300) NULL,                      -- corte 3b: marca del job SIN reposición (motivo); NULL en las de verdad
         CONSTRAINT PK_ReposicionesTraspasos PRIMARY KEY (Id),
         CONSTRAINT CK_ReposicionesTraspasos_Almacenes CHECK (Origen <> Destino),
-        CONSTRAINT CK_ReposicionesTraspasos_Herramienta CHECK (Herramienta IN ('Nesto', 'Ariadna', 'Automatico'))
+        CONSTRAINT CK_ReposicionesTraspasos_Herramienta CHECK (Herramienta IN ('Nesto', 'Ariadna', 'Automatico', 'Puntual'))
     );
 END
 GO

@@ -25,6 +25,32 @@ namespace NestoAPI.Tests.Infrastructure
     [TestClass]
     public class ServicioPreparacionReposicionTests
     {
+        // Revisión 13/10/26: el CHECK CK_ReposicionesTraspasos_Herramienta solo admitía Nesto/Ariadna/Automatico y la puntual
+        // graba 'Puntual': POST api/Reposiciones/Puntual habría fallado siempre en producción. Los scripts tienen que admitir
+        // todas las herramientas del código.
+        [TestMethod]
+        public void ScriptsReposicionesTraspasos_ElCheckDeHerramientaAdmiteTodasLasDelCodigo()
+        {
+            string raiz = System.IO.Path.GetDirectoryName(typeof(ServicioPreparacionReposicionTests).Assembly.Location);
+            while (raiz != null && !System.IO.Directory.Exists(System.IO.Path.Combine(raiz, "Scripts")))
+            {
+                raiz = System.IO.Path.GetDirectoryName(raiz);
+            }
+            Assert.IsNotNull(raiz, "No se encuentra la carpeta Scripts del repositorio");
+            string alta = System.IO.File.ReadAllText(System.IO.Path.Combine(raiz, "Scripts", "Issue577_ReposicionesTraspasos.sql"));
+            string cambio = System.IO.File.ReadAllText(System.IO.Path.Combine(raiz, "Scripts", "Issue581_ReposicionesTraspasos_Recogida.sql"));
+            IEnumerable<string> herramientas = typeof(HerramientasReposicion)
+                .GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+                .Where(f => f.IsLiteral && f.FieldType == typeof(string))
+                .Select(f => (string)f.GetRawConstantValue());
+
+            foreach (string herramienta in herramientas)
+            {
+                StringAssert.Contains(alta, "'" + herramienta + "'", "Issue577 (tabla nueva) no admite " + herramienta);
+                StringAssert.Contains(cambio, "'" + herramienta + "'", "Issue581 (producción) no admite " + herramienta);
+            }
+        }
+
         private static readonly DateTime AHORA = new DateTime(2026, 10, 6, 9, 32, 16);
 
         private RepositorioEnMemoria repositorio;

@@ -66,6 +66,28 @@ END
 GO
 
 ------------------------------------------------------------------------------------------------
+-- 2b. La reposición puntual se graba con Herramienta 'Puntual' (revisión 13/10/26): el CHECK de Issue577 solo admitía
+--     'Nesto', 'Ariadna' y 'Automatico', y POST api/Reposiciones/Puntual fallaría siempre. Se rehace con 'Puntual'.
+------------------------------------------------------------------------------------------------
+IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'CK_ReposicionesTraspasos_Herramienta'
+           AND parent_object_id = OBJECT_ID('dbo.ReposicionesTraspasos') AND definition NOT LIKE '%Puntual%')
+BEGIN
+    ALTER TABLE dbo.ReposicionesTraspasos DROP CONSTRAINT CK_ReposicionesTraspasos_Herramienta;
+END
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'CK_ReposicionesTraspasos_Herramienta'
+               AND parent_object_id = OBJECT_ID('dbo.ReposicionesTraspasos'))
+BEGIN
+    ALTER TABLE dbo.ReposicionesTraspasos ADD CONSTRAINT CK_ReposicionesTraspasos_Herramienta
+        CHECK (Herramienta IN ('Nesto', 'Ariadna', 'Automatico', 'Puntual'));
+END
+GO
+
+SELECT name, definition FROM sys.check_constraints WHERE name = 'CK_ReposicionesTraspasos_Herramienta';
+GO
+
+------------------------------------------------------------------------------------------------
 -- 3. Comprobación: las cabeceras de hoy de las tiendas a Algete
 ------------------------------------------------------------------------------------------------
 EXEC sp_executesql N'
