@@ -27,6 +27,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         public bool YaEnPicking { get; set; }
         /// <summary>Unidades libres en Algete (stock − lo que deben los demás pedidos).</summary>
         public int EnAlgete { get; set; }
+        /// <summary>
+        /// NestoAPI#606 (kits, 13/10/26): unidades que salen desmontando un kit libre en Algete (código del kit → unidades). Salen
+        /// el mismo día que las libres: almacén desmonta con el informe de kits que saca antes de cada picking.
+        /// </summary>
+        public Dictionary<string, int> DeKits { get; set; } = new Dictionary<string, int>();
         /// <summary>Unidades que hay que traer de cada tienda (código de almacén → unidades).</summary>
         public Dictionary<string, int> EnTiendas { get; set; } = new Dictionary<string, int>();
         /// <summary>Unidades que ya vienen de camino a Algete en una reposición generada y sin recibir.</summary>
@@ -331,13 +336,14 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     Lote = l,
                     PuedeSalirEl = l.Disponible.HasValue ? (l.Disponible.Value > l.Elegible ? l.Disponible.Value : l.Elegible) : (DateTime?)null
                 })
-                .GroupBy(x => new { x.Lote.Origen, x.Lote.Producto, x.Lote.Tienda, x.PuedeSalirEl, x.Lote.LlegaAAlgete, x.Lote.FechaProveedor, x.Lote.LlegadaSupuesta, x.Lote.PedidoProveedor, x.Lote.MotivoSinFecha })
+                .GroupBy(x => new { x.Lote.Origen, x.Lote.Producto, x.Lote.Tienda, x.Lote.Kit, x.PuedeSalirEl, x.Lote.LlegaAAlgete, x.Lote.FechaProveedor, x.Lote.LlegadaSupuesta, x.Lote.PedidoProveedor, x.Lote.MotivoSinFecha })
                 .Select(g => new PartidaFechaEntregaAgenciaDTO
                 {
                     Origen = g.Key.Origen,
                     Producto = g.Key.Producto,
                     Unidades = g.Sum(x => x.Lote.Unidades),
                     Tienda = g.Key.Tienda,
+                    Kit = g.Key.Kit,
                     LlegaAAlgete = g.Key.LlegaAAlgete,
                     PuedeSalirEl = g.Key.PuedeSalirEl,
                     FechaPrevistaProveedor = g.Key.FechaProveedor,
@@ -400,6 +406,16 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 if (algete > 0)
                 {
                     lotes.Add(Nuevo(algete, hoy, ORIGEN_ALGETE));
+                }
+                foreach (KeyValuePair<string, int> kit in (linea.DeKits ?? new Dictionary<string, int>()).OrderBy(k => k.Key, StringComparer.OrdinalIgnoreCase))
+                {
+                    int unidades = Tomar(kit.Value);
+                    if (unidades > 0)
+                    {
+                        Lote lote = Nuevo(unidades, hoy, ORIGEN_KIT);
+                        lote.Kit = kit.Key?.Trim();
+                        lotes.Add(lote);
+                    }
                 }
                 foreach (KeyValuePair<string, int> tienda in (linea.EnTiendas ?? new Dictionary<string, int>()).OrderBy(t => t.Key))
                 {
@@ -520,8 +536,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             }
             // Una frase por producto, origen y día (dos líneas del mismo producto no repiten frase).
             var grupos = lotes.Where(l => l.Origen != ORIGEN_ALGETE && l.Origen != ORIGEN_PICKING)
-                .GroupBy(l => new { l.Origen, l.Producto, l.Tienda, l.Disponible, l.FechaProveedor, l.LlegadaSupuesta, l.MotivoSinFecha })
-                .Select(g => new { g.Key.Origen, g.Key.Producto, g.Key.Tienda, g.Key.Disponible, g.Key.FechaProveedor, g.Key.LlegadaSupuesta, g.Key.MotivoSinFecha, Unidades = g.Sum(l => l.Unidades) })
+                .GroupBy(l => new { l.Origen, l.Producto, l.Tienda, l.Kit, l.Disponible, l.FechaProveedor, l.LlegadaSupuesta, l.MotivoSinFecha })
+                .Select(g => new { g.Key.Origen, g.Key.Producto, g.Key.Tienda, g.Key.Kit, g.Key.Disponible, g.Key.FechaProveedor, g.Key.LlegadaSupuesta, g.Key.MotivoSinFecha, Unidades = g.Sum(l => l.Unidades) })
                 .ToList();
             foreach (var g in grupos.Where(g => g.Disponible.HasValue))
             {
@@ -529,6 +545,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 string cuantas = $"{g.Unidades} {Unidades(g.Unidades)} de {g.Producto}";
                 switch (g.Origen)
                 {
+                    case ORIGEN_KIT:
+                        frases.Add($"{cuantas} desmontando el kit {g.Kit} en Algete: puede{n} salir el {Dia(g.Disponible.Value)}.");
+                        break;
                     case ORIGEN_TIENDA:
                         frases.Add($"{cuantas} en {NombreAlmacen(g.Tienda)}: llega{n} con la reposición y puede{n} salir el {Dia(g.Disponible.Value)}.");
                         break;
@@ -624,6 +643,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
         private const string ORIGEN_PICKING = PartidaFechaEntregaAgenciaDTO.ORIGEN_PICKING;
         private const string ORIGEN_ALGETE = PartidaFechaEntregaAgenciaDTO.ORIGEN_ALGETE;
+        private const string ORIGEN_KIT = PartidaFechaEntregaAgenciaDTO.ORIGEN_KIT;
         private const string ORIGEN_TIENDA = PartidaFechaEntregaAgenciaDTO.ORIGEN_TIENDA;
         private const string ORIGEN_EN_CAMINO = PartidaFechaEntregaAgenciaDTO.ORIGEN_EN_CAMINO;
         private const string ORIGEN_PROVEEDOR = PartidaFechaEntregaAgenciaDTO.ORIGEN_PROVEEDOR;
@@ -640,6 +660,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             public DateTime? Disponible { get; set; }
             public string Origen { get; set; }
             public string Tienda { get; set; }
+            /// <summary>Solo <see cref="ORIGEN_KIT"/>: el kit que se desmonta.</summary>
+            public string Kit { get; set; }
             public bool DeTienda { get; set; }
             public bool EsRegalo { get; set; }
             public bool YaEnPicking { get; set; }

@@ -1418,6 +1418,15 @@ namespace NestoAPI.Infraestructure
             {
                 bloques.Add(new BloqueDesglose { Cabecera = $"Con stock en Algete{Parentesis(PuedeSalir(grupo.First()))}", Partidas = grupo.ToList() });
             }
+            // NestoAPI#606 (kits, 13/10/26): lo que falta en Algete y sale desmontando un kit libre que lo lleva.
+            foreach (var grupo in desglose.Where(p => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_KIT).GroupBy(p => new { p.Kit, Salida = PuedeSalir(p) }))
+            {
+                bloques.Add(new BloqueDesglose
+                {
+                    Cabecera = $"Desmontando el kit {EscaparHtml(grupo.Key.Kit)} en Algete{Parentesis(grupo.Key.Salida)}",
+                    Partidas = grupo.ToList()
+                });
+            }
             foreach (var grupo in desglose.Where(p => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_TIENDA)
                 .GroupBy(p => new { p.Tienda, p.LlegaAAlgete, p.PuedeSalirEl }))
             {

@@ -108,5 +108,122 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
 
             Assert.AreEqual(0, lineas.Count);
         }
+
+        // ----- NestoAPI#606 (kits, Carlos 13/10/26): lo que falta en Algete puede salir desmontando un kit -----
+
+        private static void Kit(DatosSombraModoServicio datos, string kit, int stockAlgete, int pendientesAlgete, params (string Componente, int Cantidad)[] componentes)
+        {
+            ResumenStocksProductos.Sumar(datos.Resumen.StockAlmacen, ResumenStocksProductos.Clave(kit, "ALG"), stockAlgete);
+            ResumenStocksProductos.Sumar(datos.Resumen.PendienteEntregarAlmacen, ResumenStocksProductos.Clave(kit, "ALG"), pendientesAlgete);
+            foreach (var c in componentes)
+            {
+                datos.Kits.Add(new ComponenteKitFechaEntregaAgencia { Kit = kit, Componente = c.Componente, Cantidad = c.Cantidad });
+            }
+        }
+
+        /// <summary>
+        /// Pedido 928288 (13/10/26): 70 × 43192 VEGAN GUANTES INDIVIDUAL, 64 en Algete. El correo decía «Reposición Reina →
+        /// Algete… el jueves», pero el kit 43191 (70 × 43192) tenía 11 en Algete: desmontando uno sale hoy.
+        /// </summary>
+        private static DatosSombraModoServicio Datos928288()
+        {
+            DatosSombraModoServicio datos = Datos();
+            Stock(datos, "43192", "ALG", 64);
+            Stock(datos, "43192", "REI", 10);
+            Kit(datos, "43191", 11, 0, ("43192", 70));
+            Kit(datos, "44491", 0, 0, ("43192", 5), ("37126", 1));
+            return datos;
+        }
+
+        [TestMethod]
+        public void Kits_Pedido928288_LoQueFaltaSaleDesmontandoElKitAntesQueDeReina()
+        {
+            LineaFechaEntregaAgencia linea = RepartidorStockFechaEntregaAgencia.Repartir(new[] { Linea("43192", 70) }, Datos928288(), REINA_PRIMERO, HOY).Single();
+
+            Assert.AreEqual(64, linea.EnAlgete);
+            Assert.AreEqual(6, linea.DeKits["43191"]);
+            Assert.IsFalse(linea.DeKits.ContainsKey("44491"), "Sin stock de ese kit");
+            Assert.AreEqual(0, linea.EnTiendas.Count, "Ya no hay que traer nada de Reina");
+        }
+
+        [TestMethod]
+        public void Kits_ElKitQueDebenOtrosPedidos_NoSeDesmonta()
+        {
+            DatosSombraModoServicio datos = Datos();
+            Stock(datos, "43192", "ALG", 64);
+            Stock(datos, "43192", "REI", 10);
+            Kit(datos, "43191", 1, 1, ("43192", 70)); // el único kit lo debe otro pedido
+
+            LineaFechaEntregaAgencia linea = RepartidorStockFechaEntregaAgencia.Repartir(new[] { Linea("43192", 70) }, datos, REINA_PRIMERO, HOY).Single();
+
+            Assert.AreEqual(0, linea.DeKits.Count);
+            Assert.AreEqual(6, linea.EnTiendas["REI"]);
+        }
+
+        [TestMethod]
+        public void Kits_ElKitQuePideElPropioPedido_NoSeDesmonta()
+        {
+            DatosSombraModoServicio datos = Datos();
+            Stock(datos, "43192", "ALG", 64);
+            Kit(datos, "43191", 1, 0, ("43192", 70));
+
+            List<LineaFechaEntregaAgencia> lineas = RepartidorStockFechaEntregaAgencia.Repartir(
+                new[] { Linea("43192", 70), Linea("43191", 1) }, datos, REINA_PRIMERO, HOY);
+
+            Assert.AreEqual(0, lineas[0].DeKits.Count, "El kit se lo lleva el propio pedido entero");
+            Assert.AreEqual(1, lineas[1].EnAlgete);
+        }
+
+        [TestMethod]
+        public void Kits_LoQueYaDebenOtrosPedidosDelComponente_SeCubreAntesConLosKits()
+        {
+            DatosSombraModoServicio datos = Datos();
+            Stock(datos, "43192", "ALG", 0, pendientes: 70); // otros pedidos esperan 70 que no hay
+            Stock(datos, "43192", "REI", 100);
+            Kit(datos, "43191", 1, 0, ("43192", 70));
+
+            LineaFechaEntregaAgencia linea = RepartidorStockFechaEntregaAgencia.Repartir(new[] { Linea("43192", 6) }, datos, REINA_PRIMERO, HOY).Single();
+
+            Assert.AreEqual(0, linea.DeKits.Count, "El único kit es para los que esperaban antes");
+            Assert.AreEqual(6, linea.EnTiendas["REI"]);
+        }
+
+        [TestMethod]
+        public void Kits_DosProductosDelMismoKit_DesmontanUnoSolo()
+        {
+            DatosSombraModoServicio datos = Datos();
+            Kit(datos, "45494", 1, 0, ("44371", 1), ("44372", 1), ("44373", 1));
+
+            List<LineaFechaEntregaAgencia> lineas = RepartidorStockFechaEntregaAgencia.Repartir(
+                new[] { Linea("44372", 1), Linea("44373", 1) }, datos, REINA_PRIMERO, HOY);
+
+            Assert.AreEqual(1, lineas[0].DeKits["45494"]);
+            Assert.AreEqual(1, lineas[1].DeKits["45494"], "Lo suelto del kit ya desmontado");
+        }
+
+        [TestMethod]
+        public void Kits_VariosKitsPequenos_SeDesmontanLosQueHaganFaltaYElRestoSigueSuCamino()
+        {
+            DatosSombraModoServicio datos = Datos();
+            Stock(datos, "43192", "REI", 10);
+            Kit(datos, "44491", 3, 0, ("43192", 5), ("37126", 1));
+
+            LineaFechaEntregaAgencia linea = RepartidorStockFechaEntregaAgencia.Repartir(new[] { Linea("43192", 17) }, datos, REINA_PRIMERO, HOY).Single();
+
+            Assert.AreEqual(15, linea.DeKits["44491"], "Los 3 kits");
+            Assert.AreEqual(2, linea.EnTiendas["REI"]);
+        }
+
+        [TestMethod]
+        public void Kits_EntreVariosKits_PrimeroElQueMasLleva()
+        {
+            DatosSombraModoServicio datos = Datos928288();
+            Kit(datos, "44492", 5, 0, ("43192", 5));
+
+            LineaFechaEntregaAgencia linea = RepartidorStockFechaEntregaAgencia.Repartir(new[] { Linea("43192", 70) }, datos, REINA_PRIMERO, HOY).Single();
+
+            Assert.AreEqual(6, linea.DeKits["43191"]);
+            Assert.AreEqual(1, linea.DeKits.Count);
+        }
     }
 }

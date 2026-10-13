@@ -22,6 +22,20 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         public Dictionary<string, DateTime> FechaPrevista { get; } = new Dictionary<string, DateTime>();
         /// <summary>NestoAPI#606: número del pedido a proveedor con esa fecha más temprana (clave producto|almacén).</summary>
         public Dictionary<string, int> PedidoCompraPrevisto { get; } = new Dictionary<string, int>();
+        /// <summary>
+        /// NestoAPI#606 (kits, 13/10/26): TODOS los componentes de los kits que contienen algún producto leído (tabla Kits).
+        /// Solo lo rellena <see cref="RepositorioSombraModoServicioSql.LeerDatosConKits"/> (la fecha de entrega a la agencia);
+        /// el stock y los pendientes de esos kits van en <see cref="Resumen"/> (StockAlmacen y PendienteEntregarAlmacen).
+        /// </summary>
+        public List<ComponenteKitFechaEntregaAgencia> Kits { get; } = new List<ComponenteKitFechaEntregaAgencia>();
+    }
+
+    /// <summary>NestoAPI#606 (kits): una fila de la tabla Kits: <see cref="Cantidad"/> unidades de <see cref="Componente"/> por cada <see cref="Kit"/>.</summary>
+    public class ComponenteKitFechaEntregaAgencia
+    {
+        public string Kit { get; set; }
+        public string Componente { get; set; }
+        public int Cantidad { get; set; }
     }
 
     /// <summary>

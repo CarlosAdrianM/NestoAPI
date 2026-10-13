@@ -410,6 +410,56 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             Assert.IsNull(await servicio.GuardarPrometidaAlCrear("1", PEDIDO), "GuardarPrometidaAlCrear sigue devolviendo null si no ha podido guardar");
         }
 
+        /// <summary>
+        /// NestoAPI#606 (kits, Carlos 13/10/26): pedido 928288, 70 × 43192 con 64 en Algete. Decía «Reposición Reina → Algete …
+        /// puede salir el jueves 15/10», pero el kit 43191 (70 × 43192) tenía 11 en Algete: desmontando uno sale hoy.
+        /// </summary>
+        [TestMethod]
+        public async Task Alta_LoQueFaltaSaleDesmontandoUnKit_SaleHoyYLoDice()
+        {
+            var pedido = new PedidoFechaEntregaAgencia
+            {
+                Empresa = "1", Numero = PEDIDO, Ruta = "FW", ModoServicio = 1, ServirJunto = true,
+                Lineas = new List<LineaPedidoFechaEntregaAgencia>
+                {
+                    new LineaPedidoFechaEntregaAgencia { Producto = "43192", Almacen = "ALG", Cantidad = 70, BaseImponible = 70 }
+                }
+            };
+            A.CallTo(() => repositorio.LeerPedido("1", PEDIDO)).Returns(Task.FromResult(pedido));
+            var datos = new DatosSombraModoServicio();
+            ResumenStocksProductos.Sumar(datos.Resumen.StockAlmacen, ResumenStocksProductos.Clave("43192", "ALG"), 64);
+            ResumenStocksProductos.Sumar(datos.Resumen.StockAlmacen, ResumenStocksProductos.Clave("43192", "REI"), 10);
+            ResumenStocksProductos.Sumar(datos.Resumen.StockSedes, ResumenStocksProductos.Clave("43192"), 74);
+            ResumenStocksProductos.Sumar(datos.Resumen.StockAlmacen, ResumenStocksProductos.Clave("43191", "ALG"), 11);
+            datos.Kits.Add(new ComponenteKitFechaEntregaAgencia { Kit = "43191", Componente = "43192", Cantidad = 70 });
+            A.CallTo(() => repositorio.LeerStock(A<string>._, A<int?>._, A<IEnumerable<string>>._)).Returns(datos);
+            var lineasCorreo = new[] { new LineaPedidoVentaDTO { Producto = "43192", texto = "VEGAN GUANTES INDIVIDUAL", tipoLinea = 1 } };
+
+            FechaEntregaAgenciaDTO fecha = await servicio.CalcularYGuardarPrometidaAlCrear("1", PEDIDO);
+            string html = GestorPresupuestos.GenerarHtmlFechaEntregaAgencia(fecha, false, false, lineasCorreo, 6);
+
+            Assert.AreEqual(new DateTime(2026, 10, 13), fecha.FechaEntregaAgencia, "Hoy, no el jueves");
+            StringAssert.Contains(html, "Entrega a la agencia: martes 13/10/2026");
+            StringAssert.Contains(html, "<li>Con stock en Algete (puede salir el martes 13/10/2026): 43192 VEGAN GUANTES INDIVIDUAL (64 uds.).</li>");
+            StringAssert.Contains(html, "<li>Desmontando el kit 43191 en Algete (puede salir el martes 13/10/2026): 43192 VEGAN GUANTES INDIVIDUAL (6 uds.).</li>");
+            Assert.IsFalse(html.Contains("Reina"), "Ya no hay que esperar a la reposición");
+            StringAssert.Contains(fecha.Motivo, "6 uds. de 43192 desmontando el kit 43191 en Algete: pueden salir el martes 13/10.");
+        }
+
+        [TestMethod]
+        public void Desglose_TodoJunto_ElKitSinFechaSiSaleAntes()
+        {
+            var kit = new PartidaFechaEntregaAgenciaDTO
+            {
+                Origen = PartidaFechaEntregaAgenciaDTO.ORIGEN_KIT, Producto = "P2", Unidades = 6, Kit = "K1", PuedeSalirEl = MARTES
+            };
+
+            string html = HtmlDesglose(JUEVES, FechaEntregaAgenciaDTO.APLICA_COMPLETA, EnAlgete("P1"), kit, DeReina("P3"));
+
+            StringAssert.Contains(html, "<li>Desmontando el kit K1 en Algete: P2 Producto P2 (6 uds.).</li>");
+            Assert.IsFalse(html.Contains("martes"));
+        }
+
         [TestMethod]
         public void PrimeraEntregaDistintaDeLaCompleta_LoDice()
         {

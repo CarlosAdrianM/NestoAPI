@@ -115,7 +115,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
         public DatosSombraModoServicio LeerStock(string empresa, int? pedidoExcluir, IEnumerable<string> productos)
         {
-            return RepositorioSombraModoServicioSql.DesdeConfiguracion().LeerDatos(empresa, pedidoExcluir, productos);
+            // NestoAPI#606 (kits, 13/10/26): también los kits que llevan esos productos (lo que falta puede salir desmontando uno).
+            return RepositorioSombraModoServicioSql.DesdeConfiguracion().LeerDatosConKits(empresa, pedidoExcluir, productos);
         }
 
         public Task<List<ReposicionCalendario>> LeerCalendario(string empresa)

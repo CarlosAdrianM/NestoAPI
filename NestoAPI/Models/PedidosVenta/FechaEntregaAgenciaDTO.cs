@@ -51,6 +51,8 @@ namespace NestoAPI.Models.PedidosVenta
         public const string ORIGEN_PICKING = "Picking";
         /// <summary>Libre en Algete.</summary>
         public const string ORIGEN_ALGETE = "Algete";
+        /// <summary>NestoAPI#606 (kits, 13/10/26): desmontando un kit libre en Algete que lo lleva (sale como lo libre).</summary>
+        public const string ORIGEN_KIT = "Kit";
         /// <summary>En una tienda: llega con su próxima reposición.</summary>
         public const string ORIGEN_TIENDA = "Tienda";
         /// <summary>Ya viene de camino desde una tienda (reposición generada y sin recibir).</summary>
@@ -60,13 +62,15 @@ namespace NestoAPI.Models.PedidosVenta
         /// <summary>Sin stock ni fecha de llegada.</summary>
         public const string ORIGEN_SIN_STOCK = "SinStock";
         /// <summary>El orden en que se explican.</summary>
-        public static readonly string[] ORDEN_ORIGENES = { ORIGEN_PICKING, ORIGEN_ALGETE, ORIGEN_TIENDA, ORIGEN_EN_CAMINO, ORIGEN_PROVEEDOR, ORIGEN_SIN_STOCK };
+        public static readonly string[] ORDEN_ORIGENES = { ORIGEN_PICKING, ORIGEN_ALGETE, ORIGEN_KIT, ORIGEN_TIENDA, ORIGEN_EN_CAMINO, ORIGEN_PROVEEDOR, ORIGEN_SIN_STOCK };
 
         public string Origen { get; set; }
         public string Producto { get; set; }
         public int Unidades { get; set; }
         /// <summary>Solo <see cref="ORIGEN_TIENDA"/>: código del almacén (REI, ALC).</summary>
         public string Tienda { get; set; }
+        /// <summary>Solo <see cref="ORIGEN_KIT"/>: el kit que se desmonta.</summary>
+        public string Kit { get; set; }
         /// <summary>Solo <see cref="ORIGEN_TIENDA"/>: día y hora a la que suele llegar a Algete la reposición que lo trae.</summary>
         public DateTime? LlegaAAlgete { get; set; }
         /// <summary>Primer día en que puede salir a la agencia. Null = sin fecha.</summary>
