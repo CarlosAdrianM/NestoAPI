@@ -1,4 +1,4 @@
-/*
+﻿/*
     NestoAPI#593 (estadística por vendedor): cuántos días antes del final del canje los clientes con el cheque sin usar
     suben en «clientes para contactar» (prioridad Máxima, los primeros, con «Tiene un cheque de 50 € sin usar hasta el
     07/11»).
