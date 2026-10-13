@@ -1321,13 +1321,19 @@ namespace NestoAPI.Infraestructure
 
             if (desglose.Any())
             {
-                // Carlos (13/10/26): con «Todo junto» nada sale antes que el pedido entero; la fecha de lo que podría salir antes
-                // confunde («el resto puede salir el martes» y no sale hasta el jueves). Solo lleva fecha lo que la marca.
-                DateTime? esperaHasta = fecha.Aplica == FechaEntregaAgenciaDTO.APLICA_COMPLETA ? ahora : null;
+                // Carlos (13/10/26): nada sale antes que la entrega en la que va. Con «Todo junto» espera al pedido entero y con
+                // «Tras reponer de tiendas» la primera entrega espera a lo que llega de las tiendas; la fecha de lo que podría salir
+                // antes confunde («el resto puede salir el martes» y no sale hasta el jueves). Solo lleva fecha lo que la marca.
+                // Todo junto y sin fecha: no sale nada hasta que la haya, así que ninguna parte lleva la suya.
+                bool todoJunto = fecha.Aplica == FechaEntregaAgenciaDTO.APLICA_COMPLETA;
+                DateTime? esperaHasta = ahora ?? (todoJunto ? DateTime.MaxValue : (DateTime?)null);
                 bool algunoEspera = esperaHasta.HasValue && desglose.Any(p => p.PuedeSalirEl.HasValue && p.PuedeSalirEl.Value.Date < esperaHasta.Value);
+                string porQue = !algunoEspera ? "Por qué:"
+                    : todoJunto ? "Por qué (va todo junto: sale cuando esté todo):"
+                    : "Por qué (lo que hay en Algete espera para salir en la misma entrega que lo que llega):";
                 _ = s.Append(esModificacion && prometida.HasValue && prometida != ahora
                     ? $"Por qué sale {(ahora.HasValue ? "el " + textoAhora : "sin fecha")} con el pedido como queda:"
-                    : algunoEspera ? "Por qué (va todo junto: sale cuando esté todo):" : "Por qué:");
+                    : porQue);
                 _ = s.Append("<ul style=\"margin:2px 0 2px 0\">");
                 foreach (string item in ItemsDesglose(desglose, descripciones, esperaHasta))
                 {
@@ -1390,7 +1396,7 @@ namespace NestoAPI.Infraestructure
             }
         }
 
-        /// <param name="esperaHasta">Con «Todo junto», el día en que sale el pedido: lo que podría salir antes no lleva fecha.</param>
+        /// <param name="esperaHasta">El día en que sale la entrega: lo que podría salir antes espera a ella y no lleva fecha.</param>
         private static List<BloqueDesglose> BloquesDesglose(List<PartidaFechaEntregaAgenciaDTO> desglose, DateTime? esperaHasta)
         {
             string PuedeSalirSiempre(PartidaFechaEntregaAgenciaDTO p) => p.PuedeSalirEl.HasValue ? $"puede salir el {DiaCorreo(p.PuedeSalirEl.Value)}" : "sin fecha";
