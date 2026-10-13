@@ -329,6 +329,22 @@ namespace NestoAPI.Models.PedidosVenta
         /// dicen por qué (<c>Falta</c> con el mínimo no superado). Null si no lleva cheque.
         /// </summary>
         public Infraestructure.ChequesRegalo.ChequeRegaloCarritoDTO ChequeRegalo { get; set; }
+
+        /// <summary>
+        /// NestoAPI#593 (TNV): el pronto pago de los plazos con los que se crearía el pedido, en tanto por uno (0,03 =
+        /// 3 %). Va en el descuento de todas las líneas —productos, cheque regalo y portes—, como en la factura, y
+        /// <see cref="TotalConIva"/> ya lo lleva descontado. 0 sin pronto pago (con tarjeta los plazos son PRE: siempre 0).
+        /// Las versiones de la app anteriores lo ignoran y enseñan el total del servidor, que es el bueno.
+        /// </summary>
+        public decimal DescuentoProntoPago { get; set; }
+
+        /// <summary>NestoAPI#593 (TNV): lo que descuenta el pronto pago de la base imponible (positivo), para la fila
+        /// del profesional.</summary>
+        public decimal ImporteProntoPago { get; set; }
+
+        /// <summary>NestoAPI#593 (TNV): lo que descuenta el pronto pago del total, con su IVA y su recargo (positivo),
+        /// para la fila del público final.</summary>
+        public decimal ImporteProntoPagoConIva { get; set; }
     }
 
     public class LineaPedidoClienteResponse

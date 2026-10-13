@@ -105,6 +105,17 @@ namespace NestoAPI.Models.PedidosVenta
         private void OnDeserializedMethod(StreamingContext context)
         {
             // Establecer la referencia Pedido en cada línea después de la deserialización
+            VincularLineas();
+        }
+
+        /// <summary>
+        /// Cada línea apunta a este pedido. Es lo que hace que su descuento (y con él la base y el total) lleve el
+        /// pronto pago de la cabecera (<see cref="LineaPedidoVentaDTO.SumaDescuentos"/>). Lo hace solo la
+        /// deserialización: un DTO montado en el servidor (el pedido de la app, NestoAPI#593) tiene que llamarlo, y
+        /// otra vez tras añadirle líneas (los portes).
+        /// </summary>
+        public void VincularLineas()
+        {
             foreach (LineaPedidoVentaDTO linea in Lineas)
             {
                 linea.Pedido = this;

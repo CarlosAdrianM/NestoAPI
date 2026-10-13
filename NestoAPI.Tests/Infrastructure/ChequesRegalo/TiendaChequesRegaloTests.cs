@@ -164,6 +164,57 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
             StringAssert.Contains(dto.Mensaje, "Te faltan 50,01 €.");
         }
 
+        /// <summary>El pedido de la app de verdad (ConstructorPedidoCliente) con unos plazos de pronto pago.</summary>
+        private static PedidoVentaDTO PedidoDeLaApp(decimal baseProducto, decimal descuentoPP)
+        {
+            var peticion = new PedidoClienteRequest
+            {
+                Lineas = new List<LineaPedidoClienteRequest>
+                {
+                    new LineaPedidoClienteRequest { Producto = "COSM", Cantidad = 1 },
+                    new LineaPedidoClienteRequest { Producto = PRODUCTO_CHEQUE, Cantidad = 1 }
+                }
+            };
+            var precios = new Dictionary<string, ProductoPlantillaDTO>
+            {
+                ["COSM"] = new ProductoPlantillaDTO { producto = "COSM", nombre = "CREMA FACIAL", precio = baseProducto, aplicarDescuento = false, iva = "G21" }
+            };
+            var ficha = new ClienteDTO { empresa = "1", cliente = CLIENTE, contacto = "0", iva = "G21", ruta = "FW" };
+            return ConstructorPedidoCliente.Construir(peticion, ficha, precios, Constantes.FormasPago.RECIBO_BANCARIO, "PP",
+                HOY, descuentoPP: descuentoPP);
+        }
+
+        [TestMethod]
+        public async Task Carrito_ConProntoPago_ElChequeTambienLoLleva()
+        {
+            // Carlos (13/10/26): el pronto pago SÍ reduce el cheque, 50 × (1 − PP), como en la factura
+            PedidoVentaDTO pedido = PedidoDeLaApp(300, 0.03M);
+
+            ResultadoChequeCarrito resultado = await Preparar(pedido);
+
+            Assert.IsTrue(resultado.Aplicado);
+            Assert.AreEqual(-48.50M, pedido.Lineas.Single(l => l.EsChequeRegalo).BaseImponible);
+            Assert.AreEqual(242.50M, pedido.BaseImponible, "300 × 0,97 − 50 × 0,97");
+            foreach (LineaPedidoVentaDTO linea in pedido.Lineas)
+            {
+                linea.PorcentajeIva = 0.21M;
+            }
+            Assert.AreEqual(293.43M, pedido.Total, "352,11 − 58,685 = 293,425");
+        }
+
+        [TestMethod]
+        public async Task Carrito_ConProntoPago_ElMinimoSeMiraDespuesDelProntoPago_ComoAlCrearElPedido()
+        {
+            // 255 € de producto: sin pronto pago supera los 250; con el 3 %, 247,35. PostPedidoVenta lo comprueba sobre
+            // las LinPedidoVta de CrearLineaVta, que ya llevan el pronto pago: el carrito decía que valía y al crear el
+            // pedido no valía.
+            ResultadoChequeCarrito resultado = await Preparar(PedidoDeLaApp(255, 0.03M));
+
+            Assert.IsNotNull(resultado.Error);
+            Assert.AreEqual(ReglasCanjeChequeRegalo.ERROR_MINIMO_NO_SUPERADO, resultado.Error.Context.ErrorCode);
+            Assert.AreEqual(2.66M, resultado.ParaElCarrito().Falta, "250 − 247,35 + 0,01");
+        }
+
         [TestMethod]
         public async Task Carrito_JustoElMinimo_NoVale()
         {

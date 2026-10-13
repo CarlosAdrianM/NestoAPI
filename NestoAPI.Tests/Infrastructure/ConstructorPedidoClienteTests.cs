@@ -240,6 +240,82 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(0M, linea.DescuentoLinea, "El cliente no pone descuentos de línea");
         }
 
+        #region NestoAPI#593 (TNV): el pronto pago
+
+        private static PedidoVentaDTO ConstruirConProntoPago(decimal descuentoPP)
+        {
+            PedidoVentaDTO pedido = ConstructorPedidoCliente.Construir(
+                Peticion(), FichaCliente(), Precios(), Constantes.FormasPago.RECIBO_BANCARIO, "PP",
+                new DateTime(2026, 10, 13), descuentoPP: descuentoPP);
+            foreach (LineaPedidoVentaDTO linea in pedido.Lineas)
+            {
+                linea.PorcentajeIva = 0.21M;
+            }
+            return pedido;
+        }
+
+        [TestMethod]
+        public void Construir_ConProntoPago_LasLineasLoLlevanComoEnLaFactura()
+        {
+            // 2 × 10 € con un 10 % = 18 €; con el 3 % de pronto pago, 17,46 € (CalcularImportesLinea: 1 − 0,9 × 0,97)
+            PedidoVentaDTO pedido = ConstruirConProntoPago(0.03M);
+
+            Assert.AreEqual(0.03M, pedido.DescuentoPP);
+            Assert.AreEqual(17.46M, pedido.BaseImponible);
+            Assert.AreEqual(21.13M, pedido.Total, "17,46 + 21 % = 21,1266");
+        }
+
+        [TestMethod]
+        public void Construir_ConTarjeta_SinProntoPago()
+        {
+            PedidoVentaDTO pedido = Construir();
+
+            Assert.AreEqual(0M, pedido.DescuentoPP);
+            Assert.AreEqual(18M, pedido.BaseImponible);
+        }
+
+        [TestMethod]
+        public void Construir_LineaQueSeAnadeDespues_LlevaElProntoPagoAlVincularla()
+        {
+            // Los portes los añade GestorPortes después de construir el pedido
+            PedidoVentaDTO pedido = ConstruirConProntoPago(0.03M);
+            var portes = new LineaPedidoVentaDTO
+            {
+                tipoLinea = Constantes.TiposLineaVenta.CUENTA_CONTABLE, Producto = "62400002", Cantidad = 1,
+                PrecioUnitario = 3.5M, AplicarDescuento = false, PorcentajeIva = 0.21M
+            };
+            pedido.Lineas.Add(portes);
+            Assert.AreEqual(3.5M, portes.BaseImponible, "Sin vincular no lo lleva");
+
+            pedido.VincularLineas();
+
+            Assert.AreEqual(3.39M, portes.BaseImponible, "3,50 − 0,105 → 3,39, como la línea 62400002 del pedido 897225");
+        }
+
+        [TestMethod]
+        public void CalcularProntoPago_DiceLoQueDescuentaEnBaseYConIva()
+        {
+            PedidoVentaDTO pedido = ConstruirConProntoPago(0.03M);
+
+            ConstructorPedidoCliente.ImportesProntoPago pp = ConstructorPedidoCliente.CalcularProntoPago(pedido);
+
+            Assert.AreEqual(0.03M, pp.Descuento);
+            Assert.AreEqual(0.54M, pp.BaseImponible, "18 − 17,46");
+            Assert.AreEqual(0.65M, pp.ConIva, "21,78 − 21,13");
+        }
+
+        [TestMethod]
+        public void CalcularProntoPago_SinProntoPago_TodoACero()
+        {
+            ConstructorPedidoCliente.ImportesProntoPago pp = ConstructorPedidoCliente.CalcularProntoPago(Construir());
+
+            Assert.AreEqual(0M, pp.Descuento);
+            Assert.AreEqual(0M, pp.BaseImponible);
+            Assert.AreEqual(0M, pp.ConIva);
+        }
+
+        #endregion
+
         [TestMethod]
         public void Construir_LosDatosDeLaFichaNoLosEligeElCliente()
         {

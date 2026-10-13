@@ -76,6 +76,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// TARIFA en <c>precio</c> (el regalo se guarda a tarifa con el 100 % de descuento, como en
         /// Nesto), por producto.
         /// </param>
+        /// <param name="descuentoPP">
+        /// NestoAPI#593 (TNV): el pronto pago de los plazos con los que se crea (PlazosPago.DtoProntoPago), igual que lo
+        /// manda Nesto en la cabecera. Va en el descuento de TODAS las líneas, como lo grabará CrearLineaVta y lo
+        /// facturará prdCrearFacturaVta (también el cheque regalo y los portes). Con tarjeta (PRE) es 0.
+        /// </param>
         public static PedidoVentaDTO Construir(
             PedidoClienteRequest peticion,
             ClienteDTO cliente,
@@ -84,7 +89,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             string plazosPago,
             DateTime fecha,
             TiendasRecogida.Tienda tienda = null,
-            IDictionary<string, ProductoPlantillaDTO> regalos = null)
+            IDictionary<string, ProductoPlantillaDTO> regalos = null,
+            decimal descuentoPP = 0)
         {
             if (peticion == null)
             {
@@ -154,7 +160,54 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 linea.formaVenta = formaVenta;
             }
 
+            // NestoAPI#593 (TNV): sin el pedido en cada línea, su descuento no lleva el pronto pago (las de un pedido de
+            // Nesto lo tienen porque se lo pone la deserialización) y el carrito enseñaba más de lo que se facturaba
+            pedido.DescuentoPP = descuentoPP;
+            pedido.VincularLineas();
+
             return pedido;
+        }
+
+        /// <summary>
+        /// NestoAPI#593 (TNV): lo que descuenta el pronto pago del pedido, para enseñarlo en el carrito en su propia fila.
+        /// Es la diferencia entre el pedido sin pronto pago y con él, línea a línea con el mismo redondeo que
+        /// LineaPedidoBase (el de CalcularImportesLinea): así productos, cheque, envío y pronto pago suman lo que dice el
+        /// total. Se llama con las líneas ya completas (portes incluidos) y vinculadas al pedido.
+        /// </summary>
+        public static ImportesProntoPago CalcularProntoPago(PedidoVentaDTO pedido)
+        {
+            if (pedido?.Lineas == null || pedido.DescuentoPP == 0)
+            {
+                return new ImportesProntoPago();
+            }
+            decimal baseSinPP = 0;
+            decimal totalSinPP = 0;
+            foreach (LineaPedidoVentaDTO linea in pedido.Lineas)
+            {
+                decimal baseLinea = RoundingHelper.DosDecimalesRound(linea.Bruto)
+                    - RoundingHelper.DosDecimalesRound(linea.Bruto * linea.SumaDescuentosSinPP);
+                baseSinPP += baseLinea;
+                totalSinPP += baseLinea + (baseLinea * linea.PorcentajeIva) + (baseLinea * linea.PorcentajeRecargoEquivalencia);
+            }
+            return new ImportesProntoPago
+            {
+                Descuento = pedido.DescuentoPP,
+                BaseImponible = RoundingHelper.DosDecimalesRound(baseSinPP) - pedido.BaseImponible,
+                ConIva = RoundingHelper.DosDecimalesRound(totalSinPP) - pedido.Total
+            };
+        }
+
+        /// <summary>NestoAPI#593 (TNV): el pronto pago del carrito (ver <see cref="CalcularProntoPago"/>).</summary>
+        public class ImportesProntoPago
+        {
+            /// <summary>En tanto por uno (0,03 = 3 %). 0 sin pronto pago (con tarjeta, siempre).</summary>
+            public decimal Descuento { get; set; }
+
+            /// <summary>Lo que baja la base imponible (positivo).</summary>
+            public decimal BaseImponible { get; set; }
+
+            /// <summary>Lo que baja el total, con su IVA y su recargo de equivalencia (positivo).</summary>
+            public decimal ConIva { get; set; }
         }
 
         private static LineaPedidoVentaDTO ConstruirLinea(

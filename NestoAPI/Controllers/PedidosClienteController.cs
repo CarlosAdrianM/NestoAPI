@@ -521,6 +521,8 @@ namespace NestoAPI.Controllers
             // enseñaba uno y se le habría cobrado otro.
             TotalCarrito carrito = await CalcularTotalDelCarrito(preparado).ConfigureAwait(false);
             ResultadoPortes portes = carrito.Portes;
+            // NestoAPI#593 (TNV): el pronto pago va en el total (como en la factura) y se dice cuánto es, para su fila
+            ConstructorPedidoCliente.ImportesProntoPago prontoPago = ConstructorPedidoCliente.CalcularProntoPago(preparado.Pedido);
 
             return Ok(new PortesClienteResponse
             {
@@ -533,7 +535,10 @@ namespace NestoAPI.Controllers
                 ComisionReembolso = portes.ComisionReembolso,
                 // TNV#70: con la tienda elegida, el mismo cálculo dice ya qué no está allí
                 ProductosSinStockEnTienda = LoQueNoHayEnLaTienda(preparado.Pedido, preparado.Tienda),
-                ChequeRegalo = preparado.ChequeRegalo?.ParaElCarrito()
+                ChequeRegalo = preparado.ChequeRegalo?.ParaElCarrito(),
+                DescuentoProntoPago = prontoPago.Descuento,
+                ImporteProntoPago = prontoPago.BaseImponible,
+                ImporteProntoPagoConIva = prontoPago.ConIva
             });
         }
 
@@ -918,6 +923,8 @@ namespace NestoAPI.Controllers
 
             ResultadoPortes portes = CalcularPortesDelCarrito(pedido, preparado.CodigoPostal);
             _ = GestorPortes.GestionarLineasPortes(pedido.Lineas, portes, pedido.iva, pedido.ParametrosIva);
+            // NestoAPI#593 (TNV): la línea de portes es nueva; vinculada, lleva el pronto pago como la que se grabará
+            pedido.VincularLineas();
 
             // NestoAPI#452: sin los porcentajes, el "total" del DTO es la base pelada y se cobraría
             // el pedido sin IVA.
@@ -1107,8 +1114,12 @@ namespace NestoAPI.Controllers
                 return new PedidoPreparado { Error = BadRequest($"El regalo {regaloDesconocido} ya no está disponible. Quítalo del carrito y elige otro.") };
             }
 
+            // NestoAPI#593 (TNV): el pronto pago de esos plazos, como lo graba CrearLineaVta y lo factura el SP (también en
+            // el cheque y los portes). Con tarjeta los plazos son PRE: 0 %.
+            decimal descuentoPP = await LeerDescuentoProntoPago(empresa, plazosPago).ConfigureAwait(false);
+
             PedidoVentaDTO pedido = ConstructorPedidoCliente.Construir(
-                peticion, fichaCliente, precios, formaPago, plazosPago, DateTime.Today, tienda, regalos);
+                peticion, fichaCliente, precios, formaPago, plazosPago, DateTime.Today, tienda, regalos, descuentoPP);
 
             // NestoAPI#593 (TNV): la línea del cheque, normalizada y comprobada con las reglas de POST api/PedidosVenta
             // (que las vuelve a mirar al crear el pedido, y reserva el cheque). Así el total del carrito, y lo que se
@@ -1232,6 +1243,24 @@ namespace NestoAPI.Controllers
             };
         }
 
+        /// <summary>
+        /// NestoAPI#593 (TNV): el pronto pago de unos plazos (PlazosPago.DtoProntoPago), la misma fila que leen
+        /// PostPedidoVenta y CrearLineaVta al grabar el pedido. 0 si no existen (PostPedidoVenta lo rechazará).
+        /// </summary>
+        private async Task<decimal> LeerDescuentoProntoPago(string empresa, string plazosPago)
+        {
+            if (string.IsNullOrWhiteSpace(plazosPago))
+            {
+                return 0;
+            }
+            decimal? descuento = await db.PlazosPago
+                .Where(p => p.Empresa == empresa && p.Número == plazosPago)
+                .Select(p => (decimal?)p.DtoProntoPago)
+                .FirstOrDefaultAsync()
+                .ConfigureAwait(false);
+            return descuento ?? 0;
+        }
+
         private async Task<CondicionesPagoResponse> LeerCondicionesPago(string empresa, string cliente)
         {
             // Sin using, igual que arriba: comparte el DbContext de este controller.
@@ -1273,6 +1302,8 @@ namespace NestoAPI.Controllers
         private static PedidoClienteResponse ConstruirRespuesta(PedidoVentaDTO pedido, string formaPago,
             string plazosPago, bool yaCobrado = false)
         {
+            // NestoAPI#593 (TNV): PostPedidoVenta le ha añadido los portes; sin vincularlos, su línea no lleva el pronto pago
+            pedido.VincularLineas();
             PedidoClienteResponse respuesta = new PedidoClienteResponse
             {
                 Empresa = pedido.empresa,
