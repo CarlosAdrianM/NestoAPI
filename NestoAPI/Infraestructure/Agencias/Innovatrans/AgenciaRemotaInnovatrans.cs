@@ -53,6 +53,9 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
         // (NestoAPI#259).
         public bool LoggingDetallado => true;
 
+        /// <summary>Sugerencia 507: DTX modifica el mismo albarán, no crea otro.</summary>
+        public bool ModificarCreaEnvioNuevo => false;
+
         public async Task<ResultadoTramitacionRemota> InsertarYEtiquetarAsync(DatosEnvioRemoto envio)
         {
             if (envio == null) throw new ArgumentNullException(nameof(envio));

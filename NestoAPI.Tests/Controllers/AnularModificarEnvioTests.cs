@@ -389,6 +389,75 @@ namespace NestoAPI.Tests.Controllers
             Assert.IsFalse(auditoria.Exito);
         }
 
+        private async Task<Newtonsoft.Json.Linq.JObject> ModificarCttQueLanza(System.Exception ex)
+        {
+            var envio = EnvioEnCurso();
+            envio.Agencia = Constantes.Agencias.AGENCIA_CTT;
+            envio.AgenciasTransporte = new AgenciaTransporte { Numero = envio.Agencia, Nombre = "CTT" };
+            ConEnvio(envio);
+            A.CallTo(() => fakeFabrica.Crear(Constantes.Agencias.AGENCIA_CTT)).Returns(fakeAgencia);
+            A.CallTo(() => fakeAgencia.ModificarCreaEnvioNuevo).Returns(true);
+            A.CallTo(() => fakeAgencia.ModificarYEtiquetarAsync(A<DatosEnvioRemoto>.Ignored, A<string>.Ignored)).ThrowsAsync(ex);
+
+            var resultado = await controller.ModificarEnvio(1, new ModificarEnvioAgenciaDTO { CodigoPostal = "28001" }) as ResponseMessageResult;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(System.Net.HttpStatusCode.BadGateway, resultado.Response.StatusCode);
+            Assert.AreEqual("28925", envio.CodPostal, "La BD queda intacta");
+            return Newtonsoft.Json.Linq.JObject.Parse(await resultado.Response.Content.ReadAsStringAsync());
+        }
+
+        [TestMethod]
+        public async Task Modificar_CttNoContestaATiempo_AvisaDeComprobarEnLaWebAntesDeReintentar()
+        {
+            // Sugerencia 507 (13/10/26): CTT modifica anulando y registrando un albarán nuevo; con un timeout pudo crearlo.
+            var cuerpo = await ModificarCttQueLanza(new AgenciaRemotaException("CTT (Manifiesto): la petición agotó el tiempo de espera.",
+                new TaskCanceledException()) { EsTransitoria = true });
+
+            Assert.AreEqual(EnviosAgenciasController.CODIGO_AGENCIA_NO_RESPONDE, (string)cuerpo["Codigo"]);
+            Assert.AreEqual(FallosAgenciaRemota.MensajeNoResponde("CTT", puedeHaberseCreado: true), (string)cuerpo["Message"]);
+            StringAssert.EndsWith((string)cuerpo["Message"], "Antes de reintentar, comprueba en la web de CTT que no se ha creado ya.");
+        }
+
+        [TestMethod]
+        public async Task Modificar_CttConError500_NoAvisaDeComprobar()
+        {
+            // Con un 5xx CTT contestó: no lo creó
+            var cuerpo = await ModificarCttQueLanza(new AgenciaRemotaException("CTT (Manifiesto) respondió HTTP 500: CONNECTIVITY") { EsTransitoria = true });
+
+            Assert.AreEqual(EnviosAgenciasController.CODIGO_AGENCIA_NO_RESPONDE, (string)cuerpo["Codigo"]);
+            Assert.AreEqual(FallosAgenciaRemota.MensajeNoResponde("CTT"), (string)cuerpo["Message"]);
+        }
+
+        [TestMethod]
+        public async Task Anular_CttNoContestaATiempo_NoAvisaDeComprobarQueNoSeHaCreado()
+        {
+            // Anular no crea nada en la agencia
+            var envio = EnvioEnCurso();
+            envio.Agencia = Constantes.Agencias.AGENCIA_CTT;
+            envio.AgenciasTransporte = new AgenciaTransporte { Numero = envio.Agencia, Nombre = "CTT" };
+            ConEnvio(envio);
+            A.CallTo(() => fakeFabrica.Crear(Constantes.Agencias.AGENCIA_CTT)).Returns(fakeAgencia);
+            A.CallTo(() => fakeAgencia.ModificarCreaEnvioNuevo).Returns(true);
+            A.CallTo(() => fakeAgencia.AnularAsync(A<string>.Ignored))
+                .ThrowsAsync(new AgenciaRemotaException("CTT (Anular): la petición agotó el tiempo de espera.", new TaskCanceledException()) { EsTransitoria = true });
+
+            var resultado = await controller.AnularEnvio(1) as ResponseMessageResult;
+
+            Assert.IsNotNull(resultado);
+            var cuerpo = Newtonsoft.Json.Linq.JObject.Parse(await resultado.Response.Content.ReadAsStringAsync());
+            Assert.AreEqual(FallosAgenciaRemota.MensajeNoResponde("CTT"), (string)cuerpo["Message"]);
+        }
+
+        [TestMethod]
+        public void ModificarCreaEnvioNuevo_ElDecoradorDeReintentosDiceLoMismoQueLaAgencia()
+        {
+            var interior = A.Fake<IAgenciaRemota>();
+            A.CallTo(() => interior.ModificarCreaEnvioNuevo).Returns(true);
+
+            Assert.IsTrue(new AgenciaRemotaConReintentos(interior).ModificarCreaEnvioNuevo);
+        }
+
         [TestMethod]
         public async Task Modificar_ModificadoPeroSinEtiqueta_PersisteLosDatosNuevos()
         {

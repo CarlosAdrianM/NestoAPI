@@ -620,8 +620,10 @@ namespace NestoAPI.Infraestructure.Agencias
                 await AuditarAsync(envio, agencia, false, ex.Message).ConfigureAwait(false);
                 if (FallosAgenciaRemota.NoResponde(ex))
                 {
-                    // Sugerencia 507: «CTT no responde ahora mismo…» (Codigo AGENCIA_NO_RESPONDE) en vez del texto crudo.
-                    throw new NestoBusinessException(FallosAgenciaRemota.MensajeNoResponde(nombre),
+                    // Sugerencia 507: «CTT no responde ahora mismo…» (Codigo AGENCIA_NO_RESPONDE) en vez del texto crudo. CTT
+                    // modifica anulando y registrando un albarán nuevo: con un timeout pudo crearlo, como en el alta.
+                    bool puedeHaberseCreado = agencia.ModificarCreaEnvioNuevo && FallosAgenciaRemota.EsTimeout(ex);
+                    throw new NestoBusinessException(FallosAgenciaRemota.MensajeNoResponde(nombre, puedeHaberseCreado),
                         new ErrorContext { ErrorCode = FallosAgenciaRemota.CODIGO_NO_RESPONDE, Empresa = envio.Empresa?.Trim() }, ex)
                     { StatusCode = System.Net.HttpStatusCode.BadGateway };
                 }

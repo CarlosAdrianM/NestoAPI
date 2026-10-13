@@ -53,6 +53,8 @@ namespace NestoAPI.Infraestructure.Agencias
 
         public bool LoggingDetallado => _interior.LoggingDetallado;
 
+        public bool ModificarCreaEnvioNuevo => _interior.ModificarCreaEnvioNuevo;
+
         public IReadOnlyList<IntercambioRemoto> Intercambios => _interior.Intercambios;
 
         // NO idempotente: sin reintentos (ver doc de la clase).

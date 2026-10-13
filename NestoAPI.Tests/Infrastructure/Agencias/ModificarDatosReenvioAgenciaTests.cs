@@ -247,6 +247,41 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         }
 
         [TestMethod]
+        public async Task CttViva_NoContestaATiempo_AvisaDeComprobarEnLaWebQueNoSeHaCreadoYa()
+        {
+            // Sugerencia 507 (13/10/26): CTT reenvía el cambio anulando y registrando un albarán nuevo; con un timeout pudo crearlo.
+            EnviosAgencia envio = EnvioCtt();
+            A.CallTo(() => ctt.ModificarCreaEnvioNuevo).Returns(true);
+            var timeout = new AgenciaRemotaException("CTT (Manifiesto): la petición agotó el tiempo de espera.",
+                new TaskCanceledException()) { EsTransitoria = true };
+            A.CallTo(() => ctt.ModificarYEtiquetarAsync(A<DatosEnvioRemoto>.Ignored, A<string>.Ignored)).ThrowsAsync(timeout);
+            ModificarDatosEnvioDTO datos = SinCambios(envio);
+            datos.Retorno = 1;
+
+            NestoBusinessException ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => servicio.ModificarDatosAsync(envio.Numero, datos, USUARIO));
+
+            Assert.AreEqual(FallosAgenciaRemota.CODIGO_NO_RESPONDE, ex.GetErrorCode());
+            Assert.AreEqual(FallosAgenciaRemota.MensajeNoResponde("CTT", puedeHaberseCreado: true), ex.Message);
+            Assert.AreEqual(0, envio.Retorno);
+        }
+
+        [TestMethod]
+        public async Task AgenciaQueModificaElMismoAlbaran_NoContestaATiempo_NoAvisaDeComprobar()
+        {
+            // Innovatrans modifica el mismo albarán: un timeout no puede dejar un envío de más
+            EnviosAgencia envio = EnvioCtt();
+            A.CallTo(() => ctt.ModificarCreaEnvioNuevo).Returns(false);
+            A.CallTo(() => ctt.ModificarYEtiquetarAsync(A<DatosEnvioRemoto>.Ignored, A<string>.Ignored))
+                .ThrowsAsync(new AgenciaRemotaException("timeout", new TaskCanceledException()) { EsTransitoria = true });
+            ModificarDatosEnvioDTO datos = SinCambios(envio);
+            datos.Retorno = 1;
+
+            NestoBusinessException ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => servicio.ModificarDatosAsync(envio.Numero, datos, USUARIO));
+
+            Assert.AreEqual(FallosAgenciaRemota.MensajeNoResponde("CTT"), ex.Message);
+        }
+
+        [TestMethod]
         public async Task CttViva_SoloObservacionesEstadoYFecha_NoLlamaALaAgencia()
         {
             EnviosAgencia envio = EnvioCtt();

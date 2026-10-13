@@ -82,6 +82,9 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
         // Recién integrada: logging detallado ON para vigilarla de cerca (NestoAPI#259).
         public bool LoggingDetallado => true;
 
+        /// <summary>Sugerencia 507: modificar es anular y registrar un albarán nuevo (ver ModificarYEtiquetarAsync).</summary>
+        public bool ModificarCreaEnvioNuevo => true;
+
         public async Task<ResultadoTramitacionRemota> InsertarYEtiquetarAsync(DatosEnvioRemoto envio)
         {
             if (envio == null) throw new ArgumentNullException(nameof(envio));

@@ -1123,8 +1123,10 @@ namespace NestoAPI.Controllers
                 await AuditarOperacion(envio, agencia, false, ex.Message, "Modificar");
                 if (FallosAgenciaRemota.NoResponde(ex))
                 {
-                    // Sugerencia 507: el mismo aviso que al tramitar.
-                    return RespuestaAgenciaNoResponde(await NombreAgenciaDe(envio), ex, envio, "Modificar");
+                    // Sugerencia 507: el mismo aviso que al tramitar. CTT modifica anulando y registrando un albarán
+                    // nuevo: con un timeout pudo crearlo sin que llegara la respuesta, como en el alta.
+                    return RespuestaAgenciaNoResponde(await NombreAgenciaDe(envio), ex, envio, "Modificar",
+                        puedeHaberseCreado: agencia.ModificarCreaEnvioNuevo && FallosAgenciaRemota.EsTimeout(ex));
                 }
                 return Content(HttpStatusCode.BadGateway, ex.Message);
             }

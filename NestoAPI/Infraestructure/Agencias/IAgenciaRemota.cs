@@ -214,6 +214,14 @@ namespace NestoAPI.Infraestructure.Agencias
         Task<ResultadoTramitacionRemota> ModificarYEtiquetarAsync(DatosEnvioRemoto envio, string albaran);
 
         /// <summary>
+        /// Sugerencia 507 (13/10/26): true si <see cref="ModificarYEtiquetarAsync"/> no modifica el envío sino que anula
+        /// el albarán y registra uno NUEVO (CTT, NestoAPI#597). Con un timeout la agencia pudo crearlo sin que llegara la
+        /// respuesta, igual que en el alta, y el aviso dice que se compruebe en su web antes de reintentar. Innovatrans
+        /// modifica el mismo albarán: false.
+        /// </summary>
+        bool ModificarCreaEnvioNuevo { get; }
+
+        /// <summary>
         /// Intercambios crudos (petición + respuesta) hechos contra la API de la agencia durante las
         /// operaciones de esta instancia. Para auditar/depurar (sobre todo el primer envío real).
         /// </summary>
