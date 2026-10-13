@@ -7,6 +7,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Transactions;
 
 namespace NestoAPI.Infraestructure.PedidosVenta
 {
@@ -205,6 +206,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             }
         }
 
+        private static TransactionScope SinTransaccion()
+            => new TransactionScope(TransactionScopeOption.Suppress, TransactionScopeAsyncFlowOption.Enabled);
+
         /// <summary>A ELMAH como mucho una vez cada <see cref="INTERVALO_AVISOS"/>. Nunca lanza.</summary>
         private void Registrar(string que, Exception ex)
         {
@@ -258,11 +262,20 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             List<string> productos = deAlgete.Select(l => l.Producto?.Trim()).Where(p => !string.IsNullOrEmpty(p))
                 .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
-            DatosSombraModoServicio datos = productos.Any()
-                ? repositorio.LeerStock(empresa, pedidoExcluir, productos)
-                : new DatosSombraModoServicio();
+            // Sugerencia 579 (Marta, 09/10): dentro del TransactionScope de UnirPedidos (PutPedidoVenta → correo de la
+            // modificación), el stock y la hora de corte se leían con conexiones propias (NestoConnection, otro NVEntities)
+            // que se alistaban en la transacción y la escalaban a distribuida; MSDTC está deshabilitado, la transacción
+            // quedaba muerta y la unión fallaba entera. Son lecturas de apoyo (el stock con NOLOCK): fuera de la transacción.
+            DatosSombraModoServicio datos;
+            TimeSpan horaCorte;
+            using (SinTransaccion())
+            {
+                datos = productos.Any()
+                    ? repositorio.LeerStock(empresa, pedidoExcluir, productos)
+                    : new DatosSombraModoServicio();
+                horaCorte = repositorio.LeerHoraCorte(empresa);
+            }
             List<ReposicionCalendario> calendario = await repositorio.LeerCalendario(empresa).ConfigureAwait(false) ?? new List<ReposicionCalendario>();
-            TimeSpan horaCorte = repositorio.LeerHoraCorte(empresa);
 
             List<string> tiendasPorOrden = TiendasPorOrden(new CalculadoraFechaReposicion(esFestivo), calendario, horaCorte, ahora, empresa);
 
@@ -285,7 +298,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             // campana a Compras (deduplicado por línea y día; nunca lanza).
             if (avisadorProveedorVencido != null && resultado.ProveedorVencido.Any())
             {
-                await avisadorProveedorVencido.Avisar(empresa, resultado.ProveedorVencido, quienEspera).ConfigureAwait(false);
+                // El aviso escribe en el buzón de Compras con sus propias conexiones: tampoco va en la transacción de quien llama.
+                using (SinTransaccion())
+                {
+                    await avisadorProveedorVencido.Avisar(empresa, resultado.ProveedorVencido, quienEspera).ConfigureAwait(false);
+                }
             }
 
             return new FechaEntregaAgenciaDTO

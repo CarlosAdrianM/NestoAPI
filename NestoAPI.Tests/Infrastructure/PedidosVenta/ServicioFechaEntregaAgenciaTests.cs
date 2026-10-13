@@ -10,6 +10,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Transactions;
 
 namespace NestoAPI.Tests.Infrastructure.PedidosVenta
 {
@@ -237,6 +238,47 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             StringAssert.Contains(dto.Motivo, "puede retrasarse");
             A.CallTo(() => avisador.Avisar("1", A<IEnumerable<ProveedorVencidoFechaEntregaAgencia>>.That.Matches(v => v.Single().Producto == "B"),
                 "el pedido 927000")).MustHaveHappenedOnceExactly();
+        }
+
+        // Sugerencia 579 (Marta, 09/10): UnirPedidos llama a PutPedidoVenta dentro de un TransactionScope y el correo de la
+        // modificación calcula la fecha. El stock, la hora de corte y el aviso a Compras abren sus propias conexiones: si se
+        // alistaban, la transacción escalaba a distribuida (MSDTC deshabilitado) y la unión fallaba entera.
+        [TestMethod]
+        public async Task CalcularPedido_DentroDeUnaTransaccion_LeeStockHoraCorteYAvisaFueraDeElla()
+        {
+            var avisador = A.Fake<IAvisadorProveedorVencido>();
+            servicio = new ServicioFechaEntregaAgencia(repositorio, () => AHORA, EsFestivo, registradas.Add, avisador);
+            A.CallTo(() => repositorio.LeerPedido("1", 927000)).Returns(Task.FromResult(PedidoConB(1)));
+            var transaccionAlLeerStock = new List<Transaction>();
+            var transaccionAlLeerHoraCorte = new List<Transaction>();
+            var transaccionAlAvisar = new List<Transaction>();
+            A.CallTo(() => repositorio.LeerStock(A<string>._, A<int?>._, A<IEnumerable<string>>._)).ReturnsLazily(() =>
+            {
+                transaccionAlLeerStock.Add(Transaction.Current);
+                return ConPedidoAProveedor("B", new DateTime(2026, 10, 9));
+            });
+            A.CallTo(() => repositorio.LeerHoraCorte(A<string>._)).ReturnsLazily(() =>
+            {
+                transaccionAlLeerHoraCorte.Add(Transaction.Current);
+                return new TimeSpan(11, 0, 0);
+            });
+            A.CallTo(() => avisador.Avisar(A<string>._, A<IEnumerable<ProveedorVencidoFechaEntregaAgencia>>._, A<string>._)).ReturnsLazily(() =>
+            {
+                transaccionAlAvisar.Add(Transaction.Current);
+                return Task.CompletedTask;
+            });
+
+            using (new TransactionScope(TransactionScopeOption.Required, TransactionScopeAsyncFlowOption.Enabled))
+            {
+                FechaEntregaAgenciaDTO dto = await servicio.CalcularPedido("1", 927000);
+
+                Assert.IsNotNull(dto);
+                Assert.IsNotNull(Transaction.Current, "La transacción de quien llama sigue viva al volver");
+            }
+
+            Assert.IsNull(transaccionAlLeerStock.Single(), "El stock se lee fuera de la transacción");
+            Assert.IsNull(transaccionAlLeerHoraCorte.Single(), "La hora de corte se lee fuera de la transacción");
+            Assert.IsNull(transaccionAlAvisar.Single(), "El aviso a Compras va fuera de la transacción");
         }
 
         [TestMethod]
