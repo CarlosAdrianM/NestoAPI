@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Guía del cheque regalo</title>
+<style>
+  @page { size: A4; margin: 16mm 15mm; }
+  body { font-family: "Segoe UI", Arial, sans-serif; font-size: 11pt; color: #1a1a1a; line-height: 1.42; }
+  h1 { font-size: 20pt; margin: 0 0 4px; color: #1f3a5f; }
+  .sub { color: #555; margin: 0 0 14px; font-size: 10.5pt; }
+  h2 { font-size: 14pt; color: #1f3a5f; border-bottom: 2px solid #1f3a5f; padding-bottom: 3px; margin: 20px 0 8px; break-after: avoid; }
+  h3 { font-size: 12pt; margin: 14px 0 4px; color: #333; break-after: avoid; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0 10px; font-size: 10pt; break-inside: avoid; }
+  th, td { border: 1px solid #bbb; padding: 4px 7px; text-align: left; vertical-align: top; }
+  th { background: #e8eef6; }
+  td.tema { font-weight: 600; background: #f7f7f7; width: 22%; }
+  .box { background: #f4f7fb; border-left: 4px solid #1f3a5f; padding: 7px 12px; margin: 10px 0; break-inside: avoid; }
+  .ojo { background: #fff7e6; border-left: 4px solid #e08a00; padding: 7px 12px; margin: 10px 0; break-inside: avoid; }
+  .box p, .ojo p { margin: 3px 0; }
+  ol, ul { margin: 4px 0 6px; padding-left: 22px; }
+  ol li, ul li { margin: 2px 0; }
+  kbd { font-family: Consolas, monospace; background: #eee; border: 1px solid #ccc; border-radius: 3px; padding: 0 4px; font-size: 9.5pt; white-space: nowrap; }
+  .pie { color: #777; font-size: 9pt; margin-top: 22px; border-top: 1px solid #ccc; padding-top: 6px; }
+</style>
+</head>
+<body>
+<h1>Cheque regalo de octubre: guía para comerciales y tiendas</h1>
+<p class="sub">Campaña CHEQUE50_OCT_2026 · Nesto 1.10.40 · octubre de 2026</p>
+
+<div class="box">
+<p><b>En resumen.</b> Cada cliente que facture <b>del 12 al 29 de octubre</b> recibe un <b>cheque de 50 € + IVA</b> para usarlo <b>una vez</b>, <b>hasta el 7 de noviembre</b>, en otro pedido de <b>más de 250 € de producto</b>.</p>
+<ul>
+<li>El cheque <b>se genera solo al facturar</b> y al cliente <b>le llega solo</b> (correo, nota en la factura y aviso en la app de la tienda). Nadie tiene que darlo de alta.</li>
+<li>Lo que sí hay que hacer es <b>aplicarlo en el pedido</b> cuando el cliente lo quiera usar: en Nesto es <b>una casilla en la plantilla</b> o <b>un botón en el pedido</b> (apartado 4).</li>
+<li>Las reglas se comprueban al guardar el pedido: si algo no cuadra, el mensaje dice qué falta (apartado 7).</li>
+</ul>
+</div>
+
+<h2>1. Cómo funciona</h2>
+<table>
+<tr><td class="tema">Quién lo recibe</td><td>Todo cliente con una factura de venta <b>emitida del 12 al 29 de octubre</b> (ambos incluidos), sea del importe que sea. Uno por código de cliente, aunque tenga varios contactos o varias facturas en esas fechas.</td></tr>
+<tr><td class="tema">Quién no lo recibe</td><td>Los clientes que facturan a fin de mes y los clientes genéricos (público final, tienda online, Amazon…). Tampoco generan cheque los abonos, las rectificativas, los cambios y devoluciones, ni las facturas que solo llevan portes, cuotas o reparaciones.</td></tr>
+<tr><td class="tema">Cuánto</td><td>50 € de base imponible, más el IVA que corresponda.</td></tr>
+<tr><td class="tema">Hasta cuándo</td><td>Se puede meter en un pedido <b>hasta el 7 de noviembre</b> (incluido). Se puede usar desde el momento en que se genera.</td></tr>
+<tr><td class="tema">En qué pedido</td><td>En <b>otro</b> pedido, no en el que lo ha generado. Una sola vez.</td></tr>
+<tr><td class="tema">Mínimo</td><td>El pedido tiene que <b>superar 250 € de producto</b> en base imponible, después de los descuentos. 250 € justos no valen.</td></tr>
+<tr><td class="tema">Lo que no suma para el mínimo</td><td>Portes, reembolso, cuotas, reparaciones y demás cuentas contables; productos de <b>peluquería</b>; packs de Navidad cuyo nombre empieza por <b>«PACK 26»</b>. Esos productos <b>sí pueden ir en el pedido</b>: solo no cuentan para llegar a los 250 €. Los cursos sí cuentan.</td></tr>
+<tr><td class="tema">Portes</td><td>El cheque no cambia los portes: se calculan como si no estuviera.</td></tr>
+</table>
+
+<h2>2. Cómo se entera el cliente</h2>
+<p>Sin que nadie haga nada, al facturar le llega:</p>
+<ul>
+<li>Un <b>correo</b> a sus direcciones de facturas, con el asunto «Con tu factura, 50 € de descuento para tu próximo pedido», la imagen del cheque y las condiciones. El correo le invita a contactar con su comercial o con la tienda para aprovecharlo.</li>
+<li>Una <b>nota al pie de la factura</b> en PDF: «Con esta factura tienes un cheque regalo de 50 € para tu próximo pedido de más de 250 € de producto computable, hasta el 7/11/2026». La nota deja de salir en cuanto el cheque se usa.</li>
+<li>Un <b>aviso en la app de la tienda</b>, si la tiene instalada, y un recordatorio <b>5 días antes</b> de que caduque si todavía no lo ha usado.</li>
+</ul>
+<div class="ojo"><p><b>Si el cliente no tiene correo para las facturas</b>, no le llega el correo: avísale tú. Nesto lo dice al facturar (apartado 3).</p></div>
+
+<h2>3. Al facturar</h2>
+<p>Cuando una factura genera cheque, Nesto enseña al terminar unas ventanas de aviso, una por mensaje. No es un error: la factura está hecha.</p>
+<ul>
+<li>«El cliente … ha recibido un cheque regalo de 50 € + IVA para su próximo pedido de más de 250 € de producto computable, hasta el 07/11/2026.»</li>
+<li>Y una de estas: «Le hemos mandado el cheque por correo a …», «El cliente no tiene correo para las facturas: no le llega el correo del cheque, avísale tú.» o «No se ha podido mandar el correo del cheque (se vuelve a intentar esta noche): si puedes, avísale tú.»</li>
+<li>Si tiene la app de la tienda: «Le ha llegado también un aviso del cheque a la app de la tienda.»</li>
+</ul>
+<p>Si el cliente está delante o al teléfono, es buen momento para contárselo.</p>
+
+<h2>4. Aplicar el cheque en Nesto</h2>
+<p>En las dos pantallas, Nesto mira por su cuenta si el cliente tiene cheque. Si no lo tiene, <b>no sale nada</b>.</p>
+
+<h3>En la plantilla de venta</h3>
+<ol>
+<li>Elige el cliente como siempre. Si tiene cheque, sale una banda con el mensaje en la pestaña <b>Productos</b> (junto a los totales) y en <b>Finalizar</b> (encima de «Añadir portes al pedido»).</li>
+<li>Marca la casilla <b>«Usar el cheque regalo de 50 €»</b>. La base y el total bajan 50 € y en el resumen aparece la línea «Cheque regalo 50 € (campaña CHEQUE50_OCT_2026)», que no se puede editar.</li>
+<li>Debajo, Nesto va diciendo cuánto falta: «Faltan X € de producto computable para superar los 250 € (lleva Y €)». Es orientativo: al crear el pedido manda lo que diga el servidor.</li>
+<li>Crea el pedido como siempre. Para quitar el cheque, desmarca la casilla.</li>
+</ol>
+<p>Si modificas con la plantilla un pedido que ya lleva el cheque, la casilla sale marcada.</p>
+
+<h3>En el pedido (detalle del pedido)</h3>
+<ol>
+<li>Abre el pedido. Si el cliente tiene el cheque disponible y el pedido aún no lo lleva, debajo de los totales sale el botón <b>«Añadir el cheque regalo de 50 €»</b>.</li>
+<li>Púlsalo: se añade la línea del cheque (cantidad −1, 50 €). <b>No se guarda solo: guarda el pedido</b> como siempre.</li>
+<li>Para quitarlo, borra la línea y guarda.</li>
+</ol>
+<div class="ojo"><p>Si el cheque ya está en otro pedido, ya se ha usado o ha caducado, en el detalle del pedido <b>no sale nada</b>. En la plantilla sí sale el mensaje con el motivo.</p></div>
+
+<h2>5. En NestoApp</h2>
+<p>NestoApp todavía no enseña el cheque. Mientras tanto, se puede aplicar <b>añadiendo al pedido una línea con la referencia <kbd>CHEQUE50_OCT26</kbd></b>, cantidad 1. Al guardar, el servidor la deja como debe (−1 × 50 €, sin descuentos) y comprueba las mismas reglas: si algo no cuadra, sale el mensaje del apartado 7. Si no sabes si el cliente tiene cheque, mira el pedido en Nesto o pregunta en la oficina.</p>
+
+<h2>6. Si la clienta lo usa sola desde la app de la tienda</h2>
+<ul>
+<li>En el <b>carrito</b> le sale un bloque con su cheque y el interruptor <b>«Usar mi cheque de 50 €»</b>.</li>
+<li>Al activarlo, ve la fila «Cheque regalo −50,00 €» en los importes, o cuánto le falta para el mínimo.</li>
+<li>Con el pedido hecho, el cheque queda usado: si luego llama para otro pedido, ya no lo tiene.</li>
+</ul>
+
+<h2>7. Si algo no cuadra</h2>
+<p>Al guardar el pedido sale un mensaje que dice exactamente qué pasa. Los más habituales:</p>
+<table>
+<tr><th>Mensaje (resumido)</th><th>Qué pasa y qué hacer</th></tr>
+<tr><td>«Para usar el cheque regalo el pedido tiene que superar 250,00 € de producto… Lleva X €: faltan Y €.»</td><td>No llega al mínimo con lo que cuenta. Añade producto o quita el cheque. Recuerda que portes, peluquería y «PACK 26» no suman.</td></tr>
+<tr><td>«…ya está aplicado en el pedido N: solo se puede usar una vez.»</td><td>El cheque está en otro pedido. Si ese pedido no va a salir, quita de él la línea del cheque (o bórralo) y el cheque vuelve a quedar libre.</td></tr>
+<tr><td>«…no se puede usar en el pedido cuya factura (…) lo generó: tiene que ir en otro pedido.»</td><td>Es el pedido que lo ha generado. Tiene que ir en un pedido nuevo.</td></tr>
+<tr><td>«El cliente … no tiene cheque regalo de la campaña…: quite la línea CHEQUE50_OCT26.»</td><td>Ese cliente no tiene cheque (no ha facturado en esas fechas, factura a fin de mes, es genérico…). Quita la línea.</td></tr>
+<tr><td>«…se podía usar hasta el 07/11/2026.»</td><td>Ha caducado.</td></tr>
+<tr><td>«Solo puede haber una línea de cheque regalo por pedido.»</td><td>Hay dos líneas del cheque: deja una.</td></tr>
+</table>
+
+<h2>8. Preguntas frecuentes</h2>
+<h3>¿Y si el pedido sale en varias entregas?</h3>
+<p>El cheque se descuenta en la entrega con la que lo entregado supera los 250 € de producto. Si nunca se llega a superar, no se descuenta.</p>
+<h3>¿Y si se borra el pedido, se quita la línea o se cambia el cliente?</h3>
+<p>El cheque vuelve a quedar libre para otro pedido, salvo que la línea del cheque ya estuviera servida.</p>
+<h3>El cliente tiene varios contactos o centros. ¿Hay un cheque por cada uno?</h3>
+<p>No: uno por código de cliente. Lo puede usar en el pedido de cualquiera de sus contactos.</p>
+<h3>Ha facturado dos veces en esas fechas. ¿Tiene dos cheques?</h3>
+<p>No, uno solo.</p>
+<h3>¿Quién puede aplicarlo?</h3>
+<p>Cualquiera que pase el pedido: el comercial, la tienda o la oficina.</p>
+
+<p class="pie">Nueva Visión · Guía del cheque regalo · Si algo de esta guía no coincide con lo que ves en pantalla, dínoslo en Novedades.</p>
+</body>
+</html>
