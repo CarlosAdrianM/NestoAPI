@@ -668,6 +668,167 @@ namespace NestoAPI.Tests.Infrastructure
             StringAssert.Contains(resumen.Body, "2 (cartera)");
         }
 
+        // ---------------------------------------------------------------- 13/10/26: mismos destinatarios, un correo
+
+        private static AvisoFacturaVencidaDTO AvisoContacto(string contacto, string factura, int nOrden, string destinatarios,
+            string direccion, decimal importe, int numeroAviso = 1, string personaContacto = null, DateTime? vencimiento = null)
+        {
+            AvisoFacturaVencidaDTO aviso = Aviso(factura: factura, nOrden: nOrden, cliente: "9247", nombre: "RAQUEL CABALLERO SOL",
+                destinatarios: destinatarios, importe: importe, numeroAviso: numeroAviso, personaContacto: personaContacto,
+                vencimiento: vencimiento);
+            aviso.Contacto = contacto;
+            aviso.Direccion = direccion;
+            return aviso;
+        }
+
+        [TestMethod]
+        public async Task Procesar_Activo_Cliente9247_DosContactosConElMismoCorreo_UnSoloCorreoYCadaEfectoSeRegistraConSuContacto()
+        {
+            // Regresión: el 12/10 Raquel recibió dos reclamaciones a la vez (contactos 1 y 3, mismo correo)
+            Parametro(Constantes.ParametrosUsuario.AVISO_FACTURAS_VENCIDAS, "Activo");
+
+            await Ejecutar(new List<AvisoFacturaVencidaDTO>
+            {
+                AvisoContacto("1", "NV2614518", 3045547, "rakelpc2@hotmail.com", "AV. CANTABRICO, 91 - BULEVAR", 302.14m, numeroAviso: 4, vencimiento: new DateTime(2026, 9, 20)),
+                AvisoContacto("1", "NV2614597", 3045917, "rakelpc2@hotmail.com", "AV. CANTABRICO, 91 - BULEVAR", 68.90m, numeroAviso: 3, vencimiento: new DateTime(2026, 9, 25)),
+                AvisoContacto("3", "NV2614177", 3043892, " RakelPC2@Hotmail.com ", "AVD DEL CANTABRICO, 91, PURIFICACION CABALLERO.", 183.57m, numeroAviso: 2, vencimiento: new DateTime(2026, 9, 10))
+            });
+
+            List<MailMessage> aClientes = enviados.Where(m => !m.To.Any(t => t.Address == Constantes.Correos.CORREO_ADMON)).ToList();
+            MailMessage raquel = aClientes.Single();
+            Assert.AreEqual("rakelpc2@hotmail.com", raquel.To.Single().Address);
+            Assert.AreEqual("Recordatorio: Facturas NV2614177, NV2614518, NV2614597 pendientes de pago", raquel.Subject);
+            StringAssert.Contains(raquel.Body, "<th align='left'>Dirección</th>", "Junta contactos: cada factura dice de qué dirección es");
+            StringAssert.Contains(raquel.Body, "AV. CANTABRICO, 91 - BULEVAR");
+            StringAssert.Contains(raquel.Body, "AVD DEL CANTABRICO, 91, PURIFICACION CABALLERO.");
+            StringAssert.Contains(raquel.Body, "Te volvemos a escribir", "El número del correo, el del efecto más antiguo (2.º)");
+            CollectionAssert.AreEquivalent(new[] { "NV2614177.pdf", "NV2614518.pdf", "NV2614597.pdf" }, raquel.Attachments.Select(a => a.Name).ToList());
+
+            Assert.AreEqual(3, registrados.Count);
+            Assert.AreEqual("3", registrados.Single(r => r.NumOrden == 3043892).Contacto, "Cada efecto con SU contacto");
+            Assert.AreEqual("1", registrados.Single(r => r.NumOrden == 3045547).Contacto);
+            Assert.AreEqual(4, registrados.Single(r => r.NumOrden == 3045547).NumeroAviso, "La cadencia sigue siendo por efecto");
+            Assert.AreEqual(2, registrados.Single(r => r.NumOrden == 3043892).NumeroAviso);
+
+            MailMessage resumen = enviados.Single(m => m.To.Any(t => t.Address == Constantes.Correos.CORREO_ADMON) && m.Bcc.Count == 0);
+            StringAssert.Contains(resumen.Subject, "1 avisos mandados");
+            Assert.AreEqual(1, System.Text.RegularExpressions.Regex.Matches(resumen.Body, "Total 9247").Count, "Un total por cliente");
+            StringAssert.Contains(resumen.Body, "Total 9247 (3 facturas, 2.º aviso)");
+            StringAssert.Contains(resumen.Body, "9247/3");
+            StringAssert.Contains(resumen.Body, "9247/1");
+        }
+
+        [TestMethod]
+        public async Task Procesar_Activo_ContactosConCorreosDistintos_UnCorreoPorContactoYUnTotalPorCliente()
+        {
+            Parametro(Constantes.ParametrosUsuario.AVISO_FACTURAS_VENCIDAS, "Activo");
+
+            await Ejecutar(new List<AvisoFacturaVencidaDTO>
+            {
+                AvisoContacto("1", "NV2614518", 1, "tienda1@raquel.es", "AV. CANTABRICO", 100m),
+                AvisoContacto("1", "NV2614597", 2, "tienda1@raquel.es", "AV. CANTABRICO", 50m),
+                AvisoContacto("3", "NV2614177", 3, "tienda3@raquel.es", "C/ KALAMOS", 25m)
+            });
+
+            List<MailMessage> aClientes = enviados.Where(m => !m.To.Any(t => t.Address == Constantes.Correos.CORREO_ADMON)).ToList();
+            Assert.AreEqual(2, aClientes.Count, "Correos distintos: uno por contacto, como antes");
+            MailMessage tienda1 = aClientes.Single(m => m.To.Single().Address == "tienda1@raquel.es");
+            Assert.IsFalse(tienda1.Body.Contains("Dirección"), "Un solo contacto: la tabla de siempre");
+            Assert.IsFalse(tienda1.Body.Contains("NV2614177"));
+
+            MailMessage resumen = enviados.Single(m => m.To.Any(t => t.Address == Constantes.Correos.CORREO_ADMON) && m.Bcc.Count == 0);
+            StringAssert.Contains(resumen.Subject, "2 avisos mandados");
+            Assert.AreEqual(1, System.Text.RegularExpressions.Regex.Matches(resumen.Body, "Total 9247").Count);
+            StringAssert.Contains(resumen.Body, "Total 9247 (3 facturas, 2 correos)");
+            StringAssert.Contains(resumen.Body, "175,00 €");
+        }
+
+        [TestMethod]
+        public void AgruparPorCliente_MismosDestinatariosEnOtroOrdenYMayusculas_UnAvisoConElSaludoDelPrimerContacto()
+        {
+            List<AvisoClienteFacturasVencidasDTO> avisos = AvisosFacturasVencidasJobsService.AgruparPorCliente(new[]
+            {
+                AvisoContacto("3", "NV3", 3, "B@x.es; a@y.es", "Dir 3", 1m, personaContacto: "Puri"),
+                AvisoContacto("1", "NV1", 1, "a@y.es, b@x.es", "Dir 1", 1m, personaContacto: null),
+                AvisoContacto("2", "NV2", 2, "a@y.es", "Dir 2", 1m, personaContacto: "Raquel")
+            });
+
+            Assert.AreEqual(2, avisos.Count);
+            AvisoClienteFacturasVencidasDTO juntos = avisos.Single(a => a.Facturas.Count == 2);
+            Assert.AreEqual("1, 3", juntos.Contacto);
+            Assert.IsTrue(juntos.VariosContactos);
+            Assert.AreEqual("Puri", juntos.NombrePersonaContacto, "La primera persona no vacía, en orden de contacto");
+            Assert.AreEqual("a@y.es, b@x.es", juntos.Destinatarios, "Los destinatarios del primer contacto");
+            Assert.IsFalse(avisos.Single(a => a.Facturas.Count == 1).VariosContactos);
+        }
+
+        [TestMethod]
+        public void ClaveDestinatarios_ConjuntoSinMayusculasEspaciosNiOrden()
+        {
+            Assert.AreEqual("a@y.es,b@x.es", AvisosFacturasVencidasJobsService.ClaveDestinatarios(" B@X.es , a@y.es"));
+            Assert.AreEqual("a@y.es,b@x.es", AvisosFacturasVencidasJobsService.ClaveDestinatarios("a@y.es;b@x.es;A@Y.ES"));
+            Assert.IsNull(AvisosFacturasVencidasJobsService.ClaveDestinatarios(" , "));
+            Assert.IsNull(AvisosFacturasVencidasJobsService.ClaveDestinatarios(null));
+        }
+
+        [TestMethod]
+        public void Plantilla_VariosContactos_TextoConLaDireccionDeCadaFacturaYSinDireccionDiceElContacto()
+        {
+            AvisoClienteFacturasVencidasDTO aviso = AvisoCliente(
+                AvisoContacto("1", "NV2614518", 1, "r@x.es", "AV. CANTABRICO, 91", 10m),
+                AvisoContacto("3", "NV2614177", 2, "r@x.es", null, 20m));
+
+            string texto = PlantillaAvisoFacturaVencida.CuerpoTexto(aviso, null);
+
+            string[] lineas = texto.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+            StringAssert.EndsWith(lineas.Single(l => l.StartsWith("NV2614518")), "AV. CANTABRICO, 91");
+            StringAssert.EndsWith(lineas.Single(l => l.StartsWith("NV2614177")), "Contacto 3");
+        }
+
+        // ---------------------------------------------------------------- 13/10/26: festivos
+
+        [TestMethod]
+        public async Task Procesar_EnFestivo_NoHaceNadaNiRegistraYLaCadenciaNoAvanza()
+        {
+            // Regresión: el lunes 12/10/2026 (fiesta nacional) se reclamó igual
+            foreach (string modo in new[] { "Activo", "Sombra" })
+            {
+                Parametro(Constantes.ParametrosUsuario.AVISO_FACTURAS_VENCIDAS, modo);
+                DependenciasAvisosFacturasVencidas deps = Deps(new List<AvisoFacturaVencidaDTO> { Aviso() });
+                deps.Ahora = new DateTime(2026, 10, 12, 7, 45, 0);
+                DateTime? diaPreguntado = null;
+                deps.EsFestivo = dia => { diaPreguntado = dia; return true; };
+
+                await AvisosFacturasVencidasJobsService.Procesar(deps);
+
+                Assert.AreEqual(new DateTime(2026, 10, 12), diaPreguntado, modo);
+                Assert.AreEqual(0, vecesCalculado, modo + ": ni consulta la BD");
+            }
+            A.CallTo(() => correo.EnviarCorreoSMTP(A<MailMessage>._)).MustNotHaveHappened();
+            A.CallTo(() => almacen.Registrar(A<IEnumerable<AvisoFacturaVencidaRegistrado>>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Procesar_EnLaborable_AvisaComoSiempre()
+        {
+            Parametro(Constantes.ParametrosUsuario.AVISO_FACTURAS_VENCIDAS, "Activo");
+            DependenciasAvisosFacturasVencidas deps = Deps(new List<AvisoFacturaVencidaDTO> { Aviso() });
+            deps.EsFestivo = dia => false;
+
+            await AvisosFacturasVencidasJobsService.Procesar(deps);
+
+            Assert.IsTrue(enviados.Any(m => m.To.Any(t => t.Address == "cobros@ana.es")));
+            Assert.AreEqual(1, registrados.Count);
+        }
+
+        [TestMethod]
+        public void GestorFestivos_El12DeOctubreDe2026EsFestivoEnAlgete()
+        {
+            // El festivo que usa el job en producción (oficina = Algete)
+            Assert.IsTrue(NestoAPI.Models.RecursosHumanos.GestorFestivos.EsFestivo(new DateTime(2026, 10, 12), Constantes.Almacenes.ALGETE));
+            Assert.IsFalse(NestoAPI.Models.RecursosHumanos.GestorFestivos.EsFestivo(new DateTime(2026, 10, 13), Constantes.Almacenes.ALGETE));
+        }
+
         [TestMethod]
         public async Task Procesar_Activo_SinNadaQueContar_NoMandaResumen()
         {

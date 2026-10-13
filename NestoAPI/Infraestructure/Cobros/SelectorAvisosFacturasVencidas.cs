@@ -142,11 +142,14 @@ namespace NestoAPI.Infraestructure.Cobros
             List<string> clientes = efectos.Select(e => e.Número?.Trim()).Distinct().ToList();
             var fichas = await db.Clientes
                 .Where(c => c.Empresa == empresa && clientes.Contains(c.Nº_Cliente))
-                .Select(c => new { c.Nº_Cliente, c.Contacto, c.Nombre })
+                .Select(c => new { c.Nº_Cliente, c.Contacto, c.Nombre, c.Dirección })
                 .ToListAsync().ConfigureAwait(false);
             Dictionary<string, string> nombrePorClave = fichas
                 .GroupBy(c => Clave(c.Nº_Cliente, c.Contacto))
                 .ToDictionary(g => g.Key, g => g.First().Nombre?.Trim());
+            Dictionary<string, string> direccionPorClave = fichas
+                .GroupBy(c => Clave(c.Nº_Cliente, c.Contacto))
+                .ToDictionary(g => g.Key, g => g.First().Dirección?.Trim());
 
             List<PersonaContactoCliente> personas = await db.PersonasContactoClientes
                 .Where(p => p.Empresa == empresa && clientes.Contains(p.NºCliente) && p.CorreoElectrónico != null)
@@ -242,6 +245,7 @@ namespace NestoAPI.Infraestructure.Cobros
                     Cliente = cliente,
                     Contacto = e.Contacto?.Trim(),
                     Nombre = nombrePorClave.TryGetValue(clave, out string nombre) ? nombre : null,
+                    Direccion = direccionPorClave.TryGetValue(clave, out string direccion) ? direccion : null,
                     Factura = documento,
                     Efecto = e.Efecto?.Trim(),
                     FechaFactura = tieneFactura ? facturaPorNumero[documento].Fecha : (DateTime?)null,

@@ -67,16 +67,18 @@ namespace NestoAPI.Infraestructure.Cobros
             }
             List<AvisoFacturaVencidaDTO> facturas = FacturasOrdenadas(aviso);
             bool varias = facturas.Count > 1;
+            bool conDireccion = aviso.VariosContactos;
             StringBuilder sb = new StringBuilder();
             sb.AppendLine(aviso.Saludo ?? Saludo(null, DateTime.Now));
             sb.AppendLine();
             sb.AppendLine(Introduccion(aviso.NumeroAviso, varias));
             sb.AppendLine();
-            sb.AppendLine("Factura      Fecha        Vencimiento  Importe");
+            sb.AppendLine("Factura      Fecha        Vencimiento  Importe" + (conDireccion ? "      Dirección" : string.Empty));
             foreach (AvisoFacturaVencidaDTO f in facturas)
             {
                 sb.AppendLine($"{(f.Factura ?? string.Empty).PadRight(12)} {FormatearFecha(f.FechaFactura).PadRight(12)} " +
-                    $"{FormatearFecha(f.Vencimiento).PadRight(12)} {FormatearImporte(f.Importe)}");
+                    $"{FormatearFecha(f.Vencimiento).PadRight(12)} {FormatearImporte(f.Importe)}" +
+                    (conDireccion ? "  " + DireccionFactura(f) : string.Empty));
                 string yaPagado = FraseYaPagado(f);
                 if (yaPagado != null)
                 {
@@ -113,12 +115,14 @@ namespace NestoAPI.Infraestructure.Cobros
             }
             List<AvisoFacturaVencidaDTO> facturas = FacturasOrdenadas(aviso);
             bool varias = facturas.Count > 1;
+            bool conDireccion = aviso.VariosContactos;
             StringBuilder sb = new StringBuilder();
             sb.Append("<div style='font-family: Arial, sans-serif; font-size: 14px; color: #222;'>");
             sb.Append("<p>").Append(PlantillaAvisoFacturaVencida.Html(aviso.Saludo ?? Saludo(null, DateTime.Now))).Append("</p>");
             sb.Append("<p>").Append(PlantillaAvisoFacturaVencida.Html(Introduccion(aviso.NumeroAviso, varias))).Append("</p>");
             sb.Append("<table border='1' cellpadding='6' cellspacing='0' style='border-collapse: collapse; font-size: 13px;'>");
-            sb.Append("<tr style='background-color: #f2f2f2;'><th align='left'>Factura</th><th align='left'>Fecha</th><th align='left'>Vencimiento</th><th align='right'>Importe</th></tr>");
+            sb.Append("<tr style='background-color: #f2f2f2;'><th align='left'>Factura</th><th align='left'>Fecha</th><th align='left'>Vencimiento</th><th align='right'>Importe</th>")
+              .Append(conDireccion ? "<th align='left'>Dirección</th>" : string.Empty).Append("</tr>");
             foreach (AvisoFacturaVencidaDTO f in facturas)
             {
                 sb.Append("<tr>")
@@ -126,18 +130,20 @@ namespace NestoAPI.Infraestructure.Cobros
                   .Append("<td>").Append(FormatearFecha(f.FechaFactura)).Append("</td>")
                   .Append("<td>").Append(FormatearFecha(f.Vencimiento)).Append("</td>")
                   .Append("<td align='right'>").Append(FormatearImporte(f.Importe)).Append("</td>")
+                  .Append(conDireccion ? "<td>" + PlantillaAvisoFacturaVencida.Html(DireccionFactura(f)) + "</td>" : string.Empty)
                   .Append("</tr>");
                 string yaPagado = FraseYaPagado(f);
                 if (yaPagado != null)
                 {
-                    sb.Append("<tr><td></td><td colspan='3' style='font-style: italic; color: #555;'>")
+                    sb.Append($"<tr><td></td><td colspan='{(conDireccion ? 4 : 3)}' style='font-style: italic; color: #555;'>")
                       .Append(PlantillaAvisoFacturaVencida.Html(yaPagado)).Append("</td></tr>");
                 }
             }
             if (varias)
             {
                 sb.Append("<tr style='font-weight: bold;'><td colspan='3'>Total pendiente</td><td align='right'>")
-                  .Append(FormatearImporte(aviso.Total)).Append("</td></tr>");
+                  .Append(FormatearImporte(aviso.Total)).Append("</td>")
+                  .Append(conDireccion ? "<td></td>" : string.Empty).Append("</tr>");
             }
             sb.Append("</table>");
             sb.Append("<p>").Append(PlantillaAvisoFacturaVencida.Html(ParrafoCruce(datos))).Append("</p>");
@@ -154,6 +160,10 @@ namespace NestoAPI.Infraestructure.Cobros
             sb.Append("</div>");
             return sb.ToString();
         }
+
+        /// <summary>De qué contacto es la factura cuando el correo junta varios: su dirección o, sin ella, «Contacto 3».</summary>
+        public static string DireccionFactura(AvisoFacturaVencidaDTO factura)
+            => !string.IsNullOrWhiteSpace(factura?.Direccion) ? factura.Direccion.Trim() : $"Contacto {factura?.Contacto?.Trim()}";
 
         private static List<AvisoFacturaVencidaDTO> FacturasOrdenadas(AvisoClienteFacturasVencidasDTO aviso)
             => (aviso.Facturas ?? new List<AvisoFacturaVencidaDTO>()).OrderBy(f => f.Vencimiento).ThenBy(f => f.Factura).ToList();

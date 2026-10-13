@@ -46,6 +46,11 @@ namespace NestoAPI.Infraestructure.Cobros
         public Func<string, string, byte[]> LeerFacturaPdf { get; set; }
         /// <summary>Fecha y hora del envío (para el saludo y para «hoy»).</summary>
         public DateTime Ahora { get; set; } = DateTime.Now;
+        /// <summary>
+        /// 13/10/26: el lunes 12/10 (fiesta nacional) el job reclamó igual. Día → si es festivo; ese día no se hace nada
+        /// (ni correos, ni resumen, ni registro), así la cadencia no avanza. Null = no se mira (los tests que no lo usan).
+        /// </summary>
+        public Func<DateTime, bool> EsFestivo { get; set; }
     }
 
     /// <summary>
@@ -94,7 +99,9 @@ namespace NestoAPI.Infraestructure.Cobros
                         LeerDatosPago = () => new LectorDatosPagoEmpresa(db, servicioFacturas).Leer(EMPRESA),
                         GenerarSaludos = nombres => new GeneradorContenidoCorreoPostCompra(new ServicioOpenAI()).GenerarSaludosAsync(nombres),
                         LeerFacturaPdf = (empresa, factura) => gestorFacturas.FacturaEnPDF(empresa, factura).ReadAsByteArrayAsync().Result,
-                        Ahora = DateTime.Now
+                        Ahora = DateTime.Now,
+                        // Festivos de la oficina (Algete), como la remesa y el recordatorio de sugerencias de contacto
+                        EsFestivo = dia => Models.RecursosHumanos.GestorFestivos.EsFestivo(dia, Constantes.Almacenes.ALGETE)
                     }).ConfigureAwait(false);
                 }
             }
@@ -115,6 +122,12 @@ namespace NestoAPI.Infraestructure.Cobros
             }
 
             DateTime hoy = deps.Ahora.Date;
+            if (deps.EsFestivo != null && deps.EsFestivo(hoy))
+            {
+                // Hangfire lo lanza de lunes a viernes sin mirar festivos: hoy no se reclama nada ni se registra
+                return modo;
+            }
+
             int dias = LeerDias(deps.Lector);
             List<AvisoFacturaVencidaDTO> candidatos = await deps.CalcularCandidatos(dias, hoy).ConfigureAwait(false)
                 ?? new List<AvisoFacturaVencidaDTO>();
@@ -193,7 +206,8 @@ namespace NestoAPI.Infraestructure.Cobros
                     {
                         Empresa = EMPRESA,
                         Cliente = aviso.Cliente,
-                        Contacto = aviso.Contacto,
+                        // Cada efecto con SU contacto: un correo puede juntar varios contactos con los mismos destinatarios
+                        Contacto = string.IsNullOrWhiteSpace(f.Contacto) ? aviso.Contacto : f.Contacto.Trim(),
                         NumOrden = f.NOrden,
                         Factura = f.Factura,
                         NumeroAviso = f.NumeroAviso,
@@ -223,21 +237,49 @@ namespace NestoAPI.Infraestructure.Cobros
             return modo;
         }
 
-        /// <summary>Un aviso por cliente/contacto con todas sus facturas avisables.</summary>
+        /// <summary>
+        /// Un aviso por cliente y destinatarios con todas sus facturas avisables. 13/10/26 (cliente 9247): con la
+        /// clave (cliente, contacto), dos contactos con el mismo correo recibían dos reclamaciones a la vez. Ahora
+        /// los contactos del mismo cliente que escriben a los mismos correos (sin distinguir mayúsculas, espacios
+        /// ni orden) van en UN correo; si los correos son distintos, sigue siendo uno por contacto. Sin
+        /// destinatarios (no debería llegar: el selector los deja fuera) no se juntan: uno por contacto.
+        /// </summary>
         internal static List<AvisoClienteFacturasVencidasDTO> AgruparPorCliente(IEnumerable<AvisoFacturaVencidaDTO> avisables)
             => (avisables ?? Enumerable.Empty<AvisoFacturaVencidaDTO>())
-                .GroupBy(a => new { Cliente = a.Cliente?.Trim(), Contacto = a.Contacto?.Trim() })
-                .Select(g => new AvisoClienteFacturasVencidasDTO
+                .GroupBy(a => new { Cliente = a.Cliente?.Trim(), Clave = ClaveDestinatarios(a.Destinatarios) ?? "contacto:" + a.Contacto?.Trim() })
+                .Select(g =>
                 {
-                    Cliente = g.Key.Cliente,
-                    Contacto = g.Key.Contacto,
-                    Nombre = g.Select(a => a.Nombre).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n)),
-                    Destinatarios = g.Select(a => a.Destinatarios).FirstOrDefault(d => !string.IsNullOrWhiteSpace(d)),
-                    NombrePersonaContacto = g.Select(a => a.NombrePersonaContacto).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n)),
-                    Facturas = g.OrderBy(a => a.Vencimiento).ThenBy(a => a.Factura).ToList()
+                    // Por contacto y vencimiento: el nombre y la persona del saludo salen siempre del mismo contacto
+                    List<AvisoFacturaVencidaDTO> enOrden = g.OrderBy(a => a.Contacto?.Trim(), StringComparer.Ordinal)
+                        .ThenBy(a => a.Vencimiento).ThenBy(a => a.Factura).ToList();
+                    return new AvisoClienteFacturasVencidasDTO
+                    {
+                        Cliente = g.Key.Cliente,
+                        Contacto = string.Join(", ", enOrden.Select(a => a.Contacto?.Trim()).Distinct()),
+                        Nombre = enOrden.Select(a => a.Nombre).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n)),
+                        Destinatarios = enOrden.Select(a => a.Destinatarios).FirstOrDefault(d => !string.IsNullOrWhiteSpace(d)),
+                        NombrePersonaContacto = enOrden.Select(a => a.NombrePersonaContacto).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n)),
+                        Facturas = g.OrderBy(a => a.Vencimiento).ThenBy(a => a.Factura).ToList()
+                    };
                 })
                 .OrderBy(c => c.Cliente).ThenBy(c => c.Contacto)
                 .ToList();
+
+        /// <summary>
+        /// «B@x.es, a@y.es » y «a@y.es,b@X.ES» dan la misma clave: el conjunto de direcciones en minúsculas, sin
+        /// espacios y ordenado. Null si no hay ninguna.
+        /// </summary>
+        internal static string ClaveDestinatarios(string destinatarios)
+        {
+            List<string> direcciones = (destinatarios ?? string.Empty)
+                .Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(d => d.Trim().ToLowerInvariant())
+                .Where(d => d.Length > 0)
+                .Distinct()
+                .OrderBy(d => d, StringComparer.Ordinal)
+                .ToList();
+            return direcciones.Count == 0 ? null : string.Join(",", direcciones);
+        }
 
         /// <summary>
         /// NestoAPI#544 (d): el saludo de cada aviso. Al modelo se le pasa el nombre de la persona de
@@ -538,8 +580,10 @@ namespace NestoAPI.Infraestructure.Cobros
                 "<th>Aviso</th><th>Último aviso</th><th>Siguiente</th><th>Destinatario</th><th>Saludo</th>");
             sb.AppendLine("</tr>");
             bool alternar = false;
-            foreach (AvisoClienteFacturasVencidasDTO c in clientes)
+            // 13/10/26: el total, por cliente aunque le vayan varios correos (contactos con distintos destinatarios)
+            foreach (IGrouping<string, AvisoClienteFacturasVencidasDTO> cliente in clientes.GroupBy(c => c.Cliente))
             {
+                foreach (AvisoClienteFacturasVencidasDTO c in cliente)
                 foreach (AvisoFacturaVencidaDTO f in c.Facturas)
                 {
                     string aviso = CadenciaAvisosFacturasVencidas.Ordinal(f.NumeroAviso)
@@ -549,8 +593,9 @@ namespace NestoAPI.Infraestructure.Cobros
                         ? PlantillaAvisoFacturaVencida.FormatearFecha(ahora.Date.AddDays(CadenciaAvisosFacturasVencidas.DiasHastaElSiguiente(f.NumeroAviso)))
                         : PlantillaAvisoFacturaVencida.FormatearFecha(f.FechaSiguienteAviso);
                     sb.Append($"<tr style='background-color: {(alternar ? "#f2f2f2" : "#ffffff")};'>");
-                    sb.Append($"<td>{PlantillaAvisoFacturaVencida.Html(c.Cliente)}/{PlantillaAvisoFacturaVencida.Html(c.Contacto)}</td>");
-                    sb.Append($"<td>{PlantillaAvisoFacturaVencida.Html(c.Nombre)}</td>");
+                    string contacto = string.IsNullOrWhiteSpace(f.Contacto) ? c.Contacto : f.Contacto.Trim();
+                    sb.Append($"<td>{PlantillaAvisoFacturaVencida.Html(c.Cliente)}/{PlantillaAvisoFacturaVencida.Html(contacto)}</td>");
+                    sb.Append($"<td>{PlantillaAvisoFacturaVencida.Html(f.Nombre ?? c.Nombre)}</td>");
                     sb.Append($"<td>{PlantillaAvisoFacturaVencida.Html(f.Factura)}</td>");
                     sb.Append($"<td>{PlantillaAvisoFacturaVencida.FormatearFecha(f.FechaFactura)}</td>");
                     sb.Append($"<td>{PlantillaAvisoFacturaVencida.FormatearFecha(f.Vencimiento)}</td>");
@@ -563,10 +608,14 @@ namespace NestoAPI.Infraestructure.Cobros
                     sb.Append($"<td>{PlantillaAvisoFacturaVencida.Html(c.Saludo)}</td>");
                     sb.AppendLine("</tr>");
                 }
-                if (c.Facturas.Count > 1)
+                int facturas = cliente.Sum(c => c.Facturas.Count);
+                if (facturas > 1)
                 {
-                    sb.AppendLine($"<tr style='font-weight: bold; background-color: #e8f0fa;'><td colspan='5'>Total {PlantillaAvisoFacturaVencida.Html(c.Cliente)} ({c.Facturas.Count} facturas, {CadenciaAvisosFacturasVencidas.Ordinal(c.NumeroAviso)})</td>" +
-                        $"<td style='text-align: right;'>{PlantillaAvisoFacturaVencida.FormatearImporte(c.Total)}</td><td colspan='6'></td></tr>");
+                    string avisos = cliente.Count() == 1
+                        ? CadenciaAvisosFacturasVencidas.Ordinal(cliente.First().NumeroAviso)
+                        : $"{cliente.Count()} correos";
+                    sb.AppendLine($"<tr style='font-weight: bold; background-color: #e8f0fa;'><td colspan='5'>Total {PlantillaAvisoFacturaVencida.Html(cliente.Key)} ({facturas} facturas, {avisos})</td>" +
+                        $"<td style='text-align: right;'>{PlantillaAvisoFacturaVencida.FormatearImporte(cliente.Sum(c => c.Total))}</td><td colspan='6'></td></tr>");
                 }
                 alternar = !alternar;
             }

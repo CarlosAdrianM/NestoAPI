@@ -17,6 +17,11 @@ namespace NestoAPI.Models.Cobros
         public string Cliente { get; set; }
         public string Contacto { get; set; }
         public string Nombre { get; set; }
+        /// <summary>
+        /// Dirección del contacto (Clientes.Dirección). Solo se enseña al cliente cuando un mismo correo junta facturas
+        /// de varios contactos (13/10/26), para que sepa de qué tienda o dirección es cada una.
+        /// </summary>
+        public string Direccion { get; set; }
         public string Factura { get; set; }
         public string Efecto { get; set; }
         public DateTime? FechaFactura { get; set; }
@@ -70,6 +75,8 @@ namespace NestoAPI.Models.Cobros
         public string Destinatarios { get; set; }
         public string NombrePersonaContacto { get; set; }
         public List<AvisoFacturaVencidaDTO> Facturas { get; set; } = new List<AvisoFacturaVencidaDTO>();
+        /// <summary>13/10/26: el correo junta facturas de varios contactos (mismos destinatarios). Entonces cada factura lleva su dirección.</summary>
+        public bool VariosContactos => Facturas.Select(f => f.Contacto?.Trim()).Distinct().Count() > 1;
         /// <summary>El número de aviso del correo es el del efecto más antiguo del cliente (Carlos, 25/09/26).</summary>
         public int NumeroAviso => Facturas.OrderBy(f => f.Vencimiento).ThenBy(f => f.NOrden).FirstOrDefault()?.NumeroAviso ?? 1;
         public decimal Total => Facturas.Sum(f => f.Importe);
