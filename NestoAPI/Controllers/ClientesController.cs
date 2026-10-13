@@ -156,7 +156,9 @@ namespace NestoAPI.Controllers
         }
 
         // GET: api/Clientes
-        public async Task<IQueryable<ClienteDTO>> GetClientes(string empresa, string vendedor, string filtro)
+        // contactoTelefonicoPrimero (sugerencia 582): lo pide el selector de Rapports de Nesto; si el
+        // vendedor es telefónico, dentro de cada cliente van primero los contactos en estado 9.
+        public async Task<IQueryable<ClienteDTO>> GetClientes(string empresa, string vendedor, string filtro, bool contactoTelefonicoPrimero = false)
         {
             if ((filtro == null) || ((filtro.Length < 4) && (!filtro.All(c => char.IsDigit(c)))))
             {
@@ -268,6 +270,10 @@ namespace NestoAPI.Controllers
                 {
                     lista = porFactura.Select(PROYECCION_CLIENTE).ToList();
                 }
+            }
+            if (contactoTelefonicoPrimero && ContactoTelefonicoPrimero.EsVendedorTelefonico(db.Vendedores, empresa, vendedor))
+            {
+                lista = ContactoTelefonicoPrimero.Ordenar(lista);
             }
             return lista.AsQueryable();
         }
@@ -617,7 +623,9 @@ namespace NestoAPI.Controllers
 
         // GET: api/Clientes/5
         [ResponseType(typeof(ClienteDTO))]
-        public async Task<IHttpActionResult> GetCliente(string empresa, string cliente, string contacto)
+        // vendedorTelefonico (sugerencia 582): lo manda el selector de Rapports de Nesto. Sin contacto
+        // y con un vendedor telefónico, se devuelve el contacto en estado 9 en vez del principal.
+        public async Task<IHttpActionResult> GetCliente(string empresa, string cliente, string contacto, string vendedorTelefonico = null)
         {
             // Sin contacto se busca el principal, y ahí hay que elegir: la ficha del cliente NO
             // garantiza un único ClientePrincipal. Hoy hay 79 clientes con más de uno, casi siempre
@@ -632,12 +640,20 @@ namespace NestoAPI.Controllers
             //
             // Se ordena en su lugar: primero los que no están anulados y, a igualdad, el contacto más
             // bajo. Determinista, no deja fuera a nadie y devuelve el contacto vivo cuando lo hay.
-            Cliente clienteEncontrado = contacto != null && contacto.Trim() != ""
+            Cliente clienteEncontrado = null;
+            bool sinContacto = contacto == null || contacto.Trim() == "";
+            if (sinContacto && ContactoTelefonicoPrimero.EsVendedorTelefonico(db.Vendedores, empresa, vendedorTelefonico))
+            {
+                clienteEncontrado = await ContactoTelefonicoPrimero
+                    .ContactosTelefonicos(db.Clientes, empresa, cliente, vendedorTelefonico)
+                    .FirstOrDefaultAsync();
+            }
+            clienteEncontrado = clienteEncontrado ?? (!sinContacto
                 ? await (from c in db.Clientes where c.Empresa == empresa && c.Nº_Cliente == cliente && c.Contacto == contacto select c).SingleOrDefaultAsync()
                 : await (from c in db.Clientes
                          where c.Empresa == empresa && c.Nº_Cliente == cliente && c.ClientePrincipal
                          orderby c.Estado >= Constantes.Clientes.Estados.VISITA_PRESENCIAL descending, c.Contacto
-                         select c).FirstOrDefaultAsync();
+                         select c).FirstOrDefaultAsync());
             if (clienteEncontrado == null)
             {
                 return NotFound();
