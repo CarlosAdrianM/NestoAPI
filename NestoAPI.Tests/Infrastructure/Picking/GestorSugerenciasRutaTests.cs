@@ -48,13 +48,14 @@ namespace NestoAPI.Tests.Infrastructure.Picking
                     Candidato(928300, cp: "28830"),
                     Candidato(928200, empresa: "1  ", cp: "28100"),      // empresa 1 sin más motivos: nada
                     Candidato(928100, empresa: "3  ", cp: "19200"),      // fuera de Madrid: nada
-                    Candidato(928050, empresa: "1  ", rutaUltimo: "16 ")
+                    Candidato(928050, empresa: "3  ", cp: "19200", rutaUltimo: "16 "), // empresa 3 fuera de Madrid, último por la 16
+                    Candidato(928040, empresa: "1  ", rutaUltimo: "16 ")  // empresa 1: el último pedido no cuenta (13/10/26)
                 });
 
             List<SugerenciaRutaPedidoDTO> sugerencias = await gestor.LeerSugerencias(null, null, null, FECHA_PICKING);
 
             CollectionAssert.AreEqual(new[] { 928050, 928300 }, sugerencias.Select(s => s.Pedido).ToArray(),
-                "Ordenadas por empresa y pedido: la 1 antes que la 3");
+                "Ordenadas por empresa y pedido");
             Assert.AreEqual("16", sugerencias[0].RutaPropuesta);
             Assert.AreEqual("AT", sugerencias[1].RutaPropuesta);
         }

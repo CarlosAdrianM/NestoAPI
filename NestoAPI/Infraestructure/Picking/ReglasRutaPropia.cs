@@ -55,7 +55,7 @@ namespace NestoAPI.Infraestructure.Picking
     /// DESPUÉS del picking, y por eso NestoAPI#588 no le servía):
     /// <list type="bullet">
     /// <item>Empresa 3 (todo contado) y código postal de Madrid (28…): el 77 % de sus pedidos acaba por AT/16.</item>
-    /// <item>El último pedido del cliente salió por AT o 16 (cualquier empresa).</item>
+    /// <item>Empresa 3: el último pedido del cliente salió por AT o 16.</item>
     /// <item>Empresa 1 con aparatos (grupo APA) y 1.500 € o más de base: por AT.</item>
     /// </list>
     /// Es una pista para almacén: decide Alfredo, nunca se cambia sola.
@@ -123,7 +123,8 @@ namespace NestoAPI.Infraestructure.Picking
                 propuesta = RUTA_ATENCION_TECNICA;
             }
 
-            if (EsRutaPropia(datos.RutaUltimoPedido))
+            // Solo en la empresa 3 (Carlos, 13/10/26): en la empresa 1 acierta el 13 % (12 de 94) y metería ruido en el aviso.
+            if (empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO && EsRutaPropia(datos.RutaUltimoPedido))
             {
                 string rutaUltimo = datos.RutaUltimoPedido.Trim().ToUpperInvariant();
                 motivos.Add($"Su último pedido salió por la {rutaUltimo}");

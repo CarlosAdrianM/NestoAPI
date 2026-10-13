@@ -84,24 +84,22 @@ namespace NestoAPI.Tests.Infrastructure.Picking
             Assert.IsNull(ReglasRutaPropia.Sugerir(Pedido(empresa: "1", cp: "28100")));
         }
 
-        // ===== R3: el último pedido del cliente salió por AT/16 (cualquier empresa)
+        // ===== R3: el último pedido del cliente salió por AT/16 (solo empresa 3, Carlos 13/10/26: en la 1 acierta el 13 %)
 
         [TestMethod]
-        public void Sugerir_UltimoPedidoPorAT_EnEmpresa1_SugiereLaRutaDelUltimo()
+        public void Sugerir_UltimoPedidoPorAT_EnEmpresa1_NoCuenta()
         {
-            SugerenciaRutaPedidoDTO s = ReglasRutaPropia.Sugerir(Pedido(empresa: "1", cp: "28100", rutaUltimo: "AT "));
-
-            Assert.IsNotNull(s);
-            Assert.AreEqual("AT", s.RutaPropuesta, "La del último pedido, no la de la zona (que sería la 16)");
-            Assert.AreEqual("Su último pedido salió por la AT", s.Motivos.Single());
+            Assert.IsNull(ReglasRutaPropia.Sugerir(Pedido(empresa: "1", cp: "28100", rutaUltimo: "AT ")));
         }
 
         [TestMethod]
-        public void Sugerir_UltimoPedidoPorLa16_FueraDeMadrid_TambienSugiere()
+        public void Sugerir_UltimoPedidoPorLa16_Empresa3FueraDeMadrid_SugiereLaRutaDelUltimo()
         {
-            SugerenciaRutaPedidoDTO s = ReglasRutaPropia.Sugerir(Pedido(empresa: "1", cp: "19200", rutaUltimo: "16"));
+            SugerenciaRutaPedidoDTO s = ReglasRutaPropia.Sugerir(Pedido(empresa: "3", cp: "19200", rutaUltimo: "16"));
 
+            Assert.IsNotNull(s);
             Assert.AreEqual("16", s.RutaPropuesta);
+            Assert.AreEqual("Su último pedido salió por la 16", s.Motivos.Single());
         }
 
         [TestMethod]
@@ -160,7 +158,7 @@ namespace NestoAPI.Tests.Infrastructure.Picking
             SugerenciaRutaPedidoDTO s = ReglasRutaPropia.Sugerir(Pedido(empresa: "1", baseImponible: 2000M, aparatos: true, rutaUltimo: "16"));
 
             Assert.AreEqual("AT", s.RutaPropuesta);
-            Assert.AreEqual(2, s.Motivos.Count);
+            Assert.AreEqual(1, s.Motivos.Count, "En la empresa 1 el último pedido no cuenta: solo los aparatos");
         }
 
         // ===== Lo que no se sugiere nunca
