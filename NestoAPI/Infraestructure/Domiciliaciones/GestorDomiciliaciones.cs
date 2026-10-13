@@ -318,8 +318,13 @@ namespace NestoAPI.Infraestructure.Domiciliaciones
                 domiciliacion.ListaEfectos.Add(efecto);
                 ultimoCorreo = efecto.Correo;
             }
-            domiciliacion.Correo = ultimoCorreo;
-            domiciliacionesClientes.Add(domiciliacion);
+            // Sin efectos con correo (un festivo sin remesa) no hay nadie a quien escribir: antes se añadía un cliente vacío y
+            // el correo reventaba en ListaEfectos[0] (ELMAH, 12/10/26).
+            if (domiciliacion.ListaEfectos.Any())
+            {
+                domiciliacion.Correo = ultimoCorreo;
+                domiciliacionesClientes.Add(domiciliacion);
+            }
             return domiciliacionesClientes;
         }
     }

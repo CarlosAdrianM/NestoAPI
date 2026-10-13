@@ -29,6 +29,32 @@ namespace NestoAPI.Tests.Infrastructure.Domiciliaciones
             gestor = new GestorDomiciliaciones(servicioDomiciliaciones, servicioCorreo, gestorFacturas);
         }
 
+        #region EnviarCorreoDomiciliacion
+
+        [TestMethod]
+        public void EnviarCorreoDomiciliacion_DiaSinDomiciliaciones_NoEnviaNadaNiFalla()
+        {
+            A.CallTo(() => servicioDomiciliaciones.LeerDomiciliacionesDia(A<System.DateTime>._)).Returns(new List<EfectoDomiciliado>());
+
+            IEnumerable<EfectoDomiciliado> efectos = gestor.EnviarCorreoDomiciliacion(new System.DateTime(2026, 10, 12));
+
+            Assert.IsFalse(System.Linq.Enumerable.Any(efectos));
+            A.CallTo(() => servicioCorreo.EnviarCorreoSMTP(A<MailMessage>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void EnviarCorreoDomiciliacion_EfectosSinCorreo_NoEnviaNadaNiFalla()
+        {
+            A.CallTo(() => servicioDomiciliaciones.LeerDomiciliacionesDia(A<System.DateTime>._))
+                .Returns(new List<EfectoDomiciliado> { new EfectoDomiciliado { Empresa = "1", Cliente = "1000", Correo = null, Importe = 10M } });
+
+            _ = gestor.EnviarCorreoDomiciliacion(new System.DateTime(2026, 10, 12));
+
+            A.CallTo(() => servicioCorreo.EnviarCorreoSMTP(A<MailMessage>._)).MustNotHaveHappened();
+        }
+
+        #endregion
+
         #region Tests existentes de AdjuntarFacturas
 
         [TestMethod]
