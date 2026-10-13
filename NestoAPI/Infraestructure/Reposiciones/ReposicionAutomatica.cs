@@ -408,6 +408,9 @@ SELECT CAST(CASE WHEN EXISTS (
         /// PreExtrProducto ([Fecha Modificación] y Usuario ahí son los de la recepción, por eso Usuario va NULL). Acotada por
         /// Diario (índice) y Fecha &gt;= corte: nunca un barrido de la tabla.</item>
         /// </list>
+        /// Sugerencia 581: las reposiciones PUNTUALES (Herramienta 'Puntual', lo que una tienda manda aparte a Algete) no
+        /// cubren el viaje: se descartan en las tres partes (por su cabecera, que siempre nace con número). Si no, una
+        /// puntual hecha justo después de la hora de cierre y antes de la pasada del job dejaría ese día sin la automática.
         /// </summary>
         internal const string SQL_TRASPASO_QUE_CUBRE = @"
 DECLARE @salida char(10) = (SELECT DiarioSalidaRep FROM Almacenes WHERE Empresa = @p0 AND [Número] = @p1);
@@ -416,16 +419,21 @@ SELECT TOP 1 x.NumTraspaso, x.Usuario, x.Fecha FROM (
     SELECT r.NumTraspaso, CAST(RTRIM(r.UsuarioCreacion) AS varchar(30)) AS Usuario, r.FechaCreacion AS Fecha
     FROM dbo.ReposicionesTraspasos r
     WHERE r.Empresa = @p0 AND r.Origen = @p1 AND r.Destino = @p2 AND r.Omitida IS NULL AND r.FechaCreacion >= @p3
+      AND r.Herramienta <> 'Puntual'
     UNION ALL
     SELECT p.[NºTraspaso], MIN(RTRIM(p.Usuario)), MIN(p.[Fecha Modificación])
     FROM PreExtrProducto p
     WHERE p.Empresa = @p0 AND p.Diario IN (@salida, @entrada) AND p.[Almacén] = @p2 AND p.Texto = @p4 AND p.Estado >= 0
+      AND NOT EXISTS (SELECT 1 FROM dbo.ReposicionesTraspasos t
+                      WHERE t.Empresa = @p0 AND t.NumTraspaso = p.[NºTraspaso] AND t.Herramienta = 'Puntual')
     GROUP BY p.[NºTraspaso]
     HAVING MIN(p.[Fecha Modificación]) >= @p3
     UNION ALL
     SELECT e.[NºTraspaso], CAST(NULL AS varchar(30)), MIN(e.Fecha)
     FROM ExtractoProducto e
     WHERE e.Diario = @entrada AND e.Fecha >= @p3 AND e.Empresa = @p0 AND e.[Almacén] = @p2 AND e.Texto = @p4
+      AND NOT EXISTS (SELECT 1 FROM dbo.ReposicionesTraspasos t
+                      WHERE t.Empresa = @p0 AND t.NumTraspaso = e.[NºTraspaso] AND t.Herramienta = 'Puntual')
     GROUP BY e.[NºTraspaso]
 ) x ORDER BY x.Fecha";
 

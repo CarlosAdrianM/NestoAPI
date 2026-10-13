@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure.Exceptions;
@@ -949,6 +949,319 @@ namespace NestoAPI.Tests.Infrastructure
             StringAssert.Contains(RegistroReposicionesTraspasosSql.SQL_NUMERAR_ABIERTA, "ORDER BY a.FechaCreacion DESC, a.Id DESC");
         }
 
+        // ---------------------------------------------------------------- Sugerencia 581: reposición puntual tienda → Algete
+
+        private readonly List<string> bloqueos = new List<string>();
+
+        private ServicioPreparacionReposicion ServicioPuntual()
+        {
+            registro = new RegistroEnMemoria(repositorio);
+            return new ServicioPreparacionReposicion(repositorio,
+                (empresa, origen, destino, corte) =>
+                {
+                    propuestasPedidas.Add($"{empresa}|{origen}|{destino}");
+                    return Task.FromResult(propuesta);
+                },
+                (origen, control) => control ? huecosAlgete : huecos,
+                (empresa, usuario) => almacenesDeUsuario.TryGetValue(usuario, out string almacen) ? almacen : null,
+                () => AHORA,
+                registro,
+                (empresa, origen, dia) =>
+                {
+                    repositorio.Llamadas.Add($"BLOQUEO {empresa} {origen} {dia:dd/MM/yyyy}");
+                    bloqueos.Add($"{origen} {dia:dd/MM/yyyy}");
+                    return Task.FromResult<IDisposable>(new Soltar(() => repositorio.Llamadas.Add("SOLTAR")));
+                });
+        }
+
+        private sealed class Soltar : IDisposable
+        {
+            private readonly Action alSoltar;
+            public Soltar(Action alSoltar) => this.alSoltar = alSoltar;
+            public void Dispose() => alSoltar();
+        }
+
+        [TestMethod]
+        public async Task Puntual_CreaYTerminaDeUnaVezConSoloLoPedido_ConCabeceraPuntualPreparada_YDentroDelBloqueoDelJob()
+        {
+            repositorio.Stocks["41980"] = 4;
+            repositorio.Stocks["36385"] = 1;
+            repositorio.UltimoTraspaso = 80950;
+
+            ResultadoTerminarReposicionDTO resultado = await ServicioPuntual().CrearPuntual(Peticion(("41980", 2), ("36385", 1), ("41980", 1)), Paloma);
+
+            Assert.AreEqual(0, propuestasPedidas.Count, "La puntual nunca pide la propuesta");
+            CollectionAssert.AreEqual(new[]
+            {
+                "BLOQUEO 1 ALC 06/10/2026",
+                "TRAN",
+                "INSERT RepoAlcAlg 36385 x1 ALC→ALG 06/10/2026 NV NUEVAVISION\\Paloma",
+                "INSERT RepoAlcAlg 41980 x3 ALC→ALG 06/10/2026 NV NUEVAVISION\\Paloma",
+                "COUNT otros RepoAlcAlg <>ALG",
+                "CONTADOR → 80951",
+                "DELETE a cero RepoAlcAlg ALG → 0",
+                "UPDATE traspaso 80951 fecha 06/10/2026 9:32 RepoAlcAlg ALG → 2",
+                "UPDATE pedidosespeciales RepoAlcAlg ALG",
+                "INSERT salida RepoAlcAlg ALC -ALG 06/10/2026 9:32 NUEVAVISION\\Paloma → 2",
+                "UPDATE entrada RepoAlcAlg ALG → PendRepo2 → 2",
+                "prdExtrProducto 1 RepoAlcAlg NUEVAVISION\\Paloma",
+                "UPDATE resto estado 1 RepoAlcAlg",
+                "CABECERA crear 80951 ALC→ALG Puntual NUEVAVISION\\Paloma 06/10/2026 9:32 corte -",
+                "CABECERA preparada 80951 NUEVAVISION\\Paloma",
+                "COMMIT",
+                "SOLTAR"
+            }, repositorio.Llamadas);
+            Assert.AreEqual(80951, resultado.NumTraspaso);
+            Assert.AreEqual("ALC", resultado.Origen);
+            Assert.AreEqual("ALG", resultado.Destino);
+            Assert.AreEqual("PendRepo2", resultado.DiarioEntrada);
+            Assert.AreEqual(4, resultado.Unidades);
+            // Algete la recibe como cualquier otra: entrada con número en su diario de entrada; nada queda en preparación
+            Assert.IsTrue(repositorio.Estado2.All(e => e.Diario == "PendRepo2" && e.Traspaso == 80951));
+            Assert.IsNull(await Servicio().LeerEnPreparacion("1", "ALC"));
+            CabeceraReposicionTraspaso cabecera = registro.Cabeceras.Single();
+            Assert.AreEqual(HerramientasReposicion.PUNTUAL, cabecera.Herramienta);
+            Assert.IsNull(cabecera.FechaCorte, "No es de ningún viaje del calendario");
+        }
+
+        [TestMethod]
+        public async Task Puntual_ConLaDelCalendarioEnPreparacion_Es409SinEscribirNada()
+        {
+            // La de las 9:00 rellena y sin mandar: que la mande (o meta el producto en esa caja) antes
+            repositorio.Lineas.Add(Fila(561483500, "41980", 3));
+            repositorio.Stocks["36385"] = 5;
+
+            ReposicionYaEnPreparacionException error = await Assert.ThrowsExceptionAsync<ReposicionYaEnPreparacionException>(
+                () => ServicioPuntual().CrearPuntual(Peticion(("36385", 1)), Paloma));
+
+            Assert.AreEqual(HttpStatusCode.Conflict, error.StatusCode);
+            StringAssert.Contains(error.Message, "en preparación");
+            CollectionAssert.AreEqual(new[] { "BLOQUEO 1 ALC 06/10/2026", "SOLTAR" }, repositorio.Llamadas, "Se mira dentro del bloqueo y no se escribe nada");
+            Assert.AreEqual(3, repositorio.Lineas.Single().Cantidad);
+        }
+
+        [TestMethod]
+        public async Task Puntual_SinStockSuficienteEnLaTienda_Es400ConLaListaYNoGastaNumero()
+        {
+            repositorio.Stocks["41980"] = 2;
+            repositorio.Stocks["36385"] = 5;
+
+            NestoBusinessException error = await Assert.ThrowsExceptionAsync<NestoBusinessException>(
+                () => ServicioPuntual().CrearPuntual(Peticion(("41980", 3), ("36385", 1)), Paloma));
+
+            Assert.AreEqual(HttpStatusCode.BadRequest, error.StatusCode);
+            StringAssert.Contains(error.Message, "41980 (pides 3, hay 2)");
+            Assert.IsFalse(error.Message.Contains("36385"));
+            Assert.AreEqual("ROLLBACK", repositorio.Llamadas[repositorio.Llamadas.Count - 2]);
+            Assert.IsFalse(repositorio.Llamadas.Any(l => l.StartsWith("CONTADOR")), "No se gasta número de traspaso");
+            Assert.AreEqual(0, repositorio.Lineas.Count);
+            Assert.AreEqual(0, registro.Cabeceras.Count);
+        }
+
+        [TestMethod]
+        public async Task Puntual_SiProdExtrProductoFalla_NoQuedaNadaEnPreparacion()
+        {
+            repositorio.Stocks["41980"] = 5;
+            repositorio.ErrorAlContabilizar = new NestoBusinessException("No se puede realizar la acción. Se quedaría un stock negativo.");
+
+            _ = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => ServicioPuntual().CrearPuntual(Peticion(("41980", 1)), Paloma));
+
+            Assert.AreEqual(0, repositorio.Lineas.Count, "Si algo falla no queda una reposición a medias que bloquee el job");
+            Assert.AreEqual("SOLTAR", repositorio.Llamadas.Last());
+        }
+
+        [TestMethod]
+        public async Task Puntual_DeOtraTiendaQueNoEsLaSuya_EsUnauthorizedSinBloqueoNiEscrituras()
+        {
+            // Paloma es de Alcobendas: de Reina no
+            CrearReposicionDTO peticion = Peticion(("41980", 1));
+            peticion.Origen = "REI";
+
+            _ = await Assert.ThrowsExceptionAsync<UnauthorizedAccessException>(() => ServicioPuntual().CrearPuntual(peticion, Paloma));
+
+            Assert.AreEqual(0, repositorio.Llamadas.Count);
+        }
+
+        [TestMethod]
+        public async Task Puntual_NoHaceFaltaEstarEnLaListaDeRellenarAMano_BastaSuTienda()
+        {
+            // La lista «UsuariosRellenarReposicionManual» es para la del calendario; la puntual, la tienda (Patricia, Reina)
+            repositorio.Stocks["41980"] = 1;
+            CrearReposicionDTO peticion = Peticion(("41980", 1));
+            peticion.Origen = "REI";
+
+            ResultadoTerminarReposicionDTO resultado = await ServicioPuntual().CrearPuntual(peticion, Usuario("NUEVAVISION\\Patricia", "Tiendas"));
+
+            Assert.AreEqual("REI", resultado.Origen);
+            Assert.AreEqual("PendRepo2", resultado.DiarioEntrada);
+        }
+
+        [DataTestMethod]
+        [DataRow("ALG", "ALC", "de una tienda a Algete")]
+        [DataRow("ALC", "REI", "de una tienda a Algete")]
+        public async Task Puntual_SoloDeUnaTiendaAAlgete(string origen, string destino, string mensaje)
+        {
+            var peticion = new CrearReposicionDTO
+            {
+                Origen = origen, Destino = destino,
+                Lineas = new List<LineaCrearReposicionDTO> { new LineaCrearReposicionDTO { Producto = "41980", Cantidad = 1 } }
+            };
+
+            NestoBusinessException error = await Assert.ThrowsExceptionAsync<NestoBusinessException>(
+                () => ServicioPuntual().CrearPuntual(peticion, Andre));
+
+            StringAssert.Contains(error.Message, mensaje);
+            Assert.AreEqual(0, repositorio.Llamadas.Count);
+        }
+
+        [TestMethod]
+        public async Task Puntual_SinDestino_EsAAlgete()
+        {
+            repositorio.Stocks["41980"] = 1;
+            var peticion = new CrearReposicionDTO
+            {
+                Origen = "ALC",
+                Lineas = new List<LineaCrearReposicionDTO> { new LineaCrearReposicionDTO { Producto = "41980", Cantidad = 1 } }
+            };
+
+            ResultadoTerminarReposicionDTO resultado = await ServicioPuntual().CrearPuntual(peticion, Paloma);
+
+            Assert.AreEqual("ALG", resultado.Destino);
+        }
+
+        [TestMethod]
+        public async Task Puntual_SinLineasConCantidad_Es400YNoUsaLaPropuesta()
+        {
+            NestoBusinessException error = await Assert.ThrowsExceptionAsync<NestoBusinessException>(
+                () => ServicioPuntual().CrearPuntual(Peticion(("41980", 0)), Paloma));
+
+            StringAssert.Contains(error.Message, "al menos un producto");
+            Assert.AreEqual(0, propuestasPedidas.Count);
+            Assert.AreEqual(0, repositorio.Llamadas.Count);
+        }
+
+        [TestMethod]
+        public async Task Puntual_ConInventarioEnCurso_Es409()
+        {
+            repositorio.InventariosEnCurso.Add("ALC");
+
+            NestoBusinessException error = await Assert.ThrowsExceptionAsync<NestoBusinessException>(
+                () => ServicioPuntual().CrearPuntual(Peticion(("41980", 1)), Paloma));
+
+            Assert.AreEqual(HttpStatusCode.Conflict, error.StatusCode);
+            Assert.AreEqual(0, repositorio.Llamadas.Count);
+        }
+
+        [TestMethod]
+        public async Task Puntual_DespuesLaTiendaPuedeTenerLaDelCalendarioComoSiempre()
+        {
+            // La puntual no deja nada abierto: el job puede rellenar el siguiente viaje (no hay YaEnPreparacion)
+            repositorio.Stocks["41980"] = 3;
+            _ = await ServicioPuntual().CrearPuntual(Peticion(("41980", 1)), Paloma);
+            propuesta.Add(new LineaPropuestaReposicionDTO { Producto = "36385", CantidadReposicion = 2 });
+
+            ReposicionEnPreparacionDTO automatica = await ServicioPuntual().Crear(new CrearReposicionDTO
+            {
+                Origen = "ALC", Destino = "ALG", Herramienta = HerramientasReposicion.AUTOMATICO
+            }, ServicioReposicionAutomatica.Principal(ServicioReposicionAutomatica.USUARIO_AUTOMATICO), new DateTime(2026, 10, 7, 9, 0, 0));
+
+            Assert.AreEqual("36385", automatica.Lineas.Single().Producto);
+        }
+
+        [TestMethod]
+        public void Herramienta_PuntualNoSePuedePedirPorElPostNormal()
+        {
+            // Solo la pone CrearPuntual: una «Puntual» en preparación no cubriría el viaje y quedaría abierta
+            _ = Assert.ThrowsException<NestoBusinessException>(() => HerramientasReposicion.Resolver("Puntual", Paloma));
+        }
+
+        [TestMethod]
+        public void Sql_ElJobNoDaPorCubiertoElViajeConUnaPuntual()
+        {
+            string sql = RepositorioReposicionAutomaticaSql.SQL_TRASPASO_QUE_CUBRE;
+            StringAssert.Contains(sql, "r.Herramienta <> 'Puntual'");
+            StringAssert.Contains(sql, "t.NumTraspaso = p.[NºTraspaso] AND t.Herramienta = 'Puntual'");
+            StringAssert.Contains(sql, "t.NumTraspaso = e.[NºTraspaso] AND t.Herramienta = 'Puntual'");
+            Assert.AreEqual(HerramientasReposicion.PUNTUAL, "Puntual");
+        }
+
+        [TestMethod]
+        public async Task Controlador_Puntual_Devuelve201ConElTraspaso_SinMirarLaListaDeRellenarAMano()
+        {
+            IServicioPreparacionReposicion servicio = A.Fake<IServicioPreparacionReposicion>();
+            var peticion = new CrearReposicionDTO { Origen = "ALC", Lineas = new List<LineaCrearReposicionDTO>() };
+            A.CallTo(() => servicio.CrearPuntual(peticion, A<IPrincipal>.Ignored)).Returns(new ResultadoTerminarReposicionDTO { NumTraspaso = 80951 });
+            // La lista vacía: nadie podría rellenar a mano la del calendario, pero la puntual sí
+            var controlador = new ReposicionesController(null, servicio, permisoManual: PermisoManual(string.Empty))
+            {
+                Request = new HttpRequestMessage(), User = Paloma
+            };
+
+            IHttpActionResult resultado = await controlador.PostPuntual(peticion);
+
+            var creado = (NegotiatedContentResult<ResultadoTerminarReposicionDTO>)resultado;
+            Assert.AreEqual(HttpStatusCode.Created, creado.StatusCode);
+            Assert.AreEqual(80951, creado.Content.NumTraspaso);
+        }
+
+        [TestMethod]
+        public async Task Controlador_Puntual_SinPermiso_Es403()
+        {
+            IServicioPreparacionReposicion servicio = A.Fake<IServicioPreparacionReposicion>();
+            A.CallTo(() => servicio.CrearPuntual(A<CrearReposicionDTO>._, A<IPrincipal>._)).Throws(new UnauthorizedAccessException("no"));
+            var controlador = new ReposicionesController(null, servicio) { Request = new HttpRequestMessage(), User = Paloma };
+
+            IHttpActionResult resultado = await controlador.PostPuntual(new CrearReposicionDTO { Origen = "REI" });
+
+            Assert.AreEqual(HttpStatusCode.Forbidden, ((ResponseMessageResult)resultado).Response.StatusCode);
+        }
+
+        [TestMethod]
+        public async Task ProductosPuntual_PrimeroLaReferencia_YSiNoElCodigoDeBarrasConSusUnidadesPorLectura()
+        {
+            var fichas = new Dictionary<string, ProductoReposicionPuntualDTO>
+            {
+                ["41980"] = new ProductoReposicionPuntualDTO { Producto = "41980", Nombre = "Guantes M", StockOrigen = 7 },
+                ["41981"] = new ProductoReposicionPuntualDTO { Producto = "41981", Nombre = "Guantes L", StockOrigen = 2 }
+            };
+            var pedidas = new List<string>();
+            var buscador = new ProductosReposicionPuntual(
+                (empresa, origen, producto) =>
+                {
+                    pedidas.Add($"{empresa}|{origen}|{producto}");
+                    return Task.FromResult(fichas.TryGetValue(producto, out ProductoReposicionPuntualDTO f)
+                        ? new ProductoReposicionPuntualDTO { Producto = f.Producto, Nombre = f.Nombre, StockOrigen = f.StockOrigen } : null);
+                },
+                (empresa, codigo) => Task.FromResult(codigo == "8437017506362"
+                    ? new List<NestoAPI.Infraestructure.Productos.ProductoPorCodigoBarrasDTO>
+                    {
+                        new NestoAPI.Infraestructure.Productos.ProductoPorCodigoBarrasDTO { Producto = "41980", Cantidad = 6, Principal = true },
+                        new NestoAPI.Infraestructure.Productos.ProductoPorCodigoBarrasDTO { Producto = "41981", Cantidad = 1 }
+                    }
+                    : new List<NestoAPI.Infraestructure.Productos.ProductoPorCodigoBarrasDTO>()));
+
+            List<ProductoReposicionPuntualDTO> porReferencia = await buscador.Buscar(null, " alc ", " 41980 ");
+            List<ProductoReposicionPuntualDTO> porCodigo = await buscador.Buscar("1", "ALC", "8437017506362");
+            List<ProductoReposicionPuntualDTO> ninguno = await buscador.Buscar("1", "ALC", "xxx");
+            List<ProductoReposicionPuntualDTO> vacio = await buscador.Buscar("1", "ALC", "  ");
+
+            Assert.AreEqual("41980", porReferencia.Single().Producto);
+            Assert.AreEqual(1, porReferencia.Single().UnidadesPorLectura);
+            Assert.AreEqual(7, porReferencia.Single().StockOrigen);
+            Assert.AreEqual("1|ALC|41980", pedidas.First(), "Empresa por defecto y origen limpio");
+            CollectionAssert.AreEqual(new[] { "41980", "41981" }, porCodigo.Select(p => p.Producto).ToArray(), "Compartido: los dos, que elija");
+            Assert.AreEqual(6, porCodigo[0].UnidadesPorLectura, "El código de la caja vale 6");
+            Assert.AreEqual(0, ninguno.Count);
+            Assert.AreEqual(0, vacio.Count);
+        }
+
+        [TestMethod]
+        public void Sql_FichaPuntualConStockDelOrigenYSoloActivos()
+        {
+            StringAssert.Contains(ProductosReposicionPuntual.SQL_FICHA, "e.[Almacén] = @p1");
+            StringAssert.Contains(ProductosReposicionPuntual.SQL_FICHA, "pr.Estado >= 0");
+        }
+
         /// <summary>La cabecera en memoria: apunta en las mismas Llamadas del repositorio para ver que va dentro de la transacción.</summary>
         private class RegistroEnMemoria : IRegistroReposicionesTraspasos
         {
@@ -1016,6 +1329,8 @@ namespace NestoAPI.Tests.Infrastructure
             public readonly List<FilaReposicionEnPreparacion> Lineas = new List<FilaReposicionEnPreparacion>();
             public readonly List<string> InventariosEnCurso = new List<string>();
             public readonly List<string> ProductosInexistentes = new List<string>();
+            /// <summary>Sugerencia 581: el stock en el origen de lo que se inserta (lo que devuelve LeerLineasEnPreparacion). Sin él, 0.</summary>
+            public readonly Dictionary<string, int> Stocks = new Dictionary<string, int>();
             public int UltimoTraspaso = 80000;
             public int LineasDeOtroAlmacen;
             public Exception ErrorAlContabilizar;
@@ -1110,7 +1425,8 @@ namespace NestoAPI.Tests.Infrastructure
                 var fila = new FilaReposicionEnPreparacion
                 {
                     NumeroOrden = siguienteOrden++, Producto = producto, Nombre = "Producto " + producto, Cantidad = cantidad,
-                    Almacen = destino, Fecha = fecha, Usuario = usuario
+                    Almacen = destino, Fecha = fecha, Usuario = usuario,
+                    StockOrigen = Stocks.TryGetValue(producto, out int stock) ? stock : 0
                 };
                 Lineas.Add(fila);
                 Estado(fila).Diario = diario;

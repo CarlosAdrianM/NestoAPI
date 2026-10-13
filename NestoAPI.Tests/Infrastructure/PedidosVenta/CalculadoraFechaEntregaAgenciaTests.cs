@@ -1,4 +1,5 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Models;
 using System;
@@ -666,6 +667,63 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             ResultadoFechaEntregaAgencia resultado = Calcular("2026-10-13 10:30:00", 1, 1, LineaA(), b);
 
             Assert.AreEqual(new DateTime(2026, 10, 14), resultado.EntregaCompleta);
+        }
+
+        /// <summary>
+        /// Sugerencia 581 (corrección de Carlos, 13/10/26): una reposición puntual tienda → Algete ADELANTA la llegada y la
+        /// fecha de los pedidos que esperan ese producto. Cuenta como cualquier otra reposición enviada: en cuanto se termina,
+        /// sus unidades salen del stock de la tienda y están en PreExtrProducto con número de traspaso (PendienteReposicion,
+        /// RepositorioSombraModoServicioSql.SQL_REPOSICIONES), es decir, «ya vienen de camino» y salen el laborable siguiente.
+        /// Datos de BD → reparto → fecha, de punta a punta.
+        /// </summary>
+        [TestMethod]
+        public void ReposicionPuntual_AdelantaLaFechaDelPedidoQueEsperabaALaSiguienteAutomatica()
+        {
+            // Martes 13/10 a las 10:30: la de Alcobendas de hoy ya cerró a las 10:00. B: nada en Algete, 1 libre en Alcobendas.
+            DateTime ahora = Instante("2026-10-13 10:30:00");
+            var pedido = new[]
+            {
+                new LineaPedidoFechaEntregaAgencia { Producto = "A", Cantidad = 2, Almacen = "ALG", BaseImponible = 20 },
+                new LineaPedidoFechaEntregaAgencia { Producto = "B", Cantidad = 1, Almacen = "ALG", BaseImponible = 10 }
+            };
+            var antes = new DatosSombraModoServicio();
+            StockSombra(antes, "A", "ALG", 5);
+            StockSombra(antes, "B", "ALC", 1);
+            // Paloma la manda en una puntual: sale de Alcobendas (contabilizada) y queda pendiente de recibir en Algete
+            var despues = new DatosSombraModoServicio();
+            StockSombra(despues, "A", "ALG", 5);
+            StockSombra(despues, "B", "ALC", 0);
+            ResumenStocksProductos.Sumar(despues.Resumen.PendienteReposicion, ResumenStocksProductos.Clave("B"), 1);
+
+            ResultadoFechaEntregaAgencia sinPuntual = CalcularDesdeDatos(ahora, pedido, antes);
+            ResultadoFechaEntregaAgencia conPuntual = CalcularDesdeDatos(ahora, pedido, despues);
+
+            // Sin ella: la siguiente de Alcobendas es el jueves 15 (llega 13:30, después del corte) → sale el viernes 16
+            Assert.AreEqual(new DateTime(2026, 10, 16), sinPuntual.EntregaCompleta, sinPuntual.Motivo);
+            // Con ella: ya viene de camino → sale el miércoles 14
+            Assert.AreEqual(new DateTime(2026, 10, 14), conPuntual.EntregaCompleta, conPuntual.Motivo);
+        }
+
+        private static void StockSombra(DatosSombraModoServicio datos, string producto, string almacen, int stock)
+        {
+            ResumenStocksProductos.Sumar(datos.Resumen.StockAlmacen, ResumenStocksProductos.Clave(producto, almacen), stock);
+            ResumenStocksProductos.Sumar(datos.Resumen.StockSedes, ResumenStocksProductos.Clave(producto), stock);
+        }
+
+        private static ResultadoFechaEntregaAgencia CalcularDesdeDatos(DateTime ahora, IEnumerable<LineaPedidoFechaEntregaAgencia> pedido,
+            DatosSombraModoServicio datos)
+        {
+            List<LineaFechaEntregaAgencia> lineas = RepartidorStockFechaEntregaAgencia.Repartir(pedido, datos, new[] { "ALC", "REI" }, ahora.Date);
+            return new CalculadoraFechaEntregaAgencia(EsFestivo).Calcular(new EntradaFechaEntregaAgencia
+            {
+                Lineas = lineas,
+                ModoServicio = 1,
+                ModoFacturacion = 1,
+                Ruta = "FW",
+                Ahora = ahora,
+                HoraCorte = new TimeSpan(11, 0, 0),
+                Calendario = CalendarioProduccion()
+            });
         }
 
         [TestMethod]

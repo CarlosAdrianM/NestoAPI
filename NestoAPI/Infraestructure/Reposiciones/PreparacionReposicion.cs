@@ -569,6 +569,11 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
         /// la salida y la entrada. 409 si ya tiene lecturas en Ariadna o está contabilizado; 404 si no existe.
         /// </summary>
         Task<ResultadoAnularReposicionDTO> Anular(string empresa, int numeroTraspaso, IPrincipal usuario);
+        /// <summary>
+        /// Sugerencia 581: una reposición PUNTUAL de una tienda a Algete con solo lo que dice la petición: se crea y se termina
+        /// de una vez (número, salida contabilizada y entrada pendiente de recibir en Algete), sin tocar la del calendario.
+        /// </summary>
+        Task<ResultadoTerminarReposicionDTO> CrearPuntual(CrearReposicionDTO peticion, IPrincipal usuario);
     }
 
     /// <summary>
@@ -604,6 +609,7 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
         private readonly Func<string, string, string> almacenDelUsuario;
         private readonly Func<DateTime> ahora;
         private readonly IRegistroReposicionesTraspasos registro;
+        private readonly Func<string, string, DateTime, Task<IDisposable>> bloquear;
         private readonly NVEntities dbPropio;
 
         public ServicioPreparacionReposicion() : this(new NVEntities())
@@ -616,7 +622,8 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
                 (origen, control) => UbicacionesReposicion.Para(origen, control, () => new PuertaUbicacionesSql(db)),
                 (empresa, usuario) => Controllers.ParametrosUsuarioController.LeerParametro(empresa, usuario, CLAVE_ALMACEN_USUARIO),
                 () => DateTime.Now,
-                new RegistroReposicionesTraspasosSql(db))
+                new RegistroReposicionesTraspasosSql(db),
+                (empresa, origen, dia) => new RepositorioReposicionAutomaticaSql(db).Bloquear(empresa, origen, dia))
         {
             dbPropio = db;
         }
@@ -625,14 +632,20 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
         /// <param name="ubicaciones">(origen, controlUbicaciones) → qué hacer con los huecos del origen.</param>
         /// <param name="almacenDelUsuario">(empresa, usuario sin dominio) → su AlmacénPedidoVta.</param>
         /// <param name="registro">NestoAPI#577: la cabecera ReposicionesTraspasos. Null: no se apunta (pruebas que no la miran).</param>
+        /// <param name="bloquear">
+        /// Sugerencia 581: (empresa, origen, día) → el mismo applock que el job de las reposiciones automáticas, para que una
+        /// puntual no se cruce con el job escribiendo en el mismo diario de salida. Null: sin bloqueo (pruebas).
+        /// </param>
         internal ServicioPreparacionReposicion(IRepositorioPreparacionReposicion repositorio,
             Func<string, string, string, DateTime?, Task<List<LineaPropuestaReposicionDTO>>> propuesta,
             Func<string, bool, IUbicacionesReposicion> ubicaciones,
             Func<string, string, string> almacenDelUsuario,
             Func<DateTime> ahora,
-            IRegistroReposicionesTraspasos registro = null)
+            IRegistroReposicionesTraspasos registro = null,
+            Func<string, string, DateTime, Task<IDisposable>> bloquear = null)
         {
             this.registro = registro ?? SinRegistroReposicionesTraspasos.Instancia;
+            this.bloquear = bloquear ?? ((e, o, d) => Task.FromResult<IDisposable>(new SinBloqueo()));
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
             this.propuesta = propuesta ?? throw new ArgumentNullException(nameof(propuesta));
             this.ubicaciones = ubicaciones ?? throw new ArgumentNullException(nameof(ubicaciones));
@@ -919,6 +932,149 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
         }
 
         /// <summary>
+        /// Sugerencia 581 (Paloma, 13/10/26; opción elegida por Carlos: «reposición manual pequeña»). Pasada la hora de cierre,
+        /// la reposición del calendario ya está rellena (y a menudo enviada); si alguien le pide a la tienda que mande un producto
+        /// concreto a Algete antes de que pase el repartidor, la tienda hace una reposición APARTE con solo eso. Carlos: que sea
+        /// una excepción puntual; NO seguir rellenando la automática hasta que pase el repartidor, porque se caería el cálculo de
+        /// fechas de entrega prometidas.
+        ///
+        /// <para>Cómo es:</para>
+        /// <list type="bullet">
+        /// <item>Solo de una tienda (sin control de ubicaciones) a Algete, con las líneas que vienen (sin propuesta). La puede
+        /// hacer quien tiene esa tienda como AlmacénPedidoVta (su tienda y ninguna otra), Almacén o Dirección; no hace falta estar
+        /// en «UsuariosRellenarReposicionManual» (eso es para rellenar a mano la del calendario).</item>
+        /// <item>De una vez, en una transacción: las líneas, el número de traspaso, la salida contabilizada de la tienda y la
+        /// entrada pendiente de recibir en Algete, exactamente como Terminar. Así nunca queda nada «en preparación» que haga que
+        /// el job se salte el siguiente viaje (YaEnPreparacion). Algete la recibe como cualquier otra (Ariadna Entradas, Nesto
+        /// Recibir).</item>
+        /// <item>Si la tienda tiene una reposición en preparación (la del calendario sin enviar), 409: que la envíe antes.</item>
+        /// <item>Cada producto tiene que tener stock en la tienda (400 con la lista; prdExtrProducto también lo impediría).</item>
+        /// <item>Cabecera ReposicionesTraspasos con Herramienta «Puntual», número, quién y cuándo, ya preparada y sin FechaCorte:
+        /// no cubre el viaje del calendario (el job la descarta en BuscarTraspasoQueCubre), no es «abierta» (Terminar no la
+        /// numera) y HayCabeceraDelDia solo mira las del job.</item>
+        /// <item>Con el applock del job (origen + día): no se cruza con la automática escribiendo en el mismo diario.</item>
+        /// </list>
+        ///
+        /// <para>Fechas de entrega (corrección de Carlos, 13/10/26): la puntual ADELANTA la fecha de los pedidos que esperan
+        /// esos productos, como cualquier reposición enviada. En cuanto se termina, sus unidades salen del stock de la tienda y
+        /// quedan en PreExtrProducto con número de traspaso (PendienteReposicion de la calculadora): «ya vienen de camino» y
+        /// salen el laborable siguiente (CalculadoraFechaEntregaAgencia, ORIGEN_EN_CAMINO), en vez de esperar a la siguiente
+        /// automática de la tienda. Lo ya prometido (CabPedidoVta.FechaEntregaAgenciaPrometida) no se reescribe; los pedidos
+        /// nuevos y el correo de modificación ya dan la fecha nueva. La propuesta del siguiente viaje las cuenta como stock de
+        /// Algete (no se mandan dos veces).</para>
+        /// </summary>
+        public async Task<ResultadoTerminarReposicionDTO> CrearPuntual(CrearReposicionDTO peticion, IPrincipal usuario)
+        {
+            if (peticion == null)
+            {
+                throw new NestoBusinessException("Faltan los datos de la reposición puntual.");
+            }
+            string empresa = Empresa(peticion.Empresa);
+            string origen = Almacen(peticion.Origen);
+            string destino = string.IsNullOrWhiteSpace(peticion.Destino) ? Constantes.Almacenes.ALGETE : Almacen(peticion.Destino);
+            ComprobarAlmacenes(origen, destino);
+            if (destino != Constantes.Almacenes.ALGETE)
+            {
+                throw new NestoBusinessException("Una reposición puntual solo puede ir de una tienda a Algete.");
+            }
+            List<LineaCrearReposicionDTO> lineas = Consolidar(peticion.Lineas);
+            if (!lineas.Any())
+            {
+                throw new NestoBusinessException("Pon al menos un producto con cantidad para la reposición puntual.");
+            }
+            if (lineas.Any(l => l.Cantidad > short.MaxValue))
+            {
+                throw new NestoBusinessException($"La cantidad de una línea no puede pasar de {short.MaxValue}.");
+            }
+
+            DatosAlmacenReposicion almacenOrigen = await AlmacenConDiario(empresa, origen, a => a.DiarioSalidaRep, "de salida").ConfigureAwait(false);
+            if (almacenOrigen.ControlUbicaciones)
+            {
+                throw new NestoBusinessException($"Las reposiciones puntuales son de una tienda a Algete: desde {origen} no se pueden hacer.");
+            }
+            if (!PuedeEscribir(usuario, empresa, origen))
+            {
+                throw new UnauthorizedAccessException($"Una reposición puntual de {origen} solo la puede hacer la gente de esa tienda (o Almacén y Dirección). " +
+                    "Tu usuario no tiene ese almacén como almacén de pedidos.");
+            }
+            DatosAlmacenReposicion almacenDestino = await AlmacenConDiario(empresa, destino, a => a.DiarioEntradaRep, "de entrada").ConfigureAwait(false);
+            if (await repositorio.HayInventarioEnCurso(empresa, origen).ConfigureAwait(false))
+            {
+                throw Conflicto($"El almacén {origen} tiene un inventario en curso: termínalo antes de mandar nada.");
+            }
+            IUbicacionesReposicion huecos = ubicaciones(origen, false);
+            string diario = almacenOrigen.DiarioSalidaRep;
+            string texto = Texto(origen, destino);
+            string quien = UsuarioAuditoriaHelper.Resolver(usuario, null);
+            DateTime momento = ahora();
+            List<FilaReposicionEnPreparacion> creadas = null;
+            int numeroTraspaso;
+
+            using (await bloquear(empresa, origen, momento.Date).ConfigureAwait(false))
+            {
+                // Dentro del bloqueo: el job puede haber rellenado la del calendario mientras tanto
+                List<FilaReposicionEnPreparacion> existentes = await repositorio.LeerLineasEnPreparacion(empresa, diario, origen).ConfigureAwait(false);
+                if (existentes.Any())
+                {
+                    throw new ReposicionYaEnPreparacionException($"{origen} tiene una reposición a {existentes.First().Almacen?.Trim()} en preparación " +
+                        $"({existentes.Count} líneas) sin enviar: termínala antes de hacer una puntual.");
+                }
+                numeroTraspaso = await repositorio.EnTransaccion(async () =>
+                {
+                    foreach (LineaCrearReposicionDTO linea in lineas)
+                    {
+                        int insertadas = await repositorio.InsertarLineaPreparacion(empresa, diario, origen, destino, linea.Producto, linea.Cantidad,
+                            momento.Date, texto, VENDEDOR_VENTA, quien).ConfigureAwait(false);
+                        if (insertadas != 1)
+                        {
+                            throw new NestoBusinessException($"El producto {linea.Producto} no existe. No se ha mandado nada.");
+                        }
+                    }
+                    creadas = await repositorio.LeerLineasEnPreparacion(empresa, diario, origen).ConfigureAwait(false);
+                    List<FilaReposicionEnPreparacion> sinStock = creadas.Where(f => f.Cantidad > f.StockOrigen).ToList();
+                    if (sinStock.Any())
+                    {
+                        throw new NestoBusinessException($"No hay stock suficiente en {origen}: " +
+                            string.Join(", ", sinStock.Select(f => $"{f.Producto} (pides {f.Cantidad}, hay {Math.Max(0, f.StockOrigen)})")) +
+                            ". No se ha mandado nada.");
+                    }
+                    int numero = await CerrarPreparacion(empresa, origen, destino, diario, almacenDestino, creadas, huecos, quien,
+                        contabilizar: true).ConfigureAwait(false);
+                    await registro.Crear(new CabeceraReposicionTraspaso
+                    {
+                        Empresa = empresa,
+                        NumTraspaso = numero,
+                        Origen = origen,
+                        Destino = destino,
+                        Herramienta = HerramientasReposicion.PUNTUAL,
+                        UsuarioCreacion = quien,
+                        FechaCreacion = momento,
+                        FechaCorte = null
+                    }).ConfigureAwait(false);
+                    await registro.MarcarPreparada(empresa, numero, quien).ConfigureAwait(false);
+                    return numero;
+                }).ConfigureAwait(false);
+            }
+
+            return new ResultadoTerminarReposicionDTO
+            {
+                NumTraspaso = numeroTraspaso,
+                Origen = origen,
+                Destino = destino,
+                DiarioSalida = diario,
+                DiarioEntrada = almacenDestino.DiarioEntradaRep,
+                Lineas = creadas.Select(f => new LineaTraspasoTerminadoDTO { Producto = f.Producto, Nombre = f.Nombre, Cantidad = f.Cantidad }).ToList()
+            };
+        }
+
+        private sealed class SinBloqueo : IDisposable
+        {
+            public void Dispose()
+            {
+            }
+        }
+
+        /// <summary>
         /// Quién puede crear, cambiar y terminar la reposición de un origen: quien tiene ese almacén en AlmacénPedidoVta (la
         /// tienda) y, además, Almacén y Dirección. El mismo criterio que para recibirla (OrigenRecepcionReposiciones). Desde
         /// un origen con control de ubicaciones (Algete), solo Almacén y Dirección: es quien la recoge en Ariadna
@@ -1055,8 +1211,13 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
                 List<LineaPropuestaReposicionDTO> calculada = await propuesta(empresa, origen, destino, corte).ConfigureAwait(false);
                 origenLineas = calculada.Select(l => new LineaCrearReposicionDTO { Producto = l.Producto, Cantidad = l.CantidadReposicion });
             }
-            // Nesto viejo consolida por producto (group by producto, grupo … sum(cantidad))
-            return origenLineas
+            return Consolidar(origenLineas);
+        }
+
+        /// <summary>Nesto viejo consolida por producto (group by producto, grupo … sum(cantidad)); fuera lo que no tiene cantidad.</summary>
+        private static List<LineaCrearReposicionDTO> Consolidar(IEnumerable<LineaCrearReposicionDTO> origenLineas)
+        {
+            return (origenLineas ?? Enumerable.Empty<LineaCrearReposicionDTO>())
                 .Where(l => !string.IsNullOrWhiteSpace(l.Producto) && l.Cantidad > 0)
                 .GroupBy(l => l.Producto.Trim(), StringComparer.OrdinalIgnoreCase)
                 .Select(g => new LineaCrearReposicionDTO { Producto = g.Key, Cantidad = g.Sum(l => l.Cantidad) })

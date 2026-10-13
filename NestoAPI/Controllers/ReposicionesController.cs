@@ -41,7 +41,7 @@ namespace NestoAPI.Controllers
         internal ReposicionesController(NVEntities db, IServicioPreparacionReposicion preparacion,
             IServicioTransitoReposiciones transito = null, IServicioCalendarioReposiciones calendario = null,
             IServicioReposicionAutomatica automatica = null, IPermisoRellenarReposicionManual permisoManual = null,
-            IServicioListadoReposicion listado = null)
+            IServicioListadoReposicion listado = null, IProductosReposicionPuntual productosPuntual = null)
         {
             this.db = db;
             this.preparacion = preparacion;
@@ -50,6 +50,55 @@ namespace NestoAPI.Controllers
             this.automatica = automatica; // ídem
             this.permisoManual = permisoManual; // ídem
             this.listado = listado; // ídem
+            this.productosPuntual = productosPuntual; // ídem
+        }
+
+        private readonly IProductosReposicionPuntual productosPuntual;
+
+        private IProductosReposicionPuntual ProductosPuntual => productosPuntual ?? new ProductosReposicionPuntual(db);
+
+        // GET api/Reposiciones/Puntual/Producto?origen=ALC&codigo=8437017506362&empresa=1
+        /// <summary>
+        /// Sugerencia 581: lo que se lee (o teclea) en la pantalla de la reposición puntual: el producto con esa referencia o,
+        /// si no, los que tienen ese código de barras (cualquiera de sus códigos), con el stock en <paramref name="origen"/> y
+        /// las unidades que vale una lectura. Lista vacía si no hay ninguno; varios si el código lo comparten (que elija).
+        /// </summary>
+        [HttpGet]
+        [Route("Puntual/Producto")]
+        [ResponseType(typeof(List<ProductoReposicionPuntualDTO>))]
+        public async Task<IHttpActionResult> GetProductoPuntual(string origen, string codigo, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            return Ok(await ProductosPuntual.Buscar(empresa, origen, codigo).ConfigureAwait(false));
+        }
+
+        // POST api/Reposiciones/Puntual   { Empresa, Origen, Destino? (ALG), Lineas: [{ Producto, Cantidad }] }
+        /// <summary>
+        /// Sugerencia 581 (Paloma): una reposición PUNTUAL de una tienda a Algete con solo los productos que dice la petición,
+        /// aparte de la del calendario, para cuando alguien pide que se mande algo concreto después de la hora de cierre. Se
+        /// crea y se termina de una vez: devuelve el traspaso como Terminar, ya pendiente de recibir en Algete. No necesita estar
+        /// en «UsuariosRellenarReposicionManual»: basta con tener esa tienda como almacén de pedidos (o Almacén y Dirección);
+        /// 403 si no. 409 si la tienda tiene una reposición en preparación sin enviar o un inventario en curso; 400 si falta
+        /// stock en la tienda, si no hay líneas o si no es de una tienda a Algete. Ver
+        /// <see cref="ServicioPreparacionReposicion.CrearPuntual"/>.
+        /// </summary>
+        [HttpPost]
+        [Route("Puntual")]
+        [ResponseType(typeof(ResultadoTerminarReposicionDTO))]
+        public async Task<IHttpActionResult> PostPuntual([FromBody] CrearReposicionDTO peticion)
+        {
+            if (peticion == null)
+            {
+                return BadRequest("Faltan los productos de la reposición puntual.");
+            }
+            try
+            {
+                ResultadoTerminarReposicionDTO resultado = await preparacion.CrearPuntual(peticion, User).ConfigureAwait(false);
+                return Content(HttpStatusCode.Created, resultado);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Prohibido(ex);
+            }
         }
 
         private readonly IServicioListadoReposicion listado;

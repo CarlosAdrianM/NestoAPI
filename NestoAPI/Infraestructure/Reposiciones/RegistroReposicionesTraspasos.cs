@@ -18,6 +18,13 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public const string ARIADNA = "Ariadna";
         /// <summary>El job que rellena las reposiciones a la hora de corte del calendario (corte 3b).</summary>
         public const string AUTOMATICO = "Automatico";
+        /// <summary>
+        /// Sugerencia 581 (Paloma, 13/10/26): la reposición puntual que una tienda manda a Algete con solo lo que elige, aparte
+        /// de la del calendario (POST api/Reposiciones/Puntual). Nace y se termina de una vez, con número. NO cubre el viaje del
+        /// calendario (el job la ignora al buscar si alguien ya ha rellenado la ruta) y no se puede pedir por el POST normal:
+        /// solo la pone <see cref="ServicioPreparacionReposicion.CrearPuntual"/>.
+        /// </summary>
+        public const string PUNTUAL = "Puntual";
 
         private static readonly string[] VALIDAS = { NESTO, ARIADNA, AUTOMATICO };
 
