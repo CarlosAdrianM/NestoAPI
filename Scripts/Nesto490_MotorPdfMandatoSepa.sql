@@ -1,4 +1,4 @@
--- Nesto#490 / Nesto#340 (13/10/26): motor del PDF del mandato SEPA (botón «Imprimir mandato» de Clientes).
+﻿-- Nesto#490 / Nesto#340 (13/10/26): motor del PDF del mandato SEPA (botón «Imprimir mandato» de Clientes).
 -- Nesto lee MotorPdfMandatoSepa del usuario: con 'QuestPDF' pide api/Clientes/MandatoPDF?...&motor=QuestPDF
 -- (generador nuevo, GeneradorPdfMandatoSepa); con cualquier otro valor, el RDLC de siempre.
 -- El mandato va al CLIENTE: no se cambia de golpe. Fila (defecto) = 'RDLC' para que el parámetro exista para
