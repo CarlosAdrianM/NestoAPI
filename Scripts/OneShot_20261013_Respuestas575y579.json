@@ -1,0 +1,12 @@
+[
+  {
+    "novedad": 575,
+    "contestados": [129],
+    "texto": "Hola, Alfredo. Gracias, lo he comprobado y es así: en los últimos tres meses, 83 pedidos han acabado por la ruta AT y 27 por la 16 siendo de clientes que en la ficha tienen OnTime (FW), y esos mismos clientes tienen otros 162 pedidos que sí van por OnTime. Por eso no se arregla cambiando la ruta de la ficha: se decide pedido a pedido, como haces tú al revisar. Lo que hace el picking ahora: si al sacarlo el pedido ya lleva AT o 16, mira el día de entrega de nuestra ruta; si todavía lleva OnTime y el cliente cierra el día que le llegaría, el aviso te dice si por nuestra ruta llegaría con el cliente abierto, para que se la cambies. Dos preguntas para afinarlo: ¿la ruta la cambias siempre antes de sacar el picking, o a veces después? ¿Y hay alguna regla que te diga cuándo un pedido va por AT o por la 16 (zona, código postal, tipo de producto, importe…)? Si la hay, Nesto podría proponértela al entrar el pedido."
+  },
+  {
+    "novedad": 579,
+    "contestados": [],
+    "texto": "Hola, Marta. Lo he mirado: el viernes a las 18:30 intentaste unir el 928236 al 928235 de la clienta 26552 y falló tres veces por un error nuestro, no por nada que hicieras mal. Al ampliar, se calcula la fecha de entrega que va en el correo del pedido, y ese cálculo, que se publicó esa misma tarde, choca con la forma en que se guarda la unión. Ya está localizado y le he pasado a Carlos el diagnóstico con el arreglo. Los dos pedidos siguen separados, pero van en el mismo picking (99806), así que salen juntos igualmente: no tienes que hacer nada con ellos. Te escribo aquí cuando ampliar vuelva a funcionar."
+  }
+]
