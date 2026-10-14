@@ -91,8 +91,19 @@ namespace NestoAPI.Infraestructure.Reposiciones
         Task Crear(CabeceraReposicionTraspaso cabecera);
 
         /// <summary>
+        /// NestoAPI#622: la cabecera del job cuando, a la hora de corte, la tienda aún tenía sin enviar la preparación de un
+        /// viaje anterior y se le ha sumado lo de hoy (<see cref="ServicioPreparacionReposicion.Completar"/>). Nace sin número,
+        /// como la abierta, y enlazada a ella (IdCompletada = la primera cabecera de esa preparación): la abierta más reciente
+        /// de la ruta creada desde <paramref name="desde"/> (el día de la línea más antigua de la preparación; así no se
+        /// enlaza con una abierta vieja que terminó Nesto viejo). Sin la columna IdCompletada (falta
+        /// Scripts/Issue622_ReposicionesTraspasos_IdCompletada.sql) se crea igual, sin enlace.
+        /// </summary>
+        Task CrearCompletando(CabeceraReposicionTraspaso cabecera, DateTime desde);
+
+        /// <summary>
         /// Al terminar en la tienda: el número recién sacado del contador va a la cabecera abierta de ese origen y destino,
-        /// que queda preparada. Sin cabecera abierta (la creó Nesto viejo), no hace nada.
+        /// que queda preparada. Sin cabecera abierta (la creó Nesto viejo), no hace nada. NestoAPI#622: también a las que
+        /// están enlazadas con ella (IdCompletada): una preparación completada en varios cortes es un solo traspaso.
         /// </summary>
         Task NumerarYMarcarPreparada(string empresa, string origen, string destino, int numTraspaso, string usuario);
 
@@ -109,6 +120,7 @@ namespace NestoAPI.Infraestructure.Reposiciones
         internal static readonly SinRegistroReposicionesTraspasos Instancia = new SinRegistroReposicionesTraspasos();
 
         public Task Crear(CabeceraReposicionTraspaso cabecera) => Task.CompletedTask;
+        public Task CrearCompletando(CabeceraReposicionTraspaso cabecera, DateTime desde) => Task.CompletedTask;
         public Task NumerarYMarcarPreparada(string empresa, string origen, string destino, int numTraspaso, string usuario) => Task.CompletedTask;
         public Task MarcarPreparada(string empresa, int numTraspaso, string usuario) => Task.CompletedTask;
         public Task Borrar(string empresa, int numTraspaso) => Task.CompletedTask;
@@ -124,15 +136,57 @@ IF OBJECT_ID('dbo.ReposicionesTraspasos') IS NOT NULL
         // La abierta del origen y destino: sin número y sin preparar (y que no sea una marca del job sin reposición, corte 3b:
         // Omitida con el motivo). Si hubiera varias (no debería: una por diario de salida;
         // las que terminó Nesto viejo se quedan abiertas), la más reciente, que es la de la preparación en curso.
+        // NestoAPI#622: con la columna IdCompletada, la abierta y las de su misma preparación (la primera cabecera, @raiz, y
+        // las que la completan). Va por sp_executesql porque sin la columna el lote entero no compilaría.
         internal const string SQL_NUMERAR_ABIERTA = @"
 IF OBJECT_ID('dbo.ReposicionesTraspasos') IS NOT NULL
-    UPDATE r SET NumTraspaso = @p3, UsuarioPreparacion = @p4, FechaPreparada = GETDATE()
-    FROM dbo.ReposicionesTraspasos r
-    WHERE r.Id = (SELECT TOP 1 a.Id FROM dbo.ReposicionesTraspasos a WITH (UPDLOCK, HOLDLOCK)
-                  WHERE a.Empresa = @p0 AND a.Origen = @p1 AND a.Destino = @p2
-                    AND a.NumTraspaso IS NULL AND a.FechaPreparada IS NULL
-                    AND a.Omitida IS NULL
-                  ORDER BY a.FechaCreacion DESC, a.Id DESC)";
+BEGIN
+    IF COL_LENGTH('dbo.ReposicionesTraspasos', 'IdCompletada') IS NULL
+        UPDATE r SET NumTraspaso = @p3, UsuarioPreparacion = @p4, FechaPreparada = GETDATE()
+        FROM dbo.ReposicionesTraspasos r
+        WHERE r.Id = (SELECT TOP 1 a.Id FROM dbo.ReposicionesTraspasos a WITH (UPDLOCK, HOLDLOCK)
+                      WHERE a.Empresa = @p0 AND a.Origen = @p1 AND a.Destino = @p2
+                        AND a.NumTraspaso IS NULL AND a.FechaPreparada IS NULL
+                        AND a.Omitida IS NULL
+                      ORDER BY a.FechaCreacion DESC, a.Id DESC)
+    ELSE
+        EXEC sp_executesql N'
+DECLARE @abierta int, @raiz int;
+SELECT TOP 1 @abierta = a.Id, @raiz = ISNULL(a.IdCompletada, a.Id)
+FROM dbo.ReposicionesTraspasos a WITH (UPDLOCK, HOLDLOCK)
+WHERE a.Empresa = @empresa AND a.Origen = @origen AND a.Destino = @destino
+  AND a.NumTraspaso IS NULL AND a.FechaPreparada IS NULL
+  AND a.Omitida IS NULL
+ORDER BY a.FechaCreacion DESC, a.Id DESC;
+UPDATE r SET NumTraspaso = @numero, UsuarioPreparacion = @usuario, FechaPreparada = GETDATE()
+FROM dbo.ReposicionesTraspasos r
+WHERE r.Empresa = @empresa AND r.Origen = @origen AND r.Destino = @destino
+  AND r.NumTraspaso IS NULL AND r.FechaPreparada IS NULL AND r.Omitida IS NULL
+  AND (r.Id = @abierta OR r.Id = @raiz OR r.IdCompletada = @raiz);',
+            N'@empresa char(3), @origen char(3), @destino char(3), @numero int, @usuario varchar(30)',
+            @empresa = @p0, @origen = @p1, @destino = @p2, @numero = @p3, @usuario = @p4;
+END";
+
+        // NestoAPI#622: ver IRegistroReposicionesTraspasos.CrearCompletando. Sin la columna, como SQL_CREAR.
+        internal const string SQL_CREAR_COMPLETANDO = @"
+IF OBJECT_ID('dbo.ReposicionesTraspasos') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('dbo.ReposicionesTraspasos', 'IdCompletada') IS NULL
+        INSERT INTO dbo.ReposicionesTraspasos (Empresa, NumTraspaso, Origen, Destino, Herramienta, UsuarioCreacion, FechaCreacion, FechaCorte)
+        VALUES (@p0, NULL, @p1, @p2, @p3, @p4, @p5, @p6)
+    ELSE
+        EXEC sp_executesql N'
+DECLARE @raiz int = (SELECT TOP 1 ISNULL(a.IdCompletada, a.Id)
+                     FROM dbo.ReposicionesTraspasos a WITH (UPDLOCK, HOLDLOCK)
+                     WHERE a.Empresa = @empresa AND a.Origen = @origen AND a.Destino = @destino
+                       AND a.NumTraspaso IS NULL AND a.FechaPreparada IS NULL AND a.Omitida IS NULL
+                       AND a.FechaCreacion >= @desde
+                     ORDER BY a.FechaCreacion DESC, a.Id DESC);
+INSERT INTO dbo.ReposicionesTraspasos (Empresa, NumTraspaso, Origen, Destino, Herramienta, UsuarioCreacion, FechaCreacion, FechaCorte, IdCompletada)
+VALUES (@empresa, NULL, @origen, @destino, @herramienta, @usuario, @creacion, @corte, @raiz);',
+            N'@empresa char(3), @origen char(3), @destino char(3), @herramienta varchar(20), @usuario varchar(30), @creacion datetime, @corte datetime, @desde datetime',
+            @empresa = @p0, @origen = @p1, @destino = @p2, @herramienta = @p3, @usuario = @p4, @creacion = @p5, @corte = @p6, @desde = @p7;
+END";
 
         internal const string SQL_MARCAR_PREPARADA = @"
 IF OBJECT_ID('dbo.ReposicionesTraspasos') IS NOT NULL
@@ -161,6 +215,14 @@ IF OBJECT_ID('dbo.ReposicionesTraspasos') IS NOT NULL
                 Char("@p0", cabecera.Empresa, 3), EnteroONulo("@p1", cabecera.NumTraspaso), Char("@p2", cabecera.Origen, 3), Char("@p3", cabecera.Destino, 3),
                 VarChar("@p4", cabecera.Herramienta, 20), VarChar("@p5", UsuarioAuditoriaHelper.ParaAuditoria(cabecera.UsuarioCreacion), 30),
                 Fecha("@p6", cabecera.FechaCreacion), Fecha("@p7", cabecera.FechaCorte));
+        }
+
+        public Task CrearCompletando(CabeceraReposicionTraspaso cabecera, DateTime desde)
+        {
+            return db.Database.ExecuteSqlCommandAsync(SQL_CREAR_COMPLETANDO,
+                Char("@p0", cabecera.Empresa, 3), Char("@p1", cabecera.Origen, 3), Char("@p2", cabecera.Destino, 3),
+                VarChar("@p3", cabecera.Herramienta, 20), VarChar("@p4", UsuarioAuditoriaHelper.ParaAuditoria(cabecera.UsuarioCreacion), 30),
+                Fecha("@p5", cabecera.FechaCreacion), Fecha("@p6", cabecera.FechaCorte), Fecha("@p7", desde));
         }
 
         public Task NumerarYMarcarPreparada(string empresa, string origen, string destino, int numTraspaso, string usuario)

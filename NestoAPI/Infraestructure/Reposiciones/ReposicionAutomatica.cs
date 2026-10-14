@@ -20,9 +20,17 @@ namespace NestoAPI.Infraestructure.Reposiciones
     {
         /// <summary>Creada (desde una tienda, en preparación; desde Algete, cerrada y por recoger en Ariadna).</summary>
         public const string CREADA = "Creada";
+        /// <summary>
+        /// NestoAPI#622: la tienda aún tenía sin enviar la de un viaje anterior y la de hoy se le ha sumado (ver
+        /// <see cref="ServicioPreparacionReposicion.Completar"/>). Se avisa a la tienda.
+        /// </summary>
+        public const string COMPLETADA = "Completada";
         /// <summary>La propuesta no tenía nada que mandar. Se apunta para no reintentar.</summary>
         public const string VACIA = "Vacia";
-        /// <summary>El origen ya tenía una en preparación hecha a mano: no se crea otra. Se apunta y se avisa.</summary>
+        /// <summary>
+        /// El origen ya tenía una en preparación que no se puede completar (hacia otro destino, o en Algete hecha en Nesto
+        /// viejo): no se crea otra. Se apunta y se avisa.
+        /// </summary>
         public const string YA_EN_PREPARACION = "YaEnPreparacion";
         /// <summary>
         /// Esa ruta ya tiene un traspaso de reposición creado después del corte, con cualquier herramienta (Nesto viejo
@@ -63,10 +71,38 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public DateTime Fecha { get; set; }
     }
 
+    /// <summary>
+    /// NestoAPI#622: lo que la pantalla «Enviar reposición» dice arriba de lo que ha hecho hoy el job con una ruta de ese
+    /// origen (GET api/Reposiciones/AvisosAutomatica).
+    /// </summary>
+    public class AvisoReposicionAutomaticaDTO
+    {
+        public string Origen { get; set; }
+        public string Destino { get; set; }
+        public DateTime? Corte { get; set; }
+        /// <summary>«Omitida» (no se ha rellenado: el motivo va en el texto) o «Completada» (sumada a una sin enviar).</summary>
+        public string Tipo { get; set; }
+        public string Texto { get; set; }
+    }
+
+    /// <summary>NestoAPI#622: una cabecera del job de hoy de un origen, con lo que hace falta para avisar a la tienda.</summary>
+    public class CabeceraReposicionAutomaticaDelDia
+    {
+        public int Id { get; set; }
+        public string Destino { get; set; }
+        public DateTime? FechaCorte { get; set; }
+        public int? NumTraspaso { get; set; }
+        public string Omitida { get; set; }
+        /// <summary>El día de la línea más antigua que el origen tiene en preparación hacia ese destino (null si no hay ninguna).</summary>
+        public DateTime? PreparacionDesde { get; set; }
+    }
+
     public interface IServicioReposicionAutomatica
     {
         /// <summary>Ver <see cref="ServicioReposicionAutomatica.RellenarRuta"/>.</summary>
         Task<ResultadoReposicionAutomaticaDTO> RellenarRuta(string empresa, string origen, string destino, IPrincipal usuario);
+        /// <summary>Ver <see cref="ServicioReposicionAutomatica.LeerAvisosDeHoy"/>.</summary>
+        Task<List<AvisoReposicionAutomaticaDTO>> LeerAvisosDeHoy(string empresa, string origen);
     }
 
     public interface IRepositorioReposicionAutomatica
@@ -90,6 +126,11 @@ namespace NestoAPI.Infraestructure.Reposiciones
         Task ApuntarOmitida(CabeceraReposicionTraspaso cabecera, string motivo);
         /// <summary>Exclusión entre ejecuciones (job, endpoint, dos servidores): applock por origen y día. Dispose lo suelta.</summary>
         Task<IDisposable> Bloquear(string empresa, string origen, DateTime dia);
+        /// <summary>
+        /// NestoAPI#622: las cabeceras del job (Herramienta 'Automatico') de las rutas de <paramref name="origen"/> creadas desde
+        /// <paramref name="desde"/>, con lo que el origen tiene en preparación hacia cada destino.
+        /// </summary>
+        Task<List<CabeceraReposicionAutomaticaDelDia>> LeerCabecerasDelDia(string empresa, string origen, DateTime desde);
     }
 
     /// <summary>
@@ -126,9 +167,18 @@ namespace NestoAPI.Infraestructure.Reposiciones
     ///
     /// <para><b>Qué se apunta</b> (para no reintentar cada 5 minutos): la reposición creada lleva su cabecera; si no se crea
     /// por un motivo de negocio, una marca en ReposicionesTraspasos sin número y con Omitida = el motivo:
-    /// propuesta vacía (sin aviso: es normal), la tienda ya tenía una en preparación hecha a mano (no se crea otra; aviso
-    /// informativo a ELMAH), otro error de negocio (aviso) o fuera de plazo (aviso). Un fallo inesperado (BD, bloqueo,
-    /// timeout) se avisa y NO se apunta: la siguiente pasada lo reintenta. Un error en una ruta no para las demás.</para>
+    /// propuesta vacía (sin aviso: es normal), la tienda ya tenía una en preparación que no se puede completar (no se crea
+    /// otra; aviso informativo a ELMAH), otro error de negocio (aviso) o fuera de plazo (aviso). Un fallo inesperado (BD,
+    /// bloqueo, timeout) se avisa y NO se apunta: la siguiente pasada lo reintenta. Un error en una ruta no para las demás.</para>
+    ///
+    /// <para><b>Preparación sin enviar</b> (NestoAPI#622): si a la hora de corte la tienda aún tiene sin enviar la de un viaje
+    /// anterior, la de hoy se SUMA a ella (<see cref="ServicioPreparacionReposicion.Completar"/>, resultado
+    /// <see cref="ResultadosReposicionAutomatica.COMPLETADA"/>) en vez de omitirse. Lo mismo al relanzarla a mano.</para>
+    ///
+    /// <para><b>Aviso a la tienda</b> (NestoAPI#622): cuando la de hoy se completa, no se puede rellenar (ya en preparación sin
+    /// poder completarla, inventario en curso…) o se queda fuera de plazo, además de ELMAH va a la campana de Nesto de la
+    /// gente del origen (<see cref="IAvisadorReposicionAutomatica"/>). La pantalla «Enviar reposición» lo lee con
+    /// <see cref="LeerAvisosDeHoy"/>. Vacía y ya cubierta no van a la campana (son normales; la pantalla sí lo dice).</para>
     ///
     /// <para><b>Fuera de plazo</b>: si a la hora de llegada habitual de esa fila aún no se ha rellenado (la API estuvo caída),
     /// ya no se rellena sola: ese viaje ha pasado. Se puede relanzar a mano con <see cref="RellenarRuta"/>.</para>
@@ -144,25 +194,38 @@ namespace NestoAPI.Infraestructure.Reposiciones
         private readonly CalculadoraFechaReposicion calculadora;
         private readonly Func<DateTime> reloj;
         private readonly Action<Exception> avisar;
+        private readonly Func<CrearReposicionDTO, IPrincipal, DateTime, Task<ResultadoCompletarReposicionDTO>> completar;
+        private readonly IAvisadorReposicionAutomatica avisarTienda;
 
         public ServicioReposicionAutomatica(NVEntities db)
             : this(new RepositorioReposicionAutomaticaSql(db),
                   (peticion, usuario, corte) => new ServicioPreparacionReposicion(db).Crear(peticion, usuario, corte),
                   new CalculadoraFechaReposicion(),
                   () => DateTime.Now,
-                  ex => ElmahHelper.Log(ex, USUARIO_ELMAH))
+                  ex => ElmahHelper.Log(ex, USUARIO_ELMAH),
+                  (peticion, usuario, corte) => new ServicioPreparacionReposicion(db).Completar(peticion, usuario, corte),
+                  new AvisadorReposicionAutomatica(db))
         {
         }
 
+        /// <param name="completar">
+        /// NestoAPI#622: (petición, usuario, corte) → suma la de hoy a la preparación sin enviar. Null: como antes de #622 (se
+        /// omite con «ya en preparación»).
+        /// </param>
+        /// <param name="avisarTienda">NestoAPI#622: la campana de la gente del origen. Null: no se avisa.</param>
         internal ServicioReposicionAutomatica(IRepositorioReposicionAutomatica repositorio,
             Func<CrearReposicionDTO, IPrincipal, DateTime?, Task<ReposicionEnPreparacionDTO>> crear,
-            CalculadoraFechaReposicion calculadora, Func<DateTime> reloj, Action<Exception> avisar)
+            CalculadoraFechaReposicion calculadora, Func<DateTime> reloj, Action<Exception> avisar,
+            Func<CrearReposicionDTO, IPrincipal, DateTime, Task<ResultadoCompletarReposicionDTO>> completar = null,
+            IAvisadorReposicionAutomatica avisarTienda = null)
         {
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
             this.crear = crear ?? throw new ArgumentNullException(nameof(crear));
             this.calculadora = calculadora ?? throw new ArgumentNullException(nameof(calculadora));
             this.reloj = reloj ?? (() => DateTime.Now);
             this.avisar = avisar ?? (ex => { });
+            this.completar = completar;
+            this.avisarTienda = avisarTienda;
         }
 
         /// <summary>
@@ -218,6 +281,8 @@ namespace NestoAPI.Infraestructure.Reposiciones
                                 "Se puede relanzar a mano (POST api/Reposiciones/RellenarAutomatica).";
                             await Apuntar(corte, automatico, motivo).ConfigureAwait(false);
                             avisar(new Exception(Prefijo(corte) + motivo));
+                            await AvisarNoRellenada(corte, $"A las {corte.Llegada:HH:mm} (llegada habitual) aún no se había rellenado: " +
+                                "ese viaje ya ha pasado. Pide a Almacén que la relance si hace falta.").ConfigureAwait(false);
                             resultados.Add(Resultado(corte, ResultadosReposicionAutomatica.FUERA_DE_PLAZO, motivo));
                             continue;
                         }
@@ -238,8 +303,9 @@ namespace NestoAPI.Infraestructure.Reposiciones
         /// POST api/Reposiciones/RellenarAutomatica: relanza a mano la de hoy de una ruta, con el corte del calendario (el
         /// último que ya ha pasado de las que cierran o llegan hoy: con antelación, el lunes relanza la del lunes con el corte
         /// del viernes). 404 si hoy no toca (o es festivo); 409 si aún no ha llegado la hora de cierre,
-        /// si ya está rellena (una marca sin reposición no cuenta: se puede relanzar) o si la tienda ya tiene una en
-        /// preparación. Escribe con el nombre de quien lo lanza y Herramienta 'Automatico'.
+        /// si ya está rellena (una marca sin reposición no cuenta: se puede relanzar) o si el origen ya tiene una en
+        /// preparación que no se puede completar (NestoAPI#622: si se puede, se le suma la de hoy, como en el job).
+        /// Escribe con el nombre de quien lo lanza y Herramienta 'Automatico'.
         /// </summary>
         public async Task<ResultadoReposicionAutomaticaDTO> RellenarRuta(string empresa, string origen, string destino, IPrincipal usuario)
         {
@@ -300,7 +366,25 @@ namespace NestoAPI.Infraestructure.Reposiciones
             };
             try
             {
-                ReposicionEnPreparacionDTO creada = await crear(peticion, quien, corte.Corte).ConfigureAwait(false);
+                ReposicionEnPreparacionDTO creada;
+                try
+                {
+                    creada = await crear(peticion, quien, corte.Corte).ConfigureAwait(false);
+                }
+                catch (ReposicionYaEnPreparacionException) when (completar != null)
+                {
+                    // NestoAPI#622: la de hoy se suma a la que la tienda tiene sin enviar. Si no se puede (otro destino,
+                    // Algete), Completar vuelve a lanzar ReposicionYaEnPreparacionException y sigue como antes (abajo).
+                    ResultadoCompletarReposicionDTO completada = await completar(peticion, quien, corte.Corte).ConfigureAwait(false);
+                    if (completada?.Completada != true)
+                    {
+                        creada = completada?.Reposicion;
+                    }
+                    else
+                    {
+                        return await Completada(corte, completada).ConfigureAwait(false);
+                    }
+                }
                 ResultadoReposicionAutomaticaDTO resultado = Resultado(corte, ResultadosReposicionAutomatica.CREADA, null);
                 resultado.NumTraspaso = creada?.NumTraspaso;
                 resultado.Lineas = creada?.Lineas?.Count ?? 0;
@@ -315,14 +399,139 @@ namespace NestoAPI.Infraestructure.Reposiciones
             {
                 await Apuntar(corte, quien, ex.Message).ConfigureAwait(false);
                 avisar(new Exception(Prefijo(corte) + "No se rellena: " + ex.Message));
+                await AvisarNoRellenada(corte, ex.Message).ConfigureAwait(false);
                 return Resultado(corte, ResultadosReposicionAutomatica.YA_EN_PREPARACION, ex.Message);
             }
             catch (NestoBusinessException ex) when (!manual && !(ex is ReposicionYaEnPreparacionException))
             {
                 await Apuntar(corte, quien, ex.Message).ConfigureAwait(false);
                 avisar(new Exception(Prefijo(corte) + "No se puede rellenar: " + ex.Message, ex));
+                await AvisarNoRellenada(corte, ex.Message).ConfigureAwait(false);
                 return Resultado(corte, ResultadosReposicionAutomatica.NO_SE_PUEDE, ex.Message);
             }
+        }
+
+        /// <summary>NestoAPI#622: la de hoy se ha sumado a la que la tienda tenía sin enviar. Se le avisa (no es un error: sin ELMAH).</summary>
+        private async Task<ResultadoReposicionAutomaticaDTO> Completada(CorteReposicion corte, ResultadoCompletarReposicionDTO completada)
+        {
+            string texto = TextoCompletada(corte.Destino, corte.Corte, completada.PreparacionDesde, completada.LineasNuevas, completada.LineasSubidas, reloj());
+            ResultadoReposicionAutomaticaDTO resultado = Resultado(corte, ResultadosReposicionAutomatica.COMPLETADA, texto);
+            resultado.Lineas = completada.LineasNuevas + completada.LineasSubidas;
+            await AvisarTienda(corte, $"Tienes sin enviar la reposición a {corte.Destino}", texto).ConfigureAwait(false);
+            return resultado;
+        }
+
+        private Task AvisarNoRellenada(CorteReposicion corte, string motivo)
+        {
+            return AvisarTienda(corte, $"La reposición a {corte.Destino} no se ha podido rellenar",
+                $"La reposición a {corte.Destino} ({Corte(corte.Corte, reloj())}) no se ha rellenado sola: {motivo}");
+        }
+
+        /// <summary>La campana es un extra: si falla, a ELMAH y el job sigue.</summary>
+        private async Task AvisarTienda(CorteReposicion corte, string titulo, string cuerpo)
+        {
+            if (avisarTienda == null)
+            {
+                return;
+            }
+            try
+            {
+                await avisarTienda.Avisar(corte.Empresa, corte.Origen, titulo, cuerpo).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                avisar(new Exception(Prefijo(corte) + "No se ha podido avisar a la tienda: " + ex.Message, ex));
+            }
+        }
+
+        /// <summary>
+        /// GET api/Reposiciones/AvisosAutomatica (NestoAPI#622): lo que «Enviar reposición» dice arriba de lo que ha hecho hoy el
+        /// job con cada ruta de <paramref name="origen"/> (la última cabecera de hoy de cada destino): si no se ha rellenado, por
+        /// qué (vacía, ya cubierta, inventario…); si se ha sumado a una sin enviar y sigue sin enviar, que la envíe. Si se ha
+        /// creado normal o ya se ha enviado, nada. Lista vacía sin la tabla (script de #577 sin lanzar).
+        /// </summary>
+        public async Task<List<AvisoReposicionAutomaticaDTO>> LeerAvisosDeHoy(string empresa, string origen)
+        {
+            string empresaLimpia = string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
+            string origenLimpio = origen?.Trim().ToUpperInvariant();
+            var avisos = new List<AvisoReposicionAutomaticaDTO>();
+            if (string.IsNullOrEmpty(origenLimpio) || !await repositorio.TablaPreparada().ConfigureAwait(false))
+            {
+                return avisos;
+            }
+            DateTime ahora = reloj();
+            List<CabeceraReposicionAutomaticaDelDia> cabeceras = await repositorio.LeerCabecerasDelDia(empresaLimpia, origenLimpio, ahora.Date).ConfigureAwait(false)
+                ?? new List<CabeceraReposicionAutomaticaDelDia>();
+            foreach (CabeceraReposicionAutomaticaDelDia cabecera in cabeceras
+                .GroupBy(c => c.Destino?.Trim())
+                .Select(g => g.OrderByDescending(c => c.Id).First())
+                .OrderBy(c => c.Destino?.Trim(), StringComparer.Ordinal))
+            {
+                string destino = cabecera.Destino?.Trim();
+                if (!string.IsNullOrWhiteSpace(cabecera.Omitida))
+                {
+                    avisos.Add(new AvisoReposicionAutomaticaDTO
+                    {
+                        Origen = origenLimpio, Destino = destino, Corte = cabecera.FechaCorte, Tipo = TIPO_AVISO_OMITIDA,
+                        Texto = $"La reposición a {destino} ({Corte(cabecera.FechaCorte, ahora)}) no se ha rellenado sola: {cabecera.Omitida.Trim()}"
+                    });
+                }
+                else if (cabecera.NumTraspaso == null && cabecera.PreparacionDesde.HasValue && cabecera.PreparacionDesde.Value.Date < ahora.Date)
+                {
+                    // Sin enviar y con líneas de antes de hoy: la de hoy se sumó a la de un viaje anterior
+                    avisos.Add(new AvisoReposicionAutomaticaDTO
+                    {
+                        Origen = origenLimpio, Destino = destino, Corte = cabecera.FechaCorte, Tipo = TIPO_AVISO_COMPLETADA,
+                        Texto = TextoCompletada(destino, cabecera.FechaCorte, cabecera.PreparacionDesde, null, null, ahora)
+                    });
+                }
+            }
+            return avisos;
+        }
+
+        public const string TIPO_AVISO_OMITIDA = "Omitida";
+        public const string TIPO_AVISO_COMPLETADA = "Completada";
+
+        /// <summary>
+        /// «La reposición a ALG (corte de hoy a las 09:00) se ha sumado a la que tenías sin enviar del 09/10: 3 productos nuevos y 2
+        /// con más cantidad. Envíala desde «Enviar reposición».» Sin cuentas (la pantalla), sin esa parte.
+        /// </summary>
+        internal static string TextoCompletada(string destino, DateTime? corte, DateTime? desde, int? nuevas, int? subidas, DateTime ahora)
+        {
+            string deCuando = desde.HasValue ? string.Format(CultureInfo.InvariantCulture, " del {0:dd/MM}", desde.Value) : string.Empty;
+            string inicio = $"La reposición a {destino} ({Corte(corte, ahora)})";
+            string cuerpo;
+            if (nuevas == null || subidas == null)
+            {
+                cuerpo = $"{inicio} se ha sumado a la que tenías sin enviar{deCuando}.";
+            }
+            else if (nuevas.Value + subidas.Value == 0)
+            {
+                cuerpo = $"{inicio} no tenía nada nuevo: sigue pendiente la que tenías sin enviar{deCuando}.";
+            }
+            else
+            {
+                cuerpo = $"{inicio} se ha sumado a la que tenías sin enviar{deCuando}: " +
+                    $"{Productos(nuevas.Value, "nuevo", "nuevos")} y {Productos(subidas.Value, "con más cantidad", "con más cantidad")}.";
+            }
+            return cuerpo + " Envíala desde «Enviar reposición».";
+        }
+
+        private static string Productos(int cuantos, string singular, string plural)
+        {
+            return cuantos == 1 ? $"1 producto {singular}" : $"{cuantos} productos {plural}";
+        }
+
+        /// <summary>«corte de hoy a las 09:00» o «corte del 16/10 a las 13:00».</summary>
+        private static string Corte(DateTime? corte, DateTime ahora)
+        {
+            if (!corte.HasValue)
+            {
+                return "sin corte";
+            }
+            return corte.Value.Date == ahora.Date
+                ? string.Format(CultureInfo.InvariantCulture, "corte de hoy a las {0:HH:mm}", corte.Value)
+                : string.Format(CultureInfo.InvariantCulture, "corte del {0:dd/MM} a las {0:HH:mm}", corte.Value);
         }
 
         private Task Apuntar(CorteReposicion corte, IPrincipal quien, string motivo)
@@ -437,6 +646,19 @@ SELECT TOP 1 x.NumTraspaso, x.Usuario, x.Fecha FROM (
     GROUP BY e.[NºTraspaso]
 ) x ORDER BY x.Fecha";
 
+        /// <summary>
+        /// NestoAPI#622: las cabeceras del job de hoy de las rutas de un origen, y desde qué día tiene el origen líneas en
+        /// preparación hacia cada destino (las mismas que LeerLineasEnPreparacion: su diario de salida, sin traspaso).
+        /// </summary>
+        internal const string SQL_CABECERAS_DEL_DIA = @"
+DECLARE @salida char(10) = (SELECT DiarioSalidaRep FROM Almacenes WHERE Empresa = @p0 AND [Número] = @p1);
+SELECT r.Id, RTRIM(r.Destino) AS Destino, r.FechaCorte, r.NumTraspaso, r.Omitida,
+       (SELECT MIN(p.Fecha) FROM PreExtrProducto p
+        WHERE p.Empresa = @p0 AND p.Diario = @salida AND p.[Almacén] = r.Destino AND p.Estado >= 0
+          AND ISNULL(p.[NºTraspaso], 0) = 0) AS PreparacionDesde
+FROM dbo.ReposicionesTraspasos r
+WHERE r.Empresa = @p0 AND r.Origen = @p1 AND r.Herramienta = 'Automatico' AND r.FechaCreacion >= @p2";
+
         internal const string SQL_APUNTAR_OMITIDA = @"
 INSERT INTO dbo.ReposicionesTraspasos (Empresa, NumTraspaso, Origen, Destino, Herramienta, UsuarioCreacion, FechaCreacion, FechaCorte, Omitida)
 VALUES (@p0, NULL, @p1, @p2, @p3, @p4, @p5, @p6, @p7)";
@@ -490,6 +712,13 @@ IF @resultado < 0 RAISERROR('Otra ejecución está rellenando las reposiciones d
                 RegistroReposicionesTraspasosSql.Char("@p4", ServicioPreparacionReposicion.Texto(origen?.Trim(), destino?.Trim()), 50))
                 .ToListAsync().ConfigureAwait(false);
             return filas.FirstOrDefault();
+        }
+
+        public Task<List<CabeceraReposicionAutomaticaDelDia>> LeerCabecerasDelDia(string empresa, string origen, DateTime desde)
+        {
+            return db.Database.SqlQuery<CabeceraReposicionAutomaticaDelDia>(SQL_CABECERAS_DEL_DIA,
+                RegistroReposicionesTraspasosSql.Char("@p0", empresa, 3), RegistroReposicionesTraspasosSql.Char("@p1", origen, 3),
+                RegistroReposicionesTraspasosSql.Fecha("@p2", desde)).ToListAsync();
         }
 
         public Task ApuntarOmitida(CabeceraReposicionTraspaso cabecera, string motivo)

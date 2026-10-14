@@ -143,6 +143,24 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public int Unidades => Lineas.Sum(l => l.Cantidad);
     }
 
+    /// <summary>NestoAPI#622: lo que ha hecho el job al sumar la reposición de hoy a la que la tienda tenía sin enviar.</summary>
+    public class ResultadoCompletarReposicionDTO
+    {
+        /// <summary>La reposición en preparación tal como queda (la de antes con lo de hoy sumado).</summary>
+        public ReposicionEnPreparacionDTO Reposicion { get; set; }
+        /// <summary>
+        /// False si al ir a completarla la tienda ya la había enviado: entonces se ha creado una nueva, como siempre (y
+        /// <see cref="LineasNuevas"/> son todas las suyas).
+        /// </summary>
+        public bool Completada { get; set; }
+        /// <summary>Productos que no estaban y se han añadido.</summary>
+        public int LineasNuevas { get; set; }
+        /// <summary>Productos que ya estaban y se les ha subido la cantidad.</summary>
+        public int LineasSubidas { get; set; }
+        /// <summary>El día de la línea más antigua de la preparación que se ha completado (la del viaje que no se envió).</summary>
+        public DateTime? PreparacionDesde { get; set; }
+    }
+
     // ------------------------------------------------------------------------------------------------------------------
     // Repositorio
     // ------------------------------------------------------------------------------------------------------------------
@@ -206,6 +224,11 @@ namespace NestoAPI.Infraestructure.Reposiciones
         Task<int> InsertarLineaPreparacion(string empresa, string diario, string origen, string destino, string producto, int cantidad,
             DateTime fecha, string texto, string vendedor, string usuario);
         Task<int> CambiarCantidad(string empresa, string diario, int numeroOrden, int cantidad);
+        /// <summary>
+        /// NestoAPI#622: suma <paramref name="unidades"/> a una línea en preparación (sin traspaso), sobre lo que tenga en ese
+        /// momento: si la tienda la está bajando a la vez, no se pisa su cambio.
+        /// </summary>
+        Task<int> SumarCantidad(string empresa, string diario, int numeroOrden, int unidades);
         Task<int> BorrarLineasACero(string empresa, string diario, string destino);
         Task<int> AsignarTraspaso(string empresa, string diario, string destino, int numeroTraspaso, DateTime fecha);
         Task<int> ActualizarPedidosEspeciales(string empresa, string diario, string destino);
@@ -284,6 +307,10 @@ FROM Productos pr WHERE pr.Empresa = @p1 AND pr.[Número] = @p9";
         //                        AND "DIARIO"=@P4 AND "Nº ORDEN"=@P5 (tras exec prdCambiarCantidadReposicion @NºOrden, @Cantidad)
         internal const string SQL_CAMBIAR_CANTIDAD = @"
 UPDATE PreExtrProducto SET Cantidad = @p3 WHERE Empresa = @p0 AND Diario = @p1 AND [Nº Orden] = @p2 AND ISNULL([NºTraspaso], 0) = 0";
+
+        // NestoAPI#622: lo de hoy que se suma a una línea que ya estaba en la preparación sin enviar
+        internal const string SQL_SUMAR_CANTIDAD = @"
+UPDATE PreExtrProducto SET Cantidad = Cantidad + @p3 WHERE Empresa = @p0 AND Diario = @p1 AND [Nº Orden] = @p2 AND ISNULL([NºTraspaso], 0) = 0";
 
         // Nesto viejo (07:32:16): delete preextrproducto where diario='RepoAlcAlg' and empresa=1 and almacén='ALG' and estado>=0 and cantidad=0
         internal const string SQL_BORRAR_A_CERO = @"
@@ -394,6 +421,14 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
                 Char("@p0", empresa, 3), Char("@p1", diario, 10),
                 new SqlParameter("@p2", SqlDbType.Int) { Value = numeroOrden },
                 new SqlParameter("@p3", SqlDbType.SmallInt) { Value = (short)cantidad });
+        }
+
+        public Task<int> SumarCantidad(string empresa, string diario, int numeroOrden, int unidades)
+        {
+            return db.Database.ExecuteSqlCommandAsync(SQL_SUMAR_CANTIDAD,
+                Char("@p0", empresa, 3), Char("@p1", diario, 10),
+                new SqlParameter("@p2", SqlDbType.Int) { Value = numeroOrden },
+                new SqlParameter("@p3", SqlDbType.SmallInt) { Value = (short)unidades });
         }
 
         public Task<int> BorrarLineasACero(string empresa, string diario, string destino)
@@ -694,28 +729,16 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
         /// </param>
         public async Task<ReposicionEnPreparacionDTO> Crear(CrearReposicionDTO peticion, IPrincipal usuario, DateTime? corte)
         {
-            if (peticion == null)
-            {
-                throw new NestoBusinessException("Faltan los datos de la reposición.");
-            }
-            string empresa = Empresa(peticion.Empresa);
-            string origen = Almacen(peticion.Origen);
-            string destino = Almacen(peticion.Destino);
-            ComprobarAlmacenes(origen, destino);
-            // NestoAPI#577: antes de escribir nada, para que una herramienta que no existe sea un 400 limpio
-            string herramienta = HerramientasReposicion.Resolver(peticion.Herramienta, usuario);
-
-            DatosAlmacenReposicion almacenOrigen = await AlmacenConDiario(empresa, origen, a => a.DiarioSalidaRep, "de salida").ConfigureAwait(false);
-            ComprobarPuedeEscribir(usuario, empresa, origen, almacenOrigen.ControlUbicaciones);
-            // El destino tiene que poder recibirla (su DiarioEntradaRep): mejor saberlo ahora que al terminar
-            DatosAlmacenReposicion almacenDestino = await AlmacenConDiario(empresa, destino, a => a.DiarioEntradaRep, "de entrada").ConfigureAwait(false);
+            RutaReposicion ruta = await ComprobarRuta(peticion, usuario).ConfigureAwait(false);
+            string empresa = ruta.Empresa;
+            string origen = ruta.Origen;
+            string destino = ruta.Destino;
+            string herramienta = ruta.Herramienta;
+            DatosAlmacenReposicion almacenOrigen = ruta.AlmacenOrigen;
+            DatosAlmacenReposicion almacenDestino = ruta.AlmacenDestino;
             IUbicacionesReposicion huecos = ubicaciones(origen, almacenOrigen.ControlUbicaciones);
             string diario = almacenOrigen.DiarioSalidaRep;
 
-            if (await repositorio.HayInventarioEnCurso(empresa, origen).ConfigureAwait(false))
-            {
-                throw Conflicto($"El almacén {origen} tiene un inventario en curso: termínalo antes de crear una reposición.");
-            }
             List<FilaReposicionEnPreparacion> existentes = await repositorio.LeerLineasEnPreparacion(empresa, diario, origen).ConfigureAwait(false);
             if (existentes.Any())
             {
@@ -778,6 +801,157 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
             ReposicionEnPreparacionDTO creada = Dto(empresa, origen, diario, creadas, reservas);
             creada.NumTraspaso = numeroTraspaso;
             return await ConNombres(creada).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// NestoAPI#622 (Carlos, 14/10/26): el job a la hora de corte, cuando la tienda aún tiene sin enviar la reposición de
+        /// un viaje anterior (con rutas diarias, a menudo). Antes se omitía la de hoy y la tienda veía la vieja como si fuera
+        /// la del día, sin las necesidades nuevas. Ahora se SUMA a la que hay:
+        /// <list type="bullet">
+        /// <item>La propuesta (prdRellenarReposicionStock2 con el corte de hoy) ya cuenta lo que está en preparación como en
+        /// camino hacia el destino y comprometido en el origen (estado A del procedimiento), así que lo que devuelve es lo
+        /// que FALTA además de lo preparado: los productos que no están se añaden y a los que están se les suma. Nunca se
+        /// baja nada: si la tienda bajó una línea, la propuesta vuelve a pedir lo que falte y la línea sube hasta ahí.</item>
+        /// <item>Cabecera nueva del job con el corte de hoy (para que ese día quede tratado), sin número y enlazada a la de
+        /// la preparación (<see cref="IRegistroReposicionesTraspasos.CrearCompletando"/>): Terminar numera las dos.</item>
+        /// <item>Las líneas nuevas llevan la fecha de hoy; las que ya estaban conservan la suya.</item>
+        /// </list>
+        /// No se completa (sigue el 409 <see cref="ReposicionYaEnPreparacionException"/>, y el job la omite y avisa) si la
+        /// preparación abierta es hacia OTRO destino o el origen tiene control de ubicaciones (Algete: la API nunca deja una
+        /// abierta, la crea ya cerrada y reservada; una abierta allí es de Nesto viejo y completarla exigiría reservar huecos).
+        /// Una puntual (sugerencia 581) nunca está abierta: nace y se termina de una vez, así que no puede ser la que se
+        /// completa (y mientras haya una abierta la puntual da 409). Si al llegar aquí la tienda ya la ha enviado, se crea
+        /// una nueva como siempre.
+        /// </summary>
+        public async Task<ResultadoCompletarReposicionDTO> Completar(CrearReposicionDTO peticion, IPrincipal usuario, DateTime corte)
+        {
+            RutaReposicion ruta = await ComprobarRuta(peticion, usuario).ConfigureAwait(false);
+            string empresa = ruta.Empresa;
+            string origen = ruta.Origen;
+            string destino = ruta.Destino;
+            string diario = ruta.AlmacenOrigen.DiarioSalidaRep;
+
+            List<FilaReposicionEnPreparacion> existentes = await repositorio.LeerLineasEnPreparacion(empresa, diario, origen).ConfigureAwait(false);
+            if (!existentes.Any())
+            {
+                // La han enviado mientras tanto: la de hoy es una normal
+                ReposicionEnPreparacionDTO creada = await Crear(peticion, usuario, corte).ConfigureAwait(false);
+                return new ResultadoCompletarReposicionDTO { Reposicion = creada, Completada = false, LineasNuevas = creada?.Lineas?.Count ?? 0 };
+            }
+            string otroDestino = existentes.Select(f => f.Almacen?.Trim()).FirstOrDefault(a => !string.Equals(a, destino, StringComparison.OrdinalIgnoreCase));
+            if (otroDestino != null)
+            {
+                throw new ReposicionYaEnPreparacionException($"Ya hay una reposición en preparación de {origen} a {otroDestino} con {existentes.Count} líneas: " +
+                    $"la de {destino} no se puede sumar a ella. Termínala para que se pueda rellenar la de {destino}.");
+            }
+            if (ruta.AlmacenOrigen.ControlUbicaciones)
+            {
+                throw new ReposicionYaEnPreparacionException($"Ya hay una reposición en preparación de {origen} a {destino} con {existentes.Count} líneas " +
+                    $"(hecha en Nesto viejo): desde {origen} no se completa sola. Termínala o bórrala en Nesto viejo.");
+            }
+
+            List<LineaCrearReposicionDTO> faltan = await LineasACrear(peticion, empresa, origen, destino, corte).ConfigureAwait(false);
+            Dictionary<string, FilaReposicionEnPreparacion> yaEstan = existentes
+                .Where(f => !string.IsNullOrWhiteSpace(f.Producto))
+                .GroupBy(f => f.Producto.Trim(), StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.OrderBy(f => f.NumeroOrden).First(), StringComparer.OrdinalIgnoreCase);
+            var nuevas = new List<LineaCrearReposicionDTO>();
+            var subidas = new List<(FilaReposicionEnPreparacion Fila, int Unidades)>();
+            foreach (LineaCrearReposicionDTO linea in faltan)
+            {
+                if (yaEstan.TryGetValue(linea.Producto, out FilaReposicionEnPreparacion fila))
+                {
+                    if (fila.Cantidad + linea.Cantidad > short.MaxValue)
+                    {
+                        throw new NestoBusinessException($"No se puede sumar {linea.Cantidad} a {fila.Producto}: pasaría de {short.MaxValue}.");
+                    }
+                    subidas.Add((fila, linea.Cantidad));
+                }
+                else
+                {
+                    nuevas.Add(linea);
+                }
+            }
+
+            DateTime desde = existentes.Min(f => f.Fecha).Date;
+            DateTime fecha = ahora().Date;
+            string texto = Texto(origen, destino);
+            string quien = UsuarioAuditoriaHelper.Resolver(usuario, null);
+            _ = await repositorio.EnTransaccion(async () =>
+            {
+                foreach (LineaCrearReposicionDTO linea in nuevas)
+                {
+                    int insertadas = await repositorio.InsertarLineaPreparacion(empresa, diario, origen, destino, linea.Producto, linea.Cantidad,
+                        fecha, texto, VENDEDOR_VENTA, quien).ConfigureAwait(false);
+                    if (insertadas != 1)
+                    {
+                        throw new NestoBusinessException($"El producto {linea.Producto} no existe en la empresa {empresa}. No se ha sumado nada.");
+                    }
+                }
+                foreach ((FilaReposicionEnPreparacion fila, int unidades) in subidas)
+                {
+                    int sumadas = await repositorio.SumarCantidad(empresa, diario, fila.NumeroOrden, unidades).ConfigureAwait(false);
+                    if (sumadas != 1)
+                    {
+                        throw Conflicto($"La reposición de {origen} a {destino} ha cambiado mientras tanto (¿se ha enviado?): no se ha sumado nada.");
+                    }
+                }
+                await registro.CrearCompletando(new CabeceraReposicionTraspaso
+                {
+                    Empresa = empresa, Origen = origen, Destino = destino, Herramienta = ruta.Herramienta,
+                    UsuarioCreacion = quien, FechaCreacion = ahora(), FechaCorte = corte
+                }, desde).ConfigureAwait(false);
+                return nuevas.Count + subidas.Count;
+            }).ConfigureAwait(false);
+
+            return new ResultadoCompletarReposicionDTO
+            {
+                Reposicion = await LeerEnPreparacion(empresa, origen, ruta.AlmacenOrigen).ConfigureAwait(false),
+                Completada = true,
+                LineasNuevas = nuevas.Count,
+                LineasSubidas = subidas.Count,
+                PreparacionDesde = desde
+            };
+        }
+
+        /// <summary>Lo que Crear y Completar comprueban de la petición antes de leer nada de la preparación.</summary>
+        private sealed class RutaReposicion
+        {
+            public string Empresa;
+            public string Origen;
+            public string Destino;
+            public string Herramienta;
+            public DatosAlmacenReposicion AlmacenOrigen;
+            public DatosAlmacenReposicion AlmacenDestino;
+        }
+
+        private async Task<RutaReposicion> ComprobarRuta(CrearReposicionDTO peticion, IPrincipal usuario)
+        {
+            if (peticion == null)
+            {
+                throw new NestoBusinessException("Faltan los datos de la reposición.");
+            }
+            string empresa = Empresa(peticion.Empresa);
+            string origen = Almacen(peticion.Origen);
+            string destino = Almacen(peticion.Destino);
+            ComprobarAlmacenes(origen, destino);
+            // NestoAPI#577: antes de escribir nada, para que una herramienta que no existe sea un 400 limpio
+            string herramienta = HerramientasReposicion.Resolver(peticion.Herramienta, usuario);
+
+            DatosAlmacenReposicion almacenOrigen = await AlmacenConDiario(empresa, origen, a => a.DiarioSalidaRep, "de salida").ConfigureAwait(false);
+            ComprobarPuedeEscribir(usuario, empresa, origen, almacenOrigen.ControlUbicaciones);
+            // El destino tiene que poder recibirla (su DiarioEntradaRep): mejor saberlo ahora que al terminar
+            DatosAlmacenReposicion almacenDestino = await AlmacenConDiario(empresa, destino, a => a.DiarioEntradaRep, "de entrada").ConfigureAwait(false);
+
+            if (await repositorio.HayInventarioEnCurso(empresa, origen).ConfigureAwait(false))
+            {
+                throw Conflicto($"El almacén {origen} tiene un inventario en curso: termínalo antes de crear una reposición.");
+            }
+            return new RutaReposicion
+            {
+                Empresa = empresa, Origen = origen, Destino = destino, Herramienta = herramienta,
+                AlmacenOrigen = almacenOrigen, AlmacenDestino = almacenDestino
+            };
         }
 
         public async Task<ReposicionEnPreparacionDTO> LeerEnPreparacion(string empresa, string origen)

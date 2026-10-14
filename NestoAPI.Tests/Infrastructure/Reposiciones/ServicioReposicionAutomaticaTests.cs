@@ -707,6 +707,348 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
             Assert.AreEqual("ReposicionAutomatica:1:REI:20261019", RepositorioReposicionAutomaticaSql.Recurso("1", "REI", LUNES.AddHours(10)));
         }
 
+        // ---------------------------------------------------------------- NestoAPI#622: preparación sin enviar a la hora de corte
+
+        private List<(CrearReposicionDTO Peticion, IPrincipal Usuario, DateTime Corte)> completadas;
+        private Func<CrearReposicionDTO, ResultadoCompletarReposicionDTO> completar;
+        private Func<CrearReposicionDTO, Exception> falloAlCompletar;
+        private List<(string Empresa, string Origen, string Titulo, string Cuerpo)> avisosTienda;
+        private Exception falloAlAvisarTienda;
+
+        /// <summary>Con la parte de #622: completar la preparación sin enviar y avisar a la tienda.</summary>
+        private ServicioReposicionAutomatica ServicioQueCompleta()
+        {
+            completadas = new List<(CrearReposicionDTO, IPrincipal, DateTime)>();
+            avisosTienda = avisosTienda ?? new List<(string, string, string, string)>();
+            var avisador = A.Fake<IAvisadorReposicionAutomatica>();
+            A.CallTo(() => avisador.Avisar(A<string>._, A<string>._, A<string>._, A<string>._))
+                .ReturnsLazily((string empresa, string origen, string titulo, string cuerpo) =>
+                {
+                    if (falloAlAvisarTienda != null)
+                    {
+                        return Task.FromException(falloAlAvisarTienda);
+                    }
+                    avisosTienda.Add((empresa, origen, titulo, cuerpo));
+                    return Task.CompletedTask;
+                });
+            return new ServicioReposicionAutomatica(repositorio,
+                (peticion, usuario, corte) =>
+                {
+                    repositorio.Pasos.Add($"crear {peticion.Origen}→{peticion.Destino}");
+                    Exception ex = fallo(peticion);
+                    if (ex != null)
+                    {
+                        return Task.FromException<ReposicionEnPreparacionDTO>(ex);
+                    }
+                    creadas.Add((peticion, usuario, corte));
+                    return Task.FromResult(new ReposicionEnPreparacionDTO { Origen = peticion.Origen, Destino = peticion.Destino });
+                },
+                new CalculadoraFechaReposicion((dia, almacen) => festivos.Contains($"{almacen}|{dia:yyyyMMdd}")),
+                () => ahora,
+                ex => avisos.Add(ex),
+                (peticion, usuario, corte) =>
+                {
+                    repositorio.Pasos.Add($"completar {peticion.Origen}→{peticion.Destino}");
+                    Exception ex = falloAlCompletar?.Invoke(peticion);
+                    if (ex != null)
+                    {
+                        return Task.FromException<ResultadoCompletarReposicionDTO>(ex);
+                    }
+                    completadas.Add((peticion, usuario, corte));
+                    return Task.FromResult(completar(peticion));
+                },
+                avisador);
+        }
+
+        private static ReposicionYaEnPreparacionException YaEnPreparacion(string origen, string destino)
+        {
+            return new ReposicionYaEnPreparacionException($"Ya hay una reposición en preparación de {origen} a {destino} con 8 líneas: termínala antes de crear otra.");
+        }
+
+        [TestMethod]
+        public async Task Job_TiendaConPreparacionSinEnviar_SeCompletaEnVezDeOmitirse_YSeAvisaALaTienda()
+        {
+            // Caso real (09/10/26): el viernes el job rellenó REI → ALG y no se envió; el lunes a la hora de corte se omitía
+            fallo = p => p.Origen == "REI" ? YaEnPreparacion("REI", "ALG") : null;
+            completar = p => new ResultadoCompletarReposicionDTO
+            {
+                Completada = true, LineasNuevas = 3, LineasSubidas = 2, PreparacionDesde = VIERNES_ANTERIOR,
+                Reposicion = new ReposicionEnPreparacionDTO { Origen = "REI", Destino = "ALG" }
+            };
+
+            List<ResultadoReposicionAutomaticaDTO> resultados = await ServicioQueCompleta().RellenarPendientes();
+
+            ResultadoReposicionAutomaticaDTO rei = resultados.Single(r => r.Origen == "REI");
+            Assert.AreEqual(ResultadosReposicionAutomatica.COMPLETADA, rei.Resultado);
+            Assert.AreEqual(5, rei.Lineas);
+            Assert.AreEqual(CORTE_LUNES, completadas.Single().Corte, "Con el corte de hoy, no con el reloj");
+            Assert.AreEqual(HerramientasReposicion.AUTOMATICO, completadas.Single().Peticion.Herramienta);
+            Assert.AreEqual(0, repositorio.Omitidas.Count, "No se apunta como omitida: la cabecera la escribe Completar");
+            Assert.AreEqual(0, avisos.Count, "Completarla es normal: nada a ELMAH");
+            CollectionAssert.AreEqual(new[]
+            {
+                "bloquear 1 REI 19/10/2026",
+                "¿hay? REI→ALG 19/10/2026 contando omitidas",
+                "crear REI→ALG",
+                "completar REI→ALG",
+                "soltar 1 REI 19/10/2026"
+            }, repositorio.Pasos.Where(p => p.Contains("REI")).ToList(), "Todo dentro del bloqueo del origen");
+            var aviso = avisosTienda.Single();
+            Assert.AreEqual("REI", aviso.Origen);
+            StringAssert.Contains(aviso.Titulo, "sin enviar");
+            Assert.AreEqual("La reposición a ALG (corte de hoy a las 10:00) se ha sumado a la que tenías sin enviar del 16/10: " +
+                "3 productos nuevos y 2 productos con más cantidad. Envíala desde «Enviar reposición».", aviso.Cuerpo);
+            Assert.AreEqual(ResultadosReposicionAutomatica.CREADA, resultados.Single(r => r.Origen == "ALG").Resultado);
+        }
+
+        [TestMethod]
+        public async Task Job_PreparacionSinEnviarQueNoSePuedeCompletar_SeOmiteComoAntes_YSeAvisaALaTienda()
+        {
+            // Hacia otro destino (o en Algete, de Nesto viejo): Completar vuelve a dar «ya en preparación»
+            fallo = p => p.Origen == "ALG" ? YaEnPreparacion("ALG", "REI") : null;
+            falloAlCompletar = p => new ReposicionYaEnPreparacionException("Ya hay una reposición en preparación de ALG a REI con 62 líneas: " +
+                "la de ALC no se puede sumar a ella. Termínala para que se pueda rellenar la de ALC.");
+            completar = p => null;
+
+            List<ResultadoReposicionAutomaticaDTO> resultados = await ServicioQueCompleta().RellenarPendientes();
+
+            Assert.AreEqual(ResultadosReposicionAutomatica.YA_EN_PREPARACION, resultados.Single(r => r.Origen == "ALG").Resultado);
+            StringAssert.Contains(repositorio.Omitidas.Single().Motivo, "no se puede sumar");
+            StringAssert.Contains(avisos.Single().Message, "ALG → ALC");
+            var aviso = avisosTienda.Single();
+            Assert.AreEqual("ALG", aviso.Origen);
+            Assert.AreEqual("La reposición a ALC no se ha podido rellenar", aviso.Titulo);
+            StringAssert.Contains(aviso.Cuerpo, "La reposición a ALC (corte de hoy a las 10:00) no se ha rellenado sola: Ya hay una reposición en preparación de ALG a REI");
+        }
+
+        [TestMethod]
+        public async Task Job_SiAlCompletarYaSeHabiaEnviado_EsUnaCreadaNormalSinAviso()
+        {
+            fallo = p => p.Origen == "REI" ? YaEnPreparacion("REI", "ALG") : null;
+            completar = p => new ResultadoCompletarReposicionDTO
+            {
+                Completada = false, LineasNuevas = 4,
+                Reposicion = new ReposicionEnPreparacionDTO
+                {
+                    Origen = "REI", Destino = "ALG",
+                    Lineas = Enumerable.Range(0, 4).Select(i => new LineaReposicionEnPreparacionDTO()).ToList()
+                }
+            };
+
+            List<ResultadoReposicionAutomaticaDTO> resultados = await ServicioQueCompleta().RellenarPendientes();
+
+            ResultadoReposicionAutomaticaDTO rei = resultados.Single(r => r.Origen == "REI");
+            Assert.AreEqual(ResultadosReposicionAutomatica.CREADA, rei.Resultado);
+            Assert.AreEqual(4, rei.Lineas);
+            Assert.AreEqual(0, avisosTienda.Count);
+        }
+
+        [TestMethod]
+        public async Task Job_NoSePuedeRellenar_AvisaALaTienda_YVaciaNo()
+        {
+            fallo = p => p.Origen == "REI"
+                ? new NestoBusinessException("El almacén REI tiene un inventario en curso: termínalo antes de crear una reposición.") { StatusCode = HttpStatusCode.Conflict }
+                : new ReposicionVaciaException("No hay nada que reponer de ALG a ALC.");
+            completar = p => null;
+
+            List<ResultadoReposicionAutomaticaDTO> resultados = await ServicioQueCompleta().RellenarPendientes();
+
+            Assert.AreEqual(ResultadosReposicionAutomatica.NO_SE_PUEDE, resultados.Single(r => r.Origen == "REI").Resultado);
+            Assert.AreEqual(ResultadosReposicionAutomatica.VACIA, resultados.Single(r => r.Origen == "ALG").Resultado);
+            var aviso = avisosTienda.Single();
+            Assert.AreEqual("REI", aviso.Origen, "Vacía es normal: no va a la campana");
+            StringAssert.Contains(aviso.Cuerpo, "inventario en curso");
+        }
+
+        [TestMethod]
+        public async Task Job_FueraDePlazo_AvisaALaTienda()
+        {
+            ahora = LUNES.AddHours(13).AddMinutes(31);
+            completar = p => null;
+
+            _ = await ServicioQueCompleta().RellenarPendientes();
+
+            Assert.IsTrue(avisosTienda.Any(a => a.Origen == "REI" && a.Cuerpo.Contains("ese viaje ya ha pasado")));
+        }
+
+        [TestMethod]
+        public async Task Job_SiFallaElAvisoALaTienda_SigueYLoDejaEnElmah()
+        {
+            fallo = p => p.Origen == "REI" ? YaEnPreparacion("REI", "ALG") : null;
+            completar = p => new ResultadoCompletarReposicionDTO { Completada = true, PreparacionDesde = VIERNES_ANTERIOR };
+            falloAlAvisarTienda = new InvalidOperationException("Sin conexión con el buzón");
+
+            List<ResultadoReposicionAutomaticaDTO> resultados = await ServicioQueCompleta().RellenarPendientes();
+
+            Assert.AreEqual(ResultadosReposicionAutomatica.COMPLETADA, resultados.Single(r => r.Origen == "REI").Resultado);
+            Assert.AreEqual(ResultadosReposicionAutomatica.CREADA, resultados.Single(r => r.Origen == "ALG").Resultado);
+            StringAssert.Contains(avisos.Single().Message, "No se ha podido avisar a la tienda");
+        }
+
+        [TestMethod]
+        public async Task Relanzar_ConPreparacionSinEnviar_LaCompletaComoElJob()
+        {
+            ahora = LUNES.AddHours(11);
+            fallo = p => YaEnPreparacion("REI", "ALG");
+            completar = p => new ResultadoCompletarReposicionDTO { Completada = true, LineasNuevas = 1, PreparacionDesde = VIERNES_ANTERIOR };
+
+            ResultadoReposicionAutomaticaDTO resultado = await ServicioQueCompleta().RellenarRuta("1", "REI", "ALG", Usuario("Carlos", "Informática"));
+
+            Assert.AreEqual(ResultadosReposicionAutomatica.COMPLETADA, resultado.Resultado);
+            Assert.AreEqual("Carlos", completadas.Single().Usuario.Identity.Name);
+            Assert.AreEqual(1, avisosTienda.Count);
+        }
+
+        [TestMethod]
+        public void TextoCompletada_SinNadaNuevo_LoDice()
+        {
+            string texto = ServicioReposicionAutomatica.TextoCompletada("ALG", CORTE_LUNES, VIERNES_ANTERIOR, 0, 0, LUNES.AddHours(11));
+
+            Assert.AreEqual("La reposición a ALG (corte de hoy a las 10:00) no tenía nada nuevo: sigue pendiente la que tenías sin enviar del 16/10. " +
+                "Envíala desde «Enviar reposición».", texto);
+        }
+
+        [TestMethod]
+        public async Task Avisos_DiceLasOmitidasYLasCompletadasSinEnviar_YNadaDeLasNormalesNiDeLasYaEnviadas()
+        {
+            ahora = LUNES.AddHours(11);
+            repositorio.CabecerasDelDia.AddRange(new[]
+            {
+                // ALC → ALG: vacía
+                new CabeceraReposicionAutomaticaDelDia { Id = 1, Destino = "ALG", FechaCorte = CORTE_LUNES, Omitida = "No hay nada que reponer de ALC a ALG." },
+                // ALC → REI: se sumó a la del viernes y sigue sin enviar
+                new CabeceraReposicionAutomaticaDelDia { Id = 2, Destino = "REI", FechaCorte = CORTE_LUNES, PreparacionDesde = VIERNES_ANTERIOR }
+            });
+
+            List<AvisoReposicionAutomaticaDTO> avisosDeHoy = await Servicio().LeerAvisosDeHoy("1", "alc");
+
+            Assert.AreEqual(2, avisosDeHoy.Count);
+            Assert.AreEqual("La reposición a ALG (corte de hoy a las 10:00) no se ha rellenado sola: No hay nada que reponer de ALC a ALG.", avisosDeHoy[0].Texto);
+            Assert.AreEqual(ServicioReposicionAutomatica.TIPO_AVISO_OMITIDA, avisosDeHoy[0].Tipo);
+            Assert.AreEqual("La reposición a REI (corte de hoy a las 10:00) se ha sumado a la que tenías sin enviar del 16/10. Envíala desde «Enviar reposición».",
+                avisosDeHoy[1].Texto);
+            Assert.AreEqual(ServicioReposicionAutomatica.TIPO_AVISO_COMPLETADA, avisosDeHoy[1].Tipo);
+            Assert.AreEqual("ALC", repositorio.OrigenAvisosLeido);
+            Assert.AreEqual(LUNES, repositorio.DesdeAvisosLeido, "Las de hoy");
+        }
+
+        [TestMethod]
+        public async Task Avisos_CreadaNormal_YaEnviada_OSoloConLineasDeHoy_NoDicenNada()
+        {
+            ahora = LUNES.AddHours(11);
+            repositorio.CabecerasDelDia.AddRange(new[]
+            {
+                // Creada hoy, sin enviar: es la del día, nada que decir
+                new CabeceraReposicionAutomaticaDelDia { Id = 1, Destino = "ALG", FechaCorte = CORTE_LUNES, PreparacionDesde = LUNES },
+                // Completada pero ya enviada (con número)
+                new CabeceraReposicionAutomaticaDelDia { Id = 2, Destino = "REI", FechaCorte = CORTE_LUNES, NumTraspaso = 80990, PreparacionDesde = null }
+            });
+
+            List<AvisoReposicionAutomaticaDTO> avisosDeHoy = await Servicio().LeerAvisosDeHoy("1", "ALC");
+
+            Assert.AreEqual(0, avisosDeHoy.Count);
+        }
+
+        [TestMethod]
+        public async Task Avisos_DeCadaDestinoSoloLaUltimaCabecera()
+        {
+            ahora = LUNES.AddHours(11);
+            repositorio.CabecerasDelDia.AddRange(new[]
+            {
+                new CabeceraReposicionAutomaticaDelDia { Id = 1, Destino = "ALG", FechaCorte = CORTE_LUNES, Omitida = "El almacén ALC tiene un inventario en curso" },
+                // Relanzada después a mano y creada
+                new CabeceraReposicionAutomaticaDelDia { Id = 5, Destino = "ALG", FechaCorte = CORTE_LUNES, PreparacionDesde = LUNES }
+            });
+
+            Assert.AreEqual(0, (await Servicio().LeerAvisosDeHoy("1", "ALC")).Count);
+        }
+
+        [TestMethod]
+        public async Task Avisos_SinLaTabla_ListaVacia()
+        {
+            repositorio.TablaLista = false;
+
+            Assert.AreEqual(0, (await Servicio().LeerAvisosDeHoy("1", "ALC")).Count);
+        }
+
+        [TestMethod]
+        public void Sql_NumerarAlTerminar_NumeraTodaLaPreparacionCompletada_YSinLaColumnaComoAntes()
+        {
+            string sql = RegistroReposicionesTraspasosSql.SQL_NUMERAR_ABIERTA;
+            StringAssert.Contains(sql, "COL_LENGTH('dbo.ReposicionesTraspasos', 'IdCompletada') IS NULL");
+            StringAssert.Contains(sql, "(r.Id = @abierta OR r.Id = @raiz OR r.IdCompletada = @raiz)");
+            StringAssert.Contains(sql, "@raiz = ISNULL(a.IdCompletada, a.Id)");
+            StringAssert.Contains(sql, "EXEC sp_executesql", "Sin la columna el lote no compilaría si la nombra fuera de sp_executesql");
+            string completando = RegistroReposicionesTraspasosSql.SQL_CREAR_COMPLETANDO;
+            StringAssert.Contains(completando, "a.FechaCreacion >= @desde", "No se enlaza con una abierta vieja que terminó Nesto viejo");
+            StringAssert.Contains(completando, "a.Omitida IS NULL");
+            StringAssert.Contains(completando, "COL_LENGTH('dbo.ReposicionesTraspasos', 'IdCompletada') IS NULL");
+        }
+
+        [TestMethod]
+        public void Sql_CabecerasDelDia_SoloLasDelJob_YLaPreparacionSinTraspaso()
+        {
+            string sql = RepositorioReposicionAutomaticaSql.SQL_CABECERAS_DEL_DIA;
+            StringAssert.Contains(sql, "r.Herramienta = 'Automatico'");
+            StringAssert.Contains(sql, "r.FechaCreacion >= @p2");
+            StringAssert.Contains(sql, "ISNULL(p.[NºTraspaso], 0) = 0", "Lo que ya tiene traspaso está enviado: no es preparación");
+        }
+
+        [TestMethod]
+        public void Script622_AnadeLaColumnaIdCompletada()
+        {
+            string raiz = System.IO.Path.GetDirectoryName(typeof(ServicioReposicionAutomaticaTests).Assembly.Location);
+            while (raiz != null && !System.IO.Directory.Exists(System.IO.Path.Combine(raiz, "Scripts")))
+            {
+                raiz = System.IO.Path.GetDirectoryName(raiz);
+            }
+            Assert.IsNotNull(raiz, "No se encuentra la carpeta Scripts del repositorio");
+            string script = System.IO.File.ReadAllText(System.IO.Path.Combine(raiz, "Scripts", "Issue622_ReposicionesTraspasos_IdCompletada.sql"));
+            StringAssert.Contains(script, "ADD IdCompletada int NULL");
+            StringAssert.Contains(script, "IF COL_LENGTH('dbo.ReposicionesTraspasos', 'IdCompletada') IS NULL", "Idempotente");
+        }
+
+        // ---------------------------------------------------------------- NestoAPI#622: a quién avisa
+
+        [TestMethod]
+        public async Task Avisador_DesdeUnaTienda_AvisaAQuienTieneEseAlmacenEnNesto()
+        {
+            var notificaciones = A.Fake<NestoAPI.Infraestructure.Notificaciones.IServicioNotificacionesPush>();
+            var pedidos = new List<string>();
+            var avisador = new AvisadorReposicionAutomatica(notificaciones,
+                (empresa, almacen) =>
+                {
+                    pedidos.Add($"{empresa}|{almacen}");
+                    return Task.FromResult(new List<string> { "Paloma", "NUEVAVISION\\Eva", "paloma", "(defecto)", " " });
+                },
+                () => throw new InvalidOperationException("Desde una tienda no se mira el grupo"));
+
+            await avisador.Avisar("1", "alc", "Tienes sin enviar la reposición a ALG", "La reposición a ALG…");
+
+            CollectionAssert.AreEqual(new[] { "1|ALC" }, pedidos);
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Paloma", Constantes.Aplicaciones.NESTO,
+                A<NotificacionPushDTO>.That.Matches(n => n.Titulo == "Tienes sin enviar la reposición a ALG" && n.Tipo == AvisadorReposicionAutomatica.TIPO_NOTIFICACION)))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Eva", Constantes.Aplicaciones.NESTO, A<NotificacionPushDTO>._))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario(A<string>._, A<string>._, A<NotificacionPushDTO>._))
+                .MustHaveHappenedTwiceExactly();
+        }
+
+        [TestMethod]
+        public async Task Avisador_DesdeAlgete_AvisaAlGrupoAlmacen()
+        {
+            var notificaciones = A.Fake<NestoAPI.Infraestructure.Notificaciones.IServicioNotificacionesPush>();
+            var avisador = new AvisadorReposicionAutomatica(notificaciones,
+                (empresa, almacen) => throw new InvalidOperationException("Algete es el almacén por defecto de todos: no vale"),
+                () => new List<string> { "Andre" });
+
+            await avisador.Avisar("1", "ALG", "La reposición a REI no se ha podido rellenar", "…");
+
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Andre", Constantes.Aplicaciones.NESTO, A<NotificacionPushDTO>._))
+                .MustHaveHappenedOnceExactly();
+        }
+
         // ---------------------------------------------------------------- repositorio en memoria
 
         private class RepositorioEnMemoria : IRepositorioReposicionAutomatica
@@ -750,6 +1092,18 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
                 Pasos.Add($"omitida {cabecera.Origen}→{cabecera.Destino}");
                 Omitidas.Add((cabecera, motivo));
                 return Task.CompletedTask;
+            }
+
+            /// <summary>NestoAPI#622: lo que devuelve LeerCabecerasDelDia.</summary>
+            public readonly List<CabeceraReposicionAutomaticaDelDia> CabecerasDelDia = new List<CabeceraReposicionAutomaticaDelDia>();
+            public string OrigenAvisosLeido;
+            public DateTime? DesdeAvisosLeido;
+
+            public Task<List<CabeceraReposicionAutomaticaDelDia>> LeerCabecerasDelDia(string empresa, string origen, DateTime desde)
+            {
+                OrigenAvisosLeido = origen;
+                DesdeAvisosLeido = desde;
+                return Task.FromResult(CabecerasDelDia.ToList());
             }
 
             public Task<IDisposable> Bloquear(string empresa, string origen, DateTime dia)

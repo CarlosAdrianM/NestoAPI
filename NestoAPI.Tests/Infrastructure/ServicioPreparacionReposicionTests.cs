@@ -1701,6 +1701,167 @@ namespace NestoAPI.Tests.Infrastructure
             StringAssert.Contains(ProductosReposicionPuntual.SQL_FICHA, "pr.Estado >= 0");
         }
 
+        // ---------------------------------------------------------------- NestoAPI#622: completar la preparación sin enviar
+
+        private static readonly DateTime VIERNES = new DateTime(2026, 10, 2);
+        private static readonly DateTime CORTE_MARTES = new DateTime(2026, 10, 6, 9, 0, 0);
+
+        private static CrearReposicionDTO PeticionDelJob(string origen = "ALC", string destino = "ALG")
+        {
+            return new CrearReposicionDTO { Empresa = "1", Origen = origen, Destino = destino, Herramienta = HerramientasReposicion.AUTOMATICO };
+        }
+
+        private static LineaPropuestaReposicionDTO Propuesta(string producto, int cantidad)
+        {
+            return new LineaPropuestaReposicionDTO { Producto = producto, CantidadReposicion = cantidad };
+        }
+
+        private FilaReposicionEnPreparacion DelViernes(int orden, string producto, int cantidad)
+        {
+            FilaReposicionEnPreparacion fila = Fila(orden, producto, cantidad);
+            fila.Fecha = VIERNES;
+            repositorio.Lineas.Add(fila);
+            return fila;
+        }
+
+        [TestMethod]
+        public async Task Completar_ConPreparacionSinEnviar_AnadeLasQueFaltanYSumaALasQueEstan_SinDuplicarNiBajar()
+        {
+            // El viernes se rellenó ALC → ALG y no se envió; la tienda bajó 17404 a 0. La propuesta del martes ya cuenta lo
+            // preparado como en camino: lo que devuelve es lo que falta ADEMÁS.
+            DelViernes(561483000, "21116", 3);
+            DelViernes(561483001, "41980", 4);
+            DelViernes(561483002, "17404", 0);
+            propuesta.AddRange(new[] { Propuesta("21116", 2), Propuesta("17404", 1), Propuesta("33333", 5) });
+
+            ResultadoCompletarReposicionDTO resultado = await ServicioConCabecera().Completar(PeticionDelJob(), Andre, CORTE_MARTES);
+
+            CollectionAssert.AreEqual(new[]
+            {
+                "TRAN",
+                "INSERT RepoAlcAlg 33333 x5 ALC→ALG 06/10/2026 NV NUEVAVISION\\Andre",
+                "UPDATE RepoAlcAlg 561483002 += 1",
+                "UPDATE RepoAlcAlg 561483000 += 2",
+                "CABECERA completando - ALC→ALG Automatico NUEVAVISION\\Andre 06/10/2026 9:32 corte 06/10/2026 9:00 desde 02/10/2026 0:00",
+                "COMMIT"
+            }, repositorio.Llamadas);
+            Assert.AreEqual(4, repositorio.Lineas.Count, "Una línea por producto: ninguno duplicado");
+            Assert.AreEqual(5, repositorio.Lineas.Single(l => l.Producto == "21116").Cantidad);
+            Assert.AreEqual(4, repositorio.Lineas.Single(l => l.Producto == "41980").Cantidad, "Lo que no pide la propuesta no se toca (nunca se baja)");
+            Assert.AreEqual(1, repositorio.Lineas.Single(l => l.Producto == "17404").Cantidad);
+            Assert.AreEqual(5, repositorio.Lineas.Single(l => l.Producto == "33333").Cantidad);
+            Assert.AreEqual(CORTE_MARTES.Date, repositorio.Lineas.Single(l => l.Producto == "33333").Fecha, "Las nuevas, con la fecha de hoy");
+            Assert.AreEqual(VIERNES, repositorio.Lineas.Single(l => l.Producto == "21116").Fecha, "Las que estaban conservan la suya");
+            Assert.IsTrue(resultado.Completada);
+            Assert.AreEqual(1, resultado.LineasNuevas);
+            Assert.AreEqual(2, resultado.LineasSubidas);
+            Assert.AreEqual(VIERNES, resultado.PreparacionDesde);
+            Assert.AreEqual(4, resultado.Reposicion.Lineas.Count);
+            Assert.AreEqual(HerramientasReposicion.AUTOMATICO, registro.Cabeceras.Single().Herramienta);
+            Assert.IsNull(registro.Cabeceras.Single().NumTraspaso, "Sin número, como la abierta: lo pone Terminar");
+        }
+
+        [TestMethod]
+        public async Task Completar_SinNadaNuevo_ApuntaIgualLaCabeceraDelCorteDeHoy()
+        {
+            DelViernes(561483000, "21116", 3);
+
+            ResultadoCompletarReposicionDTO resultado = await ServicioConCabecera().Completar(PeticionDelJob(), Andre, CORTE_MARTES);
+
+            CollectionAssert.AreEqual(new[]
+            {
+                "TRAN",
+                "CABECERA completando - ALC→ALG Automatico NUEVAVISION\\Andre 06/10/2026 9:32 corte 06/10/2026 9:00 desde 02/10/2026 0:00",
+                "COMMIT"
+            }, repositorio.Llamadas, "Para que ese día quede tratado y la tienda sepa que la de hoy está ahí");
+            Assert.IsTrue(resultado.Completada);
+            Assert.AreEqual(0, resultado.LineasNuevas + resultado.LineasSubidas);
+            Assert.AreEqual(3, repositorio.Lineas.Single().Cantidad);
+        }
+
+        [TestMethod]
+        public async Task Completar_LaAnteriorYaConTraspaso_NoCuentaComoAbierta_CreaUnaNueva()
+        {
+            // Enviada y pendiente de recibir (#577): con número de traspaso ya no está en preparación
+            FilaReposicionEnPreparacion enviada = DelViernes(561483000, "21116", 3);
+            repositorio.Numerar(enviada, 80950);
+            propuesta.Add(Propuesta("41980", 2));
+
+            ResultadoCompletarReposicionDTO resultado = await ServicioConCabecera().Completar(PeticionDelJob(), Andre, CORTE_MARTES);
+
+            Assert.IsFalse(resultado.Completada);
+            Assert.AreEqual(1, resultado.LineasNuevas);
+            CollectionAssert.Contains(repositorio.Llamadas, "CABECERA crear - ALC→ALG Automatico NUEVAVISION\\Andre 06/10/2026 9:32 corte 06/10/2026 9:00");
+            Assert.IsFalse(repositorio.Llamadas.Any(l => l.Contains("completando") || l.Contains("+=")));
+            Assert.AreEqual(3, enviada.Cantidad, "La enviada no se toca");
+        }
+
+        [TestMethod]
+        public void Sql_LineasEnPreparacion_LasQueTienenTraspasoNoCuentan()
+        {
+            StringAssert.Contains(RepositorioPreparacionReposicionSql.SQL_LINEAS_EN_PREPARACION, "ISNULL(p.[NºTraspaso], 0) = 0");
+            StringAssert.Contains(RepositorioPreparacionReposicionSql.SQL_SUMAR_CANTIDAD, "SET Cantidad = Cantidad + @p3",
+                "Sobre lo que haya en ese momento: si la tienda la baja a la vez, no se pisa");
+            StringAssert.Contains(RepositorioPreparacionReposicionSql.SQL_SUMAR_CANTIDAD, "ISNULL([NºTraspaso], 0) = 0");
+        }
+
+        [TestMethod]
+        public async Task Completar_ConLaAbiertaHaciaOtroDestino_Es409SinEscribir()
+        {
+            FilaReposicionEnPreparacion haciaReina = DelViernes(561483000, "21116", 3);
+            haciaReina.Almacen = "REI";
+            propuesta.Add(Propuesta("41980", 2));
+
+            ReposicionYaEnPreparacionException error = await Assert.ThrowsExceptionAsync<ReposicionYaEnPreparacionException>(
+                () => ServicioConCabecera().Completar(PeticionDelJob(), Andre, CORTE_MARTES));
+
+            StringAssert.Contains(error.Message, "de ALC a REI");
+            StringAssert.Contains(error.Message, "no se puede sumar");
+            Assert.AreEqual(0, repositorio.Llamadas.Count);
+        }
+
+        [TestMethod]
+        public async Task Completar_EnAlgeteUnaAbiertaDeNestoViejo_Es409SinEscribir()
+        {
+            _ = await repositorio.InsertarLineaPreparacion("1", "General", "ALG", "REI", "41980", 3, VIERNES, "x", "NV", "NUEVAVISION\\Andre");
+            repositorio.Llamadas.Clear();
+            propuesta.Add(Propuesta("21116", 2));
+
+            ReposicionYaEnPreparacionException error = await Assert.ThrowsExceptionAsync<ReposicionYaEnPreparacionException>(
+                () => ServicioConCabecera().Completar(PeticionDelJob("ALG", "REI"), Andre, CORTE_MARTES));
+
+            StringAssert.Contains(error.Message, "no se completa sola");
+            Assert.AreEqual(0, repositorio.Llamadas.Count);
+        }
+
+        [TestMethod]
+        public async Task Completar_ConInventarioEnCurso_Es409SinEscribir()
+        {
+            DelViernes(561483000, "21116", 3);
+            repositorio.InventariosEnCurso.Add("ALC");
+
+            NestoBusinessException error = await Assert.ThrowsExceptionAsync<NestoBusinessException>(
+                () => ServicioConCabecera().Completar(PeticionDelJob(), Andre, CORTE_MARTES));
+
+            Assert.AreEqual(HttpStatusCode.Conflict, error.StatusCode);
+            Assert.AreEqual(0, repositorio.Llamadas.Count);
+        }
+
+        [TestMethod]
+        public async Task Completar_SiLaTiendaLaEnviaMientrasTanto_NoSumaNada()
+        {
+            DelViernes(561483000, "21116", 3);
+            propuesta.AddRange(new[] { Propuesta("21116", 2), Propuesta("33333", 5) });
+            repositorio.AlSumar = () => repositorio.Numerar(repositorio.Lineas.First(l => l.Producto == "21116"), 80951);
+
+            NestoBusinessException error = await Assert.ThrowsExceptionAsync<NestoBusinessException>(
+                () => ServicioConCabecera().Completar(PeticionDelJob(), Andre, CORTE_MARTES));
+
+            Assert.AreEqual(HttpStatusCode.Conflict, error.StatusCode);
+            Assert.AreEqual("ROLLBACK", repositorio.Llamadas.Last());
+            Assert.IsFalse(repositorio.Lineas.Any(l => l.Producto == "33333"), "Lo insertado se deshace");
+        }
+
         /// <summary>La cabecera en memoria: apunta en las mismas Llamadas del repositorio para ver que va dentro de la transacción.</summary>
         private class RegistroEnMemoria : IRegistroReposicionesTraspasos
         {
@@ -1720,6 +1881,13 @@ namespace NestoAPI.Tests.Infrastructure
             {
                 Cabeceras.Add(cabecera);
                 repositorio.Llamadas.Add(Texto("crear", cabecera));
+                return Task.CompletedTask;
+            }
+
+            public Task CrearCompletando(CabeceraReposicionTraspaso cabecera, DateTime desde)
+            {
+                Cabeceras.Add(cabecera);
+                repositorio.Llamadas.Add(Texto("completando", cabecera) + $" desde {desde:dd/MM/yyyy H:mm}");
                 return Task.CompletedTask;
             }
 
@@ -1883,6 +2051,25 @@ namespace NestoAPI.Tests.Infrastructure
                 fila.Cantidad = cantidad;
                 return Task.FromResult(1);
             }
+
+            public Task<int> SumarCantidad(string empresa, string diario, int numeroOrden, int unidades)
+            {
+                Llamadas.Add($"UPDATE {diario} {numeroOrden} += {unidades}");
+                AlSumar?.Invoke();
+                FilaReposicionEnPreparacion fila = Lineas.FirstOrDefault(l => l.NumeroOrden == numeroOrden && Estado(l).Diario == diario && Estado(l).Traspaso == 0);
+                if (fila == null)
+                {
+                    return Task.FromResult(0);
+                }
+                fila.Cantidad += unidades;
+                return Task.FromResult(1);
+            }
+
+            /// <summary>NestoAPI#622: lo que pasa justo antes de sumar (la tienda la envía a la vez).</summary>
+            public Action AlSumar;
+
+            /// <summary>Una línea ya numerada (enviada, pendiente de recibir) que sigue en ese diario.</summary>
+            public void Numerar(FilaReposicionEnPreparacion fila, int traspaso) => Estado(fila).Traspaso = traspaso;
 
             public Task<int> BorrarLineasACero(string empresa, string diario, string destino)
             {

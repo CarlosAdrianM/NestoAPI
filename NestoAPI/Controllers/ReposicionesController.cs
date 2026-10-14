@@ -172,8 +172,9 @@ namespace NestoAPI.Controllers
         /// NestoAPI#577 (corte 3b): relanza a mano la reposición automática de hoy de una ruta, con el corte del calendario
         /// (el último de hoy que ya ha pasado), como si fuera el job: Herramienta «Automatico», sin líneas (la propuesta con
         /// el corte) y con el usuario de quien lo lanza. Solo Almacén, Dirección e Informática (403). 404 si hoy no toca esa
-        /// ruta; 409 si aún no ha llegado la hora de cierre, si ya está rellena o si el origen ya tiene una en preparación.
-        /// 200 con el resultado («Creada» o «Vacia») en los demás casos.
+        /// ruta; 409 si aún no ha llegado la hora de cierre, si ya está rellena o si el origen ya tiene una en preparación que
+        /// no se puede completar. 200 con el resultado («Creada», «Completada» —NestoAPI#622: sumada a la que la tienda tenía
+        /// sin enviar— o «Vacia») en los demás casos.
         /// </summary>
         [HttpPost]
         [Route("RellenarAutomatica")]
@@ -188,6 +189,21 @@ namespace NestoAPI.Controllers
             }
             IServicioReposicionAutomatica servicio = automatica ?? new ServicioReposicionAutomatica(db);
             return Ok(await servicio.RellenarRuta(empresa, origen, destino, User).ConfigureAwait(false));
+        }
+
+        // GET api/Reposiciones/AvisosAutomatica?origen=ALC&empresa=1
+        /// <summary>
+        /// NestoAPI#622: lo que «Enviar reposición» dice arriba de lo que ha hecho hoy el job con las reposiciones de
+        /// <paramref name="origen"/>: que la de hoy no se ha rellenado y por qué, o que se ha sumado a una que la tienda tenía
+        /// sin enviar. Lista vacía si no hay nada que decir. Basta con estar identificado.
+        /// </summary>
+        [HttpGet]
+        [Route("AvisosAutomatica")]
+        [ResponseType(typeof(List<AvisoReposicionAutomaticaDTO>))]
+        public async Task<IHttpActionResult> GetAvisosAutomatica(string origen, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            IServicioReposicionAutomatica servicio = automatica ?? new ServicioReposicionAutomatica(db);
+            return Ok(await servicio.LeerAvisosDeHoy(empresa, origen).ConfigureAwait(false));
         }
 
         // GET api/Reposiciones/ProximaLlegada?origen=REI&destino=ALG&empresa=1
