@@ -555,6 +555,10 @@
     <Compile Include="Infrastructure\IndicadoresStock\IndicadoresStockJobsServiceTests.cs" />
     <Compile Include="Infrastructure\IndicadoresStock\RepositorioIndicadoresStockEnMemoria.cs" />
     <Compile Include="Infrastructure\IndicadoresStock\RepositorioIndicadoresStockSqlTests.cs" />
+    <Compile Include="Infrastructure\Stocks\Tendencias\SeriesTendencia.cs" />
+    <Compile Include="Infrastructure\Stocks\Tendencias\CalculadoraSeriesTests.cs" />
+    <Compile Include="Infrastructure\Stocks\Tendencias\MotorTendenciasTests.cs" />
+    <Compile Include="Infrastructure\Stocks\Tendencias\CalibracionTendenciasTests.cs" />
     <Compile Include="Infrastructure\Reposiciones\CalculadoraFechaReposicionTests.cs" />
     <Compile Include="Infrastructure\Reposiciones\ServicioCalendarioReposicionesTests.cs" />
     <Compile Include="Infrastructure\Reposiciones\ListadoReposicionTests.cs" />

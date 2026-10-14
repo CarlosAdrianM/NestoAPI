@@ -969,6 +969,13 @@
     <Compile Include="Infraestructure\Rapports\CargadorLightGbmNativo.cs" />
     <Compile Include="Infraestructure\Rapports\ReentrenamientoModeloLlamadasJobsService.cs" />
     <Compile Include="Controllers\RapportsController.cs" />
+    <Compile Include="Infraestructure\Stocks\Tendencias\DemandaStock.cs" />
+    <Compile Include="Infraestructure\Stocks\Tendencias\ParametrosTendencias.cs" />
+    <Compile Include="Infraestructure\Stocks\Tendencias\DatosProductoTendencia.cs" />
+    <Compile Include="Infraestructure\Stocks\Tendencias\ResultadoTendencia.cs" />
+    <Compile Include="Infraestructure\Stocks\Tendencias\CalculadoraSeries.cs" />
+    <Compile Include="Infraestructure\Stocks\Tendencias\MotorTendencias.cs" />
+    <Compile Include="Infraestructure\Stocks\Tendencias\CalibracionTendencias.cs" />
     <Compile Include="Controllers\SugerenciasContactoController.cs" />
     <Compile Include="Infraestructure\Eventos\ServicioEventos.cs" />
     <Compile Include="Infraestructure\Eventos\SenalesEventosJobsService.cs" />
