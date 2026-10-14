@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure.Picking;
@@ -263,6 +263,51 @@ namespace NestoAPI.Tests.Infrastructure.Picking
             A.CallTo(() => repo.LeerCandidatos("3", 928241, null, FECHA_PICKING.Date)).MustHaveHappenedOnceExactly();
             A.CallTo(() => repo.LeerCandidatos(null, null, "5825", FECHA_PICKING.Date)).MustHaveHappenedOnceExactly();
             A.CallTo(() => repo.LeerCandidatos(null, null, null, FECHA_PICKING.Date)).MustHaveHappenedOnceExactly();
+        }
+
+        // ===== Revisión 13/10/26: el contexto que crea el controlador se libera
+
+        // Sin subclase de NVEntities en este ensamblado: EF buscaría aquí su DbConfiguration (la de integración) y fallaría
+        private static bool EstaLiberado(NestoAPI.Models.NVEntities contexto)
+        {
+            try
+            {
+                _ = ((System.Data.Entity.Infrastructure.IObjectContextAdapter)contexto).ObjectContext;
+                return false;
+            }
+            catch (InvalidOperationException)
+            {
+                return true;
+            }
+        }
+
+        [TestMethod]
+        public void Controller_AlLiberarse_LiberaElContextoQueHaCreadoParaLasSugerenciasDeRuta()
+        {
+            var contextos = new List<NestoAPI.Models.NVEntities>();
+            var controller = new PickingController
+            {
+                CrearContexto = () => { var contexto = new NestoAPI.Models.NVEntities(); contextos.Add(contexto); return contexto; }
+            };
+
+            // El gestor por defecto (el de producción) es el que pide el contexto; dos usos en la misma petición comparten uno.
+            Assert.IsNotNull(controller.CrearGestorSugerenciasRuta());
+            Assert.IsNotNull(controller.CrearGestorSugerenciasRuta());
+            controller.Dispose();
+
+            Assert.AreEqual(1, contextos.Count);
+            Assert.IsTrue(EstaLiberado(contextos.Single()));
+        }
+
+        [TestMethod]
+        public void Controller_SinHaberUsadoElContexto_NoLoCreaYSeLiberaSinErrores()
+        {
+            int creados = 0;
+            var controller = new PickingController { CrearContexto = () => { creados++; return new NestoAPI.Models.NVEntities(); } };
+
+            controller.Dispose();
+
+            Assert.AreEqual(0, creados);
         }
     }
 }

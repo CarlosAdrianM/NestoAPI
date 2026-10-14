@@ -72,9 +72,23 @@ namespace NestoAPI.Controllers
             return Ok(pedidos);
         }
 
+        public PickingController()
+        {
+            CrearGestorSugerenciasRuta = () => new GestorSugerenciasRuta(new RepositorioSugerenciasRutaSql(Db));
+        }
+
+        // Revisión 13/10/26: el contexto que crea el controlador se libera en Dispose, como en el resto de controladores
+        // (antes se creaba un NVEntities por petición de sugerencias de ruta y nadie lo liberaba). Se crea solo si hace
+        // falta: los endpoints de sacar picking no lo usan.
+        private NVEntities db;
+
+        /// <summary>Revisión 13/10/26: cómo se crea el contexto del controlador. Sustituible en los tests.</summary>
+        internal Func<NVEntities> CrearContexto { get; set; } = () => new NVEntities();
+
+        private NVEntities Db => db ?? (db = CrearContexto());
+
         /// <summary>Sugerencia 575: el gestor de las sugerencias de ruta propia. Sustituible en los tests.</summary>
-        internal Func<GestorSugerenciasRuta> CrearGestorSugerenciasRuta { get; set; } =
-            () => new GestorSugerenciasRuta(new RepositorioSugerenciasRutaSql(new NVEntities()));
+        internal Func<GestorSugerenciasRuta> CrearGestorSugerenciasRuta { get; set; }
 
         /// <summary>Sugerencia 575: el horizonte del picking interactivo (el mismo que usará el picking). Sustituible en los tests.</summary>
         internal Func<DateTime> FechaPicking { get; set; } =
@@ -146,6 +160,16 @@ namespace NestoAPI.Controllers
             modulos.finalizador = new FinalizadorPicking();
 
             gestorPicking = new GestorPicking(modulos);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                db?.Dispose();
+                db = null;
+            }
+            base.Dispose(disposing);
         }
     }
 
