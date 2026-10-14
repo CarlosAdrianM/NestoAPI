@@ -905,6 +905,10 @@
     <Compile Include="Infraestructure\PedidosVenta\IServicioPedidosVenta.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ServicioPedidosVenta.cs" />
     <Compile Include="Infraestructure\PrincipalExtensions.cs" />
+    <Compile Include="Infraestructure\IndicadoresStock\CalculadoraIndicadoresStock.cs" />
+    <Compile Include="Infraestructure\IndicadoresStock\IndicadoresStockJobsService.cs" />
+    <Compile Include="Infraestructure\IndicadoresStock\IndicadoresStockModelos.cs" />
+    <Compile Include="Infraestructure\IndicadoresStock\RepositorioIndicadoresStock.cs" />
     <Compile Include="Infraestructure\Rapports\GestorRapports.cs" />
     <Compile Include="Infraestructure\Rapports\IServicioRapports.cs" />
     <Compile Include="Infraestructure\Rapports\ResumenRapportsDia.cs" />

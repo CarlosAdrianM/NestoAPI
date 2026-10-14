@@ -361,7 +361,12 @@ namespace NestoAPI
                 {
                     ServerName = Environment.MachineName + ":" + Infraestructure.Rapports.ReentrenamientoModeloLlamadasJobsService.COLA,
                     WorkerCount = 1,
-                    Queues = new[] { Infraestructure.Rapports.ReentrenamientoModeloLlamadasJobsService.COLA }
+                    // NestoAPI#629: también los indicadores de stock (recorren ExtractoProducto y LinPedidoVta enteras).
+                    Queues = new[]
+                    {
+                        Infraestructure.Rapports.ReentrenamientoModeloLlamadasJobsService.COLA,
+                        Infraestructure.IndicadoresStock.IndicadoresStockJobsService.COLA
+                    }
                 });
 
                 // Configurar jobs recurrentes
@@ -922,6 +927,22 @@ namespace NestoAPI
                 }
             );
             Console.WriteLine("✅ Job recurrente 'reentrenar-modelo-llamadas' configurado (primer sábado de cada mes a las 2:30)");
+
+            // NestoAPI#629 (corte 1 de #628, control de stock obsoleto): el día 1 a las 03:30 rellena la tabla IndicadoresStock con
+            // el mes anterior (valor de stock, rotación, cobertura, días en servir…). Si el día 1 es domingo, el día 2 (de madrugada
+            // del domingo corre el SP de precios medios). A las 03:30 ya han acabado los jobs de la 1:00 a las 3:00. Va en la cola
+            // «indicadores» (servidor de un hilo de los jobs largos, arriba). La reconstrucción de 36 meses se encola a mano con
+            // POST api/IndicadoresStock/Reconstruir?meses=36 y solo trabaja de noche.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.IndicadoresStock.IndicadoresStockJobsService.ID_JOB_MENSUAL,
+                () => Infraestructure.IndicadoresStock.IndicadoresStockJobsService.Mensual(),
+                Infraestructure.IndicadoresStock.IndicadoresStockJobsService.CRON_MENSUAL, // Cron: días 1 y 2 a las 03:30 (el 2 solo si el 1 fue domingo)
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'indicadores-stock-mensual' configurado (día 1 a las 03:30; el 2 si el 1 es domingo)");
         }
     }
 
