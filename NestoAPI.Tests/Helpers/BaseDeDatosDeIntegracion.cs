@@ -69,7 +69,7 @@ namespace NestoAPI.Tests.Helpers
             return new NVEntities(new EntityConnection(metadatos, new SqlConnection(conexion), true), true);
         }
 
-        private static string ConexionOInconclusa()
+        internal static string ConexionOInconclusa()
         {
             string conexion = Environment.GetEnvironmentVariable(VARIABLE_CONEXION);
             if (string.IsNullOrWhiteSpace(conexion))

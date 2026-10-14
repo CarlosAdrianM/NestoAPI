@@ -46,9 +46,12 @@ namespace NestoAPI.Infraestructure
             return false;
         }
 
-        // Cabezas de bloqueo (bloquean y no están bloqueadas) y, como fallback, sesiones
-        // sleeping con transacción abierta antigua (>15s): el caso real del 16/07/26, donde la
-        // cola ya se había vaciado por timeouts pero los locks seguían retenidos.
+        // Cabezas de bloqueo (bloquean y no están bloqueadas) y, como fallback, sesiones con
+        // transacción abierta antigua (>15s) que retienen locks: el caso real del 16/07/26, donde la
+        // cola ya se había vaciado por timeouts pero los locks seguían retenidos. NestoAPI#635: el
+        // fallback valía solo para sesiones «sleeping»; una transacción grande que se está
+        // EJECUTANDO (14/10/26) se escapaba en cuanto expiraban sus víctimas. Los locks de tipo
+        // DATABASE no cuentan (los tiene cualquier sesión conectada a la BD).
         private const string CONSULTA = @"
 SELECT TOP 3
     s.session_id AS SessionId,
@@ -64,7 +67,9 @@ OUTER APPLY (SELECT COUNT(*) AS N FROM sys.dm_exec_requests r WHERE r.blocking_s
 WHERE s.is_user_process = 1
   AND s.session_id <> @@SPID
   AND (bloqueados.N > 0
-       OR (s.status = 'sleeping' AND at.transaction_begin_time < DATEADD(second, -15, GETDATE())))
+       OR (at.transaction_begin_time < DATEADD(second, -@segundosTransaccion, GETDATE())
+           AND EXISTS (SELECT 1 FROM sys.dm_tran_locks l
+                       WHERE l.request_session_id = s.session_id AND l.resource_type <> 'DATABASE')))
   AND NOT EXISTS (SELECT 1 FROM sys.dm_exec_requests rb WHERE rb.session_id = s.session_id AND rb.blocking_session_id > 0)
 ORDER BY bloqueados.N DESC, at.transaction_begin_time ASC";
 
@@ -136,23 +141,29 @@ ORDER BY bloqueados.N DESC, at.transaction_begin_time ASC";
             return constructor.ConnectionString;
         }
 
-        private static List<FilaBloqueador> ConsultarBloqueadores(SqlConnection conexion)
+        /// <summary>Antigüedad mínima de la transacción para que el plan B la señale.</summary>
+        internal const int SEGUNDOS_TRANSACCION_ANTIGUA = 15;
+
+        internal static List<FilaBloqueador> ConsultarBloqueadores(SqlConnection conexion, int segundosTransaccion = SEGUNDOS_TRANSACCION_ANTIGUA)
         {
             List<FilaBloqueador> filas = new List<FilaBloqueador>();
             using (SqlCommand comando = new SqlCommand(CONSULTA, conexion) { CommandTimeout = 3 })
-            using (SqlDataReader lector = comando.ExecuteReader())
             {
-                while (lector.Read())
+                comando.Parameters.AddWithValue("@segundosTransaccion", segundosTransaccion);
+                using (SqlDataReader lector = comando.ExecuteReader())
                 {
-                    filas.Add(new FilaBloqueador
+                    while (lector.Read())
                     {
-                        SessionId = lector.GetInt16(0),
-                        LoginName = lector.IsDBNull(1) ? null : lector.GetString(1),
-                        ProgramName = lector.IsDBNull(2) ? null : lector.GetString(2),
-                        Desde = lector.IsDBNull(3) ? (DateTime?)null : lector.GetDateTime(3),
-                        ContextInfo = lector.IsDBNull(4) ? null : lector.GetString(4),
-                        Bloqueados = lector.GetInt32(5)
-                    });
+                        filas.Add(new FilaBloqueador
+                        {
+                            SessionId = lector.GetInt16(0),
+                            LoginName = lector.IsDBNull(1) ? null : lector.GetString(1),
+                            ProgramName = lector.IsDBNull(2) ? null : lector.GetString(2),
+                            Desde = lector.IsDBNull(3) ? (DateTime?)null : lector.GetDateTime(3),
+                            ContextInfo = lector.IsDBNull(4) ? null : lector.GetString(4),
+                            Bloqueados = lector.GetInt32(5)
+                        });
+                    }
                 }
             }
             return filas;

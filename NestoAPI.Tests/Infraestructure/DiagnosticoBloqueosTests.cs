@@ -1,11 +1,13 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Filters;
+using NestoAPI.Tests.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Data.SqlClient;
 using System.Linq;
 using System.Reflection;
+using System.Threading.Tasks;
 
 namespace NestoAPI.Tests.Infraestructure
 {
@@ -202,6 +204,48 @@ namespace NestoAPI.Tests.Infraestructure
 
             var error = (Dictionary<string, object>)respuesta["error"];
             Assert.AreEqual("No se pudo contabilizar", error["message"]);
+        }
+
+        [TestMethod]
+        [TestCategory("Integracion")]
+        public async Task Integracion_TransaccionLargaEjecutandose_SaleComoBloqueador()
+        {
+            // NestoAPI#635: caso real 14/10/26 16:42. Una transacción grande EN EJECUCIÓN bloqueaba a
+            // la oficina; cuando corría el diagnóstico las víctimas ya habían expirado (nadie esperando)
+            // y el plan B solo miraba sesiones «sleeping»: «Sin bloqueadores activos» y nadie supo a
+            // quién llamar. Aquí una sesión abre transacción, coge locks y se queda ejecutando.
+            string cadena = BaseDeDatosDeIntegracion.ConexionOInconclusa();
+            using (var bloqueadora = new SqlConnection(cadena))
+            using (var diagnostico = new SqlConnection(cadena))
+            {
+                await bloqueadora.OpenAsync();
+                await diagnostico.OpenAsync();
+                short sesion;
+                using (var comando = new SqlCommand("SELECT CAST(@@SPID AS smallint)", bloqueadora))
+                {
+                    sesion = (short)await comando.ExecuteScalarAsync();
+                }
+                using (var transaccion = bloqueadora.BeginTransaction())
+                {
+                    // Lock exclusivo de verdad sin tocar datos: un recurso de aplicación con dueño la transacción
+                    using (var comando = new SqlCommand(
+                        "EXEC sp_getapplock @Resource = 'NestoAPI635', @LockMode = 'Exclusive', @LockOwner = 'Transaction'",
+                        bloqueadora, transaccion))
+                    {
+                        await comando.ExecuteNonQueryAsync();
+                    }
+                    var espera = new SqlCommand("WAITFOR DELAY '00:00:15'", bloqueadora, transaccion) { CommandTimeout = 30 };
+                    Task ejecutandose = espera.ExecuteNonQueryAsync();
+                    await Task.Delay(2500);
+
+                    List<DiagnosticoBloqueos.FilaBloqueador> filas = DiagnosticoBloqueos.ConsultarBloqueadores(diagnostico, segundosTransaccion: 1);
+
+                    espera.Cancel();
+                    try { await ejecutandose; } catch (SqlException) { }
+                    Assert.IsTrue(filas.Any(f => f.SessionId == sesion),
+                        "La sesión con la transacción abierta y ejecutándose debería salir como posible bloqueadora");
+                }
+            }
         }
 
         // Mismo helper de reflexión que ContabilidadServiceDeadlockTests: SqlException no tiene
