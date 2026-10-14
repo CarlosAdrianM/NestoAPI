@@ -30,7 +30,7 @@
 </head>
 <body>
 <h1>Reposiciones: guía para tiendas y almacén</h1>
-<p class="sub">Para Nesto 1.10.41 y Ariadna 2.5 · octubre de 2026</p>
+<p class="sub">Para Nesto 1.10.41 y Ariadna 2.7 · octubre de 2026</p>
 
 <div class="box">
 <p><b>En resumen.</b> Las reposiciones <b>se rellenan solas a su hora</b>: nadie tiene que calcularlas. Lo que queda es <b>prepararlas, enviarlas y recibirlas</b>.</p>
@@ -57,6 +57,7 @@
 <li><b>Rellenar una reposición a mano</b> (algo urgente fuera de hora) solo lo pueden hacer Manuel, Alfredo y Carlos. Si a una tienda le piden <b>algún producto suelto después</b> de enviar la del día, lo manda ella con una <b>reposición puntual</b> (apartado 2, forma C).</li>
 <li>La reposición de Algete a una tienda <b>no aparece en «Recibir» de la tienda hasta que sale de Algete</b>, es decir, hasta que Algete termina de prepararla.</li>
 <li>Una reposición sin recibir no bloquea la siguiente: la nueva se rellena igual y lo que está de camino no se vuelve a pedir.</li>
+<li><b>Si a la hora de rellenar la de hoy todavía tienes la del día anterior sin enviar</b>, la de hoy <b>se suma a ella</b>: se añaden los productos que faltan y se suben las cantidades que hagan falta (nunca se baja lo que ya hayas tocado). No se pierde nada y no hay dos reposiciones: envías una sola. «Enviar reposición» te lo dice arriba y te llega un aviso a la campana.</li>
 </ul>
 
 <h2>2. En la tienda: enviar la reposición a Algete</h2>
@@ -65,7 +66,7 @@
 <h3>Forma A: Nesto, en el ordenador</h3>
 <div class="ojo"><p><b>Con Nesto no se prepara lejos del ordenador.</b> Al leer un código, Nesto salta a la línea del producto y deja el cursor en la cantidad. Hay que pulsar <kbd>Intro</kbd> en el teclado del ordenador. Con solo el lector en la mano no funciona.</p></div>
 <ol>
-<li>Abre <b>Productos › Reposición › Enviar</b>. A las 9:00 la reposición del día aparece ya rellena. Si entras antes, Nesto dice, por ejemplo, <i>«Todavía no hay reposición para Algete. Se rellena sola hoy a las 9:00»</i>.</li>
+<li>Abre <b>Productos › Reposición › Enviar</b>. A las 9:00 la reposición del día aparece ya rellena. Si entras antes, Nesto dice, por ejemplo, <i>«Todavía no hay reposición para Algete. Se rellena sola hoy a las 9:00»</i>. Arriba, una franja te dice qué ha pasado con la de hoy: si se ha rellenado, si <b>se ha sumado a la que tenías sin enviar</b> del día anterior, o si no se ha podido rellenar y por qué (por ejemplo, un inventario en curso). La franja desaparece al enviar.</li>
 <li>Pulsa <b>«Imprimir»</b>. Sale un listado con ubicación, referencia, código de barras, descripción, cantidad y una casilla, en el orden de recorrer la tienda.</li>
 <li>Recorre las estanterías con el papel. <b>Marca en la casilla</b> lo que coges. <b>Apunta</b> lo que falta y lo que va de menos.</li>
 <li>Vuelve al ordenador con los productos. Para cada producto:
@@ -97,10 +98,11 @@
 <p>Se prepara <b>leyendo mientras coges, sin papel</b>. Cada lectura se confirma al momento. <b>Lo que no se lee no se manda.</b></p>
 <ol>
 <li>Entra en Ariadna con tu usuario. Ariadna sabe que eres una tienda y solo enseña <b>Salidas</b> (enviar tu reposición a Algete) y <b>Entradas</b> (recibir las de Algete), además de Novedades y Sugerencias.</li>
-<li>Pulsa <b>«Salidas»</b>. Ariadna marca el <b>producto que toca</b> (el primero que queda por preparar). Coge <b>ese</b> producto, pulsa <b>«📷 Leer»</b> y enfoca su código de barras.</li>
-<li>Si es el que toca: pitido y cuenta una. Si es otro: <i>«No coincide…»</i>, tono de error y vibración, y <b>no cuenta</b>.</li>
-<li>Para mandar más unidades, léelas una a una o, después de la primera lectura, teclea las que quedan en el cuadro de lectura y pulsa <kbd>Intro</kbd>. «+1» suma una y «−1» quita una.</li>
-<li>Cuando un producto está completo, Ariadna pasa sola al siguiente.</li>
+<li>Pulsa <b>«Salidas»</b>. Ariadna marca el <b>producto que toca</b> (el primero que queda por preparar) y el cuadro de abajo dice <b>«LEE EL CÓDIGO»</b>. Coge <b>ese</b> producto, pulsa <b>«📷 Leer»</b> y enfoca su código de barras.</li>
+<li>Si es el que toca: pitido y queda <b>comprobado</b>. Si es otro: <i>«No coincide…»</i>, tono de error y vibración, y <b>no cuenta</b>.</li>
+<li>Comprobado, el cuadro cambia a <b>«CANTIDAD»</b> (y cambia de color). Si la línea es de <b>una</b> unidad, la lectura ya la cuenta y pasa al siguiente. Si es de más, teclea <b>cuántas mandas en total</b> (por ejemplo, <b>100</b> si coges las 100) y pulsa <kbd>Intro</kbd>; o pulsa <kbd>Intro</kbd> <b>sin nada</b> para mandar <b>todas</b> las que pide. Nunca más de las que pide. «−1» quita una.</li>
+<li>Leer otra vez el mismo código no suma: Ariadna te recuerda que ya está comprobado y que toca la cantidad. Si prefieres contar leyendo unidad a unidad (por ejemplo, porque las coges de varios sitios), pulsa <b>«Contar leyendo»</b> y, para esa línea, cada lectura suma una.</li>
+<li>Cuando un producto está completo, Ariadna pasa sola al siguiente, que hay que volver a comprobar.</li>
 <li>Si no hay o hay menos de lo que pide: <b>«No está»</b>. Se manda lo leído y pasa al siguiente.</li>
 <li>Al acabar, cierra la caja y pulsa <b>«Enviar a Algete»</b>. Ariadna enseña un resumen: <b>lo que no se ha leído no se manda</b> (se quita de la reposición). «Sí, enviar» o «Seguir leyendo».</li>
 </ol>
@@ -161,13 +163,13 @@
 <table class="escaneo">
 <thead><tr><th></th><th>SALIDA<br><span style="font-weight:normal;font-size:9.5pt">Preparar una reposición (Algete y tiendas) y el picking de pedidos</span></th><th>ENTRADA<br><span style="font-weight:normal;font-size:9.5pt">Recibir una reposición (Algete y tiendas) o una compra</span></th></tr></thead>
 <tr><td class="tema">Quién elige el producto</td><td><b>Ariadna.</b> Toca el primero que queda (en Algete, en orden de huecos). Ve al hueco y coge <b>ese</b> producto.</td><td><b>Tú.</b> Lee lo que sacas de la caja, en el orden que quieras.</td></tr>
-<tr><td class="tema">Qué hace la lectura</td><td>Comprueba que lo que tienes en la mano es el producto que toca y cuenta <b>1</b>. No busca en la lista.</td><td>Busca el producto en la lista y le suma <b>1</b>. Vale cualquiera de sus códigos.</td></tr>
+<tr><td class="tema">Qué hace la lectura</td><td>Comprueba que lo que tienes en la mano es el producto que toca. No busca en la lista. Si la línea es de 1, además la cuenta; si es de más, pide la cantidad. El cuadro de abajo dice en qué paso estás: <b>«LEE EL CÓDIGO»</b> (o <b>«TECLEA LA REFERENCIA»</b> si el producto no tiene código) y, comprobado, <b>«CANTIDAD»</b> en ámbar.</td><td>Busca el producto en la lista y le suma <b>1</b>. Vale cualquiera de sus códigos.</td></tr>
 <tr><td class="tema">Si lees otro producto</td><td><i>«No coincide: has leído … y toca …»</i>, tono de error. <b>No cuenta</b> y no cambia de producto.</td><td>Si no venía: se apunta aparte como «No se esperaba», con tono de error. Si ya estaba completo, se suma igual y suena el error (sobra).</td></tr>
 <tr><td class="tema">Antes de comprobar</td><td><b>No deja meter cantidad</b> (ni <kbd>F1</kbd>, ni «+1», ni <kbd>#</kbd>). Primero hay que leer el código (o la referencia).</td><td>No hace falta comprobar nada.</td></tr>
 <tr><td class="tema">Cantidad 1</td><td>La lectura basta: pasa sola al siguiente producto.</td><td>La lectura basta.</td></tr>
-<tr><td class="tema">Cantidad mayor</td><td>Lee cada unidad, o lee una y teclea <b>las que quedan</b> + <kbd>ENT</kbd> (o <kbd>F1</kbd>). En Algete, <kbd>#</kbd> + <kbd>ENT</kbd> coge todo lo que queda. Nunca más de lo que pide. Completo, pasa solo al siguiente.</td><td>Lee cada unidad, o lee una y teclea <b>las que faltan</b> + <kbd>F1</kbd> (o en el cuadro «Cant.» y <kbd>ENT</kbd> o «+»). Se suman al producto elegido: el último leído o el que tocas en la lista.</td></tr>
+<tr><td class="tema">Cantidad mayor</td><td>Lee una vez (comprueba) y teclea <b>cuántas coges en total</b> + <kbd>ENT</kbd>: para 100 unidades, <b>100</b>. O <kbd>ENT</kbd> <b>sin nada</b> = todas las que pide (<kbd>#</kbd> + <kbd>ENT</kbd> hace lo mismo). Nunca más de lo que pide. Volver a leer el código no suma (te recuerda que ya está comprobado). Para contar leyendo unidad a unidad: <kbd>F1</kbd> con el cuadro vacío (o el botón «Contar leyendo») en esa línea; otro <kbd>F1</kbd> vuelve a la cantidad. Si ya habías contado parte, lo que tecleas se suma a lo contado. Completo, pasa solo al siguiente.</td><td>Lee cada unidad, o lee una y teclea <b>las que faltan</b> + <kbd>F1</kbd> (o en el cuadro «Cant.» y <kbd>ENT</kbd> o «+»). Se suman al producto elegido: el último leído o el que tocas en la lista.</td></tr>
 <tr><td class="tema">Cuánto queda</td><td>Arriba a la derecha, <b>«Quedan: 1/2»</b>: del producto que toca queda 1 de las 2 que pide.</td><td>Igual, del producto elegido: <b>«Quedan: 1/2»</b> = falta 1 de las 2 que se esperaban.</td></tr>
-<tr><td class="tema">Ojo con el número + <kbd>ENT</kbd></td><td>Sin comprobar, la referencia del producto que toca lo comprueba. Con el producto comprobado, un número corto (hasta 4 cifras) + <kbd>ENT</kbd> en el cuadro de lectura es la cantidad, aunque coincida con su referencia.</td><td>Un número + <kbd>ENT</kbd> en el cuadro de lectura <b>no es una cantidad</b>: se toma como referencia de producto. La cantidad va con <kbd>F1</kbd> o en «Cant.».</td></tr>
+<tr><td class="tema">Ojo con el número + <kbd>ENT</kbd></td><td>Con el cuadro en «LEE EL CÓDIGO», un número es la referencia del producto que toca y lo comprueba. Con el cuadro en «CANTIDAD», un número + <kbd>ENT</kbd> es la cantidad <b>total</b> de esa línea, aunque coincida con su referencia.</td><td>Un número + <kbd>ENT</kbd> en el cuadro de lectura <b>no es una cantidad</b>: se toma como referencia de producto. La cantidad va con <kbd>F1</kbd> o en «Cant.».</td></tr>
 <tr><td class="tema">Sin código de barras (o no se lee)</td><td>Teclea su referencia + <kbd>ENT</kbd> para comprobarlo. <b>Con código también vale la referencia</b>: si el código no se lee bien, lee la etiqueta del producto (lleva la referencia) o teclea la referencia + <kbd>ENT</kbd>. La referencia de otro producto es «No coincide».</td><td>Tócalo en la lista (o elígelo con <kbd>↑</kbd><kbd>↓</kbd>) y teclea la cantidad + <kbd>F1</kbd>.</td></tr>
 <tr><td class="tema">No está o hay menos</td><td><kbd>F3</kbd> «No está»: lo que falta no sale y pasa al siguiente. En Algete, si hay de ese producto en otro hueco, Ariadna lo ofrece: <kbd>ENT</kbd> para ir allí o <kbd>F3</kbd> otra vez para darlo por falta.<br><b>¿Aparece después?</b> Léelo (o teclea su referencia) aunque no sea el que toca: Ariadna pregunta <i>«¿La has encontrado? ENT para contarla»</i>. <kbd>ENT</kbd> (o «Sí, la he encontrado») la cuenta, deja de estar en falta y ese producto pasa a ser el que toca: si faltaba más, sigue leyendo o teclea la cantidad (o <kbd>F3</kbd> otra vez si no hay más). <kbd>Esc</kbd> (o «No»): sigue en falta. Vale hasta terminar.</td><td>No hay que hacer nada: al terminar, Ariadna marca lo que falta.</td></tr>
 <tr><td class="tema">Me he equivocado</td><td><kbd>F2</kbd>: en Algete deshace lo último (si era una «encontrada», primero quita la unidad y, con otro <kbd>F2</kbd>, vuelve a estar en falta); en la tienda («−1») quita una del producto elegido (y, si no hay más, <kbd>F3</kbd> otra vez).</td><td><kbd>F2</kbd> («−1») quita una del producto elegido.</td></tr>
@@ -176,7 +178,7 @@
 </table>
 <div class="box">
 <p><b>Teclas de la PDA:</b> <kbd>F1</kbd> a <kbd>F4</kbd> = tecla roja + <kbd>1</kbd> a <kbd>4</kbd>. <kbd>ENT</kbd> es el <kbd>Intro</kbd>. <kbd>#</kbd> (abajo a la derecha) y <kbd>*</kbd> son teclas directas. Para volver atrás, el botón «atrás» de Android.</p>
-<p><b>En el móvil, sin teclado:</b> «📷 Leer» abre la cámara, que hace lo mismo que el lector. Cada botón lleva entre paréntesis su tecla de la PDA: «No está (F3)», «Enviar a Algete (F4)», «Terminar recepción (F3)», «−1 F2» y, en las entradas, «+ F1». En la salida de la tienda, «+1» suma una al producto ya comprobado. Para teclear una cantidad, escríbela en el cuadro de lectura (salida) o en «Cant.» (entrada) con el teclado del móvil.</p>
+<p><b>En el móvil, sin teclado:</b> «📷 Leer» abre la cámara, que hace lo mismo que el lector. Cada botón lleva entre paréntesis su tecla de la PDA: «No está (F3)», «Enviar a Algete (F4)», «Terminar recepción (F3)», «−1 F2» y, en las entradas, «+ F1». En una salida, «Contar leyendo (F1)» hace que cada lectura sume una en esa línea. Con la cámara abierta, al comprobar un producto salen encima <b>«Todas (N)»</b> (lo mismo que Intro sin nada) y <b>«Teclear cuántas»</b>, que cierra la cámara y abre el teclado numérico. En una entrada, la cantidad va en «Cant.».</p>
 </div>
 
 <h2>6. Si algo falla</h2>
