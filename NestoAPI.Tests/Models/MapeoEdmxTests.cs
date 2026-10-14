@@ -326,7 +326,9 @@ namespace NestoAPI.Tests.Models
         public void Edmx_EventosYEventosSenales_EstanCompletasEnLasTresCapas()
         {
             ComprobarTresCapas("Evento", "Eventos",
-                "Id", "Empresa", "Titulo", "Fecha", "ImporteSenal", "Activo", "Usuario", "FechaModificacion");
+                "Id", "Empresa", "Titulo", "Fecha", "ImporteSenal", "Activo", "Usuario", "FechaModificacion",
+                // NestoAPI#611
+                "Almacen", "ProductoCurso", "Plazas", "Lugar", "Descripcion", "FechaListaAsistencia");
             ComprobarTresCapas("EventoSenal", "EventosSenales",
                 "Id", "EventoId", "Empresa", "Cliente", "Contacto", "NumOrdenExtracto", "Importe", "Usuario", "FechaModificacion");
 
@@ -338,6 +340,23 @@ namespace NestoAPI.Tests.Models
             Assert.AreEqual(typeof(DateTime), typeof(Evento).GetProperty("Fecha").PropertyType);
             Assert.AreEqual(typeof(decimal), typeof(EventoSenal).GetProperty("Importe").PropertyType);
             Assert.AreEqual(typeof(int), typeof(EventoSenal).GetProperty("NumOrdenExtracto").PropertyType);
+            Assert.AreEqual(typeof(int?), typeof(Evento).GetProperty("Plazas").PropertyType);
+            Assert.AreEqual(typeof(DateTime?), typeof(Evento).GetProperty("FechaListaAsistencia").PropertyType);
+        }
+
+        /// <summary>NestoAPI#611: inscripciones a eventos añadidas a mano; las columnas del pago y los enlaces admiten null.</summary>
+        [TestMethod]
+        public void Edmx_EventosInscripciones_EstaCompletaEnLasTresCapas()
+        {
+            ComprobarTresCapas("EventoInscripcion", "EventosInscripciones",
+                "Id", "EventoId", "Empresa", "Cliente", "Contacto", "Origen", "Estado", "FechaLimitePago", "PagoTPVId", "EventoSenalId",
+                "FormaPago", "ImportePagado", "UsuarioPago", "FechaPago", "UsuarioCreacion", "FechaCreacion", "Usuario", "FechaModificacion");
+
+            XElement almacen = EntidadesPorNombre(LeerRecurso("ssdl"), SsdlNs)["EventosInscripciones"];
+            Assert.AreEqual("date", (string)almacen.Elements(SsdlNs + "Property").Single(p => p.Attribute("Name").Value == "FechaLimitePago").Attribute("Type"));
+            Assert.AreEqual(typeof(DateTime?), typeof(EventoInscripcion).GetProperty("FechaLimitePago").PropertyType);
+            Assert.AreEqual(typeof(int?), typeof(EventoInscripcion).GetProperty("PagoTPVId").PropertyType);
+            Assert.AreEqual(typeof(decimal?), typeof(EventoInscripcion).GetProperty("ImportePagado").PropertyType);
         }
 
         /// <summary>NestoAPI#603: registro de sugerencias de contacto añadido a mano; Probabilidad es real ↔ float y RapportId/FechaAtendida admiten null.</summary>

@@ -1275,6 +1275,9 @@
     <Compile Include="Models\Evento.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\EventoInscripcion.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
     <Compile Include="Models\EventoSenal.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>

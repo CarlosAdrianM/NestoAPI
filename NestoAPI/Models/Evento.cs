@@ -21,5 +21,11 @@ namespace NestoAPI.Models
         public bool Activo { get; set; }
         public string Usuario { get; set; }
         public System.DateTime FechaModificacion { get; set; }
+        public string Almacen { get; set; }
+        public string ProductoCurso { get; set; }
+        public Nullable<int> Plazas { get; set; }
+        public string Lugar { get; set; }
+        public string Descripcion { get; set; }
+        public Nullable<System.DateTime> FechaListaAsistencia { get; set; }
     }
 }

@@ -40,6 +40,7 @@ namespace NestoAPI.Models
         public virtual DbSet<ReposicionTraspaso> ReposicionesTraspasos { get; set; }
         public virtual DbSet<Evento> Eventos { get; set; }
         public virtual DbSet<EventoSenal> EventosSenales { get; set; }
+        public virtual DbSet<EventoInscripcion> EventosInscripciones { get; set; }
         public virtual DbSet<SugerenciaContacto> SugerenciasContacto { get; set; }
         public virtual DbSet<SubGruposProducto> SubGruposProductoes { get; set; }
         public virtual DbSet<CondPagoCliente> CondPagoClientes { get; set; }
