@@ -72,6 +72,17 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
         }
 
         [TestMethod]
+        public void UnDistribuidorNoGenera()
+        {
+            // 14/10/26: al cliente 35295 (estado 6) se le generó el cheque y se le mandó el correo
+            DecisionChequeRegalo d = ReglasChequeRegalo.Decidir(Campana(), "35295", clienteFinDeMes: false,
+                new[] { Factura("NV2616584", 13) }, clienteDistribuidor: true);
+
+            Assert.IsFalse(d.Genera);
+            StringAssert.Contains(d.Motivo, "distribuidor");
+        }
+
+        [TestMethod]
         public void UnaFacturaSoloDePeluqueriaNoGenera()
         {
             // NestoAPI#593: la peluquería no cuenta para los 250 € del canje; un cliente que solo compra peluquería no
@@ -346,6 +357,18 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
                 c.Campana == "CHEQUE50_OCT_2026" && c.Empresa == "1" && c.Cliente == "15000"
                 && c.EmpresaFactura == "1" && c.FacturaOrigen == "NV2600001" && c.Usuario == "Carlos"
                 && c.FechaActivacion != null))).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task SiElClienteEsDistribuidor_NoGeneraNiAvisa()
+        {
+            A.CallTo(() => repositorio.EsDistribuidor("15000")).Returns(Task.FromResult(true));
+            FacturasDelCliente(ReglasChequeRegaloTests.Factura("NV2600001", 13));
+
+            List<string> avisos = await Nuevo().GenerarPorFactura("1", "NV2600001", "15000", hoy, "Carlos");
+
+            Assert.AreEqual(0, avisos.Count);
+            A.CallTo(() => repositorio.InsertarCheque(A<ChequeRegaloNuevo>._)).MustNotHaveHappened();
         }
 
         [TestMethod]

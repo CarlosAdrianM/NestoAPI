@@ -178,7 +178,7 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
         /// peluquería o packs de Navidad) no cuentan: decide la siguiente.
         /// </summary>
         public static DecisionChequeRegalo Decidir(CampanaCanjeChequeRegalo campana, string cliente, bool clienteFinDeMes,
-            IEnumerable<FacturaParaChequeRegalo> facturasDelCliente)
+            IEnumerable<FacturaParaChequeRegalo> facturasDelCliente, bool clienteDistribuidor = false)
         {
             if (campana == null || !campana.Activa)
             {
@@ -191,6 +191,11 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
             if (clienteFinDeMes)
             {
                 return DecisionChequeRegalo.No($"el cliente {cliente.Trim()} factura a fin de mes");
+            }
+            // 14/10/26 (Carlos, cliente 35295 el 13/10): los distribuidores no generan el cheque
+            if (clienteDistribuidor)
+            {
+                return DecisionChequeRegalo.No($"el cliente {cliente.Trim()} es distribuidor");
             }
 
             FacturaParaChequeRegalo primera = (facturasDelCliente ?? Enumerable.Empty<FacturaParaChequeRegalo>())
@@ -238,6 +243,8 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
         Task<List<FacturaParaChequeRegalo>> LeerFacturasDelCliente(string cliente, DateTime desde, DateTime hasta);
         /// <summary>Algún contacto del cliente factura a fin de mes (el control es por código de cliente).</summary>
         Task<bool> EsClienteFinDeMes(string cliente);
+        /// <summary>Algún contacto del cliente es distribuidor (estado 6) o contacto de distribuidor (estado 67).</summary>
+        Task<bool> EsDistribuidor(string cliente);
         Task<bool> TieneCheque(string campana, string empresa, string cliente);
         /// <summary>False si ya había uno (la UNIQUE manda: lo generó otra factura a la vez).</summary>
         Task<bool> InsertarCheque(ChequeRegaloNuevo cheque);
@@ -328,7 +335,8 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
             List<FacturaParaChequeRegalo> facturas = await repositorio
                 .LeerFacturasDelCliente(cliente, campana.GeneraDesde.Date, campana.GeneraHasta.Date).ConfigureAwait(false);
             bool finDeMes = await repositorio.EsClienteFinDeMes(cliente).ConfigureAwait(false);
-            DecisionChequeRegalo decision = ReglasChequeRegalo.Decidir(campana, cliente, finDeMes, facturas);
+            bool distribuidor = await repositorio.EsDistribuidor(cliente).ConfigureAwait(false);
+            DecisionChequeRegalo decision = ReglasChequeRegalo.Decidir(campana, cliente, finDeMes, facturas, distribuidor);
             if (!decision.Genera)
             {
                 return null;
@@ -386,6 +394,9 @@ GROUP BY f.Empresa, f.[Número], l.TipoLinea, l.Producto, p.Nombre, p.Grupo, p.F
 
         internal const string SQL_CLIENTE_FIN_DE_MES = @"
 SELECT COUNT(*) FROM Clientes WHERE Empresa = @p0 AND [Nº Cliente] = @p1 AND PeriodoFacturación = @p2";
+
+        internal const string SQL_CLIENTE_DISTRIBUIDOR = @"
+SELECT COUNT(*) FROM Clientes WHERE Empresa = @p0 AND [Nº Cliente] = @p1 AND Estado IN (@p2, @p3)";
 
         internal const string SQL_TIENE_CHEQUE = @"
 SELECT COUNT(*) FROM dbo.ChequesRegalo WHERE Campana = @p0 AND Empresa = @p1 AND Cliente = @p2";
@@ -457,6 +468,13 @@ WHERE f.Empresa IN (@p0, @p1) AND f.Fecha >= @p2 AND f.Fecha < @p3
                 new SqlParameter("@p0", Constantes.Empresas.EMPRESA_POR_DEFECTO),
                 new SqlParameter("@p1", cliente),
                 new SqlParameter("@p2", Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES)).FirstAsync().ConfigureAwait(false) > 0;
+
+        public async Task<bool> EsDistribuidor(string cliente)
+            => await db.Database.SqlQuery<int>(SQL_CLIENTE_DISTRIBUIDOR,
+                new SqlParameter("@p0", Constantes.Empresas.EMPRESA_POR_DEFECTO),
+                new SqlParameter("@p1", cliente),
+                new SqlParameter("@p2", Constantes.Clientes.Estados.DISTRIBUIDOR),
+                new SqlParameter("@p3", Constantes.Clientes.Estados.CONTACTO_DE_DISTRIBUIDOR)).FirstAsync().ConfigureAwait(false) > 0;
 
         public async Task<bool> TieneCheque(string campana, string empresa, string cliente)
             => await db.Database.SqlQuery<int>(SQL_TIENE_CHEQUE,

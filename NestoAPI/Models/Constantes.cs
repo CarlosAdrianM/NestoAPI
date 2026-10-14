@@ -98,6 +98,8 @@ namespace NestoAPI.Models
                 /// su estado definitivo.</summary>
                 public const short PRIMERA_VISITA = 5;
                 public const short DISTRIBUIDOR = 6;
+                /// <summary>Contacto de distribuidor que no se llama (va con el DISTRIBUIDOR: no es cartera del vendedor).</summary>
+                public const short CONTACTO_DE_DISTRIBUIDOR = 67;
                 /// <summary>Comisiona al vendedor aunque no se le visite.</summary>
                 public const short COMISIONA_SIN_VISITA = 7;
                 /// <summary>NestoAPI#424: cliente NO profesional, compra a precio de público final.
