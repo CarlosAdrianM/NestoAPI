@@ -1,0 +1,485 @@
+using NestoAPI.Models;
+using System;
+using System.Collections.Generic;
+using System.Data;
+using System.Data.SqlClient;
+using System.Linq;
+
+namespace NestoAPI.Infraestructure.Stocks.Tendencias
+{
+    /// <summary>NestoAPI#630: acceso a datos del motor de tendencias (sustituible en los tests).</summary>
+    public interface IRepositorioTendencias
+    {
+        /// <summary>Los productos que entran (no ficticios, sin MTP ni MMP, empresa 1) con su ficha, proveedor y control de stock de ALG.</summary>
+        List<DatosProductoTendencia> LeerProductos();
+
+        /// <summary>Rellena series de venta y stock, pendientes, compras abiertas y (para los que pueden ser nuevos) ventas por cliente.</summary>
+        void CompletarLote(IList<DatosProductoTendencia> lote, DateTime mesReferencia, int mesesFaseA);
+
+        bool ExisteTabla();
+
+        /// <summary>Inserta las filas del mes que aún no existan (nunca pisa). Devuelve cuántas ha insertado.</summary>
+        int GuardarPropuestas(DateTime mes, IEnumerable<ResultadoTendencia> resultados, DateTime fechaCalculo);
+
+        /// <summary>Filas guardadas del mes, de más a menos exceso valorado. Sin mes, el último guardado.</summary>
+        List<PropuestaStockGuardada> LeerPropuestas(DateTime? mes, int top);
+    }
+
+    /// <summary>Una fila de PropuestasStock (lo calculado más la decisión del corte 3).</summary>
+    public class PropuestaStockGuardada : ResultadoTendencia
+    {
+        public int Id { get; set; }
+        public DateTime Mes { get; set; }
+        public DateTime FechaCalculo { get; set; }
+        public string Decision { get; set; }
+        public string DecisionUsuario { get; set; }
+        public DateTime? DecisionFecha { get; set; }
+        public string DecisionMotivo { get; set; }
+    }
+
+    /// <summary>
+    /// NestoAPI#630: <see cref="IRepositorioTendencias"/> con SQL a mano (<c>db.Database.SqlQuery</c>, sin tocar el EDMX).
+    /// <para>CARGA: todo con <c>WITH (NOLOCK)</c>, por lotes de <see cref="TAMANO_LOTE"/> productos (<c>Producto IN (...)</c>, que va
+    /// por los índices que empiezan por producto en LinPedidoVta, LinPedidoCmp y ExtractoProducto) y con
+    /// <see cref="TIMEOUT_SEGUNDOS"/> de tope por consulta. Recorre en total toda la venta y todo el extracto de 5 años: SOLO
+    /// en el job de madrugada.</para>
+    /// <para>Lo ÚNICO que escribe es <c>PropuestasStock</c>, y solo inserta.</para>
+    /// </summary>
+    public class RepositorioTendenciasSql : IRepositorioTendencias
+    {
+        public const int TAMANO_LOTE = 200;
+        internal const int TIMEOUT_SEGUNDOS = 300;
+        internal const string TABLA = "dbo.PropuestasStock";
+
+        internal static readonly string SQL_PRODUCTOS = @"
+SELECT RTRIM(p.Número) AS Producto, RTRIM(p.Nombre) AS Nombre, RTRIM(p.Familia) AS Familia, RTRIM(p.Grupo) AS Grupo,
+       RTRIM(p.SubGrupo) AS Subgrupo, p.Estado AS Estado, ISNULL(p.PrecioMedio, 0) AS PrecioMedio,
+       prov.Proveedor AS Proveedor, prov.DiasEnServir AS DiasEnServir,
+       CAST(cs.StockMáximo AS int) AS StockMaximoAlg, CAST(cs.StockMínimo AS int) AS StockMinimoAlg,
+       ISNULL(CAST(cs.Múltiplos AS int), 1) AS MultiplosAlg
+FROM Productos p WITH (NOLOCK)
+OUTER APPLY (SELECT TOP 1 RTRIM(pp.[Nº Proveedor]) AS Proveedor, CAST(pr.DíasEnServir AS int) AS DiasEnServir
+             FROM ProveedoresProducto pp WITH (NOLOCK)
+             LEFT JOIN Proveedores pr WITH (NOLOCK) ON pr.Empresa = pp.Empresa AND pr.Número = pp.[Nº Proveedor] AND pr.Contacto = pp.ContactoProveedor
+             WHERE pp.Empresa = p.Empresa AND pp.[Nº Producto] = p.Número
+             ORDER BY pp.Orden) prov
+LEFT JOIN ControlesStock cs WITH (NOLOCK) ON cs.Empresa = p.Empresa AND cs.Número = p.Número AND cs.Almacén = 'ALG'
+WHERE " + DemandaStock.SQL_FILTRO_PRODUCTO + @"
+ORDER BY p.Número";
+
+        internal static readonly string SQL_VENTAS_MES = @"
+SELECT RTRIM(l.Producto) AS Producto, YEAR(l.[Fecha Albarán]) AS Anno, MONTH(l.[Fecha Albarán]) AS Mes, SUM(CAST(l.Cantidad AS int)) AS Cantidad
+FROM LinPedidoVta l WITH (NOLOCK)
+WHERE l.Producto IN ({0}) AND " + DemandaStock.SQL_FILTRO_DEMANDA + @"
+  AND l.[Fecha Albarán] >= @desde AND l.[Fecha Albarán] < @hasta
+GROUP BY RTRIM(l.Producto), YEAR(l.[Fecha Albarán]), MONTH(l.[Fecha Albarán])";
+
+        internal static readonly string SQL_PRIMERA_VENTA = @"
+SELECT RTRIM(l.Producto) AS Producto, MIN(l.[Fecha Albarán]) AS Fecha
+FROM LinPedidoVta l WITH (NOLOCK)
+WHERE l.Producto IN ({0}) AND " + DemandaStock.SQL_FILTRO_DEMANDA + @" AND l.Cantidad > 0 AND l.[Fecha Albarán] < @hasta
+GROUP BY RTRIM(l.Producto)";
+
+        internal static readonly string SQL_VENTAS_CLIENTE = @"
+SELECT RTRIM(l.Producto) AS Producto, RTRIM(l.[Nº Cliente]) AS Cliente, l.[Fecha Albarán] AS Fecha
+FROM LinPedidoVta l WITH (NOLOCK)
+WHERE l.Producto IN ({0}) AND " + DemandaStock.SQL_FILTRO_DEMANDA + @" AND l.Cantidad > 0 AND l.[Fecha Albarán] < @hasta";
+
+        internal static readonly string SQL_STOCK_RESUMEN = @"
+SELECT RTRIM(e.Número) AS Producto,
+       SUM(CASE WHEN e.Almacén <> 'EXT' AND e.Fecha < @desde THEN CAST(e.Cantidad AS int) ELSE 0 END) AS SaldoInicial,
+       SUM(CASE WHEN e.Almacén = 'EXT' AND e.Fecha < @hasta THEN CAST(e.Cantidad AS int) ELSE 0 END) AS StockExt,
+       MAX(CASE WHEN e.Almacén = 'EXT' AND e.Cantidad > 0 AND e.Fecha < @hasta THEN e.Fecha END) AS UltimaEntradaExt,
+       MIN(CASE WHEN e.Cantidad > 0 THEN e.Fecha END) AS PrimeraEntrada
+FROM ExtractoProducto e WITH (NOLOCK)
+WHERE e.Número IN ({0}) AND e.Empresa IN " + DemandaStock.SQL_EMPRESAS + @"
+GROUP BY RTRIM(e.Número)";
+
+        internal static readonly string SQL_STOCK_MES = @"
+SELECT RTRIM(e.Número) AS Producto, YEAR(e.Fecha) AS Anno, MONTH(e.Fecha) AS Mes, SUM(CAST(e.Cantidad AS int)) AS Cantidad
+FROM ExtractoProducto e WITH (NOLOCK)
+WHERE e.Número IN ({0}) AND " + DemandaStock.SQL_FILTRO_STOCK + @" AND e.Fecha >= @desde AND e.Fecha < @hasta
+GROUP BY RTRIM(e.Número), YEAR(e.Fecha), MONTH(e.Fecha)";
+
+        internal static readonly string SQL_PENDIENTES = @"
+SELECT RTRIM(l.Producto) AS Producto, SUM(CAST(l.Cantidad AS int)) AS Cantidad
+FROM LinPedidoVta l WITH (NOLOCK)
+WHERE l.Producto IN ({0}) AND " + DemandaStock.SQL_FILTRO_PENDIENTE + @"
+GROUP BY RTRIM(l.Producto)";
+
+        internal static readonly string SQL_COMPRAS_ABIERTAS = @"
+SELECT RTRIM(l.Producto) AS Producto, SUM(CAST(l.Cantidad AS int)) AS Cantidad
+FROM LinPedidoCmp l WITH (NOLOCK)
+WHERE l.Producto IN ({0}) AND l.Empresa IN " + DemandaStock.SQL_EMPRESAS + @" AND l.Estado IN (-1, 1) AND l.TipoLínea = '1' AND l.Cantidad > 0
+GROUP BY RTRIM(l.Producto)";
+
+        internal const string SQL_EXISTE_TABLA = "SELECT CASE WHEN OBJECT_ID('dbo.PropuestasStock', 'U') IS NULL THEN 0 ELSE 1 END";
+
+        internal const string SQL_YA_GUARDADOS = "SELECT RTRIM(Producto) FROM dbo.PropuestasStock WITH (NOLOCK) WHERE Mes = @mes AND Almacen = @almacen";
+
+        internal const string SQL_LEER = @"
+SELECT TOP (@top) Id, Mes, RTRIM(Producto) AS Producto, Nombre, Familia, Grupo, Proveedor, EstadoProducto, RTRIM(Almacen) AS Almacen, Fase,
+       MesesDesdePrimeraVenta, Stock, PrecioMedio, Ventas12Meses, VentaMedia6Meses, VentaMediaPonderada, VentaMensualReferencia,
+       FactorEstacional, ConEstacionalidad, DiasEnServir, DiasEnServirSupuestos, DiasSeguridad, Multiplos, CoberturaObjetivoDias,
+       StockMaximoActual, StockMinimoActual, Formula, CoberturaMeses, CoberturaAlcanzableDias, PendienteRelativa, RatioTrimestre,
+       AnioPico, PorcentajeDelPico, AniosDesdePico, Tendencia, Velocidad, TasaRecompra, DemandaNoServida, PedidoCompraAbierto,
+       ExcesoUnidades, ExcesoValorado, Accion, StockMaximoPropuesto, StockMinimoPropuesto, Explicacion, EntradasJson,
+       FechaCalculo, Decision, DecisionUsuario, DecisionFecha, DecisionMotivo
+FROM dbo.PropuestasStock WITH (NOLOCK)
+WHERE Mes = ISNULL(@mes, (SELECT MAX(Mes) FROM dbo.PropuestasStock WITH (NOLOCK)))
+ORDER BY ExcesoValorado DESC, Producto";
+
+        private readonly Func<NVEntities> crearContexto;
+
+        public RepositorioTendenciasSql() : this(null)
+        {
+        }
+
+        internal RepositorioTendenciasSql(Func<NVEntities> crearContexto)
+        {
+            this.crearContexto = crearContexto ?? (() => new NVEntities());
+        }
+
+        private NVEntities Contexto()
+        {
+            NVEntities db = crearContexto();
+            db.Configuration.LazyLoadingEnabled = false;
+            db.Configuration.ProxyCreationEnabled = false;
+            db.Database.CommandTimeout = TIMEOUT_SEGUNDOS;
+            return db;
+        }
+
+        public List<DatosProductoTendencia> LeerProductos()
+        {
+            using (NVEntities db = Contexto())
+            {
+                return db.Database.SqlQuery<FilaProducto>(SQL_PRODUCTOS).ToList()
+                    .Select(f => new DatosProductoTendencia
+                    {
+                        Producto = f.Producto,
+                        Nombre = f.Nombre,
+                        Familia = f.Familia,
+                        Grupo = f.Grupo,
+                        Subgrupo = f.Subgrupo,
+                        Estado = f.Estado,
+                        PrecioMedio = f.PrecioMedio,
+                        Proveedor = f.Proveedor,
+                        DiasEnServir = f.DiasEnServir,
+                        StockMaximoAlg = f.StockMaximoAlg,
+                        StockMinimoAlg = f.StockMinimoAlg,
+                        MultiplosAlg = f.MultiplosAlg <= 0 ? 1 : f.MultiplosAlg
+                    })
+                    .ToList();
+            }
+        }
+
+        public void CompletarLote(IList<DatosProductoTendencia> lote, DateTime mesReferencia, int mesesFaseA)
+        {
+            if (lote == null || lote.Count == 0)
+            {
+                return;
+            }
+            DateTime hasta = mesReferencia.AddMonths(1);
+            DateTime desde = hasta.AddMonths(-DatosProductoTendencia.MESES_SERIE);
+            // Desde cero: si un lote falló a medias y se reintenta producto a producto, no se duplica nada.
+            foreach (DatosProductoTendencia d in lote)
+            {
+                d.Ventas = new int[DatosProductoTendencia.MESES_SERIE];
+                d.StockFinMes = new int[DatosProductoTendencia.MESES_SERIE];
+                d.VentasPorCliente = new List<VentaClienteTendencia>();
+                d.FechaPrimeraVenta = null;
+                d.FechaPrimeraEntrada = null;
+                d.StockExt = 0;
+                d.UltimaEntradaExt = null;
+                d.UnidadesPendientes = 0;
+                d.UnidadesPedidoCompraAbierto = 0;
+            }
+            Dictionary<string, DatosProductoTendencia> porProducto = lote.ToDictionary(d => d.Producto.Trim(), StringComparer.OrdinalIgnoreCase);
+            List<string> numeros = porProducto.Keys.ToList();
+
+            using (NVEntities db = Contexto())
+            {
+                foreach (FilaMes f in Consultar<FilaMes>(db, SQL_VENTAS_MES, numeros, desde, hasta))
+                {
+                    int i = Indice(f.Anno, f.Mes, desde);
+                    if (i >= 0 && i < DatosProductoTendencia.MESES_SERIE && porProducto.TryGetValue(f.Producto, out DatosProductoTendencia d))
+                    {
+                        d.Ventas[i] = Math.Max(0, f.Cantidad ?? 0);
+                    }
+                }
+
+                foreach (FilaFecha f in Consultar<FilaFecha>(db, SQL_PRIMERA_VENTA, numeros, desde, hasta))
+                {
+                    if (porProducto.TryGetValue(f.Producto, out DatosProductoTendencia d))
+                    {
+                        d.FechaPrimeraVenta = f.Fecha;
+                    }
+                }
+
+                Dictionary<string, int> saldoInicial = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                foreach (FilaStockResumen f in Consultar<FilaStockResumen>(db, SQL_STOCK_RESUMEN, numeros, desde, hasta))
+                {
+                    if (porProducto.TryGetValue(f.Producto, out DatosProductoTendencia d))
+                    {
+                        saldoInicial[f.Producto] = f.SaldoInicial ?? 0;
+                        d.StockExt = f.StockExt ?? 0;
+                        d.UltimaEntradaExt = f.UltimaEntradaExt;
+                        d.FechaPrimeraEntrada = f.PrimeraEntrada;
+                    }
+                }
+
+                Dictionary<string, int[]> movimientos = new Dictionary<string, int[]>(StringComparer.OrdinalIgnoreCase);
+                foreach (FilaMes f in Consultar<FilaMes>(db, SQL_STOCK_MES, numeros, desde, hasta))
+                {
+                    int i = Indice(f.Anno, f.Mes, desde);
+                    if (i < 0 || i >= DatosProductoTendencia.MESES_SERIE)
+                    {
+                        continue;
+                    }
+                    if (!movimientos.TryGetValue(f.Producto, out int[] serie))
+                    {
+                        serie = new int[DatosProductoTendencia.MESES_SERIE];
+                        movimientos[f.Producto] = serie;
+                    }
+                    serie[i] += f.Cantidad ?? 0;
+                }
+                foreach (KeyValuePair<string, DatosProductoTendencia> par in porProducto)
+                {
+                    saldoInicial.TryGetValue(par.Key, out int saldo);
+                    movimientos.TryGetValue(par.Key, out int[] serie);
+                    par.Value.StockFinMes = AcumularStock(saldo, serie);
+                }
+
+                foreach (FilaCantidad f in Consultar<FilaCantidad>(db, SQL_PENDIENTES, numeros, desde, hasta))
+                {
+                    if (porProducto.TryGetValue(f.Producto, out DatosProductoTendencia d))
+                    {
+                        d.UnidadesPendientes = f.Cantidad ?? 0;
+                    }
+                }
+
+                foreach (FilaCantidad f in Consultar<FilaCantidad>(db, SQL_COMPRAS_ABIERTAS, numeros, desde, hasta))
+                {
+                    if (porProducto.TryGetValue(f.Producto, out DatosProductoTendencia d))
+                    {
+                        d.UnidadesPedidoCompraAbierto = f.Cantidad ?? 0;
+                    }
+                }
+
+                // Recompra: solo los que pueden ser nuevos (primera venta hace menos de mesesFaseA meses). Son pocos y con poca historia.
+                DateTime limiteNuevos = hasta.AddMonths(-mesesFaseA).AddDays(-1);
+                List<string> nuevos = porProducto.Values
+                    .Where(d => d.FechaPrimeraVenta.HasValue && d.FechaPrimeraVenta.Value >= limiteNuevos)
+                    .Select(d => d.Producto.Trim())
+                    .ToList();
+                if (nuevos.Count > 0)
+                {
+                    foreach (FilaVentaCliente f in Consultar<FilaVentaCliente>(db, SQL_VENTAS_CLIENTE, nuevos, desde, hasta))
+                    {
+                        if (f.Fecha.HasValue && porProducto.TryGetValue(f.Producto, out DatosProductoTendencia d))
+                        {
+                            d.VentasPorCliente.Add(new VentaClienteTendencia { Cliente = f.Cliente, Fecha = f.Fecha.Value });
+                        }
+                    }
+                }
+            }
+        }
+
+        /// <summary>Stock a fin de cada mes: saldo antes de la serie más los movimientos acumulados.</summary>
+        internal static int[] AcumularStock(int saldoInicial, int[] movimientos)
+        {
+            int[] stock = new int[DatosProductoTendencia.MESES_SERIE];
+            int acumulado = saldoInicial;
+            for (int i = 0; i < stock.Length; i++)
+            {
+                acumulado += movimientos?[i] ?? 0;
+                stock[i] = acumulado;
+            }
+            return stock;
+        }
+
+        internal static int Indice(int anno, int mes, DateTime desde) => (anno - desde.Year) * 12 + mes - desde.Month;
+
+        private static List<T> Consultar<T>(NVEntities db, string plantilla, List<string> numeros, DateTime desde, DateTime hasta)
+        {
+            List<object> parametros = new List<object>();
+            List<string> nombres = new List<string>();
+            for (int i = 0; i < numeros.Count; i++)
+            {
+                nombres.Add("@n" + i);
+                parametros.Add(new SqlParameter("@n" + i, SqlDbType.VarChar, 15) { Value = numeros[i] });
+            }
+            string sql = string.Format(plantilla, string.Join(", ", nombres));
+            if (sql.Contains("@desde"))
+            {
+                parametros.Add(new SqlParameter("@desde", SqlDbType.DateTime) { Value = desde });
+            }
+            if (sql.Contains("@hasta"))
+            {
+                parametros.Add(new SqlParameter("@hasta", SqlDbType.DateTime) { Value = hasta });
+            }
+            return db.Database.SqlQuery<T>(sql, parametros.ToArray()).ToList();
+        }
+
+        public bool ExisteTabla()
+        {
+            using (NVEntities db = Contexto())
+            {
+                return db.Database.SqlQuery<int>(SQL_EXISTE_TABLA).Single() == 1;
+            }
+        }
+
+        public int GuardarPropuestas(DateTime mes, IEnumerable<ResultadoTendencia> resultados, DateTime fechaCalculo)
+        {
+            List<ResultadoTendencia> lista = (resultados ?? Enumerable.Empty<ResultadoTendencia>()).ToList();
+            if (lista.Count == 0)
+            {
+                return 0;
+            }
+            using (NVEntities db = Contexto())
+            {
+                HashSet<string> yaGuardados = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (string almacen in lista.Select(r => r.Almacen).Distinct())
+                {
+                    foreach (string producto in db.Database.SqlQuery<string>(SQL_YA_GUARDADOS,
+                        new SqlParameter("@mes", SqlDbType.Date) { Value = mes },
+                        new SqlParameter("@almacen", SqlDbType.VarChar, 3) { Value = almacen }).ToList())
+                    {
+                        yaGuardados.Add(almacen + "|" + producto);
+                    }
+                }
+                List<ResultadoTendencia> nuevas = lista.Where(r => !yaGuardados.Contains(r.Almacen + "|" + r.Producto)).ToList();
+                if (nuevas.Count == 0)
+                {
+                    return 0;
+                }
+                DataTable tabla = TablaPropuestas(mes, nuevas, fechaCalculo);
+                SqlConnection conexion = (SqlConnection)db.Database.Connection;
+                bool abiertaAqui = conexion.State != ConnectionState.Open;
+                if (abiertaAqui)
+                {
+                    conexion.Open();
+                }
+                try
+                {
+                    using (SqlBulkCopy copia = new SqlBulkCopy(conexion) { DestinationTableName = TABLA, BulkCopyTimeout = TIMEOUT_SEGUNDOS, BatchSize = 1000 })
+                    {
+                        foreach (DataColumn columna in tabla.Columns)
+                        {
+                            copia.ColumnMappings.Add(columna.ColumnName, columna.ColumnName);
+                        }
+                        copia.WriteToServer(tabla);
+                    }
+                }
+                finally
+                {
+                    if (abiertaAqui)
+                    {
+                        conexion.Close();
+                    }
+                }
+                return nuevas.Count;
+            }
+        }
+
+        /// <summary>Las columnas de PropuestasStock que se rellenan al calcular (las de la decisión quedan a NULL).</summary>
+        internal static DataTable TablaPropuestas(DateTime mes, IEnumerable<ResultadoTendencia> filas, DateTime fechaCalculo)
+        {
+            DataTable t = new DataTable();
+            void Col<T>(string nombre) => t.Columns.Add(nombre, Nullable.GetUnderlyingType(typeof(T)) ?? typeof(T));
+            Col<DateTime>("Mes"); Col<string>("Producto"); Col<string>("Nombre"); Col<string>("Familia"); Col<string>("Grupo");
+            Col<string>("Proveedor"); Col<short?>("EstadoProducto"); Col<string>("Almacen"); Col<string>("Fase");
+            Col<int?>("MesesDesdePrimeraVenta"); Col<int>("Stock"); Col<decimal>("PrecioMedio"); Col<int>("Ventas12Meses");
+            Col<decimal>("VentaMedia6Meses"); Col<decimal>("VentaMediaPonderada"); Col<decimal>("VentaMensualReferencia");
+            Col<decimal>("FactorEstacional"); Col<bool>("ConEstacionalidad"); Col<int>("DiasEnServir"); Col<bool>("DiasEnServirSupuestos");
+            Col<int>("DiasSeguridad"); Col<int>("Multiplos"); Col<int>("CoberturaObjetivoDias"); Col<int?>("StockMaximoActual");
+            Col<int?>("StockMinimoActual"); Col<string>("Formula"); Col<decimal?>("CoberturaMeses"); Col<int>("CoberturaAlcanzableDias");
+            Col<decimal?>("PendienteRelativa"); Col<decimal?>("RatioTrimestre"); Col<int?>("AnioPico"); Col<decimal?>("PorcentajeDelPico");
+            Col<int?>("AniosDesdePico"); Col<string>("Tendencia"); Col<decimal?>("Velocidad"); Col<decimal?>("TasaRecompra");
+            Col<int>("DemandaNoServida"); Col<int>("PedidoCompraAbierto"); Col<int>("ExcesoUnidades"); Col<decimal>("ExcesoValorado");
+            Col<string>("Accion"); Col<int?>("StockMaximoPropuesto"); Col<int?>("StockMinimoPropuesto"); Col<string>("Explicacion");
+            Col<string>("EntradasJson"); Col<DateTime>("FechaCalculo");
+            foreach (ResultadoTendencia r in filas)
+            {
+                object N(object valor) => valor ?? DBNull.Value;
+                t.Rows.Add(mes, r.Producto, N(Cortar(r.Nombre, 50)), N(Cortar(r.Familia, 10)), N(Cortar(r.Grupo, 3)), N(Cortar(r.Proveedor, 10)),
+                    N(r.EstadoProducto), r.Almacen, r.Fase, N(r.MesesDesdePrimeraVenta), r.Stock, r.PrecioMedio, r.Ventas12Meses,
+                    r.VentaMedia6Meses, r.VentaMediaPonderada, r.VentaMensualReferencia, r.FactorEstacional, r.ConEstacionalidad,
+                    r.DiasEnServir, r.DiasEnServirSupuestos, r.DiasSeguridad, r.Multiplos, r.CoberturaObjetivoDias,
+                    N(r.StockMaximoActual), N(r.StockMinimoActual), N(Cortar(r.Formula, 40)), N(Acotar(r.CoberturaMeses)),
+                    r.CoberturaAlcanzableDias, N(Acotar(r.PendienteRelativa)), N(Acotar(r.RatioTrimestre)), N(r.AnioPico),
+                    N(r.PorcentajeDelPico), N(r.AniosDesdePico), N(r.Tendencia), N(r.Velocidad), N(r.TasaRecompra),
+                    r.DemandaNoServida, r.PedidoCompraAbierto, r.ExcesoUnidades, r.ExcesoValorado, r.Accion,
+                    N(r.StockMaximoPropuesto), N(r.StockMinimoPropuesto), N(Cortar(r.Explicacion, 2000)), N(r.EntradasJson), fechaCalculo);
+            }
+            return t;
+        }
+
+        private static string Cortar(string texto, int longitud) => texto == null || texto.Length <= longitud ? texto : texto.Substring(0, longitud);
+
+        /// <summary>decimal(12,3) admite hasta 999.999.999: una cobertura de 30.000 meses (stock enorme, una venta) cabe; más, se acota.</summary>
+        private static decimal? Acotar(decimal? valor) => valor.HasValue ? Math.Max(-999999m, Math.Min(999999m, valor.Value)) : (decimal?)null;
+
+        public List<PropuestaStockGuardada> LeerPropuestas(DateTime? mes, int top)
+        {
+            using (NVEntities db = Contexto())
+            {
+                return db.Database.SqlQuery<PropuestaStockGuardada>(SQL_LEER,
+                    new SqlParameter("@top", SqlDbType.Int) { Value = top },
+                    new SqlParameter("@mes", SqlDbType.Date) { Value = mes.HasValue ? (object)mes.Value : DBNull.Value }).ToList();
+            }
+        }
+
+        public class FilaProducto
+        {
+            public string Producto { get; set; }
+            public string Nombre { get; set; }
+            public string Familia { get; set; }
+            public string Grupo { get; set; }
+            public string Subgrupo { get; set; }
+            public short? Estado { get; set; }
+            public decimal PrecioMedio { get; set; }
+            public string Proveedor { get; set; }
+            public int? DiasEnServir { get; set; }
+            public int? StockMaximoAlg { get; set; }
+            public int? StockMinimoAlg { get; set; }
+            public int MultiplosAlg { get; set; }
+        }
+
+        public class FilaMes
+        {
+            public string Producto { get; set; }
+            public int Anno { get; set; }
+            public int Mes { get; set; }
+            public int? Cantidad { get; set; }
+        }
+
+        public class FilaFecha
+        {
+            public string Producto { get; set; }
+            public DateTime? Fecha { get; set; }
+        }
+
+        public class FilaStockResumen
+        {
+            public string Producto { get; set; }
+            public int? SaldoInicial { get; set; }
+            public int? StockExt { get; set; }
+            public DateTime? UltimaEntradaExt { get; set; }
+            public DateTime? PrimeraEntrada { get; set; }
+        }
+
+        public class FilaCantidad
+        {
+            public string Producto { get; set; }
+            public int? Cantidad { get; set; }
+        }
+
+        public class FilaVentaCliente
+        {
+            public string Producto { get; set; }
+            public string Cliente { get; set; }
+            public DateTime? Fecha { get; set; }
+        }
+    }
+}

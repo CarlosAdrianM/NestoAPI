@@ -976,6 +976,8 @@
     <Compile Include="Infraestructure\Stocks\Tendencias\CalculadoraSeries.cs" />
     <Compile Include="Infraestructure\Stocks\Tendencias\MotorTendencias.cs" />
     <Compile Include="Infraestructure\Stocks\Tendencias\CalibracionTendencias.cs" />
+    <Compile Include="Infraestructure\Stocks\Tendencias\RepositorioTendenciasSql.cs" />
+    <Compile Include="Infraestructure\Stocks\Tendencias\ServicioPropuestasStock.cs" />
     <Compile Include="Controllers\SugerenciasContactoController.cs" />
     <Compile Include="Infraestructure\Eventos\ServicioEventos.cs" />
     <Compile Include="Infraestructure\Eventos\SenalesEventosJobsService.cs" />
