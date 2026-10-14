@@ -356,18 +356,29 @@ namespace NestoAPI.Infraestructure.Eventos
 
         // ---------------- Pagos ----------------
 
+        public const string MENSAJE_EFECTIVO_NO_DISPONIBLE =
+            "Todavía no se puede registrar desde aquí el cobro en efectivo en la caja de la tienda. La inscripción sigue reservada " +
+            "(en efectivo) hasta que se pueda apuntar ese cobro; mientras, avisa a Administración.";
+
         /// <summary>
-        /// Carlos (14/10/26): marcar a mano que la inscripción está pagada (transferencia, efectivo en la tienda o tarjeta en el
-        /// datáfono). La tienda del evento y Dirección. NO apunta nada en contabilidad ni en caja: eso lo decide el corte 2 / Carlos.
+        /// Carlos (14/10/26): marcar a mano que la inscripción está pagada (transferencia o tarjeta en el datáfono). Quien mantiene
+        /// el evento, Administración (cualquier evento) y Dirección. NO apunta nada en contabilidad.
+        /// <para>Efectivo: la inscripción se pone en firme con el cobro de verdad en la caja de la tienda, como la de tarjeta con
+        /// el cobro del enlace. La API todavía no tiene ese camino (Cajas está en Nesto), así que con Efectivo devuelve 400 y la
+        /// inscripción se queda Reservada.</para>
         /// </summary>
         public async Task<InscripcionEventoDTO> MarcarPagada(int id, MarcarPagoInscripcionDTO peticion, IPrincipal usuario)
         {
             EventoInscripcion inscripcion = await LeerInscripcion(id).ConfigureAwait(false);
             Evento evento = await LeerEvento(inscripcion.EventoId).ConfigureAwait(false);
-            ComprobarPuedeMantener(usuario, evento);
+            ComprobarPuedeMantener(usuario, evento, paraMarcarPagada: true);
 
             FormaPagoInscripcionEvento forma = ReglasInscripcionEvento.FormaPago(peticion?.FormaPago)
-                ?? throw new NestoBusinessException("Indica cómo ha pagado: Tarjeta, Transferencia o Efectivo.");
+                ?? throw new NestoBusinessException("Indica cómo ha pagado: Tarjeta o Transferencia.");
+            if (forma == FormaPagoInscripcionEvento.Efectivo)
+            {
+                throw new NestoBusinessException(MENSAJE_EFECTIVO_NO_DISPONIBLE);
+            }
             decimal importe = Math.Round(peticion.Importe ?? evento.ImporteSenal, 2, MidpointRounding.AwayFromZero);
             if (importe < 0)
             {
@@ -629,7 +640,7 @@ namespace NestoAPI.Infraestructure.Eventos
 
         // ---------------- Ayudantes ----------------
 
-        private void ComprobarPuedeMantener(IPrincipal usuario, Evento evento)
+        private void ComprobarPuedeMantener(IPrincipal usuario, Evento evento, bool paraMarcarPagada = false)
         {
             string almacenUsuario = null;
             if (!PermisosEventos.EsDireccion(usuario))
@@ -637,7 +648,10 @@ namespace NestoAPI.Infraestructure.Eventos
                 string sinDominio = PermisosEventos.SinDominio(usuario?.Identity?.Name);
                 almacenUsuario = sinDominio == null ? null : almacenDelUsuario(Limpiar(evento.Empresa) ?? Constantes.Empresas.EMPRESA_POR_DEFECTO, sinDominio);
             }
-            if (!PermisosEventos.PuedeMantener(usuario, almacenUsuario, evento.Almacen))
+            bool puede = paraMarcarPagada
+                ? PermisosEventos.PuedeMarcarPagada(usuario, almacenUsuario, evento.Almacen)
+                : PermisosEventos.PuedeMantener(usuario, almacenUsuario, evento.Almacen);
+            if (!puede)
             {
                 throw Prohibido($"{PermisosEventos.MENSAJE_SIN_PERMISO_EVENTOS} Este evento es de {PermisosEventos.NombreAlmacen(evento.Almacen) ?? "ninguna tienda"}.");
             }

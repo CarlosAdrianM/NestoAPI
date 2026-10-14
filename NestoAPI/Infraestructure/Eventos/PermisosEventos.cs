@@ -8,9 +8,10 @@ using System.Security.Principal;
 namespace NestoAPI.Infraestructure.Eventos
 {
     /// <summary>
-    /// NestoAPI#611 (Carlos, 14/10/26): los eventos no los mantiene Tienda online sino cada tienda. Un evento es en Reina
-    /// (REI) o en Alcobendas (ALC); crearlo, modificarlo, marcar pagos y pasar lista lo puede hacer el grupo Tiendas, pero
-    /// solo en los eventos de SU tienda (su AlmacénPedidoVta en ParametrosUsuario). Dirección (e Informática) puede con todo.
+    /// NestoAPI#611 (Carlos, 14/10/26): un evento con tienda (Reina REI o Alcobendas ALC) lo mantiene esa tienda (grupo Tiendas
+    /// con ese AlmacénPedidoVta en ParametrosUsuario) y Administración; uno sin tienda (los de #591 y los que crea el Nesto de
+    /// hoy), los mismos que en #591 (Tienda online). Dirección (e Informática) puede con todo. Marcar pagada: además,
+    /// Administración en cualquier evento.
     /// Inscribir puede cualquiera de la casa (Nesto, vendedores en NestoApp) y el cliente de la tienda online, solo a sí mismo.
     /// </summary>
     public static class PermisosEventos
@@ -22,7 +23,8 @@ namespace NestoAPI.Infraestructure.Eventos
         public static readonly string[] ALMACENES_EVENTOS = { Constantes.Almacenes.REINA, Constantes.Almacenes.ALCOBENDAS };
 
         public const string MENSAJE_SIN_PERMISO_EVENTOS =
-            "Los eventos los mantiene cada tienda (los de Reina, Reina; los de Alcobendas, Alcobendas) y Dirección.";
+            "Los eventos los mantiene cada tienda (los de Reina, Reina; los de Alcobendas, Alcobendas), Administración y Dirección; " +
+            "los que no tienen tienda, Tienda online y Dirección.";
 
         /// <summary>Dirección puede con todo; Informática también (como en #591).</summary>
         public static bool EsDireccion(IPrincipal usuario) =>
@@ -30,8 +32,12 @@ namespace NestoAPI.Infraestructure.Eventos
                 || usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.INFORMATICA));
 
         /// <summary>
-        /// ¿Puede crear/modificar el evento, marcar pagos y pasar lista? Dirección siempre; el grupo Tiendas solo si el
-        /// evento es de su tienda (<paramref name="almacenUsuario"/> = su AlmacénPedidoVta).
+        /// ¿Puede crear/modificar el evento y pasar lista? Dirección (e Informática) siempre.
+        /// <list type="bullet">
+        /// <item>Evento SIN tienda (los de #591 y los que sigue creando el Nesto de hoy): los mismos de #591, Tienda online.</item>
+        /// <item>Evento CON tienda: Administración, y el grupo Tiendas solo si es su tienda (<paramref name="almacenUsuario"/> =
+        /// su AlmacénPedidoVta).</item>
+        /// </list>
         /// </summary>
         public static bool PuedeMantener(IPrincipal usuario, string almacenUsuario, string almacenEvento)
         {
@@ -43,11 +49,28 @@ namespace NestoAPI.Infraestructure.Eventos
             {
                 return true;
             }
+            string tiendaEvento = almacenEvento?.Trim();
+            if (string.IsNullOrEmpty(tiendaEvento))
+            {
+                return usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.TIENDA_ON_LINE);
+            }
+            if (usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.ADMINISTRACION))
+            {
+                return true;
+            }
             string almacen = almacenUsuario?.Trim();
             return usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.TIENDAS)
                 && !string.IsNullOrEmpty(almacen)
-                && string.Equals(almacen, almacenEvento?.Trim(), StringComparison.OrdinalIgnoreCase);
+                && string.Equals(almacen, tiendaEvento, StringComparison.OrdinalIgnoreCase);
         }
+
+        /// <summary>
+        /// ¿Puede marcar una inscripción como pagada? Quien mantiene el evento y, además, Administración en cualquier evento,
+        /// sea de la tienda que sea (Carlos, 14/10/26).
+        /// </summary>
+        public static bool PuedeMarcarPagada(IPrincipal usuario, string almacenUsuario, string almacenEvento) =>
+            PuedeMantener(usuario, almacenUsuario, almacenEvento)
+            || (usuario != null && ClienteDelToken(usuario) == null && usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.ADMINISTRACION));
 
         /// <summary>El cliente del token de la tienda online (claim «cliente»), o null si es un usuario de la casa.</summary>
         public static string ClienteDelToken(IPrincipal usuario)

@@ -30,18 +30,36 @@ namespace NestoAPI.Infraestructure.Eventos
         /// <summary>Solo lectura.</summary>
         public DateTime? FechaModificacion { get; set; }
 
-        /// <summary>NestoAPI#611: la tienda donde es el evento (REI o ALC). Obligatorio: lo mantiene esa tienda.</summary>
-        public string Almacen { get; set; }
+        // NestoAPI#611 (Carlos, 14/10/26): el Nesto de #591 no conoce los campos nuevos. Para que un PUT suyo no los borre, se
+        // apunta cuáles han venido en el cuerpo (Json.NET solo llama al setter de lo que viene) y el PUT conserva el resto.
+        private readonly HashSet<string> recibidos = new HashSet<string>();
+        private string almacen;
+        private string productoCurso;
+        private int? plazas;
+        private string lugar;
+        private string descripcionLarga;
+
+        /// <summary>NestoAPI#611: ¿venía este campo en el cuerpo de la petición (aunque fuera null)?</summary>
+        public bool Trae(string campo) => recibidos.Contains(campo);
+
+        /// <summary>
+        /// NestoAPI#611: la tienda donde es el evento (REI o ALC); la mantiene esa tienda. Opcional mientras haya clientes de
+        /// #591: sin tienda, el evento se mantiene como en #591 (Tienda online, Dirección, Informática).
+        /// </summary>
+        public string Almacen { get => almacen; set { almacen = value; recibidos.Add(nameof(Almacen)); } }
         /// <summary>NestoAPI#611: la referencia de producto del curso (una por curso), con la que se factura en el corte 2.</summary>
-        public string ProductoCurso { get; set; }
+        public string ProductoCurso { get => productoCurso; set { productoCurso = value; recibidos.Add(nameof(ProductoCurso)); } }
         /// <summary>NestoAPI#611: plazas del evento; null = sin límite.</summary>
-        public int? Plazas { get; set; }
+        public int? Plazas { get => plazas; set { plazas = value; recibidos.Add(nameof(Plazas)); } }
         /// <summary>NestoAPI#611: solo lectura. Inscripciones que ocupan plaza (todas menos caducadas y anuladas).</summary>
         public int PlazasOcupadas { get; set; }
         /// <summary>NestoAPI#611 (para TNV).</summary>
-        public string Lugar { get; set; }
-        /// <summary>NestoAPI#611 (para TNV).</summary>
-        public string Descripcion { get; set; }
+        public string Lugar { get => lugar; set { lugar = value; recibidos.Add(nameof(Lugar)); } }
+        /// <summary>
+        /// NestoAPI#611 (para TNV): la columna Eventos.Descripcion. NO se llama «Descripcion» porque el EventoModel del Nesto de
+        /// #591 ya manda una «Descripcion» calculada («Masterclass Cloasma 13/10/2026») y se guardaría como texto del evento.
+        /// </summary>
+        public string DescripcionLarga { get => descripcionLarga; set { descripcionLarga = value; recibidos.Add(nameof(DescripcionLarga)); } }
         /// <summary>NestoAPI#611: solo lectura. Cuándo se pasó lista (null = todavía no).</summary>
         public DateTime? FechaListaAsistencia { get; set; }
     }
@@ -215,7 +233,7 @@ namespace NestoAPI.Infraestructure.Eventos
             await Validar(evento).ConfigureAwait(false);
             Dictionary<int, int> ocupadas = await PlazasOcupadas(new List<int> { id }).ConfigureAwait(false);
             int ocupadasEvento = ocupadas.TryGetValue(id, out int n) ? n : 0;
-            if (evento.Plazas.HasValue && evento.Plazas.Value < ocupadasEvento)
+            if (evento.Trae(nameof(EventoDTO.Plazas)) && evento.Plazas.HasValue && evento.Plazas.Value < ocupadasEvento)
             {
                 throw new NestoBusinessException(
                     $"Ya hay {ocupadasEvento} inscripciones: no se pueden dejar {evento.Plazas.Value} plazas. Anula antes las que sobren.");
@@ -248,8 +266,9 @@ namespace NestoAPI.Infraestructure.Eventos
             {
                 throw new NestoBusinessException("El importe de la señal no puede ser negativo.");
             }
-            // NestoAPI#611 (Carlos, 14/10/26): cada evento es de una tienda, que es quien lo mantiene.
-            if (!PermisosEventos.EsAlmacenDeEventos(evento.Almacen))
+            // NestoAPI#611 (Carlos, 14/10/26): cada evento es de una tienda, que es quien lo mantiene. Solo se exige si viene en
+            // el cuerpo: el Nesto de #591 no lo manda y tiene que poder seguir creando y modificando eventos.
+            if (evento.Trae(nameof(EventoDTO.Almacen)) && !PermisosEventos.EsAlmacenDeEventos(evento.Almacen))
             {
                 throw new NestoBusinessException("Indica la tienda del evento: Reina (REI) o Alcobendas (ALC).");
             }
@@ -261,7 +280,7 @@ namespace NestoAPI.Infraestructure.Eventos
             {
                 throw new NestoBusinessException($"El lugar no puede tener más de {LONGITUD_LUGAR} caracteres.");
             }
-            if ((evento.Descripcion?.Trim().Length ?? 0) > LONGITUD_DESCRIPCION)
+            if ((evento.DescripcionLarga?.Trim().Length ?? 0) > LONGITUD_DESCRIPCION)
             {
                 throw new NestoBusinessException($"La descripción no puede tener más de {LONGITUD_DESCRIPCION} caracteres.");
             }
@@ -287,11 +306,27 @@ namespace NestoAPI.Infraestructure.Eventos
             destino.Fecha = origen.Fecha.Date;
             destino.ImporteSenal = Math.Round(origen.ImporteSenal, 2, MidpointRounding.AwayFromZero);
             destino.Activo = origen.Activo;
-            destino.Almacen = origen.Almacen.Trim().ToUpperInvariant();
-            destino.ProductoCurso = Limpiar(origen.ProductoCurso);
-            destino.Plazas = origen.Plazas;
-            destino.Lugar = Limpiar(origen.Lugar);
-            destino.Descripcion = Limpiar(origen.Descripcion);
+            // NestoAPI#611: los campos nuevos, solo si vienen en el cuerpo (un PUT del Nesto de #591 no los borra).
+            if (origen.Trae(nameof(EventoDTO.Almacen)))
+            {
+                destino.Almacen = Limpiar(origen.Almacen)?.ToUpperInvariant();
+            }
+            if (origen.Trae(nameof(EventoDTO.ProductoCurso)))
+            {
+                destino.ProductoCurso = Limpiar(origen.ProductoCurso);
+            }
+            if (origen.Trae(nameof(EventoDTO.Plazas)))
+            {
+                destino.Plazas = origen.Plazas;
+            }
+            if (origen.Trae(nameof(EventoDTO.Lugar)))
+            {
+                destino.Lugar = Limpiar(origen.Lugar);
+            }
+            if (origen.Trae(nameof(EventoDTO.DescripcionLarga)))
+            {
+                destino.Descripcion = Limpiar(origen.DescripcionLarga);
+            }
             destino.Usuario = UsuarioAuditoriaHelper.ParaAuditoria(usuario);
             destino.FechaModificacion = reloj();
         }
@@ -311,7 +346,7 @@ namespace NestoAPI.Infraestructure.Eventos
             Plazas = e.Plazas,
             PlazasOcupadas = plazasOcupadas,
             Lugar = e.Lugar?.Trim(),
-            Descripcion = e.Descripcion?.Trim(),
+            DescripcionLarga = e.Descripcion?.Trim(),
             FechaListaAsistencia = e.FechaListaAsistencia
         };
 

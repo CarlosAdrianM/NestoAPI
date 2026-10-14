@@ -426,16 +426,16 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         // ---------------- Pago a mano ----------------
 
         [TestMethod]
-        public async Task MarcarPagada_EfectivoEnSuTienda_PagadaConQuienYCuandoYDisparaElCorte2()
+        public async Task MarcarPagada_TransferenciaEnSuTienda_PagadaConQuienYCuandoYDisparaElCorte2()
         {
             Inscripcion(1, EVENTO_REINA, "15191", EstadoInscripcionEvento.Reservada, HOY.AddDays(3));
 
             InscripcionEventoDTO dto = await Servicio().MarcarPagada(1,
-                new MarcarPagoInscripcionDTO { FormaPago = "Efectivo", Importe = 50 }, REINA);
+                new MarcarPagoInscripcionDTO { FormaPago = "Transferencia", Importe = 50 }, REINA);
 
             Assert.AreEqual(EstadoInscripcionEvento.Pagada, dto.Estado);
             EventoInscripcion i = inscripciones.Single();
-            Assert.AreEqual("Efectivo", i.FormaPago);
+            Assert.AreEqual("Transferencia", i.FormaPago);
             Assert.AreEqual(50, i.ImportePagado);
             Assert.AreEqual("NUEVAVISION\\Reina", i.UsuarioPago);
             Assert.AreEqual(HOY, i.FechaPago);
@@ -459,19 +459,65 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             Inscripcion(1, EVENTO_REINA, "15191", EstadoInscripcionEvento.Reservada, HOY.AddDays(3));
 
             var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().MarcarPagada(1,
-                new MarcarPagoInscripcionDTO { FormaPago = "Efectivo" }, PALOMA));
+                new MarcarPagoInscripcionDTO { FormaPago = "Transferencia" }, PALOMA));
 
             Assert.AreEqual(HttpStatusCode.Forbidden, ex.StatusCode);
             Assert.AreEqual("Reservada", inscripciones.Single().Estado);
         }
 
         [TestMethod]
-        public async Task MarcarPagada_VendedorOAdministracion_403()
+        public async Task MarcarPagada_AdministracionEnCualquierTienda_Pagada()
+        {
+            Inscripcion(1, EVENTO_REINA, "15191", EstadoInscripcionEvento.Reservada, HOY.AddDays(3));
+            Inscripcion(2, EVENTO_ALCOBENDAS, "20000", EstadoInscripcionEvento.Reservada, HOY.AddDays(1));
+            IPrincipal administracion = Usuario("NUEVAVISION\\Admin", "Administración");
+
+            await Servicio().MarcarPagada(1, new MarcarPagoInscripcionDTO { FormaPago = "Transferencia" }, administracion);
+            await Servicio().MarcarPagada(2, new MarcarPagoInscripcionDTO { FormaPago = "Tarjeta" }, administracion);
+
+            Assert.IsTrue(inscripciones.All(i => i.Estado == "Pagada"));
+            Assert.AreEqual("NUEVAVISION\\Admin", inscripciones.First().UsuarioPago);
+        }
+
+        [TestMethod]
+        public async Task MarcarPagada_EnEfectivo_400YSigueReservadaHastaQueHayaCobroEnCaja()
+        {
+            await Servicio().Inscribir(EVENTO_REINA, new InscribirEventoDTO { Cliente = "15191", Origen = "Nesto", FormaPago = "Efectivo" }, VENDEDOR);
+            int id = inscripciones.Single().Id;
+
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().MarcarPagada(id,
+                new MarcarPagoInscripcionDTO { FormaPago = "Efectivo", Importe = 50 }, REINA));
+
+            Assert.AreEqual(ServicioInscripcionesEventos.MENSAJE_EFECTIVO_NO_DISPONIBLE, ex.Message);
+            Assert.AreEqual(HttpStatusCode.BadRequest, ex.StatusCode);
+            EventoInscripcion i = inscripciones.Single();
+            Assert.AreEqual("Reservada", i.Estado);
+            Assert.AreEqual("Efectivo", i.FormaPago);
+            Assert.IsNotNull(i.FechaLimitePago, "Caduca igual que la de tarjeta sin cobrar");
+            A.CallTo(() => procesador.Procesar(A<EventoInscripcion>._, A<Evento>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task MarcarPagada_EventoSinTienda_ComoEn591()
+        {
+            eventos.Single(e => e.Id == EVENTO_REINA).Almacen = null;
+            Inscripcion(1, EVENTO_REINA, "15191", EstadoInscripcionEvento.Reservada, HOY.AddDays(3));
+
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().MarcarPagada(1,
+                new MarcarPagoInscripcionDTO { FormaPago = "Transferencia" }, REINA));
+            Assert.AreEqual(HttpStatusCode.Forbidden, ex.StatusCode);
+
+            await Servicio().MarcarPagada(1, new MarcarPagoInscripcionDTO { FormaPago = "Transferencia" }, Usuario("NUEVAVISION\\Laura", "TiendaOnline"));
+            Assert.AreEqual("Pagada", inscripciones.Single().Estado);
+        }
+
+        [TestMethod]
+        public async Task MarcarPagada_Vendedor_403()
         {
             Inscripcion(1, EVENTO_REINA, "15191", EstadoInscripcionEvento.Reservada, HOY.AddDays(3));
 
             var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().MarcarPagada(1,
-                new MarcarPagoInscripcionDTO { FormaPago = "Efectivo" }, VENDEDOR));
+                new MarcarPagoInscripcionDTO { FormaPago = "Transferencia" }, VENDEDOR));
             Assert.AreEqual(HttpStatusCode.Forbidden, ex.StatusCode);
         }
 
@@ -481,7 +527,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             Inscripcion(1, EVENTO_REINA, "15191", EstadoInscripcionEvento.Pagada);
 
             await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().MarcarPagada(1,
-                new MarcarPagoInscripcionDTO { FormaPago = "Efectivo" }, REINA));
+                new MarcarPagoInscripcionDTO { FormaPago = "Transferencia" }, REINA));
             A.CallTo(() => procesador.Procesar(A<EventoInscripcion>._, A<Evento>._)).MustNotHaveHappened();
         }
 
@@ -493,7 +539,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().MarcarPagada(1,
                 new MarcarPagoInscripcionDTO { FormaPago = "Bizum" }, REINA));
             await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().MarcarPagada(1,
-                new MarcarPagoInscripcionDTO { FormaPago = "Efectivo", Fecha = HOY.AddDays(1) }, REINA));
+                new MarcarPagoInscripcionDTO { FormaPago = "Transferencia", Fecha = HOY.AddDays(1) }, REINA));
             Assert.AreEqual("Reservada", inscripciones.Single().Estado);
         }
 

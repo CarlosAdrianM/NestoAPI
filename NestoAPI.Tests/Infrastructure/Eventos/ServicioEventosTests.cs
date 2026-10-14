@@ -184,11 +184,117 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         [TestMethod]
         public async Task PostEvento_SinSerDeLaTienda_403()
         {
-            var resultado = await Controlador(Usuario("NUEVAVISION\\Admin", "Administración"))
+            var resultado = await Controlador(Usuario("NUEVAVISION\\Vendedor", "Ventas"))
                 .PostEvento(new EventoDTO { Titulo = "X", Fecha = HOY, ImporteSenal = 50, Almacen = "REI" }) as ResponseMessageResult;
 
             Assert.AreEqual(HttpStatusCode.Forbidden, resultado.Response.StatusCode);
             A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task PostEvento_AdministracionConTienda_Crea()
+        {
+            var resultado = await Controlador(Usuario("NUEVAVISION\\Admin", "Administración"))
+                .PostEvento(new EventoDTO { Titulo = "X", Fecha = HOY, ImporteSenal = 50, Almacen = "REI" });
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<EventoDTO>));
+        }
+
+        // ---------------- NestoAPI#611: compatibilidad con el Nesto de #591 (en producción) ----------------
+
+        /// <summary>
+        /// El cuerpo EXACTO que manda hoy Nesto (JsonConvert.SerializeObject de su EventoModel): sin los campos nuevos y con una
+        /// «Descripcion» calculada (Titulo + fecha) que no es la descripción del evento.
+        /// </summary>
+        private static EventoDTO CuerpoNesto591(int id, string titulo, string fecha) =>
+            Newtonsoft.Json.JsonConvert.DeserializeObject<EventoDTO>(
+                "{\"Id\":" + id + ",\"Empresa\":\"1\",\"Titulo\":\"" + titulo + "\",\"Fecha\":\"" + fecha + "T00:00:00\"," +
+                "\"ImporteSenal\":50.0,\"Activo\":true,\"Usuario\":null,\"FechaModificacion\":null," +
+                "\"Descripcion\":\"" + titulo + " 20/10/2026\"}");
+
+        [TestMethod]
+        public async Task Nesto591_PostComoEnProduccion_TiendaOnlineCreaElEventoSinTienda()
+        {
+            var resultado = await Controlador(Usuario("NUEVAVISION\\Laura", "TiendaOnline"))
+                .PostEvento(CuerpoNesto591(0, "Masterclass Cloasma", "2026-10-20"));
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<EventoDTO>));
+            A.CallTo(() => fakeEventos.Add(A<Evento>.That.Matches(e => e.Titulo == "Masterclass Cloasma" && e.Almacen == null
+                && e.Descripcion == null && e.ProductoCurso == null && e.Plazas == null))).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Nesto591_PutComoEnProduccion_TiendaOnlineModificaUnoSinTienda()
+        {
+            Evento evento = Evento(1, "Viejo", new DateTime(2026, 10, 20));
+            evento.Almacen = null;
+            eventos.Add(evento);
+
+            var resultado = await Controlador(Usuario("NUEVAVISION\\Laura", "TiendaOnline")).PutEvento(1, CuerpoNesto591(1, "Nuevo", "2026-10-21"));
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<EventoDTO>));
+            Assert.AreEqual("Nuevo", evento.Titulo);
+            Assert.IsNull(evento.Almacen);
+        }
+
+        [TestMethod]
+        public async Task Nesto591_PutComoEnProduccion_ConservaLosCamposNuevos()
+        {
+            Evento evento = Evento(1, "Viejo", new DateTime(2026, 10, 20));
+            evento.ProductoCurso = "CURSO01";
+            evento.Plazas = 12;
+            evento.Lugar = "Tienda de Reina";
+            evento.Descripcion = "Dos horas de práctica con modelo.";
+            eventos.Add(evento);
+
+            var resultado = await Controlador(Usuario("NUEVAVISION\\Reina", "Tiendas")).PutEvento(1, CuerpoNesto591(1, "Nuevo", "2026-10-21"));
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<EventoDTO>));
+            Assert.AreEqual("Nuevo", evento.Titulo);
+            Assert.AreEqual("REI", evento.Almacen);
+            Assert.AreEqual("CURSO01", evento.ProductoCurso);
+            Assert.AreEqual(12, evento.Plazas);
+            Assert.AreEqual("Tienda de Reina", evento.Lugar);
+            Assert.AreEqual("Dos horas de práctica con modelo.", evento.Descripcion);
+        }
+
+        [TestMethod]
+        public async Task Nesto591_SinTienda_AdministracionYVentasSiguenSinPoder()
+        {
+            var admin = await Controlador(Usuario("NUEVAVISION\\Admin", "Administración"))
+                .PostEvento(CuerpoNesto591(0, "X", "2026-10-20")) as ResponseMessageResult;
+            var reina = await Controlador(Usuario("NUEVAVISION\\Reina", "Tiendas"))
+                .PostEvento(CuerpoNesto591(0, "X", "2026-10-20")) as ResponseMessageResult;
+
+            Assert.AreEqual(HttpStatusCode.Forbidden, admin.Response.StatusCode);
+            Assert.AreEqual(HttpStatusCode.Forbidden, reina.Response.StatusCode);
+        }
+
+        [TestMethod]
+        public async Task Nesto591_LaRespuestaSeLeeConElEventoModelDeNesto()
+        {
+            eventos.Add(Evento(1, "Masterclass", new DateTime(2026, 10, 20)));
+
+            List<EventoDTO> lista = await Servicio().LeerEventos("1", true);
+            string json = Newtonsoft.Json.JsonConvert.SerializeObject(lista);
+            List<EventoModelNesto591> leidos = Newtonsoft.Json.JsonConvert.DeserializeObject<List<EventoModelNesto591>>(json);
+
+            Assert.AreEqual("Masterclass", leidos.Single().Titulo);
+            Assert.AreEqual("Masterclass 20/10/2026", leidos.Single().Descripcion, "La Descripcion calculada de Nesto no se pisa");
+        }
+
+        /// <summary>Copia del EventoModel de Nesto (Modulos/Cliente/Models/EventoModel.cs) tal como está en producción.</summary>
+        private class EventoModelNesto591
+        {
+            public int Id { get; set; }
+            public string Empresa { get; set; }
+            public string Titulo { get; set; }
+            public DateTime Fecha { get; set; }
+            public decimal ImporteSenal { get; set; }
+            public bool Activo { get; set; } = true;
+            public string Usuario { get; set; }
+            public DateTime? FechaModificacion { get; set; }
+            public string Descripcion => $"{Titulo} {Fecha:dd/MM/yyyy}";
         }
 
         [TestMethod]

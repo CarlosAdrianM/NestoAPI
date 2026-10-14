@@ -48,8 +48,8 @@ namespace NestoAPI.Controllers
             return Ok(await servicio.LeerEventos(empresa, soloActivos).ConfigureAwait(false));
         }
 
-        // POST api/Eventos   { Empresa, Titulo, Fecha, ImporteSenal, Activo, Almacen, ProductoCurso, Plazas, Lugar, Descripcion }
-        /// <summary>NestoAPI#611: solo la tienda del evento (su AlmacénPedidoVta = Almacen) o Dirección.</summary>
+        // POST api/Eventos   { Empresa, Titulo, Fecha, ImporteSenal, Activo, Almacen?, ProductoCurso?, Plazas?, Lugar?, DescripcionLarga? }
+        /// <summary>NestoAPI#611: con Almacen, esa tienda, Administración o Dirección; sin él, como en #591 (Tienda online, Dirección).</summary>
         [HttpPost]
         [Route("")]
         [ResponseType(typeof(EventoDTO))]
@@ -62,15 +62,17 @@ namespace NestoAPI.Controllers
             return Ok(await servicio.CrearEvento(evento, UsuarioAuditoriaHelper.Resolver(User, null)).ConfigureAwait(false));
         }
 
-        // PUT api/Eventos/5   { Titulo, Fecha, ImporteSenal, Activo, Almacen, ProductoCurso, Plazas, Lugar, Descripcion }
-        /// <summary>NestoAPI#611: la tienda del evento (la de antes y la nueva, si se cambia) o Dirección.</summary>
+        // PUT api/Eventos/5   { Titulo, Fecha, ImporteSenal, Activo, y solo los campos nuevos que vengan: Almacen, ProductoCurso, Plazas, Lugar, DescripcionLarga }
+        /// <summary>NestoAPI#611: quien mantiene el evento con la tienda de antes y con la nueva (si se cambia). Conserva los campos nuevos que no vengan.</summary>
         [HttpPut]
         [Route("{id:int}")]
         [ResponseType(typeof(EventoDTO))]
         public async Task<IHttpActionResult> PutEvento(int id, [FromBody] EventoDTO evento)
         {
+            // NestoAPI#611: el Nesto de #591 no manda Almacen: entonces el evento se queda en la tienda que tuviera (o en ninguna).
             string almacenActual = await servicio.AlmacenDelEvento(id).ConfigureAwait(false);
-            if ((almacenActual != null && !PuedeMantener(evento?.Empresa, almacenActual)) || !PuedeMantener(evento?.Empresa, evento?.Almacen))
+            string almacenNuevo = evento != null && evento.Trae(nameof(EventoDTO.Almacen)) ? evento.Almacen : almacenActual;
+            if ((almacenActual != null && !PuedeMantener(evento?.Empresa, almacenActual)) || !PuedeMantener(evento?.Empresa, almacenNuevo))
             {
                 return Prohibido(PermisosEventos.MENSAJE_SIN_PERMISO_EVENTOS);
             }
@@ -114,8 +116,8 @@ namespace NestoAPI.Controllers
 
         // POST api/Eventos/Inscripciones/7/Pago   { FormaPago, Importe?, Fecha? }
         /// <summary>
-        /// Marca la inscripción como pagada a mano (transferencia, efectivo en la tienda o tarjeta). La tienda del evento o
-        /// Dirección. Pasa por el mismo enganche del corte 2 que el cobro por enlace.
+        /// Marca la inscripción como pagada a mano (transferencia o tarjeta). Quien mantiene el evento, Administración o
+        /// Dirección. Pasa por el mismo enganche del corte 2 que el cobro por enlace. Efectivo: 400, todavía no (falta el cobro en caja).
         /// </summary>
         [HttpPost]
         [Route("Inscripciones/{id:int}/Pago")]

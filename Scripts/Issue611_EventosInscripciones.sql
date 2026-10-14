@@ -1,4 +1,8 @@
 /*
+    ##################################################################################################################
+    ###  LANZAR ANTES DEL DEPLOY DE LA API. Sin estas columnas y esta tabla, api/Eventos falla (están en el EDMX).   ###
+    ##################################################################################################################
+
     NestoAPI#611 (cupones, corte 1 de #610): eventos con referencia de curso e inscripciones sin pedido.
 
     Ejecutar en SSMS contra NV como sa (ALTER y CREATE: el login nuevavision no puede). Idempotente: se puede lanzar
@@ -6,8 +10,8 @@
     api/Eventos falla.
 
     1. Eventos: columnas nuevas, todas NULL en la BD (los eventos de #591 siguen valiendo tal cual).
-       - Almacen: la tienda donde es el evento (REI o ALC; la API lo exige al crear o modificar). Lo mantiene esa tienda
-         (grupo Tiendas con ese AlmacénPedidoVta) y Dirección (Carlos, 14/10/26).
+       - Almacen: la tienda donde es el evento (REI o ALC). Con tienda, lo mantiene esa tienda (grupo Tiendas con ese
+         AlmacénPedidoVta), Administración y Dirección; sin tienda (los de #591 y los que crea el Nesto de hoy), como en #591.
        - ProductoCurso: la referencia de producto del curso (una por curso), con la que se facturará en el corte 2 (#612).
        - Plazas: si viene, la API no deja inscribir a más gente de la que cabe.
        - Lugar / Descripcion: para la ficha del evento en TNV.
