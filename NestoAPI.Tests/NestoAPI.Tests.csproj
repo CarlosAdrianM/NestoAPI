@@ -325,6 +325,7 @@
     <Compile Include="Infrastructure\FechaEntregaNotasTests.cs" />
     <Compile Include="Infrastructure\ServicioPropuestaReposicionTests.cs" />
     <Compile Include="Infrastructure\ServicioPreparacionReposicionTests.cs" />
+    <Compile Include="Infrastructure\Ubicaciones\CuadreUbicacionesTests.cs" />
     <Compile Include="Infrastructure\Ubicaciones\PlanificadorReservaHuecosTests.cs" />
     <Compile Include="Infrastructure\Ubicaciones\PuertaUbicacionesTests.cs" />
     <Compile Include="Infrastructure\Ubicaciones\RegistroMovimientosUbicacionSqlTests.cs" />
