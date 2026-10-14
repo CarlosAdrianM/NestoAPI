@@ -15,6 +15,7 @@
          - Issue629_IndicadoresStock.sql                     (tabla IndicadoresStock; sin ella el job solo avisa en ELMAH y el GET da 503)
       2) Scripts sa cuando se quiera (antes o después, idempotentes):
          - Issue622_ReposicionesTraspasos_IdCompletada.sql   (enlace entre la cabecera del día y la preparación completada)
+         - Issue630_PropuestasStock.sql                      (tabla PropuestasStock; sin ella el job manda el Excel y avisa de que no guarda)
          - Issue594_UbicacionesMovimientos.sql               (OPCIONAL: solo si se enciende Ubicaciones:RegistrarMovimientos)
          - Nesto490_RegionesPropias.sql                      (OPCIONAL: piloto de regiones solo para Carlos)
       3) Publicar NestoAPI.
