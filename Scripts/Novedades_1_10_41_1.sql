@@ -21,7 +21,9 @@
       3) Publicar NestoAPI.
       4) Publicar la ClickOnce (Clean + Rebuild) → 1.10.41.1.
       5) DESPUÉS: ESTE script (idempotente: compara por Versión + Título).
-      6) Cerrar NestoAPI#624, #622 y Nesto#525 (comentario con la versión).
+      6) Cerrar NestoAPI#624, #622, Nesto#525 y Ariadna#24 (comentario con la versión).
+      7) Re-adjuntar «Guia reposiciones automaticas.pdf» (ya regenerada: Ariadna 2.7 + #622) a las novedades de reposiciones
+         (552, 562, 564, 570, 577, 578 y 581) con Scripts/AdjuntarANovedad.ps1.
 
     SE OMITE A PROPÓSITO:
       - #611 (inscripciones a eventos): solo API; la pantalla llega con Nesto#517.
@@ -55,3 +57,19 @@ FROM @novedades n
 WHERE NOT EXISTS (SELECT 1 FROM Novedades x WHERE x.Version = @version AND x.Titulo = n.Titulo);
 
 SELECT @@ROWCOUNT AS NovedadesNestoInsertadasAhora;
+
+-- Ariadna 2.7 (Ariadna#24; publicada el 14/10 en Play interna y Windows)
+DECLARE @ariadna TABLE (Categoria nvarchar(40), Titulo nvarchar(400), Descripcion nvarchar(2000));
+
+INSERT INTO @ariadna (Categoria, Titulo, Descripcion) VALUES
+    ('Mejorado', N'En las salidas, leer el código comprueba el producto y la cantidad se teclea entera',
+     N'Al preparar un picking o una reposición, la lectura del código ya no cuenta una unidad: solo comprueba que tienes en la mano el producto que toca (si la línea es de una unidad, la cuenta y pasa al siguiente, como antes). Comprobado, el cuadro cambia a «CANTIDAD» (en ámbar) y tecleas cuántas coges en total: para 100 unidades, 100 e Intro. Intro sin nada manda todas las que pide. Leer el código otra vez ya no suma: te avisa de que ya está comprobado. Si prefieres contar leyendo unidad a unidad, F1 con el cuadro vacío (o el botón «Contar leyendo») en esa línea. Si ya habías contado una parte y tecleas más, se suma y te lo dice con un aviso y un pitido distinto.'),
+    ('Mejorado', N'Se ve en qué paso estás: «LEE EL CÓDIGO» o «CANTIDAD»',
+     N'El cuadro de lectura lleva encima una etiqueta grande con lo que toca hacer: «LEE EL CÓDIGO» (o «TECLEA LA REFERENCIA» si el producto no tiene código) y, comprobado, «CANTIDAD», con el cuadro en ámbar. En el móvil, con la cámara abierta, al comprobar salen los botones «Todas (N)» y «Teclear cuántas», que abre el teclado numérico. En Entradas no cambia nada: la lectura sigue buscando el producto y sumando.');
+
+INSERT INTO Novedades (Version, Fecha, Categoria, Titulo, Descripcion, Ambito, Publicada, Usuario)
+SELECT '2.7', @fecha, a.Categoria, a.Titulo, a.Descripcion, 'Ariadna', 1, 'sa'
+FROM @ariadna a
+WHERE NOT EXISTS (SELECT 1 FROM Novedades x WHERE x.Ambito = 'Ariadna' AND x.Titulo = a.Titulo);
+
+SELECT @@ROWCOUNT AS NovedadesAriadnaInsertadasAhora;
