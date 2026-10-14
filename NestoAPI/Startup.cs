@@ -943,6 +943,21 @@ namespace NestoAPI
                 }
             );
             Console.WriteLine("✅ Job recurrente 'indicadores-stock-mensual' configurado (día 1 a las 03:30; el 2 si el 1 es domingo)");
+
+            // NestoAPI#630 (stock obsoleto, corte 2): propuestas de máximo y mínimo por producto con su explicación, guardadas en
+            // PropuestasStock y en un Excel por correo (PropuestasStock:Destinatarios). Día 1 a las 04:30, una hora después del
+            // 'indicadores-stock-mensual' del corte 1 (03:30). Lee 5 años de venta y extracto de todos los productos: va en la
+            // cola «entrenamiento» (su servidor de un hilo, arriba) para no parar los jobs de cada 5 minutos.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.Stocks.Tendencias.PropuestasStockJobsService.ID_JOB,
+                () => Infraestructure.Stocks.Tendencias.PropuestasStockJobsService.GenerarProgramado(),
+                Infraestructure.Stocks.Tendencias.PropuestasStockJobsService.CRON, // Cron: día 1 de cada mes a las 4:30
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'propuestas-stock-mensual' configurado (día 1 de cada mes a las 4:30)");
         }
     }
 

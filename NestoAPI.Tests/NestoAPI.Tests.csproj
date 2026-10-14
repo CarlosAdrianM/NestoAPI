@@ -560,6 +560,8 @@
     <Compile Include="Infrastructure\Stocks\Tendencias\MotorTendenciasTests.cs" />
     <Compile Include="Infrastructure\Stocks\Tendencias\CalibracionTendenciasTests.cs" />
     <Compile Include="Infrastructure\Stocks\Tendencias\ServicioPropuestasStockTests.cs" />
+    <Compile Include="Infrastructure\Stocks\Tendencias\PropuestasStockJobsServiceTests.cs" />
+    <Compile Include="Controllers\PropuestasStockControllerTests.cs" />
     <Compile Include="Infrastructure\Reposiciones\CalculadoraFechaReposicionTests.cs" />
     <Compile Include="Infrastructure\Reposiciones\ServicioCalendarioReposicionesTests.cs" />
     <Compile Include="Infrastructure\Reposiciones\ListadoReposicionTests.cs" />
