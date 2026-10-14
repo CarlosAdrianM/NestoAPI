@@ -550,6 +550,7 @@
     <Compile Include="Infrastructure\Rapports\ModeloContactoTests.cs" />
     <Compile Include="Infrastructure\Rapports\ReentrenamientoModeloLlamadasTests.cs" />
     <Compile Include="Controllers\RapportsControllerTests.cs" />
+    <Compile Include="Controllers\IndicadoresStockControllerTests.cs" />
     <Compile Include="Infrastructure\IndicadoresStock\CalculadoraIndicadoresStockTests.cs" />
     <Compile Include="Infrastructure\IndicadoresStock\IndicadoresStockJobsServiceTests.cs" />
     <Compile Include="Infrastructure\IndicadoresStock\RepositorioIndicadoresStockEnMemoria.cs" />

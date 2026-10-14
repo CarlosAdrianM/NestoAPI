@@ -905,6 +905,7 @@
     <Compile Include="Infraestructure\PedidosVenta\IServicioPedidosVenta.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ServicioPedidosVenta.cs" />
     <Compile Include="Infraestructure\PrincipalExtensions.cs" />
+    <Compile Include="Controllers\IndicadoresStockController.cs" />
     <Compile Include="Infraestructure\IndicadoresStock\CalculadoraIndicadoresStock.cs" />
     <Compile Include="Infraestructure\IndicadoresStock\IndicadoresStockJobsService.cs" />
     <Compile Include="Infraestructure\IndicadoresStock\IndicadoresStockModelos.cs" />
