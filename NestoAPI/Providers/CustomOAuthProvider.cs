@@ -6,11 +6,15 @@ using NestoAPI.Infraestructure.Seguridad;
 using System;
 using System.Security.Claims;
 using System.Threading.Tasks;
+using System.Web;
 
 namespace NestoAPI.Providers
 {
     public class CustomOAuthProvider : OAuthAuthorizationServerProvider
     {
+        // NestoAPI#624: texto de error_description cuando usuario y contraseña son correctos pero el
+        // correo no está confirmado. Se mantiene el código invalid_grant para no romper a los clientes.
+        internal const string MENSAJE_USUARIO_NO_ACTIVADO = "Tu usuario aún no está activado: avisa a informática.";
 
         public override Task ValidateClientAuthentication(OAuthValidateClientAuthenticationContext context)
         {
@@ -45,9 +49,12 @@ namespace NestoAPI.Providers
                 return;
             }
 
+            // NestoAPI#624: aquí las credenciales ya son correctas (FindAsync devuelve null si la
+            // contraseña no coincide), así que decir «no activado» no revela si el usuario existe.
             if (!user.EmailConfirmed)
             {
-                context.SetError("invalid_grant", "User did not confirm email.");
+                context.SetError("invalid_grant", MENSAJE_USUARIO_NO_ACTIVADO);
+                RegistrarUsuarioNoActivadoEnElmah(user.UserName, context.ClientId);
                 return;
             }
 
@@ -106,6 +113,23 @@ namespace NestoAPI.Providers
             var nuevoTicket = new AuthenticationTicket(nuevaIdentity, context.Ticket.Properties);
 
             _ = context.Validated(nuevoTicket);
+        }
+
+        /// <summary>
+        /// NestoAPI#624: rastro informativo en ELMAH para que informática vea quién intenta entrar con
+        /// un usuario sin activar. Nunca rompe la respuesta del token.
+        /// </summary>
+        private static void RegistrarUsuarioNoActivadoEnElmah(string usuario, string aplicacion)
+        {
+            try
+            {
+                Elmah.ErrorLog.GetDefault(HttpContext.Current)?.Log(new Elmah.Error(new Exception(
+                    $"[Informativo NestoAPI#624] Login rechazado en /oauth/token: el usuario «{usuario}» tiene la contraseña correcta pero el correo sin confirmar (EmailConfirmed = 0). Aplicación: {aplicacion ?? "NestoApp"}")));
+            }
+            catch
+            {
+                // Sin ELMAH (tests) o fallo al registrar: el cliente recibe igualmente el error.
+            }
         }
 
         private static async Task<ClaimsIdentity> ConstruirIdentity(ApplicationUser user, ApplicationUserManager userManager)

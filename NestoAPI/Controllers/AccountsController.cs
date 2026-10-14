@@ -58,15 +58,7 @@ namespace NestoAPI.Controllers
                 return BadRequest(ModelState);
             }
 
-            ApplicationUser user = new ApplicationUser()
-            {
-                UserName = createUserModel.Username,
-                Email = createUserModel.Email,
-                FirstName = createUserModel.FirstName,
-                LastName = createUserModel.LastName,
-                Level = 3,
-                JoinDate = DateTime.Now.Date,
-            };
+            ApplicationUser user = NuevoUsuarioAltaAdministracion(createUserModel);
 
             IdentityResult addUserResult = await AppUserManager.CreateAsync(user, createUserModel.Password);
 
@@ -78,6 +70,26 @@ namespace NestoAPI.Controllers
             Uri locationHeader = new Uri(Url.Link("GetUserById", new { id = user.Id }));
 
             return Created(locationHeader, TheModelFactory.Create(user));
+        }
+
+        /// <summary>
+        /// NestoAPI#624: el alta por api/accounts/create solo la hace un Admin, con un correo conocido,
+        /// y la API no tiene ningún flujo para confirmar el correo después. Si el usuario naciera con
+        /// EmailConfirmed = false, /oauth/token lo rechazaría siempre (caso real 13/10/26: los mozos
+        /// de Ariadna no podían entrar). Por eso nace ya confirmado.
+        /// </summary>
+        internal static ApplicationUser NuevoUsuarioAltaAdministracion(CreateUserBindingModel createUserModel)
+        {
+            return new ApplicationUser()
+            {
+                UserName = createUserModel.Username,
+                Email = createUserModel.Email,
+                EmailConfirmed = true,
+                FirstName = createUserModel.FirstName,
+                LastName = createUserModel.LastName,
+                Level = 3,
+                JoinDate = DateTime.Now.Date,
+            };
         }
 
         [Authorize(Roles = "Admin")]
