@@ -21,7 +21,8 @@
       3) Publicar NestoAPI.
       4) Publicar la ClickOnce (Clean + Rebuild) → 1.10.41.1.
       5) DESPUÉS: ESTE script (idempotente: compara por Versión + Título).
-      6) Cerrar NestoAPI#624, #622, Nesto#525 y Ariadna#24 (comentario con la versión).
+      6) Cerrar NestoAPI#624, #622, Nesto#525 y Ariadna#24 (comentario con la versión). Sugerencia 599 (Paloma): PUT Version 1.10.41.1
+         y comentario en su hilo (OneShot_20261014_CerrarSugerencias_1_10_41_1.ps1).
       7) Re-adjuntar «Guia reposiciones automaticas.pdf» (ya regenerada: Ariadna 2.7 + #622) a las novedades de reposiciones
          (552, 562, 564, 570, 577, 578 y 581) con Scripts/AdjuntarANovedad.ps1.
 
@@ -47,6 +48,9 @@ INSERT INTO @novedades (Categoria, Titulo, Descripcion, Perfiles) VALUES
     ('Corregido', N'La plantilla ya no cambia sola el modo de servir que has elegido',
      N'Si elegías «Todo junto» (o cualquier otro modo) y después tocabas cantidades, añadías un regalo o una oferta o filtrabas las direcciones, la plantilla volvía a poner el modo que calcula ella y el pedido se grababa con otro distinto, sin avisar. Ahora, mientras la dirección sea la misma, se respeta lo que has elegido: el modo de servir, el de facturación, la forma de pago, los plazos y la cuenta. Solo se recalcula si cambias de contacto de verdad, y en ese caso te avisa. También avisa si el pedido vuelve a «Todo junto» por un cambio automático o si no se puede cambiar el modo porque ya tiene picking.',
      N'Vendedores,Tiendas,Administración'),
+    ('Mejorado', N'Doble clic en la referencia de una reposición abre la ficha del producto',
+     N'En Enviar reposición (también en la reposición puntual) y en las líneas de Recibir reposición, doble clic en la referencia abre la ficha del producto, como en el pedido. Al volver a la pestaña de la reposición, el cursor vuelve al cuadro del lector. El doble clic en «Cantidad» o «Leído» sigue sirviendo para escribir.',
+     N'Tiendas'),
     ('Mejorado', N'Enviar reposición te dice qué ha pasado con la reposición de hoy',
      N'Arriba, en «Enviar reposición», sale lo que ha hecho el sistema con la reposición automática del día: si se ha rellenado, si se ha sumado a la que tenías sin enviar del día anterior (en vez de saltársela, como pasaba antes) o si no se ha podido rellenar y por qué (por ejemplo, un inventario en curso). Cuando pasa algo de esto también te llega un aviso a la campana. La franja desaparece en cuanto envías la reposición.',
      N'Tiendas');
