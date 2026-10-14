@@ -12,6 +12,7 @@
     ORDEN:
       1) Scripts sa ANTES de publicar la API:
          - Issue611_EventosInscripciones.sql                 (columnas de Eventos + tabla EventosInscripciones: están en el EDMX)
+         - Issue629_IndicadoresStock.sql                     (tabla IndicadoresStock; sin ella el job solo avisa en ELMAH y el GET da 503)
       2) Scripts sa cuando se quiera (antes o después, idempotentes):
          - Issue622_ReposicionesTraspasos_IdCompletada.sql   (enlace entre la cabecera del día y la preparación completada)
          - Issue594_UbicacionesMovimientos.sql               (OPCIONAL: solo si se enciende Ubicaciones:RegistrarMovimientos)
