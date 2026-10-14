@@ -59,12 +59,21 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             A.CallTo(() => db.EventosSenales).Returns(fakeSenales);
             A.CallTo(() => db.ExtractosCliente).Returns(fakeExtracto);
             A.CallTo(() => db.Clientes).Returns(fakeClientes);
+            inscripciones = new List<EventoInscripcion>();
+            A.CallTo(() => db.EventosInscripciones).Returns(Crear(inscripciones));
+            A.CallTo(() => db.Productos).Returns(Crear(new List<Producto> { new Producto { Empresa = "1", Número = "CURSO01" } }));
         }
 
-        private ServicioEventos Servicio() => new ServicioEventos(db, () => HOY);
+        private List<EventoInscripcion> inscripciones;
+
+        /// <summary>NestoAPI#611: Reina mantiene los eventos de REI y Paloma los de ALC (su AlmacénPedidoVta).</summary>
+        private static string AlmacenDe(string empresa, string usuario) =>
+            usuario == "Reina" ? "REI" : usuario == "Paloma" ? "ALC" : null;
+
+        private ServicioEventos Servicio() => new ServicioEventos(db, () => HOY, AlmacenDe);
 
         private static Evento Evento(int id, string titulo, DateTime fecha, bool activo = true) =>
-            new Evento { Id = id, Empresa = "1", Titulo = titulo, Fecha = fecha, ImporteSenal = 50, Activo = activo, Usuario = "Laura", FechaModificacion = HOY };
+            new Evento { Id = id, Empresa = "1", Titulo = titulo, Fecha = fecha, ImporteSenal = 50, Activo = activo, Usuario = "Laura", FechaModificacion = HOY, Almacen = "REI" };
 
         private static ExtractoCliente Apunte(int orden, string cliente, string contacto, decimal importe, decimal pendiente) =>
             new ExtractoCliente
@@ -118,14 +127,50 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
                 Titulo = "  Masterclass Cloasma ",
                 Fecha = new DateTime(2026, 10, 20, 17, 0, 0),
                 ImporteSenal = 50,
-                Activo = true
+                Activo = true,
+                Almacen = "rei",
+                ProductoCurso = " CURSO01 ",
+                Plazas = 12,
+                Lugar = "Tienda de Reina"
             }, "NUEVAVISION\\Laura");
 
             A.CallTo(() => fakeEventos.Add(A<Evento>.That.Matches(e =>
-                e.Titulo == "Masterclass Cloasma" && e.Fecha == new DateTime(2026, 10, 20) && e.Empresa == "1" && e.Usuario == "NUEVAVISION\\Laura")))
+                e.Titulo == "Masterclass Cloasma" && e.Fecha == new DateTime(2026, 10, 20) && e.Empresa == "1" && e.Usuario == "NUEVAVISION\\Laura"
+                && e.Almacen == "REI" && e.ProductoCurso == "CURSO01" && e.Plazas == 12 && e.Lugar == "Tienda de Reina")))
                 .MustHaveHappenedOnceExactly();
             A.CallTo(() => db.SaveChangesAsync()).MustHaveHappenedOnceExactly();
             Assert.AreEqual("Masterclass Cloasma", creado.Titulo);
+            Assert.AreEqual("REI", creado.Almacen);
+        }
+
+        [TestMethod]
+        public async Task CrearEvento_SinTienda_400SinGuardar()
+        {
+            await Assert.ThrowsExceptionAsync<NestoBusinessException>(() =>
+                Servicio().CrearEvento(new EventoDTO { Titulo = "X", Fecha = HOY, ImporteSenal = 50, Almacen = "ALG" }, "x"));
+            A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task CrearEvento_ProductoQueNoExiste_400SinGuardar()
+        {
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() =>
+                Servicio().CrearEvento(new EventoDTO { Titulo = "X", Fecha = HOY, ImporteSenal = 50, Almacen = "REI", ProductoCurso = "NOEXISTE" }, "x"));
+            StringAssert.Contains(ex.Message, "NOEXISTE");
+            A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task ModificarEvento_MenosPlazasQueInscritos_400()
+        {
+            eventos.Add(Evento(1, "Masterclass", new DateTime(2026, 10, 20)));
+            inscripciones.Add(new EventoInscripcion { Id = 1, EventoId = 1, Empresa = "1", Cliente = "15191", Contacto = "0", Estado = "Pagada", Origen = "Nesto" });
+            inscripciones.Add(new EventoInscripcion { Id = 2, EventoId = 1, Empresa = "1", Cliente = "20000", Contacto = "0", Estado = "Reservada", Origen = "Nesto" });
+            inscripciones.Add(new EventoInscripcion { Id = 3, EventoId = 1, Empresa = "1", Cliente = "30000", Contacto = "0", Estado = "Caducada", Origen = "Nesto" });
+
+            await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().ModificarEvento(1,
+                new EventoDTO { Titulo = "Masterclass", Fecha = new DateTime(2026, 10, 20), ImporteSenal = 50, Almacen = "REI", Plazas = 1 }, "x"));
+            Assert.AreEqual(2, (await Servicio().LeerEventos("1", true)).Single().PlazasOcupadas);
         }
 
         [TestMethod]
@@ -137,29 +182,79 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         }
 
         [TestMethod]
-        public async Task PostEvento_SinSerTiendaOnline_403()
+        public async Task PostEvento_SinSerDeLaTienda_403()
         {
             var resultado = await Controlador(Usuario("NUEVAVISION\\Admin", "Administración"))
-                .PostEvento(new EventoDTO { Titulo = "X", Fecha = HOY, ImporteSenal = 50 }) as ResponseMessageResult;
+                .PostEvento(new EventoDTO { Titulo = "X", Fecha = HOY, ImporteSenal = 50, Almacen = "REI" }) as ResponseMessageResult;
 
             Assert.AreEqual(HttpStatusCode.Forbidden, resultado.Response.StatusCode);
             A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
         }
 
         [TestMethod]
-        public async Task PutEvento_TiendaOnline_Modifica()
+        public async Task PostEvento_TiendaOnlineYaNoMantieneEventos_403()
+        {
+            var resultado = await Controlador(Usuario("NUEVAVISION\\Laura", "TiendaOnline"))
+                .PostEvento(new EventoDTO { Titulo = "X", Fecha = HOY, ImporteSenal = 50, Almacen = "REI" }) as ResponseMessageResult;
+
+            Assert.AreEqual(HttpStatusCode.Forbidden, resultado.Response.StatusCode);
+        }
+
+        [TestMethod]
+        public async Task PostEvento_TiendasDeOtraTienda_403()
+        {
+            var resultado = await Controlador(Usuario("NUEVAVISION\\Paloma", "Tiendas"))
+                .PostEvento(new EventoDTO { Titulo = "X", Fecha = HOY, ImporteSenal = 50, Almacen = "REI" }) as ResponseMessageResult;
+
+            Assert.AreEqual(HttpStatusCode.Forbidden, resultado.Response.StatusCode);
+            A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task PostEvento_TiendasDeSuTienda_Crea()
+        {
+            var resultado = await Controlador(Usuario("NUEVAVISION\\Paloma", "Tiendas"))
+                .PostEvento(new EventoDTO { Titulo = "X", Fecha = HOY, ImporteSenal = 50, Almacen = "ALC" });
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<EventoDTO>));
+        }
+
+        [TestMethod]
+        public async Task PostEvento_Direccion_CreaEnCualquierTienda()
+        {
+            var resultado = await Controlador(Usuario("NUEVAVISION\\Carlos", "Dirección"))
+                .PostEvento(new EventoDTO { Titulo = "X", Fecha = HOY, ImporteSenal = 50, Almacen = "ALC" });
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<EventoDTO>));
+        }
+
+        [TestMethod]
+        public async Task PutEvento_TiendaDelEvento_Modifica()
         {
             Evento evento = Evento(1, "Viejo", new DateTime(2026, 10, 20));
             eventos.Add(evento);
 
-            var resultado = await Controlador(Usuario("NUEVAVISION\\Laura", "TiendaOnline"))
-                .PutEvento(1, new EventoDTO { Titulo = "Nuevo", Fecha = new DateTime(2026, 10, 21), ImporteSenal = 60, Activo = false });
+            var resultado = await Controlador(Usuario("NUEVAVISION\\Reina", "Tiendas"))
+                .PutEvento(1, new EventoDTO { Titulo = "Nuevo", Fecha = new DateTime(2026, 10, 21), ImporteSenal = 60, Activo = false, Almacen = "REI" });
 
             Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<EventoDTO>));
             Assert.AreEqual("Nuevo", evento.Titulo);
             Assert.AreEqual(60, evento.ImporteSenal);
             Assert.IsFalse(evento.Activo);
-            Assert.AreEqual("NUEVAVISION\\Laura", evento.Usuario);
+            Assert.AreEqual("NUEVAVISION\\Reina", evento.Usuario);
+        }
+
+        [TestMethod]
+        public async Task PutEvento_LlevarseUnEventoDeOtraTienda_403()
+        {
+            Evento evento = Evento(1, "De Reina", new DateTime(2026, 10, 20));
+            eventos.Add(evento);
+
+            var resultado = await Controlador(Usuario("NUEVAVISION\\Paloma", "Tiendas"))
+                .PutEvento(1, new EventoDTO { Titulo = "Mío", Fecha = new DateTime(2026, 10, 21), ImporteSenal = 60, Almacen = "ALC" }) as ResponseMessageResult;
+
+            Assert.AreEqual(HttpStatusCode.Forbidden, resultado.Response.StatusCode);
+            Assert.AreEqual("De Reina", evento.Titulo);
         }
 
         // ---------------- Marcar señal ----------------

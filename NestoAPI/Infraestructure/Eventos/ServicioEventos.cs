@@ -29,6 +29,21 @@ namespace NestoAPI.Infraestructure.Eventos
         public string Usuario { get; set; }
         /// <summary>Solo lectura.</summary>
         public DateTime? FechaModificacion { get; set; }
+
+        /// <summary>NestoAPI#611: la tienda donde es el evento (REI o ALC). Obligatorio: lo mantiene esa tienda.</summary>
+        public string Almacen { get; set; }
+        /// <summary>NestoAPI#611: la referencia de producto del curso (una por curso), con la que se factura en el corte 2.</summary>
+        public string ProductoCurso { get; set; }
+        /// <summary>NestoAPI#611: plazas del evento; null = sin límite.</summary>
+        public int? Plazas { get; set; }
+        /// <summary>NestoAPI#611: solo lectura. Inscripciones que ocupan plaza (todas menos caducadas y anuladas).</summary>
+        public int PlazasOcupadas { get; set; }
+        /// <summary>NestoAPI#611 (para TNV).</summary>
+        public string Lugar { get; set; }
+        /// <summary>NestoAPI#611 (para TNV).</summary>
+        public string Descripcion { get; set; }
+        /// <summary>NestoAPI#611: solo lectura. Cuándo se pasó lista (null = todavía no).</summary>
+        public DateTime? FechaListaAsistencia { get; set; }
     }
 
     /// <summary>NestoAPI#591: POST api/Eventos/{id}/Senales. El apunte a favor del extracto que es la señal del evento.</summary>
@@ -77,6 +92,10 @@ namespace NestoAPI.Infraestructure.Eventos
     public interface IServicioEventos
     {
         Task<List<EventoDTO>> LeerEventos(string empresa, bool soloActivos);
+        /// <summary>NestoAPI#611: el AlmacénPedidoVta del usuario (para saber de qué tienda es). Null si no tiene.</summary>
+        string AlmacenDelUsuario(IPrincipal usuario, string empresa);
+        /// <summary>NestoAPI#611: la tienda del evento guardado ("" si no tiene); null si el evento no existe.</summary>
+        Task<string> AlmacenDelEvento(int id);
         Task<EventoDTO> CrearEvento(EventoDTO evento, string usuario);
         Task<EventoDTO> ModificarEvento(int id, EventoDTO evento, string usuario);
         Task<List<SenalEventoDTO>> LeerSenales(string empresa, string estado, string cliente, int? eventoId);
@@ -88,23 +107,18 @@ namespace NestoAPI.Infraestructure.Eventos
     /// <summary>
     /// NestoAPI#591 (MVP): eventos con señal reembolsable. La señal es un cobro a cuenta que queda a favor del cliente en su
     /// extracto (ImportePdte negativo); aquí solo se guarda qué apunte es la señal de qué evento, y el estado se calcula con
-    /// <see cref="CalculadoraEstadoSenalEvento"/>. Los eventos los mantiene Tienda online; las señales las marca Administración.
+    /// <see cref="CalculadoraEstadoSenalEvento"/>. Los eventos los mantiene cada tienda (NestoAPI#611, <see cref="PermisosEventos"/>);
+    /// las señales las marca Administración.
     /// </summary>
     public class ServicioEventos : IServicioEventos
     {
         public const int LONGITUD_TITULO = 100;
+        public const int LONGITUD_LUGAR = 100;
+        public const int LONGITUD_DESCRIPCION = 2000;
+        public const int LONGITUD_PRODUCTO = 15;
 
-        public const string MENSAJE_SIN_PERMISO_EVENTOS =
-            "Los eventos los mantiene Tienda online. Pídeselo a informática si necesitas cambiarlos.";
         public const string MENSAJE_SIN_PERMISO_SENALES =
             "Las señales de los eventos las marca Administración. Pídeselo a informática si necesitas hacerlo.";
-
-        private static readonly string[] gruposEventos =
-        {
-            Constantes.GruposSeguridad.TIENDA_ON_LINE,
-            Constantes.GruposSeguridad.DIRECCION,
-            Constantes.GruposSeguridad.INFORMATICA
-        };
 
         private static readonly string[] gruposSenales =
         {
@@ -115,19 +129,32 @@ namespace NestoAPI.Infraestructure.Eventos
 
         private readonly NVEntities db;
         private readonly Func<DateTime> reloj;
+        private readonly Func<string, string, string> almacenDelUsuario;
 
         public ServicioEventos(NVEntities db) : this(db, () => DateTime.Now)
         {
         }
 
-        internal ServicioEventos(NVEntities db, Func<DateTime> reloj)
+        /// <param name="almacenDelUsuario">(empresa, usuario sin dominio) → su AlmacénPedidoVta. Null: el de ParametrosUsuario.</param>
+        internal ServicioEventos(NVEntities db, Func<DateTime> reloj, Func<string, string, string> almacenDelUsuario = null)
         {
             this.db = db;
             this.reloj = reloj;
+            this.almacenDelUsuario = almacenDelUsuario
+                ?? ((empresa, usuario) => Controllers.ParametrosUsuarioController.LeerParametro(empresa, usuario, PermisosEventos.CLAVE_ALMACEN_USUARIO));
         }
 
-        public static bool PuedeMantenerEventos(IPrincipal usuario) =>
-            usuario != null && gruposEventos.Any(g => usuario.IsInRoleSinDominio(g));
+        public string AlmacenDelUsuario(IPrincipal usuario, string empresa)
+        {
+            string sinDominio = PermisosEventos.SinDominio(usuario?.Identity?.Name);
+            return sinDominio == null ? null : almacenDelUsuario(EmpresaOPorDefecto(empresa), sinDominio)?.Trim();
+        }
+
+        public async Task<string> AlmacenDelEvento(int id)
+        {
+            Evento evento = await db.Eventos.SingleOrDefaultAsync(e => e.Id == id).ConfigureAwait(false);
+            return evento == null ? null : (evento.Almacen?.Trim() ?? "");
+        }
 
         public static bool PuedeMarcarSenales(IPrincipal usuario) =>
             usuario != null && gruposSenales.Any(g => usuario.IsInRoleSinDominio(g));
@@ -144,34 +171,61 @@ namespace NestoAPI.Infraestructure.Eventos
                 consulta = consulta.Where(e => e.Activo);
             }
             List<Evento> eventos = await consulta.ToListAsync().ConfigureAwait(false);
+            Dictionary<int, int> ocupadas = await PlazasOcupadas(eventos.Select(e => e.Id).ToList()).ConfigureAwait(false);
             DateTime hoy = reloj().Date;
             return eventos.Where(e => e.Fecha.Date >= hoy).OrderBy(e => e.Fecha).ThenBy(e => e.Titulo)
                 .Concat(eventos.Where(e => e.Fecha.Date < hoy).OrderByDescending(e => e.Fecha).ThenBy(e => e.Titulo))
-                .Select(ADTO)
+                .Select(e => ADTO(e, ocupadas.TryGetValue(e.Id, out int n) ? n : 0))
                 .ToList();
+        }
+
+        /// <summary>NestoAPI#611: cuántas inscripciones ocupan plaza en cada evento.</summary>
+        private async Task<Dictionary<int, int>> PlazasOcupadas(List<int> ids)
+        {
+            if (!ids.Any())
+            {
+                return new Dictionary<int, int>();
+            }
+            List<string> estados = ReglasInscripcionEvento.OCUPAN_PLAZA.Select(e => e.ToString()).ToList();
+            List<int> filas = await db.EventosInscripciones
+                .Where(i => ids.Contains(i.EventoId) && estados.Contains(i.Estado))
+                .Select(i => i.EventoId)
+                .ToListAsync().ConfigureAwait(false);
+            return filas.GroupBy(f => f).ToDictionary(g => g.Key, g => g.Count());
         }
 
         public async Task<EventoDTO> CrearEvento(EventoDTO evento, string usuario)
         {
-            Validar(evento);
+            await Validar(evento).ConfigureAwait(false);
             var entidad = new Evento { Empresa = EmpresaOPorDefecto(evento.Empresa) };
             Copiar(evento, entidad, usuario);
             db.Eventos.Add(entidad);
             await db.SaveChangesAsync().ConfigureAwait(false);
-            return ADTO(entidad);
+            return ADTO(entidad, 0);
         }
 
         public async Task<EventoDTO> ModificarEvento(int id, EventoDTO evento, string usuario)
         {
-            Validar(evento);
             Evento entidad = await db.Eventos.SingleOrDefaultAsync(e => e.Id == id).ConfigureAwait(false)
                 ?? throw NoEncontrado($"No existe el evento {id}.");
+            if (evento != null)
+            {
+                evento.Empresa = Limpiar(entidad.Empresa);
+            }
+            await Validar(evento).ConfigureAwait(false);
+            Dictionary<int, int> ocupadas = await PlazasOcupadas(new List<int> { id }).ConfigureAwait(false);
+            int ocupadasEvento = ocupadas.TryGetValue(id, out int n) ? n : 0;
+            if (evento.Plazas.HasValue && evento.Plazas.Value < ocupadasEvento)
+            {
+                throw new NestoBusinessException(
+                    $"Ya hay {ocupadasEvento} inscripciones: no se pueden dejar {evento.Plazas.Value} plazas. Anula antes las que sobren.");
+            }
             Copiar(evento, entidad, usuario);
             await db.SaveChangesAsync().ConfigureAwait(false);
-            return ADTO(entidad);
+            return ADTO(entidad, ocupadasEvento);
         }
 
-        private static void Validar(EventoDTO evento)
+        private async Task Validar(EventoDTO evento)
         {
             if (evento == null)
             {
@@ -194,6 +248,37 @@ namespace NestoAPI.Infraestructure.Eventos
             {
                 throw new NestoBusinessException("El importe de la señal no puede ser negativo.");
             }
+            // NestoAPI#611 (Carlos, 14/10/26): cada evento es de una tienda, que es quien lo mantiene.
+            if (!PermisosEventos.EsAlmacenDeEventos(evento.Almacen))
+            {
+                throw new NestoBusinessException("Indica la tienda del evento: Reina (REI) o Alcobendas (ALC).");
+            }
+            if (evento.Plazas.HasValue && evento.Plazas.Value <= 0)
+            {
+                throw new NestoBusinessException("Las plazas tienen que ser más de cero (o ninguna, si no hay límite).");
+            }
+            if ((evento.Lugar?.Trim().Length ?? 0) > LONGITUD_LUGAR)
+            {
+                throw new NestoBusinessException($"El lugar no puede tener más de {LONGITUD_LUGAR} caracteres.");
+            }
+            if ((evento.Descripcion?.Trim().Length ?? 0) > LONGITUD_DESCRIPCION)
+            {
+                throw new NestoBusinessException($"La descripción no puede tener más de {LONGITUD_DESCRIPCION} caracteres.");
+            }
+            string producto = Limpiar(evento.ProductoCurso);
+            if (producto != null)
+            {
+                if (producto.Length > LONGITUD_PRODUCTO)
+                {
+                    throw new NestoBusinessException($"La referencia del curso no puede tener más de {LONGITUD_PRODUCTO} caracteres.");
+                }
+                string empresa = EmpresaOPorDefecto(evento.Empresa);
+                bool existe = await db.Productos.AnyAsync(p => p.Empresa == empresa && p.Número == producto).ConfigureAwait(false);
+                if (!existe)
+                {
+                    throw new NestoBusinessException($"No existe el producto {producto}: da de alta antes la referencia del curso.");
+                }
+            }
         }
 
         private void Copiar(EventoDTO origen, Evento destino, string usuario)
@@ -202,11 +287,16 @@ namespace NestoAPI.Infraestructure.Eventos
             destino.Fecha = origen.Fecha.Date;
             destino.ImporteSenal = Math.Round(origen.ImporteSenal, 2, MidpointRounding.AwayFromZero);
             destino.Activo = origen.Activo;
+            destino.Almacen = origen.Almacen.Trim().ToUpperInvariant();
+            destino.ProductoCurso = Limpiar(origen.ProductoCurso);
+            destino.Plazas = origen.Plazas;
+            destino.Lugar = Limpiar(origen.Lugar);
+            destino.Descripcion = Limpiar(origen.Descripcion);
             destino.Usuario = UsuarioAuditoriaHelper.ParaAuditoria(usuario);
             destino.FechaModificacion = reloj();
         }
 
-        private static EventoDTO ADTO(Evento e) => new EventoDTO
+        internal static EventoDTO ADTO(Evento e, int plazasOcupadas) => new EventoDTO
         {
             Id = e.Id,
             Empresa = Limpiar(e.Empresa),
@@ -215,7 +305,14 @@ namespace NestoAPI.Infraestructure.Eventos
             ImporteSenal = e.ImporteSenal,
             Activo = e.Activo,
             Usuario = e.Usuario?.Trim(),
-            FechaModificacion = e.FechaModificacion
+            FechaModificacion = e.FechaModificacion,
+            Almacen = Limpiar(e.Almacen),
+            ProductoCurso = Limpiar(e.ProductoCurso),
+            Plazas = e.Plazas,
+            PlazasOcupadas = plazasOcupadas,
+            Lugar = e.Lugar?.Trim(),
+            Descripcion = e.Descripcion?.Trim(),
+            FechaListaAsistencia = e.FechaListaAsistencia
         };
 
         // ---------------- Señales ----------------

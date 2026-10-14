@@ -836,6 +836,19 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'senales-eventos' configurado (L-V a las 7:50)");
 
+            // NestoAPI#611: las inscripciones a eventos sin pagar caducan (aviso a quien las creó) y, si al día siguiente del
+            // evento nadie ha pasado lista, se da a todos por asistidos y se avisa a la tienda. Todos los días: hay eventos en sábado.
+            RecurringJob.AddOrUpdate(
+                "inscripciones-eventos",
+                () => Infraestructure.Eventos.InscripcionesEventosJobsService.Procesar(),
+                "55 7 * * *", // Cron: todos los días a las 7:55
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'inscripciones-eventos' configurado (todos los días a las 7:55)");
+
             // NestoAPI#606 (decisión de Carlos, 08/10/26): correo a Compras con los pedidos a proveedor enviados, sin recibir y con
             // la fecha prevista ya pasada, primero los que tienen clientes esperando. Se calcula al mandarlo: lo que ya han
             // actualizado no sale. Sin nada vencido, no manda nada.

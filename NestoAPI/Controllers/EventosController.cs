@@ -12,9 +12,12 @@ using System.Web.Http.Description;
 namespace NestoAPI.Controllers
 {
     /// <summary>
-    /// NestoAPI#591 (MVP): eventos (cursos, masterclass…) con señal reembolsable. Leer basta con estar identificado; los eventos
-    /// los mantiene Tienda online (y Dirección/Informática) y las señales las marca y desmarca Administración (y
-    /// Dirección/Informática). 403 si no. Los errores de negocio (apunte ajeno, ya marcado…) salen como 400 por el filtro global.
+    /// NestoAPI#591 (MVP): eventos (cursos, masterclass…) con señal reembolsable. Leer basta con estar identificado; las señales
+    /// las marca y desmarca Administración (y Dirección/Informática). 403 si no. Los errores de negocio (apunte ajeno, ya
+    /// marcado…) salen como 400 por el filtro global.
+    /// <para>NestoAPI#611: cada evento es de una tienda (REI o ALC) y lo mantiene esa tienda (grupo Tiendas con ese
+    /// AlmacénPedidoVta) o Dirección: crear, modificar, marcar pagos y pasar lista. Inscribir puede cualquiera de la casa y el
+    /// cliente de la tienda online a sí mismo (<see cref="PermisosEventos"/>).</para>
     /// </summary>
     [Authorize]
     [RoutePrefix("api/Eventos")]
@@ -22,15 +25,17 @@ namespace NestoAPI.Controllers
     {
         private readonly NVEntities db;
         private readonly IServicioEventos servicio;
+        private readonly IServicioInscripcionesEventos inscripciones;
 
         public EventosController() : this(new NVEntities())
         {
         }
 
-        internal EventosController(NVEntities db, IServicioEventos servicio = null)
+        internal EventosController(NVEntities db, IServicioEventos servicio = null, IServicioInscripcionesEventos inscripciones = null)
         {
             this.db = db;
             this.servicio = servicio ?? new ServicioEventos(db);
+            this.inscripciones = inscripciones ?? new ServicioInscripcionesEventos(db);
         }
 
         // GET api/Eventos?empresa=1&soloActivos=true
@@ -43,30 +48,113 @@ namespace NestoAPI.Controllers
             return Ok(await servicio.LeerEventos(empresa, soloActivos).ConfigureAwait(false));
         }
 
-        // POST api/Eventos   { Empresa, Titulo, Fecha, ImporteSenal, Activo }
+        // POST api/Eventos   { Empresa, Titulo, Fecha, ImporteSenal, Activo, Almacen, ProductoCurso, Plazas, Lugar, Descripcion }
+        /// <summary>NestoAPI#611: solo la tienda del evento (su AlmacénPedidoVta = Almacen) o Dirección.</summary>
         [HttpPost]
         [Route("")]
         [ResponseType(typeof(EventoDTO))]
         public async Task<IHttpActionResult> PostEvento([FromBody] EventoDTO evento)
         {
-            if (!ServicioEventos.PuedeMantenerEventos(User))
+            if (!PuedeMantener(evento?.Empresa, evento?.Almacen))
             {
-                return Prohibido(ServicioEventos.MENSAJE_SIN_PERMISO_EVENTOS);
+                return Prohibido(PermisosEventos.MENSAJE_SIN_PERMISO_EVENTOS);
             }
             return Ok(await servicio.CrearEvento(evento, UsuarioAuditoriaHelper.Resolver(User, null)).ConfigureAwait(false));
         }
 
-        // PUT api/Eventos/5   { Titulo, Fecha, ImporteSenal, Activo }
+        // PUT api/Eventos/5   { Titulo, Fecha, ImporteSenal, Activo, Almacen, ProductoCurso, Plazas, Lugar, Descripcion }
+        /// <summary>NestoAPI#611: la tienda del evento (la de antes y la nueva, si se cambia) o Dirección.</summary>
         [HttpPut]
         [Route("{id:int}")]
         [ResponseType(typeof(EventoDTO))]
         public async Task<IHttpActionResult> PutEvento(int id, [FromBody] EventoDTO evento)
         {
-            if (!ServicioEventos.PuedeMantenerEventos(User))
+            string almacenActual = await servicio.AlmacenDelEvento(id).ConfigureAwait(false);
+            if ((almacenActual != null && !PuedeMantener(evento?.Empresa, almacenActual)) || !PuedeMantener(evento?.Empresa, evento?.Almacen))
             {
-                return Prohibido(ServicioEventos.MENSAJE_SIN_PERMISO_EVENTOS);
+                return Prohibido(PermisosEventos.MENSAJE_SIN_PERMISO_EVENTOS);
             }
             return Ok(await servicio.ModificarEvento(id, evento, UsuarioAuditoriaHelper.Resolver(User, null)).ConfigureAwait(false));
+        }
+
+        // ---------------- NestoAPI#611: inscripciones ----------------
+
+        // POST api/Eventos/5/Inscripciones   { Empresa, Cliente, Contacto?, Origen, FormaPago?, GenerarEnlacePago?, Correo? }
+        /// <summary>
+        /// Inscribe al cliente (sin pedido). Con tarjeta (o sin forma de pago) y GenerarEnlacePago genera el enlace de pago, que
+        /// viene en UrlPago. Cualquiera de la casa; el cliente de la tienda online, solo a sí mismo.
+        /// </summary>
+        [HttpPost]
+        [Route("{id:int}/Inscripciones")]
+        [ResponseType(typeof(InscripcionEventoDTO))]
+        public async Task<IHttpActionResult> PostInscripcion(int id, [FromBody] InscribirEventoDTO peticion)
+        {
+            return Ok(await inscripciones.Inscribir(id, peticion, User).ConfigureAwait(false));
+        }
+
+        // GET api/Eventos/5/Inscripciones
+        /// <summary>Los inscritos del evento (todas, también caducadas y anuladas). Solo la casa.</summary>
+        [HttpGet]
+        [Route("{id:int}/Inscripciones")]
+        [ResponseType(typeof(List<InscripcionEventoDTO>))]
+        public async Task<IHttpActionResult> GetInscripciones(int id)
+        {
+            return Ok(await inscripciones.LeerInscripcionesEvento(id, User).ConfigureAwait(false));
+        }
+
+        // DELETE api/Eventos/Inscripciones/7
+        /// <summary>Anula una inscripción sin pagar (Reservada). Devuelve cómo queda.</summary>
+        [HttpDelete]
+        [Route("Inscripciones/{id:int}")]
+        [ResponseType(typeof(InscripcionEventoDTO))]
+        public async Task<IHttpActionResult> DeleteInscripcion(int id)
+        {
+            return Ok(await inscripciones.Anular(id, User).ConfigureAwait(false));
+        }
+
+        // POST api/Eventos/Inscripciones/7/Pago   { FormaPago, Importe?, Fecha? }
+        /// <summary>
+        /// Marca la inscripción como pagada a mano (transferencia, efectivo en la tienda o tarjeta). La tienda del evento o
+        /// Dirección. Pasa por el mismo enganche del corte 2 que el cobro por enlace.
+        /// </summary>
+        [HttpPost]
+        [Route("Inscripciones/{id:int}/Pago")]
+        [ResponseType(typeof(InscripcionEventoDTO))]
+        public async Task<IHttpActionResult> PostPagoInscripcion(int id, [FromBody] MarcarPagoInscripcionDTO peticion)
+        {
+            return Ok(await inscripciones.MarcarPagada(id, peticion, User).ConfigureAwait(false));
+        }
+
+        // POST api/Eventos/5/Asistencia   { Asistentes: [7, 9] }
+        /// <summary>
+        /// Lista de asistencia (desde el día del evento): las pagadas que vienen en Asistentes pasan a Asistió y el resto a No
+        /// asistió. La tienda del evento o Dirección. Se puede repetir para corregirla.
+        /// </summary>
+        [HttpPost]
+        [Route("{id:int}/Asistencia")]
+        [ResponseType(typeof(List<InscripcionEventoDTO>))]
+        public async Task<IHttpActionResult> PostAsistencia(int id, [FromBody] AsistenciaEventoDTO peticion)
+        {
+            return Ok(await inscripciones.PasarLista(id, peticion, User).ConfigureAwait(false));
+        }
+
+        // GET api/Clientes/1/15191/Inscripciones?contacto=0
+        /// <summary>Las inscripciones de un cliente (de todos sus contactos si no se pide uno). El cliente de la tienda, solo las suyas.</summary>
+        [HttpGet]
+        [Route("~/api/Clientes/{empresa}/{cliente}/Inscripciones")]
+        [ResponseType(typeof(List<InscripcionEventoDTO>))]
+        public async Task<IHttpActionResult> GetInscripcionesCliente(string empresa, string cliente, string contacto = null)
+        {
+            return Ok(await inscripciones.LeerInscripcionesCliente(empresa, cliente, contacto, User).ConfigureAwait(false));
+        }
+
+        private bool PuedeMantener(string empresa, string almacenEvento)
+        {
+            if (PermisosEventos.EsDireccion(User))
+            {
+                return true;
+            }
+            return PermisosEventos.PuedeMantener(User, servicio.AlmacenDelUsuario(User, empresa), almacenEvento);
         }
 
         // GET api/Eventos/Senales?empresa=1&estado=Liberada&cliente=15191&eventoId=3

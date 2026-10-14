@@ -31,6 +31,12 @@ namespace NestoAPI.Infraestructure.Pagos
         /// </summary>
         internal Func<IServicioNotificacionesPush> CrearNotificaciones { get; set; } = () => new ServicioNotificacionesPush();
 
+        /// <summary>
+        /// NestoAPI#611: (PagoTPV raíz, importe) → la inscripción a un evento de ese enlace pasa a Pagada (y de ahí al corte 2).
+        /// Sustituible en tests.
+        /// </summary>
+        internal Func<int, decimal, Task> RegistrarCobroInscripcion { get; set; } = Eventos.CobroInscripcionEvento.Registrar;
+
         public ServicioPagos(IRedsysService redsysService, IContabilidadService contabilidadService, ILectorParametrosUsuario lectorParametros)
             : this(redsysService, contabilidadService, lectorParametros, new ServicioCorreoElectronico(), new ElmahLogService())
         {
@@ -287,6 +293,9 @@ namespace NestoAPI.Infraestructure.Pagos
 
                     // NestoAPI#565: y quien creó el enlace lo ve en la campana de Nesto y en NestoApp
                     AvisarCobroEnAplicaciones(pago, errorContabilizacion);
+
+                    // NestoAPI#611: si el enlace es el de una inscripción a un evento, la inscripción pasa a Pagada
+                    await RegistrarCobroInscripcionEvento(pago).ConfigureAwait(false);
                 }
                 else
                 {
@@ -1816,6 +1825,28 @@ namespace NestoAPI.Infraestructure.Pagos
             {
                 _logService.LogError($"[CobroNestoPago #565] Error al componer el aviso del cobro {pago?.NumeroOrden}: {ex.Message}", ex);
                 return Task.CompletedTask;
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#611: el cobro del enlace de una inscripción (Documento «INS{id}») la pasa a Pagada. El dinero ya está
+        /// contabilizado como un cobro a cuenta en el extracto del cliente (ContabilizarCobro); que esto falle no puede tirar el
+        /// procesado del pago: va a ELMAH y la inscripción se marca a mano. Nunca lanza.
+        /// </summary>
+        internal async Task RegistrarCobroInscripcionEvento(PagoTPV pago)
+        {
+            if (!Eventos.CobroInscripcionEvento.EsEnlaceDeInscripcion(pago))
+            {
+                return;
+            }
+            try
+            {
+                await RegistrarCobroInscripcion(pago.PagoOriginalId ?? pago.Id, pago.Importe).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logService.LogError($"[Inscripciones #611] Cobrado el enlace {pago.NumeroOrden} ({pago.Documento?.Trim()}), pero no se " +
+                    $"ha podido marcar la inscripción como pagada: {ex.Message}", ex);
             }
         }
 
