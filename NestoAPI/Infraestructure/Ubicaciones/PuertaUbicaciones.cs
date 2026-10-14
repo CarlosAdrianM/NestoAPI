@@ -106,8 +106,8 @@ namespace NestoAPI.Infraestructure.Ubicaciones
     }
 
     /// <summary>
-    /// Lo que la puerta apunta de cada cambio en Ubicaciones. Hoy no se guarda (no hay tabla: corte 2 de #594), pero la
-    /// forma queda fijada: es lo que irá a la tabla de movimientos y lo que se cuadrará contra ExtractoProducto.
+    /// Lo que la puerta apunta de cada cambio en Ubicaciones. Corte 2 de #594: una fila de UbicacionesMovimientos por
+    /// movimiento (<see cref="RegistroMovimientosUbicacionSql"/>, con el interruptor Ubicaciones:RegistrarMovimientos).
     /// </summary>
     public class MovimientoUbicacion
     {
@@ -132,7 +132,7 @@ namespace NestoAPI.Infraestructure.Ubicaciones
             $"estado {EstadoAnterior?.ToString() ?? "-"}→{EstadoNuevo?.ToString() ?? "-"} ({Documento}) {Usuario} {Momento:dd/MM/yy HH:mm:ss}";
     }
 
-    /// <summary>Dónde acaba lo que la puerta registra. Corte 1: Debug. Corte 2: la tabla de movimientos.</summary>
+    /// <summary>Dónde acaba lo que la puerta registra. Corte 1: Debug. Corte 2: la tabla UbicacionesMovimientos (<see cref="RegistroMovimientosUbicacionSql"/>).</summary>
     public interface IRegistroMovimientosUbicacion
     {
         void Registrar(MovimientoUbicacion movimiento);

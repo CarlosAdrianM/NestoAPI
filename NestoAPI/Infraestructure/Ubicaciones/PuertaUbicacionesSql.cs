@@ -26,7 +26,8 @@ namespace NestoAPI.Infraestructure.Ubicaciones
         public PuertaUbicacionesSql(NVEntities db, IRegistroMovimientosUbicacion registro = null, Func<DateTime> ahora = null)
         {
             this.db = db ?? throw new ArgumentNullException(nameof(db));
-            this.registro = registro ?? new RegistroMovimientosUbicacionDebug();
+            // Corte 2: a la tabla UbicacionesMovimientos, en la misma transacción (detrás del interruptor Ubicaciones:RegistrarMovimientos)
+            this.registro = registro ?? new RegistroMovimientosUbicacionSql(db);
             this.ahora = ahora ?? (() => DateTime.Now);
         }
 
@@ -103,7 +104,7 @@ WHERE [NºOrden] = @p0";
 
         // ---------------------------------------------------------------- Registro
 
-        /// <summary>El punto ÚNICO por donde pasa cada cambio de Ubicaciones (corte 2: la tabla de movimientos).</summary>
+        /// <summary>El punto ÚNICO por donde pasa cada cambio de Ubicaciones. Corte 2: va a UbicacionesMovimientos (<see cref="RegistroMovimientosUbicacionSql"/>).</summary>
         public void Registrar(MovimientoUbicacion movimiento)
         {
             if (movimiento == null)
