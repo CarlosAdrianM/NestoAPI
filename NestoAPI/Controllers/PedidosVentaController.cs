@@ -1437,7 +1437,7 @@ namespace NestoAPI.Controllers
                         ).Single();
                         efectoCabecera.FechaVencimiento = efectoPedido.FechaVencimiento;
                         efectoCabecera.Importe = efectoPedido.Importe;
-                        efectoCabecera.FormaPago = efectoPedido.FormaPago;
+                        efectoCabecera.FormaPago = FormaPagoDelEfecto(efectoPedido.FormaPago, pedido.formaPago);
                         efectoCabecera.CCC = string.IsNullOrWhiteSpace(efectoPedido.Ccc) ? null : efectoPedido.Ccc;
                         efectoCabecera.Usuario = pedido.Usuario;
                         efectoCabecera.FechaModificacion = DateTime.Now;
@@ -1448,7 +1448,7 @@ namespace NestoAPI.Controllers
                         {
                             FechaVencimiento = efectoPedido.FechaVencimiento,
                             Importe = efectoPedido.Importe,
-                            FormaPago = efectoPedido.FormaPago,
+                            FormaPago = FormaPagoDelEfecto(efectoPedido.FormaPago, pedido.formaPago),
                             CCC = string.IsNullOrWhiteSpace(efectoPedido.Ccc) ? null : efectoPedido.Ccc,
                             Usuario = pedido.Usuario
                         });
@@ -2237,7 +2237,7 @@ namespace NestoAPI.Controllers
                     {
                         FechaVencimiento = efecto.FechaVencimiento,
                         Importe = efecto.Importe,
-                        FormaPago = efecto.FormaPago,
+                        FormaPago = FormaPagoDelEfecto(efecto.FormaPago, pedido.formaPago),
                         CCC = efecto.Ccc,
                         Usuario = pedido.Usuario
                     });
@@ -2701,6 +2701,14 @@ namespace NestoAPI.Controllers
                 return false;
             }
         }
+
+        /// <summary>
+        /// 15/10/26 (Magan, pedido 928499): un efecto manual sin forma de pago (Nesto pone al primero la del cliente y, si
+        /// no la tiene cargada, sale vacía; los siguientes copian del anterior) reventaba al guardar con una
+        /// DbEntityValidationException («El campo FormaPago es obligatorio»). Sin forma de pago, la del pedido.
+        /// </summary>
+        internal static string FormaPagoDelEfecto(string formaPagoEfecto, string formaPagoPedido)
+            => string.IsNullOrWhiteSpace(formaPagoEfecto) ? formaPagoPedido : formaPagoEfecto;
 
         internal static void GuardarUltimoNumeroPedido(ParametroUsuario parametroUsuario, int numeroPedido)
         {

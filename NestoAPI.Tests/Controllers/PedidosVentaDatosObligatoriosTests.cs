@@ -240,6 +240,23 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual("920001", parametro.Valor);
         }
 
+        // --- 15/10/26 (Magan, pedido 928499): efectos manuales sin forma de pago ---
+
+        [DataTestMethod]
+        [DataRow(null)]
+        [DataRow("")]
+        [DataRow("  ")]
+        public void FormaPagoDelEfecto_SinFormaDePago_UsaLaDelPedido(string formaPagoEfecto)
+        {
+            Assert.AreEqual("RCB", PedidosVentaController.FormaPagoDelEfecto(formaPagoEfecto, "RCB"));
+        }
+
+        [TestMethod]
+        public void FormaPagoDelEfecto_ConFormaDePago_SeRespeta()
+        {
+            Assert.AreEqual("TRN", PedidosVentaController.FormaPagoDelEfecto("TRN", "RCB"));
+        }
+
         // --- El nombre de usuario sin dominio ---
 
         [TestMethod]
