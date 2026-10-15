@@ -362,7 +362,7 @@ ORDER BY ExcesoValorado DESC, Producto";
                 }
                 try
                 {
-                    using (SqlBulkCopy copia = new SqlBulkCopy(conexion) { DestinationTableName = TABLA, BulkCopyTimeout = TIMEOUT_SEGUNDOS, BatchSize = 1000 })
+                    using (SqlBulkCopy copia = new SqlBulkCopy(conexion, OPCIONES_COPIA_PROPUESTAS, null) { DestinationTableName = TABLA, BulkCopyTimeout = TIMEOUT_SEGUNDOS, BatchSize = 1000 })
                     {
                         foreach (DataColumn columna in tabla.Columns)
                         {
@@ -381,6 +381,14 @@ ORDER BY ExcesoValorado DESC, Producto";
                 return nuevas.Count;
             }
         }
+
+        /// <summary>
+        /// NestoAPI#637: sin CheckConstraints la copia masiva se salta las restricciones de la tabla
+        /// (CK_PropuestasStock_Fase) y eso exige ALTER TABLE, que la cuenta del API no tiene: el 15/10/26
+        /// las propuestas de 2026-09 no se guardaron («El usuario no tiene el permiso ALTER TABLE»).
+        /// FireTriggers por lo mismo, si algún día la tabla lleva trigger. Así basta con INSERT.
+        /// </summary>
+        internal const SqlBulkCopyOptions OPCIONES_COPIA_PROPUESTAS = SqlBulkCopyOptions.CheckConstraints | SqlBulkCopyOptions.FireTriggers;
 
         /// <summary>Las columnas de PropuestasStock que se rellenan al calcular (las de la decisión quedan a NULL).</summary>
         internal static DataTable TablaPropuestas(DateTime mes, IEnumerable<ResultadoTendencia> filas, DateTime fechaCalculo)

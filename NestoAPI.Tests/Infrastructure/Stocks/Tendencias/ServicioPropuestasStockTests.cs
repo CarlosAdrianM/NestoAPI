@@ -126,6 +126,17 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
         }
 
         [TestMethod]
+        public void CopiaMasivaPropuestas_CompruebaRestriccionesYDisparaTriggers_ParaNoNecesitarAlterTable()
+        {
+            // NestoAPI#637: con las opciones por defecto, SQL Server exige ALTER TABLE para saltarse
+            // CK_PropuestasStock_Fase, y el 15/10/26 las propuestas de 2026-09 no se guardaron.
+            Assert.IsTrue(RepositorioTendenciasSql.OPCIONES_COPIA_PROPUESTAS.HasFlag(System.Data.SqlClient.SqlBulkCopyOptions.CheckConstraints));
+            Assert.IsTrue(RepositorioTendenciasSql.OPCIONES_COPIA_PROPUESTAS.HasFlag(System.Data.SqlClient.SqlBulkCopyOptions.FireTriggers));
+            Assert.IsFalse(RepositorioTendenciasSql.OPCIONES_COPIA_PROPUESTAS.HasFlag(System.Data.SqlClient.SqlBulkCopyOptions.KeepIdentity),
+                "KeepIdentity también exige ALTER TABLE, y el Id es IDENTITY");
+        }
+
+        [TestMethod]
         public void Consultas_ConNolockYConLaDemandaDeLaEpica()
         {
             foreach (string sql in new[] { RepositorioTendenciasSql.SQL_VENTAS_MES, RepositorioTendenciasSql.SQL_PRIMERA_VENTA, RepositorioTendenciasSql.SQL_VENTAS_CLIENTE })
