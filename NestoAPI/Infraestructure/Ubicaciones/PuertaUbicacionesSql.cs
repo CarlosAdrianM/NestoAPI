@@ -102,6 +102,27 @@ UPDATE Ubicaciones SET Cantidad = @p1, Estado = CASE WHEN Pasillo IS NULL THEN 2
        PedidoVta = NULL, [AlbaránVta] = NULL, [NºOrdenVta] = NULL, [NºOrdenRepo] = NULL, [NºTraspasoRepo] = NULL, Usuario = @p2
 WHERE [NºOrden] = @p0";
 
+        // NestoAPI#634: lo libre y sin reservar del producto en el almacén, y si está en el hueco del que salió el traspaso
+        internal const string SQL_FILAS_PARA_DIFERENCIA = @"
+SELECT u.[NºOrden] AS NumeroOrden, RTRIM(u.Empresa) AS Empresa, RTRIM(u.[Almacén]) AS Almacen, RTRIM(u.[Número]) AS Producto,
+       RTRIM(u.Pasillo) AS Pasillo, RTRIM(u.Fila) AS Fila, RTRIM(u.Columna) AS Columna, u.Cantidad, ISNULL(u.Estado, 0) AS Estado,
+       u.FechaCreación AS FechaCreacion,
+       CAST(CASE WHEN EXISTS (SELECT 1 FROM Ubicaciones s
+                              WHERE s.[NºTraspasoRepo] = @p4 AND s.Estado = -4 AND s.[Almacén] = u.[Almacén] AND s.[Número] = u.[Número]
+                                AND s.Pasillo = u.Pasillo AND s.Fila = u.Fila AND s.Columna = u.Columna) THEN 1 ELSE 0 END AS bit) AS DelTraspaso
+FROM Ubicaciones u WITH (UPDLOCK, HOLDLOCK)
+WHERE u.[Almacén] = @p2 AND u.[Número] = @p3 AND (u.Empresa = @p0 OR u.Empresa = @p1) AND u.Estado IN (0, 2) AND u.Cantidad > 0
+  AND u.PedidoVta IS NULL AND u.[AlbaránVta] IS NULL AND u.[NºOrdenVta] IS NULL AND u.[NºOrdenRepo] IS NULL";
+
+        // Se coge la fila entera: sobra
+        internal const string SQL_QUITAR_FILA_ENTERA = @"
+DELETE FROM Ubicaciones WHERE [NºOrden] = @p0 AND Cantidad = @p1 AND Estado IN (0, 2)";
+
+        // La misma fila que pone prdExtrProducto con un diario que no es el de entrada de reposiciones
+        internal const string SQL_ENTRADA_PENDIENTE_DE_UBICAR = @"
+INSERT INTO Ubicaciones (Empresa, [Almacén], [Número], Cantidad, Estado, Usuario) VALUES (@p0, @p1, @p2, @p3, 2, @p4);
+SELECT CAST(SCOPE_IDENTITY() AS int);";
+
         // ---------------------------------------------------------------- Registro
 
         /// <summary>El punto ÚNICO por donde pasa cada cambio de Ubicaciones. Corte 2: va a UbicacionesMovimientos (<see cref="RegistroMovimientosUbicacionSql"/>).</summary>
@@ -222,6 +243,67 @@ WHERE [NºOrden] = @p0";
                 new SqlParameter("@p0", SqlDbType.Int) { Value = numeroTraspaso }, Char("@p1", almacenOrigen, 3)).ToListAsync().ConfigureAwait(false);
             return await DevolverAlHueco(salidas, TipoMovimientoUbicacion.AnularSalidaDeReposicion,
                 DocumentoUbicacion.De(TipoDocumentoUbicacion.Traspaso, numeroTraspaso), usuario).ConfigureAwait(false);
+        }
+
+        // ---------------------------------------------------------------- Diferencias de reposición (NestoAPI#634)
+
+        public async Task<ResumenUbicaciones> EntradaPorDiferenciaReposicion(string empresa, string almacen, string producto, int cantidad,
+            int numeroTraspaso, string usuario)
+        {
+            var resumen = new ResumenUbicaciones();
+            if (cantidad <= 0)
+            {
+                return resumen;
+            }
+            string quien = UsuarioAuditoriaHelper.ParaAuditoria(usuario);
+            int? nueva = await db.Database.SqlQuery<int?>(SQL_ENTRADA_PENDIENTE_DE_UBICAR,
+                Char("@p0", empresa, 3), Char("@p1", almacen, 3), Char("@p2", producto, 15),
+                new SqlParameter("@p3", SqlDbType.Int) { Value = cantidad },
+                new SqlParameter("@p4", SqlDbType.VarChar, 30) { Value = quien }).FirstOrDefaultAsync().ConfigureAwait(false);
+            resumen.FilasTocadas = 1;
+            Apuntar(resumen, new MovimientoUbicacion
+            {
+                Tipo = TipoMovimientoUbicacion.DiferenciaDeReposicion,
+                Empresa = empresa, Almacen = almacen, Producto = producto?.Trim(), NumeroOrdenUbicacion = nueva,
+                Cantidad = cantidad, EstadoNuevo = EstadosUbicacion.PENDIENTE_DE_UBICAR,
+                Documento = DocumentoUbicacion.De(TipoDocumentoUbicacion.Traspaso, numeroTraspaso), Usuario = quien
+            });
+            return resumen;
+        }
+
+        public async Task<ResumenUbicaciones> SalidaPorDiferenciaReposicion(string empresa, string almacen, string producto, int cantidad,
+            int numeroTraspaso, bool primeroPendienteDeUbicar, string usuario)
+        {
+            var resumen = new ResumenUbicaciones();
+            if (cantidad <= 0)
+            {
+                return resumen;
+            }
+            string quien = UsuarioAuditoriaHelper.ParaAuditoria(usuario);
+            List<FilaUbicacionDiferencia> filas = await db.Database.SqlQuery<FilaUbicacionDiferencia>(SQL_FILAS_PARA_DIFERENCIA,
+                Char("@p0", empresa, 3), Char("@p1", Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO, 3), Char("@p2", almacen, 3),
+                Char("@p3", producto, 15), new SqlParameter("@p4", SqlDbType.Int) { Value = numeroTraspaso })
+                .ToListAsync().ConfigureAwait(false);
+
+            foreach (TomaDeHueco toma in PlanificadorDiferenciaUbicaciones.Repartir(filas, cantidad, primeroPendienteDeUbicar))
+            {
+                int tocadas = toma.Entera
+                    ? await db.Database.ExecuteSqlCommandAsync(SQL_QUITAR_FILA_ENTERA, Orden(toma.Libre.NumeroOrden),
+                        new SqlParameter("@p1", SqlDbType.Int) { Value = toma.Cantidad }).ConfigureAwait(false)
+                    : await db.Database.ExecuteSqlCommandAsync(SQL_RESTAR_DE_LIBRE, Orden(toma.Libre.NumeroOrden),
+                        new SqlParameter("@p1", SqlDbType.Int) { Value = toma.Cantidad },
+                        new SqlParameter("@p2", SqlDbType.VarChar, 30) { Value = quien }).ConfigureAwait(false);
+                Comprobar(tocadas, toma);
+                resumen.FilasTocadas += 1;
+                Apuntar(resumen, new MovimientoUbicacion
+                {
+                    Tipo = TipoMovimientoUbicacion.DiferenciaDeReposicion,
+                    Empresa = toma.Libre.Empresa, Almacen = almacen, Producto = producto?.Trim(), NumeroOrdenUbicacion = toma.Libre.NumeroOrden,
+                    HuecoOrigen = toma.Libre.Hueco, Cantidad = toma.Cantidad, EstadoAnterior = toma.Libre.Estado,
+                    Documento = DocumentoUbicacion.De(TipoDocumentoUbicacion.Traspaso, numeroTraspaso), Usuario = quien
+                });
+            }
+            return resumen;
         }
 
         // ---------------------------------------------------------------- Aún no pasan por la puerta (corte 3 de #594)

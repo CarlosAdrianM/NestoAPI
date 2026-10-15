@@ -55,6 +55,8 @@ namespace NestoAPI.Infraestructure.Ubicaciones
         SalidaDeReposicion,
         AnularSalidaDeReposicion,
         EntradaDeReposicion,
+        /// <summary>NestoAPI#634: el ajuste del stock por una diferencia entre lo enviado y lo recibido (y su resolución).</summary>
+        DiferenciaDeReposicion,
         // Kits
         MontarKit,
         DesmontarKit,
@@ -228,6 +230,26 @@ namespace NestoAPI.Infraestructure.Ubicaciones
         /// <summary>La entrada en el destino, «pendiente de ubicar» con NºTraspasoRepo. Hoy: CierreReposiciones / prdExtrProducto.</summary>
         Task<ResumenUbicaciones> EntradaDeReposicion(string empresa, string almacenDestino, string producto, int cantidad, int numeroTraspaso, string usuario);
 
+        /// <summary>
+        /// NestoAPI#634: lo que entra en un almacén con control de ubicaciones por una diferencia de reposición (el ajuste del
+        /// origen al recibir de menos, o una resolución): «pendiente de ubicar» (estado 2), como las demás entradas, para que al
+        /// comprobarla se ubique. Sin NºTraspasoRepo: no es la entrada del traspaso en su destino (lo mismo que haría
+        /// prdExtrProducto con un diario que no es el de entrada de reposiciones). El llamante ya sabe que el almacén lleva
+        /// control de ubicaciones y el producto se ubica.
+        /// </summary>
+        Task<ResumenUbicaciones> EntradaPorDiferenciaReposicion(string empresa, string almacen, string producto, int cantidad, int numeroTraspaso, string usuario);
+
+        /// <summary>
+        /// NestoAPI#634: lo que sale de un almacén con control de ubicaciones por una diferencia de reposición (el ajuste del
+        /// origen al recibir de más, o una resolución). Se quita de lo libre y sin reservar, en este orden (ver
+        /// <see cref="PlanificadorDiferenciaUbicaciones"/>): el hueco del que salió el traspaso y lo «pendiente de ubicar» (o al
+        /// revés con <paramref name="primeroPendienteDeUbicar"/>) y, si aún falta, el único hueco con stock del producto (como
+        /// prdExtrProducto con una salida sin hueco). Lo que no se encuentre se queda: la diferencia es
+        /// <paramref name="cantidad"/> menos lo movido, y la dice el llamante.
+        /// </summary>
+        Task<ResumenUbicaciones> SalidaPorDiferenciaReposicion(string empresa, string almacen, string producto, int cantidad, int numeroTraspaso,
+            bool primeroPendienteDeUbicar, string usuario);
+
         // ---------------------------------------------------------------- Kits
         /// <summary>Montar un kit: reservar los componentes (estado 5) y dar entrada al kit. Hoy: prdUbicarReposicion tipo 2, Kits/UbicacionService.</summary>
         Task<ResumenUbicaciones> MontarKit(string empresa, string almacen, string kit, int cantidad, string usuario);
@@ -244,5 +266,66 @@ namespace NestoAPI.Infraestructure.Ubicaciones
 
         /// <summary>Lo que no está en su hueco al recoger: pasa a «pendiente de ubicar». Hoy: EscriturasSalida (faltas de Ariadna).</summary>
         Task<ResumenUbicaciones> Falta(string empresa, int numeroOrdenUbicacion, int cantidad, string usuario);
+    }
+
+    /// <summary>Una fila libre de Ubicaciones candidata a una salida por diferencia: si está en el hueco del que salió el traspaso.</summary>
+    public class FilaUbicacionDiferencia : FilaUbicacionLibre
+    {
+        public bool DelTraspaso { get; set; }
+    }
+
+    /// <summary>
+    /// NestoAPI#634: de qué filas libres (estado 0 con hueco o 2 «pendiente de ubicar», sin reservar) se quita una salida por
+    /// diferencia de reposición. Puro: sin base de datos.
+    /// <list type="number">
+    /// <item>Al recibir de más (lo que salió de más estaba donde se cogió lo demás): primero el hueco del que salió el
+    /// traspaso; después lo pendiente de ubicar.</item>
+    /// <item>Al resolver (<c>primeroPendienteDeUbicar</c>: se deshace lo que puso el ajuste al recibir): primero lo pendiente
+    /// de ubicar, lo más nuevo antes; después el hueco del traspaso.</item>
+    /// <item>Si aún falta, el resto de huecos solo si el producto está en UNO (como prdExtrProducto con una salida sin hueco:
+    /// con varios no se sabe de cuál; se queda sin quitar y se avisa).</item>
+    /// </list>
+    /// </summary>
+    public static class PlanificadorDiferenciaUbicaciones
+    {
+        public static List<TomaDeHueco> Repartir(IEnumerable<FilaUbicacionDiferencia> filas, int cantidad, bool primeroPendienteDeUbicar)
+        {
+            var tomas = new List<TomaDeHueco>();
+            if (cantidad <= 0)
+            {
+                return tomas;
+            }
+            List<FilaUbicacionDiferencia> validas = (filas ?? Enumerable.Empty<FilaUbicacionDiferencia>())
+                .Where(f => f != null && f.Cantidad > 0 && (f.Estado == EstadosUbicacion.LIBRE || f.Estado == EstadosUbicacion.PENDIENTE_DE_UBICAR))
+                .ToList();
+            List<FilaUbicacionDiferencia> pendientes = validas.Where(f => !EnHueco(f))
+                .OrderByDescending(f => f.FechaCreacion).ThenByDescending(f => f.NumeroOrden).ToList();
+            List<FilaUbicacionDiferencia> delTraspaso = validas.Where(f => EnHueco(f) && f.DelTraspaso)
+                .OrderByDescending(f => f.NumeroOrden).ToList();
+            List<FilaUbicacionDiferencia> resto = validas.Where(f => EnHueco(f) && !f.DelTraspaso).ToList();
+            List<FilaUbicacionDiferencia> unico = resto.Select(f => f.Hueco.ToString()).Distinct().Count() == 1
+                ? resto.OrderByDescending(f => f.NumeroOrden).ToList()
+                : new List<FilaUbicacionDiferencia>();
+
+            IEnumerable<FilaUbicacionDiferencia> orden = (primeroPendienteDeUbicar ? pendientes.Concat(delTraspaso) : delTraspaso.Concat(pendientes))
+                .Concat(unico);
+            int queda = cantidad;
+            foreach (FilaUbicacionDiferencia fila in orden)
+            {
+                if (queda == 0)
+                {
+                    break;
+                }
+                int coger = Math.Min(queda, fila.Cantidad);
+                tomas.Add(new TomaDeHueco { Libre = fila, Cantidad = coger });
+                queda -= coger;
+            }
+            return tomas;
+        }
+
+        private static bool EnHueco(FilaUbicacionDiferencia fila)
+        {
+            return fila.Estado == EstadosUbicacion.LIBRE && fila.Hueco.TieneHueco;
+        }
     }
 }

@@ -569,6 +569,7 @@
     <Compile Include="Models\PreparacionAlmacen\EtiquetasHuecoDTO.cs" />
     <Compile Include="Models\PreparacionAlmacen\PreparacionAlmacenDTO.cs" />
     <Compile Include="Models\PreparacionAlmacen\RecepcionesDTO.cs" />
+    <Compile Include="Models\PreparacionAlmacen\DiferenciasReposicionDTO.cs" />
     <Compile Include="Models\PreparacionAlmacen\SalidasDTO.cs" />
     <Compile Include="Controllers\OfertasEscalonadasController.cs" />
     <Compile Include="Controllers\OfertasPermitidasProductoController.cs" />
@@ -1004,6 +1005,8 @@
     <Compile Include="Infraestructure\Reposiciones\PermisoRellenarReposicionManual.cs" />
     <Compile Include="Infraestructure\Reposiciones\ProductosReposicionPuntual.cs" />
     <Compile Include="Infraestructure\Reposiciones\RecogidaReposiciones.cs" />
+    <Compile Include="Infraestructure\Reposiciones\DiferenciasReposicion.cs" />
+    <Compile Include="Infraestructure\Reposiciones\DiferenciasReposicionSql.cs" />
     <Compile Include="Infraestructure\Ubicaciones\CuadreUbicaciones.cs" />
     <Compile Include="Infraestructure\Ubicaciones\PlanificadorReservaHuecos.cs" />
     <Compile Include="Infraestructure\Ubicaciones\PuertaUbicaciones.cs" />
