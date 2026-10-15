@@ -88,9 +88,12 @@ namespace NestoAPI.Controllers
         /// tocan. Dentro de un TransactionScope (UnirPedidos) se usa ese; si no, se abre una aquí. Sin nada que hacer con
         /// cheques, el SaveChanges de siempre.
         /// </summary>
-        private async Task GuardarConChequeRegalo(Infraestructure.ChequesRegalo.PlanCanjeChequeRegalo plan)
+        private async Task GuardarConChequeRegalo(Infraestructure.ChequesRegalo.PlanCanjeChequeRegalo plan,
+            Infraestructure.Cupones.PlanCanjeCupon planCupon = null)
         {
-            if (plan == null || !plan.HayQueTocarCheques)
+            bool hayCheques = plan != null && plan.HayQueTocarCheques;
+            bool hayCupones = planCupon != null && planCupon.HayQueTocarCupones;
+            if (!hayCheques && !hayCupones)
             {
                 _ = await db.SaveChangesAsync();
                 return;
@@ -98,9 +101,24 @@ namespace NestoAPI.Controllers
             DbContextTransaction transaccion = System.Transactions.Transaction.Current == null ? db.Database.BeginTransaction() : null;
             try
             {
-                await ServicioCanje.Reservar(plan).ConfigureAwait(true);
+                if (hayCheques)
+                {
+                    await ServicioCanje.Reservar(plan).ConfigureAwait(true);
+                }
+                // NestoAPI#613: el cupón queda Usado en la misma transacción (dos pedidos a la vez: solo entra uno)
+                if (hayCupones)
+                {
+                    await ServicioCupones.Reservar(planCupon).ConfigureAwait(true);
+                }
                 _ = await db.SaveChangesAsync();
-                await ServicioCanje.LiberarOtros(plan).ConfigureAwait(true);
+                if (hayCheques)
+                {
+                    await ServicioCanje.LiberarOtros(plan).ConfigureAwait(true);
+                }
+                if (hayCupones)
+                {
+                    await ServicioCupones.LiberarOtros(planCupon).ConfigureAwait(true);
+                }
                 transaccion?.Commit();
             }
             finally
@@ -108,6 +126,21 @@ namespace NestoAPI.Controllers
                 transaccion?.Dispose();
             }
         }
+
+        // NestoAPI#613: el uso del cupón de evento (reglas duras fuera del pipeline de validación). Para tests.
+        private Infraestructure.Cupones.IServicioCanjeCupones servicioCupones;
+        internal Infraestructure.Cupones.IServicioCanjeCupones ServicioCupones
+        {
+            get => servicioCupones ?? (servicioCupones = new Infraestructure.Cupones.ServicioCanjeCupones(
+                new Infraestructure.Cupones.RepositorioCupones(db)));
+            set => servicioCupones = value;
+        }
+
+        /// <summary>NestoAPI#613: el pedido tenía (o tiene) una línea del producto del cupón, así que al guardarlo puede haber un cupón que soltar.</summary>
+        private bool TieneOTeniaLineaCupon(string empresa, int numero) =>
+            db.ChangeTracker.Entries<LinPedidoVta>()
+                .Any(e => e.Entity.Número == numero && (e.Entity.Empresa ?? string.Empty).Trim() == (empresa ?? string.Empty).Trim()
+                    && Infraestructure.Cupones.ReglasCupon.EsProductoCupon(e.Entity.Producto, ServicioCupones.ProductoCupon));
         // Carlos 04/09/15: lo pongo para desactivar el Lazy Loading
         public PedidosVentaController()
         {
@@ -792,6 +825,8 @@ namespace NestoAPI.Controllers
             // NestoAPI#593 (c4): la línea del cheque regalo la pone el servidor, venga como venga (cantidad −1, importe de
             // la campaña, sin descuentos), antes de tocar las líneas y de validar
             await ServicioCanje.NormalizarLineas(pedido).ConfigureAwait(true);
+            // NestoAPI#613: la línea del cupón (CodigoCupon) la pone el servidor: producto, −1, importe / 1,21, sin descuentos.
+            await ServicioCupones.NormalizarLineas(pedido).ConfigureAwait(true);
 
             // NestoAPI#449: descuentos fuera de 0-100 % con mensaje claro, no con el CHECK de SQL
             string fueraDeRango = ValidarRangosLineas(pedido);
@@ -1698,6 +1733,11 @@ namespace NestoAPI.Controllers
             Infraestructure.ChequesRegalo.PlanCanjeChequeRegalo planChequeRegalo = await ServicioCanje.Comprobar(
                 pedido.empresa, pedido.numero, pedido.cliente, lineasVivasTrasElPut.ToList(), pedido.iva,
                 l => this.gestor.CalcularImportesLinea(l, pedido.iva), pedido.Usuario, pedidoNuevo: false).ConfigureAwait(true);
+            // NestoAPI#613: el cupón, igual: regla dura sobre las líneas que quedan (también al quitarlo o cambiar de cliente).
+            Infraestructure.Cupones.PlanCanjeCupon planCupon = await ServicioCupones.Comprobar(
+                pedido.empresa, pedido.numero, pedido.cliente, lineasVivasTrasElPut.ToList(), pedido.iva,
+                l => this.gestor.CalcularImportesLinea(l, pedido.iva), pedido.Usuario, pedidoNuevo: false,
+                teniaLineaCupon: TieneOTeniaLineaCupon(pedido.empresa, pedido.numero)).ConfigureAwait(true);
 
             // Validación: verificar que ninguna línea tenga TipoLinea NULL
             var lineasConTipoNull = cabPedidoVta.LinPedidoVtas
@@ -1735,7 +1775,7 @@ namespace NestoAPI.Controllers
 
             try
             {
-                await GuardarConChequeRegalo(planChequeRegalo).ConfigureAwait(true);
+                await GuardarConChequeRegalo(planChequeRegalo, planCupon).ConfigureAwait(true);
             }
             catch (NestoBusinessException)
             {
@@ -1902,6 +1942,8 @@ namespace NestoAPI.Controllers
             // NestoAPI#593 (c4): la línea del cheque regalo la pone el servidor, venga como venga (NestoApp mandaría +1
             // o +50): cantidad −1, importe de la campaña, sin descuentos. Antes de crear las líneas y de validar.
             await ServicioCanje.NormalizarLineas(pedido).ConfigureAwait(true);
+            // NestoAPI#613: la línea del cupón (CodigoCupon) la pone el servidor: producto, −1, importe / 1,21, sin descuentos.
+            await ServicioCupones.NormalizarLineas(pedido).ConfigureAwait(true);
 
             // NestoAPI#482: sin modo informado el pedido NACE en el modo por defecto, no en el ServirJunto
             // de la ficha del cliente. NestoAPI#506: ese defecto es el que fuerce el parámetro
@@ -2251,6 +2293,19 @@ namespace NestoAPI.Controllers
             Infraestructure.ChequesRegalo.PlanCanjeChequeRegalo planChequeRegalo = await ServicioCanje.Comprobar(
                 pedido.empresa, pedido.numero, pedido.cliente, lineasPedidoInsertar, pedido.iva,
                 l => this.gestor.CalcularImportesLinea(l, pedido.iva), pedido.Usuario, pedidoNuevo: true).ConfigureAwait(true);
+            // NestoAPI#613: el cupón de evento, también regla dura (si no se puede usar, el pedido no se crea y el número vuelve, #636)
+            Infraestructure.Cupones.PlanCanjeCupon planCupon;
+            try
+            {
+                planCupon = await ServicioCupones.Comprobar(
+                    pedido.empresa, pedido.numero, pedido.cliente, lineasPedidoInsertar, pedido.iva,
+                    l => this.gestor.CalcularImportesLinea(l, pedido.iva), pedido.Usuario, pedidoNuevo: true, teniaLineaCupon: false).ConfigureAwait(true);
+            }
+            catch (NestoBusinessException)
+            {
+                DevolverNumeroPedidoNoGuardado(db, pedido.numero, numeroReservadoAqui);
+                throw;
+            }
 
             // Carlos 04/01/18: comprobamos que las ofertas del pedido sean todas válidas
             // Siempre calculamos la validación para incluirla en el correo, aunque no la bloqueemos
@@ -2292,7 +2347,7 @@ namespace NestoAPI.Controllers
 
             try
             {
-                await GuardarConChequeRegalo(planChequeRegalo).ConfigureAwait(true);
+                await GuardarConChequeRegalo(planChequeRegalo, planCupon).ConfigureAwait(true);
             }
             catch (NestoBusinessException)
             {
@@ -2440,6 +2495,17 @@ namespace NestoAPI.Controllers
             catch (Exception ex)
             {
                 ElmahHelper.Log(new Exception($"[Cheque regalo #593] No se pudo soltar el cheque del pedido {numero} al borrarlo: {ex.Message}", ex));
+            }
+
+            // NestoAPI#613: el cupón usado en el pedido vuelve a Activo (si el pedido se borra antes de facturar). Best-effort como
+            // el cheque: si falla, se da por libre igual (su pedido ya no tiene la línea).
+            try
+            {
+                await ServicioCupones.LiberarPedido(numero, User?.Identity?.Name).ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Cupones #613] No se pudo soltar el cupón del pedido {numero} al borrarlo: {ex.Message}", ex));
             }
 
             return Ok(cabPedidoVta);

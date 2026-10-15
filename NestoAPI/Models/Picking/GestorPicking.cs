@@ -190,6 +190,9 @@ namespace NestoAPI.Models.Picking
             // NestoAPI#593 (c4): la línea del cheque regalo solo sale en la entrega con la que se supera el mínimo
             GestorReservasStock.ReservarChequesRegalo(candidatos);
 
+            // NestoAPI#613: y la del cupón de evento, en la que con lo entregado se llega al doble del cupón
+            GestorReservasStock.ReservarCupones(candidatos);
+
             // Recorrer Candidatos (quitamos los que no tienen que salir)
             for (int i = 0; i < candidatos.Count(); i++)
             {

@@ -1,0 +1,395 @@
+using NestoAPI.Infraestructure.Eventos;
+using NestoAPI.Infrastructure;
+using NestoAPI.Infraestructure.Exceptions;
+using NestoAPI.Infraestructure.Notificaciones;
+using NestoAPI.Models;
+using System;
+using System.Collections.Generic;
+using System.Configuration;
+using System.Data.Entity;
+using System.Globalization;
+using System.Linq;
+using System.Net;
+using System.Net.Mail;
+using System.Security.Principal;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace NestoAPI.Infraestructure.Cupones
+{
+    public interface IServicioCupones
+    {
+        /// <summary>Los del cliente. <paramref name="todos"/> false: solo los que se pueden usar o se podrán (Activo y Emitido).</summary>
+        Task<List<CuponDTO>> LeerDelCliente(string empresa, string cliente, bool todos, IPrincipal usuario);
+        Task<CuponDTO> LeerPorCodigo(string codigo, IPrincipal usuario);
+        /// <summary>Solo Dirección, con motivo obligatorio; mismas reglas que los de evento.</summary>
+        Task<CuponDTO> CrearManual(CrearCuponManualDTO peticion, IPrincipal usuario);
+    }
+
+    /// <summary>
+    /// NestoAPI#613: los cupones vistos desde fuera del pedido: consultar (la plantilla avisa «tiene un cupón de 50 €», como las
+    /// ofertas), emitir a mano (Dirección), anular por no asistir (lista del corte 1) y el job diario de estados.
+    /// </summary>
+    public class ServicioCupones : IServicioCupones
+    {
+        public const string MOTIVO_NO_ASISTIO = "No asistió al evento.";
+
+        private readonly IRepositorioCupones repositorio;
+        private readonly NVEntities db;
+        private readonly Func<DateTime> ahora;
+        private readonly string productoCupon;
+
+        public ServicioCupones(NVEntities db) : this(new RepositorioCupones(db), db, null, null)
+        {
+        }
+
+        internal ServicioCupones(IRepositorioCupones repositorio, NVEntities db, Func<DateTime> ahora, string productoCupon)
+        {
+            this.repositorio = repositorio;
+            this.db = db;
+            this.ahora = ahora ?? (() => DateTime.Now);
+            this.productoCupon = productoCupon ?? ReglasCupon.ProductoCupon;
+        }
+
+        public async Task<List<CuponDTO>> LeerDelCliente(string empresa, string cliente, bool todos, IPrincipal usuario)
+        {
+            string clienteLimpio = cliente?.Trim();
+            if (string.IsNullOrEmpty(clienteLimpio))
+            {
+                throw new NestoBusinessException("Falta el cliente.");
+            }
+            string clienteDelToken = PermisosEventos.ClienteDelToken(usuario);
+            if (clienteDelToken != null && clienteDelToken != clienteLimpio)
+            {
+                throw new NestoBusinessException("Solo puede ver sus cupones.") { StatusCode = HttpStatusCode.Forbidden };
+            }
+            DateTime hoy = ahora();
+            List<CuponLeido> cupones = await repositorio.LeerDelCliente(string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim(),
+                clienteLimpio).ConfigureAwait(false) ?? new List<CuponLeido>();
+            return cupones
+                .Select(c => ReglasCupon.ADTO(c, hoy, productoCupon))
+                .Where(c => todos || c.Estado == EstadosCupon.ACTIVO || c.Estado == EstadosCupon.EMITIDO)
+                .OrderBy(c => c.Estado == EstadosCupon.ACTIVO ? 0 : c.Estado == EstadosCupon.EMITIDO ? 1 : 2)
+                .ThenBy(c => c.Caducidad)
+                .ToList();
+        }
+
+        public async Task<CuponDTO> LeerPorCodigo(string codigo, IPrincipal usuario)
+        {
+            CuponLeido cupon = await repositorio.LeerPorCodigo(codigo).ConfigureAwait(false)
+                ?? throw new NestoBusinessException($"No existe el cupón {codigo?.Trim()}.") { StatusCode = HttpStatusCode.NotFound };
+            string clienteDelToken = PermisosEventos.ClienteDelToken(usuario);
+            if (clienteDelToken != null && clienteDelToken != cupon.Cliente?.Trim())
+            {
+                throw new NestoBusinessException($"No existe el cupón {codigo?.Trim()}.") { StatusCode = HttpStatusCode.NotFound };
+            }
+            return ReglasCupon.ADTO(cupon, ahora(), productoCupon);
+        }
+
+        public async Task<CuponDTO> CrearManual(CrearCuponManualDTO peticion, IPrincipal usuario)
+        {
+            if (usuario == null || PermisosEventos.ClienteDelToken(usuario) != null || !usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION))
+            {
+                throw new NestoBusinessException("Los cupones sin evento solo los puede emitir Dirección.") { StatusCode = HttpStatusCode.Forbidden };
+            }
+            if (peticion == null || string.IsNullOrWhiteSpace(peticion.Cliente))
+            {
+                throw new NestoBusinessException("Falta el cliente del cupón.");
+            }
+            string motivo = peticion.Motivo?.Trim();
+            if (string.IsNullOrEmpty(motivo))
+            {
+                throw new NestoBusinessException("Indique el motivo del cupón: es obligatorio en los cupones sin evento.");
+            }
+            if (motivo.Length > 500)
+            {
+                throw new NestoBusinessException("El motivo no puede tener más de 500 caracteres.");
+            }
+            decimal importe = Math.Round(peticion.Importe, 2, MidpointRounding.AwayFromZero);
+            if (importe <= 0)
+            {
+                throw new NestoBusinessException("El importe del cupón tiene que ser mayor que cero.");
+            }
+            string empresa = string.IsNullOrWhiteSpace(peticion.Empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : peticion.Empresa.Trim();
+            string cliente = peticion.Cliente.Trim();
+            string contacto = string.IsNullOrWhiteSpace(peticion.Contacto) ? null : peticion.Contacto.Trim();
+            List<Cliente> fichas = await db.Clientes.Where(c => c.Empresa == empresa && c.Nº_Cliente == cliente).ToListAsync().ConfigureAwait(false);
+            if (!fichas.Any() || (contacto != null && !fichas.Any(f => f.Contacto?.Trim() == contacto)))
+            {
+                throw new NestoBusinessException(contacto == null ? $"No existe el cliente {cliente}." : $"No existe el cliente {cliente}/{contacto}.")
+                    { StatusCode = HttpStatusCode.NotFound };
+            }
+            DateTime hoy = ahora().Date;
+            DateTime validoDesde = (peticion.ValidoDesde ?? hoy).Date;
+            if (validoDesde < hoy)
+            {
+                throw new NestoBusinessException("El cupón no puede valer desde una fecha pasada.");
+            }
+            string usuarioAuditoria = UsuarioAuditoriaHelper.ParaAuditoria(UsuarioAuditoriaHelper.Resolver(usuario, null));
+            CuponLeido creado = await repositorio.Insertar(new CuponNuevo
+            {
+                Empresa = empresa,
+                Cliente = cliente,
+                Contacto = contacto,
+                Importe = importe,
+                Origen = OrigenesCupon.MANUAL,
+                Motivo = motivo,
+                ValidoDesde = validoDesde,
+                Caducidad = ReglasCupon.Caducidad(validoDesde),
+                Estado = validoDesde > hoy ? EstadosCupon.EMITIDO : EstadosCupon.ACTIVO,
+                Usuario = usuarioAuditoria
+            }, () => ReglasCupon.NuevoCodigo(OrigenesCupon.MANUAL, hoy)).ConfigureAwait(false);
+            return ReglasCupon.ADTO(creado, ahora(), productoCupon);
+        }
+
+        /// <summary>
+        /// La lista del corte 1: quien no vino pierde el cupón (Anulado). Si se corrige la lista y sí vino, el cupón anulado por no
+        /// asistir vuelve. Un cupón ya usado no se toca (se avisa en ELMAH para que lo mire Administración).
+        /// </summary>
+        public async Task AplicarAsistencia(IEnumerable<KeyValuePair<int, bool>> asistencias, string usuario)
+        {
+            foreach (KeyValuePair<int, bool> a in asistencias ?? Enumerable.Empty<KeyValuePair<int, bool>>())
+            {
+                if (a.Value)
+                {
+                    _ = await repositorio.ReactivarDeInscripcion(a.Key, MOTIVO_NO_ASISTIO, usuario).ConfigureAwait(false);
+                    continue;
+                }
+                int anulados = await repositorio.AnularDeInscripcion(a.Key, MOTIVO_NO_ASISTIO, usuario).ConfigureAwait(false);
+                if (anulados == 0)
+                {
+                    CuponLeido cupon = await repositorio.LeerDeInscripcion(a.Key).ConfigureAwait(false);
+                    if (cupon?.Estado?.Trim() == EstadosCupon.USADO)
+                    {
+                        ElmahHelper.Log(new Exception($"[Cupones #613] La inscripción {a.Key} está como «No asistió», pero su cupón {cupon.Codigo?.Trim()} " +
+                            $"ya está usado en el pedido {cupon.UsadoEnPedido}: no se anula. Decidid si se quita del pedido."));
+                    }
+                }
+            }
+        }
+
+        /// <summary>Job diario: Emitido → Activo el día del evento; Activo → Caducado a los 6 meses.</summary>
+        public Task<int> ActualizarEstados() => repositorio.ActualizarEstados();
+    }
+
+    /// <summary>
+    /// NestoAPI#613: emite el cupón al confirmarse la señal (corte 2): importe = señal IVA incluido, válido desde el día del
+    /// evento y 6 meses. Idempotente (un cupón por inscripción). Si la lista ya está pasada y no vino, no se emite. Avisos: push
+    /// al vendedor (NestoApp) y, con Cupones:CorreoCliente encendido, correo al cliente con el código y las normas.
+    /// </summary>
+    public class EmisorCuponesEvento : IEmisorCuponEvento
+    {
+        public const string CLAVE_CORREO_CLIENTE = "Cupones:CorreoCliente";
+        public const string CLAVE_URL_NORMAS = "Cupones:UrlNormas";
+        public const string TIPO_NOTIFICACION = "CuponEmitido";
+
+        private readonly IRepositorioCupones repositorio;
+        private readonly IAvisadorCupones avisador;
+        private readonly Func<DateTime> ahora;
+
+        public EmisorCuponesEvento(NVEntities db) : this(new RepositorioCupones(db), new AvisadorCupones(db), null)
+        {
+        }
+
+        internal EmisorCuponesEvento(IRepositorioCupones repositorio, IAvisadorCupones avisador, Func<DateTime> ahora)
+        {
+            this.repositorio = repositorio;
+            this.avisador = avisador;
+            this.ahora = ahora ?? (() => DateTime.Now);
+        }
+
+        public async Task Emitir(EventoInscripcion inscripcion, Evento evento, FacturacionCursoInscripcion facturacion, string usuario)
+        {
+            if (inscripcion == null || evento == null || evento.ImporteSenal <= 0)
+            {
+                return;
+            }
+            if (ReglasInscripcionEvento.Estado(inscripcion.Estado) == EstadoInscripcionEvento.NoAsistio)
+            {
+                return; // pagó tarde y ya consta que no vino: no hay cupón
+            }
+            if (await repositorio.LeerDeInscripcion(inscripcion.Id).ConfigureAwait(false) != null)
+            {
+                return;
+            }
+            DateTime hoy = ahora().Date;
+            DateTime validoDesde = evento.Fecha.Date;
+            CuponLeido cupon = await repositorio.Insertar(new CuponNuevo
+            {
+                Empresa = inscripcion.Empresa?.Trim() ?? Constantes.Empresas.EMPRESA_POR_DEFECTO,
+                Cliente = inscripcion.Cliente?.Trim(),
+                Contacto = inscripcion.Contacto?.Trim(),
+                // La señal IVA incluido, nunca señal + IVA (Carlos, 08/10/26). Lo cobrado coincide con la señal (corte 2).
+                Importe = Math.Round(evento.ImporteSenal, 2, MidpointRounding.AwayFromZero),
+                Origen = OrigenesCupon.EVENTO,
+                EventoInscripcionId = inscripcion.Id,
+                EventoId = evento.Id,
+                EmpresaFacturaOrigen = facturacion?.EmpresaFactura?.Trim(),
+                FacturaOrigen = facturacion?.Factura?.Trim(),
+                ValidoDesde = validoDesde,
+                Caducidad = ReglasCupon.Caducidad(validoDesde),
+                Estado = validoDesde > hoy ? EstadosCupon.EMITIDO : EstadosCupon.ACTIVO,
+                Usuario = usuario
+            }, () => ReglasCupon.NuevoCodigo(OrigenesCupon.EVENTO, validoDesde)).ConfigureAwait(false);
+            if (cupon == null)
+            {
+                return;
+            }
+            await avisador.AvisarEmitido(cupon, inscripcion).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Avisos de un cupón recién emitido. Nunca lanza.</summary>
+    public interface IAvisadorCupones
+    {
+        Task AvisarEmitido(CuponLeido cupon, EventoInscripcion inscripcion);
+    }
+
+    public class AvisadorCupones : IAvisadorCupones
+    {
+        private readonly NVEntities db;
+        private readonly Func<IServicioNotificacionesPush> push;
+        private readonly Func<IServicioCorreoElectronico> correo;
+        private readonly Func<bool> correoEncendido;
+        private readonly IRepositorioCupones repositorio;
+        private static readonly CultureInfo es = CultureInfo.GetCultureInfo("es-ES");
+
+        public AvisadorCupones(NVEntities db) : this(db, () => new ServicioNotificacionesPush(), () => new ServicioCorreoElectronico(),
+            () => string.Equals(ConfigurationManager.AppSettings[EmisorCuponesEvento.CLAVE_CORREO_CLIENTE], "true", StringComparison.OrdinalIgnoreCase),
+            new RepositorioCupones(db))
+        {
+        }
+
+        internal AvisadorCupones(NVEntities db, Func<IServicioNotificacionesPush> push, Func<IServicioCorreoElectronico> correo, Func<bool> correoEncendido,
+            IRepositorioCupones repositorio)
+        {
+            this.db = db;
+            this.push = push;
+            this.correo = correo;
+            this.correoEncendido = correoEncendido;
+            this.repositorio = repositorio;
+        }
+
+        public async Task AvisarEmitido(CuponLeido cupon, EventoInscripcion inscripcion)
+        {
+            string empresa = cupon.Empresa?.Trim() ?? Constantes.Empresas.EMPRESA_POR_DEFECTO;
+            string cliente = cupon.Cliente?.Trim();
+            Cliente ficha = null;
+            try
+            {
+                ficha = (await db.Clientes.Where(c => c.Empresa == empresa && c.Nº_Cliente == cliente).ToListAsync().ConfigureAwait(false))
+                    .FirstOrDefault(c => c.Contacto?.Trim() == cupon.Contacto?.Trim());
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Cupones #613] No se ha podido leer la ficha del cliente {cliente} para avisar del cupón: {ex.Message}", ex));
+            }
+
+            // Push al vendedor del cliente (NestoApp)
+            try
+            {
+                string vendedor = ficha?.Vendedor?.Trim();
+                if (!string.IsNullOrEmpty(vendedor))
+                {
+                    _ = await push().EnviarAVendedor(empresa, vendedor, Notificacion(cupon, ficha?.Nombre?.Trim())).ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Cupones #613] No se ha podido avisar al vendedor del cupón {cupon.Codigo?.Trim()}: {ex.Message}", ex));
+            }
+
+            // Correo al cliente, detrás de su interruptor (el texto y las normas los tiene que ver Carlos antes)
+            if (!correoEncendido())
+            {
+                return;
+            }
+            try
+            {
+                string destino = await CorreoDelCliente(empresa, cliente, cupon.Contacto?.Trim()).ConfigureAwait(false);
+                if (destino == null)
+                {
+                    await repositorio.MarcarAviso(cupon.Id, "(sin correo)").ConfigureAwait(false);
+                    return;
+                }
+                using (MailMessage mail = Correo(cupon, ficha?.Nombre?.Trim(), destino))
+                {
+                    bool enviado = correo().EnviarCorreoSMTP(mail);
+                    await repositorio.MarcarAviso(cupon.Id, enviado ? destino : "(falló el envío)").ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Cupones #613] No se ha podido mandar al cliente {cliente} el correo del cupón {cupon.Codigo?.Trim()}: {ex.Message}", ex));
+            }
+        }
+
+        internal static NotificacionPushDTO Notificacion(CuponLeido cupon, string nombre)
+        {
+            string quien = string.IsNullOrWhiteSpace(nombre) ? $"El cliente {cupon.Cliente?.Trim()}" : $"{nombre} ({cupon.Cliente?.Trim()})";
+            return new NotificacionPushDTO
+            {
+                Titulo = $"Cupón de {ReglasCupon.Euros(cupon.Importe)} €",
+                Cuerpo = $"{quien} tiene el cupón {cupon.Codigo?.Trim()}" + (string.IsNullOrWhiteSpace(cupon.Evento) ? "" : $" por «{cupon.Evento.Trim()}»") +
+                    $": vale desde el {ReglasCupon.Fecha(cupon.ValidoDesde)} hasta el {ReglasCupon.Fecha(cupon.Caducidad)} en un pedido de al menos " +
+                    $"{ReglasCupon.Euros(ReglasCupon.PedidoMinimo(cupon.Importe))} € de productos.",
+                Tipo = EmisorCuponesEvento.TIPO_NOTIFICACION,
+                Datos = new Dictionary<string, string>
+                {
+                    ["tipo"] = EmisorCuponesEvento.TIPO_NOTIFICACION,
+                    ["empresa"] = cupon.Empresa?.Trim(),
+                    ["cliente"] = cupon.Cliente?.Trim(),
+                    ["contacto"] = cupon.Contacto?.Trim(),
+                    ["codigo"] = cupon.Codigo?.Trim(),
+                    ["importe"] = cupon.Importe.ToString(CultureInfo.InvariantCulture)
+                }
+            };
+        }
+
+        /// <summary>Los correos de las facturas (cargo 22) del contacto, como el cheque regalo.</summary>
+        private async Task<string> CorreoDelCliente(string empresa, string cliente, string contacto)
+        {
+            List<string> correos = (await db.PersonasContactoClientes
+                .Where(p => p.Empresa == empresa && p.NºCliente == cliente && p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO
+                    && p.CorreoElectrónico != null)
+                .Select(p => new { p.Contacto, p.CorreoElectrónico }).ToListAsync().ConfigureAwait(false))
+                .OrderBy(p => p.Contacto?.Trim() == contacto ? 0 : 1)
+                .Select(p => p.CorreoElectrónico.Trim()).Where(c => c.Length > 0).Distinct().ToList();
+            return correos.FirstOrDefault();
+        }
+
+        internal static MailMessage Correo(CuponLeido cupon, string nombre, string destino)
+        {
+            string Html(string t) => WebUtility.HtmlEncode(t ?? string.Empty);
+            string urlNormas = ConfigurationManager.AppSettings[EmisorCuponesEvento.CLAVE_URL_NORMAS]?.Trim();
+            var cuerpo = new StringBuilder();
+            cuerpo.Append("<!DOCTYPE html><html><head><meta charset='utf-8'></head><body style='font-family: Arial, sans-serif; font-size: 14px; max-width: 600px;'>");
+            cuerpo.Append($"<p>Hola{(string.IsNullOrWhiteSpace(nombre) ? "" : ", " + Html(nombre))}:</p>");
+            cuerpo.Append($"<p>Gracias por apuntarse a «{Html(cupon.Evento?.Trim())}». Tiene un cupón de <b>{ReglasCupon.Euros(cupon.Importe)} €</b> " +
+                "de descuento para su próxima compra de productos:</p>");
+            cuerpo.Append($"<p style='font-size: 22px; font-weight: bold; letter-spacing: 2px;'>{Html(cupon.Codigo?.Trim())}</p>");
+            cuerpo.Append("<ul>");
+            cuerpo.Append($"<li>Vale desde el {ReglasCupon.Fecha(cupon.ValidoDesde)} hasta el {ReglasCupon.Fecha(cupon.Caducidad)}.</li>");
+            cuerpo.Append($"<li>Se usa una sola vez, en un pedido de al menos {ReglasCupon.Euros(ReglasCupon.PedidoMinimo(cupon.Importe))} € de productos " +
+                "(IVA incluido; no cuentan cursos ni portes). Uno por pedido.</li>");
+            cuerpo.Append("<li>Si no asiste al evento, el cupón se pierde.</li>");
+            cuerpo.Append("</ul>");
+            if (!string.IsNullOrEmpty(urlNormas))
+            {
+                cuerpo.Append($"<p><a href='{Html(urlNormas)}'>Normas completas de los cupones</a></p>");
+            }
+            cuerpo.Append("<p>Nueva Visión</p></body></html>");
+            var mail = new MailMessage
+            {
+                From = new MailAddress("nuevavision@nuevavision.es", "Nueva Visión"),
+                Subject = $"Su cupón de {ReglasCupon.Euros(cupon.Importe)} € para su próxima compra",
+                Body = cuerpo.ToString(),
+                IsBodyHtml = true,
+                BodyEncoding = Encoding.UTF8,
+                SubjectEncoding = Encoding.UTF8
+            };
+            mail.To.Add(destino);
+            return mail;
+        }
+    }
+}

@@ -295,7 +295,7 @@ namespace NestoAPI.Infraestructure.Eventos
         public ConfirmadorSenalEvento(NVEntities db)
             : this(db, () => InterruptoresEventos.FacturarCursoAlCobrar, new RepositorioFacturacionCursos(db),
                   new CreadorPedidoCurso(db), new FacturadorPedidoCurso(), new LiquidadorSenalCurso(db),
-                  new AvisadorFacturacionCurso(), null, null, InterruptoresEventos.UsuarioAutomatico)
+                  new AvisadorFacturacionCurso(), new Cupones.EmisorCuponesEvento(db), null, InterruptoresEventos.UsuarioAutomatico)
         {
         }
 
@@ -310,15 +310,10 @@ namespace NestoAPI.Infraestructure.Eventos
             this.facturador = facturador;
             this.liquidador = liquidador;
             this.avisador = avisador;
-            this.emisor = emisor ?? CrearEmisorPorDefecto(db);
+            this.emisor = emisor ?? new EmisorCuponEventoNulo();
             this.reloj = reloj ?? (() => DateTime.Now);
             this.usuarioAutomatico = string.IsNullOrWhiteSpace(usuarioAutomatico) ? InterruptoresEventos.USUARIO_AUTOMATICO : usuarioAutomatico.Trim();
         }
-
-        /// <summary>Punto de extensión del corte 3: el emisor de cupones de verdad.</summary>
-        internal static Func<NVEntities, IEmisorCuponEvento> FabricaEmisor { get; set; } = d => new EmisorCuponEventoNulo();
-
-        private static IEmisorCuponEvento CrearEmisorPorDefecto(NVEntities db) => FabricaEmisor?.Invoke(db) ?? new EmisorCuponEventoNulo();
 
         public bool Encendido => interruptor();
 

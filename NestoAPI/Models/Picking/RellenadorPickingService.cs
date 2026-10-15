@@ -204,6 +204,7 @@ namespace NestoAPI.Models.Picking
             }).ToList();
 
             RellenarChequesRegalo(resultado);
+            RellenarCupones(resultado);
             return resultado;
         }
 
@@ -225,6 +226,57 @@ namespace NestoAPI.Models.Picking
                 Infraestructure.ElmahHelper.Log(new Exception(
                     $"[Cheque regalo #593] No se pudo preparar el cheque regalo en el picking: {ex.Message}", ex), "Sistema (picking)");
             }
+        }
+
+        /// <summary>
+        /// NestoAPI#613: marca la línea del cupón de evento y lo que suma para su mínimo en los pedidos que lo llevan, y lee lo ya
+        /// entregado y el importe del cupón. Sin pedidos con cupón no consulta nada. Si falla, el picking sigue como antes y queda en ELMAH.
+        /// </summary>
+        private void RellenarCupones(List<PedidoPicking> pedidosPicking)
+        {
+            try
+            {
+                string productoCupon = Infraestructure.Cupones.ReglasCupon.ProductoCupon;
+                if (!pedidosPicking.Any(p => p.Lineas != null && p.Lineas.Any(l => Infraestructure.Cupones.ReglasCupon.EsProductoCupon(l.Producto, productoCupon))))
+                {
+                    return;
+                }
+                CuponesPicking.Rellenar(pedidosPicking, productoCupon, LeerProductosCupon, LeerLineasYaEntregadasCupon, LeerImporteCupon);
+            }
+            catch (Exception ex)
+            {
+                Infraestructure.ElmahHelper.Log(new Exception(
+                    $"[Cupones #613] No se pudo preparar el cupón en el picking: {ex.Message}", ex), "Sistema (picking)");
+            }
+        }
+
+        private Dictionary<string, Infraestructure.Cupones.ProductoParaCupon> LeerProductosCupon(string empresa, List<string> productos)
+        {
+            return db.Productos
+                .Where(p => p.Empresa == empresa && productos.Contains(p.Número))
+                .Select(p => new { p.Número, p.Grupo, p.Ficticio })
+                .ToList()
+                .Where(p => p.Número != null)
+                .GroupBy(p => p.Número.Trim(), StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => new Infraestructure.Cupones.ProductoParaCupon { Numero = g.Key, Grupo = g.First().Grupo?.Trim(), Ficticio = g.First().Ficticio },
+                    StringComparer.OrdinalIgnoreCase);
+        }
+
+        private List<LineaEntregadaCupon> LeerLineasYaEntregadasCupon(PedidoPicking pedido)
+        {
+            return db.LinPedidoVtas
+                .Where(l => l.Número == pedido.Id && l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO
+                    && (l.Estado >= Constantes.EstadosLineaVenta.ALBARAN
+                        || (l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO && l.Picking > 0)))
+                .Select(l => new LineaEntregadaCupon { Producto = l.Producto, Total = l.Total })
+                .ToList();
+        }
+
+        private decimal? LeerImporteCupon(int pedido)
+        {
+            return db.Database.SqlQuery<decimal?>(
+                "IF OBJECT_ID('dbo.Cupones') IS NULL SELECT CAST(NULL AS decimal(10,2)) ELSE SELECT TOP 1 Importe FROM dbo.Cupones WHERE UsadoEnPedido = @p0 AND Estado = 'Usado'",
+                new System.Data.SqlClient.SqlParameter("@p0", pedido)).FirstOrDefault();
         }
 
         private Dictionary<string, Infraestructure.ChequesRegalo.ProductoParaChequeRegalo> LeerProductosChequeRegalo(string empresa, List<string> productos)

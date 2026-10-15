@@ -29,6 +29,8 @@ namespace NestoAPI.Infraestructure.Eventos
         public IServicioCorreoElectronico Correo { get; set; }
         /// <summary>NestoAPI#612: relanza la facturación de los cursos que fallaron (y el cupón que falte). Opcional.</summary>
         public Func<Task<int>> ReintentarFacturacionCursos { get; set; }
+        /// <summary>NestoAPI#613: Emitido → Activo el día del evento y Activo → Caducado a los 6 meses. Opcional.</summary>
+        public Func<Task<int>> ActualizarCupones { get; set; }
     }
 
     /// <summary>
@@ -64,7 +66,8 @@ namespace NestoAPI.Infraestructure.Eventos
                         CorreosTienda = (empresa, almacen) => LeerCorreosTienda(db, empresa, almacen),
                         Avisar = (usuario, notificacion) => AvisoCobroNestoPago.Avisar(usuario, notificacion, new ServicioNotificacionesPush()),
                         Correo = new ServicioCorreoElectronico(),
-                        ReintentarFacturacionCursos = () => servicio.ReintentarFacturacionCursos()
+                        ReintentarFacturacionCursos = () => servicio.ReintentarFacturacionCursos(),
+                        ActualizarCupones = () => new Cupones.ServicioCupones(db).ActualizarEstados()
                     }).ConfigureAwait(false);
                 }
             }
@@ -107,6 +110,19 @@ namespace NestoAPI.Infraestructure.Eventos
                     {
                         ElmahHelper.Log(new Exception($"[Inscripciones de eventos #611] No se ha podido mandar el correo de la lista del evento {evento.Key.Id}."));
                     }
+                }
+            }
+
+            // NestoAPI#613: los cupones que hoy empiezan a valer o caducan
+            if (deps.ActualizarCupones != null)
+            {
+                try
+                {
+                    _ = await deps.ActualizarCupones().ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    ElmahHelper.Log(new Exception($"[Cupones #613] Error al actualizar los estados de los cupones: {ex.Message}", ex));
                 }
             }
 

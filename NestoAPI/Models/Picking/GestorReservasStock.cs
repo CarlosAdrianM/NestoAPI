@@ -96,6 +96,51 @@ namespace NestoAPI.Models.Picking
             }
         }
 
+        /// <summary>
+        /// NestoAPI#613: la línea (−1) del cupón de evento solo sale en la entrega con la que lo entregado del pedido LLEGA al
+        /// pedido mínimo del cupón (el doble, IVA incluido, solo productos que computan: ni cursos ni cuentas contables). Si no
+        /// llega, sale de este picking y se queda en el pedido para la siguiente entrega: así un pedido servido por partes nunca
+        /// factura el cupón contra una primera entrega pequeña. Mismo patrón que <see cref="ReservarChequesRegalo"/>.
+        /// </summary>
+        public static void ReservarCupones(List<PedidoPicking> candidatos)
+        {
+            foreach (PedidoPicking pedido in candidatos.Where(p => !p.EsNotaEntrega && p.Cupon != null && p.Lineas != null))
+            {
+                if (!pedido.Lineas.Any(l => l.EsCupon))
+                {
+                    continue;
+                }
+                decimal entregado = pedido.Cupon.TotalComputableYaEntregado
+                    + pedido.Lineas.Where(l => l.ComputaMinimoCupon && !l.EsCupon).Sum(TotalQueSale);
+                pedido.Cupon.TotalComputableConEstaEntrega = entregado;
+                if (Math.Round(entregado, 2, MidpointRounding.AwayFromZero) >= pedido.Cupon.PedidoMinimo)
+                {
+                    foreach (LineaPedidoPicking cupon in pedido.Lineas.Where(l => l.EsCupon))
+                    {
+                        cupon.CantidadReservada = cupon.Cantidad;
+                    }
+                    pedido.Cupon.Retenido = false;
+                }
+                else
+                {
+                    _ = pedido.Lineas.RemoveAll(l => l.EsCupon);
+                    pedido.Cupon.Retenido = true;
+                }
+            }
+        }
+
+        /// <summary>NestoAPI#613: la parte del total (IVA incluido) de la línea que sale en esta pasada.</summary>
+        internal static decimal TotalQueSale(LineaPedidoPicking linea)
+        {
+            int unidadesLinea = linea.Cantidad + linea.CantidadRecogida;
+            int unidadesQueSalen = linea.CantidadReservada + linea.CantidadARecoger;
+            if (unidadesLinea == 0 || unidadesQueSalen == 0)
+            {
+                return 0;
+            }
+            return linea.Total * unidadesQueSalen / unidadesLinea;
+        }
+
         /// <summary>NestoAPI#593: la parte de la base de la línea que sale (y se factura) en esta pasada.</summary>
         internal static decimal BaseComputableQueSale(LineaPedidoPicking linea)
         {

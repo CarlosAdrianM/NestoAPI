@@ -33,6 +33,10 @@ namespace NestoAPI.Models.Picking
         /// <summary>NestoAPI#593 (c4): suma para el mínimo del cheque regalo (producto no ficticio, sin los prefijos ni
         /// los grupos excluidos de la campaña). Solo se rellena en los pedidos que llevan cheque.</summary>
         public bool ComputaMinimoChequeRegalo { get; set; }
+        /// <summary>NestoAPI#613: es la línea (−1) de un cupón de evento. Lo pone el rellenador.</summary>
+        public bool EsCupon { get; set; }
+        /// <summary>NestoAPI#613: suma para el mínimo del cupón (producto no ficticio y que no es curso). Solo en los pedidos con cupón.</summary>
+        public bool ComputaMinimoCupon { get; set; }
         public decimal BaseImponibleEntrega {
             get
             {

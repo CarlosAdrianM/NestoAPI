@@ -147,12 +147,14 @@ namespace NestoAPI.Infraestructure.Eventos
         private readonly Func<string, string, string> almacenDelUsuario;
         private readonly IProcesadorInscripcionPagada procesador;
         private readonly IRepositorioFacturacionCursos facturacion;
+        private readonly Func<List<KeyValuePair<int, bool>>, string, Task> aplicarAsistenciaCupones;
 
         /// <summary>NestoAPI#612: en producción, el enganche es el que factura el curso (detrás de su interruptor).</summary>
         public ServicioInscripcionesEventos(NVEntities db)
             : this(db, () => DateTime.Now,
                 () => new ServicioPagos(new RedsysService(), new ContabilidadService(), new LectorParametrosUsuario()),
-                null, new ConfirmadorSenalEvento(db), new RepositorioFacturacionCursos(db))
+                null, new ConfirmadorSenalEvento(db), new RepositorioFacturacionCursos(db),
+                (asistencias, usuario) => new Cupones.ServicioCupones(db).AplicarAsistencia(asistencias, usuario))
         {
         }
 
@@ -160,10 +162,12 @@ namespace NestoAPI.Infraestructure.Eventos
         /// <param name="almacenDelUsuario">(empresa, usuario sin dominio) → su AlmacénPedidoVta. Null: el de ParametrosUsuario.</param>
         /// <param name="procesador">El enganche del corte 2. Null: <see cref="ProcesadorInscripcionPagadaPendiente"/>.</param>
         /// <param name="facturacion">NestoAPI#612: para enseñar en qué punto está la facturación del curso. Null: no se enseña.</param>
+        /// <param name="aplicarAsistenciaCupones">NestoAPI#613: (inscripción → ¿vino?, usuario) anula o recupera su cupón. Null: nada.</param>
         internal ServicioInscripcionesEventos(NVEntities db, Func<DateTime> reloj, Func<IServicioPagos> pagos,
             Func<string, string, string> almacenDelUsuario = null, IProcesadorInscripcionPagada procesador = null,
-            IRepositorioFacturacionCursos facturacion = null)
+            IRepositorioFacturacionCursos facturacion = null, Func<List<KeyValuePair<int, bool>>, string, Task> aplicarAsistenciaCupones = null)
         {
+            this.aplicarAsistenciaCupones = aplicarAsistenciaCupones;
             this.db = db;
             this.reloj = reloj ?? (() => DateTime.Now);
             this.pagos = pagos;
@@ -620,6 +624,22 @@ namespace NestoAPI.Infraestructure.Eventos
             }
             evento.FechaListaAsistencia = ahora;
             await db.SaveChangesAsync().ConfigureAwait(false);
+
+            // NestoAPI#613: quien no vino pierde el cupón; si se corrige la lista y sí vino, lo recupera. Si falla, la lista
+            // queda pasada igual y el error va a ELMAH.
+            if (aplicarAsistenciaCupones != null)
+            {
+                try
+                {
+                    await aplicarAsistenciaCupones(enLista.Select(i => new KeyValuePair<int, bool>(i.Id, vinieron.Contains(i.Id))).ToList(),
+                        usuarioAuditoria).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    ElmahHelper.Log(new Exception($"[Cupones #613] La lista del evento {evento.Id} está pasada, pero no se han podido anular o " +
+                        $"recuperar los cupones: {ex.Message}", ex));
+                }
+            }
 
             return (await Completar(inscripciones, new Dictionary<int, Evento> { [evento.Id] = evento }).ConfigureAwait(false))
                 .OrderBy(i => OrdenEstado(i.Estado)).ThenBy(i => i.Nombre).ToList();

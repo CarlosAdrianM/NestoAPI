@@ -1005,6 +1005,13 @@
     <Compile Include="Infraestructure\Eventos\PermisosEventos.cs" />
     <Compile Include="Infraestructure\Eventos\ConfirmadorSenalEvento.cs" />
     <Compile Include="Infraestructure\Eventos\FacturacionCursoEvento.cs" />
+    <Compile Include="Infraestructure\Cupones\Cupones.cs" />
+    <Compile Include="Infraestructure\Cupones\RepositorioCupones.cs" />
+    <Compile Include="Infraestructure\Cupones\ServicioCanjeCupones.cs" />
+    <Compile Include="Infraestructure\Cupones\ServicioCupones.cs" />
+    <Compile Include="Infraestructure\ValidadoresPedido\ValidadorCupon.cs" />
+    <Compile Include="Controllers\CuponesController.cs" />
+    <Compile Include="Models\Picking\CuponesPicking.cs" />
     <Compile Include="Infraestructure\Reposiciones\CalculadoraFechaReposicion.cs" />
     <Compile Include="Infraestructure\Productos\CodigosBarrasProductos.cs" />
     <Compile Include="Controllers\ProductosCodigosBarrasController.cs" />

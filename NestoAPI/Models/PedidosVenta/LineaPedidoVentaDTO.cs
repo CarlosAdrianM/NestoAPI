@@ -56,6 +56,17 @@ namespace NestoAPI.Models.PedidosVenta
         [JsonIgnore]
         public bool EsChequeRegalo { get; set; }
 
+        /// <summary>
+        /// NestoAPI#613: para aplicar un cupón de evento, la línea lleva su código (EV-2610-7K3Q); el producto, la cantidad (−1), el
+        /// precio y el texto los pone el servidor. Al modificar el pedido no hace falta volver a mandarlo: el servidor sabe qué
+        /// cupón tiene. Solo en escrituras.
+        /// </summary>
+        public string CodigoCupon { get; set; }
+
+        /// <summary>NestoAPI#613: la línea es la de un cupón (la marca ReglasCupon.Normalizar). Derivada: no va en el JSON.</summary>
+        [JsonIgnore]
+        public bool EsCupon { get; set; }
+
         // Carlos 23/10/25: para controlar en modificaciones qué líneas son nuevas o tienen cantidad modificada
         [JsonIgnore]
         public int? CantidadAnterior { get; set; }

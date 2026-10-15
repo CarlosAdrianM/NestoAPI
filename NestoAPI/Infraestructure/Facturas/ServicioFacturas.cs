@@ -774,6 +774,9 @@ namespace NestoAPI.Infraestructure.Facturas
                 await AnadirChequeRegalo(generadorChequesRegalo, respuestaFactura, cabPedido.Nº_Cliente, DateTime.Today,
                     usuarioAutenticado ?? usuario, avisadorChequesRegalo, avisadorPushChequesRegalo);
 
+                // NestoAPI#613: si el pedido llevaba un cupón de evento, queda apuntada la factura donde se usó. Best-effort.
+                await ApuntarFacturaDeUsoCupon(empresaOriginal, empresa, pedido, resultadoProcedimiento);
+
                 return respuestaFactura;
             }
             catch (SqlException sqlEx)
@@ -810,6 +813,28 @@ namespace NestoAPI.Infraestructure.Facturas
         /// al cliente (diciendo a quien factura si le ha llegado). Un fallo (tablas sin crear, red, SMTP…) va a ELMAH
         /// y la factura sigue adelante: ya está creada. El correo que no salga lo manda la reconciliación de la noche.
         /// </summary>
+        /// <summary>
+        /// NestoAPI#613: apunta en Cupones la factura del pedido donde se usó el cupón. Solo si el pedido lleva la línea del cupón
+        /// (si no, ni una consulta). Un fallo va a ELMAH y la factura sigue: ya está creada.
+        /// </summary>
+        private async Task ApuntarFacturaDeUsoCupon(string empresaPedido, string empresaFactura, int pedido, string factura)
+        {
+            try
+            {
+                string productoCupon = Cupones.ReglasCupon.ProductoCupon;
+                bool llevaCupon = await db.LinPedidoVtas.AnyAsync(l => l.Número == pedido && l.Producto == productoCupon).ConfigureAwait(false);
+                if (llevaCupon)
+                {
+                    _ = await new Cupones.RepositorioCupones(db, productoCupon)
+                        .ApuntarFacturaDeUso(empresaPedido?.Trim(), pedido, empresaFactura?.Trim(), factura?.Trim()).ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Cupones #613] La factura {factura} está creada, pero no se ha podido apuntar en el cupón del pedido {pedido}: {ex.Message}", ex));
+            }
+        }
+
         internal static async Task AnadirChequeRegalo(ChequesRegalo.IGeneradorChequesRegalo generador,
             CrearFacturaResponseDTO respuesta, string cliente, DateTime fechaFactura, string usuario,
             ChequesRegalo.IAvisadorChequesRegalo avisador = null,

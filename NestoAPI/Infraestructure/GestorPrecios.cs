@@ -334,6 +334,9 @@ namespace NestoAPI.Infraestructure
 
                 listaValidadoresAceptacion = new List<IValidadorAceptacion>
                 {
+                    // NestoAPI#613: la línea del cupón (sus reglas son duras, fuera del pipeline). La primera: el motivo del
+                    // rechazo que se enseña si nadie acepta es el del último.
+                    new ValidadorCupon(),
                     new ValidadorOfertasCombinadas(),
                     new ValidadorOfertasEscalonadas(),
                     new ValidadorMuestrasYMaterialPromocional(),

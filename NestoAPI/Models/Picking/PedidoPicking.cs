@@ -21,6 +21,19 @@ namespace NestoAPI.Models.Picking
         public bool Retenido { get; set; }
     }
 
+    /// <summary>NestoAPI#613: lo que necesita el picking para decidir si el cupón sale en esta entrega.</summary>
+    public class CuponPicking
+    {
+        public string Codigo { get; set; }
+        /// <summary>Lo entregado (IVA incluido, solo productos que computan) tiene que LLEGAR a esto: el doble del cupón.</summary>
+        public decimal PedidoMinimo { get; set; }
+        /// <summary>Total computable de las líneas ya en albarán o factura, o con picking de una pasada anterior.</summary>
+        public decimal TotalComputableYaEntregado { get; set; }
+        public decimal TotalComputableConEstaEntrega { get; set; }
+        /// <summary>True si en esta pasada no se llega al mínimo y la línea del cupón se queda en el pedido.</summary>
+        public bool Retenido { get; set; }
+    }
+
     public class PedidoPicking
     {
         private const string PREFIJO_PORTES = "624";
@@ -94,6 +107,10 @@ namespace NestoAPI.Models.Picking
         /// <summary>NestoAPI#593 (c4): el pedido lleva la línea de un cheque regalo (null si no). Lo rellena
         /// RellenadorPickingService y lo usa GestorReservasStock.ReservarChequesRegalo.</summary>
         public ChequeRegaloPicking ChequeRegalo { get; set; }
+
+        /// <summary>NestoAPI#613: el pedido lleva la línea de un cupón de evento (null si no). Lo rellena
+        /// RellenadorPickingService y lo usa GestorReservasStock.ReservarCupones.</summary>
+        public CuponPicking Cupon { get; set; }
 
         /// <summary>NestoAPI#482: modo de servicio informado (null = manda ServirJunto).</summary>
         public byte? ModoServicio { get; set; }
