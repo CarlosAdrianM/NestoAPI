@@ -43,8 +43,9 @@ namespace NestoAPI.Controllers
             IServicioTransitoReposiciones transito = null, IServicioCalendarioReposiciones calendario = null,
             IServicioReposicionAutomatica automatica = null, IPermisoRellenarReposicionManual permisoManual = null,
             IServicioListadoReposicion listado = null, IProductosReposicionPuntual productosPuntual = null,
-            IServicioDiferenciasReposicion diferencias = null)
+            IServicioDiferenciasReposicion diferencias = null, Infraestructure.PreparacionAlmacen.IServicioBultosReposicion bultos = null)
         {
+            this.bultos = bultos; // ídem (NestoAPI#645)
             this.diferencias = diferencias; // ídem (NestoAPI#634)
             this.db = db;
             this.preparacion = preparacion;
@@ -575,6 +576,80 @@ namespace NestoAPI.Controllers
                 return Prohibido(ex);
             }
         }
+
+        // ---------------------------------------------------------------- NestoAPI#645: etiquetas de bulto
+
+        private readonly Infraestructure.PreparacionAlmacen.IServicioBultosReposicion bultos;
+
+        private Infraestructure.PreparacionAlmacen.IServicioBultosReposicion Bultos => bultos
+            ?? new Infraestructure.PreparacionAlmacen.ServicioBultosReposicion(new Infraestructure.PreparacionAlmacen.RepositorioBultosReposicionSql(db),
+                new LectorParametrosUsuario(), new Infraestructure.PreparacionAlmacen.ImpresoraEtiquetasWindows());
+
+        // POST api/Reposiciones/81010/Bultos?empresa=1   { "Bultos": 3, "Imprimir": true }
+        /// <summary>
+        /// NestoAPI#645: al cerrar la reposición, cuántos bultos lleva (de 1 a 50) y una etiqueta por bulto («R81010-2», debajo
+        /// «81010 · bulto 2/3 · ALC→ALG») en la impresora de etiquetas del usuario (ImpresoraCodBarras, la de las etiquetas de
+        /// hueco). Si ya tenía bultos y no se ha leído ninguno, se rehacen con el nuevo total; si alguno se ha leído, 409.
+        /// 404 si no existe el traspaso; 503 sin la tabla. Si la impresión falla, los bultos quedan creados y responde 502.
+        /// </summary>
+        [HttpPost]
+        [Route("{numTraspaso:int}/Bultos")]
+        [ResponseType(typeof(ResultadoBultosReposicionDTO))]
+        public async Task<IHttpActionResult> PostBultos(int numTraspaso, [FromBody] CrearBultosReposicionDTO peticion,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            return await ConErroresDeBultos(() => Bultos.Crear(EmpresaBultos(empresa), numTraspaso, peticion, User?.Identity?.Name)).ConfigureAwait(false);
+        }
+
+        // POST api/Reposiciones/81010/Bultos/Reimprimir?empresa=1
+        /// <summary>NestoAPI#645: vuelve a imprimir las etiquetas de bulto que ya tiene. 404 si no tiene; 502 si la impresión falla.</summary>
+        [HttpPost]
+        [Route("{numTraspaso:int}/Bultos/Reimprimir")]
+        [ResponseType(typeof(ResultadoBultosReposicionDTO))]
+        public async Task<IHttpActionResult> PostReimprimirBultos(int numTraspaso, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            return await ConErroresDeBultos(() => Bultos.Reimprimir(EmpresaBultos(empresa), numTraspaso, User?.Identity?.Name)).ConfigureAwait(false);
+        }
+
+        // GET api/Reposiciones/Bultos/R81010-2?empresa=1
+        /// <summary>NestoAPI#645: de qué reposición es una etiqueta de bulto y si ya se ha leído al recibir. 404 si no es de ninguna.</summary>
+        [HttpGet]
+        [Route("Bultos/{codigo}")]
+        [ResponseType(typeof(LecturaBultoReposicionDTO))]
+        public async Task<IHttpActionResult> GetBulto(string codigo, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            try
+            {
+                LecturaBultoReposicionDTO bulto = await Bultos.Leer(EmpresaBultos(empresa), codigo).ConfigureAwait(false);
+                return bulto == null
+                    ? ResponseMessage(Request.CreateErrorResponse(HttpStatusCode.NotFound, "Esa etiqueta no es de ninguna reposición."))
+                    : (IHttpActionResult)Ok(bulto);
+            }
+            catch (Infraestructure.PreparacionAlmacen.BultosReposicionException ex)
+            {
+                return ResponseMessage(Request.CreateErrorResponse(ex.StatusCode, ex.Message));
+            }
+        }
+
+        private async Task<IHttpActionResult> ConErroresDeBultos(Func<Task<ResultadoBultosReposicionDTO>> accion)
+        {
+            try
+            {
+                return Ok(await accion().ConfigureAwait(false));
+            }
+            catch (Infraestructure.PreparacionAlmacen.BultosReposicionException ex)
+            {
+                return ResponseMessage(Request.CreateErrorResponse(ex.StatusCode, ex.Message));
+            }
+            catch (Infraestructure.PreparacionAlmacen.ImpresionBultosException ex)
+            {
+                ElmahHelper.Log(ex);
+                return ResponseMessage(Request.CreateErrorResponse(HttpStatusCode.BadGateway, ex.Message));
+            }
+        }
+
+        private static string EmpresaBultos(string empresa)
+            => string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
 
         /// <summary>Identificado pero sin permiso: 403, no 401 (con 401 el cliente intentaría refrescar el token).</summary>
         private IHttpActionResult Prohibido(UnauthorizedAccessException ex)
