@@ -127,7 +127,7 @@ namespace NestoAPI.Infraestructure.Outlet
             }
             if (!p.TieneFichaWeb)
             {
-                return "está en estado 4 pero no tiene ficha web (PrestashopProductos): no está en la tienda";
+                return "está en estado 4 pero no está en la tienda (ni ficha web ni publicado nunca por la sincronización)";
             }
             return $"está en estado 4 pero la puerta de publicación no lo deja ir a la tienda: {p.MotivoNoPublicable}";
         }
@@ -160,7 +160,7 @@ namespace NestoAPI.Infraestructure.Outlet
         public string Subgrupo { get; set; }
         public short Estado { get; set; }
 
-        /// <summary>Tiene fila en PrestashopProductos (ficha web).</summary>
+        /// <summary>Tiene fila en PrestashopProductos (ficha web) o se ha publicado alguna vez por Nesto_sync (Carlos, 15/10/26).</summary>
         public bool TieneFichaWeb { get; set; }
 
         /// <summary>La puerta de publicación (PuertaPublicacionTienda) lo deja ir a la tienda.</summary>

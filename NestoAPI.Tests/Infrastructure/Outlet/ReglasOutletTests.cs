@@ -171,5 +171,13 @@ namespace NestoAPI.Tests.Infrastructure.Outlet
             CollectionAssert.AreEquivalent(new[] { "1", "2", "3", "4", "5", "6" }, cambios.Select(c => c.Numero).ToList());
             Assert.AreEqual("COS/OUT", cambios.Single(c => c.Numero == "3").Poner);
         }
+
+        [TestMethod]
+        public void EnLaTienda_TambienLoPublicadoPorNestoSync()
+        {
+            // Carlos 15/10/26: 66 de estado 4 sin ficha web estaban en el Outlet y en la tienda (carga de #414); cuentan como «en la tienda».
+            StringAssert.Contains(RepositorioOutletSql.SQL_PUBLICADOS, "FROM dbo.Nesto_sync");
+            StringAssert.Contains(RepositorioOutletSql.SQL_PUBLICADOS, "Tabla = 'Productos' AND Sincronizado IS NOT NULL");
+        }
     }
 }

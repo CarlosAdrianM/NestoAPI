@@ -37,6 +37,15 @@ namespace NestoAPI.Infraestructure.Outlet
     {
         private const string EMPRESA = Constantes.Empresas.EMPRESA_POR_DEFECTO;
 
+        // #643 (Carlos, 15/10/26): «está en la tienda» también si se ha publicado alguna vez por Nesto_sync. Los 66 de estado 4
+        // que entraron en el Outlet con #414 no tienen ficha web (el catálogo legacy no la exigía) pero sí están en la tienda:
+        // sin esto saldrían del Outlet en Nesto sin republicarse y la tienda los seguiría enseñando en el Outlet.
+        internal const string SQL_PUBLICADOS = @"
+IF OBJECT_ID('dbo.Nesto_sync') IS NOT NULL
+    SELECT DISTINCT RTRIM(ModificadoId) FROM dbo.Nesto_sync WITH (NOLOCK) WHERE Tabla = 'Productos' AND Sincronizado IS NOT NULL
+ELSE
+    SELECT CAST(NULL AS varchar(15)) WHERE 1 = 0";
+
         public async Task<List<SituacionOutletProducto>> CargarSituacion()
         {
             using (NVEntities db = new NVEntities())
@@ -53,7 +62,7 @@ namespace NestoAPI.Infraestructure.Outlet
 
                 var productos = await db.Productos
                     .Where(p => p.Empresa == EMPRESA
-                        && ((p.Estado == ReglasOutlet.ESTADO_OUTLET && db.PrestashopProductos.Any(pp => pp.Empresa == p.Empresa && pp.Número == p.Número))
+                        && (p.Estado == ReglasOutlet.ESTADO_OUTLET
                             || db.ProductosCategoriasSecundarias.Any(c => c.Empresa == p.Empresa && c.Número == p.Número
                                 && ((c.Grupo == "PEL" && c.SubGrupo == "OUT") || (c.Grupo == "COS" && (c.SubGrupo == "OUT" || c.SubGrupo == "OUM"))))))
                     .Select(p => new
@@ -77,9 +86,14 @@ namespace NestoAPI.Infraestructure.Outlet
                     })
                     .ToListAsync().ConfigureAwait(false);
 
+                HashSet<string> publicados = new HashSet<string>(
+                    (await db.Database.SqlQuery<string>(SQL_PUBLICADOS).ToListAsync().ConfigureAwait(false)).Where(n => n != null),
+                    StringComparer.OrdinalIgnoreCase);
+                bool EnTienda(string numero, bool fichaWeb) => fichaWeb || publicados.Contains(numero.Trim());
+
                 // El extracto solo hace falta para los recambios de aparatología (APA/010) que la puerta evalúa.
                 List<string> recambios = productos
-                    .Where(p => p.TieneFichaWeb && p.Estado == ReglasOutlet.ESTADO_OUTLET
+                    .Where(p => EnTienda(p.Número, p.TieneFichaWeb) && p.Estado == ReglasOutlet.ESTADO_OUTLET
                         && string.Equals(p.Grupo?.Trim(), "APA", StringComparison.OrdinalIgnoreCase)
                         && string.Equals(p.SubGrupo?.Trim(), "010", StringComparison.OrdinalIgnoreCase))
                     .Select(p => p.Número)
@@ -113,7 +127,7 @@ namespace NestoAPI.Infraestructure.Outlet
                         Grupo = p.Grupo?.Trim(),
                         Subgrupo = p.SubGrupo?.Trim(),
                         Estado = p.Estado ?? 0,
-                        TieneFichaWeb = p.TieneFichaWeb,
+                        TieneFichaWeb = EnTienda(numero, p.TieneFichaWeb),
                         CategoriasOutletActuales = categoriasPorProducto[numero].ToList()
                     };
 
