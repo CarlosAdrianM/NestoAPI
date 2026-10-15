@@ -13,8 +13,9 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
     [TestClass]
     public class AvisadorReposicionesTests
     {
+        // NestoAPI#634 (Carlos, 14/10/26): antes solo a quien lo creó; ahora a quien lo preparó Y al grupo Almacén (que comprueba)
         [TestMethod]
-        public async Task Avisar_AQuienCreoElTraspaso_SoloAEl()
+        public async Task Avisar_AQuienCreoElTraspasoYAlGrupoAlmacen()
         {
             var notificaciones = A.Fake<IServicioNotificacionesPush>();
             var avisador = new AvisadorReposiciones(notificaciones, () => new List<string> { "Santiago" });
@@ -24,8 +25,34 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Andre", Constantes.Aplicaciones.NESTO,
                 A<NotificacionPushDTO>.That.Matches(n => n.Titulo.Contains("80862") && n.Cuerpo.Contains("leído 1"))))
                 .MustHaveHappenedOnceExactly();
-            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Santiago", A<string>.Ignored, A<NotificacionPushDTO>.Ignored))
-                .MustNotHaveHappened();
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Santiago", Constantes.Aplicaciones.NESTO, A<NotificacionPushDTO>.Ignored))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Avisar_CreadorQueEsDeAlmacen_UnaSolaVez()
+        {
+            var notificaciones = A.Fake<IServicioNotificacionesPush>();
+            var avisador = new AvisadorReposiciones(notificaciones, () => new List<string> { "Andre", "Santiago" });
+
+            await avisador.Avisar("NUEVAVISION\\Andre", "t", new[] { "x" });
+
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Andre", Constantes.Aplicaciones.NESTO, A<NotificacionPushDTO>.Ignored))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        // Ariadna#25: el aviso también en el buzón de Ariadna (usuario sin dominio), con la vista para abrir las diferencias
+        [TestMethod]
+        public async Task Avisar_TambienAlBuzonDeAriadnaSinDominioYConLaVista()
+        {
+            var notificaciones = A.Fake<IServicioNotificacionesPush>();
+            var avisador = new AvisadorReposiciones(notificaciones, () => new List<string>());
+
+            await avisador.Avisar("NUEVAVISION\\Andre", "t", new[] { "x" });
+
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("Andre", Constantes.Aplicaciones.ARIADNA,
+                A<NotificacionPushDTO>.That.Matches(n => n.Datos["vista"] == AvisadorReposiciones.VISTA_DIFERENCIAS)))
+                .MustHaveHappenedOnceExactly();
         }
 
         [TestMethod]

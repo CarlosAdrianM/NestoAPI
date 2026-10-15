@@ -86,11 +86,12 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         // Reposiciones: hoy da la entrada quien tiene el almacén de destino en AlmacénPedidoVta
         // (60 días: Reina → REI, Paloma → ALC, Andre/Alfredo/Santiago → ALG)
         private static OrigenRecepcionReposiciones Reposiciones(IRepositorioCierreReposiciones cierre = null, IAvisadorReposiciones avisador = null,
-            IServicioRecepcionReposiciones servicio = null)
+            IServicioRecepcionReposiciones servicio = null, NestoAPI.Infraestructure.Reposiciones.IServicioDiferenciasReposicion diferencias = null)
         {
             var almacenes = new Dictionary<string, string> { ["Reina"] = "REI", ["Paloma"] = "ALC", ["Andre"] = "ALG" };
             return new OrigenRecepcionReposiciones(servicio ?? A.Fake<IServicioRecepcionReposiciones>(), cierre ?? A.Fake<IRepositorioCierreReposiciones>(),
-                avisador ?? A.Fake<IAvisadorReposiciones>(), (empresa, usuario) => almacenes.TryGetValue(usuario, out string a) ? a : null);
+                avisador ?? A.Fake<IAvisadorReposiciones>(), (empresa, usuario) => almacenes.TryGetValue(usuario, out string a) ? a : null,
+                diferencias ?? A.Fake<NestoAPI.Infraestructure.Reposiciones.IServicioDiferenciasReposicion>());
         }
 
         private static (IRepositorioCierreReposiciones Cierre, ITransaccionCierreReposicion Transaccion) CierreFalso(params int[] traspasosEnDiario)
@@ -266,6 +267,131 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             CollectionAssert.AreEqual(new[] { "foto", "ajustar", "foto", "contabilizar", "foto" }, pasos);
             Assert.IsNotNull(solicitud.Ensayo.TrasAjustar);
             A.CallTo(() => avisador.Avisar(A<string>.Ignored, A<string>.Ignored, A<IEnumerable<string>>.Ignored)).MustNotHaveHappened();
+        }
+
+        // NestoAPI#634: cada diferencia queda registrada con la entrada (misma transacción) y, después de confirmar, se ajusta el
+        // stock del ORIGEN. Caso 38631 / 80915: enviado 1, leído 0 → la unidad vuelve a Algete y el aviso lo dice.
+        [TestMethod]
+        public async Task Reposiciones_Terminar_ConDiferencias_QuedaConstanciaYSeAjustaElOrigenTrasConfirmar()
+        {
+            var (cierre, transaccion) = CierreFalso(80862);
+            var diferencias = A.Fake<NestoAPI.Infraestructure.Reposiciones.IServicioDiferenciasReposicion>();
+            var avisador = A.Fake<IAvisadorReposiciones>();
+            var pasos = new List<string>();
+            List<NestoAPI.Infraestructure.Reposiciones.DiferenciaReposicionNueva> registradas = null;
+            A.CallTo(() => transaccion.RegistrarDiferencias(A<IEnumerable<NestoAPI.Infraestructure.Reposiciones.DiferenciaReposicionNueva>>.Ignored))
+                .ReturnsLazily((IEnumerable<NestoAPI.Infraestructure.Reposiciones.DiferenciaReposicionNueva> d) =>
+                {
+                    pasos.Add("registrar");
+                    registradas = d.ToList();
+                    return new List<int> { 41 };
+                });
+            A.CallTo(() => cierre.EnTransaccion(A<Func<ITransaccionCierreReposicion, Task<ResultadoTerminarRecepcionDTO>>>.Ignored, A<bool>.Ignored))
+                .ReturnsLazily(async (Func<ITransaccionCierreReposicion, Task<ResultadoTerminarRecepcionDTO>> t, bool deshacer) =>
+                {
+                    ResultadoTerminarRecepcionDTO r = await t(transaccion);
+                    pasos.Add("confirmar");
+                    return r;
+                });
+            A.CallTo(() => diferencias.AjustarOrigenTrasRecibir("1", A<IReadOnlyCollection<int>>.That.IsSameSequenceAs(new[] { 41 }), "NUEVAVISION\\Reina"))
+                .ReturnsLazily(() =>
+                {
+                    pasos.Add("ajustar origen");
+                    return new List<NestoAPI.Infraestructure.Reposiciones.ResultadoAjusteDiferencia>
+                    {
+                        new NestoAPI.Infraestructure.Reposiciones.ResultadoAjusteDiferencia { Id = 41, Producto = "A", Diferencia = -1, Origen = "ALG", Ajuste = "Hecho" }
+                    };
+                });
+            List<string> lineas = null;
+            A.CallTo(() => avisador.Avisar(A<string>.Ignored, A<string>.Ignored, A<IEnumerable<string>>.Ignored))
+                .Invokes((string d, string t, IEnumerable<string> l) => lineas = l.ToList());
+
+            ResultadoTerminarRecepcionDTO resultado = await Reposiciones(cierre, avisador, diferencias: diferencias).Terminar(SolicitudReposicionLeyendo(("A", 1)));
+
+            CollectionAssert.AreEqual(new[] { "registrar", "confirmar", "ajustar origen" }, pasos, "El ajuste, después de confirmar la entrada");
+            NestoAPI.Infraestructure.Reposiciones.DiferenciaReposicionNueva fila = registradas.Single();
+            Assert.AreEqual(80862, fila.Traspaso);
+            Assert.AreEqual("ALG", fila.Origen);
+            Assert.AreEqual("REI", fila.Destino);
+            Assert.AreEqual("A", fila.Producto);
+            Assert.AreEqual(2, fila.Enviado);
+            Assert.AreEqual(1, fila.Leido);
+            Assert.AreEqual("NUEVAVISION\\Andre", fila.Preparador);
+            string texto = string.Join("\n", lineas);
+            StringAssert.Contains(texto, "El stock de ALG se ha corregido: A +1.");
+            StringAssert.Contains(texto, "Pendiente de comprobar en ALG");
+            Assert.IsFalse(texto.Contains("no se ha tocado"));
+            StringAssert.Contains(string.Join(" ", resultado.Avisos), "pendiente de comprobar en ALG");
+            StringAssert.Contains(string.Join(" ", resultado.Avisos), "el grupo Almacén");
+        }
+
+        [TestMethod]
+        public async Task Reposiciones_Terminar_ConElAjusteApagado_ElAvisoDiceQueElOrigenNoSeHaTocado()
+        {
+            var (cierre, transaccion) = CierreFalso(80862);
+            var diferencias = A.Fake<NestoAPI.Infraestructure.Reposiciones.IServicioDiferenciasReposicion>();
+            var avisador = A.Fake<IAvisadorReposiciones>();
+            A.CallTo(() => transaccion.RegistrarDiferencias(A<IEnumerable<NestoAPI.Infraestructure.Reposiciones.DiferenciaReposicionNueva>>.Ignored))
+                .Returns(new List<int> { 41 });
+            A.CallTo(() => diferencias.AjustarOrigenTrasRecibir(A<string>.Ignored, A<IReadOnlyCollection<int>>.Ignored, A<string>.Ignored))
+                .Returns(new List<NestoAPI.Infraestructure.Reposiciones.ResultadoAjusteDiferencia>
+                {
+                    new NestoAPI.Infraestructure.Reposiciones.ResultadoAjusteDiferencia { Id = 41, Producto = "A", Diferencia = -1, Ajuste = "Apagado" }
+                });
+            List<string> lineas = null;
+            A.CallTo(() => avisador.Avisar(A<string>.Ignored, A<string>.Ignored, A<IEnumerable<string>>.Ignored))
+                .Invokes((string d, string t, IEnumerable<string> l) => lineas = l.ToList());
+
+            _ = await Reposiciones(cierre, avisador, diferencias: diferencias).Terminar(SolicitudReposicionLeyendo(("A", 1)));
+
+            StringAssert.Contains(string.Join("\n", lineas), "La salida de ALG no se ha tocado.");
+        }
+
+        [TestMethod]
+        public async Task Reposiciones_Terminar_SiFallaElAjuste_LaEntradaSeQuedaHechaYSeAvisa()
+        {
+            var (cierre, transaccion) = CierreFalso(80862);
+            var diferencias = A.Fake<NestoAPI.Infraestructure.Reposiciones.IServicioDiferenciasReposicion>();
+            var avisador = A.Fake<IAvisadorReposiciones>();
+            A.CallTo(() => transaccion.RegistrarDiferencias(A<IEnumerable<NestoAPI.Infraestructure.Reposiciones.DiferenciaReposicionNueva>>.Ignored))
+                .Returns(new List<int> { 41 });
+            A.CallTo(() => diferencias.AjustarOrigenTrasRecibir(A<string>.Ignored, A<IReadOnlyCollection<int>>.Ignored, A<string>.Ignored))
+                .Throws(new Exception("sin conexión"));
+
+            ResultadoTerminarRecepcionDTO resultado = await Reposiciones(cierre, avisador, diferencias: diferencias).Terminar(SolicitudReposicionLeyendo(("A", 1)));
+
+            Assert.AreEqual(1, resultado.Diferencias.Count);
+            A.CallTo(() => avisador.Avisar("NUEVAVISION\\Andre", A<string>.Ignored, A<IEnumerable<string>>.Ignored)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Reposiciones_Terminar_SinDiferencias_NoRegistraNiAjusta()
+        {
+            var (cierre, transaccion) = CierreFalso(80862);
+            var diferencias = A.Fake<NestoAPI.Infraestructure.Reposiciones.IServicioDiferenciasReposicion>();
+
+            _ = await Reposiciones(cierre, diferencias: diferencias).Terminar(SolicitudReposicion());
+
+            A.CallTo(() => transaccion.RegistrarDiferencias(A<IEnumerable<NestoAPI.Infraestructure.Reposiciones.DiferenciaReposicionNueva>>.Ignored))
+                .MustNotHaveHappened();
+            A.CallTo(() => diferencias.AjustarOrigenTrasRecibir(A<string>.Ignored, A<IReadOnlyCollection<int>>.Ignored, A<string>.Ignored))
+                .MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Reposiciones_Ensayo_NoAjustaElOrigen()
+        {
+            var (cierre, transaccion) = CierreFalso(80862);
+            var diferencias = A.Fake<NestoAPI.Infraestructure.Reposiciones.IServicioDiferenciasReposicion>();
+            A.CallTo(() => transaccion.RegistrarDiferencias(A<IEnumerable<NestoAPI.Infraestructure.Reposiciones.DiferenciaReposicionNueva>>.Ignored))
+                .Returns(new List<int> { 41 });
+            SolicitudTerminarRecepcion solicitud = SolicitudReposicionLeyendo(("A", 1));
+            solicitud.Ensayo = new RegistroEnsayoRecepcion();
+
+            _ = await Reposiciones(cierre, diferencias: diferencias).Terminar(solicitud);
+
+            A.CallTo(() => diferencias.AjustarOrigenTrasRecibir(A<string>.Ignored, A<IReadOnlyCollection<int>>.Ignored, A<string>.Ignored))
+                .MustNotHaveHappened();
         }
 
         [TestMethod]

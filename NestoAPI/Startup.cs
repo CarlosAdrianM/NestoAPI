@@ -229,10 +229,13 @@ namespace NestoAPI
                 sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IAvisadorCompras>()));
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioCierreReposiciones>(_ => Infraestructure.PreparacionAlmacen.RepositorioCierreReposiciones.ConContextoPropio());
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IAvisadorReposiciones, Infraestructure.PreparacionAlmacen.AvisadorReposiciones>();
+            // NestoAPI#634: diferencias de reposición (constancia, ajuste del origen y comprobación)
+            _ = services.AddScoped<Infraestructure.Reposiciones.IServicioDiferenciasReposicion>(_ => new Infraestructure.Reposiciones.ServicioDiferenciasReposicion());
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IOrigenRecepcion>(sp => new Infraestructure.PreparacionAlmacen.OrigenRecepcionReposiciones(
                 sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IServicioRecepcionReposiciones>(),
                 sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IRepositorioCierreReposiciones>(),
-                sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IAvisadorReposiciones>()));
+                sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IAvisadorReposiciones>(),
+                sp.GetRequiredService<Infraestructure.Reposiciones.IServicioDiferenciasReposicion>()));
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioRecepciones, Infraestructure.PreparacionAlmacen.ServicioRecepciones>();
             // Lo que ve el mozo de cada producto además del nombre: familia, subgrupo, tamaño y unidad (un solo sitio)
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioFichasProducto>(_ => Infraestructure.PreparacionAlmacen.RepositorioFichasProducto.ConContextoPropio());

@@ -53,6 +53,11 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// cabecera (de Nesto viejo), no hace nada.
         /// </summary>
         Task MarcarReposicionRecibida(string empresa, int traspaso, string usuario);
+        /// <summary>
+        /// NestoAPI#634: la constancia de cada diferencia (DiferenciasReposiciones), en la misma transacción que la entrada.
+        /// Devuelve sus Id; vacía si la tabla no existe todavía (script sin lanzar).
+        /// </summary>
+        Task<List<int>> RegistrarDiferencias(IEnumerable<Reposiciones.DiferenciaReposicionNueva> diferencias);
         /// <summary>Para el ensayo: cómo leer las filas que toca dar entrada al diario (antes y después).</summary>
         Task<Func<Task<List<FilaEnsayoDTO>>>> PrepararFoto(string empresa, string diario, IReadOnlyCollection<int> traspasos);
     }
@@ -414,6 +419,11 @@ SELECT @puestas;";
         public Task MarcarReposicionRecibida(string empresa, int traspaso, string usuario)
         {
             return Reposiciones.RegistroReposicionesTraspasosSql.MarcarRecibida(db, empresa, traspaso, usuario);
+        }
+
+        public Task<List<int>> RegistrarDiferencias(IEnumerable<Reposiciones.DiferenciaReposicionNueva> diferencias)
+        {
+            return Reposiciones.DiferenciasReposicionSql.Insertar(db, diferencias);
         }
 
         internal const string UBICACIONES_DE_REPOSICIONES = "u.Empresa = @p0 AND u.Estado = 2 AND u.[NºTraspasoRepo] IN ({LISTA})";

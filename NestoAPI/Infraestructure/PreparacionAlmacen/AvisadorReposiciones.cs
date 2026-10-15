@@ -11,7 +11,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     /// <summary>Avisar de las diferencias de una reposición (buzón y campana de Nesto). Nunca debe romper la entrada.</summary>
     public interface IAvisadorReposiciones
     {
-        /// <param name="destinatario">Quien creó el traspaso (con o sin dominio). Null: el grupo Almacén.</param>
+        /// <param name="destinatario">Quien creó el traspaso (con o sin dominio), o null si no se sabe. NestoAPI#634: se avisa además
+        /// siempre al grupo Almacén, al buzón de Nesto y al de Ariadna.</param>
         Task Avisar(string destinatario, string titulo, IEnumerable<string> lineas);
     }
 
@@ -23,6 +24,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     public class AvisadorReposiciones : IAvisadorReposiciones
     {
         public const string TIPO_NOTIFICACION = "RecepcionReposicion";
+        /// <summary>NestoAPI#634: Datos["vista"] del aviso, para que Nesto y Ariadna abran la lista de diferencias de reposición.</summary>
+        public const string VISTA_DIFERENCIAS = "DiferenciasReposicion";
         private const string DOMINIO = "NUEVAVISION\\";
 
         private readonly IServicioNotificacionesPush notificaciones;
@@ -45,7 +48,14 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             {
                 return;
             }
-            List<string> usuarios = (string.IsNullOrWhiteSpace(destinatario) ? usuariosDeAlmacen() ?? new List<string>() : new List<string> { destinatario })
+            // NestoAPI#634 (Carlos, 14/10/26): a quien la preparó Y al grupo Almacén, que es quien comprueba la diferencia en Algete
+            var candidatos = new List<string>();
+            if (!string.IsNullOrWhiteSpace(destinatario))
+            {
+                candidatos.Add(destinatario);
+            }
+            candidatos.AddRange(usuariosDeAlmacen() ?? new List<string>());
+            List<string> usuarios = candidatos
                 .Select(u => u?.Trim())
                 .Where(u => !string.IsNullOrWhiteSpace(u))
                 .Select(u => u.Contains("\\") ? u : DOMINIO + u)
@@ -62,11 +72,14 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 Titulo = titulo,
                 Cuerpo = string.Join(Environment.NewLine, lista),
                 Tipo = TIPO_NOTIFICACION,
-                Datos = new Dictionary<string, string> { ["tipo"] = TIPO_NOTIFICACION }
+                Datos = new Dictionary<string, string> { ["tipo"] = TIPO_NOTIFICACION, ["vista"] = VISTA_DIFERENCIAS }
             };
             foreach (string usuario in usuarios)
             {
                 await notificaciones.GuardarEnBuzonDeUsuario(usuario, Constantes.Aplicaciones.NESTO, notificacion).ConfigureAwait(false);
+                // Ariadna#25: también al buzón de la PDA, donde el usuario va sin dominio
+                await notificaciones.GuardarEnBuzonDeUsuario(usuario.Substring(usuario.LastIndexOf('\\') + 1), Constantes.Aplicaciones.ARIADNA, notificacion)
+                    .ConfigureAwait(false);
             }
         }
     }
