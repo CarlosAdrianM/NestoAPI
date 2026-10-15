@@ -135,6 +135,40 @@ namespace NestoAPI.Models.RecursosHumanos
             }
         }
 
+        /// <summary>
+        /// NestoAPI#627: el propio día si la delegación trabaja ese día; si no (sábado, domingo o festivo), el primer laborable
+        /// posterior. P. ej., una recepción prevista de proveedor en sábado cuenta como el lunes (ese día no se puede dar de alta
+        /// la mercancía).
+        /// </summary>
+        public static DateTime PrimerLaborableDesde(DateTime fecha, string delegacion)
+        {
+            return PrimerLaborableDesde(fecha, delegacion, EsFestivo);
+        }
+
+        /// <param name="esFestivo">(día, delegación) → true si esa delegación no trabaja ese día. Los sábados y domingos nunca
+        /// son laborables, lo diga o no esta función.</param>
+        public static DateTime PrimerLaborableDesde(DateTime fecha, string delegacion, Func<DateTime, string, bool> esFestivo)
+        {
+            if (esFestivo == null)
+            {
+                throw new ArgumentNullException(nameof(esFestivo));
+            }
+            DateTime dia = fecha.Date;
+            for (int i = 0; i < DIAS_MAXIMOS_BUSQUEDA_LABORABLE && !EsLaborable(dia, delegacion, esFestivo); i++)
+            {
+                dia = dia.AddDays(1);
+            }
+            return dia;
+        }
+
+        private const int DIAS_MAXIMOS_BUSQUEDA_LABORABLE = 60;
+
+        /// <summary>NestoAPI#627: ni sábado, ni domingo, ni festivo de la delegación.</summary>
+        public static bool EsLaborable(DateTime dia, string delegacion, Func<DateTime, string, bool> esFestivo)
+        {
+            return dia.DayOfWeek != DayOfWeek.Saturday && dia.DayOfWeek != DayOfWeek.Sunday && !esFestivo(dia, delegacion);
+        }
+
         private static readonly List<Festivo> Fiestas = new List<Festivo>
         {
             #region 2024

@@ -730,6 +730,7 @@
     <Compile Include="Models\RecursosHumanos\GestorAccionesTest.cs" />
     <Compile Include="Models\RecursosHumanos\ImportadorAccionesAlgeteTest.cs" />
     <Compile Include="Models\RecursosHumanos\GestorEmpleadosTest.cs" />
+    <Compile Include="Models\RecursosHumanos\GestorFestivosPrimerLaborableTests.cs" />
     <Compile Include="Models\RecursosHumanos\EmpleadoTest.cs" />
     <Compile Include="Models\RecursosHumanos\AccionTest.cs" />
     <Compile Include="Models\Ubicaciones\PreExtractoProductoDTOTests.cs" />

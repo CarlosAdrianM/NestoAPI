@@ -117,7 +117,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
     /// próxima reposición de esa tienda (<see cref="CalculadoraFechaReposicion"/>: sale ese mismo día si la fila del
     /// calendario llega a Algete ANTES de la hora de corte del picking, <see cref="HoraCortePicking"/>; si no, el laborable
     /// siguiente); en camino desde una tienda → el laborable siguiente a hoy; del proveedor → el laborable siguiente a su
-    /// fecha prevista (la fecha no tiene hora); con la fecha prevista vencida, se supone que llega el laborable siguiente a
+    /// fecha prevista (la fecha no tiene hora; si la prevista cae en sábado, domingo o festivo, cuenta como el siguiente
+    /// laborable, NestoAPI#627); con la fecha prevista vencida, se supone que llega el laborable siguiente a
     /// hoy y sale el laborable siguiente a ese (<see cref="ResultadoFechaEntregaAgencia.ProveedorVencido"/>); el resto, sin
     /// fecha.</item>
     /// <item>Cada día: si la entrega (el laborable siguiente) cae en un día que el cliente cierra, no sale
@@ -449,7 +450,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 int proveedor = Tomar(linea.DelProveedor);
                 if (proveedor > 0)
                 {
-                    DateTime? prevista = linea.FechaProveedor?.Date;
+                    // NestoAPI#627 (Carlos 14/10/26): si la prevista cae en sábado, domingo o festivo de Algete, ese día no se
+                    // puede dar de alta la mercancía: cuenta como el siguiente laborable, en el cálculo y en los textos.
+                    DateTime? prevista = linea.FechaProveedor.HasValue ? RecepcionPrevistaEfectiva(linea.FechaProveedor.Value) : (DateTime?)null;
                     if (prevista.HasValue && prevista.Value >= hoy)
                     {
                         // Decisión de Carlos (08/10): LinPedidoCmp.FechaRecepción es solo FECHA (sin hora), así que lo que
@@ -626,21 +629,16 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
         private static string Dia(DateTime dia) => dia.ToString("dddd dd/MM", castellano);
 
-        private bool EsLaborable(DateTime dia)
-        {
-            return dia.DayOfWeek != DayOfWeek.Saturday && dia.DayOfWeek != DayOfWeek.Sunday && !esFestivo(dia, Constantes.Almacenes.ALGETE);
-        }
+        private bool EsLaborable(DateTime dia) => GestorFestivos.EsLaborable(dia, Constantes.Almacenes.ALGETE, esFestivo);
 
         /// <summary>El primer laborable de Algete POSTERIOR a <paramref name="dia"/>: lo que se recibe un día sale en el picking del siguiente.</summary>
-        private DateTime SiguienteLaborable(DateTime dia)
-        {
-            DateTime siguiente = dia.Date.AddDays(1);
-            for (int i = 0; i < 60 && !EsLaborable(siguiente); i++)
-            {
-                siguiente = siguiente.AddDays(1);
-            }
-            return siguiente;
-        }
+        private DateTime SiguienteLaborable(DateTime dia) => GestorFestivos.PrimerLaborableDesde(dia.Date.AddDays(1), Constantes.Almacenes.ALGETE, esFestivo);
+
+        /// <summary>
+        /// NestoAPI#627: el día en que cuenta que llega a Algete lo de un pedido a proveedor con esa fecha prevista: ella misma si
+        /// es laborable; si no (sábado, domingo o festivo), el siguiente laborable.
+        /// </summary>
+        private DateTime RecepcionPrevistaEfectiva(DateTime prevista) => GestorFestivos.PrimerLaborableDesde(prevista, Constantes.Almacenes.ALGETE, esFestivo);
 
         private const string ORIGEN_PICKING = PartidaFechaEntregaAgenciaDTO.ORIGEN_PICKING;
         private const string ORIGEN_ALGETE = PartidaFechaEntregaAgenciaDTO.ORIGEN_ALGETE;

@@ -2,6 +2,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Models;
+using NestoAPI.Models.PedidosVenta;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -901,6 +902,88 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             ResultadoFechaEntregaAgencia resultado = CalcularConCalendario("2026-10-13 10:30:00", 2, calendario, LineaA(), BEnReina(), c);
 
             CollectionAssert.AreEqual(new[] { new DateTime(2026, 10, 13), new DateTime(2026, 10, 14), new DateTime(2026, 10, 15) }, resultado.Entregas);
+        }
+
+        #endregion
+
+        #region NestoAPI#627: prevista del proveedor en día no laborable
+
+        private static PartidaFechaEntregaAgenciaDTO PartidaProveedor(ResultadoFechaEntregaAgencia resultado) =>
+            resultado.Desglose.Single(p => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_PROVEEDOR);
+
+        [TestMethod]
+        public void ProveedorPrevistaEnSabado_CuentaComoElLunesYSaleElMartes()
+        {
+            // Caso de la issue (pedido a proveedor 220528): prevista el sábado 17/10 → se recibe el lunes 19 y sale el martes 20
+            // (antes decía «puede salir el lunes 19» con la prevista en sábado, que es un día que no se puede recibir).
+            ResultadoFechaEntregaAgencia resultado = Calcular("2026-10-14 10:30:00", 1, 1, LineaA(), BDelProveedor("2026-10-17"));
+
+            Assert.AreEqual(new DateTime(2026, 10, 20), resultado.EntregaCompleta, resultado.Motivo);
+            Assert.AreEqual(new DateTime(2026, 10, 19), PartidaProveedor(resultado).FechaPrevistaProveedor);
+            Assert.AreEqual(new DateTime(2026, 10, 20), PartidaProveedor(resultado).PuedeSalirEl);
+            StringAssert.Contains(resultado.Motivo, "prevista el 19/10");
+            Assert.IsFalse(resultado.Motivo.Contains("17/10"), resultado.Motivo);
+        }
+
+        [TestMethod]
+        public void ProveedorPrevistaEnDomingo_CuentaComoElLunes()
+        {
+            ResultadoFechaEntregaAgencia resultado = Calcular("2026-10-14 10:30:00", 1, 1, LineaA(), BDelProveedor("2026-10-18"));
+
+            Assert.AreEqual(new DateTime(2026, 10, 20), resultado.EntregaCompleta, resultado.Motivo);
+            Assert.AreEqual(new DateTime(2026, 10, 19), PartidaProveedor(resultado).FechaPrevistaProveedor);
+        }
+
+        [TestMethod]
+        public void ProveedorPrevistaEnFestivoEntreSemana_CuentaComoElSiguienteLaborable()
+        {
+            // Jueves 08: prevista el lunes 12 (festivo) → se recibe el martes 13 y sale el miércoles 14.
+            ResultadoFechaEntregaAgencia resultado = Calcular("2026-10-08 10:30:00", 1, 1, LineaA(), BDelProveedor("2026-10-12"));
+
+            Assert.AreEqual(new DateTime(2026, 10, 14), resultado.EntregaCompleta, resultado.Motivo);
+            Assert.AreEqual(new DateTime(2026, 10, 13), PartidaProveedor(resultado).FechaPrevistaProveedor);
+        }
+
+        [TestMethod]
+        public void ProveedorPrevistaEnPuente_ViernesFestivoYFinDeSemana_CuentaComoElLunes()
+        {
+            // Viernes 16 festivo (puente): prevista ese viernes → se recibe el lunes 19 y sale el martes 20.
+            var conPuente = new HashSet<DateTime>(festivos) { new DateTime(2026, 10, 16) };
+            var calculadora = new CalculadoraFechaEntregaAgencia((dia, almacen) => EsFestivo(dia, almacen) || conPuente.Contains(dia.Date));
+
+            ResultadoFechaEntregaAgencia resultado = calculadora.Calcular(new EntradaFechaEntregaAgencia
+            {
+                Lineas = new List<LineaFechaEntregaAgencia> { LineaA(), BDelProveedor("2026-10-16") },
+                ModoServicio = 1,
+                ModoFacturacion = 1,
+                Ruta = "FW",
+                Ahora = Instante("2026-10-14 10:30:00"),
+                HoraCorte = new TimeSpan(11, 0, 0),
+                Calendario = CalendarioProduccion()
+            });
+
+            Assert.AreEqual(new DateTime(2026, 10, 20), resultado.EntregaCompleta, resultado.Motivo);
+            Assert.AreEqual(new DateTime(2026, 10, 19), PartidaProveedor(resultado).FechaPrevistaProveedor);
+        }
+
+        [TestMethod]
+        public void ProveedorPrevistaEnLaborable_NoCambia()
+        {
+            ResultadoFechaEntregaAgencia resultado = Calcular("2026-10-14 10:30:00", 1, 1, LineaA(), BDelProveedor("2026-10-15"));
+
+            Assert.AreEqual(new DateTime(2026, 10, 16), resultado.EntregaCompleta, resultado.Motivo);
+            Assert.AreEqual(new DateTime(2026, 10, 15), PartidaProveedor(resultado).FechaPrevistaProveedor);
+            StringAssert.Contains(resultado.Motivo, "prevista el 15/10");
+        }
+
+        [TestMethod]
+        public void ProveedorPrevistaElSabadoPasado_ElLunesNoEstaVencida()
+        {
+            // Lunes 19: la prevista del sábado 17 cuenta como hoy, así que no está vencida: sale el martes 20 (no el miércoles 21).
+            ResultadoFechaEntregaAgencia resultado = Calcular("2026-10-19 10:30:00", 1, 1, LineaA(), BDelProveedor("2026-10-17"));
+
+            Assert.AreEqual(new DateTime(2026, 10, 20), resultado.EntregaCompleta, resultado.Motivo);
+            Assert.AreEqual(0, resultado.ProveedorVencido.Count);
         }
 
         #endregion
