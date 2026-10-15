@@ -176,7 +176,7 @@ namespace NestoAPI.Tests.Infrastructure.Outlet
         }
 
         [TestMethod]
-        public void WebConfig_ElInterruptorNaceApagado()
+        public void WebConfig_ElInterruptorEstaEncendido()
         {
             // bin\Debug -> NestoAPI.Tests -> raíz de la solución -> NestoAPI\Web.config
             string ruta = System.IO.Path.GetFullPath(System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\..\..\NestoAPI\Web.config"));
@@ -186,8 +186,8 @@ namespace NestoAPI.Tests.Infrastructure.Outlet
             System.Xml.XmlNode nodo = xml.SelectSingleNode("/configuration/appSettings/add[@key='" + ServicioOutlet.CLAVE_INTERRUPTOR + "']");
 
             Assert.IsNotNull(nodo, "Falta la clave del interruptor en Web.config");
-            Assert.IsFalse(new ServicioOutlet(A.Fake<IRepositorioOutlet>(), c => nodo.Attributes["value"].Value).InterruptorEncendido(),
-                "Nace apagado: se enciende cuando Carlos dé el visto bueno a la simulación");
+            Assert.IsTrue(new ServicioOutlet(A.Fake<IRepositorioOutlet>(), c => nodo.Attributes["value"].Value).InterruptorEncendido(),
+                "Encendido el 15/10/26 con el visto bueno de Carlos a la simulación: apagarlo es una decisión, no un descuido");
         }
 
         [TestMethod]
