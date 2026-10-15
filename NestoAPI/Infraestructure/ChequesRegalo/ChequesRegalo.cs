@@ -112,9 +112,17 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
     /// </summary>
     public static class ReglasChequeRegalo
     {
+        /// <summary>
+        /// Los otros dos códigos de Amazon (AMAZON EU 29440 y VENTAS AMAZON 31482): no son de factura simplificada, así
+        /// que no estaban en la lista de genéricos, y el 15/10/26 AMAZON EU recibió un cheque (el 31). Si se añade uno
+        /// aquí, añadirlo también a SQL_CLIENTES_SIN_CHEQUE.
+        /// </summary>
+        internal static readonly string[] OTROS_CLIENTES_EXCLUIDOS = { "29440", "31482" };
+
         /// <summary>Clientes genéricos (público final, tienda online, pedido tienda, materiales cursos, Amazon).</summary>
         public static bool ClienteExcluido(string cliente)
-            => string.IsNullOrWhiteSpace(cliente) || Constantes.ClientesEspeciales.EsClienteFacturaSimplificada(cliente);
+            => string.IsNullOrWhiteSpace(cliente) || Constantes.ClientesEspeciales.EsClienteFacturaSimplificada(cliente)
+               || OTROS_CLIENTES_EXCLUIDOS.Contains(cliente.Trim());
 
         /// <summary>
         /// Por qué una factura no es «de venta normal» (null si lo es): rectificativa, a cero o negativa, cambio o
@@ -412,7 +420,7 @@ WHERE NOT EXISTS (SELECT 1 FROM dbo.ChequesRegalo WITH (UPDLOCK, HOLDLOCK) WHERE
 SELECT DISTINCT RTRIM(f.[Nº Cliente])
 FROM CabFacturaVta f
 WHERE f.Empresa IN (@p0, @p1) AND f.Fecha >= @p2 AND f.Fecha < @p3
-      AND RTRIM(f.[Nº Cliente]) NOT IN ('10458', '31517', '9500', '31794', '32624')
+      AND RTRIM(f.[Nº Cliente]) NOT IN ('10458', '31517', '9500', '31794', '32624', '29440', '31482')
       AND NOT EXISTS (SELECT 1 FROM dbo.ChequesRegalo c WHERE c.Campana = @p4 AND c.Empresa = @p5 AND c.Cliente = RTRIM(f.[Nº Cliente]))";
 
         // Las mismas campañas que el canje, con sus exclusiones (sin tablas no hay campañas: no se genera nada; sin las

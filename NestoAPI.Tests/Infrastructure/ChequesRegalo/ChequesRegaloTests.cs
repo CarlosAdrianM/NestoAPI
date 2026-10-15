@@ -18,6 +18,25 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
     [TestClass]
     public class ReglasChequeRegaloTests
     {
+        [DataTestMethod]
+        [DataRow("29440")]
+        [DataRow("31482 ")]
+        [DataRow("32624")]
+        public void ClienteExcluido_LosTresCodigosDeAmazon(string cliente)
+        {
+            // 15/10/26: AMAZON EU (29440) recibió el cheque 31; solo estaba excluido el de factura simplificada (32624).
+            Assert.IsTrue(ReglasChequeRegalo.ClienteExcluido(cliente));
+        }
+
+        [TestMethod]
+        public void ClientesSinCheque_LaReconciliacionExcluyeLosMismosQueLaRegla()
+        {
+            foreach (string cliente in ReglasChequeRegalo.OTROS_CLIENTES_EXCLUIDOS)
+            {
+                StringAssert.Contains(RepositorioChequesRegalo.SQL_CLIENTES_SIN_CHEQUE, $"'{cliente}'");
+            }
+        }
+
         internal static CampanaCanjeChequeRegalo Campana(decimal minimoFactura = 0, int diasEspera = 0, bool activa = true) => new CampanaCanjeChequeRegalo
         {
             Codigo = "CHEQUE50_OCT_2026",
