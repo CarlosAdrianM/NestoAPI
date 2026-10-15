@@ -121,7 +121,7 @@ namespace NestoAPI.Tests.Controllers
             // NestoAPI#394: el mensaje se reescribió (una sola lista, plural concordado y con el
             // código delante del nombre), así que ya no dice "Borre primero" sino "Bórrala primero
             // del pedido" / "Bórralas primero del pedido" según cuántas muestras haya.
-            Assert.IsTrue(okResult.Content.Mensaje.Contains("Bórrala primero del pedido"),
+            Assert.IsTrue(okResult.Content.Mensaje.Contains("Bórrela del pedido"), // NestoAPI#638: de usted
                 $"Mensaje: '{okResult.Content.Mensaje}'");
             Assert.IsTrue(okResult.Content.Mensaje.Contains("MMP1 Muestra Crema"),
                 $"Se espera 'codigo nombre'. Mensaje: '{okResult.Content.Mensaje}'");

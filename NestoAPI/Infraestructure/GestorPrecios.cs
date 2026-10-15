@@ -532,6 +532,7 @@ namespace NestoAPI.Infraestructure
 
             // Consolidamos todos los errores encontrados
             erroresAcumulados = erroresAcumulados.Distinct().ToList();
+            erroresAcumulados = ValidadoresPedido.ValidadorMuestrasYMaterialPromocional.AgruparMotivos5PorCiento(erroresAcumulados); // NestoAPI#638
             if (erroresAcumulados.Any())
             {
                 respuesta.ValidacionSuperada = false;

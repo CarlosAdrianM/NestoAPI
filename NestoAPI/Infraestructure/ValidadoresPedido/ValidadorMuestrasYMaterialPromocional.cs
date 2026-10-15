@@ -67,11 +67,57 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     MotivoEspecifico = true,
                     Motivo = maximoUnidades > UNIDADES_MAXIMO_MUESTRAS
                         ? $"El producto {numeroProducto} no se puede regalar: se superan las {UNIDADES_MAXIMO_MUESTRAS} unidades de muestra suelta permitidas"
-                        : $"El material promocional suelto (el que no cubre ninguna oferta) supera el 5 % del pedido: no se puede regalar el producto {numeroProducto}"
+                        : PREFIJO_MOTIVO_5_POR_CIENTO + numeroProducto
                 };
             }
 
             return respuesta;
+        }
+
+        // NestoAPI#638: el rechazo del 5 % sale una vez por muestra con la frase entera repetida;
+        // AgruparMotivos5PorCiento los junta en uno con la lista de productos.
+        internal const string PREFIJO_MOTIVO_5_POR_CIENTO =
+            "El material promocional suelto (el que no cubre ninguna oferta) supera el 5 % del pedido: no se puede regalar el producto ";
+
+        /// <summary>
+        /// NestoAPI#638: junta en un solo motivo los rechazos del 5 % de varias muestras (15/10/26: dos
+        /// muestras daban dos frases idénticas salvo el código). El motivo agrupado ocupa el sitio del
+        /// primero; los demás motivos no se tocan y conservan su orden.
+        /// </summary>
+        internal static List<string> AgruparMotivos5PorCiento(List<string> motivos)
+        {
+            if (motivos == null)
+            {
+                return motivos;
+            }
+            List<string> productos = motivos
+                .Where(m => m != null && m.StartsWith(PREFIJO_MOTIVO_5_POR_CIENTO, StringComparison.Ordinal))
+                .Select(m => m.Substring(PREFIJO_MOTIVO_5_POR_CIENTO.Length).Trim())
+                .Distinct()
+                .ToList();
+            if (productos.Count < 2)
+            {
+                return motivos;
+            }
+            string lista = string.Join(", ", productos.Take(productos.Count - 1)) + " y " + productos.Last();
+            string agrupado = "El material promocional suelto (el que no cubre ninguna oferta) supera el 5 % del pedido: " +
+                $"no se pueden regalar los productos {lista}. Quite alguna de esas muestras o amplíe el pedido.";
+            var resultado = new List<string>();
+            bool puesto = false;
+            foreach (string m in motivos)
+            {
+                if (m != null && m.StartsWith(PREFIJO_MOTIVO_5_POR_CIENTO, StringComparison.Ordinal))
+                {
+                    if (!puesto)
+                    {
+                        resultado.Add(agrupado);
+                        puesto = true;
+                    }
+                    continue;
+                }
+                resultado.Add(m);
+            }
+            return resultado;
         }
 
         /// <summary>

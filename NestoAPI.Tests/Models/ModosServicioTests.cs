@@ -1,5 +1,6 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Models;
+using NestoAPI.Infraestructure.ValidadoresPedido;
 using NestoAPI.Infraestructure.ValidadoresServirJunto;
 using NestoAPI.Models.PedidosVenta;
 using NestoAPI.Models.PedidosVenta.ServirJunto;
@@ -211,6 +212,67 @@ namespace NestoAPI.Tests.Models
             StringAssert.Contains(mensaje, "pasar el pedido a «Ahora lo que hay, el resto de una vez»");
             StringAssert.Contains(mensaje, "45461");
             Assert.IsFalse(mensaje.Contains("Servir junto"), "La casilla ya no existe en Nesto");
+        }
+
+        // NestoAPI#638: 15/10/26, una usuaria intentó 8 veces seguidas «Según vaya entrando» con dos
+        // muestras sin stock en REI: el mensaje no decía POR QUÉ se quedarían pendientes, y mezclaba tú y usted.
+
+        [TestMethod]
+        public void MensajeDeMaterialPromocional_DiceQueNoHayStockEnElAlmacenYTrataDeUsted()
+        {
+            var problematicos = new List<ProductoSinStockDTO>
+            {
+                new ProductoSinStockDTO { ProductoId = "42543", ProductoNombre = "MUESTRA CONTORNO DE OJOS SPLENDORE" },
+                new ProductoSinStockDTO { ProductoId = "43893", ProductoNombre = "MUESTRA STARSUN FACIAL CREAM" }
+            };
+
+            string mensaje = ValidadorMaterialPromocional.ConstruirMensaje(problematicos, 2, "REI  ");
+
+            StringAssert.Contains(mensaje, "no hay stock en REI de estas muestras");
+            StringAssert.Contains(mensaje, "Bórrelas del pedido: 42543 MUESTRA CONTORNO DE OJOS SPLENDORE, 43893 MUESTRA STARSUN FACIAL CREAM");
+            StringAssert.Contains(mensaje, "elija otro modo");
+            Assert.IsFalse(mensaje.Contains("Bórralas") || mensaje.Contains("Bórrala"), "De usted, no de tú: " + mensaje);
+        }
+
+        [TestMethod]
+        public void MensajeDeMaterialPromocional_UnaMuestraSinAlmacen_SingularYSinHuecoRaro()
+        {
+            var problematicos = new List<ProductoSinStockDTO>
+            {
+                new ProductoSinStockDTO { ProductoId = "45461", ProductoNombre = "SENSITIVE MUESTRA" }
+            };
+
+            string mensaje = ValidadorMaterialPromocional.ConstruirMensaje(problematicos, 2);
+
+            StringAssert.Contains(mensaje, "no hay stock de esta muestra (material promocional) y no puede quedarse pendiente. Bórrela del pedido: 45461");
+        }
+
+        [TestMethod]
+        public void AgruparMotivos5PorCiento_DosMuestras_UnSoloMotivoConLaLista()
+        {
+            var motivos = new List<string>
+            {
+                "Otro motivo",
+                ValidadorMuestrasYMaterialPromocional.PREFIJO_MOTIVO_5_POR_CIENTO + "42543",
+                ValidadorMuestrasYMaterialPromocional.PREFIJO_MOTIVO_5_POR_CIENTO + "43893"
+            };
+
+            List<string> agrupados = ValidadorMuestrasYMaterialPromocional.AgruparMotivos5PorCiento(motivos);
+
+            Assert.AreEqual(2, agrupados.Count, string.Join(" | ", agrupados));
+            Assert.AreEqual("Otro motivo", agrupados[0]);
+            StringAssert.Contains(agrupados[1], "supera el 5 % del pedido: no se pueden regalar los productos 42543 y 43893.");
+            StringAssert.Contains(agrupados[1], "Quite alguna de esas muestras o amplíe el pedido");
+        }
+
+        [TestMethod]
+        public void AgruparMotivos5PorCiento_UnaSolaMuestra_NoCambiaNada()
+        {
+            var motivos = new List<string> { ValidadorMuestrasYMaterialPromocional.PREFIJO_MOTIVO_5_POR_CIENTO + "42543" };
+
+            List<string> agrupados = ValidadorMuestrasYMaterialPromocional.AgruparMotivos5PorCiento(motivos);
+
+            CollectionAssert.AreEqual(motivos, agrupados);
         }
 
         [TestMethod]

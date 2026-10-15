@@ -92,7 +92,7 @@ namespace NestoAPI.Infraestructure.ValidadoresServirJunto
             {
                 PuedeDesmarcar = false,
                 ProductosProblematicos = productosProblematicos,
-                Mensaje = ConstruirMensaje(productosProblematicos, modoServicio)
+                Mensaje = ConstruirMensaje(productosProblematicos, modoServicio, almacen)
             };
         }
 
@@ -105,7 +105,13 @@ namespace NestoAPI.Infraestructure.ValidadoresServirJunto
         /// Ahora la lista aparece UNA vez, al final, con el código delante del nombre (sin el código
         /// hay que buscar la línea a ojo) y con el plural concordado.
         /// </summary>
-        internal static string ConstruirMensaje(List<ProductoSinStockDTO> productosProblematicos, byte? modoServicio = null)
+        /// <remarks>
+        /// NestoAPI#638: el mensaje decía que las muestras «se quedarían pendientes» sin decir por qué, y
+        /// el motivo es SIEMPRE que no hay stock disponible en el almacén (es lo único que comprueba
+        /// el validador). Sin eso parecía que el modo «no funcionaba»: una usuaria lo intentó 8 veces
+        /// seguidas (15/10/26). De paso, de usted (mezclaba «Bórralas» con «elija»).
+        /// </remarks>
+        internal static string ConstruirMensaje(List<ProductoSinStockDTO> productosProblematicos, byte? modoServicio = null, string almacen = null)
         {
             string listaProductos = string.Join(", ",
                 productosProblematicos.Select(p => $"{p.ProductoId} {p.ProductoNombre}"));
@@ -117,11 +123,13 @@ namespace NestoAPI.Infraestructure.ValidadoresServirJunto
             // NestoAPI#491: solo se deniega «Según vaya entrando»; los otros modos son la otra salida.
             string alternativa = $" O elija otro modo de servicio ({Constantes.Pedidos.ModosServicio.AlternativasSinValidacion()}).";
 
+            string enAlmacen = string.IsNullOrWhiteSpace(almacen) ? "" : $" en {almacen.Trim()}";
+
             return productosProblematicos.Count == 1
-                ? $"No se puede pasar el pedido a «{destino}»: esta muestra (material promocional) se quedaría " +
-                  $"pendiente y no está permitido. Bórrala primero del pedido: {listaProductos}.{alternativa}"
-                : $"No se puede pasar el pedido a «{destino}»: estas muestras (material promocional) se quedarían " +
-                  $"pendientes y no está permitido. Bórralas primero del pedido: {listaProductos}.{alternativa}";
+                ? $"No se puede pasar el pedido a «{destino}»: no hay stock{enAlmacen} de esta muestra (material promocional) " +
+                  $"y no puede quedarse pendiente. Bórrela del pedido: {listaProductos}.{alternativa}"
+                : $"No se puede pasar el pedido a «{destino}»: no hay stock{enAlmacen} de estas muestras (material promocional) " +
+                  $"y no pueden quedarse pendientes. Bórrelas del pedido: {listaProductos}.{alternativa}";
         }
 
         private static ValidarServirJuntoResponse PuedeDesmarcar() =>
