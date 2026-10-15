@@ -1,6 +1,7 @@
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Reposiciones;
 using NestoAPI.Models;
+using NestoAPI.Models.PreparacionAlmacen;
 using System;
 using System.Collections.Generic;
 using System.Net;
@@ -41,8 +42,10 @@ namespace NestoAPI.Controllers
         internal ReposicionesController(NVEntities db, IServicioPreparacionReposicion preparacion,
             IServicioTransitoReposiciones transito = null, IServicioCalendarioReposiciones calendario = null,
             IServicioReposicionAutomatica automatica = null, IPermisoRellenarReposicionManual permisoManual = null,
-            IServicioListadoReposicion listado = null, IProductosReposicionPuntual productosPuntual = null)
+            IServicioListadoReposicion listado = null, IProductosReposicionPuntual productosPuntual = null,
+            IServicioDiferenciasReposicion diferencias = null)
         {
+            this.diferencias = diferencias; // ídem (NestoAPI#634)
             this.db = db;
             this.preparacion = preparacion;
             this.transito = transito; // null = el de la BD, creado al usarlo (los tests del resto no pasan db)
@@ -470,6 +473,102 @@ namespace NestoAPI.Controllers
             try
             {
                 return Ok(await preparacion.Anular(empresa, numTraspaso, User).ConfigureAwait(false));
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Prohibido(ex);
+            }
+        }
+
+        // ---------------------------------------------------------------- NestoAPI#634: diferencias de reposición
+
+        private readonly IServicioDiferenciasReposicion diferencias;
+
+        private IServicioDiferenciasReposicion Diferencias => diferencias ?? (diferenciasPropias = diferenciasPropias
+            ?? new ServicioDiferenciasReposicion(new RepositorioDiferenciasReposicionSql(db)));
+
+        private ServicioDiferenciasReposicion diferenciasPropias;
+
+        // GET api/Reposiciones/Diferencias?estado=Pendiente&almacen=ALG&empresa=1
+        /// <summary>
+        /// NestoAPI#634 (Nesto#526, Ariadna#25): las diferencias entre lo enviado y lo recibido en las reposiciones, con lo que
+        /// hay que comprobar en el almacén de origen. <paramref name="estado"/>: Pendiente, Resuelta o Todas (por defecto,
+        /// Pendiente). <paramref name="almacen"/>: el de origen (donde se comprueba). Almacén y Dirección ven todas; los demás,
+        /// solo las de su almacén (AlmacénPedidoVta); otro almacén, 403. Pendientes primero, de la más antigua a la más nueva.
+        /// </summary>
+        [HttpGet]
+        [Route("Diferencias")]
+        [ResponseType(typeof(List<DiferenciaReposicionDTO>))]
+        public async Task<IHttpActionResult> GetDiferencias(string estado = EstadosDiferenciaReposicion.PENDIENTE, string almacen = null,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            try
+            {
+                return Ok(await Diferencias.Listar(empresa, estado, almacen, User).ConfigureAwait(false));
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Prohibido(ex);
+            }
+        }
+
+        // GET api/Reposiciones/Diferencias/Contador?almacen=ALG&empresa=1
+        /// <summary>NestoAPI#634: cuántas diferencias quedan por comprobar en <paramref name="almacen"/> (todas si no se dice y se puede).</summary>
+        [HttpGet]
+        [Route("Diferencias/Contador")]
+        [ResponseType(typeof(ContadorDiferenciasReposicionDTO))]
+        public async Task<IHttpActionResult> GetContadorDiferencias(string almacen = null, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            try
+            {
+                return Ok(await Diferencias.ContarPendientes(empresa, almacen, User).ConfigureAwait(false));
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Prohibido(ex);
+            }
+        }
+
+        // GET api/Reposiciones/Diferencias/12?empresa=1
+        /// <summary>NestoAPI#634: una diferencia. 404 si no existe; 403 si no es de su almacén.</summary>
+        [HttpGet]
+        [Route("Diferencias/{id:int}")]
+        [ResponseType(typeof(DiferenciaReposicionDTO))]
+        public async Task<IHttpActionResult> GetDiferencia(int id, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            try
+            {
+                DiferenciaReposicionDTO diferencia = await Diferencias.Leer(empresa, id, User).ConfigureAwait(false);
+                return diferencia == null ? (IHttpActionResult)NotFound() : Ok(diferencia);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Prohibido(ex);
+            }
+        }
+
+        // POST api/Reposiciones/Diferencias/12/Resolver?empresa=1   { "Resolucion": "Confirmada", "Comentario": "..." }
+        /// <summary>
+        /// NestoAPI#634: la comprobación en el origen. «Confirmada» (cuadra con lo que dejó el ajuste), «NoEstaba» (solo si se
+        /// recibió de menos: lo que volvió al origen no está, baja), «Sobraba» (solo si se recibió de más: lo descontado sigue
+        /// allí, alta) o «ErrorRecepcion» (se equivocó quien recibió: se deshace el ajuste del origen y se corrige el destino).
+        /// Con el interruptor Reposiciones:AjustarStockDiferencias apagado solo se apunta (el stock no se toca y se dice).
+        /// Resuelven Almacén y Dirección; las de una tienda, también su gente (403 si no). 404 si no existe; 409 si ya estaba
+        /// resuelta; 400 si la resolución no existe o no vale para esa diferencia.
+        /// </summary>
+        [HttpPost]
+        [Route("Diferencias/{id:int}/Resolver")]
+        [ResponseType(typeof(ResultadoResolverDiferenciaReposicionDTO))]
+        public async Task<IHttpActionResult> PostResolverDiferencia(int id, [FromBody] ResolverDiferenciaReposicionDTO peticion,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            if (peticion == null || string.IsNullOrWhiteSpace(peticion.Resolucion))
+            {
+                return BadRequest("Falta la resolución (Confirmada, NoEstaba, Sobraba o ErrorRecepcion).");
+            }
+            try
+            {
+                return Ok(await Diferencias.Resolver(empresa, id, peticion, User).ConfigureAwait(false));
             }
             catch (UnauthorizedAccessException ex)
             {
