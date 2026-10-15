@@ -2,6 +2,7 @@
 using NestoAPI.Infraestructure.Clientes;
 using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Infraestructure.Kits;
+using NestoAPI.Infraestructure.Seguridad;
 using NestoAPI.Infraestructure.Sincronizacion;
 using NestoAPI.Infraestructure.Vendedores;
 using NestoAPI.Models;
@@ -170,6 +171,13 @@ namespace NestoAPI.Controllers
                 CodigoBarras = producto.CodBarras?.Trim()
             };
 
+            // NestoAPI#644: este DTO es el que se publica por Nesto_sync, y el campo viajaba
+            // siempre a 0. Sin clasificación se queda en 0 (= sin clasificar, como en el buscador).
+            productoDTO.ClasificacionMasVendidos = await db.ClasificacionMasVendidos
+                .Where(c => c.Empresa == empresa && c.Producto == id)
+                .Select(c => (int?)c.Posicion)
+                .FirstOrDefaultAsync().ConfigureAwait(false) ?? 0;
+
             // NestoAPI#446: la tarifa profesional también es "el precio al que compra" para
             // quien hace pedidos sin ver los precios. El PVP público se queda: es el de la web.
             if (PoliticaPreciosOcultos.EsUsuarioSinPrecios(User?.Identity))
@@ -324,6 +332,45 @@ namespace NestoAPI.Controllers
             PoliticaPreciosOcultos.AplicarNivel(productoDTO, nivelPrecios, (decimal)producto.PVP);
 
             return Ok(productoDTO);
+        }
+
+        // GET: api/Productos/ClasificacionMasVendidos?empresa=1
+        /// <summary>
+        /// NestoAPI#644: la clasificación de más vendidos COMPLETA, para que la tienda la descargue
+        /// cada noche y ordene sus listados por «Relevancia». Va por endpoint y no por Nesto_sync
+        /// porque un cambio de posición no republica el producto.
+        ///
+        /// La tabla la rellena prdActualizarClasificacionProductos (job del Agente SQL
+        /// «Actualizar estados productos», diario a las 20:00, tarda unos 6 minutos).
+        ///
+        /// Lo llama la tienda por cron: API key de PrestaShop en la cabecera X-API-KEY, como
+        /// prestashop-login. Sin ella o con una mala, 401.
+        /// </summary>
+        [HttpGet]
+        [ApiKey("ApiKeyPrestashop", "X-API-KEY")]
+        [ResponseType(typeof(List<ClasificacionMasVendidosDTO>))]
+        [Route("api/Productos/ClasificacionMasVendidos")]
+        public async Task<IHttpActionResult> GetClasificacionMasVendidos(string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            List<ClasificacionMasVendidosDTO> filas = await db.ClasificacionMasVendidos
+                .AsNoTracking()
+                .Where(c => c.Empresa == empresa)
+                .OrderBy(c => c.Posicion)
+                .Select(c => new ClasificacionMasVendidosDTO
+                {
+                    Producto = c.Producto,
+                    Posicion = c.Posicion
+                })
+                .ToListAsync().ConfigureAwait(false);
+
+            // El Trim en memoria: dentro de la proyección EF lo traduciría a LTRIM(RTRIM()) igual,
+            // pero así no depende del proveedor y los tests con datos en memoria lo cubren.
+            foreach (ClasificacionMasVendidosDTO fila in filas)
+            {
+                fila.Producto = fila.Producto?.Trim();
+            }
+
+            return Ok(filas);
         }
 
         // GET: api/Productos/Relacionados/5

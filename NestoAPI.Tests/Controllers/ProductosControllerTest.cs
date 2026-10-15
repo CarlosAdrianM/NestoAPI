@@ -77,6 +77,10 @@ namespace NestoAPI.Tests.Controllers
                 SubGruposProducto = new SubGruposProducto { Descripción = "Cremas" }
             };
             ConfigurarFakeDbSetFicha(fakeProductos, new List<Producto> { producto }.AsQueryable());
+            // NestoAPI#644: la ficha también lee la clasificación de más vendidos
+            DbSet<ClasificacionMasVendido> fakeClasificacion = A.Fake<DbSet<ClasificacionMasVendido>>(o => o.Implements<IQueryable<ClasificacionMasVendido>>().Implements<IDbAsyncEnumerable<ClasificacionMasVendido>>());
+            A.CallTo(() => db.ClasificacionMasVendidos).Returns(fakeClasificacion);
+            ConfigurarFakeDbSetFicha(fakeClasificacion, new List<ClasificacionMasVendido>().AsQueryable());
 
             ProductosController controller = new ProductosController(db);
 

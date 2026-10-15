@@ -280,6 +280,7 @@
     <Compile Include="Controllers\PedidosVentaPrepagoConPickingTests.cs" />
     <Compile Include="Controllers\PedidosVentaServirJuntoTests.cs" />
     <Compile Include="Controllers\PedidosCompraControllerTests.cs" />
+    <Compile Include="Controllers\ProductosClasificacionMasVendidosTests.cs" />
     <Compile Include="Controllers\ProductosControllerTest.cs" />
     <Compile Include="Controllers\CodigosPostalesControllerTests.cs" />
     <Compile Include="Controllers\ProductosCategoriasSecundariasControllerTests.cs" />

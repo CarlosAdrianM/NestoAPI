@@ -1763,6 +1763,7 @@
     <Compile Include="Models\NVEntitiesSync.cs" />
     <Compile Include="Models\PrestashopProductoDTO.cs" />
     <Compile Include="Models\ProductoDTO.cs" />
+    <Compile Include="Models\Productos\ClasificacionMasVendidosDTO.cs" />
     <Compile Include="Models\Productos\ControlStockAlmacenModel.cs" />
     <Compile Include="Models\Productos\ControlStockBase.cs" />
     <Compile Include="Models\Productos\ControlStockProductoModel.cs" />

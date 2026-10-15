@@ -34,7 +34,11 @@ namespace NestoAPI.Tests.Controllers
             fakeCodigos = A.Fake<DbSet<ProductoCodigoBarras>>(o => o.Implements<IQueryable<ProductoCodigoBarras>>().Implements<IDbAsyncEnumerable<ProductoCodigoBarras>>());
             A.CallTo(() => db.ProductosCodigosBarras).Returns(fakeCodigos);
             ConfigurarCodigos();
-            controller = new ProductosController(db, A.Fake<IGestorSincronizacion>());
+            // NestoAPI#644: la ficha también lee la clasificación de más vendidos
+            DbSet<ClasificacionMasVendido> fakeClasificacion = A.Fake<DbSet<ClasificacionMasVendido>>(o => o.Implements<IQueryable<ClasificacionMasVendido>>().Implements<IDbAsyncEnumerable<ClasificacionMasVendido>>());
+            A.CallTo(() => db.ClasificacionMasVendidos).Returns(fakeClasificacion);
+            ConfigurarFakeDbSet(fakeClasificacion, new List<ClasificacionMasVendido>().AsQueryable());
+            controller =new ProductosController(db, A.Fake<IGestorSincronizacion>());
         }
 
         private static Producto CrearProducto(string numero, string codBarras, string nombre)
