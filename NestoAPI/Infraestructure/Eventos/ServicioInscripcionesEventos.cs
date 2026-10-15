@@ -356,16 +356,12 @@ namespace NestoAPI.Infraestructure.Eventos
 
         // ---------------- Pagos ----------------
 
-        public const string MENSAJE_EFECTIVO_NO_DISPONIBLE =
-            "Todavía no se puede registrar desde aquí el cobro en efectivo en la caja de la tienda. La inscripción sigue reservada " +
-            "(en efectivo) hasta que se pueda apuntar ese cobro; mientras, avisa a Administración.";
-
         /// <summary>
-        /// Carlos (14/10/26): marcar a mano que la inscripción está pagada (transferencia o tarjeta en el datáfono). Quien mantiene
-        /// el evento, Administración (cualquier evento) y Dirección. NO apunta nada en contabilidad.
-        /// <para>Efectivo: la inscripción se pone en firme con el cobro de verdad en la caja de la tienda, como la de tarjeta con
-        /// el cobro del enlace. La API todavía no tiene ese camino (Cajas está en Nesto), así que con Efectivo devuelve 400 y la
-        /// inscripción se queda Reservada.</para>
+        /// Carlos (14/10/26): marcar a mano que la inscripción está pagada (transferencia, tarjeta en el datáfono o efectivo en la
+        /// tienda). Quien mantiene el evento, Administración (cualquier evento) y Dirección. NO apunta nada en contabilidad.
+        /// <para>Efectivo (Carlos, 15/10/26): el cobro en efectivo no se automatiza; lo mete cada usuario en su caja, como
+        /// cualquier cobro en efectivo. La inscripción en efectivo se queda Reservada hasta que alguien (la tienda o
+        /// Administración) la marca aquí como pagada, igual que las demás formas de pago.</para>
         /// </summary>
         public async Task<InscripcionEventoDTO> MarcarPagada(int id, MarcarPagoInscripcionDTO peticion, IPrincipal usuario)
         {
@@ -374,11 +370,7 @@ namespace NestoAPI.Infraestructure.Eventos
             ComprobarPuedeMantener(usuario, evento, paraMarcarPagada: true);
 
             FormaPagoInscripcionEvento forma = ReglasInscripcionEvento.FormaPago(peticion?.FormaPago)
-                ?? throw new NestoBusinessException("Indica cómo ha pagado: Tarjeta o Transferencia.");
-            if (forma == FormaPagoInscripcionEvento.Efectivo)
-            {
-                throw new NestoBusinessException(MENSAJE_EFECTIVO_NO_DISPONIBLE);
-            }
+                ?? throw new NestoBusinessException("Indique cómo ha pagado: Tarjeta, Transferencia o Efectivo.");
             decimal importe = Math.Round(peticion.Importe ?? evento.ImporteSenal, 2, MidpointRounding.AwayFromZero);
             if (importe < 0)
             {

@@ -116,8 +116,9 @@ namespace NestoAPI.Controllers
 
         // POST api/Eventos/Inscripciones/7/Pago   { FormaPago, Importe?, Fecha? }
         /// <summary>
-        /// Marca la inscripción como pagada a mano (transferencia o tarjeta). Quien mantiene el evento, Administración o
-        /// Dirección. Pasa por el mismo enganche del corte 2 que el cobro por enlace. Efectivo: 400, todavía no (falta el cobro en caja).
+        /// Marca la inscripción como pagada a mano (transferencia, tarjeta o efectivo). Quien mantiene el evento, Administración
+        /// o Dirección. Pasa por el mismo enganche del corte 2 que el cobro por enlace. La API no contabiliza nada: el efectivo
+        /// lo mete cada usuario en su caja (Carlos, 15/10/26).
         /// </summary>
         [HttpPost]
         [Route("Inscripciones/{id:int}/Pago")]
