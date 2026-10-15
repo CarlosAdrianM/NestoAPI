@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Propuestas de stock explicadas</title>
+<style>
+  @page { size: A4; margin: 16mm 15mm; }
+  body { font-family: "Segoe UI", Arial, sans-serif; font-size: 10.8pt; color: #1a1a1a; line-height: 1.42; background: #fff; max-width: 190mm; margin: 0 auto; }
+  h1 { font-size: 22pt; margin: 0 0 4px; color: #1f3a5f; }
+  .sub { color: #555; margin: 0 0 14px; font-size: 10.5pt; }
+  h2 { font-size: 14pt; color: #1f3a5f; border-bottom: 2px solid #1f3a5f; padding-bottom: 3px; margin: 22px 0 8px; break-after: avoid; }
+  h3 { font-size: 12pt; margin: 14px 0 4px; color: #333; break-after: avoid; }
+  p { margin: 5px 0; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0 10px; font-size: 9.6pt; break-inside: auto; }
+  tr { break-inside: avoid; }
+  th, td { border: 1px solid #bbb; padding: 4px 6px; text-align: left; vertical-align: top; }
+  th { background: #e8eef6; }
+  thead { display: table-header-group; }
+  td.tema { font-weight: 600; background: #f7f7f7; width: 17%; }
+  table.cols td:first-child { font-weight: 600; background: #f7f7f7; width: 16%; }
+  table.cols td:nth-child(2) { width: 34%; }
+  table.directiva td:first-child { width: 24%; background: #f7f7f7; }
+  table.directiva td:nth-child(2) { width: 46%; }
+  .box { background: #f4f7fb; border-left: 4px solid #1f3a5f; padding: 7px 12px; margin: 10px 0; break-inside: avoid; }
+  .ojo { background: #fff7e6; border-left: 4px solid #e08a00; padding: 7px 12px; margin: 10px 0; break-inside: avoid; }
+  .cita { background: #f6f6f6; border-left: 4px solid #888; padding: 6px 12px; margin: 8px 0; font-style: italic; color: #333; break-inside: avoid; }
+  .box p, .ojo p { margin: 3px 0; }
+  ol, ul { margin: 4px 0 6px; padding-left: 22px; }
+  li { margin: 2px 0; }
+  .ok { color: #1b6e20; font-weight: 700; }
+  .parcial { color: #a35b00; font-weight: 700; }
+  .no { color: #b71c1c; font-weight: 700; }
+  .salto { break-before: page; }
+  .portada { font-size: 10pt; line-height: 1.36; }
+  .portada table { font-size: 9.2pt; }
+  .portada h1 { font-size: 20pt; }
+  .portada .titulo { margin-top: 2mm; }
+  .portada .pie-portada { margin-top: 10px; color: #666; font-size: 9.5pt; border-top: 1px solid #ccc; padding-top: 6px; }
+  .tres { display: flex; gap: 8px; margin: 10px 0; }
+  .tres div { flex: 1; background: #f4f7fb; border-top: 3px solid #1f3a5f; padding: 7px 9px; font-size: 10pt; }
+  .tres b { display: block; color: #1f3a5f; margin-bottom: 2px; }
+  .num { text-align: right; white-space: nowrap; }
+  .pie { color: #777; font-size: 9pt; margin-top: 22px; border-top: 1px solid #ccc; padding-top: 6px; }
+  code { font-family: Consolas, monospace; font-size: 9pt; background: #f0f0f0; padding: 0 3px; }
+  @media (max-width: 700px) { body { padding: 0 16px; } .tres { flex-direction: column; } table { font-size: 9pt; } }
+</style>
+</head>
+<body>
+
+<!-- ============================ PORTADA Y RESUMEN ============================ -->
+<section class="portada">
+<div class="titulo">
+<h1>Propuestas de stock</h1>
+<p class="sub" style="font-size:12pt">Qué es el Excel mensual, cómo se lee cada pestaña y cada columna, y cómo responde a la directiva de los socios de julio de 2026</p>
+<p class="sub">Para Nacho · Nueva Visión · octubre de 2026 · Sistema en servicio desde el 15/10/26 (primer mes calculado: septiembre de 2026)</p>
+</div>
+
+<div class="box">
+<p><b>En una página.</b></p>
+<p>Cada mes, la madrugada del día 1, el sistema revisa uno por uno todos los productos que tienen stock, ventas en los dos últimos años, pedidos pendientes o compras en curso. Para cada uno calcula cómo evoluciona su venta, cuánto stock le sobra en euros y <b>qué conviene hacer</b>: ajustar su máximo y su mínimo, parar compras, pasarlo a «sobre pedido» (estado 1), liquidarlo por el Outlet o por Ganavisiones o, si es de fabricación propia, potenciar sus ventas. Cada propuesta lleva <b>una frase que explica de dónde sale cada cifra</b>.</p>
+<p>El resultado llega por correo en un <b>Excel con seis pestañas</b> (Resumen, Top 50 por exceso, Todos los productos, Nuevos, Propios y Calibración) y, a la vez, Compras recibe un aviso en Nesto para <b>decidir cada propuesta</b>: aplicarla, rechazarla, posponerla, silenciarla o darle un plazo para vender más. Nada cambia en el stock sin que una persona lo apruebe, y queda apuntado quién lo hizo, cuándo, y qué había antes y después.</p>
+<p>Al mes siguiente se mide el resultado con dos indicadores: el <b>valor del stock</b> (que debe bajar) y los <b>días que tardamos en servir</b> (que no deben empeorar).</p>
+</div>
+
+<div class="tres">
+<div><b>La idea</b>Menos stock con el mismo servicio: que no se acumule lo que ya no se vende.</div>
+<div><b>La diferencia</b>Avisa <i>antes</i> de que el producto deje de venderse, cuando aún se puede dejar de comprar y liquidar con poco coste.</div>
+<div><b>La garantía</b>Propone, no impone: decide Compras, y cada decisión queda registrada.</div>
+</div>
+
+<h3>Ficha rápida</h3>
+<table>
+<tr><td class="tema">Qué es</td><td>Un Excel con las propuestas de stock del último mes cerrado, producto por producto, con su explicación.</td></tr>
+<tr><td class="tema">Cada cuánto</td><td>Mensual. Se calcula el día 1 de madrugada (04:30), con el mes anterior ya cerrado. Una hora antes (03:30) se guardan los indicadores generales del mes.</td></tr>
+<tr><td class="tema">A quién</td><td>Hoy, por decisión de Carlos, solo a él mientras se validan las primeras cifras. La lista de destinatarios se amplía sin cambiar el programa (Dirección y Almacén, como pide la directiva). Compras recibe, además, el aviso en Nesto para decidir.</td></tr>
+<tr><td class="tema">Qué productos</td><td>Todos los que tienen stock, venta en los últimos 24 meses, unidades pendientes de servir o pedidos de compra abiertos. No entran las materias primas (grupo MTP) ni las muestras (subgrupo MMP), ni los productos ficticios.</td></tr>
+<tr><td class="tema">Qué stock</td><td>El de toda la empresa (Algete, Reina, Alcobendas), <b>sin el almacén de extinguidos</b>. Los máximos y mínimos que se proponen son los de <b>Algete</b>, que es donde se compra.</td></tr>
+<tr><td class="tema">Qué venta</td><td>Toda la empresa: tiendas, ruta, Amazon y web («si lo vendo, lo tengo que comprar»). Solo lo que ha salido de verdad a clientes (albaranes y facturas), descontando devoluciones. No cuentan presupuestos ni notas de entrega.</td></tr>
+<tr><td class="tema">Valoración</td><td>Al precio medio de coste del producto.</td></tr>
+</table>
+
+<p class="pie-portada">Este documento describe lo que el sistema hace hoy (versión publicada el 15 de octubre de 2026), no lo que está previsto. Lo que la directiva pide y aún no está cubierto se explica en el apartado 7.</p>
+</section>
+
+<!-- ============================ 2. CORRESPONDENCIA ============================ -->
+<h2 class="salto">1. De dónde partimos: el problema y la directiva</h2>
+<p>El valor del stock crece año a año porque entran novedades y los productos que dejan de venderse no salen hasta que acaban en pérdidas. Hubo un intento anterior con un Excel que calculaba la «pendiente» de las ventas de 12 meses, y no funcionó por cuatro razones: no se sabía a partir de qué valor había que preocuparse, no se relacionaba con los máximos y mínimos con los que se compra, la lista era inabarcable y, en la práctica, nadie actuaba.</p>
+<p>El sistema nuevo está construido para resolver justo eso: <b>prioriza por euros</b> (se empieza por los 50 productos con más dinero sobrante), <b>traduce cada señal en una acción concreta</b> sobre el máximo y el mínimo, <b>explica cada cifra</b> y <b>obliga a decidir</b> (lo que no se decide vuelve a salir el mes siguiente).</p>
+<p>La directiva de los socios de julio de 2026 (el documento de Nacho) fija el marco: un almacén en tres partes, un informe mensual de stock, un informe mensual de tendencias para adelantarse a la obsolescencia, unos objetivos de rotación, unos criterios para aceptar familias y la situación de cada grupo de familias, con los propios como productos a potenciar.</p>
+
+<h2>2. La directiva, punto por punto</h2>
+<p>Leyenda: <span class="ok">Cubierto</span> · <span class="parcial">Parcial</span> · <span class="no">Pendiente</span> (detalle en el apartado 7).</p>
+<table class="directiva">
+<thead><tr><th>Punto de la directiva</th><th>Qué hace el sistema</th><th>Dónde se ve</th></tr></thead>
+<tr><td><b>1. El almacén en tres partes</b>: corriente, descatalogado (estado 4) y a extinguir.</td>
+<td><span class="ok">Cubierto.</span> El almacén de extinguidos queda fuera de todos los cálculos. Los productos en estado 4 (o en cualquier estado que ya no se trabaja) no reciben máximos: si tienen stock, la propuesta es <b>Liquidar</b>, con máximo y mínimo a 0. Las tendencias y los máximos solo se calculan para los productos que se trabajan (estados 0 y 1), es decir, para el almacén corriente. Desde el 15/10 los productos en estado 4 que están en la tienda online pasan solos a la categoría Outlet.</td>
+<td>Columna «Estado» y «Acción» = Liquidar en las pestañas de productos. Indicadores mensuales: valor y número de productos en estado 4.</td></tr>
+<tr><td><b>2. Excel mensual de Administración</b>: artículos y saldo por almacén; artículos de proveedores con última venta de más de 365 días; artículos sin venta en 183 días. A Dirección y Almacén.</td>
+<td><span class="parcial">Parcial.</span> Cada mes se guarda, por almacén y en total, el valor y las unidades de stock, el valor y número de productos <b>sin venta en 6, 12 y 24 meses</b> (equivalentes a 183 y 365 días), los de estado 4 y estado 1, la rotación, la cobertura, los días en servir, las compras, las mermas y las altas y bajas de referencias, con 36 meses de histórico. Falta: que vaya dentro del Excel que se reparte, el corte por proveedor y el número de artículos con stock por almacén.</td>
+<td>Tabla mensual de indicadores (hoy se consulta por la API, no va en el Excel). En el Excel, pestaña «Resumen»: valor de stock total y sin propios.</td></tr>
+<tr><td><b>3. Tendencias</b> (solo almacén corriente): descubrir cambios en la tendencia de venta para adelantarse a la obsolescencia; mensual, a Dirección.</td>
+<td><span class="ok">Cubierto.</span> Es el núcleo del Excel. Para cada producto: si sube, está estable, ha tenido un bajón puntual o está en <b>declive</b> (confirmado con 5 años de historia), con la «pendiente» en % al mes, la comparación del último trimestre con el del año anterior y la posición frente a su mejor año. En los nuevos, la <b>tasa de recompra</b> avisa a los 2-3 meses de que un lanzamiento no repite. Mensual y por correo.</td>
+<td>Columnas «Pendiente %/mes», «Tendencia», «Trimestre vs año anterior», «Año pico», «% del pico» (pestaña Todos) y «Recompra %» (pestaña Nuevos).</td></tr>
+<tr><td><b>4. Rotación</b> (almacén corriente): aceptable ≥ 2 (6 meses), óptimo ≥ 4 (3 meses).</td>
+<td><span class="ok">Cubierto</span> en lo esencial. Cada producto lleva su <b>cobertura en meses</b> (la rotación vista al revés: 6 meses = rotación 2; 3 meses = rotación 4). El stock objetivo es de <b>90 días = rotación 4, el óptimo de la directiva</b>; todo lo que pasa de ahí es «exceso» y se valora en euros. Solo se admite más cobertura cuando el proveedor no permite menos (plazo de entrega y lote mínimo). La rotación general (veces al año) se mide cada mes por almacén.</td>
+<td>Columnas «Cobertura (meses)», «Cobertura objetivo (días)», «Exceso (uds)» y «Exceso €». Indicadores mensuales: rotación.</td></tr>
+<tr><td><b>5. Criterios para aceptar familias</b>: venta anual ≥ 10.000 €, margen bruto ≥ 50 %, forma de pago &lt; 60 días.</td>
+<td><span class="no">Pendiente.</span> El sistema trabaja por producto; no calcula aún venta anual, margen ni condiciones de pago por familia.</td>
+<td>Se puede filtrar por la columna «Familia», pero sin esas cifras. Propuesta en el apartado 7.</td></tr>
+<tr><td><b>6a. Propios</b> (Unión Láser y Eva Visnú): hay que POTENCIARLOS; margen óptimo ≥ 75 %.</td>
+<td><span class="ok">Cubierto</span> en stock; <span class="no">pendiente</span> en margen. Tienen <b>fórmula propia</b> (se fabrican por lotes, con plazo largo, y no pueden faltar), <b>pestaña propia</b>, y <b>nunca se proponen para liquidar ni para el Outlet</b>. Si les sobra stock, la propuesta es «Potenciar ventas», y Compras puede fijar un <b>objetivo de venta mensual y una fecha de revisión</b> que el sistema sigue mes a mes. No se mide el margen ni el mix Visnú/UL.</td>
+<td>Pestaña «Propios» y bloque «Propios por acción» en «Resumen». Decisión «Potenciar».</td></tr>
+<tr><td><b>6b-6e. Especiales, Exclusivas, Posibles, Resto</b>: márgenes mínimos, familias en liquidación (Urapan, Cazcarra, Dduueett, Eurostil) o en vigilancia (Faby, Max2originale, Maystar, ODA, I'm Golden, Staleks), rotación a llevar entre 2 y 4.</td>
+<td><span class="parcial">Parcial.</span> La rotación se trabaja producto a producto en todas ellas. Cuando una familia se pone en liquidación pasando sus productos a estado 4, el Excel los propone para liquidar y el Outlet los recoge solo. Pero la clasificación (Especiales, Exclusivas…) no existe todavía en Nesto, ni la marca de «vigilancia» por familia, ni los márgenes.</td>
+<td>Filtro por «Familia» en las pestañas de productos. Propuesta en el apartado 7.</td></tr>
+<tr><td><b>6f-6g. Genéricos y Peluquería</b> (Peluquería con criterios distintos; revisar en el primer trimestre de 2027).</td>
+<td><span class="parcial">Parcial.</span> Se tratan con las mismas fórmulas que el resto; la estacionalidad se calcula por familia, lo que ya recoge parte de sus diferencias. No hay criterios específicos de Peluquería.</td>
+<td>Filtro por «Grupo» (pestaña Todos).</td></tr>
+</table>
+
+<div class="box"><p><b>Resumen de la correspondencia.</b> Los puntos 1, 3 y 4 (estructura del almacén, tendencias y rotación) y la parte de stock del 6a (propios) están cubiertos por el Excel y por las decisiones de Compras. El punto 2 (informe de stock) está calculado y guardado mes a mes, pero aún no se reparte en el Excel. Los puntos 5 y 6 en lo que se refiere a <b>márgenes, condiciones de pago y clasificación de familias</b> no están cubiertos: el sistema actual mide stock y venta, no rentabilidad.</p></div>
+
+<!-- ============================ 3. PESTAÑAS ============================ -->
+<h2 class="salto">3. El Excel, pestaña por pestaña</h2>
+<p>El fichero se llama <code>PropuestasStock_AAAA-MM.xlsx</code> y llega con un correo que ya resume lo esencial. Las pestañas están en este orden:</p>
+<table>
+<thead><tr><th style="width:22%">Pestaña</th><th>Para qué sirve</th></tr></thead>
+<tr><td class="tema">1. Resumen</td><td>La foto del mes en dos tablas: valor de stock y exceso, con y sin propios; y los propios agrupados por acción.</td></tr>
+<tr><td class="tema">2. Top 50 por exceso</td><td>Los 50 productos con más euros de stock sobrante (sin propios). Es la lista de trabajo: por aquí se empieza.</td></tr>
+<tr><td class="tema">3. Todos los productos</td><td>Todos los productos (sin propios) con todas sus cifras, para filtrar por familia, proveedor, fase o acción.</td></tr>
+<tr><td class="tema">4. Nuevos (fase A)</td><td>Los lanzamientos de menos de un año, ordenados para ver primero los que no repiten.</td></tr>
+<tr><td class="tema">5. Propios</td><td>Unión Láser y Eva Visnú, con su fórmula de lotes y vida útil.</td></tr>
+<tr><td class="tema">6. Calibración</td><td>La prueba de que los umbrales avisan a tiempo: cómo estaban, meses antes, los productos que acabaron mal.</td></tr>
+</table>
+<p>Todas las pestañas de productos tienen la cabecera fija y filtros, y la última columna, <b>«Explicación»</b>, cuenta en una frase todo el cálculo de esa fila.</p>
+
+<h3>El correo que acompaña al Excel</h3>
+<p>Dice el mes, cuántos productos tienen propuesta, el <b>exceso total</b> en euros y cuánto suman los 50 primeros; el número de productos y el exceso de <b>cada acción</b> (Ajustar, Liquidar, Parar compras…); y el valor de stock y el exceso <b>sin propios</b> y <b>solo de propios</b>, para que los propios no tapen el exceso real. Al pie, datos de control: productos leídos, familias con estacionalidad, filas guardadas, si algo falló y cuánto tardó.</p>
+
+<!-- Resumen -->
+<h3>Pestaña 1 · Resumen</h3>
+<p><b>Para qué sirve.</b> Ver de un vistazo cuánto stock tenemos y cuánto sobra, separando los propios, que por su forma de fabricarse (lotes grandes) tienen siempre más cobertura y, mezclados con el resto, darían una imagen falsa del exceso. <b>Cómo se lee.</b> La primera tabla tiene tres filas: «Todos (con propios)», «Sin propios» y «Solo propios». La segunda, «Propios por acción (nunca Outlet ni liquidar)», reparte los propios por lo que se propone hacer con ellos, de más a menos exceso.</p>
+<table class="cols">
+<thead><tr><th>Columna</th><th>Qué significa y cómo se calcula</th><th>Por qué está</th></tr></thead>
+<tr><td>Productos / Acción</td><td>El grupo de la fila: todos, sin propios o solo propios; en la segunda tabla, la acción propuesta.</td><td>Separar lo que se gestiona igual.</td></tr>
+<tr><td>Filas</td><td>Número de productos del grupo.</td><td>Da idea del trabajo que supone.</td></tr>
+<tr><td>Valor de stock</td><td>Suma de stock × precio medio de coste (sin contar existencias negativas).</td><td>Es el indicador que queremos bajar.</td></tr>
+<tr><td>Exceso (uds)</td><td>Unidades que pasan del stock objetivo de cada producto.</td><td>Cuánto sobra físicamente.</td></tr>
+<tr><td>Exceso €</td><td>Esas unidades × precio medio.</td><td>El dinero inmovilizado que se puede liberar: el tamaño del problema.</td></tr>
+</table>
+
+<!-- Top / Todos -->
+<h3>Pestañas 2 y 3 · Top 50 por exceso y Todos los productos</h3>
+<p><b>Para qué sirven.</b> «Top 50» es la lista corta de trabajo: los productos con más euros atrapados, de más a menos. «Todos» es la lista completa con más columnas, para analizar. Ninguna de las dos lleva los propios (van en su pestaña). <b>Cómo se leen.</b> Cada fila es un producto. Se mira primero la «Acción» y el «Exceso €»; después, las columnas de tendencia dicen <i>por qué</i>; por último, «Máx/Mín actual» frente a «Máx/Mín propuesto» dicen <i>qué cambia</i>. La «Explicación» lo resume todo.</p>
+<p>Las columnas marcadas con <b>(T)</b> solo aparecen en «Todos los productos».</p>
+<table class="cols">
+<thead><tr><th>Columna</th><th>Qué significa y cómo se calcula</th><th>Por qué está (qué decisión ayuda a tomar)</th></tr></thead>
+<tr><td>Producto, Nombre</td><td>Referencia y descripción.</td><td>Identificarlo.</td></tr>
+<tr><td>Familia, Proveedor</td><td>Marca y proveedor habitual.</td><td>Filtrar por familia (directiva, punto 6) o agrupar las acciones por proveedor (un pedido, una llamada).</td></tr>
+<tr><td>Fase</td><td><b>A</b> nuevo (menos de 12 meses desde la primera venta), <b>B</b> maduro, <b>C</b> intermitente (menos de 12 unidades vendidas en un año). Ver apartado 4.</td><td>Cada fase se calcula con una fórmula distinta: no se puede juzgar igual un lanzamiento que un clásico o un aparato que se vende de uno en uno.</td></tr>
+<tr><td>Estado</td><td>Estado del producto en Nesto: 0 se trabaja con stock; 1 sobre pedido; 4 descatalogado (a liquidar).</td><td>Enlaza con el punto 1 de la directiva: en estado 4 ya no se proponen máximos, solo liquidar.</td></tr>
+<tr><td>Stock</td><td>Unidades en todos los almacenes, sin el de extinguidos.</td><td>Base de la cobertura y del exceso.</td></tr>
+<tr><td>Precio medio</td><td>Coste medio unitario.</td><td>Para pasar unidades a euros.</td></tr>
+<tr><td>Venta media 6 m</td><td>Unidades vendidas al mes de media en los últimos 6 meses (toda la empresa, neto de devoluciones).</td><td>La «velocidad de venta» de referencia de un producto maduro.</td></tr>
+<tr><td>Grupo (T)</td><td>Grupo de producto (por ejemplo, Peluquería, Cosmética).</td><td>Filtrar por grandes líneas (directiva, 6g).</td></tr>
+<tr><td>Meses desde 1ª venta (T)</td><td>Edad comercial del producto.</td><td>Decide si es nuevo (fase A).</td></tr>
+<tr><td>Ventas 12 m (T)</td><td>Unidades vendidas en el último año.</td><td>Decide si es intermitente (fase C) y da el tamaño real del producto.</td></tr>
+<tr><td>Venta ponderada (T)</td><td>Media que da más peso a lo reciente: (3 × media de 3 meses + 2 × media de 6 + media de 12) ÷ 6.</td><td>Es la que se usa para el máximo de un maduro. La fórmula que usamos hoy para comprar promedia 24 meses y reacciona un año tarde cuando un producto empieza a caer.</td></tr>
+<tr><td>Factor estacional (T)</td><td>Cuánto se vende en los próximos meses respecto a un mes normal, calculado para la familia con sus 3 últimos años (1,00 = sin estacionalidad; 1,30 = un 30 % más).</td><td>Que el máximo no baje justo antes de la temporada alta ni suba antes de la baja.</td></tr>
+<tr><td>Días en servir (T)</td><td>Lo que tarda el proveedor en servir, medido con sus pedidos reales (15 días si no se conoce).</td><td>Cuanto más tarda, más stock hace falta: es lo que justifica una cobertura mayor.</td></tr>
+<tr><td>Múltiplos (T)</td><td>Lote mínimo de compra en Algete.</td><td>Si el proveedor vende de 144 en 144, no se puede tener menos de lo que da un lote.</td></tr>
+<tr><td>Cobertura objetivo (días) (T)</td><td>El stock al que se aspira, en días de venta: <b>90 días</b> (rotación 4, el óptimo de la directiva), salvo que el proveedor obligue a más (ver «Cobertura alcanzable»).</td><td>Fija la línea a partir de la cual el stock es «exceso».</td></tr>
+<tr><td>Trimestre vs año anterior (T)</td><td>Ventas de los últimos 3 meses ÷ las de los mismos 3 meses del año anterior (0,80 = un 20 % menos).</td><td>Confirma o desmiente la pendiente sin que influya la estacionalidad.</td></tr>
+<tr><td>Año pico (T)</td><td>El mejor de los últimos 5 años de venta.</td><td>Contexto: un producto que ya pasó su mejor momento.</td></tr>
+<tr><td>% del pico (T)</td><td>Ventas de los últimos 12 meses ÷ las del año pico × 100.</td><td>Un 40 % del pico es una caída de fondo, no un mal mes.</td></tr>
+<tr><td>Años desde el pico (T)</td><td>0 = el último año es el mejor.</td><td>Distingue un producto en auge de uno en retirada.</td></tr>
+<tr><td>Pendiente de servir (T)</td><td>Unidades en pedidos de clientes aún no servidos.</td><td>Demanda que no hemos podido atender: en un nuevo, señal de que hay que comprar más.</td></tr>
+<tr><td>Pedido compra abierto (T)</td><td>Unidades ya pedidas al proveedor y no recibidas.</td><td>Si sobra stock y además hay compras en camino, lo primero es pararlas.</td></tr>
+<tr><td>Cobertura (meses)</td><td>Stock ÷ venta media de 6 meses. Vacía si no se ha vendido nada en 6 meses. Es la rotación vista al revés: 6 meses = rotación 2 (aceptable); 3 meses = rotación 4 (óptimo).</td><td>La cifra que la directiva pide vigilar (punto 4), producto a producto.</td></tr>
+<tr><td>Cobertura alcanzable (días)</td><td>La mínima cobertura posible con ese proveedor: días en servir + 7 de seguridad + los días que se tarda en vender un lote mínimo.</td><td>Evita pedir lo imposible: si el proveedor tarda 60 días, no se puede tener 30 días de stock.</td></tr>
+<tr><td>Pendiente %/mes</td><td>Cuánto cambia la venta cada mes en % de su media, calculado con los 12 últimos meses y descontada la estacionalidad (−5 = cada mes vende un 5 % menos).</td><td>El indicador de tendencia que pide el punto 3; al estar en %, se pueden comparar productos grandes y pequeños.</td></tr>
+<tr><td>Tendencia</td><td>Solo en maduros: <b>Sube</b>, <b>Estable</b>, <b>Bajón puntual</b> o <b>Declive</b> (reglas en el apartado 4).</td><td>La palabra que resume si hay que preocuparse. «Bajón puntual» evita reaccionar ante un mal año aislado.</td></tr>
+<tr><td>Exceso (uds), Exceso €</td><td>Stock − stock objetivo (cobertura objetivo × venta mensual), si es positivo; en euros, × precio medio.</td><td>El criterio de orden: por dónde se empieza.</td></tr>
+<tr><td>Acción</td><td>Ajustar máx/mín, Mantener, Parar compras, Pasar a estado 1, Liquidar o Nada (apartado 5).</td><td>Lo que se propone hacer. Es lo que faltaba en el intento anterior.</td></tr>
+<tr><td>Máx actual, Mín actual</td><td>Máximo y mínimo de Algete hoy (vacíos si no tiene control de stock).</td><td>Para comparar.</td></tr>
+<tr><td>Máx propuesto, Mín propuesto</td><td>Los que calcula la fórmula de su fase.</td><td>Lo que se escribirá si Compras aplica la propuesta.</td></tr>
+<tr><td>Explicación</td><td>La frase con todas las cifras usadas. Por ejemplo: «Maduro. 6 meses: 442,0 uds/mes, ponderada 387,9 × 1,00 estacional; proveedor 10 días + 7 de seguridad; múltiplos de 144; objetivo 90 días → máximo 364, mínimo 220 (hoy 555/295)».</td><td>Trazabilidad: cualquiera puede rehacer la cuenta y discutirla con datos.</td></tr>
+</table>
+
+<!-- Nuevos -->
+<h3>Pestaña 4 · Nuevos (fase A)</h3>
+<p><b>Para qué sirve.</b> Los lanzamientos son donde más stock se compromete con menos información. Un nuevo que vende mucho el primer mes y nadie repite (el caso I'm Golden) se desploma, y eso se ve a los 2-3 meses en la recompra, no a los 9 en la tendencia. <b>Cómo se lee.</b> Está ordenada por <b>recompra de menor a mayor</b> (los que no repiten, arriba) y, a igualdad, por valor de stock. Los que aún no tienen datos de recompra (menos de 90 días) van al final.</p>
+<table class="cols">
+<thead><tr><th>Columna</th><th>Qué significa y cómo se calcula</th><th>Por qué está</th></tr></thead>
+<tr><td>Producto, Nombre, Familia, Proveedor</td><td>Como en las otras pestañas.</td><td>Identificarlo.</td></tr>
+<tr><td>Meses desde 1ª venta</td><td>Edad del lanzamiento.</td><td>Para saber cuánto peso dar a las cifras.</td></tr>
+<tr><td>Velocidad (uds/mes)</td><td>Todo lo vendido desde la primera venta ÷ meses transcurridos (mínimo 1).</td><td>La demanda demostrada, no la esperada.</td></tr>
+<tr><td>Recompra %</td><td>De los clientes que lo compraron en sus primeros 60 días, cuántos han vuelto a comprarlo al menos 30 días después. Necesita 90 días de vida. (Amazon y la web cuentan como un cliente cada uno.)</td><td>La alarma temprana: por debajo del 20 % se compra con un tope más corto.</td></tr>
+<tr><td>Pendiente de servir</td><td>Unidades pedidas por clientes que no hemos podido servir.</td><td>Un nuevo con pendientes (el caso SERUM PERLÉ) necesita más, no menos.</td></tr>
+<tr><td>Stock, Pedido compra abierto</td><td>Lo que hay y lo que viene.</td><td>Para no sobrecomprar un lanzamiento.</td></tr>
+<tr><td>Exceso €, Acción, Máx/Mín actual y propuesto</td><td>Como en las otras pestañas, con la fórmula A.</td><td>Compra pequeña y frecuente hasta que la demanda se confirme.</td></tr>
+<tr><td>Explicación</td><td>Velocidad, recompra, plazo del proveedor, tope en días y resultado.</td><td>Trazabilidad.</td></tr>
+</table>
+
+<!-- Propios -->
+<h3>Pestaña 5 · Propios</h3>
+<p><b>Para qué sirve.</b> Responde al punto 6a de la directiva. Los productos de Unión Láser y Eva Visnú (las familias marcadas como fabricación propia en Nesto) se fabrican por lotes, con plazos largos y sin poder quedarnos sin ellos. Tratarlos como cualquier otro producto los llenaba de «exceso» (el primer cálculo de septiembre salía casi entero de ellos); esconderlos sería engañarnos. Por eso tienen su propia fórmula y su propia pestaña, y <b>nunca se proponen para el Outlet ni para liquidar</b>: si sobra, se propone venderlos más. <b>Cómo se lee.</b> El título de la pestaña recuerda las reglas (lote = múltiplos de Algete, 30 días de seguridad, vida útil de 12 meses). Se mira la «Acción» y, sobre todo, «Meses de venta en stock» frente a los 12 meses de vida útil.</p>
+<table class="cols">
+<thead><tr><th>Columna</th><th>Qué significa y cómo se calcula</th><th>Por qué está</th></tr></thead>
+<tr><td>Producto … Precio medio</td><td>Como en las otras pestañas (Producto, Nombre, Familia, Proveedor, Fase, Estado, Stock, Precio medio).</td><td>Identificarlo.</td></tr>
+<tr><td>Valor de stock</td><td>Stock × precio medio.</td><td>Cuánto dinero hay en cada propio.</td></tr>
+<tr><td>Venta de referencia (uds/mes)</td><td>La venta mensual con la que se calcula: media de 6 meses si es maduro, velocidad si es nuevo, media de 12 si es intermitente.</td><td>Base de todos los cálculos de la fila.</td></tr>
+<tr><td>Meses de venta en stock</td><td>Stock ÷ venta de referencia.</td><td>Si pasa de 12, parte del stock caducará antes de venderse.</td></tr>
+<tr><td>Días en servir</td><td>Plazo real de fabricación y entrega.</td><td>Determina el mínimo.</td></tr>
+<tr><td>Días de seguridad</td><td>30 días (frente a 7 en el resto): un propio no puede faltar.</td><td>Colchón mayor por el plazo largo.</td></tr>
+<tr><td>Lote mínimo</td><td>Lo mínimo que se fabrica (los múltiplos de Algete).</td><td>Lo que entra de golpe cada vez.</td></tr>
+<tr><td>Meses de venta del lote</td><td>Lote ÷ venta de referencia.</td><td>Si un solo lote son más de 12 meses de venta, el problema es el tamaño del lote: hay que pedir lotes menores.</td></tr>
+<tr><td>Tope vida útil (uds)</td><td>12 meses × venta de referencia.</td><td>Lo máximo que tiene sentido tener: lo que pase, caduca.</td></tr>
+<tr><td>Exceso (uds), Exceso €</td><td>Stock − máximo propuesto, si es positivo.</td><td>Lo que habrá que vender con un esfuerzo comercial.</td></tr>
+<tr><td>Acción</td><td><b>Ajustar el siguiente lote</b>, <b>Potenciar ventas</b>, <b>Caduca antes de venderse</b>, Mantener o Nada.</td><td>Siempre una acción comercial o de fabricación, nunca de liquidación.</td></tr>
+<tr><td>Máx/Mín actual y propuesto</td><td>Con la fórmula P (apartado 4).</td><td>Lo que se fabricará en adelante.</td></tr>
+<tr><td>Pedido compra abierto</td><td>Lote ya pedido y no recibido.</td><td>Si sobra stock, revisar el siguiente lote antes de que llegue.</td></tr>
+<tr><td>Explicación</td><td>Venta, plazo, seguridad, lote, vida útil y resultado.</td><td>Trazabilidad.</td></tr>
+</table>
+
+<!-- Calibración -->
+<h3>Pestaña 6 · Calibración</h3>
+<p><b>Para qué sirve.</b> Comprobar con nuestros propios datos que las señales avisan a tiempo, en vez de fiarnos de umbrales sacados de un libro. Mira los productos que <b>acabaron mal</b> en los últimos 3 años (en el almacén de extinguidos, en estado 4 o sin ninguna venta en 12 meses) y mide cómo estaban <b>6, 9 y 12 meses antes</b>, frente a los productos <b>vivos</b> (estado 0 y con ventas en los últimos 3 meses). Si una regla marca a la mayoría de los que acabaron mal y a pocos vivos, es buena. <b>Cómo se lee.</b> Tiene cuatro bloques:</p>
+<table class="cols">
+<thead><tr><th>Bloque</th><th>Qué contiene</th><th>Por qué está</th></tr></thead>
+<tr><td>Umbrales en uso</td><td>Cada umbral con su valor y su significado (cobertura objetivo 90 días, pendiente de subida +2 %/mes, de bajada −3 %/mes, etc.). Se avisa de que son <b>provisionales</b> hasta revisar esta hoja.</td><td>Transparencia: se sabe con qué reglas se ha calculado el mes y se pueden cambiar sin tocar el programa.</td></tr>
+<tr><td>Resumen por grupo</td><td>Para cada grupo (Acabó en EXT, Estado 4, Sin venta 12 meses, Vivo) y cada horizonte (6, 9, 12 meses antes): número de productos, cuántos ya no vendían, cobertura mediana y pendiente mediana.</td><td>Ver si los que acabaron mal se distinguían de los vivos con antelación.</td></tr>
+<tr><td>Reglas candidatas</td><td>Para reglas como «cobertura &gt; 6, 9 o 12 meses» o «pendiente ≤ −2, −3 o −5 %/mes» (y la combinación cobertura + pendiente): % de muertos que habría marcado (aciertos) y % de vivos (falsas alarmas).</td><td>Elegir los umbrales con datos: el que más acierta con menos falsas alarmas.</td></tr>
+<tr><td>Detalle por producto</td><td>Cada producto del análisis con su grupo, el mes del «evento» y su cobertura y pendiente 6, 9 y 12 meses antes.</td><td>Poder bajar al caso concreto y comprobarlo.</td></tr>
+</table>
+
+<!-- ============================ 4. FÓRMULAS ============================ -->
+<h2 class="salto">4. Las fórmulas, en lenguaje llano</h2>
+
+<h3>4.1. La fase: no todos los productos se juzgan igual</h3>
+<table>
+<thead><tr><th style="width:20%">Fase</th><th>Cuándo</th><th>Qué se mira</th><th>Cómo se calcula el máximo</th></tr></thead>
+<tr><td class="tema">A · Nuevo</td><td>Menos de 12 meses desde la primera venta (o desde que entró, si aún no se ha vendido).</td><td>Velocidad de salida, recompra y pedidos sin servir.</td><td>Compra pequeña y frecuente: lo que se vende en 45 días (30 si la recompra es baja), más lo pendiente de servir.</td></tr>
+<tr><td class="tema">B · Maduro</td><td>Más de un año y 12 o más unidades al año.</td><td>Cobertura, pendiente, trimestre y contexto de 5 años.</td><td>La fórmula de siempre (7 días + 2 veces el plazo del proveedor), pero con la venta reciente ponderada y la estacionalidad, y sin pasar nunca de la cobertura objetivo.</td></tr>
+<tr><td class="tema">C · Intermitente</td><td>Menos de 12 unidades al año (aparatos, productos de nicho).</td><td>Si se vende o no.</td><td>Máximo 0, 1 o 2: 0 si no se vendió nada en un año; 1 si se vendieron hasta 6; 2 si más.</td></tr>
+<tr><td class="tema">P · Propios</td><td>Familias de fabricación propia, sea cual sea su fase.</td><td>Lote, plazo y vida útil.</td><td>Mínimo + un lote, sin pasar nunca de 12 meses de venta.</td></tr>
+</table>
+
+<h3>4.2. La tendencia (solo maduros)</h3>
+<ul>
+<li><b>Sube</b>: la pendiente es de +2 % al mes o más.</li>
+<li><b>Estable</b>: entre −3 % y +2 % al mes.</li>
+<li>Si baja un 3 % al mes o más, se mira el contexto de 5 años. Es <b>Declive</b> solo si además los últimos 12 meses están al <b>70 % de su mejor año o por debajo</b>, ese mejor año fue hace al menos un año y el último trimestre vende menos del 90 % que el del año anterior. Si el contexto no lo confirma, es un <b>Bajón puntual</b> y no se toca más que el máximo normal.</li>
+</ul>
+<div class="ojo"><p><b>Por qué dos ventanas.</b> Doce meses para la señal (reacciona pronto) y cinco años para el contexto (evita falsas alarmas). Un producto de toda la vida que tiene un mal año (el caso de la referencia 17404) no se declara en declive; uno que lleva tres años cayendo, sí.</p></div>
+
+<h3>4.3. Cobertura, stock objetivo y exceso</h3>
+<ul>
+<li><b>Cobertura</b> = stock ÷ venta media mensual de 6 meses.</li>
+<li><b>Cobertura alcanzable</b> = plazo del proveedor + 7 días de seguridad + días que tarda en venderse un lote.</li>
+<li><b>Cobertura objetivo</b> = 90 días, o la alcanzable si el proveedor no permite bajar de ahí.</li>
+<li><b>Exceso</b> = lo que pasa del stock objetivo, en unidades y en euros.</li>
+</ul>
+
+<h3>4.4. Un ejemplo de cada fórmula (cifras inventadas y redondas)</h3>
+<table>
+<thead><tr><th style="width:18%">Caso</th><th>Datos</th><th>Cálculo</th><th style="width:20%">Resultado</th></tr></thead>
+<tr><td class="tema">B · Maduro</td><td>Stock 600 uds a 5 €. Venta media de 6 meses: 100 uds/mes; ponderada: 90. Sin estacionalidad. Proveedor: 10 días. Lote: 50. Hoy máx 400 / mín 200.</td>
+<td>Venta diaria: 90 ÷ 30 = 3 uds. Mínimo: 3 × (10 + 7) = <b>51</b>. Fórmula: 3 × (7 + 2 × 10) = 81, pero al menos mínimo + un lote = <b>101</b>. Tope por objetivo: 3 × 90 = 270 (no limita). Cobertura: 600 ÷ 100 = <b>6 meses</b> (rotación 2). Stock objetivo: 3 meses × 100 = 300 uds.</td>
+<td><b>Ajustar máx/mín</b> a 101 / 51. Exceso 300 uds = <b>1.500 €</b>.</td></tr>
+<tr><td class="tema">B · en declive</td><td>Igual, pero pendiente −6 %/mes, últimos 12 meses al 50 % de su mejor año (hace 3 años), trimestre al 70 % del año anterior. Cobertura: 9 meses.</td>
+<td>Declive confirmado. Cobertura de 9 meses: más de 6, pero menos de 12.</td>
+<td><b>Pasar a estado 1</b> (sobre pedido). Con más de 12 meses: <b>Liquidar</b>.</td></tr>
+<tr><td class="tema">A · Nuevo</td><td>4 meses de vida. Velocidad 40 uds/mes. Recompra 15 % (baja). 10 uds pendientes de servir. Proveedor: 15 días.</td>
+<td>Venta diaria: 40 ÷ 30 = 1,33. Recompra baja → tope de 30 días: 1,33 × 30 = 40, + 10 pendientes = <b>50</b>. Mínimo: 1,33 × (15 + 7) = <b>30</b>.</td>
+<td>Máx 50 / mín 30. Con recompra buena, el tope serían 45 días (máx 70).</td></tr>
+<tr><td class="tema">C · Intermitente</td><td>5 uds vendidas en un año.</td><td>Hasta 6 al año → máximo 1, mínimo 0. Con 8 al año: máximo 2, mínimo 1. Sin ventas en un año y con stock: liquidar.</td><td>Máx 1 / mín 0.</td></tr>
+<tr><td class="tema">P · Propio</td><td>Venta 50 uds/mes. Plazo de fabricación 60 días. Lote mínimo 200. Precio medio 4 €.</td>
+<td>Mínimo: 50 × (60 + 30) ÷ 30 = <b>150</b>. Máximo: 150 + 200 = <b>350</b>. Tope de vida útil: 12 × 50 = 600 (no limita).<br>
+· Con 300 uds en stock: no sobra → <b>Ajustar el siguiente lote</b> (o Mantener si ya está así).<br>
+· Con 500: sobran 150 (600 €), pero son 10 meses de venta y se venden antes de caducar → <b>Potenciar ventas</b>.<br>
+· Con 900: son 18 meses de venta, más que la vida útil; 300 uds (1.200 €) caducarán → <b>Caduca antes de venderse</b>.</td>
+<td>Nunca Outlet ni liquidar. Si el lote solo fuera más de 12 meses de venta, la explicación diría «pedir lote menor».</td></tr>
+</table>
+
+<!-- ============================ 5. ACCIONES Y DECISIONES ============================ -->
+<h2 class="salto">5. Las acciones propuestas y las decisiones de Compras</h2>
+<h3>5.1. Qué se propone y en qué orden</h3>
+<p>Para cada producto que no es propio, el sistema se pregunta, por este orden, y se queda con la primera respuesta:</p>
+<ol>
+<li>¿Está en un estado que ya no se trabaja (por ejemplo, 4)? Si tiene stock: <b>Liquidar</b> (Outlet o Ganavisiones), máximo y mínimo a 0. Si no tiene stock: <b>Nada</b>.</li>
+<li>¿No es nuevo, tiene stock y no ha vendido nada en 6 meses (12 si es intermitente)? <b>Liquidar</b>.</li>
+<li>¿Está en declive confirmado con más de 12 meses de cobertura? <b>Liquidar</b>.</li>
+<li>¿Está en declive confirmado, en estado 0, con más de 6 meses de cobertura? <b>Pasar a estado 1</b> (sobre pedido, sin máximos).</li>
+<li>Si no, se calcula su máximo y su mínimo. Si le sobra stock y hay pedidos de compra abiertos: <b>Parar compras</b>. Si ya está en estado 1: <b>Mantener</b>. Si el máximo y el mínimo propuestos coinciden con los actuales: <b>Mantener</b>; si no: <b>Ajustar máx/mín</b>.</li>
+</ol>
+<p>Cuando se propone liquidar y hay compras en camino, la explicación añade «y anular las N uds de pedidos de compra abiertos».</p>
+<p>Los <b>propios</b> no pasan por los pasos 1 a 4: nunca se liquidan ni se pasan a estado 1. Sus acciones son Ajustar el siguiente lote, Potenciar ventas o Caduca antes de venderse (y, si están en un estado que ya no se trabaja, no se fabrica otro lote y se propone darles salida con ventas propias).</p>
+
+<h3>5.2. Qué puede decidir Compras</h3>
+<p>Al calcularse las propuestas, Compras recibe un aviso en la campana de Nesto («Hay N propuestas pendientes de decidir, X € de exceso») y las ve en una pantalla de Nesto con la explicación de cada una. Deciden Compras y Dirección; el resto solo consulta. Las decisiones posibles son:</p>
+<table>
+<thead><tr><th style="width:15%">Decisión</th><th>Qué pasa</th><th style="width:28%">Qué se exige</th></tr></thead>
+<tr><td class="tema">Aplicar</td><td>
+<b>Ajustar máx/mín</b> (y las tres de los propios): se escriben el máximo y el mínimo en Algete (si no tenía control de stock, se crea).<br>
+<b>Pasar a estado 1</b>: máximo y mínimo a 0 en <i>todos</i> los almacenes, tiendas incluidas, y el producto pasa a estado 1.<br>
+<b>Liquidar</b>: máximo y mínimo de Algete a 0 (deja de reponerse) y se apunta el canal: <b>Outlet</b> o <b>Ganavisiones</b>. El paso al canal lo hace la persona.<br>
+<b>Parar compras</b>: se apunta; la anulación del pedido se hace a mano.</td>
+<td>Se puede aplicar otro máximo o mínimo distinto del propuesto, pero entonces hay que decir por qué. El mínimo nunca puede superar al máximo.</td></tr>
+<tr><td class="tema">Rechazar</td><td>No se cambia nada.</td><td><b>Motivo obligatorio</b>: es lo que sirve para mejorar las fórmulas.</td></tr>
+<tr><td class="tema">Posponer</td><td>No se cambia nada; el producto vuelve a salir el mes siguiente.</td><td>Nada.</td></tr>
+<tr><td class="tema">Silenciar</td><td>Las propuestas del producto de los meses siguientes salen como «Silenciada», no como pendientes, hasta la fecha indicada.</td><td>Motivo de la lista (Nuevo, Estacional, Aparato; ampliable sin publicar) y fecha de caducidad, como mucho 24 meses: ningún producto desaparece para siempre.</td></tr>
+<tr><td class="tema">Potenciar</td><td>No se cambia el stock. Hasta la fecha de revisión, el producto sale «En potenciación» con su venta media frente al objetivo («venta media 38 uds/mes de un objetivo de 50, 76 %»). Pasada la fecha, vuelve a la lista con la nota «potenciación cumplida» o «sin cumplir (objetivo X, real Y)».</td><td>Objetivo de venta en unidades al mes y fecha de revisión (por defecto, 6 meses; como mucho 24). Pensada para los propios (punto 6a), vale para cualquier producto.</td></tr>
+</table>
+
+<h3>5.3. Liquidar: Outlet y Ganavisiones</h3>
+<p>Son los dos canales de salida. Desde el 15/10/26, la tienda online mantiene sola su Outlet: <b>todo producto en estado 4 que ya esté en la tienda entra en la categoría Outlet que le corresponde</b> (Peluquería, Maquillaje y Uñas o Estética), con el descuento de su marca, y sale de ella cuando deja de estar en estado 4; nunca se crea un producto solo para el Outlet. Así, la cadena es: el Excel propone liquidar → Compras aplica (deja de reponerse) → el producto en estado 4 aparece en el Outlet sin más trabajo. Ganavisiones se gestiona a mano.</p>
+
+<h3>5.4. Trazabilidad: quién, cuándo, antes y después, y por qué</h3>
+<ul>
+<li><b>Cada mes, una fila nueva por producto</b>, que nunca se borra ni se sobrescribe. Así se puede medir después si la propuesta acertó.</li>
+<li><b>Cada propuesta guarda sus datos de partida</b>: las ventas mes a mes, el stock a fin de mes, los índices estacionales, la venta por año, la fecha de primera venta y los parámetros, además de la frase que lo explica.</li>
+<li><b>Cada decisión queda registrada</b> con la persona, la fecha y hora, el máximo, mínimo y estado <b>anteriores</b> y los <b>aplicados</b>, el motivo, el canal de liquidación, el silencio o la potenciación, en la propia propuesta y en un histórico aparte.</li>
+<li><b>Salvaguardas</b>: no se puede aplicar dos veces la misma propuesta; si hay una propuesta más reciente del producto, se decide sobre la última; si el producto ha cambiado de estado desde el cálculo, la propuesta deja de valer; si dos personas deciden a la vez, la segunda recibe un aviso en lugar de sobrescribir la decisión de la primera.</li>
+</ul>
+
+<!-- ============================ 6. CICLO ============================ -->
+<h2 class="salto">6. El ciclo mensual</h2>
+<table>
+<thead><tr><th style="width:20%">Cuándo</th><th>Qué ocurre</th></tr></thead>
+<tr><td class="tema">Día 1, 03:30</td><td>Se guardan los <b>indicadores del mes</b> que acaba de cerrar, por almacén y en total (si el día 1 es domingo, el día 2).</td></tr>
+<tr><td class="tema">Día 1, 04:30</td><td>Se calculan las <b>propuestas</b> de todos los productos, se guardan y se manda el <b>Excel</b> por correo. Compras recibe el aviso en Nesto. Todo de madrugada, para no ralentizar el trabajo del día.</td></tr>
+<tr><td class="tema">Durante el mes</td><td>Compras <b>decide</b> cada propuesta, empezando por las de más euros. Las liquidaciones pasan al Outlet o a Ganavisiones.</td></tr>
+<tr><td class="tema">Día 1 siguiente</td><td>Nuevas propuestas con los datos nuevos. Lo pospuesto y lo no decidido vuelve a salir; lo silenciado o en potenciación no molesta hasta su fecha. Se comparan los indicadores con el mes anterior.</td></tr>
+</table>
+
+<h3>Cómo se mide si funciona</h3>
+<table>
+<thead><tr><th style="width:28%">Indicador</th><th>Qué es</th><th style="width:18%">Objetivo</th></tr></thead>
+<tr><td class="tema">Valor de stock</td><td>Stock de todos los almacenes (sin extinguidos) × precio medio. En el Excel, con y sin propios.</td><td>Bajar.</td></tr>
+<tr><td class="tema">Días en servir</td><td>Media de días entre la fecha de entrega pedida y la del albarán, en las líneas servidas en el mes.</td><td>No empeorar.</td></tr>
+<tr><td class="tema">Nivel de servicio</td><td>% de líneas que salieron enteras, sin partirse en varios envíos.</td><td>No empeorar.</td></tr>
+<tr><td class="tema">Rotación</td><td>Coste de lo vendido en 12 meses ÷ stock medio de esos 12 meses (veces al año).</td><td>Hacia 2-4 (directiva, punto 4).</td></tr>
+<tr><td class="tema">Sin venta en 6, 12 y 24 meses</td><td>Valor y número de productos con stock y sin ninguna venta en ese plazo.</td><td>Bajar.</td></tr>
+<tr><td class="tema">Compras con más de 6 meses de cobertura</td><td>% de las unidades compradas en 12 meses que, al comprarlas, ya tenían stock para más de medio año.</td><td>Bajar: es la medida directa de comprar de más.</td></tr>
+</table>
+<p>Estos indicadores están reconstruidos <b>36 meses hacia atrás</b>, de modo que se puede ver la evolución de los últimos tres años y no solo a partir de ahora.</p>
+
+<!-- ============================ 7. LO QUE NO CUBRE ============================ -->
+<h2 class="salto">7. Lo que todavía no cubre y próximos pasos</h2>
+<p>Con franqueza: el sistema mide y gestiona <b>stock y venta</b>. La directiva pide también decisiones sobre <b>rentabilidad y condiciones de compra por familia</b>, que hoy no están. Esto es lo que falta, con una propuesta para cada cosa.</p>
+<table>
+<thead><tr><th style="width:24%">Qué falta</th><th>Situación hoy</th><th style="width:36%">Propuesta</th></tr></thead>
+<tr><td class="tema">Criterios para aceptar familias (punto 5): venta ≥ 10.000 €/año, margen ≥ 50 %, pago &lt; 60 días</td><td>No se calculan.</td><td>Una pestaña <b>«Familias»</b> en el mismo Excel: venta de 12 meses, margen bruto (venta frente a coste), rotación y exceso por familia, marcando en rojo las que no cumplen cada criterio. Las condiciones de pago, si están en la ficha del proveedor.</td></tr>
+<tr><td class="tema">Clasificación de familias (punto 6): Especiales, Exclusivas, Posibles, Resto, Genéricos, Peluquería</td><td>No existe en Nesto. El tipo de familia que hay distingue otra cosa (exclusiva nacional, de Madrid, sin exclusiva, propia…); solo «propia» se usa.</td><td>Un campo de <b>clasificación por familia</b> que mantenga Dirección, con el margen mínimo de cada grupo (75 %, 62 %, 50-62 %, 50 %). Después, columna en el Excel y resumen por clasificación.</td></tr>
+<tr><td class="tema">Márgenes de los propios (6a: 75 %; Visnú 53 %, UL 68 %) y de las demás familias</td><td>No se miden.</td><td>Incluido en la pestaña «Familias», con el mix de ventas de los propios.</td></tr>
+<tr><td class="tema">Familias en vigilancia y en liquidación (Faby, Max2originale, Maystar, ODA, I'm Golden, Staleks; Urapan, Cazcarra, Dduueett, Eurostil)</td><td>No hay marca de vigilancia por familia. Una familia se liquida pasando sus productos a estado 4 a mano; a partir de ahí, el Excel propone liquidar y el Outlet los recoge solo.</td><td>Marca de <b>«vigilancia»</b> con fecha de revisión por familia (como el silencio o la potenciación de los productos) y una acción de <b>«poner la familia en liquidación»</b> que pase todos sus productos a estado 4 con registro.</td></tr>
+<tr><td class="tema">Informe de stock del punto 2 en el Excel que se reparte</td><td>Los indicadores se calculan y guardan cada mes, pero no van en el Excel; faltan el corte por proveedor (última venta de más de 365 días) y el número de artículos con stock por almacén.</td><td>Una pestaña <b>«Indicadores»</b> con los últimos 13 meses por almacén y la lista de proveedores sin venta en 365 días, con sus artículos y su stock.</td></tr>
+<tr><td class="tema">Destinatarios (puntos 2 y 3: Dirección y Almacén)</td><td>Solo Carlos, mientras se validan las cifras.</td><td>Añadir los correos de Dirección y Almacén en cuanto se dé por bueno el primer mes (no requiere cambiar el programa).</td></tr>
+<tr><td class="tema">Rotación «solo del almacén corriente» y con y sin propios</td><td>La rotación general incluye los productos en estado 4 que aún no han pasado a extinguidos; la separación con y sin propios está en el Excel (valor y exceso), no en los indicadores ni en los días en servir.</td><td>Añadir a los indicadores la rotación y el valor del corriente (sin estado 4) y la separación de propios.</td></tr>
+<tr><td class="tema">Peluquería con criterios propios (6g)</td><td>Mismas fórmulas que el resto.</td><td>Revisar con la calibración del primer trimestre de 2027, como pide la directiva.</td></tr>
+<tr><td class="tema">Umbrales</td><td>Son provisionales (razonables, no sacados aún de nuestros datos).</td><td>Fijarlos con la pestaña «Calibración» de los primeros meses y con los motivos de rechazo de Compras.</td></tr>
+<tr><td class="tema">La compra del día a día</td><td>Las propuestas cambian los máximos y mínimos con los que se compra, pero la fórmula que Nesto usa para calcular máximos sigue siendo la media de 24 meses, y la opción de «ampliar el pedido al máximo» todavía rellena todo el proveedor.</td><td>Siguiente fase ya planificada: llevar a la compra la misma lógica (venta reciente, nunca subir en declive, no ampliar lo que ya sobra) y el «mínimo de escaparate» de las tiendas.</td></tr>
+<tr><td class="tema">Productos que sustituyen a otros</td><td>El declive de un producto sustituido sale como alarma aunque tenga relevo.</td><td>Fase posterior: que el nuevo herede la demanda del antiguo y el antiguo tenga plan de salida.</td></tr>
+<tr><td class="tema">Potenciar desde Nesto</td><td>La decisión existe, pero la pantalla de Nesto aún no la ofrece (las demás decisiones, sí).</td><td>Pendiente en Nesto; mientras tanto, la puede registrar Informática.</td></tr>
+</table>
+
+<div class="box"><p><b>En resumen.</b> Lo que la directiva pide sobre <b>stock</b> (estructura del almacén, tendencias, rotación, propios a potenciar, liquidación por estado 4 y Outlet) ya funciona y se mide cada mes. Lo que pide sobre <b>familias y márgenes</b> (criterios de aceptación, clasificación, vigilancia, margen de los propios) es el siguiente paso natural, y puede ir en el mismo Excel con una pestaña «Familias» y una pestaña «Indicadores».</p></div>
+
+<!-- ============================ ANEXO ============================ -->
+<h2 class="salto">Anexo. Notas técnicas</h2>
+<p>Para quien tenga que comprobar o cambiar algo. No hace falta para leer el Excel.</p>
+<table>
+<tr><td class="tema">Dónde se guarda</td><td>Tabla <code>PropuestasStock</code> (una fila por mes, producto y almacén; entradas del cálculo en JSON y explicación). Decisiones en la propia fila y en el histórico <code>PropuestasStockDecisiones</code>. Indicadores mensuales en <code>IndicadoresStock</code> (mes × almacén y TOTAL; 36 meses reconstruidos).</td></tr>
+<tr><td class="tema">Tareas programadas</td><td><code>indicadores-stock-mensual</code> (día 1, o 2 si el 1 es domingo, 03:30) y <code>propuestas-stock-mensual</code> (día 1, 04:30), en una cola propia de un solo hilo para no frenar las tareas de cada 5 minutos. Sin reintentos automáticos. Relanzar un mes: <code>POST api/PropuestasStock/Generar?mes=AAAA-MM</code> (en horario se programa para la madrugada).</td></tr>
+<tr><td class="tema">Consultas</td><td><code>GET api/PropuestasStock?mes=&amp;estado=</code>, <code>GET api/PropuestasStock/Resumen</code>, <code>POST api/PropuestasStock/{id}/Decision</code>, <code>GET api/IndicadoresStock?desde=&amp;hasta=&amp;almacen=</code>.</td></tr>
+<tr><td class="tema">Parámetros (appSettings <code>PropuestasStock:&lt;Nombre&gt;</code>)</td><td>CoberturaObjetivoDias 90 · DiasSeguridad 7 · DiasEnServirPorDefecto 15 · MesesFaseA 12 · UnidadesAnioIntermitente 12 · PendienteSube 2 · PendienteBaja −3 · PorcentajePicoDeclive 70 · RatioTrimestreDeclive 0,9 · MesesCoberturaEstado1 6 · MesesCoberturaLiquidar 12 · MesesSinSalidaLiquidar 6 · TopeDiasFaseA 45 · TopeDiasFaseASinRecompra 30 · RecompraMinima 20 · UnidadesMinimasFamiliaEstacionalidad 120 · DiasSeguridadPropios 30 · VidaUtilMesesPropios 12 · FilasTop 50 · Destinatarios (por defecto, Carlos). Las claves puestas a mano en el servidor se pierden al publicar: los cambios definitivos van en el código o en el Web.config del proyecto.</td></tr>
+<tr><td class="tema">Definiciones</td><td>Venta: líneas de pedido de venta con estado ≥ 2, tipo de línea producto, empresas 1 y 3, por fecha de albarán, neta de devoluciones, sin grupo MTP ni subgrupo MMP. Stock: extracto de producto de las empresas 1 y 3, sin almacén EXT. Propios: familias con tipo de exclusiva PRP. Estacionalidad: por familia con 36 meses, índices acotados entre 0,3 y 3, solo si la familia tiene 3 años y 120 uds.</td></tr>
+<tr><td class="tema">Referencias</td><td>Épica NestoAPI#628; cortes #629 (indicadores), #630 (motor y Excel), #631 (decisiones y pantalla de Nesto), #632 (fórmula de compra, pendiente), #633 (ciclo de vida y sustitutos, pendiente); #643 (Outlet = estado 4); #655 (propios y Potenciar).</td></tr>
+</table>
+
+<p class="pie">Nueva Visión · Propuestas de stock: explicación del Excel y relación con la directiva de julio de 2026 · octubre de 2026</p>
+</body>
+</html>

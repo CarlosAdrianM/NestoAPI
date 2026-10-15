@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Guía de packing</title>
+<style>
+  @page { size: A4; margin: 16mm 15mm; }
+  body { font-family: "Segoe UI", Arial, sans-serif; font-size: 11pt; color: #1a1a1a; line-height: 1.42; }
+  h1 { font-size: 20pt; margin: 0 0 4px; color: #1f3a5f; }
+  .sub { color: #555; margin: 0 0 14px; font-size: 10.5pt; }
+  h2 { font-size: 14pt; color: #1f3a5f; border-bottom: 2px solid #1f3a5f; padding-bottom: 3px; margin: 20px 0 8px; break-after: avoid; }
+  h3 { font-size: 12pt; margin: 14px 0 4px; color: #333; break-after: avoid; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0 10px; font-size: 10pt; break-inside: avoid; }
+  th, td { border: 1px solid #bbb; padding: 4px 7px; text-align: left; vertical-align: top; }
+  th { background: #e8eef6; }
+  td.tema { font-weight: 600; background: #f7f7f7; width: 18%; }
+  .teclas { break-inside: auto; }
+  .teclas tr { break-inside: avoid; }
+  .teclas td:first-child { width: 13%; white-space: nowrap; }
+  .teclas td:nth-child(2) { width: 17%; }
+  .teclas td:nth-child(3) { width: 12%; }
+  .box { background: #f4f7fb; border-left: 4px solid #1f3a5f; padding: 7px 12px; margin: 10px 0; break-inside: avoid; }
+  .ojo { background: #fff7e6; border-left: 4px solid #e08a00; padding: 7px 12px; margin: 10px 0; break-inside: avoid; }
+  .box p, .ojo p { margin: 3px 0; }
+  ol, ul { margin: 4px 0 6px; padding-left: 22px; }
+  ol li, ul li { margin: 2px 0; }
+  kbd { font-family: Consolas, monospace; background: #eee; border: 1px solid #ccc; border-radius: 3px; padding: 0 4px; font-size: 9.5pt; white-space: nowrap; }
+  .regla { background: #fdecea; border: 2px solid #c62828; padding: 9px 13px; margin: 12px 0; break-inside: avoid; }
+  .regla p { margin: 3px 0; }
+  .regla .titulo { color: #b71c1c; font-size: 13pt; font-weight: 700; }
+  .pie { color: #777; font-size: 9pt; margin-top: 22px; border-top: 1px solid #ccc; padding-top: 6px; }
+  .txt { font-style: italic; color: #333; }
+
+  /* Maqueta sencilla de la pantalla */
+  .maquetas { display: flex; gap: 14px; margin: 10px 0 6px; break-inside: avoid; }
+  .pantalla { flex: 1; border: 2px solid #444; border-radius: 14px; padding: 8px; background: #fafafa; font-size: 8.6pt; line-height: 1.3; }
+  .pantalla .tit { font-weight: 700; font-size: 9.5pt; margin-bottom: 5px; }
+  .m-cli { background: #fff; border: 1px solid #ccc; border-radius: 8px; padding: 4px 7px; margin-bottom: 5px; }
+  .m-cli b { font-size: 9.2pt; }
+  .m-cli .gris { color: #666; }
+  .m-linea { background: #1565C0; color: #fff; border-radius: 9px; padding: 5px 8px; margin-bottom: 5px; }
+  .m-linea .arriba { display: flex; justify-content: space-between; font-weight: 700; }
+  .m-linea .prod { display: flex; gap: 6px; align-items: flex-start; margin: 3px 0; }
+  .m-linea .foto { width: 30px; height: 30px; background: #90CAF9; border-radius: 4px; flex: none; }
+  .m-linea .estado { font-weight: 700; }
+  .m-cuadro { border: 2px solid #bbb; background: #fff; border-radius: 8px; padding: 4px 7px; margin-bottom: 5px; }
+  .m-cuadro .etq { color: #0D47A1; font-weight: 700; font-size: 10pt; display: flex; justify-content: space-between; align-items: center; }
+  .m-cuadro.cant { background: #FFF3E0; border: 3px solid #E65100; }
+  .m-cuadro.cant .etq { color: #E65100; }
+  .m-cuadro .entry { border-bottom: 1px solid #999; color: #888; margin-top: 3px; padding: 1px 2px; display: flex; justify-content: space-between; }
+  .m-boton { display: inline-block; border: 1px solid #999; border-radius: 6px; padding: 0 5px; font-size: 7.8pt; color: #333; background: #eee; font-weight: 400; }
+  .m-botones { display: flex; gap: 4px; margin-bottom: 5px; }
+  .m-botones span { flex: 1; text-align: center; border: 1px solid #999; border-radius: 6px; padding: 2px; background: #eee; }
+  .m-botones span.prim { background: #1f3a5f; color: #fff; border-color: #1f3a5f; }
+  .m-ok { color: #2E7D32; font-weight: 600; margin-bottom: 4px; }
+  .m-lista div { border: 1px solid #ccc; background: #fff; border-radius: 6px; padding: 2px 6px; margin-bottom: 3px; display: flex; justify-content: space-between; }
+  .m-lista div.sel { border: 2px solid #1565C0; }
+  .leyenda { font-size: 9.5pt; color: #444; margin: 2px 0 10px; }
+</style>
+</head>
+<body>
+<h1>Packing en Ariadna: guía para el almacén</h1>
+<p class="sub">Para Ariadna 2.11 (PDA, móvil y ordenador) · 15 de octubre de 2026</p>
+
+<div class="box">
+<p><b>En resumen.</b> En el packing se mete en cajas lo que ya se ha recogido. Lea el producto que va a meter: Ariadna <b>busca su línea y la comprueba</b>, pero <b>no la cuenta</b>. Después teclee <b>cuántas mete</b> (el total) y pulse <kbd>Intro</kbd>, o pulse <kbd>Intro</kbd> sin escribir nada para meter <b>todas</b>.</p>
+<ul>
+<li>Si de ese producto solo queda <b>1</b>, la lectura ya lo cuenta y cierra la línea.</li>
+<li>Con todo dentro, <kbd>Intro</kbd> (vacío) hace la <b>foto que cierra la caja</b>.</li>
+<li>El cuadro de lectura le dice qué espera: <b>«LEA EL CÓDIGO»</b> en azul o <b>«CANTIDAD»</b> sobre fondo naranja.</li>
+<li><b>Nuevo en la 2.10:</b> si lleva años haciendo packing, lea el <b>apartado 6</b>. Ha cambiado cómo se cuenta.</li>
+</ul>
+</div>
+
+<div class="regla">
+<p class="titulo">⛔ Lo tecleado es el TOTAL que mete, no «uno más»</p>
+<p>Si lee un producto del que van 5 y teclea <kbd>5</kbd> <kbd>Intro</kbd>: entran <b>5</b>. Hasta la 2.9 entraban 6 (la lectura contaba 1 y se sumaban 5).</p>
+<p>Si no quiere teclear nada, pulse <kbd>Intro</kbd> vacío o <kbd>#</kbd> y entran todas las que faltan.</p>
+</div>
+
+<h2>1. Qué es el packing y cuándo se usa</h2>
+<p>Cuando el picking ya está recogido, todo el producto está en la mesa. En el packing, usted:</p>
+<ol>
+<li>elige un pedido de la lista;</li>
+<li>lee cada producto según lo mete en la caja;</li>
+<li>con todo dentro, hace la foto de la caja. Esa foto cierra el <b>bulto</b>;</li>
+<li>vuelve a la lista y sigue con el siguiente pedido.</li>
+</ol>
+<p>Cuando todos los pedidos tienen sus cajas con foto, Agencias ya puede hacer la etiqueta.</p>
+<p><b>Cómo se entra:</b></p>
+<ul>
+<li>Desde <b>Salidas</b>: toque el «Packing …» de la lista, o el botón <b>«Packing (F2)»</b> de un picking (por ejemplo, si se recogió en papel).</li>
+<li>Desde <b>Salidas</b>, leyendo el <b>número de un pedido</b>: se abre el packing de su picking, ya dentro de ese pedido.</li>
+<li>Desde el <b>recorrido</b>, al terminarlo: botón <b>«Packing (F5)»</b>.</li>
+</ul>
+<p>Lo que lee se guarda en el servidor. Se puede seguir el packing <b>desde otra PDA</b>.</p>
+
+<h2>2. La pantalla</h2>
+<div class="maquetas">
+  <div class="pantalla">
+    <div class="tit">Packing 99854 · modo código</div>
+    <div class="m-cli"><b>PELUQUERÍA LOLA · MADRID</b><br><span class="gris">Pedido 928597 · 14/55 uds · 0 bultos</span><br><span class="gris">▾ Ver dirección (F5)</span></div>
+    <div class="m-linea">
+      <div class="arriba"><span></span><span>Quedan: 12/12</span></div>
+      <div class="prod"><div class="foto"></div><div><b>Champú reparador 500 ml</b><br>17404 · Familia · 500 ml</div></div>
+      <div class="estado">Lea el código (o la referencia) del producto que va a meter: pasa a su línea y la comprueba.</div>
+    </div>
+    <div class="m-cuadro"><div class="etq">LEA EL CÓDIGO</div><div class="entry"><span>Lea un producto del pedido</span><span>📷</span></div></div>
+    <div class="m-botones"><span>Deshacer (F2)</span><span>No aparece (F3)</span><span class="prim">Cerrar caja · foto (F4)</span></div>
+    <div class="m-lista"><div class="sel"><span>17404 · Champú reparador</span><b>0/12</b></div><div><span>40057 · Mascarilla</span><b>1/1</b></div></div>
+  </div>
+  <div class="pantalla">
+    <div class="tit">Packing 99854 · modo cantidad</div>
+    <div class="m-cli"><b>PELUQUERÍA LOLA · MADRID</b><br><span class="gris">Pedido 928597 · 14/55 uds · 0 bultos</span><br><span class="gris">▾ Ver dirección (F5)</span></div>
+    <div class="m-linea">
+      <div class="arriba"><span></span><span>Quedan: 12/12</span></div>
+      <div class="prod"><div class="foto"></div><div><b>Champú reparador 500 ml</b><br>17404 · Familia · 500 ml</div></div>
+      <div class="estado">✔ Comprobado. Quedan 12: teclee cuántas o Intro para todas.</div>
+    </div>
+    <div class="m-cuadro cant"><div class="etq">CANTIDAD <span class="m-boton">Contar leyendo (F1)</span></div><div class="entry"><span>¿Cuántas? Intro = todas (12)</span><span>📷</span></div></div>
+    <div class="m-botones"><span>Deshacer (F2)</span><span>No aparece (F3)</span><span class="prim">Cerrar caja · foto (F4)</span></div>
+    <div class="m-ok">✔ Champú reparador: comprobado. ¿Cuántas? Intro = todas (12).</div>
+    <div class="m-lista"><div class="sel"><span>17404 · Champú reparador</span><b>0/12</b></div></div>
+  </div>
+</div>
+<p class="leyenda">Maqueta simplificada (no es una captura). A la izquierda espera un código; a la derecha, tras leer el producto, espera la cantidad.</p>
+
+<h3>De arriba abajo</h3>
+<table>
+<tr><td class="tema">Cliente</td><td>Dos líneas: el cliente y la población; debajo, el pedido y cómo va («14/55 uds · 0 bultos»). Tóquelo o pulse <kbd>F5</kbd> para ver <b>la dirección y las observaciones</b> (el comentario de picking del pedido, que suele decir cómo preparar la caja). Si el pedido tiene observaciones, se abre ya desplegado: léalas. Otra vez <kbd>F5</kbd> lo pliega.</td></tr>
+<tr><td class="tema">Línea actual (azul)</td><td>La línea en la que está: arriba a la derecha <b>«Quedan: 12/12»</b> (lo que falta / lo que pide). Si van varios pedidos juntos, arriba a la izquierda dice de qué pedido es la línea. Después, el producto con su foto (tóquela o <kbd>F6</kbd> para ampliarla) y su ficha (la referencia va la primera). Debajo, en negrita, <b>qué toca hacer</b>: «Lea el código…» o «✔ Comprobado. Quedan 12: teclee cuántas o Intro para todas.».</td></tr>
+<tr><td class="tema">Cuadro de lectura</td><td>Donde escriben el lector, la cámara y el teclado. Tiene <b>dos modos</b> (ver la tabla siguiente).</td></tr>
+<tr><td class="tema">Botones</td><td><b>Deshacer (F2)</b>, <b>No aparece (F3)</b> y <b>Cerrar caja · foto (F4)</b>. En la PDA llevan la tecla delante («F2 Deshacer»).</td></tr>
+<tr><td class="tema">Mensajes</td><td>Cada clase de mensaje tiene su color, en modo claro y en modo oscuro (también encima de la cámara):
+<ul>
+<li><b>Verde</b>: lo que ha salido bien («✔ Champú: quedan 7.»).</li>
+<li><b>Rojo</b>: un <b>error</b>, lo leído no vale o algo ha fallado («No va en esta caja…», «Sin conexión…»). Suena con tono de error y vibra.</li>
+<li><b>Azul</b>: un <b>aviso suave</b> o una indicación, no un error («Ya está comprobado…», «Deshecho: 1 de…», «Bulto 1 guardado.»). No suena el tono de error.</li>
+</ul>
+El <b>naranja</b> queda para cómo va la subida al servidor (lecturas pendientes sin red).</td></tr>
+<tr><td class="tema">Bultos</td><td>Los botones «Bulto 1 📷», «Bulto 2 📷»… de las cajas ya cerradas. Tocar uno repite su foto.</td></tr>
+<tr><td class="tema">Lista</td><td>Las líneas del pedido con lo metido: «5/12», y «· no aparece 1» si se dio alguna por falta. La línea actual va marcada y la lista se mueve sola hasta ella.</td></tr>
+</table>
+
+<h3>Los dos modos del cuadro de lectura</h3>
+<table>
+<tr><th></th><th>Modo código</th><th>Modo cantidad</th></tr>
+<tr><td class="tema">Cómo se ve</td><td>Cuadro blanco. Etiqueta <b>«LEA EL CÓDIGO»</b> en azul.</td><td>Cuadro <b>naranja claro con borde naranja grueso</b>. Etiqueta <b>«CANTIDAD»</b> en naranja.</td></tr>
+<tr><td class="tema">Texto del cuadro vacío</td><td>«Lea un producto del pedido»</td><td>«¿Cuántas? Intro = todas (12)»</td></tr>
+<tr><td class="tema">Qué espera</td><td>El código de barras de un producto del pedido (o su referencia).</td><td>Cuántas mete de ese producto (el total) + <kbd>Intro</kbd>. O <kbd>Intro</kbd> vacío / <kbd>#</kbd> para todas.</td></tr>
+<tr><td class="tema">Cuándo pasa</td><td>Al entrar en el pedido, al acabar una línea y al cambiar de línea.</td><td>Al leer un producto del que queda más de 1.</td></tr>
+<tr><td class="tema">En el móvil</td><td>Teclado normal.</td><td>Teclado numérico.</td></tr>
+</table>
+<p>Hay un tercer aspecto: con todo dentro, la etiqueta dice <b>«INTRO: CERRAR LA CAJA»</b>.</p>
+
+<h2>3. Paso a paso de un pedido normal</h2>
+<ol>
+<li>En la lista de pedidos, elija uno: muévase con <kbd>↑</kbd> <kbd>↓</kbd> y pulse <kbd>Intro</kbd>, tóquelo, o lea/teclee su número + <kbd>Intro</kbd>.</li>
+<li>Mire el cliente. Si tiene observaciones, salen desplegadas: léalas.</li>
+<li>Coja un producto de la mesa, el que quiera. <b>Léalo.</b> Ariadna salta a su línea:
+  <ul>
+  <li><b>Si queda 1:</b> suena el pitido de bien, la línea queda completa («✔ …: completo.») y pasa sola a otra línea por meter.</li>
+  <li><b>Si quedan más:</b> suena el pitido de bien, la línea dice «✔ Comprobado» y el cuadro pasa a <b>CANTIDAD</b>.</li>
+  </ul></li>
+<li>En modo cantidad, meta las unidades en la caja y:
+  <ul>
+  <li>si mete <b>todas</b>, pulse <kbd>Intro</kbd> sin escribir nada (o <kbd>#</kbd>);</li>
+  <li>si mete <b>menos</b>, teclee cuántas y pulse <kbd>Intro</kbd>. La línea sigue comprobada: luego puede teclear el resto sin volver a leer.</li>
+  </ul></li>
+<li>Repita con el resto de productos.</li>
+<li>Con todo dentro, la pantalla dice «Todo dentro. Cierre la caja con su foto (Intro).». Pulse <kbd>Intro</kbd> vacío (o <kbd>F4</kbd>) y haga la foto de la caja abierta, con el producto a la vista.</li>
+<li>Al guardarse la foto, vuelve a la lista con el siguiente pedido marcado: «PELUQUERÍA LOLA: listo con 1 bulto. Siga con el siguiente.».</li>
+</ol>
+<div class="ojo"><p><b>Lea antes de teclear.</b> Sin leer el producto, Ariadna no acepta ninguna cantidad, ni <kbd>#</kbd>: dice «Antes de la cantidad, lea el código de …».</p>
+<p><b>Si cambia de línea</b> (con las flechas, tocándola o leyendo otro producto), la línea anterior deja de estar comprobada. Lo que no haya tecleado no se cuenta: tendrá que volver a leerla.</p></div>
+
+<h2>4. Casos</h2>
+
+<h3>Cantidad grande</h3>
+<p>Lea una unidad. Si las mete todas, <kbd>Intro</kbd> vacío. Si no, teclee las que mete (por ejemplo <kbd>40</kbd> <kbd>Intro</kbd>). No puede meter más de lo que falta: «De … solo quedan 7: no se puede preparar más de lo que pide.».</p>
+<p>Si en esa línea ya había unidades metidas (de antes, de otra PDA o contando leyendo), lo que teclee <b>se suma a ellas</b>. Ariadna le avisa con dos pitidos cortos (la señal de atención): «Ya tenía 1: con 4 más lleva 5 de 12.».</p>
+
+<h3>Contar leyendo</h3>
+<p>Sirve para leer las unidades una a una (por ejemplo, si son de colores distintos).</p>
+<ol>
+<li>Con el cuadro vacío, pulse <kbd>F1</kbd> o el botón <b>«Contar leyendo (F1)»</b> (sale junto a «CANTIDAD» tras comprobar el producto).</li>
+<li>Aviso: «Contando leyendo: cada lectura suma 1. F1 para volver a teclear cuántas.». El cuadro vuelve a decir «LEA EL CÓDIGO».</li>
+<li>Lea cada unidad: cada lectura suma 1.</li>
+<li>Para volver a teclear la cantidad, otra vez <kbd>F1</kbd> (el botón dice «Teclear cuántas (F1)»).</li>
+</ol>
+<p>Vale solo para esa línea. Si lee otro producto o cambia de línea, se apaga solo. Contando leyendo, después de leer alguna unidad, <kbd>Intro</kbd> vacío también mete todas las que quedan.</p>
+
+<h3>Leer dos veces el mismo producto</h3>
+<p>Si vuelve a leer un producto ya comprobado, <b>no suma</b>. Sale un aviso, sin tono de error: «Ya está comprobado: teclee la cantidad o Intro para todas». Si quiere contar leyendo, pulse <kbd>F1</kbd>.</p>
+
+<h3>Producto sin código de barras</h3>
+<p>Si la línea marcada no tiene código, Ariadna lo dice igual que en el recorrido: la etiqueta del cuadro pasa a <b>«TECLEE LA REFERENCIA»</b> y debajo del producto sale «No tiene código de barras: teclee su referencia para comprobar que es este producto.».</p>
+<p>Teclee su <b>referencia</b> (la que va la primera en la ficha, debajo del nombre) y pulse <kbd>Intro</kbd>. Funciona igual que leer el código. La referencia también vale para un producto con código que no se lee bien.</p>
+<p>Comprobado el producto, un número de hasta 4 cifras es la cantidad, no la referencia.</p>
+
+<h3>Código que no es de esta caja</h3>
+<table>
+<tr><th>Lo que dice Ariadna</th><th>Qué hacer</th></tr>
+<tr><td>«No va en esta caja: es de PEPA · MADRID (pedido 927600).»</td><td>Ese producto es de otro pedido de este picking. Apártelo para ese pedido.</td></tr>
+<tr><td>«Ya están las 3 de …: esa unidad sobra aquí.» y, a veces, «Puede ser de … (pedido …)».</td><td>Esa línea ya está completa. Si dice de quién puede ser, apártela para ese pedido. Si no, <b>revise las cajas</b> que dice: casi seguro se contó una sin meterla. Si están bien, avise a la oficina.</td></tr>
+<tr><td>«El código … lo comparten varios productos de esta lista: elija la línea (↑↓ o tocándola) y vuelva a leerlo.»</td><td>Dos productos del pedido tienen el mismo código. Elija la línea correcta y lea otra vez.</td></tr>
+<tr><td>«El código … no está en este picking.»</td><td>Ese código no es de ningún producto del picking. Si es el código de un producto del pedido que no lo tiene apuntado:
+<ul>
+<li>Elija la línea del producto que tiene en la mano (<kbd>↑</kbd> <kbd>↓</kbd> o tocándola), <b>después</b> de la lectura que no ha casado. Hasta entonces no se ofrece <kbd>F7</kbd>: el mensaje le pide «elija la línea del producto que tiene en la mano (↑↓ o tocándola) y pulse F7».</li>
+<li>Elegida, Ariadna pregunta nombrando el producto: «¿El 8437017506362 es un código de GUANTES NITRILO T/M (32565)? Pulse F7 para añadírselo.» y sale el botón <b>«¿Es un código de GUANTES NITRILO T/M (32565)? F7»</b>.</li>
+<li>Si es ese producto, pulse <kbd>F7</kbd> o el botón. El código se añade a ese producto y la siguiente lectura ya casa. Si no, elija otra línea (la pregunta cambia de producto).</li>
+<li>Si cree que el código está mal, escriba <kbd>*</kbd> + <kbd>Intro</kbd>: se abre «Algo está mal» con ese código ya puesto.</li>
+</ul></td></tr>
+</table>
+<div class="ojo"><p><b>Cuidado con F7.</b> Un código puesto en el producto equivocado estropea todas las lecturas siguientes. Por eso, en el packing, <kbd>F7</kbd> solo funciona si ha elegido la línea a propósito tras la lectura fallida, y la pregunta y el botón dicen el <b>nombre y la referencia</b> del producto: léalos antes de pulsar.</p></div>
+
+<h3>Producto que no aparece</h3>
+<ol>
+<li>Busque bien. Casi siempre se ha metido en la caja de otro cliente de este picking: mire las cajas antes de cerrarlas.</li>
+<li>Si no aparece, elija su línea y pulse <kbd>F3</kbd> (o «No aparece»).</li>
+<li>Ariadna pregunta si lo ha buscado. <kbd>Intro</kbd> (o «Sí») lo apunta: todas las unidades que faltan de esa línea quedan como «no aparece» y se avisa a Compras. <kbd>Esc</kbd> (o «Seguir») vuelve sin apuntar nada.</li>
+</ol>
+
+<h3>Deshacer</h3>
+<p><kbd>F2</kbd> (o «Deshacer») quita lo último que se hizo en esta PDA <b>en este pedido</b>: una lectura, una cantidad tecleada (entera, de una vez) o un «no aparece». Pulse otra vez para deshacer lo anterior.</p>
+<p>Cada pedido deshace lo suyo: aunque lo último que hizo fuera en otro pedido, aquí deshace lo último de este. Solo dice «No hay nada que deshacer en este pedido.» si en este pedido no ha hecho nada desde esta PDA.</p>
+<p>Tras deshacer una cantidad, la línea sigue comprobada: teclee la cantidad buena sin volver a leer.</p>
+<p><b>Lo de una caja ya cerrada no se deshace</b>: su foto ya está hecha con eso dentro. Ariadna dice «Esa caja ya está cerrada con su foto: si sobra algo, ábrala de nuevo o use No aparece.». Lo de la caja abierta sí se deshace.</p>
+
+<h3>Cerrar la caja y la foto</h3>
+<ul>
+<li><kbd>Intro</kbd> vacío (sin nada comprobado esperando cantidad), <kbd>F4</kbd> o el botón «Cerrar caja · foto» abren la cámara. Haga la foto.</li>
+<li>Si cancela la cámara, la caja sigue abierta.</li>
+<li>Si falta algo por meter, antes pregunta: «Falta por meter: 2 de 17404… Casi siempre es un error. ¿Cierra esta caja con su foto y sigue con lo que falta en otra?». <kbd>Intro</kbd> = sí; <kbd>Esc</kbd> = seguir leyendo. Leer otro producto también sigue leyendo.</li>
+<li>Para repetir la foto de una caja ya cerrada, toque su botón «Bulto N 📷». La foto nueva sustituye a la anterior.</li>
+<li>Sin red, la foto se queda en la PDA: pulse <b>«Reintentar la foto»</b> cuando vuelva la red. Hasta entonces no puede cerrar otra caja.</li>
+</ul>
+
+<h3>Varias cajas</h3>
+<ol>
+<li>Si no cabe todo, cierre la caja con <kbd>F4</kbd>. Ariadna pregunta porque falta algo: confirme con <kbd>Intro</kbd> y haga la foto.</li>
+<li>Sale «Bulto 1 guardado. Siga metiendo lo que falta en otra caja.».</li>
+<li>Siga leyendo en la caja nueva. Con todo dentro, <kbd>Intro</kbd> hace la foto del bulto 2 y vuelve a la lista.</li>
+</ol>
+<p>Si pide cerrar caja sin haber leído nada desde la última foto, pregunta: «En esta caja no ha leído nada desde la última foto. ¿Hace la foto de una caja más?».</p>
+
+<h3>Pedidos que van juntos (juntar o separar)</h3>
+<p>Si hay varios pedidos del <b>mismo cliente y la misma dirección</b>, salen juntos en la lista («2 pedidos: ¿juntos o separados?»). Al abrirlos, Ariadna pregunta si van en los mismos bultos. Mire el comentario de picking.</p>
+<ul>
+<li><kbd>1</kbd> o «Juntos (1)»: todos los productos van en las mismas cajas. Cada línea dice de qué pedido es.</li>
+<li><kbd>2</kbd> o «Separados (2)»: cada pedido sale en la lista por separado, con sus cajas. Empieza por el primero. Los números de bulto siguen la cuenta entre ellos (si el primero acaba en el bulto 2, el segundo empieza en el 3).</li>
+<li><kbd>Esc</kbd>: vuelve a la lista sin decidir.</li>
+</ul>
+<p>Mientras no decida, no se puede leer nada en esa caja. Si ya hay cajas hechas, Ariadna recuerda lo que se decidió y no pregunta.</p>
+
+<h3>Leer un producto en la lista</h3>
+<p>En la lista de pedidos puede leer un producto del montón para saber de quién es:</p>
+<ul>
+<li>si solo lo espera un pedido, abre su caja y esa lectura ya cuenta (lo comprueba y, si queda 1, lo mete);</li>
+<li>si lo esperan varios, los dice y marca el primero. Abra el que vaya a preparar;</li>
+<li>si ya está todo metido, dice que esa unidad sobra y qué cajas revisar.</li>
+</ul>
+
+<h2>5. Teclas y móvil</h2>
+<p>En la PDA, las <b>F</b> se pulsan con la <b>tecla roja</b> y una cifra: <kbd>F1</kbd> = roja + <kbd>1</kbd>, <kbd>F2</kbd> = roja + <kbd>2</kbd>… La PDA no tiene <kbd>Esc</kbd>: es el botón <b>atrás</b> de Android.</p>
+<table class="teclas">
+<tr><th>Tecla</th><th>PDA</th><th>Ordenador</th><th>Qué hace</th></tr>
+<tr><td><kbd>Intro</kbd> vacío</td><td><kbd>ENT</kbd></td><td><kbd>Intro</kbd></td><td>Con una línea comprobada: mete <b>todas</b> las que faltan. Si no: <b>cierra la caja</b> con su foto (pregunta si falta algo). En la lista: abre el pedido marcado. En una pregunta: «sí».</td></tr>
+<tr><td>número + <kbd>Intro</kbd></td><td>cifras + <kbd>ENT</kbd></td><td>cifras + <kbd>Intro</kbd></td><td>Con la línea comprobada: mete esa cantidad (el total). En la lista: abre ese pedido.</td></tr>
+<tr><td><kbd>#</kbd></td><td><kbd>#</kbd> + <kbd>ENT</kbd></td><td><kbd>#</kbd> + <kbd>Intro</kbd></td><td>Todas las que faltan de la línea comprobada.</td></tr>
+<tr><td><kbd>*</kbd></td><td><kbd>*</kbd> + <kbd>ENT</kbd></td><td><kbd>*</kbd> + <kbd>Intro</kbd></td><td>«Dato mal» del producto (foto, nombre…). Después de un código que no casa, abre «Algo está mal» con ese código.</td></tr>
+<tr><td><kbd>F1</kbd></td><td>roja + <kbd>1</kbd></td><td><kbd>F1</kbd></td><td>Con el cuadro vacío: <b>Contar leyendo</b> (otra vez: volver a teclear cuántas). Con un número escrito: mete esa cantidad, como <kbd>Intro</kbd>.</td></tr>
+<tr><td><kbd>F2</kbd></td><td>roja + <kbd>2</kbd></td><td><kbd>F2</kbd></td><td>Deshacer lo último.</td></tr>
+<tr><td><kbd>F3</kbd></td><td>roja + <kbd>3</kbd></td><td><kbd>F3</kbd></td><td>No aparece (la línea marcada).</td></tr>
+<tr><td><kbd>F4</kbd></td><td>roja + <kbd>4</kbd></td><td><kbd>F4</kbd></td><td>Cerrar la caja con su foto. En una pregunta: «sí».</td></tr>
+<tr><td><kbd>F5</kbd></td><td>roja + <kbd>5</kbd></td><td><kbd>F5</kbd></td><td>Ver u ocultar la dirección y las observaciones del cliente.</td></tr>
+<tr><td><kbd>F6</kbd></td><td>roja + <kbd>6</kbd></td><td><kbd>F6</kbd></td><td>Ampliar la foto del producto (<kbd>Intro</kbd> o <kbd>Esc</kbd> la cierran).</td></tr>
+<tr><td><kbd>F7</kbd></td><td>roja + <kbd>7</kbd></td><td><kbd>F7</kbd></td><td>Tras un código que no casa y elegir a propósito la línea del producto que tiene en la mano: «¿Es un código de NOMBRE (ref.)?» (lo añade a ese producto).</td></tr>
+<tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>flechas</td><td>flechas</td><td>Moverse por la lista de pedidos o por las líneas del pedido.</td></tr>
+<tr><td><kbd>1</kbd> / <kbd>2</kbd></td><td>cifras</td><td>cifras</td><td>En «¿juntos o separados?»: 1 juntos, 2 separados.</td></tr>
+<tr><td><kbd>Esc</kbd></td><td>atrás</td><td><kbd>Esc</kbd></td><td>Cierra la pregunta («seguir leyendo»), vuelve del pedido a la lista o sale del packing.</td></tr>
+</table>
+<p>En el ordenador, la línea de abajo recuerda las teclas de cada momento. En la PDA y en el móvil sin teclado no sale: no hay sitio y los botones ya llevan su tecla.</p>
+
+<h3>En el móvil</h3>
+<ul>
+<li><b>Cámara:</b> el botón <b>📷</b>, a la derecha del cuadro de lectura (solo en Android). Ocupa toda la pantalla y lo que lee entra como si fuera el lector. Arriba salen el mensaje y lo que ha salido bien.</li>
+<li>En el packing la cámara <b>se queda abierta</b> para seguir leyendo. Ciérrela con «Cerrar cámara» o con atrás. «Linterna» enciende la luz.</li>
+<li>Tras comprobar un producto del que quedan varios, encima de la cámara salen <b>«Todas (12)»</b> (mete todas sin cerrar la cámara) y <b>«Teclear cuántas»</b> (cierra la cámara y saca el teclado numérico).</li>
+<li><b>Toques:</b> el cliente (desplegar o plegar), una línea (elegirla), la foto del producto (ampliarla), «Dato mal», los tres botones de abajo y «Bulto N 📷» (repetir la foto).</li>
+<li>En el móvil el cliente ocupa dos líneas y la ficha va recogida, para que quede sitio para la lista de líneas.</li>
+</ul>
+
+<h2>6. Qué ha cambiado respecto a la versión anterior</h2>
+<p>Para quien ya hacía packing con Ariadna 2.9:</p>
+<table>
+<tr><th style="width:50%">Antes (2.9)</th><th>Ahora (2.10)</th></tr>
+<tr><td>Cada lectura sumaba 1.</td><td>La lectura <b>comprueba</b>. Solo cuenta si queda 1. Para contar leyendo, <kbd>F1</kbd>.</td></tr>
+<tr><td>Leer y teclear 5 metía 6 (1 leída + 5).</td><td>Leer y teclear 5 mete <b>5</b>: es el total.</td></tr>
+<tr><td>Leer dos veces el mismo producto sumaba 2.</td><td>La segunda lectura no suma (aviso sin tono de error).</td></tr>
+<tr><td>Botón «Sumar (F1)»: cantidad + <kbd>F1</kbd>.</td><td>El botón ya no está. <kbd>F1</kbd> con el cuadro vacío es «Contar leyendo»; cantidad + <kbd>F1</kbd> sigue valiendo, como <kbd>Intro</kbd>.</td></tr>
+<tr><td><kbd>Intro</kbd> vacío siempre cerraba la caja.</td><td>Con una línea comprobada, <kbd>Intro</kbd> vacío mete todas. Sin línea comprobada, cierra la caja como antes.</td></tr>
+<tr><td>El cuadro decía siempre «Escanea o teclea».</td><td>Dice qué espera: «LEA EL CÓDIGO» o «CANTIDAD» (naranja), y la línea actual va destacada en azul.</td></tr>
+<tr><td>Un código de otro pedido decía solo que no era de aquí.</td><td>Dice de qué cliente y pedido es.</td></tr>
+<tr><td>El cliente, con dirección y observaciones, ocupaba media pantalla en el móvil.</td><td>Plegado en dos líneas; <kbd>F5</kbd> o un toque lo abren. Con observaciones, se abre solo.</td></tr>
+</table>
+<p>Es la misma forma de leer que el <b>recorrido</b>, con una diferencia: en el packing usted lee los productos <b>en el orden que quiera</b> y Ariadna busca su línea. En el recorrido va por las paradas en orden. Las señales son las mismas: pitido de bien, dos pitidos cortos de atención y tono de error con vibración.</p>
+
+<h2>7. Problemas frecuentes</h2>
+<ul>
+<li><b>Leo un producto y no suma:</b> es normal. La lectura comprueba; ahora teclee cuántas o pulse <kbd>Intro</kbd> para todas.</li>
+<li><b>Pulso <kbd>Intro</kbd> para meter todas y me pregunta si cierro la caja:</b> la línea ya no estaba comprobada (cambió de línea o leyó otro producto). Pulse <kbd>Esc</kbd>, lea el producto otra vez y pulse <kbd>Intro</kbd>.</li>
+<li><b>Tecleo una cantidad y dice «Antes de la cantidad, lea el código…» o «… no está en este picking. Si es una cantidad, antes lea…»:</b> primero lea el producto; luego la cantidad.</li>
+<li><b>Me he equivocado de cantidad:</b> <kbd>F2</kbd> la quita entera. Teclee la buena (la línea sigue comprobada).</li>
+<li><b>Dice «solo quedan N»:</b> ha tecleado más de lo que falta. Revise lo que lleva la caja.</li>
+<li><b>Dice que esa unidad sobra:</b> revise las cajas que nombra antes de seguir. Si están bien, avise a la oficina.</li>
+<li><b>El código no se lee o no casa:</b> teclee la referencia. Si el producto tiene un código que Ariadna no conoce, elija su línea (<kbd>↑</kbd> <kbd>↓</kbd> o tocándola), compruebe el nombre que dice la pregunta y pulse <kbd>F7</kbd>. Si el código está mal, <kbd>*</kbd> + <kbd>Intro</kbd>.</li>
+<li><b>Pulso <kbd>F7</kbd> y dice «Antes elija la línea del producto que tiene en la mano…»:</b> la línea marcada era la de la lectura anterior. Elija la del producto que tiene en la mano y pulse <kbd>F7</kbd> otra vez.</li>
+<li><b>Un producto sin código y el cuadro pide «TECLEE LA REFERENCIA»:</b> teclee la referencia (la primera de la ficha) y <kbd>Intro</kbd>.</li>
+<li><b>¿Por qué un mensaje sale en rojo y otro en azul?</b> Rojo es un error (lo leído no vale o algo ha fallado: suena el tono de error); azul es un aviso o una indicación (no hay que corregir nada).</li>
+<li><b>No veo la dirección del cliente:</b> pulse <kbd>F5</kbd> o toque el cliente.</li>
+<li><b>Sin red:</b> lo leído se guarda en la PDA y se reintenta solo cada 20 segundos (lo dice debajo de los botones). La foto se reintenta con «Reintentar la foto».</li>
+<li><b>La cámara no se abre:</b> Ariadna pide permiso de cámara. Concédalo y vuelva a pulsar «Cerrar caja».</li>
+<li><b>La foto de una caja salió mal:</b> toque su «Bulto N 📷» y repítala.</li>
+<li><b>«No hay nada que deshacer en este pedido»:</b> solo se deshace lo hecho en esta PDA en este pedido, y ya no queda nada.</li>
+<li><b>«Esa caja ya está cerrada con su foto…»:</b> lo que quiere deshacer va en una caja ya cerrada. Si sobra algo, ábrala de nuevo o use <b>No aparece</b>.</li>
+<li><b>El pedido dice «ya está hecho»:</b> tiene todo dentro y las cajas con foto. Puede repetir una foto tocando su bulto, o volver con <kbd>Esc</kbd>.</li>
+</ul>
+
+<p class="pie">Nueva Visión · Guía de packing en Ariadna 2.11 · Si algo de esta guía no coincide con lo que ve en pantalla, díganoslo en Novedades.</p>
+</body>
+</html>
