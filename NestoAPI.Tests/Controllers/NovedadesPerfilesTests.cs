@@ -167,6 +167,32 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public void GetNovedades_LasDeCompras_NoLasVeAdministracion()
+        {
+            // Carlos 15/10/26: la 625 (propuestas de stock) es de Compras, no de Administración
+            A.CallTo(() => servicio.LeerNovedadesPublicadas()).Returns(new List<NovedadDTO>
+            {
+                Novedad(1, "Para todos"),
+                Novedad(4, "De administración"),
+                Novedad(5, "De compras")
+            });
+            A.CallTo(() => servicio.LeerPerfiles()).Returns(new Dictionary<int, string>
+            {
+                [4] = "Administración",
+                [5] = "compras"
+            });
+
+            ComoUsuario("Compras");
+            CollectionAssert.AreEqual(new[] { "De administración", "De compras", "Para todos" }, Titulos());
+
+            ComoUsuario("Administración");
+            CollectionAssert.AreEqual(new[] { "De administración", "Para todos" }, Titulos());
+
+            ComoUsuario("TiendaOnline");
+            CollectionAssert.AreEqual(new[] { "De administración", "Para todos" }, Titulos());
+        }
+
+        [TestMethod]
         public void GetNovedades_LlevaLosPerfilesCanonicos()
         {
             ComoUsuario("Dirección");
@@ -227,7 +253,7 @@ namespace NestoAPI.Tests.Controllers
             CollectionAssert.AreEqual(new[] { "Almacén", "Tiendas" }, resultado.Content.Perfiles);
             Assert.IsFalse(resultado.Content.VeTodas);
             Assert.IsFalse(resultado.Content.PuedeEditar);
-            CollectionAssert.AreEqual(new[] { "Vendedores", "Almacén", "Tiendas", "Administración" }, resultado.Content.Disponibles);
+            CollectionAssert.AreEqual(new[] { "Vendedores", "Almacén", "Tiendas", "Administración", "Compras" }, resultado.Content.Disponibles);
 
             ComoUsuario("Dirección");
             resultado = controller.GetMisPerfiles() as OkNegotiatedContentResult<PerfilesUsuarioNovedades>;
@@ -255,7 +281,7 @@ namespace NestoAPI.Tests.Controllers
 
             _ = controller.PutPerfiles(7, new PerfilesNovedadDTO { Perfiles = new List<string> { "Todos" } });
             _ = controller.PutPerfiles(8, new PerfilesNovedadDTO { Perfiles = new List<string>() });
-            _ = controller.PutPerfiles(9, new PerfilesNovedadDTO { Perfiles = new List<string> { "Vendedores", "Almacén", "Tiendas", "Administración" } });
+            _ = controller.PutPerfiles(9, new PerfilesNovedadDTO { Perfiles = new List<string> { "Vendedores", "Almacén", "Tiendas", "Administración", "Compras" } });
 
             A.CallTo(() => servicio.GuardarPerfiles(A<int>._, null, A<string>._)).MustHaveHappened(3, Times.Exactly);
         }

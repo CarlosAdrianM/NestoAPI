@@ -21,7 +21,9 @@ namespace NestoAPI.Infraestructure.Novedades
     ///   Dirección, Informatica (o Informática)         ve TODAS (redacta y revisa)
     ///   Almacén                                        Almacén
     ///   Tiendas                                        Tiendas
-    ///   Administración, Compras, TiendaOnline          Administración
+    ///   Administración, TiendaOnline                   Administración
+    ///   Compras                                        Compras y Administración (Carlos 15/10/26: lo de
+    ///                                                  Compras no es de Administración, p. ej. la 625)
     ///   Comerciales o claim IsVendedor (NestoApp)      Vendedores, SOLO si no tiene ninguno de los
     ///                                                  tres de arriba: Comerciales lo tienen también
     ///                                                  almacén y tiendas (permiso de ver clientes)
@@ -37,6 +39,7 @@ namespace NestoAPI.Infraestructure.Novedades
         public const string ALMACEN = "Almacén";
         public const string TIENDAS = "Tiendas";
         public const string ADMINISTRACION = "Administración";
+        public const string COMPRAS = "Compras";
         /// <summary>Se acepta al escribir; se guarda como NULL (para todos).</summary>
         public const string TODOS = "Todos";
 
@@ -51,7 +54,7 @@ namespace NestoAPI.Infraestructure.Novedades
         public const int LONGITUD_COLUMNA = 200;
 
         /// <summary>Los perfiles que se pueden elegir, en el orden en que se enseñan.</summary>
-        public static readonly IReadOnlyList<string> DISPONIBLES = new[] { VENDEDORES, ALMACEN, TIENDAS, ADMINISTRACION };
+        public static readonly IReadOnlyList<string> DISPONIBLES = new[] { VENDEDORES, ALMACEN, TIENDAS, ADMINISTRACION, COMPRAS };
 
         /// <summary>
         /// El nombre canónico del perfil (sin distinguir mayúsculas ni tildes: «almacen» → «Almacén»), o null si no
@@ -149,11 +152,16 @@ namespace NestoAPI.Infraestructure.Novedades
             {
                 perfiles.Add(TIENDAS);
             }
+            bool esCompras = usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.COMPRAS);
             if (usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.ADMINISTRACION)
-                || usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.COMPRAS)
+                || esCompras
                 || usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.TIENDA_ON_LINE))
             {
                 perfiles.Add(ADMINISTRACION);
+            }
+            if (esCompras)
+            {
+                perfiles.Add(COMPRAS);
             }
             if (perfiles.Count == 0 && (usuario.IsInRoleSinDominio(GRUPO_COMERCIALES) || TieneClaimVendedor(usuario)))
             {
@@ -211,7 +219,7 @@ namespace NestoAPI.Infraestructure.Novedades
         public bool VeTodas { get; set; }
         /// <summary>Dirección o Informática: PUT api/Novedades/{id}/Perfiles.</summary>
         public bool PuedeEditar { get; set; }
-        /// <summary>Los perfiles que se pueden poner a una novedad (Vendedores, Almacén, Tiendas, Administración).</summary>
+        /// <summary>Los perfiles que se pueden poner a una novedad (Vendedores, Almacén, Tiendas, Administración, Compras).</summary>
         public List<string> Disponibles { get; set; } = ReglasPerfilesNovedades.DISPONIBLES.ToList();
 
         internal static PerfilesUsuarioNovedades Todas(bool puedeEditar) => new PerfilesUsuarioNovedades { VeTodas = true, PuedeEditar = puedeEditar };
