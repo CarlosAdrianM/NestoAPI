@@ -24,6 +24,11 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
     /// <para>«Silenciar» (con un motivo de <see cref="MotivosSilencioVigentes"/> y fecha de caducidad): las propuestas del producto de los meses
     /// siguientes salen como «Silenciada» y no como «Pendiente» hasta que caduca. «Posponer»: no se hace nada y el mes que viene
     /// vuelve a salir.</para>
+    /// <para>NestoAPI#655: «Aplicar» en las acciones de los propios («Ajustar el siguiente lote», «Potenciar ventas», «Caduca antes
+    /// de venderse») escribe el máximo y el mínimo de la fórmula P, como un «Ajustar máx/mín». «Potenciar» (objetivo en uds/mes y
+    /// fecha de revisión, por defecto 6 meses; vale para cualquier propuesta con acción, aunque está pensada para los propios): no
+    /// escribe nada en el stock; hasta la fecha, las filas del producto salen «En potenciación» con la venta media frente al
+    /// objetivo, y pasada la fecha vuelven a su estado normal con la nota «potenciación cumplida» o «sin cumplir (objetivo X, real Y)».</para>
     /// </summary>
     public class ServicioDecisionesPropuestasStock
     {
@@ -33,6 +38,11 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         internal const int MESES_MAXIMOS_SILENCIO = 24;
         internal const short ESTADO_DISPONIBLE = 0;
         internal const short ESTADO_SOBRE_PEDIDO = 1;
+        /// <summary>NestoAPI#655: la fecha de revisión de una potenciación, si no se dice (decisión de Carlos: 6 meses).</summary>
+        internal const int MESES_POTENCIACION_POR_DEFECTO = 6;
+        /// <summary>NestoAPI#655: como el silencio, una potenciación no puede esconder el producto para siempre.</summary>
+        internal const int MESES_MAXIMOS_POTENCIACION = 24;
+        internal const string MENSAJE_SIN_POTENCIACION = "Falta el script de «Potenciar ventas» (Scripts/Issue655_PotenciarVentas.sql): de momento solo se puede aplicar, rechazar, posponer o silenciar.";
 
         private readonly IRepositorioDecisionesPropuestasStock repositorio;
         private readonly Func<DateTime> ahora;
@@ -57,6 +67,11 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             {
                 throw NoValida($"La decisión tiene que ser {string.Join(", ", DecisionesPropuesta.TODAS)}.");
             }
+            if (decision == DecisionesPropuesta.POTENCIAR && !repositorio.ExistePotenciacion())
+            {
+                // Sin el script, la API va como antes: solo esta decisión no se puede tomar (404, como el resto de «falta el script»).
+                throw new DecisionPropuestaStockException(HttpStatusCode.NotFound, MENSAJE_SIN_POTENCIACION);
+            }
             string motivo = string.IsNullOrWhiteSpace(peticion.Motivo) ? null : peticion.Motivo.Trim();
             if (motivo != null && motivo.Length > LONGITUD_MOTIVO)
             {
@@ -67,10 +82,14 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                 ?? throw new DecisionPropuestaStockException(HttpStatusCode.NotFound, $"No existe la propuesta {id}.");
             ComprobarQueSePuedeDecidir(propuesta);
 
-            bool esAjuste = propuesta.Accion == AccionesPropuesta.AJUSTAR;
+            bool esAjuste = AccionesPropuesta.EsAjusteDeMaximos(propuesta.Accion);
             if ((peticion.StockMaximo.HasValue || peticion.StockMinimo.HasValue) && !(decision == DecisionesPropuesta.APLICAR && esAjuste))
             {
-                throw NoValida("El máximo y el mínimo solo se indican al aplicar una propuesta de «Ajustar máx/mín».");
+                throw NoValida("El máximo y el mínimo solo se indican al aplicar una propuesta de «Ajustar máx/mín» (o una de los propios).");
+            }
+            if (decision != DecisionesPropuesta.POTENCIAR && (peticion.ObjetivoVentaMensual.HasValue || peticion.PotenciarHasta.HasValue))
+            {
+                throw NoValida("El objetivo de venta y la fecha de revisión solo se indican al potenciar.");
             }
             if (!string.IsNullOrWhiteSpace(peticion.CanalLiquidacion) && !(decision == DecisionesPropuesta.APLICAR && propuesta.Accion == AccionesPropuesta.LIQUIDAR))
             {
@@ -110,6 +129,9 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                     break;
                 case DecisionesPropuesta.APLICAR:
                     PrepararAplicacion(propuesta, peticion, motivo, registro, cambios);
+                    break;
+                case DecisionesPropuesta.POTENCIAR:
+                    PrepararPotenciacion(peticion, momento, registro);
                     break;
             }
 
@@ -174,12 +196,36 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             registro.SilenciadaHasta = hasta;
         }
 
+        /// <summary>
+        /// NestoAPI#655: «Potenciar ventas»: objetivo (uds/mes, obligatorio) y fecha de revisión (por defecto, dentro de
+        /// <see cref="MESES_POTENCIACION_POR_DEFECTO"/> meses). No escribe nada en el stock: hasta la fecha, las propuestas del producto
+        /// salen «En potenciación» y no como pendientes.
+        /// </summary>
+        private static void PrepararPotenciacion(DecisionPropuestaStockDTO peticion, DateTime momento, RegistroDecisionPropuesta registro)
+        {
+            if (!peticion.ObjetivoVentaMensual.HasValue || peticion.ObjetivoVentaMensual.Value <= 0)
+            {
+                throw NoValida("Para potenciar las ventas indique el objetivo de venta (unidades al mes, más de 0).");
+            }
+            DateTime hasta = (peticion.PotenciarHasta ?? momento.Date.AddMonths(MESES_POTENCIACION_POR_DEFECTO)).Date;
+            if (hasta <= momento.Date)
+            {
+                throw NoValida("La fecha de revisión de la potenciación tiene que ser posterior a hoy.");
+            }
+            if (hasta > momento.Date.AddMonths(MESES_MAXIMOS_POTENCIACION))
+            {
+                throw NoValida($"Una potenciación no puede durar más de {MESES_MAXIMOS_POTENCIACION} meses.");
+            }
+            registro.ObjetivoVentaMensual = peticion.ObjetivoVentaMensual.Value;
+            registro.PotenciarHasta = hasta;
+        }
+
         private void PrepararAplicacion(PropuestaStockConDecision propuesta, DecisionPropuestaStockDTO peticion, string motivo,
             RegistroDecisionPropuesta registro, List<string> cambios)
         {
             string producto = propuesta.Producto?.Trim();
             string almacen = propuesta.Almacen?.Trim();
-            bool escribe = propuesta.Accion == AccionesPropuesta.AJUSTAR || propuesta.Accion == AccionesPropuesta.ESTADO_1;
+            bool escribe = AccionesPropuesta.EsAjusteDeMaximos(propuesta.Accion) || propuesta.Accion == AccionesPropuesta.ESTADO_1;
             short? estadoActual = null;
             if (escribe)
             {
@@ -198,6 +244,10 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             switch (propuesta.Accion)
             {
                 case AccionesPropuesta.AJUSTAR:
+                // NestoAPI#655: las tres de los propios llevan el máximo y el mínimo de la fórmula P: aplicarlas es escribirlos.
+                case AccionesPropuesta.AJUSTAR_LOTE:
+                case AccionesPropuesta.POTENCIAR:
+                case AccionesPropuesta.CADUCA:
                     {
                         int? maximo = peticion.StockMaximo ?? propuesta.StockMaximoPropuesto;
                         int? minimo = peticion.StockMinimo ?? propuesta.StockMinimoPropuesto;
@@ -321,6 +371,7 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                 case DecisionesPropuesta.APLICAR: return EstadosPropuesta.APLICADA;
                 case DecisionesPropuesta.RECHAZAR: return EstadosPropuesta.RECHAZADA;
                 case DecisionesPropuesta.SILENCIAR: return EstadosPropuesta.SILENCIADA;
+                case DecisionesPropuesta.POTENCIAR: return EstadosPropuesta.EN_POTENCIACION;
                 default: return EstadosPropuesta.POSPUESTA;
             }
         }
@@ -345,7 +396,7 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                     {
                         return $"Propuesta del producto {producto} aplicada: {string.Join("; ", cambios)}.";
                     }
-                    if (propuesta.Accion == AccionesPropuesta.AJUSTAR)
+                    if (AccionesPropuesta.EsAjusteDeMaximos(propuesta.Accion))
                     {
                         return $"Propuesta del producto {producto} aplicada: el máximo y el mínimo ya eran esos, no se ha cambiado nada.";
                     }
@@ -355,6 +406,9 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                     return $"Propuesta del producto {producto} rechazada.";
                 case DecisionesPropuesta.SILENCIAR:
                     return $"Producto {producto} silenciado hasta el {registro.SilenciadaHasta:dd/MM/yyyy} ({registro.MotivoSilencio}).";
+                case DecisionesPropuesta.POTENCIAR:
+                    return $"Producto {producto} en potenciación hasta el {registro.PotenciarHasta:dd/MM/yyyy}: objetivo {registro.ObjetivoVentaMensual} uds/mes " +
+                        $"(ahora vende {MotorTendencias.Num(propuesta.VentaMedia6Meses, 1)} de media). Si no se cumple, volverá a salir con la nota «potenciación sin cumplir».";
                 default:
                     return $"Propuesta del producto {producto} pospuesta: volverá a salir el mes que viene.";
             }

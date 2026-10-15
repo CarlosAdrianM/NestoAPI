@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Net;
 
 namespace NestoAPI.Infraestructure.Stocks.Tendencias
@@ -11,8 +12,13 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         public const string RECHAZAR = "Rechazar";
         public const string POSPONER = "Posponer";
         public const string SILENCIAR = "Silenciar";
+        /// <summary>
+        /// NestoAPI#655: en vez de liquidar, darle un plazo para vender más: objetivo de venta (uds/mes) y fecha de revisión.
+        /// Necesita Scripts/Issue655_PotenciarVentas.sql.
+        /// </summary>
+        public const string POTENCIAR = "Potenciar";
 
-        public static readonly string[] TODAS = { APLICAR, RECHAZAR, POSPONER, SILENCIAR };
+        public static readonly string[] TODAS = { APLICAR, RECHAZAR, POSPONER, SILENCIAR, POTENCIAR };
 
         /// <summary>«aplicar» → «Aplicar»; null si no es ninguna.</summary>
         public static string Normalizar(string decision)
@@ -38,8 +44,14 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         public const string SUPERADA = "Superada";
         /// <summary>«Mantener» o «Nada»: no hay nada que decidir.</summary>
         public const string SIN_ACCION = "SinAccion";
+        /// <summary>
+        /// NestoAPI#655: con una potenciación vigente (de esta fila o de una anterior del producto) que no ha llegado a su fecha de
+        /// revisión: no es exceso pendiente. En la pantalla, «En potenciación» con la venta media frente al objetivo
+        /// (<see cref="PropuestaStockConDecision.NotaPotenciacion"/>). Pasada la fecha, la fila vuelve a su estado normal.
+        /// </summary>
+        public const string EN_POTENCIACION = "EnPotenciacion";
 
-        public static readonly string[] TODOS = { PENDIENTE, APLICADA, RECHAZADA, POSPUESTA, SILENCIADA, SUPERADA, SIN_ACCION };
+        public static readonly string[] TODOS = { PENDIENTE, APLICADA, RECHAZADA, POSPUESTA, SILENCIADA, SUPERADA, SIN_ACCION, EN_POTENCIACION };
 
         public static string Normalizar(string estado)
             => estado == null ? null : Array.Find(TODOS, e => string.Equals(e, estado.Trim(), StringComparison.OrdinalIgnoreCase));
@@ -132,6 +144,10 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         /// <summary>Solo al aplicar un «Liquidar»: Outlet o Ganavisiones (opcional; se apunta: el máximo y el mínimo del almacén
         /// pasan a 0, pero el paso al Outlet o a Ganavisiones lo hace la persona a mano).</summary>
         public string CanalLiquidacion { get; set; }
+        /// <summary>NestoAPI#655: solo al potenciar (obligatorio): la venta que se quiere conseguir, en unidades al mes.</summary>
+        public int? ObjetivoVentaMensual { get; set; }
+        /// <summary>NestoAPI#655: solo al potenciar: la fecha de revisión (incluida). Sin ella, dentro de 6 meses.</summary>
+        public DateTime? PotenciarHasta { get; set; }
     }
 
     /// <summary>Respuesta de POST api/PropuestasStock/{id}/Decision.</summary>
@@ -176,6 +192,44 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         public string SilencioMotivo { get; set; }
         /// <summary>El mes de la propuesta más reciente del mismo producto y almacén, si la hay (entonces esta ya no se puede decidir).</summary>
         public DateTime? MesMasReciente { get; set; }
+
+        // NestoAPI#655: potenciar ventas. Sin Scripts/Issue655_PotenciarVentas.sql la consulta los devuelve a NULL.
+        /// <summary>Lo decidido en esta fila (solo si su decisión es «Potenciar»).</summary>
+        public int? ObjetivoVentaMensual { get; set; }
+        public DateTime? PotenciarHasta { get; set; }
+        /// <summary>La última potenciación del producto y almacén (de esta fila o de una anterior): su Id, objetivo y fecha de revisión.</summary>
+        public int? PotenciacionPropuestaId { get; set; }
+        public int? PotenciacionObjetivo { get; set; }
+        public DateTime? PotenciacionHasta { get; set; }
+        /// <summary>La de <see cref="PotenciacionPropuestaId"/> no ha llegado a su fecha de revisión.</summary>
+        public bool PotenciacionVigente { get; set; }
+
+        /// <summary>
+        /// NestoAPI#655: cómo va la potenciación, con la venta media de 6 meses de esta fila como «real». Vigente: «En potenciación
+        /// hasta el …: venta media X uds/mes de un objetivo de Y (Z %)». Pasada la fecha: «potenciación cumplida» o «potenciación sin
+        /// cumplir (objetivo X, real Y)». Null si el producto no tiene ninguna. Solo lectura (no es columna).
+        /// </summary>
+        public string NotaPotenciacion
+        {
+            get
+            {
+                if (!PotenciacionPropuestaId.HasValue || !PotenciacionObjetivo.HasValue)
+                {
+                    return null;
+                }
+                CultureInfo es = CultureInfo.GetCultureInfo("es-ES");
+                int objetivo = PotenciacionObjetivo.Value;
+                string real = VentaMedia6Meses.ToString("N1", es);
+                if (PotenciacionVigente)
+                {
+                    string porcentaje = objetivo > 0 ? $" ({Math.Round(VentaMedia6Meses * 100m / objetivo, 0).ToString("N0", es)} %)" : string.Empty;
+                    return $"En potenciación hasta el {PotenciacionHasta:dd/MM/yyyy}: venta media {real} uds/mes de un objetivo de {objetivo}{porcentaje}";
+                }
+                return VentaMedia6Meses >= objetivo
+                    ? $"potenciación cumplida (objetivo {objetivo}, real {real})"
+                    : $"potenciación sin cumplir (objetivo {objetivo}, real {real})";
+            }
+        }
     }
 
     /// <summary>El control de stock de un almacén tal como está ahora.</summary>
@@ -220,6 +274,9 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         public string MotivoSilencio { get; set; }
         public DateTime? SilenciadaHasta { get; set; }
         public string CanalLiquidacion { get; set; }
+        /// <summary>NestoAPI#655: solo al potenciar.</summary>
+        public int? ObjetivoVentaMensual { get; set; }
+        public DateTime? PotenciarHasta { get; set; }
 
         /// <summary>Lo que se apunta en las columnas de la fila (el del almacén de la propuesta).</summary>
         public int? StockMaximoAnterior { get; set; }
@@ -240,6 +297,12 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
     {
         /// <summary>¿Están las columnas y la tabla del corte 3 (Scripts/Issue631_PropuestasStockDecisiones.sql)?</summary>
         bool ExisteEsquema();
+
+        /// <summary>
+        /// NestoAPI#655: ¿Están las columnas de «Potenciar ventas» (Scripts/Issue655_PotenciarVentas.sql)? Sin ellas, todo va como
+        /// antes y solo la decisión «Potenciar» responde 404.
+        /// </summary>
+        bool ExistePotenciacion();
 
         PropuestaStockConDecision LeerPropuesta(int id);
 

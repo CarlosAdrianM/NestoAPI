@@ -116,7 +116,7 @@ namespace NestoAPI.Controllers
         /// <summary>
         /// Las propuestas guardadas de un mes (AAAA-MM; por defecto el último guardado), de más a menos exceso valorado.
         /// NestoAPI#631: solo Compras y Dirección (403 al resto); con <paramref name="estado"/> (Pendiente, Aplicada, Rechazada,
-        /// Pospuesta, Silenciada, Superada, SinAccion) solo las de ese estado. Con el script del corte 3, cada fila lleva su
+        /// Pospuesta, Silenciada, Superada, SinAccion y, desde NestoAPI#655, EnPotenciacion) solo las de ese estado. Con el script del corte 3, cada fila lleva su
         /// Estado, la decisión y lo aplicado.
         /// GET api/PropuestasStock?mes=2026-10&amp;top=50&amp;estado=Pendiente
         /// </summary>
@@ -225,6 +225,9 @@ namespace NestoAPI.Controllers
         /// pone a 0 el máximo y el mínimo del almacén de la propuesta; «Parar compras» solo se apunta. Queda quién, cuándo, el valor
         /// anterior y el nuevo. Reglas en <see cref="ServicioDecisionesPropuestasStock"/>.
         /// POST api/PropuestasStock/123/Decision  { "Decision": "Aplicar", "Motivo": "...", "StockMaximo": 300, "StockMinimo": 200 }
+        /// <para>NestoAPI#655: «Potenciar» con objetivo (uds/mes) y fecha de revisión (opcional, por defecto 6 meses); sin
+        /// Scripts/Issue655_PotenciarVentas.sql, 404 solo para esta decisión.</para>
+        /// POST api/PropuestasStock/123/Decision  { "Decision": "Potenciar", "ObjetivoVentaMensual": 40, "PotenciarHasta": "2027-04-15", "Motivo": "..." }
         /// </summary>
         [HttpPost]
         [Route("{id:int}/Decision")]

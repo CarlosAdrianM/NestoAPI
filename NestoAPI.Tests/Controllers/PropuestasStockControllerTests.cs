@@ -279,6 +279,40 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public void Decision_PotenciarSinElScriptDe655_404ConElNombreDelScript()
+        {
+            PropuestasStockController controller = Controller(Noche, grupos: new[] { "NUEVAVISION\\Compras" });
+            _ = A.CallTo(() => decisiones.ExisteEsquema()).Returns(true);
+            _ = A.CallTo(() => decisiones.ExistePotenciacion()).Returns(false);
+
+            System.Net.Http.HttpResponseMessage respuesta = controller.Decision(7, new DecisionPropuestaStockDTO { Decision = "Potenciar", ObjetivoVentaMensual = 40 })
+                .ExecuteAsync(default).Result;
+
+            Assert.AreEqual(HttpStatusCode.NotFound, respuesta.StatusCode);
+            StringAssert.Contains(respuesta.Content.ReadAsStringAsync().Result, "Issue655_PotenciarVentas.sql");
+            A.CallTo(() => decisiones.GuardarDecision(A<RegistroDecisionPropuesta>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void Decision_Potenciar_DevuelveEnPotenciacion()
+        {
+            PropuestasStockController controller = Controller(Noche, grupos: new[] { "NUEVAVISION\\Compras" });
+            _ = A.CallTo(() => decisiones.ExisteEsquema()).Returns(true);
+            _ = A.CallTo(() => decisiones.ExistePotenciacion()).Returns(true);
+            _ = A.CallTo(() => decisiones.LeerPropuesta(7)).Returns(new PropuestaStockConDecision
+            {
+                Id = 7, Mes = new DateTime(2026, 9, 1), Producto = "20258", Almacen = "ALG", Accion = AccionesPropuesta.POTENCIAR, Estado = EstadosPropuesta.PENDIENTE
+            });
+
+            IHttpActionResult resultado = controller.Decision(7, new DecisionPropuestaStockDTO { Decision = "Potenciar", ObjetivoVentaMensual = 40 });
+
+            var ok = (OkNegotiatedContentResult<ResultadoDecisionPropuestaStock>)resultado;
+            Assert.AreEqual(EstadosPropuesta.EN_POTENCIACION, ok.Content.Estado);
+            A.CallTo(() => decisiones.GuardarDecision(A<RegistroDecisionPropuesta>.That.Matches(r => r.ObjetivoVentaMensual == 40 && r.PotenciarHasta == new DateTime(2027, 4, 14))))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
         public void Get_DevuelveLasFilasDelMes()
         {
             PropuestasStockController controller = Controller(Noche);

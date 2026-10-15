@@ -518,6 +518,180 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
             Assert.AreEqual(50, guardado.Usuario.Length);
         }
 
+        // ---------- NestoAPI#655: propios y «Potenciar ventas» ----------
+
+        [TestMethod]
+        public void Aplicar_AccionDePropios_EscribeElMaximoYElMinimoDeLaFormulaP()
+        {
+            foreach (string accion in new[] { AccionesPropuesta.AJUSTAR_LOTE, AccionesPropuesta.POTENCIAR, AccionesPropuesta.CADUCA })
+            {
+                PropuestaStockConDecision p = Propuesta(accion);
+                p.StockMaximoPropuesto = 360;
+                p.StockMinimoPropuesto = 90;
+
+                ResultadoDecisionPropuestaStock r = Servicio().Decidir(7, new DecisionPropuestaStockDTO { Decision = "Aplicar" }, "Manuel");
+
+                Assert.AreEqual(EstadosPropuesta.APLICADA, r.Estado, accion);
+                Assert.AreEqual("ALG: máximo 555 → 360, mínimo 295 → 90", guardado.Cambios, accion);
+            }
+        }
+
+        [TestMethod]
+        public void Aplicar_AccionDePropiosConOtrosValoresYMotivo_EscribeLosDeLaPersona()
+        {
+            PropuestaStockConDecision p = Propuesta(AccionesPropuesta.AJUSTAR_LOTE);
+            p.StockMaximoPropuesto = 360;
+            p.StockMinimoPropuesto = 90;
+
+            _ = Servicio().Decidir(7, new DecisionPropuestaStockDTO { Decision = "Aplicar", StockMaximo = 300, StockMinimo = 90, Motivo = "Lote de 200 pactado" }, "Manuel");
+
+            Assert.AreEqual(300, guardado.CambiosControlStock.Single().MaximoNuevo);
+        }
+
+        [TestMethod]
+        public void Potenciar_ConObjetivo_SinFechaSonSeisMesesYNoTocaElStock()
+        {
+            _ = A.CallTo(() => repositorio.ExistePotenciacion()).Returns(true);
+            PropuestaStockConDecision p = Propuesta(AccionesPropuesta.POTENCIAR);
+            p.VentaMedia6Meses = 30m;
+
+            ResultadoDecisionPropuestaStock r = Servicio().Decidir(7, new DecisionPropuestaStockDTO { Decision = "potenciar", ObjetivoVentaMensual = 40, Motivo = "Feria de Unión Láser" }, "Manuel");
+
+            Assert.AreEqual(EstadosPropuesta.EN_POTENCIACION, r.Estado);
+            Assert.AreEqual(DecisionesPropuesta.POTENCIAR, guardado.Decision);
+            Assert.AreEqual(40, guardado.ObjetivoVentaMensual);
+            Assert.AreEqual(new DateTime(2027, 4, 15), guardado.PotenciarHasta);
+            Assert.AreEqual("Feria de Unión Láser", guardado.Motivo);
+            Assert.AreEqual(0, guardado.CambiosControlStock.Count);
+            Assert.IsNull(guardado.EstadoAplicado);
+            Assert.IsNull(guardado.MotivoSilencio);
+            Assert.AreEqual("Producto 17404 en potenciación hasta el 15/04/2027: objetivo 40 uds/mes (ahora vende 30,0 de media). " +
+                "Si no se cumple, volverá a salir con la nota «potenciación sin cumplir».", r.Mensaje);
+        }
+
+        [TestMethod]
+        public void Potenciar_ConFechaDeRevision_LaDeLaPersona()
+        {
+            _ = A.CallTo(() => repositorio.ExistePotenciacion()).Returns(true);
+            _ = Propuesta(AccionesPropuesta.CADUCA);
+
+            _ = Servicio().Decidir(7, new DecisionPropuestaStockDTO { Decision = "Potenciar", ObjetivoVentaMensual = 25, PotenciarHasta = new DateTime(2027, 1, 31, 18, 0, 0) }, "Manuel");
+
+            Assert.AreEqual(new DateTime(2027, 1, 31), guardado.PotenciarHasta);
+        }
+
+        [TestMethod]
+        public void Potenciar_SinObjetivoOConFechaPasadaOMasDeDosAnios_400()
+        {
+            _ = A.CallTo(() => repositorio.ExistePotenciacion()).Returns(true);
+            _ = Propuesta(AccionesPropuesta.POTENCIAR);
+
+            Assert.AreEqual(HttpStatusCode.BadRequest, Falla(new DecisionPropuestaStockDTO { Decision = "Potenciar" }));
+            Assert.AreEqual(HttpStatusCode.BadRequest, Falla(new DecisionPropuestaStockDTO { Decision = "Potenciar", ObjetivoVentaMensual = 0 }));
+            Assert.AreEqual(HttpStatusCode.BadRequest, Falla(new DecisionPropuestaStockDTO { Decision = "Potenciar", ObjetivoVentaMensual = 40, PotenciarHasta = Hoy.Date }));
+            Assert.AreEqual(HttpStatusCode.BadRequest, Falla(new DecisionPropuestaStockDTO { Decision = "Potenciar", ObjetivoVentaMensual = 40, PotenciarHasta = Hoy.Date.AddMonths(25) }));
+        }
+
+        [TestMethod]
+        public void ObjetivoOFechaDePotenciacionEnOtraDecision_400()
+        {
+            _ = A.CallTo(() => repositorio.ExistePotenciacion()).Returns(true);
+            _ = Propuesta();
+
+            Assert.AreEqual(HttpStatusCode.BadRequest, Falla(new DecisionPropuestaStockDTO { Decision = "Posponer", ObjetivoVentaMensual = 40 }));
+            Assert.AreEqual(HttpStatusCode.BadRequest, Falla(new DecisionPropuestaStockDTO { Decision = "Aplicar", PotenciarHasta = Hoy.AddMonths(1) }));
+        }
+
+        [TestMethod]
+        public void Potenciar_SinElScript_404YNoGuarda_ElRestoDeDecisionesComoAntes()
+        {
+            _ = A.CallTo(() => repositorio.ExistePotenciacion()).Returns(false);
+            _ = Propuesta(AccionesPropuesta.POTENCIAR);
+
+            try
+            {
+                _ = Servicio().Decidir(7, new DecisionPropuestaStockDTO { Decision = "Potenciar", ObjetivoVentaMensual = 40 }, "Manuel");
+                Assert.Fail("Tenía que fallar");
+            }
+            catch (DecisionPropuestaStockException ex)
+            {
+                Assert.AreEqual(HttpStatusCode.NotFound, ex.Codigo);
+                StringAssert.Contains(ex.Message, "Issue655_PotenciarVentas.sql");
+            }
+            A.CallTo(() => repositorio.GuardarDecision(A<RegistroDecisionPropuesta>._)).MustNotHaveHappened();
+
+            ResultadoDecisionPropuestaStock pospuesta = Servicio().Decidir(7, new DecisionPropuestaStockDTO { Decision = "Posponer" }, "Manuel");
+            Assert.AreEqual(EstadosPropuesta.POSPUESTA, pospuesta.Estado);
+        }
+
+        [TestMethod]
+        public void SePuedeDecidirSobreUnaFilaEnPotenciacion()
+        {
+            _ = A.CallTo(() => repositorio.ExistePotenciacion()).Returns(true);
+            _ = Propuesta(AccionesPropuesta.POTENCIAR, decision: DecisionesPropuesta.POTENCIAR, estado: EstadosPropuesta.EN_POTENCIACION);
+
+            ResultadoDecisionPropuestaStock r = Servicio().Decidir(7, new DecisionPropuestaStockDTO { Decision = "Potenciar", ObjetivoVentaMensual = 50 }, "Manuel");
+
+            Assert.AreEqual(EstadosPropuesta.EN_POTENCIACION, r.Estado);
+            Assert.AreEqual(DecisionesPropuesta.POTENCIAR, guardado.DecisionAnterior);
+            Assert.AreEqual(50, guardado.ObjetivoVentaMensual);
+        }
+
+        [TestMethod]
+        public void NotaPotenciacion_VigenteCumplidaYSinCumplir()
+        {
+            PropuestaStockConDecision fila = new PropuestaStockConDecision { VentaMedia6Meses = 30m };
+            Assert.IsNull(fila.NotaPotenciacion);
+
+            fila.PotenciacionPropuestaId = 7;
+            fila.PotenciacionObjetivo = 40;
+            fila.PotenciacionHasta = new DateTime(2027, 4, 15);
+            fila.PotenciacionVigente = true;
+            Assert.AreEqual("En potenciación hasta el 15/04/2027: venta media 30,0 uds/mes de un objetivo de 40 (75 %)", fila.NotaPotenciacion);
+
+            fila.PotenciacionVigente = false;
+            Assert.AreEqual("potenciación sin cumplir (objetivo 40, real 30,0)", fila.NotaPotenciacion);
+
+            fila.VentaMedia6Meses = 42.5m;
+            Assert.AreEqual("potenciación cumplida (objetivo 40, real 42,5)", fila.NotaPotenciacion);
+        }
+
+        [TestMethod]
+        public void Sql_SinElScriptDePotenciacion_NoMiraLasColumnasNuevas()
+        {
+            string leer = RepositorioDecisionesPropuestasStockSql.SqlLeer(false);
+            string guardar = RepositorioDecisionesPropuestasStockSql.SqlGuardar(false);
+            string historico = RepositorioDecisionesPropuestasStockSql.SqlHistorico(false);
+
+            Assert.IsFalse(leer.Contains("p.PotenciarHasta") || leer.Contains("pv."), leer);
+            StringAssert.Contains(leer, "CAST(NULL AS date) AS PotenciarHasta");
+            StringAssert.Contains(leer, "CAST(0 AS bit) AS PotenciacionVigente");
+            Assert.IsFalse(leer.Contains("EnPotenciacion"));
+            Assert.IsFalse(guardar.Contains("PotenciarHasta") || guardar.Contains("{0}"), guardar);
+            Assert.IsFalse(historico.Contains("PotenciarHasta") || historico.Contains("{1}"), historico);
+            // Las columnas de PropuestaStockConDecision con set salen en las dos variantes (si no, SqlQuery falla)
+            foreach (string columna in new[] { "ObjetivoVentaMensual", "PotenciarHasta", "PotenciacionPropuestaId", "PotenciacionObjetivo", "PotenciacionHasta", "PotenciacionVigente" })
+            {
+                StringAssert.Contains(leer, columna);
+                StringAssert.Contains(RepositorioDecisionesPropuestasStockSql.SqlLeer(true), columna);
+            }
+        }
+
+        [TestMethod]
+        public void Sql_ConElScriptDePotenciacion_EstadoEnPotenciacionYGuardaObjetivoYFecha()
+        {
+            string leer = RepositorioDecisionesPropuestasStockSql.SqlLeer(true);
+
+            StringAssert.Contains(leer, "WHEN p.Decision = 'Potenciar' AND p.PotenciarHasta >= CAST(GETDATE() AS date) THEN 'EnPotenciacion'");
+            StringAssert.Contains(leer, "WHEN pv.PotenciarHasta >= CAST(GETDATE() AS date) THEN 'EnPotenciacion'");
+            StringAssert.Contains(leer, "x.Decision = 'Potenciar' AND x.Mes <= p.Mes");
+            // Heredada: después de superada y silenciada; antes de pospuesta
+            Assert.IsTrue(leer.IndexOf("WHEN s.Id IS NOT NULL", StringComparison.Ordinal) < leer.IndexOf("WHEN pv.PotenciarHasta >= CAST(GETDATE() AS date) THEN 'EnPotenciacion'", StringComparison.Ordinal));
+            Assert.IsTrue(leer.IndexOf("WHEN pv.PotenciarHasta >= CAST(GETDATE() AS date) THEN 'EnPotenciacion'", StringComparison.Ordinal) < leer.IndexOf("WHEN p.Decision = 'Posponer'", StringComparison.Ordinal));
+            StringAssert.Contains(RepositorioDecisionesPropuestasStockSql.SqlGuardar(true), "ObjetivoVentaMensual = @objetivo, PotenciarHasta = @potenciarHasta");
+            StringAssert.Contains(RepositorioDecisionesPropuestasStockSql.SqlHistorico(true), "@cambios, @objetivo, @potenciarHasta)");
+        }
+
         // ---------- Escritura de ControlesStock (compartida con PUT api/ControlesStock) ----------
 
         [TestMethod]
