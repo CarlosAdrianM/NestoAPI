@@ -33,6 +33,21 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
         public decimal Descuento { get; set; }
         /// <summary>Corte 3: Id de la oferta escalonada que la sustenta.</summary>
         public int? OfertaEscalonada { get; set; }
+        /// <summary>
+        /// NestoAPI#626: qué tiene que hacer el cliente al aplicarla (constantes ACCION_* de
+        /// <see cref="GestorSugerenciasOfertas"/>). «ModificarLinea»: tocar la línea del producto, que ya
+        /// está en el pedido. «AnadirLinea»: añadir al pedido <see cref="CantidadRegalo"/> unidades de
+        /// regalo (100 % de descuento, <see cref="Descuento"/> = 1) del producto, que puede no estar en el
+        /// pedido. Null: solo informativa (las de importe y las escalonadas).
+        /// </summary>
+        public string Accion { get; set; }
+        /// <summary>NestoAPI#626: Id de la oferta combinada que la sustenta.</summary>
+        public int? OfertaCombinada { get; set; }
+        /// <summary>
+        /// NestoAPI#626: si el regalo es de un grupo de alternativas («elija 1 de N»), las referencias que
+        /// valen y tienen stock; la primera es <see cref="Producto"/>. Null si no hay dónde elegir.
+        /// </summary>
+        public List<string> Alternativas { get; set; }
     }
 
     /// <summary>
@@ -42,9 +57,10 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
     ///   - AmpliarCantidad: faltan pocas unidades (como mucho la mitad del N) para llegar al N+M.
     /// Cada sugerencia se comprueba contra el MISMO circuito de validación del pedido con la línea de
     /// regalo puesta (<see cref="GestorPrecios.EsPedidoValido"/>): lo que el pedido rechazaría al
-    /// guardar no se sugiere. Ofertas combinadas, escalonadas y regalo por importe: cortes siguientes.
+    /// guardar no se sugiere. Regalo por importe (corte 2), escalonadas (corte 3) y ofertas combinadas
+    /// (NestoAPI#626, en GestorSugerenciasOfertas.Combinadas.cs).
     /// </summary>
-    public static class GestorSugerenciasOfertas
+    public static partial class GestorSugerenciasOfertas
     {
         public const string TIPO_OFERTA_NO_APLICADA = "OfertaNoAplicada";
         public const string TIPO_AMPLIAR_CANTIDAD = "AmpliarCantidad";
@@ -94,6 +110,14 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             }
             sugerencias.AddRange(SugerirRegalosPorImporte(pedido, servicio, validar));
             sugerencias.AddRange(SugerirEscalonadas(pedido, servicio, validar));
+            // NestoAPI#626: el «ampliar» de una combinada no se ofrece sobre un producto que ya tiene sugerencia
+            // de N+M: primero va el N+M (en la 267 la unidad que le falta a la 45664 es la gratis de su 6+1) y,
+            // aplicado ese, sale el regalo de la combinada.
+            var conNMasM = new HashSet<string>(sugerencias
+                .Where(s => s.Tipo == TIPO_OFERTA_NO_APLICADA || s.Tipo == TIPO_AMPLIAR_CANTIDAD)
+                .Select(s => s.Producto));
+            sugerencias.AddRange(SugerirCombinadas(pedido, servicio, validar)
+                .Where(s => s.Tipo != TIPO_AMPLIAR_CANTIDAD_COMBINADA || !conNMasM.Contains(s.Producto)));
             return sugerencias;
         }
 
@@ -440,6 +464,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 .Select(o => new SugerenciaOfertaDTO
                 {
                     Tipo = TIPO_OFERTA_NO_APLICADA,
+                    Accion = ACCION_MODIFICAR_LINEA,
                     Producto = numeroProducto,
                     CantidadActual = cantidadCobrada,
                     CantidadSugerida = cantidadCobrada,
@@ -459,6 +484,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     .Select(o => new SugerenciaOfertaDTO
                     {
                         Tipo = TIPO_AMPLIAR_CANTIDAD,
+                        Accion = ACCION_MODIFICAR_LINEA,
                         Producto = numeroProducto,
                         CantidadActual = cantidadCobrada,
                         CantidadSugerida = o.CantidadConPrecio,
