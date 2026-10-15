@@ -981,6 +981,10 @@
     <Compile Include="Infraestructure\Stocks\Tendencias\GeneradorExcelPropuestasStock.cs" />
     <Compile Include="Infraestructure\Stocks\Tendencias\PropuestasStockJobsService.cs" />
     <Compile Include="Controllers\PropuestasStockController.cs" />
+    <Compile Include="Infraestructure\Stocks\ControlesStockEscritura.cs" />
+    <Compile Include="Infraestructure\Stocks\Tendencias\DecisionesPropuestasStock.cs" />
+    <Compile Include="Infraestructure\Stocks\Tendencias\ServicioDecisionesPropuestasStock.cs" />
+    <Compile Include="Infraestructure\Stocks\Tendencias\RepositorioDecisionesPropuestasStockSql.cs" />
     <Compile Include="Controllers\SugerenciasContactoController.cs" />
     <Compile Include="Infraestructure\Eventos\ServicioEventos.cs" />
     <Compile Include="Infraestructure\Eventos\SenalesEventosJobsService.cs" />

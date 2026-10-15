@@ -1,0 +1,320 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using System.Net;
+
+namespace NestoAPI.Infraestructure.Stocks.Tendencias
+{
+    /// <summary>
+    /// NestoAPI#631 (stock obsoleto, corte 3 de la épica #628): la decisión de una persona de Compras o Dirección sobre una
+    /// propuesta. Nada se aplica solo: la propuesta solo cambia el stock cuando alguien la «Aplica», y queda apuntado quién,
+    /// cuándo, el valor anterior y el nuevo (en la fila y en el histórico PropuestasStockDecisiones).
+    /// <para>Qué escribe «Aplicar», según la acción propuesta:</para>
+    /// <list type="bullet">
+    /// <item>«Ajustar máx/mín»: máximo y mínimo del almacén de la propuesta en ControlesStock (los propuestos o los que diga la
+    /// persona, con motivo). Si no hay control de stock, lo crea.</item>
+    /// <item>«Pasar a estado 1»: pone a 0 el máximo y el mínimo de TODOS los almacenes y el producto en estado 1. Es lo que exige
+    /// el trigger trgProductosUpd: no deja sacar un producto del estado 0 mientras tenga algún máximo.</item>
+    /// <item>«Parar compras» y «Liquidar» (Outlet o Ganavisiones): solo se apunta; la acción es manual.</item>
+    /// </list>
+    /// <para>«Silenciar» (con motivo Nuevo, Estacional o Aparato y fecha de caducidad): las propuestas del producto de los meses
+    /// siguientes salen como «Silenciada» y no como «Pendiente» hasta que caduca. «Posponer»: no se hace nada y el mes que viene
+    /// vuelve a salir.</para>
+    /// </summary>
+    public class ServicioDecisionesPropuestasStock
+    {
+        internal const int LONGITUD_MOTIVO = 500;
+        internal const int LONGITUD_USUARIO = 50;
+        /// <summary>Un silencio no puede durar más: si no, el producto desaparece para siempre de la lista.</summary>
+        internal const int MESES_MAXIMOS_SILENCIO = 24;
+        internal const short ESTADO_DISPONIBLE = 0;
+        internal const short ESTADO_SOBRE_PEDIDO = 1;
+
+        private readonly IRepositorioDecisionesPropuestasStock repositorio;
+        private readonly Func<DateTime> ahora;
+
+        public ServicioDecisionesPropuestasStock(IRepositorioDecisionesPropuestasStock repositorio, Func<DateTime> ahora = null)
+        {
+            this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
+            this.ahora = ahora ?? (() => DateTime.Now);
+        }
+
+        private static DecisionPropuestaStockException NoValida(string mensaje) => new DecisionPropuestaStockException(HttpStatusCode.BadRequest, mensaje);
+        private static DecisionPropuestaStockException Conflicto(string mensaje) => new DecisionPropuestaStockException(HttpStatusCode.Conflict, mensaje);
+
+        public ResultadoDecisionPropuestaStock Decidir(int id, DecisionPropuestaStockDTO peticion, string usuario)
+        {
+            if (peticion == null)
+            {
+                throw NoValida("Falta la decisión.");
+            }
+            string decision = DecisionesPropuesta.Normalizar(peticion.Decision);
+            if (decision == null)
+            {
+                throw NoValida($"La decisión tiene que ser {string.Join(", ", DecisionesPropuesta.TODAS)}.");
+            }
+            string motivo = string.IsNullOrWhiteSpace(peticion.Motivo) ? null : peticion.Motivo.Trim();
+            if (motivo != null && motivo.Length > LONGITUD_MOTIVO)
+            {
+                throw NoValida($"El motivo no puede pasar de {LONGITUD_MOTIVO} caracteres.");
+            }
+
+            PropuestaStockConDecision propuesta = repositorio.LeerPropuesta(id)
+                ?? throw new DecisionPropuestaStockException(HttpStatusCode.NotFound, $"No existe la propuesta {id}.");
+            ComprobarQueSePuedeDecidir(propuesta);
+
+            bool esAjuste = propuesta.Accion == AccionesPropuesta.AJUSTAR;
+            if ((peticion.StockMaximo.HasValue || peticion.StockMinimo.HasValue) && !(decision == DecisionesPropuesta.APLICAR && esAjuste))
+            {
+                throw NoValida("El máximo y el mínimo solo se indican al aplicar una propuesta de «Ajustar máx/mín».");
+            }
+            if (!string.IsNullOrWhiteSpace(peticion.CanalLiquidacion) && !(decision == DecisionesPropuesta.APLICAR && propuesta.Accion == AccionesPropuesta.LIQUIDAR))
+            {
+                throw NoValida("El canal de liquidación solo se indica al aplicar una propuesta de «Liquidar».");
+            }
+            if (decision != DecisionesPropuesta.SILENCIAR && (!string.IsNullOrWhiteSpace(peticion.MotivoSilencio) || peticion.SilenciarHasta.HasValue))
+            {
+                throw NoValida("El motivo del silencio y la fecha de caducidad solo se indican al silenciar.");
+            }
+
+            DateTime momento = ahora();
+            RegistroDecisionPropuesta registro = new RegistroDecisionPropuesta
+            {
+                PropuestaId = propuesta.Id,
+                Producto = propuesta.Producto?.Trim(),
+                Almacen = propuesta.Almacen?.Trim(),
+                Mes = propuesta.Mes,
+                DecisionAnterior = propuesta.Decision,
+                DecisionFechaAnterior = propuesta.DecisionFecha,
+                Decision = decision,
+                Usuario = Cortar(string.IsNullOrWhiteSpace(usuario) ? "(desconocido)" : usuario.Trim(), LONGITUD_USUARIO),
+                Fecha = momento,
+                Motivo = motivo
+            };
+            List<string> cambios = new List<string>();
+
+            switch (decision)
+            {
+                case DecisionesPropuesta.RECHAZAR:
+                    if (motivo == null)
+                    {
+                        throw NoValida("Para rechazar una propuesta indique el motivo: sirve para ajustar las fórmulas.");
+                    }
+                    break;
+                case DecisionesPropuesta.SILENCIAR:
+                    PrepararSilencio(peticion, motivo, momento, registro);
+                    break;
+                case DecisionesPropuesta.APLICAR:
+                    PrepararAplicacion(propuesta, peticion, motivo, registro, cambios);
+                    break;
+            }
+
+            registro.Cambios = cambios.Count == 0 ? null : string.Join("; ", cambios);
+            repositorio.GuardarDecision(registro);
+
+            return new ResultadoDecisionPropuestaStock
+            {
+                Id = propuesta.Id,
+                Producto = registro.Producto,
+                Decision = decision,
+                Estado = EstadoTras(decision),
+                Cambios = cambios,
+                Mensaje = Mensaje(propuesta, registro, cambios)
+            };
+        }
+
+        private void ComprobarQueSePuedeDecidir(PropuestaStockConDecision propuesta)
+        {
+            CultureInfo es = CultureInfo.GetCultureInfo("es-ES");
+            if (propuesta.Decision == DecisionesPropuesta.APLICAR || propuesta.Estado == EstadosPropuesta.APLICADA)
+            {
+                throw Conflicto($"La propuesta del producto {propuesta.Producto?.Trim()} ya está aplicada " +
+                    $"({propuesta.DecisionUsuario?.Trim()}, {propuesta.DecisionFecha:dd/MM/yyyy HH:mm}). Para cambiar algo, hágalo en la ficha del producto.");
+            }
+            if (propuesta.MesMasReciente.HasValue && propuesta.MesMasReciente.Value > propuesta.Mes)
+            {
+                throw Conflicto($"Esta propuesta es de {propuesta.Mes.ToString("MMMM yyyy", es)} y ya hay una más reciente del producto " +
+                    $"{propuesta.Producto?.Trim()} ({propuesta.MesMasReciente.Value.ToString("MMMM yyyy", es)}): decida sobre la última.");
+            }
+            if (propuesta.Accion == AccionesPropuesta.MANTENER || propuesta.Accion == AccionesPropuesta.NADA || propuesta.Estado == EstadosPropuesta.SIN_ACCION)
+            {
+                throw NoValida($"La propuesta del producto {propuesta.Producto?.Trim()} es «{propuesta.Accion}»: no hay nada que decidir.");
+            }
+        }
+
+        private void PrepararSilencio(DecisionPropuestaStockDTO peticion, string motivo, DateTime momento, RegistroDecisionPropuesta registro)
+        {
+            string motivoSilencio = MotivosSilencio.Normalizar(peticion.MotivoSilencio);
+            if (motivoSilencio == null)
+            {
+                throw NoValida($"Para silenciar indique el motivo del silencio: {string.Join(", ", MotivosSilencio.TODOS)}.");
+            }
+            if (!peticion.SilenciarHasta.HasValue)
+            {
+                throw NoValida("Para silenciar indique hasta cuándo (la fecha de caducidad).");
+            }
+            DateTime hasta = peticion.SilenciarHasta.Value.Date;
+            if (hasta <= momento.Date)
+            {
+                throw NoValida("La fecha de caducidad del silencio tiene que ser posterior a hoy.");
+            }
+            if (hasta > momento.Date.AddMonths(MESES_MAXIMOS_SILENCIO))
+            {
+                throw NoValida($"Un silencio no puede durar más de {MESES_MAXIMOS_SILENCIO} meses.");
+            }
+            registro.MotivoSilencio = motivoSilencio;
+            registro.SilenciadaHasta = hasta;
+        }
+
+        private void PrepararAplicacion(PropuestaStockConDecision propuesta, DecisionPropuestaStockDTO peticion, string motivo,
+            RegistroDecisionPropuesta registro, List<string> cambios)
+        {
+            string producto = propuesta.Producto?.Trim();
+            string almacen = propuesta.Almacen?.Trim();
+            bool escribe = propuesta.Accion == AccionesPropuesta.AJUSTAR || propuesta.Accion == AccionesPropuesta.ESTADO_1;
+            short? estadoActual = null;
+            if (escribe)
+            {
+                estadoActual = repositorio.LeerEstadoProducto(producto);
+                if (!estadoActual.HasValue)
+                {
+                    throw new DecisionPropuestaStockException(HttpStatusCode.NotFound, $"No existe el producto {producto}.");
+                }
+                if (propuesta.EstadoProducto.HasValue && estadoActual.Value != propuesta.EstadoProducto.Value)
+                {
+                    throw Conflicto($"El producto {producto} ha cambiado de estado desde que se calculó la propuesta (era {propuesta.EstadoProducto}, " +
+                        $"ahora {estadoActual}): esta propuesta ya no vale. Espere a la del mes que viene o cámbielo en la ficha.");
+                }
+            }
+
+            switch (propuesta.Accion)
+            {
+                case AccionesPropuesta.AJUSTAR:
+                    {
+                        int? maximo = peticion.StockMaximo ?? propuesta.StockMaximoPropuesto;
+                        int? minimo = peticion.StockMinimo ?? propuesta.StockMinimoPropuesto;
+                        if (!maximo.HasValue || !minimo.HasValue)
+                        {
+                            throw NoValida("La propuesta no tiene máximo y mínimo: indíquelos usted.");
+                        }
+                        if (minimo.Value < 0 || maximo.Value < 0 || maximo.Value > short.MaxValue)
+                        {
+                            throw NoValida($"El máximo y el mínimo tienen que estar entre 0 y {short.MaxValue}.");
+                        }
+                        if (minimo.Value > maximo.Value)
+                        {
+                            throw NoValida("El mínimo no puede ser mayor que el máximo.");
+                        }
+                        bool conCambios = maximo != propuesta.StockMaximoPropuesto || minimo != propuesta.StockMinimoPropuesto;
+                        if (conCambios && motivo == null)
+                        {
+                            throw NoValida($"Si no aplica el máximo y el mínimo propuestos ({propuesta.StockMaximoPropuesto}/{propuesta.StockMinimoPropuesto}), indique el motivo.");
+                        }
+                        ControlStockActual actual = repositorio.LeerControlesStock(producto)
+                            .FirstOrDefault(c => string.Equals(c.Almacen?.Trim(), almacen, StringComparison.OrdinalIgnoreCase));
+                        registro.StockMaximoAnterior = actual?.StockMaximo;
+                        registro.StockMinimoAnterior = actual?.StockMinimo;
+                        registro.StockMaximoAplicado = maximo;
+                        registro.StockMinimoAplicado = minimo;
+                        if (actual == null || actual.StockMaximo != maximo.Value || actual.StockMinimo != minimo.Value)
+                        {
+                            CambioControlStock cambio = new CambioControlStock
+                            {
+                                Almacen = almacen,
+                                Existia = actual != null,
+                                MaximoAnterior = actual?.StockMaximo,
+                                MinimoAnterior = actual?.StockMinimo,
+                                MaximoNuevo = maximo.Value,
+                                MinimoNuevo = minimo.Value,
+                                Multiplos = Math.Max(1, propuesta.Multiplos)
+                            };
+                            registro.CambiosControlStock.Add(cambio);
+                            cambios.Add(cambio.Texto());
+                        }
+                        break;
+                    }
+                case AccionesPropuesta.ESTADO_1:
+                    {
+                        if (estadoActual.Value == ESTADO_SOBRE_PEDIDO)
+                        {
+                            throw Conflicto($"El producto {producto} ya está en estado {ESTADO_SOBRE_PEDIDO}.");
+                        }
+                        List<ControlStockActual> controles = repositorio.LeerControlesStock(producto);
+                        ControlStockActual delAlmacen = controles.FirstOrDefault(c => string.Equals(c.Almacen?.Trim(), almacen, StringComparison.OrdinalIgnoreCase));
+                        registro.StockMaximoAnterior = delAlmacen?.StockMaximo;
+                        registro.StockMinimoAnterior = delAlmacen?.StockMinimo;
+                        registro.StockMaximoAplicado = delAlmacen == null ? (int?)null : 0;
+                        registro.StockMinimoAplicado = delAlmacen == null ? (int?)null : 0;
+                        foreach (ControlStockActual c in controles.Where(c => c.StockMaximo != 0 || c.StockMinimo != 0).OrderBy(c => c.Almacen))
+                        {
+                            CambioControlStock cambio = new CambioControlStock
+                            {
+                                Almacen = c.Almacen?.Trim(),
+                                Existia = true,
+                                MaximoAnterior = c.StockMaximo,
+                                MinimoAnterior = c.StockMinimo,
+                                MaximoNuevo = 0,
+                                MinimoNuevo = 0
+                            };
+                            registro.CambiosControlStock.Add(cambio);
+                            cambios.Add(cambio.Texto());
+                        }
+                        registro.EstadoAnterior = estadoActual;
+                        registro.EstadoAplicado = ESTADO_SOBRE_PEDIDO;
+                        cambios.Add($"Estado {estadoActual} → {ESTADO_SOBRE_PEDIDO}");
+                        break;
+                    }
+                case AccionesPropuesta.LIQUIDAR:
+                    if (!string.IsNullOrWhiteSpace(peticion.CanalLiquidacion))
+                    {
+                        registro.CanalLiquidacion = CanalesLiquidacion.Normalizar(peticion.CanalLiquidacion)
+                            ?? throw NoValida($"El canal de liquidación tiene que ser {string.Join(" o ", CanalesLiquidacion.TODOS)}.");
+                    }
+                    break;
+                case AccionesPropuesta.PARAR_COMPRAS:
+                    break;
+                default:
+                    throw NoValida($"No se sabe aplicar una propuesta «{propuesta.Accion}».");
+            }
+        }
+
+        internal static string EstadoTras(string decision)
+        {
+            switch (decision)
+            {
+                case DecisionesPropuesta.APLICAR: return EstadosPropuesta.APLICADA;
+                case DecisionesPropuesta.RECHAZAR: return EstadosPropuesta.RECHAZADA;
+                case DecisionesPropuesta.SILENCIAR: return EstadosPropuesta.SILENCIADA;
+                default: return EstadosPropuesta.POSPUESTA;
+            }
+        }
+
+        private static string Mensaje(PropuestaStockConDecision propuesta, RegistroDecisionPropuesta registro, List<string> cambios)
+        {
+            string producto = registro.Producto;
+            switch (registro.Decision)
+            {
+                case DecisionesPropuesta.APLICAR:
+                    if (cambios.Count > 0)
+                    {
+                        return $"Propuesta del producto {producto} aplicada: {string.Join("; ", cambios)}.";
+                    }
+                    if (propuesta.Accion == AccionesPropuesta.AJUSTAR)
+                    {
+                        return $"Propuesta del producto {producto} aplicada: el máximo y el mínimo ya eran esos, no se ha cambiado nada.";
+                    }
+                    string canal = registro.CanalLiquidacion == null ? "" : $" ({registro.CanalLiquidacion})";
+                    return $"Propuesta del producto {producto} aceptada: «{propuesta.Accion}»{canal}. No se cambia nada automáticamente; la acción la hace usted.";
+                case DecisionesPropuesta.RECHAZAR:
+                    return $"Propuesta del producto {producto} rechazada.";
+                case DecisionesPropuesta.SILENCIAR:
+                    return $"Producto {producto} silenciado hasta el {registro.SilenciadaHasta:dd/MM/yyyy} ({registro.MotivoSilencio}).";
+                default:
+                    return $"Propuesta del producto {producto} pospuesta: volverá a salir el mes que viene.";
+            }
+        }
+
+        private static string Cortar(string texto, int longitud) => texto.Length <= longitud ? texto : texto.Substring(0, longitud);
+    }
+}

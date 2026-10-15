@@ -1,4 +1,5 @@
-﻿using NestoAPI.Models;
+﻿using NestoAPI.Infraestructure.Stocks;
+using NestoAPI.Models;
 using NestoAPI.Models.Productos;
 using System;
 using System.Collections.Generic;
@@ -262,13 +263,12 @@ namespace NestoAPI.Controllers
             }
 
             // Actualizar solo los campos específicos
-            existente.StockMínimo = controlStock.StockMínimo;
-            existente.StockMáximo = controlStock.StockMáximo;
+            // NestoAPI#631: máximo, mínimo, usuario y fecha, igual que al aplicar una propuesta de stock.
+            ControlesStockEscritura.CambiarMaximoMinimo(existente, controlStock.StockMínimo, controlStock.StockMáximo,
+                string.IsNullOrEmpty(controlStock.Usuario) ? User.Identity.Name : controlStock.Usuario, DateTime.Now);
             existente.Categoria = controlStock.Categoria;
             existente.Estacionalidad = controlStock.Estacionalidad;
             existente.Múltiplos = controlStock.Múltiplos;
-            existente.Usuario = string.IsNullOrEmpty(controlStock.Usuario) ? User.Identity.Name : controlStock.Usuario;
-            existente.Fecha_Modificación = DateTime.Now;
 
             try
             {

@@ -10,7 +10,8 @@ using static NestoAPI.Models.Constantes;
 namespace NestoAPI.Controllers
 {
     /// <summary>
-    /// NestoAPI#630 (stock obsoleto, corte 2): propuestas mensuales de máximo y mínimo por producto. Solo Dirección.
+    /// NestoAPI#630 (stock obsoleto, corte 2): propuestas mensuales de máximo y mínimo por producto.
+    /// NestoAPI#631 (corte 3): decidirlas con supervisión. Generar: Dirección. Decidir: Compras y Dirección. Consultar: todos.
     /// </summary>
     [RoutePrefix("api/PropuestasStock")]
     public class PropuestasStockController : ApiController
@@ -26,6 +27,7 @@ namespace NestoAPI.Controllers
         private readonly Func<string, string, DateTimeOffset, string> programar;
         private readonly Func<IRepositorioTendencias> crearRepositorio;
         private readonly Func<DateTime> ahora;
+        private readonly Func<IRepositorioDecisionesPropuestasStock> crearRepositorioDecisiones;
 
         public PropuestasStockController() : this(null)
         {
@@ -34,15 +36,22 @@ namespace NestoAPI.Controllers
         /// <param name="encolar">(mes, usuario) → id del job de Hangfire.</param>
         /// <param name="programar">(mes, usuario, cuándo) → id del job programado.</param>
         internal PropuestasStockController(Func<string, string, string> encolar, Func<string, string, DateTimeOffset, string> programar = null,
-            Func<IRepositorioTendencias> crearRepositorio = null, Func<DateTime> ahora = null)
+            Func<IRepositorioTendencias> crearRepositorio = null, Func<DateTime> ahora = null,
+            Func<IRepositorioDecisionesPropuestasStock> crearRepositorioDecisiones = null)
         {
             this.encolar = encolar ?? ((mes, usuario) => BackgroundJob.Enqueue(() => PropuestasStockJobsService.GenerarManual(mes, usuario)));
             this.programar = programar ?? ((mes, usuario, cuando) => BackgroundJob.Schedule(() => PropuestasStockJobsService.GenerarManual(mes, usuario), cuando));
             this.crearRepositorio = crearRepositorio ?? (() => new RepositorioTendenciasSql());
             this.ahora = ahora ?? (() => DateTime.Now);
+            this.crearRepositorioDecisiones = crearRepositorioDecisiones ?? (() => new RepositorioDecisionesPropuestasStockSql());
         }
 
+        internal const string MENSAJE_SIN_ESQUEMA = "Faltan las columnas de las decisiones en PropuestasStock (Scripts/Issue631_PropuestasStockDecisiones.sql).";
+
         private bool EsDireccion() => User != null && User.IsInRoleSinDominio(GruposSeguridad.DIRECCION);
+
+        /// <summary>NestoAPI#631: «Compras y Dirección deciden; el resto consulta».</summary>
+        private bool PuedeDecidir() => User != null && (User.IsInRoleSinDominio(GruposSeguridad.COMPRAS) || User.IsInRoleSinDominio(GruposSeguridad.DIRECCION));
 
         /// <summary>
         /// Lanza a mano el job de propuestas (el mismo que corre el día 1 a las 04:30) para el mes AAAA-MM (por defecto, el último
@@ -103,17 +112,16 @@ namespace NestoAPI.Controllers
 
         /// <summary>
         /// Las propuestas guardadas de un mes (AAAA-MM; por defecto el último guardado), de más a menos exceso valorado.
-        /// GET api/PropuestasStock?mes=2026-10&amp;top=50
+        /// NestoAPI#631: cualquier usuario las puede consultar; con <paramref name="estado"/> (Pendiente, Aplicada, Rechazada,
+        /// Pospuesta, Silenciada, Superada, SinAccion) solo las de ese estado. Con el script del corte 3, cada fila lleva su
+        /// Estado, la decisión y lo aplicado.
+        /// GET api/PropuestasStock?mes=2026-10&amp;top=50&amp;estado=Pendiente
         /// </summary>
         [HttpGet]
         [Route("")]
         [Authorize]
-        public IHttpActionResult Get(string mes = null, int top = 50)
+        public IHttpActionResult Get(string mes = null, int top = 50, string estado = null)
         {
-            if (!EsDireccion())
-            {
-                return StatusCode(HttpStatusCode.Forbidden);
-            }
             DateTime? referencia = null;
             if (!string.IsNullOrWhiteSpace(mes))
             {
@@ -127,13 +135,91 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest("top tiene que ser mayor que 0.");
             }
+            string estadoNormalizado = null;
+            if (!string.IsNullOrWhiteSpace(estado))
+            {
+                estadoNormalizado = EstadosPropuesta.Normalizar(estado);
+                if (estadoNormalizado == null)
+                {
+                    return BadRequest($"El estado tiene que ser {string.Join(", ", EstadosPropuesta.TODOS)}.");
+                }
+            }
             IRepositorioTendencias repositorio = crearRepositorio();
             if (!repositorio.ExisteTabla())
             {
                 return Content(HttpStatusCode.NotFound, new { Message = "La tabla PropuestasStock no existe todavía (Scripts/Issue630_PropuestasStock.sql)." });
             }
+            IRepositorioDecisionesPropuestasStock decisiones = crearRepositorioDecisiones();
+            if (decisiones.ExisteEsquema())
+            {
+                return Ok(decisiones.LeerPropuestas(referencia, estadoNormalizado, Math.Min(top, TOP_MAXIMO)));
+            }
+            if (estadoNormalizado != null)
+            {
+                return Content(HttpStatusCode.NotFound, new { Message = MENSAJE_SIN_ESQUEMA });
+            }
             List<PropuestaStockGuardada> filas = repositorio.LeerPropuestas(referencia, Math.Min(top, TOP_MAXIMO));
             return Ok(filas);
+        }
+
+        /// <summary>
+        /// NestoAPI#631: cuántas propuestas hay en cada estado y cuánto exceso suman (por defecto, el último mes guardado). Para
+        /// la cabecera de la pantalla de Nesto y el aviso de la campana.
+        /// GET api/PropuestasStock/Resumen?mes=2026-10
+        /// </summary>
+        [HttpGet]
+        [Route("Resumen")]
+        [Authorize]
+        public IHttpActionResult Resumen(string mes = null)
+        {
+            DateTime? referencia = null;
+            if (!string.IsNullOrWhiteSpace(mes))
+            {
+                referencia = PropuestasStockJobsService.LeerMes(mes);
+                if (!referencia.HasValue)
+                {
+                    return BadRequest("El mes tiene que ir como AAAA-MM (por ejemplo, 2026-10).");
+                }
+            }
+            IRepositorioDecisionesPropuestasStock decisiones = crearRepositorioDecisiones();
+            if (!decisiones.ExisteEsquema())
+            {
+                return Content(HttpStatusCode.NotFound, new { Message = MENSAJE_SIN_ESQUEMA });
+            }
+            return Ok(decisiones.Resumen(referencia));
+        }
+
+        /// <summary>
+        /// NestoAPI#631: la decisión de Compras o Dirección sobre una propuesta: Aplicar, Rechazar (con motivo), Posponer o
+        /// Silenciar (con motivo Nuevo, Estacional o Aparato y fecha de caducidad). Aplicar escribe en ControlesStock (máximo y
+        /// mínimo) o pasa el producto a estado 1; «Parar compras» y «Liquidar» solo se apuntan. Queda quién, cuándo, el valor
+        /// anterior y el nuevo. Reglas en <see cref="ServicioDecisionesPropuestasStock"/>.
+        /// POST api/PropuestasStock/123/Decision  { "Decision": "Aplicar", "Motivo": "...", "StockMaximo": 300, "StockMinimo": 200 }
+        /// </summary>
+        [HttpPost]
+        [Route("{id:int}/Decision")]
+        [Authorize]
+        public IHttpActionResult Decision(int id, [FromBody] DecisionPropuestaStockDTO peticion)
+        {
+            if (!PuedeDecidir())
+            {
+                return Content(HttpStatusCode.Forbidden, new { Message = "Solo Compras y Dirección pueden decidir las propuestas de stock." });
+            }
+            IRepositorioDecisionesPropuestasStock decisiones = crearRepositorioDecisiones();
+            if (!decisiones.ExisteEsquema())
+            {
+                return Content(HttpStatusCode.NotFound, new { Message = MENSAJE_SIN_ESQUEMA });
+            }
+            try
+            {
+                ResultadoDecisionPropuestaStock resultado = new ServicioDecisionesPropuestasStock(decisiones, ahora)
+                    .Decidir(id, peticion, User.Identity?.Name);
+                return Ok(resultado);
+            }
+            catch (DecisionPropuestaStockException ex)
+            {
+                return Content(ex.Codigo, new { Message = ex.Message });
+            }
         }
     }
 }

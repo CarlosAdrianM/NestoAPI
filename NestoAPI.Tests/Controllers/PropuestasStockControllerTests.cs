@@ -11,29 +11,37 @@ using System.Web.Http.Results;
 
 namespace NestoAPI.Tests.Controllers
 {
-    /// <summary>NestoAPI#630: POST api/PropuestasStock/Generar y GET api/PropuestasStock (solo Dirección).</summary>
+    /// <summary>
+    /// NestoAPI#630: POST api/PropuestasStock/Generar (solo Dirección) y GET api/PropuestasStock.
+    /// NestoAPI#631: GET con estado, GET Resumen (todos consultan) y POST {id}/Decision (Compras y Dirección).
+    /// </summary>
     [TestClass]
     public class PropuestasStockControllerTests
     {
         private List<(string mes, string usuario)> encolados;
         private List<(string mes, string usuario, DateTimeOffset cuando)> programados;
         private IRepositorioTendencias repositorio;
+        private IRepositorioDecisionesPropuestasStock decisiones;
 
-        private PropuestasStockController Controller(DateTime ahora, bool direccion = true)
+        private PropuestasStockController Controller(DateTime ahora, bool direccion = true, string[] grupos = null)
         {
             encolados = new List<(string, string)>();
             programados = new List<(string, string, DateTimeOffset)>();
             repositorio = A.Fake<IRepositorioTendencias>();
+            decisiones = A.Fake<IRepositorioDecisionesPropuestasStock>();
             PropuestasStockController controller = new PropuestasStockController(
                 (m, u) => { encolados.Add((m, u)); return "1"; },
                 (m, u, c) => { programados.Add((m, u, c)); return "2"; },
                 () => repositorio,
-                () => ahora)
+                () => ahora,
+                () => decisiones)
             {
                 Request = new System.Net.Http.HttpRequestMessage(),
                 Configuration = new HttpConfiguration()
             };
-            controller.User = direccion
+            controller.User = grupos != null
+                ? new GenericPrincipal(new GenericIdentity("NUEVAVISION\\Manuel"), grupos)
+                : direccion
                 ? new GenericPrincipal(new GenericIdentity("NUEVAVISION\\Carlos"), new[] { "NUEVAVISION\\Dirección" })
                 : new GenericPrincipal(new GenericIdentity("NUEVAVISION\\Vendedor"), new[] { "NUEVAVISION\\Vendedores" });
             return controller;
@@ -104,12 +112,120 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
-        public void Get_SinSerDireccion_Forbidden()
+        public void Get_SinSerDireccion_TambienConsulta()
+        {
+            // NestoAPI#631: «Compras y Dirección deciden; el resto consulta».
+            PropuestasStockController controller = Controller(Noche, direccion: false);
+            _ = A.CallTo(() => repositorio.ExisteTabla()).Returns(true);
+            _ = A.CallTo(() => decisiones.ExisteEsquema()).Returns(true);
+            _ = A.CallTo(() => decisiones.LeerPropuestas(new DateTime(2026, 9, 1), null, 50))
+                .Returns(new List<PropuestaStockConDecision> { new PropuestaStockConDecision { Producto = "17404", Estado = EstadosPropuesta.PENDIENTE } });
+
+            var ok = (OkNegotiatedContentResult<List<PropuestaStockConDecision>>)controller.Get("2026-09");
+
+            Assert.AreEqual(EstadosPropuesta.PENDIENTE, ok.Content[0].Estado);
+        }
+
+        [TestMethod]
+        public void Get_ConEstado_FiltraPorElEstadoNormalizado()
+        {
+            PropuestasStockController controller = Controller(Noche);
+            _ = A.CallTo(() => repositorio.ExisteTabla()).Returns(true);
+            _ = A.CallTo(() => decisiones.ExisteEsquema()).Returns(true);
+
+            _ = controller.Get("2026-09", 10, "pendiente");
+
+            A.CallTo(() => decisiones.LeerPropuestas(new DateTime(2026, 9, 1), EstadosPropuesta.PENDIENTE, 10)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public void Get_EstadoDesconocido_BadRequest()
+        {
+            Assert.IsInstanceOfType(Controller(Noche).Get("2026-09", 10, "Borrada"), typeof(BadRequestErrorMessageResult));
+        }
+
+        [TestMethod]
+        public void Get_ConEstadoSinElScriptDelCorte3_404()
+        {
+            PropuestasStockController controller = Controller(Noche);
+            _ = A.CallTo(() => repositorio.ExisteTabla()).Returns(true);
+            _ = A.CallTo(() => decisiones.ExisteEsquema()).Returns(false);
+
+            Assert.AreEqual(HttpStatusCode.NotFound, controller.Get("2026-09", 10, "Pendiente").ExecuteAsync(default).Result.StatusCode);
+        }
+
+        [TestMethod]
+        public void Resumen_DevuelveLosEstadosDelMes()
+        {
+            PropuestasStockController controller = Controller(Noche, direccion: false);
+            _ = A.CallTo(() => decisiones.ExisteEsquema()).Returns(true);
+            _ = A.CallTo(() => decisiones.Resumen(new DateTime(2026, 9, 1)))
+                .Returns(new List<ResumenEstadoPropuestas> { new ResumenEstadoPropuestas { Estado = EstadosPropuesta.PENDIENTE, Propuestas = 42 } });
+
+            var ok = (OkNegotiatedContentResult<List<ResumenEstadoPropuestas>>)controller.Resumen("2026-09");
+
+            Assert.AreEqual(42, ok.Content[0].Propuestas);
+        }
+
+        [TestMethod]
+        public void Resumen_SinElScriptDelCorte3_404()
+        {
+            PropuestasStockController controller = Controller(Noche);
+            _ = A.CallTo(() => decisiones.ExisteEsquema()).Returns(false);
+
+            Assert.AreEqual(HttpStatusCode.NotFound, controller.Resumen().ExecuteAsync(default).Result.StatusCode);
+        }
+
+        [TestMethod]
+        public void Decision_SinSerComprasNiDireccion_Forbidden()
         {
             PropuestasStockController controller = Controller(Noche, direccion: false);
 
-            Assert.AreEqual(HttpStatusCode.Forbidden, ((StatusCodeResult)controller.Get("2026-09")).StatusCode);
-            A.CallTo(() => repositorio.LeerPropuestas(A<DateTime?>._, A<int>._)).MustNotHaveHappened();
+            Assert.AreEqual(HttpStatusCode.Forbidden, controller.Decision(7, new DecisionPropuestaStockDTO { Decision = "Posponer" }).ExecuteAsync(default).Result.StatusCode);
+            A.CallTo(() => decisiones.GuardarDecision(A<RegistroDecisionPropuesta>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void Decision_Compras_Guarda()
+        {
+            PropuestasStockController controller = Controller(Noche, grupos: new[] { "NUEVAVISION\\Compras" });
+            _ = A.CallTo(() => decisiones.ExisteEsquema()).Returns(true);
+            _ = A.CallTo(() => decisiones.LeerPropuesta(7)).Returns(new PropuestaStockConDecision
+            {
+                Id = 7, Mes = new DateTime(2026, 9, 1), Producto = "17404", Almacen = "ALG", Accion = AccionesPropuesta.PARAR_COMPRAS, Estado = EstadosPropuesta.PENDIENTE
+            });
+
+            IHttpActionResult resultado = controller.Decision(7, new DecisionPropuestaStockDTO { Decision = "Posponer" });
+
+            var ok = (OkNegotiatedContentResult<ResultadoDecisionPropuestaStock>)resultado;
+            Assert.AreEqual(EstadosPropuesta.POSPUESTA, ok.Content.Estado);
+            A.CallTo(() => decisiones.GuardarDecision(A<RegistroDecisionPropuesta>.That.Matches(r => r.Usuario == "NUEVAVISION\\Manuel" && r.Fecha == Noche)))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public void Decision_ErrorDeNegocio_DevuelveSuCodigoYElTexto()
+        {
+            PropuestasStockController controller = Controller(Noche);
+            _ = A.CallTo(() => decisiones.ExisteEsquema()).Returns(true);
+            _ = A.CallTo(() => decisiones.LeerPropuesta(7)).Returns(null);
+
+            Assert.AreEqual(HttpStatusCode.NotFound, controller.Decision(7, new DecisionPropuestaStockDTO { Decision = "Posponer" }).ExecuteAsync(default).Result.StatusCode);
+
+            _ = A.CallTo(() => decisiones.LeerPropuesta(7)).Returns(new PropuestaStockConDecision
+            {
+                Id = 7, Mes = new DateTime(2026, 9, 1), Producto = "17404", Almacen = "ALG", Accion = AccionesPropuesta.AJUSTAR, Decision = DecisionesPropuesta.APLICAR, Estado = EstadosPropuesta.APLICADA
+            });
+            Assert.AreEqual(HttpStatusCode.Conflict, controller.Decision(7, new DecisionPropuestaStockDTO { Decision = "Posponer" }).ExecuteAsync(default).Result.StatusCode);
+        }
+
+        [TestMethod]
+        public void Decision_SinElScriptDelCorte3_404()
+        {
+            PropuestasStockController controller = Controller(Noche);
+            _ = A.CallTo(() => decisiones.ExisteEsquema()).Returns(false);
+
+            Assert.AreEqual(HttpStatusCode.NotFound, controller.Decision(7, new DecisionPropuestaStockDTO { Decision = "Posponer" }).ExecuteAsync(default).Result.StatusCode);
         }
 
         [TestMethod]
