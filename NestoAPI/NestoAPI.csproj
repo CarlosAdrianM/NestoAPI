@@ -983,6 +983,11 @@
     <Compile Include="Infraestructure\Stocks\Tendencias\GeneradorExcelPropuestasStock.cs" />
     <Compile Include="Infraestructure\Stocks\Tendencias\PropuestasStockJobsService.cs" />
     <Compile Include="Controllers\PropuestasStockController.cs" />
+    <Compile Include="Controllers\OutletController.cs" />
+    <Compile Include="Infraestructure\Outlet\ReglasOutlet.cs" />
+    <Compile Include="Infraestructure\Outlet\RepositorioOutletSql.cs" />
+    <Compile Include="Infraestructure\Outlet\ServicioOutlet.cs" />
+    <Compile Include="Infraestructure\Outlet\OutletJobsService.cs" />
     <Compile Include="Infraestructure\Stocks\ControlesStockEscritura.cs" />
     <Compile Include="Infraestructure\Stocks\Tendencias\DecisionesPropuestasStock.cs" />
     <Compile Include="Infraestructure\Stocks\Tendencias\ServicioDecisionesPropuestasStock.cs" />

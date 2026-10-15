@@ -964,6 +964,20 @@ namespace NestoAPI
                 }
             );
             Console.WriteLine("✅ Job recurrente 'propuestas-stock-mensual' configurado (día 1 de cada mes a las 4:30)");
+
+            // NestoAPI#643: cuadre nocturno del Outlet de la tienda (estado 4 + en la tienda = categoría Outlet). A las 04:00, después
+            // de los jobs de la 1:00 a las 3:00; lo que encola en Nesto_sync lo publica la pasada de los 5 minutos de madrugada. Con
+            // Outlet:SincronizarConEstado apagado (por defecto) solo simula y manda el Excel a Carlos.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.Outlet.OutletJobsService.ID_JOB,
+                () => Infraestructure.Outlet.OutletJobsService.CuadrarProgramado(),
+                Infraestructure.Outlet.OutletJobsService.CRON, // Cron: todos los días a las 04:00
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'outlet-cuadre-nocturno' configurado (diario a las 04:00; solo simula salvo Web.config)");
         }
     }
 
