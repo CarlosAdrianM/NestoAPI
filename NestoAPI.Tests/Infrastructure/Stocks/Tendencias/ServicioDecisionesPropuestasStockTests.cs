@@ -208,21 +208,71 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
             Assert.AreEqual(HttpStatusCode.Conflict, Falla(new DecisionPropuestaStockDTO { Decision = "Aplicar" }));
         }
 
-        // ---------- Aplicar sin escritura ----------
+        // ---------- Aplicar «Liquidar» (Carlos, 15/10/26: máximo y mínimo a 0 en el almacén de la propuesta) ----------
 
         [TestMethod]
-        public void Aplicar_LiquidarConCanal_SoloSeApunta()
+        public void Aplicar_LiquidarConCanal_PoneAceroElMaximoYElMinimoDelAlmacenYApuntaElCanal()
         {
             _ = Propuesta(AccionesPropuesta.LIQUIDAR);
 
             ResultadoDecisionPropuestaStock r = Servicio().Decidir(7, new DecisionPropuestaStockDTO { Decision = "Aplicar", CanalLiquidacion = "outlet" }, "Manuel");
 
             Assert.AreEqual(CanalesLiquidacion.OUTLET, guardado.CanalLiquidacion);
-            Assert.AreEqual(0, guardado.CambiosControlStock.Count);
+            // Solo ALG (el de la propuesta): REI tiene 6/3 y no se toca.
+            Assert.AreEqual(1, guardado.CambiosControlStock.Count);
+            CambioControlStock cambio = guardado.CambiosControlStock[0];
+            Assert.AreEqual("ALG", cambio.Almacen);
+            Assert.IsTrue(cambio.Existia);
+            Assert.AreEqual(555, cambio.MaximoAnterior);
+            Assert.AreEqual(295, cambio.MinimoAnterior);
+            Assert.AreEqual(0, cambio.MaximoNuevo);
+            Assert.AreEqual(0, cambio.MinimoNuevo);
+            // Valor anterior y aplicado en la fila, y el texto en el histórico.
+            Assert.AreEqual(555, guardado.StockMaximoAnterior);
+            Assert.AreEqual(295, guardado.StockMinimoAnterior);
+            Assert.AreEqual(0, guardado.StockMaximoAplicado);
+            Assert.AreEqual(0, guardado.StockMinimoAplicado);
+            Assert.AreEqual("ALG: máximo 555 → 0, mínimo 295 → 0", guardado.Cambios);
+            Assert.AreEqual("Manuel", guardado.Usuario);
+            Assert.AreEqual(Hoy, guardado.Fecha);
+            // No cambia el estado del producto.
             Assert.IsNull(guardado.EstadoAplicado);
             A.CallTo(() => repositorio.LeerEstadoProducto(A<string>._)).MustNotHaveHappened();
-            StringAssert.Contains(r.Mensaje, "No se cambia nada automáticamente");
+            Assert.AreEqual(EstadosPropuesta.APLICADA, r.Estado);
+            CollectionAssert.AreEqual(new[] { "ALG: máximo 555 → 0, mínimo 295 → 0" }, r.Cambios);
+            StringAssert.Contains(r.Mensaje, "La liquidación (Outlet) la hace usted a mano");
         }
+
+        [TestMethod]
+        public void Aplicar_LiquidarYaAcero_SeApuntaSinEscribir()
+        {
+            PropuestaStockConDecision p = Propuesta(AccionesPropuesta.LIQUIDAR);
+            p.Almacen = "ALC";
+
+            ResultadoDecisionPropuestaStock r = Servicio().Decidir(7, new DecisionPropuestaStockDTO { Decision = "Aplicar" }, "Manuel");
+
+            Assert.AreEqual(0, guardado.CambiosControlStock.Count);
+            Assert.AreEqual(0, guardado.StockMaximoAnterior);
+            Assert.AreEqual(0, guardado.StockMaximoAplicado);
+            Assert.IsNull(guardado.Cambios);
+            StringAssert.Contains(r.Mensaje, "ya estaban a 0");
+        }
+
+        [TestMethod]
+        public void Aplicar_LiquidarSinControlDeStock_NoLoCrea()
+        {
+            PropuestaStockConDecision p = Propuesta(AccionesPropuesta.LIQUIDAR);
+            p.Almacen = "TIE";
+
+            ResultadoDecisionPropuestaStock r = Servicio().Decidir(7, new DecisionPropuestaStockDTO { Decision = "Aplicar" }, "Manuel");
+
+            Assert.AreEqual(0, guardado.CambiosControlStock.Count);
+            Assert.IsNull(guardado.StockMaximoAnterior);
+            Assert.IsNull(guardado.StockMaximoAplicado);
+            StringAssert.Contains(r.Mensaje, "no hay control de stock en TIE");
+        }
+
+        // ---------- Aplicar sin escritura ----------
 
         [TestMethod]
         public void Aplicar_LiquidarConCanalDesconocido_400()
@@ -319,6 +369,53 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
             Assert.AreEqual(HttpStatusCode.BadRequest, Falla(new DecisionPropuestaStockDTO { Decision = "Silenciar", SilenciarHasta = new DateTime(2027, 1, 1) }));
             Assert.AreEqual(HttpStatusCode.BadRequest, Falla(new DecisionPropuestaStockDTO { Decision = "Silenciar", MotivoSilencio = "Porque sí", SilenciarHasta = new DateTime(2027, 1, 1) }));
             Assert.AreEqual(HttpStatusCode.BadRequest, Falla(new DecisionPropuestaStockDTO { Decision = "Silenciar", MotivoSilencio = "Nuevo" }));
+        }
+
+        // ---------- Motivos de silencio desde el parámetro MotivosSilencioPropuestas ----------
+
+        [TestMethod]
+        public void Silenciar_ConUnMotivoNuevoDelParametro_SeAceptaComoEstaEscritoEnElParametro()
+        {
+            _ = Propuesta();
+            _ = A.CallTo(() => repositorio.LeerParametroMotivosSilencio()).Returns("Nuevo; Estacional, Aparato, Fin de serie");
+
+            ResultadoDecisionPropuestaStock r = Servicio().Decidir(7, new DecisionPropuestaStockDTO
+            {
+                Decision = "Silenciar",
+                MotivoSilencio = " fin de SERIE ",
+                SilenciarHasta = new DateTime(2027, 3, 31)
+            }, "Manuel");
+
+            Assert.AreEqual(EstadosPropuesta.SILENCIADA, r.Estado);
+            Assert.AreEqual("Fin de serie", guardado.MotivoSilencio);
+        }
+
+        [TestMethod]
+        public void Silenciar_ConParametroQueQuitaUnMotivo_Ese400()
+        {
+            _ = Propuesta();
+            _ = A.CallTo(() => repositorio.LeerParametroMotivosSilencio()).Returns("Nuevo, Estacional");
+
+            Assert.AreEqual(HttpStatusCode.BadRequest, Falla(new DecisionPropuestaStockDTO { Decision = "Silenciar", MotivoSilencio = "Aparato", SilenciarHasta = new DateTime(2027, 1, 1) }));
+        }
+
+        [TestMethod]
+        public void MotivosSilencioVigentes_SinParametroOVacio_LosTresDeLaIssue()
+        {
+            _ = A.CallTo(() => repositorio.LeerParametroMotivosSilencio()).Returns(null);
+            CollectionAssert.AreEqual(new[] { "Nuevo", "Estacional", "Aparato" }, Servicio().MotivosSilencioVigentes());
+
+            _ = A.CallTo(() => repositorio.LeerParametroMotivosSilencio()).Returns("  ;, ");
+            CollectionAssert.AreEqual(new[] { "Nuevo", "Estacional", "Aparato" }, Servicio().MotivosSilencioVigentes());
+        }
+
+        [TestMethod]
+        public void MotivosSilencio_Lista_SinRepetidosNiMasLargosQueLaColumna()
+        {
+            List<string> lista = MotivosSilencio.Lista("Nuevo, nuevo, Estacional, Un motivo de más de veinte letras, Aparato");
+
+            CollectionAssert.AreEqual(new[] { "Nuevo", "Estacional", "Aparato" }, lista);
+            Assert.AreEqual(20, MotivosSilencio.LONGITUD_MAXIMA);
         }
 
         [TestMethod]

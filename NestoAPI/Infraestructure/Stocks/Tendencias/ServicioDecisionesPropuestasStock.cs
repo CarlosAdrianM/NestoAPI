@@ -16,9 +16,12 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
     /// persona, con motivo). Si no hay control de stock, lo crea.</item>
     /// <item>«Pasar a estado 1»: pone a 0 el máximo y el mínimo de TODOS los almacenes y el producto en estado 1. Es lo que exige
     /// el trigger trgProductosUpd: no deja sacar un producto del estado 0 mientras tenga algún máximo.</item>
-    /// <item>«Parar compras» y «Liquidar» (Outlet o Ganavisiones): solo se apunta; la acción es manual.</item>
+    /// <item>«Liquidar» (Outlet o Ganavisiones): decisión de Carlos (15/10/26), pone a 0 el máximo y el mínimo del almacén de
+    /// la propuesta (lo que propone el motor; con mínimo mayor que el máximo se seguiría reponiendo). El paso al Outlet o a
+    /// Ganavisiones sigue siendo manual: solo se apunta el canal.</item>
+    /// <item>«Parar compras»: solo se apunta; la acción es manual.</item>
     /// </list>
-    /// <para>«Silenciar» (con motivo Nuevo, Estacional o Aparato y fecha de caducidad): las propuestas del producto de los meses
+    /// <para>«Silenciar» (con un motivo de <see cref="MotivosSilencioVigentes"/> y fecha de caducidad): las propuestas del producto de los meses
     /// siguientes salen como «Silenciada» y no como «Pendiente» hasta que caduca. «Posponer»: no se hace nada y el mes que viene
     /// vuelve a salir.</para>
     /// </summary>
@@ -143,12 +146,16 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             }
         }
 
+        /// <summary>Los motivos de silencio que valen ahora (parámetro <see cref="MotivosSilencio.CLAVE"/>; sin él, Nuevo, Estacional y Aparato).</summary>
+        public List<string> MotivosSilencioVigentes() => MotivosSilencio.Lista(repositorio.LeerParametroMotivosSilencio());
+
         private void PrepararSilencio(DecisionPropuestaStockDTO peticion, string motivo, DateTime momento, RegistroDecisionPropuesta registro)
         {
-            string motivoSilencio = MotivosSilencio.Normalizar(peticion.MotivoSilencio);
+            List<string> motivos = MotivosSilencioVigentes();
+            string motivoSilencio = MotivosSilencio.Normalizar(peticion.MotivoSilencio, motivos);
             if (motivoSilencio == null)
             {
-                throw NoValida($"Para silenciar indique el motivo del silencio: {string.Join(", ", MotivosSilencio.TODOS)}.");
+                throw NoValida($"Para silenciar indique el motivo del silencio: {string.Join(", ", motivos)}.");
             }
             if (!peticion.SilenciarHasta.HasValue)
             {
@@ -236,6 +243,8 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                     }
                 case AccionesPropuesta.ESTADO_1:
                     {
+                        // A propósito, TODOS los almacenes, tiendas incluidas (Carlos, 15/10/26): «Estado 0 es el único estado del
+                        // que queremos tener stock, el resto son sobre pedido». Además lo exige trgProductosUpd.
                         if (estadoActual.Value == ESTADO_SOBRE_PEDIDO)
                         {
                             throw Conflicto($"El producto {producto} ya está en estado {ESTADO_SOBRE_PEDIDO}.");
@@ -266,12 +275,38 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                         break;
                     }
                 case AccionesPropuesta.LIQUIDAR:
-                    if (!string.IsNullOrWhiteSpace(peticion.CanalLiquidacion))
                     {
-                        registro.CanalLiquidacion = CanalesLiquidacion.Normalizar(peticion.CanalLiquidacion)
-                            ?? throw NoValida($"El canal de liquidación tiene que ser {string.Join(" o ", CanalesLiquidacion.TODOS)}.");
+                        if (!string.IsNullOrWhiteSpace(peticion.CanalLiquidacion))
+                        {
+                            registro.CanalLiquidacion = CanalesLiquidacion.Normalizar(peticion.CanalLiquidacion)
+                                ?? throw NoValida($"El canal de liquidación tiene que ser {string.Join(" o ", CanalesLiquidacion.TODOS)}.");
+                        }
+                        // Solo el almacén de la propuesta. Sin control de stock no hay máximo que quitar: no se crea uno a 0.
+                        ControlStockActual actual = repositorio.LeerControlesStock(producto)
+                            .FirstOrDefault(c => string.Equals(c.Almacen?.Trim(), almacen, StringComparison.OrdinalIgnoreCase));
+                        if (actual != null)
+                        {
+                            registro.StockMaximoAnterior = actual.StockMaximo;
+                            registro.StockMinimoAnterior = actual.StockMinimo;
+                            registro.StockMaximoAplicado = 0;
+                            registro.StockMinimoAplicado = 0;
+                            if (actual.StockMaximo != 0 || actual.StockMinimo != 0)
+                            {
+                                CambioControlStock cambio = new CambioControlStock
+                                {
+                                    Almacen = almacen,
+                                    Existia = true,
+                                    MaximoAnterior = actual.StockMaximo,
+                                    MinimoAnterior = actual.StockMinimo,
+                                    MaximoNuevo = 0,
+                                    MinimoNuevo = 0
+                                };
+                                registro.CambiosControlStock.Add(cambio);
+                                cambios.Add(cambio.Texto());
+                            }
+                        }
+                        break;
                     }
-                    break;
                 case AccionesPropuesta.PARAR_COMPRAS:
                     break;
                 default:
@@ -296,6 +331,16 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             switch (registro.Decision)
             {
                 case DecisionesPropuesta.APLICAR:
+                    if (propuesta.Accion == AccionesPropuesta.LIQUIDAR)
+                    {
+                        string canalLiquidar = registro.CanalLiquidacion == null ? "" : $" ({registro.CanalLiquidacion})";
+                        string escrito = cambios.Count > 0
+                            ? string.Join("; ", cambios)
+                            : registro.StockMaximoAplicado.HasValue
+                                ? $"el máximo y el mínimo de {registro.Almacen} ya estaban a 0"
+                                : $"no hay control de stock en {registro.Almacen}, no se ha cambiado nada";
+                        return $"Propuesta del producto {producto} aplicada: {escrito}. La liquidación{canalLiquidar} la hace usted a mano.";
+                    }
                     if (cambios.Count > 0)
                     {
                         return $"Propuesta del producto {producto} aplicada: {string.Join("; ", cambios)}.";

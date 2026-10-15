@@ -13,7 +13,7 @@ namespace NestoAPI.Tests.Controllers
 {
     /// <summary>
     /// NestoAPI#630: POST api/PropuestasStock/Generar (solo Dirección) y GET api/PropuestasStock.
-    /// NestoAPI#631: GET con estado, GET Resumen (todos consultan) y POST {id}/Decision (Compras y Dirección).
+    /// NestoAPI#631: GET con estado, GET Resumen, GET MotivosSilencio y POST {id}/Decision (todo solo Compras y Dirección).
     /// </summary>
     [TestClass]
     public class PropuestasStockControllerTests
@@ -112,10 +112,22 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
-        public void Get_SinSerDireccion_TambienConsulta()
+        public void Get_SinSerComprasNiDireccion_Forbidden()
         {
-            // NestoAPI#631: «Compras y Dirección deciden; el resto consulta».
+            // NestoAPI#631, Carlos (15/10/26): la lista solo la ven Compras y Dirección.
             PropuestasStockController controller = Controller(Noche, direccion: false);
+            _ = A.CallTo(() => repositorio.ExisteTabla()).Returns(true);
+            _ = A.CallTo(() => decisiones.ExisteEsquema()).Returns(true);
+
+            Assert.AreEqual(HttpStatusCode.Forbidden, controller.Get("2026-09").ExecuteAsync(default).Result.StatusCode);
+            A.CallTo(() => decisiones.LeerPropuestas(A<DateTime?>._, A<string>._, A<int>._)).MustNotHaveHappened();
+            A.CallTo(() => repositorio.LeerPropuestas(A<DateTime?>._, A<int>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void Get_Compras_Consulta()
+        {
+            PropuestasStockController controller = Controller(Noche, grupos: new[] { "NUEVAVISION\\Compras" });
             _ = A.CallTo(() => repositorio.ExisteTabla()).Returns(true);
             _ = A.CallTo(() => decisiones.ExisteEsquema()).Returns(true);
             _ = A.CallTo(() => decisiones.LeerPropuestas(new DateTime(2026, 9, 1), null, 50))
@@ -155,9 +167,47 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
-        public void Resumen_DevuelveLosEstadosDelMes()
+        public void Resumen_SinSerComprasNiDireccion_Forbidden()
         {
             PropuestasStockController controller = Controller(Noche, direccion: false);
+            _ = A.CallTo(() => decisiones.ExisteEsquema()).Returns(true);
+
+            Assert.AreEqual(HttpStatusCode.Forbidden, controller.Resumen("2026-09").ExecuteAsync(default).Result.StatusCode);
+            A.CallTo(() => decisiones.Resumen(A<DateTime?>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void MotivosSilencio_SinSerComprasNiDireccion_Forbidden()
+        {
+            Assert.AreEqual(HttpStatusCode.Forbidden, Controller(Noche, direccion: false).GetMotivosSilencio().ExecuteAsync(default).Result.StatusCode);
+        }
+
+        [TestMethod]
+        public void MotivosSilencio_SinParametro_LosTresDeLaIssue()
+        {
+            PropuestasStockController controller = Controller(Noche, grupos: new[] { "NUEVAVISION\\Compras" });
+            _ = A.CallTo(() => decisiones.LeerParametroMotivosSilencio()).Returns(null);
+
+            var ok = (OkNegotiatedContentResult<List<string>>)controller.GetMotivosSilencio();
+
+            CollectionAssert.AreEqual(new[] { "Nuevo", "Estacional", "Aparato" }, ok.Content);
+        }
+
+        [TestMethod]
+        public void MotivosSilencio_ConParametro_LosDelParametro()
+        {
+            PropuestasStockController controller = Controller(Noche);
+            _ = A.CallTo(() => decisiones.LeerParametroMotivosSilencio()).Returns("Nuevo, Estacional, Aparato, Fin de serie");
+
+            var ok = (OkNegotiatedContentResult<List<string>>)controller.GetMotivosSilencio();
+
+            CollectionAssert.AreEqual(new[] { "Nuevo", "Estacional", "Aparato", "Fin de serie" }, ok.Content);
+        }
+
+        [TestMethod]
+        public void Resumen_DevuelveLosEstadosDelMes()
+        {
+            PropuestasStockController controller = Controller(Noche, grupos: new[] { "NUEVAVISION\\Compras" });
             _ = A.CallTo(() => decisiones.ExisteEsquema()).Returns(true);
             _ = A.CallTo(() => decisiones.Resumen(new DateTime(2026, 9, 1)))
                 .Returns(new List<ResumenEstadoPropuestas> { new ResumenEstadoPropuestas { Estado = EstadosPropuesta.PENDIENTE, Propuestas = 42 } });

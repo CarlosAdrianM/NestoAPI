@@ -45,17 +45,61 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             => estado == null ? null : Array.Find(TODOS, e => string.Equals(e, estado.Trim(), StringComparison.OrdinalIgnoreCase));
     }
 
-    /// <summary>NestoAPI#631: por qué se silencia (los tres de la issue).</summary>
+    /// <summary>
+    /// NestoAPI#631: por qué se silencia. Decisión de Carlos (15/10/26): aún no se sabe qué motivos saldrán, así que la lista
+    /// se amplía sin publicar con el parámetro <see cref="CLAVE"/> de la fila «(defecto)» de la empresa por defecto
+    /// (Scripts/Issue631_MotivosSilencio.sql): separada por comas o punto y coma. Sin la fila, o vacía, los tres de la issue
+    /// (<see cref="POR_DEFECTO"/>). La columna PropuestasStock.MotivoSilencio es varchar(20) sin CHECK de valores: un motivo
+    /// más largo de <see cref="LONGITUD_MAXIMA"/> caracteres no se ofrece.
+    /// </summary>
     public static class MotivosSilencio
     {
         public const string NUEVO = "Nuevo";
         public const string ESTACIONAL = "Estacional";
         public const string APARATO = "Aparato";
 
+        public const string CLAVE = "MotivosSilencioPropuestas";
+        public const string POR_DEFECTO = NUEVO + ", " + ESTACIONAL + ", " + APARATO;
+        /// <summary>PropuestasStock.MotivoSilencio y PropuestasStockDecisiones.MotivoSilencio son varchar(20).</summary>
+        public const int LONGITUD_MAXIMA = 20;
+
+        /// <summary>Los tres de la issue (la lista cuando no hay parámetro).</summary>
         public static readonly string[] TODOS = { NUEVO, ESTACIONAL, APARATO };
 
-        public static string Normalizar(string motivo)
-            => motivo == null ? null : Array.Find(TODOS, m => string.Equals(m, motivo.Trim(), StringComparison.OrdinalIgnoreCase));
+        /// <summary>La lista que vale con el valor del parámetro (null o vacío: <see cref="POR_DEFECTO"/>), sin repetidos ni demasiado largos.</summary>
+        public static List<string> Lista(string valor)
+        {
+            List<string> lista = new List<string>();
+            foreach (string motivo in (valor ?? "").Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                string limpio = motivo.Trim();
+                if (limpio.Length > 0 && limpio.Length <= LONGITUD_MAXIMA && !lista.Exists(m => string.Equals(m, limpio, StringComparison.OrdinalIgnoreCase)))
+                {
+                    lista.Add(limpio);
+                }
+            }
+            return lista.Count > 0 ? lista : new List<string>(TODOS);
+        }
+
+        /// <summary>«estacional» → «Estacional» (como esté escrito en la lista); null si no está en <paramref name="lista"/>.</summary>
+        public static string Normalizar(string motivo, IEnumerable<string> lista)
+        {
+            if (motivo == null || lista == null)
+            {
+                return null;
+            }
+            foreach (string m in lista)
+            {
+                if (string.Equals(m, motivo.Trim(), StringComparison.OrdinalIgnoreCase))
+                {
+                    return m;
+                }
+            }
+            return null;
+        }
+
+        /// <summary>Con la lista por defecto.</summary>
+        public static string Normalizar(string motivo) => Normalizar(motivo, TODOS);
     }
 
     /// <summary>NestoAPI#631: a dónde se propone liquidar (de momento solo se apunta: la acción es manual).</summary>
@@ -81,11 +125,12 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         public int? StockMaximo { get; set; }
         /// <summary>Solo al aplicar un «Ajustar máx/mín»: el mínimo que se pone si no es el propuesto.</summary>
         public int? StockMinimo { get; set; }
-        /// <summary>Solo al silenciar: Nuevo, Estacional o Aparato.</summary>
+        /// <summary>Solo al silenciar: uno de GET api/PropuestasStock/MotivosSilencio (por defecto, Nuevo, Estacional o Aparato).</summary>
         public string MotivoSilencio { get; set; }
         /// <summary>Solo al silenciar: hasta cuándo (incluido) no vuelve a salir como pendiente.</summary>
         public DateTime? SilenciarHasta { get; set; }
-        /// <summary>Solo al aplicar un «Liquidar»: Outlet o Ganavisiones (opcional; se apunta, no se hace nada automático).</summary>
+        /// <summary>Solo al aplicar un «Liquidar»: Outlet o Ganavisiones (opcional; se apunta: el máximo y el mínimo del almacén
+        /// pasan a 0, pero el paso al Outlet o a Ganavisiones lo hace la persona a mano).</summary>
         public string CanalLiquidacion { get; set; }
     }
 
@@ -209,6 +254,9 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
 
         /// <summary>Los controles de stock del producto (empresa 1) en todos los almacenes.</summary>
         List<ControlStockActual> LeerControlesStock(string producto);
+
+        /// <summary>El valor del parámetro <see cref="MotivosSilencio.CLAVE"/> de la fila «(defecto)» (empresa 1); null si no hay fila.</summary>
+        string LeerParametroMotivosSilencio();
 
         /// <summary>
         /// En una transacción: la decisión en la fila (solo si nadie la ha cambiado desde que se leyó; si no,

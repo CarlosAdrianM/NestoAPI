@@ -179,6 +179,24 @@ VALUES (@id, @mes, @producto, @almacen, @decision, @usuario, @fecha, @motivo, @m
             }
         }
 
+        /// <summary>
+        /// Solo la fila «(defecto)», a propósito (como PermisoRellenarReposicionManual): ParametrosUsuarioController.LeerParametro
+        /// copiaría el valor a una fila del usuario y cada uno tendría su propia lista.
+        /// </summary>
+        public string LeerParametroMotivosSilencio()
+        {
+            using (NVEntities db = Contexto())
+            {
+                string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO;
+                return db.ParametrosUsuario
+                    .Where(p => p.Empresa == empresa && p.Usuario == USUARIO_GENERAL && p.Clave == MotivosSilencio.CLAVE)
+                    .Select(p => p.Valor)
+                    .FirstOrDefault();
+            }
+        }
+
+        private const string USUARIO_GENERAL = "(defecto)";
+
         public void GuardarDecision(RegistroDecisionPropuesta r)
         {
             if (r == null)

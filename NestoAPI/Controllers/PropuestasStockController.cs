@@ -11,7 +11,8 @@ namespace NestoAPI.Controllers
 {
     /// <summary>
     /// NestoAPI#630 (stock obsoleto, corte 2): propuestas mensuales de máximo y mínimo por producto.
-    /// NestoAPI#631 (corte 3): decidirlas con supervisión. Generar: Dirección. Decidir: Compras y Dirección. Consultar: todos.
+    /// NestoAPI#631 (corte 3): decidirlas con supervisión. Generar: Dirección. Consultar y decidir: Compras y Dirección
+    /// (decisión de Carlos, 15/10/26; el resto, 403).
     /// </summary>
     [RoutePrefix("api/PropuestasStock")]
     public class PropuestasStockController : ApiController
@@ -50,7 +51,9 @@ namespace NestoAPI.Controllers
 
         private bool EsDireccion() => User != null && User.IsInRoleSinDominio(GruposSeguridad.DIRECCION);
 
-        /// <summary>NestoAPI#631: «Compras y Dirección deciden; el resto consulta».</summary>
+        internal const string MENSAJE_SIN_PERMISO_CONSULTAR = "Solo Compras y Dirección pueden ver las propuestas de stock.";
+
+        /// <summary>NestoAPI#631: Compras y Dirección consultan y deciden (Carlos, 15/10/26: el resto no ve ni la lista ni el resumen).</summary>
         private bool PuedeDecidir() => User != null && (User.IsInRoleSinDominio(GruposSeguridad.COMPRAS) || User.IsInRoleSinDominio(GruposSeguridad.DIRECCION));
 
         /// <summary>
@@ -112,7 +115,7 @@ namespace NestoAPI.Controllers
 
         /// <summary>
         /// Las propuestas guardadas de un mes (AAAA-MM; por defecto el último guardado), de más a menos exceso valorado.
-        /// NestoAPI#631: cualquier usuario las puede consultar; con <paramref name="estado"/> (Pendiente, Aplicada, Rechazada,
+        /// NestoAPI#631: solo Compras y Dirección (403 al resto); con <paramref name="estado"/> (Pendiente, Aplicada, Rechazada,
         /// Pospuesta, Silenciada, Superada, SinAccion) solo las de ese estado. Con el script del corte 3, cada fila lleva su
         /// Estado, la decisión y lo aplicado.
         /// GET api/PropuestasStock?mes=2026-10&amp;top=50&amp;estado=Pendiente
@@ -122,6 +125,10 @@ namespace NestoAPI.Controllers
         [Authorize]
         public IHttpActionResult Get(string mes = null, int top = 50, string estado = null)
         {
+            if (!PuedeDecidir())
+            {
+                return Content(HttpStatusCode.Forbidden, new { Message = MENSAJE_SIN_PERMISO_CONSULTAR });
+            }
             DateTime? referencia = null;
             if (!string.IsNullOrWhiteSpace(mes))
             {
@@ -164,7 +171,7 @@ namespace NestoAPI.Controllers
 
         /// <summary>
         /// NestoAPI#631: cuántas propuestas hay en cada estado y cuánto exceso suman (por defecto, el último mes guardado). Para
-        /// la cabecera de la pantalla de Nesto y el aviso de la campana.
+        /// la cabecera de la pantalla de Nesto y el aviso de la campana. Solo Compras y Dirección (403 al resto).
         /// GET api/PropuestasStock/Resumen?mes=2026-10
         /// </summary>
         [HttpGet]
@@ -172,6 +179,10 @@ namespace NestoAPI.Controllers
         [Authorize]
         public IHttpActionResult Resumen(string mes = null)
         {
+            if (!PuedeDecidir())
+            {
+                return Content(HttpStatusCode.Forbidden, new { Message = MENSAJE_SIN_PERMISO_CONSULTAR });
+            }
             DateTime? referencia = null;
             if (!string.IsNullOrWhiteSpace(mes))
             {
@@ -190,9 +201,28 @@ namespace NestoAPI.Controllers
         }
 
         /// <summary>
+        /// NestoAPI#631: los motivos con los que se puede silenciar una propuesta, en el orden en que se ofrecen. Salen del
+        /// parámetro «MotivosSilencioPropuestas» de la fila «(defecto)» (se amplían sin publicar); sin él, Nuevo, Estacional y
+        /// Aparato. Solo Compras y Dirección (403 al resto).
+        /// GET api/PropuestasStock/MotivosSilencio  → ["Nuevo", "Estacional", "Aparato"]
+        /// </summary>
+        [HttpGet]
+        [Route("MotivosSilencio")]
+        [Authorize]
+        public IHttpActionResult GetMotivosSilencio()
+        {
+            if (!PuedeDecidir())
+            {
+                return Content(HttpStatusCode.Forbidden, new { Message = MENSAJE_SIN_PERMISO_CONSULTAR });
+            }
+            return Ok(new ServicioDecisionesPropuestasStock(crearRepositorioDecisiones(), ahora).MotivosSilencioVigentes());
+        }
+
+        /// <summary>
         /// NestoAPI#631: la decisión de Compras o Dirección sobre una propuesta: Aplicar, Rechazar (con motivo), Posponer o
-        /// Silenciar (con motivo Nuevo, Estacional o Aparato y fecha de caducidad). Aplicar escribe en ControlesStock (máximo y
-        /// mínimo) o pasa el producto a estado 1; «Parar compras» y «Liquidar» solo se apuntan. Queda quién, cuándo, el valor
+        /// Silenciar (con un motivo de GET api/PropuestasStock/MotivosSilencio y fecha de caducidad). Aplicar escribe en
+        /// ControlesStock (máximo y mínimo), pasa el producto a estado 1 (máximos a 0 en todos los almacenes) o, al liquidar,
+        /// pone a 0 el máximo y el mínimo del almacén de la propuesta; «Parar compras» solo se apunta. Queda quién, cuándo, el valor
         /// anterior y el nuevo. Reglas en <see cref="ServicioDecisionesPropuestasStock"/>.
         /// POST api/PropuestasStock/123/Decision  { "Decision": "Aplicar", "Motivo": "...", "StockMaximo": 300, "StockMinimo": 200 }
         /// </summary>
