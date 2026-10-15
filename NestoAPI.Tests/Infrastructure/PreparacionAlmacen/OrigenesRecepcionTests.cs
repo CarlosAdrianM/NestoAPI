@@ -91,7 +91,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             var almacenes = new Dictionary<string, string> { ["Reina"] = "REI", ["Paloma"] = "ALC", ["Andre"] = "ALG" };
             return new OrigenRecepcionReposiciones(servicio ?? A.Fake<IServicioRecepcionReposiciones>(), cierre ?? A.Fake<IRepositorioCierreReposiciones>(),
                 avisador ?? A.Fake<IAvisadorReposiciones>(), (empresa, usuario) => almacenes.TryGetValue(usuario, out string a) ? a : null,
-                diferencias ?? A.Fake<NestoAPI.Infraestructure.Reposiciones.IServicioDiferenciasReposicion>());
+                diferencias ?? A.Fake<NestoAPI.Infraestructure.Reposiciones.IServicioDiferenciasReposicion>(), A.Fake<IRepositorioBultosReposicion>());
         }
 
         private static (IRepositorioCierreReposiciones Cierre, ITransaccionCierreReposicion Transaccion) CierreFalso(params int[] traspasosEnDiario)
@@ -886,7 +886,8 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
 
         private static OrigenRecepcionReposiciones Reposiciones(IServicioRecepcionReposiciones servicio)
         {
-            return new OrigenRecepcionReposiciones(servicio, A.Fake<IRepositorioCierreReposiciones>(), A.Fake<IAvisadorReposiciones>(), (e, u) => null);
+            return new OrigenRecepcionReposiciones(servicio, A.Fake<IRepositorioCierreReposiciones>(), A.Fake<IAvisadorReposiciones>(), (e, u) => null,
+                bultos: A.Fake<IRepositorioBultosReposicion>());
         }
 
         [TestMethod]

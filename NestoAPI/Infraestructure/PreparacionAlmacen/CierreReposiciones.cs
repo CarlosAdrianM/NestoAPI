@@ -60,6 +60,12 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         Task<List<int>> RegistrarDiferencias(IEnumerable<Reposiciones.DiferenciaReposicionNueva> diferencias);
         /// <summary>Para el ensayo: cómo leer las filas que toca dar entrada al diario (antes y después).</summary>
         Task<Func<Task<List<FilaEnsayoDTO>>>> PrepararFoto(string empresa, string diario, IReadOnlyCollection<int> traspasos);
+        /// <summary>NestoAPI#645: los bultos del traspaso. Null si la tabla ReposicionesBultos no existe todavía.</summary>
+        Task<List<FilaBultoReposicion>> LeerBultos(string empresa, int traspaso);
+        /// <summary>NestoAPI#645: el bulto con ese código. Null si no es de ninguna reposición.</summary>
+        Task<FilaBultoReposicion> LeerBulto(string empresa, string codigo);
+        /// <summary>NestoAPI#645: quién y cuándo ha leído cada bulto al recibir (se queda la primera lectura).</summary>
+        Task MarcarBultosLeidos(string empresa, IEnumerable<string> codigos, string usuario);
     }
 
     /// <summary>
@@ -425,6 +431,13 @@ SELECT @puestas;";
         {
             return Reposiciones.DiferenciasReposicionSql.Insertar(db, diferencias);
         }
+
+        public Task<List<FilaBultoReposicion>> LeerBultos(string empresa, int traspaso) => ReposicionesBultosSql.Leer(db.Database, empresa, traspaso);
+
+        public Task<FilaBultoReposicion> LeerBulto(string empresa, string codigo) => ReposicionesBultosSql.LeerPorCodigo(db.Database, empresa, codigo);
+
+        public Task MarcarBultosLeidos(string empresa, IEnumerable<string> codigos, string usuario)
+            => ReposicionesBultosSql.MarcarLeidos(db.Database, empresa, codigos, usuario);
 
         internal const string UBICACIONES_DE_REPOSICIONES = "u.Empresa = @p0 AND u.Estado = 2 AND u.[NºTraspasoRepo] IN ({LISTA})";
 

@@ -21,6 +21,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public string Usuario { get; set; }
         public IPrincipal Principal { get; set; }
         public string Dispositivo { get; set; }
+        /// <summary>NestoAPI#645: las etiquetas de bulto leídas, sin repetir, en mayúsculas y sin espacios. Nunca null.</summary>
+        public List<string> CodigosBulto { get; set; } = new List<string>();
         /// <summary>
         /// Null de verdad. En un ensayo, la estrategia hace lo mismo pero en una transacción que se deshace SIEMPRE, apunta
         /// aquí las filas que toca antes y después y no avisa a nadie.
@@ -392,7 +394,9 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 Lecturas = lecturas,
                 Usuario = nombre.Trim(),
                 Principal = usuario,
-                Dispositivo = terminar.Dispositivo
+                Dispositivo = terminar.Dispositivo,
+                CodigosBulto = (terminar.CodigosBulto ?? new List<string>())
+                    .Select(CodigosBultoReposicion.Normalizar).Where(c => c != null).Distinct().ToList()
             };
             return Completar(origen, ensayo
                 ? await Ensayar(origen, solicitud).ConfigureAwait(false)

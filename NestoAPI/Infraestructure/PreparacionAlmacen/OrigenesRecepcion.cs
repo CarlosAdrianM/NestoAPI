@@ -4,6 +4,7 @@ using NestoAPI.Models;
 using NestoAPI.Models.PreparacionAlmacen;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Security.Cryptography;
@@ -368,19 +369,23 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         private readonly IAvisadorReposiciones avisador;
         private readonly Func<string, string, string> almacenDelUsuario;
         private readonly Reposiciones.IServicioDiferenciasReposicion diferenciasReposicion;
+        private IRepositorioBultosReposicion bultos;
 
         /// <param name="diferenciasReposicion">NestoAPI#634: el ajuste del origen después de confirmar. Null: el de la BD, creado al usarlo.</param>
+        /// <param name="bultos">NestoAPI#645: las etiquetas de bulto. Null: las de la BD, creado al usarlo.</param>
         public OrigenRecepcionReposiciones(IServicioRecepcionReposiciones reposiciones, IRepositorioCierreReposiciones cierre,
-            IAvisadorReposiciones avisador, Reposiciones.IServicioDiferenciasReposicion diferenciasReposicion = null)
-            : this(reposiciones, cierre, avisador, null, diferenciasReposicion)
+            IAvisadorReposiciones avisador, Reposiciones.IServicioDiferenciasReposicion diferenciasReposicion = null,
+            IRepositorioBultosReposicion bultos = null)
+            : this(reposiciones, cierre, avisador, null, diferenciasReposicion, bultos)
         {
         }
 
         /// <param name="almacenDelUsuario">(empresa, usuario sin dominio) → su AlmacénPedidoVta.</param>
         internal OrigenRecepcionReposiciones(IServicioRecepcionReposiciones reposiciones, IRepositorioCierreReposiciones cierre,
             IAvisadorReposiciones avisador, Func<string, string, string> almacenDelUsuario,
-            Reposiciones.IServicioDiferenciasReposicion diferenciasReposicion = null)
+            Reposiciones.IServicioDiferenciasReposicion diferenciasReposicion = null, IRepositorioBultosReposicion bultos = null)
         {
+            this.bultos = bultos;
             this.reposiciones = reposiciones;
             this.cierre = cierre;
             this.avisador = avisador;
@@ -455,12 +460,20 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             }).ToList();
         }
 
+        private IRepositorioBultosReposicion Bultos => bultos ?? (bultos = RepositorioBultosReposicionSql.ConContextoPropio());
+
         public async Task<List<RecepcionPendienteDTO>> BuscarPorCodigo(string empresa, string almacen, string codigo)
         {
             var encontradas = new List<RecepcionPendienteDTO>();
-            foreach (RecepcionPendienteDTO pendiente in await LeerPendientes(empresa, almacen).ConfigureAwait(false))
+            List<RecepcionPendienteDTO> pendientes = await LeerPendientes(empresa, almacen).ConfigureAwait(false);
+            // NestoAPI#645: la etiqueta del bulto («R81010-2») lleva a su reposición, si está pendiente aquí
+            if (CodigosBultoReposicion.Leer(codigo, out int traspasoEtiqueta, out _))
             {
-                RecepcionDTO esperado = await LeerEsperado(empresa, almacen, pendiente.Documento).ConfigureAwait(false);
+                return pendientes.Where(p => p.Documento == traspasoEtiqueta.ToString(CultureInfo.InvariantCulture)).ToList();
+            }
+            foreach (RecepcionPendienteDTO pendiente in pendientes)
+            {
+                RecepcionDTO esperado = await LeerSinBultos(empresa, almacen, pendiente.Documento).ConfigureAwait(false);
                 if (esperado != null && esperado.Lineas.Any(l =>
                     string.Equals(l.Producto?.Trim(), codigo, StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(l.CodigoBarras?.Trim(), codigo, StringComparison.OrdinalIgnoreCase)))
@@ -472,6 +485,19 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         }
 
         public async Task<RecepcionDTO> LeerEsperado(string empresa, string almacen, string documento)
+        {
+            RecepcionDTO recepcion = await LeerSinBultos(empresa, almacen, documento).ConfigureAwait(false);
+            if (recepcion != null)
+            {
+                // NestoAPI#645: la transición es automática: las cerradas sin etiquetas (las de antes) se reciben como siempre
+                List<FilaBultoReposicion> filas = await Bultos.Leer(empresa, int.Parse(recepcion.Documento, CultureInfo.InvariantCulture)).ConfigureAwait(false);
+                recepcion.Bultos = filas?.Count ?? 0;
+                recepcion.ExigeEtiqueta = recepcion.Bultos > 0;
+            }
+            return recepcion;
+        }
+
+        private async Task<RecepcionDTO> LeerSinBultos(string empresa, string almacen, string documento)
         {
             if (!int.TryParse(documento?.Trim(), out int traspaso))
             {
@@ -522,6 +548,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 {
                     return new ResultadoTerminarRecepcionDTO { Tipo = TIPO, Documento = solicitud.Documento, YaEstabaTerminada = true };
                 }
+                // NestoAPI#645: cada bulto en su reposición (antes de tocar nada)
+                List<string> bultosLeidos = await ComprobarEtiquetas(transaccion, solicitud, traspaso).ConfigureAwait(false);
 
                 string diario = await transaccion.DiarioDeEntrada(solicitud.Empresa, solicitud.Almacen).ConfigureAwait(false);
                 if (string.IsNullOrWhiteSpace(diario))
@@ -582,6 +610,11 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 _ = await transaccion.DejarPendientesDeUbicar(solicitud.Empresa, pendientesDeUbicar, solicitud.Usuario).ConfigureAwait(false);
                 // NestoAPI#577: quién y cuándo la ha recibido, en su cabecera (si la creó la API)
                 await transaccion.MarcarReposicionRecibida(solicitud.Empresa, traspaso, solicitud.Usuario).ConfigureAwait(false);
+                // NestoAPI#645: los bultos leídos (en un ensayo no se marca nada)
+                if (solicitud.Ensayo == null && bultosLeidos.Any())
+                {
+                    await transaccion.MarcarBultosLeidos(solicitud.Empresa, bultosLeidos, solicitud.Usuario).ConfigureAwait(false);
+                }
                 await transaccion.RegistrarEvidencia(solicitud.Empresa, solicitud.Lecturas.Select(l => new EvidenciaRecepcion
                 {
                     IdCliente = EvidenciasRecepcionSql.IdEvidencia(solicitud.IdRecepcion, l.Key),
@@ -670,6 +703,40 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         }
 
         internal const string HAZLA_EN_NESTO_VIEJO = "haz esta entrada en Nesto viejo o avisa a Andre.";
+
+        /// <summary>
+        /// NestoAPI#645: si el traspaso tiene etiquetas de bulto, hace falta al menos una suya entre las leídas; una etiqueta de
+        /// otra reposición no se admite nunca (ese bulto es de la otra). Las que no son de ninguna se ignoran. Un bulto ya leído
+        /// en otra recepción (parcial) no impide nada. Devuelve los códigos de este traspaso, para marcarlos. Sin la tabla, nada.
+        /// </summary>
+        private static async Task<List<string>> ComprobarEtiquetas(ITransaccionCierreReposicion transaccion, SolicitudTerminarRecepcion solicitud, int traspaso)
+        {
+            List<FilaBultoReposicion> delTraspaso = await transaccion.LeerBultos(solicitud.Empresa, traspaso).ConfigureAwait(false);
+            if (delTraspaso == null)
+            {
+                return new List<string>();
+            }
+            var suyos = new HashSet<string>(delTraspaso.Select(b => b.Codigo?.Trim().ToUpperInvariant()).Where(c => c != null));
+            var leidos = new List<string>();
+            foreach (string codigo in solicitud.CodigosBulto ?? new List<string>())
+            {
+                if (suyos.Contains(codigo))
+                {
+                    leidos.Add(codigo);
+                    continue;
+                }
+                FilaBultoReposicion otro = await transaccion.LeerBulto(solicitud.Empresa, codigo).ConfigureAwait(false);
+                if (otro != null && otro.Traspaso != traspaso)
+                {
+                    throw new NestoBusinessException($"Esa etiqueta es de la reposición {otro.Traspaso}, no de la {traspaso}.");
+                }
+            }
+            if (suyos.Any() && !leidos.Any())
+            {
+                throw new NestoBusinessException($"Lea la etiqueta del bulto antes de recibir la reposición {traspaso}.");
+            }
+            return leidos;
+        }
 
         /// <summary>
         /// Solo los productos en que lo leído no es lo enviado (de menos, de más, o que no venían), con lo enviado en Esperado.

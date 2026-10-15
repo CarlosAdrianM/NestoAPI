@@ -95,6 +95,15 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public bool SeTerminaDesdeAqui { get; set; }
         public List<LineaRecepcionDTO> Lineas { get; set; } = new List<LineaRecepcionDTO>();
 
+        /// <summary>
+        /// NestoAPI#645: REPO cerrada con etiquetas de bulto (tiene filas en ReposicionesBultos): hay que leer la etiqueta de un
+        /// bulto antes de recibirla y mandarla en <see cref="TerminarRecepcionDTO.CodigosBulto"/>. False en las cerradas sin
+        /// etiquetas (las de antes) y en los demás tipos: se reciben como siempre.
+        /// </summary>
+        public bool ExigeEtiqueta { get; set; }
+        /// <summary>NestoAPI#645: cuántos bultos lleva (0 si no tiene etiquetas).</summary>
+        public int Bultos { get; set; }
+
         // NestoAPI#600: los textos de la confirmación antes de terminar, de su tipo, para que la app no mire el código del
         // tipo. La app sabe lo que se ha leído y elige el caso; el texto es del servidor. Cómo se monta la confirmación:
         // TituloConfirmacion de encabezado; después el resumen de lo leído (de la app); después AvisoCoincide si no falta ni
@@ -141,6 +150,11 @@ namespace NestoAPI.Models.PreparacionAlmacen
         /// <summary>Lo contado de cada producto (leído o tecleado).</summary>
         public List<LecturaRecepcionDTO> Lecturas { get; set; } = new List<LecturaRecepcionDTO>();
         public string Dispositivo { get; set; }
+        /// <summary>
+        /// NestoAPI#645: las etiquetas de bulto leídas («R81010-1», …). Opcional; hace falta al menos una del traspaso si la
+        /// recepción dice <see cref="RecepcionDTO.ExigeEtiqueta"/>.
+        /// </summary>
+        public List<string> CodigosBulto { get; set; } = new List<string>();
     }
 
     public class DocumentoRecepcionDTO
