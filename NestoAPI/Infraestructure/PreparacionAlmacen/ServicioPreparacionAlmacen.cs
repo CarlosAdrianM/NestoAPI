@@ -89,7 +89,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         {
             new OrigenSalidaPicking(repositorio),
             new OrigenSalidaReposicion(repositorio)
-        }, escriturasSalida, anulacionesLecturas));
+        }, escriturasSalida, anulacionesLecturas, ordenRecorrido));
+
+        /// <summary>NestoAPI#641: las calles de cada almacén (una lectura por almacén y petición). Null: el orden de siempre.</summary>
+        private readonly ILectorOrdenRecorrido ordenRecorrido;
 
         /// <summary>Dónde escribe la salida al terminar (en las pruebas del servicio, nada: no termina salidas).</summary>
         private readonly IRepositorioSalidas escriturasSalida;
@@ -102,6 +105,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             repositorio = new RepositorioPreparacionAlmacen(dbPropio);
             escriturasSalida = new RepositorioSalidasSql(dbPropio);
             anulacionesLecturas = new RepositorioAnulacionLecturasSql(dbPropio);
+            ordenRecorrido = new LectorOrdenRecorridoSql(dbPropio.Database);
             fotos = new AlmacenFotosBultosAzure();
             claveEnlacesFotos = System.Configuration.ConfigurationManager.AppSettings[EnlacePublicoFotoBulto.CLAVE_CONFIGURACION];
         }
@@ -112,9 +116,16 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             this.avisadorCompras = avisadorCompras;
         }
 
-        internal ServicioPreparacionAlmacen(IRepositorioPreparacionAlmacen repositorio, IAlmacenFotosBultos fotos, string claveEnlacesFotos = null,
-            IAvisadorCompras avisadorCompras = null)
+        /// <summary>NestoAPI#641: con el lector de calles de la petición (el mismo para todos los servicios de almacén).</summary>
+        public ServicioPreparacionAlmacen(IAvisadorCompras avisadorCompras, ILectorOrdenRecorrido ordenRecorrido) : this(avisadorCompras)
         {
+            this.ordenRecorrido = ordenRecorrido ?? this.ordenRecorrido;
+        }
+
+        internal ServicioPreparacionAlmacen(IRepositorioPreparacionAlmacen repositorio, IAlmacenFotosBultos fotos, string claveEnlacesFotos = null,
+            IAvisadorCompras avisadorCompras = null, ILectorOrdenRecorrido ordenRecorrido = null)
+        {
+            this.ordenRecorrido = ordenRecorrido;
             this.repositorio = repositorio;
             this.fotos = fotos;
             this.claveEnlacesFotos = claveEnlacesFotos;
@@ -148,8 +159,19 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             {
                 Empresa = empresa,
                 Picking = picking,
-                Lineas = CasadorEscaneos.OrdenarRecorrido(lineas)
+                Lineas = CasadorEscaneos.OrdenarRecorrido(lineas, await OrdenDelPicking(empresa, picking, lineas).ConfigureAwait(false))
             };
+        }
+
+        /// <summary>NestoAPI#641: las calles del almacén del picking (sin líneas o sin lector, el orden de siempre).</summary>
+        private async Task<OrdenRecorrido> OrdenDelPicking(string empresa, int picking, List<LineaPickingAlmacenDTO> lineas)
+        {
+            if (ordenRecorrido == null || lineas == null || lineas.Count == 0)
+            {
+                return OrdenRecorrido.ComoHoy;
+            }
+            string almacen = await repositorio.LeerAlmacenPicking(empresa, picking).ConfigureAwait(false);
+            return string.IsNullOrWhiteSpace(almacen) ? OrdenRecorrido.ComoHoy : await ordenRecorrido.DelAlmacen(empresa, almacen).ConfigureAwait(false);
         }
 
         public Task<List<PickingEnCursoDTO>> LeerPickingsEnCurso(string empresa, string almacen)

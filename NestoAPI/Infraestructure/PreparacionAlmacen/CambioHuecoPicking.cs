@@ -91,8 +91,11 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
     public interface IRepositorioCambioHueco
     {
-        /// <summary>Los otros huecos del almacén del picking donde hay libre de ese producto, en el orden del recorrido.</summary>
+        /// <summary>Los otros huecos del almacén del picking donde hay libre de ese producto (sin ordenar: lo ordena el servicio por el recorrido).</summary>
         Task<List<HuecoAlternativoDTO>> LeerAlternativas(string empresa, int picking, string producto, string huecoOrigen);
+
+        /// <summary>NestoAPI#641: el almacén del picking, para ordenar las alternativas por sus calles. Null si no se sabe.</summary>
+        Task<string> LeerAlmacenPicking(string empresa, int picking);
 
         /// <summary>
         /// Pasa la reserva de un hueco a otro, todo en una transacción. Devuelve las unidades cambiadas (0 si en el origen
@@ -104,7 +107,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     public class RepositorioCambioHuecoSql : IRepositorioCambioHueco, IDisposable
     {
         // El almacén es el de las líneas del producto en el picking. Solo lo libre con hueco (estado 0): lo pendiente de
-        // ubicar (estado 2) no tiene hueco al que mandar al mozo.
+        // ubicar (estado 2) no tiene hueco al que mandar al mozo. NestoAPI#641: sin ORDER BY; el orden del recorrido (con
+        // las calles del almacén) lo pone ServicioCambioHuecoPicking con la regla única (OrdenRecorrido), no SQL.
         internal const string SQL_ALTERNATIVAS = @"
 SELECT RTRIM(u.Pasillo) + '/' + RTRIM(u.Fila) + '/' + RTRIM(u.Columna) AS Ubicacion,
        RTRIM(u.Pasillo) + RTRIM(u.Fila) + RTRIM(u.Columna) AS Codigo,
@@ -116,8 +120,7 @@ WHERE u.Empresa = @p0 AND u.[Número] = @p2 AND u.Estado = 0 AND u.PedidoVta IS 
       AND u.[Almacén] IN (SELECT l.[Almacén] FROM LinPedidoVta l
                           WHERE l.Empresa = @p0 AND l.Picking = @p1 AND l.TipoLinea = 1 AND l.Estado = 1 AND l.Producto = @p2)
 GROUP BY u.Pasillo, u.Fila, u.Columna
-HAVING SUM(u.Cantidad) > 0
-ORDER BY u.Pasillo, u.Columna, u.Fila";
+HAVING SUM(u.Cantidad) > 0";
 
         // El pedido más nuevo primero, como al repartir las faltas (PlanificadorFaltasSalida)
         internal const string SQL_RESERVAS_EN_EL_HUECO = @"
@@ -174,6 +177,12 @@ DELETE Ubicaciones WHERE [NºOrden] = @p0 AND Cantidad = 0 AND Estado = 0;";
             return db.Database.SqlQuery<HuecoAlternativoDTO>(SQL_ALTERNATIVAS,
                 Char("@p0", 3, empresa), new SqlParameter("@p1", picking), Char("@p2", 15, producto), Texto("@p3", huecoOrigen ?? string.Empty))
                 .ToListAsync();
+        }
+
+        public async Task<string> LeerAlmacenPicking(string empresa, int picking)
+        {
+            return (await db.Database.SqlQuery<string>(RepositorioPreparacionAlmacen.SQL_ALMACEN_PICKING, Char("@p0", 3, empresa), new SqlParameter("@p1", picking))
+                .ToListAsync().ConfigureAwait(false)).FirstOrDefault();
         }
 
         public async Task<int> Cambiar(string empresa, int picking, string producto, string huecoOrigen, string huecoDestino, int cantidad, string usuario)
@@ -243,10 +252,13 @@ DELETE Ubicaciones WHERE [NºOrden] = @p0 AND Cantidad = 0 AND Estado = 0;";
     public class ServicioCambioHuecoPicking : IServicioCambioHuecoPicking
     {
         private readonly IRepositorioCambioHueco repositorio;
+        /// <summary>NestoAPI#641: las calles del almacén. Null: el orden de siempre.</summary>
+        private readonly ILectorOrdenRecorrido ordenRecorrido;
 
-        public ServicioCambioHuecoPicking(IRepositorioCambioHueco repositorio)
+        public ServicioCambioHuecoPicking(IRepositorioCambioHueco repositorio, ILectorOrdenRecorrido ordenRecorrido = null)
         {
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
+            this.ordenRecorrido = ordenRecorrido;
         }
 
         public async Task<List<HuecoAlternativoDTO>> LeerAlternativas(string empresa, int picking, string producto, string hueco)
@@ -255,8 +267,38 @@ DELETE Ubicaciones WHERE [NºOrden] = @p0 AND Cantidad = 0 AND Estado = 0;";
             {
                 return new List<HuecoAlternativoDTO>();
             }
-            return await repositorio.LeerAlternativas(empresa, picking, producto.Trim(), PlanificadorFaltasSalida.NormalizarHueco(hueco))
+            List<HuecoAlternativoDTO> alternativas = await repositorio.LeerAlternativas(empresa, picking, producto.Trim(), PlanificadorFaltasSalida.NormalizarHueco(hueco))
                 .ConfigureAwait(false) ?? new List<HuecoAlternativoDTO>();
+            if (alternativas.Count < 2)
+            {
+                return alternativas;
+            }
+            OrdenRecorrido orden = OrdenRecorrido.ComoHoy;
+            if (ordenRecorrido != null)
+            {
+                string almacen = await repositorio.LeerAlmacenPicking(empresa, picking).ConfigureAwait(false);
+                if (!string.IsNullOrWhiteSpace(almacen))
+                {
+                    orden = await ordenRecorrido.DelAlmacen(empresa, almacen).ConfigureAwait(false);
+                }
+            }
+            return OrdenarAlternativas(alternativas, orden);
+        }
+
+        /// <summary>
+        /// NestoAPI#641: en el orden del recorrido (antes, ORDER BY Pasillo, Columna, Fila en el SQL: sin calles es lo
+        /// mismo). La ubicación viene como se enseña, pasillo/fila/columna.
+        /// </summary>
+        internal static List<HuecoAlternativoDTO> OrdenarAlternativas(IEnumerable<HuecoAlternativoDTO> alternativas, OrdenRecorrido orden)
+        {
+            string Parte(HuecoAlternativoDTO h, int i)
+            {
+                string[] partes = h.Ubicacion?.Split('/');
+                return partes != null && partes.Length == 3 ? partes[i] : null;
+            }
+            return (orden ?? OrdenRecorrido.ComoHoy).Ordenar(alternativas, h => Parte(h, 0), h => Parte(h, 2), h => Parte(h, 1))
+                .ThenBy(h => h.Codigo, StringComparer.Ordinal)
+                .ToList();
         }
 
         public async Task<ResultadoCambioHueco> Cambiar(string empresa, int picking, CambiarHuecoPickingDTO cambio, string usuario)

@@ -16,6 +16,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public string Destino { get; set; }
         /// <summary>NestoAPI#600: el nombre del destino para enseñarlo («Reina», «Mesa de packing»). Null: el propio Destino.</summary>
         public string NombreDestino { get; set; }
+        /// <summary>NestoAPI#641: el almacén de donde sale (el de los huecos), para ordenar por sus calles. Null: como siempre.</summary>
+        public string Almacen { get; set; }
         public List<LineaPickingAlmacenDTO> Lineas { get; set; } = new List<LineaPickingAlmacenDTO>();
         public List<LecturaPickingAlmacen> Lecturas { get; set; } = new List<LecturaPickingAlmacen>();
     }
@@ -37,6 +39,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public string Destino { get; set; }
         /// <summary>NestoAPI#600: Almacenes.Descripción del destino («Reina»).</summary>
         public string NombreDestino { get; set; }
+        /// <summary>NestoAPI#641: el almacén de origen (el de los huecos).</summary>
+        public string Almacen { get; set; }
         public List<LineaPickingAlmacenDTO> Lineas { get; set; } = new List<LineaPickingAlmacenDTO>();
     }
 
@@ -178,13 +182,17 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         private readonly Dictionary<string, IOrigenSalida> origenes;
         private readonly IRepositorioSalidas escrituras;
         private readonly IRepositorioAnulacionLecturas anulaciones;
+        /// <summary>NestoAPI#641: las calles de cada almacén. Null: el orden de siempre.</summary>
+        private readonly ILectorOrdenRecorrido ordenRecorrido;
 
-        public ServicioSalidas(IEnumerable<IOrigenSalida> origenes, IRepositorioSalidas escrituras = null, IRepositorioAnulacionLecturas anulaciones = null)
+        public ServicioSalidas(IEnumerable<IOrigenSalida> origenes, IRepositorioSalidas escrituras = null, IRepositorioAnulacionLecturas anulaciones = null,
+            ILectorOrdenRecorrido ordenRecorrido = null)
         {
             this.origenes = (origenes ?? Enumerable.Empty<IOrigenSalida>())
                 .ToDictionary(o => o.Tipo.Trim().ToUpperInvariant(), o => o);
             this.escrituras = escrituras;
             this.anulaciones = anulaciones;
+            this.ordenRecorrido = ordenRecorrido;
         }
 
         private IOrigenSalida Origen(string tipo)
@@ -456,14 +464,17 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             return string.Join(" → ", mensajes);
         }
 
-        private static async Task<RecorridoSalida> LeerRecorridoOrdenado(IOrigenSalida origen, string empresa, int numero)
+        private async Task<RecorridoSalida> LeerRecorridoOrdenado(IOrigenSalida origen, string empresa, int numero)
         {
             RecorridoSalida recorrido = await origen.LeerRecorrido(empresa, numero).ConfigureAwait(false);
             if (recorrido?.Lineas == null || recorrido.Lineas.Count == 0)
             {
                 return null;
             }
-            recorrido.Lineas = CasadorEscaneos.OrdenarRecorrido(recorrido.Lineas);
+            OrdenRecorrido orden = ordenRecorrido == null || string.IsNullOrWhiteSpace(recorrido.Almacen)
+                ? OrdenRecorrido.ComoHoy
+                : await ordenRecorrido.DelAlmacen(empresa, recorrido.Almacen).ConfigureAwait(false);
+            recorrido.Lineas = CasadorEscaneos.OrdenarRecorrido(recorrido.Lineas, orden);
             recorrido.Lecturas = recorrido.Lecturas ?? new List<LecturaPickingAlmacen>();
             return recorrido;
         }
@@ -568,6 +579,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             {
                 Destino = CasadorEscaneos.DESTINO_PICKING,
                 NombreDestino = CasadorEscaneos.DESTINO_PICKING,
+                Almacen = await repositorio.LeerAlmacenPicking(empresa, numero).ConfigureAwait(false),
                 Lineas = lineas,
                 Lecturas = await repositorio.LeerLecturasDelPicking(empresa, numero).ConfigureAwait(false)
             };
@@ -737,6 +749,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             {
                 Destino = salida.Destino,
                 NombreDestino = salida.NombreDestino,
+                Almacen = salida.Almacen,
                 Lineas = salida.Lineas,
                 Lecturas = await repositorio.LeerLecturasDeSalida(empresa, Tipo, numero).ConfigureAwait(false)
             };

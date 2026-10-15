@@ -241,11 +241,19 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// </summary>
         public static List<LineaPickingAlmacenDTO> OrdenarRecorrido(IEnumerable<LineaPickingAlmacenDTO> lineas)
         {
+            return OrdenarRecorrido(lineas, OrdenRecorrido.ComoHoy);
+        }
+
+        /// <summary>
+        /// NestoAPI#641: lo mismo, con las calles del almacén (<see cref="OrdenRecorrido"/>, la regla única). Sin calles,
+        /// pasillo, columna y fila, como siempre. Lo que no tiene ubicación sigue yendo al final.
+        /// </summary>
+        public static List<LineaPickingAlmacenDTO> OrdenarRecorrido(IEnumerable<LineaPickingAlmacenDTO> lineas, OrdenRecorrido calles)
+        {
+            OrdenRecorrido regla = calles ?? OrdenRecorrido.ComoHoy;
             List<LineaPickingAlmacenDTO> ordenadas = (lineas ?? Enumerable.Empty<LineaPickingAlmacenDTO>())
                 .OrderBy(l => string.IsNullOrWhiteSpace(l.Pasillo))
-                .ThenBy(l => l.Pasillo?.Trim(), StringComparer.Ordinal)
-                .ThenBy(l => l.Columna?.Trim(), StringComparer.Ordinal)
-                .ThenBy(l => l.Fila?.Trim(), StringComparer.Ordinal)
+                .ThenBy(l => regla.Clave(l.Pasillo, l.Columna, l.Fila))
                 .ThenBy(l => l.Producto?.Trim(), StringComparer.Ordinal)
                 .ToList();
 

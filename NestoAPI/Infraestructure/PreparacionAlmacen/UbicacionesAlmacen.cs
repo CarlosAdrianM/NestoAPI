@@ -218,16 +218,33 @@ INSERT INTO Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES (N'Ubicacion
 
         private readonly IRepositorioUbicacionesAlmacen repositorio;
         private readonly NVEntities dbPropio;
+        /// <summary>NestoAPI#641: las calles de cada almacén. Null: el orden de siempre.</summary>
+        private readonly ILectorOrdenRecorrido ordenRecorrido;
 
         public ServicioUbicacionesAlmacen()
         {
             dbPropio = new NVEntities();
             repositorio = new RepositorioUbicacionesAlmacen(dbPropio);
+            ordenRecorrido = new LectorOrdenRecorridoSql(dbPropio.Database);
         }
 
-        internal ServicioUbicacionesAlmacen(IRepositorioUbicacionesAlmacen repositorio)
+        /// <summary>NestoAPI#641: con el lector de calles de la petición (el mismo para todos los servicios de almacén).</summary>
+        public ServicioUbicacionesAlmacen(ILectorOrdenRecorrido ordenRecorrido) : this()
+        {
+            this.ordenRecorrido = ordenRecorrido ?? this.ordenRecorrido;
+        }
+
+        internal ServicioUbicacionesAlmacen(IRepositorioUbicacionesAlmacen repositorio, ILectorOrdenRecorrido ordenRecorrido = null)
         {
             this.repositorio = repositorio;
+            this.ordenRecorrido = ordenRecorrido;
+        }
+
+        private Task<OrdenRecorrido> Orden(string empresa, string almacen)
+        {
+            return ordenRecorrido == null || string.IsNullOrWhiteSpace(almacen)
+                ? Task.FromResult(OrdenRecorrido.ComoHoy)
+                : ordenRecorrido.DelAlmacen(empresa, almacen);
         }
 
         public async Task<PendienteDeUbicarDTO> LeerPendienteDeUbicar(string empresa, string almacen)
@@ -244,7 +261,7 @@ INSERT INTO Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES (N'Ubicacion
             {
                 Empresa = empresa,
                 Almacen = almacen,
-                Productos = MontarPendiente(pendiente, huecos)
+                Productos = MontarPendiente(pendiente, huecos, await Orden(empresa, almacen).ConfigureAwait(false))
             };
         }
 
@@ -254,8 +271,9 @@ INSERT INTO Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES (N'Ubicacion
         /// columna, fila); lo que no tiene hueco todavía va al final.
         /// </summary>
         internal static List<ProductoPendienteDeUbicarDTO> MontarPendiente(
-            IEnumerable<FilaPendienteDeUbicar> pendiente, IEnumerable<FilaUbicacionProducto> huecos)
+            IEnumerable<FilaPendienteDeUbicar> pendiente, IEnumerable<FilaUbicacionProducto> huecos, OrdenRecorrido calles = null)
         {
+            OrdenRecorrido regla = calles ?? OrdenRecorrido.ComoHoy;
             List<FilaUbicacionProducto> todos = (huecos ?? Enumerable.Empty<FilaUbicacionProducto>()).ToList();
             ILookup<string, FilaUbicacionProducto> huecosPorProducto = todos
                 .Where(h => h.Cantidad > 0)
@@ -288,7 +306,7 @@ INSERT INTO Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES (N'Ubicacion
                             Traspaso = f.Traspaso,
                             Cantidad = f.Cantidad
                         }).ToList(),
-                        UbicacionesActuales = OrdenarHuecos(huecosPorProducto[g.Key]),
+                        UbicacionesActuales = OrdenarHuecos(huecosPorProducto[g.Key], regla),
                         UltimaUbicacion = !huecosPorProducto[g.Key].Any() && ultimoHueco.TryGetValue(g.Key, out FilaUbicacionProducto ultimo)
                             ? CasadorEscaneos.TextoUbicacion(ultimo.Pasillo, ultimo.Fila, ultimo.Columna)
                             : null
@@ -309,11 +327,15 @@ INSERT INTO Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES (N'Ubicacion
                 string[] partes = p.UltimaUbicacion?.Split('/');   // pasillo/fila/columna
                 return partes != null && partes.Length == 3 ? new[] { partes[0], partes[2], partes[1] } : null;
             }
+            // NestoAPI#641: (pasillo, columna, fila) por la regla única del recorrido (sin calles, como siempre)
+            ClaveRecorrido Clave(ProductoPendienteDeUbicarDTO p)
+            {
+                string[] hueco = Hueco(p);
+                return hueco == null ? null : regla.Clave(hueco[0], hueco[1], hueco[2]);
+            }
             productos = productos
                 .OrderBy(p => Hueco(p) == null)
-                .ThenBy(p => Hueco(p)?[0], StringComparer.Ordinal)
-                .ThenBy(p => Hueco(p)?[1], StringComparer.Ordinal)
-                .ThenBy(p => Hueco(p)?[2], StringComparer.Ordinal)
+                .ThenBy(Clave)
                 .ThenBy(p => p.Producto, StringComparer.Ordinal)
                 .ToList();
 
@@ -325,12 +347,9 @@ INSERT INTO Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES (N'Ubicacion
             return productos;
         }
 
-        private static List<UbicacionAlmacenDTO> OrdenarHuecos(IEnumerable<FilaUbicacionProducto> huecos)
+        private static List<UbicacionAlmacenDTO> OrdenarHuecos(IEnumerable<FilaUbicacionProducto> huecos, OrdenRecorrido orden)
         {
-            return huecos
-                .OrderBy(h => h.Pasillo?.Trim(), StringComparer.Ordinal)
-                .ThenBy(h => h.Columna?.Trim(), StringComparer.Ordinal)
-                .ThenBy(h => h.Fila?.Trim(), StringComparer.Ordinal)
+            return (orden ?? OrdenRecorrido.ComoHoy).Ordenar(huecos, h => h.Pasillo, h => h.Columna, h => h.Fila)
                 .Select(h => new UbicacionAlmacenDTO
                 {
                     Pasillo = h.Pasillo?.Trim(),
@@ -351,17 +370,19 @@ INSERT INTO Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES (N'Ubicacion
             }
 
             var resultado = new List<ProductoAlmacenDTO>();
+            OrdenRecorrido orden = null;
             foreach (FilaProductoAlmacen producto in await repositorio.BuscarProductos(empresa, limpio).ConfigureAwait(false))
             {
                 List<FilaUbicacionProducto> filas = await repositorio
                     .LeerUbicacionesDelProducto(empresa, almacen, producto.Producto).ConfigureAwait(false);
+                orden = orden ?? await Orden(empresa, almacen).ConfigureAwait(false);
                 resultado.Add(new ProductoAlmacenDTO
                 {
                     Producto = producto.Producto?.Trim(),
                     Descripcion = producto.Descripcion?.Trim(),
                     CodigoBarras = string.IsNullOrWhiteSpace(producto.CodigoBarras) ? null : producto.CodigoBarras.Trim(),
                     Almacen = almacen,
-                    Ubicaciones = OrdenarHuecos(filas.Where(f => f.Estado == ESTADO_UBICADO && f.Cantidad > 0)),
+                    Ubicaciones = OrdenarHuecos(filas.Where(f => f.Estado == ESTADO_UBICADO && f.Cantidad > 0), orden),
                     PendienteDeUbicar = filas.Where(f => f.Estado == ESTADO_PENDIENTE_DE_UBICAR).Sum(f => f.Cantidad)
                 });
             }
@@ -515,7 +536,8 @@ INSERT INTO Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES (N'Ubicacion
             {
                 Producto = ubicar.Producto,
                 Almacen = ubicar.Almacen,
-                Ubicaciones = OrdenarHuecos(despues.Where(f => f.Estado == ESTADO_UBICADO && f.Cantidad > 0)),
+                Ubicaciones = OrdenarHuecos(despues.Where(f => f.Estado == ESTADO_UBICADO && f.Cantidad > 0),
+                    await Orden(empresa, ubicar.Almacen).ConfigureAwait(false)),
                 PendienteDeUbicar = despues.Where(f => f.Estado == ESTADO_PENDIENTE_DE_UBICAR).Sum(f => f.Cantidad)
             };
         }

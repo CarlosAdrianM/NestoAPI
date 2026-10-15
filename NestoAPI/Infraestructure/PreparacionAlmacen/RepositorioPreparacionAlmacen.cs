@@ -76,6 +76,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     public interface IRepositorioPreparacionAlmacen
     {
         Task<List<LineaPickingAlmacenDTO>> LeerLineasPicking(string empresa, int picking);
+        /// <summary>NestoAPI#641: el almacén de las líneas que siguen en el picking (para el orden de sus calles). Null si no queda ninguna.</summary>
+        Task<string> LeerAlmacenPicking(string empresa, int picking);
         /// <summary>Los pickings del almacén con líneas todavía sin servir, el más reciente primero.</summary>
         Task<List<PickingEnCursoDTO>> LeerPickingsEnCurso(string empresa, string almacen);
         Task<List<LecturaPickingAlmacen>> LeerLecturasDelPicking(string empresa, int picking);
@@ -148,6 +150,13 @@ WHERE l.Empresa = @p0 AND l.Picking = @p1 AND l.TipoLinea = 1 AND l.Estado = 1
 GROUP BY l.Producto, u.Pasillo, u.Fila, u.Columna
 HAVING ISNULL(SUM(u.Cantidad), ISNULL(SUM(l.Cantidad - l.Recoger), 0)) <> 0";
 
+        /// <summary>NestoAPI#641: el almacén de un picking (las mismas líneas que SQL_LINEAS_PICKING). Lo usa también el cambio de hueco.</summary>
+        internal const string SQL_ALMACEN_PICKING = @"
+SELECT TOP 1 RTRIM(l.[Almacén]) FROM LinPedidoVta l
+WHERE l.Empresa = @p0 AND l.Picking = @p1 AND l.TipoLinea = 1 AND l.Estado = 1
+GROUP BY l.[Almacén]
+ORDER BY COUNT(*) DESC";
+
         internal const string SQL_PICKINGS_EN_CURSO = @"
 SELECT l.Picking AS Picking, COUNT(*) AS Lineas, COUNT(DISTINCT l.[Número]) AS Pedidos,
        CAST(SUM(ISNULL(l.Cantidad, 0) - ISNULL(l.Recoger, 0)) AS int) AS Unidades
@@ -188,6 +197,12 @@ FROM PreExtrProducto s
 WHERE s.Empresa = @p0 AND s.[Almacén] = @p1 AND s.Diario = a.DiarioSalidaRep AND s.[NºTraspaso] > 0 AND s.Cantidad < 0
 GROUP BY s.Empresa, s.[NºTraspaso]
 ORDER BY s.[NºTraspaso] DESC";
+
+        /// <summary>NestoAPI#641: el almacén de origen de una reposición (el de su salida, donde están los huecos).</summary>
+        internal const string SQL_ORIGEN_REPOSICION = @"
+SELECT TOP 1 RTRIM(s.[Almacén]) FROM PreExtrProducto s
+     INNER JOIN Almacenes a ON a.Empresa = s.Empresa AND a.[Número] = s.[Almacén]
+WHERE s.Empresa = @p0 AND s.[NºTraspaso] = @p1 AND s.Diario = a.DiarioSalidaRep AND s.Cantidad < 0";
 
         internal const string SQL_DESTINO_REPOSICION = @"
 SELECT TOP 1 RTRIM(e.[Almacén]) FROM PreExtrProducto e
@@ -361,6 +376,12 @@ ORDER BY e.Picking DESC, e.Cliente, e.Contacto";
             return baseDeDatos.SqlQuery<PickingEnCursoDTO>(SQL_PICKINGS_EN_CURSO, empresa, almacen).ToListAsync();
         }
 
+        public async Task<string> LeerAlmacenPicking(string empresa, int picking)
+        {
+            return (await baseDeDatos.SqlQuery<string>(SQL_ALMACEN_PICKING, empresa, picking).ToListAsync().ConfigureAwait(false))
+                .FirstOrDefault();
+        }
+
         public Task<List<LecturaPickingAlmacen>> LeerLecturasDelPicking(string empresa, int picking)
         {
             return baseDeDatos.SqlQuery<LecturaPickingAlmacen>(SQL_LECTURAS_DEL_PICKING, empresa, picking).ToListAsync();
@@ -387,7 +408,9 @@ ORDER BY e.Picking DESC, e.Cliente, e.Contacto";
             string destino = (await baseDeDatos.SqlQuery<string>(SQL_DESTINO_REPOSICION, empresa, traspaso).ToListAsync().ConfigureAwait(false))
                 .FirstOrDefault();
             string nombreDestino = await LeerNombreAlmacen(baseDeDatos, empresa, destino).ConfigureAwait(false);
-            return new ReposicionSalida { Destino = destino, NombreDestino = nombreDestino, Lineas = lineas };
+            string origen = (await baseDeDatos.SqlQuery<string>(SQL_ORIGEN_REPOSICION, empresa, traspaso).ToListAsync().ConfigureAwait(false))
+                .FirstOrDefault();
+            return new ReposicionSalida { Destino = destino, NombreDestino = nombreDestino, Almacen = origen, Lineas = lineas };
         }
 
         /// <summary>

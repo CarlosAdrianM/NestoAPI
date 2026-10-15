@@ -216,6 +216,9 @@ namespace NestoAPI
             // Ofertas autorizadas: lectura para NestoApp e informar a los vendedores bajo demanda (NestoAPI#233)
             _ = services.AddScoped<Infraestructure.OfertasAutorizadas.IServicioOfertasAutorizadas, Infraestructure.OfertasAutorizadas.ServicioOfertasAutorizadas>();
 
+            // NestoAPI#641: el orden de recorrido por calles, una lectura por almacén y petición (picking, reposiciones,
+            // pendiente de ubicar y huecos alternativos comparten la misma regla y el mismo lector)
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.ILectorOrdenRecorrido>(_ => Infraestructure.PreparacionAlmacen.LectorOrdenRecorridoSql.ConContextoPropio());
             // Ariadna, la app de almacén: preparación de pedidos con lector y foto de bultos (NestoAPI#556)
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioPreparacionAlmacen, Infraestructure.PreparacionAlmacen.ServicioPreparacionAlmacen>();
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioUbicacionesAlmacen, Infraestructure.PreparacionAlmacen.ServicioUbicacionesAlmacen>();
