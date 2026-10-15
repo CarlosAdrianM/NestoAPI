@@ -1,5 +1,8 @@
 using Hangfire;
+using NestoAPI.Infraestructure.Notificaciones;
+using NestoAPI.Infraestructure.PreparacionAlmacen;
 using System;
+using System.Collections.Generic;
 using System.Configuration;
 using System.Globalization;
 using System.IO;
@@ -19,6 +22,8 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
     /// caería en horario.</para>
     /// <para>A mano: <c>POST api/PropuestasStock/Generar?mes=AAAA-MM</c> (Dirección), que lo encola (o lo programa para la
     /// madrugada si es horario de trabajo).</para>
+    /// <para>NestoAPI#631: si ha guardado filas nuevas y hay propuestas pendientes de decidir, avisa a Compras por la campana
+    /// de Nesto (<see cref="TIPO_NOTIFICACION"/>).</para>
     /// </summary>
     public class PropuestasStockJobsService
     {
@@ -28,25 +33,32 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         public const string COLA = Rapports.ReentrenamientoModeloLlamadasJobsService.COLA;
         internal const string ORIGEN_PROGRAMADO = "job mensual";
         internal const string REMITENTE = "nesto@nuevavision.es";
+        /// <summary>NestoAPI#631: tipo del aviso en la campana de Nesto (al pulsarlo, la pantalla de propuestas de stock).</summary>
+        public const string TIPO_NOTIFICACION = "PropuestasStock";
 
         private readonly Func<IRepositorioTendencias> crearRepositorio;
         private readonly IServicioCorreoElectronico correo;
         private readonly Func<string, string> leerParametro;
         private readonly Func<DateTime> ahora;
         private readonly Action<Exception> registrarError;
+        private readonly Func<IAvisadorCompras> crearAvisador;
+        private readonly Func<IRepositorioDecisionesPropuestasStock> crearRepositorioDecisiones;
 
         public PropuestasStockJobsService() : this(null)
         {
         }
 
         internal PropuestasStockJobsService(Func<IRepositorioTendencias> crearRepositorio, IServicioCorreoElectronico correo = null,
-            Func<string, string> leerParametro = null, Func<DateTime> ahora = null, Action<Exception> registrarError = null)
+            Func<string, string> leerParametro = null, Func<DateTime> ahora = null, Action<Exception> registrarError = null,
+            Func<IAvisadorCompras> crearAvisador = null, Func<IRepositorioDecisionesPropuestasStock> crearRepositorioDecisiones = null)
         {
             this.crearRepositorio = crearRepositorio ?? (() => new RepositorioTendenciasSql());
             this.correo = correo ?? new ServicioCorreoElectronico();
             this.leerParametro = leerParametro ?? (clave => ConfigurationManager.AppSettings[clave]);
             this.ahora = ahora ?? (() => DateTime.Now);
             this.registrarError = registrarError ?? ElmahHelper.Log;
+            this.crearAvisador = crearAvisador ?? (() => new AvisadorCompras(new ServicioNotificacionesPush()));
+            this.crearRepositorioDecisiones = crearRepositorioDecisiones ?? (() => new RepositorioDecisionesPropuestasStockSql());
         }
 
         /// <summary>Punto de entrada del job recurrente: el mes que acaba de cerrar.</summary>
@@ -130,7 +142,59 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             {
                 registrarError(new Exception($"[Propuestas de stock #630] Error al generar o mandar el Excel de {resultado.Mes:yyyy-MM} ({origen}): {ex.Message}", ex));
             }
+
+            if (guardadas > 0)
+            {
+                AvisarCompras(resultado);
+            }
             return resultado;
+        }
+
+        /// <summary>
+        /// NestoAPI#631: aviso a Compras por la campana con las propuestas pendientes del mes (sin las silenciadas, si ya está el
+        /// script del corte 3; si no, todas las que tienen acción). Nunca lanza.
+        /// </summary>
+        internal void AvisarCompras(ResultadoPropuestasStock resultado)
+        {
+            try
+            {
+                int pendientes;
+                decimal exceso;
+                IRepositorioDecisionesPropuestasStock decisiones = crearRepositorioDecisiones();
+                if (decisiones.ExisteEsquema())
+                {
+                    ResumenEstadoPropuestas fila = decisiones.Resumen(resultado.Mes).FirstOrDefault(r => r.Estado == EstadosPropuesta.PENDIENTE);
+                    pendientes = fila?.Propuestas ?? 0;
+                    exceso = fila?.ExcesoValorado ?? 0;
+                }
+                else
+                {
+                    List<ResultadoTendencia> conAccion = resultado.Productos
+                        .Where(p => p.Accion != AccionesPropuesta.MANTENER && p.Accion != AccionesPropuesta.NADA).ToList();
+                    pendientes = conAccion.Count;
+                    exceso = conAccion.Sum(p => p.ExcesoValorado);
+                }
+                if (pendientes == 0)
+                {
+                    return;
+                }
+                string titulo = TituloAviso(resultado.Mes);
+                string texto = TextoAviso(resultado.Mes, pendientes, exceso);
+                crearAvisador().Avisar(titulo, new[] { texto }, TIPO_NOTIFICACION).GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                registrarError(new Exception($"[Propuestas de stock #631] No se ha podido avisar a Compras de las propuestas de {resultado.Mes:yyyy-MM}: {ex.Message}", ex));
+            }
+        }
+
+        internal static string TituloAviso(DateTime mes) => $"Propuestas de stock de {mes.ToString("MMMM yyyy", CultureInfo.GetCultureInfo("es-ES"))}";
+
+        internal static string TextoAviso(DateTime mes, int pendientes, decimal exceso)
+        {
+            string cuantas = pendientes == 1 ? "Hay 1 propuesta" : $"Hay {pendientes} propuestas";
+            return $"{cuantas} de máximos y mínimos de {mes.ToString("MMMM yyyy", CultureInfo.GetCultureInfo("es-ES"))} pendientes de decidir " +
+                $"({MotorTendencias.Euros(exceso)} de exceso). Revíselas en Nesto: puede aplicarlas, rechazarlas, posponerlas o silenciarlas.";
         }
 
         internal static string NombreFichero(DateTime mes) => $"PropuestasStock_{mes:yyyy-MM}.xlsx";

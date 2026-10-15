@@ -3,6 +3,7 @@ using DocumentFormat.OpenXml.Spreadsheet;
 using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.PreparacionAlmacen;
 using NestoAPI.Infraestructure.Stocks.Tendencias;
 using System;
 using System.Collections.Generic;
@@ -18,6 +19,8 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
     public class PropuestasStockJobsServiceTests
     {
         private IRepositorioTendencias repositorio;
+        private IAvisadorCompras avisador;
+        private IRepositorioDecisionesPropuestasStock decisiones;
         private IServicioCorreoElectronico correo;
         private List<Exception> errores;
         private Dictionary<string, string> parametros;
@@ -27,6 +30,8 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
         public void Inicializar()
         {
             repositorio = A.Fake<IRepositorioTendencias>();
+            avisador = A.Fake<IAvisadorCompras>();
+            decisiones = A.Fake<IRepositorioDecisionesPropuestasStock>();
             correo = A.Fake<IServicioCorreoElectronico>();
             errores = new List<Exception>();
             parametros = new Dictionary<string, string>();
@@ -57,7 +62,92 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
 
         private PropuestasStockJobsService Servicio()
             => new PropuestasStockJobsService(() => repositorio, correo, c => parametros.TryGetValue(c, out string v) ? v : null,
-                () => new DateTime(2026, 10, 1, 4, 30, 0), errores.Add);
+                () => new DateTime(2026, 10, 1, 4, 30, 0), errores.Add, () => avisador, () => decisiones);
+
+        // ---------- NestoAPI#631: aviso a Compras por la campana ----------
+
+        [TestMethod]
+        public void Ejecutar_ConFilasNuevas_AvisaACompras_ConLasPendientesDelResumen()
+        {
+            _ = A.CallTo(() => decisiones.ExisteEsquema()).Returns(true);
+            _ = A.CallTo(() => decisiones.Resumen(MesReferencia)).Returns(new List<ResumenEstadoPropuestas>
+            {
+                new ResumenEstadoPropuestas { Estado = EstadosPropuesta.SIN_ACCION, Propuestas = 100 },
+                new ResumenEstadoPropuestas { Estado = EstadosPropuesta.SILENCIADA, Propuestas = 4 },
+                new ResumenEstadoPropuestas { Estado = EstadosPropuesta.PENDIENTE, Propuestas = 12, ExcesoValorado = 1234.5m }
+            });
+
+            _ = Servicio().Ejecutar(MesReferencia, "prueba");
+
+            A.CallTo(() => avisador.Avisar("Propuestas de stock de septiembre 2026",
+                A<IEnumerable<string>>.That.Matches(t => t.Single().StartsWith("Hay 12 propuestas de máximos y mínimos de septiembre 2026 pendientes de decidir (1.234,50 €")),
+                PropuestasStockJobsService.TIPO_NOTIFICACION)).MustHaveHappenedOnceExactly();
+            Assert.AreEqual(0, errores.Count);
+        }
+
+        [TestMethod]
+        public void Ejecutar_SinPendientes_NoAvisa()
+        {
+            _ = A.CallTo(() => decisiones.ExisteEsquema()).Returns(true);
+            _ = A.CallTo(() => decisiones.Resumen(MesReferencia)).Returns(new List<ResumenEstadoPropuestas>
+            {
+                new ResumenEstadoPropuestas { Estado = EstadosPropuesta.SILENCIADA, Propuestas = 3 }
+            });
+
+            _ = Servicio().Ejecutar(MesReferencia, "prueba");
+
+            A.CallTo(() => avisador.Avisar(A<string>._, A<IEnumerable<string>>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void Ejecutar_SinFilasNuevas_NoAvisa()
+        {
+            _ = A.CallTo(() => repositorio.GuardarPropuestas(A<DateTime>._, A<IEnumerable<ResultadoTendencia>>._, A<DateTime>._)).Returns(0);
+
+            _ = Servicio().Ejecutar(MesReferencia, "prueba");
+
+            A.CallTo(() => avisador.Avisar(A<string>._, A<IEnumerable<string>>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => decisiones.Resumen(A<DateTime?>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void Ejecutar_SinElScriptDelCorte3_AvisaConLasQueTienenAccion()
+        {
+            _ = A.CallTo(() => decisiones.ExisteEsquema()).Returns(false);
+            ResultadoPropuestasStock r = Servicio().Ejecutar(MesReferencia, "prueba");
+            int conAccion = r.Productos.Count(p => p.Accion != AccionesPropuesta.MANTENER && p.Accion != AccionesPropuesta.NADA);
+
+            if (conAccion == 0)
+            {
+                A.CallTo(() => avisador.Avisar(A<string>._, A<IEnumerable<string>>._, A<string>._)).MustNotHaveHappened();
+            }
+            else
+            {
+                A.CallTo(() => avisador.Avisar(A<string>._, A<IEnumerable<string>>.That.Matches(t => t.Single().StartsWith($"Hay {conAccion} propuesta")),
+                    PropuestasStockJobsService.TIPO_NOTIFICACION)).MustHaveHappenedOnceExactly();
+            }
+        }
+
+        [TestMethod]
+        public void Ejecutar_SiFallaElAviso_NoLanzaYVaAElmah()
+        {
+            _ = A.CallTo(() => decisiones.ExisteEsquema()).Returns(true);
+            _ = A.CallTo(() => decisiones.Resumen(MesReferencia)).Returns(new List<ResumenEstadoPropuestas>
+            {
+                new ResumenEstadoPropuestas { Estado = EstadosPropuesta.PENDIENTE, Propuestas = 1 }
+            });
+            _ = A.CallTo(() => avisador.Avisar(A<string>._, A<IEnumerable<string>>._, A<string>._)).Throws(new InvalidOperationException("sin AD"));
+
+            Assert.IsNotNull(Servicio().Ejecutar(MesReferencia, "prueba"));
+            Assert.AreEqual(1, enviados.Count);
+            Assert.AreEqual(1, errores.Count);
+        }
+
+        [TestMethod]
+        public void TextoAviso_UnaPropuesta_EnSingular()
+        {
+            StringAssert.StartsWith(PropuestasStockJobsService.TextoAviso(MesReferencia, 1, 10m), "Hay 1 propuesta de máximos");
+        }
 
         [TestMethod]
         public void MesCerrado_EsElAnterior()
