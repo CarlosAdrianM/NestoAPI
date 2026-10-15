@@ -509,7 +509,7 @@ namespace NestoAPI.Tests.Infrastructure.PreciosMedios
         #endregion
 
         [TestMethod]
-        public void WebConfig_ElIncrementalNaceApagado()
+        public void WebConfig_ElIncrementalEstaEncendido()
         {
             // bin\Debug -> NestoAPI.Tests -> raíz de la solución -> NestoAPI\Web.config
             string ruta = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\..\..\NestoAPI\Web.config"));
@@ -519,8 +519,9 @@ namespace NestoAPI.Tests.Infrastructure.PreciosMedios
             XmlNode nodo = xml.SelectSingleNode("/configuration/appSettings/add[@key='" + PreciosMediosIncrementalJobsService.CLAVE_INTERRUPTOR + "']");
 
             Assert.IsNotNull(nodo, "Falta la clave del interruptor en Web.config");
-            Assert.IsFalse(PreciosMediosIncrementalJobsService.EstaActivo(nodo.Attributes["value"].Value),
-                "Se enciende a propósito cuando la sombra lleve dos domingos limpios, no antes");
+            // 15/10/26 (Carlos): encendido tras dos sombras limpias (04/10 y 11/10). Si se vuelve a apagar, que sea a propósito.
+            Assert.IsTrue(PreciosMediosIncrementalJobsService.EstaActivo(nodo.Attributes["value"].Value),
+                "El incremental se encendió el 15/10/26 tras dos sombras limpias; si hay que apagarlo, cambiar también este test");
         }
     }
 }
