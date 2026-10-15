@@ -193,7 +193,42 @@ namespace NestoAPI.Controllers
             {
                 return Prohibido(ServicioEventos.MENSAJE_SIN_PERMISO_SENALES);
             }
-            return Ok(await servicio.MarcarSenal(id, peticion, UsuarioAuditoriaHelper.Resolver(User, null)).ConfigureAwait(false));
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, null);
+            SenalEventoDTO senal = await servicio.MarcarSenal(id, peticion, usuario).ConfigureAwait(false);
+
+            // NestoAPI#612: con la facturación de cursos encendida, la señal paga la inscripción del cliente (o la crea, con
+            // origen Transferencia) y de ahí sale sola la factura del curso con la señal liquidada. Si falla, la señal queda
+            // marcada como hasta hoy (pendiente en la lista de #591) y el error va a ELMAH.
+            if (FacturarCursoAlCobrar())
+            {
+                try
+                {
+                    _ = await inscripciones.InscribirDesdeTransferencia(senal.Id, usuario).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    ElmahHelper.Log(new Exception($"[Cursos #612] La señal {senal.Id} está marcada, pero no se ha podido pagar con ella la " +
+                        $"inscripción del cliente {senal.Cliente}: {ex.Message}", ex));
+                }
+            }
+            return Ok(senal);
+        }
+
+        /// <summary>NestoAPI#612: el interruptor (Web.config Eventos:FacturarCursoAlCobrar). Sustituible en tests.</summary>
+        internal Func<bool> FacturarCursoAlCobrar { get; set; } = () => InterruptoresEventos.FacturarCursoAlCobrar;
+
+        // POST api/Eventos/Inscripciones/7/Facturar
+        /// <summary>
+        /// NestoAPI#612: relanza la facturación del curso (pedido, factura exenta, liquidación de la señal) desde donde se
+        /// quedó; lo hecho no se repite. La tienda del evento, Administración o Dirección. 400 con el motivo si no se puede
+        /// automatizar o falla (o si el interruptor está apagado); 409 si la está haciendo otro proceso en ese momento.
+        /// </summary>
+        [HttpPost]
+        [Route("Inscripciones/{id:int}/Facturar")]
+        [ResponseType(typeof(InscripcionEventoDTO))]
+        public async Task<IHttpActionResult> PostFacturarCurso(int id)
+        {
+            return Ok(await inscripciones.FacturarCurso(id, User).ConfigureAwait(false));
         }
 
         // DELETE api/Eventos/Senales/7

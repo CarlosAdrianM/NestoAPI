@@ -85,6 +85,8 @@ namespace NestoAPI.Infraestructure.Eventos
         public int? EventoSenalId { get; set; }
         public string UsuarioCreacion { get; set; }
         public DateTime FechaCreacion { get; set; }
+        /// <summary>NestoAPI#612: la facturación del curso (pedido, factura, liquidación). Null si no ha empezado.</summary>
+        public FacturacionCursoDTO Facturacion { get; set; }
     }
 
     /// <summary>
@@ -114,6 +116,10 @@ namespace NestoAPI.Infraestructure.Eventos
         Task<InscripcionEventoDTO> Anular(int id, IPrincipal usuario);
         Task<InscripcionEventoDTO> MarcarPagada(int id, MarcarPagoInscripcionDTO peticion, IPrincipal usuario);
         Task<List<InscripcionEventoDTO>> PasarLista(int eventoId, AsistenciaEventoDTO peticion, IPrincipal usuario);
+        /// <summary>NestoAPI#612: relanzar a mano la facturación del curso desde donde se quedó.</summary>
+        Task<InscripcionEventoDTO> FacturarCurso(int id, IPrincipal usuario);
+        /// <summary>NestoAPI#612: una señal (#591) recién marcada paga (o crea) la inscripción del cliente en el evento.</summary>
+        Task<InscripcionEventoDTO> InscribirDesdeTransferencia(int eventoSenalId, string usuario);
     }
 
     /// <summary>
@@ -140,18 +146,23 @@ namespace NestoAPI.Infraestructure.Eventos
         private readonly Func<IServicioPagos> pagos;
         private readonly Func<string, string, string> almacenDelUsuario;
         private readonly IProcesadorInscripcionPagada procesador;
+        private readonly IRepositorioFacturacionCursos facturacion;
 
+        /// <summary>NestoAPI#612: en producción, el enganche es el que factura el curso (detrás de su interruptor).</summary>
         public ServicioInscripcionesEventos(NVEntities db)
             : this(db, () => DateTime.Now,
-                () => new ServicioPagos(new RedsysService(), new ContabilidadService(), new LectorParametrosUsuario()))
+                () => new ServicioPagos(new RedsysService(), new ContabilidadService(), new LectorParametrosUsuario()),
+                null, new ConfirmadorSenalEvento(db), new RepositorioFacturacionCursos(db))
         {
         }
 
         /// <param name="pagos">Para generar el enlace (perezoso: solo se crea si hace falta).</param>
         /// <param name="almacenDelUsuario">(empresa, usuario sin dominio) → su AlmacénPedidoVta. Null: el de ParametrosUsuario.</param>
         /// <param name="procesador">El enganche del corte 2. Null: <see cref="ProcesadorInscripcionPagadaPendiente"/>.</param>
+        /// <param name="facturacion">NestoAPI#612: para enseñar en qué punto está la facturación del curso. Null: no se enseña.</param>
         internal ServicioInscripcionesEventos(NVEntities db, Func<DateTime> reloj, Func<IServicioPagos> pagos,
-            Func<string, string, string> almacenDelUsuario = null, IProcesadorInscripcionPagada procesador = null)
+            Func<string, string, string> almacenDelUsuario = null, IProcesadorInscripcionPagada procesador = null,
+            IRepositorioFacturacionCursos facturacion = null)
         {
             this.db = db;
             this.reloj = reloj ?? (() => DateTime.Now);
@@ -159,6 +170,7 @@ namespace NestoAPI.Infraestructure.Eventos
             this.almacenDelUsuario = almacenDelUsuario
                 ?? ((empresa, usuario) => Controllers.ParametrosUsuarioController.LeerParametro(empresa, usuario, PermisosEventos.CLAVE_ALMACEN_USUARIO));
             this.procesador = procesador ?? new ProcesadorInscripcionPagadaPendiente();
+            this.facturacion = facturacion;
         }
 
         // ---------------- Inscribir ----------------
@@ -509,6 +521,62 @@ namespace NestoAPI.Infraestructure.Eventos
             }
         }
 
+        // ---------------- NestoAPI#612: facturación del curso ----------------
+
+        /// <summary>
+        /// Relanza a mano la facturación del curso (pedido, factura exenta, liquidación de la señal) desde donde se quedó: lo
+        /// hecho no se repite. Quien puede marcar pagos (la tienda del evento, Administración, Dirección). 400 con el motivo
+        /// si no se puede automatizar o si falla; con el interruptor apagado, 400.
+        /// </summary>
+        public async Task<InscripcionEventoDTO> FacturarCurso(int id, IPrincipal usuario)
+        {
+            EventoInscripcion inscripcion = await LeerInscripcion(id).ConfigureAwait(false);
+            Evento evento = await LeerEvento(inscripcion.EventoId).ConfigureAwait(false);
+            ComprobarPuedeMantener(usuario, evento, paraMarcarPagada: true);
+            if (!(procesador is IConfirmadorSenalEvento confirmador))
+            {
+                throw new NestoBusinessException("La facturación automática de los cursos no está disponible.");
+            }
+            _ = await confirmador.ConfirmarSenal(inscripcion, evento, aMano: true).ConfigureAwait(false);
+            return (await Completar(new List<EventoInscripcion> { inscripcion }, new Dictionary<int, Evento> { [evento.Id] = evento })
+                .ConfigureAwait(false)).Single();
+        }
+
+        /// <summary>
+        /// Lo que no terminó (job diario): las que fallaron, desde donde se quedaron, hasta <see cref="ConfirmadorSenalEvento.MAX_INTENTOS_AUTOMATICOS"/>
+        /// intentos; y las facturadas sin cupón (corte 3). Devuelve cuántas se han relanzado.
+        /// </summary>
+        internal async Task<int> ReintentarFacturacionCursos()
+        {
+            if (facturacion == null || !(procesador is ConfirmadorSenalEvento confirmador) || !confirmador.Encendido)
+            {
+                return 0;
+            }
+            List<int> ids = (await facturacion.ConError(ConfirmadorSenalEvento.MAX_INTENTOS_AUTOMATICOS).ConfigureAwait(false) ?? new List<int>())
+                .Concat(await facturacion.FacturadasSinCupon().ConfigureAwait(false) ?? new List<int>())
+                .Distinct().ToList();
+            int relanzadas = 0;
+            foreach (int id in ids)
+            {
+                try
+                {
+                    EventoInscripcion inscripcion = await db.EventosInscripciones.SingleOrDefaultAsync(i => i.Id == id).ConfigureAwait(false);
+                    if (inscripcion == null || !ReglasInscripcionEvento.EN_LISTA_ASISTENCIA.Contains(EstadoDe(inscripcion)))
+                    {
+                        continue;
+                    }
+                    Evento evento = await LeerEvento(inscripcion.EventoId).ConfigureAwait(false);
+                    _ = await confirmador.ConfirmarSenal(inscripcion, evento, aMano: false).ConfigureAwait(false);
+                    relanzadas++;
+                }
+                catch (Exception ex)
+                {
+                    ElmahHelper.Log(new Exception($"[Cursos #612] No se ha podido relanzar la facturación del curso de la inscripción {id}: {ex.Message}", ex));
+                }
+            }
+            return relanzadas;
+        }
+
         // ---------------- Lista de asistencia ----------------
 
         /// <summary>
@@ -731,6 +799,8 @@ namespace NestoAPI.Infraestructure.Eventos
                     .ToDictionary(p => p.Id, p => p.TokenAcceso);
             }
 
+            Dictionary<int, FacturacionCursoInscripcion> facturaciones = await LeerFacturaciones(inscripciones).ConfigureAwait(false);
+
             return inscripciones.Select(i =>
             {
                 eventos.TryGetValue(i.EventoId, out Evento evento);
@@ -740,8 +810,31 @@ namespace NestoAPI.Infraestructure.Eventos
                 {
                     dto.UrlPago = URL_PAGINA_PAGO + token;
                 }
+                if (facturaciones.TryGetValue(i.Id, out FacturacionCursoInscripcion f))
+                {
+                    dto.Facturacion = FacturacionCursoDTO.De(f);
+                }
                 return dto;
             }).ToList();
+        }
+
+        /// <summary>NestoAPI#612: la facturación del curso de las que ya están pagadas. Un fallo aquí no rompe la lista.</summary>
+        private async Task<Dictionary<int, FacturacionCursoInscripcion>> LeerFacturaciones(List<EventoInscripcion> inscripciones)
+        {
+            List<int> pagadas = inscripciones.Where(i => ReglasInscripcionEvento.EN_LISTA_ASISTENCIA.Contains(EstadoDe(i))).Select(i => i.Id).ToList();
+            if (facturacion == null || !pagadas.Any())
+            {
+                return new Dictionary<int, FacturacionCursoInscripcion>();
+            }
+            try
+            {
+                return await facturacion.Leer(pagadas).ConfigureAwait(false) ?? new Dictionary<int, FacturacionCursoInscripcion>();
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Cursos #612] No se ha podido leer la facturación de los cursos: {ex.Message}", ex));
+                return new Dictionary<int, FacturacionCursoInscripcion>();
+            }
         }
 
         internal static InscripcionEventoDTO Componer(EventoInscripcion i, Evento evento, string nombre)

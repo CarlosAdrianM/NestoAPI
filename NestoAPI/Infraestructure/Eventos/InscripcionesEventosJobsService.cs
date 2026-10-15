@@ -27,6 +27,8 @@ namespace NestoAPI.Infraestructure.Eventos
         /// <summary>(usuario que creó la inscripción, notificación) → campana de Nesto + push de NestoApp. Nunca lanza.</summary>
         public Func<string, NotificacionPushDTO, Task> Avisar { get; set; }
         public IServicioCorreoElectronico Correo { get; set; }
+        /// <summary>NestoAPI#612: relanza la facturación de los cursos que fallaron (y el cupón que falte). Opcional.</summary>
+        public Func<Task<int>> ReintentarFacturacionCursos { get; set; }
     }
 
     /// <summary>
@@ -61,7 +63,8 @@ namespace NestoAPI.Infraestructure.Eventos
                         DarPorAsistidosSinLista = () => servicio.DarPorAsistidosSinLista(),
                         CorreosTienda = (empresa, almacen) => LeerCorreosTienda(db, empresa, almacen),
                         Avisar = (usuario, notificacion) => AvisoCobroNestoPago.Avisar(usuario, notificacion, new ServicioNotificacionesPush()),
-                        Correo = new ServicioCorreoElectronico()
+                        Correo = new ServicioCorreoElectronico(),
+                        ReintentarFacturacionCursos = () => servicio.ReintentarFacturacionCursos()
                     }).ConfigureAwait(false);
                 }
             }
@@ -104,6 +107,19 @@ namespace NestoAPI.Infraestructure.Eventos
                     {
                         ElmahHelper.Log(new Exception($"[Inscripciones de eventos #611] No se ha podido mandar el correo de la lista del evento {evento.Key.Id}."));
                     }
+                }
+            }
+
+            // NestoAPI#612: lo que se quedó a medias al facturar el curso, desde donde se quedó (detrás de su interruptor)
+            if (deps.ReintentarFacturacionCursos != null)
+            {
+                try
+                {
+                    _ = await deps.ReintentarFacturacionCursos().ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    ElmahHelper.Log(new Exception($"[Cursos #612] Error al relanzar la facturación de los cursos: {ex.Message}", ex));
                 }
             }
             return (caducadas.Count, sinLista.Count);

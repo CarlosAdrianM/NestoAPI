@@ -1003,6 +1003,8 @@
     <Compile Include="Infraestructure\Eventos\ServicioInscripcionesEventos.cs" />
     <Compile Include="Infraestructure\Eventos\InscripcionesEventosJobsService.cs" />
     <Compile Include="Infraestructure\Eventos\PermisosEventos.cs" />
+    <Compile Include="Infraestructure\Eventos\ConfirmadorSenalEvento.cs" />
+    <Compile Include="Infraestructure\Eventos\FacturacionCursoEvento.cs" />
     <Compile Include="Infraestructure\Reposiciones\CalculadoraFechaReposicion.cs" />
     <Compile Include="Infraestructure\Productos\CodigosBarrasProductos.cs" />
     <Compile Include="Controllers\ProductosCodigosBarrasController.cs" />
