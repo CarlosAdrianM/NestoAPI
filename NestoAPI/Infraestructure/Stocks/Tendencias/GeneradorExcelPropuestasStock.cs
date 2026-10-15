@@ -10,6 +10,8 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
     /// <summary>
     /// NestoAPI#630: el Excel mensual de propuestas de stock (ClosedXML, como <see cref="PedidosCompra.GeneradorExcelPedidoCompra"/>).
     /// Hojas: «Top 50 por exceso», «Todos los productos», «Nuevos (fase A)» y «Calibración».
+    /// <para>NestoAPI#655: delante, «Resumen» (valor de stock y exceso con y sin propios); detrás de los nuevos, «Propios» (familias
+    /// PRP, fórmula P). Las tres hojas de productos van sin los propios.</para>
     /// </summary>
     public class GeneradorExcelPropuestasStock
     {
@@ -17,6 +19,10 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         public const string HOJA_TODOS = "Todos los productos";
         public const string HOJA_NUEVOS = "Nuevos (fase A)";
         public const string HOJA_CALIBRACION = "Calibración";
+        /// <summary>NestoAPI#655: valor de stock y exceso con y sin propios.</summary>
+        public const string HOJA_RESUMEN = "Resumen";
+        /// <summary>NestoAPI#655: las familias de fabricación propia (PRP), con la fórmula P y sus acciones.</summary>
+        public const string HOJA_PROPIOS = "Propios";
 
         private const string FORMATO_EUROS = "#,##0.00 €";
         private const string FORMATO_DECIMAL = "#,##0.0";
@@ -35,12 +41,17 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             string mes = resultado.Mes.ToString("MMMM yyyy", ES);
             using (XLWorkbook libro = new XLWorkbook())
             {
-                List<ResultadoTendencia> ordenados = MotorTendencias.OrdenarPorExceso(resultado.Productos);
+                List<ResultadoTendencia> todos = MotorTendencias.OrdenarPorExceso(resultado.Productos);
+                // NestoAPI#655: los propios (familias PRP, fórmula P) van en su hoja: con ellos, la general se llenaba de «exceso».
+                List<ResultadoTendencia> ordenados = todos.Where(r => !r.FabricacionPropia).ToList();
+                List<ResultadoTendencia> propios = todos.Where(r => r.FabricacionPropia).ToList();
+                HojaResumen(libro.Worksheets.Add(HOJA_RESUMEN), todos, ordenados, propios, mes);
                 HojaProductos(libro.Worksheets.Add(NombreHojaTop(p.FilasTop)), ordenados.Take(p.FilasTop).ToList(),
-                    $"Propuestas de stock — {mes}: los {p.FilasTop} con más euros atrapados (exceso total de todos: {MotorTendencias.Euros(ordenados.Sum(r => r.ExcesoValorado))})", resumida: true);
+                    $"Propuestas de stock — {mes}: los {p.FilasTop} con más euros atrapados, sin propios (exceso total sin propios: {MotorTendencias.Euros(ordenados.Sum(r => r.ExcesoValorado))})", resumida: true);
                 HojaProductos(libro.Worksheets.Add(HOJA_TODOS), ordenados,
-                    $"Propuestas de stock — {mes}: {ordenados.Count} productos (stock, venta en 24 meses, pendientes o compras abiertas)", resumida: false);
+                    $"Propuestas de stock — {mes}: {ordenados.Count} productos sin los propios (stock, venta en 24 meses, pendientes o compras abiertas)", resumida: false);
                 HojaNuevos(libro.Worksheets.Add(HOJA_NUEVOS), ordenados.Where(r => r.Fase == FasesProducto.NUEVO).ToList(), mes);
+                HojaPropios(libro.Worksheets.Add(HOJA_PROPIOS), propios, p, mes);
                 HojaCalibracion(libro.Worksheets.Add(HOJA_CALIBRACION), resultado.Calibracion ?? new ResultadoCalibracion(), p, mes);
 
                 using (MemoryStream ms = new MemoryStream())
@@ -213,6 +224,116 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             hoja.Columns(1, columnas.Count - 1).AdjustToContents(FILA_CABECERA, Math.Min(fila, FILA_CABECERA + 200));
             hoja.Column(2).Width = Math.Min(hoja.Column(2).Width, 40);
             hoja.Column(columnas.Count).Width = 120;
+        }
+
+        /// <summary>NestoAPI#655: valor de stock (stock × precio medio, sin negativos) de un grupo de filas.</summary>
+        internal static decimal ValorStock(IEnumerable<ResultadoTendencia> filas) => Math.Round(filas.Sum(r => Math.Max(0, r.Stock) * r.PrecioMedio), 2);
+
+        /// <summary>NestoAPI#655: valor de stock y exceso con y sin propios, y los propios por acción.</summary>
+        private static void HojaResumen(IXLWorksheet hoja, List<ResultadoTendencia> todos, List<ResultadoTendencia> sinPropios,
+            List<ResultadoTendencia> propios, string mes)
+        {
+            Titulo(hoja, $"Propuestas de stock — {mes}: resumen con y sin propios (familias de fabricación propia)");
+            const int FILA_CABECERA = 3;
+            Cabecera(hoja, FILA_CABECERA, new[] { "Productos", "Filas", "Valor de stock", "Exceso (uds)", "Exceso €" });
+            int fila = FILA_CABECERA + 1;
+            foreach (var (nombre, filas) in new[] { ("Todos (con propios)", todos), ("Sin propios", sinPropios), ("Solo propios", propios) })
+            {
+                hoja.Cell(fila, 1).Value = nombre;
+                hoja.Cell(fila, 2).Value = filas.Count;
+                Valor(hoja.Cell(fila, 3), ValorStock(filas), FORMATO_EUROS);
+                hoja.Cell(fila, 4).Value = filas.Sum(r => r.ExcesoUnidades);
+                Valor(hoja.Cell(fila, 5), filas.Sum(r => r.ExcesoValorado), FORMATO_EUROS);
+                fila++;
+            }
+
+            fila += 2;
+            hoja.Cell(fila, 1).Value = "Propios por acción (nunca Outlet ni liquidar)";
+            hoja.Cell(fila, 1).Style.Font.Bold = true;
+            fila++;
+            string[] cabecera = { "Acción", "Filas", "Valor de stock", "Exceso (uds)", "Exceso €" };
+            for (int c = 0; c < cabecera.Length; c++)
+            {
+                IXLCell celda = hoja.Cell(fila, c + 1);
+                celda.Value = cabecera[c];
+                celda.Style.Font.Bold = true;
+                celda.Style.Fill.BackgroundColor = XLColor.FromHtml("#DDEBF7");
+            }
+            fila++;
+            foreach (IGrouping<string, ResultadoTendencia> grupo in propios.GroupBy(r => r.Accion).OrderByDescending(g => g.Sum(r => r.ExcesoValorado)))
+            {
+                hoja.Cell(fila, 1).Value = grupo.Key;
+                hoja.Cell(fila, 2).Value = grupo.Count();
+                Valor(hoja.Cell(fila, 3), ValorStock(grupo), FORMATO_EUROS);
+                hoja.Cell(fila, 4).Value = grupo.Sum(r => r.ExcesoUnidades);
+                Valor(hoja.Cell(fila, 5), grupo.Sum(r => r.ExcesoValorado), FORMATO_EUROS);
+                fila++;
+            }
+            hoja.Column(1).Width = 30;
+            for (int c = 2; c <= 5; c++)
+            {
+                hoja.Column(c).Width = 18;
+            }
+        }
+
+        /// <summary>NestoAPI#655: los propios con lo que mira la fórmula P (lote, meses de venta, tope de vida útil).</summary>
+        private static void HojaPropios(IXLWorksheet hoja, List<ResultadoTendencia> filas, ParametrosTendencias p, string mes)
+        {
+            Titulo(hoja, $"Propios (fabricación propia) — {mes}: {filas.Count} productos; lote = múltiplos de ALG, " +
+                $"{p.DiasSeguridadPropios} días de seguridad y tope de {p.VidaUtilMesesPropios} meses de vida útil");
+            decimal? Meses(decimal unidades, decimal venta) => venta > 0 ? Math.Round(unidades / venta, 1) : (decimal?)null;
+            var columnas = new List<(string nombre, Func<ResultadoTendencia, object> valor, string formato)>
+            {
+                ("Producto", r => r.Producto, null),
+                ("Nombre", r => r.Nombre, null),
+                ("Familia", r => r.Familia, null),
+                ("Proveedor", r => r.Proveedor, null),
+                ("Fase", r => r.Fase, null),
+                ("Estado", r => r.EstadoProducto, null),
+                ("Stock", r => r.Stock, null),
+                ("Precio medio", r => r.PrecioMedio, FORMATO_EUROS),
+                ("Valor de stock", r => Math.Round(Math.Max(0, r.Stock) * r.PrecioMedio, 2), FORMATO_EUROS),
+                ("Venta de referencia (uds/mes)", r => r.VentaMensualReferencia, FORMATO_DECIMAL),
+                ("Meses de venta en stock", r => Meses(r.Stock, r.VentaMensualReferencia), FORMATO_DECIMAL),
+                ("Días en servir", r => r.DiasEnServir, null),
+                ("Días de seguridad", r => r.DiasSeguridad, null),
+                ("Lote mínimo", r => r.Multiplos, null),
+                ("Meses de venta del lote", r => Meses(r.Multiplos, r.VentaMensualReferencia), FORMATO_DECIMAL),
+                ("Tope vida útil (uds)", r => MotorTendencias.TopePropios(r.VentaMensualReferencia, p), null),
+                ("Exceso (uds)", r => r.ExcesoUnidades, null),
+                ("Exceso €", r => r.ExcesoValorado, FORMATO_EUROS),
+                ("Acción", r => r.Accion, null),
+                ("Máx actual", r => r.StockMaximoActual, null),
+                ("Mín actual", r => r.StockMinimoActual, null),
+                ("Máx propuesto", r => r.StockMaximoPropuesto, null),
+                ("Mín propuesto", r => r.StockMinimoPropuesto, null),
+                ("Pedido compra abierto", r => r.PedidoCompraAbierto, null),
+                ("Explicación", r => r.Explicacion, null)
+            };
+            const int FILA_CABECERA = 3;
+            Cabecera(hoja, FILA_CABECERA, columnas.Select(c => c.nombre).ToList());
+            int fila = FILA_CABECERA + 1;
+            foreach (ResultadoTendencia r in filas)
+            {
+                for (int c = 0; c < columnas.Count; c++)
+                {
+                    Valor(hoja.Cell(fila, c + 1), columnas[c].valor(r), columnas[c].formato);
+                }
+                fila++;
+            }
+            hoja.Columns(1, columnas.Count - 1).AdjustToContents(FILA_CABECERA, Math.Min(fila, FILA_CABECERA + 200));
+            foreach (IXLColumn columna in hoja.Columns(1, columnas.Count - 1))
+            {
+                if (columna.Width > 40)
+                {
+                    columna.Width = 40;
+                }
+            }
+            hoja.Column(columnas.Count).Width = 120;
+            if (filas.Count > 0)
+            {
+                hoja.Range(FILA_CABECERA, 1, fila - 1, columnas.Count).SetAutoFilter();
+            }
         }
 
         private static void HojaCalibracion(IXLWorksheet hoja, ResultadoCalibracion calibracion, ParametrosTendencias p, string mes)

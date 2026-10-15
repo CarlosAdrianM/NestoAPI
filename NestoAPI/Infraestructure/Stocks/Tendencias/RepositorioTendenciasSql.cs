@@ -56,8 +56,9 @@ SELECT RTRIM(p.Número) AS Producto, RTRIM(p.Nombre) AS Nombre, RTRIM(p.Familia)
        RTRIM(p.SubGrupo) AS Subgrupo, p.Estado AS Estado, ISNULL(p.PrecioMedio, 0) AS PrecioMedio,
        prov.Proveedor AS Proveedor, prov.DiasEnServir AS DiasEnServir,
        CAST(cs.StockMáximo AS int) AS StockMaximoAlg, CAST(cs.StockMínimo AS int) AS StockMinimoAlg,
-       ISNULL(CAST(cs.Múltiplos AS int), 1) AS MultiplosAlg
+       ISNULL(CAST(cs.Múltiplos AS int), 1) AS MultiplosAlg, RTRIM(fa.TipoExclusiva) AS TipoExclusiva
 FROM Productos p WITH (NOLOCK)
+LEFT JOIN Familias fa WITH (NOLOCK) ON fa.Empresa = p.Empresa AND fa.Número = p.Familia
 OUTER APPLY (SELECT TOP 1 RTRIM(pp.[Nº Proveedor]) AS Proveedor, CAST(pr.DíasEnServir AS int) AS DiasEnServir
              FROM ProveedoresProducto pp WITH (NOLOCK)
              LEFT JOIN Proveedores pr WITH (NOLOCK) ON pr.Empresa = pp.Empresa AND pr.Número = pp.[Nº Proveedor] AND pr.Contacto = pp.ContactoProveedor
@@ -167,7 +168,8 @@ ORDER BY ExcesoValorado DESC, Producto";
                         DiasEnServir = f.DiasEnServir,
                         StockMaximoAlg = f.StockMaximoAlg,
                         StockMinimoAlg = f.StockMinimoAlg,
-                        MultiplosAlg = f.MultiplosAlg <= 0 ? 1 : f.MultiplosAlg
+                        MultiplosAlg = f.MultiplosAlg <= 0 ? 1 : f.MultiplosAlg,
+                        TipoExclusiva = f.TipoExclusiva?.Trim()
                     })
                     .ToList();
             }
@@ -452,6 +454,8 @@ ORDER BY ExcesoValorado DESC, Producto";
             public int? StockMaximoAlg { get; set; }
             public int? StockMinimoAlg { get; set; }
             public int MultiplosAlg { get; set; }
+            /// <summary>NestoAPI#655: Familias.TipoExclusiva (PRP = fabricación propia).</summary>
+            public string TipoExclusiva { get; set; }
         }
 
         public class FilaMes

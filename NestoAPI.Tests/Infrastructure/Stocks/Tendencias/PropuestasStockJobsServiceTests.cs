@@ -172,7 +172,7 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
             StringAssert.Contains(enviados[0].cuerpo, "3 filas nuevas en PropuestasStock");
             Assert.AreEqual(0, errores.Count);
 
-            CollectionAssert.AreEqual(new[] { "Top 50 por exceso", "Todos los productos", "Nuevos (fase A)", "Calibración" }, Hojas(enviados[0].excel));
+            CollectionAssert.AreEqual(new[] { "Resumen", "Top 50 por exceso", "Todos los productos", "Nuevos (fase A)", "Propios", "Calibración" }, Hojas(enviados[0].excel));
             Assert.AreEqual("Producto", Celda(enviados[0].excel, "Top 50 por exceso", "A3"));
             Assert.AreEqual("1", Celda(enviados[0].excel, "Top 50 por exceso", "A4")); // el de más exceso, primero
             Assert.AreEqual("3", Celda(enviados[0].excel, "Nuevos (fase A)", "A4"));
@@ -238,6 +238,61 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
             Assert.AreEqual("4", Celda(excel, "Top 2 por exceso", "A5"));
             Assert.IsNull(Celda(excel, "Top 2 por exceso", "A6"));
             Assert.AreEqual("1", Celda(excel, "Todos los productos", "A8"));
+        }
+
+        [TestMethod]
+        public void Excel_PropiosEnSuHoja_LaGeneralSinEllos_YResumenConYSinPropios()
+        {
+            ResultadoPropuestasStock r = new ResultadoPropuestasStock
+            {
+                Mes = MesReferencia,
+                Parametros = new ParametrosTendencias(),
+                Productos = new List<ResultadoTendencia>
+                {
+                    new ResultadoTendencia { Producto = "1", Fase = FasesProducto.MADURO, Formula = "B: ponderada × (7 + 2 × días)", Stock = 10, PrecioMedio = 2m, ExcesoUnidades = 50, ExcesoValorado = 100m, Accion = AccionesPropuesta.AJUSTAR },
+                    new ResultadoTendencia { Producto = "20258", Fase = FasesProducto.MADURO, Formula = "P: mín + lote, tope 12 meses", Stock = 20, PrecioMedio = 3m, ExcesoUnidades = 15, ExcesoValorado = 45m, Accion = AccionesPropuesta.POTENCIAR, Multiplos = 100, VentaMensualReferencia = 30m },
+                    new ResultadoTendencia { Producto = "20259", Fase = FasesProducto.NUEVO, Formula = "P: mín + lote, tope 12 meses", Stock = 5, PrecioMedio = 1m, ExcesoUnidades = 5, ExcesoValorado = 5m, Accion = AccionesPropuesta.CADUCA }
+                }
+            };
+
+            byte[] excel = new GeneradorExcelPropuestasStock().Generar(r);
+
+            // General: solo el que no es propio (ni en «Top», ni en «Todos», ni en «Nuevos», aunque el 20259 sea fase A)
+            Assert.AreEqual("1", Celda(excel, "Top 50 por exceso", "A4"));
+            Assert.IsNull(Celda(excel, "Top 50 por exceso", "A5"));
+            Assert.AreEqual("1", Celda(excel, "Todos los productos", "A4"));
+            Assert.IsNull(Celda(excel, "Todos los productos", "A5"));
+            Assert.IsNull(Celda(excel, "Nuevos (fase A)", "A4"));
+            // Propios: los dos, de más a menos exceso; lote 100 con 30 uds/mes = 3,3 meses; tope 12 × 30 = 360
+            Assert.AreEqual("20258", Celda(excel, "Propios", "A4"));
+            Assert.AreEqual("20259", Celda(excel, "Propios", "A5"));
+            Assert.AreEqual("3.3", Celda(excel, "Propios", "O4"));
+            Assert.AreEqual("360", Celda(excel, "Propios", "P4"));
+            // Resumen: valor de stock y exceso con y sin propios
+            Assert.AreEqual("Todos (con propios)", Celda(excel, "Resumen", "A4"));
+            Assert.AreEqual("85", Celda(excel, "Resumen", "C4"));  // 20 + 60 + 5
+            Assert.AreEqual("150", Celda(excel, "Resumen", "E4"));
+            Assert.AreEqual("Sin propios", Celda(excel, "Resumen", "A5"));
+            Assert.AreEqual("20", Celda(excel, "Resumen", "C5"));
+            Assert.AreEqual("100", Celda(excel, "Resumen", "E5"));
+            Assert.AreEqual("Solo propios", Celda(excel, "Resumen", "A6"));
+            Assert.AreEqual("2", Celda(excel, "Resumen", "B6"));
+            Assert.AreEqual("50", Celda(excel, "Resumen", "E6"));
+        }
+
+        [TestMethod]
+        public void Ejecutar_UnProductoDeFamiliaPRP_VaALaHojaPropiosYElCorreoLoSeparaDelExceso()
+        {
+            DatosProductoTendencia propio = Propio("20258", ventas: Constante(30), stock: 300, diasEnServir: 60, lote: 100);
+            _ = A.CallTo(() => repositorio.LeerProductos()).Returns(new List<DatosProductoTendencia> { Producto("1", ventas: Constante(30), stock: 1000), propio });
+
+            _ = Servicio().Ejecutar(MesReferencia, "prueba");
+
+            Assert.AreEqual("20258", Celda(enviados[0].excel, "Propios", "A4"));
+            Assert.AreEqual("1", Celda(enviados[0].excel, "Todos los productos", "A4"));
+            Assert.IsNull(Celda(enviados[0].excel, "Todos los productos", "A5"));
+            StringAssert.Contains(enviados[0].cuerpo, "Propios (fabricación propia): 1 productos");
+            StringAssert.Contains(enviados[0].cuerpo, "Sin propios: 1 productos");
         }
 
         private static string[] Hojas(byte[] excel)

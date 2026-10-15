@@ -45,5 +45,15 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
                 FechaPrimeraEntrada = new DateTime(2015, 1, 2)
             };
         }
+
+        /// <summary>NestoAPI#655: un producto de fabricación propia (familia PRP, como Eva Visnú) con lote mínimo <paramref name="lote"/>.</summary>
+        public static DatosProductoTendencia Propio(string numero = "20258", int[] ventas = null, int stock = 150, int diasEnServir = 60,
+            int lote = 100, decimal precio = 2m, short estado = 0)
+        {
+            DatosProductoTendencia d = Producto(numero, ventas, stock, diasEnServir, lote, precio, estado);
+            d.Familia = "Eva Visnu";
+            d.TipoExclusiva = "PRP";
+            return d;
+        }
     }
 }

@@ -1,3 +1,5 @@
+using System;
+
 namespace NestoAPI.Infraestructure.Stocks.Tendencias
 {
     public static class FasesProducto
@@ -39,6 +41,25 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         /// <summary>Outlet (#467) o Ganavisiones.</summary>
         public const string LIQUIDAR = "Liquidar";
         public const string NADA = "Nada";
+
+        // NestoAPI#655: las de la fórmula P (fabricación propia). Nunca Outlet ni liquidar: son los productos que hay que potenciar.
+        /// <summary>Propios: el máximo y el mínimo cambian (lo que se fabrica en el siguiente lote), o el lote solo ya pasa de la vida útil.</summary>
+        public const string AJUSTAR_LOTE = "Ajustar el siguiente lote";
+        /// <summary>Propios: sobra stock sobre el máximo, pero se vende antes de caducar.</summary>
+        public const string POTENCIAR = "Potenciar ventas";
+        /// <summary>Propios: hay más stock que meses de vida útil de venta; lo que pase, caducará.</summary>
+        public const string CADUCA = "Caduca antes de venderse";
+
+        /// <summary>Las que «Aplicar» escribe como un ajuste de máximo y mínimo en ControlesStock.</summary>
+        public static bool EsAjusteDeMaximos(string accion) => accion == AJUSTAR || accion == AJUSTAR_LOTE || accion == POTENCIAR || accion == CADUCA;
+    }
+
+    /// <summary>NestoAPI#655: la fórmula P (fabricación propia) se reconoce por el prefijo de <see cref="ResultadoTendencia.Formula"/>.</summary>
+    public static class FormulasPropuesta
+    {
+        public const string PREFIJO_PROPIOS = "P:";
+
+        public static bool EsFabricacionPropia(string formula) => formula != null && formula.StartsWith(PREFIJO_PROPIOS, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -77,6 +98,11 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         public int? StockMaximoActual { get; set; }
         public int? StockMinimoActual { get; set; }
         public string Formula { get; set; }
+        /// <summary>
+        /// NestoAPI#655: de una familia PRP (fórmula P). Solo lectura, sacado de <see cref="Formula"/>: PropuestasStock no tiene
+        /// columna para esto (y EF, en SqlQuery, no busca columna para las propiedades sin set).
+        /// </summary>
+        public bool FabricacionPropia => FormulasPropuesta.EsFabricacionPropia(Formula);
 
         // Indicadores
         /// <summary>Stock ÷ venta media de 6 meses. Null si no se ha vendido nada en 6 meses.</summary>

@@ -229,8 +229,16 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             cuerpo.Append($"<p>{r.Productos.Count} productos con propuesta; exceso total sobre la cobertura objetivo: <b>{MotorTendencias.Euros(r.Productos.Sum(p => p.ExcesoValorado))}</b>. " +
                 $"Los {top} primeros suman {MotorTendencias.Euros(r.Productos.Take(top).Sum(p => p.ExcesoValorado))}.</p>");
             cuerpo.Append("<ul>").Append(string.Join("", porAccion)).Append("</ul>");
-            cuerpo.Append($"<p>Hojas: «{GeneradorExcelPropuestasStock.NombreHojaTop(top)}», «{GeneradorExcelPropuestasStock.HOJA_TODOS}», " +
-                $"«{GeneradorExcelPropuestasStock.HOJA_NUEVOS}» y «{GeneradorExcelPropuestasStock.HOJA_CALIBRACION}». " +
+            // NestoAPI#655: los propios (fabricación propia) aparte, para que no tapen el exceso de verdad.
+            List<ResultadoTendencia> propios = r.Productos.Where(p => p.FabricacionPropia).ToList();
+            List<ResultadoTendencia> sinPropios = r.Productos.Where(p => !p.FabricacionPropia).ToList();
+            cuerpo.Append($"<p>Sin propios: {sinPropios.Count} productos, {MotorTendencias.Euros(GeneradorExcelPropuestasStock.ValorStock(sinPropios))} de stock y " +
+                $"<b>{MotorTendencias.Euros(sinPropios.Sum(p => p.ExcesoValorado))}</b> de exceso. Propios (fabricación propia): {propios.Count} productos, " +
+                $"{MotorTendencias.Euros(GeneradorExcelPropuestasStock.ValorStock(propios))} de stock y {MotorTendencias.Euros(propios.Sum(p => p.ExcesoValorado))} de exceso " +
+                "(nunca Outlet ni liquidar).</p>");
+            cuerpo.Append($"<p>Hojas: «{GeneradorExcelPropuestasStock.HOJA_RESUMEN}», «{GeneradorExcelPropuestasStock.NombreHojaTop(top)}», «{GeneradorExcelPropuestasStock.HOJA_TODOS}», " +
+                $"«{GeneradorExcelPropuestasStock.HOJA_NUEVOS}», «{GeneradorExcelPropuestasStock.HOJA_PROPIOS}» y «{GeneradorExcelPropuestasStock.HOJA_CALIBRACION}» " +
+                "(las de productos, sin los propios). " +
                 "Los umbrales son PROVISIONALES hasta revisar la calibración.</p>");
             cuerpo.Append($"<p style=\"color:#666\">{r.ProductosLeidos} productos leídos, {r.FamiliasConEstacionalidad} familias con estacionalidad, " +
                 $"{guardadas} filas nuevas en PropuestasStock");

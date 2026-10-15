@@ -58,6 +58,14 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         /// <summary>Estacionalidad: la familia necesita al menos estas unidades en los 36 meses (si no, ruido).</summary>
         public int UnidadesMinimasFamiliaEstacionalidad { get; set; } = 120;
 
+        /// <summary>
+        /// NestoAPI#655: días de seguridad de la fórmula P (fabricación propia, familias PRP). Más que los normales: se fabrican
+        /// por lotes, con plazo largo, y no se pueden quedar cortos.
+        /// </summary>
+        public int DiasSeguridadPropios { get; set; } = 30;
+        /// <summary>NestoAPI#655: vida útil de un producto propio (simplificación de Carlos): el máximo nunca pasa de estos meses de venta.</summary>
+        public int VidaUtilMesesPropios { get; set; } = 12;
+
         /// <summary>Filas de la hoja «Top».</summary>
         public int FilasTop { get; set; } = 50;
 
@@ -86,6 +94,8 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             p.TopeDiasFaseASinRecompra = Entero(leer, nameof(TopeDiasFaseASinRecompra), p.TopeDiasFaseASinRecompra);
             p.RecompraMinima = Numero(leer, nameof(RecompraMinima), p.RecompraMinima);
             p.UnidadesMinimasFamiliaEstacionalidad = Entero(leer, nameof(UnidadesMinimasFamiliaEstacionalidad), p.UnidadesMinimasFamiliaEstacionalidad);
+            p.DiasSeguridadPropios = Entero(leer, nameof(DiasSeguridadPropios), p.DiasSeguridadPropios);
+            p.VidaUtilMesesPropios = Entero(leer, nameof(VidaUtilMesesPropios), p.VidaUtilMesesPropios);
             p.FilasTop = Entero(leer, nameof(FilasTop), p.FilasTop);
             return p;
         }
@@ -121,6 +131,8 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             yield return (nameof(TopeDiasFaseASinRecompra), TopeDiasFaseASinRecompra.ToString(), "Fase A con recompra baja: tope en días");
             yield return (nameof(RecompraMinima), RecompraMinima.ToString(CultureInfo.InvariantCulture), "Fase A: recompra (%) por debajo de la cual se acorta el tope");
             yield return (nameof(UnidadesMinimasFamiliaEstacionalidad), UnidadesMinimasFamiliaEstacionalidad.ToString(), "Estacionalidad: mínimo de unidades de la familia en 36 meses");
+            yield return (nameof(DiasSeguridadPropios), DiasSeguridadPropios.ToString(), "Propios (P): días de seguridad");
+            yield return (nameof(VidaUtilMesesPropios), VidaUtilMesesPropios.ToString(), "Propios (P): vida útil en meses de venta (tope del máximo)");
         }
 
         private static int Entero(Func<string, string> leer, string nombre, int porDefecto)

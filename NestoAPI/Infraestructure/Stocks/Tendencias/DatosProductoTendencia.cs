@@ -17,6 +17,11 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         public string Familia { get; set; }
         public string Grupo { get; set; }
         public string Subgrupo { get; set; }
+        /// <summary>NestoAPI#655: Familias.TipoExclusiva de la familia del producto (empresa 1), sin el relleno del char(3).</summary>
+        public string TipoExclusiva { get; set; }
+        /// <summary>NestoAPI#655: familia de fabricación propia (Unión Láser, Eva Visnú…): va por la fórmula P.</summary>
+        public bool EsFabricacionPropia => string.Equals(TipoExclusiva?.Trim(), TIPO_EXCLUSIVA_PROPIA, StringComparison.OrdinalIgnoreCase);
+        public const string TIPO_EXCLUSIVA_PROPIA = "PRP";
         /// <summary>Productos.Estado: 0 disponible, 1 sobre pedido, 4 anular («a extinguir»), −1 nulo…</summary>
         public short? Estado { get; set; }
         public decimal PrecioMedio { get; set; }

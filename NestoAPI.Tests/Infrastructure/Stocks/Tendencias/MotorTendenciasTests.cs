@@ -364,6 +364,150 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
             Assert.IsTrue(MotorTendencias.EsRelevante(conPendientes));
         }
 
+        // ---------- NestoAPI#655: fórmula P (fabricación propia) ----------
+
+        private static readonly string[] AccionesPropios = { AccionesPropuesta.AJUSTAR_LOTE, AccionesPropuesta.POTENCIAR, AccionesPropuesta.CADUCA };
+
+        [TestMethod]
+        public void Propio_FormulaP_MinimoConSeguridadDePropiosYMaximoMasUnLote()
+        {
+            // 30 uds/mes, proveedor 60 días, lote 100: mínimo = 30 × (60 + 30) ÷ 30 = 90; máximo = 90 + 100
+            ResultadoTendencia r = Calcular(Propio(ventas: Constante(30), stock: 150, diasEnServir: 60, lote: 100));
+
+            Assert.IsTrue(r.FabricacionPropia);
+            StringAssert.StartsWith(r.Formula, FormulasPropuesta.PREFIJO_PROPIOS);
+            Assert.AreEqual(P.DiasSeguridadPropios, r.DiasSeguridad);
+            Assert.AreEqual(90, r.StockMinimoPropuesto);
+            Assert.AreEqual(190, r.StockMaximoPropuesto);
+            Assert.AreEqual(0, r.ExcesoUnidades);
+            Assert.AreEqual(AccionesPropuesta.AJUSTAR_LOTE, r.Accion);
+            StringAssert.Contains(r.Explicacion, "proveedor 60 días + 30 de seguridad de propios → mínimo 90; lote mínimo 100 → máximo 190; vida útil 12 meses = 360 uds");
+            StringAssert.Contains(r.Explicacion, "(hoy 555/295)");
+            StringAssert.Contains(r.EntradasJson, "\"tipoExclusiva\":\"PRP\"");
+            StringAssert.Contains(r.EntradasJson, "\"propios\":{\"lote\":100,\"diasSeguridad\":30,\"vidaUtilMeses\":12,\"tope\":360}");
+        }
+
+        [TestMethod]
+        public void Propio_MaximoYMinimoIgualesALosDeHoy_Mantener()
+        {
+            DatosProductoTendencia d = Propio(ventas: Constante(30), stock: 150, diasEnServir: 60, lote: 100);
+            d.StockMaximoAlg = 190;
+            d.StockMinimoAlg = 90;
+
+            Assert.AreEqual(AccionesPropuesta.MANTENER, Calcular(d).Accion);
+        }
+
+        [TestMethod]
+        public void Propio_TopeDeVidaUtil_ElMaximoNuncaPasaDeDoceMesesDeVenta()
+        {
+            // Proveedor de 300 días: mínimo 330, + lote 100 = 430, pero 12 meses de venta son 360
+            ResultadoTendencia r = Calcular(Propio(ventas: Constante(30), stock: 200, diasEnServir: 300, lote: 100));
+
+            Assert.AreEqual(360, r.StockMaximoPropuesto);
+            Assert.AreEqual(330, r.StockMinimoPropuesto);
+            StringAssert.Contains(r.Explicacion, "máximo 430 (acotado a 360 por la vida útil de 12 meses)");
+            Assert.IsFalse(r.Explicacion.Contains("pedir lote menor"), r.Explicacion);
+        }
+
+        [TestMethod]
+        public void Propio_LoteDeMasMesesQueLaVidaUtil_LoDiceYProponeAjustarElLote()
+        {
+            // Lote de 500 con 30 uds/mes: 16,7 meses de venta, más que los 12 de vida útil
+            DatosProductoTendencia d = Propio(ventas: Constante(30), stock: 300, diasEnServir: 60, lote: 500);
+            d.StockMaximoAlg = 360;
+            d.StockMinimoAlg = 90;
+
+            ResultadoTendencia r = Calcular(d);
+
+            Assert.AreEqual(360, r.StockMaximoPropuesto);
+            Assert.AreEqual(90, r.StockMinimoPropuesto);
+            Assert.AreEqual(AccionesPropuesta.AJUSTAR_LOTE, r.Accion); // aunque el máximo y el mínimo sean los de hoy
+            StringAssert.Contains(r.Explicacion, "El lote mínimo son 16,7 meses de venta, más que la vida útil: pedir lote menor");
+        }
+
+        [TestMethod]
+        public void Propio_SobraPeroSeVendeAntesDeCaducar_PotenciarVentas()
+        {
+            ResultadoTendencia r = Calcular(Propio(ventas: Constante(30), stock: 300, diasEnServir: 60, lote: 100, precio: 2m));
+
+            Assert.AreEqual(AccionesPropuesta.POTENCIAR, r.Accion);
+            Assert.AreEqual(110, r.ExcesoUnidades); // 300 − 190
+            Assert.AreEqual(220m, r.ExcesoValorado);
+            Assert.AreEqual(190, r.StockMaximoPropuesto);
+            StringAssert.StartsWith(r.Explicacion, "Potenciar ventas: sobran 110 uds (220,00 €) sobre el máximo, pero 300 uds son 10,0 meses de venta");
+            StringAssert.Contains(r.Explicacion, "nunca Outlet ni liquidar");
+        }
+
+        [TestMethod]
+        public void Propio_MasStockQueVidaUtil_CaducaAntesDeVenderse()
+        {
+            DatosProductoTendencia d = Propio(ventas: Constante(30), stock: 1000, diasEnServir: 60, lote: 100, precio: 2m);
+            d.UnidadesPedidoCompraAbierto = 200;
+
+            ResultadoTendencia r = Calcular(d);
+
+            Assert.AreEqual(AccionesPropuesta.CADUCA, r.Accion); // y no «Parar compras»
+            Assert.AreEqual(810, r.ExcesoUnidades);              // exceso = stock − máximo (190)
+            StringAssert.StartsWith(r.Explicacion, "Caduca antes de venderse: 1000 uds son 33,3 meses de venta, más que la vida útil de 12 meses; 640 uds (1.280,00 €) caducarán");
+            StringAssert.Contains(r.Explicacion, "Hay 200 uds en pedidos de compra abiertos (el siguiente lote): revisarlo.");
+        }
+
+        [TestMethod]
+        public void Propio_SinSalidaEnSeisMeses_NuncaSeLiquida()
+        {
+            int[] ventas = Constante(20);
+            for (int i = FIN - 5; i <= FIN; i++)
+            {
+                ventas[i] = 0;
+            }
+
+            ResultadoTendencia normal = Calcular(Producto(ventas: ventas, stock: 50));
+            ResultadoTendencia propio = Calcular(Propio(ventas: ventas, stock: 50));
+
+            Assert.AreEqual(AccionesPropuesta.LIQUIDAR, normal.Accion);
+            Assert.AreEqual(AccionesPropuesta.CADUCA, propio.Accion);
+            Assert.AreEqual(0, propio.StockMaximoPropuesto);
+            Assert.AreEqual(50, propio.ExcesoUnidades);
+            StringAssert.Contains(propio.Explicacion, "no se vende nada y quedan 50 uds");
+            StringAssert.Contains(propio.Explicacion, "Sin venta: cualquier lote caduca antes de venderse");
+        }
+
+        [TestMethod]
+        public void Propio_EnDeclive_NiSeLiquidaNiPasaAEstado1()
+        {
+            foreach (int stock in new[] { 300, 600 })
+            {
+                ResultadoTendencia normal = Calcular(Producto(ventas: DecliveConfirmado(), stock: stock));
+                ResultadoTendencia propio = Calcular(Propio(ventas: DecliveConfirmado(), stock: stock));
+
+                CollectionAssert.Contains(new[] { AccionesPropuesta.LIQUIDAR, AccionesPropuesta.ESTADO_1 }, normal.Accion);
+                CollectionAssert.Contains(AccionesPropios, propio.Accion, $"stock {stock}: {propio.Accion}");
+                Assert.IsFalse(propio.Explicacion.Contains("Outlet o Ganavisiones"), propio.Explicacion);
+            }
+        }
+
+        [TestMethod]
+        public void Propio_EnEstado4_NoSeFabricaOtroLotePeroNoSeLiquida()
+        {
+            ResultadoTendencia r = Calcular(Propio(ventas: Constante(30), stock: 10, estado: 4));
+
+            Assert.AreEqual(AccionesPropuesta.POTENCIAR, r.Accion);
+            Assert.AreEqual(0, r.StockMaximoPropuesto);
+            Assert.AreEqual(0, r.StockMinimoPropuesto);
+            Assert.AreEqual("P: estado 4", r.Formula);
+            StringAssert.Contains(r.Explicacion, "fabricación propia en estado 4, no se fabrica otro lote");
+        }
+
+        [TestMethod]
+        public void NoPropio_SigueConLaFormulaDeSiempre()
+        {
+            ResultadoTendencia r = Calcular(Producto(ventas: Constante(30), stock: 90));
+
+            Assert.IsFalse(r.FabricacionPropia);
+            Assert.AreEqual(P.DiasSeguridad, r.DiasSeguridad);
+            StringAssert.Contains(r.EntradasJson, "\"propios\":null");
+        }
+
         [TestMethod]
         public void Entradas_GuardaLaSerieEnJson()
         {
