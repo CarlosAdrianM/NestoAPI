@@ -1999,9 +1999,11 @@ namespace NestoAPI.Controllers
             // peticiones concurrentes no cojan el mismo y una pierda el pedido por PK duplicada.
             // El contador se sigue leyendo para el resto de campos (Oferta).
             ContadorGlobal contador = db.ContadoresGlobales.SingleOrDefault();
+            bool numeroReservadoAqui = false;
             if (pedido.numero == 0)
             {
                 pedido.numero = db.TomarSiguienteNumeroPedido();
+                numeroReservadoAqui = true;
             }
 
             // NestoAPI#277: garantizar el vendedor base en la cabecera (ningún trigger lo rellena, así que
@@ -2267,6 +2269,8 @@ namespace NestoAPI.Controllers
                     // Carlos 21/11/24: Usar PedidoValidacionException en lugar de ValidationException
                     // para que GlobalExceptionFilter lo maneje correctamente y el frontend pueda
                     // detectarlo por código de error "PEDIDO_VALIDACION_FALLO"
+                    // NestoAPI#636: el pedido no se crea, así que el número vuelve al contador (sin hueco).
+                    DevolverNumeroPedidoNoGuardado(db, pedido.numero, numeroReservadoAqui);
                     throw new PedidoValidacionException(
                         respuestaValidacion.Motivo,
                         respuestaValidacion,
@@ -2279,6 +2283,7 @@ namespace NestoAPI.Controllers
             if (lineasConTipoNull.Any())
             {
                 var errores = string.Join(", ", lineasConTipoNull.Select(l => $"línea {l.Nº_Orden}"));
+                DevolverNumeroPedidoNoGuardado(db, pedido.numero, numeroReservadoAqui);
                 throw new InvalidOperationException(
                     $"No se puede crear el pedido {pedido.numero} porque tiene {lineasConTipoNull.Count} línea(s) con tipo de línea en blanco (NULL). " +
                     $"Esto indica un error en la creación de las líneas. Líneas afectadas: {errores}");
@@ -2290,12 +2295,15 @@ namespace NestoAPI.Controllers
             }
             catch (NestoBusinessException)
             {
+                DevolverNumeroPedidoNoGuardado(db, pedido.numero, numeroReservadoAqui);
                 throw; // NestoAPI#593: el cheque lo ha cogido otro pedido a la vez (400 con su código)
             }
             catch (DbUpdateException e)
             {
                 // Issue #95: Loguear JSON del pedido en ELMAH para diagnóstico
                 LoguearPedidoEnElmah(pedido, e, "DbUpdateException al guardar pedido");
+                // NestoAPI#636: si el pedido ya existe (Conflict), la propia SQL no devuelve el número.
+                DevolverNumeroPedidoNoGuardado(db, pedido.numero, numeroReservadoAqui);
 
                 if (CabPedidoVtaExists(cabecera.Empresa, cabecera.Número))
                 {
@@ -2317,6 +2325,7 @@ namespace NestoAPI.Controllers
             {
                 // Issue #95: Loguear JSON del pedido en ELMAH para diagnóstico
                 LoguearPedidoEnElmah(pedido, e, "Exception al guardar pedido");
+                DevolverNumeroPedidoNoGuardado(db, pedido.numero, numeroReservadoAqui);
 
                 string message = e.Message;
                 // faltaría recorrer el InnerException
@@ -2670,6 +2679,28 @@ namespace NestoAPI.Controllers
         /// UltNumPedidoVta es una comodidad de la UI de escritorio (reabrir el último pedido), así
         /// que el parámetro puede no existir y eso NO puede impedir crear el pedido.
         /// </summary>
+        /// <summary>
+        /// NestoAPI#636: devuelve al contador el número que este POST reservó si el pedido no se ha
+        /// guardado. Solo si lo reservó él (un número que trae el DTO no es suyo). Nunca lanza: si la
+        /// devolución falla, queda el hueco de siempre y el error original es el que manda.
+        /// </summary>
+        internal static bool DevolverNumeroPedidoNoGuardado(NVEntities db, int numero, bool numeroReservadoAqui)
+        {
+            if (!numeroReservadoAqui || numero <= 0)
+            {
+                return false;
+            }
+            try
+            {
+                return db.DevolverNumeroPedido(numero);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[NestoAPI#636] No se ha podido devolver el número de pedido {numero} al contador: {ex.Message}", ex));
+                return false;
+            }
+        }
+
         internal static void GuardarUltimoNumeroPedido(ParametroUsuario parametroUsuario, int numeroPedido)
         {
             if (parametroUsuario == null)
