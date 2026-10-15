@@ -213,8 +213,8 @@ WHERE e.Empresa = @p0 AND e.[NºTraspaso] = @p1 AND e.Cantidad > 0";
 SELECT TOP 1 RTRIM([Descripción]) FROM Almacenes WHERE Empresa = @p0 AND [Número] = @p1";
 
         // El hueco sale del registro que queda en Ubicaciones al cerrar el traspaso (Nesto viejo o POST api/Reposiciones):
-        // la reserva de prdUbicarReposicion / la puerta de Ubicaciones pasada a -4 con el NºTraspasoRepo, ya quitada del
-        // hueco. OJO: su NºOrdenRepo apunta a la línea de ENTRADA (la que había al reservar), no a la de salida, y la entrada
+        // la reserva de prdUbicarReposicion / la puerta de Ubicaciones con el NºTraspasoRepo, en -4 (Nesto viejo) o aún en 4
+        // (la API, NestoAPI#651: pasa a -4 al terminar la recogida). OJO: su NºOrdenRepo apunta a la línea de ENTRADA (la que había al reservar), no a la de salida, y la entrada
         // se va al diario del destino (y ExtractoProducto no conserva su Nº Orden): por eso se localiza por NºTraspasoRepo +
         // producto + almacén de origen (traspaso 80885, 05/10/26: 53 de 53 filas así). Lo que no tiene registro (no había
         // nada libre al reservar, o un almacén sin control de ubicaciones) va en una parada sin hueco. Una línea de salida

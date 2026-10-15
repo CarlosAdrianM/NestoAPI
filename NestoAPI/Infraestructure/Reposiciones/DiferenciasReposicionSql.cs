@@ -45,7 +45,7 @@ SELECT {TOP} d.Id, RTRIM(d.Empresa) AS Empresa, d.NumTraspaso AS Traspaso, RTRIM
        CAST(ISNULL(a.ControlUbicaciones, 0) AS bit) AS OrigenConControlUbicaciones,
        CAST(NULL AS nvarchar(200)) AS QuePaso, CAST(NULL AS nvarchar(300)) AS QueComprobar, -- los pone el servicio (SqlQuery exige la columna)
        (SELECT TOP 1 RTRIM(s.Pasillo) + '/' + RTRIM(s.Fila) + '/' + RTRIM(s.Columna) FROM Ubicaciones s
-         WHERE s.[NºTraspasoRepo] = d.NumTraspaso AND s.Estado = -4 AND s.[Almacén] = d.Origen AND s.[Número] = d.Producto
+         WHERE s.[NºTraspasoRepo] = d.NumTraspaso AND s.Estado IN (4, -4) AND s.[Almacén] = d.Origen AND s.[Número] = d.Producto
            AND s.Pasillo IS NOT NULL
          ORDER BY s.[NºOrden] DESC) AS HuecoSalida,
        STUFF((SELECT DISTINCT ', ' + RTRIM(u.Pasillo) + '/' + RTRIM(u.Fila) + '/' + RTRIM(u.Columna) FROM Ubicaciones u

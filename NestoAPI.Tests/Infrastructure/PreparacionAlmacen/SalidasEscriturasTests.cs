@@ -69,7 +69,18 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         public Task QuitarDeLaReposicion(string empresa, int traspaso, PiezaSalida pieza, int cantidad, string usuario)
         {
             QuitadoDeReposicion.Add((pieza, cantidad));
+            Pasos.Add($"quitar falta {pieza.Producto} x{cantidad}");
             return Task.CompletedTask;
+        }
+
+        /// <summary>NestoAPI#651: las reservas de los huecos que han pasado a salida (4 → -4), por traspaso.</summary>
+        public List<(string Almacen, int Traspaso, string Usuario)> SalidasDeHuecos { get; } = new List<(string, int, string)>();
+
+        public Task<int> SalidaDeLosHuecos(string empresa, string almacenOrigen, int traspaso, string usuario)
+        {
+            SalidasDeHuecos.Add((almacenOrigen, traspaso, usuario));
+            Pasos.Add($"salida de los huecos {almacenOrigen} {traspaso}");
+            return Task.FromResult(1);
         }
 
         public Task<DiarioSalidaReposicion> DiarioDeSalida(string empresa, int traspaso) => Task.FromResult(Diario);
@@ -393,8 +404,77 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             {
                 "apartar de General lo que no es 80872",
                 "contabilizar General",
+                "salida de los huecos ALG 80872",
                 "devolver a General 501,502"
             }, tx.Pasos);
+        }
+
+        [TestMethod]
+        public async Task Terminar_UnaReposicion_LasReservasDeLosHuecosSalenEnLaMismaTransaccionQueLaContabilizacion()
+        {
+            // NestoAPI#651: al crearla desde Algete las reservas se quedan en 4 (siguen en el almacén, como en el extracto);
+            // pasan a -4 justo cuando se contabiliza la salida, dentro de la misma transacción (la de RepositorioSalidas)
+            ReposicionRecogida(new LecturaPickingAlmacen { Producto = "A", Unidades = 3 });
+
+            _ = await servicio.Terminar(EMPRESA, "REPO", 80872, Usuario("Almacén"));
+
+            Assert.AreEqual(("ALG", 80872, "NUEVAVISION\\Andre"), tx.SalidasDeHuecos.Single());
+            Assert.AreEqual(1, escrituras.DeshacerSiempre.Count, "Una sola transacción");
+            CollectionAssert.AreEqual(new[] { "apartar de General lo que no es 80872", "contabilizar General", "salida de los huecos ALG 80872", "devolver a General " },
+                tx.Pasos);
+        }
+
+        [TestMethod]
+        public async Task Terminar_UnaReposicionConFalta_QuitaLaFaltaDeLaReservaAntesDePasarLaASalida()
+        {
+            // NestoAPI#651: la falta baja la reserva (4) y pasa a «pendiente de ubicar»; lo que queda reservado es lo que sale
+            ReposicionRecogida(new LecturaPickingAlmacen { Producto = "A", Unidades = 2, Faltas = 1 });
+            tx.Faltas = new List<FaltaSalida> { new FaltaSalida { Producto = "A", Cantidad = 1 } };
+            tx.PiezasReposicion = new List<PiezaSalida>
+            {
+                new PiezaSalida { Linea = 561387000, Ubicacion = 322199801, Producto = "A", Hueco = "001001001", Cantidad = 3 }
+            };
+
+            _ = await servicio.Terminar(EMPRESA, "REPO", 80872, Usuario("Almacén"));
+
+            CollectionAssert.AreEqual(new[]
+            {
+                "quitar falta A x1",
+                "apartar de General lo que no es 80872",
+                "contabilizar General",
+                "salida de los huecos ALG 80872",
+                "devolver a General "
+            }, tx.Pasos);
+        }
+
+        [TestMethod]
+        public async Task Terminar_UnaReposicionQueNoSaleNada_NoPasaNadaASalida()
+        {
+            ReposicionRecogida(new LecturaPickingAlmacen { Producto = "A", Faltas = 3 });
+            tx.Faltas = new List<FaltaSalida> { new FaltaSalida { Producto = "A", Cantidad = 3 } };
+            tx.PiezasReposicion = new List<PiezaSalida> { new PiezaSalida { Linea = 561387000, Ubicacion = 322199801, Producto = "A", Hueco = "001001001", Cantidad = 3 } };
+
+            _ = await servicio.Terminar(EMPRESA, "REPO", 80872, Usuario("Almacén"));
+
+            Assert.AreEqual(0, tx.SalidasDeHuecos.Count, "Todo era falta: ya ha vuelto a «pendiente de ubicar», no sale nada");
+        }
+
+        [TestMethod]
+        public async Task Terminar_UnaReposicionSiFallaLaContabilizacion_NoPasaLasReservasASalida()
+        {
+            ReposicionRecogida(new LecturaPickingAlmacen { Producto = "A", Unidades = 3 });
+            tx.FallarAlContabilizar = new Exception("Se quedaría un stock negativo");
+
+            try
+            {
+                _ = await servicio.Terminar(EMPRESA, "REPO", 80872, Usuario("Almacén"));
+            }
+            catch (Exception)
+            {
+                // Lo que haga el servicio con el error da igual aquí: lo que importa es que no se ha tocado ningún hueco
+            }
+
+            Assert.AreEqual(0, tx.SalidasDeHuecos.Count);
         }
 
         [TestMethod]

@@ -91,6 +91,12 @@ namespace NestoAPI.Tests.Infrastructure
                     repositorio.Llamadas.Add($"HUECOS descontar {traspaso} [{string.Join(",", lineas)}] {u}");
                     return Task.FromResult(new ResumenUbicaciones());
                 });
+            A.CallTo(() => huecosAlgete.EnlazarAlTraspaso(A<string>._, A<IReadOnlyList<int>>._, A<int>._, A<string>._))
+                .ReturnsLazily((string e, IReadOnlyList<int> lineas, int traspaso, string u) =>
+                {
+                    repositorio.Llamadas.Add($"HUECOS enlazar {traspaso} [{string.Join(",", lineas)}] {u}");
+                    return Task.FromResult(new ResumenUbicaciones());
+                });
             A.CallTo(() => huecosAlgete.AnularSalida(A<string>._, A<string>._, A<int>._, A<string>._))
                 .ReturnsLazily((string e, string o, int traspaso, string u) =>
                 {
@@ -259,11 +265,13 @@ namespace NestoAPI.Tests.Infrastructure
                 "DELETE a cero General REI → 0",
                 "UPDATE traspaso 80901 fecha 06/10/2026 9:32 General REI → 2",
                 "UPDATE pedidosespeciales General REI",
-                "HUECOS descontar 80901 [900000000,900000001] NUEVAVISION\\Andre",
+                // NestoAPI#651: la reserva NO pasa a -4 (la salida aún no está en el extracto): solo se enlaza al traspaso
+                "HUECOS enlazar 80901 [900000000,900000001] NUEVAVISION\\Andre",
                 "INSERT salida General ALG -REI 06/10/2026 9:32 NUEVAVISION\\Andre → 2",
                 "UPDATE entrada General REI → PendRepo → 2",
                 "COMMIT"
             }, repositorio.Llamadas, "Sin prdExtrProducto: la salida la contabiliza Ariadna al terminar la recogida");
+            A.CallTo(() => huecosAlgete.DescontarAlTerminar(A<string>._, A<IReadOnlyList<int>>._, A<int>._, A<string>._)).MustNotHaveHappened();
             Assert.AreEqual(80901, creada.NumTraspaso);
             Assert.AreEqual("ALG", creada.Origen);
             Assert.AreEqual("REI", creada.Destino);

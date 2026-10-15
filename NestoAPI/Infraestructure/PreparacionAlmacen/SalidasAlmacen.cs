@@ -682,10 +682,12 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     /// <summary>
     /// REPO: la salida de un traspaso de reposición desde el almacén de origen. El traspaso lo crea Nesto viejo o
     /// POST api/Reposiciones (NestoAPI#553): deja la salida en PreExtrProducto (diario Almacenes.DiarioSalidaRep del
-    /// origen, «General» en Algete) y la entrada en el diario de entrada del destino, y quita ya la mercancía de los huecos
-    /// dejando su registro en Ubicaciones (estado -4 con NºTraspasoRepo; su NºOrdenRepo es la línea de entrada). Una vez recogida, la salida se contabiliza (prdExtrProducto del
-    /// diario de salida; en los datos, unos 11 minutos después de crearla). Eso es terminar: lo que se ha dado por falta
-    /// sale antes de la salida, de la entrada del destino y del registro del hueco, y pasa a «pendiente de ubicar».
+    /// origen, «General» en Algete) y la entrada en el diario de entrada del destino. Lo reservado en los huecos queda en
+    /// Ubicaciones con el NºTraspasoRepo (su NºOrdenRepo es la línea de entrada): en estado 4 si lo creó la API (NestoAPI#651:
+    /// sigue en el almacén hasta que sale) o ya en -4 si lo creó Nesto viejo. Una vez recogida, la salida se contabiliza (prdExtrProducto del
+    /// diario de salida; en los datos, unos 11 minutos después de crearla) y, en la misma transacción, las reservas en 4 pasan a
+    /// -4. Eso es terminar: lo que se ha dado por falta sale antes de la salida, de la entrada del destino y del registro
+    /// del hueco, y pasa a «pendiente de ubicar».
     /// En 60 días, cada vez que se contabilizó la salida había un solo traspaso en el diario: si hay otro, no se termina.
     /// </summary>
     public class OrigenSalidaReposicion : IOrigenSalida
@@ -802,6 +804,9 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             // las demás (como se hacía a mano con «RepoEscond») para que solo salga esta y se puede ir a las dos tiendas el mismo día
             List<int> apartadas = await tx.ApartarOtros(empresa, diario.Diario, numero).ConfigureAwait(false) ?? new List<int>();
             await tx.Contabilizar(empresa, diario.Diario, nombreUsuario).ConfigureAwait(false);
+            // NestoAPI#651: y en la misma transacción, lo reservado en los huecos sale (4 → -4): hasta ahora seguía en el
+            // almacén, como en el extracto. Después de quitar las faltas, que ya han bajado esas reservas.
+            _ = await tx.SalidaDeLosHuecos(empresa, diario.Almacen, numero, nombreUsuario).ConfigureAwait(false);
             await tx.DevolverApartadas(empresa, diario.Diario, apartadas).ConfigureAwait(false);
             // NestoAPI#577: quién y cuándo la ha sacado, en su cabecera (si la creó la API)
             await tx.MarcarReposicionPreparada(empresa, numero, nombreUsuario).ConfigureAwait(false);

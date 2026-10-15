@@ -560,7 +560,8 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
             StringAssert.Contains(sql, "u.Estado IN (0, 2)");
             StringAssert.Contains(sql, "u.[NºOrdenVta] IS NULL");
             StringAssert.Contains(sql, "u.[NºOrdenRepo] IS NULL");
-            StringAssert.Contains(sql, "s.[NºTraspasoRepo] = @p4 AND s.Estado = -4");
+            // NestoAPI#651: el hueco del que salió el traspaso, ya en -4 o (si aún no se ha contabilizado la salida) en 4
+            StringAssert.Contains(sql, "s.[NºTraspasoRepo] = @p4 AND s.Estado IN (4, -4)");
             StringAssert.Contains(PuertaUbicacionesSql.SQL_ENTRADA_PENDIENTE_DE_UBICAR, "Cantidad, Estado, Usuario) VALUES (@p0, @p1, @p2, @p3, 2, @p4)");
         }
     }

@@ -54,10 +54,33 @@ namespace NestoAPI.Tests.Infrastructure.Ubicaciones
         }
 
         [TestMethod]
+        public void Sql_EnlazarAlTraspaso_LaReservaSigueEn4PositivaConSuNumeroDeTraspaso()
+        {
+            // NestoAPI#651: al cerrar sin contabilizar (Algete) la reserva no sale: ni cambia de estado ni de signo
+            string sql = PuertaUbicacionesSql.SQL_ENLAZAR_RESERVAS_AL_TRASPASO;
+            StringAssert.Contains(sql, "SET [NºTraspasoRepo] = @p0, Usuario = @p1");
+            StringAssert.Contains(sql, "WHERE Estado = 4 AND [NºOrdenRepo] IN ({0})");
+            Assert.IsFalse(sql.Contains("Cantidad"), "No cambia la cantidad");
+            Assert.IsFalse(sql.Contains("-4"), "No pasa a salida");
+        }
+
+        [TestMethod]
+        public void Sql_SalidaDelTraspaso_Sus4PasanAMenos4AlContabilizar()
+        {
+            // NestoAPI#651: al contabilizar la salida (Ariadna), las reservas del traspaso en el origen; las -4 de antes no se tocan
+            string sql = PuertaUbicacionesSql.SQL_SALIDA_DE_REPOSICION_DEL_TRASPASO;
+            StringAssert.Contains(sql, "SET Cantidad = -Cantidad, Estado = -4, Usuario = @p2");
+            StringAssert.Contains(sql, "WHERE [NºTraspasoRepo] = @p0 AND Estado = 4 AND [Almacén] = @p1");
+            StringAssert.Contains(PuertaUbicacionesSql.SQL_RESERVAS_DEL_TRASPASO, "WHERE [NºTraspasoRepo] = @p0 AND Estado = 4 AND [Almacén] = @p1");
+            StringAssert.Contains(PuertaUbicacionesSql.SQL_RESERVAS_DEL_TRASPASO, "WITH (UPDLOCK)");
+        }
+
+        [TestMethod]
         public void Sql_LiberarYAnular_VuelvenAlHuecoComoPrdDeshacerUbicacionReposicion()
         {
             StringAssert.Contains(PuertaUbicacionesSql.SQL_RESERVAS_DE_LA_LINEA, "WHERE [NºOrdenRepo] = @p0 AND Estado = 4");
-            StringAssert.Contains(PuertaUbicacionesSql.SQL_SALIDAS_DEL_TRASPASO, "WHERE [NºTraspasoRepo] = @p0 AND Estado = -4 AND [Almacén] = @p1");
+            // NestoAPI#651: anular una REPO de Algete sin terminar devuelve sus reservas (4) al hueco; las cerradas antes, sus -4
+            StringAssert.Contains(PuertaUbicacionesSql.SQL_SALIDAS_DEL_TRASPASO, "WHERE [NºTraspasoRepo] = @p0 AND Estado IN (4, -4) AND [Almacén] = @p1");
             string sumar = PuertaUbicacionesSql.SQL_SUMAR_A_LIBRE_DEL_HUECO;
             StringAssert.Contains(sumar, "Pasillo = @p5 AND Fila = @p6 AND Columna = @p7");
             StringAssert.Contains(sumar, "Estado = 0 AND PedidoVta IS NULL AND [AlbaránVta] IS NULL");
@@ -71,7 +94,8 @@ namespace NestoAPI.Tests.Infrastructure.Ubicaciones
             foreach (string sql in new[]
             {
                 PuertaUbicacionesSql.SQL_RESERVAR_FILA_ENTERA, PuertaUbicacionesSql.SQL_RESTAR_DE_LIBRE, PuertaUbicacionesSql.SQL_INSERTAR_RESERVA,
-                PuertaUbicacionesSql.SQL_SALIDA_DE_REPOSICION, PuertaUbicacionesSql.SQL_SUMAR_A_LIBRE_DEL_HUECO, PuertaUbicacionesSql.SQL_DEVOLVER_FILA_A_LIBRE
+                PuertaUbicacionesSql.SQL_SALIDA_DE_REPOSICION, PuertaUbicacionesSql.SQL_SUMAR_A_LIBRE_DEL_HUECO, PuertaUbicacionesSql.SQL_DEVOLVER_FILA_A_LIBRE,
+                PuertaUbicacionesSql.SQL_ENLAZAR_RESERVAS_AL_TRASPASO, PuertaUbicacionesSql.SQL_SALIDA_DE_REPOSICION_DEL_TRASPASO
             })
             {
                 StringAssert.Contains(sql, "Usuario");
@@ -137,6 +161,26 @@ namespace NestoAPI.Tests.Infrastructure.Ubicaciones
             A.CallTo(() => puerta.ReservarParaReposicion("1", Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO, "ALG", lineas, "NUEVAVISION\\Andre")).MustHaveHappenedOnceExactly();
             A.CallTo(() => puerta.SalidaDeReposicion("1", A<IReadOnlyList<int>>.That.IsSameSequenceAs(new[] { 561465600 }), 80885, "NUEVAVISION\\Andre")).MustHaveHappenedOnceExactly();
             A.CallTo(() => puerta.AnularSalidaDeReposicion("1", "ALG", 80885, "NUEVAVISION\\Andre")).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task ConControl_EnlazarAlTraspaso_VaPorLaPuertaSinSacarNada()
+        {
+            IPuertaUbicaciones puerta = A.Fake<IPuertaUbicaciones>();
+
+            _ = await new ConControlUbicaciones(puerta).EnlazarAlTraspaso("1", new[] { 561974200 }, 81016, "NUEVAVISION\\Carlos");
+
+            A.CallTo(() => puerta.EnlazarReservasAlTraspaso("1", A<IReadOnlyList<int>>.That.IsSameSequenceAs(new[] { 561974200 }), 81016, "NUEVAVISION\\Carlos"))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => puerta.SalidaDeReposicion(A<string>._, A<IReadOnlyList<int>>._, A<int>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task SinControl_EnlazarAlTraspaso_NoHaceNada()
+        {
+            ResumenUbicaciones resumen = await new SinControlUbicaciones().EnlazarAlTraspaso("1", new[] { 1 }, 81016, "u");
+
+            Assert.AreEqual(0, resumen.FilasTocadas);
         }
 
         [TestMethod]

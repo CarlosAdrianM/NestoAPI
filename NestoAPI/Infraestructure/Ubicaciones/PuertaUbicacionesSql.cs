@@ -81,9 +81,24 @@ WHERE Estado = 4 AND [NºOrdenRepo] IN ({0})";
 UPDATE Ubicaciones SET Cantidad = -Cantidad, Estado = -4, [NºTraspasoRepo] = @p0, Usuario = @p1
 WHERE Estado = 4 AND [NºOrdenRepo] IN ({0})";
 
-        // Lo que salió de los huecos del origen con un traspaso aún no recogido
+        // NestoAPI#651: al cerrar sin contabilizar (Algete), la reserva sigue viva (4, positiva) y se enlaza al traspaso
+        internal const string SQL_ENLAZAR_RESERVAS_AL_TRASPASO = @"
+UPDATE Ubicaciones SET [NºTraspasoRepo] = @p0, Usuario = @p1
+WHERE Estado = 4 AND [NºOrdenRepo] IN ({0})";
+
+        // NestoAPI#651: las reservas enlazadas a un traspaso cuya salida aún no se ha contabilizado
+        internal const string SQL_RESERVAS_DEL_TRASPASO = COLUMNAS_FILA + @"
+WHERE [NºTraspasoRepo] = @p0 AND Estado = 4 AND [Almacén] = @p1";
+
+        // NestoAPI#651: al contabilizar la salida (Ariadna, terminar la recogida), las reservas del traspaso salen (4 → -4)
+        internal const string SQL_SALIDA_DE_REPOSICION_DEL_TRASPASO = @"
+UPDATE Ubicaciones SET Cantidad = -Cantidad, Estado = -4, Usuario = @p2
+WHERE [NºTraspasoRepo] = @p0 AND Estado = 4 AND [Almacén] = @p1";
+
+        // Lo reservado en los huecos del origen para un traspaso aún no recogido: en 4 (NestoAPI#651) o, si se cerró antes
+        // de #651, ya en -4
         internal const string SQL_SALIDAS_DEL_TRASPASO = COLUMNAS_FILA + @"
-WHERE [NºTraspasoRepo] = @p0 AND Estado = -4 AND [Almacén] = @p1";
+WHERE [NºTraspasoRepo] = @p0 AND Estado IN (4, -4) AND [Almacén] = @p1";
 
         // prdDeshacerUbicacionReposicion: si en el mismo hueco hay una fila libre (estado 0, sin pedido ni albarán), se le suma…
         internal const string SQL_SUMAR_A_LIBRE_DEL_HUECO = @"
@@ -108,7 +123,7 @@ SELECT u.[NºOrden] AS NumeroOrden, RTRIM(u.Empresa) AS Empresa, RTRIM(u.[Almac�
        RTRIM(u.Pasillo) AS Pasillo, RTRIM(u.Fila) AS Fila, RTRIM(u.Columna) AS Columna, u.Cantidad, ISNULL(u.Estado, 0) AS Estado,
        u.FechaCreación AS FechaCreacion,
        CAST(CASE WHEN EXISTS (SELECT 1 FROM Ubicaciones s
-                              WHERE s.[NºTraspasoRepo] = @p4 AND s.Estado = -4 AND s.[Almacén] = u.[Almacén] AND s.[Número] = u.[Número]
+                              WHERE s.[NºTraspasoRepo] = @p4 AND s.Estado IN (4, -4) AND s.[Almacén] = u.[Almacén] AND s.[Número] = u.[Número]
                                 AND s.Pasillo = u.Pasillo AND s.Fila = u.Fila AND s.Columna = u.Columna) THEN 1 ELSE 0 END AS bit) AS DelTraspaso
 FROM Ubicaciones u WITH (UPDLOCK, HOLDLOCK)
 WHERE u.[Almacén] = @p2 AND u.[Número] = @p3 AND (u.Empresa = @p0 OR u.Empresa = @p1) AND u.Estado IN (0, 2) AND u.Cantidad > 0
@@ -217,6 +232,84 @@ SELECT CAST(SCOPE_IDENTITY() AS int);";
             };
             parametros.AddRange(ListaDeLineas(lineas, out _));
             int cambiadas = await db.Database.ExecuteSqlCommandAsync(string.Format(SQL_SALIDA_DE_REPOSICION, lista), parametros.ToArray()).ConfigureAwait(false);
+            if (cambiadas != reservas.Count)
+            {
+                throw new NestoBusinessException($"Al sacar de los huecos el traspaso {numeroTraspaso} se han cambiado {cambiadas} reservas y había {reservas.Count}. " +
+                    "No se ha hecho nada.");
+            }
+            resumen.FilasTocadas = cambiadas;
+            foreach (FilaUbicacionReposicion reserva in reservas)
+            {
+                Apuntar(resumen, new MovimientoUbicacion
+                {
+                    Tipo = TipoMovimientoUbicacion.SalidaDeReposicion,
+                    Empresa = reserva.Empresa, Almacen = reserva.Almacen, Producto = reserva.Producto, NumeroOrdenUbicacion = reserva.NumeroOrden,
+                    HuecoOrigen = reserva.Hueco, Cantidad = reserva.Cantidad,
+                    EstadoAnterior = EstadosUbicacion.RESERVA_REPOSICION, EstadoNuevo = EstadosUbicacion.SALIDA_REPOSICION,
+                    Documento = DocumentoUbicacion.De(TipoDocumentoUbicacion.Traspaso, numeroTraspaso), Usuario = quien
+                });
+            }
+            return resumen;
+        }
+
+        public async Task<ResumenUbicaciones> EnlazarReservasAlTraspaso(string empresa, IReadOnlyList<int> numerosOrdenEntrada, int numeroTraspaso, string usuario)
+        {
+            var resumen = new ResumenUbicaciones();
+            List<int> lineas = (numerosOrdenEntrada ?? new List<int>()).Distinct().ToList();
+            if (lineas.Count == 0)
+            {
+                return resumen;
+            }
+            string quien = UsuarioAuditoriaHelper.ParaAuditoria(usuario);
+            List<SqlParameter> enLista = ListaDeLineas(lineas, out string lista);
+            List<FilaUbicacionReposicion> reservas = await db.Database.SqlQuery<FilaUbicacionReposicion>(
+                string.Format(SQL_RESERVAS_DE_LAS_LINEAS, lista), enLista.ToArray()).ToListAsync().ConfigureAwait(false);
+            if (reservas.Count == 0)
+            {
+                return resumen;
+            }
+
+            var parametros = new List<SqlParameter>
+            {
+                new SqlParameter("@p0", SqlDbType.Int) { Value = numeroTraspaso },
+                new SqlParameter("@p1", SqlDbType.VarChar, 30) { Value = quien }
+            };
+            parametros.AddRange(ListaDeLineas(lineas, out _));
+            int enlazadas = await db.Database.ExecuteSqlCommandAsync(string.Format(SQL_ENLAZAR_RESERVAS_AL_TRASPASO, lista), parametros.ToArray()).ConfigureAwait(false);
+            if (enlazadas != reservas.Count)
+            {
+                throw new NestoBusinessException($"Al enlazar las reservas al traspaso {numeroTraspaso} se han cambiado {enlazadas} y había {reservas.Count}. " +
+                    "No se ha hecho nada.");
+            }
+            resumen.FilasTocadas = enlazadas;
+            foreach (FilaUbicacionReposicion reserva in reservas)
+            {
+                Apuntar(resumen, new MovimientoUbicacion
+                {
+                    Tipo = TipoMovimientoUbicacion.EnlazarReservaAlTraspaso,
+                    Empresa = reserva.Empresa, Almacen = reserva.Almacen, Producto = reserva.Producto, NumeroOrdenUbicacion = reserva.NumeroOrden,
+                    HuecoOrigen = reserva.Hueco, HuecoDestino = reserva.Hueco, Cantidad = reserva.Cantidad,
+                    EstadoAnterior = EstadosUbicacion.RESERVA_REPOSICION, EstadoNuevo = EstadosUbicacion.RESERVA_REPOSICION,
+                    Documento = DocumentoUbicacion.De(TipoDocumentoUbicacion.Traspaso, numeroTraspaso), Usuario = quien
+                });
+            }
+            return resumen;
+        }
+
+        public async Task<ResumenUbicaciones> SalidaDeReposicionDelTraspaso(string empresa, string almacenOrigen, int numeroTraspaso, string usuario)
+        {
+            var resumen = new ResumenUbicaciones();
+            string quien = UsuarioAuditoriaHelper.ParaAuditoria(usuario);
+            List<FilaUbicacionReposicion> reservas = await db.Database.SqlQuery<FilaUbicacionReposicion>(SQL_RESERVAS_DEL_TRASPASO,
+                new SqlParameter("@p0", SqlDbType.Int) { Value = numeroTraspaso }, Char("@p1", almacenOrigen, 3)).ToListAsync().ConfigureAwait(false);
+            if (reservas.Count == 0)
+            {
+                // Cerrado antes de NestoAPI#651 (ya en -4), sin nada reservado o de un almacén sin control de ubicaciones
+                return resumen;
+            }
+            int cambiadas = await db.Database.ExecuteSqlCommandAsync(SQL_SALIDA_DE_REPOSICION_DEL_TRASPASO,
+                new SqlParameter("@p0", SqlDbType.Int) { Value = numeroTraspaso }, Char("@p1", almacenOrigen, 3),
+                new SqlParameter("@p2", SqlDbType.VarChar, 30) { Value = quien }).ConfigureAwait(false);
             if (cambiadas != reservas.Count)
             {
                 throw new NestoBusinessException($"Al sacar de los huecos el traspaso {numeroTraspaso} se han cambiado {cambiadas} reservas y había {reservas.Count}. " +

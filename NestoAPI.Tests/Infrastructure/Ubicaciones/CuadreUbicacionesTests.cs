@@ -48,6 +48,20 @@ namespace NestoAPI.Tests.Infrastructure.Ubicaciones
         }
 
         [TestMethod]
+        public void ReposicionDeAlgeteSinTerminar_LaReservaEn4Cuadra_En4NegativaNo()
+        {
+            // NestoAPI#651, 37800 el 15/10/26 (traspaso 81016 por recoger): stock 32 en el extracto, 31 en el hueco y 1 reservado.
+            // Con la reserva viva (4) cuadra; con la reserva ya en -4 (lo que hacía la API al crearla) faltaba 1.
+            CuadreUbicacionProducto bien = Uno(new[] { Stock("23101", 32) }, new[] { Ubi("23101", 0, 31), Ubi("23101", 4, 1) });
+            CuadreUbicacionProducto antes = Uno(new[] { Stock("23101", 32) }, new[] { Ubi("23101", 0, 31), Ubi("23101", -4, -1) });
+
+            Assert.IsTrue(bien.Cuadra);
+            Assert.AreEqual(1, bien.ReservadoReposicion);
+            Assert.IsFalse(antes.Cuadra);
+            Assert.AreEqual(-1, antes.Diferencia);
+        }
+
+        [TestMethod]
         public void SobraEnUbicacion_LoDevueltoAlProveedorSeQuedoEnElHueco()
         {
             // El caso del 14/10/26: la devolución bajó el extracto pero no el hueco

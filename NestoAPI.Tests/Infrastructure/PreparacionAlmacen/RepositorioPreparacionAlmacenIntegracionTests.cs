@@ -219,5 +219,30 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
                 _ = await repositorio.LeerLecturasDeSalida(EMPRESA, "PICK", 99633);
             }
         }
+
+        /// <summary>
+        /// NestoAPI#651: mientras la salida de una reposición de Algete está «por salir» (PreExtrProducto sin contabilizar), sus
+        /// unidades siguen en el extracto, así que sus reservas tienen que seguir vivas (estado 4, positivas); un -4 de un
+        /// traspaso sin contabilizar deja las Ubicaciones vivas por debajo del stock. Solo lee. Falla antes de lanzar
+        /// Scripts/OneShot_20261015_ReservasRepoAlgeteEnCurso.sql (traspaso 81016) o si Nesto viejo crea una reposición desde
+        /// Algete (sigue pasando la reserva a -4 al cerrarla).
+        /// </summary>
+        [TestMethod]
+        [TestCategory("Integracion")]
+        public async Task Integracion_LasReposicionesDeAlgetePorSalir_TienenSusReservasVivas()
+        {
+            using (DbContext contexto = Abrir())
+            {
+                List<string> enSalida = await contexto.Database.SqlQuery<string>(@"
+SELECT CONCAT(u.[NºTraspasoRepo], ' ', RTRIM(u.[Número]), ' x', u.Cantidad, ' (NºOrden ', u.[NºOrden], ')')
+FROM Ubicaciones u WITH (NOLOCK)
+WHERE u.[Almacén] = 'ALG' AND u.Estado = -4
+  AND EXISTS (SELECT 1 FROM PreExtrProducto s WITH (NOLOCK)
+              WHERE s.Empresa = @p0 AND s.[Almacén] = u.[Almacén] AND s.[NºTraspaso] = u.[NºTraspasoRepo] AND s.Cantidad < 0)", EMPRESA)
+                    .ToListAsync();
+
+                Assert.AreEqual(0, enSalida.Count, "Reservas ya en -4 de traspasos de Algete sin contabilizar: " + string.Join("; ", enSalida));
+            }
+        }
     }
 }

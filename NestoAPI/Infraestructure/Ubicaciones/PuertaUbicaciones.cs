@@ -33,7 +33,10 @@ namespace NestoAPI.Infraestructure.Ubicaciones
         public const int SALIDA_PICKING = -3;
         /// <summary>Reservada para una línea de reposición (NºOrdenRepo = PreExtrProducto.[Nº Orden] de la ENTRADA).</summary>
         public const int RESERVA_REPOSICION = 4;
-        /// <summary>Salida de reposición: cantidad en negativo y NºTraspasoRepo.</summary>
+        /// <summary>
+        /// Salida de reposición: cantidad en negativo y NºTraspasoRepo. NestoAPI#651: solo cuando la salida se contabiliza
+        /// (prdExtrProducto); mientras el traspaso está «por salir» la reserva sigue en 4 (viva) con su NºTraspasoRepo.
+        /// </summary>
         public const int SALIDA_REPOSICION = -4;
         /// <summary>Reservada para montar un kit (prdUbicarReposicion tipo 2).</summary>
         public const int RESERVA_KIT = 5;
@@ -53,6 +56,8 @@ namespace NestoAPI.Infraestructure.Ubicaciones
         ReservarParaReposicion,
         LiberarReservaReposicion,
         SalidaDeReposicion,
+        /// <summary>NestoAPI#651: la reserva (estado 4) se enlaza al traspaso al cerrarlo sin contabilizar (Algete); sigue viva.</summary>
+        EnlazarReservaAlTraspaso,
         AnularSalidaDeReposicion,
         EntradaDeReposicion,
         /// <summary>NestoAPI#634: el ajuste del stock por una diferencia entre lo enviado y lo recibido (y su resolución).</summary>
@@ -221,10 +226,30 @@ namespace NestoAPI.Infraestructure.Ubicaciones
         /// <summary>Devolver al hueco la reserva de una línea (4 → 0/2). Mismo resultado que prdDeshacerUbicacionReposicion.</summary>
         Task<ResumenUbicaciones> LiberarReservaReposicion(string empresa, int numeroOrdenEntrada, string usuario);
 
-        /// <summary>Al cerrar el traspaso: las reservas de esas líneas pasan a salida (4 → -4, cantidad negativa, NºTraspasoRepo).</summary>
+        /// <summary>
+        /// Al cerrar el traspaso Y contabilizar su salida a la vez (las tiendas, Terminar): las reservas de esas líneas pasan a
+        /// salida (4 → -4, cantidad negativa, NºTraspasoRepo).
+        /// </summary>
         Task<ResumenUbicaciones> SalidaDeReposicion(string empresa, IReadOnlyList<int> numerosOrdenEntrada, int numeroTraspaso, string usuario);
 
-        /// <summary>Anular un traspaso aún sin recoger ni contabilizar: lo que salió de cada hueco vuelve a él (-4 → 0/2).</summary>
+        /// <summary>
+        /// NestoAPI#651: al cerrar el traspaso SIN contabilizar la salida (Algete: la contabiliza Ariadna al terminar la
+        /// recogida). Las reservas de esas líneas se quedan en estado 4, positivas (siguen en el almacén: el extracto aún las
+        /// cuenta), y se enlazan al traspaso (NºTraspasoRepo) para que el recorrido, las faltas y anular las encuentren.
+        /// </summary>
+        Task<ResumenUbicaciones> EnlazarReservasAlTraspaso(string empresa, IReadOnlyList<int> numerosOrdenEntrada, int numeroTraspaso, string usuario);
+
+        /// <summary>
+        /// NestoAPI#651: al contabilizar la salida de un traspaso ya cerrado (Ariadna, terminar la recogida), en la misma
+        /// transacción que prdExtrProducto: sus reservas en el origen (estado 4 con NºTraspasoRepo) pasan a salida (4 → -4,
+        /// cantidad negativa). Las de un traspaso cerrado antes de #651 ya están en -4 y no se tocan.
+        /// </summary>
+        Task<ResumenUbicaciones> SalidaDeReposicionDelTraspaso(string empresa, string almacenOrigen, int numeroTraspaso, string usuario);
+
+        /// <summary>
+        /// Anular un traspaso aún sin recoger ni contabilizar: lo reservado vuelve a su hueco (4 → 0/2; y -4 → 0/2 en los
+        /// cerrados antes de NestoAPI#651).
+        /// </summary>
         Task<ResumenUbicaciones> AnularSalidaDeReposicion(string empresa, string almacenOrigen, int numeroTraspaso, string usuario);
 
         /// <summary>La entrada en el destino, «pendiente de ubicar» con NºTraspasoRepo. Hoy: CierreReposiciones / prdExtrProducto.</summary>

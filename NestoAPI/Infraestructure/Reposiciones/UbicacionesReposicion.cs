@@ -12,7 +12,9 @@ namespace NestoAPI.Infraestructure.Reposiciones
     /// de ubicaciones (las tiendas) no hay nada que hacer. En Algete, Nesto viejo reserva al imprimir (prdUbicarReposicion:
     /// filas de Ubicaciones en estado 4 con NºOrdenRepo = la línea de ENTRADA), devuelve al hueco lo que se baja de la
     /// línea (prdCambiarCantidadReposicion) y al terminar pone esas reservas en -4 con el NºTraspasoRepo. Aquí, el mismo
-    /// resultado por la puerta única de Ubicaciones (NestoAPI#594).
+    /// resultado por la puerta única de Ubicaciones (NestoAPI#594), con una diferencia (NestoAPI#651): si el traspaso se
+    /// cierra SIN contabilizar la salida (Algete, que la contabiliza Ariadna al terminar la recogida), las reservas no pasan a
+    /// -4 al cerrarlo, solo se enlazan al traspaso: siguen vivas (estado 4) mientras el extracto aún cuenta esas unidades.
     /// </summary>
     public interface IUbicacionesReposicion
     {
@@ -22,8 +24,14 @@ namespace NestoAPI.Infraestructure.Reposiciones
         /// <summary>Al bajar la cantidad de una línea: devolver al hueco las unidades que sobran.</summary>
         Task<ResumenUbicaciones> DevolverSobrante(string empresa, string origen, int numeroOrden, string producto, int cantidadNueva, string usuario);
 
-        /// <summary>Al cerrar la preparación: descontar de los huecos lo que sale, con el número de traspaso.</summary>
+        /// <summary>Al cerrar la preparación Y contabilizar la salida a la vez: descontar de los huecos lo que sale, con el número de traspaso.</summary>
         Task<ResumenUbicaciones> DescontarAlTerminar(string empresa, IReadOnlyList<int> numerosOrdenEntrada, int numeroTraspaso, string usuario);
+
+        /// <summary>
+        /// NestoAPI#651: al cerrar la preparación SIN contabilizar la salida (Algete): las reservas siguen en el hueco (estado 4)
+        /// y se enlazan al traspaso. Pasan a -4 cuando Ariadna contabiliza la salida (<see cref="IPuertaUbicaciones.SalidaDeReposicionDelTraspaso"/>).
+        /// </summary>
+        Task<ResumenUbicaciones> EnlazarAlTraspaso(string empresa, IReadOnlyList<int> numerosOrdenEntrada, int numeroTraspaso, string usuario);
 
         /// <summary>Al anular un traspaso aún sin recoger: lo que salió de los huecos vuelve a ellos.</summary>
         Task<ResumenUbicaciones> AnularSalida(string empresa, string origen, int numeroTraspaso, string usuario);
@@ -39,6 +47,8 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public Task<ResumenUbicaciones> DevolverSobrante(string empresa, string origen, int numeroOrden, string producto, int cantidadNueva, string usuario) => Nada();
 
         public Task<ResumenUbicaciones> DescontarAlTerminar(string empresa, IReadOnlyList<int> numerosOrdenEntrada, int numeroTraspaso, string usuario) => Nada();
+
+        public Task<ResumenUbicaciones> EnlazarAlTraspaso(string empresa, IReadOnlyList<int> numerosOrdenEntrada, int numeroTraspaso, string usuario) => Nada();
 
         public Task<ResumenUbicaciones> AnularSalida(string empresa, string origen, int numeroTraspaso, string usuario) => Nada();
     }
@@ -85,6 +95,11 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public Task<ResumenUbicaciones> DescontarAlTerminar(string empresa, IReadOnlyList<int> numerosOrdenEntrada, int numeroTraspaso, string usuario)
         {
             return puerta.SalidaDeReposicion(empresa, numerosOrdenEntrada, numeroTraspaso, usuario);
+        }
+
+        public Task<ResumenUbicaciones> EnlazarAlTraspaso(string empresa, IReadOnlyList<int> numerosOrdenEntrada, int numeroTraspaso, string usuario)
+        {
+            return puerta.EnlazarReservasAlTraspaso(empresa, numerosOrdenEntrada, numeroTraspaso, usuario);
         }
 
         public Task<ResumenUbicaciones> AnularSalida(string empresa, string origen, int numeroTraspaso, string usuario)

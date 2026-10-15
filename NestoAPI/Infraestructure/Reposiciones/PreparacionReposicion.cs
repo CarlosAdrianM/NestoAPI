@@ -636,7 +636,8 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
     /// cierra Y contabiliza la salida (prdExtrProducto), como Nesto viejo.</item>
     /// <item>Algete (con control de ubicaciones): Crear, en una transacción, crea las líneas, reserva los huecos por la
     /// puerta única de Ubicaciones (NestoAPI#594) y la cierra SIN contabilizar: queda «por salir» en Recoger de Ariadna
-    /// (REPO), que la contabiliza al terminar la recogida. Se anula con <see cref="Anular"/> mientras nadie la recoja.</item>
+    /// (REPO), que la contabiliza al terminar la recogida. NestoAPI#651: hasta entonces las reservas siguen en el hueco
+    /// (estado 4, enlazadas al traspaso) y pasan a -4 al contabilizar, para que Ubicaciones cuadre siempre con el extracto. Se anula con <see cref="Anular"/> mientras nadie la recoja.</item>
     /// </list>
     /// </summary>
     public class ServicioPreparacionReposicion : IServicioPreparacionReposicion, IDisposable
@@ -1111,7 +1112,7 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
                 DatosAlmacenReposicion almacenOrigen = await repositorio.LeerAlmacen(empresa, origen).ConfigureAwait(false);
                 IUbicacionesReposicion huecos = ubicaciones(origen, almacenOrigen?.ControlUbicaciones == true);
 
-                // (1) lo que salió de cada hueco vuelve a él (-4 → 0/2)
+                // (1) lo reservado vuelve a su hueco (4 → 0/2; -4 → 0/2 si se cerró antes de NestoAPI#651)
                 ResumenUbicaciones devuelto = await huecos.AnularSalida(empresa, origen, numeroTraspaso, quien).ConfigureAwait(false);
                 // (2) lo contrario de «update pedidosespeciales set NºTraspaso=…»
                 _ = await repositorio.QuitarTraspasoDePedidosEspeciales(numeroTraspaso).ConfigureAwait(false);
@@ -1473,8 +1474,14 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
             }
             // (6) update pedidosespeciales set NºTraspaso=… (líneas «Compra», sin vendedor)
             _ = await repositorio.ActualizarPedidosEspeciales(empresa, diario, destino).ConfigureAwait(false);
-            // (7) update ubicaciones set cantidad=-cantidad, estado=-4, nºtraspasorepo=… (solo con control de ubicaciones)
-            _ = await huecos.DescontarAlTerminar(empresa, conCantidad.Select(f => f.NumeroOrden).ToList(), numero, quien).ConfigureAwait(false);
+            // (7) Con control de ubicaciones. Si se contabiliza ya: update ubicaciones set cantidad=-cantidad, estado=-4,
+            // nºtraspasorepo=… como Nesto viejo. NestoAPI#651: si NO (Algete, la contabiliza Ariadna al terminar la recogida),
+            // las reservas siguen vivas en 4 y solo se enlazan al traspaso; pasar a -4 aquí dejaba las Ubicaciones vivas N por
+            // debajo del stock del extracto hasta que se terminaba la recogida.
+            List<int> lineasEntrada = conCantidad.Select(f => f.NumeroOrden).ToList();
+            _ = contabilizar
+                ? await huecos.DescontarAlTerminar(empresa, lineasEntrada, numero, quien).ConfigureAwait(false)
+                : await huecos.EnlazarAlTraspaso(empresa, lineasEntrada, numero, quien).ConfigureAwait(false);
             // (8) la SALIDA: las mismas líneas con Almacén = origen y cantidad negativa
             int salidas = await repositorio.InsertarSalida(empresa, diario, origen, destino, momento, quien).ConfigureAwait(false);
             if (salidas != numeradas)

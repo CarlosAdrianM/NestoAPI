@@ -1,6 +1,7 @@
 ﻿using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Infraestructure.ExtractosProducto;
 using NestoAPI.Infraestructure.PedidosVenta;
+using NestoAPI.Infraestructure.Ubicaciones;
 using NestoAPI.Models;
 using NestoAPI.Models.PreparacionAlmacen;
 using System;
@@ -192,6 +193,12 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         Task<List<int>> TraspasosEnDiario(string empresa, string almacen, string diario);
         /// <summary>prdExtrProducto del diario, por el único punto de llamada (ServicioExtractoProducto).</summary>
         Task Contabilizar(string empresa, string diario, string usuario);
+        /// <summary>
+        /// NestoAPI#651: al contabilizar la salida del traspaso, sus reservas en los huecos del origen (estado 4 con
+        /// NºTraspasoRepo) pasan a salida (-4), por la puerta única de Ubicaciones. Devuelve las filas cambiadas (0 si se cerró
+        /// antes de #651 y ya estaban en -4).
+        /// </summary>
+        Task<int> SalidaDeLosHuecos(string empresa, string almacenOrigen, int traspaso, string usuario);
         /// <summary>NestoAPI#553: aparta del diario lo que no es de este traspaso (ver ApartadoTraspasosSql).</summary>
         Task<List<int>> ApartarOtros(string empresa, string diario, int traspaso);
         Task DevolverApartadas(string empresa, string diario, IReadOnlyCollection<int> apartadas);
@@ -388,8 +395,9 @@ UPDATE Ubicaciones SET [NºOrdenVta] = NULL WHERE [NºOrdenVta] = @p0 AND Estado
 UPDATE Ubicaciones SET [NºOrdenVta] = @p0 WHERE [NºOrden] = @p1";
 
         // La salida de un traspaso de reposición: sus filas de PreExtrProducto en el diario de salida del origen, con el
-        // registro de lo que salió de cada hueco. Al cerrar el traspaso (Nesto viejo o POST api/Reposiciones) la reserva
-        // (estado 4) pasa a -4 con el NºTraspasoRepo, ya quitada del hueco. Su NºOrdenRepo es la línea de ENTRADA, no la de
+        // registro de lo que salió de cada hueco. Al cerrar el traspaso, Nesto viejo pasa la reserva (estado 4) a -4 con el
+        // NºTraspasoRepo; POST api/Reposiciones (NestoAPI#651) la deja en 4 con el NºTraspasoRepo y pasa a -4 al terminar
+        // aquí (SalidaDeLosHuecos), por eso se leen las dos. Su NºOrdenRepo es la línea de ENTRADA, no la de
         // salida: se localiza por NºTraspasoRepo + producto + almacén de origen. Lo que la salida tiene de más sobre esos
         // registros (no había nada libre al reservar, o un almacén sin control de ubicaciones) es una pieza sin hueco.
         internal const string SQL_PIEZAS_REPOSICION = @"
@@ -613,6 +621,13 @@ WHERE u.[NºTraspasoRepo] = @p1
         public Task Contabilizar(string empresa, string diario, string usuario)
         {
             return extractos.ContabilizarDiario(db, empresa, diario, Usuario(usuario));
+        }
+
+        public async Task<int> SalidaDeLosHuecos(string empresa, string almacenOrigen, int traspaso, string usuario)
+        {
+            ResumenUbicaciones resumen = await new PuertaUbicacionesSql(db).SalidaDeReposicionDelTraspaso(empresa, almacenOrigen, traspaso, Usuario(usuario))
+                .ConfigureAwait(false);
+            return resumen.FilasTocadas;
         }
 
         public Task<List<int>> ApartarOtros(string empresa, string diario, int traspaso)
