@@ -31,6 +31,27 @@ namespace NestoAPI.Tests.Infrastructure
         private static LinPedidoVta Linea(short estado, int? picking = null, DateTime? fechaAlbaran = null) =>
             new LinPedidoVta { Estado = estado, Picking = picking, Fecha_Albarán = fechaAlbaran };
 
+        private static ClaimsPrincipal ConRoles(params string[] roles) => new ClaimsPrincipal(new ClaimsIdentity(
+            roles.Select(r => new Claim(ClaimTypes.Role, r)).Concat(new[] { new Claim(ClaimTypes.Name, "NUEVAVISION\\Alfredo") }), "test"));
+
+        // Sugerencia 618 (Alfredo, 15/10/26, pedido 928498): el correo pedía a almacén cambiar el modo, pero la regla
+        // también le bloqueaba a él. Almacén y Dirección sí pueden; los demás siguen pidiéndoselo a almacén.
+        [DataTestMethod]
+        [DataRow("NUEVAVISION\\Almacén", true)]
+        [DataRow("Dirección", true)]
+        [DataRow("NUEVAVISION\\Tiendas", false)]
+        [DataRow("NUEVAVISION\\Vendedores", false)]
+        public void PuedeCambiarConPicking_SoloAlmacenYDireccion(string rol, bool puede)
+        {
+            Assert.AreEqual(puede, CambioModoConPicking.PuedeCambiarConPicking(ConRoles(rol)));
+        }
+
+        [TestMethod]
+        public void PuedeCambiarConPicking_SinUsuario_No()
+        {
+            Assert.IsFalse(CambioModoConPicking.PuedeCambiarConPicking(null));
+        }
+
         [TestMethod]
         public void ConPicking_NoSePuedeCambiar()
         {

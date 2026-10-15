@@ -5,6 +5,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Mail;
+using System.Security.Principal;
+using NestoAPI.Infrastructure;
 
 namespace NestoAPI.Infraestructure.PedidosVenta
 {
@@ -40,6 +42,29 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     "Si hace falta, se lo podemos pedir a almacén: lo intentarán, pero puede que ya no llegue a tiempo.";
             }
             return null;
+        }
+
+        /// <summary>
+        /// Sugerencia 618 (Alfredo, 15/10/26): el correo pide a almacén que lo cambie, pero la regla también le
+        /// bloqueaba a él (y mandaba otro correo a su nombre). Almacén y Dirección sí pueden cambiar el modo con
+        /// picking: son quienes saben si aún están a tiempo y deshacen lo preparado. Explícitamente esos dos grupos,
+        /// no el permiso de omitir validación (que también tienen algunos vendedores).
+        /// </summary>
+        internal static bool PuedeCambiarConPicking(IPrincipal usuario)
+        {
+            if (usuario == null)
+            {
+                return false;
+            }
+            try
+            {
+                return usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.ALMACEN)
+                    || usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION);
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         /// <summary>El correo a almacén pidiendo el cambio (sin prometer nada). Puro para testear.</summary>

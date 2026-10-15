@@ -879,7 +879,8 @@ namespace NestoAPI.Controllers
             if (Constantes.Pedidos.ModosServicio.Efectivo(pedido.modoServicio, pedido.servirJunto) != modoEfectivoAnterior)
             {
                 string motivoConPicking = Infraestructure.PedidosVenta.CambioModoConPicking.Motivo(cabPedidoVta.LinPedidoVtas, DateTime.Today);
-                if (motivoConPicking != null)
+                // Sugerencia 618: Almacén y Dirección sí pueden (son a quienes se les pide el cambio).
+                if (motivoConPicking != null && !Infraestructure.PedidosVenta.CambioModoConPicking.PuedeCambiarConPicking(usuarioValidacion))
                 {
                     throw new Infraestructure.PedidosVenta.ModoConPickingException(motivoConPicking, pedido.empresa, pedido.numero);
                 }
