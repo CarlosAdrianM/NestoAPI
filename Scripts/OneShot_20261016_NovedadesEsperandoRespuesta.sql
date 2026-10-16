@@ -5,7 +5,7 @@
     asistente y le pregunta algo al autor, sin respuesta posterior. La fecha de espera es la de esa pregunta, así que
     el primer job (L-V 9:00) mandará ya el recordatorio a las que lleven 2 días laborables o más.
 
-    Comprobado el 16/10/26 con SELECT en producción: son 4.
+    Comprobado el 16/10/26 con SELECT en producción: son 4, más la 648 (Paloma, pregunta de las 11:18 sobre el informe de cifras).
         579  Marta      13/10 10:12  «¿nos dices aquí si te ha ido bien?»
         584  MariaJose  14/10 08:31  «¿es el Enlace de pago…, el Cobro NestoPago…?»
         605  Marta      14/10 18:14  «¿Puedes volver a intentar borrarla ahora?»
@@ -35,7 +35,7 @@ WHERE n.Version IS NULL AND n.Publicada = 1 AND n.Estado IN ('Pendiente', 'Acept
 ORDER BY n.Id;
 GO
 
--- 2) Marcar las 4 revisadas a mano, con la fecha real de la pregunta.
+-- 2) Marcar las 5 revisadas a mano, con la fecha real de la pregunta.
 WITH ultimo AS (
     SELECT c.NovedadId, c.Usuario, c.Fecha,
            ROW_NUMBER() OVER (PARTITION BY c.NovedadId ORDER BY c.Fecha DESC, c.Id DESC) AS rn
@@ -48,7 +48,7 @@ UPDATE n SET
     UltimoRecordatorioRespuesta = NULL
 FROM dbo.Novedades n
 JOIN ultimo u ON u.NovedadId = n.Id AND u.rn = 1
-WHERE n.Id IN (579, 584, 605, 621)
+WHERE n.Id IN (579, 584, 605, 621, 648)
   AND n.Version IS NULL AND n.Estado IN ('Pendiente', 'Aceptada')
   AND u.Usuario = N'Claude'
   AND n.EsperandoRespuestaDesde IS NULL;
