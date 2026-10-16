@@ -47,7 +47,8 @@ namespace NestoAPI.Controllers
 
         /// <summary>
         /// Las filas de IndicadoresStock de los meses <paramref name="desde"/> a <paramref name="hasta"/> (AAAA-MM, incluidos; por
-        /// defecto los 36 meses que acaban en el mes anterior), de un almacén (ALG, REI, ALC…, TOTAL) o de todos. Cada fila lleva
+        /// defecto los 36 meses que acaban en el mes anterior), de un almacén (ALG, REI, ALC…, TOTAL; NestoAPI#628: o una agrupación
+        /// por tipo de exclusiva, G:PRP, G:NAC, G:MAD, G:NIG, G:EXT, G:SIN, que salen detrás de los almacenes) o de todos. Cada fila lleva
         /// además el % de unidades compradas en sus 12 meses con más de 6 meses de cobertura. Dirección e Informática.
         /// GET api/IndicadoresStock?desde=2023-10&amp;hasta=2026-09&amp;almacen=TOTAL
         /// </summary>
@@ -157,7 +158,7 @@ namespace NestoAPI.Controllers
             }
             return respuesta
                 .OrderBy(f => f.Mes)
-                .ThenBy(f => f.Almacen == FilaIndicadoresStock.TOTAL ? 0 : 1)
+                .ThenBy(f => f.Almacen == FilaIndicadoresStock.TOTAL ? 0 : AgrupacionesStock.EsAgrupacion(f.Almacen) ? 2 : 1)
                 .ThenBy(f => f.Almacen, StringComparer.OrdinalIgnoreCase)
                 .ToList();
         }

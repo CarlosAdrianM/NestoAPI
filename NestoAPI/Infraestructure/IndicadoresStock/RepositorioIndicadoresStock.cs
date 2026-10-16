@@ -50,8 +50,10 @@ namespace NestoAPI.Infraestructure.IndicadoresStock
         internal const string SQL_PRODUCTOS = @"
 SELECT RTRIM(p.Número) AS Producto, CAST(ISNULL(p.Estado, 0) AS int) AS Estado,
     RTRIM(ISNULL(p.Grupo, '')) AS Grupo, RTRIM(ISNULL(p.SubGrupo, '')) AS SubGrupo,
-    CAST(ISNULL(p.PrecioMedio, 0) AS decimal(19, 4)) AS PrecioMedio
+    CAST(ISNULL(p.PrecioMedio, 0) AS decimal(19, 4)) AS PrecioMedio,
+    RTRIM(ISNULL(f.TipoExclusiva, '')) AS TipoExclusiva
 FROM dbo.Productos p WITH (NOLOCK)
+LEFT JOIN dbo.Familias f WITH (NOLOCK) ON f.Empresa = p.Empresa AND f.Número = p.Familia
 WHERE p.Empresa = '1' AND p.Ficticio = 0";
 
         // @p0 = día 1 del mes, @p1 = día 1 del mes siguiente. Tramo −1 = antes de los 12 meses; 0..11 = de M−11 a M.
@@ -149,7 +151,7 @@ GROUP BY CASE WHEN ISNULL(p.Grupo, '') = 'MTP' THEN 'MTP' ELSE 'MMP' END, RTRIM(
         internal static readonly string SQL_LEER = "SELECT " + string.Join(", ", COLUMNAS) + @", FechaCalculo
 FROM dbo.IndicadoresStock
 WHERE Mes >= @p0 AND Mes <= @p1 AND (@p2 IS NULL OR Almacen = @p2)
-ORDER BY Mes, CASE WHEN Almacen = 'TOTAL' THEN 0 ELSE 1 END, Almacen";
+ORDER BY Mes, CASE WHEN Almacen = 'TOTAL' THEN 0 WHEN Almacen LIKE 'G:%' THEN 2 ELSE 1 END, Almacen";
 
         private readonly NVEntities db;
 

@@ -360,6 +360,80 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             return fila;
         }
 
+        public const string TITULO_AGRUPACIONES = "Por tipo de exclusiva: propios, nacionales, Madrid, sin exclusiva y a extinguir";
+        public const string ETIQUETA_TODAS_AGRUPACIONES = "Todos";
+
+        /// <summary>El orden de las columnas «nº por acción»; las que no estén aquí, detrás por orden alfabético.</summary>
+        private static readonly string[] ORDEN_ACCIONES =
+        {
+            AccionesPropuesta.AJUSTAR, AccionesPropuesta.MANTENER, AccionesPropuesta.ESTADO_1, AccionesPropuesta.PARAR_COMPRAS,
+            AccionesPropuesta.LIQUIDAR, AccionesPropuesta.AJUSTAR_LOTE, AccionesPropuesta.POTENCIAR, AccionesPropuesta.CADUCA, AccionesPropuesta.NADA
+        };
+
+        /// <summary>
+        /// NestoAPI#628 (Manuel): por agrupación de tipo de exclusiva (<see cref="AgrupacionesStock"/>), referencias, valor de stock y
+        /// exceso de las propuestas, y el coste de ventas, la rotación y la cobertura de IndicadoresStock de esa agrupación (no una
+        /// aproximación con el stock de fin de mes: el mismo cálculo que el total, con el stock medio de 12 meses).
+        /// </summary>
+        private static int TablaAgrupaciones(IXLWorksheet hoja, int fila, List<ResultadoTendencia> todos, IndicadoresDelMesPropuestas indicadores)
+        {
+            fila = Subtitulo(hoja, fila, TITULO_AGRUPACIONES);
+            List<string> acciones = todos.Select(r => r.Accion).Where(a => !string.IsNullOrWhiteSpace(a)).Distinct()
+                .OrderBy(a => Array.IndexOf(ORDEN_ACCIONES, a) < 0 ? int.MaxValue : Array.IndexOf(ORDEN_ACCIONES, a))
+                .ThenBy(a => a, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            List<string> cabecera = new List<string> { "Agrupación", "Referencias", "Valor de stock", "Coste de ventas 12 m", "Rotación (veces al año)",
+                "Cobertura media (días)", "Exceso €" };
+            cabecera.AddRange(acciones.Select(a => "Nº " + a));
+            CabeceraTabla(hoja, fila, cabecera);
+            fila++;
+
+            bool faltanIndicadores = false;
+            void Linea(string nombre, List<ResultadoTendencia> filas, FilaIndicadoresStock indicador)
+            {
+                hoja.Cell(fila, 1).Value = nombre;
+                hoja.Cell(fila, 2).Value = filas.Count;
+                Valor(hoja.Cell(fila, 3), ValorStock(filas), FORMATO_EUROS);
+                if (indicador != null)
+                {
+                    Valor(hoja.Cell(fila, 4), indicador.CosteVentas12Meses, FORMATO_EUROS);
+                    Valor(hoja.Cell(fila, 5), indicador.Rotacion, FORMATO_RATIO);
+                    Valor(hoja.Cell(fila, 6), indicador.CoberturaMediaDias, FORMATO_DECIMAL);
+                }
+                else
+                {
+                    faltanIndicadores = true;
+                }
+                Valor(hoja.Cell(fila, 7), filas.Sum(r => r.ExcesoValorado), FORMATO_EUROS);
+                for (int i = 0; i < acciones.Count; i++)
+                {
+                    hoja.Cell(fila, 8 + i).Value = filas.Count(r => r.Accion == acciones[i]);
+                }
+                fila++;
+            }
+
+            Dictionary<string, List<ResultadoTendencia>> porAgrupacion = todos.GroupBy(r => r.Agrupacion).ToDictionary(g => g.Key, g => g.ToList());
+            foreach (string codigo in AgrupacionesStock.TODAS)
+            {
+                FilaIndicadoresStock indicador = indicadores?.Fila(AgrupacionesStock.Almacen(codigo));
+                if (!porAgrupacion.TryGetValue(codigo, out List<ResultadoTendencia> filas) && indicador == null)
+                {
+                    continue;
+                }
+                Linea(AgrupacionesStock.Nombre(codigo), filas ?? new List<ResultadoTendencia>(), indicador);
+            }
+            Linea(ETIQUETA_TODAS_AGRUPACIONES, todos, indicadores?.Total);
+            hoja.Range(fila - 1, 1, fila - 1, cabecera.Count).Style.Font.Bold = true;
+
+            fila = Nota(hoja, fila, "Referencias, valor de stock, exceso y acciones: los de las propuestas (sin materias primas ni muestras). Coste de ventas, " +
+                "rotación (coste de ventas de 12 meses ÷ stock medio de 12 meses) y cobertura: los de los indicadores de stock del mes de cada agrupación.");
+            if (faltanIndicadores && indicadores != null)
+            {
+                fila = Nota(hoja, fila, "Los indicadores de stock de este mes no tienen alguna agrupación: hay que recalcularlos (POST api/IndicadoresStock/Reconstruir).");
+            }
+            return fila;
+        }
+
         /// <summary>NestoAPI#628: el desglose por familia de lo que el motor deja fuera (para analizarlo cuando toque).</summary>
         private static int TablaFueraPorFamilia(IXLWorksheet hoja, int fila, IndicadoresDelMesPropuestas indicadores)
         {
@@ -412,6 +486,9 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             fila = TablaCuadre(hoja, fila, todos, indicadores);
 
             fila += 2;
+            fila = TablaAgrupaciones(hoja, fila, todos, indicadores);
+
+            fila += 2;
             hoja.Cell(fila, 1).Value = "Propios por acción (nunca Outlet ni liquidar)";
             hoja.Cell(fila, 1).Style.Font.Bold = true;
             fila++;
@@ -438,7 +515,7 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             _ = TablaFueraPorFamilia(hoja, fila, indicadores);
 
             hoja.Column(1).Width = 62;
-            for (int c = 2; c <= 6; c++)
+            for (int c = 2; c <= 16; c++)
             {
                 hoja.Column(c).Width = 18;
             }

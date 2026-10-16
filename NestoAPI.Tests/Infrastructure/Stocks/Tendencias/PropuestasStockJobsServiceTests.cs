@@ -455,6 +455,63 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
             Assert.AreEqual(0, errores.Count);
         }
 
+        // ---------- NestoAPI#628 (Manuel): desglose por tipo de exclusiva, con la rotación de IndicadoresStock ----------
+
+        [TestMethod]
+        public void ResultadoTendencia_Agrupacion_PropiosPorFormula_ElRestoPorElTipoDeExclusivaDeEntradasJson()
+        {
+            Assert.AreEqual("PRP", new ResultadoTendencia { Formula = FormulasPropuesta.PREFIJO_PROPIOS + " estado 0", EntradasJson = "{\"tipoExclusiva\":\"NAC\"}" }.Agrupacion);
+            Assert.AreEqual("NAC", new ResultadoTendencia { Formula = "B", EntradasJson = "{\"tipoExclusiva\":\"NAC\"}" }.Agrupacion);
+            Assert.AreEqual("MAD", new ResultadoTendencia { Formula = "B", EntradasJson = "{\"tipoExclusiva\":\"mad \"}" }.Agrupacion);
+            Assert.AreEqual("SIN", new ResultadoTendencia { Formula = "B", EntradasJson = "{\"tipoExclusiva\":\"ZZZ\"}" }.Agrupacion);
+            Assert.AreEqual("SIN", new ResultadoTendencia { Formula = "B" }.Agrupacion);
+            Assert.AreEqual("SIN", new ResultadoTendencia { Formula = "B", EntradasJson = "no es json" }.Agrupacion);
+            ResultadoTendencia cambia = new ResultadoTendencia { Formula = "B", EntradasJson = "{\"tipoExclusiva\":\"EXT\"}" };
+            Assert.AreEqual("EXT", cambia.Agrupacion);
+            cambia.EntradasJson = "{\"tipoExclusiva\":\"NIG\"}";
+            Assert.AreEqual("NIG", cambia.Agrupacion);
+        }
+
+        [TestMethod]
+        public void Excel_Resumen_PorTipoDeExclusiva_ConLaRotacionDeLosIndicadoresDeCadaAgrupacion()
+        {
+            IndicadoresDelMesPropuestas indicadores = IndicadoresDePrueba(100.5m);
+            indicadores.Filas[0].CosteVentas12Meses = 300m;
+            indicadores.Filas[0].Rotacion = 1.5m;
+            indicadores.Filas.Add(new FilaIndicadoresStock { Mes = MesReferencia, Almacen = "G:NAC", CosteVentas12Meses = 120m, Rotacion = 3m, CoberturaMediaDias = 90m });
+            ResultadoPropuestasStock r = ResultadoConDosProductos(indicadores);
+            r.Productos[0].EntradasJson = "{\"tipoExclusiva\":\"NAC\"}";
+            r.Productos[0].ExcesoValorado = 7m;
+            r.Productos[1].EntradasJson = "{\"tipoExclusiva\":\"MAD\"}";
+
+            byte[] excel = new GeneradorExcelPropuestasStock().Generar(r);
+
+            int titulo = FilaConTexto(excel, "Resumen", GeneradorExcelPropuestasStock.TITULO_AGRUPACIONES);
+            Assert.IsTrue(titulo > 0);
+            Assert.AreEqual("Nº " + AccionesPropuesta.AJUSTAR, Celda(excel, "Resumen", "H" + (titulo + 1)));
+            Assert.AreEqual("Nº " + AccionesPropuesta.MANTENER, Celda(excel, "Resumen", "I" + (titulo + 1)));
+            int nac = FilaConTexto(excel, "Resumen", AgrupacionesStock.Nombre(AgrupacionesStock.NACIONALES));
+            Assert.AreEqual(titulo + 2, nac);
+            Assert.AreEqual("1", Celda(excel, "Resumen", "B" + nac));
+            Assert.AreEqual("20", Celda(excel, "Resumen", "C" + nac));
+            Assert.AreEqual("120", Celda(excel, "Resumen", "D" + nac));
+            Assert.AreEqual("3", Celda(excel, "Resumen", "E" + nac));       // la rotación de G:NAC de IndicadoresStock
+            Assert.AreEqual("90", Celda(excel, "Resumen", "F" + nac));
+            Assert.AreEqual("7", Celda(excel, "Resumen", "G" + nac));
+            Assert.AreEqual("1", Celda(excel, "Resumen", "H" + nac));
+            Assert.AreEqual("0", Celda(excel, "Resumen", "I" + nac));
+            // MAD sin fila en los indicadores: sin rotación inventada, y el aviso de recalcular
+            int mad = FilaConTexto(excel, "Resumen", AgrupacionesStock.Nombre(AgrupacionesStock.MADRID));
+            Assert.AreEqual(nac + 1, mad);
+            Assert.IsNull(Celda(excel, "Resumen", "E" + mad));
+            int todos = FilaConTexto(excel, "Resumen", GeneradorExcelPropuestasStock.ETIQUETA_TODAS_AGRUPACIONES);
+            Assert.AreEqual(mad + 1, todos);
+            Assert.AreEqual("2", Celda(excel, "Resumen", "B" + todos));
+            Assert.AreEqual("1.5", Celda(excel, "Resumen", "E" + todos));
+            Assert.IsTrue(FilaConTexto(excel, "Resumen",
+                "Los indicadores de stock de este mes no tienen alguna agrupación: hay que recalcularlos (POST api/IndicadoresStock/Reconstruir).") > 0);
+        }
+
         /// <summary>NestoAPI#628: la fila (1, 2…) cuya columna A tiene exactamente ese texto; −1 si no hay ninguna.</summary>
         private static int FilaConTexto(byte[] excel, string hoja, string texto)
         {

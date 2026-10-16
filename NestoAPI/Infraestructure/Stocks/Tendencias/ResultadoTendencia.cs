@@ -137,5 +137,60 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
 
         /// <summary>Series y contexto en JSON (columna Entradas de la tabla).</summary>
         public string EntradasJson { get; set; }
+
+        // NestoAPI#628: el tipo de exclusiva viaja en EntradasJson («tipoExclusiva»); se lee una vez y se guarda en estos campos
+        // (campos y no propiedades: EF, en SqlQuery, no busca columna para ellos ni para las propiedades sin set).
+        private string entradasLeidas;
+        private string tipoExclusivaLeido;
+
+        /// <summary>
+        /// NestoAPI#628: Familias.TipoExclusiva de la familia (NAC, MAD, NIG, EXT, PRP…), sacado de <see cref="EntradasJson"/>;
+        /// null si no está. Solo lectura (PropuestasStock no tiene columna para esto).
+        /// </summary>
+        public string TipoExclusiva
+        {
+            get
+            {
+                if (!ReferenceEquals(entradasLeidas, EntradasJson))
+                {
+                    tipoExclusivaLeido = LeerTipoExclusiva(EntradasJson);
+                    entradasLeidas = EntradasJson;
+                }
+                return tipoExclusivaLeido;
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#628: la agrupación por tipo de exclusiva (<see cref="IndicadoresStock.AgrupacionesStock"/>): los propios (fórmula
+        /// P) en PRP sea cual sea su tipo; el resto, por su tipo de exclusiva (sin tipo, SIN). Solo lectura.
+        /// </summary>
+        public string Agrupacion => FabricacionPropia
+            ? IndicadoresStock.AgrupacionesStock.PROPIOS
+            : IndicadoresStock.AgrupacionesStock.Codigo(TipoExclusiva);
+
+        private static string LeerTipoExclusiva(string entradas)
+        {
+            if (string.IsNullOrWhiteSpace(entradas))
+            {
+                return null;
+            }
+            try
+            {
+                string tipo = (string)Newtonsoft.Json.Linq.JObject.Parse(entradas)["tipoExclusiva"];
+                return string.IsNullOrWhiteSpace(tipo) ? null : tipo.Trim();
+            }
+            catch (Newtonsoft.Json.JsonException)
+            {
+                return null;
+            }
+            catch (InvalidCastException)
+            {
+                return null;
+            }
+            catch (ArgumentException)
+            {
+                return null;
+            }
+        }
     }
 }

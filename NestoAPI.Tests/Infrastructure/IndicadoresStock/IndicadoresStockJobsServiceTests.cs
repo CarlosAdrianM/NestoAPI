@@ -46,7 +46,7 @@ namespace NestoAPI.Tests.Infrastructure.IndicadoresStock
             int filas = repo.Tabla.Count;
             Assert.AreEqual(ResultadoMesIndicadoresStock.Completo, servicio.RellenarMes(SEPTIEMBRE.AddDays(14)).Result);
 
-            Assert.AreEqual(3, filas, "TOTAL, ALG y REI");
+            Assert.AreEqual(4, filas, "TOTAL, ALG, REI y G:SIN (NestoAPI#628: los productos de prueba no tienen tipo de exclusiva)");
             Assert.AreEqual(filas, repo.Tabla.Count);
             Assert.IsTrue(repo.Tabla.All(f => f.Mes == SEPTIEMBRE));
             Assert.AreEqual(30m, repo.Tabla.Single(f => f.Almacen == FilaIndicadoresStock.TOTAL).ValorStock);

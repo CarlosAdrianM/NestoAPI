@@ -14,6 +14,56 @@ namespace NestoAPI.Infraestructure.IndicadoresStock
         public string SubGrupo { get; set; }
         /// <summary>Productos.PrecioMedio de hoy: valora el stock de cualquier fecha, como la consulta de Carlos de la épica.</summary>
         public decimal PrecioMedio { get; set; }
+        /// <summary>NestoAPI#628: Familias.TipoExclusiva de su familia, de HOY (como el estado); vacío si no tiene familia.</summary>
+        public string TipoExclusiva { get; set; }
+    }
+
+    /// <summary>
+    /// NestoAPI#628 (Manuel, 16/10/26): «tenemos que tener también los datos de las exclusivas: Nacionales (NAC), Madrid (MAD),
+    /// ninguna (NIG), extinguir (EXT)… la rotación tendría que ser por cada uno de estos grupos». Las agrupaciones salen del
+    /// tipo de exclusiva de la familia; los propios (familias PRP, fórmula P del motor) van aparte.
+    /// <para>En IndicadoresStock son filas más del mes con <c>Almacen = "G:" + código</c> (G:PRP, G:NAC, G:MAD, G:NIG, G:EXT y
+    /// G:SIN): caben en el varchar(5) de la columna sin tocar la tabla, no chocan con ningún almacén (Almacenes.Número es
+    /// char(3)) y quien lee hoy <c>Almacen = 'TOTAL'</c> o un almacén no ve nada distinto.</para>
+    /// </summary>
+    public static class AgrupacionesStock
+    {
+        public const string PREFIJO = "G:";
+        public const string PROPIOS = "PRP";
+        public const string NACIONALES = "NAC";
+        public const string MADRID = "MAD";
+        public const string NINGUNA = "NIG";
+        public const string EXTINGUIR = "EXT";
+        /// <summary>Sin familia, o con un tipo de exclusiva que no es de los de arriba.</summary>
+        public const string SIN_TIPO = "SIN";
+
+        /// <summary>En el orden en que se enseñan.</summary>
+        public static readonly string[] TODAS = { PROPIOS, NACIONALES, MADRID, NINGUNA, EXTINGUIR, SIN_TIPO };
+
+        /// <summary>El código de agrupación de un tipo de exclusiva (PRP, NAC, MAD, NIG, EXT; cualquier otro, o vacío, SIN).</summary>
+        public static string Codigo(string tipoExclusiva)
+        {
+            string tipo = tipoExclusiva?.Trim().ToUpperInvariant();
+            return tipo != SIN_TIPO && Array.IndexOf(TODAS, tipo) >= 0 ? tipo : SIN_TIPO;
+        }
+
+        /// <summary>«G:NAC»: el valor de la columna Almacen de IndicadoresStock para esa agrupación.</summary>
+        public static string Almacen(string codigo) => PREFIJO + codigo;
+
+        public static bool EsAgrupacion(string almacen) => almacen != null && almacen.Trim().StartsWith(PREFIJO, StringComparison.OrdinalIgnoreCase);
+
+        public static string Nombre(string codigo)
+        {
+            switch (codigo)
+            {
+                case PROPIOS: return "Propios (fabricación propia)";
+                case NACIONALES: return "Exclusivas nacionales (NAC)";
+                case MADRID: return "Exclusivas de Madrid (MAD)";
+                case NINGUNA: return "Sin exclusiva (NIG)";
+                case EXTINGUIR: return "A extinguir (EXT)";
+                default: return "Sin tipo de exclusiva";
+            }
+        }
     }
 
     /// <summary>
@@ -88,7 +138,7 @@ namespace NestoAPI.Infraestructure.IndicadoresStock
 
         /// <summary>Día 1 del mes.</summary>
         public DateTime Mes { get; set; }
-        /// <summary>Código del almacén o «TOTAL» (todos menos EXT).</summary>
+        /// <summary>Código del almacén, «TOTAL» (todos menos EXT) o una agrupación por tipo de exclusiva («G:NAC»…, <see cref="AgrupacionesStock"/>).</summary>
         public string Almacen { get; set; }
 
         public decimal? ValorStock { get; set; }

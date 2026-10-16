@@ -326,6 +326,67 @@ namespace NestoAPI.Tests.Infrastructure.IndicadoresStock
             Assert.IsNull(total.UnidadesCompradasMes);
         }
 
+        // ---------- NestoAPI#628: agrupaciones por tipo de exclusiva ----------
+
+        [TestMethod]
+        public void Agrupaciones_UnaFilaPorTipoDeExclusiva_ConLaRotacionDeSusProductos_DetrasDeLosAlmacenes()
+        {
+            Producto("N", 2m);
+            repo.Productos.Last().TipoExclusiva = "NAC";
+            Producto("P", 1m);
+            repo.Productos.Last().TipoExclusiva = "PRP ";       // con el relleno del char(3)
+            Producto("MP", 1m, grupo: "MTP");                   // materia prima de una familia propia: en el valor, no en la rotación
+            repo.Productos.Last().TipoExclusiva = "PRP";
+            Producto("S", 3m);                                  // sin familia: G:SIN
+            Producto("X", 1m);
+            repo.Productos.Last().TipoExclusiva = "ZZZ";        // tipo desconocido: G:SIN
+            Movimiento("N", ANTIGUO, 10);
+            Movimiento("P", ANTIGUO, 40, "REI");
+            Movimiento("MP", ANTIGUO, 5);
+            Movimiento("S", ANTIGUO, 1);
+            Movimiento("X", ANTIGUO, 2);
+            Venta("N", new DateTime(2026, 9, 10), 30);          // 30 × 2 = 60 de coste; stock medio 20 → rotación 3
+            Venta("P", new DateTime(2026, 9, 10), 10, "REI");   // 10 × 1 = 10; stock medio 40 → rotación 0,25
+
+            List<FilaIndicadoresStock> filas = Calcular();
+
+            FilaIndicadoresStock nac = Fila(filas, "G:NAC");
+            Assert.AreEqual(20m, nac.ValorStock);
+            Assert.AreEqual(60m, nac.CosteVentas12Meses);
+            Assert.AreEqual(20m, nac.ValorStockMedio12Meses);
+            Assert.AreEqual(3m, nac.Rotacion);
+            FilaIndicadoresStock propios = Fila(filas, "G:PRP");
+            Assert.AreEqual(45m, propios.ValorStock);            // 40 + 5 de la materia prima (como la TOTAL)
+            Assert.AreEqual(40m, propios.ValorStockMedio12Meses); // sin la materia prima (como la TOTAL)
+            Assert.AreEqual(0.25m, propios.Rotacion);
+            FilaIndicadoresStock sinTipo = Fila(filas, "G:SIN");
+            Assert.AreEqual(5m, sinTipo.ValorStock);             // 1 × 3 + 2 × 1
+            Assert.IsFalse(filas.Any(f => f.Almacen == "G:MAD"), "Sin productos, sin fila");
+            // La suma de las agrupaciones es la TOTAL; los días en servir, por almacén, no van en las agrupaciones
+            FilaIndicadoresStock total = Fila(filas, "TOTAL");
+            Assert.AreEqual(total.ValorStock, filas.Where(f => f.Almacen.StartsWith("G:")).Sum(f => f.ValorStock));
+            Assert.AreEqual(70m, total.CosteVentas12Meses);
+            Assert.IsNull(nac.LineasServidas);
+            Assert.IsNotNull(total.LineasServidas);
+            Assert.IsNull(nac.ValorStockAlgete);
+            // Orden: TOTAL, almacenes, agrupaciones (PRP, NAC, …, SIN)
+            CollectionAssert.AreEqual(new[] { "TOTAL", "ALG", "REI", "G:PRP", "G:NAC", "G:SIN" }, filas.Select(f => f.Almacen).ToArray());
+        }
+
+        [TestMethod]
+        public void Agrupaciones_SinVenta_MiraLaVentaDeTodaLaEmpresa_ComoLaTotal()
+        {
+            Producto("N", 2m);
+            repo.Productos.Last().TipoExclusiva = "MAD";
+            Movimiento("N", ANTIGUO, 10);
+
+            FilaIndicadoresStock mad = Fila(Calcular(), "G:MAD");
+
+            Assert.AreEqual(1, mad.ProductosSinVenta6Meses);
+            Assert.AreEqual(20m, mad.ValorSinVenta24Meses);
+            Assert.AreEqual(0m, mad.Rotacion);
+        }
+
         [TestMethod]
         [ExpectedException(typeof(ArgumentException))]
         public void SinProductos_NoSePuedeCalcular()

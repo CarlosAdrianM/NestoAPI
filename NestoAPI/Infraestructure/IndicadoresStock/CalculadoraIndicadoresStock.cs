@@ -62,6 +62,12 @@ namespace NestoAPI.Infraestructure.IndicadoresStock
     /// 12 filas (<see cref="CalcularPorcentajeCompras12Meses"/>).</item>
     /// <item><b>Algete vs tiendas</b> (solo en la fila TOTAL): valor de stock de ALG y de REI + ALC.</item>
     /// </list>
+    /// <para>NestoAPI#628: además de TOTAL y los almacenes, una fila por agrupación de tipo de exclusiva de la familia
+    /// (<see cref="AgrupacionesStock"/>: G:PRP, G:NAC, G:MAD, G:NIG, G:EXT, G:SIN), calculada con el MISMO código que TOTAL pero
+    /// solo con los productos de esa agrupación (la rotación de cada una es su coste de ventas de 12 meses ÷ su stock medio de 12
+    /// meses). «Sin venta» mira, como siempre, la venta de toda la empresa del producto. Los días en servir y el nivel de servicio
+    /// son por almacén y quedan a null; Algete y tiendas, solo en TOTAL. La suma del valor de stock de las agrupaciones es la de
+    /// TOTAL (todo producto cae en una, «G:SIN» si su familia no tiene tipo).</para>
     /// </summary>
     public static class CalculadoraIndicadoresStock
     {
@@ -94,8 +100,11 @@ namespace NestoAPI.Infraestructure.IndicadoresStock
             Dictionary<string, ProductoIndicadorStock> productos = datos.Productos
                 .GroupBy(p => Clave(p.Producto))
                 .ToDictionary(g => g.Key, g => g.First());
+            // NestoAPI#628: la agrupación por tipo de exclusiva de cada producto («G:NAC»…), que se acumula como un ámbito más
+            Dictionary<string, string> agrupacion = productos.ToDictionary(par => par.Key,
+                par => AgrupacionesStock.Almacen(AgrupacionesStock.Codigo(par.Value.TipoExclusiva)));
 
-            // (almacén, producto) y (TOTAL, producto)
+            // (almacén, producto), (TOTAL, producto) y (agrupación, producto)
             var porAmbito = new Dictionary<string, Dictionary<string, Acumulado>>(StringComparer.OrdinalIgnoreCase);
             Acumulado Obtener(string almacen, string producto)
             {
@@ -124,7 +133,7 @@ namespace NestoAPI.Infraestructure.IndicadoresStock
                     {
                         continue;
                     }
-                    foreach (Acumulado a in new[] { Obtener(almacen, producto), Obtener(FilaIndicadoresStock.TOTAL, producto) })
+                    foreach (Acumulado a in new[] { Obtener(almacen, producto), Obtener(FilaIndicadoresStock.TOTAL, producto), Obtener(agrupacion[producto], producto) })
                     {
                         a.Stock[m.Tramo + 1] += m.Cantidad;
                         if (!a.PrimeraFecha.HasValue || m.PrimeraFecha < a.PrimeraFecha.Value)
@@ -156,7 +165,7 @@ namespace NestoAPI.Infraestructure.IndicadoresStock
                     {
                         continue;
                     }
-                    foreach (Acumulado a in new[] { Obtener(almacen, producto), Obtener(FilaIndicadoresStock.TOTAL, producto) })
+                    foreach (Acumulado a in new[] { Obtener(almacen, producto), Obtener(FilaIndicadoresStock.TOTAL, producto), Obtener(agrupacion[producto], producto) })
                     {
                         a.VentasNetas[v.Tramo] += v.UnidadesNetas;
                         a.VentasSalida[v.Tramo] += v.UnidadesSalida;
@@ -191,8 +200,8 @@ namespace NestoAPI.Infraestructure.IndicadoresStock
             if (datos.MovimientosComprados != null && datos.Stock != null && datos.Ventas != null)
             {
                 porAmbito.TryGetValue(FilaIndicadoresStock.TOTAL, out Dictionary<string, Acumulado> empresa);
-                comprasCobertura = CalcularComprasConCobertura(datos.MovimientosComprados, productos, empresa ?? new Dictionary<string, Acumulado>());
-                foreach (string almacen in comprasCobertura.Keys.Where(k => k != FilaIndicadoresStock.TOTAL))
+                comprasCobertura = CalcularComprasConCobertura(datos.MovimientosComprados, productos, empresa ?? new Dictionary<string, Acumulado>(), agrupacion);
+                foreach (string almacen in comprasCobertura.Keys.Where(k => k != FilaIndicadoresStock.TOTAL && !AgrupacionesStock.EsAgrupacion(k)))
                 {
                     _ = almacenesConDatos.Add(almacen);
                 }
@@ -201,14 +210,20 @@ namespace NestoAPI.Infraestructure.IndicadoresStock
             porAmbito.TryGetValue(FilaIndicadoresStock.TOTAL, out Dictionary<string, Acumulado> deLaEmpresa);
             deLaEmpresa = deLaEmpresa ?? new Dictionary<string, Acumulado>();
 
+            // NestoAPI#628: detrás de los almacenes, las agrupaciones por tipo de exclusiva que tienen algún producto con datos
+            IEnumerable<string> agrupaciones = AgrupacionesStock.TODAS.Select(AgrupacionesStock.Almacen).Where(porAmbito.ContainsKey);
+
             var filas = new List<FilaIndicadoresStock>();
-            foreach (string almacen in new[] { FilaIndicadoresStock.TOTAL }.Concat(almacenesConDatos.OrderBy(a => a, StringComparer.OrdinalIgnoreCase)))
+            foreach (string almacen in new[] { FilaIndicadoresStock.TOTAL }
+                .Concat(almacenesConDatos.OrderBy(a => a, StringComparer.OrdinalIgnoreCase))
+                .Concat(agrupaciones))
             {
                 porAmbito.TryGetValue(almacen, out Dictionary<string, Acumulado> deAmbito);
                 FilaIndicadoresStock fila = CalcularFila(mes, almacen, deAmbito ?? new Dictionary<string, Acumulado>(), deLaEmpresa, productos,
                     datos.Stock != null, datos.Ventas != null);
 
-                if (servicio != null)
+                // Los días en servir y el nivel de servicio son por almacén (líneas de pedido): en las agrupaciones quedan a null.
+                if (servicio != null && !AgrupacionesStock.EsAgrupacion(almacen))
                 {
                     List<ServicioAlmacen> lineas = almacen == FilaIndicadoresStock.TOTAL
                         ? servicio.Values.ToList()
@@ -373,7 +388,7 @@ namespace NestoAPI.Infraestructure.IndicadoresStock
         /// unidades compradas y las que entraron con más de <see cref="MESES_COBERTURA_ALTA"/> meses de cobertura.
         /// </summary>
         private static Dictionary<string, (int compradas, int altas)> CalcularComprasConCobertura(IEnumerable<MovimientoProductoComprado> movimientos,
-            Dictionary<string, ProductoIndicadorStock> productos, Dictionary<string, Acumulado> deLaEmpresa)
+            Dictionary<string, ProductoIndicadorStock> productos, Dictionary<string, Acumulado> deLaEmpresa, Dictionary<string, string> agrupacion)
         {
             var resultado = new Dictionary<string, (int compradas, int altas)>(StringComparer.OrdinalIgnoreCase)
             {
@@ -399,7 +414,7 @@ namespace NestoAPI.Infraestructure.IndicadoresStock
                     {
                         bool coberturaAlta = ventaMedia > 0 ? stock / ventaMedia > MESES_COBERTURA_ALTA : stock > 0;
                         string almacen = Clave(m.Almacen);
-                        foreach (string ambito in new[] { FilaIndicadoresStock.TOTAL, almacen })
+                        foreach (string ambito in new[] { FilaIndicadoresStock.TOTAL, almacen, agrupacion[deProducto.Key] })
                         {
                             (int compradas, int altas) actual = resultado.TryGetValue(ambito, out var v) ? v : (0, 0);
                             resultado[ambito] = (actual.compradas + m.Cantidad, actual.altas + (coberturaAlta ? m.Cantidad : 0));
