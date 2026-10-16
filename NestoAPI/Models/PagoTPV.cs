@@ -46,7 +46,13 @@ namespace NestoAPI.Models
         public System.Guid TokenAcceso { get; set; }
         public Nullable<int> PagoOriginalId { get; set; }
         public string MetodoPago { get; set; }
-    
+        public string ReferenciaExterna { get; set; }
+        public bool Sandbox { get; set; }
+        public Nullable<System.DateTime> FechaConfirmacion { get; set; }
+        public Nullable<System.DateTime> FechaCaptura { get; set; }
+        public Nullable<decimal> ImporteCapturado { get; set; }
+        public Nullable<System.DateTime> FechaAvisoCaptura { get; set; }
+
         public virtual ICollection<PagoTPV_Efecto> PagosTPV_Efectos { get; set; }
         public virtual ICollection<PagoTPV> PagosTPV1 { get; set; }
         public virtual PagoTPV PagosTPV2 { get; set; }

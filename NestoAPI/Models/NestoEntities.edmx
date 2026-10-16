@@ -1678,6 +1678,12 @@
           <Property Name="TokenAcceso" Type="uniqueidentifier" Nullable="false" />
           <Property Name="PagoOriginalId" Type="int" />
           <Property Name="MetodoPago" Type="nvarchar" MaxLength="1" />
+          <Property Name="ReferenciaExterna" Type="nvarchar" MaxLength="64" />
+          <Property Name="Sandbox" Type="bit" Nullable="false" />
+          <Property Name="FechaConfirmacion" Type="datetime" />
+          <Property Name="FechaCaptura" Type="datetime" />
+          <Property Name="ImporteCapturado" Type="decimal" Precision="18" Scale="2" />
+          <Property Name="FechaAvisoCaptura" Type="datetime" />
         </EntityType>
         <EntityType Name="PagosTPV_Efectos">
           <Key>
@@ -13934,6 +13940,12 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="TokenAcceso" Type="Guid" Nullable="false" />
           <Property Name="PagoOriginalId" Type="Int32" />
           <Property Name="MetodoPago" Type="String" MaxLength="1" FixedLength="false" Unicode="true" />
+          <Property Name="ReferenciaExterna" Type="String" MaxLength="64" FixedLength="false" Unicode="true" />
+          <Property Name="Sandbox" Type="Boolean" Nullable="false" />
+          <Property Name="FechaConfirmacion" Type="DateTime" Precision="3" />
+          <Property Name="FechaCaptura" Type="DateTime" Precision="3" />
+          <Property Name="ImporteCapturado" Type="Decimal" Precision="18" Scale="2" />
+          <Property Name="FechaAvisoCaptura" Type="DateTime" Precision="3" />
           <NavigationProperty Name="PagosTPV1" Relationship="NVModel.FK_PagosTPV_PagoOriginal" FromRole="PagoTPV" ToRole="PagoTPV1" />
           <NavigationProperty Name="PagosTPV2" Relationship="NVModel.FK_PagosTPV_PagoOriginal" FromRole="PagoTPV1" ToRole="PagoTPV" />
         </EntityType>
@@ -16458,6 +16470,12 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySetMapping Name="PagosTPV">
             <EntityTypeMapping TypeName="NVModel.PagoTPV">
               <MappingFragment StoreEntitySet="PagosTPV">
+                <ScalarProperty Name="FechaAvisoCaptura" ColumnName="FechaAvisoCaptura" />
+                <ScalarProperty Name="ImporteCapturado" ColumnName="ImporteCapturado" />
+                <ScalarProperty Name="FechaCaptura" ColumnName="FechaCaptura" />
+                <ScalarProperty Name="FechaConfirmacion" ColumnName="FechaConfirmacion" />
+                <ScalarProperty Name="Sandbox" ColumnName="Sandbox" />
+                <ScalarProperty Name="ReferenciaExterna" ColumnName="ReferenciaExterna" />
                 <ScalarProperty Name="MetodoPago" ColumnName="MetodoPago" />
                 <ScalarProperty Name="PagoOriginalId" ColumnName="PagoOriginalId" />
                 <ScalarProperty Name="TokenAcceso" ColumnName="TokenAcceso" />

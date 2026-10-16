@@ -396,6 +396,16 @@ namespace NestoAPI.Models
             /// pedido ya estaba creado y hubo que borrarlo a mano.</para>
             /// </summary>
             public const string CARRITO_APP = "CarritoApp";
+
+            /// <summary>
+            /// NestoAPI#663: el carrito de la app pagado con Aplázame (financiación). Mismo orden que
+            /// <see cref="CARRITO_APP"/> —primero el cobro y, solo si Aplázame lo aprueba, el pedido—, pero el
+            /// pedido entra como los de PrestaShop pagados con Aplázame: TRN / PRE con Prepago en la 57200013.
+            /// NumeroOrden es el <c>mid</c> de Aplázame (APP-{Id}) y ReferenciaExterna, el id del checkout.
+            /// Estados: Pendiente → Autorizado (Aplázame lo aprueba y nosotros lo confirmamos) → con pedido; o
+            /// Denegado (Aplázame lo rechaza) / Cancelado (lo cancelamos nosotros porque no llegó a ser pedido).
+            /// </summary>
+            public const string CARRITO_APLAZAME = "CarritoAplazame";
         }
 
         public static class Prepagos
@@ -405,6 +415,13 @@ namespace NestoAPI.Models
             /// factura el pedido. Es la que usa PrestaShop para sus prepagos.
             /// </summary>
             public const string CUENTA_REDSYS = "57200013";
+
+            /// <summary>
+            /// NestoAPI#663: la de los prepagos de Aplázame. Es la MISMA que pone CanalesExternos a los pedidos de
+            /// PrestaShop pagados con Aplázame (CanalExternoPedidosPrestashop, FORMA_PAGO_APLAZAME), y con la que
+            /// cuenta la conciliación de Bancos (ReglaAplazame): los de la app tienen que quedar igual.
+            /// </summary>
+            public const string CUENTA_APLAZAME = "57200013";
         }
 
         public static class EstadosPagoTPV
@@ -418,6 +435,12 @@ namespace NestoAPI.Models
             /// crear (red de seguridad del flujo cobrar-primero).
             /// </summary>
             public const string DEVUELTO = "Devuelto";
+
+            /// <summary>
+            /// NestoAPI#663: cobro de Aplázame cancelado por nosotros antes de capturarlo (el pedido no se llegó a
+            /// crear o el cobro se quedó sin pedido). Al cliente no se le cobra nada.
+            /// </summary>
+            public const string CANCELADO = "Cancelado";
         }
 
         public static class NivelRiesgoPagos
@@ -858,6 +881,22 @@ namespace NestoAPI.Models
             /// que ve el usuario.
             /// </summary>
             public const string MODO_SERVICIO_SOMBRA = "ModoServicioSombra";
+
+            /// <summary>
+            /// NestoAPI#663: interruptor del pago con Aplázame en la app, bajo «(defecto)». "Apagado" (y sin fila o cualquier
+            /// valor no reconocido): no se ofrece. "Sandbox": solo a los clientes de <see cref="APLAZAME_APP_CLIENTES_PRUEBA"/>,
+            /// contra el entorno de pruebas de Aplázame (no mueve dinero, pero el pedido SÍ se crea en Nesto). "Activo": a todos.
+            /// </summary>
+            public const string APLAZAME_APP = "AplazameApp";
+
+            /// <summary>NestoAPI#663: clientes (separados por comas) que ven Aplázame mientras el interruptor está en Sandbox.</summary>
+            public const string APLAZAME_APP_CLIENTES_PRUEBA = "AplazameAppClientesPrueba";
+
+            /// <summary>NestoAPI#663: importe mínimo con IVA («150» o «150,00») para ofrecer Aplázame. Sin fila: sin mínimo.</summary>
+            public const string APLAZAME_IMPORTE_MINIMO = "AplazameImporteMinimo";
+
+            /// <summary>NestoAPI#663: importe máximo con IVA para ofrecer Aplázame. Sin fila: sin máximo.</summary>
+            public const string APLAZAME_IMPORTE_MAXIMO = "AplazameImporteMaximo";
 
             /// <summary>
             /// NestoAPI#547 (corte c): marca (yyyy-MM-ddTHH:mm:ss, hora del servidor de BD) de la última pasada nocturna

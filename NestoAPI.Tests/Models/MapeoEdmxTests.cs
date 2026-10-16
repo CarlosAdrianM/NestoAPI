@@ -419,6 +419,40 @@ namespace NestoAPI.Tests.Models
             Assert.AreEqual(typeof(DateTime?), typeof(ReposicionTraspaso).GetProperty("FechaRecibida").PropertyType);
         }
 
+        /// <summary>
+        /// NestoAPI#663: columnas de Aplázame en PagosTPV añadidas a mano. Todas admiten null salvo Sandbox (bit NOT NULL
+        /// DEFAULT 0, que es lo que valen los cobros de siempre).
+        /// </summary>
+        [TestMethod]
+        public void Edmx_PagosTPV_ColumnasDeAplazameEnLasTresCapas()
+        {
+            Dictionary<string, (string Ssdl, string Csdl, Type Clr, bool Nullable)> columnas = new Dictionary<string, (string, string, Type, bool)>
+            {
+                { "ReferenciaExterna", ("nvarchar", "String", typeof(string), true) },
+                { "Sandbox", ("bit", "Boolean", typeof(bool), false) },
+                { "FechaConfirmacion", ("datetime", "DateTime", typeof(DateTime?), true) },
+                { "FechaCaptura", ("datetime", "DateTime", typeof(DateTime?), true) },
+                { "ImporteCapturado", ("decimal", "Decimal", typeof(decimal?), true) },
+                { "FechaAvisoCaptura", ("datetime", "DateTime", typeof(DateTime?), true) }
+            };
+            XElement almacen = EntidadesPorNombre(LeerRecurso("ssdl"), SsdlNs)["PagosTPV"];
+            XElement conceptual = EntidadesPorNombre(LeerRecurso("csdl"), CsdlNs)["PagoTPV"];
+            XElement mapeo = LeerRecurso("msl").Descendants(MslNs + "EntitySetMapping").Single(m => m.Attribute("Name").Value == "PagosTPV");
+
+            foreach (var columna in columnas)
+            {
+                XElement ssdl = almacen.Elements(SsdlNs + "Property").Single(p => p.Attribute("Name").Value == columna.Key);
+                XElement csdl = conceptual.Elements(CsdlNs + "Property").Single(p => p.Attribute("Name").Value == columna.Key);
+                Assert.AreEqual(columna.Value.Ssdl, (string)ssdl.Attribute("Type"), columna.Key);
+                Assert.AreEqual(columna.Value.Csdl, (string)csdl.Attribute("Type"), columna.Key);
+                Assert.AreEqual(columna.Value.Nullable, (string)ssdl.Attribute("Nullable") != "false", columna.Key);
+                Assert.AreEqual(columna.Value.Nullable, (string)csdl.Attribute("Nullable") != "false", columna.Key);
+                Assert.IsTrue(mapeo.Descendants(MslNs + "ScalarProperty").Any(p =>
+                    p.Attribute("Name").Value == columna.Key && p.Attribute("ColumnName").Value == columna.Key), columna.Key);
+                Assert.AreEqual(columna.Value.Clr, typeof(PagoTPV).GetProperty(columna.Key).PropertyType, columna.Key);
+            }
+        }
+
         private static void ComprobarTresCapas(string entidad, string conjunto, params string[] esperadas)
         {
             XElement conceptual = EntidadesPorNombre(LeerRecurso("csdl"), CsdlNs)[entidad];
