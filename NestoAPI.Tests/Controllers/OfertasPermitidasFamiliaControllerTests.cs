@@ -665,6 +665,185 @@ namespace NestoAPI.Tests.Controllers
 
         #endregion
 
+        #region Sugerencia 643: caducidad (FechaDesde / FechaHasta)
+
+        [TestMethod]
+        public async Task GetOfertasPermitidasFamilia_DevuelveLasFechasYSiEstaVigente()
+        {
+            var permanente = AutorizacionGenericos6mas1(48);
+            var caducada = AutorizacionGenericos6mas1(49);
+            caducada.FechaDesde = DateTime.Today.AddMonths(-2);
+            caducada.FechaHasta = DateTime.Today.AddDays(-1);
+            ConfigurarFakeDbSet(fakeOfertasPermitidas, new List<OfertaPermitida> { permanente, caducada }.AsQueryable());
+            ConfigurarFakeDbSet(fakeFamilias, FamiliaGenericos.AsQueryable());
+
+            var resultado = await controller.GetOfertasPermitidasFamilia("1");
+
+            var lista = ((OkNegotiatedContentResult<List<OfertaPermitidaFamiliaDTO>>)resultado).Content;
+            Assert.AreEqual(2, lista.Count, "El GET sigue devolviendo todas: el filtro «Solo activas» es de la pantalla");
+            Assert.IsNull(lista[0].FechaHasta);
+            Assert.IsTrue(lista[0].Vigente, "Sin fechas = permanente = siempre vigente");
+            Assert.AreEqual(DateTime.Today.AddDays(-1), lista[1].FechaHasta);
+            Assert.IsFalse(lista[1].Vigente);
+        }
+
+        [TestMethod]
+        public async Task PostOfertaPermitidaFamilia_ConFechas_LasGraba()
+        {
+            ConfigurarFakeDbSet(fakeFamilias, FamiliaGenericos.AsQueryable());
+            OfertaPermitida grabada = null;
+            A.CallTo(() => fakeOfertasPermitidas.Add(A<OfertaPermitida>.Ignored))
+                .Invokes((OfertaPermitida o) => grabada = o).ReturnsLazily((OfertaPermitida o) => o);
+            var desde = new DateTime(2026, 10, 1);
+            var hasta = new DateTime(2026, 12, 31);
+
+            var resultado = await controller.PostOfertaPermitidaFamilia(new OfertaPermitidaFamiliaCreateDTO
+            {
+                Empresa = "1", Familia = "Genéricos", CantidadConPrecio = 6, CantidadRegalo = 1,
+                FechaDesde = desde, FechaHasta = hasta, ActualizarFechas = true
+            }, "testuser");
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<OfertaPermitidaFamiliaDTO>));
+            Assert.AreEqual(desde, grabada.FechaDesde);
+            Assert.AreEqual(hasta, grabada.FechaHasta);
+            var dto = ((OkNegotiatedContentResult<OfertaPermitidaFamiliaDTO>)resultado).Content;
+            Assert.AreEqual(hasta, dto.FechaHasta);
+        }
+
+        [TestMethod]
+        public async Task PostOfertaPermitidaFamilia_HastaAnteriorADesde_RetornaBadRequest()
+        {
+            ConfigurarFakeDbSet(fakeFamilias, FamiliaGenericos.AsQueryable());
+
+            var resultado = await controller.PostOfertaPermitidaFamilia(new OfertaPermitidaFamiliaCreateDTO
+            {
+                Empresa = "1", Familia = "Genéricos", CantidadConPrecio = 6, CantidadRegalo = 1,
+                FechaDesde = new DateTime(2026, 11, 1), FechaHasta = new DateTime(2026, 10, 31), ActualizarFechas = true
+            }, "testuser");
+
+            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+            Assert.AreEqual("La fecha de inicio no puede ser posterior a la de fin", ((BadRequestErrorMessageResult)resultado).Message);
+            A.CallTo(() => fakeOfertasPermitidas.Add(A<OfertaPermitida>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task PostOfertaPermitidaFamilia_DesdeIgualAHasta_EsValida()
+        {
+            // Una oferta de un solo día (p. ej. una feria) es legítima.
+            ConfigurarFakeDbSet(fakeFamilias, FamiliaGenericos.AsQueryable());
+            A.CallTo(() => fakeOfertasPermitidas.Add(A<OfertaPermitida>.Ignored)).ReturnsLazily((OfertaPermitida o) => o);
+            var dia = new DateTime(2026, 11, 15);
+
+            var resultado = await controller.PostOfertaPermitidaFamilia(new OfertaPermitidaFamiliaCreateDTO
+            {
+                Empresa = "1", Familia = "Genéricos", CantidadConPrecio = 6, CantidadRegalo = 1,
+                FechaDesde = dia, FechaHasta = dia, ActualizarFechas = true
+            }, "testuser");
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<OfertaPermitidaFamiliaDTO>));
+        }
+
+        [TestMethod]
+        public async Task PostOfertaPermitidaFamilia_MismaOfertaEncadenadaSinSolape_EsValida()
+        {
+            // Una acaba el 31/10 y la siguiente empieza el 01/11: para eso están las fechas.
+            var vieja = AutorizacionGenericos6mas1();
+            vieja.FechaHasta = new DateTime(2026, 10, 31);
+            ConfigurarFakeDbSet(fakeOfertasPermitidas, new List<OfertaPermitida> { vieja }.AsQueryable());
+            ConfigurarFakeDbSet(fakeFamilias, FamiliaGenericos.AsQueryable());
+            A.CallTo(() => fakeOfertasPermitidas.Add(A<OfertaPermitida>.Ignored)).ReturnsLazily((OfertaPermitida o) => o);
+
+            var resultado = await controller.PostOfertaPermitidaFamilia(new OfertaPermitidaFamiliaCreateDTO
+            {
+                Empresa = "1", Familia = "Genéricos", CantidadConPrecio = 6, CantidadRegalo = 1,
+                FechaDesde = new DateTime(2026, 11, 1), ActualizarFechas = true
+            }, "testuser");
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<OfertaPermitidaFamiliaDTO>));
+        }
+
+        [TestMethod]
+        public async Task PostOfertaPermitidaFamilia_MismaOfertaConFechasSolapadas_RetornaBadRequest()
+        {
+            var vieja = AutorizacionGenericos6mas1();
+            vieja.FechaHasta = new DateTime(2026, 10, 31);
+            ConfigurarFakeDbSet(fakeOfertasPermitidas, new List<OfertaPermitida> { vieja }.AsQueryable());
+            ConfigurarFakeDbSet(fakeFamilias, FamiliaGenericos.AsQueryable());
+
+            var resultado = await controller.PostOfertaPermitidaFamilia(new OfertaPermitidaFamiliaCreateDTO
+            {
+                Empresa = "1", Familia = "Genéricos", CantidadConPrecio = 6, CantidadRegalo = 1,
+                FechaDesde = new DateTime(2026, 10, 31), ActualizarFechas = true
+            }, "testuser");
+
+            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+            StringAssert.Contains(((BadRequestErrorMessageResult)resultado).Message, "Ya existe una oferta");
+        }
+
+        [TestMethod]
+        public async Task PutOfertaPermitidaFamilia_ConFechas_LasActualizaYPuedeVolverAPermanente()
+        {
+            var oferta = AutorizacionGenericos6mas1();
+            oferta.FechaDesde = new DateTime(2026, 1, 1);
+            oferta.FechaHasta = new DateTime(2026, 12, 31);
+            ConfigurarFakeDbSet(fakeOfertasPermitidas, new List<OfertaPermitida> { oferta }.AsQueryable());
+            ConfigurarFakeDbSet(fakeFamilias, FamiliaGenericos.AsQueryable());
+
+            var resultado = await controller.PutOfertaPermitidaFamilia(48, new OfertaPermitidaFamiliaCreateDTO
+            {
+                Empresa = "1", Familia = "Genéricos", CantidadConPrecio = 6, CantidadRegalo = 1,
+                SubGrupo = "", Denegar = false,
+                FechaDesde = new DateTime(2026, 2, 1), FechaHasta = null, ActualizarFechas = true
+            }, "testuser");
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<OfertaPermitidaFamiliaDTO>));
+            Assert.AreEqual(new DateTime(2026, 2, 1), oferta.FechaDesde);
+            Assert.IsNull(oferta.FechaHasta, "Quitar el «Hasta» la deja permanente");
+        }
+
+        [TestMethod]
+        public async Task PutOfertaPermitidaFamilia_HastaAnteriorADesde_RetornaBadRequestYNoToca()
+        {
+            var oferta = AutorizacionGenericos6mas1();
+            ConfigurarFakeDbSet(fakeOfertasPermitidas, new List<OfertaPermitida> { oferta }.AsQueryable());
+            ConfigurarFakeDbSet(fakeFamilias, FamiliaGenericos.AsQueryable());
+
+            var resultado = await controller.PutOfertaPermitidaFamilia(48, new OfertaPermitidaFamiliaCreateDTO
+            {
+                Empresa = "1", Familia = "Genéricos", CantidadConPrecio = 6, CantidadRegalo = 1,
+                FechaDesde = new DateTime(2026, 11, 1), FechaHasta = new DateTime(2026, 10, 1), ActualizarFechas = true
+            }, "testuser");
+
+            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+            Assert.IsNull(oferta.FechaDesde);
+            Assert.IsNull(oferta.FechaHasta);
+            A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task PutOfertaPermitidaFamilia_ClienteAntiguoSinFechas_ConservaLasFechas()
+        {
+            // Un Nesto antiguo no conoce las fechas: editar la cantidad no puede volver permanente
+            // una oferta que caduca.
+            var oferta = AutorizacionGenericos6mas1();
+            oferta.FechaDesde = new DateTime(2026, 10, 1);
+            oferta.FechaHasta = new DateTime(2026, 12, 31);
+            ConfigurarFakeDbSet(fakeOfertasPermitidas, new List<OfertaPermitida> { oferta }.AsQueryable());
+            ConfigurarFakeDbSet(fakeFamilias, FamiliaGenericos.AsQueryable());
+
+            var resultado = await controller.PutOfertaPermitidaFamilia(48, new OfertaPermitidaFamiliaCreateDTO
+            {
+                Empresa = "1", Familia = "Genéricos", CantidadConPrecio = 12, CantidadRegalo = 2
+            }, "testuser");
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<OfertaPermitidaFamiliaDTO>));
+            Assert.AreEqual(12, oferta.CantidadConPrecio);
+            Assert.AreEqual(new DateTime(2026, 10, 1), oferta.FechaDesde);
+            Assert.AreEqual(new DateTime(2026, 12, 31), oferta.FechaHasta);
+        }
+
+        #endregion
+
         #region DELETE Tests
 
         [TestMethod]

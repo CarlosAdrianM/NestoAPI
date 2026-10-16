@@ -64,6 +64,9 @@ namespace NestoAPI.Infraestructure.OfertasAutorizadas
                 FiltroProducto = oferta.FiltroProducto?.Trim(),
                 SubGrupo = OfertasPermitidasFamiliaController.NormalizarSubGrupo(oferta.SubGrupo),
                 Denegar = oferta.Denegar,
+                FechaDesde = oferta.FechaDesde,
+                FechaHasta = oferta.FechaHasta,
+                Vigente = Vigencia.EsVigente(oferta),
                 Usuario = oferta.Usuario?.Trim(),
                 FechaModificacion = oferta.FechaModificación
             };

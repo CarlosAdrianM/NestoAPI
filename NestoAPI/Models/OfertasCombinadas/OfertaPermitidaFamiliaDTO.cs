@@ -15,6 +15,12 @@ namespace NestoAPI.Models.OfertasCombinadas
         // denegación (prohíbe el N+M en vez de permitirlo).
         public string SubGrupo { get; set; }
         public bool Denegar { get; set; }
+        // Sugerencia 643 (Manuel): caducidad de la oferta. Nulas = sin límite por ese lado
+        // (sin FechaHasta = permanente). Inclusivas: hasta el 30/09 vale todo el día 30.
+        public DateTime? FechaDesde { get; set; }
+        public DateTime? FechaHasta { get; set; }
+        /// <summary>Calculado por el servidor: si la oferta está en vigor hoy.</summary>
+        public bool Vigente { get; set; }
         public string Usuario { get; set; }
         public DateTime FechaModificacion { get; set; }
     }
@@ -34,5 +40,17 @@ namespace NestoAPI.Models.OfertasCombinadas
         //   mandar la cadena vacía "".
         public string SubGrupo { get; set; }
         public bool? Denegar { get; set; }
+
+        // Sugerencia 643: vigencia de la oferta (null = sin límite por ese lado).
+        public DateTime? FechaDesde { get; set; }
+        public DateTime? FechaHasta { get; set; }
+
+        /// <summary>
+        /// Sugerencia 643: en el PUT, las fechas solo se tocan si llega a true. Un Nesto antiguo no
+        /// manda fechas ni este campo, y sin él no se distinguiría «no las conozco» de «quítalas»:
+        /// editar la cantidad desde un Nesto viejo dejaría permanente una oferta que caduca.
+        /// En el POST da igual: las fechas que lleguen (o null) son las de la oferta nueva.
+        /// </summary>
+        public bool ActualizarFechas { get; set; }
     }
 }

@@ -191,9 +191,10 @@ namespace NestoAPI.Controllers
             {
                 return "La cantidad de regalo tiene que ser al menos 1";
             }
-            if (dto.FechaDesde.HasValue && dto.FechaHasta.HasValue && dto.FechaDesde.Value > dto.FechaHasta.Value)
+            string errorFechas = Vigencia.ErrorDeRango(dto.FechaDesde, dto.FechaHasta);
+            if (errorFechas != null)
             {
-                return "La fecha de inicio no puede ser posterior a la de fin";
+                return errorFechas;
             }
 
             string producto = dto.Producto.Trim();
@@ -241,9 +242,7 @@ namespace NestoAPI.Controllers
         /// empieza antes de que acabe el otro.</summary>
         internal static bool SeSolapan(DateTime? desdeA, DateTime? hastaA, DateTime? desdeB, DateTime? hastaB)
         {
-            bool aEmpiezaAntesDeQueAcabeB = desdeA == null || hastaB == null || desdeA <= hastaB;
-            bool bEmpiezaAntesDeQueAcabeA = desdeB == null || hastaA == null || desdeB <= hastaA;
-            return aEmpiezaAntesDeQueAcabeB && bEmpiezaAntesDeQueAcabeA;
+            return Vigencia.SeSolapan(desdeA, hastaA, desdeB, hastaB);
         }
 
         private static OfertaPermitidaProductoDTO ADto(OfertaPermitida oferta, Dictionary<string, string> nombres, DateTime hoy)

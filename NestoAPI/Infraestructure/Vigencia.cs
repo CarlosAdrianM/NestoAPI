@@ -69,5 +69,29 @@ namespace NestoAPI.Infraestructure
             return (fila.FechaDesde == null || fila.FechaDesde <= dia)
                 && (fila.FechaHasta == null || fila.FechaHasta >= dia);
         }
+
+        /// <summary>
+        /// Dos rangos con extremos abiertos (null = sin límite) se solapan si cada uno empieza
+        /// antes de que acabe el otro. Inclusivos: compartir un solo día ya es solaparse.
+        /// </summary>
+        internal static bool SeSolapan(DateTime? desdeA, DateTime? hastaA, DateTime? desdeB, DateTime? hastaB)
+        {
+            bool aEmpiezaAntesDeQueAcabeB = desdeA == null || hastaB == null || desdeA <= hastaB;
+            bool bEmpiezaAntesDeQueAcabeA = desdeB == null || hastaA == null || desdeB <= hastaA;
+            return aEmpiezaAntesDeQueAcabeB && bEmpiezaAntesDeQueAcabeA;
+        }
+
+        internal const string ERROR_DESDE_POSTERIOR_A_HASTA = "La fecha de inicio no puede ser posterior a la de fin";
+
+        /// <summary>
+        /// El mensaje de error si el rango está al revés (Desde posterior a Hasta), o null si vale.
+        /// Desde = Hasta es válido: la oferta dura ese único día.
+        /// </summary>
+        internal static string ErrorDeRango(DateTime? desde, DateTime? hasta)
+        {
+            return desde.HasValue && hasta.HasValue && desde.Value.Date > hasta.Value.Date
+                ? ERROR_DESDE_POSTERIOR_A_HASTA
+                : null;
+        }
     }
 }

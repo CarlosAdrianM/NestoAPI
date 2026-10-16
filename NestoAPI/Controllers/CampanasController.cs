@@ -546,9 +546,7 @@ namespace NestoAPI.Controllers
         /// empieza antes de que acabe el otro.</summary>
         internal static bool SeSolapan(DateTime? desdeA, DateTime? hastaA, DateTime? desdeB, DateTime? hastaB)
         {
-            bool aEmpiezaAntesDeQueAcabeB = desdeA == null || hastaB == null || desdeA <= hastaB;
-            bool bEmpiezaAntesDeQueAcabeA = desdeB == null || hastaA == null || desdeB <= hastaA;
-            return aEmpiezaAntesDeQueAcabeB && bEmpiezaAntesDeQueAcabeA;
+            return Vigencia.SeSolapan(desdeA, hastaA, desdeB, hastaB);
         }
 
         private static CampanaDTO ADto(DescuentosProducto fila, DateTime hoy)

@@ -122,8 +122,9 @@ namespace NestoAPI.Controllers
             }
 
             // Validar que no existe ya una oferta con misma Familia + FiltroProducto + SubGrupo + Denegar
+            // vigente a la vez (sugerencia 643: con fechas que no se solapan sí se pueden encadenar).
             string filtro = dto.FiltroProducto?.Trim();
-            if (await ExisteDuplicada(empresaPadded, null, familia, filtro, subGrupo, denegar).ConfigureAwait(false))
+            if (await ExisteDuplicada(empresaPadded, null, familia, filtro, subGrupo, denegar, dto.FechaDesde, dto.FechaHasta).ConfigureAwait(false))
             {
                 return BadRequest(MensajeDuplicada(dto.Familia, denegar));
             }
@@ -137,6 +138,8 @@ namespace NestoAPI.Controllers
                 FiltroProducto = string.IsNullOrWhiteSpace(dto.FiltroProducto) ? null : dto.FiltroProducto.Trim(),
                 SubGrupo = subGrupo,
                 Denegar = denegar,
+                FechaDesde = dto.FechaDesde?.Date,
+                FechaHasta = dto.FechaHasta?.Date,
                 Usuario = UsuarioAuditoriaHelper.Resolver(User, usuario),
                 FechaModificación = DateTime.Now
             };
@@ -210,9 +213,13 @@ namespace NestoAPI.Controllers
                 return BadRequest(errorSubGrupo);
             }
 
+            // Sugerencia 643: un Nesto antiguo no manda fechas (ActualizarFechas = false) y se conservan.
+            DateTime? fechaDesde = dto.ActualizarFechas ? dto.FechaDesde?.Date : oferta.FechaDesde;
+            DateTime? fechaHasta = dto.ActualizarFechas ? dto.FechaHasta?.Date : oferta.FechaHasta;
+
             // Validar duplicado (excluyendo el registro actual)
             string filtro = dto.FiltroProducto?.Trim();
-            if (await ExisteDuplicada(empresaPadded, nOrden, familia, filtro, subGrupo, denegar).ConfigureAwait(false))
+            if (await ExisteDuplicada(empresaPadded, nOrden, familia, filtro, subGrupo, denegar, fechaDesde, fechaHasta).ConfigureAwait(false))
             {
                 return BadRequest(MensajeDuplicada(dto.Familia, denegar));
             }
@@ -223,6 +230,8 @@ namespace NestoAPI.Controllers
             oferta.FiltroProducto = string.IsNullOrWhiteSpace(dto.FiltroProducto) ? null : dto.FiltroProducto.Trim();
             oferta.SubGrupo = subGrupo;
             oferta.Denegar = denegar;
+            oferta.FechaDesde = fechaDesde;
+            oferta.FechaHasta = fechaHasta;
             oferta.Usuario = UsuarioAuditoriaHelper.Resolver(User, usuario);
             oferta.FechaModificación = DateTime.Now;
 
@@ -291,7 +300,8 @@ namespace NestoAPI.Controllers
                 return $"El subgrupo '{dto.SubGrupo.Trim()}' no es válido: tiene como máximo 3 caracteres";
             }
 
-            return null;
+            // Sugerencia 643: Hasta no puede ser anterior a Desde.
+            return Vigencia.ErrorDeRango(dto.FechaDesde, dto.FechaHasta);
         }
 
         // NestoAPI#564: el subgrupo se guarda recortado y en mayúsculas; vacío = toda la familia.
@@ -318,10 +328,13 @@ namespace NestoAPI.Controllers
 
         // NestoAPI#564: la autorización y la denegación de una misma familia (p. ej. Genéricos 6+1 y
         // Genéricos + DES 6+1 Denegar) conviven, así que el duplicado compara también SubGrupo y Denegar.
-        private Task<bool> ExisteDuplicada(string empresaPadded, int? nOrdenExcluido, string familia, string filtro, string subGrupo, bool denegar)
+        // Sugerencia 643: y solo choca si las dos están vigentes a la vez; encadenarlas (una acaba,
+        // la siguiente empieza) es justo para lo que están las fechas.
+        private async Task<bool> ExisteDuplicada(string empresaPadded, int? nOrdenExcluido, string familia, string filtro, string subGrupo, bool denegar,
+            DateTime? fechaDesde, DateTime? fechaHasta)
         {
-            return db.OfertasPermitidas
-                .AnyAsync(o => o.Empresa == empresaPadded
+            List<OfertaPermitida> mismas = await db.OfertasPermitidas
+                .Where(o => o.Empresa == empresaPadded
                     && (nOrdenExcluido == null || o.NºOrden != nOrdenExcluido)
                     && o.Cliente == null
                     && o.Número == null
@@ -332,7 +345,11 @@ namespace NestoAPI.Controllers
                     && (subGrupo == null
                         ? (o.SubGrupo == null || o.SubGrupo.Trim() == "")
                         : (o.SubGrupo != null && o.SubGrupo.Trim() == subGrupo))
-                    && o.Denegar == denegar);
+                    && o.Denegar == denegar)
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            return mismas.Any(o => Vigencia.SeSolapan(o.FechaDesde, o.FechaHasta, fechaDesde, fechaHasta));
         }
 
         private static string MensajeDuplicada(string familia, bool denegar)
