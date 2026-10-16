@@ -12,8 +12,10 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
     {
         internal const string SIN_CAMBIOS = "No cambia nada.";
         internal const string SOLO_ANOTADO = "Solo queda anotado: no se cambia nada automáticamente, hay que hacerlo a mano.";
-        internal const string PASO_A_OUTLET = "El paso al Outlet o a Ganavisiones lo hace usted a mano (solo queda anotado el canal): " +
-            "para el Outlet, ponga el producto en estado 4 y, si tiene ficha en la tienda, entra en el Outlet en la pasada nocturna siguiente.";
+        /// <summary>NestoAPI#628: con el canal Ganavisiones, «Liquidar» no cambia el estado.</summary>
+        internal const string LIQUIDAR_GANAVISIONES = "Si elige el canal Ganavisiones, el estado no cambia: solo el máximo y el mínimo de este almacén " +
+            "pasan a 0 y el paso a Ganavisiones lo hace usted a mano.";
+        internal const string PROPIOS_NO_SE_LIQUIDAN = "Los productos propios (fabricación propia) nunca se liquidan: esta propuesta no se puede aplicar.";
 
         public static string Texto(PropuestaStockConDecision propuesta)
         {
@@ -44,20 +46,28 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                     }
                 case AccionesPropuesta.LIQUIDAR:
                     {
+                        // NestoAPI#628: los propios nunca se liquidan (el servicio devuelve 400 si se intenta).
+                        if (propuesta.FabricacionPropia)
+                        {
+                            return PROPIOS_NO_SE_LIQUIDAN;
+                        }
                         string stock;
                         if (!propuesta.StockMaximoActual.HasValue && !propuesta.StockMinimoActual.HasValue)
                         {
-                            stock = $"No hay control de stock en {almacen}: no se cambia nada en el stock.";
+                            stock = $"no hay control de stock en {almacen}, así que no cambia ningún máximo";
                         }
                         else if (!TieneMaximos(propuesta))
                         {
-                            stock = $"El máximo y el mínimo de {almacen} ya están a 0.";
+                            stock = $"el máximo y el mínimo de {almacen} ya están a 0";
                         }
                         else
                         {
-                            stock = $"El máximo y el mínimo de {almacen} pasan de {propuesta.StockMaximoActual ?? 0}/{propuesta.StockMinimoActual ?? 0} a 0 (deja de reponerse).";
+                            stock = $"el máximo y el mínimo de {almacen} pasan de {propuesta.StockMaximoActual ?? 0}/{propuesta.StockMinimoActual ?? 0} a 0";
                         }
-                        return $"{stock} El producto sigue en el estado que tiene. {PASO_A_OUTLET}";
+                        string estado = propuesta.EstadoProducto == ServicioDecisionesPropuestasStock.ESTADO_A_EXTINGUIR
+                            ? $"Ya está en estado {ServicioDecisionesPropuestasStock.ESTADO_A_EXTINGUIR} y, si tiene ficha en la tienda, entra en el Outlet en la pasada nocturna siguiente"
+                            : $"Pasa a estado {ServicioDecisionesPropuestasStock.ESTADO_A_EXTINGUIR} y, si tiene ficha en la tienda, entra en el Outlet en la pasada nocturna siguiente";
+                        return $"{estado}; {stock} (y los de los demás almacenes, si los tiene, también quedan a 0). {LIQUIDAR_GANAVISIONES}";
                     }
                 case AccionesPropuesta.PARAR_COMPRAS:
                     {

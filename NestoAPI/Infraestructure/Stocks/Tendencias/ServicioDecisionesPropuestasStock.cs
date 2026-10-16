@@ -17,8 +17,12 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
     /// <item>«Pasar a estado 1»: pone a 0 el máximo y el mínimo de TODOS los almacenes y el producto en estado 1. Es lo que exige
     /// el trigger trgProductosUpd: no deja sacar un producto del estado 0 mientras tenga algún máximo.</item>
     /// <item>«Liquidar» (Outlet o Ganavisiones): decisión de Carlos (15/10/26), pone a 0 el máximo y el mínimo del almacén de
-    /// la propuesta (lo que propone el motor; con mínimo mayor que el máximo se seguiría reponiendo). El paso al Outlet o a
-    /// Ganavisiones sigue siendo manual: solo se apunta el canal.</item>
+    /// la propuesta (lo que propone el motor; con mínimo mayor que el máximo se seguiría reponiendo). NestoAPI#628 (Carlos,
+    /// 16/10/26): con el canal Outlet (o sin canal) además pasa el producto a estado 4, y el cuadre nocturno del Outlet (#643,
+    /// que solo mete productos en estado 4) lo mete si tiene ficha en la tienda; por eso quedan a 0 los máximos y mínimos de
+    /// TODOS los almacenes, como en «Pasar a estado 1» (trgProductosUpd no deja sacar un producto del estado 0 con algún
+    /// máximo). Con Ganavisiones no cambia el estado: solo el máximo y el mínimo del almacén, y el paso es manual. Los propios
+    /// (fabricación propia) nunca se liquidan: 400.</item>
     /// <item>«Parar compras»: solo se apunta; la acción es manual.</item>
     /// </list>
     /// <para>«Silenciar» (con un motivo de <see cref="MotivosSilencioVigentes"/> y fecha de caducidad): las propuestas del producto de los meses
@@ -38,6 +42,10 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         internal const int MESES_MAXIMOS_SILENCIO = 24;
         internal const short ESTADO_DISPONIBLE = 0;
         internal const short ESTADO_SOBRE_PEDIDO = 1;
+        /// <summary>NestoAPI#628: «Liquidar» por el Outlet deja el producto en estado 4 (a extinguir).</summary>
+        internal const short ESTADO_A_EXTINGUIR = NestoAPI.Models.Constantes.Productos.ESTADO_A_EXTINGUIR;
+        internal const string MENSAJE_PROPIOS_NO_SE_LIQUIDAN = "Los productos propios (fabricación propia) nunca se liquidan: no se puede aplicar «Liquidar». " +
+            "Recházela con el motivo o decida otra cosa (ajustar el siguiente lote o potenciar las ventas).";
         /// <summary>NestoAPI#655: la fecha de revisión de una potenciación, si no se dice (decisión de Carlos: 6 meses).</summary>
         internal const int MESES_POTENCIACION_POR_DEFECTO = 6;
         /// <summary>NestoAPI#655: como el silencio, una potenciación no puede esconder el producto para siempre.</summary>
@@ -225,7 +233,23 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         {
             string producto = propuesta.Producto?.Trim();
             string almacen = propuesta.Almacen?.Trim();
-            bool escribe = AccionesPropuesta.EsAjusteDeMaximos(propuesta.Accion) || propuesta.Accion == AccionesPropuesta.ESTADO_1;
+            string canalLiquidacion = null;
+            bool liquidarAEstado4 = false;
+            if (propuesta.Accion == AccionesPropuesta.LIQUIDAR)
+            {
+                // NestoAPI#655/#628: el motor nunca propone liquidar un propio; si llega (fila antigua, cliente que se equivoca), no.
+                if (propuesta.FabricacionPropia)
+                {
+                    throw NoValida(MENSAJE_PROPIOS_NO_SE_LIQUIDAN);
+                }
+                if (!string.IsNullOrWhiteSpace(peticion.CanalLiquidacion))
+                {
+                    canalLiquidacion = CanalesLiquidacion.Normalizar(peticion.CanalLiquidacion)
+                        ?? throw NoValida($"El canal de liquidación tiene que ser {string.Join(" o ", CanalesLiquidacion.TODOS)}.");
+                }
+                liquidarAEstado4 = LiquidarPasaAEstado4(canalLiquidacion);
+            }
+            bool escribe = AccionesPropuesta.EsAjusteDeMaximos(propuesta.Accion) || propuesta.Accion == AccionesPropuesta.ESTADO_1 || liquidarAEstado4;
             short? estadoActual = null;
             if (escribe)
             {
@@ -234,7 +258,9 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                 {
                     throw new DecisionPropuestaStockException(HttpStatusCode.NotFound, $"No existe el producto {producto}.");
                 }
-                if (propuesta.EstadoProducto.HasValue && estadoActual.Value != propuesta.EstadoProducto.Value)
+                // Si alguien ya lo ha pasado a estado 4 a mano, liquidar por el Outlet sigue valiendo (solo quita los máximos).
+                bool yaEnEstado4 = liquidarAEstado4 && estadoActual.Value == ESTADO_A_EXTINGUIR;
+                if (!yaEnEstado4 && propuesta.EstadoProducto.HasValue && estadoActual.Value != propuesta.EstadoProducto.Value)
                 {
                     throw Conflicto($"El producto {producto} ha cambiado de estado desde que se calculó la propuesta (era {propuesta.EstadoProducto}, " +
                         $"ahora {estadoActual}): esta propuesta ya no vale. Espere a la del mes que viene o cámbielo en la ficha.");
@@ -326,14 +352,46 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                     }
                 case AccionesPropuesta.LIQUIDAR:
                     {
-                        if (!string.IsNullOrWhiteSpace(peticion.CanalLiquidacion))
-                        {
-                            registro.CanalLiquidacion = CanalesLiquidacion.Normalizar(peticion.CanalLiquidacion)
-                                ?? throw NoValida($"El canal de liquidación tiene que ser {string.Join(" o ", CanalesLiquidacion.TODOS)}.");
-                        }
-                        // Solo el almacén de la propuesta. Sin control de stock no hay máximo que quitar: no se crea uno a 0.
-                        ControlStockActual actual = repositorio.LeerControlesStock(producto)
+                        registro.CanalLiquidacion = canalLiquidacion;
+                        List<ControlStockActual> controles = repositorio.LeerControlesStock(producto);
+                        ControlStockActual actual = controles
                             .FirstOrDefault(c => string.Equals(c.Almacen?.Trim(), almacen, StringComparison.OrdinalIgnoreCase));
+                        if (liquidarAEstado4)
+                        {
+                            // NestoAPI#628 (Outlet o sin canal): estado 4. TODOS los almacenes a 0, como «Pasar a estado 1»: lo exige
+                            // trgProductosUpd al salir del estado 0, y en estado 4 no se repone en ningún sitio. Sin control no se crea.
+                            registro.StockMaximoAnterior = actual?.StockMaximo;
+                            registro.StockMinimoAnterior = actual?.StockMinimo;
+                            registro.StockMaximoAplicado = actual == null ? (int?)null : 0;
+                            registro.StockMinimoAplicado = actual == null ? (int?)null : 0;
+                            foreach (ControlStockActual c in controles
+                                .Where(c => c.StockMaximo != 0 || c.StockMinimo != 0)
+                                .OrderBy(c => string.Equals(c.Almacen?.Trim(), almacen, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+                                .ThenBy(c => c.Almacen))
+                            {
+                                CambioControlStock cambio = new CambioControlStock
+                                {
+                                    Almacen = c.Almacen?.Trim(),
+                                    Existia = true,
+                                    MaximoAnterior = c.StockMaximo,
+                                    MinimoAnterior = c.StockMinimo,
+                                    MaximoNuevo = 0,
+                                    MinimoNuevo = 0
+                                };
+                                registro.CambiosControlStock.Add(cambio);
+                                cambios.Add(cambio.Texto());
+                            }
+                            if (estadoActual.Value != ESTADO_A_EXTINGUIR)
+                            {
+                                // Por el mismo camino que «Pasar a estado 1» (SQL_ESTADO_NUEVO en el repositorio): el usuario de la
+                                // decisión en Productos.Usuario, y trgProductosUpd apunta la auditoría y encola en Nesto_sync.
+                                registro.EstadoAnterior = estadoActual;
+                                registro.EstadoAplicado = ESTADO_A_EXTINGUIR;
+                                cambios.Add($"Estado {estadoActual} → {ESTADO_A_EXTINGUIR}");
+                            }
+                            break;
+                        }
+                        // Ganavisiones: solo el almacén de la propuesta. Sin control de stock no hay máximo que quitar: no se crea uno a 0.
                         if (actual != null)
                         {
                             registro.StockMaximoAnterior = actual.StockMaximo;
@@ -364,6 +422,12 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             }
         }
 
+        /// <summary>
+        /// NestoAPI#628: «Liquidar» pasa a estado 4 (y así al Outlet en la pasada nocturna) salvo que el canal elegido sea
+        /// Ganavisiones. Sin canal cuenta como Outlet.
+        /// </summary>
+        internal static bool LiquidarPasaAEstado4(string canalNormalizado) => canalNormalizado != CanalesLiquidacion.GANAVISIONES;
+
         internal static string EstadoTras(string decision)
         {
             switch (decision)
@@ -384,13 +448,19 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                 case DecisionesPropuesta.APLICAR:
                     if (propuesta.Accion == AccionesPropuesta.LIQUIDAR)
                     {
-                        string canalLiquidar = registro.CanalLiquidacion == null ? "" : $" ({registro.CanalLiquidacion})";
                         string escrito = cambios.Count > 0
                             ? string.Join("; ", cambios)
                             : registro.StockMaximoAplicado.HasValue
                                 ? $"el máximo y el mínimo de {registro.Almacen} ya estaban a 0"
                                 : $"no hay control de stock en {registro.Almacen}, no se ha cambiado nada";
-                        return $"Propuesta del producto {producto} aplicada: {escrito}. La liquidación{canalLiquidar} la hace usted a mano.";
+                        if (!LiquidarPasaAEstado4(registro.CanalLiquidacion))
+                        {
+                            return $"Propuesta del producto {producto} aplicada: {escrito}. El estado no cambia: el paso a Ganavisiones lo hace usted a mano.";
+                        }
+                        string outlet = registro.EstadoAplicado == ESTADO_A_EXTINGUIR
+                            ? $"El producto pasa a estado {ESTADO_A_EXTINGUIR}"
+                            : $"El producto ya estaba en estado {ESTADO_A_EXTINGUIR}";
+                        return $"Propuesta del producto {producto} aplicada: {escrito}. {outlet}: si tiene ficha en la tienda, entra en el Outlet en la pasada nocturna siguiente.";
                     }
                     if (cambios.Count > 0)
                     {

@@ -100,28 +100,47 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
         }
 
         [TestMethod]
-        public void Liquidar_MaximoYMinimoA0YElOutletAMano()
+        public void Liquidar_PasaAEstado4YAlOutlet_YElMaximoYElMinimoA0()
         {
-            // Lo que hace el servicio: solo pone a 0 el máximo y el mínimo del almacén; no cambia el estado ni mete en el Outlet.
+            // NestoAPI#628: lo que hace el servicio con el canal Outlet (o sin canal): estado 4 y máximos y mínimos a 0.
             string texto = ConsecuenciasPropuesta.Texto(Propuesta(AccionesPropuesta.LIQUIDAR, maximoPropuesto: 0, minimoPropuesto: 0));
 
-            StringAssert.StartsWith(texto, "El máximo y el mínimo de ALG pasan de 59/39 a 0 (deja de reponerse). El producto sigue en el estado que tiene.");
-            StringAssert.Contains(texto, "lo hace usted a mano");
-            StringAssert.Contains(texto, "ponga el producto en estado 4");
+            StringAssert.StartsWith(texto, "Pasa a estado 4 y, si tiene ficha en la tienda, entra en el Outlet en la pasada nocturna siguiente; " +
+                "el máximo y el mínimo de ALG pasan de 59/39 a 0 (y los de los demás almacenes, si los tiene, también quedan a 0).");
+            // Con Ganavisiones no cambia el estado
+            StringAssert.Contains(texto, "Si elige el canal Ganavisiones, el estado no cambia");
+        }
+
+        [TestMethod]
+        public void Liquidar_YaEnEstado4_LoDice()
+        {
+            PropuestaStockConDecision p = Propuesta(AccionesPropuesta.LIQUIDAR);
+            p.EstadoProducto = 4;
+
+            StringAssert.StartsWith(ConsecuenciasPropuesta.Texto(p), "Ya está en estado 4 y, si tiene ficha en la tienda, entra en el Outlet");
+        }
+
+        [TestMethod]
+        public void Liquidar_UnPropio_NuncaSeLiquida()
+        {
+            PropuestaStockConDecision p = Propuesta(AccionesPropuesta.LIQUIDAR);
+            p.Formula = FormulasPropuesta.PREFIJO_PROPIOS + " estado 0";
+
+            Assert.AreEqual("Los productos propios (fabricación propia) nunca se liquidan: esta propuesta no se puede aplicar.", ConsecuenciasPropuesta.Texto(p));
         }
 
         [TestMethod]
         public void Liquidar_YaA0_LoDice()
         {
-            StringAssert.StartsWith(ConsecuenciasPropuesta.Texto(Propuesta(AccionesPropuesta.LIQUIDAR, maximoActual: 0, minimoActual: 0)),
-                "El máximo y el mínimo de ALG ya están a 0.");
+            StringAssert.Contains(ConsecuenciasPropuesta.Texto(Propuesta(AccionesPropuesta.LIQUIDAR, maximoActual: 0, minimoActual: 0)),
+                "; el máximo y el mínimo de ALG ya están a 0");
         }
 
         [TestMethod]
-        public void Liquidar_SinControlDeStock_NoSeCambiaNadaEnElStock()
+        public void Liquidar_SinControlDeStock_NoCambiaNingunMaximo()
         {
-            StringAssert.StartsWith(ConsecuenciasPropuesta.Texto(Propuesta(AccionesPropuesta.LIQUIDAR, maximoActual: null, minimoActual: null)),
-                "No hay control de stock en ALG: no se cambia nada en el stock.");
+            StringAssert.Contains(ConsecuenciasPropuesta.Texto(Propuesta(AccionesPropuesta.LIQUIDAR, maximoActual: null, minimoActual: null)),
+                "; no hay control de stock en ALG, así que no cambia ningún máximo");
         }
 
         [TestMethod]

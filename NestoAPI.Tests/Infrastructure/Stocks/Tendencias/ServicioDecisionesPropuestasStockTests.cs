@@ -211,13 +211,88 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
         // ---------- Aplicar «Liquidar» (Carlos, 15/10/26: máximo y mínimo a 0 en el almacén de la propuesta) ----------
 
         [TestMethod]
-        public void Aplicar_LiquidarConCanal_PoneAceroElMaximoYElMinimoDelAlmacenYApuntaElCanal()
+        public void Aplicar_LiquidarPorElOutlet_PasaAEstado4_YPoneA0LosMaximosDeTodosLosAlmacenes()
         {
+            // NestoAPI#628 (Carlos, 16/10/26): con el Outlet, estado 4 (el cuadre nocturno #643 solo mete productos en estado 4).
             _ = Propuesta(AccionesPropuesta.LIQUIDAR);
 
             ResultadoDecisionPropuestaStock r = Servicio().Decidir(7, new DecisionPropuestaStockDTO { Decision = "Aplicar", CanalLiquidacion = "outlet" }, "Manuel");
 
             Assert.AreEqual(CanalesLiquidacion.OUTLET, guardado.CanalLiquidacion);
+            // ALG (el de la propuesta) primero y REI (6/3) también: trgProductosUpd no deja salir del estado 0 con algún máximo.
+            Assert.AreEqual(2, guardado.CambiosControlStock.Count);
+            Assert.AreEqual("ALG", guardado.CambiosControlStock[0].Almacen);
+            Assert.AreEqual("REI", guardado.CambiosControlStock[1].Almacen);
+            Assert.AreEqual(0, guardado.CambiosControlStock[1].MaximoNuevo);
+            Assert.AreEqual(555, guardado.StockMaximoAnterior);
+            Assert.AreEqual(0, guardado.StockMaximoAplicado);
+            // El estado, con el usuario de la decisión (lo escribe el repositorio por el mismo camino que «Pasar a estado 1»)
+            Assert.AreEqual((short?)0, guardado.EstadoAnterior);
+            Assert.AreEqual((short?)4, guardado.EstadoAplicado);
+            Assert.AreEqual("Manuel", guardado.Usuario);
+            Assert.AreEqual("ALG: máximo 555 → 0, mínimo 295 → 0; REI: máximo 6 → 0, mínimo 3 → 0; Estado 0 → 4", guardado.Cambios);
+            Assert.AreEqual(EstadosPropuesta.APLICADA, r.Estado);
+            StringAssert.Contains(r.Mensaje, "El producto pasa a estado 4: si tiene ficha en la tienda, entra en el Outlet en la pasada nocturna siguiente.");
+        }
+
+        [TestMethod]
+        public void Aplicar_LiquidarSinCanal_CuentaComoOutlet()
+        {
+            _ = Propuesta(AccionesPropuesta.LIQUIDAR);
+
+            _ = Servicio().Decidir(7, new DecisionPropuestaStockDTO { Decision = "Aplicar" }, "Manuel");
+
+            Assert.IsNull(guardado.CanalLiquidacion);
+            Assert.AreEqual((short?)4, guardado.EstadoAplicado);
+        }
+
+        [TestMethod]
+        public void Aplicar_LiquidarPorElOutlet_YaEnEstado4AMano_SoloQuitaLosMaximos()
+        {
+            _ = Propuesta(AccionesPropuesta.LIQUIDAR);
+            _ = A.CallTo(() => repositorio.LeerEstadoProducto("17404")).Returns((short?)4);
+
+            ResultadoDecisionPropuestaStock r = Servicio().Decidir(7, new DecisionPropuestaStockDTO { Decision = "Aplicar", CanalLiquidacion = "Outlet" }, "Manuel");
+
+            Assert.IsNull(guardado.EstadoAplicado);
+            Assert.AreEqual(2, guardado.CambiosControlStock.Count);
+            StringAssert.Contains(r.Mensaje, "El producto ya estaba en estado 4");
+        }
+
+        [TestMethod]
+        public void Aplicar_LiquidarPorElOutlet_SiElEstadoHaCambiadoAOtro_409()
+        {
+            _ = Propuesta(AccionesPropuesta.LIQUIDAR);
+            _ = A.CallTo(() => repositorio.LeerEstadoProducto("17404")).Returns((short?)1);
+
+            Assert.AreEqual(HttpStatusCode.Conflict, Falla(new DecisionPropuestaStockDTO { Decision = "Aplicar", CanalLiquidacion = "Outlet" }));
+        }
+
+        [TestMethod]
+        public void Aplicar_LiquidarUnPropio_400()
+        {
+            PropuestaStockConDecision p = Propuesta(AccionesPropuesta.LIQUIDAR);
+            p.Formula = FormulasPropuesta.PREFIJO_PROPIOS + " estado 0";
+
+            Assert.AreEqual(HttpStatusCode.BadRequest, Falla(new DecisionPropuestaStockDTO { Decision = "Aplicar", CanalLiquidacion = "Outlet" }));
+            try
+            {
+                _ = Servicio().Decidir(7, new DecisionPropuestaStockDTO { Decision = "Aplicar" }, "Manuel");
+            }
+            catch (DecisionPropuestaStockException ex)
+            {
+                StringAssert.StartsWith(ex.Message, "Los productos propios (fabricación propia) nunca se liquidan");
+            }
+        }
+
+        [TestMethod]
+        public void Aplicar_LiquidarPorGanavisiones_PoneAceroElMaximoYElMinimoDelAlmacenYApuntaElCanal_SinCambiarElEstado()
+        {
+            _ = Propuesta(AccionesPropuesta.LIQUIDAR);
+
+            ResultadoDecisionPropuestaStock r = Servicio().Decidir(7, new DecisionPropuestaStockDTO { Decision = "Aplicar", CanalLiquidacion = "ganavisiones" }, "Manuel");
+
+            Assert.AreEqual(CanalesLiquidacion.GANAVISIONES, guardado.CanalLiquidacion);
             // Solo ALG (el de la propuesta): REI tiene 6/3 y no se toca.
             Assert.AreEqual(1, guardado.CambiosControlStock.Count);
             CambioControlStock cambio = guardado.CambiosControlStock[0];
@@ -240,7 +315,7 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
             A.CallTo(() => repositorio.LeerEstadoProducto(A<string>._)).MustNotHaveHappened();
             Assert.AreEqual(EstadosPropuesta.APLICADA, r.Estado);
             CollectionAssert.AreEqual(new[] { "ALG: máximo 555 → 0, mínimo 295 → 0" }, r.Cambios);
-            StringAssert.Contains(r.Mensaje, "La liquidación (Outlet) la hace usted a mano");
+            StringAssert.Contains(r.Mensaje, "El estado no cambia: el paso a Ganavisiones lo hace usted a mano.");
         }
 
         [TestMethod]
@@ -249,7 +324,7 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
             PropuestaStockConDecision p = Propuesta(AccionesPropuesta.LIQUIDAR);
             p.Almacen = "ALC";
 
-            ResultadoDecisionPropuestaStock r = Servicio().Decidir(7, new DecisionPropuestaStockDTO { Decision = "Aplicar" }, "Manuel");
+            ResultadoDecisionPropuestaStock r = Servicio().Decidir(7, new DecisionPropuestaStockDTO { Decision = "Aplicar", CanalLiquidacion = "Ganavisiones" }, "Manuel");
 
             Assert.AreEqual(0, guardado.CambiosControlStock.Count);
             Assert.AreEqual(0, guardado.StockMaximoAnterior);
@@ -264,7 +339,7 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
             PropuestaStockConDecision p = Propuesta(AccionesPropuesta.LIQUIDAR);
             p.Almacen = "TIE";
 
-            ResultadoDecisionPropuestaStock r = Servicio().Decidir(7, new DecisionPropuestaStockDTO { Decision = "Aplicar" }, "Manuel");
+            ResultadoDecisionPropuestaStock r = Servicio().Decidir(7, new DecisionPropuestaStockDTO { Decision = "Aplicar", CanalLiquidacion = "Ganavisiones" }, "Manuel");
 
             Assert.AreEqual(0, guardado.CambiosControlStock.Count);
             Assert.IsNull(guardado.StockMaximoAnterior);
