@@ -16,6 +16,14 @@ namespace NestoAPI.Infraestructure.Notificaciones
 {
     public class ServicioNotificacionesPush : IServicioNotificacionesPush
     {
+        /// <summary>NotificacionesBuzon.Titulo es nvarchar(200).</summary>
+        internal const int LONGITUD_TITULO_BUZON = 200;
+
+        // ELMAH 16/10/26: «Enrique ha comentado en «<título largo de la sugerencia>»» pasaba de 200 y el aviso se perdía
+        // (DbEntityValidationException al guardar el buzón). El comentario sí se guardaba.
+        internal static string RecortarTitulo(string titulo)
+            => titulo == null || titulo.Length <= LONGITUD_TITULO_BUZON ? titulo : titulo.Substring(0, LONGITUD_TITULO_BUZON - 1) + "…";
+
         private static readonly object _lockInit = new object();
         private static bool _firebaseInitialized = false;
         private static readonly Dictionary<string, FirebaseApp> _firebaseApps = new Dictionary<string, FirebaseApp>();
@@ -513,7 +521,7 @@ namespace NestoAPI.Infraestructure.Notificaciones
                             Cliente = destinatario.Cliente,
                             Contacto = destinatario.Contacto,
                             Aplicacion = aplicacion,
-                            Titulo = notificacion.Titulo,
+                            Titulo = RecortarTitulo(notificacion.Titulo),
                             Cuerpo = notificacion.Cuerpo,
                             Datos = datos,
                             FechaCreacion = DateTime.Now
