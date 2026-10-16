@@ -1,4 +1,5 @@
 using ClosedXML.Excel;
+using NestoAPI.Infraestructure.IndicadoresStock;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -12,6 +13,8 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
     /// Hojas: «Top 50 por exceso», «Todos los productos», «Nuevos (fase A)» y «Calibración».
     /// <para>NestoAPI#655: delante, «Resumen» (valor de stock y exceso con y sin propios); detrás de los nuevos, «Propios» (familias
     /// PRP, fórmula P). Las tres hojas de productos van sin los propios.</para>
+    /// <para>NestoAPI#628: en «Resumen», el cuadre del total con IndicadoresStock (lo analizado + MTP y MMP, que el motor deja
+    /// fuera) y el desglose por familia de MTP y MMP (<see cref="ResultadoPropuestasStock.Indicadores"/>).</para>
     /// </summary>
     public class GeneradorExcelPropuestasStock
     {
@@ -52,7 +55,7 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                 // NestoAPI#655: los propios (familias PRP, fórmula P) van en su hoja: con ellos, la general se llenaba de «exceso».
                 List<ResultadoTendencia> ordenados = todos.Where(r => !r.FabricacionPropia).ToList();
                 List<ResultadoTendencia> propios = todos.Where(r => r.FabricacionPropia).ToList();
-                HojaResumen(libro.Worksheets.Add(HOJA_RESUMEN), todos, ordenados, propios, mes);
+                HojaResumen(libro.Worksheets.Add(HOJA_RESUMEN), todos, ordenados, propios, mes, resultado.Indicadores);
                 string nota = NotaPendientes(p);
                 HojaProductos(libro.Worksheets.Add(NombreHojaTop(p.FilasTop)), ordenados.Take(p.FilasTop).ToList(),
                     $"Propuestas de stock — {mes}: los {p.FilasTop} con más euros atrapados, sin propios (exceso total sin propios: {MotorTendencias.Euros(ordenados.Sum(r => r.ExcesoValorado))})", resumida: true, p);
@@ -252,9 +255,144 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         /// <summary>NestoAPI#655: valor de stock (stock × precio medio, sin negativos) de un grupo de filas.</summary>
         internal static decimal ValorStock(IEnumerable<ResultadoTendencia> filas) => Math.Round(filas.Sum(r => Math.Max(0, r.Stock) * r.PrecioMedio), 2);
 
-        /// <summary>NestoAPI#655: valor de stock y exceso con y sin propios, y los propios por acción.</summary>
+        /// <summary>NestoAPI#628: la línea del cuadre con lo que el motor deja fuera (MTP y MMP).</summary>
+        public const string ETIQUETA_FUERA = "Fuera de las propuestas: materias primas (MTP) y muestras (MMP)";
+        public const string ETIQUETA_ANALIZADO = "Analizado en las propuestas (todos, con propios)";
+        public const string ETIQUETA_TOTAL_CUADRE = "Total";
+        public const string ETIQUETA_INDICADORES = "Valor de stock según los indicadores del mes (IndicadoresStock, TOTAL)";
+        public const string ETIQUETA_DIFERENCIA = "Diferencia";
+        public const string TITULO_CUADRE = "Cuadre con los indicadores de stock del mes";
+        public const string TITULO_FUERA_POR_FAMILIA = "Fuera de las propuestas por familia (materias primas y muestras)";
+
+        private static void CabeceraTabla(IXLWorksheet hoja, int fila, IList<string> columnas)
+        {
+            for (int c = 0; c < columnas.Count; c++)
+            {
+                IXLCell celda = hoja.Cell(fila, c + 1);
+                celda.Value = columnas[c];
+                celda.Style.Font.Bold = true;
+                celda.Style.Fill.BackgroundColor = XLColor.FromHtml("#DDEBF7");
+                celda.Style.Alignment.WrapText = true;
+            }
+        }
+
+        private static int Subtitulo(IXLWorksheet hoja, int fila, string texto)
+        {
+            hoja.Cell(fila, 1).Value = texto;
+            hoja.Cell(fila, 1).Style.Font.Bold = true;
+            return fila + 1;
+        }
+
+        private static int Nota(IXLWorksheet hoja, int fila, string texto)
+        {
+            hoja.Cell(fila, 1).Value = texto;
+            hoja.Cell(fila, 1).Style.Font.Italic = true;
+            return fila + 1;
+        }
+
+        /// <summary>
+        /// NestoAPI#628 (cuadre): lo analizado + lo que el motor deja fuera (MTP y MMP, con el mismo criterio de valoración que
+        /// IndicadoresStock) frente al valor de stock de la fila TOTAL de los indicadores del mes. Devuelve la fila siguiente.
+        /// </summary>
+        private static int TablaCuadre(IXLWorksheet hoja, int fila, List<ResultadoTendencia> todos, IndicadoresDelMesPropuestas indicadores)
+        {
+            fila = Subtitulo(hoja, fila, TITULO_CUADRE);
+            CabeceraTabla(hoja, fila, new[] { "Concepto", "Productos", "Valor de stock" });
+            fila++;
+            decimal analizado = ValorStock(todos);
+            hoja.Cell(fila, 1).Value = ETIQUETA_ANALIZADO;
+            hoja.Cell(fila, 2).Value = todos.Count;
+            Valor(hoja.Cell(fila, 3), analizado, FORMATO_EUROS);
+            fila++;
+
+            List<StockFueraDeLaDemanda> fuera = indicadores?.FueraDeLaDemanda;
+            decimal? valorFuera = fuera?.Sum(f => f.Valor);
+            hoja.Cell(fila, 1).Value = ETIQUETA_FUERA;
+            if (fuera != null)
+            {
+                hoja.Cell(fila, 2).Value = fuera.Sum(f => f.Productos);
+                Valor(hoja.Cell(fila, 3), valorFuera.Value, FORMATO_EUROS);
+            }
+            else
+            {
+                hoja.Cell(fila, 3).Value = "sin datos";
+            }
+            fila++;
+
+            decimal? total = valorFuera.HasValue ? analizado + valorFuera.Value : (decimal?)null;
+            hoja.Cell(fila, 1).Value = ETIQUETA_TOTAL_CUADRE;
+            hoja.Cell(fila, 1).Style.Font.Bold = true;
+            if (total.HasValue)
+            {
+                Valor(hoja.Cell(fila, 3), total.Value, FORMATO_EUROS);
+                hoja.Cell(fila, 3).Style.Font.Bold = true;
+            }
+            fila++;
+
+            decimal? segunIndicadores = indicadores?.Total?.ValorStock;
+            hoja.Cell(fila, 1).Value = ETIQUETA_INDICADORES;
+            if (segunIndicadores.HasValue)
+            {
+                Valor(hoja.Cell(fila, 3), segunIndicadores.Value, FORMATO_EUROS);
+            }
+            else
+            {
+                hoja.Cell(fila, 3).Value = "sin datos";
+            }
+            fila++;
+
+            if (total.HasValue && segunIndicadores.HasValue)
+            {
+                hoja.Cell(fila, 1).Value = ETIQUETA_DIFERENCIA;
+                Valor(hoja.Cell(fila, 3), total.Value - segunIndicadores.Value, FORMATO_EUROS);
+                fila++;
+                fila = Nota(hoja, fila, "Si la diferencia no es 0, suele ser stock negativo (aquí cuenta como 0 y en los indicadores resta) " +
+                    "o productos con stock que el motor no analiza.");
+            }
+            if (indicadores == null)
+            {
+                fila = Nota(hoja, fila, "No se han leído los indicadores de stock del mes.");
+            }
+            else if (!string.IsNullOrWhiteSpace(indicadores.Aviso))
+            {
+                fila = Nota(hoja, fila, indicadores.Aviso);
+            }
+            return fila;
+        }
+
+        /// <summary>NestoAPI#628: el desglose por familia de lo que el motor deja fuera (para analizarlo cuando toque).</summary>
+        private static int TablaFueraPorFamilia(IXLWorksheet hoja, int fila, IndicadoresDelMesPropuestas indicadores)
+        {
+            fila = Subtitulo(hoja, fila, TITULO_FUERA_POR_FAMILIA);
+            List<StockFueraDeLaDemanda> fuera = indicadores?.FueraDeLaDemanda;
+            if (fuera == null)
+            {
+                return Nota(hoja, fila, "Sin datos.");
+            }
+            CabeceraTabla(hoja, fila, new[] { "Partida", "Familia", "Nombre de la familia", "Productos", "Unidades", "Valor de stock" });
+            fila++;
+            foreach (StockFueraDeLaDemanda f in fuera
+                .OrderBy(f => f.Partida == StockFueraDeLaDemanda.MATERIAS_PRIMAS ? 0 : 1)
+                .ThenByDescending(f => f.Valor)
+                .ThenBy(f => f.Familia, StringComparer.OrdinalIgnoreCase))
+            {
+                hoja.Cell(fila, 1).Value = f.Partida == StockFueraDeLaDemanda.MATERIAS_PRIMAS ? "Materias primas (MTP)" : "Muestras (MMP)";
+                Valor(hoja.Cell(fila, 2), f.Familia);
+                Valor(hoja.Cell(fila, 3), f.NombreFamilia);
+                hoja.Cell(fila, 4).Value = f.Productos;
+                hoja.Cell(fila, 5).Value = f.Unidades;
+                Valor(hoja.Cell(fila, 6), f.Valor, FORMATO_EUROS);
+                fila++;
+            }
+            return fila;
+        }
+
+        /// <summary>
+        /// NestoAPI#655: valor de stock y exceso con y sin propios, y los propios por acción. NestoAPI#628: el cuadre con los
+        /// indicadores del mes y el desglose por familia de lo que queda fuera (MTP y MMP).
+        /// </summary>
         private static void HojaResumen(IXLWorksheet hoja, List<ResultadoTendencia> todos, List<ResultadoTendencia> sinPropios,
-            List<ResultadoTendencia> propios, string mes)
+            List<ResultadoTendencia> propios, string mes, IndicadoresDelMesPropuestas indicadores)
         {
             Titulo(hoja, $"Propuestas de stock — {mes}: resumen con y sin propios (familias de fabricación propia)");
             const int FILA_CABECERA = 3;
@@ -269,6 +407,9 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                 Valor(hoja.Cell(fila, 5), filas.Sum(r => r.ExcesoValorado), FORMATO_EUROS);
                 fila++;
             }
+
+            fila += 2;
+            fila = TablaCuadre(hoja, fila, todos, indicadores);
 
             fila += 2;
             hoja.Cell(fila, 1).Value = "Propios por acción (nunca Outlet ni liquidar)";
@@ -292,8 +433,12 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                 Valor(hoja.Cell(fila, 5), grupo.Sum(r => r.ExcesoValorado), FORMATO_EUROS);
                 fila++;
             }
-            hoja.Column(1).Width = 30;
-            for (int c = 2; c <= 5; c++)
+
+            fila += 2;
+            _ = TablaFueraPorFamilia(hoja, fila, indicadores);
+
+            hoja.Column(1).Width = 62;
+            for (int c = 2; c <= 6; c++)
             {
                 hoja.Column(c).Width = 18;
             }

@@ -38,6 +38,8 @@ namespace NestoAPI.Tests.Infrastructure.IndicadoresStock
     internal class ProductoEnMemoria : ProductoIndicadorStock
     {
         public bool Ficticio { get; set; }
+        public string Familia { get; set; } = "Fam";
+        public string NombreFamilia { get; set; } = "Familia";
     }
 
     /// <summary>
@@ -201,6 +203,32 @@ namespace NestoAPI.Tests.Infrastructure.IndicadoresStock
                 .Where(f => f.Mes >= desde && f.Mes <= hasta && (string.IsNullOrWhiteSpace(almacen) || f.Almacen == almacen))
                 .OrderBy(f => f.Mes)
                 .ToList());
+        }
+
+        /// <summary>NestoAPI#628: como SQL_STOCK_FUERA_DE_LA_DEMANDA (MTP y MMP por familia, stock distinto de 0 a fin de mes).</summary>
+        public Task<List<StockFueraDeLaDemanda>> LeerStockFueraDeLaDemanda(DateTime mes)
+        {
+            DateTime fin = mes.AddMonths(1);
+            Dictionary<string, ProductoEnMemoria> fuera = Productos
+                .Where(p => !p.Ficticio && (p.Grupo == "MTP" || p.SubGrupo == "MMP"))
+                .ToDictionary(p => p.Producto);
+            List<StockFueraDeLaDemanda> filas = ExtractoValido()
+                .Where(e => e.Fecha < fin && fuera.ContainsKey(e.Producto))
+                .GroupBy(e => e.Producto)
+                .Select(g => new { Producto = fuera[g.Key], Stock = g.Sum(e => e.Cantidad) })
+                .Where(x => x.Stock != 0)
+                .GroupBy(x => new { Partida = x.Producto.Grupo == "MTP" ? "MTP" : "MMP", x.Producto.Familia })
+                .Select(g => new StockFueraDeLaDemanda
+                {
+                    Partida = g.Key.Partida,
+                    Familia = g.Key.Familia,
+                    NombreFamilia = g.First().Producto.NombreFamilia,
+                    Productos = g.Count(),
+                    Unidades = g.Sum(x => x.Stock),
+                    Valor = g.Sum(x => x.Stock * x.Producto.PrecioMedio)
+                })
+                .ToList();
+            return Task.FromResult(filas);
         }
 
         /// <summary>Lo que hace DATEDIFF(month, desde, fecha).</summary>

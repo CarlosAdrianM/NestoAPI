@@ -126,6 +126,26 @@ namespace NestoAPI.Infraestructure.IndicadoresStock
     }
 
     /// <summary>
+    /// NestoAPI#628 (cuadre del Excel de propuestas): el stock a fin de mes de lo que el motor de propuestas deja fuera a propósito
+    /// (<see cref="Stocks.Tendencias.DemandaStock"/>): el grupo MTP (materias primas) y el subgrupo MMP (muestras), por familia.
+    /// Mismo criterio de valoración que la fila TOTAL de IndicadoresStock: empresas 1 y 3, sin EXT, sin ficticios, × PrecioMedio.
+    /// </summary>
+    public class StockFueraDeLaDemanda
+    {
+        public const string MATERIAS_PRIMAS = "MTP";
+        public const string MUESTRAS = "MMP";
+
+        /// <summary><see cref="MATERIAS_PRIMAS"/> o <see cref="MUESTRAS"/> (un producto MTP y MMP a la vez cuenta como MTP).</summary>
+        public string Partida { get; set; }
+        public string Familia { get; set; }
+        public string NombreFamilia { get; set; }
+        /// <summary>Productos con stock distinto de 0 a fin de mes.</summary>
+        public int Productos { get; set; }
+        public int Unidades { get; set; }
+        public decimal Valor { get; set; }
+    }
+
+    /// <summary>
     /// NestoAPI#629: lo que devuelve GET api/IndicadoresStock: la fila tal cual más el % de unidades compradas en los 12 meses que
     /// acaban en ese mes que ya tenían más de 6 meses de cobertura al comprarlas (sale de las 12 filas del mismo almacén; null si
     /// falta alguno de esos meses).

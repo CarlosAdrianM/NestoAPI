@@ -15,7 +15,8 @@ namespace NestoAPI.Tests.Infrastructure.IndicadoresStock
         private static readonly string[] LECTURAS =
         {
             RepositorioIndicadoresStockSql.SQL_PRODUCTOS, RepositorioIndicadoresStockSql.SQL_STOCK, RepositorioIndicadoresStockSql.SQL_VENTAS,
-            RepositorioIndicadoresStockSql.SQL_SERVICIO, RepositorioIndicadoresStockSql.SQL_MOVIMIENTOS_COMPRADOS
+            RepositorioIndicadoresStockSql.SQL_SERVICIO, RepositorioIndicadoresStockSql.SQL_MOVIMIENTOS_COMPRADOS,
+            RepositorioIndicadoresStockSql.SQL_STOCK_FUERA_DE_LA_DEMANDA
         };
 
         [TestMethod]

@@ -3,6 +3,7 @@ using DocumentFormat.OpenXml.Spreadsheet;
 using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.IndicadoresStock;
 using NestoAPI.Infraestructure.PreparacionAlmacen;
 using NestoAPI.Infraestructure.Stocks.Tendencias;
 using System;
@@ -10,6 +11,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net.Mail;
+using NestoAPI.Tests.Infrastructure.IndicadoresStock;
 using static NestoAPI.Tests.Infrastructure.Stocks.Tendencias.SeriesTendencia;
 
 namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
@@ -331,6 +333,139 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
             Assert.IsNull(Celda(enviados[0].excel, "Todos los productos", "A5"));
             StringAssert.Contains(enviados[0].cuerpo, "Propios (fabricación propia): 1 productos");
             StringAssert.Contains(enviados[0].cuerpo, "Sin propios: 1 productos");
+        }
+
+        // ---------- NestoAPI#628: cuadre del total con IndicadoresStock ----------
+
+        private static IndicadoresDelMesPropuestas IndicadoresDePrueba(decimal valorTotal) => new IndicadoresDelMesPropuestas
+        {
+            Filas = new List<FilaIndicadoresStock> { new FilaIndicadoresStock { Mes = MesReferencia, Almacen = "TOTAL", ValorStock = valorTotal } },
+            FueraDeLaDemanda = new List<StockFueraDeLaDemanda>
+            {
+                new StockFueraDeLaDemanda { Partida = "MMP", Familia = "Lisap", NombreFamilia = "Lisap", Productos = 3, Unidades = 40, Valor = 5m },
+                new StockFueraDeLaDemanda { Partida = "MTP", Familia = "Eva Visnu", NombreFamilia = "Eva Visnú", Productos = 2, Unidades = 30, Valor = 15.5m }
+            }
+        };
+
+        private static ResultadoPropuestasStock ResultadoConDosProductos(IndicadoresDelMesPropuestas indicadores) => new ResultadoPropuestasStock
+        {
+            Mes = MesReferencia,
+            Parametros = new ParametrosTendencias(),
+            Productos = new List<ResultadoTendencia>
+            {
+                new ResultadoTendencia { Producto = "1", Fase = FasesProducto.MADURO, Formula = "B", Stock = 10, PrecioMedio = 2m, Accion = AccionesPropuesta.AJUSTAR },
+                new ResultadoTendencia { Producto = "2", Fase = FasesProducto.MADURO, Formula = "B", Stock = 20, PrecioMedio = 3m, Accion = AccionesPropuesta.MANTENER }
+            },
+            Indicadores = indicadores
+        };
+
+        [TestMethod]
+        public void Excel_Resumen_LoDeFueraDeLasPropuestasCuadraElTotalConLosIndicadores_YSeDesglosaPorFamilia()
+        {
+            byte[] excel = new GeneradorExcelPropuestasStock().Generar(ResultadoConDosProductos(IndicadoresDePrueba(100.5m)));
+
+            int analizado = FilaConTexto(excel, "Resumen", GeneradorExcelPropuestasStock.ETIQUETA_ANALIZADO);
+            Assert.AreEqual("80", Celda(excel, "Resumen", "C" + analizado)); // 10 × 2 + 20 × 3
+            int fuera = FilaConTexto(excel, "Resumen", GeneradorExcelPropuestasStock.ETIQUETA_FUERA);
+            Assert.AreEqual(analizado + 1, fuera);
+            Assert.AreEqual("5", Celda(excel, "Resumen", "B" + fuera));
+            Assert.AreEqual("20.5", Celda(excel, "Resumen", "C" + fuera));
+            Assert.AreEqual("100.5", Celda(excel, "Resumen", "C" + (fuera + 1))); // Total
+            Assert.AreEqual(GeneradorExcelPropuestasStock.ETIQUETA_TOTAL_CUADRE, Celda(excel, "Resumen", "A" + (fuera + 1)));
+            int indicadores = FilaConTexto(excel, "Resumen", GeneradorExcelPropuestasStock.ETIQUETA_INDICADORES);
+            Assert.AreEqual("100.5", Celda(excel, "Resumen", "C" + indicadores));
+            int diferencia = FilaConTexto(excel, "Resumen", GeneradorExcelPropuestasStock.ETIQUETA_DIFERENCIA);
+            Assert.AreEqual("0", Celda(excel, "Resumen", "C" + diferencia));
+
+            // Desglose: primero las materias primas; luego las muestras de más a menos valor
+            int titulo = FilaConTexto(excel, "Resumen", GeneradorExcelPropuestasStock.TITULO_FUERA_POR_FAMILIA);
+            Assert.AreEqual("Materias primas (MTP)", Celda(excel, "Resumen", "A" + (titulo + 2)));
+            Assert.AreEqual("Eva Visnu", Celda(excel, "Resumen", "B" + (titulo + 2)));
+            Assert.AreEqual("15.5", Celda(excel, "Resumen", "F" + (titulo + 2)));
+            Assert.AreEqual("Muestras (MMP)", Celda(excel, "Resumen", "A" + (titulo + 3)));
+            Assert.AreEqual("40", Celda(excel, "Resumen", "E" + (titulo + 3)));
+            // Lo de antes sigue en su sitio
+            Assert.AreEqual("Todos (con propios)", Celda(excel, "Resumen", "A4"));
+        }
+
+        [TestMethod]
+        public void Excel_Resumen_SinIndicadores_LoDiceYNoInventaElTotal()
+        {
+            byte[] excel = new GeneradorExcelPropuestasStock().Generar(ResultadoConDosProductos(null));
+
+            int fuera = FilaConTexto(excel, "Resumen", GeneradorExcelPropuestasStock.ETIQUETA_FUERA);
+            Assert.AreEqual("sin datos", Celda(excel, "Resumen", "C" + fuera));
+            Assert.IsNull(Celda(excel, "Resumen", "C" + (fuera + 1)));
+            Assert.AreEqual(-1, FilaConTexto(excel, "Resumen", GeneradorExcelPropuestasStock.ETIQUETA_DIFERENCIA));
+            Assert.IsTrue(FilaConTexto(excel, "Resumen", "No se han leído los indicadores de stock del mes.") > 0);
+        }
+
+        [TestMethod]
+        public void Ejecutar_ConLectorDeIndicadores_ElExcelLlevaElCuadre_YSiFallaSaleIgualSinEl()
+        {
+            DateTime? mesLeido = null;
+            PropuestasStockJobsService servicio = new PropuestasStockJobsService(() => repositorio, correo, c => null,
+                () => new DateTime(2026, 10, 1, 4, 30, 0), errores.Add, () => avisador, () => decisiones,
+                mes => { mesLeido = mes; return IndicadoresDePrueba(1000m); });
+
+            _ = servicio.Ejecutar(MesReferencia, "prueba");
+
+            Assert.AreEqual(MesReferencia, mesLeido);
+            int indicadores = FilaConTexto(enviados[0].excel, "Resumen", GeneradorExcelPropuestasStock.ETIQUETA_INDICADORES);
+            Assert.AreEqual("1000", Celda(enviados[0].excel, "Resumen", "C" + indicadores));
+            Assert.AreEqual(0, errores.Count);
+
+            PropuestasStockJobsService conFallo = new PropuestasStockJobsService(() => repositorio, correo, c => null,
+                () => new DateTime(2026, 10, 1, 4, 30, 0), errores.Add, () => avisador, () => decisiones,
+                mes => throw new TimeoutException("caído"));
+            _ = conFallo.Ejecutar(MesReferencia, "prueba");
+
+            Assert.AreEqual(2, enviados.Count);
+            Assert.AreEqual(1, errores.Count);
+            StringAssert.Contains(errores[0].Message, "#628");
+        }
+
+        [TestMethod]
+        public void LeerIndicadores_ConLaTablaYElMes_TraeLasFilasYLoDeFuera_SinTabla_ElAviso()
+        {
+            var repo = new RepositorioIndicadoresStockEnMemoria();
+            repo.Productos.Add(new ProductoEnMemoria { Producto = "MP", PrecioMedio = 2m, Grupo = "MTP", SubGrupo = "001", Familia = "Eva Visnu" });
+            repo.Productos.Add(new ProductoEnMemoria { Producto = "MU", PrecioMedio = 1m, Grupo = "COS", SubGrupo = "MMP", Familia = "Lisap" });
+            repo.Productos.Add(new ProductoEnMemoria { Producto = "A", PrecioMedio = 1m, Grupo = "COS", SubGrupo = "001" });
+            repo.Extracto.Add(new MovimientoExtracto { Producto = "MP", Fecha = new DateTime(2025, 1, 1), Cantidad = 10 });
+            repo.Extracto.Add(new MovimientoExtracto { Producto = "MP", Fecha = new DateTime(2026, 10, 2), Cantidad = 50 }); // después del mes
+            repo.Extracto.Add(new MovimientoExtracto { Producto = "MU", Fecha = new DateTime(2025, 1, 1), Cantidad = 7, Almacen = "EXT" }); // EXT no cuenta
+            repo.Extracto.Add(new MovimientoExtracto { Producto = "MU", Fecha = new DateTime(2025, 1, 1), Cantidad = 3, Empresa = "3", Almacen = "REI" });
+            repo.Extracto.Add(new MovimientoExtracto { Producto = "A", Fecha = new DateTime(2025, 1, 1), Cantidad = 100 });
+            repo.Tabla.Add(new FilaIndicadoresStock { Mes = MesReferencia, Almacen = "TOTAL", ValorStock = 123m });
+            repo.Tabla.Add(new FilaIndicadoresStock { Mes = MesReferencia.AddMonths(-1), Almacen = "TOTAL", ValorStock = 1m });
+
+            IndicadoresDelMesPropuestas r = PropuestasStockJobsService.LeerIndicadores(repo, new DateTime(2026, 9, 17), errores.Add);
+
+            Assert.AreEqual(123m, r.Total.ValorStock);
+            Assert.AreEqual(1, r.Filas.Count);
+            Assert.AreEqual(20m, r.FueraDeLaDemanda.Single(f => f.Partida == "MTP").Valor);
+            Assert.AreEqual(3m, r.FueraDeLaDemanda.Single(f => f.Partida == "MMP").Valor);
+            Assert.IsNull(r.Aviso);
+
+            repo.TablaExiste = false;
+            IndicadoresDelMesPropuestas sinTabla = PropuestasStockJobsService.LeerIndicadores(repo, MesReferencia, errores.Add);
+            StringAssert.Contains(sinTabla.Aviso, "No existe la tabla IndicadoresStock");
+            Assert.AreEqual(2, sinTabla.FueraDeLaDemanda.Count);
+            Assert.AreEqual(0, errores.Count);
+        }
+
+        /// <summary>NestoAPI#628: la fila (1, 2…) cuya columna A tiene exactamente ese texto; −1 si no hay ninguna.</summary>
+        private static int FilaConTexto(byte[] excel, string hoja, string texto)
+        {
+            for (int fila = 1; fila <= 300; fila++)
+            {
+                if (Celda(excel, hoja, "A" + fila) == texto)
+                {
+                    return fila;
+                }
+            }
+            return -1;
         }
 
         private static string[] Hojas(byte[] excel)

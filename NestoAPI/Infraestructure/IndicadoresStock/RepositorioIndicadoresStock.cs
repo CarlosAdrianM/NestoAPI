@@ -26,6 +26,11 @@ namespace NestoAPI.Infraestructure.IndicadoresStock
         Task Guardar(DateTime mes, IList<FilaIndicadoresStock> filas);
         /// <summary>Las filas de los meses de <paramref name="desde"/> a <paramref name="hasta"/> (incluidos); sin almacén, todos.</summary>
         Task<List<FilaIndicadoresStock>> Leer(DateTime desde, DateTime hasta, string almacen);
+        /// <summary>
+        /// NestoAPI#628: el stock a fin de <paramref name="mes"/> de MTP y MMP por familia (lo que no entra en las propuestas), para
+        /// el cuadre del Excel. Solo los productos de esos dos (unos 900): no recorre el extracto entero, pero va en el job de noche.
+        /// </summary>
+        Task<List<StockFueraDeLaDemanda>> LeerStockFueraDeLaDemanda(DateTime mes);
     }
 
     /// <summary>
@@ -106,6 +111,25 @@ WHERE e.Empresa IN ('1', '3') AND ISNULL(e.Almacén, '') <> 'EXT' AND e.Fecha >=
         WHERE c.Diario = '_ALBCOMP' AND c.Empresa IN ('1', '3') AND c.Cantidad > 0
             AND ISNULL(c.Almacén, '') <> 'EXT' AND c.Fecha >= @p0 AND c.Fecha < @p1)";
 
+        // NestoAPI#628: @p1 = día 1 del mes siguiente. Mismo ámbito que SQL_STOCK (empresas 1 y 3, sin EXT, sin ficticios) y mismo
+        // valor que la fila TOTAL (stock × PrecioMedio de hoy, negativos incluidos), solo de MTP y MMP, por familia.
+        internal const string SQL_STOCK_FUERA_DE_LA_DEMANDA = @"
+SELECT CASE WHEN ISNULL(p.Grupo, '') = 'MTP' THEN 'MTP' ELSE 'MMP' END AS Partida,
+    RTRIM(ISNULL(p.Familia, '')) AS Familia, RTRIM(ISNULL(MAX(f.Descripción), '')) AS NombreFamilia,
+    COUNT(*) AS Productos, SUM(s.Stock) AS Unidades,
+    CAST(SUM(s.Stock * CAST(ISNULL(p.PrecioMedio, 0) AS decimal(19, 4))) AS decimal(19, 2)) AS Valor
+FROM (
+    SELECT e.Número, SUM(CAST(e.Cantidad AS int)) AS Stock
+    FROM dbo.ExtractoProducto e WITH (NOLOCK)
+    INNER JOIN dbo.Productos q WITH (NOLOCK) ON q.Empresa = '1' AND q.Número = e.Número AND q.Ficticio = 0
+    WHERE e.Empresa IN ('1', '3') AND ISNULL(e.Almacén, '') <> 'EXT' AND e.Fecha < @p1
+        AND (ISNULL(q.Grupo, '') = 'MTP' OR ISNULL(q.SubGrupo, '') = 'MMP')
+    GROUP BY e.Número
+    HAVING SUM(CAST(e.Cantidad AS int)) <> 0) s
+INNER JOIN dbo.Productos p WITH (NOLOCK) ON p.Empresa = '1' AND p.Número = s.Número
+LEFT JOIN dbo.Familias f WITH (NOLOCK) ON f.Empresa = '1' AND f.Número = p.Familia
+GROUP BY CASE WHEN ISNULL(p.Grupo, '') = 'MTP' THEN 'MTP' ELSE 'MMP' END, RTRIM(ISNULL(p.Familia, ''))";
+
         internal const string SQL_BORRAR_MES = "DELETE FROM dbo.IndicadoresStock WHERE Mes = @p0";
 
         /// <summary>Las columnas de IndicadoresStock que escribe el job, en el orden de los parámetros del INSERT.</summary>
@@ -183,6 +207,11 @@ ORDER BY Mes, CASE WHEN Almacen = 'TOTAL' THEN 0 ELSE 1 END, Almacen";
             return db.Database.SqlQuery<FilaIndicadoresStock>(SQL_LEER, Dia("@p0", PrimeroDeMes(desde)), Dia("@p1", PrimeroDeMes(hasta)),
                 new SqlParameter("@p2", SqlDbType.VarChar, 5) { Value = string.IsNullOrWhiteSpace(almacen) ? (object)DBNull.Value : almacen.Trim().ToUpperInvariant() })
                 .ToListAsync();
+        }
+
+        public Task<List<StockFueraDeLaDemanda>> LeerStockFueraDeLaDemanda(DateTime mes)
+        {
+            return db.Database.SqlQuery<StockFueraDeLaDemanda>(SQL_STOCK_FUERA_DE_LA_DEMANDA, Fin(mes)).ToListAsync();
         }
 
         internal static object[] Parametros(DateTime mes, FilaIndicadoresStock f)

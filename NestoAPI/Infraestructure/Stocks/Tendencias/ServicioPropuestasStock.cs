@@ -1,3 +1,4 @@
+using NestoAPI.Infraestructure.IndicadoresStock;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -16,6 +17,31 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         public int LotesConError { get; set; }
         public int ProductosConError { get; set; }
         public int FamiliasConEstacionalidad { get; set; }
+        /// <summary>
+        /// NestoAPI#628: lo de IndicadoresStock del mismo mes que sale en la hoja «Resumen» (cuadre del total y rotación por tipo
+        /// de exclusiva). Lo rellena <see cref="PropuestasStockJobsService"/> antes del Excel; null si no se ha leído.
+        /// </summary>
+        public IndicadoresDelMesPropuestas Indicadores { get; set; }
+    }
+
+    /// <summary>
+    /// NestoAPI#628: lo que el Excel de propuestas toma de IndicadoresStock para un mes: las filas del mes (TOTAL, almacenes y
+    /// agrupaciones por tipo de exclusiva) y el stock que el motor deja fuera (MTP y MMP) por familia, con el mismo criterio de
+    /// valoración, para que el total del Excel cuadre con el de los indicadores.
+    /// </summary>
+    public class IndicadoresDelMesPropuestas
+    {
+        public List<FilaIndicadoresStock> Filas { get; set; } = new List<FilaIndicadoresStock>();
+        /// <summary>Null si no se ha podido leer (sale el aviso en la hoja).</summary>
+        public List<StockFueraDeLaDemanda> FueraDeLaDemanda { get; set; } = new List<StockFueraDeLaDemanda>();
+        /// <summary>Qué falta y por qué (sin tabla, mes sin calcular, consulta fallida); null si está todo.</summary>
+        public string Aviso { get; set; }
+
+        /// <summary>La fila de ese almacén (o «TOTAL», o «G:NAC»…) del mes; null si no está.</summary>
+        public FilaIndicadoresStock Fila(string almacen)
+            => Filas?.FirstOrDefault(f => string.Equals(f.Almacen?.Trim(), almacen, StringComparison.OrdinalIgnoreCase));
+
+        public FilaIndicadoresStock Total => Fila(FilaIndicadoresStock.TOTAL);
     }
 
     /// <summary>

@@ -1,6 +1,8 @@
 using Hangfire;
+using NestoAPI.Infraestructure.IndicadoresStock;
 using NestoAPI.Infraestructure.Notificaciones;
 using NestoAPI.Infraestructure.PreparacionAlmacen;
+using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
 using System.Configuration;
@@ -43,14 +45,16 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         private readonly Action<Exception> registrarError;
         private readonly Func<IAvisadorCompras> crearAvisador;
         private readonly Func<IRepositorioDecisionesPropuestasStock> crearRepositorioDecisiones;
+        private readonly Func<DateTime, IndicadoresDelMesPropuestas> leerIndicadores;
 
-        public PropuestasStockJobsService() : this(null)
+        public PropuestasStockJobsService() : this(null, leerIndicadores: LeerIndicadoresDeLaBd)
         {
         }
 
         internal PropuestasStockJobsService(Func<IRepositorioTendencias> crearRepositorio, IServicioCorreoElectronico correo = null,
             Func<string, string> leerParametro = null, Func<DateTime> ahora = null, Action<Exception> registrarError = null,
-            Func<IAvisadorCompras> crearAvisador = null, Func<IRepositorioDecisionesPropuestasStock> crearRepositorioDecisiones = null)
+            Func<IAvisadorCompras> crearAvisador = null, Func<IRepositorioDecisionesPropuestasStock> crearRepositorioDecisiones = null,
+            Func<DateTime, IndicadoresDelMesPropuestas> leerIndicadores = null)
         {
             this.crearRepositorio = crearRepositorio ?? (() => new RepositorioTendenciasSql());
             this.correo = correo ?? new ServicioCorreoElectronico();
@@ -59,6 +63,60 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             this.registrarError = registrarError ?? ElmahHelper.Log;
             this.crearAvisador = crearAvisador ?? (() => new AvisadorCompras(new ServicioNotificacionesPush()));
             this.crearRepositorioDecisiones = crearRepositorioDecisiones ?? (() => new RepositorioDecisionesPropuestasStockSql());
+            // NestoAPI#628: sin lector (tests), el Excel sale sin el cuadre con los indicadores ni la rotación por exclusiva.
+            this.leerIndicadores = leerIndicadores;
+        }
+
+        /// <summary>NestoAPI#628: lo de IndicadoresStock del mes para la hoja «Resumen», de la BD (con el tope de tiempo del job).</summary>
+        internal static IndicadoresDelMesPropuestas LeerIndicadoresDeLaBd(DateTime mes)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                return LeerIndicadores(new RepositorioIndicadoresStockSql(db, RepositorioIndicadoresStockSql.SEGUNDOS_CONSULTA_JOB), mes, ElmahHelper.Log);
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#628: las filas de IndicadoresStock del mes y el stock de MTP y MMP por familia. Nunca lanza: lo que falla va a
+        /// ELMAH y queda en <see cref="IndicadoresDelMesPropuestas.Aviso"/>, que sale en la hoja.
+        /// </summary>
+        internal static IndicadoresDelMesPropuestas LeerIndicadores(IRepositorioIndicadoresStock repositorio, DateTime mes, Action<Exception> registrarError)
+        {
+            DateTime primero = new DateTime(mes.Year, mes.Month, 1);
+            IndicadoresDelMesPropuestas resultado = new IndicadoresDelMesPropuestas();
+            List<string> avisos = new List<string>();
+            try
+            {
+                if (repositorio.ExisteTabla().GetAwaiter().GetResult())
+                {
+                    resultado.Filas = repositorio.Leer(primero, primero, null).GetAwaiter().GetResult() ?? new List<FilaIndicadoresStock>();
+                    if (resultado.Total == null)
+                    {
+                        avisos.Add($"IndicadoresStock no tiene todavía el mes {primero:yyyy-MM} (se calcula el día 1 a las 03:30).");
+                    }
+                }
+                else
+                {
+                    avisos.Add("No existe la tabla IndicadoresStock (Scripts/Issue629_IndicadoresStock.sql).");
+                }
+            }
+            catch (Exception ex)
+            {
+                avisos.Add("No se han podido leer los indicadores de stock del mes (detalle en ELMAH).");
+                registrarError(new Exception($"[Propuestas de stock #628] No se han podido leer los indicadores de {primero:yyyy-MM} para el Excel: {ex.Message}", ex));
+            }
+            try
+            {
+                resultado.FueraDeLaDemanda = repositorio.LeerStockFueraDeLaDemanda(primero).GetAwaiter().GetResult() ?? new List<StockFueraDeLaDemanda>();
+            }
+            catch (Exception ex)
+            {
+                resultado.FueraDeLaDemanda = null;
+                avisos.Add("No se ha podido leer el stock de materias primas y muestras (detalle en ELMAH).");
+                registrarError(new Exception($"[Propuestas de stock #628] No se ha podido leer el stock de MTP y MMP de {primero:yyyy-MM} para el Excel: {ex.Message}", ex));
+            }
+            resultado.Aviso = avisos.Count == 0 ? null : string.Join(" ", avisos);
+            return resultado;
         }
 
         /// <summary>Punto de entrada del job recurrente: el mes que acaba de cerrar.</summary>
@@ -149,6 +207,18 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             {
                 avisoGuardado = "No se han podido guardar las propuestas (detalle en ELMAH).";
                 registrarError(new Exception($"[Propuestas de stock #630] Error al guardar {resultado.Mes:yyyy-MM} ({origen}); el Excel sale igual: {ex.Message}", ex));
+            }
+
+            if (leerIndicadores != null)
+            {
+                try
+                {
+                    resultado.Indicadores = leerIndicadores(resultado.Mes);
+                }
+                catch (Exception ex)
+                {
+                    registrarError(new Exception($"[Propuestas de stock #628] No se han podido leer los indicadores de {resultado.Mes:yyyy-MM}; el Excel sale sin el cuadre: {ex.Message}", ex));
+                }
             }
 
             try
