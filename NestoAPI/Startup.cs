@@ -780,6 +780,20 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'cobros-carrito-huerfanos' configurado (cada hora)");
 
+            // NestoAPI#663: Aplázame exige capturar el cobro al enviar (como mucho 15 días después de confirmarlo). Cada
+            // hora en horario laboral se capturan los cobros cuyo pedido ya está entero en albarán o factura, y se avisa a
+            // Informática de los que lleven 12 días sin poder capturarse. Sin cobros de Aplázame no hace nada.
+            RecurringJob.AddOrUpdate(
+                "aplazame-capturas",
+                () => Infraestructure.Pagos.Aplazame.AplazameJobsService.CapturarCobrosServidos(),
+                "20 8-20 * * 1-6", // Cron: de lunes a sábado, cada hora de 8:20 a 20:20
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'aplazame-capturas' configurado (cada hora en horario laboral)");
+
             // Ariadna#8: un aviso de dato mal se cierra solo («Cambiado») cuando el dato ya no es el que había al avisar.
             // Cada hora es de sobra: lo normal es que lo cierren a mano con el botón del correo.
             RecurringJob.AddOrUpdate(

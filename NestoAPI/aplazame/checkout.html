@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="color-scheme" content="light dark">
+    <meta name="robots" content="noindex">
+    <title>Aplázame</title>
+    <!--
+        NestoAPI#663: el checkout de Aplázame dentro de la app NestoTiendas (WebView), como hacen sus SDK de Android e iOS.
+        La app abre esta página con ?id={CheckoutId}&pk={clave pública}&sandbox={true|false} (la URL la monta
+        POST api/Pedidos/Cliente/Carrito/Aplazame) y espera volver por nestotiendas://aplazame/ok|pending|ko|dismiss.
+        El dominio api.nuevavision.es está dado de alta en el panel de Aplázame.
+    -->
+    <style>
+        :root {
+            --fondo: #f5f5f5;
+            --texto: #222222;
+            --suave: #666666;
+            --acento: #222222;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --fondo: #121212;
+                --texto: #eeeeee;
+                --suave: #aaaaaa;
+                --acento: #eeeeee;
+            }
+        }
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            background: var(--fondo);
+            color: var(--texto);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        .mensaje {
+            min-height: 100%;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 24px 16px;
+        }
+        .mensaje p { margin: 8px 0; }
+        .mensaje small { color: var(--suave); }
+        .mensaje a { color: var(--acento); }
+        .rueda {
+            width: 36px;
+            height: 36px;
+            border: 3px solid var(--suave);
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: girar 0.9s linear infinite;
+            margin-bottom: 12px;
+        }
+        @keyframes girar { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="mensaje" id="mensaje">
+        <div class="rueda" id="rueda"></div>
+        <p id="texto">Cargando Aplázame…</p>
+        <p><small id="ayuda"></small></p>
+    </div>
+    <script>
+        (function () {
+            var VOLVER = 'nestotiendas://aplazame/';
+
+            function parametro(nombre) {
+                var coincidencia = new RegExp('[?&]' + nombre + '=([^&#]*)').exec(window.location.search);
+                return coincidencia ? decodeURIComponent(coincidencia[1].replace(/\+/g, ' ')) : '';
+            }
+
+            function volver(resultado) {
+                window.location.href = VOLVER + resultado;
+            }
+
+            function fallo(texto) {
+                document.getElementById('rueda').style.display = 'none';
+                document.getElementById('texto').textContent = texto;
+                document.getElementById('ayuda').innerHTML = '<a href="' + VOLVER + 'ko">Volver a la aplicación</a>';
+            }
+
+            var id = parametro('id');
+            var pk = parametro('pk');
+            var sandbox = parametro('sandbox') === 'true' ? 'true' : 'false';
+
+            if (!id || !pk) {
+                fallo('No se ha podido abrir el pago con Aplázame.');
+                return;
+            }
+
+            var abierto = false;
+            // La cola que recomienda Aplázame (y usa su módulo de PrestaShop): la función se ejecuta cuando aplazame.js está listo
+            (window.aplazame = window.aplazame || []).push(function (aplazame) {
+                abierto = true;
+                aplazame.checkout(id, {
+                    onSuccess: function () { volver('ok'); },
+                    onPending: function () { volver('pending'); },
+                    onKO: function () { volver('ko'); },
+                    onError: function () { volver('ko'); },
+                    onDismiss: function () { volver('dismiss'); }
+                });
+            });
+
+            var script = document.createElement('script');
+            script.src = 'https://cdn.aplazame.com/aplazame.js?public_key=' + encodeURIComponent(pk) + '&sandbox=' + sandbox;
+            script.async = true;
+            script.onerror = function () {
+                fallo('No se ha podido cargar Aplázame. Compruebe su conexión e inténtelo de nuevo.');
+            };
+            document.head.appendChild(script);
+
+            setTimeout(function () {
+                if (!abierto) {
+                    fallo('Aplázame está tardando en cargar. Compruebe su conexión e inténtelo de nuevo.');
+                }
+            }, 20000);
+        })();
+    </script>
+</body>
+</html>

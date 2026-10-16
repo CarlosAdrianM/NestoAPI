@@ -5,6 +5,7 @@ using NestoAPI.Infraestructure.Contabilidad;
 using NestoAPI.Infraestructure.CorreosPostCompra;
 using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Infraestructure.Pagos;
+using NestoAPI.Infraestructure.Pagos.Aplazame;
 using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Infraestructure.Seguridad;
 using NestoAPI.Models;
@@ -120,12 +121,27 @@ namespace NestoAPI.Controllers
             // TNV#68: si viene el cobro del carrito, se paga con tarjeta guardada y punto. Lo
             // decide el servidor y no la petición, para que un cuerpo mal montado no acabe
             // creando un pedido a crédito con un cobro con tarjeta ya hecho.
+            // NestoAPI#663: salvo que el cobro sea de Aplázame: entonces el pedido va TRN / PRE, como los
+            // de PrestaShop pagados con Aplázame, y no hay tarjeta ninguna. Lo dice el TIPO del cobro
+            // guardado, no la petición; que el cobro sea de este cliente y esté aprobado lo comprueba
+            // después ReservarCobroCarrito, igual que con Redsys.
+            ProveedorCobroCarrito proveedorCobro = null;
             if (peticion.IdPagoCarrito.HasValue)
             {
-                peticion.PagarConTarjetaGuardada = true;
+                proveedorCobro = await ProveedorDelCobro(peticion.IdPagoCarrito.Value).ConfigureAwait(false);
+                if (proveedorCobro == ProveedorCobroCarrito.Aplazame)
+                {
+                    peticion.PagarConTarjeta = false;
+                    peticion.PagarConTarjetaGuardada = false;
+                    peticion.TarjetaId = null;
+                }
+                else
+                {
+                    peticion.PagarConTarjetaGuardada = true;
+                }
             }
 
-            PedidoPreparado preparado = await PrepararPedido(peticion).ConfigureAwait(false);
+            PedidoPreparado preparado = await PrepararPedido(peticion, proveedorCobro).ConfigureAwait(false);
             if (preparado.Error != null)
             {
                 return preparado.Error;
@@ -835,35 +851,19 @@ namespace NestoAPI.Controllers
             }
             peticion.PagarConTarjetaGuardada = true;
 
-            PedidoPreparado preparado = await PrepararPedido(peticion).ConfigureAwait(false);
-            if (preparado.Error != null)
+            CarritoACobrar carrito = await PrepararCarritoACobrar(peticion, ProveedorCobroCarrito.Redsys).ConfigureAwait(false);
+            if (carrito.Error != null)
             {
-                return preparado.Error;
+                return carrito.Error;
             }
-            // NestoAPI#593 (TNV): no se cobra un carrito con un cheque que no se puede usar
-            if (preparado.ChequeRegalo?.Error != null)
-            {
-                throw preparado.ChequeRegalo.Error;
-            }
-
-            if (!PoliticaPagoCanal.SeCobraEnElMomento(preparado.FormaPago, preparado.PlazosPago))
-            {
-                // La política del canal no ha dejado el pedido en tarjeta al contado: no hay nada
-                // que cobrar por adelantado.
-                return BadRequest("Este pedido no se cobra con tarjeta, así que no hay nada que pagar ahora.");
-            }
+            PedidoPreparado preparado = carrito.Preparado;
+            decimal total = carrito.Total;
 
             TarjetaCliente tarjeta = servicioPagos.TarjetaGuardadaDe(
                 preparado.Pedido.empresa, preparado.Pedido.cliente, peticion.TarjetaId.Value);
             if (tarjeta == null)
             {
                 return BadRequest("No encontramos esa tarjeta guardada. Elige otra forma de pago.");
-            }
-
-            decimal total = (await CalcularTotalDelCarrito(preparado).ConfigureAwait(false)).Total;
-            if (total <= 0)
-            {
-                return BadRequest("No hemos podido calcular el importe del pedido. Vuelve a abrir el carrito.");
             }
 
             RespuestaIniciarPago pago;
@@ -901,6 +901,274 @@ namespace NestoAPI.Controllers
                 TarjetaDescripcion = tarjeta.Descripcion
             });
         }
+
+        /// <summary>El carrito listo para cobrarlo por adelantado (o el error por el que no se puede).</summary>
+        private class CarritoACobrar
+        {
+            public IHttpActionResult Error { get; set; }
+            public PedidoPreparado Preparado { get; set; }
+            public decimal Total { get; set; }
+        }
+
+        /// <summary>
+        /// TNV#68 / NestoAPI#663: lo común a cobrar el carrito por adelantado, sea con tarjeta (Redsys) o con Aplázame: el
+        /// mismo pedido que se crearía, las mismas comprobaciones y el MISMO total (<see cref="CalcularTotalDelCarrito"/>),
+        /// que es el que luego se le exige al pedido al crearlo.
+        /// </summary>
+        private async Task<CarritoACobrar> PrepararCarritoACobrar(PedidoClienteRequest peticion, ProveedorCobroCarrito proveedor)
+        {
+            PedidoPreparado preparado = await PrepararPedido(peticion, proveedor).ConfigureAwait(false);
+            if (preparado.Error != null)
+            {
+                return new CarritoACobrar { Error = preparado.Error };
+            }
+            // NestoAPI#593 (TNV): no se cobra un carrito con un cheque que no se puede usar
+            if (preparado.ChequeRegalo?.Error != null)
+            {
+                throw preparado.ChequeRegalo.Error;
+            }
+
+            if (!PoliticaPagoCanal.SeCobraEnElMomento(preparado.FormaPago, preparado.PlazosPago))
+            {
+                // La política del canal no ha dejado el pedido en tarjeta al contado: no hay nada
+                // que cobrar por adelantado.
+                return new CarritoACobrar { Error = BadRequest("Este pedido no se cobra con tarjeta, así que no hay nada que pagar ahora.") };
+            }
+
+            decimal total = (await CalcularTotalDelCarrito(preparado).ConfigureAwait(false)).Total;
+            if (total <= 0)
+            {
+                return new CarritoACobrar { Error = BadRequest("No hemos podido calcular el importe del pedido. Vuelve a abrir el carrito.") };
+            }
+
+            return new CarritoACobrar { Preparado = preparado, Total = total };
+        }
+
+        /// <summary>NestoAPI#663: de qué proveedor es un cobro del carrito (null si no existe o no es del carrito).</summary>
+        private async Task<ProveedorCobroCarrito> ProveedorDelCobro(int idPago)
+        {
+            try
+            {
+                Models.Pagos.PagoTPVDTO pago = await servicioPagos.ConsultarPago(idPago).ConfigureAwait(false);
+                return ProveedorCobroCarrito.DeTipo(pago?.Tipo);
+            }
+            catch (Exception ex)
+            {
+                // Sin poder leerlo se sigue como siempre (tarjeta): ReservarCobroCarrito decidirá si vale
+                ElmahHelper.Log(new Exception($"[Pedido app] No se ha podido leer el cobro {idPago}: {ex.Message}", ex));
+                return null;
+            }
+        }
+
+        #region NestoAPI#663: Aplázame
+
+        /// <summary>NestoAPI#663: el servicio de cobros de Aplázame. Sustituible en tests.</summary>
+        private IServicioCobrosAplazame servicioAplazame;
+        internal IServicioCobrosAplazame ServicioAplazame
+        {
+            get => servicioAplazame ?? (servicioAplazame = ServicioCobrosAplazame.CrearPorDefecto());
+            set => servicioAplazame = value;
+        }
+
+        /// <summary>
+        /// NestoAPI#663: si se le ofrece Aplázame a este cliente (el del JWT) para un carrito de este importe (con IVA).
+        /// Interruptor AplazameApp (Apagado / Sandbox con sus clientes de prueba / Activo), cobro del carrito antes del
+        /// pedido encendido, que vea los precios y, si existen, AplazameImporteMinimo / AplazameImporteMaximo.
+        /// </summary>
+        // GET: api/Pedidos/Cliente/Aplazame/Disponible?importe=123.45
+        [HttpGet]
+        [Route("Cliente/Aplazame/Disponible")]
+        [ResponseType(typeof(DisponibilidadAplazameDTO))]
+        public IHttpActionResult GetAplazameDisponible(decimal importe = 0)
+        {
+            ClaimsIdentity identity = User?.Identity as ClaimsIdentity;
+            string cliente = identity?.FindFirst("cliente")?.Value?.Trim();
+            if (string.IsNullOrWhiteSpace(cliente)
+                || !ValidadorAccesoCliente.ValidarAcceso(identity, cliente).Autorizado)
+            {
+                return Unauthorized();
+            }
+
+            return Ok(ServicioAplazame.Configuracion.Disponibilidad(cliente, importe,
+                CobrarCarritoAntesDelPedido, PoliticaPreciosOcultos.OcultaImportes(identity)));
+        }
+
+        /// <summary>
+        /// NestoAPI#663: abre el pago con Aplázame del carrito, ANTES de que exista el pedido (como
+        /// <see cref="PostPagoCarrito"/> con Redsys, y con el mismo cálculo del importe). Crea el cobro y el checkout en
+        /// Aplázame y devuelve con qué abrirlo. El pedido se crea después con <c>POST Cliente</c> e
+        /// <c>IdPagoCarrito</c>, y solo si Aplázame lo ha aprobado.
+        /// </summary>
+        // POST: api/Pedidos/Cliente/Carrito/Aplazame
+        [HttpPost]
+        [Route("Cliente/Carrito/Aplazame")]
+        [ResponseType(typeof(CobroAplazameIniciadoDTO))]
+        public async Task<IHttpActionResult> PostCarritoAplazame(PedidoClienteRequest peticion)
+        {
+            if (!CobrarCarritoAntesDelPedido)
+            {
+                return BadRequest("Ahora mismo no se puede pagar con Aplázame. Elija otra forma de pago.");
+            }
+            ClaimsIdentity identity = User?.Identity as ClaimsIdentity;
+            string cliente = identity?.FindFirst("cliente")?.Value?.Trim();
+            if (string.IsNullOrWhiteSpace(cliente))
+            {
+                return Unauthorized();
+            }
+            if (PoliticaPreciosOcultos.OcultaImportes(identity))
+            {
+                return BadRequest("Su pedido se paga con su forma de pago habitual, no con Aplázame.");
+            }
+            if (peticion == null)
+            {
+                return BadRequest("El carrito está vacío.");
+            }
+            // Ni tarjeta ni forma de pago de la petición: lo decide el servidor (TRN / PRE)
+            peticion.PagarConTarjeta = false;
+            peticion.PagarConTarjetaGuardada = false;
+            peticion.TarjetaId = null;
+            peticion.IdPagoCarrito = null;
+
+            CarritoACobrar carrito = await PrepararCarritoACobrar(peticion, ProveedorCobroCarrito.Aplazame).ConfigureAwait(false);
+            if (carrito.Error != null)
+            {
+                return carrito.Error;
+            }
+            PedidoPreparado preparado = carrito.Preparado;
+
+            DisponibilidadAplazameDTO disponible = ServicioAplazame.Configuracion.Disponibilidad(
+                preparado.Pedido.cliente?.Trim(), carrito.Total, CobrarCarritoAntesDelPedido, ocultaPrecios: false);
+            if (!disponible.Disponible)
+            {
+                return BadRequest(disponible.Motivo);
+            }
+
+            DatosAplazameCliente datos = await LeerDatosAplazame(preparado).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(datos.Correo))
+            {
+                return BadRequest("Para pagar con Aplázame necesitamos su correo electrónico. Llámenos y lo añadimos a su ficha.");
+            }
+
+            try
+            {
+                CobroAplazameIniciadoDTO cobro = await ServicioAplazame.IniciarCobro(new SolicitudCobroAplazame
+                {
+                    Empresa = preparado.Pedido.empresa,
+                    Cliente = preparado.Pedido.cliente,
+                    Contacto = preparado.Pedido.contacto,
+                    Correo = datos.Correo,
+                    Usuario = preparado.Pedido.Usuario,
+                    Importe = carrito.Total,
+                    Lineas = preparado.Pedido.Lineas,
+                    Facturacion = datos.Facturacion,
+                    Envio = datos.Envio,
+                    NombreEnvio = preparado.Tienda != null ? "Recogida en " + preparado.Tienda.Nombre : "Envío",
+                    RecogidaEnTienda = preparado.Tienda != null
+                }).ConfigureAwait(false);
+                return Ok(cobro);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception(
+                    $"[Aplázame #663] No se ha podido abrir el pago con Aplázame del cliente " +
+                    $"{preparado.Pedido.cliente?.Trim()} ({carrito.Total:N2} EUR): {ex.Message}", ex));
+                return BadRequest("No hemos podido abrir el pago con Aplázame. Inténtelo de nuevo en unos minutos o elija otra forma de pago.");
+            }
+        }
+
+        /// <summary>NestoAPI#663: cómo va el cobro de Aplázame (solo si es del cliente del JWT).</summary>
+        // GET: api/Pedidos/Cliente/Carrito/Aplazame/5
+        [HttpGet]
+        [Route("Cliente/Carrito/Aplazame/{idPago:int}")]
+        [ResponseType(typeof(EstadoCobroAplazameDTO))]
+        public async Task<IHttpActionResult> GetCobroAplazame(int idPago)
+        {
+            ClaimsIdentity identity = User?.Identity as ClaimsIdentity;
+            string cliente = identity?.FindFirst("cliente")?.Value?.Trim();
+            if (string.IsNullOrWhiteSpace(cliente)
+                || !ValidadorAccesoCliente.ValidarAcceso(identity, cliente).Autorizado)
+            {
+                return Unauthorized();
+            }
+
+            // La misma respuesta si no existe que si es de otro: no se dice qué cobros hay ni de quién son
+            EstadoCobroAplazameDTO estado = await ServicioAplazame
+                .Estado(idPago, Constantes.Empresas.EMPRESA_POR_DEFECTO, cliente).ConfigureAwait(false);
+            return estado == null ? (IHttpActionResult)NotFound() : Ok(estado);
+        }
+
+        private class DatosAplazameCliente
+        {
+            public string Correo { get; set; }
+            public DireccionCheckout Facturacion { get; set; }
+            public DireccionCheckout Envio { get; set; }
+        }
+
+        /// <summary>
+        /// NestoAPI#663: correo y direcciones para Aplázame. Facturación, la ficha principal; envío, el contacto del pedido
+        /// (o la tienda donde lo recoge). El correo, el del usuario de la app y, si no tiene, el de las personas de contacto
+        /// de su ficha.
+        /// </summary>
+        private async Task<DatosAplazameCliente> LeerDatosAplazame(PedidoPreparado preparado)
+        {
+            string empresa = preparado.Pedido.empresa;
+            string cliente = preparado.Pedido.cliente?.Trim();
+            string contacto = preparado.Pedido.contacto?.Trim();
+
+            List<Cliente> fichas = await db.Clientes
+                .Where(c => c.Empresa == empresa && c.Nº_Cliente == cliente)
+                .ToListAsync()
+                .ConfigureAwait(false);
+            Cliente principal = fichas.FirstOrDefault(c => c.ClientePrincipal) ?? fichas.FirstOrDefault(c => c.Contacto?.Trim() == contacto);
+            Cliente entrega = fichas.FirstOrDefault(c => c.Contacto?.Trim() == contacto) ?? principal;
+
+            string correo = preparado.Correo?.Trim();
+            if (string.IsNullOrWhiteSpace(correo))
+            {
+                List<string> correos = await db.PersonasContactoClientes
+                    .Where(p => p.Empresa == empresa && p.NºCliente == cliente && p.CorreoElectrónico != null && p.CorreoElectrónico != "")
+                    .OrderBy(p => p.Contacto == contacto ? 0 : 1)
+                    .Select(p => p.CorreoElectrónico)
+                    .ToListAsync()
+                    .ConfigureAwait(false);
+                correo = correos.Select(c => c?.Trim()).FirstOrDefault(c => !string.IsNullOrWhiteSpace(c) && c.Contains("@"));
+            }
+
+            DireccionCheckout Direccion(Cliente ficha) => ficha == null ? null : new DireccionCheckout
+            {
+                Nombre = ficha.Nombre?.Trim(),
+                Direccion = ficha.Dirección?.Trim(),
+                CodigoPostal = ficha.CodPostal?.Trim(),
+                Poblacion = ficha.Población?.Trim(),
+                Provincia = ficha.Provincia?.Trim(),
+                Pais = ficha.Pais?.Trim(),
+                Telefono = ficha.Teléfono?.Trim()
+            };
+
+            DireccionCheckout envio = Direccion(entrega);
+            if (preparado.Tienda != null)
+            {
+                envio = new DireccionCheckout
+                {
+                    Nombre = principal?.Nombre?.Trim() ?? preparado.Tienda.Nombre,
+                    Direccion = preparado.Tienda.Direccion,
+                    CodigoPostal = preparado.Tienda.CodigoPostal,
+                    Poblacion = preparado.Tienda.Poblacion,
+                    Provincia = preparado.Tienda.Poblacion,
+                    Pais = "ES",
+                    Telefono = principal?.Teléfono?.Trim()
+                };
+            }
+
+            return new DatosAplazameCliente
+            {
+                Correo = correo,
+                Facturacion = Direccion(principal) ?? envio,
+                Envio = envio ?? Direccion(principal)
+            };
+        }
+
+        #endregion
 
         /// <summary>
         /// TNV#68: lo que va a costar el pedido que se crearía con este carrito, con IVA y portes
@@ -989,8 +1257,12 @@ namespace NestoAPI.Controllers
             public ResultadoChequeCarrito ChequeRegalo { get; set; } = new ResultadoChequeCarrito();
         }
 
-        private async Task<PedidoPreparado> PrepararPedido(PedidoClienteRequest peticion)
+        /// <param name="proveedorCobro">NestoAPI#663: el proveedor del cobro del carrito, si lo hay. Con Aplázame la forma y
+        /// los plazos de pago los pone el proveedor (TRN / PRE, como los pedidos de PrestaShop pagados con Aplázame), no la
+        /// política del canal ni la ficha.</param>
+        private async Task<PedidoPreparado> PrepararPedido(PedidoClienteRequest peticion, ProveedorCobroCarrito proveedorCobro = null)
         {
+            bool pagaConAplazame = proveedorCobro == ProveedorCobroCarrito.Aplazame;
             // 1. Quién pide. El cliente sale SIEMPRE del JWT: si viniera en el cuerpo se ignora,
             //    que es lo que impide pedir en nombre de otro.
             ClaimsIdentity identity = User?.Identity as ClaimsIdentity;
@@ -1062,6 +1334,13 @@ namespace NestoAPI.Controllers
             string plazosPagoSolicitados = pagaConTarjeta ? Constantes.PlazosPago.PREPAGO : peticion.PlazosPago;
             string formaPago = PoliticaPagoCanal.ResolverFormaPago(condiciones, formaPagoSolicitada);
             string plazosPago = PoliticaPagoCanal.ResolverPlazosPago(condiciones, plazosPagoSolicitados);
+            if (pagaConAplazame)
+            {
+                // NestoAPI#663: lo paga Aplázame por adelantado (financia al cliente y nos paga a nosotros), así que la
+                // deuda o el crédito de la ficha no cuentan: el pedido va como los de PrestaShop pagados con Aplázame.
+                formaPago = proveedorCobro.FormaPago;
+                plazosPago = proveedorCobro.PlazosPago;
+            }
 
             // NestoAPI#446: sin ver los precios no hay tarjeta (la pasarela enseña el importe):
             // la forma habitual de la ficha, y si solo queda la tarjeta, el pedido no se crea.
@@ -1119,7 +1398,8 @@ namespace NestoAPI.Controllers
             // recomendados del canal, que son PRE: el pedido salía sin su pronto pago y a la pasarela. Van sus plazos
             // habituales para esa forma y ese importe, como si hubiera llamado a su vendedor. El importe, el que mira
             // la plantilla de Nesto para elegirlos (PoliticaPagoCanal.ImporteParaPlazos).
-            if (!PoliticaPreciosOcultos.OcultaImportes(identity))
+            // NestoAPI#663: con Aplázame no: sus plazos son PRE siempre
+            if (!PoliticaPreciosOcultos.OcultaImportes(identity) && !pagaConAplazame)
             {
                 List<CondPagoCliente> condicionesFicha = await db.CondPagoClientes
                     .Where(c => c.Empresa == empresa && c.Nº_Cliente == cliente)

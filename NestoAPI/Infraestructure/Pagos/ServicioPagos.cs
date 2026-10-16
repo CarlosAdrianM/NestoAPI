@@ -37,6 +37,12 @@ namespace NestoAPI.Infraestructure.Pagos
         /// </summary>
         internal Func<int, decimal, Task> RegistrarCobroInscripcion { get; set; } = Eventos.CobroInscripcionEvento.Registrar;
 
+        /// <summary>
+        /// NestoAPI#663: el servicio de cobros de Aplázame, para cancelar en Aplázame lo que en Redsys sería una
+        /// devolución. Se crea solo cuando hace falta. Sustituible en tests.
+        /// </summary>
+        internal Func<Aplazame.IServicioCobrosAplazame> CrearServicioAplazame { get; set; } = Aplazame.ServicioCobrosAplazame.CrearPorDefecto;
+
         public ServicioPagos(IRedsysService redsysService, IContabilidadService contabilidadService, ILectorParametrosUsuario lectorParametros)
             : this(redsysService, contabilidadService, lectorParametros, new ServicioCorreoElectronico(), new ElmahLogService())
         {
@@ -974,11 +980,17 @@ namespace NestoAPI.Infraestructure.Pagos
                 return ReservaCobroCarrito.No("No encontramos el pago de este pedido. Vuelve a intentarlo desde el carrito.");
             }
 
+            ProveedorCobroCarrito proveedor = ProveedorCobroCarrito.De(pago);
+
             if (!string.Equals(pago.Estado?.Trim(), Constantes.EstadosPagoTPV.AUTORIZADO, StringComparison.OrdinalIgnoreCase))
             {
                 // Aquí es donde se corta el pedido fantasma: el banco no ha dicho que sí.
-                return ReservaCobroCarrito.No("El banco no ha confirmado el pago, así que no hemos creado el pedido " +
-                    "ni te hemos cobrado nada. Tu carrito sigue igual: puedes intentarlo de nuevo.");
+                // NestoAPI#663: con Aplázame, «Autorizado» es que Aplázame lo aprobó y se lo confirmamos.
+                return ReservaCobroCarrito.No(proveedor == ProveedorCobroCarrito.Aplazame
+                    ? "Aplázame no ha aprobado el pago, así que no hemos creado el pedido ni se le ha cobrado nada. " +
+                      "Su carrito sigue igual: puede intentarlo de nuevo."
+                    : "El banco no ha confirmado el pago, así que no hemos creado el pedido " +
+                      "ni te hemos cobrado nada. Tu carrito sigue igual: puedes intentarlo de nuevo.");
             }
 
             if (!string.IsNullOrWhiteSpace(pago.Documento))
@@ -987,7 +999,8 @@ namespace NestoAPI.Infraestructure.Pagos
                     "antes de volver a comprar, para no pagarlo dos veces.");
             }
 
-            if (pago.FechaCreacion < ahora.AddMinutes(-MINUTOS_VALIDEZ_COBRO_CARRITO))
+            // NestoAPI#663: Redsys cuenta desde el cobro (30 min); Aplázame, desde que lo confirmamos (2 h)
+            if (proveedor.CaducaEl(pago) < ahora)
             {
                 // No se crea el pedido con un cobro de hace horas: los precios y el stock que se
                 // cobraron ya no tienen por qué ser los de ahora. Se devuelve el dinero.
@@ -995,8 +1008,11 @@ namespace NestoAPI.Infraestructure.Pagos
                 {
                     Valido = false,
                     HayQueDevolver = true,
-                    Motivo = "Ha pasado demasiado tiempo desde el pago. " +
-                        "Te devolvemos el importe y puedes volver a hacer el pedido."
+                    Motivo = proveedor == ProveedorCobroCarrito.Aplazame
+                        ? "Ha pasado demasiado tiempo desde que Aplázame aprobó el pago. Lo hemos cancelado, así que no " +
+                          "se le cobrará nada, y puede volver a hacer el pedido."
+                        : "Ha pasado demasiado tiempo desde el pago. " +
+                          "Te devolvemos el importe y puedes volver a hacer el pedido."
                 };
             }
 
@@ -1037,6 +1053,14 @@ namespace NestoAPI.Infraestructure.Pagos
                 if (pago == null)
                 {
                     return false;
+                }
+
+                // NestoAPI#663: un cobro de Aplázame no se devuelve por Redsys: se cancela en Aplázame (no está capturado).
+                // Es el mismo punto de entrada para que el flujo del carrito (importe cambiado, pedido que no sale,
+                // cobro caducado, huérfanos) no tenga que saber de qué proveedor es el cobro.
+                if (ProveedorCobroCarrito.EsAplazame(pago))
+                {
+                    return await CrearServicioAplazame().Cancelar(pago.Id, motivo).ConfigureAwait(false);
                 }
 
                 ParametrosRedsysFirmados parametros = _redsysService.CrearParametrosDevolucion(pago.Importe, pago.NumeroOrden);
@@ -1109,14 +1133,15 @@ namespace NestoAPI.Infraestructure.Pagos
             string tipo = pago?.Tipo?.Trim();
             return string.Equals(tipo, Constantes.TiposPagoTPV.PEDIDO_APP, StringComparison.OrdinalIgnoreCase)
                 || string.Equals(tipo, Constantes.TiposPagoTPV.CARRITO_APP, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(tipo, Constantes.TiposPagoTPV.ALTA_TARJETA, StringComparison.OrdinalIgnoreCase);
+                || string.Equals(tipo, Constantes.TiposPagoTPV.ALTA_TARJETA, StringComparison.OrdinalIgnoreCase)
+                // NestoAPI#663: el de Aplázame tampoco es un enlace de pago (ni siquiera pasa por Redsys)
+                || string.Equals(tipo, Constantes.TiposPagoTPV.CARRITO_APLAZAME, StringComparison.OrdinalIgnoreCase);
         }
 
-        /// <summary>TNV#68: cobro del carrito (el que va ANTES de crear el pedido).</summary>
+        /// <summary>TNV#68: cobro del carrito (el que va ANTES de crear el pedido). NestoAPI#663: de Redsys o de Aplázame.</summary>
         internal static bool EsCobroDeCarrito(PagoTPV pago)
         {
-            return string.Equals(pago?.Tipo?.Trim(), Constantes.TiposPagoTPV.CARRITO_APP,
-                StringComparison.OrdinalIgnoreCase);
+            return ProveedorCobroCarrito.De(pago) != null;
         }
 
         /// <summary>
@@ -1128,8 +1153,28 @@ namespace NestoAPI.Infraestructure.Pagos
         /// </summary>
         internal static string ConceptoPrepagoPedido(int numeroPedido, string numeroOrden)
         {
-            string concepto = $"Tarjeta app pedido {numeroPedido} {numeroOrden?.Trim()}";
-            return concepto.Length > 50 ? concepto.Substring(0, 50) : concepto;
+            return ProveedorCobroCarrito.Redsys.ConceptoPrepago(numeroPedido, numeroOrden);
+        }
+
+        /// <summary>
+        /// NestoAPI#663: la fila de Prepago que se apunta al pedido por un cobro de la app. Con tarjeta (Redsys), en la
+        /// cuenta de Redsys; con Aplázame, en la 57200013 como los pedidos de PrestaShop pagados con Aplázame. Internal
+        /// para los tests.
+        /// </summary>
+        internal static Prepago ConstruirPrepago(PagoTPV pago, int numeroPedido, string empresa)
+        {
+            // PEDIDO_APP (cobro tras crear el pedido) es tarjeta: Redsys
+            ProveedorCobroCarrito proveedor = ProveedorCobroCarrito.De(pago) ?? ProveedorCobroCarrito.Redsys;
+            return new Prepago
+            {
+                Empresa = empresa,
+                Pedido = numeroPedido,
+                Importe = pago.Importe,
+                CuentaContable = proveedor.CuentaPrepago,
+                ConceptoAdicional = proveedor.ConceptoPrepago(numeroPedido, pago.NumeroOrden),
+                // NestoAPI#456: ya no lo tapa el valor por defecto de la BD
+                Usuario = UsuarioAuditoriaHelper.ParaAuditoria(pago.Usuario)
+            };
         }
 
         /// <summary>
@@ -1141,7 +1186,7 @@ namespace NestoAPI.Infraestructure.Pagos
         {
             int numeroPedido = int.Parse(pago.Documento.Trim());
             string empresa = pago.Empresa?.Trim() ?? Empresas.EMPRESA_POR_DEFECTO;
-            string concepto = ConceptoPrepagoPedido(numeroPedido, pago.NumeroOrden);
+            string concepto = ConstruirPrepago(pago, numeroPedido, empresa).ConceptoAdicional;
 
             CabPedidoVta pedido = await db.CabPedidoVtas
                 .FirstOrDefaultAsync(cab => cab.Empresa == empresa && cab.Número == numeroPedido)
@@ -1168,16 +1213,7 @@ namespace NestoAPI.Infraestructure.Pagos
                 return;
             }
 
-            _ = db.Prepagos.Add(new Prepago
-            {
-                Empresa = empresa,
-                Pedido = numeroPedido,
-                Importe = pago.Importe,
-                CuentaContable = Constantes.Prepagos.CUENTA_REDSYS,
-                ConceptoAdicional = concepto,
-                // NestoAPI#456: ya no lo tapa el valor por defecto de la BD
-                Usuario = UsuarioAuditoriaHelper.ParaAuditoria(pago.Usuario)
-            });
+            _ = db.Prepagos.Add(ConstruirPrepago(pago, numeroPedido, empresa));
             _ = await db.SaveChangesAsync().ConfigureAwait(false);
 
             // El prepago tiene que cubrir el total para que el pedido salga en el picking. Si no

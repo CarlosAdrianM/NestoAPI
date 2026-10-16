@@ -495,6 +495,7 @@
     <Compile Include="Controllers\AlbaranesVentaController.cs" />
     <Compile Include="Controllers\AuthController.cs" />
     <Compile Include="Controllers\PagoRedirectController.cs" />
+    <Compile Include="Controllers\AplazameController.cs" />
     <Compile Include="Controllers\Pago3DSController.cs" />
     <Compile Include="Controllers\BancosController.cs" />
     <Compile Include="Controllers\PaisesController.cs" />
@@ -1108,6 +1109,13 @@
     <Compile Include="Infraestructure\Pagos\ITarjetaClienteStore.cs" />
     <Compile Include="Infraestructure\Pagos\TarjetaClienteStore.cs" />
     <Compile Include="Infraestructure\Pagos\CobrosCarritoJobsService.cs" />
+    <Compile Include="Infraestructure\Pagos\ProveedorCobroCarrito.cs" />
+    <Compile Include="Infraestructure\Pagos\Aplazame\AplazameJobsService.cs" />
+    <Compile Include="Infraestructure\Pagos\Aplazame\CheckoutAplazame.cs" />
+    <Compile Include="Infraestructure\Pagos\Aplazame\ClienteApiAplazame.cs" />
+    <Compile Include="Infraestructure\Pagos\Aplazame\ConfiguracionAplazame.cs" />
+    <Compile Include="Infraestructure\Pagos\Aplazame\RepositorioCobrosAplazame.cs" />
+    <Compile Include="Infraestructure\Pagos\Aplazame\ServicioCobrosAplazame.cs" />
     <Compile Include="Infraestructure\Sincronizacion\VigenciaCampanasJobsService.cs" />
     <Compile Include="Infraestructure\Sincronizacion\FechasComprasCliente.cs" />
     <Compile Include="Infraestructure\Sincronizacion\FechasComprasClientesJobsService.cs" />
@@ -2009,6 +2017,7 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="Connected Services\Application Insights\ConnectedService.json" />
+    <Content Include="aplazame\checkout.html" />
     <Content Include="ModelsIA\modelo_llamadas.zip" />
     <!-- NestoAPI#619: librería nativa de LightGBM (x64), necesaria para ENTRENAR el modelo de llamadas en el job mensual.
          El paquete LightGBM solo la copia con PlatformTarget x64 y la API es AnyCPU; CargadorLightGbmNativo la carga desde

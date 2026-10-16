@@ -26,13 +26,17 @@ namespace NestoAPI.Infraestructure.Pagos
     /// devolver el dinero dejaría un pedido creado y sin pagar. Se avisa para mirarlo a mano, que
     /// es lo que hay que hacer con dos casos al año.</description></item>
     /// </list>
+    ///
+    /// <para>NestoAPI#663: lo mismo para los cobros de Aplázame, con su plazo (2 horas desde que se confirmaron, no 30
+    /// minutos desde que se crearon) y deshaciéndolos a su manera: <see cref="IServicioPagos.DevolverCobro"/> los cancela
+    /// en Aplázame en vez de devolverlos por Redsys.</para>
     /// </summary>
     public class CobrosCarritoJobsService
     {
         /// <summary>
-        /// Margen antes de dar por perdido un cobro. Entre que el banco autoriza y la app pide
+        /// Margen antes de dar por perdido un cobro de Redsys. Entre que el banco autoriza y la app pide
         /// crear el pedido pasa un segundo; media hora es de sobra para no pisar a nadie que esté
-        /// en mitad del proceso.
+        /// en mitad del proceso. (El de Aplázame está en <see cref="ProveedorCobroCarrito"/>.)
         /// </summary>
         internal const int MINUTOS_DE_GRACIA = ServicioPagos.MINUTOS_VALIDEZ_COBRO_CARRITO;
 
@@ -43,6 +47,19 @@ namespace NestoAPI.Infraestructure.Pagos
         /// </summary>
         internal const int DIAS_A_REVISAR = 30;
 
+        /// <summary>Qué hacer con un cobro del carrito autorizado.</summary>
+        internal enum Decision
+        {
+            /// <summary>Todavía está a tiempo, o ya tiene pedido.</summary>
+            Nada,
+
+            /// <summary>Se quedó a medio aplicar (reservado): mirarlo a mano.</summary>
+            Avisar,
+
+            /// <summary>Caducado y sin pedido: devolver (Redsys) o cancelar (Aplázame).</summary>
+            Deshacer
+        }
+
         // Sin reintentos: si falla, dentro de una hora vuelve a pasar por aquí.
         // Y nunca dos a la vez, que devolverían el mismo cobro dos veces.
         [AutomaticRetry(Attempts = 0)]
@@ -52,65 +69,87 @@ namespace NestoAPI.Infraestructure.Pagos
             IServicioPagos servicioPagos = new ServicioPagos(
                 new RedsysService(), new ContabilidadService(), new LectorParametrosUsuario());
 
-            await RevisarCobrosHuerfanos(servicioPagos).ConfigureAwait(false);
+            await RevisarCobrosHuerfanos(servicioPagos, LeerCandidatos, DateTime.Now).ConfigureAwait(false);
         }
 
-        /// <summary>Internal para poder probarlo sin tocar Redsys.</summary>
-        internal static async Task RevisarCobrosHuerfanos(IServicioPagos servicioPagos)
+        /// <summary>Los cobros del carrito (Redsys y Aplázame) autorizados de los últimos días.</summary>
+        private static async Task<List<PagoTPV>> LeerCandidatos(DateTime ahora)
         {
-            DateTime limite = DateTime.Now.AddMinutes(-MINUTOS_DE_GRACIA);
-            DateTime desde = DateTime.Now.AddDays(-DIAS_A_REVISAR);
-
-            List<PagoTPV> huerfanos;
+            DateTime desde = ahora.AddDays(-DIAS_A_REVISAR);
+            string[] tipos = { Constantes.TiposPagoTPV.CARRITO_APP, Constantes.TiposPagoTPV.CARRITO_APLAZAME };
             using (NVEntities db = new NVEntities())
             {
                 db.Configuration.LazyLoadingEnabled = false;
                 db.Configuration.ProxyCreationEnabled = false;
 
-                huerfanos = await db.PagosTPV
+                return await db.PagosTPV
                     .AsNoTracking()
-                    .Where(p => p.Tipo == Constantes.TiposPagoTPV.CARRITO_APP
+                    .Where(p => tipos.Contains(p.Tipo)
                              && p.Estado == Constantes.EstadosPagoTPV.AUTORIZADO
-                             && p.FechaCreacion < limite
                              && p.FechaCreacion > desde)
                     .OrderBy(p => p.FechaCreacion)
                     .ToListAsync()
                     .ConfigureAwait(false);
             }
+        }
 
-            foreach (PagoTPV pago in huerfanos)
+        /// <summary>
+        /// Lo que se hace con cada cobro, separado de la base de datos para poder probarlo. Internal para los tests.
+        /// </summary>
+        internal static Decision Decidir(PagoTPV pago, DateTime ahora)
+        {
+            ProveedorCobroCarrito proveedor = ProveedorCobroCarrito.De(pago);
+            if (proveedor == null
+                || !string.Equals(pago.Estado?.Trim(), Constantes.EstadosPagoTPV.AUTORIZADO, StringComparison.OrdinalIgnoreCase)
+                || proveedor.CaducaEl(pago) >= ahora)
             {
-                string documento = pago.Documento?.Trim();
+                return Decision.Nada;
+            }
 
-                if (string.Equals(documento, ServicioPagos.MARCA_COBRO_RESERVADO, StringComparison.OrdinalIgnoreCase))
+            string documento = pago.Documento?.Trim();
+            if (string.Equals(documento, ServicioPagos.MARCA_COBRO_RESERVADO, StringComparison.OrdinalIgnoreCase))
+            {
+                return Decision.Avisar;
+            }
+
+            // Con pedido no es huérfano (la consulta no puede filtrarlo en SQL sin complicarla, y son cuatro filas al día)
+            return string.IsNullOrWhiteSpace(documento) ? Decision.Deshacer : Decision.Nada;
+        }
+
+        /// <summary>Internal para poder probarlo sin tocar Redsys, Aplázame ni la base de datos.</summary>
+        internal static async Task RevisarCobrosHuerfanos(IServicioPagos servicioPagos,
+            Func<DateTime, Task<List<PagoTPV>>> leerCandidatos, DateTime ahora)
+        {
+            List<PagoTPV> candidatos = await leerCandidatos(ahora).ConfigureAwait(false);
+
+            foreach (PagoTPV pago in candidatos)
+            {
+                ProveedorCobroCarrito proveedor = ProveedorCobroCarrito.De(pago);
+                switch (Decidir(pago, ahora))
                 {
-                    // El pedido se estaba creando cuando algo se rompió. Puede existir (retenido,
-                    // sin su prepago) o no existir: hay que mirarlo, no adivinarlo.
-                    ElmahHelper.Log(new Exception(
-                        $"[Cobros carrito] El cobro {pago.NumeroOrden} ({pago.Importe:N2} EUR, cliente " +
-                        $"{pago.Cliente?.Trim()}, {pago.FechaCreacion:dd/MM/yyyy HH:mm}) se quedó a medio aplicar. " +
-                        "Comprobar si el pedido llegó a crearse: si existe, apuntarle el prepago; si no, " +
-                        "devolver el cobro desde el panel de Redsys."));
-                    continue;
+                    case Decision.Avisar:
+                        // El pedido se estaba creando cuando algo se rompió. Puede existir (retenido,
+                        // sin su prepago) o no existir: hay que mirarlo, no adivinarlo.
+                        ElmahHelper.Log(new Exception(
+                            $"[Cobros carrito] El cobro {pago.NumeroOrden} ({pago.Importe:N2} EUR, cliente " +
+                            $"{pago.Cliente?.Trim()}, {pago.FechaCreacion:dd/MM/yyyy HH:mm}) se quedó a medio aplicar. " +
+                            "Comprobar si el pedido llegó a crearse: si existe, apuntarle el prepago; si no, " +
+                            $"deshacer el cobro desde el panel de {proveedor.Nombre}."));
+                        break;
+
+                    case Decision.Deshacer:
+                        // Cobrado y sin pedido: el cliente pagó y no llegó a pedir nada. Se devuelve (o se cancela).
+                        bool deshecho = await servicioPagos.DevolverCobro(pago.Id,
+                            "cobro de carrito que no llegó a ser pedido (TNV#68)").ConfigureAwait(false);
+
+                        ElmahHelper.Log(new Exception(
+                            $"[Cobros carrito] Cobro {pago.NumeroOrden} ({pago.Importe:N2} EUR, cliente " +
+                            $"{pago.Cliente?.Trim()}, {pago.FechaCreacion:dd/MM/yyyy HH:mm}) sin pedido: " +
+                            (deshecho
+                                ? (proveedor == ProveedorCobroCarrito.Aplazame ? "CANCELADO en Aplázame automáticamente." : "DEVUELTO automáticamente.")
+                                : $"NO se ha podido deshacer. Hay que hacerlo desde el panel de {proveedor.Nombre}.")));
+                        break;
                 }
-
-                if (!string.IsNullOrWhiteSpace(documento))
-                {
-                    // Tiene pedido: no es huérfano (la consulta no puede filtrarlo en SQL sin
-                    // complicarla, y son cuatro filas al día).
-                    continue;
-                }
-
-                // Cobrado y sin pedido: el cliente pagó y no llegó a pedir nada. Se devuelve.
-                bool devuelto = await servicioPagos.DevolverCobro(pago.Id,
-                    "cobro de carrito que no llegó a ser pedido (TNV#68)").ConfigureAwait(false);
-
-                ElmahHelper.Log(new Exception(
-                    $"[Cobros carrito] Cobro {pago.NumeroOrden} ({pago.Importe:N2} EUR, cliente " +
-                    $"{pago.Cliente?.Trim()}, {pago.FechaCreacion:dd/MM/yyyy HH:mm}) sin pedido: " +
-                    (devuelto
-                        ? "DEVUELTO automáticamente."
-                        : "NO se ha podido devolver. Hay que devolverlo desde el panel de Redsys.")));
             }
         }
     }

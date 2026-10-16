@@ -25,6 +25,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
     public class CorreoConfirmacionPedidoDTO
     {
         public const string PAGADO = "Pagado";
+        /// <summary>NestoAPI#663: pagado con Aplázame (el pedido va TRN / PRE, como los de PrestaShop pagados con Aplázame).</summary>
+        public const string PAGADO_APLAZAME = "PagadoAplazame";
         public const string PAGO_PENDIENTE_PASARELA = "PagoPendientePasarela";
         public const string PAGO_PENDIENTE = "PagoPendiente";
         public const string CONDICIONES_HABITUALES = "CondicionesHabituales";
@@ -82,7 +84,10 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         {
             if (respuesta.Pagado)
             {
-                return CorreoConfirmacionPedidoDTO.PAGADO;
+                // NestoAPI#663: el único cobro previo que deja el pedido en transferencia es el de Aplázame
+                return string.Equals(respuesta.FormaPago?.Trim(), Constantes.FormasPago.TRANSFERENCIA, StringComparison.OrdinalIgnoreCase)
+                    ? CorreoConfirmacionPedidoDTO.PAGADO_APLAZAME
+                    : CorreoConfirmacionPedidoDTO.PAGADO;
             }
             if (respuesta.RequierePago)
             {
@@ -144,6 +149,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             {
                 case CorreoConfirmacionPedidoDTO.PAGADO:
                     return "Pago recibido con tu tarjeta. No tienes que hacer nada más.";
+                case CorreoConfirmacionPedidoDTO.PAGADO_APLAZAME:
+                    return "Pago aprobado por Aplázame. No hay que hacer nada más.";
                 case CorreoConfirmacionPedidoDTO.PAGO_PENDIENTE_PASARELA:
                     return "Este pedido se paga con tarjeta: si no has terminado el pago en la pasarela, no se preparará hasta que lo completes.";
                 case CorreoConfirmacionPedidoDTO.PAGO_PENDIENTE:
