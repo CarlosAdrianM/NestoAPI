@@ -460,7 +460,7 @@ namespace NestoAPI.Infraestructure.Pagos.Aplazame
             NotificacionPushDTO notificacion = new NotificacionPushDTO
             {
                 Titulo = "Pago aprobado",
-                Cuerpo = "Aplázame ha aprobado su pago. Abra el carrito para terminar el pedido",
+                Cuerpo = "Aplázame ha aprobado tu pago. Abre el carrito para terminar el pedido",
                 Tipo = "carrito",
                 Datos = new Dictionary<string, string>
                 {

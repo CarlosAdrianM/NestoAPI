@@ -509,7 +509,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos.Aplazame
 
             A.CallTo(() => push.EnviarACliente("1", CLIENTE, A<NotificacionPushDTO>.That.Matches(n =>
                 n.Tipo == "carrito" && n.Datos["tipo"] == "carrito"
-                && n.Cuerpo == "Aplázame ha aprobado su pago. Abra el carrito para terminar el pedido"))).MustHaveHappenedOnceExactly();
+                && n.Cuerpo == "Aplázame ha aprobado tu pago. Abre el carrito para terminar el pedido"))).MustHaveHappenedOnceExactly();
         }
 
         [TestMethod]

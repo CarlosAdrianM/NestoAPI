@@ -1007,7 +1007,7 @@ namespace NestoAPI.Controllers
         {
             if (!CobrarCarritoAntesDelPedido)
             {
-                return BadRequest("Ahora mismo no se puede pagar con Aplázame. Elija otra forma de pago.");
+                return BadRequest("Ahora mismo no se puede pagar con Aplázame. Elige otra forma de pago.");
             }
             ClaimsIdentity identity = User?.Identity as ClaimsIdentity;
             string cliente = identity?.FindFirst("cliente")?.Value?.Trim();
@@ -1017,7 +1017,7 @@ namespace NestoAPI.Controllers
             }
             if (PoliticaPreciosOcultos.OcultaImportes(identity))
             {
-                return BadRequest("Su pedido se paga con su forma de pago habitual, no con Aplázame.");
+                return BadRequest("Tu pedido se paga con tu forma de pago habitual, no con Aplázame.");
             }
             if (peticion == null)
             {
@@ -1046,7 +1046,7 @@ namespace NestoAPI.Controllers
             DatosAplazameCliente datos = await LeerDatosAplazame(preparado).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(datos.Correo))
             {
-                return BadRequest("Para pagar con Aplázame necesitamos su correo electrónico. Llámenos y lo añadimos a su ficha.");
+                return BadRequest("Para pagar con Aplázame necesitamos tu correo electrónico. Llámanos y lo añadimos a tu ficha.");
             }
 
             try
@@ -1072,7 +1072,7 @@ namespace NestoAPI.Controllers
                 ElmahHelper.Log(new Exception(
                     $"[Aplázame #663] No se ha podido abrir el pago con Aplázame del cliente " +
                     $"{preparado.Pedido.cliente?.Trim()} ({carrito.Total:N2} EUR): {ex.Message}", ex));
-                return BadRequest("No hemos podido abrir el pago con Aplázame. Inténtelo de nuevo en unos minutos o elija otra forma de pago.");
+                return BadRequest("No hemos podido abrir el pago con Aplázame. Inténtalo de nuevo en unos minutos o elige otra forma de pago.");
             }
         }
 
