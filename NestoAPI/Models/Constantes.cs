@@ -829,6 +829,21 @@ namespace NestoAPI.Models
             public const string RECORDATORIO_REPOSICION_CONSUMIBLES = "RecordatorioReposicionConsumibles";
 
             /// <summary>
+            /// NestoAPI#662: interruptor PROPIO del canal push del recordatorio de reposición (job diario de Hangfire,
+            /// lunes a jueves a las 9:30), independiente de <see cref="RECORDATORIO_REPOSICION"/> (el correo semanal).
+            /// Bajo «(defecto)». Sin fila o cualquier valor no reconocido: APAGADO. "Sombra": manda a
+            /// Correos.INFORMATICA a quién le habría llegado la push hoy y con qué texto, sin enviar nada a clientes.
+            /// "Activo": envía la push a los clientes de NestoTiendas.
+            /// </summary>
+            public const string RECORDATORIO_REPOSICION_PUSH = "RecordatorioReposicionPush";
+
+            /// <summary>
+            /// NestoAPI#662: hora (HH:mm) a partir de la cual ya no se manda la push de reposición ese día, porque lo
+            /// que se pida ya no sale hoy y «lo tienes mañana» no sería verdad. Sin fila o ilegible: 11:00.
+            /// </summary>
+            public const string RECORDATORIO_REPOSICION_HORA_LIMITE = "RecordatorioReposicionHoraLimite";
+
+            /// <summary>
             /// NestoAPI#547 (corte b): interruptor de la sombra semanal de precios medios (job de Hangfire, domingo
             /// 06:30). Bajo «(defecto)». Sin fila, "0" o cualquier valor que no se reconozca: APAGADO. "1" o "Activo":
             /// calcula en C# y compara con lo que dejó el SP, registrando en PreciosMediosSombra. Nunca escribe

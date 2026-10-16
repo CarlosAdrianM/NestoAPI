@@ -26,5 +26,6 @@ namespace NestoAPI.Models
         public System.DateTime FechaRegistro { get; set; }
         public System.DateTime FechaUltimaActividad { get; set; }
         public bool Activo { get; set; }
+        public bool RecibirConsejos { get; set; }
     }
 }

@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 
 namespace NestoAPI.Models
 {
@@ -20,5 +20,12 @@ namespace NestoAPI.Models
         public string Cliente { get; set; }
 
         public string Contacto { get; set; }
+
+        /// <summary>
+        /// NestoAPI#662 (TNV#87): si el cliente quiere recibir consejos y recordatorios de reposición
+        /// (las push que no son de su pedido). Null = no cambia lo que ya estaba guardado (un
+        /// dispositivo nuevo nace con true). Los avisos de pedidos, protocolos y cheques no lo miran.
+        /// </summary>
+        public bool? RecibirConsejos { get; set; }
     }
 }

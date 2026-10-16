@@ -168,6 +168,11 @@ namespace NestoAPI.Infraestructure.Notificaciones
                     dispositivo.Aplicacion = registro.Aplicacion;
                     dispositivo.FechaUltimaActividad = DateTime.Now;
                     dispositivo.Activo = true;
+                    // NestoAPI#662: sin valor en la petición (versiones de la app que no lo mandan), se queda como estaba
+                    if (registro.RecibirConsejos.HasValue)
+                    {
+                        dispositivo.RecibirConsejos = registro.RecibirConsejos.Value;
+                    }
                 }
 
                 // NestoAPI#575: en Ariadna el token es del aparato y lo comparten los mozos de la PDA (una fila por
@@ -191,7 +196,8 @@ namespace NestoAPI.Infraestructure.Notificaciones
                 var nuevo = new DispositivoNotificacion
                 {
                     Token = registro.Token,
-                    FechaRegistro = DateTime.Now
+                    FechaRegistro = DateTime.Now,
+                    RecibirConsejos = true // NestoAPI#662: nace queriendo consejos (como el DEFAULT de la columna)
                 };
                 ActualizarDatos(nuevo);
 
@@ -446,6 +452,15 @@ namespace NestoAPI.Infraestructure.Notificaciones
         {
             string aplicacion = Constantes.Aplicaciones.NESTO_TIENDAS;
             var dispositivos = await ObtenerDispositivosCliente(empresa, cliente, aplicacion).ConfigureAwait(false);
+            return await EnviarYGuardar(dispositivos, notificacion, aplicacion).ConfigureAwait(false);
+        }
+
+        public async Task<int> EnviarConsejoACliente(string empresa, string cliente, NotificacionPushDTO notificacion)
+        {
+            string aplicacion = Constantes.Aplicaciones.NESTO_TIENDAS;
+            List<DispositivoNotificacion> dispositivos = (await ObtenerDispositivosCliente(empresa, cliente, aplicacion).ConfigureAwait(false))
+                .Where(d => d.RecibirConsejos)
+                .ToList();
             return await EnviarYGuardar(dispositivos, notificacion, aplicacion).ConfigureAwait(false);
         }
 

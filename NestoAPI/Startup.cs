@@ -544,6 +544,20 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'recordatorio-reposicion-semanal' configurado (jueves a las 05:30; apagado salvo parámetro)");
 
+            // NestoAPI#662: el mismo cálculo por push a los clientes de NestoTiendas. Diario de lunes a jueves a las 9:30
+            // (la regla de una push cada 7 días evita repetir). Interruptor PROPIO: parámetro RecordatorioReposicionPush
+            // de (defecto) (Apagado / Sombra / Activo; sin fila = apagado). Scripts/Issue662_RecordatorioReposicionPush.sql.
+            RecurringJob.AddOrUpdate(
+                "recordatorio-reposicion-push-diario",
+                () => RecordatorioReposicionPushJobsService.Procesar(),
+                "30 9 * * 1-4", // Cron: de lunes a jueves a las 09:30
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'recordatorio-reposicion-push-diario' configurado (L-J a las 09:30; apagado salvo parámetro)");
+
             // Issue #137: Informe semanal de clientes nuevos por vendedor
             RecurringJob.AddOrUpdate(
                 "informe-clientes-nuevos-semanal",

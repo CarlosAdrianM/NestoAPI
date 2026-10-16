@@ -367,6 +367,7 @@
     <Compile Include="Controllers\PagoRedirectControllerTests.cs" />
     <Compile Include="Infraestructure\Notificaciones\BuzonNotificacionesTests.cs" />
     <Compile Include="Infraestructure\Notificaciones\ServicioNotificacionesPushTests.cs" />
+    <Compile Include="Infraestructure\Notificaciones\RecibirConsejosTests.cs" />
     <Compile Include="Infraestructure\Informes\InformeClientesNuevosTests.cs" />
     <Compile Include="Infraestructure\Informes\MotorSaldoCuentaTests.cs" />
     <Compile Include="Infrastructure\Agencias\RegistroAgenciasTests.cs" />
@@ -625,6 +626,7 @@
     <Compile Include="Infrastructure\CorreosPostCompra\GeneradorContenidoCorreoPostCompraSaludosTests.cs" />
     <Compile Include="Infrastructure\CorreosPostCompra\CalculadoraReposicionTests.cs" />
     <Compile Include="Infrastructure\CorreosPostCompra\RecordatorioReposicionJobsServiceTests.cs" />
+    <Compile Include="Infrastructure\CorreosPostCompra\RecordatorioReposicionPushJobsServiceTests.cs" />
     <Compile Include="Infrastructure\Traspasos\ServicioTraspasosTests.cs" />
     <Compile Include="Infrastructure\OpenAI\ServicioOpenAITests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\GestorPortesTests.cs" />

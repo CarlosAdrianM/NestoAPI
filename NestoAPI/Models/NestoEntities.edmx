@@ -665,6 +665,7 @@
           <Property Name="FechaRegistro" Type="datetime" Nullable="false" />
           <Property Name="FechaUltimaActividad" Type="datetime" Nullable="false" />
           <Property Name="Activo" Type="bit" Nullable="false" />
+          <Property Name="RecibirConsejos" Type="bit" Nullable="false" />
         </EntityType>
         <EntityType Name="EfectosPedidoVenta">
           <Key>
@@ -13981,6 +13982,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="FechaRegistro" Type="DateTime" Nullable="false" Precision="3" />
           <Property Name="FechaUltimaActividad" Type="DateTime" Nullable="false" Precision="3" />
           <Property Name="Activo" Type="Boolean" Nullable="false" />
+          <Property Name="RecibirConsejos" Type="Boolean" Nullable="false" />
         </EntityType>
         <EntityType Name="NotificacionBuzon">
           <Key>
@@ -16505,6 +16507,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySetMapping Name="DispositivosNotificaciones">
             <EntityTypeMapping TypeName="NVModel.DispositivoNotificacion">
               <MappingFragment StoreEntitySet="DispositivosNotificaciones">
+                <ScalarProperty Name="RecibirConsejos" ColumnName="RecibirConsejos" />
                 <ScalarProperty Name="Activo" ColumnName="Activo" />
                 <ScalarProperty Name="FechaUltimaActividad" ColumnName="FechaUltimaActividad" />
                 <ScalarProperty Name="FechaRegistro" ColumnName="FechaRegistro" />

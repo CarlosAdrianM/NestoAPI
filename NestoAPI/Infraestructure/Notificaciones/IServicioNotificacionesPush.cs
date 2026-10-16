@@ -20,6 +20,13 @@ namespace NestoAPI.Infraestructure.Notificaciones
         Task<int> EnviarAUsuario(string usuario, string aplicacion, NotificacionPushDTO notificacion);
         Task<int> EnviarAVendedor(string empresa, string vendedor, NotificacionPushDTO notificacion);
         Task<int> EnviarACliente(string empresa, string cliente, NotificacionPushDTO notificacion);
+
+        /// <summary>
+        /// NestoAPI#662: como <see cref="EnviarACliente"/> (NestoTiendas, se guarda en el buzón), pero solo a los
+        /// dispositivos del cliente con <c>RecibirConsejos</c>: es para lo que no es de su pedido (el recordatorio de
+        /// reposición). Los avisos de pedidos, protocolos y cheques siguen por EnviarACliente y no lo miran.
+        /// </summary>
+        Task<int> EnviarConsejoACliente(string empresa, string cliente, NotificacionPushDTO notificacion);
         Task<int> EnviarATodosDeAplicacion(string aplicacion, NotificacionPushDTO notificacion);
         /// <summary>NestoAPI#579: los usuarios (sin repetir) con algún dispositivo activo de esa aplicación.</summary>
         Task<List<string>> UsuariosConDispositivoActivo(string aplicacion);

@@ -1200,6 +1200,7 @@
     <Compile Include="Infraestructure\CorreosPostCompra\PlantillaRecordatorioReposicion.cs" />
     <Compile Include="Infraestructure\CorreosPostCompra\RecordatorioReposicionDTO.cs" />
     <Compile Include="Infraestructure\CorreosPostCompra\RecordatorioReposicionJobsService.cs" />
+    <Compile Include="Infraestructure\CorreosPostCompra\RecordatorioReposicionPushJobsService.cs" />
     <Compile Include="Infraestructure\CorreosPostCompra\SelectorRecordatoriosReposicion.cs" />
     <Compile Include="Infraestructure\CorreosPostCompra\GeneradorContenidoCorreoPostCompra.cs" />
     <Compile Include="Infraestructure\CorreosPostCompra\SaludoPorNombreDePila.cs" />
