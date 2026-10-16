@@ -1039,7 +1039,7 @@ namespace NestoAPI.Controllers
             string.Equals(ambito?.Trim(), AMBITO_NESTOAPP, StringComparison.OrdinalIgnoreCase);
 
         /// <summary>
-        /// NestoAPI#537: a cada @mencionado le llega «X te ha mencionado en Novedades», con el mismo
+        /// NestoAPI#537: a cada @mencionado le llega «X le ha mencionado en Novedades», con el mismo
         /// salto al comentario que la respuesta. Se busca entre los usuarios del ámbito de la novedad
         /// (Nesto: buzón; NestoApp: push + buzón). Ni a quien escribe ni a quien ya se ha avisado por
         /// otra vía (el autor contestado). Nunca rompe el comentario.
@@ -1060,7 +1060,7 @@ namespace NestoAPI.Controllers
                     .Where(m => !excluidos.Contains(m.Clave, StringComparer.OrdinalIgnoreCase));
                 var notificacion = new NotificacionPushDTO
                 {
-                    Titulo = $"{nombreAutor} te ha mencionado en Novedades",
+                    Titulo = $"{nombreAutor} le ha mencionado en Novedades",
                     Cuerpo = texto.Length > 200 ? texto.Substring(0, 197) + "…" : texto,
                     Tipo = TIPO_NOTIFICACION_RESPUESTA,
                     Datos = new Dictionary<string, string>

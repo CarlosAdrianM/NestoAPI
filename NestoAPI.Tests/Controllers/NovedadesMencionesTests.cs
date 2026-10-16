@@ -102,7 +102,7 @@ namespace NestoAPI.Tests.Controllers
             _ = await controller.PostComentario(350, new NuevoComentarioNovedadDTO { Texto = "@Carlos, el asistente no me entiende" });
 
             A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Carlos", "Nesto",
-                A<NotificacionPushDTO>.That.Matches(n => n.Titulo == "Alfredo te ha mencionado en Novedades"
+                A<NotificacionPushDTO>.That.Matches(n => n.Titulo == "Alfredo le ha mencionado en Novedades"
                     && n.Datos["novedadId"] == "350" && n.Datos["comentarioId"] == "60")))
                 .MustHaveHappenedOnceExactly();
         }
