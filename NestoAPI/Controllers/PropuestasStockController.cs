@@ -142,12 +142,16 @@ namespace NestoAPI.Controllers
         /// NestoAPI#631: solo Compras y Dirección (403 al resto); con <paramref name="estado"/> (Pendiente, Aplicada, Rechazada,
         /// Pospuesta, Silenciada, Superada, SinAccion y, desde NestoAPI#655, EnPotenciacion) solo las de ese estado. Con el script del corte 3, cada fila lleva su
         /// Estado, la decisión y lo aplicado.
-        /// GET api/PropuestasStock?mes=2026-10&amp;top=50&amp;estado=Pendiente
+        /// <para>Sugerencia 644: también por <paramref name="familia"/>, <paramref name="grupo"/>, <paramref name="accion"/> (exactas;
+        /// las de GET api/PropuestasStock/Filtros) y <paramref name="texto"/> (parte del código o del nombre). Cada fila lleva su
+        /// <see cref="PropuestaStockConDecision.Consecuencia"/>: qué pasa exactamente al aplicarla.</para>
+        /// GET api/PropuestasStock?mes=2026-10&amp;top=50&amp;estado=Pendiente&amp;familia=Lisap&amp;accion=Liquidar&amp;texto=champú
         /// </summary>
         [HttpGet]
         [Route("")]
         [Authorize]
-        public IHttpActionResult Get(string mes = null, int top = 50, string estado = null)
+        public IHttpActionResult Get(string mes = null, int top = 50, string estado = null, string familia = null, string grupo = null,
+            string accion = null, string texto = null)
         {
             if (!PuedeDecidir())
             {
@@ -181,11 +185,12 @@ namespace NestoAPI.Controllers
                 return Content(HttpStatusCode.NotFound, new { Message = "La tabla PropuestasStock no existe todavía (Scripts/Issue630_PropuestasStock.sql)." });
             }
             IRepositorioDecisionesPropuestasStock decisiones = crearRepositorioDecisiones();
+            FiltroPropuestasStock filtro = new FiltroPropuestasStock(familia, grupo, accion, texto);
             if (decisiones.ExisteEsquema())
             {
-                return Ok(decisiones.LeerPropuestas(referencia, estadoNormalizado, Math.Min(top, TOP_MAXIMO)));
+                return Ok(decisiones.LeerPropuestas(referencia, estadoNormalizado, Math.Min(top, TOP_MAXIMO), filtro));
             }
-            if (estadoNormalizado != null)
+            if (estadoNormalizado != null || !filtro.EstaVacio)
             {
                 return Content(HttpStatusCode.NotFound, new { Message = MENSAJE_SIN_ESQUEMA });
             }
@@ -196,12 +201,14 @@ namespace NestoAPI.Controllers
         /// <summary>
         /// NestoAPI#631: cuántas propuestas hay en cada estado y cuánto exceso suman (por defecto, el último mes guardado). Para
         /// la cabecera de la pantalla de Nesto y el aviso de la campana. Solo Compras y Dirección (403 al resto).
-        /// GET api/PropuestasStock/Resumen?mes=2026-10
+        /// Sugerencia 644: con los mismos filtros que GET api/PropuestasStock (familia, grupo, acción y texto), para que el
+        /// contador de la pantalla cuente lo filtrado.
+        /// GET api/PropuestasStock/Resumen?mes=2026-10&amp;familia=Lisap
         /// </summary>
         [HttpGet]
         [Route("Resumen")]
         [Authorize]
-        public IHttpActionResult Resumen(string mes = null)
+        public IHttpActionResult Resumen(string mes = null, string familia = null, string grupo = null, string accion = null, string texto = null)
         {
             if (!PuedeDecidir())
             {
@@ -221,7 +228,37 @@ namespace NestoAPI.Controllers
             {
                 return Content(HttpStatusCode.NotFound, new { Message = MENSAJE_SIN_ESQUEMA });
             }
-            return Ok(decisiones.Resumen(referencia));
+            return Ok(decisiones.Resumen(referencia, new FiltroPropuestasStock(familia, grupo, accion, texto)));
+        }
+
+        /// <summary>
+        /// Sugerencia 644: las familias, grupos y acciones que hay en las propuestas del mes (por defecto, el último guardado), para
+        /// los desplegables de filtro de la pantalla. Solo Compras y Dirección (403 al resto).
+        /// GET api/PropuestasStock/Filtros?mes=2026-10  → { "Familias": [...], "Grupos": [...], "Acciones": [...] }
+        /// </summary>
+        [HttpGet]
+        [Route("Filtros")]
+        [Authorize]
+        public IHttpActionResult GetFiltros(string mes = null)
+        {
+            if (!PuedeDecidir())
+            {
+                return Content(HttpStatusCode.Forbidden, new { Message = MENSAJE_SIN_PERMISO_CONSULTAR });
+            }
+            DateTime? referencia = null;
+            if (!string.IsNullOrWhiteSpace(mes))
+            {
+                referencia = PropuestasStockJobsService.LeerMes(mes);
+                if (!referencia.HasValue)
+                {
+                    return BadRequest("El mes tiene que ir como AAAA-MM (por ejemplo, 2026-10).");
+                }
+            }
+            if (!crearRepositorio().ExisteTabla())
+            {
+                return Content(HttpStatusCode.NotFound, new { Message = "La tabla PropuestasStock no existe todavía (Scripts/Issue630_PropuestasStock.sql)." });
+            }
+            return Ok(crearRepositorioDecisiones().LeerOpcionesFiltro(referencia));
         }
 
         /// <summary>

@@ -111,17 +111,37 @@ OUTER APPLY (SELECT TOP 1 x.Id, x.SilenciadaHasta, x.MotivoSilencio FROM dbo.Pro
         internal static string SqlLeerUna(bool potenciacion) => "SELECT * FROM (" + SqlFilas(potenciacion) + @"
 WHERE p.Id = @id) f";
 
+        /// <summary>
+        /// Sugerencia 644: los filtros de <see cref="FiltroPropuestasStock"/> sobre las filas ya calculadas («f»); cada uno, NULL =
+        /// sin filtro. El texto va con <see cref="FiltroPropuestasStock.PatronTexto"/> (comodines escapados con \).
+        /// </summary>
+        internal const string SQL_FILTRO = @"
+  AND (@familia IS NULL OR RTRIM(f.Familia) = @familia)
+  AND (@grupo IS NULL OR RTRIM(f.Grupo) = @grupo)
+  AND (@accion IS NULL OR f.Accion = @accion)
+  AND (@texto IS NULL OR f.Producto LIKE @texto ESCAPE '\' OR f.Nombre LIKE @texto ESCAPE '\')";
+
         internal static string SqlLeer(bool potenciacion) => @"
 SELECT TOP (@top) * FROM (" + SqlFilas(potenciacion) + @"
 WHERE p.Mes = ISNULL(@mes, (SELECT MAX(Mes) FROM dbo.PropuestasStock WITH (NOLOCK)))) f
-WHERE @estado IS NULL OR f.Estado = @estado
+WHERE (@estado IS NULL OR f.Estado = @estado)" + SQL_FILTRO + @"
 ORDER BY f.ExcesoValorado DESC, f.Producto";
 
         internal static string SqlResumen(bool potenciacion) => @"
 SELECT f.Mes, f.Estado, COUNT(*) AS Propuestas, CAST(ISNULL(SUM(f.ExcesoValorado), 0) AS decimal(18, 2)) AS ExcesoValorado FROM (" + SqlFilas(potenciacion) + @"
 WHERE p.Mes = ISNULL(@mes, (SELECT MAX(Mes) FROM dbo.PropuestasStock WITH (NOLOCK)))) f
+WHERE 1 = 1" + SQL_FILTRO + @"
 GROUP BY f.Mes, f.Estado
 ORDER BY f.Estado";
+
+        /// <summary>Sugerencia 644: las familias (F), grupos (G) y acciones (A) del mes, para los desplegables.</summary>
+        internal const string SQL_OPCIONES_FILTRO = @"
+SELECT DISTINCT o.Tipo, o.Valor
+FROM dbo.PropuestasStock p WITH (NOLOCK)
+CROSS APPLY (VALUES ('F', RTRIM(p.Familia)), ('G', RTRIM(p.Grupo)), ('A', RTRIM(p.Accion))) o (Tipo, Valor)
+WHERE p.Mes = ISNULL(@mes, (SELECT MAX(Mes) FROM dbo.PropuestasStock WITH (NOLOCK)))
+  AND o.Valor IS NOT NULL AND o.Valor <> ''
+ORDER BY o.Tipo, o.Valor";
 
         internal const string SQL_ESTADO_PRODUCTO = "SELECT Estado FROM Productos WITH (NOLOCK) WHERE Empresa = @empresa AND Número = @producto";
 
@@ -222,24 +242,55 @@ VALUES (@id, @mes, @producto, @almacen, @decision, @usuario, @fecha, @motivo, @m
             }
         }
 
-        public List<PropuestaStockConDecision> LeerPropuestas(DateTime? mes, string estado, int top)
+        public List<PropuestaStockConDecision> LeerPropuestas(DateTime? mes, string estado, int top, FiltroPropuestasStock filtro)
         {
             using (NVEntities db = Contexto())
             {
-                return db.Database.SqlQuery<PropuestaStockConDecision>(SqlLeer(ConPotenciacion(db)),
+                List<SqlParameter> parametros = new List<SqlParameter>
+                {
                     new SqlParameter("@top", SqlDbType.Int) { Value = top },
                     Mes(mes),
-                    new SqlParameter("@estado", SqlDbType.VarChar, 20) { Value = N(estado) }).ToList();
+                    new SqlParameter("@estado", SqlDbType.VarChar, 20) { Value = N(estado) }
+                };
+                parametros.AddRange(ParametrosFiltro(filtro));
+                return db.Database.SqlQuery<PropuestaStockConDecision>(SqlLeer(ConPotenciacion(db)), parametros.ToArray()).ToList();
             }
         }
 
-        public List<ResumenEstadoPropuestas> Resumen(DateTime? mes)
+        public List<ResumenEstadoPropuestas> Resumen(DateTime? mes) => Resumen(mes, null);
+
+        public List<ResumenEstadoPropuestas> Resumen(DateTime? mes, FiltroPropuestasStock filtro)
         {
             using (NVEntities db = Contexto())
             {
-                return db.Database.SqlQuery<ResumenEstadoPropuestas>(SqlResumen(ConPotenciacion(db)), Mes(mes)).ToList();
+                List<SqlParameter> parametros = new List<SqlParameter> { Mes(mes) };
+                parametros.AddRange(ParametrosFiltro(filtro));
+                return db.Database.SqlQuery<ResumenEstadoPropuestas>(SqlResumen(ConPotenciacion(db)), parametros.ToArray()).ToList();
             }
         }
+
+        public OpcionesFiltroPropuestas LeerOpcionesFiltro(DateTime? mes)
+        {
+            using (NVEntities db = Contexto())
+            {
+                List<FilaOpcionFiltroPropuestas> filas = db.Database.SqlQuery<FilaOpcionFiltroPropuestas>(SQL_OPCIONES_FILTRO, Mes(mes)).ToList();
+                return new OpcionesFiltroPropuestas
+                {
+                    Familias = filas.Where(f => f.Tipo == "F").Select(f => f.Valor).ToList(),
+                    Grupos = filas.Where(f => f.Tipo == "G").Select(f => f.Valor).ToList(),
+                    Acciones = filas.Where(f => f.Tipo == "A").Select(f => f.Valor).ToList()
+                };
+            }
+        }
+
+        /// <summary>Sugerencia 644: los cuatro de <see cref="SQL_FILTRO"/> (DBNull los que no vienen).</summary>
+        private static SqlParameter[] ParametrosFiltro(FiltroPropuestasStock filtro) => new[]
+        {
+            new SqlParameter("@familia", SqlDbType.VarChar, 50) { Value = N(filtro?.Familia) },
+            new SqlParameter("@grupo", SqlDbType.VarChar, 50) { Value = N(filtro?.Grupo) },
+            new SqlParameter("@accion", SqlDbType.VarChar, 50) { Value = N(filtro?.Accion) },
+            new SqlParameter("@texto", SqlDbType.VarChar, 60) { Value = N(filtro?.PatronTexto) }
+        };
 
         public short? LeerEstadoProducto(string producto)
         {

@@ -173,7 +173,7 @@ namespace NestoAPI.Tests.Controllers
             _ = A.CallTo(() => decisiones.ExisteEsquema()).Returns(true);
 
             Assert.AreEqual(HttpStatusCode.Forbidden, controller.Get("2026-09").ExecuteAsync(default).Result.StatusCode);
-            A.CallTo(() => decisiones.LeerPropuestas(A<DateTime?>._, A<string>._, A<int>._)).MustNotHaveHappened();
+            A.CallTo(() => decisiones.LeerPropuestas(A<DateTime?>._, A<string>._, A<int>._, A<FiltroPropuestasStock>._)).MustNotHaveHappened();
             A.CallTo(() => repositorio.LeerPropuestas(A<DateTime?>._, A<int>._)).MustNotHaveHappened();
         }
 
@@ -183,7 +183,7 @@ namespace NestoAPI.Tests.Controllers
             PropuestasStockController controller = Controller(Noche, grupos: new[] { "NUEVAVISION\\Compras" });
             _ = A.CallTo(() => repositorio.ExisteTabla()).Returns(true);
             _ = A.CallTo(() => decisiones.ExisteEsquema()).Returns(true);
-            _ = A.CallTo(() => decisiones.LeerPropuestas(new DateTime(2026, 9, 1), null, 50))
+            _ = A.CallTo(() => decisiones.LeerPropuestas(new DateTime(2026, 9, 1), null, 50, A<FiltroPropuestasStock>._))
                 .Returns(new List<PropuestaStockConDecision> { new PropuestaStockConDecision { Producto = "17404", Estado = EstadosPropuesta.PENDIENTE } });
 
             var ok = (OkNegotiatedContentResult<List<PropuestaStockConDecision>>)controller.Get("2026-09");
@@ -200,7 +200,7 @@ namespace NestoAPI.Tests.Controllers
 
             _ = controller.Get("2026-09", 10, "pendiente");
 
-            A.CallTo(() => decisiones.LeerPropuestas(new DateTime(2026, 9, 1), EstadosPropuesta.PENDIENTE, 10)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => decisiones.LeerPropuestas(new DateTime(2026, 9, 1), EstadosPropuesta.PENDIENTE, 10, A<FiltroPropuestasStock>._)).MustHaveHappenedOnceExactly();
         }
 
         [TestMethod]
@@ -226,7 +226,7 @@ namespace NestoAPI.Tests.Controllers
             _ = A.CallTo(() => decisiones.ExisteEsquema()).Returns(true);
 
             Assert.AreEqual(HttpStatusCode.Forbidden, controller.Resumen("2026-09").ExecuteAsync(default).Result.StatusCode);
-            A.CallTo(() => decisiones.Resumen(A<DateTime?>._)).MustNotHaveHappened();
+            A.CallTo(() => decisiones.Resumen(A<DateTime?>._, A<FiltroPropuestasStock>._)).MustNotHaveHappened();
         }
 
         [TestMethod]
@@ -262,12 +262,94 @@ namespace NestoAPI.Tests.Controllers
         {
             PropuestasStockController controller = Controller(Noche, grupos: new[] { "NUEVAVISION\\Compras" });
             _ = A.CallTo(() => decisiones.ExisteEsquema()).Returns(true);
-            _ = A.CallTo(() => decisiones.Resumen(new DateTime(2026, 9, 1)))
+            _ = A.CallTo(() => decisiones.Resumen(new DateTime(2026, 9, 1), A<FiltroPropuestasStock>._))
                 .Returns(new List<ResumenEstadoPropuestas> { new ResumenEstadoPropuestas { Estado = EstadosPropuesta.PENDIENTE, Propuestas = 42 } });
 
             var ok = (OkNegotiatedContentResult<List<ResumenEstadoPropuestas>>)controller.Resumen("2026-09");
 
             Assert.AreEqual(42, ok.Content[0].Propuestas);
+        }
+
+        [TestMethod]
+        public void Get_ConFiltros_PasaFamiliaGrupoAccionYTextoLimpios()
+        {
+            // Sugerencia 644 (Manuel): sin filtros la lista no es útil.
+            PropuestasStockController controller = Controller(Noche, grupos: new[] { "NUEVAVISION\\Compras" });
+            _ = A.CallTo(() => repositorio.ExisteTabla()).Returns(true);
+            _ = A.CallTo(() => decisiones.ExisteEsquema()).Returns(true);
+
+            _ = controller.Get("2026-09", 10, null, " Lisap ", "COS", AccionesPropuesta.LIQUIDAR, " champú ");
+
+            A.CallTo(() => decisiones.LeerPropuestas(new DateTime(2026, 9, 1), null, 10,
+                A<FiltroPropuestasStock>.That.Matches(f => f.Familia == "Lisap" && f.Grupo == "COS" && f.Accion == AccionesPropuesta.LIQUIDAR && f.Texto == "champú")))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public void Get_ConFiltrosSinElScriptDelCorte3_404()
+        {
+            PropuestasStockController controller = Controller(Noche);
+            _ = A.CallTo(() => repositorio.ExisteTabla()).Returns(true);
+            _ = A.CallTo(() => decisiones.ExisteEsquema()).Returns(false);
+
+            Assert.AreEqual(HttpStatusCode.NotFound, controller.Get("2026-09", 10, null, "Lisap").ExecuteAsync(default).Result.StatusCode);
+            A.CallTo(() => repositorio.LeerPropuestas(A<DateTime?>._, A<int>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void Resumen_ConFiltros_CuentaSoloLoFiltrado()
+        {
+            // Sugerencia 644: el contador de la pantalla refleja lo filtrado.
+            PropuestasStockController controller = Controller(Noche, grupos: new[] { "NUEVAVISION\\Compras" });
+            _ = A.CallTo(() => decisiones.ExisteEsquema()).Returns(true);
+            _ = A.CallTo(() => decisiones.Resumen(new DateTime(2026, 9, 1), A<FiltroPropuestasStock>.That.Matches(f => f.Familia == "Lisap" && f.Accion == AccionesPropuesta.LIQUIDAR)))
+                .Returns(new List<ResumenEstadoPropuestas> { new ResumenEstadoPropuestas { Estado = EstadosPropuesta.PENDIENTE, Propuestas = 7 } });
+
+            var ok = (OkNegotiatedContentResult<List<ResumenEstadoPropuestas>>)controller.Resumen("2026-09", "Lisap", null, AccionesPropuesta.LIQUIDAR);
+
+            Assert.AreEqual(7, ok.Content[0].Propuestas);
+        }
+
+        [TestMethod]
+        public void Filtros_SinSerComprasNiDireccion_Forbidden()
+        {
+            PropuestasStockController controller = Controller(Noche, direccion: false);
+
+            Assert.AreEqual(HttpStatusCode.Forbidden, controller.GetFiltros("2026-09").ExecuteAsync(default).Result.StatusCode);
+            A.CallTo(() => decisiones.LeerOpcionesFiltro(A<DateTime?>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void Filtros_DevuelveLasOpcionesDelMes()
+        {
+            PropuestasStockController controller = Controller(Noche, grupos: new[] { "NUEVAVISION\\Compras" });
+            _ = A.CallTo(() => repositorio.ExisteTabla()).Returns(true);
+            _ = A.CallTo(() => decisiones.LeerOpcionesFiltro(new DateTime(2026, 9, 1))).Returns(new OpcionesFiltroPropuestas
+            {
+                Familias = new List<string> { "Lisap" },
+                Grupos = new List<string> { "COS" },
+                Acciones = new List<string> { AccionesPropuesta.LIQUIDAR }
+            });
+
+            var ok = (OkNegotiatedContentResult<OpcionesFiltroPropuestas>)controller.GetFiltros("2026-09");
+
+            CollectionAssert.AreEqual(new[] { "Lisap" }, ok.Content.Familias);
+            CollectionAssert.AreEqual(new[] { AccionesPropuesta.LIQUIDAR }, ok.Content.Acciones);
+        }
+
+        [TestMethod]
+        public void Filtros_MesMalEscrito_BadRequest()
+        {
+            Assert.IsInstanceOfType(Controller(Noche).GetFiltros("sept"), typeof(BadRequestErrorMessageResult));
+        }
+
+        [TestMethod]
+        public void Filtros_SinTabla_404()
+        {
+            PropuestasStockController controller = Controller(Noche);
+            _ = A.CallTo(() => repositorio.ExisteTabla()).Returns(false);
+
+            Assert.AreEqual(HttpStatusCode.NotFound, controller.GetFiltros().ExecuteAsync(default).Result.StatusCode);
         }
 
         [TestMethod]

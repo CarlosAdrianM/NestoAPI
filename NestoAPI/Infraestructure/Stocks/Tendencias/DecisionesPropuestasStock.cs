@@ -230,6 +230,61 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                     : $"potenciación sin cumplir (objetivo {objetivo}, real {real})";
             }
         }
+
+        /// <summary>
+        /// Sugerencia 644: qué pasa exactamente al aplicar la propuesta («El máximo de ALG pasa de 59 a 88 y el mínimo de 39 a
+        /// 68»). Solo lectura (no es columna): <see cref="ConsecuenciasPropuesta"/>.
+        /// </summary>
+        public string Consecuencia => ConsecuenciasPropuesta.Texto(this);
+    }
+
+    /// <summary>
+    /// Sugerencia 644: filtros de GET api/PropuestasStock y de GET api/PropuestasStock/Resumen (además del mes y el estado).
+    /// Todos opcionales; vacíos, sin filtro.
+    /// </summary>
+    public class FiltroPropuestasStock
+    {
+        internal const int LONGITUD_MAXIMA_TEXTO = 50;
+
+        public FiltroPropuestasStock(string familia = null, string grupo = null, string accion = null, string texto = null)
+        {
+            Familia = Limpiar(familia);
+            Grupo = Limpiar(grupo);
+            Accion = Limpiar(accion);
+            string t = Limpiar(texto);
+            Texto = t != null && t.Length > LONGITUD_MAXIMA_TEXTO ? t.Substring(0, LONGITUD_MAXIMA_TEXTO) : t;
+        }
+
+        /// <summary>Exacta (PropuestasStock.Familia sin espacios).</summary>
+        public string Familia { get; }
+        public string Grupo { get; }
+        /// <summary>Exacta, como <see cref="AccionesPropuesta"/>.</summary>
+        public string Accion { get; }
+        /// <summary>Parte del código o del nombre del producto.</summary>
+        public string Texto { get; }
+
+        public bool EstaVacio => Familia == null && Grupo == null && Accion == null && Texto == null;
+
+        /// <summary>Para el LIKE: el texto entre % con los comodines de SQL escapados (con \); null sin texto.</summary>
+        public string PatronTexto => Texto == null ? null
+            : "%" + Texto.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_").Replace("[", "\\[") + "%";
+
+        private static string Limpiar(string valor) => string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();
+    }
+
+    /// <summary>Sugerencia 644: GET api/PropuestasStock/Filtros: lo que se puede elegir en los desplegables de la pantalla (del mes).</summary>
+    public class OpcionesFiltroPropuestas
+    {
+        public List<string> Familias { get; set; } = new List<string>();
+        public List<string> Grupos { get; set; } = new List<string>();
+        public List<string> Acciones { get; set; } = new List<string>();
+    }
+
+    /// <summary>Una fila de la consulta de <see cref="OpcionesFiltroPropuestas"/>: F (familia), G (grupo) o A (acción) y su valor.</summary>
+    public class FilaOpcionFiltroPropuestas
+    {
+        public string Tipo { get; set; }
+        public string Valor { get; set; }
     }
 
     /// <summary>El control de stock de un almacén tal como está ahora.</summary>
@@ -306,11 +361,20 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
 
         PropuestaStockConDecision LeerPropuesta(int id);
 
-        /// <summary>Filas del mes (sin mes, el último guardado), de más a menos exceso, del estado pedido (sin estado, todas).</summary>
-        List<PropuestaStockConDecision> LeerPropuestas(DateTime? mes, string estado, int top);
+        /// <summary>
+        /// Filas del mes (sin mes, el último guardado), de más a menos exceso, del estado pedido (sin estado, todas). Sugerencia
+        /// 644: y de la familia, el grupo, la acción y el texto de <paramref name="filtro"/> (null o vacío: sin filtro).
+        /// </summary>
+        List<PropuestaStockConDecision> LeerPropuestas(DateTime? mes, string estado, int top, FiltroPropuestasStock filtro);
 
         /// <summary>Cuántas propuestas hay en cada estado (sin mes, el último guardado).</summary>
         List<ResumenEstadoPropuestas> Resumen(DateTime? mes);
+
+        /// <summary>Sugerencia 644: <see cref="Resumen(DateTime?)"/> solo con las filas de <paramref name="filtro"/> (para el contador de la pantalla).</summary>
+        List<ResumenEstadoPropuestas> Resumen(DateTime? mes, FiltroPropuestasStock filtro);
+
+        /// <summary>Sugerencia 644: las familias, grupos y acciones que hay en las propuestas del mes (sin mes, el último guardado).</summary>
+        OpcionesFiltroPropuestas LeerOpcionesFiltro(DateTime? mes);
 
         /// <summary>Productos.Estado ahora (empresa 1); null si el producto no existe.</summary>
         short? LeerEstadoProducto(string producto);
