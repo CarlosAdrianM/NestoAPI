@@ -61,7 +61,7 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
             }
             else
             {
-                throw new ArgumentException($"CTT no tiene el servicio {servicio}. Elige «CTT 48h» (el normal) o «CTT 24h» (urgente).");
+                throw new ArgumentException($"CTT no tiene el servicio {servicio}. Elija «CTT 48h» (el normal) o «CTT 24h» (urgente).");
             }
 
             string cp = (codigoPostal ?? string.Empty).Trim();

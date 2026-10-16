@@ -252,7 +252,7 @@ namespace NestoAPI.Infraestructure.Agencias.Perfiles
             return Tarifas.ZonasActivasAgencia.EstaActiva(zonasActivas, zona)
                 ? null
                 : $"CTT todavía no está activa para la zona {zona} (CP {codPostal}). Zonas activas: {valorParametro.Trim()}. " +
-                  "Elige otra agencia o amplía el parámetro CTTZonasActivas.";
+                  "Elija otra agencia o amplíe el parámetro CTTZonasActivas.";
         }
 
         // Servicio 48 = "CTT 48h" (TarifaCTT48h.ServicioId), el económico que usamos como base.

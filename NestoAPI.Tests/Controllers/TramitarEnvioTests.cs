@@ -451,7 +451,7 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual(System.Net.HttpStatusCode.BadGateway, respuesta.StatusCode);
             var cuerpo = Newtonsoft.Json.Linq.JObject.Parse(await respuesta.Content.ReadAsStringAsync());
             Assert.AreEqual(EnviosAgenciasController.CODIGO_AGENCIA_NO_RESPONDE, (string)cuerpo["Codigo"]);
-            Assert.AreEqual("CTT no responde ahora mismo (error de su servidor). Vuelve a intentarlo en unos minutos o, si es urgente, sácalo por GLS.",
+            Assert.AreEqual("CTT no responde ahora mismo (error de su servidor). Vuelva a intentarlo en unos minutos o, si es urgente, sáquelo por GLS.",
                 (string)cuerpo["Message"]);
             Assert.AreEqual(crudo, (string)cuerpo["Detalle"], "La respuesta cruda de CTT va aparte, para diagnosticar");
             // Queda auditado con lo que contestó CTT, como antes.
@@ -524,10 +524,10 @@ namespace NestoAPI.Tests.Controllers
         [TestMethod]
         public void MensajeNoResponde_ConElNombreDeLaAgenciaYSinNombreGenerico()
         {
-            Assert.AreEqual("CTT no responde ahora mismo (error de su servidor). Vuelve a intentarlo en unos minutos o, si es urgente, sácalo por GLS.",
+            Assert.AreEqual("CTT no responde ahora mismo (error de su servidor). Vuelva a intentarlo en unos minutos o, si es urgente, sáquelo por GLS.",
                 FallosAgenciaRemota.MensajeNoResponde(" CTT "));
             StringAssert.StartsWith(FallosAgenciaRemota.MensajeNoResponde(null), "La agencia no responde ahora mismo");
-            StringAssert.EndsWith(FallosAgenciaRemota.MensajeNoResponde("GLS"), "sácalo por otra agencia.");
+            StringAssert.EndsWith(FallosAgenciaRemota.MensajeNoResponde("GLS"), "sáquelo por otra agencia.");
         }
 
         // ===== Sugerencia 507 (seguimiento 13/10/26): timeout en el alta = CTT pudo crearlo sin que llegara la respuesta =====
@@ -543,8 +543,8 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual(System.Net.HttpStatusCode.BadGateway, respuesta.StatusCode);
             var cuerpo = Newtonsoft.Json.Linq.JObject.Parse(await respuesta.Content.ReadAsStringAsync());
             Assert.AreEqual(EnviosAgenciasController.CODIGO_AGENCIA_NO_RESPONDE, (string)cuerpo["Codigo"]);
-            Assert.AreEqual("CTT no responde ahora mismo (error de su servidor). Vuelve a intentarlo en unos minutos o, si es urgente, " +
-                "sácalo por GLS. " + AVISO_COMPROBAR_CTT, (string)cuerpo["Message"]);
+            Assert.AreEqual("CTT no responde ahora mismo (error de su servidor). Vuelva a intentarlo en unos minutos o, si es urgente, " +
+                "sáquelo por GLS. " + AVISO_COMPROBAR_CTT, (string)cuerpo["Message"]);
         }
 
         [TestMethod]

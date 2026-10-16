@@ -80,7 +80,7 @@ namespace NestoAPI.Infraestructure.Agencias
 
         /// <summary>
         /// Lo que lee el usuario cuando la agencia no responde: «CTT no responde ahora mismo (error de su servidor).
-        /// Vuelve a intentarlo en unos minutos o, si es urgente, sácalo por GLS.» Sin nombre, «La agencia…»; si la que
+        /// Vuelva a intentarlo en unos minutos o, si es urgente, sáquelo por GLS.» Sin nombre, «La agencia…»; si la que
         /// falla es GLS, la alternativa es «otra agencia».
         /// </summary>
         public static string MensajeNoResponde(string agencia) => MensajeNoResponde(agencia, puedeHaberseCreado: false);
@@ -95,7 +95,7 @@ namespace NestoAPI.Infraestructure.Agencias
             string nombre = string.IsNullOrWhiteSpace(agencia) ? "La agencia" : agencia.Trim();
             string alternativa = nombre.IndexOf("GLS", StringComparison.OrdinalIgnoreCase) >= 0 ? "otra agencia" : "GLS";
             string mensaje = $"{nombre} no responde ahora mismo (error de su servidor). " +
-                $"Vuelve a intentarlo en unos minutos o, si es urgente, sácalo por {alternativa}.";
+                $"Vuelva a intentarlo en unos minutos o, si es urgente, sáquelo por {alternativa}.";
             if (puedeHaberseCreado)
             {
                 string web = string.IsNullOrWhiteSpace(agencia) ? "la agencia" : nombre;

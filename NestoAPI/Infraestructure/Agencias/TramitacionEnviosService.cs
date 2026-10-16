@@ -654,7 +654,7 @@ namespace NestoAPI.Infraestructure.Agencias
 
         /// <summary>El texto de siempre de Nesto (#512): en una agencia sin modificación remota el cambio solo queda en Nesto.</summary>
         internal const string AVISO_PEDIR_A_LA_AGENCIA = "El cambio solo se ha guardado en Nesto: NO se avisa a la agencia ni se modifica " +
-            "nada en su sistema. Pídeselo a la agencia por correo o por teléfono.";
+            "nada en su sistema. Pídaselo a la agencia por correo o por teléfono.";
 
         /// <summary>Sugerencia 544: lo que se le dice al usuario al cambiar el reembolso de un envío devuelto.</summary>
         internal const string AVISO_REEMBOLSO_DEVUELTO = "Envío devuelto: el reembolso se cambia solo en Nesto, sin avisar a la agencia.";

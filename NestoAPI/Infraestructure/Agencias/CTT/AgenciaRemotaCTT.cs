@@ -446,11 +446,11 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
             if (envio.Retorno == RETORNO_NINGUNO) return;
             if (envio.Retorno != RETORNO_CON_RETORNO && envio.Retorno != RETORNO_RECOGIDA_EN_ORIGEN)
             {
-                throw new ArgumentException($"CTT no tiene el tipo de retorno {envio.Retorno}. Elige «NO», «Con retorno» o «Recogida en origen».");
+                throw new ArgumentException($"CTT no tiene el tipo de retorno {envio.Retorno}. Elija «NO», «Con retorno» o «Recogida en origen».");
             }
             if (!_config.RetornosActivos)
             {
-                throw new ArgumentException($"Las recogidas y retornos por CTT todavía no están activados (parámetro {CLAVE_RETORNOS_ACTIVOS}). Tramítalo sin retorno o por otra agencia.");
+                throw new ArgumentException($"Las recogidas y retornos por CTT todavía no están activados (parámetro {CLAVE_RETORNOS_ACTIVOS}). Tramítelo sin retorno o por otra agencia.");
             }
             if (envio.Retorno == RETORNO_RECOGIDA_EN_ORIGEN && envio.Reembolso > 0)
             {

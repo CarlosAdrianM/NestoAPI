@@ -50,7 +50,7 @@ namespace NestoAPI.Infraestructure.Agencias.Perfiles
                 return null;
             }
             return $"La agencia {NombreAgencia} no tiene {string.Join(", ni ", errores)}. " +
-                "Revisa el servicio, el horario y el retorno del envío (¿son de otra agencia?) antes de guardarlo.";
+                "Revise el servicio, el horario y el retorno del envío (¿son de otra agencia?) antes de guardarlo.";
         }
 
         private static string Describir(IReadOnlyDictionary<short, string> valores)

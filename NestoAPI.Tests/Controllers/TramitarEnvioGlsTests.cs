@@ -197,7 +197,7 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual(HttpStatusCode.BadGateway, resultado.Response.StatusCode);
             var cuerpo = Newtonsoft.Json.Linq.JObject.Parse(await resultado.Response.Content.ReadAsStringAsync());
             Assert.AreEqual(EnviosAgenciasController.CODIGO_AGENCIA_NO_RESPONDE, (string)cuerpo["Codigo"]);
-            Assert.AreEqual("GLS no responde ahora mismo (error de su servidor). Vuelve a intentarlo en unos minutos o, si es urgente, sácalo por otra agencia.",
+            Assert.AreEqual("GLS no responde ahora mismo (error de su servidor). Vuelva a intentarlo en unos minutos o, si es urgente, sáquelo por otra agencia.",
                 (string)cuerpo["Message"]);
             AgenciaLlamadaWeb llamada = auditorias.Single();
             Assert.IsFalse(llamada.Exito);
