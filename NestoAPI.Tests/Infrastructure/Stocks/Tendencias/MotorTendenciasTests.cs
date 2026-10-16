@@ -82,15 +82,59 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
         }
 
         [TestMethod]
-        public void Multiplos_SubenLaCoberturaAlcanzableYElMaximoCabeUnLote()
+        public void Multiplos_NoSubenLaCoberturaAlcanzableNiElMaximo()
         {
-            // 17404: 450 uds/mes (15 al día), cajas de 144, proveedor 10 días
+            // 17404: 450 uds/mes (15 al día), cajas de 144, proveedor 10 días. NestoAPI#630 (16/10/26): el lote se respeta al pedir.
             ResultadoTendencia r = Calcular(Producto(ventas: Constante(450), stock: 1300, diasEnServir: 10, multiplos: 144));
 
-            Assert.AreEqual(10 + 7 + 10, r.CoberturaAlcanzableDias); // 144 ÷ 15 = 9,6 → 10 días
+            Assert.AreEqual(10 + 7, r.CoberturaAlcanzableDias);
             Assert.AreEqual(255, r.StockMinimoPropuesto);           // 15 × 17
-            Assert.AreEqual(405, r.StockMaximoPropuesto);           // 15 × 27 (≥ 255 + 144)
-            StringAssert.Contains(r.Explicacion, "múltiplos de 144");
+            Assert.AreEqual(405, r.StockMaximoPropuesto);           // 15 × 27
+            StringAssert.Contains(r.Explicacion, "múltiplos de 144 (se respetan al pedir, no en el máximo)");
+            Assert.IsFalse(r.Explicacion.Contains("proponga al proveedor"), r.Explicacion); // 144 uds son 0,3 meses
+        }
+
+        [TestMethod]
+        public void Multiplos_Caso42274_MaximoSinElLoteYAvisoDeMultiploGrande()
+        {
+            // 42274 en septiembre de 2026 (EntradasJson real): ALG múltiplo 12, ponderada 1,44 × 1,04 estacional, proveedor 20 días
+            // + 7. Antes: mínimo 2 / máximo 14 (2 + 12) y objetivo 243 días (el lote, 12 ÷ 1,67 × 30 = 216 días, subía la alcanzable).
+            int[] ventas = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 2, 7, 0, 0, 0, 1, 2, 5, 2, 0, 0, 1, 1, 0, 3, 0, 5, 4, 2, 2, 0, 3, 1,
+                2, 1, 0, 0, 1, 2, 0, 1, 1, 0, 0, 0, 0, 5, 0, 0, 1, 0, 2, 3, 1, 2, 0, 2 };
+            decimal[] indices = { 0.8930936613m, 1.2992746768m, 0.9801324503m, 1.1542100284m, 0.9649952696m, 0.8325449385m,
+                1.0343740145m, 0.4213181962m, 1.4985808893m, 1.0444654683m, 1.0305897193m, 0.8464206875m };
+            DatosProductoTendencia d = Producto("42274", ventas: ventas, stock: 248, diasEnServir: 20, multiplos: 12);
+            d.FechaPrimeraVenta = new DateTime(2022, 9, 8);
+            d.StockMaximoAlg = 2;
+            d.StockMinimoAlg = 1;
+
+            ResultadoTendencia r = Calcular(d, indices);
+
+            Assert.AreEqual(1.44m, r.VentaMediaPonderada);
+            Assert.AreEqual(1.04m, r.FactorEstacional);
+            Assert.AreEqual(2, r.StockMinimoPropuesto);
+            Assert.AreEqual(3, r.StockMaximoPropuesto);
+            Assert.AreEqual(27, r.CoberturaAlcanzableDias);
+            Assert.AreEqual(90, r.CoberturaObjetivoDias);
+            Assert.AreEqual(AccionesPropuesta.AJUSTAR, r.Accion); // el aviso no cambia la acción
+            Assert.AreEqual(7.2m, r.MesesVentaMultiplo);          // 12 ÷ 1,67
+            StringAssert.Contains(r.Explicacion, "El múltiplo de compra (12 uds) son 7,2 meses de venta: proponga al proveedor un múltiplo menor.");
+        }
+
+        [TestMethod]
+        public void Multiplos_LoteGrande_SeConfiguraYSinComprarNoSeAvisa()
+        {
+            ParametrosTendencias p = ParametrosTendencias.Desde(c => c == "PropuestasStock:MesesLoteGrande" ? "12" : null);
+            DatosProductoTendencia d = Producto(ventas: Constante(2), stock: 5, multiplos: 20); // 10 meses de venta
+
+            Assert.IsFalse(MotorTendencias.Calcular(d, null, MesReferencia, p).Explicacion.Contains("proponga al proveedor"));
+            Assert.IsTrue(Calcular(d).Explicacion.Contains("son 10,0 meses de venta: proponga al proveedor un múltiplo menor"));
+
+            // Estado 4 con stock: liquidar, no se vuelve a comprar → sin aviso aunque el múltiplo sean 10 meses
+            DatosProductoTendencia liquidar = Producto(ventas: Constante(2), stock: 50, multiplos: 20, estado: 4);
+            ResultadoTendencia r = Calcular(liquidar);
+            Assert.AreEqual(AccionesPropuesta.LIQUIDAR, r.Accion);
+            Assert.IsFalse(r.Explicacion.Contains("proponga al proveedor"), r.Explicacion);
         }
 
         [TestMethod]
@@ -459,19 +503,20 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
         private static readonly string[] AccionesPropios = { AccionesPropuesta.AJUSTAR_LOTE, AccionesPropuesta.POTENCIAR, AccionesPropuesta.CADUCA };
 
         [TestMethod]
-        public void Propio_FormulaP_MinimoConSeguridadDePropiosYMaximoMasUnLote()
+        public void Propio_FormulaP_MinimoConSeguridadDePropiosYMaximoSinElLote()
         {
-            // 30 uds/mes, proveedor 60 días, lote 100: mínimo = 30 × (60 + 30) ÷ 30 = 90; máximo = 90 + 100
+            // 30 uds/mes, proveedor 60 días, lote 100: mínimo = 30 × (60 + 30) ÷ 30 = 90; máximo = 30 × (30 + 2 × 60) ÷ 30 = 150
+            // (NestoAPI#630, 16/10/26: antes 90 + 100 = 190; el lote se respeta al fabricar, no en el máximo)
             ResultadoTendencia r = Calcular(Propio(ventas: Constante(30), stock: 150, diasEnServir: 60, lote: 100));
 
             Assert.IsTrue(r.FabricacionPropia);
             StringAssert.StartsWith(r.Formula, FormulasPropuesta.PREFIJO_PROPIOS);
             Assert.AreEqual(P.DiasSeguridadPropios, r.DiasSeguridad);
             Assert.AreEqual(90, r.StockMinimoPropuesto);
-            Assert.AreEqual(190, r.StockMaximoPropuesto);
+            Assert.AreEqual(150, r.StockMaximoPropuesto);
             Assert.AreEqual(0, r.ExcesoUnidades);
             Assert.AreEqual(AccionesPropuesta.AJUSTAR_LOTE, r.Accion);
-            StringAssert.Contains(r.Explicacion, "proveedor 60 días + 30 de seguridad de propios → mínimo 90; lote mínimo 100 → máximo 190; vida útil 12 meses (grupo COS) = 360 uds");
+            StringAssert.Contains(r.Explicacion, "proveedor 60 días + 30 de seguridad de propios → mínimo 90; máximo = 30,0 × (30 + 2 × 60) ÷ 30 = 150; lote mínimo 100 (se respeta al fabricar, no en el máximo); vida útil 12 meses (grupo COS) = 360 uds");
             StringAssert.Contains(r.Explicacion, "(hoy 555/295)");
             StringAssert.Contains(r.EntradasJson, "\"tipoExclusiva\":\"PRP\"");
             StringAssert.Contains(r.EntradasJson, "\"propios\":{\"lote\":100,\"diasSeguridad\":30,\"grupo\":\"COS\",\"caduca\":true,\"vidaUtilMeses\":12,\"tope\":360}");
@@ -481,7 +526,7 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
         public void Propio_MaximoYMinimoIgualesALosDeHoy_Mantener()
         {
             DatosProductoTendencia d = Propio(ventas: Constante(30), stock: 150, diasEnServir: 60, lote: 100);
-            d.StockMaximoAlg = 190;
+            d.StockMaximoAlg = 150;
             d.StockMinimoAlg = 90;
 
             Assert.AreEqual(AccionesPropuesta.MANTENER, Calcular(d).Accion);
@@ -490,12 +535,12 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
         [TestMethod]
         public void Propio_TopeDeVidaUtil_ElMaximoNuncaPasaDeDoceMesesDeVenta()
         {
-            // Proveedor de 300 días: mínimo 330, + lote 100 = 430, pero 12 meses de venta son 360
+            // Proveedor de 300 días: mínimo 330, máximo 30 × (30 + 600) ÷ 30 = 630, pero 12 meses de venta son 360
             ResultadoTendencia r = Calcular(Propio(ventas: Constante(30), stock: 200, diasEnServir: 300, lote: 100));
 
             Assert.AreEqual(360, r.StockMaximoPropuesto);
             Assert.AreEqual(330, r.StockMinimoPropuesto);
-            StringAssert.Contains(r.Explicacion, "máximo 430 (acotado a 360 por la vida útil de 12 meses)");
+            StringAssert.Contains(r.Explicacion, "máximo = 30,0 × (30 + 2 × 300) ÷ 30 = 630 (acotado a 360 por la vida útil de 12 meses)");
             Assert.IsFalse(r.Explicacion.Contains("pedir lote menor"), r.Explicacion);
         }
 
@@ -503,13 +548,13 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
         public void Propio_LoteDeMasMesesQueLaVidaUtil_LoDiceYProponeAjustarElLote()
         {
             // Lote de 500 con 30 uds/mes: 16,7 meses de venta, más que los 12 de vida útil
-            DatosProductoTendencia d = Propio(ventas: Constante(30), stock: 300, diasEnServir: 60, lote: 500);
-            d.StockMaximoAlg = 360;
+            DatosProductoTendencia d = Propio(ventas: Constante(30), stock: 150, diasEnServir: 60, lote: 500);
+            d.StockMaximoAlg = 150;
             d.StockMinimoAlg = 90;
 
             ResultadoTendencia r = Calcular(d);
 
-            Assert.AreEqual(360, r.StockMaximoPropuesto);
+            Assert.AreEqual(150, r.StockMaximoPropuesto);
             Assert.AreEqual(90, r.StockMinimoPropuesto);
             Assert.AreEqual(AccionesPropuesta.AJUSTAR_LOTE, r.Accion); // aunque el máximo y el mínimo sean los de hoy
             StringAssert.Contains(r.Explicacion, "El lote mínimo son 16,7 meses de venta, más que la vida útil: pedir lote menor");
@@ -521,10 +566,10 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
             ResultadoTendencia r = Calcular(Propio(ventas: Constante(30), stock: 300, diasEnServir: 60, lote: 100, precio: 2m));
 
             Assert.AreEqual(AccionesPropuesta.POTENCIAR, r.Accion);
-            Assert.AreEqual(110, r.ExcesoUnidades); // 300 − 190
-            Assert.AreEqual(220m, r.ExcesoValorado);
-            Assert.AreEqual(190, r.StockMaximoPropuesto);
-            StringAssert.StartsWith(r.Explicacion, "Potenciar ventas: sobran 110 uds (220,00 €) sobre el máximo, pero 300 uds son 10,0 meses de venta");
+            Assert.AreEqual(150, r.ExcesoUnidades); // 300 − 150
+            Assert.AreEqual(300m, r.ExcesoValorado);
+            Assert.AreEqual(150, r.StockMaximoPropuesto);
+            StringAssert.StartsWith(r.Explicacion, "Potenciar ventas: sobran 150 uds (300,00 €) sobre el máximo, pero 300 uds son 10,0 meses de venta");
             StringAssert.Contains(r.Explicacion, "nunca Outlet ni liquidar");
         }
 
@@ -537,7 +582,7 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
             ResultadoTendencia r = Calcular(d);
 
             Assert.AreEqual(AccionesPropuesta.CADUCA, r.Accion); // y no «Parar compras»
-            Assert.AreEqual(810, r.ExcesoUnidades);              // exceso = stock − máximo (190)
+            Assert.AreEqual(850, r.ExcesoUnidades);              // exceso = stock − máximo (150)
             StringAssert.StartsWith(r.Explicacion, "Caduca antes de venderse: 1000 uds son 33,3 meses de venta, más que la vida útil de 12 meses; 640 uds (1.280,00 €) caducarán");
             StringAssert.Contains(r.Explicacion, "Hay 200 uds en pedidos de compra abiertos (el siguiente lote): revisarlo.");
         }
@@ -623,12 +668,12 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
             ResultadoTendencia r = Calcular(d);
 
             Assert.AreEqual(AccionesPropuesta.POTENCIAR, r.Accion);
-            Assert.AreEqual(430, r.StockMaximoPropuesto); // 330 + 100, sin el tope de 12 meses (360)
+            Assert.AreEqual(630, r.StockMaximoPropuesto); // 30 × (30 + 600) ÷ 30, sin el tope de 12 meses (360)
             Assert.AreEqual(330, r.StockMinimoPropuesto);
-            Assert.AreEqual(570, r.ExcesoUnidades);
-            Assert.AreEqual("P: mín + lote, no caduca", r.Formula);
-            StringAssert.StartsWith(r.Explicacion, "Potenciar ventas: sobran 570 uds (1.140,00 €) sobre el máximo; 1000 uds son 33,3 meses de venta, pero no caducan (nunca Outlet ni liquidar)");
-            StringAssert.Contains(r.Explicacion, "lote mínimo 100 → máximo 430; no caduca (grupo APA): sin tope de vida útil");
+            Assert.AreEqual(370, r.ExcesoUnidades);
+            Assert.AreEqual("P: seg. + 2 × días, no caduca", r.Formula);
+            StringAssert.StartsWith(r.Explicacion, "Potenciar ventas: sobran 370 uds (740,00 €) sobre el máximo; 1000 uds son 33,3 meses de venta, pero no caducan (nunca Outlet ni liquidar)");
+            StringAssert.Contains(r.Explicacion, "máximo = 30,0 × (30 + 2 × 300) ÷ 30 = 630; lote mínimo 100 (se respeta al fabricar, no en el máximo); no caduca (grupo APA): sin tope de vida útil");
             Assert.IsFalse(r.Explicacion.Contains("acotado"), r.Explicacion);
             StringAssert.Contains(r.EntradasJson, "\"propios\":{\"lote\":100,\"diasSeguridad\":30,\"grupo\":\"APA\",\"caduca\":false,\"vidaUtilMeses\":null,\"tope\":null}");
         }
@@ -686,7 +731,7 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
 
             Assert.AreEqual(AccionesPropuesta.CADUCA, cosmetica.Accion);
             Assert.AreEqual(AccionesPropuesta.POTENCIAR, peluqueria.Accion);
-            Assert.AreEqual("P: mín + lote, tope 24 meses", peluqueria.Formula);
+            Assert.AreEqual("P: seg. + 2 × días, tope 24 meses", peluqueria.Formula);
             StringAssert.Contains(peluqueria.Explicacion, "vida útil 24 meses (grupo PEL) = 720 uds");
         }
 

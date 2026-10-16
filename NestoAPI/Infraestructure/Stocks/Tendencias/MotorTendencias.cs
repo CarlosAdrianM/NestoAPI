@@ -143,9 +143,9 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                 : Math.Round(CalculadoraSeries.Media(d.Ventas, FIN, 12), 2);
 
             // Cobertura y exceso
-            decimal ventaDiaria = r.VentaMensualReferencia / 30m;
-            int diasMultiplo = r.Multiplos > 1 && ventaDiaria > 0 ? (int)Math.Ceiling(r.Multiplos / ventaDiaria) : 0;
-            r.CoberturaAlcanzableDias = r.DiasEnServir + r.DiasSeguridad + diasMultiplo;
+            // NestoAPI#630 (Carlos, 16/10/26): el múltiplo de compra (lote) no sube la cobertura alcanzable ni el objetivo: se
+            // respeta al hacer el pedido de compra, no en los máximos ni en el exceso.
+            r.CoberturaAlcanzableDias = r.DiasEnServir + r.DiasSeguridad;
             r.CoberturaObjetivoDias = Math.Max(p.CoberturaObjetivoDias, r.CoberturaAlcanzableDias);
             r.CoberturaMeses = r.VentaMedia6Meses > 0 ? Math.Round(r.Stock / r.VentaMedia6Meses, 1) : (decimal?)null;
             int stockObjetivo = (int)Math.Ceiling(r.CoberturaObjetivoDias / 30m * r.VentaMensualReferencia);
@@ -163,6 +163,7 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             {
                 Proponer(r, d, p);
             }
+            AvisarLoteGrande(r, p);
 
             r.EntradasJson = JsonConvert.SerializeObject(new
             {
@@ -280,17 +281,17 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                 decimal diaria = r.VentaMediaPonderada * r.FactorEstacional / 30m;
                 minimo = (int)Math.Ceiling(diaria * (r.DiasEnServir + r.DiasSeguridad));
                 int formula = (int)Math.Ceiling(diaria * (r.DiasSeguridad + 2 * r.DiasEnServir));
-                int conLote = Math.Max(formula, minimo + (r.Multiplos > 1 ? r.Multiplos : 0));
+                // NestoAPI#630 (Carlos, 16/10/26): ni el máximo ni el mínimo incluyen el múltiplo de compra; se respeta al pedir.
                 int tope = (int)Math.Ceiling(diaria * r.CoberturaObjetivoDias);
-                maximo = Math.Max(minimo, Math.Min(conLote, Math.Max(tope, minimo + (r.Multiplos > 1 ? r.Multiplos : 0))));
+                maximo = Math.Max(minimo, Math.Min(formula, tope));
                 if (diaria <= 0)
                 {
                     maximo = 0;
                     minimo = 0;
                 }
                 r.Formula = "B: ponderada × (7 + 2 × días)";
-                string lote = r.Multiplos > 1 ? $"; múltiplos de {r.Multiplos}" : string.Empty;
-                string acotado = conLote > maximo ? $" (acotado por el objetivo de {r.CoberturaObjetivoDias} días)" : string.Empty;
+                string lote = r.Multiplos > 1 ? $"; múltiplos de {r.Multiplos} (se respetan al pedir, no en el máximo)" : string.Empty;
+                string acotado = formula > maximo ? $" (acotado por el objetivo de {r.CoberturaObjetivoDias} días)" : string.Empty;
                 calculo = $"Maduro. 6 meses: {Num(r.VentaMedia6Meses, 1)} uds/mes, ponderada {Num(r.VentaMediaPonderada, 1)} × {Num(r.FactorEstacional, 2)} estacional" +
                     $"{(r.ConEstacionalidad ? "" : " (familia sin 3 años)")}; proveedor {r.DiasEnServir} días{(r.DiasEnServirSupuestos ? " (supuestos)" : "")} + {r.DiasSeguridad} de seguridad{lote}; " +
                     $"objetivo {r.CoberturaObjetivoDias} días → máximo {maximo}{acotado}, mínimo {minimo}";
@@ -341,12 +342,13 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         /// <summary>
         /// NestoAPI#655: fórmula P (fabricación propia, familias con TipoExclusiva PRP). Se fabrican por lotes, con plazo largo y
         /// sin poder quedarse cortos: lote mínimo = Múltiplos de ALG; mínimo = venta mensual de referencia × (días en servir +
-        /// <see cref="ParametrosTendencias.DiasSeguridadPropios"/>) ÷ 30; máximo = mínimo + lote, y nunca más de los meses de vida
+        /// <see cref="ParametrosTendencias.DiasSeguridadPropios"/>) ÷ 30; máximo = venta × (seguridad de propios + 2 × días en
+        /// servir) ÷ 30 (NestoAPI#630, 16/10/26: sin el lote, que se respeta al fabricar), y nunca más de los meses de vida
         /// útil de su grupo (<see cref="ParametrosTendencias.VidaUtilMeses"/>; lo que pase, caducará). Exceso = stock − máximo.
         /// Acciones: «Caduca antes de venderse» (stock de más meses de venta que la vida útil), «Potenciar ventas» (sobra, pero se
         /// vende antes de caducar) y «Ajustar el siguiente lote» (cambian máximo y mínimo, o el lote solo ya pasa de la vida útil).
         /// <para>Vida útil por grupo (Carlos, 16/10/26): cosmética 12 meses, peluquería 24; accesorios, aparatos y accesorios de
-        /// peluquería NO caducan: sin tope (máximo = mínimo + lote) y nunca «Caduca antes de venderse»; lo que sobre es «Potenciar
+        /// peluquería NO caducan: sin tope de vida útil y nunca «Caduca antes de venderse»; lo que sobre es «Potenciar
         /// ventas». Sin venta, uno que no caduca tampoco se vuelve a fabricar (máximo y mínimo 0): no tiene sentido otro lote de
         /// algo que no sale.</para>
         /// <para>DECISIÓN (#655): a un propio NUNCA se le propone liquidar (ni Outlet ni Ganavisiones) ni pasar a estado 1: son los
@@ -387,13 +389,13 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             }
 
             int minimo = (int)Math.Ceiling(venta * (r.DiasEnServir + r.DiasSeguridad) / 30m);
-            int sinTope = minimo + lote;
-            // Sin venta, uno que no caduca tampoco lleva otro lote (no hay tope de vida útil que lo deje en 0).
-            int maximo = caduca ? Math.Min(sinTope, tope.Value) : venta > 0 ? sinTope : 0;
+            // NestoAPI#630 (16/10/26): el máximo no incluye el lote (se respeta al fabricar). Sin venta, 0: tampoco otro lote.
+            int sinTope = (int)Math.Ceiling(venta * (r.DiasSeguridad + 2 * r.DiasEnServir) / 30m);
+            int maximo = caduca ? Math.Min(sinTope, tope.Value) : sinTope;
             minimo = Math.Min(minimo, maximo);
             r.Formula = caduca
-                ? $"{FormulasPropuesta.PREFIJO_PROPIOS} mín + lote, tope {vidaUtil} meses"
-                : $"{FormulasPropuesta.PREFIJO_PROPIOS} mín + lote, no caduca";
+                ? $"{FormulasPropuesta.PREFIJO_PROPIOS} seg. + 2 × días, tope {vidaUtil} meses"
+                : $"{FormulasPropuesta.PREFIJO_PROPIOS} seg. + 2 × días, no caduca";
             r.ExcesoUnidades = Math.Max(0, r.Stock - maximo);
             r.ExcesoValorado = Math.Round(r.ExcesoUnidades * r.PrecioMedio, 2);
             // La cobertura objetivo de un propio es la de su máximo (la del resto, aquí, no significa nada).
@@ -403,7 +405,7 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             string acotado = caduca && sinTope > maximo ? $" (acotado a {maximo} por la vida útil de {vidaUtil} meses)" : string.Empty;
             string calculo = $"Fabricación propia ({FasesProducto.Nombre(r.Fase).ToLowerInvariant()}): venta de referencia {Num(venta, 1)} uds/mes; " +
                 $"proveedor {r.DiasEnServir} días{(r.DiasEnServirSupuestos ? " (supuestos)" : "")} + {r.DiasSeguridad} de seguridad de propios → mínimo {minimo}; " +
-                $"lote mínimo {lote} → máximo {(caduca || venta > 0 ? sinTope : maximo)}{acotado}; " +
+                $"máximo = {Num(venta, 1)} × ({r.DiasSeguridad} + 2 × {r.DiasEnServir}) ÷ 30 = {sinTope}{acotado}; lote mínimo {lote} (se respeta al fabricar, no en el máximo); " +
                 (caduca ? $"{textoVidaUtil} = {tope} uds" : $"{textoVidaUtil}: sin tope de vida útil");
             if (loteExcede)
             {
@@ -458,6 +460,25 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             r.StockMinimoPropuesto = minimo;
             r.Explicacion = explicacion.Trim();
         }
+
+        /// <summary>
+        /// NestoAPI#630 («tercera vía», Carlos 16/10/26): si el múltiplo de compra son más de
+        /// <see cref="ParametrosTendencias.MesesLoteGrande"/> meses de venta y se sigue comprando (máximo &gt; 0), lo dice en la frase
+        /// para pedir al proveedor un múltiplo menor. No cambia la acción. Un propio cuyo lote ya pasa de la vida útil ya lo dice.
+        /// </summary>
+        private static void AvisarLoteGrande(ResultadoTendencia r, ParametrosTendencias p)
+        {
+            if (EsLoteGrande(r, p) && (r.StockMaximoPropuesto ?? 0) > 0 && !(r.Explicacion ?? string.Empty).Contains("pedir lote menor"))
+            {
+                r.Explicacion = $"{r.Explicacion} {AvisoLoteGrande(r)}".Trim();
+            }
+        }
+
+        internal static bool EsLoteGrande(ResultadoTendencia r, ParametrosTendencias p)
+            => r.MesesVentaMultiplo.HasValue && r.MesesVentaMultiplo.Value > p.MesesLoteGrande;
+
+        internal static string AvisoLoteGrande(ResultadoTendencia r)
+            => $"El múltiplo de compra ({r.Multiplos} uds) son {Num(r.MesesVentaMultiplo ?? 0m, 1)} meses de venta: proponga al proveedor un múltiplo menor.";
 
         /// <summary>NestoAPI#656: meses en los que se mide el retraso (12, o los que tiene si es más nuevo; al menos 1).</summary>
         internal static int MesesRetraso(ResultadoTendencia r) => Math.Max(1, Math.Min(12, r.MesesDesdePrimeraVenta ?? 12));

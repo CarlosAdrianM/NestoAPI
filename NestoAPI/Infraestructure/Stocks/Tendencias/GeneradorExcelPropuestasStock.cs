@@ -28,6 +28,8 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         public const string COLUMNA_PENDIENTE_VENCIDO = "Pendiente de servir (vencido)";
         /// <summary>NestoAPI#656: unidades albaranadas en 12 meses más de PropuestasStock:DiasRetraso días después de la fecha de entrega.</summary>
         public const string COLUMNA_SERVIDO_CON_RETRASO = "Servido con retraso 12 m (uds)";
+        /// <summary>NestoAPI#630: el múltiplo de compra son más de PropuestasStock:MesesLoteGrande meses de venta.</summary>
+        public const string COLUMNA_MULTIPLO_GRANDE = "Múltiplo grande (pedir uno menor)";
 
         private const string FORMATO_EUROS = "#,##0.00 €";
         private const string FORMATO_DECIMAL = "#,##0.0";
@@ -53,9 +55,9 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                 HojaResumen(libro.Worksheets.Add(HOJA_RESUMEN), todos, ordenados, propios, mes);
                 string nota = NotaPendientes(p);
                 HojaProductos(libro.Worksheets.Add(NombreHojaTop(p.FilasTop)), ordenados.Take(p.FilasTop).ToList(),
-                    $"Propuestas de stock — {mes}: los {p.FilasTop} con más euros atrapados, sin propios (exceso total sin propios: {MotorTendencias.Euros(ordenados.Sum(r => r.ExcesoValorado))})", resumida: true);
+                    $"Propuestas de stock — {mes}: los {p.FilasTop} con más euros atrapados, sin propios (exceso total sin propios: {MotorTendencias.Euros(ordenados.Sum(r => r.ExcesoValorado))})", resumida: true, p);
                 HojaProductos(libro.Worksheets.Add(HOJA_TODOS), ordenados,
-                    $"Propuestas de stock — {mes}: {ordenados.Count} productos sin los propios (stock, venta en 24 meses, pendientes o compras abiertas)", resumida: false);
+                    $"Propuestas de stock — {mes}: {ordenados.Count} productos sin los propios (stock, venta en 24 meses, pendientes o compras abiertas)", resumida: false, p);
                 HojaNuevos(libro.Worksheets.Add(HOJA_NUEVOS), ordenados.Where(r => r.Fase == FasesProducto.NUEVO).ToList(), mes);
                 foreach (string hoja in new[] { NombreHojaTop(p.FilasTop), HOJA_TODOS, HOJA_NUEVOS })
                 {
@@ -130,7 +132,7 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             }
         }
 
-        private static void HojaProductos(IXLWorksheet hoja, List<ResultadoTendencia> filas, string titulo, bool resumida)
+        private static void HojaProductos(IXLWorksheet hoja, List<ResultadoTendencia> filas, string titulo, bool resumida, ParametrosTendencias p)
         {
             Titulo(hoja, titulo);
             var columnas = new List<(string nombre, Func<ResultadoTendencia, object> valor, string formato)>
@@ -155,7 +157,9 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                 ("Mín actual", r => r.StockMinimoActual, null),
                 ("Máx propuesto", r => r.StockMaximoPropuesto, null),
                 ("Mín propuesto", r => r.StockMinimoPropuesto, null),
-                (COLUMNA_SERVIDO_CON_RETRASO, r => r.ServidoConRetraso, null)
+                (COLUMNA_SERVIDO_CON_RETRASO, r => r.ServidoConRetraso, null),
+                ("Meses de venta del múltiplo", r => r.MesesVentaMultiplo, FORMATO_DECIMAL),
+                (COLUMNA_MULTIPLO_GRANDE, r => MotorTendencias.EsLoteGrande(r, p) ? "Sí" : null, null)
             };
             if (!resumida)
             {

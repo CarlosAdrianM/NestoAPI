@@ -84,6 +84,12 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         /// </summary>
         public int DiasRetraso { get; set; } = 2;
 
+        /// <summary>
+        /// NestoAPI#630 (Carlos, 16/10/26): el máximo y el mínimo ya no incluyen el múltiplo de compra; si un múltiplo son más de
+        /// estos meses de venta, la frase y el Excel piden proponer al proveedor un múltiplo menor (sin cambiar la acción).
+        /// </summary>
+        public int MesesLoteGrande { get; set; } = 6;
+
         /// <summary>Filas de la hoja «Top».</summary>
         public int FilasTop { get; set; } = 50;
 
@@ -120,6 +126,7 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                 p.VidaUtilMesesPorGrupo = porGrupo.Trim();
             }
             p.DiasRetraso = Entero(leer, nameof(DiasRetraso), p.DiasRetraso);
+            p.MesesLoteGrande = Entero(leer, nameof(MesesLoteGrande), p.MesesLoteGrande);
             p.FilasTop = Entero(leer, nameof(FilasTop), p.FilasTop);
             return p;
         }
@@ -157,6 +164,7 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             yield return (nameof(UnidadesMinimasFamiliaEstacionalidad), UnidadesMinimasFamiliaEstacionalidad.ToString(), "Estacionalidad: mínimo de unidades de la familia en 36 meses");
             yield return (nameof(DiasSeguridadPropios), DiasSeguridadPropios.ToString(), "Propios (P): días de seguridad");
             yield return (nameof(VidaUtilMesesPorGrupo), VidaUtilMesesPorGrupo, "Propios (P): vida útil por grupo en meses de venta (tope del máximo); 0 = no caduca: " + TextoVidaUtil());
+            yield return (nameof(MesesLoteGrande), MesesLoteGrande.ToString(), "Múltiplo grande: más de estos meses de venta (aviso para pedir un múltiplo menor; no está en el máximo)");
             yield return (nameof(DiasRetraso), DiasRetraso.ToString(), "Servido con retraso: albarán más de estos días después de la fecha de entrega (12 meses)");
             yield return (nameof(VidaUtilMesesPropios), VidaUtilMesesPropios.ToString(), "Propios (P): vida útil en meses de los grupos que no están en VidaUtilMesesPorGrupo");
         }

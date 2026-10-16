@@ -94,6 +94,11 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         public bool DiasEnServirSupuestos { get; set; }
         public int DiasSeguridad { get; set; }
         public int Multiplos { get; set; } = 1;
+        /// <summary>
+        /// NestoAPI#630: cuántos meses de venta (de referencia) es un múltiplo de compra; null sin múltiplo o sin venta. Solo
+        /// lectura (EF, en SqlQuery, no busca columna para las propiedades sin set).
+        /// </summary>
+        public decimal? MesesVentaMultiplo => Multiplos > 1 && VentaMensualReferencia > 0 ? Math.Round(Multiplos / VentaMensualReferencia, 1) : (decimal?)null;
         public int CoberturaObjetivoDias { get; set; }
         public int? StockMaximoActual { get; set; }
         public int? StockMinimoActual { get; set; }
