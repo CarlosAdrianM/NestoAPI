@@ -184,19 +184,33 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
-        public void Pdrn267_DosVecesConEl6Mas1EnLineaAparte_SoloSugiereLoQueAceptaElValidador()
+        public void Pdrn267_DosVecesConEl6Mas1EnLineaAparte_AceptaYSugiereDosLimpiadores()
         {
-            // 12 cobradas + 2 del 6+1: el control de múltiplos de ValidadorOfertasCombinadas mira cada línea por
-            // separado (12/7 < 2/1) y rechaza el 2º limpiador. Se sugiere lo que el pedido aceptaría: uno.
+            // NestoAPI#647: 12 cobradas + 2 del 6+1 en líneas distintas son 14 mascarillas = dos veces la combinada.
+            // El control de múltiplos miraba cada línea por separado (12/7 < 2/1) y rechazaba el 2º limpiador;
+            // ahora suma por producto (14/7 = 2/1) y lo acepta, así que la sugerencia ofrece los dos.
             PedidoVentaDTO pedido = Pedido(
                 Linea(MASCARILLA, 12, 22, id: 1, oferta: 1),
                 Linea(MASCARILLA, 2, 0, id: 2, oferta: 1));
             PedidoVentaDTO conDos = Pedido(pedido.Lineas.Concat(new[] { Linea(LIMPIADOR, 2, 0, id: 0, oferta: 2) }).ToArray());
-            Assert.IsFalse(GestorPrecios.EsPedidoValido(conDos, servicio).ValidacionSuperada, "Así valida hoy el pedido");
+            RespuestaValidacion validacion = GestorPrecios.EsPedidoValido(conDos, servicio);
+            Assert.IsTrue(validacion.ValidacionSuperada, validacion.Motivo);
 
             SugerenciaOfertaDTO regalo = GestorSugerenciasOfertas.Calcular(pedido, servicio).Single();
 
-            Assert.AreEqual(1, regalo.CantidadRegalo);
+            Assert.AreEqual(2, regalo.CantidadRegalo);
+        }
+
+        [TestMethod]
+        public void Pdrn267_DosVecesConEl6Mas1EnLineaAparte_TresLimpiadoresSigueSiendoDeMas()
+        {
+            // NestoAPI#647: agrupar por producto no abre la puerta a regalar de más: 14 mascarillas dan para 2, no 3.
+            PedidoVentaDTO conTres = Pedido(
+                Linea(MASCARILLA, 12, 22, id: 1, oferta: 1),
+                Linea(MASCARILLA, 2, 0, id: 2, oferta: 1),
+                Linea(LIMPIADOR, 3, 0, id: 3, oferta: 2));
+
+            Assert.IsFalse(GestorPrecios.EsPedidoValido(conTres, servicio).ValidacionSuperada);
         }
 
         [TestMethod]

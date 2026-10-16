@@ -207,13 +207,20 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 var cantidadOferta = ofertaCumplida.OfertasCombinadasDetalles.Where(o => o.Producto?.Trim() == productoValidado).Sum(o => o.Cantidad);
                 if (!compartidoConOtrasOfertas && cantidadOferta > 0 && cantidadLineas > cantidadOferta)
                 {
-                    IEnumerable<LineaPedidoVentaDTO> lineasOfertaPedido = pedido.Lineas.Where(l =>
-                        ofertaCumplida.OfertasCombinadasDetalles
-                            .Where(o => o.Cantidad > 0 && !o.PermitirCantidadMenor && (float)l.Cantidad / o.Cantidad < (float)cantidadLineas / cantidadOferta)
-                            .Select(d => d.Producto?.Trim())
-                            .Contains(l.Producto?.Trim())
-                    );
-                    if (lineasOfertaPedido != null && lineasOfertaPedido.Count() > 0)
+                    // NestoAPI#647: la proporción se mide POR PRODUCTO (suma de todas sus líneas del pedido frente a la
+                    // suma de sus filas en la oferta), no línea a línea: con 12 cobradas + 2 de regalo del 6+1 en líneas
+                    // distintas, la de 12 sola (12/7) parecía no llegar a 2 instancias y se rechazaba el 2º regalo.
+                    bool algunProductoNoLlega = ofertaCumplida.OfertasCombinadasDetalles
+                        .Where(o => o.Cantidad > 0 && !o.PermitirCantidadMenor && o.Producto != null)
+                        .GroupBy(o => o.Producto.Trim())
+                        .Any(g =>
+                        {
+                            int pedidasProducto = pedido.Lineas.Where(l => l.Producto?.Trim() == g.Key).Sum(l => l.Cantidad);
+                            int cantidadOfertaProducto = g.Sum(o => (int)o.Cantidad);
+                            return pedidasProducto > 0
+                                && (float)pedidasProducto / cantidadOfertaProducto < (float)cantidadLineas / cantidadOferta;
+                        });
+                    if (algunProductoNoLlega)
                     {
                         // Si la rama del importe mínimo ya la había dado por buena, hay que deshacerlo: si no, el
                         // rechazo se quedaba en el motivo y la respuesta salía válida (1 juego + 6 diademas en la 263).
