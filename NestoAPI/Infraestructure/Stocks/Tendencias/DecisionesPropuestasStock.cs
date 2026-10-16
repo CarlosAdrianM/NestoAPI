@@ -231,6 +231,18 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             }
         }
 
+        /// <summary>Nesto#535: el objetivo que se propone al potenciar: la venta media de 6 meses por este factor.</summary>
+        internal const decimal FACTOR_OBJETIVO_SUGERIDO = 1.5m;
+
+        /// <summary>
+        /// Nesto#535 (gemela de NestoAPI#655): el objetivo de venta (uds/mes) que la pantalla propone al potenciar: la venta media
+        /// de 6 meses × <see cref="FACTOR_OBJETIVO_SUGERIDO"/>, redondeado hacia arriba. Null si no vende (la persona tiene que
+        /// escribirlo). Solo lectura (no es columna): un solo sitio para todos los clientes.
+        /// </summary>
+        public int? ObjetivoVentaSugerido => VentaMedia6Meses > 0
+            ? (int)Math.Ceiling(VentaMedia6Meses * FACTOR_OBJETIVO_SUGERIDO)
+            : (int?)null;
+
         /// <summary>
         /// Sugerencia 644: qué pasa exactamente al aplicar la propuesta («El máximo de ALG pasa de 59 a 88 y el mínimo de 39 a
         /// 68»). Solo lectura (no es columna): <see cref="ConsecuenciasPropuesta"/>.

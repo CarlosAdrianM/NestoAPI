@@ -657,6 +657,20 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
         }
 
         [TestMethod]
+        public void ObjetivoVentaSugerido_EsLaVentaMediaPorUnoYMedioRedondeadaHaciaArriba()
+        {
+            Assert.AreEqual(45, new PropuestaStockConDecision { VentaMedia6Meses = 30m }.ObjetivoVentaSugerido);
+            Assert.AreEqual(4, new PropuestaStockConDecision { VentaMedia6Meses = 2.1m }.ObjetivoVentaSugerido);
+            Assert.AreEqual(1, new PropuestaStockConDecision { VentaMedia6Meses = 0.1m }.ObjetivoVentaSugerido);
+        }
+
+        [TestMethod]
+        public void ObjetivoVentaSugerido_SinVentas_EsNull()
+        {
+            Assert.IsNull(new PropuestaStockConDecision { VentaMedia6Meses = 0m }.ObjetivoVentaSugerido);
+        }
+
+        [TestMethod]
         public void Sql_SinElScriptDePotenciacion_NoMiraLasColumnasNuevas()
         {
             string leer = RepositorioDecisionesPropuestasStockSql.SqlLeer(false);
