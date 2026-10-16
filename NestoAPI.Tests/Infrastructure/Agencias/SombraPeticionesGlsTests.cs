@@ -98,6 +98,34 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         }
 
         [TestMethod]
+        public void Comparar_FechaMandadaDelDiaDeLaLlamadaConEnvioAnterior_NoEsDiferencia()
+        {
+            // NestoAPI#552 (fase 2): la API manda el día de tramitación; si el envío aún no se ha cerrado conserva la de creación.
+            EnviosAgencia hoy = Envio(17);
+            hoy.Fecha = new DateTime(2026, 9, 22);
+            EnviosAgencia comoLaMandoLaApi = Envio(17);
+            comoLaMandoLaApi.Fecha = new DateTime(2026, 9, 30);
+
+            ResultadoSombraGls resultado = SombraPeticionesGls.Comparar(new[] { Guardada(12, comoLaMandoLaApi) }, Buscador(hoy));
+
+            Assert.AreEqual(1, resultado.Iguales);
+            Assert.AreEqual(1, resultado.FechasReescritasAlTramitar);
+        }
+
+        [TestMethod]
+        public void Comparar_FechaMandadaQueNoEsDelDiaDeLaLlamada_SiEsDiferencia()
+        {
+            EnviosAgencia hoy = Envio(18);
+            hoy.Fecha = new DateTime(2026, 9, 22);
+            EnviosAgencia comoLaMando = Envio(18);
+            comoLaMando.Fecha = new DateTime(2026, 9, 25);
+
+            ResultadoSombraGls resultado = SombraPeticionesGls.Comparar(new[] { Guardada(13, comoLaMando) }, Buscador(hoy));
+
+            Assert.AreEqual("Envio/Fecha", resultado.Detalle.Single().Diferencias.Single().Campo);
+        }
+
+        [TestMethod]
         public void Comparar_ObservacionesConSaltosDeLinea_SonIguales()
         {
             // Al leer el XML guardado, \r\n se convierte en \n (normalización de XML); en la BD sigue con \r\n.

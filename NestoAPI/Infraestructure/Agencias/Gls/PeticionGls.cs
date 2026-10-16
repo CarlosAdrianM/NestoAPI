@@ -10,8 +10,8 @@ namespace NestoAPI.Infraestructure.Agencias.Gls
     /// <summary>
     /// NestoAPI#552 (fase 1, sombra): la petición GrabaServicios de GLS (ASM), construida en la API exactamente como la
     /// construye hoy Nesto en AgenciaASM.construirXMLdeSalida. En esta fase NO se envía: solo se compara con las
-    /// peticiones reales que Nesto deja en AgenciasLlamadasWeb (<see cref="SombraPeticionesGls"/>). Cuando la API
-    /// tramite GLS (fase 2), se mandará esta.
+    /// peticiones reales que Nesto deja en AgenciasLlamadasWeb (<see cref="SombraPeticionesGls"/>). Fase 2: es la que
+    /// manda <see cref="TramitadorGls"/> cuando la API tramita GLS (interruptor Agencias:GlsTramitarPorApi).
     /// </summary>
     public static class PeticionGls
     {
@@ -30,7 +30,11 @@ namespace NestoAPI.Infraestructure.Agencias.Gls
 
         /// <summary>El nodo Servicios (lo que va dentro de docIn).</summary>
         /// <param name="identificadorAgencia">AgenciasTransporte.Identificador de la agencia del envío.</param>
-        public static XElement ConstruirServicios(EnviosAgencia envio, Empresa empresa, string identificadorAgencia)
+        /// <param name="fecha">
+        /// La fecha que se manda a GLS. Sin ella, la del envío (EnviosAgencia.Fecha), que es lo que manda Nesto y con lo
+        /// que compara la sombra. Fase 2 (Carlos, 16/10/26): cuando tramita la API, se manda la del DÍA DE TRAMITACIÓN.
+        /// </param>
+        public static XElement ConstruirServicios(EnviosAgencia envio, Empresa empresa, string identificadorAgencia, DateTime? fecha = null)
         {
             if (envio == null) throw new ArgumentNullException(nameof(envio));
             if (empresa == null) throw new ArgumentNullException(nameof(empresa));
@@ -42,7 +46,7 @@ namespace NestoAPI.Infraestructure.Agencias.Gls
                 new XElement(Ns + "Envio",
                     new XAttribute("codbarras", envio.CodigoBarras ?? string.Empty),
                     // Nesto usa ToShortDateString, que en los puestos es dd/MM/yy (20.550 de 20.621 peticiones guardadas).
-                    E("Fecha", envio.Fecha.ToString("dd/MM/yy", CultureInfo.InvariantCulture)),
+                    E("Fecha", (fecha ?? envio.Fecha).ToString("dd/MM/yy", CultureInfo.InvariantCulture)),
                     E("Portes", "P"),
                     E("Servicio", envio.Servicio),
                     E("Horario", envio.Horario),

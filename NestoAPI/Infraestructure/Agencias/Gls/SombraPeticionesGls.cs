@@ -253,10 +253,27 @@ namespace NestoAPI.Infraestructure.Agencias.Gls
             return resultado;
         }
 
+        /// <summary>
+        /// La fecha no cuenta como diferencia si cualquiera de las dos es la del día de la llamada: (a) la del envío, porque
+        /// ConfirmarTramitacion la reescribe con el día de tramitar; (b) NestoAPI#552 (fase 2) la que se mandó, si el envío es de
+        /// antes: cuando tramita la API manda el día de tramitación (decisión de Carlos, 16/10/26), y si el envío aún no se ha
+        /// cerrado conserva su fecha de creación. Un envío con fecha POSTERIOR a la llamada sí es diferencia.
+        /// </summary>
         private static bool EsFechaReescritaAlTramitar(DiferenciaPeticionGls diferencia, DateTime fechaLlamada)
-            => diferencia.Campo == ComparadorPeticionesGls.CAMPO_FECHA
-                && ComparadorPeticionesGls.LeerFecha(diferencia.Api, out DateTime fechaActual)
-                && fechaActual.Date == fechaLlamada.Date;
+        {
+            if (diferencia.Campo != ComparadorPeticionesGls.CAMPO_FECHA
+                || !ComparadorPeticionesGls.LeerFecha(diferencia.Api, out DateTime fechaEnvio))
+            {
+                return false;
+            }
+            if (fechaEnvio.Date == fechaLlamada.Date)
+            {
+                return true;
+            }
+            return fechaEnvio.Date < fechaLlamada.Date
+                && ComparadorPeticionesGls.LeerFecha(diferencia.Nesto, out DateTime fechaMandada)
+                && fechaMandada.Date == fechaLlamada.Date;
+        }
 
         private static string CodigoDeBarras(XElement servicios)
             => servicios?.Element(PeticionGls.Ns + "Envio")?.Attribute("codbarras")?.Value?.Trim();
