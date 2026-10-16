@@ -18,7 +18,7 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         public string Producto { get; set; }
         public string Nombre { get; set; }
         public string Grupo { get; set; }
-        /// <summary>Mes del evento: entrada en EXT, último mes con venta (sin venta 12 meses) o el de referencia (estado 4 y vivos).</summary>
+        /// <summary>Mes del evento: entrada en EXT, último mes con venta (estado 4 y sin venta 12 meses) o el de referencia (vivos).</summary>
         public DateTime MesEvento { get; set; }
         /// <summary>Clave: meses antes del evento (6, 9, 12).</summary>
         public Dictionary<int, decimal?> Cobertura { get; set; } = new Dictionary<int, decimal?>();
@@ -58,8 +58,12 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
     /// 4 o sin venta 12 meses, qué cobertura y pendiente relativa tenían 6, 9 y 12 meses antes, frente a los vivos (estado 0, con
     /// venta en los 3 últimos meses) medidos 6, 9 y 12 meses antes del mes de referencia.
     /// <para>Decidido aquí: la fecha del evento es la última entrada en EXT; para «sin venta» el último mes con venta (el momento
-    /// en que dejó de venderse, con 12 meses de confirmación detrás); para estado 4 no hay fecha del cambio de estado en la BD y
-    /// se mide desde el mes de referencia. Las pendientes se desestacionalizan con los índices de hoy de la familia.</para>
+    /// en que dejó de venderse, con 12 meses de confirmación detrás); para estado 4, como no hay fecha del cambio de estado en la
+    /// BD, también su último mes con venta dentro de los 36 meses (decisión de Carlos 16/10/26: medirlo desde el mes de referencia
+    /// metía ~1.100 productos muertos hace años que salían iguales a 6, 9 y 12 meses); el estado 4 sin venta en esa ventana no
+    /// entra. Los vivos se miden desde el mes de referencia. Las pendientes se desestacionalizan con los índices de hoy de la familia.</para>
+    /// <para>Orden de los grupos: EXT (tiene fecha propia) → estado 4 → sin venta 12 meses → vivo; el estado 4 va antes que «sin
+    /// venta» para que no se cuente como tal aunque lleve 12 meses sin vender.</para>
     /// </summary>
     public static class CalibracionTendencias
     {
@@ -78,11 +82,18 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                 indiceEvento = FIN - ((mesReferencia.Year - mes.Year) * 12 + mesReferencia.Month - mes.Month);
                 return GruposCalibracion.EXT;
             }
+            int? ultimaVenta = CalculadoraSeries.UltimoMesConVenta(d.Ventas, FIN);
             if (d.Estado == 4)
             {
+                // Sin fecha del cambio de estado en la BD: el evento es su último mes con venta dentro de la ventana. Sin venta en
+                // la ventana no aporta información (lleva años muerto: 6, 9 y 12 meses antes saldría igual) y no entra.
+                if (!ultimaVenta.HasValue || ultimaVenta.Value < FIN - (VENTANA_MESES - 1))
+                {
+                    return null;
+                }
+                indiceEvento = ultimaVenta.Value;
                 return GruposCalibracion.ESTADO_4;
             }
-            int? ultimaVenta = CalculadoraSeries.UltimoMesConVenta(d.Ventas, FIN);
             if (ultimaVenta.HasValue && ultimaVenta.Value <= FIN - 12 && ultimaVenta.Value >= FIN - 12 - (VENTANA_MESES - 1))
             {
                 indiceEvento = ultimaVenta.Value;

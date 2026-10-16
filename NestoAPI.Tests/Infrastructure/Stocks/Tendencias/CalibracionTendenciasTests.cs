@@ -59,6 +59,60 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
             Assert.IsNull(CalibracionTendencias.Grupo(Producto("X", ventas: antiguo), MesReferencia, out _));
         }
 
+        /// <summary>
+        /// Estado 4 que fue cayendo: 30 al mes hasta la posición 27, 20 hasta la 33, 10 hasta la 39 (último mes con venta,
+        /// enero de 2025) y nada después; 100 uds en stock.
+        /// </summary>
+        private static DatosProductoTendencia Estado4QueFueCayendo()
+        {
+            int[] ventas = Constante(30);
+            for (int i = 28; i < N; i++)
+            {
+                ventas[i] = i <= 33 ? 20 : i <= 39 ? 10 : 0;
+            }
+            return Producto("E4C", ventas: ventas, stock: 100, estado: 4);
+        }
+
+        [TestMethod]
+        public void Grupo_Estado4_EventoEsElUltimoMesConVenta()
+        {
+            string grupo = CalibracionTendencias.Grupo(Estado4QueFueCayendo(), MesReferencia, out int evento);
+
+            Assert.AreEqual(GruposCalibracion.ESTADO_4, grupo);
+            Assert.AreEqual(39, evento);
+        }
+
+        [TestMethod]
+        public void Grupo_Estado4SinVentaEnLaVentana_NoEntra()
+        {
+            // Última venta hace 57 meses: fuera de los 36 meses
+            int[] antiguo = Ultimos(0);
+            antiguo[2] = 5;
+            Assert.IsNull(CalibracionTendencias.Grupo(Producto("E4A", ventas: antiguo, estado: 4), MesReferencia, out _));
+            // Nunca vendió
+            Assert.IsNull(CalibracionTendencias.Grupo(Producto("E4N", ventas: Ultimos(0), estado: 4), MesReferencia, out _));
+        }
+
+        [TestMethod]
+        public void Calcular_Estado4_CoberturasDistintasA6_9Y12MesesDeSuUltimaVenta()
+        {
+            int[] antiguo = Ultimos(0);
+            antiguo[2] = 5;
+            ResultadoCalibracion r = CalibracionTendencias.Calcular(
+                new[] { Estado4QueFueCayendo(), Producto("E4A", ventas: antiguo, estado: 4) }, f => null, MesReferencia, new ParametrosTendencias());
+
+            FilaCalibracion e4 = r.Detalle.Single(f => f.Producto == "E4C");
+            Assert.AreEqual(new DateTime(2025, 1, 1), e4.MesEvento);
+            // 6 meses antes (33): media 20 → 5; 9 meses antes (30): (3 × 30 + 3 × 20) ÷ 6 = 25 → 4; 12 meses antes (27): 30 → 3,3
+            Assert.AreEqual(5.0m, e4.Cobertura[6]);
+            Assert.AreEqual(4.0m, e4.Cobertura[9]);
+            Assert.AreEqual(3.3m, e4.Cobertura[12]);
+            Assert.AreNotEqual(e4.Pendiente[6], e4.Pendiente[12]);
+            // El estado 4 muerto hace años no aporta: no está en el detalle
+            Assert.IsFalse(r.Detalle.Any(f => f.Producto == "E4A"));
+            Assert.AreEqual(1, r.Resumen.Single(x => x.Grupo == GruposCalibracion.ESTADO_4 && x.MesesAntes == 12).Productos);
+        }
+
         [TestMethod]
         public void Calcular_CoberturaYPendienteAntesDelEvento()
         {

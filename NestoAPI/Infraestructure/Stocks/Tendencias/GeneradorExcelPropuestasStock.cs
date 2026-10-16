@@ -341,6 +341,8 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             Titulo(hoja, $"Calibración — {mes}: cómo estaban 6, 9 y 12 meses antes los que acabaron mal, frente a los vivos");
             hoja.Cell(2, 1).Value = "Umbrales en uso: PROVISIONALES hasta revisar esta hoja (se cambian en appSettings PropuestasStock:<Nombre>).";
             hoja.Cell(2, 1).Style.Font.Italic = true;
+            hoja.Cell(3, 1).Value = "Mes del evento: entrada en EXT; último mes con venta en estado 4 (no hay fecha del cambio de estado; sin venta en los últimos 36 meses no entra) y en «sin venta 12 meses»; mes de referencia en los vivos.";
+            hoja.Cell(3, 1).Style.Font.Italic = true;
 
             int fila = 4;
             Cabecera(hoja, fila, new[] { "Umbral", "Valor", "Significado" });
@@ -399,7 +401,7 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
 
             fila += 2;
             hoja.Cell(fila++, 1).Value = "Detalle por producto (cobertura vacía = sin venta en los 6 meses anteriores)";
-            List<string> cabDetalle = new List<string> { "Producto", "Nombre", "Grupo", "Mes del evento" };
+            List<string> cabDetalle = new List<string> { "Producto", "Nombre", "Grupo", "Mes del evento (estado 4: último con venta)" };
             foreach (int h in CalibracionTendencias.HORIZONTES)
             {
                 cabDetalle.Add($"Cobertura {h} m antes");
