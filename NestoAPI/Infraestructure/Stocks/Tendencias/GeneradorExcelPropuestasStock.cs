@@ -24,6 +24,11 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         /// <summary>NestoAPI#655: las familias de fabricación propia (PRP), con la fórmula P y sus acciones.</summary>
         public const string HOJA_PROPIOS = "Propios";
 
+        /// <summary>NestoAPI#656: líneas −1 con la fecha de entrega vencida al acabar el mes (antes, −1 y 1 sin mirar la fecha).</summary>
+        public const string COLUMNA_PENDIENTE_VENCIDO = "Pendiente de servir (vencido)";
+        /// <summary>NestoAPI#656: unidades albaranadas en 12 meses más de PropuestasStock:DiasRetraso días después de la fecha de entrega.</summary>
+        public const string COLUMNA_SERVIDO_CON_RETRASO = "Servido con retraso 12 m (uds)";
+
         private const string FORMATO_EUROS = "#,##0.00 €";
         private const string FORMATO_DECIMAL = "#,##0.0";
         private const string FORMATO_RATIO = "0.00";
@@ -46,11 +51,17 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                 List<ResultadoTendencia> ordenados = todos.Where(r => !r.FabricacionPropia).ToList();
                 List<ResultadoTendencia> propios = todos.Where(r => r.FabricacionPropia).ToList();
                 HojaResumen(libro.Worksheets.Add(HOJA_RESUMEN), todos, ordenados, propios, mes);
+                string nota = NotaPendientes(p);
                 HojaProductos(libro.Worksheets.Add(NombreHojaTop(p.FilasTop)), ordenados.Take(p.FilasTop).ToList(),
                     $"Propuestas de stock — {mes}: los {p.FilasTop} con más euros atrapados, sin propios (exceso total sin propios: {MotorTendencias.Euros(ordenados.Sum(r => r.ExcesoValorado))})", resumida: true);
                 HojaProductos(libro.Worksheets.Add(HOJA_TODOS), ordenados,
                     $"Propuestas de stock — {mes}: {ordenados.Count} productos sin los propios (stock, venta en 24 meses, pendientes o compras abiertas)", resumida: false);
                 HojaNuevos(libro.Worksheets.Add(HOJA_NUEVOS), ordenados.Where(r => r.Fase == FasesProducto.NUEVO).ToList(), mes);
+                foreach (string hoja in new[] { NombreHojaTop(p.FilasTop), HOJA_TODOS, HOJA_NUEVOS })
+                {
+                    libro.Worksheet(hoja).Cell(2, 1).Value = nota;
+                    libro.Worksheet(hoja).Cell(2, 1).Style.Font.Italic = true;
+                }
                 HojaPropios(libro.Worksheets.Add(HOJA_PROPIOS), propios, p, mes);
                 HojaCalibracion(libro.Worksheets.Add(HOJA_CALIBRACION), resultado.Calibracion ?? new ResultadoCalibracion(), p, mes);
 
@@ -61,6 +72,12 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                 }
             }
         }
+
+        /// <summary>NestoAPI#656: qué cuentan las columnas de lo no servido (fila 2 de Top, Todos y Nuevos).</summary>
+        internal static string NotaPendientes(ParametrosTendencias p)
+            => $"«{COLUMNA_PENDIENTE_VENCIDO}»: uds en líneas pendientes (−1) con la fecha de entrega antes de acabar el mes (sin las en curso ni las de " +
+                $"entrega futura). «{COLUMNA_SERVIDO_CON_RETRASO}»: uds albaranadas en los 12 meses que salieron más de {p.DiasRetraso} días después de la " +
+                "fecha de entrega. En los nuevos (fase A), el máximo suma el mayor de los dos (el retraso, por mes).";
 
         private static void Titulo(IXLWorksheet hoja, string texto)
         {
@@ -137,7 +154,8 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                 ("Máx actual", r => r.StockMaximoActual, null),
                 ("Mín actual", r => r.StockMinimoActual, null),
                 ("Máx propuesto", r => r.StockMaximoPropuesto, null),
-                ("Mín propuesto", r => r.StockMinimoPropuesto, null)
+                ("Mín propuesto", r => r.StockMinimoPropuesto, null),
+                (COLUMNA_SERVIDO_CON_RETRASO, r => r.ServidoConRetraso, null)
             };
             if (!resumida)
             {
@@ -155,7 +173,7 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                     ("Año pico", r => r.AnioPico, null),
                     ("% del pico", r => r.PorcentajeDelPico, FORMATO_DECIMAL),
                     ("Años desde el pico", r => r.AniosDesdePico, null),
-                    ("Pendiente de servir", r => r.DemandaNoServida, null),
+                    (COLUMNA_PENDIENTE_VENCIDO, r => r.DemandaNoServida, null),
                     ("Pedido compra abierto", r => r.PedidoCompraAbierto, null)
                 });
             }
@@ -199,7 +217,8 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                 ("Meses desde 1ª venta", r => r.MesesDesdePrimeraVenta, null),
                 ("Velocidad (uds/mes)", r => r.Velocidad, FORMATO_DECIMAL),
                 ("Recompra %", r => r.TasaRecompra, FORMATO_DECIMAL),
-                ("Pendiente de servir", r => r.DemandaNoServida, null),
+                (COLUMNA_PENDIENTE_VENCIDO, r => r.DemandaNoServida, null),
+                (COLUMNA_SERVIDO_CON_RETRASO, r => r.ServidoConRetraso, null),
                 ("Stock", r => r.Stock, null),
                 ("Pedido compra abierto", r => r.PedidoCompraAbierto, null),
                 ("Exceso €", r => r.ExcesoValorado, FORMATO_EUROS),

@@ -116,7 +116,10 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         public string Tendencia { get; set; }
         public decimal? Velocidad { get; set; }
         public decimal? TasaRecompra { get; set; }
+        /// <summary>NestoAPI#656: pendiente vencido (−1 con fecha de entrega antes del fin del mes de referencia).</summary>
         public int DemandaNoServida { get; set; }
+        /// <summary>NestoAPI#656: unidades servidas con más de <see cref="ParametrosTendencias.DiasRetraso"/> días de retraso en 12 meses.</summary>
+        public int ServidoConRetraso { get; set; }
         public int PedidoCompraAbierto { get; set; }
         public int ExcesoUnidades { get; set; }
         public decimal ExcesoValorado { get; set; }

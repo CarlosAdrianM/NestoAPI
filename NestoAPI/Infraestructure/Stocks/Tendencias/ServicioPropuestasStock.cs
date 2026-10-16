@@ -51,7 +51,7 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                 List<DatosProductoTendencia> lote = productos.Skip(i).Take(RepositorioTendenciasSql.TAMANO_LOTE).ToList();
                 try
                 {
-                    repositorio.CompletarLote(lote, mesReferencia, parametros.MesesFaseA);
+                    repositorio.CompletarLote(lote, mesReferencia, parametros.MesesFaseA, parametros.DiasRetraso);
                     completos.AddRange(lote);
                 }
                 catch (Exception ex)
@@ -65,7 +65,7 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                     {
                         try
                         {
-                            repositorio.CompletarLote(new List<DatosProductoTendencia> { producto }, mesReferencia, parametros.MesesFaseA);
+                            repositorio.CompletarLote(new List<DatosProductoTendencia> { producto }, mesReferencia, parametros.MesesFaseA, parametros.DiasRetraso);
                             completos.Add(producto);
                         }
                         catch (Exception exProducto)

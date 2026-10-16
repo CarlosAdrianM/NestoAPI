@@ -76,6 +76,14 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         public string VidaUtilMesesPorGrupo { get; set; } = VIDA_UTIL_POR_GRUPO_POR_DEFECTO;
         public const string VIDA_UTIL_POR_GRUPO_POR_DEFECTO = "COS=12;PEL=24;ACC=0;APA=0;ACP=0";
 
+        /// <summary>
+        /// NestoAPI#656 (corte 2): una línea albaranada cuenta como «servida con retraso» si salió más de estos días naturales
+        /// después de su fecha de entrega. 2 por defecto: el servicio normal sale el mismo día o el siguiente (ruta o agencia de
+        /// 24 h), y 2 días absorben una fecha de entrega en sábado o domingo que se sirve el lunes; a partir de 3 días naturales ya
+        /// es mercancía que no estaba cuando el cliente la quería.
+        /// </summary>
+        public int DiasRetraso { get; set; } = 2;
+
         /// <summary>Filas de la hoja «Top».</summary>
         public int FilasTop { get; set; } = 50;
 
@@ -111,6 +119,7 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             {
                 p.VidaUtilMesesPorGrupo = porGrupo.Trim();
             }
+            p.DiasRetraso = Entero(leer, nameof(DiasRetraso), p.DiasRetraso);
             p.FilasTop = Entero(leer, nameof(FilasTop), p.FilasTop);
             return p;
         }
@@ -148,6 +157,7 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             yield return (nameof(UnidadesMinimasFamiliaEstacionalidad), UnidadesMinimasFamiliaEstacionalidad.ToString(), "Estacionalidad: mínimo de unidades de la familia en 36 meses");
             yield return (nameof(DiasSeguridadPropios), DiasSeguridadPropios.ToString(), "Propios (P): días de seguridad");
             yield return (nameof(VidaUtilMesesPorGrupo), VidaUtilMesesPorGrupo, "Propios (P): vida útil por grupo en meses de venta (tope del máximo); 0 = no caduca: " + TextoVidaUtil());
+            yield return (nameof(DiasRetraso), DiasRetraso.ToString(), "Servido con retraso: albarán más de estos días después de la fecha de entrega (12 meses)");
             yield return (nameof(VidaUtilMesesPropios), VidaUtilMesesPropios.ToString(), "Propios (P): vida útil en meses de los grupos que no están en VidaUtilMesesPorGrupo");
         }
 

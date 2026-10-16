@@ -301,6 +301,11 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
             Assert.AreEqual("3.3", Celda(excel, "Propios", "O4"));
             Assert.AreEqual("360", Celda(excel, "Propios", "P4"));
             Assert.AreEqual("12 meses", Celda(excel, "Propios", "R4")); // NestoAPI#655: sin grupo, la vida útil conservadora
+            // NestoAPI#656: las columnas de lo no servido, explicadas en la fila 2
+            Assert.AreEqual(GeneradorExcelPropuestasStock.COLUMNA_PENDIENTE_VENCIDO, Celda(excel, "Nuevos (fase A)", "H3"));
+            Assert.AreEqual(GeneradorExcelPropuestasStock.COLUMNA_SERVIDO_CON_RETRASO, Celda(excel, "Nuevos (fase A)", "I3"));
+            StringAssert.Contains(Celda(excel, "Todos los productos", "A2"), "más de 2 días después de la fecha de entrega");
+            StringAssert.Contains(Celda(excel, "Top 50 por exceso", "A2"), "sin las en curso ni las de entrega futura");
             // Resumen: valor de stock y exceso con y sin propios
             Assert.AreEqual("Todos (con propios)", Celda(excel, "Resumen", "A4"));
             Assert.AreEqual("85", Celda(excel, "Resumen", "C4"));  // 20 + 60 + 5

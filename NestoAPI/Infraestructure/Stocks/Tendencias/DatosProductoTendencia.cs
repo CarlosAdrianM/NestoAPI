@@ -48,8 +48,16 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         public int StockExt { get; set; }
         public DateTime? UltimaEntradaExt { get; set; }
 
-        /// <summary>Unidades en líneas de venta −1 y 1 (demanda no servida).</summary>
+        /// <summary>
+        /// Demanda no servida: unidades en líneas de venta pendientes (−1) con fecha de entrega vencida (antes del fin del mes de
+        /// referencia). NestoAPI#656: ya no cuenta el estado 1 (en curso) ni lo de entrega futura.
+        /// </summary>
         public int UnidadesPendientes { get; set; }
+        /// <summary>
+        /// NestoAPI#656 (corte 2): unidades albaranadas en los 12 meses que acaban en el de referencia que salieron más de
+        /// <see cref="ParametrosTendencias.DiasRetraso"/> días después de la fecha de entrega.
+        /// </summary>
+        public int UnidadesServidasConRetraso { get; set; }
         /// <summary>Unidades en pedidos de compra abiertos (−1 y 1).</summary>
         public int UnidadesPedidoCompraAbierto { get; set; }
 

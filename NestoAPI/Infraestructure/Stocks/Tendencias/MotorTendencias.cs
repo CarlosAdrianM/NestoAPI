@@ -114,6 +114,7 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                 StockMaximoActual = d.StockMaximoAlg,
                 StockMinimoActual = d.StockMinimoAlg,
                 DemandaNoServida = Math.Max(0, d.UnidadesPendientes),
+                ServidoConRetraso = Math.Max(0, d.UnidadesServidasConRetraso),
                 PedidoCompraAbierto = Math.Max(0, d.UnidadesPedidoCompraAbierto),
                 ConEstacionalidad = indicesFamilia != null
             };
@@ -174,6 +175,9 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                 diasEnServirSupuestos = r.DiasEnServirSupuestos,
                 coberturaObjetivoConfigurada = p.CoberturaObjetivoDias,
                 tipoExclusiva = d.TipoExclusiva?.Trim(),
+                pendienteVencido = r.DemandaNoServida,
+                servidoConRetraso = r.ServidoConRetraso,
+                diasRetraso = p.DiasRetraso,
                 propios = d.EsFabricacionPropia
                     ? new
                     {
@@ -191,7 +195,7 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
 
         private static void Proponer(ResultadoTendencia r, DatosProductoTendencia d, ParametrosTendencias p)
         {
-            string resumen = Resumen(r);
+            string resumen = Resumen(r, p.DiasRetraso);
             bool hayStock = r.Stock > 0;
             // Un intermitente puede pasar medio año sin vender sin estar muerto: a él se le mira un año entero.
             int mesesSinSalida = r.Fase == FasesProducto.INTERMITENTE ? Math.Max(12, p.MesesSinSalidaLiquidar) : p.MesesSinSalidaLiquidar;
@@ -253,14 +257,20 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                 int tope = sinRecompra ? p.TopeDiasFaseASinRecompra : p.TopeDiasFaseA;
                 decimal diaria = (r.Velocidad ?? 0m) * r.FactorEstacional / 30m;
                 int porVelocidad = (int)Math.Ceiling(diaria * tope);
-                maximo = porVelocidad + r.DemandaNoServida;
+                int retrasoMensual = RetrasoMensual(r);
+                int noServido = Math.Max(r.DemandaNoServida, retrasoMensual);
+                maximo = porVelocidad + noServido;
                 minimo = Math.Min(maximo, (int)Math.Ceiling(diaria * (r.DiasEnServir + r.DiasSeguridad)));
                 r.Formula = $"A: velocidad × {tope} días";
                 string edad = r.MesesDesdePrimeraVenta.HasValue ? $"{r.MesesDesdePrimeraVenta} meses desde la primera venta" : "aún sin ventas";
                 string recompra = r.TasaRecompra.HasValue
                     ? $"recompra {Num(r.TasaRecompra.Value, 0)} %{(sinRecompra ? " (baja: tope " + tope + " días)" : "")}"
                     : "recompra aún sin datos";
-                string pendientes = r.DemandaNoServida > 0 ? $" + {r.DemandaNoServida} pendientes de servir" : string.Empty;
+                string pendientes = noServido <= 0 ? string.Empty
+                    : r.DemandaNoServida >= retrasoMensual
+                    ? $" + {r.DemandaNoServida} pendientes de servir (vencidos)"
+                    : $" + {retrasoMensual} de retraso al mes ({r.ServidoConRetraso} uds servidas con más de {p.DiasRetraso} días de retraso en {MesesRetraso(r)} meses" +
+                        $"{(r.DemandaNoServida > 0 ? $"; pendientes vencidos {r.DemandaNoServida}" : "")})";
                 calculo = $"Nuevo ({edad}): velocidad {Num(r.Velocidad ?? 0m, 1)} uds/mes × {Num(r.FactorEstacional, 2)} estacional; {recompra}; " +
                     $"proveedor {r.DiasEnServir} días{(r.DiasEnServirSupuestos ? " (supuestos)" : "")} + {r.DiasSeguridad} de seguridad; tope {tope} días → " +
                     $"máximo {porVelocidad}{pendientes} = {maximo}, mínimo {minimo}";
@@ -347,7 +357,7 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         /// </summary>
         private static void ProponerPropio(ResultadoTendencia r, ParametrosTendencias p)
         {
-            string resumen = Resumen(r);
+            string resumen = Resumen(r, p.DiasRetraso);
             decimal venta = r.VentaMensualReferencia;
             int lote = Math.Max(1, r.Multiplos);
             int? vidaUtil = p.VidaUtilMeses(r.Grupo);
@@ -449,8 +459,19 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             r.Explicacion = explicacion.Trim();
         }
 
+        /// <summary>NestoAPI#656: meses en los que se mide el retraso (12, o los que tiene si es más nuevo; al menos 1).</summary>
+        internal static int MesesRetraso(ResultadoTendencia r) => Math.Max(1, Math.Min(12, r.MesesDesdePrimeraVenta ?? 12));
+
+        /// <summary>
+        /// NestoAPI#656 (corte 2): lo servido con retraso, por mes. En la fórmula A el máximo suma lo que no se pudo servir a tiempo:
+        /// el mayor entre el pendiente vencido (la foto) y este retraso mensual. El mayor y no la suma: el pendiente vencido de hoy
+        /// es el retraso de mañana, y sumarlos lo contaría dos veces.
+        /// </summary>
+        internal static int RetrasoMensual(ResultadoTendencia r)
+            => r.ServidoConRetraso <= 0 ? 0 : (int)Math.Ceiling(r.ServidoConRetraso / (decimal)MesesRetraso(r));
+
         /// <summary>Los indicadores en una frase: cobertura, tendencia, trimestre y contexto.</summary>
-        internal static string Resumen(ResultadoTendencia r)
+        internal static string Resumen(ResultadoTendencia r, int? diasRetraso = null)
         {
             List<string> partes = new List<string>
             {
@@ -480,6 +501,10 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             else if (r.Tendencia == TendenciasProducto.DECLIVE)
             {
                 texto += " Declive confirmado por el contexto de 5 años.";
+            }
+            if (r.ServidoConRetraso > 0)
+            {
+                texto += $" Servidas con retraso{(diasRetraso.HasValue ? $" (más de {diasRetraso} días)" : "")} en 12 meses: {r.ServidoConRetraso} uds.";
             }
             return texto;
         }

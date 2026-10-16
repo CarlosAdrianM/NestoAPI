@@ -265,8 +265,98 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
             Assert.AreEqual(146, r.DemandaNoServida);
             Assert.AreEqual(146, r.StockMaximoPropuesto);
             Assert.AreEqual(AccionesPropuesta.AJUSTAR, r.Accion);
-            StringAssert.Contains(r.Explicacion, "+ 146 pendientes de servir = 146");
+            StringAssert.Contains(r.Explicacion, "+ 146 pendientes de servir (vencidos) = 146");
             StringAssert.Contains(r.Explicacion, "aún sin ventas");
+        }
+
+        // ---------- NestoAPI#656: servido con retraso ----------
+
+        /// <summary>Un nuevo de 5 meses que vende 30 al mes, sin recompra conocida: máximo por velocidad 30 × 45 ÷ 30 = 45.</summary>
+        private static DatosProductoTendencia NuevoDeCincoMeses()
+        {
+            DatosProductoTendencia d = Producto("50003", ventas: Ultimos(30, 30, 30, 30, 30), stock: 10);
+            d.FechaPrimeraVenta = new DateTime(2026, 5, 1);
+            return d;
+        }
+
+        [TestMethod]
+        public void Nuevo_ConServidoConRetraso_ElMaximoSumaElRetrasoMensual()
+        {
+            DatosProductoTendencia d = NuevoDeCincoMeses();
+            d.UnidadesServidasConRetraso = 48; // en 5 meses: 9,6 → 10 al mes
+            d.UnidadesPendientes = 4;
+
+            ResultadoTendencia r = Calcular(d);
+
+            Assert.AreEqual(48, r.ServidoConRetraso);
+            Assert.AreEqual(5, r.MesesDesdePrimeraVenta);
+            Assert.AreEqual(45 + 10, r.StockMaximoPropuesto);
+            StringAssert.Contains(r.Explicacion, "máximo 45 + 10 de retraso al mes (48 uds servidas con más de 2 días de retraso en 5 meses; pendientes vencidos 4) = 55");
+            StringAssert.Contains(r.Explicacion, "Servidas con retraso (más de 2 días) en 12 meses: 48 uds.");
+            StringAssert.Contains(r.EntradasJson, "\"pendienteVencido\":4,\"servidoConRetraso\":48,\"diasRetraso\":2");
+        }
+
+        [TestMethod]
+        public void Nuevo_PendienteVencidoMayorQueElRetraso_SumaElPendienteYNoLosDos()
+        {
+            DatosProductoTendencia d = NuevoDeCincoMeses();
+            d.UnidadesServidasConRetraso = 10; // 2 al mes
+            d.UnidadesPendientes = 7;
+
+            ResultadoTendencia r = Calcular(d);
+
+            Assert.AreEqual(45 + 7, r.StockMaximoPropuesto);
+            StringAssert.Contains(r.Explicacion, "máximo 45 + 7 pendientes de servir (vencidos) = 52");
+        }
+
+        [TestMethod]
+        public void Maduro_ConServidoConRetraso_NoCambiaElMaximoPeroLoDice()
+        {
+            DatosProductoTendencia sin = Producto(ventas: Constante(30), stock: 90);
+            DatosProductoTendencia con = Producto(ventas: Constante(30), stock: 90);
+            con.UnidadesServidasConRetraso = 25;
+
+            ResultadoTendencia rSin = Calcular(sin);
+            ResultadoTendencia rCon = Calcular(con);
+
+            Assert.AreEqual(rSin.StockMaximoPropuesto, rCon.StockMaximoPropuesto);
+            StringAssert.Contains(rCon.Explicacion, "Servidas con retraso (más de 2 días) en 12 meses: 25 uds.");
+            Assert.IsFalse(rSin.Explicacion.Contains("retraso"), rSin.Explicacion);
+        }
+
+        [TestMethod]
+        public void DiasRetraso_PorDefecto2YConfigurable()
+        {
+            Assert.AreEqual(2, new ParametrosTendencias().DiasRetraso);
+            Assert.AreEqual(5, ParametrosTendencias.Desde(c => c == "PropuestasStock:DiasRetraso" ? "5" : null).DiasRetraso);
+        }
+
+        [TestMethod]
+        public void Sql_PendienteSoloVencidoYServidoConRetrasoAgregadoPorProducto()
+        {
+            // Corte 1: solo −1 con la fecha de entrega vencida (ni el estado 1 ni lo de entrega futura)
+            StringAssert.Contains(RepositorioTendenciasSql.SQL_PENDIENTES, "l.Estado = -1");
+            StringAssert.Contains(RepositorioTendenciasSql.SQL_PENDIENTES, "l.[Fecha Entrega] < @hasta");
+            Assert.IsFalse(RepositorioTendenciasSql.SQL_PENDIENTES.Contains("IN (-1, 1)"));
+            // Corte 2: una consulta por lote, agrupada por producto, 12 meses y más de @dias días
+            string sql = RepositorioTendenciasSql.SQL_SERVIDO_CON_RETRASO;
+            StringAssert.Contains(sql, "l.Producto IN ({0})");
+            StringAssert.Contains(sql, "GROUP BY RTRIM(l.Producto)");
+            StringAssert.Contains(sql, "l.Estado >= 2 AND l.TipoLinea = 1 AND l.Cantidad > 0");
+            StringAssert.Contains(sql, "l.[Fecha Albarán] >= @desde12");
+            StringAssert.Contains(sql, "DATEDIFF(day, l.[Fecha Entrega], l.[Fecha Albarán]) > @dias");
+            StringAssert.Contains(RepositorioTendenciasSql.SQL_LEER, "ServidoConRetraso");
+        }
+
+        [TestMethod]
+        public void TablaPropuestas_GuardaServidoConRetraso()
+        {
+            ResultadoTendencia r = Calcular(Producto(ventas: Constante(30), stock: 90));
+            r.ServidoConRetraso = 17;
+
+            System.Data.DataTable t = RepositorioTendenciasSql.TablaPropuestas(MesReferencia, new[] { r }, DateTime.Now);
+
+            Assert.AreEqual(17, t.Rows[0]["ServidoConRetraso"]);
         }
 
         [TestMethod]

@@ -38,7 +38,7 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
             CollectionAssert.AreEqual(new[] { "1", "2" }, r.Productos.Select(p => p.Producto).ToArray());
             Assert.AreEqual(3, r.ProductosLeidos);
             Assert.AreEqual(0, errores.Count);
-            A.CallTo(() => repositorio.CompletarLote(A<IList<DatosProductoTendencia>>._, MesReferencia, 12)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => repositorio.CompletarLote(A<IList<DatosProductoTendencia>>._, MesReferencia, 12, 2)).MustHaveHappenedOnceExactly();
         }
 
         [TestMethod]
@@ -48,9 +48,9 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
                 .Select(i => Producto(i.ToString("00000"), stock: 10))
                 .ToList();
             _ = A.CallTo(() => repositorio.LeerProductos()).Returns(productos);
-            _ = A.CallTo(() => repositorio.CompletarLote(A<IList<DatosProductoTendencia>>.That.Matches(l => l.Count == RepositorioTendenciasSql.TAMANO_LOTE), A<DateTime>._, A<int>._))
+            _ = A.CallTo(() => repositorio.CompletarLote(A<IList<DatosProductoTendencia>>.That.Matches(l => l.Count == RepositorioTendenciasSql.TAMANO_LOTE), A<DateTime>._, A<int>._, A<int>._))
                 .Throws(new TimeoutException("tiempo de espera agotado"));
-            _ = A.CallTo(() => repositorio.CompletarLote(A<IList<DatosProductoTendencia>>.That.Matches(l => l.Count == 1 && l[0].Producto == "00007"), A<DateTime>._, A<int>._))
+            _ = A.CallTo(() => repositorio.CompletarLote(A<IList<DatosProductoTendencia>>.That.Matches(l => l.Count == 1 && l[0].Producto == "00007"), A<DateTime>._, A<int>._, A<int>._))
                 .Throws(new TimeoutException("tiempo de espera agotado"));
 
             ResultadoPropuestasStock r = Servicio().Calcular(MesReferencia, new ParametrosTendencias());
@@ -167,7 +167,7 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
                 new DatosProductoTendencia { Producto = "45958", Familia = "Genéricos", Estado = 0, PrecioMedio = 7.3m, DiasEnServir = 15, MultiplosAlg = 1, StockMaximoAlg = 54, StockMinimoAlg = 30 }
             };
 
-            repositorio.CompletarLote(lote, MesReferencia, 12);
+            repositorio.CompletarLote(lote, MesReferencia, 12, 2);
 
             DatosProductoTendencia maduro = lote[0];
             Assert.IsTrue(maduro.Ventas.Sum() > 10000, "17404 vende miles al año");

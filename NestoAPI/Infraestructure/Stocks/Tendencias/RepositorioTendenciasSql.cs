@@ -13,8 +13,11 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         /// <summary>Los productos que entran (no ficticios, sin MTP ni MMP, empresa 1) con su ficha, proveedor y control de stock de ALG.</summary>
         List<DatosProductoTendencia> LeerProductos();
 
-        /// <summary>Rellena series de venta y stock, pendientes, compras abiertas y (para los que pueden ser nuevos) ventas por cliente.</summary>
-        void CompletarLote(IList<DatosProductoTendencia> lote, DateTime mesReferencia, int mesesFaseA);
+        /// <summary>
+        /// Rellena series de venta y stock, pendientes (vencidos), servido con retraso (NestoAPI#656, más de
+        /// <paramref name="diasRetraso"/> días), compras abiertas y (para los que pueden ser nuevos) ventas por cliente.
+        /// </summary>
+        void CompletarLote(IList<DatosProductoTendencia> lote, DateTime mesReferencia, int mesesFaseA, int diasRetraso);
 
         bool ExisteTabla();
 
@@ -136,6 +139,13 @@ FROM LinPedidoVta l WITH (NOLOCK)
 WHERE l.Producto IN ({0}) AND " + DemandaStock.SQL_FILTRO_PENDIENTE + @"
 GROUP BY RTRIM(l.Producto)";
 
+        /// <summary>NestoAPI#656 (corte 2): una consulta agregada por producto para todo el lote (Producto IN), como las demás.</summary>
+        internal static readonly string SQL_SERVIDO_CON_RETRASO = @"
+SELECT RTRIM(l.Producto) AS Producto, SUM(CAST(l.Cantidad AS int)) AS Cantidad
+FROM LinPedidoVta l WITH (NOLOCK)
+WHERE l.Producto IN ({0}) AND " + DemandaStock.SQL_FILTRO_SERVIDO_CON_RETRASO + @"
+GROUP BY RTRIM(l.Producto)";
+
         internal static readonly string SQL_COMPRAS_ABIERTAS = @"
 SELECT RTRIM(l.Producto) AS Producto, SUM(CAST(l.Cantidad AS int)) AS Cantidad
 FROM LinPedidoCmp l WITH (NOLOCK)
@@ -168,7 +178,7 @@ SELECT TOP (@top) Id, Mes, RTRIM(Producto) AS Producto, Nombre, Familia, Grupo, 
        MesesDesdePrimeraVenta, Stock, PrecioMedio, Ventas12Meses, VentaMedia6Meses, VentaMediaPonderada, VentaMensualReferencia,
        FactorEstacional, ConEstacionalidad, DiasEnServir, DiasEnServirSupuestos, DiasSeguridad, Multiplos, CoberturaObjetivoDias,
        StockMaximoActual, StockMinimoActual, Formula, CoberturaMeses, CoberturaAlcanzableDias, PendienteRelativa, RatioTrimestre,
-       AnioPico, PorcentajeDelPico, AniosDesdePico, Tendencia, Velocidad, TasaRecompra, DemandaNoServida, PedidoCompraAbierto,
+       AnioPico, PorcentajeDelPico, AniosDesdePico, Tendencia, Velocidad, TasaRecompra, DemandaNoServida, ServidoConRetraso, PedidoCompraAbierto,
        ExcesoUnidades, ExcesoValorado, Accion, StockMaximoPropuesto, StockMinimoPropuesto, Explicacion, EntradasJson,
        FechaCalculo, Decision, DecisionUsuario, DecisionFecha, DecisionMotivo
 FROM dbo.PropuestasStock WITH (NOLOCK)
@@ -220,7 +230,7 @@ ORDER BY ExcesoValorado DESC, Producto";
             }
         }
 
-        public void CompletarLote(IList<DatosProductoTendencia> lote, DateTime mesReferencia, int mesesFaseA)
+        public void CompletarLote(IList<DatosProductoTendencia> lote, DateTime mesReferencia, int mesesFaseA, int diasRetraso)
         {
             if (lote == null || lote.Count == 0)
             {
@@ -239,6 +249,7 @@ ORDER BY ExcesoValorado DESC, Producto";
                 d.StockExt = 0;
                 d.UltimaEntradaExt = null;
                 d.UnidadesPendientes = 0;
+                d.UnidadesServidasConRetraso = 0;
                 d.UnidadesPedidoCompraAbierto = 0;
             }
             Dictionary<string, DatosProductoTendencia> porProducto = lote.ToDictionary(d => d.Producto.Trim(), StringComparer.OrdinalIgnoreCase);
@@ -305,6 +316,15 @@ ORDER BY ExcesoValorado DESC, Producto";
                     }
                 }
 
+                Dictionary<string, object> retraso = new Dictionary<string, object> { ["@desde12"] = hasta.AddMonths(-12), ["@dias"] = Math.Max(0, diasRetraso) };
+                foreach (FilaCantidad f in Consultar<FilaCantidad>(db, SQL_SERVIDO_CON_RETRASO, numeros, desde, hasta, retraso))
+                {
+                    if (porProducto.TryGetValue(f.Producto, out DatosProductoTendencia d))
+                    {
+                        d.UnidadesServidasConRetraso = Math.Max(0, f.Cantidad ?? 0);
+                    }
+                }
+
                 foreach (FilaCantidad f in Consultar<FilaCantidad>(db, SQL_COMPRAS_ABIERTAS, numeros, desde, hasta))
                 {
                     if (porProducto.TryGetValue(f.Producto, out DatosProductoTendencia d))
@@ -347,7 +367,8 @@ ORDER BY ExcesoValorado DESC, Producto";
 
         internal static int Indice(int anno, int mes, DateTime desde) => (anno - desde.Year) * 12 + mes - desde.Month;
 
-        private static List<T> Consultar<T>(NVEntities db, string plantilla, List<string> numeros, DateTime desde, DateTime hasta)
+        private static List<T> Consultar<T>(NVEntities db, string plantilla, List<string> numeros, DateTime desde, DateTime hasta,
+            Dictionary<string, object> otros = null)
         {
             List<object> parametros = new List<object>();
             List<string> nombres = new List<string>();
@@ -364,6 +385,12 @@ ORDER BY ExcesoValorado DESC, Producto";
             if (sql.Contains("@hasta"))
             {
                 parametros.Add(new SqlParameter("@hasta", SqlDbType.DateTime) { Value = hasta });
+            }
+            foreach (KeyValuePair<string, object> otro in otros ?? new Dictionary<string, object>())
+            {
+                parametros.Add(otro.Value is DateTime
+                    ? new SqlParameter(otro.Key, SqlDbType.DateTime) { Value = otro.Value }
+                    : new SqlParameter(otro.Key, otro.Value));
             }
             return db.Database.SqlQuery<T>(sql, parametros.ToArray()).ToList();
         }
@@ -515,7 +542,7 @@ ORDER BY ExcesoValorado DESC, Producto";
             Col<int?>("StockMinimoActual"); Col<string>("Formula"); Col<decimal?>("CoberturaMeses"); Col<int>("CoberturaAlcanzableDias");
             Col<decimal?>("PendienteRelativa"); Col<decimal?>("RatioTrimestre"); Col<int?>("AnioPico"); Col<decimal?>("PorcentajeDelPico");
             Col<int?>("AniosDesdePico"); Col<string>("Tendencia"); Col<decimal?>("Velocidad"); Col<decimal?>("TasaRecompra");
-            Col<int>("DemandaNoServida"); Col<int>("PedidoCompraAbierto"); Col<int>("ExcesoUnidades"); Col<decimal>("ExcesoValorado");
+            Col<int>("DemandaNoServida"); Col<int>("ServidoConRetraso"); Col<int>("PedidoCompraAbierto"); Col<int>("ExcesoUnidades"); Col<decimal>("ExcesoValorado");
             Col<string>("Accion"); Col<int?>("StockMaximoPropuesto"); Col<int?>("StockMinimoPropuesto"); Col<string>("Explicacion");
             Col<string>("EntradasJson"); Col<DateTime>("FechaCalculo");
             foreach (ResultadoTendencia r in filas)
@@ -528,7 +555,7 @@ ORDER BY ExcesoValorado DESC, Producto";
                     N(r.StockMaximoActual), N(r.StockMinimoActual), N(Cortar(r.Formula, 40)), N(Acotar(r.CoberturaMeses)),
                     r.CoberturaAlcanzableDias, N(Acotar(r.PendienteRelativa)), N(Acotar(r.RatioTrimestre)), N(r.AnioPico),
                     N(r.PorcentajeDelPico), N(r.AniosDesdePico), N(r.Tendencia), N(r.Velocidad), N(r.TasaRecompra),
-                    r.DemandaNoServida, r.PedidoCompraAbierto, r.ExcesoUnidades, r.ExcesoValorado, r.Accion,
+                    r.DemandaNoServida, r.ServidoConRetraso, r.PedidoCompraAbierto, r.ExcesoUnidades, r.ExcesoValorado, r.Accion,
                     N(r.StockMaximoPropuesto), N(r.StockMinimoPropuesto), N(Cortar(r.Explicacion, 2000)), N(r.EntradasJson), fechaCalculo);
             }
             return t;

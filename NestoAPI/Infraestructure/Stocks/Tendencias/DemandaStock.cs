@@ -11,7 +11,9 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
     /// <item>Demanda = toda la empresa (Algete, Reina, Alcobendas, Amazon, web): «si lo vendo lo tengo que comprar». Cuenta lo que
     /// sale a clientes con estado &gt;= 2 (albarán o factura). Fuera: presupuestos (−3), notas de entrega (−2), el grupo MTP
     /// (materias primas) y el subgrupo MMP (muestras).</item>
-    /// <item>Lo pendiente (−1 y 1) NO entra en la tendencia; solo como señal aparte de «demanda no servida» en los nuevos.</item>
+    /// <item>Lo pendiente NO entra en la tendencia; solo como señal aparte de «demanda no servida» en los nuevos. NestoAPI#656:
+    /// solo el pendiente (−1) con fecha de entrega vencida; el en curso (1) ya se está sirviendo y lo de entrega futura nadie
+    /// ha intentado servirlo todavía.</item>
     /// <item>Stock = todos los almacenes menos EXT (extinguidos), empresas 1 y 3 con producto de la 1, sin ficticios.</item>
     /// </list>
     /// <para>Decidido en #630 (no estaba en la épica): la venta del mes es NETA (las devoluciones, en negativo, restan: lo que vuelve
@@ -38,9 +40,22 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         public const string SQL_FILTRO_DEMANDA =
             "l.Empresa IN ('1', '3') AND l.Estado >= 2 AND l.TipoLinea = 1 AND l.[Fecha Albarán] IS NOT NULL";
 
-        /// <summary>Filtro de la demanda no servida (alias <c>l</c> sobre LinPedidoVta): pendiente (−1) y en curso (1).</summary>
+        /// <summary>
+        /// Filtro de la demanda no servida (alias <c>l</c> sobre LinPedidoVta). NestoAPI#656 (corte 1): solo pendiente (−1) con
+        /// <c>[Fecha Entrega]</c> antes de <c>@hasta</c> (el día siguiente al fin del mes de referencia). Lo usa solo
+        /// <see cref="RepositorioTendenciasSql.SQL_PENDIENTES"/>.
+        /// </summary>
         public const string SQL_FILTRO_PENDIENTE =
-            "l.Empresa IN ('1', '3') AND l.Estado IN (-1, 1) AND l.TipoLinea = 1";
+            "l.Empresa IN ('1', '3') AND l.Estado = -1 AND l.TipoLinea = 1 AND l.[Fecha Entrega] < @hasta";
+
+        /// <summary>
+        /// NestoAPI#656 (corte 2): lo servido con retraso (alias <c>l</c> sobre LinPedidoVta): albaranado (estado &gt;= 2), de producto,
+        /// salidas (cantidad &gt; 0), empresas 1 y 3, en <c>[@desde12, @hasta)</c> por fecha de albarán, y más de <c>@dias</c> días
+        /// naturales después de la fecha de entrega (mismo origen que «días en servir» de #629).
+        /// </summary>
+        public const string SQL_FILTRO_SERVIDO_CON_RETRASO =
+            "l.Empresa IN ('1', '3') AND l.Estado >= 2 AND l.TipoLinea = 1 AND l.Cantidad > 0 AND l.[Fecha Albarán] >= @desde12 " +
+            "AND l.[Fecha Albarán] < @hasta AND l.[Fecha Entrega] IS NOT NULL AND DATEDIFF(day, l.[Fecha Entrega], l.[Fecha Albarán]) > @dias";
 
         /// <summary>Filtro del stock (alias <c>e</c> sobre ExtractoProducto), sin EXT.</summary>
         public const string SQL_FILTRO_STOCK =
