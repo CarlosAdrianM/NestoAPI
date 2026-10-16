@@ -48,11 +48,12 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
 
         /// <summary>NestoAPI#655: un producto de fabricación propia (familia PRP, como Eva Visnú) con lote mínimo <paramref name="lote"/>.</summary>
         public static DatosProductoTendencia Propio(string numero = "20258", int[] ventas = null, int stock = 150, int diasEnServir = 60,
-            int lote = 100, decimal precio = 2m, short estado = 0)
+            int lote = 100, decimal precio = 2m, short estado = 0, string grupo = "COS")
         {
             DatosProductoTendencia d = Producto(numero, ventas, stock, diasEnServir, lote, precio, estado);
             d.Familia = "Eva Visnu";
             d.TipoExclusiva = "PRP";
+            d.Grupo = grupo; // NestoAPI#655: la vida útil va por grupo (COS 12 meses)
             return d;
         }
     }

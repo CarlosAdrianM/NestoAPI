@@ -268,6 +268,7 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
             Assert.AreEqual("20259", Celda(excel, "Propios", "A5"));
             Assert.AreEqual("3.3", Celda(excel, "Propios", "O4"));
             Assert.AreEqual("360", Celda(excel, "Propios", "P4"));
+            Assert.AreEqual("12 meses", Celda(excel, "Propios", "R4")); // NestoAPI#655: sin grupo, la vida útil conservadora
             // Resumen: valor de stock y exceso con y sin propios
             Assert.AreEqual("Todos (con propios)", Celda(excel, "Resumen", "A4"));
             Assert.AreEqual("85", Celda(excel, "Resumen", "C4"));  // 20 + 60 + 5

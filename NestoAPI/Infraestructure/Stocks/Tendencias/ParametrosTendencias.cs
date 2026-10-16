@@ -63,8 +63,18 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         /// por lotes, con plazo largo, y no se pueden quedar cortos.
         /// </summary>
         public int DiasSeguridadPropios { get; set; } = 30;
-        /// <summary>NestoAPI#655: vida útil de un producto propio (simplificación de Carlos): el máximo nunca pasa de estos meses de venta.</summary>
+        /// <summary>
+        /// NestoAPI#655: vida útil de un producto propio cuyo grupo no está en <see cref="VidaUtilMesesPorGrupo"/> (lo conservador): el
+        /// máximo nunca pasa de estos meses de venta.
+        /// </summary>
         public int VidaUtilMesesPropios { get; set; } = 12;
+        /// <summary>
+        /// NestoAPI#655 (Carlos, 16/10/26): vida útil de los propios por grupo de producto, «GRUPO=meses» separados por punto y coma;
+        /// 0 = no caduca (sin tope de vida útil, nunca «Caduca antes de venderse»). Cosmética 12 meses, peluquería 24; accesorios,
+        /// aparatos y accesorios de peluquería no caducan. El grupo que no esté, <see cref="VidaUtilMesesPropios"/>.
+        /// </summary>
+        public string VidaUtilMesesPorGrupo { get; set; } = VIDA_UTIL_POR_GRUPO_POR_DEFECTO;
+        public const string VIDA_UTIL_POR_GRUPO_POR_DEFECTO = "COS=12;PEL=24;ACC=0;APA=0;ACP=0";
 
         /// <summary>Filas de la hoja «Top».</summary>
         public int FilasTop { get; set; } = 50;
@@ -96,6 +106,11 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             p.UnidadesMinimasFamiliaEstacionalidad = Entero(leer, nameof(UnidadesMinimasFamiliaEstacionalidad), p.UnidadesMinimasFamiliaEstacionalidad);
             p.DiasSeguridadPropios = Entero(leer, nameof(DiasSeguridadPropios), p.DiasSeguridadPropios);
             p.VidaUtilMesesPropios = Entero(leer, nameof(VidaUtilMesesPropios), p.VidaUtilMesesPropios);
+            string porGrupo = leer(PREFIJO + nameof(VidaUtilMesesPorGrupo));
+            if (!string.IsNullOrWhiteSpace(porGrupo))
+            {
+                p.VidaUtilMesesPorGrupo = porGrupo.Trim();
+            }
             p.FilasTop = Entero(leer, nameof(FilasTop), p.FilasTop);
             return p;
         }
@@ -132,7 +147,54 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             yield return (nameof(RecompraMinima), RecompraMinima.ToString(CultureInfo.InvariantCulture), "Fase A: recompra (%) por debajo de la cual se acorta el tope");
             yield return (nameof(UnidadesMinimasFamiliaEstacionalidad), UnidadesMinimasFamiliaEstacionalidad.ToString(), "Estacionalidad: mínimo de unidades de la familia en 36 meses");
             yield return (nameof(DiasSeguridadPropios), DiasSeguridadPropios.ToString(), "Propios (P): días de seguridad");
-            yield return (nameof(VidaUtilMesesPropios), VidaUtilMesesPropios.ToString(), "Propios (P): vida útil en meses de venta (tope del máximo)");
+            yield return (nameof(VidaUtilMesesPorGrupo), VidaUtilMesesPorGrupo, "Propios (P): vida útil por grupo en meses de venta (tope del máximo); 0 = no caduca: " + TextoVidaUtil());
+            yield return (nameof(VidaUtilMesesPropios), VidaUtilMesesPropios.ToString(), "Propios (P): vida útil en meses de los grupos que no están en VidaUtilMesesPorGrupo");
+        }
+
+        /// <summary>«GRUPO=meses» de <see cref="VidaUtilMesesPorGrupo"/> (lo que no se entienda, se ignora).</summary>
+        public Dictionary<string, int> VidaUtilPorGrupo()
+        {
+            Dictionary<string, int> resultado = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (string par in (VidaUtilMesesPorGrupo ?? string.Empty).Split(new[] { ';', ',' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                string[] partes = par.Split(new[] { '=', ':' }, 2);
+                if (partes.Length == 2 && !string.IsNullOrWhiteSpace(partes[0])
+                    && int.TryParse(partes[1].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int meses) && meses >= 0)
+                {
+                    resultado[partes[0].Trim()] = meses;
+                }
+            }
+            return resultado;
+        }
+
+        /// <summary>
+        /// NestoAPI#655: meses de vida útil de un propio de <paramref name="grupo"/>; null si no caduca. El grupo que no tiene regla,
+        /// <see cref="VidaUtilMesesPropios"/> (lo conservador).
+        /// </summary>
+        public int? VidaUtilMeses(string grupo)
+        {
+            if (!string.IsNullOrWhiteSpace(grupo) && VidaUtilPorGrupo().TryGetValue(grupo.Trim(), out int meses))
+            {
+                return meses <= 0 ? (int?)null : meses;
+            }
+            return Math.Max(1, VidaUtilMesesPropios);
+        }
+
+        /// <summary>NestoAPI#655: si <paramref name="grupo"/> tiene regla propia en <see cref="VidaUtilMesesPorGrupo"/>.</summary>
+        public bool TieneReglaVidaUtil(string grupo) => !string.IsNullOrWhiteSpace(grupo) && VidaUtilPorGrupo().ContainsKey(grupo.Trim());
+
+        /// <summary>La vida útil en texto: «COS 12 meses, PEL 24 meses, ACC/APA/ACP no caducan; el resto, 12 meses».</summary>
+        public string TextoVidaUtil()
+        {
+            Dictionary<string, int> porGrupo = VidaUtilPorGrupo();
+            List<string> partes = porGrupo.Where(g => g.Value > 0).Select(g => $"{g.Key} {g.Value} meses").ToList();
+            List<string> sinCaducidad = porGrupo.Where(g => g.Value <= 0).Select(g => g.Key).ToList();
+            if (sinCaducidad.Count > 0)
+            {
+                partes.Add(string.Join("/", sinCaducidad) + (sinCaducidad.Count == 1 ? " no caduca" : " no caducan"));
+            }
+            string resto = $"el resto, {Math.Max(1, VidaUtilMesesPropios)} meses";
+            return partes.Count == 0 ? resto : string.Join(", ", partes) + "; " + resto;
         }
 
         private static int Entero(Func<string, string> leer, string nombre, int porDefecto)

@@ -175,7 +175,15 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                 coberturaObjetivoConfigurada = p.CoberturaObjetivoDias,
                 tipoExclusiva = d.TipoExclusiva?.Trim(),
                 propios = d.EsFabricacionPropia
-                    ? new { lote = r.Multiplos, diasSeguridad = p.DiasSeguridadPropios, vidaUtilMeses = p.VidaUtilMesesPropios, tope = TopePropios(r.VentaMensualReferencia, p) }
+                    ? new
+                    {
+                        lote = r.Multiplos,
+                        diasSeguridad = p.DiasSeguridadPropios,
+                        grupo = r.Grupo,
+                        caduca = p.VidaUtilMeses(r.Grupo).HasValue,
+                        vidaUtilMeses = p.VidaUtilMeses(r.Grupo),
+                        tope = TopePropios(r.VentaMensualReferencia, p.VidaUtilMeses(r.Grupo))
+                    }
                     : null
             });
             return r;
@@ -299,17 +307,38 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             Fijar(r, accion, maximo, minimo, calculo + actual + ". " + resumen);
         }
 
-        /// <summary>NestoAPI#655: lo más que puede haber de un propio: <see cref="ParametrosTendencias.VidaUtilMesesPropios"/> meses de venta.</summary>
-        internal static int TopePropios(decimal ventaMensual, ParametrosTendencias p)
-            => ventaMensual <= 0 ? 0 : (int)Math.Ceiling(ventaMensual * Math.Max(1, p.VidaUtilMesesPropios));
+        /// <summary>
+        /// NestoAPI#655: lo más que puede haber de un propio: <paramref name="vidaUtilMeses"/> meses de venta
+        /// (<see cref="ParametrosTendencias.VidaUtilMeses"/> de su grupo). Null si no caduca (sin tope).
+        /// </summary>
+        internal static int? TopePropios(decimal ventaMensual, int? vidaUtilMeses)
+            => !vidaUtilMeses.HasValue ? (int?)null : ventaMensual <= 0 ? 0 : (int)Math.Ceiling(ventaMensual * Math.Max(1, vidaUtilMeses.Value));
+
+        /// <summary>NestoAPI#655: la vida útil de un propio en texto, para la frase y el Excel.</summary>
+        internal static string TextoVidaUtil(string grupo, ParametrosTendencias p)
+        {
+            int? meses = p.VidaUtilMeses(grupo);
+            string nombreGrupo = string.IsNullOrWhiteSpace(grupo) ? "sin grupo" : "grupo " + grupo.Trim();
+            if (!meses.HasValue)
+            {
+                return $"no caduca ({nombreGrupo})";
+            }
+            return p.TieneReglaVidaUtil(grupo)
+                ? $"vida útil {meses} meses ({nombreGrupo})"
+                : $"vida útil {meses} meses ({nombreGrupo} sin regla propia: se suponen {meses})";
+        }
 
         /// <summary>
         /// NestoAPI#655: fórmula P (fabricación propia, familias con TipoExclusiva PRP). Se fabrican por lotes, con plazo largo y
         /// sin poder quedarse cortos: lote mínimo = Múltiplos de ALG; mínimo = venta mensual de referencia × (días en servir +
-        /// <see cref="ParametrosTendencias.DiasSeguridadPropios"/>) ÷ 30; máximo = mínimo + lote, y nunca más de
-        /// <see cref="ParametrosTendencias.VidaUtilMesesPropios"/> meses de venta (lo que pase, caducará). Exceso = stock − máximo.
+        /// <see cref="ParametrosTendencias.DiasSeguridadPropios"/>) ÷ 30; máximo = mínimo + lote, y nunca más de los meses de vida
+        /// útil de su grupo (<see cref="ParametrosTendencias.VidaUtilMeses"/>; lo que pase, caducará). Exceso = stock − máximo.
         /// Acciones: «Caduca antes de venderse» (stock de más meses de venta que la vida útil), «Potenciar ventas» (sobra, pero se
         /// vende antes de caducar) y «Ajustar el siguiente lote» (cambian máximo y mínimo, o el lote solo ya pasa de la vida útil).
+        /// <para>Vida útil por grupo (Carlos, 16/10/26): cosmética 12 meses, peluquería 24; accesorios, aparatos y accesorios de
+        /// peluquería NO caducan: sin tope (máximo = mínimo + lote) y nunca «Caduca antes de venderse»; lo que sobre es «Potenciar
+        /// ventas». Sin venta, uno que no caduca tampoco se vuelve a fabricar (máximo y mínimo 0): no tiene sentido otro lote de
+        /// algo que no sale.</para>
         /// <para>DECISIÓN (#655): a un propio NUNCA se le propone liquidar (ni Outlet ni Ganavisiones) ni pasar a estado 1: son los
         /// productos que hay que potenciar (circular de los socios, julio 2026). Por eso no pasa por las salidas tempranas de
         /// <see cref="Proponer"/> (estado, sin salida y declive): sin venta, la fórmula da máximo 0 y todo el stock «Caduca antes de
@@ -321,8 +350,10 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             string resumen = Resumen(r);
             decimal venta = r.VentaMensualReferencia;
             int lote = Math.Max(1, r.Multiplos);
-            int vidaUtil = Math.Max(1, p.VidaUtilMesesPropios);
-            int tope = TopePropios(venta, p);
+            int? vidaUtil = p.VidaUtilMeses(r.Grupo);
+            bool caduca = vidaUtil.HasValue;
+            int? tope = TopePropios(venta, vidaUtil);
+            string textoVidaUtil = TextoVidaUtil(r.Grupo, p);
             string mesesStock = venta > 0 ? $"{r.Stock} uds son {Num(r.Stock / venta, 1)} meses de venta" : $"no se vende nada y quedan {r.Stock} uds";
             const string NUNCA = "nunca Outlet ni liquidar";
 
@@ -333,7 +364,7 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                 r.ExcesoValorado = Math.Round(r.ExcesoUnidades * r.PrecioMedio, 2);
                 if (r.Stock > 0)
                 {
-                    bool caducaEnEstado = r.Stock > tope;
+                    bool caducaEnEstado = caduca && r.Stock > tope.Value;
                     Fijar(r, caducaEnEstado ? AccionesPropuesta.CADUCA : AccionesPropuesta.POTENCIAR, 0, 0,
                         $"{(caducaEnEstado ? "Caduca antes de venderse" : "Potenciar ventas")}: fabricación propia en estado {r.EstadoProducto.Value}, " +
                         $"no se fabrica otro lote (máximo y mínimo 0); {mesesStock} ({Euros(r.ExcesoValorado)}): darles salida con ventas propias, {NUNCA}. {resumen}");
@@ -347,26 +378,32 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
 
             int minimo = (int)Math.Ceiling(venta * (r.DiasEnServir + r.DiasSeguridad) / 30m);
             int sinTope = minimo + lote;
-            int maximo = Math.Min(sinTope, tope);
+            // Sin venta, uno que no caduca tampoco lleva otro lote (no hay tope de vida útil que lo deje en 0).
+            int maximo = caduca ? Math.Min(sinTope, tope.Value) : venta > 0 ? sinTope : 0;
             minimo = Math.Min(minimo, maximo);
-            r.Formula = $"{FormulasPropuesta.PREFIJO_PROPIOS} mín + lote, tope {vidaUtil} meses";
+            r.Formula = caduca
+                ? $"{FormulasPropuesta.PREFIJO_PROPIOS} mín + lote, tope {vidaUtil} meses"
+                : $"{FormulasPropuesta.PREFIJO_PROPIOS} mín + lote, no caduca";
             r.ExcesoUnidades = Math.Max(0, r.Stock - maximo);
             r.ExcesoValorado = Math.Round(r.ExcesoUnidades * r.PrecioMedio, 2);
             // La cobertura objetivo de un propio es la de su máximo (la del resto, aquí, no significa nada).
             r.CoberturaObjetivoDias = venta > 0 ? (int)Math.Ceiling(maximo / (venta / 30m)) : 0;
 
-            bool loteExcede = venta > 0 && lote > tope;
-            string acotado = sinTope > maximo ? $" (acotado a {maximo} por la vida útil de {vidaUtil} meses)" : string.Empty;
+            bool loteExcede = caduca && venta > 0 && lote > tope.Value;
+            string acotado = caduca && sinTope > maximo ? $" (acotado a {maximo} por la vida útil de {vidaUtil} meses)" : string.Empty;
             string calculo = $"Fabricación propia ({FasesProducto.Nombre(r.Fase).ToLowerInvariant()}): venta de referencia {Num(venta, 1)} uds/mes; " +
                 $"proveedor {r.DiasEnServir} días{(r.DiasEnServirSupuestos ? " (supuestos)" : "")} + {r.DiasSeguridad} de seguridad de propios → mínimo {minimo}; " +
-                $"lote mínimo {lote} → máximo {sinTope}{acotado}; vida útil {vidaUtil} meses = {tope} uds";
+                $"lote mínimo {lote} → máximo {(caduca || venta > 0 ? sinTope : maximo)}{acotado}; " +
+                (caduca ? $"{textoVidaUtil} = {tope} uds" : $"{textoVidaUtil}: sin tope de vida útil");
             if (loteExcede)
             {
                 calculo += $". El lote mínimo son {Num(lote / venta, 1)} meses de venta, más que la vida útil: pedir lote menor";
             }
             else if (venta <= 0)
             {
-                calculo += ". Sin venta: cualquier lote caduca antes de venderse";
+                calculo += caduca
+                    ? ". Sin venta: cualquier lote caduca antes de venderse"
+                    : ". Sin venta: no se fabrica otro lote (no caduca, pero no sale)";
             }
             string actual = r.StockMaximoActual.HasValue ? $" (hoy {r.StockMaximoActual}/{r.StockMinimoActual})" : " (hoy sin control de stock en ALG)";
             string compras = r.PedidoCompraAbierto > 0 && r.ExcesoUnidades > 0
@@ -379,17 +416,20 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                 return;
             }
             string accion;
-            if (r.Stock > 0 && r.Stock > tope)
+            if (caduca && r.Stock > 0 && r.Stock > tope.Value)
             {
                 accion = AccionesPropuesta.CADUCA;
-                calculo = $"Caduca antes de venderse: {mesesStock}, más que la vida útil de {vidaUtil} meses; {r.Stock - tope} uds " +
-                    $"({Euros((r.Stock - tope) * r.PrecioMedio)}) caducarán si no se potencian las ventas ({NUNCA}). " + calculo;
+                calculo = $"Caduca antes de venderse: {mesesStock}, más que la vida útil de {vidaUtil} meses; {r.Stock - tope.Value} uds " +
+                    $"({Euros((r.Stock - tope.Value) * r.PrecioMedio)}) caducarán si no se potencian las ventas ({NUNCA}). " + calculo;
             }
             else if (r.ExcesoUnidades > 0)
             {
                 accion = AccionesPropuesta.POTENCIAR;
-                calculo = $"Potenciar ventas: sobran {r.ExcesoUnidades} uds ({Euros(r.ExcesoValorado)}) sobre el máximo, pero {mesesStock}: " +
-                    $"se venden antes de caducar ({NUNCA}). " + calculo;
+                calculo = caduca
+                    ? $"Potenciar ventas: sobran {r.ExcesoUnidades} uds ({Euros(r.ExcesoValorado)}) sobre el máximo, pero {mesesStock}: " +
+                        $"se venden antes de caducar ({NUNCA}). " + calculo
+                    : $"Potenciar ventas: sobran {r.ExcesoUnidades} uds ({Euros(r.ExcesoValorado)}) sobre el máximo; {mesesStock}, " +
+                        $"pero no caducan ({NUNCA}). " + calculo;
             }
             else
             {

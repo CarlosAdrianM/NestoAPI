@@ -280,7 +280,7 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         private static void HojaPropios(IXLWorksheet hoja, List<ResultadoTendencia> filas, ParametrosTendencias p, string mes)
         {
             Titulo(hoja, $"Propios (fabricación propia) — {mes}: {filas.Count} productos; lote = múltiplos de ALG, " +
-                $"{p.DiasSeguridadPropios} días de seguridad y tope de {p.VidaUtilMesesPropios} meses de vida útil");
+                $"{p.DiasSeguridadPropios} días de seguridad y tope de vida útil por grupo ({p.TextoVidaUtil()})");
             decimal? Meses(decimal unidades, decimal venta) => venta > 0 ? Math.Round(unidades / venta, 1) : (decimal?)null;
             var columnas = new List<(string nombre, Func<ResultadoTendencia, object> valor, string formato)>
             {
@@ -299,7 +299,9 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                 ("Días de seguridad", r => r.DiasSeguridad, null),
                 ("Lote mínimo", r => r.Multiplos, null),
                 ("Meses de venta del lote", r => Meses(r.Multiplos, r.VentaMensualReferencia), FORMATO_DECIMAL),
-                ("Tope vida útil (uds)", r => MotorTendencias.TopePropios(r.VentaMensualReferencia, p), null),
+                ("Tope vida útil (uds)", r => MotorTendencias.TopePropios(r.VentaMensualReferencia, p.VidaUtilMeses(r.Grupo)), null),
+                ("Grupo", r => r.Grupo, null),
+                ("Vida útil", r => p.VidaUtilMeses(r.Grupo).HasValue ? $"{p.VidaUtilMeses(r.Grupo)} meses" : "No caduca", null),
                 ("Exceso (uds)", r => r.ExcesoUnidades, null),
                 ("Exceso €", r => r.ExcesoValorado, FORMATO_EUROS),
                 ("Acción", r => r.Accion, null),

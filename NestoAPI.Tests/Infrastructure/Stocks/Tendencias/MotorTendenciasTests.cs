@@ -381,10 +381,10 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
             Assert.AreEqual(190, r.StockMaximoPropuesto);
             Assert.AreEqual(0, r.ExcesoUnidades);
             Assert.AreEqual(AccionesPropuesta.AJUSTAR_LOTE, r.Accion);
-            StringAssert.Contains(r.Explicacion, "proveedor 60 días + 30 de seguridad de propios → mínimo 90; lote mínimo 100 → máximo 190; vida útil 12 meses = 360 uds");
+            StringAssert.Contains(r.Explicacion, "proveedor 60 días + 30 de seguridad de propios → mínimo 90; lote mínimo 100 → máximo 190; vida útil 12 meses (grupo COS) = 360 uds");
             StringAssert.Contains(r.Explicacion, "(hoy 555/295)");
             StringAssert.Contains(r.EntradasJson, "\"tipoExclusiva\":\"PRP\"");
-            StringAssert.Contains(r.EntradasJson, "\"propios\":{\"lote\":100,\"diasSeguridad\":30,\"vidaUtilMeses\":12,\"tope\":360}");
+            StringAssert.Contains(r.EntradasJson, "\"propios\":{\"lote\":100,\"diasSeguridad\":30,\"grupo\":\"COS\",\"caduca\":true,\"vidaUtilMeses\":12,\"tope\":360}");
         }
 
         [TestMethod]
@@ -496,6 +496,117 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
             Assert.AreEqual(0, r.StockMinimoPropuesto);
             Assert.AreEqual("P: estado 4", r.Formula);
             StringAssert.Contains(r.Explicacion, "fabricación propia en estado 4, no se fabrica otro lote");
+        }
+
+        // ---------- NestoAPI#655: vida útil por grupo (Carlos, 16/10/26) ----------
+
+        [TestMethod]
+        public void VidaUtil_PorDefecto_Cosmetica12Peluqueria24YAparatosYAccesoriosNoCaducan()
+        {
+            Assert.AreEqual(12, P.VidaUtilMeses("COS"));
+            Assert.AreEqual(24, P.VidaUtilMeses("PEL"));
+            Assert.IsNull(P.VidaUtilMeses("ACC"));
+            Assert.IsNull(P.VidaUtilMeses("APA"));
+            Assert.IsNull(P.VidaUtilMeses("acp "));
+            Assert.AreEqual(12, P.VidaUtilMeses("XYZ")); // sin regla: lo conservador
+            Assert.AreEqual(12, P.VidaUtilMeses(null));
+        }
+
+        [TestMethod]
+        public void VidaUtil_SeConfiguraEnAppSettings()
+        {
+            ParametrosTendencias p = ParametrosTendencias.Desde(c => c == "PropuestasStock:VidaUtilMesesPorGrupo" ? "COS=6; APA=36"
+                : c == "PropuestasStock:VidaUtilMesesPropios" ? "9" : null);
+
+            Assert.AreEqual(6, p.VidaUtilMeses("COS"));
+            Assert.AreEqual(36, p.VidaUtilMeses("APA"));
+            Assert.AreEqual(9, p.VidaUtilMeses("PEL")); // ya no tiene regla propia
+            StringAssert.Contains(string.Join("|", p.Descripcion().Select(d => d.Nombre + "=" + d.Valor)), "VidaUtilMesesPorGrupo=COS=6; APA=36");
+        }
+
+        [TestMethod]
+        public void Propio_Aparato_NoCaduca_SinTopeYPotenciarEnVezDeCaduca()
+        {
+            // 1000 uds con 30 al mes son 33 meses: en cosmética «Caduca antes de venderse»; un aparato no caduca
+            DatosProductoTendencia d = Propio(ventas: Constante(30), stock: 1000, diasEnServir: 300, lote: 100, grupo: "APA");
+
+            ResultadoTendencia r = Calcular(d);
+
+            Assert.AreEqual(AccionesPropuesta.POTENCIAR, r.Accion);
+            Assert.AreEqual(430, r.StockMaximoPropuesto); // 330 + 100, sin el tope de 12 meses (360)
+            Assert.AreEqual(330, r.StockMinimoPropuesto);
+            Assert.AreEqual(570, r.ExcesoUnidades);
+            Assert.AreEqual("P: mín + lote, no caduca", r.Formula);
+            StringAssert.StartsWith(r.Explicacion, "Potenciar ventas: sobran 570 uds (1.140,00 €) sobre el máximo; 1000 uds son 33,3 meses de venta, pero no caducan (nunca Outlet ni liquidar)");
+            StringAssert.Contains(r.Explicacion, "lote mínimo 100 → máximo 430; no caduca (grupo APA): sin tope de vida útil");
+            Assert.IsFalse(r.Explicacion.Contains("acotado"), r.Explicacion);
+            StringAssert.Contains(r.EntradasJson, "\"propios\":{\"lote\":100,\"diasSeguridad\":30,\"grupo\":\"APA\",\"caduca\":false,\"vidaUtilMeses\":null,\"tope\":null}");
+        }
+
+        [TestMethod]
+        public void Propio_AccesorioOAparato_NuncaCaducaNiSeLiquida()
+        {
+            int[] sinVenta = Constante(20);
+            for (int i = FIN - 11; i <= FIN; i++)
+            {
+                sinVenta[i] = 0;
+            }
+            foreach (string grupo in new[] { "ACC", "APA", "ACP" })
+            {
+                foreach (DatosProductoTendencia d in new[]
+                {
+                    Propio(ventas: Constante(30), stock: 5000, grupo: grupo),
+                    Propio(ventas: DecliveConfirmado(), stock: 5000, grupo: grupo),
+                    Propio(ventas: sinVenta, stock: 50, grupo: grupo),
+                    Propio(ventas: Constante(30), stock: 5000, estado: 4, grupo: grupo)
+                })
+                {
+                    ResultadoTendencia r = Calcular(d);
+
+                    Assert.AreEqual(AccionesPropuesta.POTENCIAR, r.Accion, $"{grupo}: {r.Explicacion}");
+                    Assert.IsFalse(r.Explicacion.Contains("Caduca") || r.Explicacion.Contains("caducan si") || r.Explicacion.Contains("Outlet o Ganavisiones"), r.Explicacion);
+                }
+            }
+        }
+
+        [TestMethod]
+        public void Propio_AparatoSinVenta_NoSeFabricaOtroLote()
+        {
+            int[] ventas = Constante(20);
+            for (int i = FIN - 11; i <= FIN; i++)
+            {
+                ventas[i] = 0;
+            }
+
+            ResultadoTendencia r = Calcular(Propio(ventas: ventas, stock: 50, grupo: "APA"));
+
+            Assert.AreEqual(AccionesPropuesta.POTENCIAR, r.Accion);
+            Assert.AreEqual(0, r.StockMaximoPropuesto);
+            Assert.AreEqual(0, r.StockMinimoPropuesto);
+            Assert.AreEqual(50, r.ExcesoUnidades);
+            StringAssert.Contains(r.Explicacion, "Sin venta: no se fabrica otro lote (no caduca, pero no sale)");
+        }
+
+        [TestMethod]
+        public void Propio_Peluqueria_VidaUtilDe24Meses()
+        {
+            // 500 uds con 30 al mes son 16,7 meses: en cosmética caducan; en peluquería (24 meses, tope 720) no
+            ResultadoTendencia cosmetica = Calcular(Propio(ventas: Constante(30), stock: 500, grupo: "COS"));
+            ResultadoTendencia peluqueria = Calcular(Propio(ventas: Constante(30), stock: 500, grupo: "PEL"));
+
+            Assert.AreEqual(AccionesPropuesta.CADUCA, cosmetica.Accion);
+            Assert.AreEqual(AccionesPropuesta.POTENCIAR, peluqueria.Accion);
+            Assert.AreEqual("P: mín + lote, tope 24 meses", peluqueria.Formula);
+            StringAssert.Contains(peluqueria.Explicacion, "vida útil 24 meses (grupo PEL) = 720 uds");
+        }
+
+        [TestMethod]
+        public void Propio_GrupoSinRegla_DoceMesesYLoDice()
+        {
+            ResultadoTendencia r = Calcular(Propio(ventas: Constante(30), stock: 1000, grupo: "XYZ"));
+
+            Assert.AreEqual(AccionesPropuesta.CADUCA, r.Accion);
+            StringAssert.Contains(r.Explicacion, "vida útil 12 meses (grupo XYZ sin regla propia: se suponen 12) = 360 uds");
         }
 
         [TestMethod]
