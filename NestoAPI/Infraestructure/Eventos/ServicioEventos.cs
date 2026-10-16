@@ -536,9 +536,9 @@ namespace NestoAPI.Infraestructure.Eventos
         }
 
         /// <summary>
-        /// NestoAPI#612 (Carlos, 16/10/26): una señal que ya ha servido para facturar el curso (y emitir el cupón) no se quita:
-        /// 409 <see cref="ERROR_SENAL_YA_USADA"/>. Primero se rectifica la factura del curso (a mano) y se anula el cupón; si el
-        /// cupón ya se usó, se dice. Sin factura ni cupón se quita como siempre.
+        /// NestoAPI#612 (Carlos, 16/10/26): una señal que ya ha servido para facturar el curso (y emitir el cupón) no se quita
+        /// hasta que la factura del curso tenga rectificativa y el cupón esté anulado: 409 <see cref="ERROR_SENAL_YA_USADA"/>
+        /// diciendo qué falta. Si el cupón ya se usó, no se puede. Con las dos cosas hechas (o sin factura ni cupón), se suelta y se borra.
         /// </summary>
         private async Task ComprobarQueNoEstaUsada(EventoSenal senal, List<EventoInscripcion> pagadas)
         {
@@ -546,7 +546,10 @@ namespace NestoAPI.Infraestructure.Eventos
             {
                 FacturacionCursoInscripcion facturacion = await facturacionCursos.Leer(inscripcionId).ConfigureAwait(false);
                 CuponLeido cupon = await cupones.LeerDeInscripcion(inscripcionId).ConfigureAwait(false);
-                string mensaje = MensajeSenalUsada(Limpiar(facturacion?.Factura), cupon);
+                string factura = Limpiar(facturacion?.Factura);
+                bool rectificada = factura != null
+                    && await TieneRectificativa(facturacion.EmpresaFactura ?? senal.Empresa, factura).ConfigureAwait(false);
+                string mensaje = MensajeSenalUsada(factura, rectificada, cupon);
                 if (mensaje != null)
                 {
                     throw new NestoBusinessException(mensaje, new ErrorContext
@@ -564,22 +567,43 @@ namespace NestoAPI.Infraestructure.Eventos
             }
         }
 
-        /// <summary>Null si la señal no se ha usado (ni factura del curso ni cupón).</summary>
-        internal static string MensajeSenalUsada(string factura, CuponLeido cupon)
+        /// <summary>
+        /// NestoAPI#612 (Carlos, 16/10/26): la factura del curso ya tiene rectificativa. Mismo criterio que
+        /// ServicioFacturasPendientesVerifactu: hay alguna fila en LinFacturaVtaRectificacion cuya FacturaOriginalNumero es esta
+        /// factura (Verifactu #37/#38: la rellenan CopiarFactura, la facturación del pedido rectificativo y el auto-curado LIFO).
+        /// LinFacturaVtaRectificacion.Empresa es char(1): se compara la empresa sin relleno.
+        /// </summary>
+        private async Task<bool> TieneRectificativa(string empresa, string factura)
+        {
+            string empresaLimpia = Limpiar(empresa) ?? Constantes.Empresas.EMPRESA_POR_DEFECTO;
+            string numero = Limpiar(factura);
+            return await db.LinFacturaVtaRectificaciones
+                .AnyAsync(r => r.Empresa == empresaLimpia && r.FacturaOriginalNumero.Trim() == numero).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Null si la señal se puede quitar: la factura del curso, si la hay, ya tiene rectificativa, y el cupón, si lo hay, está
+        /// anulado (NestoAPI#612, Carlos 16/10/26). Si no, dice exactamente qué falta; si el cupón ya se usó, que no se puede.
+        /// </summary>
+        internal static string MensajeSenalUsada(string factura, bool facturaRectificada, CuponLeido cupon)
         {
             string codigo = Limpiar(cupon?.Codigo);
-            if (factura == null && codigo == null)
+            string estado = cupon?.Estado?.Trim();
+            bool anulado = codigo != null && estado == EstadosCupon.ANULADO;
+            bool usado = codigo != null && estado == EstadosCupon.USADO;
+            bool faltaRectificativa = factura != null && !facturaRectificada;
+            bool faltaAnularCupon = codigo != null && !anulado;
+            if (!faltaRectificativa && !faltaAnularCupon)
             {
                 return null;
             }
-            string estado = cupon?.Estado?.Trim();
-            bool anulado = estado == EstadosCupon.ANULADO;
-            bool usado = estado == EstadosCupon.USADO;
 
             var usos = new List<string>();
             if (factura != null)
             {
-                usos.Add($"facturar el curso (factura {factura})");
+                usos.Add(facturaRectificada
+                    ? $"facturar el curso (factura {factura}, que ya tiene rectificativa)"
+                    : $"facturar el curso (factura {factura})");
             }
             if (codigo != null)
             {
@@ -591,19 +615,19 @@ namespace NestoAPI.Infraestructure.Eventos
                 string dondeSeUso = cupon.UsadoEnPedido.HasValue ? $" en el pedido {cupon.UsadoEnPedido}" : string.Empty;
                 string facturaUso = Limpiar(cupon.FacturaUso);
                 dondeSeUso += facturaUso != null ? $" (factura {facturaUso})" : string.Empty;
-                mensaje += $" El cupón ya se ha usado{dondeSeUso}, así que no se puede anular.";
+                return mensaje + $" El cupón ya se ha usado{dondeSeUso}, así que no se puede anular y la señal no se puede quitar.";
             }
 
             var pasos = new List<string>();
-            if (factura != null)
+            if (faltaRectificativa)
             {
                 pasos.Add("haga primero la rectificativa del curso");
             }
-            if (codigo != null && !anulado && !usado)
+            if (faltaAnularCupon)
             {
-                pasos.Add(factura != null ? "anule el cupón" : "anule primero el cupón");
+                pasos.Add(faltaRectificativa ? "anule el cupón" : "anule primero el cupón");
             }
-            return pasos.Any() ? mensaje + " Para anularla, " + string.Join(" y ", pasos) + "." : mensaje;
+            return mensaje + " Para anularla, " + string.Join(" y ", pasos) + ".";
         }
 
         /// <summary>Junta cada señal con su evento, su apunte del extracto y el nombre del cliente (en memoria: los char vienen con relleno).</summary>

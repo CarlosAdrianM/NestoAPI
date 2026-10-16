@@ -62,10 +62,13 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             A.CallTo(() => db.Clientes).Returns(fakeClientes);
             inscripciones = new List<EventoInscripcion>();
             A.CallTo(() => db.EventosInscripciones).Returns(Crear(inscripciones));
+            rectificaciones = new List<LinFacturaVtaRectificacion>();
+            A.CallTo(() => db.LinFacturaVtaRectificaciones).Returns(Crear(rectificaciones));
             A.CallTo(() => db.Productos).Returns(Crear(new List<Producto> { new Producto { Empresa = "1", Número = "CURSO01" } }));
         }
 
         private List<EventoInscripcion> inscripciones;
+        private List<LinFacturaVtaRectificacion> rectificaciones;
 
         /// <summary>NestoAPI#611: Reina mantiene los eventos de REI y Paloma los de ALC (su AlmacénPedidoVta).</summary>
         private static string AlmacenDe(string empresa, string usuario) =>
@@ -554,8 +557,8 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
 
             Assert.AreEqual(HttpStatusCode.Conflict, ex.StatusCode);
             Assert.AreEqual("Esta señal ya se ha usado para facturar el curso (factura CV2600700) y emitir el cupón EV-2610-7K3Q. " +
-                "El cupón ya se ha usado en el pedido 931234 (factura NV26012345), así que no se puede anular. " +
-                "Para anularla, haga primero la rectificativa del curso.", ex.Message);
+                "El cupón ya se ha usado en el pedido 931234 (factura NV26012345), así que no se puede anular y la señal no se puede quitar.",
+                ex.Message);
             A.CallTo(() => fakeSenales.Remove(A<EventoSenal>._)).MustNotHaveHappened();
         }
 
@@ -625,6 +628,97 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             CollectionAssert.AreEqual(new[] { "senal=null borrada=False", "senal=null borrada=True" }, guardados,
                 "Primero se suelta la inscripción y después se borra la señal");
             Assert.AreEqual(1, transacciones);
+        }
+
+        // ---------------- NestoAPI#612: quitar la señal tras la rectificativa (Carlos, 16/10/26) ----------------
+
+        /// <summary>La rectificativa del curso, como la deja CopiarFactura (Verifactu #38): Empresa char(1), número original con relleno.</summary>
+        private void Rectificar(string facturaOriginal) =>
+            rectificaciones.Add(new LinFacturaVtaRectificacion
+            {
+                Empresa = "1", NumeroFactura = "RV2600010", NumeroLinea = 1, FacturaOriginalNumero = facturaOriginal + "  ",
+                FacturaOriginalLinea = 1, CantidadRectificada = 1
+            });
+
+        [TestMethod]
+        public async Task QuitarSenal_FacturaRectificadaYCuponAnulado_SueltaYBorra()
+        {
+            EventoSenal senal = SenalUsada("CV2600700", Cupon(EstadosCupon.ANULADO));
+            Rectificar("CV2600700");
+
+            await Servicio().QuitarSenal(7, "Carmen");
+
+            A.CallTo(() => fakeSenales.Remove(senal)).MustHaveHappenedOnceExactly();
+            Assert.AreEqual("Reservada", inscripciones[0].Estado);
+            Assert.IsNull(inscripciones[0].EventoSenalId);
+            Assert.AreEqual(1, transacciones);
+        }
+
+        [TestMethod]
+        public async Task QuitarSenal_FacturaRectificadaSinCupon_SueltaYBorra()
+        {
+            EventoSenal senal = SenalUsada("CV2600700", null);
+            Rectificar("CV2600700");
+
+            await Servicio().QuitarSenal(7, "Carmen");
+
+            A.CallTo(() => fakeSenales.Remove(senal)).MustHaveHappenedOnceExactly();
+            Assert.IsNull(inscripciones[0].EventoSenalId);
+        }
+
+        [TestMethod]
+        public async Task QuitarSenal_SinFacturaYCuponAnulado_SueltaYBorra()
+        {
+            EventoSenal senal = SenalUsada(null, Cupon(EstadosCupon.ANULADO));
+
+            await Servicio().QuitarSenal(7, "Carmen");
+
+            A.CallTo(() => fakeSenales.Remove(senal)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task QuitarSenal_FacturaRectificadaCuponSinAnular_409SoloPideAnularElCupon()
+        {
+            SenalUsada("CV2600700", Cupon(EstadosCupon.ACTIVO));
+            Rectificar("CV2600700");
+
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().QuitarSenal(7, "Carmen"));
+
+            Assert.AreEqual(HttpStatusCode.Conflict, ex.StatusCode);
+            Assert.AreEqual("SENAL_EVENTO_YA_USADA", ex.Context.ErrorCode);
+            Assert.AreEqual("Esta señal ya se ha usado para facturar el curso (factura CV2600700, que ya tiene rectificativa) y emitir el " +
+                "cupón EV-2610-7K3Q. Para anularla, anule primero el cupón.", ex.Message);
+            A.CallTo(() => fakeSenales.Remove(A<EventoSenal>._)).MustNotHaveHappened();
+            A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
+            Assert.AreEqual("Pagada", inscripciones[0].Estado);
+        }
+
+        [TestMethod]
+        public async Task QuitarSenal_FacturaRectificadaCuponUsado_409NoSePuede()
+        {
+            SenalUsada("CV2600700", Cupon(EstadosCupon.USADO, 931234, "NV26012345"));
+            Rectificar("CV2600700");
+
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().QuitarSenal(7, "Carmen"));
+
+            Assert.AreEqual(HttpStatusCode.Conflict, ex.StatusCode);
+            Assert.AreEqual("Esta señal ya se ha usado para facturar el curso (factura CV2600700, que ya tiene rectificativa) y emitir el " +
+                "cupón EV-2610-7K3Q. El cupón ya se ha usado en el pedido 931234 (factura NV26012345), así que no se puede anular y la " +
+                "señal no se puede quitar.", ex.Message);
+            A.CallTo(() => fakeSenales.Remove(A<EventoSenal>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task QuitarSenal_RectificativaDeOtraFactura_NoCuenta()
+        {
+            SenalUsada("CV2600700", Cupon(EstadosCupon.ANULADO));
+            Rectificar("CV2600701");
+
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().QuitarSenal(7, "Carmen"));
+
+            Assert.AreEqual("Esta señal ya se ha usado para facturar el curso (factura CV2600700) y emitir el cupón EV-2610-7K3Q, " +
+                "que ya está anulado. Para anularla, haga primero la rectificativa del curso.", ex.Message);
+            A.CallTo(() => fakeSenales.Remove(A<EventoSenal>._)).MustNotHaveHappened();
         }
 
         /// <summary>Pagada con el enlace (tarjeta) y con la señal apuntada después: el pago con tarjeta sigue valiendo, solo se suelta la señal.</summary>

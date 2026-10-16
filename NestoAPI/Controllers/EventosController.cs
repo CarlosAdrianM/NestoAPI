@@ -234,7 +234,8 @@ namespace NestoAPI.Controllers
         // DELETE api/Eventos/Senales/7
         /// <summary>
         /// Quita la señal (el apunte vuelve a ser un cobro a cuenta normal). No toca el extracto. NestoAPI#612: si ya facturó el
-        /// curso o emitió el cupón, 409 SENAL_EVENTO_YA_USADA (primero la rectificativa del curso y anular el cupón). Si pagó una
+        /// curso o emitió el cupón, 409 SENAL_EVENTO_YA_USADA diciendo qué falta (la rectificativa del curso, anular el cupón; si el
+        /// cupón ya se usó, no se puede). Con la rectificativa hecha y el cupón anulado (o sin ellos), se quita. Si pagó una
         /// inscripción, se suelta de ella (vuelve a pendiente de pago) y se borra, en una transacción.
         /// </summary>
         [HttpDelete]
