@@ -163,6 +163,16 @@ namespace NestoAPI.Models.Sincronizacion
         public List<ProductoDTO.StockProducto> Stocks { get; set; }
 
         /// <summary>
+        /// Incidencia 645 / prestashop-nestosync#35: disponible de la EMPRESA =
+        /// max(0, Σ Stock − Σ PendienteEntregar) de los almacenes de <see cref="Stocks"/>.
+        /// Es la cantidad que el consumidor debe llevar a stock_availables (productos que no son
+        /// kits). NO es la suma de <c>Stocks[].CantidadDisponible</c> (esa lleva suelo en 0 por
+        /// almacén y no resta lo pendiente de un almacén vacío), NO incluye PendienteReposicion ni
+        /// <c>Stocks[].CantidadMontable</c>. 0 si el mensaje no lleva stocks (producto ficticio).
+        /// </summary>
+        public int CantidadDisponibleTotal { get; set; }
+
+        /// <summary>
         /// NestoAPI#414: categorías comerciales SECUNDARIAS del producto, en orden. La principal
         /// sigue siendo Grupo/Subgrupo de la ficha y NO debe tocarse por esta lista.
         /// Semántica: null/ausente = no tocar; lista vacía = el producto no tiene secundarias

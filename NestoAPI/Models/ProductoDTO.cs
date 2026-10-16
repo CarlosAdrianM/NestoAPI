@@ -94,6 +94,47 @@ namespace NestoAPI.Models
         /// <summary>NestoAPI#478: la familia del producto tiene la venta pausada en la tienda.</summary>
         public bool VentaPausada { get; set; }
 
+        /// <summary>
+        /// Incidencia 645 / prestashop-nestosync#35: disponible de la EMPRESA, no de un almacén.
+        /// Ver <see cref="CalcularCantidadDisponibleTotal"/>.
+        /// </summary>
+        public int CantidadDisponibleTotal => CalcularCantidadDisponibleTotal(Stocks);
+
+        /// <summary>
+        /// Incidencia 645 / prestashop-nestosync#35: max(0, Σ Stock − Σ PendienteEntregar) sobre
+        /// los almacenes que vienen en <paramref name="stocks"/> (ALG, REI y ALC en el mensaje).
+        ///
+        /// Por qué no vale sumar <see cref="StockProducto.CantidadDisponible"/>: ese lleva suelo en
+        /// 0 POR ALMACÉN, así que lo pendiente de un almacén sin stock desaparece en vez de restar
+        /// del stock de los otros. 43992 (16/10/26): ALG 0 con 2 pendientes, REI 1, ALC 1 → la
+        /// suma de disponibles daba 2 y el disponible real es 2 − 2 = 0.
+        ///
+        /// NO suma PendienteReposicion: la reposición mueve stock entre nuestros almacenes, no lo
+        /// crea (sumado aquí contaría dos veces la misma unidad).
+        ///
+        /// NO suma CantidadMontable de los kits: es un derivado del stock de los componentes, que
+        /// ya cuentan como producto suelto; quien quiera vender los montables (la tienda) los
+        /// añade él, igual que hasta ahora con el campo por almacén.
+        ///
+        /// Único punto de cálculo: lo usan el DTO y el mensaje Productos del bus.
+        /// </summary>
+        public static int CalcularCantidadDisponibleTotal(IEnumerable<StockProducto> stocks)
+        {
+            if (stocks == null)
+            {
+                return 0;
+            }
+            int total = 0;
+            foreach (StockProducto stock in stocks)
+            {
+                if (stock != null)
+                {
+                    total += stock.Stock - stock.PendienteEntregar;
+                }
+            }
+            return total > 0 ? total : 0;
+        }
+
         public class StockProducto
         {
             public string Almacen { get; set; }

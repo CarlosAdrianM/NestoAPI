@@ -79,7 +79,10 @@ namespace NestoAPI.Infraestructure
                 Variante = productoDTO.Variante,
                 // NestoAPI#478: siempre con valor explícito, como ClasificacionMasVendidos.
                 VentaPausada = productoDTO.VentaPausada,
-                Stocks = productoDTO.Stocks?.ToList()
+                Stocks = productoDTO.Stocks?.ToList(),
+                // Incidencia 645: el disponible de la empresa (Σ Stock − Σ PendienteEntregar,
+                // suelo en 0 sobre el total). Es lo que debe ir a stock_availables.
+                CantidadDisponibleTotal = productoDTO.CantidadDisponibleTotal
             };
 
             // Pasar el objeto directamente - GooglePubSubEventPublisher se encarga de serializar

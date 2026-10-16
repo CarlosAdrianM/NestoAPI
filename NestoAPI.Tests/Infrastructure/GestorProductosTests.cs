@@ -321,6 +321,137 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(3, mensaje.Stocks[0].CantidadDisponible, "El disponible es solo el físico");
             Assert.AreEqual(7, mensaje.Stocks[0].CantidadMontable);
         }
+
+        /// <summary>Caso real 43992 a las 02:00 del 16/10/26 (incidencia 645).</summary>
+        private static ProductoDTO Producto43992()
+        {
+            var dto = new ProductoDTO { Producto = "43992", Nombre = "PRODUCTO 43992" };
+            dto.Stocks.Add(new ProductoDTO.StockProducto { Almacen = "ALG", Stock = 0, PendienteEntregar = 2 });
+            dto.Stocks.Add(new ProductoDTO.StockProducto { Almacen = "REI", Stock = 1 });
+            dto.Stocks.Add(new ProductoDTO.StockProducto { Almacen = "ALC", Stock = 1 });
+            return dto;
+        }
+
+        [TestMethod]
+        public async Task PublicarProductoSincronizar_Caso43992_ElDisponibleTotalRestaLoPendienteDeTodosLosAlmacenes()
+        {
+            // Incidencia 645: con suelo en 0 por almacén, ALG daba 0 y la suma de disponibles 2.
+            // El disponible de la empresa es (0 + 1 + 1) − 2 = 0.
+            var mensaje = await PublicarYCapturar(Producto43992());
+
+            Assert.AreEqual(0, mensaje.CantidadDisponibleTotal);
+            // Lo que ya viajaba no cambia.
+            Assert.AreEqual(2, mensaje.Stocks.Sum(s => s.CantidadDisponible));
+        }
+
+        [TestMethod]
+        public async Task PublicarProductoSincronizar_LaClaveCantidadDisponibleTotalViajaEnElJson()
+        {
+            // Contrato con prestashop-nestosync#35: clave a nivel de producto, número entero, y
+            // sin quitar nada de lo que ya viajaba por almacén.
+            var dto = Producto43992();
+            dto.Stocks.First(s => s.Almacen == "REI").Stock = 5;
+
+            var mensaje = await PublicarYCapturar(dto);
+            // Exactamente como en GooglePubSubEventPublisher: como object y sin opciones.
+            string json = System.Text.Json.JsonSerializer.Serialize((object)mensaje);
+
+            StringAssert.Contains(json, "\"CantidadDisponibleTotal\":4");
+            StringAssert.Contains(json, "\"Stocks\":[");
+            StringAssert.Contains(json, "\"CantidadDisponible\":");
+            StringAssert.Contains(json, "\"PendienteEntregar\":");
+            StringAssert.Contains(json, "\"PendienteReposicion\":");
+            StringAssert.Contains(json, "\"CantidadMontable\":");
+        }
+
+        [TestMethod]
+        public async Task PublicarProductoSincronizar_SinStocks_ElDisponibleTotalEsCero()
+        {
+            // Producto ficticio: no se calculan stocks y el total viaja como 0 (lo mismo que daba
+            // la suma por almacén).
+            var mensaje = await PublicarYCapturar(new ProductoDTO { Producto = "FICT" });
+
+            Assert.AreEqual(0, mensaje.CantidadDisponibleTotal);
+        }
+    }
+
+    /// <summary>
+    /// Incidencia 645 / prestashop-nestosync#35: cálculo del disponible de la empresa
+    /// (<c>ProductoDTO.CalcularCantidadDisponibleTotal</c>).
+    /// </summary>
+    [TestClass]
+    public class CantidadDisponibleTotalTests
+    {
+        private static ProductoDTO.StockProducto S(string almacen, int stock, int pendienteEntregar = 0, int pendienteReposicion = 0, int montable = 0)
+        {
+            return new ProductoDTO.StockProducto
+            {
+                Almacen = almacen,
+                Stock = stock,
+                PendienteEntregar = pendienteEntregar,
+                PendienteReposicion = pendienteReposicion,
+                CantidadMontable = montable
+            };
+        }
+
+        [TestMethod]
+        public void Caso43992_LoPendienteDeUnAlmacenVacioRestaDelStockDeLosOtros()
+        {
+            var stocks = new[] { S("ALG", 0, 2), S("REI", 1), S("ALC", 1) };
+
+            Assert.AreEqual(0, ProductoDTO.CalcularCantidadDisponibleTotal(stocks));
+        }
+
+        [TestMethod]
+        public void SumaStocksYRestaTodoLoPendiente()
+        {
+            var stocks = new[] { S("ALG", 10, 3), S("REI", 4, 1), S("ALC", 2) };
+
+            Assert.AreEqual(12, ProductoDTO.CalcularCantidadDisponibleTotal(stocks));
+        }
+
+        [TestMethod]
+        public void SiLoPendienteSuperaAlStock_ElTotalEsCero()
+        {
+            var stocks = new[] { S("ALG", 1, 5), S("REI", 1), S("ALC", 0) };
+
+            Assert.AreEqual(0, ProductoDTO.CalcularCantidadDisponibleTotal(stocks));
+        }
+
+        [TestMethod]
+        public void NoSumaLaReposicion_PorqueMueveStockEntreAlmacenesNoLoCrea()
+        {
+            // 5 en ALG de las que 3 van camino de REI (reposición): siguen siendo 5 de la empresa.
+            var stocks = new[] { S("ALG", 5), S("REI", 0, 0, 3), S("ALC", 0) };
+
+            Assert.AreEqual(5, ProductoDTO.CalcularCantidadDisponibleTotal(stocks));
+        }
+
+        [TestMethod]
+        public void NoSumaLoMontableDeLosKits()
+        {
+            var stocks = new[] { S("ALG", 2, 0, 0, 7), S("REI", 0, 0, 0, 1), S("ALC", 0) };
+
+            Assert.AreEqual(2, ProductoDTO.CalcularCantidadDisponibleTotal(stocks));
+        }
+
+        [TestMethod]
+        public void SinStocks_EsCero()
+        {
+            Assert.AreEqual(0, ProductoDTO.CalcularCantidadDisponibleTotal(null));
+            Assert.AreEqual(0, ProductoDTO.CalcularCantidadDisponibleTotal(new ProductoDTO.StockProducto[0]));
+        }
+
+        [TestMethod]
+        public void ElDtoUsaElMismoCalculo()
+        {
+            var dto = new ProductoDTO();
+            dto.Stocks.Add(S("ALG", 0, 2));
+            dto.Stocks.Add(S("REI", 1));
+            dto.Stocks.Add(S("ALC", 1));
+
+            Assert.AreEqual(0, dto.CantidadDisponibleTotal);
+        }
     }
 
     /// <summary>
