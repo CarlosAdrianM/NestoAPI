@@ -262,6 +262,11 @@ namespace NestoAPI
                 Infraestructure.PreparacionAlmacen.RepositorioEtiquetasHuecoSql.ConContextoPropio(),
                 sp.GetRequiredService<ILectorParametrosUsuario>(),
                 new Infraestructure.PreparacionAlmacen.ImpresoraEtiquetasWindows()));
+            // NestoAPI#654: etiquetas de código de barras de producto, con la ficha del almacén y la impresora de las de hueco
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioEtiquetasProducto>(sp => new Infraestructure.PreparacionAlmacen.ServicioEtiquetasProducto(
+                sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IRepositorioFichasProducto>(),
+                sp.GetRequiredService<ILectorParametrosUsuario>(),
+                new Infraestructure.PreparacionAlmacen.ImpresoraEtiquetasWindows()));
 
             // Ventana de facturas pendientes de Verifactu (NestoAPI#522)
             _ = services.AddScoped<Infraestructure.Verifactu.IServicioFacturasPendientesVerifactu, Infraestructure.Verifactu.ServicioFacturasPendientesVerifactu>();

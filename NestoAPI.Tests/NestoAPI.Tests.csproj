@@ -453,6 +453,8 @@
     <Compile Include="Infrastructure\PreparacionAlmacen\ServicioRecepcionReposicionesTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\ServicioUbicacionesAlmacenTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\EtiquetasHuecoAlmacenTests.cs" />
+    <Compile Include="Infrastructure\PreparacionAlmacen\EtiquetasProductoAlmacenTests.cs" />
+    <Compile Include="Controllers\EtiquetasProductoControllerTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfExtractoContableTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfKitsQueSePuedenMontarTests.cs" />
     <Compile Include="Infrastructure\RoundingHelperTests.cs" />

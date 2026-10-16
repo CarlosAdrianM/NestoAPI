@@ -569,6 +569,9 @@
     <Compile Include="Infraestructure\PreparacionAlmacen\BultosReposicion.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\EtiquetasHuecoAlmacen.cs" />
     <Compile Include="Models\PreparacionAlmacen\EtiquetasHuecoDTO.cs" />
+    <Compile Include="Infraestructure\PreparacionAlmacen\EtiquetasProductoAlmacen.cs" />
+    <Compile Include="Models\PreparacionAlmacen\EtiquetasProductoDTO.cs" />
+    <Compile Include="Controllers\EtiquetasProductoController.cs" />
     <Compile Include="Models\PreparacionAlmacen\PreparacionAlmacenDTO.cs" />
     <Compile Include="Models\PreparacionAlmacen\BultosReposicionDTO.cs" />
     <Compile Include="Models\PreparacionAlmacen\RecepcionesDTO.cs" />

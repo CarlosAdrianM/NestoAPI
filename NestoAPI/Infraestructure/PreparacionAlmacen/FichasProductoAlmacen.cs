@@ -13,6 +13,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     public class FichaProductoAlmacen
     {
         public string Producto { get; set; }
+        /// <summary>NestoAPI#654: para la etiqueta de código de barras del producto (aquí no se completa: ya lo trae cada lectura).</summary>
+        public string Nombre { get; set; }
         public string Familia { get; set; }
         public string Subgrupo { get; set; }
         public short? Tamano { get; set; }
@@ -117,6 +119,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
         internal const string SQL_FICHAS = @"
 SELECT RTRIM(p.[Número]) AS Producto,
+       RTRIM(p.Nombre) AS Nombre,
        RTRIM(f.[Descripción]) AS Familia,
        RTRIM(s.[Descripción]) AS Subgrupo,
        p.[Tamaño] AS Tamano,

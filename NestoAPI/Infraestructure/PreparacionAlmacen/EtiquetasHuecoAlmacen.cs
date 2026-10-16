@@ -282,7 +282,7 @@ HAVING SUM(u.Cantidad) > 0";
             }
             if (string.IsNullOrWhiteSpace(destino))
             {
-                throw new ArgumentException($"El usuario {sinDominio} no tiene impresora de etiquetas (parámetro {PARAMETRO_IMPRESORA}). Pídesela a informática.");
+                throw new ArgumentException($"El usuario {sinDominio} no tiene impresora de etiquetas (parámetro {PARAMETRO_IMPRESORA}). Pídasela a informática.");
             }
             return destino.Trim();
         }
