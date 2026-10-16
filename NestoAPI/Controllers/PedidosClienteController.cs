@@ -2,6 +2,7 @@
 using NestoAPI.Infraestructure.ChequesRegalo;
 using NestoAPI.Infraestructure.Clientes;
 using NestoAPI.Infraestructure.Contabilidad;
+using NestoAPI.Infraestructure.CorreosPostCompra;
 using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Infraestructure.Pagos;
 using NestoAPI.Infraestructure.PedidosVenta;
@@ -1413,6 +1414,50 @@ namespace NestoAPI.Controllers
             }
 
             return Ok(resumenes);
+        }
+
+        /// <summary>
+        /// NestoAPI#661: de dónde sale la lectura de habituales. Sustituible en tests (sin BD).
+        /// </summary>
+        internal Func<NVEntities, ISelectorRecordatoriosReposicion> CrearSelectorReposicion { get; set; }
+            = db => new SelectorRecordatoriosReposicion(db);
+
+        /// <summary>NestoAPI#661: para leer la lista de consumibles del recordatorio. Sustituible en tests.</summary>
+        internal ILectorParametrosUsuario LectorParametros { get; set; } = new LectorParametrosUsuario();
+
+        /// <summary>
+        /// NestoAPI#661 (TNV#86): los productos que ha comprado el cliente que ha iniciado sesión, ordenados para
+        /// que arriba salga lo que, por su propio ritmo de compra, ya le tocaría reponer, con la cantidad que suele
+        /// llevarse. Es el criterio del recordatorio de reposición (NestoAPI#532, un solo sitio:
+        /// <see cref="CalculadoraReposicion.Habituales"/>), para un solo cliente y bajo demanda: la consulta va
+        /// acotada por su Nº Cliente.
+        ///
+        /// <para>Como en <see cref="GetPedidosCliente"/>, el cliente sale SIEMPRE del JWT: si viene otro en la
+        /// query, se ignora. Un cliente sin compras recibe una lista vacía.</para>
+        /// </summary>
+        // GET: api/Pedidos/Cliente/Habituales
+        [HttpGet]
+        [Route("Cliente/Habituales")]
+        [ResponseType(typeof(List<HabitualClienteDTO>))]
+        public async Task<IHttpActionResult> GetHabitualesCliente()
+        {
+            ClaimsIdentity identity = User?.Identity as ClaimsIdentity;
+            string cliente = identity?.FindFirst("cliente")?.Value?.Trim();
+            if (string.IsNullOrWhiteSpace(cliente))
+            {
+                return Unauthorized();
+            }
+            if (!ValidadorAccesoCliente.ValidarAcceso(identity, cliente).Autorizado)
+            {
+                return Unauthorized();
+            }
+
+            List<HabitualClienteDTO> habituales = await CrearSelectorReposicion(db)
+                .LeerHabituales(Constantes.Empresas.EMPRESA_POR_DEFECTO, cliente, DateTime.Today,
+                    RecordatorioReposicionJobsService.LeerConsumibles(LectorParametros))
+                .ConfigureAwait(false);
+
+            return Ok(habituales ?? new List<HabitualClienteDTO>());
         }
 
         private static string MotivoParaElCliente(PedidoValidacionException ex)

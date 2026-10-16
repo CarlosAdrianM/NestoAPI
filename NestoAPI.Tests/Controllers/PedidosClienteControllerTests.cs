@@ -1,6 +1,7 @@
 ﻿using System.Collections.Generic;
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Clientes;
+using NestoAPI.Infraestructure.CorreosPostCompra;
 using NestoAPI.Tests.Helpers;
 using System.Data.Entity;
 using System.Data.Entity.Infrastructure;
@@ -66,6 +67,78 @@ namespace NestoAPI.Tests.Controllers
             Assert.IsInstanceOfType(demasiados, typeof(BadRequestErrorMessageResult));
             Assert.IsInstanceOfType(ninguno, typeof(BadRequestErrorMessageResult));
         }
+
+        #region NestoAPI#661: habituales del cliente
+
+        [TestMethod]
+        public async Task GetHabitualesCliente_DevuelveLaListaDelSelectorParaElClienteDelToken()
+        {
+            ISelectorRecordatoriosReposicion selector = A.Fake<ISelectorRecordatoriosReposicion>();
+            var lista = new List<HabitualClienteDTO>
+            {
+                new HabitualClienteDTO { Producto = "CREMA500", Nombre = "CREMA 500", CantidadHabitual = 2, TocaReponer = true, Orden = 1 }
+            };
+            A.CallTo(() => selector.LeerHabituales(A<string>._, A<string>._, A<System.DateTime>._, A<string>._)).Returns(lista);
+            PedidosClienteController controller = ControllerHabituales(IdentityDeCliente("15816"), selector);
+
+            var resultado = await controller.GetHabitualesCliente() as OkNegotiatedContentResult<List<HabitualClienteDTO>>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual("CREMA500", resultado.Content.Single().Producto);
+            A.CallTo(() => selector.LeerHabituales(Constantes.Empresas.EMPRESA_POR_DEFECTO, "15816", System.DateTime.Today, A<string>._))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task GetHabitualesCliente_SinCompras_DevuelveListaVacia()
+        {
+            ISelectorRecordatoriosReposicion selector = A.Fake<ISelectorRecordatoriosReposicion>();
+            A.CallTo(() => selector.LeerHabituales(A<string>._, A<string>._, A<System.DateTime>._, A<string>._))
+                .Returns(new List<HabitualClienteDTO>());
+            PedidosClienteController controller = ControllerHabituales(IdentityDeCliente("15816"), selector);
+
+            var resultado = await controller.GetHabitualesCliente() as OkNegotiatedContentResult<List<HabitualClienteDTO>>;
+
+            Assert.IsNotNull(resultado, "200, no error");
+            Assert.AreEqual(0, resultado.Content.Count);
+        }
+
+        [TestMethod]
+        public async Task GetHabitualesCliente_ClienteEnLaQuery_SeIgnoraYSeUsaElDelToken()
+        {
+            ISelectorRecordatoriosReposicion selector = A.Fake<ISelectorRecordatoriosReposicion>();
+            A.CallTo(() => selector.LeerHabituales(A<string>._, A<string>._, A<System.DateTime>._, A<string>._))
+                .Returns(new List<HabitualClienteDTO>());
+            PedidosClienteController controller = ControllerHabituales(IdentityDeCliente("15816"), selector);
+            controller.Request = new HttpRequestMessage(HttpMethod.Get, "http://localhost/api/Pedidos/Cliente/Habituales?cliente=99999");
+
+            _ = await controller.GetHabitualesCliente();
+
+            A.CallTo(() => selector.LeerHabituales(A<string>._, "15816", A<System.DateTime>._, A<string>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => selector.LeerHabituales(A<string>._, "99999", A<System.DateTime>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task GetHabitualesCliente_SinClaimDeCliente_NoEntra()
+        {
+            ISelectorRecordatoriosReposicion selector = A.Fake<ISelectorRecordatoriosReposicion>();
+            PedidosClienteController controller = ControllerHabituales(new ClaimsIdentity(new List<Claim>(), "JWT"), selector);
+
+            IHttpActionResult resultado = await controller.GetHabitualesCliente();
+
+            Assert.IsInstanceOfType(resultado, typeof(UnauthorizedResult));
+            A.CallTo(() => selector.LeerHabituales(A<string>._, A<string>._, A<System.DateTime>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        private static PedidosClienteController ControllerHabituales(ClaimsIdentity identity, ISelectorRecordatoriosReposicion selector)
+        {
+            PedidosClienteController controller = ControllerConIdentity(identity);
+            controller.CrearSelectorReposicion = _ => selector;
+            controller.LectorParametros = A.Fake<ILectorParametrosUsuario>();
+            return controller;
+        }
+
+        #endregion
 
         private static ClaimsIdentity IdentityDeCliente(string cliente)
         {

@@ -1701,6 +1701,7 @@
     <Compile Include="Models\PedidosVenta\LineaPedidoVentaBusquedaDTO.cs" />
     <Compile Include="Models\PedidosVenta\LineaPedidoVentaDTO.cs" />
     <Compile Include="Models\PedidosVenta\PedidoClienteResumenDTO.cs" />
+    <Compile Include="Models\PedidosVenta\HabitualClienteDTO.cs" />
     <Compile Include="Models\Notificaciones\EstadoNotificadoPedido.cs" />
     <Compile Include="Models\PedidosVenta\ParametroStringIntInt.cs" />
     <Compile Include="Models\PedidosVenta\ParametroStringIntPedido.cs" />

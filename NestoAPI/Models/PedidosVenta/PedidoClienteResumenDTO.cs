@@ -59,6 +59,24 @@ namespace NestoAPI.Models.PedidosVenta
         /// para que la app no tenga dos formas de pintar lo mismo (TNV#5).
         /// </summary>
         public UltimoEnvioClienteDTO Envio { get; set; }
+
+        /// <summary>
+        /// NestoAPI#661 (TNV#85, «Volver a pedir»): los productos del pedido con su cantidad, para cargarlos en el
+        /// carrito. Solo líneas de producto (sin portes, textos, regalos de Ganavisiones, cupones ni cheques
+        /// regalo) y una por producto. Sin precios: la app los recalcula como con cualquier producto añadido.
+        /// </summary>
+        public List<LineaPedidoClienteResumenDTO> Lineas { get; set; } = new List<LineaPedidoClienteResumenDTO>();
+    }
+
+    /// <summary>NestoAPI#661: un producto de un pedido del cliente, para volver a pedirlo.</summary>
+    public class LineaPedidoClienteResumenDTO
+    {
+        public string Producto { get; set; }
+
+        /// <summary>El texto de la línea del pedido.</summary>
+        public string Nombre { get; set; }
+
+        public int Cantidad { get; set; }
     }
 
     /// <summary>

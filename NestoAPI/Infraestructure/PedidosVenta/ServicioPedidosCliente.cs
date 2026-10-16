@@ -51,6 +51,10 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     c.PlazosPago,
                     Lineas = c.LinPedidoVtas.Select(l => new
                     {
+                        l.Nº_Orden,
+                        l.Producto,
+                        l.Base_Imponible,
+                        l.NºOferta,
                         l.Estado,
                         l.Picking,
                         l.TipoLinea,
@@ -71,6 +75,19 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 .ConfigureAwait(false);
 
             List<int> numeros = pedidos.Select(p => p.Número).ToList();
+
+            // NestoAPI#661: los regalos de Ganavisiones no se vuelven a pedir. Se reconocen igual que en el GET de
+            // PedidosVenta (#279): línea de producto a 0 € sin oferta, confirmada contra la tabla Ganavision.
+            List<string> candidatosGanavisiones = pedidos
+                .SelectMany(p => p.Lineas)
+                .Where(l => ResumidorPedidosCliente.EsCandidataGanavisiones(l.TipoLinea, l.Producto, l.Cantidad, l.Base_Imponible, l.NºOferta))
+                .Select(l => l.Producto.Trim())
+                .Distinct()
+                .ToList();
+            HashSet<string> ganavisiones = candidatosGanavisiones.Any()
+                ? await ServirJunto.ServicioValidarServirJunto
+                    .ConfirmarGanavisionesContraBdAsync(db, candidatosGanavisiones).ConfigureAwait(false)
+                : new HashSet<string>();
             Dictionary<int, UltimoEnvioClienteDTO> envios =
                 await LeerEnviosDeLosPedidos(empresa, cliente, numeros).ConfigureAwait(false);
 
@@ -86,8 +103,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     PlazosPago = p.PlazosPago,
                     ImportePrepagado = p.ImportePrepagado ?? 0m,
                     Envio = envios.ContainsKey(p.Número) ? envios[p.Número] : null,
-                    Lineas = p.Lineas.Select(l => new DatosLineaPedidoCliente
+                    Lineas = p.Lineas.OrderBy(l => l.Nº_Orden).Select(l => new DatosLineaPedidoCliente
                     {
+                        Producto = l.Producto,
+                        EsRegaloGanavisiones = ResumidorPedidosCliente.EsCandidataGanavisiones(
+                            l.TipoLinea, l.Producto, l.Cantidad, l.Base_Imponible, l.NºOferta)
+                            && ganavisiones.Contains(l.Producto.Trim()),
                         Estado = l.Estado,
                         Picking = l.Picking,
                         TipoLinea = l.TipoLinea,

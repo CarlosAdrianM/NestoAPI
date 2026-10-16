@@ -13,6 +13,19 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
         public string Producto { get; set; }
         public DateTime Dia { get; set; }
         public decimal BaseImponible { get; set; }
+        /// <summary>NestoAPI#661: unidades que se llevó ese día (para la cantidad habitual).</summary>
+        public int Cantidad { get; set; }
+    }
+
+    /// <summary>
+    /// NestoAPI#661: un par cliente-producto ya evaluado, toque o no reponerlo. <see cref="Toca"/> = consumible,
+    /// con ritmo propio y dentro de la ventana (solo entonces el candidato lleva Motivo de exclusión).
+    /// </summary>
+    internal class EvaluacionParReposicion
+    {
+        public CandidatoReposicionDTO Candidato { get; set; }
+        public ProductoReposicion Ficha { get; set; }
+        public bool Toca { get; set; }
     }
 
     /// <summary>
@@ -67,6 +80,11 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
         public int DiasDesdeUltimaCompra { get; set; }
         /// <summary>Base imponible media de cada compra: ordena los productos dentro del correo.</summary>
         public decimal ImporteHabitual { get; set; }
+        /// <summary>
+        /// NestoAPI#661/#662: unidades que suele llevarse (mediana por día de compra, mínimo 1). Precarga la
+        /// cantidad en la app y viaja en los datos de la push de reposición.
+        /// </summary>
+        public int CantidadHabitual { get; set; }
         public string Motivo { get; set; }
         public string EnlaceTienda { get; set; }
         public bool SeAvisaria => Motivo == null;

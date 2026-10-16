@@ -321,6 +321,7 @@
     <Compile Include="Infraestructure\DiagnosticoBloqueosTests.cs" />
     <Compile Include="Infraestructure\ErroresTriggerSqlTests.cs" />
     <Compile Include="Infraestructure\ResumidorPedidosClienteTests.cs" />
+    <Compile Include="Infraestructure\ServicioPedidosClienteTests.cs" />
     <Compile Include="Infraestructure\AvisosEstadoPedidoTests.cs" />
     <Compile Include="Infraestructure\AvisosPedidosJobsServiceTests.cs" />
     <Compile Include="Infraestructure\Direcciones\CodigoPostalAlGuardarTests.cs" />

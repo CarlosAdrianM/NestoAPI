@@ -291,6 +291,63 @@ namespace NestoAPI.Tests.Infraestructure
             }
         }
 
+        // --- NestoAPI#661: «Volver a pedir» ---
+
+        [TestMethod]
+        public void Resumir_Lineas_SoloLasDeProductoSinRegalosCuponesNiPortes()
+        {
+            string cupon = NestoAPI.Infraestructure.Cupones.ReglasCupon.ProductoCupon;
+            DatosPedidoCliente pedido = Pedido(
+                LineaDe("LACA500  ", "LACA 500 ML  ", 2),
+                LineaDe("REGALO", "REGALO GANAVISIONES", 1, ganavisiones: true),
+                LineaDe(cupon, "Cupón 10 €", -1),
+                LineaDe("CHEQUE", "Cheque regalo 20 € (campaña X)", -1),
+                LineaDe("62400000", "Portes", 1, tipoLinea: Constantes.TiposLineaVenta.CUENTA_CONTABLE),
+                LineaDe(null, "Gracias por su pedido", 0, tipoLinea: Constantes.TiposLineaVenta.TEXTO),
+                LineaDe("CHAMPU", "CHAMPÚ 1000 ML", 3));
+
+            PedidoClienteResumenDTO resumen = ResumidorPedidosCliente.Resumir(pedido);
+
+            Assert.AreEqual(2, resumen.Lineas.Count);
+            Assert.AreEqual("LACA500", resumen.Lineas[0].Producto);
+            Assert.AreEqual("LACA 500 ML", resumen.Lineas[0].Nombre);
+            Assert.AreEqual(2, resumen.Lineas[0].Cantidad);
+            Assert.AreEqual("CHAMPU", resumen.Lineas[1].Producto);
+            Assert.AreEqual("CHAMPÚ 1000 ML", resumen.Lineas[1].Nombre);
+            Assert.AreEqual(3, resumen.Lineas[1].Cantidad);
+        }
+
+        [TestMethod]
+        public void Resumir_Lineas_UnProductoEnVariasLineasVaEnUnaSumando()
+        {
+            // Una oferta 6+1 son dos líneas del mismo producto
+            DatosPedidoCliente pedido = Pedido(LineaDe("LACA500", "LACA 500 ML", 6), LineaDe("LACA500 ", "LACA 500 ML", 1));
+
+            PedidoClienteResumenDTO resumen = ResumidorPedidosCliente.Resumir(pedido);
+
+            Assert.AreEqual(1, resumen.Lineas.Count);
+            Assert.AreEqual(7, resumen.Lineas[0].Cantidad);
+        }
+
+        [TestMethod]
+        public void EsCandidataGanavisiones_ProductoACeroSinOferta()
+        {
+            Assert.IsTrue(ResumidorPedidosCliente.EsCandidataGanavisiones(Constantes.TiposLineaVenta.PRODUCTO, "REGALO", 1, 0m, null));
+            Assert.IsTrue(ResumidorPedidosCliente.EsCandidataGanavisiones(Constantes.TiposLineaVenta.PRODUCTO, "REGALO", 1, 0m, 0));
+            Assert.IsFalse(ResumidorPedidosCliente.EsCandidataGanavisiones(Constantes.TiposLineaVenta.PRODUCTO, "REGALO", 1, 0m, 77), "El gratis de una oferta");
+            Assert.IsFalse(ResumidorPedidosCliente.EsCandidataGanavisiones(Constantes.TiposLineaVenta.PRODUCTO, "LACA", 1, 5m, null));
+            Assert.IsFalse(ResumidorPedidosCliente.EsCandidataGanavisiones(Constantes.TiposLineaVenta.CUENTA_CONTABLE, "62400000", 1, 0m, null));
+        }
+
+        private static DatosLineaPedidoCliente LineaDe(string producto, string texto, short cantidad,
+            int tipoLinea = Constantes.TiposLineaVenta.PRODUCTO, bool ganavisiones = false)
+        {
+            DatosLineaPedidoCliente linea = Linea(cantidad: cantidad, tipoLinea: tipoLinea, texto: texto);
+            linea.Producto = producto;
+            linea.EsRegaloGanavisiones = ganavisiones;
+            return linea;
+        }
+
         private static DatosPedidoCliente Pedido(params DatosLineaPedidoCliente[] lineas)
         {
             return new DatosPedidoCliente

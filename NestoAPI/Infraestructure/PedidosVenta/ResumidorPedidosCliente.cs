@@ -54,9 +54,49 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 ImportePendiente = pendiente,
                 FormaPago = pedido.FormaPago?.Trim(),
                 PlazosPago = pedido.PlazosPago?.Trim(),
-                Envio = pedido.Envio
+                Envio = pedido.Envio,
+                Lineas = LineasParaVolverAPedir(lineas, Cupones.ReglasCupon.ProductoCupon)
             };
         }
+
+        /// <summary>
+        /// NestoAPI#661 (TNV#85, «Volver a pedir»): lo que el cliente pidió, para volver a meterlo en el carrito.
+        /// Solo líneas de producto vivas con cantidad positiva: fuera textos, portes y demás cuentas, los regalos
+        /// de Ganavisiones (los elige él en cada pedido), el cupón y el cheque regalo (van en negativo y nunca se
+        /// repiten). Un producto en varias líneas (por ejemplo, una oferta 6+1) va en una sola, sumando.
+        /// La app recalcula precios y stock como con cualquier producto que añade: aquí no viaja ningún precio.
+        /// </summary>
+        internal static List<LineaPedidoClienteResumenDTO> LineasParaVolverAPedir(List<DatosLineaPedidoCliente> lineas,
+            string productoCupon)
+        {
+            return (lineas ?? new List<DatosLineaPedidoCliente>())
+                .Where(l => l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO
+                    && l.Estado > Constantes.EstadosLineaVenta.PRESUPUESTO
+                    && !string.IsNullOrWhiteSpace(l.Producto)
+                    && (l.Cantidad ?? 0) > 0
+                    && !l.EsRegaloGanavisiones
+                    && !Cupones.ReglasCupon.EsProductoCupon(l.Producto, productoCupon))
+                .GroupBy(l => l.Producto.Trim(), StringComparer.OrdinalIgnoreCase)
+                .Select(g => new LineaPedidoClienteResumenDTO
+                {
+                    Producto = g.Key,
+                    Nombre = g.Select(l => l.Texto?.Trim()).FirstOrDefault(t => !string.IsNullOrWhiteSpace(t)),
+                    Cantidad = g.Sum(l => (int)(l.Cantidad ?? 0))
+                })
+                .ToList();
+        }
+
+        /// <summary>
+        /// Candidata a regalo de Ganavisiones: línea de producto a 0 euros sin oferta (el mismo criterio que
+        /// GestorPedidosVenta.MarcarBonificadosGanavisionesAsync). Hay que confirmarla contra la tabla Ganavision:
+        /// las muestras y los regalos por importe también van a 0 y esos sí se vuelven a pedir.
+        /// </summary>
+        internal static bool EsCandidataGanavisiones(byte? tipoLinea, string producto, short? cantidad, decimal baseImponible, int? oferta)
+            => tipoLinea == Constantes.TiposLineaVenta.PRODUCTO
+                && !string.IsNullOrWhiteSpace(producto)
+                && (cantidad ?? 0) > 0
+                && baseImponible == 0
+                && (oferta == null || oferta == 0);
 
         /// <summary>
         /// Lo que falta por cobrar de un pedido de prepago. En los demás (recibo, transferencia a
@@ -205,6 +245,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
     internal class DatosLineaPedidoCliente
     {
+        /// <summary>NestoAPI#661: para «Volver a pedir».</summary>
+        public string Producto { get; set; }
+
+        /// <summary>NestoAPI#661: regalo de Ganavisiones confirmado contra la tabla (no se vuelve a pedir).</summary>
+        public bool EsRegaloGanavisiones { get; set; }
+
         public short Estado { get; set; }
 
         /// <summary>

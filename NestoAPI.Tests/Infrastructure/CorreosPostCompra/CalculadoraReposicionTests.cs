@@ -1,6 +1,7 @@
 ﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.CorreosPostCompra;
+using NestoAPI.Models.PedidosVenta;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -476,6 +477,142 @@ namespace NestoAPI.Tests.Infrastructure.CorreosPostCompra
         {
             Assert.AreEqual(ConsumiblesReposicion.POR_DEFECTO, ConsumiblesReposicion.Leer("").Definicion);
             Assert.AreEqual(ConsumiblesReposicion.POR_DEFECTO, ConsumiblesReposicion.Leer(" -COS/MMP ").Definicion);
+        }
+
+        #endregion
+
+        #region NestoAPI#661: habituales de un cliente
+
+        private void ComprasConCantidad(string cliente, string producto, decimal importe, int cantidad, params int[] haceDias)
+        {
+            foreach (int dias in haceDias)
+            {
+                compras.Add(new CompraDiaReposicion
+                {
+                    Cliente = cliente,
+                    Producto = producto,
+                    Dia = HOY.AddDays(-dias),
+                    BaseImponible = importe,
+                    Cantidad = cantidad
+                });
+            }
+        }
+
+        private List<HabitualClienteDTO> Habituales(Func<IReadOnlyCollection<string>, ISet<string>> leerSinStock = null)
+            => CalculadoraReposicion.Habituales(compras, pendientes, productos, CONSUMIBLES, HOY, leerSinStock);
+
+        [TestMethod]
+        public void Habituales_TresComprasCada30DiasY40DesdeLaUltima_TocaReponer()
+        {
+            ComprasConCantidad("1001", "CREMA500", 50m, 2, 100, 70, 40);
+
+            HabitualClienteDTO habitual = Habituales().Single();
+
+            Assert.IsTrue(habitual.TocaReponer);
+            Assert.AreEqual("CREMA500", habitual.Producto);
+            Assert.AreEqual("Crema hidratante 500 ml", habitual.Nombre);
+            Assert.AreEqual(2, habitual.CantidadHabitual);
+            Assert.AreEqual(HOY.AddDays(-40), habitual.UltimaCompra);
+            Assert.AreEqual(1, habitual.Orden);
+        }
+
+        [TestMethod]
+        public void Habituales_TresComprasCada30DiasY20DesdeLaUltima_AparecePeroNoToca()
+        {
+            ComprasConCantidad("1001", "CREMA500", 50m, 1, 80, 50, 20);
+
+            HabitualClienteDTO habitual = Habituales().Single();
+
+            Assert.IsFalse(habitual.TocaReponer);
+        }
+
+        [TestMethod]
+        public void Habituales_MedianaDeMenosDe14Dias_NuncaToca()
+        {
+            // Ritmo de 10 días y 21 desde la última: por ventana tocaría (12,5 a 30), pero quien compra tan a
+            // menudo no necesita recordatorio
+            ComprasConCantidad("1001", "CREMA500", 50m, 1, 41, 31, 21);
+
+            Assert.IsFalse(Habituales().Single().TocaReponer);
+        }
+
+        [TestMethod]
+        public void Habituales_ConPedidoPendienteDelMismoCliente_NoToca()
+        {
+            ComprasConCantidad("1001", "CREMA500", 50m, 1, 100, 70, 40);
+            pendientes.Add(new LineaPendienteReposicion { Cliente = "1001", Producto = "CREMA500", Estado = -1, Fecha = HOY.AddDays(2) });
+
+            HabitualClienteDTO habitual = Habituales().Single();
+
+            Assert.IsFalse(habitual.TocaReponer, "Ya lo tiene pedido");
+        }
+
+        [TestMethod]
+        public void Habituales_SinStock_NoToca()
+        {
+            ComprasConCantidad("1001", "CREMA500", 50m, 1, 100, 70, 40);
+
+            HabitualClienteDTO habitual = Habituales(_ => new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "CREMA500" }).Single();
+
+            Assert.IsFalse(habitual.TocaReponer);
+        }
+
+        [TestMethod]
+        public void Habituales_SinCompras_ListaVacia()
+        {
+            Assert.AreEqual(0, Habituales().Count);
+        }
+
+        [TestMethod]
+        public void Habituales_NoConsumiblesYCompraSuelta_AparecenSinTocar_YLosDeBajaNoAparecen()
+        {
+            ComprasConCantidad("1001", "APARATO", 900m, 1, 100, 70, 40);   // no consumible, con el mismo ritmo
+            ComprasConCantidad("1001", "TINTE", 5m, 1, 10);                 // una sola compra: sin ritmo
+            productos["BAJA"] = Producto("BAJA", "Crema descatalogada", "COS", "125", "Fama", estado: -1);
+            productos["FICTICIO"] = Producto("FICTICIO", "Portes", "COS", "125", "Fama", ficticio: true);
+            ComprasConCantidad("1001", "BAJA", 50m, 1, 100, 70, 40);
+            ComprasConCantidad("1001", "FICTICIO", 50m, 1, 100, 70, 40);
+            ComprasConCantidad("1001", "SINFICHA", 50m, 1, 100, 70, 40);
+
+            List<HabitualClienteDTO> habituales = Habituales();
+
+            CollectionAssert.AreEquivalent(new[] { "APARATO", "TINTE" }, habituales.Select(h => h.Producto).ToArray());
+            Assert.IsTrue(habituales.All(h => !h.TocaReponer));
+        }
+
+        [TestMethod]
+        public void Habituales_Orden_PrimeroLosQueTocanPorImporteYLuegoElRestoPorImporteYUltimaCompra()
+        {
+            ComprasConCantidad("1001", "CREMA500", 20m, 1, 100, 70, 40);   // toca, importe 20
+            ComprasConCantidad("1001", "CREMA1000", 60m, 1, 100, 70, 40);  // toca, importe 60
+            ComprasConCantidad("1001", "APARATO", 900m, 1, 100, 70, 40);   // no toca (no consumible), importe 900
+            ComprasConCantidad("1001", "TINTE", 5m, 1, 30);                // no toca, importe 5, más reciente
+            ComprasConCantidad("1001", "MUESTRA", 5m, 1, 60);              // no toca, importe 5, más antigua
+
+            List<HabitualClienteDTO> habituales = Habituales();
+
+            CollectionAssert.AreEqual(new[] { "CREMA1000", "CREMA500", "APARATO", "TINTE", "MUESTRA" },
+                habituales.Select(h => h.Producto).ToArray());
+            CollectionAssert.AreEqual(new[] { 1, 2, 3, 4, 5 }, habituales.Select(h => h.Orden).ToArray());
+        }
+
+        [TestMethod]
+        public void CantidadHabitual_EsLaMedianaRedondeadaYNuncaMenosDeUno()
+        {
+            Assert.AreEqual(2, CalculadoraReposicion.CantidadHabitual(new[] { 2, 6, 2 }), "Un pedido grande suelto no la mueve");
+            Assert.AreEqual(2, CalculadoraReposicion.CantidadHabitual(new[] { 1, 2 }), "1,5 redondea hacia arriba (AwayFromZero)");
+            Assert.AreEqual(4, CalculadoraReposicion.CantidadHabitual(new[] { 2, 3, 4, 5 }), "(3 + 4) / 2 = 3,5 → 4");
+            Assert.AreEqual(1, CalculadoraReposicion.CantidadHabitual(new int[0]));
+        }
+
+        [TestMethod]
+        public void EvaluarPares_LlevaLaCantidadHabitual()
+        {
+            ComprasConCantidad("1001", "CREMA500", 50m, 3, 100);
+            ComprasConCantidad("1001", "CREMA500", 50m, 4, 70);
+            ComprasConCantidad("1001", "CREMA500", 50m, 3, 40);
+
+            Assert.AreEqual(3, Evaluar().Single().CantidadHabitual);
         }
 
         #endregion

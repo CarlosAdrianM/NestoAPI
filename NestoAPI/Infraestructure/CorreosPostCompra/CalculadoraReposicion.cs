@@ -1,4 +1,5 @@
 ﻿using NestoAPI.Models;
+using NestoAPI.Models.PedidosVenta;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -83,6 +84,24 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
             IDictionary<string, ProductoReposicion> productos,
             ConsumiblesReposicion consumibles,
             DateTime hoy)
+            => EvaluarTodos(compras, pendientes, productos, consumibles, hoy)
+                .Where(e => e.Toca)
+                .Select(e => e.Candidato)
+                .ToList();
+
+        /// <summary>
+        /// NestoAPI#661: TODOS los pares cliente-producto con ficha de producto, toquen o no. Es el núcleo de
+        /// <see cref="EvaluarPares"/> (el job, que solo quiere los que tocan) y de <see cref="Habituales"/> (la
+        /// app, que quiere todo lo comprado con lo que toca arriba): un solo criterio.
+        /// <see cref="EvaluacionParReposicion.Toca"/> = consumible, con ritmo propio (al menos
+        /// <see cref="MINIMO_COMPRAS"/> días y mediana de al menos <see cref="INTERVALO_MINIMO_DIAS"/>) y dentro
+        /// de la ventana; solo entonces se rellena el Motivo de exclusión.
+        /// </summary>
+        internal static List<EvaluacionParReposicion> EvaluarTodos(IEnumerable<CompraDiaReposicion> compras,
+            IEnumerable<LineaPendienteReposicion> pendientes,
+            IDictionary<string, ProductoReposicion> productos,
+            ConsumiblesReposicion consumibles,
+            DateTime hoy)
         {
             DateTime fechaHoy = hoy.Date;
             DateTime desde = HistorialDesde(fechaHoy);
@@ -94,7 +113,8 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                     Cliente = c.Cliente.Trim(),
                     Producto = c.Producto.Trim(),
                     Dia = c.Dia.Date,
-                    BaseImponible = c.BaseImponible
+                    BaseImponible = c.BaseImponible,
+                    Cantidad = c.Cantidad
                 })
                 .ToList();
 
@@ -107,34 +127,33 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                 .GroupBy(p => p.Cliente.Trim(), StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
 
-            var resultado = new List<CandidatoReposicionDTO>();
+            productos = productos ?? new Dictionary<string, ProductoReposicion>(StringComparer.OrdinalIgnoreCase);
+            var resultado = new List<EvaluacionParReposicion>();
             foreach (var par in comprasValidas.GroupBy(c => new { Cliente = c.Cliente.ToUpperInvariant(), Producto = c.Producto.ToUpperInvariant() }))
             {
                 CompraDiaReposicion primera = par.First();
-                if (!productos.TryGetValue(primera.Producto, out ProductoReposicion producto)
-                    || !consumibles.EsConsumible(producto.Grupo, producto.SubGrupo))
+                if (!productos.TryGetValue(primera.Producto, out ProductoReposicion producto) || producto == null)
                 {
                     continue;
                 }
 
-                List<DateTime> dias = par.Select(c => c.Dia).Distinct().OrderBy(d => d).ToList();
-                double? mediana = IntervaloMediano(dias);
-                if (mediana == null)
-                {
-                    continue;
-                }
-                // Carlos (25/09/26): quien lo compra cada semana (o más a menudo) no necesita recordatorio
-                if (mediana.Value < INTERVALO_MINIMO_DIAS)
-                {
-                    continue;
-                }
-                double intervalo = mediana.Value;
+                // Varias filas del mismo día (la consulta ya agrupa por día) cuentan como una sola compra
+                List<CompraDiaReposicion> porDia = par
+                    .GroupBy(c => c.Dia)
+                    .Select(g => new CompraDiaReposicion
+                    {
+                        Cliente = primera.Cliente,
+                        Producto = primera.Producto,
+                        Dia = g.Key,
+                        BaseImponible = g.Sum(c => c.BaseImponible),
+                        Cantidad = g.Sum(c => c.Cantidad)
+                    })
+                    .OrderBy(c => c.Dia)
+                    .ToList();
+                List<DateTime> dias = porDia.Select(c => c.Dia).ToList();
                 DateTime ultima = dias.Last();
                 int diasDesde = (int)(fechaHoy - ultima).TotalDays;
-                if (!TocaReponer(intervalo, diasDesde))
-                {
-                    continue;
-                }
+                double? mediana = IntervaloMediano(dias);
 
                 var candidato = new CandidatoReposicionDTO
                 {
@@ -144,17 +163,104 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                     NumeroCompras = dias.Count,
                     PrimeraCompra = dias.First(),
                     UltimaCompra = ultima,
-                    IntervaloDias = (int)Math.Round(intervalo, MidpointRounding.AwayFromZero),
+                    IntervaloDias = mediana == null ? 0 : (int)Math.Round(mediana.Value, MidpointRounding.AwayFromZero),
                     DiasDesdeUltimaCompra = diasDesde,
-                    ImporteHabitual = RoundingHelper.Round(par.Sum(c => c.BaseImponible) / dias.Count, 2)
+                    ImporteHabitual = RoundingHelper.Round(porDia.Sum(c => c.BaseImponible) / dias.Count, 2),
+                    CantidadHabitual = CantidadHabitual(porDia.Select(c => c.Cantidad))
                 };
 
-                comprasPorCliente.TryGetValue(primera.Cliente, out List<CompraDiaReposicion> comprasCliente);
-                pendientesPorCliente.TryGetValue(primera.Cliente, out List<LineaPendienteReposicion> pendientesCliente);
-                candidato.Motivo = MotivoExclusion(producto, ultima, comprasCliente, pendientesCliente, productos);
-                resultado.Add(candidato);
+                bool consumible = consumibles != null && consumibles.EsConsumible(producto.Grupo, producto.SubGrupo);
+                // Carlos (25/09/26): quien lo compra cada semana (o más a menudo) no necesita recordatorio
+                bool conRitmo = mediana != null && mediana.Value >= INTERVALO_MINIMO_DIAS;
+                bool toca = consumible && conRitmo && TocaReponer(mediana.Value, diasDesde);
+                if (toca)
+                {
+                    comprasPorCliente.TryGetValue(primera.Cliente, out List<CompraDiaReposicion> comprasCliente);
+                    pendientesPorCliente.TryGetValue(primera.Cliente, out List<LineaPendienteReposicion> pendientesCliente);
+                    candidato.Motivo = MotivoExclusion(producto, ultima, comprasCliente, pendientesCliente, productos);
+                }
+
+                resultado.Add(new EvaluacionParReposicion
+                {
+                    Candidato = candidato,
+                    Ficha = producto,
+                    Toca = toca
+                });
             }
             return resultado;
+        }
+
+        /// <summary>
+        /// NestoAPI#661/#662: la cantidad que el cliente suele llevarse de un producto. Es la MEDIANA de las
+        /// unidades por día de compra (no la moda: con tres o cuatro compras casi nunca hay moda, y la media se
+        /// la lleva por delante un pedido grande puntual), redondeada AwayFromZero y nunca menos de 1:
+        /// 2, 2, 6 → 2; 1, 2 → 2 (1,5 redondea a 2).
+        /// </summary>
+        public static int CantidadHabitual(IEnumerable<int> cantidadesPorDia)
+        {
+            List<int> ordenadas = (cantidadesPorDia ?? Enumerable.Empty<int>()).Where(c => c > 0).OrderBy(c => c).ToList();
+            if (ordenadas.Count == 0)
+            {
+                return 1;
+            }
+            int n = ordenadas.Count;
+            decimal mediana = n % 2 == 1
+                ? ordenadas[n / 2]
+                : (ordenadas[(n / 2) - 1] + ordenadas[n / 2]) / 2m;
+            return Math.Max(1, (int)RoundingHelper.Round(mediana, 0));
+        }
+
+        /// <summary>
+        /// NestoAPI#661: los productos que el cliente ha comprado (albarán, cualquier canal) en los últimos
+        /// <see cref="MESES_HISTORIAL"/> meses, con lo que hoy le toca reponer arriba. Mismo criterio que el
+        /// recordatorio: <see cref="HabitualClienteDTO.TocaReponer"/> es exactamente lo que
+        /// <see cref="EvaluarPares"/> deja con Motivo null, y además con stock (como en el job). Los no
+        /// consumibles o sin ritmo propio salen con TocaReponer false; los de baja o ficticios no salen.
+        /// Orden: los que tocan (por importe habitual) y luego el resto por importe habitual y última compra.
+        /// </summary>
+        public static List<HabitualClienteDTO> Habituales(IEnumerable<CompraDiaReposicion> compras,
+            IEnumerable<LineaPendienteReposicion> pendientes,
+            IDictionary<string, ProductoReposicion> productos,
+            ConsumiblesReposicion consumibles,
+            DateTime hoy,
+            Func<IReadOnlyCollection<string>, ISet<string>> leerSinStock = null)
+        {
+            List<EvaluacionParReposicion> evaluados = EvaluarTodos(compras, pendientes, productos, consumibles, hoy)
+                .Where(e => e.Ficha.Estado >= 0 && !e.Ficha.Ficticio)
+                .ToList();
+
+            List<CandidatoReposicionDTO> tocan = evaluados.Where(e => e.Toca).Select(e => e.Candidato).ToList();
+            List<string> avisables = tocan.Where(c => c.SeAvisaria)
+                .Select(c => c.Producto).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (avisables.Any() && leerSinStock != null)
+            {
+                AplicarSinStock(tocan, leerSinStock(avisables));
+            }
+
+            List<HabitualClienteDTO> habituales = evaluados
+                .Select(e => new
+                {
+                    e.Candidato,
+                    TocaReponer = e.Toca && e.Candidato.SeAvisaria
+                })
+                .OrderByDescending(x => x.TocaReponer)
+                .ThenByDescending(x => x.Candidato.ImporteHabitual)
+                .ThenByDescending(x => x.Candidato.UltimaCompra)
+                .ThenBy(x => x.Candidato.Producto, StringComparer.OrdinalIgnoreCase)
+                .Select(x => new HabitualClienteDTO
+                {
+                    Producto = x.Candidato.Producto,
+                    Nombre = x.Candidato.NombreProducto,
+                    CantidadHabitual = x.Candidato.CantidadHabitual,
+                    UltimaCompra = x.Candidato.UltimaCompra,
+                    TocaReponer = x.TocaReponer
+                })
+                .ToList();
+            for (int i = 0; i < habituales.Count; i++)
+            {
+                habituales[i].Orden = i + 1;
+            }
+            return habituales;
         }
 
         internal static string MotivoExclusion(ProductoReposicion producto, DateTime ultimaCompra,
@@ -279,8 +385,12 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
         /// Agrupa los que se avisarían en un correo por cliente (hasta 3 productos, los de más importe
         /// habitual), aparta el grupo de control y deja en <c>Descartes</c> todo lo que se queda fuera.
         /// </summary>
+        /// <param name="exigirCorreo">NestoAPI#662: el canal push no necesita correo (va al móvil del cliente): con
+        /// false no se descarta a nadie por no tener correo ni se junta por dirección.</param>
+        /// <param name="porcentajeGrupoControl">NestoAPI#662: el canal push va sin grupo de control (0).</param>
         public static ResultadoRecordatorioReposicionDTO Agrupar(List<CandidatoReposicionDTO> candidatos,
-            IDictionary<string, ClienteReposicion> clientes, DateTime hoy, string consumibles = null)
+            IDictionary<string, ClienteReposicion> clientes, DateTime hoy, string consumibles = null,
+            bool exigirCorreo = true, int porcentajeGrupoControl = PORCENTAJE_GRUPO_CONTROL)
         {
             var resultado = new ResultadoRecordatorioReposicionDTO
             {
@@ -307,7 +417,7 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                 {
                     motivoCliente = MOTIVO_CLIENTE_BAJA;
                 }
-                else if (string.IsNullOrWhiteSpace(cliente.Email))
+                else if (exigirCorreo && string.IsNullOrWhiteSpace(cliente.Email))
                 {
                     motivoCliente = MOTIVO_SIN_CORREO;
                 }
@@ -329,15 +439,16 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                 {
                     Cliente = cliente.Cliente?.Trim() ?? grupo.Key,
                     Nombre = cliente.Nombre?.Trim(),
-                    Email = cliente.Email.Trim(),
+                    Email = cliente.Email?.Trim(),
                     VendedorNombre = NombreVendedor(cliente),
-                    GrupoControl = EsGrupoControl(grupo.Key),
+                    GrupoControl = EsGrupoControl(grupo.Key, porcentajeGrupoControl),
                     Productos = delCliente.Take(MAXIMO_PRODUCTOS_POR_CORREO).ToList()
                 });
             }
 
             // Un correo por dirección: si varios clientes comparten correo, se queda el de más productos.
-            foreach (var mismoCorreo in correos.GroupBy(c => c.Email.ToLowerInvariant()))
+            // Sin exigir correo (push), cada cliente va por su cuenta
+            foreach (var mismoCorreo in correos.GroupBy(c => exigirCorreo ? c.Email.ToLowerInvariant() : c.Cliente.ToUpperInvariant()))
             {
                 List<RecordatorioReposicionClienteDTO> ordenados = mismoCorreo
                     .OrderByDescending(c => c.Productos.Count)
