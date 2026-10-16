@@ -1,4 +1,6 @@
-﻿using NestoAPI.Infraestructure.Stocks;
+﻿using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Stocks;
+using NestoAPI.Infraestructure.Stocks.Tendencias;
 using NestoAPI.Models;
 using NestoAPI.Models.Productos;
 using System;
@@ -17,14 +19,23 @@ namespace NestoAPI.Controllers
     public class ControlesStockController : ApiController
     {
         private NVEntities db = new NVEntities();
+        private readonly IServicioPropuestaStockProducto servicioPropuesta;
+        private readonly Action<Exception> registrarError;
 
-        public ControlesStockController()
+        public ControlesStockController() : this(new NVEntities())
         {
         }
 
-        public ControlesStockController(NVEntities context)
+        public ControlesStockController(NVEntities context) : this(context, null)
+        {
+        }
+
+        /// <param name="servicioPropuesta">NestoAPI#628 (ficha = Excel): lo sugerido en ALG; por defecto, el motor de las propuestas de stock.</param>
+        public ControlesStockController(NVEntities context, IServicioPropuestaStockProducto servicioPropuesta, Action<Exception> registrarError = null)
         {
             db = context;
+            this.servicioPropuesta = servicioPropuesta ?? new ServicioPropuestaStockProducto();
+            this.registrarError = registrarError ?? ElmahHelper.Log;
         }
         /*
         // GET: api/ControlesStock
@@ -59,6 +70,9 @@ namespace NestoAPI.Controllers
             {
                 return NotFound();
             }
+
+            // NestoAPI#628 (ficha = Excel): la propuesta de ALG del motor, en paralelo con las consultas de aquí abajo.
+            Task<ResultadoTendencia> propuestaAlg = Task.Run(() => servicioPropuesta.Calcular(productoId));
 
             ControlStockProductoModel controlStockProducto = new ControlStockProductoModel
             {
@@ -122,8 +136,51 @@ namespace NestoAPI.Controllers
                 controlStockProducto.ControlesStocksAlmacen.Add(controlStockAlmacen);
             }
 
+            ResultadoTendencia propuesta = null;
+            string motivoSinPropuesta;
+            try
+            {
+                propuesta = await propuestaAlg.ConfigureAwait(false);
+                motivoSinPropuesta = propuesta == null ? "este producto no entra en las propuestas de stock" : null;
+            }
+            catch (Exception ex)
+            {
+                registrarError(new Exception($"[Ficha = Excel #628] No se ha podido calcular la propuesta de stock del producto {productoId}; " +
+                    $"la ficha sugiere con la fórmula de siempre: {ex.Message}", ex));
+                motivoSinPropuesta = "no se ha podido calcular como en el Excel de propuestas";
+            }
+            AplicarExplicaciones(controlStockProducto, propuesta, motivoSinPropuesta);
 
             return Ok(controlStockProducto);
+        }
+
+        /// <summary>
+        /// NestoAPI#628 (ficha = Excel, Carlos 16/10/26: «Nesto y el Excel deben sugerir lo mismo»). En ALG, el máximo y el mínimo
+        /// sugeridos son los del motor de las propuestas de stock (lo que saldría hoy en el Excel), con su frase, su fórmula y su
+        /// acción. Si el motor no da máximos (estado 1, liquidar, nada que hacer…), lo sugerido es 0 y la frase dice por qué. En
+        /// las tiendas (REI, ALC) el motor no calcula: sigue la media de 24 meses, con la frase de cómo sale.
+        /// Sin propuesta del motor (<paramref name="propuesta"/> null), ALG también sigue con la fórmula de siempre, y lo dice.
+        /// </summary>
+        internal static void AplicarExplicaciones(ControlStockProductoModel producto, ResultadoTendencia propuesta, string motivoSinPropuesta)
+        {
+            foreach (ControlStockAlmacenModel almacen in producto.ControlesStocksAlmacen)
+            {
+                bool esAlg = almacen.Almacen == Constantes.Almacenes.ALGETE;
+                if (esAlg && propuesta != null)
+                {
+                    almacen.FijarStockMaximoCalculado(propuesta.StockMaximoPropuesto ?? 0);
+                    producto.FijarStockMinimoCalculado(propuesta.StockMinimoPropuesto ?? 0);
+                    almacen.Explicacion = propuesta.Explicacion;
+                    almacen.Formula = propuesta.Formula;
+                    almacen.Accion = propuesta.Accion;
+                    almacen.CalculadoComoExcel = true;
+                    continue;
+                }
+                almacen.Formula = ControlStockBase.FORMULA_CLASICA;
+                almacen.Explicacion = esAlg
+                    ? $"Fórmula de siempre ({motivoSinPropuesta}). {almacen.ExplicacionMaximoClasico(almacen.Almacen)} {producto.ExplicacionMinimoClasico()}"
+                    : almacen.ExplicacionMaximoClasico(almacen.Almacen);
+            }
         }
 
         // GET: api/ControlesStock/ProductosProveedor?proveedorId=65&almacen=ALG

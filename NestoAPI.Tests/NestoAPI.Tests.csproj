@@ -346,6 +346,7 @@
     <Compile Include="Infraestructure\CorreoClienteTests.cs" />
     <Compile Include="Infraestructure\ApplicationDbContextInitializerTests.cs" />
     <Compile Include="Controllers\ControlesStockControllerTests.cs" />
+    <Compile Include="Controllers\ControlesStockFichaExcelTests.cs" />
     <Compile Include="Controllers\SeguimientosClientesControllerTests.cs" />
     <Compile Include="Controllers\VendedoresControllerTests.cs" />
     <Compile Include="Controllers\AlquileresControllerTests.cs" />

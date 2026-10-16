@@ -14,6 +14,18 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         List<DatosProductoTendencia> LeerProductos();
 
         /// <summary>
+        /// NestoAPI#628 (ficha = Excel): la fila de <see cref="LeerProductos"/> de un solo producto (sin series: se completan con
+        /// <see cref="CompletarLote"/>). Null si no entra en el cálculo (ficticio, MTP, MMP) o no existe.
+        /// </summary>
+        DatosProductoTendencia LeerProducto(string producto);
+
+        /// <summary>
+        /// NestoAPI#628 (ficha = Excel): ventas por mes de la familia (la suma de sus productos que entran, cada uno recortado a 0
+        /// por mes), alineadas como <see cref="DatosProductoTendencia.Ventas"/>: lo que necesita la estacionalidad de la familia.
+        /// </summary>
+        int[] LeerVentasFamilia(string familia, DateTime mesReferencia);
+
+        /// <summary>
         /// Rellena series de venta y stock, pendientes (vencidos), servido con retraso (NestoAPI#656, más de
         /// <paramref name="diasRetraso"/> días), compras abiertas y (para los que pueden ser nuevos) ventas por cliente.
         /// </summary>
@@ -82,7 +94,9 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         internal const int TIMEOUT_SEGUNDOS = 300;
         internal const string TABLA = "dbo.PropuestasStock";
 
-        internal static readonly string SQL_PRODUCTOS = @"
+        /// <summary>Ficha, proveedor y control de stock de ALG de los productos que entran (sin ORDER BY: lo comparten
+        /// <see cref="SQL_PRODUCTOS"/> y <see cref="SQL_PRODUCTO"/>).</summary>
+        private static readonly string SQL_PRODUCTOS_SIN_ORDEN = @"
 SELECT RTRIM(p.Número) AS Producto, RTRIM(p.Nombre) AS Nombre, RTRIM(p.Familia) AS Familia, RTRIM(p.Grupo) AS Grupo,
        RTRIM(p.SubGrupo) AS Subgrupo, p.Estado AS Estado, ISNULL(p.PrecioMedio, 0) AS PrecioMedio,
        prov.Proveedor AS Proveedor, prov.DiasEnServir AS DiasEnServir,
@@ -96,8 +110,21 @@ OUTER APPLY (SELECT TOP 1 RTRIM(pp.[Nº Proveedor]) AS Proveedor, CAST(pr.DíasE
              WHERE pp.Empresa = p.Empresa AND pp.[Nº Producto] = p.Número
              ORDER BY pp.Orden) prov
 LEFT JOIN ControlesStock cs WITH (NOLOCK) ON cs.Empresa = p.Empresa AND cs.Número = p.Número AND cs.Almacén = 'ALG'
-WHERE " + DemandaStock.SQL_FILTRO_PRODUCTO + @"
+WHERE " + DemandaStock.SQL_FILTRO_PRODUCTO;
+
+        internal static readonly string SQL_PRODUCTOS = SQL_PRODUCTOS_SIN_ORDEN + @"
 ORDER BY p.Número";
+
+        /// <summary>NestoAPI#628 (ficha = Excel): la misma fila de <see cref="SQL_PRODUCTOS"/> para un solo producto.</summary>
+        internal static readonly string SQL_PRODUCTO = SQL_PRODUCTOS_SIN_ORDEN + " AND p.Número = @producto";
+
+        /// <summary>
+        /// NestoAPI#628 (ficha = Excel): los productos de una familia que entran en el cálculo (los mismos que suma
+        /// <see cref="ServicioPropuestasStock.IndicesPorFamilia"/>), como subconsulta para el <c>IN ({0})</c> de
+        /// <see cref="SQL_VENTAS_MES"/>: una familia puede tener más productos que parámetros admite SQL Server.
+        /// </summary>
+        internal static readonly string SQL_PRODUCTOS_FAMILIA =
+            "SELECT p.Número FROM Productos p WITH (NOLOCK) WHERE " + DemandaStock.SQL_FILTRO_PRODUCTO + " AND p.Familia = @familia";
 
         internal static readonly string SQL_VENTAS_MES = @"
 SELECT RTRIM(l.Producto) AS Producto, YEAR(l.[Fecha Albarán]) AS Anno, MONTH(l.[Fecha Albarán]) AS Mes, SUM(CAST(l.Cantidad AS int)) AS Cantidad
@@ -209,26 +236,76 @@ ORDER BY ExcesoValorado DESC, Producto";
         {
             using (NVEntities db = Contexto())
             {
-                return db.Database.SqlQuery<FilaProducto>(SQL_PRODUCTOS).ToList()
-                    .Select(f => new DatosProductoTendencia
-                    {
-                        Producto = f.Producto,
-                        Nombre = f.Nombre,
-                        Familia = f.Familia,
-                        Grupo = f.Grupo,
-                        Subgrupo = f.Subgrupo,
-                        Estado = f.Estado,
-                        PrecioMedio = f.PrecioMedio,
-                        Proveedor = f.Proveedor,
-                        DiasEnServir = f.DiasEnServir,
-                        StockMaximoAlg = f.StockMaximoAlg,
-                        StockMinimoAlg = f.StockMinimoAlg,
-                        MultiplosAlg = f.MultiplosAlg <= 0 ? 1 : f.MultiplosAlg,
-                        TipoExclusiva = f.TipoExclusiva?.Trim()
-                    })
-                    .ToList();
+                return db.Database.SqlQuery<FilaProducto>(SQL_PRODUCTOS).ToList().Select(Datos).ToList();
             }
         }
+
+        public DatosProductoTendencia LeerProducto(string producto)
+        {
+            if (string.IsNullOrWhiteSpace(producto))
+            {
+                return null;
+            }
+            using (NVEntities db = Contexto())
+            {
+                FilaProducto fila = db.Database.SqlQuery<FilaProducto>(SQL_PRODUCTO,
+                    new SqlParameter("@producto", SqlDbType.VarChar, 15) { Value = producto.Trim() }).FirstOrDefault();
+                return fila == null ? null : Datos(fila);
+            }
+        }
+
+        public int[] LeerVentasFamilia(string familia, DateTime mesReferencia)
+        {
+            if (string.IsNullOrWhiteSpace(familia))
+            {
+                return new int[DatosProductoTendencia.MESES_SERIE];
+            }
+            DateTime hasta = mesReferencia.AddMonths(1);
+            DateTime desde = hasta.AddMonths(-DatosProductoTendencia.MESES_SERIE);
+            using (NVEntities db = Contexto())
+            {
+                List<FilaMes> filas = db.Database.SqlQuery<FilaMes>(string.Format(SQL_VENTAS_MES, SQL_PRODUCTOS_FAMILIA),
+                    new SqlParameter("@familia", SqlDbType.VarChar, 10) { Value = familia.Trim() },
+                    new SqlParameter("@desde", SqlDbType.DateTime) { Value = desde },
+                    new SqlParameter("@hasta", SqlDbType.DateTime) { Value = hasta }).ToList();
+                return SumarVentasFamilia(filas, desde);
+            }
+        }
+
+        /// <summary>
+        /// La serie de una familia como la suma <see cref="ServicioPropuestasStock.IndicesPorFamilia"/>: por producto y mes, la
+        /// venta neta recortada a 0 (igual que <see cref="CompletarLote"/>), y luego la suma de los productos.
+        /// </summary>
+        internal static int[] SumarVentasFamilia(IEnumerable<FilaMes> filas, DateTime desde)
+        {
+            int[] serie = new int[DatosProductoTendencia.MESES_SERIE];
+            foreach (FilaMes f in filas ?? Enumerable.Empty<FilaMes>())
+            {
+                int i = Indice(f.Anno, f.Mes, desde);
+                if (i >= 0 && i < DatosProductoTendencia.MESES_SERIE)
+                {
+                    serie[i] += Math.Max(0, f.Cantidad ?? 0);
+                }
+            }
+            return serie;
+        }
+
+        private static DatosProductoTendencia Datos(FilaProducto f) => new DatosProductoTendencia
+        {
+            Producto = f.Producto,
+            Nombre = f.Nombre,
+            Familia = f.Familia,
+            Grupo = f.Grupo,
+            Subgrupo = f.Subgrupo,
+            Estado = f.Estado,
+            PrecioMedio = f.PrecioMedio,
+            Proveedor = f.Proveedor,
+            DiasEnServir = f.DiasEnServir,
+            StockMaximoAlg = f.StockMaximoAlg,
+            StockMinimoAlg = f.StockMinimoAlg,
+            MultiplosAlg = f.MultiplosAlg <= 0 ? 1 : f.MultiplosAlg,
+            TipoExclusiva = f.TipoExclusiva?.Trim()
+        };
 
         public void CompletarLote(IList<DatosProductoTendencia> lote, DateTime mesReferencia, int mesesFaseA, int diasRetraso)
         {

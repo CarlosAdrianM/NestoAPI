@@ -129,10 +129,17 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                         serie[i] += d.Ventas[i];
                     }
                 }
-                resultado[familia.Key] = CalculadoraSeries.IndicesEstacionales(serie, DatosProductoTendencia.ULTIMO, mesReferencia,
-                    p.UnidadesMinimasFamiliaEstacionalidad, CalculadoraSeries.PrimerMesConVenta(serie));
+                resultado[familia.Key] = IndicesDeSerie(serie, mesReferencia, p);
             }
             return resultado;
         }
+
+        /// <summary>
+        /// Estacionalidad de una familia a partir de su serie de ventas (la suma de sus productos). La usan el Excel
+        /// (<see cref="IndicesPorFamilia"/>) y la ficha del producto (<see cref="ServicioPropuestaStockProducto"/>): un único cálculo.
+        /// </summary>
+        public static decimal[] IndicesDeSerie(int[] serie, DateTime mesReferencia, ParametrosTendencias p)
+            => CalculadoraSeries.IndicesEstacionales(serie, DatosProductoTendencia.ULTIMO, mesReferencia,
+                (p ?? new ParametrosTendencias()).UnidadesMinimasFamiliaEstacionalidad, CalculadoraSeries.PrimerMesConVenta(serie));
     }
 }

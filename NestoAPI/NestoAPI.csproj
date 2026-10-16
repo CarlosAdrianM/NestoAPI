@@ -991,6 +991,7 @@
     <Compile Include="Infraestructure\Stocks\Tendencias\CalibracionTendencias.cs" />
     <Compile Include="Infraestructure\Stocks\Tendencias\RepositorioTendenciasSql.cs" />
     <Compile Include="Infraestructure\Stocks\Tendencias\ServicioPropuestasStock.cs" />
+    <Compile Include="Infraestructure\Stocks\Tendencias\ServicioPropuestaStockProducto.cs" />
     <Compile Include="Infraestructure\Stocks\Tendencias\GeneradorExcelPropuestasStock.cs" />
     <Compile Include="Infraestructure\Stocks\Tendencias\PropuestasStockJobsService.cs" />
     <Compile Include="Controllers\PropuestasStockController.cs" />
