@@ -1,4 +1,4 @@
-/*
+﻿/*
     Novedades de Ariadna 2.12 (16/10/26): Ariadna#35, #42, #30, #28 (sin cambio: ya estaba desde la 2.7), #29, #33 y #40.
     Va primero al canal INTERNO (Carlos). Ejecutar en SSMS contra NV como sa cuando la 2.12 llegue a la prueba cerrada.
     Idempotente (compara por Ámbito + Título). Necesita la API publicada el 16/10 (UrlFoto de reposiciones, NestoAPI#653).
