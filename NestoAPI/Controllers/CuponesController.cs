@@ -62,6 +62,19 @@ namespace NestoAPI.Controllers
             return Ok(await servicio.CrearManual(peticion, User).ConfigureAwait(false));
         }
 
+        // POST api/Cupones/EV-2610-7K3Q/Anular   { Motivo? }
+        /// <summary>
+        /// Devolución del curso (la factura se rectifica a mano): anula el cupón si no se ha usado. Si ya se usó, 409 con el
+        /// pedido donde se usó y no se toca. Solo Administración y Dirección.
+        /// </summary>
+        [HttpPost]
+        [Route("api/Cupones/{codigo}/Anular")]
+        [ResponseType(typeof(CuponDTO))]
+        public async Task<IHttpActionResult> PostAnularCupon(string codigo, [FromBody] AnularCuponDTO peticion)
+        {
+            return Ok(await servicio.Anular(codigo, peticion, User).ConfigureAwait(false));
+        }
+
         protected override void Dispose(bool disposing)
         {
             if (disposing)

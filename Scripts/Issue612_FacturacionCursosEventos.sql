@@ -18,15 +18,12 @@
         señal, evento sin referencia de curso…: aviso a Administración).
       - ProcesandoDesde: candado para que el webhook y el botón no lo hagan dos veces a la vez (caduca a los 15 min).
 
-    ANTES DE ENCENDER EL INTERRUPTOR (no lo hace este script, lo decide Carlos):
+    USUARIO AUTOMÁTICO EN FechasPermitidas (decisión de Carlos 15/10/26, opción a):
       prdCrearFacturaVta comprueba prdFechaEsVálida (Ventas) y prdContabilizar (Contabilidad) con el @Usuario que se le
       pasa. Lo que hace la API sola (el cobro del enlace de pago) firma como «SenalesEventos» (Web.config
-      Eventos:UsuarioAutomatico) y ese usuario no tiene fechas en FechasPermitidas: sin ellas, la factura falla con
-      «Fecha no permitida» (se queda en Error y se reintenta). Ejemplo, a ajustar:
-        -- INSERT INTO dbo.FechasPermitidas (Empresa, Usuario, FechaInicialVta, FechaFinalVta, FechaInicialCnt, FechaFinalCnt)
-        -- SELECT e.Empresa, 'SenalesEventos', '20261001', '20270630', '20261001', '20270630'
-        -- FROM (SELECT '1' AS Empresa UNION ALL SELECT '3') e
-        -- WHERE NOT EXISTS (SELECT 1 FROM dbo.FechasPermitidas f WHERE f.Empresa = e.Empresa AND f.Usuario = 'SenalesEventos');
+      Eventos:UsuarioAutomatico). Este script le da fila en FechasPermitidas en las empresas 1 y 3 copiando las fechas de
+      NUEVAVISION\Administrativo (solo si no la tiene ya); a partir de ahí se le mueven las fechas como a los demás. Sin
+      ellas, la factura falla con «Fecha no permitida» (se queda en Error y se reintenta).
       Lo que marca una persona (pago a mano, señal de #591) firma con su usuario, que ya tiene sus fechas.
 
     PRECAUCIÓN (#542, #294): nada de índices filtrados ni de columnas calculadas indexadas.
@@ -66,6 +63,19 @@ GO
 
 -- BD de negocio: la API corre con la cuenta de máquina de RDS2016
 GRANT SELECT, INSERT, UPDATE ON dbo.EventosInscripcionesCurso TO [NUEVAVISION\RDS2016$];
+GO
+
+-- Usuario automático con fechas de Ventas y Contabilidad (empresas 1 y 3), copiadas de NUEVAVISION\Administrativo
+INSERT INTO dbo.FechasPermitidas (Empresa, Usuario, FechaInicialCnt, FechaFinalCnt, FechaInicialVta, FechaFinalVta,
+       FechaInicialCmp, FechaFinalCmp, FechaInicialRapports, FechaFinalRapports, FechaInicialExtrProd, FechaFinalExtrProd,
+       FechaInicialBanco, FechaFinalBanco, FechaInicialPagare, FechaFinalPagare, Usuario2, [Fecha Modificación])
+SELECT f.Empresa, N'SenalesEventos', f.FechaInicialCnt, f.FechaFinalCnt, f.FechaInicialVta, f.FechaFinalVta,
+       NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, LEFT(SUSER_SNAME(), 30), GETDATE()
+FROM dbo.FechasPermitidas f
+WHERE f.Usuario = N'NUEVAVISION\Administrativo' AND f.Empresa IN ('1', '3')
+      AND NOT EXISTS (SELECT 1 FROM dbo.FechasPermitidas x WHERE x.Empresa = f.Empresa AND x.Usuario = N'SenalesEventos');
+
+SELECT @@ROWCOUNT AS FechasPermitidasCreadasAhora;
 GO
 
 -- Comprobación

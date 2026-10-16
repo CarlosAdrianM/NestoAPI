@@ -124,13 +124,31 @@ namespace NestoAPI.Infraestructure.Cupones
     }
 
     /// <summary>
+    /// NestoAPI#613: los porcentajes de IVA y de recargo de equivalencia (en tanto por cien, como ParametrosIVA: 21 y 5,20) con
+    /// los que se saca la base de la línea del cupón para que descuente exactamente su importe al cliente (Carlos, 15/10/26).
+    /// </summary>
+    public class PorcentajesIvaCupon
+    {
+        public decimal Iva { get; set; }
+        public decimal RecargoEquivalencia { get; set; }
+
+        /// <summary>Lo de siempre si no se encuentra la combinación en ParametrosIVA: 21 % sin recargo.</summary>
+        public static PorcentajesIvaCupon PorDefecto => new PorcentajesIvaCupon { Iva = ReglasCupon.PORCENTAJE_IVA, RecargoEquivalencia = 0 };
+        /// <summary>Pedido sin IVA (la cabecera no lo lleva): la línea no lleva impuestos, así que la base es el importe.</summary>
+        public static PorcentajesIvaCupon SinIva => new PorcentajesIvaCupon { Iva = 0, RecargoEquivalencia = 0 };
+    }
+
+    /// <summary>
     /// NestoAPI#613: las reglas del cupón, todas aquí y sin base de datos (decisiones de la épica #610, 08/10/26): de una vez,
     /// uno por pedido, pedido mínimo el doble del cupón IVA incluido sin contar cursos ni portes, solo productos, convive con
     /// ofertas y descuentos (va sobre el neto), válido desde el día del evento y durante 6 meses, del mismo cliente.
     /// </summary>
     public static class ReglasCupon
     {
-        /// <summary>El cupón es un descuento comercial en producto al 21 %: 50 € → base −41,32 (Carlos, 08/10/26).</summary>
+        /// <summary>
+        /// El cupón es un descuento comercial en producto al 21 %: 50 € → base −41,32 (Carlos, 08/10/26). Con recargo de
+        /// equivalencia la base sale del IVA + RE del cliente, para que descuente siempre el importe exacto (Carlos, 15/10/26).
+        /// </summary>
         public const decimal PORCENTAJE_IVA = 21M;
         public const int MESES_VALIDEZ = 6;
         public const decimal MULTIPLO_PEDIDO_MINIMO = 2M;
@@ -167,9 +185,19 @@ namespace NestoAPI.Infraestructure.Cupones
         public static bool EsLineaCupon(byte? tipoLinea, string producto, string productoCupon) =>
             (tipoLinea == null || tipoLinea == Constantes.TiposLineaVenta.PRODUCTO) && EsProductoCupon(producto, productoCupon);
 
-        /// <summary>Precio (base) de la línea −1: el importe IVA incluido entre 1,21, a 4 decimales como LinPedidoVta.Precio.</summary>
-        public static decimal PrecioLinea(decimal importeIvaIncluido) =>
-            Math.Round(importeIvaIncluido / (1 + PORCENTAJE_IVA / 100M), 4, MidpointRounding.AwayFromZero);
+        /// <summary>Precio (base) de la línea −1 al 21 % sin recargo: el importe IVA incluido entre 1,21.</summary>
+        public static decimal PrecioLinea(decimal importeIvaIncluido) => PrecioLinea(importeIvaIncluido, PorcentajesIvaCupon.PorDefecto);
+
+        /// <summary>
+        /// Precio (base) de la línea −1, a 4 decimales como LinPedidoVta.Precio: el importe entre (1 + IVA + RE) del cliente, para
+        /// que el cupón descuente siempre su importe exacto (Carlos, 15/10/26): 50 € con RE (21 % + 5,2 %) → base 39,62, no 41,32
+        /// (que serían 52,15 €). Sin porcentajes, los de siempre (21 %).
+        /// </summary>
+        public static decimal PrecioLinea(decimal importe, PorcentajesIvaCupon porcentajes)
+        {
+            PorcentajesIvaCupon p = porcentajes ?? PorcentajesIvaCupon.PorDefecto;
+            return Math.Round(importe / (1 + (p.Iva + p.RecargoEquivalencia) / 100M), 4, MidpointRounding.AwayFromZero);
+        }
 
         public static decimal PedidoMinimo(decimal importe) => Math.Round(importe * MULTIPLO_PEDIDO_MINIMO, 2, MidpointRounding.AwayFromZero);
 
@@ -225,11 +253,12 @@ namespace NestoAPI.Infraestructure.Cupones
         }
 
         /// <summary>
-        /// La línea del cupón la pone el servidor, venga como venga: producto del cupón, cantidad −1, precio = importe / 1,21,
+        /// La línea del cupón la pone el servidor, venga como venga: producto del cupón, cantidad −1, precio = importe / (1 + IVA + RE),
         /// sin descuentos de línea, de producto ni de cliente (el pronto pago de la cabecera sí le aplica, como al cheque regalo
         /// y a toda la factura) y el IVA del producto.
         /// </summary>
-        public static void Normalizar(LineaPedidoVentaDTO linea, CuponLeido cupon, string productoCupon, string ivaProducto, bool pedidoConIva)
+        public static void Normalizar(LineaPedidoVentaDTO linea, CuponLeido cupon, string productoCupon, string ivaProducto, bool pedidoConIva,
+            PorcentajesIvaCupon porcentajes = null)
         {
             linea.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
             linea.Producto = productoCupon;
@@ -243,7 +272,7 @@ namespace NestoAPI.Infraestructure.Cupones
             linea.EsCupon = true;
             if (cupon != null)
             {
-                linea.PrecioUnitario = PrecioLinea(cupon.Importe);
+                linea.PrecioUnitario = PrecioLinea(cupon.Importe, porcentajes);
                 linea.texto = TextoLinea(cupon);
             }
             if (pedidoConIva && !string.IsNullOrWhiteSpace(ivaProducto))
@@ -253,14 +282,14 @@ namespace NestoAPI.Infraestructure.Cupones
         }
 
         /// <summary>Lo mismo sobre la línea ya creada, mientras se puede tocar. Devuelve si hay que recalcular importes.</summary>
-        public static bool Normalizar(LinPedidoVta linea, CuponLeido cupon, string ivaProducto, bool pedidoConIva)
+        public static bool Normalizar(LinPedidoVta linea, CuponLeido cupon, string ivaProducto, bool pedidoConIva, PorcentajesIvaCupon porcentajes = null)
         {
             if ((linea.Picking ?? 0) != 0 || linea.Estado > Constantes.EstadosLineaVenta.EN_CURSO)
             {
                 return false;
             }
             bool cambia = false;
-            decimal precio = PrecioLinea(cupon.Importe);
+            decimal precio = PrecioLinea(cupon.Importe, porcentajes);
             string texto = TextoLinea(cupon);
             if (linea.Cantidad != -1) { linea.Cantidad = -1; cambia = true; }
             if (linea.Precio != precio) { linea.Precio = precio; cambia = true; }

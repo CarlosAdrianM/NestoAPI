@@ -52,6 +52,10 @@ namespace NestoAPI.Tests.Infrastructure.Cupones
             A.CallTo(() => repositorio.LeerProductos(A<string>._, A<IEnumerable<string>>._)).ReturnsLazily(() => Task.FromResult(Productos()));
             A.CallTo(() => repositorio.LeerPorCodigo("EV-2610-7K3Q")).ReturnsLazily(() => Task.FromResult(Cupon()));
             A.CallTo(() => repositorio.Reservar(A<int>._, A<string>._, A<int>._, A<string>._, A<string>._)).Returns(Task.FromResult(true));
+            A.CallTo(() => repositorio.LeerPorcentajesIva(A<string>._, A<string>._, A<string>._))
+                .ReturnsLazily(() => Task.FromResult(new PorcentajesIvaCupon { Iva = 21, RecargoEquivalencia = 0 }));
+            A.CallTo(() => repositorio.LeerPorcentajesIva(A<string>._, "E52", "G21"))
+                .ReturnsLazily(() => Task.FromResult(new PorcentajesIvaCupon { Iva = 21, RecargoEquivalencia = 5.2M }));
             canje = new ServicioCanjeCupones(repositorio, () => HOY, PRODUCTO);
         }
 
@@ -758,6 +762,137 @@ namespace NestoAPI.Tests.Infrastructure.Cupones
             Assert.AreEqual(58.68M, request.DesgloseIva[0].BaseImponible);
             Assert.AreEqual(12.32M, request.DesgloseIva[0].CuotaIva);
             Assert.AreEqual(71.00M, request.ImporteTotal);
+        }
+
+        // ---------------- Recargo de equivalencia: el cupón vale siempre su importe exacto (Carlos, 15/10/26) ----------------
+
+        [TestMethod]
+        public void Reglas_ConRecargoDeEquivalencia_LaBaseSaleDelIvaMasElRecargo()
+        {
+            decimal precio = ReglasCupon.PrecioLinea(50, new PorcentajesIvaCupon { Iva = 21, RecargoEquivalencia = 5.2M });
+            decimal baseImponible = Math.Round(precio, 2, MidpointRounding.AwayFromZero);
+            decimal total = baseImponible + baseImponible * 21 / 100 + baseImponible * 0.052M;
+
+            Assert.AreEqual(39.6197M, precio, "50 / 1,262, no 50 / 1,21");
+            Assert.AreEqual(50.00M, Math.Round(total, 2, MidpointRounding.AwayFromZero), "Con RE descuenta 50 € exactos, no 52,15 €");
+        }
+
+        [TestMethod]
+        public void Reglas_SinRecargo_SigueSiendo50Entre121()
+        {
+            Assert.AreEqual(41.3223M, ReglasCupon.PrecioLinea(50, new PorcentajesIvaCupon { Iva = 21, RecargoEquivalencia = 0 }));
+            Assert.AreEqual(41.3223M, ReglasCupon.PrecioLinea(50, null));
+        }
+
+        [TestMethod]
+        public async Task Normalizar_ClienteConRecargo_LaLineaDescuentaElImporteExacto()
+        {
+            var linea = new LineaPedidoVentaDTO { CodigoCupon = "EV-2610-7K3Q" };
+            var pedido = new PedidoVentaDTO { empresa = "1", cliente = CLIENTE, iva = "E52", Lineas = new List<LineaPedidoVentaDTO> { linea } };
+
+            await canje.NormalizarLineas(pedido);
+
+            Assert.AreEqual(39.6197M, linea.PrecioUnitario);
+            Assert.AreEqual("G21", linea.iva);
+            A.CallTo(() => repositorio.LeerPorcentajesIva("1", "E52", "G21")).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Normalizar_PedidoSinIva_LaBaseEsElImporte()
+        {
+            var linea = new LineaPedidoVentaDTO { CodigoCupon = "EV-2610-7K3Q" };
+            var pedido = new PedidoVentaDTO { empresa = "1", cliente = CLIENTE, iva = null, Lineas = new List<LineaPedidoVentaDTO> { linea } };
+
+            await canje.NormalizarLineas(pedido);
+
+            Assert.AreEqual(50M, linea.PrecioUnitario, "Sin IVA la línea no lleva impuestos: descuenta 50 €");
+        }
+
+        [TestMethod]
+        public async Task Normalizar_SinLaCombinacionEnParametrosIva_Usa21()
+        {
+            A.CallTo(() => repositorio.LeerPorcentajesIva(A<string>._, "XXX", A<string>._)).Returns(Task.FromResult<PorcentajesIvaCupon>(null));
+            var linea = new LineaPedidoVentaDTO { CodigoCupon = "EV-2610-7K3Q" };
+
+            await canje.NormalizarLineas(new PedidoVentaDTO { empresa = "1", cliente = CLIENTE, iva = "XXX", Lineas = new List<LineaPedidoVentaDTO> { linea } });
+
+            Assert.AreEqual(41.3223M, linea.PrecioUnitario);
+        }
+
+        [TestMethod]
+        public async Task Comprobar_ClienteConRecargo_ElServidorCorrigeElPrecioDeLaLinea()
+        {
+            await canje.NormalizarLineas(new PedidoVentaDTO { empresa = "1", iva = "E52", Lineas = new List<LineaPedidoVentaDTO> { new LineaPedidoVentaDTO { CodigoCupon = "EV-2610-7K3Q" } } });
+            LinPedidoVta cupon = LineaCupon(precio: 41.3223M);
+            bool recalculado = false;
+
+            _ = await canje.Comprobar("1", PEDIDO, CLIENTE, new List<LinPedidoVta> { Linea("CREMA", 120), cupon }, "E52",
+                l => recalculado = true, "x", pedidoNuevo: true, teniaLineaCupon: false);
+
+            Assert.AreEqual(39.6197M, cupon.Precio, "Con RE la línea antigua a /1,21 descontaría 52,15 €");
+            Assert.IsTrue(recalculado);
+        }
+
+        // ---------------- Devolución del curso: anular el cupón (Carlos, 15/10/26) ----------------
+
+        [TestMethod]
+        public async Task Anular_CuponSinUsar_QuedaAnulado()
+        {
+            A.CallTo(() => repositorio.Anular(7, A<string>._, A<string>._)).Returns(Task.FromResult(1));
+            A.CallTo(() => repositorio.LeerPorId(7)).ReturnsLazily(() =>
+            {
+                CuponLeido c = Cupon(EstadosCupon.ANULADO);
+                c.MotivoAnulacion = ServicioCupones.MOTIVO_DEVOLUCION;
+                return Task.FromResult(c);
+            });
+            var servicio = new ServicioCupones(repositorio, A.Fake<NVEntities>(), () => HOY, PRODUCTO);
+
+            CuponDTO dto = await servicio.Anular("EV-2610-7K3Q", null, Usuario("NUEVAVISION\\Alfredo", "Administración"));
+
+            Assert.AreEqual(EstadosCupon.ANULADO, dto.Estado);
+            A.CallTo(() => repositorio.Anular(7, ServicioCupones.MOTIVO_DEVOLUCION, A<string>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Anular_CuponYaUsado_AvisaYNoLoToca()
+        {
+            CuponLeido usado = Cupon(EstadosCupon.USADO, pedidoUso: PEDIDO);
+            usado.FacturaUso = "NV2600900";
+            A.CallTo(() => repositorio.LeerPorCodigo("EV-2610-7K3Q")).Returns(Task.FromResult(usado));
+            var servicio = new ServicioCupones(repositorio, A.Fake<NVEntities>(), () => HOY, PRODUCTO);
+
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() =>
+                servicio.Anular("EV-2610-7K3Q", new AnularCuponDTO { Motivo = "Devuelve el curso" }, Usuario("NUEVAVISION\\Carlos", "Dirección")));
+
+            Assert.AreEqual(HttpStatusCode.Conflict, ex.StatusCode);
+            Assert.AreEqual(ServicioCupones.ERROR_USADO_NO_SE_ANULA, ex.Context.ErrorCode);
+            StringAssert.Contains(ex.Message, $"pedido {PEDIDO} (factura NV2600900)");
+            A.CallTo(() => repositorio.Anular(A<int>._, A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Anular_SinPermiso_403()
+        {
+            var servicio = new ServicioCupones(repositorio, A.Fake<NVEntities>(), () => HOY, PRODUCTO);
+
+            var tienda = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => servicio.Anular("EV-2610-7K3Q", null, Usuario("NUEVAVISION\\Reina", "Tiendas")));
+            var cliente = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => servicio.Anular("EV-2610-7K3Q", null, ClienteTienda(CLIENTE)));
+
+            Assert.AreEqual(HttpStatusCode.Forbidden, tienda.StatusCode);
+            Assert.AreEqual(HttpStatusCode.Forbidden, cliente.StatusCode);
+            A.CallTo(() => repositorio.Anular(A<int>._, A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Anular_YaAnulado_LoDevuelveSinTocarlo()
+        {
+            A.CallTo(() => repositorio.LeerPorCodigo("EV-2610-7K3Q")).Returns(Task.FromResult(Cupon(EstadosCupon.ANULADO)));
+            var servicio = new ServicioCupones(repositorio, A.Fake<NVEntities>(), () => HOY, PRODUCTO);
+
+            CuponDTO dto = await servicio.Anular("EV-2610-7K3Q", null, Usuario("NUEVAVISION\\Carlos", "Dirección"));
+
+            Assert.AreEqual(EstadosCupon.ANULADO, dto.Estado);
+            A.CallTo(() => repositorio.Anular(A<int>._, A<string>._, A<string>._)).MustNotHaveHappened();
         }
 
         // ---------------- Ayudantes ----------------

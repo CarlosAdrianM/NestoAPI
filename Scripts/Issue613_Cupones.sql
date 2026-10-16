@@ -7,17 +7,19 @@
 
     1. Cupones: uno por inscripción pagada (o manual, de Dirección con motivo).
        - Codigo: legible y único (EV-2610-7K3Q: EV de evento o MN de manual, año y mes, cuatro caracteres sin 0/O ni 1/I).
-       - Importe: IVA incluido (= la señal). En el pedido es una línea −1 del producto CUPONEVENTO a Importe / 1,21 al 21 %.
+       - Importe: IVA incluido (= la señal). En el pedido es una línea −1 del producto CUPONEVENTO a Importe / (1 + IVA + RE
+         del cliente): descuenta siempre el importe exacto, también con recargo de equivalencia (Carlos, 15/10/26).
        - ValidoDesde = día del evento; Caducidad = 6 meses después.
        - Estado: Emitido (antes del evento) → Activo → Usado (en un pedido; vuelve a Activo si se quita la línea o se borra el
-         pedido antes de servirlo); Anulado (no asistió: lista del corte 1) o Caducado (job inscripciones-eventos, 7:55).
+         pedido antes de servirlo); Anulado (no asistió: lista del corte 1; o devolución del curso con
+         POST api/Cupones/{codigo}/Anular) o Caducado (job inscripciones-eventos, 7:55).
        - UsadoEnPedido/EmpresaUso/FechaUso/CanalUso (forma de venta de la línea) y EmpresaFacturaUso/FacturaUso al facturarlo.
        - FechaAvisoCorreo/CorreoAviso: el correo al cliente (interruptor Cupones:CorreoCliente, apagado).
        Una inscripción, un cupón: lo controla la API con un INSERT ... WHERE NOT EXISTS con bloqueo (sin índice filtrado).
     2. Producto CUPONEVENTO: copia de TiCKET (familia Bonificac, grupo COS, ficticio, G21) en las empresas 1 y 3, como el
        CHEQUE50_OCT26 del cheque regalo (#593). Ficticio: no va a la tienda online ni a la plantilla y no cuenta como venta.
-       OJO comisiones: igual que el cheque, al ser grupo COS / familia Bonificac resta de lo vendido (decisión pendiente de
-       Carlos; se cambia en la ficha del producto, sin programar).
+       Comisiones: igual que TiCKET y el cheque, al ser grupo COS / familia Bonificac resta de lo vendido (decidido por
+       Carlos el 15/10/26).
 
     PRECAUCIÓN (#542, #294): nada de índices filtrados ni de columnas calculadas indexadas.
 */

@@ -95,9 +95,10 @@ namespace NestoAPI.Infraestructure.Cupones
             }
             Dictionary<string, ProductoParaCupon> productos = await repositorio.LeerProductos(pedido.empresa, new[] { ProductoCupon }).ConfigureAwait(false);
             string ivaProducto = ReglasCupon.Buscar(productos, ProductoCupon)?.IvaRepercutido;
+            PorcentajesIvaCupon porcentajes = cupon == null ? null : await Porcentajes(pedido.empresa, pedido.iva, ivaProducto).ConfigureAwait(false);
             foreach (LineaPedidoVentaDTO linea in lineasCupon)
             {
-                ReglasCupon.Normalizar(linea, cupon, ProductoCupon, ivaProducto, pedido.iva != null);
+                ReglasCupon.Normalizar(linea, cupon, ProductoCupon, ivaProducto, pedido.iva != null, porcentajes);
             }
         }
 
@@ -133,7 +134,9 @@ namespace NestoAPI.Infraestructure.Cupones
                 lineas.Where(l => l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO && !string.IsNullOrWhiteSpace(l.Producto))
                     .Select(l => l.Producto.Trim()).Concat(new[] { ProductoCupon }).Distinct()).ConfigureAwait(false);
 
-            if (ReglasCupon.Normalizar(lineaCupon, cupon, ReglasCupon.Buscar(productos, ProductoCupon)?.IvaRepercutido, !string.IsNullOrWhiteSpace(ivaCabecera)))
+            string ivaProductoCupon = ReglasCupon.Buscar(productos, ProductoCupon)?.IvaRepercutido;
+            PorcentajesIvaCupon porcentajes = await Porcentajes(empresa, ivaCabecera, ivaProductoCupon).ConfigureAwait(false);
+            if (ReglasCupon.Normalizar(lineaCupon, cupon, ivaProductoCupon, !string.IsNullOrWhiteSpace(ivaCabecera), porcentajes))
             {
                 recalcularImportes?.Invoke(lineaCupon);
             }
@@ -150,6 +153,23 @@ namespace NestoAPI.Infraestructure.Cupones
                 CuponAReservar = cupon,
                 LiberarOtros = !pedidoNuevo
             };
+        }
+
+        /// <summary>
+        /// Carlos (15/10/26): el cupón descuenta siempre su importe exacto, también con recargo de equivalencia: la base sale del
+        /// IVA y el RE del cliente (ParametrosIVA). Pedido sin IVA: base = importe. Sin la combinación en ParametrosIVA: 21 %.
+        /// </summary>
+        private async Task<PorcentajesIvaCupon> Porcentajes(string empresa, string ivaCabecera, string ivaProducto)
+        {
+            if (string.IsNullOrWhiteSpace(ivaCabecera))
+            {
+                return PorcentajesIvaCupon.SinIva;
+            }
+            if (string.IsNullOrWhiteSpace(ivaProducto))
+            {
+                return PorcentajesIvaCupon.PorDefecto;
+            }
+            return await repositorio.LeerPorcentajesIva(empresa, ivaCabecera, ivaProducto).ConfigureAwait(false) ?? PorcentajesIvaCupon.PorDefecto;
         }
 
         public async Task Reservar(PlanCanjeCupon plan)

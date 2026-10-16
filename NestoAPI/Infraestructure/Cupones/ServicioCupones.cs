@@ -24,6 +24,15 @@ namespace NestoAPI.Infraestructure.Cupones
         Task<CuponDTO> LeerPorCodigo(string codigo, IPrincipal usuario);
         /// <summary>Solo Dirección, con motivo obligatorio; mismas reglas que los de evento.</summary>
         Task<CuponDTO> CrearManual(CrearCuponManualDTO peticion, IPrincipal usuario);
+        /// <summary>Devolución del curso: anula el cupón si no se ha usado; si ya se usó, avisa (409) y no lo toca.</summary>
+        Task<CuponDTO> Anular(string codigo, AnularCuponDTO peticion, IPrincipal usuario);
+    }
+
+    /// <summary>NestoAPI#613: POST api/Cupones/{codigo}/Anular.</summary>
+    public class AnularCuponDTO
+    {
+        /// <summary>Opcional: si no viene, «Devolución del curso.».</summary>
+        public string Motivo { get; set; }
     }
 
     /// <summary>
@@ -33,6 +42,8 @@ namespace NestoAPI.Infraestructure.Cupones
     public class ServicioCupones : IServicioCupones
     {
         public const string MOTIVO_NO_ASISTIO = "No asistió al evento.";
+        public const string MOTIVO_DEVOLUCION = "Devolución del curso.";
+        public const string ERROR_USADO_NO_SE_ANULA = "CUPON_USADO_NO_SE_ANULA";
 
         private readonly IRepositorioCupones repositorio;
         private readonly NVEntities db;
@@ -140,6 +151,55 @@ namespace NestoAPI.Infraestructure.Cupones
                 Usuario = usuarioAuditoria
             }, () => ReglasCupon.NuevoCodigo(OrigenesCupon.MANUAL, hoy)).ConfigureAwait(false);
             return ReglasCupon.ADTO(creado, ahora(), productoCupon);
+        }
+
+        /// <summary>
+        /// Decisión de Carlos (15/10/26) sobre la devolución de un curso o de una señal ya facturada: la factura se rectifica a
+        /// mano, como hoy, y aquí se anula el cupón si no se ha usado. Si ya se usó, no se toca y se avisa (409 con el pedido y
+        /// la factura donde se usó) para que se tenga en cuenta al rectificar. Administración y Dirección. Idempotente: un cupón
+        /// ya anulado se devuelve tal cual.
+        /// </summary>
+        public async Task<CuponDTO> Anular(string codigo, AnularCuponDTO peticion, IPrincipal usuario)
+        {
+            if (usuario == null || PermisosEventos.ClienteDelToken(usuario) != null
+                || !(usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.ADMINISTRACION) || usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION)))
+            {
+                throw new NestoBusinessException("Los cupones solo los pueden anular Administración y Dirección.") { StatusCode = HttpStatusCode.Forbidden };
+            }
+            CuponLeido cupon = await repositorio.LeerPorCodigo(codigo).ConfigureAwait(false)
+                ?? throw new NestoBusinessException($"No existe el cupón {codigo?.Trim()}.") { StatusCode = HttpStatusCode.NotFound };
+            string motivo = string.IsNullOrWhiteSpace(peticion?.Motivo) ? MOTIVO_DEVOLUCION : peticion.Motivo.Trim();
+            if (motivo.Length > 200)
+            {
+                throw new NestoBusinessException("El motivo no puede tener más de 200 caracteres.");
+            }
+            DateTime hoy = ahora();
+            string estado = ReglasCupon.EstadoEfectivo(cupon, hoy);
+            if (estado == EstadosCupon.ANULADO)
+            {
+                return ReglasCupon.ADTO(cupon, hoy, productoCupon);
+            }
+            if (estado != EstadosCupon.USADO)
+            {
+                string usuarioAuditoria = UsuarioAuditoriaHelper.ParaAuditoria(UsuarioAuditoriaHelper.Resolver(usuario, null));
+                if (await repositorio.Anular(cupon.Id, motivo, usuarioAuditoria).ConfigureAwait(false) > 0)
+                {
+                    CuponLeido anulado = await repositorio.LeerPorId(cupon.Id).ConfigureAwait(false) ?? cupon;
+                    return ReglasCupon.ADTO(anulado, ahora(), productoCupon);
+                }
+                // Se ha usado entre la lectura y el UPDATE: se vuelve a leer para avisar con el pedido
+                cupon = await repositorio.LeerPorId(cupon.Id).ConfigureAwait(false) ?? cupon;
+                if (ReglasCupon.EstadoEfectivo(cupon, hoy) == EstadosCupon.ANULADO)
+                {
+                    return ReglasCupon.ADTO(cupon, hoy, productoCupon);
+                }
+            }
+            string factura = string.IsNullOrWhiteSpace(cupon.FacturaUso) ? string.Empty : $" (factura {cupon.FacturaUso.Trim()})";
+            throw new NestoBusinessException(
+                $"El cupón {cupon.Codigo?.Trim()} ya se ha usado en el pedido {cupon.UsadoEnPedido}{factura}: no se puede anular. " +
+                $"Tenga en cuenta ese descuento de {ReglasCupon.Euros(cupon.Importe)} € al rectificar la factura del curso.",
+                new ErrorContext { ErrorCode = ERROR_USADO_NO_SE_ANULA, Empresa = cupon.EmpresaUso?.Trim(), Pedido = cupon.UsadoEnPedido, Cliente = cupon.Cliente?.Trim() })
+            { StatusCode = HttpStatusCode.Conflict };
         }
 
         /// <summary>

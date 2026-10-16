@@ -36,6 +36,13 @@ namespace NestoAPI.Infraestructure.Cupones
         Task<CuponLeido> LeerDeInscripcion(int inscripcionId);
         Task<List<CuponLeido>> LeerDelCliente(string empresa, string cliente);
         Task<Dictionary<string, ProductoParaCupon>> LeerProductos(string empresa, IEnumerable<string> productos);
+        /// <summary>% IVA y % RE (ParametrosIVA) del IVA del cliente con el IVA del producto. Null si no está la combinación.</summary>
+        Task<PorcentajesIvaCupon> LeerPorcentajesIva(string empresa, string ivaCliente, string ivaProducto);
+        /// <summary>
+        /// Devolución del curso: Anulado si no está usado (Emitido, Activo, Caducado, o Usado en un pedido que ya no tiene la
+        /// línea). Devuelve las filas tocadas (0 si está usado de verdad o ya anulado).
+        /// </summary>
+        Task<int> Anular(int id, string motivo, string usuario);
         /// <summary>Inserta con un código nuevo (si choca, lo vuelve a intentar con otro). Con inscripción, una sola vez:
         /// si ya tiene cupón, devuelve ese.</summary>
         Task<CuponLeido> Insertar(CuponNuevo cupon, Func<string> nuevoCodigo);
@@ -131,6 +138,16 @@ IF OBJECT_ID('dbo.Cupones') IS NOT NULL
     UPDATE dbo.Cupones SET Estado = 'Anulado', MotivoAnulacion = @p1, Usuario = @p2, FechaModificacion = GETDATE()
     WHERE EventoInscripcionId = @p0 AND Estado IN ('Emitido', 'Activo')";
 
+        internal const string SQL_ANULAR = @"
+IF OBJECT_ID('dbo.Cupones') IS NOT NULL
+    UPDATE c
+    SET Estado = 'Anulado', MotivoAnulacion = @p1, EmpresaUso = NULL, UsadoEnPedido = NULL, FechaUso = NULL, CanalUso = NULL,
+        Usuario = @p2, FechaModificacion = GETDATE()
+    FROM dbo.Cupones c WITH (UPDLOCK, ROWLOCK)
+    WHERE c.Id = @p0
+          AND (c.Estado IN ('Emitido', 'Activo', 'Caducado')
+               OR (c.Estado = 'Usado' AND NOT EXISTS (SELECT 1 FROM LinPedidoVta l WHERE l.[Número] = c.UsadoEnPedido AND l.Producto = @p3)))";
+
         internal const string SQL_REACTIVAR_INSCRIPCION = @"
 IF OBJECT_ID('dbo.Cupones') IS NOT NULL
     UPDATE dbo.Cupones
@@ -212,6 +229,25 @@ END";
             }
             return resultado;
         }
+
+        public async Task<PorcentajesIvaCupon> LeerPorcentajesIva(string empresa, string ivaCliente, string ivaProducto)
+        {
+            string e = empresa?.Trim() ?? Constantes.Empresas.EMPRESA_POR_DEFECTO;
+            string cliente = ivaCliente?.Trim();
+            string producto = ivaProducto?.Trim();
+            if (string.IsNullOrEmpty(cliente) || string.IsNullOrEmpty(producto))
+            {
+                return null;
+            }
+            var fila = await db.ParametrosIVA.Where(p => p.Empresa == e && p.IVA_Cliente_Prov == cliente && p.IVA_Producto == producto)
+                .Select(p => new { p.C__IVA, p.C__RE }).FirstOrDefaultAsync().ConfigureAwait(false);
+            return fila == null ? null : new PorcentajesIvaCupon { Iva = fila.C__IVA ?? 0, RecargoEquivalencia = fila.C__RE ?? 0 };
+        }
+
+        public async Task<int> Anular(int id, string motivo, string usuario) =>
+            await db.Database.ExecuteSqlCommandAsync(SQL_ANULAR,
+                new SqlParameter("@p0", id), new SqlParameter("@p1", (object)Recortar(motivo, 200) ?? DBNull.Value),
+                new SqlParameter("@p2", Usuario(usuario)), new SqlParameter("@p3", productoCupon)).ConfigureAwait(false);
 
         public async Task<CuponLeido> Insertar(CuponNuevo cupon, Func<string> nuevoCodigo)
         {

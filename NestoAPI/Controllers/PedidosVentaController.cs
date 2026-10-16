@@ -825,7 +825,7 @@ namespace NestoAPI.Controllers
             // NestoAPI#593 (c4): la línea del cheque regalo la pone el servidor, venga como venga (cantidad −1, importe de
             // la campaña, sin descuentos), antes de tocar las líneas y de validar
             await ServicioCanje.NormalizarLineas(pedido).ConfigureAwait(true);
-            // NestoAPI#613: la línea del cupón (CodigoCupon) la pone el servidor: producto, −1, importe / 1,21, sin descuentos.
+            // NestoAPI#613: la línea del cupón (CodigoCupon) la pone el servidor: producto, −1, importe / (1 + IVA + RE del cliente), sin descuentos.
             await ServicioCupones.NormalizarLineas(pedido).ConfigureAwait(true);
 
             // NestoAPI#449: descuentos fuera de 0-100 % con mensaje claro, no con el CHECK de SQL
@@ -1942,7 +1942,7 @@ namespace NestoAPI.Controllers
             // NestoAPI#593 (c4): la línea del cheque regalo la pone el servidor, venga como venga (NestoApp mandaría +1
             // o +50): cantidad −1, importe de la campaña, sin descuentos. Antes de crear las líneas y de validar.
             await ServicioCanje.NormalizarLineas(pedido).ConfigureAwait(true);
-            // NestoAPI#613: la línea del cupón (CodigoCupon) la pone el servidor: producto, −1, importe / 1,21, sin descuentos.
+            // NestoAPI#613: la línea del cupón (CodigoCupon) la pone el servidor: producto, −1, importe / (1 + IVA + RE del cliente), sin descuentos.
             await ServicioCupones.NormalizarLineas(pedido).ConfigureAwait(true);
 
             // NestoAPI#482: sin modo informado el pedido NACE en el modo por defecto, no en el ServirJunto

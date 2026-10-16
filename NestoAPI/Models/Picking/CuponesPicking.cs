@@ -41,9 +41,10 @@ namespace NestoAPI.Models.Picking
                 {
                     linea.EsCupon = true;
                 }
-                // Sin el cupón en la tabla (no debería pasar), el importe sale de la propia línea: base × 1,21
+                // Sin el cupón en la tabla (no debería pasar), el importe sale del total de la propia línea (con IVA y RE: el
+                // cupón descuenta su importe exacto también con recargo de equivalencia)
                 decimal importe = leerImporte(pedido.Id)
-                    ?? Math.Round(Math.Abs(lineasCupon.Sum(l => l.BaseImponible)) * (1 + ReglasCupon.PORCENTAJE_IVA / 100M), 2, MidpointRounding.AwayFromZero);
+                    ?? Math.Round(Math.Abs(lineasCupon.Sum(l => l.Total)), 2, MidpointRounding.AwayFromZero);
 
                 List<LineaEntregadaCupon> entregadas = leerLineasYaEntregadas(pedido) ?? new List<LineaEntregadaCupon>();
                 List<string> codigos = pedido.Lineas
