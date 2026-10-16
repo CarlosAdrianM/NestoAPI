@@ -36,6 +36,12 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
         /// <summary>NestoAPI#605: solo los códigos de barras activos de cada línea (para las que no llevan ficha).</summary>
         Task CompletarCodigos(string empresa, IEnumerable<IConCodigosBarras> lineas);
+
+        /// <summary>
+        /// NestoAPI#653 (Ariadna#35): solo la foto, para las líneas que no llevan ficha (reposiciones, diferencias). Una
+        /// llamada para todos los productos a la vez, con la misma caché que <see cref="Completar"/>.
+        /// </summary>
+        Task CompletarFotos(IEnumerable<IConFotoProducto> productos);
     }
 
     /// <summary>
@@ -64,14 +70,21 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             return Productos.CompletadorCodigosBarras.Completar(codigos, empresa, lineas);
         }
 
+        public async Task CompletarFotos(IEnumerable<IConFotoProducto> productos)
+        {
+            List<IConFotoProducto> lista = (productos ?? Enumerable.Empty<IConFotoProducto>()).Where(p => p != null).ToList();
+            List<string> numeros = Numeros(lista);
+            if (numeros.Count == 0 || fotos == null)
+            {
+                return;
+            }
+            PonerFotos(lista, await fotos.Urls(numeros).ConfigureAwait(false));
+        }
+
         public async Task Completar(string empresa, IEnumerable<IConFichaProducto> productos)
         {
             List<IConFichaProducto> lista = (productos ?? Enumerable.Empty<IConFichaProducto>()).Where(p => p != null).ToList();
-            List<string> numeros = lista
-                .Select(p => p.Producto?.Trim())
-                .Where(p => !string.IsNullOrEmpty(p))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            List<string> numeros = Numeros(lista);
             if (numeros.Count == 0)
             {
                 return;
@@ -87,14 +100,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 .GroupBy(f => f.Producto.Trim(), StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
-            IDictionary<string, string> fotosPorProducto = await urls.ConfigureAwait(false) ?? new Dictionary<string, string>();
+            PonerFotos(lista, await urls.ConfigureAwait(false));
 
             foreach (IConFichaProducto producto in lista)
             {
-                if (producto.Producto != null && fotosPorProducto.TryGetValue(producto.Producto.Trim(), out string url))
-                {
-                    producto.UrlFoto = url;
-                }
                 if (producto.Producto == null || !fichas.TryGetValue(producto.Producto.Trim(), out FichaProductoAlmacen ficha))
                 {
                     continue;
@@ -103,6 +112,31 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 producto.Subgrupo = Limpio(ficha.Subgrupo);
                 producto.Tamano = ficha.Tamano ?? producto.Tamano;
                 producto.UnidadMedida = Limpio(ficha.UnidadMedida) ?? producto.UnidadMedida;
+            }
+        }
+
+        private static List<string> Numeros(IEnumerable<IConFotoProducto> productos)
+        {
+            return productos
+                .Select(p => p.Producto?.Trim())
+                .Where(p => !string.IsNullOrEmpty(p))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        /// <summary>El único sitio que pone la foto de almacén en lo que ve el mozo.</summary>
+        private static void PonerFotos(IEnumerable<IConFotoProducto> productos, IDictionary<string, string> fotosPorProducto)
+        {
+            if (fotosPorProducto == null)
+            {
+                return;
+            }
+            foreach (IConFotoProducto producto in productos)
+            {
+                if (producto.Producto != null && fotosPorProducto.TryGetValue(producto.Producto.Trim(), out string url))
+                {
+                    producto.UrlFoto = url;
+                }
             }
         }
 

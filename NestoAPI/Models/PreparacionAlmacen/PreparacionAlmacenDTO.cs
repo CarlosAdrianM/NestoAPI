@@ -20,17 +20,25 @@ namespace NestoAPI.Models.PreparacionAlmacen
         List<string> CodigosBarras { get; set; }
     }
 
-    public interface IConFichaProducto
+    /// <summary>
+    /// NestoAPI#653 (Ariadna#35): lo mínimo para enseñar la foto de un producto junto a su nombre (reposiciones,
+    /// diferencias). La rellena siempre <c>FichasProductoAlmacen</c>: una llamada por respuesta, para todos a la vez.
+    /// </summary>
+    public interface IConFotoProducto
     {
         string Producto { get; }
+        /// <summary>Ariadna#2: la foto del producto (la de la tienda). Null si no tiene: la app no enseña nada.</summary>
+        string UrlFoto { get; set; }
+    }
+
+    public interface IConFichaProducto : IConFotoProducto
+    {
         /// <summary>El nombre de la familia (Familias.Descripción), no su código.</summary>
         string Familia { get; set; }
         /// <summary>El nombre del subgrupo (SubGruposProducto.Descripción), no su código.</summary>
         string Subgrupo { get; set; }
         short? Tamano { get; set; }
         string UnidadMedida { get; set; }
-        /// <summary>Ariadna#2: la foto del producto (la de la tienda). Null si no tiene: la app no enseña nada.</summary>
-        string UrlFoto { get; set; }
     }
 
     /// <summary>Una parada del picking: un producto en un hueco de la estantería.</summary>

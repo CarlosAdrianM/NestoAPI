@@ -1,4 +1,5 @@
 using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.PreparacionAlmacen;
 using NestoAPI.Infraestructure.Reposiciones;
 using NestoAPI.Models;
 using NestoAPI.Models.PreparacionAlmacen;
@@ -31,8 +32,13 @@ namespace NestoAPI.Controllers
         private readonly IServicioCalendarioReposiciones calendario;
         private readonly IServicioReposicionAutomatica automatica;
 
-        public ReposicionesController() : this(new NVEntities())
+        /// <summary>
+        /// AddControllersAsServices elige el constructor público que puede construir entero: este.
+        /// </summary>
+        /// <param name="fichas">NestoAPI#653: la foto de cada producto que ve Ariadna (el único sitio que la pone).</param>
+        public ReposicionesController(IFichasProductoAlmacen fichas) : this(new NVEntities())
         {
+            this.fichas = fichas;
         }
 
         internal ReposicionesController(NVEntities db) : this(db, new ServicioPreparacionReposicion(db))
@@ -43,8 +49,10 @@ namespace NestoAPI.Controllers
             IServicioTransitoReposiciones transito = null, IServicioCalendarioReposiciones calendario = null,
             IServicioReposicionAutomatica automatica = null, IPermisoRellenarReposicionManual permisoManual = null,
             IServicioListadoReposicion listado = null, IProductosReposicionPuntual productosPuntual = null,
-            IServicioDiferenciasReposicion diferencias = null, Infraestructure.PreparacionAlmacen.IServicioBultosReposicion bultos = null)
+            IServicioDiferenciasReposicion diferencias = null, Infraestructure.PreparacionAlmacen.IServicioBultosReposicion bultos = null,
+            IFichasProductoAlmacen fichas = null)
         {
+            this.fichas = fichas; // null = sin foto (NestoAPI#653)
             this.bultos = bultos; // ídem (NestoAPI#645)
             this.diferencias = diferencias; // ídem (NestoAPI#634)
             this.db = db;
@@ -58,6 +66,20 @@ namespace NestoAPI.Controllers
         }
 
         private readonly IProductosReposicionPuntual productosPuntual;
+
+        private readonly IFichasProductoAlmacen fichas;
+
+        /// <summary>NestoAPI#653 (Ariadna#35): la foto de todos los productos de la respuesta, en una sola llamada.</summary>
+        private Task CompletarFotos(IEnumerable<IConFotoProducto> productos)
+        {
+            return fichas == null || productos == null ? Task.CompletedTask : fichas.CompletarFotos(productos);
+        }
+
+        private async Task<ReposicionEnPreparacionDTO> ConFotos(ReposicionEnPreparacionDTO reposicion)
+        {
+            await CompletarFotos(reposicion?.Lineas).ConfigureAwait(false);
+            return reposicion;
+        }
 
         private IProductosReposicionPuntual ProductosPuntual => productosPuntual ?? new ProductosReposicionPuntual(db);
 
@@ -333,6 +355,7 @@ namespace NestoAPI.Controllers
         {
             List<LineaPropuestaReposicionDTO> propuesta = await new ServicioPropuestaReposicion(db)
                 .CalcularPropuesta(empresa, origen, destino).ConfigureAwait(false);
+            await CompletarFotos(propuesta).ConfigureAwait(false);
             return Ok(propuesta);
         }
 
@@ -357,7 +380,7 @@ namespace NestoAPI.Controllers
             }
             try
             {
-                ReposicionEnPreparacionDTO creada = await preparacion.Crear(peticion, User).ConfigureAwait(false);
+                ReposicionEnPreparacionDTO creada = await ConFotos(await preparacion.Crear(peticion, User).ConfigureAwait(false)).ConfigureAwait(false);
                 return Content(HttpStatusCode.Created, creada);
             }
             catch (UnauthorizedAccessException ex)
@@ -373,7 +396,7 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(ReposicionEnPreparacionDTO))]
         public async Task<IHttpActionResult> GetEnPreparacion(string origen, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
         {
-            ReposicionEnPreparacionDTO reposicion = await preparacion.LeerEnPreparacion(empresa, origen).ConfigureAwait(false);
+            ReposicionEnPreparacionDTO reposicion = await ConFotos(await preparacion.LeerEnPreparacion(empresa, origen).ConfigureAwait(false)).ConfigureAwait(false);
             return reposicion == null ? (IHttpActionResult)NotFound() : Ok(reposicion);
         }
 
@@ -432,7 +455,7 @@ namespace NestoAPI.Controllers
             }
             try
             {
-                return Ok(await preparacion.CambiarCantidad(empresa, origen, numeroOrden, cambio.Cantidad, User).ConfigureAwait(false));
+                return Ok(await ConFotos(await preparacion.CambiarCantidad(empresa, origen, numeroOrden, cambio.Cantidad, User).ConfigureAwait(false)).ConfigureAwait(false));
             }
             catch (UnauthorizedAccessException ex)
             {
@@ -452,7 +475,9 @@ namespace NestoAPI.Controllers
         {
             try
             {
-                return Ok(await preparacion.Terminar(empresa, origen, User).ConfigureAwait(false));
+                ResultadoTerminarReposicionDTO terminada = await preparacion.Terminar(empresa, origen, User).ConfigureAwait(false);
+                await CompletarFotos(terminada?.Lineas).ConfigureAwait(false);
+                return Ok(terminada);
             }
             catch (UnauthorizedAccessException ex)
             {
@@ -505,7 +530,9 @@ namespace NestoAPI.Controllers
         {
             try
             {
-                return Ok(await Diferencias.Listar(empresa, estado, almacen, User).ConfigureAwait(false));
+                List<DiferenciaReposicionDTO> lista = await Diferencias.Listar(empresa, estado, almacen, User).ConfigureAwait(false);
+                await CompletarFotos(lista).ConfigureAwait(false);
+                return Ok(lista);
             }
             catch (UnauthorizedAccessException ex)
             {
@@ -540,6 +567,7 @@ namespace NestoAPI.Controllers
             try
             {
                 DiferenciaReposicionDTO diferencia = await Diferencias.Leer(empresa, id, User).ConfigureAwait(false);
+                await CompletarFotos(diferencia == null ? null : new[] { diferencia }).ConfigureAwait(false);
                 return diferencia == null ? (IHttpActionResult)NotFound() : Ok(diferencia);
             }
             catch (UnauthorizedAccessException ex)
@@ -569,7 +597,9 @@ namespace NestoAPI.Controllers
             }
             try
             {
-                return Ok(await Diferencias.Resolver(empresa, id, peticion, User).ConfigureAwait(false));
+                ResultadoResolverDiferenciaReposicionDTO resuelta = await Diferencias.Resolver(empresa, id, peticion, User).ConfigureAwait(false);
+                await CompletarFotos(resuelta?.Diferencia == null ? null : new[] { resuelta.Diferencia }).ConfigureAwait(false);
+                return Ok(resuelta);
             }
             catch (UnauthorizedAccessException ex)
             {

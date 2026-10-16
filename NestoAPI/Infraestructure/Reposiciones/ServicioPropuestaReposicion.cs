@@ -28,7 +28,7 @@ namespace NestoAPI.Infraestructure.Reposiciones
     }
 
     /// <summary>NestoAPI#553: una línea de la propuesta de reposición de una tienda, para Nesto.</summary>
-    public class LineaPropuestaReposicionDTO
+    public class LineaPropuestaReposicionDTO : Models.PreparacionAlmacen.IConFotoProducto
     {
         public string Producto { get; set; }
         public string Grupo { get; set; }
@@ -39,6 +39,8 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public int PendienteServirOrigen { get; set; }
         public int PendienteServirDestino { get; set; }
         public int CantidadReposicion { get; set; }
+        /// <summary>NestoAPI#653: la foto del producto (FichasProductoAlmacen). Null si no tiene.</summary>
+        public string UrlFoto { get; set; }
     }
 
     /// <summary>

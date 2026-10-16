@@ -48,7 +48,7 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public int Cantidad { get; set; }
     }
 
-    public class LineaReposicionEnPreparacionDTO
+    public class LineaReposicionEnPreparacionDTO : Models.PreparacionAlmacen.IConFotoProducto
     {
         /// <summary>PreExtrProducto.[Nº Orden]: con él se cambia la cantidad.</summary>
         public int NumeroOrden { get; set; }
@@ -66,6 +66,8 @@ namespace NestoAPI.Infraestructure.Reposiciones
         /// <summary>Origen con control de ubicaciones: alguna unidad no tiene hueco (no había libre o estaba pendiente de ubicar).</summary>
         public bool SinHueco { get; set; }
         public int UnidadesSinHueco { get; set; }
+        /// <summary>NestoAPI#653: la foto del producto (FichasProductoAlmacen). Null si no tiene.</summary>
+        public string UrlFoto { get; set; }
     }
 
     /// <summary>La reposición que un almacén tiene en preparación (como mucho una a la vez).</summary>
@@ -111,11 +113,13 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public int Cantidad { get; set; }
     }
 
-    public class LineaTraspasoTerminadoDTO
+    public class LineaTraspasoTerminadoDTO : Models.PreparacionAlmacen.IConFotoProducto
     {
         public string Producto { get; set; }
         public string Nombre { get; set; }
         public int Cantidad { get; set; }
+        /// <summary>NestoAPI#653: la foto del producto (FichasProductoAlmacen). Null si no tiene.</summary>
+        public string UrlFoto { get; set; }
     }
 
     /// <summary>Lo que ha deshecho DELETE api/Reposiciones/{numTraspaso}.</summary>
