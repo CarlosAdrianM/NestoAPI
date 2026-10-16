@@ -120,7 +120,7 @@ namespace NestoAPI.Infraestructure.Eventos
         Task<List<SenalEventoDTO>> LeerSenales(string empresa, string estado, string cliente, int? eventoId);
         Task<List<SenalEventoDTO>> LeerSenalesCliente(string empresa, string cliente, string contacto);
         Task<SenalEventoDTO> MarcarSenal(int eventoId, MarcarSenalEventoDTO peticion, string usuario);
-        Task QuitarSenal(int id);
+        Task QuitarSenal(int id, string usuario);
     }
 
     /// <summary>
@@ -154,6 +154,7 @@ namespace NestoAPI.Infraestructure.Eventos
         private readonly Func<string, string, string> almacenDelUsuario;
         private readonly IRepositorioFacturacionCursos facturacionCursos;
         private readonly IRepositorioCupones cupones;
+        private readonly Func<Func<Task>, Task> enTransaccion;
 
         public ServicioEventos(NVEntities db) : this(db, () => DateTime.Now)
         {
@@ -161,7 +162,8 @@ namespace NestoAPI.Infraestructure.Eventos
 
         /// <param name="almacenDelUsuario">(empresa, usuario sin dominio) → su AlmacénPedidoVta. Null: el de ParametrosUsuario.</param>
         internal ServicioEventos(NVEntities db, Func<DateTime> reloj, Func<string, string, string> almacenDelUsuario = null,
-            IRepositorioFacturacionCursos facturacionCursos = null, IRepositorioCupones cupones = null)
+            IRepositorioFacturacionCursos facturacionCursos = null, IRepositorioCupones cupones = null,
+            Func<Func<Task>, Task> enTransaccion = null)
         {
             this.db = db;
             this.reloj = reloj;
@@ -169,6 +171,16 @@ namespace NestoAPI.Infraestructure.Eventos
                 ?? ((empresa, usuario) => Controllers.ParametrosUsuarioController.LeerParametro(empresa, usuario, PermisosEventos.CLAVE_ALMACEN_USUARIO));
             this.facturacionCursos = facturacionCursos ?? new RepositorioFacturacionCursos(db);
             this.cupones = cupones ?? new RepositorioCupones(db);
+            this.enTransaccion = enTransaccion ?? EnTransaccionBd;
+        }
+
+        private async Task EnTransaccionBd(Func<Task> trabajo)
+        {
+            using (DbContextTransaction transaccion = db.Database.BeginTransaction())
+            {
+                await trabajo().ConfigureAwait(false);
+                transaccion.Commit();
+            }
         }
 
         public string AlmacenDelUsuario(IPrincipal usuario, string empresa)
@@ -459,13 +471,68 @@ namespace NestoAPI.Infraestructure.Eventos
             return Componer(senal, evento, apunte, nombre, reloj().Date);
         }
 
-        public async Task QuitarSenal(int id)
+        /// <summary>
+        /// NestoAPI#612 (Carlos, 16/10/26): si la señal pagó alguna inscripción (sin factura del curso ni cupón pendientes), se
+        /// suelta de la inscripción y se borra la señal, en una transacción (antes daba 500 por FK_EventosInscripciones_EventosSenales).
+        /// </summary>
+        public async Task QuitarSenal(int id, string usuario)
         {
             EventoSenal senal = await db.EventosSenales.SingleOrDefaultAsync(s => s.Id == id).ConfigureAwait(false)
                 ?? throw NoEncontrado($"No existe la señal {id} (puede que ya la haya quitado otra persona).");
-            await ComprobarQueNoEstaUsada(senal).ConfigureAwait(false);
-            db.EventosSenales.Remove(senal);
-            await db.SaveChangesAsync().ConfigureAwait(false);
+            List<EventoInscripcion> pagadas = await db.EventosInscripciones.Where(i => i.EventoSenalId == senal.Id)
+                .ToListAsync().ConfigureAwait(false);
+            await ComprobarQueNoEstaUsada(senal, pagadas).ConfigureAwait(false);
+            if (!pagadas.Any())
+            {
+                db.EventosSenales.Remove(senal);
+                await db.SaveChangesAsync().ConfigureAwait(false);
+                return;
+            }
+
+            DateTime ahora = reloj();
+            Dictionary<int, Evento> eventosInscripciones = await LeerEventosDe(pagadas).ConfigureAwait(false);
+            string usuarioAuditoria = UsuarioAuditoriaHelper.ParaAuditoria(usuario);
+            await enTransaccion(async () =>
+            {
+                foreach (EventoInscripcion inscripcion in pagadas)
+                {
+                    eventosInscripciones.TryGetValue(inscripcion.EventoId, out Evento evento);
+                    SoltarSenal(inscripcion, evento, ahora, usuarioAuditoria);
+                }
+                // Dos SaveChanges: en el EDMX no hay asociación entre las dos tablas y EF no sabría que tiene que soltar antes de borrar.
+                await db.SaveChangesAsync().ConfigureAwait(false);
+                db.EventosSenales.Remove(senal);
+                await db.SaveChangesAsync().ConfigureAwait(false);
+            }).ConfigureAwait(false);
+        }
+
+        private async Task<Dictionary<int, Evento>> LeerEventosDe(List<EventoInscripcion> inscripciones)
+        {
+            List<int> ids = inscripciones.Select(i => i.EventoId).Distinct().ToList();
+            return (await db.Eventos.Where(e => ids.Contains(e.Id)).ToListAsync().ConfigureAwait(false))
+                .ToDictionary(e => e.Id);
+        }
+
+        /// <summary>
+        /// Deshace lo que hizo el pago con la señal (ServicioInscripcionesEventos.Pagar con forma Transferencia): la inscripción
+        /// vuelve a Reservada (pendiente de pago), sin forma, importe, fecha ni usuario del pago, y con una fecha límite nueva
+        /// (7 días desde hoy, nunca después del evento). Si la pagó otra cosa (el enlace de tarjeta, efectivo) y la señal solo se
+        /// le apuntó después, ese pago sigue valiendo: solo se suelta la señal.
+        /// </summary>
+        internal static void SoltarSenal(EventoInscripcion inscripcion, Evento evento, DateTime ahora, string usuario)
+        {
+            inscripcion.EventoSenalId = null;
+            if (ReglasInscripcionEvento.FormaPago(inscripcion.FormaPago) == FormaPagoInscripcionEvento.Transferencia)
+            {
+                inscripcion.Estado = EstadoInscripcionEvento.Reservada.ToString();
+                inscripcion.FormaPago = null;
+                inscripcion.ImportePagado = null;
+                inscripcion.FechaPago = null;
+                inscripcion.UsuarioPago = null;
+                inscripcion.FechaLimitePago = ReglasInscripcionEvento.FechaLimitePago(ahora, evento?.Fecha ?? DateTime.MaxValue);
+            }
+            inscripcion.Usuario = usuario;
+            inscripcion.FechaModificacion = ahora;
         }
 
         /// <summary>
@@ -473,11 +540,9 @@ namespace NestoAPI.Infraestructure.Eventos
         /// 409 <see cref="ERROR_SENAL_YA_USADA"/>. Primero se rectifica la factura del curso (a mano) y se anula el cupón; si el
         /// cupón ya se usó, se dice. Sin factura ni cupón se quita como siempre.
         /// </summary>
-        private async Task ComprobarQueNoEstaUsada(EventoSenal senal)
+        private async Task ComprobarQueNoEstaUsada(EventoSenal senal, List<EventoInscripcion> pagadas)
         {
-            List<int> idsInscripciones = await db.EventosInscripciones.Where(i => i.EventoSenalId == senal.Id)
-                .Select(i => i.Id).ToListAsync().ConfigureAwait(false);
-            foreach (int inscripcionId in idsInscripciones)
+            foreach (int inscripcionId in pagadas.Select(i => i.Id))
             {
                 FacturacionCursoInscripcion facturacion = await facturacionCursos.Leer(inscripcionId).ConfigureAwait(false);
                 CuponLeido cupon = await cupones.LeerDeInscripcion(inscripcionId).ConfigureAwait(false);

@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure;
+﻿using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Eventos;
 using NestoAPI.Models;
 using System;
@@ -234,7 +234,8 @@ namespace NestoAPI.Controllers
         // DELETE api/Eventos/Senales/7
         /// <summary>
         /// Quita la señal (el apunte vuelve a ser un cobro a cuenta normal). No toca el extracto. NestoAPI#612: si ya facturó el
-        /// curso o emitió el cupón, 409 SENAL_EVENTO_YA_USADA (primero la rectificativa del curso y anular el cupón).
+        /// curso o emitió el cupón, 409 SENAL_EVENTO_YA_USADA (primero la rectificativa del curso y anular el cupón). Si pagó una
+        /// inscripción, se suelta de ella (vuelve a pendiente de pago) y se borra, en una transacción.
         /// </summary>
         [HttpDelete]
         [Route("Senales/{id:int}")]
@@ -244,7 +245,8 @@ namespace NestoAPI.Controllers
             {
                 return Prohibido(ServicioEventos.MENSAJE_SIN_PERMISO_SENALES);
             }
-            await servicio.QuitarSenal(id).ConfigureAwait(false);
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, null);
+            await servicio.QuitarSenal(id, usuario).ConfigureAwait(false);
             return StatusCode(HttpStatusCode.NoContent);
         }
 

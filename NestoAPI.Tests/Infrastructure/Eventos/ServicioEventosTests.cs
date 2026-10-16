@@ -74,7 +74,10 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         private readonly IRepositorioFacturacionCursos facturacionCursos = A.Fake<IRepositorioFacturacionCursos>();
         private readonly IRepositorioCupones cupones = A.Fake<IRepositorioCupones>();
 
-        private ServicioEventos Servicio() => new ServicioEventos(db, () => HOY, AlmacenDe, facturacionCursos, cupones);
+        private int transacciones;
+
+        private ServicioEventos Servicio() => new ServicioEventos(db, () => HOY, AlmacenDe, facturacionCursos, cupones,
+            trabajo => { transacciones++; return trabajo(); });
 
         private static Evento Evento(int id, string titulo, DateTime fecha, bool activo = true) =>
             new Evento { Id = id, Empresa = "1", Titulo = titulo, Fecha = fecha, ImporteSenal = 50, Activo = activo, Usuario = "Laura", FechaModificacion = HOY, Almacen = "REI" };
@@ -507,7 +510,17 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         {
             EventoSenal senal = Senal(7, 1, 3054909);
             senales.Add(senal);
-            inscripciones.Add(new EventoInscripcion { Id = 30, EventoId = 1, Empresa = "1", Cliente = "15191", Contacto = "0", EventoSenalId = 7 });
+            if (!eventos.Any(e => e.Id == 1))
+            {
+                eventos.Add(Evento(1, "Masterclass", new DateTime(2026, 10, 30)));
+            }
+            inscripciones.Add(new EventoInscripcion
+            {
+                Id = 30, EventoId = 1, Empresa = "1", Cliente = "15191", Contacto = "0", EventoSenalId = 7,
+                Origen = "Transferencia", Estado = "Pagada", FormaPago = "Transferencia", ImportePagado = 50,
+                FechaPago = HOY.AddDays(-8), UsuarioPago = "NUEVAVISION\\Admin", FechaLimitePago = null,
+                Usuario = "NUEVAVISION\\Admin", FechaModificacion = HOY.AddDays(-8), FechaCreacion = HOY.AddDays(-8)
+            });
             A.CallTo(() => facturacionCursos.Leer(30)).Returns(factura == null ? null
                 : new FacturacionCursoInscripcion { InscripcionId = 30, EmpresaFactura = "1", Factura = factura, Estado = EstadosFacturacionCurso.FACTURADA });
             A.CallTo(() => cupones.LeerDeInscripcion(30)).Returns(cupon);
@@ -522,7 +535,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         {
             SenalUsada("CV2600700", Cupon(EstadosCupon.ACTIVO));
 
-            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().QuitarSenal(7));
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().QuitarSenal(7, "NUEVAVISION\\Carmen"));
 
             Assert.AreEqual(HttpStatusCode.Conflict, ex.StatusCode);
             Assert.AreEqual("SENAL_EVENTO_YA_USADA", ex.Context.ErrorCode);
@@ -537,7 +550,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         {
             SenalUsada("CV2600700", Cupon(EstadosCupon.USADO, 931234, "NV26012345"));
 
-            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().QuitarSenal(7));
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().QuitarSenal(7, "NUEVAVISION\\Carmen"));
 
             Assert.AreEqual(HttpStatusCode.Conflict, ex.StatusCode);
             Assert.AreEqual("Esta señal ya se ha usado para facturar el curso (factura CV2600700) y emitir el cupón EV-2610-7K3Q. " +
@@ -551,7 +564,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         {
             SenalUsada("CV2600700", Cupon(EstadosCupon.ANULADO));
 
-            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().QuitarSenal(7));
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().QuitarSenal(7, "NUEVAVISION\\Carmen"));
 
             Assert.AreEqual(HttpStatusCode.Conflict, ex.StatusCode);
             Assert.AreEqual("Esta señal ya se ha usado para facturar el curso (factura CV2600700) y emitir el cupón EV-2610-7K3Q, " +
@@ -563,7 +576,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         {
             SenalUsada("CV2600700", null);
 
-            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().QuitarSenal(7));
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().QuitarSenal(7, "NUEVAVISION\\Carmen"));
 
             Assert.AreEqual(HttpStatusCode.Conflict, ex.StatusCode);
             Assert.AreEqual("Esta señal ya se ha usado para facturar el curso (factura CV2600700). " +
@@ -582,15 +595,67 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             Assert.AreEqual("SENAL_EVENTO_YA_USADA", ex.Context.ErrorCode);
         }
 
+        /// <summary>
+        /// NestoAPI#612 (Carlos, 16/10/26): con inscripción pagada con la señal pero sin facturar ni cupón, antes daba 500 por
+        /// FK_EventosInscripciones_EventosSenales. Ahora la inscripción se suelta (vuelve a pendiente de pago) y luego se borra
+        /// la señal, en una transacción: primero se guarda la inscripción suelta y después se borra la señal.
+        /// </summary>
         [TestMethod]
-        public async Task QuitarSenal_ConInscripcionSinFacturarNiCupon_SeBorraComoHoy()
+        public async Task QuitarSenal_ConInscripcionSinFacturarNiCupon_SueltaLaInscripcionYBorraEnTransaccion()
         {
             EventoSenal senal = SenalUsada(null, null);
+            bool borrada = false;
+            A.CallTo(() => fakeSenales.Remove(senal)).Invokes(() => borrada = true);
+            var guardados = new List<string>();
+            A.CallTo(() => db.SaveChangesAsync()).Invokes(() =>
+                guardados.Add($"senal={inscripciones[0].EventoSenalId?.ToString() ?? "null"} borrada={borrada}")).Returns(1);
 
-            await Servicio().QuitarSenal(7);
+            await Servicio().QuitarSenal(7, "NUEVAVISION\\Carmen");
+
+            EventoInscripcion inscripcion = inscripciones[0];
+            Assert.AreEqual("Reservada", inscripcion.Estado, "Vuelve a pendiente de pago");
+            Assert.IsNull(inscripcion.EventoSenalId);
+            Assert.IsNull(inscripcion.FormaPago);
+            Assert.IsNull(inscripcion.ImportePagado);
+            Assert.IsNull(inscripcion.FechaPago);
+            Assert.IsNull(inscripcion.UsuarioPago);
+            Assert.AreEqual(new DateTime(2026, 10, 21), inscripcion.FechaLimitePago, "7 días desde hoy para volver a pagar");
+            Assert.AreEqual("NUEVAVISION\\Carmen", inscripcion.Usuario);
+            Assert.AreEqual(HOY, inscripcion.FechaModificacion);
+            CollectionAssert.AreEqual(new[] { "senal=null borrada=False", "senal=null borrada=True" }, guardados,
+                "Primero se suelta la inscripción y después se borra la señal");
+            Assert.AreEqual(1, transacciones);
+        }
+
+        /// <summary>Pagada con el enlace (tarjeta) y con la señal apuntada después: el pago con tarjeta sigue valiendo, solo se suelta la señal.</summary>
+        [TestMethod]
+        public async Task QuitarSenal_InscripcionPagadaConTarjeta_SoloSueltaLaSenal()
+        {
+            EventoSenal senal = SenalUsada(null, null);
+            EventoInscripcion inscripcion = inscripciones[0];
+            inscripcion.FormaPago = "Tarjeta";
+            inscripcion.PagoTPVId = 900;
+
+            await Servicio().QuitarSenal(7, "NUEVAVISION\\Carmen");
+
+            Assert.AreEqual("Pagada", inscripcion.Estado);
+            Assert.IsNull(inscripcion.EventoSenalId);
+            Assert.AreEqual("Tarjeta", inscripcion.FormaPago);
+            Assert.AreEqual(50M, inscripcion.ImportePagado);
+            A.CallTo(() => fakeSenales.Remove(senal)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task QuitarSenal_SinInscripciones_SeBorraSinTransaccion()
+        {
+            EventoSenal senal = Senal(7, 1, 3054909);
+            senales.Add(senal);
+
+            await Servicio().QuitarSenal(7, "NUEVAVISION\\Carmen");
 
             A.CallTo(() => fakeSenales.Remove(senal)).MustHaveHappenedOnceExactly();
             A.CallTo(() => db.SaveChangesAsync()).MustHaveHappenedOnceExactly();
+            Assert.AreEqual(0, transacciones);
         }
 
         // ---------------- Lista de señales ----------------
