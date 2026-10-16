@@ -72,6 +72,10 @@ namespace NestoAPI.Infraestructure.Contabilidad
                 string linea;
                 while ((linea = await reader.ReadLineAsync()) != null)
                 {
+                    if (linea.Length < 2)
+                    {
+                        continue;
+                    }
                     string codigoRegistro = linea.Substring(0, 2);
 
                     switch (codigoRegistro)
@@ -120,7 +124,23 @@ namespace NestoAPI.Infraestructure.Contabilidad
                 }
             }
 
+            // 16/10/26: el fichero de tarjetas de Caixabank cargado con el botón de movimientos
+            // no tiene registro 11 y reventaba más adelante con un NullReferenceException (500 sin pista).
+            if (cuaderno43.Cabecera == null)
+            {
+                throw new Exceptions.NestoBusinessException(EsFicheroTarjetas(contenido)
+                    ? "Este fichero es de movimientos de tarjetas, no de movimientos del banco (cuaderno 43): cárguelo con el botón del fichero de tarjetas."
+                    : "Este fichero no es de movimientos del banco (cuaderno 43): no tiene el registro de cabecera de la cuenta. Revise que ha elegido el fichero correcto.");
+            }
+
             return cuaderno43;
+        }
+
+        // Fichero de liquidación de TPV de Caixabank: cabecera 0, registros de operación 20x y cola 9.
+        private static bool EsFicheroTarjetas(string contenido)
+        {
+            string[] lineas = contenido.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            return lineas.Length > 0 && lineas[0].StartsWith("0") && lineas.Any(l => l.StartsWith("20"));
         }
 
         private static RegistroCabeceraCuenta AsignarValoresRegistroCabecera(string linea)

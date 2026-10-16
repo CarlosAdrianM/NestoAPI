@@ -657,6 +657,7 @@
     <Compile Include="Infrastructure\ValidadoresPedido\ValidadorLimiteRegalosTests.cs" />
     <Compile Include="Infrastructure\Contabilidad\ExtractoAdaptersTests.cs" />
     <Compile Include="Infrastructure\Contabilidad\GestorContabilidadFormasPagoTests.cs" />
+    <Compile Include="Infrastructure\Contabilidad\LeerCuaderno43Tests.cs" />
     <Compile Include="Infrastructure\Contabilidad\CalculadorSaldoMayorTests.cs" />
     <Compile Include="Infrastructure\Contabilidad\SumasPunteoTests.cs" />
     <Compile Include="Infrastructure\CosteSugerenciasOfertasTests.cs" />
