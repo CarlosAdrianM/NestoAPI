@@ -14,7 +14,13 @@ namespace NestoAPI.Infraestructure.Novedades
         public const string ESTADO_ACEPTADA = "Aceptada";
         public const string ESTADO_IMPLEMENTADA = "Implementada";
         public const string ESTADO_DESCARTADA = "Descartada";
-        public static readonly string[] ESTADOS = { ESTADO_PENDIENTE, ESTADO_ACEPTADA, ESTADO_IMPLEMENTADA, ESTADO_DESCARTADA };
+        /// <summary>
+        /// Recordatorios de respuesta (Carlos, 16/10/26): cerrada porque su autor no contestó a lo que le preguntamos
+        /// (tras dos recordatorios). A diferencia de Descartada, su autor la sigue viendo siempre en su lista y, si
+        /// comenta, vuelve sola a Pendiente. Los clientes que no la conocen la enseñan como texto.
+        /// </summary>
+        public const string ESTADO_CERRADA = "Cerrada";
+        public static readonly string[] ESTADOS = { ESTADO_PENDIENTE, ESTADO_ACEPTADA, ESTADO_IMPLEMENTADA, ESTADO_DESCARTADA, ESTADO_CERRADA };
         public static readonly string[] CATEGORIAS = { "Nuevo", "Mejorado", "Corregido", CATEGORIA_INCIDENCIA };
         public const string CATEGORIA_SUGERENCIA = "Nuevo";
         /// <summary>
@@ -82,9 +88,14 @@ namespace NestoAPI.Infraestructure.Novedades
             {
                 return true;
             }
+            // Recordatorios de respuesta: la Cerrada (por falta de respuesta) la ve su autor siempre, para que pueda
+            // reabrirla escribiendo en ella.
+            if (string.Equals(sugerencia.Estado?.Trim(), ESTADO_CERRADA, StringComparison.OrdinalIgnoreCase))
+            {
+                return EsSuAutor(sugerencia, usuario);
+            }
             if (!string.Equals(sugerencia.Estado, ESTADO_DESCARTADA, StringComparison.OrdinalIgnoreCase)
-                || string.IsNullOrWhiteSpace(usuario)
-                || !string.Equals(sugerencia.SugeridaPor?.Trim(), usuario.Trim(), StringComparison.OrdinalIgnoreCase))
+                || !EsSuAutor(sugerencia, usuario))
             {
                 return false;
             }
@@ -92,6 +103,10 @@ namespace NestoAPI.Infraestructure.Novedades
                 .Where(f => f.HasValue).Max() ?? sugerencia.SugeridaFecha;
             return ultimaActividad.HasValue && ultimaActividad.Value >= ahora.AddDays(-DIAS_DESCARTADA_VISIBLE_PARA_SU_AUTOR);
         }
+
+        private static bool EsSuAutor(NovedadConSugerenciaFila sugerencia, string usuario) =>
+            !string.IsNullOrWhiteSpace(usuario)
+            && string.Equals(sugerencia.SugeridaPor?.Trim(), usuario.Trim(), StringComparison.OrdinalIgnoreCase);
 
         /// <summary>
         /// Valida y normaliza un cambio nuestro. Devuelve el motivo si no vale, o null. Con versión,

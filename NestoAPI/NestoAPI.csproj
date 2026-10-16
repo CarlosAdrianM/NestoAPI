@@ -820,11 +820,15 @@
     <Compile Include="Infraestructure\Novedades\ReglasPerfilesNovedades.cs" />
     <Compile Include="Infraestructure\Novedades\ReglasAdjuntosNovedades.cs" />
     <Compile Include="Infraestructure\Novedades\ServicioAdjuntosNovedades.cs" />
+    <Compile Include="Infraestructure\Novedades\ReglasEsperaRespuestaNovedades.cs" />
+    <Compile Include="Infraestructure\Novedades\RepositorioEsperaRespuestaNovedades.cs" />
+    <Compile Include="Infraestructure\Novedades\RecordatoriosRespuestaNovedades.cs" />
     <Compile Include="Infraestructure\Notificaciones\AvisosTiempoReal.cs" />
     <Compile Include="Models\Novedades\FeedbackNovedadesDTO.cs" />
     <Compile Include="Models\Novedades\SugerenciaNovedadDTO.cs" />
     <Compile Include="Models\Novedades\NovedadDTO.cs" />
     <Compile Include="Models\Novedades\AdjuntoNovedadDTO.cs" />
+    <Compile Include="Models\Novedades\EsperaRespuestaNovedad.cs" />
     <Compile Include="Controllers\NovedadesController.cs" />
     <Compile Include="Infraestructure\Exceptions\PedidoValidacionException.cs" />
     <Compile Include="Infraestructure\Exceptions\TraspasoEmpresaException.cs" />

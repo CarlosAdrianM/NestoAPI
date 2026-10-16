@@ -6,8 +6,11 @@
     Uso:
       # Prueba local (NestoAPI y Nesto arrancados en Visual Studio, Nesto apuntando a localhost):
       .\ContestarComoAsistente.ps1 -Api http://localhost:53364 -Novedad 350 -Contestados 12 -Texto "Prueba de avisos"
-      # Producción, varias respuestas desde un JSON [{novedad, contestados:[..], texto}]:
+      # Producción, varias respuestas desde un JSON [{novedad, contestados:[..], texto, esperaRespuesta}]:
       .\ContestarComoAsistente.ps1 -Fichero respuestas.json
+      # Si la respuesta le PREGUNTA algo al autor, -EsperaRespuesta (o "esperaRespuesta": true en el JSON): si no
+      # contesta, el job de las 9:00 se lo recuerda cada 2 días laborables (dos veces) y a la tercera la cierra.
+      .\ContestarComoAsistente.ps1 -Novedad 584 -Contestados 150 -Texto "¿Qué correo es exactamente?" -EsperaRespuesta
 
     Necesita el usuario de Windows de alguien de Dirección o Informática (pide el windows-token con él).
     OJO: la API local escribe en la BD de producción: lo que se conteste es real.
@@ -17,7 +20,8 @@ param(
     [int]$Novedad,
     [int[]]$Contestados = @(),
     [string]$Texto,
-    [string]$Fichero
+    [string]$Fichero,
+    [switch]$EsperaRespuesta
 )
 
 $ErrorActionPreference = "Stop"
@@ -31,14 +35,15 @@ $cabeceras = @{ Authorization = "Bearer $token" }
 $respuestas = if ($Fichero) {
     Get-Content -Raw -Encoding UTF8 $Fichero | ConvertFrom-Json
 } else {
-    @([pscustomobject]@{ novedad = $Novedad; contestados = $Contestados; texto = $Texto })
+    @([pscustomobject]@{ novedad = $Novedad; contestados = $Contestados; texto = $Texto; esperaRespuesta = [bool]$EsperaRespuesta })
 }
 
 foreach ($r in $respuestas) {
-    $cuerpo = @{ Texto = $r.texto; ComentariosContestados = @($r.contestados) } | ConvertTo-Json
+    $espera = [bool]$EsperaRespuesta -or ($r.PSObject.Properties.Name -contains 'esperaRespuesta' -and [bool]$r.esperaRespuesta)
+    $cuerpo = @{ Texto = $r.texto; ComentariosContestados = @($r.contestados); EsperaRespuesta = $espera } | ConvertTo-Json
     $bytes = [System.Text.Encoding]::UTF8.GetBytes($cuerpo)
     $resultado = Invoke-RestMethod -Method Post -Uri "$Api/api/Novedades/$($r.novedad)/Comentarios/Asistente" `
         -Headers $cabeceras -ContentType "application/json; charset=utf-8" -Body $bytes
-    Write-Host "Novedad $($r.novedad): contestado ($($r.contestados -join ', '))." -ForegroundColor Green
+    Write-Host "Novedad $($r.novedad): contestado ($($r.contestados -join ', '))$(if ($espera) { '; esperando respuesta del autor' })." -ForegroundColor Green
     $resultado | ConvertTo-Json -Depth 4
 }

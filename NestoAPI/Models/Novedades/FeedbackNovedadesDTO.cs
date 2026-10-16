@@ -43,6 +43,13 @@ namespace NestoAPI.Models.Novedades
     public class NuevoComentarioAsistenteDTO : NuevoComentarioNovedadDTO
     {
         public List<int> ComentariosContestados { get; set; } = new List<int>();
+
+        /// <summary>
+        /// Recordatorios de respuesta (16/10/26): true si el comentario le pregunta algo al autor de la sugerencia o
+        /// incidencia. Desde ese momento se espera su respuesta: si no contesta, se le recuerda cada 2 días
+        /// laborables (dos veces) y a la tercera se da por cerrada. Opcional (sin él, como siempre).
+        /// </summary>
+        public bool EsperaRespuesta { get; set; }
     }
 
     /// <summary>Comentario tal cual se muestra (la imagen se pide aparte, por su Id).</summary>

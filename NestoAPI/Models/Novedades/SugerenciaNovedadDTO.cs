@@ -14,7 +14,10 @@ namespace NestoAPI.Models.Novedades
         public string TextoOriginal { get; set; }
         public string SugeridaNombre { get; set; }
         public DateTime? SugeridaFecha { get; set; }
-        /// <summary>Pendiente, Aceptada, Implementada o Descartada.</summary>
+        /// <summary>
+        /// Pendiente, Aceptada, Implementada, Descartada o (recordatorios de respuesta, 16/10/26) Cerrada: sin
+        /// respuesta del autor a lo que le preguntamos; la sigue viendo y, si comenta, vuelve a Pendiente.
+        /// </summary>
         public string Estado { get; set; }
         public bool TieneImagen { get; set; }
         /// <summary>NestoAPI#558: «Algo no funciona» (categoría Incidencia), no una idea nueva.</summary>

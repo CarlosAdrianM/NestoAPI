@@ -31,7 +31,14 @@ namespace NestoAPI.Controllers
             Notificaciones = new Infraestructure.Notificaciones.ServicioNotificacionesPush();
             LectorParametros = new LectorParametrosUsuario();
             Adjuntos = new ServicioAdjuntosNovedades();
+            EsperaRespuesta = new RepositorioEsperaRespuestaNovedadesSql();
         }
+
+        /// <summary>
+        /// Recordatorios de respuesta (16/10/26): la espera de respuesta del autor en sugerencias e incidencias.
+        /// null = sin esperas (los tests que no lo necesitan).
+        /// </summary>
+        internal IRepositorioEsperaRespuestaNovedades EsperaRespuesta { get; set; }
 
         /// <summary>NestoAPI#616: los PDF e imágenes de las novedades. null = sin adjuntos (listas vacías).</summary>
         internal IServicioAdjuntosNovedades Adjuntos { get; set; }
@@ -755,13 +762,17 @@ namespace NestoAPI.Controllers
                 ImagenTipo = tipo
             };
             int nuevoId = feedback.CrearComentario(aGrabar);
+            // Recordatorios de respuesta: si es el autor, ya ha contestado (y, si estaba Cerrada, se reabre)
+            bool reabierta = AlComentarQuitarEspera(id, usuario);
             // NestoAPI#537: a quien se mencione con @ le llega el aviso
             await AvisarMenciones(id, nuevoId, aGrabar.Texto, aGrabar.NombreVisible, User?.Identity?.Name, null).ConfigureAwait(false);
             string tituloComentado = feedback.LeerTituloNovedad(id);
-            await AvisarActividad(id, nuevoId,
-                string.IsNullOrWhiteSpace(tituloComentado) ? $"{aGrabar.NombreVisible} ha comentado en Novedades"
-                    : $"{aGrabar.NombreVisible} ha comentado «{tituloComentado}»",
-                aGrabar.Texto, aGrabar.Texto).ConfigureAwait(false);
+            string tituloAviso = reabierta
+                ? (string.IsNullOrWhiteSpace(tituloComentado) ? $"{aGrabar.NombreVisible} ha reabierto su sugerencia en Novedades"
+                    : $"{aGrabar.NombreVisible} ha reabierto «{tituloComentado}»")
+                : (string.IsNullOrWhiteSpace(tituloComentado) ? $"{aGrabar.NombreVisible} ha comentado en Novedades"
+                    : $"{aGrabar.NombreVisible} ha comentado «{tituloComentado}»");
+            await AvisarActividad(id, nuevoId, tituloAviso, aGrabar.Texto, aGrabar.Texto).ConfigureAwait(false);
             return Ok(new ComentarioNovedadDTO
             {
                 Id = nuevoId,
@@ -809,6 +820,10 @@ namespace NestoAPI.Controllers
                 ImagenTipo = tipo
             };
             int nuevoId = feedback.CrearComentario(aGrabar);
+            if (comentario.EsperaRespuesta)
+            {
+                MarcarEsperaRespuesta(id);
+            }
             List<int> contestados = (comentario.ComentariosContestados ?? new List<int>()).Distinct().ToList();
             foreach (int contestado in contestados)
             {
@@ -829,6 +844,81 @@ namespace NestoAPI.Controllers
                 EsMio = false
             });
         }
+
+        #region Recordatorios de respuesta (16/10/26)
+
+        private static int esperaFalloRegistrado;
+
+        /// <summary>
+        /// El asistente le ha preguntado algo al autor: desde ahora se espera su respuesta (fecha de hoy, 0
+        /// recordatorios). Nunca rompe la respuesta del asistente (p. ej. si aún no se ha lanzado el script).
+        /// </summary>
+        private void MarcarEsperaRespuesta(int novedadId)
+        {
+            if (EsperaRespuesta == null)
+            {
+                return;
+            }
+            try
+            {
+                _ = EsperaRespuesta.MarcarEspera(novedadId, DateTime.Now);
+            }
+            catch (Exception ex)
+            {
+                RegistrarSinRomper(new Exception($"Novedades (recordatorios de respuesta): no se pudo marcar la espera de la {novedadId}. " + ex.Message, ex));
+            }
+        }
+
+        /// <summary>
+        /// Si comenta el autor de la sugerencia, deja de esperarse su respuesta y, si estaba Cerrada por falta de
+        /// respuesta, vuelve a Pendiente (devuelve true). Los comentarios de los demás no tocan nada. Nunca rompe el comentario.
+        /// </summary>
+        internal bool AlComentarQuitarEspera(int novedadId, string usuario)
+        {
+            if (EsperaRespuesta == null)
+            {
+                return false;
+            }
+            try
+            {
+                DecisionAlComentar decision = ReglasEsperaRespuestaNovedades.AlComentar(EsperaRespuesta.Leer(novedadId), usuario);
+                if (!decision.BorrarEspera)
+                {
+                    return false;
+                }
+                EsperaRespuesta.BorrarEspera(novedadId, decision.Reabrir, User?.Identity?.Name);
+                return decision.Reabrir;
+            }
+            catch (Exception ex)
+            {
+                // Una sola vez por proceso: si faltan las columnas, fallaría en cada comentario.
+                if (Interlocked.Exchange(ref esperaFalloRegistrado, 1) == 0)
+                {
+                    RegistrarSinRomper(new Exception($"Novedades (recordatorios de respuesta): no se pudo quitar la espera de la {novedadId}. " + ex.Message, ex));
+                }
+                return false;
+            }
+        }
+
+        // POST api/Novedades/RecordatoriosRespuesta?ensayo=true  (Dirección / Informática)
+        // Lo que haría hoy el job de las 9:00 (ensayo, por defecto) o, con ensayo=false, hacerlo ya (solo si el
+        // interruptor Novedades:RecordatoriosRespuesta está a true).
+        [HttpPost]
+        [Authorize]
+        [Route("api/Novedades/RecordatoriosRespuesta")]
+        [ResponseType(typeof(List<ResultadoRecordatorioRespuestaDTO>))]
+        public async System.Threading.Tasks.Task<IHttpActionResult> PostRecordatoriosRespuesta(bool ensayo = true)
+        {
+            if (!PuedeRevisarFeedback())
+            {
+                return StatusCode(HttpStatusCode.Forbidden);
+            }
+            var recordatorios = new RecordatoriosRespuestaNovedades(EsperaRespuesta, feedback, Notificaciones,
+                () => DateTime.Now, RecordatoriosRespuestaNovedades.EsLaborableOficina, RecordatoriosRespuestaNovedadesJobsService.Activo);
+            return Ok(await recordatorios.Ejecutar(ensayo).ConfigureAwait(false));
+        }
+
+        #endregion
 
         internal const string TIPO_NOTIFICACION_RESPUESTA = "NovedadComentario";
 
