@@ -404,6 +404,8 @@
     <Compile Include="Infrastructure\Agencias\AgenciaRemotaGlsTests.cs" />
     <Compile Include="Infrastructure\Agencias\PeticionGlsTests.cs" />
     <Compile Include="Infrastructure\Agencias\SombraPeticionesGlsTests.cs" />
+    <Compile Include="Infrastructure\Agencias\TramitadorGlsTests.cs" />
+    <Compile Include="Controllers\TramitarEnvioGlsTests.cs" />
     <Compile Include="Infrastructure\Agencias\FabricaAgenciasRemotasTests.cs" />
     <Compile Include="Infrastructure\GestorAgenciasGlovoTests.cs" />
     <Compile Include="Infrastructure\GestorClientesTests.cs" />

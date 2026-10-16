@@ -18,6 +18,7 @@ using System.Configuration;
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Agencias;
 using NestoAPI.Infraestructure.PedidosVenta;
+using NestoAPI.Infraestructure.Agencias.Gls;
 using NestoAPI.Infraestructure.Agencias.Innovatrans;
 using NestoAPI.Infraestructure.Agencias.Perfiles;
 using NestoAPI.Infraestructure.Agencias.Tarifas;
@@ -42,6 +43,8 @@ namespace NestoAPI.Controllers
         public string EtiquetaTipo { get; set; }
         public string EtiquetaCodificacion { get; set; }
         public string EtiquetaContenido { get; set; }
+        /// <summary>NestoAPI#552 (fase 2): número de expedición de GLS (codexp) cuando la API tramita GLS. Null en las demás.</summary>
+        public string Expedicion { get; set; }
     }
 
     /// <summary>
@@ -773,6 +776,13 @@ namespace NestoAPI.Controllers
                 return NotFound();
             }
 
+            // NestoAPI#552 (fase 2): con el interruptor encendido, la API graba el envío de GLS ella misma. Apagado (por
+            // defecto), GLS sigue dando el 400 de abajo y se tramita desde Nesto (AgenciaASM).
+            if (envio.Agencia == Constantes.Agencias.AGENCIA_GLS && GlsTramitarPorApi())
+            {
+                return await TramitarGls(envio);
+            }
+
             IAgenciaRemota agencia = fabricaAgenciasRemotas.Crear(envio.Agencia);
             if (agencia == null)
             {
@@ -876,6 +886,139 @@ namespace NestoAPI.Controllers
             await AuditarTramitacion(envio, agencia, true, null);
 
             return Ok(AResultado(envio, resultado.Albaran, (short)resultado.Bultos, resultado.Etiqueta, reimpresion: false));
+        }
+
+        // ========== NestoAPI#552 (fase 2): GLS tramitado por la API, detrás de Agencias:GlsTramitarPorApi ==========
+
+        /// <summary>NestoAPI#552 (fase 2): el interruptor (Web.config, apagado por defecto). Sustituible en los tests.</summary>
+        internal Func<bool> GlsTramitarPorApi { get; set; } = InterruptorTramitacionGls.EstaActivo;
+
+        /// <summary>NestoAPI#552 (fase 2): el WS de GLS. En los tests, un fake: nada sale hacia GLS.</summary>
+        internal IClienteGrabaServiciosGls ClienteGls { get; set; } = new ClienteGrabaServiciosGls();
+
+        /// <summary>NestoAPI#552 (fase 2): el día de tramitación, que es la fecha que se manda a GLS.</summary>
+        internal Func<DateTime> HoyGls { get; set; } = () => DateTime.Today;
+
+        /// <summary>NestoAPI#552 (fase 2): la empresa remitente y la agencia del envío (uid y prefijo). Sustituible en los tests.</summary>
+        internal Func<EnviosAgencia, Task<(Empresa Empresa, AgenciaTransporte Agencia)>> CargarDatosGls { get; set; }
+
+        /// <summary>Lo que lleva AgenciasLlamadasWeb.Agencia en las llamadas a GLS: lo mismo que Nesto (la sombra las busca así).</summary>
+        internal const string AGENCIA_LLAMADAS_GLS = SombraPeticionesGls.AGENCIA_LLAMADAS;
+
+        /// <summary>
+        /// NestoAPI#552 (fase 2): PRIMER paso de tramitar un envío de GLS, como hoy AgenciaASM.LlamadaWebService en Nesto: lo graba
+        /// en GLS (GrabaServicios) con la petición de <see cref="PeticionGls"/> y la fecha del día de tramitación, y deja la
+        /// llamada en AgenciasLlamadasWeb igual que Nesto (Agencia «ASM», el SOAP tal cual). No cierra el envío: el segundo paso
+        /// sigue siendo ConfirmarTramitacion. GLS no devuelve etiqueta en esta llamada (la sigue montando Nesto).
+        /// Repetirlo es inocuo: GLS contesta «ya existe el código de barras» (-33) y se da por bueno, como en Nesto.
+        /// </summary>
+        private async Task<IHttpActionResult> TramitarGls(EnviosAgencia envio)
+        {
+            if (envio.Estado >= Constantes.Agencias.ESTADO_TRAMITADO)
+            {
+                return Content(HttpStatusCode.Conflict, $"El envío {envio.Numero} ya está tramitado.");
+            }
+
+            string errorCatalogo = CatalogoServiciosAgencias.Validar(envio);
+            if (errorCatalogo != null)
+            {
+                return BadRequest($"Envío {envio.Numero}: {errorCatalogo}");
+            }
+
+            (Empresa empresa, AgenciaTransporte agenciaTransporte) = await (CargarDatosGls ?? CargarDatosGlsDeLaBD)(envio);
+            if (empresa == null)
+            {
+                return BadRequest($"No se encuentra la empresa {envio.Empresa?.Trim()} del envío {envio.Numero}.");
+            }
+
+            // Issue #135: el centinela «no cobrar» (-1) no puede viajar a GLS como importe negativo (Nesto hace lo mismo).
+            if (envio.Reembolso < 0)
+            {
+                envio.Reembolso = 0;
+            }
+
+            // Los envíos de GLS ya nacen con su código de barras (lo calcula Nesto al crearlos); si falta, se calcula igual.
+            if (string.IsNullOrWhiteSpace(envio.CodigoBarras))
+            {
+                string codigo = TramitadorGls.CalcularCodigoBarras(envio, agenciaTransporte?.PrefijoCodigoBarras);
+                if (codigo == null)
+                {
+                    return BadRequest($"El envío {envio.Numero} no tiene código de barras y la agencia no tiene prefijo para calcularlo.");
+                }
+                envio.CodigoBarras = codigo;
+                envio.Usuario = User?.Identity?.Name ?? "NestoAPI";
+                envio.FechaModificacion = DateTime.Now;
+                await db.SaveChangesAsync();
+            }
+
+            TramitacionGls tramitacion = await new TramitadorGls(ClienteGls)
+                .TramitarAsync(envio, empresa, agenciaTransporte?.Identificador, HoyGls());
+            await AuditarGls(envio, tramitacion);
+
+            if (tramitacion.Fallo != null)
+            {
+                if (FallosAgenciaRemota.NoResponde(tramitacion.Fallo))
+                {
+                    // Reintentar no duplica: si GLS llegó a grabarlo, contestará -33 y se dará por bueno.
+                    return RespuestaAgenciaNoResponde("GLS", tramitacion.Fallo, envio, "Tramitar");
+                }
+                return Content(HttpStatusCode.BadGateway, tramitacion.Fallo.Message);
+            }
+
+            if (!tramitacion.Resultado.Aceptado)
+            {
+                return Content(HttpStatusCode.BadGateway, $"GLS no ha aceptado el envío {envio.Numero}: {tramitacion.Resultado.Error}");
+            }
+
+            return Ok(new TramitarEnvioResultadoDTO
+            {
+                Numero = envio.Numero,
+                Albaran = envio.CodigoBarras.Trim(),
+                Bultos = envio.Bultos,
+                Reimpresion = tramitacion.Resultado.YaRegistrado,
+                Expedicion = tramitacion.Resultado.CodigoExpedicion
+            });
+        }
+
+        private async Task<(Empresa Empresa, AgenciaTransporte Agencia)> CargarDatosGlsDeLaBD(EnviosAgencia envio)
+        {
+            // Where + ToListAsync (no FirstOrDefaultAsync con predicado): ver el «Limit1» de TramitacionEnviosService.
+            string numeroEmpresa = envio.Empresa;
+            Empresa empresa = (await db.Empresas.AsNoTracking().Where(e => e.Número == numeroEmpresa).ToListAsync()).FirstOrDefault();
+            int numeroAgencia = envio.Agencia;
+            AgenciaTransporte agencia = (await db.AgenciasTransportes.AsNoTracking().Where(a => a.Numero == numeroAgencia).ToListAsync()).FirstOrDefault();
+            return (empresa, agencia);
+        }
+
+        /// <summary>
+        /// NestoAPI#552 (fase 2): la llamada a GLS en AgenciasLlamadasWeb con el mismo formato que AgenciaService.GuardarLlamadaAgencia
+        /// de Nesto (Agencia «ASM», el SOAP en CuerpoLlamada, «OK» o el error en TextoRespuestaError), para que la sombra y las
+        /// consultas de siempre la sigan leyendo. Best-effort: si falla, a ELMAH, y la tramitación sigue.
+        /// </summary>
+        private async Task AuditarGls(EnviosAgencia envio, TramitacionGls tramitacion)
+        {
+            bool exito = tramitacion.Resultado?.Exito == true;
+            string error = tramitacion.Fallo?.Message ?? tramitacion.Resultado?.Error;
+            try
+            {
+                db.AgenciasLlamadasWeb.Add(new AgenciaLlamadaWeb
+                {
+                    Agencia = AGENCIA_LLAMADAS_GLS,
+                    Fecha = DateTime.Now,
+                    Exito = exito,
+                    UrlLlamada = Limitar(tramitacion.Url, 255) ?? string.Empty,
+                    CuerpoLlamada = tramitacion.Peticion ?? string.Empty,
+                    CuerpoRespuesta = tramitacion.Respuesta ?? string.Empty,
+                    TextoRespuestaError = Limitar(exito ? "OK" : error, 255) ?? string.Empty,
+                    Usuario = Limitar(User?.Identity?.Name ?? "NestoAPI", 30)
+                });
+                await db.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                Elmah.ErrorLog.GetDefault(null)?.Log(new Elmah.Error(new Exception(
+                    $"Fallo auditando la tramitación en GLS del envío {envio.Numero}: {DescribirErroresValidacion(ex)}", ex)));
+            }
         }
 
         // POST: api/EnviosAgencias/5/ImprimirEtiqueta   { "impresora": "nombre" } (opcional)
