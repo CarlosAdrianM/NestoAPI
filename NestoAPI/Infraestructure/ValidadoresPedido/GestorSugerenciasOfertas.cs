@@ -376,12 +376,13 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             return sugerencias;
         }
 
-        // #528: mismo stock que ValidadorRegaloSinStock (almacén de la línea o todas las sedes según el modo),
+        // #528: mismo stock que ValidadorRegaloSinStock (almacén de la línea o todas las sedes según el modo;
+        // NestoAPI#649: una muestra de un pedido por ruta, solo Algete),
         // para no prometer un regalo que luego el validador no deja meter.
         private static bool HayStockParaRegalar(IServicioPrecios servicio, PedidoVentaDTO pedido, LineaPedidoVentaDTO modelo, string producto, int cantidad)
         {
             return servicio.BuscarProducto(producto)?.Ficticio == true
-                || servicio.BuscarStockDisponibleParaRegalar(producto, ValidadorRegaloSinStock.AlmacenDelStock(pedido, modelo)) >= cantidad;
+                || servicio.BuscarStockDisponibleParaRegalar(producto, ValidadorRegaloSinStock.AlmacenDelStock(pedido, modelo, servicio, producto)) >= cantidad;
         }
 
         /// <summary>
