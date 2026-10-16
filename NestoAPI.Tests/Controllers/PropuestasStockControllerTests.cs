@@ -4,6 +4,7 @@ using NestoAPI.Controllers;
 using NestoAPI.Infraestructure.Stocks.Tendencias;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Security.Principal;
 using System.Web.Http;
@@ -20,6 +21,7 @@ namespace NestoAPI.Tests.Controllers
     {
         private List<(string mes, string usuario)> encolados;
         private List<(string mes, string usuario, DateTimeOffset cuando)> programados;
+        private List<bool> regenerados;
         private IRepositorioTendencias repositorio;
         private IRepositorioDecisionesPropuestasStock decisiones;
 
@@ -27,11 +29,12 @@ namespace NestoAPI.Tests.Controllers
         {
             encolados = new List<(string, string)>();
             programados = new List<(string, string, DateTimeOffset)>();
+            regenerados = new List<bool>();
             repositorio = A.Fake<IRepositorioTendencias>();
             decisiones = A.Fake<IRepositorioDecisionesPropuestasStock>();
             PropuestasStockController controller = new PropuestasStockController(
-                (m, u) => { encolados.Add((m, u)); return "1"; },
-                (m, u, c) => { programados.Add((m, u, c)); return "2"; },
+                (m, u, r) => { encolados.Add((m, u)); regenerados.Add(r); return "1"; },
+                (m, u, r, c) => { programados.Add((m, u, c)); regenerados.Add(r); return "2"; },
                 () => repositorio,
                 () => ahora,
                 () => decisiones)
@@ -100,7 +103,7 @@ namespace NestoAPI.Tests.Controllers
         [TestMethod]
         public void Generar_SinHangfire_503()
         {
-            PropuestasStockController controller = new PropuestasStockController((m, u) => throw new InvalidOperationException("JobStorage no inicializado"),
+            PropuestasStockController controller = new PropuestasStockController((m, u, r) => throw new InvalidOperationException("JobStorage no inicializado"),
                 null, null, () => Noche)
             {
                 Request = new System.Net.Http.HttpRequestMessage(),
@@ -109,6 +112,56 @@ namespace NestoAPI.Tests.Controllers
             };
 
             Assert.AreEqual(HttpStatusCode.ServiceUnavailable, controller.Generar("2026-09").ExecuteAsync(default).Result.StatusCode);
+        }
+
+        // ---------- NestoAPI#630: regenerar un mes ya calculado ----------
+
+        [TestMethod]
+        public void Generar_SinRegenerar_NoMiraLasDecisionesYEncolaElDeSiempre()
+        {
+            _ = Controller(Noche).Generar("2026-09");
+
+            CollectionAssert.AreEqual(new[] { false }, regenerados);
+            A.CallTo(() => repositorio.ContarDecisiones(A<DateTime>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void Generar_RegenerarEnHorario_SinDecisiones_SeProgramaParaLaMadrugada()
+        {
+            PropuestasStockController controller = Controller(Horario);
+            _ = A.CallTo(() => repositorio.ExisteTabla()).Returns(true);
+            _ = A.CallTo(() => repositorio.ContarDecisiones(new DateTime(2026, 9, 1))).Returns(0);
+
+            IHttpActionResult resultado = controller.Generar("2026-09", regenerar: true);
+
+            Assert.AreEqual(HttpStatusCode.Accepted, resultado.ExecuteAsync(default).Result.StatusCode);
+            Assert.AreEqual("2026-09", programados.Single().mes);
+            Assert.AreEqual(new DateTime(2026, 10, 15, 4, 30, 0), programados[0].cuando.DateTime);
+            CollectionAssert.AreEqual(new[] { true }, regenerados);
+        }
+
+        [TestMethod]
+        public void Generar_Regenerar_ConDecisiones_409SinEncolarNada()
+        {
+            PropuestasStockController controller = Controller(Noche);
+            _ = A.CallTo(() => repositorio.ExisteTabla()).Returns(true);
+            _ = A.CallTo(() => repositorio.ContarDecisiones(new DateTime(2026, 9, 1))).Returns(3);
+
+            System.Net.Http.HttpResponseMessage respuesta = controller.Generar("2026-09", regenerar: true).ExecuteAsync(default).Result;
+
+            Assert.AreEqual(HttpStatusCode.Conflict, respuesta.StatusCode);
+            StringAssert.Contains(respuesta.Content.ReadAsStringAsync().Result,
+                "No se pueden regenerar las propuestas de 2026-09: ya tienen 3 decisiones tomadas y regenerarlas las borraría. No se ha borrado nada.");
+            Assert.AreEqual(0, encolados.Count + programados.Count);
+        }
+
+        [TestMethod]
+        public void Generar_Regenerar_SinSerDireccion_Forbidden()
+        {
+            PropuestasStockController controller = Controller(Noche, grupos: new[] { "NUEVAVISION\\Compras" });
+
+            Assert.AreEqual(HttpStatusCode.Forbidden, ((StatusCodeResult)controller.Generar("2026-09", regenerar: true)).StatusCode);
+            Assert.AreEqual(0, encolados.Count + programados.Count);
         }
 
         [TestMethod]

@@ -80,6 +80,20 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             _ = servicio.Ejecutar(referencia, string.IsNullOrWhiteSpace(usuario) ? "a mano" : $"a mano ({usuario})");
         }
 
+        /// <summary>
+        /// NestoAPI#630 (regenerar un mes): lo que encola POST api/PropuestasStock/Generar?regenerar=true. Borra las filas del mes
+        /// (si ninguna tiene decisión), las vuelve a calcular y guardar, y manda otra vez el Excel. Método aparte (y no un parámetro
+        /// más de <see cref="GenerarManual"/>) para no romper los jobs de Hangfire ya encolados con la firma de siempre.
+        /// </summary>
+        [Queue(COLA)]
+        [AutomaticRetry(Attempts = 0, OnAttemptsExceeded = AttemptsExceededAction.Fail)]
+        public static void RegenerarManual(string mes, string usuario)
+        {
+            PropuestasStockJobsService servicio = new PropuestasStockJobsService();
+            DateTime referencia = LeerMes(mes) ?? MesCerrado(servicio.ahora());
+            _ = servicio.Ejecutar(referencia, string.IsNullOrWhiteSpace(usuario) ? "regenerado a mano" : $"regenerado a mano ({usuario})", regenerar: true);
+        }
+
         /// <summary>El último mes cerrado: el anterior al de <paramref name="hoy"/>.</summary>
         public static DateTime MesCerrado(DateTime hoy) => new DateTime(hoy.Year, hoy.Month, 1).AddMonths(-1);
 
@@ -90,7 +104,11 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                 : (DateTime?)null;
 
         /// <summary>Calcula, guarda, genera el Excel y lo manda. Nunca lanza: los errores van a ELMAH. Devuelve el resultado (o null si falló todo).</summary>
-        public ResultadoPropuestasStock Ejecutar(DateTime mes, string origen)
+        /// <param name="regenerar">
+        /// NestoAPI#630: borra antes las filas del mes (en la misma transacción que la inserción) en vez de saltarse las que ya
+        /// existen. Si alguna tiene decisión no se borra nada y el correo lo dice. No vuelve a avisar a Compras por la campana.
+        /// </param>
+        public ResultadoPropuestasStock Ejecutar(DateTime mes, string origen, bool regenerar = false)
         {
             DateTime inicio = ahora();
             ResultadoPropuestasStock resultado;
@@ -113,12 +131,19 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             {
                 if (repositorio.ExisteTabla())
                 {
-                    guardadas = repositorio.GuardarPropuestas(resultado.Mes, resultado.Productos, inicio);
+                    guardadas = regenerar
+                        ? repositorio.RegenerarPropuestas(resultado.Mes, resultado.Productos, inicio)
+                        : repositorio.GuardarPropuestas(resultado.Mes, resultado.Productos, inicio);
                 }
                 else
                 {
                     avisoGuardado = "La tabla PropuestasStock no existe (falta lanzar Scripts/Issue630_PropuestasStock.sql): no se ha guardado nada.";
                 }
+            }
+            catch (PropuestasStockConDecisionesException ex)
+            {
+                avisoGuardado = ex.Message;
+                registrarError(new Exception($"[Propuestas de stock #630] {ex.Message} ({origen})", ex));
             }
             catch (Exception ex)
             {
@@ -130,7 +155,7 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             {
                 byte[] excel = new GeneradorExcelPropuestasStock().Generar(resultado);
                 using (MailMessage mail = ConstruirCorreo(resultado, excel, guardadas, avisoGuardado, origen, ahora() - inicio,
-                    ParametrosTendencias.Destinatarios(leerParametro).ToArray()))
+                    ParametrosTendencias.Destinatarios(leerParametro).ToArray(), regenerar))
                 {
                     if (!correo.EnviarCorreoSMTP(mail))
                     {
@@ -143,7 +168,7 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                 registrarError(new Exception($"[Propuestas de stock #630] Error al generar o mandar el Excel de {resultado.Mes:yyyy-MM} ({origen}): {ex.Message}", ex));
             }
 
-            if (guardadas > 0)
+            if (guardadas > 0 && !regenerar)
             {
                 AvisarCompras(resultado);
             }
@@ -200,7 +225,7 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         internal static string NombreFichero(DateTime mes) => $"PropuestasStock_{mes:yyyy-MM}.xlsx";
 
         internal static MailMessage ConstruirCorreo(ResultadoPropuestasStock r, byte[] excel, int guardadas, string avisoGuardado,
-            string origen, TimeSpan duracion, string[] destinatarios)
+            string origen, TimeSpan duracion, string[] destinatarios, bool regenerado = false)
         {
             if (destinatarios == null || destinatarios.Length == 0)
             {
@@ -211,7 +236,7 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             MailMessage mail = new MailMessage
             {
                 From = new MailAddress(REMITENTE, "Nesto - Nueva Visión"),
-                Subject = $"Propuestas de stock de {mes}",
+                Subject = regenerado ? $"Propuestas de stock de {mes} (regeneradas)" : $"Propuestas de stock de {mes}",
                 IsBodyHtml = true,
                 BodyEncoding = Encoding.UTF8,
                 SubjectEncoding = Encoding.UTF8
@@ -241,7 +266,7 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                 "(las de productos, sin los propios). " +
                 "Los umbrales son PROVISIONALES hasta revisar la calibración.</p>");
             cuerpo.Append($"<p style=\"color:#666\">{r.ProductosLeidos} productos leídos, {r.FamiliasConEstacionalidad} familias con estacionalidad, " +
-                $"{guardadas} filas nuevas en PropuestasStock");
+                (regenerado ? $"{guardadas} filas en PropuestasStock (regeneradas: borradas las anteriores del mes)" : $"{guardadas} filas nuevas en PropuestasStock"));
             if (r.LotesConError > 0 || r.ProductosConError > 0)
             {
                 cuerpo.Append($"; <b>{r.LotesConError} lotes y {r.ProductosConError} productos con error</b> (detalle en ELMAH)");

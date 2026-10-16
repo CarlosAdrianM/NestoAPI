@@ -24,8 +24,8 @@ namespace NestoAPI.Controllers
         internal const int MINUTO_PROGRAMADO = 30;
         internal const int TOP_MAXIMO = 50000;
 
-        private readonly Func<string, string, string> encolar;
-        private readonly Func<string, string, DateTimeOffset, string> programar;
+        private readonly Func<string, string, bool, string> encolar;
+        private readonly Func<string, string, bool, DateTimeOffset, string> programar;
         private readonly Func<IRepositorioTendencias> crearRepositorio;
         private readonly Func<DateTime> ahora;
         private readonly Func<IRepositorioDecisionesPropuestasStock> crearRepositorioDecisiones;
@@ -34,14 +34,18 @@ namespace NestoAPI.Controllers
         {
         }
 
-        /// <param name="encolar">(mes, usuario) → id del job de Hangfire.</param>
-        /// <param name="programar">(mes, usuario, cuándo) → id del job programado.</param>
-        internal PropuestasStockController(Func<string, string, string> encolar, Func<string, string, DateTimeOffset, string> programar = null,
+        /// <param name="encolar">(mes, usuario, regenerar) → id del job de Hangfire.</param>
+        /// <param name="programar">(mes, usuario, regenerar, cuándo) → id del job programado.</param>
+        internal PropuestasStockController(Func<string, string, bool, string> encolar, Func<string, string, bool, DateTimeOffset, string> programar = null,
             Func<IRepositorioTendencias> crearRepositorio = null, Func<DateTime> ahora = null,
             Func<IRepositorioDecisionesPropuestasStock> crearRepositorioDecisiones = null)
         {
-            this.encolar = encolar ?? ((mes, usuario) => BackgroundJob.Enqueue(() => PropuestasStockJobsService.GenerarManual(mes, usuario)));
-            this.programar = programar ?? ((mes, usuario, cuando) => BackgroundJob.Schedule(() => PropuestasStockJobsService.GenerarManual(mes, usuario), cuando));
+            this.encolar = encolar ?? ((mes, usuario, regenerar) => regenerar
+                ? BackgroundJob.Enqueue(() => PropuestasStockJobsService.RegenerarManual(mes, usuario))
+                : BackgroundJob.Enqueue(() => PropuestasStockJobsService.GenerarManual(mes, usuario)));
+            this.programar = programar ?? ((mes, usuario, regenerar, cuando) => regenerar
+                ? BackgroundJob.Schedule(() => PropuestasStockJobsService.RegenerarManual(mes, usuario), cuando)
+                : BackgroundJob.Schedule(() => PropuestasStockJobsService.GenerarManual(mes, usuario), cuando));
             this.crearRepositorio = crearRepositorio ?? (() => new RepositorioTendenciasSql());
             this.ahora = ahora ?? (() => DateTime.Now);
             this.crearRepositorioDecisiones = crearRepositorioDecisiones ?? (() => new RepositorioDecisionesPropuestasStockSql());
@@ -62,11 +66,15 @@ namespace NestoAPI.Controllers
         /// extracto de 5 años de todos los productos, en horario de trabajo (de 6 a 22) se programa para las 04:30 siguientes,
         /// salvo <paramref name="ahora"/> = true.
         /// POST api/PropuestasStock/Generar?mes=2026-10
+        /// <para>NestoAPI#630: con <paramref name="regenerar"/> = true, el job borra las filas ya guardadas de ese mes, las vuelve a
+        /// calcular y guardar (en una transacción) y manda otra vez el Excel; sin él, las que ya existen no se tocan. Si alguna fila
+        /// del mes tiene decisión, 409 y no se encola nada (el job lo vuelve a comprobar al ejecutarse, dentro de la transacción).
+        /// POST api/PropuestasStock/Generar?mes=2026-09&amp;regenerar=true</para>
         /// </summary>
         [HttpPost]
         [Route("Generar")]
         [Authorize]
-        public IHttpActionResult Generar(string mes = null, bool ahora = false)
+        public IHttpActionResult Generar(string mes = null, bool ahora = false, bool regenerar = false)
         {
             if (!EsDireccion())
             {
@@ -84,6 +92,20 @@ namespace NestoAPI.Controllers
             }
             string textoMes = referencia.Value.ToString("yyyy-MM");
             string usuario = User.Identity?.Name;
+            if (regenerar)
+            {
+                IRepositorioTendencias repositorio = crearRepositorio();
+                if (!repositorio.ExisteTabla())
+                {
+                    return Content(HttpStatusCode.NotFound, new { Message = "La tabla PropuestasStock no existe todavía (Scripts/Issue630_PropuestasStock.sql): no hay nada que regenerar." });
+                }
+                int decisiones = repositorio.ContarDecisiones(referencia.Value);
+                if (decisiones > 0)
+                {
+                    return Content(HttpStatusCode.Conflict, new { Message = PropuestasStockConDecisionesException.Mensaje(referencia.Value, decisiones) });
+                }
+            }
+            string verbo = regenerar ? "regenerar" : "calcular";
             try
             {
                 bool enHorario = momento.Hour >= HORA_INICIO_HORARIO && momento.Hour < HORA_FIN_HORARIO;
@@ -91,19 +113,21 @@ namespace NestoAPI.Controllers
                 {
                     return Content(HttpStatusCode.Accepted, new
                     {
-                        JobId = encolar(textoMes, usuario),
+                        JobId = encolar(textoMes, usuario, regenerar),
                         Mes = textoMes,
                         Programado = (DateTime?)null,
-                        Mensaje = $"Propuestas de {textoMes} encoladas. El Excel llegará por correo."
+                        Mensaje = regenerar
+                            ? $"Propuestas de {textoMes} encoladas para regenerar (se borran las de ese mes y se vuelven a calcular). El Excel llegará por correo."
+                            : $"Propuestas de {textoMes} encoladas. El Excel llegará por correo."
                     });
                 }
                 DateTime cuando = momento.Date.AddDays(1).AddHours(HORA_PROGRAMADA).AddMinutes(MINUTO_PROGRAMADO);
                 return Content(HttpStatusCode.Accepted, new
                 {
-                    JobId = programar(textoMes, usuario, new DateTimeOffset(cuando)),
+                    JobId = programar(textoMes, usuario, regenerar, new DateTimeOffset(cuando)),
                     Mes = textoMes,
                     Programado = (DateTime?)cuando,
-                    Mensaje = $"Propuestas de {textoMes} programadas para el {cuando:dd/MM/yyyy} a las {cuando:HH:mm} (en horario no se lanza: carga la BD). Con ahora=true se lanzan ya."
+                    Mensaje = $"Propuestas de {textoMes} programadas para {verbo} el {cuando:dd/MM/yyyy} a las {cuando:HH:mm} (en horario no se lanza: carga la BD). Con ahora=true se lanzan ya."
                 });
             }
             catch (InvalidOperationException ex)

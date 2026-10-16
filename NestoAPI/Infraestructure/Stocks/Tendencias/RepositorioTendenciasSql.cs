@@ -23,6 +23,33 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
 
         /// <summary>Filas guardadas del mes, de más a menos exceso valorado. Sin mes, el último guardado.</summary>
         List<PropuestaStockGuardada> LeerPropuestas(DateTime? mes, int top);
+
+        /// <summary>
+        /// NestoAPI#630 (regenerar un mes): cuántas decisiones hay sobre las propuestas del mes (filas con <c>Decision</c> y filas
+        /// del histórico PropuestasStockDecisiones). Si no hay columnas o tabla de decisiones (sin el script del corte 3), 0.
+        /// </summary>
+        int ContarDecisiones(DateTime mes);
+
+        /// <summary>
+        /// NestoAPI#630 (regenerar un mes): en una transacción, borra TODAS las filas del mes y guarda las nuevas. Si alguna fila del
+        /// mes tiene decisión, no borra nada y lanza <see cref="PropuestasStockConDecisionesException"/>. Devuelve las insertadas.
+        /// </summary>
+        int RegenerarPropuestas(DateTime mes, IEnumerable<ResultadoTendencia> resultados, DateTime fechaCalculo);
+    }
+
+    /// <summary>NestoAPI#630: no se regenera un mes que ya tiene decisiones (se perderían). El mensaje va tal cual al usuario.</summary>
+    public class PropuestasStockConDecisionesException : Exception
+    {
+        public PropuestasStockConDecisionesException(DateTime mes, int decisiones) : base(Mensaje(mes, decisiones))
+        {
+            Decisiones = decisiones;
+        }
+
+        public int Decisiones { get; }
+
+        public static string Mensaje(DateTime mes, int decisiones)
+            => $"No se pueden regenerar las propuestas de {mes:yyyy-MM}: ya tienen {decisiones} " +
+                $"{(decisiones == 1 ? "decisión tomada" : "decisiones tomadas")} y regenerarlas las borraría. No se ha borrado nada.";
     }
 
     /// <summary>Una fila de PropuestasStock (lo calculado más la decisión del corte 3).</summary>
@@ -43,7 +70,8 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
     /// por los índices que empiezan por producto en LinPedidoVta, LinPedidoCmp y ExtractoProducto) y con
     /// <see cref="TIMEOUT_SEGUNDOS"/> de tope por consulta. Recorre en total toda la venta y todo el extracto de 5 años: SOLO
     /// en el job de madrugada.</para>
-    /// <para>Lo ÚNICO que escribe es <c>PropuestasStock</c>, y solo inserta.</para>
+    /// <para>Lo ÚNICO que escribe es <c>PropuestasStock</c>: inserta y, solo al regenerar un mes sin decisiones
+    /// (<see cref="RegenerarPropuestas"/>), borra las filas de ese mes (necesita Scripts/Issue630_RegenerarPropuestasStock.sql).</para>
     /// </summary>
     public class RepositorioTendenciasSql : IRepositorioTendencias
     {
@@ -116,7 +144,24 @@ GROUP BY RTRIM(l.Producto)";
 
         internal const string SQL_EXISTE_TABLA = "SELECT CASE WHEN OBJECT_ID('dbo.PropuestasStock', 'U') IS NULL THEN 0 ELSE 1 END";
 
-        internal const string SQL_YA_GUARDADOS = "SELECT RTRIM(Producto) FROM dbo.PropuestasStock WITH (NOLOCK) WHERE Mes = @mes AND Almacen = @almacen";
+        /// <summary>
+        /// NestoAPI#630 (regenerar): decisiones del mes. Con sp_executesql porque sin el script del corte 3 la columna Decision o la
+        /// tabla PropuestasStockDecisiones no existen y la consulta directa no compilaría. Dentro de la transacción de
+        /// <see cref="RegenerarPropuestas"/>, con UPDLOCK y HOLDLOCK: nadie decide entre la comprobación y el borrado.
+        /// </summary>
+        internal const string SQL_CONTAR_DECISIONES = @"
+DECLARE @n int = 0, @h int = 0;
+IF COL_LENGTH('dbo.PropuestasStock', 'Decision') IS NOT NULL
+    EXEC sp_executesql N'SELECT @n = COUNT(*) FROM dbo.PropuestasStock WITH (UPDLOCK, HOLDLOCK) WHERE Mes = @mes AND Decision IS NOT NULL',
+        N'@mes date, @n int OUTPUT', @mes = @mes, @n = @n OUTPUT;
+IF OBJECT_ID('dbo.PropuestasStockDecisiones', 'U') IS NOT NULL
+    EXEC sp_executesql N'SELECT @h = COUNT(*) FROM dbo.PropuestasStockDecisiones WITH (UPDLOCK, HOLDLOCK) WHERE Mes = @mes',
+        N'@mes date, @h int OUTPUT', @mes = @mes, @h = @h OUTPUT;
+SELECT @n + @h;";
+
+        internal const string SQL_BORRAR_MES = "DELETE FROM dbo.PropuestasStock WHERE Mes = @mes";
+
+        internal const string SQL_YA_GUARDADOS ="SELECT RTRIM(Producto) FROM dbo.PropuestasStock WITH (NOLOCK) WHERE Mes = @mes AND Almacen = @almacen";
 
         internal const string SQL_LEER = @"
 SELECT TOP (@top) Id, Mes, RTRIM(Producto) AS Producto, Nombre, Familia, Grupo, Proveedor, EstadoProducto, RTRIM(Almacen) AS Almacen, Fase,
@@ -364,14 +409,7 @@ ORDER BY ExcesoValorado DESC, Producto";
                 }
                 try
                 {
-                    using (SqlBulkCopy copia = new SqlBulkCopy(conexion, OPCIONES_COPIA_PROPUESTAS, null) { DestinationTableName = TABLA, BulkCopyTimeout = TIMEOUT_SEGUNDOS, BatchSize = 1000 })
-                    {
-                        foreach (DataColumn columna in tabla.Columns)
-                        {
-                            copia.ColumnMappings.Add(columna.ColumnName, columna.ColumnName);
-                        }
-                        copia.WriteToServer(tabla);
-                    }
+                    Copiar(conexion, null, tabla);
                 }
                 finally
                 {
@@ -381,6 +419,77 @@ ORDER BY ExcesoValorado DESC, Producto";
                     }
                 }
                 return nuevas.Count;
+            }
+        }
+
+        private static void Copiar(SqlConnection conexion, SqlTransaction transaccion, DataTable tabla)
+        {
+            using (SqlBulkCopy copia = new SqlBulkCopy(conexion, OPCIONES_COPIA_PROPUESTAS, transaccion) { DestinationTableName = TABLA, BulkCopyTimeout = TIMEOUT_SEGUNDOS, BatchSize = 1000 })
+            {
+                foreach (DataColumn columna in tabla.Columns)
+                {
+                    copia.ColumnMappings.Add(columna.ColumnName, columna.ColumnName);
+                }
+                copia.WriteToServer(tabla);
+            }
+        }
+
+        public int ContarDecisiones(DateTime mes)
+        {
+            using (NVEntities db = Contexto())
+            {
+                return db.Database.SqlQuery<int>(SQL_CONTAR_DECISIONES, new SqlParameter("@mes", SqlDbType.Date) { Value = mes }).Single();
+            }
+        }
+
+        public int RegenerarPropuestas(DateTime mes, IEnumerable<ResultadoTendencia> resultados, DateTime fechaCalculo)
+        {
+            List<ResultadoTendencia> lista = (resultados ?? Enumerable.Empty<ResultadoTendencia>()).ToList();
+            if (lista.Count == 0)
+            {
+                // Sin nada que guardar no se borra: un cálculo que no ha dado filas (BD caída a medias) no deja el mes vacío.
+                return 0;
+            }
+            DataTable tabla = TablaPropuestas(mes, lista, fechaCalculo);
+            using (NVEntities db = Contexto())
+            {
+                SqlConnection conexion = (SqlConnection)db.Database.Connection;
+                bool abiertaAqui = conexion.State != ConnectionState.Open;
+                if (abiertaAqui)
+                {
+                    conexion.Open();
+                }
+                try
+                {
+                    using (SqlTransaction transaccion = conexion.BeginTransaction(IsolationLevel.ReadCommitted))
+                    {
+                        using (SqlCommand contar = new SqlCommand(SQL_CONTAR_DECISIONES, conexion, transaccion) { CommandTimeout = TIMEOUT_SEGUNDOS })
+                        {
+                            contar.Parameters.Add(new SqlParameter("@mes", SqlDbType.Date) { Value = mes });
+                            int decisiones = Convert.ToInt32(contar.ExecuteScalar());
+                            if (decisiones > 0)
+                            {
+                                transaccion.Rollback();
+                                throw new PropuestasStockConDecisionesException(mes, decisiones);
+                            }
+                        }
+                        using (SqlCommand borrar = new SqlCommand(SQL_BORRAR_MES, conexion, transaccion) { CommandTimeout = TIMEOUT_SEGUNDOS })
+                        {
+                            borrar.Parameters.Add(new SqlParameter("@mes", SqlDbType.Date) { Value = mes });
+                            _ = borrar.ExecuteNonQuery();
+                        }
+                        Copiar(conexion, transaccion, tabla);
+                        transaccion.Commit();
+                    }
+                }
+                finally
+                {
+                    if (abiertaAqui)
+                    {
+                        conexion.Close();
+                    }
+                }
+                return lista.Count;
             }
         }
 

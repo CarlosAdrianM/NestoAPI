@@ -64,6 +64,38 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
             => new PropuestasStockJobsService(() => repositorio, correo, c => parametros.TryGetValue(c, out string v) ? v : null,
                 () => new DateTime(2026, 10, 1, 4, 30, 0), errores.Add, () => avisador, () => decisiones);
 
+        // ---------- NestoAPI#630: regenerar un mes ----------
+
+        [TestMethod]
+        public void Ejecutar_Regenerar_BorraYGuardaEnVezDeSaltarseLasGuardadas_YMandaElExcelSinAvisarACompras()
+        {
+            _ = A.CallTo(() => repositorio.RegenerarPropuestas(A<DateTime>._, A<IEnumerable<ResultadoTendencia>>._, A<DateTime>._))
+                .ReturnsLazily((DateTime m, IEnumerable<ResultadoTendencia> filas, DateTime f) => filas.Count());
+
+            _ = Servicio().Ejecutar(MesReferencia, "regenerado a mano (Carlos)", regenerar: true);
+
+            A.CallTo(() => repositorio.RegenerarPropuestas(MesReferencia, A<IEnumerable<ResultadoTendencia>>._, A<DateTime>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => repositorio.GuardarPropuestas(A<DateTime>._, A<IEnumerable<ResultadoTendencia>>._, A<DateTime>._)).MustNotHaveHappened();
+            Assert.AreEqual(1, enviados.Count);
+            Assert.AreEqual("Propuestas de stock de septiembre 2026 (regeneradas)", enviados[0].asunto);
+            StringAssert.Contains(enviados[0].cuerpo, "filas en PropuestasStock (regeneradas: borradas las anteriores del mes)");
+            A.CallTo(() => avisador.Avisar(A<string>._, A<IEnumerable<string>>._, A<string>._)).MustNotHaveHappened();
+            Assert.AreEqual(0, errores.Count);
+        }
+
+        [TestMethod]
+        public void Ejecutar_Regenerar_ConDecisiones_NoBorraNadaYElCorreoLoDice()
+        {
+            _ = A.CallTo(() => repositorio.RegenerarPropuestas(A<DateTime>._, A<IEnumerable<ResultadoTendencia>>._, A<DateTime>._))
+                .Throws(new PropuestasStockConDecisionesException(MesReferencia, 1));
+
+            _ = Servicio().Ejecutar(MesReferencia, "regenerado a mano", regenerar: true);
+
+            A.CallTo(() => repositorio.GuardarPropuestas(A<DateTime>._, A<IEnumerable<ResultadoTendencia>>._, A<DateTime>._)).MustNotHaveHappened();
+            StringAssert.Contains(enviados.Single().cuerpo, "No se pueden regenerar las propuestas de 2026-09: ya tienen 1 decisión tomada y regenerarlas las borraría. No se ha borrado nada.");
+            Assert.AreEqual(1, errores.Count);
+        }
+
         // ---------- NestoAPI#631: aviso a Compras por la campana ----------
 
         [TestMethod]
