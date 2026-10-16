@@ -514,6 +514,7 @@
     <Compile Include="Infrastructure\ChequesRegalo\CanjeChequesRegaloTests.cs" />
     <Compile Include="Infrastructure\ChequesRegalo\AvisoChequesRegaloTests.cs" />
     <Compile Include="Infrastructure\ChequesRegalo\TiendaChequesRegaloTests.cs" />
+    <Compile Include="Infrastructure\ChequesRegalo\PrestashopChequesRegaloTests.cs" />
     <Compile Include="Infrastructure\ChequesRegalo\ChequesRegaloTests.cs" />
     <Compile Include="Infrastructure\ChequesRegalo\EstadisticaChequesRegaloTests.cs" />
     <Compile Include="Infrastructure\GestorFacturasTests.cs" />

@@ -28,6 +28,38 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
         public decimal? Falta { get; set; }
     }
 
+    /// <summary>NestoAPI#652: el carrito de la tienda PrestaShop que se pregunta en POST api/ChequesRegalo/ComprobarCarrito.</summary>
+    public class ComprobarCarritoChequeRegaloDTO
+    {
+        public string Empresa { get; set; }
+        /// <summary>El cliente de Nesto (el módulo lo saca del vínculo o del correo + NIF de la dirección).</summary>
+        public string Cliente { get; set; }
+        public List<LineaCarritoChequeRegaloDTO> Lineas { get; set; }
+    }
+
+    public class LineaCarritoChequeRegaloDTO
+    {
+        /// <summary>Referencia del producto en PrestaShop (= el código de Nesto).</summary>
+        public string Producto { get; set; }
+        public int Cantidad { get; set; }
+        /// <summary>Precio sin IVA × cantidad, ya con los descuentos de la tienda, sin portes ni el propio cheque.</summary>
+        public decimal BaseImponible { get; set; }
+    }
+
+    /// <summary>NestoAPI#652: la respuesta de ComprobarCarrito. Con Aplicable, Codigo y Falta van a null.</summary>
+    public class ComprobacionCarritoChequeRegaloDTO
+    {
+        public bool Aplicable { get; set; }
+        /// <summary>Base imponible del cheque (0 si el cliente no tiene ninguno).</summary>
+        public decimal Importe { get; set; }
+        /// <summary>CHEQUE_REGALO_* si no se puede usar.</summary>
+        public string Codigo { get; set; }
+        /// <summary>Listo para enseñar, de usted.</summary>
+        public string Mensaje { get; set; }
+        /// <summary>Con CHEQUE_REGALO_MINIMO_NO_SUPERADO, lo que le falta de producto computable (base imponible).</summary>
+        public decimal? Falta { get; set; }
+    }
+
     /// <summary>El cheque del carrito: si lo lleva y, si no se puede usar, por qué (con el texto para la clienta).</summary>
     public class ResultadoChequeCarrito
     {
@@ -109,6 +141,106 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
                 resultado.Error = ParaLaClienta(ex);
             }
             return resultado;
+        }
+
+        /// <summary>
+        /// NestoAPI#652: ¿puede el cliente usar su cheque con este carrito de la tienda PrestaShop? Se monta el pedido
+        /// como lo grabará Nesto al importarlo (las líneas del carrito + la línea del cheque vigente del cliente) y se
+        /// pasa por el MISMO <see cref="IServicioCanjeChequesRegalo.Comprobar"/> que POST api/PedidosVenta: mínimo
+        /// computable, plazo, estado, campaña activa… No reserva nada (lo reserva el pedido al grabarse).
+        /// </summary>
+        public async Task<ComprobacionCarritoChequeRegaloDTO> ComprobarCarritoTienda(ComprobarCarritoChequeRegaloDTO carrito, DateTime ahora)
+        {
+            string empresa = string.IsNullOrWhiteSpace(carrito?.Empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : carrito.Empresa.Trim();
+            string cliente = carrito?.Cliente?.Trim();
+            ChequeRegaloClienteDTO cheque = await servicio.LeerChequeVigente(empresa, cliente, ahora).ConfigureAwait(false);
+            if (cheque == null)
+            {
+                return new ComprobacionCarritoChequeRegaloDTO
+                {
+                    Codigo = ReglasCanjeChequeRegalo.ERROR_SIN_CHEQUE,
+                    Mensaje = MensajeDeUsted(ReglasCanjeChequeRegalo.ERROR_SIN_CHEQUE, null)
+                };
+            }
+
+            // Si la tienda mandase el propio cheque como línea, no se cuenta dos veces (daría VARIAS_LINEAS)
+            List<string> productosCheque = await servicio.ProductosCheque().ConfigureAwait(false);
+            List<LinPedidoVta> lineas = (carrito.Lineas ?? new List<LineaCarritoChequeRegaloDTO>())
+                .Where(l => l != null && !string.IsNullOrWhiteSpace(l.Producto) && !EsLineaCheque(l.Producto, productosCheque))
+                .Select(l => new LinPedidoVta
+                {
+                    Empresa = empresa,
+                    TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                    Producto = l.Producto.Trim(),
+                    Cantidad = (short)Math.Max(short.MinValue, Math.Min(short.MaxValue, l.Cantidad)),
+                    Base_Imponible = l.BaseImponible,
+                    Estado = Constantes.EstadosLineaVenta.EN_CURSO,
+                    Picking = 0
+                }).ToList();
+            lineas.Add(new LinPedidoVta
+            {
+                Empresa = empresa,
+                TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = cheque.Producto,
+                Cantidad = -1,
+                Precio = cheque.Importe,
+                Base_Imponible = -cheque.Importe,
+                Estado = Constantes.EstadosLineaVenta.EN_CURSO,
+                Picking = 0
+            });
+
+            try
+            {
+                _ = await servicio.Comprobar(empresa, 0, cliente, lineas, null, null, USUARIO_TIENDA, pedidoNuevo: true).ConfigureAwait(false);
+            }
+            catch (NestoBusinessException ex) when (EsErrorDelCheque(ex))
+            {
+                return new ComprobacionCarritoChequeRegaloDTO
+                {
+                    Importe = cheque.Importe,
+                    Codigo = ex.Context.ErrorCode,
+                    Mensaje = MensajeDeUsted(ex.Context.ErrorCode, ex),
+                    Falta = Falta(ex)
+                };
+            }
+            return new ComprobacionCarritoChequeRegaloDTO
+            {
+                Aplicable = true,
+                Importe = cheque.Importe,
+                Mensaje = $"Puede usar su cheque regalo de {Euros(cheque.Importe)} € en este pedido."
+            };
+        }
+
+        internal const string USUARIO_TIENDA = "TiendaPrestashop";
+
+        /// <summary>NestoAPI#652: los textos de la tienda PrestaShop, de usted (los de TNV van de tú).</summary>
+        internal static string MensajeDeUsted(string codigo, NestoBusinessException ex)
+        {
+            Dictionary<string, object> datos = ex?.Context?.AdditionalData ?? new Dictionary<string, object>();
+            switch (codigo)
+            {
+                case ReglasCanjeChequeRegalo.ERROR_SIN_CHEQUE:
+                    return "No tiene ningún cheque regalo para usar en este pedido.";
+                case ReglasCanjeChequeRegalo.ERROR_YA_USADO:
+                    return datos.TryGetValue("pedidoCanje", out object pedido) && pedido != null
+                        ? $"Su cheque regalo ya está aplicado en el pedido {pedido}: solo se puede usar una vez."
+                        : "Su cheque regalo ya se ha usado en otro pedido: solo se puede usar una vez.";
+                case ReglasCanjeChequeRegalo.ERROR_FUERA_DE_PLAZO:
+                    return "El plazo para usar su cheque regalo ya ha terminado.";
+                case ReglasCanjeChequeRegalo.ERROR_ANULADO:
+                    return "Su cheque regalo está anulado. Si cree que es un error, llámenos.";
+                case ReglasCanjeChequeRegalo.ERROR_NO_ACTIVADO:
+                    return ex?.Message; // «El cheque regalo se podrá usar a partir del …»: ya vale para el cliente
+                case ReglasCanjeChequeRegalo.ERROR_MINIMO_NO_SUPERADO:
+                    string minimo = datos.TryGetValue("minimo", out object m) && m != null ? Euros(Convert.ToDecimal(m, CultureInfo.InvariantCulture)) : null;
+                    decimal? falta = Falta(ex);
+                    return (falta.HasValue ? $"Le faltan {Euros(falta.Value)} € de producto para poder usar su cheque regalo. " : string.Empty) +
+                        $"El pedido tiene que superar {minimo ?? "el mínimo"} € de producto (sin IVA; no cuentan los portes ni los " +
+                        "productos excluidos en las condiciones del cheque).";
+                default:
+                    // Campaña apagada, otra campaña, mismo pedido…: nada que el cliente pueda arreglar desde el carrito
+                    return "Su cheque regalo no se puede usar ahora mismo en este pedido.";
+            }
         }
 
         /// <summary>Quita las líneas del cheque (el carrito se calcula sin él cuando no se puede usar).</summary>

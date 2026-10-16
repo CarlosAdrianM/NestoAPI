@@ -1,4 +1,5 @@
 ﻿using NestoAPI.Infraestructure.ChequesRegalo;
+using NestoAPI.Infraestructure.Seguridad;
 using NestoAPI.Infraestructure.Vendedores;
 using NestoAPI.Infrastructure;
 using NestoAPI.Models;
@@ -170,9 +171,11 @@ namespace NestoAPI.Controllers
         /// GET api/ChequesRegalo/Cliente?empresa=1&amp;cliente=15191 → el cheque del cliente en una campaña activa (el que
         /// se puede usar o ya está en un pedido, si hay varios), o 404 si no tiene ninguno. Un cliente de la tienda (JWT
         /// con claim «cliente») solo puede consultar el suyo.
+        /// <para>NestoAPI#652: también con la X-API-KEY de PrestaShop (de servidor a servidor, sin claim «cliente»: se fía
+        /// del parámetro). Sin ninguna de las dos credenciales, 401 siempre (ExigirSiempre, sin modo sombra).</para>
         /// </summary>
         [HttpGet]
-        [Authorize]
+        [AutorizadoOApiKey("ApiKeyPrestashop", "X-API-KEY", ExigirSiempre = true)]
         [Route("Cliente")]
         [ResponseType(typeof(ChequeRegaloClienteDTO))]
         public async Task<IHttpActionResult> GetChequeCliente(string cliente, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
@@ -181,8 +184,7 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest("Falta el cliente");
             }
-            string clienteDelToken = (User?.Identity as ClaimsIdentity)?.FindFirst("cliente")?.Value;
-            if (clienteDelToken != null && clienteDelToken.Trim() != cliente.Trim())
+            if (!EsSuCliente(cliente))
             {
                 return StatusCode(HttpStatusCode.Forbidden);
             }
@@ -194,6 +196,40 @@ namespace NestoAPI.Controllers
                 return NotFound();
             }
             return Ok(cheque);
+        }
+
+        /// <summary>
+        /// NestoAPI#652: POST api/ChequesRegalo/ComprobarCarrito — ¿puede el cliente usar su cheque con este carrito de la
+        /// tienda PrestaShop? Body <c>{ empresa, cliente, lineas: [{ producto, cantidad, baseImponible }] }</c>; responde
+        /// 200 con <see cref="ComprobacionCarritoChequeRegaloDTO"/> (Aplicable, Importe, Codigo, Mensaje de usted, Falta).
+        /// Las reglas son las del canje en POST api/PedidosVenta (<see cref="CarritoChequesRegalo"/>); no reserva nada.
+        /// Mismas credenciales que GET Cliente; un JWT de cliente solo puede preguntar por el suyo (403).
+        /// </summary>
+        [HttpPost]
+        [AutorizadoOApiKey("ApiKeyPrestashop", "X-API-KEY", ExigirSiempre = true)]
+        [Route("ComprobarCarrito")]
+        [ResponseType(typeof(ComprobacionCarritoChequeRegaloDTO))]
+        public async Task<IHttpActionResult> ComprobarCarrito([FromBody] ComprobarCarritoChequeRegaloDTO carrito)
+        {
+            if (carrito == null || string.IsNullOrWhiteSpace(carrito.Cliente))
+            {
+                return BadRequest("Falta el cliente");
+            }
+            if (!EsSuCliente(carrito.Cliente))
+            {
+                return StatusCode(HttpStatusCode.Forbidden);
+            }
+            ComprobacionCarritoChequeRegaloDTO resultado = await new CarritoChequesRegalo(ServicioCanje)
+                .ComprobarCarritoTienda(carrito, Ahora()).ConfigureAwait(false);
+            return Ok(resultado);
+        }
+
+        /// <summary>Un JWT de cliente de la tienda (claim «cliente») solo puede preguntar por el suyo. Empleados,
+        /// vendedores y la API key de servidor a servidor no llevan el claim.</summary>
+        private bool EsSuCliente(string cliente)
+        {
+            string clienteDelToken = (User?.Identity as ClaimsIdentity)?.FindFirst("cliente")?.Value;
+            return clienteDelToken == null || clienteDelToken.Trim() == cliente.Trim();
         }
 
 

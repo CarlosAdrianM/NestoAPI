@@ -45,6 +45,13 @@ namespace NestoAPI.Infraestructure.Seguridad
         public string NombreSetting => _nombreSetting;
         public string Cabecera => _cabecera;
 
+        /// <summary>
+        /// NestoAPI#652: sin credencial, 401 SIEMPRE, aunque <see cref="Exigir"/> esté apagado. El modo sombra existe
+        /// solo por los Nesto viejos que llamaban a plazos y formas de pago sin JWT; un endpoint que antes llevaba
+        /// <c>[Authorize]</c> (el cheque regalo) no puede quedarse abierto por pasar a este atributo.
+        /// </summary>
+        public bool ExigirSiempre { get; set; }
+
         public override void OnAuthorization(HttpActionContext actionContext)
         {
             string esperada = ConfigurationManager.AppSettings[_nombreSetting];
@@ -54,7 +61,7 @@ namespace NestoAPI.Infraestructure.Seguridad
 
             if (!conApiKey && identity?.IsAuthenticated != true)
             {
-                if (!Exigir)
+                if (!Exigir && !ExigirSiempre)
                 {
                     // MODO SOMBRA (ver Exigir): se deja pasar y se apunta quién sigue llamando sin
                     // credencial, para poder encenderlo con datos en vez de a ciegas.
