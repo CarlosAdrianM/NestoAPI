@@ -232,7 +232,10 @@ namespace NestoAPI.Controllers
         }
 
         // DELETE api/Eventos/Senales/7
-        /// <summary>Quita la señal (el apunte vuelve a ser un cobro a cuenta normal). No toca el extracto.</summary>
+        /// <summary>
+        /// Quita la señal (el apunte vuelve a ser un cobro a cuenta normal). No toca el extracto. NestoAPI#612: si ya facturó el
+        /// curso o emitió el cupón, 409 SENAL_EVENTO_YA_USADA (primero la rectificativa del curso y anular el cupón).
+        /// </summary>
         [HttpDelete]
         [Route("Senales/{id:int}")]
         public async Task<IHttpActionResult> DeleteSenal(int id)

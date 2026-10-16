@@ -833,6 +833,21 @@ namespace NestoAPI.Tests.Infrastructure.Cupones
             Assert.IsTrue(recalculado);
         }
 
+        /// <summary>NestoAPI#612 (Carlos, 16/10/26): cliente exento, pedido sin IVA: el cupón descuenta 50 € de base (al modificar el pedido).</summary>
+        [TestMethod]
+        public async Task Comprobar_PedidoSinIva_LaBaseEsElImporte()
+        {
+            await canje.NormalizarLineas(new PedidoVentaDTO { empresa = "1", iva = null, Lineas = new List<LineaPedidoVentaDTO> { new LineaPedidoVentaDTO { CodigoCupon = "EV-2610-7K3Q" } } });
+            LinPedidoVta cupon = LineaCupon(precio: 41.3223M);
+            bool recalculado = false;
+
+            _ = await canje.Comprobar("1", PEDIDO, CLIENTE, new List<LinPedidoVta> { Linea("CREMA", 120), cupon }, null,
+                l => recalculado = true, "x", pedidoNuevo: true, teniaLineaCupon: false);
+
+            Assert.AreEqual(50M, cupon.Precio, "Sin IVA la línea no lleva impuestos: descuenta 50 € de base");
+            Assert.IsTrue(recalculado);
+        }
+
         // ---------------- Devolución del curso: anular el cupón (Carlos, 15/10/26) ----------------
 
         [TestMethod]

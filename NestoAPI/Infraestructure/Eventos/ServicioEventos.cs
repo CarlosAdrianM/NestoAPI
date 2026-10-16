@@ -1,4 +1,5 @@
-﻿using NestoAPI.Infraestructure.Exceptions;
+﻿using NestoAPI.Infraestructure.Cupones;
+using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Infrastructure;
 using NestoAPI.Models;
 using Newtonsoft.Json;
@@ -135,6 +136,9 @@ namespace NestoAPI.Infraestructure.Eventos
         public const int LONGITUD_DESCRIPCION = 2000;
         public const int LONGITUD_PRODUCTO = 15;
 
+        /// <summary>NestoAPI#612: DELETE api/Eventos/Senales/{id} de una señal que ya facturó el curso o emitió el cupón (409).</summary>
+        public const string ERROR_SENAL_YA_USADA = "SENAL_EVENTO_YA_USADA";
+
         public const string MENSAJE_SIN_PERMISO_SENALES =
             "Las señales de los eventos las marca Administración. Pídeselo a informática si necesitas hacerlo.";
 
@@ -148,18 +152,23 @@ namespace NestoAPI.Infraestructure.Eventos
         private readonly NVEntities db;
         private readonly Func<DateTime> reloj;
         private readonly Func<string, string, string> almacenDelUsuario;
+        private readonly IRepositorioFacturacionCursos facturacionCursos;
+        private readonly IRepositorioCupones cupones;
 
         public ServicioEventos(NVEntities db) : this(db, () => DateTime.Now)
         {
         }
 
         /// <param name="almacenDelUsuario">(empresa, usuario sin dominio) → su AlmacénPedidoVta. Null: el de ParametrosUsuario.</param>
-        internal ServicioEventos(NVEntities db, Func<DateTime> reloj, Func<string, string, string> almacenDelUsuario = null)
+        internal ServicioEventos(NVEntities db, Func<DateTime> reloj, Func<string, string, string> almacenDelUsuario = null,
+            IRepositorioFacturacionCursos facturacionCursos = null, IRepositorioCupones cupones = null)
         {
             this.db = db;
             this.reloj = reloj;
             this.almacenDelUsuario = almacenDelUsuario
                 ?? ((empresa, usuario) => Controllers.ParametrosUsuarioController.LeerParametro(empresa, usuario, PermisosEventos.CLAVE_ALMACEN_USUARIO));
+            this.facturacionCursos = facturacionCursos ?? new RepositorioFacturacionCursos(db);
+            this.cupones = cupones ?? new RepositorioCupones(db);
         }
 
         public string AlmacenDelUsuario(IPrincipal usuario, string empresa)
@@ -454,8 +463,82 @@ namespace NestoAPI.Infraestructure.Eventos
         {
             EventoSenal senal = await db.EventosSenales.SingleOrDefaultAsync(s => s.Id == id).ConfigureAwait(false)
                 ?? throw NoEncontrado($"No existe la señal {id} (puede que ya la haya quitado otra persona).");
+            await ComprobarQueNoEstaUsada(senal).ConfigureAwait(false);
             db.EventosSenales.Remove(senal);
             await db.SaveChangesAsync().ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// NestoAPI#612 (Carlos, 16/10/26): una señal que ya ha servido para facturar el curso (y emitir el cupón) no se quita:
+        /// 409 <see cref="ERROR_SENAL_YA_USADA"/>. Primero se rectifica la factura del curso (a mano) y se anula el cupón; si el
+        /// cupón ya se usó, se dice. Sin factura ni cupón se quita como siempre.
+        /// </summary>
+        private async Task ComprobarQueNoEstaUsada(EventoSenal senal)
+        {
+            List<int> idsInscripciones = await db.EventosInscripciones.Where(i => i.EventoSenalId == senal.Id)
+                .Select(i => i.Id).ToListAsync().ConfigureAwait(false);
+            foreach (int inscripcionId in idsInscripciones)
+            {
+                FacturacionCursoInscripcion facturacion = await facturacionCursos.Leer(inscripcionId).ConfigureAwait(false);
+                CuponLeido cupon = await cupones.LeerDeInscripcion(inscripcionId).ConfigureAwait(false);
+                string mensaje = MensajeSenalUsada(Limpiar(facturacion?.Factura), cupon);
+                if (mensaje != null)
+                {
+                    throw new NestoBusinessException(mensaje, new ErrorContext
+                    {
+                        ErrorCode = ERROR_SENAL_YA_USADA,
+                        Empresa = Limpiar(senal.Empresa),
+                        Cliente = Limpiar(senal.Cliente),
+                        Factura = Limpiar(facturacion?.Factura)
+                    }
+                    .WithData("senal", senal.Id)
+                    .WithData("inscripcion", inscripcionId)
+                    .WithData("cupon", Limpiar(cupon?.Codigo)))
+                    { StatusCode = HttpStatusCode.Conflict };
+                }
+            }
+        }
+
+        /// <summary>Null si la señal no se ha usado (ni factura del curso ni cupón).</summary>
+        internal static string MensajeSenalUsada(string factura, CuponLeido cupon)
+        {
+            string codigo = Limpiar(cupon?.Codigo);
+            if (factura == null && codigo == null)
+            {
+                return null;
+            }
+            string estado = cupon?.Estado?.Trim();
+            bool anulado = estado == EstadosCupon.ANULADO;
+            bool usado = estado == EstadosCupon.USADO;
+
+            var usos = new List<string>();
+            if (factura != null)
+            {
+                usos.Add($"facturar el curso (factura {factura})");
+            }
+            if (codigo != null)
+            {
+                usos.Add($"emitir el cupón {codigo}");
+            }
+            string mensaje = "Esta señal ya se ha usado para " + string.Join(" y ", usos) + (anulado ? ", que ya está anulado." : ".");
+            if (usado)
+            {
+                string dondeSeUso = cupon.UsadoEnPedido.HasValue ? $" en el pedido {cupon.UsadoEnPedido}" : string.Empty;
+                string facturaUso = Limpiar(cupon.FacturaUso);
+                dondeSeUso += facturaUso != null ? $" (factura {facturaUso})" : string.Empty;
+                mensaje += $" El cupón ya se ha usado{dondeSeUso}, así que no se puede anular.";
+            }
+
+            var pasos = new List<string>();
+            if (factura != null)
+            {
+                pasos.Add("haga primero la rectificativa del curso");
+            }
+            if (codigo != null && !anulado && !usado)
+            {
+                pasos.Add(factura != null ? "anule el cupón" : "anule primero el cupón");
+            }
+            return pasos.Any() ? mensaje + " Para anularla, " + string.Join(" y ", pasos) + "." : mensaje;
         }
 
         /// <summary>Junta cada señal con su evento, su apunte del extracto y el nombre del cliente (en memoria: los char vienen con relleno).</summary>
