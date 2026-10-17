@@ -66,6 +66,14 @@ namespace NestoAPI.Models.PedidosVenta
         /// regalo) y una por producto. Sin precios: la app los recalcula como con cualquier producto añadido.
         /// </summary>
         public List<LineaPedidoClienteResumenDTO> Lineas { get; set; } = new List<LineaPedidoClienteResumenDTO>();
+
+        /// <summary>
+        /// TNV#92 (fase 2): los regalos de Ganavisiones del pedido, una línea por producto y con su
+        /// <see cref="LineaPedidoClienteResumenDTO.CantidadEnviada"/>. Van aparte de <see cref="Lineas"/> (que no los
+        /// lleva: no se vuelven a pedir) para que la app los enseñe marcados como regalo y el cliente no los tome por
+        /// un error al abrir la caja. Nunca null: sin regalos, lista vacía.
+        /// </summary>
+        public List<LineaPedidoClienteResumenDTO> Regalos { get; set; } = new List<LineaPedidoClienteResumenDTO>();
     }
 
     /// <summary>NestoAPI#661: un producto de un pedido del cliente, para volver a pedirlo.</summary>
@@ -77,6 +85,13 @@ namespace NestoAPI.Models.PedidosVenta
         public string Nombre { get; set; }
 
         public int Cantidad { get; set; }
+
+        /// <summary>
+        /// TNV#92 (fase 2): de <see cref="Cantidad"/>, las unidades que ya están en un albarán (entregadas a la agencia).
+        /// En un pedido enviado en parte, es lo que le dice al cliente qué va en la caja y qué llega después
+        /// («me falta algo»). Campo añadido: las apps antiguas lo ignoran.
+        /// </summary>
+        public int CantidadEnviada { get; set; }
     }
 
     /// <summary>

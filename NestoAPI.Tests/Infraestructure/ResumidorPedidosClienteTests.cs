@@ -339,10 +339,113 @@ namespace NestoAPI.Tests.Infraestructure
             Assert.IsFalse(ResumidorPedidosCliente.EsCandidataGanavisiones(Constantes.TiposLineaVenta.CUENTA_CONTABLE, "62400000", 1, 0m, null));
         }
 
-        private static DatosLineaPedidoCliente LineaDe(string producto, string texto, short cantidad,
-            int tipoLinea = Constantes.TiposLineaVenta.PRODUCTO, bool ganavisiones = false)
+        // --- TNV#92 (fase 2): unidades enviadas por línea y regalos de Ganavisiones ---
+
+        [TestMethod]
+        public void Resumir_CantidadEnviada_TodoEnAlbaranEsTodo()
         {
-            DatosLineaPedidoCliente linea = Linea(cantidad: cantidad, tipoLinea: tipoLinea, texto: texto);
+            DatosPedidoCliente pedido = Pedido(
+                LineaDe("LACA500", "LACA 500 ML", 2, estado: Constantes.EstadosLineaVenta.ALBARAN),
+                LineaDe("CHAMPU", "CHAMPÚ 1000 ML", 3, estado: Constantes.EstadosLineaVenta.FACTURA));
+
+            PedidoClienteResumenDTO resumen = ResumidorPedidosCliente.Resumir(pedido);
+
+            Assert.AreEqual(2, resumen.Lineas[0].CantidadEnviada);
+            Assert.AreEqual(3, resumen.Lineas[1].CantidadEnviada);
+        }
+
+        [TestMethod]
+        public void Resumir_CantidadEnviada_NadaEnAlbaranEsCero()
+        {
+            DatosPedidoCliente pedido = Pedido(
+                LineaDe("LACA500", "LACA 500 ML", 2, estado: Constantes.EstadosLineaVenta.EN_CURSO),
+                LineaDe("CHAMPU", "CHAMPÚ 1000 ML", 3, estado: Constantes.EstadosLineaVenta.PENDIENTE));
+
+            PedidoClienteResumenDTO resumen = ResumidorPedidosCliente.Resumir(pedido);
+
+            Assert.AreEqual(0, resumen.Lineas[0].CantidadEnviada);
+            Assert.AreEqual(0, resumen.Lineas[1].CantidadEnviada);
+        }
+
+        [TestMethod]
+        public void Resumir_CantidadEnviada_MismoProductoEnDosLineasSoloCuentaLaDelAlbaran()
+        {
+            // «Me falta algo»: de las 5, 2 ya salieron y 3 siguen en curso
+            DatosPedidoCliente pedido = Pedido(
+                LineaDe("LACA500", "LACA 500 ML", 2, estado: Constantes.EstadosLineaVenta.ALBARAN),
+                LineaDe("LACA500 ", "LACA 500 ML", 3, estado: Constantes.EstadosLineaVenta.EN_CURSO));
+
+            PedidoClienteResumenDTO resumen = ResumidorPedidosCliente.Resumir(pedido);
+
+            Assert.AreEqual(EstadoPedidoCliente.EnviadoEnParte, resumen.Estado);
+            Assert.AreEqual(1, resumen.Lineas.Count);
+            Assert.AreEqual(5, resumen.Lineas[0].Cantidad);
+            Assert.AreEqual(2, resumen.Lineas[0].CantidadEnviada);
+        }
+
+        [TestMethod]
+        public void Resumir_Regalos_FueraDeLineasYDentroDeRegalosConSuEnvio()
+        {
+            DatosPedidoCliente pedido = Pedido(
+                LineaDe("LACA500", "LACA 500 ML", 2, estado: Constantes.EstadosLineaVenta.ALBARAN),
+                LineaDe("REGALO ", "REGALO GANAVISIONES ", 1, ganavisiones: true, estado: Constantes.EstadosLineaVenta.ALBARAN),
+                LineaDe("REGALO", "REGALO GANAVISIONES", 1, ganavisiones: true, estado: Constantes.EstadosLineaVenta.EN_CURSO));
+
+            PedidoClienteResumenDTO resumen = ResumidorPedidosCliente.Resumir(pedido);
+
+            Assert.AreEqual(1, resumen.Lineas.Count);
+            Assert.AreEqual("LACA500", resumen.Lineas[0].Producto);
+            Assert.AreEqual(1, resumen.Regalos.Count);
+            Assert.AreEqual("REGALO", resumen.Regalos[0].Producto);
+            Assert.AreEqual("REGALO GANAVISIONES", resumen.Regalos[0].Nombre);
+            Assert.AreEqual(2, resumen.Regalos[0].Cantidad);
+            Assert.AreEqual(1, resumen.Regalos[0].CantidadEnviada);
+        }
+
+        [TestMethod]
+        public void Resumir_Regalos_SinRegalosEsListaVaciaNoNull()
+        {
+            PedidoClienteResumenDTO resumen = ResumidorPedidosCliente.Resumir(Pedido(LineaDe("LACA500", "LACA 500 ML", 2)));
+
+            Assert.IsNotNull(resumen.Regalos);
+            Assert.AreEqual(0, resumen.Regalos.Count);
+        }
+
+        [TestMethod]
+        public void Resumir_Regalos_FueraLosDePresupuestoYLosAnulados()
+        {
+            DatosPedidoCliente pedido = Pedido(
+                LineaDe("LACA500", "LACA 500 ML", 2),
+                LineaDe("REGALO1", "REGALO PRESUPUESTO", 1, ganavisiones: true, estado: Constantes.EstadosLineaVenta.PRESUPUESTO),
+                LineaDe("REGALO2", "REGALO ANULADO", 0, ganavisiones: true),
+                LineaDe("REGALO3", "REGALO VIVO", 1, ganavisiones: true));
+
+            PedidoClienteResumenDTO resumen = ResumidorPedidosCliente.Resumir(pedido);
+
+            Assert.AreEqual(1, resumen.Regalos.Count);
+            Assert.AreEqual("REGALO3", resumen.Regalos[0].Producto);
+            Assert.AreEqual(0, resumen.Regalos[0].CantidadEnviada);
+        }
+
+        [TestMethod]
+        public void Resumir_Lineas_FueraLasDePresupuestoYLasAnuladas()
+        {
+            DatosPedidoCliente pedido = Pedido(
+                LineaDe("LACA500", "LACA 500 ML", 2),
+                LineaDe("PRESUP", "EN PRESUPUESTO", 1, estado: Constantes.EstadosLineaVenta.PRESUPUESTO),
+                LineaDe("ANULADA", "ANULADA", 0));
+
+            PedidoClienteResumenDTO resumen = ResumidorPedidosCliente.Resumir(pedido);
+
+            Assert.AreEqual(1, resumen.Lineas.Count);
+            Assert.AreEqual("LACA500", resumen.Lineas[0].Producto);
+        }
+
+        private static DatosLineaPedidoCliente LineaDe(string producto, string texto, short cantidad,
+            int tipoLinea = Constantes.TiposLineaVenta.PRODUCTO, bool ganavisiones = false,
+            int estado = Constantes.EstadosLineaVenta.PENDIENTE)
+        {
+            DatosLineaPedidoCliente linea = Linea(cantidad: cantidad, tipoLinea: tipoLinea, texto: texto, estado: estado);
             linea.Producto = producto;
             linea.EsRegaloGanavisiones = ganavisiones;
             return linea;

@@ -55,7 +55,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 FormaPago = pedido.FormaPago?.Trim(),
                 PlazosPago = pedido.PlazosPago?.Trim(),
                 Envio = pedido.Envio,
-                Lineas = LineasParaVolverAPedir(lineas, Cupones.ReglasCupon.ProductoCupon)
+                Lineas = LineasParaVolverAPedir(lineas, Cupones.ReglasCupon.ProductoCupon),
+                Regalos = RegalosGanavisiones(lineas)
             };
         }
 
@@ -77,13 +78,45 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     && !l.EsRegaloGanavisiones
                     && !Cupones.ReglasCupon.EsProductoCupon(l.Producto, productoCupon))
                 .GroupBy(l => l.Producto.Trim(), StringComparer.OrdinalIgnoreCase)
-                .Select(g => new LineaPedidoClienteResumenDTO
-                {
-                    Producto = g.Key,
-                    Nombre = g.Select(l => l.Texto?.Trim()).FirstOrDefault(t => !string.IsNullOrWhiteSpace(t)),
-                    Cantidad = g.Sum(l => (int)(l.Cantidad ?? 0))
-                })
+                .Select(AgruparPorProducto)
                 .ToList();
+        }
+
+        /// <summary>
+        /// TNV#92 (fase 2): los regalos de Ganavisiones del pedido, para que el cliente los vea en Mis pedidos marcados
+        /// como regalo. Si no se le enseñan, abre la caja, encuentra un producto que no ve en su pedido y cree que nos
+        /// hemos equivocado. Van aparte de <see cref="LineasParaVolverAPedir"/> porque esos no se repiten (los elige
+        /// en cada pedido). Mismas reglas que las líneas: vivas, con cantidad positiva y una por producto.
+        /// </summary>
+        internal static List<LineaPedidoClienteResumenDTO> RegalosGanavisiones(List<DatosLineaPedidoCliente> lineas)
+        {
+            return (lineas ?? new List<DatosLineaPedidoCliente>())
+                .Where(l => l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO
+                    && l.Estado > Constantes.EstadosLineaVenta.PRESUPUESTO
+                    && !string.IsNullOrWhiteSpace(l.Producto)
+                    && (l.Cantidad ?? 0) > 0
+                    && l.EsRegaloGanavisiones)
+                .GroupBy(l => l.Producto.Trim(), StringComparer.OrdinalIgnoreCase)
+                .Select(AgruparPorProducto)
+                .ToList();
+        }
+
+        /// <summary>
+        /// Un producto en varias líneas va en una sola, sumando. TNV#92 (fase 2): <c>CantidadEnviada</c> cuenta las
+        /// unidades de las líneas ya entregadas a la agencia (ALBARAN o más), que es lo que explica «me falta algo» en un
+        /// pedido enviado en parte: una oferta 6+1 puede tener las 6 en el albarán y la de regalo todavía esperando.
+        /// </summary>
+        private static LineaPedidoClienteResumenDTO AgruparPorProducto(IGrouping<string, DatosLineaPedidoCliente> g)
+        {
+            return new LineaPedidoClienteResumenDTO
+            {
+                Producto = g.Key,
+                Nombre = g.Select(l => l.Texto?.Trim()).FirstOrDefault(t => !string.IsNullOrWhiteSpace(t)),
+                Cantidad = g.Sum(l => (int)(l.Cantidad ?? 0)),
+                CantidadEnviada = g
+                    .Where(l => l.Estado >= Constantes.EstadosLineaVenta.ALBARAN)
+                    .Sum(l => (int)(l.Cantidad ?? 0))
+            };
         }
 
         /// <summary>
