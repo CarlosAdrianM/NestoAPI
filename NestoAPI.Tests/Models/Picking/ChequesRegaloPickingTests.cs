@@ -240,5 +240,83 @@ namespace NestoAPI.Tests.Models.Picking
             Assert.AreEqual(-1, pedido.Lineas.Single().CantidadReservada);
             Assert.IsFalse(new GestorStocksPicking(pedido).HayStockDeAlgo());
         }
+
+        // ===== Pedido 928840 (19/10/26), primer canje en producción =====
+        // El cheque se quedó a −1 y sin picking, pero NO lo retuvo el picking de la API (este test, con los datos reales,
+        // pasa): lo sacó Ariadna al terminar la salida del picking 99875, porque el mozo lo dio por «No está». Ver
+        // ServicioPreparacionAlmacenTests.Picking99875_ElChequeRegaloFicticio_NoSeLeEnsenaAlMozoNiSeQuitaComoFalta.
+
+        private static string P(string codigo) => codigo.PadRight(15);
+
+        private static LineaPedidoPicking Linea928840(int id, string producto, int cantidad, decimal baseImponible, byte tipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+            string hora = "14:54:48") => new LineaPedidoPicking
+        {
+            Id = id,
+            NumeroPedido = 928840,
+            TipoLinea = tipoLinea,
+            Almacen = "ALG",
+            Producto = P(producto),
+            Cantidad = cantidad,
+            BaseImponible = baseImponible,
+            FechaEntrega = new DateTime(2026, 10, 20),
+            FechaModificacion = DateTime.Parse("2026-10-19 " + hora)
+        };
+
+        [TestMethod]
+        public void Pedido928840_ElPickingDeLaApiSacaElCheque_252Con50SuperaLos250()
+        {
+            var pedido = new PedidoPicking
+            {
+                Empresa = "1  ", Id = 928840, ServirJunto = true, ModoServicio = 1, ModoFacturacion = 1, PlazosPago = "CONTADO", Ruta = "00 ",
+                Lineas = new List<LineaPedidoPicking>
+                {
+                    Linea928840(329147600, "38173", 1, 42.30M), Linea928840(329147700, "37503", 1, 52.96M),
+                    Linea928840(329147800, "31881", 1, 22.43M), Linea928840(329147900, "40400", 1, 22.95M),
+                    Linea928840(329148000, "35612", 1, 16.45M), Linea928840(329148100, "40558", 1, 38.41M),
+                    Linea928840(329148200, "24867", 2, 3.60M), Linea928840(329148300, "25973", 1, 12.20M),
+                    Linea928840(329148400, "25964", 1, 1.70M), Linea928840(329148500, "40624", 1, 9.50M),
+                    Linea928840(329148600, "24884", 1, 6.80M), Linea928840(329148700, "43759", 1, 24.90M),
+                    Linea928840(329148800, "62400003", 1, 3.00M, Constantes.TiposLineaVenta.CUENTA_CONTABLE),
+                    Linea928840(329148900, "CHEQUE50_OCT26", -1, -50M),
+                    Linea928840(329149600, "41307", 1, 0M, hora: "15:10:51")
+                }
+            };
+            var candidatos = new List<PedidoPicking> { pedido };
+            var campana = CanjeChequesRegaloTests.Campana();
+            campana.Producto = "CHEQUE50_OCT26";
+            var nombres = new Dictionary<string, (string, string, bool)>
+            {
+                ["38173"] = ("ALR LIPO", "COS", false), ["37503"] = ("ALGINATOS", "COS", false), ["31881"] = ("A.E. QUINTA", "COS", false),
+                ["40400"] = ("GEL LIMPIADOR", "COS", false), ["35612"] = ("GEL SILICIO", "COS", false), ["40558"] = ("VITAL ENERGY", "COS", false),
+                ["24867"] = ("MANTA TERMICA", "ACC", false), ["25973"] = ("ROLLO FILM", "ACC", false), ["25964"] = ("ROLLO PAPEL", "PEL", false),
+                ["40624"] = ("PATUCOS", "ACC", false), ["24884"] = ("TOALLA", "ACC", false), ["43759"] = ("SENSORY", "COS", false),
+                ["41307"] = ("RODILLO", "ACC", false), ["CHEQUE50_OCT26"] = ("CHEQUE REGALO", "COS", true)
+            };
+            ChequesRegaloPicking.Rellenar(candidatos, new List<CampanaCanjeChequeRegalo> { campana },
+                (e, codigos) => RepositorioCanjeChequesRegalo.Diccionario(codigos.Where(nombres.ContainsKey).Select(c => new ProductoParaChequeRegalo
+                { Numero = c, Nombre = nombres[c].Item1, Grupo = nombres[c].Item2, Ficticio = nombres[c].Item3 })),
+                p => new List<LineaEntregadaChequeRegalo>());
+
+            var stockReal = new Dictionary<string, int> { ["24867"] = 9, ["24884"] = 30, ["25964"] = 96, ["25973"] = 2, ["31881"] = 2, ["35612"] = 449,
+                ["37503"] = 1, ["38173"] = 2, ["40400"] = 116, ["40558"] = 2, ["40624"] = 3, ["41307"] = 54, ["43759"] = 3 };
+            List<StockProducto> stocks = pedido.Lineas.Where(l => l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO).Select(l => l.Producto).Distinct()
+                .Select(p => new StockProducto { Producto = p, StockDisponible = stockReal.TryGetValue(p.Trim(), out int s) ? s : 0 }).ToList();
+            List<LineaPedidoPicking> todas = pedido.Lineas.Where(l => l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO).Select(l => new LineaPedidoPicking
+            {
+                Id = l.Id, TipoLinea = l.TipoLinea, Almacen = l.Almacen, Producto = l.Producto, Cantidad = l.Cantidad, BaseImponible = l.BaseImponible,
+                FechaEntrega = l.FechaEntrega, FechaModificacion = l.FechaModificacion
+            }).OrderBy(l => l.FechaModificacion).ThenBy(l => l.Id).ToList();
+
+            GestorReservasStock.Reservar(stocks, candidatos, todas);
+            GestorReposicionTiendas.MarcarEsperas(stocks, candidatos, todas);
+            GestorReservasStock.BorrarLineasQueNoDebenSalir(candidatos, new DateTime(2026, 10, 20));
+            GestorFacturarTodoAhora.Aplicar(candidatos);
+            GestorReservasStock.ReservarChequesRegalo(candidatos);
+
+            Assert.AreEqual(252.50M, pedido.ChequeRegalo.BaseComputableConEstaEntrega);
+            Assert.IsFalse(pedido.ChequeRegalo.Retenido);
+            Assert.AreEqual(-1, pedido.Lineas.Single(l => l.EsChequeRegalo).CantidadReservada, "el cheque entra en el picking con el resto");
+            Assert.IsTrue(GestorPicking.DecidirSiSale(pedido));
+        }
     }
 }

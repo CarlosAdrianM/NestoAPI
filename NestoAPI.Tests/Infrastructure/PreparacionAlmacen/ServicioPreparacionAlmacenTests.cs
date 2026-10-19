@@ -955,5 +955,20 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             StringAssert.Contains(RepositorioPreparacionAlmacen.SQL_LINEAS_PICKING, "l.Estado = 1");
             StringAssert.Contains(RepositorioPreparacionAlmacen.SQL_LINEAS_PACKING, "l.Estado = 1");
         }
+
+        [TestMethod]
+        public void Picking99875_ElChequeRegaloFicticio_NoSeLeEnsenaAlMozoNiSeQuitaComoFalta()
+        {
+            // NestoAPI#593, pedido 928840 (19/10/26), primer canje del cheque regalo: el picking de la API metió bien la línea
+            // del cheque (CHEQUE50_OCT26, producto FICTICIO, TipoLinea 1, cantidad −1) en el picking 99875. Pero el recorrido
+            // de Ariadna (SQL_LINEAS_PICKING) la enseñó como 1 unidad que recoger (ABS(−1), sin hueco); el mozo la dio por
+            // «No está» (PreparacionEscaneos 1352, FALTA, 15:47:46) y al terminar la salida SQL_PIEZAS_PICKING la casó con esa
+            // falta y SacarDelPedido la devolvió a pendiente (Picking 0, Estado −1): el pedido iba a salir sin el descuento.
+            // Lo ficticio no está en ningún hueco ni se recoge: ni se enseña ni puede ser falta.
+            StringAssert.Contains(RepositorioPreparacionAlmacen.SQL_LINEAS_PICKING, "Ficticio",
+                "El recorrido del picking no debe pedir al mozo productos ficticios (cheque regalo, cupón, TiCKET...)");
+            StringAssert.Contains(TransaccionSalidaSql.SQL_PIEZAS_PICKING, "Ficticio",
+                "Las piezas del picking (las que se casan con las faltas al terminar) no deben incluir productos ficticios");
+        }
     }
 }
