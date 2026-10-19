@@ -1066,6 +1066,20 @@ namespace NestoAPI
                 }
             );
             Console.WriteLine("✅ Job recurrente 'sugerencias-productos-pares' configurado (de lunes a sábado a las 05:00)");
+
+            // NestoAPI#673 (Carlos, 19/10/26): una reposición que lleva más de 2 días recibida en parte (desde la primera parcial),
+            // aviso en la campana de Nesto a los usuarios del almacén que la recibe (AlmacénPedidoVta, sin «(defecto)»), una vez al
+            // día mientras siga a medias. Ligero: una consulta de pendientes por almacén. Nunca rompe (ELMAH).
+            RecurringJob.AddOrUpdate(
+                Infraestructure.PreparacionAlmacen.AvisoReposicionesRecibidasEnParteJobsService.ID_JOB,
+                () => Infraestructure.PreparacionAlmacen.AvisoReposicionesRecibidasEnParteJobsService.Avisar(),
+                Infraestructure.PreparacionAlmacen.AvisoReposicionesRecibidasEnParteJobsService.CRON, // Cron: de lunes a sábado a las 9:15
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'reposiciones-recibidas-en-parte' configurado (de lunes a sábado a las 9:15)");
         }
     }
 

@@ -463,6 +463,7 @@
     <Compile Include="Infrastructure\PreparacionAlmacen\PlanificadorRecepcionCompraTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\AvisadorComprasTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\AvisadorReposicionesTests.cs" />
+    <Compile Include="Infrastructure\PreparacionAlmacen\AvisoReposicionesRecibidasEnParteTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\BultosReposicionTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\OrigenesRecepcionTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\RecepcionParcialReposicionesTests.cs" />
