@@ -88,6 +88,11 @@ namespace NestoAPI.Infraestructure.Agencias
                 {
                     await notificaciones.GuardarEnBuzonDeUsuario(usuario, Constantes.Aplicaciones.NESTO, notificacion).ConfigureAwait(false);
                 }
+                // Carlos 19/10/26: los vendedores casi no usan Nesto; la push les llega a NestoApp
+                foreach (string vendedor in VendedoresNestoApp(comerciales))
+                {
+                    _ = await notificaciones.EnviarAVendedor(envio.Empresa?.Trim(), vendedor, notificacion).ConfigureAwait(false);
+                }
             }
             catch (Exception ex)
             {
@@ -161,6 +166,14 @@ namespace NestoAPI.Infraestructure.Agencias
                 Datos = datos
             };
         }
+
+        /// <summary>Los comerciales reales del aviso (no el vendedor general), una vez cada uno: a sus móviles con NestoApp.</summary>
+        internal static List<string> VendedoresNestoApp(ComercialesPedido comerciales) =>
+            (comerciales?.Comerciales ?? new List<ComercialPedido>())
+                .Where(ComercialesPedido.EsComercialReal)
+                .Select(c => c.Vendedor.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
         private static string DescripcionIncidencia(EnviosAgencia envio) =>
             string.IsNullOrWhiteSpace(envio.DetalleEstado) ? "la agencia no indica el motivo" : envio.DetalleEstado.Trim();

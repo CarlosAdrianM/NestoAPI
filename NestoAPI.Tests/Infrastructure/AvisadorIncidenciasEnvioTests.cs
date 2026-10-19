@@ -110,6 +110,27 @@ namespace NestoAPI.Tests.Infrastructure
                 .MustHaveHappenedOnceExactly();
             A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Peluquera", Constantes.Aplicaciones.NESTO, A<NotificacionPushDTO>._))
                 .MustHaveHappenedOnceExactly();
+            // Los vendedores casi no usan Nesto: también la push a NestoApp de cada comercial
+            A.CallTo(() => notificaciones.EnviarAVendedor("1", "SAN",
+                A<NotificacionPushDTO>.That.Matches(n => n.Tipo == AvisadorIncidenciasEnvio.TIPO_NOTIFICACION && n.Datos["pedido"] == "925137")))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => notificaciones.EnviarAVendedor("1", "PEL", A<NotificacionPushDTO>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public void VendedoresNestoApp_SinElVendedorGeneralNiRepetidos()
+        {
+            var comerciales = new ComercialesPedido
+            {
+                Comerciales =
+                {
+                    new ComercialPedido { Vendedor = "SAN " },
+                    new ComercialPedido { Vendedor = "SAN", EsPeluqueria = true },
+                    new ComercialPedido { Vendedor = Constantes.Vendedores.VENDEDOR_GENERAL }
+                }
+            };
+
+            CollectionAssert.AreEqual(new[] { "SAN" }, AvisadorIncidenciasEnvio.VendedoresNestoApp(comerciales));
         }
 
         [TestMethod]
