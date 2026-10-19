@@ -545,5 +545,79 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             StringAssert.Contains(resultado.Salida.ErrorEnsayo, "tabla ubicaciones");
             Assert.AreEqual(1, resultado.Salida.FilasAntes.Count);
         }
+
+        // ===== NestoAPI#593: picking 99875, pedido 928840 (19/10/26) =====
+
+        private void Picking99875ConFaltaDelCheque(string producto = "CHEQUE50_OCT26")
+        {
+            A.CallTo(() => repositorio.LeerLineasPicking(EMPRESA, 99875)).Returns(new List<LineaPickingAlmacenDTO> { Linea("38173", 1, "001") });
+            A.CallTo(() => repositorio.LeerLecturasDelPicking(EMPRESA, 99875)).Returns(new List<LecturaPickingAlmacen>
+            {
+                new LecturaPickingAlmacen { Producto = "38173", Unidades = 1 }
+            });
+            // Lo que el mozo apuntó (PreparacionEscaneos 1352): «No está» de 1 cheque, sin hueco
+            tx.Faltas = new List<FaltaSalida> { new FaltaSalida { Producto = producto, Hueco = null, Cantidad = 1 } };
+            tx.PiezasPicking = new List<PiezaSalida>
+            {
+                new PiezaSalida { Linea = 329147600, Pedido = 928840, Ubicacion = 322692001, Producto = "38173", Hueco = "001007005", Cantidad = 1 },
+                new PiezaSalida { Linea = 329148900, Pedido = 928840, Ubicacion = null, Producto = producto, Hueco = null, Cantidad = 1, NoAdmiteFalta = true }
+            };
+        }
+
+        [TestMethod]
+        public async Task Terminar_FaltaDelChequeRegalo_NoLoSacaDelPedido()
+        {
+            Picking99875ConFaltaDelCheque();
+
+            ResultadoTerminarSalida resultado = await servicio.Terminar(EMPRESA, "PICK", 99875, Usuario("Almacén"));
+
+            Assert.AreEqual(EstadoTerminarSalida.Terminada, resultado.Estado);
+            Assert.AreEqual(0, tx.SacadoDePedidos.Count, "La línea −1 del cheque sigue en el picking: la factura lleva el descuento");
+            Assert.AreEqual(0, tx.QuitadoDeReservas.Count);
+        }
+
+        [DataTestMethod]
+        [DataRow("CUPONEVENTO")]
+        [DataRow("TiCKET")]
+        public async Task Terminar_FaltaDelCuponODelTicket_TampocoLosSaca(string producto)
+        {
+            Picking99875ConFaltaDelCheque(producto);
+
+            ResultadoTerminarSalida resultado = await servicio.Terminar(EMPRESA, "PICK", 99875, Usuario("Almacén"));
+
+            Assert.AreEqual(EstadoTerminarSalida.Terminada, resultado.Estado);
+            Assert.AreEqual(0, tx.SacadoDePedidos.Count);
+        }
+
+        [TestMethod]
+        public void Repartir_UnaFaltaDeUnProductoConUnaLineaEnNegativo_SoloLaQuitaDeLaPositiva()
+        {
+            List<RecorteSalida> recortes = PlanificadorFaltasSalida.Repartir(
+                new[] { new FaltaSalida { Producto = "A", Cantidad = 1 } },
+                new[]
+                {
+                    new PiezaSalida { Linea = 2, Pedido = 900002, Producto = "A", Cantidad = 1, NoAdmiteFalta = true },
+                    new PiezaSalida { Linea = 1, Pedido = 900001, Producto = "A", Cantidad = 1 }
+                });
+
+            Assert.AreEqual(1, recortes.Single().Pieza.Linea, "Aunque la negativa sea del pedido más nuevo");
+        }
+
+        [TestMethod]
+        public async Task Terminar_SiSoloQuedanElChequeYLosPortes_EsperanConElResto()
+        {
+            // Si al pedido del canje le faltan todos sus productos, el cheque no le hace salir: con los portes, a pendiente
+            Picking99875ConFaltaDelCheque();
+            tx.Faltas = new List<FaltaSalida> { new FaltaSalida { Producto = "38173", Hueco = "001/007/005", Cantidad = 1 } };
+            tx.LineasQueSiguen = new List<LineaEnPickingSalida>
+            {
+                new LineaEnPickingSalida { Linea = 329148800, Pedido = 928840, Producto = "62400003", TipoLinea = 2, Cantidad = 1 },
+                new LineaEnPickingSalida { Linea = 329148900, Pedido = 928840, Producto = "CHEQUE50_OCT26", TipoLinea = 1, Cantidad = -1, Ficticio = true }
+            };
+
+            _ = await servicio.Terminar(EMPRESA, "PICK", 99875, Usuario("Almacén"));
+
+            CollectionAssert.AreEqual(new[] { (329147600, 1), (329148800, 1), (329148900, -1) }, tx.SacadoDePedidos.ToArray());
+        }
     }
 }

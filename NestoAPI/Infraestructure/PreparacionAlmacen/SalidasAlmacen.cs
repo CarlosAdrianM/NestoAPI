@@ -669,7 +669,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 ?? new List<LineaEnPickingSalida>();
             foreach (IGrouping<int, LineaEnPickingSalida> pedido in siguen.GroupBy(l => l.Pedido).OrderBy(g => g.Key))
             {
-                if (pedido.Any(l => l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO))
+                // NestoAPI#593: el cheque regalo o el cupón (ficticios) no hacen que el pedido salga: esperan con el resto
+                if (pedido.Any(l => l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO && !l.Ficticio))
                 {
                     continue;
                 }

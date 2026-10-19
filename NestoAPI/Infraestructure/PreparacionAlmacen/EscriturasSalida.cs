@@ -38,6 +38,9 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public int Cantidad { get; set; }
         /// <summary>La línea lleva producto «en carpeta» (Recoger): partirla sola no es seguro, se dice para la oficina.</summary>
         public bool QuitarAMano { get; set; }
+        /// <summary>NestoAPI#593: la línea va en negativo (un abono, un descuento): no se recoge, así que una falta nunca
+        /// se le aplica. Los productos ficticios ni siquiera llegan como pieza.</summary>
+        public bool NoAdmiteFalta { get; set; }
     }
 
     /// <summary>
@@ -52,6 +55,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public short TipoLinea { get; set; }
         /// <summary>Lo que sale de la línea (cantidad menos lo que el cliente se lleva «en carpeta»).</summary>
         public int Cantidad { get; set; }
+        /// <summary>NestoAPI#593: producto ficticio (cheque regalo, cupón, TiCKET): no cuenta como producto que sale.</summary>
+        public bool Ficticio { get; set; }
     }
 
     public class RecorteSalida
@@ -134,8 +139,17 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             {
                 string hueco = NormalizarHueco(falta.Hueco);
                 int queda = falta.Cantidad;
-                IEnumerable<PiezaSalida> candidatas = todas
+                List<PiezaSalida> delProducto = todas
                     .Where(p => string.Equals(p.Producto?.Trim(), falta.Producto?.Trim(), StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                // NestoAPI#593: una falta nunca se aplica a una línea en negativo (cheque regalo, cupón, abono): no se
+                // recoge. Si el producto solo está en líneas así, la falta no quita nada
+                if (delProducto.Any() && delProducto.All(p => p.NoAdmiteFalta))
+                {
+                    continue;
+                }
+                IEnumerable<PiezaSalida> candidatas = delProducto
+                    .Where(p => !p.NoAdmiteFalta)
                     .OrderBy(p => hueco != null && p.Hueco == hueco ? 0 : 1)
                     .ThenBy(p => p.QuitarAMano ? 1 : 0)
                     .ThenByDescending(p => p.Pedido)
@@ -353,24 +367,30 @@ GROUP BY e.Producto, e.Motivo";
 
         // Lo que se reservó para el picking: una pieza por reserva (Ubicaciones en estado 3) o la línea entera si no
         // tiene (almacén sin control de ubicaciones, notas de entrega). Igual que SQL_LINEAS_PICKING: lo que se recoge
-        // es la cantidad menos lo que el cliente se lleva «en carpeta».
+        // es la cantidad menos lo que el cliente se lleva «en carpeta». NestoAPI#593 (pedido 928840, picking 99875): ni
+        // los productos ficticios (cheque regalo, cupón, TiCKET), que no se recogen ni salen en el recorrido, ni (con
+        // NoAdmiteFalta) las líneas en negativo: una falta nunca las saca del pedido.
         internal const string SQL_PIEZAS_PICKING = @"
 SELECT l.[Nº Orden] AS Linea, l.[Número] AS Pedido, u.[NºOrden] AS Ubicacion, RTRIM(l.Producto) AS Producto,
        CASE WHEN u.Pasillo IS NULL OR u.Fila IS NULL OR u.Columna IS NULL THEN NULL
             ELSE RTRIM(u.Pasillo) + RTRIM(u.Fila) + RTRIM(u.Columna) END AS Hueco,
        CAST(ABS(ISNULL(u.Cantidad, l.Cantidad - l.Recoger)) AS int) AS Cantidad,
-       CAST(CASE WHEN l.Recoger <> 0 THEN 1 ELSE 0 END AS bit) AS QuitarAMano
+       CAST(CASE WHEN l.Recoger <> 0 THEN 1 ELSE 0 END AS bit) AS QuitarAMano,
+       CAST(CASE WHEN l.Cantidad < 0 THEN 1 ELSE 0 END AS bit) AS NoAdmiteFalta
 FROM LinPedidoVta l WITH (UPDLOCK)
      LEFT JOIN Ubicaciones u WITH (UPDLOCK) ON u.[NºOrdenVta] = l.[Nº Orden] AND u.Estado = 3
-WHERE l.Empresa = @p0 AND l.Picking = @p1 AND l.TipoLinea = 1 AND l.Estado = 1";
+     LEFT JOIN Productos p ON p.Empresa = l.Empresa AND p.[Número] = l.Producto
+WHERE l.Empresa = @p0 AND l.Picking = @p1 AND l.TipoLinea = 1 AND l.Estado = 1 AND ISNULL(p.Ficticio, 0) = 0";
 
         internal const string SQL_PEDIDOS_DEL_PICKING = @"
 SELECT DISTINCT l.[Número] FROM LinPedidoVta l WHERE l.Empresa = @p0 AND l.Picking = @p1";
 
         internal const string SQL_LINEAS_QUE_SIGUEN_EN_EL_PICKING = @"
 SELECT l.[Nº Orden] AS Linea, l.[Número] AS Pedido, RTRIM(l.Producto) AS Producto, CAST(ISNULL(l.TipoLinea, 0) AS smallint) AS TipoLinea,
-       CAST(ISNULL(l.Cantidad, 0) - ISNULL(l.Recoger, 0) AS int) AS Cantidad
+       CAST(ISNULL(l.Cantidad, 0) - ISNULL(l.Recoger, 0) AS int) AS Cantidad,
+       CAST(ISNULL(p.Ficticio, 0) AS bit) AS Ficticio
 FROM LinPedidoVta l WITH (UPDLOCK)
+     LEFT JOIN Productos p ON p.Empresa = l.Empresa AND p.[Número] = l.Producto
 WHERE l.Empresa = @p0 AND l.Picking = @p1 AND l.Estado = 1 AND l.[Número] IN ({0})";
 
         // Lo que no estaba en el hueco no sale: pasa a «pendiente de ubicar» (sin hueco), como deja las reservas
@@ -405,7 +425,7 @@ SELECT s.[Nº Orden] AS Linea, 0 AS Pedido, u.[NºOrden] AS Ubicacion, RTRIM(s.[
        CASE WHEN u.Pasillo IS NULL OR u.Fila IS NULL OR u.Columna IS NULL THEN NULL
             ELSE RTRIM(u.Pasillo) + RTRIM(u.Fila) + RTRIM(u.Columna) END AS Hueco,
        CAST(ABS(u.Cantidad) AS int) AS Cantidad,
-       CAST(0 AS bit) AS QuitarAMano
+       CAST(0 AS bit) AS QuitarAMano, CAST(0 AS bit) AS NoAdmiteFalta
 FROM PreExtrProducto s WITH (UPDLOCK)
      INNER JOIN Almacenes a ON a.Empresa = s.Empresa AND a.[Número] = s.[Almacén]
      INNER JOIN Ubicaciones u WITH (UPDLOCK) ON u.[NºTraspasoRepo] = s.[NºTraspaso] AND u.[Número] = s.[Número] AND u.[Almacén] = s.[Almacén]
@@ -414,7 +434,7 @@ WHERE s.Empresa = @p0 AND s.[NºTraspaso] = @p1 AND s.Diario = a.DiarioSalidaRep
 UNION ALL
 SELECT s.[Nº Orden], 0, NULL, RTRIM(s.[Número]), NULL,
        CAST(-s.Cantidad - ISNULL(r.Cantidad, 0) AS int),
-       CAST(0 AS bit)
+       CAST(0 AS bit), CAST(0 AS bit)
 FROM PreExtrProducto s WITH (UPDLOCK)
      INNER JOIN Almacenes a ON a.Empresa = s.Empresa AND a.[Número] = s.[Almacén]
      OUTER APPLY (SELECT SUM(ABS(u.Cantidad)) AS Cantidad FROM Ubicaciones u WITH (UPDLOCK)
@@ -540,6 +560,13 @@ WHERE u.[NºTraspasoRepo] = @p1
         public async Task SacarDelPedido(int lineaPedido, int cantidadQueFalta)
         {
             LinPedidoVta linea = await db.LinPedidoVtas.SingleAsync(l => l.Nº_Orden == lineaPedido).ConfigureAwait(false);
+            // NestoAPI#593 (pedido 928840): una falta (cantidad positiva) nunca saca del pedido una línea en negativo, como
+            // la del cheque regalo: −1 − 1 la dejaba pendiente y la factura salía sin el descuento. Quitarla entera (los
+            // portes y demás que esperan con el resto) llega con cantidadQueFalta = su cantidad y sí se hace.
+            if (cantidadQueFalta > 0 && (linea.Cantidad ?? 0) - linea.Recoger <= 0)
+            {
+                return;
+            }
             int picking = linea.Picking ?? 0;
             int servida = (linea.Cantidad ?? 0) - linea.Recoger - cantidadQueFalta;
 

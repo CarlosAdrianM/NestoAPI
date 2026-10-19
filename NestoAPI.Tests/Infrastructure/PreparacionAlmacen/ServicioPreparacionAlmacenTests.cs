@@ -970,5 +970,37 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             StringAssert.Contains(TransaccionSalidaSql.SQL_PIEZAS_PICKING, "Ficticio",
                 "Las piezas del picking (las que se casan con las faltas al terminar) no deben incluir productos ficticios");
         }
+
+        [TestMethod]
+        public void Picking99875_ElPackingNoEnsenaElChequeRegalo()
+        {
+            // En la mesa saldría como −1 unidad que meter en la caja: ni en las líneas del packing ni en las entregas por empaquetar
+            StringAssert.Contains(RepositorioPreparacionAlmacen.SQL_LINEAS_PACKING, "ISNULL(p.Ficticio, 0) = 0");
+            StringAssert.Contains(RepositorioPreparacionAlmacen.SQL_ENTREGAS_POR_EMPAQUETAR, "ISNULL(p.Ficticio, 0) = 0");
+        }
+
+        [TestMethod]
+        public void ProductosFicticios_ElCuponYTicketTambienQuedanFuera_PorLaFichaNoPorElCodigo()
+        {
+            // CHEQUE50_OCT26, CUPONEVENTO (#613) y TiCKET son Ficticio = 1 en la empresa 1 (comprobado el 19/10/26; TiCKET
+            // llevaba 15 líneas en pickings desde el 01/09). El filtro va por la ficha del producto (de la empresa de la línea),
+            // así que vale para los tres y para los que vengan, sin nombrar ningún código.
+            foreach (string sql in new[]
+            {
+                RepositorioPreparacionAlmacen.SQL_LINEAS_PICKING,
+                RepositorioPreparacionAlmacen.SQL_LINEAS_PACKING,
+                RepositorioPreparacionAlmacen.SQL_ENTREGAS_POR_EMPAQUETAR,
+                RepositorioPreparacionAlmacen.SQL_PICKINGS_EN_CURSO,
+                TransaccionSalidaSql.SQL_PIEZAS_PICKING
+            })
+            {
+                StringAssert.Contains(sql, "LEFT JOIN Productos p ON p.Empresa = l.Empresa AND p.[Número] = l.Producto");
+                StringAssert.Contains(sql, "ISNULL(p.Ficticio, 0) = 0");
+                foreach (string codigo in new[] { "CHEQUE", "CUPONEVENTO", "TiCKET" })
+                {
+                    Assert.IsFalse(sql.IndexOf(codigo, StringComparison.OrdinalIgnoreCase) >= 0, codigo);
+                }
+            }
+        }
     }
 }
