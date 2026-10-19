@@ -330,7 +330,10 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public string Fase { get; set; }
         /// <summary>Negativa para deshacer una lectura.</summary>
         public int Cantidad { get; set; }
-        /// <summary>SCAN, MANUAL o FALTA.</summary>
+        /// <summary>
+        /// SCAN (código del proveedor), ETIQ (nuestra etiqueta), TECLA (tecleado), FALTA o MANUAL (Ariadna sin #43: etiqueta o
+        /// tecleado, sin distinguir). Ariadna#43: las unidades tecleadas tras una lectura llevan el método de esa lectura.
+        /// </summary>
         public string Metodo { get; set; }
         public int? Bulto { get; set; }
         public string Motivo { get; set; }

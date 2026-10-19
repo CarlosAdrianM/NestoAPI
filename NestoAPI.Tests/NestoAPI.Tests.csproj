@@ -476,6 +476,8 @@
     <Compile Include="Infrastructure\PreparacionAlmacen\EtiquetasHuecoAlmacenTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\EtiquetasProductoAlmacenTests.cs" />
     <Compile Include="Controllers\EtiquetasProductoControllerTests.cs" />
+    <Compile Include="Infrastructure\PreparacionAlmacen\LecturasAlmacenTests.cs" />
+    <Compile Include="Controllers\LecturasAlmacenControllerTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\AjusteImpresorasEtiquetasTests.cs" />
     <Compile Include="Controllers\EtiquetasImpresorasControllerTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfExtractoContableTests.cs" />

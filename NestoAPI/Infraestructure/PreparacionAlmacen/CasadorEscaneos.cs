@@ -17,9 +17,30 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     {
         public const string FASE_PICKING = "PICK";
         public const string FASE_PACKING = "PACK";
+        /// <summary>
+        /// Ariadna#43: el código del proveedor (el EAN del envase), leído con el lector o con la cámara. También las unidades
+        /// que se teclean después de esa lectura (heredan su método).
+        /// </summary>
         public const string METODO_LECTOR = "SCAN";
+        /// <summary>
+        /// Hasta Ariadna#43 (y lo que siguen mandando las versiones de Ariadna sin él): todo lo que no era el código del
+        /// proveedor, sin distinguir la etiqueta leída de lo tecleado. Se sigue aceptando.
+        /// </summary>
         public const string METODO_MANUAL = "MANUAL";
         public const string METODO_FALTA = "FALTA";
+        /// <summary>Ariadna#43: nuestra etiqueta de producto (la que lleva la referencia, NestoAPI#654), leída con el lector o con la cámara.</summary>
+        public const string METODO_ETIQUETA = "ETIQ";
+        /// <summary>Ariadna#43: tecleado (la referencia o el código, a mano), y las unidades tecleadas después.</summary>
+        public const string METODO_TECLADO = "TECLA";
+
+        /// <summary>Los métodos que acepta POST api/Almacen/Escaneos (PreparacionEscaneos.Metodo es char(6)).</summary>
+        public static readonly IReadOnlyList<string> METODOS = new[] { METODO_LECTOR, METODO_ETIQUETA, METODO_TECLADO, METODO_MANUAL, METODO_FALTA };
+
+        /// <summary>
+        /// NestoAPI#604/Ariadna#43: las lecturas en las que NO se ha leído el código del proveedor (lo que antes era «a mano»):
+        /// nuestra etiqueta, tecleado y el MANUAL de antes.
+        /// </summary>
+        public static readonly IReadOnlyList<string> METODOS_SIN_CODIGO_PROVEEDOR = new[] { METODO_ETIQUETA, METODO_TECLADO, METODO_MANUAL };
         /// <summary>NestoAPI#574: recoger es lo mismo venga de un picking de pedidos o de una reposición a tienda.</summary>
         public const string ORIGEN_PICKING = "PICK";
         public const string ORIGEN_REPOSICION = "REPO";
@@ -315,9 +336,9 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 return "La fase tiene que ser PICK o PACK.";
             }
             string metodo = escaneo.Metodo?.Trim().ToUpperInvariant();
-            if (metodo != METODO_LECTOR && metodo != METODO_MANUAL && metodo != METODO_FALTA)
+            if (!METODOS.Contains(metodo))
             {
-                return "El método tiene que ser SCAN, MANUAL o FALTA.";
+                return "El método tiene que ser SCAN, ETIQ, TECLA, MANUAL o FALTA.";
             }
             if (escaneo.Cantidad == 0 || escaneo.Cantidad < short.MinValue || escaneo.Cantidad > short.MaxValue)
             {

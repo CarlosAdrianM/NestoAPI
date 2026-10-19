@@ -311,11 +311,30 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             StringAssert.Contains(CasadorEscaneos.MotivoDeRechazo(sinId), "IdCliente");
             StringAssert.Contains(CasadorEscaneos.MotivoDeRechazo(sinProducto), "producto");
             StringAssert.Contains(CasadorEscaneos.MotivoDeRechazo(faseRara), "PICK o PACK");
-            StringAssert.Contains(CasadorEscaneos.MotivoDeRechazo(metodoRaro), "SCAN, MANUAL o FALTA");
+            StringAssert.Contains(CasadorEscaneos.MotivoDeRechazo(metodoRaro), "SCAN, ETIQ, TECLA, MANUAL o FALTA");
             StringAssert.Contains(CasadorEscaneos.MotivoDeRechazo(cantidadCero), "cantidad");
             StringAssert.Contains(CasadorEscaneos.MotivoDeRechazo(packSinPedido), "pedido");
             StringAssert.Contains(CasadorEscaneos.MotivoDeRechazo(sinFecha), "fecha");
             Assert.IsNotNull(CasadorEscaneos.MotivoDeRechazo(null));
+        }
+
+        [TestMethod]
+        public void MotivoDeRechazo_Ariadna43_AceptaEtiquetaYTecladoYSigueAceptandoManual()
+        {
+            foreach (string metodo in new[] { "SCAN", "ETIQ", "tecla", "MANUAL", "FALTA" })
+            {
+                EscaneoAlmacenDTO escaneo = Escaneo(); escaneo.Metodo = metodo;
+                Assert.IsNull(CasadorEscaneos.MotivoDeRechazo(escaneo), metodo);
+            }
+            // PreparacionEscaneos.Metodo es char(6)
+            Assert.IsTrue(CasadorEscaneos.METODOS.All(m => m.Length <= 6));
+            CollectionAssert.AreEquivalent(new[] { "ETIQ", "TECLA", "MANUAL" }, CasadorEscaneos.METODOS_SIN_CODIGO_PROVEEDOR.ToArray());
+        }
+
+        [TestMethod]
+        public void SqlFasesAManoHoy_Ariadna43_CuentaEtiquetaTecladoYManual()
+        {
+            StringAssert.Contains(RepositorioAvisosFichaSql.SQL_FASES_A_MANO_HOY, "e.Metodo IN ('MANUAL', 'ETIQ', 'TECLA')");
         }
 
         #region NestoAPI#574: recoger es lo mismo para un picking y para una reposición

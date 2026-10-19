@@ -575,6 +575,9 @@
     <Compile Include="Infraestructure\PreparacionAlmacen\EtiquetasProductoAlmacen.cs" />
     <Compile Include="Models\PreparacionAlmacen\EtiquetasProductoDTO.cs" />
     <Compile Include="Controllers\EtiquetasProductoController.cs" />
+    <Compile Include="Infraestructure\PreparacionAlmacen\LecturasAlmacen.cs" />
+    <Compile Include="Models\PreparacionAlmacen\LecturasAlmacenDTO.cs" />
+    <Compile Include="Controllers\LecturasAlmacenController.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\AjusteImpresorasEtiquetas.cs" />
     <Compile Include="Models\PreparacionAlmacen\AjusteImpresoraEtiquetasDTO.cs" />
     <Compile Include="Controllers\EtiquetasImpresorasController.cs" />

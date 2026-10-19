@@ -270,6 +270,10 @@ namespace NestoAPI
                 sp.GetRequiredService<ILectorParametrosUsuario>(),
                 Infraestructure.PreparacionAlmacen.ImpresoraEtiquetasConAjuste.EnWindows()));
 
+            // Ariadna#43: lecturas que no casan y por qué se teclea un producto con código («No se lee»)
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioLecturasAlmacen>(_ => Infraestructure.PreparacionAlmacen.RepositorioLecturasAlmacenSql.ConContextoPropio());
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioLecturasAlmacen, Infraestructure.PreparacionAlmacen.ServicioLecturasAlmacen>();
+
             // NestoAPI#672: desplazamiento por impresora de etiquetas y etiqueta de prueba (la prueba imprime sin el decorador:
             // ya lleva aplicado el ajuste que se está probando)
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioAjustesImpresoras>(sp => new Infraestructure.PreparacionAlmacen.ServicioAjustesImpresoras(

@@ -665,11 +665,12 @@ WHERE c.Empresa = @empresa AND c.Producto = @producto AND c.Codigo = @codigo AND
         /// <summary>NestoAPI#605: ProductosCodigosBarras.Codigo es varchar(20).</summary>
         internal const int LONGITUD_CODIGO_TABLA = 20;
 
-        // NestoAPI#604: va por IX_PreparacionEscaneos_Producto (Empresa, Producto, FechaEscaneo), del script #604
+        // NestoAPI#604: va por IX_PreparacionEscaneos_Producto (Empresa, Producto, FechaEscaneo), del script #604. Ariadna#43:
+        // «a mano» es todo lo que no ha leído el código del proveedor (CasadorEscaneos.METODOS_SIN_CODIGO_PROVEEDOR)
         internal const string SQL_FASES_A_MANO_HOY = @"
 SELECT DISTINCT RTRIM(e.Fase) AS Fase
 FROM PreparacionEscaneos e
-WHERE e.Empresa = @empresa AND e.Producto = @producto AND e.Metodo = 'MANUAL'
+WHERE e.Empresa = @empresa AND e.Producto = @producto AND e.Metodo IN ('MANUAL', 'ETIQ', 'TECLA')
   AND e.FechaEscaneo >= CAST(GETDATE() AS date)";
 
         /// <summary>Productos.CodBarras es char(13): un código más largo no puede ser de ninguna ficha.</summary>
