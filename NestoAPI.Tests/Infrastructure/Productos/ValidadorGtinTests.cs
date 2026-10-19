@@ -217,11 +217,69 @@ namespace NestoAPI.Tests.Infrastructure.Productos
         }
 
         [TestMethod]
+        public void Construir_Ariadna43_NoSeLeenYTecleadosPorUsuario()
+        {
+            var productos = new[] { P("1001", null), P("1003", "8437020512176"), P("1004", "8437020512237") };
+            var motivos = new[]
+            {
+                new MotivoTecleoGuardado { Producto = "1003", Motivo = "NOSELEE", Codigo = "8437020512176", Veces = 1, Usuario = "Andre", FechaModificacion = new DateTime(2026, 10, 15) },
+                new MotivoTecleoGuardado { Producto = "1004", Motivo = "SINCODIGO", Veces = 1, Usuario = "Andre", FechaModificacion = new DateTime(2026, 10, 16) }
+            };
+            var tecleadas = new[]
+            {
+                new EntradaTecleadaInforme { Producto = "1003", Usuario = "Andre", Veces = 3, Unidades = 10 },
+                new EntradaTecleadaInforme { Producto = "1001", Usuario = "Andre", Veces = 2, Unidades = 2 },
+                new EntradaTecleadaInforme { Producto = "1004", Usuario = "Alfredo", Veces = 1, Unidades = 6 }
+            };
+
+            InformeCodigosBarras informe = InformeCodigosBarras.Construir(productos, new CodigoActivoTabla[0], new DateTime(2026, 10, 19), motivos, tecleadas);
+
+            CodigoQueNoSeLeeInforme noSeLee = informe.NoSeLeen.Single();
+            Assert.AreEqual("1003", noSeLee.Producto);
+            Assert.AreEqual("NOMBRE 1003", noSeLee.Nombre);
+            Assert.AreEqual(3, noSeLee.TecleadasSemana);
+            Assert.AreEqual("Andre", noSeLee.Usuario);
+
+            EntradaTecleadaInforme sinCodigo = informe.Tecleadas.Single(t => t.Producto == "1001");
+            Assert.IsFalse(sinCodigo.TieneCodigoValido);
+            Assert.IsNull(sinCodigo.Motivo);
+            Assert.AreEqual("No se lee", informe.Tecleadas.Single(t => t.Producto == "1003").Motivo);
+            Assert.AreEqual("No lleva código", informe.Tecleadas.Single(t => t.Producto == "1004").Motivo);
+
+            TecleadoPorUsuarioInforme andre = informe.TecleadasPorUsuario.First();
+            Assert.AreEqual(("Andre", 5, 12, 2, 3), (andre.Usuario, andre.Entradas, andre.Unidades, andre.Productos, andre.EntradasConCodigo));
+            Assert.AreEqual("Alfredo", informe.TecleadasPorUsuario.Last().Usuario);
+        }
+
+        [TestMethod]
+        public void GenerarHtml_Ariadna43_ConTecleadosSacaLaTablaPorUsuario()
+        {
+            InformeCodigosBarras informe = InformeCodigosBarras.Construir(new[] { P("1003", "8437020512176") }, new CodigoActivoTabla[0], new DateTime(2026, 10, 19),
+                new[] { new MotivoTecleoGuardado { Producto = "1003", Motivo = "NOSELEE", Codigo = "8437020512176", Veces = 1, Usuario = "Andre", FechaModificacion = new DateTime(2026, 10, 15) } },
+                new[] { new EntradaTecleadaInforme { Producto = "1003", Usuario = "Andre", Veces = 3, Unidades = 10 } });
+
+            string html = InformeCodigosBarrasJobsService.GenerarHtml(informe);
+
+            StringAssert.Contains(html, "<td>Andre</td><td>3</td><td>10</td><td>1</td><td>3</td>");
+            StringAssert.Contains(html, "8437020512176");
+            Assert.IsTrue(InformeCodigosBarrasJobsService.GenerarExcel(informe).Length > 0);
+        }
+
+        [TestMethod]
+        public void SqlTecleadas_Ariadna43_SoloTeclaYSinLosDeshacer()
+        {
+            StringAssert.Contains(RepositorioInformeCodigosBarrasSql.SQL_TECLEADAS, "e.Metodo = 'TECLA' AND e.Cantidad > 0");
+            StringAssert.Contains(RepositorioInformeCodigosBarrasSql.SQL_MOTIVOS_TECLEO, "IF OBJECT_ID('dbo.ProductosMotivoTecleo') IS NOT NULL");
+        }
+
+        [TestMethod]
         public void Procesar_MandaElCorreoACompras()
         {
             IRepositorioInformeCodigosBarras repositorio = A.Fake<IRepositorioInformeCodigosBarras>();
             A.CallTo(() => repositorio.LeerProductosActivos("1")).Returns(new List<ProductoActivoCodigoBarras> { P("1001", null), P("1002", "1") });
             A.CallTo(() => repositorio.LeerCodigosActivosTabla("1")).Returns(new List<CodigoActivoTabla>());
+            A.CallTo(() => repositorio.LeerMotivosTecleo("1")).Returns(new List<MotivoTecleoGuardado>());
+            A.CallTo(() => repositorio.LeerTecleadas("1", new DateTime(2026, 10, 12))).Returns(new List<EntradaTecleadaInforme>());
             IServicioCorreoElectronico correo = A.Fake<IServicioCorreoElectronico>();
             MailMessage enviado = null;
             A.CallTo(() => correo.EnviarCorreoSMTP(A<MailMessage>._)).Invokes((MailMessage m) =>
@@ -243,6 +301,7 @@ namespace NestoAPI.Tests.Infrastructure.Productos
 
             Assert.IsTrue(mandado);
             Assert.IsNotNull(enviado);
+            A.CallTo(() => repositorio.LeerTecleadas("1", new DateTime(2026, 10, 12))).MustHaveHappenedOnceExactly();
         }
     }
 }
