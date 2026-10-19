@@ -186,7 +186,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
         public async Task<List<RecepcionPendienteDTO>> Buscar(string empresa, string almacen, string codigo)
         {
-            string limpio = codigo?.Trim();
+            // NestoAPI#675: una etiqueta de bulto se busca siempre como «R{traspaso}-{bulto}», venga con el separador que venga
+            string limpio = CodigosBultoReposicion.Leer(codigo, out int traspasoEtiqueta, out int bultoEtiqueta)
+                ? CodigosBultoReposicion.Codigo(traspasoEtiqueta, bultoEtiqueta)
+                : codigo?.Trim();
             var encontradas = new List<RecepcionPendienteDTO>();
             if (string.IsNullOrEmpty(limpio))
             {

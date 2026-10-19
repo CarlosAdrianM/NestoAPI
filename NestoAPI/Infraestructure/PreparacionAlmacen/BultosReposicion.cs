@@ -9,6 +9,7 @@ using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace NestoAPI.Infraestructure.PreparacionAlmacen
@@ -44,26 +45,42 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             => string.Format(CultureInfo.InvariantCulture, "{0} · bulto {1}/{2} · {3}→{4}", traspaso, bulto, total,
                 origen?.Trim() ?? "¿?", destino?.Trim() ?? "¿?");
 
-        /// <summary>Lo leído, sin espacios y en mayúsculas («r81010-2 » → «R81010-2»). Null si viene vacío.</summary>
+        /// <summary>
+        /// NestoAPI#675: R + traspaso + cualquier separador que no sea cifra ni letra + bulto. La pistola con teclado americano
+        /// en un Windows español manda «R81029'1» (o «?», «_», «/»…) en vez de «R81029-1».
+        /// </summary>
+        private static readonly Regex patronEtiqueta = new Regex(@"^R([0-9]+)[^\p{L}\p{N}]+([0-9]+)$", RegexOptions.CultureInvariant);
+
+        /// <summary>
+        /// Lo leído, listo para buscar: una etiqueta de bulto, siempre como «R{traspaso}-{bulto}» (NestoAPI#675: «r81029'1 » →
+        /// «R81029-1»); cualquier otra cosa, sin espacios y en mayúsculas. Null si viene vacío.
+        /// </summary>
         public static string Normalizar(string codigo)
         {
+            if (Leer(codigo, out int traspaso, out int bulto))
+            {
+                return Codigo(traspaso, bulto);
+            }
             string limpio = codigo?.Trim().ToUpperInvariant();
             return string.IsNullOrEmpty(limpio) ? null : limpio;
         }
 
-        /// <summary>Si tiene la forma de una etiqueta de bulto (R + traspaso + guion + bulto), con sus números.</summary>
+        /// <summary>
+        /// Si tiene la forma de una etiqueta de bulto (R + traspaso + separador + bulto), con sus números. Sin distinguir
+        /// mayúsculas y con espacios alrededor. Un código de producto (solo cifras) nunca lo es.
+        /// </summary>
         public static bool Leer(string codigo, out int traspaso, out int bulto)
         {
             traspaso = bulto = 0;
-            string limpio = Normalizar(codigo);
-            if (limpio == null || limpio.Length < 4 || limpio[0] != 'R')
+            string limpio = codigo?.Trim().ToUpperInvariant();
+            if (string.IsNullOrEmpty(limpio))
             {
                 return false;
             }
-            int guion = limpio.IndexOf('-');
-            return guion > 1
-                && int.TryParse(limpio.Substring(1, guion - 1), NumberStyles.None, CultureInfo.InvariantCulture, out traspaso)
-                && int.TryParse(limpio.Substring(guion + 1), NumberStyles.None, CultureInfo.InvariantCulture, out bulto)
+            Match encontrado = patronEtiqueta.Match(limpio);
+            return encontrado.Success
+                && int.TryParse(encontrado.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture, out traspaso)
+                && int.TryParse(encontrado.Groups[2].Value, NumberStyles.None, CultureInfo.InvariantCulture, out bulto)
                 && traspaso > 0 && bulto > 0;
         }
     }

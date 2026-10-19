@@ -829,9 +829,11 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             {
                 return new List<string>();
             }
-            var suyos = new HashSet<string>(delTraspaso.Select(b => b.Codigo?.Trim().ToUpperInvariant()).Where(c => c != null));
+            // NestoAPI#675: todo en la forma normalizada («R81029'1» es «R81029-1»), lo guardado y lo leído
+            var suyos = new HashSet<string>(delTraspaso.Select(b => CodigosBultoReposicion.Normalizar(b.Codigo)).Where(c => c != null));
             var leidos = new List<string>();
-            foreach (string codigo in solicitud.CodigosBulto ?? new List<string>())
+            foreach (string codigo in (solicitud.CodigosBulto ?? new List<string>())
+                .Select(CodigosBultoReposicion.Normalizar).Where(c => c != null).Distinct())
             {
                 if (suyos.Contains(codigo))
                 {

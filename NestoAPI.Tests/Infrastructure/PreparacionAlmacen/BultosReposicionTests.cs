@@ -57,11 +57,44 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         [DataRow("R81010", false, 0, 0)]
         [DataRow("8437017506362", false, 0, 0)]
         [DataRow("R-2", false, 0, 0)]
+        // NestoAPI#675: cualquier separador que no sea cifra ni letra (la pistola con teclado americano manda «'»)
+        [DataRow("R81029-1", true, 81029, 1)]
+        [DataRow("R81029'1", true, 81029, 1)]
+        [DataRow("r81029?1", true, 81029, 1)]
+        [DataRow(" R81029-1 ", true, 81029, 1)]
+        [DataRow("R81029_1", true, 81029, 1)]
+        [DataRow("R81029/1", true, 81029, 1)]
+        [DataRow("R81029 1", true, 81029, 1)]
+        [DataRow("R81029A1", false, 0, 0)]
+        [DataRow("R810291", false, 0, 0)]
+        [DataRow("8102901", false, 0, 0)]
+        [DataRow("8437017509999", false, 0, 0)]
+        [DataRow("AB-1234", false, 0, 0)]
+        [DataRow("RE81029-1", false, 0, 0)]
+        [DataRow("R81029-", false, 0, 0)]
+        [DataRow("R81029-0", false, 0, 0)]
+        [DataRow("", false, 0, 0)]
+        [DataRow(null, false, 0, 0)]
         public void Leer_CodigoDeBulto(string codigo, bool esBulto, int traspaso, int bulto)
         {
             Assert.AreEqual(esBulto, CodigosBultoReposicion.Leer(codigo, out int t, out int b));
             Assert.AreEqual(traspaso, esBulto ? t : 0);
             Assert.AreEqual(bulto, esBulto ? b : 0);
+        }
+
+        [DataTestMethod]
+        [DataRow("R81029-1", "R81029-1")]
+        [DataRow("R81029'1", "R81029-1")]
+        [DataRow("r81029?1", "R81029-1")]
+        [DataRow(" R81029-1 ", "R81029-1")]
+        [DataRow("R081029_01", "R81029-1")]
+        [DataRow(" 8437017509999 ", "8437017509999")]
+        [DataRow("abc-12", "ABC-12")]
+        [DataRow("   ", null)]
+        [DataRow(null, null)]
+        public void Normalizar_LaEtiquetaSiempreConGuion_YLoDemasSinTocar(string codigo, string esperado)
+        {
+            Assert.AreEqual(esperado, CodigosBultoReposicion.Normalizar(codigo));
         }
 
         [TestMethod]
@@ -261,6 +294,20 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         }
 
         [TestMethod]
+        public async Task Leer_PorCodigoConApostrofo_LoBuscaConGuion()
+        {
+            A.CallTo(() => repositorio.LeerPorCodigo("1", "R81029-1")).Returns(new FilaBultoReposicion
+            {
+                Traspaso = 81029, Bulto = 1, Total = 1, Codigo = "R81029-1"
+            });
+
+            LecturaBultoReposicionDTO bulto = await servicio.Leer("1", "R81029'1");
+
+            Assert.AreEqual(81029, bulto.Traspaso);
+            A.CallTo(() => repositorio.LeerPorCodigo("1", "R81029-1")).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
         public async Task Leer_CodigoQueNoEsDeNinguna_Null()
         {
             A.CallTo(() => repositorio.LeerPorCodigo("1", A<string>._)).Returns((FilaBultoReposicion)null);
@@ -448,6 +495,32 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             A.CallTo(() => transaccion.Contabilizar("1", "PendRepo", "NUEVAVISION\\Reina")).MustHaveHappenedOnceExactly();
             A.CallTo(() => transaccion.MarcarBultosLeidos("1", A<IEnumerable<string>>.That.IsSameSequenceAs(new[] { "R81010-2" }), "NUEVAVISION\\Reina"))
                 .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Terminar_ConLaEtiquetaConApostrofo_LaReconoceYMarcaLaNormalizada()
+        {
+            var (cierre, transaccion) = Cierre(DosBultos());
+
+            _ = await Origen(cierre).Terminar(Solicitud("R81010'2", "r81010?2"));
+
+            A.CallTo(() => transaccion.Contabilizar("1", "PendRepo", "NUEVAVISION\\Reina")).MustHaveHappenedOnceExactly();
+            A.CallTo(() => transaccion.MarcarBultosLeidos("1", A<IEnumerable<string>>.That.IsSameSequenceAs(new[] { "R81010-2" }), "NUEVAVISION\\Reina"))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task BuscarPorCodigo_LaEtiquetaConApostrofoTambienLlevaASuReposicion()
+        {
+            var servicio = A.Fake<IServicioRecepcionReposiciones>();
+            A.CallTo(() => servicio.LeerPendientes("1", "REI")).Returns(new List<ReposicionPendienteDTO>
+            {
+                new ReposicionPendienteDTO { Traspaso = 81010 }, new ReposicionPendienteDTO { Traspaso = 81011 }
+            });
+
+            List<RecepcionPendienteDTO> encontradas = await Origen(null, null, servicio).BuscarPorCodigo("1", "REI", "R81011'1");
+
+            Assert.AreEqual("81011", encontradas.Single().Documento);
         }
 
         [TestMethod]
