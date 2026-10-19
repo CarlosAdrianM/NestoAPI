@@ -72,9 +72,9 @@ namespace NestoAPI.Tests.Controllers
             Producto guantes = CrearProducto("32565", "8437017506379", "GUANTES T/M");
             guantes.Estado = 0;
             ConfigurarProductos(guantes);
-            ConfigurarCodigos(Alternativo("32565", "8437017509999"));
+            ConfigurarCodigos(Alternativo("32565", "8437017509998"));
 
-            List<Producto> encontrados = await controller.BuscarPorCodigoBarras("1", "8437017509999", incluirNumero: false);
+            List<Producto> encontrados = await controller.BuscarPorCodigoBarras("1", "8437017509998", incluirNumero: false);
 
             Assert.AreEqual("32565", encontrados.Single().Número);
         }
@@ -93,13 +93,35 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual("32564", encontrados.Single().Número);
         }
 
+        /// <summary>NestoAPI#674: un relleno («1») en la ficha no casa con nada aunque se lea «1».</summary>
+        [TestMethod]
+        public async Task GetProductoPorCodigoBarras_CodigoGuardadoNoValido_NoCasa()
+        {
+            ConfigurarProductos(CrearProducto("45114", "1", "Producto con relleno"));
+            ConfigurarCodigos(Alternativo("45114", "0"));
+
+            Assert.IsInstanceOfType(await controller.GetProducto("1"), typeof(NotFoundResult));
+            Assert.AreEqual(0, (await controller.BuscarPorCodigoBarras("1", "0", incluirNumero: false)).Count);
+        }
+
+        /// <summary>NestoAPI#674: nuestras etiquetas llevan la referencia («44724»): se sigue encontrando como referencia.</summary>
+        [TestMethod]
+        public async Task GetProductoPorCodigoBarras_ReferenciaInterna_SigueEncontrandose()
+        {
+            ConfigurarProductos(CrearProducto("44724", "1", "Producto con relleno"), CrearProducto("44725", "8437020512176", "Otro"));
+
+            List<Producto> encontrados = await controller.BuscarPorCodigoBarras("1", "44724", incluirNumero: true);
+
+            Assert.AreEqual("44724", encontrados.Single().Número);
+        }
+
         [TestMethod]
         public async Task GetProductoPorCodigoBarras_CodigoAlternativoDeBaja_NoEncuentraNada()
         {
             ConfigurarProductos(CrearProducto("32565", "8437017506379", "GUANTES T/M"));
-            ConfigurarCodigos(Alternativo("32565", "8437017509999", activo: false));
+            ConfigurarCodigos(Alternativo("32565", "8437017509998", activo: false));
 
-            IHttpActionResult resultado = await controller.GetProducto("8437017509999");
+            IHttpActionResult resultado = await controller.GetProducto("8437017509998");
 
             Assert.IsInstanceOfType(resultado, typeof(NotFoundResult));
         }

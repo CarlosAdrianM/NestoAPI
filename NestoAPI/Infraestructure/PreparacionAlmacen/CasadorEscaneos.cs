@@ -162,11 +162,11 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// <summary>
         /// A qué producto de la lista corresponde un código leído. La lista es la del picking o la
         /// del pedido que se está preparando: un código duplicado en el catálogo solo molesta si los
-        /// dos productos están en lo que se prepara.
+        /// dos productos están en lo que se prepara. NestoAPI#674: lo que no es un GTIN válido es ajeno.
         /// </summary>
         public static Resolucion ResolverCodigo(string codigoLeido, IEnumerable<KeyValuePair<string, string>> productosConCodigo)
         {
-            string codigo = codigoLeido?.Trim();
+            string codigo = Productos.ValidadorGtin.SoloSiValido(codigoLeido);
             var resolucion = new Resolucion { Tipo = TipoResolucion.Ajeno };
             if (string.IsNullOrEmpty(codigo))
             {
@@ -212,13 +212,14 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         }
 
         /// <summary>
-        /// Los códigos de barras que comparten dos o más productos distintos de la lista.
+        /// Los códigos de barras que comparten dos o más productos distintos de la lista. NestoAPI#674: solo los GTIN
+        /// válidos (uno que no lo es cuenta como «sin código», no como duplicado).
         /// </summary>
         public static HashSet<string> CodigosDuplicados(IEnumerable<KeyValuePair<string, string>> productosConCodigo)
         {
             return new HashSet<string>(
                 (productosConCodigo ?? Enumerable.Empty<KeyValuePair<string, string>>())
-                    .Where(p => !string.IsNullOrWhiteSpace(p.Value))
+                    .Where(p => Productos.ValidadorGtin.EsCodigoValido(p.Value))
                     .GroupBy(p => p.Value.Trim(), StringComparer.OrdinalIgnoreCase)
                     .Where(g => g.Select(p => p.Key?.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1)
                     .Select(g => g.Key),
@@ -264,7 +265,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             foreach (LineaPickingAlmacenDTO linea in ordenadas)
             {
                 linea.Orden = ++orden;
-                linea.CodigoBarras = string.IsNullOrWhiteSpace(linea.CodigoBarras) ? null : linea.CodigoBarras.Trim();
+                // NestoAPI#674: un código que no es GTIN válido («1», «0», letras) no se manda: el producto cuenta como sin código
+                linea.CodigoBarras = Productos.ValidadorGtin.SoloSiValido(linea.CodigoBarras);
                 linea.SinCodigo = linea.CodigoBarras == null;
                 linea.CodigoDuplicado = linea.CodigoBarras != null && duplicados.Contains(linea.CodigoBarras);
                 linea.Ubicacion = TextoUbicacion(linea.Pasillo, linea.Fila, linea.Columna);

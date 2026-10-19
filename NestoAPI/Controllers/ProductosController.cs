@@ -743,10 +743,16 @@ namespace NestoAPI.Controllers
         /// </summary>
         internal async Task<List<Producto>> BuscarPorCodigoBarras(string empresa, string codigo, bool incluirNumero)
         {
+            // NestoAPI#674: por código de barras solo casa un GTIN válido; la referencia (incluirNumero) se sigue buscando tal cual
+            bool esGtin = Infraestructure.Productos.ValidadorGtin.EsCodigoValido(codigo);
+            if (!esGtin && !incluirNumero)
+            {
+                return new List<Producto>();
+            }
             List<Producto> coincidencias = await db.Productos
-                .Where(p => p.Empresa == empresa && (p.CodBarras == codigo || (incluirNumero && p.Número.Trim() == codigo)))
+                .Where(p => p.Empresa == empresa && ((esGtin && p.CodBarras == codigo) || (incluirNumero && p.Número.Trim() == codigo)))
                 .ToListAsync().ConfigureAwait(false);
-            if (codigo.Length <= Infraestructure.Productos.ServicioCodigosBarras.LONGITUD_MAXIMA && db.ProductosCodigosBarras != null)
+            if (esGtin && codigo.Length <= Infraestructure.Productos.ServicioCodigosBarras.LONGITUD_MAXIMA && db.ProductosCodigosBarras != null)
             {
                 List<string> alternativos = (await db.ProductosCodigosBarras
                         .Where(c => c.Empresa == empresa && c.Codigo == codigo && c.Activo)

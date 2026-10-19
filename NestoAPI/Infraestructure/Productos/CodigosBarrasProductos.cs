@@ -199,6 +199,11 @@ namespace NestoAPI.Infraestructure.Productos
             {
                 return NoValido($"El código de barras no puede tener más de {LONGITUD_MAXIMA} caracteres.");
             }
+            // NestoAPI#674: solo GTIN (EAN-8, UPC-A, EAN-13, ITF-14) con el dígito de control bien
+            if (!ValidadorGtin.EsCodigoValido(codigo))
+            {
+                return NoValido(ValidadorGtin.MensajeNoValido(codigo));
+            }
             int cantidad = nuevo.Cantidad.GetValueOrDefault() == 0 ? 1 : nuevo.Cantidad.Value;
             if (cantidad < 0)
             {
@@ -310,6 +315,11 @@ namespace NestoAPI.Infraestructure.Productos
             {
                 return NoEncontrado(numero, id);
             }
+            // NestoAPI#674: un código que no es GTIN no se pone en la ficha (de los de antes de validar puede quedar alguno)
+            if (!ValidadorGtin.EsCodigoValido(fila.Codigo))
+            {
+                return NoValido(ValidadorGtin.MensajeNoValido(fila.Codigo));
+            }
             if (fila.Codigo?.Trim().Length > LONGITUD_MAXIMA_FICHA)
             {
                 return NoValido($"Un código de más de {LONGITUD_MAXIMA_FICHA} caracteres no cabe en la ficha: no puede ser el principal.");
@@ -354,7 +364,9 @@ namespace NestoAPI.Infraestructure.Productos
         public async Task<List<ProductoPorCodigoBarrasDTO>> BuscarPorCodigo(string empresa, string codigo)
         {
             string limpio = Limpiar(codigo);
-            if (limpio == null)
+            // NestoAPI#674: lo que no es un GTIN válido no casa con ningún producto. Como se casa por igualdad, basta con
+            // mirar lo leído: un código guardado que no es válido («1», «0», letras) nunca es igual a una lectura válida.
+            if (limpio == null || !ValidadorGtin.EsCodigoValido(limpio))
             {
                 return new List<ProductoPorCodigoBarrasDTO>();
             }
@@ -564,13 +576,16 @@ WHERE p.Empresa = @p0 AND p.[Número] IN ({0}) AND RTRIM(ISNULL(p.CodBarras, '')
             }
         }
 
-        /// <summary>El principal (si lo hay) el primero y luego los demás, sin repetir.</summary>
+        /// <summary>
+        /// El principal (si lo hay) el primero y luego los demás, sin repetir. NestoAPI#674: solo los GTIN válidos; uno que
+        /// no lo es no casa con ninguna lectura en Ariadna.
+        /// </summary>
         public static List<string> Juntar(string principal, IEnumerable<string> otros)
         {
             var resultado = new List<string>();
             foreach (string codigo in new[] { principal }.Concat(otros ?? Enumerable.Empty<string>()))
             {
-                string limpio = codigo?.Trim();
+                string limpio = ValidadorGtin.SoloSiValido(codigo);
                 if (!string.IsNullOrEmpty(limpio) && !resultado.Contains(limpio, StringComparer.OrdinalIgnoreCase))
                 {
                     resultado.Add(limpio);

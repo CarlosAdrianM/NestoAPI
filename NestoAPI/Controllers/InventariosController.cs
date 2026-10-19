@@ -172,6 +172,11 @@ namespace NestoAPI.Controllers
         private Producto buscarProducto(string empresa, string producto)
         {
             Producto productoEncontrado = db.Productos.SingleOrDefault(p => p.Empresa == empresa && p.Número == producto);
+            // NestoAPI#674: por código de barras solo casa un GTIN válido (la referencia, arriba, se busca siempre)
+            if (productoEncontrado != null || !Infraestructure.Productos.ValidadorGtin.EsCodigoValido(producto))
+            {
+                return productoEncontrado;
+            }
             if (productoEncontrado == null)
             {
                 productoEncontrado = db.Productos.FirstOrDefault(p => p.Empresa == empresa && p.Estado >= 0 && p.CodBarras == producto);

@@ -122,8 +122,8 @@ ORDER BY l.[NºOrden]";
 SELECT DISTINCT RTRIM(l.[NºProveedor])
 FROM LinPedidoCmp l
      LEFT JOIN Productos p ON p.Empresa = l.Empresa AND p.[Número] = l.Producto
-WHERE l.Empresa = @p0 AND l.[Almacén] = @p1 AND (l.Producto = @p2 OR p.CodBarras = @p2
-      OR EXISTS (SELECT 1 FROM ProductosCodigosBarras c WHERE c.Empresa = l.Empresa AND c.Producto = l.Producto AND c.Codigo = @p2 AND c.Activo = 1))
+WHERE l.Empresa = @p0 AND l.[Almacén] = @p1 AND (l.Producto = @p2 OR p.CodBarras = @p3
+      OR EXISTS (SELECT 1 FROM ProductosCodigosBarras c WHERE c.Empresa = l.Empresa AND c.Producto = l.Producto AND c.Codigo = @p3 AND c.Activo = 1))
   AND " + FILTRO_LINEAS_DE_PRODUCTO;
 
         // NestoAPI#559: la recepción es por proveedor (todos sus pedidos abiertos en el almacén)
@@ -149,7 +149,14 @@ ORDER BY l.[Número], l.[NºOrden]";
 
         public Task<List<string>> ProveedoresConPendiente(string empresa, string almacen, string codigo)
         {
-            return baseDeDatos.SqlQuery<string>(SQL_PROVEEDORES_DEL_CODIGO, empresa, almacen, codigo).ToListAsync();
+            // NestoAPI#674: por referencia, lo leído tal cual (@p2); por código de barras, solo si es un GTIN válido (@p3, si no NULL:
+            // no casa con nada). Parámetros explícitos porque EF no admite un null suelto.
+            return baseDeDatos.SqlQuery<string>(SQL_PROVEEDORES_DEL_CODIGO,
+                new SqlParameter("@p0", System.Data.SqlDbType.NVarChar) { Value = (object)empresa ?? DBNull.Value },
+                new SqlParameter("@p1", System.Data.SqlDbType.NVarChar) { Value = (object)almacen ?? DBNull.Value },
+                new SqlParameter("@p2", System.Data.SqlDbType.NVarChar) { Value = (object)codigo ?? DBNull.Value },
+                new SqlParameter("@p3", System.Data.SqlDbType.NVarChar) { Value = (object)Productos.ValidadorGtin.SoloSiValido(codigo) ?? DBNull.Value })
+                .ToListAsync();
         }
 
         /// <summary>
@@ -279,7 +286,7 @@ ORDER BY l.[Número], l.[NºOrden]";
                 NombreProveedor = filas.First().NombreProveedor?.Trim(),
                 Lineas = filas.Select(f =>
                 {
-                    string codigo = string.IsNullOrWhiteSpace(f.CodigoBarras) ? null : f.CodigoBarras.Trim();
+                    string codigo = Productos.ValidadorGtin.SoloSiValido(f.CodigoBarras); // NestoAPI#674: no GTIN = sin código
                     return new LineaRecepcionCompraDTO
                     {
                         LineaPedido = f.LineaPedido,

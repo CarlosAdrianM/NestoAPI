@@ -179,7 +179,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         [TestMethod]
         public void ResolverCodigo_DosProductosDelPedidoCompartenCodigo_Duplicado()
         {
-            var resolucion = CasadorEscaneos.ResolverCodigo("111", new[] { P("A", "111"), P("B", "111"), P("C", "222") });
+            var resolucion = CasadorEscaneos.ResolverCodigo("8437020512176", new[] { P("A", "8437020512176"), P("B", "8437020512176"), P("C", "8437020512237") });
 
             Assert.AreEqual(CasadorEscaneos.TipoResolucion.Duplicado, resolucion.Tipo);
             CollectionAssert.AreEquivalent(new[] { "A", "B" }, resolucion.Productos);
@@ -188,7 +188,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         [TestMethod]
         public void ResolverCodigo_ElMismoProductoEnDosLineas_NoEsDuplicado()
         {
-            var resolucion = CasadorEscaneos.ResolverCodigo("111", new[] { P("A", "111"), P("A  ", "111") });
+            var resolucion = CasadorEscaneos.ResolverCodigo("8437020512176", new[] { P("A", "8437020512176"), P("A  ", "8437020512176") });
 
             Assert.AreEqual(CasadorEscaneos.TipoResolucion.Unico, resolucion.Tipo);
         }
@@ -197,7 +197,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         public void ResolverCodigo_CodigoQueNoEstaEnLaLista_Ajeno()
         {
             Assert.AreEqual(CasadorEscaneos.TipoResolucion.Ajeno,
-                CasadorEscaneos.ResolverCodigo("999", new[] { P("A", "111"), P("B", null) }).Tipo);
+                CasadorEscaneos.ResolverCodigo("999", new[] { P("A", "8437020512176"), P("B", null) }).Tipo);
             Assert.AreEqual(CasadorEscaneos.TipoResolucion.Ajeno, CasadorEscaneos.ResolverCodigo("", new[] { P("B", null) }).Tipo);
         }
 
@@ -244,9 +244,9 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             List<LineaPickingAlmacenDTO> recorrido = CasadorEscaneos.OrdenarRecorrido(new[]
             {
                 L("LIMA", "001", "001", "001", codigo: "   "),
-                L("A", "001", "001", "002", codigo: "111"),
-                L("B", "001", "001", "003", codigo: "111"),
-                L("C", "001", "001", "004", codigo: "222")
+                L("A", "001", "001", "002", codigo: "8437020512176"),
+                L("B", "001", "001", "003", codigo: "8437020512176"),
+                L("C", "001", "001", "004", codigo: "8437020512237")
             });
 
             Assert.IsTrue(recorrido.Single(l => l.Producto == "LIMA").SinCodigo);

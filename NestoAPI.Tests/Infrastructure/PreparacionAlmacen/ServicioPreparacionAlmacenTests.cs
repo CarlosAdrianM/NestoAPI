@@ -157,8 +157,8 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             // Como el packing list de hoy: se agrupa por cliente y dirección de entrega
             PackingAlmacenDTO packing = ServicioPreparacionAlmacen.MontarPacking(EMPRESA, PICKING, new[]
             {
-                Fila(926940, 1, "A", "111", 2),
-                Fila(926941, 5, "B", "222", 1),
+                Fila(926940, 1, "A", "8437020512176", 2),
+                Fila(926941, 5, "B", "8437020512237", 1),
                 Fila(926950, 9, "C", "333", 1, cliente: "34384")
             });
 
@@ -174,8 +174,8 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             PackingAlmacenDTO packing = ServicioPreparacionAlmacen.MontarPacking(EMPRESA, PICKING, new[]
             {
                 Fila(926940, 1, "LIMA", " ", 5),
-                Fila(926940, 2, "A", "111", 1),
-                Fila(926941, 3, "B", "111", 1)
+                Fila(926940, 2, "A", "8437020512176", 1),
+                Fila(926941, 3, "B", "8437020512176", 1)
             });
 
             List<LineaPackingAlmacenDTO> lineas = packing.Entregas.Single().Pedidos.SelectMany(p => p.Lineas).ToList();
@@ -190,9 +190,9 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             // Para seguir un packing desde otra PDA: lo ya metido en la caja de cada pedido
             PackingAlmacenDTO packing = ServicioPreparacionAlmacen.MontarPacking(EMPRESA, PICKING, new[]
             {
-                Fila(926940, 1, "17404", "111", 1),
-                Fila(926940, 2, "40057", "222", 1),
-                Fila(926941, 3, "17404", "111", 1)
+                Fila(926940, 1, "17404", "8437020512176", 1),
+                Fila(926940, 2, "40057", "8437020512237", 1),
+                Fila(926941, 3, "17404", "8437020512176", 1)
             }, new[]
             {
                 new LecturaPackingAlmacen { Pedido = 926940, Producto = "17404", Metidas = 1 },
@@ -212,8 +212,8 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         {
             PackingAlmacenDTO packing = ServicioPreparacionAlmacen.MontarPacking(EMPRESA, PICKING, new[]
             {
-                Fila(926940, 7, "17404", "111", 2),
-                Fila(926940, 3, "17404", "111", 1)
+                Fila(926940, 7, "17404", "8437020512176", 2),
+                Fila(926940, 3, "17404", "8437020512176", 1)
             }, new[] { new LecturaPackingAlmacen { Pedido = 926940, Producto = "17404", Metidas = 4, Faltas = 2 } });
 
             List<LineaPackingAlmacenDTO> lineas = packing.Entregas.Single().Pedidos.Single().Lineas;
@@ -227,7 +227,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         [TestMethod]
         public void MontarPacking_SinLecturas_TodoACero()
         {
-            PackingAlmacenDTO packing = ServicioPreparacionAlmacen.MontarPacking(EMPRESA, PICKING, new[] { Fila(926940, 1, "A", "111", 2) });
+            PackingAlmacenDTO packing = ServicioPreparacionAlmacen.MontarPacking(EMPRESA, PICKING, new[] { Fila(926940, 1, "A", "8437020512176", 2) });
 
             LineaPackingAlmacenDTO linea = packing.Entregas.Single().Pedidos.Single().Lineas.Single();
             Assert.AreEqual(0, linea.Metidas);
@@ -237,7 +237,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         [TestMethod]
         public async Task LeerPacking_TraeLoMetidoDelPicking()
         {
-            A.CallTo(() => repositorio.LeerLineasPacking(EMPRESA, PICKING, null)).Returns(new List<FilaPackingAlmacen> { Fila(PEDIDO, 1, "A", "111", 2) });
+            A.CallTo(() => repositorio.LeerLineasPacking(EMPRESA, PICKING, null)).Returns(new List<FilaPackingAlmacen> { Fila(PEDIDO, 1, "A", "8437020512176", 2) });
             A.CallTo(() => repositorio.LeerLecturasPacking(EMPRESA, PICKING, null))
                 .Returns(new List<LecturaPackingAlmacen> { new LecturaPackingAlmacen { Pedido = PEDIDO, Producto = "A", Metidas = 2 } });
 
@@ -250,7 +250,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         public async Task LeerPackingDePedido_TraeLoMetidoSoloDeEsePedido()
         {
             A.CallTo(() => repositorio.PickingEnCursoDelPedido(EMPRESA, PEDIDO)).Returns(Task.FromResult<int?>(PICKING));
-            A.CallTo(() => repositorio.LeerLineasPacking(EMPRESA, PICKING, PEDIDO)).Returns(new List<FilaPackingAlmacen> { Fila(PEDIDO, 1, "A", "111", 2) });
+            A.CallTo(() => repositorio.LeerLineasPacking(EMPRESA, PICKING, PEDIDO)).Returns(new List<FilaPackingAlmacen> { Fila(PEDIDO, 1, "A", "8437020512176", 2) });
             A.CallTo(() => repositorio.LeerLecturasPacking(EMPRESA, PICKING, PEDIDO))
                 .Returns(new List<LecturaPackingAlmacen> { new LecturaPackingAlmacen { Pedido = PEDIDO, Producto = "A", Metidas = 1 } });
 
@@ -272,7 +272,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         {
             A.CallTo(() => repositorio.LeerLineasPacking(EMPRESA, PICKING, PEDIDO)).Returns(new List<FilaPackingAlmacen>
             {
-                Fila(PEDIDO, 1, "17404", "111", 2)
+                Fila(PEDIDO, 1, "17404", "8437020512176", 2)
             });
             return new ServicioPreparacionAlmacen(repositorio, fotos, avisadorCompras: avisador);
         }
@@ -908,7 +908,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         {
             A.CallTo(() => repositorio.LeerLineasPacking(EMPRESA, PICKING, PEDIDO)).Returns(new List<FilaPackingAlmacen>
             {
-                Fila(PEDIDO, 1, "A", "111", 2), Fila(PEDIDO, 2, "B", "222", 1)
+                Fila(PEDIDO, 1, "A", "8437020512176", 2), Fila(PEDIDO, 2, "B", "8437020512237", 1)
             });
             A.CallTo(() => repositorio.LeerLecturas(EMPRESA, PEDIDO, PICKING, "PACK")).Returns(new List<LecturaProductoAlmacen>
             {
@@ -933,7 +933,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             A.CallTo(() => repositorio.PickingEnCursoDelPedido(EMPRESA, PEDIDO)).Returns(Task.FromResult<int?>(PICKING));
             A.CallTo(() => repositorio.LeerLineasPacking(EMPRESA, PICKING, PEDIDO)).Returns(new List<FilaPackingAlmacen>
             {
-                Fila(PEDIDO, 1, "A", "111", 2)
+                Fila(PEDIDO, 1, "A", "8437020512176", 2)
             });
             A.CallTo(() => repositorio.LeerLecturas(EMPRESA, PEDIDO, PICKING, "PACK")).Returns(new List<LecturaProductoAlmacen>());
             A.CallTo(() => repositorio.LeerBultos(EMPRESA, PEDIDO)).Returns(new List<BultoAlmacenDTO>());

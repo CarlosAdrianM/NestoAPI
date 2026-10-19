@@ -1037,6 +1037,20 @@ namespace NestoAPI
                 }
             );
             Console.WriteLine("✅ Job recurrente 'outlet-cuadre-nocturno' configurado (diario a las 04:00; solo simula salvo Web.config)");
+
+            // NestoAPI#674: informe semanal a Compras de los códigos de barras de los productos activos (sin código, código que no
+            // es un GTIN válido, código compartido; y, cuando llegue Ariadna#43, los que no se leen y los tecleados). Los lunes a
+            // las 8:10, después del de proveedores vencidos (8:00). Solo con CodigosBarras:InformeSemanal a true en Web.config.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.Productos.InformeCodigosBarrasJobsService.ID_JOB,
+                () => Infraestructure.Productos.InformeCodigosBarrasJobsService.Procesar(),
+                Infraestructure.Productos.InformeCodigosBarrasJobsService.CRON, // Cron: los lunes a las 8:10
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'informe-codigos-barras' configurado (lunes a las 8:10; solo con el interruptor de Web.config)");
         }
     }
 

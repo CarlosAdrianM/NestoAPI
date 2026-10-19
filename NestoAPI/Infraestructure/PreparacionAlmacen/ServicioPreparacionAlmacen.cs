@@ -376,7 +376,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                         ComentarioPicking = string.IsNullOrWhiteSpace(g.First().ComentarioPicking) ? null : g.First().ComentarioPicking.Trim(),
                         Lineas = g.OrderBy(f => f.LineaPedido).Select(f =>
                         {
-                            string codigo = string.IsNullOrWhiteSpace(f.CodigoBarras) ? null : f.CodigoBarras.Trim();
+                            string codigo = Productos.ValidadorGtin.SoloSiValido(f.CodigoBarras); // NestoAPI#674: no GTIN = sin código
                             return new LineaPackingAlmacenDTO
                             {
                                 LineaPedido = f.LineaPedido,

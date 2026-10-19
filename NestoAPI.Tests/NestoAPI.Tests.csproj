@@ -685,6 +685,7 @@
     <Compile Include="Infrastructure\ValidadoresPedido\ValidadorFamiliasIncompatiblesTests.cs" />
     <Compile Include="Infrastructure\Productos\FamiliasRestringidasTests.cs" />
     <Compile Include="Infrastructure\Productos\ServicioCodigosBarrasTests.cs" />
+    <Compile Include="Infrastructure\Productos\ValidadorGtinTests.cs" />
     <Compile Include="Infrastructure\Productos\ServicioSustitucionesProductoTests.cs" />
     <Compile Include="Infrastructure\ValidadoresPedido\GestorPreciosPermisoNecesarioTests.cs" />
     <Compile Include="Infrastructure\ValidadoresPedido\ValidadorLimiteRegalosTests.cs" />

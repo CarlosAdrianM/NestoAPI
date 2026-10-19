@@ -122,8 +122,8 @@ HAVING SUM(u.Cantidad) <> 0";
         internal const string SQL_BUSCAR_PRODUCTOS = @"
 SELECT RTRIM(p.[Número]) AS Producto, RTRIM(p.Nombre) AS Descripcion, RTRIM(p.CodBarras) AS CodigoBarras
 FROM Productos p
-WHERE p.Empresa = @p0 AND (p.CodBarras = @p1 OR p.[Número] = @p1
-      OR EXISTS (SELECT 1 FROM ProductosCodigosBarras c WHERE c.Empresa = p.Empresa AND c.Producto = p.[Número] AND c.Codigo = @p1 AND c.Activo = 1))";
+WHERE p.Empresa = @p0 AND (p.CodBarras = @p2 OR p.[Número] = @p1
+      OR EXISTS (SELECT 1 FROM ProductosCodigosBarras c WHERE c.Empresa = p.Empresa AND c.Producto = p.[Número] AND c.Codigo = @p2 AND c.Activo = 1))";
 
         internal const string SQL_UBICACIONES_DEL_PRODUCTO = @"
 SELECT RTRIM(u.[Número]) AS Producto, u.Estado, RTRIM(u.Pasillo) AS Pasillo, RTRIM(u.Fila) AS Fila, RTRIM(u.Columna) AS Columna,
@@ -187,8 +187,10 @@ INSERT INTO Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES (N'Ubicacion
         public Task<List<FilaProductoAlmacen>> BuscarProductos(string empresa, string codigo)
         {
             // char(15) las dos columnas: un parámetro más largo no puede coincidir con nada
+            // NestoAPI#674: por referencia, lo leído (@p1); por código de barras, solo si es un GTIN válido (@p2; si no, NULL)
             return baseDeDatos.SqlQuery<FilaProductoAlmacen>(SQL_BUSCAR_PRODUCTOS,
-                Texto("@p0", empresa, 3), Texto("@p1", codigo, 15)).ToListAsync();
+                Texto("@p0", empresa, 3), Texto("@p1", codigo, 15),
+                Texto("@p2", Productos.ValidadorGtin.SoloSiValido(codigo), Productos.ServicioCodigosBarras.LONGITUD_MAXIMA)).ToListAsync();
         }
 
         public Task<List<FilaUbicacionProducto>> LeerUbicacionesDelProducto(string empresa, string almacen, string producto)
@@ -288,7 +290,7 @@ INSERT INTO Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES (N'Ubicacion
                 .GroupBy(f => f.Producto?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase)
                 .Select(g =>
                 {
-                    string codigo = g.Select(f => f.CodigoBarras).FirstOrDefault(c => !string.IsNullOrWhiteSpace(c))?.Trim();
+                    string codigo = Productos.ValidadorGtin.SoloSiValido(g.Select(f => f.CodigoBarras).FirstOrDefault(c => !string.IsNullOrWhiteSpace(c))); // NestoAPI#674: no GTIN = sin código
                     return new ProductoPendienteDeUbicarDTO
                     {
                         Producto = g.Key,
@@ -380,7 +382,7 @@ INSERT INTO Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES (N'Ubicacion
                 {
                     Producto = producto.Producto?.Trim(),
                     Descripcion = producto.Descripcion?.Trim(),
-                    CodigoBarras = string.IsNullOrWhiteSpace(producto.CodigoBarras) ? null : producto.CodigoBarras.Trim(),
+                    CodigoBarras = Productos.ValidadorGtin.SoloSiValido(producto.CodigoBarras), // NestoAPI#674
                     Almacen = almacen,
                     Ubicaciones = OrdenarHuecos(filas.Where(f => f.Estado == ESTADO_UBICADO && f.Cantidad > 0), orden),
                     PendienteDeUbicar = filas.Where(f => f.Estado == ESTADO_PENDIENTE_DE_UBICAR).Sum(f => f.Cantidad)

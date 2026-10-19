@@ -94,15 +94,17 @@ namespace NestoAPI.Controllers
 
             // Comprobar si el producto existe
             Producto productoEncontrado = db.Productos.SingleOrDefault(p => p.Empresa == inventarioCuadre.Empresa && p.Número == inventarioCuadre.Producto);
-            if (productoEncontrado == null)
+            // NestoAPI#674: por código de barras solo casa un GTIN válido (la referencia, arriba, se busca siempre)
+            bool esGtin = Infraestructure.Productos.ValidadorGtin.EsCodigoValido(inventarioCuadre.Producto);
+            if (productoEncontrado == null && esGtin)
             {
                 productoEncontrado = db.Productos.FirstOrDefault(p => p.Empresa == inventarioCuadre.Empresa && p.Estado >= 0 && p.CodBarras == inventarioCuadre.Producto);
             }
-            if (productoEncontrado == null)
+            if (productoEncontrado == null && esGtin)
             {
                 productoEncontrado = db.Productos.FirstOrDefault(p => p.Empresa == inventarioCuadre.Empresa && p.CodBarras == inventarioCuadre.Producto);
             }
-            if (productoEncontrado == null)
+            if (productoEncontrado == null && esGtin)
             {
                 // NestoAPI#605: un código alternativo activo (ProductosCodigosBarras)
                 string alternativo = db.ProductosCodigosBarras

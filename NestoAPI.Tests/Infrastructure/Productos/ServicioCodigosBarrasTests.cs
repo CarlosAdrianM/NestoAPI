@@ -119,10 +119,10 @@ namespace NestoAPI.Tests.Infrastructure.Productos
         [TestMethod]
         public async Task Anadir_CodigoNuevo_LoCreaLimpioYNoTocaElPrincipal()
         {
-            ResultadoCodigoBarras resultado = await Anadir("32565", " 8437017 5099 99 ", cantidad: 100);
+            ResultadoCodigoBarras resultado = await Anadir("32565", " 8437017 5099 98 ", cantidad: 100);
 
             Assert.AreEqual(EstadoOperacionCodigoBarras.Creado, resultado.Estado);
-            Assert.AreEqual("8437017509999", resultado.Codigo.Codigo);
+            Assert.AreEqual("8437017509998", resultado.Codigo.Codigo);
             Assert.AreEqual(100, resultado.Codigo.Cantidad);
             Assert.AreEqual("Almacen", resultado.Codigo.Origen);
             Assert.AreEqual("Alfredo", resultado.Codigo.Usuario);
@@ -158,9 +158,9 @@ namespace NestoAPI.Tests.Infrastructure.Productos
         [TestMethod]
         public async Task Anadir_CodigoDeBajaEnOtroProducto_NoEsConflicto()
         {
-            repositorio.Fila("32564", "8437017500000", activo: false);
+            repositorio.Fila("32564", "8437017500001", activo: false);
 
-            ResultadoCodigoBarras resultado = await Anadir("32565", "8437017500000");
+            ResultadoCodigoBarras resultado = await Anadir("32565", "8437017500001");
 
             Assert.AreEqual(EstadoOperacionCodigoBarras.Creado, resultado.Estado);
         }
@@ -168,10 +168,10 @@ namespace NestoAPI.Tests.Infrastructure.Productos
         [TestMethod]
         public async Task Anadir_CodigoQueYaTieneElProductoDeBaja_LoReactivaY200()
         {
-            ProductoCodigoBarras deBaja = repositorio.Fila("32565", "8437017501111", activo: false);
+            ProductoCodigoBarras deBaja = repositorio.Fila("32565", "8437017501114", activo: false);
             int filas = repositorio.Filas.Count;
 
-            ResultadoCodigoBarras resultado = await Anadir("32565", "8437017501111");
+            ResultadoCodigoBarras resultado = await Anadir("32565", "8437017501114");
 
             Assert.AreEqual(EstadoOperacionCodigoBarras.Ok, resultado.Estado);
             Assert.AreEqual(deBaja.Id, resultado.Codigo.Id);
@@ -195,18 +195,18 @@ namespace NestoAPI.Tests.Infrastructure.Productos
         {
             Producto sinCodigo = repositorio.Producto("40510", null, "PRODUCTO SIN CÓDIGO");
 
-            ResultadoCodigoBarras resultado = await Anadir("40510", "8400000040510");
+            ResultadoCodigoBarras resultado = await Anadir("40510", "8400000040518");
 
             Assert.AreEqual(EstadoOperacionCodigoBarras.Creado, resultado.Estado);
             Assert.IsTrue(resultado.Codigo.Principal);
-            Assert.AreEqual("8400000040510", sinCodigo.CodBarras);
+            Assert.AreEqual("8400000040518", sinCodigo.CodBarras);
             Assert.AreEqual("Alfredo", sinCodigo.Usuario);
         }
 
         [TestMethod]
         public async Task Anadir_ProductoQueNoExiste_NoEncontrado()
         {
-            ResultadoCodigoBarras resultado = await Anadir("99999", "8400000000009");
+            ResultadoCodigoBarras resultado = await Anadir("99999", "8400000000000");
 
             Assert.AreEqual(EstadoOperacionCodigoBarras.NoEncontrado, resultado.Estado);
         }
@@ -224,7 +224,7 @@ namespace NestoAPI.Tests.Infrastructure.Productos
         [TestMethod]
         public async Task MarcarPrincipal_ActualizaLaFichaYElAnteriorSigueActivo()
         {
-            ProductoCodigoBarras alternativo = repositorio.Fila("32565", "8437017502222");
+            ProductoCodigoBarras alternativo = repositorio.Fila("32565", "8437017502227");
             ProductoCodigoBarras anterior = repositorio.Filas.Single(f => f.Producto == "32565" && f.Principal);
 
             ResultadoCodigoBarras resultado = await servicio.MarcarPrincipal("1", "32565", alternativo.Id, "Compras1");
@@ -234,13 +234,13 @@ namespace NestoAPI.Tests.Infrastructure.Productos
             Assert.IsFalse(anterior.Principal);
             Assert.IsTrue(anterior.Activo, "El principal anterior se queda como alternativo");
             Producto ficha = repositorio.Productos.Single(p => p.Número == "32565");
-            Assert.AreEqual("8437017502222", ficha.CodBarras);
+            Assert.AreEqual("8437017502227", ficha.CodBarras);
             Assert.AreEqual("Compras1", ficha.Usuario);
             // Primero la tabla y luego la ficha: así el trigger de Productos no da de baja el principal anterior
             Assert.AreEqual(2, repositorio.Guardados);
-            StringAssert.Contains(repositorio.PrincipalDeLaTablaAlGuardar[0], "32565:8437017502222");
+            StringAssert.Contains(repositorio.PrincipalDeLaTablaAlGuardar[0], "32565:8437017502227");
             StringAssert.Contains(repositorio.FichaAlGuardar[0], "32565:8437017506379");
-            StringAssert.Contains(repositorio.FichaAlGuardar[1], "32565:8437017502222");
+            StringAssert.Contains(repositorio.FichaAlGuardar[1], "32565:8437017502227");
         }
 
         [TestMethod]
@@ -268,7 +268,7 @@ namespace NestoAPI.Tests.Infrastructure.Productos
         [TestMethod]
         public async Task DarDeBaja_UnAlternativo_QuedaInactivoSinBorrarse()
         {
-            ProductoCodigoBarras alternativo = repositorio.Fila("32565", "8437017503333");
+            ProductoCodigoBarras alternativo = repositorio.Fila("32565", "8437017503330");
 
             ResultadoCodigoBarras resultado = await servicio.DarDeBaja("1", "32565", alternativo.Id, "Compras1");
 
@@ -281,11 +281,11 @@ namespace NestoAPI.Tests.Infrastructure.Productos
         public async Task Listar_ActivosPrimeroYElPrincipalElPrimero()
         {
             repositorio.Fila("32565", "8437017504444", activo: false);
-            repositorio.Fila("32565", "8437017505555");
+            repositorio.Fila("32565", "8437017505556");
 
             List<CodigoBarrasProductoDTO> codigos = await servicio.Listar("1", "32565");
 
-            CollectionAssert.AreEqual(new[] { "8437017506379", "8437017505555", "8437017504444" }, codigos.Select(c => c.Codigo).ToList());
+            CollectionAssert.AreEqual(new[] { "8437017506379", "8437017505556", "8437017504444" }, codigos.Select(c => c.Codigo).ToList());
         }
 
         [TestMethod]
@@ -355,12 +355,12 @@ namespace NestoAPI.Tests.Infrastructure.Productos
         [TestMethod]
         public async Task Post_CodigoNuevo_201()
         {
-            IHttpActionResult resultado = await Controlador("Almacén").PostCodigoBarras("32565", new NuevoCodigoBarrasDTO { Codigo = "8437017509999", Origen = "Almacen" });
+            IHttpActionResult resultado = await Controlador("Almacén").PostCodigoBarras("32565", new NuevoCodigoBarrasDTO { Codigo = "8437017509998", Origen = "Almacen" });
 
             var creado = resultado as NegotiatedContentResult<CodigoBarrasProductoDTO>;
             Assert.IsNotNull(creado);
             Assert.AreEqual(HttpStatusCode.Created, creado.StatusCode);
-            Assert.AreEqual("8437017509999", creado.Content.Codigo);
+            Assert.AreEqual("8437017509998", creado.Content.Codigo);
         }
 
         [TestMethod]
@@ -377,7 +377,7 @@ namespace NestoAPI.Tests.Infrastructure.Productos
         [TestMethod]
         public async Task Post_SinGrupoQuePuedaEscribir_403()
         {
-            IHttpActionResult resultado = await Controlador("Vendedores").PostCodigoBarras("32565", new NuevoCodigoBarrasDTO { Codigo = "8437017509999" });
+            IHttpActionResult resultado = await Controlador("Vendedores").PostCodigoBarras("32565", new NuevoCodigoBarrasDTO { Codigo = "8437017509998" });
 
             var respuesta = resultado as ResponseMessageResult;
             Assert.IsNotNull(respuesta);
@@ -400,12 +400,12 @@ namespace NestoAPI.Tests.Infrastructure.Productos
         public async Task PutPrincipal_ActualizaLaFicha()
         {
             ProductosCodigosBarrasController controller = Controlador("Compras");
-            ProductoCodigoBarras alternativo = repositorio.Fila("32565", "8437017502222");
+            ProductoCodigoBarras alternativo = repositorio.Fila("32565", "8437017502227");
 
             IHttpActionResult resultado = await controller.PutPrincipal("32565", alternativo.Id);
 
             Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<CodigoBarrasProductoDTO>));
-            Assert.AreEqual("8437017502222", repositorio.Productos.Single(p => p.Número == "32565").CodBarras);
+            Assert.AreEqual("8437017502227", repositorio.Productos.Single(p => p.Número == "32565").CodBarras);
         }
 
         [TestMethod]

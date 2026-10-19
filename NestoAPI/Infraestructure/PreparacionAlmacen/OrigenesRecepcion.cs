@@ -172,7 +172,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 {
                     Producto = g.Key,
                     Descripcion = g.Select(f => f.Descripcion?.Trim()).FirstOrDefault(d => !string.IsNullOrEmpty(d)),
-                    Codigo = g.Select(f => f.CodigoBarras?.Trim()).FirstOrDefault(c => !string.IsNullOrEmpty(c)),
+                    Codigo = Productos.ValidadorGtin.SoloSiValido(g.Select(f => f.CodigoBarras?.Trim()).FirstOrDefault(c => !string.IsNullOrEmpty(c))), // NestoAPI#674
                     Cantidad = g.Where(f => f.Estado == PlanificadorRecepcionCompra.ESTADO_PENDIENTE).Sum(f => f.Cantidad),
                     // Lo dado por no servido hace poco: si llega, entra con su pedido (la más antigua primero)
                     Recuperables = g.Where(f => f.Estado == PlanificadorRecepcionCompra.ESTADO_ANULADA)

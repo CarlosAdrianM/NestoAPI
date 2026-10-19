@@ -1608,7 +1608,8 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
                         NumeroOrden = f.NumeroOrden,
                         Producto = f.Producto,
                         Nombre = f.Nombre,
-                        CodigoBarras = f.CodigoBarras,
+                        // NestoAPI#674: un código que no es GTIN válido no se manda (Ariadna lo trata como sin código)
+                        CodigoBarras = Productos.ValidadorGtin.SoloSiValido(f.CodigoBarras),
                         Cantidad = f.Cantidad,
                         StockOrigen = f.StockOrigen
                     };

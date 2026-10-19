@@ -1029,6 +1029,8 @@
     <Compile Include="Models\Picking\CuponesPicking.cs" />
     <Compile Include="Infraestructure\Reposiciones\CalculadoraFechaReposicion.cs" />
     <Compile Include="Infraestructure\Productos\CodigosBarrasProductos.cs" />
+    <Compile Include="Infraestructure\Productos\InformeCodigosBarras.cs" />
+    <Compile Include="Infraestructure\Productos\ValidadorGtin.cs" />
     <Compile Include="Controllers\ProductosCodigosBarrasController.cs" />
     <Compile Include="Infraestructure\Productos\SustitucionesProducto.cs" />
     <Compile Include="Controllers\ProductosSustitucionesController.cs" />

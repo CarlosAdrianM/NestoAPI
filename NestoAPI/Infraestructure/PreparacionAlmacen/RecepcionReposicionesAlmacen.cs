@@ -202,7 +202,7 @@ ORDER BY p.[Número]";
                 Traspaso = traspaso,
                 Lineas = filas.Select(f =>
                 {
-                    string codigo = string.IsNullOrWhiteSpace(f.CodigoBarras) ? null : f.CodigoBarras.Trim();
+                    string codigo = Productos.ValidadorGtin.SoloSiValido(f.CodigoBarras); // NestoAPI#674: no GTIN = sin código
                     return new LineaReposicionDTO
                     {
                         Producto = f.Producto?.Trim(),
