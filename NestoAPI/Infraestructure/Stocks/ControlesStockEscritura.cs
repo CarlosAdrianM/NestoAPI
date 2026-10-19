@@ -15,13 +15,22 @@ namespace NestoAPI.Infraestructure.Stocks
         /// <summary>Estacionalidad «plana»: la que llevan casi todos (el campo no se mantiene, #628).</summary>
         internal const string ESTACIONALIDAD_PLANA = "111111111111";
 
+        /// <summary>
+        /// NestoAPI#667: solo Algete tiene stock mínimo (lo mantiene Compras); en las tiendas solo hay máximo. Fuera de Algete
+        /// el mínimo es siempre 0, lo mande quien lo mande (el 16/10/26 «Actualizar Stocks por Proveedor» lo grabó en REI y ALC).
+        /// </summary>
+        public static int MinimoDelAlmacen(string almacen, int minimo)
+        {
+            return string.Equals(almacen?.Trim(), Constantes.Almacenes.ALGETE, StringComparison.OrdinalIgnoreCase) ? minimo : 0;
+        }
+
         public static void CambiarMaximoMinimo(ControlStock control, short minimo, short maximo, string usuario, DateTime ahora)
         {
             if (control == null)
             {
                 throw new ArgumentNullException(nameof(control));
             }
-            control.StockMínimo = minimo;
+            control.StockMínimo = (short)MinimoDelAlmacen(control.Almacén, minimo);
             control.StockMáximo = maximo;
             control.Usuario = Usuario(usuario);
             control.Fecha_Modificación = ahora;
@@ -34,7 +43,7 @@ namespace NestoAPI.Infraestructure.Stocks
                 Empresa = empresa,
                 Almacén = almacen,
                 Número = producto,
-                StockMínimo = minimo,
+                StockMínimo = (short)MinimoDelAlmacen(almacen, minimo),
                 StockMáximo = maximo,
                 Múltiplos = multiplos <= 0 ? (short)1 : multiplos,
                 Estacionalidad = ESTACIONALIDAD_PLANA,

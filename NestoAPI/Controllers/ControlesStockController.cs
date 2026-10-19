@@ -265,9 +265,10 @@ namespace NestoAPI.Controllers
                 decimal consumoMedioDiario = consumoMedioMensual / 30;
                 decimal puntoPedido = consumoMedioDiario * (diasStockSeguridad + diasReaprovisionamiento);
 
-                int stockMinimoCalculado = puntoPedido < 1
+                // NestoAPI#667: fuera de Algete se propone mínimo 0 (las tiendas solo tienen máximo)
+                int stockMinimoCalculado = ControlesStockEscritura.MinimoDelAlmacen(almacen, puntoPedido < 1
                     ? (int)Math.Ceiling(puntoPedido)
-                    : (int)Math.Round(puntoPedido, 0, MidpointRounding.AwayFromZero);
+                    : (int)Math.Round(puntoPedido, 0, MidpointRounding.AwayFromZero));
 
                 int stockMaximoCalculado = (int)Math.Ceiling(consumoMedioDiario * (diasStockSeguridad + diasReaprovisionamiento * 2));
 
@@ -356,6 +357,8 @@ namespace NestoAPI.Controllers
 
             // Establecer fecha de modificación (siempre usamos Now para evitar problemas con datetime de SQL Server)
             controlStock.Fecha_Modificación = DateTime.Now;
+            // NestoAPI#667: en las tiendas no hay stock mínimo
+            controlStock.StockMínimo = (short)ControlesStockEscritura.MinimoDelAlmacen(controlStock.Almacén, controlStock.StockMínimo);
 
             _ = db.ControlesStocks.Add(controlStock);
 

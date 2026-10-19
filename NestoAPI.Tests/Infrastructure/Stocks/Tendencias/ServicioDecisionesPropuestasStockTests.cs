@@ -786,7 +786,7 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
         [TestMethod]
         public void ControlesStockEscritura_CambiaMaximoMinimoUsuarioYFecha()
         {
-            ControlStock control = new ControlStock { StockMáximo = 555, StockMínimo = 295, Múltiplos = 144, Estacionalidad = "111111111111" };
+            ControlStock control = new ControlStock { Almacén = "ALG", StockMáximo = 555, StockMínimo = 295, Múltiplos = 144, Estacionalidad = "111111111111" };
 
             ControlesStockEscritura.CambiarMaximoMinimo(control, 220, 364, "NUEVAVISION\\UnUsuarioConUnNombreMuyMuyLargo", Hoy);
 
