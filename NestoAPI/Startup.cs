@@ -1051,6 +1051,21 @@ namespace NestoAPI
                 }
             );
             Console.WriteLine("✅ Job recurrente 'informe-codigos-barras' configurado (lunes a las 8:10; solo con el interruptor de Web.config)");
+
+            // NestoAPI#670: pares «comprados juntos» y perfiles de las sugerencias de la plantilla de venta. De lunes a sábado a las
+            // 05:00 (después de los jobs de la 1:00 a las 4:30; el domingo de madrugada corre el SP de precios medios, que bloquea
+            // LinPedidoVta). Lee 24 meses de albaranes con NOLOCK por un solo índice (~3 s) y calcula en memoria. Cola «indicadores»
+            // (servidor de un hilo de los jobs largos). Interruptor: ParámetrosUsuario «SugerenciasProductosJob» = Activo.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.SugerenciasProductos.SugerenciasProductosJobsService.ID_JOB,
+                () => Infraestructure.SugerenciasProductos.SugerenciasProductosJobsService.CalcularProgramado(),
+                Infraestructure.SugerenciasProductos.SugerenciasProductosJobsService.CRON, // Cron: de lunes a sábado a las 05:00
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'sugerencias-productos-pares' configurado (de lunes a sábado a las 05:00)");
         }
     }
 

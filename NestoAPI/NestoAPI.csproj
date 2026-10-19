@@ -922,6 +922,13 @@
     <Compile Include="Infraestructure\PedidosVenta\ValidadorModoServicio.cs" />
     <Compile Include="Infraestructure\Exceptions\ModoServicioNoPermitidoException.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ComercialesPedido.cs" />
+    <Compile Include="Controllers\SugerenciasProductosController.cs" />
+    <Compile Include="Infraestructure\SugerenciasProductos\CalculadoraParesCompradosJuntos.cs" />
+    <Compile Include="Infraestructure\SugerenciasProductos\MotorSugerenciasProductos.cs" />
+    <Compile Include="Infraestructure\SugerenciasProductos\RepositorioSugerenciasProductos.cs" />
+    <Compile Include="Infraestructure\SugerenciasProductos\ServicioSugerenciasProductos.cs" />
+    <Compile Include="Infraestructure\SugerenciasProductos\SugerenciasProductosDTO.cs" />
+    <Compile Include="Infraestructure\SugerenciasProductos\SugerenciasProductosJobsService.cs" />
     <Compile Include="Infraestructure\PedidosVenta\IServicioPedidosVenta.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ServicioPedidosVenta.cs" />
     <Compile Include="Infraestructure\PrincipalExtensions.cs" />

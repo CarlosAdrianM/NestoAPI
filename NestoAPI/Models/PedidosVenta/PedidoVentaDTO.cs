@@ -78,6 +78,11 @@ namespace NestoAPI.Models.PedidosVenta
         /// La autorización real la hace el servidor (no fiarse de este flag).
         /// </summary>
         public bool AnadirPortes { get; set; } = true;
+        /// <summary>
+        /// NestoAPI#670: el Guid de la sesión de sugerencias de la plantilla (el IdSesion de api/SugerenciasProductos/Calcular).
+        /// Opcional. Al guardar, se enlaza la sesión con el pedido y se marca qué sugerencias entraron en él.
+        /// </summary>
+        public Guid? IdSesionSugerencias { get; set; }
 
         public virtual ICollection<PrepagoDTO> Prepagos { get; set; }
         public virtual ICollection<VendedorGrupoProductoDTO> VendedoresGrupoProducto { get; set; }

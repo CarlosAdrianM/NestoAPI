@@ -867,6 +867,13 @@ namespace NestoAPI.Models
             public const string RECORDATORIO_REPOSICION_HORA_LIMITE = "RecordatorioReposicionHoraLimite";
 
             /// <summary>
+            /// NestoAPI#670: interruptor del job nocturno de las sugerencias de productos (pares «comprados juntos» y
+            /// perfiles). Bajo «(defecto)». "Activo": calcula; sin fila o cualquier otro valor: no hace nada. El script
+            /// Issue670_SugerenciasProductos.sql lo crea Activo.
+            /// </summary>
+            public const string SUGERENCIAS_PRODUCTOS_JOB = "SugerenciasProductosJob";
+
+            /// <summary>
             /// NestoAPI#547 (corte b): interruptor de la sombra semanal de precios medios (job de Hangfire, domingo
             /// 06:30). Bajo «(defecto)». Sin fila, "0" o cualquier valor que no se reconozca: APAGADO. "1" o "Activo":
             /// calcula en C# y compara con lo que dejó el SP, registrando en PreciosMediosSombra. Nunca escribe

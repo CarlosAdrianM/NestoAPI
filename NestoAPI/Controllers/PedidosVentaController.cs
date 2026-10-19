@@ -1861,6 +1861,10 @@ namespace NestoAPI.Controllers
                 }
             }
 
+            // NestoAPI#670: la sesión de sugerencias de la plantilla, con el pedido (y qué sugerencias entraron). Sin
+            // IdSesionSugerencias no hace nada; nunca lanza.
+            await Infraestructure.SugerenciasProductos.ServicioSugerenciasProductos.EnlazarPedidoSinFallar(pedido);
+
             // Carlos 01/12/25: Pasar respuestaValidacion al GestorPresupuestos para incluirla en el correo (Issue #48)
             GestorPresupuestos gestor = new GestorPresupuestos(pedido, respuestaValidacion)
             {
@@ -2398,6 +2402,10 @@ namespace NestoAPI.Controllers
             {
                 fechaEntregaAgencia = await ServicioFechaEntregaAgencia.CalcularYGuardarPrometidaAlCrear(pedido.empresa, pedido.numero);
             }
+
+            // NestoAPI#670: la sesión de sugerencias de la plantilla, con el pedido (y qué sugerencias entraron). Sin
+            // IdSesionSugerencias no hace nada; nunca lanza.
+            await Infraestructure.SugerenciasProductos.ServicioSugerenciasProductos.EnlazarPedidoSinFallar(pedido);
 
             GestorPresupuestos gestor = new GestorPresupuestos(pedido, respuestaValidacion)
             {
