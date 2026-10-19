@@ -500,6 +500,7 @@
     <Compile Include="Infrastructure\GeneradorPdfPickingTests.cs" />
     <Compile Include="Infrastructure\UsuarioContextInfoInterceptorTests.cs" />
     <Compile Include="Infrastructure\SeguimientoEnviosJobsServiceTests.cs" />
+    <Compile Include="Infrastructure\AvisadorIncidenciasEnvioTests.cs" />
     <Compile Include="Infrastructure\ComercialesPedidoTests.cs" />
     <Compile Include="Infrastructure\ConvertidorPedidoAPlantillaTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfPackingTests.cs" />

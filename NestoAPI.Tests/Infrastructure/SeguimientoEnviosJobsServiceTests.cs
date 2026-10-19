@@ -259,6 +259,78 @@ namespace NestoAPI.Tests.Infrastructure
             StringAssert.Contains(avisos[0].Message, "cuenta de reembolsos");
         }
 
+        // ===== NestoAPI#666 (Sugerencia 672): aviso a los comerciales al pasar a incidentado =====
+
+        [TestMethod]
+        public async Task PasaAIncidentado_AvisaUnaVezDespuesDeGuardar_YNoSiYaEstabaIncidentado()
+        {
+            EnviosAgencia yaIncidentado = Envio(2, "ALB2", new DateTime(2026, 10, 1));
+            yaIncidentado.Estado = Constantes.Agencias.ESTADO_INCIDENTADO;
+            yaIncidentado.DetalleEstado = "AUSENTE";
+            EnviosEnVuelo(Envio(1, "ALB1", new DateTime(2026, 10, 1)), yaIncidentado, Envio(3, "ALB3", new DateTime(2026, 10, 1)));
+            A.CallTo(() => _seguimiento.ConsultarSeguimientoAsync("ALB1"))
+                .Returns(Task.FromResult(new SeguimientoEnvioRemoto { Estado = EstadoEnvioSeguimiento.Incidentado, Detalle = "DIRECCIÓN INCORRECTA" }));
+            // Ya estaba incidentado: aunque la agencia cambie el texto, no es una incidencia nueva
+            A.CallTo(() => _seguimiento.ConsultarSeguimientoAsync("ALB2"))
+                .Returns(Task.FromResult(new SeguimientoEnvioRemoto { Estado = EstadoEnvioSeguimiento.Incidentado, Detalle = "AUSENTE 2ª VISITA" }));
+            A.CallTo(() => _seguimiento.ConsultarSeguimientoAsync("ALB3"))
+                .Returns(Task.FromResult(new SeguimientoEnvioRemoto { Estado = EstadoEnvioSeguimiento.Entregado, FechaEntrega = new DateTime(2026, 10, 2) }));
+            var orden = new List<string>();
+            A.CallTo(() => _db.SaveChangesAsync()).Invokes(() => orden.Add("guardar")).Returns(Task.FromResult(1));
+            var servicio = new SeguimientoEnviosJobsService(_db, _fabrica, avisar: _ => { },
+                avisarIncidencia: envio => { orden.Add($"avisar {envio.Numero}"); return Task.CompletedTask; });
+
+            int actualizados = await servicio.ActualizarSeguimientosAsync(new DateTime(2026, 6, 1));
+
+            Assert.AreEqual(3, actualizados);
+            CollectionAssert.AreEqual(new[] { "guardar", "avisar 1" }, orden);
+        }
+
+        [TestMethod]
+        public async Task PasaAIncidentado_SegundaPasada_NoVuelveAAvisar()
+        {
+            EnviosAgencia envio = Envio(1, "ALB1", new DateTime(2026, 10, 1));
+            EnviosEnVuelo(envio);
+            A.CallTo(() => _seguimiento.ConsultarSeguimientoAsync("ALB1"))
+                .Returns(Task.FromResult(new SeguimientoEnvioRemoto { Estado = EstadoEnvioSeguimiento.Incidentado, Detalle = "AUSENTE" }));
+            var avisados = new List<int>();
+            var servicio = new SeguimientoEnviosJobsService(_db, _fabrica, avisar: _ => { },
+                avisarIncidencia: e => { avisados.Add(e.Numero); return Task.CompletedTask; });
+
+            _ = await servicio.ActualizarSeguimientosAsync(new DateTime(2026, 6, 1));
+            EnviosEnVuelo(envio); // la siguiente pasada lo lee ya incidentado
+            _ = await servicio.ActualizarSeguimientosAsync(new DateTime(2026, 6, 1));
+
+            CollectionAssert.AreEqual(new[] { 1 }, avisados);
+        }
+
+        [TestMethod]
+        public async Task PasaAIncidentado_FallaElAviso_NoRompeElJob()
+        {
+            EnviosEnVuelo(Envio(1, "ALB1", new DateTime(2026, 10, 1)), Envio(2, "ALB2", new DateTime(2026, 10, 1)));
+            A.CallTo(() => _seguimiento.ConsultarSeguimientoAsync(A<string>._))
+                .Returns(Task.FromResult(new SeguimientoEnvioRemoto { Estado = EstadoEnvioSeguimiento.Incidentado, Detalle = "AUSENTE" }));
+            var avisados = new List<int>();
+            var avisos = new List<Exception>();
+            var servicio = new SeguimientoEnviosJobsService(_db, _fabrica, avisar: avisos.Add,
+                avisarIncidencia: e =>
+                {
+                    if (e.Numero == 1)
+                    {
+                        throw new InvalidOperationException("SMTP caído");
+                    }
+                    avisados.Add(e.Numero);
+                    return Task.CompletedTask;
+                });
+
+            int actualizados = await servicio.ActualizarSeguimientosAsync(new DateTime(2026, 6, 1));
+
+            Assert.AreEqual(2, actualizados);
+            CollectionAssert.AreEqual(new[] { 2 }, avisados);
+            Assert.AreEqual(1, avisos.Count);
+            StringAssert.Contains(avisos[0].Message, "SMTP caído");
+        }
+
         // ===== NestoAPI#259: la etiqueta del estado (texto de la agencia) se persiste =====
 
         [TestMethod]

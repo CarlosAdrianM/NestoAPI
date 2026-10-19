@@ -57,6 +57,7 @@ namespace NestoAPI.Infraestructure
         private readonly Action<Exception> _avisar;
         private readonly Func<DateTime> _hoy;
         private readonly Func<int, Task> _quitarReembolsoDevuelto;
+        private readonly Func<EnviosAgencia, Task> _avisarIncidencia;
 
         /// <summary>
         /// Sugerencia 544: usuario de la historia del envío y de los apuntes cuando el seguimiento quita el
@@ -65,8 +66,11 @@ namespace NestoAPI.Infraestructure
         public const string USUARIO_REEMBOLSO_DEVUELTO = "SeguimientoEnvios";
 
         public SeguimientoEnviosJobsService(NVEntities db, IFabricaAgenciasRemotas fabrica, Action programarReintento = null,
-            Action<Exception> avisar = null, Func<DateTime> hoy = null, Func<int, Task> quitarReembolsoDevuelto = null)
+            Action<Exception> avisar = null, Func<DateTime> hoy = null, Func<int, Task> quitarReembolsoDevuelto = null,
+            Func<EnviosAgencia, Task> avisarIncidencia = null)
         {
+            // NestoAPI#666: aviso a los comerciales cuando un envío pasa a incidentado. Null = no se avisa.
+            _avisarIncidencia = avisarIncidencia;
             _db = db;
             _fabrica = fabrica;
             _programarReintento = programarReintento;
@@ -130,7 +134,8 @@ namespace NestoAPI.Infraestructure
                     programarReintento: () => Hangfire.BackgroundJob.Schedule(
                         () => ProcesarSeguimientosReintentoAsync(),
                         TimeSpan.FromMinutes(REINTENTO_TRAS_MINUTOS)),
-                    quitarReembolsoDevuelto: QuitarReembolsoDevueltoAsync)
+                    quitarReembolsoDevuelto: QuitarReembolsoDevueltoAsync,
+                    avisarIncidencia: AvisadorIncidenciasEnvio.AvisarConContextoPropioAsync)
                 .ActualizarSeguimientosAsync(FECHA_CORTE);
         }
 
@@ -143,7 +148,8 @@ namespace NestoAPI.Infraestructure
             var db = new NVEntities();
             db.Configuration.LazyLoadingEnabled = false;
             return new SeguimientoEnviosJobsService(db, new FabricaAgenciasRemotas(db),
-                    quitarReembolsoDevuelto: QuitarReembolsoDevueltoAsync)
+                    quitarReembolsoDevuelto: QuitarReembolsoDevueltoAsync,
+                    avisarIncidencia: AvisadorIncidenciasEnvio.AvisarConContextoPropioAsync)
                 .ActualizarSeguimientosAsync(FECHA_CORTE, esReintento: true);
         }
 
@@ -197,6 +203,9 @@ namespace NestoAPI.Infraestructure
             Dictionary<string, int> motivosDesconocido = new Dictionary<string, int>();
             // Sugerencia 544: envíos que esta pasada deja DEVUELTOS con un reembolso que ya no se cobrará.
             List<EnviosAgencia> devueltosConReembolso = new List<EnviosAgencia>();
+            // NestoAPI#666: envíos que esta pasada deja INCIDENTADOS viniendo de otro estado (los que ya lo estaban
+            // no cuentan: así no se avisa en cada pasada de la misma incidencia).
+            List<EnviosAgencia> nuevasIncidencias = new List<EnviosAgencia>();
             // NestoAPI#264: Desconocido = la agencia no devolvió datos del envío. Algún suelto es normal
             // (envío recién creado aún no registrado), pero MUCHOS a la vez delatan un problema
             // (rate-limit de GLS por ráfaga, uid mal, WS caído) que antes pasaba desapercibido porque se
@@ -210,12 +219,17 @@ namespace NestoAPI.Infraestructure
                     motivosDesconocido[motivo] = motivosDesconocido.TryGetValue(motivo, out int veces) ? veces + 1 : 1;
                 }
                 bool eraDevuelto = envio.Estado == Constantes.Agencias.ESTADO_DEVUELTO;
+                short estadoAnterior = envio.Estado;
                 if (AplicarSeguimiento(envio, seguimiento))
                 {
                     actualizados++;
                     if (!eraDevuelto && TramitacionEnviosService.DebeQuitarseReembolsoPorDevuelto(envio))
                     {
                         devueltosConReembolso.Add(envio);
+                    }
+                    if (AvisadorIncidenciasEnvio.PasaAIncidencia(estadoAnterior, envio))
+                    {
+                        nuevasIncidencias.Add(envio);
                     }
                 }
             }
@@ -301,6 +315,10 @@ namespace NestoAPI.Infraestructure
             // Sugerencia 544: DESPUÉS de guardar los estados (la vía manual exige el envío ya devuelto en la BD).
             await QuitarReembolsosDevueltosAsync(devueltosConReembolso).ConfigureAwait(false);
 
+            // NestoAPI#666: también DESPUÉS de guardar. Si el guardado fallara, no se avisa y la siguiente pasada
+            // vuelve a ver la transición; una vez guardado como incidentado, ya no vuelve a avisar.
+            await AvisarNuevasIncidenciasAsync(nuevasIncidencias).ConfigureAwait(false);
+
             // NestoAPI#264: si una parte grande de los envíos no devuelve estado (Desconocido), casi seguro
             // es un fallo de configuración de seguimiento (uid mal, WS caído), no que todos sean nuevos.
             if (desconocidos >= 10 || (envios.Count > 0 && desconocidos > envios.Count / 2))
@@ -355,6 +373,30 @@ namespace NestoAPI.Infraestructure
                     _avisar(new Exception(
                         $"No se pudo quitar el reembolso ({envio.Reembolso:N2} €) del envío {envio.Numero} (pedido {envio.Pedido}), " +
                         $"devuelto a origen: {ex.Message}. Hay que quitarlo a mano desde Agencias.", ex));
+                }
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#666 (Sugerencia 672): aviso a los comerciales del pedido de cada envío que acaba de pasar a
+        /// incidentado. Best-effort por envío: un fallo al avisar se registra y no rompe el job.
+        /// </summary>
+        private async Task AvisarNuevasIncidenciasAsync(List<EnviosAgencia> incidencias)
+        {
+            if (_avisarIncidencia == null)
+            {
+                return;
+            }
+            foreach (EnviosAgencia envio in incidencias)
+            {
+                try
+                {
+                    await _avisarIncidencia(envio).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _avisar(new Exception(
+                        $"No se pudo avisar de la incidencia del envío {envio.Numero} (pedido {envio.Pedido}): {ex.Message}", ex));
                 }
             }
         }

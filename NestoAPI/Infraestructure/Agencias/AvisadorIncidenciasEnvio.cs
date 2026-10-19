@@ -1,0 +1,191 @@
+using NestoAPI.Infraestructure.Notificaciones;
+using NestoAPI.Infraestructure.PedidosVenta;
+using NestoAPI.Models;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Net;
+using System.Net.Mail;
+using System.Threading.Tasks;
+
+namespace NestoAPI.Infraestructure.Agencias
+{
+    /// <summary>
+    /// NestoAPI#666 (Sugerencia 672 de Novedades, María José): cuando el seguimiento pasa un envío a
+    /// INCIDENTADO, se avisa a los comerciales del pedido (estética y/o peluquería según sus líneas, con el
+    /// mismo núcleo que el correo de retenidos, <see cref="ComercialesPedido"/>) por correo, con copia a
+    /// administración, y en la campana de Nesto (buzón + SignalR).
+    /// </summary>
+    public class AvisadorIncidenciasEnvio
+    {
+        /// <summary>Tipo del aviso en la campana de Nesto.</summary>
+        public const string TIPO_NOTIFICACION = "IncidenciaEnvioAgencia";
+        private const string CORREO_REMITENTE = "nesto@nuevavision.es";
+
+        private readonly NVEntities db;
+        private readonly ILectorComercialesPedido lector;
+        private readonly IServicioCorreoElectronico servicioCorreo;
+        private readonly IServicioNotificacionesPush notificaciones;
+
+        public AvisadorIncidenciasEnvio(NVEntities db, ILectorComercialesPedido lector = null,
+            IServicioCorreoElectronico servicioCorreo = null, IServicioNotificacionesPush notificaciones = null)
+        {
+            this.db = db;
+            this.lector = lector ?? new LectorComercialesPedido(db);
+            this.servicioCorreo = servicioCorreo ?? new ServicioCorreoElectronico();
+            this.notificaciones = notificaciones ?? new ServicioNotificacionesPush();
+        }
+
+        /// <summary>
+        /// ¿Este cambio de estado es una incidencia NUEVA? Solo la transición (de cualquier otro estado a
+        /// Incidentado) avisa: un envío que ya estaba incidentado no vuelve a avisar en cada pasada del job,
+        /// aunque la agencia cambie el texto de la incidencia.
+        /// </summary>
+        public static bool PasaAIncidencia(short estadoAnterior, EnviosAgencia envio) =>
+            envio != null
+            && estadoAnterior != Constantes.Agencias.ESTADO_INCIDENTADO
+            && envio.Estado == Constantes.Agencias.ESTADO_INCIDENTADO;
+
+        /// <summary>
+        /// Punto de entrada del job y de la actualización a demanda: con su propio contexto, para no mezclarse
+        /// con el de la pasada. Nunca lanza.
+        /// </summary>
+        public static async Task AvisarConContextoPropioAsync(EnviosAgencia envio)
+        {
+            try
+            {
+                using (var db = new NVEntities())
+                {
+                    db.Configuration.LazyLoadingEnabled = false;
+                    await new AvisadorIncidenciasEnvio(db).AvisarAsync(envio).ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                Registrar(envio, ex);
+            }
+        }
+
+        /// <summary>Correo + campana. Nunca lanza: un fallo al avisar no debe romper el seguimiento.</summary>
+        public async Task AvisarAsync(EnviosAgencia envio)
+        {
+            if (envio == null)
+            {
+                return;
+            }
+            try
+            {
+                ComercialesPedido comerciales = LeerComerciales(envio);
+                string agencia = db.AgenciasTransportes
+                    .Where(a => a.Numero == envio.Agencia)
+                    .Select(a => a.Nombre).FirstOrDefault()?.Trim();
+
+                MailMessage mail = ComponerCorreo(envio, comerciales, agencia);
+                _ = servicioCorreo.EnviarCorreoSMTP(mail);
+
+                NotificacionPushDTO notificacion = ComponerNotificacion(envio, comerciales, agencia);
+                foreach (string usuario in comerciales.UsuariosBuzon())
+                {
+                    await notificaciones.GuardarEnBuzonDeUsuario(usuario, Constantes.Aplicaciones.NESTO, notificacion).ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                Registrar(envio, ex);
+            }
+        }
+
+        private ComercialesPedido LeerComerciales(EnviosAgencia envio)
+        {
+            ComercialesPedido comerciales = envio.Pedido.HasValue ? lector.Leer(envio.Empresa, envio.Pedido.Value) : null;
+            // Envío sin pedido (o pedido que ya no está): el vendedor del envío y, de respaldo, quien lo tramitó.
+            return comerciales ?? lector.LeerDeVendedor(envio.Empresa, envio.Vendedor, envio.Usuario);
+        }
+
+        internal static MailMessage ComponerCorreo(EnviosAgencia envio, ComercialesPedido comerciales, string agencia)
+        {
+            string cliente = TextoCliente(envio, comerciales);
+            string documento = envio.Pedido.HasValue ? $"el pedido {envio.Pedido}" : $"el envío {envio.Numero}";
+            var mail = new MailMessage
+            {
+                From = new MailAddress(CORREO_REMITENTE),
+                Subject = $"Incidencia de la agencia en {documento} - c/ {cliente}",
+                IsBodyHtml = true,
+                Body =
+                    $"<p>La agencia <b>{Html(agencia ?? envio.Agencia.ToString())}</b> ha puesto una <b>incidencia</b> en " +
+                    $"{Html(documento)} del cliente <b>{Html(cliente)}</b>.</p>" +
+                    "<ul>" +
+                    (envio.Pedido.HasValue ? $"<li>Pedido: <b>{envio.Pedido}</b></li>" : string.Empty) +
+                    $"<li>Cliente: <b>{Html(cliente)}</b></li>" +
+                    $"<li>Agencia: {Html(agencia ?? envio.Agencia.ToString())}</li>" +
+                    $"<li>Número de seguimiento: <b>{Html(envio.CodigoBarras?.Trim())}</b> (envío {envio.Numero})</li>" +
+                    $"<li>Incidencia: <b>{Html(DescripcionIncidencia(envio))}</b></li>" +
+                    "</ul>" +
+                    "<p>Revise el envío en Nesto (Agencias, pestaña de incidentados) y, si hace falta, " +
+                    "póngase en contacto con el cliente para solucionarlo cuanto antes.</p>"
+            };
+            List<string> destinatarios = comerciales?.Correos() ?? new List<string>();
+            if (destinatarios.Any())
+            {
+                destinatarios.ForEach(d => mail.To.Add(new MailAddress(d)));
+                mail.CC.Add(new MailAddress(Constantes.Correos.CORREO_ADMON));
+            }
+            else
+            {
+                mail.To.Add(new MailAddress(Constantes.Correos.CORREO_ADMON));
+            }
+            return mail;
+        }
+
+        internal static NotificacionPushDTO ComponerNotificacion(EnviosAgencia envio, ComercialesPedido comerciales, string agencia)
+        {
+            string cliente = TextoCliente(envio, comerciales);
+            var datos = new Dictionary<string, string>
+            {
+                ["tipo"] = TIPO_NOTIFICACION,
+                ["empresa"] = envio.Empresa?.Trim(),
+                ["envio"] = envio.Numero.ToString(),
+                ["cliente"] = envio.Cliente?.Trim()
+            };
+            if (envio.Pedido.HasValue)
+            {
+                datos["pedido"] = envio.Pedido.Value.ToString();
+            }
+            return new NotificacionPushDTO
+            {
+                Titulo = envio.Pedido.HasValue
+                    ? $"Incidencia de agencia en el pedido {envio.Pedido}"
+                    : $"Incidencia de agencia en el envío {envio.Numero}",
+                Cuerpo = $"Cliente {cliente}. {agencia ?? "La agencia"} ({envio.CodigoBarras?.Trim()}): {DescripcionIncidencia(envio)}",
+                Tipo = TIPO_NOTIFICACION,
+                Datos = datos
+            };
+        }
+
+        private static string DescripcionIncidencia(EnviosAgencia envio) =>
+            string.IsNullOrWhiteSpace(envio.DetalleEstado) ? "la agencia no indica el motivo" : envio.DetalleEstado.Trim();
+
+        private static string TextoCliente(EnviosAgencia envio, ComercialesPedido comerciales)
+        {
+            string numero = (comerciales?.Cliente ?? envio.Cliente)?.Trim();
+            string nombre = (comerciales?.NombreCliente ?? envio.Nombre)?.Trim();
+            return string.IsNullOrWhiteSpace(nombre) ? numero : $"{numero} - {nombre}";
+        }
+
+        private static string Html(string texto) => WebUtility.HtmlEncode(texto ?? string.Empty);
+
+        private static void Registrar(EnviosAgencia envio, Exception ex)
+        {
+            try
+            {
+                ElmahHelper.Log(new Exception(
+                    $"[Incidencia envío #666] No se pudo avisar de la incidencia del envío {envio?.Numero} (pedido {envio?.Pedido}): {ex.Message}", ex),
+                    "Sistema (seguimiento de envíos)");
+            }
+            catch
+            {
+                // nunca romper el seguimiento
+            }
+        }
+    }
+}

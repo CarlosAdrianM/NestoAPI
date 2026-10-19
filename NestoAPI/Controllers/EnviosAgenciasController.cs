@@ -206,6 +206,10 @@ namespace NestoAPI.Controllers
         private IFabricaAgenciasRemotas fabricaAgenciasRemotas;
         private ITramitacionEnviosService tramitacionEnviosService;
 
+        /// <summary>NestoAPI#666: aviso a los comerciales cuando la consulta a demanda descubre una incidencia.
+        /// Sustituible en tests (null = no se avisa).</summary>
+        internal Func<EnviosAgencia, Task> AvisarIncidencia { get; set; } = AvisadorIncidenciasEnvio.AvisarConContextoPropioAsync;
+
         // NestoAPI#513: el reembolso de la etiqueta mira los efectos manuales del pedido. Perezoso
         // (ServicioPedidosVenta abre su propia conexión al construirse) e inyectable para los tests.
         private IServicioPedidosVenta servicioPedidosVenta;
@@ -1559,9 +1563,25 @@ namespace NestoAPI.Controllers
             }
 
             bool eraDevuelto = envio.Estado == Constantes.Agencias.ESTADO_DEVUELTO;
+            short estadoAnterior = envio.Estado;
             SeguimientoEnviosJobsService.AplicarSeguimiento(envio, seguimiento);
             await db.SaveChangesAsync();                            // persiste el nuevo estado (lo importante) antes de auditar
             await AuditarSeguimiento(envio, agencia, true, null);   // audita la llamada (best-effort; captura denegaciones suaves)
+
+            // NestoAPI#666: si la consulta a demanda es la que descubre la incidencia, avisa ella (el job ya lo verá
+            // incidentado y no avisará). Nunca lanza.
+            if (AvisadorIncidenciasEnvio.PasaAIncidencia(estadoAnterior, envio) && AvisarIncidencia != null)
+            {
+                try
+                {
+                    await AvisarIncidencia(envio);
+                }
+                catch (System.Exception ex)
+                {
+                    ElmahHelper.Log(new System.Exception($"No se pudo avisar de la incidencia del envío {envio.Numero}: {ex.Message}", ex),
+                        "Sistema (seguimiento de envíos)");
+                }
+            }
 
             // Sugerencia 544: igual que el poll, si el envío acaba de pasar a DEVUELTO se le quita el reembolso
             // (ningún devuelto lo cobra), por la vía del cambio manual y con el usuario del proceso automático.
