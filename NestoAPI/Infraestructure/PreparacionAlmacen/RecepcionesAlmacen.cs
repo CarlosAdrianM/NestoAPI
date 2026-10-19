@@ -23,6 +23,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public string Dispositivo { get; set; }
         /// <summary>NestoAPI#645: las etiquetas de bulto leídas, sin repetir, en mayúsculas y sin espacios. Nunca null.</summary>
         public List<string> CodigosBulto { get; set; } = new List<string>();
+        /// <summary>NestoAPI#673: dar de alta solo lo leído y dejar el resto pendiente (solo lo admiten las reposiciones).</summary>
+        public bool Parcial { get; set; }
         /// <summary>
         /// Null de verdad. En un ensayo, la estrategia hace lo mismo pero en una transacción que se deshace SIEMPRE, apunta
         /// aquí las filas que toca antes y después y no avisa a nadie.
@@ -134,6 +136,14 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         Task<ResultadoTerminarRecepcionDTO> Terminar(SolicitudTerminarRecepcion solicitud);
     }
 
+    /// <summary>
+    /// NestoAPI#673: un tipo que sabe dar de alta solo lo leído y dejar el resto pendiente (<see cref="SolicitudTerminarRecepcion.Parcial"/>).
+    /// El núcleo rechaza una parcial de los demás tipos (en compras lo que no llega ya se queda pendiente al terminar).
+    /// </summary>
+    public interface IAdmiteRecepcionParcial
+    {
+    }
+
     public interface IServicioRecepciones
     {
         Task<List<RecepcionPendienteDTO>> LeerPendientes(string empresa, string almacen);
@@ -216,6 +226,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 recepcion.Tipo = origen.Tipo;
                 recepcion.SeTerminaDesdeAqui = origen.SeTerminaDesdeAqui;
                 recepcion.PuedeTerminar = origen.SeTerminaDesdeAqui && origen.PuedeTerminar(usuario, empresa, almacen);
+                recepcion.AdmiteRecibirEnParte = origen.SeTerminaDesdeAqui && origen is IAdmiteRecepcionParcial;
                 Completar(origen, recepcion);
             }
             return recepcion;
@@ -286,7 +297,9 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             List<DocumentoRecepcionDTO> documentos = resultado.Documentos ?? new List<DocumentoRecepcionDTO>();
             var lineas = new List<string>
             {
-                documentos.Count == 0
+                // NestoAPI#673: en una parcial la recepción NO se ha terminado
+                resultado.Parcial ? "Recibido en parte: se ha dado de alta lo leído."
+                : documentos.Count == 0
                     ? "Recepción terminada."
                     : "Recibido. " + string.Join(", ", documentos.Select(d => $"albarán {d.Albaran} (pedido {d.Pedido})")) + "."
             };
@@ -374,6 +387,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             {
                 throw new NestoBusinessException("Falta el identificador de la recepción (IdRecepcion).");
             }
+            if (terminar.Parcial && !(origen is IAdmiteRecepcionParcial))
+            {
+                throw new NestoBusinessException($"Las recepciones de tipo {origen.Tipo} no se dan de alta por partes: termínela con lo leído.");
+            }
             Dictionary<string, int> lecturas = (terminar.Lecturas ?? new List<LecturaRecepcionDTO>())
                 .Where(l => !string.IsNullOrWhiteSpace(l?.Producto))
                 .GroupBy(l => PlanificadorRecepcionCompra.Normalizar(l.Producto))
@@ -395,6 +412,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 Usuario = nombre.Trim(),
                 Principal = usuario,
                 Dispositivo = terminar.Dispositivo,
+                Parcial = terminar.Parcial,
                 CodigosBulto = (terminar.CodigosBulto ?? new List<string>())
                     .Select(CodigosBultoReposicion.Normalizar).Where(c => c != null).Distinct().ToList()
             };

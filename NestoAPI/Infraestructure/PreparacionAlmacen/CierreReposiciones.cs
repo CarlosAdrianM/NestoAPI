@@ -45,7 +45,16 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         Task Contabilizar(string empresa, string diario, string usuario);
         /// <summary>NestoAPI#553: aparta del diario lo que no es de este traspaso (ver <see cref="ApartadoTraspasosSql"/>).</summary>
         Task<List<int>> ApartarOtros(string empresa, string diario, int traspaso);
-        /// <summary>Devuelve al diario lo apartado con <see cref="ApartarOtros"/>.</summary>
+        /// <summary>
+        /// NestoAPI#673 (recepción parcial): aparta del diario lo NO leído del propio traspaso, para que se contabilice solo lo
+        /// leído. Por producto, en el orden de sus filas: las que caben enteras en lo leído se quedan, la que lo cruza se parte
+        /// (se queda con lo leído y una copia con el resto va apartada) y las demás se apartan. Comprueba que en el diario
+        /// queda EXACTAMENTE lo leído y lanza si no. Devuelve los [Nº Orden] apartados (también las copias), para
+        /// <see cref="DevolverApartadas"/>.
+        /// </summary>
+        /// <param name="leido">Producto (en mayúsculas, sin espacios) → unidades leídas; ninguna más que lo enviado.</param>
+        Task<List<int>> ApartarNoLeido(string empresa, string almacen, string diario, int traspaso, IReadOnlyDictionary<string, int> leido);
+        /// <summary>Devuelve al diario lo apartado con <see cref="ApartarOtros"/> (y con <see cref="ApartarNoLeido"/>).</summary>
         Task DevolverApartadas(string empresa, string diario, IReadOnlyCollection<int> apartadas);
         Task RegistrarEvidencia(string empresa, IEnumerable<EvidenciaRecepcion> filas);
         /// <summary>
@@ -207,9 +216,120 @@ WHERE Empresa = @p0 AND Diario = @p2 AND [Nº Orden] IN ({LISTA})";
             int devueltas = await db.Database.ExecuteSqlCommandAsync(sql, empresa, diario, DIARIO_APARTADO).ConfigureAwait(false);
             if (devueltas != apartadas.Count)
             {
-                throw new NestoBusinessException($"Al devolver al diario {diario} las {apartadas.Count} líneas de otros traspasos " +
-                    $"apartadas en {DIARIO_APARTADO}, solo se han encontrado {devueltas}. No se ha hecho nada.");
+                throw new NestoBusinessException($"Al devolver al diario {diario} las {apartadas.Count} líneas apartadas en " +
+                    $"{DIARIO_APARTADO}, solo se han encontrado {devueltas}. No se ha hecho nada.");
             }
+        }
+
+        // NestoAPI#673: los productos del traspaso que hay en el diario (ya apartados los demás traspasos)
+        internal const string SQL_PRODUCTOS_TRASPASO = @"
+SELECT DISTINCT RTRIM([Número]) FROM PreExtrProducto WITH (UPDLOCK, HOLDLOCK)
+WHERE Empresa = @p0 AND [Almacén] = @p1 AND Diario = @p2 AND [NºTraspaso] = @p3";
+
+        // NestoAPI#673: de las filas de UN producto del traspaso (en orden de [Nº Orden]) se quedan en el diario @p5 unidades
+        // (lo leído) y el resto se aparta en @p6. «Antes» = lo que suman las filas anteriores. Se quedan las que caben
+        // enteras (Antes + Cantidad <= @p5); la que cruza @p5 se parte: se queda con lo que le toca y una copia exacta (todas
+        // las columnas, como la fila nueva de AjustarALoLeido, salvo [Nº Orden], que es identidad, y Fecha Modificación, que
+        // tiene valor por defecto) con el resto va al diario apartado; las demás (Antes >= @p5) se apartan enteras. Importe,
+        // si lo hubiera (en las de entrada de reposiciones va a NULL), se reparte en proporción y suma lo mismo. Devuelve los
+        // [Nº Orden] apartados.
+        internal const string SQL_APARTAR_NO_LEIDO = @"
+DECLARE @apartadas TABLE ([Nº Orden] int NOT NULL);
+DECLARE @filas TABLE ([Nº Orden] int NOT NULL PRIMARY KEY, Cantidad int NOT NULL, Antes int NOT NULL);
+INSERT INTO @filas ([Nº Orden], Cantidad, Antes)
+SELECT [Nº Orden], Cantidad, CAST(SUM(Cantidad) OVER (ORDER BY [Nº Orden] ROWS UNBOUNDED PRECEDING) AS int) - Cantidad
+FROM PreExtrProducto WITH (UPDLOCK, HOLDLOCK)
+WHERE Empresa = @p0 AND [Almacén] = @p1 AND Diario = @p2 AND [NºTraspaso] = @p3 AND [Número] = @p4;
+
+DECLARE @partida int, @seQueda int;
+SELECT @partida = [Nº Orden], @seQueda = @p5 - Antes FROM @filas WHERE Antes < @p5 AND Antes + Cantidad > @p5;
+IF @partida IS NOT NULL
+BEGIN
+    INSERT INTO PreExtrProducto (Empresa, Diario, [Número], Fecha, [Nº Cliente], ContactoCliente, [NºProveedor], ContactoProveedor,
+        [Albarán], Factura, Texto, [Almacén], Grupo, Cantidad, Coste, Importe, [Delegación], [Forma Venta], [Asiento Automático],
+        LinPedido, Vendedor, Estado, [NºTraspaso], [NºPedido], Pasillo, Fila, Columna, CentroCoste, Departamento, Usuario)
+    OUTPUT inserted.[Nº Orden] INTO @apartadas
+    SELECT m.Empresa, @p6, m.[Número], m.Fecha, m.[Nº Cliente], m.ContactoCliente, m.[NºProveedor], m.ContactoProveedor,
+        m.[Albarán], m.Factura, m.Texto, m.[Almacén], m.Grupo, m.Cantidad - @seQueda, m.Coste,
+        CASE WHEN m.Importe IS NULL OR m.Cantidad = 0 THEN m.Importe ELSE ROUND(m.Importe * (m.Cantidad - @seQueda) / m.Cantidad, 2) END,
+        m.[Delegación], m.[Forma Venta], m.[Asiento Automático],
+        m.LinPedido, m.Vendedor, m.Estado, m.[NºTraspaso], m.[NºPedido], m.Pasillo, m.Fila, m.Columna, m.CentroCoste, m.Departamento, m.Usuario
+    FROM PreExtrProducto m
+    WHERE m.Empresa = @p0 AND m.Diario = @p2 AND m.[Nº Orden] = @partida;
+
+    UPDATE PreExtrProducto
+    SET Importe = CASE WHEN Importe IS NULL OR Cantidad = 0 THEN Importe ELSE Importe - ROUND(Importe * (Cantidad - @seQueda) / Cantidad, 2) END,
+        Cantidad = @seQueda
+    WHERE Empresa = @p0 AND Diario = @p2 AND [Nº Orden] = @partida;
+END
+
+UPDATE p SET Diario = @p6
+OUTPUT inserted.[Nº Orden] INTO @apartadas
+FROM PreExtrProducto p INNER JOIN @filas f ON f.[Nº Orden] = p.[Nº Orden]
+WHERE p.Empresa = @p0 AND p.Diario = @p2 AND f.Antes >= @p5;
+
+SELECT [Nº Orden] FROM @apartadas;";
+
+        internal static async Task<List<int>> ApartarNoLeido(NVEntities db, string empresa, string almacen, string diario, int traspaso,
+            IReadOnlyDictionary<string, int> leido)
+        {
+            List<string> productos = await db.Database.SqlQuery<string>(SQL_PRODUCTOS_TRASPASO,
+                Char("@p0", empresa, 3), Char("@p1", almacen, 3), Char("@p2", diario, 10), Entero("@p3", traspaso))
+                .ToListAsync().ConfigureAwait(false);
+            var apartadas = new List<int>();
+            foreach (string producto in productos.Where(p => !string.IsNullOrWhiteSpace(p)))
+            {
+                int seQueda = leido != null && leido.TryGetValue(PlanificadorRecepcionCompra.Normalizar(producto), out int cantidad) ? cantidad : 0;
+                apartadas.AddRange(await db.Database.SqlQuery<int>(SQL_APARTAR_NO_LEIDO,
+                    Char("@p0", empresa, 3), Char("@p1", almacen, 3), Char("@p2", diario, 10), Entero("@p3", traspaso),
+                    Char("@p4", producto, 15), Entero("@p5", seQueda), Char("@p6", DIARIO_APARTADO, 10))
+                    .ToListAsync().ConfigureAwait(false));
+            }
+
+            // Lo que va a contabilizarse tiene que ser EXACTAMENTE lo leído: si no, no se toca nada
+            List<FilaReposicion> quedan = await db.Database.SqlQuery<FilaReposicion>(RepositorioRecepcionReposiciones.SQL_LINEAS, empresa, almacen, traspaso)
+                .ToListAsync().ConfigureAwait(false);
+            string descuadre = Descuadre(quedan, leido);
+            if (descuadre != null)
+            {
+                throw new NestoBusinessException($"Al separar lo leído del resto de la reposición {traspaso} no cuadra ({descuadre}). " +
+                    "No se ha recibido nada.");
+            }
+            return apartadas;
+        }
+
+        /// <summary>Null si en el diario queda exactamente lo leído; si no, qué no cuadra («A: queda 3, leído 2»).</summary>
+        internal static string Descuadre(IEnumerable<FilaReposicion> quedan, IReadOnlyDictionary<string, int> leido)
+        {
+            var enDiario = (quedan ?? Enumerable.Empty<FilaReposicion>())
+                .Where(f => !string.IsNullOrWhiteSpace(f.Producto))
+                .GroupBy(f => PlanificadorRecepcionCompra.Normalizar(f.Producto))
+                .ToDictionary(g => g.Key, g => g.Sum(f => f.Cantidad));
+            var leidos = (leido ?? new Dictionary<string, int>())
+                .Where(l => l.Value != 0)
+                .ToDictionary(l => PlanificadorRecepcionCompra.Normalizar(l.Key), l => l.Value);
+            List<string> malos = enDiario.Keys.Union(leidos.Keys)
+                .Select(p => new
+                {
+                    Producto = p,
+                    Queda = enDiario.TryGetValue(p, out int q) ? q : 0,
+                    Leido = leidos.TryGetValue(p, out int l) ? l : 0
+                })
+                .Where(x => x.Queda != x.Leido)
+                .OrderBy(x => x.Producto)
+                .Select(x => $"{x.Producto}: queda {x.Queda}, leído {x.Leido}")
+                .ToList();
+            return malos.Any() ? string.Join("; ", malos) : null;
+        }
+
+        private static SqlParameter Char(string nombre, string valor, int longitud)
+        {
+            return new SqlParameter(nombre, System.Data.SqlDbType.Char, longitud) { Value = (object)valor ?? DBNull.Value };
+        }
+
+        private static SqlParameter Entero(string nombre, int valor)
+        {
+            return new SqlParameter(nombre, System.Data.SqlDbType.Int) { Value = valor };
         }
     }
 
@@ -412,6 +532,11 @@ SELECT @puestas;";
             return ApartadoTraspasosSql.Apartar(db, empresa, diario, traspaso);
         }
 
+        public Task<List<int>> ApartarNoLeido(string empresa, string almacen, string diario, int traspaso, IReadOnlyDictionary<string, int> leido)
+        {
+            return ApartadoTraspasosSql.ApartarNoLeido(db, empresa, almacen, diario, traspaso, leido);
+        }
+
         public Task DevolverApartadas(string empresa, string diario, IReadOnlyCollection<int> apartadas)
         {
             return ApartadoTraspasosSql.Devolver(db, empresa, diario, apartadas);
@@ -517,6 +642,11 @@ FROM Ubicaciones u WHERE u.[NºOrden] > @p3 OR ({UBICACIONES})";
     public static class EvidenciasRecepcionSql
     {
         public const string FASE = "RECE";
+        /// <summary>
+        /// NestoAPI#673: el Motivo de la evidencia de una recepción parcial («Recepción parcial {IdRecepcion}»; la entera,
+        /// «Recepción {IdRecepcion}»). Así se sabe lo ya recibido en parte de una reposición pendiente.
+        /// </summary>
+        public const string MOTIVO_PARCIAL = "Recepción parcial";
 
         internal const string SQL_YA_REGISTRADA = "SELECT COUNT(*) FROM PreparacionEscaneos WHERE IdCliente IN ({0})";
 
@@ -545,7 +675,7 @@ WHERE NOT EXISTS (SELECT 1 FROM PreparacionEscaneos WHERE IdCliente = @p0)";
             foreach (EvidenciaRecepcion fila in filas ?? Enumerable.Empty<EvidenciaRecepcion>())
             {
                 _ = await db.Database.ExecuteSqlCommandAsync(SQL_EVIDENCIA, fila.IdCliente, empresa, fila.NumeroOrigen, fila.Producto,
-                    (short)Math.Min(fila.Cantidad, short.MaxValue), $"Recepción {fila.IdRecepcion}",
+                    (short)Math.Min(fila.Cantidad, short.MaxValue), $"{(fila.Parcial ? MOTIVO_PARCIAL : "Recepción")} {fila.IdRecepcion}",
                     Recortar(UsuarioAuditoriaHelper.ParaAuditoria(fila.Usuario), 50), (object)Recortar(fila.Dispositivo, 50) ?? DBNull.Value, tipoOrigen)
                     .ConfigureAwait(false);
             }

@@ -567,6 +567,15 @@ namespace NestoAPI.Models.PreparacionAlmacen
         /// no es la del calendario.
         /// </summary>
         public bool EsPuntual { get; set; }
+        /// <summary>
+        /// NestoAPI#673: productos distintos ya dados de alta en recepciones parciales (evidencia «Recepción parcial» en
+        /// PreparacionEscaneos). 0 si no se ha recibido nada en parte.
+        /// </summary>
+        public int LineasRecibidas { get; set; }
+        /// <summary>NestoAPI#673: unidades ya dadas de alta en recepciones parciales.</summary>
+        public int UnidadesRecibidas { get; set; }
+        /// <summary>NestoAPI#673: cuándo se hizo la primera recepción parcial. Null si ninguna.</summary>
+        public DateTime? FechaPrimeraParcial { get; set; }
     }
 
     public class LineaReposicionDTO : IConCodigosBarras

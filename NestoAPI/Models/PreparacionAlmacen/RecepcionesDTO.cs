@@ -30,8 +30,29 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public DateTime? Fecha { get; set; }
         /// <summary>COMP: los pedidos de compra que tiene pendientes. REPO: vacío.</summary>
         public List<int> Pedidos { get; set; } = new List<int>();
+        /// <summary>Lo que queda por recibir (en una REPO recibida en parte, solo lo pendiente).</summary>
         public int Lineas { get; set; }
         public int Unidades { get; set; }
+
+        // NestoAPI#673: una REPO de la que ya se ha dado de alta una parte (lo leído) y el resto sigue pendiente.
+
+        /// <summary>REPO: ya se ha dado de alta una parte (una o varias recepciones parciales). False en los demás tipos.</summary>
+        public bool RecibidaEnParte { get; set; }
+        /// <summary>REPO recibida en parte: productos distintos dados de alta en las parciales.</summary>
+        public int LineasRecibidas { get; set; }
+        /// <summary>REPO recibida en parte: unidades dadas de alta en las parciales.</summary>
+        public int UnidadesRecibidas { get; set; }
+        /// <summary>REPO recibida en parte: cuándo se hizo la primera parcial.</summary>
+        public DateTime? FechaPrimeraParcial { get; set; }
+        /// <summary>«Recibido en parte: 1 línea, 2 ud.». Null si no se ha recibido nada en parte. Ya va en <see cref="Detalle"/>.</summary>
+        public string TextoRecibidaEnParte { get; set; }
+        /// <summary>
+        /// Decisión de Carlos (19/10/26): lleva más de 2 días recibida en parte y sin terminar. Las apps lo señalan en la lista y
+        /// en el inicio (con <see cref="AvisoRecibidaEnParte"/>).
+        /// </summary>
+        public bool AvisarRecibidaEnParte { get; set; }
+        /// <summary>El aviso para enseñar tal cual si <see cref="AvisarRecibidaEnParte"/>; null si no.</summary>
+        public string AvisoRecibidaEnParte { get; set; }
     }
 
     /// <summary>Un producto que se espera recibir.</summary>
@@ -104,6 +125,14 @@ namespace NestoAPI.Models.PreparacionAlmacen
         /// <summary>NestoAPI#645: cuántos bultos lleva (0 si no tiene etiquetas).</summary>
         public int Bultos { get; set; }
 
+        /// <summary>
+        /// NestoAPI#673: se puede dar de alta solo lo leído (<see cref="TerminarRecepcionDTO.Parcial"/>) y dejar el resto pendiente.
+        /// True en las REPO. Una app solo debe ofrecerlo si viene a true: una API anterior ignoraría Parcial y la terminaría entera.
+        /// </summary>
+        public bool AdmiteRecibirEnParte { get; set; }
+        /// <summary>NestoAPI#673: «Recibido en parte: 1 línea, 2 ud.» si ya se ha dado de alta una parte; null si no.</summary>
+        public string TextoRecibidaEnParte { get; set; }
+
         // NestoAPI#600: los textos de la confirmación antes de terminar, de su tipo, para que la app no mire el código del
         // tipo. La app sabe lo que se ha leído y elige el caso; el texto es del servidor. Cómo se monta la confirmación:
         // TituloConfirmacion de encabezado; después el resumen de lo leído (de la app); después AvisoCoincide si no falta ni
@@ -155,6 +184,12 @@ namespace NestoAPI.Models.PreparacionAlmacen
         /// recepción dice <see cref="RecepcionDTO.ExigeEtiqueta"/>.
         /// </summary>
         public List<string> CodigosBulto { get; set; } = new List<string>();
+        /// <summary>
+        /// NestoAPI#673 (solo REPO): dar de alta SOLO lo leído (como mucho lo enviado de cada producto, y nada que no viniera)
+        /// y dejar el resto de la reposición pendiente, sin diferencias ni faltas: se comparan al terminarla después. Si lo
+        /// leído es exactamente lo enviado, es la recepción entera. IdRecepcion nuevo en cada parcial y en la final.
+        /// </summary>
+        public bool Parcial { get; set; }
     }
 
     public class DocumentoRecepcionDTO
@@ -171,6 +206,15 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public string Documento { get; set; }
         /// <summary>Esta recepción (IdRecepcion) ya se había terminado: no se ha vuelto a hacer nada.</summary>
         public bool YaEstabaTerminada { get; set; }
+        /// <summary>
+        /// NestoAPI#673: se ha dado de alta solo lo leído y el resto sigue pendiente (<see cref="LineasPendientes"/>,
+        /// <see cref="UnidadesPendientes"/>). False si se ha terminado entera (también si la parcial lo completaba todo).
+        /// </summary>
+        public bool Parcial { get; set; }
+        /// <summary>NestoAPI#673: tras una parcial, los productos que siguen pendientes de recibir.</summary>
+        public int LineasPendientes { get; set; }
+        /// <summary>NestoAPI#673: tras una parcial, las unidades que siguen pendientes de recibir.</summary>
+        public int UnidadesPendientes { get; set; }
         public List<DocumentoRecepcionDTO> Documentos { get; set; } = new List<DocumentoRecepcionDTO>();
         /// <summary>Productos leídos que no estaban en lo esperado: no han entrado.</summary>
         public List<DiferenciaPreparacionDTO> NoEsperados { get; set; } = new List<DiferenciaPreparacionDTO>();

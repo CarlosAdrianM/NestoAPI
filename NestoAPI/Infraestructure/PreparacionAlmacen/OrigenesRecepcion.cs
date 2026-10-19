@@ -26,6 +26,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public string Dispositivo { get; set; }
         /// <summary>Para encontrar todas las filas de la misma recepción.</summary>
         public Guid IdRecepcion { get; set; }
+        /// <summary>NestoAPI#673: de una recepción parcial (Motivo «Recepción parcial …»).</summary>
+        public bool Parcial { get; set; }
     }
 
     /// <summary>Lo que se escribe al terminar una recepción de compras, todo dentro de una transacción.</summary>
@@ -358,8 +360,11 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     ///
     /// <para>Quién: hoy la entrada la da siempre alguien cuyo AlmacénPedidoVta es el almacén de destino (60 días: Reina →
     /// REI, Paloma → ALC, Andre/Alfredo/Santiago → ALG). Se exige lo mismo.</para>
+    ///
+    /// <para>Por partes (NestoAPI#673): con <see cref="SolicitudTerminarRecepcion.Parcial"/> entra solo lo leído y el resto del
+    /// traspaso se queda en el diario, pendiente, con el mismo NºTraspaso (ver <see cref="ITransaccionCierreReposicion.ApartarNoLeido"/>).</para>
     /// </summary>
-    public class OrigenRecepcionReposiciones : IOrigenRecepcion
+    public class OrigenRecepcionReposiciones : IOrigenRecepcion, IAdmiteRecepcionParcial
     {
         public const string TIPO = "REPO";
         private const string CLAVE_ALMACEN_USUARIO = "AlmacénPedidoVta";
@@ -398,6 +403,9 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public bool SeTerminaDesdeAqui => true;
         public TextosTipoRecepcion Textos { get; } = new TextosReposiciones();
 
+        /// <summary>La hora de ahora (los tests la cambian): para avisar de las recibidas en parte hace más de 2 días.</summary>
+        internal Func<DateTime> Ahora { get; set; } = () => DateTime.Now;
+
         /// <summary>
         /// NestoAPI#600: lo que se le dice al mozo al recibir una reposición (antes estaba en Ariadna). El detalle de la lista
         /// es el genérico («1 línea · 1 ud. · 06/10»): «Reposición» ya va en el título.
@@ -413,6 +421,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 "Lo leído no coincide con lo enviado: entra lo leído (no lo enviado), queda pendiente de ubicar y se avisa a quien hizo la reposición y a Almacén.";
 
             public override string AvisoUbicar(ResultadoTerminarRecepcionDTO resultado) => "Lo recibido ya aparece en Ubicar.";
+
+            /// <summary>NestoAPI#673: «2 líneas · 3 ud. · 06/10 · Recibido en parte: 1 línea, 2 ud.» (lo de delante, lo que queda).</summary>
+            public override string Detalle(RecepcionPendienteDTO pendiente)
+                => Juntar(base.Detalle(pendiente), pendiente.TextoRecibidaEnParte);
         }
 
         /// <summary>
@@ -448,15 +460,31 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         {
             List<ReposicionPendienteDTO> pendientes = await reposiciones.LeerPendientes(empresa, almacen).ConfigureAwait(false)
                 ?? new List<ReposicionPendienteDTO>();
-            return pendientes.Select(r => new RecepcionPendienteDTO
+            DateTime ahora = Ahora();
+            return pendientes.Select(r =>
             {
-                Tipo = TIPO,
-                Documento = r.Traspaso.ToString(),
-                Titulo = Titulo(r.Traspaso, r),
-                EsPuntual = r.EsPuntual,
-                Fecha = r.Fecha,
-                Lineas = r.Lineas,
-                Unidades = r.Unidades
+                // NestoAPI#673: lo ya dado de alta en parciales; más de 2 días así, se avisa (decisión de Carlos, 19/10/26)
+                string recibidaEnParte = TextoRecibidaEnParte(r.LineasRecibidas, r.UnidadesRecibidas);
+                bool avisar = recibidaEnParte != null && r.FechaPrimeraParcial.HasValue && ahora - r.FechaPrimeraParcial.Value > PLAZO_RECIBIDA_EN_PARTE;
+                return new RecepcionPendienteDTO
+                {
+                    Tipo = TIPO,
+                    Documento = r.Traspaso.ToString(),
+                    Titulo = Titulo(r.Traspaso, r),
+                    EsPuntual = r.EsPuntual,
+                    Fecha = r.Fecha,
+                    Lineas = r.Lineas,
+                    Unidades = r.Unidades,
+                    RecibidaEnParte = recibidaEnParte != null,
+                    LineasRecibidas = r.LineasRecibidas,
+                    UnidadesRecibidas = r.UnidadesRecibidas,
+                    FechaPrimeraParcial = recibidaEnParte != null ? r.FechaPrimeraParcial : null,
+                    TextoRecibidaEnParte = recibidaEnParte,
+                    AvisarRecibidaEnParte = avisar,
+                    AvisoRecibidaEnParte = avisar
+                        ? $"La reposición {r.Traspaso} lleva más de 2 días recibida solo en parte: termine de recibirla."
+                        : null
+                };
             }).ToList();
         }
 
@@ -517,6 +545,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 Documento = traspaso.ToString(),
                 Titulo = Titulo(traspaso, pendiente),
                 EsPuntual = pendiente?.EsPuntual == true,
+                TextoRecibidaEnParte = pendiente == null ? null : TextoRecibidaEnParte(pendiente.LineasRecibidas, pendiente.UnidadesRecibidas),
                 Empresa = recepcion.Empresa,
                 Almacen = recepcion.Almacen,
                 Lineas = recepcion.Lineas.Select(l => new LineaRecepcionDTO
@@ -540,6 +569,9 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             List<DiferenciaPreparacionDTO> diferencias = new List<DiferenciaPreparacionDTO>();
             DatosTraspasoReposicion datos = null;
             List<int> registradas = new List<int>();
+            // NestoAPI#673: se da de alta solo lo leído y el resto sigue pendiente (lo enviado frente a lo leído, para contarlo)
+            bool parcial = false;
+            List<DiferenciaPreparacionDTO> pendiente = null;
 
             ResultadoTerminarRecepcionDTO resultado = await cierre.EnTransaccion(async transaccion =>
             {
@@ -586,7 +618,32 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 // Reposiciones:AjustarStockDiferencias está encendido)
                 List<FilaReposicion> enviado = await transaccion.LeerLineas(solicitud.Empresa, solicitud.Almacen, traspaso).ConfigureAwait(false)
                     ?? new List<FilaReposicion>();
-                diferencias = Diferencias(enviado, solicitud.Lecturas);
+                List<DiferenciaPreparacionDTO> comparado = Diferencias(enviado, solicitud.Lecturas);
+                if (solicitud.Parcial)
+                {
+                    ComprobarParcial(comparado, traspaso);
+                    // Si lo leído es exactamente lo enviado, la parcial lo completa todo: es la recepción entera (la de siempre)
+                    parcial = comparado.Any();
+                }
+                var noLeidas = new List<int>();
+                if (parcial)
+                {
+                    // NestoAPI#673: entra SOLO lo leído. Lo no leído del propio traspaso se aparta como las otras reposiciones
+                    // (partiendo la fila que tenga parte leída y parte no), se contabiliza y vuelve al diario con el mismo
+                    // NºTraspaso: la reposición sigue pendiente con lo que queda. Ni diferencias ni faltas: se comparan en la
+                    // recepción que la termine, sobre lo que quede
+                    pendiente = comparado;
+                    noLeidas = await transaccion.ApartarNoLeido(solicitud.Empresa, solicitud.Almacen, diario, traspaso,
+                        new Dictionary<string, int>(solicitud.Lecturas, StringComparer.OrdinalIgnoreCase)).ConfigureAwait(false) ?? new List<int>();
+                    if (solicitud.Ensayo != null)
+                    {
+                        await solicitud.Ensayo.FotografiarTrasAjustar().ConfigureAwait(false);
+                    }
+                }
+                else
+                {
+                    diferencias = comparado;
+                }
                 if (diferencias.Any())
                 {
                     datos = await transaccion.LeerDatosTraspaso(solicitud.Empresa, solicitud.Almacen, diario, traspaso).ConfigureAwait(false)
@@ -606,15 +663,20 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 // se calcula antes igual que él (ya con lo leído) y se pone después, en la misma transacción
                 PendientesDeUbicarEntrada pendientesDeUbicar = await transaccion.LeerPendientesDeUbicar(solicitud.Empresa, diario).ConfigureAwait(false);
                 await transaccion.Contabilizar(solicitud.Empresa, diario, solicitud.Usuario).ConfigureAwait(false);
-                await transaccion.DevolverApartadas(solicitud.Empresa, diario, apartadas).ConfigureAwait(false);
+                await transaccion.DevolverApartadas(solicitud.Empresa, diario, apartadas.Concat(noLeidas).ToList()).ConfigureAwait(false);
                 _ = await transaccion.DejarPendientesDeUbicar(solicitud.Empresa, pendientesDeUbicar, solicitud.Usuario).ConfigureAwait(false);
-                // NestoAPI#577: quién y cuándo la ha recibido, en su cabecera (si la creó la API)
-                await transaccion.MarcarReposicionRecibida(solicitud.Empresa, traspaso, solicitud.Usuario).ConfigureAwait(false);
-                // NestoAPI#645: los bultos leídos (en un ensayo no se marca nada)
-                if (solicitud.Ensayo == null && bultosLeidos.Any())
+                // NestoAPI#673: en una parcial la reposición sigue abierta: ni cabecera recibida ni bultos leídos (eso, en la final)
+                if (!parcial)
                 {
-                    await transaccion.MarcarBultosLeidos(solicitud.Empresa, bultosLeidos, solicitud.Usuario).ConfigureAwait(false);
+                    // NestoAPI#577: quién y cuándo la ha recibido, en su cabecera (si la creó la API)
+                    await transaccion.MarcarReposicionRecibida(solicitud.Empresa, traspaso, solicitud.Usuario).ConfigureAwait(false);
+                    // NestoAPI#645: los bultos leídos (en un ensayo no se marca nada)
+                    if (solicitud.Ensayo == null && bultosLeidos.Any())
+                    {
+                        await transaccion.MarcarBultosLeidos(solicitud.Empresa, bultosLeidos, solicitud.Usuario).ConfigureAwait(false);
+                    }
                 }
+                // Quién y cuándo ha recibido cada cosa; NestoAPI#673: la de una parcial, marcada (es lo que dice «Recibido en parte»)
                 await transaccion.RegistrarEvidencia(solicitud.Empresa, solicitud.Lecturas.Select(l => new EvidenciaRecepcion
                 {
                     IdCliente = EvidenciasRecepcionSql.IdEvidencia(solicitud.IdRecepcion, l.Key),
@@ -623,7 +685,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     Producto = l.Key,
                     Cantidad = l.Value,
                     Usuario = solicitud.Usuario,
-                    Dispositivo = solicitud.Dispositivo
+                    Dispositivo = solicitud.Dispositivo,
+                    Parcial = parcial
                 }).ToList()).ConfigureAwait(false);
                 // NestoAPI#634: constancia de cada diferencia, con la entrada (el ajuste del origen va después de confirmar)
                 if (diferencias.Any())
@@ -644,6 +707,14 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 }
 
                 var avisos = new List<string>();
+                int lineasPendientes = 0, unidadesPendientes = 0;
+                if (parcial)
+                {
+                    List<DiferenciaPreparacionDTO> quedan = pendiente.Where(d => d.Leido < d.Esperado).ToList();
+                    lineasPendientes = quedan.Count;
+                    unidadesPendientes = quedan.Sum(d => d.Esperado - d.Leido);
+                    avisos.Add(AvisoParcial(solicitud.Lecturas.Count, solicitud.Lecturas.Values.Sum(), lineasPendientes, unidadesPendientes));
+                }
                 if (solicitud.Ensayo != null)
                 {
                     await solicitud.Ensayo.Acabar().ConfigureAwait(false);
@@ -653,7 +724,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     Tipo = TIPO,
                     Documento = traspaso.ToString(),
                     Avisos = avisos,
-                    Diferencias = diferencias
+                    Diferencias = diferencias,
+                    Parcial = parcial,
+                    LineasPendientes = lineasPendientes,
+                    UnidadesPendientes = unidadesPendientes
                 };
             }, solicitud.Ensayo != null).ConfigureAwait(false);
 
@@ -703,6 +777,45 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         }
 
         internal const string HAZLA_EN_NESTO_VIEJO = "haz esta entrada en Nesto viejo o avisa a Andre.";
+
+        /// <summary>
+        /// NestoAPI#673: en una parcial solo entra lo que venía y como mucho lo enviado de cada producto. Lo que no venía o lo
+        /// que sobra se ve al terminarla (que es la que compara y registra las diferencias de lo que quede).
+        /// </summary>
+        internal static void ComprobarParcial(IEnumerable<DiferenciaPreparacionDTO> comparado, int traspaso)
+        {
+            List<DiferenciaPreparacionDTO> ajenos = comparado.Where(d => d.Ajeno && d.Leido > 0).ToList();
+            if (ajenos.Any())
+            {
+                throw new NestoBusinessException($"Para dar de alta solo lo leído, todo tiene que venir en la reposición {traspaso}: " +
+                    string.Join(", ", ajenos.Select(d => d.Producto)) + " no venía. Quítelo de lo leído o termine la reposición entera. " +
+                    "No se ha recibido nada.");
+            }
+            List<DiferenciaPreparacionDTO> sobran = comparado.Where(d => !d.Ajeno && d.Leido > d.Esperado).ToList();
+            if (sobran.Any())
+            {
+                throw new NestoBusinessException("Para dar de alta solo lo leído, no puede haber más de lo enviado: " +
+                    string.Join(", ", sobran.Select(d => $"{d.Producto} (enviado {d.Esperado}, leído {d.Leido})")) +
+                    ". Corrija lo leído o termine la reposición entera. No se ha recibido nada.");
+            }
+        }
+
+        internal static string AvisoParcial(int lineasRecibidas, int unidadesRecibidas, int lineasPendientes, int unidadesPendientes)
+        {
+            return $"Se ha dado de alta lo leído ({TextosTipoRecepcion.Contar(lineasRecibidas, "línea", "líneas")}, {unidadesRecibidas} ud.). " +
+                $"Sigue pendiente de recibir el resto de la reposición ({TextosTipoRecepcion.Contar(lineasPendientes, "línea", "líneas")}, " +
+                $"{unidadesPendientes} ud.): léalo y termine la reposición después; las diferencias se comprobarán entonces.";
+        }
+
+        /// <summary>«Recibido en parte: 1 línea, 2 ud.». Null si no se ha recibido nada en parte.</summary>
+        internal static string TextoRecibidaEnParte(int lineas, int unidades)
+        {
+            return lineas <= 0 && unidades <= 0 ? null
+                : $"Recibido en parte: {TextosTipoRecepcion.Contar(lineas, "línea", "líneas")}, {unidades} ud.";
+        }
+
+        /// <summary>Decisión de Carlos (19/10/26): más de 2 días recibida en parte y sin terminar, se avisa.</summary>
+        internal static readonly TimeSpan PLAZO_RECIBIDA_EN_PARTE = TimeSpan.FromDays(2);
 
         /// <summary>
         /// NestoAPI#645: si el traspaso tiene etiquetas de bulto, hace falta al menos una suya entre las leídas; una etiqueta de

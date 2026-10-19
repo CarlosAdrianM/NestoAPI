@@ -94,16 +94,25 @@ WHERE p.Empresa = @p0 AND p.[Almacén] = @p1 AND p.[NºTraspaso] > 0
 
         // Sugerencia 581: EsPuntual por la cabecera ReposicionesTraspasos (Herramienta 'Puntual'); fuera del GROUP BY porque
         // un EXISTS no puede ir dentro de un agregado.
+        // NestoAPI#673: lo ya dado de alta en recepciones parciales, por su evidencia (PreparacionEscaneos REPO/RECE con Motivo
+        // «Recepción parcial …», índice IX_PreparacionEscaneos_Origen). Una reposición terminada ya no sale aquí, así que
+        // toda la evidencia parcial de una pendiente es de lo que ya ha entrado.
         internal const string SQL_PENDIENTES = @"
 SELECT x.Traspaso, x.Lineas, x.Unidades, x.Fecha, x.Usuario, x.Origen, x.NombreOrigen,
        CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.ReposicionesTraspasos t
-                              WHERE t.Empresa = @p0 AND t.NumTraspaso = x.Traspaso AND t.Herramienta = 'Puntual') THEN 1 ELSE 0 END AS bit) AS EsPuntual
+                              WHERE t.Empresa = @p0 AND t.NumTraspaso = x.Traspaso AND t.Herramienta = 'Puntual') THEN 1 ELSE 0 END AS bit) AS EsPuntual,
+       ISNULL(r.LineasRecibidas, 0) AS LineasRecibidas, ISNULL(r.UnidadesRecibidas, 0) AS UnidadesRecibidas, r.FechaPrimeraParcial
 FROM (
 SELECT p.[NºTraspaso] AS Traspaso, COUNT(*) AS Lineas, CAST(SUM(p.Cantidad) AS int) AS Unidades,
        MIN(p.Fecha) AS Fecha, RTRIM(MAX(p.Usuario)) AS Usuario,
        RTRIM(MAX(p.[Delegación])) AS Origen, RTRIM(MAX(o.[Descripción])) AS NombreOrigen" + ORIGEN_Y_FILTRO + @"
 GROUP BY p.[NºTraspaso]
 ) x
+OUTER APPLY (SELECT COUNT(DISTINCT e.Producto) AS LineasRecibidas, CAST(SUM(e.Cantidad) AS int) AS UnidadesRecibidas,
+                    MIN(e.FechaEscaneo) AS FechaPrimeraParcial
+             FROM dbo.PreparacionEscaneos e
+             WHERE e.Empresa = @p0 AND e.TipoOrigen = 'REPO' AND e.NumeroOrigen = x.Traspaso AND e.Fase = 'RECE'
+               AND e.Motivo LIKE @p2) r
 ORDER BY x.Traspaso";
 
         internal const string SQL_LINEAS = @"
@@ -120,7 +129,7 @@ ORDER BY p.[Número]";
 
         public Task<List<ReposicionPendienteDTO>> LeerPendientes(string empresa, string almacen)
         {
-            return baseDeDatos.SqlQuery<ReposicionPendienteDTO>(SQL_PENDIENTES, empresa, almacen).ToListAsync();
+            return baseDeDatos.SqlQuery<ReposicionPendienteDTO>(SQL_PENDIENTES, empresa, almacen, EvidenciasRecepcionSql.MOTIVO_PARCIAL + " %").ToListAsync();
         }
 
         public Task<List<FilaReposicion>> LeerLineas(string empresa, string almacen, int traspaso)
