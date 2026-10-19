@@ -21,6 +21,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         private IServicioRecepcionReposiciones reposiciones;
         private IServicioNotificacionesPush notificaciones;
         private List<UsuarioAlmacen> usuarios;
+        private Dictionary<int, List<string>> deLasParciales;
         private AvisoReposicionesRecibidasEnParte aviso;
 
         [TestInitialize]
@@ -33,13 +34,67 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
                 new UsuarioAlmacen { Usuario = "Paloma", Almacen = "ALC" },
                 new UsuarioAlmacen { Usuario = "Carmen ", Almacen = "alc " },
                 new UsuarioAlmacen { Usuario = "(defecto)", Almacen = "ALC" },
-                new UsuarioAlmacen { Usuario = "Reina", Almacen = "REI" }
+                new UsuarioAlmacen { Usuario = "Reina", Almacen = "REI" },
+                new UsuarioAlmacen { Usuario = "Andre", Almacen = "ALG" },
+                new UsuarioAlmacen { Usuario = "Comercial1", Almacen = "ALG" },
+                new UsuarioAlmacen { Usuario = "RevisionGoogle", Almacen = "ALG" }
             };
+            deLasParciales = new Dictionary<int, List<string>>();
             A.CallTo(() => reposiciones.LeerPendientes(A<string>._, A<string>._)).Returns(new List<ReposicionPendienteDTO>());
-            aviso = new AvisoReposicionesRecibidasEnParte(reposiciones, notificaciones, _ => Task.FromResult(usuarios))
+            aviso = Crear();
+        }
+
+        private AvisoReposicionesRecibidasEnParte Crear(Func<string, Task<List<UsuarioAlmacen>>> leerUsuarios = null)
+        {
+            return new AvisoReposicionesRecibidasEnParte(reposiciones, notificaciones, leerUsuarios ?? (_ => Task.FromResult(usuarios)),
+                (_, traspaso) => Task.FromResult(deLasParciales.TryGetValue(traspaso, out List<string> u) ? u : new List<string>()))
             {
                 Ahora = () => Ahora
             };
+        }
+
+        private List<string> Avisados(string cuerpoContiene)
+        {
+            var avisados = new List<string>();
+            foreach (var llamada in Fake.GetCalls(notificaciones).Where(c => c.Method.Name == nameof(IServicioNotificacionesPush.GuardarEnBuzonDeUsuario)))
+            {
+                if (((NotificacionPushDTO)llamada.Arguments[2]).Cuerpo.Contains(cuerpoContiene))
+                {
+                    avisados.Add((string)llamada.Arguments[0]);
+                }
+            }
+            return avisados;
+        }
+
+        [TestMethod]
+        public async Task Avisar_EnAlgete_SoloAQuienHizoLaParcial()
+        {
+            deLasParciales[81050] = new List<string> { "NUEVAVISION\\Alfredo" };
+            A.CallTo(() => reposiciones.LeerPendientes("1", "ALG")).Returns(new List<ReposicionPendienteDTO> { AMedias(81050, Ahora.AddDays(-3)) });
+
+            List<AvisoRecibidaEnParte> avisados = await aviso.Avisar("1");
+
+            CollectionAssert.AreEqual(new[] { "NUEVAVISION\\Alfredo" }, avisados.Single().Usuarios);
+            CollectionAssert.AreEqual(new[] { "NUEVAVISION\\Alfredo" }, Avisados("81050"));
+        }
+
+        [TestMethod]
+        public async Task Avisar_EnUnaTienda_AQuienHizoLaParcialYALosDeLaTienda_SinRepetir()
+        {
+            deLasParciales[81029] = new List<string> { "NUEVAVISION\\Paloma", "paloma", "Andre" };
+            A.CallTo(() => reposiciones.LeerPendientes("1", "ALC")).Returns(new List<ReposicionPendienteDTO> { AMedias(81029, Ahora.AddDays(-3)) });
+
+            _ = await aviso.Avisar("1");
+
+            CollectionAssert.AreEquivalent(new[] { "NUEVAVISION\\Paloma", "NUEVAVISION\\Andre", "NUEVAVISION\\Carmen" }, Avisados("81029"));
+        }
+
+        [TestMethod]
+        public void Destinatarios_AlgeteSinParciales_Nadie()
+        {
+            Assert.AreEqual(0, AvisoReposicionesRecibidasEnParte.Destinatarios("ALG", null, new[] { "Andre", "Comercial1" }).Count);
+            CollectionAssert.AreEquivalent(new[] { "NUEVAVISION\\Reina" },
+                AvisoReposicionesRecibidasEnParte.Destinatarios("rei ", new[] { "(defecto)", " " }, new[] { "Reina", "NUEVAVISION\\reina" }));
         }
 
         private static ReposicionPendienteDTO AMedias(int traspaso, DateTime? primeraParcial, int lineas = 4, int unidades = 12,
@@ -59,7 +114,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         }
 
         [TestMethod]
-        public async Task Avisar_MasDeDosDiasAMedias_AvisaEnLaCampanaDeNestoALosUsuariosDeEseAlmacen()
+        public async Task Avisar_MasDeDosDiasAMediasEnUnaTienda_AvisaEnLaCampanaDeNestoALosUsuariosDeLaTienda()
         {
             A.CallTo(() => reposiciones.LeerPendientes("1", "ALC")).Returns(new List<ReposicionPendienteDTO>
             {
@@ -150,7 +205,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         [TestMethod]
         public async Task Avisar_SiNoSeLeenLosUsuarios_NoLanza()
         {
-            aviso = new AvisoReposicionesRecibidasEnParte(reposiciones, notificaciones, _ => throw new InvalidOperationException("BD caída"));
+            aviso = Crear(_ => throw new InvalidOperationException("BD caída"));
 
             List<AvisoRecibidaEnParte> avisados = await aviso.Avisar("1");
 

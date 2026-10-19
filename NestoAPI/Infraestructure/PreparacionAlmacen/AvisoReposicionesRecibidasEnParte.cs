@@ -29,8 +29,9 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
     /// <summary>
     /// NestoAPI#673 (Carlos, 19/10/26): una reposición que lleva más de 2 días recibida en parte (desde la primera parcial) se
-    /// avisa en la campana de Nesto a los usuarios del almacén que la recibe (los que tienen ese AlmacénPedidoVta, sin la fila
-    /// «(defecto)»), una vez al día mientras siga a medias. Lo mismo que se ve en la lista de recepciones
+    /// avisa en la campana de Nesto a quienes hicieron sus recepciones parciales y, si la recibe una tienda, también a los
+    /// usuarios de esa tienda (AlmacénPedidoVta, sin la fila «(defecto)»; ver <see cref="Destinatarios"/>), una vez al día
+    /// mientras siga a medias. Lo mismo que se ve en la lista de recepciones
     /// (<see cref="OrigenRecepcionReposiciones.LeerPendientes"/>), con el mismo plazo. Nunca lanza: lo que falle va a ELMAH.
     /// </summary>
     public class AvisoReposicionesRecibidasEnParte
@@ -43,17 +44,40 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         private readonly IServicioRecepcionReposiciones reposiciones;
         private readonly IServicioNotificacionesPush notificaciones;
         private readonly Func<string, Task<List<UsuarioAlmacen>>> usuariosConAlmacen;
+        private readonly Func<string, int, Task<List<string>>> usuariosDeLasParciales;
 
         /// <summary>La hora de ahora (los tests la cambian).</summary>
         internal Func<DateTime> Ahora { get; set; } = () => DateTime.Now;
 
         /// <param name="usuariosConAlmacen">empresa → los usuarios con su AlmacénPedidoVta (incluida o no la fila «(defecto)»).</param>
+        /// <param name="usuariosDeLasParciales">(empresa, traspaso) → quienes hicieron sus recepciones parciales (con o sin dominio).</param>
         public AvisoReposicionesRecibidasEnParte(IServicioRecepcionReposiciones reposiciones, IServicioNotificacionesPush notificaciones,
-            Func<string, Task<List<UsuarioAlmacen>>> usuariosConAlmacen)
+            Func<string, Task<List<UsuarioAlmacen>>> usuariosConAlmacen, Func<string, int, Task<List<string>>> usuariosDeLasParciales)
         {
             this.reposiciones = reposiciones;
             this.notificaciones = notificaciones;
             this.usuariosConAlmacen = usuariosConAlmacen;
+            this.usuariosDeLasParciales = usuariosDeLasParciales;
+        }
+
+        /// <summary>
+        /// A quién se avisa (Carlos, 19/10/26): siempre a quienes hicieron las parciales; en una tienda (REI, ALC: las mismas que
+        /// <see cref="ReglasPerfilAlmacen.TIENDAS"/>), además a todos sus usuarios. En Algete, no: allí tienen AlmacénPedidoVta ALG
+        /// comerciales, administración, SA… Sin repetir a nadie, siempre como NUEVAVISION\usuario.
+        /// </summary>
+        internal static List<string> Destinatarios(string almacen, IEnumerable<string> deLasParciales, IEnumerable<string> delAlmacen)
+        {
+            IEnumerable<string> candidatos = deLasParciales ?? Enumerable.Empty<string>();
+            if (ReglasPerfilAlmacen.TIENDAS.Contains(almacen?.Trim().ToUpperInvariant()))
+            {
+                candidatos = candidatos.Concat(delAlmacen ?? Enumerable.Empty<string>());
+            }
+            return candidatos
+                .Select(ReglasPerfilAlmacen.SinDominio)
+                .Where(u => !string.IsNullOrWhiteSpace(u) && !string.Equals(u, USUARIO_DEFECTO, StringComparison.OrdinalIgnoreCase))
+                .Select(u => DOMINIO + u)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
         }
 
         /// <summary>«La reposición 81029 desde Algete lleva 3 días recibida en parte: quedan 4 líneas (12 ud.) por dar de alta.»</summary>
@@ -103,10 +127,6 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             {
                 try
                 {
-                    List<string> destinatarios = almacen
-                        .Select(u => u.Contains("\\") ? u : DOMINIO + u)
-                        .Distinct(StringComparer.OrdinalIgnoreCase)
-                        .ToList();
                     List<ReposicionPendienteDTO> pendientes = await reposiciones.LeerPendientes(empresa, almacen.Key).ConfigureAwait(false)
                         ?? new List<ReposicionPendienteDTO>();
                     foreach (ReposicionPendienteDTO reposicion in pendientes)
@@ -114,6 +134,22 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                         int? dias = DiasRecibidaEnParte(reposicion, ahora);
                         if (!dias.HasValue)
                         {
+                            continue;
+                        }
+                        List<string> deLasParciales;
+                        try
+                        {
+                            deLasParciales = await usuariosDeLasParciales(empresa, reposicion.Traspaso).ConfigureAwait(false);
+                        }
+                        catch (Exception ex)
+                        {
+                            ElmahHelper.Log(new Exception($"[Reposiciones recibidas en parte] No se ha podido leer quién recibió en parte la reposición {reposicion.Traspaso}: {ex.Message}", ex));
+                            deLasParciales = null;
+                        }
+                        List<string> destinatarios = Destinatarios(almacen.Key, deLasParciales, almacen);
+                        if (!destinatarios.Any())
+                        {
+                            ElmahHelper.Log(new Exception($"[Reposiciones recibidas en parte] No hay a quién avisar de la reposición {reposicion.Traspaso} ({almacen.Key})."));
                             continue;
                         }
                         var aviso = new AvisoRecibidaEnParte { Traspaso = reposicion.Traspaso, Almacen = almacen.Key, Texto = Texto(reposicion, dias.Value) };
@@ -160,6 +196,16 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 .ToListAsync().ConfigureAwait(false);
             return filas.Select(p => new UsuarioAlmacen { Usuario = p.Usuario?.Trim(), Almacen = p.Valor?.Trim() }).ToList();
         }
+
+        internal const string SQL_USUARIOS_PARCIALES = @"
+SELECT DISTINCT RTRIM(e.Usuario)
+FROM dbo.PreparacionEscaneos e
+WHERE e.Empresa = @p0 AND e.TipoOrigen = 'REPO' AND e.NumeroOrigen = @p1 AND e.Fase = '" + EvidenciasRecepcionSql.FASE + @"'
+  AND e.Motivo LIKE @p2 AND e.Usuario IS NOT NULL";
+
+        /// <summary>Quienes hicieron las recepciones parciales de la reposición (sus evidencias, como las cuenta la lista).</summary>
+        internal static Task<List<string>> LeerUsuariosDeLasParciales(NVEntities db, string empresa, int traspaso)
+            => db.Database.SqlQuery<string>(SQL_USUARIOS_PARCIALES, empresa, traspaso, EvidenciasRecepcionSql.MOTIVO_PARCIAL + " %").ToListAsync();
     }
 
     /// <summary>
@@ -183,7 +229,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     db.Configuration.LazyLoadingEnabled = false;
                     db.Configuration.ProxyCreationEnabled = false;
                     var aviso = new AvisoReposicionesRecibidasEnParte(reposiciones, new ServicioNotificacionesPush(),
-                        empresa => AvisoReposicionesRecibidasEnParte.LeerUsuariosConAlmacen(db, empresa));
+                        empresa => AvisoReposicionesRecibidasEnParte.LeerUsuariosConAlmacen(db, empresa),
+                        (empresa, traspaso) => AvisoReposicionesRecibidasEnParte.LeerUsuariosDeLasParciales(db, empresa, traspaso));
                     _ = await aviso.Avisar(Constantes.Empresas.EMPRESA_POR_DEFECTO).ConfigureAwait(false);
                 }
             }
