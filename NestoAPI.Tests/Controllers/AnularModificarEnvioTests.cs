@@ -44,6 +44,9 @@ namespace NestoAPI.Tests.Controllers
             A.CallTo(() => fakeAgencia.Intercambios).Returns(new List<IntercambioRemoto>());
             fakeFabrica = A.Fake<IFabricaAgenciasRemotas>();
             A.CallTo(() => fakeFabrica.Crear(Constantes.Agencias.AGENCIA_INNOVATRANS)).Returns(fakeAgencia);
+            // NestoAPI#552 (fase 3): /Anular pide la anulación a la fábrica; como la real, la de las agencias remotas
+            // completas es su propia estrategia (y null para las demás, que es lo que dan aquí las no configuradas).
+            A.CallTo(() => fakeFabrica.CrearAnulacion(A<int>._)).ReturnsLazily((int agencia) => fakeFabrica.Crear(agencia));
 
             A.CallTo(() => fakeLlamadas.Add(A<AgenciaLlamadaWeb>.Ignored))
                 .Invokes((AgenciaLlamadaWeb l) => auditoria = l)

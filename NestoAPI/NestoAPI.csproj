@@ -665,6 +665,7 @@
     <Compile Include="Infraestructure\Agencias\Gls\ComparadorPeticionesGls.cs" />
     <Compile Include="Infraestructure\Agencias\Gls\PeticionGls.cs" />
     <Compile Include="Infraestructure\Agencias\Gls\SombraPeticionesGls.cs" />
+    <Compile Include="Infraestructure\Agencias\Gls\AnulacionGls.cs" />
     <Compile Include="Infraestructure\Agencias\Gls\ClienteGrabaServiciosGls.cs" />
     <Compile Include="Infraestructure\Agencias\Gls\TramitadorGls.cs" />
     <Compile Include="Infraestructure\Agencias\IAgenciaRemota.cs" />

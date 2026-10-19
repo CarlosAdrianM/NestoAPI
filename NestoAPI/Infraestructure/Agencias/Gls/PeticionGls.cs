@@ -16,7 +16,17 @@ namespace NestoAPI.Infraestructure.Agencias.Gls
     public static class PeticionGls
     {
         public static readonly XNamespace Ns = "http://www.asmred.com/";
-        public const string URL_GRABA_SERVICIOS = "https://www.asmred.com/WebSrvs/b2b.asmx?op=GrabaServicios";
+        public const string OPERACION_GRABA_SERVICIOS = "GrabaServicios";
+        public const string URL_GRABA_SERVICIOS = "https://www.asmred.com/WebSrvs/b2b.asmx?op=" + OPERACION_GRABA_SERVICIOS;
+
+        /// <summary>
+        /// NestoAPI#552 (fase 3): la operación Anula del mismo WS b2b. OJO: Nesto nunca la ha usado (en Nesto un envío de
+        /// GLS ya tramitado no se anula desde el programa) y no hay ninguna llamada suya guardada en AgenciasLlamadasWeb;
+        /// el contrato sale de la documentación del WS b2b de GLS y hay que confirmarlo con una llamada de prueba antes de
+        /// encender Agencias:GlsAnularPorApi.
+        /// </summary>
+        public const string OPERACION_ANULA = "Anula";
+        public const string URL_ANULA = "https://www.asmred.com/WebSrvs/b2b.asmx?op=" + OPERACION_ANULA;
 
         /// <summary>BusinessParcel (servicio 96) va con su propia cuenta, no con la de la agencia (AgenciaASM).</summary>
         public const short SERVICIO_BUSINESSPARCEL = 96;
@@ -92,17 +102,35 @@ namespace NestoAPI.Infraestructure.Agencias.Gls
                         new XElement(Ns + "PlazaDestino"))));
         }
 
-        /// <summary>El sobre SOAP completo, con el mismo texto que monta AgenciaASM.LlamadaWebService.</summary>
-        public static string ConstruirSoap(XElement servicios)
+        /// <summary>
+        /// NestoAPI#552 (fase 3): el nodo Servicios de una anulación: la misma cuenta (uidcliente) con la que se grabó el
+        /// envío y su código de barras, que es lo que lo identifica en GLS.
+        /// </summary>
+        /// <param name="codigoBarras">EnviosAgencia.CodigoBarras (se manda sin espacios).</param>
+        /// <param name="uidCliente">El de <see cref="Identificador"/> para ese envío: el mismo que en GrabaServicios.</param>
+        public static XElement ConstruirAnulacion(string codigoBarras, string uidCliente)
+        {
+            if (string.IsNullOrWhiteSpace(codigoBarras)) throw new ArgumentNullException(nameof(codigoBarras));
+            return new XElement(Ns + "Servicios",
+                new XAttribute("uidcliente", uidCliente ?? string.Empty),
+                new XElement(Ns + "Envio",
+                    new XAttribute("codbarras", codigoBarras.Trim())));
+        }
+
+        /// <summary>
+        /// El sobre SOAP completo, con el mismo texto que monta AgenciaASM.LlamadaWebService. La operación es GrabaServicios
+        /// salvo que se diga otra (fase 3: Anula, con el mismo sobre).
+        /// </summary>
+        public static string ConstruirSoap(XElement servicios, string operacion = OPERACION_GRABA_SERVICIOS)
         {
             return "<?xml version=\"1.0\" encoding=\"utf-8\"?>" +
                 "<soap:Envelope xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" " +
                 "xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" " +
                 "xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\">" +
                 "<soap:Body>" +
-                "<GrabaServicios xmlns=\"http://www.asmred.com/\">" +
+                "<" + operacion + " xmlns=\"http://www.asmred.com/\">" +
                 "<docIn>" + servicios + "</docIn>" +
-                "</GrabaServicios>" +
+                "</" + operacion + ">" +
                 "</soap:Body>" +
                 "</soap:Envelope>";
         }
@@ -126,7 +154,13 @@ namespace NestoAPI.Infraestructure.Agencias.Gls
             {
                 // PreserveWhitespace: un campo que solo lleva saltos de línea (unas Observaciones «\r\n\r\n») es lo que
                 // se mandó; sin él, Parse lo deja vacío.
-                return XDocument.Parse(texto, LoadOptions.PreserveWhitespace).Descendants(Ns + "Servicios").FirstOrDefault();
+                XDocument documento = XDocument.Parse(texto, LoadOptions.PreserveWhitespace);
+                // Fase 3: una anulación también lleva un nodo Servicios, pero no es una petición de grabar.
+                if (documento.Descendants(Ns + OPERACION_ANULA).Any())
+                {
+                    return null;
+                }
+                return documento.Descendants(Ns + "Servicios").FirstOrDefault();
             }
             catch (XmlException)
             {

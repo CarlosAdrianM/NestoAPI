@@ -190,14 +190,14 @@ namespace NestoAPI.Infraestructure.Agencias
         Task<byte[]> ObtenerEtiquetaPdfAsync(string albaran);
     }
 
-    public interface IAgenciaRemota : ISeguimientoAgenciaRemota
+    /// <summary>
+    /// NestoAPI#552 (fase 3): capacidad de ANULAR en la agencia un envío ya registrado, separada de la tramitación
+    /// completa. La cumplen todas las <see cref="IAgenciaRemota"/> (Innovatrans, CTT) y, por su lado, GLS, que todavía
+    /// no tramita entera en el servidor (detrás de Agencias:GlsAnularPorApi). POST api/EnviosAgencias/{id}/Anular
+    /// trabaja con esto, sin saber de qué agencia se trata.
+    /// </summary>
+    public interface IAnulacionAgenciaRemota
     {
-        /// <summary>Inserta el envío en la agencia (asigna albarán) y obtiene su etiqueta. Crea envío REAL.</summary>
-        Task<ResultadoTramitacionRemota> InsertarYEtiquetarAsync(DatosEnvioRemoto envio);
-
-        /// <summary>Reimprime la etiqueta de un albarán ya insertado (no reinserta). Idempotente.</summary>
-        Task<EtiquetaDataTrans> ReimprimirAsync(string albaran, int? desdeBulto = null, int? hastaBulto = null);
-
         /// <summary>
         /// Anula en la agencia un envío YA registrado, por su albarán (#316). Tras el éxito, el
         /// albarán deja de existir en la agencia (no se recoge ni se factura). La regla del llamante
@@ -205,6 +205,23 @@ namespace NestoAPI.Infraestructure.Agencias
         /// suelen limitar la ventana de anulación (Innovatrans: hasta el cierre del día).
         /// </summary>
         Task<ResultadoOperacionRemota> AnularAsync(string albaran);
+
+        /// <summary>
+        /// Intercambios crudos (petición + respuesta) hechos contra la API de la agencia durante las
+        /// operaciones de esta instancia. Para auditar/depurar (sobre todo el primer envío real).
+        /// </summary>
+        IReadOnlyList<IntercambioRemoto> Intercambios { get; }
+    }
+
+    public interface IAgenciaRemota : ISeguimientoAgenciaRemota, IAnulacionAgenciaRemota
+    {
+        /// <summary>Inserta el envío en la agencia (asigna albarán) y obtiene su etiqueta. Crea envío REAL.</summary>
+        Task<ResultadoTramitacionRemota> InsertarYEtiquetarAsync(DatosEnvioRemoto envio);
+
+        /// <summary>Reimprime la etiqueta de un albarán ya insertado (no reinserta). Idempotente.</summary>
+        Task<EtiquetaDataTrans> ReimprimirAsync(string albaran, int? desdeBulto = null, int? hastaBulto = null);
+
+        // AnularAsync e Intercambios vienen de IAnulacionAgenciaRemota (NestoAPI#552, fase 3).
 
         /// <summary>
         /// Modifica en la agencia un envío YA registrado (por su albarán) con los datos corregidos
@@ -220,11 +237,5 @@ namespace NestoAPI.Infraestructure.Agencias
         /// modifica el mismo albarán: false.
         /// </summary>
         bool ModificarCreaEnvioNuevo { get; }
-
-        /// <summary>
-        /// Intercambios crudos (petición + respuesta) hechos contra la API de la agencia durante las
-        /// operaciones de esta instancia. Para auditar/depurar (sobre todo el primer envío real).
-        /// </summary>
-        IReadOnlyList<IntercambioRemoto> Intercambios { get; }
     }
 }

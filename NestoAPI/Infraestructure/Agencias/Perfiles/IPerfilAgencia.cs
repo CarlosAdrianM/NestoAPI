@@ -30,6 +30,17 @@ namespace NestoAPI.Infraestructure.Agencias.Perfiles
     }
 
     /// <summary>
+    /// NestoAPI#552 (fase 3): capacidad de ANULAR en el servidor un envío ya registrado, para una agencia que NO tiene
+    /// gestión remota completa (hoy GLS: su tramitación sigue en Nesto o, con su interruptor, a medias en la API). Las de
+    /// gestión remota completa no la necesitan: su <see cref="IAgenciaRemota"/> ya anula. Devuelve null si la agencia no
+    /// debe anular por la API ahora mismo (interruptor apagado): el llamante sigue como si no tuviera la capacidad.
+    /// </summary>
+    public interface IPerfilConAnulacionRemota : IPerfilAgencia
+    {
+        IAnulacionAgenciaRemota CrearAnulacion(NVEntities db);
+    }
+
+    /// <summary>
     /// Capacidad: la agencia expone SEGUIMIENTO (consultar el estado de un envío por su albarán). La
     /// cumplen tanto las de tramitación (Innovatrans, cuya estrategia de tramitar ya sigue) como las
     /// que solo siguen (GLS).

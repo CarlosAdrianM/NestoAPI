@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Configuration;
 using System.Linq;
 using NestoAPI.Controllers;
@@ -68,10 +69,24 @@ namespace NestoAPI.Infraestructure.Agencias.Perfiles
         }
     }
 
-    /// <summary>GLS/ASM: solo SEGUIMIENTO (no tramita server-side) y con defaults de envío propios.</summary>
-    public class PerfilAgenciaGls : IPerfilConSeguimiento, IPerfilConDefaultsEnvio, IPerfilConCatalogoServicios
+    /// <summary>
+    /// GLS/ASM: SEGUIMIENTO y defaults de envío propios. No tiene gestión remota completa (tramitar sigue en Nesto o, con
+    /// Agencias:GlsTramitarPorApi, a medias en la API); desde NestoAPI#552 (fase 3) sí ANULA por la API, detrás de
+    /// Agencias:GlsAnularPorApi (apagado).
+    /// </summary>
+    public class PerfilAgenciaGls : IPerfilConSeguimiento, IPerfilConDefaultsEnvio, IPerfilConCatalogoServicios, IPerfilConAnulacionRemota
     {
         public int AgenciaId => Constantes.Agencias.AGENCIA_GLS;
+
+        /// <summary>NestoAPI#552 (fase 3): el interruptor (Web.config, apagado por defecto). Sustituible en los tests.</summary>
+        internal Func<bool> AnularPorApi { get; set; } = InterruptorAnulacionGls.EstaActivo;
+
+        /// <summary>
+        /// NestoAPI#552 (fase 3): con el interruptor apagado, null (GLS sigue sin poder anular en el servidor, como siempre);
+        /// encendido, la operación Anula de GLS con la cuenta de cada envío sacada de la BD.
+        /// </summary>
+        public IAnulacionAgenciaRemota CrearAnulacion(NVEntities db)
+            => AnularPorApi() ? new AnulacionGls(AnulacionGls.ClientePorDefecto(), AnulacionGls.UidDesdeLaBD(db)) : null;
 
         // NestoAPI#546: AgenciaASM.vb (ListaServicios/ListaHorarios/ListaTiposRetorno) + sus tarifas
         // (TarifaGLSBusinessParcel 96/18, TarifaGLSBaleares 6/10, TarifaGLSEuroBusinessParcel 74/18).

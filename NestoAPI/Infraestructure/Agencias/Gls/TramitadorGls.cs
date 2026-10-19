@@ -54,34 +54,10 @@ namespace NestoAPI.Infraestructure.Agencias.Gls
 
         public static ResultadoGrabaServiciosGls Interpretar(string respuesta)
         {
-            if (string.IsNullOrWhiteSpace(respuesta))
-            {
-                return Fallo("GLS devolvió una respuesta vacía.");
-            }
-
-            XDocument documento;
-            try
-            {
-                documento = XDocument.Parse(respuesta.TrimStart('﻿', ' ', '\r', '\n', '\t'));
-            }
-            catch (XmlException ex)
-            {
-                return Fallo("Error al interpretar la respuesta XML de GLS: " + ex.Message);
-            }
-
-            XElement resultado = documento.Descendants(PeticionGls.Ns + "GrabaServiciosResult").FirstOrDefault();
-            if (resultado == null || !resultado.HasElements)
-            {
-                string fallo = documento.Descendants().FirstOrDefault(e => e.Name.LocalName == "faultstring")?.Value?.Trim();
-                return Fallo(string.IsNullOrEmpty(fallo)
-                    ? "Respuesta de GLS con formato inesperado: falta GrabaServiciosResult."
-                    : "GLS respondió con un error SOAP: " + fallo);
-            }
-
-            XElement envio = resultado.Descendants().FirstOrDefault(e => e.Name.LocalName == "Envio");
+            XElement envio = LeerNodoEnvio(respuesta, PeticionGls.OPERACION_GRABA_SERVICIOS, out string errorLectura);
             if (envio == null)
             {
-                return Fallo("Respuesta de GLS con formato inesperado: falta el nodo Envio.");
+                return Fallo(errorLectura);
             }
 
             string retorno = Hijo(envio, "Resultado")?.Attribute("return")?.Value?.Trim();
@@ -111,7 +87,50 @@ namespace NestoAPI.Infraestructure.Agencias.Gls
         }
 
         /// <summary>
-        /// AgenciaASM.RespuestaYaTramitada: «Ya existe el código de barras» (con o sin tildes, como lo dé GLS o la tabla) o
+        /// NestoAPI#552: el nodo Envio de la respuesta de una operación del WS b2b (GrabaServicios, Anula), o null con el
+        /// motivo en <paramref name="error"/> si no se puede leer (vacía, XML roto, SOAP Fault, sin {operación}Result o
+        /// sin Envio).
+        /// </summary>
+        internal static XElement LeerNodoEnvio(string respuesta, string operacion, out string error)
+        {
+            error = null;
+            if (string.IsNullOrWhiteSpace(respuesta))
+            {
+                error = "GLS devolvió una respuesta vacía.";
+                return null;
+            }
+
+            XDocument documento;
+            try
+            {
+                documento = XDocument.Parse(respuesta.TrimStart('﻿', ' ', '\r', '\n', '\t'));
+            }
+            catch (XmlException ex)
+            {
+                error = "Error al interpretar la respuesta XML de GLS: " + ex.Message;
+                return null;
+            }
+
+            XElement resultado = documento.Descendants(PeticionGls.Ns + (operacion + "Result")).FirstOrDefault();
+            if (resultado == null || !resultado.HasElements)
+            {
+                string fallo = documento.Descendants().FirstOrDefault(e => e.Name.LocalName == "faultstring")?.Value?.Trim();
+                error = string.IsNullOrEmpty(fallo)
+                    ? $"Respuesta de GLS con formato inesperado: falta {operacion}Result."
+                    : "GLS respondió con un error SOAP: " + fallo;
+                return null;
+            }
+
+            XElement envio = resultado.Descendants().FirstOrDefault(e => e.Name.LocalName == "Envio");
+            if (envio == null)
+            {
+                error = "Respuesta de GLS con formato inesperado: falta el nodo Envio.";
+            }
+            return envio;
+        }
+
+        /// <summary>
+        /// AgenciaASM.RespuestaYaTramitada:«Ya existe el código de barras» (con o sin tildes, como lo dé GLS o la tabla) o
         /// «Error -33» pelado. NO se perdona «Ya existe el albarán»: podría ser el -70, que es otra cosa.
         /// </summary>
         public static bool EsYaRegistrado(string texto)
@@ -166,9 +185,9 @@ namespace NestoAPI.Infraestructure.Agencias.Gls
 
         private static ResultadoGrabaServiciosGls Fallo(string error) => new ResultadoGrabaServiciosGls { Error = error };
 
-        private static XElement Hijo(XElement padre, string nombre) => padre?.Elements().FirstOrDefault(e => e.Name.LocalName == nombre);
+        internal static XElement Hijo(XElement padre, string nombre) => padre?.Elements().FirstOrDefault(e => e.Name.LocalName == nombre);
 
-        private static string Vacio(string valor) => string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();
+        internal static string Vacio(string valor) => string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();
     }
 
     /// <summary>Una llamada a GrabaServicios: lo que se mandó, lo que contestó GLS y cómo se ha entendido.</summary>

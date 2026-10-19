@@ -19,6 +19,14 @@ namespace NestoAPI.Infraestructure.Agencias
         IReadOnlyCollection<int> AgenciasConGestionRemota { get; }
 
         /// <summary>
+        /// NestoAPI#552 (fase 3): quién ANULA en la agencia un envío ya registrado, o null si la agencia no puede anular
+        /// desde el servidor. Las de gestión remota completa anulan con su propia estrategia (la de <see cref="Crear"/>);
+        /// las demás, solo si su perfil tiene la capacidad <see cref="IPerfilConAnulacionRemota"/> y la tiene activa
+        /// (GLS, detrás de Agencias:GlsAnularPorApi, apagado).
+        /// </summary>
+        IAnulacionAgenciaRemota CrearAnulacion(int agenciaId);
+
+        /// <summary>
         /// Estrategia de SEGUIMIENTO (solo lectura) de la agencia, o null si no tiene. La cumplen tanto
         /// las de tramitación (Innovatrans) como las que solo siguen (GLS). La usa el poll de estados.
         /// </summary>
@@ -62,6 +70,10 @@ namespace NestoAPI.Infraestructure.Agencias
 
         public IAgenciaRemota Crear(int agenciaId)
             => (_registro.Value.Perfil(agenciaId) as IPerfilConGestionRemota)?.CrearGestionRemota(_db);
+
+        public IAnulacionAgenciaRemota CrearAnulacion(int agenciaId)
+            => (IAnulacionAgenciaRemota)Crear(agenciaId)
+                ?? (_registro.Value.Perfil(agenciaId) as IPerfilConAnulacionRemota)?.CrearAnulacion(_db);
 
         public ISeguimientoAgenciaRemota CrearSeguimiento(int agenciaId)
             => (_registro.Value.Perfil(agenciaId) as IPerfilConSeguimiento)?.CrearSeguimiento(_db);

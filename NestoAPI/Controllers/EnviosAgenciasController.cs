@@ -1158,7 +1158,9 @@ namespace NestoAPI.Controllers
                 return NotFound();
             }
 
-            IAgenciaRemota agencia = fabricaAgenciasRemotas.Crear(envio.Agencia);
+            // NestoAPI#552 (fase 3): la anulación, no la gestión remota completa. Innovatrans y CTT, su propia estrategia;
+            // GLS, la suya solo con Agencias:GlsAnularPorApi encendido (apagado: null y el 400 de siempre).
+            IAnulacionAgenciaRemota agencia = fabricaAgenciasRemotas.CrearAnulacion(envio.Agencia);
             if (agencia == null)
             {
                 return BadRequest($"La agencia {envio.Agencia} no tiene gestión remota en el servidor.");
@@ -1189,7 +1191,7 @@ namespace NestoAPI.Controllers
                 if (FallosAgenciaRemota.NoResponde(ex))
                 {
                     // Sugerencia 507: el mismo aviso que al tramitar, en vez de «CTT (Anular) respondió HTTP 500: …».
-                    return RespuestaAgenciaNoResponde(await NombreAgenciaDe(envio), ex, envio, "Anular");
+                    return RespuestaAgenciaNoResponde(await NombreAgenciaParaUsuario(envio), ex, envio, "Anular");
                 }
                 return Content(HttpStatusCode.BadGateway, ex.Message);
             }
@@ -1213,7 +1215,7 @@ namespace NestoAPI.Controllers
             {
                 string detalle = DescribirErroresValidacion(ex);
                 Elmah.ErrorLog.GetDefault(null)?.Log(new Elmah.Error(new Exception(
-                    $"Innovatrans anuló el envío {envio.Numero} (albarán {albaranAnulado}) pero falló al actualizar la BD: {detalle}", ex)));
+                    $"{await NombreAgenciaParaUsuario(envio) ?? "La agencia"} anuló el envío {envio.Numero} (albarán {albaranAnulado}) pero falló al actualizar la BD: {detalle}", ex)));
                 return Content(HttpStatusCode.InternalServerError,
                     $"Se anuló en la agencia (albarán {albaranAnulado}) pero no se pudo actualizar nuestra BD: {detalle}");
             }
@@ -1737,14 +1739,15 @@ namespace NestoAPI.Controllers
             => AuditarOperacion(envio, agencia, exito, error, "Tramitar");
 
         // Auditoría común de las operaciones remotas del controller (Tramitar/Anular/Modificar, #316/#317).
-        private async Task AuditarOperacion(EnviosAgencia envio, IAgenciaRemota agencia, bool exito, string error, string operacion)
+        private async Task AuditarOperacion(EnviosAgencia envio, IAnulacionAgenciaRemota agencia, bool exito, string error, string operacion)
         {
             // NestoAPI#259: una operación fallida queda en AgenciasLlamadasWeb (Exito=false), pero
             // además la logueamos en ELMAH con contexto para detectarla desde el primer momento (antes
             // solo se veía revisando la tabla de llamadas o cuando se quejaba el almacén). Cubre todas
             // las rutas de fallo que pasan por aquí: DataTransException, BadGateway, sin ZPL, reimpresión.
             // Gobernado por el flag de logging detallado de la agencia (hoy ON solo en Innovatrans).
-            if (!exito && agencia?.LoggingDetallado == true)
+            // NestoAPI#552 (fase 3): la anulación de GLS no es una agencia remota completa ni tiene detalle (GLS está rodada).
+            if (!exito && (agencia as ISeguimientoAgenciaRemota)?.LoggingDetallado == true)
             {
                 try
                 {
@@ -1818,6 +1821,13 @@ namespace NestoAPI.Controllers
         // Las columnas son NOT NULL con longitud máxima (UrlLlamada/TextoRespuestaError 255, Usuario 30,
         // Agencia 50); CuerpoLlamada/Respuesta son nvarchar(max). Hay que respetar ambas o EF lanza
         // DbEntityValidationException.
+        /// <summary>
+        /// NestoAPI#552 (fase 3): el nombre que lee el usuario. GLS es «GLS» aunque en AgenciasTransporte se llame ASM (como
+        /// TramitacionEnviosService.NombreAgencia), para que el aviso de «no responde» proponga otra agencia y no GLS.
+        /// </summary>
+        private async Task<string> NombreAgenciaParaUsuario(EnviosAgencia envio)
+            => envio?.Agencia == Constantes.Agencias.AGENCIA_GLS ? "GLS" : await NombreAgenciaDe(envio);
+
         /// <summary>
         /// NestoAPI#512: el nombre de la agencia del envío para la auditoría. La navegación no viene
         /// cargada (FindAsync sin Include y sin lazy loading), así que se busca por su número.

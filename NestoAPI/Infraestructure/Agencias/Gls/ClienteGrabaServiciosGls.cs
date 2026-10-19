@@ -24,8 +24,26 @@ namespace NestoAPI.Infraestructure.Agencias.Gls
             => string.Equals(valor?.Trim(), "true", StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>NestoAPI#552 (fase 2): el transporte de GrabaServicios (el WS b2b de GLS/ASM). Se fakea en los tests.</summary>
-    public interface IClienteGrabaServiciosGls
+    /// <summary>
+    /// NestoAPI#552 (fase 3): interruptor de la ANULACIÓN de envíos de GLS por la API. <c>Agencias:GlsAnularPorApi</c> en
+    /// Web.config, APAGADO por defecto: POST api/EnviosAgencias/{id}/Anular con un envío de GLS sigue dando el 400 de
+    /// siempre («no tiene gestión remota en el servidor»). Es independiente del de tramitar: la operación Anula de GLS no
+    /// se ha probado nunca contra GLS y se enciende cuando se haya comprobado. Mismo criterio que el de tramitar: solo
+    /// "true" enciende, y el valor que vale es el del Web.config del repo.
+    /// </summary>
+    public static class InterruptorAnulacionGls
+    {
+        public const string CLAVE = "Agencias:GlsAnularPorApi";
+
+        /// <summary>Lee el Web.config en cada llamada.</summary>
+        public static bool EstaActivo() => InterruptorTramitacionGls.EstaActivo(ConfigurationManager.AppSettings[CLAVE]);
+    }
+
+    /// <summary>
+    /// NestoAPI#552: el transporte de UNA operación del WS b2b de GLS/ASM (GrabaServicios en la fase 2, Anula en la 3).
+    /// Se fakea en los tests.
+    /// </summary>
+    public interface IClienteSoapGls
     {
         /// <summary>URL a la que se manda (queda en AgenciasLlamadasWeb.UrlLlamada).</summary>
         string Url { get; }
@@ -37,24 +55,32 @@ namespace NestoAPI.Infraestructure.Agencias.Gls
         Task<string> EnviarAsync(string soap);
     }
 
-    /// <summary>
-    /// NestoAPI#552 (fase 2): GrabaServicios por HTTP, igual que AgenciaASM.LlamadaWebService de Nesto: mismo URL,
-    /// SOAPAction, content-type y 30 s de espera. No lleva credenciales: la cuenta va en el uidcliente de la petición
-    /// (AgenciasTransporte.Identificador o el de BusinessParcel, ver <see cref="PeticionGls.Identificador"/>).
-    /// </summary>
-    public class ClienteGrabaServiciosGls : IClienteGrabaServiciosGls
+    /// <summary>NestoAPI#552 (fase 2): el transporte de GrabaServicios. Se fakea en los tests.</summary>
+    public interface IClienteGrabaServiciosGls : IClienteSoapGls
     {
-        private const string SOAP_ACTION = "\"http://www.asmred.com/GrabaServicios\"";
+    }
+
+    /// <summary>
+    /// NestoAPI#552: una operación del WS b2b de GLS por HTTP, igual que AgenciaASM.LlamadaWebService de Nesto: URL con
+    /// ?op=, SOAPAction «http://www.asmred.com/{operación}», text/xml y 30 s de espera. No lleva credenciales: la cuenta
+    /// va en el uidcliente de la petición (AgenciasTransporte.Identificador o el de BusinessParcel, ver
+    /// <see cref="PeticionGls.Identificador"/>).
+    /// </summary>
+    public class ClienteSoapGls : IClienteSoapGls
+    {
         private static readonly HttpClient ClienteCompartido = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
 
+        private readonly string _operacion;
         private readonly HttpClient _http;
 
-        public ClienteGrabaServiciosGls(HttpClient http = null)
+        public ClienteSoapGls(string operacion, string url, HttpClient http = null)
         {
+            _operacion = operacion ?? throw new ArgumentNullException(nameof(operacion));
+            Url = url ?? throw new ArgumentNullException(nameof(url));
             _http = http ?? ClienteCompartido;
         }
 
-        public string Url => PeticionGls.URL_GRABA_SERVICIOS;
+        public string Url { get; }
 
         public async Task<string> EnviarAsync(string soap)
         {
@@ -62,7 +88,7 @@ namespace NestoAPI.Infraestructure.Agencias.Gls
             {
                 Content = new StringContent(soap ?? string.Empty, Encoding.UTF8, "text/xml")
             };
-            _ = peticion.Headers.TryAddWithoutValidation("SOAPAction", SOAP_ACTION);
+            _ = peticion.Headers.TryAddWithoutValidation("SOAPAction", $"\"{PeticionGls.Ns.NamespaceName}{_operacion}\"");
             _ = peticion.Headers.TryAddWithoutValidation("Accept", "text/xml");
 
             HttpResponseMessage respuesta;
@@ -72,11 +98,11 @@ namespace NestoAPI.Infraestructure.Agencias.Gls
             }
             catch (HttpRequestException ex)
             {
-                throw new AgenciaRemotaException("GLS (GrabaServicios): no se pudo conectar: " + ex.Message, ex) { EsTransitoria = true };
+                throw new AgenciaRemotaException($"GLS ({_operacion}): no se pudo conectar: " + ex.Message, ex) { EsTransitoria = true };
             }
             catch (TaskCanceledException ex)
             {
-                throw new AgenciaRemotaException("GLS (GrabaServicios): la petición agotó el tiempo de espera.", ex) { EsTransitoria = true };
+                throw new AgenciaRemotaException($"GLS ({_operacion}): la petición agotó el tiempo de espera.", ex) { EsTransitoria = true };
             }
 
             using (respuesta)
@@ -87,7 +113,7 @@ namespace NestoAPI.Infraestructure.Agencias.Gls
                 // (no es «GLS no responde»). Un 5xx sin XML sí es su servidor caído.
                 if (!respuesta.IsSuccessStatusCode && !EsXml(cuerpo))
                 {
-                    throw new AgenciaRemotaException($"GLS (GrabaServicios) respondió HTTP {codigo}: {Acotar(cuerpo)}")
+                    throw new AgenciaRemotaException($"GLS ({_operacion}) respondió HTTP {codigo}: {Acotar(cuerpo)}")
                     {
                         EsTransitoria = codigo >= 500
                     };
@@ -99,5 +125,14 @@ namespace NestoAPI.Infraestructure.Agencias.Gls
         private static bool EsXml(string cuerpo) => cuerpo != null && cuerpo.TrimStart('﻿', ' ', '\r', '\n', '\t').StartsWith("<", StringComparison.Ordinal);
 
         private static string Acotar(string texto) => texto == null ? string.Empty : texto.Length <= 300 ? texto : texto.Substring(0, 300) + "…";
+    }
+
+    /// <summary>NestoAPI#552 (fase 2): GrabaServicios, como AgenciaASM.LlamadaWebService de Nesto.</summary>
+    public class ClienteGrabaServiciosGls : ClienteSoapGls, IClienteGrabaServiciosGls
+    {
+        public ClienteGrabaServiciosGls(HttpClient http = null)
+            : base(PeticionGls.OPERACION_GRABA_SERVICIOS, PeticionGls.URL_GRABA_SERVICIOS, http)
+        {
+        }
     }
 }
