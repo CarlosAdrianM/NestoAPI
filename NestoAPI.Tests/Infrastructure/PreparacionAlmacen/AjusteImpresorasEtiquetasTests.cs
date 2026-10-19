@@ -141,7 +141,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
 
             Assert.AreEqual(
                 "I8,A,034\r\n" +
-                "q240\r\n" +
+                "q264\r\n" + // la anchura crece lo mismo que se desplaza a la derecha (X=24)
                 "Q160,24\r\n" +
                 "N\r\n" +
                 "B42,4,0,1,2,2,56,N,\"002004001\"\r\n" +
@@ -176,7 +176,28 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
 
             string desplazado = DesplazadorEpl.Desplazar(epl, 8, 8);
 
-            Assert.AreEqual("I8,A,034\r\nq240\r\nQ160,24\r\nN\r\nA18,18,0,2,1,1,N,\"B12,34 A5,6\"\r\nP1\r\n", desplazado);
+            // La anchura (q) crece lo mismo que se desplaza a la derecha; el resto de la cabecera no se toca
+            Assert.AreEqual("I8,A,034\r\nq248\r\nQ160,24\r\nN\r\nA18,18,0,2,1,1,N,\"B12,34 A5,6\"\r\nP1\r\n", desplazado);
+        }
+
+        [TestMethod]
+        public void Desplazar_ALaDerecha_AmpliaLaAnchuraParaQueElMarcoNoSeSalga()
+        {
+            // 19/10/26, impresora de Reina: con X=16 el marco iba a 255 con q240 y salió un recuadro negro relleno
+            string epl = "I8,A,034\r\nq240\r\nQ160,24\r\nN\r\nX0,0,2,239,159\r\nP1\r\n";
+
+            string desplazado = DesplazadorEpl.Desplazar(epl, 16, 0);
+
+            StringAssert.Contains(desplazado, "q256\r\n");
+            StringAssert.Contains(desplazado, "X16,0,2,255,159\r\n");
+        }
+
+        [TestMethod]
+        public void Desplazar_ALaIzquierda_NoCambiaLaAnchura()
+        {
+            string epl = "I8,A,034\r\nq240\r\nQ160,24\r\nN\r\nA20,10,0,2,1,1,N,\"X\"\r\nP1\r\n";
+
+            StringAssert.Contains(DesplazadorEpl.Desplazar(epl, -8, 0), "q240\r\n");
         }
 
         [TestMethod]

@@ -45,6 +45,20 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
         internal static string DesplazarLinea(string linea, int x, int y)
         {
+            // 19/10/26 (prueba en Reina): la anchura (q) crece lo mismo que se desplaza a la derecha. Si no, lo que pasa de la
+            // anchura declarada (el marco de la etiqueta de prueba, X…,255 con q240) sale como un recuadro negro relleno.
+            if (x > 0 && linea.Length > 1 && linea[0] == 'q' && char.IsDigit(linea[1]))
+            {
+                int fin = 1;
+                while (fin < linea.Length && char.IsDigit(linea[fin]))
+                {
+                    fin++;
+                }
+                if (int.TryParse(linea.Substring(1, fin - 1), NumberStyles.None, CultureInfo.InvariantCulture, out int ancho))
+                {
+                    return "q" + (ancho + x).ToString(CultureInfo.InvariantCulture) + linea.Substring(fin);
+                }
+            }
             string comando = Comando(linea);
             if (comando == null)
             {
