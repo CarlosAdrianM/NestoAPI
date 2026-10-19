@@ -155,23 +155,25 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public async Task<PickingAlmacenDTO> LeerPicking(string empresa, int picking)
         {
             List<LineaPickingAlmacenDTO> lineas = await repositorio.LeerLineasPicking(empresa, picking).ConfigureAwait(false);
+            // Ariadna#47: el almacén también dice de qué huecos leer los demás productos (lo completa el controlador)
+            string almacen = lineas == null || lineas.Count == 0
+                ? null
+                : await repositorio.LeerAlmacenPicking(empresa, picking).ConfigureAwait(false);
             return new PickingAlmacenDTO
             {
                 Empresa = empresa,
                 Picking = picking,
-                Lineas = CasadorEscaneos.OrdenarRecorrido(lineas, await OrdenDelPicking(empresa, picking, lineas).ConfigureAwait(false))
+                Almacen = almacen,
+                Lineas = CasadorEscaneos.OrdenarRecorrido(lineas, await OrdenDelAlmacen(empresa, almacen).ConfigureAwait(false))
             };
         }
 
-        /// <summary>NestoAPI#641: las calles del almacén del picking (sin líneas o sin lector, el orden de siempre).</summary>
-        private async Task<OrdenRecorrido> OrdenDelPicking(string empresa, int picking, List<LineaPickingAlmacenDTO> lineas)
+        /// <summary>NestoAPI#641: las calles del almacén del picking (sin almacén o sin lector, el orden de siempre).</summary>
+        private async Task<OrdenRecorrido> OrdenDelAlmacen(string empresa, string almacen)
         {
-            if (ordenRecorrido == null || lineas == null || lineas.Count == 0)
-            {
-                return OrdenRecorrido.ComoHoy;
-            }
-            string almacen = await repositorio.LeerAlmacenPicking(empresa, picking).ConfigureAwait(false);
-            return string.IsNullOrWhiteSpace(almacen) ? OrdenRecorrido.ComoHoy : await ordenRecorrido.DelAlmacen(empresa, almacen).ConfigureAwait(false);
+            return ordenRecorrido == null || string.IsNullOrWhiteSpace(almacen)
+                ? OrdenRecorrido.ComoHoy
+                : await ordenRecorrido.DelAlmacen(empresa, almacen).ConfigureAwait(false);
         }
 
         public Task<List<PickingEnCursoDTO>> LeerPickingsEnCurso(string empresa, string almacen)

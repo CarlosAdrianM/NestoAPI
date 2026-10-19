@@ -249,7 +249,9 @@ namespace NestoAPI
             // NestoAPI#605: varios códigos de barras por producto
             _ = services.AddScoped<Infraestructure.Productos.IRepositorioCodigosBarras>(_ => Infraestructure.Productos.RepositorioCodigosBarras.ConContextoPropio());
             _ = services.AddScoped<Infraestructure.Productos.IServicioCodigosBarras, Infraestructure.Productos.ServicioCodigosBarras>();
-            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IFichasProductoAlmacen, Infraestructure.PreparacionAlmacen.FichasProductoAlmacen>();
+            // Ariadna#47: los demás productos con stock en el hueco de cada línea (una consulta por respuesta)
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioProductosMismoHueco>(_ => Infraestructure.PreparacionAlmacen.RepositorioProductosMismoHuecoSql.ConContextoPropio());
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IFichasProductoAlmacen,Infraestructure.PreparacionAlmacen.FichasProductoAlmacen>();
             // Ariadna#12: coger de otro hueco lo que no estaba en el de la parada
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioCambioHueco>(_ => Infraestructure.PreparacionAlmacen.RepositorioCambioHuecoSql.ConContextoPropio());
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioCambioHuecoPicking, Infraestructure.PreparacionAlmacen.ServicioCambioHuecoPicking>();

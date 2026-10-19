@@ -270,10 +270,15 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 return null;
             }
             RecorridoSalida recorrido = await LeerRecorridoOrdenado(origen, empresa, numero).ConfigureAwait(false);
-            return recorrido == null
-                ? null
-                : Completar(origen, ServicioPreparacionAlmacen.MontarRecogida(empresa, origen.Tipo, numero, recorrido.Destino, recorrido.Lineas, recorrido.Lecturas),
-                    recorrido.NombreDestino);
+            if (recorrido == null)
+            {
+                return null;
+            }
+            RecogidaAlmacenDTO recogida = Completar(origen, ServicioPreparacionAlmacen.MontarRecogida(empresa, origen.Tipo, numero, recorrido.Destino, recorrido.Lineas, recorrido.Lecturas),
+                recorrido.NombreDestino);
+            // Ariadna#47: de qué almacén son los huecos (para leer los demás productos de cada uno; lo completa el controlador)
+            recogida.Almacen = recorrido.Almacen;
+            return recogida;
         }
 
         public async Task<ResultadoTerminarSalida> Terminar(string empresa, string tipo, int numero, IPrincipal usuario, bool ensayo = false)

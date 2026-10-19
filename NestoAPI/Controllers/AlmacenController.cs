@@ -80,7 +80,9 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> GetPicking(int picking, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
         {
             PickingAlmacenDTO resultado = await servicio.LeerPicking(Empresa(empresa), picking).ConfigureAwait(false);
-            await CompletarCodigos(Empresa(empresa), resultado?.Lineas).ConfigureAwait(false);
+            await Task.WhenAll(
+                CompletarCodigos(Empresa(empresa), resultado?.Lineas),
+                CompletarMismoHueco(Empresa(empresa), resultado?.Almacen, resultado?.Lineas)).ConfigureAwait(false);
             return resultado.Lineas.Count == 0 ? (IHttpActionResult)NotFound() : Ok(resultado);
         }
 
@@ -142,7 +144,9 @@ namespace NestoAPI.Controllers
             {
                 return NotFound();
             }
-            await CompletarFichas(Empresa(empresa), recogida.Lineas).ConfigureAwait(false);
+            await Task.WhenAll(
+                CompletarFichas(Empresa(empresa), recogida.Lineas),
+                CompletarMismoHueco(Empresa(empresa), recogida.Almacen, recogida.Lineas)).ConfigureAwait(false);
             return Ok(recogida);
         }
 
@@ -427,7 +431,9 @@ namespace NestoAPI.Controllers
             string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
         {
             PendienteDeUbicarDTO pendiente = await ubicaciones.LeerPendienteDeUbicar(Empresa(empresa), Almacen(almacen)).ConfigureAwait(false);
-            await CompletarFichas(Empresa(empresa), pendiente?.Productos).ConfigureAwait(false);
+            await Task.WhenAll(
+                CompletarFichas(Empresa(empresa), pendiente?.Productos),
+                CompletarMismoHueco(Empresa(empresa), pendiente?.Almacen, pendiente?.Productos)).ConfigureAwait(false);
             return Ok(pendiente);
         }
 
@@ -443,7 +449,9 @@ namespace NestoAPI.Controllers
             string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
         {
             ProductoAlmacenDTO producto = await ubicaciones.Ubicar(Empresa(empresa), ubicar, Usuario()).ConfigureAwait(false);
-            await CompletarFichas(Empresa(empresa), new[] { producto }).ConfigureAwait(false);
+            await Task.WhenAll(
+                CompletarFichas(Empresa(empresa), new[] { producto }),
+                CompletarMismoHueco(Empresa(empresa), producto?.Almacen, new[] { producto })).ConfigureAwait(false);
             return Ok(producto);
         }
 
@@ -495,7 +503,9 @@ namespace NestoAPI.Controllers
                 return BadRequest("Falta el código de barras o el número de producto.");
             }
             List<ProductoAlmacenDTO> productos = await ubicaciones.BuscarProducto(Empresa(empresa), Almacen(almacen), codigo).ConfigureAwait(false);
-            await CompletarFichas(Empresa(empresa), productos).ConfigureAwait(false);
+            await Task.WhenAll(
+                CompletarFichas(Empresa(empresa), productos),
+                CompletarMismoHueco(Empresa(empresa), Almacen(almacen), productos)).ConfigureAwait(false);
             return Ok(productos);
         }
 
@@ -597,6 +607,17 @@ namespace NestoAPI.Controllers
         private Task CompletarFichas(string empresa, IEnumerable<IConFichaProducto> productos)
         {
             return fichas == null || productos == null ? Task.CompletedTask : fichas.Completar(empresa, productos);
+        }
+
+        /// <summary>
+        /// Ariadna#47: los demás productos con stock en el hueco de cada línea (una consulta para todos). Nunca falla: si no
+        /// se puede leer, las líneas salen sin el campo.
+        /// </summary>
+        private Task CompletarMismoHueco(string empresa, string almacen, IEnumerable<IConProductosMismoHueco> lineas)
+        {
+            return fichas == null || lineas == null || string.IsNullOrWhiteSpace(almacen)
+                ? Task.CompletedTask
+                : fichas.CompletarMismoHueco(empresa, almacen, lineas);
         }
 
         /// <summary>NestoAPI#605: todos los códigos activos de cada producto, para las líneas que no llevan ficha.</summary>

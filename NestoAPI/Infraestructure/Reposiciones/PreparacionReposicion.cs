@@ -48,7 +48,7 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public int Cantidad { get; set; }
     }
 
-    public class LineaReposicionEnPreparacionDTO : Models.PreparacionAlmacen.IConFotoProducto
+    public class LineaReposicionEnPreparacionDTO : Models.PreparacionAlmacen.IConFotoProducto, Models.PreparacionAlmacen.IConProductosMismoHueco
     {
         /// <summary>PreExtrProducto.[Nº Orden]: con él se cambia la cantidad.</summary>
         public int NumeroOrden { get; set; }
@@ -68,6 +68,15 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public int UnidadesSinHueco { get; set; }
         /// <summary>NestoAPI#653: la foto del producto (FichasProductoAlmacen). Null si no tiene.</summary>
         public string UrlFoto { get; set; }
+        /// <summary>
+        /// Ariadna#47: los demás productos con stock en el (primer) hueco de donde sale lo reservado. Null sin hueco. Ver
+        /// <see cref="Models.PreparacionAlmacen.IConProductosMismoHueco"/>.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty(NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public List<Models.PreparacionAlmacen.ProductoMismoHuecoDTO> ProductosMismoHueco { get; set; }
+        /// <summary>Ariadna#47: el primer hueco reservado (el de <see cref="Hueco"/>), para comparar. No viaja.</summary>
+        [Newtonsoft.Json.JsonIgnore]
+        public Models.PreparacionAlmacen.UbicacionAlmacenDTO HuecoDeReferencia { get; set; }
     }
 
     /// <summary>La reposición que un almacén tiene en preparación (como mucho una a la vez).</summary>
@@ -1617,6 +1626,8 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
                     {
                         porLinea.TryGetValue(f.NumeroOrden, out ReservaLineaReposicion reserva);
                         linea.Hueco = UbicacionesReposicion.Huecos(reserva);
+                        HuecoUbicacion primero = reserva?.Piezas.Select(p => p.Hueco).FirstOrDefault(h => h?.TieneHueco == true);
+                        linea.HuecoDeReferencia = primero == null ? null : Models.PreparacionAlmacen.UbicacionAlmacenDTO.De(primero.Pasillo, primero.Fila, primero.Columna);
                         linea.UnidadesSinHueco = reserva?.UnidadesSinHueco ?? f.Cantidad;
                         linea.SinHueco = linea.UnidadesSinHueco > 0;
                     }

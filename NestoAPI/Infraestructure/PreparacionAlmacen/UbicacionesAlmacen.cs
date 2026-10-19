@@ -538,6 +538,8 @@ INSERT INTO Modificaciones (Tabla, Anterior, Nuevo, Usuario) VALUES (N'Ubicacion
             {
                 Producto = ubicar.Producto,
                 Almacen = ubicar.Almacen,
+                // Ariadna#47: con lo que hay en el hueco donde se acaba de ubicar (lo completa el controlador)
+                HuecoUbicado = UbicacionAlmacenDTO.De(ubicar.Pasillo, ubicar.Fila, ubicar.Columna),
                 Ubicaciones = OrdenarHuecos(despues.Where(f => f.Estado == ESTADO_UBICADO && f.Cantidad > 0),
                     await Orden(empresa, ubicar.Almacen).ConfigureAwait(false)),
                 PendienteDeUbicar = despues.Where(f => f.Estado == ESTADO_PENDIENTE_DE_UBICAR).Sum(f => f.Cantidad)

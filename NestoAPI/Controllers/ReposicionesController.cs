@@ -77,7 +77,12 @@ namespace NestoAPI.Controllers
 
         private async Task<ReposicionEnPreparacionDTO> ConFotos(ReposicionEnPreparacionDTO reposicion)
         {
-            await CompletarFotos(reposicion?.Lineas).ConfigureAwait(false);
+            // Ariadna#47: con los demás productos del hueco de cada línea (solo las que salen de un hueco: desde Algete)
+            await Task.WhenAll(
+                CompletarFotos(reposicion?.Lineas),
+                fichas == null || reposicion?.Lineas == null || string.IsNullOrWhiteSpace(reposicion.Origen)
+                    ? Task.CompletedTask
+                    : fichas.CompletarMismoHueco(reposicion.Empresa, reposicion.Origen, reposicion.Lineas)).ConfigureAwait(false);
             return reposicion;
         }
 

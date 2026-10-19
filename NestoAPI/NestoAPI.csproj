@@ -542,6 +542,7 @@
     <Compile Include="Infraestructure\PreparacionAlmacen\AlmacenFotosBultos.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\CasadorEscaneos.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\FichasProductoAlmacen.cs" />
+    <Compile Include="Infraestructure\PreparacionAlmacen\ProductosMismoHueco.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\FotosProductoAlmacen.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\FaltasSinQuitarSalida.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\AvisosFichaProducto.cs" />

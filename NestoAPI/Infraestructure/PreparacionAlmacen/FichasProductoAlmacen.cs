@@ -42,6 +42,12 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// llamada para todos los productos a la vez, con la misma caché que <see cref="Completar"/>.
         /// </summary>
         Task CompletarFotos(IEnumerable<IConFotoProducto> productos);
+
+        /// <summary>
+        /// Ariadna#47: los demás productos con stock en el hueco de cada línea, del almacén <paramref name="almacen"/>. Una
+        /// consulta para todos los huecos; nunca falla: si no se puede leer, las líneas se quedan sin el campo (ELMAH).
+        /// </summary>
+        Task CompletarMismoHueco(string empresa, string almacen, IEnumerable<IConProductosMismoHueco> lineas);
     }
 
     /// <summary>
@@ -54,15 +60,23 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         private readonly IRepositorioFichasProducto repositorio;
         private readonly IFotosProductoAlmacen fotos;
         private readonly Productos.IRepositorioCodigosBarras codigos;
+        private readonly IRepositorioProductosMismoHueco mismoHueco;
 
         /// <param name="fotos">Sin él, sin foto.</param>
         /// <param name="codigos">NestoAPI#605: sin él, CodigosBarras lleva solo el principal.</param>
+        /// <param name="mismoHueco">Ariadna#47: sin él, las líneas no llevan los demás productos del hueco.</param>
         public FichasProductoAlmacen(IRepositorioFichasProducto repositorio, IFotosProductoAlmacen fotos = null,
-            Productos.IRepositorioCodigosBarras codigos = null)
+            Productos.IRepositorioCodigosBarras codigos = null, IRepositorioProductosMismoHueco mismoHueco = null)
         {
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
             this.fotos = fotos;
             this.codigos = codigos;
+            this.mismoHueco = mismoHueco;
+        }
+
+        public Task CompletarMismoHueco(string empresa, string almacen, IEnumerable<IConProductosMismoHueco> lineas)
+        {
+            return ProductosMismoHueco.Completar(mismoHueco, empresa, almacen, lineas);
         }
 
         public Task CompletarCodigos(string empresa, IEnumerable<IConCodigosBarras> lineas)

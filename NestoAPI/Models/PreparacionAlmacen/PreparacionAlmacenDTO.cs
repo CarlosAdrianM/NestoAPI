@@ -31,6 +31,36 @@ namespace NestoAPI.Models.PreparacionAlmacen
         string UrlFoto { get; set; }
     }
 
+    /// <summary>
+    /// Ariadna#47 (Carlos, 19/10/26): otro producto con stock en el mismo hueco que la línea, para que el mozo distinga los
+    /// que se parecen (SERUM / MÁSCARA LEVEL LASH): lo que no comparten se resalta en la app.
+    /// </summary>
+    public class ProductoMismoHuecoDTO
+    {
+        public string Producto { get; set; }
+        public string Nombre { get; set; }
+        public short? Tamano { get; set; }
+        public string UnidadMedida { get; set; }
+        /// <summary>Las 5 últimas cifras del código de barras principal, solo si es un GTIN válido; si no, null.</summary>
+        public string UltimasCifras { get; set; }
+    }
+
+    /// <summary>
+    /// Ariadna#47: una línea que se enseña con su hueco y lleva los demás productos que hay en él. La rellena siempre
+    /// <c>FichasProductoAlmacen.CompletarMismoHueco</c>: una consulta por respuesta, para todos los huecos a la vez.
+    /// </summary>
+    public interface IConProductosMismoHueco
+    {
+        string Producto { get; }
+        /// <summary>El hueco con el que se compara (pasillo, fila y columna). Null: la línea no tiene hueco y no lleva nada.</summary>
+        UbicacionAlmacenDTO HuecoDeReferencia { get; }
+        /// <summary>
+        /// Los demás productos con stock en ese hueco (sin el propio). Null si la línea no tiene hueco o no se ha podido
+        /// leer (la app compara entonces con los de su propia lista); vacía si no hay ninguno más.
+        /// </summary>
+        List<ProductoMismoHuecoDTO> ProductosMismoHueco { get; set; }
+    }
+
     public interface IConFichaProducto : IConFotoProducto
     {
         /// <summary>El nombre de la familia (Familias.Descripción), no su código.</summary>
@@ -42,7 +72,7 @@ namespace NestoAPI.Models.PreparacionAlmacen
     }
 
     /// <summary>Una parada del picking: un producto en un hueco de la estantería.</summary>
-    public class LineaPickingAlmacenDTO : IConCodigosBarras
+    public class LineaPickingAlmacenDTO : IConCodigosBarras, IConProductosMismoHueco
     {
         /// <summary>Posición en el recorrido (1, 2, 3…): pasillo, columna, fila.</summary>
         public int Orden { get; set; }
@@ -63,11 +93,19 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public string Columna { get; set; }
         /// <summary>Como se enseña siempre: pasillo/fila/columna (001/002/004). Null si no tiene ubicación.</summary>
         public string Ubicacion { get; set; }
+        /// <summary>Ariadna#47: los demás productos con stock en este hueco. Ver <see cref="IConProductosMismoHueco"/>.</summary>
+        [Newtonsoft.Json.JsonProperty(NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public List<ProductoMismoHuecoDTO> ProductosMismoHueco { get; set; }
+
+        UbicacionAlmacenDTO IConProductosMismoHueco.HuecoDeReferencia => UbicacionAlmacenDTO.De(Pasillo, Fila, Columna);
     }
 
     public class PickingAlmacenDTO
     {
         public string Empresa { get; set; }
+        /// <summary>Ariadna#47: el almacén de los huecos (para leer qué más hay en ellos). No viaja.</summary>
+        [Newtonsoft.Json.JsonIgnore]
+        public string Almacen { get; set; }
         public int Picking { get; set; }
         public List<LineaPickingAlmacenDTO> Lineas { get; set; } = new List<LineaPickingAlmacenDTO>();
     }
@@ -124,6 +162,9 @@ namespace NestoAPI.Models.PreparacionAlmacen
     public class RecogidaAlmacenDTO
     {
         public string Empresa { get; set; }
+        /// <summary>Ariadna#47: el almacén de donde sale (el de los huecos), para leer qué más hay en ellos. No viaja.</summary>
+        [Newtonsoft.Json.JsonIgnore]
+        public string Almacen { get; set; }
         public string Tipo { get; set; }
         public int Numero { get; set; }
         public string Destino { get; set; }
@@ -397,6 +438,29 @@ namespace NestoAPI.Models.PreparacionAlmacen
             }
             return partes[0].PadLeft(3, '0') + partes[1].PadLeft(3, '0') + partes[2].PadLeft(3, '0');
         }
+
+        /// <summary>Ariadna#47: el hueco de una línea; null si le falta el pasillo, la fila o la columna.</summary>
+        public static UbicacionAlmacenDTO De(string pasillo, string fila, string columna)
+        {
+            if (string.IsNullOrWhiteSpace(pasillo) || string.IsNullOrWhiteSpace(fila) || string.IsNullOrWhiteSpace(columna))
+            {
+                return null;
+            }
+            return new UbicacionAlmacenDTO
+            {
+                Pasillo = pasillo.Trim(),
+                Fila = fila.Trim(),
+                Columna = columna.Trim(),
+                Ubicacion = $"{pasillo.Trim()}/{fila.Trim()}/{columna.Trim()}"
+            };
+        }
+
+        /// <summary>Ariadna#47: el hueco escrito como se enseña («001/002/004»); null si no lo es.</summary>
+        public static UbicacionAlmacenDTO DeTexto(string ubicacion)
+        {
+            string[] partes = ubicacion?.Split('/');
+            return partes != null && partes.Length == 3 ? De(partes[0], partes[1], partes[2]) : null;
+        }
     }
 
     /// <summary>De dónde viene lo que está pendiente de ubicar.</summary>
@@ -412,7 +476,7 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public int Cantidad { get; set; }
     }
 
-    public class ProductoPendienteDeUbicarDTO : IConFichaProducto, IConCodigosBarras
+    public class ProductoPendienteDeUbicarDTO : IConFichaProducto, IConCodigosBarras, IConProductosMismoHueco
     {
         /// <summary>Posición en el recorrido: por el hueco donde ya hay producto (pasillo, columna, fila).</summary>
         public int Orden { get; set; }
@@ -438,6 +502,21 @@ namespace NestoAPI.Models.PreparacionAlmacen
         /// (pasillo/fila/columna). Null si nunca ha tenido hueco: es un producto nuevo.
         /// </summary>
         public string UltimaUbicacion { get; set; }
+        /// <summary>
+        /// Ariadna#47: los demás productos con stock en el hueco sugerido (el primero de <see cref="UbicacionesActuales"/>
+        /// o, si no queda ninguno, <see cref="UltimaUbicacion"/>). Ver <see cref="IConProductosMismoHueco"/>.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty(NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public List<ProductoMismoHuecoDTO> ProductosMismoHueco { get; set; }
+
+        UbicacionAlmacenDTO IConProductosMismoHueco.HuecoDeReferencia
+        {
+            get
+            {
+                UbicacionAlmacenDTO actual = UbicacionesActuales?.Find(u => u != null);
+                return actual != null ? UbicacionAlmacenDTO.De(actual.Pasillo, actual.Fila, actual.Columna) : UbicacionAlmacenDTO.DeTexto(UltimaUbicacion);
+            }
+        }
     }
 
     public class PendienteDeUbicarDTO
@@ -470,7 +549,7 @@ namespace NestoAPI.Models.PreparacionAlmacen
     }
 
     /// <summary>Un producto encontrado por su código de barras o su número, con dónde está.</summary>
-    public class ProductoAlmacenDTO : IConFichaProducto, IConCodigosBarras
+    public class ProductoAlmacenDTO : IConFichaProducto, IConCodigosBarras, IConProductosMismoHueco
     {
         public string Producto { get; set; }
         public string Descripcion { get; set; }
@@ -486,6 +565,24 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public List<UbicacionAlmacenDTO> Ubicaciones { get; set; } = new List<UbicacionAlmacenDTO>();
         /// <summary>Unidades recibidas sin hueco asignado.</summary>
         public int PendienteDeUbicar { get; set; }
+        /// <summary>
+        /// Ariadna#47: los demás productos con stock en el hueco donde se acaba de ubicar (al ubicar) o en el primero de
+        /// <see cref="Ubicaciones"/> (al buscar). Ver <see cref="IConProductosMismoHueco"/>.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty(NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public List<ProductoMismoHuecoDTO> ProductosMismoHueco { get; set; }
+        /// <summary>Ariadna#47: al ubicar, el hueco donde se ha ubicado (el que se compara). No viaja.</summary>
+        [Newtonsoft.Json.JsonIgnore]
+        public UbicacionAlmacenDTO HuecoUbicado { get; set; }
+
+        UbicacionAlmacenDTO IConProductosMismoHueco.HuecoDeReferencia
+        {
+            get
+            {
+                UbicacionAlmacenDTO hueco = HuecoUbicado ?? Ubicaciones?.Find(u => u != null);
+                return hueco == null ? null : UbicacionAlmacenDTO.De(hueco.Pasillo, hueco.Fila, hueco.Columna);
+            }
+        }
     }
 }
 
