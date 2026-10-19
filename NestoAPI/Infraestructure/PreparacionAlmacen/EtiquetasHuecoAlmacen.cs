@@ -218,7 +218,7 @@ HAVING SUM(u.Cantidad) > 0";
         private readonly ILectorParametrosUsuario parametros;
         private readonly IImpresoraEtiquetas impresora;
 
-        public ServicioEtiquetasHueco() : this(RepositorioEtiquetasHuecoSql.ConContextoPropio(), new LectorParametrosUsuario(), new ImpresoraEtiquetasWindows())
+        public ServicioEtiquetasHueco() : this(RepositorioEtiquetasHuecoSql.ConContextoPropio(), new LectorParametrosUsuario(), ImpresoraEtiquetasConAjuste.EnWindows())
         {
         }
 

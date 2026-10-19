@@ -613,7 +613,7 @@ namespace NestoAPI.Controllers
 
         private Infraestructure.PreparacionAlmacen.IServicioBultosReposicion Bultos => bultos
             ?? new Infraestructure.PreparacionAlmacen.ServicioBultosReposicion(new Infraestructure.PreparacionAlmacen.RepositorioBultosReposicionSql(db),
-                new LectorParametrosUsuario(), new Infraestructure.PreparacionAlmacen.ImpresoraEtiquetasWindows());
+                new LectorParametrosUsuario(), Infraestructure.PreparacionAlmacen.ImpresoraEtiquetasConAjuste.EnWindows());
 
         // POST api/Reposiciones/81010/Bultos?empresa=1   { "Bultos": 3, "Imprimir": true }
         /// <summary>

@@ -261,10 +261,17 @@ namespace NestoAPI
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioEtiquetasHueco>(sp => new Infraestructure.PreparacionAlmacen.ServicioEtiquetasHueco(
                 Infraestructure.PreparacionAlmacen.RepositorioEtiquetasHuecoSql.ConContextoPropio(),
                 sp.GetRequiredService<ILectorParametrosUsuario>(),
-                new Infraestructure.PreparacionAlmacen.ImpresoraEtiquetasWindows()));
+                Infraestructure.PreparacionAlmacen.ImpresoraEtiquetasConAjuste.EnWindows()));
             // NestoAPI#654: etiquetas de código de barras de producto, con la ficha del almacén y la impresora de las de hueco
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioEtiquetasProducto>(sp => new Infraestructure.PreparacionAlmacen.ServicioEtiquetasProducto(
                 sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IRepositorioFichasProducto>(),
+                sp.GetRequiredService<ILectorParametrosUsuario>(),
+                Infraestructure.PreparacionAlmacen.ImpresoraEtiquetasConAjuste.EnWindows()));
+
+            // NestoAPI#672: desplazamiento por impresora de etiquetas y etiqueta de prueba (la prueba imprime sin el decorador:
+            // ya lleva aplicado el ajuste que se está probando)
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioAjustesImpresoras>(sp => new Infraestructure.PreparacionAlmacen.ServicioAjustesImpresoras(
+                new Infraestructure.PreparacionAlmacen.RepositorioAjustesImpresorasSql(),
                 sp.GetRequiredService<ILectorParametrosUsuario>(),
                 new Infraestructure.PreparacionAlmacen.ImpresoraEtiquetasWindows()));
 
