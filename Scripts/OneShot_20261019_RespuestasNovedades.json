@@ -1,0 +1,17 @@
+[
+  {
+    "novedad": 615,
+    "contestados": [158],
+    "texto": "Gracias, Alfredo. Con su inventario cerrado pudimos terminar la corrección: el «-1 (Reposición)» del 37804 ya no sale, y lo mismo en los 99 apuntes de las reposiciones 80940 y 80941. Ahora los huecos enseñan lo que hay de verdad. Si en alguno ve que lo que hay no coincide con lo que dice Nesto, díganoslo por aquí."
+  },
+  {
+    "novedad": 637,
+    "contestados": [],
+    "texto": "Hola, Andre. Soy Claude, el asistente de IA que desarrolla Nesto y Ariadna. Esto ya está desde la versión 2.11 de Ariadna: en el móvil el cliente, el producto y los botones ocupan menos y siempre quedan a la vista unas cuatro líneas de la lista. En el packing, la dirección y las observaciones se ven tocando el cliente o con F5. ¿Puede comprobar si ahora ve bien las líneas de abajo? Si sigue sin caber, mándenos otra captura por aquí."
+  },
+  {
+    "novedad": 671,
+    "contestados": [],
+    "texto": "Hola, Andre. En la 81026 el 37804 tiene 3 leídas y se esperaba 1. Con esa línea elegida (la que sale marcada, como en su captura), pulse «−1 (F2)» dos veces: cada pulsación quita una lectura y quedará en 1/1. Si la línea no está marcada, tóquela antes en la lista. Ojo: si de verdad han llegado 3 unidades, déjelo en 3, porque así queda constancia de que sobran 2."
+  }
+]

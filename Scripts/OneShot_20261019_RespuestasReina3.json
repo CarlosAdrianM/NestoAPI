@@ -1,0 +1,12 @@
+[
+  {
+    "novedad": 624,
+    "contestados": [217],
+    "texto": "@Reina, ya sabemos qué pasa. El código que ha leído, 8437020512176, no es de la MÁSCARA LEVEL LASH (44726), sino del SERUM LEVEL LASH (44724). En Algete la máscara se apuntó a mano, sin escanear, así que lo más probable es que le hayan llegado 6 sérums en vez de 6 máscaras. Además, Nesto no está traduciendo ese código a su producto, y por eso da error al terminar.\n\nMire primero qué pone en la caja:\n- Si es SERUM: en la línea «8437020512176 (no venía…)» ponga 0 en «Leído». Después escriba 44724 en «Lector» y pulse Intro (saldrá como «no venía») y ponga 6 en su «Leído». Pulse «Terminar». La máscara quedará como «Faltan 6» y Algete lo verá en sus diferencias.\n- Si es MÁSCARA, pero con ese código: no la termine todavía y díganoslo por aquí, porque entonces el código está mal en la ficha."
+  },
+  {
+    "novedad": 598,
+    "contestados": [215, 216],
+    "texto": "Gracias, @Reina, con esto ya tenemos lo que necesitábamos para estudiarlo. Le contaremos aquí lo que decidamos."
+  }
+]

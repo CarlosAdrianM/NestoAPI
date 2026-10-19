@@ -1,0 +1,22 @@
+[
+  {
+    "novedad": 650,
+    "contestados": [],
+    "texto": "@Paloma, una prueba rápida para entender por qué el viernes Nesto no reconoció la etiqueta del bulto. Abra el Bloc de notas en el ordenador de la tienda, pulse dentro y lea con la pistola una etiqueta de bulto (las que empiezan por R, por ejemplo R81032-1). ¿Qué sale escrito: «R81032-1» con guion, o algo como «R81032'1» con un apóstrofo? Con eso sabremos si es la configuración de la pistola, y de todas formas vamos a hacer que Nesto la reconozca salga como salga."
+  },
+  {
+    "novedad": 673,
+    "contestados": [],
+    "texto": "@Aida, lo vamos a hacer: en la pestaña Incidentados de Agencias habrá un botón «Dar por cerrado». Pedirá el motivo, quitará el envío de la lista y dejará anotado en el historial del envío quién lo cerró y por qué. Le avisaremos aquí cuando esté."
+  },
+  {
+    "novedad": 674,
+    "contestados": [],
+    "texto": "@Andre, lo vamos a cambiar: cuando un código no coincida con la lista, Ariadna lo comprobará antes con el servidor, así que un código recién corregido valdrá sin salir de la reposición. Le avisaremos aquí cuando esté."
+  },
+  {
+    "novedad": 675,
+    "contestados": [],
+    "texto": "@Andre, también lo vamos a cambiar: el nombre del producto se verá entero en la cabecera. Le avisaremos aquí cuando esté."
+  }
+]
