@@ -252,7 +252,8 @@ namespace NestoAPI.Models.Picking
             GestorMargenes gestor = new GestorMargenes();
             gestor.Rellenar(asignadorPicking.numeroPicking);
             gestor.enviarCorreo();
-            GestorPrepagos.EnviarCorreo(retenidosPorPrepago);
+            // NestoAPI#665: a los comerciales de cada pedido (estética/peluquería según sus líneas)
+            GestorPrepagos.EnviarCorreo(retenidosPorPrepago, new Infraestructure.PedidosVenta.LectorComercialesPedido(db));
             // NestoAPI#362: un pedido que no sale sin decir por qué parece un cuelgue
             GestorDiasEnServir.EnviarCorreo(sinSalirPorCierreCliente, diaEntregaPicking);
             // NestoAPI#253: aviso con importe a vendedor y usuario para los pedidos con la casilla

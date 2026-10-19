@@ -280,21 +280,15 @@ namespace NestoAPI.Infraestructure.Facturas
         public List<VendedorFactura> CargarVendedoresPedido(string empresa, int pedido)
         {
             List<VendedorFactura> nombresVendedores = new List<VendedorFactura>();
-            List<string> codigosVendedores = new List<string>();
             CabPedidoVta pedidoCompleto = db.CabPedidoVtas.Single(p => p.Empresa == empresa && p.Número == pedido);
             VendedorPedidoGrupoProducto vendedorPeluqueria = db.VendedoresPedidosGruposProductos.SingleOrDefault(v => v.Empresa == empresa && v.Pedido == pedido);
             string vendedorEstetica = pedidoCompleto.Vendedor;
 
-            bool hayPeluqueria = pedidoCompleto.LinPedidoVtas.Any(l => l.Grupo == Constantes.Productos.GRUPO_PELUQUERIA);
-            bool hayNoPeluqueria = pedidoCompleto.LinPedidoVtas.Any(l => l.Grupo != Constantes.Productos.GRUPO_PELUQUERIA);
-            if (hayPeluqueria && vendedorPeluqueria != null)
-            {
-                codigosVendedores.Add(vendedorPeluqueria.Vendedor);
-            }
-            if (hayNoPeluqueria)
-            {
-                codigosVendedores.Add(vendedorEstetica);
-            }
+            // NestoAPI#665: la regla estética/peluquería vive en ComercialesPedido (la comparten los avisos de
+            // retenidos y de incidencias). La factura, como siempre: con peluquería y sin vendedor de peluquería, nadie.
+            List<string> codigosVendedores = PedidosVenta.ComercialesPedido.CodigosVendedores(
+                pedidoCompleto.LinPedidoVtas.Select(l => l.Grupo), vendedorEstetica, vendedorPeluqueria?.Vendedor,
+                peluqueriaSinVendedorVaAlDeEstetica: false);
 
             foreach (string codigoVendedor in codigosVendedores)
             {
