@@ -110,6 +110,21 @@ namespace NestoAPI.Controllers
         public DateTime FechaRetornoRecibido { get; set; }
     }
 
+    /// <summary>NestoAPI#676: cuerpo de POST EnviosAgencias/{id}/DarPorCerrado.</summary>
+    public class DarPorCerradoEnvioDTO
+    {
+        public string Motivo { get; set; }
+    }
+
+    /// <summary>NestoAPI#676: respuesta de POST EnviosAgencias/{id}/DarPorCerrado (el envío ya cerrado).</summary>
+    public class EnvioCerradoDTO
+    {
+        public int Numero { get; set; }
+        public int? Pedido { get; set; }
+        public short Estado { get; set; }
+        public string DetalleEstado { get; set; }
+    }
+
     /// <summary>
     /// Nesto#340 (Agencias, slice A1): fila de los listados de la ventana de Agencias de Nesto
     /// (pendientes, en curso, tramitados, incidentados, reembolsos y retornos), calcada del
@@ -1516,6 +1531,47 @@ namespace NestoAPI.Controllers
                 Numero = envio.Numero,
                 Pedido = envio.Pedido,
                 FechaRetornoRecibido = envio.FechaRetornoRecibido.Value
+            });
+        }
+
+        /// <summary>
+        /// NestoAPI#676 (Sugerencia 673): da por cerrado un envío INCIDENTADO que la agencia nunca cerró. Pasa a
+        /// Entregado con «cerrado a mano» en el detalle (ver <see cref="CierreManualEnvio"/> por qué ese estado) y
+        /// deja en EnviosHistoria el estado y la incidencia anteriores con el usuario del token, la fecha y el motivo.
+        /// Sale de Incidentados y el seguimiento automático ya no lo vuelve a consultar ni a avisar.
+        /// </summary>
+        [HttpPost]
+        [Authorize]
+        [Route("api/EnviosAgencias/{id:int}/DarPorCerrado")]
+        [ResponseType(typeof(EnvioCerradoDTO))]
+        public async Task<IHttpActionResult> DarPorCerrado(int id, DarPorCerradoEnvioDTO datos)
+        {
+            EnviosAgencia envio = await db.EnviosAgencias.FindAsync(id);
+            if (envio == null)
+            {
+                return NotFound();
+            }
+
+            string error = CierreManualEnvio.Validar(envio, datos?.Motivo);
+            if (error != null)
+            {
+                return BadRequest(error);
+            }
+
+            string usuario = UsuarioAuditoriaHelper.ParaAuditoria(UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"));
+            List<EnvioHistoria> historia = CierreManualEnvio.Aplicar(envio, datos.Motivo, usuario, DateTime.Now);
+            foreach (EnvioHistoria fila in historia)
+            {
+                _ = db.EnviosHistorias.Add(fila);
+            }
+            _ = await db.SaveChangesAsync();
+
+            return Ok(new EnvioCerradoDTO
+            {
+                Numero = envio.Numero,
+                Pedido = envio.Pedido,
+                Estado = envio.Estado,
+                DetalleEstado = envio.DetalleEstado
             });
         }
 

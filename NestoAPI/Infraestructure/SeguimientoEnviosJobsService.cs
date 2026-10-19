@@ -421,6 +421,14 @@ namespace NestoAPI.Infraestructure
                 return false;
             }
 
+            // NestoAPI#676: un envío que una persona ha dado por cerrado a mano no lo reabre ninguna consulta (el poll
+            // ya no lo lee, porque es Entregado, pero sí lo haría «Actualizar estado» a demanda): ni vuelve a
+            // incidentado ni, por tanto, repite el aviso de #666. Solo se acepta una entrega confirmada.
+            if (CierreManualEnvio.EstaCerradoAMano(envio) && seguimiento.Estado != EstadoEnvioSeguimiento.Entregado)
+            {
+                return false;
+            }
+
             // 23/09/26: el seguimiento nunca "destramita". EnCurso (0) es la etiqueta aún sin tramitar;
             // un envío que ya consultamos en la agencia está, como poco, tramitado. Si una agencia lo
             // devuelve (CTT lo hacía con "ENVÍO RECOGIDO"), se guarda como Tramitado: si no, el envío

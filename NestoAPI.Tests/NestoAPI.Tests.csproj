@@ -305,6 +305,7 @@
     <Compile Include="Controllers\EnviosAgenciasTextosLargosTests.cs" />
     <Compile Include="Controllers\ConfirmarTramitacionTests.cs" />
     <Compile Include="Controllers\RecibirRetornoTests.cs" />
+    <Compile Include="Controllers\DarPorCerradoEnvioTests.cs" />
     <Compile Include="Controllers\PagarReembolsosControllerTests.cs" />
     <Compile Include="Controllers\TramitarEnvioTests.cs" />
     <Compile Include="Controllers\EnviosAgenciasCatalogoServiciosTests.cs" />
