@@ -4,6 +4,7 @@ using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace NestoAPI.Tests.Infraestructure
 {
@@ -250,6 +251,34 @@ namespace NestoAPI.Tests.Infraestructure
             };
 
             Assert.AreEqual(EstadoPedidoCliente.Entregado, ResumidorPedidosCliente.Resumir(pedido).Estado);
+        }
+
+        [TestMethod]
+        public void Resumir_EnvioCerradoAMano_EsEnvioCerradoYNoEntregado()
+        {
+            // NestoAPI#676: lo cerramos nosotros porque la agencia nunca lo cerró; no sabemos si llegó.
+            DatosPedidoCliente pedido = Pedido(Linea(estado: Constantes.EstadosLineaVenta.FACTURA));
+            pedido.Envio = new UltimoEnvioClienteDTO
+            {
+                Pedido = pedido.Numero,
+                NumeroSeguimiento = "123",
+                Estado = Constantes.Agencias.ESTADO_CERRADO_A_MANO
+            };
+
+            PedidoClienteResumenDTO resumen = ResumidorPedidosCliente.Resumir(pedido);
+
+            Assert.AreEqual(EstadoPedidoCliente.EnvioCerrado, resumen.Estado);
+            Assert.AreEqual("Envío cerrado", resumen.EstadoTexto);
+        }
+
+        [TestMethod]
+        public void EstadoPedidoCliente_EnvioCerrado_ViajaComoTextoYAlFinal()
+        {
+            // Viaja como texto (StringEnumConverter): una app que no lo conozca solo pinta EstadoTexto.
+            string json = Newtonsoft.Json.JsonConvert.SerializeObject(new PedidoClienteResumenDTO { Estado = EstadoPedidoCliente.EnvioCerrado });
+            StringAssert.Contains(json, "\"Estado\":\"EnvioCerrado\"");
+            Assert.AreEqual(EstadoPedidoCliente.EnvioCerrado,
+                ((EstadoPedidoCliente[])Enum.GetValues(typeof(EstadoPedidoCliente))).Max(), "Al final: no se reordena ninguno");
         }
 
         [TestMethod]

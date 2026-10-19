@@ -519,7 +519,8 @@ namespace NestoAPI.Controllers
         }
 
         /// <summary>
-        /// Tramitados (Estado &gt;= 1, que incluye Entregado e Incidentado, #387) con las tres
+        /// Tramitados (Estado &gt;= 1, que incluye Entregado e Incidentado, #387; NestoAPI#676: menos los cerrados a
+        /// mano, que ya no están vivos) con las tres
         /// búsquedas de la pestaña: por agencia+fecha, por cliente o por texto (nombre,
         /// dirección o teléfonos). Sin ningún filtro no hay listado: el histórico es enorme.
         /// </summary>
@@ -535,7 +536,8 @@ namespace NestoAPI.Controllers
             }
 
             IQueryable<EnviosAgencia> query = db.EnviosAgencias
-                .Where(e => e.Empresa == empresa && e.Estado >= Constantes.Agencias.ESTADO_TRAMITADO);
+                .Where(e => e.Empresa == empresa && e.Estado >= Constantes.Agencias.ESTADO_TRAMITADO
+                    && e.Estado != Constantes.Agencias.ESTADO_CERRADO_A_MANO);
             if (agencia.HasValue)
             {
                 query = query.Where(e => e.Agencia == agencia.Value);
@@ -577,7 +579,8 @@ namespace NestoAPI.Controllers
             return Ok(envios);
         }
 
-        /// <summary>Reembolsos tramitados pendientes de pago por la agencia — pestaña Reembolsos.</summary>
+        /// <summary>Reembolsos tramitados pendientes de pago por la agencia — pestaña Reembolsos. NestoAPI#676: los
+        /// cerrados a mano (Estado 5) siguen saliendo, como un entregado: la agencia todavía puede pagarlo.</summary>
         [HttpGet]
         [Route("api/EnviosAgencias/Reembolsos")]
         [ResponseType(typeof(List<EnvioAgenciaListadoDTO>))]
@@ -1536,7 +1539,7 @@ namespace NestoAPI.Controllers
 
         /// <summary>
         /// NestoAPI#676 (Sugerencia 673): da por cerrado un envío INCIDENTADO que la agencia nunca cerró. Pasa a
-        /// Entregado con «cerrado a mano» en el detalle (ver <see cref="CierreManualEnvio"/> por qué ese estado) y
+        /// «Cerrado a mano» (Estado 5, ver <see cref="CierreManualEnvio"/> cómo se comporta) y
         /// deja en EnviosHistoria el estado y la incidencia anteriores con el usuario del token, la fecha y el motivo.
         /// Sale de Incidentados y el seguimiento automático ya no lo vuelve a consultar ni a avisar.
         /// </summary>

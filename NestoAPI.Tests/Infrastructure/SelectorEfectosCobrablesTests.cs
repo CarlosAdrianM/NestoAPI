@@ -290,6 +290,32 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public async Task CandidatosSepa_EnvioCerradoAMano_NoRetieneComoUnEntregado()
+        {
+            // NestoAPI#676: lo contrario de DEVUELTO. Cerrado a mano = terminado sin confirmar; a efectos de cobro,
+            // como entregado. Como su número (5) queda por encima de DEVUELTO (4), si entrara en el gating saldría
+            // retenido como devuelto y sin poder forzarlo.
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente>
+            {
+                Efecto(id: 1, documento: "NV2612001")
+            }.AsQueryable());
+            ConfigurarFakeDbSet(fakeLineas, new List<LinPedidoVta>
+            {
+                new LinPedidoVta { Empresa = "1", Número = 922001, Nº_Factura = "NV2612001" }
+            }.AsQueryable());
+            ConfigurarFakeDbSet(fakeEnvios, new List<EnviosAgencia>
+            {
+                new EnviosAgencia { Numero = 1, Pedido = 922001, Estado = Constantes.Agencias.ESTADO_CERRADO_A_MANO, Fecha = HOY.AddDays(-3) }
+            }.AsQueryable());
+
+            List<EfectoCandidatoDTO> candidatos = await selector.CandidatosSepa("1", HOY);
+
+            EfectoCandidatoDTO efecto = candidatos.Single(c => c.Id == 1);
+            Assert.IsTrue(efecto.Preseleccionado, "Cerrado a mano no retiene la remesa");
+            Assert.IsTrue(string.IsNullOrEmpty(efecto.Motivo) || !efecto.Motivo.Contains("DEVUELTO"));
+        }
+
+        [TestMethod]
         public async Task CandidatosSepa_EnvioDeAgenciaSinSeguimiento_NoRetiene()
         {
             // Fallo 20/08/26 (caso real 3028653): un envío de Correos Express (u otra agencia

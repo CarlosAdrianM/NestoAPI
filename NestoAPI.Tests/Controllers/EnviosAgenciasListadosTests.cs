@@ -428,6 +428,43 @@ namespace NestoAPI.Tests.Controllers
             CollectionAssert.AreEquivalent(new List<int> { 3, 4 }, porTelefono.Content.Select(e => e.Numero).ToList());
         }
 
+        // NestoAPI#676: «Cerrado a mano» (5) es un envío terminado sin confirmar: fuera de las listas de envíos vivos,
+        // dentro de Reembolsos mientras la agencia no pague (como un entregado).
+
+        [TestMethod]
+        public async Task CerradoAMano_NoSaleEnIncidentadosNiEnTramitadosNiEnRetrasados()
+        {
+            DateTime hoy = DateTime.Today;
+            ConEnvios(
+                EnvioConFecha(1, Constantes.Agencias.ESTADO_CERRADO_A_MANO, hoy.AddDays(-20)),
+                EnvioConFecha(2, Constantes.Agencias.ESTADO_INCIDENTADO, hoy.AddDays(-20)),
+                EnvioConFecha(3, Constantes.Agencias.ESTADO_TRAMITADO, hoy.AddDays(-20)));
+
+            var incidentados = await controller.GetEnviosIncidentados("1") as OkNegotiatedContentResult<List<EnvioAgenciaListadoDTO>>;
+            var tramitados = await controller.GetEnviosTramitados("1", agencia: 1, fecha: hoy.AddDays(-20)) as OkNegotiatedContentResult<List<EnvioAgenciaListadoDTO>>;
+            var porCliente = await controller.GetEnviosTramitados("1", cliente: "15191") as OkNegotiatedContentResult<List<EnvioAgenciaListadoDTO>>;
+            var retrasados = await controller.GetEnviosRetrasados(diasUmbral: 3) as OkNegotiatedContentResult<List<EnvioRetrasadoDTO>>;
+
+            CollectionAssert.AreEqual(new List<int> { 2 }, incidentados.Content.Select(e => e.Numero).ToList());
+            CollectionAssert.AreEquivalent(new List<int> { 2, 3 }, tramitados.Content.Select(e => e.Numero).ToList());
+            CollectionAssert.AreEquivalent(new List<int> { 2, 3 }, porCliente.Content.Select(e => e.Numero).ToList());
+            CollectionAssert.AreEqual(new List<int> { 3 }, retrasados.Content.Select(e => e.Numero).ToList());
+        }
+
+        [TestMethod]
+        public async Task CerradoAMano_ConReembolsoSinPagar_SigueEnReembolsos()
+        {
+            ConEnvios(
+                Envio(1, estado: Constantes.Agencias.ESTADO_CERRADO_A_MANO, reembolso: 50),
+                Envio(2, estado: Constantes.Agencias.ESTADO_CERRADO_A_MANO, reembolso: 50, fechaPagoReembolso: new DateTime(2026, 8, 1)),
+                Envio(3, estado: Constantes.Agencias.ESTADO_ENTREGADO, reembolso: 50));
+
+            var resultado = await controller.GetEnviosReembolsos("1", 1) as OkNegotiatedContentResult<List<EnvioAgenciaListadoDTO>>;
+
+            CollectionAssert.AreEquivalent(new List<int> { 1, 3 }, resultado.Content.Select(e => e.Numero).ToList(),
+                "Igual que un entregado: hasta que la agencia lo pague");
+        }
+
         [TestMethod]
         public async Task Incidentados_SoloElEstadoIncidentado()
         {

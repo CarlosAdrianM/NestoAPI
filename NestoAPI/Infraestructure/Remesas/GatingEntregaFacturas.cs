@@ -72,6 +72,9 @@ namespace NestoAPI.Infraestructure.Remesas
                 .Where(ea => ea.Pedido != null && pedidos.Contains(ea.Pedido.Value)
                     && agenciasConSeguimiento.Contains(ea.Agencia)
                     && ea.Estado != Constantes.Agencias.ESTADO_ENTREGADO
+                    // NestoAPI#676: cerrado a mano = terminado sin confirmar; a efectos de cobro, como entregado
+                    // (lo contrario de DEVUELTO). Si entrara aquí, «>= DEVUELTO» lo retendría sin poder forzarlo.
+                    && ea.Estado != Constantes.Agencias.ESTADO_CERRADO_A_MANO
                     && ea.Fecha >= corteSeguimiento)
                 .Select(ea => new { Pedido = ea.Pedido.Value, ea.Estado })
                 .ToListAsync().ConfigureAwait(false);

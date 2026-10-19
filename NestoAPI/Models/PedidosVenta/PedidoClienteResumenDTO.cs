@@ -131,6 +131,13 @@ namespace NestoAPI.Models.PedidosVenta
         Entregado,
 
         /// <summary>Servido entero sin envío por agencia (recogida en tienda, ruta propia).</summary>
-        Servido
+        Servido,
+
+        /// <summary>
+        /// NestoAPI#676: el envío lo cerramos a mano porque la agencia nunca lo cerró (una incidencia que se quedó
+        /// abierta). No decimos «Entregado» porque la agencia no lo ha confirmado. Va al final: viaja como texto y
+        /// una app que no lo conozca lo pinta con <see cref="PedidoClienteResumenDTO.EstadoTexto"/>, sin color.
+        /// </summary>
+        EnvioCerrado
     }
 }

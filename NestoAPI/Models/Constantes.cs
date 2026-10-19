@@ -45,6 +45,10 @@ namespace NestoAPI.Models
             public const short ESTADO_ENTREGADO = 2;
             public const short ESTADO_INCIDENTADO = 3;
             public const short ESTADO_DEVUELTO = 4; // devuelto a origen (fallo terminal de entrega)
+            // NestoAPI#676: una persona lo dio por cerrado (era un incidentado que la agencia nunca cerró). Terminal,
+            // sin confirmación de la agencia: a efectos de cobro y de «vivo» cuenta como entregado, pero NO es
+            // Entregado. OJO con los filtros por rango: queda por encima de DEVUELTO (ver CierreManualEnvio).
+            public const short ESTADO_CERRADO_A_MANO = 5;
             public const decimal REEMBOLSO_NO_COBRAR = -1M;
         }
 

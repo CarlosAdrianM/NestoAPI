@@ -8,16 +8,16 @@ namespace NestoAPI.Infraestructure.Agencias
     /// NestoAPI#676 (Sugerencia 673 de Novedades, Aida): «Dar por cerrado» un envío INCIDENTADO que la agencia
     /// nunca cerró (en la pestaña Incidentados seguían saliendo envíos de junio, julio y septiembre).
     ///
-    /// <para>Estado al que pasa: ENTREGADO (2). No hay un estado «cerrado a mano», y se ha preferido no crearlo:
-    /// un 5 nuevo caería en <c>GatingEntregaFacturas</c> como «≥ DEVUELTO» (retención NO forzable de la remesa),
-    /// en los filtros «Estado &lt; ENTREGADO» de los envíos vivos, y sin color ni nombre en las rejillas de Nesto.
-    /// Entregado es terminal (el seguimiento automático solo consulta Tramitados e Incidentados), no toca el
-    /// reembolso (DEVUELTO lo quitaría solo, Sugerencia 544) ni sale en Retrasados (solo Tramitados), y la
-    /// pestaña Reembolsos sigue mostrándolo mientras la agencia no lo pague (Estado ≥ TRAMITADO).</para>
+    /// <para>Estado al que pasa: su propio <see cref="Constantes.Agencias.ESTADO_CERRADO_A_MANO"/> (5), decisión de
+    /// Carlos (19/10/26): no es una entrega confirmada y no debe parecerlo. Se comporta como un envío TERMINADO sin
+    /// confirmar: no está vivo (ni Incidentados, ni Tramitados, ni Retrasados, ni el seguimiento automático), no
+    /// retiene la remesa (<c>GatingEntregaFacturas</c> lo trata como entregado), sigue en Reembolsos mientras la
+    /// agencia no pague y en Mis pedidos el cliente lo ve como «Envío cerrado». Como queda POR ENCIMA de DEVUELTO
+    /// (4), cualquier filtro «≥ DEVUELTO» o «≥ TRAMITADO» nuevo tiene que decidir qué hace con él.</para>
     ///
-    /// <para>Lo que lo distingue de una entrega confirmada: <see cref="DETALLE_CERRADO_A_MANO"/> en DetalleEstado,
-    /// FechaEntrega sin tocar (no hay fecha real de entrega) y las filas de EnviosHistoria (estado y texto de
-    /// la incidencia anteriores, usuario, fecha y motivo).</para>
+    /// <para>Además: <see cref="DETALLE_CERRADO_A_MANO"/> en DetalleEstado, FechaEntrega sin tocar (no hay fecha real
+    /// de entrega) y las filas de EnviosHistoria (estado y texto de la incidencia anteriores, usuario, fecha y
+    /// motivo). Si la agencia confirma después la entrega, pasa a Entregado con su fecha.</para>
     /// </summary>
     public static class CierreManualEnvio
     {
@@ -57,7 +57,7 @@ namespace NestoAPI.Infraestructure.Agencias
                 Fila(envio, "Estado", envio.Estado.ToString(), observaciones, usuario, ahora),
                 Fila(envio, "DetalleEstado", envio.DetalleEstado?.Trim() ?? string.Empty, observaciones, usuario, ahora)
             };
-            envio.Estado = Constantes.Agencias.ESTADO_ENTREGADO;
+            envio.Estado = Constantes.Agencias.ESTADO_CERRADO_A_MANO;
             envio.DetalleEstado = DETALLE_CERRADO_A_MANO;
             envio.Usuario = usuario;
             return historia;
@@ -65,9 +65,7 @@ namespace NestoAPI.Infraestructure.Agencias
 
         /// <summary>¿Lo cerró una persona a mano (y no la agencia)?</summary>
         public static bool EstaCerradoAMano(EnviosAgencia envio) =>
-            envio != null
-            && envio.Estado == Constantes.Agencias.ESTADO_ENTREGADO
-            && envio.DetalleEstado?.Trim() == DETALLE_CERRADO_A_MANO;
+            envio != null && envio.Estado == Constantes.Agencias.ESTADO_CERRADO_A_MANO;
 
         private static EnvioHistoria Fila(EnviosAgencia envio, string campo, string valorAnterior, string observaciones, string usuario, DateTime ahora)
             => new EnvioHistoria

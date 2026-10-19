@@ -18,8 +18,8 @@ namespace NestoAPI.Tests.Controllers
 {
     /// <summary>
     /// NestoAPI#676 (Sugerencia 673, Aida): POST api/EnviosAgencias/{id}/DarPorCerrado. Un envío incidentado que la
-    /// agencia nunca cerró se da por cerrado a mano con un motivo: pasa a Entregado con «cerrado a mano» en el
-    /// detalle, queda en EnviosHistoria y el seguimiento automático no lo reabre ni vuelve a avisar (#666).
+    /// agencia nunca cerró se da por cerrado a mano con un motivo: pasa a su estado propio «Cerrado a mano» (5), queda
+    /// en EnviosHistoria y el seguimiento automático no lo reabre ni vuelve a avisar (#666).
     /// </summary>
     [TestClass]
     public class DarPorCerradoEnvioTests
@@ -74,21 +74,22 @@ namespace NestoAPI.Tests.Controllers
         // ===== El endpoint =====
 
         [TestMethod]
-        public async Task DarPorCerrado_Incidentado_PasaAEntregadoCerradoAMano()
+        public async Task DarPorCerrado_Incidentado_PasaACerradoAMano()
         {
             EnviosAgencia envio = ConEnvio(EnvioIncidentado());
 
             var resultado = await controller.DarPorCerrado(envio.Numero, Motivo("El cliente confirma que lo recibió")) as OkNegotiatedContentResult<EnvioCerradoDTO>;
 
             Assert.IsNotNull(resultado, "Debe devolver 200 con el envío cerrado");
-            Assert.AreEqual(Constantes.Agencias.ESTADO_ENTREGADO, envio.Estado, "Sale de Incidentados a un estado terminal que el poll no consulta");
+            Assert.AreEqual(Constantes.Agencias.ESTADO_CERRADO_A_MANO, envio.Estado, "Estado propio, no Entregado: la agencia no lo ha confirmado");
+            Assert.AreEqual((short)5, Constantes.Agencias.ESTADO_CERRADO_A_MANO, "El siguiente libre tras DEVUELTO (4); Nesto lo pinta por número");
             Assert.AreEqual(CierreManualEnvio.DETALLE_CERRADO_A_MANO, envio.DetalleEstado);
             Assert.IsNull(envio.FechaEntrega, "No hay fecha real de entrega: no se inventa");
             Assert.AreEqual(@"NUEVAVISION\aida", envio.Usuario);
             Assert.IsTrue(CierreManualEnvio.EstaCerradoAMano(envio));
             Assert.AreEqual(251300, resultado.Content.Numero);
             Assert.AreEqual(921456, resultado.Content.Pedido);
-            Assert.AreEqual(Constantes.Agencias.ESTADO_ENTREGADO, resultado.Content.Estado);
+            Assert.AreEqual(Constantes.Agencias.ESTADO_CERRADO_A_MANO, resultado.Content.Estado);
             A.CallTo(() => db.SaveChangesAsync()).MustHaveHappenedOnceExactly();
         }
 
@@ -172,6 +173,7 @@ namespace NestoAPI.Tests.Controllers
         [DataRow((short)1, DisplayName = "Tramitado")]
         [DataRow((short)2, DisplayName = "Entregado (p. ej. ya cerrado por otra sesión)")]
         [DataRow((short)4, DisplayName = "Devuelto")]
+        [DataRow((short)5, DisplayName = "Ya cerrado a mano (otra sesión)")]
         public async Task DarPorCerrado_NoIncidentado_Devuelve400DeUstedYNoToca(short estado)
         {
             EnviosAgencia envio = EnvioIncidentado();
@@ -237,7 +239,7 @@ namespace NestoAPI.Tests.Controllers
 
             Assert.AreEqual(0, actualizados);
             A.CallTo(() => seguimiento.ConsultarSeguimientoAsync(A<string>._)).MustNotHaveHappened();
-            Assert.AreEqual(Constantes.Agencias.ESTADO_ENTREGADO, envio.Estado);
+            Assert.AreEqual(Constantes.Agencias.ESTADO_CERRADO_A_MANO, envio.Estado);
             Assert.AreEqual(0, avisados.Count, "Ni aviso de #666");
         }
 
@@ -258,13 +260,13 @@ namespace NestoAPI.Tests.Controllers
                 new SeguimientoEnvioRemoto { Estado = estadoAgencia, Detalle = "AUSENTE" });
 
             Assert.IsFalse(cambia);
-            Assert.AreEqual(Constantes.Agencias.ESTADO_ENTREGADO, envio.Estado);
+            Assert.AreEqual(Constantes.Agencias.ESTADO_CERRADO_A_MANO, envio.Estado);
             Assert.AreEqual(CierreManualEnvio.DETALLE_CERRADO_A_MANO, envio.DetalleEstado);
             Assert.IsFalse(AvisadorIncidenciasEnvio.PasaAIncidencia(estadoAnterior, envio));
         }
 
         [TestMethod]
-        public void AplicarSeguimiento_CerradoAMano_UnaEntregaConfirmadaDespuesSiSeApunta()
+        public void AplicarSeguimiento_CerradoAMano_UnaEntregaConfirmadaDespuesLoPasaAEntregadoConSuFecha()
         {
             EnviosAgencia envio = EnvioIncidentado();
             _ = CierreManualEnvio.Aplicar(envio, "El cliente lo tiene", "aida", DateTime.Now);
@@ -279,15 +281,31 @@ namespace NestoAPI.Tests.Controllers
             Assert.IsTrue(cambia);
             Assert.AreEqual(Constantes.Agencias.ESTADO_ENTREGADO, envio.Estado);
             Assert.AreEqual(new DateTime(2026, 6, 20), envio.FechaEntrega);
+            Assert.AreEqual("ENTREGADO", envio.DetalleEstado);
+            Assert.IsFalse(CierreManualEnvio.EstaCerradoAMano(envio));
         }
 
         [TestMethod]
         public void EstaCerradoAMano_UnEntregadoPorLaAgenciaNoLoEsta()
         {
-            var entregado = new EnviosAgencia { Estado = Constantes.Agencias.ESTADO_ENTREGADO, DetalleEstado = "ENTREGADO" };
+            var entregado = new EnviosAgencia { Estado = Constantes.Agencias.ESTADO_ENTREGADO, DetalleEstado = CierreManualEnvio.DETALLE_CERRADO_A_MANO };
 
-            Assert.IsFalse(CierreManualEnvio.EstaCerradoAMano(entregado));
+            Assert.IsFalse(CierreManualEnvio.EstaCerradoAMano(entregado), "Lo dice el estado, no el texto");
             Assert.IsFalse(CierreManualEnvio.EstaCerradoAMano(null));
+        }
+
+        // ===== Cómo se comporta «Cerrado a mano» en el resto de reglas =====
+
+        [TestMethod]
+        public void CerradoAMano_EstaTerminado_NoTieneEtiquetaVivaNiAlmacenCambiable()
+        {
+            EnviosAgencia envio = EnvioIncidentado();
+            _ = CierreManualEnvio.Aplicar(envio, "El cliente lo tiene", "aida", DateTime.Now);
+
+            Assert.IsTrue(TramitacionEnviosService.EstaEntregadoORecogido(envio), "Como un entregado: no se reenvía a la agencia");
+            Assert.IsFalse(TramitacionEnviosService.TieneEtiquetaViva(envio));
+            Assert.IsFalse(NestoAPI.Infraestructure.PedidosVenta.CambioAlmacenPedido.EsEtiquetaViva(envio));
+            Assert.IsFalse(AvisadorIncidenciasEnvio.PasaAIncidencia(Constantes.Agencias.ESTADO_INCIDENTADO, envio), "Cerrarlo no es una incidencia nueva");
         }
 
         private static void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class

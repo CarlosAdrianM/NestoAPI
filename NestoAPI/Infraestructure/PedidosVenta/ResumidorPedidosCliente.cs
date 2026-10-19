@@ -206,6 +206,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     // Sin envío por agencia que seguir: recogida en tienda o ruta propia.
                     return EstadoPedidoCliente.Servido;
                 }
+                // NestoAPI#676: lo cerramos a mano sin que la agencia confirmara la entrega: no se le dice
+                // «Entregado» (no lo sabemos), sino que el envío está cerrado.
+                if (pedido.Envio.Estado == Constantes.Agencias.ESTADO_CERRADO_A_MANO)
+                {
+                    return EstadoPedidoCliente.EnvioCerrado;
+                }
                 bool entregado = pedido.Envio.FechaEntrega.HasValue
                     || pedido.Envio.Estado == Constantes.Agencias.ESTADO_ENTREGADO;
                 if (entregado)
@@ -238,6 +244,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             return enPicking ? EstadoPedidoCliente.EnPreparacion : EstadoPedidoCliente.Recibido;
         }
 
+        /// <summary>NestoAPI#676: neutro, sin «entregado» (no lo ha confirmado la agencia) y sin tú ni usted.</summary>
+        internal const string TEXTO_ENVIO_CERRADO = "Envío cerrado";
+
         internal static string TextoDe(EstadoPedidoCliente estado)
         {
             switch (estado)
@@ -258,6 +267,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     return "Entregado";
                 case EstadoPedidoCliente.Servido:
                     return "Servido";
+                case EstadoPedidoCliente.EnvioCerrado:
+                    return TEXTO_ENVIO_CERRADO;
                 default:
                     return string.Empty;
             }

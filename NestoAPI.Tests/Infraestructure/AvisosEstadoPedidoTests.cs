@@ -72,6 +72,8 @@ namespace NestoAPI.Tests.Infraestructure
             Assert.IsFalse(AvisosEstadoPedido.HayQueAvisar(EstadoPedidoCliente.EnPreparacion, registro, AHORA));
             Assert.IsFalse(AvisosEstadoPedido.HayQueAvisar(EstadoPedidoCliente.Entregado, registro, AHORA));
             Assert.IsFalse(AvisosEstadoPedido.HayQueAvisar(EstadoPedidoCliente.Servido, registro, AHORA));
+            // NestoAPI#676: cerrar a mano una incidencia es cosa nuestra; no se le manda un push al cliente.
+            Assert.IsFalse(AvisosEstadoPedido.HayQueAvisar(EstadoPedidoCliente.EnvioCerrado, Registro(EstadoPedidoCliente.Incidencia), AHORA));
         }
 
         [TestMethod]

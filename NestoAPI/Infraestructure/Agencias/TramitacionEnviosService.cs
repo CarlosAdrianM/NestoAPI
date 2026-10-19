@@ -720,13 +720,15 @@ namespace NestoAPI.Infraestructure.Agencias
             || (datos.Servicio.HasValue && datos.Servicio.Value != envio.Servicio);
 
         /// <summary>
-        /// Entregado (2) o devuelto a origen (4) según el Estado grabado (lo pone el poll de seguimiento o el
-        /// usuario), o con el retorno ya recibido en el almacén (FechaRetornoRecibido). Se mira el estado
-        /// ANTERIOR al cambio: marcar a la vez «entregado» y otro retorno no se bloquea a sí mismo.
+        /// Entregado (2), devuelto a origen (4) o cerrado a mano (5, NestoAPI#676: terminado aunque la agencia no lo
+        /// confirmara) según el Estado grabado (lo pone el poll de seguimiento o el usuario), o con el retorno ya
+        /// recibido en el almacén (FechaRetornoRecibido). Se mira el estado ANTERIOR al cambio: marcar a la vez
+        /// «entregado» y otro retorno no se bloquea a sí mismo.
         /// </summary>
         internal static bool EstaEntregadoORecogido(EnviosAgencia envio)
             => envio.Estado == Constantes.Agencias.ESTADO_ENTREGADO
             || envio.Estado == Constantes.Agencias.ESTADO_DEVUELTO
+            || envio.Estado == Constantes.Agencias.ESTADO_CERRADO_A_MANO
             || envio.FechaRetornoRecibido.HasValue;
 
         /// <summary>Etiqueta viva: registrada (código de barras y Estado ≥ 0) y no entregada ni recogida.</summary>

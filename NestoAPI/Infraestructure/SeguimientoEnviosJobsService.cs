@@ -422,8 +422,9 @@ namespace NestoAPI.Infraestructure
             }
 
             // NestoAPI#676: un envío que una persona ha dado por cerrado a mano no lo reabre ninguna consulta (el poll
-            // ya no lo lee, porque es Entregado, pero sí lo haría «Actualizar estado» a demanda): ni vuelve a
-            // incidentado ni, por tanto, repite el aviso de #666. Solo se acepta una entrega confirmada.
+            // no lo lee, porque solo mira Tramitados e Incidentados, pero sí lo haría «Actualizar estado» a demanda):
+            // ni vuelve a incidentado ni, por tanto, repite el aviso de #666. Solo se acepta una entrega confirmada,
+            // que lo pasa a Entregado con su fecha.
             if (CierreManualEnvio.EstaCerradoAMano(envio) && seguimiento.Estado != EstadoEnvioSeguimiento.Entregado)
             {
                 return false;
