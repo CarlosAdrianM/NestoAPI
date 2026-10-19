@@ -1,4 +1,4 @@
-/*
+﻿/*
     Novedades de la versión 1.10.44.0 de Nesto (19/10/2026).
     Versión de la ClickOnce: 1.10.44.0 (pubxml 1.10.44.* en revisión 0: recibir una reposición por partes, «Dar por cerrado» en
     Incidentados, avisos a los comerciales de los retenidos y de las incidencias de agencia).

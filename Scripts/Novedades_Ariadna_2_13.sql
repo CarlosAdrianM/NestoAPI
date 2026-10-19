@@ -1,4 +1,4 @@
-/*
+﻿/*
     Novedades de Ariadna 2.13 (19/10/26): Ariadna#43, #44, #45, #46, #47 y NestoAPI#675 (parte de Ariadna); en la API, #593
     (cheques y cupones fuera del recorrido y del packing).
     Va primero al canal INTERNO (Carlos). Ejecutar en SSMS contra NV como sa cuando la 2.13 llegue a la prueba cerrada.
