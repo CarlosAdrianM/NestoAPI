@@ -80,11 +80,12 @@ namespace NestoAPI.Tests.Infraestructure.Informes
         }
 
         [TestMethod]
-        public void Sql_FiltraPorLaDelegacionDeLasLineasYLeeSinBloquear()
+        public void Sql_FiltraPorElAlmacenDeLasLineasNoPorLaDelegacionYLeeSinBloquear()
         {
             string sql = GestorFacturacionTienda.SQL_FACTURACION_TIENDA;
 
-            StringAssert.Contains(sql, "l.[Delegación] = @p4");
+            StringAssert.Contains(sql, "l.[Almacén] = @p4");
+            Assert.IsFalse(sql.Contains("[Delegación]"), "Decisión 20/10/26: lo servido desde ALG con delegación de la tienda no cuenta");
             StringAssert.Contains(sql, "LinPedidoVta l WITH (NOLOCK)");
             StringAssert.Contains(sql, "CabFacturaVta f WITH (NOLOCK)");
             Assert.IsFalse(sql.ToUpperInvariant().Contains("UPDATE") || sql.ToUpperInvariant().Contains("INSERT") || sql.ToUpperInvariant().Contains("DELETE"));

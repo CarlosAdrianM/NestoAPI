@@ -23,7 +23,7 @@ namespace NestoAPI.Models.Informes
         public decimal TotalBaseImponibleCursos { get; set; }
     }
 
-    /// <summary>NestoAPI#658: una factura con las líneas de la tienda (solo suman las líneas de esa delegación).</summary>
+    /// <summary>NestoAPI#658: una factura con las líneas de la tienda (solo suman las líneas con el almacén de la tienda).</summary>
     public class FacturaTiendaDTO
     {
         public string Empresa { get; set; }

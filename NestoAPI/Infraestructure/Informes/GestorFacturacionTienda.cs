@@ -11,10 +11,10 @@ namespace NestoAPI.Infraestructure.Informes
     /// NestoAPI#658 (sugerencia 648 de Paloma): el único punto de cálculo del informe de lo facturado en tienda durante la semana,
     /// cursos incluidos, con el cliente, su dirección, su comercial y el importe. Lo usan GET api/Informes/FacturacionTienda (JSON
     /// para Nesto u otros clientes) y su /Excel.
-    /// <para>«De la tienda» = líneas facturadas con la <b>delegación</b> de la tienda (REI, ALC): es lo que hace el mostrador y lo que
-    /// usa contabilidad para las cifras por delegación. Un pedido de la app que se recoge en la tienda lleva el almacén de la tienda
-    /// pero no su delegación (TNV#70), así que no cuenta. Los cursos (serie CV) entran si se facturan con la delegación de la tienda.
-    /// De cada factura solo suman las líneas de esa delegación. Entran la empresa normal y la espejo; las rectificativas restan.</para>
+    /// <para>«De la tienda» = líneas facturadas con el <b>almacén</b> de la tienda (REI, ALC), no con su delegación (decisión de Carlos,
+    /// 20/10/26): lo que se sirve desde Algete no es de la tienda aunque lleve la delegación ALC (desde agosto, 236 facturas así), y los
+    /// cursos (serie CV) con almacén ALG tampoco. Los cursos con almacén de la tienda sí entran. De cada factura solo suman las líneas de
+    /// ese almacén. Entran la empresa normal y la espejo; las rectificativas restan.</para>
     /// </summary>
     public static class GestorFacturacionTienda
     {
@@ -24,7 +24,7 @@ namespace NestoAPI.Infraestructure.Informes
         public const int MAXIMO_DIAS_PERIODO = 366;
 
         // @p0 empresa (y la de las fichas de clientes y vendedores), @p1 empresa espejo, @p2 desde (incluido), @p3 hasta (excluido),
-        // @p4 delegación de la tienda, @p5 grupo de peluquería, @p6 serie de cursos. Solo lectura y con NOLOCK: es un informe.
+        // @p4 almacén de la tienda, @p5 grupo de peluquería, @p6 serie de cursos. Solo lectura y con NOLOCK: es un informe.
         internal const string SQL_FACTURACION_TIENDA = @"
 SELECT RTRIM(f.Empresa) AS Empresa, RTRIM(f.[Número]) AS Factura, f.Fecha, RTRIM(f.Serie) AS Serie,
        CAST(CASE WHEN RTRIM(f.Serie) = @p6 THEN 1 ELSE 0 END AS bit) AS EsCurso,
@@ -45,7 +45,7 @@ FROM CabFacturaVta f WITH (NOLOCK)
                   WHERE g.Empresa = @p0 AND g.Cliente = f.[Nº Cliente] AND g.Contacto = f.Contacto AND g.GrupoProducto = @p5
                   ORDER BY g.Id DESC) vp
      LEFT JOIN Vendedores vpn WITH (NOLOCK) ON vpn.Empresa = @p0 AND vpn.[Número] = vp.Vendedor
-WHERE f.Empresa IN (@p0, @p1) AND f.Fecha >= @p2 AND f.Fecha < @p3 AND l.[Delegación] = @p4
+WHERE f.Empresa IN (@p0, @p1) AND f.Fecha >= @p2 AND f.Fecha < @p3 AND l.[Almacén] = @p4
 GROUP BY f.Empresa, f.[Número], f.Fecha, f.Serie, f.[Nº Cliente], f.Contacto, c.Nombre, f.NombreFiscal, c.[Dirección], f.DireccionFiscal,
          c.CodPostal, f.CodPostalFiscal, c.[Población], f.PoblacionFiscal, c.Vendedor, v.[Descripción], vp.Vendedor, vpn.[Descripción]
 ORDER BY f.Fecha, f.[Número]";
