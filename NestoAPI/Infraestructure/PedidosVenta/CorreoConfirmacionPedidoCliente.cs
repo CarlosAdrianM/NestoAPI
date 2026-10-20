@@ -110,28 +110,20 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
         internal static (string Asunto, string Html) Generar(CorreoConfirmacionPedidoDTO dto)
         {
-            string asunto = $"Gracias por tu pedido nº {dto.Numero}";
+            // NestoAPI#660 (Carlos 20/10/26): de usted, como el resto de lo que mandamos a los clientes
+            string asunto = $"Gracias por su pedido nº {dto.Numero}";
             StringBuilder s = new StringBuilder();
             _ = s.AppendLine("<div style=\"font-family: Arial, sans-serif; color: #333; max-width: 640px; margin: 0 auto;\">");
-            _ = s.AppendLine($"<h2 style=\"color: #222;\">Gracias por tu pedido nº {dto.Numero}</h2>");
-            _ = s.AppendLine("<p>Hemos recibido tu pedido y ya está en manos de nuestro equipo. Te avisaremos cuando salga hacia tu dirección.</p>");
+            _ = s.AppendLine($"<h2 style=\"color: #222;\">Gracias por su pedido nº {dto.Numero}</h2>");
+            _ = s.AppendLine("<p>Hemos recibido su pedido y ya está en manos de nuestro equipo. Le avisaremos cuando salga hacia su dirección.</p>");
 
-            _ = s.AppendLine("<table style=\"width: 100%; border-collapse: collapse;\" cellpadding=\"6\">");
-            // Carlos (25/09/26): la referencia también, que es con lo que se busca el producto
-            _ = s.AppendLine("<thead><tr style=\"background: #f2f2f2;\"><th align=\"left\">Referencia</th><th align=\"left\">Producto</th><th align=\"right\">Cantidad</th>"
-                + (dto.SinImportes ? "" : "<th align=\"right\">Importe</th>") + "</tr></thead><tbody>");
+            // NestoAPI#660 (Carlos 20/10/26): una tarjeta por línea, que en el móvil la tabla de cuatro columnas no cabía
+            _ = s.AppendLine("<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"width: 100%; border-collapse: collapse; border-top: 1px solid #eee;\">");
             foreach (LineaCorreoConfirmacionPedidoDTO linea in dto.Lineas)
             {
-                _ = s.Append($"<tr><td style=\"border-bottom: 1px solid #eee; white-space: nowrap;\">{WebUtility.HtmlEncode(linea.Producto?.Trim())}</td>");
-                _ = s.Append($"<td style=\"border-bottom: 1px solid #eee;\">{CeldaProducto(linea)}</td>");
-                _ = s.Append($"<td align=\"right\" style=\"border-bottom: 1px solid #eee;\">{linea.Cantidad}</td>");
-                if (!dto.SinImportes)
-                {
-                    _ = s.Append($"<td align=\"right\" style=\"border-bottom: 1px solid #eee;\">{Euros(linea.Total)}</td>");
-                }
-                _ = s.AppendLine("</tr>");
+                _ = s.AppendLine(TarjetaLinea(linea, dto.SinImportes));
             }
-            _ = s.AppendLine("</tbody></table>");
+            _ = s.AppendLine("</table>");
 
             if (!dto.SinImportes)
             {
@@ -148,30 +140,51 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             }
 
             _ = s.AppendLine($"<p style=\"margin-top: 16px;\">{TextoPago(dto.SituacionPago)}</p>");
-            _ = s.AppendLine("<p style=\"color: #777; font-size: 12px;\">Si tienes cualquier duda, responde a este correo y te ayudamos.</p>");
+            _ = s.AppendLine("<p style=\"color: #777; font-size: 12px;\">Si tiene cualquier duda, responda a este correo y le ayudaremos.</p>");
             _ = s.AppendLine("</div>");
             return (asunto, s.ToString());
         }
 
         /// <summary>
-        /// NestoAPI#660: el nombre del producto con su miniatura delante, si la tiene. La foto va por URL https absoluta
-        /// (sin adjuntarla: con una por línea el correo pesaría mucho), con ancho fijo y el nombre en el alt para quien
-        /// tenga las imágenes bloqueadas. Va en una tablita dentro de la celda (Outlook no respeta float ni flex) y sin
-        /// foto no se pinta nada más que el nombre: no queda hueco.
+        /// NestoAPI#660: la tarjeta de una línea: la miniatura a la izquierda (si la tiene) y, apilados a la derecha, el
+        /// nombre, la referencia (Carlos 25/09/26: es con lo que se busca el producto) y «2 × 12,50 € = 25,00 €». Todo con
+        /// tablas y estilos en línea, que es lo único que respetan a la vez Outlook y Gmail. La foto va por URL https
+        /// absoluta (sin adjuntarla: con una por línea el correo pesaría mucho), con ancho fijo y el nombre en el alt para
+        /// quien tenga las imágenes bloqueadas. Sin foto no se pinta su celda: no queda hueco.
         /// </summary>
-        internal static string CeldaProducto(LineaCorreoConfirmacionPedidoDTO linea)
+        internal static string TarjetaLinea(LineaCorreoConfirmacionPedidoDTO linea, bool sinImportes)
         {
             string nombre = WebUtility.HtmlEncode(linea.Texto);
             string url = UrlFotoValida(linea.UrlFoto);
-            if (url == null)
+            StringBuilder t = new StringBuilder();
+            _ = t.Append("<tr><td style=\"padding: 10px 0; border-bottom: 1px solid #eee;\">");
+            _ = t.Append("<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\"><tr>");
+            if (url != null)
             {
-                return nombre;
+                _ = t.Append($"<td width=\"{ANCHO_FOTO}\" valign=\"top\" style=\"width: {ANCHO_FOTO}px; padding-right: 12px;\">"
+                    + $"<img src=\"{WebUtility.HtmlEncode(url)}\" alt=\"{nombre}\" width=\"{ANCHO_FOTO}\" "
+                    + $"style=\"display: block; width: {ANCHO_FOTO}px; height: auto; border: 0; outline: none; text-decoration: none;\"></td>");
             }
-            return "<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\"><tr>"
-                + $"<td width=\"{ANCHO_FOTO}\" valign=\"middle\" style=\"width: {ANCHO_FOTO}px; padding-right: 10px;\">"
-                + $"<img src=\"{WebUtility.HtmlEncode(url)}\" alt=\"{nombre}\" width=\"{ANCHO_FOTO}\" "
-                + $"style=\"display: block; width: {ANCHO_FOTO}px; height: auto; border: 0; outline: none; text-decoration: none;\"></td>"
-                + $"<td valign=\"middle\">{nombre}</td></tr></table>";
+            _ = t.Append("<td valign=\"top\" style=\"font-size: 14px; line-height: 20px;\">");
+            _ = t.Append($"<div style=\"font-weight: bold; color: #222;\">{nombre}</div>");
+            _ = t.Append($"<div style=\"font-size: 12px; color: #777;\">Ref. {WebUtility.HtmlEncode(linea.Producto?.Trim())}</div>");
+            _ = t.Append($"<div>{TextoCantidad(linea, sinImportes)}</div>");
+            _ = t.Append("</td></tr></table></td></tr>");
+            return t.ToString();
+        }
+
+        /// <summary>
+        /// «2 × 12,50 € = 25,00 €», con IVA, como el total del correo. El precio por unidad sale del importe de la línea
+        /// (con su descuento), redondeado a céntimos: lo que manda es el importe. Sin importes (NestoAPI#446), solo la cantidad.
+        /// </summary>
+        internal static string TextoCantidad(LineaCorreoConfirmacionPedidoDTO linea, bool sinImportes)
+        {
+            if (sinImportes)
+            {
+                return linea.Cantidad == 1 ? "1 unidad" : $"{linea.Cantidad} unidades";
+            }
+            decimal unidad = linea.Cantidad != 0 ? RoundingHelper.DosDecimalesRound(linea.Total / linea.Cantidad) : linea.Total;
+            return $"{linea.Cantidad} × {Euros(unidad)} = {Euros(linea.Total)}";
         }
 
         /// <summary>Solo URLs absolutas https (Gmail y Outlook bloquean o avisan con las http, y una relativa no lleva a ningún sitio).</summary>
@@ -226,15 +239,15 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             switch (situacion)
             {
                 case CorreoConfirmacionPedidoDTO.PAGADO:
-                    return "Pago recibido con tu tarjeta. No tienes que hacer nada más.";
+                    return "Pago recibido con su tarjeta. No tiene que hacer nada más.";
                 case CorreoConfirmacionPedidoDTO.PAGADO_APLAZAME:
-                    return "Pago aprobado por Aplázame. No hay que hacer nada más.";
+                    return "Pago aprobado por Aplázame. No tiene que hacer nada más.";
                 case CorreoConfirmacionPedidoDTO.PAGO_PENDIENTE_PASARELA:
-                    return "Este pedido se paga con tarjeta: si no has terminado el pago en la pasarela, no se preparará hasta que lo completes.";
+                    return "Este pedido se paga con tarjeta: si no ha terminado el pago en la pasarela, no se preparará hasta que lo complete.";
                 case CorreoConfirmacionPedidoDTO.PAGO_PENDIENTE:
                     return "Este pedido se prepara en cuanto recibamos el pago.";
                 default:
-                    return "Se cobrará con tus condiciones de pago habituales.";
+                    return "Se cobrará con sus condiciones de pago habituales.";
             }
         }
 

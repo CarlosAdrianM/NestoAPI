@@ -70,18 +70,67 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
 
             (string asunto, string html) = CorreoConfirmacionPedidoCliente.Generar(dto);
 
-            Assert.AreEqual("Gracias por tu pedido nº 925347", asunto);
+            Assert.AreEqual("Gracias por su pedido nº 925347", asunto);
             StringAssert.Contains(html, "CHAMPU 1000 ML &lt;Pro&gt;");
             StringAssert.Contains(html, "SERUM");
-            // Carlos (25/09/26): la referencia del producto, en su columna
-            StringAssert.Contains(html, "<th align=\"left\">Referencia</th>");
-            StringAssert.Contains(html, ">38697</td>");
-            StringAssert.Contains(html, ">44707</td>");
+            // Carlos (25/09/26): la referencia del producto, ahora debajo del nombre en su tarjeta (NestoAPI#660)
+            StringAssert.Contains(html, ">Ref. 38697</div>");
+            StringAssert.Contains(html, ">Ref. 44707</div>");
             StringAssert.Contains(html, "121,00");
             StringAssert.Contains(html, "100,00");
             StringAssert.Contains(html, "21,00");
-            StringAssert.Contains(html, "Pago recibido con tu tarjeta");
-            StringAssert.Contains(html, "Te avisaremos cuando salga");
+            StringAssert.Contains(html, "Pago recibido con su tarjeta");
+            StringAssert.Contains(html, "Le avisaremos cuando salga");
+        }
+
+        [TestMethod]
+        public void Generar_TodoDeUsted_SinNingunTuteo()
+        {
+            // NestoAPI#660 (Carlos 20/10/26): de usted y sin mezclar, en todas las situaciones de pago
+            foreach (string situacion in new[] { CorreoConfirmacionPedidoDTO.PAGADO, CorreoConfirmacionPedidoDTO.PAGADO_APLAZAME,
+                CorreoConfirmacionPedidoDTO.PAGO_PENDIENTE_PASARELA, CorreoConfirmacionPedidoDTO.PAGO_PENDIENTE, CorreoConfirmacionPedidoDTO.CONDICIONES_HABITUALES })
+            {
+                CorreoConfirmacionPedidoDTO dto = CorreoConfirmacionPedidoCliente.Preparar(Respuesta(), "cliente@ejemplo.com", false);
+                dto.SituacionPago = situacion;
+
+                (string asunto, string html) = CorreoConfirmacionPedidoCliente.Generar(dto);
+
+                string texto = Regex.Replace(asunto + " " + html, "<[^>]+>", " ");
+                foreach (string tuteo in new[] { "tu", "tus", "te", "ti", "tienes", "has", "completes", "responde", "ayudamos" })
+                {
+                    Assert.IsFalse(Regex.IsMatch(texto, $@"\b{tuteo}\b", RegexOptions.IgnoreCase), $"«{tuteo}» en el correo ({situacion})");
+                }
+                StringAssert.Contains(html, "Si tiene cualquier duda, responda a este correo y le ayudaremos.");
+            }
+        }
+
+        [TestMethod]
+        public void Generar_CadaLineaEsUnaTarjetaConCantidadPrecioEImporte()
+        {
+            PedidoClienteResponse r = Respuesta();
+            r.Lineas.Clear();
+            r.Lineas.Add(new LineaPedidoClienteResponse { Producto = "38697", Texto = "CHAMPU", Cantidad = 2, Total = 25M });
+            CorreoConfirmacionPedidoDTO dto = CorreoConfirmacionPedidoCliente.Preparar(r, "cliente@ejemplo.com", false);
+
+            (_, string html) = CorreoConfirmacionPedidoCliente.Generar(dto);
+
+            var es = System.Globalization.CultureInfo.GetCultureInfo("es-ES");
+            StringAssert.Contains(html, $"<div>2 × {12.5M.ToString("C", es)} = {25M.ToString("C", es)}</div>");
+            StringAssert.Contains(html, "12,50");
+            StringAssert.Contains(html, "25,00");
+            Assert.IsFalse(html.Contains("<th"), "Ya no hay cabecera de columnas");
+            Assert.IsFalse(html.Contains("Referencia</th>"));
+        }
+
+        [TestMethod]
+        public void TextoCantidad_RedondeaElPrecioPorUnidadYSinImportesSoloLaCantidad()
+        {
+            var tres = new LineaCorreoConfirmacionPedidoDTO { Cantidad = 3, Total = 10M };
+            StringAssert.Contains(CorreoConfirmacionPedidoCliente.TextoCantidad(tres, false), "3,33");
+            StringAssert.Contains(CorreoConfirmacionPedidoCliente.TextoCantidad(tres, false), "10,00");
+            Assert.AreEqual("3 unidades", CorreoConfirmacionPedidoCliente.TextoCantidad(tres, true));
+            Assert.AreEqual("1 unidad", CorreoConfirmacionPedidoCliente.TextoCantidad(new LineaCorreoConfirmacionPedidoDTO { Cantidad = 1, Total = 5M }, true));
+            StringAssert.Contains(CorreoConfirmacionPedidoCliente.TextoCantidad(new LineaCorreoConfirmacionPedidoDTO { Cantidad = 0, Total = 5M }, false), "5,00");
         }
 
         [TestMethod]
@@ -149,8 +198,8 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             (_, string html) = CorreoConfirmacionPedidoCliente.Generar(dto);
 
             Assert.IsFalse(html.Contains("<img"));
-            Assert.IsFalse(html.Contains("role=\"presentation\""), "Sin foto no hay tablita ni celda vacía");
-            StringAssert.Contains(html, "<td style=\"border-bottom: 1px solid #eee;\">SERUM</td>");
+            Assert.IsFalse(html.Contains("width=\"64\""), "Sin foto no hay celda de la foto: no queda hueco");
+            StringAssert.Contains(html, "<tr><td valign=\"top\" style=\"font-size: 14px; line-height: 20px;\"><div style=\"font-weight: bold; color: #222;\">SERUM</div>");
         }
 
         [TestMethod]
@@ -197,7 +246,7 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             Assert.AreEqual(2, Regex.Matches(html, "<img ").Count);
             StringAssert.Contains(html, "alt=\"TINTE 5.0\"");
             Assert.IsTrue(html.IndexOf(FOTO_CHAMPU, StringComparison.Ordinal) < html.IndexOf("tinte.jpg", StringComparison.Ordinal), "En el orden de las líneas");
-            StringAssert.Contains(html, ">SERUM</td>");
+            StringAssert.Contains(html, ">SERUM</div>");
         }
 
         [TestMethod]
