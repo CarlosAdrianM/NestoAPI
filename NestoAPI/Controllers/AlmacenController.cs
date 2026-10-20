@@ -39,6 +39,8 @@ namespace NestoAPI.Controllers
         private readonly IServicioCambioHuecoPicking cambioHueco;
         /// <summary>NestoAPI#646: avisar a las demás PDA del documento de que ha cambiado (SignalR). Null: no se avisa.</summary>
         private readonly Infraestructure.Notificaciones.IAvisosAlmacen avisosAlmacen;
+        /// <summary>NestoAPI#595 (slice 5, Ariadna#13): la etiqueta de agencia desde el packing. Null: no está configurada.</summary>
+        private readonly Infraestructure.Agencias.IServicioEtiquetaPacking etiquetaPacking;
 
         /// <param name="fichas">Familia, subgrupo, tamaño y unidad de cada producto que ve el mozo. Sin él, solo el nombre.</param>
         /// <param name="etiquetas">Imprimir etiquetas de hueco (Nesto y Ariadna).</param>
@@ -46,8 +48,10 @@ namespace NestoAPI.Controllers
         public AlmacenController(IServicioPreparacionAlmacen servicio, IServicioUbicacionesAlmacen ubicaciones,
             IServicioRecepcionCompras compras, IServicioRecepcionReposiciones reposiciones, IFichasProductoAlmacen fichas = null,
             IServicioEtiquetasHueco etiquetas = null, IServicioCambioHuecoPicking cambioHueco = null,
-            Infraestructure.Notificaciones.IAvisosAlmacen avisosAlmacen = null)
+            Infraestructure.Notificaciones.IAvisosAlmacen avisosAlmacen = null,
+            Infraestructure.Agencias.IServicioEtiquetaPacking etiquetaPacking = null)
         {
+            this.etiquetaPacking = etiquetaPacking;
             this.avisosAlmacen = avisosAlmacen;
             this.cambioHueco = cambioHueco;
             this.servicio = servicio;
@@ -497,6 +501,50 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> GetBultosDelPedido(int pedido, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
         {
             return Ok(await servicio.LeerBultos(Empresa(empresa), pedido).ConfigureAwait(false));
+        }
+
+        // POST api/Almacen/Pedidos/926940/Etiqueta   { "Empresa": "1", "Peso": 3.5, "Impresora": null, "Confirmaciones": [],
+        //   "DescontarPrepagos": null, "Dimensiones": null }
+        /// <summary>
+        /// NestoAPI#595 (slice 5, Ariadna#13): la etiqueta de agencia de la entrega al terminarla en el packing, en una llamada:
+        /// graba el envío desde el pedido (DesdePedido) con las cajas de la entrega, lo registra en la agencia (Tramitar, CTT e
+        /// Innovatrans) e imprime la etiqueta en el servidor (ImprimirEtiqueta); si el usuario tiene «FacturarAlImprimirEtiqueta»,
+        /// factura el pedido como Facturar rutas (#592). Si el pedido ya tiene un envío en curso, sigue desde él (reintento o
+        /// reimpresión): nunca graba ni registra dos veces.
+        /// <list type="bullet">
+        /// <item>200 <see cref="Models.Agencias.EtiquetaPackingDTO"/>: impresa, o para GLS y Canteras grabado con
+        /// EtiquetaEnNesto y «La etiqueta de GLS hay que sacarla en Nesto».</item>
+        /// <item>409 <see cref="Models.Agencias.ConflictoEnvioDesdePedidoDTO"/>: lo pendiente de DesdePedido; se repite con las respuestas.</item>
+        /// <item>400 <see cref="Models.Agencias.ErrorEnvioDesdePedidoDTO"/> con su Codigo (los de DesdePedido y SinBultos).</item>
+        /// <item>404: el pedido no existe.</item>
+        /// <item>502 <see cref="Models.Agencias.EtiquetaPackingDTO"/>: el envío está grabado pero la agencia o la impresora han
+        /// fallado (Codigo TramitarFallido o ImprimirFallido); repetir sigue desde ahí.</item>
+        /// </list>
+        /// </summary>
+        [HttpPost]
+        [Route("Pedidos/{pedido:int}/Etiqueta")]
+        [ResponseType(typeof(Models.Agencias.EtiquetaPackingDTO))]
+        public async Task<IHttpActionResult> PostEtiquetaDelPedido(int pedido, [FromBody] Models.Agencias.PeticionEtiquetaPackingDTO peticion)
+        {
+            if (etiquetaPacking == null)
+            {
+                return Content(HttpStatusCode.ServiceUnavailable, "La etiqueta de agencia desde el packing no está configurada en el servidor.");
+            }
+            // Sin ConfigureAwait(false): ELMAH y los controladores de agencias toman el usuario de la petición.
+            Infraestructure.Agencias.ResultadoEtiquetaPacking resultado = await etiquetaPacking.Imprimir(pedido, peticion, User);
+            switch (resultado.Tipo)
+            {
+                case Infraestructure.Agencias.TipoResultadoEtiquetaPacking.Hecha:
+                    return Ok(resultado.Etiqueta);
+                case Infraestructure.Agencias.TipoResultadoEtiquetaPacking.Conflicto:
+                    return Content(HttpStatusCode.Conflict, resultado.Conflicto);
+                case Infraestructure.Agencias.TipoResultadoEtiquetaPacking.NoEncontrado:
+                    return NotFound();
+                case Infraestructure.Agencias.TipoResultadoEtiquetaPacking.FalloAgencia:
+                    return Content(HttpStatusCode.BadGateway, resultado.Etiqueta);
+                default:
+                    return Content(HttpStatusCode.BadRequest, resultado.Error);
+            }
         }
 
         // GET api/Almacen/Bultos/17/Foto

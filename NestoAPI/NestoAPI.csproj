@@ -649,6 +649,8 @@
     <Compile Include="Infraestructure\Agencias\GestorEnviosAgencia.cs" />
     <Compile Include="Infraestructure\Agencias\PropuestaEnvioService.cs" />
     <Compile Include="Infraestructure\Agencias\ServicioEnvioDesdePedido.cs" />
+    <Compile Include="Infraestructure\Agencias\ServicioEtiquetaPacking.cs" />
+    <Compile Include="Infraestructure\Agencias\PasosEtiquetaPackingApi.cs" />
     <Compile Include="Infraestructure\Agencias\PlazaYCodigoBarrasAgencias.cs" />
     <Compile Include="Infraestructure\Agencias\ReglasEnReparto.cs" />
     <Compile Include="Infraestructure\Agencias\AgenciaRemotaException.cs" />
@@ -809,6 +811,7 @@
     <Compile Include="Models\Agencias\EnvioRetrasadoDTO.cs" />
     <Compile Include="Models\Agencias\PropuestaEnvioDTO.cs" />
     <Compile Include="Models\Agencias\EnvioDesdePedidoDTO.cs" />
+    <Compile Include="Models\Agencias\EtiquetaPackingDTO.cs" />
     <Compile Include="Infraestructure\Clientes\NombreFiscalPlaceholder.cs" />
     <Compile Include="Infraestructure\Clientes\GuardiaAnulacionCliente.cs" />
     <Compile Include="Infraestructure\Clientes\CambioDiasEnServirConPicking.cs" />

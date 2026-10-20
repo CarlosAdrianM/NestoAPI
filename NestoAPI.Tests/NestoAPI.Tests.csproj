@@ -292,6 +292,7 @@
     <Compile Include="Controllers\PedidosVentaPortesTests.cs" />
     <Compile Include="Controllers\PlantillaVentasControllerTests.cs" />
     <Compile Include="Controllers\AlmacenControllerTests.cs" />
+    <Compile Include="Controllers\AlmacenEtiquetaPackingTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\PerfilAlmacenTests.cs" />
     <Compile Include="Controllers\PedidosVentaPrepagoConPickingTests.cs" />
     <Compile Include="Controllers\PedidosVentaServirJuntoTests.cs" />
@@ -400,6 +401,8 @@
     <Compile Include="Infrastructure\Agencias\CalculadoraCosteEnvioTests.cs" />
     <Compile Include="Infrastructure\Agencias\PropuestaEnvioServiceTests.cs" />
     <Compile Include="Infrastructure\Agencias\ServicioEnvioDesdePedidoTests.cs" />
+    <Compile Include="Infrastructure\Agencias\ServicioEtiquetaPackingTests.cs" />
+    <Compile Include="Infrastructure\Agencias\PasosEtiquetaPackingApiTests.cs" />
     <Compile Include="Infrastructure\Agencias\PlazaYCodigoBarrasAgenciasTests.cs" />
     <Compile Include="Infrastructure\Agencias\ComparadorAgenciasTests.cs" />
     <Compile Include="Infrastructure\Agencias\CalculadoraZonaEnvioTests.cs" />

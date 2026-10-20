@@ -273,6 +273,13 @@ namespace NestoAPI
                 sp.GetRequiredService<ILectorParametrosUsuario>(),
                 Infraestructure.PreparacionAlmacen.ImpresoraEtiquetasConAjuste.EnWindows()));
 
+            // NestoAPI#595 (slice 5, Ariadna#13): la etiqueta de agencia desde el packing (DesdePedido + Tramitar + ImprimirEtiqueta
+            // y, si el usuario lo tiene, facturar), con los mismos endpoints que Agencias de Nesto
+            _ = services.AddScoped<Infraestructure.Agencias.IServicioEtiquetaPacking>(sp => new Infraestructure.Agencias.ServicioEtiquetaPacking(
+                usuario => new Infraestructure.Agencias.PasosEtiquetaPackingApi(usuario,
+                    sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IServicioPreparacionAlmacen>()),
+                sp.GetRequiredService<ILectorParametrosUsuario>()));
+
             // Ariadna#43: lecturas que no casan y por qué se teclea un producto con código («No se lee»)
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioLecturasAlmacen>(_ => Infraestructure.PreparacionAlmacen.RepositorioLecturasAlmacenSql.ConContextoPropio());
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioLecturasAlmacen, Infraestructure.PreparacionAlmacen.ServicioLecturasAlmacen>();

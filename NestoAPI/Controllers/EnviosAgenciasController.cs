@@ -218,6 +218,9 @@ namespace NestoAPI.Controllers
         }
 
         private NVEntities db;
+
+        /// <summary>NestoAPI#595 (slice 5): el contexto del controlador, para que la etiqueta del packing lea y tramite sobre el mismo.</summary>
+        internal NVEntities BaseDeDatos => db;
         private IFabricaAgenciasRemotas fabricaAgenciasRemotas;
         private ITramitacionEnviosService tramitacionEnviosService;
 
