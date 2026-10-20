@@ -1,4 +1,4 @@
-using Polly;
+﻿using Polly;
 using System;
 using System.Data.SqlClient;
 using System.Threading.Tasks;
@@ -18,11 +18,14 @@ namespace NestoAPI.Infraestructure
     {
         private const int SQL_DEADLOCK_VICTIM = 1205;
 
-        public static Task<T> ReintentarSiDeadlockAsync<T>(Func<Task<T>> operacion, int maxIntentos = 3, int retrasoBaseMs = 200)
+        /// <param name="aleatorio">NestoAPI#646: a cada espera se le suma entre 0 y <paramref name="retrasoBaseMs"/> ms al azar,
+        /// para que dos peticiones que han chocado no vuelvan a chocar a la vez.</param>
+        public static Task<T> ReintentarSiDeadlockAsync<T>(Func<Task<T>> operacion, int maxIntentos = 3, int retrasoBaseMs = 200, bool aleatorio = false)
         {
             return Policy
                 .Handle<Exception>(EsVictimaDeDeadlock)
-                .WaitAndRetryAsync(maxIntentos - 1, intento => TimeSpan.FromMilliseconds(retrasoBaseMs * intento))
+                .WaitAndRetryAsync(maxIntentos - 1, intento => TimeSpan.FromMilliseconds(retrasoBaseMs * intento
+                    + (aleatorio && retrasoBaseMs > 0 ? new Random(Guid.NewGuid().GetHashCode()).Next(0, retrasoBaseMs) : 0)))
                 .ExecuteAsync(operacion);
         }
 

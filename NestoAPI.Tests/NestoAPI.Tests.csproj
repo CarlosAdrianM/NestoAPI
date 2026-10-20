@@ -455,6 +455,7 @@
     <Compile Include="Infrastructure\FacturaConImpagadoIntegracionTests.cs" />
     <Compile Include="Infrastructure\ValidadorOfertasCombinadasMismaCantidadTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\CasadorEscaneosTests.cs" />
+    <Compile Include="Infrastructure\PreparacionAlmacen\BultosVariasPdaTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\CambioHuecoPickingTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\OrdenRecorridoTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\FichasProductoAlmacenTests.cs" />

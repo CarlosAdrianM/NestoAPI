@@ -746,13 +746,15 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 }
 
                 DateTime fechaFoto = foto.FechaFoto ?? DateTime.Now;
-                string ruta = RutaDeLaFoto(foto.Empresa, foto.Pedido, foto.Picking, foto.Bulto, fechaFoto);
+                // NestoAPI#646: el nombre es el de esta subida (su IdCliente), no el número de bulto: dos PDA nunca se pisan la
+                // foto aunque pidan el mismo número, y un reenvío de la cola reutiliza el mismo blob
+                string ruta = RutaDeLaFoto(foto.Empresa, foto.Pedido, foto.Picking, foto.IdCliente);
 
-                // Primero la foto y después la fila: una fila sin foto diría que hay evidencia que no existe
+                // Primero la foto y después la fila (fuera de la transacción): una fila sin foto diría que hay evidencia que no existe
                 await fotos.Subir(ruta, foto.Imagen, "image/jpeg").ConfigureAwait(false);
 
                 // NestoAPI#646: si otra PDA ya ha cerrado ese número en la entrega, el siguiente libre (no se pisa su foto)
-                principal = await repositorio.GuardarBultoSinPisar(new BultoAlmacenDTO
+                var bulto = new BultoAlmacenDTO
                 {
                     IdCliente = foto.IdCliente,
                     Empresa = foto.Empresa,
@@ -762,7 +764,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     RutaBlob = ruta,
                     Usuario = usuarioAuditoria,
                     FechaFoto = fechaFoto
-                }, hash, foto.Imagen.Length, foto.Dispositivo).ConfigureAwait(false);
+                };
+                principal = await GuardarBultoReintentandoAsync(bulto, hash, foto.Imagen.Length, foto.Dispositivo).ConfigureAwait(false);
             }
             ExplicarRenumerado(principal, foto.Bulto);
             // Los otros pedidos de la caja van con el número que se ha quedado la caja, no con el que mandó la app
@@ -791,6 +794,30 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             }
 
             return ConEnlacePublico(principal);
+        }
+
+        /// <summary>NestoAPI#646: lo que se espera antes de reintentar tras un interbloqueo (más algo al azar). En las pruebas, 0.</summary>
+        internal int RetrasoReintentoBultoMs { get; set; } = 150;
+
+        public const string MENSAJE_BULTO_INTERBLOQUEADO = "Ahora mismo hay mucho movimiento guardando bultos de esta entrega y no se ha " +
+            "podido guardar el bulto (la foto ya está subida). Pulse Reintentar: no se duplica nada.";
+
+        /// <summary>
+        /// NestoAPI#646: guardar la fila del bulto, con hasta 3 intentos si SQL Server la elige víctima de un interbloqueo (1205: la
+        /// transacción entera se deshace, así que repetirla es seguro). Si los tres chocan, un error claro (500: la app guarda la
+        /// foto y la deja para Reintentar, con el mismo IdCliente y el mismo blob).
+        /// </summary>
+        private async Task<BultoAlmacenDTO> GuardarBultoReintentandoAsync(BultoAlmacenDTO bulto, string hash, int tamano, string dispositivo)
+        {
+            try
+            {
+                return await ReintentosSql.ReintentarSiDeadlockAsync(() => repositorio.GuardarBultoSinPisar(bulto, hash, tamano, dispositivo),
+                    maxIntentos: 3, retrasoBaseMs: RetrasoReintentoBultoMs, aleatorio: true).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ReintentosSql.EsVictimaDeDeadlock(ex))
+            {
+                throw new NestoBusinessException(MENSAJE_BULTO_INTERBLOQUEADO, ex) { StatusCode = System.Net.HttpStatusCode.InternalServerError };
+            }
         }
 
         /// <summary>
@@ -870,13 +897,15 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         }
 
         /// <summary>
-        /// Dentro del contenedor: {empresa}/{pedido}/{picking}/bulto-{n}-{fecha}.jpg. La fecha va en
-        /// el nombre para que repetir la foto no pise la anterior: la fila apunta a la última, pero
-        /// la primera sigue en el almacenamiento.
+        /// NestoAPI#646: dentro del contenedor, {empresa}/{pedido}/{picking}/bulto-{IdCliente}.jpg. El IdCliente es el de esa subida
+        /// (lo genera la PDA para cada foto): dos PDA nunca se pisan aunque cierren el mismo número, repetir la foto no pisa la
+        /// anterior (la fila apunta a la última y la primera sigue en el almacenamiento) y un reenvío de la cola va al mismo blob.
+        /// El número del bulto ya no va en el nombre: lo dice la fila (puede cambiar al guardarla). Quien enseña la foto lee
+        /// siempre RutaBlob de la fila, así que las de antes (bulto-{n}-{fecha}.jpg) se siguen viendo.
         /// </summary>
-        internal static string RutaDeLaFoto(string empresa, int pedido, int picking, int bulto, DateTime fechaFoto)
+        internal static string RutaDeLaFoto(string empresa, int pedido, int picking, Guid idCliente)
         {
-            return $"{empresa?.Trim()}/{pedido}/{picking}/bulto-{bulto}-{fechaFoto:yyyyMMddHHmmss}.jpg";
+            return $"{empresa?.Trim()}/{pedido}/{picking}/bulto-{idCliente:N}.jpg";
         }
 
         internal static string HashSha256(byte[] contenido)

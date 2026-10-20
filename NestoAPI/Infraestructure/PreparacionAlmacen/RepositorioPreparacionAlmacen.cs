@@ -361,22 +361,33 @@ WHERE Empresa = @p1 AND Pedido = @p2 AND Picking = @p3 AND Bulto = @p4";
 INSERT INTO EnviosAgenciaBultos (IdCliente, Empresa, Pedido, Picking, Bulto, RutaBlob, HashSha256, TamanoBytes, Usuario, Dispositivo, FechaFoto)
 VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10)";
 
-        // NestoAPI#646: dos PDA que cierran «el bulto 2» de la misma entrega ya no se pisan la foto. Los bultos de la
-        // entrega (los del picking de los pedidos del mismo cliente y contacto, que es como los cuenta Agencias) se leen
-        // bloqueados (UPDLOCK + HOLDLOCK: otra subida a la vez de esa entrega espera). «Mío» = mismo usuario y, si las dos
-        // lo dicen, misma PDA. Si esta PDA ya tiene ese bulto en ese pedido, es repetir la foto: se sustituye, como siempre.
+        // NestoAPI#646: dos PDA que cierran «el bulto 2» de la misma entrega ya no se pisan la foto. Las subidas de una misma
+        // entrega (los bultos del picking de los pedidos del mismo cliente y contacto, que es como los cuenta Agencias) se
+        // ponen en fila con UN cerrojo de aplicación por entrega (sp_getapplock, dueño la transacción), que es lo primero que
+        // se pide: así nunca hay dos bloqueos tomados en distinto orden (con UPDLOCK + HOLDLOCK sobre rangos, dos subidas de
+        // entregas que comparten rango podían interbloquearse, SQL 1205). Si en 10 s no se consigue, error claro y no se toca
+        // nada. «Mío» = mismo usuario y, si las dos lo dicen, misma PDA. Si esta PDA ya tiene ese bulto en ese pedido, es repetir la foto: se sustituye, como siempre.
         // Si no, y el número lo tiene otro, va al siguiente libre de la entrega. Mismos parámetros que SQL_ACTUALIZAR_BULTO.
         internal const string SQL_GUARDAR_BULTO_SIN_PISAR = @"
 SET XACT_ABORT ON;
 BEGIN TRANSACTION;
 DECLARE @cliente varchar(20), @contacto varchar(10);
 SELECT @cliente = [Nº Cliente], @contacto = Contacto FROM CabPedidoVta WHERE Empresa = @p1 AND [Número] = @p2;
+DECLARE @recurso nvarchar(255) = CONCAT(N'EnviosAgenciaBultos:', RTRIM(@p1), N':', @p3, N':', RTRIM(ISNULL(@cliente, '')), N':', RTRIM(ISNULL(@contacto, '')));
+DECLARE @cerrojo int;
+EXEC @cerrojo = sp_getapplock @Resource = @recurso, @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 10000;
+IF @cerrojo < 0
+BEGIN
+    ROLLBACK TRANSACTION;
+    RAISERROR(N'Ahora mismo otra PDA está guardando un bulto de esta entrega: no se ha guardado nada. Vuelva a intentarlo.', 16, 1);
+    RETURN;
+END
 DECLARE @entrega TABLE (Pedido int NOT NULL, Bulto int NOT NULL, Usuario varchar(50) NULL, Dispositivo varchar(50) NULL, Mio bit NOT NULL);
 INSERT INTO @entrega (Pedido, Bulto, Usuario, Dispositivo, Mio)
 SELECT b.Pedido, b.Bulto, RTRIM(b.Usuario), RTRIM(b.Dispositivo),
        CASE WHEN ISNULL(RTRIM(b.Usuario), '') = ISNULL(@p8, '')
                  AND (b.Dispositivo IS NULL OR @p9 IS NULL OR RTRIM(b.Dispositivo) = @p9) THEN 1 ELSE 0 END
-FROM EnviosAgenciaBultos b WITH (UPDLOCK, HOLDLOCK)
+FROM EnviosAgenciaBultos b
 WHERE b.Empresa = @p1 AND b.Picking = @p3
   AND (b.Pedido = @p2 OR b.Pedido IN (SELECT c.[Número] FROM CabPedidoVta c
                                       WHERE c.Empresa = @p1 AND c.[Nº Cliente] = @cliente AND c.Contacto = @contacto));

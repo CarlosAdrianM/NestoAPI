@@ -552,7 +552,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
 
             BultoAlmacenDTO guardado = await servicio.GuardarFotoBulto(foto, "Andrey");
 
-            const string rutaEsperada = "1/926940/99633/bulto-1-20260930120000.jpg";
+            string rutaEsperada = $"1/926940/99633/bulto-{foto.IdCliente:N}.jpg"; // NestoAPI#646: el de esta subida, no el número
             Assert.AreEqual(rutaEsperada, guardado.RutaBlob);
             A.CallTo(() => fotos.Subir(rutaEsperada, JPEG, "image/jpeg")).MustHaveHappenedOnceExactly();
             A.CallTo(() => repositorio.GuardarBultoSinPisar(A<BultoAlmacenDTO>._, ServicioPreparacionAlmacen.HashSha256(JPEG), JPEG.Length, null))
@@ -657,7 +657,10 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         public void SqlGuardarBultoSinPisar_BloqueaLaEntregaYSoloRenumeraSiElNumeroEsDeOtro()
         {
             string sql = RepositorioPreparacionAlmacen.SQL_GUARDAR_BULTO_SIN_PISAR;
-            StringAssert.Contains(sql, "WITH (UPDLOCK, HOLDLOCK)", "Otra subida a la vez de la misma entrega espera");
+            StringAssert.Contains(sql, "EXEC @cerrojo = sp_getapplock @Resource = @recurso, @LockMode = 'Exclusive', @LockOwner = 'Transaction'",
+                "Otra subida a la vez de la misma entrega espera, con un único cerrojo por entrega");
+            Assert.IsFalse(sql.Contains("HOLDLOCK"), "Sin bloqueos de rango que se puedan tomar en distinto orden (1205)");
+            Assert.IsTrue(sql.IndexOf("sp_getapplock") < sql.IndexOf("FROM EnviosAgenciaBultos"), "El cerrojo, lo primero que se pide sobre los bultos");
             StringAssert.Contains(sql, "BEGIN TRANSACTION");
             StringAssert.Contains(sql, "c.[Nº Cliente] = @cliente AND c.Contacto = @contacto", "La entrega es la de Agencias: cliente y contacto");
             StringAssert.Contains(sql, "Pedido = @p2 AND Bulto = @p4 AND Mio = 1", "La misma PDA repitiendo su caja sustituye");
