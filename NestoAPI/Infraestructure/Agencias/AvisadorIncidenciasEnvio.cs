@@ -14,7 +14,8 @@ namespace NestoAPI.Infraestructure.Agencias
     /// NestoAPI#666 (Sugerencia 672 de Novedades, María José): cuando el seguimiento pasa un envío a
     /// INCIDENTADO, se avisa a los comerciales del pedido (estética y/o peluquería según sus líneas, con el
     /// mismo núcleo que el correo de retenidos, <see cref="ComercialesPedido"/>) por correo, con copia a
-    /// administración, y en la campana de Nesto (buzón + SignalR).
+    /// logística (Carlos 20/10/26: las incidencias de agencia las lleva logística, no administración), y en la
+    /// campana de Nesto (buzón + SignalR).
     /// </summary>
     public class AvisadorIncidenciasEnvio
     {
@@ -133,11 +134,11 @@ namespace NestoAPI.Infraestructure.Agencias
             if (destinatarios.Any())
             {
                 destinatarios.ForEach(d => mail.To.Add(new MailAddress(d)));
-                mail.CC.Add(new MailAddress(Constantes.Correos.CORREO_ADMON));
+                mail.CC.Add(new MailAddress(Constantes.Correos.LOGISTICA));
             }
             else
             {
-                mail.To.Add(new MailAddress(Constantes.Correos.CORREO_ADMON));
+                mail.To.Add(new MailAddress(Constantes.Correos.LOGISTICA));
             }
             return mail;
         }

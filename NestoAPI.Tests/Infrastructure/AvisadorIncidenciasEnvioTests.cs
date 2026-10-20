@@ -59,12 +59,12 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
-        public void ComponerCorreo_ALosComerciales_ConCopiaAAdministracion_YLosDatosDelEnvio()
+        public void ComponerCorreo_ALosComerciales_ConCopiaALogistica_YLosDatosDelEnvio()
         {
             MailMessage mail = AvisadorIncidenciasEnvio.ComponerCorreo(Envio(), Comerciales(), "CTT");
 
             CollectionAssert.AreEquivalent(new[] { "santiago@nuevavision.es", "peluqueria@nuevavision.es" }, mail.To.Select(t => t.Address).ToList());
-            Assert.AreEqual(Constantes.Correos.CORREO_ADMON, mail.CC.Single().Address);
+            Assert.AreEqual(Constantes.Correos.LOGISTICA, mail.CC.Single().Address);
             Assert.AreEqual("Incidencia de la agencia en el pedido 925137 - c/ 15191 - Peluquería Ejemplo", mail.Subject);
             StringAssert.Contains(mail.Body, "925137");
             StringAssert.Contains(mail.Body, System.Net.WebUtility.HtmlEncode("15191 - Peluquería Ejemplo"));
@@ -75,13 +75,13 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
-        public void ComponerCorreo_SinNadieConCorreo_VaAAdministracion()
+        public void ComponerCorreo_SinNadieConCorreo_VaALogistica()
         {
             var comerciales = new ComercialesPedido { Comerciales = { new ComercialPedido { Vendedor = "SIN" } } };
 
             MailMessage mail = AvisadorIncidenciasEnvio.ComponerCorreo(Envio(), comerciales, "CTT");
 
-            Assert.AreEqual(Constantes.Correos.CORREO_ADMON, mail.To.Single().Address);
+            Assert.AreEqual(Constantes.Correos.LOGISTICA, mail.To.Single().Address);
             Assert.AreEqual(0, mail.CC.Count);
         }
 
