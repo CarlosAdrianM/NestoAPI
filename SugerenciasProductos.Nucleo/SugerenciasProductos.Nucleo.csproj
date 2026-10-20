@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    NestoAPI#671 (corte 2b de la épica #669): núcleo del modelo de sugerencias de productos de la plantilla de venta. Contiene la
+    matemática pura del corte 1 y del 2a (pares «comprados juntos», intervalo mediano, «le toca», item-kNN, popularidad, perfiles
+    y la mezcla de reglas-1), las features sin fuga, el constructor de instantáneas, el entrenador LightGBM, las métricas con la
+    diversidad aplicada, los baselines y la puerta. Lo usan la API (.NET Framework 4.8: job nocturno y, en el 2c, la inferencia)
+    y la consola ModeloSugerenciasProductos (.NET 8, entrenamiento offline), que lo referencia por ruta relativa.
+    netstandard2.0 para que valga en los dos. Microsoft.ML en la MISMA versión que ModeloLlamadaPedido.Nucleo y que
+    NestoAPI/packages.config (4.0.2): la API trae esos ensamblados por HintPath. Sin SqlClient: la lectura recibe la conexión.
+    RootNamespace ModeloSugerenciasProductos (no SugerenciasProductos) para no chocar con NestoAPI.Infraestructure.SugerenciasProductos.
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <RootNamespace>ModeloSugerenciasProductos</RootNamespace>
+    <AssemblyName>SugerenciasProductos.Nucleo</AssemblyName>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Using Include="System" />
+    <Using Include="System.Collections.Generic" />
+    <Using Include="System.IO" />
+    <Using Include="System.Linq" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.ML" Version="4.0.2" />
+    <PackageReference Include="Microsoft.ML.LightGbm" Version="4.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ModeloSugerenciasProductos.Tests" />
+  </ItemGroup>
+
+</Project>

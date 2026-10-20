@@ -2334,6 +2334,12 @@
       <Project>{756C9B13-8724-4C0D-9CAB-5F5E45B0CE4F}</Project>
       <Name>ModeloLlamadaPedido.Nucleo</Name>
     </ProjectReference>
+    <!-- NestoAPI#671: núcleo del modelo de sugerencias de productos (netstandard2.0; también lo usa la consola
+         ModeloSugerenciasProductos). Mismas dependencias (Microsoft.ML 4.0.2) que arriba. -->
+    <ProjectReference Include="..\SugerenciasProductos.Nucleo\SugerenciasProductos.Nucleo.csproj">
+      <Project>{1D2C70A0-AD1A-4100-A280-959FEC61ABC8}</Project>
+      <Name>SugerenciasProductos.Nucleo</Name>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\TypeScript\Microsoft.TypeScript.targets" Condition="Exists('$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\TypeScript\Microsoft.TypeScript.targets')" />

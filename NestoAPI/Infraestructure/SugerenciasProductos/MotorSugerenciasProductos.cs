@@ -1,9 +1,12 @@
+using ModeloSugerenciasProductos.Reglas;
 using NestoAPI.Infraestructure.CorreosPostCompra;
 using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using CompraNucleo = ModeloSugerenciasProductos.Datos.Compra;
+using FuentesNucleo = ModeloSugerenciasProductos.Reglas.Fuentes;
 
 namespace NestoAPI.Infraestructure.SugerenciasProductos
 {
@@ -26,6 +29,9 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
     /// Filtros (<see cref="MotivoDescarte"/>): del grupo del vendedor, vendible (estado, ficticio; el stock o la fecha de llegada
     /// los mira el servicio), ni en el carrito, ni en un pedido pendiente, ni rechazado por ese cliente en 60 días.
     /// Mezcla (<see cref="Elegir"/>): al menos una de cada fuente si hay, hasta <see cref="SUGERENCIAS_VISIBLES"/>.
+    /// <para>NestoAPI#671 (corte 2b): la matemática pura (sugerible, «le toca», «comprados juntos», perfil y la mezcla) vive
+    /// en el núcleo SugerenciasProductos.Nucleo (<see cref="ReglasSugerencias"/>), para que el entrenamiento offline mida
+    /// reglas-1 exactamente como funciona; aquí quedan los filtros con datos de la API y los textos.</para>
     /// </summary>
     public static class MotorSugerenciasProductos
     {
@@ -51,10 +57,7 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         internal const string DESCARTE_RECHAZADO = "No le interesó hace menos de 60 días.";
 
         /// <summary>El orden en que se cogen las fuentes al mezclar.</summary>
-        public static readonly string[] ORDEN_FUENTES =
-        {
-            MotivosSugerencia.COMPRADO_JUNTO, MotivosSugerencia.LE_TOCA, MotivosSugerencia.POTENCIAR, MotivosSugerencia.PARECIDOS
-        };
+        public static readonly string[] ORDEN_FUENTES = FuentesNucleo.ORDEN;
 
         private static readonly CultureInfo ES = CultureInfo.GetCultureInfo("es-ES");
 
@@ -105,10 +108,7 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         }
 
         /// <summary>Lo que nunca se sugiere ni entra en los pares: de baja, ficticio, materias primas y muestras.</summary>
-        public static bool EsSugerible(FichaProductoSugerencia ficha)
-            => ficha != null && ficha.Estado >= 0 && !ficha.Ficticio
-                && !string.Equals(ficha.Grupo?.Trim(), Constantes.Productos.GRUPO_MATERIAS_PRIMAS, StringComparison.OrdinalIgnoreCase)
-                && !string.Equals(ficha.SubGrupo?.Trim(), Constantes.Productos.SUBGRUPO_MUESTRAS, StringComparison.OrdinalIgnoreCase);
+        public static bool EsSugerible(FichaProductoSugerencia ficha) => ReglasSugerencias.EsSugerible(ficha);
 
         /// <summary>Por qué no se puede sugerir el producto (null si se puede; el stock va aparte).</summary>
         public static string MotivoDescarte(string producto, FichaProductoSugerencia ficha, FiltroGrupoVendedor filtro,
@@ -153,25 +153,14 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         public static List<CandidatoSugerencia> CompradoJunto(IEnumerable<ParCompradoJunto> pares, ISet<string> carrito,
             IDictionary<string, FichaProductoSugerencia> fichas)
         {
-            ISet<string> enCarrito = carrito ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            return (pares ?? Enumerable.Empty<ParCompradoJunto>())
-                .Where(p => !string.IsNullOrWhiteSpace(p.ProductoA) && !string.IsNullOrWhiteSpace(p.ProductoB)
-                    && enCarrito.Contains(p.ProductoA.Trim()) && !enCarrito.Contains(p.ProductoB.Trim()))
-                .GroupBy(p => p.ProductoB.Trim(), StringComparer.OrdinalIgnoreCase)
-                .Select(g =>
+            return ReglasSugerencias.CompradoJunto((pares ?? Enumerable.Empty<ParCompradoJunto>()).Where(p => p != null).Select(AParNucleo), carrito)
+                .Select(mejor => new CandidatoSugerencia
                 {
-                    ParCompradoJunto mejor = g.OrderByDescending(p => p.Confianza).ThenByDescending(p => p.Lift)
-                        .ThenBy(p => p.ProductoA, StringComparer.OrdinalIgnoreCase).First();
-                    return new CandidatoSugerencia
-                    {
-                        Producto = g.Key,
-                        Motivo = MotivosSugerencia.COMPRADO_JUNTO,
-                        Puntuacion = mejor.Confianza,
-                        Texto = TextoCompradoJunto(mejor.Confianza, Nombre(mejor.ProductoA.Trim(), fichas))
-                    };
+                    Producto = mejor.ProductoB.Trim(),
+                    Motivo = MotivosSugerencia.COMPRADO_JUNTO,
+                    Puntuacion = mejor.Confianza,
+                    Texto = TextoCompradoJunto(mejor.Confianza, Nombre(mejor.ProductoA.Trim(), fichas))
                 })
-                .OrderByDescending(c => c.Puntuacion)
-                .ThenBy(c => c.Producto, StringComparer.OrdinalIgnoreCase)
                 .ToList();
         }
 
@@ -181,32 +170,14 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         /// </summary>
         public static List<CandidatoSugerencia> LeToca(IEnumerable<CompraDiaReposicion> compras, DateTime hoy)
         {
-            var candidatos = new List<CandidatoSugerencia>();
-            foreach (IGrouping<string, CompraDiaReposicion> producto in (compras ?? Enumerable.Empty<CompraDiaReposicion>())
-                .Where(c => !string.IsNullOrWhiteSpace(c.Producto) && c.Dia.Date <= hoy.Date)
-                .GroupBy(c => c.Producto.Trim(), StringComparer.OrdinalIgnoreCase))
-            {
-                double? mediana = CalculadoraReposicion.IntervaloMediano(producto.Select(c => c.Dia));
-                if (!mediana.HasValue || mediana.Value < 1)
+            return ReglasSugerencias.LeToca(ACompras(compras), hoy)
+                .Select(r => new CandidatoSugerencia
                 {
-                    continue;
-                }
-                int diasDesdeUltima = (int)(hoy.Date - producto.Max(c => c.Dia).Date).TotalDays;
-                if (diasDesdeUltima <= mediana.Value || diasDesdeUltima >= mediana.Value * CalculadoraReposicion.FACTOR_ABANDONO)
-                {
-                    continue;
-                }
-                candidatos.Add(new CandidatoSugerencia
-                {
-                    Producto = producto.Key,
+                    Producto = r.Producto,
                     Motivo = MotivosSugerencia.LE_TOCA,
-                    Puntuacion = Math.Round((decimal)(diasDesdeUltima / mediana.Value), 4),
-                    Texto = TextoLeToca(mediana.Value, diasDesdeUltima)
-                });
-            }
-            return candidatos
-                .OrderByDescending(c => c.Puntuacion)
-                .ThenBy(c => c.Producto, StringComparer.OrdinalIgnoreCase)
+                    Puntuacion = r.Puntuacion,
+                    Texto = TextoLeToca(r.Mediana, r.DiasDesdeUltima)
+                })
                 .ToList();
         }
 
@@ -220,27 +191,7 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
             {
                 return null;
             }
-            var porPerfil = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
-            var claves = new Dictionary<string, Tuple<string, string>>(StringComparer.OrdinalIgnoreCase);
-            foreach (CompraDiaReposicion compra in compras ?? Enumerable.Empty<CompraDiaReposicion>())
-            {
-                if (string.IsNullOrWhiteSpace(compra.Producto) || !fichas.TryGetValue(compra.Producto.Trim(), out FichaProductoSugerencia ficha)
-                    || !EsSugerible(ficha) || string.IsNullOrWhiteSpace(ficha.Grupo))
-                {
-                    continue;
-                }
-                string grupo = ficha.Grupo.Trim().ToUpperInvariant();
-                string subGrupo = (ficha.SubGrupo ?? string.Empty).Trim().ToUpperInvariant();
-                string clave = grupo + "|" + subGrupo;
-                porPerfil[clave] = (porPerfil.TryGetValue(clave, out decimal suma) ? suma : 0) + compra.BaseImponible;
-                claves[clave] = Tuple.Create(grupo, subGrupo);
-            }
-            if (!porPerfil.Any())
-            {
-                return null;
-            }
-            string mejor = porPerfil.OrderByDescending(p => p.Value).ThenBy(p => p.Key, StringComparer.OrdinalIgnoreCase).First().Key;
-            return porPerfil[mejor] > 0 ? claves[mejor] : null;
+            return ReglasSugerencias.Perfil(ACompras(compras), Buscador(fichas));
         }
 
         /// <summary>
@@ -312,65 +263,36 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         public static List<CandidatoSugerencia> Elegir(IEnumerable<CandidatoSugerencia> candidatos, IEnumerable<string> motivosVisibles,
             ISet<string> excluidos, int huecos)
         {
-            var elegidos = new List<CandidatoSugerencia>();
-            if (huecos <= 0)
-            {
-                return elegidos;
-            }
-            var usados = new HashSet<string>(excluidos ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
-            Dictionary<string, Queue<CandidatoSugerencia>> colas = ORDEN_FUENTES.ToDictionary(f => f, f => new Queue<CandidatoSugerencia>(
-                (candidatos ?? Enumerable.Empty<CandidatoSugerencia>())
-                    .Where(c => c.Motivo == f && !string.IsNullOrWhiteSpace(c.Producto))
-                    .OrderByDescending(c => c.Puntuacion)
-                    .ThenBy(c => c.Producto, StringComparer.OrdinalIgnoreCase)));
-            var visibles = new HashSet<string>(motivosVisibles ?? Enumerable.Empty<string>());
-
-            CandidatoSugerencia Siguiente(string fuente)
-            {
-                Queue<CandidatoSugerencia> cola = colas[fuente];
-                while (cola.Count > 0)
-                {
-                    CandidatoSugerencia c = cola.Dequeue();
-                    if (usados.Add(c.Producto.Trim()))
-                    {
-                        return c;
-                    }
-                }
-                return null;
-            }
-
-            foreach (string fuente in ORDEN_FUENTES.Where(f => !visibles.Contains(f)))
-            {
-                if (elegidos.Count >= huecos)
-                {
-                    return elegidos;
-                }
-                CandidatoSugerencia c = Siguiente(fuente);
-                if (c != null)
-                {
-                    elegidos.Add(c);
-                }
-            }
-            bool quedan = true;
-            while (elegidos.Count < huecos && quedan)
-            {
-                quedan = false;
-                foreach (string fuente in ORDEN_FUENTES)
-                {
-                    if (elegidos.Count >= huecos)
-                    {
-                        break;
-                    }
-                    CandidatoSugerencia c = Siguiente(fuente);
-                    if (c != null)
-                    {
-                        elegidos.Add(c);
-                        quedan = true;
-                    }
-                }
-            }
-            return elegidos;
+            return ReglasSugerencias.Elegir((candidatos ?? Enumerable.Empty<CandidatoSugerencia>()).Where(c => c != null),
+                c => c.Producto, c => c.Motivo, c => c.Puntuacion, ORDEN_FUENTES, motivosVisibles, excluidos, huecos);
         }
+
+        /// <summary>NestoAPI#671: las compras de la API como las mira el núcleo.</summary>
+        internal static IEnumerable<CompraNucleo> ACompras(IEnumerable<CompraDiaReposicion> compras)
+            => (compras ?? Enumerable.Empty<CompraDiaReposicion>())
+                .Where(c => c != null)
+                .Select(c => new CompraNucleo
+                {
+                    Cliente = c.Cliente ?? string.Empty,
+                    Producto = c.Producto ?? string.Empty,
+                    Dia = c.Dia,
+                    BaseImponible = c.BaseImponible,
+                    Cantidad = c.Cantidad
+                });
+
+        /// <summary>NestoAPI#671: la ficha de un producto para el núcleo (FichaProductoSugerencia hereda de su FichaProducto).</summary>
+        internal static Func<string, ModeloSugerenciasProductos.Datos.FichaProducto> Buscador(IDictionary<string, FichaProductoSugerencia> fichas)
+            => producto => fichas != null && producto != null && fichas.TryGetValue(producto.Trim(), out FichaProductoSugerencia f) ? f : null;
+
+        internal static ParComprado AParNucleo(ParCompradoJunto p) => new ParComprado
+        {
+            ProductoA = p.ProductoA ?? string.Empty,
+            ProductoB = p.ProductoB ?? string.Empty,
+            VecesJuntos = p.VecesJuntos,
+            Soporte = p.Soporte,
+            Confianza = p.Confianza,
+            Lift = p.Lift
+        };
 
         /// <summary>El primer hueco libre del panel (1..4). 0 si están todos ocupados.</summary>
         public static int HuecoLibre(IEnumerable<int> ocupados)

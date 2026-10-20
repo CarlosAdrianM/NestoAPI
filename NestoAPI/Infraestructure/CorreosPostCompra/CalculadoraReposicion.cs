@@ -48,28 +48,11 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
 
         /// <summary>
         /// Mediana de los días entre compras consecutivas (días distintos). Null si no hay
-        /// <see cref="MINIMO_COMPRAS"/> días de compra.
+        /// <see cref="MINIMO_COMPRAS"/> días de compra. NestoAPI#671 (corte 2b): la cuenta vive en el núcleo de sugerencias
+        /// (la misma que usan «le toca» y el entrenamiento offline).
         /// </summary>
         public static double? IntervaloMediano(IEnumerable<DateTime> dias)
-        {
-            List<DateTime> ordenados = (dias ?? Enumerable.Empty<DateTime>())
-                .Select(d => d.Date)
-                .Distinct()
-                .OrderBy(d => d)
-                .ToList();
-            if (ordenados.Count < MINIMO_COMPRAS)
-            {
-                return null;
-            }
-            List<double> intervalos = ordenados
-                .Zip(ordenados.Skip(1), (a, b) => (b - a).TotalDays)
-                .OrderBy(x => x)
-                .ToList();
-            int n = intervalos.Count;
-            return n % 2 == 1
-                ? intervalos[n / 2]
-                : (intervalos[(n / 2) - 1] + intervalos[n / 2]) / 2.0;
-        }
+            => ModeloSugerenciasProductos.Reglas.ReglasSugerencias.IntervaloMediano(dias, MINIMO_COMPRAS);
 
         public static bool TocaReponer(double intervaloDias, int diasDesdeUltimaCompra)
             => diasDesdeUltimaCompra >= intervaloDias * FACTOR_AVISO

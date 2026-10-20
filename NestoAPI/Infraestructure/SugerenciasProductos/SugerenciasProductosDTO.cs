@@ -1,16 +1,17 @@
 using System;
 using System.Collections.Generic;
+using FuentesNucleo = ModeloSugerenciasProductos.Reglas.Fuentes;
 
 namespace NestoAPI.Infraestructure.SugerenciasProductos
 {
-    /// <summary>NestoAPI#670: de dónde sale una sugerencia (va tal cual en la columna Motivo).</summary>
+    /// <summary>NestoAPI#670: de dónde sale una sugerencia (va tal cual en la columna Motivo). NestoAPI#671: los del núcleo.</summary>
     public static class MotivosSugerencia
     {
-        public const string COMPRADO_JUNTO = "CompradoJunto";
-        public const string LE_TOCA = "LeToca";
-        public const string POTENCIAR = "Potenciar";
+        public const string COMPRADO_JUNTO = FuentesNucleo.COMPRADO_JUNTO;
+        public const string LE_TOCA = FuentesNucleo.LE_TOCA;
+        public const string POTENCIAR = FuentesNucleo.POTENCIAR;
         /// <summary>NestoAPI#671 (corte 2a): item-kNN por coseno; lo compran clientes que compran lo mismo que este.</summary>
-        public const string PARECIDOS = "Parecidos";
+        public const string PARECIDOS = FuentesNucleo.PARECIDOS;
     }
 
     /// <summary>NestoAPI#670: lo que contesta el vendedor dentro de la sugerencia («✓ Añadir» y «✗ No le interesa»).</summary>
@@ -148,15 +149,12 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         public bool Exploracion { get; set; }
     }
 
-    public class FichaProductoSugerencia
+    /// <summary>
+    /// NestoAPI#671 (corte 2b): hereda todo (Producto, Nombre, Grupo, SubGrupo, Familia, Estado, Ficticio) de la ficha del
+    /// núcleo, para que las reglas del núcleo miren las mismas fichas sin copiarlas.
+    /// </summary>
+    public class FichaProductoSugerencia : ModeloSugerenciasProductos.Datos.FichaProducto
     {
-        public string Producto { get; set; }
-        public string Nombre { get; set; }
-        public string Grupo { get; set; }
-        public string SubGrupo { get; set; }
-        public string Familia { get; set; }
-        public short Estado { get; set; }
-        public bool Ficticio { get; set; }
     }
 
     public class ParCompradoJunto

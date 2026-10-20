@@ -825,6 +825,10 @@
       <Project>{756C9B13-8724-4C0D-9CAB-5F5E45B0CE4F}</Project>
       <Name>ModeloLlamadaPedido.Nucleo</Name>
     </ProjectReference>
+    <ProjectReference Include="..\SugerenciasProductos.Nucleo\SugerenciasProductos.Nucleo.csproj">
+      <Project>{1D2C70A0-AD1A-4100-A280-959FEC61ABC8}</Project>
+      <Name>SugerenciasProductos.Nucleo</Name>
+    </ProjectReference>
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Infrastructure\PreciosMedios\Fixtures\16137.json" />
