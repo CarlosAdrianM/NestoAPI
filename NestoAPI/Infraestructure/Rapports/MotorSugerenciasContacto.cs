@@ -90,7 +90,8 @@ namespace NestoAPI.Infraestructure.Rapports
         {
             int? diasContacto = DiasDesde(c.UltimoContacto, hoy);
             int? diasIntento = DiasDesde(c.UltimoIntento, hoy);
-            int? diasPedido = DiasDesde(c.UltimoPedido, hoy);
+            // NestoAPI#620: «pidió hace poco» con cualquier pedido del cliente, también de otro grupo (de otro vendedor).
+            int? diasPedido = DiasDesde(RepositorioCarteraContactoSql.MasReciente(c.UltimoPedido, c.UltimoPedidoCliente), hoy);
             return (diasContacto.HasValue && diasContacto.Value < Cadencia(c))
                 || (diasIntento.HasValue && diasIntento.Value < UmbralesSugerenciasContacto.DIAS_TRAS_INTENTO)
                 || (diasPedido.HasValue && diasPedido.Value < UmbralesSugerenciasContacto.DIAS_TRAS_PEDIDO);

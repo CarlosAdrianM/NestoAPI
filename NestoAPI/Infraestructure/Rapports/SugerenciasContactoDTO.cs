@@ -110,6 +110,11 @@ namespace NestoAPI.Infraestructure.Rapports
         public int Pedidos24Meses { get; set; }
         /// <summary>Último pedido: el más reciente entre lo facturado y lo que está en curso (pendiente, en curso o albarán).</summary>
         public DateTime? UltimoPedido { get; set; }
+        /// <summary>
+        /// NestoAPI#620: el último pedido del cliente de CUALQUIER grupo (60 días, facturado o no). Solo para «pidió hace
+        /// poco» (<see cref="UmbralesSugerenciasContacto.DIAS_TRAS_PEDIDO"/>): vale para todos sus vendedores.
+        /// </summary>
+        public DateTime? UltimoPedidoCliente { get; set; }
         /// <summary>Último rapport Estado 0 (se habló) de tipo T/V/W. NestoAPI#620: sin los del otro vendedor que lleva al cliente.</summary>
         public DateTime? UltimoContacto { get; set; }
         /// <summary>Último rapport Estado 1 (no contestó) de tipo T/V/W.</summary>

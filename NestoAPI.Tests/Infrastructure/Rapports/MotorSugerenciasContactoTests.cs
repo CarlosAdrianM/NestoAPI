@@ -120,6 +120,24 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
             Assert.AreEqual(PrioridadesContacto.MAXIMA, MotorSugerenciasContacto.Prioridad(Cliente("a", 52, probabilidad: 0.9f, diasPedido: 6), HOY));
         }
 
+        [TestMethod]
+        public void Exclusiones_PedidoRecienteDeOtroGrupo_TampocoSePropone_PeroNoCambiaLaCadencia()
+        {
+            // NestoAPI#620 (Carlos, 20/10/26): el de peluquería no llama a quien pidió estética hace 2 días, aunque su último
+            // pedido de peluquería sea de hace 40; la cadencia sigue con sus compras.
+            ClienteCarteraContacto cliente = Cliente("a", 12, probabilidad: 0.9f, diasPedido: 40);
+            int cadencia = MotorSugerenciasContacto.Cadencia(cliente);
+            cliente.UltimoPedidoCliente = HOY.AddDays(-2);
+
+            Assert.IsTrue(MotorSugerenciasContacto.EstaExcluido(cliente, HOY));
+            Assert.IsNull(MotorSugerenciasContacto.Prioridad(cliente, HOY));
+            Assert.AreEqual(cadencia, MotorSugerenciasContacto.Cadencia(cliente));
+            Assert.AreEqual(40, MotorSugerenciasContacto.ADTO(cliente, HOY).DiasDesdeUltimoPedido, "lo que se enseña es su último pedido");
+
+            cliente.UltimoPedidoCliente = HOY.AddDays(-6);
+            Assert.AreEqual(PrioridadesContacto.MAXIMA, MotorSugerenciasContacto.Prioridad(cliente, HOY), "a los 6 días ya se le puede llamar");
+        }
+
         // ---------------- Orden ----------------
 
         [TestMethod]

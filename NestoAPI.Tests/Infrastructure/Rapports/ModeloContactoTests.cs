@@ -418,10 +418,52 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
             string sql = RepositorioCarteraContactoSql.SQL_CARTERA;
             string filtro = RepositorioCarteraContactoSql.FILTRO_GRUPO_LINEA;
 
-            StringAssert.Contains(filtro, "x.TodosLosGrupos = 1 OR EXISTS");
+            StringAssert.Contains(filtro, "OR EXISTS (SELECT 1 FROM #GruposCartera g");
             StringAssert.Contains(filtro, "g.Grupo = l.Grupo");
             Assert.AreEqual(2, (sql.Length - sql.Replace(filtro, string.Empty).Length) / filtro.Length, "en #Compras y en #EnCurso");
             Assert.IsFalse(RepositorioFeaturesContactoSql.SQL.Contains(filtro), "el modelo sigue con el historial completo, como al entrenar");
+        }
+
+        [TestMethod]
+        public void Cartera_VendedorDeLaFicha_SinLasComprasDelGrupoQueLlevaOtro()
+        {
+            // Simetría (Carlos, 20/10/26): al de la ficha no le cuentan las compras de PEL si el cliente tiene vendedor de
+            // peluquería (que no sea el general); sin vendedor de grupo, le cuentan todas.
+            string asignacion = RepositorioCarteraContactoSql.SQL_ASIGNACION;
+            string filtro = RepositorioCarteraContactoSql.FILTRO_GRUPO_LINEA;
+
+            StringAssert.Contains(asignacion, "INTO #GruposAjenos");
+            StringAssert.Contains(asignacion, "a.TodosLosGrupos = 1\r\n            WHERE v.Empresa = '1' AND v.Vendedor <> @Vendedor AND v.Vendedor <> 'NV'");
+            StringAssert.Contains(filtro, "(x.TodosLosGrupos = 1 AND NOT EXISTS (SELECT 1 FROM #GruposAjenos j");
+            StringAssert.Contains(filtro, "j.Grupo = l.Grupo");
+        }
+
+        [TestMethod]
+        public void CarteraYModelo_SinAccionComercial_FueraDeLasDosListas()
+        {
+            Assert.AreEqual("11, 22, 93", RepositorioCarteraContactoSql.ESTADOS_SIN_ACCION_COMERCIAL_SQL);
+            Assert.AreEqual(11, NestoAPI.Models.Constantes.Clientes.Estados.SIN_ACCION_COMERCIAL_SOLO_PELUQUERIA);
+            Assert.AreEqual(22, NestoAPI.Models.Constantes.Clientes.Estados.SIN_ACCION_COMERCIAL_ESTETICA_Y_PELUQUERIA);
+            Assert.AreEqual(93, NestoAPI.Models.Constantes.Clientes.Estados.SIN_ACCION_COMERCIAL_SOLO_ESTETICA);
+            string asignacion = RepositorioCarteraContactoSql.SQL_ASIGNACION;
+
+            StringAssert.Contains(asignacion, "c.Vendedor = @Vendedor AND c.Estado NOT IN (11, 22, 93)", "la ficha, de la lista de la ficha");
+            StringAssert.Contains(asignacion, "AND v.Estado NOT IN (11, 22, 93)\r\n            ) a", "la fila de grupo, de la lista del grupo");
+            StringAssert.Contains(RepositorioFeaturesContactoSql.SQL, asignacion);
+        }
+
+        [TestMethod]
+        public void Cartera_PedidoReciente_DeCualquierGrupoParaTodosSusVendedores()
+        {
+            string sql = RepositorioCarteraContactoSql.SQL_CARTERA;
+            int inicio = sql.IndexOf("INTO #PedidoReciente", StringComparison.Ordinal);
+            int fin = sql.IndexOf("GROUP BY", inicio, StringComparison.Ordinal);
+
+            Assert.IsTrue(inicio > 0);
+            string pedidoReciente = sql.Substring(inicio, fin - inicio);
+            Assert.IsFalse(pedidoReciente.Contains("#GruposCartera") || pedidoReciente.Contains("#GruposAjenos"), "sin filtro de grupo");
+            StringAssert.Contains(pedidoReciente, "(l.Estado BETWEEN -1 AND 2 OR l.Estado = 4)", "facturado o no");
+            StringAssert.Contains(sql, "MAX(pr.Dia) UltimoPedidoCliente");
         }
 
         [TestMethod]
