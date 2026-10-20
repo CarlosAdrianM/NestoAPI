@@ -64,6 +64,31 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
             }
         }
 
+        /// <summary>
+        /// NestoAPI#670 (Nesto#537): al ampliar un pedido pendiente desde la plantilla (UnirPedidos), la sesión de sugerencias
+        /// viene en la ampliación; se enlaza con el pedido que queda tras la unión y se marca qué sugerencias entraron. Se
+        /// llama fuera del TransactionScope de la unión y nunca rompe la unión: los errores van a ELMAH.
+        /// </summary>
+        /// <param name="enlazar">Para los tests; por defecto, <see cref="EnlazarPedidoSinFallar"/>.</param>
+        public static async Task EnlazarUnionSinFallar(PedidoVentaDTO pedidoUnido, PedidoVentaDTO ampliacion,
+            Func<PedidoVentaDTO, Task> enlazar = null, Action<Exception> registrarError = null)
+        {
+            Guid? idSesion = ampliacion?.IdSesionSugerencias;
+            if (pedidoUnido == null || idSesion == null || idSesion.Value == Guid.Empty)
+            {
+                return;
+            }
+            pedidoUnido.IdSesionSugerencias = idSesion;
+            try
+            {
+                await (enlazar ?? EnlazarPedidoSinFallar)(pedidoUnido).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                (registrarError ?? ElmahHelper.Log)(new Exception($"[Sugerencias #670] No se ha podido enlazar la sesión {idSesion} con el pedido unido {pedidoUnido.numero}: {ex.Message}", ex));
+            }
+        }
+
         public async Task<SugerenciasProductosDTO> Calcular(CalcularSugerenciasDTO peticion, string usuario)
         {
             if (peticion == null || string.IsNullOrWhiteSpace(peticion.Cliente))

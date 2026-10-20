@@ -2582,6 +2582,11 @@ namespace NestoAPI.Controllers
             PedidoVentaDTO pedidoUnido = parametroStringIntPedido == null || parametroStringIntPedido.PedidoAmpliacion == null
                 ? await gestor.UnirPedidos(parametroStringIntInt.Empresa, parametroStringIntInt.NumeroPedidoOriginal, parametroStringIntInt.NumeroPedidoAmpliacion, parametroStringIntInt.SinPasarValidacion).ConfigureAwait(false)
                 : await gestor.UnirPedidos(parametroStringIntPedido.Empresa, parametroStringIntPedido.NumeroPedidoOriginal, parametroStringIntPedido.PedidoAmpliacion).ConfigureAwait(false);
+
+            // NestoAPI#670 (Nesto#537): la ampliación de la plantilla trae la sesión de sugerencias; se enlaza con el pedido
+            // que queda, ya fuera de la transacción de la unión. Sin IdSesionSugerencias no hace nada; nunca lanza.
+            await Infraestructure.SugerenciasProductos.ServicioSugerenciasProductos.EnlazarUnionSinFallar(
+                pedidoUnido, parametroStringIntPedido?.PedidoAmpliacion).ConfigureAwait(false);
             return pedidoUnido;
         }
 

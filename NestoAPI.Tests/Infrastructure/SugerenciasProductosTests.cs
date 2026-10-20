@@ -684,6 +684,67 @@ namespace NestoAPI.Tests.Infrastructure
             await ServicioSugerenciasProductos.EnlazarPedidoSinFallar(null);
         }
 
+        // ---------------- Unir pedidos (ampliar un pedido pendiente desde la plantilla) ----------------
+
+        [TestMethod]
+        public async Task EnlazarUnion_ConSesionEnLaAmpliacion_EnlazaElPedidoUnidoYMarcaLasQueEntraron()
+        {
+            SugerenciasProductosDTO primera = await _servicio.Calcular(Peticion(null, "CARRO1"), "carlos");
+            var ampliacion = new PedidoVentaDTO
+            {
+                IdSesionSugerencias = primera.IdSesion,
+                Lineas = new List<LineaPedidoVentaDTO> { new LineaPedidoVentaDTO { Producto = "JUNTO1", Cantidad = 2, tipoLinea = 1 } }
+            };
+            var unido = new PedidoVentaDTO
+            {
+                numero = 925140,
+                Lineas = new List<LineaPedidoVentaDTO>
+                {
+                    new LineaPedidoVentaDTO { Producto = "CARRO1", Cantidad = 1, tipoLinea = 1 },
+                    new LineaPedidoVentaDTO { Producto = "JUNTO1", Cantidad = 2, tipoLinea = 1 }
+                }
+            };
+
+            await ServicioSugerenciasProductos.EnlazarUnionSinFallar(unido, ampliacion, p => _servicio.EnlazarPedido(p));
+
+            Assert.AreEqual(primera.IdSesion, unido.IdSesionSugerencias);
+            Assert.AreEqual(925140, _sesiones[primera.IdSesion].Pedido, "La sesión queda con el pedido que resulta de la unión");
+            SugerenciaMostrada junto1 = _mostradas.Single(m => m.Producto == "JUNTO1");
+            Assert.AreEqual(true, junto1.EntroEnPedido);
+            Assert.AreEqual(2, junto1.CantidadEnPedido);
+        }
+
+        [TestMethod]
+        public async Task EnlazarUnion_SinSesion_NoHaceNada()
+        {
+            int llamadas = 0;
+            var unido = new PedidoVentaDTO { numero = 925140 };
+
+            await ServicioSugerenciasProductos.EnlazarUnionSinFallar(unido, new PedidoVentaDTO(), p => { llamadas++; return Task.CompletedTask; });
+            await ServicioSugerenciasProductos.EnlazarUnionSinFallar(unido, new PedidoVentaDTO { IdSesionSugerencias = Guid.Empty }, p => { llamadas++; return Task.CompletedTask; });
+            await ServicioSugerenciasProductos.EnlazarUnionSinFallar(unido, null, p => { llamadas++; return Task.CompletedTask; });
+            await ServicioSugerenciasProductos.EnlazarUnionSinFallar(null, new PedidoVentaDTO { IdSesionSugerencias = Guid.NewGuid() }, p => { llamadas++; return Task.CompletedTask; });
+            // Sin sesión sale antes de abrir conexión (el camino real que usa UnirPedidos con la unión de dos números)
+            await ServicioSugerenciasProductos.EnlazarUnionSinFallar(unido, null);
+
+            Assert.AreEqual(0, llamadas);
+            Assert.IsNull(unido.IdSesionSugerencias);
+        }
+
+        [TestMethod]
+        public async Task EnlazarUnion_FallaElEnlace_NoRompeLaUnionYVaAElmah()
+        {
+            var errores = new List<Exception>();
+            var unido = new PedidoVentaDTO { numero = 925140 };
+
+            await ServicioSugerenciasProductos.EnlazarUnionSinFallar(unido, new PedidoVentaDTO { IdSesionSugerencias = Guid.NewGuid() },
+                p => throw new InvalidOperationException("BD caída"), errores.Add);
+
+            Assert.AreEqual(1, errores.Count);
+            StringAssert.Contains(errores[0].Message, "#670");
+            StringAssert.Contains(errores[0].Message, "925140");
+        }
+
         [TestMethod]
         public void Carrito_SeGuardaYSeLeeIgual()
         {
