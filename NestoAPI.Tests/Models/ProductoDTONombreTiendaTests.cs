@@ -77,6 +77,55 @@ namespace NestoAPI.Tests.Models
             Assert.AreEqual("Lampara LED dave", dto.Nombre);
         }
 
+        // ---------------------------------------------------------------- NestoAPI#681: la referencia del proveedor (Ariadna)
+
+        [TestMethod]
+        public async Task LeerReferenciasProveedor_ConProveedor_TraeSuReferenciaRecortada()
+        {
+            ConProveedores(new ProveedoresProducto { Empresa = "1  ", Nº_Proveedor = "100", Nº_Producto = "45700", Orden = 1, ReferenciaProv = " Check GY  " });
+
+            var referencias = await ProductoDTO.LeerReferenciasProveedor(db, "1  ", new[] { "45700" });
+
+            Assert.AreEqual("Check GY", referencias["45700"]);
+        }
+
+        [TestMethod]
+        public async Task LeerReferenciasProveedor_SinProveedor_NoTraeNada()
+        {
+            ConProveedores(new ProveedoresProducto { Empresa = "1  ", Nº_Proveedor = "100", Nº_Producto = "45701", Orden = 1, ReferenciaProv = "OTRO" },
+                new ProveedoresProducto { Empresa = "1  ", Nº_Proveedor = "100", Nº_Producto = "45702", Orden = 1, ReferenciaProv = "   " });
+
+            var referencias = await ProductoDTO.LeerReferenciasProveedor(db, "1  ", new[] { "45700", "45702" });
+
+            Assert.IsFalse(referencias.ContainsKey("45700"));
+            Assert.IsFalse(referencias.ContainsKey("45702"), "Una referencia en blanco es como no tenerla");
+        }
+
+        [TestMethod]
+        public async Task LeerReferenciasProveedor_ConVariosProveedores_SeQuedaLaDelDeOrdenUno()
+        {
+            ConProveedores(
+                new ProveedoresProducto { Empresa = "1  ", Nº_Proveedor = "100", Nº_Producto = "45700", Orden = 2, ReferenciaProv = "DEL-SEGUNDO" },
+                new ProveedoresProducto { Empresa = "1  ", Nº_Proveedor = "200", Nº_Producto = "45700", Orden = 1, ReferenciaProv = "DEL-PRINCIPAL" },
+                new ProveedoresProducto { Empresa = "1  ", Nº_Proveedor = "300", Nº_Producto = "45700", Orden = 3, ReferenciaProv = "DEL-TERCERO" });
+
+            var referencias = await ProductoDTO.LeerReferenciasProveedor(db, "1  ", new[] { "45700" });
+
+            Assert.AreEqual("DEL-PRINCIPAL", referencias["45700"]);
+        }
+
+        [TestMethod]
+        public void ReferenciasProveedorPrincipal_DosDeOrdenUno_SiempreLaDelMismoProveedor()
+        {
+            var referencias = ProductoDTO.ReferenciasProveedorPrincipal(new[]
+            {
+                new ProveedoresProducto { Nº_Proveedor = "300", ContactoProveedor = "0", Nº_Producto = "45700 ", Orden = 1, ReferenciaProv = "B" },
+                new ProveedoresProducto { Nº_Proveedor = "200", ContactoProveedor = "0", Nº_Producto = "45700", Orden = 1, ReferenciaProv = "A" }
+            });
+
+            Assert.AreEqual("A", referencias["45700"]);
+        }
+
         private static void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class
         {
             A.CallTo(() => ((IDbAsyncEnumerable<T>)fakeDbSet).GetAsyncEnumerator())

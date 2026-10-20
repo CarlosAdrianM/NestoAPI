@@ -19,6 +19,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public string Subgrupo { get; set; }
         public short? Tamano { get; set; }
         public string UnidadMedida { get; set; }
+        /// <summary>NestoAPI#681: ProveedoresProducto.ReferenciaProv del proveedor principal (Orden = 1). Null si no hay.</summary>
+        public string ReferenciaProveedor { get; set; }
     }
 
     public interface IRepositorioFichasProducto
@@ -48,6 +50,12 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// consulta para todos los huecos; nunca falla: si no se puede leer, las líneas se quedan sin el campo (ELMAH).
         /// </summary>
         Task CompletarMismoHueco(string empresa, string almacen, IEnumerable<IConProductosMismoHueco> lineas);
+
+        /// <summary>
+        /// NestoAPI#681: solo la referencia del proveedor principal, para las líneas que no llevan ficha (reposiciones,
+        /// diferencias). Una consulta para todos los productos a la vez (la misma de <see cref="Completar"/>).
+        /// </summary>
+        Task CompletarReferenciasProveedor(string empresa, IEnumerable<IConReferenciaProveedor> productos);
     }
 
     /// <summary>
@@ -109,10 +117,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             Task<IDictionary<string, string>> urls = fotos == null
                 ? Task.FromResult<IDictionary<string, string>>(new Dictionary<string, string>())
                 : fotos.Urls(numeros);
-            Dictionary<string, FichaProductoAlmacen> fichas = (await repositorio.LeerFichas(empresa, numeros).ConfigureAwait(false) ?? new List<FichaProductoAlmacen>())
-                .Where(f => !string.IsNullOrWhiteSpace(f?.Producto))
-                .GroupBy(f => f.Producto.Trim(), StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, FichaProductoAlmacen> fichas = PorProducto(await repositorio.LeerFichas(empresa, numeros).ConfigureAwait(false));
 
             PonerFotos(lista, await urls.ConfigureAwait(false));
 
@@ -126,7 +131,38 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 producto.Subgrupo = Limpio(ficha.Subgrupo);
                 producto.Tamano = ficha.Tamano ?? producto.Tamano;
                 producto.UnidadMedida = Limpio(ficha.UnidadMedida) ?? producto.UnidadMedida;
+                producto.ReferenciaProveedor = Limpio(ficha.ReferenciaProveedor); // NestoAPI#681
             }
+        }
+
+        public async Task CompletarReferenciasProveedor(string empresa, IEnumerable<IConReferenciaProveedor> productos)
+        {
+            List<IConReferenciaProveedor> lista = (productos ?? Enumerable.Empty<IConReferenciaProveedor>()).Where(p => p != null).ToList();
+            List<string> numeros = lista
+                .Select(p => p.Producto?.Trim())
+                .Where(p => !string.IsNullOrEmpty(p))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (numeros.Count == 0)
+            {
+                return;
+            }
+            Dictionary<string, FichaProductoAlmacen> fichas = PorProducto(await repositorio.LeerFichas(empresa, numeros).ConfigureAwait(false));
+            foreach (IConReferenciaProveedor producto in lista)
+            {
+                if (producto.Producto != null && fichas.TryGetValue(producto.Producto.Trim(), out FichaProductoAlmacen ficha))
+                {
+                    producto.ReferenciaProveedor = Limpio(ficha.ReferenciaProveedor);
+                }
+            }
+        }
+
+        private static Dictionary<string, FichaProductoAlmacen> PorProducto(IEnumerable<FichaProductoAlmacen> fichas)
+        {
+            return (fichas ?? new List<FichaProductoAlmacen>())
+                .Where(f => !string.IsNullOrWhiteSpace(f?.Producto))
+                .GroupBy(f => f.Producto.Trim(), StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
         }
 
         private static List<string> Numeros(IEnumerable<IConFotoProducto> productos)
@@ -171,10 +207,15 @@ SELECT RTRIM(p.[Número]) AS Producto,
        RTRIM(f.[Descripción]) AS Familia,
        RTRIM(s.[Descripción]) AS Subgrupo,
        p.[Tamaño] AS Tamano,
-       RTRIM(p.UnidadMedida) AS UnidadMedida
+       RTRIM(p.UnidadMedida) AS UnidadMedida,
+       NULLIF(RTRIM(pp.ReferenciaProv), '') AS ReferenciaProveedor
 FROM Productos p
      LEFT JOIN Familias f ON f.Empresa = p.Empresa AND f.[Número] = p.Familia
      LEFT JOIN SubGruposProducto s ON s.Empresa = p.Empresa AND s.Grupo = p.Grupo AND s.[Número] = p.SubGrupo
+     OUTER APPLY (SELECT TOP 1 r.ReferenciaProv
+                  FROM ProveedoresProducto r
+                  WHERE r.Empresa = p.Empresa AND r.[Nº Producto] = p.[Número] AND r.Orden = 1
+                  ORDER BY r.[Nº Proveedor], r.ContactoProveedor) pp
 WHERE p.Empresa = @p0 AND p.[Número] IN ({0})";
 
         private readonly NVEntities db;

@@ -171,6 +171,13 @@ namespace NestoAPI.Controllers
                 CodigoBarras = producto.CodBarras?.Trim()
             };
 
+            // NestoAPI#681 (Ariadna#49): la referencia del proveedor principal, para distinguir productos que se parecen
+            if (fichaCompleta)
+            {
+                Dictionary<string, string> referencias = await ProductoDTO.LeerReferenciasProveedor(db, producto.Empresa, new[] { producto.Número }).ConfigureAwait(false);
+                productoDTO.ReferenciaProveedor = producto.Número != null && referencias.TryGetValue(producto.Número.Trim(), out string referencia) ? referencia : null;
+            }
+
             // NestoAPI#644: este DTO es el que se publica por Nesto_sync, y el campo viajaba
             // siempre a 0. Sin clasificación se queda en 0 (= sin clasificar, como en el buscador).
             productoDTO.ClasificacionMasVendidos = await db.ClasificacionMasVendidos
@@ -286,7 +293,7 @@ namespace NestoAPI.Controllers
                 }
                 if (porCodigoBarras.Count > 1)
                 {
-                    return Content(HttpStatusCode.Conflict, ListarDuplicadosCodigoBarras(porCodigoBarras));
+                    return Content(HttpStatusCode.Conflict, await ListarDuplicadosCodigoBarras(porCodigoBarras).ConfigureAwait(false));
                 }
                 producto = porCodigoBarras[0];
             }
@@ -727,7 +734,7 @@ namespace NestoAPI.Controllers
             if (coincidencias.Count > 1)
             {
                 // Código de barras compartido por varios productos: devolvemos la lista (409).
-                return Content(HttpStatusCode.Conflict, ListarDuplicadosCodigoBarras(coincidencias));
+                return Content(HttpStatusCode.Conflict, await ListarDuplicadosCodigoBarras(coincidencias).ConfigureAwait(false));
             }
 
             Producto producto = coincidencias[0];
@@ -784,13 +791,18 @@ namespace NestoAPI.Controllers
             return coincidencias;
         }
 
-        private static List<ProductoCodigoBarrasDuplicadoDTO> ListarDuplicadosCodigoBarras(IEnumerable<Producto> productos)
+        /// <summary>NestoAPI#681: con la referencia del proveedor principal de cada uno (una consulta para todos).</summary>
+        private async Task<List<ProductoCodigoBarrasDuplicadoDTO>> ListarDuplicadosCodigoBarras(IEnumerable<Producto> productos)
         {
-            return productos
+            List<Producto> lista = productos.ToList();
+            string empresa = lista.Select(p => p.Empresa).FirstOrDefault(e => !string.IsNullOrWhiteSpace(e)) ?? Constantes.Empresas.EMPRESA_POR_DEFECTO;
+            Dictionary<string, string> referencias = await ProductoDTO.LeerReferenciasProveedor(db, empresa, lista.Select(p => p.Número)).ConfigureAwait(false);
+            return lista
                 .Select(p => new ProductoCodigoBarrasDuplicadoDTO
                 {
                     producto = p.Número?.Trim(),
-                    nombre = p.Nombre?.Trim()
+                    nombre = p.Nombre?.Trim(),
+                    referenciaProveedor = p.Número != null && referencias.TryGetValue(p.Número.Trim(), out string referencia) ? referencia : null
                 })
                 .ToList();
         }

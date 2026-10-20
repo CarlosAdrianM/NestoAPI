@@ -8,5 +8,7 @@ namespace NestoAPI.Models.Productos
     {
         public string producto { get; set; }
         public string nombre { get; set; }
+        /// <summary>NestoAPI#681: la referencia del proveedor principal (Orden = 1), recortada; null si no hay.</summary>
+        public string referenciaProveedor { get; set; }
     }
 }

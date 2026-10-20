@@ -65,6 +65,8 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public short? Tamano { get; set; }
         public string UnidadMedida { get; set; }
         public string UrlFoto { get; set; }
+        /// <summary>NestoAPI#681: la referencia del proveedor principal (ProveedoresProducto.ReferenciaProv con Orden = 1), recortada. Null si no hay.</summary>
+        public string ReferenciaProveedor { get; set; }
         public string CodigoBarras { get; set; }
         /// <summary>NestoAPI#605: todos los códigos activos del producto (el principal, el primero). Vacía si no tiene.</summary>
         public List<string> CodigosBarras { get; set; } = new List<string>();

@@ -36,7 +36,11 @@ namespace NestoAPI.Tests.Infrastructure
                 "para no volver a confundir el codigo con la descripcion al buscar filas de " +
                 "DescuentosProducto). Por el bus, Familia viaja como DESCRIPCION: si PrestaShop u " +
                 "Odoo llegan a necesitar el codigo para identificar la marca, se anade al mensaje " +
-                "DESPUES de acordarlo con ellos, no por sorpresa."
+                "DESPUES de acordarlo con ellos, no por sorpresa.",
+            ["ReferenciaProveedor"] =
+                "NestoAPI#681: la referencia del proveedor principal es para el almacen (Ariadna la " +
+                "ensena para distinguir productos que se parecen) y solo se rellena en la ficha de " +
+                "GET api/Productos?codigoBarras=. A PrestaShop y Odoo no se les manda sin acordarlo."
         };
 
         [TestMethod]

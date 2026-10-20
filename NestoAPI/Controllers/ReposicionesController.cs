@@ -5,6 +5,7 @@ using NestoAPI.Models;
 using NestoAPI.Models.PreparacionAlmacen;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -75,11 +76,28 @@ namespace NestoAPI.Controllers
             return fichas == null || productos == null ? Task.CompletedTask : fichas.CompletarFotos(productos);
         }
 
+        /// <summary>
+        /// NestoAPI#681: la foto y la referencia del proveedor principal de todos los productos de la respuesta (una llamada
+        /// para cada cosa, para todos a la vez).
+        /// </summary>
+        private Task CompletarFotosYReferencias<T>(string empresa, IEnumerable<T> productos) where T : IConFotoProducto, IConReferenciaProveedor
+        {
+            if (fichas == null || productos == null)
+            {
+                return Task.CompletedTask;
+            }
+            List<T> lista = productos.ToList();
+            return Task.WhenAll(
+                fichas.CompletarFotos(lista.Cast<IConFotoProducto>()),
+                fichas.CompletarReferenciasProveedor(string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim(),
+                    lista.Cast<IConReferenciaProveedor>()));
+        }
+
         private async Task<ReposicionEnPreparacionDTO> ConFotos(ReposicionEnPreparacionDTO reposicion)
         {
             // Ariadna#47: con los demás productos del hueco de cada línea (solo las que salen de un hueco: desde Algete)
             await Task.WhenAll(
-                CompletarFotos(reposicion?.Lineas),
+                CompletarFotosYReferencias(reposicion?.Empresa, reposicion?.Lineas),
                 fichas == null || reposicion?.Lineas == null || string.IsNullOrWhiteSpace(reposicion.Origen)
                     ? Task.CompletedTask
                     : fichas.CompletarMismoHueco(reposicion.Empresa, reposicion.Origen, reposicion.Lineas)).ConfigureAwait(false);
@@ -536,7 +554,7 @@ namespace NestoAPI.Controllers
             try
             {
                 List<DiferenciaReposicionDTO> lista = await Diferencias.Listar(empresa, estado, almacen, User).ConfigureAwait(false);
-                await CompletarFotos(lista).ConfigureAwait(false);
+                await CompletarFotosYReferencias(empresa, lista).ConfigureAwait(false);
                 return Ok(lista);
             }
             catch (UnauthorizedAccessException ex)
@@ -572,7 +590,7 @@ namespace NestoAPI.Controllers
             try
             {
                 DiferenciaReposicionDTO diferencia = await Diferencias.Leer(empresa, id, User).ConfigureAwait(false);
-                await CompletarFotos(diferencia == null ? null : new[] { diferencia }).ConfigureAwait(false);
+                await CompletarFotosYReferencias(empresa, diferencia == null ? null : new[] { diferencia }).ConfigureAwait(false);
                 return diferencia == null ? (IHttpActionResult)NotFound() : Ok(diferencia);
             }
             catch (UnauthorizedAccessException ex)
@@ -603,7 +621,7 @@ namespace NestoAPI.Controllers
             try
             {
                 ResultadoResolverDiferenciaReposicionDTO resuelta = await Diferencias.Resolver(empresa, id, peticion, User).ConfigureAwait(false);
-                await CompletarFotos(resuelta?.Diferencia == null ? null : new[] { resuelta.Diferencia }).ConfigureAwait(false);
+                await CompletarFotosYReferencias(empresa, resuelta?.Diferencia == null ? null : new[] { resuelta.Diferencia }).ConfigureAwait(false);
                 return Ok(resuelta);
             }
             catch (UnauthorizedAccessException ex)

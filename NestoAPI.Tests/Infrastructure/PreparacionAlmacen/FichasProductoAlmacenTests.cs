@@ -113,5 +113,65 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             Assert.AreEqual((short)50, producto.Tamano);
             Assert.AreEqual("ml.", producto.UnidadMedida);
         }
+
+        // ---------------------------------------------------------------- NestoAPI#681: la referencia del proveedor
+
+        [TestMethod]
+        public async Task Completar_TraeLaReferenciaDelProveedor_EnTodasLasLineasDeAlmacen()
+        {
+            ConFichas(new FichaProductoAlmacen { Producto = "44724", ReferenciaProveedor = " LL-SER-05 " });
+            var recogida = new LineaRecogidaDTO { Producto = "44724" };
+            var packing = new LineaPackingAlmacenDTO { Producto = "44724 " };
+            var recepcion = new LineaRecepcionDTO { Producto = "44724" };
+            var ubicar = new ProductoPendienteDeUbicarDTO { Producto = "44724" };
+            var buscado = new ProductoAlmacenDTO { Producto = "44724" };
+
+            await fichas.Completar("1", new IConFichaProducto[] { recogida, packing, recepcion, ubicar, buscado });
+
+            foreach (IConFichaProducto linea in new IConFichaProducto[] { recogida, packing, recepcion, ubicar, buscado })
+            {
+                Assert.AreEqual("LL-SER-05", linea.ReferenciaProveedor, linea.GetType().Name);
+            }
+            A.CallTo(() => repositorio.LeerFichas(A<string>._, A<IReadOnlyCollection<string>>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Completar_SinProveedor_LaReferenciaVieneNull()
+        {
+            ConFichas(new FichaProductoAlmacen { Producto = "44724", ReferenciaProveedor = null },
+                new FichaProductoAlmacen { Producto = "44726", ReferenciaProveedor = "   " });
+            var sinProveedor = new LineaRecogidaDTO { Producto = "44724" };
+            var enBlanco = new LineaRecogidaDTO { Producto = "44726" };
+
+            await fichas.Completar("1", new[] { sinProveedor, enBlanco });
+
+            Assert.IsNull(sinProveedor.ReferenciaProveedor);
+            Assert.IsNull(enBlanco.ReferenciaProveedor);
+        }
+
+        [TestMethod]
+        public async Task CompletarReferenciasProveedor_LasLineasSinFicha_ConUnaSolaConsulta()
+        {
+            ConFichas(new FichaProductoAlmacen { Producto = "44724", ReferenciaProveedor = "LL-SER-05" });
+            var diferencia = new DiferenciaReposicionDTO { Producto = "44724" };
+            var enPreparacion = new NestoAPI.Infraestructure.Reposiciones.LineaReposicionEnPreparacionDTO { Producto = "44724 " };
+            var sinProveedor = new DiferenciaReposicionDTO { Producto = "18004" };
+
+            await fichas.CompletarReferenciasProveedor("1", new IConReferenciaProveedor[] { diferencia, enPreparacion, sinProveedor });
+
+            Assert.AreEqual("LL-SER-05", diferencia.ReferenciaProveedor);
+            Assert.AreEqual("LL-SER-05", enPreparacion.ReferenciaProveedor);
+            Assert.IsNull(sinProveedor.ReferenciaProveedor);
+            A.CallTo(() => repositorio.LeerFichas("1", A<IReadOnlyCollection<string>>.That.Matches(p => p.Count == 2))).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public void SqlFichas_LaReferenciaEsLaDelProveedorDeOrdenUno_EnLaMismaConsulta()
+        {
+            StringAssert.Contains(RepositorioFichasProducto.SQL_FICHAS, "OUTER APPLY");
+            StringAssert.Contains(RepositorioFichasProducto.SQL_FICHAS, "FROM ProveedoresProducto r");
+            StringAssert.Contains(RepositorioFichasProducto.SQL_FICHAS, "r.Orden = 1");
+            StringAssert.Contains(RepositorioFichasProducto.SQL_FICHAS, "AS ReferenciaProveedor");
+        }
     }
 }

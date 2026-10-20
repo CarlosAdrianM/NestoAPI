@@ -22,6 +22,7 @@ namespace NestoAPI.Tests.Controllers
         private NVEntities db;
         private DbSet<Producto> fakeProductos;
         private DbSet<ProductoCodigoBarras> fakeCodigos;
+        private DbSet<ProveedoresProducto> fakeProveedores;
         private ProductosController controller;
 
         [TestInitialize]
@@ -38,6 +39,10 @@ namespace NestoAPI.Tests.Controllers
             DbSet<ClasificacionMasVendido> fakeClasificacion = A.Fake<DbSet<ClasificacionMasVendido>>(o => o.Implements<IQueryable<ClasificacionMasVendido>>().Implements<IDbAsyncEnumerable<ClasificacionMasVendido>>());
             A.CallTo(() => db.ClasificacionMasVendidos).Returns(fakeClasificacion);
             ConfigurarFakeDbSet(fakeClasificacion, new List<ClasificacionMasVendido>().AsQueryable());
+            // NestoAPI#681: la referencia del proveedor principal
+            fakeProveedores = A.Fake<DbSet<ProveedoresProducto>>(o => o.Implements<IQueryable<ProveedoresProducto>>().Implements<IDbAsyncEnumerable<ProveedoresProducto>>());
+            A.CallTo(() => db.ProveedoresProductoes).Returns(fakeProveedores);
+            ConfigurarFakeDbSet(fakeProveedores, new List<ProveedoresProducto>().AsQueryable());
             controller =new ProductosController(db, A.Fake<IGestorSincronizacion>());
         }
 
@@ -143,6 +148,27 @@ namespace NestoAPI.Tests.Controllers
             CollectionAssert.AreEquivalent(
                 new[] { "45114", "45115" },
                 contentResult.Content.Select(p => p.producto).ToList());
+        }
+
+        /// <summary>NestoAPI#681 (Ariadna#49): en el 409, cada candidato con la referencia de su proveedor principal (null si no hay).</summary>
+        [TestMethod]
+        public async Task GetProductoPorCodigoBarras_Compartido_CadaCandidatoConLaReferenciaDelProveedor()
+        {
+            ConfigurarProductos(
+                CrearProducto("45114", "8436566609883", "Producto A"),
+                CrearProducto("45115", "8436566609883", "Producto B"));
+            ConfigurarFakeDbSet(fakeProveedores, new List<ProveedoresProducto>
+            {
+                new ProveedoresProducto { Empresa = "1", Nº_Proveedor = "100", Nº_Producto = "45114", Orden = 2, ReferenciaProv = "OTRA" },
+                new ProveedoresProducto { Empresa = "1", Nº_Proveedor = "200", Nº_Producto = "45114", Orden = 1, ReferenciaProv = "REF-A " }
+            }.AsQueryable());
+
+            IHttpActionResult resultado = await controller.GetProducto("8436566609883");
+
+            var contentResult = resultado as NegotiatedContentResult<List<ProductoCodigoBarrasDuplicadoDTO>>;
+            Assert.IsNotNull(contentResult);
+            Assert.AreEqual("REF-A", contentResult.Content.Single(p => p.producto == "45114").referenciaProveedor);
+            Assert.IsNull(contentResult.Content.Single(p => p.producto == "45115").referenciaProveedor);
         }
 
         [TestMethod]

@@ -48,7 +48,8 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public int Cantidad { get; set; }
     }
 
-    public class LineaReposicionEnPreparacionDTO : Models.PreparacionAlmacen.IConFotoProducto, Models.PreparacionAlmacen.IConProductosMismoHueco
+    public class LineaReposicionEnPreparacionDTO : Models.PreparacionAlmacen.IConFotoProducto, Models.PreparacionAlmacen.IConProductosMismoHueco,
+        Models.PreparacionAlmacen.IConReferenciaProveedor
     {
         /// <summary>PreExtrProducto.[Nº Orden]: con él se cambia la cantidad.</summary>
         public int NumeroOrden { get; set; }
@@ -68,6 +69,8 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public int UnidadesSinHueco { get; set; }
         /// <summary>NestoAPI#653: la foto del producto (FichasProductoAlmacen). Null si no tiene.</summary>
         public string UrlFoto { get; set; }
+        /// <summary>NestoAPI#681: la referencia del proveedor principal (ProveedoresProducto.ReferenciaProv con Orden = 1), recortada. Null si no hay.</summary>
+        public string ReferenciaProveedor { get; set; }
         /// <summary>
         /// Ariadna#47: los demás productos con stock en el (primer) hueco de donde sale lo reservado. Null sin hueco. Ver
         /// <see cref="Models.PreparacionAlmacen.IConProductosMismoHueco"/>.

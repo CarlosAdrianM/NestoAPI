@@ -49,6 +49,15 @@ namespace NestoAPI.Models
         public string FamiliaCodigo { get; set; }
         public string UrlEnlace { get; set; }
         public string UrlFoto { get; set; }
+
+        /// <summary>
+        /// NestoAPI#681 (Ariadna#49): la referencia del proveedor principal (ProveedoresProducto.ReferenciaProv con Orden = 1),
+        /// recortada. Solo en la ficha completa de <c>GET api/Productos?codigoBarras=</c> (Ariadna); null si no hay, y entonces no
+        /// se manda. No va en el mensaje de la sincronización (ProductoSyncMessageCompletoTests).
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty(NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string ReferenciaProveedor { get; set; }
+
         public bool RoturaStockProveedor { get; set; }
         public int ClasificacionMasVendidos { get; set; }
         public string CodigoBarras { get; set; }
@@ -444,6 +453,43 @@ namespace NestoAPI.Models
                 .FirstOrDefaultAsync().ConfigureAwait(false);
 
             dto.Nombre = Infraestructure.Sincronizacion.FormateadorNombreTienda.FormatoOracion(dto.Nombre, referenciaProveedor?.Trim());
+        }
+
+        /// <summary>
+        /// NestoAPI#681: la referencia del proveedor principal de cada producto (ProveedoresProducto.ReferenciaProv con
+        /// Orden = 1), recortada, en una sola consulta para todos. Los que no tienen (o la tienen en blanco) no salen.
+        /// </summary>
+        internal static async Task<Dictionary<string, string>> LeerReferenciasProveedor(NVEntities db, string empresa, IEnumerable<string> productos)
+        {
+            List<string> numeros = (productos ?? Enumerable.Empty<string>())
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .Distinct()
+                .ToList();
+            if (db?.ProveedoresProductoes == null || numeros.Count == 0)
+            {
+                return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            }
+            List<ProveedoresProducto> filas = await db.ProveedoresProductoes
+                .Where(r => r.Empresa == empresa && numeros.Contains(r.Nº_Producto) && r.Orden == 1)
+                .ToListAsync().ConfigureAwait(false);
+            return ReferenciasProveedorPrincipal(filas);
+        }
+
+        /// <summary>
+        /// NestoAPI#681: de las filas de ProveedoresProducto, la referencia del proveedor principal (Orden = 1) de cada producto,
+        /// recortada (sin las que están en blanco). Si hubiera dos de orden 1, la del proveedor de número más bajo, para que
+        /// siempre salga la misma.
+        /// </summary>
+        internal static Dictionary<string, string> ReferenciasProveedorPrincipal(IEnumerable<ProveedoresProducto> filas)
+        {
+            return (filas ?? Enumerable.Empty<ProveedoresProducto>())
+                .Where(r => r != null && r.Orden == 1 && !string.IsNullOrWhiteSpace(r.Nº_Producto) && !string.IsNullOrWhiteSpace(r.ReferenciaProv))
+                .GroupBy(r => r.Nº_Producto.Trim(), StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.OrderBy(r => r.Nº_Proveedor?.Trim(), StringComparer.Ordinal).ThenBy(r => r.ContactoProveedor?.Trim(), StringComparer.Ordinal)
+                        .First().ReferenciaProv.Trim(),
+                    StringComparer.OrdinalIgnoreCase);
         }
 
         /// <summary>

@@ -7,7 +7,7 @@ namespace NestoAPI.Models.PreparacionAlmacen
     /// NestoAPI#634: una diferencia entre lo enviado y lo recibido en una reposición (tabla DiferenciasReposiciones), para la
     /// ventana «Diferencias de reposición» de Nesto (Nesto#526) y la comprobación desde la PDA (Ariadna#25).
     /// </summary>
-    public class DiferenciaReposicionDTO : IConFotoProducto
+    public class DiferenciaReposicionDTO : IConFotoProducto, IConReferenciaProveedor
     {
         public int Id { get; set; }
         public string Empresa { get; set; }
@@ -58,6 +58,8 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public bool OrigenConControlUbicaciones { get; set; }
         /// <summary>NestoAPI#653: la foto del producto (FichasProductoAlmacen). Null si no tiene.</summary>
         public string UrlFoto { get; set; }
+        /// <summary>NestoAPI#681: la referencia del proveedor principal (ProveedoresProducto.ReferenciaProv con Orden = 1), recortada. Null si no hay.</summary>
+        public string ReferenciaProveedor { get; set; }
     }
 
     /// <summary>NestoAPI#634: POST api/Reposiciones/Diferencias/{id}/Resolver.</summary>

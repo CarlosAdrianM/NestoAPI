@@ -61,7 +61,17 @@ namespace NestoAPI.Models.PreparacionAlmacen
         List<ProductoMismoHuecoDTO> ProductosMismoHueco { get; set; }
     }
 
-    public interface IConFichaProducto : IConFotoProducto
+    /// <summary>
+    /// NestoAPI#681 (Andre, 20/10/26): hay productos muy parecidos, con códigos de barras sin los números impresos, que solo se
+    /// distinguen por la referencia del proveedor. La del proveedor principal (ProveedoresProducto.ReferenciaProv con Orden = 1),
+    /// recortada; null si no hay. La rellena siempre <c>FichasProductoAlmacen</c>: una consulta por respuesta, para todos a la vez.
+    /// </summary>
+    public interface IConReferenciaProveedor : IConFotoProducto
+    {
+        string ReferenciaProveedor { get; set; }
+    }
+
+    public interface IConFichaProducto : IConReferenciaProveedor
     {
         /// <summary>El nombre de la familia (Familias.Descripción), no su código.</summary>
         string Familia { get; set; }
@@ -145,6 +155,8 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public string Familia { get; set; }
         public string Subgrupo { get; set; }
         public string UrlFoto { get; set; }
+        /// <summary>NestoAPI#681: la referencia del proveedor principal (ProveedoresProducto.ReferenciaProv con Orden = 1), recortada. Null si no hay.</summary>
+        public string ReferenciaProveedor { get; set; }
         /// <summary>Unidades de esta parada ya cogidas o dadas por falta.</summary>
         public int Resuelto { get; set; }
         /// <summary>
@@ -280,6 +292,8 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public short? Tamano { get; set; }
         public string UnidadMedida { get; set; }
         public string UrlFoto { get; set; }
+        /// <summary>NestoAPI#681: la referencia del proveedor principal (ProveedoresProducto.ReferenciaProv con Orden = 1), recortada. Null si no hay.</summary>
+        public string ReferenciaProveedor { get; set; }
         public string CodigoBarras { get; set; }
         /// <summary>NestoAPI#605: todos los códigos activos del producto (el principal, el primero). Vacía si no tiene.</summary>
         public List<string> CodigosBarras { get; set; } = new List<string>();
@@ -559,6 +573,8 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public short? Tamano { get; set; }
         public string UnidadMedida { get; set; }
         public string UrlFoto { get; set; }
+        /// <summary>NestoAPI#681: la referencia del proveedor principal (ProveedoresProducto.ReferenciaProv con Orden = 1), recortada. Null si no hay.</summary>
+        public string ReferenciaProveedor { get; set; }
         public string CodigoBarras { get; set; }
         /// <summary>NestoAPI#605: todos los códigos activos del producto (el principal, el primero). Vacía si no tiene.</summary>
         public List<string> CodigosBarras { get; set; } = new List<string>();
@@ -630,6 +646,8 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public short? Tamano { get; set; }
         public string UnidadMedida { get; set; }
         public string UrlFoto { get; set; }
+        /// <summary>NestoAPI#681: la referencia del proveedor principal (ProveedoresProducto.ReferenciaProv con Orden = 1), recortada. Null si no hay.</summary>
+        public string ReferenciaProveedor { get; set; }
         public string CodigoBarras { get; set; }
         /// <summary>NestoAPI#605: todos los códigos activos del producto (el principal, el primero). Vacía si no tiene.</summary>
         public List<string> CodigosBarras { get; set; } = new List<string>();
