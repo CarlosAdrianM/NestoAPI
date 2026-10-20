@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NestoAPI.Infraestructure.ChequesRegalo;
 using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Infraestructure.PreparacionAlmacen;
 using NestoAPI.Models.PedidosVenta;
@@ -399,6 +400,86 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             Assert.IsTrue(dto.Lineas.All(l => l.UrlFoto == null));
             (_, string html) = CorreoConfirmacionPedidoCliente.Generar(dto);
             Assert.IsFalse(html.Contains("<img"));
+        }
+
+        // NestoAPI#660 / #593: la línea del cheque regalo (producto ficticio de la campaña) lleva la miniatura de la API
+
+        private const string URL_MINIATURA_CHEQUE = "https://api.nuevavision.es/api/ChequesRegalo/CHEQUE50_OCT_2026/Miniatura";
+
+        private static PedidoClienteResponse RespuestaConCheque()
+        {
+            PedidoClienteResponse r = Respuesta();
+            r.Lineas.Add(new LineaPedidoClienteResponse
+            {
+                Producto = "CHEQUE50_OCT26 ", Texto = "Cheque regalo 50 € (campaña CHEQUE50_OCT_2026)", Cantidad = -1, PrecioUnitario = 50M, BaseImponible = -50M, Total = -60.5M
+            });
+            return r;
+        }
+
+        private static List<CampanaMiniaturaChequeRegalo> Campanas(string imagen = "cheque50.jpg") => new List<CampanaMiniaturaChequeRegalo>
+        {
+            new CampanaMiniaturaChequeRegalo { Codigo = "CHEQUE50_OCT_2026", Producto = "CHEQUE50_OCT26", ImagenCorreo = imagen }
+        };
+
+        [TestMethod]
+        public void CompletarFotosChequesRegalo_LaLineaDelChequeLlevaLaMiniaturaDeSuCampana()
+        {
+            CorreoConfirmacionPedidoDTO dto = CorreoConfirmacionPedidoCliente.Preparar(RespuestaConCheque(), "cliente@ejemplo.com", false);
+
+            CorreoConfirmacionPedidoCliente.CompletarFotosChequesRegalo(dto, () => Campanas());
+
+            Assert.AreEqual(URL_MINIATURA_CHEQUE, dto.Lineas[2].UrlFoto);
+            Assert.IsNull(dto.Lineas[0].UrlFoto, "Los demás productos no cambian: su foto sale de la tienda");
+            Assert.IsNull(dto.Lineas[1].UrlFoto);
+        }
+
+        [TestMethod]
+        public void CompletarFotosChequesRegalo_YLuegoLaTienda_ElChequeNoSeBuscaEnLaTiendaYLasDemasSiguenIgual()
+        {
+            CorreoConfirmacionPedidoDTO dto = CorreoConfirmacionPedidoCliente.Preparar(RespuestaConCheque(), "cliente@ejemplo.com", false);
+            IFotosProductoAlmacen fotos = A.Fake<IFotosProductoAlmacen>();
+            IEnumerable<string> preguntados = null;
+            _ = A.CallTo(() => fotos.Urls(A<IEnumerable<string>>._))
+                .Invokes((IEnumerable<string> p) => preguntados = p.ToList())
+                .Returns(Task.FromResult<IDictionary<string, string>>(new Dictionary<string, string> { ["38697"] = FOTO_CHAMPU }));
+
+            CorreoConfirmacionPedidoCliente.CompletarFotosChequesRegalo(dto, () => Campanas());
+            CorreoConfirmacionPedidoCliente.CompletarFotos(dto, fotos);
+            (_, string html) = CorreoConfirmacionPedidoCliente.Generar(dto);
+
+            CollectionAssert.AreEquivalent(new[] { "38697", "44707" }, preguntados.ToArray(), "El producto ficticio no está en la tienda");
+            Assert.AreEqual(FOTO_CHAMPU, dto.Lineas[0].UrlFoto);
+            Assert.IsNull(dto.Lineas[1].UrlFoto);
+            StringAssert.Contains(html, $"<img src=\"{URL_MINIATURA_CHEQUE}\" alt=\"{System.Net.WebUtility.HtmlEncode("Cheque regalo 50 € (campaña CHEQUE50_OCT_2026)")}\" width=\"64\"");
+            StringAssert.Contains(html, $"<img src=\"{FOTO_CHAMPU}\"");
+            Assert.AreEqual(2, Regex.Matches(html, "<img ").Count, "El SERUM, sin foto, sigue sin ella");
+        }
+
+        [TestMethod]
+        public void CompletarFotosChequesRegalo_CampanaSinImagen_LaLineaSigueComoLasDemas()
+        {
+            CorreoConfirmacionPedidoDTO sinNombre = CorreoConfirmacionPedidoCliente.Preparar(RespuestaConCheque(), "cliente@ejemplo.com", false);
+            CorreoConfirmacionPedidoDTO sinRecurso = CorreoConfirmacionPedidoCliente.Preparar(RespuestaConCheque(), "cliente@ejemplo.com", false);
+
+            CorreoConfirmacionPedidoCliente.CompletarFotosChequesRegalo(sinNombre, () => Campanas(imagen: null));
+            CorreoConfirmacionPedidoCliente.CompletarFotosChequesRegalo(sinRecurso, () => Campanas(imagen: "no-existe.jpg"));
+
+            Assert.IsTrue(sinNombre.Lineas.All(l => l.UrlFoto == null), "Sin imagen, la miniatura daría 404");
+            Assert.IsTrue(sinRecurso.Lineas.All(l => l.UrlFoto == null));
+        }
+
+        [TestMethod]
+        public void CompletarFotosChequesRegalo_NoPisaUnaFotoYaPuestaNiLanzaSiFallaLaLectura()
+        {
+            CorreoConfirmacionPedidoDTO dto = CorreoConfirmacionPedidoCliente.Preparar(RespuestaConCheque(), "cliente@ejemplo.com", false);
+            dto.Lineas[2].UrlFoto = "https://ya.es/foto.jpg";
+
+            CorreoConfirmacionPedidoCliente.CompletarFotosChequesRegalo(dto, () => Campanas());
+            CorreoConfirmacionPedidoCliente.CompletarFotosChequesRegalo(dto, () => throw new InvalidOperationException("sin base de datos"));
+            CorreoConfirmacionPedidoCliente.CompletarFotosChequesRegalo(null, () => Campanas());
+            CorreoConfirmacionPedidoCliente.CompletarFotosChequesRegalo(dto, null);
+
+            Assert.AreEqual("https://ya.es/foto.jpg", dto.Lineas[2].UrlFoto);
         }
     }
 }

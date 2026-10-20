@@ -1,4 +1,5 @@
-﻿using NestoAPI.Infraestructure.PreparacionAlmacen;
+﻿using NestoAPI.Infraestructure.ChequesRegalo;
+using NestoAPI.Infraestructure.PreparacionAlmacen;
 using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
 using System;
@@ -65,7 +66,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// <summary>
         /// NestoAPI#660: la foto del producto (la de la tienda, la misma que las fichas y Ariadna). La pone el job
         /// justo antes de mandar (<see cref="CorreoConfirmacionPedidoCliente.CompletarFotos"/>), no la petición de la
-        /// app; null si no tiene o la tienda no contesta, y entonces la línea sale como siempre.
+        /// app; null si no tiene o la tienda no contesta, y entonces la línea sale como siempre. La línea del cheque regalo
+        /// (producto ficticio, no está en la tienda) lleva la miniatura de su campaña que sirve la API
+        /// (<see cref="CorreoConfirmacionPedidoCliente.CompletarFotosChequesRegalo"/>).
         /// </summary>
         public string UrlFoto { get; set; }
     }
@@ -283,6 +286,53 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             }
         }
 
+        /// <summary>
+        /// NestoAPI#660 / #593 (Carlos 20/10/26): la línea del cheque regalo es el producto ficticio de su campaña
+        /// (ChequesRegaloCampanas.Producto, p. ej. CHEQUE50_OCT26), que no está en la tienda: su foto es la miniatura que
+        /// sirve la API (GET api/ChequesRegalo/{campana}/Miniatura, <see cref="MiniaturasChequeRegalo.Url"/>). Solo si la
+        /// campaña tiene imagen; si no, la línea sigue el camino de las demás. Va antes de <see cref="CompletarFotos"/>, que
+        /// ya no le busca foto en la tienda. Nunca lanza: sin foto el correo sale igual.
+        /// </summary>
+        internal static void CompletarFotosChequesRegalo(CorreoConfirmacionPedidoDTO dto, Func<IEnumerable<CampanaMiniaturaChequeRegalo>> leerCampanas,
+            string urlBase = null, Func<string, byte[]> leerImagen = null)
+        {
+            if (dto?.Lineas == null || leerCampanas == null || !dto.Lineas.Any(l => l != null && !string.IsNullOrWhiteSpace(l.Producto)))
+            {
+                return;
+            }
+            try
+            {
+                Dictionary<string, string> campanaPorProducto = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (CampanaMiniaturaChequeRegalo campana in leerCampanas() ?? Enumerable.Empty<CampanaMiniaturaChequeRegalo>())
+                {
+                    if (campana != null && !string.IsNullOrWhiteSpace(campana.Producto) && !string.IsNullOrWhiteSpace(campana.Codigo)
+                        && !campanaPorProducto.ContainsKey(campana.Producto.Trim()) && MiniaturasChequeRegalo.TieneImagen(campana.ImagenCorreo, leerImagen))
+                    {
+                        campanaPorProducto.Add(campana.Producto.Trim(), campana.Codigo.Trim());
+                    }
+                }
+                foreach (LineaCorreoConfirmacionPedidoDTO linea in dto.Lineas.Where(l => l != null && string.IsNullOrWhiteSpace(l.UrlFoto) && !string.IsNullOrWhiteSpace(l.Producto)))
+                {
+                    if (campanaPorProducto.TryGetValue(linea.Producto.Trim(), out string codigo))
+                    {
+                        linea.UrlFoto = MiniaturasChequeRegalo.Url(codigo, urlBase);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Pedido app] No se ha podido poner la foto del cheque regalo en el correo de confirmación del pedido {dto.Numero}: {ex.Message}", ex));
+            }
+        }
+
+        private static List<CampanaMiniaturaChequeRegalo> LeerCampanasConImagen()
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                return new RepositorioMiniaturasChequeRegalo(db).LeerCampanasConImagen();
+            }
+        }
+
         internal static string TextoPago(string situacion)
         {
             switch (situacion)
@@ -326,6 +376,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// <summary>El job: construye y manda el correo desde la tienda online. Lanza si el SMTP falla, para que Hangfire reintente y lo registre.</summary>
         public static void Enviar(CorreoConfirmacionPedidoDTO dto)
         {
+            CompletarFotosChequesRegalo(dto, LeerCampanasConImagen);
             CompletarFotos(dto, new FotosProductoAlmacen());
             (string asunto, string html) = Generar(dto);
             using (MailMessage mail = new MailMessage())

@@ -6,6 +6,7 @@ using NestoAPI.Models;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Net.Mail;
 using System.Net;
 using System.Security.Claims;
@@ -46,6 +47,14 @@ namespace NestoAPI.Controllers
         internal ChequesRegaloController(IAvisadorChequesRegalo avisador)
         {
             this.avisador = avisador;
+        }
+
+        private IRepositorioAvisoChequesRegalo campanasCorreo;
+        /// <summary>NestoAPI#660 / #593: de donde sale la imagen de la campaña (la misma lectura que el correo del cheque).</summary>
+        internal IRepositorioAvisoChequesRegalo CampanasCorreo
+        {
+            get => campanasCorreo ?? (campanasCorreo = new RepositorioAvisoChequesRegalo(db));
+            set => campanasCorreo = value;
         }
 
         private IServicioCanjeChequesRegalo servicioCanje;
@@ -259,6 +268,46 @@ namespace NestoAPI.Controllers
             {
                 Content = new StringContent(correo.Html, Encoding.UTF8, "text/html")
             };
+            return ResponseMessage(respuesta);
+        }
+
+        /// <summary>
+        /// NestoAPI#660 / #593: GET api/ChequesRegalo/CHEQUE50_OCT_2026/Miniatura — la imagen del cheque de la campaña
+        /// (ImagenCorreo, la del correo del cheque) reducida a 128 px de ancho, en JPEG. Es la foto de la línea del cheque en
+        /// el correo «Gracias por su pedido» (el producto ficticio no está en la tienda). Anónimo, porque la piden los
+        /// clientes de correo, y cacheable: Cache-Control público de 7 días y ETag (con If-None-Match que coincide, 304).
+        /// 404 si la campaña no existe o no tiene imagen.
+        /// </summary>
+        [HttpGet]
+        [AllowAnonymous]
+        [Route("{campana}/Miniatura")]
+        public async Task<IHttpActionResult> GetMiniatura(string campana)
+        {
+            if (string.IsNullOrWhiteSpace(campana))
+            {
+                return NotFound();
+            }
+            CampanaCorreoChequeRegalo leida = await CampanasCorreo.LeerCampana(campana.Trim()).ConfigureAwait(false);
+            MiniaturaChequeRegalo miniatura = leida == null ? null : MiniaturasChequeRegalo.DeImagen(leida.ImagenCorreo);
+            if (miniatura == null)
+            {
+                return NotFound();
+            }
+            var etag = new EntityTagHeaderValue(miniatura.ETag);
+            bool sinCambios = Request?.Headers.IfNoneMatch?.Any(e => e.Tag == "*" || e.Tag == etag.Tag) == true;
+            HttpResponseMessage respuesta;
+            if (sinCambios)
+            {
+                respuesta = new HttpResponseMessage(HttpStatusCode.NotModified);
+            }
+            else
+            {
+                respuesta = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(miniatura.Jpeg) };
+                respuesta.Content.Headers.ContentType = new MediaTypeHeaderValue("image/jpeg");
+                respuesta.Content.Headers.ContentLength = miniatura.Jpeg.Length;
+            }
+            respuesta.Headers.ETag = etag;
+            respuesta.Headers.CacheControl = new CacheControlHeaderValue { Public = true, MaxAge = MiniaturasChequeRegalo.VIGENCIA_CACHE };
             return ResponseMessage(respuesta);
         }
 
