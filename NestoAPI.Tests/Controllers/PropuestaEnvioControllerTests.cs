@@ -60,7 +60,8 @@ namespace NestoAPI.Tests.Controllers
             Empresa = "1", Pedido = e.Pedido.Value, Origen = PropuestaEnvioDTO.ORIGEN_NUEVO, Agencia = e.Agencia, Servicio = e.Servicio,
             Horario = e.Horario, Retorno = e.Retorno, Bultos = e.Bultos, Peso = e.Peso, Reembolso = e.Reembolso, Nombre = e.Nombre,
             Direccion = e.Direccion, CodPostal = e.CodPostal, Poblacion = e.Poblacion, Provincia = e.Provincia, Pais = e.Pais,
-            Telefono = e.Telefono, Movil = e.Movil, Email = e.Email, Atencion = e.Atencion, Vendedor = e.Vendedor, ImporteGasto = e.ImporteGasto
+            Telefono = e.Telefono, Movil = e.Movil, Email = e.Email, Atencion = e.Atencion, Vendedor = e.Vendedor, ImporteGasto = e.ImporteGasto,
+            Fecha = e.Fecha, FechaEntrega = e.FechaEntrega, Observaciones = e.Observaciones
         };
 
         [TestMethod]

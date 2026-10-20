@@ -356,7 +356,8 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             Numero = 250000, Pedido = p.Pedido, Agencia = p.Agencia, Servicio = p.Servicio, Horario = p.Horario, Retorno = p.Retorno,
             Reembolso = p.Reembolso, Nombre = p.Nombre + "   ", Direccion = p.Direccion, CodPostal = p.CodPostal, Poblacion = p.Poblacion,
             Provincia = p.Provincia, Pais = p.Pais, Telefono = p.Telefono, Movil = p.Movil, Email = p.Email, Atencion = p.Atencion,
-            Vendedor = p.Vendedor + " ", Bultos = p.Bultos, Peso = p.Peso, ImporteGasto = p.ImporteGasto + 0.004m
+            Vendedor = p.Vendedor + " ", Bultos = p.Bultos, Peso = p.Peso, ImporteGasto = p.ImporteGasto + 0.004m,
+            Empresa = p.Empresa + "  ", Fecha = p.Fecha.AddHours(10), FechaEntrega = p.FechaEntrega, Observaciones = " " + p.Observaciones + " "
         };
 
         [TestMethod]
@@ -382,6 +383,33 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             CollectionAssert.Contains(diferencias, "agencia: Nesto=13 / propuesta=1");
             CollectionAssert.Contains(diferencias, "CP: Nesto=28002 / propuesta=28001");
             Assert.IsTrue(diferencias.Any(d => d.StartsWith("ImporteGasto:")));
+        }
+        [TestMethod]
+        public async Task Diferencias_FechasObservacionesYEmpresa()
+        {
+            // NestoAPI#595 (slice 2, 20/10/26): también se comparan Fecha y FechaEntrega (el día), Observaciones y Empresa.
+            PropuestaEnvioDTO p = await servicio.Calcular(EMPRESA, PEDIDO, 1, 2m);
+            EnviosAgencia envio = EnvioIgualA(p);
+            envio.Fecha = p.Fecha.AddDays(1);
+            envio.FechaEntrega = null;
+            envio.Observaciones = "Otra cosa";
+            envio.Empresa = "3  ";
+
+            List<string> diferencias = ComparadorPropuestaEnvio.Diferencias(envio, p);
+
+            Assert.AreEqual(4, diferencias.Count, string.Join(" | ", diferencias));
+            CollectionAssert.Contains(diferencias, "fecha: Nesto=07/10/2026 / propuesta=06/10/2026");
+            CollectionAssert.Contains(diferencias, "fecha de entrega: Nesto=(sin fecha) / propuesta=07/10/2026");
+            Assert.IsTrue(diferencias.Any(d => d.StartsWith("observaciones: Nesto=Otra cosa / propuesta=")));
+            CollectionAssert.Contains(diferencias, "empresa: Nesto=3 / propuesta=1");
+        }
+
+        [TestMethod]
+        public void NormalizarEspacios_RecortaYJuntaLosTramos()
+        {
+            Assert.AreEqual("Llamar antes de ir", ComparadorPropuestaEnvio.NormalizarEspacios("  Llamar   antes\r\nde\tir "));
+            Assert.AreEqual(string.Empty, ComparadorPropuestaEnvio.NormalizarEspacios(null));
+            Assert.AreEqual(string.Empty, ComparadorPropuestaEnvio.NormalizarEspacios("   "));
         }
     }
 }

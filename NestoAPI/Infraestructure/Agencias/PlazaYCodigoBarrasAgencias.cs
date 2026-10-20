@@ -228,4 +228,59 @@ namespace NestoAPI.Infraestructure.Agencias
 
         public string CalcularCodigoBarras(EnviosAgencia envio, string prefijoAgencia) => string.Empty;
     }
+
+    /// <summary>
+    /// NestoAPI#595 (slice 2, 20/10/26, sombra): compara la plaza y el código de barras que ha grabado Nesto con los que
+    /// calcularía el servidor. Puro, para probarlo sin BD. Los textos se comparan sin espacios de relleno.
+    /// </summary>
+    public static class ComparadorPlazaYCodigoBarras
+    {
+        /// <param name="compararCodigo">False en las agencias que no calculan el código en local (Canteras, CTT, Innovatrans).</param>
+        /// <param name="codigoEsperado">El del servidor; null si la agencia no tiene prefijo.</param>
+        /// <param name="plazaEsperada">La del servidor; null = no se compara (GLS, para no llamar a GLS en el PUT).</param>
+        public static List<string> Diferencias(EnviosAgencia envio, bool compararCodigo, string codigoEsperado, PlazaAgencia plazaEsperada)
+        {
+            var diferencias = new List<string>();
+            if (envio == null)
+            {
+                return diferencias;
+            }
+            if (compararCodigo)
+            {
+                Comparar(diferencias, "código de barras", envio.CodigoBarras, codigoEsperado ?? "(sin prefijo en la agencia)");
+            }
+            if (plazaEsperada != null)
+            {
+                Comparar(diferencias, "nemónico", envio.Nemonico, plazaEsperada.Nemonico);
+                Comparar(diferencias, "nombre de plaza", envio.NombrePlaza, plazaEsperada.Nombre);
+                Comparar(diferencias, "teléfono de plaza", envio.TelefonoPlaza, plazaEsperada.Telefono);
+                Comparar(diferencias, "email de plaza", envio.EmailPlaza, plazaEsperada.Email);
+            }
+            return diferencias;
+        }
+
+        private static void Comparar(List<string> diferencias, string campo, string nesto, string servidor)
+        {
+            string a = nesto?.Trim() ?? string.Empty;
+            string b = servidor?.Trim() ?? string.Empty;
+            if (!string.Equals(a, b, StringComparison.Ordinal))
+            {
+                diferencias.Add($"{campo}: Nesto={a} / servidor={b}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// NestoAPI#595 (slice 2, 20/10/26): aviso informativo (no es un error) de que la plaza o el código de barras que ha grabado
+    /// Nesto no coinciden con los del servidor. Las coincidencias NO se registran.
+    /// </summary>
+    public class PlazaCodigoBarrasDifiereInfo : Exception
+    {
+        public PlazaCodigoBarrasDifiereInfo(string mensaje) : base(mensaje) { }
+
+        public static PlazaCodigoBarrasDifiereInfo Crear(EnviosAgencia envio, IReadOnlyCollection<string> diferencias)
+            => new PlazaCodigoBarrasDifiereInfo($"[Plaza y código de barras #595] Envío {envio.Numero} (agencia {envio.Agencia}, " +
+                $"pedido {envio.Pedido}): lo que calcularía el servidor difiere de lo que ha grabado Nesto en {diferencias.Count} " +
+                $"{(diferencias.Count == 1 ? "campo" : "campos")}: {string.Join("; ", diferencias)}");
+    }
 }

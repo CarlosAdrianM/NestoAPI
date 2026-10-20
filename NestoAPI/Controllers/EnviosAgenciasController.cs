@@ -775,6 +775,9 @@ namespace NestoAPI.Controllers
                 }
             }
 
+            // NestoAPI#595 (slice 2): sombra de la plaza y el código de barras (solo lectura + log; nunca hace fallar el PUT).
+            await SombraPlazaYCodigoBarras(enviosAgencia, registrado != null, registrado?.CodigoBarras);
+
             // Nesto#340 (Agencias, slice A2): se devuelve la RowVersion refrescada para que el
             // cliente pueda encadenar modificaciones sobre el mismo objeto sin recargar (antes
             // 204 sin cuerpo; 200 con cuerpo es compatible con quien solo mira IsSuccessStatusCode).
@@ -2042,6 +2045,78 @@ namespace NestoAPI.Controllers
             {
                 Registrar(new Exception($"[Propuesta de envío #595] No se pudo comparar el envío {envio.Numero} (pedido {envio.Pedido}) " +
                     $"con la propuesta del servidor: {ex.Message}", ex));
+            }
+        }
+
+        // NestoAPI#595 (slice 2): plaza y código de barras del servidor. Inyectables para los tests (null = los reales).
+        private RegistroPlazasAgencias plazasAgencias;
+        internal RegistroPlazasAgencias PlazasAgencias
+        {
+            get => plazasAgencias ?? (plazasAgencias = RegistroPlazasAgencias.PorDefecto());
+            set => plazasAgencias = value;
+        }
+
+        /// <summary>La fila de AgenciasTransporte de un número de agencia (null = de la BD).</summary>
+        internal Func<int, Task<AgenciaTransporte>> CargarAgenciaTransporte { get; set; }
+
+        private async Task<AgenciaTransporte> CargarAgenciaTransporteDeLaBD(int numero)
+            // Where + ToListAsync (no FirstOrDefaultAsync con predicado): ver el «Limit1» de TramitacionEnviosService.
+            => (await db.AgenciasTransportes.AsNoTracking().Where(a => a.Numero == numero).ToListAsync()).FirstOrDefault();
+
+        /// <summary>
+        /// NestoAPI#595 (slice 2, 20/10/26, sombra): Agencias de Nesto graba el envío (POST) y, con su Numero, calcula el
+        /// código de barras y lo manda en un PUT (InsertarRegistro). En ese PUT —el envío ya existía SIN código y está en
+        /// curso— se compara lo que ha grabado Nesto con lo que calcularía el servidor (<see cref="RegistroPlazasAgencias"/>);
+        /// si difiere, <see cref="PlazaCodigoBarrasDifiereInfo"/> a ELMAH. Best-effort: nunca hace fallar el PUT.
+        /// <list type="bullet">
+        /// <item>GLS y Correos Express (calculan el código): solo cuando el PUT trae código (el que lo pone).</item>
+        /// <item>Canteras, CTT e Innovatrans (código ""): solo la plaza; el código no se compara porque lo pega el usuario
+        /// (Canteras) o lo da /Tramitar (CTT, Innovatrans).</item>
+        /// <item>GLS: NO se compara la plaza. Pedirla es una llamada síncrona a GLS (GetPlazaXCP, hasta 15 s) y el PUT de
+        /// Nesto no debe esperar por una sombra; el código de barras sí, que es local.</item>
+        /// <item>Agencias sin implementación (Glovo, OnTime...): nada.</item>
+        /// </list>
+        /// </summary>
+        /// <param name="existia">El envío ya estaba en la BD antes del PUT.</param>
+        /// <param name="codigoBarrasAnterior">El código de barras que tenía en la BD antes del PUT.</param>
+        internal async Task SombraPlazaYCodigoBarras(EnviosAgencia envio, bool existia, string codigoBarrasAnterior)
+        {
+            // Sin ConfigureAwait(false): ELMAH toma el usuario de HttpContext.Current.
+            if (envio == null || !existia || !string.IsNullOrWhiteSpace(codigoBarrasAnterior) ||
+                envio.Estado != Constantes.Agencias.ESTADO_EN_CURSO)
+            {
+                return;
+            }
+            try
+            {
+                RegistroPlazasAgencias registro = PlazasAgencias;
+                if (!registro.Soporta(envio.Agencia))
+                {
+                    return;
+                }
+                IPlazaYCodigoBarrasAgencia agencia = registro.Para(envio.Agencia);
+                AgenciaTransporte filaAgencia = await (CargarAgenciaTransporte ?? CargarAgenciaTransporteDeLaBD)(envio.Agencia);
+                string codigoEsperado = agencia.CalcularCodigoBarras(envio, filaAgencia?.PrefijoCodigoBarras);
+                bool agenciaCalculaCodigo = codigoEsperado != string.Empty;
+                if (agenciaCalculaCodigo && string.IsNullOrWhiteSpace(envio.CodigoBarras))
+                {
+                    // Aún no es el PUT que pone el código (por ejemplo, otra modificación antes de calcularlo).
+                    return;
+                }
+                PlazaAgencia plazaEsperada = agencia.PlazaConsultaLaAgencia
+                    ? null
+                    : await agencia.CalcularPlazaAsync(envio.CodPostal, envio.Pais);
+
+                List<string> diferencias = ComparadorPlazaYCodigoBarras.Diferencias(envio, agenciaCalculaCodigo, codigoEsperado, plazaEsperada);
+                if (diferencias.Count > 0)
+                {
+                    Registrar(PlazaCodigoBarrasDifiereInfo.Crear(envio, diferencias));
+                }
+            }
+            catch (Exception ex)
+            {
+                Registrar(new Exception($"[Plaza y código de barras #595] No se pudo comparar el envío {envio.Numero} " +
+                    $"con lo que calcularía el servidor: {ex.Message}", ex));
             }
         }
 

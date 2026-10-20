@@ -4,6 +4,7 @@ using System.Data.Entity;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using NestoAPI.Infraestructure.Agencias.Perfiles;
 using NestoAPI.Infraestructure.Agencias.Tarifas;
@@ -468,6 +469,11 @@ namespace NestoAPI.Infraestructure.Agencias
             Comparar(diferencias, "vendedor", envio.Vendedor, propuesta.Vendedor);
             Comparar(diferencias, "bultos", envio.Bultos, propuesta.Bultos);
             Comparar(diferencias, "peso", envio.Peso, propuesta.Peso);
+            // NestoAPI#595 (slice 2, 20/10/26): también fechas (solo el día), observaciones (espacios normalizados) y empresa.
+            CompararDia(diferencias, "fecha", envio.Fecha, propuesta.Fecha);
+            CompararDia(diferencias, "fecha de entrega", envio.FechaEntrega, propuesta.FechaEntrega);
+            Comparar(diferencias, "observaciones", NormalizarEspacios(envio.Observaciones), NormalizarEspacios(propuesta.Observaciones));
+            Comparar(diferencias, "empresa", envio.Empresa, propuesta.Empresa);
             if (Math.Abs(envio.ImporteGasto - propuesta.ImporteGasto) > TOLERANCIA_IMPORTE_GASTO)
             {
                 diferencias.Add(string.Format(CultureInfo.InvariantCulture, "ImporteGasto: Nesto={0} / propuesta={1}", envio.ImporteGasto, propuesta.ImporteGasto));
@@ -484,6 +490,20 @@ namespace NestoAPI.Infraestructure.Agencias
                 diferencias.Add($"{campo}: Nesto={a} / propuesta={b}");
             }
         }
+
+        private static void CompararDia(List<string> diferencias, string campo, DateTime? nesto, DateTime? propuesta)
+        {
+            if (nesto?.Date != propuesta?.Date)
+            {
+                diferencias.Add($"{campo}: Nesto={Dia(nesto)} / propuesta={Dia(propuesta)}");
+            }
+        }
+
+        private static string Dia(DateTime? fecha) => fecha?.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture) ?? "(sin fecha)";
+
+        /// <summary>Sin espacios al principio ni al final y cada tramo de espacios (o saltos de línea) como un solo espacio.</summary>
+        internal static string NormalizarEspacios(string texto)
+            => string.IsNullOrWhiteSpace(texto) ? string.Empty : Regex.Replace(texto.Trim(), @"\s+", " ");
 
         private static void Comparar<T>(List<string> diferencias, string campo, T nesto, T propuesta) where T : IEquatable<T>
         {
