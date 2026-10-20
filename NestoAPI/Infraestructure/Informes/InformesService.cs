@@ -35,6 +35,16 @@ namespace NestoAPI.Infraestructure.Informes
                 .ConfigureAwait(false);
         }
 
+        // NestoAPI#658: la consulta y el cálculo viven en GestorFacturacionTienda (único punto de cálculo).
+        public async Task<FacturacionTiendaDTO> LeerFacturacionTiendaAsync(string tienda, DateTime desde, DateTime hasta)
+        {
+            List<FacturaTiendaDTO> filas = await db.Database
+                .SqlQuery<FacturaTiendaDTO>(GestorFacturacionTienda.SQL_FACTURACION_TIENDA, GestorFacturacionTienda.Parametros(tienda, desde, hasta))
+                .ToListAsync()
+                .ConfigureAwait(false);
+            return GestorFacturacionTienda.Construir(filas, tienda, desde, hasta);
+        }
+
         public async Task<List<ResumenVentasDTO>> LeerResumenVentasAsync(DateTime fechaDesde, DateTime fechaHasta, bool soloFacturas)
         {
             SqlParameter fechaDesdeParam = new SqlParameter("@FechaDesde", SqlDbType.DateTime)

@@ -9,6 +9,8 @@ using System.Web.Http;
 using System.Web.Http.Description;
 using NestoAPI.Infraestructure.Informes;
 using NestoAPI.Infraestructure.PedidosCompra;
+using NestoAPI.Infrastructure;
+using NestoAPI.Models;
 using NestoAPI.Models.Informes;
 using NestoAPI.Models.Informes.SaldoCuenta555;
 
@@ -22,6 +24,86 @@ namespace NestoAPI.Controllers
         public InformesController(IInformesService servicio)
         {
             _servicio = servicio;
+        }
+
+        /// <summary>Reloj del controlador (sustituible en tests), para la semana por defecto de FacturacionTienda.</summary>
+        internal Func<DateTime> Ahora { get; set; } = () => DateTime.Now;
+
+        public const string MENSAJE_SIN_PERMISO_FACTURACION_TIENDA =
+            "El informe de facturación de tienda solo lo pueden ver Dirección, Tiendas e Informática.";
+
+        /// <summary>
+        /// NestoAPI#658 (sugerencia 648 de Paloma): lo facturado en una tienda (REI o ALC) en un periodo, cursos incluidos, factura a
+        /// factura y agrupado por cliente, con dirección, comercial e importe (base y total) y los totales al pie. Sin fechas, la última
+        /// semana cerrada de lunes a domingo; con solo una, la semana que empieza o acaba en ella. Dirección, Tiendas e Informática.
+        /// GET api/Informes/FacturacionTienda?tienda=REI&amp;desde=2026-10-12&amp;hasta=2026-10-18
+        /// </summary>
+        [HttpGet]
+        [Route("api/Informes/FacturacionTienda")]
+        [ResponseType(typeof(FacturacionTiendaDTO))]
+        public async Task<IHttpActionResult> GetFacturacionTienda(string tienda, DateTime? desde = null, DateTime? hasta = null)
+        {
+            if (!PuedeVerFacturacionTienda())
+            {
+                return Content(HttpStatusCode.Forbidden, MENSAJE_SIN_PERMISO_FACTURACION_TIENDA);
+            }
+            string error = ValidarFacturacionTienda(tienda, desde, hasta, out string tiendaNormalizada, out DateTime fechaDesde, out DateTime fechaHasta);
+            if (error != null)
+            {
+                return BadRequest(error);
+            }
+            FacturacionTiendaDTO informe = await _servicio
+                .LeerFacturacionTiendaAsync(tiendaNormalizada, fechaDesde, fechaHasta)
+                .ConfigureAwait(false);
+            return Ok(informe);
+        }
+
+        /// <summary>NestoAPI#658: el mismo informe que <see cref="GetFacturacionTienda"/> en Excel (hojas «Facturas» y «Por cliente»).</summary>
+        [HttpGet]
+        [Route("api/Informes/FacturacionTienda/Excel")]
+        public async Task<HttpResponseMessage> GetFacturacionTiendaExcel(string tienda, DateTime? desde = null, DateTime? hasta = null)
+        {
+            if (!PuedeVerFacturacionTienda())
+            {
+                return new HttpResponseMessage(HttpStatusCode.Forbidden)
+                {
+                    Content = new StringContent(MENSAJE_SIN_PERMISO_FACTURACION_TIENDA)
+                };
+            }
+            string error = ValidarFacturacionTienda(tienda, desde, hasta, out string tiendaNormalizada, out DateTime fechaDesde, out DateTime fechaHasta);
+            if (error != null)
+            {
+                return new HttpResponseMessage(HttpStatusCode.BadRequest)
+                {
+                    Content = new StringContent(error)
+                };
+            }
+            FacturacionTiendaDTO informe = await _servicio
+                .LeerFacturacionTiendaAsync(tiendaNormalizada, fechaDesde, fechaHasta)
+                .ConfigureAwait(false);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new GeneradorExcelFacturacionTienda().GenerarExcel(informe)
+            };
+        }
+
+        private bool PuedeVerFacturacionTienda()
+        {
+            return User != null && (User.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION)
+                || User.IsInRoleSinDominio(Constantes.GruposSeguridad.TIENDAS)
+                || User.IsInRoleSinDominio(NovedadesController.GRUPO_INFORMATICA));
+        }
+
+        private string ValidarFacturacionTienda(string tienda, DateTime? desde, DateTime? hasta,
+            out string tiendaNormalizada, out DateTime fechaDesde, out DateTime fechaHasta)
+        {
+            tiendaNormalizada = GestorFacturacionTienda.NormalizarTienda(tienda);
+            string errorPeriodo = GestorFacturacionTienda.ResolverPeriodo(desde, hasta, Ahora(), out fechaDesde, out fechaHasta);
+            if (tiendaNormalizada == null)
+            {
+                return $"«{tienda}» no es una tienda: tiene que ser {string.Join(" o ", GestorFacturacionTienda.TIENDAS)}.";
+            }
+            return errorPeriodo;
         }
 
         [HttpGet]

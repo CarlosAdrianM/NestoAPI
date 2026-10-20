@@ -374,6 +374,7 @@
     <Compile Include="Infraestructure\Videos\GestorBorradoVideosTests.cs" />
     <Compile Include="Controllers\BancosControllerTests.cs" />
     <Compile Include="Controllers\InformesControllerTests.cs" />
+    <Compile Include="Controllers\InformesControllerFacturacionTiendaTests.cs" />
     <Compile Include="Controllers\NotificacionesControllerTests.cs" />
     <Compile Include="Controllers\PedidosVentaJefeEquipoTests.cs" />
     <Compile Include="Controllers\PedidosVentaListadoTests.cs" />
@@ -384,6 +385,7 @@
     <Compile Include="Infraestructure\Notificaciones\RecibirConsejosTests.cs" />
     <Compile Include="Infraestructure\Informes\InformeClientesNuevosTests.cs" />
     <Compile Include="Infraestructure\Informes\MotorSaldoCuentaTests.cs" />
+    <Compile Include="Infraestructure\Informes\GestorFacturacionTiendaTests.cs" />
     <Compile Include="Infrastructure\Agencias\RegistroAgenciasTests.cs" />
     <Compile Include="Infrastructure\Agencias\CatalogoServiciosAgenciasTests.cs" />
     <Compile Include="Infrastructure\Agencias\PerfilesAgenciasTests.cs" />

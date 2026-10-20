@@ -34,5 +34,9 @@ namespace NestoAPI.Infraestructure.Informes
         Task<List<ExtractoProveedorDTO>> LeerExtractoProveedorAsync(string empresa, string proveedor, DateTime fechaDesde, DateTime fechaHasta);
         Task<SaldoCuenta555ResultadoDto> LeerSaldoCuenta555Async(string empresa, string cuenta, DateTime fechaCorte);
         Task<List<EtiquetasTiendaDTO>> LeerEtiquetasTiendaAsync(List<string> productos);
+
+        /// <summary>NestoAPI#658: lo facturado en la tienda (delegación REI o ALC) entre las dos fechas (incluidas), cursos incluidos.
+        /// Lo calcula <see cref="GestorFacturacionTienda"/>.</summary>
+        Task<FacturacionTiendaDTO> LeerFacturacionTiendaAsync(string tienda, DateTime desde, DateTime hasta);
     }
 }

@@ -1083,6 +1083,7 @@
     <Compile Include="Infraestructure\Pagos\RevisorConcepto.cs" />
     <Compile Include="Infraestructure\TransaccionesSeguras.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfControlPedidos.cs" />
+    <Compile Include="Infraestructure\Informes\GeneradorExcelFacturacionTienda.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfDetalleRapports.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfExtractoContable.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfEtiquetasTienda.cs" />
@@ -1100,6 +1101,7 @@
     <Compile Include="Infraestructure\Informes\GeneradorPdfBalance.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfRemesa.cs" />
     <Compile Include="Infraestructure\Informes\GestorBalances.cs" />
+    <Compile Include="Infraestructure\Informes\GestorFacturacionTienda.cs" />
     <Compile Include="Infraestructure\Informes\IInformesService.cs" />
     <Compile Include="Infraestructure\Informes\InformeClientesNuevosJobsService.cs" />
     <Compile Include="Infraestructure\Informes\InformesService.cs" />
@@ -1847,6 +1849,7 @@
     <Compile Include="Models\Informes\DetalleRapportsDTO.cs" />
     <Compile Include="Models\Informes\ExtractoContableDTO.cs" />
     <Compile Include="Models\Informes\ExtractoProveedorDTO.cs" />
+    <Compile Include="Models\Informes\FacturacionTiendaDTO.cs" />
     <Compile Include="Models\Informes\KitsQueSePuedenMontarDTO.cs" />
     <Compile Include="Models\Informes\ManifiestoAgenciaDTO.cs" />
     <Compile Include="Models\Informes\BalanceInformeDTO.cs" />
