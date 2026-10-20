@@ -53,9 +53,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         public int Cantidad { get; set; }
         /// <summary>
         /// NestoAPI#660 (Carlos 20/10/26: «vendemos a profesionales: siempre bases imponibles»): el precio por unidad SIN
-        /// IVA y con el descuento de la línea ya aplicado, para que cantidad × precio cuadre con la base de la línea.
+        /// IVA y SIN descuento; el descuento va aparte (<see cref="Descuento"/>), para que la cuenta de la tarjeta cuadre siempre.
         /// </summary>
         public decimal PrecioUnitario { get; set; }
+        /// <summary>NestoAPI#660: el descuento de la línea en tanto por uno (0,15 = 15 %), el mismo con el que se calcula su base.</summary>
+        public decimal Descuento { get; set; }
         /// <summary>NestoAPI#660: el importe de la línea sin IVA (su base imponible), que es lo que sale en la tarjeta.</summary>
         public decimal BaseImponible { get; set; }
         /// <summary>El importe de la línea con IVA. Ya no sale en el correo (NestoAPI#660); se queda por los jobs ya encolados.</summary>
@@ -90,7 +92,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     Producto = l.Producto,
                     Texto = l.Texto?.Trim(),
                     Cantidad = l.Cantidad,
-                    PrecioUnitario = PrecioNeto(l),
+                    PrecioUnitario = l.PrecioUnitario,
+                    Descuento = l.Descuento,
                     BaseImponible = l.BaseImponible,
                     Total = l.Total
                 }).ToList(),
@@ -102,10 +105,6 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 SinImportes = sinImportes
             };
         }
-
-        /// <summary>NestoAPI#660: el precio por unidad sin IVA con el descuento de la línea aplicado, a céntimos.</summary>
-        internal static decimal PrecioNeto(LineaPedidoClienteResponse linea)
-            => RoundingHelper.DosDecimalesRound(linea.PrecioUnitario * (1 - linea.Descuento));
 
         internal static string SituacionPagoDe(PedidoClienteResponse respuesta)
         {
@@ -213,17 +212,29 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         }
 
         /// <summary>
-        /// «2 × 12,50 € = 25,00 €», sin IVA (Carlos 20/10/26: a profesionales, siempre bases imponibles): el precio por
-        /// unidad con el descuento aplicado y la base de la línea. Sin importes (NestoAPI#446), solo la cantidad.
+        /// La cuenta de la tarjeta, sin IVA (Carlos 20/10/26: a profesionales, siempre bases imponibles), con el precio sin
+        /// descuento y el descuento aparte para que cuadre siempre con la base de la línea, que es el importe:
+        /// «2 × 12,50 € = 25,00 €», «1 × 63,50 € −15 % = 53,97 €». Un regalo (100 %) pone «Regalo: 1 × 10,00 €»: dice
+        /// sin cuentas que no se cobra y deja ver lo que vale. Sin importes (NestoAPI#446), solo la cantidad.
         /// </summary>
         internal static string TextoCantidad(LineaCorreoConfirmacionPedidoDTO linea, bool sinImportes)
         {
+            string unidades = linea.Cantidad == 1 ? "1 unidad" : $"{linea.Cantidad} unidades";
             if (sinImportes)
             {
-                return linea.Cantidad == 1 ? "1 unidad" : $"{linea.Cantidad} unidades";
+                return unidades;
             }
-            return $"{linea.Cantidad} × {Euros(linea.PrecioUnitario)} = {Euros(linea.BaseImponible)}";
+            if (linea.Descuento >= 1)
+            {
+                return linea.PrecioUnitario > 0 ? $"Regalo: {linea.Cantidad} × {Euros(linea.PrecioUnitario)}" : $"Regalo: {unidades}";
+            }
+            string descuento = linea.Descuento != 0 ? $" −{Porcentaje(linea.Descuento)}" : string.Empty;
+            return $"{linea.Cantidad} × {Euros(linea.PrecioUnitario)}{descuento} = {Euros(linea.BaseImponible)}";
         }
+
+        /// <summary>0,15 → «15 %»; 0,125 → «12,5 %»: con los decimales que hagan falta y ninguno de sobra.</summary>
+        internal static string Porcentaje(decimal tantoPorUno)
+            => (tantoPorUno * 100).ToString("0.####", ES) + " %";
 
         /// <summary>Solo URLs absolutas https (Gmail y Outlook bloquean o avisan con las http, y una relativa no lleva a ningún sitio).</summary>
         internal static string UrlFotoValida(string url)

@@ -126,17 +126,58 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
 
             (_, string html) = CorreoConfirmacionPedidoCliente.Generar(dto);
 
-            StringAssert.Contains(html, $"<div>2 × {Euros(12M)} = {Euros(24M)}</div>");
+            StringAssert.Contains(html, $"<div>2 × {Euros(15M)} −20 % = {Euros(24M)}</div>");
             Assert.IsFalse(html.Contains("29,04"), "El importe con IVA no sale en la tarjeta");
             Assert.IsFalse(html.Contains("<th"), "Ya no hay cabecera de columnas");
         }
 
         [TestMethod]
-        public void PrecioNeto_AplicaElDescuentoYRedondeaACentimos()
+        public void TextoCantidad_ConDescuento_PrecioSinDescuentoYElDescuentoAparte()
         {
-            Assert.AreEqual(12.50M, CorreoConfirmacionPedidoCliente.PrecioNeto(new LineaPedidoClienteResponse { PrecioUnitario = 12.5M }));
-            Assert.AreEqual(53.98M, CorreoConfirmacionPedidoCliente.PrecioNeto(new LineaPedidoClienteResponse { PrecioUnitario = 63.5M, Descuento = 0.15M }));
-            Assert.AreEqual(0M, CorreoConfirmacionPedidoCliente.PrecioNeto(new LineaPedidoClienteResponse { PrecioUnitario = 9.95M, Descuento = 1M }), "Regalo: 100 %");
+            // NestoAPI#660 (Carlos 20/10/26): con el precio neto redondeado salía «1 × 53,98 € = 53,97 €»
+            var linea = new LineaCorreoConfirmacionPedidoDTO { Cantidad = 1, PrecioUnitario = 63.5M, Descuento = 0.15M, BaseImponible = 53.97M };
+            Assert.AreEqual($"1 × {Euros(63.5M)} −15 % = {Euros(53.97M)}", CorreoConfirmacionPedidoCliente.TextoCantidad(linea, false));
+        }
+
+        [TestMethod]
+        public void TextoCantidad_DescuentoConDecimales_LlevaLosQueHaganFalta()
+        {
+            var linea = new LineaCorreoConfirmacionPedidoDTO { Cantidad = 4, PrecioUnitario = 10M, Descuento = 0.125M, BaseImponible = 35M };
+            Assert.AreEqual($"4 × {Euros(10M)} −12,5 % = {Euros(35M)}", CorreoConfirmacionPedidoCliente.TextoCantidad(linea, false));
+            Assert.AreEqual("15 %", CorreoConfirmacionPedidoCliente.Porcentaje(0.15M));
+            Assert.AreEqual("15 %", CorreoConfirmacionPedidoCliente.Porcentaje(0.1500M), "Sin ceros de sobra");
+            Assert.AreEqual("33,33 %", CorreoConfirmacionPedidoCliente.Porcentaje(0.3333M));
+        }
+
+        [TestMethod]
+        public void TextoCantidad_SinDescuento_ComoAntes()
+        {
+            var linea = new LineaCorreoConfirmacionPedidoDTO { Cantidad = 2, PrecioUnitario = 12.5M, BaseImponible = 25M };
+            Assert.AreEqual($"2 × {Euros(12.5M)} = {Euros(25M)}", CorreoConfirmacionPedidoCliente.TextoCantidad(linea, false));
+        }
+
+        [TestMethod]
+        public void TextoCantidad_Regalo_DiceRegaloYLoQueVale()
+        {
+            var regalo = new LineaCorreoConfirmacionPedidoDTO { Cantidad = 1, PrecioUnitario = 10M, Descuento = 1M, BaseImponible = 0M };
+            Assert.AreEqual($"Regalo: 1 × {Euros(10M)}", CorreoConfirmacionPedidoCliente.TextoCantidad(regalo, false));
+            var sinPrecio = new LineaCorreoConfirmacionPedidoDTO { Cantidad = 2, PrecioUnitario = 0M, Descuento = 1M, BaseImponible = 0M };
+            Assert.AreEqual("Regalo: 2 unidades", CorreoConfirmacionPedidoCliente.TextoCantidad(sinPrecio, false));
+            Assert.AreEqual("1 unidad", CorreoConfirmacionPedidoCliente.TextoCantidad(regalo, true), "Sin importes, ni siquiera lo que vale");
+        }
+
+        [TestMethod]
+        public void Preparar_LlevaElPrecioSinDescuentoYElDescuentoDeLaLinea()
+        {
+            PedidoClienteResponse r = Respuesta();
+            r.Lineas.Clear();
+            r.Lineas.Add(new LineaPedidoClienteResponse { Producto = "38697", Texto = "CHAMPU", Cantidad = 1, PrecioUnitario = 63.5M, Descuento = 0.15M, BaseImponible = 53.97M });
+
+            LineaCorreoConfirmacionPedidoDTO linea = CorreoConfirmacionPedidoCliente.Preparar(r, "cliente@ejemplo.com", false).Lineas[0];
+
+            Assert.AreEqual(63.5M, linea.PrecioUnitario);
+            Assert.AreEqual(0.15M, linea.Descuento);
+            Assert.AreEqual(53.97M, linea.BaseImponible);
         }
 
         [TestMethod]
