@@ -1002,6 +1002,21 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'reentrenar-modelo-llamadas' configurado (primer sábado de cada mes a las 2:30)");
 
+            // NestoAPI#671 (corte 2d): entrenamiento mensual del modelo de sugerencias de productos. SEGUNDO sábado de cada mes a
+            // las 02:30 (el primero es el de llamadas): corre todos los sábados y el job sale si no es del 8 al 14. Misma cola
+            // «entrenamiento» (servidor de un hilo, arriba). Guarda zip, json, README e informe con la fecha en
+            // ModeloSugerencias:Carpeta, NO activa nada y avisa en la campana de Nesto.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.SugerenciasProductos.ReentrenamientoModeloSugerenciasJobsService.ID_JOB,
+                () => Infraestructure.SugerenciasProductos.ReentrenamientoModeloSugerenciasJobsService.EntrenarProgramado(),
+                Infraestructure.SugerenciasProductos.ReentrenamientoModeloSugerenciasJobsService.CRON, // Cron: sábados a las 2:30 (solo el segundo del mes)
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'entrenar-modelo-sugerencias' configurado (segundo sábado de cada mes a las 2:30)");
+
             // NestoAPI#629 (corte 1 de #628, control de stock obsoleto): el día 1 a las 03:30 rellena la tabla IndicadoresStock con
             // el mes anterior (valor de stock, rotación, cobertura, días en servir…). Si el día 1 es domingo, el día 2 (de madrugada
             // del domingo corre el SP de precios medios). A las 03:30 ya han acabado los jobs de la 1:00 a las 3:00. Va en la cola

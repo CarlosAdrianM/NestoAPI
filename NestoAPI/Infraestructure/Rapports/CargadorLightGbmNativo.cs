@@ -14,6 +14,8 @@ namespace NestoAPI.Infraestructure.Rapports
     /// proceso, el DllImport por nombre la encuentra. La copia al bin la hace NestoAPI.csproj (Content con CopyToOutputDirectory
     /// desde packages\LightGBM.3.3.5\runtimes\win-x64\native); al publicar queda en bin\ y en la raíz del sitio.
     /// Depende de vcomp140.dll (Visual C++ 2015-2022 x64), que en RDS2016 está en System32.
+    /// NestoAPI#671 (corte 2d): la usa también el entrenamiento del modelo de sugerencias (SugerenciasProductos.Nucleo, mismo
+    /// Microsoft.ML.LightGbm 4.0.2 y mismo LightGBM 3.3.5): la librería se carga una vez por proceso y vale para los dos.
     /// </summary>
     public static class CargadorLightGbmNativo
     {
@@ -33,13 +35,13 @@ namespace NestoAPI.Infraestructure.Rapports
                 if (!Environment.Is64BitProcess)
                 {
                     throw new InvalidOperationException("NestoAPI#619: LightGBM solo funciona en 64 bits y el proceso de la API es de 32 " +
-                        "(enable32BitAppOnWin64 del grupo de aplicaciones). No se puede reentrenar el modelo de llamadas.");
+                        "(enable32BitAppOnWin64 del grupo de aplicaciones). No se pueden entrenar los modelos de llamadas ni de sugerencias (NestoAPI#671).");
                 }
                 List<string> candidatas = Candidatas(AppDomain.CurrentDomain.BaseDirectory, AppDomain.CurrentDomain.RelativeSearchPath);
                 string ruta = candidatas.FirstOrDefault(File.Exists);
                 if (ruta == null)
                 {
-                    throw new FileNotFoundException("NestoAPI#619: no está " + NOMBRE + " (hace falta para entrenar el modelo de llamadas). " +
+                    throw new FileNotFoundException("NestoAPI#619: no está " + NOMBRE + " (hace falta para entrenar los modelos de llamadas y de sugerencias). " +
                         "Buscado en: " + string.Join("; ", candidatas), NOMBRE);
                 }
                 if (LoadLibrary(ruta) == IntPtr.Zero)
