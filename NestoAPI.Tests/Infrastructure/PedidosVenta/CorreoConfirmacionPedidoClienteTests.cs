@@ -1,6 +1,12 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.RegularExpressions;
+using System.Threading.Tasks;
+using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.PedidosVenta;
+using NestoAPI.Infraestructure.PreparacionAlmacen;
 using NestoAPI.Models.PedidosVenta;
 
 namespace NestoAPI.Tests.Infrastructure.PedidosVenta
@@ -115,6 +121,119 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
 
             Assert.AreEqual(1, encolados.Count, "Con dto null no se encola; el fallo del encolador no lanza");
             Assert.AreSame(dto, encolados[0]);
+        }
+
+        // NestoAPI#660: la foto de cada producto en el correo
+
+        private const string FOTO_CHAMPU = "https://www.productosdeesteticaypeluqueriaprofesional.com/1234-home_default/champu.jpg";
+
+        [TestMethod]
+        public void Generar_ConFoto_PintaLaMiniaturaConAnchoFijoYElNombreEnElAlt()
+        {
+            CorreoConfirmacionPedidoDTO dto = CorreoConfirmacionPedidoCliente.Preparar(Respuesta(), "cliente@ejemplo.com", false);
+            dto.Lineas[0].UrlFoto = FOTO_CHAMPU;
+
+            (_, string html) = CorreoConfirmacionPedidoCliente.Generar(dto);
+
+            StringAssert.Contains(html, $"<img src=\"{FOTO_CHAMPU}\" alt=\"CHAMPU 1000 ML &lt;Pro&gt;\" width=\"64\"");
+            StringAssert.Contains(html, "width: 64px");
+            Assert.AreEqual(1, Regex.Matches(html, "<img ").Count, "La línea sin foto no lleva imagen");
+            Assert.IsFalse(html.Contains("cid:"), "Por URL, sin adjuntar");
+        }
+
+        [TestMethod]
+        public void Generar_SinFoto_LaLineaSaleComoAntesSinHueco()
+        {
+            CorreoConfirmacionPedidoDTO dto = CorreoConfirmacionPedidoCliente.Preparar(Respuesta(), "cliente@ejemplo.com", false);
+
+            (_, string html) = CorreoConfirmacionPedidoCliente.Generar(dto);
+
+            Assert.IsFalse(html.Contains("<img"));
+            Assert.IsFalse(html.Contains("role=\"presentation\""), "Sin foto no hay tablita ni celda vacía");
+            StringAssert.Contains(html, "<td style=\"border-bottom: 1px solid #eee;\">SERUM</td>");
+        }
+
+        [TestMethod]
+        public void Generar_FotoRotaRelativaOHttp_NoSePinta()
+        {
+            foreach (string mala in new[] { "https://", "https://www.tienda.com/-home_default/.jpg", "https://www.tienda.com/img/-", "/img/p/1.jpg", "http://www.tienda.com/1.jpg", "javascript:alert(1)", "  " })
+            {
+                CorreoConfirmacionPedidoDTO dto = CorreoConfirmacionPedidoCliente.Preparar(Respuesta(), "cliente@ejemplo.com", false);
+                dto.Lineas[0].UrlFoto = mala;
+
+                (_, string html) = CorreoConfirmacionPedidoCliente.Generar(dto);
+
+                Assert.IsFalse(html.Contains("<img"), $"«{mala}» no es una foto que se pueda poner");
+                StringAssert.Contains(html, "CHAMPU 1000 ML &lt;Pro&gt;");
+            }
+        }
+
+        [TestMethod]
+        public void Generar_ConFoto_EscapaElNombreEnElAltYLaUrl()
+        {
+            CorreoConfirmacionPedidoDTO dto = CorreoConfirmacionPedidoCliente.Preparar(Respuesta(), "cliente@ejemplo.com", false);
+            dto.Lineas[0].Texto = "CERA \"FRIA\" & <B> 'MIEL'";
+            dto.Lineas[0].UrlFoto = "https://www.tienda.com/1-home_default/cera.jpg?a=1&b=\"2\"";
+
+            (_, string html) = CorreoConfirmacionPedidoCliente.Generar(dto);
+
+            StringAssert.Contains(html, "alt=\"CERA &quot;FRIA&quot; &amp; &lt;B&gt; &#39;MIEL&#39;\"");
+            StringAssert.Contains(html, "src=\"https://www.tienda.com/1-home_default/cera.jpg?a=1&amp;b=%222%22\"");
+            Assert.IsFalse(html.Contains("\"FRIA\""), "Las comillas del nombre no pueden cerrar el atributo");
+            Assert.IsFalse(html.Contains("<B>"));
+        }
+
+        [TestMethod]
+        public void Generar_VariasLineas_CadaUnaConSuFoto()
+        {
+            PedidoClienteResponse r = Respuesta();
+            r.Lineas.Add(new LineaPedidoClienteResponse { Producto = "17004", Texto = "TINTE 5.0", Cantidad = 3, Total = 9M });
+            CorreoConfirmacionPedidoDTO dto = CorreoConfirmacionPedidoCliente.Preparar(r, "cliente@ejemplo.com", false);
+            dto.Lineas[0].UrlFoto = FOTO_CHAMPU;
+            dto.Lineas[2].UrlFoto = "https://www.tienda.com/9-home_default/tinte.jpg";
+
+            (_, string html) = CorreoConfirmacionPedidoCliente.Generar(dto);
+
+            Assert.AreEqual(2, Regex.Matches(html, "<img ").Count);
+            StringAssert.Contains(html, "alt=\"TINTE 5.0\"");
+            Assert.IsTrue(html.IndexOf(FOTO_CHAMPU, StringComparison.Ordinal) < html.IndexOf("tinte.jpg", StringComparison.Ordinal), "En el orden de las líneas");
+            StringAssert.Contains(html, ">SERUM</td>");
+        }
+
+        [TestMethod]
+        public void CompletarFotos_PoneLaDeCadaProductoYDejaSinFotoLasQueNoTienen()
+        {
+            PedidoClienteResponse r = Respuesta();
+            r.Lineas.Add(new LineaPedidoClienteResponse { Producto = "38697", Texto = "CHAMPU 1000 ML <Pro>", Cantidad = 1, Total = 30M });
+            CorreoConfirmacionPedidoDTO dto = CorreoConfirmacionPedidoCliente.Preparar(r, "cliente@ejemplo.com", false);
+            IFotosProductoAlmacen fotos = A.Fake<IFotosProductoAlmacen>();
+            IEnumerable<string> preguntados = null;
+            _ = A.CallTo(() => fotos.Urls(A<IEnumerable<string>>._))
+                .Invokes((IEnumerable<string> p) => preguntados = p.ToList())
+                .Returns(Task.FromResult<IDictionary<string, string>>(new Dictionary<string, string> { ["38697"] = FOTO_CHAMPU, ["44707"] = null }));
+
+            CorreoConfirmacionPedidoCliente.CompletarFotos(dto, fotos);
+
+            Assert.AreEqual(FOTO_CHAMPU, dto.Lineas[0].UrlFoto);
+            Assert.IsNull(dto.Lineas[1].UrlFoto);
+            Assert.AreEqual(FOTO_CHAMPU, dto.Lineas[2].UrlFoto, "El mismo producto en dos líneas, la misma foto");
+            CollectionAssert.AreEquivalent(new[] { "38697", "44707", "38697" }, preguntados.ToArray());
+        }
+
+        [TestMethod]
+        public void CompletarFotos_SiElServicioFalla_NoLanzaYElCorreoSaleSinFotos()
+        {
+            CorreoConfirmacionPedidoDTO dto = CorreoConfirmacionPedidoCliente.Preparar(Respuesta(), "cliente@ejemplo.com", false);
+            IFotosProductoAlmacen fotos = A.Fake<IFotosProductoAlmacen>();
+            _ = A.CallTo(() => fotos.Urls(A<IEnumerable<string>>._)).Throws(new InvalidOperationException("la tienda no contesta"));
+
+            CorreoConfirmacionPedidoCliente.CompletarFotos(dto, fotos);
+            CorreoConfirmacionPedidoCliente.CompletarFotos(null, fotos);
+            CorreoConfirmacionPedidoCliente.CompletarFotos(dto, null);
+
+            Assert.IsTrue(dto.Lineas.All(l => l.UrlFoto == null));
+            (_, string html) = CorreoConfirmacionPedidoCliente.Generar(dto);
+            Assert.IsFalse(html.Contains("<img"));
         }
     }
 }

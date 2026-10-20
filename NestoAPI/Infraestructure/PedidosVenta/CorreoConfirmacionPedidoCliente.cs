@@ -1,4 +1,5 @@
-﻿using NestoAPI.Models;
+﻿using NestoAPI.Infraestructure.PreparacionAlmacen;
+using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
 using System;
 using System.Collections.Generic;
@@ -7,6 +8,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Mail;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace NestoAPI.Infraestructure.PedidosVenta
 {
@@ -48,11 +50,19 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         public string Texto { get; set; }
         public int Cantidad { get; set; }
         public decimal Total { get; set; }
+        /// <summary>
+        /// NestoAPI#660: la foto del producto (la de la tienda, la misma que las fichas y Ariadna). La pone el job
+        /// justo antes de mandar (<see cref="CorreoConfirmacionPedidoCliente.CompletarFotos"/>), no la petición de la
+        /// app; null si no tiene o la tienda no contesta, y entonces la línea sale como siempre.
+        /// </summary>
+        public string UrlFoto { get; set; }
     }
 
     public static class CorreoConfirmacionPedidoCliente
     {
         private static readonly CultureInfo ES = CultureInfo.GetCultureInfo("es-ES");
+        /// <summary>NestoAPI#660: el ancho de la miniatura, en píxeles (fijo: Outlook no entiende max-width ni object-fit).</summary>
+        internal const int ANCHO_FOTO = 64;
 
         /// <summary>Lo que hay que mandar, o null si no hay correo al que mandarlo.</summary>
         public static CorreoConfirmacionPedidoDTO Preparar(PedidoClienteResponse respuesta, string correoCliente, bool sinImportes)
@@ -113,7 +123,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             foreach (LineaCorreoConfirmacionPedidoDTO linea in dto.Lineas)
             {
                 _ = s.Append($"<tr><td style=\"border-bottom: 1px solid #eee; white-space: nowrap;\">{WebUtility.HtmlEncode(linea.Producto?.Trim())}</td>");
-                _ = s.Append($"<td style=\"border-bottom: 1px solid #eee;\">{WebUtility.HtmlEncode(linea.Texto)}</td>");
+                _ = s.Append($"<td style=\"border-bottom: 1px solid #eee;\">{CeldaProducto(linea)}</td>");
                 _ = s.Append($"<td align=\"right\" style=\"border-bottom: 1px solid #eee;\">{linea.Cantidad}</td>");
                 if (!dto.SinImportes)
                 {
@@ -141,6 +151,74 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             _ = s.AppendLine("<p style=\"color: #777; font-size: 12px;\">Si tienes cualquier duda, responde a este correo y te ayudamos.</p>");
             _ = s.AppendLine("</div>");
             return (asunto, s.ToString());
+        }
+
+        /// <summary>
+        /// NestoAPI#660: el nombre del producto con su miniatura delante, si la tiene. La foto va por URL https absoluta
+        /// (sin adjuntarla: con una por línea el correo pesaría mucho), con ancho fijo y el nombre en el alt para quien
+        /// tenga las imágenes bloqueadas. Va en una tablita dentro de la celda (Outlook no respeta float ni flex) y sin
+        /// foto no se pinta nada más que el nombre: no queda hueco.
+        /// </summary>
+        internal static string CeldaProducto(LineaCorreoConfirmacionPedidoDTO linea)
+        {
+            string nombre = WebUtility.HtmlEncode(linea.Texto);
+            string url = UrlFotoValida(linea.UrlFoto);
+            if (url == null)
+            {
+                return nombre;
+            }
+            return "<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\"><tr>"
+                + $"<td width=\"{ANCHO_FOTO}\" valign=\"middle\" style=\"width: {ANCHO_FOTO}px; padding-right: 10px;\">"
+                + $"<img src=\"{WebUtility.HtmlEncode(url)}\" alt=\"{nombre}\" width=\"{ANCHO_FOTO}\" "
+                + $"style=\"display: block; width: {ANCHO_FOTO}px; height: auto; border: 0; outline: none; text-decoration: none;\"></td>"
+                + $"<td valign=\"middle\">{nombre}</td></tr></table>";
+        }
+
+        /// <summary>Solo URLs absolutas https (Gmail y Outlook bloquean o avisan con las http, y una relativa no lleva a ningún sitio).</summary>
+        internal static string UrlFotoValida(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url) || FotosProductoAlmacen.EsRota(url))
+            {
+                return null;
+            }
+            return Uri.TryCreate(url.Trim(), UriKind.Absolute, out Uri uri) && uri.Scheme == Uri.UriSchemeHttps && !string.IsNullOrEmpty(uri.Host)
+                ? uri.AbsoluteUri
+                : null;
+        }
+
+        /// <summary>
+        /// NestoAPI#660: pone la foto a cada línea que no la tenga, con el servicio de fotos de Ariadna (caché, como mucho
+        /// unas pocas a la vez y tiempo máximo por foto). Nunca lanza: sin fotos el correo sale igual.
+        /// </summary>
+        internal static void CompletarFotos(CorreoConfirmacionPedidoDTO dto, IFotosProductoAlmacen fotos)
+        {
+            if (dto?.Lineas == null || fotos == null)
+            {
+                return;
+            }
+            try
+            {
+                List<LineaCorreoConfirmacionPedidoDTO> sinFoto = dto.Lineas
+                    .Where(l => l != null && string.IsNullOrWhiteSpace(l.UrlFoto) && !string.IsNullOrWhiteSpace(l.Producto))
+                    .ToList();
+                if (!sinFoto.Any())
+                {
+                    return;
+                }
+                // Task.Run: sin contexto de sincronización, para poder esperar aquí sin bloqueos
+                IDictionary<string, string> urls = Task.Run(() => fotos.Urls(sinFoto.Select(l => l.Producto.Trim()))).GetAwaiter().GetResult();
+                foreach (LineaCorreoConfirmacionPedidoDTO linea in sinFoto)
+                {
+                    if (urls != null && urls.TryGetValue(linea.Producto.Trim(), out string url))
+                    {
+                        linea.UrlFoto = url;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Pedido app] No se han podido poner las fotos en el correo de confirmación del pedido {dto.Numero}: {ex.Message}", ex));
+            }
         }
 
         internal static string TextoPago(string situacion)
@@ -186,6 +264,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// <summary>El job: construye y manda el correo desde la tienda online. Lanza si el SMTP falla, para que Hangfire reintente y lo registre.</summary>
         public static void Enviar(CorreoConfirmacionPedidoDTO dto)
         {
+            CompletarFotos(dto, new FotosProductoAlmacen());
             (string asunto, string html) = Generar(dto);
             using (MailMessage mail = new MailMessage())
             {
