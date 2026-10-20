@@ -211,7 +211,7 @@ namespace NestoAPI.Infraestructure.Agencias.Gls
     public class TramitadorGls
     {
         /// <summary>Prefijo del código de barras de BusinessParcel (servicio 96), que tiene su propia cuenta (AgenciaASM).</summary>
-        public const string PREFIJO_CODIGO_BARRAS_BUSINESSPARCEL = "6119714";
+        public const string PREFIJO_CODIGO_BARRAS_BUSINESSPARCEL = PlazaYCodigoBarrasGls.PREFIJO_CODIGO_BARRAS_BUSINESSPARCEL;
 
         private readonly IClienteGrabaServiciosGls _cliente;
 
@@ -240,12 +240,10 @@ namespace NestoAPI.Infraestructure.Agencias.Gls
         /// <summary>
         /// El código de barras de un envío de GLS, como AgenciaASM.calcularCodigoBarras: prefijo (el de BusinessParcel con el
         /// servicio 96; si no, AgenciasTransporte.PrefijoCodigoBarras) + número del envío con 7 cifras. Null si no hay prefijo.
+        /// NestoAPI#595 (slice 2, 20/10/26): el algoritmo vive en <see cref="PlazaYCodigoBarrasGls"/> (el de GLS del
+        /// <see cref="RegistroPlazasAgencias"/>); aquí solo se delega, sin cambiar el resultado.
         /// </summary>
         public static string CalcularCodigoBarras(EnviosAgencia envio, string prefijoAgencia)
-        {
-            if (envio == null) throw new ArgumentNullException(nameof(envio));
-            string prefijo = envio.Servicio == PeticionGls.SERVICIO_BUSINESSPARCEL ? PREFIJO_CODIGO_BARRAS_BUSINESSPARCEL : prefijoAgencia?.Trim();
-            return string.IsNullOrEmpty(prefijo) ? null : prefijo + envio.Numero.ToString("D7", CultureInfo.InvariantCulture);
-        }
+            => PlazaYCodigoBarrasGls.CodigoBarras(envio, prefijoAgencia);
     }
 }

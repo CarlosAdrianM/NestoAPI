@@ -647,6 +647,7 @@
     </Compile>
     <Compile Include="Infraestructure\Agencias\GestorEnviosAgencia.cs" />
     <Compile Include="Infraestructure\Agencias\PropuestaEnvioService.cs" />
+    <Compile Include="Infraestructure\Agencias\PlazaYCodigoBarrasAgencias.cs" />
     <Compile Include="Infraestructure\Agencias\ReglasEnReparto.cs" />
     <Compile Include="Infraestructure\Agencias\AgenciaRemotaException.cs" />
     <Compile Include="Infraestructure\Agencias\AvisadorIncidenciasEnvio.cs" />
@@ -674,6 +675,7 @@
     <Compile Include="Infraestructure\Agencias\Gls\AnulacionGls.cs" />
     <Compile Include="Infraestructure\Agencias\Gls\ClienteGrabaServiciosGls.cs" />
     <Compile Include="Infraestructure\Agencias\Gls\TramitadorGls.cs" />
+    <Compile Include="Infraestructure\Agencias\Gls\PlazaYCodigoBarrasGls.cs" />
     <Compile Include="Infraestructure\Agencias\IAgenciaRemota.cs" />
     <Compile Include="Infraestructure\Agencias\RegistroIntercambiosRemotos.cs" />
     <Compile Include="Infraestructure\Agencias\FabricaAgenciasRemotas.cs" />

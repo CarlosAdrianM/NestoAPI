@@ -22,6 +22,8 @@ namespace NestoAPI.Models
         public class Agencias
         {
             public const int AGENCIA_GLS = 1;
+            // NestoAPI#595 (20/10/26): GLS/ASM de la empresa espejo (AgenciasTransporte con Numero=5, Empresa=3, Nombre=ASM).
+            public const int AGENCIA_GLS_EMPRESA_ESPEJO = 5;
             public const int AGENCIA_GLOVO = 7;
             public const int AGENCIA_CORREOS_EXPRESS = 8;
             public const int AGENCIA_SENDING = 10;
