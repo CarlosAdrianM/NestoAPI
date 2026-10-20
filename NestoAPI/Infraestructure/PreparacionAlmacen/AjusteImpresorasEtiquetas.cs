@@ -31,63 +31,16 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             {
                 return epl;
             }
-            // 20/10/26 (Reina imprime ~2,5 mm baja): hacia ARRIBA no se puede restar a las coordenadas (lo de arriba se aplasta
-            // contra 0), así que si el trabajo lleva su Q se sube con el desplazamiento del Q (Qp1,p2-p3), que tampoco se queda
-            // guardado porque cada trabajo manda el suyo. Sin Q (no es nuestro), se resta a las coordenadas como antes.
-            bool subirConQ = y < 0 && LineasDe(epl).Any(EsQ);
-            int yCoordenadas = subirConQ ? 0 : y;
             var resultado = new StringBuilder(epl.Length + 64);
-            foreach (string linea in LineasDe(epl))
-            {
-                _ = resultado.Append(subirConQ && EsQ(linea) ? SubirConQ(linea, y) : DesplazarLinea(linea, x, yCoordenadas));
-            }
-            return resultado.ToString();
-        }
-
-        private static IEnumerable<string> LineasDe(string epl)
-        {
             int inicio = 0;
             while (inicio < epl.Length)
             {
                 int salto = epl.IndexOf('\n', inicio);
                 int fin = salto < 0 ? epl.Length : salto + 1;
-                yield return epl.Substring(inicio, fin - inicio);
+                _ = resultado.Append(DesplazarLinea(epl.Substring(inicio, fin - inicio), x, y));
                 inicio = fin;
             }
-        }
-
-        private static bool EsQ(string linea) => linea.Length > 1 && linea[0] == 'Q' && char.IsDigit(linea[1]);
-
-        /// <summary>«Q160,24» con <paramref name="y"/> = -20 → «Q160,24-20» (se suma al desplazamiento que ya llevara).</summary>
-        internal static string SubirConQ(string linea, int y)
-        {
-            int coma = linea.IndexOf(',');
-            if (coma < 0)
-            {
-                return linea;
-            }
-            int pos = coma + 1;
-            while (pos < linea.Length && char.IsDigit(linea[pos]))
-            {
-                pos++;
-            }
-            int finSeparacion = pos;
-            int desplazamiento = 0;
-            if (pos < linea.Length && (linea[pos] == '+' || linea[pos] == '-'))
-            {
-                int empieza = pos++;
-                while (pos < linea.Length && char.IsDigit(linea[pos]))
-                {
-                    pos++;
-                }
-                if (!int.TryParse(linea.Substring(empieza, pos - empieza), NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out desplazamiento))
-                {
-                    return linea;
-                }
-            }
-            int total = desplazamiento + y;
-            string sufijo = total == 0 ? string.Empty : (total > 0 ? "+" : "-") + Math.Abs(total).ToString(CultureInfo.InvariantCulture);
-            return linea.Substring(0, finSeparacion) + sufijo + linea.Substring(pos);
+            return resultado.ToString();
         }
 
         internal static string DesplazarLinea(string linea, int x, int y)
