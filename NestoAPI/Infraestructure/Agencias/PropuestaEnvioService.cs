@@ -272,36 +272,43 @@ namespace NestoAPI.Infraestructure.Agencias
             // VB 3478-3488: «Este pedido no tiene ninguna línea con picking. ¿Desea insertar el pedido de todos modos?»
             if (!await datos.TieneAlgunaLineaConPicking(empresa, pedido).ConfigureAwait(false))
             {
-                propuesta.Avisos.Add("Este pedido no tiene ninguna línea con picking.");
+                Avisar(propuesta, CodigosAvisoPropuestaEnvio.SIN_PICKING, TiposAvisoPropuestaEnvio.CONFIRMAR, "Este pedido no tiene ninguna línea con picking.");
             }
             // VB 3449-3472: la ampliación se confirma con los bultos totales.
             if (propuesta.Origen == PropuestaEnvioDTO.ORIGEN_AMPLIACION)
             {
-                propuesta.Avisos.Add($"Este pedido es una ampliación del envío {propuesta.EnvioOrigen}: se actualizarían los datos de ese envío " +
+                Avisar(propuesta, CodigosAvisoPropuestaEnvio.AMPLIACION, TiposAvisoPropuestaEnvio.CONFIRMAR, $"Este pedido es una ampliación del envío {propuesta.EnvioOrigen}: se actualizarían los datos de ese envío " +
                     $"y el nº total de bultos pasaría a ser {propuesta.Bultos}.");
             }
             // VB 2002-2034 (ConfirmarDireccionPropia): envío a la dirección de Nueva Visión.
             if (EsDireccionDeNuevaVision(propuesta.Direccion, propuesta.CodPostal))
             {
-                propuesta.Avisos.Add($"El envío va a la dirección de Nueva Visión: {propuesta.Direccion}, {propuesta.CodPostal} {propuesta.Poblacion}. " +
+                Avisar(propuesta, CodigosAvisoPropuestaEnvio.DIRECCION_PROPIA, TiposAvisoPropuestaEnvio.CONFIRMAR, $"El envío va a la dirección de Nueva Visión: {propuesta.Direccion}, {propuesta.CodPostal} {propuesta.Poblacion}. " +
                     "Si es un pedido de la tienda online, la dirección del cliente está en los comentarios del pedido.");
             }
             // VB 669-680 (#569): HayAvisoPrepagos = prepagos > 0 y reembolso > 0.
             if (propuesta.PrepagosPendientes > 0m && propuesta.Reembolso > 0m)
             {
-                propuesta.Avisos.Add(string.Format(Espanol, "El pedido tiene {0:C} pagados por adelantado. El reembolso propuesto ({1:C}) no los descuenta.",
+                Avisar(propuesta, CodigosAvisoPropuestaEnvio.PREPAGOS, TiposAvisoPropuestaEnvio.ELEGIR, string.Format(Espanol, "El pedido tiene {0:C} pagados por adelantado. El reembolso propuesto ({1:C}) no los descuenta.",
                     propuesta.PrepagosPendientes, propuesta.Reembolso));
             }
             // VB 2110-2124 (Nesto#367): Canteras (DimensionesBultosObligatorias) pide las dimensiones al imprimir.
             if (propuesta.Agencia == Constantes.Agencias.AGENCIA_CANTERAS)
             {
-                propuesta.Avisos.Add("Canteras necesita las dimensiones de los bultos (AnchoxAltoxLargo, por ejemplo 30x20x15).");
+                Avisar(propuesta, CodigosAvisoPropuestaEnvio.DIMENSIONES, TiposAvisoPropuestaEnvio.DATO, "Canteras necesita las dimensiones de los bultos (AnchoxAltoxLargo, por ejemplo 30x20x15).");
             }
             // VB 2407-2409: sin agencia con tarifa para el destino no se puede tramitar.
             if (propuesta.Agencia == 0)
             {
-                propuesta.Avisos.Add($"Ninguna agencia tiene tarifa para la zona del destino (CP {propuesta.CodPostal}).");
+                Avisar(propuesta, CodigosAvisoPropuestaEnvio.SIN_AGENCIA, TiposAvisoPropuestaEnvio.BLOQUEANTE, $"Ninguna agencia tiene tarifa para la zona del destino (CP {propuesta.CodPostal}).");
             }
+        }
+
+        /// <summary>NestoAPI#595 (slice 2, 20/10/26): el aviso va a Avisos (el texto, como siempre) y a AvisosDetalle.</summary>
+        private static void Avisar(PropuestaEnvioDTO propuesta, string codigo, string tipo, string texto)
+        {
+            propuesta.Avisos.Add(texto);
+            propuesta.AvisosDetalle.Add(new AvisoPropuestaEnvio { Codigo = codigo, Texto = texto, Tipo = tipo });
         }
 
         // ---------------------------------------------------------------- piezas

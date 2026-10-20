@@ -308,6 +308,81 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             Assert.IsTrue(p.Avisos.Any(a => a.Contains("Nueva Visión")), string.Join(" | ", p.Avisos));
         }
 
+        // ------------------------------------------------------------ AvisosDetalle (slice 2, 20/10/26)
+
+        /// <summary>AvisosDetalle lleva los mismos textos que Avisos, en el mismo orden; devuelve los «código/tipo».</summary>
+        private static List<string> CodigosYTipos(PropuestaEnvioDTO p)
+        {
+            CollectionAssert.AreEqual(p.Avisos, p.AvisosDetalle.Select(a => a.Texto).ToList(), "Avisos y AvisosDetalle con los mismos textos");
+            return p.AvisosDetalle.Select(a => a.Codigo + "/" + a.Tipo).ToList();
+        }
+
+        [TestMethod]
+        public async Task AvisosDetalle_SinAvisos_Vacio()
+        {
+            PropuestaEnvioDTO p = await servicio.Calcular(EMPRESA, PEDIDO, 1, 1m);
+
+            Assert.AreEqual(0, p.AvisosDetalle.Count);
+            Assert.AreEqual(0, p.Avisos.Count);
+        }
+
+        [TestMethod]
+        public async Task AvisosDetalle_SinPickingYPrepagos()
+        {
+            A.CallTo(() => datos.TieneAlgunaLineaConPicking(EMPRESA, PEDIDO)).Returns(Task.FromResult(false));
+            A.CallTo(() => datos.PrepagosPendientes(EMPRESA, PEDIDO)).Returns(50m);
+
+            PropuestaEnvioDTO p = await servicio.Calcular(EMPRESA, PEDIDO, 1, 1m);
+
+            CollectionAssert.AreEqual(new List<string> { "SinPicking/Confirmar", "Prepagos/Elegir" }, CodigosYTipos(p));
+        }
+
+        [TestMethod]
+        public async Task AvisosDetalle_Ampliacion()
+        {
+            var enCurso = new EnviosAgencia
+            {
+                Numero = 249400, Empresa = "1  ", Agencia = Constantes.Agencias.AGENCIA_CTT, Pedido = 927600,
+                Estado = (short)Constantes.Agencias.ESTADO_EN_CURSO, Reembolso = 30m, Direccion = "Calle Mayor, 1"
+            };
+            A.CallTo(() => datos.LeerEnvioAmpliacion(A<string>._, A<string>._, A<string>._, A<int?>._)).Returns(Task.FromResult(enCurso));
+
+            PropuestaEnvioDTO p = await servicio.Calcular(EMPRESA, PEDIDO, 3, 1m);
+
+            CollectionAssert.AreEqual(new List<string> { CodigosAvisoPropuestaEnvio.AMPLIACION + "/" + TiposAvisoPropuestaEnvio.CONFIRMAR }, CodigosYTipos(p));
+        }
+
+        [TestMethod]
+        public async Task AvisosDetalle_DireccionPropia()
+        {
+            A.CallTo(() => datos.LeerPedido(EMPRESA, PEDIDO)).Returns(Task.FromResult(Pedido("28110", "C/ Río Tiétar, 11")));
+
+            PropuestaEnvioDTO p = await servicio.Calcular(EMPRESA, PEDIDO, 1, 1m);
+
+            CollectionAssert.AreEqual(new List<string> { "DireccionPropia/Confirmar" }, CodigosYTipos(p));
+        }
+
+        [TestMethod]
+        public async Task AvisosDetalle_CanterasPideLasDimensiones()
+        {
+            A.CallTo(() => datos.LeerPedido(EMPRESA, PEDIDO)).Returns(Task.FromResult(Pedido("35001")));
+
+            PropuestaEnvioDTO p = await servicio.Calcular(EMPRESA, PEDIDO, 1, 1m);
+
+            CollectionAssert.AreEqual(new List<string> { "Dimensiones/Dato" }, CodigosYTipos(p));
+        }
+
+        [TestMethod]
+        public async Task AvisosDetalle_SinAgenciaParaElDestino_Bloqueante()
+        {
+            ConTarifas();
+
+            PropuestaEnvioDTO p = await servicio.Calcular(EMPRESA, PEDIDO, 1, 1m);
+
+            Assert.AreEqual(0, p.Agencia);
+            CollectionAssert.AreEqual(new List<string> { "SinAgencia/Bloqueante" }, CodigosYTipos(p));
+        }
+
         [TestMethod]
         public async Task Prepagos_SiFallaLaLectura_SinAvisoYSigue()
         {

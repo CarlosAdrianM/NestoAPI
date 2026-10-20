@@ -56,5 +56,51 @@ namespace NestoAPI.Models.Agencias
         public int? EnvioOrigen { get; set; }
         /// <summary>Lo que Nesto pregunta o avisa antes de insertar (sin picking, dirección propia, prepagos, dimensiones...).</summary>
         public List<string> Avisos { get; set; } = new List<string>();
+        /// <summary>
+        /// NestoAPI#595 (slice 2, 20/10/26): los mismos avisos que <see cref="Avisos"/> (mismos textos, mismo orden) con un
+        /// código y un tipo para que el cliente sepa qué hacer con cada uno sin leer el texto. Avisos se mantiene.
+        /// </summary>
+        public List<AvisoPropuestaEnvio> AvisosDetalle { get; set; } = new List<AvisoPropuestaEnvio>();
+    }
+
+    /// <summary>NestoAPI#595 (slice 2, 20/10/26): un aviso de la propuesta de envío.</summary>
+    public class AvisoPropuestaEnvio
+    {
+        /// <summary>Uno de <see cref="CodigosAvisoPropuestaEnvio"/>.</summary>
+        public string Codigo { get; set; }
+        /// <summary>El mismo texto que va en <see cref="PropuestaEnvioDTO.Avisos"/>.</summary>
+        public string Texto { get; set; }
+        /// <summary>Uno de <see cref="TiposAvisoPropuestaEnvio"/>.</summary>
+        public string Tipo { get; set; }
+    }
+
+    /// <summary>NestoAPI#595 (slice 2, 20/10/26): los códigos de los avisos de la propuesta de envío.</summary>
+    public static class CodigosAvisoPropuestaEnvio
+    {
+        /// <summary>El pedido no tiene ninguna línea con picking (Nesto pregunta si se inserta igualmente).</summary>
+        public const string SIN_PICKING = "SinPicking";
+        /// <summary>Es ampliación de un envío en curso: se actualizarían sus bultos.</summary>
+        public const string AMPLIACION = "Ampliacion";
+        /// <summary>El destino es la dirección de Nueva Visión.</summary>
+        public const string DIRECCION_PROPIA = "DireccionPropia";
+        /// <summary>Hay prepagos y el reembolso no los descuenta (Nesto ofrece descontarlos).</summary>
+        public const string PREPAGOS = "Prepagos";
+        /// <summary>La agencia (Canteras) necesita las dimensiones de los bultos.</summary>
+        public const string DIMENSIONES = "Dimensiones";
+        /// <summary>Ninguna agencia tiene tarifa para el destino.</summary>
+        public const string SIN_AGENCIA = "SinAgencia";
+    }
+
+    /// <summary>NestoAPI#595 (slice 2, 20/10/26): qué tiene que hacer quien llama con cada aviso.</summary>
+    public static class TiposAvisoPropuestaEnvio
+    {
+        /// <summary>Hay que confirmar para seguir (sí / no).</summary>
+        public const string CONFIRMAR = "Confirmar";
+        /// <summary>Hay que elegir entre opciones (por ejemplo, descontar o no los prepagos del reembolso).</summary>
+        public const string ELEGIR = "Elegir";
+        /// <summary>Falta un dato que hay que pedir (por ejemplo, las dimensiones de los bultos).</summary>
+        public const string DATO = "Dato";
+        /// <summary>No se puede crear el envío así.</summary>
+        public const string BLOQUEANTE = "Bloqueante";
     }
 }
