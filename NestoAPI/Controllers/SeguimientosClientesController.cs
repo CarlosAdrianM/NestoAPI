@@ -1112,6 +1112,7 @@ El mensaje resultante es importante que lo devuelvas en HTML para poner en el cu
         /// <summary>
         /// NestoAPI#603: si el cliente tenía sugerencia de contacto ese día, queda atendida con este rapport. El rapport ya
         /// está guardado: si esto falla no se deshace nada, se registra en ELMAH (y el GET de sugerencias lo concilia).
+        /// NestoAPI#620: con el vendedor del rapport, para no atender la sugerencia del otro vendedor del cliente.
         /// </summary>
         private async Task MarcarSugerenciaAtendidaAsync(SeguimientoCliente rapport)
         {
@@ -1121,7 +1122,7 @@ El mensaje resultante es importante que lo devuelvas en HTML para poner en el cu
                 using (var contexto = new NVEntities())
                 {
                     _ = await new RegistroSugerenciasContacto(contexto)
-                        .MarcarAtendidaPorRapport(rapport.Número, rapport.Contacto, rapport.Fecha, rapport.NºOrden)
+                        .MarcarAtendidaPorRapport(rapport.Número, rapport.Contacto, rapport.Fecha, rapport.NºOrden, rapport.Vendedor)
                         .ConfigureAwait(false);
                 }
             }

@@ -381,5 +381,58 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
             StringAssert.Contains(RepositorioFeaturesContactoSql.SQL, filtro);
             Assert.AreEqual(95, NestoAPI.Models.Constantes.Clientes.Estados.UNA_SOLA_COMPRA_AMAZON);
         }
+
+        // ---------------- NestoAPI#620: vendedores por grupo de producto (peluquería) ----------------
+        // La consulta se ha probado contra una BD local con datos de prueba (IF solo por grupo, cliente en la ficha y en el
+        // grupo, cliente con dos vendedores, fila de grupo en estado 7, ficha anulada); aquí se fija su forma.
+
+        [TestMethod]
+        public void CarteraYModelo_VendedorSoloPorGrupo_TieneCartera()
+        {
+            string asignacion = RepositorioCarteraContactoSql.SQL_ASIGNACION;
+
+            StringAssert.Contains(asignacion, "FROM VendedoresClienteGrupoProducto v WITH (NOLOCK)");
+            StringAssert.Contains(asignacion, "v.Vendedor = @Vendedor AND v.Estado >= 0 AND v.Estado NOT IN (7, 67, 95)", "la fila de grupo, con el filtro de estado de la ficha");
+            StringAssert.Contains(asignacion, "c.Vendedor = @Vendedor", "y los de la ficha, como siempre");
+            foreach (string sql in new[] { RepositorioCarteraContactoSql.SQL_CARTERA, RepositorioFeaturesContactoSql.SQL })
+            {
+                StringAssert.Contains(sql, asignacion, "cartera y modelo con los mismos clientes");
+                StringAssert.Contains(sql, "INNER JOIN #Asignacion a ON a.Cliente = c.[Nº Cliente] AND a.Contacto = c.Contacto");
+                Assert.IsFalse(sql.Contains("c.Estado NOT IN (7, 67, 95) AND c.Vendedor = @Vendedor"), "ya no solo los de la ficha");
+            }
+        }
+
+        [TestMethod]
+        public void Cartera_ClienteEnLaFichaYEnElGrupo_CuentaUnaVezYConTodasSusCompras()
+        {
+            string asignacion = RepositorioCarteraContactoSql.SQL_ASIGNACION;
+
+            StringAssert.Contains(asignacion, "MAX(a.TodosLosGrupos) TodosLosGrupos");
+            StringAssert.Contains(asignacion, "GROUP BY a.Cliente, a.Contacto;", "una fila por cliente + contacto");
+            StringAssert.Contains(asignacion, "a.TodosLosGrupos = 0", "los grupos solo limitan a los que no son suyos por la ficha");
+        }
+
+        [TestMethod]
+        public void Cartera_PorGrupo_SoloCuentanLasComprasYPedidosEnCursoDeSuGrupo()
+        {
+            string sql = RepositorioCarteraContactoSql.SQL_CARTERA;
+            string filtro = RepositorioCarteraContactoSql.FILTRO_GRUPO_LINEA;
+
+            StringAssert.Contains(filtro, "x.TodosLosGrupos = 1 OR EXISTS");
+            StringAssert.Contains(filtro, "g.Grupo = l.Grupo");
+            Assert.AreEqual(2, (sql.Length - sql.Replace(filtro, string.Empty).Length) / filtro.Length, "en #Compras y en #EnCurso");
+            Assert.IsFalse(RepositorioFeaturesContactoSql.SQL.Contains(filtro), "el modelo sigue con el historial completo, como al entrenar");
+        }
+
+        [TestMethod]
+        public void Cartera_UltimoContacto_SinLosRapportsDelOtroVendedorDelCliente()
+        {
+            string sql = RepositorioCarteraContactoSql.SQL_CARTERA;
+
+            StringAssert.Contains(sql, "INTO #OtrosVendedores");
+            StringAssert.Contains(sql, "o.Vendedor <> @Vendedor AND o.Vendedor <> 'NV'", "el general no es «otro vendedor»");
+            StringAssert.Contains(sql, "AND NOT EXISTS (SELECT 1 FROM #OtrosVendedores o");
+            StringAssert.Contains(sql, "o.Vendedor = s.Vendedor", "solo se quitan los rapports del otro vendedor; los sin vendedor cuentan");
+        }
     }
 }

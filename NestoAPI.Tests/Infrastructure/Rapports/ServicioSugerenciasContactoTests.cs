@@ -526,6 +526,81 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
             A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
         }
 
+        // ---------------- NestoAPI#620: un cliente con dos vendedores (estética y peluquería) ----------------
+
+        /// <summary>1002/0: MPP por la ficha (estética) e IF por peluquería (VendedoresClienteGrupoProducto), con relleno de char.</summary>
+        private void ClienteConDosVendedores()
+        {
+            // En memoria "1" ≠ "1  " (en SQL sí casan): la empresa va sin relleno; el vendedor de grupo, con él.
+            var fichas = new List<Cliente> { new Cliente { Empresa = "1", Nº_Cliente = "1002", Contacto = "0", Vendedor = "MPP" } };
+            var porGrupo = new List<VendedorClienteGrupoProducto>
+            {
+                new VendedorClienteGrupoProducto { Empresa = "1", Cliente = "1002", Contacto = "0", GrupoProducto = "PEL", Vendedor = "IF " }
+            };
+            DbSet<Cliente> fakeClientes = A.Fake<DbSet<Cliente>>(o => o.Implements<IQueryable<Cliente>>().Implements<IDbAsyncEnumerable<Cliente>>());
+            DbSet<VendedorClienteGrupoProducto> fakeGrupos = A.Fake<DbSet<VendedorClienteGrupoProducto>>(o => o
+                .Implements<IQueryable<VendedorClienteGrupoProducto>>().Implements<IDbAsyncEnumerable<VendedorClienteGrupoProducto>>());
+            ConfigurarFakeDbSet(fakeClientes, fichas);
+            ConfigurarFakeDbSet(fakeGrupos, porGrupo);
+            A.CallTo(() => db.Clientes).Returns(fakeClientes);
+            A.CallTo(() => db.VendedoresClientesGruposProductos).Returns(fakeGrupos);
+            sugerencias.Add(new SugerenciaContacto { Id = 1, Vendedor = "MPP", Cliente = "1002", Contacto = "0", Fecha = AHORA, Prioridad = "Alta", Orden = 1, Motivo = "x" });
+            sugerencias.Add(new SugerenciaContacto { Id = 2, Vendedor = "IF", Cliente = "1002", Contacto = "0", Fecha = AHORA, Prioridad = "Alta", Orden = 1, Motivo = "x" });
+        }
+
+        [TestMethod]
+        public async Task MarcarAtendidaPorRapport_DelVendedorDePeluqueria_SoloAtiendeLaSuya()
+        {
+            ClienteConDosVendedores();
+
+            int marcadas = await new RegistroSugerenciasContacto(db).MarcarAtendidaPorRapport("1002", "0", AHORA.AddHours(1), 777, "IF ");
+
+            Assert.AreEqual(1, marcadas);
+            Assert.IsTrue(sugerencias.Single(s => s.Vendedor == "IF").Atendida);
+            Assert.IsFalse(sugerencias.Single(s => s.Vendedor == "MPP").Atendida, "lo ha llamado el de peluquería: el de estética sigue teniéndolo pendiente");
+        }
+
+        [TestMethod]
+        public async Task MarcarAtendidaPorRapport_SinVendedor_AtiendeLasDos()
+        {
+            // Alguien que no lleva al cliente (el rapport se guarda sin vendedor): se atendió al cliente, como antes de #620.
+            ClienteConDosVendedores();
+
+            int marcadas = await new RegistroSugerenciasContacto(db).MarcarAtendidaPorRapport("1002", "0", AHORA.AddHours(1), 777, null);
+
+            Assert.AreEqual(2, marcadas);
+            Assert.IsTrue(sugerencias.All(s => s.Atendida));
+        }
+
+        [TestMethod]
+        public async Task ConciliarAtendidas_RapportDelVendedorDeEstetica_NoAtiendeLaDelDePeluqueria()
+        {
+            ClienteConDosVendedores();
+            rapports.Add(new SeguimientoCliente { NºOrden = 55, Número = "1002", Contacto = "0", Fecha = AHORA.AddHours(1), Estado = 0, Vendedor = "MPP" });
+            var registro = new RegistroSugerenciasContacto(db, bloqueo);
+
+            bool cambios = await registro.ConciliarAtendidas(sugerencias, HOY);
+
+            Assert.IsTrue(cambios);
+            SugerenciaContacto deEstetica = sugerencias.Single(s => s.Vendedor == "MPP");
+            Assert.IsTrue(deEstetica.Atendida);
+            Assert.AreEqual(55, deEstetica.RapportId);
+            Assert.IsFalse(sugerencias.Single(s => s.Vendedor == "IF").Atendida);
+        }
+
+        [TestMethod]
+        public void RapportCuentaPara_SoloNoCuentaElDelOtroVendedorDelCliente()
+        {
+            var delCliente = new HashSet<string> { "MPP", "IF" };
+
+            Assert.IsTrue(RegistroSugerenciasContacto.RapportCuentaPara("IF", "IF ", delCliente), "el suyo");
+            Assert.IsFalse(RegistroSugerenciasContacto.RapportCuentaPara("IF", "mpp", delCliente), "el del otro vendedor del cliente");
+            Assert.IsTrue(RegistroSugerenciasContacto.RapportCuentaPara("IF", null, delCliente), "sin vendedor");
+            Assert.IsTrue(RegistroSugerenciasContacto.RapportCuentaPara("IF", "NV", delCliente), "el general");
+            Assert.IsTrue(RegistroSugerenciasContacto.RapportCuentaPara("IF", "PA", delCliente), "alguien que ya no lo lleva");
+            Assert.IsTrue(RegistroSugerenciasContacto.RapportCuentaPara("IF", "MPP", null), "sin saber quién lo lleva, como antes");
+        }
+
         // ---------------- Uso ----------------
 
         [TestMethod]

@@ -102,14 +102,15 @@ namespace NestoAPI.Infraestructure.Rapports
         public string Telefono { get; set; }
         public string Poblacion { get; set; }
         public string Provincia { get; set; }
-        /// <summary>Días distintos con compra (LinPedidoVta Estado 4, base &gt; 0, subgrupo ≠ MMP) en 12 meses.</summary>
+        /// <summary>Días distintos con compra (LinPedidoVta Estado 4, base &gt; 0, subgrupo ≠ MMP) en 12 meses. NestoAPI#620: si el
+        /// vendedor lleva al cliente solo por grupo de producto (peluquería), solo las líneas de ese grupo (también en el resto de compras y el último pedido).</summary>
         public int Pedidos12Meses { get; set; }
         public decimal Importe12Meses { get; set; }
         /// <summary>Ídem en 24 meses (≥ 1 para estar en la cartera).</summary>
         public int Pedidos24Meses { get; set; }
         /// <summary>Último pedido: el más reciente entre lo facturado y lo que está en curso (pendiente, en curso o albarán).</summary>
         public DateTime? UltimoPedido { get; set; }
-        /// <summary>Último rapport Estado 0 (se habló) de tipo T/V/W.</summary>
+        /// <summary>Último rapport Estado 0 (se habló) de tipo T/V/W. NestoAPI#620: sin los del otro vendedor que lleva al cliente.</summary>
         public DateTime? UltimoContacto { get; set; }
         /// <summary>Último rapport Estado 1 (no contestó) de tipo T/V/W.</summary>
         public DateTime? UltimoIntento { get; set; }

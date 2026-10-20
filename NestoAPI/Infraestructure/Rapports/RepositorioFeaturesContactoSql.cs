@@ -21,7 +21,10 @@ namespace NestoAPI.Infraestructure.Rapports
     /// <list type="bullet">
     /// <item>Clientes = los activos del vendedor (empresa 1, Estado ≥ 0, sin los de
     /// <see cref="RepositorioCarteraContactoSql.ESTADOS_EXCLUIDOS_SQL"/>), materializados en #Clientes con índice;
-    /// todo lo demás se filtra contra ellos (patrón de #401).</item>
+    /// todo lo demás se filtra contra ellos (patrón de #401). NestoAPI#620: «del vendedor» = los de la ficha más los que
+    /// lleva por grupo de producto (<see cref="RepositorioCarteraContactoSql.SQL_ASIGNACION"/>). El historial de cada cliente
+    /// sigue siendo el completo (todos los grupos y todos los rapports), como en el entrenamiento: el modelo predice si
+    /// habrá pedido, no de qué grupo.</item>
     /// <item>Pedidos = días distintos de CabPedidoVta.Fecha con líneas TipoLinea 1, base &gt; 0, NotaEntrega 0 y Estado ≥ -1
     /// (no solo lo facturado), de los últimos 24 meses y anteriores a hoy.</item>
     /// <item>Rapports T/V/W con Estado 0 de 24 meses (tasa de conversión y contactos previos).</item>
@@ -37,11 +40,13 @@ namespace NestoAPI.Infraestructure.Rapports
         internal const string SQL = @"
             SET NOCOUNT ON;
             SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+" + RepositorioCarteraContactoSql.SQL_ASIGNACION + @"
 
             SELECT c.[Nº Cliente] Cliente, c.Contacto
             INTO #Clientes
             FROM Clientes c WITH (NOLOCK)
-            WHERE c.Empresa = '1' AND c.Estado >= 0 AND c.Estado NOT IN (" + RepositorioCarteraContactoSql.ESTADOS_EXCLUIDOS_SQL + @") AND c.Vendedor = @Vendedor;
+            INNER JOIN #Asignacion a ON a.Cliente = c.[Nº Cliente] AND a.Contacto = c.Contacto
+            WHERE c.Empresa = '1' AND c.Estado >= 0 AND c.Estado NOT IN (" + RepositorioCarteraContactoSql.ESTADOS_EXCLUIDOS_SQL + @");
             CREATE CLUSTERED INDEX IX_Clientes ON #Clientes (Cliente, Contacto);
 
             -- 0. Los clientes (también los que no tienen historial)

@@ -10,7 +10,10 @@ namespace NestoAPI.Infraestructure.Rapports
     /// <summary>NestoAPI#603: lo que el motor de sugerencias lee de la BD (todo de solo lectura).</summary>
     public interface IRepositorioCarteraContacto
     {
-        /// <summary>Clientes activos del vendedor con alguna compra en 24 meses, con sus pedidos, importe y últimos contactos.</summary>
+        /// <summary>
+        /// Clientes activos del vendedor (por la ficha o, NestoAPI#620, por grupo de producto) con alguna compra en 24 meses
+        /// (de su grupo, si lo lleva por grupo), con sus pedidos, importe y últimos contactos (sin los rapports del otro vendedor del cliente).
+        /// </summary>
         Task<List<ClienteCarteraContacto>> LeerCartera(string vendedor, DateTime hoy);
         /// <summary>Rapports Estado 0 de tipo T/V/W del vendedor hoy, desde el lunes y desde el día 1.</summary>
         Task<ContactosVendedor> LeerContactos(string vendedor, DateTime hoy);
@@ -34,18 +37,79 @@ namespace NestoAPI.Infraestructure.Rapports
         /// </summary>
         internal const string ESTADOS_EXCLUIDOS_SQL = "7, 67, 95";
 
+        /// <summary>
+        /// NestoAPI#620: a quién lleva el vendedor. Única fuente para la cartera (<see cref="SQL_CARTERA"/>) y para la
+        /// inferencia del modelo (<see cref="RepositorioFeaturesContactoSql"/>).
+        /// <list type="bullet">
+        /// <item><b>#Asignacion</b> (Cliente, Contacto, TodosLosGrupos): los de la ficha (Clientes.Vendedor, TodosLosGrupos = 1)
+        /// más los que lleva por grupo de producto (VendedoresClienteGrupoProducto, el de peluquería; TodosLosGrupos = 0), con
+        /// el Estado de la fila de grupo con el mismo filtro que la ficha (≥ 0 y fuera <see cref="ESTADOS_EXCLUIDOS_SQL"/>).
+        /// Si está en las dos, una sola fila (cliente + contacto) y manda la ficha. El filtro de estado de la FICHA lo aplica
+        /// quien la usa (también a los que vienen por grupo: un cliente anulado no es cartera de nadie).</item>
+        /// <item><b>#GruposCartera</b> (Cliente, Contacto, Grupo): los grupos por los que lleva a los que NO son suyos por la
+        /// ficha. Para ellos solo cuentan las compras de esos grupos (las de peluquería para el de peluquería).</item>
+        /// </list>
+        /// </summary>
+        internal const string SQL_ASIGNACION = @"
+            SELECT a.Cliente, a.Contacto, MAX(a.TodosLosGrupos) TodosLosGrupos
+            INTO #Asignacion
+            FROM (
+                SELECT c.[Nº Cliente] Cliente, c.Contacto, 1 TodosLosGrupos
+                FROM Clientes c WITH (NOLOCK)
+                WHERE c.Empresa = '1' AND c.Vendedor = @Vendedor
+                UNION ALL
+                SELECT v.Cliente, v.Contacto, 0 TodosLosGrupos
+                FROM VendedoresClienteGrupoProducto v WITH (NOLOCK)
+                WHERE v.Empresa = '1' AND v.Vendedor = @Vendedor AND v.Estado >= 0 AND v.Estado NOT IN (" + ESTADOS_EXCLUIDOS_SQL + @")
+            ) a
+            GROUP BY a.Cliente, a.Contacto;
+            CREATE CLUSTERED INDEX IX_Asignacion ON #Asignacion (Cliente, Contacto);
+
+            SELECT DISTINCT v.Cliente, v.Contacto, v.GrupoProducto Grupo
+            INTO #GruposCartera
+            FROM VendedoresClienteGrupoProducto v WITH (NOLOCK)
+            INNER JOIN #Asignacion a ON a.Cliente = v.Cliente AND a.Contacto = v.Contacto AND a.TodosLosGrupos = 0
+            WHERE v.Empresa = '1' AND v.Vendedor = @Vendedor AND v.Estado >= 0 AND v.Estado NOT IN (" + ESTADOS_EXCLUIDOS_SQL + @");";
+
+        /// <summary>
+        /// NestoAPI#620: la línea cuenta para el vendedor si el cliente es suyo por la ficha o si es de uno de los grupos por
+        /// los que lo lleva (x = #Cartera, l = LinPedidoVta).
+        /// </summary>
+        internal const string FILTRO_GRUPO_LINEA = @"(x.TodosLosGrupos = 1 OR EXISTS (SELECT 1 FROM #GruposCartera g
+                    WHERE g.Cliente = x.Cliente AND g.Contacto = x.Contacto AND g.Grupo = l.Grupo))";
+
         internal const string SQL_CARTERA = @"
             SET NOCOUNT ON;
             DECLARE @Hace12Meses date = DATEADD(month, -12, @Hoy);
             DECLARE @Hace24Meses date = DATEADD(month, -@MesesCartera, @Hoy);
             DECLARE @Hace60Dias date = DATEADD(day, -60, @Hoy);
+" + SQL_ASIGNACION + @"
 
             SELECT c.[Nº Cliente] Cliente, c.Contacto, c.Nombre, c.Dirección Direccion, c.CodPostal, c.Población Poblacion,
-                c.Provincia, c.Teléfono Telefono
+                c.Provincia, c.Teléfono Telefono, a.TodosLosGrupos
             INTO #Cartera
             FROM Clientes c WITH (NOLOCK)
-            WHERE c.Empresa = '1' AND c.Estado >= 0 AND c.Estado NOT IN (" + ESTADOS_EXCLUIDOS_SQL + @") AND c.Vendedor = @Vendedor;
+            INNER JOIN #Asignacion a ON a.Cliente = c.[Nº Cliente] AND a.Contacto = c.Contacto
+            WHERE c.Empresa = '1' AND c.Estado >= 0 AND c.Estado NOT IN (" + ESTADOS_EXCLUIDOS_SQL + @");
             CREATE CLUSTERED INDEX IX_Cartera ON #Cartera (Cliente, Contacto);
+
+            -- NestoAPI#620: los OTROS vendedores que llevan hoy al cliente (el de la ficha o el de un grupo, sin el general):
+            -- sus rapports no cuentan como contacto de este vendedor (cada uno, su cadencia). Los de cualquier otro (sin
+            -- vendedor, el general, o alguien que ya no lo lleva) sí cuentan, como antes.
+            SELECT DISTINCT o.Cliente, o.Contacto, o.Vendedor
+            INTO #OtrosVendedores
+            FROM (
+                SELECT c.[Nº Cliente] Cliente, c.Contacto, c.Vendedor
+                FROM Clientes c WITH (NOLOCK)
+                INNER JOIN #Cartera x ON x.Cliente = c.[Nº Cliente] AND x.Contacto = c.Contacto
+                WHERE c.Empresa = '1'
+                UNION ALL
+                SELECT v.Cliente, v.Contacto, v.Vendedor
+                FROM VendedoresClienteGrupoProducto v WITH (NOLOCK)
+                INNER JOIN #Cartera x ON x.Cliente = v.Cliente AND x.Contacto = v.Contacto
+                WHERE v.Empresa = '1'
+            ) o
+            WHERE o.Vendedor IS NOT NULL AND o.Vendedor <> @Vendedor AND o.Vendedor <> '" + Constantes.Vendedores.VENDEDOR_GENERAL + @"';
 
             -- Compras facturadas: un pedido = un Número de pedido con alguna línea facturada, con la fecha del pedido
             -- (CabPedidoVta.Fecha), como #EnCurso. Antes era un día distinto con albarán (no la fecha de factura, que en
@@ -61,6 +125,7 @@ namespace NestoAPI.Infraestructure.Rapports
             INNER JOIN #Cartera x ON x.Cliente = l.[Nº Cliente] AND x.Contacto = l.Contacto
             WHERE l.Empresa = '1' AND l.Estado = 4 AND l.[Base Imponible] > 0 AND l.SubGrupo <> 'MMP'
                 AND l.[Fecha Factura] >= @Hace24Meses AND cab.Fecha >= @Hace24Meses
+                AND " + FILTRO_GRUPO_LINEA + @"
             GROUP BY l.[Nº Cliente], l.Contacto, l.Número, CAST(cab.Fecha AS date);
 
             -- Pedidos todavía sin facturar (pendiente, en curso, albarán): solo cuentan para «pidió hace poco», con la
@@ -72,6 +137,7 @@ namespace NestoAPI.Infraestructure.Rapports
             INNER JOIN #Cartera x ON x.Cliente = l.[Nº Cliente] AND x.Contacto = l.Contacto
             WHERE l.Empresa = '1' AND l.Estado BETWEEN -1 AND 2 AND l.[Base Imponible] > 0 AND l.SubGrupo <> 'MMP'
                 AND cab.Fecha >= @Hace60Dias
+                AND " + FILTRO_GRUPO_LINEA + @"
             GROUP BY l.[Nº Cliente], l.Contacto;
 
             SELECT s.Número Cliente, s.Contacto,
@@ -81,6 +147,8 @@ namespace NestoAPI.Infraestructure.Rapports
             FROM SeguimientoCliente s WITH (NOLOCK)
             INNER JOIN #Cartera x ON x.Cliente = s.Número AND x.Contacto = s.Contacto
             WHERE s.Fecha >= @Hace24Meses AND s.Estado IN (0, 1) AND s.Tipo IN ('T', 'V', 'W')
+                AND NOT EXISTS (SELECT 1 FROM #OtrosVendedores o
+                    WHERE o.Cliente = s.Número AND o.Contacto = s.Contacto AND o.Vendedor = s.Vendedor)
             GROUP BY s.Número, s.Contacto;
 
             SELECT x.Cliente, x.Contacto, x.Nombre, x.Direccion, x.CodPostal, x.Poblacion, x.Provincia, x.Telefono,

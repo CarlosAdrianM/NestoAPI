@@ -11,7 +11,7 @@ namespace NestoAPI.Infraestructure.Rapports
     /// <summary>
     /// NestoAPI#603: la tabla SugerenciasContacto. Se registra UNA vez por vendedor y día (la primera consulta inserta; las
     /// siguientes reutilizan las filas y solo añaden si piden más) y se marca Atendida cuando hay un rapport del cliente
-    /// ese mismo día. Con esto se sabe quién usa la lista y si las sugerencias venden más que las llamadas libres.
+    /// ese mismo día (NestoAPI#620: que no sea del otro vendedor que lleva al cliente). Con esto se sabe quién usa la lista y si las sugerencias venden más que las llamadas libres.
     /// </summary>
     public class RegistroSugerenciasContacto
     {
@@ -90,8 +90,10 @@ namespace NestoAPI.Infraestructure.Rapports
         }
 
         /// <summary>
-        /// Las sugerencias del día de las que ya hay rapport (de cualquier vendedor o usuario: es el cliente el que se
-        /// atendió) pasan a Atendida. Cubre los rapports que no entran por el POST de SeguimientosClientes.
+        /// Las sugerencias del día de las que ya hay rapport pasan a Atendida. Cubre los rapports que no entran por el POST
+        /// de SeguimientosClientes. Vale el rapport de cualquier usuario (es el cliente el que se atendió) salvo, desde
+        /// NestoAPI#620, el del OTRO vendedor que lleva al cliente (<see cref="RapportCuentaPara"/>): si lo llama el de
+        /// estética, la sugerencia del de peluquería sigue pendiente, y al revés.
         /// Devuelve true si ha cambiado alguna (falta guardar).
         /// </summary>
         public async Task<bool> ConciliarAtendidas(IList<SugerenciaContacto> delDia, DateTime dia)
@@ -106,14 +108,23 @@ namespace NestoAPI.Infraestructure.Rapports
             List<string> clientes = pendientes.Select(s => s.Cliente.Trim()).Distinct().ToList();
             var rapports = await db.SeguimientosClientes
                 .Where(r => r.Fecha >= desde && r.Fecha < hasta && clientes.Contains(r.Número))
-                .Select(r => new { r.NºOrden, r.Número, r.Contacto, r.Fecha })
+                .Select(r => new { r.NºOrden, r.Número, r.Contacto, r.Fecha, r.Vendedor })
                 .ToListAsync().ConfigureAwait(false);
+
+            // Los vendedores de la ficha y de grupo solo se leen si algún rapport es de un vendedor distinto del de la sugerencia.
+            List<string> clientesConDuda = pendientes
+                .Where(s => rapports.Any(r => MismoCliente(r.Número, r.Contacto, s) && NecesitaAsignados(s.Vendedor, r.Vendedor)))
+                .Select(s => s.Cliente.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            Dictionary<string, HashSet<string>> asignados = await LeerVendedoresAsignados(clientesConDuda).ConfigureAwait(false);
 
             bool cambios = false;
             foreach (SugerenciaContacto sugerencia in pendientes)
             {
+                ISet<string> delCliente = VendedoresDe(asignados, sugerencia.Cliente, sugerencia.Contacto);
                 var rapport = rapports
-                    .Where(r => r.Número?.Trim() == sugerencia.Cliente.Trim() && r.Contacto?.Trim() == sugerencia.Contacto.Trim())
+                    .Where(r => MismoCliente(r.Número, r.Contacto, sugerencia) && RapportCuentaPara(sugerencia.Vendedor, r.Vendedor, delCliente))
                     .OrderBy(r => r.Fecha)
                     .FirstOrDefault();
                 if (rapport != null)
@@ -155,9 +166,10 @@ namespace NestoAPI.Infraestructure.Rapports
 
         /// <summary>
         /// Al crear un rapport: si el cliente tenía sugerencia ese día sin atender, se marca Atendida con el rapport.
-        /// Guarda. Devuelve cuántas ha marcado.
+        /// NestoAPI#620: con <paramref name="vendedorRapport"/>, no se marcan las sugerencias de los otros vendedores que
+        /// llevan al cliente (<see cref="RapportCuentaPara"/>). Guarda. Devuelve cuántas ha marcado.
         /// </summary>
-        public async Task<int> MarcarAtendidaPorRapport(string cliente, string contacto, DateTime fechaRapport, int rapportId)
+        public async Task<int> MarcarAtendidaPorRapport(string cliente, string contacto, DateTime fechaRapport, int rapportId, string vendedorRapport = null)
         {
             if (string.IsNullOrWhiteSpace(cliente))
             {
@@ -170,6 +182,12 @@ namespace NestoAPI.Infraestructure.Rapports
             List<SugerenciaContacto> filas = await db.SugerenciasContacto
                 .Where(s => s.Cliente == clienteLimpio && s.Contacto == contactoLimpio && s.Fecha >= desde && s.Fecha < hasta && !s.Atendida)
                 .ToListAsync().ConfigureAwait(false);
+            if (filas.Any(f => NecesitaAsignados(f.Vendedor, vendedorRapport)))
+            {
+                Dictionary<string, HashSet<string>> asignados = await LeerVendedoresAsignados(new List<string> { clienteLimpio }).ConfigureAwait(false);
+                ISet<string> delCliente = VendedoresDe(asignados, clienteLimpio, contactoLimpio);
+                filas = filas.Where(f => RapportCuentaPara(f.Vendedor, vendedorRapport, delCliente)).ToList();
+            }
             if (!filas.Any())
             {
                 return 0;
@@ -180,6 +198,71 @@ namespace NestoAPI.Infraestructure.Rapports
             }
             _ = await db.SaveChangesAsync().ConfigureAwait(false);
             return filas.Count;
+        }
+
+        /// <summary>
+        /// NestoAPI#620: un cliente puede estar en la lista de dos vendedores el mismo día (el de la ficha, estética, y el de
+        /// peluquería, VendedoresClienteGrupoProducto); el índice único es por vendedor, así que son dos filas. El rapport
+        /// atiende la sugerencia de <paramref name="vendedorSugerencia"/> salvo que lo haya hecho OTRO de los vendedores que
+        /// llevan hoy al cliente (<paramref name="vendedoresDelCliente"/>): cada uno tiene su cadencia y su lista. El rapport
+        /// sin vendedor (alguien que no lleva al cliente), el del vendedor general o el de alguien que ya no lo lleva sí
+        /// atiende, como antes. Es la misma regla que el último contacto de la cartera (#OtrosVendedores de
+        /// <see cref="RepositorioCarteraContactoSql.SQL_CARTERA"/>).
+        /// </summary>
+        internal static bool RapportCuentaPara(string vendedorSugerencia, string vendedorRapport, ICollection<string> vendedoresDelCliente)
+        {
+            string autor = vendedorRapport?.Trim();
+            if (!NecesitaAsignados(vendedorSugerencia, autor))
+            {
+                return true;
+            }
+            return vendedoresDelCliente == null || !vendedoresDelCliente.Contains(autor, StringComparer.OrdinalIgnoreCase);
+        }
+
+        /// <summary>True si el rapport es de un vendedor concreto (no el general) distinto del de la sugerencia: hay que mirar quién lleva al cliente.</summary>
+        private static bool NecesitaAsignados(string vendedorSugerencia, string vendedorRapport)
+        {
+            string autor = vendedorRapport?.Trim();
+            return !string.IsNullOrEmpty(autor)
+                && !string.Equals(autor, vendedorSugerencia?.Trim(), StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(autor, Constantes.Vendedores.VENDEDOR_GENERAL, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool MismoCliente(string cliente, string contacto, SugerenciaContacto sugerencia)
+            => string.Equals(cliente?.Trim(), sugerencia.Cliente?.Trim(), StringComparison.OrdinalIgnoreCase)
+                && string.Equals(contacto?.Trim(), sugerencia.Contacto?.Trim(), StringComparison.OrdinalIgnoreCase);
+
+        private static ISet<string> VendedoresDe(Dictionary<string, HashSet<string>> asignados, string cliente, string contacto)
+            => asignados.TryGetValue(ClienteCarteraContacto.ClaveDe(cliente, contacto), out HashSet<string> vendedores) ? vendedores : null;
+
+        /// <summary>NestoAPI#620: quién lleva hoy a cada cliente/contacto: el vendedor de la ficha y los de grupo de producto.</summary>
+        private async Task<Dictionary<string, HashSet<string>>> LeerVendedoresAsignados(List<string> clientes)
+        {
+            var resultado = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+            if (clientes == null || !clientes.Any())
+            {
+                return resultado;
+            }
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO;
+            var fichas = await db.Clientes
+                .Where(c => c.Empresa == empresa && clientes.Contains(c.Nº_Cliente))
+                .Select(c => new { Cliente = c.Nº_Cliente, c.Contacto, c.Vendedor })
+                .ToListAsync().ConfigureAwait(false);
+            var porGrupo = await db.VendedoresClientesGruposProductos
+                .Where(v => v.Empresa == empresa && clientes.Contains(v.Cliente))
+                .Select(v => new { v.Cliente, v.Contacto, v.Vendedor })
+                .ToListAsync().ConfigureAwait(false);
+            foreach (var fila in fichas.Concat(porGrupo).Where(f => !string.IsNullOrWhiteSpace(f.Vendedor)))
+            {
+                string clave = ClienteCarteraContacto.ClaveDe(fila.Cliente, fila.Contacto);
+                if (!resultado.TryGetValue(clave, out HashSet<string> vendedores))
+                {
+                    vendedores = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    resultado[clave] = vendedores;
+                }
+                _ = vendedores.Add(fila.Vendedor.Trim());
+            }
+            return resultado;
         }
 
         private static void Marcar(SugerenciaContacto fila, int rapportId, DateTime fechaRapport)
