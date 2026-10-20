@@ -23,8 +23,8 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             {
                 Empresa = "1", Numero = 925347, Cliente = "15191", BaseImponible = 100M, Portes = 0M, Total = 121M
             };
-            r.Lineas.Add(new LineaPedidoClienteResponse { Producto = "38697", Texto = "CHAMPU 1000 ML <Pro>", Cantidad = 2, Total = 60.5M });
-            r.Lineas.Add(new LineaPedidoClienteResponse { Producto = "44707", Texto = "SERUM", Cantidad = 1, Total = 60.5M });
+            r.Lineas.Add(new LineaPedidoClienteResponse { Producto = "38697", Texto = "CHAMPU 1000 ML <Pro>", Cantidad = 2, PrecioUnitario = 25M, BaseImponible = 50M, Total = 60.5M });
+            r.Lineas.Add(new LineaPedidoClienteResponse { Producto = "44707", Texto = "SERUM", Cantidad = 1, PrecioUnitario = 50M, BaseImponible = 50M, Total = 60.5M });
             return r;
         }
 
@@ -104,33 +104,105 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             }
         }
 
-        [TestMethod]
-        public void Generar_CadaLineaEsUnaTarjetaConCantidadPrecioEImporte()
+        private static readonly System.Globalization.CultureInfo ES = System.Globalization.CultureInfo.GetCultureInfo("es-ES");
+
+        private static string Euros(decimal importe) => importe.ToString("C", ES);
+
+        private static decimal ImporteDeLaFila(string html, string concepto)
         {
+            Match fila = Regex.Match(html, $"<tr><td>(<b>)?{Regex.Escape(concepto)}(</b>)?</td><td align=\"right\">(<b>)?(?<importe>[^<]+)(</b>)?</td></tr>");
+            Assert.IsTrue(fila.Success, $"Falta la fila «{concepto}» en el pie");
+            return decimal.Parse(fila.Groups["importe"].Value.Replace("€", string.Empty).Trim(), System.Globalization.NumberStyles.Number, ES);
+        }
+
+        [TestMethod]
+        public void Generar_LaTarjetaVaSinIva_PrecioConDescuentoPorCantidadIgualALaBase()
+        {
+            // NestoAPI#660 (Carlos 20/10/26): «vendemos a profesionales: siempre bases imponibles»
             PedidoClienteResponse r = Respuesta();
             r.Lineas.Clear();
-            r.Lineas.Add(new LineaPedidoClienteResponse { Producto = "38697", Texto = "CHAMPU", Cantidad = 2, Total = 25M });
+            r.Lineas.Add(new LineaPedidoClienteResponse { Producto = "38697", Texto = "CHAMPU", Cantidad = 2, PrecioUnitario = 15M, Descuento = 0.2M, BaseImponible = 24M, Total = 29.04M });
             CorreoConfirmacionPedidoDTO dto = CorreoConfirmacionPedidoCliente.Preparar(r, "cliente@ejemplo.com", false);
 
             (_, string html) = CorreoConfirmacionPedidoCliente.Generar(dto);
 
-            var es = System.Globalization.CultureInfo.GetCultureInfo("es-ES");
-            StringAssert.Contains(html, $"<div>2 × {12.5M.ToString("C", es)} = {25M.ToString("C", es)}</div>");
-            StringAssert.Contains(html, "12,50");
-            StringAssert.Contains(html, "25,00");
+            StringAssert.Contains(html, $"<div>2 × {Euros(12M)} = {Euros(24M)}</div>");
+            Assert.IsFalse(html.Contains("29,04"), "El importe con IVA no sale en la tarjeta");
             Assert.IsFalse(html.Contains("<th"), "Ya no hay cabecera de columnas");
-            Assert.IsFalse(html.Contains("Referencia</th>"));
         }
 
         [TestMethod]
-        public void TextoCantidad_RedondeaElPrecioPorUnidadYSinImportesSoloLaCantidad()
+        public void PrecioNeto_AplicaElDescuentoYRedondeaACentimos()
         {
-            var tres = new LineaCorreoConfirmacionPedidoDTO { Cantidad = 3, Total = 10M };
-            StringAssert.Contains(CorreoConfirmacionPedidoCliente.TextoCantidad(tres, false), "3,33");
-            StringAssert.Contains(CorreoConfirmacionPedidoCliente.TextoCantidad(tres, false), "10,00");
+            Assert.AreEqual(12.50M, CorreoConfirmacionPedidoCliente.PrecioNeto(new LineaPedidoClienteResponse { PrecioUnitario = 12.5M }));
+            Assert.AreEqual(53.98M, CorreoConfirmacionPedidoCliente.PrecioNeto(new LineaPedidoClienteResponse { PrecioUnitario = 63.5M, Descuento = 0.15M }));
+            Assert.AreEqual(0M, CorreoConfirmacionPedidoCliente.PrecioNeto(new LineaPedidoClienteResponse { PrecioUnitario = 9.95M, Descuento = 1M }), "Regalo: 100 %");
+        }
+
+        [TestMethod]
+        public void TextoCantidad_SinImportesSoloLaCantidad()
+        {
+            var tres = new LineaCorreoConfirmacionPedidoDTO { Cantidad = 3, PrecioUnitario = 3.5M, BaseImponible = 10.5M, Total = 12.71M };
+            Assert.AreEqual($"3 × {Euros(3.5M)} = {Euros(10.5M)}", CorreoConfirmacionPedidoCliente.TextoCantidad(tres, false));
             Assert.AreEqual("3 unidades", CorreoConfirmacionPedidoCliente.TextoCantidad(tres, true));
-            Assert.AreEqual("1 unidad", CorreoConfirmacionPedidoCliente.TextoCantidad(new LineaCorreoConfirmacionPedidoDTO { Cantidad = 1, Total = 5M }, true));
-            StringAssert.Contains(CorreoConfirmacionPedidoCliente.TextoCantidad(new LineaCorreoConfirmacionPedidoDTO { Cantidad = 0, Total = 5M }, false), "5,00");
+            Assert.AreEqual("1 unidad", CorreoConfirmacionPedidoCliente.TextoCantidad(new LineaCorreoConfirmacionPedidoDTO { Cantidad = 1, BaseImponible = 5M }, true));
+        }
+
+        [TestMethod]
+        public void Pie_BaseIvaYTotal_CuadranAlCentimoYElTotalEsElDelPedido()
+        {
+            PedidoClienteResponse r = Respuesta();
+            r.BaseImponible = 100.85M;
+            r.Total = 122.03M; // la suma de los totales de línea sin redondear, redondeada: el IVA no es round(base * 21 %)
+            CorreoConfirmacionPedidoDTO dto = CorreoConfirmacionPedidoCliente.Preparar(r, "cliente@ejemplo.com", false);
+
+            (_, string html) = CorreoConfirmacionPedidoCliente.Generar(dto);
+
+            decimal baseImponible = ImporteDeLaFila(html, "Base imponible");
+            decimal iva = ImporteDeLaFila(html, "IVA");
+            decimal total = ImporteDeLaFila(html, "Total");
+            Assert.AreEqual(100.85M, baseImponible);
+            Assert.AreEqual(122.03M, total, "El total sale de donde salía: no cambia, solo se desglosa");
+            Assert.AreEqual(total, baseImponible + iva);
+            Assert.IsFalse(html.Contains("Recargo de equivalencia"), "Sin RE no hay fila de RE");
+            Assert.IsFalse(html.Contains("Gastos de envío"), "Sin portes no hay fila de portes");
+            Assert.IsFalse(html.Contains(">Productos<"));
+        }
+
+        [TestMethod]
+        public void Pie_ConRecargoDeEquivalencia_LoDesglosaYCuadra()
+        {
+            PedidoClienteResponse r = Respuesta();
+            r.BaseImponible = 100M;
+            r.ImporteRecargoEquivalencia = 5.2M;
+            r.Total = 126.2M;
+            CorreoConfirmacionPedidoDTO dto = CorreoConfirmacionPedidoCliente.Preparar(r, "cliente@ejemplo.com", false);
+
+            (_, string html) = CorreoConfirmacionPedidoCliente.Generar(dto);
+
+            Assert.AreEqual(5.2M, ImporteDeLaFila(html, "Recargo de equivalencia"));
+            Assert.AreEqual(21M, ImporteDeLaFila(html, "IVA"));
+            Assert.AreEqual(126.2M, ImporteDeLaFila(html, "Total"));
+            Assert.IsTrue(html.IndexOf(">IVA<", StringComparison.Ordinal) < html.IndexOf("Recargo de equivalencia", StringComparison.Ordinal));
+        }
+
+        [TestMethod]
+        public void Pie_ConPortes_ProductosMasEnvioEsLaBase()
+        {
+            PedidoClienteResponse r = Respuesta();
+            r.Portes = 6.5M;
+            r.BaseImponible = 106.5M;
+            r.Total = 128.87M;
+            CorreoConfirmacionPedidoDTO dto = CorreoConfirmacionPedidoCliente.Preparar(r, "cliente@ejemplo.com", false);
+
+            (_, string html) = CorreoConfirmacionPedidoCliente.Generar(dto);
+
+            decimal productos = ImporteDeLaFila(html, "Productos");
+            Assert.AreEqual(100M, productos, "La suma de las tarjetas (50 + 50)");
+            Assert.AreEqual(dto.Lineas.Sum(l => l.BaseImponible), productos);
+            Assert.AreEqual(106.5M, productos + ImporteDeLaFila(html, "Gastos de envío"));
+            Assert.AreEqual(106.5M, ImporteDeLaFila(html, "Base imponible"));
+            Assert.AreEqual(128.87M, ImporteDeLaFila(html, "Base imponible") + ImporteDeLaFila(html, "IVA"));
         }
 
         [TestMethod]
@@ -142,20 +214,23 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
 
             Assert.IsFalse(html.Contains("€"), "NestoAPI#446: sin precios tampoco por correo");
             Assert.IsFalse(html.Contains("Total"));
+            Assert.IsFalse(html.Contains("Base imponible"), "Ni el pie de importes");
+            Assert.IsFalse(html.Contains("IVA"));
+            Assert.IsFalse(html.Contains("Recargo"));
+            StringAssert.Contains(html, "<div>2 unidades</div>");
             StringAssert.Contains(html, "SERUM");
         }
 
         [TestMethod]
-        public void Generar_ConPortes_LosDesglosa()
+        public void OcultarImportes_TambienTapaElRecargoDeEquivalencia()
         {
             PedidoClienteResponse r = Respuesta();
-            r.Portes = 6.5M;
-            CorreoConfirmacionPedidoDTO dto = CorreoConfirmacionPedidoCliente.Preparar(r, "cliente@ejemplo.com", false);
+            r.ImporteRecargoEquivalencia = 5.2M;
 
-            (_, string html) = CorreoConfirmacionPedidoCliente.Generar(dto);
+            NestoAPI.Infraestructure.Clientes.PoliticaPreciosOcultos.OcultarImportes(r);
 
-            StringAssert.Contains(html, "Gastos de envío");
-            StringAssert.Contains(html, "6,50");
+            Assert.AreEqual(0M, r.ImporteRecargoEquivalencia, "NestoAPI#446: quien no ve precios tampoco ve el RE");
+            Assert.AreEqual(0M, CorreoConfirmacionPedidoCliente.Preparar(r, "cliente@ejemplo.com", true).Lineas[0].PrecioUnitario);
         }
 
         [TestMethod]

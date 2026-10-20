@@ -1611,6 +1611,7 @@ namespace NestoAPI.Controllers
                 PlazosPago = plazosPago,
                 BaseImponible = pedido.BaseImponible,
                 Total = pedido.Total,
+                ImporteRecargoEquivalencia = Infraestructure.RoundingHelper.DosDecimalesRound(pedido.Lineas.Sum(l => l.ImporteRecargoEquivalencia)),
                 // Los portes los ha calculado el servidor y son una línea más de cuenta contable
                 Portes = PortesDelPedido(pedido),
                 RequierePago = !yaCobrado && PoliticaPagoCanal.SeCobraEnElMomento(formaPago, plazosPago)

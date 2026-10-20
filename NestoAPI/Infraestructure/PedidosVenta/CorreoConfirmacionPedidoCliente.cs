@@ -38,6 +38,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         public List<LineaCorreoConfirmacionPedidoDTO> Lineas { get; set; } = new List<LineaCorreoConfirmacionPedidoDTO>();
         public decimal BaseImponible { get; set; }
         public decimal Portes { get; set; }
+        /// <summary>NestoAPI#660: el recargo de equivalencia del pedido (0 si el cliente no lo lleva), para desglosarlo al pie.</summary>
+        public decimal ImporteRecargoEquivalencia { get; set; }
         public decimal Total { get; set; }
         public string SituacionPago { get; set; }
         /// <summary>NestoAPI#446: a quien hace pedidos sin ver los precios tampoco se le cuentan por correo.</summary>
@@ -49,6 +51,14 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         public string Producto { get; set; }
         public string Texto { get; set; }
         public int Cantidad { get; set; }
+        /// <summary>
+        /// NestoAPI#660 (Carlos 20/10/26: «vendemos a profesionales: siempre bases imponibles»): el precio por unidad SIN
+        /// IVA y con el descuento de la línea ya aplicado, para que cantidad × precio cuadre con la base de la línea.
+        /// </summary>
+        public decimal PrecioUnitario { get; set; }
+        /// <summary>NestoAPI#660: el importe de la línea sin IVA (su base imponible), que es lo que sale en la tarjeta.</summary>
+        public decimal BaseImponible { get; set; }
+        /// <summary>El importe de la línea con IVA. Ya no sale en el correo (NestoAPI#660); se queda por los jobs ya encolados.</summary>
         public decimal Total { get; set; }
         /// <summary>
         /// NestoAPI#660: la foto del producto (la de la tienda, la misma que las fichas y Ariadna). La pone el job
@@ -80,15 +90,22 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     Producto = l.Producto,
                     Texto = l.Texto?.Trim(),
                     Cantidad = l.Cantidad,
+                    PrecioUnitario = PrecioNeto(l),
+                    BaseImponible = l.BaseImponible,
                     Total = l.Total
                 }).ToList(),
                 BaseImponible = respuesta.BaseImponible,
                 Portes = respuesta.Portes,
+                ImporteRecargoEquivalencia = respuesta.ImporteRecargoEquivalencia,
                 Total = respuesta.Total,
                 SituacionPago = SituacionPagoDe(respuesta),
                 SinImportes = sinImportes
             };
         }
+
+        /// <summary>NestoAPI#660: el precio por unidad sin IVA con el descuento de la línea aplicado, a céntimos.</summary>
+        internal static decimal PrecioNeto(LineaPedidoClienteResponse linea)
+            => RoundingHelper.DosDecimalesRound(linea.PrecioUnitario * (1 - linea.Descuento));
 
         internal static string SituacionPagoDe(PedidoClienteResponse respuesta)
         {
@@ -127,16 +144,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
             if (!dto.SinImportes)
             {
-                decimal impuestos = dto.Total - dto.BaseImponible;
-                _ = s.AppendLine("<table style=\"margin-top: 12px; margin-left: auto;\" cellpadding=\"4\">");
-                _ = s.AppendLine($"<tr><td>Base imponible</td><td align=\"right\">{Euros(dto.BaseImponible)}</td></tr>");
-                if (dto.Portes > 0)
-                {
-                    _ = s.AppendLine($"<tr><td>Gastos de envío (incluidos en la base)</td><td align=\"right\">{Euros(dto.Portes)}</td></tr>");
-                }
-                _ = s.AppendLine($"<tr><td>IVA</td><td align=\"right\">{Euros(impuestos)}</td></tr>");
-                _ = s.AppendLine($"<tr><td><b>Total</b></td><td align=\"right\"><b>{Euros(dto.Total)}</b></td></tr>");
-                _ = s.AppendLine("</table>");
+                _ = s.AppendLine(Pie(dto));
             }
 
             _ = s.AppendLine($"<p style=\"margin-top: 16px;\">{TextoPago(dto.SituacionPago)}</p>");
@@ -144,6 +152,37 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             _ = s.AppendLine("</div>");
             return (asunto, s.ToString());
         }
+
+        /// <summary>
+        /// NestoAPI#660 (Carlos 20/10/26): al pie, la base imponible y los impuestos encima. La base y el total salen de
+        /// donde salían (los del pedido), así que el total no cambia: solo se desglosa. Con portes, la base se separa en
+        /// productos (la suma de las tarjetas: la base del pedido menos los portes) y gastos de envío. El RE va redondeado
+        /// a céntimos y el IVA es lo que queda hasta el total, para que el pie cuadre al céntimo.
+        /// </summary>
+        internal static string Pie(CorreoConfirmacionPedidoDTO dto)
+        {
+            decimal recargo = RoundingHelper.DosDecimalesRound(dto.ImporteRecargoEquivalencia);
+            decimal iva = dto.Total - dto.BaseImponible - recargo;
+            StringBuilder p = new StringBuilder();
+            _ = p.AppendLine("<table role=\"presentation\" cellpadding=\"4\" cellspacing=\"0\" border=\"0\" style=\"margin-top: 12px; margin-left: auto;\">");
+            if (dto.Portes != 0)
+            {
+                _ = p.AppendLine(FilaPie("Productos", dto.BaseImponible - dto.Portes));
+                _ = p.AppendLine(FilaPie("Gastos de envío", dto.Portes));
+            }
+            _ = p.AppendLine(FilaPie("Base imponible", dto.BaseImponible));
+            _ = p.AppendLine(FilaPie("IVA", iva));
+            if (recargo != 0)
+            {
+                _ = p.AppendLine(FilaPie("Recargo de equivalencia", recargo));
+            }
+            _ = p.AppendLine($"<tr><td><b>Total</b></td><td align=\"right\"><b>{Euros(dto.Total)}</b></td></tr>");
+            _ = p.Append("</table>");
+            return p.ToString();
+        }
+
+        private static string FilaPie(string concepto, decimal importe)
+            => $"<tr><td>{concepto}</td><td align=\"right\">{Euros(importe)}</td></tr>";
 
         /// <summary>
         /// NestoAPI#660: la tarjeta de una línea: la miniatura a la izquierda (si la tiene) y, apilados a la derecha, el
@@ -174,8 +213,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         }
 
         /// <summary>
-        /// «2 × 12,50 € = 25,00 €», con IVA, como el total del correo. El precio por unidad sale del importe de la línea
-        /// (con su descuento), redondeado a céntimos: lo que manda es el importe. Sin importes (NestoAPI#446), solo la cantidad.
+        /// «2 × 12,50 € = 25,00 €», sin IVA (Carlos 20/10/26: a profesionales, siempre bases imponibles): el precio por
+        /// unidad con el descuento aplicado y la base de la línea. Sin importes (NestoAPI#446), solo la cantidad.
         /// </summary>
         internal static string TextoCantidad(LineaCorreoConfirmacionPedidoDTO linea, bool sinImportes)
         {
@@ -183,8 +222,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             {
                 return linea.Cantidad == 1 ? "1 unidad" : $"{linea.Cantidad} unidades";
             }
-            decimal unidad = linea.Cantidad != 0 ? RoundingHelper.DosDecimalesRound(linea.Total / linea.Cantidad) : linea.Total;
-            return $"{linea.Cantidad} × {Euros(unidad)} = {Euros(linea.Total)}";
+            return $"{linea.Cantidad} × {Euros(linea.PrecioUnitario)} = {Euros(linea.BaseImponible)}";
         }
 
         /// <summary>Solo URLs absolutas https (Gmail y Outlook bloquean o avisan con las http, y una relativa no lleva a ningún sitio).</summary>

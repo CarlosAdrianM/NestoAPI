@@ -224,6 +224,12 @@ namespace NestoAPI.Models.PedidosVenta
         public decimal Total { get; set; }
 
         /// <summary>
+        /// NestoAPI#660: el recargo de equivalencia del pedido, a céntimos (0 si el cliente no lo lleva). Va dentro de
+        /// <see cref="Total"/>; está aparte para desglosar los impuestos al pie del correo de confirmación.
+        /// </summary>
+        public decimal ImporteRecargoEquivalencia { get; set; }
+
+        /// <summary>
         /// Portes que ha calculado el servidor (0 si el pedido supera el mínimo). Va aparte para
         /// que la app pueda explicárselo al cliente sin tener que adivinar qué línea son.
         /// </summary>

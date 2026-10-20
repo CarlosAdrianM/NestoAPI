@@ -181,6 +181,7 @@ namespace NestoAPI.Infraestructure.Clientes
             respuesta.BaseImponible = 0;
             respuesta.Total = 0;
             respuesta.Portes = 0;
+            respuesta.ImporteRecargoEquivalencia = 0;
             respuesta.ImportesOcultos = true;
             foreach (LineaPedidoClienteResponse linea in respuesta.Lineas ?? Enumerable.Empty<LineaPedidoClienteResponse>())
             {
