@@ -107,6 +107,13 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         Task<BultoAlmacenDTO> LeerBulto(int id);
         Task<List<BultoAlmacenDTO>> LeerBultos(string empresa, int pedido);
         Task<BultoAlmacenDTO> GuardarBulto(BultoAlmacenDTO bulto, string hashSha256, int tamanoBytes, string dispositivo);
+        /// <summary>
+        /// NestoAPI#646: guarda el bulto de una foto sin pisar el de otra PDA. Si ese número ya lo tiene en la entrega (mismo
+        /// picking, mismo cliente y contacto) otro usuario u otra PDA, y no es la misma caja repetida por esta, se guarda
+        /// con el siguiente libre de la entrega; todo en una transacción con la entrega bloqueada. Devuelve la fila con el
+        /// número real y, si se ha cambiado, en <see cref="BultoAlmacenDTO.OcupadoPor"/> quién lo tenía.
+        /// </summary>
+        Task<BultoAlmacenDTO> GuardarBultoSinPisar(BultoAlmacenDTO bulto, string hashSha256, int tamanoBytes, string dispositivo);
         /// <summary>La salida se terminó en el servidor (PreparacionSalidasTerminadas).</summary>
         Task<bool> SalidaTerminada(string empresa, string tipo, int numero);
         /// <summary>Ariadna: las entregas de los pickings en curso del almacén, con sus bultos (para «Empaquetar»).</summary>
@@ -328,6 +335,40 @@ WHERE Empresa = @p1 AND Pedido = @p2 AND Picking = @p3 AND Bulto = @p4";
 INSERT INTO EnviosAgenciaBultos (IdCliente, Empresa, Pedido, Picking, Bulto, RutaBlob, HashSha256, TamanoBytes, Usuario, Dispositivo, FechaFoto)
 VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10)";
 
+        // NestoAPI#646: dos PDA que cierran «el bulto 2» de la misma entrega ya no se pisan la foto. Los bultos de la
+        // entrega (los del picking de los pedidos del mismo cliente y contacto, que es como los cuenta Agencias) se leen
+        // bloqueados (UPDLOCK + HOLDLOCK: otra subida a la vez de esa entrega espera). «Mío» = mismo usuario y, si las dos
+        // lo dicen, misma PDA. Si esta PDA ya tiene ese bulto en ese pedido, es repetir la foto: se sustituye, como siempre.
+        // Si no, y el número lo tiene otro, va al siguiente libre de la entrega. Mismos parámetros que SQL_ACTUALIZAR_BULTO.
+        internal const string SQL_GUARDAR_BULTO_SIN_PISAR = @"
+SET XACT_ABORT ON;
+BEGIN TRANSACTION;
+DECLARE @cliente varchar(20), @contacto varchar(10);
+SELECT @cliente = [Nº Cliente], @contacto = Contacto FROM CabPedidoVta WHERE Empresa = @p1 AND [Número] = @p2;
+DECLARE @entrega TABLE (Pedido int NOT NULL, Bulto int NOT NULL, Usuario varchar(50) NULL, Dispositivo varchar(50) NULL, Mio bit NOT NULL);
+INSERT INTO @entrega (Pedido, Bulto, Usuario, Dispositivo, Mio)
+SELECT b.Pedido, b.Bulto, RTRIM(b.Usuario), RTRIM(b.Dispositivo),
+       CASE WHEN ISNULL(RTRIM(b.Usuario), '') = ISNULL(@p8, '')
+                 AND (b.Dispositivo IS NULL OR @p9 IS NULL OR RTRIM(b.Dispositivo) = @p9) THEN 1 ELSE 0 END
+FROM EnviosAgenciaBultos b WITH (UPDLOCK, HOLDLOCK)
+WHERE b.Empresa = @p1 AND b.Picking = @p3
+  AND (b.Pedido = @p2 OR b.Pedido IN (SELECT c.[Número] FROM CabPedidoVta c
+                                      WHERE c.Empresa = @p1 AND c.[Nº Cliente] = @cliente AND c.Contacto = @contacto));
+DECLARE @bulto int = @p4, @ocupadoPor varchar(50) = NULL;
+IF NOT EXISTS (SELECT 1 FROM @entrega WHERE Pedido = @p2 AND Bulto = @p4 AND Mio = 1)
+    SELECT TOP 1 @ocupadoPor = ISNULL(Usuario, '') FROM @entrega WHERE Bulto = @p4 AND Mio = 0 ORDER BY Pedido;
+IF @ocupadoPor IS NOT NULL
+    SELECT @bulto = ISNULL(MAX(Bulto), 0) + 1 FROM @entrega;
+UPDATE EnviosAgenciaBultos
+SET IdCliente = @p0, RutaBlob = @p5, HashSha256 = @p6, TamanoBytes = @p7, Usuario = @p8, Dispositivo = @p9,
+    FechaFoto = @p10, FechaRegistro = GETDATE()
+WHERE Empresa = @p1 AND Pedido = @p2 AND Picking = @p3 AND Bulto = @bulto;
+IF @@ROWCOUNT = 0
+    INSERT INTO EnviosAgenciaBultos (IdCliente, Empresa, Pedido, Picking, Bulto, RutaBlob, HashSha256, TamanoBytes, Usuario, Dispositivo, FechaFoto)
+    VALUES (@p0, @p1, @p2, @p3, @bulto, @p5, @p6, @p7, @p8, @p9, @p10);
+COMMIT TRANSACTION;
+SELECT @bulto AS Bulto, @ocupadoPor AS OcupadoPor;";
+
         // Si la tabla aún no existe (script de Ariadna#6 sin lanzar), ninguna salida está terminada
         internal const string SQL_SALIDA_TERMINADA = @"
 IF OBJECT_ID('dbo.PreparacionSalidasTerminadas') IS NULL
@@ -517,22 +558,43 @@ ORDER BY e.Picking DESC, e.Cliente, e.Contacto";
             return baseDeDatos.SqlQuery<BultoAlmacenDTO>(SQL_BULTOS_DEL_PEDIDO, empresa, pedido).ToListAsync();
         }
 
+        /// <summary>Lo que devuelve SQL_GUARDAR_BULTO_SIN_PISAR: el número con el que se ha guardado y quién tenía el pedido.</summary>
+        public class NumeroBultoGuardado
+        {
+            public int Bulto { get; set; }
+            public string OcupadoPor { get; set; }
+        }
+
+        public async Task<BultoAlmacenDTO> GuardarBultoSinPisar(BultoAlmacenDTO bulto, string hashSha256, int tamanoBytes, string dispositivo)
+        {
+            NumeroBultoGuardado numero = await baseDeDatos.SqlQuery<NumeroBultoGuardado>(SQL_GUARDAR_BULTO_SIN_PISAR,
+                ParametrosBulto(bulto, hashSha256, tamanoBytes, dispositivo)).SingleAsync().ConfigureAwait(false);
+            BultoAlmacenDTO guardado = await LeerBultoPorIdCliente(bulto.IdCliente).ConfigureAwait(false);
+            if (guardado != null && numero.Bulto != bulto.Bulto)
+            {
+                guardado.OcupadoPor = string.IsNullOrWhiteSpace(numero.OcupadoPor) ? null : numero.OcupadoPor.Trim();
+            }
+            return guardado;
+        }
+
+        private static object[] ParametrosBulto(BultoAlmacenDTO bulto, string hashSha256, int tamanoBytes, string dispositivo) => new object[]
+        {
+            new SqlParameter("@p0", bulto.IdCliente),
+            new SqlParameter("@p1", bulto.Empresa),
+            new SqlParameter("@p2", bulto.Pedido),
+            new SqlParameter("@p3", bulto.Picking),
+            new SqlParameter("@p4", bulto.Bulto),
+            Texto("@p5", bulto.RutaBlob, 200),
+            Texto("@p6", hashSha256, 64),
+            new SqlParameter("@p7", tamanoBytes),
+            Texto("@p8", bulto.Usuario, 50),
+            Texto("@p9", dispositivo, 50),
+            new SqlParameter("@p10", System.Data.SqlDbType.DateTime) { Value = (object)bulto.FechaFoto ?? DBNull.Value }
+        };
+
         public async Task<BultoAlmacenDTO> GuardarBulto(BultoAlmacenDTO bulto, string hashSha256, int tamanoBytes, string dispositivo)
         {
-            object[] Parametros() => new object[]
-            {
-                new SqlParameter("@p0", bulto.IdCliente),
-                new SqlParameter("@p1", bulto.Empresa),
-                new SqlParameter("@p2", bulto.Pedido),
-                new SqlParameter("@p3", bulto.Picking),
-                new SqlParameter("@p4", bulto.Bulto),
-                Texto("@p5", bulto.RutaBlob, 200),
-                Texto("@p6", hashSha256, 64),
-                new SqlParameter("@p7", tamanoBytes),
-                Texto("@p8", bulto.Usuario, 50),
-                Texto("@p9", dispositivo, 50),
-                new SqlParameter("@p10", System.Data.SqlDbType.DateTime) { Value = (object)bulto.FechaFoto ?? DBNull.Value }
-            };
+            object[] Parametros() => ParametrosBulto(bulto, hashSha256, tamanoBytes, dispositivo);
 
             int actualizadas = await baseDeDatos.ExecuteSqlCommandAsync(SQL_ACTUALIZAR_BULTO, Parametros()).ConfigureAwait(false);
             if (actualizadas == 0)

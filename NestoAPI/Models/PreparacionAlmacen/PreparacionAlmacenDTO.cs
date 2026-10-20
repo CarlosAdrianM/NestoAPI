@@ -396,6 +396,18 @@ namespace NestoAPI.Models.PreparacionAlmacen
         /// <summary>Solo para uso interno: no viaja al cliente.</summary>
         [Newtonsoft.Json.JsonIgnore]
         public string RutaBlob { get; set; }
+
+        // NestoAPI#646: varias PDA empaquetando la misma entrega. Si el número que manda la app ya lo tiene otra PDA u otro
+        // usuario en esa entrega, el servidor le da el siguiente libre: la app tiene que usar Bulto, no el que mandó.
+
+        /// <summary>El servidor ha cambiado el número de bulto que mandó la app (lo tenía otra PDA). Solo al subir la foto.</summary>
+        public bool Renumerado { get; set; }
+        /// <summary>El número que mandó la app, si se ha cambiado. Null si no.</summary>
+        public int? BultoPedido { get; set; }
+        /// <summary>Quién tenía ya ese número (el usuario, sin dominio), si se sabe.</summary>
+        public string OcupadoPor { get; set; }
+        /// <summary>Lo que se le dice al mozo si se ha cambiado: «Esta caja es el bulto 3: el 2 ya lo había cerrado Pedro.». Null si no.</summary>
+        public string AvisoRenumerado { get; set; }
     }
 
     /// <summary>Lo pedido frente a lo leído de un producto.</summary>

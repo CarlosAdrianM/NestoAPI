@@ -444,7 +444,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         public async Task GuardarFotoBulto_SubeLaFotoYGuardaLaFilaConSuRutaYSuHash()
         {
             FotoBultoAlmacen foto = Foto();
-            A.CallTo(() => repositorio.GuardarBulto(A<BultoAlmacenDTO>._, A<string>._, A<int>._, A<string>._))
+            A.CallTo(() => repositorio.GuardarBultoSinPisar(A<BultoAlmacenDTO>._, A<string>._, A<int>._, A<string>._))
                 .ReturnsLazily((BultoAlmacenDTO b, string h, int t, string d) => Task.FromResult(b));
 
             BultoAlmacenDTO guardado = await servicio.GuardarFotoBulto(foto, "Andrey");
@@ -452,7 +452,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             const string rutaEsperada = "1/926940/99633/bulto-1-20260930120000.jpg";
             Assert.AreEqual(rutaEsperada, guardado.RutaBlob);
             A.CallTo(() => fotos.Subir(rutaEsperada, JPEG, "image/jpeg")).MustHaveHappenedOnceExactly();
-            A.CallTo(() => repositorio.GuardarBulto(A<BultoAlmacenDTO>._, ServicioPreparacionAlmacen.HashSha256(JPEG), JPEG.Length, null))
+            A.CallTo(() => repositorio.GuardarBultoSinPisar(A<BultoAlmacenDTO>._, ServicioPreparacionAlmacen.HashSha256(JPEG), JPEG.Length, null))
                 .MustHaveHappenedOnceExactly();
         }
 
@@ -466,6 +466,8 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             var guardados = new List<BultoAlmacenDTO>();
             A.CallTo(() => repositorio.GuardarBulto(A<BultoAlmacenDTO>._, A<string>._, A<int>._, A<string>._))
                 .ReturnsLazily((BultoAlmacenDTO b, string h, int t, string d) => { guardados.Add(b); return Task.FromResult(b); });
+            A.CallTo(() => repositorio.GuardarBultoSinPisar(A<BultoAlmacenDTO>._, A<string>._, A<int>._, A<string>._))
+                .ReturnsLazily((BultoAlmacenDTO b, string h, int t, string d) => { guardados.Add(b); return Task.FromResult(b); });
 
             _ = await servicio.GuardarFotoBulto(foto, "Andrey");
 
@@ -473,6 +475,90 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             CollectionAssert.AreEqual(new[] { PEDIDO, 926941 }, guardados.Select(b => b.Pedido).ToList());
             Assert.AreEqual(guardados[0].RutaBlob, guardados[1].RutaBlob, "La misma foto para los dos");
             Assert.AreNotEqual(guardados[0].IdCliente, guardados[1].IdCliente);
+        }
+
+        [TestMethod]
+        public async Task GuardarFotoBulto_LaMismaPdaRepiteLaFoto_SeQuedaConSuNumeroYSinAviso()
+        {
+            // NestoAPI#646: el servidor guarda con el número que manda la app (la misma PDA sustituye su foto)
+            FotoBultoAlmacen foto = Foto();
+            foto.Bulto = 2;
+            A.CallTo(() => repositorio.GuardarBultoSinPisar(A<BultoAlmacenDTO>._, A<string>._, A<int>._, A<string>._))
+                .ReturnsLazily((BultoAlmacenDTO b, string h, int t, string d) => Task.FromResult(b));
+
+            BultoAlmacenDTO guardado = await servicio.GuardarFotoBulto(foto, "Andrey");
+
+            Assert.AreEqual(2, guardado.Bulto);
+            Assert.IsFalse(guardado.Renumerado);
+            Assert.IsNull(guardado.BultoPedido);
+            Assert.IsNull(guardado.AvisoRenumerado);
+        }
+
+        [TestMethod]
+        public async Task GuardarFotoBulto_OtraPdaYaTieneEseNumero_SeGuardaConElSiguienteYSeDiceQuienLoTenia()
+        {
+            // NestoAPI#646: Andrey y Pedro empaquetan la misma entrega y los dos cierran «el bulto 2»
+            FotoBultoAlmacen foto = Foto();
+            foto.Bulto = 2;
+            foto.Dispositivo = "PDA-2";
+            A.CallTo(() => repositorio.GuardarBultoSinPisar(A<BultoAlmacenDTO>.That.Matches(b => b.Bulto == 2 && b.Usuario == "Andrey"),
+                    A<string>._, A<int>._, "PDA-2"))
+                .ReturnsLazily((BultoAlmacenDTO b, string h, int t, string d) =>
+                    Task.FromResult(new BultoAlmacenDTO { Id = 9, IdCliente = b.IdCliente, Pedido = b.Pedido, Picking = b.Picking, Bulto = 3, OcupadoPor = "NUEVAVISION\\Pedro" }));
+
+            BultoAlmacenDTO guardado = await servicio.GuardarFotoBulto(foto, "Andrey");
+
+            Assert.AreEqual(3, guardado.Bulto, "El número que se ha quedado la caja");
+            Assert.IsTrue(guardado.Renumerado);
+            Assert.AreEqual(2, guardado.BultoPedido);
+            Assert.AreEqual("Pedro", guardado.OcupadoPor, "Sin el dominio");
+            Assert.AreEqual("Esta caja es el bulto 3: el 2 ya lo había cerrado Pedro.", guardado.AvisoRenumerado);
+        }
+
+        [TestMethod]
+        public async Task GuardarFotoBulto_CajaCompartidaRenumerada_ElOtroPedidoVaConElNumeroBueno()
+        {
+            FotoBultoAlmacen foto = Foto();
+            foto.Bulto = 2;
+            foto.OtrosPedidos = new List<int> { 926941 };
+            A.CallTo(() => repositorio.ExistePedidoEnPicking(EMPRESA, 926941, PICKING)).Returns(true);
+            A.CallTo(() => repositorio.GuardarBultoSinPisar(A<BultoAlmacenDTO>._, A<string>._, A<int>._, A<string>._))
+                .ReturnsLazily((BultoAlmacenDTO b, string h, int t, string d) =>
+                    Task.FromResult(new BultoAlmacenDTO { IdCliente = b.IdCliente, Pedido = b.Pedido, Picking = b.Picking, Bulto = 4, RutaBlob = b.RutaBlob }));
+
+            BultoAlmacenDTO guardado = await servicio.GuardarFotoBulto(foto, "Andrey");
+
+            Assert.AreEqual(4, guardado.Bulto);
+            A.CallTo(() => repositorio.GuardarBulto(A<BultoAlmacenDTO>.That.Matches(b => b.Pedido == 926941 && b.Bulto == 4),
+                A<string>._, A<int>._, A<string>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task GuardarFotoBulto_ReenvioDeUnaFotoQueSeRenumero_DevuelveElNumeroBuenoSinVolverASubir()
+        {
+            // La cola reenvía la foto (se cortó la red al volver la respuesta): el IdCliente ya está, con el número real
+            FotoBultoAlmacen foto = Foto();
+            foto.Bulto = 2;
+            A.CallTo(() => repositorio.LeerBultoPorIdCliente(foto.IdCliente)).Returns(new BultoAlmacenDTO { Id = 7, IdCliente = foto.IdCliente, Bulto = 3 });
+
+            BultoAlmacenDTO guardado = await servicio.GuardarFotoBulto(foto, "Andrey");
+
+            Assert.AreEqual(3, guardado.Bulto);
+            Assert.IsTrue(guardado.Renumerado);
+            Assert.AreEqual("Esta caja es el bulto 3: el 2 ya estaba cerrado en otra PDA.", guardado.AvisoRenumerado);
+            A.CallTo(() => fotos.Subir(A<string>._, A<byte[]>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => repositorio.GuardarBultoSinPisar(A<BultoAlmacenDTO>._, A<string>._, A<int>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void SqlGuardarBultoSinPisar_BloqueaLaEntregaYSoloRenumeraSiElNumeroEsDeOtro()
+        {
+            string sql = RepositorioPreparacionAlmacen.SQL_GUARDAR_BULTO_SIN_PISAR;
+            StringAssert.Contains(sql, "WITH (UPDLOCK, HOLDLOCK)", "Otra subida a la vez de la misma entrega espera");
+            StringAssert.Contains(sql, "BEGIN TRANSACTION");
+            StringAssert.Contains(sql, "c.[Nº Cliente] = @cliente AND c.Contacto = @contacto", "La entrega es la de Agencias: cliente y contacto");
+            StringAssert.Contains(sql, "Pedido = @p2 AND Bulto = @p4 AND Mio = 1", "La misma PDA repitiendo su caja sustituye");
+            StringAssert.Contains(sql, "MAX(Bulto), 0) + 1", "Si no, el siguiente libre de la entrega");
         }
 
         [TestMethod]
@@ -533,6 +619,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             _ = await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => servicio.GuardarFotoBulto(Foto(), "Andrey"));
 
             A.CallTo(() => repositorio.GuardarBulto(A<BultoAlmacenDTO>._, A<string>._, A<int>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => repositorio.GuardarBultoSinPisar(A<BultoAlmacenDTO>._, A<string>._, A<int>._, A<string>._)).MustNotHaveHappened();
         }
 
         [TestMethod]
@@ -557,6 +644,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
 
             Assert.AreEqual(System.Net.HttpStatusCode.ServiceUnavailable, ex.StatusCode);
             A.CallTo(() => repositorio.GuardarBulto(A<BultoAlmacenDTO>._, A<string>._, A<int>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => repositorio.GuardarBultoSinPisar(A<BultoAlmacenDTO>._, A<string>._, A<int>._, A<string>._)).MustNotHaveHappened();
         }
 
         [TestMethod]

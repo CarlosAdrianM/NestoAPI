@@ -621,7 +621,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 // Primero la foto y después la fila: una fila sin foto diría que hay evidencia que no existe
                 await fotos.Subir(ruta, foto.Imagen, "image/jpeg").ConfigureAwait(false);
 
-                principal = await repositorio.GuardarBulto(new BultoAlmacenDTO
+                // NestoAPI#646: si otra PDA ya ha cerrado ese número en la entrega, el siguiente libre (no se pisa su foto)
+                principal = await repositorio.GuardarBultoSinPisar(new BultoAlmacenDTO
                 {
                     IdCliente = foto.IdCliente,
                     Empresa = foto.Empresa,
@@ -633,6 +634,9 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     FechaFoto = fechaFoto
                 }, hash, foto.Imagen.Length, foto.Dispositivo).ConfigureAwait(false);
             }
+            ExplicarRenumerado(principal, foto.Bulto);
+            // Los otros pedidos de la caja van con el número que se ha quedado la caja, no con el que mandó la app
+            int numeroDeLaCaja = principal?.Bulto > 0 ? principal.Bulto : foto.Bulto;
 
             // Los demás pedidos de la caja: la misma foto, cada uno con su fila. También en un reenvío,
             // por si la primera vez se quedó a medias.
@@ -649,7 +653,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     Empresa = foto.Empresa,
                     Pedido = pedido,
                     Picking = foto.Picking,
-                    Bulto = foto.Bulto,
+                    Bulto = numeroDeLaCaja,
                     RutaBlob = principal?.RutaBlob,
                     Usuario = usuarioAuditoria,
                     FechaFoto = principal?.FechaFoto
@@ -657,6 +661,36 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             }
 
             return ConEnlacePublico(principal);
+        }
+
+        /// <summary>
+        /// NestoAPI#646: si el bulto se ha guardado con otro número que el que mandó la app (otra PDA ya tenía ese en la
+        /// entrega), lo dice para que la app siga con el bueno. También en un reenvío de la cola: la fila ya tiene el número real.
+        /// </summary>
+        internal static void ExplicarRenumerado(BultoAlmacenDTO bulto, int pedido)
+        {
+            if (bulto == null || bulto.Bulto <= 0 || bulto.Bulto == pedido)
+            {
+                return;
+            }
+            bulto.Renumerado = true;
+            bulto.BultoPedido = pedido;
+            bulto.OcupadoPor = SinDominio(bulto.OcupadoPor);
+            bulto.AvisoRenumerado = string.IsNullOrEmpty(bulto.OcupadoPor)
+                ? $"Esta caja es el bulto {bulto.Bulto}: el {pedido} ya estaba cerrado en otra PDA."
+                : $"Esta caja es el bulto {bulto.Bulto}: el {pedido} ya lo había cerrado {bulto.OcupadoPor}.";
+        }
+
+        /// <summary>«NUEVAVISION\Pedro» → «Pedro». Null si no hay nadie.</summary>
+        internal static string SinDominio(string usuario)
+        {
+            string limpio = usuario?.Trim();
+            if (string.IsNullOrEmpty(limpio))
+            {
+                return null;
+            }
+            int barra = limpio.LastIndexOf('\\');
+            return barra >= 0 && barra < limpio.Length - 1 ? limpio.Substring(barra + 1) : limpio;
         }
 
         /// <summary>
