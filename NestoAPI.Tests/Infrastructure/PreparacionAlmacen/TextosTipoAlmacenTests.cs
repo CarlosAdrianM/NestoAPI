@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.PreparacionAlmacen;
 using NestoAPI.Models.PreparacionAlmacen;
@@ -364,7 +364,8 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             {
                 Destino = "PROV", NombreDestino = "Proveedor 65", Lineas = new List<LineaPickingAlmacenDTO> { Linea("A", 1) }
             });
-            public Task<ResultadoTerminarSalidaDTO> Terminar(string empresa, int numero, EstadoPickingDTO estado, IPrincipal usuario, ITransaccionSalida tx) =>
+            public Task<ResultadoTerminarSalidaDTO> Terminar(string empresa, int numero, EstadoPickingDTO estado, List<FaltaSalida> faltas, IPrincipal usuario,
+                ITransaccionSalida tx) =>
                 throw new NotImplementedException();
             public Task<FotoSalida> PrepararFoto(ITransaccionSalida tx, string empresa, int numero) => throw new NotImplementedException();
         }

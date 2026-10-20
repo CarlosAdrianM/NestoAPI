@@ -153,9 +153,11 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         Task<RecorridoSalida> LeerRecorrido(string empresa, int numero);
         /// <summary>
         /// Lo que hace este tipo al terminar, con la salida ya validada por el núcleo (todo resuelto), escribiendo solo en
-        /// <paramref name="tx"/>: el núcleo decide si se guarda o se deshace (ensayo).
+        /// <paramref name="tx"/>: el núcleo decide si se guarda o se deshace (ensayo). <paramref name="faltas"/> son las que
+        /// hay que quitar, ya leídas y agrupadas por el núcleo (y recortadas si está encendido Salidas.RecortarFaltas).
         /// </summary>
-        Task<ResultadoTerminarSalidaDTO> Terminar(string empresa, int numero, EstadoPickingDTO estado, IPrincipal usuario, ITransaccionSalida tx);
+        Task<ResultadoTerminarSalidaDTO> Terminar(string empresa, int numero, EstadoPickingDTO estado, List<FaltaSalida> faltas, IPrincipal usuario,
+            ITransaccionSalida tx);
         /// <summary>Para el ensayo: cómo leer las filas que este tipo toca al terminar (se llama antes y después).</summary>
         Task<FotoSalida> PrepararFoto(ITransaccionSalida tx, string empresa, int numero);
     }
@@ -184,16 +186,31 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         private readonly IRepositorioAnulacionLecturas anulaciones;
         /// <summary>NestoAPI#641: las calles de cada almacén. Null: el orden de siempre.</summary>
         private readonly ILectorOrdenRecorrido ordenRecorrido;
+        /// <summary>NestoAPI#646: si al terminar se quitan solo las faltas que de verdad quedan sin leer (ver <see cref="CLAVE_RECORTAR_FALTAS"/>).</summary>
+        private readonly Func<bool> recortarFaltas;
+
+        /// <summary>
+        /// NestoAPI#646 (appSetting, apagado al publicar): con varias PDA en la misma salida, las faltas se suman entre todas y
+        /// lo que una da por falta y otra ya ha cogido se quitaba igual. Encendido («true»), al terminar se quita de cada
+        /// producto solo lo que de verdad queda sin leer (<see cref="PlanificadorFaltasSalida.RecortarFaltas"/>) y se
+        /// explica en Cambios. Apagado, como siempre; el ensayo dice entonces en Cambios lo que se quitaría encendido.
+        /// </summary>
+        public const string CLAVE_RECORTAR_FALTAS = "Salidas.RecortarFaltas";
 
         public ServicioSalidas(IEnumerable<IOrigenSalida> origenes, IRepositorioSalidas escrituras = null, IRepositorioAnulacionLecturas anulaciones = null,
-            ILectorOrdenRecorrido ordenRecorrido = null)
+            ILectorOrdenRecorrido ordenRecorrido = null, Func<bool> recortarFaltas = null)
         {
             this.origenes = (origenes ?? Enumerable.Empty<IOrigenSalida>())
                 .ToDictionary(o => o.Tipo.Trim().ToUpperInvariant(), o => o);
             this.escrituras = escrituras;
             this.anulaciones = anulaciones;
             this.ordenRecorrido = ordenRecorrido;
+            this.recortarFaltas = recortarFaltas ?? RecortarFaltasSegunConfiguracion;
         }
+
+        /// <summary>El interruptor del Web.config: solo «true» lo enciende.</summary>
+        internal static bool RecortarFaltasSegunConfiguracion() =>
+            string.Equals(System.Configuration.ConfigurationManager.AppSettings[CLAVE_RECORTAR_FALTAS]?.Trim(), "true", StringComparison.OrdinalIgnoreCase);
 
         private IOrigenSalida Origen(string tipo)
         {
@@ -332,7 +349,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 Estado = EstadoTerminarSalida.Terminada,
                 Salida = ensayo
                     ? await Ensayar(origen, empresa, numero, estado, usuario).ConfigureAwait(false)
-                    : await escrituras.EnTransaccion(tx => TerminarYApuntar(origen, empresa, numero, estado, usuario, tx), false).ConfigureAwait(false)
+                    : await escrituras.EnTransaccion(tx => TerminarYApuntar(origen, empresa, numero, estado, usuario, tx, false), false).ConfigureAwait(false)
             };
         }
 
@@ -340,18 +357,73 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// Lo que hace el tipo al terminar y, en la misma transacción, la marca de terminada (Ariadna#6). Si ya estaba
         /// terminada no se hace nada más: repetirlo quitaría otra vez las faltas, ahora de lo que sí se ha cogido (Ariadna
         /// termina antes de empaquetar, y el picking pudo terminarse en otra PDA o en otra sesión).
+        /// Las faltas las lee aquí el núcleo, igual para todos los tipos (netas de sus «deshacer», por producto y hueco) y,
+        /// con <see cref="CLAVE_RECORTAR_FALTAS"/> encendido, recortadas a lo que de verdad queda sin leer (NestoAPI#646).
         /// </summary>
-        private static async Task<ResultadoTerminarSalidaDTO> TerminarYApuntar(IOrigenSalida origen, string empresa, int numero, EstadoPickingDTO estado,
-            IPrincipal usuario, ITransaccionSalida tx)
+        private async Task<ResultadoTerminarSalidaDTO> TerminarYApuntar(IOrigenSalida origen, string empresa, int numero, EstadoPickingDTO estado,
+            IPrincipal usuario, ITransaccionSalida tx, bool ensayo)
         {
             if (await tx.EstaTerminada(empresa, origen.Tipo, numero).ConfigureAwait(false))
             {
                 string documento = Texto(TextosDe(origen), t => t.YaEstabaTerminada(origen.Tipo, numero));
                 return Resumen(origen.Tipo, numero, estado, $"{documento}: no se ha vuelto a tocar nada.");
             }
-            ResultadoTerminarSalidaDTO hecho = await origen.Terminar(empresa, numero, estado, usuario, tx).ConfigureAwait(false);
+            List<FaltaSalida> netas = PlanificadorFaltasSalida.AgruparFaltas(await tx.LeerFaltas(empresa, origen.Tipo, numero).ConfigureAwait(false));
+            ResultadoRecorteFaltas recorte = PlanificadorFaltasSalida.RecortarFaltas(netas, estado.Productos);
+            bool recortar = recortarFaltas();
+            var explicaciones = new List<string>();
+            if (recortar)
+            {
+                AplicarRecorte(estado, recorte);
+                explicaciones.AddRange(recorte.Recortes.Select(ExplicarRecorte));
+            }
+            else if (ensayo)
+            {
+                explicaciones.AddRange(recorte.Recortes.Select(ExplicarRecorteApagado));
+            }
+            ResultadoTerminarSalidaDTO hecho = await origen.Terminar(empresa, numero, estado, recortar ? recorte.Faltas : netas, usuario, tx).ConfigureAwait(false);
+            if (explicaciones.Count > 0 && hecho != null)
+            {
+                hecho.Cambios = explicaciones.Concat(hecho.Cambios ?? Enumerable.Empty<string>()).ToList();
+            }
             await tx.ApuntarTerminada(empresa, origen.Tipo, numero, NombreUsuario(usuario)).ConfigureAwait(false);
             return hecho;
+        }
+
+        /// <summary>NestoAPI#646: con las faltas recortadas, el resumen dice las que de verdad se quitan (y si queda completa).</summary>
+        private static void AplicarRecorte(EstadoPickingDTO estado, ResultadoRecorteFaltas recorte)
+        {
+            if (recorte.Recortes.Count == 0)
+            {
+                return;
+            }
+            foreach (RecorteFalta recortado in recorte.Recortes)
+            {
+                DiferenciaPreparacionDTO producto = estado.Productos
+                    .FirstOrDefault(p => string.Equals(p.Producto?.Trim(), recortado.Producto, StringComparison.OrdinalIgnoreCase));
+                if (producto != null)
+                {
+                    producto.Faltas = recortado.Efectivas;
+                }
+            }
+            estado.Completo = CasadorEscaneos.EstaCompleto(estado.Productos) && estado.Productos.All(p => p.Faltas == 0);
+        }
+
+        /// <summary>NestoAPI#646: por qué se quita menos de lo que se dio por falta («A: se dio 1 unidad por falta, pero…»).</summary>
+        internal static string ExplicarRecorte(RecorteFalta recorte)
+        {
+            string dadas = recorte.Netas == 1 ? "se dio 1 unidad" : $"se dieron {recorte.Netas} unidades";
+            string quita = recorte.Efectivas == 0
+                ? "no se quita nada"
+                : $"solo se quita{(recorte.Efectivas == 1 ? string.Empty : "n")} {Unidades(recorte.Efectivas)}";
+            return $"{recorte.Producto}: {dadas} por falta, pero entre todas las PDA ya se han leído {recorte.Leido} de {recorte.Esperado}: {quita}.";
+        }
+
+        /// <summary>NestoAPI#646: en el ensayo con el interruptor apagado, lo que cambiaría al encenderlo.</summary>
+        internal static string ExplicarRecorteApagado(RecorteFalta recorte)
+        {
+            return $"Con {CLAVE_RECORTAR_FALTAS} encendido, de {recorte.Producto} se quitaría{(recorte.Efectivas == 1 ? string.Empty : "n")} " +
+                $"{Unidades(recorte.Efectivas)} en vez de {Unidades(recorte.Netas)}: entre todas las PDA ya se han leído {recorte.Leido} de {recorte.Esperado}.";
         }
 
         /// <summary>
@@ -430,7 +502,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 {
                     FotoSalida foto = await origen.PrepararFoto(tx, empresa, numero).ConfigureAwait(false);
                     antes = await foto().ConfigureAwait(false);
-                    ResultadoTerminarSalidaDTO hecho = await TerminarYApuntar(origen, empresa, numero, estado, usuario, tx).ConfigureAwait(false);
+                    ResultadoTerminarSalidaDTO hecho = await TerminarYApuntar(origen, empresa, numero, estado, usuario, tx, true).ConfigureAwait(false);
                     despues = await foto().ConfigureAwait(false);
                     return hecho;
                 }, true).ConfigureAwait(false);
@@ -600,9 +672,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             return () => tx.FotoPicking(empresa, pedidos, productos, desde);
         }
 
-        public async Task<ResultadoTerminarSalidaDTO> Terminar(string empresa, int numero, EstadoPickingDTO estado, IPrincipal usuario, ITransaccionSalida tx)
+        public async Task<ResultadoTerminarSalidaDTO> Terminar(string empresa, int numero, EstadoPickingDTO estado, List<FaltaSalida> faltas,
+            IPrincipal usuario, ITransaccionSalida tx)
         {
-            List<FaltaSalida> faltas = PlanificadorFaltasSalida.AgruparFaltas(await tx.LeerFaltas(empresa, Tipo, numero).ConfigureAwait(false));
+            faltas = faltas ?? new List<FaltaSalida>();
             int unidades = faltas.Sum(f => f.Cantidad);
             if (unidades == 0)
             {
@@ -771,7 +844,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             return () => tx.FotoReposicion(empresa, numero, productos, desde);
         }
 
-        public async Task<ResultadoTerminarSalidaDTO> Terminar(string empresa, int numero, EstadoPickingDTO estado, IPrincipal usuario, ITransaccionSalida tx)
+        public async Task<ResultadoTerminarSalidaDTO> Terminar(string empresa, int numero, EstadoPickingDTO estado, List<FaltaSalida> faltas,
+            IPrincipal usuario, ITransaccionSalida tx)
         {
             DiarioSalidaReposicion diario = await tx.DiarioDeSalida(empresa, numero).ConfigureAwait(false);
             if (diario == null)
@@ -779,7 +853,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 throw new NestoBusinessException($"El traspaso {numero} ya no tiene salida pendiente: ¿ya se ha sacado?");
             }
             string nombreUsuario = ServicioSalidas.NombreUsuario(usuario);
-            List<FaltaSalida> faltas = PlanificadorFaltasSalida.AgruparFaltas(await tx.LeerFaltas(empresa, Tipo, numero).ConfigureAwait(false));
+            faltas = faltas ?? new List<FaltaSalida>();
             int unidades = faltas.Sum(f => f.Cantidad);
             var cambios = new List<string>();
             bool saleAlgo = true;

@@ -59,6 +59,25 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public bool Ficticio { get; set; }
     }
 
+    /// <summary>NestoAPI#646: las faltas que de verdad se quitan y, de cada producto recortado, por qué.</summary>
+    public class ResultadoRecorteFaltas
+    {
+        public List<FaltaSalida> Faltas { get; } = new List<FaltaSalida>();
+        public List<RecorteFalta> Recortes { get; } = new List<RecorteFalta>();
+    }
+
+    /// <summary>NestoAPI#646: un producto con menos faltas efectivas que dadas (otra PDA lo había leído).</summary>
+    public class RecorteFalta
+    {
+        public string Producto { get; set; }
+        /// <summary>Las dadas por falta entre todas las PDA (netas de sus «deshacer»).</summary>
+        public int Netas { get; set; }
+        /// <summary>Lo que de verdad queda sin leer: lo que se quita.</summary>
+        public int Efectivas { get; set; }
+        public int Leido { get; set; }
+        public int Esperado { get; set; }
+    }
+
     public class RecorteSalida
     {
         public PiezaSalida Pieza { get; set; }
@@ -124,6 +143,54 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 {
                     resultado.Add(new FaltaSalida { Producto = producto.Key, Hueco = null, Cantidad = total - atribuido });
                 }
+            }
+            return resultado;
+        }
+
+        /// <summary>
+        /// NestoAPI#646 (varias PDA en la misma salida): las faltas se suman entre PDA, así que si B da por falta lo que A ya
+        /// ha cogido, se quitaría aunque vaya en la caja. La falta efectiva de un producto es lo que de verdad queda sin
+        /// leer: min(faltas netas, esperado − leído, nunca menos de 0), con lo leído por TODAS las PDA. Lo que sobra se
+        /// quita primero de lo que no tiene hueco y después de los huecos, del último al primero. Un producto que no está en
+        /// <paramref name="productos"/> se queda como venía. Puro: sin base de datos.
+        /// </summary>
+        public static ResultadoRecorteFaltas RecortarFaltas(IEnumerable<FaltaSalida> faltasNetas, IEnumerable<DiferenciaPreparacionDTO> productos)
+        {
+            Dictionary<string, DiferenciaPreparacionDTO> porProducto = (productos ?? Enumerable.Empty<DiferenciaPreparacionDTO>())
+                .Where(p => !string.IsNullOrWhiteSpace(p?.Producto))
+                .GroupBy(p => p.Producto.Trim(), StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+            var resultado = new ResultadoRecorteFaltas();
+            foreach (IGrouping<string, FaltaSalida> producto in (faltasNetas ?? Enumerable.Empty<FaltaSalida>())
+                .Where(f => !string.IsNullOrWhiteSpace(f.Producto) && f.Cantidad > 0)
+                .GroupBy(f => f.Producto.Trim(), StringComparer.OrdinalIgnoreCase))
+            {
+                List<FaltaSalida> filas = producto.Select(f => new FaltaSalida { Producto = f.Producto, Hueco = f.Hueco, Cantidad = f.Cantidad }).ToList();
+                int netas = filas.Sum(f => f.Cantidad);
+                if (porProducto.TryGetValue(producto.Key, out DiferenciaPreparacionDTO estado))
+                {
+                    int efectivas = Math.Min(netas, Math.Max(0, estado.Esperado - estado.Leido));
+                    if (efectivas < netas)
+                    {
+                        int sobran = netas - efectivas;
+                        foreach (FaltaSalida fila in filas.Where(f => NormalizarHueco(f.Hueco) == null)
+                            .Concat(filas.Where(f => NormalizarHueco(f.Hueco) != null).Reverse()).ToList())
+                        {
+                            int menos = Math.Min(sobran, fila.Cantidad);
+                            fila.Cantidad -= menos;
+                            sobran -= menos;
+                        }
+                        resultado.Recortes.Add(new RecorteFalta
+                        {
+                            Producto = producto.Key,
+                            Netas = netas,
+                            Efectivas = efectivas,
+                            Leido = estado.Leido,
+                            Esperado = estado.Esperado
+                        });
+                    }
+                }
+                resultado.Faltas.AddRange(filas.Where(f => f.Cantidad > 0));
             }
             return resultado;
         }
