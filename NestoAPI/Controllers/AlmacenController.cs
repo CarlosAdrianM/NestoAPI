@@ -37,14 +37,18 @@ namespace NestoAPI.Controllers
         private readonly IFichasProductoAlmacen fichas;
         private readonly IServicioEtiquetasHueco etiquetas;
         private readonly IServicioCambioHuecoPicking cambioHueco;
+        /// <summary>NestoAPI#646: avisar a las demás PDA del documento de que ha cambiado (SignalR). Null: no se avisa.</summary>
+        private readonly Infraestructure.Notificaciones.IAvisosAlmacen avisosAlmacen;
 
         /// <param name="fichas">Familia, subgrupo, tamaño y unidad de cada producto que ve el mozo. Sin él, solo el nombre.</param>
         /// <param name="etiquetas">Imprimir etiquetas de hueco (Nesto y Ariadna).</param>
         /// <param name="cambioHueco">Ariadna#12: coger de otro hueco lo que no estaba en el de la parada.</param>
         public AlmacenController(IServicioPreparacionAlmacen servicio, IServicioUbicacionesAlmacen ubicaciones,
             IServicioRecepcionCompras compras, IServicioRecepcionReposiciones reposiciones, IFichasProductoAlmacen fichas = null,
-            IServicioEtiquetasHueco etiquetas = null, IServicioCambioHuecoPicking cambioHueco = null)
+            IServicioEtiquetasHueco etiquetas = null, IServicioCambioHuecoPicking cambioHueco = null,
+            Infraestructure.Notificaciones.IAvisosAlmacen avisosAlmacen = null)
         {
+            this.avisosAlmacen = avisosAlmacen;
             this.cambioHueco = cambioHueco;
             this.servicio = servicio;
             this.ubicaciones = ubicaciones;
@@ -182,6 +186,10 @@ namespace NestoAPI.Controllers
             switch (resultado.Estado)
             {
                 case EstadoTerminarSalida.Terminada:
+                    if (!ensayo)
+                    {
+                        Avisar(Infraestructure.Notificaciones.AvisosAlmacen.GrupoRecogida(tipo, numero)); // NestoAPI#646
+                    }
                     return Ok(resultado.Salida);
                 case EstadoTerminarSalida.SinPermiso:
                     return Content(HttpStatusCode.Forbidden, resultado.Mensaje);
@@ -230,6 +238,7 @@ namespace NestoAPI.Controllers
             switch (resultado.Estado)
             {
                 case EstadoCambioHueco.Cambiado:
+                    Avisar(Infraestructure.Notificaciones.AvisosAlmacen.GrupoRecogida(CasadorEscaneos.ORIGEN_PICKING, picking)); // NestoAPI#646
                     return Ok(new ResultadoCambiarHuecoDTO { Movidas = resultado.Movidas, Mensaje = resultado.Mensaje });
                 case EstadoCambioHueco.NoSePuede:
                     return Content(HttpStatusCode.Conflict, resultado.Mensaje);
@@ -352,7 +361,45 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest("No ha llegado ningún escaneo.");
             }
-            return Ok(await servicio.GuardarEscaneos(Empresa(empresa), escaneos, Usuario()).ConfigureAwait(false));
+            ResultadoEscaneosAlmacenDTO guardados = await servicio.GuardarEscaneos(Empresa(empresa), escaneos, Usuario()).ConfigureAwait(false);
+            if (guardados?.Guardados > 0)
+            {
+                // NestoAPI#646: a las demás PDA de cada documento tocado, «ha cambiado»
+                foreach (string grupo in GruposDe(escaneos))
+                {
+                    Avisar(grupo);
+                }
+            }
+            return Ok(guardados);
+        }
+
+        /// <summary>NestoAPI#646: el grupo de SignalR de cada documento de un lote de escaneos (recorrido o packing).</summary>
+        internal static List<string> GruposDe(IEnumerable<EscaneoAlmacenDTO> escaneos)
+        {
+            return (escaneos ?? Enumerable.Empty<EscaneoAlmacenDTO>())
+                .Where(e => e != null && CasadorEscaneos.NumeroOrigenDe(e) > 0)
+                .Select(e => string.Equals(e.Fase?.Trim(), CasadorEscaneos.FASE_PACKING, StringComparison.OrdinalIgnoreCase)
+                    ? Infraestructure.Notificaciones.AvisosAlmacen.GrupoPacking(CasadorEscaneos.NumeroOrigenDe(e))
+                    : Infraestructure.Notificaciones.AvisosAlmacen.GrupoRecogida(CasadorEscaneos.TipoOrigenDe(e), CasadorEscaneos.NumeroOrigenDe(e)))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        /// <summary>NestoAPI#646: el aviso nunca rompe la petición (lo que se ha guardado, guardado está).</summary>
+        private void Avisar(string grupo)
+        {
+            if (avisosAlmacen == null || string.IsNullOrWhiteSpace(grupo))
+            {
+                return;
+            }
+            try
+            {
+                avisosAlmacen.HaCambiado(grupo, UsuarioAuditoriaHelper.ParaAuditoria(Usuario()));
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(ex);
+            }
         }
 
         // POST api/Almacen/Escaneos/Corregir?empresa=1   { "IdCliente": "…", "TipoOrigen": "PICK", "NumeroOrigen": 99739, "Producto": "22624",
@@ -374,6 +421,8 @@ namespace NestoAPI.Controllers
             switch (resultado.Estado)
             {
                 case EstadoCorreccionLectura.Corregida:
+                    Avisar(Infraestructure.Notificaciones.AvisosAlmacen.GrupoRecogida(correccion.TipoOrigen, correccion.NumeroOrigen)); // NestoAPI#646
+                    return Ok(resultado.Respuesta);
                 case EstadoCorreccionLectura.Repetida:
                     return Ok(resultado.Respuesta);
                 case EstadoCorreccionLectura.HaCambiado:
@@ -430,6 +479,7 @@ namespace NestoAPI.Controllers
                 Dispositivo = dispositivo
             }, Usuario()).ConfigureAwait(false);
 
+            Avisar(Infraestructure.Notificaciones.AvisosAlmacen.GrupoPacking(picking)); // NestoAPI#646
             return Ok(guardado);
         }
 

@@ -79,7 +79,8 @@ namespace NestoAPI
                 ConfigureOAuthTokenConsumption(app);
 
                 // NestoAPI#536: avisos en tiempo real para Nesto (buzón, Nesto#477). DESPUÉS de la
-                // autenticación JWT, para que el hub vea al usuario del token.
+                // autenticación JWT, para que el hub vea al usuario del token. NestoAPI#646: en la misma ruta, AlmacenHub
+                // (las PDA de Ariadna que comparten recorrido o packing).
                 _ = app.MapSignalR(Infraestructure.Notificaciones.AvisosTiempoReal.RUTA, new Microsoft.AspNet.SignalR.HubConfiguration());
 
                 // Configurar Hangfire para jobs programados
@@ -255,6 +256,8 @@ namespace NestoAPI
             // Ariadna#12: coger de otro hueco lo que no estaba en el de la parada
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioCambioHueco>(_ => Infraestructure.PreparacionAlmacen.RepositorioCambioHuecoSql.ConContextoPropio());
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioCambioHuecoPicking, Infraestructure.PreparacionAlmacen.ServicioCambioHuecoPicking>();
+            // NestoAPI#646: avisos de «ha cambiado» a las demás PDA del mismo documento (SignalR, AlmacenHub)
+            _ = services.AddSingleton<Infraestructure.Notificaciones.IAvisosAlmacen, Infraestructure.Notificaciones.AvisosAlmacenSignalR>();
             // Ariadna#8: el mozo informa de un dato mal de la ficha (foto → Tienda online; lo demás → Compras)
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioAvisosFicha>(_ => Infraestructure.PreparacionAlmacen.RepositorioAvisosFichaSql.ConContextoPropio());
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IAvisadorFichaProducto, Infraestructure.PreparacionAlmacen.AvisadorFichaProducto>();
