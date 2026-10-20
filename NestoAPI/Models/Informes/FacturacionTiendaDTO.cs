@@ -37,17 +37,15 @@ namespace NestoAPI.Models.Informes
         public string Direccion { get; set; }
         public string CodigoPostal { get; set; }
         public string Poblacion { get; set; }
-        /// <summary>Vendedor de la ficha del cliente (estética).</summary>
+        /// <summary>El comercial: el vendedor de la cabecera de la factura (CabFacturaVta.Vendedor), no el de la ficha del cliente.</summary>
         public string Vendedor { get; set; }
         public string NombreVendedor { get; set; }
-        /// <summary>Vendedor de peluquería del cliente (VendedoresClienteGrupoProducto, grupo PEL), si lo tiene.</summary>
-        public string VendedorPeluqueria { get; set; }
-        public string NombreVendedorPeluqueria { get; set; }
         public decimal BaseImponible { get; set; }
         public decimal Total { get; set; }
     }
 
-    /// <summary>NestoAPI#658: lo facturado en la tienda a un cliente (contacto) en el periodo.</summary>
+    /// <summary>NestoAPI#658: lo facturado en la tienda a un cliente (contacto) en el periodo con un comercial (vendedor de la factura):
+    /// un cliente con facturas de dos comerciales sale en dos filas.</summary>
     public class ClienteFacturacionTiendaDTO
     {
         public string Cliente { get; set; }
@@ -58,8 +56,6 @@ namespace NestoAPI.Models.Informes
         public string Poblacion { get; set; }
         public string Vendedor { get; set; }
         public string NombreVendedor { get; set; }
-        public string VendedorPeluqueria { get; set; }
-        public string NombreVendedorPeluqueria { get; set; }
         public int NumeroFacturas { get; set; }
         public decimal BaseImponible { get; set; }
         public decimal Total { get; set; }

@@ -89,7 +89,33 @@ namespace NestoAPI.Tests.Infraestructure.Informes
             StringAssert.Contains(sql, "LinPedidoVta l WITH (NOLOCK)");
             StringAssert.Contains(sql, "CabFacturaVta f WITH (NOLOCK)");
             Assert.IsFalse(sql.ToUpperInvariant().Contains("UPDATE") || sql.ToUpperInvariant().Contains("INSERT") || sql.ToUpperInvariant().Contains("DELETE"));
-            Assert.AreEqual(7, GestorFacturacionTienda.Parametros("REI", DateTime.Today, DateTime.Today).Length);
+            Assert.AreEqual(6, GestorFacturacionTienda.Parametros("REI", DateTime.Today, DateTime.Today).Length);
+        }
+
+        [TestMethod]
+        public void Sql_ElComercialEsElVendedorDeLaCabeceraDeLaFactura()
+        {
+            string sql = GestorFacturacionTienda.SQL_FACTURACION_TIENDA;
+
+            StringAssert.Contains(sql, "RTRIM(f.Vendedor) AS Vendedor");
+            StringAssert.Contains(sql, "v.[Número] = f.Vendedor");
+            Assert.IsFalse(sql.Contains("c.Vendedor"), "Decisión 20/10/26: no el vendedor de la ficha");
+            Assert.IsFalse(sql.Contains("VendedoresClienteGrupoProducto"), "Decisión 20/10/26: no el de peluquería");
+        }
+
+        [TestMethod]
+        public void Construir_UnClienteConFacturasDeDosComerciales_SaleUnaFilaPorComercial()
+        {
+            List<FacturaTiendaDTO> filas = Filas();
+            filas[2].Vendedor = "JE";
+            filas[2].NombreVendedor = "Jesús Ejemplo";
+
+            FacturacionTiendaDTO informe = GestorFacturacionTienda.Construir(filas, "REI", new DateTime(2026, 10, 12), new DateTime(2026, 10, 18));
+
+            Assert.AreEqual(3, informe.Clientes.Count);
+            Assert.AreEqual(2, informe.NumeroClientes, "Los clientes se cuentan una vez aunque salgan con dos comerciales");
+            Assert.AreEqual(300m, informe.Clientes.Single(c => c.Cliente == "15191" && c.Vendedor == "PA").BaseImponible);
+            Assert.AreEqual(-20m, informe.Clientes.Single(c => c.Cliente == "15191" && c.Vendedor == "JE").BaseImponible);
         }
 
         [TestMethod]
@@ -108,7 +134,8 @@ namespace NestoAPI.Tests.Infraestructure.Informes
             Assert.IsTrue(curso.EsCurso);
             Assert.AreEqual("15191", curso.Cliente);
             Assert.AreEqual("Calle Mayor, 1", curso.Direccion);
-            Assert.IsNull(curso.VendedorPeluqueria, "Un vendedor en blanco sale como null");
+            Assert.AreEqual("PA", curso.Vendedor);
+            Assert.IsNull(informe.Facturas.Single(f => f.Factura == "NV2600100").NombreVendedor, "Un nombre en blanco sale como null");
             Assert.IsFalse(informe.Facturas.Single(f => f.Factura == "NV2600100").EsCurso);
         }
 
@@ -166,14 +193,14 @@ namespace NestoAPI.Tests.Infraestructure.Informes
             {
                 Empresa = "1  ", Factura = "NV2600100 ", Fecha = new DateTime(2026, 10, 13), Serie = "NV", Cliente = "24680     ", Contacto = "0  ",
                 Nombre = "Peluquería Ejemplo  ", Direccion = "Avenida Ficticia, 7", CodigoPostal = "28100", Poblacion = "Alcobendas",
-                Vendedor = "JE ", NombreVendedor = "Jesús Ejemplo", VendedorPeluqueria = "PE", NombreVendedorPeluqueria = "Pedro Ejemplo",
+                Vendedor = "JE ", NombreVendedor = "   ",
                 BaseImponible = 150m, Total = 181.5m
             },
             new FacturaTiendaDTO
             {
                 Empresa = "1", Factura = "CV2600010", Fecha = new DateTime(2026, 10, 14), Serie = "CV ", Cliente = "15191", Contacto = "0",
                 Nombre = "Centro Estético Inventado", Direccion = "Calle Mayor, 1 ", CodigoPostal = "28001", Poblacion = "Madrid",
-                Vendedor = "PA", NombreVendedor = "Paloma Ejemplo", VendedorPeluqueria = "   ", BaseImponible = 300m, Total = 363m
+                Vendedor = "PA", NombreVendedor = "Paloma Ejemplo", BaseImponible = 300m, Total = 363m
             },
             new FacturaTiendaDTO
             {

@@ -73,7 +73,7 @@ namespace NestoAPI.Infraestructure.Informes
         private static void HojaFacturas(IXLWorksheet ws, FacturacionTiendaDTO informe)
         {
             string[] columnas = { "Fecha", "Factura", "Serie", "Cliente", "Contacto", "Nombre", "Dirección", "C.P.", "Población",
-                "Comercial", "Comercial peluquería", "Base imponible", "Total" };
+                "Comercial", "Base imponible", "Total" };
             int fila = Cabecera(ws, informe, columnas);
             foreach (FacturaTiendaDTO f in informe.Facturas ?? new List<FacturaTiendaDTO>())
             {
@@ -88,24 +88,23 @@ namespace NestoAPI.Infraestructure.Informes
                 ws.Cell(fila, 8).Value = f.CodigoPostal;
                 ws.Cell(fila, 9).Value = f.Poblacion;
                 ws.Cell(fila, 10).Value = Comercial(f.Vendedor, f.NombreVendedor);
-                ws.Cell(fila, 11).Value = Comercial(f.VendedorPeluqueria, f.NombreVendedorPeluqueria);
-                Importe(ws.Cell(fila, 12), f.BaseImponible);
-                Importe(ws.Cell(fila, 13), f.Total);
+                Importe(ws.Cell(fila, 11), f.BaseImponible);
+                Importe(ws.Cell(fila, 12), f.Total);
                 fila++;
             }
-            Pie(ws, fila, 11, $"Total ({informe.NumeroFacturas} facturas):", informe.TotalBaseImponible, informe.Total);
+            Pie(ws, fila, 10, $"Total ({informe.NumeroFacturas} facturas):", informe.TotalBaseImponible, informe.Total);
             if (informe.TotalBaseImponibleCursos != 0)
             {
-                ws.Cell(fila + 1, 11).Value = "De ello, cursos:";
-                ws.Cell(fila + 1, 11).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
-                Importe(ws.Cell(fila + 1, 12), informe.TotalBaseImponibleCursos);
+                ws.Cell(fila + 1, 10).Value = "De ello, cursos:";
+                ws.Cell(fila + 1, 10).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+                Importe(ws.Cell(fila + 1, 11), informe.TotalBaseImponibleCursos);
             }
             Ajustar(ws, columnas.Length);
         }
 
         private static void HojaClientes(IXLWorksheet ws, FacturacionTiendaDTO informe)
         {
-            string[] columnas = { "Cliente", "Contacto", "Nombre", "Dirección", "C.P.", "Población", "Comercial", "Comercial peluquería",
+            string[] columnas = { "Cliente", "Contacto", "Nombre", "Dirección", "C.P.", "Población", "Comercial",
                 "Facturas", "Base imponible", "Total" };
             int fila = Cabecera(ws, informe, columnas);
             foreach (ClienteFacturacionTiendaDTO c in informe.Clientes ?? new List<ClienteFacturacionTiendaDTO>())
@@ -117,13 +116,12 @@ namespace NestoAPI.Infraestructure.Informes
                 ws.Cell(fila, 5).Value = c.CodigoPostal;
                 ws.Cell(fila, 6).Value = c.Poblacion;
                 ws.Cell(fila, 7).Value = Comercial(c.Vendedor, c.NombreVendedor);
-                ws.Cell(fila, 8).Value = Comercial(c.VendedorPeluqueria, c.NombreVendedorPeluqueria);
-                ws.Cell(fila, 9).Value = c.NumeroFacturas;
-                Importe(ws.Cell(fila, 10), c.BaseImponible);
-                Importe(ws.Cell(fila, 11), c.Total);
+                ws.Cell(fila, 8).Value = c.NumeroFacturas;
+                Importe(ws.Cell(fila, 9), c.BaseImponible);
+                Importe(ws.Cell(fila, 10), c.Total);
                 fila++;
             }
-            Pie(ws, fila, 9, $"Total ({informe.NumeroClientes} clientes):", informe.TotalBaseImponible, informe.Total);
+            Pie(ws, fila, 8, $"Total ({informe.NumeroClientes} clientes):", informe.TotalBaseImponible, informe.Total);
             Ajustar(ws, columnas.Length);
         }
 
