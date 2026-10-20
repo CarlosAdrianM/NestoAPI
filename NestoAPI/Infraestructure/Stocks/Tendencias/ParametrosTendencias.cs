@@ -55,6 +55,27 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         /// <summary>Tasa de recompra (%) por debajo de la cual un nuevo «no repite» (caso ImGolden).</summary>
         public decimal RecompraMinima { get; set; } = 20m;
 
+        /// <summary>
+        /// NestoAPI#678: fase A sin recompra medible todavía (menos de los 90 días que necesita la tasa de recompra: 60 de
+        /// lanzamiento + 30 para volver): tope más corto, porque aún no se sabe si los clientes que lo han probado repetirán.
+        /// </summary>
+        public int TopeDiasFaseASinDatosRecompra { get; set; } = 30;
+
+        /// <summary>
+        /// NestoAPI#678: la velocidad de un nuevo, por días, nunca se divide por menos de estos días. Con 14 (dos semanas, un ciclo
+        /// normal de pedidos), una venta de 1 ud el primer día da 2,2 uds/mes y no 30; y 125 uds en 12 días dan 271,8 uds/mes
+        /// (125 ÷ 14 × 30,44) en vez de 317.
+        /// </summary>
+        public int DiasMinimosVelocidadNuevo { get; set; } = 14;
+
+        /// <summary>
+        /// NestoAPI#678 (Carlos, 20/10/26: «tener en cuenta cualquier caída sin esperar a final de mes»): días de la ventana reciente
+        /// de un nuevo. La ventana es la mitad de la vida del producto como mucho (para que quede historia antes con la que
+        /// comparar) y al menos 7 días; si las ventas de la ventana van por debajo de la velocidad desde el lanzamiento, se usa la
+        /// reciente para el máximo y el mínimo.
+        /// </summary>
+        public int DiasVentanaRecienteNuevos { get; set; } = 14;
+
         /// <summary>Estacionalidad: la familia necesita al menos estas unidades en los 36 meses (si no, ruido).</summary>
         public int UnidadesMinimasFamiliaEstacionalidad { get; set; } = 120;
 
@@ -117,6 +138,9 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             p.TopeDiasFaseA = Entero(leer, nameof(TopeDiasFaseA), p.TopeDiasFaseA);
             p.TopeDiasFaseASinRecompra = Entero(leer, nameof(TopeDiasFaseASinRecompra), p.TopeDiasFaseASinRecompra);
             p.RecompraMinima = Numero(leer, nameof(RecompraMinima), p.RecompraMinima);
+            p.TopeDiasFaseASinDatosRecompra = Entero(leer, nameof(TopeDiasFaseASinDatosRecompra), p.TopeDiasFaseASinDatosRecompra);
+            p.DiasMinimosVelocidadNuevo = Entero(leer, nameof(DiasMinimosVelocidadNuevo), p.DiasMinimosVelocidadNuevo);
+            p.DiasVentanaRecienteNuevos = Entero(leer, nameof(DiasVentanaRecienteNuevos), p.DiasVentanaRecienteNuevos);
             p.UnidadesMinimasFamiliaEstacionalidad = Entero(leer, nameof(UnidadesMinimasFamiliaEstacionalidad), p.UnidadesMinimasFamiliaEstacionalidad);
             p.DiasSeguridadPropios = Entero(leer, nameof(DiasSeguridadPropios), p.DiasSeguridadPropios);
             p.VidaUtilMesesPropios = Entero(leer, nameof(VidaUtilMesesPropios), p.VidaUtilMesesPropios);
@@ -161,6 +185,9 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             yield return (nameof(TopeDiasFaseA), TopeDiasFaseA.ToString(), "Fase A: tope del máximo en días de velocidad");
             yield return (nameof(TopeDiasFaseASinRecompra), TopeDiasFaseASinRecompra.ToString(), "Fase A con recompra baja: tope en días");
             yield return (nameof(RecompraMinima), RecompraMinima.ToString(CultureInfo.InvariantCulture), "Fase A: recompra (%) por debajo de la cual se acorta el tope");
+            yield return (nameof(TopeDiasFaseASinDatosRecompra), TopeDiasFaseASinDatosRecompra.ToString(), "Fase A con menos de 90 días (recompra aún sin medir): tope en días");
+            yield return (nameof(DiasMinimosVelocidadNuevo), DiasMinimosVelocidadNuevo.ToString(), "Fase A: la velocidad por días nunca se divide por menos de estos días");
+            yield return (nameof(DiasVentanaRecienteNuevos), DiasVentanaRecienteNuevos.ToString(), "Fase A: días de la ventana reciente; si sus ventas caen, se usa esa velocidad");
             yield return (nameof(UnidadesMinimasFamiliaEstacionalidad), UnidadesMinimasFamiliaEstacionalidad.ToString(), "Estacionalidad: mínimo de unidades de la familia en 36 meses");
             yield return (nameof(DiasSeguridadPropios), DiasSeguridadPropios.ToString(), "Propios (P): días de seguridad");
             yield return (nameof(VidaUtilMesesPorGrupo), VidaUtilMesesPorGrupo, "Propios (P): vida útil por grupo en meses de venta (tope del máximo); 0 = no caduca: " + TextoVidaUtil());

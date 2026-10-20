@@ -63,11 +63,32 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
 
         /// <summary>Solo se rellena para los que pueden ser fase A: cada venta (cliente y fecha) desde la primera.</summary>
         public List<VentaClienteTendencia> VentasPorCliente { get; set; } = new List<VentaClienteTendencia>();
+
+        /// <summary>
+        /// NestoAPI#678: hasta dónde llegan los datos por días (exclusive, a las 00:00): hoy si el mes de referencia es el último
+        /// cerrado, o el día siguiente al fin del mes de referencia si se calcula un mes pasado (como si fuera el día 1). Null = el
+        /// corte del mes de referencia (sin nada del mes en curso).
+        /// </summary>
+        public DateTime? FechaDatos { get; set; }
+
+        /// <summary>
+        /// NestoAPI#678: venta neta por día (misma definición que <see cref="Ventas"/>) de los que pueden ser fase A, desde 12 meses
+        /// antes del corte hasta <see cref="FechaDatos"/>; incluye los días del mes en curso. Null = no se ha leído (el motor
+        /// calcula la velocidad de los nuevos solo con los meses cerrados, como antes).
+        /// </summary>
+        public List<VentaDiariaTendencia> VentasDiarias { get; set; }
     }
 
     public class VentaClienteTendencia
     {
         public string Cliente { get; set; }
         public DateTime Fecha { get; set; }
+    }
+
+    /// <summary>NestoAPI#678: venta neta de un día (puede ser negativa si ese día hubo más devoluciones que ventas).</summary>
+    public class VentaDiariaTendencia
+    {
+        public DateTime Fecha { get; set; }
+        public int Cantidad { get; set; }
     }
 }

@@ -17,6 +17,9 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
     /// D = venta ponderada × factor ÷ 30 (uds/día); mínimo (punto de pedido) = D × (días en servir + seguridad); máximo =
     /// D × (seguridad + 2 × días en servir), al menos el mínimo más un múltiplo, y nunca más que D × cobertura objetivo.</para>
     /// <para>A: D = velocidad demostrada × factor; máximo = D × tope (45 días, 30 si no hay recompra) + lo pendiente de servir.
+    /// NestoAPI#678: la velocidad va por días hasta hoy (también la de un nuevo de este mes, con la primera venta después del
+    /// corte) y, si las ventas de los últimos días caen, se usa la reciente; con menos de 90 días (recompra sin medir), tope de
+    /// 30 días. Ver <see cref="CalcularVelocidadNuevo"/>.
     /// C: máximo 0-2 (0 sin venta en 12 meses; 1 hasta 6 uds/año; 2 a partir de ahí), mínimo 0 o 1.</para>
     /// <para>NestoAPI#655: P (fabricación propia, familias PRP), sea cual sea la fase: ver <see cref="ProponerPropio"/>.</para>
     /// </summary>
@@ -24,10 +27,14 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
     {
         private static readonly CultureInfo ES = CultureInfo.GetCultureInfo("es-ES");
 
-        /// <summary>Lo que merece fila: con stock, con venta en 24 meses, con pendientes o con compras abiertas.</summary>
+        /// <summary>
+        /// Lo que merece fila: con stock, con venta en 24 meses, con pendientes o con compras abiertas; NestoAPI#678: o con venta en
+        /// los días leídos (un nuevo de este mes que llegó y se vendió después del corte no tiene nada de lo anterior).
+        /// </summary>
         public static bool EsRelevante(DatosProductoTendencia d)
             => d != null && (d.Stock > 0 || CalculadoraSeries.Suma(d.Ventas, DatosProductoTendencia.ULTIMO, 24) > 0
-                || d.UnidadesPendientes > 0 || d.UnidadesPedidoCompraAbierto > 0);
+                || d.UnidadesPendientes > 0 || d.UnidadesPedidoCompraAbierto > 0
+                || (d.VentasDiarias != null && d.VentasDiarias.Sum(v => v.Cantidad) > 0));
 
         public static string Fase(int? mesesEdad, int ventas12, ParametrosTendencias p)
         {
@@ -86,8 +93,14 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             p = p ?? new ParametrosTendencias();
             const int FIN = DatosProductoTendencia.ULTIMO;
             DateTime fechaCorte = mesReferencia.AddMonths(1);
+            DateTime hoy = FechaDatos(d, fechaCorte);
             DateTime? primeraVenta = d.FechaPrimeraVenta.HasValue && d.FechaPrimeraVenta.Value < fechaCorte ? d.FechaPrimeraVenta : null;
-            DateTime? origen = primeraVenta ?? (d.FechaPrimeraEntrada.HasValue && d.FechaPrimeraEntrada.Value < fechaCorte ? d.FechaPrimeraEntrada : null);
+            // NestoAPI#678: la primera venta del mes en curso (después del corte, antes de hoy). Solo da la edad si no hay nada antes
+            // del corte (ni venta ni entrada): uno que llevaba años en el almacén sin venderse no se vuelve nuevo por venderse hoy.
+            DateTime? primeraVentaMesEnCurso = !primeraVenta.HasValue && d.FechaPrimeraVenta.HasValue
+                && d.FechaPrimeraVenta.Value >= fechaCorte && d.FechaPrimeraVenta.Value < hoy ? d.FechaPrimeraVenta : null;
+            DateTime? origen = primeraVenta ?? (d.FechaPrimeraEntrada.HasValue && d.FechaPrimeraEntrada.Value < fechaCorte ? d.FechaPrimeraEntrada : null)
+                ?? primeraVentaMesEnCurso;
 
             int ventas12 = CalculadoraSeries.Suma(d.Ventas, FIN, 12);
             int? mesesEdad = origen.HasValue ? CalculadoraSeries.MesesEntre(origen.Value, fechaCorte) : (int?)null;
@@ -128,10 +141,18 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             r.AniosDesdePico = contexto.AniosDesdePico;
             r.Tendencia = r.Fase == FasesProducto.MADURO ? Tendencia(r.PendienteRelativa, r.RatioTrimestre, contexto, p) : null;
 
-            if (r.Fase == FasesProducto.NUEVO && primeraVenta.HasValue)
+            VelocidadNuevo velocidadNuevo = null;
+            DateTime? lanzamiento = primeraVenta ?? primeraVentaMesEnCurso;
+            if (r.Fase == FasesProducto.NUEVO && lanzamiento.HasValue)
             {
-                r.Velocidad = CalculadoraSeries.Velocidad(d.Ventas, FIN, primeraVenta.Value, fechaCorte);
-                r.TasaRecompra = CalculadoraSeries.TasaRecompra(d.VentasPorCliente, primeraVenta.Value, fechaCorte);
+                if (!primeraVenta.HasValue)
+                {
+                    r.MesesDesdePrimeraVenta = 0; // nuevo de este mes
+                }
+                velocidadNuevo = CalcularVelocidadNuevo(d, lanzamiento.Value, fechaCorte, hoy, p);
+                r.Velocidad = velocidadNuevo.Usada;
+                // NestoAPI#678: con datos por días, la recompra también se mira hasta hoy.
+                r.TasaRecompra = CalculadoraSeries.TasaRecompra(d.VentasPorCliente, lanzamiento.Value, velocidadNuevo.PorDias ? hoy : fechaCorte);
             }
             else if (r.Fase == FasesProducto.NUEVO)
             {
@@ -161,7 +182,7 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             }
             else
             {
-                Proponer(r, d, p);
+                Proponer(r, d, p, velocidadNuevo);
             }
             AvisarLoteGrande(r, p);
 
@@ -189,12 +210,152 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                         vidaUtilMeses = p.VidaUtilMeses(r.Grupo),
                         tope = TopePropios(r.VentaMensualReferencia, p.VidaUtilMeses(r.Grupo))
                     }
-                    : null
+                    : null,
+                // NestoAPI#678: de dónde sale la velocidad de un nuevo (por días hasta hoy y ventana reciente)
+                nuevo = velocidadNuevo == null
+                    ? null
+                    : new
+                    {
+                        lanzamiento = velocidadNuevo.Lanzamiento.ToString("yyyy-MM-dd"),
+                        datosHasta = hoy.ToString("yyyy-MM-dd"),
+                        porDias = velocidadNuevo.PorDias,
+                        delMesEnCurso = velocidadNuevo.DelMesEnCurso,
+                        unidades = velocidadNuevo.Unidades,
+                        dias = velocidadNuevo.EdadDias,
+                        diasContados = velocidadNuevo.DiasContados,
+                        desdeLanzamiento = velocidadNuevo.DesdeLanzamiento,
+                        ventana = velocidadNuevo.Ventana,
+                        unidadesVentana = velocidadNuevo.UnidadesVentana,
+                        reciente = velocidadNuevo.Reciente,
+                        cae = velocidadNuevo.Cae
+                    }
             });
             return r;
         }
 
-        private static void Proponer(ResultadoTendencia r, DatosProductoTendencia d, ParametrosTendencias p)
+        /// <summary>
+        /// NestoAPI#678: hasta dónde llegan los datos (exclusive): <see cref="DatosProductoTendencia.FechaDatos"/>, nunca antes del
+        /// corte del mes de referencia.
+        /// </summary>
+        internal static DateTime FechaDatos(DatosProductoTendencia d, DateTime fechaCorte)
+            => d.FechaDatos.HasValue && d.FechaDatos.Value.Date > fechaCorte ? d.FechaDatos.Value.Date : fechaCorte;
+
+        /// <summary>
+        /// NestoAPI#678: la fecha de los datos de un cálculo hecho en <paramref name="ahora"/> para <paramref name="mesReferencia"/>:
+        /// hoy (a las 00:00, solo días completos) si el mes de referencia es el último cerrado; si es un mes pasado, como si se
+        /// hubiera calculado el día 1 (el corte), para que regenerar un mes antiguo dé lo mismo que el día que se generó.
+        /// </summary>
+        public static DateTime FechaDatos(DateTime mesReferencia, DateTime ahora)
+        {
+            DateTime fechaCorte = new DateTime(mesReferencia.Year, mesReferencia.Month, 1).AddMonths(1);
+            DateTime hoy = ahora.Date;
+            return hoy > fechaCorte && hoy < fechaCorte.AddMonths(1) ? hoy : fechaCorte;
+        }
+
+        /// <summary>
+        /// NestoAPI#678: días desde la primera venta que necesita la tasa de recompra para medirse (los 60 de lanzamiento + 30 para
+        /// volver de <see cref="CalculadoraSeries.TasaRecompra"/>). Antes, el tope del máximo es
+        /// <see cref="ParametrosTendencias.TopeDiasFaseASinDatosRecompra"/>.
+        /// </summary>
+        internal const int DIAS_MEDIR_RECOMPRA = 90;
+
+        /// <summary>NestoAPI#678: de dónde sale la velocidad de un nuevo, en palabras, para la frase de la ficha y del Excel.</summary>
+        internal static string TextoVelocidadNuevo(ResultadoTendencia r, VelocidadNuevo v)
+        {
+            if (v == null || !v.PorDias)
+            {
+                string edad = r.MesesDesdePrimeraVenta.HasValue ? $"{r.MesesDesdePrimeraVenta} meses desde la primera venta" : "aún sin ventas";
+                return $"Nuevo ({edad}): velocidad {Num(r.Velocidad ?? 0m, 1)} uds/mes";
+            }
+            string dias = v.EdadDias == 1 ? "1 día" : $"{v.EdadDias} días";
+            string periodo = v.EdadDias <= 0 ? string.Empty
+                : $" (del {v.Lanzamiento.ToString("dd/MM/yyyy", ES)} al {v.DatosHasta.AddDays(-1).ToString("dd/MM/yyyy", ES)})";
+            string contados = v.DiasContados > v.EdadDias
+                ? $" (se cuentan al menos {v.DiasContados} días, para que el arranque no dispare el máximo)"
+                : string.Empty;
+            string texto = v.DelMesEnCurso
+                ? $"Nuevo de este mes: {Uds(v.Unidades)} en {dias}{periodo} = {Num(v.DesdeLanzamiento, 1)} uds/mes{contados}"
+                : $"Nuevo ({r.MesesDesdePrimeraVenta} meses desde la primera venta): {Uds(v.Unidades)} en {dias}{periodo} = {Num(v.DesdeLanzamiento, 1)} uds/mes{contados}";
+            if (v.Ventana <= 0)
+            {
+                texto += $"; aún es pronto para ver si las ventas caen (se mira a partir de 14 días)";
+            }
+            else if (v.Cae)
+            {
+                texto += $"; las ventas de los últimos {v.Ventana} días han caído a {Num(v.Reciente ?? 0m, 1)} uds/mes ({Uds(v.UnidadesVentana)}): se usa esa velocidad";
+            }
+            else
+            {
+                texto += $"; los últimos {v.Ventana} días van a {Num(v.Reciente ?? 0m, 1)} uds/mes ({Uds(v.UnidadesVentana)}): sin caída";
+            }
+            return texto + $". Velocidad {Num(v.Usada, 1)} uds/mes";
+        }
+
+        private static string Uds(int unidades) => unidades == 1 ? "1 ud" : $"{unidades} uds";
+
+        /// <summary>NestoAPI#678: la velocidad de un nuevo y de dónde sale (para la frase y las entradas).</summary>
+        internal class VelocidadNuevo
+        {
+            public DateTime Lanzamiento { get; set; }
+            /// <summary>Hasta dónde llegan los datos (exclusive).</summary>
+            public DateTime DatosHasta { get; set; }
+            /// <summary>Calculada por días (con <see cref="DatosProductoTendencia.VentasDiarias"/>); si no, por meses cerrados, como antes.</summary>
+            public bool PorDias { get; set; }
+            /// <summary>La primera venta es de después del corte (del mes en curso).</summary>
+            public bool DelMesEnCurso { get; set; }
+            /// <summary>Unidades vendidas desde la primera venta hasta los datos (solo por días).</summary>
+            public int Unidades { get; set; }
+            /// <summary>Días reales desde la primera venta hasta los datos.</summary>
+            public int EdadDias { get; set; }
+            /// <summary>Días por los que se divide (al menos <see cref="ParametrosTendencias.DiasMinimosVelocidadNuevo"/>).</summary>
+            public int DiasContados { get; set; }
+            public decimal DesdeLanzamiento { get; set; }
+            /// <summary>Días de la ventana reciente (0 si el producto es aún demasiado nuevo para comparar).</summary>
+            public int Ventana { get; set; }
+            public int UnidadesVentana { get; set; }
+            public decimal? Reciente { get; set; }
+            /// <summary>La ventana reciente va por debajo de la velocidad desde el lanzamiento: se usa la reciente.</summary>
+            public bool Cae { get; set; }
+            public decimal Usada => Cae && Reciente.HasValue ? Reciente.Value : DesdeLanzamiento;
+        }
+
+        /// <summary>
+        /// NestoAPI#678 (Carlos, 20/10/26: «velocidad hasta hoy […] y que el máximo y el mínimo tengan en cuenta cualquier caída sin
+        /// esperar a final de mes»). Con ventas por días: velocidad desde el lanzamiento = unidades desde la primera venta hasta
+        /// hoy ÷ max(días reales, <see cref="ParametrosTendencias.DiasMinimosVelocidadNuevo"/>) × 30,44; y la ventana reciente
+        /// (<see cref="CalculadoraSeries.DiasVentanaReciente"/>): si su velocidad es menor, se usa esa (la más baja). Sin ventas por
+        /// días (no leídas), por meses cerrados hasta el corte, como antes (<see cref="CalculadoraSeries.Velocidad"/>).
+        /// </summary>
+        internal static VelocidadNuevo CalcularVelocidadNuevo(DatosProductoTendencia d, DateTime lanzamiento, DateTime fechaCorte, DateTime hoy, ParametrosTendencias p)
+        {
+            VelocidadNuevo v = new VelocidadNuevo
+            {
+                Lanzamiento = lanzamiento.Date,
+                DatosHasta = hoy,
+                DelMesEnCurso = lanzamiento >= fechaCorte
+            };
+            if (d.VentasDiarias == null)
+            {
+                v.EdadDias = CalculadoraSeries.DiasEntre(lanzamiento, fechaCorte);
+                v.DesdeLanzamiento = v.DelMesEnCurso ? 0m : CalculadoraSeries.Velocidad(d.Ventas, DatosProductoTendencia.ULTIMO, lanzamiento, fechaCorte);
+                return v;
+            }
+            v.PorDias = true;
+            v.EdadDias = CalculadoraSeries.DiasEntre(lanzamiento, hoy);
+            v.Unidades = CalculadoraSeries.SumaDiaria(d.VentasDiarias, lanzamiento, hoy);
+            v.DiasContados = Math.Max(Math.Max(1, p.DiasMinimosVelocidadNuevo), v.EdadDias);
+            v.DesdeLanzamiento = CalculadoraSeries.VelocidadPorDias(v.Unidades, v.DiasContados);
+            v.Ventana = CalculadoraSeries.DiasVentanaReciente(v.EdadDias, p.DiasVentanaRecienteNuevos);
+            if (v.Ventana > 0)
+            {
+                v.UnidadesVentana = CalculadoraSeries.SumaDiaria(d.VentasDiarias, hoy.AddDays(-v.Ventana), hoy);
+                v.Reciente = CalculadoraSeries.VelocidadPorDias(v.UnidadesVentana, v.Ventana);
+                v.Cae = v.Reciente.Value < v.DesdeLanzamiento;
+            }
+            return v;
+        }
+
+        private static void Proponer(ResultadoTendencia r, DatosProductoTendencia d, ParametrosTendencias p, VelocidadNuevo velocidadNuevo)
         {
             string resumen = Resumen(r, p.DiasRetraso);
             bool hayStock = r.Stock > 0;
@@ -255,24 +416,30 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             else if (r.Fase == FasesProducto.NUEVO)
             {
                 bool sinRecompra = r.TasaRecompra.HasValue && r.TasaRecompra.Value < p.RecompraMinima;
-                int tope = sinRecompra ? p.TopeDiasFaseASinRecompra : p.TopeDiasFaseA;
+                // NestoAPI#678: sin recompra todavía medible (menos de 90 días desde la primera venta, o aún sin vender), prudencia:
+                // no se sabe si los que lo han probado repetirán.
+                bool recompraPorMedir = !r.TasaRecompra.HasValue && (velocidadNuevo == null || velocidadNuevo.EdadDias < DIAS_MEDIR_RECOMPRA);
+                int tope = sinRecompra ? p.TopeDiasFaseASinRecompra : recompraPorMedir ? p.TopeDiasFaseASinDatosRecompra : p.TopeDiasFaseA;
                 decimal diaria = (r.Velocidad ?? 0m) * r.FactorEstacional / 30m;
                 int porVelocidad = (int)Math.Ceiling(diaria * tope);
                 int retrasoMensual = RetrasoMensual(r);
                 int noServido = Math.Max(r.DemandaNoServida, retrasoMensual);
                 maximo = porVelocidad + noServido;
                 minimo = Math.Min(maximo, (int)Math.Ceiling(diaria * (r.DiasEnServir + r.DiasSeguridad)));
-                r.Formula = $"A: velocidad × {tope} días";
-                string edad = r.MesesDesdePrimeraVenta.HasValue ? $"{r.MesesDesdePrimeraVenta} meses desde la primera venta" : "aún sin ventas";
+                r.Formula = velocidadNuevo != null && velocidadNuevo.Cae ? $"A: velocidad reciente × {tope} días"
+                    : velocidadNuevo != null && velocidadNuevo.PorDias ? $"A: velocidad hasta hoy × {tope} días"
+                    : $"A: velocidad × {tope} días";
                 string recompra = r.TasaRecompra.HasValue
                     ? $"recompra {Num(r.TasaRecompra.Value, 0)} %{(sinRecompra ? " (baja: tope " + tope + " días)" : "")}"
+                    : recompraPorMedir
+                    ? $"recompra aún sin datos (menos de {DIAS_MEDIR_RECOMPRA} días: tope {tope} días)"
                     : "recompra aún sin datos";
                 string pendientes = noServido <= 0 ? string.Empty
                     : r.DemandaNoServida >= retrasoMensual
                     ? $" + {r.DemandaNoServida} pendientes de servir (vencidos)"
                     : $" + {retrasoMensual} de retraso al mes ({r.ServidoConRetraso} uds servidas con más de {p.DiasRetraso} días de retraso en {MesesRetraso(r)} meses" +
                         $"{(r.DemandaNoServida > 0 ? $"; pendientes vencidos {r.DemandaNoServida}" : "")})";
-                calculo = $"Nuevo ({edad}): velocidad {Num(r.Velocidad ?? 0m, 1)} uds/mes × {Num(r.FactorEstacional, 2)} estacional; {recompra}; " +
+                calculo = $"{TextoVelocidadNuevo(r, velocidadNuevo)} × {Num(r.FactorEstacional, 2)} estacional; {recompra}; " +
                     $"proveedor {r.DiasEnServir} días{(r.DiasEnServirSupuestos ? " (supuestos)" : "")} + {r.DiasSeguridad} de seguridad; tope {tope} días → " +
                     $"máximo {porVelocidad}{pendientes} = {maximo}, mínimo {minimo}";
             }

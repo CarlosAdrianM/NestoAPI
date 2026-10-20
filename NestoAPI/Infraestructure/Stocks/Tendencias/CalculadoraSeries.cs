@@ -173,6 +173,36 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             return Math.Round(Suma(serie, fin, mesesSerie) / meses, 2);
         }
 
+        /// <summary>Días de un mes medio (los mismos que usan <see cref="MesesEntre"/> y <see cref="Velocidad"/>).</summary>
+        public const decimal DIAS_MES = 30.44m;
+
+        /// <summary>NestoAPI#678: días naturales entre dos fechas (sin la hora); 0 si <paramref name="hasta"/> no es posterior.</summary>
+        public static int DiasEntre(DateTime desde, DateTime hasta)
+            => Math.Max(0, (int)(hasta.Date - desde.Date).TotalDays);
+
+        /// <summary>
+        /// NestoAPI#678: venta neta de los días en [<paramref name="desde"/>, <paramref name="hasta"/>), recortada a 0 (más
+        /// devoluciones que ventas no es venta negativa, como en los meses).
+        /// </summary>
+        public static int SumaDiaria(IEnumerable<VentaDiariaTendencia> ventas, DateTime desde, DateTime hasta)
+            => ventas == null ? 0 : Math.Max(0, ventas.Where(v => v.Fecha >= desde.Date && v.Fecha < hasta.Date).Sum(v => v.Cantidad));
+
+        /// <summary>NestoAPI#678: <paramref name="unidades"/> vendidas en <paramref name="dias"/> días, en uds/mes (× 30,44 ÷ días).</summary>
+        public static decimal VelocidadPorDias(int unidades, int dias)
+            => dias <= 0 || unidades <= 0 ? 0m : Math.Round(unidades * DIAS_MES / dias, 2);
+
+        /// <summary>
+        /// NestoAPI#678: días de la ventana reciente de un nuevo de <paramref name="edadDias"/> días: la mitad de su vida como mucho
+        /// (para que antes quede al menos otro tanto con el que comparar), hasta <paramref name="ventanaMaxima"/>; 0 (no se mira) si
+        /// no llega a 7 días.
+        /// </summary>
+        public static int DiasVentanaReciente(int edadDias, int ventanaMaxima)
+        {
+            const int MINIMO = 7;
+            int ventana = Math.Min(ventanaMaxima, edadDias / 2);
+            return ventana > 0 && ventana >= Math.Min(MINIMO, ventanaMaxima) ? ventana : 0;
+        }
+
         /// <summary>
         /// Tasa de recompra (%): de los clientes que compraron en los primeros <paramref name="diasLanzamiento"/> días desde la
         /// primera venta, cuántos han vuelto a comprar al menos <paramref name="diasRecompra"/> días después de su primera compra.

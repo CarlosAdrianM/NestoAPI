@@ -133,16 +133,33 @@ WHERE l.Producto IN ({0}) AND " + DemandaStock.SQL_FILTRO_DEMANDA + @"
   AND l.[Fecha Albarán] >= @desde AND l.[Fecha Albarán] < @hasta
 GROUP BY RTRIM(l.Producto), YEAR(l.[Fecha Albarán]), MONTH(l.[Fecha Albarán])";
 
+        /// <summary>
+        /// NestoAPI#678: hasta <c>@hoy</c> (y no hasta el corte), para ver la primera venta de un nuevo de este mes. El motor solo la
+        /// usa como edad si antes del corte no había nada (<see cref="MotorTendencias.Calcular"/>).
+        /// </summary>
         internal static readonly string SQL_PRIMERA_VENTA = @"
 SELECT RTRIM(l.Producto) AS Producto, MIN(l.[Fecha Albarán]) AS Fecha
 FROM LinPedidoVta l WITH (NOLOCK)
-WHERE l.Producto IN ({0}) AND " + DemandaStock.SQL_FILTRO_DEMANDA + @" AND l.Cantidad > 0 AND l.[Fecha Albarán] < @hasta
+WHERE l.Producto IN ({0}) AND " + DemandaStock.SQL_FILTRO_DEMANDA + @" AND l.Cantidad > 0 AND l.[Fecha Albarán] < @hoy
 GROUP BY RTRIM(l.Producto)";
 
+        /// <summary>NestoAPI#678: hasta <c>@hoy</c>, como la velocidad de los nuevos (la recompra se mira hasta hoy).</summary>
         internal static readonly string SQL_VENTAS_CLIENTE = @"
 SELECT RTRIM(l.Producto) AS Producto, RTRIM(l.[Nº Cliente]) AS Cliente, l.[Fecha Albarán] AS Fecha
 FROM LinPedidoVta l WITH (NOLOCK)
-WHERE l.Producto IN ({0}) AND " + DemandaStock.SQL_FILTRO_DEMANDA + @" AND l.Cantidad > 0 AND l.[Fecha Albarán] < @hasta";
+WHERE l.Producto IN ({0}) AND " + DemandaStock.SQL_FILTRO_DEMANDA + @" AND l.Cantidad > 0 AND l.[Fecha Albarán] < @hoy";
+
+        /// <summary>
+        /// NestoAPI#678: venta neta por día de los que pueden ser nuevos (los mismos de <see cref="SQL_VENTAS_CLIENTE"/>), desde 12
+        /// meses antes del corte hasta <c>@hoy</c> (a las 00:00: días completos). Agregada por producto y día: como mucho una fila
+        /// por día con venta de cada nuevo.
+        /// </summary>
+        internal static readonly string SQL_VENTAS_DIA = @"
+SELECT RTRIM(l.Producto) AS Producto, CAST(CAST(l.[Fecha Albarán] AS date) AS datetime) AS Fecha, SUM(CAST(l.Cantidad AS int)) AS Cantidad
+FROM LinPedidoVta l WITH (NOLOCK)
+WHERE l.Producto IN ({0}) AND " + DemandaStock.SQL_FILTRO_DEMANDA + @"
+  AND l.[Fecha Albarán] >= @desdeDia AND l.[Fecha Albarán] < @hoy
+GROUP BY RTRIM(l.Producto), CAST(l.[Fecha Albarán] AS date)";
 
         internal static readonly string SQL_STOCK_RESUMEN = @"
 SELECT RTRIM(e.Número) AS Producto,
@@ -213,14 +230,17 @@ WHERE Mes = ISNULL(@mes, (SELECT MAX(Mes) FROM dbo.PropuestasStock WITH (NOLOCK)
 ORDER BY ExcesoValorado DESC, Producto";
 
         private readonly Func<NVEntities> crearContexto;
+        private readonly Func<DateTime> ahora;
 
         public RepositorioTendenciasSql() : this(null)
         {
         }
 
-        internal RepositorioTendenciasSql(Func<NVEntities> crearContexto)
+        /// <param name="ahora">NestoAPI#678: el reloj para saber hasta dónde se leen los días del mes en curso (por defecto, ahora).</param>
+        internal RepositorioTendenciasSql(Func<NVEntities> crearContexto, Func<DateTime> ahora = null)
         {
             this.crearContexto = crearContexto ?? (() => new NVEntities());
+            this.ahora = ahora ?? (() => DateTime.Now);
         }
 
         private NVEntities Contexto()
@@ -315,6 +335,9 @@ ORDER BY ExcesoValorado DESC, Producto";
             }
             DateTime hasta = mesReferencia.AddMonths(1);
             DateTime desde = hasta.AddMonths(-DatosProductoTendencia.MESES_SERIE);
+            // NestoAPI#678: los días del mes en curso, hasta hoy (si el mes de referencia es el último cerrado).
+            DateTime hoy = MotorTendencias.FechaDatos(mesReferencia, ahora());
+            Dictionary<string, object> hastaHoy = new Dictionary<string, object> { ["@hoy"] = hoy };
             // Desde cero: si un lote falló a medias y se reintenta producto a producto, no se duplica nada.
             foreach (DatosProductoTendencia d in lote)
             {
@@ -328,6 +351,8 @@ ORDER BY ExcesoValorado DESC, Producto";
                 d.UnidadesPendientes = 0;
                 d.UnidadesServidasConRetraso = 0;
                 d.UnidadesPedidoCompraAbierto = 0;
+                d.FechaDatos = hoy;
+                d.VentasDiarias = null;
             }
             Dictionary<string, DatosProductoTendencia> porProducto = lote.ToDictionary(d => d.Producto.Trim(), StringComparer.OrdinalIgnoreCase);
             List<string> numeros = porProducto.Keys.ToList();
@@ -343,7 +368,7 @@ ORDER BY ExcesoValorado DESC, Producto";
                     }
                 }
 
-                foreach (FilaFecha f in Consultar<FilaFecha>(db, SQL_PRIMERA_VENTA, numeros, desde, hasta))
+                foreach (FilaFecha f in Consultar<FilaFecha>(db, SQL_PRIMERA_VENTA, numeros, desde, hasta, hastaHoy))
                 {
                     if (porProducto.TryGetValue(f.Producto, out DatosProductoTendencia d))
                     {
@@ -418,11 +443,25 @@ ORDER BY ExcesoValorado DESC, Producto";
                     .ToList();
                 if (nuevos.Count > 0)
                 {
-                    foreach (FilaVentaCliente f in Consultar<FilaVentaCliente>(db, SQL_VENTAS_CLIENTE, nuevos, desde, hasta))
+                    foreach (FilaVentaCliente f in Consultar<FilaVentaCliente>(db, SQL_VENTAS_CLIENTE, nuevos, desde, hasta, hastaHoy))
                     {
                         if (f.Fecha.HasValue && porProducto.TryGetValue(f.Producto, out DatosProductoTendencia d))
                         {
                             d.VentasPorCliente.Add(new VentaClienteTendencia { Cliente = f.Cliente, Fecha = f.Fecha.Value });
+                        }
+                    }
+
+                    // NestoAPI#678: venta por días de los nuevos (velocidad hasta hoy y caída reciente).
+                    foreach (string numero in nuevos)
+                    {
+                        porProducto[numero].VentasDiarias = new List<VentaDiariaTendencia>();
+                    }
+                    Dictionary<string, object> dias = new Dictionary<string, object> { ["@hoy"] = hoy, ["@desdeDia"] = limiteNuevos };
+                    foreach (FilaVentaDia f in Consultar<FilaVentaDia>(db, SQL_VENTAS_DIA, nuevos, desde, hasta, dias))
+                    {
+                        if (f.Fecha.HasValue && porProducto.TryGetValue(f.Producto, out DatosProductoTendencia d))
+                        {
+                            d.VentasDiarias.Add(new VentaDiariaTendencia { Fecha = f.Fecha.Value, Cantidad = f.Cantidad ?? 0 });
                         }
                     }
                 }
@@ -697,6 +736,13 @@ ORDER BY ExcesoValorado DESC, Producto";
         public class FilaCantidad
         {
             public string Producto { get; set; }
+            public int? Cantidad { get; set; }
+        }
+
+        public class FilaVentaDia
+        {
+            public string Producto { get; set; }
+            public DateTime? Fecha { get; set; }
             public int? Cantidad { get; set; }
         }
 
