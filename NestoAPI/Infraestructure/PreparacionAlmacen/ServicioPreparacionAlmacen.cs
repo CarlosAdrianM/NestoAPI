@@ -25,6 +25,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         Task<ResultadoTerminarSalida> TerminarRecogida(string empresa, string tipo, int numero, System.Security.Principal.IPrincipal usuario, bool ensayo = false);
         /// <summary>Ariadna#6: anula todo lo que un mozo ha leído en una salida (solo Admin o Dirección, y sin terminar).</summary>
         Task<ResultadoAnularLecturas> AnularLecturasRecogida(string empresa, string tipo, int numero, string usuarioLecturas, System.Security.Principal.IPrincipal usuario);
+        /// <summary>NestoAPI#646 / Ariadna#41: quita una falta o lo cogido de una parada, solo si sigue como la vio la app.</summary>
+        Task<ResultadoCorreccionLectura> CorregirLectura(string empresa, CorregirEscaneoDTO correccion, System.Security.Principal.IPrincipal usuario);
         Task<PackingAlmacenDTO> LeerPacking(string empresa, int picking);
         /// <summary>Ariadna: los pickings del almacén con alguna entrega sin empaquetar (ver <see cref="PackingPendienteDTO"/>).</summary>
         Task<List<PackingPendienteDTO>> LeerPackingsPendientes(string empresa, string almacen);
@@ -89,7 +91,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         {
             new OrigenSalidaPicking(repositorio),
             new OrigenSalidaReposicion(repositorio)
-        }, escriturasSalida, anulacionesLecturas, ordenRecorrido));
+        }, escriturasSalida, anulacionesLecturas, ordenRecorrido, correcciones: correccionesLecturas));
+
+        /// <summary>NestoAPI#646 / Ariadna#41: dónde se corrige una parada (en las pruebas del servicio, nada).</summary>
+        private readonly IRepositorioCorrecciones correccionesLecturas;
 
         /// <summary>NestoAPI#641: las calles de cada almacén (una lectura por almacén y petición). Null: el orden de siempre.</summary>
         private readonly ILectorOrdenRecorrido ordenRecorrido;
@@ -105,6 +110,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             repositorio = new RepositorioPreparacionAlmacen(dbPropio);
             escriturasSalida = new RepositorioSalidasSql(dbPropio);
             anulacionesLecturas = new RepositorioAnulacionLecturasSql(dbPropio);
+            correccionesLecturas = new RepositorioCorreccionesSql(dbPropio);
             ordenRecorrido = new LectorOrdenRecorridoSql(dbPropio.Database);
             fotos = new AlmacenFotosBultosAzure();
             claveEnlacesFotos = System.Configuration.ConfigurationManager.AppSettings[EnlacePublicoFotoBulto.CLAVE_CONFIGURACION];
@@ -361,6 +367,11 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public Task<ResultadoAnularLecturas> AnularLecturasRecogida(string empresa, string tipo, int numero, string usuarioLecturas, System.Security.Principal.IPrincipal usuario)
         {
             return Salidas.AnularLecturas(empresa, tipo, numero, usuarioLecturas, usuario);
+        }
+
+        public Task<ResultadoCorreccionLectura> CorregirLectura(string empresa, CorregirEscaneoDTO correccion, System.Security.Principal.IPrincipal usuario)
+        {
+            return Salidas.CorregirLectura(empresa, correccion, usuario);
         }
 
         internal static RecogidaAlmacenDTO MontarRecogida(string empresa, string tipo, int numero, string destino,

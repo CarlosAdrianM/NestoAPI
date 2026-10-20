@@ -171,6 +171,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         Task<RecogidaAlmacenDTO> LeerRecogida(string empresa, string tipo, int numero);
         Task<ResultadoTerminarSalida> Terminar(string empresa, string tipo, int numero, IPrincipal usuario, bool ensayo = false);
         Task<ResultadoAnularLecturas> AnularLecturas(string empresa, string tipo, int numero, string usuarioLecturas, IPrincipal usuario);
+        /// <summary>NestoAPI#646 / Ariadna#41: quita una falta o lo cogido de una parada, solo si sigue como la vio la app.</summary>
+        Task<ResultadoCorreccionLectura> CorregirLectura(string empresa, CorregirEscaneoDTO correccion, IPrincipal usuario);
     }
 
     /// <summary>
@@ -188,6 +190,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         private readonly ILectorOrdenRecorrido ordenRecorrido;
         /// <summary>NestoAPI#646: si al terminar se quitan solo las faltas que de verdad quedan sin leer (ver <see cref="CLAVE_RECORTAR_FALTAS"/>).</summary>
         private readonly Func<bool> recortarFaltas;
+        /// <summary>NestoAPI#646 / Ariadna#41: dónde se corrige una parada (en una transacción). Null: no se corrige.</summary>
+        private readonly IRepositorioCorrecciones correcciones;
 
         /// <summary>
         /// NestoAPI#646 (appSetting, apagado al publicar): con varias PDA en la misma salida, las faltas se suman entre todas y
@@ -198,8 +202,9 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public const string CLAVE_RECORTAR_FALTAS = "Salidas.RecortarFaltas";
 
         public ServicioSalidas(IEnumerable<IOrigenSalida> origenes, IRepositorioSalidas escrituras = null, IRepositorioAnulacionLecturas anulaciones = null,
-            ILectorOrdenRecorrido ordenRecorrido = null, Func<bool> recortarFaltas = null)
+            ILectorOrdenRecorrido ordenRecorrido = null, Func<bool> recortarFaltas = null, IRepositorioCorrecciones correcciones = null)
         {
+            this.correcciones = correcciones;
             this.origenes = (origenes ?? Enumerable.Empty<IOrigenSalida>())
                 .ToDictionary(o => o.Tipo.Trim().ToUpperInvariant(), o => o);
             this.escrituras = escrituras;
@@ -473,6 +478,165 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     : $"Anuladas las lecturas de {mozo} en {origen.Tipo} {numero}: lo suyo queda a cero, como si lo hubiera deshecho."
             };
         }
+
+        /// <summary>
+        /// NestoAPI#646 / Ariadna#41: corregir una parada concreta (quitar lo dado por falta o lo cogido), la haya hecho la PDA
+        /// que la haya hecho. Todo en una transacción con las lecturas de la salida bloqueadas: se monta la recogida como la ve
+        /// la app (<see cref="LeerRecogida"/>) y, solo si la parada sigue con lo cogido y lo dado por falta que vio la app, se
+        /// guarda la lectura en negativo (como un «Deshacer»: la falta con su hueco). Si ha cambiado (otra PDA a la vez) o la
+        /// salida ya está terminada, no se toca nada y se devuelve cómo está. Un reenvío con el mismo IdCliente no corrige dos veces.
+        /// </summary>
+        public async Task<ResultadoCorreccionLectura> CorregirLectura(string empresa, CorregirEscaneoDTO correccion, IPrincipal usuario)
+        {
+            string motivo = MotivoDeRechazoCorreccion(correccion);
+            IOrigenSalida origen = motivo == null ? Origen(correccion.TipoOrigen) : null;
+            if (motivo == null && origen == null)
+            {
+                motivo = $"El tipo de salida tiene que ser {string.Join(" o ", origenes.Keys)}.";
+            }
+            if (motivo != null)
+            {
+                return Correccion(EstadoCorreccionLectura.NoValida, motivo, null);
+            }
+            if (correcciones == null)
+            {
+                throw new InvalidOperationException("ServicioSalidas sin dónde corregir: no puede corregir paradas.");
+            }
+            string tipoCorreccion = correccion.Tipo.Trim().ToUpperInvariant();
+            string producto = correccion.Producto.Trim();
+            string documento = $"{origen.Tipo} {correccion.NumeroOrigen}";
+            return await correcciones.EnTransaccion(async tx =>
+            {
+                bool terminada = await tx.BloquearYMirarSiTerminada(empresa, origen.Tipo, correccion.NumeroOrigen).ConfigureAwait(false);
+                if (await tx.ExisteEscaneo(correccion.IdCliente).ConfigureAwait(false))
+                {
+                    LineaRecogidaDTO comoEsta = await LineaAhora(origen, empresa, correccion, tx).ConfigureAwait(false);
+                    return Correccion(EstadoCorreccionLectura.Repetida, "Esa corrección ya estaba guardada: no se ha vuelto a quitar nada.", comoEsta);
+                }
+                LineaRecogidaDTO linea = await LineaAhora(origen, empresa, correccion, tx).ConfigureAwait(false);
+                if (terminada)
+                {
+                    return Correccion(EstadoCorreccionLectura.YaTerminada,
+                        $"{documento} ya está terminada: lo que faltaba ya se quitó y desde aquí ya no se corrige.", linea);
+                }
+                if (linea == null)
+                {
+                    return Correccion(EstadoCorreccionLectura.HaCambiado, "Esa parada ya no está en la recogida: no se ha corregido nada.", null);
+                }
+                int cogidas = Math.Max(0, linea.Resuelto - linea.Faltas);
+                if (cogidas != correccion.EsperadoCogidas || linea.Faltas != correccion.EsperadoFaltas)
+                {
+                    return Correccion(EstadoCorreccionLectura.HaCambiado,
+                        $"La parada ha cambiado mientras tanto (otra PDA): ahora tiene {cogidas} cogidas y {linea.Faltas} en falta. No se ha corregido nada.", linea);
+                }
+                bool esFalta = tipoCorreccion == CasadorEscaneos.METODO_FALTA;
+                int hay = esFalta ? linea.Faltas : cogidas;
+                if (correccion.Unidades > hay)
+                {
+                    return Correccion(EstadoCorreccionLectura.NoValida,
+                        $"No se pueden quitar {Unidades(correccion.Unidades)}: la parada tiene {(esFalta ? $"{linea.Faltas} en falta" : $"{cogidas} cogidas")}.", linea);
+                }
+                var escaneo = new EscaneoAlmacenDTO
+                {
+                    IdCliente = correccion.IdCliente,
+                    TipoOrigen = origen.Tipo,
+                    NumeroOrigen = correccion.NumeroOrigen,
+                    Producto = producto,
+                    Fase = CasadorEscaneos.FASE_PICKING,
+                    Cantidad = -correccion.Unidades,
+                    Metodo = esFalta ? CasadorEscaneos.METODO_FALTA : MetodoDeLaLectura(correccion.Metodo),
+                    Motivo = esFalta ? correccion.Hueco?.Trim() : null,
+                    Dispositivo = correccion.Dispositivo,
+                    FechaEscaneo = correccion.FechaEscaneo ?? DateTime.Now
+                };
+                _ = await tx.InsertarEscaneo(empresa, escaneo, UsuarioAuditoriaHelper.ParaAuditoria(NombreUsuario(usuario))).ConfigureAwait(false);
+                LineaRecogidaDTO despues = await LineaAhora(origen, empresa, correccion, tx).ConfigureAwait(false);
+                string nombre = string.IsNullOrWhiteSpace(linea.Descripcion) ? producto : linea.Descripcion.Trim();
+                return Correccion(EstadoCorreccionLectura.Corregida, esFalta
+                    ? $"Corregido: quitada la falta de {Unidades(correccion.Unidades)} de {nombre}."
+                    : $"Corregido: quitadas {Unidades(correccion.Unidades)} cogidas de {nombre}.", despues ?? linea);
+            }).ConfigureAwait(false);
+        }
+
+        /// <summary>La parada (por su orden y su producto) tal como la monta la recogida, con las lecturas bloqueadas de la transacción.</summary>
+        private async Task<LineaRecogidaDTO> LineaAhora(IOrigenSalida origen, string empresa, CorregirEscaneoDTO correccion, ITransaccionCorreccion tx)
+        {
+            RecorridoSalida recorrido = await LeerRecorridoOrdenado(origen, empresa, correccion.NumeroOrigen).ConfigureAwait(false);
+            if (recorrido == null)
+            {
+                return null;
+            }
+            List<LecturaPickingAlmacen> lecturas = await tx.LeerLecturas(empresa, origen.Tipo, correccion.NumeroOrigen).ConfigureAwait(false);
+            RecogidaAlmacenDTO recogida = ServicioPreparacionAlmacen.MontarRecogida(empresa, origen.Tipo, correccion.NumeroOrigen, recorrido.Destino,
+                recorrido.Lineas, lecturas);
+            return recogida.Lineas.FirstOrDefault(l => l.Orden == correccion.Orden
+                && string.Equals(l.Producto?.Trim(), correccion.Producto?.Trim(), StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static ResultadoCorreccionLectura Correccion(EstadoCorreccionLectura estado, string mensaje, LineaRecogidaDTO linea)
+        {
+            return new ResultadoCorreccionLectura
+            {
+                Estado = estado,
+                Respuesta = new ResultadoCorregirEscaneoDTO
+                {
+                    Corregida = estado == EstadoCorreccionLectura.Corregida || estado == EstadoCorreccionLectura.Repetida,
+                    Repetida = estado == EstadoCorreccionLectura.Repetida,
+                    YaTerminada = estado == EstadoCorreccionLectura.YaTerminada,
+                    Mensaje = mensaje,
+                    Linea = linea,
+                    Cogidas = linea == null ? 0 : Math.Max(0, linea.Resuelto - linea.Faltas),
+                    Faltas = linea?.Faltas ?? 0
+                }
+            };
+        }
+
+        /// <summary>La lectura que se quita va con su método (el de la lectura que se corrige); sin uno válido, tecleada.</summary>
+        private static string MetodoDeLaLectura(string metodo)
+        {
+            string limpio = metodo?.Trim().ToUpperInvariant();
+            return limpio == CasadorEscaneos.METODO_LECTOR || limpio == CasadorEscaneos.METODO_ETIQUETA || limpio == CasadorEscaneos.METODO_TECLADO
+                || limpio == CasadorEscaneos.METODO_MANUAL
+                ? limpio
+                : CasadorEscaneos.METODO_TECLADO;
+        }
+
+        internal static string MotivoDeRechazoCorreccion(CorregirEscaneoDTO correccion)
+        {
+            if (correccion == null)
+            {
+                return "No ha llegado ninguna corrección.";
+            }
+            if (correccion.IdCliente == Guid.Empty)
+            {
+                return "Falta el identificador de la corrección (IdCliente).";
+            }
+            if (correccion.NumeroOrigen <= 0)
+            {
+                return "Falta el número de la salida.";
+            }
+            if (string.IsNullOrWhiteSpace(correccion.Producto) || correccion.Producto.Trim().Length > 15)
+            {
+                return "Falta el producto (o tiene más de 15 caracteres).";
+            }
+            string tipo = correccion.Tipo?.Trim().ToUpperInvariant();
+            if (tipo != CasadorEscaneos.METODO_FALTA && tipo != TIPO_CORRECCION_LECTURA)
+            {
+                return "El tipo de corrección tiene que ser FALTA o LECTURA.";
+            }
+            if (correccion.Unidades <= 0 || correccion.Unidades > short.MaxValue)
+            {
+                return "Las unidades que se quitan tienen que ser más de 0.";
+            }
+            if (correccion.EsperadoCogidas < 0 || correccion.EsperadoFaltas < 0)
+            {
+                return "Lo esperado de la parada no puede ser negativo.";
+            }
+            return null;
+        }
+
+        /// <summary>NestoAPI#646: corregir lo cogido (la otra es FALTA).</summary>
+        public const string TIPO_CORRECCION_LECTURA = "LECTURA";
 
         public const string MENSAJE_ANULAR_SIN_PERMISO = "Descartar lo leído por un mozo solo lo pueden hacer Admin o Dirección.";
 

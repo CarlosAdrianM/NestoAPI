@@ -355,6 +355,35 @@ namespace NestoAPI.Controllers
             return Ok(await servicio.GuardarEscaneos(Empresa(empresa), escaneos, Usuario()).ConfigureAwait(false));
         }
 
+        // POST api/Almacen/Escaneos/Corregir?empresa=1   { "IdCliente": "…", "TipoOrigen": "PICK", "NumeroOrigen": 99739, "Producto": "22624",
+        //   "Hueco": "001/007/002", "Orden": 3, "Tipo": "FALTA", "Unidades": 1, "EsperadoCogidas": 2, "EsperadoFaltas": 1 }
+        /// <summary>
+        /// NestoAPI#646 / Ariadna#41: quita una falta (Tipo FALTA) o lo cogido (LECTURA) de una parada concreta, la haya hecho la
+        /// PDA que la haya hecho, de forma atómica: solo si la parada sigue con lo cogido y lo dado por falta que vio la app
+        /// (EsperadoCogidas, EsperadoFaltas). 200 con la parada corregida (también un reenvío del mismo IdCliente, con
+        /// Repetida). 409 con cómo está ahora si ha cambiado (otra PDA a la vez), si ya no está o si la salida ya está
+        /// terminada: no se toca nada. 400 si la petición no vale.
+        /// </summary>
+        [HttpPost]
+        [Route("Escaneos/Corregir")]
+        [ResponseType(typeof(ResultadoCorregirEscaneoDTO))]
+        public async Task<IHttpActionResult> PostCorregirEscaneo([FromBody] CorregirEscaneoDTO correccion,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            ResultadoCorreccionLectura resultado = await servicio.CorregirLectura(Empresa(empresa), correccion, User).ConfigureAwait(false);
+            switch (resultado.Estado)
+            {
+                case EstadoCorreccionLectura.Corregida:
+                case EstadoCorreccionLectura.Repetida:
+                    return Ok(resultado.Respuesta);
+                case EstadoCorreccionLectura.HaCambiado:
+                case EstadoCorreccionLectura.YaTerminada:
+                    return Content(HttpStatusCode.Conflict, resultado.Respuesta);
+                default:
+                    return BadRequest(resultado.Respuesta?.Mensaje);
+            }
+        }
+
         // POST api/Almacen/Bultos/Foto?idCliente=...&pedido=926940&picking=99633&bulto=1&otrosPedidos=926941
         /// <summary>
         /// La foto de un bulto antes de cerrarlo. El cuerpo de la petición es la imagen (image/jpeg),

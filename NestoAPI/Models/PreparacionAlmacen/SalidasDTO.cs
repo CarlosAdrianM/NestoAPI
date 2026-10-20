@@ -42,6 +42,55 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public string Datos { get; set; }
     }
 
+    /// <summary>
+    /// NestoAPI#646 / Ariadna#41: POST api/Almacen/Escaneos/Corregir. Quitar una falta o lo cogido de una parada concreta
+    /// (la haya hecho la PDA que la haya hecho), solo si la parada sigue como la vio la app (<see cref="EsperadoCogidas"/> y
+    /// <see cref="EsperadoFaltas"/>): así dos PDA que corrigen a la vez no dejan la falta en negativo.
+    /// </summary>
+    public class CorregirEscaneoDTO
+    {
+        /// <summary>El del escaneo en negativo que se guarda: un reenvío con el mismo no corrige dos veces.</summary>
+        public System.Guid IdCliente { get; set; }
+        /// <summary>PICK o REPO.</summary>
+        public string TipoOrigen { get; set; }
+        public int NumeroOrigen { get; set; }
+        public string Producto { get; set; }
+        /// <summary>El hueco de la parada (001/007/002 o 001007002): va con la falta quitada, como un «Deshacer».</summary>
+        public string Hueco { get; set; }
+        /// <summary>LineaRecogidaDTO.Orden de la parada.</summary>
+        public int Orden { get; set; }
+        /// <summary>FALTA (quitar lo dado por falta) o LECTURA (quitar lo cogido).</summary>
+        public string Tipo { get; set; }
+        /// <summary>Cuántas se quitan (en positivo).</summary>
+        public int Unidades { get; set; }
+        /// <summary>Lo cogido de la parada (Resuelto − Faltas) que vio la app.</summary>
+        public int EsperadoCogidas { get; set; }
+        /// <summary>Lo dado por falta de la parada que vio la app.</summary>
+        public int EsperadoFaltas { get; set; }
+        /// <summary>En una LECTURA, el método de la lectura que se quita (SCAN, ETIQ, TECLA). Sin él, TECLA.</summary>
+        public string Metodo { get; set; }
+        public string Dispositivo { get; set; }
+        /// <summary>La hora del móvil. Sin ella, la del servidor.</summary>
+        public System.DateTime? FechaEscaneo { get; set; }
+    }
+
+    /// <summary>NestoAPI#646: lo que contesta POST api/Almacen/Escaneos/Corregir (200, o 409 con cómo está ahora la parada).</summary>
+    public class ResultadoCorregirEscaneoDTO
+    {
+        /// <summary>Se ha guardado (o ya estaba, si <see cref="Repetida"/>).</summary>
+        public bool Corregida { get; set; }
+        /// <summary>Ese IdCliente ya estaba guardado: no se ha vuelto a quitar nada.</summary>
+        public bool Repetida { get; set; }
+        /// <summary>La salida ya está terminada: no se ha tocado nada.</summary>
+        public bool YaTerminada { get; set; }
+        public string Mensaje { get; set; }
+        /// <summary>La parada como está ahora en el servidor (después de corregir, o la que ha hecho que no se corrija). Null si ya no está.</summary>
+        public LineaRecogidaDTO Linea { get; set; }
+        /// <summary>Lo cogido de la parada ahora (Resuelto − Faltas).</summary>
+        public int Cogidas { get; set; }
+        public int Faltas { get; set; }
+    }
+
     /// <summary>Ariadna#6: de qué mozo son las lecturas que se anulan.</summary>
     public class AnularLecturasDTO
     {
