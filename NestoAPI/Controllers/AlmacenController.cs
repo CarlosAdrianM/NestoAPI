@@ -365,9 +365,10 @@ namespace NestoAPI.Controllers
             if (guardados?.Guardados > 0)
             {
                 // NestoAPI#646: a las demás PDA de cada documento tocado, «ha cambiado»
+                string dispositivo = escaneos.Select(e => e?.Dispositivo).FirstOrDefault(d => !string.IsNullOrWhiteSpace(d));
                 foreach (string grupo in GruposDe(escaneos))
                 {
-                    Avisar(grupo);
+                    Avisar(grupo, dispositivo);
                 }
             }
             return Ok(guardados);
@@ -385,8 +386,12 @@ namespace NestoAPI.Controllers
                 .ToList();
         }
 
-        /// <summary>NestoAPI#646: el aviso nunca rompe la petición (lo que se ha guardado, guardado está).</summary>
-        private void Avisar(string grupo)
+        /// <summary>
+        /// NestoAPI#646: a las demás PDA del grupo, «ha cambiado». A la que hace la petición no: su conexión llega en la cabecera
+        /// X-Conexion-SignalR y, si no, se excluyen las de su dispositivo (cabecera X-Dispositivo o el de la petición). El aviso
+        /// nunca rompe la petición (lo que se ha guardado, guardado está).
+        /// </summary>
+        private void Avisar(string grupo, string dispositivoDeLaPeticion = null)
         {
             if (avisosAlmacen == null || string.IsNullOrWhiteSpace(grupo))
             {
@@ -394,7 +399,9 @@ namespace NestoAPI.Controllers
             }
             try
             {
-                avisosAlmacen.HaCambiado(grupo, UsuarioAuditoriaHelper.ParaAuditoria(Usuario()));
+                string dispositivo = Cabecera(Infraestructure.Notificaciones.AvisosAlmacen.CABECERA_DISPOSITIVO) ?? dispositivoDeLaPeticion?.Trim();
+                avisosAlmacen.HaCambiado(grupo, UsuarioAuditoriaHelper.ParaAuditoria(Usuario()),
+                    Cabecera(Infraestructure.Notificaciones.AvisosAlmacen.CABECERA_CONEXION), string.IsNullOrWhiteSpace(dispositivo) ? null : dispositivo);
             }
             catch (Exception ex)
             {
@@ -421,7 +428,7 @@ namespace NestoAPI.Controllers
             switch (resultado.Estado)
             {
                 case EstadoCorreccionLectura.Corregida:
-                    Avisar(Infraestructure.Notificaciones.AvisosAlmacen.GrupoRecogida(correccion.TipoOrigen, correccion.NumeroOrigen)); // NestoAPI#646
+                    Avisar(Infraestructure.Notificaciones.AvisosAlmacen.GrupoRecogida(correccion.TipoOrigen, correccion.NumeroOrigen), correccion.Dispositivo); // NestoAPI#646
                     return Ok(resultado.Respuesta);
                 case EstadoCorreccionLectura.Repetida:
                     return Ok(resultado.Respuesta);
@@ -479,7 +486,7 @@ namespace NestoAPI.Controllers
                 Dispositivo = dispositivo
             }, Usuario()).ConfigureAwait(false);
 
-            Avisar(Infraestructure.Notificaciones.AvisosAlmacen.GrupoPacking(picking)); // NestoAPI#646
+            Avisar(Infraestructure.Notificaciones.AvisosAlmacen.GrupoPacking(picking), dispositivo); // NestoAPI#646
             return Ok(guardado);
         }
 
@@ -740,6 +747,17 @@ namespace NestoAPI.Controllers
         private Task CompletarCodigos(string empresa, IEnumerable<IConCodigosBarras> lineas)
         {
             return fichas == null || lineas == null ? Task.CompletedTask : fichas.CompletarCodigos(empresa, lineas);
+        }
+
+        /// <summary>El valor de una cabecera de la petición; null si no viene o está en blanco.</summary>
+        private string Cabecera(string nombre)
+        {
+            if (Request?.Headers == null || !Request.Headers.TryGetValues(nombre, out IEnumerable<string> valores))
+            {
+                return null;
+            }
+            string valor = valores?.FirstOrDefault()?.Trim();
+            return string.IsNullOrEmpty(valor) ? null : valor;
         }
 
         private string Usuario()

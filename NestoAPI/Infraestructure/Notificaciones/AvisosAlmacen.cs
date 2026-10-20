@@ -13,15 +13,21 @@ namespace NestoAPI.Infraestructure.Notificaciones
     /// pantalla abierta está consumiendo recursos… la mayoría de las veces prepara el picking uno solo»). Cada Ariadna entra al
     /// abrir el recorrido o el packing en el grupo de ese documento (<see cref="AvisosAlmacen.GrupoRecogida"/>,
     /// <see cref="AvisosAlmacen.GrupoPacking"/>) y sale al cerrarlo. Cuando alguien lee, da una falta, corrige, cierra un bulto o
-    /// termina, la API manda al grupo solo «haCambiado» (sin datos), a todos menos al usuario que lo ha hecho: si está solo, no
-    /// se manda nada. La PDA, al recibirlo, pide la recogida (o el packing) ligera. Misma ruta y mismo JWT (en la query string,
-    /// access_token) que <see cref="AvisosHub"/>.
+    /// termina, la API manda al grupo solo «haCambiado(grupo, dispositivo)» (sin datos), a todos menos a la PDA que lo ha hecho
+    /// (la que se actualiza en local con la respuesta de su POST): si está sola, no se manda nada. La PDA, al recibirlo, pide la
+    /// recogida (o el packing) ligera. Misma ruta y mismo JWT (en la query string, access_token) que <see cref="AvisosHub"/>.
     /// </summary>
     [Authorize]
     public class AlmacenHub : Hub
     {
-        /// <summary>La PDA abre un recorrido o un packing. False si el grupo no es de los que hay.</summary>
-        public async Task<bool> Entrar(string grupo)
+        /// <summary>La PDA abre un recorrido o un packing (sin decir su dispositivo: versiones sin él). False si el grupo no vale.</summary>
+        public Task<bool> Entrar(string grupo) => Entrar(grupo, null);
+
+        /// <summary>
+        /// La PDA abre un recorrido o un packing y dice qué dispositivo es (el mismo que manda en sus escaneos y en la cabecera
+        /// X-Dispositivo): así, si un POST llega sin la cabecera de su conexión, no se le avisa de lo suyo. False si el grupo no vale.
+        /// </summary>
+        public async Task<bool> Entrar(string grupo, string dispositivo)
         {
             string limpio = AvisosAlmacen.Normalizar(grupo);
             string usuario = Context.User?.Identity?.Name;
@@ -30,7 +36,7 @@ namespace NestoAPI.Infraestructure.Notificaciones
                 return false;
             }
             await Groups.Add(Context.ConnectionId, limpio).ConfigureAwait(false);
-            ConexionesAlmacen.Entrar(Context.ConnectionId, usuario, limpio);
+            ConexionesAlmacen.Entrar(Context.ConnectionId, usuario, dispositivo, limpio);
             return true;
         }
 
@@ -54,20 +60,21 @@ namespace NestoAPI.Infraestructure.Notificaciones
     }
 
     /// <summary>
-    /// NestoAPI#646: qué conexión de Ariadna está en qué grupo y de qué usuario es, para no avisar al que ha hecho el cambio.
-    /// En memoria: se vacía al reciclar la API; las PDA se reconectan solas y vuelven a entrar en su grupo.
+    /// NestoAPI#646: qué conexión de Ariadna está en qué grupo, de qué usuario y de qué dispositivo, para no avisar a la PDA que ha
+    /// hecho el cambio. En memoria: se vacía al reciclar la API; las PDA vuelven a entrar en su grupo al reconectar.
     /// </summary>
     public static class ConexionesAlmacen
     {
         private sealed class Conexion
         {
             public string Usuario { get; set; }
+            public string Dispositivo { get; set; }
             public ConcurrentDictionary<string, bool> Grupos { get; } = new ConcurrentDictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         }
 
         private static readonly ConcurrentDictionary<string, Conexion> conexiones = new ConcurrentDictionary<string, Conexion>();
 
-        public static void Entrar(string conexion, string usuario, string grupo)
+        public static void Entrar(string conexion, string usuario, string dispositivo, string grupo)
         {
             if (string.IsNullOrWhiteSpace(conexion) || string.IsNullOrWhiteSpace(grupo))
             {
@@ -75,6 +82,10 @@ namespace NestoAPI.Infraestructure.Notificaciones
             }
             Conexion datos = conexiones.GetOrAdd(conexion, _ => new Conexion());
             datos.Usuario = usuario?.Trim();
+            if (!string.IsNullOrWhiteSpace(dispositivo))
+            {
+                datos.Dispositivo = dispositivo.Trim();
+            }
             datos.Grupos[grupo] = true;
         }
 
@@ -94,23 +105,32 @@ namespace NestoAPI.Infraestructure.Notificaciones
             }
         }
 
-        /// <summary>Las conexiones del grupo que son del usuario que ha hecho el cambio: a esas no se les avisa.</summary>
-        public static List<string> DelUsuarioEnElGrupo(string grupo, string usuario)
+        /// <summary>
+        /// Las conexiones del grupo a las que NO se avisa: la que manda la cabecera X-Conexion-SignalR; si no llega (versión vieja,
+        /// o la PDA sin SignalR conectado), las del mismo dispositivo; y si tampoco se sabe el dispositivo, las del mismo usuario.
+        /// </summary>
+        public static List<string> AExcluir(string grupo, string usuario, string conexionEmisora, string dispositivoEmisor)
         {
+            if (!string.IsNullOrWhiteSpace(conexionEmisora))
+            {
+                return new List<string> { conexionEmisora.Trim() };
+            }
+            string dispositivo = dispositivoEmisor?.Trim();
             string quien = usuario?.Trim();
             return conexiones
-                .Where(c => c.Value.Grupos.ContainsKey(grupo ?? string.Empty)
-                    && !string.IsNullOrEmpty(quien) && string.Equals(c.Value.Usuario, quien, StringComparison.OrdinalIgnoreCase))
+                .Where(c => c.Value.Grupos.ContainsKey(grupo ?? string.Empty))
+                .Where(c => !string.IsNullOrEmpty(dispositivo)
+                    ? string.Equals(c.Value.Dispositivo, dispositivo, StringComparison.OrdinalIgnoreCase)
+                    : !string.IsNullOrEmpty(quien) && string.Equals(c.Value.Usuario, quien, StringComparison.OrdinalIgnoreCase))
                 .Select(c => c.Key)
                 .ToList();
         }
 
-        /// <summary>Hay alguien de OTRO usuario en el grupo (si no, no se manda nada).</summary>
-        public static bool HayOtros(string grupo, string usuario)
+        /// <summary>Queda alguien en el grupo fuera de <paramref name="excluidas"/> (si no, no se manda nada).</summary>
+        public static bool HayOtros(string grupo, IEnumerable<string> excluidas)
         {
-            string quien = usuario?.Trim();
-            return conexiones.Any(c => c.Value.Grupos.ContainsKey(grupo ?? string.Empty)
-                && !string.Equals(c.Value.Usuario, quien, StringComparison.OrdinalIgnoreCase));
+            var fuera = new HashSet<string>(excluidas ?? Enumerable.Empty<string>());
+            return conexiones.Any(c => c.Value.Grupos.ContainsKey(grupo ?? string.Empty) && !fuera.Contains(c.Key));
         }
 
         internal static void Vaciar() => conexiones.Clear();
@@ -120,13 +140,20 @@ namespace NestoAPI.Infraestructure.Notificaciones
     public interface IAvisosAlmacen
     {
         /// <param name="grupo">El del documento (<see cref="AvisosAlmacen.GrupoRecogida"/> o <see cref="AvisosAlmacen.GrupoPacking"/>).</param>
-        /// <param name="usuario">El que ha hecho el cambio: a sus conexiones no se les avisa.</param>
-        void HaCambiado(string grupo, string usuario);
+        /// <param name="usuario">El que ha hecho el cambio.</param>
+        /// <param name="conexionEmisora">La conexión de SignalR de la PDA que lo ha hecho (cabecera X-Conexion-SignalR). Null si no llega.</param>
+        /// <param name="dispositivoEmisor">El dispositivo que lo ha hecho (cabecera X-Dispositivo o el de la petición). Null si no se sabe.</param>
+        void HaCambiado(string grupo, string usuario, string conexionEmisora, string dispositivoEmisor);
     }
 
-    /// <summary>Los nombres de los grupos (los mismos en la API y en Ariadna).</summary>
+    /// <summary>Los nombres de los grupos (los mismos en la API y en Ariadna) y las cabeceras.</summary>
     public static class AvisosAlmacen
     {
+        /// <summary>La conexión de SignalR de la PDA que hace el POST (para no avisarle de lo suyo).</summary>
+        public const string CABECERA_CONEXION = "X-Conexion-SignalR";
+        /// <summary>El dispositivo que hace el POST (si no llega la conexión, se excluyen las de este dispositivo).</summary>
+        public const string CABECERA_DISPOSITIVO = "X-Dispositivo";
+
         private static readonly Regex FORMATO = new Regex(@"^(Recogida:(PICK|REPO):\d{1,9}|Packing:\d{1,9})$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
         /// <summary>«Recogida:PICK:99633», «Recogida:REPO:80905».</summary>
@@ -161,17 +188,21 @@ namespace NestoAPI.Infraestructure.Notificaciones
             this.contexto = contexto;
         }
 
-        public void HaCambiado(string grupo, string usuario)
+        public void HaCambiado(string grupo, string usuario, string conexionEmisora, string dispositivoEmisor)
         {
             try
             {
                 string limpio = AvisosAlmacen.Normalizar(grupo);
-                if (limpio == null || !ConexionesAlmacen.HayOtros(limpio, usuario))
+                if (limpio == null)
                 {
-                    return; // solo, o nadie mirando: nada que mandar
+                    return;
                 }
-                IList<string> excluidas = ConexionesAlmacen.DelUsuarioEnElGrupo(limpio, usuario);
-                contexto().Clients.Group(limpio, excluidas.ToArray()).haCambiado(limpio);
+                List<string> excluidas = ConexionesAlmacen.AExcluir(limpio, usuario, conexionEmisora, dispositivoEmisor);
+                if (!ConexionesAlmacen.HayOtros(limpio, excluidas))
+                {
+                    return; // sola, o nadie mirando: nada que mandar
+                }
+                contexto().Clients.Group(limpio, excluidas.ToArray()).haCambiado(limpio, dispositivoEmisor?.Trim() ?? string.Empty);
             }
             catch (Exception ex)
             {

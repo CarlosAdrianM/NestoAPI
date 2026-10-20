@@ -57,9 +57,9 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
 
             _ = await controller.PostEscaneos(lote);
 
-            A.CallTo(() => avisos.HaCambiado("Recogida:PICK:99633", "Andrey")).MustHaveHappenedOnceExactly();
-            A.CallTo(() => avisos.HaCambiado("Recogida:REPO:80905", "Andrey")).MustHaveHappenedOnceExactly();
-            A.CallTo(() => avisos.HaCambiado("Packing:99640", "Andrey")).MustHaveHappenedOnceExactly();
+            A.CallTo(() => avisos.HaCambiado("Recogida:PICK:99633", "Andrey", A<string>._, A<string>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => avisos.HaCambiado("Recogida:REPO:80905", "Andrey", A<string>._, A<string>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => avisos.HaCambiado("Packing:99640", "Andrey", A<string>._, A<string>._)).MustHaveHappenedOnceExactly();
         }
 
         [TestMethod]
@@ -79,7 +79,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             var lote = new List<EscaneoAlmacenDTO> { Escaneo("PICK") };
             var guardado = new ResultadoEscaneosAlmacenDTO { Guardados = 1 };
             A.CallTo(() => servicio.GuardarEscaneos("1", lote, "Andrey")).Returns(guardado);
-            A.CallTo(() => avisos.HaCambiado(A<string>._, A<string>._)).Throws(new InvalidOperationException("hub caído"));
+            A.CallTo(() => avisos.HaCambiado(A<string>._, A<string>._, A<string>._, A<string>._)).Throws(new InvalidOperationException("hub caído"));
 
             IHttpActionResult resultado = await controller.PostEscaneos(lote);
 
@@ -98,7 +98,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             A.CallTo(avisos).MustNotHaveHappened();
             _ = await controller.PostCorregirEscaneo(correccion);
 
-            A.CallTo(() => avisos.HaCambiado("Recogida:REPO:80905", "Andrey")).MustHaveHappenedOnceExactly();
+            A.CallTo(() => avisos.HaCambiado("Recogida:REPO:80905", "Andrey", A<string>._, A<string>._)).MustHaveHappenedOnceExactly();
         }
 
         [TestMethod]
@@ -109,7 +109,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
 
             _ = await controller.PostFotoBulto(Guid.NewGuid(), 926940, 99633, 1);
 
-            A.CallTo(() => avisos.HaCambiado("Packing:99633", "Andrey")).MustHaveHappenedOnceExactly();
+            A.CallTo(() => avisos.HaCambiado("Packing:99633", "Andrey", A<string>._, A<string>._)).MustHaveHappenedOnceExactly();
         }
 
         [TestMethod]
@@ -122,7 +122,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             A.CallTo(avisos).MustNotHaveHappened();
             _ = await controller.PostTerminarRecogida("PICK", 99633);
 
-            A.CallTo(() => avisos.HaCambiado("Recogida:PICK:99633", "Andrey")).MustHaveHappenedOnceExactly();
+            A.CallTo(() => avisos.HaCambiado("Recogida:PICK:99633", "Andrey", A<string>._, A<string>._)).MustHaveHappenedOnceExactly();
         }
 
         [TestMethod]
@@ -141,7 +141,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             var recibidos = new List<string>();
             var excluidas = new List<string[]>();
             dynamic grupo = new ExpandoObject();
-            grupo.haCambiado = new Action<string>(g => recibidos.Add(g));
+            grupo.haCambiado = new Action<string, string>((g, d) => recibidos.Add(g + "|" + d));
             IHubContext contexto = A.Fake<IHubContext>();
             IHubConnectionContext<dynamic> clientes = A.Fake<IHubConnectionContext<dynamic>>();
             A.CallTo(() => contexto.Clients).Returns(clientes);
@@ -151,50 +151,88 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         }
 
         [TestMethod]
-        public void HaCambiado_AvisaAlGrupoMenosAlUsuarioQueLoHaHecho()
+        public void HaCambiado_ConLaCabeceraDeSuConexion_SeExcluyeEsaConexionYElAvisoLlevaSuDispositivo()
         {
-            ConexionesAlmacen.Entrar("c1", "Andrey", "Recogida:PICK:99633");
-            ConexionesAlmacen.Entrar("c2", "Andrey", "Recogida:PICK:99633"); // el mismo mozo con otra PDA
-            ConexionesAlmacen.Entrar("c3", "Pedro", "Recogida:PICK:99633");
-            ConexionesAlmacen.Entrar("c4", "Luis", "Recogida:PICK:1");
+            ConexionesAlmacen.Entrar("c1", "Andrey", "PDA-1", "Recogida:PICK:99633");
+            ConexionesAlmacen.Entrar("c2", "Andrey", "PDA-2", "Recogida:PICK:99633"); // el mismo mozo con otra PDA: sí se le avisa
+            ConexionesAlmacen.Entrar("c3", "Pedro", "PDA-3", "Recogida:PICK:99633");
+            ConexionesAlmacen.Entrar("c4", "Luis", "PDA-4", "Recogida:PICK:1");
             var (contexto, recibidos, excluidas) = HubFalso();
 
-            new AvisosAlmacenSignalR(() => contexto).HaCambiado("Recogida:PICK:99633", "andrey");
+            new AvisosAlmacenSignalR(() => contexto).HaCambiado("Recogida:PICK:99633", "andrey", "c1", "PDA-1");
 
-            CollectionAssert.AreEqual(new[] { "Recogida:PICK:99633" }, recibidos);
-            CollectionAssert.AreEquivalent(new[] { "c1", "c2" }, excluidas[0]);
+            CollectionAssert.AreEqual(new[] { "Recogida:PICK:99633|PDA-1" }, recibidos);
+            CollectionAssert.AreEqual(new[] { "c1" }, excluidas[0]);
         }
 
         [TestMethod]
-        public void HaCambiado_SoloOSinNadieMirando_NoMandaNada()
+        public void HaCambiado_SinLaCabecera_SeExcluyenLasConexionesDeSuDispositivo()
         {
-            ConexionesAlmacen.Entrar("c1", "Andrey", "Recogida:PICK:99633");
+            ConexionesAlmacen.Entrar("c1", "Andrey", "PDA-1", "Packing:99633");
+            ConexionesAlmacen.Entrar("c9", "Andrey", "PDA-1", "Packing:99633"); // la misma PDA, reconectada
+            ConexionesAlmacen.Entrar("c3", "Pedro", "PDA-3", "Packing:99633");
+            var (contexto, _, excluidas) = HubFalso();
+
+            new AvisosAlmacenSignalR(() => contexto).HaCambiado("Packing:99633", "Andrey", null, "pda-1");
+
+            CollectionAssert.AreEquivalent(new[] { "c1", "c9" }, excluidas[0]);
+        }
+
+        [TestMethod]
+        public void HaCambiado_SinCabeceraNiDispositivo_SeExcluyeAlMismoUsuario()
+        {
+            ConexionesAlmacen.Entrar("c1", "Andrey", null, "Packing:99633");
+            ConexionesAlmacen.Entrar("c3", "Pedro", null, "Packing:99633");
+            var (contexto, _, excluidas) = HubFalso();
+
+            new AvisosAlmacenSignalR(() => contexto).HaCambiado("Packing:99633", "Andrey", null, null);
+
+            CollectionAssert.AreEqual(new[] { "c1" }, excluidas[0]);
+        }
+
+        [TestMethod]
+        public void HaCambiado_SolaOSinNadieMirando_NoMandaNada()
+        {
+            ConexionesAlmacen.Entrar("c1", "Andrey", "PDA-1", "Recogida:PICK:99633");
             bool usado = false;
 
-            new AvisosAlmacenSignalR(() => { usado = true; throw new InvalidOperationException(); }).HaCambiado("Recogida:PICK:99633", "Andrey");
-            new AvisosAlmacenSignalR(() => { usado = true; throw new InvalidOperationException(); }).HaCambiado("Packing:5", "Andrey");
+            new AvisosAlmacenSignalR(() => { usado = true; throw new InvalidOperationException(); }).HaCambiado("Recogida:PICK:99633", "Andrey", "c1", "PDA-1");
+            new AvisosAlmacenSignalR(() => { usado = true; throw new InvalidOperationException(); }).HaCambiado("Recogida:PICK:99633", "Andrey", null, "PDA-1");
+            new AvisosAlmacenSignalR(() => { usado = true; throw new InvalidOperationException(); }).HaCambiado("Packing:5", "Andrey", null, null);
 
-            Assert.IsFalse(usado, "Si está solo, no se manda nada");
+            Assert.IsFalse(usado, "Si la PDA está sola, no se manda nada");
         }
 
         [TestMethod]
         public void HaCambiado_SiElHubFalla_NoLanza()
         {
-            ConexionesAlmacen.Entrar("c3", "Pedro", "Packing:99633");
+            ConexionesAlmacen.Entrar("c3", "Pedro", "PDA-3", "Packing:99633");
 
-            new AvisosAlmacenSignalR(() => throw new InvalidOperationException("sin hub")).HaCambiado("Packing:99633", "Andrey");
+            new AvisosAlmacenSignalR(() => throw new InvalidOperationException("sin hub")).HaCambiado("Packing:99633", "Andrey", null, "PDA-1");
         }
 
         [TestMethod]
         public void ConexionQueSale_YaNoRecibe()
         {
-            ConexionesAlmacen.Entrar("c3", "Pedro", "Packing:99633");
+            ConexionesAlmacen.Entrar("c3", "Pedro", "PDA-3", "Packing:99633");
             ConexionesAlmacen.Salir("c3", "Packing:99633");
 
-            Assert.IsFalse(ConexionesAlmacen.HayOtros("Packing:99633", "Andrey"));
-            ConexionesAlmacen.Entrar("c3", "Pedro", "Packing:99633");
+            Assert.IsFalse(ConexionesAlmacen.HayOtros("Packing:99633", new string[0]));
+            ConexionesAlmacen.Entrar("c3", "Pedro", "PDA-3", "Packing:99633");
             ConexionesAlmacen.Quitar("c3");
-            Assert.IsFalse(ConexionesAlmacen.HayOtros("Packing:99633", "Andrey"));
+            Assert.IsFalse(ConexionesAlmacen.HayOtros("Packing:99633", new string[0]));
+        }
+
+        [TestMethod]
+        public async Task Controlador_PasaLaConexionYElDispositivoDeLaPeticion()
+        {
+            controller.Request = new HttpRequestMessage { Content = new ByteArrayContent(new byte[] { 0xFF, 0xD8, 0xFF }) };
+            controller.Request.Headers.Add(AvisosAlmacen.CABECERA_CONEXION, "c1");
+            A.CallTo(() => servicio.GuardarFotoBulto(A<FotoBultoAlmacen>._, "Andrey")).Returns(new BultoAlmacenDTO { Bulto = 1 });
+
+            _ = await controller.PostFotoBulto(Guid.NewGuid(), 926940, 99633, 1, dispositivo: "PDA-1");
+
+            A.CallTo(() => avisos.HaCambiado("Packing:99633", "Andrey", "c1", "PDA-1")).MustHaveHappenedOnceExactly();
         }
     }
 }
