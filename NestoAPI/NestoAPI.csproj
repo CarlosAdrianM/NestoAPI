@@ -893,6 +893,7 @@
     <Compile Include="Infraestructure\Kits\IUbicacionService.cs" />
     <Compile Include="Infraestructure\Kits\ProductoService.cs" />
     <Compile Include="Infraestructure\Kits\UbicacionService.cs" />
+    <Compile Include="Infraestructure\PedidosCompra\FechasFacturaCompra.cs" />
     <Compile Include="Infraestructure\PedidosCompra\GeneradorExcelPedidoCompra.cs" />
     <Compile Include="Infraestructure\PedidosCompra\GeneradorPdfPedidoCompra.cs" />
     <Compile Include="Infraestructure\PedidosCompra\ResumenImportesPedidoCompra.cs" />

@@ -14,10 +14,11 @@ namespace NestoAPI.Infraestructure.PedidosCompra
 {
     public class PedidosCompraService : IPedidosCompraService
     {
-        public async Task<int> CrearAlbaran(int pedidoId, NVEntities db, string usuario = null)
+        public async Task<int> CrearAlbaran(int pedidoId, NVEntities db, string usuario = null, DateTime? fechaRecepcionAlbaran = null)
         {
             string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO;
-            DateTime fechaRecepcion = DateTime.Now;
+            // NestoAPI#668: con FechaFactura el albarán va con ella; si no, ahora, como siempre
+            DateTime fechaRecepcion = fechaRecepcionAlbaran ?? DateTime.Now;
             decimal importeMinimo = 0M;
             bool contabiliza = true;
 
@@ -73,9 +74,9 @@ namespace NestoAPI.Infraestructure.PedidosCompra
             }
         }
 
-        public async Task<CrearFacturaCmpResponse> CrearAlbaranYFactura(int pedidoId, DateTime fecha, NVEntities db, string usuario = null)
+        public async Task<CrearFacturaCmpResponse> CrearAlbaranYFactura(int pedidoId, DateTime fecha, NVEntities db, string usuario = null, DateTime? fechaAlbaran = null)
         {
-            int albaran = await CrearAlbaran(pedidoId, db, usuario);
+            int albaran = await CrearAlbaran(pedidoId, db, usuario, fechaAlbaran);
             if (albaran == 0)
             {
                 throw new Exception("No se ha podido crear el albarán");
@@ -197,7 +198,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra
             return respuesta;
         }
 
-        public async Task<int> CrearPagoFactura(CrearFacturaCmpRequest request, CrearFacturaCmpResponse respuesta, NVEntities db)
+        public async Task<int> CrearPagoFactura(CrearFacturaCmpRequest request, CrearFacturaCmpResponse respuesta, NVEntities db, DateTime? fechaPago = null)
         {
             try
             {
@@ -211,7 +212,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra
                     Nº_Cuenta = request.Pedido.Proveedor,
                     Contacto = request.Pedido.Contacto,
                     Asiento = 1,
-                    Fecha = request.Pedido.Fecha,
+                    // NestoAPI#668: el pago va con la fecha del movimiento aunque la factura vaya más tarde
+                    Fecha = fechaPago ?? request.Pedido.Fecha,
                     Debe = respuesta.ImporteFactura > 0 ? respuesta.ImporteFactura : 0,
                     Haber = respuesta.ImporteFactura < 0 ? -respuesta.ImporteFactura : 0,
                     Concepto = $"N/Pago S/Fra.{request.Pedido.FacturaProveedor} - {respuesta.Factura} {textoDocumento}",

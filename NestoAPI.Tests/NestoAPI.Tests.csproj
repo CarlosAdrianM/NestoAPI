@@ -348,6 +348,7 @@
     <Compile Include="Infrastructure\ServicioNotasEntregaTests.cs" />
     <Compile Include="Infrastructure\CreadorNotaEntregaPendienteTests.cs" />
     <Compile Include="Infrastructure\FechaEntregaNotasTests.cs" />
+    <Compile Include="Infrastructure\FechasFacturaCompraTests.cs" />
     <Compile Include="Infrastructure\ServicioPropuestaReposicionTests.cs" />
     <Compile Include="Infrastructure\ServicioPreparacionReposicionTests.cs" />
     <Compile Include="Infrastructure\Ubicaciones\CuadreUbicacionesTests.cs" />

@@ -29,6 +29,7 @@ namespace NestoAPI.Controllers
         private readonly IServicioFacturas _servicioFacturas;
         private readonly IGestorFacturas _gestor;
         private readonly IPedidosCompraService _servicio;
+        private readonly ComprobadorFechaFacturaCompra _comprobadorFechas; // NestoAPI#668
 
         private NVEntities db = new NVEntities();
 
@@ -37,6 +38,7 @@ namespace NestoAPI.Controllers
             _servicioFacturas = new ServicioFacturas();
             _gestor = new GestorFacturas(_servicioFacturas);
             _servicio = new PedidosCompraService();
+            _comprobadorFechas = new ComprobadorFechaFacturaCompra(new FechasPermitidasComprasSql());
         }
 
         internal PedidosCompraController(NVEntities db)
@@ -45,6 +47,7 @@ namespace NestoAPI.Controllers
             _servicioFacturas = new ServicioFacturas();
             _gestor = new GestorFacturas(_servicioFacturas);
             _servicio = new PedidosCompraService();
+            _comprobadorFechas = new ComprobadorFechaFacturaCompra(new FechasPermitidasComprasSql());
         }
         /*
         // GET: api/PedidosCompra
@@ -499,16 +502,28 @@ namespace NestoAPI.Controllers
                 return null;
             }
 
-            // NestoAPI#384: reintento ante deadlock de la operación COMPLETA (transacción y
-            // contexto NUEVOS en cada intento, patrón #273: la víctima 1205 se revierte entera).
-            // Caso real 17/08/26: los gastos de remesa deadlockeaban a las y cuarto contra el
-            // job de Verifactu y el usuario veía el 500 con la mitad contabilizada.
-            CrearFacturaCmpResponse resultado = await Infraestructure.Contabilidad.ContabilidadService
-                .ReintentarSiDeadlock(() => CrearAlbaranYFacturaUnaVez(request));
-            return Ok(resultado);
+            // NestoAPI#668: las fechas se fijan UNA vez, antes de los reintentos (AplicarAlPedido cambia
+            // la fecha del pedido y el pago tiene que seguir con la del movimiento).
+            FechasFacturaCompra fechas = FechasFacturaCompra.Calcular(request.Pedido?.Fecha ?? DateTime.Today, request.FechaFactura);
+
+            try
+            {
+                // NestoAPI#384: reintento ante deadlock de la operación COMPLETA (transacción y
+                // contexto NUEVOS en cada intento, patrón #273: la víctima 1205 se revierte entera).
+                // Caso real 17/08/26: los gastos de remesa deadlockeaban a las y cuarto contra el
+                // job de Verifactu y el usuario veía el 500 con la mitad contabilizada.
+                CrearFacturaCmpResponse resultado = await Infraestructure.Contabilidad.ContabilidadService
+                    .ReintentarSiDeadlock(() => CrearAlbaranYFacturaUnaVez(request, fechas));
+                return Ok(resultado);
+            }
+            catch (FechaCompraNoPermitidaException ex)
+            {
+                // NestoAPI#668: no se ha creado nada; el cliente puede reenviar con FechaFactura = FechaPropuesta
+                return Content(HttpStatusCode.Conflict, ex.ToDTO());
+            }
         }
 
-        private async Task<CrearFacturaCmpResponse> CrearAlbaranYFacturaUnaVez(CrearFacturaCmpRequest request)
+        private async Task<CrearFacturaCmpResponse> CrearAlbaranYFacturaUnaVez(CrearFacturaCmpRequest request, FechasFacturaCompra fechas)
         {
             using (var db = new NVEntities())
             {
@@ -523,17 +538,31 @@ namespace NestoAPI.Controllers
                     return existente;
                 }
 
+                // NestoAPI#668: antes de crear nada, ¿están abiertas las compras en la fecha de la factura?
+                // Si no, y hay una primera fecha permitida, 409 para que el cliente la ofrezca. Sin
+                // propuesta posible se sigue como siempre y el SP da su «Fecha no permitida».
+                if (request.Pedido != null)
+                {
+                    ComprobacionFechaCompra comprobacion = await _comprobadorFechas.Comprobar(
+                        Constantes.Empresas.EMPRESA_POR_DEFECTO, fechas.FechaFactura, request.Pedido.Usuario, db);
+                    if (!comprobacion.EsValida && comprobacion.FechaPropuesta.HasValue)
+                    {
+                        throw new FechaCompraNoPermitidaException(fechas.FechaFactura, comprobacion.FechaPropuesta.Value);
+                    }
+                    fechas.AplicarAlPedido(request.Pedido);
+                }
+
                 using (var transaction = db.Database.BeginTransaction())
                 {
                     try
                     {
                         CabPedidoCmp pedido = await _servicio.CrearPedido(request.Pedido, db);
                         var fechaFactura = (DateTime)pedido.Fecha;
-                        CrearFacturaCmpResponse respuesta = await _servicio.CrearAlbaranYFactura(pedido.Número, fechaFactura, db, pedido.Usuario);
+                        CrearFacturaCmpResponse respuesta = await _servicio.CrearAlbaranYFactura(pedido.Número, fechaFactura, db, pedido.Usuario, fechas.FechaAlbaran);
                         if (request.CrearPago)
                         {
                             respuesta.Exito = false;
-                            respuesta.AsientoPago = await _servicio.CrearPagoFactura(request, respuesta, db);
+                            respuesta.AsientoPago = await _servicio.CrearPagoFactura(request, respuesta, db, fechas.FechaPago);
                             if (respuesta.AsientoPago > 0)
                             {
                                 respuesta.Exito = true;
