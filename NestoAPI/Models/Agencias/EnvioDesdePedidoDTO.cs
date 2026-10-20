@@ -85,7 +85,7 @@ namespace NestoAPI.Models.Agencias
         /// Innovatrans, cuya etiqueta da la agencia al registrar el envío (Nesto sigue con InsertarYEtiquetar).
         /// </summary>
         public bool EtiquetaEnNesto { get; set; }
-        /// <summary>Se ha pedido el correo «Pedido entregado a la agencia» al cliente (solo envío nuevo de TramitarAlCerrar con código).</summary>
+        /// <summary>Se ha encolado el correo «Pedido entregado a la agencia» al cliente (solo envío nuevo de TramitarAlCerrar con código); sale en segundo plano.</summary>
         public bool CorreoEnviado { get; set; }
         /// <summary>Avisos informativos de la grabación (plaza de GLS sin contestar, cambios que no se aplican...).</summary>
         public List<string> Avisos { get; set; } = new List<string>();

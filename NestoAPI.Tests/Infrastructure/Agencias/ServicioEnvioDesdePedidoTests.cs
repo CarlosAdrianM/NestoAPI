@@ -26,6 +26,74 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         private const int CTT = Constantes.Agencias.AGENCIA_CTT;
         private const int CANTERAS = Constantes.Agencias.AGENCIA_CANTERAS;
 
+        [TestMethod]
+        public async Task NotificadorCorreo_SoloEncolaElNumero_SinEsperarAlCorreo()
+        {
+            // Carlos (20/10/26): quien inserta el envío no espera a que se genere el PDF y salga el correo
+            var encolados = new List<int>();
+            var notificador = new NotificadorEntregaAgenciaCorreo(numero => encolados.Add(numero));
+
+            Task tarea = notificador.Notificar(new EnviosAgencia { Numero = 249871, Email = "cliente@ejemplo.es" });
+
+            Assert.IsTrue(tarea.IsCompleted);
+            await tarea;
+            CollectionAssert.AreEqual(new[] { 249871 }, encolados);
+        }
+
+        [TestMethod]
+        public async Task CorreoEntregaJob_SiSale_NoAvisaANadie()
+        {
+            var notificaciones = A.Fake<NestoAPI.Infraestructure.Notificaciones.IServicioNotificacionesPush>();
+            var envio = new EnviosAgencia { Numero = 1, Pedido = PEDIDO, Email = "c@ejemplo.es", Usuario = "NUEVAVISION\\Alfredo" };
+
+            await CorreoEntregaAgenciaJobs.Enviar(1, _ => envio, _ => Task.CompletedTask, notificaciones, _ => { });
+
+            A.CallTo(notificaciones).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task CorreoEntregaJob_SiFalla_AvisaEnLaCampanaAQuienInsertoElEnvio()
+        {
+            var notificaciones = A.Fake<NestoAPI.Infraestructure.Notificaciones.IServicioNotificacionesPush>();
+            var registrados = new List<Exception>();
+            var envio = new EnviosAgencia { Numero = 249871, Empresa = "1", Pedido = PEDIDO, Cliente = "15191", Email = "c@ejemplo.es", Usuario = "alfredo", CodigoBarras = "61197140249871" };
+
+            await CorreoEntregaAgenciaJobs.Enviar(249871, _ => envio, _ => throw new InvalidOperationException("SMTP caído"), notificaciones, registrados.Add);
+
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\alfredo", Constantes.Aplicaciones.NESTO,
+                A<NotificacionPushDTO>.That.Matches(n => n.Tipo == CorreoEntregaAgenciaJobs.TIPO_NOTIFICACION
+                    && n.Titulo.Contains(PEDIDO.ToString()) && n.Cuerpo.Contains("SMTP caído") && n.Cuerpo.Contains("Avise usted"))))
+                .MustHaveHappenedOnceExactly();
+            Assert.AreEqual(1, registrados.Count);
+        }
+
+        [TestMethod]
+        public async Task CorreoEntregaJob_SinCorreo_AvisaSinIntentarMandarlo()
+        {
+            var notificaciones = A.Fake<NestoAPI.Infraestructure.Notificaciones.IServicioNotificacionesPush>();
+            bool mandado = false;
+            var envio = new EnviosAgencia { Numero = 2, Pedido = PEDIDO, Email = " ", Usuario = "NUEVAVISION\\Alfredo" };
+
+            await CorreoEntregaAgenciaJobs.Enviar(2, _ => envio, _ => { mandado = true; return Task.CompletedTask; }, notificaciones, _ => { });
+
+            Assert.IsFalse(mandado);
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Alfredo", Constantes.Aplicaciones.NESTO,
+                A<NotificacionPushDTO>.That.Matches(n => n.Cuerpo.Contains("no tiene correo")))).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task CorreoEntregaJob_SinUsuarioAQuienAvisar_SoloElmah()
+        {
+            var notificaciones = A.Fake<NestoAPI.Infraestructure.Notificaciones.IServicioNotificacionesPush>();
+            var registrados = new List<Exception>();
+            var envio = new EnviosAgencia { Numero = 3, Pedido = PEDIDO, Email = "", Usuario = "NestoAPI" };
+
+            await CorreoEntregaAgenciaJobs.Enviar(3, _ => envio, _ => Task.CompletedTask, notificaciones, registrados.Add);
+
+            A.CallTo(notificaciones).MustNotHaveHappened();
+            Assert.AreEqual(1, registrados.Count);
+        }
+
         private const string RespuestaPlazaGls =
             "<?xml version=\"1.0\" encoding=\"utf-8\"?>" +
             "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\">" +

@@ -2022,7 +2022,7 @@ namespace NestoAPI.Controllers
         internal IServicioEnvioDesdePedido EnvioDesdePedido
         {
             get => envioDesdePedido ?? (envioDesdePedido = new ServicioEnvioDesdePedido(PropuestaEnvio, new DatosEnvioDesdePedidoEF(db),
-                PlazasAgencias, new NotificadorEntregaAgenciaCorreo(fabricaAgenciasRemotas.Crear), ex => RegistrarEnElmah?.Invoke(ex)));
+                PlazasAgencias, new NotificadorEntregaAgenciaCorreo(), ex => RegistrarEnElmah?.Invoke(ex)));
             set => envioDesdePedido = value;
         }
 

@@ -87,18 +87,117 @@ namespace NestoAPI.Infraestructure.Agencias
         Task Notificar(EnviosAgencia envio);
     }
 
-    /// <summary>El de siempre: GestorEnviosAgencia.EnviarCorreoEntregaAgencia (lo que llama Nesto en NotificarEntregaAgencia).</summary>
+    /// <summary>
+    /// El de siempre (GestorEnviosAgencia.EnviarCorreoEntregaAgencia, lo que llama Nesto en NotificarEntregaAgencia), pero en un
+    /// job de Hangfire: Carlos (20/10/26) no quiere que quien inserta el envío espere a que se genere el PDF y salga el correo.
+    /// Se encola solo el número; el job relee el envío de la BD.
+    /// </summary>
     public class NotificadorEntregaAgenciaCorreo : INotificadorEntregaAgencia
     {
-        private readonly Func<int, IAgenciaRemota> crearAgenciaRemota;
+        private readonly Action<int> encolar;
 
-        public NotificadorEntregaAgenciaCorreo(Func<int, IAgenciaRemota> crearAgenciaRemota)
+        /// <param name="encolar">Para los tests; por defecto, BackgroundJob.Enqueue del job.</param>
+        public NotificadorEntregaAgenciaCorreo(Action<int> encolar = null)
         {
-            this.crearAgenciaRemota = crearAgenciaRemota;
+            this.encolar = encolar ?? (numero => Hangfire.BackgroundJob.Enqueue(() => CorreoEntregaAgenciaJobs.Enviar(numero)));
         }
 
         public Task Notificar(EnviosAgencia envio)
-            => new GestorEnviosAgencia { CrearAgenciaRemota = crearAgenciaRemota }.EnviarCorreoEntregaAgencia(envio);
+        {
+            encolar(envio.Numero);
+            return Task.CompletedTask;
+        }
+    }
+
+    /// <summary>
+    /// NestoAPI#595 (slice 2): el job del correo «Pedido entregado a la agencia» de un envío creado desde el pedido. Si no sale
+    /// (sin correo o fallo al mandarlo), se avisa en la campana de Nesto (buzón + SignalR) a quien insertó el envío, para que
+    /// avise él al cliente: Carlos (20/10/26) prefiere que lo sepa el usuario en el momento a que se quede solo en ELMAH.
+    /// Sin reintentos automáticos: un reintento podría mandar el correo dos veces.
+    /// </summary>
+    public static class CorreoEntregaAgenciaJobs
+    {
+        public const string TIPO_NOTIFICACION = "CorreoEntregaAgenciaFallido";
+        private const string DOMINIO = "NUEVAVISION\\";
+
+        [Hangfire.AutomaticRetry(Attempts = 0)]
+        public static Task Enviar(int numeroEnvio)
+        {
+            var gestor = new GestorEnviosAgencia();
+            return Enviar(numeroEnvio, gestor.LeerEnvioDeBd, gestor.EnviarCorreoEntregaAgencia,
+                new Notificaciones.ServicioNotificacionesPush(), ex => ElmahHelper.Log(ex));
+        }
+
+        internal static async Task Enviar(int numeroEnvio, Func<int, EnviosAgencia> leer, Func<EnviosAgencia, Task> mandar,
+            Notificaciones.IServicioNotificacionesPush notificaciones, Action<Exception> registrar)
+        {
+            EnviosAgencia envio = leer(numeroEnvio);
+            if (envio == null)
+            {
+                return;
+            }
+            string motivo;
+            if (string.IsNullOrWhiteSpace(envio.Email))
+            {
+                motivo = "el envío no tiene correo electrónico";
+            }
+            else
+            {
+                try
+                {
+                    // Solo llegan envíos nuevos de TramitarAlCerrar (GLS): no hace falta la agencia remota (es para la recogida de CTT)
+                    await mandar(envio).ConfigureAwait(false);
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    registrar(new Exception($"[Envío desde pedido #595] No se pudo mandar el correo «Pedido entregado a la agencia» del envío {envio.Numero} (pedido {envio.Pedido}): {ex.Message}", ex));
+                    motivo = ex.Message;
+                }
+            }
+            await Avisar(envio, motivo, notificaciones, registrar).ConfigureAwait(false);
+        }
+
+        internal static NotificacionPushDTO Componer(EnviosAgencia envio, string motivo) => new NotificacionPushDTO
+        {
+            Titulo = $"No se ha avisado al cliente del pedido {envio.Pedido}",
+            Cuerpo = $"El correo «Pedido entregado a la agencia» del cliente {envio.Cliente?.Trim()} (envío {envio.Numero}) no ha salido: {motivo}. Avise usted al cliente con el número de seguimiento {envio.CodigoBarras?.Trim()}.",
+            Tipo = TIPO_NOTIFICACION,
+            Datos = new Dictionary<string, string>
+            {
+                ["tipo"] = TIPO_NOTIFICACION,
+                ["empresa"] = envio.Empresa?.Trim(),
+                ["envio"] = envio.Numero.ToString(),
+                ["pedido"] = envio.Pedido?.ToString(),
+                ["cliente"] = envio.Cliente?.Trim()
+            }
+        };
+
+        /// <summary>«NUEVAVISION\alfredo» o «alfredo» → «NUEVAVISION\alfredo»; null si el envío no tiene usuario o es de la propia API.</summary>
+        internal static string UsuarioBuzon(string usuario)
+        {
+            string sinDominio = usuario?.Substring(usuario.IndexOf('\\') + 1).Trim();
+            return string.IsNullOrWhiteSpace(sinDominio) || sinDominio == "NestoAPI" ? null : DOMINIO + sinDominio;
+        }
+
+        private static async Task Avisar(EnviosAgencia envio, string motivo, Notificaciones.IServicioNotificacionesPush notificaciones,
+            Action<Exception> registrar)
+        {
+            string usuario = UsuarioBuzon(envio.Usuario);
+            if (usuario == null)
+            {
+                registrar(new Exception($"[Envío desde pedido #595] El correo del envío {envio.Numero} no ha salido ({motivo}) y no hay a quién avisar."));
+                return;
+            }
+            try
+            {
+                await notificaciones.GuardarEnBuzonDeUsuario(usuario, Constantes.Aplicaciones.NESTO, Componer(envio, motivo)).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                registrar(new Exception($"[Envío desde pedido #595] No se pudo avisar a {usuario} de que el correo del envío {envio.Numero} no ha salido: {ex.Message}", ex));
+            }
+        }
     }
 
     public class ServicioEnvioDesdePedido : IServicioEnvioDesdePedido
