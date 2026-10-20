@@ -47,21 +47,21 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
 
             ResultadoTendencia r = Calcular(d);
 
-            // 125 uds en 12 días, contados como 14 (mínimo): 125 × 30,44 ÷ 14 = 271,79 uds/mes; recompra aún por medir: tope 30 días
+            // 125 uds en 12 días, contados como 30 (mínimo): 125 × 30,44 ÷ 30 = 126,83 uds/mes; recompra aún por medir: tope 30 días
             Assert.AreEqual(FasesProducto.NUEVO, r.Fase);
             Assert.AreEqual(0, r.MesesDesdePrimeraVenta);
-            Assert.AreEqual(271.79m, r.Velocidad);
+            Assert.AreEqual(126.83m, r.Velocidad);
             Assert.AreEqual(15, r.DiasEnServir);
             Assert.AreEqual(7, r.DiasSeguridad);
-            Assert.AreEqual(272, r.StockMaximoPropuesto);   // ⌈271,79 ÷ 30 × 30⌉
-            Assert.AreEqual(200, r.StockMinimoPropuesto);   // ⌈271,79 ÷ 30 × (15 + 7)⌉
+            Assert.AreEqual(127, r.StockMaximoPropuesto);   // ⌈126,83 ÷ 30 × 30⌉
+            Assert.AreEqual(94, r.StockMinimoPropuesto);    // ⌈126,83 ÷ 30 × (15 + 7)⌉
             Assert.AreEqual(AccionesPropuesta.AJUSTAR, r.Accion);
             Assert.AreEqual("A: velocidad hasta hoy × 30 días", r.Formula);
-            StringAssert.Contains(r.Explicacion, "Nuevo de este mes: 125 uds en 12 días (del 08/10/2026 al 19/10/2026) = 271,8 uds/mes " +
-                "(se cuentan al menos 14 días, para que el arranque no dispare el máximo)");
+            StringAssert.Contains(r.Explicacion, "Nuevo de este mes: 125 uds en 12 días (del 08/10/2026 al 19/10/2026) = 126,8 uds/mes " +
+                "(se cuentan al menos 30 días, para que el arranque no dispare el máximo)");
             StringAssert.Contains(r.Explicacion, "aún es pronto para ver si las ventas caen");
             StringAssert.Contains(r.Explicacion, "recompra aún sin datos (menos de 90 días: tope 30 días)");
-            StringAssert.Contains(r.Explicacion, "máximo 272 = 272, mínimo 200 (hoy 54/30)");
+            StringAssert.Contains(r.Explicacion, "máximo 127 = 127, mínimo 94 (hoy 54/30)");
             StringAssert.Contains(r.EntradasJson, "\"delMesEnCurso\":true");
         }
 
@@ -71,7 +71,7 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
             ResultadoTendencia r = Calcular(SerumPerle(primeraEntrada: new DateTime(2026, 10, 6)));
 
             Assert.AreEqual(FasesProducto.NUEVO, r.Fase);
-            Assert.AreEqual(272, r.StockMaximoPropuesto);
+            Assert.AreEqual(127, r.StockMaximoPropuesto);
             Assert.IsTrue(MotorTendencias.EsRelevante(SerumPerle(primeraEntrada: new DateTime(2026, 10, 6))), "sin stock al corte, pero con venta este mes");
         }
 
@@ -107,12 +107,12 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
 
             ResultadoTendencia r = Calcular(d);
 
-            // 1 ud ÷ 14 días × 30,44 = 2,17 uds/mes (con 1 día serían 30,44 y el máximo 31)
+            // 1 ud ÷ 30 días × 30,44 = 1,01 uds/mes (con 1 día serían 30,44 y el máximo 31)
             Assert.AreEqual(FasesProducto.NUEVO, r.Fase);
-            Assert.AreEqual(2.17m, r.Velocidad);
-            Assert.AreEqual(3, r.StockMaximoPropuesto);
-            Assert.AreEqual(2, r.StockMinimoPropuesto);
-            StringAssert.Contains(r.Explicacion, "Nuevo de este mes: 1 ud en 1 día (del 19/10/2026 al 19/10/2026) = 2,2 uds/mes");
+            Assert.AreEqual(1.01m, r.Velocidad);
+            Assert.AreEqual(2, r.StockMaximoPropuesto);
+            Assert.AreEqual(1, r.StockMinimoPropuesto);
+            StringAssert.Contains(r.Explicacion, "Nuevo de este mes: 1 ud en 1 día (del 19/10/2026 al 19/10/2026) = 1,0 uds/mes");
         }
 
         /// <summary>Nuevo desde el 01/07 (111 días hasta hoy): 3 uds al día hasta el 05/10 y luego <paramref name="ultimas"/> al día.</summary>
@@ -145,7 +145,7 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
             Assert.IsTrue(conCaida.StockMaximoPropuesto < sinCaida.StockMaximoPropuesto);
             Assert.AreEqual("A: velocidad reciente × 45 días", conCaida.Formula);
             StringAssert.Contains(conCaida.Explicacion, "Nuevo (3 meses desde la primera venta): 305 uds en 111 días (del 01/07/2026 al 19/10/2026) = 83,6 uds/mes");
-            StringAssert.Contains(conCaida.Explicacion, "las ventas de los últimos 14 días han caído a 30,4 uds/mes (14 uds): se usa esa velocidad. Velocidad 30,4 uds/mes");
+            StringAssert.Contains(conCaida.Explicacion, "las ventas de los últimos 14 días han caído un 63,6 % (más del 20 %) a 30,4 uds/mes (14 uds): se usa esa velocidad. Velocidad 30,4 uds/mes");
             StringAssert.Contains(conCaida.EntradasJson, "\"cae\":true");
         }
 
@@ -162,8 +162,46 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
             ResultadoTendencia r = Calcular(d);
 
             Assert.AreEqual(30.44m, r.Velocidad);
-            StringAssert.Contains(r.Explicacion, "las ventas de los últimos 14 días han caído a 30,4 uds/mes (14 uds)");
+            StringAssert.Contains(r.Explicacion, "las ventas de los últimos 14 días han caído un 62,9 % (más del 20 %) a 30,4 uds/mes (14 uds)");
             StringAssert.Contains(r.Explicacion, "al 30/09/2026");
+        }
+
+        /// <summary>Nuevo desde el 01/07: 10 uds al día hasta el 05/10 (970) y <paramref name="ultimos14"/> uds en los 14 últimos días.</summary>
+        private static DatosProductoTendencia NuevoConUltimos14(int ultimos14)
+        {
+            DatosProductoTendencia d = Producto("50022", ventas: Ultimos(310, 310, 300), stock: 100, diasEnServir: 15);
+            d.FechaPrimeraVenta = new DateTime(2026, 7, 1);
+            d.FechaPrimeraEntrada = new DateTime(2026, 6, 25);
+            d.FechaDatos = Hoy;
+            d.VentasDiarias = Dias(new DateTime(2026, 7, 1), 97, 10).Concat(Dias(new DateTime(2026, 10, 6), 14, ultimos14 / 14)).ToList();
+            d.VentasDiarias[97].Cantidad += ultimos14 % 14;
+            return d;
+        }
+
+        [TestMethod]
+        public void Nuevo_CaidaDel15PorCiento_NoCambiaNada()
+        {
+            // 1086 uds en 111 días = 297,82 uds/mes; los 14 últimos, 116 uds = 252,22 uds/mes: un 15,3 % menos, no más del 20 %
+            ResultadoTendencia r = Calcular(NuevoConUltimos14(116));
+
+            Assert.AreEqual(297.82m, r.Velocidad);
+            Assert.AreEqual(447, r.StockMaximoPropuesto);   // ⌈297,82 ÷ 30 × 45⌉
+            Assert.AreEqual("A: velocidad hasta hoy × 45 días", r.Formula);
+            StringAssert.Contains(r.Explicacion, "los últimos 14 días van a 252,2 uds/mes (116 uds), un 15,3 % menos (no más del 20 %): se sigue con la velocidad hasta hoy");
+            StringAssert.Contains(r.EntradasJson, "\"cae\":false");
+        }
+
+        [TestMethod]
+        public void Nuevo_CaidaDel25PorCiento_SeUsaLaReciente()
+        {
+            // 1071 uds en 111 días = 293,71 uds/mes; los 14 últimos, 101 uds = 219,60 uds/mes: un 25,2 % menos, más del 20 %
+            ResultadoTendencia r = Calcular(NuevoConUltimos14(101));
+
+            Assert.AreEqual(219.60m, r.Velocidad);
+            Assert.AreEqual(330, r.StockMaximoPropuesto);   // ⌈219,60 ÷ 30 × 45⌉
+            Assert.AreEqual(162, r.StockMinimoPropuesto);   // ⌈219,60 ÷ 30 × 22⌉
+            Assert.AreEqual("A: velocidad reciente × 45 días", r.Formula);
+            StringAssert.Contains(r.Explicacion, "las ventas de los últimos 14 días han caído un 25,2 % (más del 20 %) a 219,6 uds/mes (101 uds): se usa esa velocidad");
         }
 
         [TestMethod]
@@ -245,14 +283,18 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
         [TestMethod]
         public void Parametros_NuevosConfigurables()
         {
-            Assert.AreEqual(14, P.DiasMinimosVelocidadNuevo);
+            Assert.AreEqual(30, P.DiasMinimosVelocidadNuevo);
             Assert.AreEqual(14, P.DiasVentanaRecienteNuevos);
             Assert.AreEqual(30, P.TopeDiasFaseASinDatosRecompra);
+            Assert.AreEqual(0.20m, P.CaidaMinimaNuevos);
             ParametrosTendencias p = ParametrosTendencias.Desde(c => c == "PropuestasStock:DiasMinimosVelocidadNuevo" ? "21"
-                : c == "PropuestasStock:DiasVentanaRecienteNuevos" ? "28" : c == "PropuestasStock:TopeDiasFaseASinDatosRecompra" ? "20" : null);
+                : c == "PropuestasStock:DiasVentanaRecienteNuevos" ? "28" : c == "PropuestasStock:TopeDiasFaseASinDatosRecompra" ? "20"
+                : c == "PropuestasStock:CaidaMinimaNuevos" ? "0,3" : null);
             Assert.AreEqual(21, p.DiasMinimosVelocidadNuevo);
             Assert.AreEqual(28, p.DiasVentanaRecienteNuevos);
             Assert.AreEqual(20, p.TopeDiasFaseASinDatosRecompra);
+            Assert.AreEqual(0.3m, p.CaidaMinimaNuevos);
+            StringAssert.Contains(string.Join("|", P.Descripcion().Select(x => x.Nombre + "=" + x.Valor)), "CaidaMinimaNuevos=0.20");
         }
 
         [TestMethod]

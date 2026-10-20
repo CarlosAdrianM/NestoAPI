@@ -18,7 +18,7 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
     /// D × (seguridad + 2 × días en servir), al menos el mínimo más un múltiplo, y nunca más que D × cobertura objetivo.</para>
     /// <para>A: D = velocidad demostrada × factor; máximo = D × tope (45 días, 30 si no hay recompra) + lo pendiente de servir.
     /// NestoAPI#678: la velocidad va por días hasta hoy (también la de un nuevo de este mes, con la primera venta después del
-    /// corte) y, si las ventas de los últimos días caen, se usa la reciente; con menos de 90 días (recompra sin medir), tope de
+    /// corte) y, si las ventas de los últimos días caen más de un 20 %, se usa la reciente; con menos de 90 días (recompra sin medir), tope de
     /// 30 días. Ver <see cref="CalcularVelocidadNuevo"/>.
     /// C: máximo 0-2 (0 sin venta en 12 meses; 1 hasta 6 uds/año; 2 a partir de ahí), mínimo 0 o 1.</para>
     /// <para>NestoAPI#655: P (fabricación propia, familias PRP), sea cual sea la fase: ver <see cref="ProponerPropio"/>.</para>
@@ -227,6 +227,8 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                         ventana = velocidadNuevo.Ventana,
                         unidadesVentana = velocidadNuevo.UnidadesVentana,
                         reciente = velocidadNuevo.Reciente,
+                        caidaPorcentaje = velocidadNuevo.PorcentajeCaida,
+                        caidaMinima = velocidadNuevo.UmbralCaida,
                         cae = velocidadNuevo.Cae
                     }
             });
@@ -282,7 +284,13 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             }
             else if (v.Cae)
             {
-                texto += $"; las ventas de los últimos {v.Ventana} días han caído a {Num(v.Reciente ?? 0m, 1)} uds/mes ({Uds(v.UnidadesVentana)}): se usa esa velocidad";
+                texto += $"; las ventas de los últimos {v.Ventana} días han caído un {Num(v.PorcentajeCaida, 1)} % (más del {Num(v.UmbralCaida * 100m, 0)} %) " +
+                    $"a {Num(v.Reciente ?? 0m, 1)} uds/mes ({Uds(v.UnidadesVentana)}): se usa esa velocidad";
+            }
+            else if (v.PorcentajeCaida > 0m)
+            {
+                texto += $"; los últimos {v.Ventana} días van a {Num(v.Reciente ?? 0m, 1)} uds/mes ({Uds(v.UnidadesVentana)}), un {Num(v.PorcentajeCaida, 1)} % menos " +
+                    $"(no más del {Num(v.UmbralCaida * 100m, 0)} %): se sigue con la velocidad hasta hoy";
             }
             else
             {
@@ -314,7 +322,11 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             public int Ventana { get; set; }
             public int UnidadesVentana { get; set; }
             public decimal? Reciente { get; set; }
-            /// <summary>La ventana reciente va por debajo de la velocidad desde el lanzamiento: se usa la reciente.</summary>
+            /// <summary>Cuánto (en %) va la ventana reciente por debajo de la velocidad desde el lanzamiento; 0 si no va por debajo.</summary>
+            public decimal PorcentajeCaida { get; set; }
+            /// <summary><see cref="ParametrosTendencias.CaidaMinimaNuevos"/> con el que se ha decidido.</summary>
+            public decimal UmbralCaida { get; set; }
+            /// <summary>La ventana reciente ha caído más de <see cref="UmbralCaida"/>: se usa la reciente.</summary>
             public bool Cae { get; set; }
             public decimal Usada => Cae && Reciente.HasValue ? Reciente.Value : DesdeLanzamiento;
         }
@@ -323,7 +335,8 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         /// NestoAPI#678 (Carlos, 20/10/26: «velocidad hasta hoy […] y que el máximo y el mínimo tengan en cuenta cualquier caída sin
         /// esperar a final de mes»). Con ventas por días: velocidad desde el lanzamiento = unidades desde la primera venta hasta
         /// hoy ÷ max(días reales, <see cref="ParametrosTendencias.DiasMinimosVelocidadNuevo"/>) × 30,44; y la ventana reciente
-        /// (<see cref="CalculadoraSeries.DiasVentanaReciente"/>): si su velocidad es menor, se usa esa (la más baja). Sin ventas por
+        /// (<see cref="CalculadoraSeries.DiasVentanaReciente"/>): si su velocidad ha caído más de
+        /// <see cref="ParametrosTendencias.CaidaMinimaNuevos"/> (Carlos, segunda vuelta: más de un 20 %), se usa esa. Sin ventas por
         /// días (no leídas), por meses cerrados hasta el corte, como antes (<see cref="CalculadoraSeries.Velocidad"/>).
         /// </summary>
         internal static VelocidadNuevo CalcularVelocidadNuevo(DatosProductoTendencia d, DateTime lanzamiento, DateTime fechaCorte, DateTime hoy, ParametrosTendencias p)
@@ -350,7 +363,11 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             {
                 v.UnidadesVentana = CalculadoraSeries.SumaDiaria(d.VentasDiarias, hoy.AddDays(-v.Ventana), hoy);
                 v.Reciente = CalculadoraSeries.VelocidadPorDias(v.UnidadesVentana, v.Ventana);
-                v.Cae = v.Reciente.Value < v.DesdeLanzamiento;
+                v.UmbralCaida = Math.Max(0m, p.CaidaMinimaNuevos);
+                v.PorcentajeCaida = v.DesdeLanzamiento > 0m && v.Reciente.Value < v.DesdeLanzamiento
+                    ? Math.Round((1m - v.Reciente.Value / v.DesdeLanzamiento) * 100m, 1)
+                    : 0m;
+                v.Cae = v.DesdeLanzamiento > 0m && v.Reciente.Value < v.DesdeLanzamiento * (1m - v.UmbralCaida);
             }
             return v;
         }

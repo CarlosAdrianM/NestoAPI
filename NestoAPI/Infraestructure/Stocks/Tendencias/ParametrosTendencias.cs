@@ -62,17 +62,24 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         public int TopeDiasFaseASinDatosRecompra { get; set; } = 30;
 
         /// <summary>
-        /// NestoAPI#678: la velocidad de un nuevo, por días, nunca se divide por menos de estos días. Con 14 (dos semanas, un ciclo
-        /// normal de pedidos), una venta de 1 ud el primer día da 2,2 uds/mes y no 30; y 125 uds en 12 días dan 271,8 uds/mes
-        /// (125 ÷ 14 × 30,44) en vez de 317.
+        /// NestoAPI#678: la velocidad de un nuevo, por días, nunca se divide por menos de estos días. Carlos (20/10/26, segunda
+        /// vuelta): 30, un mes. Así una venta de 1 ud el primer día da 1 ud/mes y no 30; y 125 uds en 12 días (el 45958) dan
+        /// 126,8 uds/mes (125 ÷ 30 × 30,44) y un máximo de 127, en vez de 317 uds/mes con los días reales.
         /// </summary>
-        public int DiasMinimosVelocidadNuevo { get; set; } = 14;
+        public int DiasMinimosVelocidadNuevo { get; set; } = 30;
+
+        /// <summary>
+        /// NestoAPI#678 (Carlos, 20/10/26, segunda vuelta): la velocidad de la ventana reciente de un nuevo solo se usa si ha caído
+        /// MÁS de esta fracción respecto a la velocidad hasta hoy (0,20 = más de un 20 %). Una caída menor es ruido de una semana
+        /// floja: se sigue con la velocidad hasta hoy.
+        /// </summary>
+        public decimal CaidaMinimaNuevos { get; set; } = 0.20m;
 
         /// <summary>
         /// NestoAPI#678 (Carlos, 20/10/26: «tener en cuenta cualquier caída sin esperar a final de mes»): días de la ventana reciente
         /// de un nuevo. La ventana es la mitad de la vida del producto como mucho (para que quede historia antes con la que
-        /// comparar) y al menos 7 días; si las ventas de la ventana van por debajo de la velocidad desde el lanzamiento, se usa la
-        /// reciente para el máximo y el mínimo.
+        /// comparar) y al menos 7 días; si las ventas de la ventana han caído más de <see cref="CaidaMinimaNuevos"/> respecto a la
+        /// velocidad hasta hoy, se usa la reciente para el máximo y el mínimo.
         /// </summary>
         public int DiasVentanaRecienteNuevos { get; set; } = 14;
 
@@ -141,6 +148,7 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             p.TopeDiasFaseASinDatosRecompra = Entero(leer, nameof(TopeDiasFaseASinDatosRecompra), p.TopeDiasFaseASinDatosRecompra);
             p.DiasMinimosVelocidadNuevo = Entero(leer, nameof(DiasMinimosVelocidadNuevo), p.DiasMinimosVelocidadNuevo);
             p.DiasVentanaRecienteNuevos = Entero(leer, nameof(DiasVentanaRecienteNuevos), p.DiasVentanaRecienteNuevos);
+            p.CaidaMinimaNuevos = Numero(leer, nameof(CaidaMinimaNuevos), p.CaidaMinimaNuevos);
             p.UnidadesMinimasFamiliaEstacionalidad = Entero(leer, nameof(UnidadesMinimasFamiliaEstacionalidad), p.UnidadesMinimasFamiliaEstacionalidad);
             p.DiasSeguridadPropios = Entero(leer, nameof(DiasSeguridadPropios), p.DiasSeguridadPropios);
             p.VidaUtilMesesPropios = Entero(leer, nameof(VidaUtilMesesPropios), p.VidaUtilMesesPropios);
@@ -187,7 +195,8 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             yield return (nameof(RecompraMinima), RecompraMinima.ToString(CultureInfo.InvariantCulture), "Fase A: recompra (%) por debajo de la cual se acorta el tope");
             yield return (nameof(TopeDiasFaseASinDatosRecompra), TopeDiasFaseASinDatosRecompra.ToString(), "Fase A con menos de 90 días (recompra aún sin medir): tope en días");
             yield return (nameof(DiasMinimosVelocidadNuevo), DiasMinimosVelocidadNuevo.ToString(), "Fase A: la velocidad por días nunca se divide por menos de estos días");
-            yield return (nameof(DiasVentanaRecienteNuevos), DiasVentanaRecienteNuevos.ToString(), "Fase A: días de la ventana reciente; si sus ventas caen, se usa esa velocidad");
+            yield return (nameof(DiasVentanaRecienteNuevos), DiasVentanaRecienteNuevos.ToString(), "Fase A: días de la ventana reciente; si sus ventas caen más de CaidaMinimaNuevos, se usa esa velocidad");
+            yield return (nameof(CaidaMinimaNuevos), CaidaMinimaNuevos.ToString(CultureInfo.InvariantCulture), "Fase A: caída (fracción) de la ventana reciente a partir de la cual se usa su velocidad (0.20 = más de un 20 %)");
             yield return (nameof(UnidadesMinimasFamiliaEstacionalidad), UnidadesMinimasFamiliaEstacionalidad.ToString(), "Estacionalidad: mínimo de unidades de la familia en 36 meses");
             yield return (nameof(DiasSeguridadPropios), DiasSeguridadPropios.ToString(), "Propios (P): días de seguridad");
             yield return (nameof(VidaUtilMesesPorGrupo), VidaUtilMesesPorGrupo, "Propios (P): vida útil por grupo en meses de venta (tope del máximo); 0 = no caduca: " + TextoVidaUtil());
