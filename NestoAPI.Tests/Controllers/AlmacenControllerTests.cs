@@ -416,6 +416,42 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public async Task GetRecogida_Ligero_NoCompletaFichasNiVecinosDeHueco()
+        {
+            // NestoAPI#640: para sondear cada pocos segundos lo que coge otra PDA
+            IFichasProductoAlmacen fichas = A.Fake<IFichasProductoAlmacen>();
+            var recogida = new RecogidaAlmacenDTO
+            {
+                Tipo = "PICK", Numero = 99739, Almacen = "ALG",
+                Lineas = new List<LineaRecogidaDTO> { new LineaRecogidaDTO { Producto = "22624", Pasillo = "001", Fila = "001", Columna = "001" } }
+            };
+            A.CallTo(() => servicio.LeerRecogida("1", "PICK", 99739)).Returns(recogida);
+
+            IHttpActionResult resultado = await ConFichas(fichas).GetRecogida("PICK", 99739, ligero: true);
+
+            Assert.AreSame(recogida, ((OkNegotiatedContentResult<RecogidaAlmacenDTO>)resultado).Content);
+            A.CallTo(fichas).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task GetRecogida_MarcaComoPropioLoLeidoPorElMismoUsuario()
+        {
+            var andrey = new LectorLineaRecogidaDTO { Usuario = "andrey", Leido = 1 };
+            var pedro = new LectorLineaRecogidaDTO { Usuario = "Pedro", Leido = 2 };
+            var recogida = new RecogidaAlmacenDTO
+            {
+                Tipo = "PICK", Numero = 99739,
+                Lineas = new List<LineaRecogidaDTO> { new LineaRecogidaDTO { Producto = "22624", Lectores = new List<LectorLineaRecogidaDTO> { andrey, pedro } } }
+            };
+            A.CallTo(() => servicio.LeerRecogida("1", "PICK", 99739)).Returns(recogida);
+
+            _ = await controller.GetRecogida("PICK", 99739, ligero: true);
+
+            Assert.IsTrue(andrey.Propio, "El token es de Andrey (sin distinguir mayúsculas)");
+            Assert.IsFalse(pedro.Propio);
+        }
+
+        [TestMethod]
         public async Task GetPackingDelPicking_CompletaLaFichaDeTodasLasLineas()
         {
             // Ariadna#9: en el packing también se ve la ficha y la foto de lo que se mete en la caja

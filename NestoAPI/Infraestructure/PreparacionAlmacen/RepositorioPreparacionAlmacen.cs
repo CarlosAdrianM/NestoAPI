@@ -67,6 +67,11 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public string Producto { get; set; }
         public int Unidades { get; set; }
         public int Faltas { get; set; }
+        /// <summary>
+        /// NestoAPI#640: quién lo ha leído (PreparacionEscaneos.Usuario). Las lecturas vienen por producto y usuario: todo lo
+        /// que mira el producto suma las filas, así que cuadra igual que antes. Null en las de antes de #640 o en las pruebas.
+        /// </summary>
+        public string Usuario { get; set; }
     }
 
     /// <summary>
@@ -166,21 +171,25 @@ WHERE l.Empresa = @p0 AND l.[Almacén] = @p1 AND l.Estado = 1 AND l.TipoLinea = 
 GROUP BY l.Picking
 ORDER BY l.Picking DESC";
 
+        // NestoAPI#640: por producto Y por usuario, para saber quién ha leído cada parada (ServicioPreparacionAlmacen.RepartirLectores).
+        // Todo lo demás suma las filas del producto, así que el resultado es el mismo que agrupando solo por producto.
         internal const string SQL_LECTURAS_DEL_PICKING = @"
 SELECT RTRIM(e.Producto) AS Producto,
        CAST(SUM(CASE WHEN e.Metodo <> 'FALTA' THEN e.Cantidad ELSE 0 END) AS int) AS Unidades,
-       CAST(SUM(CASE WHEN e.Metodo = 'FALTA' THEN e.Cantidad ELSE 0 END) AS int) AS Faltas
+       CAST(SUM(CASE WHEN e.Metodo = 'FALTA' THEN e.Cantidad ELSE 0 END) AS int) AS Faltas,
+       RTRIM(e.Usuario) AS Usuario
 FROM PreparacionEscaneos e
 WHERE e.Empresa = @p0 AND e.TipoOrigen = 'PICK' AND e.NumeroOrigen = @p1 AND e.Fase = 'PICK'
-GROUP BY e.Producto";
+GROUP BY e.Producto, e.Usuario";
 
         internal const string SQL_LECTURAS_DE_SALIDA = @"
 SELECT RTRIM(e.Producto) AS Producto,
        CAST(SUM(CASE WHEN e.Metodo <> 'FALTA' THEN e.Cantidad ELSE 0 END) AS int) AS Unidades,
-       CAST(SUM(CASE WHEN e.Metodo = 'FALTA' THEN e.Cantidad ELSE 0 END) AS int) AS Faltas
+       CAST(SUM(CASE WHEN e.Metodo = 'FALTA' THEN e.Cantidad ELSE 0 END) AS int) AS Faltas,
+       RTRIM(e.Usuario) AS Usuario
 FROM PreparacionEscaneos e
 WHERE e.Empresa = @p0 AND e.TipoOrigen = @p1 AND e.NumeroOrigen = @p2 AND e.Fase = 'PICK'
-GROUP BY e.Producto";
+GROUP BY e.Producto, e.Usuario";
 
         // NestoAPI#556: la salida de un traspaso de reposición son sus filas de PreExtrProducto en el diario de salida
         // del almacén de origen (Almacenes.DiarioSalidaRep; «General» en Algete), con NºTraspaso y cantidad negativa,

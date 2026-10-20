@@ -153,6 +153,24 @@ namespace NestoAPI.Models.PreparacionAlmacen
         /// </summary>
         public int Faltas { get; set; }
         public int Pendiente => Math.Max(0, Cantidad - Resuelto);
+        /// <summary>
+        /// NestoAPI#640: quién ha resuelto esta parada (cada PDA o móvil que lee la misma salida), para refrescar lo que
+        /// coge la otra y avisar antes de dar por falta lo que otro ya ha leído. Vacía si nadie ha leído nada de ella.
+        /// Suma lo mismo que <see cref="Resuelto"/> (Leido) y <see cref="Faltas"/>.
+        /// </summary>
+        public List<LectorLineaRecogidaDTO> Lectores { get; set; } = new List<LectorLineaRecogidaDTO>();
+    }
+
+    /// <summary>NestoAPI#640: lo que ha leído y dado por falta un usuario en una parada.</summary>
+    public class LectorLineaRecogidaDTO
+    {
+        /// <summary>El usuario con el que se leyó (PreparacionEscaneos.Usuario).</summary>
+        public string Usuario { get; set; }
+        /// <summary>Unidades cogidas (sin las faltas).</summary>
+        public int Leido { get; set; }
+        public int Faltas { get; set; }
+        /// <summary>Es el mismo usuario que pregunta: lo suyo no hay que avisárselo.</summary>
+        public bool Propio { get; set; }
     }
 
     /// <summary>

@@ -129,11 +129,15 @@ namespace NestoAPI.Controllers
         /// <summary>
         /// El recorrido de una recogida y cómo va, en una sola llamada: cada parada con lo que ya está
         /// hecho, y por cuál seguir. Así la app abre donde se dejó sin que el mozo toque nada.
+        /// NestoAPI#640: cada parada dice quién la ha resuelto (Lectores). Con <paramref name="ligero"/>, lo mismo sin la
+        /// ficha, la foto, los códigos ni los vecinos de hueco de cada producto: para sondear cada pocos segundos lo que
+        /// coge otra PDA (la app ya tiene lo demás de cuando la abrió).
         /// </summary>
         [HttpGet]
         [Route("Recogidas/{tipo}/{numero:int}")]
         [ResponseType(typeof(RecogidaAlmacenDTO))]
-        public async Task<IHttpActionResult> GetRecogida(string tipo, int numero, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        public async Task<IHttpActionResult> GetRecogida(string tipo, int numero, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO,
+            bool ligero = false)
         {
             if (CasadorEscaneos.NormalizarTipoOrigen(tipo) == null)
             {
@@ -144,10 +148,24 @@ namespace NestoAPI.Controllers
             {
                 return NotFound();
             }
-            await Task.WhenAll(
-                CompletarFichas(Empresa(empresa), recogida.Lineas),
-                CompletarMismoHueco(Empresa(empresa), recogida.Almacen, recogida.Lineas)).ConfigureAwait(false);
+            MarcarLoPropio(recogida);
+            if (!ligero)
+            {
+                await Task.WhenAll(
+                    CompletarFichas(Empresa(empresa), recogida.Lineas),
+                    CompletarMismoHueco(Empresa(empresa), recogida.Almacen, recogida.Lineas)).ConfigureAwait(false);
+            }
             return Ok(recogida);
+        }
+
+        /// <summary>NestoAPI#640: lo que ha leído el mismo usuario que pregunta (con el mismo nombre que se guarda en los escaneos).</summary>
+        private void MarcarLoPropio(RecogidaAlmacenDTO recogida)
+        {
+            string yo = UsuarioAuditoriaHelper.ParaAuditoria(Usuario());
+            foreach (LectorLineaRecogidaDTO lector in recogida.Lineas.SelectMany(l => l.Lectores ?? new List<LectorLineaRecogidaDTO>()))
+            {
+                lector.Propio = string.Equals(lector.Usuario?.Trim(), yo, StringComparison.OrdinalIgnoreCase);
+            }
         }
 
         // POST api/Almacen/Recogidas/PICK/99633/Terminar?empresa=1

@@ -754,6 +754,56 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         }
 
         [TestMethod]
+        public void MontarRecogida_VariasPdaConElMismoProductoEnVariasParadas_RepartenQuienLeyoCadaParada()
+        {
+            // NestoAPI#640: A está en dos huecos (3 + 2). Pedro ha leído 4 y Andre 1; Andre ha dado además 1 de B por falta
+            // y la ha leído Pedro también (B lleva 2).
+            var recorrido = new List<LineaPickingAlmacenDTO>
+            {
+                Parada(1, "A", 3, "001"), Parada(2, "B", 2, "002"), Parada(3, "A", 2, "005"), Parada(4, "C", 1, "007")
+            };
+            var lecturas = new List<LecturaPickingAlmacen>
+            {
+                new LecturaPickingAlmacen { Producto = "A", Usuario = "Pedro", Unidades = 4 },
+                new LecturaPickingAlmacen { Producto = "A", Usuario = "Andre", Unidades = 1 },
+                new LecturaPickingAlmacen { Producto = "B", Usuario = "Andre", Faltas = 1 },
+                new LecturaPickingAlmacen { Producto = "B", Usuario = "Pedro", Unidades = 1 }
+            };
+
+            RecogidaAlmacenDTO recogida = ServicioPreparacionAlmacen.MontarRecogida(EMPRESA, "PICK", PICKING, "Mesa de packing", recorrido, lecturas);
+
+            CollectionAssert.AreEqual(new[] { 3, 2, 2, 0 }, recogida.Lineas.Select(l => l.Resuelto).ToArray(), "Lo resuelto, como siempre");
+            // Primera parada de A: 3 cogidas, por orden de usuario (Andre 1, Pedro 2); la segunda, lo que queda de Pedro
+            Assert.AreEqual("Andre:1/0 Pedro:2/0", Lectores(recogida.Lineas[0]));
+            Assert.AreEqual("Pedro:2/0", Lectores(recogida.Lineas[2]));
+            Assert.AreEqual("Andre:0/1 Pedro:1/0", Lectores(recogida.Lineas[1]));
+            Assert.AreEqual(0, recogida.Lineas[3].Lectores.Count, "Nadie ha leído C");
+            foreach (LineaRecogidaDTO linea in recogida.Lineas)
+            {
+                Assert.AreEqual(linea.Resuelto - linea.Faltas, linea.Lectores.Sum(l => l.Leido), "Lo leído de cada parada cuadra");
+                Assert.AreEqual(linea.Faltas, linea.Lectores.Sum(l => l.Faltas), "Las faltas de cada parada cuadran");
+            }
+        }
+
+        [TestMethod]
+        public void MontarRecogida_LoLeidoDeMas_NoSeApuntaANingunLector()
+        {
+            var recorrido = new List<LineaPickingAlmacenDTO> { Parada(1, "A", 2, "001") };
+            var lecturas = new List<LecturaPickingAlmacen>
+            {
+                new LecturaPickingAlmacen { Producto = "A", Usuario = "Andre", Unidades = 2 },
+                new LecturaPickingAlmacen { Producto = "A", Usuario = "Pedro", Unidades = 3 }
+            };
+
+            RecogidaAlmacenDTO recogida = ServicioPreparacionAlmacen.MontarRecogida(EMPRESA, "PICK", PICKING, "Mesa de packing", recorrido, lecturas);
+
+            Assert.AreEqual("Andre:2/0", Lectores(recogida.Lineas[0]));
+        }
+
+        private static string Lectores(LineaRecogidaDTO linea)
+            => string.Join(" ", linea.Lectores.Select(l => $"{l.Usuario}:{l.Leido}/{l.Faltas}"));
+
+        [TestMethod]
         public void MontarRecogida_UnaFaltaDeshecha_NoQuedaEnFalta()
         {
             // La falta y su deshacer («La encontré»): la suma de las FALTA es 0

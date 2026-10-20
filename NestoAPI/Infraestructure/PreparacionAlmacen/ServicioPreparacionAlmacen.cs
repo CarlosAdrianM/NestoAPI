@@ -256,6 +256,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 (lecturas ?? new List<LecturaPickingAlmacen>())
                     .Select(l => new CasadorEscaneos.Cantidad { Producto = l.Producto, Unidades = l.Unidades + l.Faltas }));
             RepartirLasFaltas(lineas, lecturas);
+            RepartirLectores(lineas, lecturas);
             return new RecogidaAlmacenDTO
             {
                 Empresa = empresa,
@@ -292,6 +293,52 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 }
                 linea.Faltas = Math.Min(quedan, Math.Max(0, linea.Resuelto));
                 faltas[producto] = quedan - linea.Faltas;
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#640 (varias PDA en la misma salida): quién ha resuelto cada parada. Las lecturas dicen el producto y el
+        /// usuario, no el hueco, así que se reparten como lo resuelto: lo cogido de cada parada (Resuelto − Faltas) sale de
+        /// lo leído por cada usuario, por orden de parada y de usuario, y sus faltas, de las faltas de cada uno. Nunca pasa de
+        /// lo que hay en la parada: lo leído de más no se asigna a ninguna.
+        /// </summary>
+        internal static void RepartirLectores(List<LineaRecogidaDTO> lineas, IEnumerable<LecturaPickingAlmacen> lecturas)
+        {
+            Dictionary<string, List<LectorLineaRecogidaDTO>> porProducto = (lecturas ?? Enumerable.Empty<LecturaPickingAlmacen>())
+                .GroupBy(l => l.Producto?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g
+                    .GroupBy(l => l.Usuario?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(u => u.Key, StringComparer.OrdinalIgnoreCase)
+                    .Select(u => new LectorLineaRecogidaDTO
+                    {
+                        Usuario = u.Key.Length == 0 ? null : u.Key,
+                        Leido = Math.Max(0, u.Sum(l => l.Unidades)),
+                        Faltas = Math.Max(0, u.Sum(l => l.Faltas))
+                    })
+                    .ToList(), StringComparer.OrdinalIgnoreCase);
+
+            foreach (LineaRecogidaDTO linea in lineas.OrderBy(l => l.Orden))
+            {
+                linea.Lectores = new List<LectorLineaRecogidaDTO>();
+                if (!porProducto.TryGetValue(linea.Producto?.Trim() ?? string.Empty, out List<LectorLineaRecogidaDTO> quedan))
+                {
+                    continue;
+                }
+                int cogido = Math.Max(0, linea.Resuelto - linea.Faltas);
+                int enFalta = Math.Max(0, linea.Faltas);
+                foreach (LectorLineaRecogidaDTO lector in quedan)
+                {
+                    int leido = Math.Min(cogido, lector.Leido);
+                    int faltas = Math.Min(enFalta, lector.Faltas);
+                    lector.Leido -= leido;
+                    lector.Faltas -= faltas;
+                    cogido -= leido;
+                    enFalta -= faltas;
+                    if (leido > 0 || faltas > 0)
+                    {
+                        linea.Lectores.Add(new LectorLineaRecogidaDTO { Usuario = lector.Usuario, Leido = leido, Faltas = faltas });
+                    }
+                }
             }
         }
 
