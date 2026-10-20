@@ -48,8 +48,10 @@ namespace NestoAPI.Controllers
         }
 
         /// <summary>
-        /// Lo que contesta el vendedor: «Anadido» (ofrecida y aceptada) o «NoLeInteresa» (ofrecida y rechazada: no se le vuelve a
-        /// sugerir a este cliente en 60 días). Con «NoLeInteresa» devuelve la sustituta (en el mismo hueco), si la hay.
+        /// Lo que contesta el vendedor: «Anadido» (ofrecida y aceptada), «NoLeInteresa» (ofrecida y rechazada) o
+        /// «DescartadoVendedor» (Nesto#537: el vendedor no la ofrece porque sabe que no la quiere o no se la puede vender; se
+        /// registra aparte del rechazo del cliente). Con las dos últimas no se le vuelve a sugerir a este cliente en 60 días y
+        /// devuelve la sustituta (en el mismo hueco), si la hay.
         /// </summary>
         [HttpPost]
         [Route("{idSugerencia:int}/Respuesta")]
@@ -77,7 +79,9 @@ namespace NestoAPI.Controllers
             {
                 db.Configuration.LazyLoadingEnabled = false;
                 db.Configuration.ProxyCreationEnabled = false;
-                return await accion(new ServicioSugerenciasProductos(new RepositorioSugerenciasProductosSql(db))).ConfigureAwait(false);
+                // Nesto#537: las fichas llevan la foto de la tienda (la caché de las fotos es común a todas las peticiones)
+                return await accion(new ServicioSugerenciasProductos(new RepositorioSugerenciasProductosSql(db),
+                    fotos: new Infraestructure.PreparacionAlmacen.FotosProductoAlmacen())).ConfigureAwait(false);
             }
         }
     }

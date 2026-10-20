@@ -14,11 +14,35 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         public const string PARECIDOS = FuentesNucleo.PARECIDOS;
     }
 
-    /// <summary>NestoAPI#670: lo que contesta el vendedor dentro de la sugerencia («✓ Añadir» y «✗ No le interesa»).</summary>
+    /// <summary>
+    /// NestoAPI#670: lo que contesta el vendedor dentro de la sugerencia («✓ Añadir», «✗ No le interesa» y, desde Nesto#537
+    /// segunda vuelta, «🚫 Quitar»).
+    /// <para>IMPORTANTE para el modelo de aceptación (NestoAPI#671, corte 2e): solo <see cref="ANADIDO"/> (positivo) y
+    /// <see cref="NO_LE_INTERESA"/> (negativo) son respuestas DEL CLIENTE. <see cref="DESCARTADO_VENDEDOR"/> es una decisión
+    /// del vendedor sin llegar a ofrecerlo («sé que no lo quiere» o «no se lo puedo vender»): NO es un negativo del cliente y
+    /// no debe entrar como etiqueta 0 al entrenar; como mucho, como dato aparte (o se descarta la fila). Lo mismo con las
+    /// filas provisionales de antes del script Issue670b (Respuesta «NoLeInteresa» con Texto que empieza por
+    /// <see cref="MARCA_DESCARTADO_VENDEDOR"/>): el script las pasa a «DescartadoVendedor».</para>
+    /// <para>Para no volver a sugerirlo a ese cliente en 60 días, «NoLeInteresa» y «DescartadoVendedor» cuentan igual
+    /// (<see cref="ExcluyenSesentaDias"/>).</para>
+    /// </summary>
     public static class RespuestasSugerencia
     {
         public const string ANADIDO = "Anadido";
         public const string NO_LE_INTERESA = "NoLeInteresa";
+        /// <summary>Nesto#537: «No se lo ofrezco» (el vendedor la quita sin ofrecerla). No es un rechazo del cliente.</summary>
+        public const string DESCARTADO_VENDEDOR = "DescartadoVendedor";
+
+        /// <summary>
+        /// Sin el script Issue670b, el CK de Respuesta no admite «DescartadoVendedor»: se guarda «NoLeInteresa» (excluye igual
+        /// 60 días) y el Texto empieza por esta marca, para que el script lo pase a «DescartadoVendedor» y el modelo no lo lea
+        /// como un rechazo del cliente.
+        /// </summary>
+        public const string MARCA_DESCARTADO_VENDEDOR = "[DescartadoVendedor] ";
+
+        /// <summary>Las que no se vuelven a sugerir a ese cliente en 60 días y dejan hueco para una sustituta.</summary>
+        public static bool ExcluyenSesentaDias(string respuesta)
+            => respuesta == NO_LE_INTERESA || respuesta == DESCARTADO_VENDEDOR;
     }
 
     /// <summary>NestoAPI#670: aplicaciones que pueden pedir sugerencias.</summary>
@@ -70,6 +94,18 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         public string Texto { get; set; }
         /// <summary>1..4: el hueco del panel (la sustituta ocupa el de la rechazada).</summary>
         public int Posicion { get; set; }
+
+        // Nesto#537 (segunda vuelta): fichas más ricas. Opcionales: los clientes de antes no los leen.
+
+        /// <summary>La foto de la tienda (la misma de Ariadna, con caché). Null si no tiene o la tienda no contesta a tiempo.</summary>
+        public string UrlFoto { get; set; }
+        /// <summary>Productos.Tamaño. Null o 0: sin tamaño.</summary>
+        public short? Tamano { get; set; }
+        public string UnidadMedida { get; set; }
+        /// <summary>La descripción de la familia (Familias.Descripción); si no la tiene, el código.</summary>
+        public string Familia { get; set; }
+        /// <summary>«Crema Reafirmante 500 ml»: el nombre con el tamaño y la unidad detrás (sin tamaño, el nombre solo).</summary>
+        public string NombreConTamano { get; set; }
     }
 
     /// <summary>NestoAPI#670: respuesta de Calcular.</summary>
@@ -82,7 +118,7 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
     /// <summary>NestoAPI#670: cuerpo de POST api/SugerenciasProductos/{IdSugerencia}/Respuesta.</summary>
     public class RespuestaSugerenciaDTO
     {
-        /// <summary>"Anadido" o "NoLeInteresa".</summary>
+        /// <summary>"Anadido", "NoLeInteresa" o "DescartadoVendedor".</summary>
         public string Respuesta { get; set; }
         /// <summary>Opcional: el carrito de ahora. Si no viene, se usa el del último Calcular de la sesión.</summary>
         public List<ProductoCarritoSugerenciaDTO> Productos { get; set; }
@@ -93,7 +129,7 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
     {
         public int IdSugerencia { get; set; }
         public string Respuesta { get; set; }
-        /// <summary>Con «NoLeInteresa», la que ocupa su hueco. Null si no hay otra (o con «Anadido»).</summary>
+        /// <summary>Con «NoLeInteresa» o «DescartadoVendedor», la que ocupa su hueco. Null si no hay otra (o con «Anadido»).</summary>
         public SugerenciaProductoDTO Sustituta { get; set; }
         /// <summary>Las que quedan visibles después de responder (con la sustituta).</summary>
         public List<SugerenciaProductoDTO> Sugerencias { get; set; } = new List<SugerenciaProductoDTO>();
@@ -155,6 +191,12 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
     /// </summary>
     public class FichaProductoSugerencia : ModeloSugerenciasProductos.Datos.FichaProducto
     {
+        /// <summary>Nesto#537: Productos.Tamaño (solo para enseñarlo).</summary>
+        public short? Tamano { get; set; }
+        /// <summary>Nesto#537: Productos.UnidadMedida (solo para enseñarlo).</summary>
+        public string UnidadMedida { get; set; }
+        /// <summary>Nesto#537: Familias.Descripción (solo para enseñarlo; las reglas miran el código, <c>Familia</c>).</summary>
+        public string NombreFamilia { get; set; }
     }
 
     public class ParCompradoJunto

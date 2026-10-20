@@ -1,8 +1,10 @@
 using NestoAPI.Infraestructure.CorreosPostCompra;
+using NestoAPI.Infraestructure.PreparacionAlmacen;
 using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -32,13 +34,16 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         private readonly IRepositorioSugerenciasProductos repositorio;
         private readonly Func<DateTime> ahora;
         private readonly Action<Exception> registrarError;
+        private readonly IFotosProductoAlmacen fotos;
 
+        /// <param name="fotos">Nesto#537: las fotos de la tienda (las de Ariadna, con caché). Null: las fichas van sin foto.</param>
         public ServicioSugerenciasProductos(IRepositorioSugerenciasProductos repositorio, Func<DateTime> ahora = null,
-            Action<Exception> registrarError = null)
+            Action<Exception> registrarError = null, IFotosProductoAlmacen fotos = null)
         {
             this.repositorio = repositorio;
             this.ahora = ahora ?? (() => DateTime.Now);
             this.registrarError = registrarError ?? ElmahHelper.Log;
+            this.fotos = fotos;
         }
 
         /// <summary>
@@ -149,7 +154,7 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
             string respuesta = Respuesta(peticion?.Respuesta);
             if (respuesta == null)
             {
-                throw new SugerenciasProductosException(false, "La respuesta tiene que ser «Anadido» o «NoLeInteresa».");
+                throw new SugerenciasProductosException(false, "La respuesta tiene que ser «Anadido», «NoLeInteresa» o «DescartadoVendedor».");
             }
             if (!await repositorio.ExistenTablas().ConfigureAwait(false))
             {
@@ -158,9 +163,9 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
             SugerenciaMostrada mostrada = await repositorio.LeerMostrada(idSugerencia).ConfigureAwait(false)
                 ?? throw new SugerenciasProductosException(true, $"No existe la sugerencia {idSugerencia}.");
 
-            await repositorio.GuardarRespuesta(idSugerencia, respuesta).ConfigureAwait(false);
+            await GuardarRespuesta(idSugerencia, respuesta).ConfigureAwait(false);
             var resultado = new ResultadoRespuestaSugerenciaDTO { IdSugerencia = idSugerencia, Respuesta = respuesta };
-            if (respuesta != RespuestasSugerencia.NO_LE_INTERESA)
+            if (!RespuestasSugerencia.ExcluyenSesentaDias(respuesta))
             {
                 return resultado;
             }
@@ -228,6 +233,21 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
             }
         }
 
+        /// <summary>
+        /// Nesto#537: «DescartadoVendedor» va aparte de «NoLeInteresa» (no es un rechazo del cliente). Si el CK de Respuesta
+        /// todavía no lo admite (sin el script Issue670b), se guarda provisionalmente como «NoLeInteresa» con la marca en el
+        /// Texto: excluye igual 60 días y el script lo reclasifica. Nunca falla por el CK.
+        /// </summary>
+        private async Task GuardarRespuesta(int idSugerencia, string respuesta)
+        {
+            if (respuesta == RespuestasSugerencia.DESCARTADO_VENDEDOR && !await repositorio.AdmiteDescartadoVendedor().ConfigureAwait(false))
+            {
+                await repositorio.GuardarDescartadoVendedorProvisional(idSugerencia).ConfigureAwait(false);
+                return;
+            }
+            await repositorio.GuardarRespuesta(idSugerencia, respuesta).ConfigureAwait(false);
+        }
+
         internal class ResultadoRelleno
         {
             public List<SugerenciaProductoDTO> Visibles { get; set; } = new List<SugerenciaProductoDTO>();
@@ -253,7 +273,7 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
             HashSet<string> rechazados = await repositorio.LeerRechazados(empresa, cliente,
                 hoy.AddDays(-MotorSugerenciasProductos.DIAS_SIN_REPETIR_RECHAZO)).ConfigureAwait(false)
                 ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (SugerenciaMostrada rechazada in mostradas.Where(m => m.Respuesta == RespuestasSugerencia.NO_LE_INTERESA))
+            foreach (SugerenciaMostrada rechazada in mostradas.Where(m => RespuestasSugerencia.ExcluyenSesentaDias(m.Respuesta)))
             {
                 _ = rechazados.Add(rechazada.Producto.Trim());
             }
@@ -348,19 +368,74 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
                 _ = resultado.Nuevas.Add(nueva.Id);
             }
 
+            // Nesto#537: las fotos de las que se ven, de una vez (con caché); el resto de la ficha ya está leído
+            IDictionary<string, string> urlsFotos = await UrlsFotos(visibles.Select(v => v.Producto)).ConfigureAwait(false);
             resultado.Visibles = visibles
                 .OrderBy(v => v.Posicion)
-                .Select(v => new SugerenciaProductoDTO
-                {
-                    IdSugerencia = v.Id,
-                    Producto = v.Producto.Trim(),
-                    Nombre = fichas.TryGetValue(v.Producto.Trim(), out FichaProductoSugerencia f) ? f.Nombre : null,
-                    Motivo = v.Motivo,
-                    Texto = v.Texto,
-                    Posicion = v.Posicion
-                })
+                .Select(v => Dto(v, fichas.TryGetValue(v.Producto.Trim(), out FichaProductoSugerencia f) ? f : null,
+                    urlsFotos.TryGetValue(v.Producto.Trim(), out string url) ? url : null))
                 .ToList();
             return resultado;
+        }
+
+        internal static SugerenciaProductoDTO Dto(SugerenciaMostrada mostrada, FichaProductoSugerencia ficha, string urlFoto)
+        {
+            string familia = string.IsNullOrWhiteSpace(ficha?.NombreFamilia) ? ficha?.Familia?.Trim() : ficha.NombreFamilia.Trim();
+            return new SugerenciaProductoDTO
+            {
+                IdSugerencia = mostrada.Id,
+                Producto = mostrada.Producto.Trim(),
+                Nombre = ficha?.Nombre,
+                Motivo = mostrada.Motivo,
+                Texto = mostrada.Texto,
+                Posicion = mostrada.Posicion,
+                UrlFoto = string.IsNullOrWhiteSpace(urlFoto) ? null : urlFoto.Trim(),
+                Tamano = ficha?.Tamano,
+                UnidadMedida = string.IsNullOrWhiteSpace(ficha?.UnidadMedida) ? null : ficha.UnidadMedida.Trim(),
+                Familia = string.IsNullOrEmpty(familia) ? null : familia,
+                NombreConTamano = NombreConTamano(ficha?.Nombre, ficha?.Tamano, ficha?.UnidadMedida)
+            };
+        }
+
+        /// <summary>
+        /// Nesto#537: «Crema Reafirmante 500 ml». El mismo formato que el tamaño de los pedidos de compra y de las etiquetas
+        /// (GeneradorPdfPedidoCompra.FormatoTamanno): sin tamaño (null o 0), el nombre solo.
+        /// </summary>
+        internal static string NombreConTamano(string nombre, short? tamano, string unidadMedida)
+        {
+            string limpio = nombre?.Trim();
+            if (string.IsNullOrEmpty(limpio))
+            {
+                return null;
+            }
+            if (!tamano.HasValue || tamano.Value == 0)
+            {
+                return limpio;
+            }
+            string medida = tamano.Value.ToString(CultureInfo.GetCultureInfo("es-ES"));
+            string unidad = unidadMedida?.Trim();
+            return string.IsNullOrEmpty(unidad) ? $"{limpio} {medida}" : $"{limpio} {medida} {unidad}";
+        }
+
+        /// <summary>Nunca falla: sin servicio de fotos o si la tienda no contesta, las fichas van sin foto.</summary>
+        private async Task<IDictionary<string, string>> UrlsFotos(IEnumerable<string> productos)
+        {
+            var vacio = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            List<string> lista = productos.Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p.Trim()).ToList();
+            if (fotos == null || lista.Count == 0)
+            {
+                return vacio;
+            }
+            try
+            {
+                IDictionary<string, string> urls = await fotos.Urls(lista).ConfigureAwait(false);
+                return urls == null ? vacio : new Dictionary<string, string>(urls, StringComparer.OrdinalIgnoreCase);
+            }
+            catch (Exception ex)
+            {
+                registrarError(new Exception($"[Sugerencias #537] No se han podido leer las fotos de las sugerencias: {ex.Message}", ex));
+                return vacio;
+            }
         }
 
         internal static Dictionary<string, int> Carrito(IEnumerable<ProductoCarritoSugerenciaDTO> productos)
@@ -406,6 +481,10 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
                 || string.Equals(limpia, "Añadido", StringComparison.OrdinalIgnoreCase))
             {
                 return RespuestasSugerencia.ANADIDO;
+            }
+            if (string.Equals(limpia, RespuestasSugerencia.DESCARTADO_VENDEDOR, StringComparison.OrdinalIgnoreCase))
+            {
+                return RespuestasSugerencia.DESCARTADO_VENDEDOR;
             }
             return string.Equals(limpia, RespuestasSugerencia.NO_LE_INTERESA, StringComparison.OrdinalIgnoreCase) ? RespuestasSugerencia.NO_LE_INTERESA : null;
         }

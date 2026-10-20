@@ -24,7 +24,20 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         /// <summary>Devuelve el Id. Con las columnas del script Issue671a, también Fuentes, TamanoCarrito y Exploracion.</summary>
         Task<int> InsertarMostrada(SugerenciaMostrada mostrada);
         Task GuardarRespuesta(int id, string respuesta);
-        /// <summary>Productos a los que este cliente ha dicho «No le interesa» desde <paramref name="desde"/>.</summary>
+        /// <summary>
+        /// Nesto#537: si el CK de Respuesta admite «DescartadoVendedor» (script Issue670b lanzado) o no hay CK. Se mira una vez
+        /// por petición.
+        /// </summary>
+        Task<bool> AdmiteDescartadoVendedor();
+        /// <summary>
+        /// Nesto#537: «DescartadoVendedor» antes del script Issue670b. Se guarda «NoLeInteresa» (excluye igual 60 días) con
+        /// <see cref="RespuestasSugerencia.MARCA_DESCARTADO_VENDEDOR"/> delante del Texto; el script lo pasa a «DescartadoVendedor».
+        /// </summary>
+        Task GuardarDescartadoVendedorProvisional(int id);
+        /// <summary>
+        /// Productos que no se le vuelven a sugerir a este cliente desde <paramref name="desde"/>: los que dijo «No le interesa»
+        /// y los que el vendedor quitó («DescartadoVendedor»).
+        /// </summary>
         Task<HashSet<string>> LeerRechazados(string empresa, string cliente, DateTime desde);
         Task<List<CompraDiaReposicion>> LeerComprasCliente(string empresa, string cliente, DateTime desde, DateTime hasta);
         /// <summary>Productos en pedidos pendientes o en curso del cliente.</summary>
@@ -78,6 +91,8 @@ VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, GETDATE())";
         internal const string SQL_ACTUALIZAR_SESION = @"
 UPDATE dbo.SugerenciasProductosSesiones SET Contacto = @p1, Vendedor = @p2, Carrito = @p3, FechaUltimoCalculo = GETDATE() WHERE Id = @p0";
 
+        // Respuesta: «Anadido» y «NoLeInteresa» son del cliente; «DescartadoVendedor» (Nesto#537) es del vendedor y NO es un
+        // negativo del cliente para el modelo de aceptación (NestoAPI#671, 2e). Ver RespuestasSugerencia.
         internal const string SQL_COLUMNAS_MOSTRADA = @"Id, SesionId, RTRIM(Producto) AS Producto, Motivo, Puntuacion, Posicion, VersionMotor, Texto,
        FechaMostrada, Respuesta, FechaRespuesta, EntroEnPedido, CantidadEnPedido";
 
@@ -109,7 +124,23 @@ UPDATE dbo.SugerenciasProductosMostradas SET Respuesta = @p1, FechaRespuesta = G
 SELECT DISTINCT RTRIM(m.Producto)
 FROM dbo.SugerenciasProductosMostradas m
 JOIN dbo.SugerenciasProductosSesiones s ON s.Id = m.SesionId
-WHERE s.Empresa = @p0 AND s.Cliente = @p1 AND m.Respuesta = 'NoLeInteresa' AND m.FechaRespuesta >= @p2";
+WHERE s.Empresa = @p0 AND s.Cliente = @p1 AND m.Respuesta IN ('NoLeInteresa', 'DescartadoVendedor') AND m.FechaRespuesta >= @p2";
+
+        /// <summary>Nesto#537: 1 si el CK de Respuesta admite «DescartadoVendedor» o no hay CK (con él, cualquier valor cabe).</summary>
+        internal const string SQL_ADMITE_DESCARTADO_VENDEDOR = @"
+SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM sys.check_constraints
+                              WHERE parent_object_id = OBJECT_ID(N'dbo.SugerenciasProductosMostradas')
+                                AND definition LIKE N'%Respuesta%'
+                                AND definition NOT LIKE N'%DescartadoVendedor%')
+            THEN 0 ELSE 1 END AS bit)";
+
+        /// <summary>Nesto#537: «DescartadoVendedor» sin el script Issue670b (ver RespuestasSugerencia.MARCA_DESCARTADO_VENDEDOR).</summary>
+        internal const string SQL_GUARDAR_DESCARTADO_VENDEDOR_PROVISIONAL = @"
+UPDATE dbo.SugerenciasProductosMostradas
+SET Respuesta = 'NoLeInteresa', FechaRespuesta = GETDATE(),
+    Texto = CASE WHEN ISNULL(Texto, N'') LIKE N'[[]DescartadoVendedor] %' THEN Texto
+                 ELSE LEFT(N'" + RespuestasSugerencia.MARCA_DESCARTADO_VENDEDOR + @"' + ISNULL(Texto, N''), 200) END
+WHERE Id = @p0";
 
         // Las líneas pendientes son pocos cientos y Estado es la clave del índice agrupado (como en #532).
         internal const string SQL_PENDIENTES_CLIENTE = @"
@@ -256,6 +287,22 @@ WHERE p.Decision = 'Potenciar' AND p.PotenciarHasta >= @p0";
             => db.Database.ExecuteSqlCommandAsync(SugerenciasProductosSql.SQL_GUARDAR_RESPUESTA, SugerenciasProductosSql.Entero("@p0", id),
                 SugerenciasProductosSql.Varchar("@p1", respuesta, 20));
 
+        private bool? admiteDescartadoVendedor;
+
+        public async Task<bool> AdmiteDescartadoVendedor()
+        {
+            if (admiteDescartadoVendedor == null)
+            {
+                admiteDescartadoVendedor = await db.Database.SqlQuery<bool>(SugerenciasProductosSql.SQL_ADMITE_DESCARTADO_VENDEDOR)
+                    .FirstAsync().ConfigureAwait(false);
+            }
+            return admiteDescartadoVendedor.Value;
+        }
+
+        public Task GuardarDescartadoVendedorProvisional(int id)
+            => db.Database.ExecuteSqlCommandAsync(SugerenciasProductosSql.SQL_GUARDAR_DESCARTADO_VENDEDOR_PROVISIONAL,
+                SugerenciasProductosSql.Entero("@p0", id));
+
         public async Task<HashSet<string>> LeerRechazados(string empresa, string cliente, DateTime desde)
         {
             List<string> productos = await db.Database.SqlQuery<string>(SugerenciasProductosSql.SQL_RECHAZADOS,
@@ -376,7 +423,7 @@ WHERE p.Decision = 'Potenciar' AND p.PotenciarHasta >= @p0";
                 List<string> lote = lista.Skip(i).Take(SugerenciasProductosSql.TAMANO_LOTE).ToList();
                 var fichas = await db.Productos
                     .Where(p => p.Empresa == empresa && lote.Contains(p.Número))
-                    .Select(p => new { p.Número, p.Nombre, p.Grupo, p.SubGrupo, p.Familia, p.Estado, p.Ficticio })
+                    .Select(p => new { p.Número, p.Nombre, p.Grupo, p.SubGrupo, p.Familia, p.Estado, p.Ficticio, p.Tamaño, p.UnidadMedida, NombreFamilia = p.Familia1.Descripción })
                     .ToListAsync().ConfigureAwait(false);
                 foreach (var f in fichas)
                 {
@@ -388,7 +435,10 @@ WHERE p.Decision = 'Potenciar' AND p.PotenciarHasta >= @p0";
                         SubGrupo = f.SubGrupo?.Trim(),
                         Familia = f.Familia?.Trim(),
                         Estado = f.Estado ?? 0,
-                        Ficticio = f.Ficticio
+                        Ficticio = f.Ficticio,
+                        Tamano = f.Tamaño,
+                        UnidadMedida = f.UnidadMedida?.Trim(),
+                        NombreFamilia = f.NombreFamilia?.Trim()
                     };
                 }
             }

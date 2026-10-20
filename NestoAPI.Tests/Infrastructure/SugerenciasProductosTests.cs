@@ -2,6 +2,7 @@ using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure.CorreosPostCompra;
+using NestoAPI.Infraestructure.PreparacionAlmacen;
 using NestoAPI.Infraestructure.SugerenciasProductos;
 using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
@@ -38,6 +39,7 @@ namespace NestoAPI.Tests.Infrastructure
         private HashSet<string> _rechazados;
         private DatosGrupoVendedor _datosVendedor;
         private bool _existenTablas;
+        private bool _admiteDescartadoVendedor;
         private int _siguienteId;
         private List<Exception> _errores;
         private ServicioSugerenciasProductos _servicio;
@@ -46,6 +48,7 @@ namespace NestoAPI.Tests.Infrastructure
         public void Setup()
         {
             _existenTablas = true;
+            _admiteDescartadoVendedor = true;
             _sesiones = new Dictionary<Guid, SesionSugerencias>();
             _mostradas = new List<SugerenciaMostrada>();
             _siguienteId = 100;
@@ -110,6 +113,16 @@ namespace NestoAPI.Tests.Infrastructure
                 SugerenciaMostrada m = _mostradas.Single(x => x.Id == id);
                 m.Respuesta = r;
                 m.FechaRespuesta = HOY;
+                return Task.CompletedTask;
+            });
+            A.CallTo(() => _repo.AdmiteDescartadoVendedor()).ReturnsLazily(() => Task.FromResult(_admiteDescartadoVendedor));
+            A.CallTo(() => _repo.GuardarDescartadoVendedorProvisional(A<int>._)).ReturnsLazily((int id) =>
+            {
+                // Lo mismo que SQL_GUARDAR_DESCARTADO_VENDEDOR_PROVISIONAL
+                SugerenciaMostrada m = _mostradas.Single(x => x.Id == id);
+                m.Respuesta = RespuestasSugerencia.NO_LE_INTERESA;
+                m.FechaRespuesta = HOY;
+                m.Texto = RespuestasSugerencia.MARCA_DESCARTADO_VENDEDOR + m.Texto;
                 return Task.CompletedTask;
             });
             A.CallTo(() => _repo.LeerRechazados(A<string>._, A<string>._, A<DateTime>._))
@@ -956,6 +969,143 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(MotivosSugerencia.PARECIDOS, parecido.Motivo);
             Assert.AreEqual(MotorSugerenciasProductos.TextoParecidos(), parecido.Texto);
             Assert.AreEqual(0, _mostradas.Single().TamanoCarrito);
+        }
+
+        // ---------------- Nesto#537 (segunda vuelta): fichas más ricas ----------------
+
+        [TestMethod]
+        public async Task Calcular_FichasConFotoTamanoYFamilia_YLasFotosDeUnaVez()
+        {
+            _fichas["JUNTO1"].Nombre = "Crema Reafirmante";
+            _fichas["JUNTO1"].Tamano = 500;
+            _fichas["JUNTO1"].UnidadMedida = "ml ";
+            _fichas["JUNTO1"].Familia = "LISAP";
+            _fichas["JUNTO1"].NombreFamilia = "Lisap Milano";
+            _fichas["LETOCA1"].Familia = "EVA";            // sin descripción: el código
+            var fotos = A.Fake<IFotosProductoAlmacen>();
+            var pedidas = new List<List<string>>();
+            A.CallTo(() => fotos.Urls(A<IEnumerable<string>>._)).ReturnsLazily((IEnumerable<string> productos) =>
+            {
+                pedidas.Add(productos.ToList());
+                IDictionary<string, string> urls = new Dictionary<string, string> { { "JUNTO1", "https://tienda/junto1.jpg" }, { "LETOCA1", null } };
+                return Task.FromResult(urls);
+            });
+            var servicio = new ServicioSugerenciasProductos(_repo, () => HOY, ex => _errores.Add(ex), fotos);
+
+            SugerenciasProductosDTO r = await servicio.Calcular(Peticion(null, "CARRO1"), "carlos");
+
+            Assert.AreEqual(1, pedidas.Count, "Una sola llamada con todas las que se ven, no una por sugerencia");
+            CollectionAssert.AreEquivalent(new[] { "JUNTO1", "LETOCA1", "POT1" }, pedidas[0]);
+            SugerenciaProductoDTO junto = r.Sugerencias.Single(s => s.Producto == "JUNTO1");
+            Assert.AreEqual("https://tienda/junto1.jpg", junto.UrlFoto);
+            Assert.AreEqual((short)500, junto.Tamano);
+            Assert.AreEqual("ml", junto.UnidadMedida);
+            Assert.AreEqual("Lisap Milano", junto.Familia);
+            Assert.AreEqual("Crema Reafirmante 500 ml", junto.NombreConTamano);
+            SugerenciaProductoDTO letoca = r.Sugerencias.Single(s => s.Producto == "LETOCA1");
+            Assert.IsNull(letoca.UrlFoto);
+            Assert.AreEqual("EVA", letoca.Familia);
+            Assert.AreEqual("Nombre de LETOCA1", letoca.NombreConTamano, "Sin tamaño, el nombre solo");
+            Assert.AreEqual(0, _errores.Count);
+        }
+
+        [TestMethod]
+        public async Task Calcular_LasFotosFallan_LasFichasVanSinFotoYNoRompe()
+        {
+            var fotos = A.Fake<IFotosProductoAlmacen>();
+            A.CallTo(() => fotos.Urls(A<IEnumerable<string>>._)).Throws(new InvalidOperationException("La tienda no contesta"));
+            var servicio = new ServicioSugerenciasProductos(_repo, () => HOY, ex => _errores.Add(ex), fotos);
+
+            SugerenciasProductosDTO r = await servicio.Calcular(Peticion(null, "CARRO1"), "carlos");
+
+            Assert.AreEqual(3, r.Sugerencias.Count);
+            Assert.IsTrue(r.Sugerencias.All(s => s.UrlFoto == null));
+            Assert.AreEqual(1, _errores.Count);
+            StringAssert.Contains(_errores[0].Message, "#537");
+        }
+
+        [TestMethod]
+        public async Task Calcular_SinServicioDeFotos_SinFoto()
+        {
+            SugerenciasProductosDTO r = await _servicio.Calcular(Peticion(null, "CARRO1"), "carlos");
+
+            Assert.IsTrue(r.Sugerencias.All(s => s.UrlFoto == null));
+            Assert.IsTrue(r.Sugerencias.All(s => s.NombreConTamano == "Nombre de " + s.Producto));
+        }
+
+        [TestMethod]
+        public void NombreConTamano_ComoEnLosPedidosDeCompra()
+        {
+            Assert.AreEqual("Crema Reafirmante 500 ml", ServicioSugerenciasProductos.NombreConTamano(" Crema Reafirmante ", 500, " ml "));
+            Assert.AreEqual("Champú 1000", ServicioSugerenciasProductos.NombreConTamano("Champú", 1000, null));
+            Assert.AreEqual("Champú", ServicioSugerenciasProductos.NombreConTamano("Champú", 0, "ml"));
+            Assert.AreEqual("Champú", ServicioSugerenciasProductos.NombreConTamano("Champú", null, "ml"));
+            Assert.IsNull(ServicioSugerenciasProductos.NombreConTamano(null, 500, "ml"));
+        }
+
+        // ---------------- Nesto#537 (segunda vuelta): «🚫 Quitar» = DescartadoVendedor ----------------
+
+        [TestMethod]
+        public async Task Responder_DescartadoVendedor_SeGuardaAparteYDevuelveLaSustitutaEnSuHueco()
+        {
+            SugerenciasProductosDTO primera = await _servicio.Calcular(Peticion(null, "CARRO1"), "carlos");
+            SugerenciaProductoDTO junto1 = primera.Sugerencias.Single(s => s.Producto == "JUNTO1");
+
+            ResultadoRespuestaSugerenciaDTO r = await _servicio.Responder(junto1.IdSugerencia,
+                new RespuestaSugerenciaDTO { Respuesta = "descartadovendedor" });
+
+            Assert.AreEqual(RespuestasSugerencia.DESCARTADO_VENDEDOR, r.Respuesta);
+            Assert.AreEqual(RespuestasSugerencia.DESCARTADO_VENDEDOR, _mostradas.Single(m => m.Id == junto1.IdSugerencia).Respuesta,
+                "Aparte del rechazo del cliente");
+            A.CallTo(() => _repo.GuardarDescartadoVendedorProvisional(A<int>._)).MustNotHaveHappened();
+            Assert.IsNotNull(r.Sustituta);
+            Assert.AreEqual("JUNTO2", r.Sustituta.Producto);
+            Assert.AreEqual(junto1.Posicion, r.Sustituta.Posicion);
+            CollectionAssert.AreEqual(new[] { "JUNTO2", "LETOCA1", "POT1" }, r.Sugerencias.Select(s => s.Producto).ToArray());
+        }
+
+        [TestMethod]
+        public async Task Responder_DescartadoVendedorSinElScript_GuardaNoLeInteresaConLaMarcaYNoFalla()
+        {
+            _admiteDescartadoVendedor = false;
+            SugerenciasProductosDTO primera = await _servicio.Calcular(Peticion(null, "CARRO1"), "carlos");
+            SugerenciaProductoDTO junto1 = primera.Sugerencias.Single(s => s.Producto == "JUNTO1");
+
+            ResultadoRespuestaSugerenciaDTO r = await _servicio.Responder(junto1.IdSugerencia,
+                new RespuestaSugerenciaDTO { Respuesta = RespuestasSugerencia.DESCARTADO_VENDEDOR });
+
+            A.CallTo(() => _repo.GuardarRespuesta(A<int>._, RespuestasSugerencia.DESCARTADO_VENDEDOR)).MustNotHaveHappened();
+            SugerenciaMostrada guardada = _mostradas.Single(m => m.Id == junto1.IdSugerencia);
+            Assert.AreEqual(RespuestasSugerencia.NO_LE_INTERESA, guardada.Respuesta, "Lo que admite el CK de antes");
+            StringAssert.StartsWith(guardada.Texto, RespuestasSugerencia.MARCA_DESCARTADO_VENDEDOR, "El script lo reclasifica");
+            Assert.AreEqual(RespuestasSugerencia.DESCARTADO_VENDEDOR, r.Respuesta, "Al cliente se le contesta lo que pidió");
+            Assert.AreEqual("JUNTO2", r.Sustituta?.Producto);
+        }
+
+        [TestMethod]
+        public async Task DescartadoVendedor_NoSeVuelveASugerirAEseClienteEnSesentaDias()
+        {
+            // El SQL de los excluidos cuenta los dos (y ningún otro valor)
+            StringAssert.Contains(SugerenciasProductosSql.SQL_RECHAZADOS, "'NoLeInteresa', 'DescartadoVendedor'");
+            Assert.IsTrue(RespuestasSugerencia.ExcluyenSesentaDias(RespuestasSugerencia.DESCARTADO_VENDEDOR));
+            Assert.IsTrue(RespuestasSugerencia.ExcluyenSesentaDias(RespuestasSugerencia.NO_LE_INTERESA));
+            Assert.IsFalse(RespuestasSugerencia.ExcluyenSesentaDias(RespuestasSugerencia.ANADIDO));
+            Assert.AreEqual(60, MotorSugerenciasProductos.DIAS_SIN_REPETIR_RECHAZO);
+
+            // Otra plantilla (sesión nueva) del mismo cliente: lo que devuelve LeerRechazados no sale
+            _rechazados.Add("JUNTO1");
+            SugerenciasProductosDTO r = await _servicio.Calcular(Peticion(null, "CARRO1"), "carlos");
+            Assert.IsFalse(r.Sugerencias.Any(s => s.Producto == "JUNTO1"));
+            A.CallTo(() => _repo.LeerRechazados("1", CLIENTE, HOY.Date.AddDays(-60))).MustHaveHappened();
+        }
+
+        [TestMethod]
+        public void SqlProvisional_LlevaLaMarcaQueQuitaElScript()
+        {
+            StringAssert.Contains(SugerenciasProductosSql.SQL_GUARDAR_DESCARTADO_VENDEDOR_PROVISIONAL, "'NoLeInteresa'");
+            StringAssert.Contains(SugerenciasProductosSql.SQL_GUARDAR_DESCARTADO_VENDEDOR_PROVISIONAL, RespuestasSugerencia.MARCA_DESCARTADO_VENDEDOR);
+            Assert.AreEqual(21, RespuestasSugerencia.MARCA_DESCARTADO_VENDEDOR.Length, "El script Issue670b quita 21 caracteres (SUBSTRING(Texto, 22, 200))");
+            Assert.IsTrue(RespuestasSugerencia.DESCARTADO_VENDEDOR.Length <= 20, "Cabe en Respuesta varchar(20)");
         }
 
         // ---------------- Ayudas ----------------
