@@ -142,12 +142,12 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             Assert.AreEqual(
                 "I8,A,034\r\n" +
                 "q264\r\n" + // la anchura crece lo mismo que se desplaza a la derecha (X=24)
-                "Q160,24\r\n" +
+                "Q160,24-4\r\n" + // hacia arriba (Y=-4) sube con el Q, sin tocar las coordenadas (20/10/26)
                 "N\r\n" +
-                "B42,4,0,1,2,2,56,N,\"002004001\"\r\n" +
-                "A78,68,0,3,1,1,N,\"Pasillo:002\"\r\n" +
-                "A78,92,0,3,1,1,N,\"Fila...:004\"\r\n" +
-                "A78,116,0,3,1,1,N,\"Columna:001\"\r\n" +
+                "B42,8,0,1,2,2,56,N,\"002004001\"\r\n" +
+                "A78,72,0,3,1,1,N,\"Pasillo:002\"\r\n" +
+                "A78,96,0,3,1,1,N,\"Fila...:004\"\r\n" +
+                "A78,120,0,3,1,1,N,\"Columna:001\"\r\n" +
                 "P1\r\n",
                 impreso);
             A.CallTo(() => impresoraReal.Imprimir("  " + REINA.ToLowerInvariant() + " ", A<string>._, "Etiquetas de hueco")).MustHaveHappenedOnceExactly();
@@ -212,6 +212,38 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         public void Desplazar_HaciaAtrasNoBajaDeCero()
         {
             Assert.AreEqual("A0,2,0,3,1,1,N,\"x\"\r\n", DesplazadorEpl.DesplazarLinea("A12,6,0,3,1,1,N,\"x\"\r\n", -20, -4));
+        }
+
+        [TestMethod]
+        public void Desplazar_HaciaArriba_ConQ_SubeConElDesplazamientoDelQ_SinTocarLasCoordenadas()
+        {
+            // 20/10/26, impresora de Reina: imprime ~2,5 mm baja; restar a las coordenadas aplastaría lo de arriba contra 0
+            string epl = "I8,A,034\r\nq240\r\nQ160,24\r\nN\r\nX0,0,2,239,159\r\nA20,10,0,2,1,1,N,\"X\"\r\nP1\r\n";
+
+            string desplazado = DesplazadorEpl.Desplazar(epl, 16, -20);
+
+            Assert.AreEqual("I8,A,034\r\nq256\r\nQ160,24-20\r\nN\r\nX16,0,2,255,159\r\nA36,10,0,2,1,1,N,\"X\"\r\nP1\r\n", desplazado);
+        }
+
+        [TestMethod]
+        public void Desplazar_HaciaArriba_SoloY_TambienCambiaElTrabajo()
+        {
+            string epl = "I8,A,034\r\nq240\r\nQ160,24\r\nN\r\nA20,10,0,2,1,1,N,\"X\"\r\nP1\r\n";
+
+            Assert.AreEqual("I8,A,034\r\nq240\r\nQ160,24-20\r\nN\r\nA20,10,0,2,1,1,N,\"X\"\r\nP1\r\n", DesplazadorEpl.Desplazar(epl, 0, -20));
+        }
+
+        [TestMethod]
+        public void Desplazar_HaciaArriba_SinQ_RestaALasCoordenadasComoAntes()
+        {
+            Assert.AreEqual("N\r\nA20,0,0,2,1,1,N,\"X\"\r\n", DesplazadorEpl.Desplazar("N\r\nA20,10,0,2,1,1,N,\"X\"\r\n", 0, -20));
+        }
+
+        [TestMethod]
+        public void SubirConQ_SumaAlDesplazamientoQueYaLlevara()
+        {
+            Assert.AreEqual("Q160,24-12\r\n", DesplazadorEpl.SubirConQ("Q160,24+8\r\n", -20));
+            Assert.AreEqual("Q160,24\r\n", DesplazadorEpl.SubirConQ("Q160,24+20\r\n", -20));
         }
 
         // ---- La etiqueta de prueba ----
