@@ -64,8 +64,8 @@ namespace NestoAPI.Infraestructure.Novedades
             using (var db = new NVEntities())
             {
                 return db.Database.SqlQuery<AdjuntoNovedadContenido>(SI_EXISTE_LA_TABLA +
-                    "SELECT Nombre, Tipo, Contenido FROM dbo.NovedadesAdjuntos WHERE Id = @id " +
-                    "ELSE SELECT CAST(NULL AS nvarchar(200)) AS Nombre, CAST(NULL AS varchar(100)) AS Tipo, " +
+                    "SELECT NovedadId, Nombre, Tipo, Contenido FROM dbo.NovedadesAdjuntos WHERE Id = @id " +
+                    "ELSE SELECT CAST(0 AS int) AS NovedadId, CAST(NULL AS nvarchar(200)) AS Nombre, CAST(NULL AS varchar(100)) AS Tipo, " +
                     "CAST(NULL AS varbinary(max)) AS Contenido WHERE 1 = 0",
                     new SqlParameter("@id", adjuntoId)).FirstOrDefault();
             }

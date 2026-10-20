@@ -53,6 +53,8 @@ namespace NestoAPI.Models.Novedades
     /// <summary>El fichero para la descarga.</summary>
     public class AdjuntoNovedadContenido
     {
+        /// <summary>NestoAPI#650: de qué novedad es (para no servir los de una sugerencia privada a quien no la ve).</summary>
+        public int NovedadId { get; set; }
         public string Nombre { get; set; }
         public string Tipo { get; set; }
         public byte[] Contenido { get; set; }

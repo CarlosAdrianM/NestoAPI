@@ -32,7 +32,14 @@ namespace NestoAPI.Controllers
             LectorParametros = new LectorParametrosUsuario();
             Adjuntos = new ServicioAdjuntosNovedades();
             EsperaRespuesta = new RepositorioEsperaRespuestaNovedadesSql();
+            LectorMiembrosGrupo = Infraestructure.Verifactu.MiembrosGrupoDominio.Leer;
         }
+
+        /// <summary>
+        /// NestoAPI#650: los miembros (sin dominio) de un grupo del dominio, para saber a quién se puede avisar de
+        /// una sugerencia privada (Dirección / Informática). null = nadie (los tests que no lo necesitan).
+        /// </summary>
+        internal Func<string, List<string>> LectorMiembrosGrupo { get; set; }
 
         /// <summary>
         /// Recordatorios de respuesta (16/10/26): la espera de respuesta del autor en sugerencias e incidencias.
@@ -84,6 +91,12 @@ namespace NestoAPI.Controllers
         public IHttpActionResult GetNovedades(string desdeVersion = null, string ambito = null, bool todas = false)
         {
             List<NovedadDTO> novedades = servicio.LeerNovedadesPublicadas();
+            // NestoAPI#650: una privada implementada sigue siendo solo de su autor y de Dirección / Informática
+            PrivacidadNovedades privacidad = Privacidad();
+            if (privacidad.HayQueMirar)
+            {
+                novedades = novedades.Where(n => privacidad.PuedeVerEnLista(n.Id, n.Version, null)).ToList();
+            }
 
             // NestoAPI#489: el ámbito se filtra ANTES que la versión. Nesto (1.10.x) y NestoApp (2.x)
             // tienen espacios de versiones distintos: comparar desdeVersion sin acotar el producto
@@ -253,19 +266,115 @@ namespace NestoAPI.Controllers
             string usuario = incluirCerradas ? null : ReglasFeedbackNovedades.ClaveUsuario(User);
             bool descartadasDelAutor = usuario != null;
             DateTime ahora = DateTime.Now;
+            PrivacidadNovedades privacidad = Privacidad();
             List<SugerenciaNovedadDTO> sugerencias = servicio.LeerSugerencias(incluirCerradas || descartadasDelAutor)
                 .Where(s => EsDelAmbito(s.Ambito, ambitoEfectivo))
                 .Where(s => incluirCerradas || ReglasSugerenciasNovedades.SeVeEnLaLista(s, usuario, ahora))
+                // NestoAPI#650: las privadas, solo para su autor y Dirección / Informática
+                .Where(s => privacidad.PuedeVerEnLista(s.Id, s.Version, s.SugeridaPor))
                 .Select(s => s.ADto())
                 .ToList();
+            MarcarPrivadas(sugerencias, privacidad);
             OcultarContextoSiNoRevisa(sugerencias);
             _ = RellenarFeedback(sugerencias);
             RellenarAdjuntos(sugerencias);
             return Ok(sugerencias
-                .OrderByDescending(s => (s.VotosPositivos ?? 0) - (s.VotosNegativos ?? 0))
+                // NestoAPI#650: las privadas tienen menos prioridad: detrás de las públicas
+                .OrderBy(s => s.Privada ? 1 : 0)
+                .ThenByDescending(s => (s.VotosPositivos ?? 0) - (s.VotosNegativos ?? 0))
                 .ThenByDescending(s => s.SugeridaFecha)
                 .ToList());
         }
+
+        #region NestoAPI#650: sugerencias privadas
+
+        private static int privadasFalloRegistrado;
+        private PrivacidadNovedades privacidadPeticion;
+        private System.Security.Principal.IPrincipal privacidadDe;
+        private List<string> quienesRevisan;
+
+        /// <summary>
+        /// NestoAPI#650: cuáles son privadas y quién pregunta, una vez por petición. Si no se puede leer (fallo de la
+        /// BD), se cierra por seguridad (ver <see cref="PrivacidadNovedades"/>) y el fallo va a ELMAH una sola vez.
+        /// Si la columna aún no existe no es un fallo: no hay ninguna privada.
+        /// </summary>
+        internal PrivacidadNovedades Privacidad()
+        {
+            if (privacidadPeticion != null && ReferenceEquals(privacidadDe, User))
+            {
+                return privacidadPeticion;
+            }
+            privacidadDe = User;
+            string usuario = ReglasFeedbackNovedades.ClaveUsuario(User);
+            bool revisa = PuedeRevisarFeedback();
+            try
+            {
+                privacidadPeticion = PrivacidadNovedades.Desde(servicio.LeerPrivadas(), usuario, revisa);
+            }
+            catch (Exception ex)
+            {
+                if (Interlocked.Exchange(ref privadasFalloRegistrado, 1) == 0)
+                {
+                    RegistrarSinRomper(new Exception("Novedades (NestoAPI#650): no se pudieron leer las sugerencias privadas; " +
+                        "a quien no es de Dirección / Informática solo se le enseñan las novedades y sus sugerencias. " + ex.Message, ex));
+                }
+                privacidadPeticion = PrivacidadNovedades.SinPoderLeer(usuario, revisa);
+            }
+            return privacidadPeticion;
+        }
+
+        private static void MarcarPrivadas(IEnumerable<SugerenciaNovedadDTO> sugerencias, PrivacidadNovedades privacidad)
+        {
+            foreach (SugerenciaNovedadDTO s in sugerencias)
+            {
+                s.Privada = privacidad.EsPrivada(s.Id);
+            }
+        }
+
+        /// <summary>Los de Dirección e Informática (sin dominio), leídos del dominio solo si hace falta y una vez por petición.</summary>
+        private IEnumerable<string> QuienesRevisan()
+        {
+            if (quienesRevisan == null)
+            {
+                quienesRevisan = new List<string>();
+                if (LectorMiembrosGrupo != null)
+                {
+                    foreach (string grupo in new[] { Constantes.GruposSeguridad.DIRECCION, GRUPO_INFORMATICA })
+                    {
+                        try
+                        {
+                            quienesRevisan.AddRange(LectorMiembrosGrupo(grupo) ?? new List<string>());
+                        }
+                        catch (Exception ex)
+                        {
+                            RegistrarSinRomper(new Exception($"Novedades (NestoAPI#650): no se pudieron leer los miembros de «{grupo}». " + ex.Message, ex));
+                        }
+                    }
+                }
+            }
+            return quienesRevisan;
+        }
+
+        /// <summary>NestoAPI#650: si se le puede avisar de esta novedad (de una privada, solo a su autor y a Dirección / Informática).</summary>
+        internal bool PuedeRecibirAviso(int novedadId, string clave) =>
+            Privacidad().PuedeRecibirAviso(novedadId, clave, QuienesRevisan);
+
+        /// <summary>NestoAPI#650: lo que se pide por el id de la novedad. false = para quien pregunta no existe (404).</summary>
+        private bool PuedeVerNovedad(int novedadId) => Privacidad().PuedeVer(novedadId);
+
+        /// <summary>NestoAPI#650: lo de un comentario (su imagen) se ve si se ve su novedad. Sin privadas, ni se mira.</summary>
+        private bool PuedeVerComentario(int comentarioId)
+        {
+            PrivacidadNovedades privacidad = Privacidad();
+            if (privacidad.Revisa || !privacidad.HayQueMirar)
+            {
+                return true;
+            }
+            AutorComentarioNovedad comentario = feedback.LeerAutores(new[] { comentarioId })?.FirstOrDefault();
+            return comentario != null && privacidad.PuedeVer(comentario.NovedadId);
+        }
+
+        #endregion
 
         // POST api/Novedades/Sugerencias  { "Texto": "Aquí iría bien un botón...", "ImagenBase64": "...", "VersionCliente": "1.10.31.0" }
         // NestoAPI#558: «Algo no funciona» es el mismo POST con "EsIncidencia": true (y, desde Nesto,
@@ -292,8 +401,14 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest(error);
             }
+            // NestoAPI#650: mientras no se lance el script no se puede guardar privada; mejor decirlo que publicarla
+            if (sugerencia.Privada && !servicio.AdmitePrivadas())
+            {
+                return BadRequest(PrivacidadNovedades.ERROR_SIN_COLUMNA);
+            }
             var aGrabar = new SugerenciaNovedadAGrabar
             {
+                Privada = sugerencia.Privada,
                 Ambito = AmbitoDelCliente(cliente),
                 Titulo = ReglasSugerenciasNovedades.TituloDesde(sugerencia.Texto),
                 TextoOriginal = sugerencia.Texto.Trim(),
@@ -305,6 +420,16 @@ namespace NestoAPI.Controllers
                 Contexto = sugerencia.EsIncidencia ? ContextoIncidencia(sugerencia) : null
             };
             int id = servicio.CrearSugerencia(aGrabar);
+            if (aGrabar.Privada)
+            {
+                // NestoAPI#650: los avisos de abajo ya la tratan como privada (sin volver a leer de la BD)
+                privacidadPeticion = Privacidad().ConOtraPrivada(new SugerenciaPrivadaFila
+                {
+                    Id = id,
+                    SugeridaPor = aGrabar.SugeridaPor,
+                    SugeridaNombre = aGrabar.SugeridaNombre
+                });
+            }
             // NestoAPI#537: también se puede mencionar a alguien al sugerir (el aviso lleva a la sugerencia)
             await AvisarMencionesEnSugerencia(id, aGrabar.TextoOriginal, aGrabar.SugeridaNombre, User?.Identity?.Name).ConfigureAwait(false);
             string tituloAviso = sugerencia.EsIncidencia
@@ -324,6 +449,7 @@ namespace NestoAPI.Controllers
                 SugeridaFecha = DateTime.Now,
                 Estado = ReglasSugerenciasNovedades.ESTADO_PENDIENTE,
                 TieneImagen = imagen != null,
+                Privada = aGrabar.Privada,
                 VotosPositivos = 0,
                 VotosNegativos = 0,
                 NumeroComentarios = 0
@@ -393,6 +519,10 @@ namespace NestoAPI.Controllers
         [Route("api/Novedades/{id:int}/Imagen")]
         public HttpResponseMessage GetImagenNovedad(int id)
         {
+            if (!PuedeVerNovedad(id))
+            {
+                return Request.CreateResponse(HttpStatusCode.NotFound);
+            }
             ImagenComentarioNovedad imagen = servicio.LeerImagen(id);
             if (imagen?.Imagen == null)
             {
@@ -432,9 +562,18 @@ namespace NestoAPI.Controllers
                     return BadRequest(error);
                 }
             }
+            // NestoAPI#650: pasarla a privada necesita la columna; a pública sin columna no hay nada que hacer
+            if (cambios.Privada == true && !servicio.AdmitePrivadas())
+            {
+                return BadRequest(PrivacidadNovedades.ERROR_SIN_COLUMNA);
+            }
             if (!servicio.ActualizarSugerencia(id, cambios, User?.Identity?.Name))
             {
                 return NotFound();
+            }
+            if (cambios.Privada.HasValue)
+            {
+                _ = servicio.GuardarPrivada(id, cambios.Privada.Value, User?.Identity?.Name);
             }
             if (cambios.Perfiles != null)
             {
@@ -457,10 +596,13 @@ namespace NestoAPI.Controllers
                 return BadRequest($"Escribe al menos una palabra de {ReglasSugerenciasNovedades.LONGITUD_MINIMA_PALABRA} letras");
             }
             string ambitoEfectivo = AmbitoEfectivo(ambito);
+            PrivacidadNovedades privacidad = Privacidad();
             List<SugerenciaNovedadDTO> encontradas = servicio.Buscar(palabras)
                 .Where(n => EsDelAmbito(n.Ambito, ambitoEfectivo))
+                .Where(n => privacidad.PuedeVerEnLista(n.Id, n.Version, n.SugeridaPor)) // NestoAPI#650
                 .Select(n => n.ADto())
                 .ToList();
+            MarcarPrivadas(encontradas, privacidad);
             OcultarContextoSiNoRevisa(encontradas);
             _ = RellenarFeedback(encontradas);
             RellenarAdjuntos(encontradas);
@@ -523,6 +665,10 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(List<AdjuntoNovedadDTO>))]
         public IHttpActionResult GetAdjuntos(int id)
         {
+            if (!PuedeVerNovedad(id))
+            {
+                return NotFound(); // NestoAPI#650
+            }
             if (Adjuntos == null)
             {
                 return Ok(new List<AdjuntoNovedadDTO>());
@@ -541,7 +687,7 @@ namespace NestoAPI.Controllers
         public HttpResponseMessage GetAdjunto(int id)
         {
             AdjuntoNovedadContenido adjunto = Adjuntos?.Leer(id);
-            if (adjunto?.Contenido == null)
+            if (adjunto?.Contenido == null || !PuedeVerNovedad(adjunto.NovedadId))
             {
                 return Request.CreateResponse(HttpStatusCode.NotFound);
             }
@@ -703,9 +849,14 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest("El voto debe ser 1 (me gusta), -1 (no me gusta) o 0 (quitar el voto).");
             }
-            if (!feedback.ExisteNovedad(id))
+            if (!PuedeVerNovedad(id) || !feedback.ExisteNovedad(id))
             {
                 return NotFound();
+            }
+            // NestoAPI#650: una privada no se vota (quitar un voto de cuando era pública, sí)
+            if (voto.Voto != 0 && Privacidad().EsPrivada(id))
+            {
+                return BadRequest(PrivacidadNovedades.ERROR_VOTO_PRIVADA);
             }
             feedback.Votar(id, usuario, ReglasFeedbackNovedades.Cliente(User), voto.Voto);
             if (voto.Voto != 0)
@@ -725,6 +876,10 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(List<ComentarioNovedadDTO>))]
         public IHttpActionResult GetComentarios(int id)
         {
+            if (!PuedeVerNovedad(id))
+            {
+                return NotFound(); // NestoAPI#650
+            }
             return Ok(feedback.LeerComentarios(id, ReglasFeedbackNovedades.ClaveUsuario(User)));
         }
 
@@ -745,7 +900,7 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest(error);
             }
-            if (!feedback.ExisteNovedad(id))
+            if (!PuedeVerNovedad(id) || !feedback.ExisteNovedad(id))
             {
                 return NotFound();
             }
@@ -962,7 +1117,8 @@ namespace NestoAPI.Controllers
             try
             {
                 string supervisor = SupervisorActividad();
-                if (supervisor == null || EsElMismoUsuario(User?.Identity?.Name, supervisor))
+                if (supervisor == null || EsElMismoUsuario(User?.Identity?.Name, supervisor)
+                    || !PuedeRecibirAviso(novedadId, supervisor)) // NestoAPI#650
                 {
                     return;
                 }
@@ -1018,6 +1174,7 @@ namespace NestoAPI.Controllers
             {
                 string supervisor = SupervisorActividad();
                 if (supervisor == null
+                    || !PuedeRecibirAviso(novedadId, supervisor) // NestoAPI#650
                     || (yaAvisados ?? new List<string>()).Any(a => EsElMismoUsuario(a, supervisor))
                     || ReglasMenciones.Resolver(ReglasMenciones.Extraer(texto),
                         new List<MencionableDTO> { new MencionableDTO { Nombre = supervisor, Clave = supervisor } }, null).Any())
@@ -1075,6 +1232,8 @@ namespace NestoAPI.Controllers
                 };
                 IEnumerable<AutorComentarioNovedad> autores = feedback.LeerAutores(contestados)
                     .Where(a => !string.Equals(a.Usuario?.Trim(), ReglasFeedbackNovedades.USUARIO_ASISTENTE, StringComparison.OrdinalIgnoreCase))
+                    // NestoAPI#650: si la han pasado a privada, solo a quien todavía puede verla
+                    .Where(a => PuedeRecibirAviso(novedadId, a.Usuario) || PuedeRecibirAviso(novedadId, a.NombreVisible))
                     .GroupBy(a => a.Usuario?.Trim(), StringComparer.OrdinalIgnoreCase)
                     .Select(g => g.First());
                 foreach (AutorComentarioNovedad autor in autores)
@@ -1147,7 +1306,9 @@ namespace NestoAPI.Controllers
                 bool deNestoApp = EsDeNestoApp(feedback.LeerAmbitoNovedad(novedadId));
                 List<string> excluidos = (yaAvisados ?? Enumerable.Empty<string>()).Where(x => x != null).ToList();
                 IEnumerable<MencionableDTO> mencionados = ReglasMenciones.Resolver(menciones, feedback.LeerMencionables(deNestoApp), claveAutor)
-                    .Where(m => !excluidos.Contains(m.Clave, StringComparer.OrdinalIgnoreCase));
+                    .Where(m => !excluidos.Contains(m.Clave, StringComparer.OrdinalIgnoreCase))
+                    // NestoAPI#650: en una privada, solo a quien puede verla (su autor y Dirección / Informática)
+                    .Where(m => PuedeRecibirAviso(novedadId, m.Clave));
                 var notificacion = new NotificacionPushDTO
                 {
                     Titulo = $"{nombreAutor} le ha mencionado en Novedades",
@@ -1189,7 +1350,7 @@ namespace NestoAPI.Controllers
         public HttpResponseMessage GetImagenComentario(int id)
         {
             ImagenComentarioNovedad imagen = feedback.LeerImagen(id);
-            if (imagen?.Imagen == null)
+            if (imagen?.Imagen == null || !PuedeVerComentario(id))
             {
                 return Request.CreateResponse(HttpStatusCode.NotFound);
             }

@@ -39,5 +39,17 @@ namespace NestoAPI.Infraestructure.Novedades
         /// <paramref name="desdeUtc"/>, del más reciente al más antiguo. Para el contexto de las incidencias.
         /// </summary>
         List<ErrorElmahResumen> LeerErroresElmah(IReadOnlyList<string> usuarios, DateTime desdeUtc, int maximo);
+
+        /// <summary>
+        /// NestoAPI#650: las sugerencias privadas (Id y autor). Lista vacía si la columna Privada aún no existe
+        /// (Scripts/Issue650_SugerenciasPrivadas.sql); lanza solo si falla la BD (el controlador cierra entonces por seguridad).
+        /// </summary>
+        List<SugerenciaPrivadaFila> LeerPrivadas();
+
+        /// <summary>NestoAPI#650: si ya existe la columna Novedades.Privada (si no, no se pueden crear privadas).</summary>
+        bool AdmitePrivadas();
+
+        /// <summary>NestoAPI#650: la pasa a privada o a pública. false si no existe o no es una sugerencia.</summary>
+        bool GuardarPrivada(int id, bool privada, string usuario);
     }
 }

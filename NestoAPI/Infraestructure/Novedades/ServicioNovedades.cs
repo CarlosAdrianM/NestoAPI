@@ -85,12 +85,22 @@ namespace NestoAPI.Infraestructure.Novedades
         {
             using (NVEntities db = new NVEntities())
             {
-                return db.Database.SqlQuery<int>(@"
+                const string INSERT = @"
                     INSERT INTO Novedades (Version, Fecha, Categoria, Titulo, Descripcion, Ambito, Publicada, Usuario,
                                            TextoOriginal, Imagen, ImagenTipo, SugeridaPor, SugeridaNombre, SugeridaFecha, Estado, Contexto)
-                    OUTPUT CAST(INSERTED.Id AS int)
+                    OUTPUT CAST(INSERTED.Id AS int) {0}
                     VALUES (NULL, CAST(GETDATE() AS date), @categoria, @titulo, NULL, @ambito, 1, @usuarioCorto,
-                            @texto, @imagen, @tipo, @usuario, @nombre, SYSDATETIME(), 'Pendiente', @contexto);",
+                            @texto, @imagen, @tipo, @usuario, @nombre, SYSDATETIME(), 'Pendiente', @contexto);";
+                // NestoAPI#650: la privada se crea y se marca en la misma transacción (la marca, con SQL dinámico
+                // porque la columna puede no existir aún; el controlador lo comprueba antes). La pública, como siempre.
+                string sql = !s.Privada
+                    ? string.Format(INSERT, string.Empty)
+                    : "SET XACT_ABORT ON; BEGIN TRAN; DECLARE @nueva TABLE (Id int); " +
+                      string.Format(INSERT, "INTO @nueva (Id)") +
+                      " DECLARE @id int = (SELECT Id FROM @nueva);" +
+                      " EXEC sp_executesql N'UPDATE dbo.Novedades SET Privada = 1 WHERE Id = @id', N'@id int', @id;" +
+                      " COMMIT; SET XACT_ABORT OFF; SELECT @id;";
+                return db.Database.SqlQuery<int>(sql,
                     // NestoAPI#558: Incidencia para «Algo no funciona»; si no, Nuevo como siempre
                     new SqlParameter("@categoria", SqlDbType.NVarChar, 20) { Value = string.IsNullOrWhiteSpace(s.Categoria) ? ReglasSugerenciasNovedades.CATEGORIA_SUGERENCIA : s.Categoria },
                     new SqlParameter("@contexto", SqlDbType.NVarChar, -1) { Value = (object)s.Contexto ?? DBNull.Value },
@@ -193,6 +203,47 @@ namespace NestoAPI.Infraestructure.Novedades
             {
                 db.Database.CommandTimeout = 10;
                 return db.Database.SqlQuery<ErrorElmahResumen>(sql, parametros.ToArray()).ToList();
+            }
+        }
+
+        // NestoAPI#650: la columna Privada se lee y se escribe con SQL dinámico para que, mientras no se lance
+        // Scripts/Issue650_SugerenciasPrivadas.sql, nada falle (un SELECT con la columna no compilaría).
+        private const string EXISTE_COLUMNA_PRIVADA = "COL_LENGTH('dbo.Novedades', 'Privada') IS NOT NULL";
+
+        public List<SugerenciaPrivadaFila> LeerPrivadas()
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                return db.Database.SqlQuery<SugerenciaPrivadaFila>(
+                    "IF " + EXISTE_COLUMNA_PRIVADA + " " +
+                    "EXEC sp_executesql N'SELECT Id, SugeridaPor, SugeridaNombre FROM dbo.Novedades WHERE Privada = 1' " +
+                    "ELSE SELECT CAST(0 AS int) AS Id, CAST(NULL AS nvarchar(128)) AS SugeridaPor, " +
+                    "CAST(NULL AS nvarchar(100)) AS SugeridaNombre WHERE 1 = 0").ToList();
+            }
+        }
+
+        public bool AdmitePrivadas()
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                return db.Database.SqlQuery<bool>(
+                    "SELECT CAST(CASE WHEN " + EXISTE_COLUMNA_PRIVADA + " THEN 1 ELSE 0 END AS bit)").Single();
+            }
+        }
+
+        public bool GuardarPrivada(int id, bool privada, string usuario)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                return db.Database.SqlQuery<int>(
+                    "IF " + EXISTE_COLUMNA_PRIVADA + " " +
+                    "EXEC sp_executesql N'UPDATE dbo.Novedades SET Privada = @privada, Usuario = @usuario, Fecha_Modificación = GETDATE() " +
+                    "WHERE Id = @id AND TextoOriginal IS NOT NULL; SELECT CAST(@@ROWCOUNT AS int);', " +
+                    "N'@privada bit, @usuario nvarchar(50), @id int', @privada, @usuario, @id " +
+                    "ELSE SELECT CAST(0 AS int)",
+                    new SqlParameter("@privada", SqlDbType.Bit) { Value = privada },
+                    new SqlParameter("@usuario", SqlDbType.NVarChar, 50) { Value = Recortar(usuario, 50) },
+                    new SqlParameter("@id", id)).Single() > 0;
             }
         }
 

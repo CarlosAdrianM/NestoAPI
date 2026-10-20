@@ -566,6 +566,7 @@
     <Compile Include="Controllers\NovedadesFeedbackTests.cs" />
     <Compile Include="Controllers\NovedadesIncidenciasTests.cs" />
     <Compile Include="Controllers\NovedadesSugerenciasTests.cs" />
+    <Compile Include="Controllers\NovedadesPrivadasTests.cs" />
     <Compile Include="Controllers\NovedadesActividadSupervisorTests.cs" />
     <Compile Include="Controllers\NovedadesMencionesTests.cs" />
     <Compile Include="Controllers\NovedadesRecordatoriosRespuestaTests.cs" />

@@ -27,6 +27,11 @@ namespace NestoAPI.Models.Novedades
         /// la última hora. Solo lo ven Dirección / Informática (a los demás les llega a null).
         /// </summary>
         public string Contexto { get; set; }
+        /// <summary>
+        /// NestoAPI#650: solo la ven quien la creó y Dirección / Informática (a los demás ni les llega). No admite
+        /// «Me gusta» y va detrás de las públicas. false en las de siempre (y si la columna aún no existe).
+        /// </summary>
+        public bool Privada { get; set; }
     }
 
     /// <summary>
@@ -38,6 +43,19 @@ namespace NestoAPI.Models.Novedades
         public bool EsIncidencia { get; set; }
         /// <summary>La pantalla que tenía abierta el usuario (opcional; solo se guarda en las incidencias).</summary>
         public string Pantalla { get; set; }
+        /// <summary>
+        /// NestoAPI#650: que solo la vean quien la crea y Dirección / Informática. Opcional: los clientes que no lo
+        /// mandan crean públicas, como siempre.
+        /// </summary>
+        public bool Privada { get; set; }
+    }
+
+    /// <summary>NestoAPI#650: fila de la consulta de las sugerencias privadas (Id y su autor).</summary>
+    public class SugerenciaPrivadaFila
+    {
+        public int Id { get; set; }
+        public string SugeridaPor { get; set; }
+        public string SugeridaNombre { get; set; }
     }
 
     /// <summary>NestoAPI#558: un error de ELMAH del usuario, para el contexto de la incidencia.</summary>
@@ -106,6 +124,8 @@ namespace NestoAPI.Models.Novedades
         public string Categoria { get; set; }
         /// <summary>NestoAPI#558: el contexto automático de la incidencia (null en las sugerencias).</summary>
         public string Contexto { get; set; }
+        /// <summary>NestoAPI#650: se graba privada (el controlador ya ha comprobado que la columna existe).</summary>
+        public bool Privada { get; set; }
     }
 
     /// <summary>
@@ -129,5 +149,7 @@ namespace NestoAPI.Models.Novedades
         /// null = no se toca; vacía o con «Todos» = para todos.
         /// </summary>
         public List<string> Perfiles { get; set; }
+        /// <summary>NestoAPI#650: pasarla a privada (true) o a pública (false). null = no se toca.</summary>
+        public bool? Privada { get; set; }
     }
 }
