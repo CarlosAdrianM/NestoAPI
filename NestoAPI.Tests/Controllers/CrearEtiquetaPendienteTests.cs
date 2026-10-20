@@ -739,41 +739,6 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
-        public async Task CrearEtiquetaPendiente_AgenciaCEX_CodigoPostalEspanol_DefaultsEpaq24()
-        {
-            // Arrange
-            var envioCreado = await CrearEtiquetaConAgenciaYCodPostal(Constantes.Agencias.AGENCIA_CORREOS_EXPRESS, "28001");
-
-            // Assert
-            Assert.AreEqual((short)93, envioCreado.Servicio); // ePaq24
-            Assert.AreEqual((short)0, envioCreado.Horario);
-            Assert.AreEqual(724, envioCreado.Pais);
-        }
-
-        [TestMethod]
-        public async Task CrearEtiquetaPendiente_AgenciaCEX_CodigoPostalPortugues_DefaultsPaq24()
-        {
-            // Arrange
-            var envioCreado = await CrearEtiquetaConAgenciaYCodPostal(Constantes.Agencias.AGENCIA_CORREOS_EXPRESS, "1000-001");
-
-            // Assert
-            Assert.AreEqual((short)63, envioCreado.Servicio); // Paq24 Portugal
-            Assert.AreEqual((short)0, envioCreado.Horario);
-            Assert.AreEqual(724, envioCreado.Pais);
-        }
-
-        [TestMethod]
-        public async Task CrearEtiquetaPendiente_AgenciaCEX_CodigoPostalInternacional_DefaultsMonobulto()
-        {
-            // Arrange
-            var envioCreado = await CrearEtiquetaConAgenciaYCodPostal(Constantes.Agencias.AGENCIA_CORREOS_EXPRESS, "75008");
-
-            // Assert
-            Assert.AreEqual((short)90, envioCreado.Servicio); // Internacional monobulto
-            Assert.AreEqual((short)0, envioCreado.Horario);
-        }
-
-        [TestMethod]
         public async Task CrearEtiquetaPendiente_AgenciaSending_DefaultsExpressNormal()
         {
             // Arrange
@@ -892,31 +857,20 @@ namespace NestoAPI.Tests.Controllers
         #region NestoAPI#204 — Canarias / Canteras
 
         [TestMethod]
-        public async Task CrearEtiquetaPendiente_AgenciaCEX_CodigoPostalCanarias_RetornaBadRequest()
+        public async Task CrearEtiquetaPendiente_AgenciaCEX_RetornaBadRequestPorqueYaNoSeUsa()
         {
-            // Reproductor #204: hoy NestoApp manda Agencia=8 (CEX) para CP 35xxx/38xxx, pero CEX
-            // no entrega en Canarias. La API debe rechazar y obligar a usar Canteras.
-            var resultado = await IntentarCrearEtiqueta(
-                agencia: Constantes.Agencias.AGENCIA_CORREOS_EXPRESS,
-                codPostal: "35001",
-                lineas: ProductoDe(500m));
+            // NestoAPI#595 (20/10/26): Correos Express se quitó (antes #204 la rechazaba solo para Canarias).
+            foreach (string codPostal in new[] { "28001", "35001" })
+            {
+                var resultado = await IntentarCrearEtiqueta(
+                    agencia: Constantes.Agencias.AGENCIA_CORREOS_EXPRESS,
+                    codPostal: codPostal,
+                    lineas: ProductoDe(500m));
 
-            var badRequest = resultado as BadRequestErrorMessageResult;
-            Assert.IsNotNull(badRequest, "CEX a CP canario debe devolver BadRequest");
-            StringAssert.Contains(badRequest.Message, "Canteras",
-                "El mensaje debe orientar al usuario a la agencia correcta (Canteras).");
-        }
-
-        [TestMethod]
-        public async Task CrearEtiquetaPendiente_AgenciaCEX_CodigoPostalTenerife_RetornaBadRequest()
-        {
-            // Tenerife (CP 38xxx) también es Canarias.
-            var resultado = await IntentarCrearEtiqueta(
-                agencia: Constantes.Agencias.AGENCIA_CORREOS_EXPRESS,
-                codPostal: "38001",
-                lineas: ProductoDe(500m));
-
-            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+                var badRequest = resultado as BadRequestErrorMessageResult;
+                Assert.IsNotNull(badRequest, $"CEX a {codPostal} debe devolver BadRequest");
+                Assert.AreEqual(EnviosAgenciasController.MENSAJE_CORREOS_EXPRESS_RETIRADA, badRequest.Message);
+            }
         }
 
         [TestMethod]

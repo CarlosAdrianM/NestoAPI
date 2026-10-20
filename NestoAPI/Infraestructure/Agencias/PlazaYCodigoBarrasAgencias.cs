@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using NestoAPI.Infraestructure.Agencias.Gls;
@@ -41,8 +40,7 @@ namespace NestoAPI.Infraestructure.Agencias
 
     /// <summary>
     /// NestoAPI#595 (slice 2, 20/10/26): plaza y código de barras de UNA agencia, en el servidor. Es lo que hacen hoy
-    /// IAgencia.calcularPlaza y IAgencia.calcularCodigoBarras de Nesto (AgenciaASM, AgenciaCorreosExpress, AgenciaCanteras,
-    /// AgenciaGestionadaPorApi), para que el envío se pueda crear desde el pedido sin pasar por Nesto.
+    /// IAgencia.calcularPlaza y IAgencia.calcularCodigoBarras de Nesto (AgenciaASM, AgenciaCanteras, AgenciaGestionadaPorApi), para que el envío se pueda crear desde el pedido sin pasar por Nesto.
     /// </summary>
     public interface IPlazaYCodigoBarrasAgencia
     {
@@ -62,7 +60,7 @@ namespace NestoAPI.Infraestructure.Agencias
         string CalcularCodigoBarras(EnviosAgencia envio, string prefijoAgencia);
     }
 
-    /// <summary>NestoAPI#595: la agencia no tiene plaza ni código de barras en el servidor (Glovo, OnTime, Sending...).</summary>
+    /// <summary>NestoAPI#595: la agencia no tiene plaza ni código de barras en el servidor (Correos Express, Glovo, OnTime, Sending...).</summary>
     public class AgenciaSinPlazaYCodigoBarrasException : NotSupportedException
     {
         public AgenciaSinPlazaYCodigoBarrasException(int agencia)
@@ -76,7 +74,7 @@ namespace NestoAPI.Infraestructure.Agencias
 
     /// <summary>
     /// NestoAPI#595 (slice 2, 20/10/26): elige la implementación de plaza y código de barras por número de agencia. Las
-    /// agencias que no están (Glovo, OnTime, Sending) dan <see cref="AgenciaSinPlazaYCodigoBarrasException"/>.
+    /// agencias que no están (Correos Express, Glovo, OnTime, Sending) dan <see cref="AgenciaSinPlazaYCodigoBarrasException"/>.
     /// </summary>
     public class RegistroPlazasAgencias
     {
@@ -98,8 +96,8 @@ namespace NestoAPI.Infraestructure.Agencias
         }
 
         /// <summary>
-        /// Las agencias de hoy: GLS (1 y la de la empresa espejo, 5), Correos Express (8), Canteras (11), Innovatrans (12) y
-        /// CTT (13).
+        /// Las agencias de hoy: GLS (1 y la de la empresa espejo, 5), Canteras (11), Innovatrans (12) y CTT (13). Correos
+        /// Express (8) se quitó el 20/10/26 (ya no se usa): es una agencia no soportada más.
         /// </summary>
         /// <param name="clienteGls">El transporte de GetPlazaXCP (null = el real, contra asmred).</param>
         /// <param name="registrar">Dónde se registran los fallos de la plaza de GLS (null = ELMAH).</param>
@@ -107,7 +105,6 @@ namespace NestoAPI.Infraestructure.Agencias
             => new RegistroPlazasAgencias(new IPlazaYCodigoBarrasAgencia[]
             {
                 new PlazaYCodigoBarrasGls(clienteGls ?? new ClientePlazaGls(), registrar),
-                new PlazaYCodigoBarrasCorreosExpress(),
                 PlazaYCodigoBarrasFija.Canteras(),
                 PlazaYCodigoBarrasFija.Innovatrans(),
                 PlazaYCodigoBarrasFija.Ctt()
@@ -124,80 +121,6 @@ namespace NestoAPI.Infraestructure.Agencias
             }
             return implementacion;
         }
-    }
-
-    /// <summary>
-    /// NestoAPI#595 (slice 2, 20/10/26): Correos Express, como AgenciaCorreosExpress.vb. Plaza fija (l.140-145) y código de
-    /// barras de 16 cifras con dígito de control (l.441-471 y 494-508), sin llamadas externas.
-    /// </summary>
-    public class PlazaYCodigoBarrasCorreosExpress : IPlazaYCodigoBarrasAgencia
-    {
-        public const string NEMONICO = "CE";
-        public const string NOMBRE = "Correos Express";
-        public const string TELEFONO = "916602444";
-        public const string EMAIL = "am-cabelloandres@correosexpress.com";
-
-        public IReadOnlyCollection<int> Agencias { get; } = new[] { Constantes.Agencias.AGENCIA_CORREOS_EXPRESS };
-
-        public bool PlazaConsultaLaAgencia => false;
-
-        public Task<PlazaAgencia> CalcularPlazaAsync(string codPostal, int pais)
-            => Task.FromResult(new PlazaAgencia { Nemonico = NEMONICO, Nombre = NOMBRE, Telefono = TELEFONO, Email = EMAIL });
-
-        /// <summary>
-        /// Servicio (2 cifras) + cliente etiquetador (las 4 primeras del prefijo de la agencia) + número del envío (9 cifras) +
-        /// dígito de control. Null si la agencia no tiene un prefijo de al menos 4 caracteres (en Nesto revienta).
-        /// <para>OJO, diferencia con VB: Nesto hace <c>posiciones(0) = envio.Servicio / 10</c>, que es división decimal y
-        /// CInt con redondeo bancario (63 / 10 = 6,3 → 6, pero 57 / 10 = 5,7 → 6 y 96 / 10 = 9,6 → 10). Aquí es división
-        /// entera (la decena del servicio, que es lo que pide el formato). Para los servicios que se usan de verdad (54, 63,
-        /// 90, 93: unidades menores que 5) dan lo mismo; con unidades de 5 en adelante Nesto calcularía mal.</para>
-        /// </summary>
-        public string CalcularCodigoBarras(EnviosAgencia envio, string prefijoAgencia)
-        {
-            if (envio == null) throw new ArgumentNullException(nameof(envio));
-            if (prefijoAgencia == null || prefijoAgencia.Length < 4)
-            {
-                return null;
-            }
-
-            string numero = envio.Numero.ToString("D9", CultureInfo.InvariantCulture);
-            var posiciones = new int[15];
-            // Posiciones 1 y 2: código del producto (servicio).
-            posiciones[0] = envio.Servicio / 10;
-            posiciones[1] = envio.Servicio % 10;
-            // Posiciones 3 a 6: código de cliente etiquetador (lo da Correos Express).
-            for (int i = 0; i < 4; i++)
-            {
-                posiciones[2 + i] = Cifra(prefijoAgencia[i]);
-            }
-            // Posiciones 7 a 15: rango de expediciones (el número del envío).
-            for (int i = 0; i < 9; i++)
-            {
-                posiciones[6 + i] = Cifra(numero[i]);
-            }
-
-            return string.Concat(posiciones.Select(p => p.ToString(CultureInfo.InvariantCulture)))
-                + DigitoControl(posiciones).ToString(CultureInfo.InvariantCulture);
-        }
-
-        /// <summary>
-        /// AgenciaCorreosExpress.CalcularDigitoControl: suma ponderada en la que la posición i lleva peso 1 si
-        /// (i + longitud) es par y 3 si es impar (con 15 posiciones: 3 en las pares desde 0, 1 en las impares); el dígito es
-        /// lo que falta hasta la siguiente decena (0 si ya es múltiplo de 10).
-        /// </summary>
-        public static int DigitoControl(IReadOnlyList<int> posiciones)
-        {
-            int suma = 0;
-            for (int i = 0; i < posiciones.Count; i++)
-            {
-                suma += (i + posiciones.Count) % 2 == 0 ? posiciones[i] : posiciones[i] * 3;
-            }
-            int resto = suma % 10;
-            return resto == 0 ? 0 : 10 - resto;
-        }
-
-        // Val(carácter) de VB: la cifra, o 0 si no es una cifra.
-        private static int Cifra(char caracter) => caracter >= '0' && caracter <= '9' ? caracter - '0' : 0;
     }
 
     /// <summary>

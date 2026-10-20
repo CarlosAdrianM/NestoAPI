@@ -193,11 +193,11 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         }
 
         [TestMethod]
-        public void CEX_ServiciosDeSuLista_Pasan()
+        public void CEX_SinCatalogo_NoSeValida()
         {
-            Assert.IsNull(CatalogoServiciosAgencias.Validar(CEX, 92, 0, 0));
-            Assert.IsNull(CatalogoServiciosAgencias.Validar(CEX, 90, 0, 0));
-            Assert.IsNotNull(CatalogoServiciosAgencias.Validar(CEX, 96, 18, 0));
+            // NestoAPI#595 (20/10/26): CEX se quitó; sus envíos antiguos se pueden modificar sin que el catálogo los bloquee.
+            Assert.IsNull(CatalogoServiciosAgencias.De(CEX));
+            Assert.IsNull(CatalogoServiciosAgencias.Validar(CEX, 96, 18, 0));
         }
     }
 }

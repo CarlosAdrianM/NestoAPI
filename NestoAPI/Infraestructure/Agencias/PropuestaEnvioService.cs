@@ -385,7 +385,7 @@ namespace NestoAPI.Infraestructure.Agencias
         }
 
         // Las agencias cuya lista de países de Nesto incluye Portugal (AgenciaASM.rellenarPaises, PaisesSoportados de
-        // AgenciaGestionadaPorApi). Correos Express tiene sus propios ids (724) en DefaultsEnvio.
+        // AgenciaGestionadaPorApi).
         private static bool AdmitePortugal(int agencia)
             => agencia == Constantes.Agencias.AGENCIA_GLS || agencia == Constantes.Agencias.AGENCIA_CTT
             || agencia == Constantes.Agencias.AGENCIA_INNOVATRANS;
@@ -397,7 +397,7 @@ namespace NestoAPI.Infraestructure.Agencias
                 return "PT";
             }
             // NestoAPI#596: la forma portuguesa la decide Direcciones.CodigoPostal (con o sin guion/espacio).
-            return PerfilAgenciaCorreosExpress.EsCodigoPostalPortugues(codPostal) ? "PT" : "ES";
+            return Direcciones.CodigoPostal.TieneFormatoPortugues(codPostal) ? "PT" : "ES";
         }
 
         /// <summary>CorreoCliente (el mismo criterio que Nesto, VB 3321-3338): primero el de agencia, luego cualquiera.</summary>

@@ -89,7 +89,7 @@ namespace NestoAPI.Infraestructure.Agencias.CTT
         {
             string iso = CodigoPostal.PaisIso(paisIso);
             if (iso == CodigoPostal.PORTUGAL) return true;
-            if (iso.Length == 0) return PerfilAgenciaCorreosExpress.EsCodigoPostalPortugues(cp);
+            if (iso.Length == 0) return Direcciones.CodigoPostal.TieneFormatoPortugues(cp);
             return CodigoPostal.EsPortugues(cp, iso);
         }
 

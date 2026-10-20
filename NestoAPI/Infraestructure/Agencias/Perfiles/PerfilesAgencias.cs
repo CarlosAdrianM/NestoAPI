@@ -149,52 +149,9 @@ namespace NestoAPI.Infraestructure.Agencias.Perfiles
         }
     }
 
-    /// <summary>
-    /// Correos Express: en cuarentena (no se tramita), pero sus reglas de destino y defaults siguen
-    /// aplicando a las etiquetas que se creen a mano.
-    /// </summary>
-    public class PerfilAgenciaCorreosExpress : IPerfilConReglasDestino, IPerfilConDefaultsEnvio, IPerfilConCatalogoServicios
-    {
-        public int AgenciaId => Constantes.Agencias.AGENCIA_CORREOS_EXPRESS;
-
-        // NestoAPI#546: AgenciaCorreosExpress.vb (tarifas actuales + la lista antigua comentada, que
-        // incluye los internacionales 90/91 de DefaultsEnvio). Sin horarios ni retornos.
-        public CatalogoServiciosAgencia CatalogoServicios { get; } = new CatalogoServiciosAgencia("Correos Express",
-            servicios: new Dictionary<short, string>
-            {
-                { 54, "EntregaPlus" }, { 63, "Paq 24" }, { 66, "Baleares" }, { 69, "Canarias marítimo" },
-                { 90, "Internacional estándar" }, { 91, "Internacional express" }, { 92, "Paq Empresa 14" }, { 93, "ePaq 24" }
-            },
-            horarios: new Dictionary<short, string> { { 0, "" } },
-            retornos: new Dictionary<short, string> { { 0, "No disponible" } });
-
-        public string ValidarDestino(string codPostal, CabPedidoVta pedido, bool cobrarReembolso)
-            => PedidosVenta.GestorPortes.EsCanarias(codPostal)
-                ? "Correos Express no entrega en Canarias. Usa la agencia Canteras para envíos a Canarias."
-                : null;
-
-        public (short Servicio, short Horario, int Pais) DefaultsEnvio(string codPostal)
-        {
-            if (EsCodigoPostalPortugues(codPostal))
-            {
-                return (Servicio: 63, Horario: 0, Pais: 724); // Paq24, Portugal
-            }
-            if (EsCodigoPostalEspanol(codPostal))
-            {
-                return (Servicio: 93, Horario: 0, Pais: 724); // ePaq24, España
-            }
-            return (Servicio: 90, Horario: 0, Pais: 724); // Internacional monobulto
-        }
-
-        // NestoAPI#596: alias de Direcciones.CodigoPostal, el único que entiende el CP.
-        internal static bool EsCodigoPostalEspanol(string codPostal)
-            => Direcciones.CodigoPostal.EsEspanol(codPostal);
-
-        // NestoAPI#596: «1000», «1000-001», «1000 001» o «1000001» (antes solo los dos primeros:
-        // «4480 670» se rechazaba en CTT). Sin país, 4 cifras siguen contando como Portugal.
-        internal static bool EsCodigoPostalPortugues(string codPostal)
-            => Direcciones.CodigoPostal.TieneFormatoPortugues(codPostal);
-    }
+    // NestoAPI#595 (20/10/26): el perfil de Correos Express (agencia 8: catálogo, defaults y regla de Canarias) se quitó
+    // porque la agencia ya no se usa. Sus envíos antiguos se siguen viendo (seguimiento en SeguimientoAgencias). Está en el
+    // histórico del repositorio por si se vuelve a trabajar con ellos.
 
     /// <summary>Sending: en cuarentena (no se tramita), pero conserva sus defaults de envío.</summary>
     /// <summary>
@@ -273,7 +230,7 @@ namespace NestoAPI.Infraestructure.Agencias.Perfiles
         // Servicio 48 = "CTT 48h" (TarifaCTT48h.ServicioId), el económico que usamos como base.
         // Portugal es zona propia de la oferta (misma API, país distinto); el resto, España.
         public (short Servicio, short Horario, int Pais) DefaultsEnvio(string codPostal)
-            => PerfilAgenciaCorreosExpress.EsCodigoPostalPortugues(codPostal ?? string.Empty)
+            => Direcciones.CodigoPostal.TieneFormatoPortugues(codPostal ?? string.Empty)
                 ? (Servicio: (short)48, Horario: (short)0, Pais: 351)
                 : (Servicio: (short)48, Horario: (short)0, Pais: 34);
     }

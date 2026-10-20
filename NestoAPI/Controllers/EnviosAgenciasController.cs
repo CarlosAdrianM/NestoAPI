@@ -2069,7 +2069,7 @@ namespace NestoAPI.Controllers
         /// curso— se compara lo que ha grabado Nesto con lo que calcularía el servidor (<see cref="RegistroPlazasAgencias"/>);
         /// si difiere, <see cref="PlazaCodigoBarrasDifiereInfo"/> a ELMAH. Best-effort: nunca hace fallar el PUT.
         /// <list type="bullet">
-        /// <item>GLS y Correos Express (calculan el código): solo cuando el PUT trae código (el que lo pone).</item>
+        /// <item>GLS (calcula el código): solo cuando el PUT trae código (el que lo pone).</item>
         /// <item>Canteras, CTT e Innovatrans (código ""): solo la plaza; el código no se compara porque lo pega el usuario
         /// (Canteras) o lo da /Tramitar (CTT, Innovatrans).</item>
         /// <item>GLS: NO se compara la plaza. Pedirla es una llamada síncrona a GLS (GetPlazaXCP, hasta 15 s) y el PUT de
@@ -2234,6 +2234,9 @@ namespace NestoAPI.Controllers
                 "DELETE FROM EnviosHistoria WHERE NumeroEnvio = @p0", id);
         }
 
+        /// <summary>NestoAPI#595 (20/10/26): Correos Express (agencia 8) se quitó porque ya no se usa.</summary>
+        internal const string MENSAJE_CORREOS_EXPRESS_RETIRADA = "Correos Express ya no se usa. Elija otra agencia.";
+
         [HttpPost]
         [Authorize]
         [Route("api/EnviosAgencias/CrearEtiquetaPendiente")]
@@ -2280,6 +2283,12 @@ namespace NestoAPI.Controllers
             {
                 request.Agencia = ElegirAgenciaPendiente(request, codPostalFicha,
                     request.CobrarReembolso ? request.ImporteReembolso ?? 0m : 0m);
+            }
+
+            // NestoAPI#595 (20/10/26): Correos Express ya no se usa; sin su perfil saldría una etiqueta sin servicio ni país.
+            if (request.Agencia == Constantes.Agencias.AGENCIA_CORREOS_EXPRESS)
+            {
+                return BadRequest(MENSAJE_CORREOS_EXPRESS_RETIRADA);
             }
 
             // NestoAPI#204: validar combinación agencia + destino antes de crear la etiqueta.

@@ -75,19 +75,14 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
-        public async Task CorreosExpress_ComparaCodigoYPlaza()
+        public async Task CorreosExpress_YaNoSoportada_NoComparaNada()
         {
+            // NestoAPI#595 (20/10/26): CEX se quitó; un PUT de un envío antiguo no registra nada.
             EnviosAgencia envio = Envio(8, 93, "9312340002469982");
-            envio.Nemonico = "CE";
-            envio.NombrePlaza = "Correos Express";
-            envio.TelefonoPlaza = "916602444";
-            envio.EmailPlaza = "otro@correosexpress.com";
 
             await controller.SombraPlazaYCodigoBarras(envio, existia: true, codigoBarrasAnterior: null);
 
-            Assert.AreEqual(1, registrados.Count);
-            StringAssert.Contains(registrados[0].Message, "1 campo:");
-            StringAssert.Contains(registrados[0].Message, "email de plaza: Nesto=otro@correosexpress.com / servidor=am-cabelloandres@correosexpress.com");
+            Assert.AreEqual(0, registrados.Count);
         }
 
         [TestMethod]

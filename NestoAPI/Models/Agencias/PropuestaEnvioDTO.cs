@@ -35,7 +35,7 @@ namespace NestoAPI.Models.Agencias
         public string CodPostal { get; set; }
         public string Poblacion { get; set; }
         public string Provincia { get; set; }
-        /// <summary>El id de país de la agencia (34 España, 351 Portugal; 724 en Correos Express), como EnviosAgencia.Pais.</summary>
+        /// <summary>El id de país de la agencia (34 España, 351 Portugal), como EnviosAgencia.Pais.</summary>
         public int Pais { get; set; }
         /// <summary>País del destino en ISO 3166-1 alfa-2, el que se pasa al comparador y al coste.</summary>
         public string PaisIso { get; set; }

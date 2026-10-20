@@ -54,27 +54,10 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         }
 
         [TestMethod]
-        public void CorreosExpress_Canarias_RechazaYRedirigeACanteras()
-        {
-            string error = new PerfilAgenciaCorreosExpress().ValidarDestino(CP_CANARIAS, PedidoConBase(1000), cobrarReembolso: false);
-            StringAssert.Contains(error, "Canteras");
-        }
-
-        [TestMethod]
-        public void CorreosExpress_Peninsula_Acepta()
-        {
-            Assert.IsNull(new PerfilAgenciaCorreosExpress().ValidarDestino(CP_MADRID, PedidoConBase(1000), cobrarReembolso: false));
-        }
-
-        [TestMethod]
         public void DefaultsEnvio_PorAgenciaYCodigoPostal()
         {
             Assert.AreEqual(((short)96, (short)18, 34), new PerfilAgenciaGls().DefaultsEnvio(CP_MADRID));
             Assert.AreEqual(((short)1, (short)1, 34), new PerfilAgenciaSending().DefaultsEnvio(CP_MADRID));
-            var cex = new PerfilAgenciaCorreosExpress();
-            Assert.AreEqual(((short)93, (short)0, 724), cex.DefaultsEnvio(CP_MADRID), "ePaq24 España");
-            Assert.AreEqual(((short)63, (short)0, 724), cex.DefaultsEnvio("1000-001"), "Paq24 Portugal");
-            Assert.AreEqual(((short)90, (short)0, 724), cex.DefaultsEnvio("75008"), "CP francés: internacional monobulto");
             // NestoAPI#493: CTT 48h (servicio 48 = TarifaCTT48h.ServicioId); Portugal con su país.
             var ctt = new PerfilAgenciaCTT();
             Assert.AreEqual(Constantes.Agencias.AGENCIA_CTT, ctt.AgenciaId);
@@ -86,10 +69,10 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         public void RegistroSinPuerta_IncluyeLasAgenciasEnCuarentena()
         {
             // La cuarentena gobierna la tramitación remota; las reglas de destino y los defaults
-            // aplican igual a CEX y Sending (comportamiento de los antiguos switch del controller).
+            // aplican igual a Sending (comportamiento de los antiguos switch del controller). CEX ya no tiene perfil (#595).
             RegistroAgencias registro = RegistroAgencias.PorReflexionSinPuerta();
 
-            Assert.IsNotNull(registro.Perfil(Constantes.Agencias.AGENCIA_CORREOS_EXPRESS));
+            Assert.IsNull(registro.Perfil(Constantes.Agencias.AGENCIA_CORREOS_EXPRESS));
             Assert.IsNotNull(registro.Perfil(Constantes.Agencias.AGENCIA_SENDING));
             Assert.IsNotNull(registro.Perfil(Constantes.Agencias.AGENCIA_CANTERAS));
             Assert.IsInstanceOfType(registro.Perfil(Constantes.Agencias.AGENCIA_CANTERAS), typeof(IPerfilConReglasDestino));

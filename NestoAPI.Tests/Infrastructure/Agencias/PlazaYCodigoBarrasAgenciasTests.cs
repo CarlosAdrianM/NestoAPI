@@ -11,7 +11,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
 {
     /// <summary>
     /// NestoAPI#595 (slice 2, 20/10/26): plaza y código de barras en el servidor, equivalentes a los de Nesto
-    /// (AgenciaASM, AgenciaCorreosExpress, AgenciaCanteras, AgenciaGestionadaPorApi). Los casos de código de barras son los de
+    /// (AgenciaASM, AgenciaCanteras, AgenciaGestionadaPorApi). Los casos de código de barras son los de
     /// ViewModels.Tests/AgenciaCodigoBarrasTests.vb. Nada llama a GLS: el transporte de GetPlazaXCP es un fake.
     /// </summary>
     [TestClass]
@@ -38,7 +38,6 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         {
             Assert.IsInstanceOfType(registro.Para(Constantes.Agencias.AGENCIA_GLS), typeof(PlazaYCodigoBarrasGls));
             Assert.IsInstanceOfType(registro.Para(Constantes.Agencias.AGENCIA_GLS_EMPRESA_ESPEJO), typeof(PlazaYCodigoBarrasGls));
-            Assert.IsInstanceOfType(registro.Para(Constantes.Agencias.AGENCIA_CORREOS_EXPRESS), typeof(PlazaYCodigoBarrasCorreosExpress));
             Assert.IsInstanceOfType(registro.Para(Constantes.Agencias.AGENCIA_CANTERAS), typeof(PlazaYCodigoBarrasFija));
             Assert.IsInstanceOfType(registro.Para(Constantes.Agencias.AGENCIA_INNOVATRANS), typeof(PlazaYCodigoBarrasFija));
             Assert.IsInstanceOfType(registro.Para(Constantes.Agencias.AGENCIA_CTT), typeof(PlazaYCodigoBarrasFija));
@@ -170,63 +169,12 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
 
         // ------------------------------------------------------------ Correos Express
 
-        // Dígito de control (AgenciaCorreosExpress.CalcularDigitoControl): 15 posiciones; la posición i pesa 1 si (i + 15) es
-        // par (i impar) y 3 si es impar (i par). El dígito es lo que falta hasta la siguiente decena.
-
         [TestMethod]
-        public void CorreosExpress_Servicio63_CasoDeNesto()
+        public void CorreosExpress_YaNoEstaSoportada()
         {
-            // AgenciaCodigoBarrasTests.vb: (5, 63, «1234») empieza por 631234000000005.
-            // Posiciones 6 3 1 2 3 4 0 0 0 0 0 0 0 0 5:
-            // ×3 en las pares: 6+1+3+0+0+0+0+5 = 15 → 45; ×1 en las impares: 3+2+4+0+0+0+0 = 9. Suma 54 → falta 6 hasta 60.
-            Assert.AreEqual("6312340000000056", registro.Para(8).CalcularCodigoBarras(Envio(5, 63), "1234"));
-        }
-
-        [TestMethod]
-        public void CorreosExpress_Servicio93()
-        {
-            // 9 3 1 2 3 4 0 0 0 2 4 6 9 9 8: pares 9+1+3+0+0+4+9+8 = 34 → 102; impares 3+2+4+0+2+6+9 = 26. Suma 128 → 2.
-            Assert.AreEqual("9312340002469982", registro.Para(8).CalcularCodigoBarras(Envio(246998, 93), "1234"));
-        }
-
-        [TestMethod]
-        public void CorreosExpress_Servicio90()
-        {
-            // 9 0 1 2 3 4 0 0 0 2 4 6 9 9 8: pares 34 → 102; impares 0+2+4+0+2+6+9 = 23. Suma 125 → 5.
-            Assert.AreEqual("9012340002469985", registro.Para(8).CalcularCodigoBarras(Envio(246998, 90), "1234"));
-        }
-
-        [TestMethod]
-        public void CorreosExpress_Servicio54()
-        {
-            // 5 4 1 2 3 4 0 0 0 2 4 6 9 9 8: pares 5+1+3+0+0+4+9+8 = 30 → 90; impares 4+2+4+0+2+6+9 = 27. Suma 117 → 3.
-            Assert.AreEqual("5412340002469983", registro.Para(8).CalcularCodigoBarras(Envio(246998, 54), "1234"));
-        }
-
-        [TestMethod]
-        public void CorreosExpress_SumaMultiploDeDiez_DigitoCero()
-        {
-            // 6 3 1 2 3 4 0 0 0 0 0 0 0 0 7: pares 6+1+3+7 = 17 → 51; impares 9. Suma 60 → 0.
-            Assert.AreEqual("6312340000000070", registro.Para(8).CalcularCodigoBarras(Envio(7, 63), "1234"));
-        }
-
-        [TestMethod]
-        public void CorreosExpress_PrefijoCorto_Null()
-        {
-            Assert.IsNull(registro.Para(8).CalcularCodigoBarras(Envio(5, 63), "12"));
-            Assert.IsNull(registro.Para(8).CalcularCodigoBarras(Envio(5, 63), null));
-        }
-
-        [TestMethod]
-        public async Task CorreosExpress_PlazaFija()
-        {
-            PlazaAgencia plaza = await registro.Para(8).CalcularPlazaAsync("28001", 724);
-
-            Assert.AreEqual("CE", plaza.Nemonico);
-            Assert.AreEqual("Correos Express", plaza.Nombre);
-            Assert.AreEqual("916602444", plaza.Telefono);
-            Assert.AreEqual("am-cabelloandres@correosexpress.com", plaza.Email);
-            Assert.IsFalse(registro.Para(8).PlazaConsultaLaAgencia);
+            // NestoAPI#595 (20/10/26): CEX se quitó porque ya no se usa.
+            Assert.IsFalse(registro.Soporta(Constantes.Agencias.AGENCIA_CORREOS_EXPRESS));
+            Assert.ThrowsException<AgenciaSinPlazaYCodigoBarrasException>(() => registro.Para(Constantes.Agencias.AGENCIA_CORREOS_EXPRESS));
         }
 
         // ------------------------------------------------------------ Canteras, CTT, Innovatrans
