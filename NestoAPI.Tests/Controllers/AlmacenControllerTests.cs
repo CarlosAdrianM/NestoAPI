@@ -5,6 +5,7 @@ using NestoAPI.Infraestructure.PreparacionAlmacen;
 using NestoAPI.Models.PreparacionAlmacen;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Security.Principal;
 using System.Threading.Tasks;
@@ -464,6 +465,42 @@ namespace NestoAPI.Tests.Controllers
 
             A.CallTo(() => fichas.Completar("1", A<IEnumerable<IConFichaProducto>>.That.IsSameSequenceAs(new[] { lata, cera })))
                 .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task GetPackingDelPicking_Ligero_SinFichasYConQuienLoEstaEmpaquetando()
+        {
+            // NestoAPI#646: para sondear desde la entrega; lo del que pregunta (Andrey) no es aviso
+            IFichasProductoAlmacen fichas = A.Fake<IFichasProductoAlmacen>();
+            PackingAlmacenDTO packing = PackingCon(new LineaPackingAlmacenDTO { Producto = "22624" }, new LineaPackingAlmacenDTO { Producto = "18004" });
+            packing.Entregas[0].Actividad = new List<ActividadPackingAlmacen>
+            {
+                new ActividadPackingAlmacen { Pedido = 1, Usuario = "Andrey", Segundos = 2 },
+                new ActividadPackingAlmacen { Pedido = 2, Usuario = "Pedro", Segundos = 70 }
+            };
+            A.CallTo(() => servicio.LeerPacking("1", 99633)).Returns(packing);
+
+            IHttpActionResult resultado = await ConFichas(fichas).GetPackingDelPicking(99633, ligero: true);
+
+            EntregaPackingAlmacenDTO entrega = ((OkNegotiatedContentResult<PackingAlmacenDTO>)resultado).Content.Entregas.Single();
+            Assert.AreEqual("Pedro", entrega.EmpaquetandoPor);
+            Assert.AreEqual("Lo está empaquetando Pedro (hace 1 min).", entrega.AvisoEmpaquetando);
+            A.CallTo(fichas).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task GetPackingsPendientes_DiceQuienEstaEmpaquetandoCadaPicking()
+        {
+            var pendiente = new PackingPendienteDTO
+            {
+                Picking = 99633,
+                Actividad = new List<ActividadPackingAlmacen> { new ActividadPackingAlmacen { Picking = 99633, Pedido = 1, Usuario = "Pedro", Segundos = 30 } }
+            };
+            A.CallTo(() => servicio.LeerPackingsPendientes("1", "ALG")).Returns(new List<PackingPendienteDTO> { pendiente });
+
+            _ = await controller.GetPackingsPendientes();
+
+            Assert.AreEqual("Lo está empaquetando Pedro (ahora mismo).", pendiente.AvisoEmpaquetando);
         }
 
         [TestMethod]

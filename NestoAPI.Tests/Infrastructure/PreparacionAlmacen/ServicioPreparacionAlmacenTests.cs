@@ -247,6 +247,109 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         }
 
         [TestMethod]
+        public async Task LeerPacking_CadaEntregaLlevaSusBultosYLoHechoEnSuPackingEstosMinutos()
+        {
+            // NestoAPI#646: dos entregas; la de 40182 con dos pedidos y una caja compartida
+            A.CallTo(() => repositorio.LeerLineasPacking(EMPRESA, PICKING, null)).Returns(new List<FilaPackingAlmacen>
+            {
+                Fila(PEDIDO, 1, "A", "8437020512176", 2), Fila(926941, 1, "B", null, 1), Fila(926950, 1, "C", null, 1, cliente: "15191")
+            });
+            A.CallTo(() => repositorio.LeerBultosDelPicking(EMPRESA, PICKING)).Returns(new List<BultoAlmacenDTO>
+            {
+                new BultoAlmacenDTO { Id = 1, Pedido = PEDIDO, Picking = PICKING, Bulto = 1 },
+                new BultoAlmacenDTO { Id = 2, Pedido = 926941, Picking = PICKING, Bulto = 1 },
+                new BultoAlmacenDTO { Id = 3, Pedido = 926950, Picking = PICKING, Bulto = 1 }
+            });
+            A.CallTo(() => repositorio.LeerActividadPacking(EMPRESA, A<IReadOnlyCollection<int>>.That.IsSameSequenceAs(new[] { PICKING }), 300))
+                .Returns(new List<ActividadPackingAlmacen> { new ActividadPackingAlmacen { Picking = PICKING, Pedido = 926941, Usuario = "Pedro", Segundos = 40 } });
+
+            PackingAlmacenDTO packing = await servicio.LeerPacking(EMPRESA, PICKING);
+
+            EntregaPackingAlmacenDTO lola = packing.Entregas.Single(e => e.Cliente == "40182");
+            CollectionAssert.AreEqual(new[] { 1, 2 }, lola.Bultos.Select(b => b.Id).ToArray(), "La caja compartida, en cada pedido");
+            Assert.AreEqual("Pedro", lola.Actividad.Single().Usuario);
+            EntregaPackingAlmacenDTO otra = packing.Entregas.Single(e => e.Cliente == "15191");
+            Assert.AreEqual(3, otra.Bultos.Single().Id);
+            Assert.AreEqual(0, otra.Actividad.Count);
+        }
+
+        [TestMethod]
+        public async Task LeerPacking_SiNoSePuedeLeerQuienEmpaqueta_ElPackingSaleIgual()
+        {
+            A.CallTo(() => repositorio.LeerLineasPacking(EMPRESA, PICKING, null)).Returns(new List<FilaPackingAlmacen> { Fila(PEDIDO, 1, "A", null, 2) });
+            A.CallTo(() => repositorio.LeerActividadPacking(A<string>._, A<IReadOnlyCollection<int>>._, A<int>._)).Throws(new InvalidOperationException("columna"));
+
+            PackingAlmacenDTO packing = await servicio.LeerPacking(EMPRESA, PICKING);
+
+            Assert.AreEqual(1, packing.Entregas.Count);
+            Assert.AreEqual(0, packing.Entregas[0].Actividad.Count);
+        }
+
+        [TestMethod]
+        public void CalcularQuienEmpaqueta_ElOtroUsuarioMasRecienteDentroDeLosCincoMinutos()
+        {
+            var ahora = new DateTime(2026, 10, 20, 10, 0, 0);
+            var actividad = new List<ActividadPackingAlmacen>
+            {
+                new ActividadPackingAlmacen { Pedido = 1, Usuario = "Andrey", Segundos = 5 },               // el que pregunta: no cuenta
+                new ActividadPackingAlmacen { Pedido = 1, Usuario = "NUEVAVISION\\Pedro", Segundos = 130 },
+                new ActividadPackingAlmacen { Pedido = 2, Usuario = "Luis", Segundos = 200 },
+                new ActividadPackingAlmacen { Pedido = 2, Usuario = "Marta", Segundos = 301 }                 // fuera de la ventana
+            };
+
+            ServicioPreparacionAlmacen.QuienEmpaqueta quien = ServicioPreparacionAlmacen.CalcularQuienEmpaqueta(actividad, "andrey", ahora);
+
+            Assert.AreEqual("Pedro", quien.Usuario, "Sin dominio");
+            Assert.AreEqual(2, quien.Minutos);
+            Assert.AreEqual(ahora.AddSeconds(-130), quien.UltimaActividad);
+            Assert.AreEqual("Lo está empaquetando Pedro (hace 2 min).", quien.Aviso);
+        }
+
+        [TestMethod]
+        public void CalcularQuienEmpaqueta_SoloLoPropioOViejo_Nadie()
+        {
+            var actividad = new List<ActividadPackingAlmacen>
+            {
+                new ActividadPackingAlmacen { Usuario = "Andrey", Segundos = 5 },
+                new ActividadPackingAlmacen { Usuario = "Pedro", Segundos = 400 }
+            };
+
+            Assert.IsNull(ServicioPreparacionAlmacen.CalcularQuienEmpaqueta(actividad, "Andrey", DateTime.Now));
+            Assert.IsNull(ServicioPreparacionAlmacen.CalcularQuienEmpaqueta(null, "Andrey", DateTime.Now));
+            Assert.AreEqual("Lo está empaquetando Pedro (ahora mismo).", ServicioPreparacionAlmacen.CalcularQuienEmpaqueta(
+                new[] { new ActividadPackingAlmacen { Usuario = "Pedro", Segundos = 20 } }, "Andrey", DateTime.Now).Aviso);
+        }
+
+        [TestMethod]
+        public async Task LeerPackingsPendientes_CadaPickingLlevaLoHechoEnSuPacking()
+        {
+            A.CallTo(() => repositorio.LeerEntregasPorEmpaquetar(EMPRESA, "ALG")).Returns(new List<EntregaPorEmpaquetar>
+            {
+                new EntregaPorEmpaquetar { Picking = 99700, Cliente = "1", Contacto = "0", Pedidos = 1 },
+                new EntregaPorEmpaquetar { Picking = 99701, Cliente = "2", Contacto = "0", Pedidos = 1 }
+            });
+            A.CallTo(() => repositorio.LeerActividadPacking(EMPRESA, A<IReadOnlyCollection<int>>._, 300)).Returns(new List<ActividadPackingAlmacen>
+            {
+                new ActividadPackingAlmacen { Picking = 99701, Pedido = 5, Usuario = "Pedro", Segundos = 10 }
+            });
+
+            List<PackingPendienteDTO> pendientes = await servicio.LeerPackingsPendientes(EMPRESA, "ALG");
+            ServicioPreparacionAlmacen.PonerQuienEmpaqueta(pendientes, "Andrey", DateTime.Now);
+
+            Assert.IsNull(pendientes.Single(p => p.Picking == 99700).AvisoEmpaquetando);
+            Assert.AreEqual("Pedro", pendientes.Single(p => p.Picking == 99701).EmpaquetandoPor);
+            Assert.AreEqual(0, pendientes.Single(p => p.Picking == 99701).MinutosDesdeActividad);
+        }
+
+        [TestMethod]
+        public void SqlActividadPacking_LecturasPackYFotosConLaHoraDelServidor()
+        {
+            StringAssert.Contains(RepositorioPreparacionAlmacen.SQL_ACTIVIDAD_PACKING, "e.Fase = 'PACK'");
+            StringAssert.Contains(RepositorioPreparacionAlmacen.SQL_ACTIVIDAD_PACKING, "e.FechaRegistro >= DATEADD(second, -@p1, GETDATE())");
+            StringAssert.Contains(RepositorioPreparacionAlmacen.SQL_ACTIVIDAD_PACKING, "FROM EnviosAgenciaBultos b");
+        }
+
+        [TestMethod]
         public async Task LeerPackingDePedido_TraeLoMetidoSoloDeEsePedido()
         {
             A.CallTo(() => repositorio.PickingEnCursoDelPedido(EMPRESA, PEDIDO)).Returns(Task.FromResult<int?>(PICKING));

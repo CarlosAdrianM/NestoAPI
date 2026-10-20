@@ -269,15 +269,23 @@ namespace NestoAPI.Controllers
         }
 
         // GET api/Almacen/Picking/99633/Packing?empresa=1
-        /// <summary>Lo que hay que meter en cajas de todo un picking, agrupado por entrega y por pedido.</summary>
+        /// <summary>
+        /// Lo que hay que meter en cajas de todo un picking, agrupado por entrega y por pedido. NestoAPI#646: cada entrega
+        /// lleva sus bultos y, si otro usuario la está empaquetando (en los últimos 5 minutos), quién y desde cuándo
+        /// (AvisoEmpaquetando). Con <paramref name="ligero"/>, sin la ficha ni la foto de cada producto: para sondear.
+        /// </summary>
         [HttpGet]
         [Route("Picking/{picking:int}/Packing")]
         [ResponseType(typeof(PackingAlmacenDTO))]
-        public async Task<IHttpActionResult> GetPackingDelPicking(int picking, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        public async Task<IHttpActionResult> GetPackingDelPicking(int picking, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO, bool ligero = false)
         {
             PackingAlmacenDTO resultado = await servicio.LeerPacking(Empresa(empresa), picking).ConfigureAwait(false);
-            await CompletarFichas(Empresa(empresa), LineasDe(resultado)).ConfigureAwait(false);
-            return resultado.Entregas.Count == 0 ? (IHttpActionResult)NotFound() : Ok(resultado);
+            if (!ligero)
+            {
+                await CompletarFichas(Empresa(empresa), LineasDe(resultado)).ConfigureAwait(false);
+            }
+            ServicioPreparacionAlmacen.PonerQuienEmpaqueta(resultado, Usuario(), DateTime.Now);
+            return resultado == null || resultado.Entregas.Count == 0 ? (IHttpActionResult)NotFound() : Ok(resultado);
         }
 
         // GET api/Almacen/Packing/Pendientes?almacen=ALG&empresa=1
@@ -291,18 +299,29 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> GetPackingsPendientes(string almacen = Constantes.Almacenes.ALGETE,
             string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
         {
-            return Ok(await servicio.LeerPackingsPendientes(Empresa(empresa), Almacen(almacen)).ConfigureAwait(false));
+            List<PackingPendienteDTO> pendientes = await servicio.LeerPackingsPendientes(Empresa(empresa), Almacen(almacen)).ConfigureAwait(false);
+            // NestoAPI#646: de cada picking, si otro usuario está empaquetando algo de él
+            ServicioPreparacionAlmacen.PonerQuienEmpaqueta(pendientes, Usuario(), DateTime.Now);
+            return Ok(pendientes);
         }
 
         // GET api/Almacen/Pedidos/926940/Packing?empresa=1
-        /// <summary>El packing de un pedido (el que se abre al leer el código del pedido en la mesa).</summary>
+        /// <summary>
+        /// El packing de un pedido (el que se abre al leer el código del pedido en la mesa). NestoAPI#646: con sus bultos y
+        /// quién lo está empaquetando, como el del picking; con <paramref name="ligero"/>, sin fichas (Agencias de Nesto lo
+        /// usa para avisar si alguien lo está empaquetando todavía).
+        /// </summary>
         [HttpGet]
         [Route("Pedidos/{pedido:int}/Packing")]
         [ResponseType(typeof(PackingAlmacenDTO))]
-        public async Task<IHttpActionResult> GetPackingDelPedido(int pedido, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        public async Task<IHttpActionResult> GetPackingDelPedido(int pedido, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO, bool ligero = false)
         {
             PackingAlmacenDTO resultado = await servicio.LeerPackingDePedido(Empresa(empresa), pedido).ConfigureAwait(false);
-            await CompletarFichas(Empresa(empresa), LineasDe(resultado)).ConfigureAwait(false);
+            if (!ligero)
+            {
+                await CompletarFichas(Empresa(empresa), LineasDe(resultado)).ConfigureAwait(false);
+            }
+            ServicioPreparacionAlmacen.PonerQuienEmpaqueta(resultado, Usuario(), DateTime.Now);
             return resultado == null || resultado.Entregas.Count == 0 ? (IHttpActionResult)NotFound() : Ok(resultado);
         }
 

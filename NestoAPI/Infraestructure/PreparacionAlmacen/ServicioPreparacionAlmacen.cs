@@ -210,7 +210,122 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
         public async Task<List<PackingPendienteDTO>> LeerPackingsPendientes(string empresa, string almacen)
         {
-            return MontarPackingsPendientes(await repositorio.LeerEntregasPorEmpaquetar(empresa, almacen).ConfigureAwait(false));
+            List<PackingPendienteDTO> pendientes = MontarPackingsPendientes(await repositorio.LeerEntregasPorEmpaquetar(empresa, almacen).ConfigureAwait(false));
+            List<ActividadPackingAlmacen> actividad = await LeerActividadSinFallar(empresa, pendientes.Select(p => p.Picking).ToList()).ConfigureAwait(false);
+            foreach (PackingPendienteDTO pendiente in pendientes)
+            {
+                pendiente.Actividad = actividad.Where(a => a.Picking == pendiente.Picking).ToList();
+            }
+            return pendientes;
+        }
+
+        /// <summary>NestoAPI#646: cuánto dura «lo está empaquetando»: lo hecho en el packing en estos últimos minutos.</summary>
+        public static readonly TimeSpan VENTANA_EMPAQUETANDO = TimeSpan.FromMinutes(5);
+
+        /// <summary>NestoAPI#646: quién está empaquetando no puede tirar el packing: si no se puede leer, sin aviso.</summary>
+        private async Task<List<ActividadPackingAlmacen>> LeerActividadSinFallar(string empresa, IReadOnlyCollection<int> pickings)
+        {
+            try
+            {
+                return await repositorio.LeerActividadPacking(empresa, pickings, (int)VENTANA_EMPAQUETANDO.TotalSeconds).ConfigureAwait(false)
+                    ?? new List<ActividadPackingAlmacen>();
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(ex);
+                return new List<ActividadPackingAlmacen>();
+            }
+        }
+
+        /// <summary>NestoAPI#646: a cada entrega, sus bultos en este picking y lo hecho en su packing estos últimos minutos.</summary>
+        private async Task CompletarBultosYActividad(string empresa, int picking, PackingAlmacenDTO packing)
+        {
+            if (packing?.Entregas == null || packing.Entregas.Count == 0)
+            {
+                return;
+            }
+            List<BultoAlmacenDTO> bultos = ConEnlacePublico(await repositorio.LeerBultosDelPicking(empresa, picking).ConfigureAwait(false))
+                ?? new List<BultoAlmacenDTO>();
+            List<ActividadPackingAlmacen> actividad = await LeerActividadSinFallar(empresa, new[] { picking }).ConfigureAwait(false);
+            RepartirBultosYActividad(packing, bultos, actividad);
+        }
+
+        internal static void RepartirBultosYActividad(PackingAlmacenDTO packing, IEnumerable<BultoAlmacenDTO> bultos, IEnumerable<ActividadPackingAlmacen> actividad)
+        {
+            List<BultoAlmacenDTO> todos = (bultos ?? Enumerable.Empty<BultoAlmacenDTO>()).Where(b => b.Picking == packing.Picking).ToList();
+            List<ActividadPackingAlmacen> hecho = (actividad ?? Enumerable.Empty<ActividadPackingAlmacen>()).Where(a => a.Picking == packing.Picking).ToList();
+            foreach (EntregaPackingAlmacenDTO entrega in packing.Entregas)
+            {
+                var pedidos = new HashSet<int>(entrega.Pedidos.Select(p => p.Pedido));
+                entrega.Bultos = todos.Where(b => pedidos.Contains(b.Pedido)).OrderBy(b => b.Bulto).ThenBy(b => b.Pedido).ToList();
+                entrega.Actividad = hecho.Where(a => pedidos.Contains(a.Pedido)).ToList();
+            }
+        }
+
+        /// <summary>NestoAPI#646: quién (que no sea <paramref name="usuario"/>) está empaquetando cada entrega del packing.</summary>
+        public static void PonerQuienEmpaqueta(PackingAlmacenDTO packing, string usuario, DateTime ahora)
+        {
+            foreach (EntregaPackingAlmacenDTO entrega in packing?.Entregas ?? new List<EntregaPackingAlmacenDTO>())
+            {
+                QuienEmpaqueta quien = CalcularQuienEmpaqueta(entrega.Actividad, usuario, ahora);
+                entrega.EmpaquetandoPor = quien?.Usuario;
+                entrega.UltimaActividad = quien?.UltimaActividad;
+                entrega.MinutosDesdeActividad = quien?.Minutos;
+                entrega.AvisoEmpaquetando = quien?.Aviso;
+            }
+        }
+
+        /// <summary>NestoAPI#646: quién (que no sea <paramref name="usuario"/>) está empaquetando algo de cada picking de la lista.</summary>
+        public static void PonerQuienEmpaqueta(IEnumerable<PackingPendienteDTO> pendientes, string usuario, DateTime ahora)
+        {
+            foreach (PackingPendienteDTO pendiente in pendientes ?? Enumerable.Empty<PackingPendienteDTO>())
+            {
+                QuienEmpaqueta quien = CalcularQuienEmpaqueta(pendiente.Actividad, usuario, ahora);
+                pendiente.EmpaquetandoPor = quien?.Usuario;
+                pendiente.UltimaActividad = quien?.UltimaActividad;
+                pendiente.MinutosDesdeActividad = quien?.Minutos;
+                pendiente.AvisoEmpaquetando = quien?.Aviso;
+            }
+        }
+
+        /// <summary>NestoAPI#646: el otro usuario que ha hecho algo más recientemente, dentro de la ventana.</summary>
+        public class QuienEmpaqueta
+        {
+            public string Usuario { get; set; }
+            public DateTime UltimaActividad { get; set; }
+            public int Minutos { get; set; }
+            public string Aviso { get; set; }
+        }
+
+        /// <summary>
+        /// NestoAPI#646 (decisiones 4 y 6 de Carlos, 20/10/26): sin cerrojo, solo un aviso. De lo hecho en el packing (lecturas
+        /// PACK y fotos de bulto), lo último de OTRO usuario en los últimos <see cref="VENTANA_EMPAQUETANDO"/>. Lo del propio
+        /// usuario (en cualquier PDA) no cuenta. Null si no hay nadie.
+        /// </summary>
+        public static QuienEmpaqueta CalcularQuienEmpaqueta(IEnumerable<ActividadPackingAlmacen> actividad, string usuario, DateTime ahora)
+        {
+            string yo = UsuarioAuditoriaHelper.ParaAuditoria(usuario);
+            ActividadPackingAlmacen ultima = (actividad ?? Enumerable.Empty<ActividadPackingAlmacen>())
+                .Where(a => !string.IsNullOrWhiteSpace(a.Usuario)
+                    && !string.Equals(a.Usuario.Trim(), yo, StringComparison.OrdinalIgnoreCase)
+                    && a.Segundos >= 0 && a.Segundos <= VENTANA_EMPAQUETANDO.TotalSeconds)
+                .OrderBy(a => a.Segundos)
+                .FirstOrDefault();
+            if (ultima == null)
+            {
+                return null;
+            }
+            string nombre = SinDominio(ultima.Usuario);
+            int minutos = ultima.Segundos / 60;
+            return new QuienEmpaqueta
+            {
+                Usuario = nombre,
+                UltimaActividad = ahora.AddSeconds(-ultima.Segundos),
+                Minutos = minutos,
+                Aviso = minutos == 0
+                    ? $"Lo está empaquetando {nombre} (ahora mismo)."
+                    : $"Lo está empaquetando {nombre} (hace {minutos} min)."
+            };
         }
 
         /// <summary>
@@ -378,7 +493,9 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         {
             List<FilaPackingAlmacen> filas = await repositorio.LeerLineasPacking(empresa, picking, null).ConfigureAwait(false);
             List<LecturaPackingAlmacen> lecturas = await repositorio.LeerLecturasPacking(empresa, picking, null).ConfigureAwait(false);
-            return MontarPacking(empresa, picking, filas, lecturas);
+            PackingAlmacenDTO packing = MontarPacking(empresa, picking, filas, lecturas);
+            await CompletarBultosYActividad(empresa, picking, packing).ConfigureAwait(false);
+            return packing;
         }
 
         public async Task<PackingAlmacenDTO> LeerPackingDePedido(string empresa, int pedido)
@@ -390,7 +507,9 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             }
             List<FilaPackingAlmacen> filas = await repositorio.LeerLineasPacking(empresa, picking.Value, pedido).ConfigureAwait(false);
             List<LecturaPackingAlmacen> lecturas = await repositorio.LeerLecturasPacking(empresa, picking.Value, pedido).ConfigureAwait(false);
-            return MontarPacking(empresa, picking.Value, filas, lecturas);
+            PackingAlmacenDTO packing = MontarPacking(empresa, picking.Value, filas, lecturas);
+            await CompletarBultosYActividad(empresa, picking.Value, packing).ConfigureAwait(false);
+            return packing;
         }
 
         /// <summary>

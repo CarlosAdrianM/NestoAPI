@@ -244,6 +244,28 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public string Nombre { get; set; }
         /// <summary>Se recogió con Ariadna y se terminó (si no, se recogió en papel o aún no se ha recogido).</summary>
         public bool RecogidoEnAriadna { get; set; }
+
+        /// <summary>NestoAPI#646: otro usuario está empaquetando algo de este picking (lo último, en los últimos minutos). Null si nadie.</summary>
+        public string EmpaquetandoPor { get; set; }
+        /// <summary>NestoAPI#646: cuándo fue lo último que hizo (una lectura del packing o una foto de bulto). Null si nadie.</summary>
+        public DateTime? UltimaActividad { get; set; }
+        /// <summary>NestoAPI#646: hace cuántos minutos (con la hora del servidor, no la de la PDA). Null si nadie.</summary>
+        public int? MinutosDesdeActividad { get; set; }
+        /// <summary>NestoAPI#646: «Lo está empaquetando Pedro (hace 2 min).». Null si nadie.</summary>
+        public string AvisoEmpaquetando { get; set; }
+        /// <summary>NestoAPI#646: lo que se ha hecho en el packing en los últimos minutos, de cualquier usuario. No viaja.</summary>
+        [Newtonsoft.Json.JsonIgnore]
+        public List<ActividadPackingAlmacen> Actividad { get; set; } = new List<ActividadPackingAlmacen>();
+    }
+
+    /// <summary>NestoAPI#646: lo último que ha hecho un usuario en el packing de un pedido (lectura PACK o foto de bulto).</summary>
+    public class ActividadPackingAlmacen
+    {
+        public int Picking { get; set; }
+        public int Pedido { get; set; }
+        public string Usuario { get; set; }
+        /// <summary>Hace cuántos segundos (con la hora de la base de datos).</summary>
+        public int Segundos { get; set; }
     }
 
     public class LineaPackingAlmacenDTO : IConFichaProducto, IConCodigosBarras
@@ -297,6 +319,23 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public string Poblacion { get; set; }
         public string Ruta { get; set; }
         public List<PedidoPackingAlmacenDTO> Pedidos { get; set; } = new List<PedidoPackingAlmacenDTO>();
+
+        /// <summary>
+        /// NestoAPI#646: los bultos ya hechos de esta entrega en este picking (una fila por pedido: un bulto compartido sale
+        /// en cada pedido de la caja, con el mismo número). Para refrescar sin pedirlos pedido a pedido.
+        /// </summary>
+        public List<BultoAlmacenDTO> Bultos { get; set; } = new List<BultoAlmacenDTO>();
+        /// <summary>NestoAPI#646: otro usuario está empaquetando esta entrega (lo último, en los últimos minutos). Null si nadie.</summary>
+        public string EmpaquetandoPor { get; set; }
+        /// <summary>NestoAPI#646: cuándo fue lo último que hizo (una lectura del packing o una foto de bulto). Null si nadie.</summary>
+        public DateTime? UltimaActividad { get; set; }
+        /// <summary>NestoAPI#646: hace cuántos minutos (con la hora del servidor). Null si nadie.</summary>
+        public int? MinutosDesdeActividad { get; set; }
+        /// <summary>NestoAPI#646: «Lo está empaquetando Pedro (hace 2 min).». Null si nadie: no hay que avisar.</summary>
+        public string AvisoEmpaquetando { get; set; }
+        /// <summary>NestoAPI#646: lo hecho en el packing de esta entrega en los últimos minutos, de cualquier usuario. No viaja.</summary>
+        [Newtonsoft.Json.JsonIgnore]
+        public List<ActividadPackingAlmacen> Actividad { get; set; } = new List<ActividadPackingAlmacen>();
     }
 
     /// <summary>Un picking sacado que todavía tiene líneas sin servir.</summary>

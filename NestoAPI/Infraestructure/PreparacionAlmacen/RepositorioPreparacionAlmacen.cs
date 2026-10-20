@@ -118,6 +118,13 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         Task<bool> SalidaTerminada(string empresa, string tipo, int numero);
         /// <summary>Ariadna: las entregas de los pickings en curso del almacén, con sus bultos (para «Empaquetar»).</summary>
         Task<List<EntregaPorEmpaquetar>> LeerEntregasPorEmpaquetar(string empresa, string almacen);
+        /// <summary>NestoAPI#646: los bultos de un picking (de todos sus pedidos).</summary>
+        Task<List<BultoAlmacenDTO>> LeerBultosDelPicking(string empresa, int picking);
+        /// <summary>
+        /// NestoAPI#646: lo último que ha hecho cada usuario en el packing de cada pedido de esos pickings (lecturas PACK y
+        /// fotos de bulto) en los últimos <paramref name="segundos"/>, con la hora de la base de datos.
+        /// </summary>
+        Task<List<ActividadPackingAlmacen>> LeerActividadPacking(string empresa, IReadOnlyCollection<int> pickings, int segundos);
     }
 
     /// <summary>
@@ -323,6 +330,25 @@ RTRIM(b.Usuario) AS Usuario, b.FechaFoto, b.RutaBlob";
         internal const string SQL_BULTO_POR_ID = "SELECT" + COLUMNAS_BULTO + " FROM EnviosAgenciaBultos b WHERE b.Id = @p0";
         internal const string SQL_BULTOS_DEL_PEDIDO = "SELECT" + COLUMNAS_BULTO +
             " FROM EnviosAgenciaBultos b WHERE b.Empresa = @p0 AND b.Pedido = @p1 ORDER BY b.Picking, b.Bulto";
+        internal const string SQL_BULTOS_DEL_PICKING = "SELECT" + COLUMNAS_BULTO +
+            " FROM EnviosAgenciaBultos b WHERE b.Empresa = @p0 AND b.Picking = @p1 ORDER BY b.Pedido, b.Bulto";
+
+        // NestoAPI#646: quién está empaquetando. Lo último de cada usuario en cada pedido: sus lecturas PACK (por
+        // IX_PreparacionEscaneos_Origen) y sus fotos de bulto, con la hora del servidor al guardarlas (FechaRegistro, no la de
+        // la PDA). Sin tabla nueva. {0}: la lista de pickings (@p2, @p3…).
+        internal const string SQL_ACTIVIDAD_PACKING = @"
+SELECT x.Picking, x.Pedido, x.Usuario, CAST(MIN(DATEDIFF(second, x.Fecha, GETDATE())) AS int) AS Segundos
+FROM (
+    SELECT e.NumeroOrigen AS Picking, e.Pedido AS Pedido, RTRIM(e.Usuario) AS Usuario, e.FechaRegistro AS Fecha
+    FROM PreparacionEscaneos e
+    WHERE e.Empresa = @p0 AND e.TipoOrigen = 'PICK' AND e.NumeroOrigen IN ({0}) AND e.Fase = 'PACK' AND e.Pedido IS NOT NULL
+          AND e.FechaRegistro >= DATEADD(second, -@p1, GETDATE())
+    UNION ALL
+    SELECT b.Picking, b.Pedido, RTRIM(b.Usuario), b.FechaRegistro
+    FROM EnviosAgenciaBultos b
+    WHERE b.Empresa = @p0 AND b.Picking IN ({0}) AND b.FechaRegistro >= DATEADD(second, -@p1, GETDATE())
+) x
+GROUP BY x.Picking, x.Pedido, x.Usuario";
 
         // Repetir la foto de un bulto sustituye a la anterior: manda la última
         internal const string SQL_ACTUALIZAR_BULTO = @"
@@ -556,6 +582,29 @@ ORDER BY e.Picking DESC, e.Cliente, e.Contacto";
         public Task<List<BultoAlmacenDTO>> LeerBultos(string empresa, int pedido)
         {
             return baseDeDatos.SqlQuery<BultoAlmacenDTO>(SQL_BULTOS_DEL_PEDIDO, empresa, pedido).ToListAsync();
+        }
+
+        public Task<List<BultoAlmacenDTO>> LeerBultosDelPicking(string empresa, int picking)
+        {
+            return baseDeDatos.SqlQuery<BultoAlmacenDTO>(SQL_BULTOS_DEL_PICKING, empresa, picking).ToListAsync();
+        }
+
+        public Task<List<ActividadPackingAlmacen>> LeerActividadPacking(string empresa, IReadOnlyCollection<int> pickings, int segundos)
+        {
+            List<int> lista = (pickings ?? new int[0]).Distinct().ToList();
+            if (lista.Count == 0)
+            {
+                return Task.FromResult(new List<ActividadPackingAlmacen>());
+            }
+            var parametros = new List<object> { empresa, segundos };
+            var nombres = new List<string>();
+            foreach (int picking in lista)
+            {
+                nombres.Add("@p" + parametros.Count);
+                parametros.Add(picking);
+            }
+            return baseDeDatos.SqlQuery<ActividadPackingAlmacen>(string.Format(SQL_ACTIVIDAD_PACKING, string.Join(", ", nombres)), parametros.ToArray())
+                .ToListAsync();
         }
 
         /// <summary>Lo que devuelve SQL_GUARDAR_BULTO_SIN_PISAR: el número con el que se ha guardado y quién tenía el pedido.</summary>
