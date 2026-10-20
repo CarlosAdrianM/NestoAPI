@@ -2017,6 +2017,49 @@ namespace NestoAPI.Controllers
             return Ok(propuesta);
         }
 
+        // NestoAPI#595 (slice 2): el alta desde el pedido. Perezosa e inyectable para los tests.
+        private IServicioEnvioDesdePedido envioDesdePedido;
+        internal IServicioEnvioDesdePedido EnvioDesdePedido
+        {
+            get => envioDesdePedido ?? (envioDesdePedido = new ServicioEnvioDesdePedido(PropuestaEnvio, new DatosEnvioDesdePedidoEF(db),
+                PlazasAgencias, new NotificadorEntregaAgenciaCorreo(fabricaAgenciasRemotas.Crear), ex => RegistrarEnElmah?.Invoke(ex)));
+            set => envioDesdePedido = value;
+        }
+
+        // POST: api/EnviosAgencias/DesdePedido
+        /// <summary>
+        /// NestoAPI#595 (slice 2): crea el envío de un pedido en el servidor con las reglas de InsertarRegistro de Agencias de
+        /// Nesto (propuesta + cambios de la pantalla + confirmaciones), con la plaza y el código de barras del servidor, y
+        /// avisa al cliente si toca. CTT e Innovatrans NO se tramitan aquí (el cliente sigue con /Tramitar al imprimir).
+        /// <list type="bullet">
+        /// <item>200 <see cref="EnvioDesdePedidoDTO"/>: grabado.</item>
+        /// <item>409 <see cref="ConflictoEnvioDesdePedidoDTO"/>: falta confirmar (códigos de AvisosDetalle), elegir los prepagos
+        /// (DescontarPrepagos) o las dimensiones de Canteras. Se repite con las respuestas.</item>
+        /// <item>400 <see cref="ErrorEnvioDesdePedidoDTO"/> con su Codigo (<see cref="CodigosErrorEnvioDesdePedido"/>).</item>
+        /// <item>404: el pedido no existe.</item>
+        /// </list>
+        /// </summary>
+        [HttpPost]
+        [Authorize]
+        [Route("api/EnviosAgencias/DesdePedido")]
+        [ResponseType(typeof(EnvioDesdePedidoDTO))]
+        public async Task<IHttpActionResult> PostEnvioDesdePedido(CrearEnvioDesdePedidoDTO peticion)
+        {
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
+            ResultadoEnvioDesdePedido resultado = await EnvioDesdePedido.Crear(peticion, usuario);
+            switch (resultado.Tipo)
+            {
+                case TipoResultadoEnvioDesdePedido.Creado:
+                    return Ok(resultado.Envio);
+                case TipoResultadoEnvioDesdePedido.Conflicto:
+                    return Content(HttpStatusCode.Conflict, resultado.Conflicto);
+                case TipoResultadoEnvioDesdePedido.NoEncontrado:
+                    return NotFound();
+                default:
+                    return Content(HttpStatusCode.BadRequest, resultado.Error);
+            }
+        }
+
         /// <summary>
         /// NestoAPI#595 (slice 1, sombra): tras grabar un envío NUEVO de un pedido (Estado ≥ 0, lo que inserta Agencias
         /// de Nesto; las etiquetas pendientes no), calcula la propuesta del servidor con los bultos y el peso grabados y

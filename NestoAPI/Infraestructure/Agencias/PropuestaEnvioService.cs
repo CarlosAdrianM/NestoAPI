@@ -280,6 +280,37 @@ namespace NestoAPI.Infraestructure.Agencias
                 Avisar(propuesta, CodigosAvisoPropuestaEnvio.AMPLIACION, TiposAvisoPropuestaEnvio.CONFIRMAR, $"Este pedido es una ampliación del envío {propuesta.EnvioOrigen}: se actualizarían los datos de ese envío " +
                     $"y el nº total de bultos pasaría a ser {propuesta.Bultos}.");
             }
+            AnadirAvisosDeDestino(propuesta);
+        }
+
+        // Los avisos que dependen de lo que se puede cambiar en la pantalla (destino, agencia, reembolso).
+        private static readonly string[] CodigosAvisosDeDestino =
+        {
+            CodigosAvisoPropuestaEnvio.DIRECCION_PROPIA, CodigosAvisoPropuestaEnvio.PREPAGOS,
+            CodigosAvisoPropuestaEnvio.DIMENSIONES, CodigosAvisoPropuestaEnvio.SIN_AGENCIA
+        };
+
+        /// <summary>
+        /// NestoAPI#595 (slice 2, corte 4): vuelve a calcular los avisos que dependen del destino, la agencia y el reembolso
+        /// (dirección propia, prepagos, dimensiones y sin agencia) después de aplicar los cambios de la pantalla. Los de sin
+        /// picking y ampliación no cambian.
+        /// </summary>
+        internal static void RecalcularAvisosDeDestino(PropuestaEnvioDTO propuesta)
+        {
+            for (int i = propuesta.AvisosDetalle.Count - 1; i >= 0; i--)
+            {
+                AvisoPropuestaEnvio aviso = propuesta.AvisosDetalle[i];
+                if (CodigosAvisosDeDestino.Contains(aviso.Codigo))
+                {
+                    propuesta.AvisosDetalle.RemoveAt(i);
+                    _ = propuesta.Avisos.Remove(aviso.Texto);
+                }
+            }
+            AnadirAvisosDeDestino(propuesta);
+        }
+
+        private static void AnadirAvisosDeDestino(PropuestaEnvioDTO propuesta)
+        {
             // VB 2002-2034 (ConfirmarDireccionPropia): envío a la dirección de Nueva Visión.
             if (EsDireccionDeNuevaVision(propuesta.Direccion, propuesta.CodPostal))
             {
@@ -340,6 +371,24 @@ namespace NestoAPI.Infraestructure.Agencias
                 return 1;
             }
         }
+
+        /// <summary>NestoAPI#595 (slice 2): Nesto#367, el formato de las dimensiones de los bultos (EsFormatoDimensionesValido).</summary>
+        internal static bool EsFormatoDimensionesValido(string texto)
+            => !string.IsNullOrWhiteSpace(texto) &&
+               Regex.IsMatch(texto, @"\d+([.,]\d+)?\s*[xX×]\s*\d+([.,]\d+)?\s*[xX×]\s*\d+([.,]\d+)?");
+
+        /// <summary>NestoAPI#595 (slice 2): Nesto#367, las dimensiones se añaden a las observaciones sin pisarlas, y todo a 80.</summary>
+        internal static string ObservacionesConDimensiones(string observaciones, string dimensiones)
+        {
+            string combinadas = string.IsNullOrWhiteSpace(observaciones)
+                ? dimensiones?.Trim()
+                : $"{observaciones.Trim()} - {dimensiones?.Trim()}";
+            return Recortar(combinadas, LONGITUD_OBSERVACIONES);
+        }
+
+        /// <summary>NestoAPI#595 (slice 2): observaciones de la pantalla, sin comillas y como mucho 80 (VB 3541).</summary>
+        internal static string ObservacionesDeLaPantalla(string observaciones)
+            => Recortar(observaciones?.Replace("\"", string.Empty), LONGITUD_OBSERVACIONES);
 
         private decimal CosteDeAgencia(string empresa, PropuestaEnvioDTO propuesta, decimal reembolsoPedido)
         {

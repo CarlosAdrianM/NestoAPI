@@ -310,6 +310,7 @@
     <Compile Include="Controllers\TramitarEnvioTests.cs" />
     <Compile Include="Controllers\EnviosAgenciasCatalogoServiciosTests.cs" />
     <Compile Include="Controllers\PropuestaEnvioControllerTests.cs" />
+    <Compile Include="Controllers\EnvioDesdePedidoControllerTests.cs" />
     <Compile Include="Controllers\SombraPlazaYCodigoBarrasTests.cs" />
     <Compile Include="Controllers\ImprimirEtiquetaEnvioTests.cs" />
     <Compile Include="Controllers\PlazosPagoControllerTests.cs" />
@@ -394,6 +395,7 @@
     <Compile Include="Infrastructure\Agencias\GateAgenciasActivasTests.cs" />
     <Compile Include="Infrastructure\Agencias\CalculadoraCosteEnvioTests.cs" />
     <Compile Include="Infrastructure\Agencias\PropuestaEnvioServiceTests.cs" />
+    <Compile Include="Infrastructure\Agencias\ServicioEnvioDesdePedidoTests.cs" />
     <Compile Include="Infrastructure\Agencias\PlazaYCodigoBarrasAgenciasTests.cs" />
     <Compile Include="Infrastructure\Agencias\ComparadorAgenciasTests.cs" />
     <Compile Include="Infrastructure\Agencias\CalculadoraZonaEnvioTests.cs" />
