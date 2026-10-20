@@ -43,6 +43,19 @@ namespace NestoAPI.Infraestructure.Pagos
         /// </summary>
         internal Func<Aplazame.IServicioCobrosAplazame> CrearServicioAplazame { get; set; } = Aplazame.ServicioCobrosAplazame.CrearPorDefecto;
 
+        /// <summary>
+        /// NestoAPI#679 (punto 2): (empresa, pedido) → la forma de pago y los envíos del pedido, para avisar al generar un
+        /// enlace de pago de un pedido contra reembolso. Sustituible en tests.
+        /// </summary>
+        internal Func<string, int, Task<DatosPedidoEnlacePago>> LeerDatosPedidoEnlace { get; set; } = LectorEnlacesPagoPedido.LeerDatosPedido;
+
+        /// <summary>
+        /// NestoAPI#679 (punto 3): encola el aviso a logística y administración del enlace cobrado (id del PagoTPV). El job
+        /// comprueba si el envío del pedido va en reparto con reembolso. Sustituible en tests.
+        /// </summary>
+        internal Action<int> EncolarAvisoCobroConReembolso { get; set; } =
+            idPago => Hangfire.BackgroundJob.Enqueue(() => AvisoCobroEnlaceConReembolsoJobs.Avisar(idPago));
+
         public ServicioPagos(IRedsysService redsysService, IContabilidadService contabilidadService, ILectorParametrosUsuario lectorParametros)
             : this(redsysService, contabilidadService, lectorParametros, new ServicioCorreoElectronico(), new ElmahLogService())
         {
@@ -171,6 +184,11 @@ namespace NestoAPI.Infraestructure.Pagos
 
                 string urlPaginaPago = $"https://api.nuevavision.es/pago/{pago.TokenAcceso}";
 
+                // NestoAPI#679 (punto 2): si es el enlace de un pedido contra reembolso, se avisa en la respuesta (sin bloquear).
+                List<AvisoEnlacePago> avisos = esCobroDeLaApp
+                    ? new List<AvisoEnlacePago>()
+                    : await AvisosAlGenerarEnlace(pago.Empresa, solicitud.Descripcion).ConfigureAwait(false);
+
                 // Issue #139: Correo pre-cobro al cliente.
                 // NestoAPI#436: en la app NO. Alli esto no es un enlace de pago que se manda para
                 // que lo abra cuando quiera: es un cobro online, el cliente esta delante y la
@@ -194,7 +212,8 @@ namespace NestoAPI.Infraestructure.Pagos
                     // vez de la pasarela. Si el emisor no exige desafío, el cliente no ve nada.
                     UrlPago3DS = solicitud.TarjetaGuardada != null
                         ? UrlPagina3DS(pago.TokenAcceso, solicitud.TarjetaGuardada.Id)
-                        : null
+                        : null,
+                    Avisos = avisos
                 };
             }
         }
@@ -299,6 +318,9 @@ namespace NestoAPI.Infraestructure.Pagos
 
                     // NestoAPI#565: y quien creó el enlace lo ve en la campana de Nesto y en NestoApp
                     AvisarCobroEnAplicaciones(pago, errorContabilizacion);
+
+                    // NestoAPI#679 (punto 3): si el pedido del enlace va en reparto contra reembolso, aviso a logística (Hangfire)
+                    AvisarSiElEnvioVaContraReembolso(pago);
 
                     // NestoAPI#611: si el enlace es el de una inscripción a un evento, la inscripción pasa a Pagada
                     await RegistrarCobroInscripcionEvento(pago).ConfigureAwait(false);
@@ -1861,6 +1883,50 @@ namespace NestoAPI.Infraestructure.Pagos
             {
                 _logService.LogError($"[CobroNestoPago #565] Error al componer el aviso del cobro {pago?.NumeroOrden}: {ex.Message}", ex);
                 return Task.CompletedTask;
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#679 (punto 2): los avisos al generar el enlace de pago de un pedido (por el concepto). Nunca lanza: si algo
+        /// falla, el enlace sale igual y sin avisos.
+        /// </summary>
+        internal async Task<List<AvisoEnlacePago>> AvisosAlGenerarEnlace(string empresa, string concepto)
+        {
+            try
+            {
+                int? pedido = EnlacesPagoPedido.PedidoDelConcepto(concepto);
+                if (!pedido.HasValue)
+                {
+                    return new List<AvisoEnlacePago>();
+                }
+                DatosPedidoEnlacePago datos = await LeerDatosPedidoEnlace(empresa?.Trim() ?? Empresas.EMPRESA_POR_DEFECTO, pedido.Value).ConfigureAwait(false);
+                return EnlacesPagoPedido.AvisosAlGenerar(pedido.Value, datos);
+            }
+            catch (Exception ex)
+            {
+                _logService.LogError($"[Enlace de pago #679] No se pudo comprobar el reembolso del pedido del enlace «{concepto}»: {ex.Message}", ex);
+                return new List<AvisoEnlacePago>();
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#679 (punto 3): el enlace de un pedido se ha cobrado; si su envío va en reparto con reembolso hay que avisar
+        /// a logística ya. Solo se encola (lo comprueba el job): la notificación de Redsys no espera. Nunca lanza.
+        /// </summary>
+        internal void AvisarSiElEnvioVaContraReembolso(PagoTPV pago)
+        {
+            try
+            {
+                int? pedido = EnlacesPagoPedido.PedidoDelConcepto(pago?.Descripcion);
+                if (!pedido.HasValue || !EnlacesPagoPedido.EsEnlaceDelPedido(pago.Tipo, pago.Descripcion, pedido.Value))
+                {
+                    return;
+                }
+                EncolarAvisoCobroConReembolso(pago.Id);
+            }
+            catch (Exception ex)
+            {
+                _logService.LogError($"[Enlace de pago #679] No se pudo encolar el aviso de reembolso del cobro {pago?.NumeroOrden}: {ex.Message}", ex);
             }
         }
 

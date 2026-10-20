@@ -2612,6 +2612,7 @@ namespace NestoAPI.Controllers
         /// <summary>
         /// NestoAPI#569: lo ya pagado por adelantado en el pedido (prepagos sin facturar). El reembolso
         /// (ImporteReembolso) NO lo descuenta: Agencias de Nesto avisa y quien hace la etiqueta decide.
+        /// NestoAPI#679: incluye lo cobrado con enlaces de pago del pedido (se tratan como un prepago).
         /// </summary>
         [HttpGet]
         [ResponseType(typeof(decimal))]

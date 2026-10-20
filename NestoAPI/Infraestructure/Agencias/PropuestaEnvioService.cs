@@ -11,7 +11,9 @@ using NestoAPI.Infraestructure.Agencias.Tarifas;
 using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Infraestructure.PreparacionAlmacen;
 using NestoAPI.Models;
+using NestoAPI.Infraestructure.Pagos;
 using NestoAPI.Models.Agencias;
+using NestoAPI.Models.Pagos;
 using NestoAPI.Models.PedidosVenta;
 using NestoAPI.Models.PreparacionAlmacen;
 
@@ -48,6 +50,8 @@ namespace NestoAPI.Infraestructure.Agencias
         decimal ImporteReembolso(string empresa, int pedido);
         /// <summary>GET PedidosVenta/PrepagosPendientes (#569).</summary>
         decimal PrepagosPendientes(string empresa, int pedido);
+        /// <summary>NestoAPI#679: los enlaces de pago (TPV virtual) pendientes o autorizados del pedido.</summary>
+        List<EnlacePagoPedido> EnlacesDePago(string empresa, int pedido);
         /// <summary>Bultos distintos del packing de Ariadna (GET Almacen/Pedidos/{pedido}/Bultos); 0 si no hay.</summary>
         Task<int> BultosPacking(string empresa, int pedido);
         Task<List<AgenciaTransporte>> LeerAgencias();
@@ -88,6 +92,8 @@ namespace NestoAPI.Infraestructure.Agencias
             decimal reembolsoPedido = datos.ImporteReembolso(empresa, pedido);
             // VB 480-488 (#569): best-effort, si no se pueden leer no hay aviso.
             decimal prepagos = LeerPrepagos(empresa, pedido);
+            // NestoAPI#679: los enlaces de pago del pedido (best-effort, como los prepagos). Los cobrados ya van en prepagos.
+            List<EnlacePagoPedido> enlaces = LeerEnlacesDePago(empresa, pedido);
             // VB 498 + 573-576 (Nesto#507): 1 por defecto; los del packing de Ariadna si los hay. Lo que teclea el usuario manda.
             short bultosPropuestos = bultos.HasValue && bultos.Value > 0 ? bultos.Value : await BultosDelPacking(empresa, pedido).ConfigureAwait(false);
             decimal pesoPropuesto = peso ?? 0m;
@@ -99,7 +105,9 @@ namespace NestoAPI.Infraestructure.Agencias
                 Contacto = pedidoAgencia.Contacto?.Trim(),
                 Bultos = bultosPropuestos,
                 Peso = pesoPropuesto,
-                PrepagosPendientes = prepagos
+                PrepagosPendientes = prepagos,
+                EnlacesPagoAutorizados = EnlacesPagoPedido.ImporteAutorizado(enlaces),
+                EnlacesPagoPendientes = EnlacesPagoPedido.PendientesVivos(enlaces, DateTime.Now)
             };
 
             List<AgenciaTransporte> agencias = await datos.LeerAgencias().ConfigureAwait(false) ?? new List<AgenciaTransporte>();
@@ -287,7 +295,8 @@ namespace NestoAPI.Infraestructure.Agencias
         private static readonly string[] CodigosAvisosDeDestino =
         {
             CodigosAvisoPropuestaEnvio.DIRECCION_PROPIA, CodigosAvisoPropuestaEnvio.PREPAGOS,
-            CodigosAvisoPropuestaEnvio.DIMENSIONES, CodigosAvisoPropuestaEnvio.SIN_AGENCIA
+            CodigosAvisoPropuestaEnvio.DIMENSIONES, CodigosAvisoPropuestaEnvio.SIN_AGENCIA,
+            CodigosAvisoPropuestaEnvio.ENLACE_PAGO_PENDIENTE
         };
 
         /// <summary>
@@ -318,10 +327,20 @@ namespace NestoAPI.Infraestructure.Agencias
                     "Si es un pedido de la tienda online, la dirección del cliente está en los comentarios del pedido.");
             }
             // VB 669-680 (#569): HayAvisoPrepagos = prepagos > 0 y reembolso > 0.
+            // NestoAPI#679: lo cobrado con enlaces de pago va dentro de los prepagos y se dice cuánto es.
             if (propuesta.PrepagosPendientes > 0m && propuesta.Reembolso > 0m)
             {
-                Avisar(propuesta, CodigosAvisoPropuestaEnvio.PREPAGOS, TiposAvisoPropuestaEnvio.ELEGIR, string.Format(Espanol, "El pedido tiene {0:C} pagados por adelantado. El reembolso propuesto ({1:C}) no los descuenta.",
-                    propuesta.PrepagosPendientes, propuesta.Reembolso));
+                string conEnlace = propuesta.EnlacesPagoAutorizados > 0m
+                    ? string.Format(Espanol, " ({0:C} con enlace de pago)", Math.Min(propuesta.EnlacesPagoAutorizados, propuesta.PrepagosPendientes))
+                    : string.Empty;
+                Avisar(propuesta, CodigosAvisoPropuestaEnvio.PREPAGOS, TiposAvisoPropuestaEnvio.ELEGIR, string.Format(Espanol, "El pedido tiene {0:C} pagados por adelantado{2}. El reembolso propuesto ({1:C}) no los descuenta.",
+                    propuesta.PrepagosPendientes, propuesta.Reembolso, conEnlace));
+            }
+            // NestoAPI#679 (pedido 928521): con un enlace de pago sin pagar, ¿seguro que sale contra reembolso?
+            if (propuesta.Reembolso > 0m && propuesta.EnlacesPagoPendientes != null && propuesta.EnlacesPagoPendientes.Count > 0)
+            {
+                Avisar(propuesta, CodigosAvisoPropuestaEnvio.ENLACE_PAGO_PENDIENTE, TiposAvisoPropuestaEnvio.CONFIRMAR,
+                    EnlacesPagoPedido.TextoAvisoPendientes(propuesta.EnlacesPagoPendientes));
             }
             // VB 2110-2124 (Nesto#367): Canteras (DimensionesBultosObligatorias) pide las dimensiones al imprimir.
             if (propuesta.Agencia == Constantes.Agencias.AGENCIA_CANTERAS)
@@ -354,6 +373,19 @@ namespace NestoAPI.Infraestructure.Agencias
             {
                 ElmahHelper.Log(new Exception($"Propuesta de envío del pedido {pedido}: no se pudieron leer los prepagos. {ex.Message}", ex));
                 return 0m;
+            }
+        }
+
+        private List<EnlacePagoPedido> LeerEnlacesDePago(string empresa, int pedido)
+        {
+            try
+            {
+                return datos.EnlacesDePago(empresa, pedido) ?? new List<EnlacePagoPedido>();
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"Propuesta de envío del pedido {pedido}: no se pudieron leer los enlaces de pago (#679). {ex.Message}", ex));
+                return new List<EnlacePagoPedido>();
             }
         }
 
@@ -626,6 +658,9 @@ namespace NestoAPI.Infraestructure.Agencias
 
         public decimal PrepagosPendientes(string empresa, int pedido)
             => new GestorPedidosVenta(servicioPedidosVenta()).ImportePrepagosPendientes(empresa, pedido);
+
+        public List<EnlacePagoPedido> EnlacesDePago(string empresa, int pedido)
+            => LectorEnlacesPagoPedido.Leer(db, empresa, pedido);
 
         public async Task<int> BultosPacking(string empresa, int pedido)
         {

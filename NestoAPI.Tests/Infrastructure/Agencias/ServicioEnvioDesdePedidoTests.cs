@@ -408,6 +408,43 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         }
 
         [TestMethod]
+        public async Task EnlacePagoPendiente_ContraReembolso_409ConfirmarYConLaConfirmacionGraba()
+        {
+            // NestoAPI#679 (pedido 928521): salió contra reembolso con un enlace de pago sin pagar
+            propuesta.EnlacesPagoPendientes.Add(new NestoAPI.Models.Pagos.EnlacePagoPedido
+            {
+                Id = 900,
+                Importe = 252.94m,
+                Estado = Constantes.EstadosPagoTPV.PENDIENTE,
+                FechaCreacion = new DateTime(2026, 10, 16, 12, 14, 26)
+            });
+
+            ResultadoEnvioDesdePedido sinConfirmar = await Crear(Peticion());
+
+            Assert.AreEqual(TipoResultadoEnvioDesdePedido.Conflicto, sinConfirmar.Tipo);
+            AvisoPropuestaEnvio pendiente = sinConfirmar.Conflicto.Pendientes.Single();
+            Assert.AreEqual(CodigosAvisoPropuestaEnvio.ENLACE_PAGO_PENDIENTE, pendiente.Codigo);
+            Assert.AreEqual(TiposAvisoPropuestaEnvio.CONFIRMAR, pendiente.Tipo);
+            StringAssert.Contains(pendiente.Texto, "¿seguro que sale contra reembolso?");
+
+            ResultadoEnvioDesdePedido confirmado = await Crear(Peticion(CodigosAvisoPropuestaEnvio.ENLACE_PAGO_PENDIENTE));
+            Assert.AreEqual(TipoResultadoEnvioDesdePedido.Creado, confirmado.Tipo, confirmado.Error?.Message);
+        }
+
+        [TestMethod]
+        public async Task EnlacePagoPendiente_SinReembolsoEnLaPantalla_NoPregunta()
+        {
+            propuesta.EnlacesPagoPendientes.Add(new NestoAPI.Models.Pagos.EnlacePagoPedido { Id = 900, Importe = 252.94m, FechaCreacion = DateTime.Now });
+            CrearEnvioDesdePedidoDTO peticion = Peticion();
+            peticion.Cambios = new CambiosEnvioDesdePedidoDTO { Reembolso = 0m };
+
+            ResultadoEnvioDesdePedido resultado = await Crear(peticion);
+
+            Assert.AreEqual(TipoResultadoEnvioDesdePedido.Creado, resultado.Tipo, resultado.Error?.Message);
+            Assert.AreEqual(0m, resultado.Envio.Envio.Reembolso);
+        }
+
+        [TestMethod]
         public async Task Prepagos_SinDecidir_409Elegir()
         {
             propuesta.PrepagosPendientes = 50m;

@@ -322,5 +322,13 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     .ToList();
             }
         }
+
+        public List<Models.Pagos.EnlacePagoPedido> CargarEnlacesPagoPedido(string empresa, int pedido)
+        {
+            using (var db = new NVEntities())
+            {
+                return Pagos.LectorEnlacesPagoPedido.Leer(db, empresa, pedido);
+            }
+        }
     }
 }

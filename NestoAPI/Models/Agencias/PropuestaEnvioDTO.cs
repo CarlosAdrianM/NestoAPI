@@ -29,7 +29,15 @@ namespace NestoAPI.Models.Agencias
         public decimal Peso { get; set; }
         /// <summary>Lo que cobrará la agencia. NO descuenta los prepagos (#569): eso va en <see cref="Avisos"/>.</summary>
         public decimal Reembolso { get; set; }
+        /// <summary>
+        /// Lo ya pagado por adelantado: prepagos sin facturar (#569) y, desde NestoAPI#679, lo cobrado con enlaces de pago
+        /// del pedido (<see cref="EnlacesPagoAutorizados"/> va dentro). Es lo que se descuenta con DescontarPrepagos.
+        /// </summary>
         public decimal PrepagosPendientes { get; set; }
+        /// <summary>NestoAPI#679: la parte de <see cref="PrepagosPendientes"/> cobrada con enlaces de pago del pedido.</summary>
+        public decimal EnlacesPagoAutorizados { get; set; }
+        /// <summary>NestoAPI#679: los enlaces de pago del pedido aún sin pagar (los vivos, del más reciente al más antiguo).</summary>
+        public List<Pagos.EnlacePagoPedido> EnlacesPagoPendientes { get; set; } = new List<Pagos.EnlacePagoPedido>();
         public string Nombre { get; set; }
         public string Direccion { get; set; }
         public string CodPostal { get; set; }
@@ -89,6 +97,8 @@ namespace NestoAPI.Models.Agencias
         public const string DIMENSIONES = "Dimensiones";
         /// <summary>Ninguna agencia tiene tarifa para el destino.</summary>
         public const string SIN_AGENCIA = "SinAgencia";
+        /// <summary>NestoAPI#679: el pedido tiene enlaces de pago sin pagar y sale contra reembolso.</summary>
+        public const string ENLACE_PAGO_PENDIENTE = "EnlacePagoPendiente";
     }
 
     /// <summary>NestoAPI#595 (slice 2, 20/10/26): qué tiene que hacer quien llama con cada aviso.</summary>

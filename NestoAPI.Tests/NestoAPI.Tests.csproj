@@ -755,6 +755,7 @@
     <Compile Include="Infrastructure\BuscadorClientesTests.cs" />
     <Compile Include="Infrastructure\Pagos\ServicioReclamacionDeudaTests.cs" />
     <Compile Include="Infrastructure\Pagos\AvisoCobroNestoPagoTests.cs" />
+    <Compile Include="Infrastructure\Pagos\EnlacesPagoPedidoTests.cs" />
     <Compile Include="Infrastructure\Pagos\AuditoriaPagosTPVTests.cs" />
     <Compile Include="Infrastructure\Pagos\RevisorConceptoTests.cs" />
     <Compile Include="Infrastructure\Pagos\ServicioPagosTests.cs" />

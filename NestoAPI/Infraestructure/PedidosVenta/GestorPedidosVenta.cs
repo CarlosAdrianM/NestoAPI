@@ -975,10 +975,29 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 servicio);
         }
 
-        /// <summary>NestoAPI#569: prepagos del pedido sin facturar (para avisar al hacer la etiqueta).</summary>
+        /// <summary>
+        /// NestoAPI#569: prepagos del pedido sin facturar (para avisar al hacer la etiqueta). NestoAPI#679: más lo cobrado con
+        /// enlaces de pago del pedido, que el cliente también ha pagado ya (pedido 928521: salió contra reembolso con el enlace
+        /// pagado). Si los enlaces no se pueden leer, quedan solo los prepagos, como hasta ahora.
+        /// </summary>
         internal decimal ImportePrepagosPendientes(string empresa, int pedido)
         {
-            return GestorEnviosAgencia.ImportePrepagosPendientes(servicio.CargarPrepagosPedido(empresa, pedido));
+            decimal prepagos = GestorEnviosAgencia.ImportePrepagosPendientes(servicio.CargarPrepagosPedido(empresa, pedido));
+            return prepagos + ImporteEnlacesPagoAutorizados(empresa, pedido);
+        }
+
+        /// <summary>NestoAPI#679: lo cobrado con enlaces de pago del pedido; 0 (y a ELMAH) si no se puede leer.</summary>
+        internal decimal ImporteEnlacesPagoAutorizados(string empresa, int pedido)
+        {
+            try
+            {
+                return Pagos.EnlacesPagoPedido.ImporteAutorizado(servicio.CargarEnlacesPagoPedido(empresa, pedido));
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"Pedido {pedido}: no se pudieron leer los enlaces de pago (#679). {ex.Message}", ex));
+                return 0m;
+            }
         }
 
         internal async Task<PedidoVentaDTO> UnirPedidos(string empresa, int numeroPedidoOriginal, int numeroPedidoAmpliacion, bool sinPasarValidacion = false)
