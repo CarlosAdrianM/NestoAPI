@@ -260,6 +260,7 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
             List<ParCompradoJunto> pares = enCarrito.Count == 0 ? new List<ParCompradoJunto>()
                 : await repositorio.LeerPares(enCarrito).ConfigureAwait(false) ?? new List<ParCompradoJunto>();
             List<CandidatoPotenciar> potenciar = await repositorio.LeerPotenciar(empresa, hoy).ConfigureAwait(false) ?? new List<CandidatoPotenciar>();
+            List<AfinidadCliente> afinidades = await repositorio.LeerAfinidad(cliente).ConfigureAwait(false) ?? new List<AfinidadCliente>();
 
             var comprados = new HashSet<string>(compras.Where(c => c.Producto != null).Select(c => c.Producto.Trim()), StringComparer.OrdinalIgnoreCase);
             List<SugerenciaMostrada> sinResponder = mostradas.Where(m => m.Respuesta == null).OrderBy(m => m.Posicion).ThenBy(m => m.Id).ToList();
@@ -267,6 +268,7 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
                 .Concat(enCarrito)
                 .Concat(pares.Select(p => p.ProductoA)).Concat(pares.Select(p => p.ProductoB))
                 .Concat(potenciar.Select(p => p.Producto))
+                .Concat(afinidades.Select(a => a.Producto))
                 .Concat(sinResponder.Select(m => m.Producto));
             Dictionary<string, FichaProductoSugerencia> fichas = await repositorio.LeerFichas(empresa, productosConFicha).ConfigureAwait(false)
                 ?? new Dictionary<string, FichaProductoSugerencia>(StringComparer.OrdinalIgnoreCase);
@@ -283,9 +285,14 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
 
             // Lo ya enseñado en la sesión no vuelve como nuevo (se haya respondido o no)
             var yaEnsenados = new HashSet<string>(mostradas.Select(m => m.Producto.Trim()), StringComparer.OrdinalIgnoreCase);
-            List<CandidatoSugerencia> candidatos = MotorSugerenciasProductos.CompradoJunto(pares, enCarrito, fichas)
+            List<CandidatoSugerencia> todos = MotorSugerenciasProductos.CompradoJunto(pares, enCarrito, fichas)
                 .Concat(MotorSugerenciasProductos.LeToca(compras, hoy))
                 .Concat(MotorSugerenciasProductos.Potenciar(potenciar, clientesPerfil, comprados))
+                .Concat(MotorSugerenciasProductos.Parecidos(afinidades, comprados))
+                .ToList();
+            // NestoAPI#671: todas las fuentes que proponen cada producto (para el modelo; al vendedor solo se le enseña una)
+            Dictionary<string, string> fuentes = MotorSugerenciasProductos.Fuentes(todos);
+            List<CandidatoSugerencia> candidatos = todos
                 .Where(c => !yaEnsenados.Contains(c.Producto) && Vale(c.Producto))
                 .GroupBy(c => c.Motivo)
                 .SelectMany(g => g.OrderByDescending(c => c.Puntuacion).ThenBy(c => c.Producto, StringComparer.OrdinalIgnoreCase)
@@ -330,7 +337,10 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
                     Posicion = (byte)posicion,
                     VersionMotor = MotorSugerenciasProductos.VERSION_MOTOR,
                     Texto = elegida.Texto,
-                    FechaMostrada = ahora()
+                    FechaMostrada = ahora(),
+                    Fuentes = fuentes.TryGetValue(elegida.Producto.Trim(), out string fuentesProducto) ? fuentesProducto : elegida.Motivo,
+                    TamanoCarrito = enCarrito.Count,
+                    Exploracion = false
                 };
                 nueva.Id = await repositorio.InsertarMostrada(nueva).ConfigureAwait(false);
                 ocupadas.Add(posicion);

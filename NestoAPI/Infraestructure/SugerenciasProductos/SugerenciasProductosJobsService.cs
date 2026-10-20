@@ -18,6 +18,10 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         public int Compras { get; set; }
         public int Pares { get; set; }
         public int PerfilesProductos { get; set; }
+        /// <summary>NestoAPI#671: filas de afinidad (0 si no está el script Issue671a).</summary>
+        public int Afinidades { get; set; }
+        /// <summary>NestoAPI#671: productos con popularidad (0 si no está el script Issue671a).</summary>
+        public int Popularidad { get; set; }
     }
 
     public interface IRepositorioJobSugerenciasProductos
@@ -29,6 +33,10 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         Dictionary<string, FichaProductoSugerencia> LeerFichas(string empresa);
         /// <summary>Vacía las dos tablas y las rellena, todo o nada.</summary>
         void Guardar(List<ParCompradoJunto> pares, List<ProductoPerfil> perfiles, DateTime fechaCalculo);
+        /// <summary>NestoAPI#671: si existen SugerenciasProductosAfinidad y SugerenciasProductosPopularidad (script Issue671a).</summary>
+        bool ExistenTablasModelo();
+        /// <summary>NestoAPI#671: vacía las dos tablas y las rellena, todo o nada.</summary>
+        void GuardarModelo(List<AfinidadCliente> afinidades, List<PopularidadProducto> popularidad, DateTime fechaCalculo);
     }
 
     /// <summary>
@@ -36,6 +44,9 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
     /// consulta de #532 (<see cref="SelectorRecordatoriosReposicion.SQL_COMPRAS"/>: NOLOCK y un único recorrido del índice que
     /// la cubre entera, ~3 s y ~41.000 lecturas lógicas medidos el 25/09/26), calcula en memoria los pares «comprados juntos» y
     /// los perfiles (<see cref="CalculadoraParesCompradosJuntos"/>) y deja las dos tablas rellenas en una transacción.
+    /// NestoAPI#671 (corte 2a): en la misma pasada, con las mismas compras, la afinidad item-kNN de cada cliente y la
+    /// popularidad de cada producto (<see cref="CalculadoraAfinidadProductos"/>), en otra transacción y solo si están las
+    /// tablas del script Issue671a.
     /// <para>De lunes a sábado a las 05:00: después de los jobs de la 1:00 a las 4:30 y nunca el domingo de madrugada (el SP de
     /// precios medios bloquea LinPedidoVta). En la cola «indicadores» (servidor de un hilo de los jobs largos) y sin reintentos:
     /// un reintento caería en horario. Interruptor: <see cref="Constantes.ParametrosUsuario.SUGERENCIAS_PRODUCTOS_JOB"/>.</para>
@@ -76,7 +87,8 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
                         Constantes.ParametrosUsuario.SUGERENCIAS_PRODUCTOS_JOB)).Ejecutar();
                 Console.WriteLine(resultado.MotivoNoCalcula != null
                     ? $"🛒 [Hangfire] Sugerencias de productos: no se calcula ({resultado.MotivoNoCalcula})"
-                    : $"🛒 [Hangfire] Sugerencias de productos: {resultado.Compras} compras, {resultado.Pares} pares, {resultado.PerfilesProductos} filas de perfiles");
+                    : $"🛒 [Hangfire] Sugerencias de productos: {resultado.Compras} compras, {resultado.Pares} pares, {resultado.PerfilesProductos} filas de perfiles, " +
+                      $"{resultado.Afinidades} afinidades, {resultado.Popularidad} productos con popularidad");
             }
             catch (Exception ex)
             {
@@ -126,6 +138,15 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
             repositorio.Guardar(pares, perfiles, momento);
             resultado.Pares = pares.Count;
             resultado.PerfilesProductos = perfiles.Count;
+
+            if (repositorio.ExistenTablasModelo())
+            {
+                List<AfinidadCliente> afinidades = CalculadoraAfinidadProductos.Afinidades(compras, fichas);
+                List<PopularidadProducto> popularidad = CalculadoraAfinidadProductos.Popularidad(compras, fichas, hoy);
+                repositorio.GuardarModelo(afinidades, popularidad, momento);
+                resultado.Afinidades = afinidades.Count;
+                resultado.Popularidad = popularidad.Count;
+            }
             return resultado;
         }
     }
@@ -137,6 +158,10 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         internal const string SQL_EXISTEN_TABLAS = @"
 SELECT CAST(CASE WHEN OBJECT_ID(N'dbo.SugerenciasProductosPares', N'U') IS NULL
                    OR OBJECT_ID(N'dbo.SugerenciasProductosPerfilesProductos', N'U') IS NULL THEN 0 ELSE 1 END AS bit)";
+
+        internal const string SQL_EXISTEN_TABLAS_MODELO = @"
+SELECT CAST(CASE WHEN OBJECT_ID(N'dbo.SugerenciasProductosAfinidad', N'U') IS NULL
+                   OR OBJECT_ID(N'dbo.SugerenciasProductosPopularidad', N'U') IS NULL THEN 0 ELSE 1 END AS bit)";
 
         private static NVEntities Contexto()
         {
@@ -152,6 +177,14 @@ SELECT CAST(CASE WHEN OBJECT_ID(N'dbo.SugerenciasProductosPares', N'U') IS NULL
             using (NVEntities db = Contexto())
             {
                 return db.Database.SqlQuery<bool>(SQL_EXISTEN_TABLAS).First();
+            }
+        }
+
+        public bool ExistenTablasModelo()
+        {
+            using (NVEntities db = Contexto())
+            {
+                return db.Database.SqlQuery<bool>(SQL_EXISTEN_TABLAS_MODELO).First();
             }
         }
 
@@ -215,6 +248,40 @@ SELECT CAST(CASE WHEN OBJECT_ID(N'dbo.SugerenciasProductosPares', N'U') IS NULL
                 _ = tablaPerfiles.Rows.Add(p.Grupo, p.SubGrupo ?? string.Empty, p.Producto, p.Clientes, fechaCalculo);
             }
 
+            Reemplazar(Tuple.Create("dbo.SugerenciasProductosPares", tablaPares),
+                Tuple.Create("dbo.SugerenciasProductosPerfilesProductos", tablaPerfiles));
+        }
+
+        public void GuardarModelo(List<AfinidadCliente> afinidades, List<PopularidadProducto> popularidad, DateTime fechaCalculo)
+        {
+            DataTable tablaAfinidad = new DataTable();
+            _ = tablaAfinidad.Columns.Add("Cliente", typeof(string));
+            _ = tablaAfinidad.Columns.Add("Producto", typeof(string));
+            _ = tablaAfinidad.Columns.Add("Afinidad", typeof(decimal));
+            _ = tablaAfinidad.Columns.Add("Rango", typeof(short));
+            _ = tablaAfinidad.Columns.Add("FechaCalculo", typeof(DateTime));
+            foreach (AfinidadCliente a in afinidades ?? new List<AfinidadCliente>())
+            {
+                _ = tablaAfinidad.Rows.Add(a.Cliente, a.Producto, Math.Min(a.Afinidad, 999999m), a.Rango, fechaCalculo);
+            }
+            DataTable tablaPopularidad = new DataTable();
+            _ = tablaPopularidad.Columns.Add("Producto", typeof(string));
+            _ = tablaPopularidad.Columns.Add("Clientes12Meses", typeof(int));
+            _ = tablaPopularidad.Columns.Add("Clientes3Meses", typeof(int));
+            _ = tablaPopularidad.Columns.Add("Cestas12Meses", typeof(int));
+            _ = tablaPopularidad.Columns.Add("Rango", typeof(int));
+            _ = tablaPopularidad.Columns.Add("FechaCalculo", typeof(DateTime));
+            foreach (PopularidadProducto p in popularidad ?? new List<PopularidadProducto>())
+            {
+                _ = tablaPopularidad.Rows.Add(p.Producto, p.Clientes12Meses, p.Clientes3Meses, p.Cestas12Meses, p.Rango, fechaCalculo);
+            }
+            Reemplazar(Tuple.Create("dbo.SugerenciasProductosAfinidad", tablaAfinidad),
+                Tuple.Create("dbo.SugerenciasProductosPopularidad", tablaPopularidad));
+        }
+
+        /// <summary>Vacía las tablas y las rellena con lo nuevo, todo en una transacción.</summary>
+        private static void Reemplazar(params Tuple<string, DataTable>[] tablas)
+        {
             using (NVEntities db = Contexto())
             {
                 SqlConnection conexion = (SqlConnection)db.Database.Connection;
@@ -227,15 +294,17 @@ SELECT CAST(CASE WHEN OBJECT_ID(N'dbo.SugerenciasProductosPares', N'U') IS NULL
                 {
                     using (SqlTransaction transaccion = conexion.BeginTransaction(IsolationLevel.ReadCommitted))
                     {
-                        foreach (string tabla in new[] { "dbo.SugerenciasProductosPares", "dbo.SugerenciasProductosPerfilesProductos" })
+                        foreach (Tuple<string, DataTable> tabla in tablas)
                         {
-                            using (SqlCommand borrar = new SqlCommand("DELETE FROM " + tabla, conexion, transaccion) { CommandTimeout = TIMEOUT_SEGUNDOS })
+                            using (SqlCommand borrar = new SqlCommand("DELETE FROM " + tabla.Item1, conexion, transaccion) { CommandTimeout = TIMEOUT_SEGUNDOS })
                             {
                                 _ = borrar.ExecuteNonQuery();
                             }
                         }
-                        Copiar(conexion, transaccion, "dbo.SugerenciasProductosPares", tablaPares);
-                        Copiar(conexion, transaccion, "dbo.SugerenciasProductosPerfilesProductos", tablaPerfiles);
+                        foreach (Tuple<string, DataTable> tabla in tablas)
+                        {
+                            Copiar(conexion, transaccion, tabla.Item1, tabla.Item2);
+                        }
                         transaccion.Commit();
                     }
                 }

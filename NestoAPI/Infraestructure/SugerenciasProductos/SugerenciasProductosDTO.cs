@@ -9,6 +9,8 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         public const string COMPRADO_JUNTO = "CompradoJunto";
         public const string LE_TOCA = "LeToca";
         public const string POTENCIAR = "Potenciar";
+        /// <summary>NestoAPI#671 (corte 2a): item-kNN por coseno; lo compran clientes que compran lo mismo que este.</summary>
+        public const string PARECIDOS = "Parecidos";
     }
 
     /// <summary>NestoAPI#670: lo que contesta el vendedor dentro de la sugerencia («✓ Añadir» y «✗ No le interesa»).</summary>
@@ -61,7 +63,7 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         public int IdSugerencia { get; set; }
         public string Producto { get; set; }
         public string Nombre { get; set; }
-        /// <summary>"CompradoJunto", "LeToca" o "Potenciar".</summary>
+        /// <summary>"CompradoJunto", "LeToca", "Potenciar" o "Parecidos".</summary>
         public string Motivo { get; set; }
         /// <summary>La frase que puede decir el vendedor («Lo compra cada ~45 días; el último, hace 52.»).</summary>
         public string Texto { get; set; }
@@ -138,6 +140,12 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         public DateTime? FechaRespuesta { get; set; }
         public bool? EntroEnPedido { get; set; }
         public int? CantidadEnPedido { get; set; }
+        /// <summary>NestoAPI#671: todas las fuentes que propusieron el producto («CompradoJunto,Parecidos»). Solo se escribe.</summary>
+        public string Fuentes { get; set; }
+        /// <summary>NestoAPI#671: productos distintos del carrito cuando se enseñó. Solo se escribe.</summary>
+        public int? TamanoCarrito { get; set; }
+        /// <summary>NestoAPI#671: hueco elegido al azar (ε-greedy, corte 2c). Hasta el 2c, siempre false.</summary>
+        public bool Exploracion { get; set; }
     }
 
     public class FichaProductoSugerencia
@@ -191,6 +199,25 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         public string VendedorEsteticaCliente { get; set; }
         /// <summary>VendedoresClienteGrupoProducto con grupo PEL del cliente.</summary>
         public string VendedorPeluqueriaCliente { get; set; }
+    }
+
+    /// <summary>NestoAPI#671: una fila de SugerenciasProductosAfinidad (item-kNN de un cliente con un producto que no compra).</summary>
+    public class AfinidadCliente
+    {
+        public string Cliente { get; set; }
+        public string Producto { get; set; }
+        public decimal Afinidad { get; set; }
+        public short Rango { get; set; }
+    }
+
+    /// <summary>NestoAPI#671: una fila de SugerenciasProductosPopularidad.</summary>
+    public class PopularidadProducto
+    {
+        public string Producto { get; set; }
+        public int Clientes12Meses { get; set; }
+        public int Clientes3Meses { get; set; }
+        public int Cestas12Meses { get; set; }
+        public int Rango { get; set; }
     }
 
     /// <summary>NestoAPI#670: una sugerencia posible, antes de enseñarla.</summary>

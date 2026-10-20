@@ -19,6 +19,9 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
     /// <item><b>Potenciar</b>: ofertas activas, «Potenciar hasta» vigente y novedades que el cliente no ha comprado y que
     /// compran clientes parecidos (mismo perfil: el grupo y subgrupo en el que más compra); gana el que más clientes
     /// parecidos compran.</item>
+    /// <item><b>Parecidos</b> (NestoAPI#671, corte 2a): lo que el job nocturno calcula por item-kNN
+    /// (<see cref="CalculadoraAfinidadProductos"/>): productos que el cliente no compra y compran los clientes que compran lo
+    /// mismo que él; gana la afinidad más alta.</item>
     /// </list>
     /// Filtros (<see cref="MotivoDescarte"/>): del grupo del vendedor, vendible (estado, ficticio; el stock o la fecha de llegada
     /// los mira el servicio), ni en el carrito, ni en un pedido pendiente, ni rechazado por ese cliente en 60 días.
@@ -50,7 +53,7 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         /// <summary>El orden en que se cogen las fuentes al mezclar.</summary>
         public static readonly string[] ORDEN_FUENTES =
         {
-            MotivosSugerencia.COMPRADO_JUNTO, MotivosSugerencia.LE_TOCA, MotivosSugerencia.POTENCIAR
+            MotivosSugerencia.COMPRADO_JUNTO, MotivosSugerencia.LE_TOCA, MotivosSugerencia.POTENCIAR, MotivosSugerencia.PARECIDOS
         };
 
         private static readonly CultureInfo ES = CultureInfo.GetCultureInfo("es-ES");
@@ -269,6 +272,39 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         }
 
         /// <summary>
+        /// NestoAPI#671: «Parecidos»: las afinidades item-kNN del cliente (las calcula el job), sin lo que ya ha comprado
+        /// (el job mira 24 meses hasta anoche; aquí se quitan también las compras de hoy). Puntuación: la afinidad.
+        /// </summary>
+        public static List<CandidatoSugerencia> Parecidos(IEnumerable<AfinidadCliente> afinidades, ISet<string> compradosPorElCliente)
+        {
+            ISet<string> comprados = compradosPorElCliente ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            return (afinidades ?? Enumerable.Empty<AfinidadCliente>())
+                .Where(a => !string.IsNullOrWhiteSpace(a.Producto) && !comprados.Contains(a.Producto.Trim()))
+                .GroupBy(a => a.Producto.Trim(), StringComparer.OrdinalIgnoreCase)
+                .Select(g => new CandidatoSugerencia
+                {
+                    Producto = g.Key,
+                    Motivo = MotivosSugerencia.PARECIDOS,
+                    Puntuacion = g.Max(a => a.Afinidad),
+                    Texto = TextoParecidos()
+                })
+                .OrderByDescending(c => c.Puntuacion)
+                .ThenBy(c => c.Producto, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        /// <summary>
+        /// NestoAPI#671: todas las fuentes que proponen cada producto, en el orden de <see cref="ORDEN_FUENTES"/> y separadas
+        /// por comas («CompradoJunto,Parecidos»). Va en la columna Fuentes de lo mostrado.
+        /// </summary>
+        public static Dictionary<string, string> Fuentes(IEnumerable<CandidatoSugerencia> candidatos)
+            => (candidatos ?? Enumerable.Empty<CandidatoSugerencia>())
+                .Where(c => !string.IsNullOrWhiteSpace(c.Producto) && c.Motivo != null)
+                .GroupBy(c => c.Producto.Trim(), StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => string.Join(",", ORDEN_FUENTES.Where(f => g.Any(c => c.Motivo == f))),
+                    StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
         /// Las nuevas que se enseñan para llenar <paramref name="huecos"/>: primero la mejor de cada fuente que todavía no está
         /// a la vista (en <see cref="ORDEN_FUENTES"/>), después, por turnos, la siguiente mejor de cada fuente. Los candidatos
         /// llegan ya filtrados; aquí solo se quitan los <paramref name="excluidos"/> (lo ya enseñado en la sesión) y los repetidos.
@@ -393,6 +429,8 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
                 : string.Format(ES, "lo compran {0:N0} clientes parecidos", clientesParecidos);
             return $"{primero}; {clientes}.";
         }
+
+        internal static string TextoParecidos() => "Lo compran clientes parecidos, con compras como las suyas, y aún no lo ha pedido.";
 
         private static string Nombre(string producto, IDictionary<string, FichaProductoSugerencia> fichas)
         {

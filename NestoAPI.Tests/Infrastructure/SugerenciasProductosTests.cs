@@ -30,6 +30,7 @@ namespace NestoAPI.Tests.Infrastructure
         private List<ParCompradoJunto> _pares;
         private List<CompraDiaReposicion> _compras;
         private List<CandidatoPotenciar> _potenciar;
+        private List<AfinidadCliente> _afinidades;
         private Dictionary<string, int> _clientesPerfil;
         private Dictionary<string, FichaProductoSugerencia> _fichas;
         private HashSet<string> _sinStock;
@@ -78,6 +79,7 @@ namespace NestoAPI.Tests.Infrastructure
                 new CandidatoPotenciar { Producto = "POT3", Tipo = CandidatoPotenciar.TIPO_POTENCIAR }
             };
             _clientesPerfil = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase) { { "POT1", 12 }, { "POT2", 5 }, { "POT3", 2 } };
+            _afinidades = new List<AfinidadCliente>();
 
             _repo = A.Fake<IRepositorioSugerenciasProductos>();
             A.CallTo(() => _repo.ExistenTablas()).ReturnsLazily(() => Task.FromResult(_existenTablas));
@@ -118,6 +120,7 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => _repo.LeerPares(A<IEnumerable<string>>._)).ReturnsLazily((IEnumerable<string> carrito) =>
                 Task.FromResult(_pares.Where(p => carrito.Contains(p.ProductoA, StringComparer.OrdinalIgnoreCase)).ToList()));
             A.CallTo(() => _repo.LeerPotenciar(A<string>._, A<DateTime>._)).ReturnsLazily(() => Task.FromResult(_potenciar.ToList()));
+            A.CallTo(() => _repo.LeerAfinidad(A<string>._)).ReturnsLazily(() => Task.FromResult(_afinidades.ToList()));
             A.CallTo(() => _repo.LeerClientesPerfil(A<string>._, A<string>._))
                 .ReturnsLazily((string g, string s) => Task.FromResult(g == "COS" && s == "CRE" ? new Dictionary<string, int>(_clientesPerfil) : new Dictionary<string, int>()));
             A.CallTo(() => _repo.LeerFichas(A<string>._, A<IEnumerable<string>>._)).ReturnsLazily((string e, IEnumerable<string> productos) =>
@@ -784,6 +787,177 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreSame(dto, ok?.Content);
         }
 
+        // ---------------- NestoAPI#671 (corte 2a): «Parecidos», popularidad y registro ----------------
+
+        [TestMethod]
+        public void Afinidades_CosenoConLoQueNoHaComprado_YDeterminista()
+        {
+            var compras = new List<CompraDiaReposicion>();
+            foreach (string c in new[] { "C1", "C2", "C3" })
+            {
+                compras.AddRange(Cesta(c, -10, "A", "B", "C"));
+            }
+            compras.AddRange(Cesta("C4", -10, "A", "B"));
+            compras.AddRange(Cesta("C5", -10, "A"));
+            Dictionary<string, FichaProductoSugerencia> fichas = FichasCos("A", "B", "C");
+
+            List<AfinidadCliente> afinidades = CalculadoraAfinidadProductos.Afinidades(compras, fichas);
+
+            // sim(A,B) = 4/√(5·4) = 0,894; sim(A,C) = 3/√(5·3) = 0,775; sim(B,C) = 3/√(4·3) = 0,866
+            List<AfinidadCliente> c5 = afinidades.Where(a => a.Cliente == "C5").OrderBy(a => a.Rango).ToList();
+            CollectionAssert.AreEqual(new[] { "B", "C" }, c5.Select(a => a.Producto).ToArray());
+            Assert.AreEqual(0.894427m, c5[0].Afinidad);
+            Assert.AreEqual(0.774597m, c5[1].Afinidad);
+            AfinidadCliente c4 = afinidades.Single(a => a.Cliente == "C4");
+            Assert.AreEqual("C", c4.Producto, "Lo único que no ha comprado");
+            Assert.AreEqual(0.774597m + 0.866025m, c4.Afinidad);
+            Assert.IsFalse(afinidades.Any(a => a.Cliente == "C1"), "Ya lo compra todo");
+
+            List<AfinidadCliente> otraVez = CalculadoraAfinidadProductos.Afinidades(Enumerable.Reverse(compras).ToList(), fichas);
+            CollectionAssert.AreEqual(afinidades.Select(a => a.Cliente + a.Producto + a.Afinidad + a.Rango).ToArray(),
+                otraVez.Select(a => a.Cliente + a.Producto + a.Afinidad + a.Rango).ToArray(), "El orden de las compras no cambia nada");
+        }
+
+        [TestMethod]
+        public void Afinidades_PocosClientesComunesONoSugerible_NoCuentan()
+        {
+            var compras = new List<CompraDiaReposicion>();
+            compras.AddRange(Cesta("C1", -10, "A", "B", "MUESTRA"));
+            compras.AddRange(Cesta("C2", -10, "A", "B", "MUESTRA"));
+            compras.AddRange(Cesta("C3", -10, "A", "MUESTRA"));
+            Dictionary<string, FichaProductoSugerencia> fichas = FichasCos("A", "B");
+            fichas["MUESTRA"] = NuevaFicha("MUESTRA", "COS", Constantes.Productos.SUBGRUPO_MUESTRAS);
+
+            List<AfinidadCliente> afinidades = CalculadoraAfinidadProductos.Afinidades(compras, fichas);
+
+            Assert.AreEqual(0, afinidades.Count, "A y B solo tienen 2 clientes comunes; la muestra no se sugiere nunca");
+        }
+
+        [TestMethod]
+        public void Popularidad_ClientesEnDoceYTresMesesYCestas()
+        {
+            var compras = new List<CompraDiaReposicion>();
+            compras.AddRange(Cesta("C1", -10, "A", "B"));
+            compras.AddRange(Cesta("C1", -20, "A"));
+            compras.AddRange(Cesta("C2", -200, "A"));
+            compras.AddRange(Cesta("C3", -200, "B"));
+            compras.AddRange(Cesta("C4", -400, "B"));    // de hace más de 12 meses: no cuenta
+
+            List<PopularidadProducto> popularidad = CalculadoraAfinidadProductos.Popularidad(compras, FichasCos("A", "B"), HOY);
+
+            PopularidadProducto a = popularidad.Single(p => p.Producto == "A");
+            PopularidadProducto b = popularidad.Single(p => p.Producto == "B");
+            Assert.AreEqual(2, a.Clientes12Meses);
+            Assert.AreEqual(1, a.Clientes3Meses);
+            Assert.AreEqual(3, a.Cestas12Meses);
+            Assert.AreEqual(1, a.Rango, "Empatan en clientes; A tiene más cestas");
+            Assert.AreEqual(2, b.Clientes12Meses);
+            Assert.AreEqual(2, b.Rango);
+        }
+
+        [TestMethod]
+        public void Parecidos_SinLoQueYaHaCompradoYFuentesEnOrden()
+        {
+            var afinidades = new List<AfinidadCliente>
+            {
+                new AfinidadCliente { Cliente = CLIENTE, Producto = "X", Afinidad = 0.5m, Rango = 2 },
+                new AfinidadCliente { Cliente = CLIENTE, Producto = "Y", Afinidad = 0.9m, Rango = 1 },
+                new AfinidadCliente { Cliente = CLIENTE, Producto = "COMPRADO", Afinidad = 2m, Rango = 0 }
+            };
+
+            List<CandidatoSugerencia> parecidos = MotorSugerenciasProductos.Parecidos(afinidades, Conjunto("COMPRADO"));
+
+            CollectionAssert.AreEqual(new[] { "Y", "X" }, parecidos.Select(c => c.Producto).ToArray());
+            Assert.IsTrue(parecidos.All(c => c.Motivo == MotivosSugerencia.PARECIDOS));
+            StringAssert.StartsWith(parecidos[0].Texto, "Lo compran clientes parecidos");
+            Assert.AreEqual(MotivosSugerencia.PARECIDOS, MotorSugerenciasProductos.ORDEN_FUENTES.Last(), "Va la última: sin afinidad, todo como en el corte 1");
+
+            Dictionary<string, string> fuentes = MotorSugerenciasProductos.Fuentes(new[]
+            {
+                Candidato("Y", MotivosSugerencia.PARECIDOS, 1), Candidato("Y", MotivosSugerencia.COMPRADO_JUNTO, 1), Candidato("Z", MotivosSugerencia.LE_TOCA, 1)
+            });
+            Assert.AreEqual("CompradoJunto,Parecidos", fuentes["Y"]);
+            Assert.AreEqual("LeToca", fuentes["Z"]);
+        }
+
+        [TestMethod]
+        public void Job_ConTablasDelModelo_GuardaAfinidadYPopularidadEnLaMismaPasada()
+        {
+            var repo = A.Fake<IRepositorioJobSugerenciasProductos>();
+            A.CallTo(() => repo.ExistenTablas()).Returns(true);
+            A.CallTo(() => repo.ExistenTablasModelo()).Returns(true);
+            var compras = new List<CompraDiaReposicion>();
+            foreach (string c in new[] { "C1", "C2", "C3" })
+            {
+                compras.AddRange(Cesta(c, -10, "A", "B", "C"));
+            }
+            compras.AddRange(Cesta("C4", -10, "A", "B"));
+            A.CallTo(() => repo.LeerCompras(A<string>._, A<DateTime>._, A<DateTime>._)).Returns(compras);
+            A.CallTo(() => repo.LeerFichas("1")).Returns(FichasCos("A", "B", "C"));
+            List<AfinidadCliente> guardadas = null;
+            A.CallTo(() => repo.GuardarModelo(A<List<AfinidadCliente>>._, A<List<PopularidadProducto>>._, A<DateTime>._))
+                .Invokes((List<AfinidadCliente> a, List<PopularidadProducto> p, DateTime f) => guardadas = a);
+
+            ResultadoJobSugerenciasProductos r = new SugerenciasProductosJobsService(repo, () => "Activo", () => HOY).Ejecutar();
+
+            A.CallTo(() => repo.LeerCompras(A<string>._, A<DateTime>._, A<DateTime>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => repo.Guardar(A<List<ParCompradoJunto>>._, A<List<ProductoPerfil>>._, A<DateTime>._)).MustHaveHappenedOnceExactly();
+            Assert.AreEqual(1, r.Afinidades);
+            Assert.AreEqual("C4", guardadas.Single().Cliente);
+            Assert.AreEqual(3, r.Popularidad);
+        }
+
+        [TestMethod]
+        public void Job_SinTablasDelModelo_SoloParesYPerfiles()
+        {
+            var repo = A.Fake<IRepositorioJobSugerenciasProductos>();
+            A.CallTo(() => repo.ExistenTablas()).Returns(true);
+            A.CallTo(() => repo.ExistenTablasModelo()).Returns(false);
+            A.CallTo(() => repo.LeerCompras(A<string>._, A<DateTime>._, A<DateTime>._)).Returns(Cesta("C1", -1, "A").ToList());
+            A.CallTo(() => repo.LeerFichas("1")).Returns(FichasCos("A"));
+
+            ResultadoJobSugerenciasProductos r = new SugerenciasProductosJobsService(repo, () => "Activo", () => HOY).Ejecutar();
+
+            Assert.IsNull(r.MotivoNoCalcula);
+            A.CallTo(() => repo.GuardarModelo(A<List<AfinidadCliente>>._, A<List<PopularidadProducto>>._, A<DateTime>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Calcular_ConAfinidad_LasTresFuentesDeAntesNoCambianYSeRegistranFuentesYCarrito()
+        {
+            Ficha("PARECIDO1", "COS", "CRE");
+            _afinidades.Add(new AfinidadCliente { Cliente = CLIENTE, Producto = "PARECIDO1", Afinidad = 3m, Rango = 1 });
+            _afinidades.Add(new AfinidadCliente { Cliente = CLIENTE, Producto = "JUNTO1", Afinidad = 1m, Rango = 2 });
+
+            SugerenciasProductosDTO r = await _servicio.Calcular(Peticion(null, "CARRO1", "OTRO"), "carlos");
+
+            CollectionAssert.AreEqual(new[] { "JUNTO1", "LETOCA1", "POT1" }, r.Sugerencias.Select(s => s.Producto).ToArray(),
+                "Con 3 visibles y 4 fuentes, «Parecidos» va detrás");
+            SugerenciaMostrada junto = _mostradas.Single(m => m.Producto == "JUNTO1");
+            Assert.AreEqual("CompradoJunto,Parecidos", junto.Fuentes);
+            Assert.AreEqual(2, junto.TamanoCarrito);
+            Assert.AreEqual("LeToca", _mostradas.Single(m => m.Producto == "LETOCA1").Fuentes);
+            Assert.IsTrue(_mostradas.All(m => !m.Exploracion));
+        }
+
+        [TestMethod]
+        public async Task Calcular_SinOtrasFuentes_SaleParecidosConSuTexto()
+        {
+            Ficha("PARECIDO1", "COS", "CRE");
+            _afinidades.Add(new AfinidadCliente { Cliente = CLIENTE, Producto = "PARECIDO1", Afinidad = 3m, Rango = 1 });
+            _pares.Clear();
+            _potenciar.Clear();
+            _compras.Clear();
+
+            SugerenciasProductosDTO r = await _servicio.Calcular(Peticion(null), "carlos");
+
+            SugerenciaProductoDTO parecido = r.Sugerencias.Single();
+            Assert.AreEqual("PARECIDO1", parecido.Producto);
+            Assert.AreEqual(MotivosSugerencia.PARECIDOS, parecido.Motivo);
+            Assert.AreEqual(MotorSugerenciasProductos.TextoParecidos(), parecido.Texto);
+            Assert.AreEqual(0, _mostradas.Single().TamanoCarrito);
+        }
+
         // ---------------- Ayudas ----------------
 
         private CalcularSugerenciasDTO Peticion(Guid? idSesion, params string[] productos) => Peticion(idSesion, productos, "SAN");
@@ -843,7 +1017,10 @@ namespace NestoAPI.Tests.Infrastructure
             Respuesta = m.Respuesta,
             FechaRespuesta = m.FechaRespuesta,
             EntroEnPedido = m.EntroEnPedido,
-            CantidadEnPedido = m.CantidadEnPedido
+            CantidadEnPedido = m.CantidadEnPedido,
+            Fuentes = m.Fuentes,
+            TamanoCarrito = m.TamanoCarrito,
+            Exploracion = m.Exploracion
         };
     }
 }

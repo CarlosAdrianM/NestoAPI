@@ -21,7 +21,7 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         Task<List<SugerenciaMostrada>> LeerMostradas(Guid sesion);
         /// <summary>Null si no existe.</summary>
         Task<SugerenciaMostrada> LeerMostrada(int id);
-        /// <summary>Devuelve el Id.</summary>
+        /// <summary>Devuelve el Id. Con las columnas del script Issue671a, también Fuentes, TamanoCarrito y Exploracion.</summary>
         Task<int> InsertarMostrada(SugerenciaMostrada mostrada);
         Task GuardarRespuesta(int id, string respuesta);
         /// <summary>Productos a los que este cliente ha dicho «No le interesa» desde <paramref name="desde"/>.</summary>
@@ -35,6 +35,8 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         Task<List<CandidatoPotenciar>> LeerPotenciar(string empresa, DateTime hoy);
         /// <summary>Producto → clientes del perfil que lo compran. Vacío si el job aún no tiene tabla.</summary>
         Task<Dictionary<string, int>> LeerClientesPerfil(string grupo, string subGrupo);
+        /// <summary>NestoAPI#671: las afinidades item-kNN del cliente. Vacía si el job aún no tiene tabla (script Issue671a).</summary>
+        Task<List<AfinidadCliente>> LeerAfinidad(string cliente);
         Task<Dictionary<string, FichaProductoSugerencia>> LeerFichas(string empresa, IEnumerable<string> productos);
         /// <summary>De los productos dados, los que tienen stock disponible o una llegada prevista de un pedido a proveedor enviado.</summary>
         Task<HashSet<string>> LeerVendibles(string empresa, IEnumerable<string> productos);
@@ -61,6 +63,8 @@ SELECT CAST(CASE WHEN COL_LENGTH(@p0, @p1) IS NULL THEN 0 ELSE 1 END AS bit)";
 
         internal const string TABLA_PARES = "dbo.SugerenciasProductosPares";
         internal const string TABLA_PERFILES = "dbo.SugerenciasProductosPerfilesProductos";
+        internal const string TABLA_AFINIDAD = "dbo.SugerenciasProductosAfinidad";
+        internal const string TABLA_MOSTRADAS = "dbo.SugerenciasProductosMostradas";
 
         internal const string SQL_LEER_SESION = @"
 SELECT Id, RTRIM(Empresa) AS Empresa, RTRIM(Cliente) AS Cliente, RTRIM(Contacto) AS Contacto, RTRIM(Vendedor) AS Vendedor,
@@ -87,6 +91,16 @@ SELECT " + SQL_COLUMNAS_MOSTRADA + @" FROM dbo.SugerenciasProductosMostradas WHE
 INSERT INTO dbo.SugerenciasProductosMostradas (SesionId, Producto, Motivo, Puntuacion, Posicion, VersionMotor, Texto, FechaMostrada)
 OUTPUT INSERTED.Id
 VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, GETDATE())";
+
+        /// <summary>NestoAPI#671: con las columnas del script Issue671a.</summary>
+        internal const string SQL_INSERTAR_MOSTRADA_MODELO = @"
+INSERT INTO dbo.SugerenciasProductosMostradas (SesionId, Producto, Motivo, Puntuacion, Posicion, VersionMotor, Texto, FechaMostrada,
+       Fuentes, TamanoCarrito, Exploracion)
+OUTPUT INSERTED.Id
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, GETDATE(), @p7, @p8, @p9)";
+
+        internal const string SQL_AFINIDAD_CLIENTE = @"
+SELECT RTRIM(Cliente) AS Cliente, RTRIM(Producto) AS Producto, Afinidad, Rango FROM dbo.SugerenciasProductosAfinidad WHERE Cliente = @p0";
 
         internal const string SQL_GUARDAR_RESPUESTA = @"
 UPDATE dbo.SugerenciasProductosMostradas SET Respuesta = @p1, FechaRespuesta = GETDATE() WHERE Id = @p0";
@@ -207,12 +221,36 @@ WHERE p.Decision = 'Potenciar' AND p.PotenciarHasta >= @p0";
         public Task<SugerenciaMostrada> LeerMostrada(int id)
             => db.Database.SqlQuery<SugerenciaMostrada>(SugerenciasProductosSql.SQL_LEER_MOSTRADA, SugerenciasProductosSql.Entero("@p0", id)).FirstOrDefaultAsync();
 
-        public Task<int> InsertarMostrada(SugerenciaMostrada m)
-            => db.Database.SqlQuery<int>(SugerenciasProductosSql.SQL_INSERTAR_MOSTRADA, SugerenciasProductosSql.Identificador("@p0", m.SesionId),
+        private bool? hayColumnasModelo;
+
+        public async Task<int> InsertarMostrada(SugerenciaMostrada m)
+        {
+            // NestoAPI#671: sin el script Issue671a, como en el corte 1 (se mira una vez por petición)
+            if (hayColumnasModelo == null)
+            {
+                hayColumnasModelo = await ExisteColumna(SugerenciasProductosSql.TABLA_MOSTRADAS, "Fuentes").ConfigureAwait(false)
+                    && await ExisteColumna(SugerenciasProductosSql.TABLA_MOSTRADAS, "TamanoCarrito").ConfigureAwait(false)
+                    && await ExisteColumna(SugerenciasProductosSql.TABLA_MOSTRADAS, "Exploracion").ConfigureAwait(false);
+            }
+            var parametros = new List<SqlParameter>
+            {
+                SugerenciasProductosSql.Identificador("@p0", m.SesionId),
                 SugerenciasProductosSql.Varchar("@p1", m.Producto, 15), SugerenciasProductosSql.Varchar("@p2", m.Motivo, 20),
                 new SqlParameter("@p3", SqlDbType.Decimal) { Precision = 12, Scale = 4, Value = Math.Round(Math.Min(m.Puntuacion, 99999999m), 4) },
                 new SqlParameter("@p4", SqlDbType.TinyInt) { Value = m.Posicion },
-                SugerenciasProductosSql.Varchar("@p5", m.VersionMotor, 20), SugerenciasProductosSql.Nvarchar("@p6", m.Texto, 200)).FirstAsync();
+                SugerenciasProductosSql.Varchar("@p5", m.VersionMotor, 20), SugerenciasProductosSql.Nvarchar("@p6", m.Texto, 200)
+            };
+            if (hayColumnasModelo != true)
+            {
+                return await db.Database.SqlQuery<int>(SugerenciasProductosSql.SQL_INSERTAR_MOSTRADA, parametros.Cast<object>().ToArray())
+                    .FirstAsync().ConfigureAwait(false);
+            }
+            parametros.Add(SugerenciasProductosSql.Varchar("@p7", m.Fuentes, 50));
+            parametros.Add(new SqlParameter("@p8", SqlDbType.Int) { Value = (object)m.TamanoCarrito ?? DBNull.Value });
+            parametros.Add(new SqlParameter("@p9", SqlDbType.Bit) { Value = m.Exploracion });
+            return await db.Database.SqlQuery<int>(SugerenciasProductosSql.SQL_INSERTAR_MOSTRADA_MODELO, parametros.Cast<object>().ToArray())
+                .FirstAsync().ConfigureAwait(false);
+        }
 
         public Task GuardarRespuesta(int id, string respuesta)
             => db.Database.ExecuteSqlCommandAsync(SugerenciasProductosSql.SQL_GUARDAR_RESPUESTA, SugerenciasProductosSql.Entero("@p0", id),
@@ -317,6 +355,16 @@ WHERE p.Decision = 'Potenciar' AND p.PotenciarHasta >= @p0";
                 resultado[fila.Producto.Trim()] = fila.Clientes;
             }
             return resultado;
+        }
+
+        public async Task<List<AfinidadCliente>> LeerAfinidad(string cliente)
+        {
+            if (string.IsNullOrWhiteSpace(cliente) || !await ExisteTabla(SugerenciasProductosSql.TABLA_AFINIDAD).ConfigureAwait(false))
+            {
+                return new List<AfinidadCliente>();
+            }
+            return await db.Database.SqlQuery<AfinidadCliente>(SugerenciasProductosSql.SQL_AFINIDAD_CLIENTE,
+                SugerenciasProductosSql.Varchar("@p0", cliente, 10)).ToListAsync().ConfigureAwait(false);
         }
 
         public async Task<Dictionary<string, FichaProductoSugerencia>> LeerFichas(string empresa, IEnumerable<string> productos)
