@@ -83,8 +83,28 @@ VALUES (@origen, @empresa, @pedido, @esPresupuesto, @cliente, @contacto, @usuari
             {
                 throw new ArgumentNullException(nameof(cadenaConexion));
             }
-            this.cadenaConexion = cadenaConexion;
+            this.cadenaConexion = SinAlistar(cadenaConexion);
         }
+
+        /// <summary>La cadena con la que abre sus conexiones (siempre con <c>Enlist=false</c>). Para los tests.</summary>
+        internal string CadenaConexion => cadenaConexion;
+
+        /// <summary>
+        /// NestoAPI#687 (sugerencia 579, Marta): la cadena con <c>Enlist=false</c>, la venga como venga. La sombra (y la fecha
+        /// de entrega a la agencia, que lee el stock con este repositorio) son lecturas de apoyo y diagnóstico: su conexión NUNCA
+        /// debe alistarse en la transacción ambiente. Dentro del TransactionScope de UnirPedidos (PutPedidoVenta → correo), una
+        /// segunda conexión con otra cadena que la de EF la escalaba a distribuida; MSDTC está deshabilitado en el servidor
+        /// («El administrador de transacciones ha deshabilitado su soporte para transacciones de red o remotas»), la
+        /// transacción quedaba muerta y la unión fallaba entera.
+        /// <para>Por qué en la cadena y no (solo) con un <c>TransactionScope(Suppress)</c> alrededor de cada llamada: es una
+        /// propiedad de la conexión, así que vale para TODOS los métodos (ExisteTabla, LeerDatos, LeerDatosConKits, Guardar) y
+        /// para cualquier llamante de hoy o de mañana, en cualquier hilo (el trabajo en segundo plano hereda el contexto de
+        /// ejecución y, con él, la transacción ambiente, incluso ya terminada), sin depender de que cada llamante se acuerde de
+        /// suprimir ni de cómo se crucen el scope y los await. El Suppress de ServicioFechaEntregaAgencia se queda (también
+        /// cubre la hora de corte y el aviso a Compras).</para>
+        /// </summary>
+        internal static string SinAlistar(string cadenaConexion)
+            => new SqlConnectionStringBuilder(cadenaConexion) { Enlist = false }.ConnectionString;
 
         /// <summary>La cadena de <c>NestoConnection</c> (misma BD NV) con nombre de aplicación propio.</summary>
         public static RepositorioSombraModoServicioSql DesdeConfiguracion()

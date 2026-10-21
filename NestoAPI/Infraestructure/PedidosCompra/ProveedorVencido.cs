@@ -137,7 +137,10 @@ SELECT CASE WHEN EXISTS (SELECT 1 FROM NotificacionesBuzon WITH (NOLOCK)
                 ?? throw new ConfigurationErrorsException("Falta la cadena de conexión NestoConnection");
             return new RepositorioProveedorVencidoSql(new SqlConnectionStringBuilder(origen.ConnectionString)
             {
-                ApplicationName = "NestoAPI-ProveedorVencido"
+                ApplicationName = "NestoAPI-ProveedorVencido",
+                // NestoAPI#687: el aviso a Compras sale del correo del pedido, que en UnirPedidos va dentro de un
+                // TransactionScope; con otra cadena que la de EF, alistarse escalaría a MSDTC (deshabilitado).
+                Enlist = false
             }.ConnectionString);
         }
 

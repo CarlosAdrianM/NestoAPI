@@ -60,8 +60,25 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         /// <summary>
         /// Lo que llaman PostPedidoVenta y PutPedidoVenta después de guardar. Sin sesión de sugerencias no hace nada (ni abre
         /// conexión); con ella, nunca rompe el guardado: los errores van a ELMAH.
+        /// <para>NestoAPI#687: fuera de la transacción ambiente (TransactionScope Suppress). PutPedidoVenta también se ejecuta
+        /// DENTRO del TransactionScope de UnirPedidos; el registro de sugerencias no forma parte del pedido (solo toca sus
+        /// tablas) y su NVEntities propio no debe alistarse: con dos conexiones a la vez la transacción escalaría a MSDTC
+        /// (deshabilitado) y la unión fallaría entera. La unión vuelve a enlazar la sesión al terminar
+        /// (<see cref="EnlazarUnionSinFallar"/>).</para>
         /// </summary>
-        public static async Task EnlazarPedidoSinFallar(PedidoVentaDTO pedido)
+        public static Task EnlazarPedidoSinFallar(PedidoVentaDTO pedido)
+            => EnlazarPedidoSinFallar(pedido, EnlazarConContextoPropio, ElmahHelper.Log);
+
+        private static async Task EnlazarConContextoPropio(PedidoVentaDTO pedido)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                await new ServicioSugerenciasProductos(new RepositorioSugerenciasProductosSql(db)).EnlazarPedido(pedido).ConfigureAwait(false);
+            }
+        }
+
+        /// <param name="enlazar">El enlace de verdad (sustituible en los tests).</param>
+        internal static async Task EnlazarPedidoSinFallar(PedidoVentaDTO pedido, Func<PedidoVentaDTO, Task> enlazar, Action<Exception> registrarError)
         {
             if (pedido?.IdSesionSugerencias == null || pedido.IdSesionSugerencias.Value == Guid.Empty)
             {
@@ -69,14 +86,16 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
             }
             try
             {
-                using (NVEntities db = new NVEntities())
+                using (var sinTransaccion = new System.Transactions.TransactionScope(System.Transactions.TransactionScopeOption.Suppress,
+                    System.Transactions.TransactionScopeAsyncFlowOption.Enabled))
                 {
-                    await new ServicioSugerenciasProductos(new RepositorioSugerenciasProductosSql(db)).EnlazarPedido(pedido).ConfigureAwait(false);
+                    await enlazar(pedido).ConfigureAwait(false);
+                    sinTransaccion.Complete();
                 }
             }
             catch (Exception ex)
             {
-                ElmahHelper.Log(new Exception($"[Sugerencias #670] No se ha podido enlazar la sesión {pedido.IdSesionSugerencias} con el pedido {pedido.numero}: {ex.Message}", ex));
+                registrarError(new Exception($"[Sugerencias #670] No se ha podido enlazar la sesión {pedido.IdSesionSugerencias} con el pedido {pedido.numero}: {ex.Message}", ex));
             }
         }
 

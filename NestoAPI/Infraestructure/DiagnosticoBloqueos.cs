@@ -136,7 +136,9 @@ ORDER BY bloqueados.N DESC, at.transaction_begin_time ASC";
             SqlConnectionStringBuilder constructor = new SqlConnectionStringBuilder(origen.ConnectionString)
             {
                 ApplicationName = "NestoAPI-Diagnostico",
-                ConnectTimeout = 3
+                ConnectTimeout = 3,
+                // NestoAPI#687: diagnóstico, nunca dentro de la transacción de quien falla (escalaría a MSDTC, deshabilitado).
+                Enlist = false
             };
             return constructor.ConnectionString;
         }
