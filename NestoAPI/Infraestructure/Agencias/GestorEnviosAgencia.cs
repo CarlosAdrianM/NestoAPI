@@ -358,6 +358,20 @@ namespace NestoAPI.Infraestructure.Agencias
                 todas.Where(EsAlbaranSinFacturar));
         }
 
+        /// <summary>
+        /// NestoAPI#686: el albarán de este envío factura TODO lo que el pedido tenga sin facturar: «Mantener junto» (2, el
+        /// envío que lo completa, porque con líneas pendientes no hay reembolso) y «Todo ahora» (3).
+        /// </summary>
+        internal static bool SeFacturaTodoConEsteEnvio(CabPedidoVta pedido)
+        {
+            if (pedido == null)
+            {
+                return false;
+            }
+            byte modo = Constantes.Pedidos.ModosFacturacion.Efectivo(pedido.ModoFacturacion, pedido.MantenerJunto);
+            return Constantes.Pedidos.ModosFacturacion.EsAlCompletar(modo) || Constantes.Pedidos.ModosFacturacion.EsTodoAhora(modo);
+        }
+
         /// <summary>NestoAPI#686: línea en albarán que aún no se ha facturado (la retiene «Mantener junto»).</summary>
         internal static bool EsAlbaranSinFacturar(LinPedidoVta linea)
             => linea != null && linea.Estado == Constantes.EstadosLineaVenta.ALBARAN && string.IsNullOrWhiteSpace(linea.Nº_Factura);
@@ -411,7 +425,9 @@ namespace NestoAPI.Infraestructure.Agencias
             // NestoAPI#686 (pedido 928220): con «Mantener junto» los albaranes anteriores no se facturaron (ni se cobraron:
             // su envío salió con reembolso 0, arriba). Este envío completa el pedido y se factura TODO, así que cobra
             // también lo de esos albaranes, menos lo que ya se hubiera cobrado contra reembolso en sus envíos.
-            if (pedidoSeleccionado.MantenerJunto)
+            // Con «Todo ahora» (modo 3) igual: el albarán de este envío factura el pedido entero, también lo que quede
+            // en albarán sin facturar (decisión de Carlos 21/10/26: cobrar toda la factura, no bloquear el modo 3).
+            if (SeFacturaTodoConEsteEnvio(pedidoSeleccionado))
             {
                 List<LinPedidoVta> albaranesSinFacturar = (lineasAlbaranSinFacturar ?? Enumerable.Empty<LinPedidoVta>())
                     .Where(EsAlbaranSinFacturar)

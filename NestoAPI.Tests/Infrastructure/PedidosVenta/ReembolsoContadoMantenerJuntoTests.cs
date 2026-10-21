@@ -7,6 +7,7 @@ using NestoAPI.Infraestructure.Agencias;
 using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
+using M = NestoAPI.Models.Constantes.Pedidos.ModosFacturacion;
 
 namespace NestoAPI.Tests.Infrastructure.PedidosVenta
 {
@@ -109,6 +110,43 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             decimal reembolso = GestorEnviosAgencia.ImporteReembolso(Cabecera928220(mantenerJunto: false), Lineas928220Al19Oct(), ServicioSinEfectos());
 
             Assert.AreEqual(28.19m, reembolso);
+        }
+
+        [TestMethod]
+        public void ImporteReembolso_TodoAhora_ElEnvioQueFacturaCobraTodoLoQueQuedaSinFacturar()
+        {
+            // Decisión de Carlos (21/10/26): «Todo ahora» (modo 3) al contado no se bloquea, pero el envío cuyo albarán
+            // factura el pedido entero cobra toda la factura, también lo que quede en albarán sin facturar.
+            CabPedidoVta cabecera = Cabecera928220(mantenerJunto: false);
+            cabecera.ModoFacturacion = M.TODO_AHORA_Y_LO_PENDIENTE_DESPUES;
+
+            Assert.AreEqual(325.79m, GestorEnviosAgencia.ImporteReembolso(cabecera, Lineas928220Al19Oct(), ServicioSinEfectos()));
+        }
+
+        [TestMethod]
+        public void ImporteReembolso_TodoAhora_DescuentaLoYaCobrado()
+        {
+            IServicioPedidosVenta servicio = ServicioSinEfectos();
+            A.CallTo(() => servicio.ReembolsosCobradosDelPedido("1", PEDIDO, ALBARAN_13_10.Date)).Returns(297.60m);
+            CabPedidoVta cabecera = Cabecera928220(mantenerJunto: false);
+            cabecera.ModoFacturacion = M.TODO_AHORA_Y_LO_PENDIENTE_DESPUES;
+
+            Assert.AreEqual(28.19m, GestorEnviosAgencia.ImporteReembolso(cabecera, Lineas928220Al19Oct(), servicio));
+        }
+
+        [TestMethod]
+        public void ImporteReembolso_TodoAhora_DesdeLaBD_CargaLosAlbaranesSinFacturar()
+        {
+            IServicioPedidosVenta servicio = ServicioSinEfectos();
+            List<LinPedidoVta> lineas = Lineas928220Al19Oct();
+            CabPedidoVta cabecera = Cabecera928220(mantenerJunto: false);
+            cabecera.ModoFacturacion = M.TODO_AHORA_Y_LO_PENDIENTE_DESPUES;
+            A.CallTo(() => servicio.LeerCabPedidoVta(EMPRESA, PEDIDO)).Returns(cabecera);
+            A.CallTo(() => servicio.CargarLineasPedidoPendientes(PEDIDO)).Returns(new List<LinPedidoVta>());
+            A.CallTo(() => servicio.CargarLineasPedidoSinPicking(PEDIDO)).Returns(lineas.Where(l => l.Estado == Constantes.EstadosLineaVenta.EN_CURSO).ToList());
+            A.CallTo(() => servicio.CargarLineasAlbaranSinFacturar(PEDIDO)).Returns(lineas.Where(l => l.Estado == Constantes.EstadosLineaVenta.ALBARAN).ToList());
+
+            Assert.AreEqual(325.79m, new GestorPedidosVenta(servicio).ImporteReembolso(EMPRESA, PEDIDO));
         }
 
         [TestMethod]

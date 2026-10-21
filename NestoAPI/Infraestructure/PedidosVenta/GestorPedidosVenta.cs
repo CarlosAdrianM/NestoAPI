@@ -969,12 +969,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             {
                 return 0;
             }
-            // NestoAPI#686: con «Mantener junto», también los albaranes sin facturar (se facturan con este envío).
+            // NestoAPI#686: con «Mantener junto» o «Todo ahora», también los albaranes sin facturar (se facturan con este envío).
             return GestorEnviosAgencia.ImporteReembolso(pedidoBD,
                 servicio.CargarLineasPedidoPendientes(pedido),
                 servicio.CargarLineasPedidoSinPicking(pedido),
                 servicio,
-                pedidoBD.MantenerJunto ? servicio.CargarLineasAlbaranSinFacturar(pedido) : null);
+                GestorEnviosAgencia.SeFacturaTodoConEsteEnvio(pedidoBD) ? servicio.CargarLineasAlbaranSinFacturar(pedido) : null);
         }
 
         /// <summary>
