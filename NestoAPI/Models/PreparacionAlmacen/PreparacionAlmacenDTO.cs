@@ -98,6 +98,8 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public int Cantidad { get; set; }
         public short? Tamano { get; set; }
         public string UnidadMedida { get; set; }
+        /// <summary>Familia (Familias.Descripción): con ella se ordena lo que no tiene ubicación (las tiendas), como el papel de la reposición.</summary>
+        public string Familia { get; set; }
         public string Pasillo { get; set; }
         public string Fila { get; set; }
         public string Columna { get; set; }

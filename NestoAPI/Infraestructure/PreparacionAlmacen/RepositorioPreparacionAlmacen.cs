@@ -160,11 +160,13 @@ SELECT 0 AS Orden, CAST(0 AS bit) AS SinCodigo, CAST(0 AS bit) AS CodigoDuplicad
        RTRIM(MAX(p.CodBarras)) AS CodigoBarras,
        MAX(p.[Tamaño]) AS Tamano,
        RTRIM(MAX(p.UnidadMedida)) AS UnidadMedida,
+       RTRIM(MAX(f.[Descripción])) AS Familia,
        CAST(ABS(ISNULL(SUM(u.Cantidad), ISNULL(SUM(l.Cantidad - l.Recoger), 0))) AS int) AS Cantidad,
        RTRIM(u.Pasillo) AS Pasillo, RTRIM(u.Fila) AS Fila, RTRIM(u.Columna) AS Columna
 FROM LinPedidoVta l
      LEFT JOIN Ubicaciones u ON l.[Número] = u.PedidoVta AND l.[Nº Orden] = u.[NºOrdenVta] AND u.Estado = 3
      LEFT JOIN Productos p ON p.Empresa = l.Empresa AND p.[Número] = l.Producto
+     LEFT JOIN Familias f ON f.Empresa = p.Empresa AND f.[Número] = p.Familia
 WHERE l.Empresa = @p0 AND l.Picking = @p1 AND l.TipoLinea = 1 AND l.Estado = 1 AND ISNULL(p.Ficticio, 0) = 0
 GROUP BY l.Producto, u.Pasillo, u.Fila, u.Columna
 HAVING ISNULL(SUM(u.Cantidad), ISNULL(SUM(l.Cantidad - l.Recoger), 0)) <> 0";
@@ -267,10 +269,12 @@ SELECT 0 AS Orden, CAST(0 AS bit) AS SinCodigo, CAST(0 AS bit) AS CodigoDuplicad
        RTRIM(MAX(p.CodBarras)) AS CodigoBarras,
        MAX(p.[Tamaño]) AS Tamano,
        RTRIM(MAX(p.UnidadMedida)) AS UnidadMedida,
+       RTRIM(MAX(f.[Descripción])) AS Familia,
        CAST(SUM(t.Cantidad) AS int) AS Cantidad,
        t.Pasillo, t.Fila, t.Columna
 FROM Paradas t
      LEFT JOIN Productos p ON p.Empresa = @p0 AND p.[Número] = t.[Número]
+     LEFT JOIN Familias f ON f.Empresa = p.Empresa AND f.[Número] = p.Familia
 GROUP BY t.[Número], t.Pasillo, t.Fila, t.Columna
 HAVING SUM(t.Cantidad) > 0";
 

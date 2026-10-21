@@ -238,6 +238,42 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         }
 
         [TestMethod]
+        public void OrdenarRecorrido_SinUbicacion_VaPorFamiliaYDescripcion_ComoElPapelDeLaReposicion()
+        {
+            // Carlos, 21/10/26: en las tiendas no hay huecos; el recorrido de Ariadna, como el listado impreso
+            LineaPickingAlmacenDTO SinHueco(string producto, string familia, string descripcion)
+            {
+                LineaPickingAlmacenDTO linea = L(producto, null, null, null);
+                linea.Familia = familia;
+                linea.Descripcion = descripcion;
+                return linea;
+            }
+            List<LineaPickingAlmacenDTO> recorrido = CasadorEscaneos.OrdenarRecorrido(new[]
+            {
+                SinHueco("10", null, "AAA sin familia"),
+                SinHueco("20", "Uñas", "Lima"),
+                SinHueco("30", "anubis", "Sérum"),
+                SinHueco("40", "Anubis", "Crema"),
+                L("50", "001", "001", "001")
+            });
+
+            CollectionAssert.AreEqual(new[] { "50", "40", "30", "20", "10" }, recorrido.Select(l => l.Producto).ToList());
+        }
+
+        [TestMethod]
+        public void OrdenarRecorrido_ConUbicacion_LaFamiliaNoCambiaElOrden()
+        {
+            LineaPickingAlmacenDTO a = L("A", "001", "001", "001");
+            a.Familia = "Zeta";
+            LineaPickingAlmacenDTO b = L("B", "001", "001", "002");
+            b.Familia = "Alfa";
+
+            List<LineaPickingAlmacenDTO> recorrido = CasadorEscaneos.OrdenarRecorrido(new[] { b, a });
+
+            CollectionAssert.AreEqual(new[] { "A", "B" }, recorrido.Select(l => l.Producto).ToList());
+        }
+
+        [TestMethod]
         public void OrdenarRecorrido_MarcaLosProductosSinCodigoYLosCodigosDuplicados()
         {
             // El 28 % del catálogo no tiene código de barras (las limas, por ejemplo): no es una excepción

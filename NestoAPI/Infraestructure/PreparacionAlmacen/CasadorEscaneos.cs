@@ -268,14 +268,20 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
         /// <summary>
         /// NestoAPI#641: lo mismo, con las calles del almacén (<see cref="OrdenRecorrido"/>, la regla única). Sin calles,
-        /// pasillo, columna y fila, como siempre. Lo que no tiene ubicación sigue yendo al final.
+        /// pasillo, columna y fila, como siempre. Lo que no tiene ubicación sigue yendo al final, y entre ello (las tiendas,
+        /// casi todo) por familia y descripción, sin familia al final: el orden del papel de la reposición
+        /// (<see cref="Reposiciones.ListadoReposicion.OrdenarParaRecorrer"/>).
         /// </summary>
         public static List<LineaPickingAlmacenDTO> OrdenarRecorrido(IEnumerable<LineaPickingAlmacenDTO> lineas, OrdenRecorrido calles)
         {
             OrdenRecorrido regla = calles ?? OrdenRecorrido.ComoHoy;
+            StringComparer texto = StringComparer.Create(System.Globalization.CultureInfo.GetCultureInfo("es-ES"), ignoreCase: true);
             List<LineaPickingAlmacenDTO> ordenadas = (lineas ?? Enumerable.Empty<LineaPickingAlmacenDTO>())
                 .OrderBy(l => string.IsNullOrWhiteSpace(l.Pasillo))
                 .ThenBy(l => regla.Clave(l.Pasillo, l.Columna, l.Fila))
+                .ThenBy(l => string.IsNullOrWhiteSpace(l.Pasillo) && string.IsNullOrWhiteSpace(l.Familia) ? 1 : 0)
+                .ThenBy(l => string.IsNullOrWhiteSpace(l.Pasillo) ? l.Familia ?? string.Empty : string.Empty, texto)
+                .ThenBy(l => string.IsNullOrWhiteSpace(l.Pasillo) ? l.Descripcion ?? string.Empty : string.Empty, texto)
                 .ThenBy(l => l.Producto?.Trim(), StringComparer.Ordinal)
                 .ToList();
 
