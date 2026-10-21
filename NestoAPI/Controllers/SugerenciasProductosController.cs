@@ -145,6 +145,48 @@ namespace NestoAPI.Controllers
             });
         }
 
+        /// <summary>NestoAPI#669: (desde, hasta) → filas del informe de uso. Null = contra la BD. Para tests.</summary>
+        internal Func<DateTime, DateTime, Task<System.Collections.Generic.List<FilaUsoSugerencia>>> LeerFilasUso { get; set; }
+
+        /// <summary>
+        /// NestoAPI#669: uso de las sugerencias por vendedor y aplicación (sesiones empezadas entre desde y hasta, los dos días incluidos): sesiones,
+        /// mostradas, ✓ añadidas, ✗ no le interesa, 🚫 quitadas, sustituidas, «acierto sin ofrecer» (sin pulsar nada y el
+        /// producto acabó en el pedido: la predicción acertó, NO consta que se ofreciera) y % de acierto. Solo lee; no escribe
+        /// nada (ver <see cref="InformeUsoSugerenciasProductos"/>). Sin <paramref name="desde"/>, los últimos 30 días; sin
+        /// <paramref name="hasta"/>, hasta hoy incluido. Solo Dirección e Informática.
+        /// GET api/SugerenciasProductos/Uso?desde=2026-10-01
+        /// </summary>
+        [HttpGet]
+        [Route("Uso")]
+        [ResponseType(typeof(UsoSugerenciasDTO))]
+        public async Task<IHttpActionResult> GetUso(DateTime? desde = null, DateTime? hasta = null)
+        {
+            if (User == null || !(User.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION) || User.IsInRoleSinDominio(NovedadesController.GRUPO_INFORMATICA)))
+            {
+                return StatusCode(HttpStatusCode.Forbidden);
+            }
+            DateTime hoy = ahora().Date;
+            DateTime inicio = (desde ?? hoy.AddDays(-InformeUsoSugerenciasProductos.DIAS_POR_DEFECTO)).Date;
+            DateTime fin = (hasta?.Date ?? hoy).AddDays(1); // exclusivo
+            if (fin <= inicio)
+            {
+                return BadRequest("La fecha «hasta» no puede ser anterior a «desde».");
+            }
+            System.Collections.Generic.List<FilaUsoSugerencia> filas;
+            if (LeerFilasUso != null)
+            {
+                filas = await LeerFilasUso(inicio, fin).ConfigureAwait(false);
+            }
+            else
+            {
+                using (var db = new NVEntities())
+                {
+                    filas = await InformeUsoSugerenciasProductos.Leer(db, inicio, fin).ConfigureAwait(false);
+                }
+            }
+            return Ok(InformeUsoSugerenciasProductos.Calcular(filas, inicio, fin));
+        }
+
         /// <summary>Ya (o en el próximo minuto): Enqueue; más tarde: Schedule. Los dos en la cola «entrenamiento» (atributo Queue del job).</summary>
         private string ProgramarEnHangfire(bool forzar, string usuario, DateTime programada)
             => programada <= ahora().AddMinutes(1)

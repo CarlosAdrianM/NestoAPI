@@ -946,6 +946,7 @@
     <Compile Include="Controllers\SugerenciasProductosController.cs" />
     <Compile Include="Infraestructure\SugerenciasProductos\CalculadoraAfinidadProductos.cs" />
     <Compile Include="Infraestructure\SugerenciasProductos\CalculadoraParesCompradosJuntos.cs" />
+    <Compile Include="Infraestructure\SugerenciasProductos\InformeUsoSugerenciasProductos.cs" />
     <Compile Include="Infraestructure\SugerenciasProductos\MotorSugerenciasProductos.cs" />
     <Compile Include="Infraestructure\SugerenciasProductos\PredictorSugerenciasProductos.cs" />
     <Compile Include="Infraestructure\SugerenciasProductos\ReentrenamientoModeloSugerenciasJobsService.cs" />
