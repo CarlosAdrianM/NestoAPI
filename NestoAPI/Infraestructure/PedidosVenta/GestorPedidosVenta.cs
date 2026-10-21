@@ -969,10 +969,37 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             {
                 return 0;
             }
+            // NestoAPI#686: con «Mantener junto», también los albaranes sin facturar (se facturan con este envío).
             return GestorEnviosAgencia.ImporteReembolso(pedidoBD,
                 servicio.CargarLineasPedidoPendientes(pedido),
                 servicio.CargarLineasPedidoSinPicking(pedido),
-                servicio);
+                servicio,
+                pedidoBD.MantenerJunto ? servicio.CargarLineasAlbaranSinFacturar(pedido) : null);
+        }
+
+        /// <summary>
+        /// NestoAPI#686: ¿el envío de este pedido sale con reembolso 0 porque es al contado con «Mantener junto» y aún le
+        /// quedan líneas pendientes? (Se avisa en la propuesta de envío y queda en ELMAH.)
+        /// </summary>
+        internal bool SaleSinReembolsoPorMantenerJunto(string empresa, int pedido)
+        {
+            CabPedidoVta pedidoBD = servicio.LeerCabPedidoVta(empresa, pedido);
+            if (pedidoBD == null || !pedidoBD.MantenerJunto)
+            {
+                return false;
+            }
+            return GestorEnviosAgencia.SaleSinReembolsoPorMantenerJunto(pedidoBD, servicio.CargarLineasPedidoPendientes(pedido), servicio);
+        }
+
+        /// <summary>NestoAPI#686: el aviso para Agencias de Nesto (y a ELMAH), o null si el envío no sale sin reembolso por esto.</summary>
+        internal string AvisoReembolsoMantenerJunto(string empresa, int pedido)
+        {
+            if (!SaleSinReembolsoPorMantenerJunto(empresa, pedido))
+            {
+                return null;
+            }
+            Agencias.ReembolsoMantenerJuntoInfo.Registrar(pedido);
+            return MantenerJuntoContado.AVISO_ENVIO_SIN_REEMBOLSO;
         }
 
         /// <summary>

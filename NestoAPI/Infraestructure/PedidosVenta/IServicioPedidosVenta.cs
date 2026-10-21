@@ -40,6 +40,14 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         string LeerTipoExclusiva(string empresa, string producto);
         List<LinPedidoVta> CargarLineasPedidoPendientes(int pedido);
         List<LinPedidoVta> CargarLineasPedidoSinPicking(int pedido);
+        /// <summary>NestoAPI#686: líneas del pedido en albarán y aún sin facturar.</summary>
+        List<LinPedidoVta> CargarLineasAlbaranSinFacturar(int pedido);
+        /// <summary>
+        /// NestoAPI#686: lo que ya se ha cobrado (o se va a cobrar) contra reembolso en envíos del pedido desde esa fecha:
+        /// los que ya han salido (tramitados, entregados, incidentados o cerrados a mano; no los devueltos ni el que está
+        /// en curso, que es el de la etiqueta que se está haciendo).
+        /// </summary>
+        decimal ReembolsosCobradosDelPedido(string empresa, int pedido, DateTime desde);
         List<EfectoPedidoVenta> CargarEfectosPedido(string empresa, int pedido);
         /// <summary>NestoAPI#569: los prepagos del pedido (facturados o no).</summary>
         List<Prepago> CargarPrepagosPedido(string empresa, int pedido);

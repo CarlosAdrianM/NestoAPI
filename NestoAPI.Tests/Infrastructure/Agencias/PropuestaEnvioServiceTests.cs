@@ -299,6 +299,29 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         }
 
         [TestMethod]
+        public async Task Avisos_ContadoConMantenerJuntoYPendientes_PideConfirmarElEnvioSinReembolso()
+        {
+            // NestoAPI#686 (pedido 928220): el primer envío salió con reembolso 0 sin que nadie se enterase.
+            A.CallTo(() => datos.ImporteReembolso(EMPRESA, PEDIDO)).Returns(0m);
+            A.CallTo(() => datos.SaleSinReembolsoPorMantenerJunto(EMPRESA, PEDIDO)).Returns(true);
+
+            PropuestaEnvioDTO p = await servicio.Calcular(EMPRESA, PEDIDO, 1, 1m);
+
+            AvisoPropuestaEnvio aviso = p.AvisosDetalle.SingleOrDefault(a => a.Codigo == CodigosAvisoPropuestaEnvio.CONTADO_MANTENER_JUNTO);
+            Assert.IsNotNull(aviso, string.Join(" | ", p.Avisos));
+            Assert.AreEqual(TiposAvisoPropuestaEnvio.CONFIRMAR, aviso.Tipo);
+            StringAssert.Contains(aviso.Texto, "sin reembolso");
+        }
+
+        [TestMethod]
+        public async Task Avisos_SinContadoConMantenerJunto_NoAvisa()
+        {
+            PropuestaEnvioDTO p = await servicio.Calcular(EMPRESA, PEDIDO, 1, 1m);
+
+            Assert.IsFalse(p.AvisosDetalle.Any(a => a.Codigo == CodigosAvisoPropuestaEnvio.CONTADO_MANTENER_JUNTO));
+        }
+
+        [TestMethod]
         public async Task Avisos_DireccionPropia()
         {
             A.CallTo(() => datos.LeerPedido(EMPRESA, PEDIDO)).Returns(Task.FromResult(Pedido("28110", "C/ Río Tiétar, 11")));

@@ -2629,6 +2629,20 @@ namespace NestoAPI.Controllers
             return Ok(importeReembolso);
         }
 
+        // GET: api/PedidosVenta/AvisoReembolso?empresa=1&pedido=928220
+        /// <summary>
+        /// NestoAPI#686: si la etiqueta del pedido sale con reembolso 0 porque es al contado con «Mantener junto» y aún le
+        /// quedan líneas pendientes, el texto del aviso (y queda en ELMAH); si no, vacío. Agencias de Nesto lo pregunta al
+        /// insertar un envío sin reembolso (por la API, DesdePedido lo pide confirmar con el aviso ContadoMantenerJunto).
+        /// </summary>
+        [HttpGet]
+        [ResponseType(typeof(string))]
+        [Route("api/PedidosVenta/AvisoReembolso")]
+        public IHttpActionResult AvisoReembolso(string empresa, int pedido)
+        {
+            return Ok(gestor.AvisoReembolsoMantenerJunto(empresa, pedido) ?? string.Empty);
+        }
+
         // GET: api/PedidosVenta/PrepagosPendientes?empresa=1&pedido=927700
         /// <summary>
         /// NestoAPI#569: lo ya pagado por adelantado en el pedido (prepagos sin facturar). El reembolso

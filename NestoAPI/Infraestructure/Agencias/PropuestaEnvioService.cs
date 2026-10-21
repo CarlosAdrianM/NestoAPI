@@ -52,6 +52,8 @@ namespace NestoAPI.Infraestructure.Agencias
         decimal PrepagosPendientes(string empresa, int pedido);
         /// <summary>NestoAPI#679: los enlaces de pago (TPV virtual) pendientes o autorizados del pedido.</summary>
         List<EnlacePagoPedido> EnlacesDePago(string empresa, int pedido);
+        /// <summary>NestoAPI#686: el envío sale sin reembolso porque el pedido es al contado con «Mantener junto» y le quedan líneas pendientes.</summary>
+        bool SaleSinReembolsoPorMantenerJunto(string empresa, int pedido);
         /// <summary>Bultos distintos del packing de Ariadna (GET Almacen/Pedidos/{pedido}/Bultos); 0 si no hay.</summary>
         Task<int> BultosPacking(string empresa, int pedido);
         Task<List<AgenciaTransporte>> LeerAgencias();
@@ -288,7 +290,27 @@ namespace NestoAPI.Infraestructure.Agencias
                 Avisar(propuesta, CodigosAvisoPropuestaEnvio.AMPLIACION, TiposAvisoPropuestaEnvio.CONFIRMAR, $"Este pedido es una ampliación del envío {propuesta.EnvioOrigen}: se actualizarían los datos de ese envío " +
                     $"y el nº total de bultos pasaría a ser {propuesta.Bultos}.");
             }
+            // NestoAPI#686 (pedido 928220): al contado con «Mantener junto» y líneas pendientes, este envío sale sin
+            // reembolso (no hay factura todavía). No pasa en silencio: se pregunta y queda en ELMAH.
+            if (LeerSaleSinReembolsoPorMantenerJunto(empresa, pedido))
+            {
+                Avisar(propuesta, CodigosAvisoPropuestaEnvio.CONTADO_MANTENER_JUNTO, TiposAvisoPropuestaEnvio.CONFIRMAR, MantenerJuntoContado.AVISO_ENVIO_SIN_REEMBOLSO);
+                ReembolsoMantenerJuntoInfo.Registrar(pedido);
+            }
             AnadirAvisosDeDestino(propuesta);
+        }
+
+        private bool LeerSaleSinReembolsoPorMantenerJunto(string empresa, int pedido)
+        {
+            try
+            {
+                return datos.SaleSinReembolsoPorMantenerJunto(empresa, pedido);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"Propuesta de envío del pedido {pedido}: no se pudo comprobar «Mantener junto» al contado (#686). {ex.Message}", ex));
+                return false;
+            }
         }
 
         // Los avisos que dependen de lo que se puede cambiar en la pantalla (destino, agencia, reembolso).
@@ -602,6 +624,16 @@ namespace NestoAPI.Infraestructure.Agencias
         }
     }
 
+    /// <summary>NestoAPI#686: aviso informativo (no es un error): un envío al contado con «Mantener junto» sale sin reembolso.</summary>
+    public class ReembolsoMantenerJuntoInfo : Exception
+    {
+        public ReembolsoMantenerJuntoInfo(string mensaje) : base(mensaje) { }
+
+        public static void Registrar(int pedido)
+            => ElmahHelper.Log(new ReembolsoMantenerJuntoInfo($"[NestoAPI#686] Pedido {pedido}: es al contado con «Mantener junto» y aún " +
+                "tiene líneas pendientes, así que el envío sale sin reembolso. Se cobrará todo con el envío que complete el pedido."));
+    }
+
     /// <summary>
     /// NestoAPI#595: aviso informativo (no es un error) de que la propuesta del servidor no coincide con el envío que ha
     /// grabado Nesto. Las coincidencias NO se registran.
@@ -661,6 +693,9 @@ namespace NestoAPI.Infraestructure.Agencias
 
         public List<EnlacePagoPedido> EnlacesDePago(string empresa, int pedido)
             => LectorEnlacesPagoPedido.Leer(db, empresa, pedido);
+
+        public bool SaleSinReembolsoPorMantenerJunto(string empresa, int pedido)
+            => new GestorPedidosVenta(servicioPedidosVenta()).SaleSinReembolsoPorMantenerJunto(empresa, pedido);
 
         public async Task<int> BultosPacking(string empresa, int pedido)
         {

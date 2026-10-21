@@ -266,6 +266,31 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             }
         }
 
+        public List<LinPedidoVta> CargarLineasAlbaranSinFacturar(int pedido)
+        {
+            using (var db = new NVEntities())
+            {
+                return db.LinPedidoVtas
+                    .Where(l => l.Número == pedido && l.Estado == Constantes.EstadosLineaVenta.ALBARAN
+                             && (l.Nº_Factura == null || l.Nº_Factura.Trim() == ""))
+                    .ToList();
+            }
+        }
+
+        public decimal ReembolsosCobradosDelPedido(string empresa, int pedido, DateTime desde)
+        {
+            using (var db = new NVEntities())
+            {
+                // Por número de pedido, sin empresa: la del envío es la de la agencia (puede ser la espejo).
+                return db.EnviosAgencias
+                    .Where(e => e.Pedido == pedido && e.Fecha >= desde && e.Reembolso > 0
+                             && e.Estado >= Constantes.Agencias.ESTADO_TRAMITADO
+                             && e.Estado != Constantes.Agencias.ESTADO_DEVUELTO)
+                    .Select(e => (decimal?)e.Reembolso)
+                    .Sum() ?? 0;
+            }
+        }
+
         public List<string> FacturasDelPedido(string empresa, int pedido)
         {
             using (var db = new NVEntities())

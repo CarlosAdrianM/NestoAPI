@@ -354,14 +354,21 @@ namespace NestoAPI.Infraestructure.Agencias
                 pedidoSeleccionado,
                 todas.Where(l => l.Estado == Constantes.EstadosLineaVenta.PENDIENTE),
                 todas.Where(l => l.Picking != 0 && l.Estado == Constantes.EstadosLineaVenta.EN_CURSO),
-                servicio);
+                servicio,
+                todas.Where(EsAlbaranSinFacturar));
         }
+
+        /// <summary>NestoAPI#686: línea en albarán que aún no se ha facturado (la retiene «Mantener junto»).</summary>
+        internal static bool EsAlbaranSinFacturar(LinPedidoVta linea)
+            => linea != null && linea.Estado == Constantes.EstadosLineaVenta.ALBARAN && string.IsNullOrWhiteSpace(linea.Nº_Factura);
 
         /// <param name="lineasPendientes">Líneas pendientes (solo importan para servir junto).</param>
         /// <param name="lineasEnCursoConPicking">Lo que sale en este envío.</param>
+        /// <param name="lineasAlbaranSinFacturar">NestoAPI#686: albaranes anteriores aún sin facturar. Con «Mantener junto»,
+        /// el envío que completa el pedido se factura con ellos, así que su reembolso los cobra también.</param>
         internal static decimal ImporteReembolso(CabPedidoVta pedidoSeleccionado,
             IEnumerable<LinPedidoVta> lineasPendientes, IEnumerable<LinPedidoVta> lineasEnCursoConPicking,
-            IServicioPedidosVenta servicio)
+            IServicioPedidosVenta servicio, IEnumerable<LinPedidoVta> lineasAlbaranSinFacturar = null)
         {
             // La "deuda del extracto" (calcularDeuda) llevaba años comentada y a 0 en las dos copias:
             // se quita. El reembolso es lo de ESTE pedido, no la deuda antigua del cliente.
@@ -399,10 +406,42 @@ namespace NestoAPI.Infraestructure.Agencias
                 return 0;
             }
 
-            decimal importeFinal = RoundingHelper.DosDecimalesRound(conPicking.Sum(l => l.Total));
+            decimal importeFinal = conPicking.Sum(l => l.Total);
+
+            // NestoAPI#686 (pedido 928220): con «Mantener junto» los albaranes anteriores no se facturaron (ni se cobraron:
+            // su envío salió con reembolso 0, arriba). Este envío completa el pedido y se factura TODO, así que cobra
+            // también lo de esos albaranes, menos lo que ya se hubiera cobrado contra reembolso en sus envíos.
+            if (pedidoSeleccionado.MantenerJunto)
+            {
+                List<LinPedidoVta> albaranesSinFacturar = (lineasAlbaranSinFacturar ?? Enumerable.Empty<LinPedidoVta>())
+                    .Where(EsAlbaranSinFacturar)
+                    .ToList();
+                if (albaranesSinFacturar.Any())
+                {
+                    importeFinal += albaranesSinFacturar.Sum(l => l.Total);
+                    DateTime desde = albaranesSinFacturar.Min(l => l.Fecha_Albarán ?? l.Fecha_Entrega).Date;
+                    importeFinal -= servicio.ReembolsosCobradosDelPedido(pedidoSeleccionado.Empresa?.Trim(), pedidoSeleccionado.Número, desde);
+                }
+            }
+
+            importeFinal = RoundingHelper.DosDecimalesRound(importeFinal);
 
             // Evitamos los reembolsos negativos
             return importeFinal < 0 ? 0 : importeFinal;
+        }
+
+        /// <summary>
+        /// NestoAPI#686: el envío de un pedido al contado con «Mantener junto» y líneas aún pendientes sale con reembolso 0
+        /// (no hay factura todavía). No es un error, pero no debe pasar en silencio: lo de este envío se cobrará con el
+        /// que complete el pedido. False si el pedido manda por efectos manuales o no es contado.
+        /// </summary>
+        internal static bool SaleSinReembolsoPorMantenerJunto(CabPedidoVta pedido, IEnumerable<LinPedidoVta> lineasPendientes, IServicioPedidosVenta servicio)
+        {
+            if (pedido == null || !pedido.MantenerJunto || !(lineasPendientes?.Any() ?? false) || !MantenerJuntoContado.EsContado(pedido))
+            {
+                return false;
+            }
+            return !ImporteEfectosManualesEnEfectivo(pedido, servicio).HasValue;
         }
 
         /// <summary>

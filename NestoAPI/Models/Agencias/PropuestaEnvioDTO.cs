@@ -99,6 +99,8 @@ namespace NestoAPI.Models.Agencias
         public const string SIN_AGENCIA = "SinAgencia";
         /// <summary>NestoAPI#679: el pedido tiene enlaces de pago sin pagar y sale contra reembolso.</summary>
         public const string ENLACE_PAGO_PENDIENTE = "EnlacePagoPendiente";
+        /// <summary>NestoAPI#686: pedido al contado con «Mantener junto» y líneas pendientes: el envío sale sin reembolso.</summary>
+        public const string CONTADO_MANTENER_JUNTO = "ContadoMantenerJunto";
     }
 
     /// <summary>NestoAPI#595 (slice 2, 20/10/26): qué tiene que hacer quien llama con cada aviso.</summary>
