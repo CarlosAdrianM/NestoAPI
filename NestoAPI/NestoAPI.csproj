@@ -1000,6 +1000,7 @@
     <Compile Include="Infraestructure\NotasEntrega\ServicioNotasEntrega.cs" />
     <Compile Include="Infraestructure\Contadores\NumeradorTraspasos.cs" />
     <Compile Include="Infraestructure\NotasEntrega\CreadorNotaEntregaPendiente.cs" />
+    <Compile Include="Infraestructure\NotasEntrega\AvisoPendienteCompleto.cs" />
     <Compile Include="Infraestructure\NotasEntrega\GestorFechaEntregaNotas.cs" />
     <Compile Include="Infraestructure\Reposiciones\ServicioPropuestaReposicion.cs" />
     <Compile Include="Infraestructure\Reposiciones\ListadoReposicion.cs" />

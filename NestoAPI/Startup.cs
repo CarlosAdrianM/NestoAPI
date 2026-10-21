@@ -964,6 +964,20 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'novedades-recordatorios-respuesta' configurado (L-V a las 9:00)");
 
+            // NestoAPI#688: avisa (buzón + campana a quien hizo el pedido, push al vendedor) cuando TODO lo pendiente de una nota
+            // de entrega automática sin fecha ya tiene stock. Cada hora en horario laboral: cubre cualquier entrada de stock
+            // (también la del Nesto viejo) sin sondeo en los clientes. Sin el script Issue688 no hace nada.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.NotasEntrega.AvisoPendienteCompletoJobsService.ID_JOB,
+                () => Infraestructure.NotasEntrega.AvisoPendienteCompletoJobsService.Procesar(),
+                Infraestructure.NotasEntrega.AvisoPendienteCompletoJobsService.CRON, // Cron: L-V cada hora de 8:00 a 19:00
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'aviso-pendiente-completo' configurado (L-V cada hora de 8:00 a 19:00)");
+
             // NestoAPI#593: cheques regalo de las facturas hechas fuera de la API (Nesto viejo, facturación
             // agrupada…). La API ya los genera al facturar; esto recoge lo que se le escape. Todos los días a
             // las 21:30, con la facturación del día cerrada. No hace nada salvo ChequesRegalo:Generar = true y
