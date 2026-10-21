@@ -203,6 +203,83 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
             Assert.IsNull(await servicio.LeerRecepcion("1", "ALC", 1));
         }
 
+        // ---------------------------------------------------------------- NestoAPI#685: enviadas sin recibir
+
+        [TestMethod]
+        public async Task LeerEnviadas_DelOrigenLimpiasYLaMasRecientePrimero()
+        {
+            A.CallTo(() => repositorio.LeerEnviadas("1", "ALC")).Returns(new List<ReposicionEnviadaDTO>
+            {
+                new ReposicionEnviadaDTO { Traspaso = 81093, Origen = "ALC", Destino = "ALG ", NombreDestino = "Algete ", Bultos = 2 },
+                new ReposicionEnviadaDTO { Traspaso = 81097, Origen = "ALC", Destino = "ALG", NombreDestino = "Algete", Bultos = 1 }
+            });
+
+            List<ReposicionEnviadaDTO> enviadas = await servicio.LeerEnviadas(null, " alc ");
+
+            CollectionAssert.AreEqual(new[] { 81097, 81093 }, enviadas.Select(e => e.Traspaso).ToArray());
+            Assert.AreEqual("ALG", enviadas[1].Destino);
+            Assert.AreEqual("Algete", enviadas[1].NombreDestino);
+            Assert.AreEqual(2, enviadas[1].Bultos);
+        }
+
+        [TestMethod]
+        public async Task LeerEnviadas_SinOrigen_VaciaSinPreguntarALaBaseDeDatos()
+        {
+            List<ReposicionEnviadaDTO> enviadas = await servicio.LeerEnviadas("1", " ");
+
+            Assert.AreEqual(0, enviadas.Count);
+            A.CallTo(() => repositorio.LeerEnviadas(A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task LeerEnviada_ComoLaDePrepararConLasLineasQueLleganYLasUbicacionesDelOrigen()
+        {
+            A.CallTo(() => repositorio.LeerEnviadas("1", "ALC")).Returns(new List<ReposicionEnviadaDTO>
+            {
+                new ReposicionEnviadaDTO { Traspaso = 81093, Origen = "ALC", Destino = "ALG", NombreDestino = "Algete", Fecha = new DateTime(2026, 10, 21) }
+            });
+            A.CallTo(() => recepcion.LeerRecepcion("1", "ALG", 81093)).Returns(new RecepcionReposicionDTO
+            {
+                Traspaso = 81093,
+                Lineas = new List<LineaReposicionDTO>
+                {
+                    new LineaReposicionDTO { Producto = "17404", Descripcion = "Cera", CodigoBarras = "8411", Cantidad = 4 },
+                    new LineaReposicionDTO { Producto = "40057", Descripcion = "Banda", Cantidad = 1 }
+                }
+            });
+            A.CallTo(() => repositorio.LeerNombreAlmacen("1", "ALC")).Returns("Alcobendas");
+            A.CallTo(() => repositorio.LeerFechaCorteTraspaso("1", 81093)).Returns(new DateTime(2026, 10, 21, 13, 0, 0));
+            A.CallTo(() => repositorio.LeerFichas("1", "ALC", A<IReadOnlyCollection<string>>._)).Returns(new List<FichaListadoReposicion>
+            {
+                new FichaListadoReposicion { Producto = "17404", Familia = "Depilación" },
+                new FichaListadoReposicion { Producto = "40057", Familia = "Aparatología" }
+            });
+
+            ListadoReposicionDTO listado = await servicio.LeerEnviada("1", "alc", 81093);
+
+            Assert.IsTrue(listado.EsEnvio);
+            Assert.AreEqual("Reposición para preparar", listado.Titulo);
+            Assert.AreEqual("Alcobendas (ALC) > Algete (ALG)", listado.Ruta);
+            Assert.AreEqual("ALC", listado.AlmacenUbicaciones);
+            Assert.AreEqual(81093, listado.NumTraspaso);
+            Assert.AreEqual(new DateTime(2026, 10, 21), listado.Fecha);
+            Assert.AreEqual(new DateTime(2026, 10, 21, 13, 0, 0), listado.FechaCorte);
+            Assert.AreEqual(5, listado.Unidades);
+            CollectionAssert.AreEqual(new[] { "40057", "17404" }, listado.Lineas.Select(l => l.Producto).ToArray(), "Por familia");
+        }
+
+        [TestMethod]
+        public async Task LeerEnviada_QueNoEsUnaEnviadaDelOrigen_Null()
+        {
+            A.CallTo(() => repositorio.LeerEnviadas("1", "ALC")).Returns(new List<ReposicionEnviadaDTO>
+            {
+                new ReposicionEnviadaDTO { Traspaso = 81097, Destino = "ALG" }
+            });
+
+            Assert.IsNull(await servicio.LeerEnviada("1", "ALC", 81093));
+            A.CallTo(() => recepcion.LeerRecepcion(A<string>._, A<string>._, A<int>._)).MustNotHaveHappened();
+        }
+
         // ---------------------------------------------------------------- PDF
 
         [TestMethod]
@@ -352,6 +429,45 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
             HttpResponseMessage respuesta = await Controlador(listado).GetEnPreparacionPdf("ALC");
 
             Assert.AreEqual(HttpStatusCode.NotFound, respuesta.StatusCode);
+        }
+
+        [TestMethod]
+        public async Task GetEnviadas_LasDelOrigen_YSinOrigen400()
+        {
+            IServicioListadoReposicion listado = A.Fake<IServicioListadoReposicion>();
+            var enviadas = new List<ReposicionEnviadaDTO> { new ReposicionEnviadaDTO { Traspaso = 81093 } };
+            A.CallTo(() => listado.LeerEnviadas("1", "ALC")).Returns(enviadas);
+
+            var ok = await Controlador(listado).GetEnviadas("ALC") as System.Web.Http.Results.OkNegotiatedContentResult<List<ReposicionEnviadaDTO>>;
+            System.Web.Http.IHttpActionResult sinOrigen = await Controlador(listado).GetEnviadas(" ");
+
+            Assert.IsNotNull(ok);
+            Assert.AreSame(enviadas, ok.Content);
+            Assert.IsInstanceOfType(sinOrigen, typeof(System.Web.Http.Results.BadRequestErrorMessageResult));
+        }
+
+        [TestMethod]
+        public async Task GetEnviadaPdf_DevuelveElPdfYSiNoEsUnaEnviadaDelOrigen404()
+        {
+            IServicioListadoReposicion listado = A.Fake<IServicioListadoReposicion>();
+            A.CallTo(() => listado.LeerEnviada("1", "ALC", 81093)).Returns(new ListadoReposicionDTO { EsEnvio = true, NumTraspaso = 81093 });
+            A.CallTo(() => listado.LeerEnviada("1", "ALC", 1)).Returns((ListadoReposicionDTO)null);
+
+            HttpResponseMessage ok = await Controlador(listado).GetEnviadaPdf(81093, "ALC");
+            HttpResponseMessage noEs = await Controlador(listado).GetEnviadaPdf(1, "ALC");
+
+            Assert.AreEqual(HttpStatusCode.OK, ok.StatusCode);
+            Assert.AreEqual("application/pdf", ok.Content.Headers.ContentType.MediaType);
+            Assert.AreEqual(HttpStatusCode.NotFound, noEs.StatusCode);
+        }
+
+        [TestMethod]
+        public void SqlEnviadas_DesdeElOrigenYSoloLasQueYaHanSalido()
+        {
+            StringAssert.Contains(RepositorioListadoReposicionSql.SQL_ENVIADAS, "p.[Delegación] = @p1");
+            StringAssert.Contains(RepositorioListadoReposicionSql.SQL_ENVIADAS, "a.DiarioEntradaRep = p.Diario");
+            StringAssert.Contains(RepositorioListadoReposicionSql.SQL_ENVIADAS, "NOT EXISTS (SELECT 1 FROM PreExtrProducto s");
+            Assert.AreEqual(1, RepositorioListadoReposicionSql.SQL_ENVIADAS.Split(new[] { "{0}" }, StringSplitOptions.None).Length - 1);
         }
 
         [TestMethod]

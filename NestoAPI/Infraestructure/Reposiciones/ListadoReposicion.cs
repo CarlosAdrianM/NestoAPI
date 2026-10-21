@@ -77,6 +77,26 @@ namespace NestoAPI.Infraestructure.Reposiciones
         }
     }
 
+    /// <summary>
+    /// NestoAPI#685: una reposición que ha salido de un almacén y todavía no se ha recibido en el destino (la entrada sigue en
+    /// el diario de entrada de reposiciones del destino y ya no queda salida en el del origen). Con ella, Nesto «Enviar
+    /// reposición» deja reimprimir los bultos y el impreso cuando haga falta, no solo justo después de enviarla.
+    /// </summary>
+    public class ReposicionEnviadaDTO
+    {
+        public int Traspaso { get; set; }
+        public string Origen { get; set; }
+        public string Destino { get; set; }
+        /// <summary>Almacenes.Descripción del destino («Algete»).</summary>
+        public string NombreDestino { get; set; }
+        public DateTime? Fecha { get; set; }
+        public string Usuario { get; set; }
+        public int Lineas { get; set; }
+        public int Unidades { get; set; }
+        /// <summary>Cuántas etiquetas de bulto tiene (NestoAPI#645); 0 si no tiene o si aún no existe la tabla.</summary>
+        public int Bultos { get; set; }
+    }
+
     /// <summary>Familia y hueco de un producto en un almacén.</summary>
     public class FichaListadoReposicion
     {
@@ -98,6 +118,8 @@ namespace NestoAPI.Infraestructure.Reposiciones
         /// <summary>El corte del traspaso. Null si no hay cabecera (Nesto viejo) o se hizo a mano.</summary>
         Task<DateTime?> LeerFechaCorteTraspaso(string empresa, int traspaso);
         Task<string> LeerNombreAlmacen(string empresa, string almacen);
+        /// <summary>NestoAPI#685: las que han salido del origen y no se han recibido aún, la más reciente primero.</summary>
+        Task<List<ReposicionEnviadaDTO>> LeerEnviadas(string empresa, string origen);
     }
 
     public class RepositorioListadoReposicionSql : IRepositorioListadoReposicion
@@ -137,6 +159,25 @@ IF OBJECT_ID('dbo.ReposicionesTraspasos') IS NOT NULL
     SELECT TOP 1 r.FechaCorte FROM dbo.ReposicionesTraspasos r WHERE r.Empresa = @p0 AND r.NumTraspaso = @p1 ORDER BY r.Id DESC
 ELSE
     SELECT CAST(NULL AS datetime) AS FechaCorte";
+
+        // NestoAPI#685: lo mismo que «pendiente de recibir» (RepositorioRecepcionReposiciones.SQL_PENDIENTES: la entrada en el
+        // diario de entrada de reposiciones del destino, ya sin salida en el del origen), pero desde el origen (Delegación de
+        // las filas de entrada). PreExtrProducto es pequeña. {0}: los bultos (0 si aún no existe ReposicionesBultos).
+        internal const string SQL_ENVIADAS = @"
+SELECT x.Traspaso, x.Origen, x.Destino, x.NombreDestino, x.Lineas, x.Unidades, x.Fecha, x.Usuario, {0} AS Bultos
+FROM (
+SELECT p.[NºTraspaso] AS Traspaso, RTRIM(MAX(p.[Delegación])) AS Origen, RTRIM(MAX(p.[Almacén])) AS Destino,
+       RTRIM(MAX(a.[Descripción])) AS NombreDestino, COUNT(*) AS Lineas, CAST(SUM(p.Cantidad) AS int) AS Unidades,
+       MIN(p.Fecha) AS Fecha, RTRIM(MAX(p.Usuario)) AS Usuario
+FROM PreExtrProducto p
+     JOIN Almacenes a ON a.Empresa = p.Empresa AND a.[Número] = p.[Almacén] AND a.DiarioEntradaRep = p.Diario
+WHERE p.Empresa = @p0 AND p.[Delegación] = @p1 AND p.[NºTraspaso] > 0
+  AND " + PreparacionAlmacen.SalidaReposicionSql.YA_HA_SALIDO + @"
+GROUP BY p.[NºTraspaso]
+) x
+ORDER BY x.Traspaso DESC";
+
+        internal const string BULTOS_CON_TABLA = "(SELECT COUNT(*) FROM dbo.ReposicionesBultos b WHERE b.Empresa = @p0 AND b.NumTraspaso = x.Traspaso)";
 
         private readonly NVEntities db;
 
@@ -189,6 +230,15 @@ ELSE
         {
             return RepositorioPreparacionAlmacen.LeerNombreAlmacen(db.Database, empresa, almacen);
         }
+
+        public async Task<List<ReposicionEnviadaDTO>> LeerEnviadas(string empresa, string origen)
+        {
+            bool conBultos = await ReposicionesBultosSql.ExisteTabla(db.Database).ConfigureAwait(false);
+            string sql = string.Format(SQL_ENVIADAS, conBultos ? BULTOS_CON_TABLA : "0");
+            return await db.Database.SqlQuery<ReposicionEnviadaDTO>(sql,
+                    RegistroReposicionesTraspasosSql.Char("@p0", empresa, 3), RegistroReposicionesTraspasosSql.Char("@p1", origen, 3))
+                .ToListAsync().ConfigureAwait(false);
+        }
     }
 
     public interface IServicioListadoReposicion
@@ -197,6 +247,13 @@ ELSE
         Task<ListadoReposicionDTO> LeerEnPreparacion(string empresa, string origen);
         /// <summary>Lo que llega al almacén con ese traspaso. Null si no está pendiente de recibir ahí.</summary>
         Task<ListadoReposicionDTO> LeerRecepcion(string empresa, string almacen, int traspaso);
+        /// <summary>NestoAPI#685: las reposiciones que han salido del origen y aún no se han recibido.</summary>
+        Task<List<ReposicionEnviadaDTO>> LeerEnviadas(string empresa, string origen);
+        /// <summary>
+        /// NestoAPI#685: una reposición ya enviada desde el origen y sin recibir, en el formato de la de preparar (con las
+        /// ubicaciones del origen), para reimprimir el papel que sacaron al enviarla. Null si no es una enviada del origen.
+        /// </summary>
+        Task<ListadoReposicionDTO> LeerEnviada(string empresa, string origen, int traspaso);
     }
 
     /// <summary>
@@ -280,6 +337,63 @@ ELSE
                 AlmacenUbicaciones = almacen,
                 NumTraspaso = traspaso,
                 Fecha = pendiente?.Fecha,
+                Lineas = esperada.Lineas.Where(l => l.Cantidad > 0).Select(l => new LineaListadoReposicionDTO
+                {
+                    Producto = Limpio(l.Producto),
+                    CodigoBarras = Limpio(l.CodigoBarras),
+                    Descripcion = Limpio(l.Descripcion),
+                    Cantidad = l.Cantidad
+                }).ToList()
+            };
+            listado.FechaCorte = await SinFallar(() => repositorio.LeerFechaCorteTraspaso(empresa, traspaso)).ConfigureAwait(false);
+            await Completar(listado).ConfigureAwait(false);
+            return listado;
+        }
+
+        public async Task<List<ReposicionEnviadaDTO>> LeerEnviadas(string empresa, string origen)
+        {
+            empresa = Limpio(empresa) ?? Constantes.Empresas.EMPRESA_POR_DEFECTO;
+            origen = Limpio(origen)?.ToUpperInvariant();
+            if (origen == null)
+            {
+                return new List<ReposicionEnviadaDTO>();
+            }
+            List<ReposicionEnviadaDTO> enviadas = await repositorio.LeerEnviadas(empresa, origen).ConfigureAwait(false) ?? new List<ReposicionEnviadaDTO>();
+            foreach (ReposicionEnviadaDTO enviada in enviadas)
+            {
+                enviada.Origen = Limpio(enviada.Origen);
+                enviada.Destino = Limpio(enviada.Destino);
+                enviada.NombreDestino = Limpio(enviada.NombreDestino);
+                enviada.Usuario = Limpio(enviada.Usuario);
+            }
+            return enviadas.OrderByDescending(e => e.Traspaso).ToList();
+        }
+
+        public async Task<ListadoReposicionDTO> LeerEnviada(string empresa, string origen, int traspaso)
+        {
+            empresa = Limpio(empresa) ?? Constantes.Empresas.EMPRESA_POR_DEFECTO;
+            origen = Limpio(origen)?.ToUpperInvariant();
+            ReposicionEnviadaDTO enviada = (await LeerEnviadas(empresa, origen).ConfigureAwait(false)).FirstOrDefault(e => e.Traspaso == traspaso);
+            if (enviada?.Destino == null)
+            {
+                return null;
+            }
+            RecepcionReposicionDTO esperada = await recepcion.LeerRecepcion(empresa, enviada.Destino.ToUpperInvariant(), traspaso).ConfigureAwait(false);
+            if (esperada?.Lineas == null || !esperada.Lineas.Any())
+            {
+                return null;
+            }
+            var listado = new ListadoReposicionDTO
+            {
+                EsEnvio = true,
+                Empresa = empresa,
+                Origen = origen,
+                NombreOrigen = Limpio(await SinFallar(() => repositorio.LeerNombreAlmacen(empresa, origen)).ConfigureAwait(false)),
+                Destino = enviada.Destino,
+                NombreDestino = enviada.NombreDestino,
+                AlmacenUbicaciones = origen,
+                NumTraspaso = traspaso,
+                Fecha = enviada.Fecha,
                 Lineas = esperada.Lineas.Where(l => l.Cantidad > 0).Select(l => new LineaListadoReposicionDTO
                 {
                     Producto = Limpio(l.Producto),

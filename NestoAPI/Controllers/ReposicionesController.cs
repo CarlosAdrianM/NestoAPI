@@ -454,6 +454,41 @@ namespace NestoAPI.Controllers
                 : Pdf(datos);
         }
 
+        // GET api/Reposiciones/Enviadas?origen=ALC&empresa=1
+        /// <summary>
+        /// NestoAPI#685: las reposiciones que han salido de <paramref name="origen"/> y todavía no se han recibido en el destino,
+        /// la más reciente primero, con cuántos bultos tienen. Con ellas Nesto «Enviar reposición» deja reimprimir los bultos
+        /// (POST {n}/Bultos/Reimprimir) y el impreso (GET Enviada/{n}/Pdf) en cualquier momento. Lista vacía si no hay ninguna.
+        /// </summary>
+        [HttpGet]
+        [Route("Enviadas")]
+        [ResponseType(typeof(List<ReposicionEnviadaDTO>))]
+        public async Task<IHttpActionResult> GetEnviadas(string origen, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            if (string.IsNullOrWhiteSpace(origen))
+            {
+                return BadRequest("Falta el almacén de origen.");
+            }
+            return Ok(await Listado.LeerEnviadas(empresa, origen).ConfigureAwait(false));
+        }
+
+        // GET api/Reposiciones/Enviada/81093/Pdf?origen=ALC&empresa=1
+        /// <summary>
+        /// NestoAPI#685: el impreso de una reposición ya enviada desde <paramref name="origen"/> y sin recibir, con el mismo
+        /// formato que el de preparar (GET EnPreparacion/Pdf, el que sacan al enviarla) y las ubicaciones del origen. 404 si no
+        /// es una enviada de ese origen pendiente de recibir.
+        /// </summary>
+        [HttpGet]
+        [Route("Enviada/{numTraspaso:int}/Pdf")]
+        public async Task<HttpResponseMessage> GetEnviadaPdf(int numTraspaso, string origen, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            ListadoReposicionDTO datos = await Listado.LeerEnviada(empresa, origen, numTraspaso).ConfigureAwait(false);
+            return datos == null
+                ? Request.CreateErrorResponse(HttpStatusCode.NotFound,
+                    $"La reposición {numTraspaso} no es una reposición enviada desde {origen?.Trim()} pendiente de recibir.")
+                : Pdf(datos);
+        }
+
         private static HttpResponseMessage Pdf(ListadoReposicionDTO datos)
         {
             var respuesta = new HttpResponseMessage(HttpStatusCode.OK)
