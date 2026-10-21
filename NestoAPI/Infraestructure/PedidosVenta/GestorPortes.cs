@@ -425,6 +425,40 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             => lineas?.FirstOrDefault(l => EsEstadoVivoCuentaContable(l.estado));
 
         /// <summary>
+        /// La línea de portes que el PUT de un pedido añade cuando hacen falta y no lleva ninguna viva. Toma almacén,
+        /// estado y demás de una línea aún por servir (<see cref="LineaReferenciaCuentaContable"/>), como el reembolso
+        /// desde NestoAPI#580; null si no queda ninguna: no se añaden portes a lo ya servido. Antes tomaba la primera
+        /// línea, y en un pedido ya albaranado nacía en estado 2 y la guarda de CrearLineaVta tumbaba el guardado
+        /// (pedidos 928974, 928975 y 928977 al poner «Su pedido», 21/10/26; 927608 el 20/10).
+        /// </summary>
+        public static Models.PedidosVenta.LineaPedidoVentaDTO CrearLineaPortesPut(ResultadoPortes resultado,
+            IEnumerable<Models.PedidosVenta.LineaPedidoVentaDTO> lineasDto, IEnumerable<LinPedidoVta> lineasBD, string iva)
+        {
+            var referencia = LineaReferenciaCuentaContable(lineasDto);
+            if (resultado == null || referencia == null)
+            {
+                return null;
+            }
+            return new Models.PedidosVenta.LineaPedidoVentaDTO
+            {
+                tipoLinea = Constantes.TiposLineaVenta.CUENTA_CONTABLE,
+                almacen = referencia.almacen,
+                Producto = resultado.CuentaPortes,
+                Cantidad = 1,
+                delegacion = referencia.delegacion,
+                formaVenta = referencia.formaVenta,
+                estado = referencia.estado,
+                texto = "Portes",
+                PrecioUnitario = resultado.ImportePortes,
+                iva = iva,
+                vistoBueno = true,
+                usuario = referencia.usuario,
+                // NestoAPI#508: la fecha de la mercancía viva en BD, no la del DTO.
+                fechaEntrega = FechaEntregaLineaCuentaContable(lineasBD, referencia.fechaEntrega)
+            };
+        }
+
+        /// <summary>
         /// Gestiona las líneas de portes y comisión reembolso en un pedido DTO.
         /// Añade o quita líneas según corresponda.
         /// Devuelve true si se modificaron las líneas.

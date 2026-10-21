@@ -1560,26 +1560,9 @@ namespace NestoAPI.Controllers
                 // Añadir portes si no los tiene y los necesita
                 if (resultadoPortesPut.ImportePortes > 0 && !resultadoPortesPut.PortesGratis && !yaLlevaPortesBD)
                 {
-                    var lineaRefPut = pedido.Lineas.FirstOrDefault();
-                    if (lineaRefPut != null)
+                    var lineaPortesPut = GestorPortes.CrearLineaPortesPut(resultadoPortesPut, pedido.Lineas, cabPedidoVta.LinPedidoVtas, pedido.iva);
+                    if (lineaPortesPut != null)
                     {
-                        var lineaPortesPut = new LineaPedidoVentaDTO
-                        {
-                            tipoLinea = Constantes.TiposLineaVenta.CUENTA_CONTABLE,
-                            almacen = lineaRefPut.almacen,
-                            Producto = resultadoPortesPut.CuentaPortes,
-                            Cantidad = 1,
-                            delegacion = lineaRefPut.delegacion,
-                            formaVenta = lineaRefPut.formaVenta,
-                            estado = lineaRefPut.estado,
-                            texto = "Portes",
-                            PrecioUnitario = resultadoPortesPut.ImportePortes,
-                            iva = pedido.iva,
-                            vistoBueno = true,
-                            usuario = lineaRefPut.usuario,
-                            // NestoAPI#508: la fecha de la mercancía viva en BD, no la del DTO.
-                            fechaEntrega = GestorPortes.FechaEntregaLineaCuentaContable(cabPedidoVta.LinPedidoVtas, lineaRefPut.fechaEntrega)
-                        };
                         var linPedidoPortes = this.gestor.CrearLineaVta(lineaPortesPut, pedido.empresa, pedido.numero, vendedorContablePut);
                         _ = db.LinPedidoVtas.Add(linPedidoPortes);
                         pedido.Lineas.Add(lineaPortesPut);
