@@ -119,7 +119,7 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
             ListadoReposicionDTO listado = await servicio.LeerEnPreparacion("1 ", "alc");
 
             Assert.IsTrue(listado.EsEnvio);
-            Assert.AreEqual("Alcobendas (ALC) → Algete (ALG)", listado.Ruta);
+            Assert.AreEqual("Alcobendas (ALC) > Algete (ALG)", listado.Ruta);
             Assert.AreEqual("Reposición para preparar", listado.Titulo);
             Assert.AreEqual("ALC", listado.AlmacenUbicaciones);
             Assert.IsNull(listado.NumTraspaso);
@@ -187,7 +187,7 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
 
             Assert.IsFalse(listado.EsEnvio);
             Assert.AreEqual("Reposición para recibir", listado.Titulo);
-            Assert.AreEqual("Algete (ALG) → Alcobendas (ALC)", listado.Ruta);
+            Assert.AreEqual("Algete (ALG) > Alcobendas (ALC)", listado.Ruta);
             Assert.AreEqual("ALC", listado.AlmacenUbicaciones);
             Assert.AreEqual(80893, listado.NumTraspaso);
             Assert.AreEqual(new DateTime(2026, 10, 8), listado.Fecha);
@@ -290,6 +290,35 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
                 byte[] bytes = new GeneradorPdfReposicion().GenerarPdf(listado).ReadAsByteArrayAsync().Result;
                 Assert.IsTrue(bytes.Length > 4);
                 Assert.AreEqual("%PDF", System.Text.Encoding.ASCII.GetString(bytes, 0, 4));
+            }
+        }
+
+        [TestMethod]
+        public void GenerarPdf_TodoElTextoTieneGlifoEnLaFuente()
+        {
+            // NestoAPI#685: «Alcobendas (ALC) → Algete (ALG)» salía con la flecha como un cuadradito (la fuente no la tiene)
+            bool antes = QuestPDF.Settings.CheckIfAllTextGlyphsAreAvailable;
+            QuestPDF.Settings.CheckIfAllTextGlyphsAreAvailable = true;
+            try
+            {
+                var listado = new ListadoReposicionDTO
+                {
+                    EsEnvio = true, Origen = "ALC", NombreOrigen = "Alcobendas", Destino = "ALG", NombreDestino = "Algete", NumTraspaso = 81093,
+                    Fecha = new DateTime(2026, 10, 21), FechaCorte = new DateTime(2026, 10, 21, 13, 0, 0),
+                    Lineas = new List<LineaListadoReposicionDTO>
+                    {
+                        new LineaListadoReposicionDTO { Producto = "17404", Descripcion = "Cera tibia ñ", CodigoBarras = "8411", Cantidad = 3, Familia = "Depilación" }
+                    }
+                };
+
+                byte[] bytes = new GeneradorPdfReposicion().GenerarPdf(listado).ReadAsByteArrayAsync().Result;
+
+                Assert.AreEqual("%PDF", System.Text.Encoding.ASCII.GetString(bytes, 0, 4));
+                Assert.IsFalse(listado.Ruta.Contains("→"));
+            }
+            finally
+            {
+                QuestPDF.Settings.CheckIfAllTextGlyphsAreAvailable = antes;
             }
         }
 

@@ -64,8 +64,9 @@ namespace NestoAPI.Infraestructure.Reposiciones
 
         public int Unidades => (Lineas ?? new List<LineaListadoReposicionDTO>()).Sum(l => l.Cantidad);
 
-        /// <summary>«Alcobendas (ALC) → Algete (ALG)».</summary>
-        public string Ruta => $"{Almacen(NombreOrigen, Origen)} → {Almacen(NombreDestino, Destino)}";
+        /// <summary>«Alcobendas (ALC) > Algete (ALG)». Con «>» y no con la flecha: la fuente del PDF no la tiene y salía un
+        /// cuadradito (NestoAPI#685).</summary>
+        public string Ruta => $"{Almacen(NombreOrigen, Origen)} > {Almacen(NombreDestino, Destino)}";
 
         public string Titulo => EsEnvio ? "Reposición para preparar" : "Reposición para recibir";
 
