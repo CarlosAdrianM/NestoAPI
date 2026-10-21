@@ -321,8 +321,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             });
             string nombre = Constantes.Pedidos.ModosServicio.Nombre(alternativo);
             return otro.PrimeraEntrega.HasValue
-                ? $"{inicio}; si eliges «{nombre}», la primera parte sale el {Dia(otro.PrimeraEntrega.Value)}."
-                : $"{inicio}; si eliges «{nombre}», sale una primera parte en cuanto haya algo (ahora mismo no hay nada que pueda salir).";
+                ? $"{inicio}; si elige «{nombre}», la primera parte sale el {Dia(otro.PrimeraEntrega.Value)}."
+                : $"{inicio}; si elige «{nombre}», sale una primera parte en cuanto haya algo (ahora mismo no hay nada que pueda salir).";
         }
 
         /// <summary>

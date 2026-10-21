@@ -281,7 +281,8 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
 
             Assert.IsNotNull(r);
             Assert.IsNotNull(r.Content.Facturacion);
-            CollectionAssert.AreEqual(new List<byte> { 1, 2, 3 }, r.Content.Facturacion.ModosPermitidos);
+            // Contado: «al completar» no se puede (#686); por entregas y todo ahora, sí.
+            CollectionAssert.AreEqual(new List<byte> { 1, 3 }, r.Content.Facturacion.ModosPermitidos);
             Assert.IsTrue(r.Content.ServirPendienteAlHaberStock.Valor);
             Assert.IsNotNull(r2);
             Assert.IsNotNull(r2.Content.Facturacion);
