@@ -39,8 +39,15 @@ public static class CalculadoraFeatures
     /// <param name="ficha">Ficha de un producto (null si no hay).</param>
     /// <param name="dia">d.</param>
     /// <param name="maximoPorFuente">Candidatos de cada fuente.</param>
+    /// <param name="adicionales">
+    /// NestoAPI#671 (corte 2c): productos que la API también quiere puntuar (las de «Potenciar», que no se pueden reconstruir
+    /// hacia atrás, y las que ya están a la vista). Se añaden al final de los candidatos SIN apuntarles ninguna fuente: sus
+    /// features salen exactamente como saldrían en el entrenamiento para un producto que ninguna fuente del modelo propone
+    /// (lo de «comprado junto» y «le toca» se mira igual con todos los pares y todo el historial). Lo que no se puede sugerir
+    /// o está en el carrito no entra. Null en el entrenamiento: el resultado es el de siempre.
+    /// </param>
     public static ResultadoCandidatos Calcular(ContextoInstantanea contexto, string cliente, IEnumerable<Compra> historial,
-        ISet<string> carrito, Func<string, FichaProducto?> ficha, DateTime dia, int maximoPorFuente)
+        ISet<string> carrito, Func<string, FichaProducto?> ficha, DateTime dia, int maximoPorFuente, IEnumerable<string>? adicionales = null)
     {
         DateTime d = dia.Date;
         DateTime desde = d.AddMonths(-MESES_HISTORIAL);
@@ -111,6 +118,13 @@ public static class CalculadoraFeatures
         foreach (ResultadoLeToca r in letoca.Take(maximoPorFuente)) Fuente(r.Producto, Fuentes.LE_TOCA);
         foreach (AfinidadProducto a in parecidos.Take(maximoPorFuente)) Fuente(a.Producto.Trim(), Fuentes.PARECIDOS);
         foreach (ProductoDePerfil p in delPerfil.Take(maximoPorFuente)) Fuente(p.Producto.Trim(), Fuentes.PERFIL);
+        foreach (string extra in adicionales ?? Enumerable.Empty<string>())
+        {
+            string producto = extra?.Trim() ?? "";
+            if (producto.Length == 0 || fuentes.ContainsKey(producto) || !Vale(producto)) continue;
+            fuentes[producto] = new HashSet<string>();
+            orden.Add(producto);
+        }
 
         // reglas-1 (la mezcla del corte 1 con lo reconstruible: CompradoJunto y LeToca)
         var reglas = juntos.Take(CANDIDATOS_POR_FUENTE_REGLAS)

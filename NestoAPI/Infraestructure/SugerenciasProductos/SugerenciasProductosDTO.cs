@@ -40,9 +40,28 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         /// </summary>
         public const string MARCA_DESCARTADO_VENDEDOR = "[DescartadoVendedor] ";
 
+        /// <summary>
+        /// NestoAPI#682: la API la quitó del panel sin que nadie la tocara, porque con el carrito nuevo salió otra claramente
+        /// mejor (la sustituta ocupa su hueco). NO es una respuesta del vendedor ni del cliente: ni positivo ni negativo para
+        /// ningún modelo (como una sin respuesta: no se llegó a ofrecer), no excluye 60 días y no vuelve a salir en esa sesión.
+        /// No la manda ningún cliente (Responder no la admite).
+        /// </summary>
+        public const string SUSTITUIDA = "Sustituida";
+
+        /// <summary>
+        /// NestoAPI#682: sin el script Issue682 el CK de Respuesta no admite «Sustituida»: la fila se queda con Respuesta NULL
+        /// (como una no tocada, que tampoco cuenta) y el Texto empieza por esta marca, para no volver a enseñarla. El script la
+        /// pasa a «Sustituida».
+        /// </summary>
+        public const string MARCA_SUSTITUIDA = "[Sustituida] ";
+
         /// <summary>Las que no se vuelven a sugerir a ese cliente en 60 días y dejan hueco para una sustituta.</summary>
         public static bool ExcluyenSesentaDias(string respuesta)
             => respuesta == NO_LE_INTERESA || respuesta == DESCARTADO_VENDEDOR;
+
+        /// <summary>NestoAPI#682: sustituida antes del script Issue682 (Respuesta NULL con la marca en el Texto).</summary>
+        public static bool EsSustituidaProvisional(string respuesta, string texto)
+            => respuesta == null && texto != null && texto.StartsWith(MARCA_SUSTITUIDA, StringComparison.Ordinal);
 
         /// <summary>
         /// NestoAPI#669: «🚫 Quitar» del vendedor, también la provisional de antes del script Issue670b («NoLeInteresa» con

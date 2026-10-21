@@ -776,6 +776,14 @@ namespace NestoAPI.Models
             public const string OFERTAS_SUGERIDAS_ACTIVAS = "OfertasSugeridasActivas";
 
             /// <summary>
+            /// NestoAPI#671 (corte 2c): interruptor del modelo de sugerencias de productos en POST
+            /// api/SugerenciasProductos/Calcular. Bajo «(defecto)» de la empresa por defecto: "0" lo apaga sin
+            /// publicar (vuelven las reglas, «reglas-1»; se nota en menos de un minuto); sin fila o cualquier otro
+            /// valor, ENCENDIDO (con el último modelo que pasó la puerta).
+            /// </summary>
+            public const string MODELO_SUGERENCIAS_ACTIVO = "ModeloSugerenciasActivo";
+
+            /// <summary>
             /// NestoAPI#534: interruptor del aviso automático de facturas vencidas por transferencia
             /// (job diario de Hangfire). Bajo «(defecto)». Sin fila, "0" o cualquier valor que no se
             /// reconozca: APAGADO (no hace nada). "Sombra": calcula la lista y la manda SOLO a

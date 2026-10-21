@@ -160,6 +160,7 @@ namespace NestoAPI.Tests.Infrastructure
                 return Task.CompletedTask;
             });
 
+            ConfigurarFakesModelo();
             _servicio = new ServicioSugerenciasProductos(_repo, () => HOY, ex => _errores.Add(ex));
         }
 

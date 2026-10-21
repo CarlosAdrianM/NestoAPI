@@ -1,3 +1,6 @@
+using ModeloSugerenciasProductos.Entrenamiento;
+using ModeloSugerenciasProductos.Features;
+using ModeloSugerenciasProductos.Reglas;
 using NestoAPI.Infraestructure.CorreosPostCompra;
 using NestoAPI.Infraestructure.PreparacionAlmacen;
 using NestoAPI.Models;
@@ -7,6 +10,8 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
+using Compra = ModeloSugerenciasProductos.Datos.Compra;
+using FichaProducto = ModeloSugerenciasProductos.Datos.FichaProducto;
 
 namespace NestoAPI.Infraestructure.SugerenciasProductos
 {
@@ -28,6 +33,9 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
     /// enseñar, pero su fila queda sin respuesta: no cuentan como ofrecidas.</para>
     /// <para>Sin las tablas del script Issue670 todo devuelve vacío (Calcular) o 404 (Responder), y el enlace con el pedido no
     /// hace nada.</para>
+    /// <para>NestoAPI#671 (corte 2c): con el modelo 1 (<see cref="IPredictorSugerenciasProductos"/>), los huecos se llenan por
+    /// P1; sin él o si falla, reglas-1. NestoAPI#682: en Calcular, una visible sin contestar puede ceder su hueco a una nueva
+    /// claramente mejor (como mucho una por llamada). NestoAPI#669: dos «🚫 Quitar» de una familia la excluyen para el cliente.</para>
     /// </summary>
     public class ServicioSugerenciasProductos : IServicioSugerenciasProductos
     {
@@ -35,15 +43,18 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         private readonly Func<DateTime> ahora;
         private readonly Action<Exception> registrarError;
         private readonly IFotosProductoAlmacen fotos;
+        private readonly IPredictorSugerenciasProductos predictor;
 
         /// <param name="fotos">Nesto#537: las fotos de la tienda (las de Ariadna, con caché). Null: las fichas van sin foto.</param>
+        /// <param name="predictor">NestoAPI#671 (corte 2c): el modelo 1. Null: solo reglas («reglas-1»), como en el corte 1.</param>
         public ServicioSugerenciasProductos(IRepositorioSugerenciasProductos repositorio, Func<DateTime> ahora = null,
-            Action<Exception> registrarError = null, IFotosProductoAlmacen fotos = null)
+            Action<Exception> registrarError = null, IFotosProductoAlmacen fotos = null, IPredictorSugerenciasProductos predictor = null)
         {
             this.repositorio = repositorio;
             this.ahora = ahora ?? (() => DateTime.Now);
             this.registrarError = registrarError ?? ElmahHelper.Log;
             this.fotos = fotos;
+            this.predictor = predictor;
         }
 
         /// <summary>
@@ -145,7 +156,9 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
             await repositorio.ActualizarSesion(idSesion, sesion.Contacto, sesion.Vendedor, sesion.Carrito).ConfigureAwait(false);
 
             List<SugerenciaMostrada> mostradas = await repositorio.LeerMostradas(idSesion).ConfigureAwait(false);
-            resultado.Sugerencias = (await Rellenar(sesion, carrito, mostradas).ConfigureAwait(false)).Visibles;
+            // NestoAPI#682: solo aquí (cambio de carrito) se sustituye una visible sin contestar; al responder, no (el cliente
+            // solo pinta la sustituta en el hueco contestado).
+            resultado.Sugerencias = (await Rellenar(sesion, carrito, mostradas, permitirSustitucion: true).ConfigureAwait(false)).Visibles;
             return resultado;
         }
 
@@ -191,7 +204,7 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
             {
                 m.Respuesta = respuesta; // por si la lectura no ve todavía la respuesta recién guardada
             }
-            ResultadoRelleno relleno = await Rellenar(sesion, carrito, mostradas).ConfigureAwait(false);
+            ResultadoRelleno relleno = await Rellenar(sesion, carrito, mostradas, permitirSustitucion: false).ConfigureAwait(false);
             resultado.Sugerencias = relleno.Visibles;
             List<SugerenciaProductoDTO> nuevas = relleno.Visibles.Where(v => relleno.Nuevas.Contains(v.IdSugerencia)).ToList();
             resultado.Sustituta = nuevas.FirstOrDefault(v => v.Posicion == mostrada.Posicion) ?? nuevas.FirstOrDefault();
@@ -254,8 +267,36 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
             public HashSet<int> Nuevas { get; set; } = new HashSet<int>();
         }
 
-        /// <summary>Las que se ven: las que se mantienen y las nuevas que llenan los huecos (y se registran).</summary>
-        private async Task<ResultadoRelleno> Rellenar(SesionSugerencias sesion, Dictionary<string, int> carrito, List<SugerenciaMostrada> mostradas)
+        /// <summary>NestoAPI#671 (corte 2c): un candidato puntuado por el modelo, con lo que se enseña si sale.</summary>
+        internal class CandidatoModelo
+        {
+            public CandidatoSugerencia Candidato { get; set; }
+            public float P1 { get; set; }
+            public string Fuentes { get; set; }
+            public bool EsHabitual { get; set; }
+            public string Familia { get; set; }
+        }
+
+        /// <summary>NestoAPI#671 (corte 2c): lo que sale del modelo para una llamada.</summary>
+        internal class PuntuacionModelo
+        {
+            public string Version { get; set; }
+            /// <summary>Los candidatos nuevos que valen (sin el stock), de más a menos P1.</summary>
+            public List<CandidatoModelo> Orden { get; set; } = new List<CandidatoModelo>();
+            /// <summary>P1 de ahora (con el carrito de ahora) de las visibles sin contestar.</summary>
+            public Dictionary<string, float> P1Visibles { get; set; } = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Las que se ven: las que se mantienen y las nuevas que llenan los huecos (y se registran).
+        /// <para>NestoAPI#671 (corte 2c): con el modelo, los huecos se llenan por P1 (todas las fuentes juntas, sin diversidad:
+        /// <see cref="MotorSugerenciasProductos.APLICAR_DIVERSIDAD"/>) y, en las sesiones que exploran, el hueco 3 se elige al azar
+        /// entre los puestos 4 a 15. Sin modelo (o si falla), las reglas de siempre.</para>
+        /// <para>NestoAPI#682 (<paramref name="permitirSustitucion"/>, solo Calcular): como mucho una visible sin contestar se
+        /// cambia, en su mismo hueco, por una nueva claramente mejor; la sustituida queda como «Sustituida».</para>
+        /// </summary>
+        private async Task<ResultadoRelleno> Rellenar(SesionSugerencias sesion, Dictionary<string, int> carrito, List<SugerenciaMostrada> mostradas,
+            bool permitirSustitucion)
         {
             DateTime hoy = ahora().Date;
             string empresa = sesion.Empresa?.Trim();
@@ -284,7 +325,10 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
             List<AfinidadCliente> afinidades = await repositorio.LeerAfinidad(cliente).ConfigureAwait(false) ?? new List<AfinidadCliente>();
 
             var comprados = new HashSet<string>(compras.Where(c => c.Producto != null).Select(c => c.Producto.Trim()), StringComparer.OrdinalIgnoreCase);
-            List<SugerenciaMostrada> sinResponder = mostradas.Where(m => m.Respuesta == null).OrderBy(m => m.Posicion).ThenBy(m => m.Id).ToList();
+            // NestoAPI#682: las sustituidas antes del script Issue682 siguen sin respuesta, pero ya no se enseñan
+            List<SugerenciaMostrada> sinResponder = mostradas
+                .Where(m => m.Respuesta == null && !RespuestasSugerencia.EsSustituidaProvisional(m.Respuesta, m.Texto))
+                .OrderBy(m => m.Posicion).ThenBy(m => m.Id).ToList();
             IEnumerable<string> productosConFicha = comprados
                 .Concat(enCarrito)
                 .Concat(pares.Select(p => p.ProductoA)).Concat(pares.Select(p => p.ProductoB))
@@ -330,9 +374,16 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
                 .Select(g => g.First())
                 .ToList();
 
+            // NestoAPI#671 (corte 2c): el modelo puntúa todas las candidatas (y las visibles); si no hay o falla, reglas-1
+            PuntuacionModelo modelo = await PuntuarConModelo(hoy, cliente, empresa, compras, enCarrito, pares, afinidades, fichas, perfil,
+                clientesPerfil, todos, fuentes, quedan, yaEnsenados, Vale).ConfigureAwait(false);
+
             // El stock (o la fecha de llegada), de una vez, solo para lo que puede salir
+            IEnumerable<string> paraStock = modelo != null
+                ? modelo.Orden.Take(MotorSugerenciasProductos.CANDIDATOS_MODELO_CON_STOCK).Select(c => c.Candidato.Producto)
+                : candidatos.Select(c => c.Producto);
             HashSet<string> vendibles = await repositorio.LeerVendibles(empresa,
-                quedan.Select(m => m.Producto).Concat(candidatos.Select(c => c.Producto))).ConfigureAwait(false)
+                quedan.Select(m => m.Producto).Concat(paraStock)).ConfigureAwait(false)
                 ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             vendibles = new HashSet<string>(vendibles, StringComparer.OrdinalIgnoreCase);
 
@@ -340,20 +391,16 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
                 .Where(m => vendibles.Contains(m.Producto.Trim()))
                 .Take(MotorSugerenciasProductos.MAXIMO_SUGERENCIAS)
                 .ToList();
+            var mantenidas = new HashSet<int>(visibles.Select(v => v.Id));
             int huecos = Math.Max(0, MotorSugerenciasProductos.SUGERENCIAS_VISIBLES - visibles.Count);
             var excluidos = new HashSet<string>(yaEnsenados.Concat(enCarrito), StringComparer.OrdinalIgnoreCase);
-            List<CandidatoSugerencia> elegidas = MotorSugerenciasProductos.Elegir(
-                candidatos.Where(c => vendibles.Contains(c.Producto)), visibles.Select(v => v.Motivo), excluidos, huecos);
-
+            bool explora = MotorSugerenciasProductos.EsSesionDeExploracion(sesion.Id);
             var resultado = new ResultadoRelleno();
             var ocupadas = visibles.Select(v => (int)v.Posicion).ToList();
-            foreach (CandidatoSugerencia elegida in elegidas)
+            int tamanoCarrito = enCarrito.Count;
+
+            async Task<SugerenciaMostrada> Registrar(CandidatoSugerencia elegida, int posicion, string fuentesProducto, bool exploracion, string version)
             {
-                int posicion = MotorSugerenciasProductos.HuecoLibre(ocupadas);
-                if (posicion == 0)
-                {
-                    break;
-                }
                 var nueva = new SugerenciaMostrada
                 {
                     SesionId = sesion.Id,
@@ -361,17 +408,97 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
                     Motivo = elegida.Motivo,
                     Puntuacion = elegida.Puntuacion,
                     Posicion = (byte)posicion,
-                    VersionMotor = MotorSugerenciasProductos.VERSION_MOTOR,
+                    VersionMotor = version,
                     Texto = elegida.Texto,
                     FechaMostrada = ahora(),
-                    Fuentes = fuentes.TryGetValue(elegida.Producto.Trim(), out string fuentesProducto) ? fuentesProducto : elegida.Motivo,
-                    TamanoCarrito = enCarrito.Count,
-                    Exploracion = false
+                    Fuentes = fuentesProducto,
+                    TamanoCarrito = tamanoCarrito,
+                    Exploracion = exploracion
                 };
                 nueva.Id = await repositorio.InsertarMostrada(nueva).ConfigureAwait(false);
                 ocupadas.Add(posicion);
                 visibles.Add(nueva);
                 _ = resultado.Nuevas.Add(nueva.Id);
+                return nueva;
+            }
+
+            if (modelo != null)
+            {
+                List<CandidatoModelo> orden = modelo.Orden.Where(c => vendibles.Contains(c.Candidato.Producto) && !excluidos.Contains(c.Candidato.Producto)).ToList();
+                if (MotorSugerenciasProductos.APLICAR_DIVERSIDAD)
+                {
+                    orden = ModeloSugerenciasProductos.Evaluacion.Diversidad.Aplicar(orden, c => c.EsHabitual, c => c.Familia, orden.Count);
+                }
+                // Los puestos de la exploración son los del orden de esta llamada (antes de elegir nada)
+                List<CandidatoModelo> ordenInicial = orden.ToList();
+                var azar = new Random(ConstructorInstantaneas.Hash(sesion.Id.ToString("N") + "|" + mostradas.Count));
+                for (int i = 0; i < huecos && orden.Count > 0; i++)
+                {
+                    int posicion = MotorSugerenciasProductos.HuecoLibre(ocupadas);
+                    if (posicion == 0)
+                    {
+                        break;
+                    }
+                    int? indiceExploracion = explora && posicion == MotorSugerenciasProductos.POSICION_EXPLORACION
+                        ? MotorSugerenciasProductos.IndiceExploracion(ordenInicial.Count, azar) : null;
+                    CandidatoModelo elegida = indiceExploracion.HasValue && orden.Contains(ordenInicial[indiceExploracion.Value])
+                        ? ordenInicial[indiceExploracion.Value] : orden[0];
+                    bool exploracion = indiceExploracion.HasValue && ReferenceEquals(elegida, ordenInicial[indiceExploracion.Value]);
+                    _ = orden.Remove(elegida);
+                    _ = await Registrar(elegida.Candidato, posicion, elegida.Fuentes, exploracion, modelo.Version).ConfigureAwait(false);
+                }
+
+                // NestoAPI#682 con el modelo: la mejor nueva frente a la visible sin contestar más floja (P1 de ahora). La del
+                // hueco de exploración no se toca (si no, la exploración no duraría ni un cambio de carrito).
+                if (permitirSustitucion && orden.Count > 0)
+                {
+                    var sustituibles = visibles
+                        .Where(v => mantenidas.Contains(v.Id) && !(explora && v.Posicion == MotorSugerenciasProductos.POSICION_EXPLORACION)
+                            && modelo.P1Visibles.ContainsKey(v.Producto.Trim()))
+                        .OrderBy(v => modelo.P1Visibles[v.Producto.Trim()]).ThenByDescending(v => v.Posicion)
+                        .ToList();
+                    SugerenciaMostrada floja = sustituibles.FirstOrDefault();
+                    CandidatoModelo mejor = orden[0];
+                    if (floja != null && MotorSugerenciasProductos.MejoraClara(mejor.P1, modelo.P1Visibles[floja.Producto.Trim()]))
+                    {
+                        await Sustituir(floja, visibles, ocupadas).ConfigureAwait(false);
+                        _ = await Registrar(mejor.Candidato, floja.Posicion, mejor.Fuentes, false, modelo.Version).ConfigureAwait(false);
+                    }
+                }
+            }
+            else
+            {
+                List<CandidatoSugerencia> conStock = candidatos.Where(c => vendibles.Contains(c.Producto)).ToList();
+                List<CandidatoSugerencia> elegidas = MotorSugerenciasProductos.Elegir(conStock, visibles.Select(v => v.Motivo), excluidos, huecos);
+                foreach (CandidatoSugerencia elegida in elegidas)
+                {
+                    int posicion = MotorSugerenciasProductos.HuecoLibre(ocupadas);
+                    if (posicion == 0)
+                    {
+                        break;
+                    }
+                    _ = await Registrar(elegida, posicion, fuentes.TryGetValue(elegida.Producto.Trim(), out string f) ? f : elegida.Motivo,
+                        false, MotorSugerenciasProductos.VERSION_MOTOR).ConfigureAwait(false);
+                }
+
+                // NestoAPI#682 sin el modelo (las puntuaciones de fuentes distintas no se comparan): una «comprado junto» nueva
+                // con confianza suficiente entra si no hay ninguna a la vista, en el hueco de la más floja según ORDEN_FUENTES.
+                if (permitirSustitucion && !visibles.Any(v => v.Motivo == MotivosSugerencia.COMPRADO_JUNTO))
+                {
+                    var yaElegidas = new HashSet<string>(elegidas.Select(e => e.Producto), StringComparer.OrdinalIgnoreCase);
+                    CandidatoSugerencia junto = conStock
+                        .Where(c => c.Motivo == MotivosSugerencia.COMPRADO_JUNTO && c.Puntuacion >= MotorSugerenciasProductos.CONFIANZA_MINIMA_SUSTITUCION_REGLAS
+                            && !excluidos.Contains(c.Producto) && !yaElegidas.Contains(c.Producto))
+                        .OrderByDescending(c => c.Puntuacion).ThenBy(c => c.Producto, StringComparer.OrdinalIgnoreCase)
+                        .FirstOrDefault();
+                    SugerenciaMostrada floja = MotorSugerenciasProductos.MasFlojaSegunReglas(visibles.Where(v => mantenidas.Contains(v.Id)));
+                    if (junto != null && floja != null)
+                    {
+                        await Sustituir(floja, visibles, ocupadas).ConfigureAwait(false);
+                        _ = await Registrar(junto, floja.Posicion, fuentes.TryGetValue(junto.Producto.Trim(), out string f) ? f : junto.Motivo,
+                            false, MotorSugerenciasProductos.VERSION_MOTOR).ConfigureAwait(false);
+                    }
+                }
             }
 
             // Nesto#537: las fotos de las que se ven, de una vez (con caché); el resto de la ficha ya está leído
@@ -382,6 +509,190 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
                     urlsFotos.TryGetValue(v.Producto.Trim(), out string url) ? url : null))
                 .ToList();
             return resultado;
+        }
+
+        /// <summary>
+        /// NestoAPI#682: la quita del panel como «Sustituida» (con el script Issue682) o con la marca en el Texto (sin él). No
+        /// cuenta como ofrecida ni como rechazo y no vuelve a salir en la sesión (sigue en lo ya enseñado).
+        /// </summary>
+        private async Task Sustituir(SugerenciaMostrada floja, List<SugerenciaMostrada> visibles, List<int> ocupadas)
+        {
+            if (await repositorio.AdmiteSustituida().ConfigureAwait(false))
+            {
+                await repositorio.GuardarSustituida(floja.Id).ConfigureAwait(false);
+            }
+            else
+            {
+                await repositorio.GuardarSustituidaProvisional(floja.Id).ConfigureAwait(false);
+            }
+            _ = visibles.Remove(floja);
+            _ = ocupadas.Remove(floja.Posicion);
+        }
+
+        /// <summary>
+        /// NestoAPI#671 (corte 2c): P1 de todas las candidatas (CompradoJunto, LeToca, Potenciar, Parecidos y lo más comprado del
+        /// perfil) y de las visibles sin contestar, con las features calculadas EXACTAMENTE como en el entrenamiento
+        /// (<see cref="CalculadoraFeatures"/> del núcleo, con «d» = hoy: solo compras anteriores a hoy y las tablas del job de
+        /// anoche). Lecturas añadidas: la popularidad de los candidatos (una consulta) y, si hace falta, las fichas de los
+        /// productos del perfil que no se tenían (otra) y el perfil sin las compras de hoy (casi nunca). Null si no hay modelo o
+        /// algo falla (a ELMAH una vez): entonces, reglas-1. Nunca lanza.
+        /// </summary>
+        private async Task<PuntuacionModelo> PuntuarConModelo(DateTime hoy, string cliente, string empresa, List<CompraDiaReposicion> compras,
+            HashSet<string> enCarrito, List<ParCompradoJunto> pares, List<AfinidadCliente> afinidades, Dictionary<string, FichaProductoSugerencia> fichas,
+            Tuple<string, string> perfil, Dictionary<string, int> clientesPerfil, List<CandidatoSugerencia> todos, Dictionary<string, string> fuentes,
+            List<SugerenciaMostrada> quedan, HashSet<string> yaEnsenados, Func<string, bool> vale)
+        {
+            string version = predictor?.ModeloDisponible();
+            if (version == null)
+            {
+                return null;
+            }
+            try
+            {
+                List<Compra> comprasNucleo = MotorSugerenciasProductos.ACompras(compras).ToList();
+                Func<string, FichaProducto> ficha = MotorSugerenciasProductos.Buscador(fichas);
+
+                // El perfil como en el entrenamiento (compras anteriores a d); casi siempre es el de las reglas
+                Tuple<string, string> perfilModelo = ReglasSugerencias.Perfil(comprasNucleo.Where(c => c.Dia < hoy), ficha);
+                Dictionary<string, int> clientesPerfilModelo = clientesPerfil;
+                if (perfilModelo != null && (perfil == null || !string.Equals(perfil.Item1, perfilModelo.Item1, StringComparison.OrdinalIgnoreCase)
+                    || !string.Equals(perfil.Item2, perfilModelo.Item2, StringComparison.OrdinalIgnoreCase)))
+                {
+                    clientesPerfilModelo = await repositorio.LeerClientesPerfil(perfilModelo.Item1, perfilModelo.Item2).ConfigureAwait(false)
+                        ?? new Dictionary<string, int>();
+                }
+                List<ProductoDePerfil> perfiles = perfilModelo == null ? new List<ProductoDePerfil>()
+                    : clientesPerfilModelo.Where(c => !string.IsNullOrWhiteSpace(c.Key)).Select(c => new ProductoDePerfil
+                    {
+                        Grupo = perfilModelo.Item1 ?? string.Empty,
+                        SubGrupo = perfilModelo.Item2 ?? string.Empty,
+                        Producto = c.Key.Trim(),
+                        Clientes = c.Value
+                    }).ToList();
+
+                // Las fichas de los primeros del perfil (el modelo coge los 15 primeros que se pueden sugerir)
+                List<string> sinFicha = perfiles.OrderByDescending(p => p.Clientes).ThenBy(p => p.Producto, StringComparer.OrdinalIgnoreCase)
+                    .Take(MotorSugerenciasProductos.FICHAS_PERFIL_MODELO).Select(p => p.Producto)
+                    .Where(p => !fichas.ContainsKey(p)).ToList();
+                if (sinFicha.Count > 0)
+                {
+                    Dictionary<string, FichaProductoSugerencia> nuevas = await repositorio.LeerFichas(empresa, sinFicha).ConfigureAwait(false);
+                    foreach (KeyValuePair<string, FichaProductoSugerencia> f in nuevas ?? new Dictionary<string, FichaProductoSugerencia>())
+                    {
+                        fichas[f.Key.Trim()] = f.Value;
+                    }
+                }
+
+                List<ParComprado> paresNucleo = pares.Where(p => p != null).Select(MotorSugerenciasProductos.AParNucleo).ToList();
+                List<AfinidadProducto> afinidadesNucleo = afinidades.Where(a => a?.Producto != null).Select(a => new AfinidadProducto
+                {
+                    Cliente = (a.Cliente ?? cliente).Trim(),
+                    Producto = a.Producto.Trim(),
+                    Afinidad = a.Afinidad,
+                    Rango = a.Rango
+                }).ToList();
+                // Las que la API también quiere puntuar: todas sus candidatas (Potenciar no lo propone el modelo) y las visibles
+                List<string> adicionales = todos.Select(c => c.Producto).Concat(quedan.Select(m => m.Producto.Trim()))
+                    .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                int maximoPorFuente = new OpcionesEntrenamiento().MaximoCandidatosPorFuente;
+
+                // Dos pasadas: la primera da los candidatos (la popularidad no cambia cuáles son) y la segunda, con su popularidad
+                ContextoInstantanea sinPopularidad = ContextoInstantanea.Desde(hoy, paresNucleo, afinidadesNucleo, null, perfiles);
+                ResultadoCandidatos previos = CalculadoraFeatures.Calcular(sinPopularidad, cliente, comprasNucleo, enCarrito, ficha, hoy, maximoPorFuente, adicionales);
+                List<PopularidadProducto> popularidad = await repositorio.LeerPopularidad(previos.Filas.Select(f => f.Producto)).ConfigureAwait(false)
+                    ?? new List<PopularidadProducto>();
+                ContextoInstantanea contexto = ContextoInstantanea.Desde(hoy, paresNucleo, afinidadesNucleo,
+                    popularidad.Where(p => p?.Producto != null).Select(p => new PopularidadDeProducto
+                    {
+                        Producto = p.Producto.Trim(),
+                        Clientes12Meses = p.Clientes12Meses,
+                        Clientes3Meses = p.Clientes3Meses,
+                        Cestas12Meses = p.Cestas12Meses,
+                        Rango = p.Rango
+                    }), perfiles);
+                ResultadoCandidatos features = CalculadoraFeatures.Calcular(contexto, cliente, comprasNucleo, enCarrito, ficha, hoy, maximoPorFuente, adicionales);
+                List<ModeloSugerenciaEntrada> entradas = features.Filas.Cast<ModeloSugerenciaEntrada>().ToList();
+                IList<float> probabilidades = predictor.Puntuar(entradas);
+                if (probabilidades == null || probabilidades.Count != entradas.Count)
+                {
+                    throw new InvalidOperationException($"El modelo ha devuelto {probabilidades?.Count ?? 0} probabilidades para {entradas.Count} candidatos.");
+                }
+
+                var resultado = new PuntuacionModelo { Version = version };
+                var visibles = new HashSet<string>(quedan.Select(m => m.Producto.Trim()), StringComparer.OrdinalIgnoreCase);
+                Dictionary<string, CandidatoSugerencia> deLaApi = todos
+                    .GroupBy(c => c.Producto.Trim(), StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(g => g.Key, g => g.OrderBy(c => IndiceFuente(c.Motivo)).ThenByDescending(c => c.Puntuacion).First(), StringComparer.OrdinalIgnoreCase);
+                for (int i = 0; i < features.Filas.Count; i++)
+                {
+                    FilaEntrenamiento fila = features.Filas[i];
+                    string producto = fila.Producto.Trim();
+                    float p1 = probabilidades[i];
+                    if (visibles.Contains(producto))
+                    {
+                        resultado.P1Visibles[producto] = p1;
+                        continue;
+                    }
+                    if (yaEnsenados.Contains(producto) || !vale(producto))
+                    {
+                        continue;
+                    }
+                    CandidatoSugerencia aEnsenar;
+                    if (deLaApi.TryGetValue(producto, out CandidatoSugerencia api))
+                    {
+                        aEnsenar = api;
+                    }
+                    else if (fila.EsPerfil > 0)
+                    {
+                        // Lo más comprado del perfil: solo lo propone el modelo; al vendedor, como «Clientes parecidos»
+                        aEnsenar = new CandidatoSugerencia
+                        {
+                            Producto = producto,
+                            Motivo = MotivosSugerencia.PARECIDOS,
+                            Texto = MotorSugerenciasProductos.TextoPerfil((int)fila.ClientesPerfil)
+                        };
+                    }
+                    else
+                    {
+                        continue; // otra fuente con un dato que la API no ve igual (p. ej. compras de hoy): no se enseña
+                    }
+                    // Las de la API; lo que solo propone el perfil, solo «Perfil» (el Motivo «Parecidos» es para enseñarlo)
+                    string fuentesProducto = fuentes.TryGetValue(producto, out string f) ? f : (api != null ? api.Motivo : null);
+                    if (fila.EsPerfil > 0)
+                    {
+                        fuentesProducto = string.IsNullOrEmpty(fuentesProducto) ? ModeloSugerenciasProductos.Reglas.Fuentes.PERFIL
+                            : fuentesProducto + "," + ModeloSugerenciasProductos.Reglas.Fuentes.PERFIL;
+                    }
+                    resultado.Orden.Add(new CandidatoModelo
+                    {
+                        Candidato = new CandidatoSugerencia
+                        {
+                            Producto = producto,
+                            Motivo = aEnsenar.Motivo,
+                            Texto = aEnsenar.Texto,
+                            Puntuacion = Math.Round((decimal)p1, 4, MidpointRounding.AwayFromZero)
+                        },
+                        P1 = p1,
+                        Fuentes = fuentesProducto,
+                        EsHabitual = fila.EsHabitual > 0,
+                        Familia = fila.Familia
+                    });
+                }
+                resultado.Orden = resultado.Orden.OrderByDescending(c => c.P1)
+                    .ThenBy(c => c.Candidato.Producto, StringComparer.OrdinalIgnoreCase).ToList();
+                return resultado;
+            }
+            catch (Exception ex)
+            {
+                predictor.AvisarFallo(ex);
+                return null;
+            }
+        }
+
+        private static int IndiceFuente(string motivo)
+        {
+            int i = Array.IndexOf(MotorSugerenciasProductos.ORDEN_FUENTES, motivo);
+            return i < 0 ? MotorSugerenciasProductos.ORDEN_FUENTES.Length : i;
         }
 
         internal static SugerenciaProductoDTO Dto(SugerenciaMostrada mostrada, FichaProductoSugerencia ficha, string urlFoto)

@@ -80,7 +80,7 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
 
     public enum EstadoEntrenamientoSugerencias
     {
-        /// <summary>Entrenado y guardado; pasaría la puerta (no se activa: lo decide Carlos con el informe).</summary>
+        /// <summary>Entrenado y guardado; pasa la puerta: desde el corte 2c, Calcular lo usa en cuanto lo ve (PredictorSugerenciasProductos).</summary>
         Pasaria,
         /// <summary>Entrenado y guardado; no pasaría la puerta.</summary>
         NoPasaria,
@@ -94,7 +94,7 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
     /// NestoAPI#671 (corte 2d): dónde deja el job lo que entrena. Fuera de la carpeta publicada (por defecto
     /// <see cref="CARPETA_POR_DEFECTO"/>, appSetting <see cref="CLAVE_CARPETA"/>) para que un deploy no lo pise, y con
     /// histórico: cada ejecución deja sus ficheros con el sufijo AAAAMMDD_HHmm (zip, json, README, informe y log), como la consola.
-    /// NO hay «modelo activo»: la inferencia (corte 2c) no existe todavía y activarlo se decide viendo el informe.
+    /// NestoAPI#671 (corte 2c): no hay «modelo activo» aparte: Calcular usa el último zip cuyo json dice PasaPuerta (PredictorSugerenciasProductos); se apaga con el parámetro ModeloSugerenciasActivo = 0 de «(defecto)».
     /// </summary>
     public class AlmacenModeloSugerencias
     {
@@ -140,7 +140,7 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
     /// Cola «entrenamiento» (servidor de Hangfire de un hilo, Startup), así que nunca coincide con el de llamadas ni deja
     /// parados los jobs de la cola «default».</para>
     /// <para>Guarda zip, json, README e informe frente a reglas-1 en <see cref="AlmacenModeloSugerencias"/>, con histórico por
-    /// fecha. NO activa nada para la API. Avisa en la campana de Nesto (buzón + SignalR) a <see cref="CLAVE_USUARIOS_AVISO"/>
+    /// fecha. Si pasa la puerta, Calcular lo usa solo (corte 2c). Avisa en la campana de Nesto (buzón + SignalR) a <see cref="CLAVE_USUARIOS_AVISO"/>
     /// (por defecto Carlos): si pasaría la puerta, las métricas y dónde está el informe. Los errores, además, a ELMAH. Sin
     /// reintentos automáticos (un reintento caería en horario).</para>
     /// <para>Guarda horaria: de lunes a viernes de 7:00 a 21:00 no entrena (lee 36 meses de LinPedidoVta y ocupa la CPU un buen
@@ -167,8 +167,8 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
             "las 02:30 (cola «entrenamiento» de Hangfire). A mano: `POST api/SugerenciasProductos/ReentrenarModelo` (Dirección o " +
             "Informática): sin `cuando`, se programa para la próxima franja permitida (de lunes a viernes, a las 23:30); con " +
             "`cuando=AAAA-MM-DDTHH:mm`, a esa hora (fuera de horario). Deja zip, json, README e informe con la fecha en " +
-            "appSetting ModeloSugerencias:Carpeta (por defecto C:\\NestoAPI\\ModelosIA\\Sugerencias). NO se activa en la API: " +
-            "se decide viendo el informe. También desde la consola ModeloSugerenciasProductos (`--completo --simular`).";
+            "appSetting ModeloSugerencias:Carpeta (por defecto C:\\NestoAPI\\ModelosIA\\Sugerencias). Si pasa la puerta, Calcular lo usa solo (corte 2c; para volver a las reglas, ParametrosUsuario «(defecto)» ModeloSugerenciasActivo = 0). " +
+            "También desde la consola ModeloSugerenciasProductos (`--completo --simular`).";
 
         private readonly IEntrenadorModeloSugerencias entrenador;
         private readonly AlmacenModeloSugerencias almacen;
@@ -244,7 +244,7 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
             => $"son las {momento:HH:mm} del {momento.ToString("dddd", CultureInfo.GetCultureInfo("es-ES"))} y el entrenamiento lee 36 meses " +
                "de LinPedidoVta: no se lanza de lunes a viernes de 7:00 a 21:00 (para lanzarlo igualmente, forzar=true)";
 
-        /// <summary>Entrena, mide frente a reglas-1, guarda (sin activar) y avisa. Nunca lanza.</summary>
+        /// <summary>Entrena, mide frente a reglas-1, guarda y avisa. Nunca lanza.</summary>
         public EstadoEntrenamientoSugerencias Ejecutar(bool forzar, string origen)
         {
             DateTime inicio = ahora();
@@ -282,7 +282,7 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
                 EstadoEntrenamientoSugerencias estado = evaluacion.Decision != null && evaluacion.Decision.Pasa
                     ? EstadoEntrenamientoSugerencias.Pasaria
                     : EstadoEntrenamientoSugerencias.NoPasaria;
-                Apuntar($"Terminado: {(estado == EstadoEntrenamientoSugerencias.Pasaria ? "pasaría" : "no pasaría")} la puerta. Nada activado.");
+                Apuntar($"Terminado: {(estado == EstadoEntrenamientoSugerencias.Pasaria ? "pasaría" : "no pasaría")} la puerta.");
                 Avisar(TextoAviso(estado, evaluacion.Decision?.Motivo, evaluacion.Modelo, evaluacion.Reglas, rutaInforme));
                 return estado;
             }
@@ -324,15 +324,15 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
             switch (estado)
             {
                 case EstadoEntrenamientoSugerencias.Pasaria:
-                    return $"Modelo de sugerencias: entrenado, PASARÍA la puerta ({motivo}). {Metricas(modelo, reglas)} NO se ha activado. Informe: {rutaInforme}";
+                    return $"Modelo de sugerencias: entrenado, PASARÍA la puerta ({motivo}). {Metricas(modelo, reglas)} Las sugerencias ya lo usan (para volver a las reglas: parámetro ModeloSugerenciasActivo = 0 en «(defecto)»). Informe: {rutaInforme}";
                 case EstadoEntrenamientoSugerencias.NoPasaria:
-                    return $"Modelo de sugerencias: entrenado, NO pasaría la puerta ({motivo}). {Metricas(modelo, reglas)} No se activa nada. Informe: {rutaInforme}";
+                    return $"Modelo de sugerencias: entrenado, NO pasaría la puerta ({motivo}). {Metricas(modelo, reglas)} Las sugerencias siguen con el último que la pasó (o con las reglas). Informe: {rutaInforme}";
                 case EstadoEntrenamientoSugerencias.DatosInsuficientes:
                     return $"Modelo de sugerencias: no hay datos suficientes para entrenar y validar. Informe: {rutaInforme}";
                 case EstadoEntrenamientoSugerencias.EnHorario:
                     return $"Modelo de sugerencias: no se ha entrenado: {motivo}.";
                 default:
-                    return $"Modelo de sugerencias: error en el entrenamiento ({motivo}). No se activa nada. Detalle en ELMAH.";
+                    return $"Modelo de sugerencias: error en el entrenamiento ({motivo}). Las sugerencias siguen como estaban. Detalle en ELMAH.";
             }
         }
 

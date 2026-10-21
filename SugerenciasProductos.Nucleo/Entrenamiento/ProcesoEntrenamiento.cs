@@ -201,7 +201,7 @@ public sealed class ProcesoEntrenamiento
             sb.AppendLine($"- Fichero: `{Path.GetFileName(rutaModelo)}` — LightGBM binario calibrado, entrenado con todas las sesiones (entrenamiento + validación).");
         sb.AppendLine($"- Qué predice: P(el cliente se lleva el producto en el pedido del día d o en los {Opciones.DiasEtiqueta} días siguientes).");
         sb.AppendLine($"- Puerta: **{(Decision.Pasa ? "pasa" : "no pasa")}** — {Decision.Motivo}.");
-        sb.AppendLine("- NO está activado en la API: el 2c lo consumirá con caché del zip (como ModeloContacto) y, sin modelo, reglas-1.");
+        sb.AppendLine("- La API (corte 2c) usa el último zip que pasa la puerta, con caché (como ModeloContacto); sin modelo, reglas-1. Se apaga con el parámetro ModeloSugerenciasActivo = 0 de «(defecto)».");
         sb.AppendLine();
         sb.AppendLine(InformeMetricas().Replace("# Sugerencias de productos", "## Informe: sugerencias de productos"));
         sb.AppendLine("## Entrada del modelo");

@@ -40,6 +40,17 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         /// consulta (dos «Quitar» de una familia la excluyen entera para ese cliente).
         /// </summary>
         Task<List<RechazoCliente>> LeerRechazados(string empresa, string cliente, DateTime desde);
+        /// <summary>NestoAPI#682: si el CK de Respuesta admite «Sustituida» (script Issue682 lanzado) o no hay CK. Se mira una vez por petición.</summary>
+        Task<bool> AdmiteSustituida();
+        /// <summary>NestoAPI#682: Respuesta «Sustituida» (solo si nadie la ha contestado entretanto).</summary>
+        Task GuardarSustituida(int id);
+        /// <summary>
+        /// NestoAPI#682: «Sustituida» antes del script Issue682: Respuesta sigue NULL (no cuenta como ofrecida) y el Texto empieza
+        /// por <see cref="RespuestasSugerencia.MARCA_SUSTITUIDA"/> (no se vuelve a enseñar); el script la reclasifica.
+        /// </summary>
+        Task GuardarSustituidaProvisional(int id);
+        /// <summary>NestoAPI#671 (corte 2c): popularidad de los productos (tabla del job). Vacía si no hay tabla.</summary>
+        Task<List<PopularidadProducto>> LeerPopularidad(IEnumerable<string> productos);
         Task<List<CompraDiaReposicion>> LeerComprasCliente(string empresa, string cliente, DateTime desde, DateTime hasta);
         /// <summary>Productos en pedidos pendientes o en curso del cliente.</summary>
         Task<HashSet<string>> LeerPendientesCliente(string empresa, string cliente);
@@ -79,6 +90,7 @@ SELECT CAST(CASE WHEN COL_LENGTH(@p0, @p1) IS NULL THEN 0 ELSE 1 END AS bit)";
         internal const string TABLA_PERFILES = "dbo.SugerenciasProductosPerfilesProductos";
         internal const string TABLA_AFINIDAD = "dbo.SugerenciasProductosAfinidad";
         internal const string TABLA_MOSTRADAS = "dbo.SugerenciasProductosMostradas";
+        internal const string TABLA_POPULARIDAD = "dbo.SugerenciasProductosPopularidad";
 
         internal const string SQL_LEER_SESION = @"
 SELECT Id, RTRIM(Empresa) AS Empresa, RTRIM(Cliente) AS Cliente, RTRIM(Contacto) AS Contacto, RTRIM(Vendedor) AS Vendedor,
@@ -131,6 +143,25 @@ JOIN dbo.SugerenciasProductosSesiones s ON s.Id = m.SesionId
 LEFT JOIN dbo.Productos p WITH (NOLOCK) ON p.Empresa = s.Empresa AND p.[Número] = m.Producto
 WHERE s.Empresa = @p0 AND s.Cliente = @p1 AND m.Respuesta IN ('NoLeInteresa', 'DescartadoVendedor') AND m.FechaRespuesta >= @p2
 GROUP BY RTRIM(m.Producto)";
+
+        /// <summary>NestoAPI#682: 1 si el CK de Respuesta admite «Sustituida» o no hay CK.</summary>
+        internal const string SQL_ADMITE_SUSTITUIDA = @"
+SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM sys.check_constraints
+                              WHERE parent_object_id = OBJECT_ID(N'dbo.SugerenciasProductosMostradas')
+                                AND definition LIKE N'%Respuesta%'
+                                AND definition NOT LIKE N'%Sustituida%')
+            THEN 0 ELSE 1 END AS bit)";
+
+        internal const string SQL_GUARDAR_SUSTITUIDA = @"
+UPDATE dbo.SugerenciasProductosMostradas SET Respuesta = '" + RespuestasSugerencia.SUSTITUIDA + @"', FechaRespuesta = GETDATE()
+WHERE Id = @p0 AND Respuesta IS NULL";
+
+        /// <summary>NestoAPI#682: «Sustituida» sin el script Issue682 (ver RespuestasSugerencia.MARCA_SUSTITUIDA).</summary>
+        internal const string SQL_GUARDAR_SUSTITUIDA_PROVISIONAL = @"
+UPDATE dbo.SugerenciasProductosMostradas
+SET Texto = CASE WHEN ISNULL(Texto, N'') LIKE N'[[]Sustituida] %' THEN Texto
+                 ELSE LEFT(N'" + RespuestasSugerencia.MARCA_SUSTITUIDA + @"' + ISNULL(Texto, N''), 200) END
+WHERE Id = @p0 AND Respuesta IS NULL";
 
         /// <summary>Nesto#537: 1 si el CK de Respuesta admite «DescartadoVendedor» o no hay CK (con él, cualquier valor cabe).</summary>
         internal const string SQL_ADMITE_DESCARTADO_VENDEDOR = @"
@@ -315,6 +346,42 @@ WHERE p.Decision = 'Potenciar' AND p.PotenciarHasta >= @p0";
                 SugerenciasProductosSql.Char("@p0", empresa, 3), SugerenciasProductosSql.Varchar("@p1", cliente, 10),
                 SugerenciasProductosSql.Fecha("@p2", desde)).ToListAsync().ConfigureAwait(false);
             return filas.Where(f => f?.Producto != null).ToList();
+        }
+
+        private bool? admiteSustituida;
+
+        public async Task<bool> AdmiteSustituida()
+        {
+            if (admiteSustituida == null)
+            {
+                admiteSustituida = await db.Database.SqlQuery<bool>(SugerenciasProductosSql.SQL_ADMITE_SUSTITUIDA).FirstAsync().ConfigureAwait(false);
+            }
+            return admiteSustituida.Value;
+        }
+
+        public Task GuardarSustituida(int id)
+            => db.Database.ExecuteSqlCommandAsync(SugerenciasProductosSql.SQL_GUARDAR_SUSTITUIDA, SugerenciasProductosSql.Entero("@p0", id));
+
+        public Task GuardarSustituidaProvisional(int id)
+            => db.Database.ExecuteSqlCommandAsync(SugerenciasProductosSql.SQL_GUARDAR_SUSTITUIDA_PROVISIONAL, SugerenciasProductosSql.Entero("@p0", id));
+
+        public async Task<List<PopularidadProducto>> LeerPopularidad(IEnumerable<string> productos)
+        {
+            var resultado = new List<PopularidadProducto>();
+            List<string> lista = Limpios(productos);
+            if (lista.Count == 0 || !await ExisteTabla(SugerenciasProductosSql.TABLA_POPULARIDAD).ConfigureAwait(false))
+            {
+                return resultado;
+            }
+            for (int i = 0; i < lista.Count; i += SugerenciasProductosSql.TAMANO_LOTE)
+            {
+                List<string> lote = lista.Skip(i).Take(SugerenciasProductosSql.TAMANO_LOTE).ToList();
+                List<SqlParameter> parametros = lote.Select((p, n) => SugerenciasProductosSql.Varchar("@a" + n, p, 15)).ToList();
+                string sql = "SELECT RTRIM(Producto) AS Producto, Clientes12Meses, Clientes3Meses, Cestas12Meses, Rango " +
+                    "FROM dbo.SugerenciasProductosPopularidad WHERE Producto IN (" + string.Join(", ", parametros.Select(p => p.ParameterName)) + ")";
+                resultado.AddRange(await db.Database.SqlQuery<PopularidadProducto>(sql, parametros.Cast<object>().ToArray()).ToListAsync().ConfigureAwait(false));
+            }
+            return resultado;
         }
 
         // La consulta de #661 (un cliente, búsqueda por los índices que empiezan por Nº Cliente: milisegundos).

@@ -64,6 +64,37 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         /// </summary>
         public const int MINIMO_QUITADOS_FAMILIA = 2;
 
+        // ---- NestoAPI#671 (corte 2c): el modelo en Calcular ----
+
+        /// <summary>
+        /// La diversidad del plan (1 habitual y 1 por familia) se queda APAGADA: con los datos del informe del 20/10/26 el top-3
+        /// sin ella acierta más (P@3 26,1 % frente a 17,2 %). Cambiar a true para volver a aplicarla al orden del modelo.
+        /// (static readonly y no const para que el código apagado siga compilándose sin avisos.)
+        /// </summary>
+        public static readonly bool APLICAR_DIVERSIDAD = false;
+        /// <summary>Exploración ε-greedy: en este % de las sesiones (decidido por sesión: estable entre llamadas) el hueco
+        /// <see cref="POSICION_EXPLORACION"/> se elige al azar entre los puestos <see cref="PUESTO_EXPLORACION_DESDE"/> a
+        /// <see cref="PUESTO_EXPLORACION_HASTA"/> del orden del modelo (Exploracion = 1 en el registro).</summary>
+        public const int PORCENTAJE_SESIONES_EXPLORACION = 10;
+        public const int POSICION_EXPLORACION = 3;
+        public const int PUESTO_EXPLORACION_DESDE = 4;
+        public const int PUESTO_EXPLORACION_HASTA = 15;
+        /// <summary>Los mejores por P1 a los que se mira el stock (el stock es lo más caro de leer).</summary>
+        public const int CANDIDATOS_MODELO_CON_STOCK = 20;
+        /// <summary>Candidatos del perfil a los que se lee la ficha, si no se tiene (el modelo coge los 15 primeros que valgan).</summary>
+        public const int FICHAS_PERFIL_MODELO = 40;
+
+        // ---- NestoAPI#682: sustituir una visible sin contestar cuando aparece otra mejor ----
+
+        /// <summary>Con el modelo: la nueva tiene que tener al menos este múltiplo de la P1 de la más floja…</summary>
+        public const double FACTOR_MEJORA_SUSTITUCION = 1.3;
+        /// <summary>…y al menos estos puntos más (en probabilidad: 0,03 = 3 puntos).</summary>
+        public const double DIFERENCIA_MINIMA_SUSTITUCION = 0.03;
+        /// <summary>Sin el modelo: una «comprado junto» nueva con al menos esta confianza entra si no hay ninguna a la vista.</summary>
+        public const decimal CONFIANZA_MINIMA_SUSTITUCION_REGLAS = 0.15m;
+        /// <summary>Como mucho una sustitución por llamada, para que las tarjetas no bailen.</summary>
+        public const int MAXIMO_SUSTITUCIONES_POR_LLAMADA = 1;
+
         /// <summary>El orden en que se cogen las fuentes al mezclar.</summary>
         public static readonly string[] ORDEN_FUENTES = FuentesNucleo.ORDEN;
 
@@ -194,6 +225,46 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
                 .GroupBy(f => f, StringComparer.OrdinalIgnoreCase)
                 .Where(g => g.Count() >= MINIMO_QUITADOS_FAMILIA)
                 .Select(g => g.Key), StringComparer.OrdinalIgnoreCase);
+        }
+
+        /// <summary>NestoAPI#671: si la sesión explora (ε-greedy). Por sesión y estable: el mismo Guid siempre da lo mismo.</summary>
+        public static bool EsSesionDeExploracion(Guid sesion)
+            => ModeloSugerenciasProductos.Features.ConstructorInstantaneas.Hash(sesion.ToString("N")) % 100 < PORCENTAJE_SESIONES_EXPLORACION;
+
+        /// <summary>
+        /// NestoAPI#671: el índice (base 0) del candidato que va al hueco de exploración: al azar entre los puestos
+        /// <see cref="PUESTO_EXPLORACION_DESDE"/> y <see cref="PUESTO_EXPLORACION_HASTA"/>. Null si no hay tantos candidatos
+        /// (entonces va el mejor, sin explorar).
+        /// </summary>
+        public static int? IndiceExploracion(int candidatos, Random azar)
+        {
+            if (candidatos < PUESTO_EXPLORACION_DESDE || azar == null)
+            {
+                return null;
+            }
+            return azar.Next(PUESTO_EXPLORACION_DESDE - 1, Math.Min(PUESTO_EXPLORACION_HASTA, candidatos));
+        }
+
+        /// <summary>NestoAPI#682 (con el modelo): la nueva mejora claramente a la más floja de las visibles sin contestar.</summary>
+        public static bool MejoraClara(double pNueva, double pFloja)
+            => pNueva >= pFloja * FACTOR_MEJORA_SUSTITUCION && pNueva - pFloja >= DIFERENCIA_MINIMA_SUSTITUCION;
+
+        /// <summary>
+        /// NestoAPI#682 (sin el modelo): la más floja según <see cref="ORDEN_FUENTES"/> (la fuente más atrás); a igualdad, la de
+        /// menos puntuación (dentro de una fuente sí se pueden comparar) y la del hueco más alto.
+        /// </summary>
+        public static SugerenciaMostrada MasFlojaSegunReglas(IEnumerable<SugerenciaMostrada> visibles)
+            => (visibles ?? Enumerable.Empty<SugerenciaMostrada>())
+                .Where(v => v != null)
+                .OrderByDescending(v => IndiceFuente(v.Motivo))
+                .ThenBy(v => v.Puntuacion)
+                .ThenByDescending(v => v.Posicion)
+                .FirstOrDefault();
+
+        private static int IndiceFuente(string motivo)
+        {
+            int i = Array.IndexOf(ORDEN_FUENTES, motivo);
+            return i < 0 ? ORDEN_FUENTES.Length : i;
         }
 
         /// <summary>
@@ -403,6 +474,12 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         }
 
         internal static string TextoParecidos() => "Lo compran clientes parecidos, con compras como las suyas, y aún no lo ha pedido.";
+
+        /// <summary>NestoAPI#671: lo más comprado del perfil (candidato solo del modelo; se enseña como «Clientes parecidos»).</summary>
+        internal static string TextoPerfil(int clientesParecidos)
+            => clientesParecidos == 1
+                ? "De lo más vendido entre los clientes parecidos (lo compra 1)."
+                : string.Format(ES, "De lo más vendido entre los clientes parecidos (lo compran {0:N0}).", clientesParecidos);
 
         private static string Nombre(string producto, IDictionary<string, FichaProductoSugerencia> fichas)
         {

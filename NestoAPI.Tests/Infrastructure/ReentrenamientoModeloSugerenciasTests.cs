@@ -195,7 +195,7 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual("job mensual", meta.Origen);
             Assert.IsTrue(File.Exists(almacen.RutaLog(sufijo)));
             Assert.AreEqual(5, Directory.GetFiles(carpeta, "*", SearchOption.AllDirectories).Length, "zip, json, README, informe y log; nada más (nada «activo»)");
-            ComprobarAviso("PASARÍA", "NO se ha activado", "P@3 15,3 %", "reglas-1 12,1 %", "NDCG@3 0,180", almacen.RutaInforme(sufijo));
+            ComprobarAviso("PASARÍA", "Las sugerencias ya lo usan", "P@3 15,3 %", "reglas-1 12,1 %", "NDCG@3 0,180", almacen.RutaInforme(sufijo));
             Assert.AreEqual(0, errores.Count);
             Assert.AreEqual(1, memoriaLiberada);
         }
@@ -433,7 +433,7 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         /// <summary>Lo mismo que DatosSinteticos de la consola: 60 clientes de 4 tipos que compran sobre todo su subgrupo, con pares.</summary>
-        private static DatosCrudos DatosSinteticos(DateTime desde, DateTime hasta, int clientes = 60, int productos = 48)
+        internal static DatosCrudos DatosSinteticos(DateTime desde, DateTime hasta, int clientes = 60, int productos = 48)
         {
             var datos = new DatosCrudos();
             for (int i = 0; i < productos; i++)

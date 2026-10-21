@@ -85,8 +85,9 @@ namespace NestoAPI.Controllers
 
         /// <summary>
         /// NestoAPI#671 (corte 2d): entrena el modelo de sugerencias en el servidor (el mismo job que corre el segundo sábado de
-        /// cada mes), en la cola «entrenamiento» de Hangfire. NO activa nada: deja zip, json, README e informe frente a reglas-1
-        /// en ModeloSugerencias:Carpeta y avisa en la campana de Nesto. Solo Dirección e Informática.
+        /// cada mes), en la cola «entrenamiento» de Hangfire. Deja zip, json, README e informe frente a reglas-1 en
+        /// ModeloSugerencias:Carpeta y avisa en la campana de Nesto. Desde el corte 2c, Calcular usa el último que pasa la puerta
+        /// (<see cref="PredictorSugerenciasProductos"/>). Solo Dirección e Informática.
         /// <para>Sin <paramref name="cuando"/>, en la próxima franja permitida (de lunes a viernes de 5:00 a 21:00, hoy a las
         /// 23:30; si no, ya). Con <paramref name="cuando"/>, a esa hora, que no puede caer de lunes a viernes de 7:00 a 21:00
         /// (400). Con <paramref name="forzar"/>=true se salta la guarda horaria (y sin <paramref name="cuando"/>, se lanza ya).</para>
@@ -139,8 +140,8 @@ namespace NestoAPI.Controllers
                 JobId = jobId,
                 Programada = programada,
                 Forzar = forzar,
-                Mensaje = $"Entrenamiento del modelo de sugerencias programado para el {programada:dd/MM/yyyy HH:mm}. No se activa nada: " +
-                    "el resultado (si pasaría la puerta, métricas y dónde está el informe) llegará a la campana."
+                Mensaje = $"Entrenamiento del modelo de sugerencias programado para el {programada:dd/MM/yyyy HH:mm}. Si pasa la puerta, " +
+                    "las sugerencias lo usarán en cuanto termine; el resultado (métricas y dónde está el informe) llegará a la campana."
             });
         }
 
@@ -162,7 +163,9 @@ namespace NestoAPI.Controllers
                 db.Configuration.ProxyCreationEnabled = false;
                 // Nesto#537: las fichas llevan la foto de la tienda (la caché de las fotos es común a todas las peticiones)
                 return await accion(new ServicioSugerenciasProductos(new RepositorioSugerenciasProductosSql(db),
-                    fotos: new Infraestructure.PreparacionAlmacen.FotosProductoAlmacen())).ConfigureAwait(false);
+                    fotos: new Infraestructure.PreparacionAlmacen.FotosProductoAlmacen(),
+                    // NestoAPI#671 (corte 2c): el modelo (caché del zip común a todas las peticiones; sin él, reglas-1)
+                    predictor: PredictorSugerenciasProductos.Instancia)).ConfigureAwait(false);
             }
         }
     }
