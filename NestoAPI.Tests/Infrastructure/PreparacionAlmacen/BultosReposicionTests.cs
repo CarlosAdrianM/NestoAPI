@@ -75,6 +75,14 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         [DataRow("R81029-0", false, 0, 0)]
         [DataRow("", false, 0, 0)]
         [DataRow(null, false, 0, 0)]
+        // Reposición 81097: el prefijo AIM de la simbología («]C0» Code 128, «]C1» con FNC1) delante
+        [DataRow("]C0R81097-1", true, 81097, 1)]
+        [DataRow("]C1R81097-1", true, 81097, 1)]
+        [DataRow(" ]c0r81097'1 ", true, 81097, 1)]
+        [DataRow("]C0", false, 0, 0)]
+        [DataRow("]C0R81097", false, 0, 0)]
+        [DataRow("]E08437017509999", false, 0, 0)]
+        [DataRow("]C0]C0R81097-1", false, 0, 0)]
         public void Leer_CodigoDeBulto(string codigo, bool esBulto, int traspaso, int bulto)
         {
             Assert.AreEqual(esBulto, CodigosBultoReposicion.Leer(codigo, out int t, out int b));
@@ -88,6 +96,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         [DataRow("r81029?1", "R81029-1")]
         [DataRow(" R81029-1 ", "R81029-1")]
         [DataRow("R081029_01", "R81029-1")]
+        [DataRow("]C0R81097-1", "R81097-1")]
         [DataRow(" 8437017509999 ", "8437017509999")]
         [DataRow("abc-12", "ABC-12")]
         [DataRow("   ", null)]
@@ -141,6 +150,32 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             StringAssert.Contains(epl, "A66,112,0,3,1,1,N,\"ALC > ALG\"");
             StringAssert.Contains(zpl, "^FDR81093-2^FS");
             Assert.IsFalse(zpl.Contains("^PW") || zpl.Contains("^LL"));
+        }
+
+        /// <summary>
+        /// Reposición 81097 (21/10/26): la etiqueta hecha a mano para Alcobendas llevaba el código con módulo de 2 puntos
+        /// desde x=40: 123 módulos × 2 = 246 puntos, hasta el 286, en una etiqueta de 240 (30 mm). Sin el final (control y
+        /// parada) ni margen a la derecha, no lo lee ningún lector. El de la API tiene que caber con su margen (10 módulos
+        /// a cada lado) incluso con un traspaso de 6 cifras y un bulto de 2, contando todo en el juego B (lo más largo).
+        /// </summary>
+        [DataTestMethod]
+        [DataRow("R81097-1")]
+        [DataRow("R999999-99")]
+        public void Reposicion81097_ElCodigoDeLaEtiquetaCabeConSuMargen(string codigo)
+        {
+            const int margenModulos = 10;
+            int modulos = 11 + 11 * codigo.Length + 11 + 13; // inicio + datos + control + parada (juego B)
+            var bultos = new List<BultoReposicionDTO> { new BultoReposicionDTO { Codigo = codigo, Bulto = 1, Total = 1 } };
+            string epl = GeneradorEtiquetasBulto.Epl(bultos, 81097, "ALC", "ALG");
+            string zpl = GeneradorEtiquetasBulto.Zpl(bultos, 81097, "ALC", "ALG");
+            int estrecho = GeneradorEtiquetasBulto.CODIGO_ESTRECHO;
+            int x = int.Parse(System.Text.RegularExpressions.Regex.Match(zpl, @"\^FO(\d+),\d+\^BY").Groups[1].Value);
+
+            StringAssert.Contains(epl, $"B{x},{GeneradorEtiquetasBulto.CODIGO_Y},0,1,{estrecho},{estrecho},");
+            StringAssert.Contains(zpl, $"^BY{estrecho}^BC");
+            Assert.IsTrue(x >= margenModulos * estrecho, $"margen izquierdo {x} puntos");
+            Assert.IsTrue(x + modulos * estrecho <= GeneradorEtiquetasHueco.ANCHO - margenModulos * estrecho,
+                $"el código acaba en el punto {x + modulos * estrecho} y la etiqueta tiene {GeneradorEtiquetasHueco.ANCHO}");
         }
 
         [TestMethod]

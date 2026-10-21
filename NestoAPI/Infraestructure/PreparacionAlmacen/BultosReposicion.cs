@@ -48,8 +48,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// <summary>
         /// NestoAPI#675: R + traspaso + cualquier separador que no sea cifra ni letra + bulto. La pistola con teclado americano
         /// en un Windows español manda «R81029'1» (o «?», «_», «/»…) en vez de «R81029-1».
+        /// <para>Reposición 81097 (21/10/26): delante puede venir el identificador de simbología AIM («]C0», «]C1»…). La
+        /// cámara de Ariadna (ML Kit) lo pone en los Code 128 con FNC1 y un lector con el prefijo AIM, en todos; se quita.</para>
         /// </summary>
-        private static readonly Regex patronEtiqueta = new Regex(@"^R([0-9]+)[^\p{L}\p{N}]+([0-9]+)$", RegexOptions.CultureInvariant);
+        private static readonly Regex patronEtiqueta = new Regex(@"^(?:\][A-Z][0-9A-Z])?R([0-9]+)[^\p{L}\p{N}]+([0-9]+)$", RegexOptions.CultureInvariant);
 
         /// <summary>
         /// Lo leído, listo para buscar: una etiqueta de bulto, siempre como «R{traspaso}-{bulto}» (NestoAPI#675: «r81029'1 » →
