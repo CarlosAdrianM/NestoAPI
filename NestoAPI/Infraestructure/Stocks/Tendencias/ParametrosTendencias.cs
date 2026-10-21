@@ -121,6 +121,14 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         /// <summary>Filas de la hoja «Top».</summary>
         public int FilasTop { get; set; } = 50;
 
+        /// <summary>
+        /// NestoAPI#632: con qué fórmula salen el máximo y el mínimo de los maduros (fase B). Interruptor para volver atrás sin
+        /// publicar: <see cref="FormulasMaduros.RECIENTE"/> (por defecto, #632: ponderada sin estacionalidad, la de 6 meses si va a
+        /// la baja y sin subir en declive), <see cref="FormulasMaduros.PONDERADA"/> (la del corte 2, #630) o
+        /// <see cref="FormulasMaduros.CLASICA"/> (la media de 24 meses de siempre de la ficha).
+        /// </summary>
+        public string FormulaMaduros { get; set; } = FormulasMaduros.RECIENTE;
+
         public static ParametrosTendencias DesdeConfiguracion() => Desde(clave => ConfigurationManager.AppSettings[clave]);
 
         public static ParametrosTendencias Desde(Func<string, string> leer)
@@ -160,6 +168,7 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             p.DiasRetraso = Entero(leer, nameof(DiasRetraso), p.DiasRetraso);
             p.MesesLoteGrande = Entero(leer, nameof(MesesLoteGrande), p.MesesLoteGrande);
             p.FilasTop = Entero(leer, nameof(FilasTop), p.FilasTop);
+            p.FormulaMaduros = FormulasMaduros.Normalizar(leer(PREFIJO + nameof(FormulaMaduros)));
             return p;
         }
 
@@ -203,6 +212,7 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             yield return (nameof(MesesLoteGrande), MesesLoteGrande.ToString(), "Múltiplo grande: más de estos meses de venta (aviso para pedir un múltiplo menor; no está en el máximo)");
             yield return (nameof(DiasRetraso), DiasRetraso.ToString(), "Servido con retraso: albarán más de estos días después de la fecha de entrega (12 meses)");
             yield return (nameof(VidaUtilMesesPropios), VidaUtilMesesPropios.ToString(), "Propios (P): vida útil en meses de los grupos que no están en VidaUtilMesesPorGrupo");
+            yield return (nameof(FormulaMaduros), FormulaMaduros, "Maduros (B): Reciente (ponderada sin estacionalidad, la de 6 meses si va a la baja, sin subir en declive), Ponderada (corte 2) o Clasica (media de 24 meses)");
         }
 
         /// <summary>«GRUPO=meses» de <see cref="VidaUtilMesesPorGrupo"/> (lo que no se entienda, se ignora).</summary>

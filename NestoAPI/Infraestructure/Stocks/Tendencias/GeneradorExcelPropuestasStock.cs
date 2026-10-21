@@ -33,6 +33,10 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         public const string COLUMNA_SERVIDO_CON_RETRASO = "Servido con retraso 12 m (uds)";
         /// <summary>NestoAPI#630: el múltiplo de compra son más de PropuestasStock:MesesLoteGrande meses de venta.</summary>
         public const string COLUMNA_MULTIPLO_GRANDE = "Múltiplo grande (pedir uno menor)";
+        /// <summary>NestoAPI#632: la venta mensual de la que salen el máximo y el mínimo (antes del factor estacional).</summary>
+        public const string COLUMNA_VENTA_BASE_MAXIMOS = "Venta base del máximo (uds/mes)";
+        /// <summary>NestoAPI#632: de dónde sale esa venta (ponderada sin estacionalidad, 6 meses si va a la baja, declive sin subir…).</summary>
+        public const string COLUMNA_ORIGEN_VENTA_BASE = "Base del máximo";
 
         private const string FORMATO_EUROS = "#,##0.00 €";
         private const string FORMATO_DECIMAL = "#,##0.0";
@@ -172,6 +176,9 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                     ("Meses desde 1ª venta", r => r.MesesDesdePrimeraVenta, null),
                     ("Ventas 12 m", r => r.Ventas12Meses, null),
                     ("Venta ponderada", r => r.VentaMediaPonderada, FORMATO_DECIMAL),
+                    // NestoAPI#632: de qué venta salen el máximo y el mínimo (la frase completa, en «Explicación»)
+                    (COLUMNA_VENTA_BASE_MAXIMOS, r => r.VentaBaseMaximos, FORMATO_DECIMAL),
+                    (COLUMNA_ORIGEN_VENTA_BASE, r => r.OrigenVentaBaseMaximos, null),
                     ("Factor estacional", r => r.FactorEstacional, FORMATO_RATIO),
                     ("Días en servir", r => r.DiasEnServir, null),
                     ("Múltiplos", r => r.Multiplos, null),

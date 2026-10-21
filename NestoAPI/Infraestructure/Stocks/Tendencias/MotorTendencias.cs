@@ -12,10 +12,14 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
     /// <para><b>Fase</b> (por edad y volumen): A nuevo si hace menos de <see cref="ParametrosTendencias.MesesFaseA"/> meses de la
     /// primera venta (o de la primera entrada, si aún no se ha vendido); si no, C intermitente si en 12 meses vende menos de
     /// <see cref="ParametrosTendencias.UnidadesAnioIntermitente"/> uds; si no, B maduro.</para>
-    /// <para><b>Máximo y mínimo</b> (B): misma estructura que la fórmula de hoy (7 + 2 × días en servir), pero con la venta
-    /// ponderada reciente en vez de la media de 24 meses y con el factor estacional de la familia para los próximos meses:
-    /// D = venta ponderada × factor ÷ 30 (uds/día); mínimo (punto de pedido) = D × (días en servir + seguridad); máximo =
-    /// D × (seguridad + 2 × días en servir), al menos el mínimo más un múltiplo, y nunca más que D × cobertura objetivo.</para>
+    /// <para><b>Máximo y mínimo</b>: los calcula la estrategia de la fase (<see cref="EstrategiasMaximos"/>, NestoAPI#632: núcleo
+    /// + estrategias); el núcleo decide antes las salidas tempranas y después la acción.</para>
+    /// <para>B (NestoAPI#632, <see cref="EstrategiaMaduroReciente"/>): misma estructura que la fórmula de hoy (7 + 2 × días en
+    /// servir), pero con la venta ponderada reciente (3 × media de 3 meses + 2 × media de 6 + media de 12) ÷ 6 SIN la
+    /// estacionalidad de la familia, la de 6 meses si va a la baja y es menor, y × el factor estacional de los próximos meses:
+    /// D = esa venta ÷ 30 (uds/día); mínimo (punto de pedido) = D × (días en servir + seguridad); máximo = D × (seguridad + 2 ×
+    /// días en servir), nunca más que D × cobertura objetivo; en declive confirmado ni el máximo ni el mínimo suben de los de
+    /// hoy. Interruptor <see cref="ParametrosTendencias.FormulaMaduros"/> para volver a la del corte 2 o a la de siempre.</para>
     /// <para>A: D = velocidad demostrada × factor; máximo = D × tope (45 días, 30 si no hay recompra) + lo pendiente de servir.
     /// NestoAPI#678: la velocidad va por días hasta hoy (también la de un nuevo de este mes, con la primera venta después del
     /// corte) y, si las ventas de los últimos días caen más de un 20 %, se usa la reciente; con menos de 90 días (recompra sin medir), tope de
@@ -176,13 +180,14 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             // Propuesta
             int diasHorizonte = r.DiasSeguridad + 2 * r.DiasEnServir;
             r.FactorEstacional = FactorProximoPeriodo(indicesFamilia, mesReferencia, diasHorizonte);
+            CalculoMaximos calculoMaximos = null;
             if (d.EsFabricacionPropia)
             {
                 ProponerPropio(r, p);
             }
             else
             {
-                Proponer(r, d, p, velocidadNuevo);
+                calculoMaximos = Proponer(r, d, p, velocidadNuevo, indicesFamilia, mesReferencia);
             }
             AvisarLoteGrande(r, p);
 
@@ -211,6 +216,8 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                         tope = TopePropios(r.VentaMensualReferencia, p.VidaUtilMeses(r.Grupo))
                     }
                     : null,
+                // NestoAPI#632: cómo salen el máximo y el mínimo (estrategia, entradas y pasos intermedios)
+                maximos = calculoMaximos?.Entradas,
                 // NestoAPI#678: de dónde sale la velocidad de un nuevo (por días hasta hoy y ventana reciente)
                 nuevo = velocidadNuevo == null
                     ? null
@@ -299,7 +306,7 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             return texto + $". Velocidad {Num(v.Usada, 1)} uds/mes";
         }
 
-        private static string Uds(int unidades) => unidades == 1 ? "1 ud" : $"{unidades} uds";
+        internal static string Uds(int unidades) => unidades == 1 ? "1 ud" : $"{unidades} uds";
 
         /// <summary>NestoAPI#678: la velocidad de un nuevo y de dónde sale (para la frase y las entradas).</summary>
         internal class VelocidadNuevo
@@ -372,7 +379,8 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             return v;
         }
 
-        private static void Proponer(ResultadoTendencia r, DatosProductoTendencia d, ParametrosTendencias p, VelocidadNuevo velocidadNuevo)
+        private static CalculoMaximos Proponer(ResultadoTendencia r, DatosProductoTendencia d, ParametrosTendencias p, VelocidadNuevo velocidadNuevo,
+            decimal[] indices, DateTime mesReferencia)
         {
             string resumen = Resumen(r, p.DiasRetraso);
             bool hayStock = r.Stock > 0;
@@ -394,7 +402,7 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                 {
                     Fijar(r, AccionesPropuesta.NADA, null, null, $"Estado {r.EstadoProducto.Value} y sin stock: nada que hacer. {resumen}");
                 }
-                return;
+                return null;
             }
 
             if (hayStock && r.Fase != FasesProducto.NUEVO && ventasSinSalida <= 0)
@@ -402,7 +410,7 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                 r.Formula = "Sin salida";
                 Fijar(r, AccionesPropuesta.LIQUIDAR, 0, 0,
                     $"Liquidar (Outlet o Ganavisiones){anularCompra}: ninguna venta en {mesesSinSalida} meses y {r.Stock} uds en stock ({Euros(r.ExcesoValorado)}). {resumen}");
-                return;
+                return null;
             }
 
             if (r.Tendencia == TendenciasProducto.DECLIVE && r.CoberturaMeses.HasValue && r.CoberturaMeses.Value > p.MesesCoberturaLiquidar)
@@ -410,7 +418,7 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                 r.Formula = "Declive";
                 Fijar(r, AccionesPropuesta.LIQUIDAR, 0, 0,
                     $"Liquidar (Outlet o Ganavisiones){anularCompra}: declive confirmado y {Num(r.CoberturaMeses.Value, 1)} meses de cobertura (más de {p.MesesCoberturaLiquidar}); sobran {r.ExcesoUnidades} uds ({Euros(r.ExcesoValorado)}). {resumen}");
-                return;
+                return null;
             }
 
             if (r.Tendencia == TendenciasProducto.DECLIVE && r.EstadoProducto == 0 && r.CoberturaMeses.HasValue && r.CoberturaMeses.Value > p.MesesCoberturaEstado1)
@@ -418,68 +426,24 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
                 r.Formula = "Declive";
                 Fijar(r, AccionesPropuesta.ESTADO_1, null, null,
                     $"Pasar a estado 1 (sobre pedido, sin máximos){anularCompra}: declive confirmado y {Num(r.CoberturaMeses.Value, 1)} meses de cobertura (más de {p.MesesCoberturaEstado1}). {resumen}");
-                return;
+                return null;
             }
 
-            string calculo;
-            int maximo, minimo;
-            if (r.Fase == FasesProducto.INTERMITENTE)
+            // NestoAPI#632: la estrategia de la fase (A nuevos, B maduros según FormulaMaduros, C intermitentes) calcula el máximo y
+            // el mínimo con sus entradas; el núcleo decide la acción.
+            CalculoMaximos calculoMaximos = EstrategiasMaximos.Para(r.Fase, p).Calcular(new ContextoMaximos
             {
-                r.Formula = "C: 0-2";
-                maximo = r.Ventas12Meses <= 0 ? 0 : r.Ventas12Meses <= 6 ? 1 : 2;
-                minimo = maximo > 1 ? 1 : 0;
-                calculo = $"Intermitente: {r.Ventas12Meses} uds en 12 meses → máximo {maximo}, mínimo {minimo}";
-            }
-            else if (r.Fase == FasesProducto.NUEVO)
-            {
-                bool sinRecompra = r.TasaRecompra.HasValue && r.TasaRecompra.Value < p.RecompraMinima;
-                // NestoAPI#678: sin recompra todavía medible (menos de 90 días desde la primera venta, o aún sin vender), prudencia:
-                // no se sabe si los que lo han probado repetirán.
-                bool recompraPorMedir = !r.TasaRecompra.HasValue && (velocidadNuevo == null || velocidadNuevo.EdadDias < DIAS_MEDIR_RECOMPRA);
-                int tope = sinRecompra ? p.TopeDiasFaseASinRecompra : recompraPorMedir ? p.TopeDiasFaseASinDatosRecompra : p.TopeDiasFaseA;
-                decimal diaria = (r.Velocidad ?? 0m) * r.FactorEstacional / 30m;
-                int porVelocidad = (int)Math.Ceiling(diaria * tope);
-                int retrasoMensual = RetrasoMensual(r);
-                int noServido = Math.Max(r.DemandaNoServida, retrasoMensual);
-                maximo = porVelocidad + noServido;
-                minimo = Math.Min(maximo, (int)Math.Ceiling(diaria * (r.DiasEnServir + r.DiasSeguridad)));
-                r.Formula = velocidadNuevo != null && velocidadNuevo.Cae ? $"A: velocidad reciente × {tope} días"
-                    : velocidadNuevo != null && velocidadNuevo.PorDias ? $"A: velocidad hasta hoy × {tope} días"
-                    : $"A: velocidad × {tope} días";
-                string recompra = r.TasaRecompra.HasValue
-                    ? $"recompra {Num(r.TasaRecompra.Value, 0)} %{(sinRecompra ? " (baja: tope " + tope + " días)" : "")}"
-                    : recompraPorMedir
-                    ? $"recompra aún sin datos (menos de {DIAS_MEDIR_RECOMPRA} días: tope {tope} días)"
-                    : "recompra aún sin datos";
-                string pendientes = noServido <= 0 ? string.Empty
-                    : r.DemandaNoServida >= retrasoMensual
-                    ? $" + {r.DemandaNoServida} pendientes de servir (vencidos)"
-                    : $" + {retrasoMensual} de retraso al mes ({r.ServidoConRetraso} uds servidas con más de {p.DiasRetraso} días de retraso en {MesesRetraso(r)} meses" +
-                        $"{(r.DemandaNoServida > 0 ? $"; pendientes vencidos {r.DemandaNoServida}" : "")})";
-                calculo = $"{TextoVelocidadNuevo(r, velocidadNuevo)} × {Num(r.FactorEstacional, 2)} estacional; {recompra}; " +
-                    $"proveedor {r.DiasEnServir} días{(r.DiasEnServirSupuestos ? " (supuestos)" : "")} + {r.DiasSeguridad} de seguridad; tope {tope} días → " +
-                    $"máximo {porVelocidad}{pendientes} = {maximo}, mínimo {minimo}";
-            }
-            else
-            {
-                decimal diaria = r.VentaMediaPonderada * r.FactorEstacional / 30m;
-                minimo = (int)Math.Ceiling(diaria * (r.DiasEnServir + r.DiasSeguridad));
-                int formula = (int)Math.Ceiling(diaria * (r.DiasSeguridad + 2 * r.DiasEnServir));
-                // NestoAPI#630 (Carlos, 16/10/26): ni el máximo ni el mínimo incluyen el múltiplo de compra; se respeta al pedir.
-                int tope = (int)Math.Ceiling(diaria * r.CoberturaObjetivoDias);
-                maximo = Math.Max(minimo, Math.Min(formula, tope));
-                if (diaria <= 0)
-                {
-                    maximo = 0;
-                    minimo = 0;
-                }
-                r.Formula = "B: ponderada × (7 + 2 × días)";
-                string lote = r.Multiplos > 1 ? $"; múltiplos de {r.Multiplos} (se respetan al pedir, no en el máximo)" : string.Empty;
-                string acotado = formula > maximo ? $" (acotado por el objetivo de {r.CoberturaObjetivoDias} días)" : string.Empty;
-                calculo = $"Maduro. 6 meses: {Num(r.VentaMedia6Meses, 1)} uds/mes, ponderada {Num(r.VentaMediaPonderada, 1)} × {Num(r.FactorEstacional, 2)} estacional" +
-                    $"{(r.ConEstacionalidad ? "" : " (familia sin 3 años)")}; proveedor {r.DiasEnServir} días{(r.DiasEnServirSupuestos ? " (supuestos)" : "")} + {r.DiasSeguridad} de seguridad{lote}; " +
-                    $"objetivo {r.CoberturaObjetivoDias} días → máximo {maximo}{acotado}, mínimo {minimo}";
-            }
+                R = r,
+                D = d,
+                P = p,
+                Indices = indices,
+                MesReferencia = mesReferencia,
+                VelocidadNuevo = velocidadNuevo
+            });
+            r.Formula = calculoMaximos.Formula;
+            int maximo = calculoMaximos.Maximo;
+            int minimo = calculoMaximos.Minimo;
+            string calculo = calculoMaximos.Frase;
 
             string actual = r.StockMaximoActual.HasValue ? $" (hoy {r.StockMaximoActual}/{r.StockMinimoActual})" : " (hoy sin control de stock en ALG)";
             string accion;
@@ -493,13 +457,14 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             {
                 // Sobre pedido: no tiene máximos que ajustar; solo se avisa si sobra o si hay que parar compras (arriba).
                 Fijar(r, AccionesPropuesta.MANTENER, null, null, $"Ya está en estado 1 (sobre pedido). {resumen}");
-                return;
+                return null;
             }
             else
             {
                 accion = r.StockMaximoActual == maximo && (r.StockMinimoActual ?? 0) == minimo ? AccionesPropuesta.MANTENER : AccionesPropuesta.AJUSTAR;
             }
             Fijar(r, accion, maximo, minimo, calculo + actual + ". " + resumen);
+            return calculoMaximos;
         }
 
         /// <summary>

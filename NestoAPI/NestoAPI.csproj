@@ -1020,6 +1020,7 @@
     <Compile Include="Infraestructure\Rapports\ReentrenamientoModeloLlamadasJobsService.cs" />
     <Compile Include="Controllers\RapportsController.cs" />
     <Compile Include="Infraestructure\Stocks\Tendencias\DemandaStock.cs" />
+    <Compile Include="Infraestructure\Stocks\Tendencias\EstrategiasMaximos.cs" />
     <Compile Include="Infraestructure\Stocks\Tendencias\ParametrosTendencias.cs" />
     <Compile Include="Infraestructure\Stocks\Tendencias\DatosProductoTendencia.cs" />
     <Compile Include="Infraestructure\Stocks\Tendencias\ResultadoTendencia.cs" />

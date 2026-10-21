@@ -50,6 +50,31 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             => (3m * Media(serie, fin, 3) + 2m * Media(serie, fin, 6) + Media(serie, fin, 12)) / 6m;
 
         /// <summary>
+        /// NestoAPI#632: media de los <paramref name="meses"/> que acaban en <paramref name="fin"/> sin la estacionalidad: cada mes
+        /// se divide por el índice de la familia de su mes del año (<paramref name="indices"/>, enero primero) antes de promediar.
+        /// Así tres meses de temporada alta no inflan la base (que luego se multiplica por el factor de los próximos meses) y
+        /// tres de temporada baja no la hunden. Sin índices (familia sin 3 años), la media tal cual. Los meses antes del 0, 0.
+        /// </summary>
+        public static decimal MediaDesestacionalizada(int[] serie, int fin, int meses, decimal[] indices, DateTime mesFin)
+        {
+            if (indices == null)
+            {
+                return Media(serie, fin, meses);
+            }
+            if (serie == null || meses <= 0 || fin < 0)
+            {
+                return 0m;
+            }
+            decimal suma = 0m;
+            for (int i = Math.Max(0, fin - meses + 1); i <= fin && i < serie.Length; i++)
+            {
+                decimal indice = indices[MesDelAnio(mesFin, fin, i)];
+                suma += serie[i] / (indice <= 0m ? 1m : indice);
+            }
+            return suma / meses;
+        }
+
+        /// <summary>
         /// Índice estacional de la familia por mes del año (posición 0 = enero): venta media de ese mes en los últimos 3 años ÷
         /// venta media mensual de los 36. Null (sin estacionalidad) si la familia no tiene 3 años completos de venta (algún mes
         /// con venta en el primer año de la ventana o antes), si no llega a <paramref name="unidadesMinimas"/> o si no vende nada.

@@ -138,10 +138,24 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         /// <summary>Series y contexto en JSON (columna Entradas de la tabla).</summary>
         public string EntradasJson { get; set; }
 
-        // NestoAPI#628: el tipo de exclusiva viaja en EntradasJson («tipoExclusiva»); se lee una vez y se guarda en estos campos
-        // (campos y no propiedades: EF, en SqlQuery, no busca columna para ellos ni para las propiedades sin set).
+        // NestoAPI#628: el tipo de exclusiva viaja en EntradasJson («tipoExclusiva»); NestoAPI#632: y cómo salen el máximo y el
+        // mínimo («maximos»). Se lee una vez y se guarda en estos campos (campos y no propiedades: EF, en SqlQuery, no busca
+        // columna para ellos ni para las propiedades sin set).
         private string entradasLeidas;
-        private string tipoExclusivaLeido;
+        private Newtonsoft.Json.Linq.JObject entradasParseadas;
+
+        private Newtonsoft.Json.Linq.JObject Entradas
+        {
+            get
+            {
+                if (!ReferenceEquals(entradasLeidas, EntradasJson))
+                {
+                    entradasParseadas = Parsear(EntradasJson);
+                    entradasLeidas = EntradasJson;
+                }
+                return entradasParseadas;
+            }
+        }
 
         /// <summary>
         /// NestoAPI#628: Familias.TipoExclusiva de la familia (NAC, MAD, NIG, EXT, PRP…), sacado de <see cref="EntradasJson"/>;
@@ -151,14 +165,22 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
         {
             get
             {
-                if (!ReferenceEquals(entradasLeidas, EntradasJson))
-                {
-                    tipoExclusivaLeido = LeerTipoExclusiva(EntradasJson);
-                    entradasLeidas = EntradasJson;
-                }
-                return tipoExclusivaLeido;
+                string tipo = Leer<string>(Hijo(Entradas, "tipoExclusiva"));
+                return string.IsNullOrWhiteSpace(tipo) ? null : tipo.Trim();
             }
         }
+
+        /// <summary>
+        /// NestoAPI#632: la venta mensual de la que salen el máximo y el mínimo (antes del factor estacional), sacada de
+        /// <see cref="EntradasJson"/> («maximos.ventaBase»). Null si no hay (salidas tempranas, propios o propuestas antiguas).
+        /// </summary>
+        public decimal? VentaBaseMaximos => Leer<decimal?>(Hijo(Hijo(Entradas, "maximos"), "ventaBase"));
+
+        /// <summary>
+        /// NestoAPI#632: de dónde sale <see cref="VentaBaseMaximos"/> («ponderada sin estacionalidad», «6 meses sin estacionalidad
+        /// (a la baja); declive: no sube», «velocidad desde el lanzamiento (nuevo)»…). Null si no hay.
+        /// </summary>
+        public string OrigenVentaBaseMaximos => Leer<string>(Hijo(Hijo(Entradas, "maximos"), "origenVentaBase"));
 
         /// <summary>
         /// NestoAPI#628: la agrupación por tipo de exclusiva (<see cref="IndicadoresStock.AgrupacionesStock"/>): los propios (fórmula
@@ -168,7 +190,7 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             ? IndicadoresStock.AgrupacionesStock.PROPIOS
             : IndicadoresStock.AgrupacionesStock.Codigo(TipoExclusiva);
 
-        private static string LeerTipoExclusiva(string entradas)
+        private static Newtonsoft.Json.Linq.JObject Parsear(string entradas)
         {
             if (string.IsNullOrWhiteSpace(entradas))
             {
@@ -176,20 +198,42 @@ namespace NestoAPI.Infraestructure.Stocks.Tendencias
             }
             try
             {
-                string tipo = (string)Newtonsoft.Json.Linq.JObject.Parse(entradas)["tipoExclusiva"];
-                return string.IsNullOrWhiteSpace(tipo) ? null : tipo.Trim();
+                return Newtonsoft.Json.Linq.JObject.Parse(entradas);
             }
             catch (Newtonsoft.Json.JsonException)
             {
                 return null;
             }
+        }
+
+        private static Newtonsoft.Json.Linq.JToken Hijo(Newtonsoft.Json.Linq.JToken padre, string clave)
+            => padre is Newtonsoft.Json.Linq.JObject objeto ? objeto[clave] : null;
+
+        private static T Leer<T>(Newtonsoft.Json.Linq.JToken token)
+        {
+            if (token == null || token.Type == Newtonsoft.Json.Linq.JTokenType.Null)
+            {
+                return default(T);
+            }
+            try
+            {
+                return token.ToObject<T>();
+            }
+            catch (Newtonsoft.Json.JsonException)
+            {
+                return default(T);
+            }
             catch (InvalidCastException)
             {
-                return null;
+                return default(T);
             }
             catch (ArgumentException)
             {
-                return null;
+                return default(T);
+            }
+            catch (FormatException)
+            {
+                return default(T);
             }
         }
     }

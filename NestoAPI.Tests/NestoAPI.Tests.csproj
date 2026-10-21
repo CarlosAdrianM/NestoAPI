@@ -624,6 +624,7 @@
     <Compile Include="Infrastructure\Stocks\Tendencias\SeriesTendencia.cs" />
     <Compile Include="Infrastructure\Stocks\Tendencias\CalculadoraSeriesTests.cs" />
     <Compile Include="Infrastructure\Stocks\Tendencias\MotorTendenciasNuevosTests.cs" />
+    <Compile Include="Infrastructure\Stocks\Tendencias\MotorTendenciasMaximosTests.cs" />
     <Compile Include="Infrastructure\Stocks\Tendencias\MotorTendenciasTests.cs" />
     <Compile Include="Infrastructure\Stocks\Tendencias\CalibracionTendenciasTests.cs" />
     <Compile Include="Infrastructure\Stocks\Tendencias\ServicioPropuestasStockTests.cs" />

@@ -74,9 +74,11 @@ namespace NestoAPI.Tests.Infrastructure.Stocks.Tendencias
         {
             ResultadoTendencia r = Calcular(Producto(ventas: Constante(30), stock: 90, diasEnServir: 10));
 
-            StringAssert.Contains(r.Explicacion, "Maduro. 6 meses: 30,0 uds/mes, ponderada 30,0 × 1,00 estacional (familia sin 3 años)");
+            // NestoAPI#632: la frase da las tres medias, la ponderada y las cuentas del mínimo y del máximo
+            StringAssert.Contains(r.Explicacion, "Maduro. Venta tal cual (familia sin 3 años: sin estacionalidad): 3 meses 30,0, 6 meses 30,0, 12 meses 30,0 uds/mes");
+            StringAssert.Contains(r.Explicacion, "ponderada (3 × 30,0 + 2 × 30,0 + 30,0) ÷ 6 = 30,0");
             StringAssert.Contains(r.Explicacion, "proveedor 10 días + 7 de seguridad");
-            StringAssert.Contains(r.Explicacion, "objetivo 90 días → máximo 27, mínimo 17 (hoy 555/295)");
+            StringAssert.Contains(r.Explicacion, "mínimo = 30,0 × 17 ÷ 30 = 17; máximo = 30,0 × (7 + 2 × 10) ÷ 30 = 27 → máximo 27, mínimo 17 (hoy 555/295)");
             StringAssert.Contains(r.Explicacion, "Cobertura 3,0 meses (alcanzable 17 días)");
             StringAssert.Contains(r.Explicacion, "los últimos 12 meses son el pico de 5 años");
         }
