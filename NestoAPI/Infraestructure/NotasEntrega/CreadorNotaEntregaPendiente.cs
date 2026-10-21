@@ -42,12 +42,24 @@ namespace NestoAPI.Infraestructure.NotasEntrega
         /// </summary>
         public static readonly DateTime FECHA_ENTREGA_SIN_DETERMINAR = new DateTime(2099, 12, 31);
 
+        /// <summary>NestoAPI#688: lo que dice la nota que nace con fecha (la casilla estaba marcada en el pedido).</summary>
+        internal const string AVISO_SERVIR_AL_HABER_STOCK = "SE SIRVE EN CUANTO HAYA STOCK DE TODO (todo junto).";
+
         internal const string AVISO_SIN_FECHA = "SIN FECHA DE ENTREGA: ponla cuando se sepa cuándo se entrega (hasta entonces no sale en el picking).";
 
         private readonly NVEntities db;
         private readonly GestorPedidosVenta gestorPedidos;
         private readonly Action<Exception, string> registrar;
         private readonly Func<string, int, string, string, Task<ClienteFinalLeasing>> buscarLeasing;
+
+        /// <summary>NestoAPI#688: la casilla «¿Servir lo pendiente en cuanto haya stock?» (columna fuera del EDMX). Sustituible en tests.</summary>
+        internal IRepositorioServirPendienteAlHaberStock RepositorioServirPendiente { get; set; } = new RepositorioServirPendienteAlHaberStock();
+
+        /// <summary>
+        /// NestoAPI#688: la fecha de entrega mínima (hora de corte, ruta y festivos) para una línea que puede salir ya:
+        /// (fecha pedida, ruta, almacén). Por defecto, la de GestorPedidosVenta.FechaEntregaAjustada.
+        /// </summary>
+        internal Func<DateTime, string, string, DateTime> FechaEntregaAjustada { get; set; }
 
         public CreadorNotaEntregaPendiente(NVEntities db, GestorPedidosVenta gestorPedidos)
             : this(db, gestorPedidos, null, (empresa, pedido, banco, contactoBanco) => BuscarEnTablaLeasing(db, empresa, pedido, banco, contactoBanco))
@@ -165,8 +177,14 @@ WHERE l.Empresa = @p0 AND l.Pedido = @p1 AND l.Estado = 0 AND l.Banco = @p2 AND 
                 return null;
             }
 
+            // NestoAPI#688: con la casilla marcada en el pedido (y «Todo ahora»), la nota nace con fecha, todo junto, y sale
+            // en cuanto haya stock de todo lo pendiente, con las reglas de siempre del picking.
+            bool servirAlHaberStock = OpcionesModosPedido.Efectivo(RepositorioServirPendiente.Leer(empresa, pedido),
+                Constantes.Pedidos.ModosFacturacion.Efectivo(original.ModoFacturacion, original.MantenerJunto), esNotaEntrega: false);
+            Func<DateTime, string, string, DateTime> ajustar = FechaEntregaAjustada ?? ((fecha, ruta, almacen) => gestorPedidos.FechaEntregaAjustada(fecha, ruta, almacen));
+
             int numero = db.TomarSiguienteNumeroPedido();
-            CabPedidoVta nota = ConstruirCabecera(original, numero, albaran, usuario, DateTime.Today);
+            CabPedidoVta nota = ConstruirCabecera(original, numero, albaran, usuario, DateTime.Today, servirAlHaberStock);
             ClienteFinalLeasing leasing = await buscarLeasing(empresa, pedido, original.Nº_Cliente?.Trim(), original.Contacto?.Trim()).ConfigureAwait(false);
             if (leasing != null)
             {
@@ -175,13 +193,19 @@ WHERE l.Empresa = @p0 AND l.Pedido = @p1 AND l.Estado = 0 AND l.Banco = @p2 AND 
             db.CabPedidoVtas.Add(nota);
             foreach (LinPedidoVta pendiente in pendientes)
             {
-                LinPedidoVta linea = ConstruirLinea(pendiente, nota, usuario);
+                DateTime? fechaEntrega = servirAlHaberStock ? ajustar(DateTime.Today, nota.Ruta?.Trim(), pendiente.Almacén?.Trim()) : (DateTime?)null;
+                LinPedidoVta linea = ConstruirLinea(pendiente, nota, usuario, fechaEntrega);
                 linea.Nº_Cliente = nota.Nº_Cliente;
                 linea.Contacto = nota.Contacto;
                 gestorPedidos.CalcularImportesLinea(linea, nota.IVA);
                 db.LinPedidoVtas.Add(linea);
             }
             _ = await db.SaveChangesAsync().ConfigureAwait(false);
+            if (servirAlHaberStock)
+            {
+                // Sin la columna no se guarda (la nota ya ha nacido con fecha y todo junto: sale igual).
+                _ = RepositorioServirPendiente.Guardar(empresa, numero, true);
+            }
             return nota;
         }
 
@@ -216,8 +240,10 @@ WHERE l.Empresa = @p0 AND l.Pedido = @p1 AND l.Estado = 0 AND l.Banco = @p2 AND 
         /// <summary>
         /// La cabecera es la del pedido original (Carlos, 25/09/26: ruta, forma de pago, plazos y vendedor los
         /// del pedido, no los de la ficha), marcada como nota de entrega y con el modo de servicio heredado.
+        /// NestoAPI#688: con <paramref name="servirAlHaberStock"/>, todo junto y sin el aviso de «sin fecha» (nace con fecha).
         /// </summary>
-        internal static CabPedidoVta ConstruirCabecera(CabPedidoVta original, int numero, int albaran, string usuario, DateTime hoy)
+        internal static CabPedidoVta ConstruirCabecera(CabPedidoVta original, int numero, int albaran, string usuario, DateTime hoy,
+            bool servirAlHaberStock = false)
         {
             CabPedidoVta nota = original.ClonarParaEmpresa(original.Empresa);
             nota.Número = numero;
@@ -227,12 +253,12 @@ WHERE l.Empresa = @p0 AND l.Pedido = @p1 AND l.Estado = 0 AND l.Banco = @p2 AND 
             // Una nota no se factura: sin modo de facturación y sin retener nada
             nota.MantenerJunto = false;
             nota.ModoFacturacion = null;
-            byte modoHeredado = ModoServicioHeredado(original);
+            byte modoHeredado = servirAlHaberStock ? Constantes.Pedidos.ModosServicio.TODO_JUNTO : ModoServicioHeredado(original);
             nota.ModoServicio = modoHeredado;
             nota.ServirJunto = Constantes.Pedidos.ModosServicio.EsTodoJunto(modoHeredado);
             nota.PedidoOrigen = original.Número;
             nota.AlbaranOrigen = albaran;
-            nota.Comentarios = ComentarioNota(original.Comentarios, original.Número, albaran);
+            nota.Comentarios = ComentarioNota(original.Comentarios, original.Número, albaran, conFecha: servirAlHaberStock);
             nota.AvisarConImporteAlCogerPicking = false; // no hay nada que cobrar al entregar
             nota.Agrupada = false;
             nota.FijarPrimerVto = false;
@@ -252,9 +278,10 @@ WHERE l.Empresa = @p0 AND l.Pedido = @p1 AND l.Estado = 0 AND l.Banco = @p2 AND 
                 : modo;
         }
 
-        internal static string ComentarioNota(string comentarioOriginal, int pedido, int albaran)
+        internal static string ComentarioNota(string comentarioOriginal, int pedido, int albaran, bool conFecha = false)
         {
-            string etiqueta = $"NOTA DE ENTREGA: pendiente de entregar del pedido {pedido} (albarán {albaran})\r\n{AVISO_SIN_FECHA}";
+            string etiqueta = $"NOTA DE ENTREGA: pendiente de entregar del pedido {pedido} (albarán {albaran})\r\n" +
+                (conFecha ? AVISO_SERVIR_AL_HABER_STOCK : AVISO_SIN_FECHA);
             string original = comentarioOriginal?.Trim();
             return string.IsNullOrEmpty(original) ? etiqueta : original + "\r\n" + etiqueta;
         }
@@ -265,7 +292,7 @@ WHERE l.Empresa = @p0 AND l.Pedido = @p1 AND l.Estado = 0 AND l.Banco = @p2 AND 
         /// fecha de modificación del original: el cliente ya ha pagado esas unidades, y esa fecha es la
         /// antigüedad con la que el picking reparte el stock.
         /// </summary>
-        internal static LinPedidoVta ConstruirLinea(LinPedidoVta original, CabPedidoVta nota, string usuario)
+        internal static LinPedidoVta ConstruirLinea(LinPedidoVta original, CabPedidoVta nota, string usuario, DateTime? fechaEntrega = null)
         {
             LinPedidoVta linea = original.ClonarParaEmpresa(nota.Empresa, nota.Número);
             linea.Nº_Orden = 0; // identidad: lo pone la BD
@@ -278,7 +305,7 @@ WHERE l.Empresa = @p0 AND l.Pedido = @p1 AND l.Estado = 0 AND l.Banco = @p2 AND 
             linea.Fecha_Albarán = null;
             linea.Nº_Factura = null;
             linea.Fecha_Factura = null;
-            linea.Fecha_Entrega = FECHA_ENTREGA_SIN_DETERMINAR;
+            linea.Fecha_Entrega = fechaEntrega ?? FECHA_ENTREGA_SIN_DETERMINAR; // #688: con la casilla, con fecha
             linea.LineaParcial = false;
             linea.VtoBueno = true;
             linea.Usuario = usuario;

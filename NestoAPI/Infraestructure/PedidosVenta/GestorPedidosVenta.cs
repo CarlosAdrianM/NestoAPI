@@ -802,6 +802,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             };
         }
 
+        /// <summary>NestoAPI#688: las columnas de la casilla «¿Servir lo pendiente…?» (fuera del EDMX).</summary>
+        internal static IRepositorioServirPendienteAlHaberStock RepositorioServirPendiente { get; set; } = new RepositorioServirPendienteAlHaberStock();
+
         internal static async Task<PedidoVentaDTO> LeerPedido(string empresa, int numero)
         {
             using (NVEntities db = new NVEntities())
@@ -815,6 +818,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 decimal totalComprobacion = RoundingHelper.DosDecimalesRound(cabPedidoVta.LinPedidoVtas.Sum(l => l.Total));
 
                 PedidoVentaDTO pedido = CrearCabeceraDTO(cabPedidoVta);
+                // NestoAPI#688: la casilla vive fuera del EDMX; solo se lee cuando aplica (nota o «Todo ahora»).
+                if (pedido.notaEntrega || Constantes.Pedidos.ModosFacturacion.EsTodoAhora(pedido.modoFacturacion ?? 0))
+                {
+                    pedido.servirPendienteAlHaberStock = OpcionesModosPedido.ParaLeer(RepositorioServirPendiente.Leer(empresa, numero),
+                        pedido.modoFacturacion ?? 0, pedido.notaEntrega);
+                }
 
                 var parametros = db.ParametrosIVA
                     .Where(p => p.Empresa == empresa && p.IVA_Cliente_Prov == pedido.iva)

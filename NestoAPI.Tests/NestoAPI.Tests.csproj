@@ -715,6 +715,7 @@
     <Compile Include="Infrastructure\PedidosVenta\ModosFacturacionPermitidosTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\ContadoMantenerJuntoTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\ReembolsoContadoMantenerJuntoTests.cs" />
+    <Compile Include="Infrastructure\PedidosVenta\OpcionesModosPedidoTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\GestorPortesLineasVivasTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\GestorPortesLineaPortesPutTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\FechaEntregaLineasProtegidasTests.cs" />

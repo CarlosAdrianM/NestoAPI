@@ -1,3 +1,4 @@
+using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
@@ -79,6 +80,77 @@ namespace NestoAPI.Infraestructure.NotasEntrega
             cabecera.Comentarios = QuitarAviso(cabecera.Comentarios);
             _ = await db.SaveChangesAsync().ConfigureAwait(false);
             return null;
+        }
+
+        /// <summary>NestoAPI#688: la casilla de la nota (columna fuera del EDMX). Sustituible en tests.</summary>
+        internal IRepositorioServirPendienteAlHaberStock RepositorioServirPendiente { get; set; } = new RepositorioServirPendienteAlHaberStock();
+
+        /// <summary>NestoAPI#688: la fecha de entrega mínima (fecha, ruta, almacén). Por defecto, la de GestorPedidosVenta.</summary>
+        internal Func<DateTime, string, string, DateTime> FechaEntregaAjustada { get; set; } =
+            (fecha, ruta, almacen) => new GestorPedidosVenta(new ServicioPedidosVenta()).FechaEntregaAjustada(fecha, ruta, almacen);
+
+        internal const string MOTIVO_SIN_COLUMNA = "Todavía no se puede cambiar: falta preparar la base de datos (NestoAPI#688).";
+
+        /// <summary>
+        /// NestoAPI#688 (decisión 9): cambia en la nota «¿Servir lo pendiente en cuanto haya stock?» mientras no tenga picking.
+        /// Marcar = la nota sale todo junto en cuanto haya stock: sus líneas pendientes pasan a la fecha mínima de hoy (hora de
+        /// corte, ruta y festivos) y el picking decide con sus reglas de siempre. Desmarcar = vuelve a «sin fecha» (31/12/2099)
+        /// hasta que alguien la ponga (y entonces avisa el job cuando todo tenga stock). Devuelve el motivo si no se puede.
+        /// </summary>
+        public async Task<string> CambiarServirAlHaberStock(string empresa, int nota, bool marcar, string usuario)
+        {
+            CabPedidoVta cabecera = await db.CabPedidoVtas
+                .SingleOrDefaultAsync(c => c.Empresa == empresa && c.Número == nota).ConfigureAwait(false);
+            if (cabecera == null || !cabecera.NotaEntrega)
+            {
+                return $"El pedido {nota} no es una nota de entrega.";
+            }
+            if (!RepositorioServirPendiente.ColumnasExisten())
+            {
+                return MOTIVO_SIN_COLUMNA;
+            }
+            List<LinPedidoVta> lineas = await db.LinPedidoVtas
+                .Where(l => l.Empresa == empresa && l.Número == nota && l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO
+                    && l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE)
+                .ToListAsync().ConfigureAwait(false);
+            if (lineas.Any(l => (l.Picking ?? 0) != 0))
+            {
+                return $"La nota {nota} ya tiene picking: ya no se puede cambiar cuándo se sirve.";
+            }
+            if (!lineas.Any())
+            {
+                return $"La nota {nota} no tiene nada pendiente de servir.";
+            }
+
+            foreach (LinPedidoVta linea in lineas)
+            {
+                linea.Fecha_Entrega = marcar
+                    ? FechaEntregaAjustada(Hoy(), cabecera.Ruta?.Trim(), linea.Almacén?.Trim())
+                    : CreadorNotaEntregaPendiente.FECHA_ENTREGA_SIN_DETERMINAR;
+                linea.Usuario = usuario;
+            }
+            string sinAvisos = QuitarAviso(QuitarTexto(cabecera.Comentarios, CreadorNotaEntregaPendiente.AVISO_SERVIR_AL_HABER_STOCK));
+            string aviso = marcar ? CreadorNotaEntregaPendiente.AVISO_SERVIR_AL_HABER_STOCK : CreadorNotaEntregaPendiente.AVISO_SIN_FECHA;
+            cabecera.Comentarios = string.IsNullOrEmpty(sinAvisos) ? aviso : sinAvisos + "\r\n" + aviso;
+            if (marcar)
+            {
+                // Decisión 1: sale todo junto, de una vez.
+                cabecera.ModoServicio = Constantes.Pedidos.ModosServicio.TODO_JUNTO;
+                cabecera.ServirJunto = true;
+            }
+            cabecera.Usuario = usuario;
+            _ = await db.SaveChangesAsync().ConfigureAwait(false);
+            _ = RepositorioServirPendiente.Guardar(empresa, nota, marcar);
+            return null;
+        }
+
+        private static string QuitarTexto(string comentarios, string texto)
+        {
+            if (string.IsNullOrEmpty(comentarios))
+            {
+                return comentarios;
+            }
+            return comentarios.Replace("\r\n" + texto, string.Empty).Replace(texto, string.Empty).TrimEnd();
         }
 
         internal static string QuitarAviso(string comentarios)

@@ -941,6 +941,8 @@
     <Compile Include="Infraestructure\PedidosVenta\RepositorioSombraModoServicioSql.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ModosFacturacionPermitidos.cs" />
     <Compile Include="Infraestructure\PedidosVenta\MantenerJuntoContado.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\OpcionesModosPedido.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\RepositorioServirPendienteAlHaberStock.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ValidadorModoServicio.cs" />
     <Compile Include="Infraestructure\Exceptions\ModoServicioNoPermitidoException.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ComercialesPedido.cs" />

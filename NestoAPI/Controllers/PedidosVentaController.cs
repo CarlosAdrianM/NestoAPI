@@ -511,6 +511,12 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest("Falta el pedido.");
             }
+            return Ok(SugerenciaModoServicio(pedido));
+        }
+
+        /// <summary>NestoAPI#688: la sugerencia de ModoServicioSugerido, para reutilizarla en OpcionesModos.</summary>
+        private SugeridorModoServicio.Sugerencia SugerenciaModoServicio(PedidoVentaDTO pedido)
+        {
             // NestoAPI#517: va en la misma petición de la plantilla que las ofertas; mismo trato: caché por
             // huella del pedido (que incluye el almacén de cada línea) y el stock de todos sus productos leído
             // de golpe (antes 2-5 consultas por producto).
@@ -525,7 +531,7 @@ namespace NestoAPI.Controllers
             // NestoAPI#518: el parámetro del usuario manda solo si su modo tiene sentido para el pedido (se
             // aplica fuera de la caché: la sugerencia es del pedido y el parámetro, de cada usuario).
             byte? forzado = ModoServicioForzadoPorParametro();
-            return Ok(forzado.HasValue ? SugeridorModoServicio.AplicarForzado(sugerencia, forzado.Value) : sugerencia);
+            return forzado.HasValue ? SugeridorModoServicio.AplicarForzado(sugerencia, forzado.Value) : sugerencia;
         }
 
         /// <summary>
@@ -547,6 +553,96 @@ namespace NestoAPI.Controllers
                 ? db.CabPedidoVtas.Where(c => c.Empresa == pedido.empresa && c.Número == pedido.numero).Select(c => c.ModoFacturacion).FirstOrDefault()
                 : null;
             return Ok(ModosFacturacionPermitidos.Sugerir(pedido, modoAlmacenado, PlazosSonDeLaFicha(pedido)));
+        }
+
+        /// <summary>
+        /// NestoAPI#688: LA regla de qué enseñar de los modos del pedido (servicio × facturación × casilla «¿Servir lo
+        /// pendiente en cuanto haya stock?»), ver <see cref="OpcionesModosPedido"/>. Mismo DTO que se manda a guardar.
+        /// Servicio y Facturacion son las MISMAS sugerencias que ModoServicioSugerido y ModoFacturacionSugerido (que
+        /// siguen igual); esta respuesta añade si se enseña cada cosa.
+        /// </summary>
+        [HttpPost]
+        [Authorize]
+        [Route("api/PedidosVenta/OpcionesModos")]
+        [ResponseType(typeof(OpcionesModosPedidoDTO))]
+        public IHttpActionResult PostOpcionesModos([FromBody] PedidoVentaDTO pedido)
+        {
+            if (pedido == null)
+            {
+                return BadRequest("Falta el pedido.");
+            }
+            var guardado = pedido.numero != 0
+                ? db.CabPedidoVtas.Where(c => c.Empresa == pedido.empresa && c.Número == pedido.numero)
+                    .Select(c => new { c.ModoServicio, c.ServirJunto, c.ModoFacturacion, c.MantenerJunto, c.NotaEntrega })
+                    .FirstOrDefault()
+                : null;
+            bool esNota = pedido.notaEntrega || guardado?.NotaEntrega == true;
+
+            SugeridorModoServicio.Sugerencia servicio = SugerenciaModoServicio(pedido);
+            ModosFacturacionPermitidos.Sugerencia facturacion = ModosFacturacionPermitidos.Sugerir(pedido, guardado?.ModoFacturacion, PlazosSonDeLaFicha(pedido));
+
+            // El modo de servicio: el que manda el cliente; si no, el del pedido guardado; en la plantilla, el sugerido.
+            byte modoServicio = pedido.modoServicio
+                ?? (guardado != null ? Constantes.Pedidos.ModosServicio.Efectivo(guardado.ModoServicio, guardado.ServirJunto) : servicio.Modo);
+            // El de facturación: el informado tal cual (como Normalizar); si no, el efectivo del guardado con el bit del DTO.
+            byte modoFacturacion = pedido.modoFacturacion
+                ?? Constantes.Pedidos.ModosFacturacion.Efectivo(guardado?.ModoFacturacion, pedido.mantenerJunto);
+            byte? anterior = guardado != null ? Constantes.Pedidos.ModosFacturacion.Efectivo(guardado.ModoFacturacion, guardado.MantenerJunto) : (byte?)null;
+            bool? almacenado = null;
+            if (guardado != null && (esNota || Constantes.Pedidos.ModosFacturacion.EsTodoAhora(anterior.Value)))
+            {
+                almacenado = OpcionesModosPedido.Efectivo(LeerServirPendienteGuardado(pedido.empresa, pedido.numero),
+                    anterior.Value, esNota);
+            }
+
+            return Ok(OpcionesModosPedido.Calcular(servicio, facturacion, modoServicio, modoFacturacion,
+                pedido.servirPendienteAlHaberStock, almacenado, esNota));
+        }
+
+        /// <summary>NestoAPI#688: la casilla guardada en el pedido (null si no tiene o la columna aún no existe).</summary>
+        private bool? LeerServirPendienteGuardado(string empresa, int numero) => RepositorioServirPendiente.Leer(empresa, numero);
+
+        /// <summary>NestoAPI#688: las columnas de la casilla y del aviso (fuera del EDMX). Sustituible en tests.</summary>
+        internal IRepositorioServirPendienteAlHaberStock RepositorioServirPendiente
+        {
+            get => repositorioServirPendiente ?? (repositorioServirPendiente = new RepositorioServirPendienteAlHaberStock());
+            set => repositorioServirPendiente = value;
+        }
+        private IRepositorioServirPendienteAlHaberStock repositorioServirPendiente;
+
+        /// <summary>
+        /// NestoAPI#688: tras grabar el pedido, guarda la casilla (si hay algo que guardar; sin la columna no hace nada) y
+        /// deja en el DTO su valor efectivo para el correo. Nunca lanza.
+        /// </summary>
+        internal void GuardarServirPendiente(PedidoVentaDTO pedido, bool? aGuardar)
+        {
+            try
+            {
+                byte modo = Constantes.Pedidos.ModosFacturacion.Efectivo(pedido.modoFacturacion, pedido.mantenerJunto);
+                bool aplica = pedido.notaEntrega || Constantes.Pedidos.ModosFacturacion.EsTodoAhora(modo);
+                if (aGuardar.HasValue)
+                {
+                    _ = RepositorioServirPendiente.Guardar(pedido.empresa, pedido.numero, aGuardar.Value);
+                }
+                bool? guardado = aGuardar ?? (aplica ? RepositorioServirPendiente.Leer(pedido.empresa, pedido.numero) : null);
+                pedido.servirPendienteAlHaberStock = OpcionesModosPedido.ParaLeer(guardado, modo, pedido.notaEntrega);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Servir lo pendiente #688] Pedido {pedido?.numero}: {ex.Message}", ex));
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#688: comprueba la casilla «¿Servir lo pendiente en cuanto haya stock?» contra el modo de facturación ya
+        /// normalizado y deja en el DTO lo que hay que guardar (null = no se toca). Devuelve el motivo del rechazo o null.
+        /// </summary>
+        internal string ResolverServirPendiente(PedidoVentaDTO pedido, byte? modoFacturacionAnterior, out bool? aGuardar)
+        {
+            byte nuevo = Constantes.Pedidos.ModosFacturacion.Efectivo(pedido.modoFacturacion, pedido.mantenerJunto);
+            OpcionesModosPedido.ResolucionCasilla resolucion = OpcionesModosPedido.ResolverAlGuardar(pedido.servirPendienteAlHaberStock, nuevo, modoFacturacionAnterior);
+            aGuardar = resolucion.AGuardar;
+            return resolucion.Error;
         }
 
         /// <summary>
@@ -667,6 +763,33 @@ namespace NestoAPI.Controllers
                 .PonerFecha(empresaPedido, nota, peticion.FechaEntrega, usuario).ConfigureAwait(false);
             return error == null ? (IHttpActionResult)Ok() : BadRequest(error);
         }
+
+        /// <summary>
+        /// NestoAPI#688 (decisión 9): marca o desmarca en una nota de entrega «¿Servir lo pendiente en cuanto haya stock?»
+        /// mientras no tenga picking. Marcar = sale todo junto en cuanto haya stock (las líneas pasan a la fecha mínima de
+        /// hoy); desmarcar = vuelve a «sin fecha». 400 con el motivo si no se puede.
+        /// </summary>
+        [HttpPost]
+        [Route("api/PedidosVenta/{empresa}/{nota:int}/ServirPendienteAlHaberStock")]
+        public async Task<IHttpActionResult> PostServirPendienteAlHaberStockNota(string empresa, int nota, [FromBody] ServirPendienteAlHaberStockRequest peticion)
+        {
+            if (peticion == null)
+            {
+                return BadRequest("Falta indicar si se sirve en cuanto haya stock.");
+            }
+            string empresaPedido = string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, peticion.Usuario);
+            var gestorNotas = new Infraestructure.NotasEntrega.GestorFechaEntregaNotas(db) { RepositorioServirPendiente = RepositorioServirPendiente };
+            if (FechaEntregaAjustadaNotas != null)
+            {
+                gestorNotas.FechaEntregaAjustada = FechaEntregaAjustadaNotas;
+            }
+            string error = await gestorNotas.CambiarServirAlHaberStock(empresaPedido, nota, peticion.Valor, usuario).ConfigureAwait(false);
+            return error == null ? (IHttpActionResult)Ok() : BadRequest(error);
+        }
+
+        /// <summary>NestoAPI#688: la fecha mínima de las notas (sustituible en tests; null = la de siempre).</summary>
+        internal Func<DateTime, string, string, DateTime> FechaEntregaAjustadaNotas { get; set; }
 
         /// <summary>NestoAPI#606: el servicio de la fecha de entrega a la agencia. Sustituible en los tests.</summary>
         internal IServicioFechaEntregaAgencia ServicioFechaEntregaAgencia
@@ -924,6 +1047,13 @@ namespace NestoAPI.Controllers
             if (contadoMantenerJunto != null)
             {
                 return BadRequest(contadoMantenerJunto);
+            }
+            // NestoAPI#688: la casilla «¿Servir lo pendiente en cuanto haya stock?», solo con «Todo ahora» (rechazo solo al entrar).
+            string servirPendienteInvalido = ResolverServirPendiente(pedido,
+                Constantes.Pedidos.ModosFacturacion.Efectivo(cabPedidoVta.ModoFacturacion, cabPedidoVta.MantenerJunto), out bool? servirPendienteAGuardar);
+            if (servirPendienteInvalido != null)
+            {
+                return BadRequest(servirPendienteInvalido);
             }
             // NestoAPI#533: con picking (o albarán de hoy) el modo ya no se cambia; el cliente ofrece pedírselo a almacén.
             if (Constantes.Pedidos.ModosServicio.Efectivo(pedido.modoServicio, pedido.servirJunto) != modoEfectivoAnterior)
@@ -1819,6 +1949,9 @@ namespace NestoAPI.Controllers
                 throw new HttpResponseException(Request.CreateErrorResponse(HttpStatusCode.NotAcceptable, message));
             }
 
+            // NestoAPI#688: la casilla «¿Servir lo pendiente en cuanto haya stock?» (columna fuera del EDMX). Nunca lanza.
+            GuardarServirPendiente(pedido, servirPendienteAGuardar);
+
             // NestoAPI#606 (decisión de Carlos, 08/10): un presupuesto que se convierte en pedido «nace» ahora como pedido: se le
             // da la fecha de entrega a la agencia prometida como al crearlo (solo si aún no tiene: el UPDATE lleva IS NULL).
             // Nunca lanza.
@@ -1969,6 +2102,12 @@ namespace NestoAPI.Controllers
             if (contadoMantenerJunto != null)
             {
                 return BadRequest(contadoMantenerJunto);
+            }
+            // NestoAPI#688: la casilla «¿Servir lo pendiente en cuanto haya stock?», solo con «Todo ahora» (marcada si no la manda).
+            string servirPendienteInvalido = ResolverServirPendiente(pedido, null, out bool? servirPendienteAGuardar);
+            if (servirPendienteInvalido != null)
+            {
+                return BadRequest(servirPendienteInvalido);
             }
 
             // NestoAPI#176: bloquear creación de pedido si servirJunto=false y alguna
@@ -2395,6 +2534,9 @@ namespace NestoAPI.Controllers
                 // faltaría recorrer el InnerException
                 throw new HttpResponseException(Request.CreateErrorResponse(HttpStatusCode.NotAcceptable, message));
             }
+
+            // NestoAPI#688: la casilla «¿Servir lo pendiente en cuanto haya stock?» (columna fuera del EDMX). Nunca lanza.
+            GuardarServirPendiente(pedido, servirPendienteAGuardar);
 
             // NestoAPI#606: la fecha de entrega a la agencia que se le da al usuario al crear el pedido, para medir después si
             // acertamos (frente a la del albarán). Se escribe UNA vez y no se toca más. Todos los caminos de creación pasan

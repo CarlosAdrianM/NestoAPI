@@ -236,7 +236,7 @@ namespace NestoAPI.Tests.Infrastructure
                     return Task.FromResult(new ClienteFinalLeasing { Cliente = "5057", Contacto = "0", Ruta = "AT" });
                 });
 
-            CabPedidoVta nota = await creador.Crear("1", 926346, ALBARAN, "NUEVAVISION\\Alfredo", ModoNotaEntregaAutomatica.Encendido);
+            CabPedidoVta nota = await ConRepositorio(creador).Crear("1", 926346, ALBARAN, "NUEVAVISION\\Alfredo", ModoNotaEntregaAutomatica.Encendido);
 
             CollectionAssert.AreEqual(new[] { "1|926346|30722|0" }, buscados, "Busca el leasing de ESE pedido y ESA financiera");
             Assert.AreEqual("5057", nota.Nº_Cliente);
@@ -257,7 +257,7 @@ namespace NestoAPI.Tests.Infrastructure
             creador = new CreadorNotaEntregaPendiente(db, new GestorPedidosVenta(servicioPedidos), (ex, usuario) => registrado.Add(ex.Message),
                 (empresa, pedido, banco, contactoBanco) => Task.FromResult<ClienteFinalLeasing>(null));
 
-            CabPedidoVta nota = await creador.Crear("1", 926346, ALBARAN, "NUEVAVISION\\Alfredo", ModoNotaEntregaAutomatica.Encendido);
+            CabPedidoVta nota = await ConRepositorio(creador).Crear("1", 926346, ALBARAN, "NUEVAVISION\\Alfredo", ModoNotaEntregaAutomatica.Encendido);
 
             Assert.AreEqual("41223", nota.Nº_Cliente);
             Assert.AreEqual("2", nota.Contacto);
@@ -274,7 +274,7 @@ namespace NestoAPI.Tests.Infrastructure
             LineaFacturada(2, "42860", 20, recoger: 20, precio: 3.9M);
             LineaFacturada(3, "40627", 1, recoger: 0, precio: 44);
 
-            CabPedidoVta nota = await creador.Crear("1", 926346, ALBARAN, "NUEVAVISION\\Alfredo", ModoNotaEntregaAutomatica.Encendido);
+            CabPedidoVta nota = await ConRepositorio(creador).Crear("1", 926346, ALBARAN, "NUEVAVISION\\Alfredo", ModoNotaEntregaAutomatica.Encendido);
 
             Assert.IsNotNull(nota);
             Assert.AreEqual(926777, nota.Número);
@@ -299,7 +299,7 @@ namespace NestoAPI.Tests.Infrastructure
             Original926346();
             LineaFacturada(1, "38932", 1, recoger: 1, precio: 134);
 
-            CabPedidoVta nota = await creador.Crear("1", 926346, ALBARAN, "u", ModoNotaEntregaAutomatica.Sombra);
+            CabPedidoVta nota = await ConRepositorio(creador).Crear("1", 926346, ALBARAN, "u", ModoNotaEntregaAutomatica.Sombra);
 
             Assert.IsNull(nota);
             Assert.AreEqual(0, cabecerasAnadidas.Count + lineasAnadidas.Count);
@@ -315,7 +315,7 @@ namespace NestoAPI.Tests.Infrastructure
             Original926346();
             LineaFacturada(1, "40627", 1, recoger: 0, precio: 44);
 
-            CabPedidoVta nota = await creador.Crear("1", 926346, ALBARAN, "u", ModoNotaEntregaAutomatica.Encendido);
+            CabPedidoVta nota = await ConRepositorio(creador).Crear("1", 926346, ALBARAN, "u", ModoNotaEntregaAutomatica.Encendido);
 
             Assert.IsNull(nota);
             Assert.AreEqual(0, cabecerasAnadidas.Count);
@@ -328,7 +328,7 @@ namespace NestoAPI.Tests.Infrastructure
             LineaFacturada(1, "38932", 1, recoger: 1, precio: 134);
             cabeceras.Add(new CabPedidoVta { Empresa = "1", Número = 926777, NotaEntrega = true, PedidoOrigen = 926346, AlbaranOrigen = ALBARAN });
 
-            CabPedidoVta nota = await creador.Crear("1", 926346, ALBARAN, "u", ModoNotaEntregaAutomatica.Encendido);
+            CabPedidoVta nota = await ConRepositorio(creador).Crear("1", 926346, ALBARAN, "u", ModoNotaEntregaAutomatica.Encendido);
 
             Assert.IsNull(nota);
             Assert.AreEqual(0, cabecerasAnadidas.Count);
@@ -341,7 +341,7 @@ namespace NestoAPI.Tests.Infrastructure
             LineaFacturada(1, "38932", 1, recoger: 1, precio: 134, albaran: 729700);
             cabeceras.Add(new CabPedidoVta { Empresa = "1", Número = 926777, NotaEntrega = true, PedidoOrigen = 926346, AlbaranOrigen = ALBARAN });
 
-            CabPedidoVta nota = await creador.Crear("1", 926346, 729700, "u", ModoNotaEntregaAutomatica.Encendido);
+            CabPedidoVta nota = await ConRepositorio(creador).Crear("1", 926346, 729700, "u", ModoNotaEntregaAutomatica.Encendido);
 
             Assert.IsNotNull(nota);
             Assert.AreEqual(729700, nota.AlbaranOrigen);
@@ -350,10 +350,73 @@ namespace NestoAPI.Tests.Infrastructure
         [TestMethod]
         public async Task Crear_Apagado_NoMiraNada()
         {
-            CabPedidoVta nota = await creador.Crear("1", 926346, ALBARAN, "u", ModoNotaEntregaAutomatica.Apagado);
+            CabPedidoVta nota = await ConRepositorio(creador).Crear("1", 926346, ALBARAN, "u", ModoNotaEntregaAutomatica.Apagado);
 
             Assert.IsNull(nota);
             A.CallTo(() => db.CabPedidoVtas).MustNotHaveHappened();
+        }
+
+        // NestoAPI#688: la casilla «¿Servir lo pendiente en cuanto haya stock?» (columna fuera del EDMX, repositorio falso)
+
+        private IRepositorioServirPendienteAlHaberStock repositorio = A.Fake<IRepositorioServirPendienteAlHaberStock>();
+
+        private CreadorNotaEntregaPendiente ConRepositorio(CreadorNotaEntregaPendiente c)
+        {
+            c.RepositorioServirPendiente = repositorio;
+            c.FechaEntregaAjustada = (fecha, ruta, almacen) => new DateTime(2026, 10, 22);
+            return c;
+        }
+
+        [TestMethod]
+        public async Task Crear_ConLaCasillaMarcada_NaceConFechaTodoJuntoSinAvisoYLaCopia()
+        {
+            Original926346(Modos.SEGUN_VAYA_ENTRANDO, false);
+            LineaFacturada(1, "17404", 200, recoger: 150, precio: 1);
+            A.CallTo(() => repositorio.Leer("1", 926346)).Returns(true);
+            var pedidas = new List<string>();
+            ConRepositorio(creador).FechaEntregaAjustada = (fecha, ruta, almacen) =>
+            {
+                pedidas.Add($"{ruta}|{almacen}");
+                return new DateTime(2026, 10, 22);
+            };
+
+            CabPedidoVta nota = await creador.Crear("1", 926346, ALBARAN, "NUEVAVISION\\Alfredo", ModoNotaEntregaAutomatica.Encendido);
+
+            Assert.AreEqual(new DateTime(2026, 10, 22), lineasAnadidas.Single().Fecha_Entrega, "Decisión 2: nace con la fecha ajustada, no 2099");
+            CollectionAssert.AreEqual(new[] { "FW|ALG" }, pedidas, "Con la ruta de la nota y el almacén de la línea");
+            Assert.AreEqual(Modos.TODO_JUNTO, nota.ModoServicio, "Decisión 1: todo junto, de una vez");
+            Assert.IsTrue(nota.ServirJunto);
+            Assert.IsFalse(nota.Comentarios.Contains(CreadorNotaEntregaPendiente.AVISO_SIN_FECHA));
+            StringAssert.Contains(nota.Comentarios, CreadorNotaEntregaPendiente.AVISO_SERVIR_AL_HABER_STOCK);
+            A.CallTo(() => repositorio.Guardar("1", 926777, true)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Crear_SinLaCasilla_ComoHastaAhora_SinFechaYConAviso()
+        {
+            Original926346(Modos.SEGUN_VAYA_ENTRANDO, false);
+            LineaFacturada(1, "17404", 200, recoger: 150, precio: 1);
+            A.CallTo(() => repositorio.Leer("1", 926346)).Returns(null);
+
+            CabPedidoVta nota = await ConRepositorio(creador).Crear("1", 926346, ALBARAN, "NUEVAVISION\\Alfredo", ModoNotaEntregaAutomatica.Encendido);
+
+            Assert.AreEqual(CreadorNotaEntregaPendiente.FECHA_ENTREGA_SIN_DETERMINAR, lineasAnadidas.Single().Fecha_Entrega);
+            Assert.AreEqual(Modos.SEGUN_VAYA_ENTRANDO, nota.ModoServicio, "Hereda el modo como siempre");
+            StringAssert.Contains(nota.Comentarios, CreadorNotaEntregaPendiente.AVISO_SIN_FECHA);
+            A.CallTo(() => repositorio.Guardar(A<string>._, A<int>._, A<bool>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Crear_CasillaMarcadaPeroPedidoSinTodoAhora_NoCuenta()
+        {
+            CabPedidoVta original = Original926346(Modos.SEGUN_VAYA_ENTRANDO, false);
+            original.ModoFacturacion = Constantes.Pedidos.ModosFacturacion.POR_ENTREGAS;
+            LineaFacturada(1, "17404", 200, recoger: 150, precio: 1);
+            A.CallTo(() => repositorio.Leer("1", 926346)).Returns(true);
+
+            await ConRepositorio(creador).Crear("1", 926346, ALBARAN, "NUEVAVISION\\Alfredo", ModoNotaEntregaAutomatica.Encendido);
+
+            Assert.AreEqual(CreadorNotaEntregaPendiente.FECHA_ENTREGA_SIN_DETERMINAR, lineasAnadidas.Single().Fecha_Entrega);
         }
     }
 }

@@ -59,6 +59,12 @@ namespace NestoAPI.Models.PedidosVenta
         public int? pedidoOrigen { get; set; }
         /// <summary>NestoAPI#542: el albarán de ese pedido del que sale lo pendiente. Solo lectura.</summary>
         public int? albaranOrigen { get; set; }
+        /// <summary>NestoAPI#688: «¿Servir lo pendiente en cuanto haya stock?» (solo con modoFacturacion 3). Al leer, el valor
+        /// efectivo con «Todo ahora» (NULL guardado = sin marcar, como hasta ahora) y null cuando no aplica (otro modo de
+        /// facturación), para que quien reenvía lo leído reciba la casilla marcada por defecto al pasar a «Todo ahora». Al grabar, null = no cambia; al elegir «Todo ahora» sin
+        /// informarla, marcada. En una nota de entrega, si la nota sale sola en cuanto haya stock (la cambia
+        /// POST api/PedidosVenta/{empresa}/{nota}/ServirPendienteAlHaberStock).</summary>
+        public bool? servirPendienteAlHaberStock { get; set; }
         public string suPedido { get; set; }
         public string vendedor { get; set; }
         public bool vistoBuenoPlazosPago { get; set; }

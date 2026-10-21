@@ -3,6 +3,15 @@ using System.Collections.Generic;
 namespace NestoAPI.Models.PedidosVenta
 {
     /// <summary>NestoAPI#582: cuerpo de <c>POST api/PedidosVenta/{empresa}/{nota}/FechaEntrega</c>.</summary>
+    /// <summary>NestoAPI#688: marcar o desmarcar en una nota «¿Servir lo pendiente en cuanto haya stock?».</summary>
+    public class ServirPendienteAlHaberStockRequest
+    {
+        public bool Valor { get; set; }
+
+        /// <summary>Solo para auditoría si no viene del token.</summary>
+        public string Usuario { get; set; }
+    }
+
     public class FechaEntregaNotaRequest
     {
         public System.DateTime FechaEntrega { get; set; }
