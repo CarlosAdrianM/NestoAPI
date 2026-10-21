@@ -78,7 +78,7 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
             Assert.AreEqual(DESDE, mpp.Desde);
             A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Mariajose", Constantes.Aplicaciones.NESTO,
                 A<NotificacionPushDTO>.That.Matches(n => n.Tipo == RecordatorioSugerenciasContacto.TIPO_NOTIFICACION
-                    && n.Cuerpo.StartsWith("Tienes 23 clientes de prioridad Alta esperando en Rapports › Clientes para contactar"))))
+                    && n.Cuerpo.StartsWith("Tiene 23 clientes de prioridad Alta esperando en Rapports › Clientes para contactar"))))
                 .MustHaveHappenedOnceExactly();
             A.CallTo(() => repositorio.GuardarAviso("MPP", A<IEnumerable<string>>.That.Contains("Mariajose"), AHORA, mpp.Texto)).MustHaveHappenedOnceExactly();
         }
@@ -140,7 +140,7 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
 
             ResultadoRecordatorioSugerenciasDTO mpp = De(resultados, "MPP");
             Assert.AreEqual(EstadosRecordatorioSugerencias.POR_AVISAR, mpp.Estado);
-            StringAssert.StartsWith(mpp.Texto, "Tienes 23 clientes de prioridad Alta");
+            StringAssert.StartsWith(mpp.Texto, "Tiene 23 clientes de prioridad Alta");
             CollectionAssert.AreEqual(new[] { "Mariajose" }, mpp.Usuarios);
             A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario(A<string>._, A<string>._, A<NotificacionPushDTO>._)).MustNotHaveHappened();
             A.CallTo(() => repositorio.GuardarAviso(A<string>._, A<IEnumerable<string>>._, A<DateTime>._, A<string>._)).MustNotHaveHappened();
@@ -205,10 +205,10 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
         [TestMethod]
         public void Texto_ConElDatoConcretoDeSuCartera()
         {
-            Assert.AreEqual("Tienes 5 clientes de prioridad Máxima y 23 de prioridad Alta esperando en Rapports › Clientes para contactar. La lista te dice a quién llamar primero y por qué.",
+            Assert.AreEqual("Tiene 5 clientes de prioridad Máxima y 23 de prioridad Alta esperando en Rapports › Clientes para contactar. La lista le dice a quién llamar primero y por qué.",
                 RecordatorioSugerenciasContacto.Texto(new PendientesVendedor { Maxima = 5, Alta = 23, Media = 3 }));
-            StringAssert.StartsWith(RecordatorioSugerenciasContacto.Texto(new PendientesVendedor { Maxima = 1 }), "Tienes 1 cliente de prioridad Máxima esperando");
-            StringAssert.StartsWith(RecordatorioSugerenciasContacto.Texto(new PendientesVendedor { Media = 30, Baja = 12 }), "Tienes 42 clientes de tu cartera esperando");
+            StringAssert.StartsWith(RecordatorioSugerenciasContacto.Texto(new PendientesVendedor { Maxima = 1 }), "Tiene 1 cliente de prioridad Máxima esperando");
+            StringAssert.StartsWith(RecordatorioSugerenciasContacto.Texto(new PendientesVendedor { Media = 30, Baja = 12 }), "Tiene 42 clientes de su cartera esperando");
             Assert.IsNull(RecordatorioSugerenciasContacto.Texto(new PendientesVendedor()));
         }
 

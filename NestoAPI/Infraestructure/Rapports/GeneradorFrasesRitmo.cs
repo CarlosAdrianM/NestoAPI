@@ -109,94 +109,94 @@ namespace NestoAPI.Infraestructure.Rapports
         public static readonly IReadOnlyList<PlantillaFraseRitmo> Plantillas = new List<PlantillaFraseRitmo>
         {
             // ---- Día no laborable
-            new PlantillaFraseRitmo("nl1", SituacionesRitmo.NO_LABORABLE, "Hoy no toca, {nombre}: a descansar. Este mes llevas {mes:contacto} de {objetivoMes}.", s => s.TieneNombre),
-            new PlantillaFraseRitmo("nl2", SituacionesRitmo.NO_LABORABLE, "Día de descanso. El próximo laborable te esperan {maxima} clientes de prioridad Máxima y {alta} de Alta.", s => s.Maxima > 1),
-            new PlantillaFraseRitmo("nl3", SituacionesRitmo.NO_LABORABLE, "Hoy no es laborable. Llevas {mes:contacto} este mes; el próximo día seguimos con energía."),
-            new PlantillaFraseRitmo("nl4", SituacionesRitmo.NO_LABORABLE, "Hoy toca desconectar. La lista te estará esperando el próximo día, ya ordenada."),
+            new PlantillaFraseRitmo("nl1", SituacionesRitmo.NO_LABORABLE, "Hoy no toca, {nombre}: a descansar. Este mes lleva {mes:contacto} de {objetivoMes}.", s => s.TieneNombre),
+            new PlantillaFraseRitmo("nl2", SituacionesRitmo.NO_LABORABLE, "Día de descanso. El próximo laborable le esperan {maxima} clientes de prioridad Máxima y {alta} de Alta.", s => s.Maxima > 1),
+            new PlantillaFraseRitmo("nl3", SituacionesRitmo.NO_LABORABLE, "Hoy no es laborable. Lleva {mes:contacto} este mes; el próximo día seguimos con energía."),
+            new PlantillaFraseRitmo("nl4", SituacionesRitmo.NO_LABORABLE, "Hoy toca desconectar. La lista le estará esperando el próximo día, ya ordenada."),
 
             // ---- Objetivo del mes cubierto
-            new PlantillaFraseRitmo("mc1", SituacionesRitmo.MES_CUMPLIDO, "¡Objetivo del mes cubierto! {mes:contacto} de {objetivoMes}. Todo lo que sumes ahora es ventaja."),
-            new PlantillaFraseRitmo("mc2", SituacionesRitmo.MES_CUMPLIDO, "Ya has hablado con toda la cartera que tocaba este mes ({mes} de {objetivoMes}). ¡Enhorabuena, {nombre}!", s => s.TieneNombre),
-            new PlantillaFraseRitmo("mc3", SituacionesRitmo.MES_CUMPLIDO, "Mes cubierto. Si te sobra un rato, los clientes de prioridad Máxima ({maxima}) agradecen una llamada.", s => s.Maxima > 0),
-            new PlantillaFraseRitmo("mc4", SituacionesRitmo.MES_CUMPLIDO, "Con {mes:contacto} ya has cubierto el mes. Hoy llevas {hoy}: cada llamada extra es terreno ganado."),
+            new PlantillaFraseRitmo("mc1", SituacionesRitmo.MES_CUMPLIDO, "¡Objetivo del mes cubierto! {mes:contacto} de {objetivoMes}. Todo lo que sume ahora es ventaja."),
+            new PlantillaFraseRitmo("mc2", SituacionesRitmo.MES_CUMPLIDO, "Ya ha hablado con toda la cartera que tocaba este mes ({mes} de {objetivoMes}). ¡Enhorabuena, {nombre}!", s => s.TieneNombre),
+            new PlantillaFraseRitmo("mc3", SituacionesRitmo.MES_CUMPLIDO, "Mes cubierto. Si le sobra un rato, los clientes de prioridad Máxima ({maxima}) agradecen una llamada.", s => s.Maxima > 0),
+            new PlantillaFraseRitmo("mc4", SituacionesRitmo.MES_CUMPLIDO, "Con {mes:contacto} ya ha cubierto el mes. Hoy lleva {hoy}: cada llamada extra es terreno ganado."),
 
             // ---- Objetivo de hoy cumplido y mejor día del mes
             new PlantillaFraseRitmo("md1", SituacionesRitmo.MEJOR_DIA, "¡Mejor día del mes! {hoy:contacto} hoy y el objetivo de {objetivoHoy} ya está superado."),
-            new PlantillaFraseRitmo("md2", SituacionesRitmo.MEJOR_DIA, "Hoy estás batiendo tu marca del mes: {hoy:contacto}. ¡Qué buen día, {nombre}!", s => s.TieneNombre),
-            new PlantillaFraseRitmo("md3", SituacionesRitmo.MEJOR_DIA, "{hoy:contacto} hoy, tu mejor marca del mes. Si sigues así, la semana sale redonda."),
+            new PlantillaFraseRitmo("md2", SituacionesRitmo.MEJOR_DIA, "Hoy está batiendo su marca del mes: {hoy:contacto}. ¡Qué buen día, {nombre}!", s => s.TieneNombre),
+            new PlantillaFraseRitmo("md3", SituacionesRitmo.MEJOR_DIA, "{hoy:contacto} hoy, su mejor marca del mes. Si sigue así, la semana sale redonda."),
 
             // ---- Objetivo de hoy cumplido
             new PlantillaFraseRitmo("oc1", SituacionesRitmo.OBJETIVO_CUMPLIDO, "¡Objetivo de hoy cumplido! {hoy} de {objetivoHoy}. Lo que venga ahora es para adelantar trabajo."),
-            new PlantillaFraseRitmo("oc2", SituacionesRitmo.OBJETIVO_CUMPLIDO, "Hecho: {hoy:contacto} hoy. Cada llamada de más te deja mañana más tranquilo."),
-            new PlantillaFraseRitmo("oc3", SituacionesRitmo.OBJETIVO_CUMPLIDO, "Ya tienes los {objetivoHoy} de hoy. Llevas {racha:día} seguidos cumpliendo: ¡vaya racha!", s => s.Racha >= 2),
-            new PlantillaFraseRitmo("oc4", SituacionesRitmo.OBJETIVO_CUMPLIDO, "Objetivo del día en el bolsillo. Quedan {maxima:cliente} de prioridad Máxima por si te animas con uno más.", s => s.Maxima > 0),
+            new PlantillaFraseRitmo("oc2", SituacionesRitmo.OBJETIVO_CUMPLIDO, "Hecho: {hoy:contacto} hoy. Cada llamada de más le deja mañana más tranquilo."),
+            new PlantillaFraseRitmo("oc3", SituacionesRitmo.OBJETIVO_CUMPLIDO, "Ya tiene los {objetivoHoy} de hoy. Lleva {racha:día} seguidos cumpliendo: ¡vaya racha!", s => s.Racha >= 2),
+            new PlantillaFraseRitmo("oc4", SituacionesRitmo.OBJETIVO_CUMPLIDO, "Objetivo del día en el bolsillo. Quedan {maxima:cliente} de prioridad Máxima por si se anima con uno más.", s => s.Maxima > 0),
             new PlantillaFraseRitmo("oc5", SituacionesRitmo.OBJETIVO_CUMPLIDO, "{hoy:contacto} hoy, objetivo cumplido. Buen trabajo, {nombre}.", s => s.TieneNombre),
 
             // ---- Primer pedido del día
             new PlantillaFraseRitmo("pp1", SituacionesRitmo.PRIMER_PEDIDO, "¡Primer pedido del día! Con ese ánimo, a por {faltan:contacto} más.", s => s.Faltan > 0),
-            new PlantillaFraseRitmo("pp2", SituacionesRitmo.PRIMER_PEDIDO, "Ya ha caído el primer pedido de hoy. Las llamadas dan fruto: sigue con la lista."),
+            new PlantillaFraseRitmo("pp2", SituacionesRitmo.PRIMER_PEDIDO, "Ya ha caído el primer pedido de hoy. Las llamadas dan fruto: siga con la lista."),
             new PlantillaFraseRitmo("pp3", SituacionesRitmo.PRIMER_PEDIDO, "Primer pedido de hoy conseguido. Quedan {maxima:cliente} de prioridad Máxima con muchas papeletas.", s => s.Maxima > 0),
 
             // ---- Primer contacto del día
-            new PlantillaFraseRitmo("pc1", SituacionesRitmo.PRIMER_CONTACTO, "Primer contacto del día hecho: lo más difícil ya está. Te quedan {faltan:contacto} para el objetivo.", s => s.Faltan > 0),
+            new PlantillaFraseRitmo("pc1", SituacionesRitmo.PRIMER_CONTACTO, "Primer contacto del día hecho: lo más difícil ya está. Le quedan {faltan:contacto} para el objetivo.", s => s.Faltan > 0),
             new PlantillaFraseRitmo("pc2", SituacionesRitmo.PRIMER_CONTACTO, "¡Arrancamos! 1 de {objetivoHoy}. El siguiente sale solo.", s => s.ObjetivoHoy > 1),
-            new PlantillaFraseRitmo("pc3", SituacionesRitmo.PRIMER_CONTACTO, "Buen comienzo, {nombre}. Uno hecho; la lista te va guiando por orden.", s => s.TieneNombre),
-            new PlantillaFraseRitmo("pc4", SituacionesRitmo.PRIMER_CONTACTO, "El primero ya está. Tira de la prioridad Máxima: son {maxima} y suelen ser llamadas agradecidas.", s => s.Maxima > 1),
+            new PlantillaFraseRitmo("pc3", SituacionesRitmo.PRIMER_CONTACTO, "Buen comienzo, {nombre}. Uno hecho; la lista le va guiando por orden.", s => s.TieneNombre),
+            new PlantillaFraseRitmo("pc4", SituacionesRitmo.PRIMER_CONTACTO, "El primero ya está. Tire de la prioridad Máxima: son {maxima} y suelen ser llamadas agradecidas.", s => s.Maxima > 1),
 
             // ---- Arranque (todavía ningún contacto hoy)
             new PlantillaFraseRitmo("a1", SituacionesRitmo.ARRANQUE, "Buenos días, {nombre}. Hoy tocan {objetivoHoy:contacto}; la lista ya está ordenada para empezar por el mejor.", s => s.TieneNombre && s.ObjetivoHoy > 0),
-            new PlantillaFraseRitmo("a2", SituacionesRitmo.ARRANQUE, "Hoy, {objetivoHoy:contacto} para ir al día. Empieza por los {maxima} de prioridad Máxima: es donde más se nota.", s => s.Maxima > 1 && s.ObjetivoHoy > 0),
+            new PlantillaFraseRitmo("a2", SituacionesRitmo.ARRANQUE, "Hoy, {objetivoHoy:contacto} para ir al día. Empiece por los {maxima} de prioridad Máxima: es donde más se nota.", s => s.Maxima > 1 && s.ObjetivoHoy > 0),
             new PlantillaFraseRitmo("a3", SituacionesRitmo.ARRANQUE, "Nuevo día, lista nueva: {objetivoHoy:contacto} y la cartera al día. ¡Vamos!", s => s.ObjetivoHoy > 0),
-            new PlantillaFraseRitmo("a4", SituacionesRitmo.ARRANQUE, "Hoy tocan {objetivoHoy:contacto}. {alta} buenos clientes llevan tiempo esperando tu llamada.", s => s.Alta > 1 && s.ObjetivoHoy > 0),
-            new PlantillaFraseRitmo("a5", SituacionesRitmo.ARRANQUE, "Esta semana llevas {semana:contacto}. Hoy suma {objetivoHoy} más y seguirás en línea.", s => s.Semana > 0 && s.ObjetivoHoy > 0),
-            new PlantillaFraseRitmo("a6", SituacionesRitmo.ARRANQUE, "Arrancas con una racha de {racha:día} cumpliendo. Hoy, {objetivoHoy:contacto} para mantenerla.", s => s.Racha >= 2 && s.ObjetivoHoy > 0),
+            new PlantillaFraseRitmo("a4", SituacionesRitmo.ARRANQUE, "Hoy tocan {objetivoHoy:contacto}. {alta} buenos clientes llevan tiempo esperando su llamada.", s => s.Alta > 1 && s.ObjetivoHoy > 0),
+            new PlantillaFraseRitmo("a5", SituacionesRitmo.ARRANQUE, "Esta semana lleva {semana:contacto}. Sume hoy {objetivoHoy} más y seguirá en línea.", s => s.Semana > 0 && s.ObjetivoHoy > 0),
+            new PlantillaFraseRitmo("a6", SituacionesRitmo.ARRANQUE, "Arranca con una racha de {racha:día} cumpliendo. Hoy, {objetivoHoy:contacto} para mantenerla.", s => s.Racha >= 2 && s.ObjetivoHoy > 0),
 
             // ---- Arranque en lunes
             new PlantillaFraseRitmo("l1", SituacionesRitmo.ARRANQUE_LUNES, "Lunes, semana nueva: {objetivoHoy:contacto} hoy para empezar con buen pie.", s => s.ObjetivoHoy > 0),
-            new PlantillaFraseRitmo("l2", SituacionesRitmo.ARRANQUE_LUNES, "Feliz lunes, {nombre}. La lista empieza por quien más te necesita; hoy tocan {objetivoHoy}.", s => s.TieneNombre && s.ObjetivoHoy > 0),
+            new PlantillaFraseRitmo("l2", SituacionesRitmo.ARRANQUE_LUNES, "Feliz lunes, {nombre}. La lista empieza por quien más le necesita; hoy tocan {objetivoHoy}.", s => s.TieneNombre && s.ObjetivoHoy > 0),
             new PlantillaFraseRitmo("l3", SituacionesRitmo.ARRANQUE_LUNES, "Empieza la semana. Hay {maxima:cliente} de prioridad Máxima esperando: buen lunes para llamarlos.", s => s.Maxima > 0),
 
             // ---- Arranque en viernes
             new PlantillaFraseRitmo("v1", SituacionesRitmo.ARRANQUE_VIERNES, "Viernes: {objetivoHoy:contacto} y a cerrar la semana bien arriba.", s => s.ObjetivoHoy > 0),
-            new PlantillaFraseRitmo("v2", SituacionesRitmo.ARRANQUE_VIERNES, "Último empujón de la semana, {nombre}. Llevas {semana}; hoy tocan {objetivoHoy} más.", s => s.TieneNombre && s.ObjetivoHoy > 0),
-            new PlantillaFraseRitmo("v3", SituacionesRitmo.ARRANQUE_VIERNES, "Viernes: si hoy llamas a los de prioridad Máxima ({maxima}), el lunes empiezas con ventaja.", s => s.Maxima > 0),
+            new PlantillaFraseRitmo("v2", SituacionesRitmo.ARRANQUE_VIERNES, "Último empujón de la semana, {nombre}. Lleva {semana}; hoy tocan {objetivoHoy} más.", s => s.TieneNombre && s.ObjetivoHoy > 0),
+            new PlantillaFraseRitmo("v3", SituacionesRitmo.ARRANQUE_VIERNES, "Viernes: si hoy llama a los de prioridad Máxima ({maxima}), el lunes empezará con ventaja.", s => s.Maxima > 0),
 
             // ---- Último día laborable del mes
             new PlantillaFraseRitmo("u1", SituacionesRitmo.ULTIMO_DIA_MES, "Último día laborable del mes: {mes} de {objetivoMes}. ¡A por el remate!"),
             new PlantillaFraseRitmo("u2", SituacionesRitmo.ULTIMO_DIA_MES, "Hoy se cierra el mes. Cada contacto cuenta para dejar la cartera bien atendida."),
-            new PlantillaFraseRitmo("u3", SituacionesRitmo.ULTIMO_DIA_MES, "Último día del mes, {nombre}: {faltan:contacto} más y cierras con buen sabor de boca.", s => s.TieneNombre && s.Faltan > 0),
+            new PlantillaFraseRitmo("u3", SituacionesRitmo.ULTIMO_DIA_MES, "Último día del mes, {nombre}: {faltan:contacto} más y cierra con buen sabor de boca.", s => s.TieneNombre && s.Faltan > 0),
 
             // ---- Por la tarde y todavía por debajo
-            new PlantillaFraseRitmo("t1", SituacionesRitmo.TARDE_APRETAR, "La tarde es buen momento para llamar: te quedan {faltan:contacto} para el objetivo de hoy.", s => s.Faltan > 0),
+            new PlantillaFraseRitmo("t1", SituacionesRitmo.TARDE_APRETAR, "La tarde es buen momento para llamar: le quedan {faltan:contacto} para el objetivo de hoy.", s => s.Faltan > 0),
             new PlantillaFraseRitmo("t2", SituacionesRitmo.TARDE_APRETAR, "Queda tarde por delante. {faltan:contacto} más y el día queda redondo.", s => s.Faltan > 0),
-            new PlantillaFraseRitmo("t3", SituacionesRitmo.TARDE_APRETAR, "Por la tarde mucha gente contesta con más calma. Te quedan {faltan:contacto} hoy.", s => s.Faltan > 0),
-            new PlantillaFraseRitmo("t4", SituacionesRitmo.TARDE_APRETAR, "Un último tirón: {hoy} de {objetivoHoy} hoy. Empieza por la prioridad Máxima y verás cómo sube.", s => s.Maxima > 0),
+            new PlantillaFraseRitmo("t3", SituacionesRitmo.TARDE_APRETAR, "Por la tarde mucha gente contesta con más calma. Le quedan {faltan:contacto} hoy.", s => s.Faltan > 0),
+            new PlantillaFraseRitmo("t4", SituacionesRitmo.TARDE_APRETAR, "Un último tirón: {hoy} de {objetivoHoy} hoy. Empiece por la prioridad Máxima y verá cómo sube.", s => s.Maxima > 0),
 
             // ---- Por debajo de lo esperado a esta hora
-            new PlantillaFraseRitmo("d1", SituacionesRitmo.POR_DEBAJO, "Llevas {hoy} de {objetivoHoy} hoy. Un par de llamadas seguidas y te pones en línea."),
-            new PlantillaFraseRitmo("d2", SituacionesRitmo.POR_DEBAJO, "Quedan {faltan:contacto} para el objetivo de hoy. La lista ya te dice por quién seguir.", s => s.Faltan > 0),
+            new PlantillaFraseRitmo("d1", SituacionesRitmo.POR_DEBAJO, "Lleva {hoy} de {objetivoHoy} hoy. Un par de llamadas seguidas y se pone en línea."),
+            new PlantillaFraseRitmo("d2", SituacionesRitmo.POR_DEBAJO, "Quedan {faltan:contacto} para el objetivo de hoy. La lista ya le dice por quién seguir.", s => s.Faltan > 0),
             new PlantillaFraseRitmo("d3", SituacionesRitmo.POR_DEBAJO, "Hay {maxima:cliente} de prioridad Máxima con mucha probabilidad de pedido. Buen sitio para la próxima llamada.", s => s.Maxima > 0),
-            new PlantillaFraseRitmo("d4", SituacionesRitmo.POR_DEBAJO, "{alta} buenos clientes esperan tu llamada. Con {faltan} más hoy vas al día.", s => s.Alta > 1 && s.Faltan > 0),
+            new PlantillaFraseRitmo("d4", SituacionesRitmo.POR_DEBAJO, "{alta} buenos clientes esperan su llamada. Con {faltan} más hoy va al día.", s => s.Alta > 1 && s.Faltan > 0),
             new PlantillaFraseRitmo("d5", SituacionesRitmo.POR_DEBAJO, "Vamos a por ello, {nombre}: {faltan:contacto} y el día está hecho.", s => s.TieneNombre && s.Faltan > 0),
-            new PlantillaFraseRitmo("d6", SituacionesRitmo.POR_DEBAJO, "Este mes llevas {mes} de {objetivoMes}. Hoy, {faltan:contacto} más para seguir sumando.", s => s.Faltan > 0),
+            new PlantillaFraseRitmo("d6", SituacionesRitmo.POR_DEBAJO, "Este mes lleva {mes} de {objetivoMes}. Hoy, {faltan:contacto} más para seguir sumando.", s => s.Faltan > 0),
 
             // ---- Por delante del calendario (semana o mes)
-            new PlantillaFraseRitmo("b1", SituacionesRitmo.BUEN_RITMO, "Vas por delante este mes: {mes} de {objetivoMes}. ¡Así da gusto!"),
-            new PlantillaFraseRitmo("b2", SituacionesRitmo.BUEN_RITMO, "Buen ritmo esta semana: {semana:contacto}. Sigue la lista y el mes sale solo."),
-            new PlantillaFraseRitmo("b3", SituacionesRitmo.BUEN_RITMO, "Vas con margen, {nombre}. Aprovecha para llamar a los {maxima} de prioridad Máxima.", s => s.TieneNombre && s.Maxima > 1),
+            new PlantillaFraseRitmo("b1", SituacionesRitmo.BUEN_RITMO, "Va por delante este mes: {mes} de {objetivoMes}. ¡Así da gusto!"),
+            new PlantillaFraseRitmo("b2", SituacionesRitmo.BUEN_RITMO, "Buen ritmo esta semana: {semana:contacto}. Siga la lista y el mes sale solo."),
+            new PlantillaFraseRitmo("b3", SituacionesRitmo.BUEN_RITMO, "Va con margen, {nombre}. Aproveche para llamar a los {maxima} de prioridad Máxima.", s => s.TieneNombre && s.Maxima > 1),
             new PlantillaFraseRitmo("b4", SituacionesRitmo.BUEN_RITMO, "Hoy {hoy} de {objetivoHoy} y el mes por delante del calendario. Muy bien."),
 
             // ---- En línea
-            new PlantillaFraseRitmo("e1", SituacionesRitmo.EN_LINEA, "Vas en línea: {hoy} de {objetivoHoy} hoy. Mantén el ritmo y el día sale solo."),
+            new PlantillaFraseRitmo("e1", SituacionesRitmo.EN_LINEA, "Va en línea: {hoy} de {objetivoHoy} hoy. Mantenga el ritmo y el día sale solo."),
             new PlantillaFraseRitmo("e2", SituacionesRitmo.EN_LINEA, "Todo en orden: {semana:contacto} esta semana. Siguiente de la lista, ¡y a por ello!"),
             new PlantillaFraseRitmo("e3", SituacionesRitmo.EN_LINEA, "Al día con la cartera. Quedan {faltan:contacto} hoy para dejarlo cerrado.", s => s.Faltan > 0),
-            new PlantillaFraseRitmo("e4", SituacionesRitmo.EN_LINEA, "Buen paso, {nombre}. {hoy:contacto} hoy y la lista te espera con los siguientes.", s => s.TieneNombre),
-            new PlantillaFraseRitmo("e5", SituacionesRitmo.EN_LINEA, "Llevas {racha:día} seguidos cumpliendo el objetivo. Hoy {hoy} de {objetivoHoy}: ¡a por otro!", s => s.Racha >= 2),
+            new PlantillaFraseRitmo("e4", SituacionesRitmo.EN_LINEA, "Buen paso, {nombre}. {hoy:contacto} hoy y la lista le espera con los siguientes.", s => s.TieneNombre),
+            new PlantillaFraseRitmo("e5", SituacionesRitmo.EN_LINEA, "Lleva {racha:día} seguidos cumpliendo el objetivo. Hoy {hoy} de {objetivoHoy}: ¡a por otro!", s => s.Racha >= 2),
 
             // ---- Comodín
-            new PlantillaFraseRitmo("g1", SituacionesRitmo.GENERAL, "Llevas {hoy:contacto} hoy y {mes} este mes. La lista te dice por quién seguir."),
+            new PlantillaFraseRitmo("g1", SituacionesRitmo.GENERAL, "Lleva {hoy:contacto} hoy y {mes} este mes. La lista le dice por quién seguir."),
             new PlantillaFraseRitmo("g2", SituacionesRitmo.GENERAL, "Cada llamada cuenta: {hoy} hoy, {semana} esta semana. ¡Seguimos!"),
-            new PlantillaFraseRitmo("g3", SituacionesRitmo.GENERAL, "Tu cartera te espera: empieza por arriba de la lista y verás cómo cunde.")
+            new PlantillaFraseRitmo("g3", SituacionesRitmo.GENERAL, "Su cartera le espera: empiece por arriba de la lista y verá cómo cunde.")
         };
     }
 
@@ -509,7 +509,7 @@ namespace NestoAPI.Infraestructure.Rapports
         public const string PROMPT_SISTEMA_OPENAI =
             "Escribes UNA frase corta para la cabecera de la lista de clientes a los que un comercial de una distribuidora de " +
             "peluquería y estética tiene que llamar hoy. El objetivo es animarle a hacer sus contactos del día. Tono cercano, " +
-            "motivador y natural, en español de España y tuteando; nunca reproches ni culpa, nada de frases hechas de manual. " +
+            "motivador y natural, en español de España y tratando de usted (nunca tuteando); nunca reproches ni culpa, nada de frases hechas de manual. " +
             "Como mucho un emoji (mejor ninguno). Máximo 160 caracteres. NO escribas números: usa en su lugar, tal cual entre " +
             "llaves, las variables que te dan (se sustituyen por el dato del momento); con {variable:palabra} sale el número con " +
             "la palabra en singular o plural, por ejemplo {faltan:contacto}. No uses otras variables. No repitas ni imites las " +

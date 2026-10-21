@@ -409,13 +409,13 @@ namespace NestoAPI.Infraestructure.Rapports
                         ? $"Compra cada {Cadencia(c)} días"
                         : $"Buen cliente ({Pedidos(c.Pedidos12Meses)} en el último año)";
                     string contacto = diasContacto.HasValue
-                        ? $"lleva {diasContacto.Value} {(diasContacto.Value == 1 ? "día" : "días")} sin hablar contigo"
+                        ? $"lleva {diasContacto.Value} {(diasContacto.Value == 1 ? "día" : "días")} sin hablar con usted"
                         : "no consta ningún contacto";
                     texto = $"{frecuencia} y {contacto}; probabilidad de pedido del {Math.Round(c.Probabilidad * 100, MidpointRounding.AwayFromZero)} %";
                     break;
                 case PrioridadesContacto.ALTA:
                     texto = Cadencia(c) < UmbralesSugerenciasContacto.CADENCIA_MAXIMA_DIAS && diasContacto.HasValue
-                        ? $"Compra cada {Cadencia(c)} días y lleva {diasContacto.Value} {(diasContacto.Value == 1 ? "día" : "días")} sin hablar contigo"
+                        ? $"Compra cada {Cadencia(c)} días y lleva {diasContacto.Value} {(diasContacto.Value == 1 ? "día" : "días")} sin hablar con usted"
                         : $"Buen cliente ({Pedidos(c.Pedidos12Meses)} en el último año), {SinContactoDesde(c.UltimoContacto, hoy)}";
                     break;
                 case PrioridadesContacto.MEDIA:
@@ -538,16 +538,16 @@ namespace NestoAPI.Infraestructure.Rapports
         /// <summary>Corte 1: plantilla con los números (el corte 4 la sustituirá por frases variadas).</summary>
         public static string Frase(ContactosVendedor contactos, int objetivoMes, int objetivoHoy, int restantes)
         {
-            string hoy = $"Llevas {contactos.Hoy} {(contactos.Hoy == 1 ? "contacto" : "contactos")} hoy";
+            string hoy = $"Lleva {contactos.Hoy} {(contactos.Hoy == 1 ? "contacto" : "contactos")} hoy";
             if (objetivoMes > 0 && contactos.Mes >= objetivoMes)
             {
-                return $"{hoy} y {contactos.Mes} este mes: ya has cubierto el objetivo de {objetivoMes}. ¡Buen trabajo!";
+                return $"{hoy} y {contactos.Mes} este mes: ya ha cubierto el objetivo de {objetivoMes}. ¡Buen trabajo!";
             }
             if (restantes == 0)
             {
                 return $"{hoy}; este mes van {contactos.Mes} de los {objetivoMes} que hacían falta para cubrir la cartera.";
             }
-            return $"{hoy}; para cubrir la cartera este mes necesitas {objetivoHoy} al día.";
+            return $"{hoy}; para cubrir la cartera este mes necesita {objetivoHoy} al día.";
         }
     }
 }

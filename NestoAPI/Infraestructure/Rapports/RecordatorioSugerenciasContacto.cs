@@ -159,21 +159,21 @@ namespace NestoAPI.Infraestructure.Rapports
             string dato;
             if (p.Maxima > 0 && p.Alta > 0)
             {
-                dato = $"Tienes {Clientes(p.Maxima)} de prioridad Máxima y {p.Alta} de prioridad Alta";
+                dato = $"Tiene {Clientes(p.Maxima)} de prioridad Máxima y {p.Alta} de prioridad Alta";
             }
             else if (p.Maxima > 0)
             {
-                dato = $"Tienes {Clientes(p.Maxima)} de prioridad Máxima";
+                dato = $"Tiene {Clientes(p.Maxima)} de prioridad Máxima";
             }
             else if (p.Alta > 0)
             {
-                dato = $"Tienes {Clientes(p.Alta)} de prioridad Alta";
+                dato = $"Tiene {Clientes(p.Alta)} de prioridad Alta";
             }
             else
             {
-                dato = $"Tienes {Clientes(p.Total)} de tu cartera";
+                dato = $"Tiene {Clientes(p.Total)} de su cartera";
             }
-            return $"{dato} esperando en Rapports › Clientes para contactar. La lista te dice a quién llamar primero y por qué.";
+            return $"{dato} esperando en Rapports › Clientes para contactar. La lista le dice a quién llamar primero y por qué.";
         }
 
         private static string Clientes(int n) => n == 1 ? "1 cliente" : $"{n} clientes";

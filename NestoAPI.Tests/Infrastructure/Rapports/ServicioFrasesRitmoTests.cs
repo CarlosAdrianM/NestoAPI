@@ -72,11 +72,11 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
         [TestMethod]
         public async Task MismaSituacionElMismoDia_MismaPlantillaConLosNumerosAlDia()
         {
-            guardadas.Add(new FraseRitmoGuardada { Vendedor = "MPP", Fecha = MANANA.AddMinutes(-20), Situacion = SituacionesRitmo.POR_DEBAJO, Plantilla = "d6", Texto = "Llevas {hoy}; faltan {faltan:contacto}." });
+            guardadas.Add(new FraseRitmoGuardada { Vendedor = "MPP", Fecha = MANANA.AddMinutes(-20), Situacion = SituacionesRitmo.POR_DEBAJO, Plantilla = "d6", Texto = "Lleva {hoy}; faltan {faltan:contacto}." });
 
             string frase = await Servicio().Generar("MPP", Ritmo(hoy: 5, mes: 75), new DateTime(2026, 10, 7, 13, 30, 0), SinFestivos);
 
-            Assert.AreEqual("Llevas 5; faltan 9 contactos.", frase);
+            Assert.AreEqual("Lleva 5; faltan 9 contactos.", frase);
             Assert.AreEqual(1, guardadas.Count, "No guarda otra");
         }
 

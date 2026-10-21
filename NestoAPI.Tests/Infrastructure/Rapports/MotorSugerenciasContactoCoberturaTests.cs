@@ -251,7 +251,7 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
         {
             Assert.AreEqual(OrigenesSugerenciaContacto.COBERTURA, OrigenesSugerenciaContacto.DeMotivo("Cobertura del mes: sin ningún contacto registrado; ha comprado 1 vez en el último año"));
             Assert.AreEqual(OrigenesSugerenciaContacto.CHEQUE_REGALO, OrigenesSugerenciaContacto.DeMotivo("Tiene un cheque de 50 € sin usar hasta el 07/11"));
-            Assert.AreEqual(OrigenesSugerenciaContacto.PROBABILIDAD, OrigenesSugerenciaContacto.DeMotivo("Compra cada 7 días y lleva 15 días sin hablar contigo"));
+            Assert.AreEqual(OrigenesSugerenciaContacto.PROBABILIDAD, OrigenesSugerenciaContacto.DeMotivo("Compra cada 7 días y lleva 15 días sin hablar con usted"));
             Assert.AreEqual(OrigenesSugerenciaContacto.PROBABILIDAD, OrigenesSugerenciaContacto.DeMotivo(null));
         }
 

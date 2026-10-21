@@ -177,7 +177,7 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
         {
             string motivo = MotorSugerenciasContacto.Motivo(Cliente("a", 36, diasContacto: 34, probabilidad: 0.72f), PrioridadesContacto.MAXIMA, HOY);
 
-            Assert.AreEqual("Compra cada 10 días y lleva 34 días sin hablar contigo; probabilidad de pedido del 72 %", motivo);
+            Assert.AreEqual("Compra cada 10 días y lleva 34 días sin hablar con usted; probabilidad de pedido del 72 %", motivo);
         }
 
         [TestMethod]
@@ -193,7 +193,7 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
             StringAssert.EndsWith(MotorSugerenciasContacto.Motivo(cliente, PrioridadesContacto.ALTA, HOY), "sin ningún contacto registrado");
 
             // Comprador frecuente al que le toca por cadencia antes de los 30 días.
-            Assert.AreEqual("Compra cada 7 días y lleva 15 días sin hablar contigo",
+            Assert.AreEqual("Compra cada 7 días y lleva 15 días sin hablar con usted",
                 MotorSugerenciasContacto.Motivo(Cliente("b", 52, diasContacto: 15, probabilidad: 0.3f), PrioridadesContacto.ALTA, HOY));
         }
 
@@ -339,7 +339,7 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
             Assert.AreEqual(2, ritmo.PendientesAlta);
             Assert.AreEqual(0, ritmo.PendientesMedia);
             Assert.AreEqual(1, ritmo.PendientesBaja);
-            Assert.AreEqual("Llevas 9 contactos hoy; para cubrir la cartera este mes necesitas 6 al día.", ritmo.Frase);
+            Assert.AreEqual("Lleva 9 contactos hoy; para cubrir la cartera este mes necesita 6 al día.", ritmo.Frase);
         }
 
         [TestMethod]
@@ -352,7 +352,7 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
 
             Assert.AreEqual(0, ritmo.DiasLaborablesRestantesMes);
             Assert.AreEqual(0, ritmo.ObjetivoHoy);
-            Assert.AreEqual("Llevas 0 contactos hoy; este mes van 4 de los 10 que hacían falta para cubrir la cartera.", ritmo.Frase);
+            Assert.AreEqual("Lleva 0 contactos hoy; este mes van 4 de los 10 que hacían falta para cubrir la cartera.", ritmo.Frase);
         }
 
         [TestMethod]
@@ -364,7 +364,7 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
                 new ContactosVendedor { Hoy = 1, Mes = 12 }, new List<SugerenciaContactoDTO>(), HOY, laborable);
 
             Assert.AreEqual(0, ritmo.ObjetivoHoy);
-            Assert.AreEqual("Llevas 1 contacto hoy y 12 este mes: ya has cubierto el objetivo de 10. ¡Buen trabajo!", ritmo.Frase);
+            Assert.AreEqual("Lleva 1 contacto hoy y 12 este mes: ya ha cubierto el objetivo de 10. ¡Buen trabajo!", ritmo.Frase);
         }
     }
 }
