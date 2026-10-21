@@ -1,4 +1,5 @@
 using Hangfire;
+using ModeloSugerenciasProductos.Reglas;
 using NestoAPI.Infraestructure.CorreosPostCompra;
 using NestoAPI.Models;
 using System;
@@ -22,6 +23,8 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         public int Afinidades { get; set; }
         /// <summary>NestoAPI#671: productos con popularidad (0 si no está el script Issue671a).</summary>
         public int Popularidad { get; set; }
+        /// <summary>NestoAPI#683: filas de la popularidad por estado (0 si no está el script Issue683).</summary>
+        public int PopularidadEstado { get; set; }
     }
 
     public interface IRepositorioJobSugerenciasProductos
@@ -37,6 +40,12 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         bool ExistenTablasModelo();
         /// <summary>NestoAPI#671: vacía las dos tablas y las rellena, todo o nada.</summary>
         void GuardarModelo(List<AfinidadCliente> afinidades, List<PopularidadProducto> popularidad, DateTime fechaCalculo);
+        /// <summary>NestoAPI#683: si existe SugerenciasProductosPopularidadEstado (script Issue683).</summary>
+        bool ExistenTablasEstado();
+        /// <summary>NestoAPI#683: cliente → Clientes.Estado de hoy del contacto principal (el de menor código si hay dos).</summary>
+        Dictionary<string, short?> LeerEstadosClientes(string empresa);
+        /// <summary>NestoAPI#683: vacía la tabla y la rellena, todo o nada.</summary>
+        void GuardarPopularidadEstado(List<PopularidadPorEstado> filas, DateTime fechaCalculo);
     }
 
     /// <summary>
@@ -47,6 +56,9 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
     /// NestoAPI#671 (corte 2a): en la misma pasada, con las mismas compras, la afinidad item-kNN de cada cliente y la
     /// popularidad de cada producto (<see cref="CalculadoraAfinidadProductos"/>), en otra transacción y solo si están las
     /// tablas del script Issue671a.
+    /// NestoAPI#683: también la popularidad de cada producto y de cada familia por grupo de estado del cliente (con el estado de
+    /// hoy), en otra transacción y solo si está la tabla del script Issue683. Es lo que necesita Calcular para usar un modelo de
+    /// la versión 2 de las features: mientras no esté, sigue con el último de la versión 1.
     /// <para>De lunes a sábado a las 05:00: después de los jobs de la 1:00 a las 4:30 y nunca el domingo de madrugada (el SP de
     /// precios medios bloquea LinPedidoVta). En la cola «indicadores» (servidor de un hilo de los jobs largos) y sin reintentos:
     /// un reintento caería en horario. Interruptor: <see cref="Constantes.ParametrosUsuario.SUGERENCIAS_PRODUCTOS_JOB"/>.</para>
@@ -88,7 +100,7 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
                 Console.WriteLine(resultado.MotivoNoCalcula != null
                     ? $"🛒 [Hangfire] Sugerencias de productos: no se calcula ({resultado.MotivoNoCalcula})"
                     : $"🛒 [Hangfire] Sugerencias de productos: {resultado.Compras} compras, {resultado.Pares} pares, {resultado.PerfilesProductos} filas de perfiles, " +
-                      $"{resultado.Afinidades} afinidades, {resultado.Popularidad} productos con popularidad");
+                      $"{resultado.Afinidades} afinidades, {resultado.Popularidad} productos con popularidad, {resultado.PopularidadEstado} filas de popularidad por estado");
             }
             catch (Exception ex)
             {
@@ -147,6 +159,14 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
                 resultado.Afinidades = afinidades.Count;
                 resultado.Popularidad = popularidad.Count;
             }
+
+            if (repositorio.ExistenTablasEstado())
+            {
+                Dictionary<string, short?> estados = repositorio.LeerEstadosClientes(empresa) ?? new Dictionary<string, short?>();
+                List<PopularidadPorEstado> porEstado = CalculadoraAfinidadProductos.PopularidadEstado(compras, fichas, estados, hoy);
+                repositorio.GuardarPopularidadEstado(porEstado, momento);
+                resultado.PopularidadEstado = porEstado.Count;
+            }
             return resultado;
         }
     }
@@ -158,6 +178,15 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         internal const string SQL_EXISTEN_TABLAS = @"
 SELECT CAST(CASE WHEN OBJECT_ID(N'dbo.SugerenciasProductosPares', N'U') IS NULL
                    OR OBJECT_ID(N'dbo.SugerenciasProductosPerfilesProductos', N'U') IS NULL THEN 0 ELSE 1 END AS bit)";
+
+        internal const string SQL_EXISTE_TABLA_ESTADO = @"
+SELECT CAST(CASE WHEN OBJECT_ID(N'dbo.SugerenciasProductosPopularidadEstado', N'U') IS NULL THEN 0 ELSE 1 END AS bit)";
+
+        /// <summary>NestoAPI#683: el estado de hoy del contacto principal de cada cliente (la misma que el entrenamiento).</summary>
+        internal const string SQL_ESTADOS_CLIENTES = @"
+SELECT RTRIM(c.[Nº Cliente]) AS Cliente, RTRIM(c.Contacto) AS Contacto, c.Estado
+FROM Clientes c WITH (NOLOCK)
+WHERE c.Empresa = @empresa AND c.ClientePrincipal = 1";
 
         internal const string SQL_EXISTEN_TABLAS_MODELO = @"
 SELECT CAST(CASE WHEN OBJECT_ID(N'dbo.SugerenciasProductosAfinidad', N'U') IS NULL
@@ -186,6 +215,45 @@ SELECT CAST(CASE WHEN OBJECT_ID(N'dbo.SugerenciasProductosAfinidad', N'U') IS NU
             {
                 return db.Database.SqlQuery<bool>(SQL_EXISTEN_TABLAS_MODELO).First();
             }
+        }
+
+        public bool ExistenTablasEstado()
+        {
+            using (NVEntities db = Contexto())
+            {
+                return db.Database.SqlQuery<bool>(SQL_EXISTE_TABLA_ESTADO).First();
+            }
+        }
+
+        public Dictionary<string, short?> LeerEstadosClientes(string empresa)
+        {
+            using (NVEntities db = Contexto())
+            {
+                return EstadosPorCliente(db.Database.SqlQuery<EstadoClienteFila>(SQL_ESTADOS_CLIENTES, new SqlParameter("@empresa", empresa)).ToList());
+            }
+        }
+
+        /// <summary>Un estado por cliente: el del contacto principal de menor código (como RepositorioDatosSql del núcleo).</summary>
+        internal static Dictionary<string, short?> EstadosPorCliente(IEnumerable<EstadoClienteFila> filas)
+            => (filas ?? Enumerable.Empty<EstadoClienteFila>())
+                .Where(f => !string.IsNullOrWhiteSpace(f.Cliente))
+                .GroupBy(f => f.Cliente.Trim(), StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.OrderBy(f => f.Contacto?.Trim() ?? string.Empty, StringComparer.Ordinal).First().Estado,
+                    StringComparer.OrdinalIgnoreCase);
+
+        public void GuardarPopularidadEstado(List<PopularidadPorEstado> filas, DateTime fechaCalculo)
+        {
+            DataTable tabla = new DataTable();
+            _ = tabla.Columns.Add("Estado", typeof(string));
+            _ = tabla.Columns.Add("Tipo", typeof(string));
+            _ = tabla.Columns.Add("Clave", typeof(string));
+            _ = tabla.Columns.Add("Clientes", typeof(int));
+            _ = tabla.Columns.Add("FechaCalculo", typeof(DateTime));
+            foreach (PopularidadPorEstado f in filas ?? new List<PopularidadPorEstado>())
+            {
+                _ = tabla.Rows.Add(f.Estado, f.Tipo, f.Clave ?? string.Empty, f.Clientes, fechaCalculo);
+            }
+            Reemplazar(Tuple.Create("dbo.SugerenciasProductosPopularidadEstado", tabla));
         }
 
         public List<CompraDiaReposicion> LeerCompras(string empresa, DateTime desde, DateTime hasta)
@@ -330,5 +398,13 @@ SELECT CAST(CASE WHEN OBJECT_ID(N'dbo.SugerenciasProductosAfinidad', N'U') IS NU
                 copia.WriteToServer(tabla);
             }
         }
+    }
+
+    /// <summary>NestoAPI#683: una fila de <see cref="RepositorioJobSugerenciasProductosSql.SQL_ESTADOS_CLIENTES"/>.</summary>
+    public class EstadoClienteFila
+    {
+        public string Cliente { get; set; }
+        public string Contacto { get; set; }
+        public short? Estado { get; set; }
     }
 }

@@ -149,13 +149,18 @@ public sealed record DecisionPuerta(bool Pasa, string Motivo);
 
 /// <summary>
 /// Puerta de salida del modelo 1 (plan del 20/10/26): ganar a reglas-1 en P@3 por al menos 2 puntos, con la NDCG@3 no peor.
-/// Sin métricas calculables, no pasa. Función pura.
+/// NestoAPI#683: y no perder más de <c>maximaPerdidaFrenteAnterior</c> de P@3 frente al mismo modelo con las features de la
+/// versión anterior entrenado con la misma partición (si no, la API seguiría con el zip anterior, que es mejor). Sin métricas
+/// calculables, no pasa. Función pura.
 /// </summary>
 public static class PuertaCalidad
 {
     private const double EPSILON = 1e-9;
+    /// <summary>NestoAPI#683: lo que se tolera perder de P@3 frente al modelo de la versión anterior (0,005 = medio punto).</summary>
+    public const double MAXIMA_PERDIDA_FRENTE_ANTERIOR = 0.005;
 
-    public static DecisionPuerta Decidir(ResultadoRanking modelo, ResultadoRanking reglas, double minimaMejoraP3 = 0.02)
+    public static DecisionPuerta Decidir(ResultadoRanking modelo, ResultadoRanking reglas, double minimaMejoraP3 = 0.02,
+        ResultadoRanking? versionAnterior = null, double maximaPerdidaFrenteAnterior = MAXIMA_PERDIDA_FRENTE_ANTERIOR)
     {
         if (double.IsNaN(modelo.P3) || double.IsNaN(modelo.Ndcg3) || double.IsNaN(reglas.P3) || double.IsNaN(reglas.Ndcg3))
             return new DecisionPuerta(false, "no se pueden calcular las métricas (no hay sesiones de validación con positivos)");
@@ -165,6 +170,12 @@ public static class PuertaCalidad
             fallos.Add($"la P@3 no gana a reglas-1 por {Informe.Num(minimaMejoraP3 * 100, "0.#")} puntos (gana por {Informe.Num((modelo.P3 - reglas.P3) * 100, "0.0")})");
         if (modelo.Ndcg3 < reglas.Ndcg3 - EPSILON)
             fallos.Add("la NDCG@3 es peor que la de reglas-1");
+        if (versionAnterior != null && !double.IsNaN(versionAnterior.P3))
+        {
+            comparacion += $", P@3 sin las features nuevas {Informe.Pct(versionAnterior.P3)}";
+            if (modelo.P3 < versionAnterior.P3 - maximaPerdidaFrenteAnterior - EPSILON)
+                fallos.Add($"la P@3 es peor que la del modelo sin las features nuevas ({Informe.Pct(versionAnterior.P3)}) por más de {Informe.Num(maximaPerdidaFrenteAnterior * 100, "0.0#")} puntos");
+        }
         return fallos.Count == 0
             ? new DecisionPuerta(true, comparacion)
             : new DecisionPuerta(false, $"{string.Join(" y ", fallos)}; {comparacion}");
@@ -185,6 +196,28 @@ public static class Informe
         sb.AppendLine("|---|---:|---:|---:|---:|---:|---:|");
         foreach (ResultadoRanking r in filas)
             sb.AppendLine($"| {r.Modelo} | {Pct(r.P3)} | {Pct(r.R3)} | {Num(r.Ndcg3, "0.000")} | {Pct(r.AlMenos1)} | {r.Sesiones} | {Pct(r.Cobertura)} |");
+        return sb.ToString();
+    }
+
+    /// <summary>NestoAPI#683: P@3 (y sesiones) de cada modelo por grupo de estado del cliente.</summary>
+    /// <param name="segmentos">Nombre del segmento → resultados de cada modelo en ese segmento (en el orden de las filas).</param>
+    public static string TablaEstados(IReadOnlyList<string> modelos, IReadOnlyList<KeyValuePair<string, List<ResultadoRanking>>> segmentos)
+    {
+        var sb = new StringBuilder();
+        sb.Append("| Modelo |");
+        foreach (KeyValuePair<string, List<ResultadoRanking>> s in segmentos)
+            sb.Append($" {s.Key} ({s.Value.FirstOrDefault()?.Sesiones ?? 0}) |");
+        sb.AppendLine();
+        sb.Append("|---|");
+        foreach (KeyValuePair<string, List<ResultadoRanking>> _ in segmentos) sb.Append("---:|");
+        sb.AppendLine();
+        for (int i = 0; i < modelos.Count; i++)
+        {
+            sb.Append($"| {modelos[i]} |");
+            foreach (KeyValuePair<string, List<ResultadoRanking>> s in segmentos)
+                sb.Append($" {(i < s.Value.Count ? Pct(s.Value[i].P3) : "—")} |");
+            sb.AppendLine();
+        }
         return sb.ToString();
     }
 

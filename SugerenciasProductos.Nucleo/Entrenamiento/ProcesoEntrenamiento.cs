@@ -28,6 +28,13 @@ public sealed class ProcesoEntrenamiento
     public const string BASE_REGLAS_DIVERSIDAD = "reglas-1 con la diversidad (informativo)";
     public const string BASE_POPULARIDAD = "Popularidad del perfil";
     public const string BASE_AFINIDAD = "Afinidad sola";
+    /// <summary>NestoAPI#683: el mismo modelo con las features de la versión 1 (sin el estado), con la misma partición.</summary>
+    public const string MODELO_SIN_ESTADO = "Modelo sin el estado (features v1, misma partición)";
+    public const string MODELO_SIN_ESTADO_SIN_DIVERSIDAD = "Modelo sin el estado, sin diversidad (informativo)";
+    public const string SEGMENTO_DISTRIBUIDORES = "Distribuidores (6/67)";
+    public const string SEGMENTO_RESTO = "Resto";
+    /// <summary>Versión de las features del modelo «sin el estado».</summary>
+    public const int VERSION_SIN_ESTADO = 1;
 
     private readonly MLContext _ml;
     private readonly Action<string> _log;
@@ -39,6 +46,16 @@ public sealed class ProcesoEntrenamiento
     public List<ResultadoRanking> Resultados { get; } = new();
     public ResultadoRanking? Modelo => Resultados.FirstOrDefault(r => r.Modelo == MODELO_BINARIO);
     public ResultadoRanking? Reglas => Resultados.FirstOrDefault(r => r.Modelo == BASE_REGLAS);
+    /// <summary>NestoAPI#683: el modelo con las features de la versión 1 (con la diversidad, como <see cref="Modelo"/>).</summary>
+    public ResultadoRanking? SinEstado => Resultados.FirstOrDefault(r => r.Modelo == MODELO_SIN_ESTADO);
+    /// <summary>NestoAPI#683: P@3 de cada modelo por grupo de estado (segmento → resultados en el orden de <see cref="ModelosPorEstado"/>).</summary>
+    public List<KeyValuePair<string, List<ResultadoRanking>>> ResultadosPorEstado { get; } = new();
+    public List<string> ModelosPorEstado { get; } = new();
+    /// <summary>NestoAPI#683: si el estado de cada instantánea sale del historial (sin él, fuga y no pasa la puerta).</summary>
+    public bool HistorialEstados { get; }
+    public string? MotivoSinHistorialEstados { get; }
+    /// <summary>NestoAPI#683: el primer cambio de estado apuntado (antes de él, el estado es aproximado).</summary>
+    public DateTime? PrimerCambioEstado { get; }
     public DecisionPuerta Decision { get; private set; } = new(false, "");
     public int FilasEntrenamiento => Dataset.Entrenamiento.Sum(s => s.Filas.Count);
     public int FilasValidacion => Dataset.Validacion.Sum(s => s.Filas.Count);
@@ -50,6 +67,9 @@ public sealed class ProcesoEntrenamiento
         _log = log ?? (_ => { });
         _ml = Entrenador.CrearContexto();
         Ventana = VentanaEntrenamiento.Calcular(hoy, op);
+        HistorialEstados = datos.HistorialEstados;
+        MotivoSinHistorialEstados = datos.MotivoSinHistorialEstados;
+        PrimerCambioEstado = datos.HistorialEstados && datos.CambiosEstado.Count > 0 ? datos.CambiosEstado.Min(c => c.Fecha) : null;
         Dataset = ConstructorInstantaneas.Construir(datos, Ventana, op, _log);
     }
 
@@ -83,7 +103,17 @@ public sealed class ProcesoEntrenamiento
         for (int i = 0; i < validacion.Count; i++) puntuacion[validacion[i]] = p[i];
         _log($"Modelo binario entrenado y puntuado en {reloj.Elapsed.TotalSeconds:0.0} s.");
 
-        Resultados.Add(Metricas.Evaluar(MODELO_BINARIO, Dataset.Validacion, s => Diversidad.Top(s.Filas, f => puntuacion[f])));
+        Func<Sesion, IReadOnlyList<string>> topModelo = s => Diversidad.Top(s.Filas, f => puntuacion[f]);
+        Resultados.Add(Metricas.Evaluar(MODELO_BINARIO, Dataset.Validacion, topModelo));
+
+        // NestoAPI#683: el mismo modelo sin las features del estado (versión 1), con la misma partición: lo que aportan
+        ITransformer sinEstado = Entrenador.EntrenarBinario(_ml, entrenamiento, Opciones, VERSION_SIN_ESTADO);
+        List<float> p1 = Entrenador.Probabilidades(_ml, sinEstado, validacion);
+        Dictionary<FilaEntrenamiento, float> puntuacionSinEstado = new(ReferenceEqualityComparer.Instancia);
+        for (int i = 0; i < validacion.Count; i++) puntuacionSinEstado[validacion[i]] = p1[i];
+        Func<Sesion, IReadOnlyList<string>> topSinEstado = s => Diversidad.Top(s.Filas, f => puntuacionSinEstado[f]);
+        Resultados.Add(Metricas.Evaluar(MODELO_SIN_ESTADO, Dataset.Validacion, topSinEstado));
+        _log($"Modelo sin el estado (features v1) entrenado y puntuado ({reloj.Elapsed.TotalSeconds:0.0} s).");
         if (Opciones.EvaluarLambdaRank)
         {
             try
@@ -100,9 +130,12 @@ public sealed class ProcesoEntrenamiento
                 _log($"LambdaRank no se ha podido entrenar ({ex.Message}); el informe sigue sin él.");
             }
         }
-        Resultados.Add(Metricas.Evaluar(BASE_REGLAS, Dataset.Validacion, s => s.Reglas1));
-        Resultados.Add(Metricas.Evaluar(MODELO_SIN_DIVERSIDAD, Dataset.Validacion,
-            s => s.Filas.OrderByDescending(f => puntuacion[f]).ThenBy(f => f.Producto, StringComparer.OrdinalIgnoreCase).Take(Metricas.K).Select(f => f.Producto).ToList()));
+        Func<Sesion, IReadOnlyList<string>> topReglas = s => s.Reglas1;
+        Func<Sesion, IReadOnlyList<string>> topSinDiversidad = s => SinDiversidad(s, puntuacion);
+        Func<Sesion, IReadOnlyList<string>> topSinEstadoSinDiversidad = s => SinDiversidad(s, puntuacionSinEstado);
+        Resultados.Add(Metricas.Evaluar(BASE_REGLAS, Dataset.Validacion, topReglas));
+        Resultados.Add(Metricas.Evaluar(MODELO_SIN_DIVERSIDAD, Dataset.Validacion, topSinDiversidad));
+        Resultados.Add(Metricas.Evaluar(MODELO_SIN_ESTADO_SIN_DIVERSIDAD, Dataset.Validacion, topSinEstadoSinDiversidad));
         Resultados.Add(Metricas.Evaluar(BASE_REGLAS_DIVERSIDAD, Dataset.Validacion, s =>
         {
             Dictionary<string, FilaEntrenamiento> filas = s.Filas.GroupBy(f => f.Producto, StringComparer.OrdinalIgnoreCase)
@@ -115,12 +148,46 @@ public sealed class ProcesoEntrenamiento
         Resultados.Add(Metricas.Evaluar(BASE_AFINIDAD, Dataset.Validacion,
             s => Diversidad.Top(s.Filas, f => f.Afinidad + f.Clientes12Meses / 1e9)));
 
-        Decision = PuertaCalidad.Decidir(Modelo!, Reglas!, Opciones.MinimaMejoraP3);
+        // NestoAPI#683: P@3 por estado del cliente (al menos distribuidores frente al resto)
+        var tops = new List<KeyValuePair<string, Func<Sesion, IReadOnlyList<string>>>>
+        {
+            new(MODELO_BINARIO, topModelo),
+            new(MODELO_SIN_ESTADO, topSinEstado),
+            new(MODELO_SIN_DIVERSIDAD, topSinDiversidad),
+            new(MODELO_SIN_ESTADO_SIN_DIVERSIDAD, topSinEstadoSinDiversidad),
+            new(BASE_REGLAS, topReglas)
+        };
+        ModelosPorEstado.AddRange(tops.Select(t => t.Key));
+        var segmentos = new List<KeyValuePair<string, Func<Sesion, bool>>>
+        {
+            new(SEGMENTO_DISTRIBUIDORES, s => EstadosCliente.EsDistribuidor(s.EstadoCliente)),
+            new(SEGMENTO_RESTO, s => !EstadosCliente.EsDistribuidor(s.EstadoCliente))
+        };
+        foreach (string grupo in Dataset.Validacion.Where(s => s.Positivos.Count > 0 && !EstadosCliente.EsDistribuidor(s.EstadoCliente))
+            .GroupBy(s => s.EstadoCliente).OrderByDescending(g => g.Count()).ThenBy(g => g.Key, StringComparer.Ordinal).Select(g => g.Key))
+        {
+            string g = grupo;
+            segmentos.Add(new("Estado " + g, s => s.EstadoCliente == g));
+        }
+        foreach (KeyValuePair<string, Func<Sesion, bool>> segmento in segmentos)
+        {
+            List<Sesion> sesiones = Dataset.Validacion.Where(segmento.Value).ToList();
+            ResultadosPorEstado.Add(new(segmento.Key, tops.Select(t => Metricas.Evaluar(t.Key, sesiones, t.Value)).ToList()));
+        }
+
+        Decision = PuertaCalidad.Decidir(Modelo!, Reglas!, Opciones.MinimaMejoraP3, SinEstado);
+        if (!HistorialEstados)
+        {
+            Decision = new DecisionPuerta(false, $"sin el historial de estados del cliente (SeguimientoCambiosEstadoCliente: {MotivoSinHistorialEstados}) " +
+                $"el estado de cada instantánea sería el de hoy y habría fuga; {Decision.Motivo}");
+        }
         _log("");
         _log($"Validación ({Ventana.Corte:MM/yyyy} – {Ventana.InstantaneasValidacion.LastOrDefault():MM/yyyy}), top-3 con la diversidad:");
         _log(Informe.Tabla(Resultados));
         _log("Por tipo de producto para el cliente:");
         _log(Informe.TablaSegmentos(Resultados));
+        _log("P@3 por estado del cliente (sesiones con algún positivo entre paréntesis):");
+        _log(Informe.TablaEstados(ModelosPorEstado, ResultadosPorEstado));
         _log($"Puerta: {(Decision.Pasa ? "PASA" : "NO PASA")} — {Decision.Motivo}.");
         _log($"Evaluación terminada en {reloj.Elapsed.TotalSeconds:0.0} s.");
     }
@@ -133,6 +200,7 @@ public sealed class ProcesoEntrenamiento
     {
         if (!DatosSuficientes) throw new InvalidOperationException("No hay datos suficientes para entrenar el modelo final");
         List<FilaEntrenamiento> todas = Dataset.Todas.SelectMany(s => s.Filas).ToList();
+        // Siempre con la versión actual de las features (la que se apunta en el json)
         ITransformer final = Entrenador.EntrenarBinario(_ml, todas, Opciones);
         Entrenador.Guardar(_ml, final, ruta);
         ITransformer cargado = Entrenador.Cargar(_ml, ruta);
@@ -159,7 +227,9 @@ public sealed class ProcesoEntrenamiento
         sb.AppendLine();
         sb.AppendLine($"**{(Decision.Pasa ? "PASA" : "NO PASA")}** — {Decision.Motivo}.");
         sb.AppendLine();
-        sb.AppendLine($"Regla: ganar a reglas-1 en P@3 por al menos {Informe.Num(Opciones.MinimaMejoraP3 * 100, "0.#")} puntos, con la NDCG@3 no peor.");
+        sb.AppendLine($"Regla: ganar a reglas-1 en P@3 por al menos {Informe.Num(Opciones.MinimaMejoraP3 * 100, "0.#")} puntos, con la NDCG@3 no peor, " +
+                      $"y no perder más de {Informe.Num(PuertaCalidad.MAXIMA_PERDIDA_FRENTE_ANTERIOR * 100, "0.0#")} puntos de P@3 frente al mismo modelo sin las features nuevas (NestoAPI#683). " +
+                      $"Versión de las features: {ModeloSugerenciaEntrada.VERSION_FEATURES}.");
         sb.AppendLine();
         if (!DatosSuficientes)
         {
@@ -176,6 +246,16 @@ public sealed class ProcesoEntrenamiento
         sb.AppendLine("Habituales: ≥ 3 días de compra en 24 meses; ocasionales: 1 o 2; nuevos: ninguno.");
         sb.AppendLine();
         sb.AppendLine(Informe.TablaSegmentos(Resultados));
+        sb.AppendLine("## Por estado del cliente (NestoAPI#683)");
+        sb.AppendLine();
+        sb.AppendLine($"P@3 de cada modelo según el estado del cliente el día del pedido (grupos de `EstadosCliente`; sesiones con algún positivo entre paréntesis). " +
+                      $"«Sin el estado» es el mismo LightGBM con las features de la versión {VERSION_SIN_ESTADO}, entrenado con la misma partición: lo que aportan las features nuevas.");
+        sb.AppendLine();
+        sb.AppendLine(Informe.TablaEstados(ModelosPorEstado, ResultadosPorEstado));
+        sb.AppendLine(HistorialEstados
+            ? $"Estado de cada instantánea: el de hoy deshaciendo los cambios de SeguimientoCambiosEstadoCliente posteriores{(PrimerCambioEstado.HasValue ? $" (apuntados desde el {PrimerCambioEstado:dd/MM/yyyy}; antes, aproximado)" : "")}."
+            : $"**SIN historial de estados** ({MotivoSinHistorialEstados}): el estado de cada instantánea es el de hoy (fuga), así que el modelo no pasa la puerta.");
+        sb.AppendLine();
         sb.AppendLine("## Cómo se mide");
         sb.AppendLine();
         sb.AppendLine("- Sesión = el primer pedido del mes de cada cliente. Carrito simulado: la mitad de las líneas del pedido (al azar, semilla fija); en el 30 % de las sesiones, vacío.");
@@ -210,6 +290,8 @@ public sealed class ProcesoEntrenamiento
                       "nombres y tipos exactos (ML.NET enlaza por nombre). Cálculo en `CalculadoraFeatures` con el contexto de las tablas del job " +
                       "(`ContextoInstantanea`) y las compras del cliente de los 24 meses anteriores.");
         sb.AppendLine();
+        sb.AppendLine($"Versión de las features: **{ModeloSugerenciaEntrada.VERSION_FEATURES}** (va en el json como `VersionFeatures`; la API solo usa zips de versiones que sabe calcular).");
+        sb.AppendLine();
         sb.AppendLine($"Categóricas: {string.Join(", ", Entrenador.Categoricas)}. Numéricas: {string.Join(", ", Entrenador.Numericas)}.");
         sb.AppendLine();
         sb.AppendLine("Salida: `PredictedLabel` (bool), `Score` (float), `Probability` (float).");
@@ -242,8 +324,19 @@ public sealed class ProcesoEntrenamiento
         Ndcg3Reglas = MetadatosModelo.Numero(Reglas?.Ndcg3),
         PasaPuerta = Decision.Pasa,
         Motivo = Decision.Motivo,
-        Origen = origen
+        Origen = origen,
+        VersionFeatures = ModeloSugerenciaEntrada.VERSION_FEATURES,
+        P3SinEstado = MetadatosModelo.Numero(SinEstado?.P3),
+        P3Distribuidores = MetadatosModelo.Numero(P3Segmento(SEGMENTO_DISTRIBUIDORES)),
+        P3Resto = MetadatosModelo.Numero(P3Segmento(SEGMENTO_RESTO)),
+        HistorialEstados = HistorialEstados
     };
+
+    private double? P3Segmento(string segmento)
+        => ResultadosPorEstado.FirstOrDefault(r => r.Key == segmento).Value?.FirstOrDefault(r => r.Modelo == MODELO_BINARIO)?.P3;
+
+    private static List<string> SinDiversidad(Sesion s, Dictionary<FilaEntrenamiento, float> puntuacion)
+        => s.Filas.OrderByDescending(f => puntuacion[f]).ThenBy(f => f.Producto, StringComparer.OrdinalIgnoreCase).Take(Metricas.K).Select(f => f.Producto).ToList();
 
     private static string Fecha(DateTime d) => d == default ? "—" : d.ToString("MM/yyyy");
 
@@ -288,6 +381,19 @@ public sealed class MetadatosModelo
     public bool PasaPuerta { get; set; }
     public string Motivo { get; set; } = "";
     public string Origen { get; set; } = "";
+    /// <summary>
+    /// NestoAPI#683: versión del esquema de features con la que se entrenó (<see cref="ModeloSugerenciaEntrada.VERSION_FEATURES"/>).
+    /// Los json de antes no la llevan: al leerlos queda <see cref="ModeloSugerenciaEntrada.VERSION_FEATURES_INICIAL"/>.
+    /// </summary>
+    public int VersionFeatures { get; set; } = ModeloSugerenciaEntrada.VERSION_FEATURES_INICIAL;
+    /// <summary>NestoAPI#683: P@3 del mismo modelo con las features de la versión 1 (misma partición).</summary>
+    public double? P3SinEstado { get; set; }
+    /// <summary>NestoAPI#683: P@3 del modelo en las sesiones de distribuidores (estados 6 y 67).</summary>
+    public double? P3Distribuidores { get; set; }
+    /// <summary>NestoAPI#683: P@3 del modelo en el resto de sesiones.</summary>
+    public double? P3Resto { get; set; }
+    /// <summary>NestoAPI#683: si el estado de cada instantánea salió del historial de cambios.</summary>
+    public bool HistorialEstados { get; set; }
 
     public static double? Numero(double? v) => v == null || double.IsNaN(v.Value) ? null : Math.Round(v.Value, 6);
 }

@@ -201,6 +201,26 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void Ejecutar_ConUnModeloAnterior_ElInformeYElAvisoLoComparan()
+        {
+            Decide(true);
+            _ = Directory.CreateDirectory(carpeta);
+            File.WriteAllText(Path.Combine(carpeta, "modelo_sugerencias_productos_20261020_2330.zip"), "zip");
+            File.WriteAllText(Path.Combine(carpeta, "modelo_sugerencias_productos_20261020_2330.json"),
+                "{\"PasaPuerta\": true, \"P3\": 0.261, \"P3Reglas\": 0.12, \"Corte\": \"2026-06-01T00:00:00\", \"UltimaInstantanea\": \"2026-08-01T00:00:00\"}");
+            _ = A.CallTo(() => evaluacion.SinEstado).Returns(new ResultadoRanking { Modelo = "sin estado", P3 = 0.149, Ndcg3 = 0.17 });
+
+            Assert.AreEqual(EstadoEntrenamientoSugerencias.Pasaria, Servicio().Ejecutar(false, "job mensual"));
+
+            string informe = File.ReadAllText(almacen.RutaInforme("20261114_0230"));
+            StringAssert.StartsWith(informe, "INFORME");
+            StringAssert.Contains(informe, "## Frente al modelo anterior (NestoAPI#683)");
+            StringAssert.Contains(informe, "| Anterior: `modelo_sugerencias_productos_20261020_2330.zip` | 1 | 06/2026 – 08/2026 | 26,1 % | 12,0 %");
+            StringAssert.Contains(informe, "| Este sin el estado (features v1, misma partición) | 1 | esta | 14,9 %");
+            ComprobarAviso("PASARÍA", "Modelo anterior (modelo_sugerencias_productos_20261020_2330.zip): P@3 26,1 %");
+        }
+
+        [TestMethod]
         public void Ejecutar_NoPasaria_GuardaIgualYLoDice()
         {
             Decide(false, "P@3 12,1 % → 12,5 % (+0,4 puntos; hacen falta 2)");
@@ -432,10 +452,23 @@ namespace NestoAPI.Tests.Infrastructure
             StringAssert.Contains(File.ReadAllText(almacen.RutaReadme(sufijo)), "entrenar-modelo-sugerencias");
         }
 
-        /// <summary>Lo mismo que DatosSinteticos de la consola: 60 clientes de 4 tipos que compran sobre todo su subgrupo, con pares.</summary>
+        /// <summary>
+        /// Lo mismo que DatosSinteticos de la consola: 60 clientes de 4 tipos que compran sobre todo su subgrupo, con pares.
+        /// NestoAPI#683: con estados (C000, C010… distribuidores desde la mitad del periodo; antes, «0») y su historial.
+        /// </summary>
         internal static DatosCrudos DatosSinteticos(DateTime desde, DateTime hasta, int clientes = 60, int productos = 48)
         {
-            var datos = new DatosCrudos();
+            var datos = new DatosCrudos { HistorialEstados = true };
+            DateTime mitad = desde.AddDays((hasta - desde).TotalDays / 2);
+            for (int c = 0; c < clientes; c++)
+            {
+                string cliente = $"C{c:000}";
+                datos.EstadosClientes[cliente] = c % 10 == 0 ? (short)6 : c % 10 == 1 ? (short)67 : c % 3 == 0 ? (short)9 : (short)0;
+                if (c % 10 == 0)
+                {
+                    datos.CambiosEstado.Add(new CambioEstadoCliente { Cliente = cliente, Fecha = mitad, EstadoAnterior = 0, EstadoNuevo = 6 });
+                }
+            }
             for (int i = 0; i < productos; i++)
             {
                 string p = $"P{i:00}";

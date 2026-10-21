@@ -52,5 +52,18 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
                 })
                 .ToList();
         }
+
+        /// <summary>
+        /// NestoAPI#683: popularidad de cada producto y familia por grupo de estado del cliente (el de hoy), con las cuentas del
+        /// núcleo (<see cref="TablasNocturnas.PopularidadEstado"/>, las mismas que el entrenamiento con el estado de cada instantánea).
+        /// </summary>
+        public static List<PopularidadPorEstado> PopularidadEstado(IEnumerable<CompraDiaReposicion> compras, IDictionary<string, FichaProductoSugerencia> fichas,
+            IDictionary<string, short?> estados, DateTime hoy)
+        {
+            Func<string, ModeloSugerenciasProductos.Datos.FichaProducto> buscar = MotorSugerenciasProductos.Buscador(fichas);
+            var porCliente = new Dictionary<string, short?>(estados ?? new Dictionary<string, short?>(), StringComparer.OrdinalIgnoreCase);
+            return TablasNocturnas.PopularidadEstado(MotorSugerenciasProductos.ACompras(compras), buscar,
+                cliente => ModeloSugerenciasProductos.Features.EstadosCliente.Grupo(porCliente.TryGetValue(cliente.Trim(), out short? e) ? e : null), hoy);
+        }
     }
 }

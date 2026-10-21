@@ -35,6 +35,8 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         ResultadoRanking Modelo { get; }
         /// <summary>Métricas de reglas-1 en la validación; null si no hay.</summary>
         ResultadoRanking Reglas { get; }
+        /// <summary>NestoAPI#683: el mismo modelo con las features de la versión 1 (misma partición); null si no hay.</summary>
+        ResultadoRanking SinEstado { get; }
         string InformeMetricas();
         void EntrenarFinalYGuardar(string ruta);
         string Readme(string rutaModelo, string comoEntrenar);
@@ -71,6 +73,7 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
             public DecisionPuerta Decision => proceso.Decision;
             public ResultadoRanking Modelo => proceso.Modelo;
             public ResultadoRanking Reglas => proceso.Reglas;
+            public ResultadoRanking SinEstado => proceso.SinEstado;
             public string InformeMetricas() => proceso.InformeMetricas();
             public void EntrenarFinalYGuardar(string ruta) => _ = proceso.EntrenarFinalYGuardar(ruta);
             public string Readme(string rutaModelo, string comoEntrenar) => proceso.Readme(rutaModelo, comoEntrenar);
@@ -263,10 +266,17 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
             try
             {
                 asegurarNativo();
+                // NestoAPI#683: el que usa ahora Calcular (el último que pasa la puerta), para compararlo en el informe y en el aviso
+                Tuple<string, MetadatosModelo> anterior = ModeloAnterior();
                 IEvaluacionModeloSugerencias evaluacion = entrenador.Evaluar(new OpcionesEntrenamiento(), inicio.Date, Apuntar);
 
                 string rutaInforme = almacen.RutaInforme(sufijo);
-                almacen.Escribir(rutaInforme, evaluacion.InformeMetricas());
+                string comparacion = anterior == null ? null : ComparacionAnterior(evaluacion.Modelo, evaluacion.Reglas, evaluacion.SinEstado, anterior.Item1, anterior.Item2);
+                almacen.Escribir(rutaInforme, evaluacion.InformeMetricas() + (comparacion == null ? string.Empty : Environment.NewLine + comparacion));
+                if (comparacion != null)
+                {
+                    Apuntar(comparacion);
+                }
                 if (!evaluacion.DatosSuficientes)
                 {
                     Avisar(TextoAviso(EstadoEntrenamientoSugerencias.DatosInsuficientes, evaluacion.Decision?.Motivo, null, null, rutaInforme));
@@ -283,7 +293,8 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
                     ? EstadoEntrenamientoSugerencias.Pasaria
                     : EstadoEntrenamientoSugerencias.NoPasaria;
                 Apuntar($"Terminado: {(estado == EstadoEntrenamientoSugerencias.Pasaria ? "pasaría" : "no pasaría")} la puerta.");
-                Avisar(TextoAviso(estado, evaluacion.Decision?.Motivo, evaluacion.Modelo, evaluacion.Reglas, rutaInforme));
+                Avisar(TextoAviso(estado, evaluacion.Decision?.Motivo, evaluacion.Modelo, evaluacion.Reglas, rutaInforme)
+                    + (anterior == null ? string.Empty : $" Modelo anterior ({anterior.Item1}): P@3 {Pct(anterior.Item2.P3)} en su validación."));
                 return estado;
             }
             catch (Exception ex)
@@ -306,6 +317,50 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
                 liberarMemoria();
             }
         }
+
+        /// <summary>NestoAPI#683: el último modelo que pasa la puerta en la carpeta (sea de la versión de features que sea) y su json; null si no hay.</summary>
+        private Tuple<string, MetadatosModelo> ModeloAnterior()
+        {
+            try
+            {
+                ModeloSugerenciasElegido elegido = PredictorSugerenciasProductos.ElegirModelo(almacen.Carpeta);
+                if (elegido == null)
+                {
+                    return null;
+                }
+                MetadatosModelo meta = JsonConvert.DeserializeObject<MetadatosModelo>(File.ReadAllText(Path.ChangeExtension(elegido.RutaModelo, ".json")));
+                return meta == null ? null : Tuple.Create(Path.GetFileName(elegido.RutaModelo), meta);
+            }
+            catch (Exception)
+            {
+                return null; // La comparación es una ayuda: sin ella, el entrenamiento sigue
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#683: sección del informe frente al modelo que usa ahora Calcular. Sus métricas son las de SU validación (otros
+        /// meses), así que la comparación justa con lo que aportan las features nuevas es «sin el estado» (misma partición).
+        /// </summary>
+        internal static string ComparacionAnterior(ResultadoRanking modelo, ResultadoRanking reglas, ResultadoRanking sinEstado, string ficheroAnterior, MetadatosModelo anterior)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("## Frente al modelo anterior (NestoAPI#683)");
+            sb.AppendLine();
+            sb.AppendLine("| Modelo | Versión de features | Validación | P@3 | P@3 reglas-1 | NDCG@3 |");
+            sb.AppendLine("|---|---:|---|---:|---:|---:|");
+            sb.AppendLine($"| Anterior: `{ficheroAnterior}` | {anterior.VersionFeatures} | {Mes(anterior.Corte)} – {Mes(anterior.UltimaInstantanea)} | {Pct(anterior.P3)} | {Pct(anterior.P3Reglas)} | {Num(anterior.Ndcg3)} |");
+            sb.AppendLine($"| Este | {ModeloSugerenciaEntrada.VERSION_FEATURES} | esta | {Pct(modelo?.P3)} | {Pct(reglas?.P3)} | {Num(modelo?.Ndcg3)} |");
+            sb.AppendLine($"| Este sin el estado (features v1, misma partición) | 1 | esta | {Pct(sinEstado?.P3)} | {Pct(reglas?.P3)} | {Num(sinEstado?.Ndcg3)} |");
+            sb.AppendLine();
+            sb.AppendLine("Las métricas del anterior son las de su propia validación (otros meses y otros datos): la comparación justa de lo que aportan las features nuevas es la fila «sin el estado».");
+            return sb.ToString();
+        }
+
+        private static string Mes(DateTime fecha) => fecha == default ? "—" : fecha.ToString("MM/yyyy", CultureInfo.InvariantCulture);
+
+        private static string Pct(double? v) => v == null || double.IsNaN(v.Value) ? "—" : (v.Value * 100).ToString("0.0", CultureInfo.GetCultureInfo("es-ES")) + " %";
+
+        private static string Num(double? v) => v == null || double.IsNaN(v.Value) ? "—" : v.Value.ToString("0.000", CultureInfo.GetCultureInfo("es-ES"));
 
         /// <summary>
         /// 36 meses de compras, las instantáneas y los datos de LightGBM ocupan cientos de MB en el proceso de la API: al acabar

@@ -35,4 +35,17 @@ public sealed class DatosCrudos
 {
     public List<Compra> Compras { get; } = new();
     public Dictionary<string, FichaProducto> Fichas { get; } = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>NestoAPI#683: cliente → Clientes.Estado de HOY del contacto principal.</summary>
+    public Dictionary<string, short?> EstadosClientes { get; } = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>NestoAPI#683: cambios de estado del contacto principal (SeguimientoCambiosEstadoCliente).</summary>
+    public List<Features.CambioEstadoCliente> CambiosEstado { get; } = new();
+    /// <summary>
+    /// NestoAPI#683: si se ha podido leer el historial de cambios de estado. Sin él, el estado de cada instantánea sería el de
+    /// hoy (fuga: hay estados que dependen de lo que el cliente compró después, como «9» o «93») y el modelo no pasa la puerta.
+    /// </summary>
+    public bool HistorialEstados { get; set; }
+    /// <summary>NestoAPI#683: por qué no se ha podido leer el historial (null si se ha leído).</summary>
+    public string? MotivoSinHistorialEstados { get; set; }
+
+    public Features.HistorialEstadosCliente Estados() => new(EstadosClientes, HistorialEstados ? CambiosEstado : null);
 }

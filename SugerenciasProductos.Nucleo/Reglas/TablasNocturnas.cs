@@ -22,6 +22,23 @@ public sealed class PopularidadDeProducto
 }
 
 /// <summary>
+/// NestoAPI#683: una fila de SugerenciasProductosPopularidadEstado: clientes distintos de un grupo de estado
+/// (<see cref="Features.EstadosCliente.Grupo"/>, o «*» = todos) que han comprado en 12 meses un producto (Tipo «P»), algo de una
+/// familia («F») o cualquier cosa sugerible («T», Clave vacía: el total del grupo).
+/// </summary>
+public sealed class PopularidadPorEstado
+{
+    public const string PRODUCTO = "P";
+    public const string FAMILIA = "F";
+    public const string TOTAL = "T";
+
+    public string Estado { get; set; } = "";
+    public string Tipo { get; set; } = "";
+    public string Clave { get; set; } = "";
+    public int Clientes { get; set; }
+}
+
+/// <summary>
 /// NestoAPI#670/#671: lo que calcula de noche el job «sugerencias-productos-pares» y, con lo anterior a cada instantánea, el
 /// entrenamiento offline: pares «comprados juntos», afinidad item-kNN y popularidad. Sin BD y deterministas (los empates se
 /// resuelven por código).
@@ -37,6 +54,8 @@ public sealed class PopularidadDeProducto
 /// <see cref="MAXIMO_AFINIDADES_POR_CLIENTE"/> primeros. Los clientes con más de <see cref="MAXIMO_PRODUCTOS_CLIENTE"/> productos
 /// no cuentan para las similitudes.</para>
 /// <para><b>Popularidad</b>: clientes distintos en 12 y 3 meses y cestas en 12 meses.</para>
+/// <para><b>Popularidad por estado</b> (NestoAPI#683): lo mismo en 12 meses, por grupo de estado del cliente, de cada
+/// producto y de cada familia, con el total de clientes del grupo.</para>
 /// </summary>
 public static class TablasNocturnas
 {
@@ -311,6 +330,61 @@ public static class TablasNocturnas
                 Cestas12Meses = cestas12[p.Key].Count,
                 Rango = ++rango
             })
+            .ToList();
+    }
+
+    /// <summary>
+    /// NestoAPI#683: popularidad por grupo de estado con lo comprado en (hoy − 12 meses, hoy] (la misma ventana que
+    /// <see cref="Popularidad"/>), solo productos sugeribles. Por cada grupo y por «*» (todos): clientes distintos de cada
+    /// producto, de cada familia y en total. <paramref name="grupoEstado"/> da el grupo de un cliente
+    /// (<see cref="Features.EstadosCliente.Grupo"/> de su estado en esa fecha).
+    /// </summary>
+    public static List<PopularidadPorEstado> PopularidadEstado(IEnumerable<Compra>? compras, Func<string, FichaProducto?> ficha,
+        Func<string, string> grupoEstado, DateTime hoy)
+    {
+        DateTime desde12 = hoy.Date.AddMonths(-MESES_POPULARIDAD);
+        DateTime hasta = hoy.Date.AddDays(1);
+        var clientes = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        var sugeribles = new Dictionary<string, FichaProducto?>(StringComparer.OrdinalIgnoreCase);
+        var grupos = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (Compra c in compras ?? Enumerable.Empty<Compra>())
+        {
+            if (string.IsNullOrWhiteSpace(c.Cliente) || string.IsNullOrWhiteSpace(c.Producto) || c.Dia < desde12 || c.Dia >= hasta)
+            {
+                continue;
+            }
+            string producto = c.Producto.Trim();
+            if (!sugeribles.TryGetValue(producto, out FichaProducto? f))
+            {
+                FichaProducto? leida = ficha(producto);
+                f = ReglasSugerencias.EsSugerible(leida) ? leida : null;
+                sugeribles[producto] = f;
+            }
+            if (f == null)
+            {
+                continue;
+            }
+            string cliente = c.Cliente.Trim().ToUpperInvariant();
+            if (!grupos.TryGetValue(cliente, out string? grupo))
+            {
+                grupo = grupoEstado(c.Cliente.Trim()) ?? Features.EstadosCliente.NADA;
+                grupos[cliente] = grupo;
+            }
+            string familia = f.Familia?.Trim() ?? "";
+            foreach (string g in new[] { grupo, Features.EstadosCliente.TODOS })
+            {
+                Anadir(clientes, g + "|" + PopularidadPorEstado.PRODUCTO + "|" + producto, cliente);
+                if (familia.Length > 0) Anadir(clientes, g + "|" + PopularidadPorEstado.FAMILIA + "|" + familia, cliente);
+                Anadir(clientes, g + "|" + PopularidadPorEstado.TOTAL + "|", cliente);
+            }
+        }
+        return clientes
+            .Select(p =>
+            {
+                string[] partes = p.Key.Split(new[] { '|' }, 3);
+                return new PopularidadPorEstado { Estado = partes[0], Tipo = partes[1], Clave = partes[2], Clientes = p.Value.Count };
+            })
+            .OrderBy(p => p.Estado, StringComparer.Ordinal).ThenBy(p => p.Tipo, StringComparer.Ordinal).ThenBy(p => p.Clave, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
 

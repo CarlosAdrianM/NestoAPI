@@ -1,3 +1,5 @@
+using ModeloSugerenciasProductos.Features;
+using ModeloSugerenciasProductos.Reglas;
 using NestoAPI.Infraestructure.CorreosPostCompra;
 using NestoAPI.Models;
 using System;
@@ -51,6 +53,13 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         Task GuardarSustituidaProvisional(int id);
         /// <summary>NestoAPI#671 (corte 2c): popularidad de los productos (tabla del job). Vacía si no hay tabla.</summary>
         Task<List<PopularidadProducto>> LeerPopularidad(IEnumerable<string> productos);
+        /// <summary>NestoAPI#683: Clientes.Estado de hoy del contacto principal (el de menor código si hay dos). Null si no hay ficha.</summary>
+        Task<short?> LeerEstadoCliente(string empresa, string cliente);
+        /// <summary>
+        /// NestoAPI#683: las filas de la popularidad por estado (tabla del job, script Issue683) del grupo <paramref name="estado"/>
+        /// y de «*» (todos): las de los productos y familias dados y los totales. Vacía si no hay tabla.
+        /// </summary>
+        Task<List<PopularidadPorEstado>> LeerPopularidadEstado(string estado, IEnumerable<string> productos, IEnumerable<string> familias);
         Task<List<CompraDiaReposicion>> LeerComprasCliente(string empresa, string cliente, DateTime desde, DateTime hasta);
         /// <summary>Productos en pedidos pendientes o en curso del cliente.</summary>
         Task<HashSet<string>> LeerPendientesCliente(string empresa, string cliente);
@@ -91,6 +100,17 @@ SELECT CAST(CASE WHEN COL_LENGTH(@p0, @p1) IS NULL THEN 0 ELSE 1 END AS bit)";
         internal const string TABLA_AFINIDAD = "dbo.SugerenciasProductosAfinidad";
         internal const string TABLA_MOSTRADAS = "dbo.SugerenciasProductosMostradas";
         internal const string TABLA_POPULARIDAD = "dbo.SugerenciasProductosPopularidad";
+        /// <summary>NestoAPI#683: la popularidad por grupo de estado del cliente (script Issue683).</summary>
+        internal const string TABLA_POPULARIDAD_ESTADO = "dbo.SugerenciasProductosPopularidadEstado";
+
+        /// <summary>
+        /// NestoAPI#683: 1 si la tabla de popularidad por estado existe y el job ya la ha rellenado (tiene el total de «*»). Sin
+        /// eso, Calcular no sabe calcular las features de la versión 2 y solo usa zips de la versión 1.
+        /// </summary>
+        internal const string SQL_HAY_POPULARIDAD_ESTADO = @"
+SELECT CAST(CASE WHEN OBJECT_ID(N'dbo.SugerenciasProductosPopularidadEstado', N'U') IS NULL THEN 0
+                 WHEN EXISTS (SELECT 1 FROM dbo.SugerenciasProductosPopularidadEstado WHERE Estado = '*' AND Tipo = 'T') THEN 1
+                 ELSE 0 END AS bit)";
 
         internal const string SQL_LEER_SESION = @"
 SELECT Id, RTRIM(Empresa) AS Empresa, RTRIM(Cliente) AS Cliente, RTRIM(Contacto) AS Contacto, RTRIM(Vendedor) AS Vendedor,
@@ -380,6 +400,52 @@ WHERE p.Decision = 'Potenciar' AND p.PotenciarHasta >= @p0";
                 string sql = "SELECT RTRIM(Producto) AS Producto, Clientes12Meses, Clientes3Meses, Cestas12Meses, Rango " +
                     "FROM dbo.SugerenciasProductosPopularidad WHERE Producto IN (" + string.Join(", ", parametros.Select(p => p.ParameterName)) + ")";
                 resultado.AddRange(await db.Database.SqlQuery<PopularidadProducto>(sql, parametros.Cast<object>().ToArray()).ToListAsync().ConfigureAwait(false));
+            }
+            return resultado;
+        }
+
+        public Task<short?> LeerEstadoCliente(string empresa, string cliente)
+        {
+            string codigo = cliente?.Trim();
+            return db.Clientes
+                .Where(c => c.Empresa == empresa && c.Nº_Cliente == codigo && c.ClientePrincipal)
+                .OrderBy(c => c.Contacto)
+                .Select(c => c.Estado)
+                .FirstOrDefaultAsync();
+        }
+
+        public async Task<List<PopularidadPorEstado>> LeerPopularidadEstado(string estado, IEnumerable<string> productos, IEnumerable<string> familias)
+        {
+            var resultado = new List<PopularidadPorEstado>();
+            if (string.IsNullOrWhiteSpace(estado) || !await ExisteTabla(SugerenciasProductosSql.TABLA_POPULARIDAD_ESTADO).ConfigureAwait(false))
+            {
+                return resultado;
+            }
+            var estados = new[] { estado.Trim(), EstadosCliente.TODOS }.Distinct().ToList();
+            // Los totales (Tipo T) de los dos grupos
+            resultado.AddRange(await Popularidad(estados, PopularidadPorEstado.TOTAL, new List<string> { string.Empty }).ConfigureAwait(false));
+            resultado.AddRange(await Popularidad(estados, PopularidadPorEstado.PRODUCTO, Limpios(productos)).ConfigureAwait(false));
+            resultado.AddRange(await Popularidad(estados, PopularidadPorEstado.FAMILIA, Limpios(familias)).ConfigureAwait(false));
+            return resultado;
+        }
+
+        private async Task<List<PopularidadPorEstado>> Popularidad(List<string> estados, string tipo, List<string> claves)
+        {
+            var resultado = new List<PopularidadPorEstado>();
+            for (int i = 0; i < claves.Count; i += SugerenciasProductosSql.TAMANO_LOTE)
+            {
+                List<string> lote = claves.Skip(i).Take(SugerenciasProductosSql.TAMANO_LOTE).ToList();
+                var parametros = new List<SqlParameter>
+                {
+                    SugerenciasProductosSql.Varchar("@e0", estados[0], 10),
+                    SugerenciasProductosSql.Varchar("@e1", estados[estados.Count - 1], 10),
+                    SugerenciasProductosSql.Char("@t", tipo, 1)
+                };
+                parametros.AddRange(lote.Select((c, n) => new SqlParameter("@c" + n, SqlDbType.VarChar, 20) { Value = SugerenciasProductosSql.Recortar(c, 20) }));
+                string sql = "SELECT RTRIM(Estado) AS Estado, RTRIM(Tipo) AS Tipo, RTRIM(Clave) AS Clave, Clientes " +
+                    "FROM dbo.SugerenciasProductosPopularidadEstado WHERE Estado IN (@e0, @e1) AND Tipo = @t AND Clave IN (" +
+                    string.Join(", ", lote.Select((c, n) => "@c" + n)) + ")";
+                resultado.AddRange(await db.Database.SqlQuery<PopularidadPorEstado>(sql, parametros.Cast<object>().ToArray()).ToListAsync().ConfigureAwait(false));
             }
             return resultado;
         }

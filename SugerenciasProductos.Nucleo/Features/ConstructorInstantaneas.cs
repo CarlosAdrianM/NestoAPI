@@ -58,6 +58,8 @@ public sealed class Sesion
     public List<string> Reglas1 { get; set; } = new();
     public List<string> Reglas1Orden { get; set; } = new();
     public Dictionary<string, int> ComprasPorProducto { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>NestoAPI#683: grupo del estado del cliente el día del pedido (<see cref="EstadosCliente.Grupo"/>).</summary>
+    public string EstadoCliente { get; set; } = EstadosCliente.NADA;
 }
 
 public sealed class Dataset
@@ -78,6 +80,8 @@ public sealed class Dataset
 /// <item>historial del cliente: sus compras de los 24 meses anteriores al día del pedido;</item>
 /// <item>etiqueta: el producto está en la otra mitad del pedido o el cliente se lo lleva en los 30 días siguientes (sin pasar,
 /// en el entrenamiento, del corte de la validación).</item>
+/// <item>NestoAPI#683: estado del cliente el día del pedido y popularidad por estado con el estado de cada cliente el día d
+/// (<see cref="HistorialEstadosCliente"/>: el de hoy deshaciendo los cambios posteriores).</item>
 /// </list>
 /// Determinista: misma entrada y misma semilla, mismo dataset (hash FNV propio: string.GetHashCode cambia en cada proceso).
 /// </summary>
@@ -86,6 +90,7 @@ public static class ConstructorInstantaneas
     public static Dataset Construir(DatosCrudos datos, VentanaEntrenamiento ventana, OpcionesEntrenamiento op, Action<string>? log = null)
     {
         var dataset = new Dataset { Ventana = ventana };
+        HistorialEstadosCliente estados = datos.Estados();
         var sugeribles = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         FichaProducto? Ficha(string p) => datos.Fichas.TryGetValue(p, out FichaProducto? f) ? f : null;
         bool EsSugerible(string p)
@@ -118,7 +123,8 @@ public static class ConstructorInstantaneas
         foreach ((DateTime d, bool validacion) in ventana.InstantaneasEntrenamiento.Select(d => (d, false))
             .Concat(ventana.InstantaneasValidacion.Select(d => (d, true))))
         {
-            ContextoInstantanea contexto = ContextoInstantanea.Calcular(compras, Ficha, d);
+            DateTime fechaContexto = d;
+            ContextoInstantanea contexto = ContextoInstantanea.Calcular(compras, Ficha, d, c => estados.EstadoEn(c, fechaContexto));
             DateTime finMes = d.AddMonths(1);
             DateTime limiteEtiquetas = validacion ? ventana.DatosHasta : ventana.Corte;
             int sesiones = 0;
@@ -147,8 +153,9 @@ public static class ConstructorInstantaneas
                     positivos.Add(c.Producto);
                 }
 
+                short? estado = estados.EstadoEn(cliente.Key, dia);
                 ResultadoCandidatos candidatos = CalculadoraFeatures.Calcular(contexto, cliente.Key, suyas.Where(c => c.Dia < dia),
-                    enCarrito, Ficha, dia, op.MaximoCandidatosPorFuente);
+                    enCarrito, Ficha, dia, op.MaximoCandidatosPorFuente, estadoCliente: estado);
                 string id = cliente.Key + "|" + dia.ToString("yyyyMMdd");
                 foreach (FilaEntrenamiento fila in candidatos.Filas)
                 {
@@ -168,7 +175,8 @@ public static class ConstructorInstantaneas
                     Positivos = positivos,
                     Reglas1 = candidatos.Reglas1,
                     Reglas1Orden = candidatos.Reglas1Orden,
-                    ComprasPorProducto = candidatos.ComprasPorProducto
+                    ComprasPorProducto = candidatos.ComprasPorProducto,
+                    EstadoCliente = EstadosCliente.Grupo(estado)
                 };
                 (validacion ? dataset.Validacion : dataset.Entrenamiento).Add(sesion);
                 sesiones++;

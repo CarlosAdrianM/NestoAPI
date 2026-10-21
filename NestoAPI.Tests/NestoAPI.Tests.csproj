@@ -63,6 +63,15 @@
       <HintPath>..\packages\Microsoft.ApplicationInsights.2.23.0\lib\net46\Microsoft.ApplicationInsights.dll</HintPath>
     </Reference>
     <Reference Include="Microsoft.CSharp" />
+    <Reference Include="Microsoft.ML.Core, Version=1.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
+      <HintPath>..\packages\Microsoft.ML.4.0.2\lib\netstandard2.0\Microsoft.ML.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.ML.Data, Version=1.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
+      <HintPath>..\packages\Microsoft.ML.4.0.2\lib\netstandard2.0\Microsoft.ML.Data.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.ML.DataView, Version=1.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
+      <HintPath>..\packages\Microsoft.ML.DataView.4.0.2\lib\netstandard2.0\Microsoft.ML.DataView.dll</HintPath>
+    </Reference>
     <Reference Include="QuestPDF, Version=2022.12.7.0, Culture=neutral, processorArchitecture=MSIL">
       <HintPath>..\packages\QuestPDF.2022.12.7\lib\net462\QuestPDF.dll</HintPath>
     </Reference>
@@ -534,6 +543,7 @@
     <Compile Include="Infrastructure\ReentrenamientoModeloSugerenciasTests.cs" />
     <Compile Include="Infrastructure\SugerenciasProductosTests.cs" />
     <Compile Include="Infrastructure\SugerenciasProductosModeloTests.cs" />
+    <Compile Include="Infrastructure\SugerenciasProductosEstadoTests.cs" />
     <Compile Include="Infrastructure\ComercialesPedidoTests.cs" />
     <Compile Include="Infrastructure\ConvertidorPedidoAPlantillaTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfPackingTests.cs" />

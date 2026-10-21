@@ -19,6 +19,13 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         /// </summary>
         string ModeloDisponible();
 
+        /// <summary>
+        /// NestoAPI#683: versión del esquema de features del modelo que devolvió <see cref="ModeloDisponible"/> por última vez
+        /// (<see cref="ModeloSugerenciaEntrada.VERSION_FEATURES_INICIAL"/> si ninguno). Con 2 o más, Calcular lee el estado del
+        /// cliente y la popularidad por estado; con 1, no hace falta (el zip no mira esas columnas).
+        /// </summary>
+        int VersionFeatures { get; }
+
         /// <summary>P1 (probabilidad calibrada) de cada entrada, en el mismo orden. Puede lanzar.</summary>
         IList<float> Puntuar(IList<ModeloSugerenciaEntrada> entradas);
 
@@ -31,6 +38,8 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
     {
         public string RutaModelo { get; set; }
         public string Version { get; set; }
+        /// <summary>NestoAPI#683: versión del esquema de features (MetadatosModelo.VersionFeatures; 1 en los json de antes).</summary>
+        public int VersionFeatures { get; set; } = ModeloSugerenciaEntrada.VERSION_FEATURES_INICIAL;
     }
 
     /// <summary>
@@ -44,6 +53,11 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
     /// por defecto). Sin fila, ENCENDIDO; «0» lo apaga (vuelven las reglas) en menos de un minuto.</para>
     /// <para>Sin modelo, si no carga o si falla al puntuar, Calcular sigue con las reglas («reglas-1»); el motivo va a ELMAH
     /// una sola vez (no en cada llamada) y un modelo que ha fallado no se vuelve a intentar hasta que cambie su fichero.</para>
+    /// <para>NestoAPI#683: VERSIÓN DE LAS FEATURES. Solo se usan zips cuyo json dice una versión que esta API sabe calcular
+    /// AHORA: hasta <see cref="ModeloSugerenciaEntrada.VERSION_FEATURES"/> y, la 2, solo si el job nocturno ya ha rellenado la
+    /// popularidad por estado (script Issue683; se mira con la carpeta, como mucho cada 60 s). Si el último que pasa la puerta
+    /// es de otra versión, el último compatible; si no hay ninguno, reglas-1. Así, al publicar, el zip de antes (versión 1)
+    /// sigue funcionando hasta que haya uno nuevo y el job haya pasado.</para>
     /// </summary>
     public class PredictorSugerenciasProductos : IPredictorSugerenciasProductos
     {
@@ -56,12 +70,24 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
             () => AlmacenModeloSugerencias.Produccion().Carpeta,
             new InterruptorCacheado(() => new LectorParametrosUsuario().LeerParametro(Constantes.Empresas.EMPRESA_POR_DEFECTO,
                 Constantes.ParametrosUsuario.USUARIO_POR_DEFECTO, Constantes.ParametrosUsuario.MODELO_SUGERENCIAS_ACTIVO), TimeSpan.FromSeconds(60)),
-            null, null);
+            null, null, VersionCalculableEnBd);
+
+        /// <summary>NestoAPI#683: 2 si la popularidad por estado está rellena (script Issue683 y una pasada del job); si no, 1.</summary>
+        internal static int VersionCalculableEnBd()
+        {
+            using (var db = new NVEntities())
+            {
+                return db.Database.SqlQuery<bool>(SugerenciasProductosSql.SQL_HAY_POPULARIDAD_ESTADO).First()
+                    ? ModeloSugerenciaEntrada.VERSION_FEATURES
+                    : ModeloSugerenciaEntrada.VERSION_FEATURES_INICIAL;
+            }
+        }
 
         private readonly Func<string> carpeta;
         private readonly InterruptorCacheado interruptor;
         private readonly Action<Exception> registrarError;
         private readonly Func<DateTime> ahoraUtc;
+        private readonly Func<int> versionCalculable;
         private readonly object bloqueo = new object();
         private readonly HashSet<string> avisados = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -74,13 +100,31 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         private MLContext contextoCargado;
         private string rutaFallida;
         private DateTime fechaFallida;
+        private int versionFeatures = ModeloSugerenciaEntrada.VERSION_FEATURES_INICIAL;
 
-        internal PredictorSugerenciasProductos(Func<string> carpeta, InterruptorCacheado interruptor, Action<Exception> registrarError, Func<DateTime> ahoraUtc)
+        /// <param name="versionCalculable">
+        /// NestoAPI#683: la versión de features más alta que se puede calcular ahora (null: <see cref="ModeloSugerenciaEntrada.VERSION_FEATURES"/>).
+        /// Si lanza, la inicial (y a ELMAH una vez).
+        /// </param>
+        internal PredictorSugerenciasProductos(Func<string> carpeta, InterruptorCacheado interruptor, Action<Exception> registrarError, Func<DateTime> ahoraUtc,
+            Func<int> versionCalculable = null)
         {
             this.carpeta = carpeta;
             this.interruptor = interruptor;
             this.registrarError = registrarError ?? ElmahHelper.Log;
             this.ahoraUtc = ahoraUtc ?? (() => DateTime.UtcNow);
+            this.versionCalculable = versionCalculable ?? (() => ModeloSugerenciaEntrada.VERSION_FEATURES);
+        }
+
+        public int VersionFeatures
+        {
+            get
+            {
+                lock (bloqueo)
+                {
+                    return versionFeatures;
+                }
+            }
         }
 
         public string ModeloDisponible()
@@ -119,6 +163,7 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
                         rutaCargada = ruta;
                         fechaCargada = fecha;
                     }
+                    versionFeatures = modelo.VersionFeatures;
                     return modelo.Version;
                 }
             }
@@ -224,7 +269,18 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
                     return elegido;
                 }
             }
-            ModeloSugerenciasElegido nuevo = ElegirModelo(carpetaModelos);
+            int calculable;
+            try
+            {
+                calculable = versionCalculable();
+            }
+            catch (Exception ex)
+            {
+                calculable = ModeloSugerenciaEntrada.VERSION_FEATURES_INICIAL;
+                AvisarUnaVez("version-calculable", new Exception("[Sugerencias #683] No se ha podido mirar si está la popularidad por estado: " +
+                    $"solo se usan modelos de la versión {calculable} de las features. {ex.Message}", ex));
+            }
+            ModeloSugerenciasElegido nuevo = ElegirModelo(carpetaModelos, calculable);
             lock (bloqueo)
             {
                 elegido = nuevo;
@@ -235,11 +291,14 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         }
 
         /// <summary>
-        /// El último modelo de la carpeta (por el sufijo AAAAMMDD_HHmm del nombre) cuyo json dice que pasa la puerta y cuyo zip
-        /// existe. Null si no hay ninguno (o no existe la carpeta). Un json que no se puede leer no cuenta.
+        /// El último modelo de la carpeta (por el sufijo AAAAMMDD_HHmm del nombre) cuyo json dice que pasa la puerta, cuyo zip
+        /// existe y cuya versión de features (NestoAPI#683; 1 si el json no la dice) está entre 1 y
+        /// <paramref name="versionMaxima"/> (que nunca pasa de <see cref="ModeloSugerenciaEntrada.VERSION_FEATURES"/>). Null si no
+        /// hay ninguno (o no existe la carpeta). Un json que no se puede leer no cuenta.
         /// </summary>
-        internal static ModeloSugerenciasElegido ElegirModelo(string carpetaModelos)
+        internal static ModeloSugerenciasElegido ElegirModelo(string carpetaModelos, int versionMaxima = ModeloSugerenciaEntrada.VERSION_FEATURES)
         {
+            int maxima = Math.Min(versionMaxima, ModeloSugerenciaEntrada.VERSION_FEATURES);
             if (string.IsNullOrWhiteSpace(carpetaModelos) || !Directory.Exists(carpetaModelos))
             {
                 return null;
@@ -261,9 +320,10 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
                 {
                     continue;
                 }
-                if (metadatos?.PasaPuerta == true)
+                if (metadatos?.PasaPuerta == true && metadatos.VersionFeatures >= ModeloSugerenciaEntrada.VERSION_FEATURES_INICIAL
+                    && metadatos.VersionFeatures <= maxima)
                 {
-                    return new ModeloSugerenciasElegido { RutaModelo = zip, Version = Version(zip) };
+                    return new ModeloSugerenciasElegido { RutaModelo = zip, Version = Version(zip), VersionFeatures = metadatos.VersionFeatures };
                 }
             }
             return null;

@@ -28,12 +28,26 @@ namespace NestoAPI.Tests.Infrastructure
         private const string VERSION_FAKE = "m1-test";
         private bool _admiteSustituida;
         private List<PopularidadProducto> _popularidad;
+        /// <summary>NestoAPI#683: Clientes.Estado del cliente y filas de la popularidad por estado del repositorio de mentira.</summary>
+        private short? _estadoCliente;
+        private List<PopularidadPorEstado> _popularidadEstado;
 
         /// <summary>Lo que hace falta de más en el repositorio de mentira (lo llama el Setup del otro fichero).</summary>
         private void ConfigurarFakesModelo()
         {
             _admiteSustituida = true;
             _popularidad = new List<PopularidadProducto>();
+            _estadoCliente = null;
+            _popularidadEstado = new List<PopularidadPorEstado>();
+            A.CallTo(() => _repo.LeerEstadoCliente(A<string>._, A<string>._)).ReturnsLazily(() => Task.FromResult(_estadoCliente));
+            // Lo mismo que RepositorioSugerenciasProductosSql.LeerPopularidadEstado: su grupo y «*», con esas claves y los totales
+            A.CallTo(() => _repo.LeerPopularidadEstado(A<string>._, A<IEnumerable<string>>._, A<IEnumerable<string>>._))
+                .ReturnsLazily((string estado, IEnumerable<string> productos, IEnumerable<string> familias) => Task.FromResult(_popularidadEstado
+                    .Where(f => f.Estado == estado || f.Estado == EstadosCliente.TODOS)
+                    .Where(f => f.Tipo == PopularidadPorEstado.TOTAL
+                        || (f.Tipo == PopularidadPorEstado.PRODUCTO && productos.Contains(f.Clave, StringComparer.OrdinalIgnoreCase))
+                        || (f.Tipo == PopularidadPorEstado.FAMILIA && familias.Contains(f.Clave, StringComparer.OrdinalIgnoreCase)))
+                    .ToList()));
             A.CallTo(() => _repo.AdmiteSustituida()).ReturnsLazily(() => Task.FromResult(_admiteSustituida));
             A.CallTo(() => _repo.GuardarSustituida(A<int>._)).ReturnsLazily((int id) =>
             {
@@ -64,6 +78,8 @@ namespace NestoAPI.Tests.Infrastructure
         {
             public Dictionary<string, float> P { get; } = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
             public string Version { get; set; } = VERSION_FAKE;
+            /// <summary>NestoAPI#683: por defecto, la versión actual (Calcular lee el estado).</summary>
+            public int VersionFeatures { get; set; } = ModeloSugerenciaEntrada.VERSION_FEATURES;
             public bool Fallar { get; set; }
             public List<ModeloSugerenciaEntrada> UltimasEntradas { get; private set; } = new List<ModeloSugerenciaEntrada>();
             public List<Exception> Fallos { get; } = new List<Exception>();

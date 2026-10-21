@@ -536,6 +536,9 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         /// anoche). Lecturas añadidas: la popularidad de los candidatos (una consulta) y, si hace falta, las fichas de los
         /// productos del perfil que no se tenían (otra) y el perfil sin las compras de hoy (casi nunca). Null si no hay modelo o
         /// algo falla (a ELMAH una vez): entonces, reglas-1. Nunca lanza.
+        /// <para>NestoAPI#683: con un modelo de la versión 2 de las features, además el estado del cliente (Clientes.Estado de
+        /// hoy, contacto principal) y la popularidad por estado de los candidatos y sus familias (tabla del job, una consulta por
+        /// tipo). Con uno de la versión 1 no se leen (el zip no mira esas columnas y quedan a «NADA» y 0).</para>
         /// </summary>
         private async Task<PuntuacionModelo> PuntuarConModelo(DateTime hoy, string cliente, string empresa, List<CompraDiaReposicion> compras,
             HashSet<string> enCarrito, List<ParCompradoJunto> pares, List<AfinidadCliente> afinidades, Dictionary<string, FichaProductoSugerencia> fichas,
@@ -601,6 +604,14 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
                 ResultadoCandidatos previos = CalculadoraFeatures.Calcular(sinPopularidad, cliente, comprasNucleo, enCarrito, ficha, hoy, maximoPorFuente, adicionales);
                 List<PopularidadProducto> popularidad = await repositorio.LeerPopularidad(previos.Filas.Select(f => f.Producto)).ConfigureAwait(false)
                     ?? new List<PopularidadProducto>();
+                short? estadoCliente = null;
+                List<PopularidadPorEstado> popularidadEstado = null;
+                if (predictor.VersionFeatures >= 2)
+                {
+                    estadoCliente = await repositorio.LeerEstadoCliente(empresa, cliente).ConfigureAwait(false);
+                    popularidadEstado = await repositorio.LeerPopularidadEstado(EstadosCliente.Grupo(estadoCliente),
+                        previos.Filas.Select(f => f.Producto), previos.Filas.Select(f => f.Familia).Where(f => !string.IsNullOrWhiteSpace(f))).ConfigureAwait(false);
+                }
                 ContextoInstantanea contexto = ContextoInstantanea.Desde(hoy, paresNucleo, afinidadesNucleo,
                     popularidad.Where(p => p?.Producto != null).Select(p => new PopularidadDeProducto
                     {
@@ -609,8 +620,9 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
                         Clientes3Meses = p.Clientes3Meses,
                         Cestas12Meses = p.Cestas12Meses,
                         Rango = p.Rango
-                    }), perfiles);
-                ResultadoCandidatos features = CalculadoraFeatures.Calcular(contexto, cliente, comprasNucleo, enCarrito, ficha, hoy, maximoPorFuente, adicionales);
+                    }), perfiles, popularidadEstado);
+                ResultadoCandidatos features = CalculadoraFeatures.Calcular(contexto, cliente, comprasNucleo, enCarrito, ficha, hoy, maximoPorFuente, adicionales,
+                    estadoCliente);
                 List<ModeloSugerenciaEntrada> entradas = features.Filas.Cast<ModeloSugerenciaEntrada>().ToList();
                 IList<float> probabilidades = predictor.Puntuar(entradas);
                 if (probabilidades == null || probabilidades.Count != entradas.Count)

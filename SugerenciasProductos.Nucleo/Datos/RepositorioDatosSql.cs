@@ -39,6 +39,25 @@ SELECT RTRIM(p.Número) AS Producto, RTRIM(p.Nombre) AS Nombre, RTRIM(p.Grupo) A
 FROM Productos p WITH (NOLOCK)
 WHERE p.Empresa = @empresa";
 
+    /// <summary>NestoAPI#683: el estado de hoy del contacto principal de cada cliente (unas 40.000 filas).</summary>
+    internal const string SQL_ESTADOS = @"
+SET NOCOUNT ON;
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+SELECT RTRIM(c.[Nº Cliente]) AS Cliente, RTRIM(c.Contacto) AS Contacto, c.Estado
+FROM Clientes c WITH (NOLOCK)
+WHERE c.Empresa = @empresa AND c.ClientePrincipal = 1";
+
+    /// <summary>
+    /// NestoAPI#683: los cambios de estado del cliente (no los de un grupo de producto), que apunta el trigger trgClientesUpd
+    /// desde el 16/01/2025 (unas 6.000 filas). Se quedan los del contacto principal.
+    /// </summary>
+    internal const string SQL_CAMBIOS_ESTADO = @"
+SET NOCOUNT ON;
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+SELECT RTRIM(s.Cliente) AS Cliente, RTRIM(s.Contacto) AS Contacto, s.Fecha, s.EstadoAnterior, s.EstadoNuevo
+FROM SeguimientoCambiosEstadoCliente s WITH (NOLOCK)
+WHERE s.Empresa = @empresa AND s.GrupoProducto IS NULL";
+
     private readonly Func<DbConnection> _crearConexion;
     private readonly int _tiempoComando;
     private readonly TimeSpan _pausaEntreBloques;
@@ -118,7 +137,65 @@ WHERE p.Empresa = @empresa";
             }
         }
         log?.Invoke($"  Fichas: {datos.Fichas.Count} productos.");
+        LeerEstados(datos, log);
         return datos;
+    }
+
+    /// <summary>
+    /// NestoAPI#683: el estado de hoy de cada cliente (contacto principal; si hay dos, el de menor código) y su historial. Si el
+    /// historial no se puede leer (p. ej. sin el GRANT del script Issue683), se sigue sin él y se apunta el motivo.
+    /// </summary>
+    private void LeerEstados(DatosCrudos datos, Action<string>? log)
+    {
+        var contactos = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        using (DbConnection conexion = _crearConexion())
+        {
+            conexion.Open();
+            using DbCommand comando = Comando(conexion, SQL_ESTADOS);
+            Parametro(comando, "@empresa", DbType.AnsiStringFixedLength, EMPRESA, 3);
+            using DbDataReader lector = comando.ExecuteReader();
+            while (lector.Read())
+            {
+                string cliente = Convert.ToString(lector[0])!.Trim();
+                string contacto = lector.IsDBNull(1) ? "" : Convert.ToString(lector[1])!.Trim();
+                if (cliente.Length == 0) continue;
+                if (contactos.TryGetValue(cliente, out string? anterior) && string.CompareOrdinal(anterior, contacto) <= 0) continue;
+                contactos[cliente] = contacto;
+                datos.EstadosClientes[cliente] = lector.IsDBNull(2) ? null : Convert.ToInt16(lector[2]);
+            }
+        }
+        log?.Invoke($"  Estados: {datos.EstadosClientes.Count} clientes.");
+        try
+        {
+            using DbConnection conexion = _crearConexion();
+            conexion.Open();
+            using DbCommand comando = Comando(conexion, SQL_CAMBIOS_ESTADO);
+            Parametro(comando, "@empresa", DbType.AnsiStringFixedLength, EMPRESA, 3);
+            using DbDataReader lector = comando.ExecuteReader();
+            var cambios = new List<Features.CambioEstadoCliente>();
+            while (lector.Read())
+            {
+                string cliente = Convert.ToString(lector[0])!.Trim();
+                string contacto = lector.IsDBNull(1) ? "" : Convert.ToString(lector[1])!.Trim();
+                if (!contactos.TryGetValue(cliente, out string? principal) || principal != contacto) continue;
+                cambios.Add(new Features.CambioEstadoCliente
+                {
+                    Cliente = cliente,
+                    Fecha = lector.GetDateTime(2),
+                    EstadoAnterior = lector.IsDBNull(3) ? null : Convert.ToInt16(lector[3]),
+                    EstadoNuevo = lector.IsDBNull(4) ? null : Convert.ToInt16(lector[4])
+                });
+            }
+            datos.CambiosEstado.AddRange(cambios);
+            datos.HistorialEstados = true;
+            log?.Invoke($"  Cambios de estado: {cambios.Count} (contacto principal){(cambios.Count > 0 ? $", desde el {cambios.Min(c => c.Fecha):dd/MM/yyyy}" : "")}.");
+        }
+        catch (Exception ex)
+        {
+            datos.HistorialEstados = false;
+            datos.MotivoSinHistorialEstados = ex.Message;
+            log?.Invoke($"  AVISO: no se ha podido leer SeguimientoCambiosEstadoCliente ({ex.Message}): sin historial de estados el modelo no pasará la puerta (¿falta el GRANT del script Issue683?).");
+        }
     }
 
     private DbCommand Comando(DbConnection conexion, string sql)

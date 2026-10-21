@@ -46,8 +46,14 @@ public static class CalculadoraFeatures
     /// (lo de «comprado junto» y «le toca» se mira igual con todos los pares y todo el historial). Lo que no se puede sugerir
     /// o está en el carrito no entra. Null en el entrenamiento: el resultado es el de siempre.
     /// </param>
+    /// <param name="estadoCliente">
+    /// NestoAPI#683: Clientes.Estado del contacto principal en d (en el entrenamiento, <see cref="HistorialEstadosCliente.EstadoEn"/>;
+    /// en Calcular, el de hoy). Se agrupa aquí con <see cref="EstadosCliente.Grupo"/>; null = «NADA». Las features de
+    /// popularidad por estado salen de <see cref="ContextoInstantanea.PopularidadEstado"/> (0 si no hay).
+    /// </param>
     public static ResultadoCandidatos Calcular(ContextoInstantanea contexto, string cliente, IEnumerable<Compra> historial,
-        ISet<string> carrito, Func<string, FichaProducto?> ficha, DateTime dia, int maximoPorFuente, IEnumerable<string>? adicionales = null)
+        ISet<string> carrito, Func<string, FichaProducto?> ficha, DateTime dia, int maximoPorFuente, IEnumerable<string>? adicionales = null,
+        short? estadoCliente = null)
     {
         DateTime d = dia.Date;
         DateTime desde = d.AddMonths(-MESES_HISTORIAL);
@@ -150,6 +156,9 @@ public static class CalculadoraFeatures
         var familiasCarrito = enCarrito.Select(p => ficha(p)?.Familia?.Trim() ?? "").ToList();
         string mes = d.Month.ToString(System.Globalization.CultureInfo.InvariantCulture);
         string perfilCliente = perfil == null ? NADA : perfil.Item1 + perfil.Item2;
+        string estado = EstadosCliente.Grupo(estadoCliente);
+        int clientesEstado = contexto.ClientesEstado(estado, PopularidadPorEstado.TOTAL, "");
+        int clientesTodos = contexto.ClientesEstado(EstadosCliente.TODOS, PopularidadPorEstado.TOTAL, "");
 
         foreach (string producto in orden)
         {
@@ -164,6 +173,10 @@ public static class CalculadoraFeatures
             mejorPar.TryGetValue(producto, out ParComprado? par);
             afinidadPorProducto.TryGetValue(producto, out AfinidadProducto? afinidad);
             reglaPorProducto.TryGetValue(producto, out CandidatoRegla? regla);
+            int productoEstado = contexto.ClientesEstado(estado, PopularidadPorEstado.PRODUCTO, producto);
+            int productoTodos = contexto.ClientesEstado(EstadosCliente.TODOS, PopularidadPorEstado.PRODUCTO, producto);
+            int familiaEstado = familia.Length == 0 ? 0 : contexto.ClientesEstado(estado, PopularidadPorEstado.FAMILIA, familia);
+            int familiaTodos = familia.Length == 0 ? 0 : contexto.ClientesEstado(EstadosCliente.TODOS, PopularidadPorEstado.FAMILIA, familia);
 
             resultado.Filas.Add(new FilaEntrenamiento
             {
@@ -203,12 +216,24 @@ public static class CalculadoraFeatures
                 CarritoVacio = enCarrito.Count == 0 ? 1 : 0,
                 MismoSubgrupoEnCarrito = sub == NADA ? 0 : subgruposCarrito.Count(s => s == sub),
                 MismaFamiliaEnCarrito = familia.Length == 0 ? 0 : familiasCarrito.Count(x => string.Equals(x, familia, StringComparison.OrdinalIgnoreCase)),
+                EstadoCliente = estado,
+                ClientesEstado12Meses = productoEstado,
+                ProporcionEstado12Meses = Proporcion(productoEstado, clientesEstado),
+                ProporcionFamiliaEstado12Meses = Proporcion(familiaEstado, clientesEstado),
+                IndiceEstado = Indice(productoEstado, clientesEstado, productoTodos, clientesTodos),
+                IndiceFamiliaEstado = Indice(familiaEstado, clientesEstado, familiaTodos, clientesTodos),
                 PuntuacionReglas = regla == null ? 0 : (float)regla.Puntuacion,
                 FuenteReglas = regla?.Motivo ?? ""
             });
         }
         return resultado;
     }
+
+    /// <summary>NestoAPI#683: a ÷ b; 0 si b es 0.</summary>
+    public static float Proporcion(int a, int b) => b <= 0 ? 0f : (float)((double)a / b);
+
+    /// <summary>NestoAPI#683: (a ÷ b) ÷ (c ÷ d), la proporción del grupo frente a la de todos; 0 si falta algún denominador.</summary>
+    public static float Indice(int a, int b, int c, int d) => b <= 0 || c <= 0 || d <= 0 ? 0f : (float)((double)a / b / ((double)c / d));
 
     /// <summary>Grupo + subgrupo en mayúsculas («COSCRE»); <see cref="NADA"/> si no hay ficha o grupo.</summary>
     public static string GrupoSubgrupo(FichaProducto? f)

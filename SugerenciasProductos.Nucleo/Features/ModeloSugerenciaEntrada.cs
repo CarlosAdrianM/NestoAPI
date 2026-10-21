@@ -12,10 +12,22 @@ namespace ModeloSugerenciasProductos.Features;
 /// </list>
 /// Todo lo que lee está en las tablas del 2a o en la consulta de compras de un cliente que ya usa la API (#661).
 /// Valores «no hay»: <see cref="SIN_DATO"/> en los días; 0 en lo demás.
+/// <para>NestoAPI#683: VERSIÓN DEL ESQUEMA (<see cref="VERSION_FEATURES"/>). Cada zip guarda en su json la versión con la
+/// que se entrenó (MetadatosModelo.VersionFeatures; sin ella, 1) y la API solo usa zips de versiones que sabe calcular. Añadir
+/// columnas no rompe los zips anteriores (ML.NET coge solo las suyas), pero un zip nuevo no se puede puntuar sin sus
+/// columnas: por eso, cada vez que se añada o cambie una feature (o un grupo de <see cref="EstadosCliente"/>), subir la versión.</para>
+/// <list type="table">
+/// <item><term>1</term><description>NestoAPI#671 (20/10/26): fuentes, cliente, producto, popularidad y carrito.</description></item>
+/// <item><term>2</term><description>NestoAPI#683 (21/10/26): estado del cliente y popularidad del producto y de su familia entre los clientes del mismo estado.</description></item>
+/// </list>
 /// </summary>
 public class ModeloSugerenciaEntrada
 {
     public const float SIN_DATO = 1000f;
+    /// <summary>La versión del esquema de features que calcula este núcleo.</summary>
+    public const int VERSION_FEATURES = 2;
+    /// <summary>La de los zips sin VersionFeatures en el json (los de antes de NestoAPI#683).</summary>
+    public const int VERSION_FEATURES_INICIAL = 1;
 
     // ---- No son features (para cruzar el resultado) ----
     public string Cliente { get; set; } = "";
@@ -93,6 +105,20 @@ public class ModeloSugerenciaEntrada
     public float MismoSubgrupoEnCarrito { get; set; }
     /// <summary>Productos del carrito de la misma familia (marca).</summary>
     public float MismaFamiliaEnCarrito { get; set; }
+
+    // ---- Estado del cliente (versión 2, NestoAPI#683) ----
+    /// <summary>Grupo del estado del cliente (<see cref="EstadosCliente.Grupo"/>): «6» distribuidores, «0», «9»…; "NADA" sin ficha.</summary>
+    public string EstadoCliente { get; set; } = "";
+    /// <summary>Clientes de su mismo grupo de estado que lo han comprado en 12 meses (tabla del job); 0 si no hay.</summary>
+    public float ClientesEstado12Meses { get; set; }
+    /// <summary>ClientesEstado12Meses ÷ clientes del grupo con alguna compra en 12 meses; 0 si no hay.</summary>
+    public float ProporcionEstado12Meses { get; set; }
+    /// <summary>Clientes del grupo que han comprado algo de la familia (marca) en 12 meses ÷ clientes del grupo; 0 si no hay.</summary>
+    public float ProporcionFamiliaEstado12Meses { get; set; }
+    /// <summary>ProporcionEstado12Meses ÷ la misma proporción entre todos los clientes (&gt; 1 = su estado lo compra más que la media); 0 si no hay.</summary>
+    public float IndiceEstado { get; set; }
+    /// <summary>Lo mismo con la familia: «a los distribuidores, esta marca no» (≪ 1); 0 si no hay.</summary>
+    public float IndiceFamiliaEstado { get; set; }
 }
 
 /// <summary>Una fila del dataset: la entrada del modelo + etiqueta y datos de la evaluación (no son features).</summary>
