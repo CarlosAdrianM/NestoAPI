@@ -1103,11 +1103,12 @@ namespace NestoAPI.Tests.Infrastructure
         [DataRow((byte)3, false, "Todo ahora, lo pendiente se entrega después")]
         public void GenerarHtmlModoServicio_NombraElModoDeFacturacion(byte modoFacturacion, bool mantenerJunto, string nombre)
         {
-            PedidoVentaDTO pedido = new PedidoVentaDTO { modoServicio = 1, servirJunto = true, modoFacturacion = modoFacturacion, mantenerJunto = mantenerJunto, periodoFacturacion = "NRM" };
+            // NestoAPI#688: con «Todo junto» la facturación ya no sale (salvo «Todo ahora»): se prueba con «Según vaya entrando».
+            PedidoVentaDTO pedido = new PedidoVentaDTO { modoServicio = 2, servirJunto = false, modoFacturacion = modoFacturacion, mantenerJunto = mantenerJunto, periodoFacturacion = "NRM" };
 
             string html = GestorPresupuestos.GenerarHtmlModoServicio(pedido, faltaStockDeAlgo: false, tieneQueVenirAlgunProducto: false, colspan: 6);
 
-            StringAssert.Contains(html, "Modo de entrega: Todo junto. Modo de facturación: " + nombre);
+            StringAssert.Contains(html, "Modo de entrega: Según vaya entrando. Modo de facturación: " + nombre);
             Assert.IsFalse(html.Contains("Marcado mantener junto"), html);
         }
 
@@ -1117,7 +1118,7 @@ namespace NestoAPI.Tests.Infrastructure
         public void GenerarHtmlModoServicio_SinModoDeFacturacion_LoDeduceDelBitAntiguo(bool mantenerJunto, string nombre)
         {
             // NestoApp y el Nesto viejo solo mandan mantenerJunto.
-            PedidoVentaDTO pedido = new PedidoVentaDTO { modoServicio = 1, servirJunto = true, modoFacturacion = null, mantenerJunto = mantenerJunto, periodoFacturacion = "NRM" };
+            PedidoVentaDTO pedido = new PedidoVentaDTO { modoServicio = 2, servirJunto = false, modoFacturacion = null, mantenerJunto = mantenerJunto, periodoFacturacion = "NRM" };
 
             string html = GestorPresupuestos.GenerarHtmlModoServicio(pedido, faltaStockDeAlgo: false, tieneQueVenirAlgunProducto: false, colspan: 6);
 
@@ -1136,6 +1137,68 @@ namespace NestoAPI.Tests.Infrastructure
 
             StringAssert.Contains(html, "color: red");
             StringAssert.Contains(html, "¡¡¡ ATENCIÓN !!! Modo de entrega: Según vaya entrando. Modo de facturación: Todo ahora, lo pendiente se entrega después");
+        }
+
+        // NestoAPI#688 (corte 5): lo que no tiene sentido no sale en el correo.
+
+        [TestMethod]
+        [DataRow((byte)1, false)]
+        [DataRow((byte)2, true)]
+        public void GenerarHtmlModoServicio_TodoJunto_NoNombraLaFacturacion(byte modoFacturacion, bool mantenerJunto)
+        {
+            PedidoVentaDTO pedido = new PedidoVentaDTO { modoServicio = 1, servirJunto = true, modoFacturacion = modoFacturacion, mantenerJunto = mantenerJunto, periodoFacturacion = "NRM" };
+
+            string html = GestorPresupuestos.GenerarHtmlModoServicio(pedido, faltaStockDeAlgo: false, tieneQueVenirAlgunProducto: false, colspan: 6);
+
+            StringAssert.Contains(html, "Modo de entrega: Todo junto");
+            Assert.IsFalse(html.Contains("Modo de facturación"), html);
+            Assert.IsFalse(html.Contains("Lo pendiente"), html);
+        }
+
+        [TestMethod]
+        public void GenerarHtmlModoServicio_TodoJuntoYTodoAhora_SiNombraLaFacturacion()
+        {
+            PedidoVentaDTO pedido = new PedidoVentaDTO { modoServicio = 1, servirJunto = true, modoFacturacion = 3, servirPendienteAlHaberStock = true, periodoFacturacion = "NRM" };
+
+            string html = GestorPresupuestos.GenerarHtmlModoServicio(pedido, faltaStockDeAlgo: false, tieneQueVenirAlgunProducto: false, colspan: 6);
+
+            StringAssert.Contains(html, "Modo de entrega: Todo junto. Modo de facturación: Todo ahora, lo pendiente se entrega después");
+            StringAssert.Contains(html, GestorPresupuestos.LO_PENDIENTE_EN_CUANTO_HAYA_STOCK);
+        }
+
+        [TestMethod]
+        [DataRow(true, GestorPresupuestos.LO_PENDIENTE_EN_CUANTO_HAYA_STOCK)]
+        [DataRow(false, GestorPresupuestos.LO_PENDIENTE_CUANDO_LO_INDIQUE)]
+        public void GenerarHtmlModoServicio_TodoAhora_DiceQuePasaConLoPendiente(bool casilla, string frase)
+        {
+            PedidoVentaDTO pedido = new PedidoVentaDTO { modoServicio = 4, servirJunto = false, modoFacturacion = 3, servirPendienteAlHaberStock = casilla, periodoFacturacion = "NRM" };
+
+            string html = GestorPresupuestos.GenerarHtmlModoServicio(pedido, faltaStockDeAlgo: true, tieneQueVenirAlgunProducto: false, colspan: 6);
+
+            StringAssert.Contains(html, "Modo de facturación: Todo ahora, lo pendiente se entrega después. " + frase);
+        }
+
+        [TestMethod]
+        public void GenerarHtmlModoServicio_SinTodoAhora_NoHablaDeLoPendiente()
+        {
+            PedidoVentaDTO pedido = new PedidoVentaDTO { modoServicio = 2, servirJunto = false, modoFacturacion = 1, servirPendienteAlHaberStock = true, periodoFacturacion = "NRM" };
+
+            string html = GestorPresupuestos.GenerarHtmlModoServicio(pedido, faltaStockDeAlgo: true, tieneQueVenirAlgunProducto: false, colspan: 6);
+
+            Assert.IsFalse(html.Contains("Lo pendiente"), html);
+        }
+
+        [TestMethod]
+        public void FraseRestoPrimeraEntrega_ConLaCasilla_SaleEnCuantoHayaStock()
+        {
+            var desglose = new List<PartidaFechaEntregaAgenciaDTO> { new PartidaFechaEntregaAgenciaDTO { ANotaDeEntrega = true } };
+
+            string con = GestorPresupuestos.FraseRestoPrimeraEntrega(null, desglose, servirPendienteAlHaberStock: true);
+            string sin = GestorPresupuestos.FraseRestoPrimeraEntrega(null, desglose);
+
+            StringAssert.Contains(con, "en cuanto haya stock");
+            Assert.IsFalse(con.Contains("nace sin fecha"));
+            StringAssert.Contains(sin, "nace sin fecha (la pone almacén)");
         }
 
         [TestMethod]

@@ -733,7 +733,8 @@ namespace NestoAPI.Infraestructure
             _ = s.Append(GenerarHtmlFechaEntregaComun(pedido.Lineas, colspanFechaEntrega));
             // NestoAPI#606 (09/10): la fecha de entrega a la agencia que se le ha dicho al cliente y por qué.
             _ = s.Append(GenerarHtmlFechaEntregaAgencia(FechaEntregaAgencia, pedido.EsPresupuesto,
-                tipoCorreo == "Modificación" && !FechaEntregaAgenciaRecienPrometida, pedido.Lineas, colspanFechaEntrega));
+                tipoCorreo == "Modificación" && !FechaEntregaAgenciaRecienPrometida, pedido.Lineas, colspanFechaEntrega,
+                pedido.servirPendienteAlHaberStock == true));
 
             // Carlos 01/12/25: Refactorizado para usar método testeable (Issue #48)
             int colspanValidacion = 6 + (hayDescuentos ? 1 : 0) + (hayLineasConReservas ? 1 : 0) + (hayFechasEntregaDistintas ? 1 : 0);
@@ -1229,6 +1230,9 @@ namespace NestoAPI.Infraestructure
         /// Carlos, 28/09/26: los pedidos de tienda (almacén REI o ALC) tampoco avisan: allí lo normal
         /// es que las líneas se entreguen según vaya entrando el stock.
         /// </summary>
+        internal const string LO_PENDIENTE_EN_CUANTO_HAYA_STOCK = "Lo pendiente: se sirve en cuanto haya stock";
+        internal const string LO_PENDIENTE_CUANDO_LO_INDIQUE = "Lo pendiente: se entrega cuando usted lo indique";
+
         internal static string GenerarHtmlModoServicio(PedidoVentaDTO pedido, bool faltaStockDeAlgo, bool tieneQueVenirAlgunProducto, int colspan)
         {
             byte modo = Constantes.Pedidos.ModosServicio.Efectivo(pedido.modoServicio, pedido.servirJunto);
@@ -1245,7 +1249,18 @@ namespace NestoAPI.Infraestructure
                 texto = "¡¡¡ ATENCIÓN !!! ";
             }
             texto += "Modo de entrega: " + Constantes.Pedidos.ModosServicio.Nombre(modo);
-            texto += ". Modo de facturación: " + Constantes.Pedidos.ModosFacturacion.Nombre(modoFacturacion);
+            // NestoAPI#688 (decisión 6): con «Todo junto» la facturación no se enseña (la ponen los triggers), salvo «Todo ahora».
+            bool todoAhora = Constantes.Pedidos.ModosFacturacion.EsTodoAhora(modoFacturacion);
+            if (!Constantes.Pedidos.ModosServicio.EsTodoJunto(modo) || todoAhora)
+            {
+                texto += ". Modo de facturación: " + Constantes.Pedidos.ModosFacturacion.Nombre(modoFacturacion);
+            }
+            if (todoAhora && !pedido.notaEntrega)
+            {
+                texto += pedido.servirPendienteAlHaberStock == true
+                    ? ". " + LO_PENDIENTE_EN_CUANTO_HAYA_STOCK
+                    : ". " + LO_PENDIENTE_CUANDO_LO_INDIQUE;
+            }
 
             StringBuilder s = new StringBuilder();
             _ = s.AppendLine("<tr style=\"color: " + color + ";\">");
@@ -1270,7 +1285,7 @@ namespace NestoAPI.Infraestructure
         /// aquí solo se pinta. Vacía en presupuestos, sin cálculo (falló) o sin nada que decir.
         /// </summary>
         internal static string GenerarHtmlFechaEntregaAgencia(FechaEntregaAgenciaDTO fecha, bool esPresupuesto, bool esModificacion,
-            IEnumerable<LineaPedidoVentaDTO> lineas, int colspan)
+            IEnumerable<LineaPedidoVentaDTO> lineas, int colspan, bool servirPendienteAlHaberStock = false)
         {
             if (fecha == null || esPresupuesto)
             {
@@ -1314,7 +1329,7 @@ namespace NestoAPI.Infraestructure
 
             if (ahora.HasValue && fecha.Aplica == FechaEntregaAgenciaDTO.APLICA_PRIMERA && fecha.EntregaCompleta?.Date != ahora)
             {
-                _ = s.Append(FraseRestoPrimeraEntrega(fecha.EntregaCompleta, desglose) + "<br>");
+                _ = s.Append(FraseRestoPrimeraEntrega(fecha.EntregaCompleta, desglose, servirPendienteAlHaberStock) + "<br>");
             }
 
             if (desglose.Any())
@@ -1354,7 +1369,8 @@ namespace NestoAPI.Infraestructure
         /// fecha (NestoAPI#582: la pone almacén). Decir solo «lo que falta aún no tiene fecha» junto a un desglose con todas las
         /// fechas («puede salir el jueves») se contradecía: se dice por qué no tiene fecha y cuándo podría salir.
         /// </summary>
-        internal static string FraseRestoPrimeraEntrega(DateTime? entregaCompleta, List<PartidaFechaEntregaAgenciaDTO> desglose)
+        internal static string FraseRestoPrimeraEntrega(DateTime? entregaCompleta, List<PartidaFechaEntregaAgenciaDTO> desglose,
+            bool servirPendienteAlHaberStock = false)
         {
             if (entregaCompleta.HasValue)
             {
@@ -1365,8 +1381,10 @@ namespace NestoAPI.Infraestructure
             {
                 return "Es la primera entrega; lo que falta aún no tiene fecha.";
             }
-            string inicio = "Es la primera entrega; se factura todo ahora y lo que falta pasa a una nota de entrega que nace sin fecha " +
-                "(la pone almacén)";
+            // NestoAPI#688: con la casilla, la nota nace con fecha y sale todo junto en cuanto haya stock.
+            string inicio = servirPendienteAlHaberStock
+                ? "Es la primera entrega; se factura todo ahora y lo que falta pasa a una nota de entrega que sale, todo junto, en cuanto haya stock"
+                : "Es la primera entrega; se factura todo ahora y lo que falta pasa a una nota de entrega que nace sin fecha (la pone almacén)";
             return aNota.All(p => p.PuedeSalirEl.HasValue)
                 ? $"{inicio}: podría salir el {DiaCorreo(aNota.Max(p => p.PuedeSalirEl.Value))}."
                 : $"{inicio}: parte de lo que falta aún no tiene fecha de llegada.";
