@@ -25,7 +25,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
     {
         private IRepositorioBultosReposicion repositorio;
         private ILectorParametrosUsuario parametros;
-        private IImpresoraEtiquetas impresora;
+        private IImpresoraEtiquetasAlmacen impresora;
         private ServicioBultosReposicion servicio;
 
         [TestInitialize]
@@ -33,7 +33,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         {
             repositorio = A.Fake<IRepositorioBultosReposicion>();
             parametros = A.Fake<ILectorParametrosUsuario>();
-            impresora = A.Fake<IImpresoraEtiquetas>();
+            impresora = A.Fake<IImpresoraEtiquetasAlmacen>();
             A.CallTo(() => repositorio.ExisteTabla()).Returns(true);
             A.CallTo(() => repositorio.LeerOrigenDestino("1", 81010)).Returns(new OrigenDestinoReposicion { Origen = "ALC", Destino = "ALG" });
             A.CallTo(() => repositorio.Reemplazar("1", 81010, A<int>._, A<string>._)).Returns(true);
@@ -116,13 +116,57 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             StringAssert.Contains(epl, "q240"); // la misma etiqueta de 30×20 que la de hueco
         }
 
+        [TestMethod]
+        public void Zpl_ElMismoContenidoQueElEplEnLasMismasPosiciones()
+        {
+            var bultos = new List<BultoReposicionDTO>
+            {
+                new BultoReposicionDTO { Codigo = "R81093-1", Bulto = 1, Total = 2 },
+                new BultoReposicionDTO { Codigo = "R81093-2", Bulto = 2, Total = 2 }
+            };
+
+            string zpl = GeneradorEtiquetasBulto.Zpl(bultos, 81093, "ALC", "ALG");
+            string epl = GeneradorEtiquetasBulto.Epl(bultos, 81093, "ALC", "ALG");
+
+            Assert.AreEqual(2, zpl.Split(new[] { "^XA" }, StringSplitOptions.None).Length - 1);
+            StringAssert.StartsWith(zpl,
+                "^XA^CI28^LH0,0\r\n" +
+                "^FO57,8^BY1^BCN,64,N,N,N,A^FH^FDR81093-1^FS\r\n" +
+                "^FO18,84^ADN,18,10^FH^FD81093 - bulto 1/2^FS\r\n" +
+                "^FO66,112^ADN,18,10^FH^FDALC > ALG^FS\r\n" +
+                "^PQ1^XZ\r\n");
+            // Las mismas posiciones que el EPL
+            StringAssert.Contains(epl, "B57,8,0,1,1,1,64,N,\"R81093-1\"");
+            StringAssert.Contains(epl, "A18,84,0,3,1,1,N,\"81093 - bulto 1/2\"");
+            StringAssert.Contains(epl, "A66,112,0,3,1,1,N,\"ALC > ALG\"");
+            StringAssert.Contains(zpl, "^FDR81093-2^FS");
+            Assert.IsFalse(zpl.Contains("^PW") || zpl.Contains("^LL"));
+        }
+
+        [TestMethod]
+        public async Task Reimprimir_MandaElTrabajoEnLosDosIdiomas()
+        {
+            A.CallTo(() => repositorio.Leer("1", 81010)).Returns(new List<FilaBultoReposicion>
+            {
+                new FilaBultoReposicion { Traspaso = 81010, Bulto = 1, Total = 1, Codigo = "R81010-1" }
+            });
+            TrabajoEtiquetas trabajo = null;
+            A.CallTo(() => impresora.Imprimir(A<string>._, A<TrabajoEtiquetas>._)).Invokes((string i, TrabajoEtiquetas t) => trabajo = t);
+
+            _ = await servicio.Reimprimir("1", 81010, "NUEVAVISION\\Paloma");
+
+            Assert.AreEqual("Bultos reposición 81010", trabajo.Nombre);
+            StringAssert.Contains(trabajo.Epl, "\"R81010-1\"");
+            StringAssert.Contains(trabajo.Zpl, "^FDR81010-1^FS");
+        }
+
         // ---------------------------------------------------------------- crear
 
         [TestMethod]
         public async Task Crear_CreaLosBultosEImprimeUnaEtiquetaPorBulto()
         {
             string impreso = null;
-            A.CallTo(() => impresora.Imprimir(A<string>._, A<string>._, A<string>._)).Invokes((string i, string c, string n) => impreso = c);
+            A.CallTo(() => impresora.Imprimir(A<string>._, A<TrabajoEtiquetas>._)).Invokes((string i, TrabajoEtiquetas t) => impreso = t.Epl);
 
             ResultadoBultosReposicionDTO resultado = await servicio.Crear("1", 81010, new CrearBultosReposicionDTO { Bultos = 3, Imprimir = true }, "NUEVAVISION\\Paloma");
 
@@ -134,7 +178,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             CollectionAssert.AreEqual(new[] { "R81010-1", "R81010-2", "R81010-3" }, resultado.Bultos.Select(b => b.Codigo).ToArray());
             Assert.AreEqual("81010 · bulto 2/3 · ALC→ALG", resultado.Bultos[1].Texto);
             Assert.AreEqual(3, resultado.Bultos[1].Total);
-            A.CallTo(() => impresora.Imprimir("\\\\RDS2016\\Zebra ALC", A<string>._, A<string>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => impresora.Imprimir("\\\\RDS2016\\Zebra ALC", A<TrabajoEtiquetas>._)).MustHaveHappenedOnceExactly();
             StringAssert.Contains(impreso, "\"R81010-3\"");
         }
 
@@ -145,7 +189,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
 
             Assert.AreEqual(1, resultado.Bultos.Count);
             Assert.IsNull(resultado.Impresora);
-            A.CallTo(() => impresora.Imprimir(A<string>._, A<string>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => impresora.Imprimir(A<string>._, A<TrabajoEtiquetas>._)).MustNotHaveHappened();
         }
 
         [TestMethod]
@@ -168,7 +212,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
                 servicio.Crear("1", 81010, new CrearBultosReposicionDTO { Bultos = 2 }, "Paloma"));
 
             Assert.AreEqual(HttpStatusCode.Conflict, ex.StatusCode);
-            A.CallTo(() => impresora.Imprimir(A<string>._, A<string>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => impresora.Imprimir(A<string>._, A<TrabajoEtiquetas>._)).MustNotHaveHappened();
         }
 
         [DataTestMethod]
@@ -212,7 +256,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         [TestMethod]
         public async Task Crear_SiFallaLaImpresion_LosBultosQuedanCreadosYSeDiceElMotivo()
         {
-            A.CallTo(() => impresora.Imprimir(A<string>._, A<string>._, A<string>._))
+            A.CallTo(() => impresora.Imprimir(A<string>._, A<TrabajoEtiquetas>._))
                 .Throws(new ImpresionEtiquetasException("No se puede abrir la impresora X (error de Windows 5)."));
 
             ImpresionBultosException ex = await Assert.ThrowsExceptionAsync<ImpresionBultosException>(() =>
@@ -258,7 +302,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             ResultadoBultosReposicionDTO resultado = await servicio.Reimprimir("1", 81010, "Paloma");
 
             CollectionAssert.AreEqual(new[] { "R81010-1", "R81010-2" }, resultado.Bultos.Select(b => b.Codigo).ToArray());
-            A.CallTo(() => impresora.Imprimir(A<string>._, A<string>._, A<string>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => impresora.Imprimir(A<string>._, A<TrabajoEtiquetas>._)).MustHaveHappenedOnceExactly();
             A.CallTo(() => repositorio.Reemplazar(A<string>._, A<int>._, A<int>._, A<string>._)).MustNotHaveHappened();
         }
 

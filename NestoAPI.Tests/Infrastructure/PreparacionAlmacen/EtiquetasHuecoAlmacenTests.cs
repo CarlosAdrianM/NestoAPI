@@ -23,7 +23,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
 
         private IRepositorioEtiquetasHueco repositorio;
         private ILectorParametrosUsuario parametros;
-        private IImpresoraEtiquetas impresora;
+        private IImpresoraEtiquetasAlmacen impresora;
         private ServicioEtiquetasHueco servicio;
 
         [TestInitialize]
@@ -31,7 +31,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         {
             repositorio = A.Fake<IRepositorioEtiquetasHueco>();
             parametros = A.Fake<ILectorParametrosUsuario>();
-            impresora = A.Fake<IImpresoraEtiquetas>();
+            impresora = A.Fake<IImpresoraEtiquetasAlmacen>();
             A.CallTo(() => parametros.LeerParametro(EMPRESA, "Carlos", "ImpresoraCodBarras")).Returns(@"\\RDS2016\etiquetas2");
             servicio = new ServicioEtiquetasHueco(repositorio, parametros, impresora);
         }
@@ -64,6 +64,35 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             Assert.AreEqual(1, Ocurrencias(epl, "I8,A,034"), "La cabecera va una vez");
             Assert.AreEqual(2, Ocurrencias(epl, "P1\r\n"));
             StringAssert.Contains(epl, "\"Fila...:005\"");
+        }
+
+        // ---- NestoAPI#685: el ZPL de la etiqueta (Zebra con driver ZPL) ----
+
+        [TestMethod]
+        public void Zpl_UnHueco_MismasPosicionesQueElEplConLaFuenteDeLaMismaCelda()
+        {
+            string zpl = GeneradorEtiquetasHueco.Zpl(new[] { "002004001" });
+
+            Assert.AreEqual(
+                "^XA^CI28^LH0,0\r\n" +
+                "^FO18,8^BY2^BCN,56,N,N,N,A^FH^FD002004001^FS\r\n" +
+                "^FO54,72^ADN,18,10^FH^FDPasillo:002^FS\r\n" +
+                "^FO54,96^ADN,18,10^FH^FDFila...:004^FS\r\n" +
+                "^FO54,120^ADN,18,10^FH^FDColumna:001^FS\r\n" +
+                "^PQ1^XZ\r\n",
+                zpl);
+        }
+
+        [TestMethod]
+        public void Zpl_VariosHuecos_UnFormatoPorHuecoSinFijarAnchoNiLargo()
+        {
+            string zpl = GeneradorEtiquetasHueco.Zpl(new[] { "002004001", "002005001" });
+
+            Assert.AreEqual(2, Ocurrencias(zpl, "^XA"));
+            Assert.AreEqual(2, Ocurrencias(zpl, "^XZ"));
+            StringAssert.Contains(zpl, "^FDFila...:005^FS");
+            // La Zebra de Alcobendas imprime también las de agencia: ^PW y ^LL se quedarían en la impresora
+            Assert.IsFalse(zpl.Contains("^PW") || zpl.Contains("^LL"));
         }
 
         // ---- Qué huecos se piden ----
@@ -142,7 +171,9 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             ResultadoEtiquetasHuecoDTO resultado = await servicio.Imprimir(EMPRESA, ALMACEN,
                 new EtiquetasHuecoDTO { Huecos = new List<string> { "002004001" } }, @"NUEVAVISION\Carlos", ensayo: false);
 
-            A.CallTo(() => impresora.Imprimir(@"\\RDS2016\etiquetas2", GeneradorEtiquetasHueco.Epl(new[] { "002004001" }), A<string>._))
+            A.CallTo(() => impresora.Imprimir(@"\\RDS2016\etiquetas2", A<TrabajoEtiquetas>.That.Matches(t =>
+                    t.Epl == GeneradorEtiquetasHueco.Epl(new[] { "002004001" }) && t.Zpl == GeneradorEtiquetasHueco.Zpl(new[] { "002004001" })
+                    && t.Nombre == "Etiquetas de hueco")))
                 .MustHaveHappenedOnceExactly();
             Assert.AreEqual(1, resultado.Impresas);
             Assert.AreEqual(@"\\RDS2016\etiquetas2", resultado.Impresora);
@@ -168,7 +199,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
                 new EtiquetasHuecoDTO { Huecos = new List<string> { "002004001" } }, "Nadie", ensayo: false));
 
             StringAssert.Contains(error.Message, "ImpresoraCodBarras");
-            A.CallTo(() => impresora.Imprimir(A<string>._, A<string>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => impresora.Imprimir(A<string>._, A<TrabajoEtiquetas>._)).MustNotHaveHappened();
         }
 
         [TestMethod]
@@ -177,7 +208,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             await Assert.ThrowsExceptionAsync<ArgumentException>(() => servicio.Imprimir(EMPRESA, ALMACEN,
                 new EtiquetasHuecoDTO { Huecos = new List<string> { "x" } }, "Carlos", ensayo: false));
 
-            A.CallTo(() => impresora.Imprimir(A<string>._, A<string>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => impresora.Imprimir(A<string>._, A<TrabajoEtiquetas>._)).MustNotHaveHappened();
         }
 
         [TestMethod]
@@ -186,7 +217,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             ResultadoEtiquetasHuecoDTO resultado = await servicio.Imprimir(EMPRESA, ALMACEN,
                 new EtiquetasHuecoDTO { Pasillo = "2", FilaDesde = "1", FilaHasta = "2", ColumnaDesde = "1" }, "Carlos", ensayo: true);
 
-            A.CallTo(() => impresora.Imprimir(A<string>._, A<string>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => impresora.Imprimir(A<string>._, A<TrabajoEtiquetas>._)).MustNotHaveHappened();
             Assert.AreEqual(0, resultado.Impresas);
             Assert.AreEqual(@"\\RDS2016\etiquetas2", resultado.Impresora);
             CollectionAssert.AreEqual(new[] { "002001001", "002002001" }, resultado.Huecos);
@@ -230,7 +261,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
 
             Assert.AreEqual(0, resultado.Impresas);
             StringAssert.Contains(resultado.Mensaje, "ningún hueco");
-            A.CallTo(() => impresora.Imprimir(A<string>._, A<string>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => impresora.Imprimir(A<string>._, A<TrabajoEtiquetas>._)).MustNotHaveHappened();
         }
 
         private static int Ocurrencias(string texto, string trozo)

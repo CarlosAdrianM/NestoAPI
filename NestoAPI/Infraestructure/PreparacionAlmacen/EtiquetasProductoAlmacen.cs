@@ -153,6 +153,30 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         }
 
         /// <summary>
+        /// NestoAPI#685: lo mismo en ZPL, para las Zebra con driver ZPL: mismas posiciones, texto escalable del tamaño de cada
+        /// fuente EPL (va a la izquierda, no hace falta que sea monoespaciado) y <paramref name="copias"/> con ^PQ.
+        /// </summary>
+        public static string Zpl(EtiquetaProducto etiqueta, int copias)
+        {
+            string numero = Limpio(etiqueta.Producto);
+            var zpl = new StringBuilder();
+            zpl.Append(ComandosZpl.Inicio());
+            for (int i = 0; i < etiqueta.Lineas.Count; i++)
+            {
+                zpl.Append(ComandosZpl.Texto(MARGEN_X, TEXTO_Y + i * TEXTO_INTERLINEA, etiqueta.Fuente, Limpio(etiqueta.Lineas[i])));
+            }
+            int estrecho = AnchoBarra(numero, out int x);
+            zpl.Append(ComandosZpl.Codigo128(x, CODIGO_Y, estrecho, CODIGO_ALTO, numero));
+            zpl.Append(ComandosZpl.Texto(x, NUMERO_Y, NUMERO_FUENTE, numero));
+            zpl.Append(ComandosZpl.Fin(copias));
+            return zpl.ToString();
+        }
+
+        /// <summary>NestoAPI#685: el trabajo en los dos idiomas; lo manda quien sabe cuál habla la impresora.</summary>
+        public static TrabajoEtiquetas Trabajo(EtiquetaProducto etiqueta, int copias)
+            => new TrabajoEtiquetas(Epl(etiqueta, copias), Zpl(etiqueta, copias), $"Etiqueta producto {etiqueta.Producto}");
+
+        /// <summary>
         /// Barras de 2 puntos si el código cabe (un Code128 de n caracteres ocupa como mucho 11·n + 35 módulos); si no, de 1. La
         /// x es el margen de la etiqueta si cabe con él, o la que lo centra.
         /// </summary>
@@ -171,8 +195,11 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
         /// <summary>Dentro de las comillas de EPL, la barra y las comillas van escapadas; sin saltos de línea.</summary>
         private static string Texto(string texto)
-            => Compactar(new string((texto ?? string.Empty).Where(c => !char.IsControl(c)).ToArray()))
-                .Replace("\\", "\\\\").Replace("\"", "\\\"");
+            => Limpio(texto).Replace("\\", "\\\\").Replace("\"", "\\\"");
+
+        /// <summary>Sin caracteres de control ni espacios de más (ZPL escapa lo suyo en <see cref="ComandosZpl.Escapar"/>).</summary>
+        private static string Limpio(string texto)
+            => Compactar(new string((texto ?? string.Empty).Where(c => !char.IsControl(c)).ToArray()));
     }
 
     public interface IServicioEtiquetasProducto
@@ -193,9 +220,9 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
         private readonly IRepositorioFichasProducto fichas;
         private readonly ILectorParametrosUsuario parametros;
-        private readonly IImpresoraEtiquetas impresora;
+        private readonly IImpresoraEtiquetasAlmacen impresora;
 
-        public ServicioEtiquetasProducto(IRepositorioFichasProducto fichas, ILectorParametrosUsuario parametros, IImpresoraEtiquetas impresora)
+        public ServicioEtiquetasProducto(IRepositorioFichasProducto fichas, ILectorParametrosUsuario parametros, IImpresoraEtiquetasAlmacen impresora)
         {
             this.fichas = fichas ?? throw new ArgumentNullException(nameof(fichas));
             this.parametros = parametros ?? throw new ArgumentNullException(nameof(parametros));
@@ -233,7 +260,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 resultado.Mensaje = $"Se imprimirían {Etiquetas(copias)} de {etiqueta.Producto} en {destino}.";
                 return resultado;
             }
-            impresora.Imprimir(destino, GeneradorEtiquetasProducto.Epl(etiqueta, copias), $"Etiqueta producto {etiqueta.Producto}");
+            _ = impresora.Imprimir(destino, GeneradorEtiquetasProducto.Trabajo(etiqueta, copias));
             resultado.Impresas = copias;
             resultado.Mensaje = $"{Etiquetas(copias)} de {etiqueta.Producto} mandada{(copias == 1 ? string.Empty : "s")} a {destino}.";
             return resultado;

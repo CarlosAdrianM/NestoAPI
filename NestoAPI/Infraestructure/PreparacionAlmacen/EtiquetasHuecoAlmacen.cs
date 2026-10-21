@@ -15,7 +15,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     /// <summary>
     /// Las etiquetas de hueco de la estantería (Carlos 05/10/26): 30×20 mm, el código de barras PPPFFFCCC que lee Ariadna y,
     /// debajo, «Pasillo / Fila / Columna» como las que ya están pegadas. En EPL2, el idioma de la impresora de etiquetas de
-    /// producto (Nesto ya le manda EPL: la etiqueta de las máquinas de alquiler). A 203 ppp, 1 mm = 8 puntos.
+    /// producto (Nesto ya le manda EPL: la etiqueta de las máquinas de alquiler), y en ZPL para las Zebra con driver ZPL
+    /// (NestoAPI#685: lo elige <see cref="ImpresoraEtiquetasConAjuste"/>). A 203 ppp, 1 mm = 8 puntos.
     /// <para>Las posiciones son constantes para ajustarlas tras la etiqueta de prueba sin tocar nada más.</para>
     /// </summary>
     public static class GeneradorEtiquetasHueco
@@ -49,7 +50,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 epl.Append("N\r\n");
                 epl.Append(string.Format(CultureInfo.InvariantCulture, "B{0},{1},0,1,{2},{2},{3},N,\"{4}\"\r\n",
                     CODIGO_X, CODIGO_Y, CODIGO_ESTRECHO, CODIGO_ALTO, hueco));
-                string[] lineas = { "Pasillo:" + hueco.Substring(0, 3), "Fila...:" + hueco.Substring(3, 3), "Columna:" + hueco.Substring(6, 3) };
+                string[] lineas = Lineas(hueco);
                 for (int i = 0; i < lineas.Length; i++)
                 {
                     epl.Append(string.Format(CultureInfo.InvariantCulture, "A{0},{1},0,{2},1,1,N,\"{3}\"\r\n",
@@ -59,6 +60,32 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             }
             return epl.ToString();
         }
+
+        /// <summary>NestoAPI#685: lo mismo en ZPL, para las Zebra con driver ZPL (mismas posiciones; texto en la fuente D, que
+        /// tiene la misma celda que la 3 de EPL).</summary>
+        public static string Zpl(IEnumerable<string> huecos)
+        {
+            var zpl = new StringBuilder();
+            foreach (string hueco in huecos ?? Enumerable.Empty<string>())
+            {
+                zpl.Append(ComandosZpl.Inicio());
+                zpl.Append(ComandosZpl.Codigo128(CODIGO_X, CODIGO_Y, CODIGO_ESTRECHO, CODIGO_ALTO, hueco));
+                string[] lineas = Lineas(hueco);
+                for (int i = 0; i < lineas.Length; i++)
+                {
+                    zpl.Append(ComandosZpl.TextoMonoespaciado(TEXTO_X, TEXTO_Y + i * TEXTO_INTERLINEA, lineas[i]));
+                }
+                zpl.Append(ComandosZpl.Fin());
+            }
+            return zpl.ToString();
+        }
+
+        /// <summary>NestoAPI#685: el trabajo en los dos idiomas; lo manda quien sabe cuál habla la impresora.</summary>
+        public static TrabajoEtiquetas Trabajo(IReadOnlyCollection<string> huecos)
+            => new TrabajoEtiquetas(Epl(huecos), Zpl(huecos), "Etiquetas de hueco");
+
+        private static string[] Lineas(string hueco)
+            => new[] { "Pasillo:" + hueco.Substring(0, 3), "Fila...:" + hueco.Substring(3, 3), "Columna:" + hueco.Substring(6, 3) };
     }
 
     /// <summary>Manda un trabajo tal cual (RAW) a una impresora de Windows. Detrás de una interfaz para las pruebas.</summary>
@@ -216,13 +243,13 @@ HAVING SUM(u.Cantidad) > 0";
 
         private readonly IRepositorioEtiquetasHueco repositorio;
         private readonly ILectorParametrosUsuario parametros;
-        private readonly IImpresoraEtiquetas impresora;
+        private readonly IImpresoraEtiquetasAlmacen impresora;
 
         public ServicioEtiquetasHueco() : this(RepositorioEtiquetasHuecoSql.ConContextoPropio(), new LectorParametrosUsuario(), ImpresoraEtiquetasConAjuste.EnWindows())
         {
         }
 
-        public ServicioEtiquetasHueco(IRepositorioEtiquetasHueco repositorio, ILectorParametrosUsuario parametros, IImpresoraEtiquetas impresora)
+        public ServicioEtiquetasHueco(IRepositorioEtiquetasHueco repositorio, ILectorParametrosUsuario parametros, IImpresoraEtiquetasAlmacen impresora)
         {
             this.repositorio = repositorio;
             this.parametros = parametros;
@@ -257,7 +284,7 @@ HAVING SUM(u.Cantidad) > 0";
                 resultado.Mensaje = $"Se imprimirían {Etiquetas(huecos.Count)} en {destino}.";
                 return resultado;
             }
-            impresora.Imprimir(destino, GeneradorEtiquetasHueco.Epl(huecos), "Etiquetas de hueco");
+            _ = impresora.Imprimir(destino, GeneradorEtiquetasHueco.Trabajo(huecos));
             resultado.Impresas = huecos.Count;
             resultado.Mensaje = $"{Etiquetas(huecos.Count)} mandadas a {destino}.";
             return resultado;

@@ -19,8 +19,11 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
     {
         private const string REINA = @"\\RDS2016\etiquetasreina";
 
+        private const string ALCOBENDAS = @"\\RDS2016\etiquetasalcobendas";
+
         private IImpresoraEtiquetas impresoraReal;
         private IRepositorioAjustesImpresoras repositorio;
+        private ILenguajeImpresoras lenguajes;
         private ImpresoraEtiquetasConAjuste impresora;
         private string impreso;
 
@@ -29,9 +32,74 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         {
             impresoraReal = A.Fake<IImpresoraEtiquetas>();
             repositorio = A.Fake<IRepositorioAjustesImpresoras>();
+            lenguajes = A.Fake<ILenguajeImpresoras>();
+            A.CallTo(() => lenguajes.De(A<string>._)).Returns(LenguajeEtiquetas.Epl);
+            A.CallTo(() => lenguajes.De(ALCOBENDAS)).Returns(LenguajeEtiquetas.Zpl);
             A.CallTo(() => repositorio.Leer(A<string>._)).Returns(null);
             A.CallTo(() => impresoraReal.Imprimir(A<string>._, A<string>._, A<string>._)).Invokes((string i, string c, string n) => impreso = c);
-            impresora = new ImpresoraEtiquetasConAjuste(impresoraReal, repositorio);
+            impresora = new ImpresoraEtiquetasConAjuste(impresoraReal, repositorio, lenguajes);
+        }
+
+        private static TrabajoEtiquetas Trabajo(string epl, string nombre) => new TrabajoEtiquetas(epl, "^XA^FO10,20^FDzpl^FS^XZ", nombre);
+
+        // ---- NestoAPI#685: el idioma de la impresora ----
+
+        [TestMethod]
+        public void Imprimir_ImpresoraZpl_MandaElZplYDiceQueLoHaMandadoEnZpl()
+        {
+            LenguajeEtiquetas lenguaje = impresora.Imprimir(ALCOBENDAS, new TrabajoEtiquetas("EPL", "^XA^FO10,20^FDx^FS^XZ", "Bultos reposición 81093"));
+
+            Assert.AreEqual(LenguajeEtiquetas.Zpl, lenguaje);
+            Assert.AreEqual("^XA^FO10,20^FDx^FS^XZ", impreso);
+            A.CallTo(() => impresoraReal.Imprimir(ALCOBENDAS, A<string>._, "Bultos reposición 81093")).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public void Imprimir_ImpresoraZplConAjuste_SeDesplazaElZpl()
+        {
+            A.CallTo(() => repositorio.Leer(ALCOBENDAS.ToUpperInvariant())).Returns(new AjusteImpresoraEtiquetasDTO { DesplazamientoX = 16, DesplazamientoY = -8 });
+
+            _ = impresora.Imprimir(ALCOBENDAS, GeneradorEtiquetasHueco.Trabajo(new[] { "002004001" }));
+
+            StringAssert.Contains(impreso, "^FO34,0^BY2^BCN,56,N,N,N,A^FH^FD002004001^FS");
+            StringAssert.Contains(impreso, "^FO70,64^ADN,18,10^FH^FDPasillo:002^FS");
+            Assert.IsFalse(impreso.Contains("q2"), "Ni rastro del EPL");
+        }
+
+        [TestMethod]
+        public void DesplazarZpl_SumaACadaOrigenSinBajarDeCero_YConCeroYCeroElMismoTrabajo()
+        {
+            string zpl = "^XA^LH0,0\r\n^FO10,20^GB5,5,1^FS\r\n^FT4,30^A0N,20,12^FD^FO99,99^FS\r\n^XZ\r\n";
+
+            Assert.AreSame(zpl, DesplazadorZpl.Desplazar(zpl, 0, 0));
+            Assert.AreEqual("^XA^LH0,0\r\n^FO18,12^GB5,5,1^FS\r\n^FT12,22^A0N,20,12^FD^FO107,91^FS\r\n^XZ\r\n", DesplazadorZpl.Desplazar(zpl, 8, -8));
+            StringAssert.Contains(DesplazadorZpl.Desplazar(zpl, -20, -40), "^FO0,0^GB5,5,1^FS");
+        }
+
+        [TestMethod]
+        public void EtiquetaDePruebaZpl_ElMarcoYLasReglasComoLaEpl()
+        {
+            string zpl = GeneradorEtiquetaPrueba.Zpl(8, 0);
+
+            StringAssert.StartsWith(zpl, "^XA^CI28^LH0,0\r\n");
+            StringAssert.Contains(zpl, "^FO0,0^GB240,160,2^FS");
+            StringAssert.Contains(zpl, "^FO80,0^GB1,18,1^FS"); // 10 mm: la marca larga
+            StringAssert.Contains(zpl, "^FO0,40^GB12,1,1^FS"); // 5 mm en la regla de Y
+            StringAssert.Contains(zpl, "^FDX=8 Y=0 puntos^FS");
+            Assert.IsTrue(zpl.EndsWith("^PQ1^XZ\r\n"));
+            Assert.IsFalse(zpl.Contains("^PW") || zpl.Contains("^LL"));
+        }
+
+        [TestMethod]
+        public void ImprimirPrueba_EnUnaImpresoraZpl_MandaLaDeZplDesplazada()
+        {
+            A.CallTo(() => repositorio.Leer(ALCOBENDAS.ToUpperInvariant())).Returns(new AjusteImpresoraEtiquetasDTO { DesplazamientoX = 8, DesplazamientoY = 0 });
+            var servicio = new ServicioAjustesImpresoras(repositorio, A.Fake<ILectorParametrosUsuario>(), impresoraReal, lenguajes);
+
+            ResultadoEtiquetaPruebaDTO resultado = servicio.ImprimirPrueba("1", ALCOBENDAS, null, null, "NUEVAVISION\\Paloma");
+
+            StringAssert.Contains(impreso, "^FO8,0^GB240,160,2^FS");
+            StringAssert.Contains(resultado.Mensaje, "en ZPL");
         }
 
         private static readonly string EplHueco =
@@ -105,7 +173,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         {
             foreach (string epl in new[] { EplHueco, EplProducto, EplBulto })
             {
-                impresora.Imprimir(@"\\RDS2016\etiquetas2", epl, "Etiquetas");
+                _ = impresora.Imprimir(@"\\RDS2016\etiquetas2", Trabajo(epl, "Etiquetas"));
                 Assert.AreEqual(epl, impreso);
             }
         }
@@ -115,7 +183,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         {
             A.CallTo(() => repositorio.Leer(A<string>._)).Returns(new AjusteImpresoraEtiquetasDTO { Impresora = REINA.ToUpperInvariant() });
 
-            impresora.Imprimir(REINA, EplProducto, "Etiqueta");
+            _ = impresora.Imprimir(REINA, Trabajo(EplProducto, "Etiqueta"));
 
             Assert.AreEqual(EplProducto, impreso);
         }
@@ -125,7 +193,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         {
             A.CallTo(() => repositorio.Leer(A<string>._)).Throws(new InvalidOperationException("sin conexión"));
 
-            impresora.Imprimir(REINA, EplHueco, "Etiquetas");
+            _ = impresora.Imprimir(REINA, Trabajo(EplHueco, "Etiquetas"));
 
             Assert.AreEqual(EplHueco, impreso);
         }
@@ -137,7 +205,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         {
             A.CallTo(() => repositorio.Leer(REINA.ToUpperInvariant())).Returns(new AjusteImpresoraEtiquetasDTO { DesplazamientoX = 24, DesplazamientoY = -4 });
 
-            impresora.Imprimir("  " + REINA.ToLowerInvariant() + " ", Hueco(), "Etiquetas de hueco");
+            _ = impresora.Imprimir("  " + REINA.ToLowerInvariant() + " ", Trabajo(Hueco(), "Etiquetas de hueco"));
 
             Assert.AreEqual(
                 "I8,A,034\r\n" +
@@ -158,12 +226,12 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         {
             A.CallTo(() => repositorio.Leer(REINA.ToUpperInvariant())).Returns(new AjusteImpresoraEtiquetasDTO { DesplazamientoX = 16, DesplazamientoY = 0 });
 
-            impresora.Imprimir(REINA, Producto(), "Etiqueta producto");
+            _ = impresora.Imprimir(REINA, Trabajo(Producto(), "Etiqueta producto"));
             StringAssert.Contains(impreso, "A28,6,0,2,1,1,N,\"ROLLO PAPEL CAMILLA\"\r\n");
             StringAssert.Contains(impreso, "B28,62,0,1,2,2,52,N,\"17404\"\r\n");
             StringAssert.Contains(impreso, "A28,120,0,4,1,1,N,\"17404\"\r\n");
 
-            impresora.Imprimir(REINA, Bulto(), "Etiquetas de bulto");
+            _ = impresora.Imprimir(REINA, Trabajo(Bulto(), "Etiquetas de bulto"));
             StringAssert.Contains(impreso, "B73,8,0,1,1,1,64,N,\"R81010-1\"\r\n");
             StringAssert.Contains(impreso, "A34,84,0,3,1,1,N,\"81010 - bulto 1/1\"\r\n");
             StringAssert.Contains(impreso, "A82,112,0,3,1,1,N,\"ALC > ALG\"\r\n");
@@ -238,7 +306,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         {
             var parametros = A.Fake<ILectorParametrosUsuario>();
             A.CallTo(() => repositorio.Leer(REINA.ToUpperInvariant())).Returns(new AjusteImpresoraEtiquetasDTO { DesplazamientoX = 24, DesplazamientoY = 0 });
-            var servicio = new ServicioAjustesImpresoras(repositorio, parametros, impresoraReal);
+            var servicio = new ServicioAjustesImpresoras(repositorio, parametros, impresoraReal, lenguajes);
 
             ResultadoEtiquetaPruebaDTO resultado = servicio.ImprimirPrueba("1", REINA, null, null, "NUEVAVISION\\Carlos");
 
@@ -253,7 +321,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         {
             var parametros = A.Fake<ILectorParametrosUsuario>();
             A.CallTo(() => parametros.LeerParametro("1", "Carlos", "ImpresoraCodBarras")).Returns(@"\\RDS2016\etiquetas2 ");
-            var servicio = new ServicioAjustesImpresoras(repositorio, parametros, impresoraReal);
+            var servicio = new ServicioAjustesImpresoras(repositorio, parametros, impresoraReal, lenguajes);
 
             ResultadoEtiquetaPruebaDTO resultado = servicio.ImprimirPrueba("1", null, 8, 16, "NUEVAVISION\\Carlos");
 
@@ -268,7 +336,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         public void Guardar_NormalizaLaImpresora()
         {
             A.CallTo(() => repositorio.Guardar(A<string>._, A<int>._, A<int>._, A<string>._)).Returns(true);
-            var servicio = new ServicioAjustesImpresoras(repositorio, A.Fake<ILectorParametrosUsuario>(), impresoraReal);
+            var servicio = new ServicioAjustesImpresoras(repositorio, A.Fake<ILectorParametrosUsuario>(), impresoraReal, lenguajes);
 
             _ = servicio.Guardar(new AjusteImpresoraEtiquetasDTO { Impresora = " " + REINA + " ", DesplazamientoX = 24 }, "NUEVAVISION\\Carlos");
 
@@ -278,7 +346,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         [TestMethod]
         public void Guardar_ValoresMayoresQueLaEtiqueta_NoSeGuardan()
         {
-            var servicio = new ServicioAjustesImpresoras(repositorio, A.Fake<ILectorParametrosUsuario>(), impresoraReal);
+            var servicio = new ServicioAjustesImpresoras(repositorio, A.Fake<ILectorParametrosUsuario>(), impresoraReal, lenguajes);
 
             _ = Assert.ThrowsException<ArgumentException>(() => servicio.Guardar(new AjusteImpresoraEtiquetasDTO { Impresora = REINA, DesplazamientoX = 300 }, "Carlos"));
             _ = Assert.ThrowsException<ArgumentException>(() => servicio.Guardar(new AjusteImpresoraEtiquetasDTO { DesplazamientoX = 8 }, "Carlos"));
@@ -289,7 +357,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         public void Guardar_SinLaTabla_AvisaDeQueFaltaElScript()
         {
             A.CallTo(() => repositorio.Guardar(A<string>._, A<int>._, A<int>._, A<string>._)).Returns(false);
-            var servicio = new ServicioAjustesImpresoras(repositorio, A.Fake<ILectorParametrosUsuario>(), impresoraReal);
+            var servicio = new ServicioAjustesImpresoras(repositorio, A.Fake<ILectorParametrosUsuario>(), impresoraReal, lenguajes);
 
             _ = Assert.ThrowsException<InvalidOperationException>(() => servicio.Guardar(new AjusteImpresoraEtiquetasDTO { Impresora = REINA, DesplazamientoX = 8 }, "Carlos"));
         }
@@ -297,7 +365,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         [TestMethod]
         public void Leer_SinAjusteGuardado_CeroYCero()
         {
-            var servicio = new ServicioAjustesImpresoras(repositorio, A.Fake<ILectorParametrosUsuario>(), impresoraReal);
+            var servicio = new ServicioAjustesImpresoras(repositorio, A.Fake<ILectorParametrosUsuario>(), impresoraReal, lenguajes);
 
             AjusteImpresoraEtiquetasDTO ajuste = servicio.Leer(REINA);
 

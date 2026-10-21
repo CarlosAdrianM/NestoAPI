@@ -165,6 +165,38 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             return epl.ToString();
         }
 
+        /// <summary>NestoAPI#685: la misma etiqueta de prueba en ZPL (sin desplazar), para las Zebra con driver ZPL.</summary>
+        public static string Zpl(int x, int y)
+        {
+            int ancho = GeneradorEtiquetasHueco.ANCHO;
+            int alto = GeneradorEtiquetasHueco.ALTO;
+            var zpl = new StringBuilder();
+            zpl.Append(ComandosZpl.Inicio());
+            zpl.Append(ComandosZpl.Caja(0, 0, ancho, alto, GROSOR_MARCO));
+            for (int mm = 1; mm * PUNTOS_POR_MM < ancho; mm++)
+            {
+                zpl.Append(ComandosZpl.Caja(mm * PUNTOS_POR_MM, 0, 1, Largo(mm), 1));
+                if (mm % 5 == 0)
+                {
+                    string numero = mm.ToString(CultureInfo.InvariantCulture);
+                    zpl.Append(ComandosZpl.Texto((mm * PUNTOS_POR_MM) - (numero.Length * 4), MARCA_10MM + 4, 1, numero));
+                }
+            }
+            for (int mm = 1; mm * PUNTOS_POR_MM < alto; mm++)
+            {
+                zpl.Append(ComandosZpl.Caja(0, mm * PUNTOS_POR_MM, Largo(mm), 1, 1));
+                if (mm % 5 == 0)
+                {
+                    zpl.Append(ComandosZpl.Texto(MARCA_10MM + 4, (mm * PUNTOS_POR_MM) - 6, 1, mm.ToString(CultureInfo.InvariantCulture)));
+                }
+            }
+            zpl.Append(ComandosZpl.Texto(56, 56, 2, "PRUEBA 30x20 mm ZPL"));
+            zpl.Append(ComandosZpl.Texto(56, 80, 2, string.Format(CultureInfo.InvariantCulture, "X={0} Y={1} puntos", x, y)));
+            zpl.Append(ComandosZpl.Texto(56, 104, 1, "8 puntos = 1 mm"));
+            zpl.Append(ComandosZpl.Fin());
+            return zpl.ToString();
+        }
+
         private static int Largo(int mm) => mm % 10 == 0 ? MARCA_10MM : mm % 5 == 0 ? MARCA_5MM : MARCA_MM;
 
         private static string F(string formato, params object[] valores)
@@ -248,24 +280,35 @@ IF @@ROWCOUNT = 0
     /// NestoAPI#672: la impresora de etiquetas con el ajuste de cada impresora. Envuelve a la que imprime de verdad: lee el
     /// ajuste de la impresora a la que va el trabajo y lo aplica con <see cref="DesplazadorEpl"/>. Sin ajuste (o si no se puede
     /// leer), manda el trabajo tal cual. La usan las etiquetas de producto, de hueco y de bulto; la de agencia no (no es nuestra).
+    /// <para>NestoAPI#685: es también el único sitio que elige el idioma (EPL o ZPL) de cada impresora, con
+    /// <see cref="ILenguajeImpresoras"/>, y aplica el ajuste en ese idioma (<see cref="DesplazadorEpl"/> o
+    /// <see cref="DesplazadorZpl"/>).</para>
     /// </summary>
-    public class ImpresoraEtiquetasConAjuste : IImpresoraEtiquetas
+    public class ImpresoraEtiquetasConAjuste : IImpresoraEtiquetasAlmacen
     {
         private readonly IImpresoraEtiquetas impresora;
         private readonly IRepositorioAjustesImpresoras ajustes;
+        private readonly ILenguajeImpresoras lenguajes;
 
-        public ImpresoraEtiquetasConAjuste(IImpresoraEtiquetas impresora, IRepositorioAjustesImpresoras ajustes)
+        public ImpresoraEtiquetasConAjuste(IImpresoraEtiquetas impresora, IRepositorioAjustesImpresoras ajustes, ILenguajeImpresoras lenguajes)
         {
             this.impresora = impresora ?? throw new ArgumentNullException(nameof(impresora));
             this.ajustes = ajustes ?? throw new ArgumentNullException(nameof(ajustes));
+            this.lenguajes = lenguajes ?? throw new ArgumentNullException(nameof(lenguajes));
         }
 
-        /// <summary>La de producción: imprime por Windows con el ajuste de la tabla.</summary>
+        /// <summary>La de producción: imprime por Windows, en el idioma del driver de cada cola y con el ajuste de la tabla.</summary>
         public static ImpresoraEtiquetasConAjuste EnWindows()
-            => new ImpresoraEtiquetasConAjuste(new ImpresoraEtiquetasWindows(), new RepositorioAjustesImpresorasSql());
+            => new ImpresoraEtiquetasConAjuste(new ImpresoraEtiquetasWindows(), new RepositorioAjustesImpresorasSql(), LenguajeImpresorasWindows.Compartido);
 
-        public void Imprimir(string impresora, string contenido, string nombreTrabajo)
+        public LenguajeEtiquetas Imprimir(string impresora, TrabajoEtiquetas trabajo)
         {
+            if (trabajo == null)
+            {
+                throw new ArgumentNullException(nameof(trabajo));
+            }
+            LenguajeEtiquetas lenguaje = lenguajes.De(impresora);
+            string contenido = trabajo.En(lenguaje);
             AjusteImpresoraEtiquetasDTO ajuste = null;
             string clave = ServicioAjustesImpresoras.Normalizar(impresora);
             if (clave != null)
@@ -280,9 +323,14 @@ IF @@ROWCOUNT = 0
                     ElmahHelper.Log(ex);
                 }
             }
-            string trabajo = ajuste == null ? contenido : DesplazadorEpl.Desplazar(contenido, ajuste.DesplazamientoX, ajuste.DesplazamientoY);
-            this.impresora.Imprimir(impresora, trabajo, nombreTrabajo);
+            string desplazado = ajuste == null ? contenido : Desplazar(lenguaje, contenido, ajuste.DesplazamientoX, ajuste.DesplazamientoY);
+            this.impresora.Imprimir(impresora, desplazado, trabajo.Nombre);
+            return lenguaje;
         }
+
+        /// <summary>NestoAPI#685: el ajuste de posición en el idioma del trabajo.</summary>
+        public static string Desplazar(LenguajeEtiquetas lenguaje, string contenido, int x, int y)
+            => lenguaje == LenguajeEtiquetas.Zpl ? DesplazadorZpl.Desplazar(contenido, x, y) : DesplazadorEpl.Desplazar(contenido, x, y);
     }
 
     public interface IServicioAjustesImpresoras
@@ -311,13 +359,17 @@ IF @@ROWCOUNT = 0
         private readonly IRepositorioAjustesImpresoras repositorio;
         private readonly ILectorParametrosUsuario parametros;
         private readonly IImpresoraEtiquetas impresora;
+        private readonly ILenguajeImpresoras lenguajes;
 
         /// <param name="impresora">La que imprime tal cual (sin ajuste): la prueba ya lleva aplicado el que toca.</param>
-        public ServicioAjustesImpresoras(IRepositorioAjustesImpresoras repositorio, ILectorParametrosUsuario parametros, IImpresoraEtiquetas impresora)
+        /// <param name="lenguajes">NestoAPI#685: el idioma de cada impresora (el mismo que usan las demás etiquetas).</param>
+        public ServicioAjustesImpresoras(IRepositorioAjustesImpresoras repositorio, ILectorParametrosUsuario parametros, IImpresoraEtiquetas impresora,
+            ILenguajeImpresoras lenguajes)
         {
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
             this.parametros = parametros ?? throw new ArgumentNullException(nameof(parametros));
             this.impresora = impresora ?? throw new ArgumentNullException(nameof(impresora));
+            this.lenguajes = lenguajes ?? throw new ArgumentNullException(nameof(lenguajes));
         }
 
         /// <summary>La clave de la impresora en la tabla: sin espacios alrededor y en mayúsculas (Windows no las distingue).</summary>
@@ -366,14 +418,19 @@ IF @@ROWCOUNT = 0
             int desplazamientoY = y ?? guardado?.DesplazamientoY ?? 0;
             ComprobarValores(desplazamientoX, desplazamientoY);
 
-            string epl = DesplazadorEpl.Desplazar(GeneradorEtiquetaPrueba.Epl(desplazamientoX, desplazamientoY), desplazamientoX, desplazamientoY);
-            this.impresora.Imprimir(destino, epl, "Etiqueta de prueba");
+            LenguajeEtiquetas lenguaje = lenguajes.De(destino);
+            string sinDesplazar = lenguaje == LenguajeEtiquetas.Zpl
+                ? GeneradorEtiquetaPrueba.Zpl(desplazamientoX, desplazamientoY)
+                : GeneradorEtiquetaPrueba.Epl(desplazamientoX, desplazamientoY);
+            string trabajo = ImpresoraEtiquetasConAjuste.Desplazar(lenguaje, sinDesplazar, desplazamientoX, desplazamientoY);
+            this.impresora.Imprimir(destino, trabajo, "Etiqueta de prueba");
             return new ResultadoEtiquetaPruebaDTO
             {
                 Impresora = destino,
                 DesplazamientoX = desplazamientoX,
                 DesplazamientoY = desplazamientoY,
-                Mensaje = $"Etiqueta de prueba mandada a {destino} con X={desplazamientoX} e Y={desplazamientoY} puntos (8 puntos = 1 mm)."
+                Mensaje = $"Etiqueta de prueba mandada a {destino} en {(lenguaje == LenguajeEtiquetas.Zpl ? "ZPL" : "EPL")} con X={desplazamientoX} " +
+                    $"e Y={desplazamientoY} puntos (8 puntos = 1 mm)."
             };
         }
 

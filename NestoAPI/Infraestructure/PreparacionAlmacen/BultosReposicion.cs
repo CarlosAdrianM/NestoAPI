@@ -113,24 +113,53 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             foreach (BultoReposicionDTO bulto in bultos ?? Enumerable.Empty<BultoReposicionDTO>())
             {
                 epl.Append("N\r\n");
-                int x = Math.Max(0, (GeneradorEtiquetasHueco.ANCHO - MODULOS_APROXIMADOS * CODIGO_ESTRECHO) / 2);
                 epl.Append(string.Format(CultureInfo.InvariantCulture, "B{0},{1},0,1,{2},{2},{3},N,\"{4}\"\r\n",
-                    x, CODIGO_Y, CODIGO_ESTRECHO, CODIGO_ALTO, bulto.Codigo));
-                string[] lineas =
-                {
-                    string.Format(CultureInfo.InvariantCulture, "{0} - bulto {1}/{2}", traspaso, bulto.Bulto, bulto.Total),
-                    $"{origen?.Trim() ?? "?"} > {destino?.Trim() ?? "?"}"
-                };
+                    XCodigo(), CODIGO_Y, CODIGO_ESTRECHO, CODIGO_ALTO, bulto.Codigo));
+                string[] lineas = Lineas(bulto, traspaso, origen, destino);
                 for (int i = 0; i < lineas.Length; i++)
                 {
-                    int xTexto = Math.Max(0, (GeneradorEtiquetasHueco.ANCHO - lineas[i].Length * ANCHO_CARACTER) / 2);
                     epl.Append(string.Format(CultureInfo.InvariantCulture, "A{0},{1},0,{2},1,1,N,\"{3}\"\r\n",
-                        xTexto, TEXTO_Y + i * TEXTO_INTERLINEA, TEXTO_FUENTE, lineas[i]));
+                        XTexto(lineas[i]), TEXTO_Y + i * TEXTO_INTERLINEA, TEXTO_FUENTE, lineas[i]));
                 }
                 epl.Append("P1\r\n");
             }
             return epl.ToString();
         }
+
+        /// <summary>
+        /// NestoAPI#685: lo mismo en ZPL, para las Zebra con driver ZPL (Alcobendas). Mismas posiciones y mismo módulo que el
+        /// EPL; el texto en la fuente D, con la misma celda que la 3 de EPL, así que el centrado es el mismo.
+        /// </summary>
+        public static string Zpl(IEnumerable<BultoReposicionDTO> bultos, int traspaso, string origen, string destino)
+        {
+            var zpl = new StringBuilder();
+            foreach (BultoReposicionDTO bulto in bultos ?? Enumerable.Empty<BultoReposicionDTO>())
+            {
+                zpl.Append(ComandosZpl.Inicio());
+                zpl.Append(ComandosZpl.Codigo128(XCodigo(), CODIGO_Y, CODIGO_ESTRECHO, CODIGO_ALTO, bulto.Codigo));
+                string[] lineas = Lineas(bulto, traspaso, origen, destino);
+                for (int i = 0; i < lineas.Length; i++)
+                {
+                    zpl.Append(ComandosZpl.TextoMonoespaciado(XTexto(lineas[i]), TEXTO_Y + i * TEXTO_INTERLINEA, lineas[i]));
+                }
+                zpl.Append(ComandosZpl.Fin());
+            }
+            return zpl.ToString();
+        }
+
+        /// <summary>NestoAPI#685: el trabajo en los dos idiomas; lo manda quien sabe cuál habla la impresora.</summary>
+        public static TrabajoEtiquetas Trabajo(IReadOnlyCollection<BultoReposicionDTO> bultos, int traspaso, string origen, string destino)
+            => new TrabajoEtiquetas(Epl(bultos, traspaso, origen, destino), Zpl(bultos, traspaso, origen, destino), $"Bultos reposición {traspaso}");
+
+        private static int XCodigo() => Math.Max(0, (GeneradorEtiquetasHueco.ANCHO - MODULOS_APROXIMADOS * CODIGO_ESTRECHO) / 2);
+
+        private static int XTexto(string linea) => Math.Max(0, (GeneradorEtiquetasHueco.ANCHO - linea.Length * ANCHO_CARACTER) / 2);
+
+        private static string[] Lineas(BultoReposicionDTO bulto, int traspaso, string origen, string destino) => new[]
+        {
+            string.Format(CultureInfo.InvariantCulture, "{0} - bulto {1}/{2}", traspaso, bulto.Bulto, bulto.Total),
+            $"{origen?.Trim() ?? "?"} > {destino?.Trim() ?? "?"}"
+        };
     }
 
     /// <summary>
@@ -348,9 +377,9 @@ SELECT RTRIM(@o) AS Origen, RTRIM(@d) AS Destino";
 
         private readonly IRepositorioBultosReposicion repositorio;
         private readonly ILectorParametrosUsuario parametros;
-        private readonly IImpresoraEtiquetas impresora;
+        private readonly IImpresoraEtiquetasAlmacen impresora;
 
-        public ServicioBultosReposicion(IRepositorioBultosReposicion repositorio, ILectorParametrosUsuario parametros, IImpresoraEtiquetas impresora)
+        public ServicioBultosReposicion(IRepositorioBultosReposicion repositorio, ILectorParametrosUsuario parametros, IImpresoraEtiquetasAlmacen impresora)
         {
             this.repositorio = repositorio;
             this.parametros = parametros;
@@ -463,8 +492,7 @@ SELECT RTRIM(@o) AS Origen, RTRIM(@d) AS Destino";
             }
             try
             {
-                impresora.Imprimir(destino, GeneradorEtiquetasBulto.Epl(resultado.Bultos, resultado.Traspaso, resultado.Origen, resultado.Destino),
-                    $"Bultos reposición {resultado.Traspaso}");
+                _ = impresora.Imprimir(destino, GeneradorEtiquetasBulto.Trabajo(resultado.Bultos, resultado.Traspaso, resultado.Origen, resultado.Destino));
             }
             catch (ImpresionEtiquetasException ex)
             {

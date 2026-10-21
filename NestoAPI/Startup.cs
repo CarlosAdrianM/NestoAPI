@@ -289,7 +289,8 @@ namespace NestoAPI
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioAjustesImpresoras>(sp => new Infraestructure.PreparacionAlmacen.ServicioAjustesImpresoras(
                 new Infraestructure.PreparacionAlmacen.RepositorioAjustesImpresorasSql(),
                 sp.GetRequiredService<ILectorParametrosUsuario>(),
-                new Infraestructure.PreparacionAlmacen.ImpresoraEtiquetasWindows()));
+                new Infraestructure.PreparacionAlmacen.ImpresoraEtiquetasWindows(),
+                Infraestructure.PreparacionAlmacen.LenguajeImpresorasWindows.Compartido));
 
             // Ventana de facturas pendientes de Verifactu (NestoAPI#522)
             _ = services.AddScoped<Infraestructure.Verifactu.IServicioFacturasPendientesVerifactu, Infraestructure.Verifactu.ServicioFacturasPendientesVerifactu>();

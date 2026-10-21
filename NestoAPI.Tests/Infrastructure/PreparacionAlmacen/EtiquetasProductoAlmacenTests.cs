@@ -22,7 +22,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
 
         private IRepositorioFichasProducto fichas;
         private ILectorParametrosUsuario parametros;
-        private IImpresoraEtiquetas impresora;
+        private IImpresoraEtiquetasAlmacen impresora;
         private ServicioEtiquetasProducto servicio;
 
         private static FichaProductoAlmacen RolloCamilla() => new FichaProductoAlmacen
@@ -40,7 +40,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         {
             fichas = A.Fake<IRepositorioFichasProducto>();
             parametros = A.Fake<ILectorParametrosUsuario>();
-            impresora = A.Fake<IImpresoraEtiquetas>();
+            impresora = A.Fake<IImpresoraEtiquetasAlmacen>();
             A.CallTo(() => parametros.LeerParametro(EMPRESA, "Paloma", "ImpresoraCodBarras")).Returns(@"\\RDS2016\etiquetasalcobendas");
             A.CallTo(() => fichas.LeerFichas(EMPRESA, A<IReadOnlyCollection<string>>.That.Contains("17404")))
                 .Returns(new List<FichaProductoAlmacen> { RolloCamilla() });
@@ -76,6 +76,32 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
                 "A12,120,0,4,1,1,N,\"17404\"\r\n" +
                 "P1\r\n",
                 epl);
+        }
+
+        [TestMethod]
+        public void Zpl_ComoElEpl_MismasPosicionesYTamanosDeFuente()
+        {
+            string zpl = GeneradorEtiquetasProducto.Zpl(GeneradorEtiquetasProducto.Componer(RolloCamilla()), 3);
+
+            Assert.AreEqual(
+                "^XA^CI28^LH0,0\r\n" +
+                "^FO12,6^A0N,16,10^FH^FDROLLO PAPEL CAMILLA^FS\r\n" +
+                "^FO12,24^A0N,16,10^FH^FDDesechables^FS\r\n" +
+                "^FO12,42^A0N,16,10^FH^FD100 m^FS\r\n" +
+                "^FO12,62^BY2^BCN,52,N,N,N,A^FH^FD17404^FS\r\n" +
+                "^FO12,120^A0N,24,14^FH^FD17404^FS\r\n" +
+                "^PQ3^XZ\r\n",
+                zpl);
+        }
+
+        [TestMethod]
+        public void Zpl_TildesYCaracteresDeZpl_EnHexadecimalUtf8()
+        {
+            var etiqueta = new EtiquetaProducto { Producto = "1", Lineas = new List<string> { "PEÑA ^A_B~" }, Fuente = 2 };
+
+            string zpl = GeneradorEtiquetasProducto.Zpl(etiqueta, 1);
+
+            StringAssert.Contains(zpl, "^FH^FDPE_C3_91A _5EA_5FB_7E^FS");
         }
 
         [TestMethod]
@@ -169,8 +195,9 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
                 new EtiquetasProductoDTO { Producto = " 17404 ", Copias = 2 }, @"NUEVAVISION\Paloma", false);
 
             A.CallTo(() => impresora.Imprimir(@"\\RDS2016\etiquetasalcobendas",
-                A<string>.That.Matches(e => e.Contains("B12,62,0,1,2,2,52,N,\"17404\"") && e.EndsWith("P2\r\n")),
-                "Etiqueta producto 17404")).MustHaveHappenedOnceExactly();
+                A<TrabajoEtiquetas>.That.Matches(t => t.Epl.Contains("B12,62,0,1,2,2,52,N,\"17404\"") && t.Epl.EndsWith("P2\r\n")
+                    && t.Zpl.Contains("^FO12,62^BY2^BCN,52,N,N,N,A^FH^FD17404^FS") && t.Zpl.EndsWith("^PQ2^XZ\r\n")
+                    && t.Nombre == "Etiqueta producto 17404"))).MustHaveHappenedOnceExactly();
             Assert.AreEqual(2, resultado.Impresas);
             Assert.AreEqual(@"\\RDS2016\etiquetasalcobendas", resultado.Impresora);
             CollectionAssert.AreEqual(new[] { "ROLLO PAPEL CAMILLA", "Desechables", "100 m" }, resultado.Lineas);
@@ -193,7 +220,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             ResultadoEtiquetasProductoDTO resultado = await servicio.Imprimir(EMPRESA,
                 new EtiquetasProductoDTO { Producto = "17404" }, "Paloma", true);
 
-            A.CallTo(() => impresora.Imprimir(A<string>._, A<string>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => impresora.Imprimir(A<string>._, A<TrabajoEtiquetas>._)).MustNotHaveHappened();
             Assert.AreEqual(0, resultado.Impresas);
             Assert.AreEqual(@"Se imprimirían 1 etiqueta de 17404 en \\RDS2016\etiquetasalcobendas.", resultado.Mensaje);
         }
@@ -218,7 +245,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
                 new EtiquetasProductoDTO { Producto = "99999" }, "Paloma", false));
 
             Assert.AreEqual("No existe el producto 99999.", ex.Message);
-            A.CallTo(() => impresora.Imprimir(A<string>._, A<string>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => impresora.Imprimir(A<string>._, A<TrabajoEtiquetas>._)).MustNotHaveHappened();
         }
 
         [TestMethod]
@@ -233,7 +260,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         {
             _ = await Assert.ThrowsExceptionAsync<ArgumentException>(() => servicio.Imprimir(EMPRESA,
                 new EtiquetasProductoDTO { Producto = "17404", Copias = ServicioEtiquetasProducto.MAXIMO_COPIAS + 1 }, "Paloma", false));
-            A.CallTo(() => impresora.Imprimir(A<string>._, A<string>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => impresora.Imprimir(A<string>._, A<TrabajoEtiquetas>._)).MustNotHaveHappened();
         }
 
         [TestMethod]
