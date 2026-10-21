@@ -86,6 +86,7 @@ namespace NestoAPI.Infraestructure.Rapports
                     dto.Prioridad = PrioridadesContacto.MAXIMA;
                     dto.TieneChequeRegalo = true;
                     dto.Motivo = Motivo(x.Con, hoy);
+                    dto.Origen = OrigenesSugerenciaContacto.CHEQUE_REGALO;
                     return dto;
                 })
                 .ToList();

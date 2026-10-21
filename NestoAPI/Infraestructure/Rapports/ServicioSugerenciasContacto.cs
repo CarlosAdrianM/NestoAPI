@@ -20,7 +20,9 @@ namespace NestoAPI.Infraestructure.Rapports
     /// NestoAPI#603 (corte 1): junta la cartera (<see cref="IRepositorioCarteraContacto"/>), la probabilidad del modelo
     /// (<see cref="IProbabilidadesContacto"/>), el motor (<see cref="MotorSugerenciasContacto"/>) y el registro del día
     /// (<see cref="RegistroSugerenciasContacto"/>).
-    /// <para>La primera consulta del día de un vendedor fija su lista: se guardan las max(<c>numero</c>, objetivo de hoy) primeras y las consultas
+    /// <para>NestoAPI#677: la lista va por probabilidad con un cupo de cobertura intercalado (<see cref="MotorSugerenciasContacto.ElegirDelDia"/>);
+    /// el origen de cada una (probabilidad, cobertura o cheque) queda en el principio del Motivo registrado.</para>
+    /// <para>La primera consulta del día de un vendedor fija su lista: se guardan las max(<c>numero</c>, objetivo de hoy, cupo de cobertura) primeras y las consultas
     /// siguientes devuelven esas mismas (con Atendida al día y los datos del cliente frescos). Si piden más de las que
     /// hay, se añaden las siguientes de la lista viva que no estuvieran ya. El ritmo y los pendientes se calculan siempre
     /// en vivo.</para>
@@ -97,7 +99,8 @@ namespace NestoAPI.Infraestructure.Rapports
             {
                 ritmo.Frase = await frases.Generar(vendedorLimpio, ritmo, ahora, d => !esFestivo(d, delegacion)).ConfigureAwait(false);
             }
-            numero = NumeroDelDia(numero, ritmo.ObjetivoHoy);
+            // NestoAPI#677: el último laborable del mes el cupo de cobertura son todos los que falten, aunque pase del objetivo.
+            numero = NumeroDelDia(numero, Math.Max(ritmo.ObjetivoHoy, ritmo.CupoCoberturaHoy));
 
             var registro = new RegistroSugerenciasContacto(db, bloqueo);
             List<SugerenciaContacto> delDia = await registro.LeerDelDia(vendedorLimpio, hoy).ConfigureAwait(false);
@@ -112,11 +115,11 @@ namespace NestoAPI.Infraestructure.Rapports
                     {
                         return new List<SugerenciaContacto>();
                     }
-                    var yaSugeridos = new HashSet<string>(actuales.Select(s => ClienteCarteraContacto.ClaveDe(s.Cliente, s.Contacto)), StringComparer.OrdinalIgnoreCase);
-                    List<SugerenciaContactoDTO> nuevas = pendientes
-                        .Where(p => !yaSugeridos.Contains(ClienteCarteraContacto.ClaveDe(p.Cliente, p.Contacto)))
-                        .Take(numero - actuales.Count)
-                        .ToList();
+                    // NestoAPI#677: por probabilidad, con el cupo de cobertura del día (menos lo que ya se registró por cupo hoy).
+                    int coberturaRegistrada = actuales.Count(s => OrigenesSugerenciaContacto.DeMotivo(s.Motivo) == OrigenesSugerenciaContacto.COBERTURA);
+                    List<SugerenciaContactoDTO> nuevas = MotorSugerenciasContacto.ElegirDelDia(pendientes, cartera, hoy,
+                        numero - actuales.Count, Math.Max(0, ritmo.CupoCoberturaHoy - coberturaRegistrada),
+                        actuales.Select(s => ClienteCarteraContacto.ClaveDe(s.Cliente, s.Contacto)));
                     int ultimoOrden = actuales.Any() ? actuales.Max(s => s.Orden) : 0;
                     return registro.Anadir(nuevas, ultimoOrden, vendedorLimpio, usuario, ahora);
                 }).ConfigureAwait(false);
@@ -146,19 +149,33 @@ namespace NestoAPI.Infraestructure.Rapports
 
         /// <summary>
         /// NestoAPI#617: quién entra en la lista lo fija el registro del día (orden registrado), pero el orden de la
-        /// respuesta sigue al filtro de esta llamada, con el mismo criterio que <see cref="MotorSugerenciasContacto.Priorizar"/>:
-        /// prioridad (la registrada) y probabilidad desc; el Orden registrado desempata. Orden = 1..n en la respuesta (en BD no cambia).
+        /// respuesta sigue al filtro de esta llamada, con el mismo criterio que <see cref="MotorSugerenciasContacto.ElegirDelDia"/>
+        /// (NestoAPI#677): delante las subidas por el cheque regalo; luego las de probabilidad por la probabilidad de ESTA
+        /// llamada, con las del cupo de cobertura intercaladas en su orden registrado. El Orden registrado desempata.
+        /// Orden = 1..n en la respuesta (en BD no cambia).
         /// </summary>
-        private static List<SugerenciaContactoDTO> Ordenar(List<SugerenciaContactoDTO> registradas)
+        internal static List<SugerenciaContactoDTO> Ordenar(List<SugerenciaContactoDTO> registradas)
         {
-            List<SugerenciaContactoDTO> ordenadas = registradas
-                .Select((s, i) => new { Sugerencia = s, Registrado = i })
-                .OrderBy(x => PrioridadesContacto.Rango(x.Sugerencia.Prioridad))
-                .ThenByDescending(x => x.Sugerencia.TieneChequeRegalo)
-                .ThenByDescending(x => x.Sugerencia.Probabilidad)
+            var conPuesto = registradas.Select((s, i) => new { Sugerencia = s, Registrado = i }).ToList();
+            List<SugerenciaContactoDTO> delante = conPuesto
+                .Where(x => x.Sugerencia.TieneChequeRegalo && x.Sugerencia.Prioridad == PrioridadesContacto.MAXIMA)
+                .OrderByDescending(x => x.Sugerencia.Probabilidad)
                 .ThenBy(x => x.Registrado)
                 .Select(x => x.Sugerencia)
                 .ToList();
+            var resto = conPuesto.Where(x => !delante.Contains(x.Sugerencia)).ToList();
+            List<SugerenciaContactoDTO> porProbabilidad = resto
+                .Where(x => x.Sugerencia.Origen != OrigenesSugerenciaContacto.COBERTURA)
+                .OrderByDescending(x => x.Sugerencia.Probabilidad)
+                .ThenBy(x => x.Registrado)
+                .Select(x => x.Sugerencia)
+                .ToList();
+            List<SugerenciaContactoDTO> porCobertura = resto
+                .Where(x => x.Sugerencia.Origen == OrigenesSugerenciaContacto.COBERTURA)
+                .OrderBy(x => x.Registrado)
+                .Select(x => x.Sugerencia)
+                .ToList();
+            List<SugerenciaContactoDTO> ordenadas = delante.Concat(MotorSugerenciasContacto.Intercalar(porProbabilidad, porCobertura)).ToList();
             for (int i = 0; i < ordenadas.Count; i++)
             {
                 ordenadas[i].Orden = i + 1;
@@ -208,6 +225,7 @@ namespace NestoAPI.Infraestructure.Rapports
             dto.Prioridad = fila.Prioridad?.Trim();
             dto.Orden = fila.Orden;
             dto.Atendida = fila.Atendida;
+            dto.Origen = OrigenesSugerenciaContacto.DeMotivo(fila.Motivo);
             // NestoAPI#617: la lista del día (quién y con qué prioridad) es fija, pero la probabilidad (y el motivo, que en
             // Máxima la lleva) siguen al tipo de interacción y al subgrupo de ESTA llamada: la cartera ya trae la predicción
             // del filtro actual (y ADTO la ha copiado). Lo guardado era la del filtro con que se registró. Si el cliente ya no
@@ -222,6 +240,10 @@ namespace NestoAPI.Infraestructure.Rapports
                 {
                     dto.Prioridad = PrioridadesContacto.MAXIMA;
                 }
+            }
+            else if (enCartera && dto.Origen == OrigenesSugerenciaContacto.COBERTURA)
+            {
+                dto.Motivo = MotorSugerenciasContacto.MotivoCobertura(cliente, hoy);
             }
             else if (enCartera)
             {
@@ -241,7 +263,7 @@ namespace NestoAPI.Infraestructure.Rapports
             DateTime fin = hasta.Date.AddDays(1);
             var filas = await db.SugerenciasContacto
                 .Where(s => s.Fecha >= inicio && s.Fecha < fin)
-                .Select(s => new { s.Vendedor, s.Fecha, s.Atendida })
+                .Select(s => new { s.Vendedor, s.Fecha, s.Atendida, s.Motivo })
                 .ToListAsync().ConfigureAwait(false);
             if (!filas.Any())
             {
@@ -270,7 +292,19 @@ namespace NestoAPI.Infraestructure.Rapports
                         Sugeridas = sugeridas,
                         Atendidas = atendidas,
                         PorcentajeAtendidas = sugeridas == 0 ? 0 : Math.Round((double)atendidas / sugeridas, 4),
-                        RapportsTotales = rapportsPorVendedor.TryGetValue(g.Key, out int total) ? total : 0
+                        RapportsTotales = rapportsPorVendedor.TryGetValue(g.Key, out int total) ? total : 0,
+                        // NestoAPI#677: para comparar la conversión de lo que entra por probabilidad y por el cupo de cobertura.
+                        PorOrigen = g
+                            .GroupBy(f => OrigenesSugerenciaContacto.DeMotivo(f.Motivo))
+                            .Select(o => new UsoOrigenSugerenciasContactoDTO
+                            {
+                                Origen = o.Key,
+                                Sugeridas = o.Count(),
+                                Atendidas = o.Count(f => f.Atendida),
+                                PorcentajeAtendidas = Math.Round((double)o.Count(f => f.Atendida) / o.Count(), 4)
+                            })
+                            .OrderBy(o => o.Origen, StringComparer.Ordinal)
+                            .ToList()
                     };
                 })
                 .OrderBy(u => u.Vendedor)

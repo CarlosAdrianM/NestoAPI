@@ -160,8 +160,9 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
 
             SugerenciasContactoDTO segunda = await Servicio().Leer("MPP", "Llamada", 3, "", "u");
 
-            CollectionAssert.AreEqual(new[] { "1001", "1002", "1003" }, segunda.Sugerencias.Select(s => s.Cliente).ToArray());
-            Assert.AreEqual("Máxima", segunda.Sugerencias[0].Prioridad);
+            // Los mismos tres (con su prioridad registrada); NestoAPI#677: el orden sigue a la probabilidad de esta llamada.
+            CollectionAssert.AreEqual(new[] { "1003", "1001", "1002" }, segunda.Sugerencias.Select(s => s.Cliente).ToArray());
+            Assert.AreEqual("Máxima", segunda.Sugerencias.Single(s => s.Cliente == "1001").Prioridad);
             Assert.AreEqual(3, sugerencias.Count);
             A.CallTo(() => fakeSugerencias.Add(A<SugerenciaContacto>._)).MustNotHaveHappened();
             A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
@@ -599,6 +600,121 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
             Assert.IsTrue(RegistroSugerenciasContacto.RapportCuentaPara("IF", "NV", delCliente), "el general");
             Assert.IsTrue(RegistroSugerenciasContacto.RapportCuentaPara("IF", "PA", delCliente), "alguien que ya no lo lleva");
             Assert.IsTrue(RegistroSugerenciasContacto.RapportCuentaPara("IF", "MPP", null), "sin saber quién lo lleva, como antes");
+        }
+
+        // ---------------- NestoAPI#677: orden por probabilidad y cupo de cobertura ----------------
+
+        private ServicioSugerenciasContacto ServicioEl(DateTime ahora) => new ServicioSugerenciasContacto(db, repositorio, probabilidades, () => ahora,
+            (d, delegacion) => false, null, bloqueo);
+
+        private static ClienteCarteraContacto ClienteContactado(string id, int pedidos12, DateTime ultimoContacto) => new ClienteCarteraContacto
+        {
+            Cliente = id,
+            Contacto = "0",
+            Nombre = "Centro " + id,
+            Pedidos12Meses = pedidos12,
+            Pedidos24Meses = Math.Max(1, pedidos12),
+            UltimoPedido = new DateTime(2026, 8, 1),
+            UltimoContacto = ultimoContacto
+        };
+
+        [TestMethod]
+        public async Task Leer_UltimoLaborableDelMes_EntranTodosLosCompradoresSinContactoYSeRegistraElOrigen()
+        {
+            // Viernes 30/10/26: tres semanales ya contactados este mes, muy probables, y 30 compradores sin contacto en octubre.
+            DateTime ahora = new DateTime(2026, 10, 30, 9, 0, 0);
+            cartera = new List<ClienteCarteraContacto>
+            {
+                ClienteContactado("s1", 52, new DateTime(2026, 10, 20)),
+                ClienteContactado("s2", 52, new DateTime(2026, 10, 20)),
+                ClienteContactado("s3", 52, new DateTime(2026, 10, 20))
+            };
+            cartera.AddRange(Enumerable.Range(1, 30).Select(i => ClienteContactado("p" + i, 2, new DateTime(2026, 9, 1).AddDays(i % 20))));
+            A.CallTo(() => probabilidades.Leer(A<string>._, A<string>._, A<string>._)).Returns(Task.FromResult(
+                new Dictionary<string, PrediccionContacto>
+                {
+                    ["s1/0"] = new PrediccionContacto { Probabilidad = 0.9f },
+                    ["s2/0"] = new PrediccionContacto { Probabilidad = 0.8f },
+                    ["s3/0"] = new PrediccionContacto { Probabilidad = 0.7f }
+                }));
+            A.CallTo(() => repositorio.LeerContactos(A<string>._, A<DateTime>._)).Returns(Task.FromResult(new ContactosVendedor { Mes = 500 }));
+
+            SugerenciasContactoDTO respuesta = await ServicioEl(ahora).Leer("MPP", "Llamada", 20, "", "u");
+
+            Assert.AreEqual(0, respuesta.Ritmo.ObjetivoHoy);
+            Assert.AreEqual(30, respuesta.Ritmo.CompradoresSinContactoMes);
+            Assert.AreEqual(30, respuesta.Ritmo.CupoCoberturaHoy, "último laborable: todos los que faltan");
+            Assert.AreEqual(30, respuesta.Sugerencias.Count, "aunque se pidieran 20");
+            Assert.IsTrue(Enumerable.Range(1, 30).All(i => respuesta.Sugerencias.Any(s => s.Cliente == "p" + i)));
+            Assert.IsTrue(respuesta.Sugerencias.All(s => s.Origen == OrigenesSugerenciaContacto.COBERTURA));
+            Assert.AreEqual(30, sugerencias.Count);
+            Assert.IsTrue(sugerencias.All(s => s.Motivo.StartsWith(OrigenesSugerenciaContacto.PREFIJO_MOTIVO_COBERTURA)), "el origen queda en el Motivo registrado");
+        }
+
+        [TestMethod]
+        public async Task Leer_MitadDeMes_ElCupoVaIntercaladoYSeMantieneEnLaSegundaLlamada()
+        {
+            // Jueves 15/10/26 (12 laborables por delante). 4 semanales ya contactados este mes y 24 compradores sin contacto en
+            // octubre pero dentro de su cadencia (contactados del 16 al 30 de septiembre): solo entran por cupo, ⌈24 / 12⌉ = 2.
+            DateTime ahora = new DateTime(2026, 10, 15, 9, 0, 0);
+            cartera = Enumerable.Range(1, 4).Select(i => ClienteContactado("s" + i, 52, new DateTime(2026, 10, 5))).ToList();
+            cartera.AddRange(Enumerable.Range(1, 24).Select(i => ClienteContactado("p" + i.ToString("00"), 2, new DateTime(2026, 9, 15).AddDays(i % 15 + 1))));
+            var probabilidadesSemanales = new Dictionary<string, PrediccionContacto>
+            {
+                ["s1/0"] = new PrediccionContacto { Probabilidad = 0.9f },
+                ["s2/0"] = new PrediccionContacto { Probabilidad = 0.8f },
+                ["s3/0"] = new PrediccionContacto { Probabilidad = 0.7f },
+                ["s4/0"] = new PrediccionContacto { Probabilidad = 0.6f }
+            };
+            A.CallTo(() => probabilidades.Leer(A<string>._, A<string>._, A<string>._)).Returns(Task.FromResult(probabilidadesSemanales));
+            A.CallTo(() => repositorio.LeerContactos(A<string>._, A<DateTime>._)).Returns(Task.FromResult(new ContactosVendedor { Mes = 500 }));
+
+            SugerenciasContactoDTO primera = await ServicioEl(ahora).Leer("MPP", "Llamada", 5, "", "u");
+
+            Assert.AreEqual(2, primera.Ritmo.CupoCoberturaHoy);
+            CollectionAssert.AreEqual(new[] { "Probabilidad", "Cobertura", "Probabilidad", "Cobertura", "Probabilidad" }, primera.Sugerencias.Select(s => s.Origen).ToArray());
+            CollectionAssert.AreEqual(new[] { "s1", "s2", "s3" }, primera.Sugerencias.Where(s => s.Origen == "Probabilidad").Select(s => s.Cliente).ToArray());
+            StringAssert.StartsWith(primera.Sugerencias[1].Motivo, "Cobertura del mes: sin contacto desde el ");
+
+            // Segunda llamada con otro filtro: s3 pasa a ser el más probable; las del cupo siguen en su sitio.
+            A.CallTo(() => probabilidades.Leer(A<string>._, A<string>._, A<string>._)).Returns(Task.FromResult(new Dictionary<string, PrediccionContacto>
+            {
+                ["s1/0"] = new PrediccionContacto { Probabilidad = 0.2f },
+                ["s2/0"] = new PrediccionContacto { Probabilidad = 0.1f },
+                ["s3/0"] = new PrediccionContacto { Probabilidad = 0.95f }
+            }));
+            SugerenciasContactoDTO segunda = await ServicioEl(ahora).Leer("MPP", "Visita", 5, "", "u");
+
+            Assert.AreEqual(5, sugerencias.Count, "no se registra nada más");
+            CollectionAssert.AreEqual(new[] { "s3", primera.Sugerencias[1].Cliente, "s1", primera.Sugerencias[3].Cliente, "s2" },
+                segunda.Sugerencias.Select(s => s.Cliente).ToArray());
+            CollectionAssert.AreEqual(new[] { "Probabilidad", "Cobertura", "Probabilidad", "Cobertura", "Probabilidad" }, segunda.Sugerencias.Select(s => s.Origen).ToArray());
+        }
+
+        [TestMethod]
+        public async Task LeerUso_PorOrigen_SugeridasYAtendidasDeCadaUno()
+        {
+            sugerencias.AddRange(new[]
+            {
+                new SugerenciaContacto { Vendedor = "MPP", Fecha = new DateTime(2026, 10, 22, 9, 0, 0), Atendida = true, Motivo = "Compra cada 7 días y lleva 9 días sin hablar contigo" },
+                new SugerenciaContacto { Vendedor = "MPP", Fecha = new DateTime(2026, 10, 22, 9, 0, 0), Atendida = false, Motivo = "Buen cliente (5 pedidos en el último año), sin ningún contacto registrado" },
+                new SugerenciaContacto { Vendedor = "MPP", Fecha = new DateTime(2026, 10, 22, 9, 0, 0), Atendida = true, Motivo = "Cobertura del mes: sin ningún contacto registrado; ha comprado 1 vez en el último año" },
+                new SugerenciaContacto { Vendedor = "MPP", Fecha = new DateTime(2026, 10, 22, 9, 0, 0), Atendida = false, Motivo = "Cobertura del mes: sin contacto desde el 2 de septiembre; ha comprado 2 veces en el último año" },
+                new SugerenciaContacto { Vendedor = "MPP", Fecha = new DateTime(2026, 10, 22, 9, 0, 0), Atendida = false, Motivo = "Cobertura del mes: sin contacto desde el 3 de septiembre; ha comprado 2 veces en el último año" },
+                new SugerenciaContacto { Vendedor = "MPP", Fecha = new DateTime(2026, 10, 22, 9, 0, 0), Atendida = true, Motivo = "Tiene un cheque de 50 € sin usar hasta el 07/11" }
+            });
+
+            List<UsoSugerenciasContactoDTO> uso = await Servicio().LeerUso(new DateTime(2026, 10, 22), new DateTime(2026, 10, 22));
+
+            List<UsoOrigenSugerenciasContactoDTO> porOrigen = uso.Single().PorOrigen;
+            CollectionAssert.AreEqual(new[] { "ChequeRegalo", "Cobertura", "Probabilidad" }, porOrigen.Select(o => o.Origen).ToArray());
+            UsoOrigenSugerenciasContactoDTO cobertura = porOrigen.Single(o => o.Origen == "Cobertura");
+            Assert.AreEqual(3, cobertura.Sugeridas);
+            Assert.AreEqual(1, cobertura.Atendidas);
+            Assert.AreEqual(0.3333, cobertura.PorcentajeAtendidas);
+            UsoOrigenSugerenciasContactoDTO probabilidad = porOrigen.Single(o => o.Origen == "Probabilidad");
+            Assert.AreEqual(2, probabilidad.Sugeridas);
+            Assert.AreEqual(1, probabilidad.Atendidas);
         }
 
         // ---------------- Uso ----------------

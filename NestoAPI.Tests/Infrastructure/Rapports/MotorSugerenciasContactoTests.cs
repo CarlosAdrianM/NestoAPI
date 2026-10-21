@@ -141,7 +141,7 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
         // ---------------- Orden ----------------
 
         [TestMethod]
-        public void Priorizar_OrdenaPorPrioridadProbabilidadYDiasSinContacto()
+        public void Priorizar_OrdenaPorProbabilidadYDiasSinContacto_SinMirarLaPrioridad()
         {
             var cartera = new List<ClienteCarteraContacto>
             {
@@ -159,13 +159,14 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
             List<SugerenciaContactoDTO> lista = new MotorSugerenciasContacto().Priorizar(cartera, HOY);
 
             CollectionAssert.AreEqual(
-                new[] { "maximaMas", "maxima", "altaProb", "altaNunca", "alta50", "alta40", "media", "baja" },
+                // NestoAPI#677: la prioridad ya no ordena; «media» (0,5 y 45 días) va delante de «altaProb» (0,5 y 31 días).
+                new[] { "maximaMas", "maxima", "media", "altaProb", "altaNunca", "alta50", "alta40", "baja" },
                 lista.Select(s => s.Cliente).ToArray());
             CollectionAssert.AreEqual(Enumerable.Range(1, 8).ToArray(), lista.Select(s => s.Orden).ToArray());
             Assert.AreEqual(9, lista[0].CadenciaDias, "365 / 40 = 9,1");
             Assert.AreEqual(12, lista[0].DiasDesdeUltimoContacto);
-            Assert.IsNull(lista[3].DiasDesdeUltimoContacto);
-            Assert.AreEqual(9999, lista[3].DiasDesdeUltimaInteraccion, "compatibilidad con ClienteProbabilidadVenta");
+            Assert.IsNull(lista[4].DiasDesdeUltimoContacto);
+            Assert.AreEqual(9999, lista[4].DiasDesdeUltimaInteraccion, "compatibilidad con ClienteProbabilidadVenta");
             Assert.AreEqual(40, lista[0].DiasDesdeUltimoPedido);
         }
 

@@ -54,6 +54,40 @@ namespace NestoAPI.Infraestructure.Rapports
     }
 
     /// <summary>
+    /// NestoAPI#677 (corte 1): por qué entró cada sugerencia en la lista del día. Se guarda SIN tocar el esquema: lo dice
+    /// el principio del Motivo registrado (<see cref="DeMotivo"/>), para comparar la conversión de cada origen (~10/11/26).
+    /// Las filas registradas antes del corte 1 salen como <see cref="PROBABILIDAD"/> (entonces el orden era por prioridad).
+    /// </summary>
+    public static class OrigenesSugerenciaContacto
+    {
+        /// <summary>Entró por el orden de probabilidad del modelo.</summary>
+        public const string PROBABILIDAD = "Probabilidad";
+        /// <summary>Entró por el cupo de cobertura: comprador sin contacto en el mes.</summary>
+        public const string COBERTURA = "Cobertura";
+        /// <summary>NestoAPI#593: cheque regalo sin usar en los últimos días de la campaña.</summary>
+        public const string CHEQUE_REGALO = "ChequeRegalo";
+
+        /// <summary>Principio del Motivo de las que entran por el cupo de cobertura.</summary>
+        public const string PREFIJO_MOTIVO_COBERTURA = "Cobertura del mes: ";
+        /// <summary>Principio de la frase del cheque (<c>EstadisticaChequesRegalo.FraseImpulso</c>).</summary>
+        public const string PREFIJO_MOTIVO_CHEQUE = "Tiene un cheque";
+
+        public static string DeMotivo(string motivo)
+        {
+            string texto = motivo?.TrimStart() ?? string.Empty;
+            if (texto.StartsWith(PREFIJO_MOTIVO_COBERTURA, StringComparison.Ordinal))
+            {
+                return COBERTURA;
+            }
+            if (texto.StartsWith(PREFIJO_MOTIVO_CHEQUE, StringComparison.Ordinal))
+            {
+                return CHEQUE_REGALO;
+            }
+            return PROBABILIDAD;
+        }
+    }
+
+    /// <summary>
     /// NestoAPI#603 (corte 1): decide a quién de la cartera hay que llamar, con qué prioridad y por qué, y calcula el
     /// ritmo (objetivo del mes y del día). Pura: recibe la cartera ya calculada, el día y qué días son laborables.
     /// <list type="bullet">
@@ -62,8 +96,12 @@ namespace NestoAPI.Infraestructure.Rapports
     /// pidió hace menos de 6.</item>
     /// <item><b>Máxima</b>: buen cliente (≥ 3 pedidos en 12 meses), probabilidad ≥ 0,6 y ya le toca por cadencia.
     /// <b>Alta</b>: buen cliente al que ya le toca por cadencia (probabilidad &lt; 0,6) o con ≥ 30 días sin contacto. <b>Media</b>: compras en 12 meses y ≥ 30 días sin contacto.
-    /// <b>Baja</b>: solo compras en 24 meses y ≥ 30 días sin contacto. Si no cumple ninguna, todavía no le toca.</item>
-    /// <item><b>Orden</b>: prioridad; dentro, probabilidad desc y días sin contacto desc (nunca contactado, el primero).</item>
+    /// <b>Baja</b>: solo compras en 24 meses y ≥ 30 días sin contacto. Si no cumple ninguna, todavía no le toca.
+    /// Desde NestoAPI#677 la prioridad es solo una etiqueta (color y motivo): ya no ordena.</item>
+    /// <item><b>Orden</b> (NestoAPI#677): probabilidad del modelo desc; empata días sin contacto desc (nunca contactado, el primero).</item>
+    /// <item><b>Cupo de cobertura</b> (NestoAPI#677, <see cref="ElegirDelDia"/>): en la lista del día se reserva
+    /// ⌈compradores sin contacto este mes / laborables que quedan (hoy incluido)⌉ para ellos, intercalados; el último
+    /// laborable del mes entran todos los que falten.</item>
     /// </list>
     /// </summary>
     public class MotorSugerenciasContacto
@@ -129,14 +167,16 @@ namespace NestoAPI.Infraestructure.Rapports
             return null;
         }
 
-        /// <summary>Toda la cartera a la que hoy le toca, ya ordenada y con Orden 1, 2, 3…</summary>
+        /// <summary>
+        /// Toda la cartera a la que hoy le toca, ordenada por probabilidad (NestoAPI#677: la prioridad ya no ordena; los datos
+        /// del 07 al 17/10/26 dieron que lo que entraba por regla convertía menos que el método manual) y con Orden 1, 2, 3…
+        /// </summary>
         public List<SugerenciaContactoDTO> Priorizar(IEnumerable<ClienteCarteraContacto> cartera, DateTime hoy)
         {
             var lista = cartera
                 .Select(c => new { Cliente = c, Prioridad = Prioridad(c, hoy), DiasContacto = DiasDesde(c.UltimoContacto, hoy) })
                 .Where(x => x.Prioridad != null)
-                .OrderBy(x => PrioridadesContacto.Rango(x.Prioridad))
-                .ThenByDescending(x => x.Cliente.Probabilidad)
+                .OrderByDescending(x => x.Cliente.Probabilidad)
                 .ThenByDescending(x => x.DiasContacto ?? int.MaxValue)
                 .ThenBy(x => x.Cliente.Clave, StringComparer.Ordinal)
                 .ToList();
@@ -148,9 +188,190 @@ namespace NestoAPI.Infraestructure.Rapports
                 sugerencia.Prioridad = lista[i].Prioridad;
                 sugerencia.Orden = i + 1;
                 sugerencia.Motivo = Motivo(lista[i].Cliente, lista[i].Prioridad, hoy);
+                sugerencia.Origen = OrigenesSugerenciaContacto.PROBABILIDAD;
                 resultado.Add(sugerencia);
             }
             return resultado;
+        }
+
+        // ---------------- NestoAPI#677: cupo de cobertura ----------------
+
+        /// <summary>
+        /// NestoAPI#677: «comprador» = cliente con alguna compra en los últimos 12 meses (<see cref="ClienteCarteraContacto.Pedidos12Meses"/>
+        /// &gt; 0), la misma ventana que ya usaban la prioridad Media y el «buen cliente». A fin de mes, todos los compradores
+        /// del vendedor tienen que haber sido contactados.
+        /// </summary>
+        public static bool EsComprador(ClienteCarteraContacto c) => c.Pedidos12Meses > 0;
+
+        /// <summary>Comprador sin ningún contacto (rapport Estado 0 de tipo T/V/W) desde el día 1 del mes.</summary>
+        public static bool PendienteCobertura(ClienteCarteraContacto c, DateTime hoy)
+        {
+            DateTime primeroDeMes = new DateTime(hoy.Year, hoy.Month, 1);
+            return EsComprador(c) && (!c.UltimoContacto.HasValue || c.UltimoContacto.Value.Date < primeroDeMes);
+        }
+
+        /// <summary>
+        /// Pendiente de cobertura al que hoy se le puede proponer por el cupo: la cadencia no cuenta (si no, a fin de mes
+        /// no entrarían todos), pero sí no haber contestado hace menos de 2 días o haber pedido hace menos de 6.
+        /// </summary>
+        public static bool DisponibleParaCobertura(ClienteCarteraContacto c, DateTime hoy)
+        {
+            if (!PendienteCobertura(c, hoy))
+            {
+                return false;
+            }
+            int? diasIntento = DiasDesde(c.UltimoIntento, hoy);
+            int? diasPedido = DiasDesde(RepositorioCarteraContactoSql.MasReciente(c.UltimoPedido, c.UltimoPedidoCliente), hoy);
+            return !(diasIntento.HasValue && diasIntento.Value < UmbralesSugerenciasContacto.DIAS_TRAS_INTENTO)
+                && !(diasPedido.HasValue && diasPedido.Value < UmbralesSugerenciasContacto.DIAS_TRAS_PEDIDO);
+        }
+
+        public static int CompradoresSinContactoMes(IEnumerable<ClienteCarteraContacto> cartera, DateTime hoy)
+            => (cartera ?? Enumerable.Empty<ClienteCarteraContacto>()).Count(c => PendienteCobertura(c, hoy));
+
+        /// <summary>
+        /// ⌈pendientes / laborables que quedan (hoy incluido)⌉: pequeño a principio de mes y, el último laborable, todos
+        /// los que falten. Pasado el último laborable (fin de semana a fin de mes), también todos.
+        /// </summary>
+        public static int CupoCobertura(int pendientes, DateTime hoy, Func<DateTime, bool> esLaborable)
+        {
+            if (pendientes <= 0)
+            {
+                return 0;
+            }
+            int restantes = DiasLaborablesRestantes(hoy, esLaborable);
+            return (int)Math.Ceiling((double)pendientes / Math.Max(1, restantes));
+        }
+
+        /// <summary>
+        /// NestoAPI#677: las <paramref name="cuantas"/> que se añaden hoy a la lista (ninguna de <paramref name="yaSugeridas"/>), en orden y con Orden 1, 2, 3…
+        /// <list type="number">
+        /// <item>Delante, las del cheque regalo (NestoAPI#593), como hasta ahora.</item>
+        /// <item>Por probabilidad, las que caben dejando sitio a <paramref name="cupo"/>.</item>
+        /// <item>Si esas ya traen compradores sin contacto este mes, cuentan para el cupo (no se gasta sitio dos veces); lo que
+        /// falte del cupo, con los compradores sin contacto este mes que más tiempo llevan sin hablar con el vendedor.</item>
+        /// <item>Si sobra sitio (cupo cubierto o sin candidatos), otra vez por probabilidad.</item>
+        /// </list>
+        /// Las del cupo van intercaladas a distancias iguales entre las de probabilidad (<see cref="Intercalar{T}"/>).
+        /// </summary>
+        public static List<SugerenciaContactoDTO> ElegirDelDia(IList<SugerenciaContactoDTO> pendientes, IEnumerable<ClienteCarteraContacto> cartera,
+            DateTime hoy, int cuantas, int cupo, IEnumerable<string> yaSugeridas = null)
+        {
+            var resultado = new List<SugerenciaContactoDTO>();
+            if (cuantas <= 0)
+            {
+                return resultado;
+            }
+            List<ClienteCarteraContacto> carteraLista = (cartera ?? Enumerable.Empty<ClienteCarteraContacto>()).ToList();
+            Dictionary<string, ClienteCarteraContacto> porClave = carteraLista
+                .GroupBy(c => c.Clave, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+            var usadas = new HashSet<string>(yaSugeridas ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+            List<SugerenciaContactoDTO> disponibles = (pendientes ?? new List<SugerenciaContactoDTO>())
+                .Where(p => !usadas.Contains(ClienteCarteraContacto.ClaveDe(p.Cliente, p.Contacto)))
+                .ToList();
+
+            List<SugerenciaContactoDTO> delante = disponibles.Where(p => p.Origen == OrigenesSugerenciaContacto.CHEQUE_REGALO).Take(cuantas).ToList();
+            List<SugerenciaContactoDTO> porProbabilidad = disponibles.Where(p => p.Origen != OrigenesSugerenciaContacto.CHEQUE_REGALO).ToList();
+            int libres = cuantas - delante.Count;
+            int reservadas = Math.Min(libres, Math.Max(0, cupo));
+
+            List<SugerenciaContactoDTO> elegidasProbabilidad = porProbabilidad.Take(libres - reservadas).ToList();
+            foreach (SugerenciaContactoDTO s in delante.Concat(elegidasProbabilidad))
+            {
+                _ = usadas.Add(ClienteCarteraContacto.ClaveDe(s.Cliente, s.Contacto));
+            }
+            int yaCubren = delante.Concat(elegidasProbabilidad)
+                .Count(s => porClave.TryGetValue(ClienteCarteraContacto.ClaveDe(s.Cliente, s.Contacto), out ClienteCarteraContacto c) && PendienteCobertura(c, hoy));
+            int faltanCupo = Math.Max(0, Math.Min(libres - elegidasProbabilidad.Count, cupo - yaCubren));
+
+            List<SugerenciaContactoDTO> elegidasCobertura = carteraLista
+                .Where(c => !usadas.Contains(c.Clave) && DisponibleParaCobertura(c, hoy))
+                .GroupBy(c => c.Clave, StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.First())
+                .OrderByDescending(c => DiasDesde(c.UltimoContacto, hoy) ?? int.MaxValue)
+                .ThenByDescending(c => c.Probabilidad)
+                .ThenBy(c => c.Clave, StringComparer.Ordinal)
+                .Take(faltanCupo)
+                .Select(c => SugerenciaCobertura(c, hoy))
+                .ToList();
+            foreach (SugerenciaContactoDTO s in elegidasCobertura)
+            {
+                _ = usadas.Add(ClienteCarteraContacto.ClaveDe(s.Cliente, s.Contacto));
+            }
+
+            int huecos = libres - elegidasProbabilidad.Count - elegidasCobertura.Count;
+            if (huecos > 0)
+            {
+                elegidasProbabilidad.AddRange(porProbabilidad
+                    .Where(p => !usadas.Contains(ClienteCarteraContacto.ClaveDe(p.Cliente, p.Contacto)))
+                    .Take(huecos));
+            }
+
+            resultado.AddRange(delante);
+            resultado.AddRange(Intercalar(elegidasProbabilidad, elegidasCobertura));
+            for (int i = 0; i < resultado.Count; i++)
+            {
+                resultado[i].Orden = i + 1;
+            }
+            return resultado;
+        }
+
+        /// <summary>
+        /// Las de <paramref name="intercaladas"/> repartidas a distancias iguales entre las de <paramref name="base"/> (cada una
+        /// en el centro de su tramo): 4 de cupo en 20 van en los puestos 3, 8, 13 y 18. Ninguna cambia de orden relativo.
+        /// </summary>
+        public static List<T> Intercalar<T>(IList<T> @base, IList<T> intercaladas)
+        {
+            int total = @base.Count + intercaladas.Count;
+            int c = intercaladas.Count;
+            var resultado = new List<T>(total);
+            if (c == 0)
+            {
+                resultado.AddRange(@base);
+                return resultado;
+            }
+            var puestos = new HashSet<int>();
+            for (int j = 0; j < c; j++)
+            {
+                // ⌈(j + ½) · total / c⌉ − 1, en enteros.
+                long numerador = (2L * j + 1) * total;
+                long denominador = 2L * c;
+                _ = puestos.Add((int)((numerador + denominador - 1) / denominador) - 1);
+            }
+            int b = 0, k = 0;
+            for (int i = 0; i < total; i++)
+            {
+                if ((puestos.Contains(i) && k < c) || b >= @base.Count)
+                {
+                    resultado.Add(intercaladas[k++]);
+                }
+                else
+                {
+                    resultado.Add(@base[b++]);
+                }
+            }
+            return resultado;
+        }
+
+        /// <summary>
+        /// Un comprador que entra por el cupo. La prioridad (solo etiqueta) es la de siempre si hoy le tocaba por sí solo;
+        /// si no (dentro de su cadencia), Alta si es buen cliente y Media si no.
+        /// </summary>
+        public static SugerenciaContactoDTO SugerenciaCobertura(ClienteCarteraContacto c, DateTime hoy)
+        {
+            SugerenciaContactoDTO dto = ADTO(c, hoy);
+            dto.Prioridad = Prioridad(c, hoy) ?? (EsBuenCliente(c) ? PrioridadesContacto.ALTA : PrioridadesContacto.MEDIA);
+            dto.Motivo = MotivoCobertura(c, hoy);
+            dto.Origen = OrigenesSugerenciaContacto.COBERTURA;
+            return dto;
+        }
+
+        /// <summary>«Cobertura del mes: sin contacto desde el 12 de septiembre; ha comprado 5 veces en el último año».</summary>
+        public static string MotivoCobertura(ClienteCarteraContacto c, DateTime hoy)
+        {
+            string texto = $"{OrigenesSugerenciaContacto.PREFIJO_MOTIVO_COBERTURA}{SinContactoDesde(c.UltimoContacto, hoy)}; ha comprado {Veces(c.Pedidos12Meses)} en el último año";
+            return texto.Length > LONGITUD_MAXIMA_MOTIVO ? texto.Substring(0, LONGITUD_MAXIMA_MOTIVO) : texto;
         }
 
         /// <summary>Los datos del cliente (sin prioridad, orden ni motivo).</summary>
@@ -294,6 +515,7 @@ namespace NestoAPI.Infraestructure.Rapports
             // El vendedor solo llama en laborables (lunes a viernes sin festivos; los viernes de reunión, de momento,
             // cuentan como uno más): lo que falta del mes se reparte entre los que quedan, hoy incluido.
             int objetivoHoy = restantes > 0 ? (int)Math.Ceiling((double)faltan / restantes) : 0;
+            int sinContactoMes = CompradoresSinContactoMes(cartera, hoy);
 
             return new RitmoContactosDTO
             {
@@ -307,6 +529,8 @@ namespace NestoAPI.Infraestructure.Rapports
                 PendientesAlta = pendientes.Count(p => p.Prioridad == PrioridadesContacto.ALTA),
                 PendientesMedia = pendientes.Count(p => p.Prioridad == PrioridadesContacto.MEDIA),
                 PendientesBaja = pendientes.Count(p => p.Prioridad == PrioridadesContacto.BAJA),
+                CompradoresSinContactoMes = sinContactoMes,
+                CupoCoberturaHoy = CupoCobertura(sinContactoMes, hoy, esLaborable),
                 Frase = Frase(contactos, objetivoMes, objetivoHoy, restantes)
             };
         }

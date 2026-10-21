@@ -34,6 +34,11 @@ namespace NestoAPI.Infraestructure.Rapports
         public int PendientesAlta { get; set; }
         public int PendientesMedia { get; set; }
         public int PendientesBaja { get; set; }
+        /// <summary>NestoAPI#677: compradores (compra en 12 meses) sin ningún contacto desde el día 1 del mes.</summary>
+        public int CompradoresSinContactoMes { get; set; }
+        /// <summary>NestoAPI#677: sitios de la lista de hoy reservados para ellos: ⌈CompradoresSinContactoMes / DiasLaborablesRestantesMes⌉
+        /// (el último laborable, todos).</summary>
+        public int CupoCoberturaHoy { get; set; }
         public string Frase { get; set; }
     }
 
@@ -59,7 +64,7 @@ namespace NestoAPI.Infraestructure.Rapports
         /// <summary>1, 2, 3… en el orden en que conviene llamar.</summary>
         public int Orden { get; set; }
         public string Motivo { get; set; }
-        /// <summary>Probabilidad del modelo actual (0 a 1). Solo desempata y decide la prioridad Máxima.</summary>
+        /// <summary>Probabilidad del modelo actual (0 a 1). Desde NestoAPI#677 ordena la lista (y decide la prioridad Máxima).</summary>
         public float Probabilidad { get; set; }
         /// <summary>Días desde el último rapport en el que se habló con el cliente (Estado 0). Null si no consta ninguno.</summary>
         public int? DiasDesdeUltimoContacto { get; set; }
@@ -76,6 +81,9 @@ namespace NestoAPI.Infraestructure.Rapports
         /// <summary>NestoAPI#593: en los últimos días de una campaña, el cliente tiene el cheque regalo sin usar (el motivo
         /// empieza por «Tiene un cheque de 50 € sin usar hasta el 07/11»). Ver <see cref="ImpulsoChequesRegaloContacto"/>.</summary>
         public bool TieneChequeRegalo { get; set; }
+        /// <summary>NestoAPI#677: por qué entró en la lista: "Probabilidad", "Cobertura" (cupo de compradores sin contacto este
+        /// mes) o "ChequeRegalo". Ver <see cref="OrigenesSugerenciaContacto"/>. Campo nuevo: los clientes que no lo lean no cambian.</summary>
+        public string Origen { get; set; }
     }
 
     /// <summary>NestoAPI#603: GET api/Clientes/SugerenciasContacto/Uso, una fila por vendedor.</summary>
@@ -89,6 +97,19 @@ namespace NestoAPI.Infraestructure.Rapports
         public double PorcentajeAtendidas { get; set; }
         /// <summary>Rapports del vendedor en el periodo con Estado 0 (se habló) o 1 (no contestó), de cualquier tipo.</summary>
         public int RapportsTotales { get; set; }
+        /// <summary>NestoAPI#677: sugeridas y atendidas por origen (Probabilidad, Cobertura, ChequeRegalo). Antes del corte 1
+        /// todo sale como Probabilidad: para comparar, pedir desde el día del despliegue.</summary>
+        public List<UsoOrigenSugerenciasContactoDTO> PorOrigen { get; set; } = new List<UsoOrigenSugerenciasContactoDTO>();
+    }
+
+    /// <summary>NestoAPI#677: una fila de <see cref="UsoSugerenciasContactoDTO.PorOrigen"/>.</summary>
+    public class UsoOrigenSugerenciasContactoDTO
+    {
+        public string Origen { get; set; }
+        public int Sugeridas { get; set; }
+        public int Atendidas { get; set; }
+        /// <summary>Atendidas / Sugeridas (0 a 1).</summary>
+        public double PorcentajeAtendidas { get; set; }
     }
 
     /// <summary>NestoAPI#603: un cliente de la cartera con lo que el motor necesita para decidir.</summary>
