@@ -129,6 +129,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         ? Constantes.Pedidos.RUTA_AGENCIA_00
                         : cliente.ruta.Trim(),
                 servirJunto = cliente.servirJunto,
+                // NestoAPI#686: al contado no hay «Mantener junto» (POST api/PedidosVenta lo rechazaría); abajo.
                 mantenerJunto = cliente.mantenerJunto,
                 noComisiona = cliente.noComisiona,
                 vendedor = cliente.vendedor?.Trim(),
@@ -147,6 +148,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 EsPresupuesto = false,
                 CreadoSinPasarValidacion = false
             };
+            // NestoAPI#686: el «Mantener junto» de la ficha no vale para un pedido al contado (se cobra en cada entrega).
+            if (pedido.mantenerJunto && MantenerJuntoContado.EsContado(pedido))
+            {
+                pedido.mantenerJunto = false;
+            }
 
             foreach (LineaPedidoClienteRequest lineaPedida in peticion.Lineas ?? new List<LineaPedidoClienteRequest>())
             {

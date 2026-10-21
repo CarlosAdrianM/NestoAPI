@@ -29,6 +29,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
     {
         internal const string MOTIVO_PLAZOS = "Los plazos de pago no son los de la ficha del cliente: el pedido se factura de una vez, al completarlo o todo ahora.";
         internal const string MOTIVO_NOTA_ENTREGA = "Una nota de entrega no se factura.";
+        /// <summary>NestoAPI#686: al contado se cobra en cada entrega, así que «al completar» no se puede elegir.</summary>
+        internal const string MOTIVO_CONTADO = MantenerJuntoContado.MENSAJE;
 
         private static readonly byte[] TODOS =
         {
@@ -68,23 +70,28 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         }
 
         /// <summary>El núcleo puro: los tres modos con su permiso y el motivo de los que no.</summary>
-        public static List<ModoFacturacionPermitidoDTO> Calcular(bool unaSolaFactura, bool notaEntrega)
+        /// <param name="contado">NestoAPI#686: pedido al contado (<see cref="MantenerJuntoContado.EsContado(PedidoVentaDTO)"/>).</param>
+        public static List<ModoFacturacionPermitidoDTO> Calcular(bool unaSolaFactura, bool notaEntrega, bool contado = false)
         {
             return TODOS.Select(modo => new ModoFacturacionPermitidoDTO
             {
                 Modo = modo,
                 Nombre = Constantes.Pedidos.ModosFacturacion.Nombre(modo),
-                Motivo = MotivoNoPermitido(modo, unaSolaFactura, notaEntrega)
+                Motivo = MotivoNoPermitido(modo, unaSolaFactura, notaEntrega, contado)
             })
             .Select(m => { m.Permitido = m.Motivo == null; return m; })
             .ToList();
         }
 
-        private static string MotivoNoPermitido(byte modo, bool unaSolaFactura, bool notaEntrega)
+        private static string MotivoNoPermitido(byte modo, bool unaSolaFactura, bool notaEntrega, bool contado)
         {
             if (notaEntrega)
             {
                 return MOTIVO_NOTA_ENTREGA;
+            }
+            if (contado && modo == Constantes.Pedidos.ModosFacturacion.AL_COMPLETAR)
+            {
+                return MOTIVO_CONTADO;
             }
             if (unaSolaFactura && modo == Constantes.Pedidos.ModosFacturacion.POR_ENTREGAS)
             {
@@ -99,16 +106,18 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// <summary>
         /// El modo a proponer: el que rige hoy en el pedido (el informado o, si no, el derivado de
         /// mantenerJunto sobre el guardado) si se puede elegir; si no, «al completar», que es lo que los
-        /// triggers hacían hasta ahora con esos plazos.
+        /// triggers hacían hasta ahora con esos plazos. NestoAPI#686: al contado «al completar» no vale y se propone
+        /// «por entregas» (Nesto y NestoApp desmarcan «Mantener junto» con la sugerencia).
         /// </summary>
         public static Sugerencia Sugerir(PedidoVentaDTO pedido, byte? modoAlmacenado, bool plazosSonDeLaFicha)
         {
             bool unaSolaFactura = PlazosExigenUnaSolaFactura(pedido?.plazosPago, pedido?.periodoFacturacion, plazosSonDeLaFicha);
-            List<ModoFacturacionPermitidoDTO> modos = Calcular(unaSolaFactura, pedido?.notaEntrega == true);
+            List<ModoFacturacionPermitidoDTO> modos = Calcular(unaSolaFactura, pedido?.notaEntrega == true, MantenerJuntoContado.EsContado(pedido));
             List<byte> permitidos = Permitidos(modos);
             byte actual = Constantes.Pedidos.ModosFacturacion.Efectivo(pedido?.modoFacturacion ?? modoAlmacenado, pedido?.mantenerJunto == true);
             byte sugerido = permitidos.Contains(actual) ? actual
                 : permitidos.Contains(Constantes.Pedidos.ModosFacturacion.AL_COMPLETAR) ? Constantes.Pedidos.ModosFacturacion.AL_COMPLETAR
+                : permitidos.Contains(Constantes.Pedidos.ModosFacturacion.POR_ENTREGAS) ? Constantes.Pedidos.ModosFacturacion.POR_ENTREGAS
                 : actual;
             return new Sugerencia
             {

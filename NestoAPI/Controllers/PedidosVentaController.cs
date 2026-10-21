@@ -918,6 +918,13 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest(modoFacturacionInvalido);
             }
+            // NestoAPI#686 (pedido 928220): al contado no se puede ACTIVAR «Mantener junto». Si el pedido ya estaba así,
+            // se respeta (su reembolso cobra todo lo pendiente en el envío que lo completa).
+            string contadoMantenerJunto = MantenerJuntoContado.MotivoRechazoAlModificar(pedido, cabPedidoVta);
+            if (contadoMantenerJunto != null)
+            {
+                return BadRequest(contadoMantenerJunto);
+            }
             // NestoAPI#533: con picking (o albarán de hoy) el modo ya no se cambia; el cliente ofrece pedírselo a almacén.
             if (Constantes.Pedidos.ModosServicio.Efectivo(pedido.modoServicio, pedido.servirJunto) != modoEfectivoAnterior)
             {
@@ -1973,6 +1980,12 @@ namespace NestoAPI.Controllers
             if (modoFacturacionInvalido != null)
             {
                 return BadRequest(modoFacturacionInvalido);
+            }
+            // NestoAPI#686 (pedido 928220): un pedido al contado no nace con «Mantener junto».
+            string contadoMantenerJunto = MantenerJuntoContado.MotivoRechazoAlCrear(pedido);
+            if (contadoMantenerJunto != null)
+            {
+                return BadRequest(contadoMantenerJunto);
             }
 
             // NestoAPI#176: bloquear creación de pedido si servirJunto=false y alguna
