@@ -475,6 +475,14 @@ namespace NestoAPI.Models
             public static readonly DateTime FECHA_CORTE_NO_COBRAR_COMISION_REEMBOLSO = new DateTime(2026, 9, 1);
 
             /// <summary>
+            /// NestoAPI#684: ninguna línea de pedido de venta puede tener fecha de entrega anterior a esta (la misma
+            /// que el CHECK CK_LinPedidoVta_FechaEntregaDesde2000). Pedido 928623: 19/10/2027 se grabó como 19/10/1926 y
+            /// se sirvió al día siguiente. Las fechas futuras (2099...) sí valen: se usan para retener líneas.
+            /// La comprobación vive en <see cref="Infraestructure.PedidosVenta.ValidadorFechaEntrega"/>.
+            /// </summary>
+            public static readonly DateTime FECHA_ENTREGA_MINIMA = new DateTime(2000, 1, 1);
+
+            /// <summary>
             /// NestoAPI#482: modo de servicio del pedido (CabPedidoVta.ModoServicio). ServirJunto (bit)
             /// se queda corto; se mantiene como columna coherente (modo 1 ⇔ true) durante la transición.
             /// <para>NULL en BD = "no informado": manda ServirJunto (true → 1, false → 2). Así los

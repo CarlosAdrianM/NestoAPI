@@ -1,6 +1,10 @@
+using NestoAPI.Infraestructure.PedidosVenta;
 using System.Data.Common;
 using System.Data.Entity;
+using System.Data.Entity.Infrastructure;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace NestoAPI.Models
 {
@@ -58,6 +62,34 @@ namespace NestoAPI.Models
         {
             return Database.ExecuteSqlCommand(SQL_DEVOLVER_NUMERO_PEDIDO,
                 new System.Data.SqlClient.SqlParameter("@numero", numero)) > 0;
+        }
+
+        // NestoAPI#684: red de seguridad de la fecha de entrega. El POST y el PUT de pedidos ya la validan a la entrada
+        // con un 400 claro; aquí se para cualquier otro camino (notas de entrega, líneas partidas, copias...) que cree o
+        // cambie la fecha de una línea de venta a una anterior al 01/01/2000, con el mismo mensaje y sin llegar al CHECK
+        // de SQL. Las líneas que se modifican sin tocar la fecha no se miran (hay históricas facturadas con 1899-1997).
+        public override int SaveChanges()
+        {
+            ComprobarFechasEntregaLineasVenta();
+            return base.SaveChanges();
+        }
+
+        public override Task<int> SaveChangesAsync(CancellationToken cancellationToken)
+        {
+            ComprobarFechasEntregaLineasVenta();
+            return base.SaveChangesAsync(cancellationToken);
+        }
+
+        private void ComprobarFechasEntregaLineasVenta()
+        {
+            foreach (DbEntityEntry<LinPedidoVta> entrada in ChangeTracker.Entries<LinPedidoVta>())
+            {
+                if (ValidadorFechaEntrega.HayQueComprobarAlGuardar(entrada.State,
+                    () => entrada.Property(l => l.Fecha_Entrega).IsModified))
+                {
+                    ValidadorFechaEntrega.Comprobar(entrada.Entity);
+                }
+            }
         }
     }
 }

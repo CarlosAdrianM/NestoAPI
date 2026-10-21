@@ -782,6 +782,14 @@ namespace NestoAPI.Controllers
             // (el correo de modificación es el único canal que los clientes muestran seguro hoy).
             var avisosCorreoModificacion = new List<string>();
 
+            // NestoAPI#684 (pedido 928623): 19/10/2027 llegó como 19/10/1926 y se sirvió al día siguiente. Una fecha de
+            // entrega anterior al 01/01/2000 es un 400 con el producto y la fecha, antes de tocar nada.
+            string fechaEntregaNoValida = ValidadorFechaEntrega.Validar(pedido?.Lineas);
+            if (fechaEntregaNoValida != null)
+            {
+                return BadRequest(fechaEntregaNoValida);
+            }
+
             CabPedidoVta cabPedidoVta = db.CabPedidoVtas.SingleOrDefault(p => p.Empresa == pedido.empresa && p.Número == pedido.numero);
 
             // NestoAPI#377: sin esta guarda, db.Entry(null) lanza ArgumentNullException y el
@@ -2845,7 +2853,8 @@ namespace NestoAPI.Controllers
             {
                 return $"La línea del producto {lineaSinTipo.Producto?.Trim()} no lleva tipo de línea";
             }
-            return ValidarRangosLineas(pedido);
+            // NestoAPI#684: fecha de entrega no anterior al 01/01/2000 (en el PUT se mira al principio del método)
+            return ValidadorFechaEntrega.Validar(pedido.Lineas) ?? ValidarRangosLineas(pedido);
         }
 
         /// <summary>
