@@ -36,9 +36,10 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         Task GuardarDescartadoVendedorProvisional(int id);
         /// <summary>
         /// Productos que no se le vuelven a sugerir a este cliente desde <paramref name="desde"/>: los que dijo «No le interesa»
-        /// y los que el vendedor quitó («DescartadoVendedor»).
+        /// y los que el vendedor quitó («DescartadoVendedor»). NestoAPI#669: con la familia y si fue «Quitar», en la MISMA
+        /// consulta (dos «Quitar» de una familia la excluyen entera para ese cliente).
         /// </summary>
-        Task<HashSet<string>> LeerRechazados(string empresa, string cliente, DateTime desde);
+        Task<List<RechazoCliente>> LeerRechazados(string empresa, string cliente, DateTime desde);
         Task<List<CompraDiaReposicion>> LeerComprasCliente(string empresa, string cliente, DateTime desde, DateTime hasta);
         /// <summary>Productos en pedidos pendientes o en curso del cliente.</summary>
         Task<HashSet<string>> LeerPendientesCliente(string empresa, string cliente);
@@ -120,11 +121,16 @@ SELECT RTRIM(Cliente) AS Cliente, RTRIM(Producto) AS Producto, Afinidad, Rango F
         internal const string SQL_GUARDAR_RESPUESTA = @"
 UPDATE dbo.SugerenciasProductosMostradas SET Respuesta = @p1, FechaRespuesta = GETDATE() WHERE Id = @p0";
 
+        // NestoAPI#669: con la familia del producto y si fue «Quitar» (también la provisional de antes del script Issue670b),
+        // para excluir la familia entera tras dos «Quitar»: misma consulta, sin otro viaje a la BD.
         internal const string SQL_RECHAZADOS = @"
-SELECT DISTINCT RTRIM(m.Producto)
+SELECT RTRIM(m.Producto) AS Producto, MAX(RTRIM(p.Familia)) AS Familia,
+       CAST(MAX(CASE WHEN m.Respuesta = 'DescartadoVendedor' OR ISNULL(m.Texto, N'') LIKE N'[[]DescartadoVendedor] %' THEN 1 ELSE 0 END) AS bit) AS Quitado
 FROM dbo.SugerenciasProductosMostradas m
 JOIN dbo.SugerenciasProductosSesiones s ON s.Id = m.SesionId
-WHERE s.Empresa = @p0 AND s.Cliente = @p1 AND m.Respuesta IN ('NoLeInteresa', 'DescartadoVendedor') AND m.FechaRespuesta >= @p2";
+LEFT JOIN dbo.Productos p WITH (NOLOCK) ON p.Empresa = s.Empresa AND p.[Número] = m.Producto
+WHERE s.Empresa = @p0 AND s.Cliente = @p1 AND m.Respuesta IN ('NoLeInteresa', 'DescartadoVendedor') AND m.FechaRespuesta >= @p2
+GROUP BY RTRIM(m.Producto)";
 
         /// <summary>Nesto#537: 1 si el CK de Respuesta admite «DescartadoVendedor» o no hay CK (con él, cualquier valor cabe).</summary>
         internal const string SQL_ADMITE_DESCARTADO_VENDEDOR = @"
@@ -303,12 +309,12 @@ WHERE p.Decision = 'Potenciar' AND p.PotenciarHasta >= @p0";
             => db.Database.ExecuteSqlCommandAsync(SugerenciasProductosSql.SQL_GUARDAR_DESCARTADO_VENDEDOR_PROVISIONAL,
                 SugerenciasProductosSql.Entero("@p0", id));
 
-        public async Task<HashSet<string>> LeerRechazados(string empresa, string cliente, DateTime desde)
+        public async Task<List<RechazoCliente>> LeerRechazados(string empresa, string cliente, DateTime desde)
         {
-            List<string> productos = await db.Database.SqlQuery<string>(SugerenciasProductosSql.SQL_RECHAZADOS,
+            List<RechazoCliente> filas = await db.Database.SqlQuery<RechazoCliente>(SugerenciasProductosSql.SQL_RECHAZADOS,
                 SugerenciasProductosSql.Char("@p0", empresa, 3), SugerenciasProductosSql.Varchar("@p1", cliente, 10),
                 SugerenciasProductosSql.Fecha("@p2", desde)).ToListAsync().ConfigureAwait(false);
-            return new HashSet<string>(productos.Where(p => p != null).Select(p => p.Trim()), StringComparer.OrdinalIgnoreCase);
+            return filas.Where(f => f?.Producto != null).ToList();
         }
 
         // La consulta de #661 (un cliente, búsqueda por los índices que empiezan por Nº Cliente: milisegundos).

@@ -43,6 +43,27 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         /// <summary>Las que no se vuelven a sugerir a ese cliente en 60 días y dejan hueco para una sustituta.</summary>
         public static bool ExcluyenSesentaDias(string respuesta)
             => respuesta == NO_LE_INTERESA || respuesta == DESCARTADO_VENDEDOR;
+
+        /// <summary>
+        /// NestoAPI#669: «🚫 Quitar» del vendedor, también la provisional de antes del script Issue670b («NoLeInteresa» con
+        /// <see cref="MARCA_DESCARTADO_VENDEDOR"/> delante del Texto).
+        /// </summary>
+        public static bool EsQuitada(string respuesta, string texto)
+            => respuesta == DESCARTADO_VENDEDOR
+               || (respuesta == NO_LE_INTERESA && texto != null && texto.StartsWith(MARCA_DESCARTADO_VENDEDOR, StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// NestoAPI#670/#669: un producto que no se le vuelve a sugerir a un cliente («No le interesa» o «🚫 Quitar» en los últimos
+    /// 60 días), con su familia, para que dos «Quitar» de la misma familia la excluyan entera.
+    /// </summary>
+    public class RechazoCliente
+    {
+        public string Producto { get; set; }
+        /// <summary>Productos.Familia (código). Null si no hay ficha.</summary>
+        public string Familia { get; set; }
+        /// <summary>Si fue «🚫 Quitar» (DescartadoVendedor, también la provisional), no «No le interesa».</summary>
+        public bool Quitado { get; set; }
     }
 
     /// <summary>NestoAPI#670: aplicaciones que pueden pedir sugerencias.</summary>

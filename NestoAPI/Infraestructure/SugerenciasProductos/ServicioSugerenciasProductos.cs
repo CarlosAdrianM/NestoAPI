@@ -270,9 +270,10 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
                 hoy.AddMonths(-MotorSugerenciasProductos.MESES_HISTORIAL), hoy.AddDays(1)).ConfigureAwait(false) ?? new List<CompraDiaReposicion>();
             HashSet<string> pendientes = await repositorio.LeerPendientesCliente(empresa, cliente).ConfigureAwait(false)
                 ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            HashSet<string> rechazados = await repositorio.LeerRechazados(empresa, cliente,
-                hoy.AddDays(-MotorSugerenciasProductos.DIAS_SIN_REPETIR_RECHAZO)).ConfigureAwait(false)
-                ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            List<RechazoCliente> rechazos = (await repositorio.LeerRechazados(empresa, cliente,
+                hoy.AddDays(-MotorSugerenciasProductos.DIAS_SIN_REPETIR_RECHAZO)).ConfigureAwait(false) ?? new List<RechazoCliente>())
+                .Where(r => r != null && !string.IsNullOrWhiteSpace(r.Producto)).ToList();
+            var rechazados = new HashSet<string>(rechazos.Select(r => r.Producto.Trim()), StringComparer.OrdinalIgnoreCase);
             foreach (SugerenciaMostrada rechazada in mostradas.Where(m => RespuestasSugerencia.ExcluyenSesentaDias(m.Respuesta)))
             {
                 _ = rechazados.Add(rechazada.Producto.Trim());
@@ -289,7 +290,8 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
                 .Concat(pares.Select(p => p.ProductoA)).Concat(pares.Select(p => p.ProductoB))
                 .Concat(potenciar.Select(p => p.Producto))
                 .Concat(afinidades.Select(a => a.Producto))
-                .Concat(sinResponder.Select(m => m.Producto));
+                .Concat(sinResponder.Select(m => m.Producto))
+                .Concat(mostradas.Where(m => RespuestasSugerencia.EsQuitada(m.Respuesta, m.Texto)).Select(m => m.Producto));
             Dictionary<string, FichaProductoSugerencia> fichas = await repositorio.LeerFichas(empresa, productosConFicha).ConfigureAwait(false)
                 ?? new Dictionary<string, FichaProductoSugerencia>(StringComparer.OrdinalIgnoreCase);
             fichas = new Dictionary<string, FichaProductoSugerencia>(fichas, StringComparer.OrdinalIgnoreCase);
@@ -299,9 +301,13 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
                 : await repositorio.LeerClientesPerfil(perfil.Item1, perfil.Item2).ConfigureAwait(false) ?? new Dictionary<string, int>();
             clientesPerfil = new Dictionary<string, int>(clientesPerfil, StringComparer.OrdinalIgnoreCase);
 
+            // NestoAPI#669: dos «🚫 Quitar» de la misma familia para este cliente la excluyen entera (en todas las fuentes, en
+            // las sustitutas de #682 y en la exploración: todo pasa por Vale)
+            HashSet<string> familiasExcluidas = MotorSugerenciasProductos.FamiliasQuitadas(rechazos, mostradas, fichas);
+
             bool Vale(string producto) => MotorSugerenciasProductos.MotivoDescarte(producto,
                 fichas.TryGetValue(producto?.Trim() ?? string.Empty, out FichaProductoSugerencia f) ? f : null,
-                filtro, enCarrito, pendientes, rechazados) == null;
+                filtro, enCarrito, pendientes, rechazados, familiasExcluidas) == null;
 
             // Lo ya enseñado en la sesión no vuelve como nuevo (se haya respondido o no)
             var yaEnsenados = new HashSet<string>(mostradas.Select(m => m.Producto.Trim()), StringComparer.OrdinalIgnoreCase);

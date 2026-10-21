@@ -20,7 +20,7 @@ namespace NestoAPI.Tests.Infrastructure
     /// de lo mostrado, lo respondido y lo que entra en el pedido. Datos inventados; sin BD.
     /// </summary>
     [TestClass]
-    public class SugerenciasProductosTests
+    public partial class SugerenciasProductosTests
     {
         private static readonly DateTime HOY = new DateTime(2026, 10, 19, 10, 0, 0);
         private const string CLIENTE = "1001";
@@ -37,6 +37,8 @@ namespace NestoAPI.Tests.Infrastructure
         private HashSet<string> _sinStock;
         private HashSet<string> _pendientes;
         private HashSet<string> _rechazados;
+        /// <summary>NestoAPI#669: (rechazo, cliente, FechaRespuesta).</summary>
+        private List<Tuple<RechazoCliente, string, DateTime>> _rechazosConFamilia;
         private DatosGrupoVendedor _datosVendedor;
         private bool _existenTablas;
         private bool _admiteDescartadoVendedor;
@@ -56,6 +58,7 @@ namespace NestoAPI.Tests.Infrastructure
             _sinStock = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             _pendientes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             _rechazados = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            _rechazosConFamilia = new List<Tuple<RechazoCliente, string, DateTime>>();
             _datosVendedor = new DatosGrupoVendedor { EstadoVendedor = 0, VendedorEsteticaCliente = "SAN", VendedorPeluqueriaCliente = "PEL" };
 
             _fichas = new Dictionary<string, FichaProductoSugerencia>(StringComparer.OrdinalIgnoreCase);
@@ -125,8 +128,10 @@ namespace NestoAPI.Tests.Infrastructure
                 m.Texto = RespuestasSugerencia.MARCA_DESCARTADO_VENDEDOR + m.Texto;
                 return Task.CompletedTask;
             });
+            // Lo mismo que SQL_RECHAZADOS: los de ese cliente con FechaRespuesta >= desde
             A.CallTo(() => _repo.LeerRechazados(A<string>._, A<string>._, A<DateTime>._))
-                .ReturnsLazily(() => Task.FromResult(new HashSet<string>(_rechazados, StringComparer.OrdinalIgnoreCase)));
+                .ReturnsLazily((string e, string cliente, DateTime desde) => Task.FromResult(_rechazados.Select(p => new RechazoCliente { Producto = p })
+                    .Concat(_rechazosConFamilia.Where(r => r.Item2 == cliente && r.Item3 >= desde).Select(r => r.Item1)).ToList()));
             A.CallTo(() => _repo.LeerComprasCliente(A<string>._, A<string>._, A<DateTime>._, A<DateTime>._)).ReturnsLazily(() => Task.FromResult(_compras.ToList()));
             A.CallTo(() => _repo.LeerPendientesCliente(A<string>._, A<string>._))
                 .ReturnsLazily(() => Task.FromResult(new HashSet<string>(_pendientes, StringComparer.OrdinalIgnoreCase)));

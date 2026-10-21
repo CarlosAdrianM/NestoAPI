@@ -55,6 +55,14 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         internal const string DESCARTE_EN_CARRITO = "Ya está en el carrito.";
         internal const string DESCARTE_PENDIENTE = "Ya lo tiene en un pedido pendiente de servir.";
         internal const string DESCARTE_RECHAZADO = "No le interesó hace menos de 60 días.";
+        internal const string DESCARTE_FAMILIA_QUITADA = "El vendedor ya ha quitado otros productos de esta familia a este cliente.";
+
+        /// <summary>
+        /// NestoAPI#669 (decisión de Carlos, 21/10/26): con «🚫 Quitar» en al menos estos productos distintos de una familia para
+        /// un cliente, dentro de los <see cref="DIAS_SIN_REPETIR_RECHAZO"/> días, no se le sugiere NADA de esa familia (solo a
+        /// ese cliente) mientras sigan dentro de la ventana. Caso típico: marcas que no se pueden vender a distribuidores.
+        /// </summary>
+        public const int MINIMO_QUITADOS_FAMILIA = 2;
 
         /// <summary>El orden en que se cogen las fuentes al mezclar.</summary>
         public static readonly string[] ORDEN_FUENTES = FuentesNucleo.ORDEN;
@@ -111,8 +119,9 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         public static bool EsSugerible(FichaProductoSugerencia ficha) => ReglasSugerencias.EsSugerible(ficha);
 
         /// <summary>Por qué no se puede sugerir el producto (null si se puede; el stock va aparte).</summary>
+        /// <param name="familiasExcluidas">NestoAPI#669: familias que el vendedor ha quitado a este cliente (<see cref="FamiliasQuitadas"/>).</param>
         public static string MotivoDescarte(string producto, FichaProductoSugerencia ficha, FiltroGrupoVendedor filtro,
-            ISet<string> carrito, ISet<string> pendientes, ISet<string> rechazados)
+            ISet<string> carrito, ISet<string> pendientes, ISet<string> rechazados, ISet<string> familiasExcluidas = null)
         {
             string id = producto?.Trim();
             if (ficha == null)
@@ -143,7 +152,48 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
             {
                 return DESCARTE_RECHAZADO;
             }
+            if (familiasExcluidas != null && !string.IsNullOrWhiteSpace(ficha.Familia) && familiasExcluidas.Contains(ficha.Familia.Trim()))
+            {
+                return DESCARTE_FAMILIA_QUITADA;
+            }
             return null;
+        }
+
+        /// <summary>
+        /// NestoAPI#669: las familias con «🚫 Quitar» en al menos <see cref="MINIMO_QUITADOS_FAMILIA"/> productos distintos para
+        /// este cliente: los de la ventana de 60 días (<paramref name="rechazos"/>, de la consulta de excluidos) y los de la
+        /// sesión. La familia, la de la consulta o, si no viene, la de la ficha. «No le interesa» no cuenta.
+        /// </summary>
+        public static HashSet<string> FamiliasQuitadas(IEnumerable<RechazoCliente> rechazos, IEnumerable<SugerenciaMostrada> mostradasSesion,
+            IDictionary<string, FichaProductoSugerencia> fichas)
+        {
+            var familiaDe = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            string Familia(string producto, string familia)
+            {
+                if (!string.IsNullOrWhiteSpace(familia))
+                {
+                    return familia.Trim();
+                }
+                return fichas != null && fichas.TryGetValue(producto, out FichaProductoSugerencia f) && !string.IsNullOrWhiteSpace(f?.Familia) ? f.Familia.Trim() : null;
+            }
+            foreach (RechazoCliente r in (rechazos ?? Enumerable.Empty<RechazoCliente>()).Where(r => r != null && r.Quitado && !string.IsNullOrWhiteSpace(r.Producto)))
+            {
+                string producto = r.Producto.Trim();
+                familiaDe[producto] = Familia(producto, r.Familia);
+            }
+            foreach (SugerenciaMostrada m in (mostradasSesion ?? Enumerable.Empty<SugerenciaMostrada>())
+                .Where(m => m != null && !string.IsNullOrWhiteSpace(m.Producto) && RespuestasSugerencia.EsQuitada(m.Respuesta, m.Texto)))
+            {
+                string producto = m.Producto.Trim();
+                if (!familiaDe.TryGetValue(producto, out string familia) || familia == null)
+                {
+                    familiaDe[producto] = Familia(producto, null);
+                }
+            }
+            return new HashSet<string>(familiaDe.Values.Where(f => f != null)
+                .GroupBy(f => f, StringComparer.OrdinalIgnoreCase)
+                .Where(g => g.Count() >= MINIMO_QUITADOS_FAMILIA)
+                .Select(g => g.Key), StringComparer.OrdinalIgnoreCase);
         }
 
         /// <summary>
