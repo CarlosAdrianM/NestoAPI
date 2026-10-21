@@ -10,6 +10,14 @@ namespace ModeloSugerenciasProductos.Evaluacion;
 /// </summary>
 public static class Diversidad
 {
+    /// <summary>
+    /// NestoAPI#671/#683: ÚNICA fuente de verdad de si se aplica la diversidad al orden del modelo. La usan Calcular
+    /// (MotorSugerenciasProductos.APLICAR_DIVERSIDAD) y la evaluación del entrenamiento (la puerta mide el top-3 tal y como lo
+    /// ve el vendedor). APAGADA desde el informe del 20/10/26 (P@3 26,1 % sin ella frente a 17,2 % con ella). static readonly y
+    /// no const para que el código apagado siga compilándose sin avisos.
+    /// </summary>
+    public static readonly bool APLICAR = false;
+
     public const int VISIBLES = 3;
     public const int MAXIMO_HABITUALES = 1;
     public const int MAXIMO_POR_FAMILIA = 1;
@@ -43,6 +51,17 @@ public static class Diversidad
         }
         return elegidos;
     }
+
+    /// <summary>
+    /// NestoAPI#683: el top-3 de una sesión tal y como lo ve el vendedor: con la diversidad si <see cref="APLICAR"/>; si no, las
+    /// mejores por <paramref name="puntuacion"/> (empates por producto).
+    /// </summary>
+    public static List<string> TopComoLaApi(IEnumerable<FilaEntrenamiento> filas, Func<FilaEntrenamiento, double> puntuacion, int k = VISIBLES)
+        => APLICAR ? Top(filas, puntuacion, k) : SinDiversidad(filas, puntuacion, k);
+
+    /// <summary>NestoAPI#683: el top-k sin la diversidad (las mejores; empates por producto).</summary>
+    public static List<string> SinDiversidad(IEnumerable<FilaEntrenamiento> filas, Func<FilaEntrenamiento, double> puntuacion, int k = VISIBLES)
+        => filas.OrderByDescending(puntuacion).ThenBy(f => f.Producto, StringComparer.OrdinalIgnoreCase).Take(k).Select(f => f.Producto).ToList();
 
     /// <summary>Las filas de una sesión ordenadas por <paramref name="puntuacion"/> (empates por producto), con la diversidad.</summary>
     public static List<string> Top(IEnumerable<FilaEntrenamiento> filas, Func<FilaEntrenamiento, double> puntuacion, int k = VISIBLES)

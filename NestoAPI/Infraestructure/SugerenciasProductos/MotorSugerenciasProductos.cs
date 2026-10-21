@@ -68,10 +68,11 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
 
         /// <summary>
         /// La diversidad del plan (1 habitual y 1 por familia) se queda APAGADA: con los datos del informe del 20/10/26 el top-3
-        /// sin ella acierta más (P@3 26,1 % frente a 17,2 %). Cambiar a true para volver a aplicarla al orden del modelo.
-        /// (static readonly y no const para que el código apagado siga compilándose sin avisos.)
+        /// sin ella acierta más (P@3 26,1 % frente a 17,2 %). NestoAPI#683: el valor vive en el núcleo
+        /// (<see cref="ModeloSugerenciasProductos.Evaluacion.Diversidad.APLICAR"/>) para que la puerta del entrenamiento mida lo mismo
+        /// que ve el vendedor; cambiarlo allí.
         /// </summary>
-        public static readonly bool APLICAR_DIVERSIDAD = false;
+        public static readonly bool APLICAR_DIVERSIDAD = ModeloSugerenciasProductos.Evaluacion.Diversidad.APLICAR;
         /// <summary>Exploración ε-greedy: en este % de las sesiones (decidido por sesión: estable entre llamadas) el hueco
         /// <see cref="POSICION_EXPLORACION"/> se elige al azar entre los puestos <see cref="PUESTO_EXPLORACION_DESDE"/> a
         /// <see cref="PUESTO_EXPLORACION_HASTA"/> del orden del modelo (Exploracion = 1 en el registro).</summary>

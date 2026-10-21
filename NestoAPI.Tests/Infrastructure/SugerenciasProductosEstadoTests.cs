@@ -408,6 +408,27 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void Diversidad_UnaSolaFuenteDeVerdad_LaPuertaMideComoCalcular()
+        {
+            Assert.AreEqual(Diversidad.APLICAR, MotorSugerenciasProductos.APLICAR_DIVERSIDAD, "Calcular sigue a la constante del núcleo");
+            Assert.IsFalse(Diversidad.APLICAR, "Decisión de Carlos (21/10): sin diversidad");
+            // Tres de la misma familia y habituales: sin diversidad salen las tres mejores; con ella, no
+            var filas = new List<FilaEntrenamiento>
+            {
+                new FilaEntrenamiento { Producto = "A", Familia = "F", EsHabitual = 1 },
+                new FilaEntrenamiento { Producto = "B", Familia = "F", EsHabitual = 1 },
+                new FilaEntrenamiento { Producto = "C", Familia = "F", EsHabitual = 1 },
+                new FilaEntrenamiento { Producto = "D", Familia = "G", EsHabitual = 0 },
+                new FilaEntrenamiento { Producto = "E", Familia = "H", EsHabitual = 0 }
+            };
+            var p = new Dictionary<string, double> { ["A"] = 0.9, ["B"] = 0.8, ["C"] = 0.7, ["D"] = 0.2, ["E"] = 0.1 };
+
+            CollectionAssert.AreEqual(new[] { "A", "B", "C" }, Diversidad.TopComoLaApi(filas, f => p[f.Producto]));
+            CollectionAssert.AreEqual(new[] { "A", "D", "E" }, Diversidad.Top(filas, f => p[f.Producto]));
+            Assert.AreEqual("Modelo con diversidad (informativo)", ProcesoEntrenamiento.MODELO_OTRA_DIVERSIDAD);
+        }
+
+        [TestMethod]
         public void Entrenamiento_InformeConP3PorEstado_YSinHistorialNoPasa()
         {
             if (!Environment.Is64BitProcess)
@@ -425,6 +446,11 @@ namespace NestoAPI.Tests.Infrastructure
             StringAssert.Contains(informe, ProcesoEntrenamiento.SEGMENTO_RESTO);
             StringAssert.Contains(informe, ProcesoEntrenamiento.MODELO_SIN_ESTADO);
             Assert.IsNotNull(con.SinEstado);
+            // La puerta mide el modelo como lo ve el vendedor (sin diversidad); la otra variante queda como informativa
+            ResultadoRanking informativo = con.Resultados.Single(r => r.Modelo == ProcesoEntrenamiento.MODELO_OTRA_DIVERSIDAD);
+            Assert.AreEqual(PuertaCalidad.Decidir(con.Modelo, con.Reglas, ligeras.MinimaMejoraP3, con.SinEstado).Pasa, con.Decision.Pasa);
+            Assert.AreNotEqual(informativo.P3, con.Modelo.P3, "Con datos de prueba la diversidad cambia el top-3");
+            Assert.IsFalse(con.Metadatos(hoy, "test", null).Diversidad.Value);
             MetadatosModelo meta = con.Metadatos(hoy, "test", null);
             Assert.AreEqual(2, meta.VersionFeatures);
             Assert.IsTrue(meta.P3SinEstado.HasValue && meta.P3Distribuidores.HasValue && meta.P3Resto.HasValue);

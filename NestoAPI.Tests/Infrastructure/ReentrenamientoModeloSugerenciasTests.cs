@@ -215,8 +215,10 @@ namespace NestoAPI.Tests.Infrastructure
             string informe = File.ReadAllText(almacen.RutaInforme("20261114_0230"));
             StringAssert.StartsWith(informe, "INFORME");
             StringAssert.Contains(informe, "## Frente al modelo anterior (NestoAPI#683)");
-            StringAssert.Contains(informe, "| Anterior: `modelo_sugerencias_productos_20261020_2330.zip` | 1 | 06/2026 – 08/2026 | 26,1 % | 12,0 %");
-            StringAssert.Contains(informe, "| Este sin el estado (features v1, misma partición) | 1 | esta | 14,9 %");
+            StringAssert.Contains(informe, "| Anterior: `modelo_sugerencias_productos_20261020_2330.zip` | 1 | 06/2026 – 08/2026 | con | 26,1 % | 12,0 %",
+                "El json de antes no dice la diversidad: se midió con ella");
+            StringAssert.Contains(informe, "| Este sin el estado (features v1, misma partición) | 1 | esta | sin | 14,9 %");
+            StringAssert.Contains(informe, "se midieron con la diversidad (este, sin ella, como Calcular)");
             ComprobarAviso("PASARÍA", "Modelo anterior (modelo_sugerencias_productos_20261020_2330.zip): P@3 26,1 %");
         }
 

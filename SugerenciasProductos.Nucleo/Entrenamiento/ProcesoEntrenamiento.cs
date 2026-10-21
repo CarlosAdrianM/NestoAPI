@@ -13,7 +13,8 @@ namespace ModeloSugerenciasProductos.Entrenamiento;
 /// <list type="number">
 /// <item>Instantáneas sin fuga (<see cref="ConstructorInstantaneas"/>) y partición temporal: entrenamiento, un mes de hueco y validación.</item>
 /// <item>LightGBM binario calibrado (el que se guarda) y LambdaRank (alternativa del informe), entrenados con el entrenamiento.</item>
-/// <item>En la validación, P@3, R@3, NDCG@3 y «al menos 1» con la diversidad aplicada, frente a reglas-1, popularidad del perfil
+/// <item>En la validación, P@3, R@3, NDCG@3 y «al menos 1» del top-3 como lo ve el vendedor (NestoAPI#683: con o sin la
+/// diversidad según <see cref="Diversidad.APLICAR"/>), frente a reglas-1, popularidad del perfil
 /// y afinidad sola, desglosadas en habituales, ocasionales y nuevos.</item>
 /// <item>Puerta: ganar a reglas-1 en P@3 por ≥ 2 puntos con NDCG@3 no peor.</item>
 /// <item><see cref="EntrenarFinalYGuardar"/>: el zip se entrena con TODO (entrenamiento + validación).</item>
@@ -24,13 +25,15 @@ public sealed class ProcesoEntrenamiento
     public const string MODELO_BINARIO = "Modelo (LightGBM binario)";
     public const string MODELO_LAMBDARANK = "LambdaRank (alternativa)";
     public const string BASE_REGLAS = "reglas-1";
-    public const string MODELO_SIN_DIVERSIDAD = "Modelo sin diversidad (informativo)";
+    /// <summary>NestoAPI#683: el modelo con la diversidad contraria a la de Calcular (hoy, CON ella): solo informativo.</summary>
+    public static readonly string MODELO_OTRA_DIVERSIDAD = Diversidad.APLICAR ? "Modelo sin diversidad (informativo)" : "Modelo con diversidad (informativo)";
     public const string BASE_REGLAS_DIVERSIDAD = "reglas-1 con la diversidad (informativo)";
     public const string BASE_POPULARIDAD = "Popularidad del perfil";
     public const string BASE_AFINIDAD = "Afinidad sola";
     /// <summary>NestoAPI#683: el mismo modelo con las features de la versión 1 (sin el estado), con la misma partición.</summary>
     public const string MODELO_SIN_ESTADO = "Modelo sin el estado (features v1, misma partición)";
-    public const string MODELO_SIN_ESTADO_SIN_DIVERSIDAD = "Modelo sin el estado, sin diversidad (informativo)";
+    public static readonly string MODELO_SIN_ESTADO_OTRA_DIVERSIDAD = Diversidad.APLICAR
+        ? "Modelo sin el estado, sin diversidad (informativo)" : "Modelo sin el estado, con diversidad (informativo)";
     public const string SEGMENTO_DISTRIBUIDORES = "Distribuidores (6/67)";
     public const string SEGMENTO_RESTO = "Resto";
     /// <summary>Versión de las features del modelo «sin el estado».</summary>
@@ -46,7 +49,7 @@ public sealed class ProcesoEntrenamiento
     public List<ResultadoRanking> Resultados { get; } = new();
     public ResultadoRanking? Modelo => Resultados.FirstOrDefault(r => r.Modelo == MODELO_BINARIO);
     public ResultadoRanking? Reglas => Resultados.FirstOrDefault(r => r.Modelo == BASE_REGLAS);
-    /// <summary>NestoAPI#683: el modelo con las features de la versión 1 (con la diversidad, como <see cref="Modelo"/>).</summary>
+    /// <summary>NestoAPI#683: el modelo con las features de la versión 1 (medido como <see cref="Modelo"/>: como lo ve el vendedor).</summary>
     public ResultadoRanking? SinEstado => Resultados.FirstOrDefault(r => r.Modelo == MODELO_SIN_ESTADO);
     /// <summary>NestoAPI#683: P@3 de cada modelo por grupo de estado (segmento → resultados en el orden de <see cref="ModelosPorEstado"/>).</summary>
     public List<KeyValuePair<string, List<ResultadoRanking>>> ResultadosPorEstado { get; } = new();
@@ -103,7 +106,8 @@ public sealed class ProcesoEntrenamiento
         for (int i = 0; i < validacion.Count; i++) puntuacion[validacion[i]] = p[i];
         _log($"Modelo binario entrenado y puntuado en {reloj.Elapsed.TotalSeconds:0.0} s.");
 
-        Func<Sesion, IReadOnlyList<string>> topModelo = s => Diversidad.Top(s.Filas, f => puntuacion[f]);
+        // NestoAPI#683: la puerta mide el top-3 como lo ve el vendedor (Diversidad.APLICAR, la misma constante que Calcular)
+        Func<Sesion, IReadOnlyList<string>> topModelo = s => Diversidad.TopComoLaApi(s.Filas, f => puntuacion[f]);
         Resultados.Add(Metricas.Evaluar(MODELO_BINARIO, Dataset.Validacion, topModelo));
 
         // NestoAPI#683: el mismo modelo sin las features del estado (versión 1), con la misma partición: lo que aportan
@@ -111,7 +115,7 @@ public sealed class ProcesoEntrenamiento
         List<float> p1 = Entrenador.Probabilidades(_ml, sinEstado, validacion);
         Dictionary<FilaEntrenamiento, float> puntuacionSinEstado = new(ReferenceEqualityComparer.Instancia);
         for (int i = 0; i < validacion.Count; i++) puntuacionSinEstado[validacion[i]] = p1[i];
-        Func<Sesion, IReadOnlyList<string>> topSinEstado = s => Diversidad.Top(s.Filas, f => puntuacionSinEstado[f]);
+        Func<Sesion, IReadOnlyList<string>> topSinEstado = s => Diversidad.TopComoLaApi(s.Filas, f => puntuacionSinEstado[f]);
         Resultados.Add(Metricas.Evaluar(MODELO_SIN_ESTADO, Dataset.Validacion, topSinEstado));
         _log($"Modelo sin el estado (features v1) entrenado y puntuado ({reloj.Elapsed.TotalSeconds:0.0} s).");
         if (Opciones.EvaluarLambdaRank)
@@ -122,7 +126,7 @@ public sealed class ProcesoEntrenamiento
                 List<float> pr = Entrenador.PuntuacionesRanking(_ml, ranking, validacion);
                 Dictionary<FilaEntrenamiento, float> puntuacionRanking = new(ReferenceEqualityComparer.Instancia);
                 for (int i = 0; i < validacion.Count; i++) puntuacionRanking[validacion[i]] = pr[i];
-                Resultados.Add(Metricas.Evaluar(MODELO_LAMBDARANK, Dataset.Validacion, s => Diversidad.Top(s.Filas, f => puntuacionRanking[f])));
+                Resultados.Add(Metricas.Evaluar(MODELO_LAMBDARANK, Dataset.Validacion, s => Diversidad.TopComoLaApi(s.Filas, f => puntuacionRanking[f])));
                 _log($"LambdaRank entrenado y puntuado ({reloj.Elapsed.TotalSeconds:0.0} s).");
             }
             catch (Exception ex)
@@ -131,11 +135,11 @@ public sealed class ProcesoEntrenamiento
             }
         }
         Func<Sesion, IReadOnlyList<string>> topReglas = s => s.Reglas1;
-        Func<Sesion, IReadOnlyList<string>> topSinDiversidad = s => SinDiversidad(s, puntuacion);
-        Func<Sesion, IReadOnlyList<string>> topSinEstadoSinDiversidad = s => SinDiversidad(s, puntuacionSinEstado);
+        Func<Sesion, IReadOnlyList<string>> topOtraDiversidad = s => OtraDiversidad(s, puntuacion);
+        Func<Sesion, IReadOnlyList<string>> topSinEstadoOtraDiversidad = s => OtraDiversidad(s, puntuacionSinEstado);
         Resultados.Add(Metricas.Evaluar(BASE_REGLAS, Dataset.Validacion, topReglas));
-        Resultados.Add(Metricas.Evaluar(MODELO_SIN_DIVERSIDAD, Dataset.Validacion, topSinDiversidad));
-        Resultados.Add(Metricas.Evaluar(MODELO_SIN_ESTADO_SIN_DIVERSIDAD, Dataset.Validacion, topSinEstadoSinDiversidad));
+        Resultados.Add(Metricas.Evaluar(MODELO_OTRA_DIVERSIDAD, Dataset.Validacion, topOtraDiversidad));
+        Resultados.Add(Metricas.Evaluar(MODELO_SIN_ESTADO_OTRA_DIVERSIDAD, Dataset.Validacion, topSinEstadoOtraDiversidad));
         Resultados.Add(Metricas.Evaluar(BASE_REGLAS_DIVERSIDAD, Dataset.Validacion, s =>
         {
             Dictionary<string, FilaEntrenamiento> filas = s.Filas.GroupBy(f => f.Producto, StringComparer.OrdinalIgnoreCase)
@@ -144,17 +148,17 @@ public sealed class ProcesoEntrenamiento
                 p => filas.TryGetValue(p, out FilaEntrenamiento? f) ? f.Familia : null);
         }));
         Resultados.Add(Metricas.Evaluar(BASE_POPULARIDAD, Dataset.Validacion,
-            s => Diversidad.Top(s.Filas, f => f.ClientesPerfil + f.Clientes12Meses / 1e6)));
+            s => Diversidad.TopComoLaApi(s.Filas, f => f.ClientesPerfil + f.Clientes12Meses / 1e6)));
         Resultados.Add(Metricas.Evaluar(BASE_AFINIDAD, Dataset.Validacion,
-            s => Diversidad.Top(s.Filas, f => f.Afinidad + f.Clientes12Meses / 1e9)));
+            s => Diversidad.TopComoLaApi(s.Filas, f => f.Afinidad + f.Clientes12Meses / 1e9)));
 
         // NestoAPI#683: P@3 por estado del cliente (al menos distribuidores frente al resto)
         var tops = new List<KeyValuePair<string, Func<Sesion, IReadOnlyList<string>>>>
         {
             new(MODELO_BINARIO, topModelo),
             new(MODELO_SIN_ESTADO, topSinEstado),
-            new(MODELO_SIN_DIVERSIDAD, topSinDiversidad),
-            new(MODELO_SIN_ESTADO_SIN_DIVERSIDAD, topSinEstadoSinDiversidad),
+            new(MODELO_OTRA_DIVERSIDAD, topOtraDiversidad),
+            new(MODELO_SIN_ESTADO_OTRA_DIVERSIDAD, topSinEstadoOtraDiversidad),
             new(BASE_REGLAS, topReglas)
         };
         ModelosPorEstado.AddRange(tops.Select(t => t.Key));
@@ -182,7 +186,7 @@ public sealed class ProcesoEntrenamiento
                 $"el estado de cada instantánea sería el de hoy y habría fuga; {Decision.Motivo}");
         }
         _log("");
-        _log($"Validación ({Ventana.Corte:MM/yyyy} – {Ventana.InstantaneasValidacion.LastOrDefault():MM/yyyy}), top-3 con la diversidad:");
+        _log($"Validación ({Ventana.Corte:MM/yyyy} – {Ventana.InstantaneasValidacion.LastOrDefault():MM/yyyy}), top-3 {(Diversidad.APLICAR ? "con" : "sin")} la diversidad, como lo ve el vendedor:");
         _log(Informe.Tabla(Resultados));
         _log("Por tipo de producto para el cliente:");
         _log(Informe.TablaSegmentos(Resultados));
@@ -261,9 +265,11 @@ public sealed class ProcesoEntrenamiento
         sb.AppendLine("- Sesión = el primer pedido del mes de cada cliente. Carrito simulado: la mitad de las líneas del pedido (al azar, semilla fija); en el 30 % de las sesiones, vacío.");
         sb.AppendLine("- Positivo = el producto está en la otra mitad del pedido o el cliente se lo lleva en los 30 días siguientes.");
         sb.AppendLine("- Todo se calcula con lo anterior a cada instantánea (tablas del job) o al día del pedido (historial del cliente): sin fuga.");
-        sb.AppendLine("- Modelo, LambdaRank, popularidad y afinidad: top-3 con la diversidad (la mejor siempre; como mucho 1 habitual y 1 por familia; si no hay con qué llenar, se relaja).");
-        sb.AppendLine("- La puerta compara el modelo CON la diversidad (lo que verá el vendedor) con reglas-1 SIN ella (lo que ve hoy). " +
-                      "Las dos filas «informativo» dicen cuánto cuesta la diversidad a cada uno.");
+        sb.AppendLine(Diversidad.APLICAR
+            ? "- Modelo, LambdaRank, popularidad y afinidad: top-3 con la diversidad, como en Calcular (la mejor siempre; como mucho 1 habitual y 1 por familia; si no hay con qué llenar, se relaja)."
+            : "- Modelo, LambdaRank, popularidad y afinidad: top-3 SIN la diversidad, como en Calcular (Diversidad.APLICAR = false): las tres mejores por puntuación.");
+        sb.AppendLine("- La puerta (y la comparación con el modelo sin el estado) mide el modelo como lo ve el vendedor (sigue a Diversidad.APLICAR, la misma constante que Calcular) " +
+                      "frente a reglas-1 como lo ve hoy (su propia mezcla). Las filas «informativo» dan la otra variante de la diversidad.");
         sb.AppendLine("- reglas-1: la mezcla del corte 1 (una de cada fuente y después por turnos, 8 candidatos por fuente) con CompradoJunto y LeToca. " +
                       "«Potenciar» (ofertas, novedades, «Potenciar hasta») no se puede reconstruir hacia atrás, ni los filtros de stock, pendientes, rechazos y grupo del vendedor: " +
                       "afectan igual a todos los modelos.");
@@ -329,14 +335,16 @@ public sealed class ProcesoEntrenamiento
         P3SinEstado = MetadatosModelo.Numero(SinEstado?.P3),
         P3Distribuidores = MetadatosModelo.Numero(P3Segmento(SEGMENTO_DISTRIBUIDORES)),
         P3Resto = MetadatosModelo.Numero(P3Segmento(SEGMENTO_RESTO)),
-        HistorialEstados = HistorialEstados
+        HistorialEstados = HistorialEstados,
+        Diversidad = Evaluacion.Diversidad.APLICAR
     };
 
     private double? P3Segmento(string segmento)
         => ResultadosPorEstado.FirstOrDefault(r => r.Key == segmento).Value?.FirstOrDefault(r => r.Modelo == MODELO_BINARIO)?.P3;
 
-    private static List<string> SinDiversidad(Sesion s, Dictionary<FilaEntrenamiento, float> puntuacion)
-        => s.Filas.OrderByDescending(f => puntuacion[f]).ThenBy(f => f.Producto, StringComparer.OrdinalIgnoreCase).Take(Metricas.K).Select(f => f.Producto).ToList();
+    /// <summary>La variante de la diversidad que NO usa Calcular (solo informativa).</summary>
+    private static List<string> OtraDiversidad(Sesion s, Dictionary<FilaEntrenamiento, float> puntuacion)
+        => Diversidad.APLICAR ? Diversidad.SinDiversidad(s.Filas, f => puntuacion[f], Metricas.K) : Diversidad.Top(s.Filas, f => puntuacion[f]);
 
     private static string Fecha(DateTime d) => d == default ? "—" : d.ToString("MM/yyyy");
 
@@ -394,6 +402,11 @@ public sealed class MetadatosModelo
     public double? P3Resto { get; set; }
     /// <summary>NestoAPI#683: si el estado de cada instantánea salió del historial de cambios.</summary>
     public bool HistorialEstados { get; set; }
+    /// <summary>
+    /// NestoAPI#683: si las métricas (y la puerta) se midieron con la diversidad. Null en los json de antes de este cambio, que
+    /// se midieron CON ella.
+    /// </summary>
+    public bool? Diversidad { get; set; }
 
     public static double? Numero(double? v) => v == null || double.IsNaN(v.Value) ? null : Math.Round(v.Value, 6);
 }

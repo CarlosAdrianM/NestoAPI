@@ -346,13 +346,17 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
             var sb = new StringBuilder();
             sb.AppendLine("## Frente al modelo anterior (NestoAPI#683)");
             sb.AppendLine();
-            sb.AppendLine("| Modelo | Versión de features | Validación | P@3 | P@3 reglas-1 | NDCG@3 |");
-            sb.AppendLine("|---|---:|---|---:|---:|---:|");
-            sb.AppendLine($"| Anterior: `{ficheroAnterior}` | {anterior.VersionFeatures} | {Mes(anterior.Corte)} – {Mes(anterior.UltimaInstantanea)} | {Pct(anterior.P3)} | {Pct(anterior.P3Reglas)} | {Num(anterior.Ndcg3)} |");
-            sb.AppendLine($"| Este | {ModeloSugerenciaEntrada.VERSION_FEATURES} | esta | {Pct(modelo?.P3)} | {Pct(reglas?.P3)} | {Num(modelo?.Ndcg3)} |");
-            sb.AppendLine($"| Este sin el estado (features v1, misma partición) | 1 | esta | {Pct(sinEstado?.P3)} | {Pct(reglas?.P3)} | {Num(sinEstado?.Ndcg3)} |");
+            string ahora = ModeloSugerenciasProductos.Evaluacion.Diversidad.APLICAR ? "con" : "sin";
+            string antes = anterior.Diversidad == null ? "con" : anterior.Diversidad.Value ? "con" : "sin";
+            sb.AppendLine("| Modelo | Versión de features | Validación | Diversidad | P@3 | P@3 reglas-1 | NDCG@3 |");
+            sb.AppendLine("|---|---:|---|---|---:|---:|---:|");
+            sb.AppendLine($"| Anterior: `{ficheroAnterior}` | {anterior.VersionFeatures} | {Mes(anterior.Corte)} – {Mes(anterior.UltimaInstantanea)} | {antes} | {Pct(anterior.P3)} | {Pct(anterior.P3Reglas)} | {Num(anterior.Ndcg3)} |");
+            sb.AppendLine($"| Este | {ModeloSugerenciaEntrada.VERSION_FEATURES} | esta | {ahora} | {Pct(modelo?.P3)} | {Pct(reglas?.P3)} | {Num(modelo?.Ndcg3)} |");
+            sb.AppendLine($"| Este sin el estado (features v1, misma partición) | 1 | esta | {ahora} | {Pct(sinEstado?.P3)} | {Pct(reglas?.P3)} | {Num(sinEstado?.Ndcg3)} |");
             sb.AppendLine();
-            sb.AppendLine("Las métricas del anterior son las de su propia validación (otros meses y otros datos): la comparación justa de lo que aportan las features nuevas es la fila «sin el estado».");
+            sb.AppendLine("Las métricas del anterior son las de su propia validación (otros meses y otros datos)" +
+                (antes != ahora ? $" y se midieron {antes} la diversidad (este, {ahora} ella, como Calcular)" : "") +
+                ": la comparación justa de lo que aportan las features nuevas es la fila «sin el estado».");
             return sb.ToString();
         }
 
