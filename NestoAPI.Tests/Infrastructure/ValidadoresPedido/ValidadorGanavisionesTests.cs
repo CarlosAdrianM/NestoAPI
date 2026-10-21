@@ -394,6 +394,65 @@ namespace NestoAPI.Tests.Infrastructure.ValidadoresPedido
                 "El producto no esta bonificado (precio > 0), no consume Ganavisiones");
         }
 
+        #region NestoAPI#593 (Ganavisiones): el cheque regalo resta en la base de Ganavisiones (caso de Javi, pedido 929066)
+
+        /// <summary>
+        /// Pedido 929066 (Javi, 21/10/26): 699,35 € de COS + 19,50 € de ACC = 718,85 € y el cheque CHEQUE50_OCT26
+        /// (grupo COS, cantidad −1, 50 €). La base bonificable es 668,85 € = 66 Ganavisiones, no 71: Nesto enseñaba
+        /// 71 y dejó coger el fundidor (20) y la lámpara (49) = 69; al grabar se rechazó. Esta es la regla que manda.
+        /// </summary>
+        private static PedidoVentaDTO PedidoDeJavi(params LineaPedidoVentaDTO[] regalos)
+        {
+            var lineas = new List<LineaPedidoVentaDTO>
+            {
+                new LineaPedidoVentaDTO { Producto = "45959", GrupoProducto = Constantes.Productos.GRUPO_COSMETICA, tipoLinea = 1, Cantidad = 1, PrecioUnitario = 699.35m },
+                new LineaPedidoVentaDTO { Producto = "40361", GrupoProducto = Constantes.Productos.GRUPO_ACCESORIOS, tipoLinea = 1, Cantidad = 1, PrecioUnitario = 19.50m },
+                new LineaPedidoVentaDTO { Producto = "CHEQUE50_OCT26", tipoLinea = 1, Cantidad = -1, PrecioUnitario = 50m }
+            };
+            lineas.AddRange(regalos);
+            return new PedidoVentaDTO { Lineas = lineas };
+        }
+
+        private void ConfigurarPedidoDeJavi()
+        {
+            // El cliente no manda el grupo de la línea del cheque: el validador lo busca en la ficha (COS)
+            A.CallTo(() => _servicioPrecios.BuscarProducto("CHEQUE50_OCT26")).Returns(new Producto { Número = "CHEQUE50_OCT26", Grupo = Constantes.Productos.GRUPO_COSMETICA });
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("45959")).Returns(null);
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("40361")).Returns(null);
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("CHEQUE50_OCT26")).Returns(null);
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("44243")).Returns(20);
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("44357")).Returns(49);
+        }
+
+        [TestMethod]
+        public void EsPedidoValido_ChequeRegalo_RestaDeLaBase_69DeLos71SinChequeSeRechaza()
+        {
+            ConfigurarPedidoDeJavi();
+            var pedido = PedidoDeJavi(
+                new LineaPedidoVentaDTO { Producto = "44243", tipoLinea = 1, Cantidad = 1, PrecioUnitario = 0m },
+                new LineaPedidoVentaDTO { Producto = "44357", tipoLinea = 1, Cantidad = 1, PrecioUnitario = 0m });
+
+            var resultado = _validador.EsPedidoValido(pedido, "44357", _servicioPrecios);
+
+            Assert.IsFalse(resultado.ValidacionSuperada, "718,85 − 50 = 668,85 € = 66 Ganavisiones; 20 + 49 = 69 no caben");
+            StringAssert.Contains(resultado.Motivo, "66 disponibles");
+            StringAssert.Contains(resultado.Motivo, "668,85");
+        }
+
+        [TestMethod]
+        public void EsPedidoValido_ChequeRegalo_RestaDeLaBase_LaLamparaSolaCabeEnLos66()
+        {
+            ConfigurarPedidoDeJavi();
+            var pedido = PedidoDeJavi(new LineaPedidoVentaDTO { Producto = "44357", tipoLinea = 1, Cantidad = 1, PrecioUnitario = 0m });
+
+            var resultado = _validador.EsPedidoValido(pedido, "44357", _servicioPrecios);
+
+            Assert.IsTrue(resultado.ValidacionSuperada, resultado.Motivo);
+            StringAssert.Contains(resultado.Motivo, "66 Ganavisiones disponibles");
+        }
+
+        #endregion
+
         #region Helpers
 
         private PedidoVentaDTO CrearPedidoBasico(decimal importe)

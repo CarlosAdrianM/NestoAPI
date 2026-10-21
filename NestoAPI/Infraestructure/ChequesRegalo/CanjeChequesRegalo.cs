@@ -103,6 +103,14 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
         public DateTime? FechaCanje { get; set; }
         /// <summary>El texto que pone el servidor en la línea.</summary>
         public string TextoLinea { get; set; }
+        /// <summary>
+        /// NestoAPI#593 (Ganavisiones): cuánto baja la base bonificable de Ganavisiones cuando el cheque va en el pedido. La línea del
+        /// cheque es una línea de producto con base −Importe, y al grabar (ValidadorGanavisiones) resta si el grupo de su
+        /// producto genera Ganavisiones (CHEQUE50_OCT26 es COS: resta los 50). Los clientes restan este importe de la
+        /// base que mandan a GET api/Ganavisiones/ProductosBonificables y de los puntos que enseñan, en vez de averiguar
+        /// el grupo por su cuenta: 710 € − 50 € de cheque = 660 € = 66 Ganavisiones, no 71.
+        /// </summary>
+        public decimal RestaDeLaBaseGanavisiones { get; set; }
     }
 
     /// <summary>Lo que hay que hacer con los cheques al guardar el pedido (dentro de la misma transacción).</summary>
@@ -619,8 +627,28 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
                 EmpresaPedidoCanje = elegido.Cheque.PedidoCanjeTieneLaLinea ? elegido.Cheque.EmpresaCanje?.Trim() : null,
                 PedidoCanje = elegido.Cheque.PedidoCanjeTieneLaLinea ? elegido.Cheque.PedidoCanje : null,
                 FechaCanje = elegido.Cheque.PedidoCanjeTieneLaLinea ? elegido.Cheque.FechaCanje : null,
-                TextoLinea = ReglasCanjeChequeRegalo.TextoLinea(elegido.Campana)
+                TextoLinea = ReglasCanjeChequeRegalo.TextoLinea(elegido.Campana),
+                RestaDeLaBaseGanavisiones = await RestaDeLaBaseGanavisiones(empresa, elegido.Campana).ConfigureAwait(false)
             };
+        }
+
+        /// <summary>
+        /// NestoAPI#593 (Ganavisiones): lo mismo que suma ValidadorGanavisiones al grabar: la línea del cheque (cantidad −1, precio
+        /// Importe) cuenta en la base bonificable si el grupo de su producto es de los que generan Ganavisiones.
+        /// </summary>
+        internal async Task<decimal> RestaDeLaBaseGanavisiones(string empresa, CampanaCanjeChequeRegalo campana)
+        {
+            string producto = campana?.Producto?.Trim();
+            if (string.IsNullOrEmpty(producto))
+            {
+                return 0;
+            }
+            Dictionary<string, ProductoParaChequeRegalo> productos = await repositorio
+                .LeerProductos(empresa?.Trim() ?? campana.Empresa?.Trim(), new[] { producto }).ConfigureAwait(false);
+            string grupo = ReglasCanjeChequeRegalo.Buscar(productos, producto)?.Grupo?.Trim();
+            return grupo != null && Constantes.Productos.GRUPOS_BONIFICABLES_CON_GANAVISIONES.Contains(grupo)
+                ? campana.ImporteBase
+                : 0;
         }
     }
 

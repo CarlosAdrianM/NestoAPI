@@ -612,6 +612,30 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
         }
 
         [TestMethod]
+        public async Task LeerChequeVigente_RestaDeLaBaseGanavisiones_ElChequeCosmeticaRestaSuImporte()
+        {
+            // NestoAPI#593 (Ganavisiones) (Javi, pedido 929066): al grabar, la línea del cheque (COS, −50) resta en la base de
+            // Ganavisiones; Nesto y NestoApp no la restaban y enseñaban 71 en vez de 66. La API les dice cuánto restar.
+            ChequeRegaloClienteDTO dto = await servicio.LeerChequeVigente("1", CLIENTE, HOY);
+
+            Assert.AreEqual(50M, dto.RestaDeLaBaseGanavisiones);
+        }
+
+        [TestMethod]
+        public async Task LeerChequeVigente_RestaDeLaBaseGanavisiones_SiElProductoNoEsDeGrupoBonificable_Cero()
+        {
+            A.CallTo(() => repositorio.LeerProductos(A<string>._, A<IEnumerable<string>>._)).Returns(RepositorioCanjeChequesRegalo.Diccionario(new[]
+            {
+                new ProductoParaChequeRegalo { Numero = PRODUCTO_CHEQUE, Nombre = "CHEQUE", Grupo = "PEL", Ficticio = true }
+            }));
+            Assert.AreEqual(0M, (await servicio.LeerChequeVigente("1", CLIENTE, HOY)).RestaDeLaBaseGanavisiones, "PEL no genera Ganavisiones");
+
+            A.CallTo(() => repositorio.LeerProductos(A<string>._, A<IEnumerable<string>>._))
+                .Returns(new Dictionary<string, ProductoParaChequeRegalo>(StringComparer.OrdinalIgnoreCase));
+            Assert.AreEqual(0M, (await servicio.LeerChequeVigente("1", CLIENTE, HOY)).RestaDeLaBaseGanavisiones, "sin ficha no cuenta (como el validador)");
+        }
+
+        [TestMethod]
         public async Task LeerChequeVigente_EnUnPedido()
         {
             A.CallTo(() => repositorio.LeerChequesDelCliente(A<string>._, A<string>._, A<int>._))
