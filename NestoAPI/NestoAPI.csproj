@@ -857,6 +857,7 @@
     <Compile Include="Infraestructure\Exceptions\PedidoValidacionException.cs" />
     <Compile Include="Infraestructure\Exceptions\TraspasoEmpresaException.cs" />
     <Compile Include="Infraestructure\Filters\GlobalExceptionFilter.cs" />
+    <Compile Include="Infraestructure\Facturas\DiagnosticoGastoSinCentroCoste.cs" />
     <Compile Include="Infraestructure\Facturas\GestorFacturas.cs" />
     <Compile Include="Infraestructure\Facturas\GeneradorPdfFacturasQuestPdf.cs" />
     <Compile Include="Infraestructure\Facturas\GeneradorPdfFacturasRdlc.cs" />

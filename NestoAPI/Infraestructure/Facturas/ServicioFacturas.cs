@@ -87,6 +87,12 @@ namespace NestoAPI.Infraestructure.Facturas
 
         private readonly Lazy<ChequesRegalo.IAvisadorPushChequesRegalo> avisadorPushChequesRegalo;
 
+        /// <summary>
+        /// NestoAPI#343 (solo diagnóstico): foto de PreContabilidad cuando prdCrearFacturaVta falla por «gasto sin centro
+        /// de coste». Internal set para tests.
+        /// </summary>
+        internal DiagnosticoGastoSinCentroCoste DiagnosticoGastoSinCentroCoste { get; set; } = new DiagnosticoGastoSinCentroCoste();
+
         private readonly ChequesRegalo.IGeneradorChequesRegalo generadorChequesRegalo;
         private readonly ChequesRegalo.IAvisadorChequesRegalo avisadorChequesRegalo;
         private readonly Rectificativas.IAlmacenRectificativasPendientes almacenRectificativasPendientes;
@@ -510,6 +516,11 @@ namespace NestoAPI.Infraestructure.Facturas
             // (devolución + venta nueva, art. 15.2 RD 1619/2012) es F1 lícita CON INDEPENDENCIA
             // del signo del total: no se toca.
             string avisoSerieRectificativa = null;
+            // NestoAPI#343 (diagnóstico): qué serie traía y si el gate la corrigió en esta llamada, y a qué hora.
+            string serieAlEmpezar = cabPedido.Serie;
+            string serieAntesCorreccion = null;
+            DateTime? horaCorreccionSerie = null;
+            DateTime? horaInicioProcedimiento = null;
             string serieAbono = SerieRectificativaParaAbono(cabPedido.Serie, cabPedido.LinPedidoVtas);
 
             // NestoAPI#570 (parte 2, decisión de Carlos 30/09/26): la devolución de una venta que
@@ -552,6 +563,8 @@ namespace NestoAPI.Infraestructure.Facturas
                     });
                     cabPedido.Serie = serieAbono;
                     _ = await db.SaveChangesAsync();
+                    serieAntesCorreccion = serieOriginal;
+                    horaCorreccionSerie = DateTime.Now;
                     avisoSerieRectificativa = $"El pedido {pedido} es un abono puro: se ha facturado por la " +
                         $"serie rectificativa {serieAbono} (antes {serieOriginal}) para declararse a Verifactu " +
                         "como rectificativa con sus vinculaciones.";
@@ -692,6 +705,7 @@ namespace NestoAPI.Infraestructure.Facturas
                     SqlParameter usuarioParam = new SqlParameter("@Usuario", System.Data.SqlDbType.Char) { Value = usuario };
                     SqlParameter numFactura = new SqlParameter("@NumFactura", SqlDbType.Char, 10) { Direction = ParameterDirection.Output };
 
+                    horaInicioProcedimiento = DateTime.Now;
                     _ = await db.Database.ExecuteSqlCommandAsync(
                         "EXEC prdCrearFacturaVta @Empresa, @Pedido, @Fecha, @NumFactura OUTPUT, @Usuario",
                         empresaParam, pedidoParam, fechaEntregaParam, numFactura, usuarioParam
@@ -775,6 +789,22 @@ namespace NestoAPI.Infraestructure.Facturas
             }
             catch (SqlException sqlEx)
             {
+                // NestoAPI#343 (solo diagnóstico): si es el «gasto sin centro de coste», foto de PreContabilidad por una
+                // conexión aparte y un error informativo en ELMAH. No lanza nunca ni cambia lo que sigue.
+                await RegistrarDiagnosticoGastoSinCentroCoste(sqlEx, new ContextoFalloGastoSinCentroCoste
+                {
+                    Empresa = empresa,
+                    Pedido = pedido,
+                    Usuario = usuarioAutenticado ?? usuario,
+                    SerieAlEmpezar = serieAlEmpezar,
+                    HuboCorreccionSerie = horaCorreccionSerie.HasValue,
+                    SerieAntesCorreccion = serieAntesCorreccion,
+                    SerieDespuesCorreccion = horaCorreccionSerie.HasValue ? serieAbono : null,
+                    HoraCorreccionSerie = horaCorreccionSerie,
+                    HoraInicioProcedimiento = horaInicioProcedimiento,
+                    HoraFallo = DateTime.Now
+                }).ConfigureAwait(false);
+
                 throw new FacturacionException(
                     $"Error al ejecutar el procedimiento almacenado de facturación: {sqlEx.Message}",
                     "FACTURACION_STORED_PROCEDURE_ERROR",
@@ -799,6 +829,25 @@ namespace NestoAPI.Infraestructure.Facturas
                     pedido: pedido,
                     usuario: usuario)
                     .WithData("SeAplicoAutoFixPreventivo", seAplicoAutoFix);
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#343 (solo diagnóstico): delega en <see cref="DiagnosticoGastoSinCentroCoste"/>, que ya filtra por
+        /// el mensaje y nunca lanza; el try es la segunda red para que el error original llegue siempre intacto.
+        /// </summary>
+        internal async Task RegistrarDiagnosticoGastoSinCentroCoste(Exception error, ContextoFalloGastoSinCentroCoste contexto)
+        {
+            try
+            {
+                if (DiagnosticoGastoSinCentroCoste != null)
+                {
+                    _ = await DiagnosticoGastoSinCentroCoste.RegistrarSiProcede(error, contexto).ConfigureAwait(false);
+                }
+            }
+            catch
+            {
+                // Diagnóstico: jamás tumba ni cambia la facturación.
             }
         }
 
