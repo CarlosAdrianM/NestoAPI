@@ -48,6 +48,9 @@ namespace NestoAPI.Controllers
     [Authorize]
     public class PedidosVentaController : ApiController
     {
+        /// <summary>Pedido 929031 (22/10/26): una CCC en blanco no es una cuenta; sin cuenta es NULL (si no, la factura revienta con FK_CabFacturaVta_CCC).</summary>
+        internal static string CccOVacia(string ccc) => string.IsNullOrWhiteSpace(ccc) ? null : ccc;
+
         private const int ESTADO_LINEA_EN_CURSO = Constantes.EstadosLineaVenta.EN_CURSO;
         private const int ESTADO_LINEA_PENDIENTE = Constantes.EstadosLineaVenta.PENDIENTE;
 
@@ -1231,11 +1234,11 @@ namespace NestoAPI.Controllers
             cabPedidoVta.Forma_Pago = pedido.formaPago;
             // Ojo, que el CCC va en función de la forma de pago.
             // Mirad cómo lo hace la plantilla e intentar traer aquí la lógica (y la plantilla llame aquí)
-            if (formaPago.CCCObligatorio && pedido.ccc == null)
+            if (formaPago.CCCObligatorio && string.IsNullOrWhiteSpace(pedido.ccc))
             {
                 pedido.ccc = cliente.CCC;
             }
-            cabPedidoVta.CCC = formaPago.CCCObligatorio ? pedido.ccc : null;
+            cabPedidoVta.CCC = formaPago.CCCObligatorio ? CccOVacia(pedido.ccc) : null;
             // Comprobar si los plazos de pago son válidos
             cabPedidoVta.PlazosPago = pedido.plazosPago;
             cabPedidoVta.vtoBuenoPlazosPago = pedido.vistoBuenoPlazosPago;
@@ -1268,7 +1271,7 @@ namespace NestoAPI.Controllers
                 NormalizarPedidoSiIvaNull(pedido, empresaPedido);
                 pedido.periodoFacturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL;
 
-                cabPedidoVta.CCC = pedido.ccc;
+                cabPedidoVta.CCC = CccOVacia(pedido.ccc);
                 cabPedidoVta.Forma_Pago = pedido.formaPago;
                 cabPedidoVta.PlazosPago = pedido.plazosPago;
                 cabPedidoVta.Periodo_Facturacion = pedido.periodoFacturacion;
@@ -2318,7 +2321,7 @@ namespace NestoAPI.Controllers
                 Periodo_Facturacion = pedido.periodoFacturacion,
                 Ruta = pedido.ruta,
                 Serie = pedido.serie,
-                CCC = pedido.ccc,
+                CCC = CccOVacia(pedido.ccc),
                 Origen = pedido.origen != null && pedido.origen.Trim() != "" ? pedido.origen : pedido.empresa,
                 ContactoCobro = pedido.contactoCobro,
                 NoComisiona = pedido.noComisiona,

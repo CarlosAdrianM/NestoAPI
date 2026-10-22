@@ -306,5 +306,15 @@ namespace NestoAPI.Tests.Controllers
 
             Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
         }
+
+        [TestMethod]
+        public void CccOVacia_UnaCuentaEnBlancoEsSinCuenta()
+        {
+            // Pedido 929031 (22/10/26): la CCC «   » se guardaba tal cual y la factura reventaba con FK_CabFacturaVta_CCC
+            Assert.IsNull(PedidosVentaController.CccOVacia("   "));
+            Assert.IsNull(PedidosVentaController.CccOVacia(""));
+            Assert.IsNull(PedidosVentaController.CccOVacia(null));
+            Assert.AreEqual("1  ", PedidosVentaController.CccOVacia("1  "));
+        }
     }
 }

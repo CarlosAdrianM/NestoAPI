@@ -594,6 +594,17 @@ namespace NestoAPI.Infraestructure.Facturas
                     usuario: usuario);
             }
 
+            // AUTO-FIX (pedido 929031, 22/10/26): una CCC en blanco («   ») no es «sin cuenta». El SP la copia tal cual a
+            // CabFacturaVta y revienta con FK_CabFacturaVta_CCC, y la comprobación de abajo no la ve (IsNullOrWhiteSpace).
+            // Sin cuenta es NULL: se deja así antes de facturar y se apunta.
+            if (cabPedido.CCC != null && string.IsNullOrWhiteSpace(cabPedido.CCC))
+            {
+                cabPedido.CCC = null;
+                _ = await db.SaveChangesAsync();
+                logService.LogError($"Pedido {pedido} (empresa {empresa.Trim()}): tenía la CCC en blanco y se ha dejado a NULL " +
+                    "antes de facturar (FK_CabFacturaVta_CCC).");
+            }
+
             // PREVENTIVO (NestoAPI#304): si la cabecera lleva CCC, debe existir en la tabla CCC
             // para (empresa, cliente, contacto) — el SP copia esos campos tal cual a CabFacturaVta
             // y si la cuenta se borró/renumeró después de crear el pedido revienta con
