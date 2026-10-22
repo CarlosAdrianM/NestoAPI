@@ -75,6 +75,21 @@ namespace NestoAPI.Controllers
             return Ok(await servicio.Anular(codigo, peticion, User).ConfigureAwait(false));
         }
 
+        // POST api/Cupones/EV-2610-7K3Q/Usar   { Empresa, Pedido, ReferenciaTienda?, Canal? }
+        /// <summary>
+        /// NestoAPI#614: el cupón se ha gastado en la tienda PrestaShop. Nesto lo llama al importar el pedido (CanalesExternos), ya
+        /// creado con la línea del producto del cupón tal como la cobró la tienda. Resultado Usado o YaEnEstePedido; si ya estaba
+        /// usado en otro pedido o anulado, Conflicto (200): el pedido entra igual y se avisa a Administración. 400 con el interruptor
+        /// Cupones:EspejoPrestashop apagado o si el pedido no tiene la línea; 404 si no existe el cupón; 403 para el cliente de la tienda.
+        /// </summary>
+        [HttpPost]
+        [Route("api/Cupones/{codigo}/Usar")]
+        [ResponseType(typeof(UsoCuponTiendaDTO))]
+        public async Task<IHttpActionResult> PostUsarCupon(string codigo, [FromBody] UsarCuponTiendaDTO peticion)
+        {
+            return Ok(await servicio.UsarEnTienda(codigo, peticion, User).ConfigureAwait(false));
+        }
+
         protected override void Dispose(bool disposing)
         {
             if (disposing)

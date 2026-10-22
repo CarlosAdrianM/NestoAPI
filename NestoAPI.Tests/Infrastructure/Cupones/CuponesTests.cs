@@ -358,6 +358,65 @@ namespace NestoAPI.Tests.Infrastructure.Cupones
             Assert.AreEqual(ReglasCupon.ERROR_SIN_CODIGO, ex.Context.ErrorCode);
         }
 
+        // ---------------- NestoAPI#614: cupón aplicado en la tienda PrestaShop ----------------
+
+        private static LinPedidoVta LineaCuponTienda()
+        {
+            LinPedidoVta l = LineaCupon(41.32M);
+            l.Forma_Venta = Constantes.FormasVenta.TIENDA_ONLINE + " ";
+            return l;
+        }
+
+        [TestMethod]
+        public async Task Comprobar_LineaDeLaTiendaSinCodigo_SeDejaComoVieneYSeMarcaConUsar()
+        {
+            LinPedidoVta lineaTienda = LineaCuponTienda();
+            var canjeTienda = new ServicioCanjeCupones(repositorio, () => HOY, PRODUCTO, () => true);
+
+            // 60 € de productos: por debajo del mínimo de Nesto, pero la tienda ya lo aplicó con sus reglas y cobró
+            PlanCanjeCupon plan = await canjeTienda.Comprobar("1", PEDIDO, CLIENTE, new List<LinPedidoVta> { Linea("CREMA", 60), lineaTienda }, "G21",
+                null, "x", pedidoNuevo: true, teniaLineaCupon: false);
+
+            Assert.IsFalse(plan.HayQueTocarCupones);
+            Assert.AreEqual(41.32M, lineaTienda.Precio, "El importe es el que cobró la tienda");
+            A.CallTo(() => repositorio.Reservar(A<int>._, A<string>._, A<int>._, A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Comprobar_LineaDeLaTiendaYaMarcadaConUsar_SeModificaElPedidoSinMirarElMinimo()
+        {
+            // Regresión: al quitar un producto por falta de stock, un pedido de la tienda con cupón no puede quedarse bloqueado
+            A.CallTo(() => repositorio.LeerDelPedido(PEDIDO)).Returns(Task.FromResult(Cupon(EstadosCupon.USADO, pedidoUso: PEDIDO)));
+            var canjeTienda = new ServicioCanjeCupones(repositorio, () => HOY, PRODUCTO, () => true);
+
+            PlanCanjeCupon plan = await canjeTienda.Comprobar("1", PEDIDO, CLIENTE, new List<LinPedidoVta> { Linea("CREMA", 30), LineaCuponTienda() }, "G21",
+                null, "x", pedidoNuevo: false, teniaLineaCupon: true);
+
+            Assert.IsFalse(plan.LiberarOtros, "El cupón sigue en el pedido");
+        }
+
+        [TestMethod]
+        public async Task Comprobar_LineaDeLaTiendaConElEspejoApagado_ComoAntes400()
+        {
+            var canjeApagado = new ServicioCanjeCupones(repositorio, () => HOY, PRODUCTO, () => false);
+
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => canjeApagado.Comprobar("1", PEDIDO, CLIENTE,
+                new List<LinPedidoVta> { Linea("CREMA", 150), LineaCuponTienda() }, "G21", null, "x", pedidoNuevo: true, teniaLineaCupon: false));
+
+            Assert.AreEqual(ReglasCupon.ERROR_SIN_CODIGO, ex.Context.ErrorCode);
+        }
+
+        [TestMethod]
+        public async Task Comprobar_LineaDeLaTiendaSinCodigoQuitada_SueltaElCupon()
+        {
+            var canjeTienda = new ServicioCanjeCupones(repositorio, () => HOY, PRODUCTO, () => true);
+
+            PlanCanjeCupon plan = await canjeTienda.Comprobar("1", PEDIDO, CLIENTE, new List<LinPedidoVta> { Linea("CREMA", 150) }, "G21", null, "x",
+                pedidoNuevo: false, teniaLineaCupon: true);
+
+            Assert.IsTrue(plan.LiberarOtros);
+        }
+
         [TestMethod]
         public async Task Comprobar_QuitarLaLinea_SueltaElCupon()
         {

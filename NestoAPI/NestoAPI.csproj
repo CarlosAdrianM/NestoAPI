@@ -1062,6 +1062,9 @@
     <Compile Include="Infraestructure\Cupones\RepositorioCupones.cs" />
     <Compile Include="Infraestructure\Cupones\ServicioCanjeCupones.cs" />
     <Compile Include="Infraestructure\Cupones\ServicioCupones.cs" />
+    <Compile Include="Infraestructure\Cupones\EspejoCuponesPrestashop.cs" />
+    <Compile Include="Infraestructure\Cupones\CuponesPrestashopJobsService.cs" />
+    <Compile Include="Infraestructure\Prestashop\ClienteWebservicePrestashop.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorCupon.cs" />
     <Compile Include="Controllers\CuponesController.cs" />
     <Compile Include="Models\Picking\CuponesPicking.cs" />

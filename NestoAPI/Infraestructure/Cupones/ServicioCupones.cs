@@ -26,6 +26,39 @@ namespace NestoAPI.Infraestructure.Cupones
         Task<CuponDTO> CrearManual(CrearCuponManualDTO peticion, IPrincipal usuario);
         /// <summary>Devolución del curso: anula el cupón si no se ha usado; si ya se usó, avisa (409) y no lo toca.</summary>
         Task<CuponDTO> Anular(string codigo, AnularCuponDTO peticion, IPrincipal usuario);
+        /// <summary>NestoAPI#614: el cupón se ha gastado en la tienda PrestaShop (lo llama Nesto al importar el pedido).</summary>
+        Task<UsoCuponTiendaDTO> UsarEnTienda(string codigo, UsarCuponTiendaDTO peticion, IPrincipal usuario);
+    }
+
+    /// <summary>NestoAPI#614: POST api/Cupones/{codigo}/Usar (Nesto, al importar un pedido de PrestaShop con el cupón).</summary>
+    public class UsarCuponTiendaDTO
+    {
+        public string Empresa { get; set; }
+        /// <summary>El pedido de Nesto, ya creado, con la línea del producto del cupón.</summary>
+        public int Pedido { get; set; }
+        /// <summary>El pedido de la tienda (id o referencia de PrestaShop), para el aviso.</summary>
+        public string ReferenciaTienda { get; set; }
+        /// <summary>Opcional: si no viene, «PrestaShop».</summary>
+        public string Canal { get; set; }
+    }
+
+    public static class ResultadosUsoCuponTienda
+    {
+        /// <summary>Queda Usado en el pedido.</summary>
+        public const string USADO = "Usado";
+        /// <summary>Ya estaba Usado en ese pedido (la segunda llamada no hace nada).</summary>
+        public const string YA_EN_ESTE_PEDIDO = "YaEnEstePedido";
+        /// <summary>Ya estaba usado en otro pedido o anulado: el pedido entra igual y se avisa a Administración.</summary>
+        public const string CONFLICTO = "Conflicto";
+    }
+
+    public class UsoCuponTiendaDTO
+    {
+        public string Resultado { get; set; }
+        public string Mensaje { get; set; }
+        /// <summary>Se ha mandado el correo a Administración.</summary>
+        public bool AvisoAdministracion { get; set; }
+        public CuponDTO Cupon { get; set; }
     }
 
     /// <summary>NestoAPI#613: POST api/Cupones/{codigo}/Anular.</summary>
@@ -49,17 +82,28 @@ namespace NestoAPI.Infraestructure.Cupones
         private readonly NVEntities db;
         private readonly Func<DateTime> ahora;
         private readonly string productoCupon;
+        private readonly IEspejoCupones espejo;
+        private readonly Func<IServicioCorreoElectronico> correo;
+        private readonly Func<bool> usoEnTiendaEncendido;
 
-        public ServicioCupones(NVEntities db) : this(new RepositorioCupones(db), db, null, null)
+        public ServicioCupones(NVEntities db) : this(new RepositorioCupones(db), db, null, null, new ServicioEspejoCuponesPrestashop(db),
+            () => new ServicioCorreoElectronico(), () => ReglasEspejoPrestashop.Encendido)
         {
         }
 
-        internal ServicioCupones(IRepositorioCupones repositorio, NVEntities db, Func<DateTime> ahora, string productoCupon)
+        /// <param name="espejo">NestoAPI#614: llevar el cupón a PrestaShop al emitirlo, anularlo o usarlo en la tienda. Null: nada.</param>
+        /// <param name="correo">NestoAPI#614: el aviso a Administración de un cupón gastado dos veces. Null: sin correo.</param>
+        /// <param name="usoEnTiendaEncendido">NestoAPI#614: Cupones:EspejoPrestashop. Null: apagado.</param>
+        internal ServicioCupones(IRepositorioCupones repositorio, NVEntities db, Func<DateTime> ahora, string productoCupon,
+            IEspejoCupones espejo = null, Func<IServicioCorreoElectronico> correo = null, Func<bool> usoEnTiendaEncendido = null)
         {
             this.repositorio = repositorio;
             this.db = db;
             this.ahora = ahora ?? (() => DateTime.Now);
             this.productoCupon = productoCupon ?? ReglasCupon.ProductoCupon;
+            this.espejo = espejo ?? EspejoCuponesApagado.Instancia;
+            this.correo = correo;
+            this.usoEnTiendaEncendido = usoEnTiendaEncendido ?? (() => false);
         }
 
         public async Task<List<CuponDTO>> LeerDelCliente(string empresa, string cliente, bool todos, IPrincipal usuario)
@@ -150,6 +194,10 @@ namespace NestoAPI.Infraestructure.Cupones
                 Estado = validoDesde > hoy ? EstadosCupon.EMITIDO : EstadosCupon.ACTIVO,
                 Usuario = usuarioAuditoria
             }, () => ReglasCupon.NuevoCodigo(OrigenesCupon.MANUAL, hoy)).ConfigureAwait(false);
+            if (creado != null)
+            {
+                await espejo.Sincronizar(creado.Id).ConfigureAwait(false);
+            }
             return ReglasCupon.ADTO(creado, ahora(), productoCupon);
         }
 
@@ -184,6 +232,7 @@ namespace NestoAPI.Infraestructure.Cupones
                 string usuarioAuditoria = UsuarioAuditoriaHelper.ParaAuditoria(UsuarioAuditoriaHelper.Resolver(usuario, null));
                 if (await repositorio.Anular(cupon.Id, motivo, usuarioAuditoria).ConfigureAwait(false) > 0)
                 {
+                    await espejo.Sincronizar(cupon.Id).ConfigureAwait(false);
                     CuponLeido anulado = await repositorio.LeerPorId(cupon.Id).ConfigureAwait(false) ?? cupon;
                     return ReglasCupon.ADTO(anulado, ahora(), productoCupon);
                 }
@@ -200,6 +249,143 @@ namespace NestoAPI.Infraestructure.Cupones
                 $"Tenga en cuenta ese descuento de {ReglasCupon.Euros(cupon.Importe)} € al rectificar la factura del curso.",
                 new ErrorContext { ErrorCode = ERROR_USADO_NO_SE_ANULA, Empresa = cupon.EmpresaUso?.Trim(), Pedido = cupon.UsadoEnPedido, Cliente = cupon.Cliente?.Trim() })
             { StatusCode = HttpStatusCode.Conflict };
+        }
+
+        /// <summary>
+        /// NestoAPI#614: el cupón se ha gastado en la tienda PrestaShop. Nesto importa el pedido (CanalesExternos) con la línea del
+        /// producto del cupón tal como la cobró la tienda y llama aquí con el pedido. Las reglas de Nesto (mínimo, fechas) no se miran:
+        /// las aplicó la tienda y el cliente ya ha pagado. Si el cupón ya estaba usado en otro pedido o anulado (se gastó en los dos
+        /// sitios a la vez), no se toca: el pedido entra igual y se avisa a Administración para resolverlo a mano. Lo puede llamar
+        /// cualquiera de la casa (no el cliente de la tienda). Idempotente.
+        /// </summary>
+        public async Task<UsoCuponTiendaDTO> UsarEnTienda(string codigo, UsarCuponTiendaDTO peticion, IPrincipal usuario)
+        {
+            if (!usoEnTiendaEncendido())
+            {
+                throw new NestoBusinessException($"El uso de los cupones en la tienda PrestaShop está apagado ({ReglasEspejoPrestashop.CLAVE_INTERRUPTOR}).");
+            }
+            if (usuario == null || PermisosEventos.ClienteDelToken(usuario) != null)
+            {
+                throw new NestoBusinessException("Solo la casa puede marcar un cupón como usado en la tienda.") { StatusCode = HttpStatusCode.Forbidden };
+            }
+            if (peticion == null || peticion.Pedido <= 0)
+            {
+                throw new NestoBusinessException("Indique el pedido de Nesto en el que se ha usado el cupón.");
+            }
+            CuponLeido cupon = await repositorio.LeerPorCodigo(codigo).ConfigureAwait(false)
+                ?? throw new NestoBusinessException($"No existe el cupón {codigo?.Trim()}.") { StatusCode = HttpStatusCode.NotFound };
+            string empresa = string.IsNullOrWhiteSpace(peticion.Empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : peticion.Empresa.Trim();
+            string clientePedido = await repositorio.LeerClienteDelPedidoConLineaCupon(empresa, peticion.Pedido).ConfigureAwait(false)
+                ?? throw new NestoBusinessException($"El pedido {peticion.Pedido} no tiene la línea del cupón ({productoCupon}): créela antes de " +
+                    "marcar el cupón como usado.");
+            string canal = string.IsNullOrWhiteSpace(peticion.Canal) ? ReglasEspejoPrestashop.CANAL_PRESTASHOP : peticion.Canal.Trim();
+            string codigoCupon = cupon.Codigo?.Trim();
+            DateTime hoy = ahora();
+
+            if (cupon.Estado?.Trim() == EstadosCupon.USADO && cupon.UsadoEnPedido == peticion.Pedido)
+            {
+                return new UsoCuponTiendaDTO
+                {
+                    Resultado = ResultadosUsoCuponTienda.YA_EN_ESTE_PEDIDO,
+                    Mensaje = $"El cupón {codigoCupon} ya está usado en el pedido {peticion.Pedido}.",
+                    Cupon = ReglasCupon.ADTO(cupon, hoy, productoCupon)
+                };
+            }
+
+            string usuarioAuditoria = UsuarioAuditoriaHelper.ParaAuditoria(UsuarioAuditoriaHelper.Resolver(usuario, null));
+            if (await repositorio.UsarEnTienda(cupon.Id, empresa, peticion.Pedido, canal, usuarioAuditoria).ConfigureAwait(false))
+            {
+                await espejo.Sincronizar(cupon.Id).ConfigureAwait(false);
+                CuponLeido usado = await repositorio.LeerPorId(cupon.Id).ConfigureAwait(false) ?? cupon;
+                bool otroCliente = !string.Equals(cupon.Cliente?.Trim(), clientePedido, StringComparison.OrdinalIgnoreCase);
+                string mensaje = $"El cupón {codigoCupon} queda usado en el pedido {peticion.Pedido}.";
+                bool avisado = false;
+                if (otroCliente)
+                {
+                    mensaje += $" Atención: el cupón es del cliente {cupon.Cliente?.Trim()} y el pedido ha entrado con el cliente {clientePedido}.";
+                    avisado = AvisarAdministracion(cupon, peticion, empresa, clientePedido,
+                        $"El cupón {codigoCupon} es del cliente {cupon.Cliente?.Trim()} y el pedido {peticion.Pedido} de la tienda ha entrado con el " +
+                        $"cliente {clientePedido} (por el NIF de la dirección). Se ha dado por usado en ese pedido: revise si el pedido es de quien tiene que ser.");
+                }
+                return new UsoCuponTiendaDTO
+                {
+                    Resultado = ResultadosUsoCuponTienda.USADO,
+                    Mensaje = mensaje,
+                    AvisoAdministracion = avisado,
+                    Cupon = ReglasCupon.ADTO(usado, ahora(), productoCupon)
+                };
+            }
+
+            // No se ha podido: usado en otro pedido o anulado. El pedido de la tienda entra igual; lo resuelve Administración.
+            CuponLeido actual = await repositorio.LeerPorId(cupon.Id).ConfigureAwait(false) ?? cupon;
+            string estado = ReglasCupon.EstadoEfectivo(actual, hoy);
+            string motivo = estado == EstadosCupon.USADO
+                ? $"ya estaba usado en el pedido {actual.UsadoEnPedido}" + (string.IsNullOrWhiteSpace(actual.FacturaUso) ? "" : $" (factura {actual.FacturaUso.Trim()})")
+                : estado == EstadosCupon.ANULADO
+                    ? "estaba anulado" + (string.IsNullOrWhiteSpace(actual.MotivoAnulacion) ? "" : $" ({actual.MotivoAnulacion.Trim()})")
+                    : $"estaba {estado?.ToLowerInvariant()}";
+            string conflicto = $"El cupón {codigoCupon} se ha gastado en la tienda (pedido {peticion.Pedido}" +
+                (string.IsNullOrWhiteSpace(peticion.ReferenciaTienda) ? "" : $", {peticion.ReferenciaTienda.Trim()} de la tienda") +
+                $") pero en Nesto {motivo}: se ha descontado dos veces. El pedido entra igual; hay que resolverlo a mano.";
+            bool aviso = AvisarAdministracion(actual, peticion, empresa, clientePedido, conflicto);
+            return new UsoCuponTiendaDTO
+            {
+                Resultado = ResultadosUsoCuponTienda.CONFLICTO,
+                Mensaje = conflicto,
+                AvisoAdministracion = aviso,
+                Cupon = ReglasCupon.ADTO(actual, hoy, productoCupon)
+            };
+        }
+
+        private bool AvisarAdministracion(CuponLeido cupon, UsarCuponTiendaDTO peticion, string empresa, string clientePedido, string texto)
+        {
+            ElmahHelper.Log(new Exception($"[Cupones #614] {texto}"));
+            if (correo == null)
+            {
+                return false;
+            }
+            try
+            {
+                using (MailMessage mail = CorreoUsoTienda(cupon, peticion, empresa, clientePedido, texto))
+                {
+                    return correo().EnviarCorreoSMTP(mail);
+                }
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Cupones #614] No se ha podido avisar a Administración del cupón {cupon.Codigo?.Trim()}: {ex.Message}", ex));
+                return false;
+            }
+        }
+
+        internal static MailMessage CorreoUsoTienda(CuponLeido cupon, UsarCuponTiendaDTO peticion, string empresa, string clientePedido, string texto)
+        {
+            string Html(string t) => WebUtility.HtmlEncode(t ?? string.Empty);
+            var cuerpo = new StringBuilder();
+            cuerpo.Append("<!DOCTYPE html><html><head><meta charset='utf-8'></head><body style='font-family: Arial, sans-serif; font-size: 14px;'>");
+            cuerpo.Append($"<p>{Html(texto)}</p><ul>");
+            cuerpo.Append($"<li>Cupón: <b>{Html(cupon.Codigo?.Trim())}</b> de {ReglasCupon.Euros(cupon.Importe)} €, del cliente {Html(cupon.Cliente?.Trim())}" +
+                (string.IsNullOrWhiteSpace(cupon.Evento) ? "" : $" («{Html(cupon.Evento.Trim())}»)") + "</li>");
+            cuerpo.Append($"<li>Pedido de la tienda: {Html(empresa)}/{peticion.Pedido}, cliente {Html(clientePedido)}" +
+                (string.IsNullOrWhiteSpace(peticion.ReferenciaTienda) ? "" : $", referencia {Html(peticion.ReferenciaTienda.Trim())}") + "</li>");
+            if (cupon.UsadoEnPedido.HasValue && cupon.UsadoEnPedido != peticion.Pedido)
+            {
+                cuerpo.Append($"<li>Donde ya se había usado: pedido {cupon.UsadoEnPedido}" +
+                    (string.IsNullOrWhiteSpace(cupon.FacturaUso) ? "" : $", factura {Html(cupon.FacturaUso.Trim())}") + "</li>");
+            }
+            cuerpo.Append("</ul></body></html>");
+            var mail = new MailMessage
+            {
+                From = new MailAddress(Constantes.Correos.TIENDA_ONLINE, "NestoAPI"),
+                Subject = $"Cupón {cupon.Codigo?.Trim()} de la tienda PrestaShop: revisar",
+                Body = cuerpo.ToString(),
+                IsBodyHtml = true,
+                BodyEncoding = Encoding.UTF8,
+                SubjectEncoding = Encoding.UTF8
+            };
+            mail.To.Add(Constantes.Correos.CORREO_ADMON);
+            mail.CC.Add(Constantes.Correos.TIENDA_ONLINE);
+            return mail;
         }
 
         /// <summary>
@@ -246,16 +432,20 @@ namespace NestoAPI.Infraestructure.Cupones
         private readonly IRepositorioCupones repositorio;
         private readonly IAvisadorCupones avisador;
         private readonly Func<DateTime> ahora;
+        private readonly IEspejoCupones espejo;
 
-        public EmisorCuponesEvento(NVEntities db) : this(new RepositorioCupones(db), new AvisadorCupones(db), null)
+        public EmisorCuponesEvento(NVEntities db)
+            : this(new RepositorioCupones(db), new AvisadorCupones(db), null, new ServicioEspejoCuponesPrestashop(db))
         {
         }
 
-        internal EmisorCuponesEvento(IRepositorioCupones repositorio, IAvisadorCupones avisador, Func<DateTime> ahora)
+        /// <param name="espejo">NestoAPI#614: llevarlo a PrestaShop al emitirlo (si falla, el job). Null: nada.</param>
+        internal EmisorCuponesEvento(IRepositorioCupones repositorio, IAvisadorCupones avisador, Func<DateTime> ahora, IEspejoCupones espejo = null)
         {
             this.repositorio = repositorio;
             this.avisador = avisador;
             this.ahora = ahora ?? (() => DateTime.Now);
+            this.espejo = espejo ?? EspejoCuponesApagado.Instancia;
         }
 
         public async Task Emitir(EventoInscripcion inscripcion, Evento evento, FacturacionCursoInscripcion facturacion, string usuario)
@@ -295,6 +485,7 @@ namespace NestoAPI.Infraestructure.Cupones
             {
                 return;
             }
+            await espejo.Sincronizar(cupon.Id).ConfigureAwait(false);
             await avisador.AvisarEmitido(cupon, inscripcion).ConfigureAwait(false);
         }
     }

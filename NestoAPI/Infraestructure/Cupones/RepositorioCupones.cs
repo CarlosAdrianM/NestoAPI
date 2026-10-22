@@ -59,6 +59,14 @@ namespace NestoAPI.Infraestructure.Cupones
         /// <summary>Al facturar el pedido donde se usó (best-effort desde ServicioFacturas).</summary>
         Task<int> ApuntarFacturaDeUso(string empresaPedido, int pedido, string empresaFactura, string factura);
         Task MarcarAviso(int id, string correo);
+        /// <summary>
+        /// NestoAPI#614: el cupón se ha gastado en la tienda PrestaShop y su pedido ha entrado por CanalesExternos. UPDATE
+        /// condicionado sin las reglas de Nesto (las aplicó la tienda): pasa a Usado en ese pedido si no está anulado ni usado en
+        /// otro pedido que todavía tenga la línea. Caducado vale: se gastó cuando valía. False si no se ha podido.
+        /// </summary>
+        Task<bool> UsarEnTienda(int id, string empresaPedido, int pedido, string canal, string usuario);
+        /// <summary>NestoAPI#614: el cliente del pedido si tiene la línea del producto del cupón; null si no la tiene (o no existe).</summary>
+        Task<string> LeerClienteDelPedidoConLineaCupon(string empresa, int pedido);
     }
 
     /// <summary>
@@ -68,7 +76,8 @@ namespace NestoAPI.Infraestructure.Cupones
     /// </summary>
     public class RepositorioCupones : IRepositorioCupones
     {
-        private const string COLUMNAS = @"c.Id, RTRIM(c.Codigo) AS Codigo, RTRIM(c.Empresa) AS Empresa, RTRIM(c.Cliente) AS Cliente, RTRIM(c.Contacto) AS Contacto,
+        /// <summary>Las columnas de <see cref="CuponLeido"/> (con @prod, el producto del cupón). NestoAPI#614 las reutiliza en el espejo.</summary>
+        internal const string LISTA_COLUMNAS = @"c.Id, RTRIM(c.Codigo) AS Codigo, RTRIM(c.Empresa) AS Empresa, RTRIM(c.Cliente) AS Cliente, RTRIM(c.Contacto) AS Contacto,
        c.Importe, c.Origen, c.EventoInscripcionId, c.EventoId, e.Titulo AS Evento, RTRIM(c.EmpresaFacturaOrigen) AS EmpresaFacturaOrigen,
        RTRIM(c.FacturaOrigen) AS FacturaOrigen, c.Motivo, c.FechaEmision, CAST(c.ValidoDesde AS datetime) AS ValidoDesde,
        CAST(c.Caducidad AS datetime) AS Caducidad, c.Estado, RTRIM(c.EmpresaUso) AS EmpresaUso, c.UsadoEnPedido,
@@ -76,8 +85,11 @@ namespace NestoAPI.Infraestructure.Cupones
        CAST(CASE WHEN c.UsadoEnPedido IS NOT NULL AND EXISTS (SELECT 1 FROM LinPedidoVta l WHERE l.[Número] = c.UsadoEnPedido AND l.Producto = @prod)
                  THEN 1 ELSE 0 END AS bit) AS PedidoUsoTieneLaLinea,
        CAST(CASE WHEN c.UsadoEnPedido IS NOT NULL AND EXISTS (SELECT 1 FROM LinPedidoVta l WHERE l.[Número] = c.UsadoEnPedido AND l.Producto = @prod AND l.Estado >= 2)
-                 THEN 1 ELSE 0 END AS bit) AS LineaUsoServida
-FROM dbo.Cupones c LEFT JOIN dbo.Eventos e ON e.Id = c.EventoId";
+                 THEN 1 ELSE 0 END AS bit) AS LineaUsoServida";
+
+        internal const string ORIGEN = "FROM dbo.Cupones c LEFT JOIN dbo.Eventos e ON e.Id = c.EventoId";
+
+        private const string COLUMNAS = LISTA_COLUMNAS + " " + ORIGEN;
 
         private const string VACIO = @"SELECT CAST(0 AS int) AS Id, CAST(NULL AS varchar(20)) AS Codigo, CAST(NULL AS varchar(3)) AS Empresa,
        CAST(NULL AS varchar(10)) AS Cliente, CAST(NULL AS varchar(3)) AS Contacto, CAST(0 AS decimal(10,2)) AS Importe, CAST(NULL AS varchar(10)) AS Origen,
@@ -120,6 +132,17 @@ FROM dbo.Cupones c WITH (UPDLOCK, ROWLOCK)
 WHERE c.Id = @p0
       AND ((c.Estado = 'Activo' AND c.Caducidad >= CAST(GETDATE() AS date))
            OR (c.Estado = 'Emitido' AND c.ValidoDesde <= CAST(GETDATE() AS date) AND c.Caducidad >= CAST(GETDATE() AS date))
+           OR (c.Estado = 'Usado' AND (c.UsadoEnPedido = @p2
+               OR NOT EXISTS (SELECT 1 FROM LinPedidoVta l WHERE l.[Número] = c.UsadoEnPedido AND l.Producto = @p5))))";
+
+        internal const string SQL_USAR_TIENDA = @"
+UPDATE c
+SET Estado = 'Usado', EmpresaUso = @p1, UsadoEnPedido = @p2,
+    FechaUso = CASE WHEN c.Estado = 'Usado' AND c.UsadoEnPedido = @p2 THEN c.FechaUso ELSE GETDATE() END,
+    CanalUso = @p3, Usuario = @p4, FechaModificacion = GETDATE()
+FROM dbo.Cupones c WITH (UPDLOCK, ROWLOCK)
+WHERE c.Id = @p0
+      AND (c.Estado IN ('Emitido', 'Activo', 'Caducado')
            OR (c.Estado = 'Usado' AND (c.UsadoEnPedido = @p2
                OR NOT EXISTS (SELECT 1 FROM LinPedidoVta l WHERE l.[Número] = c.UsadoEnPedido AND l.Producto = @p5))))";
 
@@ -322,6 +345,24 @@ END";
             _ = await db.Database.ExecuteSqlCommandAsync(
                 "UPDATE dbo.Cupones SET FechaAvisoCorreo = GETDATE(), CorreoAviso = @p1 WHERE Id = @p0",
                 new SqlParameter("@p0", id), new SqlParameter("@p1", (object)Recortar(correo, 200) ?? DBNull.Value)).ConfigureAwait(false);
+
+        public async Task<bool> UsarEnTienda(int id, string empresaPedido, int pedido, string canal, string usuario) =>
+            await db.Database.ExecuteSqlCommandAsync(SQL_USAR_TIENDA,
+                new SqlParameter("@p0", id),
+                new SqlParameter("@p1", empresaPedido?.Trim() ?? Constantes.Empresas.EMPRESA_POR_DEFECTO),
+                new SqlParameter("@p2", pedido),
+                new SqlParameter("@p3", (object)Recortar(canal, 20) ?? DBNull.Value),
+                new SqlParameter("@p4", Usuario(usuario)),
+                new SqlParameter("@p5", productoCupon)).ConfigureAwait(false) > 0;
+
+        public async Task<string> LeerClienteDelPedidoConLineaCupon(string empresa, int pedido)
+        {
+            string e = empresa?.Trim() ?? Constantes.Empresas.EMPRESA_POR_DEFECTO;
+            string cliente = await db.LinPedidoVtas
+                .Where(l => l.Empresa == e && l.Número == pedido && l.Producto == productoCupon)
+                .Select(l => l.Nº_Cliente).FirstOrDefaultAsync().ConfigureAwait(false);
+            return cliente?.Trim();
+        }
 
         internal static string Usuario(string usuario)
         {
