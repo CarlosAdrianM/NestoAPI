@@ -85,6 +85,62 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(0, mail.CC.Count);
         }
 
+        // Novedad 716 (Laura, 22/10/26): las incidencias de los pedidos de la tienda online y de Amazon tienen que
+        // llegar a tiendaonline@, sin quitárselas a quien ya las recibía.
+        [TestMethod]
+        public void ComponerCorreo_PedidoDeCanalExterno_TambienATiendaOnline()
+        {
+            var comerciales = new ComercialesPedido
+            {
+                Cliente = Constantes.ClientesEspeciales.AMAZON,
+                UsuarioPedido = "Laura",
+                CorreoUsuarioPedido = "laura@nuevavision.es",
+                EsCanalExterno = true,
+                Comerciales = { new ComercialPedido { Vendedor = Constantes.Vendedores.VENDEDOR_GENERAL } }
+            };
+
+            MailMessage mail = AvisadorIncidenciasEnvio.ComponerCorreo(Envio(), comerciales, "CTT");
+
+            CollectionAssert.AreEquivalent(new[] { Constantes.Correos.TIENDA_ONLINE, "laura@nuevavision.es" }, mail.To.Select(t => t.Address).ToList());
+            Assert.AreEqual(Constantes.Correos.LOGISTICA, mail.CC.Single().Address);
+        }
+
+        [TestMethod]
+        public void ComponerCorreo_PedidoDeTiendaOnlineSinNadieConCorreo_ATiendaOnlineConCopiaALogistica()
+        {
+            var comerciales = new ComercialesPedido { EsCanalExterno = true, Comerciales = { new ComercialPedido { Vendedor = "SIN" } } };
+
+            MailMessage mail = AvisadorIncidenciasEnvio.ComponerCorreo(Envio(), comerciales, "CTT");
+
+            Assert.AreEqual(Constantes.Correos.TIENDA_ONLINE, mail.To.Single().Address);
+            Assert.AreEqual(Constantes.Correos.LOGISTICA, mail.CC.Single().Address);
+        }
+
+        [DataTestMethod]
+        [DataRow(Constantes.ClientesEspeciales.TIENDA_ONLINE, true, DisplayName = "Envío al cliente de la tienda online")]
+        [DataRow(Constantes.ClientesEspeciales.AMAZON, true, DisplayName = "Envío al cliente de Amazon")]
+        [DataRow("15191", false, DisplayName = "Cliente normal")]
+        public void ComponerCorreo_EnvioSinPedido_PorElCliente(string cliente, bool aTiendaOnline)
+        {
+            EnviosAgencia envio = Envio();
+            envio.Pedido = null;
+            envio.Cliente = cliente + "  ";
+            var comerciales = new ComercialesPedido { CorreoUsuarioPedido = "enrique@nuevavision.es" };
+
+            MailMessage mail = AvisadorIncidenciasEnvio.ComponerCorreo(envio, comerciales, "CTT");
+
+            Assert.AreEqual(aTiendaOnline, mail.To.Any(t => t.Address == Constantes.Correos.TIENDA_ONLINE));
+            Assert.IsTrue(mail.To.Any(t => t.Address == "enrique@nuevavision.es"), "No se le quita a nadie");
+        }
+
+        [TestMethod]
+        public void ComponerCorreo_PedidoNormal_NoVaATiendaOnline()
+        {
+            MailMessage mail = AvisadorIncidenciasEnvio.ComponerCorreo(Envio(), Comerciales(), "CTT");
+
+            Assert.IsFalse(mail.To.Concat(mail.CC).Any(t => t.Address == Constantes.Correos.TIENDA_ONLINE));
+        }
+
         [TestMethod]
         public async Task AvisarAsync_CorreoYCampanaDeCadaComercial()
         {

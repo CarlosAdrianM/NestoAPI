@@ -80,6 +80,20 @@ namespace NestoAPI.Tests.Infrastructure
 
         private ComercialesPedido Leer() => new LectorComercialesPedido(_db).Leer(EMPRESA, PEDIDO);
 
+        // Novedad 716: los pedidos de la tienda online y de Amazon se reconocen por la forma de venta de sus líneas
+        [DataTestMethod]
+        [DataRow(Constantes.FormasVenta.TIENDA_ONLINE, true)]
+        [DataRow(Constantes.FormasVenta.AMAZON + "  ", true)]
+        [DataRow("VAR", false)]
+        [DataRow(Constantes.FormasVenta.APP, false)]
+        public void EsCanalExterno_PorLaFormaDeVentaDeLasLineas(string formaVenta, bool esperado)
+        {
+            Pedido(Constantes.Vendedores.VENDEDOR_GENERAL);
+            _lineas.Add(new LinPedidoVta { Empresa = EMPRESA, Número = PEDIDO, TipoLinea = Constantes.TiposLineaVenta.PRODUCTO, Grupo = Constantes.Productos.GRUPO_COSMETICA, Forma_Venta = formaVenta });
+
+            Assert.AreEqual(esperado, Leer().EsCanalExterno);
+        }
+
         [TestMethod]
         public void SoloEstetica_VaAlVendedorDelPedido_NoAQuienLoGrabo()
         {
