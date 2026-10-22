@@ -73,28 +73,19 @@ namespace NestoAPI.Infraestructure.Eventos
             || (usuario != null && ClienteDelToken(usuario) == null && usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.ADMINISTRACION));
 
         public const string MENSAJE_SIN_PERMISO_IMAGEN =
-            "La imagen del evento la ponen la tienda del evento, Tienda online y Dirección.";
+            "La imagen del evento la pone Tienda online.";
 
         /// <summary>
-        /// NestoAPI#690 (Carlos, 22/10/26): la imagen del evento, para las campañas, la pueden poner la tienda del evento
-        /// (grupo Tiendas con ese AlmacénPedidoVta), Tienda online y Dirección (e Informática).
+        /// NestoAPI#690 (Carlos, 22/10/26): la imagen del evento, para las campañas, la pone solo Tienda online (y Dirección
+        /// e Informática, que pueden con todo). Ni la tienda del evento ni Administración.
         /// </summary>
-        public static bool PuedeSubirImagen(IPrincipal usuario, string almacenUsuario, string almacenEvento)
+        public static bool PuedeSubirImagen(IPrincipal usuario)
         {
             if (usuario == null || ClienteDelToken(usuario) != null)
             {
                 return false;
             }
-            if (EsDireccion(usuario) || usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.TIENDA_ON_LINE))
-            {
-                return true;
-            }
-            string tiendaEvento = almacenEvento?.Trim();
-            string almacen = almacenUsuario?.Trim();
-            return !string.IsNullOrEmpty(tiendaEvento)
-                && usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.TIENDAS)
-                && !string.IsNullOrEmpty(almacen)
-                && string.Equals(almacen, tiendaEvento, StringComparison.OrdinalIgnoreCase);
+            return EsDireccion(usuario) || usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.TIENDA_ON_LINE);
         }
 
         /// <summary>El cliente del token de la tienda online (claim «cliente»), o null si es un usuario de la casa.</summary>

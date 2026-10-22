@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure;
@@ -368,15 +368,15 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         }
 
         [TestMethod]
-        public void Imagen_Permisos_TiendaDelEventoTiendaOnlineYDireccion()
+        public void Imagen_Permisos_SoloTiendaOnlineYDireccion()
         {
-            Assert.IsTrue(PermisosEventos.PuedeSubirImagen(REINA, "REI", "REI"));
-            Assert.IsFalse(PermisosEventos.PuedeSubirImagen(PALOMA, "ALC", "REI"));
-            Assert.IsTrue(PermisosEventos.PuedeSubirImagen(TIENDA_ONLINE, null, "REI"));
-            Assert.IsTrue(PermisosEventos.PuedeSubirImagen(Usuario("NUEVAVISION\\Carlos", "Dirección"), null, "ALC"));
-            Assert.IsFalse(PermisosEventos.PuedeSubirImagen(VENDEDOR, null, "REI"));
-            Assert.IsFalse(PermisosEventos.PuedeSubirImagen(Usuario("NUEVAVISION\\Admin", "Administración"), null, "REI"));
-            Assert.IsFalse(PermisosEventos.PuedeSubirImagen(ClienteTienda("15191"), null, "REI"));
+            Assert.IsFalse(PermisosEventos.PuedeSubirImagen(REINA), "La tienda del evento ya no pone la imagen: solo Tienda online");
+            Assert.IsFalse(PermisosEventos.PuedeSubirImagen(PALOMA));
+            Assert.IsTrue(PermisosEventos.PuedeSubirImagen(TIENDA_ONLINE));
+            Assert.IsTrue(PermisosEventos.PuedeSubirImagen(Usuario("NUEVAVISION\\Carlos", "Dirección")));
+            Assert.IsFalse(PermisosEventos.PuedeSubirImagen(VENDEDOR));
+            Assert.IsFalse(PermisosEventos.PuedeSubirImagen(Usuario("NUEVAVISION\\Admin", "Administración")));
+            Assert.IsFalse(PermisosEventos.PuedeSubirImagen(ClienteTienda("15191")));
         }
 
         [TestMethod]
@@ -406,7 +406,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             var controlador = new EventosController(db, ServicioEventos(imagenes), Servicio())
             {
                 Request = new HttpRequestMessage(HttpMethod.Post, "http://localhost/api/Eventos/1/Imagen") { Content = contenido },
-                User = REINA
+                User = TIENDA_ONLINE
             };
             controlador.Request.SetConfiguration(new HttpConfiguration());
 

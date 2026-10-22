@@ -130,7 +130,7 @@ namespace NestoAPI.Controllers
             {
                 return NotFound();
             }
-            if (!PermisosEventos.PuedeSubirImagen(User, servicio.AlmacenDelUsuario(User, null), almacenEvento))
+            if (!PermisosEventos.PuedeSubirImagen(User))
             {
                 return Prohibido(PermisosEventos.MENSAJE_SIN_PERMISO_IMAGEN);
             }
@@ -174,7 +174,7 @@ namespace NestoAPI.Controllers
             {
                 return NotFound();
             }
-            if (!PermisosEventos.PuedeSubirImagen(User, servicio.AlmacenDelUsuario(User, null), almacenEvento))
+            if (!PermisosEventos.PuedeSubirImagen(User))
             {
                 return Prohibido(PermisosEventos.MENSAJE_SIN_PERMISO_IMAGEN);
             }
