@@ -861,11 +861,18 @@ namespace NestoAPI.Models
 
             /// <summary>
             /// NestoAPI#532: interruptor del recordatorio de reposición (job semanal de Hangfire, jueves
-            /// 05:30). Bajo «(defecto)». Sin fila, "0" o cualquier valor que no se reconozca: APAGADO.
-            /// "Sombra": calcula a quién se le recordaría reponer qué y lo manda SOLO al equipo interno
-            /// (CorreosPostCompra:EmailsTest), sin escribir a ningún cliente.
+            /// 09:00). Bajo «(defecto)». Sin fila, "0" o cualquier valor que no se reconozca: APAGADO.
+            /// "Sombra": calcula a quién se le recordaría reponer qué y lo manda SOLO a Informática, sin
+            /// escribir a ningún cliente. "Activo": escribe a los clientes de los vendedores de
+            /// <see cref="RECORDATORIO_REPOSICION_VENDEDORES"/>, lo registra y manda el resumen a Informática.
             /// </summary>
             public const string RECORDATORIO_REPOSICION = "RecordatorioReposicion";
+
+            /// <summary>
+            /// NestoAPI#532: vendedores (CSV) a cuyos clientes se les escribe en modo Activo. «(NULL)» = cliente
+            /// sin vendedor. Sin fila o vacío: NINGUNO (para que no se escape a todos).
+            /// </summary>
+            public const string RECORDATORIO_REPOSICION_VENDEDORES = "RecordatorioReposicionVendedores";
 
             /// <summary>
             /// NestoAPI#532: lista blanca de grupos/subgrupos consumibles del recordatorio de reposición

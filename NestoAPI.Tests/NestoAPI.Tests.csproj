@@ -59,6 +59,9 @@
     <Reference Include="FakeItEasy, Version=8.0.0.0, Culture=neutral, PublicKeyToken=eff28e2146d5fd2c, processorArchitecture=MSIL">
       <HintPath>..\packages\FakeItEasy.8.3.0\lib\net462\FakeItEasy.dll</HintPath>
     </Reference>
+    <Reference Include="FirebaseAdmin, Version=3.4.0.0, Culture=neutral, PublicKeyToken=97c8d00c348326ed, processorArchitecture=MSIL">
+      <HintPath>..\packages\FirebaseAdmin.3.4.0\lib\net462\FirebaseAdmin.dll</HintPath>
+    </Reference>
     <Reference Include="Microsoft.ApplicationInsights, Version=2.23.0.29, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
       <HintPath>..\packages\Microsoft.ApplicationInsights.2.23.0\lib\net46\Microsoft.ApplicationInsights.dll</HintPath>
     </Reference>
@@ -693,6 +696,8 @@
     <Compile Include="Infrastructure\CorreosPostCompra\CalculadoraReposicionTests.cs" />
     <Compile Include="Infrastructure\CorreosPostCompra\RecordatorioReposicionJobsServiceTests.cs" />
     <Compile Include="Infrastructure\CorreosPostCompra\RecordatorioReposicionPushJobsServiceTests.cs" />
+    <Compile Include="Infrastructure\CorreosPostCompra\ReglasEnvioRecordatorioReposicionTests.cs" />
+    <Compile Include="Infrastructure\CorreosPostCompra\GeneradorTextoRecordatorioReposicionTests.cs" />
     <Compile Include="Infrastructure\Traspasos\ServicioTraspasosTests.cs" />
     <Compile Include="Infrastructure\OpenAI\ServicioOpenAITests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\GestorPortesTests.cs" />

@@ -1255,6 +1255,9 @@
     <Compile Include="Infraestructure\CorreosPostCompra\CalculadoraReposicion.cs" />
     <Compile Include="Infraestructure\CorreosPostCompra\ConsumiblesReposicion.cs" />
     <Compile Include="Infraestructure\CorreosPostCompra\PlantillaRecordatorioReposicion.cs" />
+    <Compile Include="Infraestructure\CorreosPostCompra\GeneradorTextoRecordatorioReposicion.cs" />
+    <Compile Include="Infraestructure\CorreosPostCompra\ReglasEnvioRecordatorioReposicion.cs" />
+    <Compile Include="Infraestructure\CorreosPostCompra\RepositorioRecordatorioReposicion.cs" />
     <Compile Include="Infraestructure\CorreosPostCompra\RecordatorioReposicionDTO.cs" />
     <Compile Include="Infraestructure\CorreosPostCompra\RecordatorioReposicionJobsService.cs" />
     <Compile Include="Infraestructure\CorreosPostCompra\RecordatorioReposicionPushJobsService.cs" />

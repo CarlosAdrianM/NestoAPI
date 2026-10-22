@@ -87,6 +87,8 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
         public int CantidadHabitual { get; set; }
         public string Motivo { get; set; }
         public string EnlaceTienda { get; set; }
+        /// <summary>NestoAPI#532: foto del producto en la tienda (ProductoDTO.RutaImagen). Null si no tiene.</summary>
+        public string UrlFoto { get; set; }
         public bool SeAvisaria => Motivo == null;
     }
 
@@ -98,6 +100,8 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
         public string Email { get; set; }
         /// <summary>Nombre del comercial (vacío si es el vendedor general): «si prefieres, pídeselo a...».</summary>
         public string VendedorNombre { get; set; }
+        /// <summary>NestoAPI#532: código del vendedor del cliente (null si no tiene). Decide si se le escribe en modo Activo.</summary>
+        public string Vendedor { get; set; }
         /// <summary>Grupo de control: sería elegible, pero NO se le escribe (para medir el efecto del correo).</summary>
         public bool GrupoControl { get; set; }
         public List<CandidatoReposicionDTO> Productos { get; set; } = new List<CandidatoReposicionDTO>();

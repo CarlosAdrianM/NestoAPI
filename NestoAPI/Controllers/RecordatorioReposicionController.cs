@@ -1,5 +1,6 @@
 ﻿using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.CorreosPostCompra;
+using NestoAPI.Infraestructure.OpenAI;
 using NestoAPI.Models;
 using System;
 using System.Globalization;
@@ -10,28 +11,37 @@ using System.Web.Http.Description;
 namespace NestoAPI.Controllers
 {
     /// <summary>
-    /// NestoAPI#532 (fase 1, cálculo en seco): recordatorio de reposición calculado con las ventas de
-    /// Nesto de todos los canales. Nada de lo que hay aquí escribe a clientes.
+    /// NestoAPI#532: recordatorio de reposición calculado con las ventas de Nesto de todos los canales. Nada de lo que hay
+    /// aquí escribe a clientes (eso solo lo hace el job de los jueves en modo Activo).
     /// </summary>
     [Authorize]
     [RoutePrefix("api/CorreosPostCompra/Reposicion")]
     public class RecordatorioReposicionController : ApiController
     {
         private readonly Func<ISelectorRecordatoriosReposicion> crearSelector;
+        private readonly Func<IRepositorioRecordatorioReposicion> crearRepositorio;
         private readonly ILectorParametrosUsuario lector;
         private readonly IServicioCorreoElectronico servicioCorreo;
+        private readonly IGeneradorTextoRecordatorioReposicion generadorTexto;
 
         public RecordatorioReposicionController()
-            : this(null, new LectorParametrosUsuario(), new ServicioCorreoElectronico())
+            : this(null, new LectorParametrosUsuario(), new ServicioCorreoElectronico(), null,
+                new GeneradorTextoRecordatorioReposicion(new ServicioOpenAI()))
         {
         }
 
+        /// <param name="crearSelector">Null: el de la BD.</param>
+        /// <param name="crearRepositorio">Solo se usa con <paramref name="crearSelector"/> (tests); sin selector, el de la BD.</param>
         public RecordatorioReposicionController(Func<ISelectorRecordatoriosReposicion> crearSelector,
-            ILectorParametrosUsuario lector, IServicioCorreoElectronico servicioCorreo)
+            ILectorParametrosUsuario lector, IServicioCorreoElectronico servicioCorreo,
+            Func<IRepositorioRecordatorioReposicion> crearRepositorio = null,
+            IGeneradorTextoRecordatorioReposicion generadorTexto = null)
         {
             this.crearSelector = crearSelector;
+            this.crearRepositorio = crearRepositorio;
             this.lector = lector;
             this.servicioCorreo = servicioCorreo;
+            this.generadorTexto = generadorTexto;
         }
 
         /// <summary>
@@ -48,13 +58,21 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest("La fecha tiene que ir como yyyy-MM-dd");
             }
-            ResultadoRecordatorioReposicionDTO resultado = await Calcular(empresa, hoy).ConfigureAwait(false);
-            return Ok(resultado);
+            string consumibles = RecordatorioReposicionJobsService.LeerConsumibles(lector);
+            if (crearSelector != null)
+            {
+                return Ok(await crearSelector().Calcular(empresa, hoy, consumibles).ConfigureAwait(false));
+            }
+            using (NVEntities db = NuevoContexto())
+            {
+                return Ok(await new SelectorRecordatoriosReposicion(db).Calcular(empresa, hoy, consumibles).ConfigureAwait(false));
+            }
         }
 
         /// <summary>
-        /// Manda ahora el correo sombra (SOLO al equipo interno de CorreosPostCompra:EmailsTest), sin esperar
-        /// al jueves y aunque el interruptor esté apagado. No escribe a ningún cliente.
+        /// Manda ahora el resumen en modo sombra (SOLO a Informática), con el texto de esta semana, las bajas, las
+        /// repeticiones y el filtro de vendedores, sin esperar al jueves y con el interruptor como esté. No escribe a ningún
+        /// cliente ni registra nada.
         /// </summary>
         [HttpPost]
         [Route("EnviarSombra")]
@@ -64,34 +82,55 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest("La fecha tiene que ir como yyyy-MM-dd");
             }
-            ResultadoRecordatorioReposicionDTO resultado = await Calcular(empresa, hoy).ConfigureAwait(false);
-            string destinatarios = RecordatorioReposicionJobsService.DestinatariosSombra();
-            bool enviado = await RecordatorioReposicionJobsService.EnviarSombra(resultado, servicioCorreo,
-                RecordatorioReposicionJobsService.RellenarEnlacesTienda, destinatarios).ConfigureAwait(false);
+            string consumibles = RecordatorioReposicionJobsService.LeerConsumibles(lector);
+            EjecucionRecordatorioReposicionDTO ejecucion;
+            if (crearSelector != null)
+            {
+                ResultadoRecordatorioReposicionDTO resultado = await crearSelector().Calcular(empresa, hoy, consumibles).ConfigureAwait(false);
+                ejecucion = await RecordatorioReposicionJobsService.Ejecutar(ModoRecordatorioReposicion.Sombra, resultado,
+                    Dependencias(crearRepositorio?.Invoke(), hoy)).ConfigureAwait(false);
+            }
+            else
+            {
+                using (NVEntities db = NuevoContexto())
+                {
+                    ResultadoRecordatorioReposicionDTO resultado = await new SelectorRecordatoriosReposicion(db)
+                        .Calcular(empresa, hoy, consumibles).ConfigureAwait(false);
+                    ejecucion = await RecordatorioReposicionJobsService.Ejecutar(ModoRecordatorioReposicion.Sombra, resultado,
+                        Dependencias(new RepositorioRecordatorioReposicionSql(db), hoy)).ConfigureAwait(false);
+                }
+            }
             return Ok(new
             {
-                Enviado = enviado,
-                Destinatarios = destinatarios,
-                resultado.Correos,
-                resultado.Productos,
-                GrupoControl = resultado.GrupoControl.Count,
-                Descartes = resultado.Descartes.Count
+                Enviado = ejecucion.ResumenEnviado,
+                Destinatarios = RecordatorioReposicionJobsService.DestinatariosSombra(),
+                SeEnviarian = ejecucion.Plan.Enviar.Count,
+                FueraPorVendedor = ejecucion.Plan.FueraPorVendedor.Count,
+                GrupoControl = ejecucion.Resultado.GrupoControl.Count,
+                Descartes = ejecucion.Resultado.Descartes.Count,
+                Texto = ejecucion.Texto.Version
             });
         }
 
-        private async Task<ResultadoRecordatorioReposicionDTO> Calcular(string empresa, DateTime hoy)
+        private DependenciasRecordatorioReposicion Dependencias(IRepositorioRecordatorioReposicion repositorio, DateTime hoy)
+            => new DependenciasRecordatorioReposicion
+            {
+                Lector = lector,
+                Correo = servicioCorreo,
+                RellenarProductos = RecordatorioReposicionJobsService.CrearRellenadorProductos(),
+                Repositorio = repositorio,
+                GeneradorTexto = generadorTexto,
+                Destinatarios = RecordatorioReposicionJobsService.DestinatariosSombra(),
+                Remitente = RecordatorioReposicionJobsService.Remitente(),
+                Hoy = hoy
+            };
+
+        private static NVEntities NuevoContexto()
         {
-            string consumibles = RecordatorioReposicionJobsService.LeerConsumibles(lector);
-            if (crearSelector != null)
-            {
-                return await crearSelector().Calcular(empresa, hoy, consumibles).ConfigureAwait(false);
-            }
-            using (NVEntities db = new NVEntities())
-            {
-                db.Configuration.LazyLoadingEnabled = false;
-                db.Configuration.ProxyCreationEnabled = false;
-                return await new SelectorRecordatoriosReposicion(db).Calcular(empresa, hoy, consumibles).ConfigureAwait(false);
-            }
+            var db = new NVEntities();
+            db.Configuration.LazyLoadingEnabled = false;
+            db.Configuration.ProxyCreationEnabled = false;
+            return db;
         }
 
         internal static bool LeerFecha(string fecha, out DateTime hoy)

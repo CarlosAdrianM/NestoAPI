@@ -554,19 +554,22 @@ namespace NestoAPI
 
             Console.WriteLine("✅ Job recurrente 'correos-postcompra-semanal' configurado (jueves a las 05:00)");
 
-            // NestoAPI#532: recordatorio de reposición con las ventas de Nesto (todos los canales). Jueves 05:30,
-            // detrás del de posventa. NO HACE NADA salvo con el parámetro RecordatorioReposicion de (defecto) a
-            // "Sombra", y en ese modo solo escribe al equipo interno (Scripts/Issue532_RecordatorioReposicion.sql).
+            // NestoAPI#532: recordatorio de reposición con las ventas de Nesto (todos los canales). Jueves a las 9:00
+            // (hasta el 22/10/26 iba a las 05:30, cuando solo era sombra): en Activo el correo al cliente tiene que llegar
+            // por la mañana. El cálculo son unos segundos (consulta medida el 25/09/26: ~3 s, ~41.000 lecturas lógicas, con
+            // NOLOCK y por índice: no molesta en horario); lo que más tarda son los envíos, uno cada 2,5 s (límite de
+            // Office 365) más el enlace y la foto de cada producto. NO HACE NADA salvo con el parámetro RecordatorioReposicion
+            // de (defecto) a "Sombra" (solo a Informática) o "Activo" (Scripts/Issue532_RecordatorioReposicionActivo.sql).
             RecurringJob.AddOrUpdate(
                 "recordatorio-reposicion-semanal",
                 () => RecordatorioReposicionJobsService.Procesar(),
-                "30 5 * * 4", // Cron: jueves a las 05:30
+                "0 9 * * 4", // Cron: jueves a las 09:00
                 new RecurringJobOptions
                 {
                     TimeZone = TimeZoneInfo.Local
                 }
             );
-            Console.WriteLine("✅ Job recurrente 'recordatorio-reposicion-semanal' configurado (jueves a las 05:30; apagado salvo parámetro)");
+            Console.WriteLine("✅ Job recurrente 'recordatorio-reposicion-semanal' configurado (jueves a las 09:00; apagado salvo parámetro)");
 
             // NestoAPI#662: el mismo cálculo por push a los clientes de NestoTiendas. Diario de lunes a jueves a las 9:30
             // (la regla de una push cada 7 días evita repetir). Interruptor PROPIO: parámetro RecordatorioReposicionPush
