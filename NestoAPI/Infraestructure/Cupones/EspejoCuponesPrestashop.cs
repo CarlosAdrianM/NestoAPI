@@ -22,7 +22,7 @@ namespace NestoAPI.Infraestructure.Cupones
         public const string ACTIVO = "Activo";
         /// <summary>El cart_rule existe, desactivado (active = 0, quantity = 0); o no hacía falta crearlo.</summary>
         public const string INACTIVO = "Inactivo";
-        /// <summary>El cliente no tiene cuenta en la tienda con ninguno de sus correos: se vuelve a mirar cada día.</summary>
+        /// <summary>El cliente no tiene cuenta en la tienda (ninguna dirección con su NIF casa con él): se vuelve a mirar cada día.</summary>
         public const string SIN_CLIENTE = "SinCliente";
     }
 
@@ -49,18 +49,6 @@ namespace NestoAPI.Infraestructure.Cupones
         public int? IdCustomer { get; set; }
         /// <summary>Con <see cref="Correcto"/> false, por qué ha fallado; con SinCliente, el aviso.</summary>
         public string Error { get; set; }
-    }
-
-    /// <summary>Un customer de PrestaShop tal como lo devuelve <c>customers?display=[id,email,active,is_guest,deleted]</c>.</summary>
-    public class CustomerPrestashop
-    {
-        public int Id { get; set; }
-        public string Email { get; set; }
-        public bool Activo { get; set; }
-        public bool Invitado { get; set; }
-        public bool Borrado { get; set; }
-
-        public bool Valido => Id > 0 && Activo && !Invitado && !Borrado;
     }
 
     /// <summary>
@@ -119,24 +107,6 @@ namespace NestoAPI.Infraestructure.Cupones
             return espejo == EstadosEspejo.ACTIVO;
         }
 
-        /// <summary>
-        /// El correo con el que se busca su cuenta en la tienda, como el login de PrestaShop (nestologin): el primero de la lista
-        /// (los del contacto del cupón, luego los de facturas, luego el resto) que tenga una cuenta de verdad (activa, no de invitado,
-        /// no borrada). Con varias cuentas con ese correo, la más reciente (id mayor). Null si ninguno tiene cuenta.
-        /// </summary>
-        public static CustomerPrestashop ElegirCustomer(IEnumerable<KeyValuePair<string, List<CustomerPrestashop>>> porCorreo)
-        {
-            foreach (KeyValuePair<string, List<CustomerPrestashop>> correo in porCorreo ?? Enumerable.Empty<KeyValuePair<string, List<CustomerPrestashop>>>())
-            {
-                CustomerPrestashop elegido = (correo.Value ?? new List<CustomerPrestashop>()).Where(c => c.Valido).OrderByDescending(c => c.Id).FirstOrDefault();
-                if (elegido != null)
-                {
-                    return elegido;
-                }
-            }
-            return null;
-        }
-
         public static string Nombre(CuponLeido cupon)
         {
             string evento = string.IsNullOrWhiteSpace(cupon.Evento) ? null : cupon.Evento.Trim();
@@ -155,6 +125,13 @@ namespace NestoAPI.Infraestructure.Cupones
         /// vale con lo que sobre), solo para su customer, importe IVA incluido, válido del día del evento a la caducidad, pedido
         /// mínimo el doble IVA incluido sin portes. Combina con otras reglas (el cheque regalo NVCHEQUE-*: Carlos, 15/10/26).
         /// Desactivado: active 0 y quantity 0. Con <paramref name="idCartRule"/>, para el PUT (el recurso entero).
+        /// <para>Restricción a productos (Carlos, 22/10/26: que no aplique sobre los cursos ni cuenten para el mínimo): NO se puede
+        /// hacer por el webservice. El recurso cart_rules solo expone el indicador product_restriction; las reglas de producto o
+        /// categoría (cart_rule_product_rule_group / _rule / _value) no son recursos del webservice ni van como asociaciones del
+        /// cart_rule, así que con product_restriction = 1 y sin grupos el cupón no valdría para nada. Hace falta un endpoint en un
+        /// módulo propio de la tienda que cree el grupo «categoría de cursos excluida» del cart_rule; mientras tanto va sin
+        /// restricción y Nesto, al importar el pedido (Nesto#518), aplica las reglas del corte 3 (solo productos, mínimo sin
+        /// cursos ni portes).</para>
         /// </summary>
         public static string XmlCartRule(CuponLeido cupon, int idCustomer, bool activo, int? idCartRule, int idIdioma, int idMoneda)
         {
@@ -216,28 +193,7 @@ namespace NestoAPI.Infraestructure.Cupones
             return int.TryParse(id?.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int valor) && valor > 0 ? valor : (int?)null;
         }
 
-        public static List<CustomerPrestashop> LeerCustomers(string xml)
-        {
-            if (string.IsNullOrWhiteSpace(xml))
-            {
-                return new List<CustomerPrestashop>();
-            }
-            bool Uno(XElement c, string campo) => c.Element(campo)?.Value?.Trim() == "1";
-            return XDocument.Parse(xml.Trim()).Descendants("customer")
-                .Select(c => new CustomerPrestashop
-                {
-                    Id = int.TryParse((c.Element("id")?.Value ?? c.Attribute("id")?.Value)?.Trim(), out int id) ? id : 0,
-                    Email = c.Element("email")?.Value?.Trim(),
-                    // Sin el campo (display corto), se da por bueno
-                    Activo = c.Element("active") == null || Uno(c, "active"),
-                    Invitado = Uno(c, "is_guest"),
-                    Borrado = Uno(c, "deleted")
-                })
-                .Where(c => c.Id > 0)
-                .ToList();
-        }
-
-        /// <summary>«filter[email]=[...]»: el valor entre corchetes y escapado (un + en el correo es un espacio si no).</summary>
+        /// <summary>«filter[code]=[...]»: el valor entre corchetes y escapado (un + es un espacio si no).</summary>
         internal static string Filtro(string campo, string valor) => $"filter[{campo}]=[{Uri.EscapeDataString(valor ?? string.Empty)}]";
     }
 
@@ -276,8 +232,8 @@ namespace NestoAPI.Infraestructure.Cupones
         /// <summary>Los que llevan más de <paramref name="horas"/> sin poder llevarse a PrestaShop y de los que todavía no se ha avisado.</summary>
         Task<List<CuponEspejo>> LeerRetrasados(int horas);
         Task MarcarAvisados(IEnumerable<int> ids);
-        /// <summary>Los correos del cliente: los del contacto primero, luego los de facturas y luego el resto, sin repetir.</summary>
-        Task<List<string>> LeerCorreosCliente(string empresa, string cliente, string contacto);
+        /// <summary>El NIF del cliente (el del contacto principal; si no, el de cualquiera), o null.</summary>
+        Task<string> LeerNifCliente(string empresa, string cliente);
     }
 
     /// <summary>
@@ -357,29 +313,13 @@ WHERE Id = @p0";
             }
         }
 
-        public async Task<List<string>> LeerCorreosCliente(string empresa, string cliente, string contacto)
+        public async Task<string> LeerNifCliente(string empresa, string cliente)
         {
             string e = empresa?.Trim() ?? Constantes.Empresas.EMPRESA_POR_DEFECTO;
             string c = cliente?.Trim() ?? string.Empty;
-            var personas = await db.PersonasContactoClientes
-                .Where(p => p.Empresa == e && p.NºCliente == c && p.CorreoElectrónico != null)
-                .Select(p => new { p.Contacto, p.Cargo, p.CorreoElectrónico }).ToListAsync().ConfigureAwait(false);
-            return OrdenarCorreos(personas.Select(p => new KeyValuePair<string, KeyValuePair<short?, string>>(p.Contacto,
-                new KeyValuePair<short?, string>((short?)p.Cargo, p.CorreoElectrónico))), contacto);
-        }
-
-        /// <summary>(contacto, (cargo, correo)) → correos sin repetir: los del contacto del cupón, luego los de facturas (cargo 22) y luego el resto.</summary>
-        internal static List<string> OrdenarCorreos(IEnumerable<KeyValuePair<string, KeyValuePair<short?, string>>> personas, string contacto)
-        {
-            string contactoCupon = contacto?.Trim();
-            return (personas ?? Enumerable.Empty<KeyValuePair<string, KeyValuePair<short?, string>>>())
-                .Select(p => new { Contacto = p.Key?.Trim(), Cargo = p.Value.Key, Correo = p.Value.Value?.Trim() })
-                .Where(p => !string.IsNullOrEmpty(p.Correo) && p.Correo.Contains("@"))
-                .OrderBy(p => contactoCupon != null && p.Contacto == contactoCupon ? 0 : 1)
-                .ThenBy(p => p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO ? 0 : 1)
-                .Select(p => p.Correo)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            var fichas = await db.Clientes.Where(x => x.Empresa == e && x.Nº_Cliente == c && x.CIF_NIF != null)
+                .Select(x => new { x.ClientePrincipal, x.CIF_NIF }).ToListAsync().ConfigureAwait(false);
+            return fichas.OrderBy(x => x.ClientePrincipal ? 0 : 1).Select(x => x.CIF_NIF.Trim()).FirstOrDefault(n => n.Length > 0);
         }
 
         private static string Recortar(string texto, int max) =>
@@ -401,6 +341,7 @@ WHERE Id = @p0";
 
         private readonly IRepositorioEspejoCupones repositorio;
         private readonly IClienteWebservicePrestashop tienda;
+        private readonly IBuscadorCuentaPrestashop cuentas;
         private readonly Func<bool> encendido;
         private readonly Func<DateTime> ahora;
         private readonly Func<IServicioCorreoElectronico> correo;
@@ -414,10 +355,13 @@ WHERE Id = @p0";
         }
 
         internal ServicioEspejoCuponesPrestashop(IRepositorioEspejoCupones repositorio, IClienteWebservicePrestashop tienda, Func<bool> encendido,
-            Func<DateTime> ahora, Func<IServicioCorreoElectronico> correo, int idIdioma = 1, int idMoneda = 1)
+            Func<DateTime> ahora, Func<IServicioCorreoElectronico> correo, int idIdioma = 1, int idMoneda = 1,
+            IBuscadorCuentaPrestashop cuentas = null)
         {
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
             this.tienda = tienda ?? throw new ArgumentNullException(nameof(tienda));
+            // NestoAPI#614 (Carlos, 22/10/26): el mismo casamiento cliente ↔ tienda que CanalesExternos (por el NIF de las direcciones)
+            this.cuentas = cuentas ?? new BuscadorCuentaPrestashop(tienda);
             this.encendido = encendido ?? (() => false);
             this.ahora = ahora ?? (() => DateTime.Now);
             this.correo = correo;
@@ -571,8 +515,8 @@ WHERE Id = @p0";
                 {
                     resultado.Correcto = true;
                     resultado.EstadoEspejo = EstadosEspejo.SIN_CLIENTE;
-                    resultado.Error = $"El cliente {cupon.Cliente?.Trim()} no tiene cuenta en la tienda con ninguno de sus correos: el cupón solo vale en " +
-                        "Nesto, NestoApp y la app de la tienda. Se vuelve a mirar cada día.";
+                    resultado.Error = $"El cliente {cupon.Cliente?.Trim()} no tiene cuenta en la tienda (ninguna dirección con su NIF casa con él, " +
+                        "como al importar los pedidos): el cupón solo vale en Nesto, NestoApp y la app de la tienda. Se vuelve a mirar cada día.";
                     return resultado;
                 }
                 resultado.IdCustomer = idCustomer;
@@ -611,23 +555,14 @@ WHERE Id = @p0";
             tienda.Modificar($"cart_rules/{cupon.IdCartRulePrestashop.Value}",
                 ReglasEspejoPrestashop.XmlCartRule(cupon, cupon.IdCustomerPrestashop ?? 0, false, cupon.IdCartRulePrestashop, idIdioma, idMoneda));
 
-        /// <summary>El customer de la tienda del cliente, por correo, como el login de PrestaShop. Null si ninguno de sus correos tiene cuenta.</summary>
+        /// <summary>
+        /// La cuenta de la tienda del cliente con el MISMO casamiento que CanalesExternos al importar los pedidos (NIF de las
+        /// direcciones, CasamientoClientePrestashop); con varias, la más reciente. Null si no tiene ninguna.
+        /// </summary>
         internal async Task<int?> BuscarCustomer(CuponEspejo cupon)
         {
-            List<string> correos = await repositorio.LeerCorreosCliente(cupon.Empresa, cupon.Cliente, cupon.Contacto).ConfigureAwait(false) ?? new List<string>();
-            var porCorreo = new List<KeyValuePair<string, List<CustomerPrestashop>>>();
-            foreach (string correoCliente in correos)
-            {
-                string xml = await tienda.Leer($"customers?{ReglasEspejoPrestashop.Filtro("email", correoCliente)}&display=[id,email,active,is_guest,deleted]")
-                    .ConfigureAwait(false);
-                List<CustomerPrestashop> cuentas = ReglasEspejoPrestashop.LeerCustomers(xml);
-                porCorreo.Add(new KeyValuePair<string, List<CustomerPrestashop>>(correoCliente, cuentas));
-                if (cuentas.Any(c => c.Valido))
-                {
-                    break; // el primero que tenga cuenta: no hace falta preguntar por el resto
-                }
-            }
-            return ReglasEspejoPrestashop.ElegirCustomer(porCorreo)?.Id;
+            string nif = await repositorio.LeerNifCliente(cupon.Empresa, cupon.Cliente).ConfigureAwait(false);
+            return string.IsNullOrWhiteSpace(nif) ? null : await cuentas.CuentaDelCliente(cupon.Cliente, nif).ConfigureAwait(false);
         }
 
         private async Task AvisarRetrasados(int horas)

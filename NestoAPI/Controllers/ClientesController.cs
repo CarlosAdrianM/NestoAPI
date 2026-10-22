@@ -1012,6 +1012,19 @@ namespace NestoAPI.Controllers
             return Ok(respuesta);
         }
 
+        // GET: api/Clientes/PorDniTiendaOnline?dni=B-01234567
+        // NestoAPI#614: el casamiento de CanalesExternos entero (limpia el DNI de la dirección del pedido de PrestaShop: solo
+        // letras y cifras, sin ceros a la izquierda; y busca como PorNif). El primero es el cliente; vacía = el genérico de la
+        // tienda online. Es el mismo que usa la API para buscar la cuenta de la tienda de un cliente (cupones): Nesto debería
+        // llamar a este en vez de limpiar el DNI él y llamar a PorNif.
+        [HttpGet]
+        [Route("api/Clientes/PorDniTiendaOnline")]
+        [ResponseType(typeof(List<ClienteDTO>))]
+        public async Task<IHttpActionResult> GetClientesPorDniTiendaOnline(string dni)
+        {
+            return Ok(await _gestorClientes.BuscarClientesPorDniTiendaOnline(dni).ConfigureAwait(false));
+        }
+
         [HttpGet]
         [Route("api/Clientes/ComprobarDatosBanco")]
         // GET: api/Clientes/5

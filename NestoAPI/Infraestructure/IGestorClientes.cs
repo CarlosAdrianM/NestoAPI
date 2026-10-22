@@ -31,6 +31,8 @@ namespace NestoAPI.Infraestructure
         Task<ResultadoCopiaDatosPrincipal> CopiarDatosDelPrincipal(string empresa, string cliente, string contactoDestino, string usuario);
         Task<List<ClienteDTO>> BuscarClientesPorTelefono(string telefono);
         Task<List<ClienteDTO>> BuscarClientesPorNif(string nif);
+        /// <summary>NestoAPI#614: el casamiento de CanalesExternos entero (DNI de la dirección de la tienda → limpiar → PorNif).</summary>
+        Task<List<ClienteDTO>> BuscarClientesPorDniTiendaOnline(string dni);
         Task PublicarClienteSincronizar(Cliente cliente, string source = "Nesto", string usuario = null);
         Task PublicarClienteSincronizar(Cliente cliente, Sincronizacion.FechasComprasCliente fechasCompras, string source = "Nesto", string usuario = null);
         Task<Dictionary<string, Sincronizacion.FechasComprasCliente>> LeerFechasCompras(IEnumerable<string> clientes);

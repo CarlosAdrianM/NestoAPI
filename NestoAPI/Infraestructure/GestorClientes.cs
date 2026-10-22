@@ -2183,13 +2183,13 @@ namespace NestoAPI.Infraestructure
         // Nesto#340: mínimo 5 caracteres — el cliente de Prestashop limpia el DNI (quita
         // separadores y ceros iniciales) y un resto demasiado corto barrería el fichero
         // entero con el Contains del fallback
-        public async Task<List<ClienteDTO>> BuscarClientesPorNif(string nif)
-        {
-            nif = nif?.Trim();
-            return string.IsNullOrEmpty(nif) || nif.Length < 5
-                ? new List<ClienteDTO>()
-                : await servicio.BuscarClientesPorNif(nif).ConfigureAwait(false);
-        }
+        // NestoAPI#614: la regla vive en CasamientoClientePrestashop, el único casamiento cliente ↔ tienda PrestaShop
+        public Task<List<ClienteDTO>> BuscarClientesPorNif(string nif) =>
+            Prestashop.CasamientoClientePrestashop.ClientesDelNif(servicio, nif);
+
+        /// <summary>NestoAPI#614: lo que hace CanalesExternos con el DNI de la dirección de un pedido de la tienda, entero.</summary>
+        public Task<List<ClienteDTO>> BuscarClientesPorDniTiendaOnline(string dni) =>
+            Prestashop.CasamientoClientePrestashop.ClientesDelDni(servicio, dni);
     }
 }
 

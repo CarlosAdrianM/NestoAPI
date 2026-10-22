@@ -43,10 +43,9 @@ namespace NestoAPI.Tests.Infrastructure.Cupones
             correo = A.Fake<IServicioCorreoElectronico>();
             A.CallTo(() => correo.EnviarCorreoSMTP(A<MailMessage>._)).Returns(true);
             encendido = true;
-            A.CallTo(() => repositorio.LeerCorreosCliente(A<string>._, A<string>._, A<string>._))
-                .Returns(Task.FromResult(new List<string> { "luna@example.com" }));
-            A.CallTo(() => tienda.Leer(A<string>.That.StartsWith("customers?")))
-                .Returns(Task.FromResult(Customers((5, "luna@example.com", true, false))));
+            A.CallTo(() => repositorio.LeerNifCliente(A<string>._, A<string>._)).Returns(Task.FromResult("B12345678"));
+            cuentas = A.Fake<IBuscadorCuentaPrestashop>();
+            A.CallTo(() => cuentas.CuentaDelCliente(A<string>._, A<string>._)).Returns(Task.FromResult<int?>(5));
             A.CallTo(() => tienda.Leer(A<string>.That.StartsWith("cart_rules?")))
                 .Returns(Task.FromResult("<prestashop><cart_rules></cart_rules></prestashop>"));
             A.CallTo(() => tienda.Crear("cart_rules", A<string>._))
@@ -54,8 +53,10 @@ namespace NestoAPI.Tests.Infrastructure.Cupones
             A.CallTo(() => tienda.Modificar(A<string>._, A<string>._)).Returns(Task.FromResult("<prestashop/>"));
         }
 
+        private IBuscadorCuentaPrestashop cuentas;
+
         private ServicioEspejoCuponesPrestashop Servicio(DateTime? ahora = null) =>
-            new ServicioEspejoCuponesPrestashop(repositorio, tienda, () => encendido, () => ahora ?? HOY, () => correo);
+            new ServicioEspejoCuponesPrestashop(repositorio, tienda, () => encendido, () => ahora ?? HOY, () => correo, cuentas: cuentas);
 
         private static CuponEspejo Cupon(string estado = EstadosCupon.ACTIVO, string espejo = null, int? idCartRule = null, int? idCustomer = null,
             DateTime? caducidad = null, DateTime? fechaEspejo = null, int intentos = 0) => new CuponEspejo
@@ -80,10 +81,14 @@ namespace NestoAPI.Tests.Infrastructure.Cupones
                 EspejoIntentos = intentos
             };
 
-        private static string Customers(params (int id, string email, bool activo, bool invitado)[] cuentas) =>
+        private static string Customers(params (int id, bool activo, bool invitado)[] cuentas) =>
             new XDocument(new XElement("prestashop", new XElement("customers", cuentas.Select(c => new XElement("customer",
-                new XElement("id", c.id), new XElement("email", c.email), new XElement("active", c.activo ? 1 : 0),
+                new XElement("id", c.id), new XElement("active", c.activo ? 1 : 0),
                 new XElement("is_guest", c.invitado ? 1 : 0), new XElement("deleted", 0)))))).ToString();
+
+        private static string Direcciones(params (int id, int customer, string dni)[] direcciones) =>
+            new XDocument(new XElement("prestashop", new XElement("addresses", direcciones.Select(d => new XElement("address",
+                new XElement("id", d.id), new XElement("id_customer", d.customer), new XElement("dni", d.dni), new XElement("deleted", 0)))))).ToString();
 
         private static XElement Regla(string xml) => XDocument.Parse(xml).Root.Element("cart_rule");
 
@@ -93,6 +98,9 @@ namespace NestoAPI.Tests.Infrastructure.Cupones
         public void XmlCartRule_MapeaLosCamposDelCupon()
         {
             XElement r = Regla(ReglasEspejoPrestashop.XmlCartRule(Cupon(), 5, true, null, 1, 1));
+
+            Assert.AreEqual("0", r.Element("product_restriction").Value,
+                "Sin restricción por el webservice (no expone las reglas de producto): ver ReglasEspejoPrestashop.XmlCartRule");
 
             Assert.IsNull(r.Element("id"), "El POST no lleva id");
             Assert.AreEqual("EV-2610-7K3Q", r.Element("code").Value);
@@ -148,77 +156,83 @@ namespace NestoAPI.Tests.Infrastructure.Cupones
             Assert.AreEqual("filter[email]=[luna%2Bpedidos%40example.com]", ReglasEspejoPrestashop.Filtro("email", "luna+pedidos@example.com"));
         }
 
-        // ---------------- Cliente ↔ customer ----------------
+        // ---------------- Cliente ↔ customer: el casamiento de CanalesExternos (Carlos, 22/10/26) ----------------
 
         [TestMethod]
-        public void ElegirCustomer_SinCorreos_Null()
+        public void Casamiento_LimpiarDni_ComoCanalesExternos()
         {
-            Assert.IsNull(ReglasEspejoPrestashop.ElegirCustomer(new List<KeyValuePair<string, List<CustomerPrestashop>>>()));
+            Assert.AreEqual("B12345678", CasamientoClientePrestashop.LimpiarDni(" B-12.345.678 "));
+            Assert.AreEqual("1234567Z", CasamientoClientePrestashop.LimpiarDni("01234567-Z"));
+            Assert.AreEqual(string.Empty, CasamientoClientePrestashop.LimpiarDni(null));
+            Assert.AreEqual("12345678", CasamientoClientePrestashop.TextoBusqueda("B-12345678"));
+            Assert.AreEqual("X1234", CasamientoClientePrestashop.TextoBusqueda("X1234"), "Sin 5 cifras seguidas, el NIF limpio");
         }
 
         [TestMethod]
-        public void ElegirCustomer_InvitadoOInactivo_NoValen()
+        public async Task Casamiento_ClientesDelDni_LimpiaYBuscaComoPorNifConElMinimoDeCinco()
         {
-            var porCorreo = new List<KeyValuePair<string, List<CustomerPrestashop>>>
-            {
-                new KeyValuePair<string, List<CustomerPrestashop>>("a@example.com", ReglasEspejoPrestashop.LeerCustomers(Customers((3, "a@example.com", true, true), (4, "a@example.com", false, false))))
-            };
-            Assert.IsNull(ReglasEspejoPrestashop.ElegirCustomer(porCorreo));
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            A.CallTo(() => servicio.BuscarClientesPorNif("B12345678"))
+                .Returns(Task.FromResult(new List<ClienteDTO> { new ClienteDTO { cliente = "15191" }, new ClienteDTO { cliente = "20000" } }));
+
+            Assert.AreEqual("15191", (await CasamientoClientePrestashop.ClienteDelDni(servicio, "b-12345678".ToUpperInvariant())).cliente, "El primero");
+            Assert.IsNull(await CasamientoClientePrestashop.ClienteDelDni(servicio, "0001-23"), "Menos de 5: el genérico de la tienda");
+            A.CallTo(() => servicio.BuscarClientesPorNif("123")).MustNotHaveHappened();
+        }
+
+        private BuscadorCuentaPrestashop Buscador(Dictionary<string, string> clientePorDni) =>
+            new BuscadorCuentaPrestashop(tienda, dni => Task.FromResult(clientePorDni.TryGetValue(CasamientoClientePrestashop.LimpiarDni(dni), out string c)
+                ? new ClienteDTO { cliente = c } : null));
+
+        [TestMethod]
+        public async Task Casamiento_CuentaDelCliente_LasDireccionesQueCasanConElYLaMasReciente()
+        {
+            A.CallTo(() => tienda.Leer(A<string>.That.StartsWith("addresses?filter[dni]=%25[12345678]%25")))
+                .Returns(Task.FromResult(Direcciones((1, 10, "B-12345678"), (2, 25, "B12345678"), (3, 40, "212345678X"))));
+            A.CallTo(() => tienda.Leer(A<string>.That.StartsWith("customers?filter[id]=[10|25]")))
+                .Returns(Task.FromResult(Customers((10, true, false), (25, true, false))));
+
+            int? cuenta = await Buscador(new Dictionary<string, string> { ["B12345678"] = "15191", ["212345678X"] = "99999" })
+                .CuentaDelCliente("15191", "B12345678");
+
+            Assert.AreEqual(25, cuenta, "Varias cuentas: la más reciente; la del otro NIF que contiene las cifras no es suya");
         }
 
         [TestMethod]
-        public void ElegirCustomer_VariasCuentas_ElPrimerCorreoYLaMasReciente()
+        public async Task Casamiento_CuentaDelCliente_SoloInvitadosOSinDirecciones_Null()
         {
-            var porCorreo = new List<KeyValuePair<string, List<CustomerPrestashop>>>
-            {
-                new KeyValuePair<string, List<CustomerPrestashop>>("contacto@example.com", ReglasEspejoPrestashop.LeerCustomers(Customers((10, "contacto@example.com", true, false), (25, "contacto@example.com", true, false)))),
-                new KeyValuePair<string, List<CustomerPrestashop>>("facturas@example.com", ReglasEspejoPrestashop.LeerCustomers(Customers((99, "facturas@example.com", true, false))))
-            };
-            Assert.AreEqual(25, ReglasEspejoPrestashop.ElegirCustomer(porCorreo).Id);
+            A.CallTo(() => tienda.Leer(A<string>.That.StartsWith("addresses?")))
+                .Returns(Task.FromResult(Direcciones((1, 10, "B12345678"))));
+            A.CallTo(() => tienda.Leer(A<string>.That.StartsWith("customers?")))
+                .Returns(Task.FromResult(Customers((10, true, true))));
+            var buscador = Buscador(new Dictionary<string, string> { ["B12345678"] = "15191" });
+
+            Assert.IsNull(await buscador.CuentaDelCliente("15191", "B12345678"), "De invitado: no puede entrar a usar el cupón");
+            Assert.IsNull(await buscador.CuentaDelCliente("15191", "123"), "NIF corto: ni se pregunta");
+            Assert.IsNull(await buscador.CuentaDelCliente("20000", "B12345678"), "Casa con otro cliente");
         }
 
         [TestMethod]
-        public void OrdenarCorreos_DelContactoPrimeroLuegoFacturasSinRepetirNiVacios()
+        public async Task Espejar_ClienteSinNif_SinClienteYNoLlamaALaTienda()
         {
-            var personas = new List<KeyValuePair<string, KeyValuePair<short?, string>>>
-            {
-                new KeyValuePair<string, KeyValuePair<short?, string>>("1  ", new KeyValuePair<short?, string>(1, "otro@example.com")),
-                new KeyValuePair<string, KeyValuePair<short?, string>>("1  ", new KeyValuePair<short?, string>(22, "facturas@example.com ")),
-                new KeyValuePair<string, KeyValuePair<short?, string>>("0  ", new KeyValuePair<short?, string>(1, "contacto@example.com")),
-                new KeyValuePair<string, KeyValuePair<short?, string>>("0  ", new KeyValuePair<short?, string>(22, "CONTACTO@example.com")),
-                new KeyValuePair<string, KeyValuePair<short?, string>>("2  ", new KeyValuePair<short?, string>(1, "   ")),
-                new KeyValuePair<string, KeyValuePair<short?, string>>("2  ", new KeyValuePair<short?, string>(1, "sin arroba"))
-            };
-            // Del contacto 0, el de facturas primero; el mismo correo en mayúsculas no se repite
-            CollectionAssert.AreEqual(new[] { "CONTACTO@example.com", "facturas@example.com", "otro@example.com" },
-                RepositorioEspejoCupones.OrdenarCorreos(personas, "0"));
-        }
-
-        [TestMethod]
-        public async Task Espejar_ClienteSinCorreo_SinClienteYNoLlamaALaTienda()
-        {
-            A.CallTo(() => repositorio.LeerCorreosCliente(A<string>._, A<string>._, A<string>._)).Returns(Task.FromResult(new List<string>()));
+            A.CallTo(() => repositorio.LeerNifCliente(A<string>._, A<string>._)).Returns(Task.FromResult<string>(null));
 
             ResultadoEspejo r = await Servicio().Espejar(Cupon());
 
             Assert.IsTrue(r.Correcto);
             Assert.AreEqual(EstadosEspejo.SIN_CLIENTE, r.EstadoEspejo);
             StringAssert.Contains(r.Error, "no tiene cuenta en la tienda");
+            A.CallTo(() => cuentas.CuentaDelCliente(A<string>._, A<string>._)).MustNotHaveHappened();
             A.CallTo(() => tienda.Crear(A<string>._, A<string>._)).MustNotHaveHappened();
         }
 
         [TestMethod]
-        public async Task Espejar_VariosCorreos_ParaEnElPrimeroConCuenta()
+        public async Task Espejar_BuscaLaCuentaConElCasamientoDeCanalesExternos()
         {
-            A.CallTo(() => repositorio.LeerCorreosCliente(A<string>._, A<string>._, A<string>._))
-                .Returns(Task.FromResult(new List<string> { "nuevo@example.com", "luna@example.com", "tercero@example.com" }));
-            A.CallTo(() => tienda.Leer(A<string>.That.Contains("nuevo%40example.com"))).Returns(Task.FromResult(Customers()));
-            A.CallTo(() => tienda.Leer(A<string>.That.Contains("luna%40example.com"))).Returns(Task.FromResult(Customers((5, "luna@example.com", true, false))));
-
             ResultadoEspejo r = await Servicio().Espejar(Cupon());
 
             Assert.AreEqual(5, r.IdCustomer);
-            A.CallTo(() => tienda.Leer(A<string>.That.Contains("tercero"))).MustNotHaveHappened();
+            A.CallTo(() => cuentas.CuentaDelCliente("15191", "B12345678")).MustHaveHappenedOnceExactly();
         }
 
         // ---------------- Crear, reactivar, desactivar ----------------
@@ -265,7 +279,7 @@ namespace NestoAPI.Tests.Infrastructure.Cupones
 
             Assert.AreEqual(EstadosEspejo.ACTIVO, r.EstadoEspejo);
             A.CallTo(() => tienda.Modificar("cart_rules/812", A<string>.That.Contains("<active>1</active>"))).MustHaveHappenedOnceExactly();
-            A.CallTo(() => tienda.Leer(A<string>.That.StartsWith("customers?"))).MustNotHaveHappened();
+            A.CallTo(() => cuentas.CuentaDelCliente(A<string>._, A<string>._)).MustNotHaveHappened();
         }
 
         [TestMethod]
