@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Guía de eventos, cursos y cupones</title>
+<style>
+  @page { size: A4; margin: 16mm 15mm; }
+  body { font-family: "Segoe UI", Arial, sans-serif; font-size: 10.5pt; color: #1a1a1a; line-height: 1.42; }
+  h1 { font-size: 20pt; margin: 0 0 4px; color: #1f3a5f; }
+  .sub { color: #555; margin: 0 0 14px; font-size: 10.5pt; }
+  h2 { font-size: 14pt; color: #1f3a5f; border-bottom: 2px solid #1f3a5f; padding-bottom: 3px; margin: 20px 0 8px; break-after: avoid; }
+  h3 { font-size: 11.5pt; margin: 14px 0 4px; color: #333; break-after: avoid; }
+  p { margin: 5px 0; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0 10px; font-size: 9.5pt; break-inside: avoid; }
+  tr { break-inside: avoid; }
+  th, td { border: 1px solid #bbb; padding: 4px 7px; text-align: left; vertical-align: top; }
+  th { background: #e8eef6; }
+  td.tema { font-weight: 600; background: #f7f7f7; width: 22%; }
+  td.quien { font-weight: 600; width: 18%; }
+  .box { background: #f4f7fb; border-left: 4px solid #1f3a5f; padding: 7px 12px; margin: 10px 0; break-inside: avoid; }
+  .ojo { background: #fff7e6; border-left: 4px solid #e08a00; padding: 7px 12px; margin: 10px 0; break-inside: avoid; }
+  .pronto { background: #f1f1f1; border-left: 4px solid #888; padding: 7px 12px; margin: 10px 0; break-inside: avoid; }
+  .box p, .ojo p, .pronto p { margin: 3px 0; }
+  ol, ul { margin: 4px 0 6px; padding-left: 22px; }
+  ol li, ul li { margin: 2px 0; }
+  kbd { font-family: Consolas, monospace; background: #eee; border: 1px solid #ccc; border-radius: 3px; padding: 0 4px; font-size: 9pt; white-space: nowrap; }
+  .pie { color: #777; font-size: 9pt; margin-top: 22px; border-top: 1px solid #ccc; padding-top: 6px; }
+  .bloque { break-inside: avoid; }
+  /* Esquema del circuito */
+  .circuito { display: flex; flex-direction: column; gap: 0; margin: 10px 0 6px; break-inside: avoid; }
+  .paso { display: flex; align-items: stretch; border: 1px solid #9fb3cc; border-radius: 5px; background: #fff; }
+  .paso .n { background: #1f3a5f; color: #fff; font-weight: 700; width: 28px; display: flex; align-items: center; justify-content: center; border-radius: 4px 0 0 4px; font-size: 11pt; }
+  .paso .t { padding: 4px 9px; flex: 1; font-size: 9.5pt; }
+  .paso .t b { color: #1f3a5f; }
+  .paso .q { padding: 4px 9px; width: 31%; font-size: 8.8pt; color: #444; border-left: 1px dashed #bbb; background: #f7f9fc; border-radius: 0 4px 4px 0; }
+  .flecha { text-align: center; color: #1f3a5f; font-size: 10pt; line-height: 1.05; margin: 0 0 0 4px; width: 28px; }
+  .caminos { display: flex; gap: 6px; margin: 2px 0 2px 36px; }
+  .caminos div { flex: 1; border: 1px dashed #9fb3cc; border-radius: 4px; padding: 3px 6px; font-size: 8.6pt; background: #f4f7fb; }
+</style>
+</head>
+<body>
+<h1>Eventos, cursos y cupones: guía para todos</h1>
+<p class="sub">Tiendas, Tienda online, Administración, Vendedores y Dirección · Nesto 1.10.47 · 22 de octubre de 2026</p>
+
+<div class="box">
+<p><b>En resumen.</b> La clienta reserva su plaza en un curso o masterclass de Reina o Alcobendas y la paga. Al cobrarla, el curso <b>se factura solo</b> en la serie CV. Si eligió la plaza <b>con cupón de productos</b>, recibe un <b>cupón del mismo importe</b> para gastar en productos desde el día del evento y durante 6 meses. El día del evento la tienda <b>pasa lista</b>: quien pagó y no vino <b>pierde el cupón</b>.</p>
+<ul>
+<li>Cada evento tiene <b>dos precios</b>: la plaza <b>«con cupón de productos»</b> (en Nesto, «Señal reembolsable», 100 € por defecto) y la plaza <b>«sin cupón»</b> (en Nesto, «No reembolsable», 60 € por defecto). Con las dos a 0, el evento es <b>gratuito</b>.</li>
+<li>El curso <b>nunca va mezclado con productos</b> en un mismo pedido ni en una misma factura (lleva un IVA distinto).</li>
+<li>El dinero de la plaza no se devuelve: si no viene, lo pierde. La plaza con cupón «le vuelve en producto» solo si asiste.</li>
+</ul>
+</div>
+
+<h2>1. El circuito de un vistazo</h2>
+<div class="circuito">
+  <div class="paso"><div class="n">1</div><div class="t"><b>Crear el evento</b> en Nesto: fecha, horario, tienda, formato, ponente, plazas, precios y referencia del curso.</div><div class="q">La tienda del evento, Administración o Dirección (los de Tienda online también lo ven)</div></div>
+  <div class="flecha">▼</div>
+  <div class="paso"><div class="n">2</div><div class="t"><b>Imagen y anuncio.</b> Con el evento completo, Nesto pregunta si se anuncia en las apps.</div><div class="q">Tienda online (imagen); quien guarda el evento (anuncio)</div></div>
+  <div class="flecha">▼</div>
+  <div class="paso"><div class="n">3</div><div class="t"><b>Inscribir a la clienta</b>, por cualquiera de estos caminos:</div><div class="q">Tiendas, vendedores, Administración o la propia clienta</div></div>
+  <div class="caminos"><div>Ficha del cliente en Nesto, pestaña <b>Eventos</b></div><div>Pantalla <b>Eventos</b> de Nesto, «Inscribir cliente…»</div><div><b>Plantilla de venta</b> (vendedores)</div><div>App de la tienda (<b>TNV</b>)</div><div><b>Tienda online</b> (compra del curso)</div></div>
+  <div class="flecha">▼</div>
+  <div class="paso"><div class="n">4</div><div class="t"><b>El pago:</b> enlace con tarjeta, transferencia, efectivo en la tienda o compra en la tienda online. Si no paga a tiempo, la plaza se libera.</div><div class="q">La clienta; Administración confirma transferencias; la tienda marca el efectivo</div></div>
+  <div class="flecha">▼</div>
+  <div class="paso"><div class="n">5</div><div class="t"><b>La factura del curso</b>, sola, en serie CV, en cuanto entra el pago. <b>Y el cupón</b>, si la plaza era «con cupón de productos».</div><div class="q">Automático</div></div>
+  <div class="flecha">▼</div>
+  <div class="paso"><div class="n">6</div><div class="t"><b>Recordatorio</b> dos días antes: «Asistiré» / «No podré ir».</div><div class="q">Automático; la clienta contesta</div></div>
+  <div class="flecha">▼</div>
+  <div class="paso"><div class="n">7</div><div class="t"><b>El día del evento:</b> pasar lista. Quien pagó y no vino pierde el cupón. Se ve lo que compró cada inscrita ese día.</div><div class="q">La tienda del evento</div></div>
+  <div class="flecha">▼</div>
+  <div class="paso"><div class="n">8</div><div class="t"><b>Usar el cupón</b> en un pedido de productos: en Nesto (pedido o plantilla), en la app TNV y, próximamente, en la tienda online.</div><div class="q">Vendedores, tiendas o la propia clienta</div></div>
+</div>
+
+<h3>Quién hace qué</h3>
+<table>
+<tr><th>Quién</th><th>Qué hace</th><th>Dónde</th></tr>
+<tr><td class="quien">Tiendas (Reina, Alcobendas)</td><td>Crean y mantienen los eventos de su tienda, inscriben clientas, marcan como pagado el efectivo (y la tarjeta del datáfono), apuntan quién confirma o no puede ir y pasan lista el día del evento.</td><td>Nesto: Clientes → <b>Eventos</b>; ficha del cliente, pestaña <b>Eventos</b></td></tr>
+<tr><td class="quien">Tienda online</td><td>Sube la imagen del evento y, con el evento completo, lo anuncia en las apps (o «Anunciar otra vez»). Vende el curso en la tienda online.</td><td>Nesto: Clientes → <b>Eventos</b>; tienda online</td></tr>
+<tr><td class="quien">Administración</td><td>Confirma las transferencias que son la señal de un evento (propuestas o a mano), marca pagos en cualquier evento, revisa las facturas del curso y anula cupones si hace falta.</td><td>Nesto: Clientes → <b>Señales de eventos</b>; <b>Extracto Cliente</b>; pestaña <b>Cupones</b> de la ficha</td></tr>
+<tr><td class="quien">Vendedores</td><td>Venden cursos desde la plantilla, inscriben clientas y aplican el cupón en los pedidos.</td><td>Plantilla de venta y detalle del pedido de Nesto</td></tr>
+<tr><td class="quien">Dirección</td><td>Puede con todo: eventos, imágenes, lista, señales. Es la única que emite <b>cupones manuales</b> (sin evento).</td><td>Todas las anteriores</td></tr>
+<tr><td class="quien">La clienta</td><td>Reserva y paga su plaza, contesta al recordatorio y usa su cupón.</td><td>App de la tienda (TNV), correo, tienda online</td></tr>
+</table>
+
+<h2>2. Crear el evento (Tiendas, Administración, Dirección)</h2>
+<p>En Nesto, en la cinta <b>Clientes</b>, grupo «Eventos», botón <b>«Eventos»</b>. Pulse <b>«Nuevo evento»</b> y rellene:</p>
+<table style="break-inside: auto;">
+<tr><td class="tema">Título, Fecha, Horario</td><td>El horario se escribe como <kbd>10:00</kbd> «a» <kbd>13:00</kbd>; la hora de fin tiene que ser posterior a la de inicio.</td></tr>
+<tr><td class="tema">Tienda</td><td><b>Reina</b> o <b>Alcobendas</b>. <b>Obligatoria también en los online</b>: el ponente emite desde una tienda y la <b>factura del curso lleva su almacén</b>. Un evento nuevo sale con la tienda de quien lo crea. Cada tienda mantiene los suyos.</td></tr>
+<tr><td class="tema">Formato</td><td>«Presencial» u «Online (webinar)». En los online, <b>el enlace de conexión va en «Lugar»</b>.</td></tr>
+<tr><td class="tema">Ponente</td><td>Quién da el curso.</td></tr>
+<tr><td class="tema">Señal reembolsable</td><td>El precio de la plaza <b>«con cupón de productos»</b> (100 € por defecto): se factura el curso y, si asiste, la clienta recibe un cupón por el mismo importe, IVA incluido.</td></tr>
+<tr><td class="tema">No reembolsable</td><td>El precio de la plaza <b>«sin cupón»</b> (60 € por defecto): se factura el curso y no hay cupón. Si deja una de las dos a 0, esa modalidad no se ofrece. <b>Las dos a 0: evento gratuito</b>.</td></tr>
+<tr><td class="tema">Referencia curso</td><td>El producto con el que se factura. Dos formas:
+<ul><li>Escriba una referencia de curso que ya exista (por ejemplo <kbd>90077</kbd>, <kbd>90078</kbd>; varios eventos pueden compartirla) y pulse <b>«Comprobar»</b>. Debe salir «… (exento)».</li>
+<li>O guarde el evento y pulse <b>«Crear referencia»</b>: crea la suya, <kbd>EVENTO</kbd> + el número del evento (por ejemplo <kbd>EVENTO00123</kbd>; con «NR» al final, la de la plaza sin cupón). Después, <b>guarde otra vez</b> el evento.</li></ul>
+Un evento gratuito no necesita referencia.</td></tr>
+<tr><td class="tema">Plazas</td><td>Cuántas hay. Vacío = sin límite (pero para anunciarlo en las apps hace falta poner un número).</td></tr>
+<tr><td class="tema">Lugar y Descripción</td><td>La descripción es lo que leen las clientas en la app. Es obligatoria para anunciarlo.</td></tr>
+<tr><td class="tema">Activo</td><td>Marcado, admite inscripciones y sale al marcar señales. Desmarcado, sale en gris en la lista.</td></tr>
+</table>
+<p>Pulse <b>«Guardar»</b>. Sale «Guardado el evento «…» del …». Debajo de «Guardar», en gris, Nesto dice lo que aún falta para poder anunciarlo: «Para anunciarlo en las apps falta: la imagen…».</p>
+<div class="ojo"><p><b>Plazo para pagar.</b> Las plazas se pagan, como tarde, <b>7 días antes del evento</b>. Quien se apunta ya dentro de esa última semana tiene unos días para pagar, pero nunca después del día del evento. En Nesto no hay casilla para cambiar ese plazo: si un evento necesita otro, pídalo a Informática.</p></div>
+
+<h2>3. Imagen y anuncio en las apps (Tienda online)</h2>
+<ol>
+<li>Con el evento guardado, Tienda online pulsa <b>«Subir imagen…»</b> (PNG, JPEG, GIF o WebP, hasta 10 MB). Para quitarla, «Quitar». La imagen la ponen solo <b>Tienda online</b> y <b>Dirección</b>.</li>
+<li>En cuanto el evento está <b>completo</b> (título, fecha, horario, tienda, formato, ponente, descripción, plazas, precios o gratuito, referencia del curso, imagen y, si es online, el enlace en «Lugar»), al guardar o al subir la imagen Nesto pregunta: <b>«El evento está completo. ¿Quiere anunciarlo en las apps?»</b>.</li>
+<li>Si contesta que sí, llega un aviso a:
+<ul><li><b>NestoApp</b>: a todos los vendedores;</li>
+<li><b>la app de la tienda (TNV)</b>: a las clientas; los <b>presenciales, solo a las de la zona de Madrid</b> (Madrid, Guadalajara y Toledo); los online, a todas. Cada clienta puede apagar estos avisos en «Notificaciones que recibe».</li></ul>
+Nesto dice a cuántos dispositivos ha llegado. Los avisos solo salen de 9:00 a 21:00: fuera de ese horario, «el anuncio saldrá a las 09:00».</li>
+<li>Para recordarlo más adelante, el botón <b>«Anunciar otra vez…»</b> pide un <b>reclamo</b> obligatorio (elija uno de la lista o escríbalo, hasta 60 caracteres): «¡Últimas plazas disponibles!», «¡Solo faltan dos días!», «¡Es gratuito! Reserve su plaza»… Al lado se ve cuándo y quién lo anunció la última vez.</li>
+</ol>
+
+<h2>4. Inscribir a la clienta: todos los caminos</h2>
+<p>Cada inscripción ocupa una plaza. Una clienta no puede estar dos veces en el mismo evento. Cuando no quedan plazas, ningún camino deja inscribirse.</p>
+
+<h3>4.1 Desde la ficha del cliente o desde la pantalla Eventos (Tiendas, oficina)</h3>
+<ol>
+<li>En la ficha del cliente, pestaña <b>«Eventos»</b>, botón <b>«Inscribir en un evento…»</b>. O en la pantalla Eventos, panel «Inscritos», <b>«Inscribir cliente…»</b>.</li>
+<li>Elija el <b>Evento</b> (debajo se ve el precio, las plazas ocupadas, el horario y la tienda), el <b>Contacto</b> (vacío = el principal) y «Se inscribe por»: «Nesto (en la tienda o la oficina)» o «Teléfono».</li>
+<li><b>Modalidad</b> (si el evento tiene las dos): «Reembolsable: 100,00 €, con cupón por el mismo importe» o «No reembolsable: 60,00 €, sin cupón».</li>
+<li><b>Va a pagar con</b>:
+<ul><li><b>«Tarjeta (enlace de pago)»</b>: deje marcado «Generar el enlace de pago» y, si quiere, escriba un correo en «Mandarlo al correo». Al pagar, la inscripción pasa sola a pagada.</li>
+<li><b>«Transferencia»</b>: queda reservada hasta que Administración confirme la transferencia como señal del evento (apartado 5).</li>
+<li><b>«Efectivo en la tienda»</b>: queda reservada hasta que la tienda la marque como pagada.</li></ul></li>
+<li>Pulse <b>«Inscribir»</b>. Sale en verde «Inscrito en «…» del …: Reservada, se puede pagar hasta el …» y, con tarjeta, el enlace para copiarlo y mandárselo a la clienta. El enlace también se ve después en la columna «Enlace de pago» de la pestaña Eventos.</li>
+</ol>
+
+<h3>4.2 La clienta, desde la app de la tienda (TNV)</h3>
+<ul>
+<li>En el menú, <b>«Eventos y cupones»</b> → «Próximos eventos». Cada evento enseña imagen, fecha y horario, ponente, tienda, precio, plazas libres y lo que recibe al asistir.</li>
+<li>Pulsa <b>«Reservar plaza»</b>. Si hay dos modalidades, elige en «¿Qué plaza prefiere?»: «Con cupón…» o «Sin cupón…». Confirma con «Reservar».</li>
+<li>Se abre el pago con tarjeta; el enlace también le llega por correo. Si no paga en ese momento, ve «Pendiente de pago» y el botón <b>«Pagar la plaza»</b> hasta la fecha límite.</li>
+<li><b>Clientas que piden sin ver precios</b>: no ven importes ni pagan en la app. Ven «La plaza se paga en la tienda antes del …» y pagan en la tienda (la tienda la marca como pagada, apartado 5).</li>
+<li>Mientras no esté pagada, puede <b>«Anular reserva»</b> ella misma.</li>
+</ul>
+
+<h3>4.3 Desde la tienda online</h3>
+<p>El curso se publica en la tienda online como un producto con <b>dos combinaciones</b>: la plaza con cupón y la plaza sin cupón (su referencia termina en «NR»). Cuando la compra entra en Nesto, en vez de tratarse como un pedido normal, <b>paga (o crea) la inscripción</b> de la clienta en ese evento, con la modalidad de la combinación que compró.</p>
+
+<h3>4.4 El vendedor, desde la plantilla de venta</h3>
+<ol>
+<li>Busque la referencia del curso (por ejemplo <kbd>90077</kbd> o <kbd>EVENTO00123</kbd>) como cualquier producto y ponga 1 unidad. Solo salen los cursos con algún evento futuro con plazas libres.</li>
+<li>Se abre <b>«Curso: evento y modalidad»</b>. Elija el evento (si hay varios: fecha y hora, tienda, presencial u online, plazas libres) y la modalidad: <b>«Con cupón de productos: 100,00 €»</b> o <b>«Sin cupón: 60,00 €»</b>. La modalidad se elige siempre a mano. «Cancelar» quita la línea.</li>
+<li>El precio de la línea queda fijo al de la modalidad, sin descuentos ni ofertas. Cada curso, 1 unidad (cada clienta es una plaza).</li>
+<li><b>Prepago obligatorio</b>: al añadir un curso, Nesto pone el plazo de pago «Prepago». Revise la forma de pago.</li>
+<li>Bajo los totales: «Cursos: X € de base imponible, en un pedido aparte con prepago (no suman al pedido de productos)».</li>
+<li>Al crear el pedido, los productos van en su pedido de siempre y <b>todos los cursos van juntos en otro pedido, en serie CV</b>, con <b>un solo enlace de pago</b> por el total. La clienta queda inscrita (reservada) en cada evento y recibe un correo con sus cursos y el botón <b>«Pagar mi plaza»</b> («Pagar mis plazas» si son varios).</li>
+</ol>
+<div class="ojo"><p><b>El importe de los cursos no cuenta</b> para los portes, los Ganavisiones, los regalos y ofertas, el cheque regalo ni el mínimo del cupón: se calcula todo como si el curso no estuviera.</p>
+<p>Los cursos <b>no se pueden añadir a un pedido que ya existe</b> (cree uno nuevo, sin ampliar el pendiente) <b>ni a un presupuesto</b>. Un evento gratuito no se vende en la plantilla: inscriba a la clienta desde el evento.</p></div>
+
+<h2>5. El pago</h2>
+<table>
+<tr><th>Cómo paga</th><th>Qué pasa</th><th>Quién hace algo</th></tr>
+<tr><td><b>Enlace de pago</b> (tarjeta)</td><td>Al pagar, la inscripción pasa sola a «Pagada» y se factura el curso.</td><td>Nadie.</td></tr>
+<tr><td><b>Transferencia</b></td><td>Cada mañana Nesto busca los cobros a favor de los clientes que encajan con una inscripción pendiente (mismo importe) o cuyo concepto menciona el evento, y los <b>propone</b>. <b>Nunca se confirma sola.</b></td><td>Administración confirma la propuesta (abajo) o marca la señal a mano.</td></tr>
+<tr><td><b>Efectivo</b> o datáfono en la tienda</td><td>Nesto no contabiliza el efectivo: se mete en la caja de la tienda como cualquier cobro.</td><td>La tienda pulsa «Marcar pagada».</td></tr>
+<tr><td><b>Compra en la tienda online</b></td><td>La compra paga la inscripción al entrar en Nesto.</td><td>Nadie.</td></tr>
+</table>
+
+<h3>Confirmar una propuesta de señal (Administración)</h3>
+<ol>
+<li>Clientes → <b>«Señales de eventos»</b>. Despliegue <b>«Propuestas (N cobros)»</b>. Si acaba de entrar una transferencia, <b>«Buscar ahora»</b> mira los cobros a cuenta de los últimos 15 días.</li>
+<li>Cada fila: fecha, cliente, importe, concepto, evento candidato y motivo. Si un cobro tiene varios eventos candidatos, elija la fila del correcto.</li>
+<li><b>«Confirmar»</b>: el cobro pasa a ser la señal de ese evento, igual que si se marcara a mano; la inscripción queda pagada y el curso se factura. <b>«Descartar»</b>: no es de ese evento y no se vuelve a proponer.</li>
+</ol>
+
+<h3>Crear una señal a mano (Administración, Dirección)</h3>
+<ol>
+<li>Clientes → <b>«Extracto Cliente»</b>, elija el cliente y pulse <b>«Cargar pendientes»</b>.</li>
+<li>Seleccione el <b>cobro a favor</b> (importe pendiente en negativo).</li>
+<li>Pulse <b>«Es la señal del evento…»</b> (también con el botón derecho).</li>
+<li>Elija el evento en la lista y pulse «Aceptar». Sale «El apunte … es la señal del evento «…»». La fila se pone azul y en la columna «Señal» se ve el evento.</li>
+<li>Si la clienta no estaba inscrita, se inscribe sola con ese pago. Para deshacerlo, «Quitar señal»: el cobro sigue a favor del cliente.</li>
+</ol>
+<p>En «Señales de eventos» se ven todas las señales con su estado (Pendiente, Liberada, Sin compra, Consumida) y el total pendiente a favor. Doble clic abre el extracto del cliente.</p>
+
+<h3>«Marcar pagada» en la tienda</h3>
+<p>En la pantalla Eventos, panel «Inscritos», seleccione la inscripción (reservada o caducada), elija Tarjeta, Transferencia o Efectivo, el importe (vacío = el precio de su modalidad) y la fecha, y pulse <b>«Marcar pagada»</b>. Con efectivo, Nesto le recuerda: «Recuerde meter el cobro en la caja de la tienda: Nesto no lo contabiliza». Lo puede hacer la tienda del evento y Administración en cualquier evento.</p>
+
+<h3>Si no paga a tiempo</h3>
+<ul>
+<li><b>Dos días antes</b> de que venza el plazo, la clienta recibe un aviso en la app y un correo: «Su plaza en «…» se libera … si no está pagada», con el botón «Pagar mi plaza».</li>
+<li>Vencido el plazo, la inscripción pasa a <b>«Caducada»</b> y <b>la plaza queda libre</b> para otra persona. A quien la inscribió le llega un aviso en Nesto (y en NestoApp).</li>
+<li>Si paga después (el enlace sigue vivo o llega la transferencia), manda el dinero: la inscripción vuelve a «Pagada».</li>
+</ul>
+
+<h2>6. La factura del curso</h2>
+<ul>
+<li>El curso se factura <b>solo, en cuanto entra el pago</b>, en la <b>serie CV</b>, exento de IVA (es formación). No hay que esperar a rutas ni al día del evento.</li>
+<li>Si la clienta paga <b>varios cursos juntos</b> (el enlace único del pedido de la plantilla), sale <b>una sola factura</b> con todos.</li>
+<li>El curso va <b>siempre separado de los productos</b>: en su propio pedido y su propia factura. Por eso la plantilla parte el pedido en dos.</li>
+<li>El cobro se liquida contra la factura: no queda nada a favor del cliente ni pendiente para Administración.</li>
+<li>La factura se ve en la columna «Factura» (pestaña Eventos de la ficha y panel «Inscritos») y la clienta la tiene en la app, en «Facturas».</li>
+<li>Si algo falla, la columna «Factura» dice «Error» o «No automatizable» (por ejemplo, el importe cobrado no coincide). Corríjalo y pulse <b>«Facturar curso»</b> en el panel «Inscritos»: sigue desde donde se quedó.</li>
+</ul>
+
+<h2>7. Antes del evento: el recordatorio</h2>
+<ul>
+<li><b>Dos días antes</b>, a las 10:00, a cada inscrita pagada o en un evento gratuito le llega un aviso en la app y un correo «Le esperamos en «…»» con dos botones: <b>«Confirmo asistencia»</b> y <b>«No podré ir»</b>. En la app los botones son <b>«Asistiré»</b> y <b>«No podré ir»</b>, y salen en la tarjeta del evento los dos últimos días.</li>
+<li><b>«No podré ir» libera la plaza</b>. Si aún no había pagado, la inscripción se anula. Si ya había pagado, el dinero no se toca (no se devuelve) y la plaza queda libre; si al final cambia de idea y confirma, recupera la plaza <b>solo si queda alguna</b>.</li>
+<li>Si la clienta se lo dice por teléfono o en persona, la tienda lo apunta con los botones <b>«Confirma asistencia»</b> o <b>«No podrá ir»</b> del panel «Inscritos». La columna «Asistencia» enseña: Pendiente, Confirmada, No podrá ir, Asistió, No asistió.</li>
+</ul>
+
+<div class="bloque">
+<h2>8. El día del evento: pasar lista (la tienda)</h2>
+<ol>
+<li>En la pantalla Eventos, seleccione el evento. En el panel «Inscritos», marque la casilla <b>«Vino»</b> de cada asistente.</li>
+<li>Pulse <b>«Guardar lista»</b>. Si alguien que pagó queda sin marcar, Nesto pregunta con sus nombres: «Las siguientes personas pagaron y no están marcadas: … Quedarán como ‘No asistió’ y perderán su cupón. ¿Desea guardar la lista?».</li>
+<li>La lista se puede pasar desde el día del evento y <b>se puede corregir</b> después: quien pasa de «No asistió» a «Asistió» recupera su cupón.</li>
+</ol>
+</div>
+<div class="ojo"><p>Solo entran en la lista las inscripciones pagadas y las de eventos gratuitos. Si alguien viene sin haber pagado, márquela antes como pagada.</p>
+<p>Si <b>nadie pasa lista</b>, al día siguiente todas las pagadas se dan por asistidas (para no dejar a nadie sin su cupón), salvo las que dijeron «No podré ir», que quedan como «No asistió». La tienda recibe un correo avisándolo.</p></div>
+
+<h2>9. El cupón</h2>
+<table>
+<tr><td class="tema">Quién lo gana</td><td>Quien pagó la plaza <b>«con cupón de productos»</b> (Reembolsable) y asistió. La plaza «sin cupón» y los eventos gratuitos no dan cupón. Además, Dirección puede emitir <b>cupones manuales</b> (sin evento) con un motivo.</td></tr>
+<tr><td class="tema">Cuándo se emite</td><td>Al cobrar la plaza, con la factura del curso. Hasta el día del evento sale como «Emitido» (aún no vale); desde ese día, «Activo». Si al pasar lista queda «No asistió», se anula.</td></tr>
+<tr><td class="tema">Cuánto vale</td><td>Lo mismo que pagó por la plaza, <b>IVA incluido</b> (100 € de plaza = 100 € de descuento con IVA). Descuenta siempre ese importe exacto, también a los clientes con recargo de equivalencia.</td></tr>
+<tr><td class="tema">Válido</td><td><b>Desde el día del evento y durante 6 meses.</b></td></tr>
+<tr><td class="tema">Mínimo</td><td>Un pedido de <b>al menos el doble</b> del cupón en productos, IVA incluido y después de descuentos (cupón de 100 € → pedido de 200 €). <b>No cuentan ni cursos ni portes.</b></td></tr>
+<tr><td class="tema">Uso</td><td>Una sola vez, en un pedido, uno por pedido. Convive con las ofertas, los descuentos del cliente, los precios especiales y el cheque regalo. Solo descuenta productos.</td></tr>
+<tr><td class="tema">Código</td><td>Como <kbd>EV-2610-7K3Q</kbd> (los manuales empiezan por <kbd>MN</kbd>).</td></tr>
+</table>
+<p>A la clienta le llega un correo «Su cupón de X € para su próxima compra» con el código y las condiciones, y lo ve en la app, en «Sus cupones». Al vendedor del cliente le llega un aviso en NestoApp.</p>
+
+<h3>Dónde se ve</h3>
+<p>Ficha del cliente, pestaña <b>«Cupones»</b>: código, estado (Emitido, Activo, Usado, Anulado, Caducado), importe, pedido mínimo, válido desde, caduca, origen y «Situación» (dónde se usó o hasta cuándo vale). Desde ahí, <b>«Emitir cupón manual…»</b> (solo Dirección) y <b>«Anular cupón…»</b> (Administración y Dirección; por ejemplo, por la devolución del curso).</p>
+
+<h3>Cómo se usa</h3>
+<table>
+<tr><th>Dónde</th><th>Cómo</th></tr>
+<tr><td><b>Plantilla de venta</b> (Nesto)</td><td>Si el cliente tiene cupón, sale un recuadro con el mensaje y la casilla <b>«Usar el cupón de X €»</b>. Debajo, Nesto dice cuánto falta para el mínimo («Es aproximado: al guardar manda lo que diga el servidor»). Para quitarlo, desmarque la casilla.</td></tr>
+<tr><td><b>Detalle del pedido</b> (Nesto)</td><td>Banda amarilla con el botón <b>«Añadir el cupón de X €»</b>: añade la línea «Cupón EV-… (evento)». <b>Guarde el pedido</b>. Para quitarlo, <b>«Quitar el cupón»</b> y guardar: el cupón vuelve a quedar libre.</td></tr>
+<tr><td><b>App de la tienda</b> (TNV)</td><td>La clienta lo ve en «Eventos y cupones» → «Sus cupones» y, en el carrito, activa <b>«Usar mi cupón de X €»</b>. Si no llega al mínimo, la app le dice cuánto le falta.</td></tr>
+<tr><td><b>Tienda online</b></td><td><b>Próximamente.</b> Mientras tanto, la clienta puede usarlo en la tienda física, con su comercial o en la app.</td></tr>
+</table>
+<div class="pronto"><p><b>Tienda online: próximamente.</b> Se está preparando que el cupón se aplique en el carrito de la tienda online igual que el cheque regalo. Se avisará en Novedades cuando esté.</p></div>
+
+<h2>10. Lo que compra la clienta el día del evento</h2>
+<p>En la pantalla <b>Eventos</b>, panel «Inscritos», la columna <b>«Base imponible del día»</b> enseña, para cada inscrita, cuánto ha comprado ese día. Sirve para ver qué venta trae cada evento.</p>
+<ul>
+<li>Suma la <b>base imponible</b> (sin IVA) de los pedidos del cliente con <b>fecha del día del evento</b>, en <b>Reina o Alcobendas</b> (cualquiera de las dos, no solo la del evento).</li>
+<li>Cuenta <b>todos los contactos</b> del cliente: si se apuntan dos contactos del mismo cliente, los dos enseñan la misma cifra.</li>
+<li><b>No cuenta</b> los presupuestos ni el propio curso del evento. El cupón usado ese día sí resta (es una línea del pedido).</li>
+<li>Se rellena desde el día del evento (antes sale vacía) y se actualiza al recargar o al guardar la lista. Un 0 es que no compró.</li>
+</ul>
+
+<h2>11. Casos raros</h2>
+<table>
+<tr><th>Situación</th><th>Qué pasa y qué hacer</th></tr>
+<tr><td>No quedan plazas</td><td>Nesto y la plantilla dicen «No quedan plazas en «…»»; en la app desaparece «Reservar plaza». Las plazas se liberan cuando alguien caduca, anula o dice «No podré ir». Para ampliar, cambie «Plazas» en el evento.</td></tr>
+<tr><td>La clienta no paga a tiempo</td><td>Aviso dos días antes y, vencido el plazo, «Caducada» y plaza libre (apartado 5). Si paga después, vuelve a «Pagada».</td></tr>
+<tr><td>Quiere cambiar de modalidad</td><td>No hay un botón para cambiarla. <b>Sin pagar</b>: anule la inscripción («Anular» en el panel «Inscritos») e inscríbala de nuevo con la otra modalidad. <b>Ya pagada</b>: el curso ya está facturado; consulte con Administración.</td></tr>
+<tr><td>Evento gratuito</td><td>Las dos señales a 0. La inscripción queda <b>«Inscrita»</b>: no se paga, no caduca, no se factura y no da cupón. Va directa a la lista de asistencia y recibe el recordatorio. Se puede anular.</td></tr>
+<tr><td>Cupón caducado</td><td>Al guardar el pedido: «El cupón … se podía usar hasta el …». No se puede usar; solo Dirección puede emitir uno manual si hay motivo.</td></tr>
+<tr><td>El pedido no llega al mínimo del cupón</td><td>«Para usar el cupón … el pedido tiene que ser de al menos … € de productos (IVA incluido, sin contar cursos ni portes). Lleva … €: faltan … €». Añada producto o quite el cupón.</td></tr>
+<tr><td>El cupón ya está en otro pedido</td><td>«… ya está aplicado en el pedido N: solo se puede usar una vez». Si ese pedido no va a salir, quite de él el cupón y quedará libre.</td></tr>
+<tr><td>Un pedido con cursos y productos</td><td>Desde la plantilla, Nesto crea dos pedidos: productos (su serie de siempre) y cursos (CV, prepago). Nunca van en la misma factura. Los cursos no suman para portes, Ganavisiones, cheque ni cupón.</td></tr>
+<tr><td>Pagó y no viene</td><td>No se devuelve la plaza. Con la lista pasada queda «No asistió» y pierde el cupón.</td></tr>
+<tr><td>Viene sin haber pagado</td><td>Cobre en la tienda, «Marcar pagada» y luego márquela en la lista.</td></tr>
+<tr><td>Anular una inscripción pagada</td><td>No se puede: solo se anulan las sin pagar o las gratuitas.</td></tr>
+</table>
+
+<p class="pie">Nueva Visión · Guía de eventos, cursos y cupones · Si algo de esta guía no coincide con lo que ve en pantalla, díganoslo en Novedades.</p>
+</body>
+</html>
