@@ -2044,13 +2044,6 @@ namespace NestoAPI.Controllers
             gestor.Avisos.AddRange(avisosCorreoModificacion);
             await gestor.EnviarCorreo("Modificación");
 
-            // NestoAPI#691: si es el pedido de un curso de la plantilla, ya pagado y con el evento ya llegado, se factura (detrás de
-            // Eventos:FacturarCursosPlantilla). Nunca lanza: el pedido ya está guardado.
-            if (FacturarCursoDelPedido != null)
-            {
-                _ = await FacturarCursoDelPedido(pedido.numero).ConfigureAwait(true);
-            }
-
             if (avisos.Count > 0)
             {
                 return Ok(new RespuestaModificacionPedidoDTO { Avisos = avisos });
@@ -2101,19 +2094,6 @@ namespace NestoAPI.Controllers
             pedido.plazosPago = empresa.PlazosPagoDefecto;
         }
 
-        /// <summary>
-        /// NestoAPI#691: factura el curso del pedido si es uno de la plantilla, está pagado y el evento ha llegado (nunca lanza).
-        /// Sustituible en los tests. Con el interruptor apagado no construye nada.
-        /// </summary>
-        internal Func<int, Task<bool>> FacturarCursoDelPedido
-        {
-            get => facturarCursoDelPedido ?? (numero => Infraestructure.Eventos.InterruptoresEventos.FacturarCursosPlantilla
-                ? new Infraestructure.Eventos.ServicioInscripcionesEventos(db).FacturarCursoDelPedidoSinFallar(numero)
-                : Task.FromResult(false));
-            set => facturarCursoDelPedido = value;
-        }
-        private Func<int, Task<bool>> facturarCursoDelPedido;
-
         // NestoAPI#691: los cursos de la plantilla (comprobar, inscribir, crear su pedido CV). Para tests.
         private Infraestructure.Eventos.IServicioCursosPlantilla servicioCursosPlantilla;
         internal Infraestructure.Eventos.IServicioCursosPlantilla ServicioCursosPlantilla
@@ -2125,8 +2105,9 @@ namespace NestoAPI.Controllers
         // POST: api/PedidosVenta
         /// <summary>
         /// Crea el pedido. NestoAPI#691: si lleva cursos de la plantilla (líneas con EventoId), los SEPARA: los productos van a
-        /// este pedido (NV) y cada curso a su propio pedido (CV, prepago), con su inscripción. La respuesta es la de siempre
-        /// (Location y cuerpo del pedido de productos o, si solo hay cursos, del primero) más PedidosAdicionales.
+        /// este pedido (NV) y todos los cursos a UN pedido aparte (CV, prepago), una línea por curso con su inscripción. La
+        /// respuesta es la de siempre (Location y cuerpo del pedido de productos o, si solo hay cursos, del de cursos) más
+        /// PedidosAdicionales (el de cursos).
         /// </summary>
         [HttpPost]
         [ResponseType(typeof(PedidoVentaDTO))]
@@ -2155,7 +2136,7 @@ namespace NestoAPI.Controllers
             IPrincipal usuario = PrincipalParaValidacion();
             Infraestructure.Eventos.ResultadoPedidoConCursos resultado = await Infraestructure.Eventos.OrquestadorPedidoConCursos.Crear(
                 pedido, cursos, CrearPedidoVenta,
-                curso => ServicioCursosPlantilla.CrearPedidoCurso(pedido, cursos.Ficha, curso, usuario)).ConfigureAwait(true);
+                lista => ServicioCursosPlantilla.CrearPedidoCursos(pedido, cursos.Ficha, lista, usuario)).ConfigureAwait(true);
             if (resultado.NoCreado != null)
             {
                 return resultado.NoCreado;

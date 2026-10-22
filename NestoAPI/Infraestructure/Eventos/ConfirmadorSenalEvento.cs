@@ -64,9 +64,11 @@ namespace NestoAPI.Infraestructure.Eventos
             string.Equals(ConfigurationManager.AppSettings[CLAVE_CURSOS_TIENDA], "true", StringComparison.OrdinalIgnoreCase);
 
         /// <summary>
-        /// NestoAPI#691: «true»: los pedidos de curso creados desde la plantilla (ya pagados) se facturan el día del evento con el
-        /// job diario inscripciones-eventos y al guardar el pedido. La factura la hace el mismo camino de #612, así que también
-        /// necesita <see cref="CLAVE_FACTURAR_CURSO"/> encendido. Apagado si no está o no vale «true».
+        /// NestoAPI#691 (Carlos, 22/10/26): «true»: al entrar el pago de una inscripción de un pedido de cursos de la plantilla
+        /// (enlace del pedido, señal por transferencia o «Marcar pagada»), se factura su línea en ese momento, sin esperar al
+        /// evento. Es lo único que manda en esos pedidos: NO hace falta <see cref="CLAVE_FACTURAR_CURSO"/> (que sigue mandando en
+        /// las inscripciones sin pedido de #612). Apagado si no está o no vale «true»: la inscripción se queda Pagada y la línea,
+        /// pendiente, como cualquier pedido sin facturar.
         /// </summary>
         public const string CLAVE_FACTURAR_CURSOS_PLANTILLA = "Eventos:FacturarCursosPlantilla";
 
@@ -95,12 +97,6 @@ namespace NestoAPI.Infraestructure.Eventos
         public const string ERROR = "Error";
         /// <summary>No se automatiza (importe distinto de la señal, evento sin referencia de curso…): lo hace Administración.</summary>
         public const string NO_AUTOMATIZABLE = "NoAutomatizable";
-        /// <summary>
-        /// NestoAPI#691: el pedido del curso se creó desde la plantilla (con la inscripción Reservada) y espera al pago y al día
-        /// del evento: se factura al entrar el pago si el evento ya ha llegado, al guardar el pedido o con el job diario el
-        /// día del evento (Scripts/Issue691_CursosPlantilla.sql añade el valor al CHECK).
-        /// </summary>
-        public const string PENDIENTE_EVENTO = "PendienteEvento";
     }
 
     /// <summary>NestoAPI#612: qué se ha hecho con el cobro de la señal al facturar el curso.</summary>
@@ -120,6 +116,11 @@ namespace NestoAPI.Infraestructure.Eventos
         public int InscripcionId { get; set; }
         public string EmpresaPedido { get; set; }
         public int? Pedido { get; set; }
+        /// <summary>
+        /// NestoAPI#691: el Nº Orden de SU línea en el pedido de cursos de la plantilla (un pedido para todos los cursos, una línea
+        /// por curso). Null en los pedidos de #612 (un pedido por inscripción).
+        /// </summary>
+        public int? LineaPedido { get; set; }
         public string EmpresaFactura { get; set; }
         public string Factura { get; set; }
         public string EstadoLiquidacion { get; set; }
@@ -214,10 +215,11 @@ namespace NestoAPI.Infraestructure.Eventos
         Task<List<int>> ConError(int maxIntentos);
         /// <summary>Las ya facturadas cuyo cupón no consta emitido (para el job del corte 3).</summary>
         Task<List<int>> FacturadasSinCupon();
-        /// <summary>NestoAPI#691: las inscripciones con pedido de la plantilla que esperan al pago y al día del evento.</summary>
-        Task<List<int>> PendientesDelEvento();
-        /// <summary>NestoAPI#691: la inscripción ligada a ese pedido (null si el pedido no es de un curso).</summary>
-        Task<int?> InscripcionDelPedido(int pedido);
+        /// <summary>
+        /// NestoAPI#691: otra inscripción (no <paramref name="inscripcionId"/>) cuya factura es esa y ya está liquidada. Con el
+        /// enlace único del pedido de cursos, una factura lleva varias inscripciones y un solo cobro: se liquida una vez.
+        /// </summary>
+        Task<FacturacionCursoInscripcion> LiquidadaConFactura(string empresaFactura, string factura, int inscripcionId);
     }
 
     /// <summary>Crea el pedido del curso y apunta su número en EventosInscripcionesCurso EN LA MISMA transacción.</summary>
@@ -230,6 +232,11 @@ namespace NestoAPI.Infraestructure.Eventos
     public interface IFacturadorPedidoCurso
     {
         Task<FacturaCursoCreada> Facturar(string empresa, int pedido, string usuario);
+        /// <summary>
+        /// NestoAPI#691: el pedido de cursos de la plantilla. Factura las líneas de sus inscripciones ya pagadas (las sin pagar se
+        /// quedan pendientes, Estado −1) y devuelve la factura de <paramref name="lineaPedido"/>; si ya está facturada, esa.
+        /// </summary>
+        Task<FacturaCursoCreada> FacturarLinea(string empresa, int pedido, int lineaPedido, string usuario);
     }
 
     /// <summary>Liquida el cobro de la señal contra el efecto de la factura (ServicioLiquidarEfectos, único sitio de prdLiquidar).</summary>
@@ -368,20 +375,26 @@ namespace NestoAPI.Infraestructure.Eventos
         private readonly IEmisorCuponEvento emisor;
         private readonly Func<DateTime> reloj;
         private readonly string usuarioAutomatico;
+        private readonly Func<bool> interruptorPlantilla;
 
         public ConfirmadorSenalEvento(NVEntities db)
             : this(db, () => InterruptoresEventos.FacturarCursoAlCobrar, new RepositorioFacturacionCursos(db),
                   new CreadorPedidoCurso(db), new FacturadorPedidoCurso(), new LiquidadorSenalCurso(db),
-                  new AvisadorFacturacionCurso(), new Cupones.EmisorCuponesEvento(db), null, InterruptoresEventos.UsuarioAutomatico)
+                  new AvisadorFacturacionCurso(), new Cupones.EmisorCuponesEvento(db), null, InterruptoresEventos.UsuarioAutomatico,
+                  () => InterruptoresEventos.FacturarCursosPlantilla)
         {
         }
 
+        /// <param name="interruptor">Eventos:FacturarCursoAlCobrar (#612: inscripciones sin pedido).</param>
+        /// <param name="interruptorPlantilla">NestoAPI#691: Eventos:FacturarCursosPlantilla (pedidos de cursos de la plantilla). Null: apagado.</param>
         internal ConfirmadorSenalEvento(NVEntities db, Func<bool> interruptor, IRepositorioFacturacionCursos repositorio,
             ICreadorPedidoCurso creador, IFacturadorPedidoCurso facturador, ILiquidadorSenalCurso liquidador,
-            IAvisadorFacturacionCurso avisador, IEmisorCuponEvento emisor, Func<DateTime> reloj, string usuarioAutomatico)
+            IAvisadorFacturacionCurso avisador, IEmisorCuponEvento emisor, Func<DateTime> reloj, string usuarioAutomatico,
+            Func<bool> interruptorPlantilla = null)
         {
             this.db = db;
             this.interruptor = interruptor ?? (() => false);
+            this.interruptorPlantilla = interruptorPlantilla ?? (() => false);
             this.repositorio = repositorio;
             this.creador = creador;
             this.facturador = facturador;
@@ -392,12 +405,22 @@ namespace NestoAPI.Infraestructure.Eventos
             this.usuarioAutomatico = string.IsNullOrWhiteSpace(usuarioAutomatico) ? InterruptoresEventos.USUARIO_AUTOMATICO : usuarioAutomatico.Trim();
         }
 
-        public bool Encendido => interruptor();
+        /// <summary>Alguno de los dos interruptores (#612 o los cursos de la plantilla, #691) está encendido.</summary>
+        public bool Encendido => interruptor() || interruptorPlantilla();
 
-        /// <summary>El enganche del corte 1. Con el interruptor apagado no hace nada (la inscripción se queda Pagada).</summary>
+        /// <summary>
+        /// NestoAPI#691: la fila es la de un curso de la plantilla: la plantilla creó el pedido (uno para todos los cursos) con una
+        /// línea para esta inscripción. «PendienteEvento» es el estado con el que nacían antes del 22/10/26 (un pedido por curso).
+        /// </summary>
+        internal static bool EsDePlantilla(FacturacionCursoInscripcion fila) =>
+            fila?.Pedido != null && (fila.LineaPedido.HasValue || fila.Estado == ESTADO_PLANTILLA_ANTIGUO);
+
+        private const string ESTADO_PLANTILLA_ANTIGUO = "PendienteEvento";
+
+        /// <summary>El enganche del corte 1. Con los dos interruptores apagados no hace nada (la inscripción se queda Pagada).</summary>
         public async Task Procesar(EventoInscripcion inscripcion, Evento evento)
         {
-            if (!interruptor())
+            if (!Encendido)
             {
                 return;
             }
@@ -410,9 +433,17 @@ namespace NestoAPI.Infraestructure.Eventos
             {
                 throw new ArgumentNullException(inscripcion == null ? nameof(inscripcion) : nameof(evento));
             }
-            if (!interruptor())
+            // NestoAPI#691: los cursos de la plantilla van con su interruptor; el resto, con el de #612
+            FacturacionCursoInscripcion previa = await repositorio.Leer(inscripcion.Id).ConfigureAwait(false);
+            bool dePlantilla = EsDePlantilla(previa);
+            if (!(dePlantilla ? interruptorPlantilla() : interruptor()))
             {
-                throw new NestoBusinessException($"La facturación automática de los cursos está apagada ({InterruptoresEventos.CLAVE_FACTURAR_CURSO}).");
+                string apagado = $"La facturación automática de los cursos está apagada ({(dePlantilla ? InterruptoresEventos.CLAVE_FACTURAR_CURSOS_PLANTILLA : InterruptoresEventos.CLAVE_FACTURAR_CURSO)}).";
+                if (aMano)
+                {
+                    throw new NestoBusinessException(apagado);
+                }
+                return new ResultadoConfirmacionSenal { Omitido = true, Facturacion = previa, Mensaje = apagado };
             }
             EstadoInscripcionEvento estado = ReglasInscripcionEvento.Estado(inscripcion.Estado) ?? EstadoInscripcionEvento.Anulada;
             if (!ReglasInscripcionEvento.EN_LISTA_ASISTENCIA.Contains(estado))
@@ -432,7 +463,6 @@ namespace NestoAPI.Infraestructure.Eventos
             }
 
             string usuario = ReglasFacturacionCurso.UsuarioAuditoria(inscripcion, usuarioAutomatico);
-            FacturacionCursoInscripcion previa = await repositorio.Leer(inscripcion.Id).ConfigureAwait(false);
             if (previa?.Estado == EstadosFacturacionCurso.FACTURADA)
             {
                 // Idempotente: una señal ya confirmada no vuelve a facturar. El cupón sí se reintenta (también es idempotente).
@@ -440,17 +470,7 @@ namespace NestoAPI.Infraestructure.Eventos
                 return new ResultadoConfirmacionSenal { Hecho = true, Omitido = true, Facturacion = previa, Mensaje = "El curso ya estaba facturado." };
             }
 
-            // NestoAPI#691: el pedido del curso de la plantilla se factura el día del evento (o después), nunca antes. Pagado
-            // antes, se queda esperando: lo factura el job diario ese día (o el guardado del pedido, si ya ha llegado).
-            if (previa?.Estado == EstadosFacturacionCurso.PENDIENTE_EVENTO && evento.Fecha.Date > reloj().Date)
-            {
-                string espera = $"El curso de la inscripción {inscripcion.Id} se factura el día del evento ({evento.Fecha:dd/MM/yyyy}).";
-                if (aMano)
-                {
-                    throw new NestoBusinessException(espera);
-                }
-                return new ResultadoConfirmacionSenal { Omitido = true, Facturacion = previa, Mensaje = espera };
-            }
+            // NestoAPI#691 (Carlos, 22/10/26): el curso de la plantilla se factura en cuanto llega el pago, sin esperar al evento.
 
             if (!await repositorio.Reclamar(inscripcion.Id, Limpiar(inscripcion.Empresa), usuario).ConfigureAwait(false))
             {
@@ -499,7 +519,10 @@ namespace NestoAPI.Infraestructure.Eventos
                 // 2. La factura exenta, al momento (sin esperar a rutas). Nunca se repite: si ya está, se salta.
                 if (string.IsNullOrWhiteSpace(fila.Factura))
                 {
-                    FacturaCursoCreada factura = await facturador.Facturar(fila.EmpresaPedido, fila.Pedido.Value, usuario).ConfigureAwait(false);
+                    // NestoAPI#691: en el pedido de cursos de la plantilla, solo las líneas ya pagadas (pagadas juntas, una factura)
+                    FacturaCursoCreada factura = fila.LineaPedido.HasValue
+                        ? await facturador.FacturarLinea(fila.EmpresaPedido, fila.Pedido.Value, fila.LineaPedido.Value, usuario).ConfigureAwait(false)
+                        : await facturador.Facturar(fila.EmpresaPedido, fila.Pedido.Value, usuario).ConfigureAwait(false);
                     fila.EmpresaPedido = factura.EmpresaPedido ?? fila.EmpresaPedido;
                     fila.EmpresaFactura = factura.EmpresaFactura;
                     fila.Factura = factura.Factura;
@@ -508,6 +531,20 @@ namespace NestoAPI.Infraestructure.Eventos
                 }
 
                 // 3. La señal, liquidada contra la factura (nada a favor del cliente ni nada pendiente para Administración)
+                if (fila.EstadoLiquidacion != EstadosLiquidacionCurso.LIQUIDADA && fila.EstadoLiquidacion != EstadosLiquidacionCurso.SIN_COBRO
+                    && fila.LineaPedido.HasValue)
+                {
+                    // NestoAPI#691: pagadas juntas con el enlace del pedido, la factura y el cobro son los mismos para todas: el
+                    // cobro ya se liquidó contra la factura con la primera, no se busca otra vez (ni se avisa de que «falta»)
+                    FacturacionCursoInscripcion hermana = await repositorio.LiquidadaConFactura(fila.EmpresaFactura, fila.Factura, inscripcion.Id).ConfigureAwait(false);
+                    if (hermana != null)
+                    {
+                        fila.EstadoLiquidacion = EstadosLiquidacionCurso.LIQUIDADA;
+                        fila.NumOrdenCobro = hermana.NumOrdenCobro;
+                        fila.NumOrdenEfecto = hermana.NumOrdenEfecto;
+                        fila.Mensaje = $"Liquidada junto con la inscripción {hermana.InscripcionId} (misma factura y mismo cobro).";
+                    }
+                }
                 if (fila.EstadoLiquidacion != EstadosLiquidacionCurso.LIQUIDADA && fila.EstadoLiquidacion != EstadosLiquidacionCurso.SIN_COBRO)
                 {
                     LiquidacionSenalCurso liquidacion = await liquidador.Liquidar(inscripcion, fila.EmpresaFactura, fila.Factura, usuario).ConfigureAwait(false);

@@ -48,6 +48,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         private IAvisadorFacturacionCurso avisador;
         private IEmisorCuponEvento emisor;
         private bool encendido;
+        private bool plantillaEncendido;
         private int siguienteId;
 
         [TestInitialize]
@@ -56,6 +57,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             db = A.Fake<NVEntities>();
             siguienteId = 100;
             encendido = true;
+            plantillaEncendido = true;
             eventos = new List<Evento>
             {
                 new Evento { Id = EVENTO, Empresa = "1", Titulo = "Masterclass Cloasma", Fecha = new DateTime(2026, 10, 30), ImporteSenal = 50, Activo = true, Almacen = "REI", ProductoCurso = "90324", Usuario = "Reina", FechaModificacion = HOY }
@@ -86,6 +88,8 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             facturador = A.Fake<IFacturadorPedidoCurso>();
             A.CallTo(() => facturador.Facturar(A<string>._, A<int>._, A<string>._))
                 .Returns(Task.FromResult(new FacturaCursoCreada { EmpresaPedido = "1", EmpresaFactura = "1", Factura = "CV2600700" }));
+            A.CallTo(() => facturador.FacturarLinea(A<string>._, A<int>._, A<int>._, A<string>._))
+                .Returns(Task.FromResult(new FacturaCursoCreada { EmpresaPedido = "1", EmpresaFactura = "1", Factura = "CV2600800" }));
             liquidador = A.Fake<ILiquidadorSenalCurso>();
             A.CallTo(() => liquidador.Liquidar(A<EventoInscripcion>._, A<string>._, A<string>._, A<string>._))
                 .Returns(Task.FromResult(new LiquidacionSenalCurso { Estado = EstadosLiquidacionCurso.LIQUIDADA, NumOrdenCobro = 7001, NumOrdenEfecto = 7002 }));
@@ -94,7 +98,8 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         }
 
         private ConfirmadorSenalEvento Confirmador() =>
-            new ConfirmadorSenalEvento(db, () => encendido, repositorio, creador, facturador, liquidador, avisador, emisor, () => HOY, "SenalesEventos");
+            new ConfirmadorSenalEvento(db, () => encendido, repositorio, creador, facturador, liquidador, avisador, emisor, () => HOY, "SenalesEventos",
+                () => plantillaEncendido);
 
         private ServicioInscripcionesEventos Servicio() =>
             new ServicioInscripcionesEventos(db, () => HOY, () => A.Fake<IServicioPagos>(), AlmacenDe, Confirmador(), repositorio);
@@ -713,134 +718,284 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             Assert.IsTrue(relanzado);
         }
 
-        // ---------------- NestoAPI#691: cursos de la plantilla (pedido ya creado, se factura el día del evento) ----------------
+        // ---------------- NestoAPI#691: el pedido de cursos de la plantilla (uno para todos, se factura al pagar) ----------------
 
         private const int PEDIDO_PLANTILLA = 930700;
+        private const int EVENTO_2 = 2;
+        private const int ENLACE_PEDIDO = 777;
 
-        /// <summary>Lo que deja la plantilla: inscripción con su pedido CV ligado en EventosInscripcionesCurso (PendienteEvento).</summary>
-        private EventoInscripcion CursoDePlantilla(EstadoInscripcionEvento estado)
+        /// <summary>Lo que deja la plantilla: la inscripción (Reservada) ligada a SU línea del pedido de cursos (EnCurso, sin factura).</summary>
+        private EventoInscripcion CursoDePlantilla(int linea, int evento = EVENTO, int? pagoTpv = ENLACE_PEDIDO)
         {
-            EventoInscripcion i = Inscripcion(estado, "Tarjeta", estado == EstadoInscripcionEvento.Reservada ? (decimal?)null : 50, pagoTpv: 555,
-                usuarioPago: "NestoAPI");
+            EventoInscripcion i = Inscripcion(EstadoInscripcionEvento.Reservada, "Tarjeta", pagoTpv: pagoTpv);
+            i.EventoId = evento;
+            i.Modalidad = "Reembolsable";
             repositorio.Filas[i.Id] = new FacturacionCursoInscripcion
             {
                 InscripcionId = i.Id,
                 EmpresaPedido = "1",
                 Pedido = PEDIDO_PLANTILLA,
-                Estado = EstadosFacturacionCurso.PENDIENTE_EVENTO
+                LineaPedido = linea,
+                Estado = EstadosFacturacionCurso.EN_CURSO
             };
             return i;
         }
 
-        private ServicioInscripcionesEventos ServicioPlantilla(bool encendidoPlantilla = true)
+        private void SegundoEvento() =>
+            eventos.Add(new Evento { Id = EVENTO_2, Empresa = "1", Titulo = "Curso de cejas", Fecha = new DateTime(2026, 12, 3), ImporteSenal = 110, Activo = true, Almacen = "REI", ProductoCurso = "90077", Usuario = "Reina", FechaModificacion = HOY });
+
+        /// <summary>
+        /// El pedido de cursos de verdad en memoria: dos líneas Pendientes (−1); el facturador real con el albarán (Estado 1 → 2) y
+        /// la factura (Estado 2 → 4) de mentira, como prdCrearAlbaránVta y prdCrearFacturaVta.
+        /// </summary>
+        private List<LinPedidoVta> PedidoDeCursosEnMemoria(out IServicioFacturas facturas)
         {
-            ServicioInscripcionesEventos servicio = Servicio();
-            servicio.CursosPlantillaEncendido = () => encendidoPlantilla;
-            return servicio;
-        }
-
-        [TestMethod]
-        public async Task Plantilla_PagoAntesDelEvento_NoSeFacturaTodaviaNiSeCreaOtroPedido()
-        {
-            EventoInscripcion i = CursoDePlantilla(EstadoInscripcionEvento.Pagada);
-
-            await Confirmador().Procesar(i, eventos.Single());
-
-            Assert.AreEqual(EstadosFacturacionCurso.PENDIENTE_EVENTO, repositorio.Filas[i.Id].Estado);
-            Assert.AreEqual("Pagada", i.Estado);
-            A.CallTo(() => creador.Crear(A<EventoInscripcion>._, A<Evento>._, A<string>._)).MustNotHaveHappened();
-            A.CallTo(() => facturador.Facturar(A<string>._, A<int>._, A<string>._)).MustNotHaveHappened();
-        }
-
-        [TestMethod]
-        public async Task Plantilla_PagoConElEventoYaPasado_SeFacturaSuPedidoSinCrearOtro()
-        {
-            eventos.Single().Fecha = HOY.Date.AddDays(-1);
-            EventoInscripcion i = CursoDePlantilla(EstadoInscripcionEvento.Pagada);
-
-            await Confirmador().Procesar(i, eventos.Single());
-
-            Assert.AreEqual(EstadosFacturacionCurso.FACTURADA, repositorio.Filas[i.Id].Estado);
-            Assert.AreEqual("Facturada", i.Estado);
-            A.CallTo(() => creador.Crear(A<EventoInscripcion>._, A<Evento>._, A<string>._)).MustNotHaveHappened();
-            A.CallTo(() => facturador.Facturar("1", PEDIDO_PLANTILLA, A<string>._)).MustHaveHappenedOnceExactly();
-        }
-
-        [TestMethod]
-        public async Task Plantilla_RelanzarAManoAntesDelEvento_400()
-        {
-            EventoInscripcion i = CursoDePlantilla(EstadoInscripcionEvento.Pagada);
-
-            NestoBusinessException ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() =>
-                Confirmador().ConfirmarSenal(i, eventos.Single(), aMano: true));
-
-            StringAssert.Contains(ex.Message, "día del evento");
-        }
-
-        [TestMethod]
-        public async Task Plantilla_JobDelDiaDelEvento_FacturaLasPagadasYDejaLasSinPagar()
-        {
-            eventos.Single().Fecha = HOY.Date;
-            EventoInscripcion pagada = CursoDePlantilla(EstadoInscripcionEvento.Pagada);
-            EventoInscripcion sinPagar = CursoDePlantilla(EstadoInscripcionEvento.Reservada);
-
-            int facturadas = await ServicioPlantilla().FacturarCursosPlantillaDelDia();
-
-            Assert.AreEqual(1, facturadas);
-            Assert.AreEqual(EstadosFacturacionCurso.FACTURADA, repositorio.Filas[pagada.Id].Estado);
-            Assert.AreEqual(EstadosFacturacionCurso.PENDIENTE_EVENTO, repositorio.Filas[sinPagar.Id].Estado);
-            A.CallTo(() => creador.Crear(A<EventoInscripcion>._, A<Evento>._, A<string>._)).MustNotHaveHappened();
-        }
-
-        [TestMethod]
-        public async Task Plantilla_JobAntesDelEventoOApagado_NoFactura()
-        {
-            EventoInscripcion pagada = CursoDePlantilla(EstadoInscripcionEvento.Pagada);
-
-            Assert.AreEqual(0, await ServicioPlantilla().FacturarCursosPlantillaDelDia(), "el evento es el 30/10");
-            eventos.Single().Fecha = HOY.Date;
-            Assert.AreEqual(0, await ServicioPlantilla(encendidoPlantilla: false).FacturarCursosPlantillaDelDia(), "interruptor apagado");
-            Assert.AreEqual(EstadosFacturacionCurso.PENDIENTE_EVENTO, repositorio.Filas[pagada.Id].Estado);
-        }
-
-        [TestMethod]
-        public async Task Plantilla_AlGuardarElPedidoPagadoConElEventoPasado_SeFactura()
-        {
-            eventos.Single().Fecha = HOY.Date.AddDays(-2);
-            EventoInscripcion pagada = CursoDePlantilla(EstadoInscripcionEvento.Pagada);
-
-            Assert.IsFalse(await ServicioPlantilla().FacturarCursoDelPedidoSinFallar(999999), "un pedido que no es de un curso: nada");
-            Assert.IsTrue(await ServicioPlantilla().FacturarCursoDelPedidoSinFallar(PEDIDO_PLANTILLA));
-
-            Assert.AreEqual(EstadosFacturacionCurso.FACTURADA, repositorio.Filas[pagada.Id].Estado);
-            A.CallTo(() => facturador.Facturar("1", PEDIDO_PLANTILLA, A<string>._)).MustHaveHappenedOnceExactly();
-        }
-
-        [TestMethod]
-        public async Task Plantilla_AlGuardarSinPagar_NoSeFactura()
-        {
-            eventos.Single().Fecha = HOY.Date.AddDays(-2);
-            _ = CursoDePlantilla(EstadoInscripcionEvento.Reservada);
-
-            Assert.IsFalse(await ServicioPlantilla().FacturarCursoDelPedidoSinFallar(PEDIDO_PLANTILLA));
-            A.CallTo(() => facturador.Facturar(A<string>._, A<int>._, A<string>._)).MustNotHaveHappened();
-        }
-
-        [TestMethod]
-        public async Task Job_FacturaLosCursosDeLaPlantilla()
-        {
-            bool llamado = false;
-            _ = await InscripcionesEventosJobsService.Procesar(new DependenciasInscripcionesEventos
+            var lineas = new List<LinPedidoVta>
             {
-                CaducarVencidas = () => Task.FromResult(new List<InscripcionEventoDTO>()),
-                DarPorAsistidosSinLista = () => Task.FromResult(new List<KeyValuePair<EventoDTO, List<InscripcionEventoDTO>>>()),
-                CorreosTienda = (e, a) => Task.FromResult(new List<string>()),
-                Avisar = (u, n) => Task.CompletedTask,
-                Correo = A.Fake<IServicioCorreoElectronico>(),
-                FacturarCursosPlantilla = () => { llamado = true; return Task.FromResult(1); }
+                new LinPedidoVta { Empresa = "1  ", Número = PEDIDO_PLANTILLA, Nº_Orden = 1, Estado = -1 },
+                new LinPedidoVta { Empresa = "1  ", Número = PEDIDO_PLANTILLA, Nº_Orden = 2, Estado = -1 }
+            };
+            NVEntities otro = A.Fake<NVEntities>();
+            A.CallTo(() => otro.LinPedidoVtas).Returns(Crear(lineas));
+            IServicioAlbaranesVenta albaranes = A.Fake<IServicioAlbaranesVenta>();
+            A.CallTo(() => albaranes.CrearAlbaran(A<string>._, PEDIDO_PLANTILLA, A<string>._, A<DateTime?>._)).ReturnsLazily(() =>
+            {
+                foreach (LinPedidoVta l in lineas.Where(l => l.Estado == 1))
+                {
+                    l.Estado = 2;
+                    l.Nº_Albarán = 5001;
+                }
+                return Task.FromResult(5001);
             });
+            IServicioFacturas facturasFalsas = A.Fake<IServicioFacturas>();
+            facturas = facturasFalsas;
+            int numeroFactura = 800;
+            A.CallTo(() => facturasFalsas.CrearFactura(A<string>._, PEDIDO_PLANTILLA, A<string>._, A<string>._)).ReturnsLazily(() =>
+            {
+                string factura = "CV2600" + numeroFactura++;
+                foreach (LinPedidoVta l in lineas.Where(l => l.Estado == 2))
+                {
+                    l.Estado = 4;
+                    l.Nº_Factura = factura;
+                }
+                return Task.FromResult(new CrearFacturaResponseDTO { Empresa = "1", NumeroFactura = factura, NumeroPedido = PEDIDO_PLANTILLA });
+            });
+            // Lo que hace SQL_SOLO_PAGADAS_EN_CURSO: la línea de cada inscripción pagada, a En curso; la de las sin pagar, Pendiente
+            facturador = new FacturadorPedidoCurso(() => otro, () => albaranes, () => facturasFalsas, (contexto, pedido, usuario) =>
+            {
+                foreach (FacturacionCursoInscripcion fila in repositorio.Filas.Values.Where(f => f.Pedido == pedido && f.LineaPedido.HasValue))
+                {
+                    LinPedidoVta l = lineas.Single(x => x.Nº_Orden == fila.LineaPedido.Value);
+                    EventoInscripcion i = inscripciones.Single(x => x.Id == fila.InscripcionId);
+                    if (l.Estado == -1 || l.Estado == 1)
+                    {
+                        l.Estado = (short)(ReglasInscripcionEvento.EN_LISTA_ASISTENCIA.Contains(ReglasInscripcionEvento.Estado(i.Estado).Value) ? 1 : -1);
+                    }
+                }
+                return Task.CompletedTask;
+            });
+            return lineas;
+        }
 
-            Assert.IsTrue(llamado);
+        [TestMethod]
+        public async Task Plantilla_PagoConElEventoFuturo_SeFacturaYaSuLineaSinCrearOtroPedido()
+        {
+            Assert.IsTrue(eventos.Single().Fecha.Date > HOY.Date, "el evento es dentro de dos semanas");
+            EventoInscripcion i = CursoDePlantilla(linea: 1);
+            A.CallTo(() => facturador.FacturarLinea(A<string>._, A<int>._, A<int>._, A<string>._))
+                .Returns(Task.FromResult(new FacturaCursoCreada { EmpresaPedido = "1", EmpresaFactura = "1", Factura = "CV2600800" }));
+
+            await Servicio().MarcarPagada(i.Id, new MarcarPagoInscripcionDTO { FormaPago = "Efectivo" }, REINA);
+
+            Assert.AreEqual("Facturada", i.Estado);
+            Assert.AreEqual(EstadosFacturacionCurso.FACTURADA, repositorio.Filas[i.Id].Estado);
+            Assert.AreEqual("CV2600800", repositorio.Filas[i.Id].Factura);
+            A.CallTo(() => facturador.FacturarLinea("1", PEDIDO_PLANTILLA, 1, A<string>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => facturador.Facturar(A<string>._, A<int>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => creador.Crear(A<EventoInscripcion>._, A<Evento>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Plantilla_SoloMandaSuInterruptor_NoHaceFaltaElDe612()
+        {
+            encendido = false;
+            EventoInscripcion i = CursoDePlantilla(linea: 1);
+
+            await Servicio().MarcarPagada(i.Id, new MarcarPagoInscripcionDTO { FormaPago = "Efectivo" }, REINA);
+
+            Assert.AreEqual("Facturada", i.Estado);
+            A.CallTo(() => facturador.FacturarLinea("1", PEDIDO_PLANTILLA, 1, A<string>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Plantilla_ConSuInterruptorApagado_SeQuedaPagadaYSinFacturar_AunqueEsteEncendidoElDe612()
+        {
+            plantillaEncendido = false;
+            EventoInscripcion i = CursoDePlantilla(linea: 1);
+
+            await Servicio().MarcarPagada(i.Id, new MarcarPagoInscripcionDTO { FormaPago = "Efectivo" }, REINA);
+
+            Assert.AreEqual("Pagada", i.Estado);
+            Assert.AreEqual(EstadosFacturacionCurso.EN_CURSO, repositorio.Filas[i.Id].Estado);
+            A.CallTo(() => facturador.FacturarLinea(A<string>._, A<int>._, A<int>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => creador.Crear(A<EventoInscripcion>._, A<Evento>._, A<string>._)).MustNotHaveHappened();
+            NestoBusinessException ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().FacturarCurso(i.Id, REINA));
+            StringAssert.Contains(ex.Message, InterruptoresEventos.CLAVE_FACTURAR_CURSOS_PLANTILLA);
+        }
+
+        [TestMethod]
+        public async Task Plantilla_EnlaceUnicoDelPedido_PagaLasDos_UnaFacturaYUnaLiquidacion()
+        {
+            SegundoEvento();
+            EventoInscripcion cejas = CursoDePlantilla(linea: 1);
+            EventoInscripcion otro = CursoDePlantilla(linea: 2, evento: EVENTO_2);
+            List<LinPedidoVta> lineas = PedidoDeCursosEnMemoria(out IServicioFacturas facturas);
+
+            InscripcionEventoDTO dto = await Servicio().RegistrarCobroEnlace(ENLACE_PEDIDO, 160);
+
+            Assert.AreEqual(cejas.Id, dto.Id);
+            Assert.AreEqual("Facturada", cejas.Estado);
+            Assert.AreEqual("Facturada", otro.Estado);
+            Assert.AreEqual(50M, cejas.ImportePagado, "cada una, el importe de su modalidad");
+            Assert.AreEqual(110M, otro.ImportePagado);
+            A.CallTo(() => facturas.CrearFactura(A<string>._, PEDIDO_PLANTILLA, A<string>._, A<string>._)).MustHaveHappenedOnceExactly();
+            Assert.IsTrue(lineas.All(l => l.Estado == 4 && l.Nº_Factura == "CV2600800"), "una sola factura con las dos líneas");
+            Assert.AreEqual("CV2600800", repositorio.Filas[cejas.Id].Factura);
+            Assert.AreEqual("CV2600800", repositorio.Filas[otro.Id].Factura);
+            Assert.AreEqual(EstadosLiquidacionCurso.LIQUIDADA, repositorio.Filas[otro.Id].EstadoLiquidacion);
+            Assert.AreEqual(7001, repositorio.Filas[otro.Id].NumOrdenCobro, "el mismo cobro, liquidado una vez");
+            A.CallTo(() => liquidador.Liquidar(A<EventoInscripcion>._, A<string>._, A<string>._, A<string>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => avisador.Avisar(A<string>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => emisor.Emitir(A<EventoInscripcion>._, A<Evento>._, A<FacturacionCursoInscripcion>._, A<string>._)).MustHaveHappenedTwiceExactly();
+        }
+
+        [TestMethod]
+        public async Task Plantilla_PagosSeparados_CadaPagoFacturaSoloLoSuyo()
+        {
+            SegundoEvento();
+            EventoInscripcion cejas = CursoDePlantilla(linea: 1);
+            EventoInscripcion otro = CursoDePlantilla(linea: 2, evento: EVENTO_2);
+            List<LinPedidoVta> lineas = PedidoDeCursosEnMemoria(out IServicioFacturas facturas);
+
+            await Servicio().MarcarPagada(cejas.Id, new MarcarPagoInscripcionDTO { FormaPago = "Efectivo" }, REINA);
+
+            Assert.AreEqual("Facturada", cejas.Estado);
+            Assert.AreEqual("Reservada", otro.Estado);
+            Assert.AreEqual(4, lineas.Single(l => l.Nº_Orden == 1).Estado);
+            Assert.AreEqual(-1, lineas.Single(l => l.Nº_Orden == 2).Estado, "la sin pagar se queda pendiente, fuera del albarán");
+            Assert.AreEqual("CV2600800", repositorio.Filas[cejas.Id].Factura);
+
+            await Servicio().MarcarPagada(otro.Id, new MarcarPagoInscripcionDTO { FormaPago = "Transferencia" }, REINA);
+
+            Assert.AreEqual("Facturada", otro.Estado);
+            Assert.AreEqual("CV2600801", repositorio.Filas[otro.Id].Factura, "su propia factura");
+            Assert.AreEqual("CV2600801", lineas.Single(l => l.Nº_Orden == 2).Nº_Factura);
+            Assert.AreEqual("CV2600800", lineas.Single(l => l.Nº_Orden == 1).Nº_Factura, "la primera no se toca");
+            A.CallTo(() => facturas.CrearFactura(A<string>._, PEDIDO_PLANTILLA, A<string>._, A<string>._)).MustHaveHappenedTwiceExactly();
+            A.CallTo(() => liquidador.Liquidar(A<EventoInscripcion>._, A<string>._, A<string>._, A<string>._)).MustHaveHappenedTwiceExactly();
+        }
+
+        [TestMethod]
+        public async Task Facturador_LineaYaFacturadaConOtra_DevuelveEsaFacturaSinTocarNada()
+        {
+            NVEntities otro = A.Fake<NVEntities>();
+            A.CallTo(() => otro.LinPedidoVtas).Returns(Crear(new List<LinPedidoVta>
+            {
+                new LinPedidoVta { Empresa = "1  ", Número = PEDIDO_PLANTILLA, Nº_Orden = 2, Estado = 4, Nº_Factura = "CV2600800 " }
+            }));
+            IServicioAlbaranesVenta albaranes = A.Fake<IServicioAlbaranesVenta>();
+            IServicioFacturas facturas = A.Fake<IServicioFacturas>();
+            bool tocadas = false;
+
+            FacturaCursoCreada f = await new FacturadorPedidoCurso(() => otro, () => albaranes, () => facturas,
+                (c, p, u) => { tocadas = true; return Task.CompletedTask; }).FacturarLinea("1", PEDIDO_PLANTILLA, 2, "x");
+
+            Assert.AreEqual("CV2600800", f.Factura);
+            Assert.IsFalse(tocadas);
+            A.CallTo(() => facturas.CrearFactura(A<string>._, A<int>._, A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Facturador_LineaDeInscripcionSinPagar_NoSeFactura()
+        {
+            NVEntities otro = A.Fake<NVEntities>();
+            A.CallTo(() => otro.LinPedidoVtas).Returns(Crear(new List<LinPedidoVta>
+            {
+                new LinPedidoVta { Empresa = "1  ", Número = PEDIDO_PLANTILLA, Nº_Orden = 1, Estado = -1 }
+            }));
+            IServicioFacturas facturas = A.Fake<IServicioFacturas>();
+
+            _ = await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => new FacturadorPedidoCurso(() => otro, () => A.Fake<IServicioAlbaranesVenta>(),
+                () => facturas, (c, p, u) => Task.CompletedTask).FacturarLinea("1", PEDIDO_PLANTILLA, 1, "x"));
+
+            A.CallTo(() => facturas.CrearFactura(A<string>._, A<int>._, A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void SqlSoloPagadasEnCurso_SoloTocaLasLineasDeSusInscripcionesEnPendienteOEnCurso()
+        {
+            string sql = FacturadorPedidoCurso.SQL_SOLO_PAGADAS_EN_CURSO;
+            StringAssert.Contains(sql, "c.LineaPedido = l.[Nº Orden]");
+            StringAssert.Contains(sql, "l.Estado IN (-1, 1)");
+            StringAssert.Contains(sql, "'Pagada'");
+            StringAssert.Contains(sql, "'Facturada'");
+            Assert.IsFalse(sql.Contains("'Reservada'"), "una reservada no está pagada");
+        }
+
+        [TestMethod]
+        public async Task Liquidador_EnlaceDelPedido_BuscaElCobroPorElDocumentoDeSuEnlace()
+        {
+            A.CallTo(() => db.PagosTPV).Returns(Crear(new List<PagoTPV> { new PagoTPV { Id = ENLACE_PEDIDO, Documento = "INS101    " } }));
+            var extracto = new List<ExtractoCliente>
+            {
+                new ExtractoCliente { Empresa = "1", Nº_Orden = 9001, Número = "15191", Contacto = "0", TipoApunte = "3", Nº_Documento = "INS101", Importe = -160, ImportePdte = -160 },
+                new ExtractoCliente { Empresa = "1", Nº_Orden = 9002, Número = "15191", Contacto = "0", TipoApunte = "2", Nº_Documento = "CV2600800", Importe = 160, ImportePdte = 160 }
+            };
+            A.CallTo(() => db.ExtractosCliente).Returns(Crear(extracto));
+            IServicioLiquidarEfectos liquidar = A.Fake<IServicioLiquidarEfectos>();
+            A.CallTo(() => liquidar.Liquidar("1", 9001, 9002, A<string>._)).Returns(Task.FromResult(new ResultadoLiquidacionEfectos { Exito = true }));
+            var i = new EventoInscripcion { Id = 102, Empresa = "1", Cliente = "15191", Contacto = "0", PagoTPVId = ENLACE_PEDIDO, FormaPago = "Tarjeta" };
+
+            LiquidacionSenalCurso r = await new LiquidadorSenalCurso(db, liquidar).Liquidar(i, "1", "CV2600800", "x");
+
+            Assert.AreEqual(EstadosLiquidacionCurso.LIQUIDADA, r.Estado);
+            Assert.AreEqual(9001, r.NumOrdenCobro);
+        }
+
+        [TestMethod]
+        public async Task EnlacePedidoCursos_UnoPorElTotal_ConElINSDeLaPrimeraYElPedidoEnElConcepto()
+        {
+            SegundoEvento();
+            EventoInscripcion cejas = CursoDePlantilla(linea: 1, pagoTpv: null);
+            EventoInscripcion otro = CursoDePlantilla(linea: 2, evento: EVENTO_2, pagoTpv: null);
+            cejas.FormaPago = otro.FormaPago = null;
+            IServicioPagos pagos = A.Fake<IServicioPagos>();
+            A.CallTo(() => pagos.IniciarPago(A<NestoAPI.Models.Pagos.SolicitudPagoTPV>._, A<string>._))
+                .Returns(Task.FromResult(new NestoAPI.Models.Pagos.RespuestaIniciarPago { IdPago = ENLACE_PEDIDO, UrlPaginaPago = "https://api.nuevavision.es/pago/x" }));
+            var servicio = new ServicioInscripcionesEventos(db, () => HOY, () => pagos, AlmacenDe, Confirmador(), repositorio);
+
+            InscripcionEventoDTO dto = await servicio.GenerarEnlacePagoPedidoCursos(PEDIDO_PLANTILLA, new List<int> { otro.Id, cejas.Id }, VENDEDOR);
+
+            Assert.AreEqual("https://api.nuevavision.es/pago/x", dto.UrlPago);
+            A.CallTo(() => pagos.IniciarPago(A<NestoAPI.Models.Pagos.SolicitudPagoTPV>.That.Matches(s =>
+                s.Importe == 160M && s.Documento == "INS" + cejas.Id && s.Descripcion.Contains("pedido " + PEDIDO_PLANTILLA) && s.Cliente == "15191"),
+                A<string>._)).MustHaveHappenedOnceExactly();
+            Assert.AreEqual(ENLACE_PEDIDO, cejas.PagoTPVId);
+            Assert.AreEqual(ENLACE_PEDIDO, otro.PagoTPVId);
+            Assert.AreEqual("Tarjeta", otro.FormaPago);
+            Assert.AreEqual(PEDIDO_PLANTILLA, EnlacesPagoPedido.PedidoDelConcepto(ServicioInscripcionesEventos.ConceptoPagoPedidoCursos(PEDIDO_PLANTILLA)),
+                "también es un enlace del pedido (#679)");
+        }
+
+        [TestMethod]
+        public async Task EnlaceDeUnaSolaInscripcion_ComoSiempre()
+        {
+            EventoInscripcion i = Inscripcion(EstadoInscripcionEvento.Reservada, "Tarjeta", pagoTpv: 555);
+
+            await Servicio().RegistrarCobroEnlace(555, 50);
+
+            Assert.AreEqual(50M, i.ImportePagado, "con una sola inscripción, lo cobrado");
+            Assert.AreEqual("Facturada", i.Estado);
         }
 
         // ---------------- Ayudantes ----------------
@@ -883,11 +1038,9 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
 
             public Task<List<int>> FacturadasSinCupon() => Task.FromResult(new List<int>());
 
-            public Task<List<int>> PendientesDelEvento() =>
-                Task.FromResult(Filas.Values.Where(f => f.Estado == EstadosFacturacionCurso.PENDIENTE_EVENTO).Select(f => f.InscripcionId).ToList());
-
-            public Task<int?> InscripcionDelPedido(int pedido) =>
-                Task.FromResult(Filas.Values.Where(f => f.Pedido == pedido).Select(f => (int?)f.InscripcionId).FirstOrDefault());
+            public Task<FacturacionCursoInscripcion> LiquidadaConFactura(string empresaFactura, string factura, int inscripcionId) =>
+                Task.FromResult(Filas.Values.Where(f => f.EmpresaFactura == empresaFactura && f.Factura == factura && f.InscripcionId != inscripcionId
+                    && f.EstadoLiquidacion == EstadosLiquidacionCurso.LIQUIDADA).Select(Copia).FirstOrDefault());
 
             private static FacturacionCursoInscripcion Copia(FacturacionCursoInscripcion f) => (FacturacionCursoInscripcion)f.GetType()
                 .GetMethod("MemberwiseClone", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).Invoke(f, null);

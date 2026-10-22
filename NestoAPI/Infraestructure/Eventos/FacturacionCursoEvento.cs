@@ -29,16 +29,30 @@ namespace NestoAPI.Infraestructure.Eventos
         private const string COLUMNAS = @"InscripcionId, RTRIM(EmpresaPedido) AS EmpresaPedido, Pedido, RTRIM(EmpresaFactura) AS EmpresaFactura,
        RTRIM(Factura) AS Factura, EstadoLiquidacion, NumOrdenCobro, NumOrdenEfecto, Estado, Mensaje, Intentos, Usuario, FechaCreacion, FechaModificacion";
 
-        internal const string SQL_LEER = @"
-IF OBJECT_ID('dbo.EventosInscripcionesCurso') IS NOT NULL
-    EXEC sp_executesql N'SELECT " + COLUMNAS + @" FROM dbo.EventosInscripcionesCurso WHERE InscripcionId = @id', N'@id int', @id = @p0
-ELSE
+        private const string SIN_TABLA = @"
     SELECT CAST(0 AS int) AS InscripcionId, CAST(NULL AS varchar(3)) AS EmpresaPedido, CAST(NULL AS int) AS Pedido,
            CAST(NULL AS varchar(3)) AS EmpresaFactura, CAST(NULL AS varchar(10)) AS Factura, CAST(NULL AS varchar(20)) AS EstadoLiquidacion,
            CAST(NULL AS int) AS NumOrdenCobro, CAST(NULL AS int) AS NumOrdenEfecto, CAST(NULL AS varchar(20)) AS Estado,
            CAST(NULL AS nvarchar(1000)) AS Mensaje, 0 AS Intentos, CAST(NULL AS varchar(50)) AS Usuario, GETDATE() AS FechaCreacion,
-           GETDATE() AS FechaModificacion
+           GETDATE() AS FechaModificacion, CAST(NULL AS int) AS LineaPedido
     WHERE 1 = 0";
+
+        /// <summary>
+        /// La consulta de las filas que cumplen <paramref name="filtro"/> (T-SQL que va dentro de un literal: comillas dobladas).
+        /// NestoAPI#691: LineaPedido sale de su columna si ya existe (Scripts/Issue691_CursosUnPedido.sql) y NULL si no, para que
+        /// sin el script #612 siga leyendo igual.
+        /// </summary>
+        private static string Consulta(string filtro, string parametros = null, string valores = null) => @"
+IF OBJECT_ID('dbo.EventosInscripcionesCurso') IS NOT NULL
+BEGIN
+    DECLARE @sql nvarchar(max) = N'SELECT " + COLUMNAS + @", '
+        + CASE WHEN COL_LENGTH('dbo.EventosInscripcionesCurso', 'LineaPedido') IS NULL THEN N'CAST(NULL AS int)' ELSE N'LineaPedido' END
+        + N' AS LineaPedido FROM dbo.EventosInscripcionesCurso WHERE " + filtro + @"';
+    EXEC sp_executesql @sql" + (parametros == null ? string.Empty : ", N'" + parametros + "', " + valores) + @";
+END
+ELSE" + SIN_TABLA;
+
+        internal static readonly string SQL_LEER = Consulta("InscripcionId = @id", "@id int", "@id = @p0");
 
         // La fila nace al reclamar; el reclamo es un UPDATE condicionado (dos procesos a la vez: solo uno pasa).
         // El INSERT choca con la PK si otro proceso la crea a la vez (se ignora: la fila ya está). Lo que decide es el
@@ -103,16 +117,7 @@ ELSE
             }
             // Pocas inscripciones por evento o por cliente: la lista va en el texto (son enteros, sin riesgo de inyección).
             string lista = string.Join(",", ids);
-            string sql = @"
-IF OBJECT_ID('dbo.EventosInscripcionesCurso') IS NOT NULL
-    EXEC sp_executesql N'SELECT " + COLUMNAS + " FROM dbo.EventosInscripcionesCurso WHERE InscripcionId IN (" + lista + @")'
-ELSE
-    SELECT CAST(0 AS int) AS InscripcionId, CAST(NULL AS varchar(3)) AS EmpresaPedido, CAST(NULL AS int) AS Pedido,
-           CAST(NULL AS varchar(3)) AS EmpresaFactura, CAST(NULL AS varchar(10)) AS Factura, CAST(NULL AS varchar(20)) AS EstadoLiquidacion,
-           CAST(NULL AS int) AS NumOrdenCobro, CAST(NULL AS int) AS NumOrdenEfecto, CAST(NULL AS varchar(20)) AS Estado,
-           CAST(NULL AS nvarchar(1000)) AS Mensaje, 0 AS Intentos, CAST(NULL AS varchar(50)) AS Usuario, GETDATE() AS FechaCreacion,
-           GETDATE() AS FechaModificacion
-    WHERE 1 = 0";
+            string sql = Consulta("InscripcionId IN (" + lista + ")");
             foreach (FacturacionCursoInscripcion fila in await db.Database.SqlQuery<FacturacionCursoInscripcion>(sql).ToListAsync().ConfigureAwait(false))
             {
                 resultado[fila.InscripcionId] = fila;
@@ -149,25 +154,20 @@ ELSE
         public async Task<List<int>> FacturadasSinCupon() =>
             await db.Database.SqlQuery<int>(SQL_FACTURADAS_SIN_CUPON).ToListAsync().ConfigureAwait(false);
 
-        internal const string SQL_PENDIENTES_EVENTO = @"
-IF OBJECT_ID('dbo.EventosInscripcionesCurso') IS NOT NULL
-    EXEC sp_executesql N'SELECT InscripcionId FROM dbo.EventosInscripcionesCurso WHERE Estado = ''PendienteEvento'''
-ELSE
-    SELECT CAST(0 AS int) AS InscripcionId WHERE 1 = 0";
+        internal static readonly string SQL_LIQUIDADA_CON_FACTURA = Consulta(
+            "EmpresaFactura = @empresa AND Factura = @factura AND InscripcionId <> @id AND EstadoLiquidacion = ''Liquidada''",
+            "@empresa varchar(3), @factura varchar(10), @id int", "@empresa = @p0, @factura = @p1, @id = @p2");
 
-        internal const string SQL_INSCRIPCION_DEL_PEDIDO = @"
-IF OBJECT_ID('dbo.EventosInscripcionesCurso') IS NOT NULL
-    EXEC sp_executesql N'SELECT TOP 1 InscripcionId FROM dbo.EventosInscripcionesCurso WHERE Pedido = @pedido ORDER BY InscripcionId DESC',
-        N'@pedido int', @pedido = @p0
-ELSE
-    SELECT CAST(0 AS int) AS InscripcionId WHERE 1 = 0";
-
-        public async Task<List<int>> PendientesDelEvento() =>
-            await db.Database.SqlQuery<int>(SQL_PENDIENTES_EVENTO).ToListAsync().ConfigureAwait(false);
-
-        public async Task<int?> InscripcionDelPedido(int pedido) =>
-            (await db.Database.SqlQuery<int>(SQL_INSCRIPCION_DEL_PEDIDO, new SqlParameter("@p0", pedido)).ToListAsync().ConfigureAwait(false))
-                .Select(i => (int?)i).FirstOrDefault();
+        public async Task<FacturacionCursoInscripcion> LiquidadaConFactura(string empresaFactura, string factura, int inscripcionId)
+        {
+            if (string.IsNullOrWhiteSpace(empresaFactura) || string.IsNullOrWhiteSpace(factura))
+            {
+                return null;
+            }
+            return (await db.Database.SqlQuery<FacturacionCursoInscripcion>(SQL_LIQUIDADA_CON_FACTURA,
+                    new SqlParameter("@p0", empresaFactura.Trim()), new SqlParameter("@p1", factura.Trim()), new SqlParameter("@p2", inscripcionId))
+                .ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+        }
 
         private static SqlParameter Nulable(string nombre, object valor) => new SqlParameter(nombre, valor ?? DBNull.Value);
 
@@ -328,13 +328,24 @@ WHERE InscripcionId = @p0 AND Pedido IS NULL";
         private readonly Func<NVEntities> nuevoContexto;
         private readonly Func<IServicioAlbaranesVenta> albaranes;
         private readonly Func<IServicioFacturas> facturas;
+        private readonly Func<NVEntities, int, string, Task> soloPagadasEnCurso;
 
+        /// <param name="soloPagadasEnCurso">NestoAPI#691: (contexto, pedido, usuario) deja en En curso solo las líneas de inscripciones
+        /// pagadas. Null: <see cref="SQL_SOLO_PAGADAS_EN_CURSO"/>.</param>
         public FacturadorPedidoCurso(Func<NVEntities> nuevoContexto = null, Func<IServicioAlbaranesVenta> albaranes = null,
-            Func<IServicioFacturas> facturas = null)
+            Func<IServicioFacturas> facturas = null, Func<NVEntities, int, string, Task> soloPagadasEnCurso = null)
         {
             this.nuevoContexto = nuevoContexto ?? (() => new NVEntities());
             this.albaranes = albaranes ?? (() => new ServicioAlbaranesVenta());
             this.facturas = facturas ?? (() => new ServicioFacturas());
+            this.soloPagadasEnCurso = soloPagadasEnCurso ?? SoloPagadasEnCurso;
+        }
+
+        private static async Task SoloPagadasEnCurso(NVEntities db, int pedido, string usuario)
+        {
+            string usuarioLinea = string.IsNullOrEmpty(usuario) ? InterruptoresEventos.USUARIO_AUTOMATICO : usuario.Length > 30 ? usuario.Substring(0, 30) : usuario;
+            _ = await db.Database.ExecuteSqlCommandAsync(SQL_SOLO_PAGADAS_EN_CURSO,
+                new SqlParameter("@p0", pedido), new SqlParameter("@p1", usuarioLinea)).ConfigureAwait(false);
         }
 
         public async Task<FacturaCursoCreada> Facturar(string empresa, int pedido, string usuario)
@@ -368,6 +379,64 @@ WHERE InscripcionId = @p0 AND Pedido IS NULL";
                 string empresaFactura = creada.Empresa?.Trim() ?? empresaPedido;
                 return new FacturaCursoCreada { EmpresaPedido = empresaFactura, EmpresaFactura = empresaFactura, Factura = creada.NumeroFactura.Trim() };
             }
+        }
+
+        /// <summary>
+        /// NestoAPI#691: en el pedido de cursos de la plantilla, cada línea es la de una inscripción (EventosInscripcionesCurso.LineaPedido).
+        /// Las de inscripciones pagadas pasan a En curso (1) y las de sin pagar se quedan (o vuelven) a Pendiente (−1): prdCrearAlbaránVta
+        /// solo coge Estado 1 y prdCrearFacturaVta solo Estado 2, así que la factura lleva justo las pagadas.
+        /// </summary>
+        internal static readonly string SQL_SOLO_PAGADAS_EN_CURSO = @"
+UPDATE l
+SET Estado = CASE WHEN i.Estado IN (" + string.Join(", ", ReglasInscripcionEvento.EN_LISTA_ASISTENCIA.Select(e => "'" + e + "'")) + @") THEN 1 ELSE -1 END,
+    Usuario = @p1
+FROM dbo.LinPedidoVta l
+JOIN dbo.EventosInscripcionesCurso c ON c.Pedido = l.Número AND c.LineaPedido = l.[Nº Orden]
+JOIN dbo.EventosInscripciones i ON i.Id = c.InscripcionId
+WHERE l.Número = @p0 AND l.Estado IN (-1, 1)
+  AND l.Estado <> CASE WHEN i.Estado IN (" + string.Join(", ", ReglasInscripcionEvento.EN_LISTA_ASISTENCIA.Select(e => "'" + e + "'")) + @") THEN 1 ELSE -1 END";
+
+        public async Task<FacturaCursoCreada> FacturarLinea(string empresa, int pedido, int lineaPedido, string usuario)
+        {
+            using (NVEntities db = nuevoContexto())
+            {
+                db.Configuration.LazyLoadingEnabled = false;
+                db.Configuration.ProxyCreationEnabled = false;
+                var mia = await LeerLinea(db, pedido, lineaPedido).ConfigureAwait(false);
+                if (mia.Estado == Constantes.EstadosLineaVenta.FACTURA && !string.IsNullOrWhiteSpace(mia.Nº_Factura))
+                {
+                    // Pagada junto con otra: ya salió en su factura
+                    return new FacturaCursoCreada { EmpresaPedido = mia.Empresa?.Trim(), EmpresaFactura = mia.Empresa?.Trim(), Factura = mia.Nº_Factura.Trim() };
+                }
+
+                await soloPagadasEnCurso(db, pedido, usuario).ConfigureAwait(false);
+                mia = await LeerLinea(db, pedido, lineaPedido).ConfigureAwait(false);
+                string empresaPedido = mia.Empresa?.Trim() ?? empresa;
+                if (mia.Estado == Constantes.EstadosLineaVenta.PENDIENTE)
+                {
+                    throw new InvalidOperationException($"La línea {lineaPedido} del pedido {pedido} es de una inscripción sin pagar: no se factura.");
+                }
+                if (mia.Estado == Constantes.EstadosLineaVenta.EN_CURSO)
+                {
+                    _ = await albaranes().CrearAlbaran(empresaPedido, pedido, usuario, DateTime.Today).ConfigureAwait(false);
+                }
+                CrearFacturaResponseDTO creada = await facturas().CrearFactura(empresaPedido, pedido, usuario, usuario).ConfigureAwait(false);
+                if (string.IsNullOrWhiteSpace(creada?.NumeroFactura) || creada.NumeroFactura.Trim() == Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES)
+                {
+                    throw new InvalidOperationException($"El pedido {pedido} del curso no se ha facturado.");
+                }
+                string empresaFactura = creada.Empresa?.Trim() ?? empresaPedido;
+                return new FacturaCursoCreada { EmpresaPedido = empresaFactura, EmpresaFactura = empresaFactura, Factura = creada.NumeroFactura.Trim() };
+            }
+        }
+
+        private static async Task<LinPedidoVta> LeerLinea(NVEntities db, int pedido, int lineaPedido)
+        {
+            // Numeración global: tras un traspaso el pedido vive en la espejo con el mismo número
+            var linea = await db.LinPedidoVtas.Where(l => l.Número == pedido && l.Nº_Orden == lineaPedido)
+                .Select(l => new { l.Empresa, l.Estado, l.Nº_Factura }).FirstOrDefaultAsync().ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"No existe la línea {lineaPedido} del pedido {pedido} del curso (¿la han borrado?).");
+            return new LinPedidoVta { Empresa = linea.Empresa, Estado = linea.Estado, Nº_Factura = linea.Nº_Factura };
         }
     }
 
@@ -411,7 +480,14 @@ WHERE InscripcionId = @p0 AND Pedido IS NULL";
             }
             else if (inscripcion.PagoTPVId.HasValue && ReglasInscripcionEvento.FormaPago(inscripcion.FormaPago) == FormaPagoInscripcionEvento.Tarjeta)
             {
-                string documento = ServicioInscripcionesEventos.DocumentoPago(inscripcion.Id);
+                // NestoAPI#691: el enlace único del pedido de cursos es de todas sus inscripciones y lleva el «INS» de la primera:
+                // el documento del cobro es el de SU enlace (si no se encuentra, el de la inscripción, como siempre)
+                int pagoId = inscripcion.PagoTPVId.Value;
+                string documento = (await db.PagosTPV.Where(p => p.Id == pagoId).Select(p => p.Documento).FirstOrDefaultAsync().ConfigureAwait(false))?.Trim();
+                if (string.IsNullOrEmpty(documento))
+                {
+                    documento = ServicioInscripcionesEventos.DocumentoPago(inscripcion.Id);
+                }
                 deDonde = $"el cobro del enlace ({documento})";
                 cobro = await db.ExtractosCliente
                     .Where(e => e.Empresa == empresa && e.Número == cliente && e.Nº_Documento == documento
