@@ -94,13 +94,48 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         }
 
         [TestMethod]
-        public void Reglas_ParaFacturar_LaDeSuModalidadSiExisteYElForzadoTalCual()
+        public void Reglas_ParaFacturar_SiempreElProductoSinNR()
         {
-            var evento = new Evento { Id = 123, ProductoCurso = "EVENTO00123" };
-            Assert.AreEqual("EVENTO00123NR", ReglasProductoCurso.ParaFacturar(evento, ModalidadInscripcionEvento.NoReembolsable, p => true));
-            Assert.AreEqual("EVENTO00123", ReglasProductoCurso.ParaFacturar(evento, ModalidadInscripcionEvento.NoReembolsable, p => false),
-                "Sin la NR creada, la única que hay");
-            Assert.AreEqual("90077", ReglasProductoCurso.ParaFacturar(new Evento { Id = 123, ProductoCurso = "90077 " }, ModalidadInscripcionEvento.NoReembolsable, p => true));
+            Assert.AreEqual("EVENTO00123", ReglasProductoCurso.ParaFacturar(new Evento { Id = 123, ProductoCurso = "EVENTO00123" }, p => true));
+            Assert.AreEqual("EVENTO00123", ReglasProductoCurso.ParaFacturar(new Evento { Id = 123, ProductoCurso = "EVENTO00123NR" }, p => true),
+                "Las dos modalidades se facturan con el producto sin NR");
+            Assert.AreEqual("EVENTO00123NR", ReglasProductoCurso.ParaFacturar(new Evento { Id = 123, ProductoCurso = "EVENTO00123NR" }, p => false),
+                "Si solo existe la NR, la única que hay");
+            Assert.AreEqual("90077", ReglasProductoCurso.ParaFacturar(new Evento { Id = 123, ProductoCurso = "90077 " }, p => true));
+        }
+
+        [TestMethod]
+        public void Reconocedor_ReferenciaDeLaCombinacion()
+        {
+            CursoReconocido r = ReconocedorCursoComprado.Reconocer("90077NR");
+            Assert.AreEqual("90077", r.Producto);
+            Assert.IsNull(r.EventoId);
+            Assert.AreEqual(ModalidadInscripcionEvento.NoReembolsable, r.Modalidad);
+
+            r = ReconocedorCursoComprado.Reconocer(" 90077 ");
+            Assert.AreEqual("90077", r.Producto);
+            Assert.IsNull(r.Modalidad, "Sin sufijo, la referencia no dice la modalidad: el importe");
+
+            r = ReconocedorCursoComprado.Reconocer("EVENTO00123NR");
+            Assert.AreEqual("EVENTO00123", r.Producto);
+            Assert.AreEqual(123, r.EventoId);
+            Assert.AreEqual(ModalidadInscripcionEvento.NoReembolsable, r.Modalidad);
+            Assert.AreEqual(ModalidadInscripcionEvento.Reembolsable, ReconocedorCursoComprado.Reconocer("EVENTO00123").Modalidad);
+        }
+
+        [TestMethod]
+        public void Reconocedor_Modalidad_ReferenciaLuegoImporteLuegoReembolsable()
+        {
+            var evento = new Evento { ImporteSenal = 100, ImporteSenalNoReembolsable = 60 };
+            Assert.AreEqual(ModalidadInscripcionEvento.NoReembolsable,
+                ReconocedorCursoComprado.Modalidad(ReconocedorCursoComprado.Reconocer("90077NR"), evento, 100, out bool sin1));
+            Assert.IsFalse(sin1, "La referencia manda sobre el importe");
+            Assert.AreEqual(ModalidadInscripcionEvento.NoReembolsable,
+                ReconocedorCursoComprado.Modalidad(ReconocedorCursoComprado.Reconocer("90077"), evento, 60, out bool sin2));
+            Assert.IsFalse(sin2);
+            Assert.AreEqual(ModalidadInscripcionEvento.Reembolsable,
+                ReconocedorCursoComprado.Modalidad(ReconocedorCursoComprado.Reconocer("90077"), evento, 75, out bool sin3));
+            Assert.IsTrue(sin3, "Ni referencia ni importe: reembolsable y a ELMAH");
         }
 
         [TestMethod]

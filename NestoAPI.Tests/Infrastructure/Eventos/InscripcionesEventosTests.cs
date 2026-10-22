@@ -764,6 +764,32 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         }
 
         [TestMethod]
+        public async Task CursoTienda_CombinacionSinCupon_NoReembolsableAunqueElImporteSeaElDeLaOtra()
+        {
+            eventos[0].ProductoCurso = "90077";
+            eventos[0].ImporteSenal = 100;
+            eventos[0].ImporteSenalNoReembolsable = 60;
+            CursoTiendaDTO compra = CompraCurso("90077", 100);
+            compra.Combinacion = "90077NR";
+
+            InscripcionEventoDTO dto = await ServicioTienda().InscribirDesdeTienda(compra, TIENDA_ONLINE);
+
+            Assert.AreEqual(EVENTO_REINA, dto.EventoId);
+            Assert.AreEqual("NoReembolsable", inscripciones.Single().Modalidad);
+        }
+
+        [TestMethod]
+        public async Task CursoTienda_ProductoDeNestoQueAcabaEnNR_SeReconoceTalCual()
+        {
+            eventos[0].ProductoCurso = "CURSONR";
+
+            InscripcionEventoDTO dto = await ServicioTienda().InscribirDesdeTienda(CompraCurso("CURSONR", 50), TIENDA_ONLINE);
+
+            Assert.AreEqual(EVENTO_REINA, dto.EventoId);
+            Assert.AreEqual("Reembolsable", inscripciones.Single().Modalidad, "Por el importe (50 = la reembolsable)");
+        }
+
+        [TestMethod]
         public async Task CursoTienda_ReferenciaDelEvento_LaModalidadSaleDeLaReferenciaNoDelImporte()
         {
             eventos[0].ProductoCurso = "EVENTO00001";

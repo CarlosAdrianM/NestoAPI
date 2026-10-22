@@ -85,19 +85,19 @@ namespace NestoAPI.Infraestructure.Eventos
         public static bool EsDelEvento(string producto, int eventoId) => Interpretar(producto)?.EventoId == eventoId;
 
         /// <summary>
-        /// El producto con el que se factura el curso de una inscripción: si el evento tiene su propia referencia, la de su
-        /// modalidad (EVENTO00123NR para la no reembolsable), siempre que exista; si no, Eventos.ProductoCurso tal cual (el
-        /// forzado, o la única referencia propia que se haya creado).
+        /// El producto con el que se factura el curso, sea cual sea la modalidad (Carlos, 22/10/26: «en las dos se factura el
+        /// producto de Nesto sin NR»): el forzado tal cual; con referencia propia, EVENTO00123 si existe (si solo se creó la NR,
+        /// esa, que es la única que hay).
         /// </summary>
-        public static string ParaFacturar(Evento evento, ModalidadInscripcionEvento modalidad, Func<string, bool> existe)
+        public static string ParaFacturar(Evento evento, Func<string, bool> existe)
         {
             string producto = evento?.ProductoCurso?.Trim();
-            if (string.IsNullOrEmpty(producto) || modalidad == ModalidadInscripcionEvento.Gratuita || !EsDelEvento(producto, evento.Id))
+            if (string.IsNullOrEmpty(producto) || !EsDelEvento(producto, evento.Id))
             {
                 return producto;
             }
-            string propia = Referencia(evento.Id, modalidad);
-            return propia != producto && existe != null && existe(propia) ? propia : producto;
+            string sinNr = Referencia(evento.Id, ModalidadInscripcionEvento.Reembolsable);
+            return sinNr != producto && existe != null && existe(sinNr) ? sinNr : producto;
         }
 
         /// <summary>
@@ -119,6 +119,73 @@ namespace NestoAPI.Infraestructure.Eventos
         {
             string titulo = evento?.Titulo?.Trim() ?? string.Empty;
             return titulo.Length > LONGITUD_NOMBRE ? titulo.Substring(0, LONGITUD_NOMBRE).TrimEnd() : titulo;
+        }
+    }
+
+    /// <summary>Lo que dice la referencia de un curso comprado (ver <see cref="ReconocedorCursoComprado"/>).</summary>
+    public class CursoReconocido
+    {
+        /// <summary>El producto de Nesto (sin NR): el que se busca en Eventos.ProductoCurso y con el que se factura.</summary>
+        public string Producto { get; set; }
+        /// <summary>El evento, si la referencia lo dice (EVENTO00123…); null con un producto forzado.</summary>
+        public int? EventoId { get; set; }
+        /// <summary>La modalidad, si la referencia la dice (sufijo NR = NoReembolsable); null si no (se decide por el importe).</summary>
+        public ModalidadInscripcionEvento? Modalidad { get; set; }
+    }
+
+    /// <summary>
+    /// Carlos (22/10/26): reconoce la compra de un curso por su referencia, para cualquier canal (la tienda PrestaShop hoy; otros
+    /// canales, como cursosvision.com o la venta offline de los vendedores, pueden usar lo mismo). En la tienda un curso con dos
+    /// modalidades es UN producto con DOS combinaciones, «Con cupón de productos» y «Sin cupón», cada una con su precio y su
+    /// referencia: la del producto de Nesto y, la de «Sin cupón», con el sufijo NR (90077 / 90077NR, EVENTO00123 / EVENTO00123NR).
+    /// Las dos se facturan con el producto de Nesto sin NR. Orden: la referencia de la combinación (o la del producto, si no
+    /// hay combinación); si no dice la modalidad, el importe (<see cref="Modalidad"/>); si no coincide, Reembolsable.
+    /// </summary>
+    public static class ReconocedorCursoComprado
+    {
+        public static CursoReconocido Reconocer(string referencia)
+        {
+            string limpia = referencia?.Trim();
+            if (string.IsNullOrEmpty(limpia))
+            {
+                return new CursoReconocido();
+            }
+            (int EventoId, ModalidadInscripcionEvento Modalidad)? propia = ReglasProductoCurso.Interpretar(limpia);
+            if (propia.HasValue)
+            {
+                return new CursoReconocido
+                {
+                    Producto = ReglasProductoCurso.Referencia(propia.Value.EventoId, ModalidadInscripcionEvento.Reembolsable),
+                    EventoId = propia.Value.EventoId,
+                    Modalidad = propia.Value.Modalidad
+                };
+            }
+            if (limpia.Length > ReglasProductoCurso.SUFIJO_NO_REEMBOLSABLE.Length
+                && limpia.EndsWith(ReglasProductoCurso.SUFIJO_NO_REEMBOLSABLE, StringComparison.OrdinalIgnoreCase))
+            {
+                return new CursoReconocido
+                {
+                    Producto = limpia.Substring(0, limpia.Length - ReglasProductoCurso.SUFIJO_NO_REEMBOLSABLE.Length).TrimEnd(),
+                    Modalidad = ModalidadInscripcionEvento.NoReembolsable
+                };
+            }
+            return new CursoReconocido { Producto = limpia };
+        }
+
+        /// <summary>
+        /// La modalidad de la compra: la que diga la referencia; si no, la del importe (la reembolsable si coinciden las dos); si
+        /// no coincide ninguna, Reembolsable y <paramref name="sinCoincidencia"/> es true (quien llama lo apunta en ELMAH).
+        /// </summary>
+        public static ModalidadInscripcionEvento Modalidad(CursoReconocido reconocido, Evento evento, decimal importe, out bool sinCoincidencia)
+        {
+            sinCoincidencia = false;
+            if (reconocido?.Modalidad.HasValue == true)
+            {
+                return reconocido.Modalidad.Value;
+            }
+            ModalidadInscripcionEvento? porImporte = ReglasModalidadEvento.PorImporteExacto(evento, importe);
+            sinCoincidencia = !porImporte.HasValue;
+            return porImporte ?? ModalidadInscripcionEvento.Reembolsable;
         }
     }
 
