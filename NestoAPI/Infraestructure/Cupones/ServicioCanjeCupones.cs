@@ -1,3 +1,4 @@
+using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
 using System;
@@ -42,6 +43,11 @@ namespace NestoAPI.Infraestructure.Cupones
         Task LiberarOtros(PlanCanjeCupon plan);
         Task LiberarPedido(int pedido, string usuario);
         string ProductoCupon { get; }
+        /// <summary>
+        /// NestoAPI#694: ¿puede el cliente usar su cupón con este carrito de la tienda PrestaShop? Con las mismas reglas que
+        /// <see cref="Comprobar"/> (mínimo sin cursos ni portes, estado, fechas, del cliente). No reserva nada.
+        /// </summary>
+        Task<ComprobacionCarritoCuponDTO> ComprobarCarritoTienda(ComprobarCarritoCuponDTO carrito);
     }
 
     /// <summary>
@@ -139,7 +145,10 @@ namespace NestoAPI.Infraestructure.Cupones
                     $"Indique el código del cupón en la línea {ProductoCupon} (CodigoCupon) o quítela.", empresa, pedido, cliente);
             }
 
-            bool yaEnEstePedido = !pedidoNuevo && cupon.Estado?.Trim() == EstadosCupon.USADO && cupon.UsadoEnPedido == pedido;
+            // NestoAPI#694: el cupón se gastó en la tienda PrestaShop (módulo nestocheques) y este es su pedido, que entra por
+            // CanalesExternos: no se vuelve a canjear (ni estado ni fechas) ni se mira el mínimo, que ya miró la tienda al cobrarlo.
+            bool gastadoEnLaTienda = Constantes.FormasVenta.EsCanalExterno(lineaCupon.Forma_Venta?.Trim()) && ReglasCupon.GastadoEnLaTienda(cupon, pedido);
+            bool yaEnEstePedido = gastadoEnLaTienda || (!pedidoNuevo && cupon.Estado?.Trim() == EstadosCupon.USADO && cupon.UsadoEnPedido == pedido);
             Dictionary<string, ProductoParaCupon> productos = await repositorio.LeerProductos(empresa,
                 lineas.Where(l => l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO && !string.IsNullOrWhiteSpace(l.Producto))
                     .Select(l => l.Producto.Trim()).Concat(new[] { ProductoCupon }).Distinct()).ConfigureAwait(false);
@@ -152,7 +161,7 @@ namespace NestoAPI.Infraestructure.Cupones
             }
 
             decimal totalComputable = ReglasCupon.TotalComputable(lineas, productos);
-            ReglasCupon.Comprobar(cupon, empresa, pedido, cliente, ahora(), yaEnEstePedido, totalComputable);
+            ReglasCupon.Comprobar(cupon, empresa, pedido, cliente, ahora(), yaEnEstePedido, totalComputable, comprobarMinimo: !gastadoEnLaTienda);
 
             return new PlanCanjeCupon
             {
@@ -164,6 +173,98 @@ namespace NestoAPI.Infraestructure.Cupones
                 LiberarOtros = !pedidoNuevo
             };
         }
+
+        /// <summary>
+        /// NestoAPI#694: el carrito de la tienda (módulo nestocheques) se monta como lo grabará Nesto al importarlo (sus productos con
+        /// el IVA y el recargo del cliente, más la línea del cupón con su código) y pasa por el MISMO <see cref="Comprobar"/> que
+        /// POST/PUT de api/PedidosVenta y TNV. Sin código, el cupón del cliente que elige <see cref="ReglasCupon.ElegirParaPedido"/>.
+        /// </summary>
+        public async Task<ComprobacionCarritoCuponDTO> ComprobarCarritoTienda(ComprobarCarritoCuponDTO carrito)
+        {
+            string empresa = string.IsNullOrWhiteSpace(carrito?.Empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : carrito.Empresa.Trim();
+            string cliente = carrito?.Cliente?.Trim();
+            DateTime hoy = ahora();
+
+            string codigo = carrito?.Codigo?.Trim().ToUpperInvariant();
+            if (string.IsNullOrEmpty(codigo))
+            {
+                List<CuponDTO> delCliente = ((await repositorio.LeerDelCliente(empresa, cliente).ConfigureAwait(false)) ?? new List<CuponLeido>())
+                    .Select(c => ReglasCupon.ADTO(c, hoy, ProductoCupon)).ToList();
+                codigo = ReglasCupon.ElegirParaPedido(delCliente)?.Codigo;
+                if (codigo == null)
+                {
+                    return CarritoCupones.SinCupon();
+                }
+            }
+            CuponLeido cupon = await repositorio.LeerPorCodigo(codigo).ConfigureAwait(false);
+            if (cupon == null)
+            {
+                return CarritoCupones.NoExiste(codigo);
+            }
+
+            string ivaCliente = await repositorio.LeerIvaCliente(empresa, cliente).ConfigureAwait(false);
+            List<LineaCarritoCuponDTO> lineasCarrito = (carrito?.Lineas ?? new List<LineaCarritoCuponDTO>())
+                .Where(l => l != null && !string.IsNullOrWhiteSpace(l.Producto) && !ReglasCupon.EsProductoCupon(l.Producto, ProductoCupon))
+                .ToList();
+            Dictionary<string, ProductoParaCupon> productos = await repositorio.LeerProductos(empresa,
+                lineasCarrito.Select(l => l.Producto.Trim()).Concat(new[] { ProductoCupon }).Distinct()).ConfigureAwait(false);
+
+            // El mínimo es IVA incluido y la tienda manda la base: cada línea con el IVA (y el recargo) del cliente y de su producto
+            var porcentajes = new Dictionary<string, PorcentajesIvaCupon>(StringComparer.OrdinalIgnoreCase);
+            var lineas = new List<LinPedidoVta>();
+            foreach (LineaCarritoCuponDTO l in lineasCarrito)
+            {
+                string ivaProducto = ReglasCupon.Buscar(productos, l.Producto)?.IvaRepercutido;
+                string clave = ivaProducto ?? string.Empty;
+                if (!porcentajes.TryGetValue(clave, out PorcentajesIvaCupon p))
+                {
+                    p = await Porcentajes(empresa, ivaCliente, ivaProducto).ConfigureAwait(false);
+                    porcentajes[clave] = p;
+                }
+                lineas.Add(new LinPedidoVta
+                {
+                    Empresa = empresa,
+                    TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                    Producto = l.Producto.Trim(),
+                    Cantidad = (short)Math.Max(short.MinValue, Math.Min(short.MaxValue, l.Cantidad)),
+                    Base_Imponible = l.BaseImponible,
+                    Total = Math.Round(l.BaseImponible * (1 + (p.Iva + p.RecargoEquivalencia) / 100M), 2, MidpointRounding.AwayFromZero),
+                    IVA = ivaProducto,
+                    Estado = Constantes.EstadosLineaVenta.EN_CURSO,
+                    Picking = 0
+                });
+            }
+            var lineaCupon = new LinPedidoVta
+            {
+                Empresa = empresa,
+                TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = ProductoCupon,
+                Cantidad = -1,
+                Estado = Constantes.EstadosLineaVenta.EN_CURSO,
+                Picking = 0
+            };
+            lineas.Add(lineaCupon);
+
+            // Comprobar normaliza la línea del cupón (precio = importe / (1 + IVA + RE) del cliente) antes de mirar las reglas
+            codigosPedidos.Clear();
+            codigosPedidos.Add(cupon.Codigo.Trim());
+            try
+            {
+                _ = await Comprobar(empresa, 0, cliente, lineas, ivaCliente, null, CarritoCupones.USUARIO_TIENDA,
+                    pedidoNuevo: true, teniaLineaCupon: false).ConfigureAwait(false);
+            }
+            catch (NestoBusinessException ex) when (CarritoCupones.EsErrorDelCupon(ex))
+            {
+                return CarritoCupones.NoAplicable(cupon, BaseCupon(lineaCupon), ex);
+            }
+            finally
+            {
+                codigosPedidos.Clear();
+            }
+            return CarritoCupones.Aplicable(cupon, BaseCupon(lineaCupon));
+        }
+
+        private static decimal BaseCupon(LinPedidoVta lineaCupon) => Math.Round(lineaCupon.Precio ?? 0, 2, MidpointRounding.AwayFromZero);
 
         /// <summary>
         /// Carlos (15/10/26): el cupón descuenta siempre su importe exacto, también con recargo de equivalencia: la base sale del

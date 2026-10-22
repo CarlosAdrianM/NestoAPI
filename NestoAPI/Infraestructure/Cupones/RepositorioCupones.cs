@@ -67,6 +67,16 @@ namespace NestoAPI.Infraestructure.Cupones
         Task<bool> UsarEnTienda(int id, string empresaPedido, int pedido, string canal, string usuario);
         /// <summary>NestoAPI#614: el cliente del pedido si tiene la línea del producto del cupón; null si no la tiene (o no existe).</summary>
         Task<string> LeerClienteDelPedidoConLineaCupon(string empresa, int pedido);
+        /// <summary>
+        /// NestoAPI#694: el módulo nestocheques de la tienda ha validado un pedido con el cupón. UPDATE condicionado: pasa a Usado
+        /// SIN pedido de Nesto (todavía no ha entrado), con la referencia de la tienda, si está libre (Emitido, Activo o Caducado: se
+        /// gastó cuando valía; o Usado en un pedido que ya no tiene la línea). La misma referencia otra vez: YaConEstaReferencia.
+        /// </summary>
+        Task<ResultadoUsoDesdeTienda> UsarDesdeTienda(int id, string empresa, string canal, string pedidoCanal, decimal? importeDescontado, string usuario);
+        /// <summary>NestoAPI#694: la referencia de la tienda y lo descontado, si se gastó allí. Null si no (o sin el script Issue694).</summary>
+        Task<UsoTiendaCupon> LeerUsoTienda(int id);
+        /// <summary>NestoAPI#694: el IVA de la ficha principal del cliente (null si no lleva o no existe), para el mínimo del carrito de la tienda.</summary>
+        Task<string> LeerIvaCliente(string empresa, string cliente);
     }
 
     /// <summary>
@@ -122,29 +132,66 @@ SELECT CAST(ISNULL(SCOPE_IDENTITY(), 0) AS int);";
         // El candado del canje: solo pasa si el cupón está libre (Activo, o Emitido con el día ya llegado: el job puede no
         // haber pasado), ya es de este pedido, o su pedido ya no tiene la línea. Con dos pedidos a la vez, el segundo
         // espera al bloqueo de fila del primero (va en la transacción del guardado) y, cuando el primero confirma, 0 filas.
+        // NestoAPI#694: un cupón gastado en la tienda y todavía sin pedido de Nesto (Usado con UsadoEnPedido NULL) solo llega aquí
+        // desde su pedido de CanalesExternos (ServicioCanjeCupones lo rechaza en cualquier otro): se ata a ese pedido y conserva la
+        // fecha y el canal de la tienda.
         internal const string SQL_RESERVAR = @"
 UPDATE c
 SET Estado = 'Usado', EmpresaUso = @p1, UsadoEnPedido = @p2,
-    FechaUso = CASE WHEN c.Estado = 'Usado' AND c.UsadoEnPedido = @p2 THEN c.FechaUso ELSE GETDATE() END,
-    CanalUso = CASE WHEN c.Estado = 'Usado' AND c.UsadoEnPedido = @p2 THEN c.CanalUso ELSE @p3 END,
+    FechaUso = CASE WHEN c.Estado = 'Usado' AND (c.UsadoEnPedido = @p2 OR c.UsadoEnPedido IS NULL) THEN c.FechaUso ELSE GETDATE() END,
+    CanalUso = CASE WHEN c.Estado = 'Usado' AND (c.UsadoEnPedido = @p2 OR c.UsadoEnPedido IS NULL) THEN c.CanalUso ELSE @p3 END,
     Usuario = @p4, FechaModificacion = GETDATE()
 FROM dbo.Cupones c WITH (UPDLOCK, ROWLOCK)
 WHERE c.Id = @p0
       AND ((c.Estado = 'Activo' AND c.Caducidad >= CAST(GETDATE() AS date))
            OR (c.Estado = 'Emitido' AND c.ValidoDesde <= CAST(GETDATE() AS date) AND c.Caducidad >= CAST(GETDATE() AS date))
-           OR (c.Estado = 'Usado' AND (c.UsadoEnPedido = @p2
+           OR (c.Estado = 'Usado' AND (c.UsadoEnPedido = @p2 OR c.UsadoEnPedido IS NULL
                OR NOT EXISTS (SELECT 1 FROM LinPedidoVta l WHERE l.[Número] = c.UsadoEnPedido AND l.Producto = @p5))))";
 
         internal const string SQL_USAR_TIENDA = @"
 UPDATE c
 SET Estado = 'Usado', EmpresaUso = @p1, UsadoEnPedido = @p2,
-    FechaUso = CASE WHEN c.Estado = 'Usado' AND c.UsadoEnPedido = @p2 THEN c.FechaUso ELSE GETDATE() END,
+    FechaUso = CASE WHEN c.Estado = 'Usado' AND (c.UsadoEnPedido = @p2 OR c.UsadoEnPedido IS NULL) THEN c.FechaUso ELSE GETDATE() END,
     CanalUso = @p3, Usuario = @p4, FechaModificacion = GETDATE()
 FROM dbo.Cupones c WITH (UPDLOCK, ROWLOCK)
 WHERE c.Id = @p0
       AND (c.Estado IN ('Emitido', 'Activo', 'Caducado')
-           OR (c.Estado = 'Usado' AND (c.UsadoEnPedido = @p2
+           OR (c.Estado = 'Usado' AND (c.UsadoEnPedido = @p2 OR c.UsadoEnPedido IS NULL
                OR NOT EXISTS (SELECT 1 FROM LinPedidoVta l WHERE l.[Número] = c.UsadoEnPedido AND l.Producto = @p5))))";
+
+        // NestoAPI#694: las columnas del uso en la tienda (PedidoCanalUso, ImporteDescontadoUso) son del script Issue694. Sin él, -1:
+        // una columna que falta en una tabla que existe da error al compilar el lote entero, por eso va en sp_executesql.
+        internal const string SQL_USAR_DESDE_TIENDA = @"
+IF COL_LENGTH('dbo.Cupones', 'PedidoCanalUso') IS NULL
+    SELECT CAST(-1 AS int)
+ELSE
+    EXEC sp_executesql N'
+SET NOCOUNT ON;
+DECLARE @r int = 0;
+IF EXISTS (SELECT 1 FROM dbo.Cupones WITH (UPDLOCK, ROWLOCK) WHERE Id = @id AND Estado = ''Usado'' AND PedidoCanalUso = @ref)
+    SET @r = 2;
+ELSE
+BEGIN
+    UPDATE c
+    SET Estado = ''Usado'', EmpresaUso = @emp, UsadoEnPedido = NULL, FechaUso = GETDATE(), CanalUso = @canal, PedidoCanalUso = @ref,
+        ImporteDescontadoUso = @imp, Usuario = @usu, FechaModificacion = GETDATE()
+    FROM dbo.Cupones c WITH (UPDLOCK, ROWLOCK)
+    WHERE c.Id = @id
+          AND (c.Estado IN (''Emitido'', ''Activo'', ''Caducado'')
+               OR (c.Estado = ''Usado'' AND c.UsadoEnPedido IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM LinPedidoVta l WHERE l.[Número] = c.UsadoEnPedido AND l.Producto = @prod)));
+    SET @r = CASE WHEN @@ROWCOUNT > 0 THEN 1 ELSE 0 END;
+END
+SELECT @r;',
+        N'@id int, @emp varchar(3), @canal varchar(20), @ref varchar(50), @imp decimal(10, 2), @usu varchar(50), @prod varchar(20)',
+        @id = @p0, @emp = @p1, @canal = @p2, @ref = @p3, @imp = @p4, @usu = @p5, @prod = @p6";
+
+        internal const string SQL_LEER_USO_TIENDA = @"
+IF COL_LENGTH('dbo.Cupones', 'PedidoCanalUso') IS NULL
+    SELECT CAST(NULL AS varchar(50)) AS PedidoCanal, CAST(NULL AS decimal(10, 2)) AS ImporteDescontado WHERE 1 = 0
+ELSE
+    EXEC sp_executesql N'SELECT RTRIM(PedidoCanalUso) AS PedidoCanal, ImporteDescontadoUso AS ImporteDescontado
+FROM dbo.Cupones WHERE Id = @id AND PedidoCanalUso IS NOT NULL', N'@id int', @id = @p0";
 
         internal const string SQL_LIBERAR = @"
 IF OBJECT_ID('dbo.Cupones') IS NOT NULL
@@ -169,7 +216,8 @@ IF OBJECT_ID('dbo.Cupones') IS NOT NULL
     FROM dbo.Cupones c WITH (UPDLOCK, ROWLOCK)
     WHERE c.Id = @p0
           AND (c.Estado IN ('Emitido', 'Activo', 'Caducado')
-               OR (c.Estado = 'Usado' AND NOT EXISTS (SELECT 1 FROM LinPedidoVta l WHERE l.[Número] = c.UsadoEnPedido AND l.Producto = @p3)))";
+               OR (c.Estado = 'Usado' AND c.UsadoEnPedido IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM LinPedidoVta l WHERE l.[Número] = c.UsadoEnPedido AND l.Producto = @p3)))";
 
         internal const string SQL_REACTIVAR_INSCRIPCION = @"
 IF OBJECT_ID('dbo.Cupones') IS NOT NULL
@@ -362,6 +410,33 @@ END";
                 .Where(l => l.Empresa == e && l.Número == pedido && l.Producto == productoCupon)
                 .Select(l => l.Nº_Cliente).FirstOrDefaultAsync().ConfigureAwait(false);
             return cliente?.Trim();
+        }
+
+        public async Task<ResultadoUsoDesdeTienda> UsarDesdeTienda(int id, string empresa, string canal, string pedidoCanal, decimal? importeDescontado,
+            string usuario)
+        {
+            int r = (await db.Database.SqlQuery<int>(SQL_USAR_DESDE_TIENDA,
+                new SqlParameter("@p0", id),
+                new SqlParameter("@p1", empresa?.Trim() ?? Constantes.Empresas.EMPRESA_POR_DEFECTO),
+                new SqlParameter("@p2", (object)Recortar(canal, 20) ?? DBNull.Value),
+                new SqlParameter("@p3", (object)Recortar(pedidoCanal?.Trim(), 50) ?? DBNull.Value),
+                new SqlParameter("@p4", System.Data.SqlDbType.Decimal) { Precision = 10, Scale = 2, Value = (object)importeDescontado ?? DBNull.Value },
+                new SqlParameter("@p5", Usuario(usuario)),
+                new SqlParameter("@p6", productoCupon)).ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+            return Enum.IsDefined(typeof(ResultadoUsoDesdeTienda), r) ? (ResultadoUsoDesdeTienda)r : ResultadoUsoDesdeTienda.NoLibre;
+        }
+
+        public async Task<UsoTiendaCupon> LeerUsoTienda(int id) =>
+            (await db.Database.SqlQuery<UsoTiendaCupon>(SQL_LEER_USO_TIENDA, new SqlParameter("@p0", id)).ToListAsync().ConfigureAwait(false))
+                .FirstOrDefault();
+
+        public async Task<string> LeerIvaCliente(string empresa, string cliente)
+        {
+            string e = empresa?.Trim() ?? Constantes.Empresas.EMPRESA_POR_DEFECTO;
+            string c = cliente?.Trim() ?? string.Empty;
+            string iva = await db.Clientes.Where(f => f.Empresa == e && f.Nº_Cliente == c)
+                .OrderByDescending(f => f.ClientePrincipal).Select(f => f.IVA).FirstOrDefaultAsync().ConfigureAwait(false);
+            return string.IsNullOrWhiteSpace(iva) ? null : iva.Trim();
         }
 
         internal static string Usuario(string usuario)

@@ -108,6 +108,38 @@ namespace NestoAPI.Infraestructure.Cupones
         /// (<see cref="Base"/> si el grupo del producto del cupón genera Ganavisiones; si no, 0).
         /// </summary>
         public decimal RestaDeLaBaseGanavisiones { get; set; }
+        /// <summary>
+        /// NestoAPI#694: por dónde se usó (la forma de venta del pedido de Nesto, o «PrestaShop» si se gastó en la tienda). Null si
+        /// no está usado.
+        /// </summary>
+        public string CanalUso { get; set; }
+        /// <summary>
+        /// NestoAPI#694: gastado en la tienda PrestaShop (POST api/Cupones/{codigo}/Usar del módulo nestocheques), la referencia del
+        /// pedido de la tienda. Mientras ese pedido no entra en Nesto, <see cref="UsadoEnPedido"/> va a null. Solo en GET por código.
+        /// </summary>
+        public string PedidoCanal { get; set; }
+        /// <summary>NestoAPI#694: lo que descontó la tienda (IVA incluido), si lo mandó al usarlo. Solo en GET por código.</summary>
+        public decimal? ImporteDescontado { get; set; }
+    }
+
+    /// <summary>NestoAPI#694: lo que guarda dbo.Cupones del uso en la tienda (columnas del script Issue694, fuera de la lectura común).</summary>
+    public class UsoTiendaCupon
+    {
+        public string PedidoCanal { get; set; }
+        public decimal? ImporteDescontado { get; set; }
+    }
+
+    /// <summary>NestoAPI#694: el resultado del UPDATE condicionado del uso desde la tienda.</summary>
+    public enum ResultadoUsoDesdeTienda
+    {
+        /// <summary>Usado, en otro pedido o anulado: no se ha tocado.</summary>
+        NoLibre = 0,
+        /// <summary>Queda Usado con la referencia de la tienda (sin pedido de Nesto todavía).</summary>
+        Usado = 1,
+        /// <summary>Ya estaba usado con esa misma referencia de la tienda: la segunda llamada no hace nada.</summary>
+        YaConEstaReferencia = 2,
+        /// <summary>Falta el script Issue694_CuponesTiendaPrestashop.sql (las columnas del uso en la tienda).</summary>
+        SinColumnas = -1
     }
 
     /// <summary>NestoAPI#613: POST api/Cupones (cupón manual, solo Dirección).</summary>
@@ -176,6 +208,59 @@ namespace NestoAPI.Infraestructure.Cupones
         public const string ERROR_YA_USADO = "CUPON_YA_USADO";
         public const string ERROR_VARIOS = "CUPON_VARIOS_EN_EL_PEDIDO";
         public const string ERROR_MINIMO = "CUPON_PEDIDO_MINIMO";
+        /// <summary>NestoAPI#694: ComprobarCarrito sin código y el cliente no tiene ningún cupón que se pueda usar ni que vaya a valer.</summary>
+        public const string ERROR_SIN_CUPON = "CUPON_SIN_CUPON";
+
+        /// <summary>
+        /// NestoAPI#694: el cupón se puede usar en el mismo pedido que el cheque regalo (Carlos, 15/10/26: combina con NVCHEQUE-*;
+        /// en Nesto y TNV nada lo impide). Lo lee el módulo nestocheques de la tienda.
+        /// </summary>
+        public const bool COMBINABLE_CON_CHEQUE_REGALO = true;
+
+        /// <summary>NestoAPI#694: el canal con el que queda un cupón gastado en la tienda PrestaShop.</summary>
+        public const string CANAL_TIENDA = ReglasEspejoPrestashop.CANAL_PRESTASHOP;
+
+        /// <summary>
+        /// NestoAPI#694: gastado en la tienda PrestaShop y todavía sin pedido de Nesto (POST api/Cupones/{codigo}/Usar del módulo,
+        /// antes de que CanalesExternos importe el pedido). No está libre aunque no haya pedido con la línea.
+        /// </summary>
+        public static bool UsadoEnLaTiendaSinPedido(CuponLeido c) =>
+            c != null && c.Estado?.Trim() == EstadosCupon.USADO && !c.UsadoEnPedido.HasValue;
+
+        /// <summary>
+        /// NestoAPI#694: el cupón se gastó en la tienda y este es (o va a ser) su pedido de Nesto: sin pedido todavía, o usado con el
+        /// canal de la tienda en este mismo pedido. El pedido de la tienda ya lo cobró con sus reglas: no se vuelve a canjear ni se
+        /// mira el mínimo.
+        /// </summary>
+        public static bool GastadoEnLaTienda(CuponLeido c, int pedido) =>
+            UsadoEnLaTiendaSinPedido(c)
+            || (c != null && c.Estado?.Trim() == EstadosCupon.USADO && pedido != 0 && c.UsadoEnPedido == pedido
+                && string.Equals(c.CanalUso?.Trim(), CANAL_TIENDA, StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>
+        /// NestoAPI#694: el orden en el que se enseñan los cupones de un cliente (GET api/Clientes/{empresa}/{cliente}/Cupones): primero
+        /// los que se pueden usar, luego los que valdrán, y dentro de cada uno el que caduca antes.
+        /// </summary>
+        public static List<CuponDTO> Ordenar(IEnumerable<CuponDTO> cupones) =>
+            (cupones ?? Enumerable.Empty<CuponDTO>())
+                .OrderBy(c => c.Estado == EstadosCupon.ACTIVO ? 0 : c.Estado == EstadosCupon.EMITIDO ? 1 : 2)
+                .ThenBy(c => c.Caducidad)
+                .ToList();
+
+        /// <summary>
+        /// NestoAPI#694: el cupón que se ofrece en un pedido (uno por pedido), la misma regla que Nesto#518
+        /// (<c>ReglasCupon.ElegirParaPedido</c> de Nesto, que puede pasar a usar esta): el que ya lleva este pedido; si no, el primero
+        /// que se puede usar (en el orden de <see cref="Ordenar"/>: el que caduca antes); si no, uno que valdrá más adelante (Emitido),
+        /// solo para avisar. Los usados en otros pedidos, anulados y caducados, no.
+        /// </summary>
+        public static CuponDTO ElegirParaPedido(IEnumerable<CuponDTO> cupones, int? pedidoEnEdicion = null)
+        {
+            List<CuponDTO> lista = Ordenar((cupones ?? Enumerable.Empty<CuponDTO>()).Where(c => c != null && !string.IsNullOrWhiteSpace(c.Codigo)));
+            return lista.FirstOrDefault(c => pedidoEnEdicion.HasValue && pedidoEnEdicion.Value != 0 && c.Estado == EstadosCupon.USADO
+                        && c.UsadoEnPedido == pedidoEnEdicion.Value)
+                ?? lista.FirstOrDefault(c => c.SePuedeUsar)
+                ?? lista.FirstOrDefault(c => c.Estado == EstadosCupon.EMITIDO);
+        }
 
         private static readonly CultureInfo es = CultureInfo.GetCultureInfo("es-ES");
         private const string ALFABETO_CODIGO = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
@@ -240,7 +325,8 @@ namespace NestoAPI.Infraestructure.Cupones
         public static string EstadoEfectivo(CuponLeido c, DateTime hoy)
         {
             string estado = c.Estado?.Trim();
-            if (estado == EstadosCupon.USADO && !c.PedidoUsoTieneLaLinea)
+            // NestoAPI#694: usado en la tienda sin pedido de Nesto todavía (UsadoEnPedido null) NO está libre
+            if (estado == EstadosCupon.USADO && c.UsadoEnPedido.HasValue && !c.PedidoUsoTieneLaLinea)
             {
                 estado = EstadosCupon.ACTIVO; // su pedido ya no lo tiene: libre
             }
@@ -339,9 +425,11 @@ namespace NestoAPI.Infraestructure.Cupones
         /// <summary>
         /// Las reglas duras de usar <paramref name="cupon"/> en el pedido. <paramref name="yaEnEstePedido"/>: ya estaba aplicado
         /// en este pedido (un PUT posterior): entonces no se vuelven a mirar las fechas ni el estado, pero sí el cliente y el mínimo.
+        /// <paramref name="comprobarMinimo"/> false (NestoAPI#694): el cupón se gastó en la tienda PrestaShop, que ya aplicó sus reglas
+        /// y cobró; su pedido de Nesto no se bloquea por el mínimo.
         /// </summary>
         public static void Comprobar(CuponLeido cupon, string empresa, int pedido, string cliente, DateTime hoy, bool yaEnEstePedido,
-            decimal totalComputable)
+            decimal totalComputable, bool comprobarMinimo = true)
         {
             string clienteTrim = cliente?.Trim();
             string codigo = cupon.Codigo?.Trim();
@@ -362,14 +450,14 @@ namespace NestoAPI.Infraestructure.Cupones
                     case EstadosCupon.CADUCADO:
                         throw Error(ERROR_CADUCADO, $"El cupón {codigo} se podía usar hasta el {Fecha(cupon.Caducidad)}.", empresa, pedido, cliente);
                     case EstadosCupon.USADO:
-                        throw Error(ERROR_YA_USADO, $"El cupón {codigo} ya está aplicado en el pedido {cupon.UsadoEnPedido}: solo se puede usar una vez.",
+                        throw Error(ERROR_YA_USADO, $"El cupón {codigo} {DondeEstaUsado(cupon)}: solo se puede usar una vez.",
                             empresa, pedido, cliente, new Dictionary<string, object> { ["pedidoUso"] = cupon.UsadoEnPedido });
                     case EstadosCupon.EMITIDO:
                         throw Error(ERROR_TODAVIA_NO, $"El cupón {codigo} vale desde el {Fecha(cupon.ValidoDesde)}.", empresa, pedido, cliente);
                 }
             }
             decimal minimo = PedidoMinimo(cupon.Importe);
-            if (totalComputable < minimo)
+            if (comprobarMinimo && totalComputable < minimo)
             {
                 decimal falta = minimo - totalComputable;
                 throw Error(ERROR_MINIMO, $"Para usar el cupón {codigo} de {Euros(cupon.Importe)} € el pedido tiene que ser de al menos " +
@@ -389,13 +477,17 @@ namespace NestoAPI.Infraestructure.Cupones
                 case EstadosCupon.EMITIDO:
                     return $"Tiene un cupón de {Euros(c.Importe)} € ({c.Codigo?.Trim()}) que vale desde el {Fecha(c.ValidoDesde)} hasta el {Fecha(c.Caducidad)}.";
                 case EstadosCupon.USADO:
-                    return $"El cupón {c.Codigo?.Trim()} ya está aplicado en el pedido {c.UsadoEnPedido}.";
+                    return $"El cupón {c.Codigo?.Trim()} {DondeEstaUsado(c)}.";
                 case EstadosCupon.CADUCADO:
                     return $"El cupón {c.Codigo?.Trim()} se podía usar hasta el {Fecha(c.Caducidad)}.";
                 default:
                     return $"El cupón {c.Codigo?.Trim()} está anulado.";
             }
         }
+
+        /// <summary>«ya está aplicado en el pedido 930500» o, gastado en la tienda sin pedido de Nesto todavía (NestoAPI#694), «ya se ha usado en la tienda online».</summary>
+        internal static string DondeEstaUsado(CuponLeido c) =>
+            c.UsadoEnPedido.HasValue ? $"ya está aplicado en el pedido {c.UsadoEnPedido}" : "ya se ha usado en la tienda online";
 
         public static CuponDTO ADTO(CuponLeido c, DateTime hoy, string productoCupon)
         {
@@ -424,6 +516,7 @@ namespace NestoAPI.Infraestructure.Cupones
                 UsadoEnPedido = estado == EstadosCupon.USADO ? c.UsadoEnPedido : null,
                 FacturaUso = c.FacturaUso?.Trim(),
                 FechaUso = estado == EstadosCupon.USADO ? c.FechaUso : null,
+                CanalUso = estado == EstadosCupon.USADO ? c.CanalUso?.Trim() : null,
                 FacturaOrigen = c.FacturaOrigen?.Trim(),
                 Base = Math.Round(PrecioLinea(c.Importe), 2, MidpointRounding.AwayFromZero)
             };
