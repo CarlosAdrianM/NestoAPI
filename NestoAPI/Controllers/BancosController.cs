@@ -31,6 +31,9 @@ namespace NestoAPI.Controllers
             this.db = db;
         }
 
+        /// <summary>NestoAPI#615: sustituible en tests.</summary>
+        internal Infraestructure.Eventos.EncoladorPropuestasSenales EncoladorPropuestas { get; set; } = new Infraestructure.Eventos.EncoladorPropuestasSenales();
+
         // GET: api/Bancos
         public IQueryable<Banco> GetBancos()
         {
@@ -305,6 +308,9 @@ namespace NestoAPI.Controllers
             string usuario = datosPunteo.Usuario;
 
             int punteo = await GestorContabilidad.PuntearApuntes(apunteBancoId, apunteContabilidadId, importePunteo, simboloPunteo, grupoPunteo, usuario);
+            // NestoAPI#615: con el banco punteado ya se sabe el concepto de la transferencia; se busca (en segundo plano) si
+            // es la señal de un evento. Con el interruptor Eventos:ProponerSenales apagado no hace nada; nunca falla el punteo.
+            EncoladorPropuestas.TrasPuntear(apunteBancoId, apunteContabilidadId);
             return Ok(punteo);
         }
 
