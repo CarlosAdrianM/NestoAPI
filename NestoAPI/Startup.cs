@@ -923,6 +923,33 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'inscripciones-eventos' configurado (todos los días a las 7:55)");
 
+            // NestoAPI#690: recordatorio de los eventos dos días antes, a las 10:00 (push a la app del cliente y correo con
+            // «Confirmo asistencia» / «No podré ir»). Nunca fuera de 9:00-21:00. Detrás de Eventos:RecordatorioAsistencia (apagado).
+            // Carlos (22/10/26): en la misma pasada, el aviso de las reservas sin pagar y su liberación al vencer el plazo del
+            // evento (DiasPagoAntesEvento), detrás de Eventos:LiberarReservasSinPagar (apagado).
+            RecurringJob.AddOrUpdate(
+                "recordatorio-eventos",
+                () => Infraestructure.Eventos.RecordatorioEventosJobsService.Procesar(),
+                Infraestructure.Eventos.RecordatorioEventosJobsService.CRON, // Cron: todos los días a las 10:00
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'recordatorio-eventos' configurado (todos los días a las 10:00; apagado salvo interruptor)");
+
+            // NestoAPI#614: el espejo de los cupones en PrestaShop (cart_rules). Con Cupones:EspejoPrestashop apagado no hace nada.
+            RecurringJob.AddOrUpdate(
+                "cupones-prestashop",
+                () => Infraestructure.Cupones.CuponesPrestashopJobsService.Procesar(),
+                Infraestructure.Cupones.CuponesPrestashopJobsService.CRON, // Cron: cada 15 minutos
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'cupones-prestashop' configurado (cada 15 minutos)");
+
             // NestoAPI#606 (decisión de Carlos, 08/10/26): correo a Compras con los pedidos a proveedor enviados, sin recibir y con
             // la fecha prevista ya pasada, primero los que tienen clientes esperando. Se calcula al mandarlo: lo que ya han
             // actualizado no sale. Sin nada vencido, no manda nada.

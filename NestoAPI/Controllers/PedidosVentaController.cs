@@ -99,6 +99,7 @@ namespace NestoAPI.Controllers
                 return;
             }
             DbContextTransaction transaccion = System.Transactions.Transaction.Current == null ? db.Database.BeginTransaction() : null;
+            Infraestructure.Cupones.ResultadoEspejo espejo = null;
             try
             {
                 if (hayCheques)
@@ -119,12 +120,30 @@ namespace NestoAPI.Controllers
                 {
                     await ServicioCupones.LiberarOtros(planCupon).ConfigureAwait(true);
                 }
+                // NestoAPI#614: el cupón usado aquí se desactiva en PrestaShop ANTES de confirmar el pedido. Nunca para el pedido:
+                // si la tienda no contesta, lo hace el job. Dentro de un TransactionScope de fuera (UnirPedidos) no: no sabríamos
+                // si se confirma, así que lo deja al job.
+                if (hayCupones && planCupon.CuponAReservar != null && transaccion != null)
+                {
+                    espejo = await EspejoCupones.DesactivarAntesDeConfirmar(planCupon.CuponAReservar.Id).ConfigureAwait(true);
+                }
                 transaccion?.Commit();
             }
             finally
             {
                 transaccion?.Dispose();
+                // Fuera de la transacción: si se ha deshecho, el job ve el cupón libre e inactivo en la tienda y lo reactiva
+                await EspejoCupones.ApuntarResultado(espejo).ConfigureAwait(true);
             }
+        }
+
+        // NestoAPI#614: el espejo de los cupones en PrestaShop. Para tests.
+        private Infraestructure.Cupones.IEspejoCupones espejoCupones;
+        internal Infraestructure.Cupones.IEspejoCupones EspejoCupones
+        {
+            get => espejoCupones ?? (espejoCupones = new Infraestructure.Cupones.ServicioEspejoCuponesPrestashop(db,
+                Infraestructure.Cupones.ServicioEspejoCuponesPrestashop.TIEMPO_ANTES_DE_CONFIRMAR));
+            set => espejoCupones = value;
         }
 
         // NestoAPI#613: el uso del cupón de evento (reglas duras fuera del pipeline de validación). Para tests.

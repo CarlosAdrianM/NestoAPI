@@ -1,10 +1,15 @@
 ﻿using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Eventos;
+using NestoAPI.Infraestructure.Novedades;
+using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
@@ -26,16 +31,19 @@ namespace NestoAPI.Controllers
         private readonly NVEntities db;
         private readonly IServicioEventos servicio;
         private readonly IServicioInscripcionesEventos inscripciones;
+        private readonly IServicioPropuestasSenales propuestas;
 
         public EventosController() : this(new NVEntities())
         {
         }
 
-        internal EventosController(NVEntities db, IServicioEventos servicio = null, IServicioInscripcionesEventos inscripciones = null)
+        internal EventosController(NVEntities db, IServicioEventos servicio = null, IServicioInscripcionesEventos inscripciones = null,
+            IServicioPropuestasSenales propuestas = null)
         {
             this.db = db;
             this.servicio = servicio ?? new ServicioEventos(db);
             this.inscripciones = inscripciones ?? new ServicioInscripcionesEventos(db);
+            this.propuestas = propuestas ?? new ServicioPropuestasSenales(db);
         }
 
         // GET api/Eventos?empresa=1&soloActivos=true
@@ -77,6 +85,136 @@ namespace NestoAPI.Controllers
                 return Prohibido(PermisosEventos.MENSAJE_SIN_PERMISO_EVENTOS);
             }
             return Ok(await servicio.ModificarEvento(id, evento, UsuarioAuditoriaHelper.Resolver(User, null)).ConfigureAwait(false));
+        }
+
+        // POST api/Eventos/5/ProductoCurso   { Modalidad: "Reembolsable" | "NoReembolsable" }
+        /// <summary>
+        /// Carlos (22/10/26, Nesto#517): da de alta, si no existe, la referencia del curso del evento para esa modalidad
+        /// (EVENTO00005 la reembolsable, EVENTO00005NR la no reembolsable) copiando la ficha de un curso existente (90077: grupo
+        /// CUR, ficticio, IVA del curso), con el título del evento y el importe de esa señal, y la liga al evento
+        /// (Eventos.ProductoCurso). Idempotente. Los mismos que pueden crear y modificar el evento. Devuelve
+        /// { Producto, Nombre, Creado }.
+        /// </summary>
+        [HttpPost]
+        [Route("{id:int}/ProductoCurso")]
+        [ResponseType(typeof(ProductoCursoDTO))]
+        public async Task<IHttpActionResult> PostProductoCurso(int id, [FromBody] PeticionProductoCursoDTO peticion)
+        {
+            string almacenEvento = await servicio.AlmacenDelEvento(id).ConfigureAwait(false);
+            if (almacenEvento == null)
+            {
+                return NotFound();
+            }
+            if (!PuedeMantener(null, almacenEvento))
+            {
+                return Prohibido(PermisosEventos.MENSAJE_SIN_PERMISO_EVENTOS);
+            }
+            return Ok(await servicio.CrearProductoCurso(id, peticion, UsuarioAuditoriaHelper.Resolver(User, null)).ConfigureAwait(false));
+        }
+
+        // ---------------- NestoAPI#690: imagen del evento ----------------
+
+        // POST api/Eventos/5/Imagen   multipart/form-data, la imagen en el campo «fichero»
+        /// <summary>
+        /// NestoAPI#690: pone (o sustituye) la imagen del evento, para las campañas. PNG, JPEG, GIF o WebP hasta 10 MB (las
+        /// reglas de los adjuntos de Novedades, #616, sin PDF). La tienda del evento, Tienda online y Dirección. Devuelve el
+        /// evento con su ImagenUrl nueva.
+        /// </summary>
+        [HttpPost]
+        [Route("{id:int}/Imagen")]
+        [ResponseType(typeof(EventoDTO))]
+        public async Task<IHttpActionResult> PostImagen(int id)
+        {
+            string almacenEvento = await servicio.AlmacenDelEvento(id).ConfigureAwait(false);
+            if (almacenEvento == null)
+            {
+                return NotFound();
+            }
+            if (!PermisosEventos.PuedeSubirImagen(User, servicio.AlmacenDelUsuario(User, null), almacenEvento))
+            {
+                return Prohibido(PermisosEventos.MENSAJE_SIN_PERMISO_IMAGEN);
+            }
+            if (Request.Content == null || !Request.Content.IsMimeMultipartContent())
+            {
+                return Content(HttpStatusCode.UnsupportedMediaType, new HttpError(
+                    $"Envíe la imagen como multipart/form-data en el campo «{ReglasAdjuntosNovedades.CAMPO_FICHERO}»."));
+            }
+            MultipartMemoryStreamProvider partes = await Request.Content.ReadAsMultipartAsync(new MultipartMemoryStreamProvider()).ConfigureAwait(false);
+            var ficheros = new List<(string Nombre, string Tipo, byte[] Contenido)>();
+            foreach (HttpContent parte in partes.Contents)
+            {
+                ContentDispositionHeaderValue disposicion = parte.Headers.ContentDisposition;
+                string campo = disposicion?.Name?.Trim('"');
+                string nombre = disposicion?.FileNameStar ?? disposicion?.FileName?.Trim('"');
+                if (!string.Equals(campo, ReglasAdjuntosNovedades.CAMPO_FICHERO, StringComparison.OrdinalIgnoreCase) && string.IsNullOrEmpty(nombre))
+                {
+                    continue; // otros campos del formulario
+                }
+                byte[] contenido = await parte.ReadAsByteArrayAsync().ConfigureAwait(false);
+                ficheros.Add((nombre, parte.Headers.ContentType?.MediaType, contenido));
+            }
+            ReglasImagenesEventos.Validacion validacion = ReglasImagenesEventos.Validar(ficheros);
+            if (validacion.Error != null)
+            {
+                return validacion.TipoNoPermitido
+                    ? Content(HttpStatusCode.UnsupportedMediaType, new HttpError(validacion.Error))
+                    : (IHttpActionResult)BadRequest(validacion.Error);
+            }
+            return Ok(await servicio.GuardarImagen(id, validacion.Imagen, UsuarioAuditoriaHelper.Resolver(User, null)).ConfigureAwait(false));
+        }
+
+        // DELETE api/Eventos/5/Imagen
+        /// <summary>NestoAPI#690: quita la imagen del evento (204; 404 si no tenía). Los mismos que pueden ponerla.</summary>
+        [HttpDelete]
+        [Route("{id:int}/Imagen")]
+        public async Task<IHttpActionResult> DeleteImagen(int id)
+        {
+            string almacenEvento = await servicio.AlmacenDelEvento(id).ConfigureAwait(false);
+            if (almacenEvento == null)
+            {
+                return NotFound();
+            }
+            if (!PermisosEventos.PuedeSubirImagen(User, servicio.AlmacenDelUsuario(User, null), almacenEvento))
+            {
+                return Prohibido(PermisosEventos.MENSAJE_SIN_PERMISO_IMAGEN);
+            }
+            return await servicio.BorrarImagen(id).ConfigureAwait(false)
+                ? (IHttpActionResult)StatusCode(HttpStatusCode.NoContent)
+                : NotFound();
+        }
+
+        // GET api/Eventos/5/Imagen?v=20261022101500
+        /// <summary>
+        /// NestoAPI#690: la imagen del evento. Anónima, porque la piden los correos y las campañas, y cacheable (pública, 7
+        /// días, con ETag: la URL cambia al sustituirla). 404 si no tiene.
+        /// </summary>
+        [HttpGet]
+        [AllowAnonymous]
+        [Route("{id:int}/Imagen")]
+        public async Task<IHttpActionResult> GetImagen(int id)
+        {
+            ImagenEvento imagen = await servicio.LeerImagen(id).ConfigureAwait(false);
+            if (imagen?.Contenido == null || imagen.Contenido.Length == 0)
+            {
+                return NotFound();
+            }
+            var etag = new EntityTagHeaderValue("\"" + imagen.Fecha.ToString("yyyyMMddHHmmssfff", System.Globalization.CultureInfo.InvariantCulture) + "\"");
+            bool sinCambios = Request?.Headers.IfNoneMatch?.Any(e => e.Tag == "*" || e.Tag == etag.Tag) == true;
+            HttpResponseMessage respuesta;
+            if (sinCambios)
+            {
+                respuesta = new HttpResponseMessage(HttpStatusCode.NotModified);
+            }
+            else
+            {
+                respuesta = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(imagen.Contenido) };
+                respuesta.Content.Headers.ContentType = new MediaTypeHeaderValue(
+                    string.IsNullOrWhiteSpace(imagen.Tipo) ? "application/octet-stream" : imagen.Tipo.Trim());
+                respuesta.Content.Headers.ContentLength = imagen.Contenido.Length;
+            }
+            respuesta.Headers.ETag = etag;
+            respuesta.Headers.CacheControl = new CacheControlHeaderValue { Public = true, MaxAge = TimeSpan.FromDays(7) };
+            return ResponseMessage(respuesta);
         }
 
         // ---------------- NestoAPI#611: inscripciones ----------------
@@ -141,6 +279,60 @@ namespace NestoAPI.Controllers
             return Ok(await inscripciones.PasarLista(id, peticion, User).ConfigureAwait(false));
         }
 
+        // POST api/Eventos/Inscripciones/7/ConfirmarAsistencia   { Respuesta: "Confirma" | "NoPodraIr" }
+        /// <summary>
+        /// NestoAPI#690: «Confirmo asistencia» / «No podré ir», independiente del pago. El cliente con su token de la tienda
+        /// (solo las suyas) o la tienda del evento, Administración o Dirección. Hasta el día del evento.
+        /// </summary>
+        [HttpPost]
+        [Route("Inscripciones/{id:int}/ConfirmarAsistencia")]
+        [ResponseType(typeof(InscripcionEventoDTO))]
+        public async Task<IHttpActionResult> PostConfirmarAsistencia(int id, [FromBody] ConfirmarAsistenciaDTO peticion)
+        {
+            return Ok(await inscripciones.ConfirmarAsistencia(id, peticion, User).ConfigureAwait(false));
+        }
+
+        // GET api/Eventos/Asistencia/{clave}?respuesta=Confirma
+        /// <summary>
+        /// NestoAPI#690: el botón del correo del recordatorio. Sin usuario: el enlace lleva la clave de la inscripción, que no se
+        /// puede adivinar. Enseña el evento y un botón; NO apunta nada (los antivirus del correo abren los enlaces).
+        /// </summary>
+        [HttpGet]
+        [AllowAnonymous]
+        [Route("Asistencia/{clave:guid}")]
+        public async Task<IHttpActionResult> GetAsistenciaEnlace(Guid clave, string respuesta = null)
+        {
+            ResultadoAsistenciaEnlace resultado = await inscripciones.LeerAsistenciaConClave(clave).ConfigureAwait(false);
+            return Pagina(resultado, PaginasAsistenciaEvento.Pregunta(resultado, clave, respuesta));
+        }
+
+        // POST api/Eventos/Asistencia/{clave}   (formulario: respuesta=Confirma | NoPodraIr)
+        /// <summary>NestoAPI#690: apunta la respuesta que llega por el enlace del correo (Origen Cliente).</summary>
+        [HttpPost]
+        [AllowAnonymous]
+        [Route("Asistencia/{clave:guid}")]
+        public async Task<IHttpActionResult> PostAsistenciaEnlace(Guid clave)
+        {
+            string respuesta = null;
+            if (Request?.Content != null && Request.Content.IsFormData())
+            {
+                System.Collections.Specialized.NameValueCollection formulario = await Request.Content.ReadAsFormDataAsync().ConfigureAwait(false);
+                respuesta = formulario?["respuesta"];
+            }
+            respuesta = respuesta ?? Request?.GetQueryNameValuePairs().FirstOrDefault(p => p.Key == "respuesta").Value;
+            ResultadoAsistenciaEnlace resultado = await inscripciones.ConfirmarAsistenciaConClave(clave, respuesta).ConfigureAwait(false);
+            return Pagina(resultado, PaginasAsistenciaEvento.Resultado(resultado));
+        }
+
+        private IHttpActionResult Pagina(ResultadoAsistenciaEnlace resultado, string html)
+        {
+            var respuesta = new HttpResponseMessage(resultado.Existe ? HttpStatusCode.OK : HttpStatusCode.NotFound)
+            {
+                Content = new StringContent(html, Encoding.UTF8, "text/html")
+            };
+            return ResponseMessage(respuesta);
+        }
+
         // GET api/Clientes/1/15191/Inscripciones?contacto=0
         /// <summary>Las inscripciones de un cliente (de todos sus contactos si no se pide uno). El cliente de la tienda, solo las suyas.</summary>
         [HttpGet]
@@ -194,7 +386,16 @@ namespace NestoAPI.Controllers
                 return Prohibido(ServicioEventos.MENSAJE_SIN_PERMISO_SENALES);
             }
             string usuario = UsuarioAuditoriaHelper.Resolver(User, null);
-            SenalEventoDTO senal = await servicio.MarcarSenal(id, peticion, usuario).ConfigureAwait(false);
+            return Ok(await MarcarSenalYPagar(id, peticion, usuario, resolverPropuestas: ProponerSenales()).ConfigureAwait(false));
+        }
+
+        /// <summary>
+        /// El camino único de «este apunte es la señal del evento»: lo usan el botón de #591 y la confirmación de una propuesta
+        /// (NestoAPI#615), para que confirmar sea exactamente lo mismo que marcarla a mano.
+        /// </summary>
+        private async Task<SenalEventoDTO> MarcarSenalYPagar(int eventoId, MarcarSenalEventoDTO peticion, string usuario, bool resolverPropuestas)
+        {
+            SenalEventoDTO senal = await servicio.MarcarSenal(eventoId, peticion, usuario).ConfigureAwait(false);
 
             // NestoAPI#612: con la facturación de cursos encendida, la señal paga la inscripción del cliente (o la crea, con
             // origen Transferencia) y de ahí sale sola la factura del curso con la señal liquidada. Si falla, la señal queda
@@ -211,11 +412,131 @@ namespace NestoAPI.Controllers
                         $"inscripción del cliente {senal.Cliente}: {ex.Message}", ex));
                 }
             }
-            return Ok(senal);
+
+            // NestoAPI#615: las propuestas de ese apunte quedan resueltas (la del evento elegido, confirmada; las demás, descartadas).
+            if (resolverPropuestas)
+            {
+                try
+                {
+                    await propuestas.Resolver(senal.Empresa ?? peticion?.Empresa, senal.NumOrdenExtracto, senal.EventoId, usuario).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    ElmahHelper.Log(new Exception($"[Señales #615] La señal {senal.Id} está marcada, pero no se han podido cerrar las propuestas " +
+                        $"del apunte {senal.NumOrdenExtracto}: {ex.Message}", ex));
+                }
+            }
+            return senal;
         }
 
         /// <summary>NestoAPI#612: el interruptor (Web.config Eventos:FacturarCursoAlCobrar). Sustituible en tests.</summary>
         internal Func<bool> FacturarCursoAlCobrar { get; set; } = () => InterruptoresEventos.FacturarCursoAlCobrar;
+
+        /// <summary>NestoAPI#615: el interruptor (Web.config Eventos:ProponerSenales). Sustituible en tests.</summary>
+        internal Func<bool> ProponerSenales { get; set; } = () => InterruptorPropuestasSenales.Encendido;
+
+        // ---------------- NestoAPI#615: señales propuestas ----------------
+
+        // GET api/Eventos/Senales/Propuestas?empresa=1
+        /// <summary>
+        /// Los cobros a favor que pueden ser la señal de un evento, sin confirmar, con sus eventos candidatos (uno o varios).
+        /// No salen los que ya son señal ni los que ya no tienen nada a favor.
+        /// </summary>
+        [HttpGet]
+        [Route("Senales/Propuestas")]
+        [ResponseType(typeof(List<PropuestaSenalDTO>))]
+        public async Task<IHttpActionResult> GetPropuestasSenales(string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            return Ok(await propuestas.LeerPendientes(empresa).ConfigureAwait(false));
+        }
+
+        // POST api/Eventos/Senales/Propuestas/Buscar   { Empresa?, Dias? }
+        /// <summary>
+        /// Busca ahora (sin esperar al barrido de la mañana) en los cobros a cuenta de los últimos días (15 si no se dice) y
+        /// devuelve las propuestas pendientes. Administración, Dirección e Informática. Funciona con el interruptor apagado:
+        /// solo propone, no marca nada.
+        /// </summary>
+        [HttpPost]
+        [Route("Senales/Propuestas/Buscar")]
+        [ResponseType(typeof(List<PropuestaSenalDTO>))]
+        public async Task<IHttpActionResult> PostBuscarPropuestasSenales([FromBody] BuscarPropuestasSenalesDTO peticion)
+        {
+            if (!ServicioEventos.PuedeMarcarSenales(User))
+            {
+                return Prohibido(ServicioEventos.MENSAJE_SIN_PERMISO_SENALES);
+            }
+            string empresa = string.IsNullOrWhiteSpace(peticion?.Empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : peticion.Empresa.Trim();
+            int dias = peticion?.Dias ?? ServicioPropuestasSenales.DIAS_BARRIDO;
+            if (dias < 1 || dias > 90)
+            {
+                throw new NestoBusinessException("Indique entre 1 y 90 días.");
+            }
+            _ = await propuestas.ProponerRecientes(empresa, Hoy().AddDays(-dias)).ConfigureAwait(false);
+            return Ok(await propuestas.LeerPendientes(empresa).ConfigureAwait(false));
+        }
+
+        /// <summary>NestoAPI#615: sustituible en tests.</summary>
+        internal Func<DateTime> Hoy { get; set; } = () => DateTime.Today;
+
+        // POST api/Eventos/Senales/Propuestas/12/Confirmar
+        /// <summary>
+        /// Confirma la propuesta: marca el apunte como señal de ese evento por el mismo camino que «Es la señal del evento…»
+        /// (y, con el corte 2 encendido, paga la inscripción, factura el curso y emite el cupón). Las otras propuestas del mismo
+        /// apunte quedan descartadas. Administración, Dirección e Informática. Devuelve la señal. 404 si no existe; 409 si ya
+        /// estaba confirmada o descartada; 400 con el motivo si el apunte ya no puede ser señal.
+        /// </summary>
+        [HttpPost]
+        [Route("Senales/Propuestas/{id:int}/Confirmar")]
+        [ResponseType(typeof(SenalEventoDTO))]
+        public async Task<IHttpActionResult> PostConfirmarPropuestaSenal(int id)
+        {
+            if (!ServicioEventos.PuedeMarcarSenales(User))
+            {
+                return Prohibido(ServicioEventos.MENSAJE_SIN_PERMISO_SENALES);
+            }
+            PropuestaSenalEvento propuesta = await LeerPropuestaPendiente(id).ConfigureAwait(false);
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, null);
+            var peticion = new MarcarSenalEventoDTO
+            {
+                Empresa = propuesta.Empresa,
+                NumOrdenExtracto = propuesta.NumOrdenExtracto,
+                Cliente = propuesta.Cliente,
+                Contacto = propuesta.Contacto
+            };
+            return Ok(await MarcarSenalYPagar(propuesta.EventoId, peticion, usuario, resolverPropuestas: true).ConfigureAwait(false));
+        }
+
+        // POST api/Eventos/Senales/Propuestas/12/Descartar
+        /// <summary>No es la señal de ese evento: no se vuelve a proponer. Administración, Dirección e Informática. 204.</summary>
+        [HttpPost]
+        [Route("Senales/Propuestas/{id:int}/Descartar")]
+        public async Task<IHttpActionResult> PostDescartarPropuestaSenal(int id)
+        {
+            if (!ServicioEventos.PuedeMarcarSenales(User))
+            {
+                return Prohibido(ServicioEventos.MENSAJE_SIN_PERMISO_SENALES);
+            }
+            _ = await LeerPropuestaPendiente(id).ConfigureAwait(false);
+            if (!await propuestas.Descartar(id, UsuarioAuditoriaHelper.Resolver(User, null)).ConfigureAwait(false))
+            {
+                throw new NestoBusinessException("Otra persona acaba de confirmar o descartar esta propuesta.") { StatusCode = HttpStatusCode.Conflict };
+            }
+            return StatusCode(HttpStatusCode.NoContent);
+        }
+
+        private async Task<PropuestaSenalEvento> LeerPropuestaPendiente(int id)
+        {
+            PropuestaSenalEvento propuesta = await propuestas.LeerPropuesta(id).ConfigureAwait(false)
+                ?? throw new NestoBusinessException($"No existe la propuesta {id}.") { StatusCode = HttpStatusCode.NotFound };
+            string estado = propuesta.Estado?.Trim();
+            if (estado != EstadosPropuestaSenal.PROPUESTA)
+            {
+                string como = estado == EstadosPropuestaSenal.CONFIRMADA ? "confirmada" : "descartada";
+                string quien = string.IsNullOrWhiteSpace(propuesta.Usuario) ? string.Empty : " por " + propuesta.Usuario.Trim();
+                throw new NestoBusinessException($"Esta propuesta ya está {como}{quien}.") { StatusCode = HttpStatusCode.Conflict };
+            }
+            return propuesta;
+        }
 
         // POST api/Eventos/Inscripciones/7/Facturar
         /// <summary>
@@ -229,6 +550,21 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> PostFacturarCurso(int id)
         {
             return Ok(await inscripciones.FacturarCurso(id, User).ConfigureAwait(false));
+        }
+
+        // POST api/Eventos/CursoTienda   { Empresa, Cliente, Contacto?, Producto, Importe, Fecha?, ReferenciaTienda?, FormaPago? }
+        /// <summary>
+        /// NestoAPI#614: Nesto (CanalesExternos) ha importado de la tienda PrestaShop la compra de un curso. En vez de facturarla como
+        /// pedido normal, paga la inscripción del cliente (la crea con origen PrestaShop si no la tenía) y sigue el corte 2. 400 con
+        /// el interruptor Eventos:CursosDesdePrestashop apagado o con dos eventos con la misma referencia; 404 si no hay evento activo
+        /// y por venir con esa referencia; 403 para el cliente de la tienda.
+        /// </summary>
+        [HttpPost]
+        [Route("CursoTienda")]
+        [ResponseType(typeof(InscripcionEventoDTO))]
+        public async Task<IHttpActionResult> PostCursoTienda([FromBody] CursoTiendaDTO peticion)
+        {
+            return Ok(await inscripciones.InscribirDesdeTienda(peticion, User).ConfigureAwait(false));
         }
 
         // DELETE api/Eventos/Senales/7

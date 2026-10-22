@@ -32,8 +32,36 @@ namespace NestoAPI.Infraestructure.Eventos
         /// <summary>«TIE» (tienda): la que más usan hoy las tiendas para los cursos de CV.</summary>
         public const string FORMA_VENTA_CURSO = "TIE";
 
+        /// <summary>
+        /// NestoAPI#614: «true»: Nesto puede pasar una compra del curso en la tienda PrestaShop (CanalesExternos) como pago de la
+        /// inscripción (POST api/Eventos/CursoTienda) en vez de facturarla como un pedido normal. Apagado si no está.
+        /// </summary>
+        public const string CLAVE_CURSOS_TIENDA = "Eventos:CursosDesdePrestashop";
+
         public static bool FacturarCursoAlCobrar =>
             string.Equals(ConfigurationManager.AppSettings[CLAVE_FACTURAR_CURSO], "true", StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// NestoAPI#690: «true»: dos días antes del evento, a las 10:00, push a la app del cliente y correo con «Confirmo
+        /// asistencia» / «No podré ir». Apagado si no está o no vale «true».
+        /// </summary>
+        public const string CLAVE_RECORDATORIO_ASISTENCIA = "Eventos:RecordatorioAsistencia";
+
+        public static bool RecordatorioAsistencia =>
+            string.Equals(ConfigurationManager.AppSettings[CLAVE_RECORDATORIO_ASISTENCIA], "true", StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Decisión de Carlos (22/10/26): «true»: la reserva sin pagar vence Eventos.DiasPagoAntesEvento días antes del evento
+        /// (NULL = 7); dos días antes de vencer se le avisa (push y correo, como el recordatorio) y al vencer la plaza se libera
+        /// (Caducada). Apagado si no está o no vale «true»: todo sigue como hasta ahora (7 días desde la inscripción).
+        /// </summary>
+        public const string CLAVE_LIBERAR_RESERVAS_SIN_PAGAR = "Eventos:LiberarReservasSinPagar";
+
+        public static bool LiberarReservasSinPagar =>
+            string.Equals(ConfigurationManager.AppSettings[CLAVE_LIBERAR_RESERVAS_SIN_PAGAR], "true", StringComparison.OrdinalIgnoreCase);
+
+        public static bool CursosDesdePrestashop =>
+            string.Equals(ConfigurationManager.AppSettings[CLAVE_CURSOS_TIENDA], "true", StringComparison.OrdinalIgnoreCase);
 
         public static string UsuarioAutomatico => Valor(CLAVE_USUARIO_AUTOMATICO) ?? USUARIO_AUTOMATICO;
 
@@ -228,18 +256,47 @@ namespace NestoAPI.Infraestructure.Eventos
                 return $"El evento «{titulo}» no tiene la referencia del curso (ProductoCurso): no se puede facturar solo. " +
                     "Póngasela al evento y relance la facturación, o facture el curso a mano.";
             }
-            if (evento.ImporteSenal <= 0)
+            // Carlos (22/10/26): el pedido del curso lleva el almacén y la delegación del evento; sin tienda, nunca ALG
+            if (!PermisosEventos.EsAlmacenDeEventos(evento?.Almacen))
             {
-                return $"El evento «{titulo}» no tiene importe de señal: no hay nada que facturar.";
+                return MotivoSinTienda(evento);
+            }
+            // NestoAPI#690: lo que se tenía que cobrar depende de la modalidad (reembolsable o no reembolsable)
+            ModalidadInscripcionEvento modalidad = ReglasModalidadEvento.DeInscripcion(inscripcion);
+            if (modalidad == ModalidadInscripcionEvento.Gratuita)
+            {
+                return $"La inscripción a «{titulo}» es gratuita: no hay nada que facturar.";
+            }
+            decimal senal = ReglasModalidadEvento.Importe(evento, modalidad);
+            string queSenal = modalidad == ModalidadInscripcionEvento.NoReembolsable ? "la señal no reembolsable" : "la señal";
+            if (senal <= 0)
+            {
+                return $"El evento «{titulo}» no tiene importe de {queSenal.Substring(3)}: no hay nada que facturar.";
             }
             decimal pagado = Math.Round(inscripcion?.ImportePagado ?? 0, 2, MidpointRounding.AwayFromZero);
-            decimal senal = Math.Round(evento.ImporteSenal, 2, MidpointRounding.AwayFromZero);
             if (pagado != senal)
             {
-                return $"El cliente ha pagado {Euros(pagado)} € y la señal de «{titulo}» es de {Euros(senal)} €: con importes distintos " +
+                return $"El cliente ha pagado {Euros(pagado)} € y {queSenal} de «{titulo}» es de {Euros(senal)} €: con importes distintos " +
                     "no se factura solo. Facture y liquide a mano lo que corresponda.";
             }
             return null;
+        }
+
+        internal static string MotivoSinTienda(Evento evento) =>
+            $"El evento «{evento?.Titulo?.Trim()}» no tiene tienda (Reina o Alcobendas): el pedido del curso lleva el almacén y la " +
+            "delegación del evento. Póngale su tienda y relance la facturación.";
+
+        /// <summary>
+        /// Carlos (22/10/26): el almacén (y delegación) del pedido del curso es SIEMPRE el del evento, REI o ALC. Lanza si el evento
+        /// no tiene una de las dos: nunca cae al almacén por defecto (ALG).
+        /// </summary>
+        public static string AlmacenDelCurso(Evento evento)
+        {
+            if (!PermisosEventos.EsAlmacenDeEventos(evento?.Almacen))
+            {
+                throw new InvalidOperationException(MotivoSinTienda(evento));
+            }
+            return evento.Almacen.Trim().ToUpperInvariant();
         }
 
         /// <summary>La forma de pago del pedido del curso según cómo pagó la inscripción.</summary>
@@ -342,6 +399,16 @@ namespace NestoAPI.Infraestructure.Eventos
             {
                 throw new NestoBusinessException(
                     $"La inscripción {inscripcion.Id} está {ReglasInscripcionEvento.Texto(estado).ToLowerInvariant()}: solo se factura el curso de una inscripción pagada.");
+            }
+            // NestoAPI#690: la gratuita nunca factura (ni avisa a Administración: no falta nada)
+            if (ReglasModalidadEvento.DeInscripcion(inscripcion) == ModalidadInscripcionEvento.Gratuita)
+            {
+                string gratuita = $"La inscripción {inscripcion.Id} es gratuita: no se factura.";
+                if (aMano)
+                {
+                    throw new NestoBusinessException(gratuita);
+                }
+                return new ResultadoConfirmacionSenal { Omitido = true, Mensaje = gratuita };
             }
 
             string usuario = ReglasFacturacionCurso.UsuarioAuditoria(inscripcion, usuarioAutomatico);
@@ -505,7 +572,9 @@ namespace NestoAPI.Infraestructure.Eventos
             string Html(string t) => WebUtility.HtmlEncode(t ?? string.Empty);
             return "<p>" + Html(motivo) + "</p>" +
                 "<ul>" +
-                $"<li>Evento: {Html(evento.Titulo?.Trim())} ({evento.Fecha:dd/MM/yyyy}), señal {ReglasFacturacionCurso.Euros(evento.ImporteSenal)} €, " +
+                $"<li>Evento: {Html(evento.Titulo?.Trim())} ({evento.Fecha:dd/MM/yyyy}), señal " +
+                $"{Html(ReglasModalidadEvento.Texto(ReglasModalidadEvento.DeInscripcion(inscripcion)).ToLowerInvariant())} " +
+                $"{ReglasFacturacionCurso.Euros(ReglasModalidadEvento.ImporteDe(inscripcion, evento))} €, " +
                 $"curso {Html(Limpiar(evento.ProductoCurso) ?? "sin referencia")}</li>" +
                 $"<li>Inscripción {inscripcion.Id}: cliente {Html(Limpiar(inscripcion.Cliente))}/{Html(Limpiar(inscripcion.Contacto))}, " +
                 $"pagado {ReglasFacturacionCurso.Euros(inscripcion.ImportePagado ?? 0)} € ({Html(Limpiar(inscripcion.FormaPago))})" +

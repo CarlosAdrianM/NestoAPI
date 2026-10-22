@@ -1028,6 +1028,12 @@
           <Property Name="Lugar" Type="nvarchar" MaxLength="100" />
           <Property Name="Descripcion" Type="nvarchar" MaxLength="2000" />
           <Property Name="FechaListaAsistencia" Type="datetime" />
+          <Property Name="HoraInicio" Type="time" Precision="0" />
+          <Property Name="HoraFin" Type="time" Precision="0" />
+          <Property Name="Ponente" Type="nvarchar" MaxLength="100" />
+          <Property Name="ImporteSenalNoReembolsable" Type="decimal" Precision="18" Scale="2" Nullable="false" />
+          <Property Name="DiasPagoAntesEvento" Type="int" />
+          <Property Name="Formato" Type="varchar" MaxLength="15" />
         </EntityType>
         <EntityType Name="EventosInscripciones">
           <Key>
@@ -1051,6 +1057,14 @@
           <Property Name="FechaCreacion" Type="datetime" Nullable="false" />
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="FechaModificacion" Type="datetime" Nullable="false" />
+          <Property Name="Modalidad" Type="varchar" MaxLength="20" />
+          <Property Name="AsistenciaRespuesta" Type="varchar" MaxLength="20" />
+          <Property Name="AsistenciaFecha" Type="datetime" />
+          <Property Name="AsistenciaUsuario" Type="varchar" MaxLength="30" />
+          <Property Name="AsistenciaOrigen" Type="varchar" MaxLength="20" />
+          <Property Name="RecordatorioEnviado" Type="datetime" />
+          <Property Name="ClaveAsistencia" Type="uniqueidentifier" />
+          <Property Name="AvisoPagoEnviado" Type="datetime" />
         </EntityType>
         <EntityType Name="EventosSenales">
           <Key>
@@ -8810,6 +8824,12 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="Lugar" Type="String" MaxLength="100" FixedLength="false" Unicode="true" />
           <Property Name="Descripcion" Type="String" MaxLength="2000" FixedLength="false" Unicode="true" />
           <Property Name="FechaListaAsistencia" Type="DateTime" Precision="3" />
+          <Property Name="HoraInicio" Type="Time" Precision="0" />
+          <Property Name="HoraFin" Type="Time" Precision="0" />
+          <Property Name="Ponente" Type="String" MaxLength="100" FixedLength="false" Unicode="true" />
+          <Property Name="ImporteSenalNoReembolsable" Type="Decimal" Nullable="false" Precision="18" Scale="2" />
+          <Property Name="DiasPagoAntesEvento" Type="Int32" />
+          <Property Name="Formato" Type="String" MaxLength="15" FixedLength="false" Unicode="false" />
         </EntityType>
         <EntityType Name="EventoInscripcion">
           <Key>
@@ -8833,6 +8853,14 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="FechaCreacion" Type="DateTime" Nullable="false" Precision="3" />
           <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
           <Property Name="FechaModificacion" Type="DateTime" Nullable="false" Precision="3" />
+          <Property Name="Modalidad" Type="String" MaxLength="20" FixedLength="false" Unicode="false" />
+          <Property Name="AsistenciaRespuesta" Type="String" MaxLength="20" FixedLength="false" Unicode="false" />
+          <Property Name="AsistenciaFecha" Type="DateTime" Precision="3" />
+          <Property Name="AsistenciaUsuario" Type="String" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="AsistenciaOrigen" Type="String" MaxLength="20" FixedLength="false" Unicode="false" />
+          <Property Name="RecordatorioEnviado" Type="DateTime" Precision="3" />
+          <Property Name="ClaveAsistencia" Type="Guid" />
+          <Property Name="AvisoPagoEnviado" Type="DateTime" Precision="3" />
         </EntityType>
         <EntityType Name="EventoSenal">
           <Key>
@@ -16690,6 +16718,12 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
                 <ScalarProperty Name="Lugar" ColumnName="Lugar" />
                 <ScalarProperty Name="Descripcion" ColumnName="Descripcion" />
                 <ScalarProperty Name="FechaListaAsistencia" ColumnName="FechaListaAsistencia" />
+                <ScalarProperty Name="HoraInicio" ColumnName="HoraInicio" />
+                <ScalarProperty Name="HoraFin" ColumnName="HoraFin" />
+                <ScalarProperty Name="Ponente" ColumnName="Ponente" />
+                <ScalarProperty Name="ImporteSenalNoReembolsable" ColumnName="ImporteSenalNoReembolsable" />
+                <ScalarProperty Name="DiasPagoAntesEvento" ColumnName="DiasPagoAntesEvento" />
+                <ScalarProperty Name="Formato" ColumnName="Formato" />
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>
@@ -16714,6 +16748,14 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
                 <ScalarProperty Name="FechaCreacion" ColumnName="FechaCreacion" />
                 <ScalarProperty Name="Usuario" ColumnName="Usuario" />
                 <ScalarProperty Name="FechaModificacion" ColumnName="FechaModificacion" />
+                <ScalarProperty Name="Modalidad" ColumnName="Modalidad" />
+                <ScalarProperty Name="AsistenciaRespuesta" ColumnName="AsistenciaRespuesta" />
+                <ScalarProperty Name="AsistenciaFecha" ColumnName="AsistenciaFecha" />
+                <ScalarProperty Name="AsistenciaUsuario" ColumnName="AsistenciaUsuario" />
+                <ScalarProperty Name="AsistenciaOrigen" ColumnName="AsistenciaOrigen" />
+                <ScalarProperty Name="RecordatorioEnviado" ColumnName="RecordatorioEnviado" />
+                <ScalarProperty Name="ClaveAsistencia" ColumnName="ClaveAsistencia" />
+                <ScalarProperty Name="AvisoPagoEnviado" ColumnName="AvisoPagoEnviado" />
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>

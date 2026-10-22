@@ -56,12 +56,16 @@ namespace NestoAPI.Infraestructure.Cupones
         private readonly IRepositorioCupones repositorio;
         private readonly Func<DateTime> ahora;
         private readonly List<string> codigosPedidos = new List<string>();
+        private readonly Func<bool> usoEnTiendaEncendido;
 
-        public ServicioCanjeCupones(IRepositorioCupones repositorio, Func<DateTime> ahora = null, string productoCupon = null)
+        /// <param name="usoEnTiendaEncendido">NestoAPI#614: el espejo en PrestaShop (Cupones:EspejoPrestashop). Null: el del Web.config.</param>
+        public ServicioCanjeCupones(IRepositorioCupones repositorio, Func<DateTime> ahora = null, string productoCupon = null,
+            Func<bool> usoEnTiendaEncendido = null)
         {
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
             this.ahora = ahora ?? (() => DateTime.Now);
             ProductoCupon = productoCupon ?? ReglasCupon.ProductoCupon;
+            this.usoEnTiendaEncendido = usoEnTiendaEncendido ?? (() => ReglasEspejoPrestashop.Encendido);
         }
 
         public string ProductoCupon { get; }
@@ -120,6 +124,12 @@ namespace NestoAPI.Infraestructure.Cupones
             }
 
             LinPedidoVta lineaCupon = lineasCupon[0];
+            if (!codigosPedidos.Any() && Constantes.FormasVenta.EsCanalExterno(lineaCupon.Forma_Venta?.Trim()) && usoEnTiendaEncendido())
+            {
+                // NestoAPI#614: cupón aplicado en la tienda PrestaShop (CanalesExternos). Lo cobró la tienda con sus reglas y su
+                // importe: la línea se deja como viene (ni precio ni mínimo) y el cupón se marca con POST api/Cupones/{codigo}/Usar.
+                return PlanCanjeCupon.Nada;
+            }
             CuponLeido cupon = codigosPedidos.Any()
                 ? await repositorio.LeerPorCodigo(codigosPedidos[0]).ConfigureAwait(false)
                 : pedidoNuevo ? null : await repositorio.LeerDelPedido(pedido).ConfigureAwait(false);

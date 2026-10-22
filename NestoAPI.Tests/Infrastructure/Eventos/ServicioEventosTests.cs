@@ -64,7 +64,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             A.CallTo(() => db.EventosInscripciones).Returns(Crear(inscripciones));
             rectificaciones = new List<LinFacturaVtaRectificacion>();
             A.CallTo(() => db.LinFacturaVtaRectificaciones).Returns(Crear(rectificaciones));
-            A.CallTo(() => db.Productos).Returns(Crear(new List<Producto> { new Producto { Empresa = "1", Número = "CURSO01" } }));
+            A.CallTo(() => db.Productos).Returns(Crear(new List<Producto> { new Producto { Empresa = "1", Número = "CURSO01", Grupo = "CUR" } }));
         }
 
         private List<EventoInscripcion> inscripciones;
@@ -222,29 +222,38 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
                 "\"ImporteSenal\":50.0,\"Activo\":true,\"Usuario\":null,\"FechaModificacion\":null," +
                 "\"Descripcion\":\"" + titulo + " 20/10/2026\"}");
 
+        /// <summary>
+        /// Carlos (22/10/26): todo evento, también los online, tiene tienda (REI o ALC). Antes el cuerpo del Nesto de #591 (sin
+        /// Almacen) creaba eventos sin tienda; ahora es un 400 de usted y no se guarda nada.
+        /// </summary>
         [TestMethod]
-        public async Task Nesto591_PostComoEnProduccion_TiendaOnlineCreaElEventoSinTienda()
+        public async Task Nesto591_PostSinTienda_400DeUstedSinGuardar()
         {
-            var resultado = await Controlador(Usuario("NUEVAVISION\\Laura", "TiendaOnline"))
-                .PostEvento(CuerpoNesto591(0, "Masterclass Cloasma", "2026-10-20"));
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Controlador(Usuario("NUEVAVISION\\Laura", "TiendaOnline"))
+                .PostEvento(CuerpoNesto591(0, "Masterclass Cloasma", "2026-10-20")));
 
-            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<EventoDTO>));
-            A.CallTo(() => fakeEventos.Add(A<Evento>.That.Matches(e => e.Titulo == "Masterclass Cloasma" && e.Almacen == null
-                && e.Descripcion == null && e.ProductoCurso == null && e.Plazas == null))).MustHaveHappenedOnceExactly();
+            Assert.AreEqual(ServicioEventos.MENSAJE_FALTA_TIENDA, ex.Message);
+            A.CallTo(() => fakeEventos.Add(A<Evento>._)).MustNotHaveHappened();
+            A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
         }
 
         [TestMethod]
-        public async Task Nesto591_PutComoEnProduccion_TiendaOnlineModificaUnoSinTienda()
+        public async Task Nesto591_PutDeUnoSinTienda_400HastaQueSeLePongaTienda()
         {
             Evento evento = Evento(1, "Viejo", new DateTime(2026, 10, 20));
             evento.Almacen = null;
             eventos.Add(evento);
 
-            var resultado = await Controlador(Usuario("NUEVAVISION\\Laura", "TiendaOnline")).PutEvento(1, CuerpoNesto591(1, "Nuevo", "2026-10-21"));
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() =>
+                Controlador(Usuario("NUEVAVISION\\Laura", "TiendaOnline")).PutEvento(1, CuerpoNesto591(1, "Nuevo", "2026-10-21")));
+            Assert.AreEqual(ServicioEventos.MENSAJE_FALTA_TIENDA, ex.Message);
+            Assert.AreEqual("Viejo", evento.Titulo);
 
+            EventoDTO conTienda = CuerpoNesto591(1, "Nuevo", "2026-10-21");
+            conTienda.Almacen = "REI";
+            var resultado = await Controlador(Usuario("NUEVAVISION\\Carlos", "Dirección")).PutEvento(1, conTienda);
             Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<EventoDTO>));
-            Assert.AreEqual("Nuevo", evento.Titulo);
-            Assert.IsNull(evento.Almacen);
+            Assert.AreEqual("REI", evento.Almacen);
         }
 
         [TestMethod]

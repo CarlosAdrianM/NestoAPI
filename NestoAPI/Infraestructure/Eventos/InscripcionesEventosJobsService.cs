@@ -151,7 +151,7 @@ namespace NestoAPI.Infraestructure.Eventos
             {
                 Titulo = "Inscripción caducada",
                 Cuerpo = $"La inscripción del cliente {cliente}{nombre} a «{inscripcion.Evento}» ha caducado sin pagar. " +
-                    "Si todavía quiere ir, vuelve a inscribirlo.",
+                    "Si todavía quiere ir, vuelva a inscribirlo.",
                 Tipo = TIPO_NOTIFICACION_CADUCADA,
                 Datos = new Dictionary<string, string>
                 {
@@ -227,9 +227,10 @@ namespace NestoAPI.Infraestructure.Eventos
             sb.AppendLine("<html><head><meta charset='utf-8'></head><body style='font-family: Arial, sans-serif; font-size: 13px;'>");
             sb.AppendLine($"<h2>{Html(evento.Titulo)} ({Fecha(evento.Fecha)}, {Html(PermisosEventos.NombreAlmacen(evento.Almacen))})</h2>");
             sb.AppendLine("<p>Nadie ha pasado lista el día del evento, así que se ha dado por asistidos a todos los inscritos que habían pagado " +
-                "(para no dejar a nadie sin su cupón). Si alguno no vino, pasad lista en Nesto: se puede corregir.</p>");
+                "(para no dejar a nadie sin su cupón), salvo a quienes avisaron de que no podrían ir, que quedan como «No asistió». " +
+                "Si alguno no vino, pasen lista en Nesto: se puede corregir.</p>");
             sb.AppendLine("<table style='border-collapse: collapse;' cellpadding='4' border='1'>");
-            sb.AppendLine("<tr style='background:#eee'><th>Cliente</th><th>Nombre</th><th>Pagado</th><th>Forma de pago</th></tr>");
+            sb.AppendLine("<tr style='background:#eee'><th>Cliente</th><th>Nombre</th><th>Pagado</th><th>Forma de pago</th><th>Queda</th></tr>");
             foreach (InscripcionEventoDTO i in inscripciones.OrderBy(i => i.Nombre))
             {
                 sb.Append("<tr>")
@@ -237,6 +238,7 @@ namespace NestoAPI.Infraestructure.Eventos
                     .Append($"<td>{Html(i.Nombre)}</td>")
                     .Append($"<td style='text-align:right'>{(i.ImportePagado.HasValue ? i.ImportePagado.Value.ToString("N2", es) + " €" : "")}</td>")
                     .Append($"<td>{Html(i.FormaPago)}</td>")
+                    .Append($"<td>{Html(i.EstadoTexto)}</td>")
                     .AppendLine("</tr>");
             }
             sb.AppendLine("</table>");

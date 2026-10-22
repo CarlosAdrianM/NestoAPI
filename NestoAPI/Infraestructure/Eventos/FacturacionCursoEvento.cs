@@ -76,7 +76,9 @@ ELSE
         internal const string SQL_FACTURADAS_SIN_CUPON = @"
 IF OBJECT_ID('dbo.EventosInscripcionesCurso') IS NOT NULL AND OBJECT_ID('dbo.Cupones') IS NOT NULL
     EXEC sp_executesql N'SELECT f.InscripcionId FROM dbo.EventosInscripcionesCurso f
-        WHERE f.Estado = ''Facturada'' AND NOT EXISTS (SELECT 1 FROM dbo.Cupones c WHERE c.EventoInscripcionId = f.InscripcionId)'
+        JOIN dbo.EventosInscripciones i ON i.Id = f.InscripcionId
+        WHERE f.Estado = ''Facturada'' AND ISNULL(i.Modalidad, ''Reembolsable'') = ''Reembolsable''
+          AND NOT EXISTS (SELECT 1 FROM dbo.Cupones c WHERE c.EventoInscripcionId = f.InscripcionId)'
 ELSE
     SELECT CAST(0 AS int) AS InscripcionId WHERE 1 = 0";
 
@@ -194,8 +196,19 @@ WHERE InscripcionId = @p0 AND Pedido IS NULL";
             PlazoPago plazo = servicio.LeerPlazosPago(empresa, Constantes.PlazosPago.CONTADO)
                 ?? throw new InvalidOperationException($"No existen los plazos de pago {Constantes.PlazosPago.CONTADO}.");
             DateTime hoy = DateTime.Today;
-            string almacen = PermisosEventos.EsAlmacenDeEventos(evento.Almacen) ? evento.Almacen.Trim().ToUpperInvariant() : Constantes.Productos.ALMACEN_POR_DEFECTO;
+            // Carlos (22/10/26): SIEMPRE el almacén y la delegación del evento (también los online: el ponente emite desde una de
+            // las dos tiendas). Sin tienda válida no se crea el pedido: nunca ALG.
+            string almacen = ReglasFacturacionCurso.AlmacenDelCurso(evento);
             string usuarioPedido = Truncar(usuario, 30);
+            // Carlos (22/10/26): las dos modalidades se facturan con el producto de Nesto sin NR (EVENTO00123, no EVENTO00123NR)
+            string productoCurso = evento.ProductoCurso.Trim();
+            if (ReglasProductoCurso.EsDelEvento(productoCurso, evento.Id))
+            {
+                string sinNr = ReglasProductoCurso.Referencia(evento.Id, ModalidadInscripcionEvento.Reembolsable);
+                bool existe = sinNr == productoCurso
+                    || await db.Productos.AnyAsync(p => p.Empresa == empresa && p.Número == sinNr).ConfigureAwait(false);
+                productoCurso = ReglasProductoCurso.ParaFacturar(evento, _ => existe);
+            }
             int numero = db.TomarSiguienteNumeroPedido();
 
             var cabecera = new CabPedidoVta
@@ -227,9 +240,9 @@ WHERE InscripcionId = @p0 AND Pedido IS NULL";
             LinPedidoVta linea = gestor.CrearLineaVta(new LineaPedidoVentaDTO
             {
                 tipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
-                Producto = evento.ProductoCurso.Trim(),
+                Producto = productoCurso,
                 Cantidad = 1,
-                PrecioUnitario = Math.Round(evento.ImporteSenal, 2, MidpointRounding.AwayFromZero),
+                PrecioUnitario = ReglasModalidadEvento.ImporteDe(inscripcion, evento), // NestoAPI#690: el de su modalidad
                 AplicarDescuento = false,
                 DescuentoLinea = 0,
                 DescuentoProducto = 0,
@@ -390,7 +403,7 @@ WHERE InscripcionId = @p0 AND Pedido IS NULL";
                 return new LiquidacionSenalCurso
                 {
                     Estado = EstadosLiquidacionCurso.SIN_COBRO,
-                    Mensaje = $"Pagado {DescribirForma(inscripcion.FormaPago)}: no hay cobro en el extracto que liquidar. La factura {factura} " +
+                    Mensaje = $"Pagado {DescribirForma(inscripcion)}: no hay cobro en el extracto que liquidar. La factura {factura} " +
                         "queda pendiente de cobro y se cobra como cualquier otra."
                 };
             }
@@ -442,9 +455,14 @@ WHERE InscripcionId = @p0 AND Pedido IS NULL";
             return new LiquidacionSenalCurso { Estado = EstadosLiquidacionCurso.LIQUIDADA, NumOrdenCobro = cobro, NumOrdenEfecto = efecto };
         }
 
-        private static string DescribirForma(string formaPago)
+        private static string DescribirForma(EventoInscripcion inscripcion)
         {
-            switch (ReglasInscripcionEvento.FormaPago(formaPago))
+            // NestoAPI#614: la compra del curso en la tienda se cobra como los demás pedidos de la tienda
+            if (inscripcion.Origen?.Trim() == OrigenInscripcionEvento.PrestaShop.ToString())
+            {
+                return "en la tienda online (PrestaShop)";
+            }
+            switch (ReglasInscripcionEvento.FormaPago(inscripcion.FormaPago))
             {
                 case FormaPagoInscripcionEvento.Efectivo: return "en efectivo";
                 case FormaPagoInscripcionEvento.Tarjeta: return "con tarjeta (datáfono)";
