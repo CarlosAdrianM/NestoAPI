@@ -526,12 +526,58 @@ namespace NestoAPI.Tests.Infrastructure.Cupones
         }
 
         [TestMethod]
-        public async Task UsarEnTienda_PedidoSinLaLinea_400()
+        public async Task UsarEnTienda_ContratoDeNesto518_PedidoSinLaLineaPorqueYaEstabaUsado_SoloAvisa()
         {
-            PrepararUso(CuponesTests.Cupon(), clientePedido: null);
-            NestoBusinessException ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => ServicioUso().UsarEnTienda("EV-2610-7K3Q", USO, Casa()));
-            StringAssert.Contains(ex.Message, "no tiene la línea del cupón");
+            // Nesto#518: el POST del pedido no pudo reservarlo (ya usado), así que el pedido entra sin la línea y llama a Usar
+            PrepararUso(CuponesTests.Cupon(EstadosCupon.USADO, pedidoUso: 930400), clientePedido: null);
+            MailMessage enviado = null;
+            A.CallTo(() => correo.EnviarCorreoSMTP(A<MailMessage>._)).Invokes((MailMessage m) => enviado = m).Returns(true);
+            var peticion = new UsarCuponTiendaDTO { Empresa = "1", Pedido = PEDIDO, Canal = "PrestaShop", PedidoCanal = "54321", ImporteDescontado = 50 };
+
+            UsoCuponTiendaDTO r = await ServicioUso().UsarEnTienda("EV-2610-7K3Q", peticion, Casa());
+
+            Assert.AreEqual(ResultadosUsoCuponTienda.CONFLICTO, r.Resultado);
+            Assert.IsTrue(r.AvisoAdministracion);
+            StringAssert.Contains(r.Mensaje, "ya estaba usado en el pedido 930400");
+            StringAssert.Contains(r.Mensaje, "54321");
+            StringAssert.Contains(r.Mensaje, "50,00 €");
+            StringAssert.Contains(enviado.Body, "sin la línea del cupón");
             A.CallTo(() => cupones.UsarEnTienda(A<int>._, A<string>._, A<int>._, A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        // ---------------- Base de Ganavisiones (Nesto#518) ----------------
+
+        [TestMethod]
+        public async Task LeerPorCodigo_TraeLaBaseYLoQueRestaDeGanavisiones()
+        {
+            PrepararUso(CuponesTests.Cupon());
+            A.CallTo(() => cupones.LeerProductos("1", A<IEnumerable<string>>._)).Returns(Task.FromResult(
+                new Dictionary<string, ProductoParaCupon>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["CUPONEVENTO"] = new ProductoParaCupon { Numero = "CUPONEVENTO", Grupo = Constantes.Productos.GRUPO_COSMETICA, Ficticio = true }
+                }));
+
+            CuponDTO c = await ServicioUso().LeerPorCodigo("EV-2610-7K3Q", Casa());
+
+            Assert.AreEqual(41.32M, c.Base);
+            Assert.AreEqual(41.32M, c.RestaDeLaBaseGanavisiones);
+        }
+
+        [TestMethod]
+        public async Task LeerDelCliente_ProductoDeUnGrupoSinGanavisiones_NoResta()
+        {
+            PrepararUso(CuponesTests.Cupon());
+            A.CallTo(() => cupones.LeerDelCliente("1", "15191")).Returns(Task.FromResult(new List<CuponLeido> { CuponesTests.Cupon() }));
+            A.CallTo(() => cupones.LeerProductos("1", A<IEnumerable<string>>._)).Returns(Task.FromResult(
+                new Dictionary<string, ProductoParaCupon>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["CUPONEVENTO"] = new ProductoParaCupon { Numero = "CUPONEVENTO", Grupo = "PEL", Ficticio = true }
+                }));
+
+            CuponDTO c = (await ServicioUso().LeerDelCliente("1", "15191", false, Casa())).Single();
+
+            Assert.AreEqual(41.32M, c.Base);
+            Assert.AreEqual(0, c.RestaDeLaBaseGanavisiones);
         }
 
         [TestMethod]

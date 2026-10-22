@@ -98,6 +98,16 @@ namespace NestoAPI.Infraestructure.Cupones
         public string FacturaUso { get; set; }
         public DateTime? FechaUso { get; set; }
         public string FacturaOrigen { get; set; }
+        /// <summary>
+        /// NestoAPI#614 (para Nesto#518): la base de la línea del cupón al 21 % sin recargo (50 € → 41,32). Con recargo de
+        /// equivalencia la línea lleva otra base (el servidor la calcula al grabar con el IVA y el RE del cliente).
+        /// </summary>
+        public decimal Base { get; set; }
+        /// <summary>
+        /// NestoAPI#614 (para Nesto#518), como el cheque regalo: lo que la línea del cupón resta de la base de Ganavisiones
+        /// (<see cref="Base"/> si el grupo del producto del cupón genera Ganavisiones; si no, 0).
+        /// </summary>
+        public decimal RestaDeLaBaseGanavisiones { get; set; }
     }
 
     /// <summary>NestoAPI#613: POST api/Cupones (cupón manual, solo Dirección).</summary>
@@ -414,9 +424,17 @@ namespace NestoAPI.Infraestructure.Cupones
                 UsadoEnPedido = estado == EstadosCupon.USADO ? c.UsadoEnPedido : null,
                 FacturaUso = c.FacturaUso?.Trim(),
                 FechaUso = estado == EstadosCupon.USADO ? c.FechaUso : null,
-                FacturaOrigen = c.FacturaOrigen?.Trim()
+                FacturaOrigen = c.FacturaOrigen?.Trim(),
+                Base = Math.Round(PrecioLinea(c.Importe), 2, MidpointRounding.AwayFromZero)
             };
         }
+
+        /// <summary>NestoAPI#614: la línea del cupón resta de la base de Ganavisiones si su producto es de un grupo que las genera.</summary>
+        public static decimal RestaDeLaBaseGanavisiones(CuponDTO cupon, ProductoParaCupon productoCupon) =>
+            cupon != null && productoCupon?.Grupo != null
+                && Constantes.Productos.GRUPOS_BONIFICABLES_CON_GANAVISIONES.Contains(productoCupon.Grupo.Trim())
+                ? cupon.Base
+                : 0;
 
         internal static string Euros(decimal importe) => importe.ToString("N2", es);
 

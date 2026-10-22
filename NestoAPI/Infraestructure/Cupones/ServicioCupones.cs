@@ -36,10 +36,16 @@ namespace NestoAPI.Infraestructure.Cupones
         public string Empresa { get; set; }
         /// <summary>El pedido de Nesto, ya creado, con la línea del producto del cupón.</summary>
         public int Pedido { get; set; }
-        /// <summary>El pedido de la tienda (id o referencia de PrestaShop), para el aviso.</summary>
+        /// <summary>El pedido de la tienda (id o referencia de PrestaShop), para el aviso. Es lo mismo que <see cref="PedidoCanal"/>.</summary>
         public string ReferenciaTienda { get; set; }
+        /// <summary>El pedido de la tienda tal como lo manda Nesto#518 (= <see cref="ReferenciaTienda"/>).</summary>
+        public string PedidoCanal { get; set; }
+        /// <summary>Lo que descontó la tienda por el cupón (Nesto#518), para el aviso. Opcional.</summary>
+        public decimal? ImporteDescontado { get; set; }
         /// <summary>Opcional: si no viene, «PrestaShop».</summary>
         public string Canal { get; set; }
+
+        internal string Referencia => string.IsNullOrWhiteSpace(PedidoCanal) ? ReferenciaTienda?.Trim() : PedidoCanal.Trim();
     }
 
     public static class ResultadosUsoCuponTienda
@@ -121,12 +127,33 @@ namespace NestoAPI.Infraestructure.Cupones
             DateTime hoy = ahora();
             List<CuponLeido> cupones = await repositorio.LeerDelCliente(string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim(),
                 clienteLimpio).ConfigureAwait(false) ?? new List<CuponLeido>();
-            return cupones
+            List<CuponDTO> lista = cupones
                 .Select(c => ReglasCupon.ADTO(c, hoy, productoCupon))
                 .Where(c => todos || c.Estado == EstadosCupon.ACTIVO || c.Estado == EstadosCupon.EMITIDO)
                 .OrderBy(c => c.Estado == EstadosCupon.ACTIVO ? 0 : c.Estado == EstadosCupon.EMITIDO ? 1 : 2)
                 .ThenBy(c => c.Caducidad)
                 .ToList();
+            await CompletarGanavisiones(lista).ConfigureAwait(false);
+            return lista;
+        }
+
+        /// <summary>NestoAPI#614 (Nesto#518): lo que resta cada cupón de la base de Ganavisiones, como el cheque regalo.</summary>
+        private async Task CompletarGanavisiones(List<CuponDTO> cupones)
+        {
+            if (cupones == null || !cupones.Any())
+            {
+                return;
+            }
+            foreach (IGrouping<string, CuponDTO> porEmpresa in cupones.GroupBy(c => c.Empresa ?? Constantes.Empresas.EMPRESA_POR_DEFECTO))
+            {
+                Dictionary<string, ProductoParaCupon> productos = await repositorio.LeerProductos(porEmpresa.Key, new[] { productoCupon })
+                    .ConfigureAwait(false);
+                ProductoParaCupon producto = ReglasCupon.Buscar(productos, productoCupon);
+                foreach (CuponDTO c in porEmpresa)
+                {
+                    c.RestaDeLaBaseGanavisiones = ReglasCupon.RestaDeLaBaseGanavisiones(c, producto);
+                }
+            }
         }
 
         public async Task<CuponDTO> LeerPorCodigo(string codigo, IPrincipal usuario)
@@ -138,7 +165,9 @@ namespace NestoAPI.Infraestructure.Cupones
             {
                 throw new NestoBusinessException($"No existe el cupón {codigo?.Trim()}.") { StatusCode = HttpStatusCode.NotFound };
             }
-            return ReglasCupon.ADTO(cupon, ahora(), productoCupon);
+            CuponDTO dto = ReglasCupon.ADTO(cupon, ahora(), productoCupon);
+            await CompletarGanavisiones(new List<CuponDTO> { dto }).ConfigureAwait(false);
+            return dto;
         }
 
         public async Task<CuponDTO> CrearManual(CrearCuponManualDTO peticion, IPrincipal usuario)
@@ -275,12 +304,28 @@ namespace NestoAPI.Infraestructure.Cupones
             CuponLeido cupon = await repositorio.LeerPorCodigo(codigo).ConfigureAwait(false)
                 ?? throw new NestoBusinessException($"No existe el cupón {codigo?.Trim()}.") { StatusCode = HttpStatusCode.NotFound };
             string empresa = string.IsNullOrWhiteSpace(peticion.Empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : peticion.Empresa.Trim();
-            string clientePedido = await repositorio.LeerClienteDelPedidoConLineaCupon(empresa, peticion.Pedido).ConfigureAwait(false)
-                ?? throw new NestoBusinessException($"El pedido {peticion.Pedido} no tiene la línea del cupón ({productoCupon}): créela antes de " +
-                    "marcar el cupón como usado.");
+            string clientePedido = await repositorio.LeerClienteDelPedidoConLineaCupon(empresa, peticion.Pedido).ConfigureAwait(false);
             string canal = string.IsNullOrWhiteSpace(peticion.Canal) ? ReglasEspejoPrestashop.CANAL_PRESTASHOP : peticion.Canal.Trim();
             string codigoCupon = cupon.Codigo?.Trim();
             DateTime hoy = ahora();
+            string referencia = string.IsNullOrWhiteSpace(peticion.Referencia) ? "" : $", {peticion.Referencia} de la tienda";
+            string descontado = peticion.ImporteDescontado.HasValue ? $" con {ReglasCupon.Euros(peticion.ImporteDescontado.Value)} € de descuento" : "";
+
+            if (clientePedido == null)
+            {
+                // Nesto#518: el pedido ha entrado sin la línea del cupón (no se ha podido reservar al crearlo: estaba usado o
+                // anulado). Aquí no se toca el cupón: solo se avisa a Administración para que lo resuelva a mano.
+                string estadoActual = ReglasCupon.EstadoEfectivo(cupon, hoy);
+                string sinLinea = $"El cupón {codigoCupon} se ha gastado en la tienda (pedido {peticion.Pedido}{referencia}{descontado}) pero en Nesto " +
+                    $"{MotivoNoLibre(cupon, estadoActual)}: el pedido ha entrado sin la línea del cupón. Hay que resolverlo a mano.";
+                return new UsoCuponTiendaDTO
+                {
+                    Resultado = ResultadosUsoCuponTienda.CONFLICTO,
+                    Mensaje = sinLinea,
+                    AvisoAdministracion = AvisarAdministracion(cupon, peticion, empresa, null, sinLinea),
+                    Cupon = ReglasCupon.ADTO(cupon, hoy, productoCupon)
+                };
+            }
 
             if (cupon.Estado?.Trim() == EstadosCupon.USADO && cupon.UsadoEnPedido == peticion.Pedido)
             {
@@ -319,14 +364,8 @@ namespace NestoAPI.Infraestructure.Cupones
             // No se ha podido: usado en otro pedido o anulado. El pedido de la tienda entra igual; lo resuelve Administración.
             CuponLeido actual = await repositorio.LeerPorId(cupon.Id).ConfigureAwait(false) ?? cupon;
             string estado = ReglasCupon.EstadoEfectivo(actual, hoy);
-            string motivo = estado == EstadosCupon.USADO
-                ? $"ya estaba usado en el pedido {actual.UsadoEnPedido}" + (string.IsNullOrWhiteSpace(actual.FacturaUso) ? "" : $" (factura {actual.FacturaUso.Trim()})")
-                : estado == EstadosCupon.ANULADO
-                    ? "estaba anulado" + (string.IsNullOrWhiteSpace(actual.MotivoAnulacion) ? "" : $" ({actual.MotivoAnulacion.Trim()})")
-                    : $"estaba {estado?.ToLowerInvariant()}";
-            string conflicto = $"El cupón {codigoCupon} se ha gastado en la tienda (pedido {peticion.Pedido}" +
-                (string.IsNullOrWhiteSpace(peticion.ReferenciaTienda) ? "" : $", {peticion.ReferenciaTienda.Trim()} de la tienda") +
-                $") pero en Nesto {motivo}: se ha descontado dos veces. El pedido entra igual; hay que resolverlo a mano.";
+            string conflicto = $"El cupón {codigoCupon} se ha gastado en la tienda (pedido {peticion.Pedido}{referencia}{descontado}) pero en Nesto " +
+                $"{MotivoNoLibre(actual, estado)}: se ha descontado dos veces. El pedido entra igual; hay que resolverlo a mano.";
             bool aviso = AvisarAdministracion(actual, peticion, empresa, clientePedido, conflicto);
             return new UsoCuponTiendaDTO
             {
@@ -336,6 +375,13 @@ namespace NestoAPI.Infraestructure.Cupones
                 Cupon = ReglasCupon.ADTO(actual, hoy, productoCupon)
             };
         }
+
+        private static string MotivoNoLibre(CuponLeido c, string estado) =>
+            estado == EstadosCupon.USADO
+                ? $"ya estaba usado en el pedido {c.UsadoEnPedido}" + (string.IsNullOrWhiteSpace(c.FacturaUso) ? "" : $" (factura {c.FacturaUso.Trim()})")
+                : estado == EstadosCupon.ANULADO
+                    ? "estaba anulado" + (string.IsNullOrWhiteSpace(c.MotivoAnulacion) ? "" : $" ({c.MotivoAnulacion.Trim()})")
+                    : $"estaba {estado?.ToLowerInvariant()}";
 
         private bool AvisarAdministracion(CuponLeido cupon, UsarCuponTiendaDTO peticion, string empresa, string clientePedido, string texto)
         {
@@ -366,8 +412,10 @@ namespace NestoAPI.Infraestructure.Cupones
             cuerpo.Append($"<p>{Html(texto)}</p><ul>");
             cuerpo.Append($"<li>Cupón: <b>{Html(cupon.Codigo?.Trim())}</b> de {ReglasCupon.Euros(cupon.Importe)} €, del cliente {Html(cupon.Cliente?.Trim())}" +
                 (string.IsNullOrWhiteSpace(cupon.Evento) ? "" : $" («{Html(cupon.Evento.Trim())}»)") + "</li>");
-            cuerpo.Append($"<li>Pedido de la tienda: {Html(empresa)}/{peticion.Pedido}, cliente {Html(clientePedido)}" +
-                (string.IsNullOrWhiteSpace(peticion.ReferenciaTienda) ? "" : $", referencia {Html(peticion.ReferenciaTienda.Trim())}") + "</li>");
+            cuerpo.Append($"<li>Pedido de la tienda: {Html(empresa)}/{peticion.Pedido}" +
+                (string.IsNullOrWhiteSpace(clientePedido) ? " (sin la línea del cupón)" : $", cliente {Html(clientePedido)}") +
+                (string.IsNullOrWhiteSpace(peticion.Referencia) ? "" : $", referencia {Html(peticion.Referencia)}") +
+                (peticion.ImporteDescontado.HasValue ? $", descontado {ReglasCupon.Euros(peticion.ImporteDescontado.Value)} €" : "") + "</li>");
             if (cupon.UsadoEnPedido.HasValue && cupon.UsadoEnPedido != peticion.Pedido)
             {
                 cuerpo.Append($"<li>Donde ya se había usado: pedido {cupon.UsadoEnPedido}" +
