@@ -117,7 +117,18 @@ namespace NestoAPI.Controllers
         //public IQueryable<LinPedidoVta> GetLinPedidoVtas()
         // Devuelve un listado de productos, filtrado por un concepto (para buscar productos que no ha comprado nunca)
         [HttpGet]
-        public IQueryable<LineaPlantillaVenta> GetBuscarProducto(string empresa, string filtroProducto)
+        [ResponseType(typeof(List<LineaPlantillaVenta>))]
+        public async Task<IHttpActionResult> GetBuscarProducto(string empresa, string filtroProducto)
+        {
+            List<LineaPlantillaVenta> lineas = await BuscarProductoSinCursos(empresa, filtroProducto).ToListAsync().ConfigureAwait(false);
+            // NestoAPI#691 (Nesto#543): los cursos (ficticios, grupo CUR) de algún evento futuro activo con plazas, marcados EsCurso
+            List<LineaPlantillaVenta> cursos = await new Infraestructure.Eventos.CatalogoCursosPlantilla(db)
+                .LineasCursosSinFallar(empresa, filtroProducto).ConfigureAwait(false);
+            lineas.AddRange(cursos.Where(c => !lineas.Any(l => l.producto == c.producto)));
+            return Ok(lineas);
+        }
+
+        private IQueryable<LineaPlantillaVenta> BuscarProductoSinCursos(string empresa, string filtroProducto)
         {
             if (filtroProducto == null || filtroProducto.Length < 3)
             {
@@ -182,6 +193,10 @@ namespace NestoAPI.Controllers
                 return BadRequest("Debe proporcionar un filtro de búsqueda.");
             }
             var lineasPlantilla = await _servicio.BusquedaContextual(q, usarBusquedaConAND);
+            // NestoAPI#691 (Nesto#543): los cursos vendibles (ficticios, que la búsqueda excluye) por referencia o nombre, con EsCurso
+            List<LineaPlantillaVenta> cursos = await new Infraestructure.Eventos.CatalogoCursosPlantilla(db)
+                .LineasCursosSinFallar(Constantes.Empresas.EMPRESA_POR_DEFECTO, q).ConfigureAwait(false);
+            lineasPlantilla.AddRange(cursos.Where(c => !lineasPlantilla.Any(l => l.producto == c.producto)));
 
             return Ok(lineasPlantilla);
         }

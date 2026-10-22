@@ -56,6 +56,31 @@ namespace NestoAPI.Controllers
             return Ok(await servicio.LeerEventos(empresa, soloActivos).ConfigureAwait(false));
         }
 
+        /// <summary>NestoAPI#691: los eventos de un curso que se pueden vender (sustituible en los tests).</summary>
+        internal ICatalogoCursosPlantilla Catalogo
+        {
+            get => catalogo ?? (catalogo = new CatalogoCursosPlantilla(db));
+            set => catalogo = value;
+        }
+        private ICatalogoCursosPlantilla catalogo;
+
+        // GET api/Eventos/PorProducto?empresa=1&producto=90077
+        /// <summary>
+        /// NestoAPI#691 (Nesto#543): los eventos futuros activos de un curso con plazas libres, el más cercano antes, con las
+        /// modalidades que se pueden vender («Con cupón de productos» / «Sin cupón») y su importe. Lista vacía si no hay ninguno.
+        /// </summary>
+        [HttpGet]
+        [Route("PorProducto")]
+        [ResponseType(typeof(List<EventoCursoDTO>))]
+        public async Task<IHttpActionResult> GetEventosPorProducto(string producto, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            if (string.IsNullOrWhiteSpace(producto))
+            {
+                return BadRequest("Indique el producto del curso, por favor.");
+            }
+            return Ok(await Catalogo.EventosDeProducto(empresa, producto).ConfigureAwait(false));
+        }
+
         // POST api/Eventos   { Empresa, Titulo, Fecha, ImporteSenal, Activo, Almacen?, ProductoCurso?, Plazas?, Lugar?, DescripcionLarga? }
         /// <summary>NestoAPI#611: con Almacen, esa tienda, Administración o Dirección; sin él, como en #591 (Tienda online, Dirección).</summary>
         [HttpPost]

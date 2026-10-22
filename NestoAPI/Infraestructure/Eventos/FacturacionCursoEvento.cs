@@ -149,6 +149,26 @@ ELSE
         public async Task<List<int>> FacturadasSinCupon() =>
             await db.Database.SqlQuery<int>(SQL_FACTURADAS_SIN_CUPON).ToListAsync().ConfigureAwait(false);
 
+        internal const string SQL_PENDIENTES_EVENTO = @"
+IF OBJECT_ID('dbo.EventosInscripcionesCurso') IS NOT NULL
+    EXEC sp_executesql N'SELECT InscripcionId FROM dbo.EventosInscripcionesCurso WHERE Estado = ''PendienteEvento'''
+ELSE
+    SELECT CAST(0 AS int) AS InscripcionId WHERE 1 = 0";
+
+        internal const string SQL_INSCRIPCION_DEL_PEDIDO = @"
+IF OBJECT_ID('dbo.EventosInscripcionesCurso') IS NOT NULL
+    EXEC sp_executesql N'SELECT TOP 1 InscripcionId FROM dbo.EventosInscripcionesCurso WHERE Pedido = @pedido ORDER BY InscripcionId DESC',
+        N'@pedido int', @pedido = @p0
+ELSE
+    SELECT CAST(0 AS int) AS InscripcionId WHERE 1 = 0";
+
+        public async Task<List<int>> PendientesDelEvento() =>
+            await db.Database.SqlQuery<int>(SQL_PENDIENTES_EVENTO).ToListAsync().ConfigureAwait(false);
+
+        public async Task<int?> InscripcionDelPedido(int pedido) =>
+            (await db.Database.SqlQuery<int>(SQL_INSCRIPCION_DEL_PEDIDO, new SqlParameter("@p0", pedido)).ToListAsync().ConfigureAwait(false))
+                .Select(i => (int?)i).FirstOrDefault();
+
         private static SqlParameter Nulable(string nombre, object valor) => new SqlParameter(nombre, valor ?? DBNull.Value);
 
         internal static string Usuario(string usuario)

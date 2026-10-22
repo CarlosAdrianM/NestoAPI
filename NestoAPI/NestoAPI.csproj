@@ -1057,6 +1057,7 @@
     <Compile Include="Infraestructure\Eventos\InscripcionesEventosJobsService.cs" />
     <Compile Include="Infraestructure\Eventos\PermisosEventos.cs" />
     <Compile Include="Infraestructure\Eventos\ConfirmadorSenalEvento.cs" />
+    <Compile Include="Infraestructure\Eventos\CursosPlantilla.cs" />
     <Compile Include="Infraestructure\Eventos\FacturacionCursoEvento.cs" />
     <Compile Include="Infraestructure\Eventos\ImagenesEventos.cs" />
     <Compile Include="Infraestructure\Eventos\ProductoCursoEvento.cs" />

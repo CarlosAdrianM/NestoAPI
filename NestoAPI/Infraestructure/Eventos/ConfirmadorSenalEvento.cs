@@ -63,6 +63,16 @@ namespace NestoAPI.Infraestructure.Eventos
         public static bool CursosDesdePrestashop =>
             string.Equals(ConfigurationManager.AppSettings[CLAVE_CURSOS_TIENDA], "true", StringComparison.OrdinalIgnoreCase);
 
+        /// <summary>
+        /// NestoAPI#691: «true»: los pedidos de curso creados desde la plantilla (ya pagados) se facturan el día del evento con el
+        /// job diario inscripciones-eventos y al guardar el pedido. La factura la hace el mismo camino de #612, así que también
+        /// necesita <see cref="CLAVE_FACTURAR_CURSO"/> encendido. Apagado si no está o no vale «true».
+        /// </summary>
+        public const string CLAVE_FACTURAR_CURSOS_PLANTILLA = "Eventos:FacturarCursosPlantilla";
+
+        public static bool FacturarCursosPlantilla =>
+            string.Equals(ConfigurationManager.AppSettings[CLAVE_FACTURAR_CURSOS_PLANTILLA], "true", StringComparison.OrdinalIgnoreCase);
+
         public static string UsuarioAutomatico => Valor(CLAVE_USUARIO_AUTOMATICO) ?? USUARIO_AUTOMATICO;
 
         public static string FormaVentaCurso => Valor(CLAVE_FORMA_VENTA) ?? FORMA_VENTA_CURSO;
@@ -85,6 +95,12 @@ namespace NestoAPI.Infraestructure.Eventos
         public const string ERROR = "Error";
         /// <summary>No se automatiza (importe distinto de la señal, evento sin referencia de curso…): lo hace Administración.</summary>
         public const string NO_AUTOMATIZABLE = "NoAutomatizable";
+        /// <summary>
+        /// NestoAPI#691: el pedido del curso se creó desde la plantilla (con la inscripción Reservada) y espera al pago y al día
+        /// del evento: se factura al entrar el pago si el evento ya ha llegado, al guardar el pedido o con el job diario el
+        /// día del evento (Scripts/Issue691_CursosPlantilla.sql añade el valor al CHECK).
+        /// </summary>
+        public const string PENDIENTE_EVENTO = "PendienteEvento";
     }
 
     /// <summary>NestoAPI#612: qué se ha hecho con el cobro de la señal al facturar el curso.</summary>
@@ -198,6 +214,10 @@ namespace NestoAPI.Infraestructure.Eventos
         Task<List<int>> ConError(int maxIntentos);
         /// <summary>Las ya facturadas cuyo cupón no consta emitido (para el job del corte 3).</summary>
         Task<List<int>> FacturadasSinCupon();
+        /// <summary>NestoAPI#691: las inscripciones con pedido de la plantilla que esperan al pago y al día del evento.</summary>
+        Task<List<int>> PendientesDelEvento();
+        /// <summary>NestoAPI#691: la inscripción ligada a ese pedido (null si el pedido no es de un curso).</summary>
+        Task<int?> InscripcionDelPedido(int pedido);
     }
 
     /// <summary>Crea el pedido del curso y apunta su número en EventosInscripcionesCurso EN LA MISMA transacción.</summary>
@@ -418,6 +438,18 @@ namespace NestoAPI.Infraestructure.Eventos
                 // Idempotente: una señal ya confirmada no vuelve a facturar. El cupón sí se reintenta (también es idempotente).
                 await EmitirCupon(inscripcion, evento, previa, usuario).ConfigureAwait(false);
                 return new ResultadoConfirmacionSenal { Hecho = true, Omitido = true, Facturacion = previa, Mensaje = "El curso ya estaba facturado." };
+            }
+
+            // NestoAPI#691: el pedido del curso de la plantilla se factura el día del evento (o después), nunca antes. Pagado
+            // antes, se queda esperando: lo factura el job diario ese día (o el guardado del pedido, si ya ha llegado).
+            if (previa?.Estado == EstadosFacturacionCurso.PENDIENTE_EVENTO && evento.Fecha.Date > reloj().Date)
+            {
+                string espera = $"El curso de la inscripción {inscripcion.Id} se factura el día del evento ({evento.Fecha:dd/MM/yyyy}).";
+                if (aMano)
+                {
+                    throw new NestoBusinessException(espera);
+                }
+                return new ResultadoConfirmacionSenal { Omitido = true, Facturacion = previa, Mensaje = espera };
             }
 
             if (!await repositorio.Reclamar(inscripcion.Id, Limpiar(inscripcion.Empresa), usuario).ConfigureAwait(false))

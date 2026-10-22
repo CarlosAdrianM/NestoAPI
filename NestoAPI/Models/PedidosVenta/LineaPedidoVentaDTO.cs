@@ -63,6 +63,18 @@ namespace NestoAPI.Models.PedidosVenta
         /// </summary>
         public string CodigoCupon { get; set; }
 
+        /// <summary>
+        /// NestoAPI#691 (Nesto#543): en una línea de curso vendida desde la plantilla, el evento al que se apunta la clienta. La API
+        /// fija el precio con el importe de <see cref="ModalidadEvento"/> en ese evento, la saca a un pedido aparte (serie CV,
+        /// prepago) y crea la inscripción. Null en el resto de líneas.
+        /// </summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public int? EventoId { get; set; }
+
+        /// <summary>NestoAPI#691: «Reembolsable», «NoReembolsable» o «Gratuita» (la que elige el vendedor). Null en el resto.</summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public string ModalidadEvento { get; set; }
+
         /// <summary>NestoAPI#613: la línea es la de un cupón (la marca ReglasCupon.Normalizar). Derivada: no va en el JSON.</summary>
         [JsonIgnore]
         public bool EsCupon { get; set; }

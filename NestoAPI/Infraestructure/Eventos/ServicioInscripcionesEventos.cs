@@ -977,6 +977,83 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             return relanzadas;
         }
 
+        // ---------------- NestoAPI#691: facturación de los cursos de la plantilla ----------------
+
+        /// <summary>NestoAPI#691: el interruptor Eventos:FacturarCursosPlantilla (sustituible en los tests).</summary>
+        internal Func<bool> CursosPlantillaEncendido { get; set; } = () => InterruptoresEventos.FacturarCursosPlantilla;
+
+        /// <summary>
+        /// NestoAPI#691 (job diario): los pedidos de curso de la plantilla ya pagados cuyo evento es hoy (o ya pasó) se facturan
+        /// por el camino de #612 (el pedido ya existe: solo factura, liquida y pasa la inscripción a Facturada). Las que no están
+        /// pagadas o cuyo evento todavía no ha llegado se quedan como están. Devuelve cuántas se han facturado (o intentado).
+        /// </summary>
+        internal async Task<int> FacturarCursosPlantillaDelDia()
+        {
+            if (facturacion == null || !CursosPlantillaEncendido() || !(procesador is ConfirmadorSenalEvento confirmador) || !confirmador.Encendido)
+            {
+                return 0;
+            }
+            int facturadas = 0;
+            foreach (int id in (await facturacion.PendientesDelEvento().ConfigureAwait(false) ?? new List<int>()).Distinct())
+            {
+                try
+                {
+                    if (await FacturarCursoPlantilla(id, confirmador).ConfigureAwait(false))
+                    {
+                        facturadas++;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    ElmahHelper.Log(new Exception($"[Cursos #691] No se ha podido facturar el curso de la inscripción {id}: {ex.Message}", ex));
+                }
+            }
+            return facturadas;
+        }
+
+        /// <summary>
+        /// NestoAPI#691: al guardar o modificar un pedido, si es el de un curso de la plantilla, ya está pagado y el evento ha
+        /// llegado, se factura. Nunca lanza (el pedido ya está guardado): los fallos van a ELMAH. True si se ha intentado.
+        /// </summary>
+        public async Task<bool> FacturarCursoDelPedidoSinFallar(int pedido)
+        {
+            try
+            {
+                if (facturacion == null || !CursosPlantillaEncendido() || !(procesador is ConfirmadorSenalEvento confirmador) || !confirmador.Encendido)
+                {
+                    return false;
+                }
+                int? id = await facturacion.InscripcionDelPedido(pedido).ConfigureAwait(false);
+                return id.HasValue && await FacturarCursoPlantilla(id.Value, confirmador).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Cursos #691] No se ha podido facturar el curso del pedido {pedido} al guardarlo: {ex.Message}", ex));
+                return false;
+            }
+        }
+
+        private async Task<bool> FacturarCursoPlantilla(int inscripcionId, ConfirmadorSenalEvento confirmador)
+        {
+            FacturacionCursoInscripcion fila = await facturacion.Leer(inscripcionId).ConfigureAwait(false);
+            if (fila?.Estado != EstadosFacturacionCurso.PENDIENTE_EVENTO)
+            {
+                return false; // ya facturada, con error (la relanza ReintentarFacturacionCursos) o no es de la plantilla
+            }
+            EventoInscripcion inscripcion = await db.EventosInscripciones.SingleOrDefaultAsync(i => i.Id == inscripcionId).ConfigureAwait(false);
+            if (inscripcion == null || !ReglasInscripcionEvento.EN_LISTA_ASISTENCIA.Contains(EstadoDe(inscripcion)))
+            {
+                return false; // sin pagar
+            }
+            Evento evento = await LeerEvento(inscripcion.EventoId).ConfigureAwait(false);
+            if (evento.Fecha.Date > reloj().Date)
+            {
+                return false; // se factura el día del evento
+            }
+            _ = await confirmador.ConfirmarSenal(inscripcion, evento, aMano: false).ConfigureAwait(false);
+            return true;
+        }
+
         // ---------------- NestoAPI#690: confirmación de asistencia ----------------
 
         /// <summary>
