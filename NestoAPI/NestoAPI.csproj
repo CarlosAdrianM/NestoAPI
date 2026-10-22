@@ -1060,6 +1060,7 @@
     <Compile Include="Infraestructure\Eventos\FacturacionCursoEvento.cs" />
     <Compile Include="Infraestructure\Eventos\ImagenesEventos.cs" />
     <Compile Include="Infraestructure\Eventos\RecordatorioEventosJobsService.cs" />
+    <Compile Include="Infraestructure\Eventos\PropuestasSenalesEventos.cs" />
     <Compile Include="Infraestructure\Cupones\Cupones.cs" />
     <Compile Include="Infraestructure\Cupones\RepositorioCupones.cs" />
     <Compile Include="Infraestructure\Cupones\ServicioCanjeCupones.cs" />

@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
 using NestoAPI.Infraestructure.Contabilidad;
+using NestoAPI.Infraestructure.Eventos;
 using NestoAPI.Models;
 
 namespace NestoAPI.Controllers
@@ -21,6 +22,9 @@ namespace NestoAPI.Controllers
         {
             gestorContabilidad = new GestorContabilidad(servicio);
         }
+
+        /// <summary>NestoAPI#615: sustituible en tests.</summary>
+        internal EncoladorPropuestasSenales EncoladorPropuestas { get; set; } = new EncoladorPropuestasSenales();
 
         // GET: api/PreContabilidades
         public IQueryable<PreContabilidad> GetPreContabilidades()
@@ -98,6 +102,9 @@ namespace NestoAPI.Controllers
                 if (contabilizar)
                 {
                     asiento = await gestorContabilidad.CrearLineasDiarioYContabilizar(lineas);
+                    // NestoAPI#615: si es un cobro a cuenta de un cliente, se busca (en segundo plano) si es la señal de un
+                    // evento. Con el interruptor Eventos:ProponerSenales apagado no hace nada; nunca falla la contabilización.
+                    EncoladorPropuestas.TrasContabilizar(lineas, asiento);
                 }
                 else
                 {
