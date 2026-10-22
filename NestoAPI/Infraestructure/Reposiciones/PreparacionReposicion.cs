@@ -1,3 +1,4 @@
+using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Infraestructure.Contadores;
 using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Infraestructure.ExtractosProducto;
@@ -1077,14 +1078,20 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
             }
             string quien = UsuarioAuditoriaHelper.Resolver(usuario, null);
 
-            int numeroTraspaso = await repositorio.EnTransaccion(async () =>
+            int numeroTraspaso;
+            // NestoAPI#693: el diario contabilizado y lo que manda la tienda van en UN solo evento de «promesa en riesgo»
+            using (EventosPromesaRiesgo.Ambito())
             {
-                int numero = await CerrarPreparacion(empresa, origen, destino, diario, almacenDestino, conCantidad, huecos, quien,
-                    contabilizar: true).ConfigureAwait(false);
-                // NestoAPI#577: el número va a la cabecera abierta de la reposición (si la creó la API; Nesto viejo no la tiene)
-                await registro.NumerarYMarcarPreparada(empresa, origen, destino, numero, quien).ConfigureAwait(false);
-                return numero;
-            }).ConfigureAwait(false);
+                numeroTraspaso = await repositorio.EnTransaccion(async () =>
+                {
+                    int numero = await CerrarPreparacion(empresa, origen, destino, diario, almacenDestino, conCantidad, huecos, quien,
+                        contabilizar: true).ConfigureAwait(false);
+                    // NestoAPI#577: el número va a la cabecera abierta de la reposición (si la creó la API; Nesto viejo no la tiene)
+                    await registro.NumerarYMarcarPreparada(empresa, origen, destino, numero, quien).ConfigureAwait(false);
+                    return numero;
+                }).ConfigureAwait(false);
+                AnotarPromesaRiesgo(empresa, origen, destino, numeroTraspaso, conCantidad);
+            }
 
             return new ResultadoTerminarReposicionDTO
             {
@@ -1095,6 +1102,31 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
                 DiarioEntrada = almacenDestino.DiarioEntradaRep,
                 Lineas = conCantidad.Select(f => new LineaTraspasoTerminadoDTO { Producto = f.Producto, Nombre = f.Nombre, Cantidad = f.Cantidad }).ToList()
             };
+        }
+
+        /// <summary>
+        /// NestoAPI#693: una reposición que sale de una tienda hacia Algete dice cuánto manda de cada producto («Reina mandó 1
+        /// de 3 en la reposición 81094»): los pedidos que contaban con más se recalculan y, si ya no llegan, se avisa. Lo que
+        /// sale de Algete hacia una tienda también mueve el stock de Algete, pero sin esa causa (lo cubre el diario). Nunca lanza.
+        /// </summary>
+        internal static void AnotarPromesaRiesgo(string empresa, string origen, string destino, int numeroTraspaso,
+            IEnumerable<FilaReposicionEnPreparacion> mandadas)
+        {
+            List<FilaReposicionEnPreparacion> filas = (mandadas ?? Enumerable.Empty<FilaReposicionEnPreparacion>())
+                .Where(f => f != null && !string.IsNullOrWhiteSpace(f.Producto)).ToList();
+            Dictionary<string, CausaPromesaRiesgo> causas = null;
+            if (string.Equals(destino?.Trim(), Constantes.Almacenes.ALGETE, StringComparison.OrdinalIgnoreCase))
+            {
+                causas = filas.GroupBy(f => f.Producto.Trim(), StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(g => g.Key, g => new CausaPromesaRiesgo
+                    {
+                        Tienda = origen?.Trim(),
+                        Mandadas = g.Sum(f => f.Cantidad),
+                        Traspaso = numeroTraspaso
+                    }, StringComparer.OrdinalIgnoreCase);
+            }
+            EventosPromesaRiesgo.Anotar(empresa, filas.Select(f => f.Producto),
+                $"reposición {numeroTraspaso} de {CalculadoraFechaEntregaAgencia.NombreAlmacen(origen)} a {CalculadoraFechaEntregaAgencia.NombreAlmacen(destino)}", causas);
         }
 
         public async Task<ResultadoAnularReposicionDTO> Anular(string empresa, int numeroTraspaso, IPrincipal usuario)

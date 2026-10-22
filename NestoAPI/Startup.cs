@@ -1127,6 +1127,31 @@ namespace NestoAPI
                 }
             );
             Console.WriteLine("✅ Job recurrente 'reposiciones-recibidas-en-parte' configurado (de lunes a sábado a las 9:15)");
+
+            // NestoAPI#693: pedidos con la fecha de entrega a la agencia prometida en riesgo. Lo de cada movimiento que pasa por
+            // la API va por eventos (EventosPromesaRiesgo, un job un minuto después); esta pasada nocturna recalcula, fuera de
+            // horario, todos los pedidos pendientes con promesa de hoy o futura (unas decenas) para lo que no pasa por la API
+            // (Nesto viejo: regularizaciones de inventario, albaranes de compra, cambios del calendario...). Y el correo resumen,
+            // L-V a las 9:00 y a las 15:00. Interruptor Pedidos:AvisoPromesaRiesgo (Apagado/Sombra/Activo) en Web.config.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.PedidosVenta.PromesaRiesgoJobsService.ID_JOB_NOCTURNO,
+                () => Infraestructure.PedidosVenta.PromesaRiesgoJobsService.PasadaNocturna(),
+                Infraestructure.PedidosVenta.PromesaRiesgoJobsService.CRON_NOCTURNO, // Cron: de lunes a sábado a las 5:40
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            RecurringJob.AddOrUpdate(
+                Infraestructure.PedidosVenta.PromesaRiesgoJobsService.ID_JOB_CORREO,
+                () => Infraestructure.PedidosVenta.PromesaRiesgoJobsService.EnviarCorreoResumen(),
+                Infraestructure.PedidosVenta.PromesaRiesgoJobsService.CRON_CORREO, // Cron: de lunes a viernes a las 9:00 y a las 15:00
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Jobs recurrentes 'promesa-riesgo-nocturna' (L-S 5:40) y 'promesa-riesgo-correo' (L-V 9:00 y 15:00) configurados");
         }
     }
 
