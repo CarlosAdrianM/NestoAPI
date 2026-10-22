@@ -31,6 +31,51 @@ namespace NestoAPI.Infraestructure.Cupones
         public decimal? Falta { get; set; }
     }
 
+    /// <summary>NestoAPI#694: el carrito de la tienda PrestaShop (módulo nestocheques) que se pregunta en POST api/Cupones/ComprobarCarrito.</summary>
+    public class ComprobarCarritoCuponDTO
+    {
+        /// <summary>Opcional: «1» si no viene.</summary>
+        public string Empresa { get; set; }
+        /// <summary>El cliente de Nesto (el módulo lo saca igual que para el cheque regalo).</summary>
+        public string Cliente { get; set; }
+        /// <summary>Opcional: sin código, el cupón del cliente que mejor encaja (<see cref="ReglasCupon.ElegirParaPedido"/>).</summary>
+        public string Codigo { get; set; }
+        public List<LineaCarritoCuponDTO> Lineas { get; set; }
+    }
+
+    public class LineaCarritoCuponDTO
+    {
+        /// <summary>Referencia del producto en PrestaShop (= el código de Nesto).</summary>
+        public string Producto { get; set; }
+        public int Cantidad { get; set; }
+        /// <summary>Precio sin IVA × cantidad, ya con los descuentos de la tienda, sin portes ni el propio cupón.</summary>
+        public decimal BaseImponible { get; set; }
+    }
+
+    /// <summary>
+    /// NestoAPI#694: la respuesta de POST api/Cupones/ComprobarCarrito, con la forma de <c>Cupon</c> en la respuesta de TNV
+    /// (<see cref="CuponCarritoDTO"/>) y los nombres del cheque regalo de la tienda (#652).
+    /// </summary>
+    public class ComprobacionCarritoCuponDTO
+    {
+        /// <summary>El cupón se puede usar con este carrito.</summary>
+        public bool Aplicable { get; set; }
+        /// <summary>El cupón que se ha comprobado (null si el cliente no tiene ninguno o el código no existe).</summary>
+        public string Codigo { get; set; }
+        /// <summary>IVA incluido: lo que baja el total (también cuando todavía no se puede usar, para el «le faltan…»). 0 sin cupón.</summary>
+        public decimal Importe { get; set; }
+        /// <summary>La base de la línea del cupón en positivo, con el IVA y el recargo del cliente (41,32 al 21 %). 0 sin cupón.</summary>
+        public decimal BaseImponible { get; set; }
+        /// <summary>CUPON_* si no se puede usar (CUPON_SIN_CUPON: el cliente no tiene ninguno).</summary>
+        public string ErrorCode { get; set; }
+        /// <summary>Listo para enseñar, de usted.</summary>
+        public string Mensaje { get; set; }
+        /// <summary>Con CUPON_PEDIDO_MINIMO, lo que falta de productos, IVA incluido (sin cursos ni portes).</summary>
+        public decimal? Falta { get; set; }
+        /// <summary>Se puede usar en el mismo pedido que el cheque regalo (<see cref="ReglasCupon.COMBINABLE_CON_CHEQUE_REGALO"/>).</summary>
+        public bool CombinableConChequeRegalo { get; set; } = ReglasCupon.COMBINABLE_CON_CHEQUE_REGALO;
+    }
+
     /// <summary>El cupón del carrito: si lo lleva y, si no se puede usar, por qué.</summary>
     public class ResultadoCuponCarrito
     {
@@ -181,6 +226,48 @@ namespace NestoAPI.Infraestructure.Cupones
             {
                 return null;
             }
+        }
+
+        // ---------------- NestoAPI#694: la tienda PrestaShop (POST api/Cupones/ComprobarCarrito) ----------------
+
+        /// <summary>El usuario de auditoría de las comprobaciones del carrito de la tienda (no se graba nada).</summary>
+        internal const string USUARIO_TIENDA = "TiendaPrestashop";
+
+        internal static ComprobacionCarritoCuponDTO SinCupon() => new ComprobacionCarritoCuponDTO
+        {
+            ErrorCode = ReglasCupon.ERROR_SIN_CUPON,
+            Mensaje = "No tiene ningún cupón para usar en este pedido."
+        };
+
+        internal static ComprobacionCarritoCuponDTO NoExiste(string codigo) => new ComprobacionCarritoCuponDTO
+        {
+            ErrorCode = ReglasCupon.ERROR_NO_EXISTE,
+            Mensaje = $"No encontramos el cupón {codigo}. Revise el código."
+        };
+
+        internal static ComprobacionCarritoCuponDTO Aplicable(CuponLeido cupon, decimal baseImponible) => new ComprobacionCarritoCuponDTO
+        {
+            Aplicable = true,
+            Codigo = cupon.Codigo?.Trim(),
+            Importe = cupon.Importe,
+            BaseImponible = baseImponible,
+            Mensaje = $"Puede usar su cupón de {ReglasCupon.Euros(cupon.Importe)} € ({cupon.Codigo?.Trim()}) en este pedido."
+        };
+
+        /// <summary>De otro cliente no se dice de quién es (la tienda lo enseña tal cual); el resto de textos de ReglasCupon ya van de usted.</summary>
+        internal static ComprobacionCarritoCuponDTO NoAplicable(CuponLeido cupon, decimal baseImponible, NestoBusinessException ex)
+        {
+            string codigoError = ex.Context?.ErrorCode;
+            bool deOtro = codigoError == ReglasCupon.ERROR_OTRO_CLIENTE;
+            return new ComprobacionCarritoCuponDTO
+            {
+                Codigo = cupon.Codigo?.Trim(),
+                Importe = deOtro ? 0 : cupon.Importe,
+                BaseImponible = deOtro ? 0 : baseImponible,
+                ErrorCode = codigoError,
+                Mensaje = deOtro ? $"El cupón {cupon.Codigo?.Trim()} no es suyo: solo lo puede usar el cliente que lo recibió." : ex.Message,
+                Falta = Falta(ex)
+            };
         }
 
         /// <summary>El error es del cupón (sus códigos empiezan por CUPON_).</summary>

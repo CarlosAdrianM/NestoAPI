@@ -26,15 +26,22 @@ namespace NestoAPI.Infraestructure.Cupones
         Task<CuponDTO> CrearManual(CrearCuponManualDTO peticion, IPrincipal usuario);
         /// <summary>Devolución del curso: anula el cupón si no se ha usado; si ya se usó, avisa (409) y no lo toca.</summary>
         Task<CuponDTO> Anular(string codigo, AnularCuponDTO peticion, IPrincipal usuario);
-        /// <summary>NestoAPI#614: el cupón se ha gastado en la tienda PrestaShop (lo llama Nesto al importar el pedido).</summary>
-        Task<UsoCuponTiendaDTO> UsarEnTienda(string codigo, UsarCuponTiendaDTO peticion, IPrincipal usuario);
+        /// <summary>
+        /// NestoAPI#614: el cupón se ha gastado en la tienda PrestaShop. Con <see cref="UsarCuponTiendaDTO.Pedido"/>, lo llama Nesto
+        /// al importar el pedido; sin él y con <see cref="UsarCuponTiendaDTO.PedidoCanal"/> (NestoAPI#694), el módulo nestocheques al
+        /// validar el pedido en la tienda. <paramref name="conApiKey"/>: la petición trae la X-API-KEY de PrestaShop (sin JWT).
+        /// </summary>
+        Task<UsoCuponTiendaDTO> UsarEnTienda(string codigo, UsarCuponTiendaDTO peticion, IPrincipal usuario, bool conApiKey = false);
     }
 
-    /// <summary>NestoAPI#614: POST api/Cupones/{codigo}/Usar (Nesto, al importar un pedido de PrestaShop con el cupón).</summary>
+    /// <summary>
+    /// POST api/Cupones/{codigo}/Usar. NestoAPI#614: Nesto, al importar un pedido de PrestaShop con el cupón (con Pedido).
+    /// NestoAPI#694: el módulo nestocheques de la tienda, al validar el pedido (sin Pedido, con PedidoCanal = referencia de la tienda).
+    /// </summary>
     public class UsarCuponTiendaDTO
     {
         public string Empresa { get; set; }
-        /// <summary>El pedido de Nesto, ya creado, con la línea del producto del cupón.</summary>
+        /// <summary>El pedido de Nesto, ya creado, con la línea del producto del cupón. 0 desde la tienda (NestoAPI#694): todavía no hay.</summary>
         public int Pedido { get; set; }
         /// <summary>El pedido de la tienda (id o referencia de PrestaShop), para el aviso. Es lo mismo que <see cref="PedidoCanal"/>.</summary>
         public string ReferenciaTienda { get; set; }
@@ -127,12 +134,9 @@ namespace NestoAPI.Infraestructure.Cupones
             DateTime hoy = ahora();
             List<CuponLeido> cupones = await repositorio.LeerDelCliente(string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim(),
                 clienteLimpio).ConfigureAwait(false) ?? new List<CuponLeido>();
-            List<CuponDTO> lista = cupones
+            List<CuponDTO> lista = ReglasCupon.Ordenar(cupones
                 .Select(c => ReglasCupon.ADTO(c, hoy, productoCupon))
-                .Where(c => todos || c.Estado == EstadosCupon.ACTIVO || c.Estado == EstadosCupon.EMITIDO)
-                .OrderBy(c => c.Estado == EstadosCupon.ACTIVO ? 0 : c.Estado == EstadosCupon.EMITIDO ? 1 : 2)
-                .ThenBy(c => c.Caducidad)
-                .ToList();
+                .Where(c => todos || c.Estado == EstadosCupon.ACTIVO || c.Estado == EstadosCupon.EMITIDO));
             await CompletarGanavisiones(lista).ConfigureAwait(false);
             return lista;
         }
@@ -167,7 +171,23 @@ namespace NestoAPI.Infraestructure.Cupones
             }
             CuponDTO dto = ReglasCupon.ADTO(cupon, ahora(), productoCupon);
             await CompletarGanavisiones(new List<CuponDTO> { dto }).ConfigureAwait(false);
+            await CompletarUsoTienda(cupon, dto).ConfigureAwait(false);
             return dto;
+        }
+
+        /// <summary>
+        /// NestoAPI#694: si se gastó en la tienda, la referencia de su pedido y lo descontado (CanalesExternos lo necesita para
+        /// reconocer que el cupón ya está gastado en ESE pedido y no volver a canjearlo).
+        /// </summary>
+        private async Task CompletarUsoTienda(CuponLeido cupon, CuponDTO dto)
+        {
+            if (dto?.Estado != EstadosCupon.USADO || !ReglasCupon.GastadoEnLaTienda(cupon, cupon.UsadoEnPedido ?? 0))
+            {
+                return;
+            }
+            UsoTiendaCupon uso = await repositorio.LeerUsoTienda(cupon.Id).ConfigureAwait(false);
+            dto.PedidoCanal = string.IsNullOrWhiteSpace(uso?.PedidoCanal) ? null : uso.PedidoCanal.Trim();
+            dto.ImporteDescontado = uso?.ImporteDescontado;
         }
 
         public async Task<CuponDTO> CrearManual(CrearCuponManualDTO peticion, IPrincipal usuario)
@@ -287,22 +307,32 @@ namespace NestoAPI.Infraestructure.Cupones
         /// sitios a la vez), no se toca: el pedido entra igual y se avisa a Administración para resolverlo a mano. Lo puede llamar
         /// cualquiera de la casa (no el cliente de la tienda). Idempotente.
         /// </summary>
-        public async Task<UsoCuponTiendaDTO> UsarEnTienda(string codigo, UsarCuponTiendaDTO peticion, IPrincipal usuario)
+        public async Task<UsoCuponTiendaDTO> UsarEnTienda(string codigo, UsarCuponTiendaDTO peticion, IPrincipal usuario, bool conApiKey = false)
         {
+            if (!conApiKey && (usuario == null || PermisosEventos.ClienteDelToken(usuario) != null))
+            {
+                throw new NestoBusinessException("Solo la casa puede marcar un cupón como usado en la tienda.") { StatusCode = HttpStatusCode.Forbidden };
+            }
+            if (peticion != null && peticion.Pedido <= 0 && !string.IsNullOrWhiteSpace(peticion.Referencia))
+            {
+                // NestoAPI#694: el módulo nestocheques al validar el pedido en la tienda. Sin el interruptor del espejo, que sigue apagado.
+                return await UsarDesdeTienda(codigo, peticion, usuario, conApiKey).ConfigureAwait(false);
+            }
+            if (peticion == null || peticion.Pedido <= 0)
+            {
+                throw new NestoBusinessException("Indique el pedido de Nesto en el que se ha usado el cupón (o, desde la tienda, la referencia de su pedido en PedidoCanal).");
+            }
+            CuponLeido cupon = await repositorio.LeerPorCodigo(codigo).ConfigureAwait(false)
+                ?? throw new NestoBusinessException($"No existe el cupón {codigo?.Trim()}.") { StatusCode = HttpStatusCode.NotFound };
+            UsoCuponTiendaDTO yaGastadoEnLaTienda = await YaGastadoEnLaTiendaConEstaReferencia(cupon, peticion).ConfigureAwait(false);
+            if (yaGastadoEnLaTienda != null)
+            {
+                return yaGastadoEnLaTienda;
+            }
             if (!usoEnTiendaEncendido())
             {
                 throw new NestoBusinessException($"El uso de los cupones en la tienda PrestaShop está apagado ({ReglasEspejoPrestashop.CLAVE_INTERRUPTOR}).");
             }
-            if (usuario == null || PermisosEventos.ClienteDelToken(usuario) != null)
-            {
-                throw new NestoBusinessException("Solo la casa puede marcar un cupón como usado en la tienda.") { StatusCode = HttpStatusCode.Forbidden };
-            }
-            if (peticion == null || peticion.Pedido <= 0)
-            {
-                throw new NestoBusinessException("Indique el pedido de Nesto en el que se ha usado el cupón.");
-            }
-            CuponLeido cupon = await repositorio.LeerPorCodigo(codigo).ConfigureAwait(false)
-                ?? throw new NestoBusinessException($"No existe el cupón {codigo?.Trim()}.") { StatusCode = HttpStatusCode.NotFound };
             string empresa = string.IsNullOrWhiteSpace(peticion.Empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : peticion.Empresa.Trim();
             string clientePedido = await repositorio.LeerClienteDelPedidoConLineaCupon(empresa, peticion.Pedido).ConfigureAwait(false);
             string canal = string.IsNullOrWhiteSpace(peticion.Canal) ? ReglasEspejoPrestashop.CANAL_PRESTASHOP : peticion.Canal.Trim();
@@ -376,8 +406,114 @@ namespace NestoAPI.Infraestructure.Cupones
             };
         }
 
+        /// <summary>
+        /// NestoAPI#694: POST api/Cupones/{codigo}/Usar desde el módulo nestocheques, al validar el pedido en la tienda (sin pedido de
+        /// Nesto: todavía no ha entrado). Queda Usado con el canal y la referencia de la tienda; cuando CanalesExternos importe el
+        /// pedido con la línea del cupón, se ata a él sin volver a canjearlo. Idempotente: la misma referencia otra vez no hace nada.
+        /// Si ya estaba gastado en otro sitio o anulado, el pedido de la tienda sigue adelante y se avisa a Administración.
+        /// </summary>
+        private async Task<UsoCuponTiendaDTO> UsarDesdeTienda(string codigo, UsarCuponTiendaDTO peticion, IPrincipal usuario, bool conApiKey)
+        {
+            CuponLeido cupon = await repositorio.LeerPorCodigo(codigo).ConfigureAwait(false)
+                ?? throw new NestoBusinessException($"No existe el cupón {codigo?.Trim()}.") { StatusCode = HttpStatusCode.NotFound };
+            string empresa = string.IsNullOrWhiteSpace(peticion.Empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : peticion.Empresa.Trim();
+            string canal = string.IsNullOrWhiteSpace(peticion.Canal) || string.Equals(peticion.Canal.Trim(), ReglasCupon.CANAL_TIENDA, StringComparison.OrdinalIgnoreCase)
+                ? ReglasCupon.CANAL_TIENDA
+                : peticion.Canal.Trim();
+            string referencia = peticion.Referencia;
+            string codigoCupon = cupon.Codigo?.Trim();
+            string usuarioAuditoria = conApiKey && usuario?.Identity?.IsAuthenticated != true
+                ? CarritoCupones.USUARIO_TIENDA
+                : UsuarioAuditoriaHelper.ParaAuditoria(UsuarioAuditoriaHelper.Resolver(usuario, null));
+
+            ResultadoUsoDesdeTienda resultado = await repositorio.UsarDesdeTienda(cupon.Id, empresa, canal, referencia, peticion.ImporteDescontado,
+                usuarioAuditoria).ConfigureAwait(false);
+            switch (resultado)
+            {
+                case ResultadoUsoDesdeTienda.SinColumnas:
+                    // 503: el módulo lo reintenta con su cron y la compra no se bloquea
+                    throw new NestoBusinessException("Falta lanzar el script Issue694_CuponesTiendaPrestashop.sql: no se puede apuntar el cupón usado en la tienda.")
+                        { StatusCode = HttpStatusCode.ServiceUnavailable };
+                case ResultadoUsoDesdeTienda.YaConEstaReferencia:
+                    return new UsoCuponTiendaDTO
+                    {
+                        Resultado = ResultadosUsoCuponTienda.YA_EN_ESTE_PEDIDO,
+                        Mensaje = $"El cupón {codigoCupon} ya está usado en el pedido {referencia} de la tienda.",
+                        Cupon = await DtoConUsoTienda(cupon.Id, cupon).ConfigureAwait(false)
+                    };
+                case ResultadoUsoDesdeTienda.Usado:
+                    await espejo.Sincronizar(cupon.Id).ConfigureAwait(false);
+                    string mensaje = $"El cupón {codigoCupon} queda usado en el pedido {referencia} de la tienda.";
+                    if (peticion.ImporteDescontado.HasValue && Math.Abs(peticion.ImporteDescontado.Value - cupon.Importe) >= 0.01M)
+                    {
+                        mensaje += $" Atención: la tienda ha descontado {ReglasCupon.Euros(peticion.ImporteDescontado.Value)} € y el cupón es de " +
+                            $"{ReglasCupon.Euros(cupon.Importe)} €.";
+                        ElmahHelper.Log(new Exception($"[Cupones #694] {mensaje}"));
+                    }
+                    return new UsoCuponTiendaDTO
+                    {
+                        Resultado = ResultadosUsoCuponTienda.USADO,
+                        Mensaje = mensaje,
+                        Cupon = await DtoConUsoTienda(cupon.Id, cupon).ConfigureAwait(false)
+                    };
+                default:
+                    CuponLeido actual = await repositorio.LeerPorId(cupon.Id).ConfigureAwait(false) ?? cupon;
+                    DateTime hoy = ahora();
+                    string estado = ReglasCupon.EstadoEfectivo(actual, hoy);
+                    UsoTiendaCupon usoPrevio = ReglasCupon.UsadoEnLaTiendaSinPedido(actual)
+                        ? await repositorio.LeerUsoTienda(actual.Id).ConfigureAwait(false)
+                        : null;
+                    string otraReferencia = string.IsNullOrWhiteSpace(usoPrevio?.PedidoCanal) ? "" : $" (pedido {usoPrevio.PedidoCanal.Trim()} de la tienda)";
+                    string descontado = peticion.ImporteDescontado.HasValue ? $" con {ReglasCupon.Euros(peticion.ImporteDescontado.Value)} € de descuento" : "";
+                    string conflicto = $"El cupón {codigoCupon} se ha gastado en la tienda (pedido {referencia}{descontado}) pero en Nesto " +
+                        $"{MotivoNoLibre(actual, estado)}{otraReferencia}: se ha descontado dos veces. El pedido de la tienda sigue adelante; " +
+                        "hay que resolverlo a mano.";
+                    return new UsoCuponTiendaDTO
+                    {
+                        Resultado = ResultadosUsoCuponTienda.CONFLICTO,
+                        Mensaje = conflicto,
+                        AvisoAdministracion = AvisarAdministracion(actual, peticion, empresa, null, conflicto),
+                        Cupon = ReglasCupon.ADTO(actual, hoy, productoCupon)
+                    };
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#694: Nesto (CanalesExternos) llama a Usar con el pedido ya creado, pero el cupón ya lo apuntó el módulo de la tienda
+        /// con la misma referencia: no es un conflicto ni hace falta el interruptor del espejo. Null si no es el caso.
+        /// </summary>
+        private async Task<UsoCuponTiendaDTO> YaGastadoEnLaTiendaConEstaReferencia(CuponLeido cupon, UsarCuponTiendaDTO peticion)
+        {
+            if (string.IsNullOrWhiteSpace(peticion.Referencia) || !ReglasCupon.GastadoEnLaTienda(cupon, peticion.Pedido))
+            {
+                return null;
+            }
+            UsoTiendaCupon uso = await repositorio.LeerUsoTienda(cupon.Id).ConfigureAwait(false);
+            if (!string.Equals(uso?.PedidoCanal?.Trim(), peticion.Referencia, StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+            string pedidoNesto = cupon.UsadoEnPedido.HasValue ? $" (pedido {cupon.UsadoEnPedido} de Nesto)" : "";
+            return new UsoCuponTiendaDTO
+            {
+                Resultado = ResultadosUsoCuponTienda.YA_EN_ESTE_PEDIDO,
+                Mensaje = $"El cupón {cupon.Codigo?.Trim()} ya está usado en el pedido {peticion.Referencia} de la tienda{pedidoNesto}.",
+                Cupon = await DtoConUsoTienda(cupon.Id, cupon).ConfigureAwait(false)
+            };
+        }
+
+        private async Task<CuponDTO> DtoConUsoTienda(int id, CuponLeido porDefecto)
+        {
+            CuponLeido cupon = await repositorio.LeerPorId(id).ConfigureAwait(false) ?? porDefecto;
+            CuponDTO dto = ReglasCupon.ADTO(cupon, ahora(), productoCupon);
+            await CompletarUsoTienda(cupon, dto).ConfigureAwait(false);
+            return dto;
+        }
+
         private static string MotivoNoLibre(CuponLeido c, string estado) =>
-            estado == EstadosCupon.USADO
+            estado == EstadosCupon.USADO && !c.UsadoEnPedido.HasValue
+                ? "ya se había usado en la tienda online"
+            : estado == EstadosCupon.USADO
                 ? $"ya estaba usado en el pedido {c.UsadoEnPedido}" + (string.IsNullOrWhiteSpace(c.FacturaUso) ? "" : $" (factura {c.FacturaUso.Trim()})")
                 : estado == EstadosCupon.ANULADO
                     ? "estaba anulado" + (string.IsNullOrWhiteSpace(c.MotivoAnulacion) ? "" : $" ({c.MotivoAnulacion.Trim()})")
@@ -412,10 +548,19 @@ namespace NestoAPI.Infraestructure.Cupones
             cuerpo.Append($"<p>{Html(texto)}</p><ul>");
             cuerpo.Append($"<li>Cupón: <b>{Html(cupon.Codigo?.Trim())}</b> de {ReglasCupon.Euros(cupon.Importe)} €, del cliente {Html(cupon.Cliente?.Trim())}" +
                 (string.IsNullOrWhiteSpace(cupon.Evento) ? "" : $" («{Html(cupon.Evento.Trim())}»)") + "</li>");
-            cuerpo.Append($"<li>Pedido de la tienda: {Html(empresa)}/{peticion.Pedido}" +
-                (string.IsNullOrWhiteSpace(clientePedido) ? " (sin la línea del cupón)" : $", cliente {Html(clientePedido)}") +
-                (string.IsNullOrWhiteSpace(peticion.Referencia) ? "" : $", referencia {Html(peticion.Referencia)}") +
-                (peticion.ImporteDescontado.HasValue ? $", descontado {ReglasCupon.Euros(peticion.ImporteDescontado.Value)} €" : "") + "</li>");
+            if (peticion.Pedido <= 0)
+            {
+                // NestoAPI#694: desde el módulo de la tienda, el pedido todavía no ha entrado en Nesto
+                cuerpo.Append($"<li>Pedido de la tienda: referencia {Html(peticion.Referencia)} (todavía no ha entrado en Nesto)" +
+                    (peticion.ImporteDescontado.HasValue ? $", descontado {ReglasCupon.Euros(peticion.ImporteDescontado.Value)} €" : "") + "</li>");
+            }
+            else
+            {
+                cuerpo.Append($"<li>Pedido de la tienda: {Html(empresa)}/{peticion.Pedido}" +
+                    (string.IsNullOrWhiteSpace(clientePedido) ? " (sin la línea del cupón)" : $", cliente {Html(clientePedido)}") +
+                    (string.IsNullOrWhiteSpace(peticion.Referencia) ? "" : $", referencia {Html(peticion.Referencia)}") +
+                    (peticion.ImporteDescontado.HasValue ? $", descontado {ReglasCupon.Euros(peticion.ImporteDescontado.Value)} €" : "") + "</li>");
+            }
             if (cupon.UsadoEnPedido.HasValue && cupon.UsadoEnPedido != peticion.Pedido)
             {
                 cuerpo.Append($"<li>Donde ya se había usado: pedido {cupon.UsadoEnPedido}" +
