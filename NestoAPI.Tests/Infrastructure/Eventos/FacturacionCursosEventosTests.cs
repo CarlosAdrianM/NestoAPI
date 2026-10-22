@@ -713,6 +713,136 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             Assert.IsTrue(relanzado);
         }
 
+        // ---------------- NestoAPI#691: cursos de la plantilla (pedido ya creado, se factura el día del evento) ----------------
+
+        private const int PEDIDO_PLANTILLA = 930700;
+
+        /// <summary>Lo que deja la plantilla: inscripción con su pedido CV ligado en EventosInscripcionesCurso (PendienteEvento).</summary>
+        private EventoInscripcion CursoDePlantilla(EstadoInscripcionEvento estado)
+        {
+            EventoInscripcion i = Inscripcion(estado, "Tarjeta", estado == EstadoInscripcionEvento.Reservada ? (decimal?)null : 50, pagoTpv: 555,
+                usuarioPago: "NestoAPI");
+            repositorio.Filas[i.Id] = new FacturacionCursoInscripcion
+            {
+                InscripcionId = i.Id,
+                EmpresaPedido = "1",
+                Pedido = PEDIDO_PLANTILLA,
+                Estado = EstadosFacturacionCurso.PENDIENTE_EVENTO
+            };
+            return i;
+        }
+
+        private ServicioInscripcionesEventos ServicioPlantilla(bool encendidoPlantilla = true)
+        {
+            ServicioInscripcionesEventos servicio = Servicio();
+            servicio.CursosPlantillaEncendido = () => encendidoPlantilla;
+            return servicio;
+        }
+
+        [TestMethod]
+        public async Task Plantilla_PagoAntesDelEvento_NoSeFacturaTodaviaNiSeCreaOtroPedido()
+        {
+            EventoInscripcion i = CursoDePlantilla(EstadoInscripcionEvento.Pagada);
+
+            await Confirmador().Procesar(i, eventos.Single());
+
+            Assert.AreEqual(EstadosFacturacionCurso.PENDIENTE_EVENTO, repositorio.Filas[i.Id].Estado);
+            Assert.AreEqual("Pagada", i.Estado);
+            A.CallTo(() => creador.Crear(A<EventoInscripcion>._, A<Evento>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => facturador.Facturar(A<string>._, A<int>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Plantilla_PagoConElEventoYaPasado_SeFacturaSuPedidoSinCrearOtro()
+        {
+            eventos.Single().Fecha = HOY.Date.AddDays(-1);
+            EventoInscripcion i = CursoDePlantilla(EstadoInscripcionEvento.Pagada);
+
+            await Confirmador().Procesar(i, eventos.Single());
+
+            Assert.AreEqual(EstadosFacturacionCurso.FACTURADA, repositorio.Filas[i.Id].Estado);
+            Assert.AreEqual("Facturada", i.Estado);
+            A.CallTo(() => creador.Crear(A<EventoInscripcion>._, A<Evento>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => facturador.Facturar("1", PEDIDO_PLANTILLA, A<string>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Plantilla_RelanzarAManoAntesDelEvento_400()
+        {
+            EventoInscripcion i = CursoDePlantilla(EstadoInscripcionEvento.Pagada);
+
+            NestoBusinessException ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() =>
+                Confirmador().ConfirmarSenal(i, eventos.Single(), aMano: true));
+
+            StringAssert.Contains(ex.Message, "día del evento");
+        }
+
+        [TestMethod]
+        public async Task Plantilla_JobDelDiaDelEvento_FacturaLasPagadasYDejaLasSinPagar()
+        {
+            eventos.Single().Fecha = HOY.Date;
+            EventoInscripcion pagada = CursoDePlantilla(EstadoInscripcionEvento.Pagada);
+            EventoInscripcion sinPagar = CursoDePlantilla(EstadoInscripcionEvento.Reservada);
+
+            int facturadas = await ServicioPlantilla().FacturarCursosPlantillaDelDia();
+
+            Assert.AreEqual(1, facturadas);
+            Assert.AreEqual(EstadosFacturacionCurso.FACTURADA, repositorio.Filas[pagada.Id].Estado);
+            Assert.AreEqual(EstadosFacturacionCurso.PENDIENTE_EVENTO, repositorio.Filas[sinPagar.Id].Estado);
+            A.CallTo(() => creador.Crear(A<EventoInscripcion>._, A<Evento>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Plantilla_JobAntesDelEventoOApagado_NoFactura()
+        {
+            EventoInscripcion pagada = CursoDePlantilla(EstadoInscripcionEvento.Pagada);
+
+            Assert.AreEqual(0, await ServicioPlantilla().FacturarCursosPlantillaDelDia(), "el evento es el 30/10");
+            eventos.Single().Fecha = HOY.Date;
+            Assert.AreEqual(0, await ServicioPlantilla(encendidoPlantilla: false).FacturarCursosPlantillaDelDia(), "interruptor apagado");
+            Assert.AreEqual(EstadosFacturacionCurso.PENDIENTE_EVENTO, repositorio.Filas[pagada.Id].Estado);
+        }
+
+        [TestMethod]
+        public async Task Plantilla_AlGuardarElPedidoPagadoConElEventoPasado_SeFactura()
+        {
+            eventos.Single().Fecha = HOY.Date.AddDays(-2);
+            EventoInscripcion pagada = CursoDePlantilla(EstadoInscripcionEvento.Pagada);
+
+            Assert.IsFalse(await ServicioPlantilla().FacturarCursoDelPedidoSinFallar(999999), "un pedido que no es de un curso: nada");
+            Assert.IsTrue(await ServicioPlantilla().FacturarCursoDelPedidoSinFallar(PEDIDO_PLANTILLA));
+
+            Assert.AreEqual(EstadosFacturacionCurso.FACTURADA, repositorio.Filas[pagada.Id].Estado);
+            A.CallTo(() => facturador.Facturar("1", PEDIDO_PLANTILLA, A<string>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Plantilla_AlGuardarSinPagar_NoSeFactura()
+        {
+            eventos.Single().Fecha = HOY.Date.AddDays(-2);
+            _ = CursoDePlantilla(EstadoInscripcionEvento.Reservada);
+
+            Assert.IsFalse(await ServicioPlantilla().FacturarCursoDelPedidoSinFallar(PEDIDO_PLANTILLA));
+            A.CallTo(() => facturador.Facturar(A<string>._, A<int>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Job_FacturaLosCursosDeLaPlantilla()
+        {
+            bool llamado = false;
+            _ = await InscripcionesEventosJobsService.Procesar(new DependenciasInscripcionesEventos
+            {
+                CaducarVencidas = () => Task.FromResult(new List<InscripcionEventoDTO>()),
+                DarPorAsistidosSinLista = () => Task.FromResult(new List<KeyValuePair<EventoDTO, List<InscripcionEventoDTO>>>()),
+                CorreosTienda = (e, a) => Task.FromResult(new List<string>()),
+                Avisar = (u, n) => Task.CompletedTask,
+                Correo = A.Fake<IServicioCorreoElectronico>(),
+                FacturarCursosPlantilla = () => { llamado = true; return Task.FromResult(1); }
+            });
+
+            Assert.IsTrue(llamado);
+        }
+
         // ---------------- Ayudantes ----------------
 
         /// <summary>EventosInscripcionesCurso en memoria (devuelve copias, como la BD).</summary>
@@ -752,6 +882,12 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
                 Task.FromResult(Filas.Values.Where(f => f.Estado == EstadosFacturacionCurso.ERROR && f.Intentos < maxIntentos).Select(f => f.InscripcionId).ToList());
 
             public Task<List<int>> FacturadasSinCupon() => Task.FromResult(new List<int>());
+
+            public Task<List<int>> PendientesDelEvento() =>
+                Task.FromResult(Filas.Values.Where(f => f.Estado == EstadosFacturacionCurso.PENDIENTE_EVENTO).Select(f => f.InscripcionId).ToList());
+
+            public Task<int?> InscripcionDelPedido(int pedido) =>
+                Task.FromResult(Filas.Values.Where(f => f.Pedido == pedido).Select(f => (int?)f.InscripcionId).FirstOrDefault());
 
             private static FacturacionCursoInscripcion Copia(FacturacionCursoInscripcion f) => (FacturacionCursoInscripcion)f.GetType()
                 .GetMethod("MemberwiseClone", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).Invoke(f, null);

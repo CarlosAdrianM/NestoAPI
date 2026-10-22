@@ -1057,12 +1057,14 @@
     <Compile Include="Infraestructure\Eventos\InscripcionesEventosJobsService.cs" />
     <Compile Include="Infraestructure\Eventos\PermisosEventos.cs" />
     <Compile Include="Infraestructure\Eventos\ConfirmadorSenalEvento.cs" />
+    <Compile Include="Infraestructure\Eventos\CursosPlantilla.cs" />
     <Compile Include="Infraestructure\Eventos\FacturacionCursoEvento.cs" />
     <Compile Include="Infraestructure\Eventos\ImagenesEventos.cs" />
     <Compile Include="Infraestructure\Eventos\ProductoCursoEvento.cs" />
     <Compile Include="Infraestructure\Eventos\RecordatorioEventosJobsService.cs" />
     <Compile Include="Infraestructure\Eventos\PropuestasSenalesEventos.cs" />
     <Compile Include="Infraestructure\Cupones\Cupones.cs" />
+    <Compile Include="Infraestructure\Cupones\CarritoCupones.cs" />
     <Compile Include="Infraestructure\Cupones\RepositorioCupones.cs" />
     <Compile Include="Infraestructure\Cupones\ServicioCanjeCupones.cs" />
     <Compile Include="Infraestructure\Cupones\ServicioCupones.cs" />

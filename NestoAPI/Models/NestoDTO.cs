@@ -272,6 +272,11 @@ namespace NestoAPI.Models
         public int clasificacionMasVendidos { get; set; }
         public List<StockAlmacenDTO> stocks { get; set; }
         public int StockDisponibleTodosLosAlmacenes { get; set; }
+        /// <summary>
+        /// NestoAPI#691 (Nesto#543): es un curso (grupo CUR) de algún evento futuro activo con plazas libres. Al meterlo, la
+        /// plantilla pide el evento y la modalidad (GET api/Eventos/PorProducto).
+        /// </summary>
+        public bool EsCurso { get; set; }
     }
     public class PersonaContactoDTO
     {

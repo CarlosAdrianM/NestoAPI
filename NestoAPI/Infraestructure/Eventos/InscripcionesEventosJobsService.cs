@@ -31,6 +31,8 @@ namespace NestoAPI.Infraestructure.Eventos
         public Func<Task<int>> ReintentarFacturacionCursos { get; set; }
         /// <summary>NestoAPI#613: Emitido → Activo el día del evento y Activo → Caducado a los 6 meses. Opcional.</summary>
         public Func<Task<int>> ActualizarCupones { get; set; }
+        /// <summary>NestoAPI#691: factura los cursos de la plantilla ya pagados cuyo evento es hoy (o ya pasó). Opcional.</summary>
+        public Func<Task<int>> FacturarCursosPlantilla { get; set; }
     }
 
     /// <summary>
@@ -67,7 +69,8 @@ namespace NestoAPI.Infraestructure.Eventos
                         Avisar = (usuario, notificacion) => AvisoCobroNestoPago.Avisar(usuario, notificacion, new ServicioNotificacionesPush()),
                         Correo = new ServicioCorreoElectronico(),
                         ReintentarFacturacionCursos = () => servicio.ReintentarFacturacionCursos(),
-                        ActualizarCupones = () => new Cupones.ServicioCupones(db).ActualizarEstados()
+                        ActualizarCupones = () => new Cupones.ServicioCupones(db).ActualizarEstados(),
+                        FacturarCursosPlantilla = () => servicio.FacturarCursosPlantillaDelDia()
                     }).ConfigureAwait(false);
                 }
             }
@@ -136,6 +139,18 @@ namespace NestoAPI.Infraestructure.Eventos
                 catch (Exception ex)
                 {
                     ElmahHelper.Log(new Exception($"[Cursos #612] Error al relanzar la facturación de los cursos: {ex.Message}", ex));
+                }
+            }
+            // NestoAPI#691: los cursos de la plantilla pagados antes del evento se facturan el día del evento (detrás de su interruptor)
+            if (deps.FacturarCursosPlantilla != null)
+            {
+                try
+                {
+                    _ = await deps.FacturarCursosPlantilla().ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    ElmahHelper.Log(new Exception($"[Cursos #691] Error al facturar los cursos de la plantilla del día: {ex.Message}", ex));
                 }
             }
             return (caducadas.Count, sinLista.Count);

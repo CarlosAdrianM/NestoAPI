@@ -699,6 +699,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         {
             return lineas
                 .Where(l => !l.EsChequeRegalo && !l.EsCupon)
+                // NestoAPI#691: los cursos de la plantilla van en un pedido aparte: no suman para los portes del de productos
+                .Where(l => !Eventos.ReglasCursosPlantilla.EsLineaConEvento(l))
                 .Where(l => l.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO ||
                            (l.tipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE &&
                             l.Producto != null &&

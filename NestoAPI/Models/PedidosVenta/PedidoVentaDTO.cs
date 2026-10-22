@@ -90,6 +90,20 @@ namespace NestoAPI.Models.PedidosVenta
         /// </summary>
         public Guid? IdSesionSugerencias { get; set; }
 
+        /// <summary>
+        /// NestoAPI#691 (Nesto#543): solo en la respuesta del POST. Los pedidos que la API ha creado aparte al guardar: cada curso
+        /// va en su propio pedido (serie CV, prepago), con Motivo «Cursos». Null si no hay ninguno.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty(NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public List<Infraestructure.Eventos.PedidoAdicionalDTO> PedidosAdicionales { get; set; }
+
+        /// <summary>
+        /// NestoAPI#691: solo en la respuesta del POST. Los cursos que NO se han podido crear después de crear el pedido (y por qué),
+        /// para que el vendedor inscriba a la clienta desde el evento. Null si no ha fallado ninguno.
+        /// </summary>
+        [Newtonsoft.Json.JsonProperty(NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public List<string> AvisosCursos { get; set; }
+
         public virtual ICollection<PrepagoDTO> Prepagos { get; set; }
         public virtual ICollection<VendedorGrupoProductoDTO> VendedoresGrupoProducto { get; set; }
         public virtual ICollection<EfectoPedidoVentaDTO> Efectos { get; set; }

@@ -311,6 +311,26 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         }
 
         [TestMethod]
+        public async Task Inscribir_ClienteDeLaTiendaSinVerPrecios_EfectivoSinEnlace_ReservadaConPlazoYSinCobro()
+        {
+            // TNV#82 (commit 74c2be7): con «Pedidos sin ver precios» la plaza se paga en la tienda: Efectivo, sin enlace ni correo
+            var servicio = new ServicioInscripcionesEventos(db, () => HOY, () => pagos, AlmacenDe, procesador,
+                liberarReservasEncendido: () => true);
+
+            InscripcionEventoDTO dto = await servicio.Inscribir(EVENTO_REINA,
+                new InscribirEventoDTO { Cliente = "15191", FormaPago = "Efectivo", GenerarEnlacePago = false }, ClienteTienda("15191"));
+
+            Assert.AreEqual(OrigenInscripcionEvento.TNV, dto.Origen);
+            Assert.AreEqual(EstadoInscripcionEvento.Reservada, dto.Estado);
+            Assert.AreEqual("Efectivo", dto.FormaPago);
+            Assert.IsNull(dto.UrlPago);
+            Assert.IsNull(dto.PagoTPVId);
+            A.CallTo(() => pagos.IniciarPago(A<SolicitudPagoTPV>._, A<string>._)).MustNotHaveHappened();
+            // El plazo de pago del evento (liberación automática encendida): 30/10 − 7 días
+            Assert.AreEqual(new DateTime(2026, 10, 23), dto.FechaLimitePago);
+        }
+
+        [TestMethod]
         public async Task Inscribir_ClienteDeLaTienda_AOtro_403()
         {
             var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().Inscribir(EVENTO_REINA,

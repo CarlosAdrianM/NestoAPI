@@ -530,6 +530,8 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest("Falta el pedido.");
             }
+            // NestoAPI#691: los cursos van en un pedido aparte y no cuentan para el de productos
+            _ = Infraestructure.Eventos.ReglasCursosPlantilla.QuitarLineasCurso(pedido);
             return Ok(SugerenciaModoServicio(pedido));
         }
 
@@ -568,6 +570,8 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest("Falta el pedido.");
             }
+            // NestoAPI#691: los cursos van en un pedido aparte y no cuentan para el de productos
+            _ = Infraestructure.Eventos.ReglasCursosPlantilla.QuitarLineasCurso(pedido);
             byte? modoAlmacenado = pedido.numero != 0
                 ? db.CabPedidoVtas.Where(c => c.Empresa == pedido.empresa && c.Número == pedido.numero).Select(c => c.ModoFacturacion).FirstOrDefault()
                 : null;
@@ -590,6 +594,8 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest("Falta el pedido.");
             }
+            // NestoAPI#691: los cursos van en un pedido aparte y no cuentan para el de productos
+            _ = Infraestructure.Eventos.ReglasCursosPlantilla.QuitarLineasCurso(pedido);
             var guardado = pedido.numero != 0
                 ? db.CabPedidoVtas.Where(c => c.Empresa == pedido.empresa && c.Número == pedido.numero)
                     .Select(c => new { c.ModoServicio, c.ServirJunto, c.ModoFacturacion, c.MantenerJunto, c.NotaEntrega })
@@ -719,6 +725,8 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest("Falta el pedido.");
             }
+            // NestoAPI#691: los cursos van en un pedido aparte y no cuentan para el de productos
+            _ = Infraestructure.Eventos.ReglasCursosPlantilla.QuitarLineasCurso(pedido);
             // NestoAPI#517 (23/09/26: este endpoint tumbó RDS2016). Tres defensas:
             //   1. Interruptor en ParámetrosUsuario ((defecto) / OfertasSugeridasActivas = "0" lo apaga sin
             //      publicar; se relee cada minuto). Apagado = lista vacía, que los clientes ya tratan como
@@ -845,6 +853,8 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest("Falta el pedido.");
             }
+            // NestoAPI#691: los cursos van en un pedido aparte y no cuentan para el de productos
+            _ = Infraestructure.Eventos.ReglasCursosPlantilla.QuitarLineasCurso(pedido);
             return Ok(await ServicioFechaEntregaAgencia.CalcularPlantilla(pedido).ConfigureAwait(false));
         }
 
@@ -977,6 +987,13 @@ namespace NestoAPI.Controllers
             await ServicioCanje.NormalizarLineas(pedido).ConfigureAwait(true);
             // NestoAPI#613: la línea del cupón (CodigoCupon) la pone el servidor: producto, −1, importe / (1 + IVA + RE del cliente), sin descuentos.
             await ServicioCupones.NormalizarLineas(pedido).ConfigureAwait(true);
+
+            // NestoAPI#691: un curso nuevo (con evento) va siempre en un pedido nuevo (CV, prepago): no se añade a uno que existe
+            string cursoEnPedidoExistente = Infraestructure.Eventos.ReglasCursosPlantilla.MotivoCursoEnPedidoExistente(pedido);
+            if (cursoEnPedidoExistente != null)
+            {
+                return BadRequest(cursoEnPedidoExistente);
+            }
 
             // NestoAPI#449: descuentos fuera de 0-100 % con mensaje claro, no con el CHECK de SQL
             string fueraDeRango = ValidarRangosLineas(pedido);
@@ -2024,6 +2041,13 @@ namespace NestoAPI.Controllers
             gestor.Avisos.AddRange(avisosCorreoModificacion);
             await gestor.EnviarCorreo("Modificación");
 
+            // NestoAPI#691: si es el pedido de un curso de la plantilla, ya pagado y con el evento ya llegado, se factura (detrás de
+            // Eventos:FacturarCursosPlantilla). Nunca lanza: el pedido ya está guardado.
+            if (FacturarCursoDelPedido != null)
+            {
+                _ = await FacturarCursoDelPedido(pedido.numero).ConfigureAwait(true);
+            }
+
             if (avisos.Count > 0)
             {
                 return Ok(new RespuestaModificacionPedidoDTO { Avisos = avisos });
@@ -2074,7 +2098,33 @@ namespace NestoAPI.Controllers
             pedido.plazosPago = empresa.PlazosPagoDefecto;
         }
 
+        /// <summary>
+        /// NestoAPI#691: factura el curso del pedido si es uno de la plantilla, está pagado y el evento ha llegado (nunca lanza).
+        /// Sustituible en los tests. Con el interruptor apagado no construye nada.
+        /// </summary>
+        internal Func<int, Task<bool>> FacturarCursoDelPedido
+        {
+            get => facturarCursoDelPedido ?? (numero => Infraestructure.Eventos.InterruptoresEventos.FacturarCursosPlantilla
+                ? new Infraestructure.Eventos.ServicioInscripcionesEventos(db).FacturarCursoDelPedidoSinFallar(numero)
+                : Task.FromResult(false));
+            set => facturarCursoDelPedido = value;
+        }
+        private Func<int, Task<bool>> facturarCursoDelPedido;
+
+        // NestoAPI#691: los cursos de la plantilla (comprobar, inscribir, crear su pedido CV). Para tests.
+        private Infraestructure.Eventos.IServicioCursosPlantilla servicioCursosPlantilla;
+        internal Infraestructure.Eventos.IServicioCursosPlantilla ServicioCursosPlantilla
+        {
+            get => servicioCursosPlantilla ?? (servicioCursosPlantilla = new Infraestructure.Eventos.ServicioCursosPlantilla(db));
+            set => servicioCursosPlantilla = value;
+        }
+
         // POST: api/PedidosVenta
+        /// <summary>
+        /// Crea el pedido. NestoAPI#691: si lleva cursos de la plantilla (líneas con EventoId), los SEPARA: los productos van a
+        /// este pedido (NV) y cada curso a su propio pedido (CV, prepago), con su inscripción. La respuesta es la de siempre
+        /// (Location y cuerpo del pedido de productos o, si solo hay cursos, del primero) más PedidosAdicionales.
+        /// </summary>
         [HttpPost]
         [ResponseType(typeof(PedidoVentaDTO))]
         public async Task<IHttpActionResult> PostPedidoVenta(PedidoVentaDTO pedido)
@@ -2083,7 +2133,35 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest(ModelState);
             }
+            if (pedido?.Lineas == null || ValidarDatosObligatoriosPedido(pedido) != null)
+            {
+                // Lo que falta se dice antes de mirar nada en la base de datos (NestoAPI#434)
+                return await CrearPedidoVenta(pedido).ConfigureAwait(true);
+            }
 
+            Infraestructure.Eventos.PreparacionCursos cursos = await ServicioCursosPlantilla.Preparar(pedido).ConfigureAwait(true);
+            if (cursos.Error != null)
+            {
+                return BadRequest(cursos.Error);
+            }
+            if (!cursos.HayCursos)
+            {
+                return await CrearPedidoVenta(pedido).ConfigureAwait(true);
+            }
+
+            IPrincipal usuario = PrincipalParaValidacion();
+            Infraestructure.Eventos.ResultadoPedidoConCursos resultado = await Infraestructure.Eventos.OrquestadorPedidoConCursos.Crear(
+                pedido, cursos, CrearPedidoVenta,
+                curso => ServicioCursosPlantilla.CrearPedidoCurso(pedido, cursos.Ficha, curso, usuario)).ConfigureAwait(true);
+            if (resultado.NoCreado != null)
+            {
+                return resultado.NoCreado;
+            }
+            return CreatedAtRoute("DefaultApi", new { id = resultado.Respuesta.numero }, resultado.Respuesta);
+        }
+
+        private async Task<IHttpActionResult> CrearPedidoVenta(PedidoVentaDTO pedido)
+        {
             // NestoAPI#434: los datos que el resto del método da por hechos se comprueban AQUÍ,
             // antes de tocar nada. Sin esto, un pedido incompleto no daba un error entendible sino
             // una NullReferenceException opaca (500) a mitad de la creación.
@@ -2727,6 +2805,8 @@ namespace NestoAPI.Controllers
         public async Task<RespuestaAgencia> SePuedeServirPorAgencia(PedidoVentaDTO pedido)
         {
             IGestorAgencias gestor = new GestorAgenciasGlovo();
+            // NestoAPI#691: los cursos van en un pedido aparte (no se envían)
+            _ = Infraestructure.Eventos.ReglasCursosPlantilla.QuitarLineasCurso(pedido);
 
             return await gestor.SePuedeServirPedido(pedido, new ServicioAgencias(), new GestorStocks());
         }
@@ -2742,6 +2822,11 @@ namespace NestoAPI.Controllers
             if (parametroStringIntInt == null && parametroStringIntPedido == null)
             {
                 throw new Exception("No se han pasado parametros");
+            }
+            // NestoAPI#691: un curso va siempre en un pedido nuevo (CV, prepago): no se amplía un pedido con él
+            if (parametroStringIntPedido?.PedidoAmpliacion?.Lineas?.Any(Infraestructure.Eventos.ReglasCursosPlantilla.EsLineaConEvento) == true)
+            {
+                throw new NestoBusinessException(Infraestructure.Eventos.ReglasCursosPlantilla.MENSAJE_CURSO_EN_PEDIDO_EXISTENTE);
             }
 
             PedidoVentaDTO pedidoUnido = parametroStringIntPedido == null || parametroStringIntPedido.PedidoAmpliacion == null

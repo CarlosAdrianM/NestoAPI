@@ -419,6 +419,32 @@ namespace NestoAPI.Infraestructure
         /// </summary>
         public static RespuestaValidacion EsPedidoValido(PedidoVentaDTO pedido, IServicioPrecios servicio)
         {
+            // NestoAPI#691: la línea de un curso de la plantilla (con evento) vale el importe de su modalidad, sin descuentos: la fija
+            // la API y los validadores de precio no la miran (se validan las demás y se devuelve la línea a su sitio).
+            List<LineaPedidoVentaDTO> cursos = pedido?.Lineas?.Where(Eventos.ReglasCursosPlantilla.EsLineaConEvento).ToList();
+            if (cursos == null || !cursos.Any())
+            {
+                return EsPedidoValidoSinCursos(pedido, servicio);
+            }
+            foreach (LineaPedidoVentaDTO curso in cursos)
+            {
+                _ = pedido.Lineas.Remove(curso);
+            }
+            try
+            {
+                return EsPedidoValidoSinCursos(pedido, servicio);
+            }
+            finally
+            {
+                foreach (LineaPedidoVentaDTO curso in cursos)
+                {
+                    pedido.Lineas.Add(curso);
+                }
+            }
+        }
+
+        private static RespuestaValidacion EsPedidoValidoSinCursos(PedidoVentaDTO pedido, IServicioPrecios servicio)
+        {
             RespuestaValidacion respuesta = new RespuestaValidacion
             {
                 ValidacionSuperada = true
