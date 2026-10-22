@@ -87,6 +87,31 @@ namespace NestoAPI.Controllers
             return Ok(await servicio.ModificarEvento(id, evento, UsuarioAuditoriaHelper.Resolver(User, null)).ConfigureAwait(false));
         }
 
+        // POST api/Eventos/5/ProductoCurso   { Modalidad: "Reembolsable" | "NoReembolsable" }
+        /// <summary>
+        /// Carlos (22/10/26, Nesto#517): da de alta, si no existe, la referencia del curso del evento para esa modalidad
+        /// (EVENTO00005 la reembolsable, EVENTO00005NR la no reembolsable) copiando la ficha de un curso existente (90077: grupo
+        /// CUR, ficticio, IVA del curso), con el título del evento y el importe de esa señal, y la liga al evento
+        /// (Eventos.ProductoCurso). Idempotente. Los mismos que pueden crear y modificar el evento. Devuelve
+        /// { Producto, Nombre, Creado }.
+        /// </summary>
+        [HttpPost]
+        [Route("{id:int}/ProductoCurso")]
+        [ResponseType(typeof(ProductoCursoDTO))]
+        public async Task<IHttpActionResult> PostProductoCurso(int id, [FromBody] PeticionProductoCursoDTO peticion)
+        {
+            string almacenEvento = await servicio.AlmacenDelEvento(id).ConfigureAwait(false);
+            if (almacenEvento == null)
+            {
+                return NotFound();
+            }
+            if (!PuedeMantener(null, almacenEvento))
+            {
+                return Prohibido(PermisosEventos.MENSAJE_SIN_PERMISO_EVENTOS);
+            }
+            return Ok(await servicio.CrearProductoCurso(id, peticion, UsuarioAuditoriaHelper.Resolver(User, null)).ConfigureAwait(false));
+        }
+
         // ---------------- NestoAPI#690: imagen del evento ----------------
 
         // POST api/Eventos/5/Imagen   multipart/form-data, la imagen en el campo «fichero»

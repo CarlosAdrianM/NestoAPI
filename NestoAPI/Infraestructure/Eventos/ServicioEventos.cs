@@ -173,6 +173,11 @@ namespace NestoAPI.Infraestructure.Eventos
         Task<bool> BorrarImagen(int id);
         /// <summary>NestoAPI#690: la imagen (con el contenido), o null si no tiene.</summary>
         Task<ImagenEvento> LeerImagen(int id);
+        /// <summary>
+        /// Carlos (22/10/26, Nesto#517): da de alta (si no existe) la referencia del curso del evento para esa modalidad
+        /// (EVENTO00123 / EVENTO00123NR) y la liga al evento. Idempotente.
+        /// </summary>
+        Task<ProductoCursoDTO> CrearProductoCurso(int id, PeticionProductoCursoDTO peticion, string usuario);
     }
 
     /// <summary>
@@ -213,6 +218,7 @@ namespace NestoAPI.Infraestructure.Eventos
         private readonly IRepositorioCupones cupones;
         private readonly Func<Func<Task>, Task> enTransaccion;
         private readonly IRepositorioImagenesEventos imagenes;
+        private readonly IRepositorioProductoCurso productosCurso;
 
         public ServicioEventos(NVEntities db) : this(db, () => DateTime.Now, imagenes: new RepositorioImagenesEventos(db))
         {
@@ -222,9 +228,11 @@ namespace NestoAPI.Infraestructure.Eventos
         /// <param name="imagenes">NestoAPI#690: las imágenes de los eventos. Null: los eventos salen sin imagen y no se pueden subir.</param>
         internal ServicioEventos(NVEntities db, Func<DateTime> reloj, Func<string, string, string> almacenDelUsuario = null,
             IRepositorioFacturacionCursos facturacionCursos = null, IRepositorioCupones cupones = null,
-            Func<Func<Task>, Task> enTransaccion = null, IRepositorioImagenesEventos imagenes = null)
+            Func<Func<Task>, Task> enTransaccion = null, IRepositorioImagenesEventos imagenes = null,
+            IRepositorioProductoCurso productosCurso = null)
         {
             this.imagenes = imagenes;
+            this.productosCurso = productosCurso ?? new RepositorioProductoCurso(db);
             this.db = db;
             this.reloj = reloj;
             this.almacenDelUsuario = almacenDelUsuario
@@ -489,10 +497,17 @@ namespace NestoAPI.Infraestructure.Eventos
                     throw new NestoBusinessException($"La referencia del curso no puede tener más de {LONGITUD_PRODUCTO} caracteres.");
                 }
                 string empresa = EmpresaOPorDefecto(evento.Empresa);
-                bool existe = await db.Productos.AnyAsync(p => p.Empresa == empresa && p.Número == producto).ConfigureAwait(false);
-                if (!existe)
+                var ficha = await db.Productos.Where(p => p.Empresa == empresa && p.Número == producto)
+                    .Select(p => new { p.Grupo }).FirstOrDefaultAsync().ConfigureAwait(false);
+                if (ficha == null)
                 {
                     throw new NestoBusinessException($"No existe el producto {producto}: dé de alta antes la referencia del curso.");
+                }
+                // Carlos (22/10/26): un producto forzado puede ser cualquier curso que exista (grupo CUR), compartido por varios eventos
+                if (!string.Equals(ficha.Grupo?.Trim(), Constantes.Productos.GRUPO_CURSOS, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new NestoBusinessException($"El producto {producto} no es un curso (grupo {Constantes.Productos.GRUPO_CURSOS}): " +
+                        "elija la referencia de un curso o cree una para este evento con «Producto del curso».");
                 }
             }
         }
@@ -559,6 +574,73 @@ namespace NestoAPI.Infraestructure.Eventos
             }
             destino.Usuario = UsuarioAuditoriaHelper.ParaAuditoria(usuario);
             destino.FechaModificacion = reloj();
+        }
+
+        // ---------------- Carlos (22/10/26, Nesto#517): producto del curso ----------------
+
+        public async Task<ProductoCursoDTO> CrearProductoCurso(int id, PeticionProductoCursoDTO peticion, string usuario)
+        {
+            Evento evento = await db.Eventos.SingleOrDefaultAsync(e => e.Id == id).ConfigureAwait(false)
+                ?? throw NoEncontrado($"No existe el evento {id}.");
+            ModalidadInscripcionEvento modalidad = ReglasModalidadEvento.Interpretar(peticion?.Modalidad)
+                ?? throw new NestoBusinessException("Indique la modalidad: Reembolsable o NoReembolsable.");
+            if (modalidad == ModalidadInscripcionEvento.Gratuita)
+            {
+                throw new NestoBusinessException("Un evento gratuito no se factura: no necesita producto.");
+            }
+            decimal pvp = ReglasModalidadEvento.Importe(evento, modalidad);
+            if (pvp <= 0)
+            {
+                throw new NestoBusinessException($"«{evento.Titulo?.Trim()}» no tiene señal {ReglasModalidadEvento.Texto(modalidad).ToLowerInvariant()}: " +
+                    "póngale antes el importe.");
+            }
+            string empresa = EmpresaOPorDefecto(evento.Empresa);
+            string producto = ReglasProductoCurso.Referencia(evento.Id, modalidad);
+            string usuarioAuditoria = UsuarioAuditoriaHelper.ParaAuditoria(usuario);
+            string nombre = await productosCurso.LeerNombre(empresa, producto).ConfigureAwait(false);
+            bool creado = false;
+            if (nombre == null)
+            {
+                string plantilla = ReglasProductoCurso.Plantilla;
+                nombre = ReglasProductoCurso.Nombre(evento);
+                string comentarios = $"Curso del evento {evento.Id} ({ReglasModalidadEvento.Texto(modalidad).ToLowerInvariant()}), " +
+                    $"del {evento.Fecha:dd/MM/yyyy}. Copia de la ficha de {plantilla}.";
+                int filas = await productosCurso.CrearDesdePlantilla(empresa, producto, plantilla, nombre, pvp, comentarios, usuarioAuditoria)
+                    .ConfigureAwait(false);
+                if (filas == 0)
+                {
+                    // O no está la plantilla, o alguien la acaba de crear a la vez
+                    nombre = await productosCurso.LeerNombre(empresa, producto).ConfigureAwait(false)
+                        ?? throw new NestoBusinessException($"No se ha podido crear {producto}: no existe el curso modelo {plantilla} en la empresa {empresa}.");
+                }
+                else
+                {
+                    creado = true;
+                    // La factura del curso puede traspasarse a la empresa espejo: allí también, si está la plantilla
+                    string espejo = Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO;
+                    if (espejo != empresa)
+                    {
+                        try
+                        {
+                            _ = await productosCurso.CrearDesdePlantilla(espejo, producto, plantilla, nombre, pvp, comentarios, usuarioAuditoria).ConfigureAwait(false);
+                        }
+                        catch (Exception ex)
+                        {
+                            ElmahHelper.Log(new Exception($"[Producto del curso] {producto} está creado en la empresa {empresa}, pero no en la {espejo}: {ex.Message}", ex));
+                        }
+                    }
+                }
+            }
+
+            string queda = ReglasProductoCurso.ProductoDelEvento(evento, producto);
+            if (!string.Equals(evento.ProductoCurso?.Trim(), queda, StringComparison.Ordinal))
+            {
+                evento.ProductoCurso = queda;
+                evento.Usuario = usuarioAuditoria;
+                evento.FechaModificacion = reloj();
+                await db.SaveChangesAsync().ConfigureAwait(false);
+            }
+            return new ProductoCursoDTO { Producto = producto, Nombre = nombre?.Trim(), Creado = creado };
         }
 
         internal static EventoDTO ADTO(Evento e, int plazasOcupadas) => new EventoDTO

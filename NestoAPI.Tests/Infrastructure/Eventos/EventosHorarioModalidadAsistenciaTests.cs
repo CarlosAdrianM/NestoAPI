@@ -85,7 +85,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             A.CallTo(() => db.EventosSenales).Returns(Crear(new List<EventoSenal>()));
             A.CallTo(() => db.Clientes).Returns(Crear(clientes));
             A.CallTo(() => db.PagosTPV).Returns(Crear(new List<PagoTPV>()));
-            A.CallTo(() => db.Productos).Returns(Crear(new List<Producto> { new Producto { Empresa = "1", Número = "CURSO01" } }));
+            A.CallTo(() => db.Productos).Returns(Crear(new List<Producto> { new Producto { Empresa = "1", Número = "CURSO01", Grupo = "CUR" } }));
 
             pagos = A.Fake<IServicioPagos>();
             A.CallTo(() => pagos.IniciarPago(A<SolicitudPagoTPV>._, A<string>._)).ReturnsLazily((SolicitudPagoTPV s, string u) =>

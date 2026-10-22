@@ -64,7 +64,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             A.CallTo(() => db.EventosInscripciones).Returns(Crear(inscripciones));
             rectificaciones = new List<LinFacturaVtaRectificacion>();
             A.CallTo(() => db.LinFacturaVtaRectificaciones).Returns(Crear(rectificaciones));
-            A.CallTo(() => db.Productos).Returns(Crear(new List<Producto> { new Producto { Empresa = "1", Número = "CURSO01" } }));
+            A.CallTo(() => db.Productos).Returns(Crear(new List<Producto> { new Producto { Empresa = "1", Número = "CURSO01", Grupo = "CUR" } }));
         }
 
         private List<EventoInscripcion> inscripciones;

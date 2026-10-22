@@ -200,6 +200,16 @@ WHERE InscripcionId = @p0 AND Pedido IS NULL";
             // las dos tiendas). Sin tienda válida no se crea el pedido: nunca ALG.
             string almacen = ReglasFacturacionCurso.AlmacenDelCurso(evento);
             string usuarioPedido = Truncar(usuario, 30);
+            // Carlos (22/10/26): con referencias propias del evento, la de su modalidad (EVENTO00123NR para la no reembolsable)
+            ModalidadInscripcionEvento modalidad = ReglasModalidadEvento.DeInscripcion(inscripcion);
+            string productoCurso = evento.ProductoCurso.Trim();
+            if (ReglasProductoCurso.EsDelEvento(productoCurso, evento.Id) && modalidad != ModalidadInscripcionEvento.Gratuita)
+            {
+                string propia = ReglasProductoCurso.Referencia(evento.Id, modalidad);
+                bool existe = propia == productoCurso
+                    || await db.Productos.AnyAsync(p => p.Empresa == empresa && p.Número == propia).ConfigureAwait(false);
+                productoCurso = ReglasProductoCurso.ParaFacturar(evento, modalidad, _ => existe);
+            }
             int numero = db.TomarSiguienteNumeroPedido();
 
             var cabecera = new CabPedidoVta
@@ -231,7 +241,7 @@ WHERE InscripcionId = @p0 AND Pedido IS NULL";
             LinPedidoVta linea = gestor.CrearLineaVta(new LineaPedidoVentaDTO
             {
                 tipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
-                Producto = evento.ProductoCurso.Trim(),
+                Producto = productoCurso,
                 Cantidad = 1,
                 PrecioUnitario = ReglasModalidadEvento.ImporteDe(inscripcion, evento), // NestoAPI#690: el de su modalidad
                 AplicarDescuento = false,
