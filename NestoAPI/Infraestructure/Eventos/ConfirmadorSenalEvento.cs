@@ -49,6 +49,7 @@ namespace NestoAPI.Infraestructure.Eventos
 
         public static bool RecordatorioAsistencia =>
             string.Equals(ConfigurationManager.AppSettings[CLAVE_RECORDATORIO_ASISTENCIA], "true", StringComparison.OrdinalIgnoreCase);
+
         public static bool CursosDesdePrestashop =>
             string.Equals(ConfigurationManager.AppSettings[CLAVE_CURSOS_TIENDA], "true", StringComparison.OrdinalIgnoreCase);
 

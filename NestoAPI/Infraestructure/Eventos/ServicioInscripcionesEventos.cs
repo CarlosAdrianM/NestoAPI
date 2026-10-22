@@ -206,6 +206,8 @@ namespace NestoAPI.Infraestructure.Eventos
         Task<ResultadoAsistenciaEnlace> LeerAsistenciaConClave(Guid clave);
         /// <summary>NestoAPI#690: la respuesta que llega por el enlace del correo (sin usuario).</summary>
         Task<ResultadoAsistenciaEnlace> ConfirmarAsistenciaConClave(Guid clave, string respuesta);
+        /// <summary>NestoAPI#614: la compra del curso en la tienda PrestaShop paga (o crea) la inscripción del cliente.</summary>
+        Task<InscripcionEventoDTO> InscribirDesdeTienda(CursoTiendaDTO peticion, IPrincipal usuario);
     }
 
     /// <summary>
@@ -271,8 +273,6 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             public string Cliente { get; set; }
             public decimal? BaseImponible { get; set; }
         }
-        /// <summary>NestoAPI#614: la compra del curso en la tienda PrestaShop paga (o crea) la inscripción del cliente.</summary>
-        Task<InscripcionEventoDTO> InscribirDesdeTienda(CursoTiendaDTO peticion, IPrincipal usuario);
     }
 
     /// <summary>
