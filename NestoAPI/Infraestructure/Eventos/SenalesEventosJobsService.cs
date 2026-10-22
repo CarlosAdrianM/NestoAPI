@@ -135,7 +135,7 @@ namespace NestoAPI.Infraestructure.Eventos
             if (sinCompra.Any())
             {
                 sb.AppendLine($"<p>Llevan {CalculadoraEstadoSenalEvento.DIAS_SIN_COMPRA} días o más liberadas y el cliente no ha comprado: " +
-                    "decidid caso a caso si se factura como curso o se deja para otra compra. Las marcadas como <b>nueva</b> han llegado hoy.</p>");
+                    "decidan caso a caso si se factura como curso o se deja para otra compra. Las marcadas como <b>nueva</b> han llegado hoy.</p>");
                 Tabla(sb, sinCompra, true, desde, hoy);
             }
             else

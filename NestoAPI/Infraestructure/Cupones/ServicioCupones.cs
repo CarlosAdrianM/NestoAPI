@@ -222,7 +222,7 @@ namespace NestoAPI.Infraestructure.Cupones
                     if (cupon?.Estado?.Trim() == EstadosCupon.USADO)
                     {
                         ElmahHelper.Log(new Exception($"[Cupones #613] La inscripción {a.Key} está como «No asistió», pero su cupón {cupon.Codigo?.Trim()} " +
-                            $"ya está usado en el pedido {cupon.UsadoEnPedido}: no se anula. Decidid si se quita del pedido."));
+                            $"ya está usado en el pedido {cupon.UsadoEnPedido}: no se anula. Decidan si se quita del pedido."));
                     }
                 }
             }
@@ -260,7 +260,8 @@ namespace NestoAPI.Infraestructure.Cupones
 
         public async Task Emitir(EventoInscripcion inscripcion, Evento evento, FacturacionCursoInscripcion facturacion, string usuario)
         {
-            if (inscripcion == null || evento == null || evento.ImporteSenal <= 0)
+            // NestoAPI#690: solo la señal reembolsable gana el cupón (la no reembolsable y la gratuita, no)
+            if (inscripcion == null || evento == null || evento.ImporteSenal <= 0 || !ReglasModalidadEvento.EmiteCupon(inscripcion))
             {
                 return;
             }

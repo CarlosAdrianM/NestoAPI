@@ -76,7 +76,9 @@ ELSE
         internal const string SQL_FACTURADAS_SIN_CUPON = @"
 IF OBJECT_ID('dbo.EventosInscripcionesCurso') IS NOT NULL AND OBJECT_ID('dbo.Cupones') IS NOT NULL
     EXEC sp_executesql N'SELECT f.InscripcionId FROM dbo.EventosInscripcionesCurso f
-        WHERE f.Estado = ''Facturada'' AND NOT EXISTS (SELECT 1 FROM dbo.Cupones c WHERE c.EventoInscripcionId = f.InscripcionId)'
+        JOIN dbo.EventosInscripciones i ON i.Id = f.InscripcionId
+        WHERE f.Estado = ''Facturada'' AND ISNULL(i.Modalidad, ''Reembolsable'') = ''Reembolsable''
+          AND NOT EXISTS (SELECT 1 FROM dbo.Cupones c WHERE c.EventoInscripcionId = f.InscripcionId)'
 ELSE
     SELECT CAST(0 AS int) AS InscripcionId WHERE 1 = 0";
 
@@ -229,7 +231,7 @@ WHERE InscripcionId = @p0 AND Pedido IS NULL";
                 tipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
                 Producto = evento.ProductoCurso.Trim(),
                 Cantidad = 1,
-                PrecioUnitario = Math.Round(evento.ImporteSenal, 2, MidpointRounding.AwayFromZero),
+                PrecioUnitario = ReglasModalidadEvento.ImporteDe(inscripcion, evento), // NestoAPI#690: el de su modalidad
                 AplicarDescuento = false,
                 DescuentoLinea = 0,
                 DescuentoProducto = 0,

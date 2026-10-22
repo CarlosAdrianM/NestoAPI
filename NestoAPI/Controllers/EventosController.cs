@@ -1,10 +1,14 @@
 ﻿using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Eventos;
+using NestoAPI.Infraestructure.Novedades;
 using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
@@ -79,6 +83,111 @@ namespace NestoAPI.Controllers
             return Ok(await servicio.ModificarEvento(id, evento, UsuarioAuditoriaHelper.Resolver(User, null)).ConfigureAwait(false));
         }
 
+        // ---------------- NestoAPI#690: imagen del evento ----------------
+
+        // POST api/Eventos/5/Imagen   multipart/form-data, la imagen en el campo «fichero»
+        /// <summary>
+        /// NestoAPI#690: pone (o sustituye) la imagen del evento, para las campañas. PNG, JPEG, GIF o WebP hasta 10 MB (las
+        /// reglas de los adjuntos de Novedades, #616, sin PDF). La tienda del evento, Tienda online y Dirección. Devuelve el
+        /// evento con su ImagenUrl nueva.
+        /// </summary>
+        [HttpPost]
+        [Route("{id:int}/Imagen")]
+        [ResponseType(typeof(EventoDTO))]
+        public async Task<IHttpActionResult> PostImagen(int id)
+        {
+            string almacenEvento = await servicio.AlmacenDelEvento(id).ConfigureAwait(false);
+            if (almacenEvento == null)
+            {
+                return NotFound();
+            }
+            if (!PermisosEventos.PuedeSubirImagen(User, servicio.AlmacenDelUsuario(User, null), almacenEvento))
+            {
+                return Prohibido(PermisosEventos.MENSAJE_SIN_PERMISO_IMAGEN);
+            }
+            if (Request.Content == null || !Request.Content.IsMimeMultipartContent())
+            {
+                return Content(HttpStatusCode.UnsupportedMediaType, new HttpError(
+                    $"Envíe la imagen como multipart/form-data en el campo «{ReglasAdjuntosNovedades.CAMPO_FICHERO}»."));
+            }
+            MultipartMemoryStreamProvider partes = await Request.Content.ReadAsMultipartAsync(new MultipartMemoryStreamProvider()).ConfigureAwait(false);
+            var ficheros = new List<(string Nombre, string Tipo, byte[] Contenido)>();
+            foreach (HttpContent parte in partes.Contents)
+            {
+                ContentDispositionHeaderValue disposicion = parte.Headers.ContentDisposition;
+                string campo = disposicion?.Name?.Trim('"');
+                string nombre = disposicion?.FileNameStar ?? disposicion?.FileName?.Trim('"');
+                if (!string.Equals(campo, ReglasAdjuntosNovedades.CAMPO_FICHERO, StringComparison.OrdinalIgnoreCase) && string.IsNullOrEmpty(nombre))
+                {
+                    continue; // otros campos del formulario
+                }
+                byte[] contenido = await parte.ReadAsByteArrayAsync().ConfigureAwait(false);
+                ficheros.Add((nombre, parte.Headers.ContentType?.MediaType, contenido));
+            }
+            ReglasImagenesEventos.Validacion validacion = ReglasImagenesEventos.Validar(ficheros);
+            if (validacion.Error != null)
+            {
+                return validacion.TipoNoPermitido
+                    ? Content(HttpStatusCode.UnsupportedMediaType, new HttpError(validacion.Error))
+                    : (IHttpActionResult)BadRequest(validacion.Error);
+            }
+            return Ok(await servicio.GuardarImagen(id, validacion.Imagen, UsuarioAuditoriaHelper.Resolver(User, null)).ConfigureAwait(false));
+        }
+
+        // DELETE api/Eventos/5/Imagen
+        /// <summary>NestoAPI#690: quita la imagen del evento (204; 404 si no tenía). Los mismos que pueden ponerla.</summary>
+        [HttpDelete]
+        [Route("{id:int}/Imagen")]
+        public async Task<IHttpActionResult> DeleteImagen(int id)
+        {
+            string almacenEvento = await servicio.AlmacenDelEvento(id).ConfigureAwait(false);
+            if (almacenEvento == null)
+            {
+                return NotFound();
+            }
+            if (!PermisosEventos.PuedeSubirImagen(User, servicio.AlmacenDelUsuario(User, null), almacenEvento))
+            {
+                return Prohibido(PermisosEventos.MENSAJE_SIN_PERMISO_IMAGEN);
+            }
+            return await servicio.BorrarImagen(id).ConfigureAwait(false)
+                ? (IHttpActionResult)StatusCode(HttpStatusCode.NoContent)
+                : NotFound();
+        }
+
+        // GET api/Eventos/5/Imagen?v=20261022101500
+        /// <summary>
+        /// NestoAPI#690: la imagen del evento. Anónima, porque la piden los correos y las campañas, y cacheable (pública, 7
+        /// días, con ETag: la URL cambia al sustituirla). 404 si no tiene.
+        /// </summary>
+        [HttpGet]
+        [AllowAnonymous]
+        [Route("{id:int}/Imagen")]
+        public async Task<IHttpActionResult> GetImagen(int id)
+        {
+            ImagenEvento imagen = await servicio.LeerImagen(id).ConfigureAwait(false);
+            if (imagen?.Contenido == null || imagen.Contenido.Length == 0)
+            {
+                return NotFound();
+            }
+            var etag = new EntityTagHeaderValue("\"" + imagen.Fecha.ToString("yyyyMMddHHmmssfff", System.Globalization.CultureInfo.InvariantCulture) + "\"");
+            bool sinCambios = Request?.Headers.IfNoneMatch?.Any(e => e.Tag == "*" || e.Tag == etag.Tag) == true;
+            HttpResponseMessage respuesta;
+            if (sinCambios)
+            {
+                respuesta = new HttpResponseMessage(HttpStatusCode.NotModified);
+            }
+            else
+            {
+                respuesta = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(imagen.Contenido) };
+                respuesta.Content.Headers.ContentType = new MediaTypeHeaderValue(
+                    string.IsNullOrWhiteSpace(imagen.Tipo) ? "application/octet-stream" : imagen.Tipo.Trim());
+                respuesta.Content.Headers.ContentLength = imagen.Contenido.Length;
+            }
+            respuesta.Headers.ETag = etag;
+            respuesta.Headers.CacheControl = new CacheControlHeaderValue { Public = true, MaxAge = TimeSpan.FromDays(7) };
+            return ResponseMessage(respuesta);
+        }
+
         // ---------------- NestoAPI#611: inscripciones ----------------
 
         // POST api/Eventos/5/Inscripciones   { Empresa, Cliente, Contacto?, Origen, FormaPago?, GenerarEnlacePago?, Correo? }
@@ -139,6 +248,60 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> PostAsistencia(int id, [FromBody] AsistenciaEventoDTO peticion)
         {
             return Ok(await inscripciones.PasarLista(id, peticion, User).ConfigureAwait(false));
+        }
+
+        // POST api/Eventos/Inscripciones/7/ConfirmarAsistencia   { Respuesta: "Confirma" | "NoPodraIr" }
+        /// <summary>
+        /// NestoAPI#690: «Confirmo asistencia» / «No podré ir», independiente del pago. El cliente con su token de la tienda
+        /// (solo las suyas) o la tienda del evento, Administración o Dirección. Hasta el día del evento.
+        /// </summary>
+        [HttpPost]
+        [Route("Inscripciones/{id:int}/ConfirmarAsistencia")]
+        [ResponseType(typeof(InscripcionEventoDTO))]
+        public async Task<IHttpActionResult> PostConfirmarAsistencia(int id, [FromBody] ConfirmarAsistenciaDTO peticion)
+        {
+            return Ok(await inscripciones.ConfirmarAsistencia(id, peticion, User).ConfigureAwait(false));
+        }
+
+        // GET api/Eventos/Asistencia/{clave}?respuesta=Confirma
+        /// <summary>
+        /// NestoAPI#690: el botón del correo del recordatorio. Sin usuario: el enlace lleva la clave de la inscripción, que no se
+        /// puede adivinar. Enseña el evento y un botón; NO apunta nada (los antivirus del correo abren los enlaces).
+        /// </summary>
+        [HttpGet]
+        [AllowAnonymous]
+        [Route("Asistencia/{clave:guid}")]
+        public async Task<IHttpActionResult> GetAsistenciaEnlace(Guid clave, string respuesta = null)
+        {
+            ResultadoAsistenciaEnlace resultado = await inscripciones.LeerAsistenciaConClave(clave).ConfigureAwait(false);
+            return Pagina(resultado, PaginasAsistenciaEvento.Pregunta(resultado, clave, respuesta));
+        }
+
+        // POST api/Eventos/Asistencia/{clave}   (formulario: respuesta=Confirma | NoPodraIr)
+        /// <summary>NestoAPI#690: apunta la respuesta que llega por el enlace del correo (Origen Cliente).</summary>
+        [HttpPost]
+        [AllowAnonymous]
+        [Route("Asistencia/{clave:guid}")]
+        public async Task<IHttpActionResult> PostAsistenciaEnlace(Guid clave)
+        {
+            string respuesta = null;
+            if (Request?.Content != null && Request.Content.IsFormData())
+            {
+                System.Collections.Specialized.NameValueCollection formulario = await Request.Content.ReadAsFormDataAsync().ConfigureAwait(false);
+                respuesta = formulario?["respuesta"];
+            }
+            respuesta = respuesta ?? Request?.GetQueryNameValuePairs().FirstOrDefault(p => p.Key == "respuesta").Value;
+            ResultadoAsistenciaEnlace resultado = await inscripciones.ConfirmarAsistenciaConClave(clave, respuesta).ConfigureAwait(false);
+            return Pagina(resultado, PaginasAsistenciaEvento.Resultado(resultado));
+        }
+
+        private IHttpActionResult Pagina(ResultadoAsistenciaEnlace resultado, string html)
+        {
+            var respuesta = new HttpResponseMessage(resultado.Existe ? HttpStatusCode.OK : HttpStatusCode.NotFound)
+            {
+                Content = new StringContent(html, Encoding.UTF8, "text/html")
+            };
+            return ResponseMessage(respuesta);
         }
 
         // GET api/Clientes/1/15191/Inscripciones?contacto=0
