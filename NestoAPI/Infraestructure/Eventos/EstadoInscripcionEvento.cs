@@ -138,6 +138,44 @@ namespace NestoAPI.Infraestructure.Eventos
             return limite > fechaEvento.Date ? fechaEvento.Date : limite;
         }
 
+        /// <summary>Carlos (22/10/26): Eventos.DiasPagoAntesEvento NULL = 7 días antes del evento.</summary>
+        public const int DIAS_PAGO_ANTES_EVENTO_POR_DEFECTO = 7;
+        /// <summary>Carlos (22/10/26): el aviso «su plaza sin pagar se libera el día X» sale dos días antes de vencer.</summary>
+        public const int DIAS_AVISO_ANTES_DE_VENCER = 2;
+
+        public static int DiasPagoAntesEvento(Evento evento) => evento?.DiasPagoAntesEvento ?? DIAS_PAGO_ANTES_EVENTO_POR_DEFECTO;
+
+        /// <summary>
+        /// Decisión de Carlos (22/10/26), con Eventos:LiberarReservasSinPagar encendido: el último día para pagar es la fecha del
+        /// evento menos <see cref="DiasPagoAntesEvento"/> (sustituye a los 7 días desde la inscripción). Si quien se inscribe lo
+        /// hace ya pasado ese corte (inscripciones de última hora), manda la regla de siempre (7 días, nunca después del evento):
+        /// no se le da una fecha ya vencida.
+        /// </summary>
+        public static DateTime FechaLimitePago(DateTime inscripcion, Evento evento)
+        {
+            DateTime corte = evento.Fecha.Date.AddDays(-DiasPagoAntesEvento(evento));
+            return corte >= inscripcion.Date ? corte : FechaLimitePago(inscripcion, evento.Fecha);
+        }
+
+        /// <summary>
+        /// El último día para pagar de una reserva, contando el plazo del evento aunque se inscribiera antes de que existiera
+        /// (o de que se cambiara): la guardada o el corte del evento, la que antes llegue. Null si no tiene fecha límite.
+        /// </summary>
+        public static DateTime? LimitePagoEfectivo(EventoInscripcion inscripcion, Evento evento)
+        {
+            if (inscripcion?.FechaLimitePago == null)
+            {
+                return null;
+            }
+            DateTime guardada = inscripcion.FechaLimitePago.Value.Date;
+            if (evento == null)
+            {
+                return guardada;
+            }
+            DateTime corte = evento.Fecha.Date.AddDays(-DiasPagoAntesEvento(evento));
+            return corte >= inscripcion.FechaCreacion.Date && corte < guardada ? corte : guardada;
+        }
+
         /// <summary>Caduca el día siguiente a la fecha límite (el último día todavía se puede pagar).</summary>
         public static bool EstaCaducada(DateTime? fechaLimitePago, DateTime hoy) =>
             fechaLimitePago.HasValue && fechaLimitePago.Value.Date < hoy.Date;

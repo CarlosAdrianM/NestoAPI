@@ -47,6 +47,7 @@ namespace NestoAPI.Infraestructure.Eventos
         private string horaInicio;
         private string horaFin;
         private string ponente;
+        private int? diasPagoAntesEvento;
 
         /// <summary>NestoAPI#611: ¿venía este campo en el cuerpo de la petición (aunque fuera null)?</summary>
         public bool Trae(string campo) => recibidos.Contains(campo);
@@ -93,6 +94,15 @@ namespace NestoAPI.Infraestructure.Eventos
         public List<string> Modalidades { get; set; } = new List<string>();
         /// <summary>NestoAPI#690: solo lectura. La imagen del evento (pública, para campañas); null si no tiene.</summary>
         public string ImagenUrl { get; set; }
+        /// <summary>
+        /// Carlos (22/10/26): cuántos días antes del evento vence el pago de una reserva; null = 7. Con
+        /// Eventos:LiberarReservasSinPagar, dos días antes de vencer se avisa y al vencer la plaza se libera.
+        /// </summary>
+        public int? DiasPagoAntesEvento
+        {
+            get => diasPagoAntesEvento;
+            set { diasPagoAntesEvento = value; recibidos.Add(nameof(DiasPagoAntesEvento)); }
+        }
     }
 
     /// <summary>NestoAPI#591: POST api/Eventos/{id}/Senales. El apunte a favor del extracto que es la señal del evento.</summary>
@@ -172,6 +182,8 @@ namespace NestoAPI.Infraestructure.Eventos
         public const int LONGITUD_DESCRIPCION = 2000;
         public const int LONGITUD_PRODUCTO = 15;
         public const int LONGITUD_PONENTE = 100;
+        /// <summary>El CHECK de Eventos.DiasPagoAntesEvento (Issue690).</summary>
+        public const int MAXIMO_DIAS_PAGO = 90;
 
         /// <summary>NestoAPI#612: DELETE api/Eventos/Senales/{id} de una señal que ya facturó el curso o emitió el cupón (409).</summary>
         public const string ERROR_SENAL_YA_USADA = "SENAL_EVENTO_YA_USADA";
@@ -432,6 +444,10 @@ namespace NestoAPI.Infraestructure.Eventos
             {
                 throw new NestoBusinessException($"El ponente no puede tener más de {LONGITUD_PONENTE} caracteres.");
             }
+            if (evento.DiasPagoAntesEvento.HasValue && (evento.DiasPagoAntesEvento.Value < 0 || evento.DiasPagoAntesEvento.Value > MAXIMO_DIAS_PAGO))
+            {
+                throw new NestoBusinessException($"Los días para pagar antes del evento tienen que estar entre 0 y {MAXIMO_DIAS_PAGO} (o vacío: 7).");
+            }
             // NestoAPI#611 (Carlos, 14/10/26): cada evento es de una tienda, que es quien lo mantiene. Solo se exige si viene en
             // el cuerpo: el Nesto de #591 no lo manda y tiene que poder seguir creando y modificando eventos.
             if (evento.Trae(nameof(EventoDTO.Almacen)) && !PermisosEventos.EsAlmacenDeEventos(evento.Almacen))
@@ -492,6 +508,10 @@ namespace NestoAPI.Infraestructure.Eventos
             {
                 destino.Ponente = Limpiar(origen.Ponente);
             }
+            if (origen.Trae(nameof(EventoDTO.DiasPagoAntesEvento)))
+            {
+                destino.DiasPagoAntesEvento = origen.DiasPagoAntesEvento;
+            }
             // Con lo conservado del PUT (por ejemplo, solo viene la hora de fin)
             if (destino.HoraInicio.HasValue && destino.HoraFin.HasValue && destino.HoraFin.Value <= destino.HoraInicio.Value)
             {
@@ -543,6 +563,7 @@ namespace NestoAPI.Infraestructure.Eventos
             HoraFin = ReglasModalidadEvento.EscribirHora(e.HoraFin),
             Ponente = e.Ponente?.Trim(),
             ImporteSenalNoReembolsable = e.ImporteSenalNoReembolsable,
+            DiasPagoAntesEvento = e.DiasPagoAntesEvento,
             Gratuito = ReglasModalidadEvento.EsGratuito(e),
             Modalidades = ReglasModalidadEvento.Disponibles(e).Select(m => m.ToString()).ToList()
         };

@@ -936,6 +936,143 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             Assert.AreEqual("el viernes 30 de octubre en Alcobendas", RecordatorioEventosJobsService.CuandoYDonde(eventos[1]));
         }
 
+        // ---------------- Decisión de Carlos (22/10/26): plazo de pago de las reservas ----------------
+
+        private ServicioInscripcionesEventos ServicioConPlazo(DateTime ahora, bool encendido = true) =>
+            new ServicioInscripcionesEventos(db, () => ahora, () => pagos, AlmacenDe, procesador, liberarReservasEncendido: () => encendido);
+
+        [TestMethod]
+        public void PlazoPago_FechaLimite_DiasAntesDelEvento()
+        {
+            Evento evento = eventos[2]; // 20/11
+            Assert.AreEqual(new DateTime(2026, 11, 13), ReglasInscripcionEvento.FechaLimitePago(HOY, evento), "NULL = 7 días antes");
+            evento.DiasPagoAntesEvento = 2;
+            Assert.AreEqual(new DateTime(2026, 11, 18), ReglasInscripcionEvento.FechaLimitePago(HOY, evento));
+            evento.DiasPagoAntesEvento = 7;
+            Assert.AreEqual(new DateTime(2026, 11, 20), ReglasInscripcionEvento.FechaLimitePago(new DateTime(2026, 11, 15), evento),
+                "Inscrita pasado el corte: la regla de siempre (nunca una fecha ya vencida)");
+        }
+
+        [TestMethod]
+        public void PlazoPago_LimiteEfectivo_LasDeAntesSeAdelantanAlCorteSiLlegaAntes()
+        {
+            Evento evento = eventos[2]; // 20/11
+            var reserva = new EventoInscripcion { FechaLimitePago = new DateTime(2026, 11, 4), FechaCreacion = new DateTime(2026, 10, 25) };
+            evento.DiasPagoAntesEvento = 10;
+            Assert.AreEqual(new DateTime(2026, 11, 4), ReglasInscripcionEvento.LimitePagoEfectivo(reserva, evento));
+            evento.DiasPagoAntesEvento = 20;
+            Assert.AreEqual(new DateTime(2026, 10, 31), ReglasInscripcionEvento.LimitePagoEfectivo(reserva, evento));
+            Assert.IsNull(ReglasInscripcionEvento.LimitePagoEfectivo(new EventoInscripcion(), evento), "Sin fecha límite (pagada o gratuita)");
+        }
+
+        [TestMethod]
+        public async Task PlazoPago_Inscribir_ConElInterruptorElPlazoDelEvento_SinElLosSieteDias()
+        {
+            InscripcionEventoDTO encendido = await ServicioConPlazo(HOY).Inscribir(EVENTO_SOLO_NR,
+                new InscribirEventoDTO { Empresa = "1", Cliente = "15191", Origen = "Nesto", GenerarEnlacePago = false }, VENDEDOR);
+            InscripcionEventoDTO apagado = await ServicioConPlazo(HOY, encendido: false).Inscribir(EVENTO_SOLO_NR,
+                new InscribirEventoDTO { Empresa = "1", Cliente = "20000", Origen = "Nesto", GenerarEnlacePago = false }, VENDEDOR);
+
+            Assert.AreEqual(new DateTime(2026, 11, 13), encendido.FechaLimitePago);
+            Assert.AreEqual(new DateTime(2026, 11, 4), apagado.FechaLimitePago, "Apagado, como hasta ahora");
+        }
+
+        private EventoInscripcion Reserva(int id, string cliente, DateTime limite)
+        {
+            EventoInscripcion reserva = Inscripcion(id, EVENTO_SOLO_NR, cliente, EstadoInscripcionEvento.Reservada, "NoReembolsable");
+            reserva.FechaLimitePago = limite;
+            return reserva;
+        }
+
+        [TestMethod]
+        public async Task PlazoPago_Aviso_DosDiasAntesDeVencerYUnaSolaVez()
+        {
+            _ = Reserva(7, "15191", new DateTime(2026, 11, 13));
+            EventoInscripcion avisada = Reserva(8, "20000", new DateTime(2026, 11, 13));
+            avisada.AvisoPagoEnviado = new DateTime(2026, 11, 10);
+            EventoInscripcion pagada = Inscripcion(9, EVENTO_SOLO_NR, "30000", EstadoInscripcionEvento.Pagada, "NoReembolsable");
+            pagada.FechaLimitePago = new DateTime(2026, 11, 13);
+
+            Assert.AreEqual(0, (await ServicioConPlazo(new DateTime(2026, 11, 10, 10, 0, 0)).PendientesDeAvisoPago()).Count, "Todavía no");
+            List<AvisoPagoInscripcion> avisos = await ServicioConPlazo(new DateTime(2026, 11, 11, 10, 0, 0)).PendientesDeAvisoPago();
+
+            Assert.AreEqual(7, avisos.Single().Inscripcion.Id);
+            Assert.AreEqual(new DateTime(2026, 11, 14), avisos.Single().FechaLiberacion, "Se libera el día después del último para pagar");
+        }
+
+        [TestMethod]
+        public async Task PlazoPago_Liberar_SoloLasAvisadasOtroDiaYVencidas()
+        {
+            EventoInscripcion avisada = Reserva(7, "15191", new DateTime(2026, 11, 13));
+            avisada.AvisoPagoEnviado = new DateTime(2026, 11, 11, 10, 0, 0);
+            EventoInscripcion sinAviso = Reserva(8, "20000", new DateTime(2026, 11, 13));
+            EventoInscripcion avisadaHoy = Reserva(9, "30000", new DateTime(2026, 11, 13));
+            avisadaHoy.AvisoPagoEnviado = new DateTime(2026, 11, 14, 10, 0, 0);
+
+            Assert.AreEqual(0, (await ServicioConPlazo(new DateTime(2026, 11, 13, 10, 0, 0)).LiberarReservasVencidas()).Count, "El último día aún puede pagar");
+            List<InscripcionEventoDTO> liberadas = await ServicioConPlazo(new DateTime(2026, 11, 14, 10, 0, 0)).LiberarReservasVencidas();
+
+            Assert.AreEqual(7, liberadas.Single().Id);
+            Assert.AreEqual("Caducada", avisada.Estado);
+            Assert.IsFalse(ReglasInscripcionEvento.OcupaPlaza(avisada), "La plaza queda libre");
+            Assert.AreEqual("Reservada", sinAviso.Estado, "Sin aviso no se libera por el corte (la caduca el job de las 7:55 por su fecha)");
+            Assert.AreEqual("Reservada", avisadaHoy.Estado);
+        }
+
+        [TestMethod]
+        public async Task PlazoPago_Job_AvisaDeUstedPorPushYCorreoSinRecordatorioDeAsistencia()
+        {
+            _ = Reserva(7, "15191", new DateTime(2026, 11, 13));
+            DateTime ahora = new DateTime(2026, 11, 11, 10, 0, 0);
+            IServicioNotificacionesPush push = A.Fake<IServicioNotificacionesPush>();
+            A.CallTo(() => push.EnviarACliente(A<string>._, A<string>._, A<NotificacionPushDTO>._)).Returns(Task.FromResult(1));
+            IServicioCorreoElectronico correo = A.Fake<IServicioCorreoElectronico>();
+            MailMessage enviado = null;
+            A.CallTo(() => correo.EnviarCorreoSMTP(A<MailMessage>._)).ReturnsLazily((MailMessage m) => { enviado = m; return true; });
+            var recordatorios = new List<EventoInscripcion>();
+            DependenciasRecordatorioEventos deps = Dependencias(ahora, push, correo, recordatorios, encendido: false);
+            ServicioInscripcionesEventos servicio = ServicioConPlazo(ahora);
+            deps.LiberarEncendido = () => true;
+            deps.PendientesAvisoPago = () => servicio.PendientesDeAvisoPago();
+            deps.MarcarAvisosPago = l => servicio.MarcarAvisoPagoEnviado(l);
+            deps.LiberarVencidas = () => servicio.LiberarReservasVencidas();
+
+            ResultadoRecordatorioEventos r = await RecordatorioEventosJobsService.Procesar(deps);
+
+            Assert.IsNull(r.MotivoNoSeEnvia);
+            Assert.AreEqual(1, r.AvisosPago);
+            Assert.AreEqual(0, r.Inscripciones, "El recordatorio de asistencia sigue sin llegar a las reservadas");
+            Assert.AreEqual(ahora, inscripciones.Single().AvisoPagoEnviado);
+            Assert.IsNull(inscripciones.Single().RecordatorioEnviado);
+            A.CallTo(() => push.EnviarACliente("1", "15191", A<NotificacionPushDTO>.That.Matches(n =>
+                n.Tipo == "PlazoPagoEvento" && n.Datos["fechaLiberacion"] == "2026-11-14"
+                && n.Cuerpo == "Si no está pagada, su plaza se liberará el sábado 14 de noviembre."))).MustHaveHappenedOnceExactly();
+            StringAssert.Contains(enviado.Subject, "se libera el sábado 14 de noviembre si no está pagada");
+            StringAssert.Contains(WebUtility.HtmlDecode(enviado.Body), "Si ya la ha pagado, no tenga en cuenta este mensaje.");
+        }
+
+        [TestMethod]
+        public async Task PlazoPago_EventoDTO_SeGuardaYElPutQueNoLoTraeLoConserva()
+        {
+            EventoDTO creado = await ServicioEventos().CrearEvento(new EventoDTO
+            {
+                Titulo = "Curso nuevo", Fecha = new DateTime(2026, 12, 1), Almacen = "REI", DiasPagoAntesEvento = 10
+            }, "Reina");
+            A.CallTo(() => db.Eventos.Add(A<Evento>._)).MustHaveHappened();
+            Evento guardado = Fake.GetCalls(db.Eventos).Where(c => c.Method.Name == "Add").Select(c => (Evento)c.Arguments[0]).Last();
+            Assert.AreEqual(10, guardado.DiasPagoAntesEvento);
+            Assert.AreEqual(10, creado.DiasPagoAntesEvento);
+
+            eventos[2].DiasPagoAntesEvento = 5;
+            _ = await ServicioEventos().ModificarEvento(EVENTO_SOLO_NR, new EventoDTO { Titulo = "Curso Peeling", Fecha = new DateTime(2026, 11, 20), Almacen = "REI" }, "Reina");
+            Assert.AreEqual(5, eventos[2].DiasPagoAntesEvento);
+
+            await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => ServicioEventos().CrearEvento(new EventoDTO
+            {
+                Titulo = "Curso nuevo", Fecha = new DateTime(2026, 12, 1), Almacen = "REI", DiasPagoAntesEvento = 100
+            }, "Reina"));
+        }
+
         // ---------------- Facturación y cupón por modalidad ----------------
 
         [TestMethod]

@@ -93,6 +93,19 @@ namespace NestoAPI.Infraestructure.Eventos
         public string Mensaje { get; set; }
     }
 
+    /// <summary>Carlos (22/10/26): una reserva sin pagar a la que hay que avisar de que su plaza se libera.</summary>
+    public class AvisoPagoInscripcion
+    {
+        public Evento Evento { get; set; }
+        public EventoInscripcion Inscripcion { get; set; }
+        /// <summary>El último día para pagar.</summary>
+        public DateTime FechaLimite { get; set; }
+        /// <summary>El día en que se libera la plaza si no se paga.</summary>
+        public DateTime FechaLiberacion { get; set; }
+        /// <summary>La página del enlace de pago, si lo tiene.</summary>
+        public string UrlPago { get; set; }
+    }
+
     /// <summary>NestoAPI#611: POST api/Eventos/Inscripciones/{id}/Pago (marcar pagada a mano).</summary>
     public class MarcarPagoInscripcionDTO
     {
@@ -305,6 +318,7 @@ GROUP BY RTRIM(c.[Nº Cliente])";
         private readonly Func<List<KeyValuePair<int, bool>>, string, Task> aplicarAsistenciaCupones;
         private ILectorBaseImponibleDia baseImponibleDia;
         private readonly Func<bool> cursosTiendaEncendido;
+        private readonly Func<bool> liberarReservasEncendido;
 
         /// <summary>NestoAPI#612: en producción, el enganche es el que factura el curso (detrás de su interruptor).</summary>
         public ServicioInscripcionesEventos(NVEntities db)
@@ -327,8 +341,9 @@ GROUP BY RTRIM(c.[Nº Cliente])";
         internal ServicioInscripcionesEventos(NVEntities db, Func<DateTime> reloj, Func<IServicioPagos> pagos,
             Func<string, string, string> almacenDelUsuario = null, IProcesadorInscripcionPagada procesador = null,
             IRepositorioFacturacionCursos facturacion = null, Func<List<KeyValuePair<int, bool>>, string, Task> aplicarAsistenciaCupones = null,
-            Func<bool> cursosTiendaEncendido = null)
+            Func<bool> cursosTiendaEncendido = null, Func<bool> liberarReservasEncendido = null)
         {
+            this.liberarReservasEncendido = liberarReservasEncendido ?? (() => InterruptoresEventos.LiberarReservasSinPagar);
             this.aplicarAsistenciaCupones = aplicarAsistenciaCupones;
             this.cursosTiendaEncendido = cursosTiendaEncendido ?? (() => InterruptoresEventos.CursosDesdePrestashop);
             this.db = db;
@@ -431,7 +446,10 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                 Contacto = contacto,
                 Origen = origen.ToString(),
                 Estado = (gratuita ? EstadoInscripcionEvento.Inscrita : EstadoInscripcionEvento.Reservada).ToString(),
-                FechaLimitePago = gratuita ? (DateTime?)null : ReglasInscripcionEvento.FechaLimitePago(ahora, evento.Fecha),
+                // Carlos (22/10/26): con Eventos:LiberarReservasSinPagar, el plazo del evento (DiasPagoAntesEvento)
+                FechaLimitePago = gratuita ? (DateTime?)null : liberarReservasEncendido()
+                    ? ReglasInscripcionEvento.FechaLimitePago(ahora, evento)
+                    : ReglasInscripcionEvento.FechaLimitePago(ahora, evento.Fecha),
                 FormaPago = gratuita ? null : formaPago?.ToString(),
                 Modalidad = modalidad.ToString(),
                 UsuarioCreacion = usuarioAuditoria,
@@ -1100,6 +1118,100 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                 inscripcion.RecordatorioEnviado = ahora;
             }
             await db.SaveChangesAsync().ConfigureAwait(false);
+        }
+
+        // ---------------- Decisión de Carlos (22/10/26): plazo de pago de las reservas ----------------
+
+        /// <summary>
+        /// Las reservas sin pagar a las que toca avisar hoy de que su plaza se libera: eventos activos por venir, sin aviso todavía
+        /// y con el último día para pagar (<see cref="ReglasInscripcionEvento.LimitePagoEfectivo"/>) a dos días o menos. Con la
+        /// fecha en que se liberará (el día después del límite, y nunca antes de mañana: siempre se avisa antes de liberar) y
+        /// el enlace de pago si lo tiene.
+        /// </summary>
+        internal async Task<List<AvisoPagoInscripcion>> PendientesDeAvisoPago()
+        {
+            DateTime hoy = reloj().Date;
+            List<KeyValuePair<Evento, EventoInscripcion>> reservas = await ReservasVivas(hoy).ConfigureAwait(false);
+            var avisos = new List<AvisoPagoInscripcion>();
+            foreach (KeyValuePair<Evento, EventoInscripcion> r in reservas.Where(r => r.Value.AvisoPagoEnviado == null))
+            {
+                DateTime? limite = ReglasInscripcionEvento.LimitePagoEfectivo(r.Value, r.Key);
+                if (limite == null || hoy < limite.Value.AddDays(-ReglasInscripcionEvento.DIAS_AVISO_ANTES_DE_VENCER))
+                {
+                    continue;
+                }
+                DateTime liberacion = (limite.Value < hoy ? hoy : limite.Value).AddDays(1);
+                avisos.Add(new AvisoPagoInscripcion { Evento = r.Key, Inscripcion = r.Value, FechaLimite = limite.Value, FechaLiberacion = liberacion });
+            }
+            List<int> pagos = avisos.Where(a => a.Inscripcion.PagoTPVId.HasValue).Select(a => a.Inscripcion.PagoTPVId.Value).Distinct().ToList();
+            if (pagos.Any())
+            {
+                Dictionary<int, Guid> tokens = (await db.PagosTPV.Where(p => pagos.Contains(p.Id))
+                    .Select(p => new { p.Id, p.TokenAcceso }).ToListAsync().ConfigureAwait(false))
+                    .ToDictionary(p => p.Id, p => p.TokenAcceso);
+                foreach (AvisoPagoInscripcion aviso in avisos.Where(a => a.Inscripcion.PagoTPVId.HasValue))
+                {
+                    if (tokens.TryGetValue(aviso.Inscripcion.PagoTPVId.Value, out Guid token))
+                    {
+                        aviso.UrlPago = URL_PAGINA_PAGO + token;
+                    }
+                }
+            }
+            return avisos;
+        }
+
+        /// <summary>Apunta que ya salió el aviso de pago (una sola vez por inscripción).</summary>
+        internal async Task MarcarAvisoPagoEnviado(IEnumerable<EventoInscripcion> inscripciones)
+        {
+            DateTime ahora = reloj();
+            foreach (EventoInscripcion inscripcion in inscripciones ?? Enumerable.Empty<EventoInscripcion>())
+            {
+                inscripcion.AvisoPagoEnviado = ahora;
+            }
+            await db.SaveChangesAsync().ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Pasado el último día para pagar, la reserva avisada (el aviso salió otro día) se libera: pasa a Caducada, el mismo
+        /// estado que la del plazo de siempre (no ocupa plaza y, si paga tarde, el dinero manda). Las que vencen por la fecha
+        /// guardada las sigue caducando el job de las 7:55 (<see cref="CaducarVencidas"/>), avisadas o no, como hasta ahora.
+        /// </summary>
+        internal async Task<List<InscripcionEventoDTO>> LiberarReservasVencidas()
+        {
+            DateTime hoy = reloj().Date;
+            List<KeyValuePair<Evento, EventoInscripcion>> reservas = await ReservasVivas(hoy).ConfigureAwait(false);
+            List<KeyValuePair<Evento, EventoInscripcion>> vencidas = reservas
+                .Where(r => r.Value.AvisoPagoEnviado.HasValue && r.Value.AvisoPagoEnviado.Value.Date < hoy)
+                .Where(r => ReglasInscripcionEvento.LimitePagoEfectivo(r.Value, r.Key) is DateTime limite && limite < hoy)
+                .ToList();
+            if (!vencidas.Any())
+            {
+                return new List<InscripcionEventoDTO>();
+            }
+            foreach (KeyValuePair<Evento, EventoInscripcion> r in vencidas)
+            {
+                Cambiar(r.Value, EstadoInscripcionEvento.Caducada, USUARIO_AUTOMATICO);
+            }
+            await db.SaveChangesAsync().ConfigureAwait(false);
+            Dictionary<int, Evento> eventos = vencidas.GroupBy(r => r.Key.Id).ToDictionary(g => g.Key, g => g.First().Key);
+            return await Completar(vencidas.Select(r => r.Value).ToList(), eventos).ConfigureAwait(false);
+        }
+
+        /// <summary>Las reservas sin pagar (que no dijeron «No podré ir») de los eventos activos de hoy en adelante.</summary>
+        private async Task<List<KeyValuePair<Evento, EventoInscripcion>>> ReservasVivas(DateTime hoy)
+        {
+            List<Evento> eventos = await db.Eventos.Where(e => e.Activo && e.Fecha >= hoy).ToListAsync().ConfigureAwait(false);
+            if (!eventos.Any())
+            {
+                return new List<KeyValuePair<Evento, EventoInscripcion>>();
+            }
+            List<int> ids = eventos.Select(e => e.Id).ToList();
+            string reservada = EstadoInscripcionEvento.Reservada.ToString();
+            List<EventoInscripcion> inscripciones = await db.EventosInscripciones
+                .Where(i => ids.Contains(i.EventoId) && i.Estado == reservada).ToListAsync().ConfigureAwait(false);
+            return inscripciones.Where(OcupaPlaza)
+                .Select(i => new KeyValuePair<Evento, EventoInscripcion>(eventos.First(e => e.Id == i.EventoId), i))
+                .ToList();
         }
 
         // ---------------- Lista de asistencia ----------------

@@ -922,6 +922,8 @@ namespace NestoAPI
 
             // NestoAPI#690: recordatorio de los eventos dos días antes, a las 10:00 (push a la app del cliente y correo con
             // «Confirmo asistencia» / «No podré ir»). Nunca fuera de 9:00-21:00. Detrás de Eventos:RecordatorioAsistencia (apagado).
+            // Carlos (22/10/26): en la misma pasada, el aviso de las reservas sin pagar y su liberación al vencer el plazo del
+            // evento (DiasPagoAntesEvento), detrás de Eventos:LiberarReservasSinPagar (apagado).
             RecurringJob.AddOrUpdate(
                 "recordatorio-eventos",
                 () => Infraestructure.Eventos.RecordatorioEventosJobsService.Procesar(),

@@ -30,6 +30,15 @@ namespace NestoAPI.Infraestructure.Eventos
         public Func<string, string, string, Task<string>> NombreCliente { get; set; }
         public IServicioNotificacionesPush Push { get; set; }
         public IServicioCorreoElectronico Correo { get; set; }
+
+        /// <summary>Carlos (22/10/26): el interruptor del plazo de pago (Eventos:LiberarReservasSinPagar). Null: apagado.</summary>
+        public Func<bool> LiberarEncendido { get; set; }
+        /// <summary>Las reservas sin pagar a las que toca avisar hoy de que su plaza se libera.</summary>
+        public Func<Task<List<AvisoPagoInscripcion>>> PendientesAvisoPago { get; set; }
+        /// <summary>Apunta que ya salió el aviso de pago.</summary>
+        public Func<IEnumerable<EventoInscripcion>, Task> MarcarAvisosPago { get; set; }
+        /// <summary>Libera (Caducada) las reservas avisadas con el plazo vencido. Devuelve las liberadas.</summary>
+        public Func<Task<List<InscripcionEventoDTO>>> LiberarVencidas { get; set; }
     }
 
     /// <summary>NestoAPI#690: lo que ha hecho una pasada del recordatorio (para los tests y el diagnóstico).</summary>
@@ -42,6 +51,10 @@ namespace NestoAPI.Infraestructure.Eventos
         public int Correos { get; set; }
         /// <summary>Sin app ni correo: no le ha llegado nada (la tienda puede llamarle).</summary>
         public List<int> SinCanal { get; set; } = new List<int>();
+        /// <summary>Carlos (22/10/26): avisos «su plaza sin pagar se libera el día X» enviados.</summary>
+        public int AvisosPago { get; set; }
+        /// <summary>Carlos (22/10/26): reservas sin pagar liberadas por el plazo del evento.</summary>
+        public int Liberadas { get; set; }
     }
 
     /// <summary>
@@ -63,7 +76,8 @@ namespace NestoAPI.Infraestructure.Eventos
         public const int DIAS_ANTES = 2;
         internal static readonly TimeSpan HORA_DESDE = new TimeSpan(9, 0, 0);
         internal static readonly TimeSpan HORA_HASTA = new TimeSpan(21, 0, 0);
-        internal const string MOTIVO_APAGADO = "El recordatorio está apagado (Eventos:RecordatorioAsistencia).";
+        internal const string MOTIVO_APAGADO = "El recordatorio está apagado (Eventos:RecordatorioAsistencia y Eventos:LiberarReservasSinPagar).";
+        public const string TIPO_NOTIFICACION_PAGO = "PlazoPagoEvento";
         internal const string MOTIVO_HORARIO = "Fuera de horario: el recordatorio solo sale entre las 9:00 y las 21:00.";
 
         private static readonly CultureInfo es = CultureInfo.GetCultureInfo("es-ES");
@@ -88,7 +102,11 @@ namespace NestoAPI.Infraestructure.Eventos
                         CorreoCliente = (empresa, cliente, contacto) => CorreoDelCliente(db, empresa, cliente, contacto),
                         NombreCliente = (empresa, cliente, contacto) => NombreDelCliente(db, empresa, cliente, contacto),
                         Push = new ServicioNotificacionesPush(),
-                        Correo = new ServicioCorreoElectronico()
+                        Correo = new ServicioCorreoElectronico(),
+                        LiberarEncendido = () => InterruptoresEventos.LiberarReservasSinPagar,
+                        PendientesAvisoPago = () => servicio.PendientesDeAvisoPago(),
+                        MarcarAvisosPago = inscripciones => servicio.MarcarAvisoPagoEnviado(inscripciones),
+                        LiberarVencidas = () => servicio.LiberarReservasVencidas()
                     }).ConfigureAwait(false);
                 }
             }
@@ -103,7 +121,9 @@ namespace NestoAPI.Infraestructure.Eventos
         internal static async Task<ResultadoRecordatorioEventos> Procesar(DependenciasRecordatorioEventos deps)
         {
             var resultado = new ResultadoRecordatorioEventos();
-            if (!deps.Encendido())
+            bool recordatorio = deps.Encendido();
+            bool plazoPago = deps.LiberarEncendido?.Invoke() ?? false;
+            if (!recordatorio && !plazoPago)
             {
                 resultado.MotivoNoSeEnvia = MOTIVO_APAGADO;
                 return resultado;
@@ -113,6 +133,20 @@ namespace NestoAPI.Infraestructure.Eventos
                 resultado.MotivoNoSeEnvia = MOTIVO_HORARIO;
                 return resultado;
             }
+            if (recordatorio)
+            {
+                await Recordar(deps, resultado).ConfigureAwait(false);
+            }
+            if (plazoPago)
+            {
+                await AvisarYLiberarSinPagar(deps, resultado).ConfigureAwait(false);
+            }
+            return resultado;
+        }
+
+        /// <summary>El recordatorio de asistencia (pagadas y gratuitas; nunca a las reservas sin pagar).</summary>
+        private static async Task Recordar(DependenciasRecordatorioEventos deps, ResultadoRecordatorioEventos resultado)
+        {
             List<KeyValuePair<Evento, List<EventoInscripcion>>> pendientes =
                 await deps.Pendientes(DIAS_ANTES).ConfigureAwait(false) ?? new List<KeyValuePair<Evento, List<EventoInscripcion>>>();
             foreach (KeyValuePair<Evento, List<EventoInscripcion>> evento in pendientes)
@@ -143,7 +177,132 @@ namespace NestoAPI.Infraestructure.Eventos
                     await deps.MarcarEnviados(enviadas).ConfigureAwait(false);
                 }
             }
-            return resultado;
+        }
+
+        /// <summary>
+        /// Decisión de Carlos (22/10/26): primero libera las reservas avisadas con el plazo vencido y luego avisa, por los mismos
+        /// canales que el recordatorio (push a la app y correo), a las que vencen en dos días o menos. Un aviso por inscripción.
+        /// </summary>
+        private static async Task AvisarYLiberarSinPagar(DependenciasRecordatorioEventos deps, ResultadoRecordatorioEventos resultado)
+        {
+            try
+            {
+                resultado.Liberadas = (await deps.LiberarVencidas().ConfigureAwait(false))?.Count ?? 0;
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Plazo de pago de eventos] No se han podido liberar las reservas vencidas: {ex.Message}", ex));
+            }
+
+            List<AvisoPagoInscripcion> avisos = await deps.PendientesAvisoPago().ConfigureAwait(false) ?? new List<AvisoPagoInscripcion>();
+            var avisadas = new List<EventoInscripcion>();
+            foreach (AvisoPagoInscripcion aviso in avisos)
+            {
+                try
+                {
+                    _ = await AvisarPago(deps, aviso).ConfigureAwait(false);
+                    resultado.AvisosPago++;
+                    avisadas.Add(aviso.Inscripcion);
+                }
+                catch (Exception ex)
+                {
+                    ElmahHelper.Log(new Exception($"[Plazo de pago de eventos] Inscripción {aviso.Inscripcion.Id}: {ex.Message}", ex));
+                }
+            }
+            if (avisadas.Any())
+            {
+                await deps.MarcarAvisosPago(avisadas).ConfigureAwait(false);
+            }
+        }
+
+        private static async Task<(bool push, bool correo)> AvisarPago(DependenciasRecordatorioEventos deps, AvisoPagoInscripcion aviso)
+        {
+            EventoInscripcion inscripcion = aviso.Inscripcion;
+            string empresa = Limpiar(inscripcion.Empresa) ?? Constantes.Empresas.EMPRESA_POR_DEFECTO;
+            string cliente = Limpiar(inscripcion.Cliente);
+            string contacto = Limpiar(inscripcion.Contacto);
+
+            bool push = false;
+            try
+            {
+                push = await deps.Push.EnviarACliente(empresa, cliente, NotificacionPago(aviso)).ConfigureAwait(false) > 0;
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Plazo de pago de eventos] No se ha podido mandar la push al cliente {cliente}: {ex.Message}", ex));
+            }
+
+            bool correo = false;
+            string destino = await deps.CorreoCliente(empresa, cliente, contacto).ConfigureAwait(false);
+            if (destino != null)
+            {
+                string nombre = await deps.NombreCliente(empresa, cliente, contacto).ConfigureAwait(false);
+                using (MailMessage mail = CorreoPago(aviso, nombre, destino))
+                {
+                    correo = deps.Correo.EnviarCorreoSMTP(mail);
+                }
+                if (!correo)
+                {
+                    ElmahHelper.Log(new Exception($"[Plazo de pago de eventos] No se ha podido mandar el aviso de pago a {destino} (inscripción {inscripcion.Id})."));
+                }
+            }
+            return (push, correo);
+        }
+
+        /// <summary>«el viernes 30 de octubre».</summary>
+        private static string Dia(DateTime fecha) => "el " + fecha.ToString("dddd d 'de' MMMM", es);
+
+        /// <summary>La push del plazo de pago (de usted).</summary>
+        internal static NotificacionPushDTO NotificacionPago(AvisoPagoInscripcion aviso) => new NotificacionPushDTO
+        {
+            Titulo = $"Su plaza en «{aviso.Evento.Titulo?.Trim()}» está pendiente de pago",
+            Cuerpo = $"Si no está pagada, su plaza se liberará {Dia(aviso.FechaLiberacion)}.",
+            Tipo = TIPO_NOTIFICACION_PAGO,
+            Datos = new Dictionary<string, string>
+            {
+                ["tipo"] = TIPO_NOTIFICACION_PAGO,
+                ["empresa"] = Limpiar(aviso.Inscripcion.Empresa),
+                ["cliente"] = Limpiar(aviso.Inscripcion.Cliente),
+                ["contacto"] = Limpiar(aviso.Inscripcion.Contacto),
+                ["eventoId"] = aviso.Evento.Id.ToString(CultureInfo.InvariantCulture),
+                ["inscripcionId"] = aviso.Inscripcion.Id.ToString(CultureInfo.InvariantCulture),
+                ["fechaLiberacion"] = aviso.FechaLiberacion.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                ["urlPago"] = aviso.UrlPago ?? string.Empty
+            }
+        };
+
+        /// <summary>El correo del plazo de pago (de usted), con el botón del enlace de pago si lo tiene.</summary>
+        internal static MailMessage CorreoPago(AvisoPagoInscripcion aviso, string nombre, string destino)
+        {
+            string Html(string t) => WebUtility.HtmlEncode(t ?? string.Empty);
+            Evento evento = aviso.Evento;
+            var cuerpo = new StringBuilder();
+            cuerpo.Append("<!DOCTYPE html><html><head><meta charset='utf-8'></head><body style='font-family: Arial, sans-serif; font-size: 14px; max-width: 600px;'>");
+            cuerpo.Append($"<p>Hola{(string.IsNullOrWhiteSpace(nombre) ? "" : ", " + Html(nombre.Trim()))}:</p>");
+            cuerpo.Append($"<p>Le recordamos que su plaza en <b>«{Html(evento.Titulo?.Trim())}»</b>, {Html(CuandoYDonde(evento))}, está pendiente de pago.</p>");
+            cuerpo.Append($"<p>Si no está pagada, <b>su plaza se liberará {Html(Dia(aviso.FechaLiberacion))}</b> para que pueda aprovecharla otra persona.</p>");
+            if (!string.IsNullOrWhiteSpace(aviso.UrlPago))
+            {
+                cuerpo.Append($"<p><a href='{Html(aviso.UrlPago)}' style='display:inline-block;padding:12px 20px;background:#2e7d32;color:#ffffff;" +
+                    "text-decoration:none;border-radius:6px;font-weight:bold;'>Pagar mi plaza</a></p>");
+            }
+            else
+            {
+                cuerpo.Append("<p>Puede pagarla en su tienda o pedirnos el enlace de pago.</p>");
+            }
+            cuerpo.Append("<p>Si ya la ha pagado, no tenga en cuenta este mensaje.</p><p>Muchas gracias.</p><p>Nueva Visión</p></body></html>");
+
+            var mail = new MailMessage
+            {
+                From = new MailAddress("nuevavision@nuevavision.es", "Nueva Visión"),
+                Subject = $"Su plaza en «{evento.Titulo?.Trim()}» se libera {Dia(aviso.FechaLiberacion)} si no está pagada",
+                Body = cuerpo.ToString(),
+                IsBodyHtml = true,
+                BodyEncoding = Encoding.UTF8,
+                SubjectEncoding = Encoding.UTF8
+            };
+            mail.To.Add(destino);
+            return mail;
         }
 
         /// <summary>Entre las 9:00 y las 21:00: nunca de madrugada, aunque Hangfire relance el job tarde.</summary>
