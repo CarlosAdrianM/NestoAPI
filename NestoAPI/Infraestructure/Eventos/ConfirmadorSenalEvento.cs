@@ -32,6 +32,12 @@ namespace NestoAPI.Infraestructure.Eventos
         /// <summary>«TIE» (tienda): la que más usan hoy las tiendas para los cursos de CV.</summary>
         public const string FORMA_VENTA_CURSO = "TIE";
 
+        /// <summary>
+        /// NestoAPI#614: «true»: Nesto puede pasar una compra del curso en la tienda PrestaShop (CanalesExternos) como pago de la
+        /// inscripción (POST api/Eventos/CursoTienda) en vez de facturarla como un pedido normal. Apagado si no está.
+        /// </summary>
+        public const string CLAVE_CURSOS_TIENDA = "Eventos:CursosDesdePrestashop";
+
         public static bool FacturarCursoAlCobrar =>
             string.Equals(ConfigurationManager.AppSettings[CLAVE_FACTURAR_CURSO], "true", StringComparison.OrdinalIgnoreCase);
 
@@ -43,6 +49,8 @@ namespace NestoAPI.Infraestructure.Eventos
 
         public static bool RecordatorioAsistencia =>
             string.Equals(ConfigurationManager.AppSettings[CLAVE_RECORDATORIO_ASISTENCIA], "true", StringComparison.OrdinalIgnoreCase);
+        public static bool CursosDesdePrestashop =>
+            string.Equals(ConfigurationManager.AppSettings[CLAVE_CURSOS_TIENDA], "true", StringComparison.OrdinalIgnoreCase);
 
         public static string UsuarioAutomatico => Valor(CLAVE_USUARIO_AUTOMATICO) ?? USUARIO_AUTOMATICO;
 

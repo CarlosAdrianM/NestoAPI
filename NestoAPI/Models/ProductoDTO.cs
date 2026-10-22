@@ -875,7 +875,7 @@ namespace NestoAPI.Models
 
             try
             {
-                userName = ConfigurationManager.AppSettings["PrestashopWebserviceKeyNV"];
+                userName = ConfigurationManager.AppSettings[Infraestructure.Prestashop.ClienteWebservicePrestashop.CLAVE_WEBSERVICE];
             }
             catch
             {
@@ -889,7 +889,7 @@ namespace NestoAPI.Models
 
             try
             {
-                using (var handler = new HttpClientHandler { Credentials = new NetworkCredential { UserName = userName } })
+                using (var handler = Infraestructure.Prestashop.ClienteWebservicePrestashop.CrearHandler(userName))
                 using (HttpClient client = new HttpClient(handler))
                 {
                     // 1. Buscar el producto por referencia

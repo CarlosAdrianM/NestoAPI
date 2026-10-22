@@ -15,6 +15,27 @@ using System.Threading.Tasks;
 
 namespace NestoAPI.Infraestructure.Eventos
 {
+    /// <summary>
+    /// NestoAPI#614: POST api/Eventos/CursoTienda. Nesto (CanalesExternos) ha importado de la tienda PrestaShop un pedido con la
+    /// referencia de un curso: en vez de facturarlo como un pedido normal, lo pasa aquí como pago de la inscripción.
+    /// </summary>
+    public class CursoTiendaDTO
+    {
+        public string Empresa { get; set; }
+        public string Cliente { get; set; }
+        public string Contacto { get; set; }
+        /// <summary>La referencia del curso (Evento.ProductoCurso).</summary>
+        public string Producto { get; set; }
+        /// <summary>Lo que ha cobrado la tienda por el curso. Si no coincide con la señal, el corte 2 no lo automatiza y avisa.</summary>
+        public decimal Importe { get; set; }
+        /// <summary>Fecha del pedido de la tienda. Si no viene, hoy.</summary>
+        public DateTime? Fecha { get; set; }
+        /// <summary>El pedido de la tienda (id o referencia de PrestaShop), para los mensajes.</summary>
+        public string ReferenciaTienda { get; set; }
+        /// <summary>Opcional: Tarjeta (por defecto) o Transferencia.</summary>
+        public string FormaPago { get; set; }
+    }
+
     /// <summary>NestoAPI#611: POST api/Eventos/{id}/Inscripciones.</summary>
     public class InscribirEventoDTO
     {
@@ -250,6 +271,8 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             public string Cliente { get; set; }
             public decimal? BaseImponible { get; set; }
         }
+        /// <summary>NestoAPI#614: la compra del curso en la tienda PrestaShop paga (o crea) la inscripción del cliente.</summary>
+        Task<InscripcionEventoDTO> InscribirDesdeTienda(CursoTiendaDTO peticion, IPrincipal usuario);
     }
 
     /// <summary>
@@ -281,6 +304,7 @@ GROUP BY RTRIM(c.[Nº Cliente])";
         private readonly IRepositorioFacturacionCursos facturacion;
         private readonly Func<List<KeyValuePair<int, bool>>, string, Task> aplicarAsistenciaCupones;
         private ILectorBaseImponibleDia baseImponibleDia;
+        private readonly Func<bool> cursosTiendaEncendido;
 
         /// <summary>NestoAPI#612: en producción, el enganche es el que factura el curso (detrás de su interruptor).</summary>
         public ServicioInscripcionesEventos(NVEntities db)
@@ -302,9 +326,11 @@ GROUP BY RTRIM(c.[Nº Cliente])";
         /// <param name="aplicarAsistenciaCupones">NestoAPI#613: (inscripción → ¿vino?, usuario) anula o recupera su cupón. Null: nada.</param>
         internal ServicioInscripcionesEventos(NVEntities db, Func<DateTime> reloj, Func<IServicioPagos> pagos,
             Func<string, string, string> almacenDelUsuario = null, IProcesadorInscripcionPagada procesador = null,
-            IRepositorioFacturacionCursos facturacion = null, Func<List<KeyValuePair<int, bool>>, string, Task> aplicarAsistenciaCupones = null)
+            IRepositorioFacturacionCursos facturacion = null, Func<List<KeyValuePair<int, bool>>, string, Task> aplicarAsistenciaCupones = null,
+            Func<bool> cursosTiendaEncendido = null)
         {
             this.aplicarAsistenciaCupones = aplicarAsistenciaCupones;
+            this.cursosTiendaEncendido = cursosTiendaEncendido ?? (() => InterruptoresEventos.CursosDesdePrestashop);
             this.db = db;
             this.reloj = reloj ?? (() => DateTime.Now);
             this.pagos = pagos;
@@ -625,7 +651,81 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             string contacto = Limpiar(senal.Contacto);
             string usuarioAuditoria = UsuarioAuditoriaHelper.ParaAuditoria(usuario);
             DateTime ahora = reloj();
+            EventoInscripcion inscripcion = await PagarOInscribir(evento, Limpiar(senal.Empresa), cliente, contacto, OrigenInscripcionEvento.Transferencia,
+                FormaPagoInscripcionEvento.Transferencia, senal.Importe, ahora, usuarioAuditoria, senal.Id).ConfigureAwait(false);
+            return Componer(inscripcion, evento, null);
+        }
 
+        /// <summary>
+        /// NestoAPI#614: Nesto ha importado de la tienda PrestaShop la compra de un curso (la referencia de Evento.ProductoCurso de un
+        /// evento activo y por venir). En vez de un pedido normal, paga la inscripción del cliente (o la crea con origen PrestaShop)
+        /// y de ahí sigue el corte 2: pedido del curso, factura exenta y cupón. Sin enlace de pago, la factura queda pendiente de
+        /// cobro (SinCobro) y se cobra como los demás pedidos de la tienda. Idempotente: si ya estaba pagada, se devuelve tal cual.
+        /// </summary>
+        public async Task<InscripcionEventoDTO> InscribirDesdeTienda(CursoTiendaDTO peticion, IPrincipal usuario)
+        {
+            if (!cursosTiendaEncendido())
+            {
+                throw new NestoBusinessException($"La compra de cursos desde la tienda PrestaShop está apagada ({InterruptoresEventos.CLAVE_CURSOS_TIENDA}).");
+            }
+            if (usuario == null || PermisosEventos.ClienteDelToken(usuario) != null)
+            {
+                throw Prohibido("Solo la casa puede pasar la compra de un curso de la tienda.");
+            }
+            if (peticion == null || Limpiar(peticion.Cliente) == null)
+            {
+                throw new NestoBusinessException("Falta el cliente que ha comprado el curso.");
+            }
+            string producto = Limpiar(peticion.Producto) ?? throw new NestoBusinessException("Falta la referencia del curso.");
+            string empresa = EmpresaOPorDefecto(peticion.Empresa);
+            string cliente = Limpiar(peticion.Cliente);
+            FormaPagoInscripcionEvento forma = FormaPagoInscripcionEvento.Tarjeta;
+            if (Limpiar(peticion.FormaPago) != null)
+            {
+                forma = ReglasInscripcionEvento.FormaPago(peticion.FormaPago) ?? throw new NestoBusinessException(
+                    "La forma de pago tiene que ser Tarjeta o Transferencia.");
+            }
+            decimal importe = Math.Round(peticion.Importe, 2, MidpointRounding.AwayFromZero);
+            if (importe < 0)
+            {
+                throw new NestoBusinessException("El importe del curso no puede ser negativo.");
+            }
+            DateTime ahora = reloj();
+            DateTime fecha = peticion.Fecha ?? ahora;
+            string pedidoTienda = Limpiar(peticion.ReferenciaTienda) == null ? "" : $" (pedido {Limpiar(peticion.ReferenciaTienda)} de la tienda)";
+
+            // La referencia, en memoria: los char vienen con relleno (los eventos activos son pocos)
+            List<Evento> eventos = (await db.Eventos.Where(e => e.Empresa == empresa && e.Activo && e.ProductoCurso != null)
+                .ToListAsync().ConfigureAwait(false))
+                .Where(e => Limpiar(e.ProductoCurso) == producto && e.Fecha.Date >= fecha.Date)
+                .ToList();
+            if (!eventos.Any())
+            {
+                throw NoEncontrado($"No hay ningún evento activo y por venir con la referencia {producto}{pedidoTienda}: revise el pedido a mano.");
+            }
+            if (eventos.Count > 1)
+            {
+                throw new NestoBusinessException($"Hay {eventos.Count} eventos activos con la referencia {producto} (" +
+                    string.Join(", ", eventos.OrderBy(e => e.Fecha).Select(e => $"«{e.Titulo?.Trim()}» del {e.Fecha:dd/MM/yyyy}")) +
+                    $"): cada curso tiene que tener su referencia. Revise el pedido{pedidoTienda} a mano.");
+            }
+            Evento evento = eventos[0];
+            Cliente ficha = await LeerFichaCliente(empresa, cliente, Limpiar(peticion.Contacto)).ConfigureAwait(false);
+            EventoInscripcion inscripcion = await PagarOInscribir(evento, empresa, cliente, Limpiar(ficha.Contacto), OrigenInscripcionEvento.PrestaShop,
+                forma, importe, fecha, UsuarioDe(usuario), null).ConfigureAwait(false);
+            return (await Completar(new List<EventoInscripcion> { inscripcion }, new Dictionary<int, Evento> { [evento.Id] = evento })
+                .ConfigureAwait(false)).Single();
+        }
+
+        /// <summary>
+        /// El núcleo de las inscripciones que llegan ya pagadas (señal por transferencia, compra en la tienda): si el cliente ya
+        /// estaba pagado en el evento, esa (con la señal apuntada si no la tenía); si tenía una sin pagar, se paga; si no tenía
+        /// ninguna, se crea con <paramref name="origen"/> y se paga.
+        /// </summary>
+        private async Task<EventoInscripcion> PagarOInscribir(Evento evento, string empresa, string cliente, string contacto, OrigenInscripcionEvento origen,
+            FormaPagoInscripcionEvento forma, decimal importe, DateTime fecha, string usuarioAuditoria, int? eventoSenalId)
+        {
+            DateTime ahora = reloj();
             List<EventoInscripcion> delCliente = (await db.EventosInscripciones
                 .Where(i => i.EventoId == evento.Id && i.Cliente == cliente).ToListAsync().ConfigureAwait(false))
                 .Where(i => Limpiar(i.Contacto) == contacto)
@@ -635,14 +735,14 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                 && EstadoDe(i) != EstadoInscripcionEvento.Caducada && EstadoDe(i) != EstadoInscripcionEvento.Anulada);
             if (yaPagada != null)
             {
-                if (yaPagada.EventoSenalId == null)
+                if (eventoSenalId.HasValue && yaPagada.EventoSenalId == null)
                 {
-                    yaPagada.EventoSenalId = senal.Id;
+                    yaPagada.EventoSenalId = eventoSenalId;
                     yaPagada.Usuario = usuarioAuditoria;
                     yaPagada.FechaModificacion = ahora;
                     await db.SaveChangesAsync().ConfigureAwait(false);
                 }
-                return Componer(yaPagada, evento, null);
+                return yaPagada;
             }
 
             EventoInscripcion pendiente = delCliente
@@ -654,14 +754,14 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                 pendiente = new EventoInscripcion
                 {
                     EventoId = evento.Id,
-                    Empresa = Limpiar(senal.Empresa),
+                    Empresa = empresa,
                     Cliente = cliente,
                     Contacto = contacto,
-                    Origen = OrigenInscripcionEvento.Transferencia.ToString(),
+                    Origen = origen.ToString(),
                     Estado = EstadoInscripcionEvento.Reservada.ToString(),
                     FechaLimitePago = null,
                     // NestoAPI#690: la modalidad cuyo importe coincide con lo cobrado (si no, la reembolsable, como hasta ahora)
-                    Modalidad = ReglasModalidadEvento.PorImporte(evento, senal.Importe).ToString(),
+                    Modalidad = ReglasModalidadEvento.PorImporte(evento, importe).ToString(),
                     UsuarioCreacion = usuarioAuditoria,
                     FechaCreacion = ahora,
                     Usuario = usuarioAuditoria,
@@ -669,8 +769,8 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                 };
                 db.EventosInscripciones.Add(pendiente);
             }
-            await Pagar(pendiente, evento, FormaPagoInscripcionEvento.Transferencia, senal.Importe, ahora, usuarioAuditoria, senal.Id).ConfigureAwait(false);
-            return Componer(pendiente, evento, null);
+            await Pagar(pendiente, evento, forma, importe, fecha, usuarioAuditoria, eventoSenalId).ConfigureAwait(false);
+            return pendiente;
         }
 
         /// <summary>Pasa a Pagada, guarda y llama al enganche del corte 2 (sus fallos no deshacen el pago: van a ELMAH).</summary>

@@ -933,6 +933,18 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'recordatorio-eventos' configurado (todos los días a las 10:00; apagado salvo interruptor)");
 
+            // NestoAPI#614: el espejo de los cupones en PrestaShop (cart_rules). Con Cupones:EspejoPrestashop apagado no hace nada.
+            RecurringJob.AddOrUpdate(
+                "cupones-prestashop",
+                () => Infraestructure.Cupones.CuponesPrestashopJobsService.Procesar(),
+                Infraestructure.Cupones.CuponesPrestashopJobsService.CRON, // Cron: cada 15 minutos
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'cupones-prestashop' configurado (cada 15 minutos)");
+
             // NestoAPI#606 (decisión de Carlos, 08/10/26): correo a Compras con los pedidos a proveedor enviados, sin recibir y con
             // la fecha prevista ya pasada, primero los que tienen clientes esperando. Se calcula al mandarlo: lo que ya han
             // actualizado no sale. Sin nada vencido, no manda nada.

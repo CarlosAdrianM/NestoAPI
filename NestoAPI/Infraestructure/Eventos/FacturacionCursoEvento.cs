@@ -392,7 +392,7 @@ WHERE InscripcionId = @p0 AND Pedido IS NULL";
                 return new LiquidacionSenalCurso
                 {
                     Estado = EstadosLiquidacionCurso.SIN_COBRO,
-                    Mensaje = $"Pagado {DescribirForma(inscripcion.FormaPago)}: no hay cobro en el extracto que liquidar. La factura {factura} " +
+                    Mensaje = $"Pagado {DescribirForma(inscripcion)}: no hay cobro en el extracto que liquidar. La factura {factura} " +
                         "queda pendiente de cobro y se cobra como cualquier otra."
                 };
             }
@@ -444,9 +444,14 @@ WHERE InscripcionId = @p0 AND Pedido IS NULL";
             return new LiquidacionSenalCurso { Estado = EstadosLiquidacionCurso.LIQUIDADA, NumOrdenCobro = cobro, NumOrdenEfecto = efecto };
         }
 
-        private static string DescribirForma(string formaPago)
+        private static string DescribirForma(EventoInscripcion inscripcion)
         {
-            switch (ReglasInscripcionEvento.FormaPago(formaPago))
+            // NestoAPI#614: la compra del curso en la tienda se cobra como los demás pedidos de la tienda
+            if (inscripcion.Origen?.Trim() == OrigenInscripcionEvento.PrestaShop.ToString())
+            {
+                return "en la tienda online (PrestaShop)";
+            }
+            switch (ReglasInscripcionEvento.FormaPago(inscripcion.FormaPago))
             {
                 case FormaPagoInscripcionEvento.Efectivo: return "en efectivo";
                 case FormaPagoInscripcionEvento.Tarjeta: return "con tarjeta (datáfono)";
