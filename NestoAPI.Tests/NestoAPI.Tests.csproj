@@ -618,6 +618,7 @@
     <Compile Include="Infrastructure\Eventos\ServicioEventosTests.cs" />
     <Compile Include="Infrastructure\Eventos\InscripcionesEventosTests.cs" />
     <Compile Include="Infrastructure\Eventos\FacturacionCursosEventosTests.cs" />
+    <Compile Include="Infrastructure\Eventos\PropuestasSenalesEventosTests.cs" />
     <Compile Include="Infrastructure\Cupones\CuponesTests.cs" />
     <Compile Include="Infrastructure\Rapports\MotorSugerenciasContactoCoberturaTests.cs" />
     <Compile Include="Infrastructure\Rapports\MotorSugerenciasContactoTests.cs" />

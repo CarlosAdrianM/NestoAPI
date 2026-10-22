@@ -1,5 +1,6 @@
 ﻿using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Eventos;
+using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
@@ -26,16 +27,19 @@ namespace NestoAPI.Controllers
         private readonly NVEntities db;
         private readonly IServicioEventos servicio;
         private readonly IServicioInscripcionesEventos inscripciones;
+        private readonly IServicioPropuestasSenales propuestas;
 
         public EventosController() : this(new NVEntities())
         {
         }
 
-        internal EventosController(NVEntities db, IServicioEventos servicio = null, IServicioInscripcionesEventos inscripciones = null)
+        internal EventosController(NVEntities db, IServicioEventos servicio = null, IServicioInscripcionesEventos inscripciones = null,
+            IServicioPropuestasSenales propuestas = null)
         {
             this.db = db;
             this.servicio = servicio ?? new ServicioEventos(db);
             this.inscripciones = inscripciones ?? new ServicioInscripcionesEventos(db);
+            this.propuestas = propuestas ?? new ServicioPropuestasSenales(db);
         }
 
         // GET api/Eventos?empresa=1&soloActivos=true
@@ -194,7 +198,16 @@ namespace NestoAPI.Controllers
                 return Prohibido(ServicioEventos.MENSAJE_SIN_PERMISO_SENALES);
             }
             string usuario = UsuarioAuditoriaHelper.Resolver(User, null);
-            SenalEventoDTO senal = await servicio.MarcarSenal(id, peticion, usuario).ConfigureAwait(false);
+            return Ok(await MarcarSenalYPagar(id, peticion, usuario, resolverPropuestas: ProponerSenales()).ConfigureAwait(false));
+        }
+
+        /// <summary>
+        /// El camino único de «este apunte es la señal del evento»: lo usan el botón de #591 y la confirmación de una propuesta
+        /// (NestoAPI#615), para que confirmar sea exactamente lo mismo que marcarla a mano.
+        /// </summary>
+        private async Task<SenalEventoDTO> MarcarSenalYPagar(int eventoId, MarcarSenalEventoDTO peticion, string usuario, bool resolverPropuestas)
+        {
+            SenalEventoDTO senal = await servicio.MarcarSenal(eventoId, peticion, usuario).ConfigureAwait(false);
 
             // NestoAPI#612: con la facturación de cursos encendida, la señal paga la inscripción del cliente (o la crea, con
             // origen Transferencia) y de ahí sale sola la factura del curso con la señal liquidada. Si falla, la señal queda
@@ -211,11 +224,131 @@ namespace NestoAPI.Controllers
                         $"inscripción del cliente {senal.Cliente}: {ex.Message}", ex));
                 }
             }
-            return Ok(senal);
+
+            // NestoAPI#615: las propuestas de ese apunte quedan resueltas (la del evento elegido, confirmada; las demás, descartadas).
+            if (resolverPropuestas)
+            {
+                try
+                {
+                    await propuestas.Resolver(senal.Empresa ?? peticion?.Empresa, senal.NumOrdenExtracto, senal.EventoId, usuario).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    ElmahHelper.Log(new Exception($"[Señales #615] La señal {senal.Id} está marcada, pero no se han podido cerrar las propuestas " +
+                        $"del apunte {senal.NumOrdenExtracto}: {ex.Message}", ex));
+                }
+            }
+            return senal;
         }
 
         /// <summary>NestoAPI#612: el interruptor (Web.config Eventos:FacturarCursoAlCobrar). Sustituible en tests.</summary>
         internal Func<bool> FacturarCursoAlCobrar { get; set; } = () => InterruptoresEventos.FacturarCursoAlCobrar;
+
+        /// <summary>NestoAPI#615: el interruptor (Web.config Eventos:ProponerSenales). Sustituible en tests.</summary>
+        internal Func<bool> ProponerSenales { get; set; } = () => InterruptorPropuestasSenales.Encendido;
+
+        // ---------------- NestoAPI#615: señales propuestas ----------------
+
+        // GET api/Eventos/Senales/Propuestas?empresa=1
+        /// <summary>
+        /// Los cobros a favor que pueden ser la señal de un evento, sin confirmar, con sus eventos candidatos (uno o varios).
+        /// No salen los que ya son señal ni los que ya no tienen nada a favor.
+        /// </summary>
+        [HttpGet]
+        [Route("Senales/Propuestas")]
+        [ResponseType(typeof(List<PropuestaSenalDTO>))]
+        public async Task<IHttpActionResult> GetPropuestasSenales(string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            return Ok(await propuestas.LeerPendientes(empresa).ConfigureAwait(false));
+        }
+
+        // POST api/Eventos/Senales/Propuestas/Buscar   { Empresa?, Dias? }
+        /// <summary>
+        /// Busca ahora (sin esperar al barrido de la mañana) en los cobros a cuenta de los últimos días (15 si no se dice) y
+        /// devuelve las propuestas pendientes. Administración, Dirección e Informática. Funciona con el interruptor apagado:
+        /// solo propone, no marca nada.
+        /// </summary>
+        [HttpPost]
+        [Route("Senales/Propuestas/Buscar")]
+        [ResponseType(typeof(List<PropuestaSenalDTO>))]
+        public async Task<IHttpActionResult> PostBuscarPropuestasSenales([FromBody] BuscarPropuestasSenalesDTO peticion)
+        {
+            if (!ServicioEventos.PuedeMarcarSenales(User))
+            {
+                return Prohibido(ServicioEventos.MENSAJE_SIN_PERMISO_SENALES);
+            }
+            string empresa = string.IsNullOrWhiteSpace(peticion?.Empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : peticion.Empresa.Trim();
+            int dias = peticion?.Dias ?? ServicioPropuestasSenales.DIAS_BARRIDO;
+            if (dias < 1 || dias > 90)
+            {
+                throw new NestoBusinessException("Indique entre 1 y 90 días.");
+            }
+            _ = await propuestas.ProponerRecientes(empresa, Hoy().AddDays(-dias)).ConfigureAwait(false);
+            return Ok(await propuestas.LeerPendientes(empresa).ConfigureAwait(false));
+        }
+
+        /// <summary>NestoAPI#615: sustituible en tests.</summary>
+        internal Func<DateTime> Hoy { get; set; } = () => DateTime.Today;
+
+        // POST api/Eventos/Senales/Propuestas/12/Confirmar
+        /// <summary>
+        /// Confirma la propuesta: marca el apunte como señal de ese evento por el mismo camino que «Es la señal del evento…»
+        /// (y, con el corte 2 encendido, paga la inscripción, factura el curso y emite el cupón). Las otras propuestas del mismo
+        /// apunte quedan descartadas. Administración, Dirección e Informática. Devuelve la señal. 404 si no existe; 409 si ya
+        /// estaba confirmada o descartada; 400 con el motivo si el apunte ya no puede ser señal.
+        /// </summary>
+        [HttpPost]
+        [Route("Senales/Propuestas/{id:int}/Confirmar")]
+        [ResponseType(typeof(SenalEventoDTO))]
+        public async Task<IHttpActionResult> PostConfirmarPropuestaSenal(int id)
+        {
+            if (!ServicioEventos.PuedeMarcarSenales(User))
+            {
+                return Prohibido(ServicioEventos.MENSAJE_SIN_PERMISO_SENALES);
+            }
+            PropuestaSenalEvento propuesta = await LeerPropuestaPendiente(id).ConfigureAwait(false);
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, null);
+            var peticion = new MarcarSenalEventoDTO
+            {
+                Empresa = propuesta.Empresa,
+                NumOrdenExtracto = propuesta.NumOrdenExtracto,
+                Cliente = propuesta.Cliente,
+                Contacto = propuesta.Contacto
+            };
+            return Ok(await MarcarSenalYPagar(propuesta.EventoId, peticion, usuario, resolverPropuestas: true).ConfigureAwait(false));
+        }
+
+        // POST api/Eventos/Senales/Propuestas/12/Descartar
+        /// <summary>No es la señal de ese evento: no se vuelve a proponer. Administración, Dirección e Informática. 204.</summary>
+        [HttpPost]
+        [Route("Senales/Propuestas/{id:int}/Descartar")]
+        public async Task<IHttpActionResult> PostDescartarPropuestaSenal(int id)
+        {
+            if (!ServicioEventos.PuedeMarcarSenales(User))
+            {
+                return Prohibido(ServicioEventos.MENSAJE_SIN_PERMISO_SENALES);
+            }
+            _ = await LeerPropuestaPendiente(id).ConfigureAwait(false);
+            if (!await propuestas.Descartar(id, UsuarioAuditoriaHelper.Resolver(User, null)).ConfigureAwait(false))
+            {
+                throw new NestoBusinessException("Otra persona acaba de confirmar o descartar esta propuesta.") { StatusCode = HttpStatusCode.Conflict };
+            }
+            return StatusCode(HttpStatusCode.NoContent);
+        }
+
+        private async Task<PropuestaSenalEvento> LeerPropuestaPendiente(int id)
+        {
+            PropuestaSenalEvento propuesta = await propuestas.LeerPropuesta(id).ConfigureAwait(false)
+                ?? throw new NestoBusinessException($"No existe la propuesta {id}.") { StatusCode = HttpStatusCode.NotFound };
+            string estado = propuesta.Estado?.Trim();
+            if (estado != EstadosPropuestaSenal.PROPUESTA)
+            {
+                string como = estado == EstadosPropuestaSenal.CONFIRMADA ? "confirmada" : "descartada";
+                string quien = string.IsNullOrWhiteSpace(propuesta.Usuario) ? string.Empty : " por " + propuesta.Usuario.Trim();
+                throw new NestoBusinessException($"Esta propuesta ya está {como}{quien}.") { StatusCode = HttpStatusCode.Conflict };
+            }
+            return propuesta;
+        }
 
         // POST api/Eventos/Inscripciones/7/Facturar
         /// <summary>
