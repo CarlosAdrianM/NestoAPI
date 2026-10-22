@@ -24,8 +24,17 @@ namespace NestoAPI.Infraestructure.Eventos
         public string Empresa { get; set; }
         public string Cliente { get; set; }
         public string Contacto { get; set; }
-        /// <summary>La referencia del curso (Evento.ProductoCurso).</summary>
+        /// <summary>
+        /// La referencia del curso comprado. Carlos (22/10/26): EVENTO{Id:00000} es la plaza reembolsable de ese evento y
+        /// EVENTO{Id:00000}NR la no reembolsable; cualquier otra es un producto forzado (Evento.ProductoCurso, puede ser de varios
+        /// eventos) y la modalidad sale de lo pagado.
+        /// </summary>
         public string Producto { get; set; }
+        /// <summary>
+        /// Opcional: el evento, cuando Nesto lo sabe. Con un producto forzado compartido por varios eventos, decide cuál; si no
+        /// viene, el de la inscripción pendiente del cliente o, si no tiene, el más cercano.
+        /// </summary>
+        public int? EventoId { get; set; }
         /// <summary>Lo que ha cobrado la tienda por el curso. Si no coincide con la señal, el corte 2 no lo automatiza y avisa.</summary>
         public decimal Importe { get; set; }
         /// <summary>Fecha del pedido de la tienda. Si no viene, hoy.</summary>
@@ -719,27 +728,87 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             DateTime fecha = peticion.Fecha ?? ahora;
             string pedidoTienda = Limpiar(peticion.ReferenciaTienda) == null ? "" : $" (pedido {Limpiar(peticion.ReferenciaTienda)} de la tienda)";
 
-            // La referencia, en memoria: los char vienen con relleno (los eventos activos son pocos)
-            List<Evento> eventos = (await db.Eventos.Where(e => e.Empresa == empresa && e.Activo && e.ProductoCurso != null)
-                .ToListAsync().ConfigureAwait(false))
-                .Where(e => Limpiar(e.ProductoCurso) == producto && e.Fecha.Date >= fecha.Date)
-                .ToList();
+            Cliente ficha = await LeerFichaCliente(empresa, cliente, Limpiar(peticion.Contacto)).ConfigureAwait(false);
+            string contacto = Limpiar(ficha.Contacto);
+
+            Evento evento;
+            ModalidadInscripcionEvento modalidad;
+            (int EventoId, ModalidadInscripcionEvento Modalidad)? propia = ReglasProductoCurso.Interpretar(producto);
+            if (propia.HasValue)
+            {
+                // Carlos (22/10/26): EVENTO00123 / EVENTO00123NR dicen el evento y la modalidad (no el importe)
+                if (peticion.EventoId.HasValue && peticion.EventoId.Value != propia.Value.EventoId)
+                {
+                    throw new NestoBusinessException($"La referencia {producto} es del evento {propia.Value.EventoId}, no del {peticion.EventoId.Value}{pedidoTienda}.");
+                }
+                int id = propia.Value.EventoId;
+                evento = await db.Eventos.SingleOrDefaultAsync(e => e.Id == id).ConfigureAwait(false);
+                if (evento == null || Limpiar(evento.Empresa) != empresa || !evento.Activo || evento.Fecha.Date < fecha.Date)
+                {
+                    throw NoEncontrado($"El evento {id} de la referencia {producto} no existe, no está activo o ya ha pasado{pedidoTienda}: revise el pedido a mano.");
+                }
+                modalidad = propia.Value.Modalidad;
+            }
+            else
+            {
+                // Producto forzado: puede ser de varios eventos (fechas o tiendas distintas). La referencia, en memoria: los char
+                // vienen con relleno (los eventos activos son pocos)
+                List<Evento> eventos = (await db.Eventos.Where(e => e.Empresa == empresa && e.Activo && e.ProductoCurso != null)
+                    .ToListAsync().ConfigureAwait(false))
+                    .Where(e => Limpiar(e.ProductoCurso) == producto && e.Fecha.Date >= fecha.Date)
+                    .ToList();
+                evento = await ElegirEventoDeLaTienda(eventos, peticion.EventoId, cliente, contacto, producto, pedidoTienda).ConfigureAwait(false);
+                // Una referencia para todas las modalidades: la que cuesta lo pagado (en la tienda pueden tener precios distintos);
+                // si no coincide ninguna, la reembolsable, y queda en ELMAH
+                ModalidadInscripcionEvento? porImporte = ReglasModalidadEvento.PorImporteExacto(evento, importe);
+                if (!porImporte.HasValue)
+                {
+                    ElmahHelper.Log(new Exception($"[Cursos de la tienda #614] El cliente {cliente} ha pagado {importe:0.00} € por {producto} " +
+                        $"(«{evento.Titulo?.Trim()}»){pedidoTienda} y no coincide con ninguna señal del evento: se toma como reembolsable."));
+                }
+                modalidad = porImporte ?? ModalidadInscripcionEvento.Reembolsable;
+            }
+            EventoInscripcion inscripcion = await PagarOInscribir(evento, empresa, cliente, contacto, OrigenInscripcionEvento.PrestaShop,
+                forma, importe, fecha, UsuarioDe(usuario), null, modalidad).ConfigureAwait(false);
+            return (await Completar(new List<EventoInscripcion> { inscripcion }, new Dictionary<int, Evento> { [evento.Id] = evento })
+                .ConfigureAwait(false)).Single();
+        }
+
+        /// <summary>
+        /// Con un producto forzado compartido, el evento de la compra: el que diga Nesto (EventoId); si no, el único; si hay
+        /// varios, aquel en el que el cliente tiene una inscripción sin pagar; y si no, el más cercano (queda en ELMAH).
+        /// </summary>
+        private async Task<Evento> ElegirEventoDeLaTienda(List<Evento> eventos, int? eventoId, string cliente, string contacto,
+            string producto, string pedidoTienda)
+        {
+            if (eventoId.HasValue)
+            {
+                return eventos.FirstOrDefault(e => e.Id == eventoId.Value)
+                    ?? throw NoEncontrado($"El evento {eventoId.Value} no está activo y por venir con la referencia {producto}{pedidoTienda}: revise el pedido a mano.");
+            }
             if (!eventos.Any())
             {
                 throw NoEncontrado($"No hay ningún evento activo y por venir con la referencia {producto}{pedidoTienda}: revise el pedido a mano.");
             }
-            if (eventos.Count > 1)
+            if (eventos.Count == 1)
             {
-                throw new NestoBusinessException($"Hay {eventos.Count} eventos activos con la referencia {producto} (" +
-                    string.Join(", ", eventos.OrderBy(e => e.Fecha).Select(e => $"«{e.Titulo?.Trim()}» del {e.Fecha:dd/MM/yyyy}")) +
-                    $"): cada curso tiene que tener su referencia. Revise el pedido{pedidoTienda} a mano.");
+                return eventos[0];
             }
-            Evento evento = eventos[0];
-            Cliente ficha = await LeerFichaCliente(empresa, cliente, Limpiar(peticion.Contacto)).ConfigureAwait(false);
-            EventoInscripcion inscripcion = await PagarOInscribir(evento, empresa, cliente, Limpiar(ficha.Contacto), OrigenInscripcionEvento.PrestaShop,
-                forma, importe, fecha, UsuarioDe(usuario), null).ConfigureAwait(false);
-            return (await Completar(new List<EventoInscripcion> { inscripcion }, new Dictionary<int, Evento> { [evento.Id] = evento })
-                .ConfigureAwait(false)).Single();
+            List<int> ids = eventos.Select(e => e.Id).ToList();
+            List<int> conReserva = (await db.EventosInscripciones.Where(i => ids.Contains(i.EventoId) && i.Cliente == cliente)
+                .ToListAsync().ConfigureAwait(false))
+                .Where(i => Limpiar(i.Contacto) == contacto
+                    && (EstadoDe(i) == EstadoInscripcionEvento.Reservada || EstadoDe(i) == EstadoInscripcionEvento.Caducada))
+                .Select(i => i.EventoId).Distinct().ToList();
+            if (conReserva.Count == 1)
+            {
+                return eventos.Single(e => e.Id == conReserva[0]);
+            }
+            Evento cercano = eventos.OrderBy(e => e.Fecha).ThenBy(e => e.Id).First();
+            ElmahHelper.Log(new Exception($"[Cursos de la tienda #614] {producto} es de {eventos.Count} eventos (" +
+                string.Join(", ", eventos.OrderBy(e => e.Fecha).Select(e => $"{e.Id} del {e.Fecha:dd/MM/yyyy}")) +
+                $") y el cliente {cliente} no tiene reserva en uno solo{pedidoTienda}: se inscribe en el más cercano, el {cercano.Id}."));
+            return cercano;
         }
 
         /// <summary>
@@ -748,7 +817,8 @@ GROUP BY RTRIM(c.[Nº Cliente])";
         /// ninguna, se crea con <paramref name="origen"/> y se paga.
         /// </summary>
         private async Task<EventoInscripcion> PagarOInscribir(Evento evento, string empresa, string cliente, string contacto, OrigenInscripcionEvento origen,
-            FormaPagoInscripcionEvento forma, decimal importe, DateTime fecha, string usuarioAuditoria, int? eventoSenalId)
+            FormaPagoInscripcionEvento forma, decimal importe, DateTime fecha, string usuarioAuditoria, int? eventoSenalId,
+            ModalidadInscripcionEvento? modalidad = null)
         {
             DateTime ahora = reloj();
             List<EventoInscripcion> delCliente = (await db.EventosInscripciones
@@ -785,14 +855,20 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                     Origen = origen.ToString(),
                     Estado = EstadoInscripcionEvento.Reservada.ToString(),
                     FechaLimitePago = null,
-                    // NestoAPI#690: la modalidad cuyo importe coincide con lo cobrado (si no, la reembolsable, como hasta ahora)
-                    Modalidad = ReglasModalidadEvento.PorImporte(evento, importe).ToString(),
+                    // NestoAPI#690: la que se ha comprado o, si no se sabe, la modalidad cuyo importe coincide con lo cobrado (si
+                    // no, la reembolsable, como hasta ahora)
+                    Modalidad = (modalidad ?? ReglasModalidadEvento.PorImporte(evento, importe)).ToString(),
                     UsuarioCreacion = usuarioAuditoria,
                     FechaCreacion = ahora,
                     Usuario = usuarioAuditoria,
                     FechaModificacion = ahora
                 };
                 db.EventosInscripciones.Add(pendiente);
+            }
+            else if (modalidad.HasValue)
+            {
+                // La que se ha comprado manda sobre la que eligió al reservar
+                pendiente.Modalidad = modalidad.Value.ToString();
             }
             await Pagar(pendiente, evento, forma, importe, fecha, usuarioAuditoria, eventoSenalId).ConfigureAwait(false);
             return pendiente;

@@ -712,16 +712,83 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
                 .InscribirDesdeTienda(new CursoTiendaDTO { Cliente = "15191", Producto = "CURSOPEELING", Importe = 80, Fecha = new DateTime(2026, 10, 20) }, TIENDA_ONLINE));
         }
 
+        /// <summary>
+        /// Carlos (22/10/26): un producto forzado (un curso que ya existe, p. ej. 90077) lo pueden compartir varios eventos. Antes
+        /// era un 400 («cada curso tiene que tener su referencia»); ahora se elige el evento: el de su reserva, si la tiene.
+        /// </summary>
         [TestMethod]
-        public async Task CursoTienda_DosEventosConLaMismaReferencia_400()
+        public async Task CursoTienda_ProductoForzadoCompartido_ElEventoDeSuReserva()
         {
-            eventos[0].ProductoCurso = "CURSOCLOASMA";
-            eventos[1].ProductoCurso = "CURSOCLOASMA";
+            eventos[0].ProductoCurso = "90077";
+            eventos[1].ProductoCurso = "90077";
+            Inscripcion(1, EVENTO_REINA, "15191", EstadoInscripcionEvento.Reservada, HOY.AddDays(3));
+
+            InscripcionEventoDTO dto = await ServicioTienda().InscribirDesdeTienda(CompraCurso("90077"), TIENDA_ONLINE);
+
+            Assert.AreEqual(EVENTO_REINA, dto.EventoId);
+            Assert.AreEqual(1, inscripciones.Count);
+            Assert.AreEqual("Pagada", inscripciones.Single().Estado);
+        }
+
+        [TestMethod]
+        public async Task CursoTienda_ProductoForzadoCompartidoSinReserva_ElMasCercanoOElQueDigaNesto()
+        {
+            eventos[0].ProductoCurso = "90077"; // 30/10
+            eventos[1].ProductoCurso = "90077"; // 16/10
+
+            InscripcionEventoDTO cercano = await ServicioTienda().InscribirDesdeTienda(CompraCurso("90077", 80), TIENDA_ONLINE);
+            Assert.AreEqual(EVENTO_ALCOBENDAS, cercano.EventoId);
+
+            CursoTiendaDTO conEvento = CompraCurso("90077");
+            conEvento.Cliente = "20000";
+            conEvento.EventoId = EVENTO_REINA;
+            InscripcionEventoDTO elegido = await ServicioTienda().InscribirDesdeTienda(conEvento, TIENDA_ONLINE);
+            Assert.AreEqual(EVENTO_REINA, elegido.EventoId);
+        }
+
+        [TestMethod]
+        public async Task CursoTienda_ProductoForzado_LaModalidadSaleDeLoPagado()
+        {
+            eventos[0].ProductoCurso = "90077";
+            eventos[0].ImporteSenal = 100;
+            eventos[0].ImporteSenalNoReembolsable = 60;
+
+            _ = await ServicioTienda().InscribirDesdeTienda(CompraCurso("90077", 60), TIENDA_ONLINE);
+            Assert.AreEqual("NoReembolsable", inscripciones.Single().Modalidad);
+
+            CursoTiendaDTO otra = CompraCurso("90077", 75);
+            otra.Cliente = "20000";
+            _ = await ServicioTienda().InscribirDesdeTienda(otra, TIENDA_ONLINE);
+            Assert.AreEqual("Reembolsable", inscripciones.Single(i => i.Cliente.Trim() == "20000").Modalidad,
+                "No coincide con ninguna: reembolsable (y queda en ELMAH)");
+        }
+
+        [TestMethod]
+        public async Task CursoTienda_ReferenciaDelEvento_LaModalidadSaleDeLaReferenciaNoDelImporte()
+        {
+            eventos[0].ProductoCurso = "EVENTO00001";
+            eventos[0].ImporteSenal = 100;
+            eventos[0].ImporteSenalNoReembolsable = 60;
+            Inscripcion(1, EVENTO_REINA, "15191", EstadoInscripcionEvento.Reservada, HOY.AddDays(3)).Modalidad = "Reembolsable";
+
+            _ = await ServicioTienda().InscribirDesdeTienda(CompraCurso("EVENTO00001NR", 100), TIENDA_ONLINE);
+
+            EventoInscripcion i = inscripciones.Single();
+            Assert.AreEqual("NoReembolsable", i.Modalidad, "La referencia manda (aunque el importe sea el de la reembolsable)");
+            Assert.AreEqual("Pagada", i.Estado);
+        }
+
+        [TestMethod]
+        public async Task CursoTienda_ReferenciaDeOtroEventoOInexistente_400o404()
+        {
+            CursoTiendaDTO compra = CompraCurso("EVENTO00001");
+            compra.EventoId = EVENTO_ALCOBENDAS;
+            await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => ServicioTienda().InscribirDesdeTienda(compra, TIENDA_ONLINE));
 
             NestoBusinessException ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(
-                () => ServicioTienda().InscribirDesdeTienda(CompraCurso(), TIENDA_ONLINE));
-
-            StringAssert.Contains(ex.Message, "cada curso tiene que tener su referencia");
+                () => ServicioTienda().InscribirDesdeTienda(CompraCurso("EVENTO00099"), TIENDA_ONLINE));
+            Assert.AreEqual(HttpStatusCode.NotFound, ex.StatusCode);
+            Assert.IsFalse(inscripciones.Any());
         }
 
         [TestMethod]

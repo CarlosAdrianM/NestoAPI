@@ -363,6 +363,28 @@ namespace NestoAPI.Infraestructure.Eventos
             return noReembolsable && !reembolsable ? ModalidadInscripcionEvento.NoReembolsable : ModalidadInscripcionEvento.Reembolsable;
         }
 
+        /// <summary>
+        /// Carlos (22/10/26): la modalidad cuyo importe coincide EXACTAMENTE con lo pagado (si coinciden las dos, la
+        /// reembolsable); null si no coincide ninguna (quien llama decide y lo apunta).
+        /// </summary>
+        public static ModalidadInscripcionEvento? PorImporteExacto(Evento evento, decimal importe)
+        {
+            if (evento == null)
+            {
+                return null;
+            }
+            decimal pagado = Redondear(importe);
+            if (evento.ImporteSenal > 0 && Redondear(evento.ImporteSenal) == pagado)
+            {
+                return ModalidadInscripcionEvento.Reembolsable;
+            }
+            if (evento.ImporteSenalNoReembolsable > 0 && Redondear(evento.ImporteSenalNoReembolsable) == pagado)
+            {
+                return ModalidadInscripcionEvento.NoReembolsable;
+            }
+            return null;
+        }
+
         public static string Texto(ModalidadInscripcionEvento modalidad) =>
             modalidad == ModalidadInscripcionEvento.NoReembolsable ? "No reembolsable" : modalidad.ToString();
 
