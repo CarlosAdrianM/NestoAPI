@@ -38,6 +38,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         public string UsuarioPedido { get; set; }
         /// <summary>CorreoDefecto de quien grabó el pedido. Null si no lo tiene.</summary>
         public string CorreoUsuarioPedido { get; set; }
+        /// <summary>
+        /// Novedad 716 (Laura): el pedido es de la tienda online o de un canal externo (Amazon, Perfumes Club,
+        /// Miravia), según la forma de venta de sus líneas (<see cref="Constantes.FormasVenta.EsCanalExterno"/>).
+        /// Esos pedidos los llevan Laura y Enrique desde tiendaonline@.
+        /// </summary>
+        public bool EsCanalExterno { get; set; }
         public List<ComercialPedido> Comerciales { get; set; } = new List<ComercialPedido>();
 
         /// <summary>
@@ -214,10 +220,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
             // Solo las líneas de producto: las de portes o texto no tienen grupo y no deben meter al de estética
             // en un pedido que es todo de peluquería.
-            List<string> grupos = db.LinPedidoVtas
+            var lineas = db.LinPedidoVtas
                 .Where(l => l.Empresa == empresa && l.Número == pedido && l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
-                .Select(l => l.Grupo)
+                .Select(l => new { l.Grupo, l.Forma_Venta })
                 .ToList();
+            List<string> grupos = lineas.Select(l => l.Grupo).ToList();
             string vendedorPeluqueria = db.VendedoresPedidosGruposProductos
                 .Where(v => v.Empresa == empresa && v.Pedido == pedido && v.GrupoProducto == Constantes.Productos.GRUPO_PELUQUERIA)
                 .Select(v => v.Vendedor)
@@ -232,6 +239,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 Pedido = pedido,
                 Cliente = cabecera.Nº_Cliente?.Trim(),
                 Contacto = cabecera.Contacto?.Trim(),
+                EsCanalExterno = lineas.Any(l => Constantes.FormasVenta.EsCanalExterno(l.Forma_Venta)),
                 NombreCliente = db.Clientes
                     .Where(c => c.Empresa == empresa && c.Nº_Cliente == cabecera.Nº_Cliente && c.Contacto == cabecera.Contacto)
                     .Select(c => c.Nombre).FirstOrDefault()?.Trim()

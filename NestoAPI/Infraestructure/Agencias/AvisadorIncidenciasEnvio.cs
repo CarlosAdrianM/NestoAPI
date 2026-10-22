@@ -131,6 +131,14 @@ namespace NestoAPI.Infraestructure.Agencias
                     "póngase en contacto con el cliente para solucionarlo cuanto antes.</p>"
             };
             List<string> destinatarios = comerciales?.Correos() ?? new List<string>();
+            // Novedad 716 (Laura, 22/10/26): las incidencias de los pedidos de la tienda online y de Amazon (y demás
+            // canales externos) las llevan Laura y Enrique desde tiendaonline@. Se AÑADE a quien ya lo recibía
+            // (comerciales o quien grabó el pedido; logística sigue en copia): no se le quita el aviso a nadie.
+            if (EsPedidoTiendaOnline(envio, comerciales)
+                && !destinatarios.Contains(Constantes.Correos.TIENDA_ONLINE, StringComparer.OrdinalIgnoreCase))
+            {
+                destinatarios.Insert(0, Constantes.Correos.TIENDA_ONLINE);
+            }
             if (destinatarios.Any())
             {
                 destinatarios.ForEach(d => mail.To.Add(new MailAddress(d)));
@@ -141,6 +149,20 @@ namespace NestoAPI.Infraestructure.Agencias
                 mail.To.Add(new MailAddress(Constantes.Correos.LOGISTICA));
             }
             return mail;
+        }
+
+        /// <summary>
+        /// Novedad 716: pedido de la tienda online o de un canal externo (forma de venta de sus líneas) o, si no
+        /// hay pedido que leer, envío a los clientes ficticios de la tienda online o de Amazon.
+        /// </summary>
+        internal static bool EsPedidoTiendaOnline(EnviosAgencia envio, ComercialesPedido comerciales)
+        {
+            if (comerciales?.EsCanalExterno == true)
+            {
+                return true;
+            }
+            string cliente = (comerciales?.Cliente ?? envio?.Cliente)?.Trim();
+            return cliente == Constantes.ClientesEspeciales.TIENDA_ONLINE || cliente == Constantes.ClientesEspeciales.AMAZON;
         }
 
         internal static NotificacionPushDTO ComponerNotificacion(EnviosAgencia envio, ComercialesPedido comerciales, string agencia)
