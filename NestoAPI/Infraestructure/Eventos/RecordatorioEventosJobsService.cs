@@ -342,7 +342,7 @@ namespace NestoAPI.Infraestructure.Eventos
             return (push, correo);
         }
 
-        /// <summary>«el jueves 30 de octubre a las 10:00 en Reina».</summary>
+        /// <summary>«el jueves 30 de octubre a las 10:00 en Reina»; si es online, «…a las 10:00, online» (Carlos, 22/10/26: nunca la tienda).</summary>
         internal static string CuandoYDonde(Evento evento)
         {
             string cuando = "el " + evento.Fecha.ToString("dddd d 'de' MMMM", es);
@@ -350,6 +350,10 @@ namespace NestoAPI.Infraestructure.Eventos
             if (hora != null)
             {
                 cuando += " a las " + hora;
+            }
+            if (FormatosEvento.EsOnline(evento))
+            {
+                return cuando + ", online";
             }
             string donde = Limpiar(evento.Lugar) ?? PermisosEventos.NombreAlmacen(evento.Almacen);
             return string.IsNullOrWhiteSpace(donde) ? cuando : cuando + " en " + donde;
@@ -370,7 +374,9 @@ namespace NestoAPI.Infraestructure.Eventos
                 ["eventoId"] = evento.Id.ToString(CultureInfo.InvariantCulture),
                 ["inscripcionId"] = inscripcion.Id.ToString(CultureInfo.InvariantCulture),
                 ["fecha"] = evento.Fecha.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-                ["horaInicio"] = ReglasModalidadEvento.EscribirHora(evento.HoraInicio) ?? string.Empty
+                ["horaInicio"] = ReglasModalidadEvento.EscribirHora(evento.HoraInicio) ?? string.Empty,
+                ["formato"] = FormatosEvento.De(evento),
+                ["enlace"] = FormatosEvento.EnlaceOnline(evento) ?? string.Empty
             }
         };
 
@@ -396,6 +402,12 @@ namespace NestoAPI.Infraestructure.Eventos
             if (ponente != null)
             {
                 cuerpo.Append($"<p>Lo imparte {Html(ponente)}.</p>");
+            }
+            // Carlos (22/10/26): en los online, el enlace para conectarse (si el Lugar es una dirección web; ver FormatosEvento.EnlaceOnline)
+            string enlaceOnline = FormatosEvento.EnlaceOnline(evento);
+            if (enlaceOnline != null)
+            {
+                cuerpo.Append($"<p>Puede conectarse desde este enlace: <a href='{Html(enlaceOnline)}'>{Html(enlaceOnline)}</a></p>");
             }
             cuerpo.Append("<p>¿Nos confirma si podrá venir? Así le guardamos su sitio.</p>");
             cuerpo.Append("<p>")

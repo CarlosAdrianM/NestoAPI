@@ -7,6 +7,7 @@ using NestoAPI.Infraestructure.Eventos;
 using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Infraestructure.Notificaciones;
 using NestoAPI.Infraestructure.Pagos;
+using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Models;
 using NestoAPI.Models.Pagos;
 using NestoAPI.Tests.Helpers;
@@ -245,7 +246,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         public async Task CrearEvento_CeroExplicitoEnLasDos_Gratuito()
         {
             EventoDTO cuerpo = JsonConvert.DeserializeObject<EventoDTO>(
-                "{ \"Titulo\": \"Presentación\", \"Fecha\": \"2026-11-10\", \"Activo\": true, \"ImporteSenal\": 0, \"ImporteSenalNoReembolsable\": 0 }");
+                "{ \"Titulo\": \"Presentación\", \"Fecha\": \"2026-11-10\", \"Activo\": true, \"ImporteSenal\": 0, \"ImporteSenalNoReembolsable\": 0, \"Almacen\": \"ALC\" }");
 
             EventoDTO creado = await ServicioEventos().CrearEvento(cuerpo, "NUEVAVISION\\Carlos");
 
@@ -259,7 +260,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         public async Task CrearEvento_ComoElNestoDeHoy_SoloImporteSenal_LaNoReembolsablePorDefecto()
         {
             EventoDTO cuerpo = JsonConvert.DeserializeObject<EventoDTO>(
-                "{ \"Titulo\": \"Masterclass\", \"Fecha\": \"2026-11-10\", \"Activo\": true, \"ImporteSenal\": 50 }");
+                "{ \"Titulo\": \"Masterclass\", \"Fecha\": \"2026-11-10\", \"Activo\": true, \"ImporteSenal\": 50, \"Almacen\": \"REI\" }");
 
             EventoDTO creado = await ServicioEventos().CrearEvento(cuerpo, "NUEVAVISION\\Carlos");
 
@@ -271,7 +272,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         public async Task CrearEvento_HorarioYPonente()
         {
             EventoDTO cuerpo = JsonConvert.DeserializeObject<EventoDTO>(
-                "{ \"Titulo\": \"Masterclass\", \"Fecha\": \"2026-11-10\", \"Activo\": true, \"HoraInicio\": \"10:00\", \"HoraFin\": \"14:30\", \"Ponente\": \" Maystar \" }");
+                "{ \"Titulo\": \"Masterclass\", \"Fecha\": \"2026-11-10\", \"Activo\": true, \"HoraInicio\": \"10:00\", \"HoraFin\": \"14:30\", \"Ponente\": \" Maystar \", \"Almacen\": \"REI\" }");
 
             EventoDTO creado = await ServicioEventos().CrearEvento(cuerpo, "NUEVAVISION\\Carlos");
 
@@ -1071,6 +1072,87 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             {
                 Titulo = "Curso nuevo", Fecha = new DateTime(2026, 12, 1), Almacen = "REI", DiasPagoAntesEvento = 100
             }, "Reina"));
+        }
+
+        // ---------------- Decisión de Carlos (22/10/26): presencial u online; siempre con tienda ----------------
+
+        [TestMethod]
+        public async Task Formato_OnlineConTienda_SeGuardaYLosDeAntesSonPresenciales()
+        {
+            EventoDTO creado = await ServicioEventos().CrearEvento(JsonConvert.DeserializeObject<EventoDTO>(
+                "{ \"Titulo\": \"Webinar Maystar\", \"Fecha\": \"2026-11-10\", \"Almacen\": \"ALC\", \"Formato\": \"online\" }"), "NUEVAVISION\\Paloma");
+
+            Assert.AreEqual("Online", creado.Formato);
+            Assert.AreEqual("Presencial", (await ServicioEventos().LeerEventos("1", true)).Single(e => e.Id == EVENTO_PAGO).Formato,
+                "NULL en la BD (los de antes) = Presencial");
+        }
+
+        [TestMethod]
+        public async Task Formato_ElPutQueNoLoTraeLoConservaYUnoRaro400()
+        {
+            eventos[0].Formato = "Online";
+            _ = await ServicioEventos().ModificarEvento(EVENTO_PAGO, JsonConvert.DeserializeObject<EventoDTO>(
+                "{ \"Titulo\": \"Masterclass Cloasma\", \"Fecha\": \"2026-10-30\", \"Activo\": true }"), "NUEVAVISION\\Reina");
+            Assert.AreEqual("Online", eventos[0].Formato);
+
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => ServicioEventos().CrearEvento(
+                new EventoDTO { Titulo = "X", Fecha = new DateTime(2026, 11, 10), Almacen = "REI", Formato = "Híbrido" }, "x"));
+            Assert.AreEqual("El formato del evento tiene que ser Presencial u Online.", ex.Message);
+        }
+
+        [TestMethod]
+        public async Task Formato_OnlineSinTienda_400DeUsted()
+        {
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => ServicioEventos().CrearEvento(
+                new EventoDTO { Titulo = "Webinar", Fecha = new DateTime(2026, 11, 10), Formato = "Online" }, "x"));
+
+            StringAssert.Contains(ex.Message, "También en los eventos online");
+        }
+
+        [TestMethod]
+        public void Formato_RecordatorioDeUnOnline_NoDiceLaTiendaYLlevaElEnlace()
+        {
+            Evento online = eventos[0];
+            online.Formato = "Online";
+            online.Lugar = "https://meet.example.com/maystar";
+
+            Assert.AreEqual("el viernes 30 de octubre a las 10:00, online", RecordatorioEventosJobsService.CuandoYDonde(online));
+            var inscripcion = new EventoInscripcion { Id = 7, Empresa = "1", Cliente = "15191", Contacto = "0", ClaveAsistencia = Guid.NewGuid() };
+            using (MailMessage correo = RecordatorioEventosJobsService.Correo(online, inscripcion, "Luna", "luna@example.com"))
+            {
+                Assert.IsFalse(correo.Body.Contains("Reina"));
+                StringAssert.Contains(correo.Body, "https://meet.example.com/maystar");
+            }
+            NotificacionPushDTO push = RecordatorioEventosJobsService.Notificacion(online, inscripcion);
+            Assert.AreEqual("Online", push.Datos["formato"]);
+            Assert.IsFalse(push.Cuerpo.Contains("Reina"));
+        }
+
+        [TestMethod]
+        public void FacturaDelCurso_SiempreElAlmacenDelEvento_NuncaALG()
+        {
+            Assert.AreEqual("ALC", ReglasFacturacionCurso.AlmacenDelCurso(new Evento { Titulo = "X", Almacen = "alc" }));
+            var ex = Assert.ThrowsException<InvalidOperationException>(() => ReglasFacturacionCurso.AlmacenDelCurso(new Evento { Titulo = "Viejo", Almacen = null }));
+            StringAssert.Contains(ex.Message, "no tiene tienda");
+            Assert.ThrowsException<InvalidOperationException>(() => ReglasFacturacionCurso.AlmacenDelCurso(new Evento { Titulo = "X", Almacen = "ALG" }));
+            StringAssert.Contains(ReglasFacturacionCurso.MotivoNoAutomatizable(new EventoInscripcion { ImportePagado = 100 },
+                new Evento { Titulo = "Viejo", ProductoCurso = "CURSO01", ImporteSenal = 100 }), "no tiene tienda");
+        }
+
+        [TestMethod]
+        public async Task FacturaDelCurso_EventoSinTienda_NoCreaPedidoEnALG()
+        {
+            clientes[0].IVA = "G21";
+            IServicioPedidosVenta servicioPedidos = A.Fake<IServicioPedidosVenta>();
+            A.CallTo(() => servicioPedidos.LeerPlazosPago(A<string>._, A<string>._)).Returns(new PlazoPago());
+            var creador = new CreadorPedidoCurso(db, () => servicioPedidos);
+            var inscripcion = new EventoInscripcion { Id = 7, Empresa = "1", Cliente = "15191", Contacto = "0", ImportePagado = 100 };
+
+            var ex = await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
+                creador.Crear(inscripcion, new Evento { Titulo = "Viejo", ProductoCurso = "CURSO01", ImporteSenal = 100, Almacen = null }, "x"));
+
+            StringAssert.Contains(ex.Message, "no tiene tienda");
+            A.CallTo(() => db.TomarSiguienteNumeroPedido()).MustNotHaveHappened();
         }
 
         // ---------------- Facturación y cupón por modalidad ----------------

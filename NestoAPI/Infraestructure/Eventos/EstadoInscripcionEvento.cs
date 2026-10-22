@@ -389,6 +389,49 @@ namespace NestoAPI.Infraestructure.Eventos
         private static decimal Redondear(decimal importe) => Math.Round(importe, 2, MidpointRounding.AwayFromZero);
     }
 
+    /// <summary>
+    /// Decisión de Carlos (22/10/26): eventos presenciales u online (webinars). Se guarda en Eventos.Formato; NULL es Presencial
+    /// (los de antes). Todo evento, también los online, es de una tienda (REI o ALC): el ponente emite desde una de las dos.
+    /// </summary>
+    public static class FormatosEvento
+    {
+        public const string PRESENCIAL = "Presencial";
+        public const string ONLINE = "Online";
+
+        public static bool EsOnline(Evento evento) => string.Equals(evento?.Formato?.Trim(), ONLINE, StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>El formato del evento para el DTO: «Presencial» u «Online».</summary>
+        public static string De(Evento evento) => EsOnline(evento) ? ONLINE : PRESENCIAL;
+
+        /// <summary>«online» → «Online»; null o vacío → Presencial. Lanza si no es ninguno de los dos.</summary>
+        public static string Interpretar(string texto)
+        {
+            string limpio = texto?.Trim();
+            if (string.IsNullOrEmpty(limpio) || string.Equals(limpio, PRESENCIAL, StringComparison.OrdinalIgnoreCase))
+            {
+                return PRESENCIAL;
+            }
+            if (string.Equals(limpio, ONLINE, StringComparison.OrdinalIgnoreCase))
+            {
+                return ONLINE;
+            }
+            throw new NestoBusinessException("El formato del evento tiene que ser Presencial u Online.");
+        }
+
+        /// <summary>
+        /// El enlace para conectarse a un evento online. TODO (Carlos): no hay un campo propio para el enlace del webinar; mientras
+        /// tanto, si el Lugar de un evento online es una dirección web, se usa como enlace.
+        /// </summary>
+        public static string EnlaceOnline(Evento evento)
+        {
+            string lugar = evento?.Lugar?.Trim();
+            return EsOnline(evento) && lugar != null
+                && (lugar.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || lugar.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                ? lugar
+                : null;
+        }
+    }
+
     /// <summary>NestoAPI#690: la confirmación de asistencia (independiente del pago) y el estado que se ve en la lista.</summary>
     public static class ReglasAsistenciaEvento
     {

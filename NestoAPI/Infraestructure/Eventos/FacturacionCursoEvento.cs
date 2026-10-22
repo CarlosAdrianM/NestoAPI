@@ -196,7 +196,9 @@ WHERE InscripcionId = @p0 AND Pedido IS NULL";
             PlazoPago plazo = servicio.LeerPlazosPago(empresa, Constantes.PlazosPago.CONTADO)
                 ?? throw new InvalidOperationException($"No existen los plazos de pago {Constantes.PlazosPago.CONTADO}.");
             DateTime hoy = DateTime.Today;
-            string almacen = PermisosEventos.EsAlmacenDeEventos(evento.Almacen) ? evento.Almacen.Trim().ToUpperInvariant() : Constantes.Productos.ALMACEN_POR_DEFECTO;
+            // Carlos (22/10/26): SIEMPRE el almacén y la delegación del evento (también los online: el ponente emite desde una de
+            // las dos tiendas). Sin tienda válida no se crea el pedido: nunca ALG.
+            string almacen = ReglasFacturacionCurso.AlmacenDelCurso(evento);
             string usuarioPedido = Truncar(usuario, 30);
             int numero = db.TomarSiguienteNumeroPedido();
 

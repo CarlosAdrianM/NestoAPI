@@ -256,6 +256,11 @@ namespace NestoAPI.Infraestructure.Eventos
                 return $"El evento «{titulo}» no tiene la referencia del curso (ProductoCurso): no se puede facturar solo. " +
                     "Póngasela al evento y relance la facturación, o facture el curso a mano.";
             }
+            // Carlos (22/10/26): el pedido del curso lleva el almacén y la delegación del evento; sin tienda, nunca ALG
+            if (!PermisosEventos.EsAlmacenDeEventos(evento?.Almacen))
+            {
+                return MotivoSinTienda(evento);
+            }
             // NestoAPI#690: lo que se tenía que cobrar depende de la modalidad (reembolsable o no reembolsable)
             ModalidadInscripcionEvento modalidad = ReglasModalidadEvento.DeInscripcion(inscripcion);
             if (modalidad == ModalidadInscripcionEvento.Gratuita)
@@ -275,6 +280,23 @@ namespace NestoAPI.Infraestructure.Eventos
                     "no se factura solo. Facture y liquide a mano lo que corresponda.";
             }
             return null;
+        }
+
+        internal static string MotivoSinTienda(Evento evento) =>
+            $"El evento «{evento?.Titulo?.Trim()}» no tiene tienda (Reina o Alcobendas): el pedido del curso lleva el almacén y la " +
+            "delegación del evento. Póngale su tienda y relance la facturación.";
+
+        /// <summary>
+        /// Carlos (22/10/26): el almacén (y delegación) del pedido del curso es SIEMPRE el del evento, REI o ALC. Lanza si el evento
+        /// no tiene una de las dos: nunca cae al almacén por defecto (ALG).
+        /// </summary>
+        public static string AlmacenDelCurso(Evento evento)
+        {
+            if (!PermisosEventos.EsAlmacenDeEventos(evento?.Almacen))
+            {
+                throw new InvalidOperationException(MotivoSinTienda(evento));
+            }
+            return evento.Almacen.Trim().ToUpperInvariant();
         }
 
         /// <summary>La forma de pago del pedido del curso según cómo pagó la inscripción.</summary>

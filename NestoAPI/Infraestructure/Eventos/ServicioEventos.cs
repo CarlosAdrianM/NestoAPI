@@ -48,6 +48,7 @@ namespace NestoAPI.Infraestructure.Eventos
         private string horaFin;
         private string ponente;
         private int? diasPagoAntesEvento;
+        private string formato;
 
         /// <summary>NestoAPI#611: ¿venía este campo en el cuerpo de la petición (aunque fuera null)?</summary>
         public bool Trae(string campo) => recibidos.Contains(campo);
@@ -103,6 +104,11 @@ namespace NestoAPI.Infraestructure.Eventos
             get => diasPagoAntesEvento;
             set { diasPagoAntesEvento = value; recibidos.Add(nameof(DiasPagoAntesEvento)); }
         }
+        /// <summary>
+        /// Carlos (22/10/26): «Presencial» u «Online» (webinar). Al leer, nunca null (los de antes, Presencial). Al escribir, si no
+        /// viene, Presencial al crear y el que tuviera al modificar.
+        /// </summary>
+        public string Formato { get => formato; set { formato = value; recibidos.Add(nameof(Formato)); } }
     }
 
     /// <summary>NestoAPI#591: POST api/Eventos/{id}/Senales. El apunte a favor del extracto que es la señal del evento.</summary>
@@ -182,6 +188,8 @@ namespace NestoAPI.Infraestructure.Eventos
         public const int LONGITUD_DESCRIPCION = 2000;
         public const int LONGITUD_PRODUCTO = 15;
         public const int LONGITUD_PONENTE = 100;
+        public const string MENSAJE_FALTA_TIENDA =
+            "Indique la tienda del evento: Reina (REI) o Alcobendas (ALC). También en los eventos online, porque el ponente emite desde una de las dos tiendas.";
         /// <summary>El CHECK de Eventos.DiasPagoAntesEvento (Issue690).</summary>
         public const int MAXIMO_DIAS_PAGO = 90;
 
@@ -368,8 +376,8 @@ namespace NestoAPI.Infraestructure.Eventos
             {
                 evento.ImporteSenalNoReembolsable = ReglasModalidadEvento.SENAL_NO_REEMBOLSABLE_POR_DEFECTO;
             }
-            await Validar(evento).ConfigureAwait(false);
-            var entidad = new Evento { Empresa = EmpresaOPorDefecto(evento.Empresa) };
+            await Validar(evento, null).ConfigureAwait(false);
+            var entidad = new Evento { Empresa = EmpresaOPorDefecto(evento.Empresa), Formato = FormatosEvento.PRESENCIAL };
             Copiar(evento, entidad, usuario);
             db.Eventos.Add(entidad);
             await db.SaveChangesAsync().ConfigureAwait(false);
@@ -384,7 +392,7 @@ namespace NestoAPI.Infraestructure.Eventos
             {
                 evento.Empresa = Limpiar(entidad.Empresa);
             }
-            await Validar(evento).ConfigureAwait(false);
+            await Validar(evento, entidad.Almacen).ConfigureAwait(false);
             Dictionary<int, int> ocupadas = await PlazasOcupadas(new List<int> { id }).ConfigureAwait(false);
             int ocupadasEvento = ocupadas.TryGetValue(id, out int n) ? n : 0;
             if (evento.Trae(nameof(EventoDTO.Plazas)) && evento.Plazas.HasValue && evento.Plazas.Value < ocupadasEvento)
@@ -406,7 +414,8 @@ namespace NestoAPI.Infraestructure.Eventos
             return await ConImagen(ADTO(entidad, ocupadasEvento)).ConfigureAwait(false);
         }
 
-        private async Task Validar(EventoDTO evento)
+        /// <param name="almacenGuardado">Al modificar, la tienda que ya tiene el evento (si el cuerpo no trae Almacen, se queda esa).</param>
+        private async Task Validar(EventoDTO evento, string almacenGuardado)
         {
             if (evento == null)
             {
@@ -448,11 +457,17 @@ namespace NestoAPI.Infraestructure.Eventos
             {
                 throw new NestoBusinessException($"Los días para pagar antes del evento tienen que estar entre 0 y {MAXIMO_DIAS_PAGO} (o vacío: 7).");
             }
-            // NestoAPI#611 (Carlos, 14/10/26): cada evento es de una tienda, que es quien lo mantiene. Solo se exige si viene en
-            // el cuerpo: el Nesto de #591 no lo manda y tiene que poder seguir creando y modificando eventos.
-            if (evento.Trae(nameof(EventoDTO.Almacen)) && !PermisosEventos.EsAlmacenDeEventos(evento.Almacen))
+            // NestoAPI#611 (Carlos, 14/10/26): cada evento es de una tienda, que es quien lo mantiene. Carlos (22/10/26): SIEMPRE,
+            // también los online (el ponente emite desde una de las dos tiendas), y el pedido del curso lleva su almacén y su
+            // delegación. Al modificar sin Almacen en el cuerpo, vale la que ya tenía.
+            string almacen = evento.Trae(nameof(EventoDTO.Almacen)) ? evento.Almacen : almacenGuardado;
+            if (!PermisosEventos.EsAlmacenDeEventos(almacen))
             {
-                throw new NestoBusinessException("Indique la tienda del evento: Reina (REI) o Alcobendas (ALC).");
+                throw new NestoBusinessException(MENSAJE_FALTA_TIENDA);
+            }
+            if (evento.Trae(nameof(EventoDTO.Formato)))
+            {
+                _ = FormatosEvento.Interpretar(evento.Formato);
             }
             if (evento.Plazas.HasValue && evento.Plazas.Value <= 0)
             {
@@ -512,6 +527,10 @@ namespace NestoAPI.Infraestructure.Eventos
             {
                 destino.DiasPagoAntesEvento = origen.DiasPagoAntesEvento;
             }
+            if (origen.Trae(nameof(EventoDTO.Formato)))
+            {
+                destino.Formato = FormatosEvento.Interpretar(origen.Formato);
+            }
             // Con lo conservado del PUT (por ejemplo, solo viene la hora de fin)
             if (destino.HoraInicio.HasValue && destino.HoraFin.HasValue && destino.HoraFin.Value <= destino.HoraInicio.Value)
             {
@@ -564,6 +583,7 @@ namespace NestoAPI.Infraestructure.Eventos
             Ponente = e.Ponente?.Trim(),
             ImporteSenalNoReembolsable = e.ImporteSenalNoReembolsable,
             DiasPagoAntesEvento = e.DiasPagoAntesEvento,
+            Formato = FormatosEvento.De(e),
             Gratuito = ReglasModalidadEvento.EsGratuito(e),
             Modalidades = ReglasModalidadEvento.Disponibles(e).Select(m => m.ToString()).ToList()
         };
