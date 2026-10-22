@@ -1,4 +1,4 @@
-﻿﻿/*
+﻿/*
     Novedad 751 (Alfredo, 22/10/26): la reposición 81028 (Reina → Algete, enviada el 16/10) no se puede terminar:
     «Se ha realizado un inventario posterior a esta fecha. No se pueden meter movimientos anteriores a ese inventario.»
 
