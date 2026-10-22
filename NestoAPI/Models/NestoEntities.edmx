@@ -1032,6 +1032,8 @@
           <Property Name="HoraFin" Type="time" Precision="0" />
           <Property Name="Ponente" Type="nvarchar" MaxLength="100" />
           <Property Name="ImporteSenalNoReembolsable" Type="decimal" Precision="18" Scale="2" Nullable="false" />
+          <Property Name="DiasPagoAntesEvento" Type="int" />
+          <Property Name="Formato" Type="varchar" MaxLength="15" />
         </EntityType>
         <EntityType Name="EventosInscripciones">
           <Key>
@@ -1062,6 +1064,7 @@
           <Property Name="AsistenciaOrigen" Type="varchar" MaxLength="20" />
           <Property Name="RecordatorioEnviado" Type="datetime" />
           <Property Name="ClaveAsistencia" Type="uniqueidentifier" />
+          <Property Name="AvisoPagoEnviado" Type="datetime" />
         </EntityType>
         <EntityType Name="EventosSenales">
           <Key>
@@ -8825,6 +8828,8 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="HoraFin" Type="Time" Precision="0" />
           <Property Name="Ponente" Type="String" MaxLength="100" FixedLength="false" Unicode="true" />
           <Property Name="ImporteSenalNoReembolsable" Type="Decimal" Nullable="false" Precision="18" Scale="2" />
+          <Property Name="DiasPagoAntesEvento" Type="Int32" />
+          <Property Name="Formato" Type="String" MaxLength="15" FixedLength="false" Unicode="false" />
         </EntityType>
         <EntityType Name="EventoInscripcion">
           <Key>
@@ -8855,6 +8860,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="AsistenciaOrigen" Type="String" MaxLength="20" FixedLength="false" Unicode="false" />
           <Property Name="RecordatorioEnviado" Type="DateTime" Precision="3" />
           <Property Name="ClaveAsistencia" Type="Guid" />
+          <Property Name="AvisoPagoEnviado" Type="DateTime" Precision="3" />
         </EntityType>
         <EntityType Name="EventoSenal">
           <Key>
@@ -16716,6 +16722,8 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
                 <ScalarProperty Name="HoraFin" ColumnName="HoraFin" />
                 <ScalarProperty Name="Ponente" ColumnName="Ponente" />
                 <ScalarProperty Name="ImporteSenalNoReembolsable" ColumnName="ImporteSenalNoReembolsable" />
+                <ScalarProperty Name="DiasPagoAntesEvento" ColumnName="DiasPagoAntesEvento" />
+                <ScalarProperty Name="Formato" ColumnName="Formato" />
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>
@@ -16747,6 +16755,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
                 <ScalarProperty Name="AsistenciaOrigen" ColumnName="AsistenciaOrigen" />
                 <ScalarProperty Name="RecordatorioEnviado" ColumnName="RecordatorioEnviado" />
                 <ScalarProperty Name="ClaveAsistencia" ColumnName="ClaveAsistencia" />
+                <ScalarProperty Name="AvisoPagoEnviado" ColumnName="AvisoPagoEnviado" />
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>

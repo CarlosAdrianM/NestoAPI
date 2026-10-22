@@ -24,6 +24,13 @@
        - ClaveAsistencia: la clave del enlace del correo para contestar sin usuario (no se puede adivinar).
        - Estado Inscrita: la inscripción gratuita (no caduca, no factura, va directa a la lista de asistencia).
     3. EventosImagenes: la imagen del evento, fuera del EDMX, como NovedadesAdjuntos (#616). Una por evento.
+    4. (Decisiones de Carlos, 22/10/26, al integrar #614/#615/#690)
+       - Eventos.DiasPagoAntesEvento: cuántos días antes del evento vence el pago de una reserva. NULL = 7.
+       - Eventos.Formato: Presencial u Online (webinar). NULL = Presencial (los de antes). Todo evento, también los
+         online, es de REI o ALC (el ponente emite desde una de las dos tiendas).
+       - EventosInscripciones.AvisoPagoEnviado: cuándo salió el aviso «su plaza sin pagar se libera el día X» (una vez).
+       - GRANT INSERT en Productos al usuario de la API: POST api/Eventos/{id}/ProductoCurso da de alta la referencia
+         del curso (EVENTO00123 / EVENTO00123NR) copiando la ficha de un curso existente (90077).
 
     PRECAUCIÓN (#542, #294): nada de índices filtrados ni de columnas calculadas indexadas.
 */
@@ -110,6 +117,26 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_EventosInscripciones_C
 GO
 
 ------------------------------------------------------------------------------------------------
+-- 4. Plazo de pago y formato del evento; aviso de pago de la inscripción
+------------------------------------------------------------------------------------------------
+IF COL_LENGTH('dbo.Eventos', 'DiasPagoAntesEvento') IS NULL
+    ALTER TABLE dbo.Eventos ADD DiasPagoAntesEvento int NULL;                       -- NULL = 7
+GO
+IF OBJECT_ID('dbo.CK_Eventos_DiasPagoAntesEvento') IS NULL
+    ALTER TABLE dbo.Eventos ADD CONSTRAINT CK_Eventos_DiasPagoAntesEvento
+        CHECK (DiasPagoAntesEvento IS NULL OR (DiasPagoAntesEvento >= 0 AND DiasPagoAntesEvento <= 90));
+GO
+IF COL_LENGTH('dbo.Eventos', 'Formato') IS NULL
+    ALTER TABLE dbo.Eventos ADD Formato varchar(15) NULL;                           -- NULL = Presencial
+GO
+IF OBJECT_ID('dbo.CK_Eventos_Formato') IS NULL
+    ALTER TABLE dbo.Eventos ADD CONSTRAINT CK_Eventos_Formato CHECK (Formato IS NULL OR Formato IN ('Presencial', 'Online'));
+GO
+IF COL_LENGTH('dbo.EventosInscripciones', 'AvisoPagoEnviado') IS NULL
+    ALTER TABLE dbo.EventosInscripciones ADD AvisoPagoEnviado datetime NULL;
+GO
+
+------------------------------------------------------------------------------------------------
 -- 3. EventosImagenes (fuera del EDMX, como NovedadesAdjuntos de #616)
 ------------------------------------------------------------------------------------------------
 IF OBJECT_ID('dbo.EventosImagenes', 'U') IS NULL
@@ -130,15 +157,19 @@ GO
 -- Eventos y EventosInscripciones ya tenían SELECT/INSERT/UPDATE/DELETE (#591, #611): las columnas nuevas no necesitan GRANT.
 GRANT SELECT, INSERT, UPDATE, DELETE ON dbo.EventosImagenes TO [NUEVAVISION\RDS2016$];
 GO
+-- POST api/Eventos/{id}/ProductoCurso: alta de la referencia del curso (INSERT ... SELECT de la ficha de 90077)
+GRANT SELECT, INSERT ON dbo.Productos TO [NUEVAVISION\RDS2016$];
+GO
 
 ------------------------------------------------------------------------------------------------
--- VERIFICACIÓN: 4 columnas en Eventos, 7 en EventosInscripciones, el CHECK con Inscrita y la tabla nueva
+-- VERIFICACIÓN: 6 columnas en Eventos, 8 en EventosInscripciones, el CHECK con Inscrita y la tabla nueva
 ------------------------------------------------------------------------------------------------
 SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE, IS_NULLABLE
 FROM INFORMATION_SCHEMA.COLUMNS
-WHERE (TABLE_NAME = 'Eventos' AND COLUMN_NAME IN ('HoraInicio', 'HoraFin', 'Ponente', 'ImporteSenalNoReembolsable'))
+WHERE (TABLE_NAME = 'Eventos' AND COLUMN_NAME IN ('HoraInicio', 'HoraFin', 'Ponente', 'ImporteSenalNoReembolsable',
+       'DiasPagoAntesEvento', 'Formato'))
    OR (TABLE_NAME = 'EventosInscripciones' AND COLUMN_NAME IN ('Modalidad', 'AsistenciaRespuesta', 'AsistenciaFecha',
-       'AsistenciaUsuario', 'AsistenciaOrigen', 'RecordatorioEnviado', 'ClaveAsistencia'))
+       'AsistenciaUsuario', 'AsistenciaOrigen', 'RecordatorioEnviado', 'ClaveAsistencia', 'AvisoPagoEnviado'))
 ORDER BY TABLE_NAME, COLUMN_NAME;
 
 SELECT name, definition FROM sys.check_constraints WHERE name = 'CK_EventosInscripciones_Estado';

@@ -38,5 +38,6 @@ namespace NestoAPI.Models
         public string AsistenciaOrigen { get; set; }
         public Nullable<System.DateTime> RecordatorioEnviado { get; set; }
         public Nullable<System.Guid> ClaveAsistencia { get; set; }
+        public Nullable<System.DateTime> AvisoPagoEnviado { get; set; }
     }
 }

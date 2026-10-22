@@ -31,5 +31,7 @@ namespace NestoAPI.Models
         public Nullable<System.TimeSpan> HoraFin { get; set; }
         public string Ponente { get; set; }
         public decimal ImporteSenalNoReembolsable { get; set; }
+        public Nullable<int> DiasPagoAntesEvento { get; set; }
+        public string Formato { get; set; }
     }
 }

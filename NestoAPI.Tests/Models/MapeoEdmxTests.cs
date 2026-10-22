@@ -330,7 +330,9 @@ namespace NestoAPI.Tests.Models
                 // NestoAPI#611
                 "Almacen", "ProductoCurso", "Plazas", "Lugar", "Descripcion", "FechaListaAsistencia",
                 // NestoAPI#690
-                "HoraInicio", "HoraFin", "Ponente", "ImporteSenalNoReembolsable");
+                "HoraInicio", "HoraFin", "Ponente", "ImporteSenalNoReembolsable",
+                // Decisiones de Carlos (22/10/26): plazo de pago y formato (presencial / online)
+                "DiasPagoAntesEvento", "Formato");
             ComprobarTresCapas("EventoSenal", "EventosSenales",
                 "Id", "EventoId", "Empresa", "Cliente", "Contacto", "NumOrdenExtracto", "Importe", "Usuario", "FechaModificacion");
 
@@ -348,6 +350,8 @@ namespace NestoAPI.Tests.Models
             Assert.AreEqual("time", (string)almacenEvento.Elements(SsdlNs + "Property").Single(p => p.Attribute("Name").Value == "HoraInicio").Attribute("Type"));
             Assert.AreEqual(typeof(TimeSpan?), typeof(Evento).GetProperty("HoraInicio").PropertyType);
             Assert.AreEqual(typeof(decimal), typeof(Evento).GetProperty("ImporteSenalNoReembolsable").PropertyType);
+            Assert.AreEqual(typeof(int?), typeof(Evento).GetProperty("DiasPagoAntesEvento").PropertyType);
+            Assert.AreEqual("varchar", (string)almacenEvento.Elements(SsdlNs + "Property").Single(p => p.Attribute("Name").Value == "Formato").Attribute("Type"));
         }
 
         /// <summary>NestoAPI#611: inscripciones a eventos añadidas a mano; las columnas del pago y los enlaces admiten null.</summary>
@@ -358,7 +362,9 @@ namespace NestoAPI.Tests.Models
                 "Id", "EventoId", "Empresa", "Cliente", "Contacto", "Origen", "Estado", "FechaLimitePago", "PagoTPVId", "EventoSenalId",
                 "FormaPago", "ImportePagado", "UsuarioPago", "FechaPago", "UsuarioCreacion", "FechaCreacion", "Usuario", "FechaModificacion",
                 // NestoAPI#690
-                "Modalidad", "AsistenciaRespuesta", "AsistenciaFecha", "AsistenciaUsuario", "AsistenciaOrigen", "RecordatorioEnviado", "ClaveAsistencia");
+                "Modalidad", "AsistenciaRespuesta", "AsistenciaFecha", "AsistenciaUsuario", "AsistenciaOrigen", "RecordatorioEnviado", "ClaveAsistencia",
+                "AvisoPagoEnviado");
+            Assert.AreEqual(typeof(DateTime?), typeof(EventoInscripcion).GetProperty("AvisoPagoEnviado").PropertyType);
             Assert.AreEqual(typeof(Guid?), typeof(EventoInscripcion).GetProperty("ClaveAsistencia").PropertyType);
 
             XElement almacen = EntidadesPorNombre(LeerRecurso("ssdl"), SsdlNs)["EventosInscripciones"];
