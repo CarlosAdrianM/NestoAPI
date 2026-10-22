@@ -579,6 +579,70 @@ namespace NestoAPI.Tests.Infrastructure.Cupones
             A.CallTo(() => repositorio.Reservar(7, "1", PEDIDO, Constantes.FormasVenta.TIENDA_ONLINE, "x")).MustHaveHappenedOnceExactly();
         }
 
+        /// <summary>Usado en la tienda el último día (su Caducidad); el pedido entra por CanalesExternos al día siguiente.</summary>
+        private CuponLeido GastadoEnLaTiendaElUltimoDia()
+        {
+            CuponLeido c = CuponesTests.Cupon(EstadosCupon.USADO);
+            c.Caducidad = HOY.Date.AddDays(-1);
+            c.FechaUso = HOY.Date.AddDays(-1).AddHours(23);
+            c.CanalUso = "PrestaShop";
+            return c;
+        }
+
+        [TestMethod]
+        public async Task PedidoDeCanalesExternos_CuponGastadoEnLaTiendaElUltimoDia_SeAceptaAlDiaSiguienteYaCaducado()
+        {
+            cupon = GastadoEnLaTiendaElUltimoDia();
+            A.CallTo(() => repositorio.Reservar(A<int>._, A<string>._, A<int>._, A<string>._, A<string>._)).Returns(Task.FromResult(true));
+            ServicioCanjeCupones canje = Canje(); // HOY = el día siguiente a la caducidad
+            await canje.NormalizarLineas(PedidoConCodigo(Constantes.FormasVenta.TIENDA_ONLINE));
+
+            PlanCanjeCupon plan = await canje.Comprobar("1", PEDIDO, CLIENTE,
+                new List<LinPedidoVta> { Linea("CREMA", 200), LineaCupon(Constantes.FormasVenta.TIENDA_ONLINE) }, "G21",
+                null, "x", pedidoNuevo: true, teniaLineaCupon: false);
+            await canje.Reservar(plan);
+
+            Assert.AreEqual(7, plan.CuponAReservar.Id, "No es CUPON_CADUCADO: se gastó cuando valía y solo se ata al pedido");
+            A.CallTo(() => repositorio.Reservar(7, "1", PEDIDO, A<string>._, "x")).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public void Sql_AtarElCuponGastadoEnLaTiendaNoMiraLaCaducidad()
+        {
+            // La rama de Usado sin pedido de SQL_RESERVAR no lleva condición de fechas (las de Activo/Emitido sí)
+            string sql = RepositorioCupones.SQL_RESERVAR.Replace("\r", "").Replace("\n", " ");
+            StringAssert.Contains(sql, "(c.Estado = 'Usado' AND (c.UsadoEnPedido = @p2 OR c.UsadoEnPedido IS NULL");
+        }
+
+        [TestMethod]
+        public async Task LeerPorCodigo_GastadoEnLaTiendaElUltimoDia_AlDiaSiguienteSigueUsadoConCanalYReferencia_NoCaducado()
+        {
+            cupon = GastadoEnLaTiendaElUltimoDia();
+            A.CallTo(() => repositorio.LeerUsoTienda(7)).Returns(Task.FromResult(new UsoTiendaCupon { PedidoCanal = REFERENCIA, ImporteDescontado = 50 }));
+
+            CuponDTO c = await Servicio().LeerPorCodigo(CODIGO, Casa());
+
+            Assert.AreEqual(EstadosCupon.USADO, c.Estado, "Nesto#547 lo reconoce por Usado + CanalUso + PedidoCanal, no como caducado");
+            Assert.AreEqual("PrestaShop", c.CanalUso);
+            Assert.AreEqual(REFERENCIA, c.PedidoCanal);
+            Assert.AreEqual(50M, c.ImporteDescontado);
+            Assert.IsNull(c.UsadoEnPedido);
+            Assert.IsFalse(c.SePuedeUsar);
+        }
+
+        [TestMethod]
+        public async Task UsarDesdeNesto_CuponGastadoEnLaTiendaElUltimoDia_AlDiaSiguiente_YaEnEstePedidoSinAviso()
+        {
+            cupon = GastadoEnLaTiendaElUltimoDia();
+            A.CallTo(() => repositorio.LeerUsoTienda(7)).Returns(Task.FromResult(new UsoTiendaCupon { PedidoCanal = REFERENCIA, ImporteDescontado = 50 }));
+            var peticion = new UsarCuponTiendaDTO { Empresa = "1", Pedido = PEDIDO, Canal = "PrestaShop", PedidoCanal = REFERENCIA, ImporteDescontado = 50 };
+
+            UsoCuponTiendaDTO r = await Servicio(espejoEncendido: false).UsarEnTienda(CODIGO, peticion, Casa());
+
+            Assert.AreEqual(ResultadosUsoCuponTienda.YA_EN_ESTE_PEDIDO, r.Resultado);
+            A.CallTo(() => correo.EnviarCorreoSMTP(A<MailMessage>._)).MustNotHaveHappened();
+        }
+
         [TestMethod]
         public async Task PedidoDeCanalesExternos_AlModificarloDespues_TampocoMiraElMinimo()
         {
