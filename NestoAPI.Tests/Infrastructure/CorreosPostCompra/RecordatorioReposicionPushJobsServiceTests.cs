@@ -105,13 +105,14 @@ namespace NestoAPI.Tests.Infrastructure.CorreosPostCompra
             return Task.FromResult(resultado);
         }
 
-        private Task<ResultadoRecordatorioReposicionPushDTO> Procesar(DateTime ahora)
+        private Task<ResultadoRecordatorioReposicionPushDTO> Procesar(DateTime ahora, Func<string, Task<string>> leerFoto = null)
             => RecordatorioReposicionPushJobsService.Procesar(lector, push, correo, Calcular,
                 () => Task.FromResult(clientesConApp.ToList()),
                 (clientes, desde) => Task.FromResult<ISet<string>>(new HashSet<string>(
                     clientes.Where(c => ultimaPush.TryGetValue(c, out DateTime fecha) && fecha >= desde))),
                 dia => festivos.Contains(dia.Date),
-                ahora);
+                ahora,
+                leerFoto);
 
         private void NoSeHaEnviadoNada()
             => A.CallTo(() => push.EnviarConsejoACliente(A<string>._, A<string>._, A<NotificacionPushDTO>._)).MustNotHaveHappened();
@@ -153,7 +154,7 @@ namespace NestoAPI.Tests.Infrastructure.CorreosPostCompra
             Assert.AreEqual(1, correos.Count);
             Assert.AreEqual(Constantes.Correos.INFORMATICA, correos[0].To.Single().Address);
             StringAssert.Contains(correos[0].Body, "15191");
-            StringAssert.Contains(System.Net.WebUtility.HtmlDecode(correos[0].Body), "Planifica para no quedarte sin champú reparador 1000 ml");
+            StringAssert.Contains(System.Net.WebUtility.HtmlDecode(correos[0].Body), "Que no le falte champú reparador 1000 ml esta semana");
         }
 
         [TestMethod]
@@ -198,6 +199,24 @@ namespace NestoAPI.Tests.Infrastructure.CorreosPostCompra
 
             Assert.AreEqual(RecordatorioReposicionPushJobsService.MOTIVO_HORA, resultado.MotivoNoSeEnvia);
             NoSeHaEnviadoNada();
+        }
+
+        [TestMethod]
+        public async Task FueraDe9a21_NuncaSeManda_AunqueLaHoraLimiteLoPermita()
+        {
+            Parametro(Constantes.ParametrosUsuario.RECORDATORIO_REPOSICION_HORA_LIMITE, "23:59");
+
+            foreach (DateTime ahora in new[] { MARTES.Date.AddHours(8).AddMinutes(59), MARTES.Date.AddHours(21), MARTES.Date.AddHours(23),
+                MARTES.Date.AddMinutes(30) })
+            {
+                ResultadoRecordatorioReposicionPushDTO resultado = await Procesar(ahora);
+                Assert.AreEqual(RecordatorioReposicionPushJobsService.MOTIVO_FUERA_DE_HORARIO, resultado.MotivoNoSeEnvia, ahora.ToString("HH:mm"));
+            }
+            NoSeHaEnviadoNada();
+            Assert.AreEqual(0, calculados.Count);
+
+            Assert.IsNull((await Procesar(MARTES.Date.AddHours(20).AddMinutes(59))).MotivoNoSeEnvia, "Con hora límite 23:59, a las 20:59 sí");
+            Assert.IsNull((await Procesar(MARTES.Date.AddHours(9))).MotivoNoSeEnvia, "A las 9:00 en punto sí");
         }
 
         [TestMethod]
@@ -292,16 +311,75 @@ namespace NestoAPI.Tests.Infrastructure.CorreosPostCompra
             });
 
             Assert.AreEqual("Nueva Visión", n.Titulo);
-            Assert.AreEqual("Planifica para no quedarte sin champú reparador 1000 ml", n.Cuerpo);
+            Assert.AreEqual("Que no le falte champú reparador 1000 ml esta semana", n.Cuerpo);
         }
 
         [TestMethod]
         public void Texto_DosYTresProductos()
         {
-            Assert.AreEqual("Planifica tu semana: laca fuerte y tinte 6.0",
+            Assert.AreEqual("Que no le falte laca fuerte ni tinte 6.0 esta semana",
                 RecordatorioReposicionPushJobsService.Cuerpo(new[] { "LACA FUERTE", "TINTE 6.0" }));
-            Assert.AreEqual("Planifica tu semana: laca fuerte, tinte 6.0 y oxidante 20 vol",
+            Assert.AreEqual("Laca fuerte, tinte 6.0 y oxidante 20 vol: mejor tenerlos a mano esta semana",
                 RecordatorioReposicionPushJobsService.Cuerpo(new[] { "LACA FUERTE", "TINTE 6.0", "OXIDANTE 20 VOL" }));
+        }
+
+        [TestMethod]
+        public void Texto_DeUsted_NuncaDeTu()
+        {
+            foreach (string[] nombres in new[] { new string[0], new[] { "A" }, new[] { "A", "B" }, new[] { "A", "B", "C" } })
+            {
+                string cuerpo = " " + RecordatorioReposicionPushJobsService.Cuerpo(nombres).ToLowerInvariant() + " ";
+                foreach (string tu in new[] { " tu ", " te ", " planifica", " quedarte", " puedes" })
+                {
+                    Assert.IsFalse(cuerpo.Contains(tu), cuerpo);
+                }
+            }
+        }
+
+        [TestMethod]
+        public async Task ConFoto_LaDelPrimeroVaEnImagenUrl()
+        {
+            productosQueTocan = new List<CandidatoReposicionDTO> { Producto("P1", "UNO", 10m, 1), Producto("P2", "DOS", 50m, 1) };
+            var pedidas = new List<string>();
+            NotificacionPushDTO enviada = null;
+            A.CallTo(() => push.EnviarConsejoACliente(A<string>._, A<string>._, A<NotificacionPushDTO>._))
+                .Invokes((string e, string c, NotificacionPushDTO n) => enviada = n).Returns(1);
+
+            _ = await Procesar(MARTES, p => { pedidas.Add(p); return Task.FromResult("https://www.tienda.es/img/" + p + ".jpg"); });
+
+            CollectionAssert.AreEqual(new[] { "P2" }, pedidas, "Solo la del primero, el de más importe habitual");
+            Assert.AreEqual("https://www.tienda.es/img/P2.jpg", enviada.Datos["imagenUrl"]);
+        }
+
+        [TestMethod]
+        public async Task SinFoto_NoLlevaImagenUrl()
+        {
+            NotificacionPushDTO enviada = null;
+            A.CallTo(() => push.EnviarConsejoACliente(A<string>._, A<string>._, A<NotificacionPushDTO>._))
+                .Invokes((string e, string c, NotificacionPushDTO n) => enviada = n).Returns(1);
+
+            _ = await Procesar(MARTES, p => Task.FromResult("https://"));
+            Assert.IsFalse(enviada.Datos.ContainsKey("imagenUrl"));
+
+            _ = await Procesar(MARTES, p => throw new Exception("tienda caída"));
+            Assert.IsFalse(enviada.Datos.ContainsKey("imagenUrl"), "Si falla la tienda, la push sale igual sin foto");
+        }
+
+        [TestMethod]
+        public void MensajeFcm_ConImagen_EnNotificationYEnApns_SinImagen_ComoSiempre()
+        {
+            var tokens = new List<string> { "t1" };
+            var conFoto = RecordatorioReposicionPushJobsService.Notificacion(
+                new List<CandidatoReposicionDTO> { Producto("P1", "UNO", 10m, 1) }, "https://www.tienda.es/img/p1.jpg");
+            FirebaseAdmin.Messaging.MulticastMessage mensaje = NestoAPI.Infraestructure.Notificaciones.ServicioNotificacionesPush.ConstruirMensaje(tokens, conFoto);
+            Assert.AreEqual("https://www.tienda.es/img/p1.jpg", mensaje.Notification.ImageUrl);
+            Assert.AreEqual("https://www.tienda.es/img/p1.jpg", mensaje.Apns.FcmOptions.ImageUrl);
+            Assert.IsTrue(mensaje.Apns.Aps.MutableContent);
+
+            var sinFoto = RecordatorioReposicionPushJobsService.Notificacion(new List<CandidatoReposicionDTO> { Producto("P1", "UNO", 10m, 1) });
+            mensaje = NestoAPI.Infraestructure.Notificaciones.ServicioNotificacionesPush.ConstruirMensaje(tokens, sinFoto);
+            Assert.IsNull(mensaje.Notification.ImageUrl);
+            Assert.IsNull(mensaje.Apns);
         }
 
         [TestMethod]
@@ -348,7 +426,7 @@ namespace NestoAPI.Tests.Infrastructure.CorreosPostCompra
             _ = await Procesar(MARTES);
 
             Assert.AreEqual("P2:1;P4:1;P3:1", enviada.Datos["productos"]);
-            Assert.AreEqual("Planifica tu semana: dos, cuatro y tres", enviada.Cuerpo);
+            Assert.AreEqual("Dos, cuatro y tres: mejor tenerlos a mano esta semana", enviada.Cuerpo);
         }
 
         #endregion

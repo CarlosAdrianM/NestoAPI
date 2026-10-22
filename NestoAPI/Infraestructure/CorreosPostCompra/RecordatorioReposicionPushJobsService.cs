@@ -83,6 +83,14 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
         internal const string MOTIVO_DIA = "Solo se manda de lunes a jueves.";
         internal const string MOTIVO_HORA = "Ya ha pasado la hora límite: lo que se pida no sale hoy.";
         internal const string MOTIVO_FESTIVO = "Hoy o mañana es festivo: no saldría a tiempo.";
+        internal const string MOTIVO_FUERA_DE_HORARIO = "Fuera de 9:00 a 21:00: a esas horas nunca se manda una push.";
+
+        /// <summary>
+        /// NestoAPI#532: franja en la que se puede mandar una push, pase lo que pase (lanzada a mano desde Hangfire, cron
+        /// cambiado u hora límite mal puesta). Es una guarda aparte de la hora límite, que sigue mandando dentro de ella.
+        /// </summary>
+        internal static readonly TimeSpan FRANJA_DESDE = new TimeSpan(9, 0, 0);
+        internal static readonly TimeSpan FRANJA_HASTA = new TimeSpan(21, 0, 0);
 
         private static readonly CultureInfo ES = CultureInfo.GetCultureInfo("es-ES");
 
@@ -105,7 +113,8 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                         () => ClientesConConsejos(db),
                         (clientes, desde) => ClientesConPushDesde(db, clientes, desde),
                         dia => GestorFestivos.EsFestivo(dia, Constantes.Almacenes.ALGETE),
-                        DateTime.Now).ConfigureAwait(false);
+                        DateTime.Now,
+                        RecordatorioReposicionJobsService.LeerFotoTienda).ConfigureAwait(false);
                 }
             }
             catch (Exception ex)
@@ -121,6 +130,8 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
         /// (acota el cálculo: unas decenas de consultas por cliente en vez de recorrer 24 meses de toda la empresa).</param>
         /// <param name="clientesConPushDesde">(clientes, desde) → los que ya tienen una push de reposición desde ese día.</param>
         /// <param name="esFestivo">Día → festivo en el almacén que sirve.</param>
+        /// <param name="leerFoto">NestoAPI#532: producto → URL de su foto en la tienda (null si no tiene). Va en la push la del
+        /// primero, el de más importe habitual. Sin función o si falla, la push sale sin foto.</param>
         internal static async Task<ResultadoRecordatorioReposicionPushDTO> Procesar(ILectorParametrosUsuario lector,
             IServicioNotificacionesPush push,
             IServicioCorreoElectronico servicioCorreo,
@@ -128,7 +139,8 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
             Func<Task<List<string>>> clientesConConsejos,
             Func<IReadOnlyCollection<string>, DateTime, Task<ISet<string>>> clientesConPushDesde,
             Func<DateTime, bool> esFestivo,
-            DateTime ahora)
+            DateTime ahora,
+            Func<string, Task<string>> leerFoto = null)
         {
             var resultado = new ResultadoRecordatorioReposicionPushDTO { Modo = LeerModo(lector), Ahora = ahora };
             if (resultado.Modo == ModoRecordatorioReposicionPush.Apagado)
@@ -192,7 +204,7 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                     Nombre = cliente.Nombre,
                     Dispositivos = dispositivos.Count,
                     Productos = productos,
-                    Notificacion = Notificacion(productos)
+                    Notificacion = Notificacion(productos, await LeerFotoPrimero(productos, leerFoto).ConfigureAwait(false))
                 };
 
                 if (resultado.Modo == ModoRecordatorioReposicionPush.Activo)
@@ -224,12 +236,42 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
             return resultado;
         }
 
+        /// <summary>NestoAPI#532: la foto del primer producto (el de más importe habitual). Null si no hay o si falla la tienda.</summary>
+        internal static async Task<string> LeerFotoPrimero(IReadOnlyList<CandidatoReposicionDTO> productos, Func<string, Task<string>> leerFoto)
+        {
+            CandidatoReposicionDTO primero = productos?.FirstOrDefault();
+            if (primero == null)
+            {
+                return null;
+            }
+            if (!string.IsNullOrWhiteSpace(primero.UrlFoto))
+            {
+                return PlantillaRecordatorioReposicion.NormalizarUrlFoto(primero.UrlFoto);
+            }
+            if (leerFoto == null)
+            {
+                return null;
+            }
+            try
+            {
+                return PlantillaRecordatorioReposicion.NormalizarUrlFoto(await leerFoto(primero.Producto?.Trim()).ConfigureAwait(false));
+            }
+            catch
+            {
+                return null; // Sin foto la push sigue sirviendo
+            }
+        }
+
         /// <summary>Null si hoy, a esta hora, se puede mandar; si no, por qué no.</summary>
         internal static string MotivoNoSeEnvia(DateTime ahora, TimeSpan horaLimite, Func<DateTime, bool> esFestivo)
         {
             if (ahora.DayOfWeek < DayOfWeek.Monday || ahora.DayOfWeek > DayOfWeek.Thursday)
             {
                 return MOTIVO_DIA;
+            }
+            if (ahora.TimeOfDay < FRANJA_DESDE || ahora.TimeOfDay >= FRANJA_HASTA)
+            {
+                return MOTIVO_FUERA_DE_HORARIO;
             }
             if (ahora.TimeOfDay >= horaLimite)
             {
@@ -289,26 +331,36 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                 : HORA_LIMITE_POR_DEFECTO;
 
         /// <summary>
-        /// La push: título de la app y un texto de ayuda, nunca de venta (ni «oferta», ni «descuento», ni importes). Va de
-        /// tú a propósito: es el tono de TNV. Datos para el aterrizaje en el carrito (TNV#87): tipo y
-        /// «ref1:cant1;ref2:cant2» con la cantidad habitual.
+        /// La push: título de la app y un texto de ayuda, nunca de venta (ni «oferta», ni «descuento», ni importes). De
+        /// usted (NestoAPI#532, 22/10/26), como el correo. Datos para el aterrizaje en el carrito (TNV#87): tipo y
+        /// «ref1:cant1;ref2:cant2» con la cantidad habitual. NestoAPI#532: con <paramref name="urlFoto"/>, la foto del
+        /// primer producto va en <c>imagenUrl</c>, que ServicioNotificacionesPush pone como imagen de la notificación.
         /// </summary>
-        internal static NotificacionPushDTO Notificacion(IReadOnlyList<CandidatoReposicionDTO> productos)
-            => new NotificacionPushDTO
+        internal static NotificacionPushDTO Notificacion(IReadOnlyList<CandidatoReposicionDTO> productos, string urlFoto = null)
+        {
+            var datos = new Dictionary<string, string>
+            {
+                { "tipo", TIPO },
+                { "productos", string.Join(";", productos.Select(p => $"{p.Producto?.Trim()}:{Math.Max(1, p.CantidadHabitual)}")) }
+            };
+            string foto = PlantillaRecordatorioReposicion.NormalizarUrlFoto(urlFoto);
+            if (foto != null)
+            {
+                datos["imagenUrl"] = foto;
+            }
+            return new NotificacionPushDTO
             {
                 Titulo = TITULO,
                 Cuerpo = Cuerpo(productos.Select(p => p.NombreProducto ?? p.Producto).ToList()),
                 Tipo = TIPO,
-                Datos = new Dictionary<string, string>
-                {
-                    { "tipo", TIPO },
-                    { "productos", string.Join(";", productos.Select(p => $"{p.Producto?.Trim()}:{Math.Max(1, p.CantidadHabitual)}")) }
-                }
+                Datos = datos
             };
+        }
 
         /// <summary>
-        /// 1 producto: «Planifica para no quedarte sin {p1}»; 2: «Planifica tu semana: {p1} y {p2}»; 3: «Planifica tu
-        /// semana: {p1}, {p2} y {p3}». Nombres en minúscula natural.
+        /// De usted y de ayuda (NestoAPI#532, 22/10/26). 1 producto: «Que no le falte {p1} esta semana»; 2: «Que no le
+        /// falte {p1} ni {p2} esta semana»; 3: «{P1}, {p2} y {p3}: mejor tenerlos a mano esta semana». Nombres en
+        /// minúscula natural.
         /// </summary>
         internal static string Cuerpo(IReadOnlyList<string> nombres)
         {
@@ -317,15 +369,18 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
             switch (n.Count)
             {
                 case 0:
-                    return "Planifica tu semana";
+                    return "Que no le falte nada esta semana";
                 case 1:
-                    return $"Planifica para no quedarte sin {n[0]}";
+                    return $"Que no le falte {n[0]} esta semana";
                 case 2:
-                    return $"Planifica tu semana: {n[0]} y {n[1]}";
+                    return $"Que no le falte {n[0]} ni {n[1]} esta semana";
                 default:
-                    return $"Planifica tu semana: {n[0]}, {n[1]} y {n[2]}";
+                    return $"{Mayuscula(n[0])}, {n[1]} y {n[2]}: mejor tenerlos a mano esta semana";
             }
         }
+
+        private static string Mayuscula(string texto)
+            => string.IsNullOrEmpty(texto) ? texto : char.ToUpper(texto[0], ES) + texto.Substring(1);
 
         /// <summary>
         /// Los nombres de Nesto vienen en mayúsculas («CHAMPÚ REPARADOR 1000 ML»): en la frase van en minúscula
@@ -388,7 +443,7 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
             {
                 sb.AppendLine("<table border='1' cellpadding='5' cellspacing='0' style='border-collapse: collapse; font-size: 12px;'>");
                 sb.AppendLine("<tr style='background-color: #4A90D9; color: white;'><th>Cliente</th><th>Nombre</th><th>Dispositivos</th>" +
-                    "<th>Título</th><th>Texto</th><th>Productos (cantidad habitual)</th></tr>");
+                    "<th>Título</th><th>Texto</th><th>Foto</th><th>Productos (cantidad habitual)</th></tr>");
                 foreach (PushReposicionDTO p in resultado.Pushes)
                 {
                     sb.Append("<tr>");
@@ -397,6 +452,9 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                     sb.Append($"<td style='text-align: center;'>{p.Dispositivos}</td>");
                     sb.Append($"<td>{WebUtility.HtmlEncode(p.Notificacion.Titulo)}</td>");
                     sb.Append($"<td>{WebUtility.HtmlEncode(p.Notificacion.Cuerpo)}</td>");
+                    sb.Append(p.Notificacion.Datos != null && p.Notificacion.Datos.TryGetValue("imagenUrl", out string foto)
+                        ? $"<td><img src='{WebUtility.HtmlEncode(foto)}' width='48' height='48' alt='' style='width: 48px; height: 48px;'/></td>"
+                        : "<td>(sin foto)</td>");
                     sb.Append("<td>" + string.Join("<br/>", p.Productos.Select(x =>
                         $"{WebUtility.HtmlEncode(x.Producto)} {WebUtility.HtmlEncode(x.NombreProducto)} ({x.CantidadHabitual})")) + "</td>");
                     sb.AppendLine("</tr>");

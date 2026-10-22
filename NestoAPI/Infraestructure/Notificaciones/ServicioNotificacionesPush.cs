@@ -721,6 +721,35 @@ namespace NestoAPI.Infraestructure.Notificaciones
             };
         }
 
+        /// <summary>
+        /// El mensaje de FCM. Con <c>imagenUrl</c> en los datos, la imagen va en <c>notification.image</c> (Android la pinta
+        /// sola) y, para iOS, en <c>apns.fcm_options.image</c> con <c>mutable-content</c> (NestoAPI#532: sin eso iOS no la
+        /// descarga; además la app necesita una Notification Service Extension). Sin imagen, el mensaje es el de siempre.
+        /// </summary>
+        internal static MulticastMessage ConstruirMensaje(List<string> tokens, NotificacionPushDTO notificacion)
+        {
+            string imagen = notificacion.Datos != null && notificacion.Datos.TryGetValue("imagenUrl", out string url)
+                && !string.IsNullOrWhiteSpace(url)
+                ? url
+                : null;
+            return new MulticastMessage
+            {
+                Tokens = tokens,
+                Notification = new Notification
+                {
+                    Title = notificacion.Titulo,
+                    Body = notificacion.Cuerpo,
+                    ImageUrl = imagen
+                },
+                Apns = imagen == null ? null : new ApnsConfig
+                {
+                    Aps = new Aps { MutableContent = true },
+                    FcmOptions = new ApnsFcmOptions { ImageUrl = imagen }
+                },
+                Data = notificacion.Datos
+            };
+        }
+
         private async Task<int> EnviarADispositivos(List<DispositivoNotificacion> dispositivos, NotificacionPushDTO notificacion, string aplicacion)
         {
             if (dispositivos == null || !dispositivos.Any())
@@ -736,19 +765,7 @@ namespace NestoAPI.Infraestructure.Notificaciones
             var tokens = dispositivos.Select(d => d.Token).ToList();
             int enviados = 0;
 
-            var message = new MulticastMessage
-            {
-                Tokens = tokens,
-                Notification = new Notification
-                {
-                    Title = notificacion.Titulo,
-                    Body = notificacion.Cuerpo,
-                    ImageUrl = notificacion.Datos != null && notificacion.Datos.ContainsKey("imagenUrl")
-                        ? notificacion.Datos["imagenUrl"]
-                        : null
-                },
-                Data = notificacion.Datos
-            };
+            MulticastMessage message = ConstruirMensaje(tokens, notificacion);
 
             try
             {
