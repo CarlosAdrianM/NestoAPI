@@ -15,7 +15,9 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
     public static class PlantillaRecordatorioReposicion
     {
         public const string UTM = "utm_source=correo_reposicion&utm_medium=email&utm_campaign=reposicion";
-        public const string FRASE_BAJA = "Si prefiere no recibir estos avisos, responda a este correo y se lo quitamos.";
+        /// <summary>NestoAPI#532 (bajas por tipo): la baja es solo de este aviso; el resto de correos le siguen llegando.</summary>
+        public const string FRASE_BAJA = "Si prefiere no recibir estos avisos de reposición, responda a este correo y dejaremos de enviárselos. " +
+            "Es solo para este aviso: el resto de nuestros correos le seguirán llegando como siempre.";
         internal const string SIN_VENDEDOR = "nuestro equipo";
         internal const int TAMANO_FOTO = 64;
         private static readonly CultureInfo ES = new CultureInfo("es-ES");

@@ -14,19 +14,59 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
         public string Cliente { get; set; }
         public string Producto { get; set; }
         public DateTime Fecha { get; set; }
+        /// <summary>
+        /// La última compra que tenía el cliente cuando se le recordó (RecordatoriosReposicionEnvios.UltimaCompra). Si hoy su
+        /// última compra es posterior, lo ha vuelto a comprar y se le puede recordar otra vez. Null = se mira la fecha del aviso.
+        /// </summary>
+        public DateTime? UltimaCompra { get; set; }
         /// <summary><see cref="RepositorioRecordatorioReposicionSql.GRUPO_ENVIADO"/> o <see cref="RepositorioRecordatorioReposicionSql.GRUPO_CONTROL"/>.</summary>
         public string Grupo { get; set; }
     }
 
-    /// <summary>NestoAPI#532: quien ha pedido no recibir correos posventa (CorreosPostCompraBajas), por cliente o por correo.</summary>
+    /// <summary>
+    /// NestoAPI#532: quien ha pedido no recibir correos posventa (CorreosPostCompraBajas), por cliente o por correo.
+    /// Con Tipo NULL la baja es de todos (<see cref="Clientes"/> y <see cref="Emails"/>, como las primeras que se metieron a
+    /// mano); con Tipo, solo de ese tipo de correo (<see cref="TiposCorreoCliente"/>).
+    /// </summary>
     public class BajasCorreosPostCompra
     {
+        /// <summary>Bajas de todos los correos por cliente (Tipo NULL).</summary>
         public HashSet<string> Clientes { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        /// <summary>Bajas de todos los correos por dirección (Tipo NULL).</summary>
         public HashSet<string> Emails { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> clientesPorTipo = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> emailsPorTipo = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>Añade una fila de la tabla. Tipo vacío = baja de todos.</summary>
+        public void Agregar(string cliente, string email, string tipo)
+        {
+            bool general = string.IsNullOrWhiteSpace(tipo);
+            if (!string.IsNullOrWhiteSpace(cliente))
+            {
+                _ = general ? Clientes.Add(cliente.Trim()) : clientesPorTipo.Add(Clave(tipo, cliente));
+            }
+            if (!string.IsNullOrWhiteSpace(email))
+            {
+                _ = general ? Emails.Add(email.Trim()) : emailsPorTipo.Add(Clave(tipo, email));
+            }
+        }
+
+        /// <summary>De baja de todo (cualquier tipo).</summary>
         public bool Incluye(string cliente, string email)
             => (!string.IsNullOrWhiteSpace(cliente) && Clientes.Contains(cliente.Trim()))
                 || (!string.IsNullOrWhiteSpace(email) && Emails.Contains(email.Trim()));
+
+        /// <summary>De baja de este tipo de correo: por la baja general o por la de su tipo.</summary>
+        public bool Incluye(string cliente, string email, string tipo)
+            => Incluye(cliente, email) || IncluyeSoloTipo(cliente, email, tipo);
+
+        /// <summary>Solo las bajas de ese tipo (sin contar la general).</summary>
+        public bool IncluyeSoloTipo(string cliente, string email, string tipo)
+            => !string.IsNullOrWhiteSpace(tipo)
+                && ((!string.IsNullOrWhiteSpace(cliente) && clientesPorTipo.Contains(Clave(tipo, cliente)))
+                    || (!string.IsNullOrWhiteSpace(email) && emailsPorTipo.Contains(Clave(tipo, email))));
+
+        private static string Clave(string tipo, string valor) => tipo.Trim() + "|" + valor.Trim();
     }
 
     public interface IRepositorioRecordatorioReposicion
@@ -43,7 +83,7 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
 
     /// <summary>
     /// NestoAPI#532: SQL a mano (fuera del EDMX, como las tablas de sugerencias de #670) de RecordatoriosReposicionEnvios,
-    /// RecordatoriosReposicionTextos y CorreosPostCompraBajas. Son tablas pequeñas: unos cientos de filas por semana.
+    /// RecordatoriosReposicionTextos y CorreosPostCompraBajas (con Tipo desde Issue532_BajasPorTipo.sql). Son tablas pequeñas: unos cientos de filas por semana.
     /// </summary>
     public class RepositorioRecordatorioReposicionSql : IRepositorioRecordatorioReposicion
     {
@@ -56,10 +96,11 @@ SELECT CAST(CASE WHEN OBJECT_ID(N'dbo.RecordatoriosReposicionEnvios', N'U') IS N
                    OR OBJECT_ID(N'dbo.CorreosPostCompraBajas', N'U') IS NULL THEN 0 ELSE 1 END AS bit)";
 
         internal const string SQL_BAJAS = @"
-SELECT RTRIM(Cliente) AS Cliente, LTRIM(RTRIM(Email)) AS Email FROM dbo.CorreosPostCompraBajas WITH (NOLOCK) WHERE Empresa = @empresa";
+SELECT RTRIM(Cliente) AS Cliente, LTRIM(RTRIM(Email)) AS Email, RTRIM(Tipo) AS Tipo
+FROM dbo.CorreosPostCompraBajas WITH (NOLOCK) WHERE Empresa = @empresa";
 
         internal const string SQL_ENVIOS_DESDE = @"
-SELECT RTRIM(Cliente) AS Cliente, RTRIM(Producto) AS Producto, Fecha, Grupo
+SELECT RTRIM(Cliente) AS Cliente, RTRIM(Producto) AS Producto, Fecha, CAST(UltimaCompra AS datetime) AS UltimaCompra, Grupo
 FROM dbo.RecordatoriosReposicionEnvios WITH (NOLOCK) WHERE Empresa = @empresa AND Fecha >= @desde";
 
         internal const string SQL_GUARDAR_TEXTO = @"
@@ -73,10 +114,11 @@ INSERT INTO dbo.RecordatoriosReposicionEnvios (Empresa, Cliente, Email, Vendedor
 VALUES (@empresa, @cliente, @email, @vendedor, @producto, @nombreProducto, @ultimaCompra, @intervaloDias, @cantidadHabitual,
     @grupo, @fecha, @textoId, @version)";
 
-        private class FilaBaja
+        internal class FilaBaja
         {
             public string Cliente { get; set; }
             public string Email { get; set; }
+            public string Tipo { get; set; }
         }
 
         private readonly NVEntities db;
@@ -93,17 +135,15 @@ VALUES (@empresa, @cliente, @email, @vendedor, @producto, @nombreProducto, @ulti
         {
             List<FilaBaja> filas = await db.Database.SqlQuery<FilaBaja>(SQL_BAJAS, new SqlParameter("@empresa", empresa))
                 .ToListAsync().ConfigureAwait(false);
+            return ConstruirBajas(filas);
+        }
+
+        internal static BajasCorreosPostCompra ConstruirBajas(IEnumerable<FilaBaja> filas)
+        {
             var bajas = new BajasCorreosPostCompra();
-            foreach (FilaBaja fila in filas)
+            foreach (FilaBaja fila in filas ?? Enumerable.Empty<FilaBaja>())
             {
-                if (!string.IsNullOrWhiteSpace(fila.Cliente))
-                {
-                    _ = bajas.Clientes.Add(fila.Cliente.Trim());
-                }
-                if (!string.IsNullOrWhiteSpace(fila.Email))
-                {
-                    _ = bajas.Emails.Add(fila.Email.Trim());
-                }
+                bajas.Agregar(fila.Cliente, fila.Email, fila.Tipo);
             }
             return bajas;
         }

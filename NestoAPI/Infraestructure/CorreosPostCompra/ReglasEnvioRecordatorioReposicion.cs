@@ -24,10 +24,10 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
     /// <summary>
     /// NestoAPI#532 (modo Activo): qué se hace con lo que calcula <see cref="CalculadoraReposicion"/>. Puro, sin BD.
     /// <list type="number">
-    /// <item>Baja: el cliente o su correo está en CorreosPostCompraBajas → fuera entero.</item>
+    /// <item>Baja: el cliente o su correo está en CorreosPostCompraBajas, de todo o de este tipo → fuera entero.</item>
     /// <item>Un correo cada <see cref="DIAS_ENTRE_CORREOS"/> días como mucho por cliente → fuera entero esta semana.</item>
-    /// <item>Un recordatorio por producto y compra: si ya se le recordó (o se le apuntó en el grupo de control) después de
-    /// su última compra de ese producto, ese producto sale del correo; si no queda ninguno, el cliente entero.</item>
+    /// <item>Un recordatorio por producto hasta que lo vuelva a comprar: si ya se le recordó (o se le apuntó en el grupo de
+    /// control) y no lo ha comprado desde entonces, ese producto sale del correo; si no queda ninguno, el cliente entero.</item>
     /// <item>Vendedor: solo los clientes cuyo vendedor esté en la lista; el resto, como hasta ahora (no se les escribe).</item>
     /// </list>
     /// Lo mismo para el grupo de control, para que la comparación sea con clientes iguales.
@@ -37,7 +37,7 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
         public const string SIN_VENDEDOR = "(NULL)";
         public const int DIAS_ENTRE_CORREOS = 14;
 
-        public const string MOTIVO_BAJA = "Ha pedido no recibir estos avisos (CorreosPostCompraBajas).";
+        public const string MOTIVO_BAJA = "Ha pedido no recibir estos avisos (CorreosPostCompraBajas, de todo o del recordatorio de reposición).";
         public const string MOTIVO_CORREO_RECIENTE = "Ya se le escribió hace menos de 14 días: ";
         public const string MOTIVO_YA_RECORDADO = "Ya se le recordó después de su última compra: ";
 
@@ -76,10 +76,10 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                 .Where(e => string.Equals(e.Grupo, RepositorioRecordatorioReposicionSql.GRUPO_ENVIADO, StringComparison.OrdinalIgnoreCase))
                 .GroupBy(e => e.Cliente.Trim(), StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.Max(e => e.Fecha), StringComparer.OrdinalIgnoreCase);
-            Dictionary<string, DateTime> ultimoRecordatorio = previos
+            Dictionary<string, List<EnvioPrevioReposicion>> ultimoRecordatorio = previos
                 .Where(e => !string.IsNullOrWhiteSpace(e.Producto))
                 .GroupBy(e => Clave(e.Cliente, e.Producto), StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, g => g.Max(e => e.Fecha), StringComparer.OrdinalIgnoreCase);
+                .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
             DateTime limiteCorreo = hoy.Date.AddDays(-(DIAS_ENTRE_CORREOS - 1));
 
             foreach (RecordatorioReposicionClienteDTO correo in resultado.SeAvisarian)
@@ -102,10 +102,10 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
 
         /// <summary>Aplica bajas y repeticiones a un correo. False si se queda sin nada (lo quitado va a Descartes con su motivo).</summary>
         private static bool Filtrar(RecordatorioReposicionClienteDTO correo, ResultadoRecordatorioReposicionDTO resultado,
-            BajasCorreosPostCompra bajas, Dictionary<string, DateTime> ultimoCorreo, Dictionary<string, DateTime> ultimoRecordatorio,
+            BajasCorreosPostCompra bajas, Dictionary<string, DateTime> ultimoCorreo, Dictionary<string, List<EnvioPrevioReposicion>> ultimoRecordatorio,
             DateTime limiteCorreo)
         {
-            if (bajas.Incluye(correo.Cliente, correo.Email))
+            if (bajas.Incluye(correo.Cliente, correo.Email, TiposCorreoCliente.RECORDATORIO_REPOSICION))
             {
                 Descartar(resultado, correo.Productos, MOTIVO_BAJA);
                 return false;
@@ -118,10 +118,10 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
             var quedan = new List<CandidatoReposicionDTO>();
             foreach (CandidatoReposicionDTO producto in correo.Productos)
             {
-                if (ultimoRecordatorio.TryGetValue(Clave(correo.Cliente, producto.Producto), out DateTime recordado)
-                    && recordado.Date >= producto.UltimaCompra.Date)
+                DateTime? recordado = YaRecordadoSinVolverAComprar(ultimoRecordatorio, correo.Cliente, producto);
+                if (recordado.HasValue)
                 {
-                    Descartar(resultado, new[] { producto }, MOTIVO_YA_RECORDADO + recordado.ToString("dd/MM/yyyy"));
+                    Descartar(resultado, new[] { producto }, MOTIVO_YA_RECORDADO + recordado.Value.ToString("dd/MM/yyyy"));
                 }
                 else
                 {
@@ -130,6 +130,25 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
             }
             correo.Productos = quedan;
             return quedan.Count > 0;
+        }
+
+        /// <summary>
+        /// Un aviso por producto hasta que lo vuelva a comprar: la fecha del último aviso si no ha comprado después; null si se le
+        /// puede avisar. «Volver a comprar» es que su última compra de hoy sea posterior a la que tenía cuando se le avisó (la
+        /// guardada en el registro), no a la fecha del aviso: si compra el mismo día que le llega el correo, cuenta como compra
+        /// nueva. Sin esa fecha (filas viejas), se compara con el día del aviso, como antes.
+        /// </summary>
+        private static DateTime? YaRecordadoSinVolverAComprar(Dictionary<string, List<EnvioPrevioReposicion>> previos, string cliente,
+            CandidatoReposicionDTO producto)
+        {
+            if (!previos.TryGetValue(Clave(cliente, producto.Producto), out List<EnvioPrevioReposicion> avisos))
+            {
+                return null;
+            }
+            List<EnvioPrevioReposicion> vigentes = avisos
+                .Where(a => (a.UltimaCompra ?? a.Fecha).Date >= producto.UltimaCompra.Date)
+                .ToList();
+            return vigentes.Count == 0 ? (DateTime?)null : vigentes.Max(a => a.Fecha);
         }
 
         private static void Descartar(ResultadoRecordatorioReposicionDTO resultado, IEnumerable<CandidatoReposicionDTO> productos, string motivo)

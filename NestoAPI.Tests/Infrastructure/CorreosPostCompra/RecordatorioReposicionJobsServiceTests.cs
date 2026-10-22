@@ -306,7 +306,7 @@ namespace NestoAPI.Tests.Infrastructure.CorreosPostCompra
             Assert.AreEqual(BUZON, mail.From.Address);
             Assert.AreEqual(BUZON, mail.ReplyToList.Single().Address);
             Assert.AreEqual(0, mail.CC.Count);
-            Assert.AreEqual(0, mail.Bcc.Count);
+            Assert.AreEqual("carlosadrian@nuevavision.es", mail.Bcc.Single().Address, "Carlos va en copia oculta de cada correo a un cliente");
             Assert.AreEqual("Que no le falte crema <hidratante> 500 ml en mitad de un servicio", mail.Subject);
             string body = WebUtility.HtmlDecode(mail.Body);
             StringAssert.Contains(body, "Hola:");
@@ -406,6 +406,29 @@ namespace NestoAPI.Tests.Infrastructure.CorreosPostCompra
             Assert.IsTrue(ejecucion.Resultado.Descartes.Any(d => d.Cliente == "15191" && d.Motivo == ReglasEnvioRecordatorioReposicion.MOTIVO_BAJA));
             Assert.IsTrue(ejecucion.Resultado.Descartes.Any(d => d.Cliente == "15250"
                 && d.Motivo.StartsWith(ReglasEnvioRecordatorioReposicion.MOTIVO_YA_RECORDADO)));
+        }
+
+        [TestMethod]
+        public async Task Procesar_EnActivo_LaBajaDeOtroTipoNoQuitaElRecordatorioYLaDeEsteSi()
+        {
+            Modo("Activo");
+            bajas.Agregar("15191", null, TiposCorreoCliente.VIDEOS_COMPRAS);           // solo los vídeos de los sábados
+            bajas.Agregar("15250", null, TiposCorreoCliente.RECORDATORIO_REPOSICION);  // solo este aviso
+
+            EjecucionRecordatorioReposicionDTO ejecucion = await Procesar();
+
+            CollectionAssert.AreEqual(new[] { "15191@cliente.es" }, CorreosAClientes().Select(m => m.To.Single().Address).ToList());
+            Assert.IsTrue(ejecucion.Resultado.Descartes.Any(d => d.Cliente == "15250" && d.Motivo == ReglasEnvioRecordatorioReposicion.MOTIVO_BAJA));
+        }
+
+        [TestMethod]
+        public void ConstruirCorreoCliente_SinCopiaOculta_NoLaPone()
+        {
+            RecordatorioReposicionClienteDTO cliente = Cliente("15191", "LM", "Lidia");
+            using (MailMessage mail = RecordatorioReposicionJobsService.ConstruirCorreoCliente(cliente, null, BUZON, HOY, copiaOculta: null))
+            {
+                Assert.AreEqual(0, mail.Bcc.Count);
+            }
         }
 
         [TestMethod]

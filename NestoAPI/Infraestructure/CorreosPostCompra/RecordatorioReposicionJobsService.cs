@@ -82,6 +82,11 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
         internal const string VALOR_ACTIVO = "Activo";
         internal const int MAXIMO_FILAS_DESCARTES = 300;
         internal const string REMITENTE_POR_DEFECTO = "nuevavision@nuevavision.es";
+        /// <summary>
+        /// Copia oculta de cada correo que sale a un cliente (Carlos, 22/10/26: para ver lo que llega de verdad). Para quitarla,
+        /// dejarla en null o vacía. No va en el resumen interno ni en la sombra.
+        /// </summary>
+        internal const string COPIA_OCULTA_CORREOS_CLIENTE = Constantes.Correos.INFORMATICA;
         internal static readonly TimeSpan PAUSA_ENTRE_CORREOS = TimeSpan.FromSeconds(2.5);
 
         internal const string AVISO_SIN_TABLAS = "Está en Activo, pero faltan las tablas de registro (Scripts/Issue532_RecordatorioReposicionActivo.sql) " +
@@ -293,7 +298,7 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
 
         /// <summary>El correo al cliente: del buzón de los correos posventa, que es también a donde contesta.</summary>
         internal static MailMessage ConstruirCorreoCliente(RecordatorioReposicionClienteDTO cliente, TextoRecordatorioReposicion texto,
-            string remitente, DateTime hoy)
+            string remitente, DateTime hoy, string copiaOculta = COPIA_OCULTA_CORREOS_CLIENTE)
         {
             string buzon = string.IsNullOrWhiteSpace(remitente) ? REMITENTE_POR_DEFECTO : remitente.Trim();
             string asunto = PlantillaRecordatorioReposicion.Asunto(cliente, texto);
@@ -310,6 +315,10 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
             };
             mail.To.Add(cliente.Email.Trim());
             mail.ReplyToList.Add(new MailAddress(buzon, "El equipo de Nueva Visión"));
+            if (!string.IsNullOrWhiteSpace(copiaOculta))
+            {
+                mail.Bcc.Add(copiaOculta.Trim());
+            }
             return mail;
         }
 

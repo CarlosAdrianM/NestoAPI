@@ -123,6 +123,50 @@ namespace NestoAPI.Tests.Infrastructure.CorreosPostCompra
         }
 
         [TestMethod]
+        public void Planificar_UnAvisoPorProductoHastaQueLoVuelvaAComprar_AunqueHayaPasadoMucho()
+        {
+            // Se le recordó hace 60 días con la compra de hace 100 (la misma que tiene hoy): no ha vuelto a comprar
+            ResultadoRecordatorioReposicionDTO resultado = Resultado(Cliente("1", "NV", ("A", 100)));
+            var previos = new List<EnvioPrevioReposicion> { Previo("1", "A", 60) };
+            previos[0].UltimaCompra = HOY.AddDays(-100);
+
+            PlanRecordatorioReposicionDTO plan = ReglasEnvioRecordatorioReposicion.Planificar(resultado, "NV", null, previos, HOY);
+
+            Assert.AreEqual(0, plan.Enviar.Count);
+            Assert.IsTrue(resultado.Descartes.Single().Motivo.StartsWith(ReglasEnvioRecordatorioReposicion.MOTIVO_YA_RECORDADO));
+        }
+
+        [TestMethod]
+        public void Planificar_SiLoCompraElMismoDiaDelAviso_CuentaComoCompraNueva()
+        {
+            // El aviso salió hace 40 días (con una compra de hace 90) y ese mismo día lo compró: se le puede volver a avisar
+            ResultadoRecordatorioReposicionDTO resultado = Resultado(Cliente("1", "NV", ("A", 40)));
+            var previos = new List<EnvioPrevioReposicion> { Previo("1", "A", 40) };
+            previos[0].UltimaCompra = HOY.AddDays(-90);
+
+            PlanRecordatorioReposicionDTO plan = ReglasEnvioRecordatorioReposicion.Planificar(resultado, "NV", null, previos, HOY);
+
+            Assert.AreEqual("1", plan.Enviar.Single().Cliente);
+        }
+
+        [TestMethod]
+        public void Planificar_BajaDeOtroTipo_NoQuita_LaDeEsteTipoOLaGeneralSi()
+        {
+            var bajas = new BajasCorreosPostCompra();
+            bajas.Agregar("1", null, TiposCorreoCliente.VIDEOS_COMPRAS);
+            bajas.Agregar("2", null, TiposCorreoCliente.RECORDATORIO_REPOSICION);
+            bajas.Agregar(null, "3@cliente.es", TiposCorreoCliente.RECORDATORIO_REPOSICION);
+            bajas.Agregar("4", null, null);
+            ResultadoRecordatorioReposicionDTO resultado = Resultado(Cliente("1", "NV", ("A", 40)), Cliente("2", "NV", ("A", 40)),
+                Cliente("3", "NV", ("A", 40)), Cliente("4", "NV", ("A", 40)));
+
+            PlanRecordatorioReposicionDTO plan = ReglasEnvioRecordatorioReposicion.Planificar(resultado, "NV", bajas, null, HOY);
+
+            CollectionAssert.AreEqual(new[] { "1" }, plan.Enviar.Select(c => c.Cliente).ToArray());
+            Assert.AreEqual(3, resultado.Descartes.Count(d => d.Motivo == ReglasEnvioRecordatorioReposicion.MOTIVO_BAJA));
+        }
+
+        [TestMethod]
         public void Planificar_SinResultado_PlanVacio()
         {
             PlanRecordatorioReposicionDTO plan = ReglasEnvioRecordatorioReposicion.Planificar(null, "NV", null, null, HOY);

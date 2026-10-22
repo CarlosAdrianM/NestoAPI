@@ -142,6 +142,13 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                     return;
                 }
 
+                // NestoAPI#532: quien se ha dado de baja de estos correos (o de todos) no lo recibe. Se mira al enviar (sábado),
+                // no al programar (jueves), para que valga una baja de última hora.
+                if (await EstaDeBaja(datos).ConfigureAwait(false))
+                {
+                    return;
+                }
+
                 var generador = new GeneradorContenidoCorreoPostCompra(new ServicioOpenAI());
                 var (asuntoGenerado, htmlCorreo) = await generador
                     .GenerarContenidoConAsunto(datos)
@@ -170,6 +177,7 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
 <body style=""margin: 0; padding: 0; font-family: Arial, sans-serif;"">
     {htmlCorreo}
     {pieApp}
+    {GenerarPieBaja()}
 </body>
 </html>";
 
@@ -227,6 +235,13 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                     return;
                 }
 
+                // NestoAPI#532: quien se ha dado de baja de estos correos (o de todos) no lo recibe. Se mira al enviar (sábado),
+                // no al programar (jueves), para que valga una baja de última hora.
+                if (await EstaDeBaja(datos).ConfigureAwait(false))
+                {
+                    return;
+                }
+
                 string htmlCorreo = GeneradorContenidoCorreoPostCompra.AplicarPlantilla(
                     plantilla.HtmlPlantilla, saludo, datos);
 
@@ -257,6 +272,7 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
 <body style=""margin: 0; padding: 0; font-family: Arial, sans-serif;"">
     {htmlCorreo}
     {pieApp}
+    {GenerarPieBaja()}
 </body>
 </html>";
 
@@ -291,6 +307,24 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
             catch (Exception)
             {
                 throw;
+            }
+        }
+
+        /// <summary>NestoAPI#532 (bajas por tipo): la baja que se pide contestando es solo de estos correos.</summary>
+        internal const string FRASE_BAJA = "Si prefiere no recibir estos correos con los vídeos de sus compras, responda a este correo y " +
+            "dejaremos de enviárselos. Es solo para estos correos: el resto de nuestros avisos le seguirán llegando como siempre.";
+
+        internal static string GenerarPieBaja()
+            => "<p style=\"font-size: 11px; color: #999; margin: 15px 0 0 0; font-family: Arial, sans-serif; max-width: 600px;\">" +
+                System.Net.WebUtility.HtmlEncode(FRASE_BAJA) + "</p>";
+
+        private static async Task<bool> EstaDeBaja(CorreoPostCompraClienteDTO datos)
+        {
+            using (var db = new NVEntities())
+            {
+                return await ServicioPreferenciasCorreo.EstaDeBaja(new RepositorioPreferenciasCorreoSql(db),
+                    string.IsNullOrWhiteSpace(datos.Empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : datos.Empresa.Trim(),
+                    datos.ClienteId?.Trim(), datos.ClienteEmail?.Trim(), TiposCorreoCliente.VIDEOS_COMPRAS).ConfigureAwait(false);
             }
         }
 

@@ -1257,6 +1257,9 @@
     <Compile Include="Infraestructure\CorreosPostCompra\PlantillaRecordatorioReposicion.cs" />
     <Compile Include="Infraestructure\CorreosPostCompra\GeneradorTextoRecordatorioReposicion.cs" />
     <Compile Include="Infraestructure\CorreosPostCompra\ReglasEnvioRecordatorioReposicion.cs" />
+    <Compile Include="Infraestructure\CorreosPostCompra\TiposCorreoCliente.cs" />
+    <Compile Include="Infraestructure\CorreosPostCompra\PreferenciasCorreoCliente.cs" />
+    <Compile Include="Controllers\PreferenciasCorreoController.cs" />
     <Compile Include="Infraestructure\CorreosPostCompra\RepositorioRecordatorioReposicion.cs" />
     <Compile Include="Infraestructure\CorreosPostCompra\RecordatorioReposicionDTO.cs" />
     <Compile Include="Infraestructure\CorreosPostCompra\RecordatorioReposicionJobsService.cs" />

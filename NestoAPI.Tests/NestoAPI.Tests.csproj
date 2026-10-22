@@ -697,6 +697,8 @@
     <Compile Include="Infrastructure\CorreosPostCompra\RecordatorioReposicionJobsServiceTests.cs" />
     <Compile Include="Infrastructure\CorreosPostCompra\RecordatorioReposicionPushJobsServiceTests.cs" />
     <Compile Include="Infrastructure\CorreosPostCompra\ReglasEnvioRecordatorioReposicionTests.cs" />
+    <Compile Include="Infrastructure\CorreosPostCompra\PreferenciasCorreoClienteTests.cs" />
+    <Compile Include="Controllers\PreferenciasCorreoControllerTests.cs" />
     <Compile Include="Infrastructure\CorreosPostCompra\GeneradorTextoRecordatorioReposicionTests.cs" />
     <Compile Include="Infrastructure\Traspasos\ServicioTraspasosTests.cs" />
     <Compile Include="Infrastructure\OpenAI\ServicioOpenAITests.cs" />
