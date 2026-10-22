@@ -19,12 +19,15 @@ using System.Web.Http.Results;
 
 namespace NestoAPI.Infraestructure.Eventos
 {
-    /// <summary>NestoAPI#691: un pedido que la API ha creado aparte al guardar (cada curso va en su pedido, serie CV).</summary>
+    /// <summary>NestoAPI#691: un pedido que la API ha creado aparte al guardar (todos los cursos van en un pedido, serie CV).</summary>
     public class PedidoAdicionalDTO
     {
         public int Numero { get; set; }
         /// <summary>«Cursos».</summary>
         public string Motivo { get; set; }
+        /// <summary>Lo que ha ido mal sin deshacer el pedido (el enlace de pago, por ejemplo). Va a AvisosCursos, no al JSON.</summary>
+        [Newtonsoft.Json.JsonIgnore]
+        public string Aviso { get; set; }
     }
 
     /// <summary>NestoAPI#691: GET api/Eventos/PorProducto. Un evento futuro de un curso, con lo que se puede vender.</summary>
@@ -64,6 +67,8 @@ namespace NestoAPI.Infraestructure.Eventos
         public decimal Importe { get; set; }
         /// <summary>ReglasProductoCurso.ParaFacturar: el producto de Nesto sin NR.</summary>
         public string ProductoFacturar { get; set; }
+        /// <summary>La inscripción (Reservada) que se ha creado para este curso al guardar el pedido.</summary>
+        public int? InscripcionId { get; set; }
     }
 
     /// <summary>NestoAPI#691: lo que hay que hacer con los cursos del pedido antes de crear nada.</summary>
@@ -82,8 +87,9 @@ namespace NestoAPI.Infraestructure.Eventos
     /// <summary>
     /// NestoAPI#691 (decisiones de Carlos del 22/10/26): las reglas de los cursos vendidos desde la plantilla, sin base de datos.
     /// <list type="bullet">
-    /// <item>Un curso es una línea con <see cref="LineaPedidoVentaDTO.EventoId"/> (o de grupo CUR). Va en su propio pedido (serie
-    /// CV, prepago, almacén y delegación del evento): nunca se mezcla con productos (prorrata de IVA).</item>
+    /// <item>Un curso es una línea con <see cref="LineaPedidoVentaDTO.EventoId"/> (o de grupo CUR). Todos los cursos del pedido van en
+    /// UN pedido aparte (serie CV, prepago), una línea por curso con el almacén y la delegación de su evento: nunca se mezclan con
+    /// productos (prorrata de IVA).</item>
     /// <item>Su importe NO suma para nada del pedido de productos: portes, Ganavisiones, regalos, ofertas y mínimos, cupones,
     /// reembolso… Los endpoints de cálculo quitan las líneas de curso antes de calcular (<see cref="QuitarLineasCurso"/>).</item>
     /// </list>
@@ -223,11 +229,11 @@ namespace NestoAPI.Infraestructure.Eventos
             (usuarioPedido ?? string.Empty).Contains("\\") ? OrigenInscripcionEvento.Nesto.ToString() : OrigenInscripcionEvento.NestoApp.ToString();
 
         /// <summary>
-        /// La cabecera del pedido del curso: la del pedido de la plantilla (cliente, contacto, vendedor, ruta, forma de pago, IVA),
-        /// con plazo PRE (prepago), periodo normal (un cliente de fin de mes no se queda el curso sin facturar), todo junto y la
-        /// serie que diga SerieSegunLineas (CV).
+        /// La cabecera del pedido de los cursos: la del pedido de la plantilla (cliente, contacto, vendedor, ruta, forma de pago,
+        /// IVA), con plazo PRE (prepago), periodo normal (un cliente de fin de mes no se queda el curso sin facturar), todo junto y
+        /// la serie que diga SerieSegunLineas (CV).
         /// </summary>
-        public static CabPedidoVta Cabecera(PedidoVentaDTO pedido, Cliente ficha, int numero, CursoDelPedido curso, int inscripcionId, DateTime hoy)
+        public static CabPedidoVta Cabecera(PedidoVentaDTO pedido, Cliente ficha, int numero, IReadOnlyList<CursoDelPedido> cursos, DateTime hoy)
         {
             string empresa = pedido.empresa?.Trim() ?? Constantes.Empresas.EMPRESA_POR_DEFECTO;
             string contacto = Limpiar(pedido.contacto) ?? Limpiar(ficha?.Contacto);
@@ -253,13 +259,17 @@ namespace NestoAPI.Infraestructure.Eventos
                 MantenerJunto = true,
                 ServirJunto = true,
                 ModoServicio = Constantes.Pedidos.ModosServicio.TODO_JUNTO,
-                Comentarios = Truncar($"Curso «{curso.Evento.Titulo?.Trim()}» del {curso.Evento.Fecha:dd/MM/yyyy}, {NombreModalidad(curso.Modalidad).ToLowerInvariant()} " +
-                    $"(inscripción {inscripcionId}, plantilla, NestoAPI#691)", 200),
+                Comentarios = Truncar((cursos.Count == 1 ? "Curso " : "Cursos ") + string.Join(", ", cursos.Select(c =>
+                    $"«{c.Evento.Titulo?.Trim()}» del {c.Evento.Fecha:dd/MM/yyyy}, {NombreModalidad(c.Modalidad).ToLowerInvariant()} (inscripción {c.InscripcionId})")) +
+                    " (plantilla, NestoAPI#691)", 200),
                 Usuario = Truncar(pedido.Usuario, 30)
             };
         }
 
-        /// <summary>La línea del curso: el producto sin NR, 1 unidad al importe de la modalidad, sin descuentos, en la tienda del evento.</summary>
+        /// <summary>
+        /// La línea del curso: el producto sin NR, 1 unidad al importe de la modalidad, sin descuentos, en la tienda del evento.
+        /// Nace Pendiente (−1): hasta que se paga su inscripción no entra en ningún albarán (al pagarse pasa a En curso y se factura).
+        /// </summary>
         public static LineaPedidoVentaDTO Linea(PedidoVentaDTO pedido, CursoDelPedido curso, DateTime hoy)
         {
             string almacen = ReglasFacturacionCurso.AlmacenDelCurso(curso.Evento);
@@ -273,7 +283,7 @@ namespace NestoAPI.Infraestructure.Eventos
                 DescuentoLinea = 0,
                 DescuentoProducto = 0,
                 texto = Truncar(curso.Evento.Titulo?.Trim(), LONGITUD_TEXTO_LINEA),
-                estado = Constantes.EstadosLineaVenta.EN_CURSO,
+                estado = Constantes.EstadosLineaVenta.PENDIENTE,
                 fechaEntrega = hoy,
                 almacen = almacen,
                 delegacion = almacen,
@@ -432,31 +442,39 @@ namespace NestoAPI.Infraestructure.Eventos
         }
     }
 
-    /// <summary>NestoAPI#691: crea el pedido del curso (CV, prepago) y lo liga a la inscripción en la MISMA transacción.</summary>
+    /// <summary>
+    /// NestoAPI#691: crea el pedido de los cursos (CV, prepago), una línea por curso, y liga cada inscripción a SU línea en la MISMA
+    /// transacción. Cada curso llega con su <see cref="CursoDelPedido.InscripcionId"/>.
+    /// </summary>
     public interface ICreadorPedidoCursoPlantilla
     {
-        Task<int> Crear(PedidoVentaDTO pedido, Cliente ficha, CursoDelPedido curso, int inscripcionId);
+        Task<int> Crear(PedidoVentaDTO pedido, Cliente ficha, IReadOnlyList<CursoDelPedido> cursos);
     }
 
-    /// <summary>NestoAPI#691: el correo de usted a la clienta con el enlace de pago de su plaza. Nunca lanza.</summary>
+    /// <summary>NestoAPI#691: el correo de usted a la clienta con sus cursos y el enlace de pago (uno, por el total). Nunca lanza.</summary>
     public interface IAvisadorCursoPlantilla
     {
-        Task<bool> Avisar(PedidoVentaDTO pedido, CursoDelPedido curso, InscripcionEventoDTO inscripcion, int pedidoCurso);
+        Task<bool> Avisar(PedidoVentaDTO pedido, IReadOnlyList<CursoDelPedido> cursos, IReadOnlyList<InscripcionEventoDTO> inscripciones,
+            string urlPago, int pedidoCursos);
     }
 
     public interface IServicioCursosPlantilla
     {
         /// <summary>Comprueba los cursos del pedido (sin escribir nada). Con Error, el pedido no se crea (400).</summary>
         Task<PreparacionCursos> Preparar(PedidoVentaDTO pedido);
-        /// <summary>Inscripción Reservada con enlace de pago + pedido del curso ligado + correo a la clienta.</summary>
-        Task<PedidoAdicionalDTO> CrearPedidoCurso(PedidoVentaDTO pedido, Cliente ficha, CursoDelPedido curso, IPrincipal usuario);
+        /// <summary>
+        /// Una inscripción Reservada por curso + UN pedido de cursos (una línea por curso, cada una ligada a su inscripción) + UN
+        /// enlace de pago por el total + correo a la clienta.
+        /// </summary>
+        Task<PedidoAdicionalDTO> CrearPedidoCursos(PedidoVentaDTO pedido, Cliente ficha, IReadOnlyList<CursoDelPedido> cursos, IPrincipal usuario);
     }
 
     /// <summary>
     /// NestoAPI#691: los cursos del POST api/PedidosVenta. Cada curso (línea con EventoId y ModalidadEvento) se comprueba antes
-    /// de crear nada; al guardar, se inscribe a la clienta (Reservada, con el enlace de pago de #611), se crea su pedido (serie
-    /// CV, plazo PRE, almacén y delegación del evento) ligado a esa inscripción en EventosInscripcionesCurso (así #612 no crea
-    /// otro al cobrar) y se le manda el enlace de pago por correo.
+    /// de crear nada. Al guardar (Carlos, 22/10/26): se inscribe a la clienta en cada uno (Reservada), se crea UN pedido para todos
+    /// los cursos (serie CV, plazo PRE; una línea por curso, con el almacén y la delegación de su evento) y cada inscripción queda
+    /// ligada a SU línea en EventosInscripcionesCurso (así #612 no crea otro pedido al cobrar), se genera UN enlace de pago por el
+    /// total y se le manda por correo. Al pagarse una inscripción se factura su línea en ese momento, sin esperar al evento.
     /// <para>Un producto CUR sin EventoId junto con productos (o con otros cursos con evento) es un 400: no se sabe a qué evento
     /// va y no puede ir mezclado. Un pedido que solo lleva cursos sin evento sigue como hasta ahora (SerieSegunLineas → CV), igual
     /// que los de canales externos: no se rompen los flujos de las tiendas, de #612 ni de CanalesExternos.</para>
@@ -650,45 +668,75 @@ namespace NestoAPI.Infraestructure.Eventos
                 .ToDictionary(g => g.Key, g => g.First().Grupo?.Trim(), StringComparer.OrdinalIgnoreCase);
         }
 
-        public async Task<PedidoAdicionalDTO> CrearPedidoCurso(PedidoVentaDTO pedido, Cliente ficha, CursoDelPedido curso, IPrincipal usuario)
+        public async Task<PedidoAdicionalDTO> CrearPedidoCursos(PedidoVentaDTO pedido, Cliente ficha, IReadOnlyList<CursoDelPedido> cursos, IPrincipal usuario)
         {
-            IServicioInscripcionesEventos servicio = inscripciones();
-            // La plaza (Reservada) con su enlace de pago (#611); el correo lo manda el avisador, con el evento y la modalidad
-            InscripcionEventoDTO inscripcion = await servicio.Inscribir(curso.Evento.Id, new InscribirEventoDTO
+            if (cursos == null || !cursos.Any())
             {
-                Empresa = ReglasCursosPlantilla.Limpiar(pedido.empresa) ?? Constantes.Empresas.EMPRESA_POR_DEFECTO,
-                Cliente = ReglasCursosPlantilla.Limpiar(pedido.cliente),
-                Contacto = ReglasCursosPlantilla.Limpiar(pedido.contacto),
-                Origen = ReglasCursosPlantilla.Origen(pedido.Usuario),
-                GenerarEnlacePago = true,
-                Correo = null,
-                Modalidad = curso.Modalidad.ToString()
-            }, usuario).ConfigureAwait(false);
-
+                throw new ArgumentException("No hay cursos que crear.", nameof(cursos));
+            }
+            IServicioInscripcionesEventos servicio = inscripciones();
+            var inscritas = new List<InscripcionEventoDTO>();
             int numero;
             try
             {
-                numero = await creador.Crear(pedido, ficha, curso, inscripcion.Id).ConfigureAwait(false);
+                // Una plaza (Reservada) por curso, sin enlace propio: el enlace es uno para todo el pedido (abajo)
+                foreach (CursoDelPedido curso in cursos)
+                {
+                    InscripcionEventoDTO inscripcion = await servicio.Inscribir(curso.Evento.Id, new InscribirEventoDTO
+                    {
+                        Empresa = ReglasCursosPlantilla.Limpiar(pedido.empresa) ?? Constantes.Empresas.EMPRESA_POR_DEFECTO,
+                        Cliente = ReglasCursosPlantilla.Limpiar(pedido.cliente),
+                        Contacto = ReglasCursosPlantilla.Limpiar(pedido.contacto),
+                        Origen = ReglasCursosPlantilla.Origen(pedido.Usuario),
+                        GenerarEnlacePago = false,
+                        Correo = null,
+                        Modalidad = curso.Modalidad.ToString()
+                    }, usuario).ConfigureAwait(false);
+                    inscritas.Add(inscripcion);
+                    curso.InscripcionId = inscripcion.Id;
+                }
+                numero = await creador.Crear(pedido, ficha, cursos).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                // Sin pedido no hay plaza a medias: se anula la inscripción (libera la plaza)
-                try
+                // Sin pedido no hay plazas a medias: se anulan las inscripciones ya hechas (liberan la plaza)
+                foreach (InscripcionEventoDTO inscrita in inscritas)
                 {
-                    _ = await servicio.Anular(inscripcion.Id, usuario).ConfigureAwait(false);
-                }
-                catch (Exception exAnular)
-                {
-                    ElmahHelper.Log(new Exception($"[Cursos #691] No se ha podido anular la inscripción {inscripcion.Id} tras fallar su pedido: {exAnular.Message}", exAnular));
+                    try
+                    {
+                        _ = await servicio.Anular(inscrita.Id, usuario).ConfigureAwait(false);
+                    }
+                    catch (Exception exAnular)
+                    {
+                        ElmahHelper.Log(new Exception($"[Cursos #691] No se ha podido anular la inscripción {inscrita.Id} tras fallar el pedido de cursos: {exAnular.Message}", exAnular));
+                    }
                 }
                 throw ex is NestoBusinessException
                     ? ex
-                    : new NestoBusinessException($"No se ha podido crear el pedido del curso «{curso.Evento.Titulo?.Trim()}»: {ex.Message}", ex);
+                    : new NestoBusinessException($"No se ha podido crear el pedido de {Titulos(cursos)}: {ex.Message}", ex);
             }
 
-            _ = await avisador.Avisar(pedido, curso, inscripcion, numero).ConfigureAwait(false);
-            return new PedidoAdicionalDTO { Numero = numero, Motivo = ReglasCursosPlantilla.MOTIVO_CURSOS };
+            // UN enlace por el total: al cobrarlo quedan pagadas todas las inscripciones y sale una factura con todas
+            var resultado = new PedidoAdicionalDTO { Numero = numero, Motivo = ReglasCursosPlantilla.MOTIVO_CURSOS };
+            string urlPago = null;
+            try
+            {
+                urlPago = (await servicio.GenerarEnlacePagoPedidoCursos(numero, inscritas.Select(i => i.Id).ToList(), usuario).ConfigureAwait(false))?.UrlPago;
+            }
+            catch (Exception ex)
+            {
+                // El pedido y las plazas se quedan: se pueden pagar en la tienda (Marcar pagada) o con otro enlace
+                resultado.Aviso = $"No se ha podido generar el enlace de pago del pedido {numero} ({ex.Message}). Las plazas están reservadas: " +
+                    "mándele el enlace desde el pedido o márquelas como pagadas al cobrarlas, por favor.";
+                ElmahHelper.Log(new Exception($"[Cursos #691] Pedido de cursos {numero} de {pedido.cliente?.Trim()}: {resultado.Aviso}", ex));
+            }
+
+            _ = await avisador.Avisar(pedido, cursos, inscritas, urlPago, numero).ConfigureAwait(false);
+            return resultado;
         }
+
+        internal static string Titulos(IEnumerable<CursoDelPedido> cursos) =>
+            string.Join(", ", cursos.Select(c => $"«{c.Evento.Titulo?.Trim()}»"));
     }
 
     /// <summary>NestoAPI#691: lo que devuelve el POST cuando el pedido lleva cursos.</summary>
@@ -696,20 +744,20 @@ namespace NestoAPI.Infraestructure.Eventos
     {
         /// <summary>Lo que contestó la creación del pedido de productos si NO se creó (se devuelve tal cual, sin crear cursos).</summary>
         public IHttpActionResult NoCreado { get; set; }
-        /// <summary>El cuerpo de la respuesta: el pedido principal (el de productos, o el primer curso si no hay productos).</summary>
+        /// <summary>El cuerpo de la respuesta: el pedido principal (el de productos, o el de cursos si no hay productos).</summary>
         public PedidoVentaDTO Respuesta { get; set; }
     }
 
     /// <summary>
     /// NestoAPI#691: la separación del pedido de la plantilla. Los productos van al pedido normal (NV) por su cauce de siempre,
     /// SIN las líneas de curso (así nada del pedido de productos las cuenta: portes, Ganavisiones, regalos, ofertas, cupones,
-    /// reembolso); cada curso, a su pedido (CV). La respuesta es la de siempre (el pedido de productos) más PedidosAdicionales;
-    /// si solo hay cursos, el pedido principal es el del primer curso.
+    /// reembolso); todos los cursos, a UN pedido aparte (CV). La respuesta es la de siempre (el pedido de productos) más
+    /// PedidosAdicionales con el de cursos; si solo hay cursos, el pedido principal es el de cursos.
     /// </summary>
     public static class OrquestadorPedidoConCursos
     {
         public static async Task<ResultadoPedidoConCursos> Crear(PedidoVentaDTO pedido, PreparacionCursos cursos,
-            Func<PedidoVentaDTO, Task<IHttpActionResult>> crearProductos, Func<CursoDelPedido, Task<PedidoAdicionalDTO>> crearCurso)
+            Func<PedidoVentaDTO, Task<IHttpActionResult>> crearProductos, Func<IReadOnlyList<CursoDelPedido>, Task<PedidoAdicionalDTO>> crearCursos)
         {
             foreach (CursoDelPedido curso in cursos.Cursos)
             {
@@ -725,53 +773,58 @@ namespace NestoAPI.Infraestructure.Eventos
                 }
             }
 
-            var creados = new List<PedidoAdicionalDTO>();
-            var fallos = new List<string>();
-            foreach (CursoDelPedido curso in cursos.Cursos)
+            PedidoAdicionalDTO creado = null;
+            var avisos = new List<string>();
+            try
             {
-                try
-                {
-                    creados.Add(await crearCurso(curso).ConfigureAwait(false));
-                }
-                catch (Exception ex) when (hayProductos || creados.Any())
-                {
-                    // Ya hay algo creado: no se deshace. Se dice qué curso falta y por qué (ELMAH y aviso en la respuesta).
-                    string fallo = $"No se ha podido crear el pedido del curso «{curso.Evento.Titulo?.Trim()}»: {ex.Message} Inscríbala desde el evento, por favor.";
-                    fallos.Add(fallo);
-                    ElmahHelper.Log(new Exception($"[Cursos #691] Pedido de {pedido.cliente?.Trim()}: {fallo}", ex));
-                }
+                creado = await crearCursos(cursos.Cursos).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (hayProductos)
+            {
+                // Los productos ya están creados: no se deshacen. Se dice qué cursos faltan y por qué (ELMAH y aviso en la respuesta).
+                string fallo = $"No se ha podido crear el pedido de {ServicioCursosPlantilla.Titulos(cursos.Cursos)}: {ex.Message} " +
+                    "Inscríbala desde el evento, por favor.";
+                avisos.Add(fallo);
+                ElmahHelper.Log(new Exception($"[Cursos #691] Pedido de {pedido.cliente?.Trim()}: {fallo}", ex));
+            }
+            if (!string.IsNullOrWhiteSpace(creado?.Aviso))
+            {
+                avisos.Add(creado.Aviso);
             }
 
             if (!hayProductos)
             {
-                PedidoAdicionalDTO principal = creados[0];
-                creados.RemoveAt(0);
-                CursoDelPedido primero = cursos.Cursos[0];
-                pedido.numero = principal.Numero;
+                // Solo cursos: el principal es el de cursos, con sus líneas al precio de su modalidad
+                pedido.numero = creado.Numero;
                 pedido.serie = Constantes.Series.SERIE_CURSOS;
                 pedido.plazosPago = Constantes.PlazosPago.PREPAGO;
-                primero.Linea.PrecioUnitario = primero.Importe;
-                primero.Linea.DescuentoLinea = 0;
-                primero.Linea.DescuentoProducto = 0;
-                primero.Linea.AplicarDescuento = false;
-                pedido.Lineas.Add(primero.Linea);
+                foreach (CursoDelPedido curso in cursos.Cursos)
+                {
+                    curso.Linea.PrecioUnitario = curso.Importe;
+                    curso.Linea.DescuentoLinea = 0;
+                    curso.Linea.DescuentoProducto = 0;
+                    curso.Linea.AplicarDescuento = false;
+                    pedido.Lineas.Add(curso.Linea);
+                }
+                creado = null;
             }
-            pedido.PedidosAdicionales = creados.Any() ? creados : null;
-            pedido.AvisosCursos = fallos.Any() ? fallos : null;
+            pedido.PedidosAdicionales = creado != null ? new List<PedidoAdicionalDTO> { creado } : null;
+            pedido.AvisosCursos = avisos.Any() ? avisos : null;
             return new ResultadoPedidoConCursos { Respuesta = pedido };
         }
     }
 
     /// <summary>
-    /// NestoAPI#691: el pedido del curso como el de #612 (CreadorPedidoCurso): una línea del producto sin NR al importe de la
-    /// modalidad, sin descuentos ni pronto pago, en la tienda del evento; cabecera de la plantilla con plazo PRE. Pedido y fila de
-    /// EventosInscripcionesCurso (Estado PendienteEvento) van en la misma transacción: si algo falla, no queda nada.
+    /// NestoAPI#691: el pedido de los cursos de la plantilla, como el de #612 (CreadorPedidoCurso) pero con todos los cursos: una
+    /// línea por curso con el producto sin NR al importe de su modalidad, sin descuentos ni pronto pago, en la tienda de su evento
+    /// y Pendiente (−1) hasta que se pague su inscripción; cabecera de la plantilla con plazo PRE. El pedido y las filas de
+    /// EventosInscripcionesCurso (Estado EnCurso, con el pedido y SU línea) van en la misma transacción: si algo falla, no queda nada.
     /// </summary>
     public class CreadorPedidoCursoPlantilla : ICreadorPedidoCursoPlantilla
     {
         internal const string SQL_LIGAR = @"
-INSERT INTO dbo.EventosInscripcionesCurso (InscripcionId, EmpresaPedido, Pedido, Estado, Intentos, Usuario, FechaCreacion, FechaModificacion)
-VALUES (@p0, @p1, @p2, 'PendienteEvento', 0, @p3, GETDATE(), GETDATE())";
+INSERT INTO dbo.EventosInscripcionesCurso (InscripcionId, EmpresaPedido, Pedido, LineaPedido, Estado, Intentos, Usuario, FechaCreacion, FechaModificacion)
+VALUES (@p0, @p1, @p2, @p3, 'EnCurso', 0, @p4, GETDATE(), GETDATE())";
 
         private readonly NVEntities db;
         private readonly Func<IServicioPedidosVenta> servicioPedidos;
@@ -782,8 +835,12 @@ VALUES (@p0, @p1, @p2, 'PendienteEvento', 0, @p3, GETDATE(), GETDATE())";
             this.servicioPedidos = servicioPedidos ?? (() => new ServicioPedidosVenta());
         }
 
-        public async Task<int> Crear(PedidoVentaDTO pedido, Cliente ficha, CursoDelPedido curso, int inscripcionId)
+        public async Task<int> Crear(PedidoVentaDTO pedido, Cliente ficha, IReadOnlyList<CursoDelPedido> cursos)
         {
+            if (cursos.Any(c => !c.InscripcionId.HasValue))
+            {
+                throw new InvalidOperationException("Falta la inscripción de algún curso.");
+            }
             string empresa = ReglasCursosPlantilla.Limpiar(pedido.empresa) ?? Constantes.Empresas.EMPRESA_POR_DEFECTO;
             IServicioPedidosVenta servicio = servicioPedidos();
             PlazoPago plazo = servicio.LeerPlazosPago(empresa, Constantes.PlazosPago.PREPAGO)
@@ -791,36 +848,50 @@ VALUES (@p0, @p1, @p2, 'PendienteEvento', 0, @p3, GETDATE(), GETDATE())";
             DateTime hoy = DateTime.Today;
             int numero = db.TomarSiguienteNumeroPedido();
 
-            CabPedidoVta cabecera = ReglasCursosPlantilla.Cabecera(pedido, ficha, numero, curso, inscripcionId, hoy);
+            CabPedidoVta cabecera = ReglasCursosPlantilla.Cabecera(pedido, ficha, numero, cursos, hoy);
             var gestor = new GestorPedidosVenta(servicio);
-            LinPedidoVta linea = gestor.CrearLineaVta(ReglasCursosPlantilla.Linea(pedido, curso, hoy), numero, empresa, cabecera.IVA, plazo,
-                cabecera.Nº_Cliente, cabecera.Contacto, cabecera.Ruta, cabecera.Vendedor, cabecera.Usuario);
-            // El curso vale lo que la modalidad: ni descuento de cliente ni pronto pago (la factura tiene que cuadrar con el cobro)
-            linea.DescuentoCliente = 0;
-            linea.DescuentoPP = 0;
-            linea.Descuento = 0;
-            linea.DescuentoProducto = 0;
-            linea.Aplicar_Dto = false;
-            linea.Fecha_Entrega = hoy;
-            gestor.CalcularImportesLinea(linea, cabecera.IVA);
-            cabecera.Serie = SerieSegunLineas.Resolver(cabecera.Serie, empresa, new[] { linea });
+            var lineas = new List<KeyValuePair<CursoDelPedido, LinPedidoVta>>();
+            foreach (CursoDelPedido curso in cursos)
+            {
+                LinPedidoVta linea = gestor.CrearLineaVta(ReglasCursosPlantilla.Linea(pedido, curso, hoy), numero, empresa, cabecera.IVA, plazo,
+                    cabecera.Nº_Cliente, cabecera.Contacto, cabecera.Ruta, cabecera.Vendedor, cabecera.Usuario);
+                // El curso vale lo que la modalidad: ni descuento de cliente ni pronto pago (la factura tiene que cuadrar con el cobro)
+                linea.DescuentoCliente = 0;
+                linea.DescuentoPP = 0;
+                linea.Descuento = 0;
+                linea.DescuentoProducto = 0;
+                linea.Aplicar_Dto = false;
+                linea.Fecha_Entrega = hoy;
+                gestor.CalcularImportesLinea(linea, cabecera.IVA);
+                lineas.Add(new KeyValuePair<CursoDelPedido, LinPedidoVta>(curso, linea));
+            }
+            cabecera.Serie = SerieSegunLineas.Resolver(cabecera.Serie, empresa, lineas.Select(l => l.Value).ToList());
 
             using (DbContextTransaction transaccion = db.Database.BeginTransaction())
             {
                 try
                 {
                     _ = db.CabPedidoVtas.Add(cabecera);
-                    _ = db.LinPedidoVtas.Add(linea);
+                    foreach (KeyValuePair<CursoDelPedido, LinPedidoVta> linea in lineas)
+                    {
+                        _ = db.LinPedidoVtas.Add(linea.Value);
+                    }
                     _ = await db.SaveChangesAsync().ConfigureAwait(false);
-                    _ = await db.Database.ExecuteSqlCommandAsync(SQL_LIGAR,
-                        new SqlParameter("@p0", inscripcionId), new SqlParameter("@p1", empresa), new SqlParameter("@p2", numero),
-                        new SqlParameter("@p3", RepositorioFacturacionCursos.Usuario(pedido.Usuario))).ConfigureAwait(false);
+                    // Cada inscripción, ligada a SU línea (el Nº Orden lo da la base de datos al guardar)
+                    foreach (KeyValuePair<CursoDelPedido, LinPedidoVta> linea in lineas)
+                    {
+                        _ = await db.Database.ExecuteSqlCommandAsync(SQL_LIGAR,
+                            new SqlParameter("@p0", linea.Key.InscripcionId.Value), new SqlParameter("@p1", empresa), new SqlParameter("@p2", numero),
+                            new SqlParameter("@p3", linea.Value.Nº_Orden),
+                            new SqlParameter("@p4", RepositorioFacturacionCursos.Usuario(pedido.Usuario))).ConfigureAwait(false);
+                    }
                     transaccion.Commit();
                 }
                 catch
                 {
                     transaccion.Rollback();
-                    foreach (DbEntityEntry entrada in db.ChangeTracker.Entries().Where(e => e.Entity == cabecera || e.Entity == linea).ToList())
+                    foreach (DbEntityEntry entrada in db.ChangeTracker.Entries()
+                        .Where(e => e.Entity == cabecera || lineas.Any(l => l.Value == e.Entity)).ToList())
                     {
                         entrada.State = EntityState.Detached;
                     }
@@ -832,7 +903,7 @@ VALUES (@p0, @p1, @p2, 'PendienteEvento', 0, @p3, GETDATE(), GETDATE())";
         }
     }
 
-    /// <summary>NestoAPI#691: el correo a la clienta (de usted) con el enlace de pago de su plaza. Nunca lanza.</summary>
+    /// <summary>NestoAPI#691: el correo a la clienta (de usted) con sus cursos y el enlace de pago del pedido. Nunca lanza.</summary>
     public class AvisadorCursoPlantilla : IAvisadorCursoPlantilla
     {
         private readonly NVEntities db;
@@ -844,7 +915,8 @@ VALUES (@p0, @p1, @p2, 'PendienteEvento', 0, @p3, GETDATE(), GETDATE())";
             this.correo = correo ?? new ServicioCorreoElectronico();
         }
 
-        public async Task<bool> Avisar(PedidoVentaDTO pedido, CursoDelPedido curso, InscripcionEventoDTO inscripcion, int pedidoCurso)
+        public async Task<bool> Avisar(PedidoVentaDTO pedido, IReadOnlyList<CursoDelPedido> cursos, IReadOnlyList<InscripcionEventoDTO> inscripciones,
+            string urlPago, int pedidoCursos)
         {
             try
             {
@@ -855,22 +927,24 @@ VALUES (@p0, @p1, @p2, 'PendienteEvento', 0, @p3, GETDATE(), GETDATE())";
                 if (destino == null)
                 {
                     ElmahHelper.Log(new Exception($"[Cursos #691] El cliente {cliente}/{contacto} no tiene correo: no se le ha mandado el enlace de pago " +
-                        $"de «{curso.Evento.Titulo?.Trim()}» (pedido {pedidoCurso}). Enlace: {inscripcion?.UrlPago}"));
+                        $"de {ServicioCursosPlantilla.Titulos(cursos)} (pedido {pedidoCursos}). Enlace: {urlPago}"));
                     return false;
                 }
-                using (MailMessage mail = Correo(curso, inscripcion, pedidoCurso, inscripcion?.Nombre, destino))
+                string nombre = inscripciones?.Select(i => i?.Nombre).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n));
+                DateTime? limite = inscripciones?.Where(i => i?.FechaLimitePago != null).Select(i => i.FechaLimitePago).Min();
+                using (MailMessage mail = Correo(cursos, urlPago, limite, pedidoCursos, nombre, destino))
                 {
                     bool enviado = correo.EnviarCorreoSMTP(mail);
                     if (!enviado)
                     {
-                        ElmahHelper.Log(new Exception($"[Cursos #691] No se ha podido mandar a {destino} el enlace de pago del pedido {pedidoCurso}."));
+                        ElmahHelper.Log(new Exception($"[Cursos #691] No se ha podido mandar a {destino} el enlace de pago del pedido {pedidoCursos}."));
                     }
                     return enviado;
                 }
             }
             catch (Exception ex)
             {
-                ElmahHelper.Log(new Exception($"[Cursos #691] No se ha podido mandar el enlace de pago del pedido {pedidoCurso}: {ex.Message}", ex));
+                ElmahHelper.Log(new Exception($"[Cursos #691] No se ha podido mandar el enlace de pago del pedido {pedidoCursos}: {ex.Message}", ex));
                 return false;
             }
         }
@@ -889,40 +963,65 @@ VALUES (@p0, @p1, @p2, 'PendienteEvento', 0, @p3, GETDATE(), GETDATE())";
                 .FirstOrDefault();
         }
 
-        /// <summary>El correo de usted: evento, fecha, tienda u «online», modalidad, importe y el botón del enlace de pago.</summary>
-        internal static MailMessage Correo(CursoDelPedido curso, InscripcionEventoDTO inscripcion, int pedidoCurso, string nombre, string destino)
+        /// <summary>
+        /// El correo de usted: cada curso (evento, fecha, tienda u «online», modalidad e importe), el total, el pedido y UN botón con
+        /// el enlace de pago del pedido.
+        /// </summary>
+        internal static MailMessage Correo(IReadOnlyList<CursoDelPedido> cursos, string urlPago, DateTime? fechaLimitePago, int pedidoCursos,
+            string nombre, string destino)
         {
             string Html(string t) => WebUtility.HtmlEncode(t ?? string.Empty);
-            Evento evento = curso.Evento;
+            bool varios = cursos.Count > 1;
             var cuerpo = new StringBuilder();
             cuerpo.Append("<!DOCTYPE html><html><head><meta charset='utf-8'></head><body style='font-family: Arial, sans-serif; font-size: 14px; max-width: 600px;'>");
             cuerpo.Append($"<p>Hola{(string.IsNullOrWhiteSpace(nombre) ? "" : ", " + Html(nombre.Trim()))}:</p>");
-            cuerpo.Append($"<p>Le hemos reservado una plaza en <b>«{Html(evento.Titulo?.Trim())}»</b>, {Html(ReglasCursosPlantilla.CuandoYDonde(evento))}.</p>");
-            cuerpo.Append("<ul>");
-            cuerpo.Append($"<li>Modalidad: {Html(ReglasCursosPlantilla.NombreModalidad(curso.Modalidad))}</li>");
-            cuerpo.Append($"<li>Importe: {ReglasCursosPlantilla.Euros(curso.Importe)} €</li>");
-            cuerpo.Append($"<li>Pedido: {pedidoCurso}</li>");
-            cuerpo.Append("</ul>");
-            if (!string.IsNullOrWhiteSpace(inscripcion?.UrlPago))
+            if (varios)
             {
-                cuerpo.Append("<p>Para confirmar su plaza, páguela con este enlace de pago seguro:</p>");
-                cuerpo.Append($"<p><a href='{Html(inscripcion.UrlPago)}' style='display:inline-block;padding:12px 20px;background:#2e7d32;color:#ffffff;" +
-                    "text-decoration:none;border-radius:6px;font-weight:bold;'>Pagar mi plaza</a></p>");
+                cuerpo.Append("<p>Le hemos reservado una plaza en estos cursos:</p><ul>");
+                foreach (CursoDelPedido curso in cursos)
+                {
+                    cuerpo.Append($"<li><b>«{Html(curso.Evento.Titulo?.Trim())}»</b>, {Html(ReglasCursosPlantilla.CuandoYDonde(curso.Evento))}. " +
+                        $"{Html(ReglasCursosPlantilla.NombreModalidad(curso.Modalidad))}: {ReglasCursosPlantilla.Euros(curso.Importe)} €</li>");
+                }
+                cuerpo.Append("</ul><ul>");
+                cuerpo.Append($"<li>Total: {ReglasCursosPlantilla.Euros(cursos.Sum(c => c.Importe))} €</li>");
             }
             else
             {
-                cuerpo.Append("<p>Puede pagarla en su tienda o pedirnos el enlace de pago.</p>");
+                CursoDelPedido curso = cursos[0];
+                cuerpo.Append($"<p>Le hemos reservado una plaza en <b>«{Html(curso.Evento.Titulo?.Trim())}»</b>, {Html(ReglasCursosPlantilla.CuandoYDonde(curso.Evento))}.</p>");
+                cuerpo.Append("<ul>");
+                cuerpo.Append($"<li>Modalidad: {Html(ReglasCursosPlantilla.NombreModalidad(curso.Modalidad))}</li>");
+                cuerpo.Append($"<li>Importe: {ReglasCursosPlantilla.Euros(curso.Importe)} €</li>");
             }
-            if (inscripcion?.FechaLimitePago != null)
+            cuerpo.Append($"<li>Pedido: {pedidoCursos}</li>");
+            cuerpo.Append("</ul>");
+            if (!string.IsNullOrWhiteSpace(urlPago))
             {
-                cuerpo.Append($"<p>Le guardamos la plaza hasta el {inscripcion.FechaLimitePago.Value.ToString("dddd d 'de' MMMM", CultureInfo.GetCultureInfo("es-ES"))}.</p>");
+                cuerpo.Append(varios
+                    ? "<p>Para confirmar sus plazas, páguelas todas juntas con este enlace de pago seguro:</p>"
+                    : "<p>Para confirmar su plaza, páguela con este enlace de pago seguro:</p>");
+                cuerpo.Append($"<p><a href='{Html(urlPago)}' style='display:inline-block;padding:12px 20px;background:#2e7d32;color:#ffffff;" +
+                    $"text-decoration:none;border-radius:6px;font-weight:bold;'>{(varios ? "Pagar mis plazas" : "Pagar mi plaza")}</a></p>");
+            }
+            else
+            {
+                cuerpo.Append(varios
+                    ? "<p>Puede pagarlas en su tienda o pedirnos el enlace de pago.</p>"
+                    : "<p>Puede pagarla en su tienda o pedirnos el enlace de pago.</p>");
+            }
+            if (fechaLimitePago != null)
+            {
+                cuerpo.Append($"<p>Le guardamos {(varios ? "las plazas" : "la plaza")} hasta el {fechaLimitePago.Value.ToString("dddd d 'de' MMMM", CultureInfo.GetCultureInfo("es-ES"))}.</p>");
             }
             cuerpo.Append("<p>Muchas gracias.</p><p>Nueva Visión</p></body></html>");
 
             var mail = new MailMessage
             {
                 From = new MailAddress("nuevavision@nuevavision.es", "Nueva Visión"),
-                Subject = $"Su plaza en «{evento.Titulo?.Trim()}»: enlace de pago",
+                Subject = varios
+                    ? $"Sus plazas en {ServicioCursosPlantilla.Titulos(cursos)}: enlace de pago"
+                    : $"Su plaza en «{cursos[0].Evento.Titulo?.Trim()}»: enlace de pago",
                 Body = cuerpo.ToString(),
                 IsBodyHtml = true,
                 BodyEncoding = Encoding.UTF8,

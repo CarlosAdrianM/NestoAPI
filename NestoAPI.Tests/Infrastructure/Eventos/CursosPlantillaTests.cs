@@ -222,36 +222,60 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         // ---------------- Separación ----------------
 
         [TestMethod]
-        public async Task Orquestador_SoloCursos_NoSeSeparaYElPrincipalEsElDelCursoEnCV()
+        public async Task Orquestador_SoloCursos_NoSeSeparaYElPrincipalEsElDeCursosEnCV()
         {
-            PedidoVentaDTO pedido = Pedido(Curso(modalidad: "NoReembolsable", precio: 999));
+            PedidoVentaDTO pedido = Pedido(Curso(modalidad: "NoReembolsable", precio: 999), Curso(EVENTO_ONLINE, precio: 1));
             PreparacionCursos preparacion = await Servicio().Preparar(pedido);
             bool productos = false;
+            int llamadas = 0;
 
             ResultadoPedidoConCursos resultado = await OrquestadorPedidoConCursos.Crear(pedido, preparacion,
                 p => { productos = true; return Task.FromResult<IHttpActionResult>(Creado(p)); },
-                c => Task.FromResult(new PedidoAdicionalDTO { Numero = 930200, Motivo = "Cursos" }));
+                c => { llamadas++; return Task.FromResult(new PedidoAdicionalDTO { Numero = 930200, Motivo = "Cursos" }); });
 
             Assert.IsFalse(productos, "sin productos no se crea pedido NV");
+            Assert.AreEqual(1, llamadas, "un solo pedido para los dos cursos");
             Assert.AreEqual(930200, resultado.Respuesta.numero);
             Assert.AreEqual("CV", resultado.Respuesta.serie);
             Assert.AreEqual("PRE", resultado.Respuesta.plazosPago);
             Assert.IsNull(resultado.Respuesta.PedidosAdicionales);
-            Assert.AreEqual(60M, resultado.Respuesta.Lineas.Single().PrecioUnitario, "el precio es el de la modalidad");
+            CollectionAssert.AreEqual(new[] { 60M, 150M }, resultado.Respuesta.Lineas.Select(l => l.PrecioUnitario).ToArray(), "el precio es el de la modalidad");
         }
 
         [TestMethod]
-        public async Task Orquestador_DosCursosYProductos_UnPedidoPorCurso()
+        public async Task Orquestador_DosCursosYProductos_UnSoloPedidoDeCursosConLosDos_YLosProductosNoCambian()
         {
             PedidoVentaDTO pedido = Pedido(Producto("12345", 100), Curso(), Curso(EVENTO_ONLINE));
             PreparacionCursos preparacion = await Servicio().Preparar(pedido);
-            int siguiente = 930300;
+            var pedidosDeCursos = new List<IReadOnlyList<CursoDelPedido>>();
+            PedidoVentaDTO productosCreados = null;
+
+            ResultadoPedidoConCursos resultado = await OrquestadorPedidoConCursos.Crear(pedido, preparacion,
+                p => { productosCreados = p; p.numero = 930300; return Task.FromResult<IHttpActionResult>(Creado(p)); },
+                c => { pedidosDeCursos.Add(c); return Task.FromResult(new PedidoAdicionalDTO { Numero = 930301, Motivo = "Cursos" }); });
+
+            Assert.AreEqual(1, pedidosDeCursos.Count, "UN pedido de cursos");
+            CollectionAssert.AreEqual(new[] { EVENTO, EVENTO_ONLINE }, pedidosDeCursos[0].Select(c => c.Evento.Id).ToArray());
+            Assert.AreEqual(930301, resultado.Respuesta.PedidosAdicionales.Single().Numero, "Nesto lee PedidosAdicionales [{Numero, Motivo}]");
+            Assert.AreEqual("Cursos", resultado.Respuesta.PedidosAdicionales.Single().Motivo);
+            Assert.AreEqual(930300, resultado.Respuesta.numero);
+            Assert.AreEqual("12345", productosCreados.Lineas.Single().Producto, "los productos, en su pedido NV como siempre");
+            Assert.AreEqual(100M, GestorPortes.CalcularBaseImponibleProductos(productosCreados.Lineas));
+        }
+
+        [TestMethod]
+        public async Task Orquestador_SiNoSePuedeGenerarElEnlace_ElPedidoQuedaYSeAvisa()
+        {
+            PedidoVentaDTO pedido = Pedido(Producto("12345", 100), Curso());
+            PreparacionCursos preparacion = await Servicio().Preparar(pedido);
 
             ResultadoPedidoConCursos resultado = await OrquestadorPedidoConCursos.Crear(pedido, preparacion,
                 p => Task.FromResult<IHttpActionResult>(Creado(p)),
-                c => Task.FromResult(new PedidoAdicionalDTO { Numero = ++siguiente, Motivo = "Cursos" }));
+                c => Task.FromResult(new PedidoAdicionalDTO { Numero = 930310, Motivo = "Cursos", Aviso = "No se ha podido generar el enlace de pago." }));
 
-            CollectionAssert.AreEqual(new[] { 930301, 930302 }, resultado.Respuesta.PedidosAdicionales.Select(a => a.Numero).ToArray());
+            Assert.AreEqual(930310, resultado.Respuesta.PedidosAdicionales.Single().Numero);
+            Assert.AreEqual("No se ha podido generar el enlace de pago.", resultado.Respuesta.AvisosCursos.Single());
+            Assert.IsFalse(Newtonsoft.Json.JsonConvert.SerializeObject(resultado.Respuesta.PedidosAdicionales).Contains("Aviso"), "el JSON de Nesto no cambia");
         }
 
         [TestMethod]
@@ -407,71 +431,117 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         // ---------------- El pedido del curso: inscripción ligada, cabecera y línea ----------------
 
         [TestMethod]
-        public async Task CrearPedidoCurso_InscribeReservadaConEnlace_CreaElPedidoLigadoYAvisaALaClienta()
+        public async Task CrearPedidoCursos_DosCursos_DosInscripcionesUnPedidoConLasDosLigadasYUnEnlacePorElTotal()
         {
             IServicioInscripcionesEventos servicioInscripciones = A.Fake<IServicioInscripcionesEventos>();
             A.CallTo(() => servicioInscripciones.Inscribir(EVENTO, A<InscribirEventoDTO>._, A<IPrincipal>._))
+                .Returns(Task.FromResult(new InscripcionEventoDTO { Id = 501 }));
+            A.CallTo(() => servicioInscripciones.Inscribir(EVENTO_ONLINE, A<InscribirEventoDTO>._, A<IPrincipal>._))
+                .Returns(Task.FromResult(new InscripcionEventoDTO { Id = 502 }));
+            A.CallTo(() => servicioInscripciones.GenerarEnlacePagoPedidoCursos(930400, A<List<int>>._, A<IPrincipal>._))
                 .Returns(Task.FromResult(new InscripcionEventoDTO { Id = 501, UrlPago = "https://api.nuevavision.es/pago/x" }));
             ICreadorPedidoCursoPlantilla creador = A.Fake<ICreadorPedidoCursoPlantilla>();
-            A.CallTo(() => creador.Crear(A<PedidoVentaDTO>._, A<Cliente>._, A<CursoDelPedido>._, 501)).Returns(Task.FromResult(930400));
+            List<CursoDelPedido> creados = null;
+            A.CallTo(() => creador.Crear(A<PedidoVentaDTO>._, A<Cliente>._, A<IReadOnlyList<CursoDelPedido>>._))
+                .ReturnsLazily((PedidoVentaDTO p, Cliente f, IReadOnlyList<CursoDelPedido> c) => { creados = c.ToList(); return Task.FromResult(930400); });
             IAvisadorCursoPlantilla avisador = A.Fake<IAvisadorCursoPlantilla>();
-            PedidoVentaDTO pedido = Pedido(Curso(modalidad: "NoReembolsable"));
+            PedidoVentaDTO pedido = Pedido(Curso(modalidad: "NoReembolsable"), Curso(EVENTO_ONLINE));
             ServicioCursosPlantilla servicio = Servicio(servicioInscripciones, creador, avisador);
             PreparacionCursos preparacion = await servicio.Preparar(pedido);
 
-            PedidoAdicionalDTO creado = await servicio.CrearPedidoCurso(pedido, preparacion.Ficha, preparacion.Cursos.Single(), null);
+            PedidoAdicionalDTO creado = await servicio.CrearPedidoCursos(pedido, preparacion.Ficha, preparacion.Cursos, null);
 
             Assert.AreEqual(930400, creado.Numero);
             Assert.AreEqual("Cursos", creado.Motivo);
-            A.CallTo(() => servicioInscripciones.Inscribir(EVENTO, A<InscribirEventoDTO>.That.Matches(i =>
-                i.Modalidad == "NoReembolsable" && i.GenerarEnlacePago && i.Correo == null && i.Origen == "Nesto" && i.Cliente == "15191"),
-                A<IPrincipal>._)).MustHaveHappenedOnceExactly();
-            A.CallTo(() => creador.Crear(pedido, A<Cliente>._, A<CursoDelPedido>._, 501)).MustHaveHappenedOnceExactly();
-            A.CallTo(() => avisador.Avisar(pedido, A<CursoDelPedido>._, A<InscripcionEventoDTO>.That.Matches(i => i.UrlPago != null), 930400))
+            Assert.IsNull(creado.Aviso);
+            A.CallTo(() => servicioInscripciones.Inscribir(A<int>._, A<InscribirEventoDTO>.That.Matches(i =>
+                !i.GenerarEnlacePago && i.Correo == null && i.Origen == "Nesto" && i.Cliente == "15191"),
+                A<IPrincipal>._)).MustHaveHappenedTwiceExactly();
+            A.CallTo(() => servicioInscripciones.Inscribir(EVENTO, A<InscribirEventoDTO>.That.Matches(i => i.Modalidad == "NoReembolsable"), A<IPrincipal>._))
                 .MustHaveHappenedOnceExactly();
+            A.CallTo(() => creador.Crear(pedido, A<Cliente>._, A<IReadOnlyList<CursoDelPedido>>._)).MustHaveHappenedOnceExactly();
+            CollectionAssert.AreEqual(new int?[] { 501, 502 }, creados.Select(c => c.InscripcionId).ToArray(), "cada línea, ligada a su inscripción");
+            A.CallTo(() => servicioInscripciones.GenerarEnlacePagoPedidoCursos(930400, A<List<int>>.That.Matches(l => l.SequenceEqual(new[] { 501, 502 })), A<IPrincipal>._))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => avisador.Avisar(pedido, A<IReadOnlyList<CursoDelPedido>>.That.Matches(c => c.Count == 2), A<IReadOnlyList<InscripcionEventoDTO>>._,
+                "https://api.nuevavision.es/pago/x", 930400)).MustHaveHappenedOnceExactly();
         }
 
         [TestMethod]
-        public async Task CrearPedidoCurso_SiFallaElPedido_SeAnulaLaInscripcion()
+        public async Task CrearPedidoCursos_SiFallaElPedido_SeAnulanLasInscripciones()
+        {
+            IServicioInscripcionesEventos servicioInscripciones = A.Fake<IServicioInscripcionesEventos>();
+            int id = 600;
+            A.CallTo(() => servicioInscripciones.Inscribir(A<int>._, A<InscribirEventoDTO>._, A<IPrincipal>._))
+                .ReturnsLazily(() => Task.FromResult(new InscripcionEventoDTO { Id = ++id }));
+            ICreadorPedidoCursoPlantilla creador = A.Fake<ICreadorPedidoCursoPlantilla>();
+            A.CallTo(() => creador.Crear(A<PedidoVentaDTO>._, A<Cliente>._, A<IReadOnlyList<CursoDelPedido>>._))
+                .Throws(new InvalidOperationException("CHECK"));
+            ServicioCursosPlantilla servicio = Servicio(servicioInscripciones, creador);
+            PedidoVentaDTO pedido = Pedido(Curso(), Curso(EVENTO_ONLINE));
+            PreparacionCursos preparacion = await servicio.Preparar(pedido);
+
+            _ = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => servicio.CrearPedidoCursos(pedido, preparacion.Ficha, preparacion.Cursos, null));
+
+            A.CallTo(() => servicioInscripciones.Anular(601, A<IPrincipal>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => servicioInscripciones.Anular(602, A<IPrincipal>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => servicioInscripciones.GenerarEnlacePagoPedidoCursos(A<int>._, A<List<int>>._, A<IPrincipal>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task CrearPedidoCursos_SiFallaElEnlace_ElPedidoQuedaConAvisoYElCorreoSinEnlace()
         {
             IServicioInscripcionesEventos servicioInscripciones = A.Fake<IServicioInscripcionesEventos>();
             A.CallTo(() => servicioInscripciones.Inscribir(A<int>._, A<InscribirEventoDTO>._, A<IPrincipal>._))
-                .Returns(Task.FromResult(new InscripcionEventoDTO { Id = 502 }));
+                .Returns(Task.FromResult(new InscripcionEventoDTO { Id = 701 }));
+            A.CallTo(() => servicioInscripciones.GenerarEnlacePagoPedidoCursos(A<int>._, A<List<int>>._, A<IPrincipal>._))
+                .Throws(new InvalidOperationException("Redsys caído"));
             ICreadorPedidoCursoPlantilla creador = A.Fake<ICreadorPedidoCursoPlantilla>();
-            A.CallTo(() => creador.Crear(A<PedidoVentaDTO>._, A<Cliente>._, A<CursoDelPedido>._, A<int>._))
-                .Throws(new InvalidOperationException("CHECK"));
-            ServicioCursosPlantilla servicio = Servicio(servicioInscripciones, creador);
+            A.CallTo(() => creador.Crear(A<PedidoVentaDTO>._, A<Cliente>._, A<IReadOnlyList<CursoDelPedido>>._)).Returns(Task.FromResult(930410));
+            IAvisadorCursoPlantilla avisador = A.Fake<IAvisadorCursoPlantilla>();
+            ServicioCursosPlantilla servicio = Servicio(servicioInscripciones, creador, avisador);
             PedidoVentaDTO pedido = Pedido(Curso());
             PreparacionCursos preparacion = await servicio.Preparar(pedido);
 
-            _ = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => servicio.CrearPedidoCurso(pedido, preparacion.Ficha, preparacion.Cursos.Single(), null));
+            PedidoAdicionalDTO creado = await servicio.CrearPedidoCursos(pedido, preparacion.Ficha, preparacion.Cursos, null);
 
-            A.CallTo(() => servicioInscripciones.Anular(502, A<IPrincipal>._)).MustHaveHappenedOnceExactly();
+            Assert.AreEqual(930410, creado.Numero);
+            StringAssert.Contains(creado.Aviso, "enlace de pago");
+            StringAssert.Contains(creado.Aviso, "por favor");
+            A.CallTo(() => servicioInscripciones.Anular(A<int>._, A<IPrincipal>._)).MustNotHaveHappened();
+            A.CallTo(() => avisador.Avisar(pedido, A<IReadOnlyList<CursoDelPedido>>._, A<IReadOnlyList<InscripcionEventoDTO>>._, null, 930410))
+                .MustHaveHappenedOnceExactly();
         }
 
         [TestMethod]
         public async Task CabeceraYLinea_PrepagoTiendaDelEventoSinDescuentosYSerieCV()
         {
-            PedidoVentaDTO pedido = Pedido(Curso(EVENTO_ONLINE, "Reembolsable"));
+            PedidoVentaDTO pedido = Pedido(Curso(EVENTO_ONLINE, "Reembolsable"), Curso());
             pedido.formaPago = "TRN";
             PreparacionCursos preparacion = await Servicio().Preparar(pedido);
-            CursoDelPedido curso = preparacion.Cursos.Single();
+            preparacion.Cursos[0].InscripcionId = 503;
+            preparacion.Cursos[1].InscripcionId = 504;
+            CursoDelPedido curso = preparacion.Cursos[0];
 
-            CabPedidoVta cabecera = ReglasCursosPlantilla.Cabecera(pedido, preparacion.Ficha, 930500, curso, 503, HOY.Date);
+            CabPedidoVta cabecera = ReglasCursosPlantilla.Cabecera(pedido, preparacion.Ficha, 930500, preparacion.Cursos, HOY.Date);
             LineaPedidoVentaDTO linea = ReglasCursosPlantilla.Linea(pedido, curso, HOY.Date);
+            LineaPedidoVentaDTO otra = ReglasCursosPlantilla.Linea(pedido, preparacion.Cursos[1], HOY.Date);
 
             Assert.AreEqual("PRE", cabecera.PlazosPago);
             Assert.AreEqual("TRN", cabecera.Forma_Pago);
             Assert.AreEqual(Constantes.Pedidos.PERIODO_FACTURACION_NORMAL, cabecera.Periodo_Facturacion);
             Assert.AreEqual("JE", cabecera.Vendedor, "sin vendedor en el pedido, el de la ficha");
             StringAssert.Contains(cabecera.Comentarios, "inscripción 503");
+            StringAssert.Contains(cabecera.Comentarios, "inscripción 504");
             Assert.AreEqual("ALC", linea.almacen, "el del evento, también en un online; nunca ALG");
             Assert.AreEqual("ALC", linea.delegacion);
+            Assert.AreEqual("REI", otra.almacen, "cada línea, la tienda de su evento");
             Assert.AreEqual(150M, linea.PrecioUnitario);
             Assert.AreEqual(0M, linea.DescuentoLinea);
             Assert.IsFalse(linea.AplicarDescuento);
             Assert.AreEqual(1, linea.Cantidad);
-            Assert.AreEqual("CV", SerieSegunLineas.Resolver(cabecera.Serie, "1", new[] { new LinPedidoVta { Grupo = "CUR" } }));
+            Assert.AreEqual(Constantes.EstadosLineaVenta.PENDIENTE, linea.estado, "hasta que se pague su inscripción no entra en ningún albarán");
+            Assert.AreEqual("CV", SerieSegunLineas.Resolver(cabecera.Serie, "1", new[] { new LinPedidoVta { Grupo = "CUR" }, new LinPedidoVta { Grupo = "CUR" } }));
         }
 
         [TestMethod]
@@ -532,9 +602,9 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         public void Correo_DeUstedConEventoFechaTiendaModalidadImporteYEnlace()
         {
             var curso = new CursoDelPedido { Evento = eventos.First(e => e.Id == EVENTO), Modalidad = ModalidadInscripcionEvento.NoReembolsable, Importe = 60 };
-            var inscripcion = new InscripcionEventoDTO { Id = 9, UrlPago = "https://api.nuevavision.es/pago/abc", FechaLimitePago = new DateTime(2026, 11, 3) };
+            const string url = "https://api.nuevavision.es/pago/abc";
 
-            using (MailMessage correo = AvisadorCursoPlantilla.Correo(curso, inscripcion, 930600, "LUNA", "luna@example.com"))
+            using (MailMessage correo = AvisadorCursoPlantilla.Correo(new[] { curso }, url, new DateTime(2026, 11, 3), 930600, "LUNA", "luna@example.com"))
             {
                 StringAssert.Contains(correo.Subject, "Curso de cejas");
                 StringAssert.Contains(correo.Body, "Le hemos reservado una plaza");
@@ -542,13 +612,36 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
                 StringAssert.Contains(correo.Body, "10:00");
                 StringAssert.Contains(correo.Body, System.Net.WebUtility.HtmlEncode("Sin cupón"));
                 StringAssert.Contains(correo.Body, "60,00 €");
-                StringAssert.Contains(correo.Body, "https://api.nuevavision.es/pago/abc");
+                StringAssert.Contains(correo.Body, url);
                 StringAssert.Contains(correo.Body, "930600");
             }
             curso.Evento = eventos.First(e => e.Id == EVENTO_ONLINE);
-            using (MailMessage online = AvisadorCursoPlantilla.Correo(curso, inscripcion, 1, null, "luna@example.com"))
+            using (MailMessage online = AvisadorCursoPlantilla.Correo(new[] { curso }, url, null, 1, null, "luna@example.com"))
             {
                 StringAssert.Contains(online.Body, "online");
+            }
+        }
+
+        [TestMethod]
+        public void Correo_DosCursos_TodosConSuImporte_ElTotalYUnSoloEnlace()
+        {
+            var cursos = new[]
+            {
+                new CursoDelPedido { Evento = eventos.First(e => e.Id == EVENTO), Modalidad = ModalidadInscripcionEvento.NoReembolsable, Importe = 60 },
+                new CursoDelPedido { Evento = eventos.First(e => e.Id == EVENTO_ONLINE), Modalidad = ModalidadInscripcionEvento.Reembolsable, Importe = 150 }
+            };
+            const string url = "https://api.nuevavision.es/pago/total";
+
+            using (MailMessage correo = AvisadorCursoPlantilla.Correo(cursos, url, new DateTime(2026, 10, 29), 930610, "LUNA", "luna@example.com"))
+            {
+                StringAssert.Contains(correo.Subject, "Curso de cejas");
+                StringAssert.Contains(correo.Subject, "Webinar");
+                StringAssert.Contains(correo.Body, "60,00 €");
+                StringAssert.Contains(correo.Body, "150,00 €");
+                StringAssert.Contains(correo.Body, "Total: 210,00 €");
+                StringAssert.Contains(correo.Body, "páguelas");
+                Assert.AreEqual(1, correo.Body.Split(new[] { url }, StringSplitOptions.None).Length - 1, "un solo enlace por el total");
+                StringAssert.Contains(correo.Body, "930610");
             }
         }
 

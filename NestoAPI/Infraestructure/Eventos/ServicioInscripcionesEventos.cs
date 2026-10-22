@@ -236,6 +236,11 @@ namespace NestoAPI.Infraestructure.Eventos
         Task<ResultadoAsistenciaEnlace> ConfirmarAsistenciaConClave(Guid clave, string respuesta);
         /// <summary>NestoAPI#614: la compra del curso en la tienda PrestaShop paga (o crea) la inscripción del cliente.</summary>
         Task<InscripcionEventoDTO> InscribirDesdeTienda(CursoTiendaDTO peticion, IPrincipal usuario);
+        /// <summary>
+        /// NestoAPI#691: el enlace de pago único del pedido de cursos de la plantilla, por el total de sus inscripciones. Devuelve la
+        /// primera inscripción con UrlPago.
+        /// </summary>
+        Task<InscripcionEventoDTO> GenerarEnlacePagoPedidoCursos(int pedido, List<int> inscripciones, IPrincipal usuario);
     }
 
     /// <summary>
@@ -654,12 +659,17 @@ GROUP BY RTRIM(c.[Nº Cliente])";
         /// </summary>
         public async Task<InscripcionEventoDTO> RegistrarCobroEnlace(int pagoRaizId, decimal importe)
         {
-            EventoInscripcion inscripcion = await db.EventosInscripciones
-                .FirstOrDefaultAsync(i => i.PagoTPVId == pagoRaizId).ConfigureAwait(false);
-            if (inscripcion == null)
+            List<EventoInscripcion> delEnlace = await db.EventosInscripciones
+                .Where(i => i.PagoTPVId == pagoRaizId).ToListAsync().ConfigureAwait(false);
+            if (!delEnlace.Any())
             {
                 return null;
             }
+            if (delEnlace.Count > 1)
+            {
+                return await RegistrarCobroEnlaceDelPedido(pagoRaizId, delEnlace).ConfigureAwait(false);
+            }
+            EventoInscripcion inscripcion = delEnlace[0];
             Evento evento = await LeerEvento(inscripcion.EventoId).ConfigureAwait(false);
             EstadoInscripcionEvento estado = EstadoDe(inscripcion);
             if (estado == EstadoInscripcionEvento.Anulada)
@@ -676,6 +686,102 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             await Pagar(inscripcion, evento, FormaPagoInscripcionEvento.Tarjeta, importe, reloj(), USUARIO_AUTOMATICO, null).ConfigureAwait(false);
             return Componer(inscripcion, evento, null);
         }
+
+        /// <summary>
+        /// NestoAPI#691 (Carlos, 22/10/26): el enlace único del pedido de cursos de la plantilla paga TODAS sus inscripciones, cada
+        /// una por el importe de su modalidad. Primero se apuntan todas como pagadas y después se procesan: la primera factura
+        /// las líneas de todas (una sola factura) y las demás ya la encuentran hecha.
+        /// </summary>
+        private async Task<InscripcionEventoDTO> RegistrarCobroEnlaceDelPedido(int pagoRaizId, List<EventoInscripcion> delEnlace)
+        {
+            DateTime ahora = reloj();
+            var pagadas = new List<KeyValuePair<EventoInscripcion, Evento>>();
+            foreach (EventoInscripcion inscripcion in delEnlace.OrderBy(i => i.Id))
+            {
+                Evento evento = await LeerEvento(inscripcion.EventoId).ConfigureAwait(false);
+                EstadoInscripcionEvento estado = EstadoDe(inscripcion);
+                if (estado == EstadoInscripcionEvento.Anulada)
+                {
+                    ElmahHelper.Log(new Exception($"[Cursos #691] Se ha cobrado el enlace {pagoRaizId} del pedido de cursos, pero la inscripción " +
+                        $"{inscripcion.Id} (cliente {Limpiar(inscripcion.Cliente)}, evento «{evento.Titulo?.Trim()}») estaba anulada: su parte del " +
+                        "cobro está en el extracto; decidan si se reactiva (marcándola pagada) o se devuelve."));
+                    continue;
+                }
+                if (!ReglasInscripcionEvento.PuedePasar(estado, EstadoInscripcionEvento.Pagada) || estado == EstadoInscripcionEvento.Pagada)
+                {
+                    continue;
+                }
+                AnotarPago(inscripcion, FormaPagoInscripcionEvento.Tarjeta, ReglasModalidadEvento.ImporteDe(inscripcion, evento), ahora, USUARIO_AUTOMATICO, null);
+                pagadas.Add(new KeyValuePair<EventoInscripcion, Evento>(inscripcion, evento));
+            }
+            if (pagadas.Any())
+            {
+                await db.SaveChangesAsync().ConfigureAwait(false);
+            }
+            foreach (KeyValuePair<EventoInscripcion, Evento> pagada in pagadas)
+            {
+                await ProcesarPagada(pagada.Key, pagada.Value).ConfigureAwait(false);
+            }
+            EventoInscripcion primera = delEnlace.OrderBy(i => i.Id).First();
+            return Componer(primera, await LeerEvento(primera.EventoId).ConfigureAwait(false), null);
+        }
+
+        /// <summary>
+        /// NestoAPI#691: el enlace de pago único del pedido de cursos de la plantilla, por el total de sus inscripciones (cada una,
+        /// el importe de su modalidad). Es un enlace de pago como el de una inscripción (PagosTPV.Documento «INS{id}» de la primera,
+        /// para que el cobro no se proponga como señal y se liquide contra la factura) y, como lleva el pedido en el concepto, es
+        /// también un enlace del pedido (#679). Todas las inscripciones apuntan a él (PagoTPVId): al cobrarlo, quedan pagadas todas.
+        /// </summary>
+        public async Task<InscripcionEventoDTO> GenerarEnlacePagoPedidoCursos(int pedido, List<int> inscripciones, IPrincipal usuario)
+        {
+            List<int> ids = (inscripciones ?? new List<int>()).Distinct().ToList();
+            List<EventoInscripcion> lista = (await db.EventosInscripciones.Where(i => ids.Contains(i.Id)).ToListAsync().ConfigureAwait(false))
+                .OrderBy(i => i.Id).ToList();
+            if (!lista.Any())
+            {
+                throw NoEncontrado($"No existen las inscripciones del pedido {pedido}.");
+            }
+            decimal total = 0;
+            var eventos = new Dictionary<int, Evento>();
+            foreach (EventoInscripcion inscripcion in lista)
+            {
+                if (!eventos.TryGetValue(inscripcion.EventoId, out Evento evento))
+                {
+                    evento = await LeerEvento(inscripcion.EventoId).ConfigureAwait(false);
+                    eventos[evento.Id] = evento;
+                }
+                total += ReglasModalidadEvento.ImporteDe(inscripcion, evento);
+            }
+            total = Math.Round(total, 2, MidpointRounding.AwayFromZero);
+            EventoInscripcion primera = lista[0];
+            string empresa = EmpresaOPorDefecto(primera.Empresa);
+            Cliente ficha = await LeerFichaCliente(empresa, Limpiar(primera.Cliente), Limpiar(primera.Contacto)).ConfigureAwait(false);
+            string usuarioAuditoria = UsuarioAuditoriaHelper.ParaAuditoria(UsuarioAuditoriaHelper.Resolver(usuario, null));
+            RespuestaIniciarPago enlace = await pagos().IniciarPago(new SolicitudPagoTPV
+            {
+                Empresa = empresa,
+                Cliente = Limpiar(primera.Cliente),
+                Contacto = Limpiar(ficha.Contacto),
+                Importe = total,
+                Descripcion = ConceptoPagoPedidoCursos(pedido),
+                Correo = null,
+                Documento = DocumentoPago(primera.Id),
+                Vendedor = Limpiar(ficha.Vendedor)
+            }, UsuarioAuditoriaHelper.Resolver(usuario, usuarioAuditoria)).ConfigureAwait(false);
+
+            foreach (EventoInscripcion inscripcion in lista)
+            {
+                inscripcion.PagoTPVId = enlace.IdPago;
+                inscripcion.FormaPago = FormaPagoInscripcionEvento.Tarjeta.ToString();
+            }
+            await db.SaveChangesAsync().ConfigureAwait(false);
+            InscripcionEventoDTO dto = Componer(primera, eventos[primera.EventoId], ficha.Nombre?.Trim());
+            dto.UrlPago = enlace.UrlPaginaPago;
+            return dto;
+        }
+
+        /// <summary>«Pago pedido 930400 cursos»: el pedido en el concepto lo hace enlace del pedido (#679, EnlacesPagoPedido).</summary>
+        internal static string ConceptoPagoPedidoCursos(int pedido) => $"Pago pedido {pedido} cursos";
 
         /// <summary>
         /// NestoAPI#611: llega una señal (#591) por transferencia. Si el cliente tenía una inscripción sin pagar en el evento,
@@ -898,6 +1004,14 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                 throw new NestoBusinessException(
                     $"La inscripción está {ReglasInscripcionEvento.Texto(estado).ToLowerInvariant()}: no se puede marcar como pagada.");
             }
+            AnotarPago(inscripcion, forma, importe, fecha, usuario, eventoSenalId);
+            await db.SaveChangesAsync().ConfigureAwait(false);
+            await ProcesarPagada(inscripcion, evento).ConfigureAwait(false);
+        }
+
+        private void AnotarPago(EventoInscripcion inscripcion, FormaPagoInscripcionEvento forma, decimal importe, DateTime fecha, string usuario,
+            int? eventoSenalId)
+        {
             Cambiar(inscripcion, EstadoInscripcionEvento.Pagada, usuario);
             inscripcion.FormaPago = forma.ToString();
             inscripcion.ImportePagado = importe;
@@ -907,8 +1021,11 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             {
                 inscripcion.EventoSenalId = eventoSenalId;
             }
-            await db.SaveChangesAsync().ConfigureAwait(false);
+        }
 
+        /// <summary>El enganche del corte 2 con la inscripción ya guardada como Pagada (sus fallos no deshacen el pago: van a ELMAH).</summary>
+        private async Task ProcesarPagada(EventoInscripcion inscripcion, Evento evento)
+        {
             try
             {
                 await procesador.Procesar(inscripcion, evento).ConfigureAwait(false);
@@ -975,83 +1092,6 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                 }
             }
             return relanzadas;
-        }
-
-        // ---------------- NestoAPI#691: facturación de los cursos de la plantilla ----------------
-
-        /// <summary>NestoAPI#691: el interruptor Eventos:FacturarCursosPlantilla (sustituible en los tests).</summary>
-        internal Func<bool> CursosPlantillaEncendido { get; set; } = () => InterruptoresEventos.FacturarCursosPlantilla;
-
-        /// <summary>
-        /// NestoAPI#691 (job diario): los pedidos de curso de la plantilla ya pagados cuyo evento es hoy (o ya pasó) se facturan
-        /// por el camino de #612 (el pedido ya existe: solo factura, liquida y pasa la inscripción a Facturada). Las que no están
-        /// pagadas o cuyo evento todavía no ha llegado se quedan como están. Devuelve cuántas se han facturado (o intentado).
-        /// </summary>
-        internal async Task<int> FacturarCursosPlantillaDelDia()
-        {
-            if (facturacion == null || !CursosPlantillaEncendido() || !(procesador is ConfirmadorSenalEvento confirmador) || !confirmador.Encendido)
-            {
-                return 0;
-            }
-            int facturadas = 0;
-            foreach (int id in (await facturacion.PendientesDelEvento().ConfigureAwait(false) ?? new List<int>()).Distinct())
-            {
-                try
-                {
-                    if (await FacturarCursoPlantilla(id, confirmador).ConfigureAwait(false))
-                    {
-                        facturadas++;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    ElmahHelper.Log(new Exception($"[Cursos #691] No se ha podido facturar el curso de la inscripción {id}: {ex.Message}", ex));
-                }
-            }
-            return facturadas;
-        }
-
-        /// <summary>
-        /// NestoAPI#691: al guardar o modificar un pedido, si es el de un curso de la plantilla, ya está pagado y el evento ha
-        /// llegado, se factura. Nunca lanza (el pedido ya está guardado): los fallos van a ELMAH. True si se ha intentado.
-        /// </summary>
-        public async Task<bool> FacturarCursoDelPedidoSinFallar(int pedido)
-        {
-            try
-            {
-                if (facturacion == null || !CursosPlantillaEncendido() || !(procesador is ConfirmadorSenalEvento confirmador) || !confirmador.Encendido)
-                {
-                    return false;
-                }
-                int? id = await facturacion.InscripcionDelPedido(pedido).ConfigureAwait(false);
-                return id.HasValue && await FacturarCursoPlantilla(id.Value, confirmador).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                ElmahHelper.Log(new Exception($"[Cursos #691] No se ha podido facturar el curso del pedido {pedido} al guardarlo: {ex.Message}", ex));
-                return false;
-            }
-        }
-
-        private async Task<bool> FacturarCursoPlantilla(int inscripcionId, ConfirmadorSenalEvento confirmador)
-        {
-            FacturacionCursoInscripcion fila = await facturacion.Leer(inscripcionId).ConfigureAwait(false);
-            if (fila?.Estado != EstadosFacturacionCurso.PENDIENTE_EVENTO)
-            {
-                return false; // ya facturada, con error (la relanza ReintentarFacturacionCursos) o no es de la plantilla
-            }
-            EventoInscripcion inscripcion = await db.EventosInscripciones.SingleOrDefaultAsync(i => i.Id == inscripcionId).ConfigureAwait(false);
-            if (inscripcion == null || !ReglasInscripcionEvento.EN_LISTA_ASISTENCIA.Contains(EstadoDe(inscripcion)))
-            {
-                return false; // sin pagar
-            }
-            Evento evento = await LeerEvento(inscripcion.EventoId).ConfigureAwait(false);
-            if (evento.Fecha.Date > reloj().Date)
-            {
-                return false; // se factura el día del evento
-            }
-            _ = await confirmador.ConfirmarSenal(inscripcion, evento, aMano: false).ConfigureAwait(false);
-            return true;
         }
 
         // ---------------- NestoAPI#690: confirmación de asistencia ----------------
