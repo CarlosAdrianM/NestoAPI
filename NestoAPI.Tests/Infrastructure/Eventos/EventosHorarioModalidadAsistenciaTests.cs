@@ -659,7 +659,113 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             Assert.AreEqual(EstadoAsistenciaEvento.NoPodraIr, dto.EstadoAsistencia);
             Assert.AreEqual("No podrá ir", dto.EstadoAsistenciaTexto);
             Assert.AreEqual(OrigenRespuestaAsistenciaEvento.Tienda, dto.AsistenciaConfirmada.Origen);
-            Assert.AreEqual("Inscrita", inscripciones.Single().Estado, "«No podré ir» no anula");
+            Assert.AreEqual("Inscrita", inscripciones.Single().Estado, "La gratuita no se anula: puede volver a confirmar");
+            Assert.IsFalse(ReglasInscripcionEvento.OcupaPlaza(inscripciones.Single()), "Carlos (22/10/26): «No podré ir» libera la plaza");
+        }
+
+        // ---------------- Decisión de Carlos (22/10/26): «No podré ir» libera la plaza ----------------
+
+        [TestMethod]
+        public async Task NoPodreIr_SinPagar_SeAnulaYLaPlazaQuedaLibre()
+        {
+            eventos[0].Plazas = 1;
+            _ = Inscripcion(7, EVENTO_PAGO, "15191", EstadoInscripcionEvento.Reservada);
+
+            InscripcionEventoDTO dto = await Servicio().ConfirmarAsistencia(7, new ConfirmarAsistenciaDTO { Respuesta = "NoPodraIr" }, ClienteTienda("15191"));
+
+            Assert.AreEqual(EstadoInscripcionEvento.Anulada, dto.Estado);
+            InscripcionEventoDTO otra = await Servicio().Inscribir(EVENTO_PAGO,
+                new InscribirEventoDTO { Empresa = "1", Cliente = "20000", Origen = "Nesto", GenerarEnlacePago = false }, VENDEDOR);
+            Assert.AreEqual(EstadoInscripcionEvento.Reservada, otra.Estado, "La plaza que dejó libre la coge otro");
+        }
+
+        [TestMethod]
+        public async Task NoPodreIr_Pagada_NoTocaElDineroPeroLiberaLaPlaza()
+        {
+            eventos[0].Plazas = 1;
+            EventoInscripcion pagada = Inscripcion(7, EVENTO_PAGO, "15191", EstadoInscripcionEvento.Facturada);
+            pagada.ImportePagado = 100;
+
+            _ = await Servicio().ConfirmarAsistencia(7, new ConfirmarAsistenciaDTO { Respuesta = "NoPodraIr" }, ClienteTienda("15191"));
+
+            Assert.AreEqual("Facturada", pagada.Estado, "Sin reglas de devolución: la señal queda como está");
+            Assert.AreEqual(100, pagada.ImportePagado);
+            Assert.AreEqual(0, (await ServicioEventos().LeerEventos("1", true)).Single(e => e.Id == EVENTO_PAGO).PlazasOcupadas);
+            InscripcionEventoDTO otra = await Servicio().Inscribir(EVENTO_PAGO,
+                new InscribirEventoDTO { Empresa = "1", Cliente = "20000", Origen = "Nesto", GenerarEnlacePago = false }, VENDEDOR);
+            Assert.AreEqual(EstadoInscripcionEvento.Reservada, otra.Estado);
+        }
+
+        [TestMethod]
+        public async Task NoPodreIr_YLuegoConfirma_SoloSiQuedaPlaza()
+        {
+            eventos[0].Plazas = 1;
+            EventoInscripcion pagada = Inscripcion(7, EVENTO_PAGO, "15191", EstadoInscripcionEvento.Pagada);
+            pagada.AsistenciaRespuesta = "NoPodraIr";
+            _ = Inscripcion(8, EVENTO_PAGO, "20000", EstadoInscripcionEvento.Reservada);
+
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() =>
+                Servicio().ConfirmarAsistencia(7, new ConfirmarAsistenciaDTO { Respuesta = "Confirma" }, ClienteTienda("15191")));
+            StringAssert.Contains(ex.Message, "ya no quedan plazas");
+            Assert.AreEqual("NoPodraIr", pagada.AsistenciaRespuesta);
+
+            inscripciones.Single(i => i.Id == 8).Estado = "Caducada";
+            InscripcionEventoDTO dto = await Servicio().ConfirmarAsistencia(7, new ConfirmarAsistenciaDTO { Respuesta = "Confirma" }, ClienteTienda("15191"));
+            Assert.AreEqual(EstadoAsistenciaEvento.Confirmada, dto.EstadoAsistencia);
+            Assert.IsTrue(ReglasInscripcionEvento.OcupaPlaza(pagada));
+        }
+
+        [TestMethod]
+        public async Task NoPodreIr_YaInscritoNoDuplica()
+        {
+            EventoInscripcion pagada = Inscripcion(7, EVENTO_PAGO, "15191", EstadoInscripcionEvento.Pagada);
+            pagada.AsistenciaRespuesta = "NoPodraIr";
+
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => Servicio().Inscribir(EVENTO_PAGO,
+                new InscribirEventoDTO { Empresa = "1", Cliente = "15191", Origen = "Nesto", GenerarEnlacePago = false }, VENDEDOR));
+            StringAssert.Contains(ex.Message, "confirme su asistencia");
+        }
+
+        [TestMethod]
+        public async Task NoPodreIr_PorElEnlaceDelCorreo_SinPagarQuedaAnulada()
+        {
+            Guid clave = Guid.NewGuid();
+            EventoInscripcion reservada = Inscripcion(7, EVENTO_PAGO, "15191", EstadoInscripcionEvento.Reservada);
+            reservada.ClaveAsistencia = clave;
+
+            ResultadoAsistenciaEnlace r = await Servicio().ConfirmarAsistenciaConClave(clave, "NoPodraIr");
+
+            Assert.IsTrue(r.Apuntada);
+            Assert.AreEqual("Anulada", reservada.Estado);
+            StringAssert.Contains(r.Mensaje, "su plaza queda libre");
+        }
+
+        [TestMethod]
+        public async Task NoPodreIr_SinListaPasada_NoAsistioYPierdeElCupon()
+        {
+            EventoInscripcion vino = Inscripcion(7, EVENTO_PAGO, "15191", EstadoInscripcionEvento.Facturada);
+            EventoInscripcion avisó = Inscripcion(8, EVENTO_PAGO, "20000", EstadoInscripcionEvento.Facturada);
+            avisó.AsistenciaRespuesta = "NoPodraIr";
+            List<KeyValuePair<int, bool>> aplicadas = null;
+            var servicio = new ServicioInscripcionesEventos(db, () => new DateTime(2026, 10, 31, 7, 55, 0), () => pagos, AlmacenDe, procesador,
+                aplicarAsistenciaCupones: (l, u) => { aplicadas = l; return Task.CompletedTask; });
+
+            _ = await servicio.DarPorAsistidosSinLista();
+
+            Assert.AreEqual("Asistio", vino.Estado);
+            Assert.AreEqual("NoAsistio", avisó.Estado);
+            CollectionAssert.AreEqual(new[] { new KeyValuePair<int, bool>(8, false) }, aplicadas);
+        }
+
+        [TestMethod]
+        public async Task NoPodreIr_NoLeLlegaElRecordatorio()
+        {
+            EventoInscripcion avisó = Inscripcion(7, EVENTO_PAGO, "15191", EstadoInscripcionEvento.Facturada);
+            avisó.AsistenciaRespuesta = "NoPodraIr";
+
+            var pendientes = await Servicio().PendientesDeRecordatorio(RecordatorioEventosJobsService.DIAS_ANTES);
+
+            Assert.IsFalse(pendientes.SelectMany(p => p.Value).Any());
         }
 
         [TestMethod]

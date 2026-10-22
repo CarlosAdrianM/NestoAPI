@@ -400,9 +400,16 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             List<EventoInscripcion> delEvento = await db.EventosInscripciones
                 .Where(i => i.EventoId == evento.Id).ToListAsync().ConfigureAwait(false);
             List<EventoInscripcion> ocupan = delEvento.Where(OcupaPlaza).ToList();
-            if (ocupan.Any(i => Limpiar(i.Cliente) == cliente && Limpiar(i.Contacto) == contacto))
+            // Ya inscrito: cualquier inscripción viva, también la de quien dijo «No podré ir» (libera la plaza, pero para
+            // volver basta con confirmar la asistencia: no se crea otra).
+            EventoInscripcion yaInscrita = delEvento.FirstOrDefault(i => ReglasInscripcionEvento.OCUPAN_PLAZA.Contains(EstadoDe(i))
+                && Limpiar(i.Cliente) == cliente && Limpiar(i.Contacto) == contacto);
+            if (yaInscrita != null)
             {
-                throw new NestoBusinessException($"El cliente {cliente}/{contacto} ya está inscrito en «{evento.Titulo?.Trim()}».");
+                throw new NestoBusinessException(OcupaPlaza(yaInscrita)
+                    ? $"El cliente {cliente}/{contacto} ya está inscrito en «{evento.Titulo?.Trim()}»."
+                    : $"El cliente {cliente}/{contacto} ya está inscrito en «{evento.Titulo?.Trim()}», pero dijo que no podría ir: " +
+                      "si al final viene, confirme su asistencia en esa inscripción.");
             }
             if (evento.Plazas.HasValue && ocupan.Count >= evento.Plazas.Value)
             {
@@ -895,9 +902,42 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             {
                 throw new NestoBusinessException(motivo);
             }
-            ApuntarRespuesta(inscripcion, respuesta, origen, UsuarioDe(usuario));
-            await db.SaveChangesAsync().ConfigureAwait(false);
+            await Contestar(inscripcion, evento, respuesta, origen, UsuarioDe(usuario)).ConfigureAwait(false);
             return Componer(inscripcion, evento, null);
+        }
+
+        /// <summary>
+        /// Decisión de Carlos (22/10/26): «No podré ir» LIBERA la plaza.
+        /// <list type="bullet">
+        /// <item>Sin pagar (Reservada): se anula (no hay dinero de por medio y el enlace de pago deja de valer).</item>
+        /// <item>Pagada, Facturada o gratuita (Inscrita): la inscripción se queda como está (el dinero no se toca) pero deja de
+        /// ocupar plaza (<see cref="ReglasInscripcionEvento.OcupaPlaza"/>). Si cambia de idea y confirma, recupera su plaza
+        /// si todavía queda alguna. Las reglas de su modalidad no cambian: no hay devolución de la señal en ninguna (épica #610:
+        /// «si no viene, lo pierde»); la Reembolsable pierde el cupón cuando la lista le marca «No asistió» (#613), y si nadie
+        /// pasa lista el job la marca «No asistió», no «Asistió».</item>
+        /// </list>
+        /// </summary>
+        private async Task Contestar(EventoInscripcion inscripcion, Evento evento, RespuestaAsistenciaEvento respuesta,
+            OrigenRespuestaAsistenciaEvento origen, string usuario)
+        {
+            EstadoInscripcionEvento estado = EstadoDe(inscripcion);
+            if (respuesta == RespuestaAsistenciaEvento.Confirma && !OcupaPlaza(inscripcion) && evento.Plazas.HasValue)
+            {
+                // Vuelve a ocupar plaza: solo si queda alguna (la suya la puede haber cogido otro)
+                int ocupadas = (await db.EventosInscripciones.Where(i => i.EventoId == evento.Id).ToListAsync().ConfigureAwait(false))
+                    .Count(i => i.Id != inscripcion.Id && OcupaPlaza(i));
+                if (ocupadas >= evento.Plazas.Value)
+                {
+                    throw new NestoBusinessException($"Lo sentimos: ya no quedan plazas en «{evento.Titulo?.Trim()}». " +
+                        "Su plaza quedó libre cuando nos dijo que no podría ir.");
+                }
+            }
+            ApuntarRespuesta(inscripcion, respuesta, origen, usuario);
+            if (respuesta == RespuestaAsistenciaEvento.NoPodraIr && estado == EstadoInscripcionEvento.Reservada)
+            {
+                Cambiar(inscripcion, EstadoInscripcionEvento.Anulada, usuario);
+            }
+            await db.SaveChangesAsync().ConfigureAwait(false);
         }
 
         public async Task<ResultadoAsistenciaEnlace> LeerAsistenciaConClave(Guid clave)
@@ -932,13 +972,23 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                 resultado.Mensaje = motivo;
                 return resultado;
             }
+            bool sinPagar = EstadoDe(inscripcion) == EstadoInscripcionEvento.Reservada;
             // Sin usuario: queda que fue el cliente por el enlace del correo
-            ApuntarRespuesta(inscripcion, leida.Value, OrigenRespuestaAsistenciaEvento.Cliente, USUARIO_ENLACE_CORREO);
-            await db.SaveChangesAsync().ConfigureAwait(false);
+            try
+            {
+                await Contestar(inscripcion, evento, leida.Value, OrigenRespuestaAsistenciaEvento.Cliente, USUARIO_ENLACE_CORREO).ConfigureAwait(false);
+            }
+            catch (NestoBusinessException ex)
+            {
+                resultado.Mensaje = ex.Message;
+                return resultado;
+            }
             resultado.Apuntada = true;
             resultado.Mensaje = leida.Value == RespuestaAsistenciaEvento.Confirma
                 ? $"Gracias: queda confirmada su asistencia a «{resultado.Evento}» el {resultado.FechaEvento:dd/MM/yyyy}{(resultado.HoraInicio != null ? " a las " + resultado.HoraInicio : "")}. Le esperamos."
-                : $"Gracias por avisarnos: queda apuntado que no podrá ir a «{resultado.Evento}». Si cambia de idea, puede confirmar con el mismo enlace.";
+                : sinPagar
+                    ? $"Gracias por avisarnos: queda anulada su inscripción a «{resultado.Evento}» y su plaza queda libre."
+                    : $"Gracias por avisarnos: queda apuntado que no podrá ir a «{resultado.Evento}» y su plaza queda libre. Si cambia de idea, puede confirmar con el mismo enlace mientras queden plazas.";
             return resultado;
         }
 
@@ -1021,7 +1071,8 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             bool cambios = false;
             foreach (Evento evento in eventos.OrderBy(e => e.Fecha))
             {
-                List<EventoInscripcion> suyas = inscripciones.Where(i => i.EventoId == evento.Id).ToList();
+                // Quien ya dijo «No podré ir» ha liberado su plaza: no se le recuerda
+                List<EventoInscripcion> suyas = inscripciones.Where(i => i.EventoId == evento.Id && OcupaPlaza(i)).ToList();
                 if (!suyas.Any())
                 {
                     continue;
@@ -1165,6 +1216,7 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             List<string> pagadas = ReglasInscripcionEvento.ESPERAN_AL_EVENTO.Select(e => e.ToString()).ToList();
             List<EventoInscripcion> inscripciones = await db.EventosInscripciones
                 .Where(i => ids.Contains(i.EventoId) && pagadas.Contains(i.Estado)).ToListAsync().ConfigureAwait(false);
+            var noVinieron = new List<int>();
 
             foreach (Evento evento in eventos.Where(e => e.Fecha.Date < hoy).OrderBy(e => e.Fecha))
             {
@@ -1175,7 +1227,13 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                 }
                 foreach (EventoInscripcion inscripcion in suyas)
                 {
-                    Cambiar(inscripcion, EstadoInscripcionEvento.Asistio, USUARIO_AUTOMATICO);
+                    // Decisión de Carlos (22/10/26): quien dijo «No podré ir» no se da por asistido (pierde el cupón, #613)
+                    bool avisoQueNoVenia = !OcupaPlaza(inscripcion);
+                    Cambiar(inscripcion, avisoQueNoVenia ? EstadoInscripcionEvento.NoAsistio : EstadoInscripcionEvento.Asistio, USUARIO_AUTOMATICO);
+                    if (avisoQueNoVenia)
+                    {
+                        noVinieron.Add(inscripcion.Id);
+                    }
                 }
                 evento.FechaListaAsistencia = ahora;
                 resultado.Add(new KeyValuePair<EventoDTO, List<InscripcionEventoDTO>>(
@@ -1185,6 +1243,19 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             if (resultado.Any())
             {
                 await db.SaveChangesAsync().ConfigureAwait(false);
+            }
+            if (noVinieron.Any() && aplicarAsistenciaCupones != null)
+            {
+                try
+                {
+                    await aplicarAsistenciaCupones(noVinieron.Select(id => new KeyValuePair<int, bool>(id, false)).ToList(), USUARIO_AUTOMATICO)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    ElmahHelper.Log(new Exception($"[Cupones #613] No se han podido anular los cupones de quienes dijeron que no podrían ir " +
+                        $"({string.Join(", ", noVinieron)}): {ex.Message}", ex));
+                }
             }
             return resultado;
         }
@@ -1233,8 +1304,7 @@ GROUP BY RTRIM(c.[Nº Cliente])";
         private static EstadoInscripcionEvento EstadoDe(EventoInscripcion inscripcion) =>
             ReglasInscripcionEvento.Estado(inscripcion.Estado) ?? EstadoInscripcionEvento.Anulada;
 
-        private static bool OcupaPlaza(EventoInscripcion inscripcion) =>
-            ReglasInscripcionEvento.OCUPAN_PLAZA.Contains(EstadoDe(inscripcion));
+        private static bool OcupaPlaza(EventoInscripcion inscripcion) => ReglasInscripcionEvento.OcupaPlaza(inscripcion);
 
         private static int OrdenEstado(EstadoInscripcionEvento estado) => (int)estado;
 

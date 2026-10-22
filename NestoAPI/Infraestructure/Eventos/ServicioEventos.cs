@@ -334,11 +334,14 @@ namespace NestoAPI.Infraestructure.Eventos
                 return new Dictionary<int, int>();
             }
             List<string> estados = ReglasInscripcionEvento.OCUPAN_PLAZA.Select(e => e.ToString()).ToList();
-            List<int> filas = await db.EventosInscripciones
+            // Carlos (22/10/26): «No podré ir» libera la plaza (ReglasInscripcionEvento.OcupaPlaza)
+            var filas = await db.EventosInscripciones
                 .Where(i => ids.Contains(i.EventoId) && estados.Contains(i.Estado))
-                .Select(i => i.EventoId)
+                .Select(i => new { i.EventoId, i.Estado, i.AsistenciaRespuesta })
                 .ToListAsync().ConfigureAwait(false);
-            return filas.GroupBy(f => f).ToDictionary(g => g.Key, g => g.Count());
+            return filas
+                .Where(f => ReglasInscripcionEvento.OcupaPlaza(new EventoInscripcion { Estado = f.Estado, AsistenciaRespuesta = f.AsistenciaRespuesta }))
+                .GroupBy(f => f.EventoId).ToDictionary(g => g.Key, g => g.Count());
         }
 
         public async Task<EventoDTO> CrearEvento(EventoDTO evento, string usuario)

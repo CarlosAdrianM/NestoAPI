@@ -110,6 +110,24 @@ namespace NestoAPI.Infraestructure.Eventos
                 [EstadoInscripcionEvento.Anulada] = new EstadoInscripcionEvento[0]
             };
 
+        /// <summary>
+        /// ¿Ocupa plaza? Las de <see cref="OCUPAN_PLAZA"/>, salvo las que han contestado «No podré ir» (decisión de Carlos,
+        /// 22/10/26: «No podré ir» libera la plaza). Con la lista pasada (Asistió / No asistió) manda la lista.
+        /// </summary>
+        public static bool OcupaPlaza(EventoInscripcion inscripcion)
+        {
+            EstadoInscripcionEvento estado = Estado(inscripcion?.Estado) ?? EstadoInscripcionEvento.Anulada;
+            if (!OCUPAN_PLAZA.Contains(estado))
+            {
+                return false;
+            }
+            if (estado == EstadoInscripcionEvento.Asistio || estado == EstadoInscripcionEvento.NoAsistio)
+            {
+                return true;
+            }
+            return ReglasAsistenciaEvento.Respuesta(inscripcion.AsistenciaRespuesta) != RespuestaAsistenciaEvento.NoPodraIr;
+        }
+
         public static bool PuedePasar(EstadoInscripcionEvento desde, EstadoInscripcionEvento hasta) =>
             desde == hasta || (transiciones.TryGetValue(desde, out EstadoInscripcionEvento[] destinos) && destinos.Contains(hasta));
 
