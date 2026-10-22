@@ -175,6 +175,17 @@
 <li>La diferencia queda <b>pendiente de comprobar</b> en el origen. Se ve en <b>Nesto › Productos › Reposición › Diferencias</b> (el botón dice cuántas hay) y en Ariadna, en el inicio, <b>«Diferencias de reposición por comprobar»</b> (tecla <kbd>8</kbd>).</li>
 <li>Quien comprueba va al hueco que dice y la resuelve: <b>«Comprobada»</b> (está como dice), <b>«No estaba»</b>, <b>«Sobraba»</b> o <b>«Error al recibir»</b> (lo que se leyó mal fue al recibir; corrige también el stock de quien recibió). En la PDA: leer el producto e <kbd>Intro</kbd> = Comprobada, <kbd>F3</kbd> No estaba, <kbd>F4</kbd> Sobraba, <kbd>F7</kbd> Error al recibir, <kbd>F1</kbd> comentario.</li>
 </ul>
+<h3>Los tres botones de una diferencia, uno a uno</h3>
+<p>Al terminar la recepción, el ajuste del origen <b>ya está hecho</b>: en Extracto producto aparece en el diario <b>«_ErrRepo»</b>, con el número de la reposición y el texto «Diferencia de reposición 81093 (recibido en ALC)». Si la tienda recibió <b>de menos</b>, la unidad vuelve al origen (+1; en Algete queda «pendiente de ubicar»); si recibió <b>de más</b>, se descuenta del origen (−1). Los botones sirven para decir si ese ajuste es verdad. Solo salen tres porque «No estaba» y «Sobraba» nunca van juntos: el primero es para lo recibido de menos y el segundo para lo recibido de más.</p>
+<table>
+<tr><th>Botón</th><th>Cuándo</th><th>Qué pasa con el stock</th><th>Qué aparece en Extracto producto</th></tr>
+<tr><td><b>Comprobada, cuadra</b></td><td>El ajuste es correcto: la unidad que faltaba está en el origen, o la que sobraba de verdad salió.</td><td>Nada: solo se cierra la diferencia.</td><td>Ningún apunte nuevo.</td></tr>
+<tr><td><b>No estaba (merma o inventario)</b><br>(solo si se recibió de menos)</td><td>La unidad no está en el origen ni la tiene la tienda: se ha perdido.</td><td>Se deshace el +1 del origen.</td><td>−1 en el origen: «… (no estaba en ALG)».</td></tr>
+<tr><td><b>Sobraba (alta por inventario)</b><br>(solo si se recibió de más)</td><td>La unidad sigue en el origen.</td><td>Se deshace el −1 del origen.</td><td>+1 en el origen: «… (sobraba en ALG)».</td></tr>
+<tr><td><b>Error al recibir (se corrige)</b></td><td>La mercancía llegó bien a la tienda: lo que estuvo mal fue la lectura al recibir.</td><td>Se deshace el ajuste del origen y se corrige el stock de la tienda.</td><td>Dos apuntes, uno en el origen y otro en la tienda: «… (error al recibir en ALC)».</td></tr>
+</table>
+<div class="ojo"><p><b>Cómo decidir.</b> Si la tienda recibió <b>de menos</b>: ¿la unidad está en el origen? Sí → «Comprobada». No → ¿la tiene la tienda? Sí → «Error al recibir»; no → «No estaba».<br>
+Si la tienda recibió <b>de más</b>: ¿falta esa unidad en el origen? Sí → «Comprobada». No, sigue ahí → ¿la tienda tiene de verdad una de más? Sí → «Sobraba»; no, se leyó mal → «Error al recibir».</p></div>
 
 <h3>Con Ariadna: «Entradas»</h3>
 <p>Igual, pero desde el móvil. En Entradas solo salen las reposiciones que llegan a tu tienda. <b>Lee la etiqueta de la caja</b> (se abre su reposición) y después lo que sacas de la caja, en cualquier orden: la lectura <b>busca el producto en la lista</b> y le suma una unidad. Al acabar, «Terminar recepción». Los detalles, en el apartado 5 (columna ENTRADA).</p>
