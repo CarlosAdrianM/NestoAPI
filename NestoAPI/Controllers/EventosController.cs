@@ -231,6 +231,21 @@ namespace NestoAPI.Controllers
             return Ok(await inscripciones.FacturarCurso(id, User).ConfigureAwait(false));
         }
 
+        // POST api/Eventos/CursoTienda   { Empresa, Cliente, Contacto?, Producto, Importe, Fecha?, ReferenciaTienda?, FormaPago? }
+        /// <summary>
+        /// NestoAPI#614: Nesto (CanalesExternos) ha importado de la tienda PrestaShop la compra de un curso. En vez de facturarla como
+        /// pedido normal, paga la inscripción del cliente (la crea con origen PrestaShop si no la tenía) y sigue el corte 2. 400 con
+        /// el interruptor Eventos:CursosDesdePrestashop apagado o con dos eventos con la misma referencia; 404 si no hay evento activo
+        /// y por venir con esa referencia; 403 para el cliente de la tienda.
+        /// </summary>
+        [HttpPost]
+        [Route("CursoTienda")]
+        [ResponseType(typeof(InscripcionEventoDTO))]
+        public async Task<IHttpActionResult> PostCursoTienda([FromBody] CursoTiendaDTO peticion)
+        {
+            return Ok(await inscripciones.InscribirDesdeTienda(peticion, User).ConfigureAwait(false));
+        }
+
         // DELETE api/Eventos/Senales/7
         /// <summary>
         /// Quita la señal (el apunte vuelve a ser un cobro a cuenta normal). No toca el extracto. NestoAPI#612: si ya facturó el

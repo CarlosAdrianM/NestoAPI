@@ -628,6 +628,125 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             A.CallTo(() => procesador.Procesar(A<EventoInscripcion>._, A<Evento>._)).MustNotHaveHappened();
         }
 
+        // ---------------- NestoAPI#614: curso comprado en la tienda PrestaShop ----------------
+
+        private ServicioInscripcionesEventos ServicioTienda(bool encendido = true) =>
+            new ServicioInscripcionesEventos(db, () => HOY, () => pagos, AlmacenDe, procesador, null, null, () => encendido);
+
+        private static readonly IPrincipal TIENDA_ONLINE = Usuario("NUEVAVISION\\TiendaOnline", "TiendaOnline");
+
+        private CursoTiendaDTO CompraCurso(string producto = "CURSOCLOASMA", decimal importe = 50) =>
+            new CursoTiendaDTO { Empresa = "1", Cliente = "15191", Producto = producto, Importe = importe, Fecha = HOY, ReferenciaTienda = "XKBKNABJK" };
+
+        [TestMethod]
+        public async Task CursoTienda_SinInscripcion_LaCreaConOrigenPrestashopPagadaYSigueElCorte2()
+        {
+            eventos[0].ProductoCurso = "CURSOCLOASMA   ";
+
+            InscripcionEventoDTO dto = await ServicioTienda().InscribirDesdeTienda(CompraCurso(), TIENDA_ONLINE);
+
+            EventoInscripcion i = inscripciones.Single();
+            Assert.AreEqual(EVENTO_REINA, i.EventoId);
+            Assert.AreEqual("PrestaShop", i.Origen);
+            Assert.AreEqual("Pagada", i.Estado);
+            Assert.AreEqual("Tarjeta", i.FormaPago);
+            Assert.AreEqual(50, i.ImportePagado);
+            Assert.AreEqual("0", i.Contacto?.Trim(), "El contacto principal");
+            Assert.IsNull(i.PagoTPVId, "Sin enlace: la factura se cobra como los pedidos de la tienda");
+            Assert.AreEqual(EstadoInscripcionEvento.Pagada, dto.Estado);
+            A.CallTo(() => procesador.Procesar(i, A<Evento>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task CursoTienda_ConInscripcionReservada_PagaEsa()
+        {
+            eventos[0].ProductoCurso = "CURSOCLOASMA";
+            Inscripcion(1, EVENTO_REINA, "15191", EstadoInscripcionEvento.Reservada, HOY.AddDays(3));
+
+            await ServicioTienda().InscribirDesdeTienda(CompraCurso(), TIENDA_ONLINE);
+
+            Assert.AreEqual(1, inscripciones.Count);
+            Assert.AreEqual("Pagada", inscripciones.Single().Estado);
+            Assert.AreEqual("NestoApp", inscripciones.Single().Origen);
+        }
+
+        [TestMethod]
+        public async Task CursoTienda_DosVeces_NoPagaDosVeces()
+        {
+            eventos[0].ProductoCurso = "CURSOCLOASMA";
+
+            await ServicioTienda().InscribirDesdeTienda(CompraCurso(), TIENDA_ONLINE);
+            await ServicioTienda().InscribirDesdeTienda(CompraCurso(), TIENDA_ONLINE);
+
+            Assert.AreEqual(1, inscripciones.Count);
+            A.CallTo(() => procesador.Procesar(A<EventoInscripcion>._, A<Evento>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task CursoTienda_ImporteDistinto_SePagaConLoCobradoYElCorte2DecideNoAutomatizar()
+        {
+            eventos[0].ProductoCurso = "CURSOCLOASMA";
+
+            await ServicioTienda().InscribirDesdeTienda(CompraCurso(importe: 60), TIENDA_ONLINE);
+
+            Assert.AreEqual(60, inscripciones.Single().ImportePagado);
+        }
+
+        [TestMethod]
+        public async Task CursoTienda_SinEventoConEsaReferencia_404()
+        {
+            NestoBusinessException ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(
+                () => ServicioTienda().InscribirDesdeTienda(CompraCurso("NOEXISTE"), TIENDA_ONLINE));
+
+            Assert.AreEqual(HttpStatusCode.NotFound, ex.StatusCode);
+            StringAssert.Contains(ex.Message, "XKBKNABJK");
+            Assert.IsFalse(inscripciones.Any());
+        }
+
+        [TestMethod]
+        public async Task CursoTienda_EventoPasado_NoCuenta()
+        {
+            eventos[1].ProductoCurso = "CURSOPEELING";
+
+            await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => ServicioTienda(true)
+                .InscribirDesdeTienda(new CursoTiendaDTO { Cliente = "15191", Producto = "CURSOPEELING", Importe = 80, Fecha = new DateTime(2026, 10, 20) }, TIENDA_ONLINE));
+        }
+
+        [TestMethod]
+        public async Task CursoTienda_DosEventosConLaMismaReferencia_400()
+        {
+            eventos[0].ProductoCurso = "CURSOCLOASMA";
+            eventos[1].ProductoCurso = "CURSOCLOASMA";
+
+            NestoBusinessException ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(
+                () => ServicioTienda().InscribirDesdeTienda(CompraCurso(), TIENDA_ONLINE));
+
+            StringAssert.Contains(ex.Message, "cada curso tiene que tener su referencia");
+        }
+
+        [TestMethod]
+        public async Task CursoTienda_Apagado_400()
+        {
+            eventos[0].ProductoCurso = "CURSOCLOASMA";
+
+            NestoBusinessException ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(
+                () => ServicioTienda(false).InscribirDesdeTienda(CompraCurso(), TIENDA_ONLINE));
+
+            StringAssert.Contains(ex.Message, InterruptoresEventos.CLAVE_CURSOS_TIENDA);
+            Assert.IsFalse(inscripciones.Any());
+        }
+
+        [TestMethod]
+        public async Task CursoTienda_ClienteDeLaTienda_403()
+        {
+            eventos[0].ProductoCurso = "CURSOCLOASMA";
+
+            NestoBusinessException ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(
+                () => ServicioTienda().InscribirDesdeTienda(CompraCurso(), ClienteTienda("15191")));
+
+            Assert.AreEqual(HttpStatusCode.Forbidden, ex.StatusCode);
+        }
+
         // ---------------- Anular ----------------
 
         [TestMethod]
