@@ -920,6 +920,19 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'inscripciones-eventos' configurado (todos los días a las 7:55)");
 
+            // NestoAPI#690: recordatorio de los eventos dos días antes, a las 10:00 (push a la app del cliente y correo con
+            // «Confirmo asistencia» / «No podré ir»). Nunca fuera de 9:00-21:00. Detrás de Eventos:RecordatorioAsistencia (apagado).
+            RecurringJob.AddOrUpdate(
+                "recordatorio-eventos",
+                () => Infraestructure.Eventos.RecordatorioEventosJobsService.Procesar(),
+                Infraestructure.Eventos.RecordatorioEventosJobsService.CRON, // Cron: todos los días a las 10:00
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'recordatorio-eventos' configurado (todos los días a las 10:00; apagado salvo interruptor)");
+
             // NestoAPI#606 (decisión de Carlos, 08/10/26): correo a Compras con los pedidos a proveedor enviados, sin recibir y con
             // la fecha prevista ya pasada, primero los que tienen clientes esperando. Se calcula al mandarlo: lo que ya han
             // actualizado no sale. Sin nada vencido, no manda nada.

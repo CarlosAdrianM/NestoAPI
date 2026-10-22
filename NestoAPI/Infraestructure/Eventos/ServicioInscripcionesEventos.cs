@@ -33,6 +33,43 @@ namespace NestoAPI.Infraestructure.Eventos
         public bool GenerarEnlacePago { get; set; } = true;
         /// <summary>Opcional: si viene, ServicioPagos manda el enlace por correo al cliente.</summary>
         public string Correo { get; set; }
+        /// <summary>
+        /// NestoAPI#690: Reembolsable, NoReembolsable o Gratuita. Opcional: si no viene, Gratuita en un evento gratuito y, si
+        /// no, Reembolsable (o NoReembolsable si el evento solo tiene esa). 400 si el evento no la ofrece.
+        /// </summary>
+        public string Modalidad { get; set; }
+    }
+
+    /// <summary>NestoAPI#690: POST api/Eventos/Inscripciones/{id}/ConfirmarAsistencia.</summary>
+    public class ConfirmarAsistenciaDTO
+    {
+        /// <summary>Confirma («Confirmo asistencia») o NoPodraIr («No podré ir»).</summary>
+        public string Respuesta { get; set; }
+    }
+
+    /// <summary>NestoAPI#690: la respuesta del cliente al recordatorio (o la que apunta la tienda). Null = sin contestar.</summary>
+    public class AsistenciaConfirmadaDTO
+    {
+        [JsonConverter(typeof(StringEnumConverter))]
+        public RespuestaAsistenciaEvento Respuesta { get; set; }
+        public DateTime Fecha { get; set; }
+        public string Usuario { get; set; }
+        /// <summary>Cliente (desde la app o el enlace del correo) o Tienda.</summary>
+        [JsonConverter(typeof(StringEnumConverter))]
+        public OrigenRespuestaAsistenciaEvento Origen { get; set; }
+    }
+
+    /// <summary>NestoAPI#690: lo que contesta el enlace del correo (para pintar la página).</summary>
+    public class ResultadoAsistenciaEnlace
+    {
+        /// <summary>False si la clave no es de ninguna inscripción (404).</summary>
+        public bool Existe { get; set; }
+        /// <summary>Se ha apuntado la respuesta.</summary>
+        public bool Apuntada { get; set; }
+        public string Evento { get; set; }
+        public DateTime FechaEvento { get; set; }
+        public string HoraInicio { get; set; }
+        public string Mensaje { get; set; }
     }
 
     /// <summary>NestoAPI#611: POST api/Eventos/Inscripciones/{id}/Pago (marcar pagada a mano).</summary>
@@ -87,6 +124,28 @@ namespace NestoAPI.Infraestructure.Eventos
         public DateTime FechaCreacion { get; set; }
         /// <summary>NestoAPI#612: la facturación del curso (pedido, factura, liquidación). Null si no ha empezado.</summary>
         public FacturacionCursoDTO Facturacion { get; set; }
+
+        /// <summary>NestoAPI#690: Reembolsable, NoReembolsable o Gratuita (las de antes, Reembolsable).</summary>
+        [JsonConverter(typeof(StringEnumConverter))]
+        public ModalidadInscripcionEvento Modalidad { get; set; }
+        /// <summary>NestoAPI#690: lo que se cobra por esta inscripción según su modalidad (0 si es gratuita).</summary>
+        public decimal ImporteSenal { get; set; }
+        /// <summary>NestoAPI#690: al confirmar el pago se emite cupón (solo Reembolsable).</summary>
+        public bool ConCupon { get; set; }
+        /// <summary>NestoAPI#690: «Confirmo asistencia» / «No podré ir», cuándo y quién. Null = todavía no ha contestado.</summary>
+        public AsistenciaConfirmadaDTO AsistenciaConfirmada { get; set; }
+        /// <summary>NestoAPI#690: Pendiente, Confirmada, NoPodraIr, Asistio o NoAsistio (la lista pasada manda).</summary>
+        [JsonConverter(typeof(StringEnumConverter))]
+        public EstadoAsistenciaEvento EstadoAsistencia { get; set; }
+        /// <summary>NestoAPI#690: «Pendiente», «Confirmada», «No podrá ir», «Asistió», «No asistió».</summary>
+        public string EstadoAsistenciaTexto { get; set; }
+        /// <summary>NestoAPI#690: cuándo salió el recordatorio (null = todavía no).</summary>
+        public DateTime? RecordatorioEnviado { get; set; }
+        /// <summary>
+        /// NestoAPI#690: la base imponible de los pedidos del cliente del día del evento en Reina o Alcobendas (sin
+        /// presupuestos ni la línea del curso). Solo en la lista de inscritos del evento; null en el resto.
+        /// </summary>
+        public decimal? BaseImponibleDia { get; set; }
     }
 
     /// <summary>
@@ -120,6 +179,77 @@ namespace NestoAPI.Infraestructure.Eventos
         Task<InscripcionEventoDTO> FacturarCurso(int id, IPrincipal usuario);
         /// <summary>NestoAPI#612: una señal (#591) recién marcada paga (o crea) la inscripción del cliente en el evento.</summary>
         Task<InscripcionEventoDTO> InscribirDesdeTransferencia(int eventoSenalId, string usuario);
+        /// <summary>NestoAPI#690: «Confirmo asistencia» / «No podré ir», desde la app del cliente o por la tienda.</summary>
+        Task<InscripcionEventoDTO> ConfirmarAsistencia(int id, ConfirmarAsistenciaDTO peticion, IPrincipal usuario);
+        /// <summary>NestoAPI#690: lo que enseña el enlace del correo (sin apuntar nada).</summary>
+        Task<ResultadoAsistenciaEnlace> LeerAsistenciaConClave(Guid clave);
+        /// <summary>NestoAPI#690: la respuesta que llega por el enlace del correo (sin usuario).</summary>
+        Task<ResultadoAsistenciaEnlace> ConfirmarAsistenciaConClave(Guid clave, string respuesta);
+    }
+
+    /// <summary>
+    /// NestoAPI#690: la base imponible de los pedidos de unos clientes en un día, en Reina o Alcobendas (lista de asistencia).
+    /// </summary>
+    public interface ILectorBaseImponibleDia
+    {
+        /// <summary>Cliente (sin relleno) → suma de la BaseImponible. Los que no compraron no salen.</summary>
+        Task<Dictionary<string, decimal>> Leer(string empresa, DateTime dia, IReadOnlyCollection<string> clientes, string productoExcluido);
+    }
+
+    /// <summary>
+    /// NestoAPI#690: una consulta ligera, con NOLOCK y por los clientes inscritos (índice por Nº Cliente de CabPedidoVta): la
+    /// cabecera con fecha del día, sus líneas en REI o ALC, sin presupuestos y sin la línea del propio curso.
+    /// </summary>
+    public class LectorBaseImponibleDia : ILectorBaseImponibleDia
+    {
+        internal const string SQL = @"
+SELECT RTRIM(c.[Nº Cliente]) AS Cliente, SUM(l.[Base Imponible]) AS BaseImponible
+FROM dbo.CabPedidoVta c WITH (NOLOCK)
+JOIN dbo.LinPedidoVta l WITH (NOLOCK) ON l.Empresa = c.Empresa AND l.Número = c.Número
+WHERE c.Empresa = @empresa AND c.[Nº Cliente] IN ({0}) AND c.Fecha >= @dia AND c.Fecha < DATEADD(day, 1, @dia)
+  AND l.Almacén IN ('REI', 'ALC') AND l.Estado >= -1
+  AND (@producto IS NULL OR l.Producto IS NULL OR RTRIM(l.Producto) <> @producto)
+GROUP BY RTRIM(c.[Nº Cliente])";
+
+        private readonly NVEntities db;
+
+        public LectorBaseImponibleDia(NVEntities db)
+        {
+            this.db = db;
+        }
+
+        public async Task<Dictionary<string, decimal>> Leer(string empresa, DateTime dia, IReadOnlyCollection<string> clientes, string productoExcluido)
+        {
+            List<string> lista = (clientes ?? new List<string>()).Where(c => !string.IsNullOrWhiteSpace(c)).Select(c => c.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (!lista.Any())
+            {
+                return new Dictionary<string, decimal>();
+            }
+            var parametros = new List<object>
+            {
+                new System.Data.SqlClient.SqlParameter("@empresa", empresa ?? Constantes.Empresas.EMPRESA_POR_DEFECTO),
+                new System.Data.SqlClient.SqlParameter("@dia", System.Data.SqlDbType.DateTime) { Value = dia.Date },
+                new System.Data.SqlClient.SqlParameter("@producto", (object)productoExcluido?.Trim() ?? DBNull.Value)
+            };
+            var nombres = new List<string>();
+            for (int i = 0; i < lista.Count; i++)
+            {
+                nombres.Add("@c" + i);
+                parametros.Add(new System.Data.SqlClient.SqlParameter("@c" + i, lista[i]));
+            }
+            List<BaseImponibleCliente> filas = await db.Database
+                .SqlQuery<BaseImponibleCliente>(string.Format(SQL, string.Join(", ", nombres)), parametros.ToArray())
+                .ToListAsync().ConfigureAwait(false);
+            return filas.Where(f => f.Cliente != null).GroupBy(f => f.Cliente.Trim())
+                .ToDictionary(g => g.Key, g => g.Sum(f => f.BaseImponible ?? 0));
+        }
+
+        private class BaseImponibleCliente
+        {
+            public string Cliente { get; set; }
+            public decimal? BaseImponible { get; set; }
+        }
     }
 
     /// <summary>
@@ -134,6 +264,8 @@ namespace NestoAPI.Infraestructure.Eventos
         /// <summary>PagosTPV.Documento del enlace de una inscripción: «INS» + Id (cabe en los 10 de Nº_Documento).</summary>
         public const string PREFIJO_DOCUMENTO_PAGO = "INS";
         public const string USUARIO_AUTOMATICO = "NestoAPI";
+        /// <summary>NestoAPI#690: quién consta cuando el cliente contesta por el enlace del correo (no hay usuario).</summary>
+        public const string USUARIO_ENLACE_CORREO = "Enlace del correo";
         private const string URL_PAGINA_PAGO = "https://api.nuevavision.es/pago/";
 
         private static readonly OrigenInscripcionEvento[] origenesDeLaCasa =
@@ -148,6 +280,7 @@ namespace NestoAPI.Infraestructure.Eventos
         private readonly IProcesadorInscripcionPagada procesador;
         private readonly IRepositorioFacturacionCursos facturacion;
         private readonly Func<List<KeyValuePair<int, bool>>, string, Task> aplicarAsistenciaCupones;
+        private ILectorBaseImponibleDia baseImponibleDia;
 
         /// <summary>NestoAPI#612: en producción, el enganche es el que factura el curso (detrás de su interruptor).</summary>
         public ServicioInscripcionesEventos(NVEntities db)
@@ -156,7 +289,11 @@ namespace NestoAPI.Infraestructure.Eventos
                 null, new ConfirmadorSenalEvento(db), new RepositorioFacturacionCursos(db),
                 (asistencias, usuario) => new Cupones.ServicioCupones(db).AplicarAsistencia(asistencias, usuario))
         {
+            baseImponibleDia = new LectorBaseImponibleDia(db);
         }
+
+        /// <summary>NestoAPI#690: la base imponible del día en la lista de inscritos. Null (tests): no se calcula.</summary>
+        internal ILectorBaseImponibleDia BaseImponibleDia { get => baseImponibleDia; set => baseImponibleDia = value; }
 
         /// <param name="pagos">Para generar el enlace (perezoso: solo se crea si hace falta).</param>
         /// <param name="almacenDelUsuario">(empresa, usuario sin dominio) → su AlmacénPedidoVta. Null: el de ParametrosUsuario.</param>
@@ -195,7 +332,7 @@ namespace NestoAPI.Infraestructure.Eventos
             {
                 if (clienteDelToken != cliente)
                 {
-                    throw Prohibido("Solo te puedes inscribir a ti mismo.");
+                    throw Prohibido("Solo puede inscribirse a sí mismo.");
                 }
                 origen = OrigenInscripcionEvento.TNV;
             }
@@ -204,7 +341,7 @@ namespace NestoAPI.Infraestructure.Eventos
                 OrigenInscripcionEvento? leido = ReglasInscripcionEvento.Origen(peticion.Origen);
                 if (!leido.HasValue || !origenesDeLaCasa.Contains(leido.Value))
                 {
-                    throw new NestoBusinessException("Indica desde dónde se inscribe: Nesto, NestoApp o Teléfono.");
+                    throw new NestoBusinessException("Indique desde dónde se inscribe: Nesto, NestoApp o Teléfono.");
                 }
                 origen = leido.Value;
             }
@@ -246,6 +383,12 @@ namespace NestoAPI.Infraestructure.Eventos
                 throw new NestoBusinessException($"No quedan plazas en «{evento.Titulo?.Trim()}» ({evento.Plazas.Value} ocupadas).");
             }
 
+            // NestoAPI#690: la modalidad fija lo que se cobra y si habrá cupón. La gratuita no se paga: entra Inscrita, sin
+            // fecha límite ni forma de pago, y va directa a la lista de asistencia.
+            ModalidadInscripcionEvento modalidad = ReglasModalidadEvento.Elegir(evento, peticion.Modalidad);
+            bool gratuita = modalidad == ModalidadInscripcionEvento.Gratuita;
+            decimal importe = ReglasModalidadEvento.Importe(evento, modalidad);
+
             string usuarioAuditoria = UsuarioAuditoriaHelper.ParaAuditoria(UsuarioAuditoriaHelper.Resolver(usuario, null));
             var inscripcion = new EventoInscripcion
             {
@@ -254,9 +397,10 @@ namespace NestoAPI.Infraestructure.Eventos
                 Cliente = cliente,
                 Contacto = contacto,
                 Origen = origen.ToString(),
-                Estado = EstadoInscripcionEvento.Reservada.ToString(),
-                FechaLimitePago = ReglasInscripcionEvento.FechaLimitePago(ahora, evento.Fecha),
-                FormaPago = formaPago?.ToString(),
+                Estado = (gratuita ? EstadoInscripcionEvento.Inscrita : EstadoInscripcionEvento.Reservada).ToString(),
+                FechaLimitePago = gratuita ? (DateTime?)null : ReglasInscripcionEvento.FechaLimitePago(ahora, evento.Fecha),
+                FormaPago = gratuita ? null : formaPago?.ToString(),
+                Modalidad = modalidad.ToString(),
                 UsuarioCreacion = usuarioAuditoria,
                 FechaCreacion = ahora,
                 Usuario = usuarioAuditoria,
@@ -266,7 +410,7 @@ namespace NestoAPI.Infraestructure.Eventos
             await db.SaveChangesAsync().ConfigureAwait(false);
 
             string urlPago = null;
-            bool conEnlace = peticion.GenerarEnlacePago && evento.ImporteSenal > 0
+            bool conEnlace = !gratuita && peticion.GenerarEnlacePago && importe > 0
                 && (formaPago == null || formaPago == FormaPagoInscripcionEvento.Tarjeta);
             if (conEnlace)
             {
@@ -278,7 +422,7 @@ namespace NestoAPI.Infraestructure.Eventos
                         Empresa = empresa,
                         Cliente = cliente,
                         Contacto = contacto,
-                        Importe = evento.ImporteSenal,
+                        Importe = importe,
                         Descripcion = ConceptoPago(evento),
                         Correo = Limpiar(peticion.Correo),
                         Documento = DocumentoPago(inscripcion.Id),
@@ -323,7 +467,38 @@ namespace NestoAPI.Infraestructure.Eventos
             List<EventoInscripcion> inscripciones = await db.EventosInscripciones
                 .Where(i => i.EventoId == eventoId).ToListAsync().ConfigureAwait(false);
             List<InscripcionEventoDTO> lista = await Completar(inscripciones, new Dictionary<int, Evento> { [evento.Id] = evento }).ConfigureAwait(false);
+            await RellenarBaseImponibleDia(lista, evento).ConfigureAwait(false);
             return lista.OrderBy(i => OrdenEstado(i.Estado)).ThenBy(i => i.Nombre).ThenBy(i => i.Cliente).ToList();
+        }
+
+        /// <summary>
+        /// NestoAPI#690: en la lista de inscritos, la base imponible de los pedidos de cada cliente del día del evento en Reina
+        /// o Alcobendas (0 si no compró; null si no se ha podido leer). Una consulta para todos. Un fallo no rompe la lista.
+        /// </summary>
+        private async Task RellenarBaseImponibleDia(List<InscripcionEventoDTO> lista, Evento evento)
+        {
+            // Antes del día del evento no hay nada que sumar: ni se consulta (null).
+            if (baseImponibleDia == null || lista == null || !lista.Any() || evento.Fecha.Date > reloj().Date)
+            {
+                return;
+            }
+            try
+            {
+                Dictionary<string, decimal> bases = await baseImponibleDia.Leer(EmpresaOPorDefecto(evento.Empresa), evento.Fecha.Date,
+                    lista.Select(i => i.Cliente).Distinct().ToList(), Limpiar(evento.ProductoCurso)).ConfigureAwait(false)
+                    ?? new Dictionary<string, decimal>();
+                var porCliente = new Dictionary<string, decimal>(bases, StringComparer.OrdinalIgnoreCase);
+                foreach (InscripcionEventoDTO inscripcion in lista)
+                {
+                    inscripcion.BaseImponibleDia = inscripcion.Cliente != null && porCliente.TryGetValue(inscripcion.Cliente, out decimal b)
+                        ? Math.Round(b, 2, MidpointRounding.AwayFromZero)
+                        : 0;
+                }
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Eventos #690] No se ha podido leer la base imponible del día del evento {evento.Id}: {ex.Message}", ex));
+            }
         }
 
         public async Task<List<InscripcionEventoDTO>> LeerInscripcionesCliente(string empresa, string cliente, string contacto, IPrincipal usuario)
@@ -332,7 +507,7 @@ namespace NestoAPI.Infraestructure.Eventos
             string clienteDelToken = PermisosEventos.ClienteDelToken(usuario);
             if (clienteDelToken != null && clienteDelToken != clienteLimpio)
             {
-                throw Prohibido("Solo puedes ver tus inscripciones.");
+                throw Prohibido("Solo puede ver sus inscripciones.");
             }
             string empresaLimpia = EmpresaOPorDefecto(empresa);
             string contactoLimpio = Limpiar(contacto);
@@ -356,10 +531,11 @@ namespace NestoAPI.Infraestructure.Eventos
             string clienteDelToken = PermisosEventos.ClienteDelToken(usuario);
             if (clienteDelToken != null && clienteDelToken != Limpiar(inscripcion.Cliente))
             {
-                throw Prohibido("Solo puedes anular tus inscripciones.");
+                throw Prohibido("Solo puede anular sus inscripciones.");
             }
             EstadoInscripcionEvento estado = EstadoDe(inscripcion);
-            if (estado != EstadoInscripcionEvento.Reservada)
+            // NestoAPI#690: la gratuita (Inscrita) se anula igual: no hay dinero de por medio.
+            if (estado != EstadoInscripcionEvento.Reservada && estado != EstadoInscripcionEvento.Inscrita)
             {
                 throw new NestoBusinessException(
                     $"La inscripción está {ReglasInscripcionEvento.Texto(estado).ToLowerInvariant()}: solo se puede anular una inscripción sin pagar.");
@@ -384,10 +560,12 @@ namespace NestoAPI.Infraestructure.Eventos
             EventoInscripcion inscripcion = await LeerInscripcion(id).ConfigureAwait(false);
             Evento evento = await LeerEvento(inscripcion.EventoId).ConfigureAwait(false);
             ComprobarPuedeMantener(usuario, evento, paraMarcarPagada: true);
+            ComprobarQueNoEsGratuita(inscripcion, evento);
 
             FormaPagoInscripcionEvento forma = ReglasInscripcionEvento.FormaPago(peticion?.FormaPago)
                 ?? throw new NestoBusinessException("Indique cómo ha pagado: Tarjeta, Transferencia o Efectivo.");
-            decimal importe = Math.Round(peticion.Importe ?? evento.ImporteSenal, 2, MidpointRounding.AwayFromZero);
+            // NestoAPI#690: por defecto, la señal de su modalidad (reembolsable o no reembolsable)
+            decimal importe = Math.Round(peticion.Importe ?? ReglasModalidadEvento.ImporteDe(inscripcion, evento), 2, MidpointRounding.AwayFromZero);
             if (importe < 0)
             {
                 throw new NestoBusinessException("El importe pagado no puede ser negativo.");
@@ -422,7 +600,7 @@ namespace NestoAPI.Infraestructure.Eventos
             {
                 ElmahHelper.Log(new Exception($"[Inscripciones #611] Se ha cobrado el enlace {pagoRaizId} de la inscripción {inscripcion.Id} " +
                     $"(cliente {Limpiar(inscripcion.Cliente)}, evento «{evento.Titulo?.Trim()}»), pero estaba anulada: el cobro está en su " +
-                    "extracto; decidid si se reactiva (marcándola pagada) o se devuelve."));
+                    "extracto; decidan si se reactiva (marcándola pagada) o se devuelve."));
                 return Componer(inscripcion, evento, null);
             }
             if (!ReglasInscripcionEvento.PuedePasar(estado, EstadoInscripcionEvento.Pagada) || estado == EstadoInscripcionEvento.Pagada)
@@ -482,6 +660,8 @@ namespace NestoAPI.Infraestructure.Eventos
                     Origen = OrigenInscripcionEvento.Transferencia.ToString(),
                     Estado = EstadoInscripcionEvento.Reservada.ToString(),
                     FechaLimitePago = null,
+                    // NestoAPI#690: la modalidad cuyo importe coincide con lo cobrado (si no, la reembolsable, como hasta ahora)
+                    Modalidad = ReglasModalidadEvento.PorImporte(evento, senal.Importe).ToString(),
                     UsuarioCreacion = usuarioAuditoria,
                     FechaCreacion = ahora,
                     Usuario = usuarioAuditoria,
@@ -537,6 +717,7 @@ namespace NestoAPI.Infraestructure.Eventos
             EventoInscripcion inscripcion = await LeerInscripcion(id).ConfigureAwait(false);
             Evento evento = await LeerEvento(inscripcion.EventoId).ConfigureAwait(false);
             ComprobarPuedeMantener(usuario, evento, paraMarcarPagada: true);
+            ComprobarQueNoEsGratuita(inscripcion, evento);
             if (!(procesador is IConfirmadorSenalEvento confirmador))
             {
                 throw new NestoBusinessException("La facturación automática de los cursos no está disponible.");
@@ -581,6 +762,195 @@ namespace NestoAPI.Infraestructure.Eventos
             return relanzadas;
         }
 
+        // ---------------- NestoAPI#690: confirmación de asistencia ----------------
+
+        /// <summary>
+        /// «Confirmo asistencia» / «No podré ir». El cliente de la tienda (token de TNV), solo por las suyas (Origen Cliente); la
+        /// tienda del evento, Administración o Dirección, por cualquiera (Origen Tienda). Independiente del pago: no anula ni
+        /// devuelve nada. Hasta el día del evento; se puede cambiar de respuesta.
+        /// </summary>
+        public async Task<InscripcionEventoDTO> ConfirmarAsistencia(int id, ConfirmarAsistenciaDTO peticion, IPrincipal usuario)
+        {
+            RespuestaAsistenciaEvento respuesta = ReglasAsistenciaEvento.Respuesta(peticion?.Respuesta)
+                ?? throw new NestoBusinessException("Indique la respuesta: Confirma o NoPodraIr.");
+            EventoInscripcion inscripcion = await LeerInscripcion(id).ConfigureAwait(false);
+            Evento evento = await LeerEvento(inscripcion.EventoId).ConfigureAwait(false);
+            string clienteDelToken = PermisosEventos.ClienteDelToken(usuario);
+            OrigenRespuestaAsistenciaEvento origen;
+            if (clienteDelToken != null)
+            {
+                if (clienteDelToken != Limpiar(inscripcion.Cliente))
+                {
+                    throw Prohibido("Solo puede contestar por sus inscripciones.");
+                }
+                origen = OrigenRespuestaAsistenciaEvento.Cliente;
+            }
+            else
+            {
+                ComprobarPuedeMantener(usuario, evento, paraMarcarPagada: true);
+                origen = OrigenRespuestaAsistenciaEvento.Tienda;
+            }
+            string motivo = MotivoNoPuedeContestar(inscripcion, evento);
+            if (motivo != null)
+            {
+                throw new NestoBusinessException(motivo);
+            }
+            ApuntarRespuesta(inscripcion, respuesta, origen, UsuarioDe(usuario));
+            await db.SaveChangesAsync().ConfigureAwait(false);
+            return Componer(inscripcion, evento, null);
+        }
+
+        public async Task<ResultadoAsistenciaEnlace> LeerAsistenciaConClave(Guid clave)
+        {
+            (EventoInscripcion inscripcion, Evento evento) = await LeerPorClave(clave).ConfigureAwait(false);
+            if (inscripcion == null)
+            {
+                return new ResultadoAsistenciaEnlace { Existe = false, Mensaje = "Este enlace ya no es válido." };
+            }
+            ResultadoAsistenciaEnlace resultado = Resultado(evento);
+            resultado.Mensaje = MotivoNoPuedeContestar(inscripcion, evento);
+            return resultado;
+        }
+
+        public async Task<ResultadoAsistenciaEnlace> ConfirmarAsistenciaConClave(Guid clave, string respuesta)
+        {
+            (EventoInscripcion inscripcion, Evento evento) = await LeerPorClave(clave).ConfigureAwait(false);
+            if (inscripcion == null)
+            {
+                return new ResultadoAsistenciaEnlace { Existe = false, Mensaje = "Este enlace ya no es válido." };
+            }
+            ResultadoAsistenciaEnlace resultado = Resultado(evento);
+            RespuestaAsistenciaEvento? leida = ReglasAsistenciaEvento.Respuesta(respuesta);
+            if (!leida.HasValue)
+            {
+                resultado.Mensaje = "Elija «Confirmo asistencia» o «No podré ir».";
+                return resultado;
+            }
+            string motivo = MotivoNoPuedeContestar(inscripcion, evento);
+            if (motivo != null)
+            {
+                resultado.Mensaje = motivo;
+                return resultado;
+            }
+            // Sin usuario: queda que fue el cliente por el enlace del correo
+            ApuntarRespuesta(inscripcion, leida.Value, OrigenRespuestaAsistenciaEvento.Cliente, USUARIO_ENLACE_CORREO);
+            await db.SaveChangesAsync().ConfigureAwait(false);
+            resultado.Apuntada = true;
+            resultado.Mensaje = leida.Value == RespuestaAsistenciaEvento.Confirma
+                ? $"Gracias: queda confirmada su asistencia a «{resultado.Evento}» el {resultado.FechaEvento:dd/MM/yyyy}{(resultado.HoraInicio != null ? " a las " + resultado.HoraInicio : "")}. Le esperamos."
+                : $"Gracias por avisarnos: queda apuntado que no podrá ir a «{resultado.Evento}». Si cambia de idea, puede confirmar con el mismo enlace.";
+            return resultado;
+        }
+
+        private async Task<(EventoInscripcion, Evento)> LeerPorClave(Guid clave)
+        {
+            if (clave == Guid.Empty)
+            {
+                return (null, null);
+            }
+            Guid? buscada = clave;
+            EventoInscripcion inscripcion = await db.EventosInscripciones.FirstOrDefaultAsync(i => i.ClaveAsistencia == buscada).ConfigureAwait(false);
+            if (inscripcion == null)
+            {
+                return (null, null);
+            }
+            Evento evento = await db.Eventos.SingleOrDefaultAsync(e => e.Id == inscripcion.EventoId).ConfigureAwait(false);
+            return evento == null ? (null, null) : (inscripcion, evento);
+        }
+
+        private static ResultadoAsistenciaEnlace Resultado(Evento evento) => new ResultadoAsistenciaEnlace
+        {
+            Existe = true,
+            Evento = evento.Titulo?.Trim(),
+            FechaEvento = evento.Fecha.Date,
+            HoraInicio = ReglasModalidadEvento.EscribirHora(evento.HoraInicio)
+        };
+
+        /// <summary>Null si todavía se puede contestar; si no, por qué (de usted, para el cliente y para la tienda).</summary>
+        internal string MotivoNoPuedeContestar(EventoInscripcion inscripcion, Evento evento)
+        {
+            EstadoInscripcionEvento estado = EstadoDe(inscripcion);
+            if (!ReglasInscripcionEvento.PUEDEN_CONFIRMAR_ASISTENCIA.Contains(estado))
+            {
+                return $"La inscripción a «{evento.Titulo?.Trim()}» está {ReglasInscripcionEvento.Texto(estado).ToLowerInvariant()}: ya no se puede contestar.";
+            }
+            if (evento.Fecha.Date < reloj().Date)
+            {
+                return $"«{evento.Titulo?.Trim()}» ya ha pasado.";
+            }
+            return null;
+        }
+
+        private void ApuntarRespuesta(EventoInscripcion inscripcion, RespuestaAsistenciaEvento respuesta, OrigenRespuestaAsistenciaEvento origen, string usuario)
+        {
+            DateTime ahora = reloj();
+            string usuarioAuditoria = UsuarioAuditoriaHelper.ParaAuditoria(usuario);
+            inscripcion.AsistenciaRespuesta = respuesta.ToString();
+            inscripcion.AsistenciaFecha = ahora;
+            inscripcion.AsistenciaUsuario = usuarioAuditoria;
+            inscripcion.AsistenciaOrigen = origen.ToString();
+            inscripcion.Usuario = usuarioAuditoria;
+            inscripcion.FechaModificacion = ahora;
+        }
+
+        // ---------------- NestoAPI#690: recordatorio ----------------
+
+        /// <summary>
+        /// Las inscripciones a las que les toca el recordatorio hoy: las que esperan al evento (pagadas o gratuitas) de los
+        /// eventos activos de dentro de <paramref name="diasAntes"/> días y, si un día no corrió el job, también las de antes
+        /// de esa fecha (mañana), sin recordatorio todavía. A cada una le pone su clave para el enlace del correo.
+        /// </summary>
+        internal async Task<List<KeyValuePair<Evento, List<EventoInscripcion>>>> PendientesDeRecordatorio(int diasAntes)
+        {
+            DateTime hoy = reloj().Date;
+            DateTime desde = hoy.AddDays(1);
+            DateTime hasta = hoy.AddDays(diasAntes);
+            List<Evento> eventos = await db.Eventos
+                .Where(e => e.Activo && e.Fecha >= desde && e.Fecha <= hasta)
+                .ToListAsync().ConfigureAwait(false);
+            var resultado = new List<KeyValuePair<Evento, List<EventoInscripcion>>>();
+            if (!eventos.Any())
+            {
+                return resultado;
+            }
+            List<int> ids = eventos.Select(e => e.Id).ToList();
+            List<string> estados = ReglasInscripcionEvento.ESPERAN_AL_EVENTO.Select(e => e.ToString()).ToList();
+            List<EventoInscripcion> inscripciones = await db.EventosInscripciones
+                .Where(i => ids.Contains(i.EventoId) && estados.Contains(i.Estado) && i.RecordatorioEnviado == null)
+                .ToListAsync().ConfigureAwait(false);
+            bool cambios = false;
+            foreach (Evento evento in eventos.OrderBy(e => e.Fecha))
+            {
+                List<EventoInscripcion> suyas = inscripciones.Where(i => i.EventoId == evento.Id).ToList();
+                if (!suyas.Any())
+                {
+                    continue;
+                }
+                foreach (EventoInscripcion inscripcion in suyas.Where(i => i.ClaveAsistencia == null))
+                {
+                    inscripcion.ClaveAsistencia = Guid.NewGuid();
+                    cambios = true;
+                }
+                resultado.Add(new KeyValuePair<Evento, List<EventoInscripcion>>(evento, suyas));
+            }
+            if (cambios)
+            {
+                await db.SaveChangesAsync().ConfigureAwait(false);
+            }
+            return resultado;
+        }
+
+        /// <summary>Apunta que ya salió el recordatorio (una sola vez por inscripción).</summary>
+        internal async Task MarcarRecordatorioEnviado(IEnumerable<EventoInscripcion> inscripciones)
+        {
+            DateTime ahora = reloj();
+            foreach (EventoInscripcion inscripcion in inscripciones ?? Enumerable.Empty<EventoInscripcion>())
+            {
+                inscripcion.RecordatorioEnviado = ahora;
+            }
+            await db.SaveChangesAsync().ConfigureAwait(false);
+        }
+
         // ---------------- Lista de asistencia ----------------
 
         /// <summary>
@@ -612,7 +982,7 @@ namespace NestoAPI.Infraestructure.Eventos
             List<EventoInscripcion> sinPagar = inscripciones.Where(i => vinieron.Contains(i.Id) && !enLista.Contains(i)).ToList();
             if (sinPagar.Any())
             {
-                throw new NestoBusinessException("Estas inscripciones no están pagadas; márcalas como pagadas antes de pasar lista: " +
+                throw new NestoBusinessException("Estas inscripciones no están pagadas; márquelas como pagadas antes de pasar lista: " +
                     string.Join(", ", sinPagar.Select(i => $"{i.Id} ({Limpiar(i.Cliente)}, {ReglasInscripcionEvento.Texto(EstadoDe(i)).ToLowerInvariant()})")) + ".");
             }
 
@@ -641,8 +1011,9 @@ namespace NestoAPI.Infraestructure.Eventos
                 }
             }
 
-            return (await Completar(inscripciones, new Dictionary<int, Evento> { [evento.Id] = evento }).ConfigureAwait(false))
-                .OrderBy(i => OrdenEstado(i.Estado)).ThenBy(i => i.Nombre).ToList();
+            List<InscripcionEventoDTO> lista = await Completar(inscripciones, new Dictionary<int, Evento> { [evento.Id] = evento }).ConfigureAwait(false);
+            await RellenarBaseImponibleDia(lista, evento).ConfigureAwait(false);
+            return lista.OrderBy(i => OrdenEstado(i.Estado)).ThenBy(i => i.Nombre).ToList();
         }
 
         // ---------------- Jobs ----------------
@@ -691,7 +1062,7 @@ namespace NestoAPI.Infraestructure.Eventos
                 return resultado;
             }
             List<int> ids = eventos.Select(e => e.Id).ToList();
-            List<string> pagadas = new List<string> { EstadoInscripcionEvento.Pagada.ToString(), EstadoInscripcionEvento.Facturada.ToString() };
+            List<string> pagadas = ReglasInscripcionEvento.ESPERAN_AL_EVENTO.Select(e => e.ToString()).ToList();
             List<EventoInscripcion> inscripciones = await db.EventosInscripciones
                 .Where(i => ids.Contains(i.EventoId) && pagadas.Contains(i.Estado)).ToListAsync().ConfigureAwait(false);
 
@@ -719,6 +1090,15 @@ namespace NestoAPI.Infraestructure.Eventos
         }
 
         // ---------------- Ayudantes ----------------
+
+        /// <summary>NestoAPI#690: una inscripción gratuita no se paga ni se factura (400).</summary>
+        private static void ComprobarQueNoEsGratuita(EventoInscripcion inscripcion, Evento evento)
+        {
+            if (ReglasModalidadEvento.DeInscripcion(inscripcion) == ModalidadInscripcionEvento.Gratuita)
+            {
+                throw new NestoBusinessException($"La inscripción {inscripcion.Id} es gratuita («{evento?.Titulo?.Trim()}»): no se paga ni se factura.");
+            }
+        }
 
         private void ComprobarPuedeMantener(IPrincipal usuario, Evento evento, bool paraMarcarPagada = false)
         {
@@ -860,6 +1240,8 @@ namespace NestoAPI.Infraestructure.Eventos
         internal static InscripcionEventoDTO Componer(EventoInscripcion i, Evento evento, string nombre)
         {
             EstadoInscripcionEvento estado = EstadoDe(i);
+            ModalidadInscripcionEvento modalidad = ReglasModalidadEvento.DeInscripcion(i);
+            EstadoAsistenciaEvento asistencia = ReglasAsistenciaEvento.Estado(i);
             return new InscripcionEventoDTO
             {
                 Id = i.Id,
@@ -882,7 +1264,32 @@ namespace NestoAPI.Infraestructure.Eventos
                 PagoTPVId = i.PagoTPVId,
                 EventoSenalId = i.EventoSenalId,
                 UsuarioCreacion = Limpiar(i.UsuarioCreacion),
-                FechaCreacion = i.FechaCreacion
+                FechaCreacion = i.FechaCreacion,
+                Modalidad = modalidad,
+                ImporteSenal = ReglasModalidadEvento.Importe(evento, modalidad),
+                ConCupon = ReglasModalidadEvento.EmiteCupon(modalidad),
+                AsistenciaConfirmada = AsistenciaDe(i),
+                EstadoAsistencia = asistencia,
+                EstadoAsistenciaTexto = ReglasAsistenciaEvento.Texto(asistencia),
+                RecordatorioEnviado = i.RecordatorioEnviado
+            };
+        }
+
+        private static AsistenciaConfirmadaDTO AsistenciaDe(EventoInscripcion i)
+        {
+            RespuestaAsistenciaEvento? respuesta = ReglasAsistenciaEvento.Respuesta(i.AsistenciaRespuesta);
+            if (!respuesta.HasValue)
+            {
+                return null;
+            }
+            return new AsistenciaConfirmadaDTO
+            {
+                Respuesta = respuesta.Value,
+                Fecha = i.AsistenciaFecha ?? i.FechaModificacion,
+                Usuario = Limpiar(i.AsistenciaUsuario),
+                Origen = string.Equals(Limpiar(i.AsistenciaOrigen), OrigenRespuestaAsistenciaEvento.Tienda.ToString(), StringComparison.OrdinalIgnoreCase)
+                    ? OrigenRespuestaAsistenciaEvento.Tienda
+                    : OrigenRespuestaAsistenciaEvento.Cliente
             };
         }
 

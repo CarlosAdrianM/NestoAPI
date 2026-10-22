@@ -23,8 +23,11 @@ namespace NestoAPI.Infraestructure.Eventos
         public string Titulo { get; set; }
         /// <summary>Desde ese día la señal está liberada (se ignora la hora).</summary>
         public DateTime Fecha { get; set; }
-        /// <summary>Lo que se cobra para reservar la plaza (orientativo: la señal es lo que se cobró de verdad).</summary>
-        public decimal ImporteSenal { get; set; }
+        /// <summary>
+        /// La señal REEMBOLSABLE: factura exenta del curso y cupón por ese importe, IVA incluido (#613). NestoAPI#690: al crear,
+        /// si no viene en el cuerpo, 100 € (un 0 explícito es un 0).
+        /// </summary>
+        public decimal ImporteSenal { get => importeSenal; set { importeSenal = value; recibidos.Add(nameof(ImporteSenal)); } }
         public bool Activo { get; set; } = true;
         /// <summary>Solo lectura (la API pone el del Identity).</summary>
         public string Usuario { get; set; }
@@ -39,6 +42,11 @@ namespace NestoAPI.Infraestructure.Eventos
         private int? plazas;
         private string lugar;
         private string descripcionLarga;
+        private decimal importeSenal;
+        private decimal importeSenalNoReembolsable;
+        private string horaInicio;
+        private string horaFin;
+        private string ponente;
 
         /// <summary>NestoAPI#611: ¿venía este campo en el cuerpo de la petición (aunque fuera null)?</summary>
         public bool Trae(string campo) => recibidos.Contains(campo);
@@ -63,6 +71,28 @@ namespace NestoAPI.Infraestructure.Eventos
         public string DescripcionLarga { get => descripcionLarga; set { descripcionLarga = value; recibidos.Add(nameof(DescripcionLarga)); } }
         /// <summary>NestoAPI#611: solo lectura. Cuándo se pasó lista (null = todavía no).</summary>
         public DateTime? FechaListaAsistencia { get; set; }
+
+        /// <summary>NestoAPI#690: «HH:mm» (por ejemplo, «10:00»); null = sin horario.</summary>
+        public string HoraInicio { get => horaInicio; set { horaInicio = value; recibidos.Add(nameof(HoraInicio)); } }
+        /// <summary>NestoAPI#690: «HH:mm», posterior a <see cref="HoraInicio"/>.</summary>
+        public string HoraFin { get => horaFin; set { horaFin = value; recibidos.Add(nameof(HoraFin)); } }
+        /// <summary>NestoAPI#690: texto libre, hasta 100 caracteres.</summary>
+        public string Ponente { get => ponente; set { ponente = value; recibidos.Add(nameof(Ponente)); } }
+        /// <summary>
+        /// NestoAPI#690: la señal NO reembolsable: factura exenta del curso y sin cupón. Al crear, si no viene en el cuerpo,
+        /// 60 €. Con las dos señales a 0, el evento es gratuito.
+        /// </summary>
+        public decimal ImporteSenalNoReembolsable
+        {
+            get => importeSenalNoReembolsable;
+            set { importeSenalNoReembolsable = value; recibidos.Add(nameof(ImporteSenalNoReembolsable)); }
+        }
+        /// <summary>NestoAPI#690: solo lectura. Las dos señales a 0.</summary>
+        public bool Gratuito { get; set; }
+        /// <summary>NestoAPI#690: solo lectura. Lo que se puede elegir al inscribirse (Reembolsable, NoReembolsable o Gratuita).</summary>
+        public List<string> Modalidades { get; set; } = new List<string>();
+        /// <summary>NestoAPI#690: solo lectura. La imagen del evento (pública, para campañas); null si no tiene.</summary>
+        public string ImagenUrl { get; set; }
     }
 
     /// <summary>NestoAPI#591: POST api/Eventos/{id}/Senales. El apunte a favor del extracto que es la señal del evento.</summary>
@@ -121,6 +151,12 @@ namespace NestoAPI.Infraestructure.Eventos
         Task<List<SenalEventoDTO>> LeerSenalesCliente(string empresa, string cliente, string contacto);
         Task<SenalEventoDTO> MarcarSenal(int eventoId, MarcarSenalEventoDTO peticion, string usuario);
         Task QuitarSenal(int id, string usuario);
+        /// <summary>NestoAPI#690: sustituye la imagen del evento y devuelve el evento con su ImagenUrl nueva.</summary>
+        Task<EventoDTO> GuardarImagen(int id, ImagenEventoAGrabar imagen, string usuario);
+        /// <summary>NestoAPI#690: false si el evento no tenía imagen.</summary>
+        Task<bool> BorrarImagen(int id);
+        /// <summary>NestoAPI#690: la imagen (con el contenido), o null si no tiene.</summary>
+        Task<ImagenEvento> LeerImagen(int id);
     }
 
     /// <summary>
@@ -135,12 +171,13 @@ namespace NestoAPI.Infraestructure.Eventos
         public const int LONGITUD_LUGAR = 100;
         public const int LONGITUD_DESCRIPCION = 2000;
         public const int LONGITUD_PRODUCTO = 15;
+        public const int LONGITUD_PONENTE = 100;
 
         /// <summary>NestoAPI#612: DELETE api/Eventos/Senales/{id} de una señal que ya facturó el curso o emitió el cupón (409).</summary>
         public const string ERROR_SENAL_YA_USADA = "SENAL_EVENTO_YA_USADA";
 
         public const string MENSAJE_SIN_PERMISO_SENALES =
-            "Las señales de los eventos las marca Administración. Pídeselo a informática si necesitas hacerlo.";
+            "Las señales de los eventos las marca Administración. Pídaselo a Informática si necesita hacerlo.";
 
         private static readonly string[] gruposSenales =
         {
@@ -155,16 +192,19 @@ namespace NestoAPI.Infraestructure.Eventos
         private readonly IRepositorioFacturacionCursos facturacionCursos;
         private readonly IRepositorioCupones cupones;
         private readonly Func<Func<Task>, Task> enTransaccion;
+        private readonly IRepositorioImagenesEventos imagenes;
 
-        public ServicioEventos(NVEntities db) : this(db, () => DateTime.Now)
+        public ServicioEventos(NVEntities db) : this(db, () => DateTime.Now, imagenes: new RepositorioImagenesEventos(db))
         {
         }
 
         /// <param name="almacenDelUsuario">(empresa, usuario sin dominio) → su AlmacénPedidoVta. Null: el de ParametrosUsuario.</param>
+        /// <param name="imagenes">NestoAPI#690: las imágenes de los eventos. Null: los eventos salen sin imagen y no se pueden subir.</param>
         internal ServicioEventos(NVEntities db, Func<DateTime> reloj, Func<string, string, string> almacenDelUsuario = null,
             IRepositorioFacturacionCursos facturacionCursos = null, IRepositorioCupones cupones = null,
-            Func<Func<Task>, Task> enTransaccion = null)
+            Func<Func<Task>, Task> enTransaccion = null, IRepositorioImagenesEventos imagenes = null)
         {
+            this.imagenes = imagenes;
             this.db = db;
             this.reloj = reloj;
             this.almacenDelUsuario = almacenDelUsuario
@@ -211,12 +251,80 @@ namespace NestoAPI.Infraestructure.Eventos
             }
             List<Evento> eventos = await consulta.ToListAsync().ConfigureAwait(false);
             Dictionary<int, int> ocupadas = await PlazasOcupadas(eventos.Select(e => e.Id).ToList()).ConfigureAwait(false);
+            Dictionary<int, DateTime> conImagen = await FechasImagenes(eventos.Select(e => e.Id).ToList()).ConfigureAwait(false);
             DateTime hoy = reloj().Date;
             return eventos.Where(e => e.Fecha.Date >= hoy).OrderBy(e => e.Fecha).ThenBy(e => e.Titulo)
                 .Concat(eventos.Where(e => e.Fecha.Date < hoy).OrderByDescending(e => e.Fecha).ThenBy(e => e.Titulo))
-                .Select(e => ADTO(e, ocupadas.TryGetValue(e.Id, out int n) ? n : 0))
+                .Select(e => ConImagen(ADTO(e, ocupadas.TryGetValue(e.Id, out int n) ? n : 0), conImagen))
                 .ToList();
         }
+
+        private static int imagenesFalloRegistrado;
+
+        /// <summary>
+        /// NestoAPI#690: qué eventos tienen imagen (y de cuándo es), en UNA consulta y sin el contenido. Si falla (la tabla
+        /// todavía no existe, la BD…), los eventos salen igual sin imagen y el fallo va a ELMAH una sola vez.
+        /// </summary>
+        private async Task<Dictionary<int, DateTime>> FechasImagenes(List<int> ids)
+        {
+            if (imagenes == null || !ids.Any())
+            {
+                return new Dictionary<int, DateTime>();
+            }
+            try
+            {
+                return await imagenes.LeerFechas(ids).ConfigureAwait(false) ?? new Dictionary<int, DateTime>();
+            }
+            catch (Exception ex)
+            {
+                if (System.Threading.Interlocked.Exchange(ref imagenesFalloRegistrado, 1) == 0)
+                {
+                    ElmahHelper.Log(new Exception($"[Eventos #690] No se han podido leer las imágenes de los eventos; salen sin ellas: {ex.Message}", ex));
+                }
+                return new Dictionary<int, DateTime>();
+            }
+        }
+
+        private static EventoDTO ConImagen(EventoDTO dto, Dictionary<int, DateTime> conImagen)
+        {
+            if (conImagen != null && conImagen.TryGetValue(dto.Id, out DateTime fecha))
+            {
+                dto.ImagenUrl = RepositorioImagenesEventos.Url(dto.Id, fecha);
+            }
+            return dto;
+        }
+
+        private async Task<EventoDTO> ConImagen(EventoDTO dto) =>
+            ConImagen(dto, await FechasImagenes(new List<int> { dto.Id }).ConfigureAwait(false));
+
+        // ---------------- NestoAPI#690: imagen ----------------
+
+        public async Task<EventoDTO> GuardarImagen(int id, ImagenEventoAGrabar imagen, string usuario)
+        {
+            if (imagenes == null)
+            {
+                throw new NestoBusinessException("Las imágenes de los eventos no están disponibles.");
+            }
+            Evento evento = await db.Eventos.SingleOrDefaultAsync(e => e.Id == id).ConfigureAwait(false)
+                ?? throw NoEncontrado($"No existe el evento {id}.");
+            DateTime fecha = await imagenes.Guardar(id, imagen, UsuarioAuditoriaHelper.ParaAuditoria(usuario)).ConfigureAwait(false);
+            Dictionary<int, int> ocupadas = await PlazasOcupadas(new List<int> { id }).ConfigureAwait(false);
+            EventoDTO dto = ADTO(evento, ocupadas.TryGetValue(id, out int n) ? n : 0);
+            dto.ImagenUrl = RepositorioImagenesEventos.Url(id, fecha);
+            return dto;
+        }
+
+        public async Task<bool> BorrarImagen(int id)
+        {
+            if (imagenes == null)
+            {
+                return false;
+            }
+            return await imagenes.Borrar(id).ConfigureAwait(false);
+        }
+
+        public async Task<ImagenEvento> LeerImagen(int id) =>
+            imagenes == null ? null : await imagenes.Leer(id).ConfigureAwait(false);
 
         /// <summary>NestoAPI#611: cuántas inscripciones ocupan plaza en cada evento.</summary>
         private async Task<Dictionary<int, int>> PlazasOcupadas(List<int> ids)
@@ -235,6 +343,16 @@ namespace NestoAPI.Infraestructure.Eventos
 
         public async Task<EventoDTO> CrearEvento(EventoDTO evento, string usuario)
         {
+            // NestoAPI#690 (Carlos, 22/10/26): sin importes en el cuerpo, 100 € reembolsable y 60 € no reembolsable. Un 0
+            // explícito se respeta: con los dos a 0, el evento es gratuito.
+            if (evento != null && !evento.Trae(nameof(EventoDTO.ImporteSenal)))
+            {
+                evento.ImporteSenal = ReglasModalidadEvento.SENAL_REEMBOLSABLE_POR_DEFECTO;
+            }
+            if (evento != null && !evento.Trae(nameof(EventoDTO.ImporteSenalNoReembolsable)))
+            {
+                evento.ImporteSenalNoReembolsable = ReglasModalidadEvento.SENAL_NO_REEMBOLSABLE_POR_DEFECTO;
+            }
             await Validar(evento).ConfigureAwait(false);
             var entidad = new Evento { Empresa = EmpresaOPorDefecto(evento.Empresa) };
             Copiar(evento, entidad, usuario);
@@ -257,11 +375,20 @@ namespace NestoAPI.Infraestructure.Eventos
             if (evento.Trae(nameof(EventoDTO.Plazas)) && evento.Plazas.HasValue && evento.Plazas.Value < ocupadasEvento)
             {
                 throw new NestoBusinessException(
-                    $"Ya hay {ocupadasEvento} inscripciones: no se pueden dejar {evento.Plazas.Value} plazas. Anula antes las que sobren.");
+                    $"Ya hay {ocupadasEvento} inscripciones: no se pueden dejar {evento.Plazas.Value} plazas. Anule antes las que sobren.");
             }
+            bool eraGratuito = ReglasModalidadEvento.EsGratuito(entidad);
             Copiar(evento, entidad, usuario);
+            // NestoAPI#690: las inscripciones gratuitas no tienen pago y las de pago no son gratuitas: con inscripciones vivas,
+            // el evento no cambia de gratuito a de pago ni al revés.
+            if (eraGratuito != ReglasModalidadEvento.EsGratuito(entidad) && ocupadasEvento > 0)
+            {
+                throw new NestoBusinessException(eraGratuito
+                    ? $"Ya hay {ocupadasEvento} inscripciones gratuitas: el evento no puede pasar a ser de pago. Anúlelas antes o cree otro evento."
+                    : $"Ya hay {ocupadasEvento} inscripciones de pago: el evento no puede pasar a ser gratuito. Anúlelas antes o cree otro evento.");
+            }
             await db.SaveChangesAsync().ConfigureAwait(false);
-            return ADTO(entidad, ocupadasEvento);
+            return await ConImagen(ADTO(entidad, ocupadasEvento)).ConfigureAwait(false);
         }
 
         private async Task Validar(EventoDTO evento)
@@ -287,11 +414,26 @@ namespace NestoAPI.Infraestructure.Eventos
             {
                 throw new NestoBusinessException("El importe de la señal no puede ser negativo.");
             }
+            // NestoAPI#690: la señal no reembolsable, el horario y el ponente
+            if (evento.ImporteSenalNoReembolsable < 0)
+            {
+                throw new NestoBusinessException("El importe de la señal no reembolsable no puede ser negativo.");
+            }
+            TimeSpan? inicio = ReglasModalidadEvento.LeerHora(evento.HoraInicio, "inicio");
+            TimeSpan? fin = ReglasModalidadEvento.LeerHora(evento.HoraFin, "fin");
+            if (inicio.HasValue && fin.HasValue && fin.Value <= inicio.Value)
+            {
+                throw new NestoBusinessException("La hora de fin tiene que ser posterior a la de inicio.");
+            }
+            if ((evento.Ponente?.Trim().Length ?? 0) > LONGITUD_PONENTE)
+            {
+                throw new NestoBusinessException($"El ponente no puede tener más de {LONGITUD_PONENTE} caracteres.");
+            }
             // NestoAPI#611 (Carlos, 14/10/26): cada evento es de una tienda, que es quien lo mantiene. Solo se exige si viene en
             // el cuerpo: el Nesto de #591 no lo manda y tiene que poder seguir creando y modificando eventos.
             if (evento.Trae(nameof(EventoDTO.Almacen)) && !PermisosEventos.EsAlmacenDeEventos(evento.Almacen))
             {
-                throw new NestoBusinessException("Indica la tienda del evento: Reina (REI) o Alcobendas (ALC).");
+                throw new NestoBusinessException("Indique la tienda del evento: Reina (REI) o Alcobendas (ALC).");
             }
             if (evento.Plazas.HasValue && evento.Plazas.Value <= 0)
             {
@@ -316,7 +458,7 @@ namespace NestoAPI.Infraestructure.Eventos
                 bool existe = await db.Productos.AnyAsync(p => p.Empresa == empresa && p.Número == producto).ConfigureAwait(false);
                 if (!existe)
                 {
-                    throw new NestoBusinessException($"No existe el producto {producto}: da de alta antes la referencia del curso.");
+                    throw new NestoBusinessException($"No existe el producto {producto}: dé de alta antes la referencia del curso.");
                 }
             }
         }
@@ -325,8 +467,33 @@ namespace NestoAPI.Infraestructure.Eventos
         {
             destino.Titulo = origen.Titulo.Trim();
             destino.Fecha = origen.Fecha.Date;
-            destino.ImporteSenal = Math.Round(origen.ImporteSenal, 2, MidpointRounding.AwayFromZero);
+            // NestoAPI#690: el Nesto de #591 siempre la manda; si un cliente nuevo no la manda en el PUT, se conserva.
+            if (origen.Trae(nameof(EventoDTO.ImporteSenal)))
+            {
+                destino.ImporteSenal = Math.Round(origen.ImporteSenal, 2, MidpointRounding.AwayFromZero);
+            }
             destino.Activo = origen.Activo;
+            if (origen.Trae(nameof(EventoDTO.ImporteSenalNoReembolsable)))
+            {
+                destino.ImporteSenalNoReembolsable = Math.Round(origen.ImporteSenalNoReembolsable, 2, MidpointRounding.AwayFromZero);
+            }
+            if (origen.Trae(nameof(EventoDTO.HoraInicio)))
+            {
+                destino.HoraInicio = ReglasModalidadEvento.LeerHora(origen.HoraInicio, "inicio");
+            }
+            if (origen.Trae(nameof(EventoDTO.HoraFin)))
+            {
+                destino.HoraFin = ReglasModalidadEvento.LeerHora(origen.HoraFin, "fin");
+            }
+            if (origen.Trae(nameof(EventoDTO.Ponente)))
+            {
+                destino.Ponente = Limpiar(origen.Ponente);
+            }
+            // Con lo conservado del PUT (por ejemplo, solo viene la hora de fin)
+            if (destino.HoraInicio.HasValue && destino.HoraFin.HasValue && destino.HoraFin.Value <= destino.HoraInicio.Value)
+            {
+                throw new NestoBusinessException("La hora de fin tiene que ser posterior a la de inicio.");
+            }
             // NestoAPI#611: los campos nuevos, solo si vienen en el cuerpo (un PUT del Nesto de #591 no los borra).
             if (origen.Trae(nameof(EventoDTO.Almacen)))
             {
@@ -368,7 +535,13 @@ namespace NestoAPI.Infraestructure.Eventos
             PlazasOcupadas = plazasOcupadas,
             Lugar = e.Lugar?.Trim(),
             DescripcionLarga = e.Descripcion?.Trim(),
-            FechaListaAsistencia = e.FechaListaAsistencia
+            FechaListaAsistencia = e.FechaListaAsistencia,
+            HoraInicio = ReglasModalidadEvento.EscribirHora(e.HoraInicio),
+            HoraFin = ReglasModalidadEvento.EscribirHora(e.HoraFin),
+            Ponente = e.Ponente?.Trim(),
+            ImporteSenalNoReembolsable = e.ImporteSenalNoReembolsable,
+            Gratuito = ReglasModalidadEvento.EsGratuito(e),
+            Modalidades = ReglasModalidadEvento.Disponibles(e).Select(m => m.ToString()).ToList()
         };
 
         // ---------------- Señales ----------------
@@ -449,7 +622,7 @@ namespace NestoAPI.Infraestructure.Eventos
                     ? evento
                     : await db.Eventos.SingleOrDefaultAsync(e => e.Id == yaMarcada.EventoId).ConfigureAwait(false);
                 throw new NestoBusinessException(
-                    $"El apunte {numOrden} ya es la señal del evento «{otro?.Titulo?.Trim() ?? yaMarcada.EventoId.ToString()}». Quita esa señal antes si te has equivocado.");
+                    $"El apunte {numOrden} ya es la señal del evento «{otro?.Titulo?.Trim() ?? yaMarcada.EventoId.ToString()}». Quite esa señal antes si se ha equivocado.");
             }
 
             var senal = new EventoSenal
