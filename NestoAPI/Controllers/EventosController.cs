@@ -137,6 +137,52 @@ namespace NestoAPI.Controllers
             return Ok(await servicio.CrearProductoCurso(id, peticion, UsuarioAuditoriaHelper.Resolver(User, null)).ConfigureAwait(false));
         }
 
+        // ---------------- NestoAPI#692: anunciar el evento en las apps ----------------
+
+        /// <summary>NestoAPI#692: el anuncio (sustituible en los tests).</summary>
+        internal IServicioAnunciosEventos Anuncios
+        {
+            get => anuncios ?? (anuncios = new ServicioAnunciosEventos(servicio, new RepositorioAnunciosEventosSql(db),
+                new Infraestructure.Notificaciones.ServicioNotificacionesPush(),
+                new Infraestructure.Notificaciones.RepositorioPreferenciasNotificacionesSql(db)));
+            set => anuncios = value;
+        }
+        private IServicioAnunciosEventos anuncios;
+
+        // POST api/Eventos/5/Anunciar?otraVez=true   { Reclamo? }
+        /// <summary>
+        /// NestoAPI#692: manda una push del evento a los vendedores (NestoApp) y a los clientes de la tienda online (TNV: los
+        /// presenciales, solo a la zona de Madrid; cada cliente puede apagarlo). Fuera de 9:00-21:00 queda programado para las
+        /// 9:00. Los mismos que pueden mantener el evento. 400 EVENTO_INCOMPLETO (details.queFalta) si no está completo; 409
+        /// EVENTO_YA_ANUNCIADO si ya se anunció y no viene otraVez (para repetir hace falta un Reclamo de hasta 60 caracteres).
+        /// </summary>
+        [HttpPost]
+        [Route("{id:int}/Anunciar")]
+        [ResponseType(typeof(ResultadoAnuncioEventoDTO))]
+        public async Task<IHttpActionResult> PostAnunciar(int id, [FromBody] PeticionAnuncioEventoDTO peticion, bool otraVez = false)
+        {
+            string almacenEvento = await servicio.AlmacenDelEvento(id).ConfigureAwait(false);
+            if (almacenEvento == null)
+            {
+                return NotFound();
+            }
+            if (!PuedeMantener(null, almacenEvento))
+            {
+                return Prohibido(PermisosEventos.MENSAJE_SIN_PERMISO_EVENTOS);
+            }
+            return Ok(await Anuncios.Anunciar(id, otraVez, peticion?.Reclamo, UsuarioAuditoriaHelper.Resolver(User, null)).ConfigureAwait(false));
+        }
+
+        // GET api/Eventos/5/Reclamos
+        /// <summary>NestoAPI#692: los reclamos que se proponen para volver a anunciar el evento («¡Últimas plazas disponibles!»…).</summary>
+        [HttpGet]
+        [Route("{id:int}/Reclamos")]
+        [ResponseType(typeof(List<string>))]
+        public async Task<IHttpActionResult> GetReclamos(int id)
+        {
+            return Ok(await Anuncios.Reclamos(id).ConfigureAwait(false));
+        }
+
         // ---------------- NestoAPI#690: imagen del evento ----------------
 
         // POST api/Eventos/5/Imagen   multipart/form-data, la imagen en el campo «fichero»

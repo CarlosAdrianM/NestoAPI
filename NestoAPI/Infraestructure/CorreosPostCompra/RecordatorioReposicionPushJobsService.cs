@@ -47,6 +47,8 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
         public List<string> ConPushReciente { get; set; } = new List<string>();
         /// <summary>Clientes a los que les tocaría, pero sin dispositivo activo de NestoTiendas con consejos.</summary>
         public List<string> SinDispositivoConConsejos { get; set; } = new List<string>();
+        /// <summary>NestoAPI#692: clientes con la app que han apagado «Avisos de reposición» en «Notificaciones que recibe».</summary>
+        public List<string> DeBajaEnLaApp { get; set; } = new List<string>();
         public ResultadoRecordatorioReposicionDTO Calculo { get; set; }
     }
 
@@ -114,7 +116,9 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                         (clientes, desde) => ClientesConPushDesde(db, clientes, desde),
                         dia => GestorFestivos.EsFestivo(dia, Constantes.Almacenes.ALGETE),
                         DateTime.Now,
-                        RecordatorioReposicionJobsService.LeerFotoTienda).ConfigureAwait(false);
+                        RecordatorioReposicionJobsService.LeerFotoTienda,
+                        () => ServicioPreferenciasNotificaciones.ClientesDeBaja(new RepositorioPreferenciasNotificacionesSql(db), EMPRESA,
+                            TiposNotificacionCliente.AVISOS_REPOSICION)).ConfigureAwait(false);
                 }
             }
             catch (Exception ex)
@@ -132,6 +136,8 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
         /// <param name="esFestivo">Día → festivo en el almacén que sirve.</param>
         /// <param name="leerFoto">NestoAPI#532: producto → URL de su foto en la tienda (null si no tiene). Va en la push la del
         /// primero, el de más importe habitual. Sin función o si falla, la push sale sin foto.</param>
+        /// <param name="clientesDeBaja">NestoAPI#692: los clientes que han apagado «Avisos de reposición» en la app (no se les
+        /// manda). Sin función, nadie.</param>
         internal static async Task<ResultadoRecordatorioReposicionPushDTO> Procesar(ILectorParametrosUsuario lector,
             IServicioNotificacionesPush push,
             IServicioCorreoElectronico servicioCorreo,
@@ -140,7 +146,8 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
             Func<IReadOnlyCollection<string>, DateTime, Task<ISet<string>>> clientesConPushDesde,
             Func<DateTime, bool> esFestivo,
             DateTime ahora,
-            Func<string, Task<string>> leerFoto = null)
+            Func<string, Task<string>> leerFoto = null,
+            Func<Task<ISet<string>>> clientesDeBaja = null)
         {
             var resultado = new ResultadoRecordatorioReposicionPushDTO { Modo = LeerModo(lector), Ahora = ahora };
             if (resultado.Modo == ModoRecordatorioReposicionPush.Apagado)
@@ -159,6 +166,18 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                 .Select(c => c.Trim())
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
+
+            // NestoAPI#692: su interruptor «Avisos de reposición» en «Notificaciones que recibe» (por defecto, encendido)
+            if (clientesDeBaja != null && conApp.Count > 0)
+            {
+                ISet<string> deBaja = await clientesDeBaja().ConfigureAwait(false);
+                if (deBaja != null && deBaja.Count > 0)
+                {
+                    var deBajaSinEspacios = new HashSet<string>(deBaja.Where(c => c != null).Select(c => c.Trim()), StringComparer.OrdinalIgnoreCase);
+                    resultado.DeBajaEnLaApp = conApp.Where(deBajaSinEspacios.Contains).ToList();
+                    conApp = conApp.Where(c => !deBajaSinEspacios.Contains(c)).ToList();
+                }
+            }
             if (conApp.Count == 0)
             {
                 return resultado;
@@ -474,6 +493,11 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
             {
                 sb.AppendLine("<p>Les tocaría, pero ya no tienen un dispositivo activo con los consejos encendidos: " +
                     $"{WebUtility.HtmlEncode(string.Join(", ", resultado.SinDispositivoConConsejos))}</p>");
+            }
+            if (resultado.DeBajaEnLaApp.Any())
+            {
+                sb.AppendLine("<p>Han apagado «Avisos de reposición» en la app (se quedan fuera): " +
+                    $"{WebUtility.HtmlEncode(string.Join(", ", resultado.DeBajaEnLaApp))}</p>");
             }
             int descartes = resultado.Calculo?.Descartes?.Count ?? 0;
             if (descartes > 0)

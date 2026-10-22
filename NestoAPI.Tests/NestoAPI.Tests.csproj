@@ -619,6 +619,8 @@
     <Compile Include="Infrastructure\Reposiciones\ServicioTransitoReposicionesTests.cs" />
     <Compile Include="Infrastructure\Eventos\EstadoSenalEventoTests.cs" />
     <Compile Include="Infrastructure\Eventos\ServicioEventosTests.cs" />
+    <Compile Include="Infrastructure\Eventos\AnunciosEventosTests.cs" />
+    <Compile Include="Controllers\PreferenciasNotificacionesControllerTests.cs" />
     <Compile Include="Infrastructure\Eventos\InscripcionesEventosTests.cs" />
     <Compile Include="Infrastructure\Eventos\EventosHorarioModalidadAsistenciaTests.cs" />
     <Compile Include="Infrastructure\Eventos\ProductoCursoEventoTests.cs" />

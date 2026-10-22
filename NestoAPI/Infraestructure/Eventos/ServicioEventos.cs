@@ -109,6 +109,18 @@ namespace NestoAPI.Infraestructure.Eventos
         /// viene, Presencial al crear y el que tuviera al modificar.
         /// </summary>
         public string Formato { get => formato; set { formato = value; recibidos.Add(nameof(Formato)); } }
+
+        /// <summary>
+        /// NestoAPI#692: solo lectura. Tiene todo lo necesario para anunciarlo en las apps (ver
+        /// <see cref="ReglasAnuncioEvento.QueFalta"/>, imagen incluida).
+        /// </summary>
+        public bool Completo { get; set; }
+        /// <summary>NestoAPI#692: solo lectura. Lo que le falta para anunciarlo («la imagen», «el ponente»…); vacía si está completo.</summary>
+        public List<string> QueFalta { get; set; } = new List<string>();
+        /// <summary>NestoAPI#692: solo lectura. Cuándo se anunció la última vez (null = nunca).</summary>
+        public DateTime? AnunciadoFecha { get; set; }
+        /// <summary>NestoAPI#692: solo lectura. Quién lo anunció la última vez.</summary>
+        public string AnunciadoUsuario { get; set; }
     }
 
     /// <summary>NestoAPI#591: POST api/Eventos/{id}/Senales. El apunte a favor del extracto que es la señal del evento.</summary>
@@ -157,6 +169,8 @@ namespace NestoAPI.Infraestructure.Eventos
     public interface IServicioEventos
     {
         Task<List<EventoDTO>> LeerEventos(string empresa, bool soloActivos);
+        /// <summary>NestoAPI#692: un evento con sus plazas ocupadas, su imagen, si está completo y si se ha anunciado. Null si no existe.</summary>
+        Task<EventoDTO> LeerEvento(int id);
         /// <summary>NestoAPI#611: el AlmacénPedidoVta del usuario (para saber de qué tienda es). Null si no tiene.</summary>
         string AlmacenDelUsuario(IPrincipal usuario, string empresa);
         /// <summary>NestoAPI#611: la tienda del evento guardado ("" si no tiene); null si el evento no existe.</summary>
@@ -219,8 +233,10 @@ namespace NestoAPI.Infraestructure.Eventos
         private readonly Func<Func<Task>, Task> enTransaccion;
         private readonly IRepositorioImagenesEventos imagenes;
         private readonly IRepositorioProductoCurso productosCurso;
+        private readonly IRepositorioAnunciosEventos anuncios;
 
-        public ServicioEventos(NVEntities db) : this(db, () => DateTime.Now, imagenes: new RepositorioImagenesEventos(db))
+        public ServicioEventos(NVEntities db) : this(db, () => DateTime.Now, imagenes: new RepositorioImagenesEventos(db),
+            anuncios: new RepositorioAnunciosEventosSql(db))
         {
         }
 
@@ -229,9 +245,10 @@ namespace NestoAPI.Infraestructure.Eventos
         internal ServicioEventos(NVEntities db, Func<DateTime> reloj, Func<string, string, string> almacenDelUsuario = null,
             IRepositorioFacturacionCursos facturacionCursos = null, IRepositorioCupones cupones = null,
             Func<Func<Task>, Task> enTransaccion = null, IRepositorioImagenesEventos imagenes = null,
-            IRepositorioProductoCurso productosCurso = null)
+            IRepositorioProductoCurso productosCurso = null, IRepositorioAnunciosEventos anuncios = null)
         {
             this.imagenes = imagenes;
+            this.anuncios = anuncios;
             this.productosCurso = productosCurso ?? new RepositorioProductoCurso(db);
             this.db = db;
             this.reloj = reloj;
@@ -280,11 +297,60 @@ namespace NestoAPI.Infraestructure.Eventos
             List<Evento> eventos = await consulta.ToListAsync().ConfigureAwait(false);
             Dictionary<int, int> ocupadas = await PlazasOcupadas(eventos.Select(e => e.Id).ToList()).ConfigureAwait(false);
             Dictionary<int, DateTime> conImagen = await FechasImagenes(eventos.Select(e => e.Id).ToList()).ConfigureAwait(false);
+            Dictionary<int, AnuncioEventoLeido> anunciados = await Anunciados(eventos.Select(e => e.Id).ToList()).ConfigureAwait(false);
             DateTime hoy = reloj().Date;
             return eventos.Where(e => e.Fecha.Date >= hoy).OrderBy(e => e.Fecha).ThenBy(e => e.Titulo)
                 .Concat(eventos.Where(e => e.Fecha.Date < hoy).OrderByDescending(e => e.Fecha).ThenBy(e => e.Titulo))
-                .Select(e => ConImagen(ADTO(e, ocupadas.TryGetValue(e.Id, out int n) ? n : 0), conImagen))
+                .Select(e => ConAnuncio(ConImagen(ADTO(e, ocupadas.TryGetValue(e.Id, out int n) ? n : 0), conImagen), anunciados))
                 .ToList();
+        }
+
+        public async Task<EventoDTO> LeerEvento(int id)
+        {
+            Evento evento = await db.Eventos.SingleOrDefaultAsync(e => e.Id == id).ConfigureAwait(false);
+            if (evento == null)
+            {
+                return null;
+            }
+            Dictionary<int, int> ocupadas = await PlazasOcupadas(new List<int> { id }).ConfigureAwait(false);
+            return await ConImagen(ADTO(evento, ocupadas.TryGetValue(id, out int n) ? n : 0)).ConfigureAwait(false);
+        }
+
+        private static int anunciosFalloRegistrado;
+
+        /// <summary>
+        /// NestoAPI#692: cuándo se anunció cada evento, en UNA consulta. Si falla (no se ha lanzado Issue692_AnunciarEventos.sql),
+        /// salen como no anunciados y el fallo va a ELMAH una sola vez.
+        /// </summary>
+        private async Task<Dictionary<int, AnuncioEventoLeido>> Anunciados(List<int> ids)
+        {
+            if (anuncios == null || !ids.Any())
+            {
+                return new Dictionary<int, AnuncioEventoLeido>();
+            }
+            try
+            {
+                return await anuncios.LeerAnunciados(ids).ConfigureAwait(false) ?? new Dictionary<int, AnuncioEventoLeido>();
+            }
+            catch (Exception ex)
+            {
+                if (System.Threading.Interlocked.Exchange(ref anunciosFalloRegistrado, 1) == 0)
+                {
+                    ElmahHelper.Log(new Exception($"[Eventos #692] No se ha podido leer cuándo se anunciaron los eventos: {ex.Message}", ex));
+                }
+                return new Dictionary<int, AnuncioEventoLeido>();
+            }
+        }
+
+        /// <summary>NestoAPI#692: el último anuncio y, con la imagen ya puesta, si está completo y qué le falta.</summary>
+        private EventoDTO ConAnuncio(EventoDTO dto, Dictionary<int, AnuncioEventoLeido> anunciados)
+        {
+            if (anunciados != null && anunciados.TryGetValue(dto.Id, out AnuncioEventoLeido anuncio))
+            {
+                dto.AnunciadoFecha = anuncio.Fecha;
+                dto.AnunciadoUsuario = anuncio.Usuario?.Trim();
+            }
+            return ReglasAnuncioEvento.Completar(dto, reloj().Date);
         }
 
         private static int imagenesFalloRegistrado;
@@ -322,8 +388,10 @@ namespace NestoAPI.Infraestructure.Eventos
             return dto;
         }
 
+        /// <summary>Un evento suelto: su imagen y (NestoAPI#692) su anuncio, si está completo y qué le falta.</summary>
         private async Task<EventoDTO> ConImagen(EventoDTO dto) =>
-            ConImagen(dto, await FechasImagenes(new List<int> { dto.Id }).ConfigureAwait(false));
+            ConAnuncio(ConImagen(dto, await FechasImagenes(new List<int> { dto.Id }).ConfigureAwait(false)),
+                await Anunciados(new List<int> { dto.Id }).ConfigureAwait(false));
 
         // ---------------- NestoAPI#690: imagen ----------------
 
@@ -339,7 +407,7 @@ namespace NestoAPI.Infraestructure.Eventos
             Dictionary<int, int> ocupadas = await PlazasOcupadas(new List<int> { id }).ConfigureAwait(false);
             EventoDTO dto = ADTO(evento, ocupadas.TryGetValue(id, out int n) ? n : 0);
             dto.ImagenUrl = RepositorioImagenesEventos.Url(id, fecha);
-            return dto;
+            return ConAnuncio(dto, await Anunciados(new List<int> { id }).ConfigureAwait(false));
         }
 
         public async Task<bool> BorrarImagen(int id)
@@ -389,7 +457,7 @@ namespace NestoAPI.Infraestructure.Eventos
             Copiar(evento, entidad, usuario);
             db.Eventos.Add(entidad);
             await db.SaveChangesAsync().ConfigureAwait(false);
-            return ADTO(entidad, 0);
+            return ConAnuncio(ADTO(entidad, 0), null);
         }
 
         public async Task<EventoDTO> ModificarEvento(int id, EventoDTO evento, string usuario)

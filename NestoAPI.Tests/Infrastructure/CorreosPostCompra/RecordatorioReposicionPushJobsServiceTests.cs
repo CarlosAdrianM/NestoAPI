@@ -298,6 +298,26 @@ namespace NestoAPI.Tests.Infrastructure.CorreosPostCompra
             CollectionAssert.AreEquivalent(new[] { "15191", "20000" }, calculados.Single().ToArray());
         }
 
+        /// <summary>NestoAPI#692: «Avisos de reposición» apagado en «Notificaciones que recibe»: ni se calcula ni se le manda.</summary>
+        [TestMethod]
+        public async Task ClienteConAvisosDeReposicionApagadosEnLaApp_NoRecibeNada()
+        {
+            clientesConApp = new List<string> { "15191", "20000" };
+            dispositivos["20000"] = new List<DispositivoNotificacion> { Dispositivo("20000") };
+
+            ResultadoRecordatorioReposicionPushDTO resultado = await RecordatorioReposicionPushJobsService.Procesar(lector, push, correo, Calcular,
+                () => Task.FromResult(clientesConApp.ToList()),
+                (clientes, desde) => Task.FromResult<ISet<string>>(new HashSet<string>()),
+                dia => false,
+                MARTES,
+                clientesDeBaja: () => Task.FromResult<ISet<string>>(new HashSet<string> { "15191 " }));
+
+            CollectionAssert.AreEqual(new[] { "15191" }, resultado.DeBajaEnLaApp);
+            CollectionAssert.AreEquivalent(new[] { "20000" }, calculados.Single().ToArray());
+            A.CallTo(() => push.EnviarConsejoACliente("1", "15191", A<NotificacionPushDTO>._)).MustNotHaveHappened();
+            A.CallTo(() => push.EnviarConsejoACliente("1", "20000", A<NotificacionPushDTO>._)).MustHaveHappenedOnceExactly();
+        }
+
         #endregion
 
         #region Qué
