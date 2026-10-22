@@ -1064,6 +1064,7 @@
     <Compile Include="Infraestructure\Eventos\RecordatorioEventosJobsService.cs" />
     <Compile Include="Infraestructure\Eventos\PropuestasSenalesEventos.cs" />
     <Compile Include="Infraestructure\Cupones\Cupones.cs" />
+    <Compile Include="Infraestructure\Cupones\CarritoCupones.cs" />
     <Compile Include="Infraestructure\Cupones\RepositorioCupones.cs" />
     <Compile Include="Infraestructure\Cupones\ServicioCanjeCupones.cs" />
     <Compile Include="Infraestructure\Cupones\ServicioCupones.cs" />

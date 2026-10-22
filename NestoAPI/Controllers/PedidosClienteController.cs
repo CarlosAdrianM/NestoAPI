@@ -2,6 +2,7 @@
 using NestoAPI.Infraestructure.ChequesRegalo;
 using NestoAPI.Infraestructure.Clientes;
 using NestoAPI.Infraestructure.Contabilidad;
+using NestoAPI.Infraestructure.Cupones;
 using NestoAPI.Infraestructure.CorreosPostCompra;
 using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Infraestructure.Pagos;
@@ -151,6 +152,11 @@ namespace NestoAPI.Controllers
             {
                 throw preparado.ChequeRegalo.Error;
             }
+            // NestoAPI#614 (TNV#82): un cupón que no se puede usar, tampoco (400 con su código CUPON_* y, en el mínimo, lo que falta)
+            if (preparado.Cupon?.Error != null)
+            {
+                throw preparado.Cupon.Error;
+            }
 
             // NestoAPI#178/#181: el pedido lo hace el CLIENTE con su tarjeta guardada, así que es
             // un CIT sobre credencial en fichero y hay que autenticarlo. Se crea el pedido y el
@@ -234,6 +240,12 @@ namespace NestoAPI.Controllers
                 // pedido lo ha cogido a la vez, aquí llega CHEQUE_REGALO_YA_USADO
                 return await NoSeHaCreadoPorElCheque(cobroCarrito, ex).ConfigureAwait(false);
             }
+            catch (NestoBusinessException ex) when (CarritoCupones.EsErrorDelCupon(ex))
+            {
+                // NestoAPI#614 (TNV#82): PostPedidoVenta vuelve a comprobar el cupón al guardar (y lo marca Usado): si otro pedido
+                // lo ha cogido a la vez, CUPON_YA_USADO. Sale con su código; si estaba cobrado, el dinero vuelve.
+                return await NoSeHaCreadoPorElCupon(cobroCarrito, ex).ConfigureAwait(false);
+            }
             catch (NestoBusinessException ex)
             {
                 return await NoSeHaCreado(cobroCarrito, ex.Message).ConfigureAwait(false);
@@ -257,6 +269,12 @@ namespace NestoAPI.Controllers
             if (preparado.ChequeRegalo?.Aplicado == true)
             {
                 respuesta.Avisos.Add(CarritoChequesRegalo.MensajeAplicado(preparado.ChequeRegalo.Importe));
+            }
+            // NestoAPI#614 (TNV#82): el cupón, ya Usado en este pedido
+            if (preparado.Cupon?.Aplicado == true)
+            {
+                respuesta.Cupon = preparado.Cupon.ParaElCarrito();
+                respuesta.Avisos.Add(CarritoCupones.MensajeAplicado(preparado.Cupon.Importe));
             }
 
             if (sinPrecios)
@@ -335,6 +353,27 @@ namespace NestoAPI.Controllers
             throw new NestoBusinessException(paraLaClienta.Message + (devuelto
                 ? " No te hemos cobrado nada: el pago se ha devuelto."
                 : " El pago se te devolverá; si en unos días no lo ves, llámanos."), ex.Context, ex);
+        }
+
+        /// <summary>NestoAPI#614 (TNV#82): como el cheque: el error sale con su código CUPON_* y, si se había cobrado, el dinero vuelve.</summary>
+        private async Task<IHttpActionResult> NoSeHaCreadoPorElCupon(ReservaCobroCarrito cobroCarrito, NestoBusinessException ex)
+        {
+            if (cobroCarrito == null)
+            {
+                throw ex;
+            }
+            bool devuelto = await DevolverCobroDelCarrito(cobroCarrito, "el pedido no se ha podido crear (cupón)").ConfigureAwait(false);
+            throw new NestoBusinessException(ex.Message + (devuelto
+                ? " No le hemos cobrado nada: el pago se ha devuelto."
+                : " El pago se le devolverá; si en unos días no lo ve, llámenos."), ex.Context, ex);
+        }
+
+        /// <summary>NestoAPI#614 (TNV#82): el uso del cupón, el MISMO servicio que POST/PUT de api/PedidosVenta. Sustituible en tests.</summary>
+        private IServicioCanjeCupones servicioCupones;
+        internal IServicioCanjeCupones ServicioCupones
+        {
+            get => servicioCupones ?? (servicioCupones = new ServicioCanjeCupones(new RepositorioCupones(db)));
+            set => servicioCupones = value;
         }
 
         /// <summary>
@@ -434,7 +473,9 @@ namespace NestoAPI.Controllers
                 // El principal viaja en el RequestContext: el pedido lo crea el cliente del JWT.
                 RequestContext = RequestContext,
                 // NestoAPI#593 (TNV): el mismo canje que ha preparado el carrito
-                ServicioCanje = ServicioCanje
+                ServicioCanje = ServicioCanje,
+                // NestoAPI#614 (TNV#82): el mismo uso del cupón que ha preparado el carrito
+                ServicioCupones = ServicioCupones
             };
             if (Request != null)
             {
@@ -531,6 +572,11 @@ namespace NestoAPI.Controllers
             {
                 CarritoChequesRegalo.QuitarLineasCheque(preparado.Pedido);
             }
+            // NestoAPI#614 (TNV#82): igual con el cupón: sin él, y se dice por qué (con lo que falta para el mínimo)
+            if (preparado.Cupon?.Error != null)
+            {
+                new CarritoCupones(ServicioCupones).QuitarLineasCupon(preparado.Pedido);
+            }
 
             // TNV#68: el total va aquí porque es el número que el carrito le enseña al cliente, y
             // tiene que ser el mismo que se le va a cobrar. La app lo calculaba por su cuenta
@@ -553,6 +599,7 @@ namespace NestoAPI.Controllers
                 // TNV#70: con la tienda elegida, el mismo cálculo dice ya qué no está allí
                 ProductosSinStockEnTienda = LoQueNoHayEnLaTienda(preparado.Pedido, preparado.Tienda),
                 ChequeRegalo = preparado.ChequeRegalo?.ParaElCarrito(),
+                Cupon = preparado.Cupon?.ParaElCarrito(),
                 DescuentoProntoPago = prontoPago.Descuento,
                 ImporteProntoPago = prontoPago.BaseImponible,
                 ImporteProntoPagoConIva = prontoPago.ConIva
@@ -583,6 +630,10 @@ namespace NestoAPI.Controllers
             if (preparado.ChequeRegalo?.Error != null)
             {
                 CarritoChequesRegalo.QuitarLineasCheque(preparado.Pedido); // como en los portes: sin el cheque
+            }
+            if (preparado.Cupon?.Error != null)
+            {
+                new CarritoCupones(ServicioCupones).QuitarLineasCupon(preparado.Pedido); // NestoAPI#614: sin el cupón
             }
 
             PedidoVentaDTO pedido = preparado.Pedido;
@@ -927,6 +978,11 @@ namespace NestoAPI.Controllers
             {
                 throw preparado.ChequeRegalo.Error;
             }
+            // NestoAPI#614 (TNV#82): ni con un cupón que no se puede usar
+            if (preparado.Cupon?.Error != null)
+            {
+                throw preparado.Cupon.Error;
+            }
 
             if (!PoliticaPagoCanal.SeCobraEnElMomento(preparado.FormaPago, preparado.PlazosPago))
             {
@@ -1255,6 +1311,9 @@ namespace NestoAPI.Controllers
 
             /// <summary>NestoAPI#593 (TNV): el cheque regalo del carrito (normalizado y comprobado). Nunca null.</summary>
             public ResultadoChequeCarrito ChequeRegalo { get; set; } = new ResultadoChequeCarrito();
+
+            /// <summary>NestoAPI#614 (TNV#82): el cupón del carrito (normalizado y comprobado). Nunca null.</summary>
+            public ResultadoCuponCarrito Cupon { get; set; } = new ResultadoCuponCarrito();
         }
 
         /// <param name="proveedorCobro">NestoAPI#663: el proveedor del cobro del carrito, si lo hay. Con Aplázame la forma y
@@ -1424,10 +1483,24 @@ namespace NestoAPI.Controllers
             ResultadoChequeCarrito cheque = await new CarritoChequesRegalo(ServicioCanje)
                 .Preparar(pedido, productosCheque).ConfigureAwait(false);
 
+            // NestoAPI#614 (TNV#82): el cupón de la cabecera, como línea con su código, normalizada y comprobada con las reglas de
+            // POST api/PedidosVenta (que las vuelve a mirar al crear el pedido y lo marca Usado). Así el total del carrito, y lo
+            // que se cobra por adelantado, ya lo llevan descontado.
+            ResultadoCuponCarrito cupon = new ResultadoCuponCarrito();
+            if (!string.IsNullOrWhiteSpace(peticion.CodigoCupon))
+            {
+                if (pedido.ParametrosIva == null || !pedido.ParametrosIva.Any())
+                {
+                    pedido.ParametrosIva = await LeerParametrosIva(pedido.empresa, pedido.iva).ConfigureAwait(false);
+                }
+                cupon = await new CarritoCupones(ServicioCupones).Preparar(pedido, peticion.CodigoCupon, RellenarPorcentajesIva).ConfigureAwait(false);
+            }
+
             return new PedidoPreparado
             {
                 Pedido = pedido,
                 ChequeRegalo = cheque,
+                Cupon = cupon,
                 FormaPago = formaPago,
                 PlazosPago = plazosPago,
                 CodigoPostal = fichaCliente.codigoPostal?.Trim() ?? string.Empty,

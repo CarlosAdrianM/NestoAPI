@@ -92,6 +92,13 @@ namespace NestoAPI.Models.PedidosVenta
         /// <para>Si recoge, la dirección de entrega sobra: <see cref="Contacto"/> se ignora.</para>
         /// </summary>
         public string TiendaRecogida { get; set; }
+
+        /// <summary>
+        /// NestoAPI#614 (TNV#82): el cupón que quiere usar (uno por pedido; EV-2610-7K3Q). Va también en los portes y los
+        /// Ganavisiones para que el total lo lleve. La línea la pone el servidor; si no se puede usar, los portes y los
+        /// Ganavisiones se calculan sin él y dicen por qué, y el pedido no se crea (400 con el código CUPON_*).
+        /// </summary>
+        public string CodigoCupon { get; set; }
     }
 
     /// <summary>
@@ -279,6 +286,9 @@ namespace NestoAPI.Models.PedidosVenta
         /// Un pedido parado sin decir nada es peor que un error.
         /// </summary>
         public ICollection<string> Avisos { get; set; }
+
+        /// <summary>NestoAPI#614 (TNV#82): el cupón aplicado en el pedido, si la petición llevaba CodigoCupon. Null si no.</summary>
+        public Infraestructure.Cupones.CuponCarritoDTO Cupon { get; set; }
     }
 
     /// <summary>
@@ -335,6 +345,13 @@ namespace NestoAPI.Models.PedidosVenta
         /// dicen por qué (<c>Falta</c> con el mínimo no superado). Null si no lleva cheque.
         /// </summary>
         public Infraestructure.ChequesRegalo.ChequeRegaloCarritoDTO ChequeRegalo { get; set; }
+
+        /// <summary>
+        /// NestoAPI#614 (TNV#82): el cupón del carrito, si la petición lleva <see cref="PedidoClienteRequest.CodigoCupon"/>. Con
+        /// <c>Aplicado</c>, el total ya lo lleva descontado; si no, el carrito está calculado SIN el cupón y <c>ErrorCode</c> /
+        /// <c>Mensaje</c> dicen por qué (<c>Falta</c> con el mínimo no superado). Null si no lleva cupón.
+        /// </summary>
+        public Infraestructure.Cupones.CuponCarritoDTO Cupon { get; set; }
 
         /// <summary>
         /// NestoAPI#593 (TNV): el pronto pago de los plazos con los que se crearía el pedido, en tanto por uno (0,03 =
