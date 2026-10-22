@@ -31,5 +31,12 @@ namespace NestoAPI.Models
         public System.DateTime FechaCreacion { get; set; }
         public string Usuario { get; set; }
         public System.DateTime FechaModificacion { get; set; }
+        public string Modalidad { get; set; }
+        public string AsistenciaRespuesta { get; set; }
+        public Nullable<System.DateTime> AsistenciaFecha { get; set; }
+        public string AsistenciaUsuario { get; set; }
+        public string AsistenciaOrigen { get; set; }
+        public Nullable<System.DateTime> RecordatorioEnviado { get; set; }
+        public Nullable<System.Guid> ClaveAsistencia { get; set; }
     }
 }

@@ -27,5 +27,9 @@ namespace NestoAPI.Models
         public string Lugar { get; set; }
         public string Descripcion { get; set; }
         public Nullable<System.DateTime> FechaListaAsistencia { get; set; }
+        public Nullable<System.TimeSpan> HoraInicio { get; set; }
+        public Nullable<System.TimeSpan> HoraFin { get; set; }
+        public string Ponente { get; set; }
+        public decimal ImporteSenalNoReembolsable { get; set; }
     }
 }
