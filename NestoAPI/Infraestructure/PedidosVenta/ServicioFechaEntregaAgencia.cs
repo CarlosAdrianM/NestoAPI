@@ -76,6 +76,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         private readonly Func<DateTime, string, bool> esFestivo;
         private readonly Action<Exception> registrar;
         private readonly IAvisadorProveedorVencido avisadorProveedorVencido;
+        private readonly Action<string, IEnumerable<string>, string, IDictionary<string, CausaPromesaRiesgo>> anotarPedidoGrabado;
 
         public ServicioFechaEntregaAgencia(NVEntities db)
             : this(new RepositorioFechaEntregaAgencia(db), () => DateTime.Now, GestorFestivos.EsFestivo,
@@ -84,8 +85,10 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         }
 
         internal ServicioFechaEntregaAgencia(IRepositorioFechaEntregaAgencia repositorio, Func<DateTime> reloj,
-            Func<DateTime, string, bool> esFestivo, Action<Exception> registrar, IAvisadorProveedorVencido avisadorProveedorVencido = null)
+            Func<DateTime, string, bool> esFestivo, Action<Exception> registrar, IAvisadorProveedorVencido avisadorProveedorVencido = null,
+            Action<string, IEnumerable<string>, string, IDictionary<string, CausaPromesaRiesgo>> anotarPedidoGrabado = null)
         {
+            this.anotarPedidoGrabado = anotarPedidoGrabado ?? EventosPromesaRiesgo.Anotar;
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
             this.reloj = reloj ?? (() => DateTime.Now);
             this.esFestivo = esFestivo ?? GestorFestivos.EsFestivo;
@@ -95,18 +98,23 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
         public async Task<FechaEntregaAgenciaDTO> CalcularPedido(string empresa, int numero)
         {
+            return (await CalcularPedidoConLineas(empresa, numero).ConfigureAwait(false)).dto;
+        }
+
+        private async Task<(FechaEntregaAgenciaDTO dto, PedidoFechaEntregaAgencia pedido)> CalcularPedidoConLineas(string empresa, int numero)
+        {
             string empresaLimpia = Empresa(empresa);
             PedidoFechaEntregaAgencia pedido = await repositorio.LeerPedido(empresaLimpia, numero).ConfigureAwait(false);
             if (pedido == null)
             {
-                return null;
+                return (null, null);
             }
             FechaEntregaAgenciaDTO dto = await Calcular(empresaLimpia, numero, pedido.Ruta,
                 Constantes.Pedidos.ModosServicio.Efectivo(pedido.ModoServicio, pedido.ServirJunto),
                 Constantes.Pedidos.ModosFacturacion.Efectivo(pedido.ModoFacturacion, pedido.MantenerJunto),
                 pedido.DiasEnServir, pedido.TieneLineasServidas, pedido.Lineas, $"el pedido {numero}").ConfigureAwait(false);
             dto.FechaPrometida = await repositorio.LeerPrometida(empresaLimpia, numero).ConfigureAwait(false);
-            return dto;
+            return (dto, pedido);
         }
 
         public async Task<FechaEntregaAgenciaDTO> CalcularPlantilla(PedidoVentaDTO pedido)
@@ -160,7 +168,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         {
             try
             {
-                return await CalcularPedido(empresa, numero).ConfigureAwait(false);
+                (FechaEntregaAgenciaDTO dto, PedidoFechaEntregaAgencia pedido) = await CalcularPedidoConLineas(empresa, numero).ConfigureAwait(false);
+                AnotarPedidoGrabado(empresa, numero, pedido);
+                return dto;
             }
             catch (Exception ex)
             {
@@ -179,7 +189,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             FechaEntregaAgenciaDTO dto;
             try
             {
-                dto = await CalcularPedido(empresa, numero).ConfigureAwait(false);
+                PedidoFechaEntregaAgencia pedido;
+                (dto, pedido) = await CalcularPedidoConLineas(empresa, numero).ConfigureAwait(false);
+                AnotarPedidoGrabado(empresa, numero, pedido);
             }
             catch (Exception ex)
             {
@@ -203,6 +215,33 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             {
                 Registrar($"no se ha podido guardar la fecha de entrega a la agencia prometida del pedido {numero}", ex);
                 return (dto, true);
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#693: un pedido grabado (creado o modificado; todos los caminos pasan por aquí: Nesto, NestoApp, la tienda y
+        /// UnirPedidos) cambia lo pendiente de sus productos: se recalculan los pedidos con promesa que los llevan, él incluido.
+        /// Con el interruptor apagado no hace nada; nunca lanza.
+        /// </summary>
+        private void AnotarPedidoGrabado(string empresa, int numero, PedidoFechaEntregaAgencia pedido)
+        {
+            try
+            {
+                List<string> productos = (pedido?.Lineas ?? new List<LineaPedidoFechaEntregaAgencia>())
+                    .Where(l => l != null && l.Cantidad > 0 && !string.IsNullOrWhiteSpace(l.Producto))
+                    .Select(l => l.Producto.Trim())
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                if (!productos.Any())
+                {
+                    return;
+                }
+                anotarPedidoGrabado(Empresa(empresa), productos, $"pedido {numero} grabado",
+                    productos.ToDictionary(p => p, p => new CausaPromesaRiesgo { PedidoOrigen = numero }, StringComparer.OrdinalIgnoreCase));
+            }
+            catch
+            {
+                // Ni el aviso puede romper la creación del pedido ni su correo.
             }
         }
 

@@ -1,4 +1,5 @@
-﻿using System;
+﻿using NestoAPI.Infraestructure.PedidosVenta;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Entity;
@@ -442,6 +443,8 @@ namespace NestoAPI.Controllers
             }
 
             CabPedidoCmp cabPedidoCmp = db.CabPedidosCmp.Include(c => c.LinPedidoCmps).Single(c => c.Empresa == pedido.Empresa && c.Número == pedido.Id);
+            // NestoAPI#693: cómo estaban las líneas, para saber si el cambio retrasa pedidos de venta que contaban con ellas
+            List<LineaCompraPromesaRiesgo> lineasAntes = cabPedidoCmp.LinPedidoCmps.Select(LineaCompraPromesaRiesgo.De).ToList();
 
             if (string.IsNullOrEmpty(cabPedidoCmp.PathPedido) && !string.IsNullOrEmpty(pedido.PathPedido))
             {
@@ -469,6 +472,15 @@ namespace NestoAPI.Controllers
                 {
                     throw;
                 }
+            }
+
+            // NestoAPI#693: si retrasa la fecha, baja la cantidad o quita líneas, se recalculan los pedidos de venta afectados
+            // (en un job, un minuto después). Con el interruptor apagado no hace nada; nunca lanza.
+            Dictionary<string, CausaPromesaRiesgo> empeoran = CambiosCompraPromesaRiesgo.QueEmpeora(cabPedidoCmp.Número, lineasAntes,
+                cabPedidoCmp.LinPedidoCmps.Select(LineaCompraPromesaRiesgo.De));
+            if (empeoran.Any())
+            {
+                EventosPromesaRiesgo.Anotar(cabPedidoCmp.Empresa, empeoran.Keys, $"pedido a proveedor {cabPedidoCmp.Número} modificado", empeoran);
             }
 
             return StatusCode(HttpStatusCode.NoContent);

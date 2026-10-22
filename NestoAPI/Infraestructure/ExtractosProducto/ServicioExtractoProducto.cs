@@ -90,6 +90,10 @@ namespace NestoAPI.Infraestructure.ExtractosProducto
                 }
             }
 
+            // NestoAPI#693: los productos que se van a mover (antes de contabilizar: después el diario queda vacío), para
+            // recalcular las fechas prometidas de los pedidos que los llevan. Solo con el interruptor encendido.
+            List<string> productosMovidos = await ProductosDelDiarioSiHaceFalta(db, empresa, diario).ConfigureAwait(false);
+
             var empresaParametro = new SqlParameter("@Empresa", SqlDbType.Char, 3) { Value = empresa };
             var diarioParametro = new SqlParameter("@Diario", SqlDbType.Char, 10) { Value = diario };
             var resultadoParametro = new SqlParameter { ParameterName = "@Resultado", SqlDbType = SqlDbType.Int, Direction = ParameterDirection.Output };
@@ -103,11 +107,39 @@ namespace NestoAPI.Infraestructure.ExtractosProducto
                 };
                 _ = await db.Database.ExecuteSqlCommandAsync("EXEC @Resultado = prdExtrProducto @Empresa, @Diario, @Usuario",
                     resultadoParametro, empresaParametro, diarioParametro, usuarioParametro).ConfigureAwait(false);
-                return resultadoParametro.Value is int resultado ? resultado : 0;
+                int resultadoContabilizar = resultadoParametro.Value is int resultado ? resultado : 0;
+                if (productosMovidos != null && productosMovidos.Any())
+                {
+                    // NestoAPI#693: nunca lanza; el recálculo va en un job un minuto después (la transacción ya confirmada).
+                    Infraestructure.PedidosVenta.EventosPromesaRiesgo.Anotar(empresa, productosMovidos, $"movimiento de stock (diario {diario?.Trim()})");
+                }
+                return resultadoContabilizar;
             }
             catch (SqlException ex)
             {
                 throw new Exception(MensajeDeError(ex.Errors.Cast<SqlError>().Select(e => new KeyValuePair<int, string>(e.Number, e.Message))), ex);
+            }
+        }
+
+        /// <summary>NestoAPI#693: los productos del diario, solo si el aviso de promesas en riesgo está encendido. Nunca lanza.</summary>
+        private static async Task<List<string>> ProductosDelDiarioSiHaceFalta(NVEntities db, string empresa, string diario)
+        {
+            if (!Infraestructure.PedidosVenta.EventosPromesaRiesgo.Encendido)
+            {
+                return null;
+            }
+            try
+            {
+                return await db.PreExtrProductos
+                    .Where(p => p.Empresa == empresa && p.Diario == diario)
+                    .Select(p => p.Número)
+                    .Distinct()
+                    .ToListAsync()
+                    .ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                return null; // el aviso es un extra: la contabilización sigue
             }
         }
 

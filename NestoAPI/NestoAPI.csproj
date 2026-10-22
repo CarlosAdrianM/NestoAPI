@@ -609,6 +609,7 @@
     <Compile Include="Controllers\PedidosVentaController.cs" />
     <Compile Include="Controllers\PedidosVentaTransferenciaController.cs" />
     <Compile Include="Controllers\PedidosVentaSolicitudesController.cs" />
+    <Compile Include="Controllers\PedidosVentaPromesaRiesgoController.cs" />
     <Compile Include="Controllers\TarjetasController.cs" />
     <Compile Include="Controllers\PedidosClienteController.cs" />
     <Compile Include="Controllers\PersonasContactoClienteController.cs" />
@@ -943,6 +944,15 @@
     <Compile Include="Infraestructure\PedidosVenta\MantenerJuntoContado.cs" />
     <Compile Include="Infraestructure\PedidosVenta\OpcionesModosPedido.cs" />
     <Compile Include="Infraestructure\PedidosVenta\RepositorioServirPendienteAlHaberStock.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\PromesaRiesgo\AvisadorPromesaRiesgo.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\PromesaRiesgo\CambiosCompraPromesaRiesgo.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\PromesaRiesgo\EvaluadorPromesaRiesgo.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\PromesaRiesgo\EventosPromesaRiesgo.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\PromesaRiesgo\PromesaRiesgo.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\PromesaRiesgo\PromesaRiesgoJobsService.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\PromesaRiesgo\RepositorioPromesaRiesgo.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\PromesaRiesgo\ServicioPromesaRiesgo.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\PromesaRiesgo\TextosPromesaRiesgo.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ValidadorModoServicio.cs" />
     <Compile Include="Infraestructure\Exceptions\ModoServicioNoPermitidoException.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ComercialesPedido.cs" />
@@ -1766,6 +1776,7 @@
     <Compile Include="Models\PedidosVenta\CambiarClientePedidoDTO.cs" />
     <Compile Include="Models\PedidosVenta\EfectoPedidoVentaDTO.cs" />
     <Compile Include="Models\PedidosVenta\FechaEntregaAgenciaDTO.cs" />
+    <Compile Include="Models\PedidosVenta\PedidoPromesaRiesgoDTO.cs" />
     <Compile Include="Models\PedidosVenta\ResumenPedidoVentaCanalExternoDTO.cs" />
     <Compile Include="Models\CanalesExternos\AmazonSpApiCredencial.cs" />
     <Compile Include="Models\CanalesExternos\AmazonFacturaSubida.cs" />
