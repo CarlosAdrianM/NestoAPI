@@ -12,6 +12,7 @@
       1) Scripts sa ANTES de publicar la API (TODOS YA LANZADOS el 22/10): Issue532_RecordatorioReposicionActivo,
          Issue532_BajasPorTipo, Issue690_EventosHorarioModalidadAsistencia, Issue614_CuponesPrestashop,
          Issue615_PropuestasSenalesEventos, Issue691_CursosPlantilla, Issue692_AnunciarEventos, Issue693_PedidosPromesaRiesgo.
+         FALTA: Issue691_CursosUnPedido (columna EventosInscripcionesCurso.LineaPedido; sin él no se crean pedidos de cursos).
       2) Publicar NestoAPI.
       3) Publicar la ClickOnce (Clean + Rebuild) → 1.10.47.0.
       4) DESPUÉS: ESTE script.
