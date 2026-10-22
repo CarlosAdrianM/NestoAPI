@@ -217,7 +217,7 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
         /// ¿Suma para el mínimo del pedido que canjea? Solo líneas de producto (no cuentas contables: portes, reembolso,
         /// cuotas, reparaciones; ni texto ni inmovilizado), que no sean ficticias (el propio cheque tampoco), cuyo nombre
         /// no empiece por uno de los prefijos de la campaña («PACK 26») y cuyo grupo no esté excluido («PEL»). Los
-        /// excluidos pueden ir en el pedido y llevarse el descuento: solo no suman. Cursos sí suman.
+        /// excluidos pueden ir en el pedido y llevarse el descuento: solo no suman. Los cursos no suman: son ficticios.
         /// </summary>
         public static bool ComputaParaMinimo(byte? tipoLinea, ProductoParaChequeRegalo producto, CampanaCanjeChequeRegalo campana)
         {
