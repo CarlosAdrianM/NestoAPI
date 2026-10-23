@@ -42,23 +42,28 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         }
 
         /// <summary>
-        /// Qué productos fallan y por qué, una frase por producto: «42485 Parches (3 uds.): Reina mandó 1 de 3 en la reposición
-        /// 81094; 2 en Reina: llegan con la reposición y pueden salir el viernes 23/10/2026.». Si ninguna partida falla por sí
-        /// sola (el cliente cierra ese día, «Tras reponer de tiendas» espera a todo…), el motivo del motor.
+        /// El porqué, corto y solo con la causa real (Carlos, 23/10/26: «si salen todos los productos, no me aclaro»). En
+        /// «Todo junto» todas las partidas salen el día del pedido entero y, con la prometida ya pasada, hasta lo que está en
+        /// Algete «sale después»: listarlas todas escondía al culpable. Culpable es solo lo que NO está listo en Algete (tienda,
+        /// de camino, proveedor, sin stock, kit) y sale después de la prometida, una frase por producto: «Por qué: 43710 BRILLO
+        /// (1 ud.): no está en Algete: viene de camino desde una tienda y puede salir el lunes 26/10/2026. El resto está listo en
+        /// Algete, pero el pedido es «Todo junto» y espera a todo.». Sin culpables, la causa es del pedido: su fecha de entrega,
+        /// o que no salió el día prometido teniéndolo todo; si no, el motivo del motor.
         /// </summary>
         /// <param name="necesidades">Producto → unidades pendientes en el pedido (para «1 de 3»).</param>
         /// <param name="nombres">Producto → descripción (opcional).</param>
+        /// <param name="hoy">Hoy (para «no salió el jueves»). Null: no se dice.</param>
         public static string Motivo(int pedido, DateTime prometida, FechaEntregaAgenciaDTO calculo, IDictionary<string, CausaPromesaRiesgo> causas,
-            IDictionary<string, int> necesidades, IDictionary<string, string> nombres)
+            IDictionary<string, int> necesidades, IDictionary<string, string> nombres, DateTime? hoy = null)
         {
-            List<PartidaFechaEntregaAgenciaDTO> fallan = PartidasQueFallan(prometida, calculo);
-            if (!fallan.Any())
+            List<PartidaFechaEntregaAgenciaDTO> culpables = PartidasQueFallan(prometida, calculo).Where(p => !EstaListaEnAlgete(p)).ToList();
+            string motor = calculo?.Motivo?.Trim();
+            if (!culpables.Any())
             {
-                string motivo = calculo?.Motivo?.Trim();
-                return string.IsNullOrEmpty(motivo) ? "El cálculo de la fecha de entrega a la agencia ya no llega a la prometida." : motivo;
+                return "Por qué: " + CausaDelPedido(prometida, hoy, motor);
             }
             var frases = new List<string>();
-            foreach (IGrouping<string, PartidaFechaEntregaAgenciaDTO> producto in fallan.GroupBy(p => p.Producto?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase))
+            foreach (IGrouping<string, PartidaFechaEntregaAgenciaDTO> producto in culpables.GroupBy(p => p.Producto?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase))
             {
                 int necesita = necesidades != null && necesidades.TryGetValue(producto.Key, out int n) ? n : producto.Sum(p => p.Unidades);
                 string nombre = nombres != null && nombres.TryGetValue(producto.Key, out string descripcion) && !string.IsNullOrWhiteSpace(descripcion)
@@ -73,10 +78,86 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         partes.Add(texto);
                     }
                 }
-                partes.AddRange(producto.Select(FrasePartida));
+                partes.AddRange(producto.Select(FraseCulpable));
                 frases.Add($"{nombre} ({Unidades(necesita)}): {string.Join("; ", partes)}.");
             }
-            return string.Join(" ", frases);
+            string motivo = "Por qué: " + string.Join(" ", frases);
+            bool hayListo = (calculo?.Desglose ?? new List<PartidaFechaEntregaAgenciaDTO>()).Any(p => p != null && EstaListaEnAlgete(p));
+            if (hayListo)
+            {
+                motivo += EsTodoJunto(motor)
+                    ? " El resto está listo en Algete, pero el pedido es «Todo junto» y espera a todo."
+                    : " El resto está listo en Algete.";
+            }
+            return motivo;
+        }
+
+        private static bool EstaListaEnAlgete(PartidaFechaEntregaAgenciaDTO p)
+            => p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_ALGETE || p.Origen == PartidaFechaEntregaAgenciaDTO.ORIGEN_PICKING;
+
+        private static bool EsTodoJunto(string motor)
+            => motor != null && motor.Contains("«" + Constantes.Pedidos.ModosServicio.Nombre(Constantes.Pedidos.ModosServicio.TODO_JUNTO) + "»");
+
+        /// <summary>Sin culpables entre los productos: su fecha de entrega, que no salió el día prometido o, si no, el motor.</summary>
+        private static string CausaDelPedido(DateTime prometida, DateTime? hoy, string motor)
+        {
+            // La frase del motor de #606: «Tiene fecha de entrega el lunes 26/10: no entra en el picking hasta ese día.»
+            string fechaEntrega = FraseDelMotor(motor, "Tiene fecha de entrega");
+            if (fechaEntrega != null)
+            {
+                return "el pedido " + char.ToLower(fechaEntrega[0], castellano) + fechaEntrega.Substring(1);
+            }
+            if (hoy.HasValue && prometida.Date < hoy.Value.Date)
+            {
+                return $"todo está listo en Algete, pero no salió el {Fecha(prometida)}.";
+            }
+            return string.IsNullOrEmpty(motor) ? "el cálculo de la fecha de entrega a la agencia ya no llega a la prometida." : motor;
+        }
+
+        /// <summary>La frase del motivo del motor que empieza por <paramref name="inicio"/>, con su punto. Null si no está.</summary>
+        internal static string FraseDelMotor(string motor, string inicio)
+        {
+            int i = motor?.IndexOf(inicio, StringComparison.Ordinal) ?? -1;
+            if (i < 0)
+            {
+                return null;
+            }
+            int fin = motor.IndexOf(". ", i, StringComparison.Ordinal);
+            return fin < 0 ? motor.Substring(i).Trim() : motor.Substring(i, fin - i + 1).Trim();
+        }
+
+        /// <summary>Por qué no está a tiempo una partida que no está lista en Algete, en palabras del almacén.</summary>
+        internal static string FraseCulpable(PartidaFechaEntregaAgenciaDTO p)
+        {
+            bool varias = p.Unidades != 1;
+            string n = varias ? "n" : string.Empty;
+            string sale = p.PuedeSalirEl.HasValue ? $"puede{n} salir el {Fecha(p.PuedeSalirEl)}" : "sin fecha";
+            switch (p.Origen)
+            {
+                case PartidaFechaEntregaAgenciaDTO.ORIGEN_TIENDA:
+                    string tienda = CalculadoraFechaEntregaAgencia.NombreAlmacen(p.Tienda?.Trim());
+                    return p.PuedeSalirEl.HasValue
+                        ? $"no está en Algete: tiene{n} que venir de {tienda} en la reposición y {sale}"
+                        : $"no está en Algete: está en {tienda} y no hay fecha de reposición ({p.MotivoSinFecha?.Trim() ?? "sin calendario de reposición"})";
+                case PartidaFechaEntregaAgenciaDTO.ORIGEN_EN_CAMINO:
+                    return $"no está en Algete: viene{n} de camino desde una tienda y {sale}";
+                case PartidaFechaEntregaAgenciaDTO.ORIGEN_PROVEEDOR:
+                    string pedidoProveedor = p.PedidoProveedor.HasValue ? $"el pedido al proveedor {p.PedidoProveedor.Value}" : "un pedido al proveedor";
+                    if (p.LlegadaSupuesta.HasValue)
+                    {
+                        string debia = p.FechaPrevistaProveedor.HasValue ? $" el {Fecha(p.FechaPrevistaProveedor)}" : string.Empty;
+                        return $"no hay stock y {pedidoProveedor} tenía que haber llegado{debia} y no ha llegado";
+                    }
+                    return p.FechaPrevistaProveedor.HasValue
+                        ? $"no hay stock: llega{n} con {pedidoProveedor}, previsto el {Fecha(p.FechaPrevistaProveedor)}, y {sale}"
+                        : $"no hay stock y {pedidoProveedor} no tiene fecha prevista";
+                case PartidaFechaEntregaAgenciaDTO.ORIGEN_SIN_STOCK:
+                    return string.IsNullOrWhiteSpace(p.MotivoSinFecha) ? "no hay stock ni pedido al proveedor con fecha" : $"no hay stock: {p.MotivoSinFecha.Trim()}";
+                case PartidaFechaEntregaAgenciaDTO.ORIGEN_KIT:
+                    return $"hay que desmontar el kit {p.Kit?.Trim()} en Algete y {sale}";
+                default:
+                    return FrasePartida(p);
+            }
         }
 
         /// <summary>«Reina mandó 1 de 3 en la reposición 81094». Null si la causa no dice nada de este pedido.</summary>

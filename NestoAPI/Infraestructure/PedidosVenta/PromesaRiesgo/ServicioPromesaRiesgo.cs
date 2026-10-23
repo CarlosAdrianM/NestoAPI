@@ -235,7 +235,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 Registrar($"no se han podido leer los nombres de los productos del pedido {pedido}", ex);
                 nombres = new Dictionary<string, string>();
             }
-            return TextosPromesaRiesgo.Motivo(pedido, prometida, calculo, causas, necesidades, nombres);
+            return TextosPromesaRiesgo.Motivo(pedido, prometida, calculo, causas, necesidades, nombres, reloj().Date);
         }
 
         private void Registrar(string que, Exception ex)

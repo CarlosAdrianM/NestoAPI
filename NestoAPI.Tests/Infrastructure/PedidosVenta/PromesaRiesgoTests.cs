@@ -319,8 +319,117 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             string motivo = TextosPromesaRiesgo.Motivo(PEDIDO, PROMETIDA, RetrasoAlViernes(), causas,
                 new Dictionary<string, int> { ["42485"] = 3 }, new Dictionary<string, string> { ["42485"] = "PARCHES" });
 
-            StringAssert.StartsWith(motivo, "42485 PARCHES (3 uds.): Reina mandó 1 de 3 en la reposición 81094; 2 en Reina: llegan con la reposición y pueden salir el viernes 23/10/2026.");
+            Assert.AreEqual("Por qué: 42485 PARCHES (3 uds.): Reina mandó 1 de 3 en la reposición 81094; no está en Algete: tienen que venir de " +
+                "Reina en la reposición y pueden salir el viernes 23/10/2026.", motivo);
             Assert.IsFalse(motivo.Contains("de camino"), "lo que sí llega a tiempo no se nombra: " + motivo);
+        }
+
+        // Carlos (23/10/26), correo «[Sombra] 2 pedidos ya no llegan a la fecha prometida»: en «Todo junto» todas las líneas salen el
+        // día del pedido entero y, con la prometida pasada, hasta lo de Algete «sale después». Salían los 21 productos del 929104 y
+        // no se veía que el culpable era 1 ud. del 43710 que venía de camino.
+        private static PartidaFechaEntregaAgenciaDTO EnAlgete(string producto, DateTime sale) => new PartidaFechaEntregaAgenciaDTO
+        {
+            Origen = PartidaFechaEntregaAgenciaDTO.ORIGEN_ALGETE, Producto = producto, Unidades = 2, PuedeSalirEl = sale
+        };
+
+        [TestMethod]
+        public void Motivo_TodoJunto_SoloNombraAlCulpableYDiceQueElRestoEstaListo()
+        {
+            var lunes = new DateTime(2026, 10, 26);
+            var calculo = new FechaEntregaAgenciaDTO
+            {
+                FechaEntregaAgencia = lunes,
+                Motivo = "Sale entero a la agencia el lunes 26/10. Modo «Todo junto»: sale cuando esté todo. Lo que hay en Algete está listo.",
+                Desglose = new List<PartidaFechaEntregaAgenciaDTO>
+                {
+                    EnAlgete("17404", VIERNES), EnAlgete("32564", VIERNES),
+                    new PartidaFechaEntregaAgenciaDTO { Origen = PartidaFechaEntregaAgenciaDTO.ORIGEN_EN_CAMINO, Producto = "43710", Unidades = 1, PuedeSalirEl = lunes }
+                }
+            };
+
+            string motivo = TextosPromesaRiesgo.Motivo(929104, PROMETIDA, calculo, null, null, new Dictionary<string, string> { ["43710"] = "BRILLO" }, VIERNES);
+
+            Assert.AreEqual("Por qué: 43710 BRILLO (1 ud.): no está en Algete: viene de camino desde una tienda y puede salir el lunes 26/10/2026. " +
+                "El resto está listo en Algete, pero el pedido es «Todo junto» y espera a todo.", motivo);
+        }
+
+        [TestMethod]
+        public void Motivo_TodoEnAlgeteConFechaDeEntregaPosterior_LoDiceDelPedido()
+        {
+            var lunes = new DateTime(2026, 10, 26);
+            var calculo = new FechaEntregaAgenciaDTO
+            {
+                FechaEntregaAgencia = lunes,
+                Motivo = "Sale entero a la agencia el lunes 26/10. Modo «Todo junto»: sale cuando esté todo. Tiene fecha de entrega el lunes 26/10: " +
+                    "no entra en el picking hasta ese día. Lo que hay en Algete está listo.",
+                Desglose = new List<PartidaFechaEntregaAgenciaDTO> { EnAlgete("17404", lunes), EnAlgete("24868", lunes) }
+            };
+
+            string motivo = TextosPromesaRiesgo.Motivo(929073, PROMETIDA, calculo, null, null, null, VIERNES);
+
+            Assert.AreEqual("Por qué: el pedido tiene fecha de entrega el lunes 26/10: no entra en el picking hasta ese día.", motivo);
+        }
+
+        [TestMethod]
+        public void Motivo_TodoEnAlgeteYLaPrometidaYaPaso_DiceQueNoSalio()
+        {
+            var calculo = new FechaEntregaAgenciaDTO
+            {
+                FechaEntregaAgencia = VIERNES,
+                Motivo = "Sale entero a la agencia el viernes 23/10. Modo «Todo junto»: sale cuando esté todo. Lo que hay en Algete está listo.",
+                Desglose = new List<PartidaFechaEntregaAgenciaDTO> { EnAlgete("23474", VIERNES), EnAlgete("27593", VIERNES) }
+            };
+
+            string motivo = TextosPromesaRiesgo.Motivo(929077, PROMETIDA, calculo, null, null, null, VIERNES);
+
+            Assert.AreEqual("Por qué: todo está listo en Algete, pero no salió el jueves 22/10/2026.", motivo);
+        }
+
+        [TestMethod]
+        public void Motivo_Proveedor_SoloElQueFallaYLoQueLlegaATiempoNoSeNombra()
+        {
+            var martes = new DateTime(2026, 10, 27);
+            var calculo = new FechaEntregaAgenciaDTO
+            {
+                FechaEntregaAgencia = new DateTime(2026, 11, 9),
+                Motivo = "Sale entero a la agencia el lunes 09/11. Modo «Todo junto»: sale cuando esté todo.",
+                Desglose = new List<PartidaFechaEntregaAgenciaDTO>
+                {
+                    EnAlgete("35894", martes),
+                    new PartidaFechaEntregaAgenciaDTO { Origen = PartidaFechaEntregaAgenciaDTO.ORIGEN_TIENDA, Producto = "41260", Unidades = 1, Tienda = "REI", PuedeSalirEl = martes },
+                    new PartidaFechaEntregaAgenciaDTO
+                    {
+                        Origen = PartidaFechaEntregaAgenciaDTO.ORIGEN_PROVEEDOR, Producto = "42652", Unidades = 5, PedidoProveedor = 220672,
+                        FechaPrevistaProveedor = new DateTime(2026, 11, 6), PuedeSalirEl = new DateTime(2026, 11, 9)
+                    }
+                }
+            };
+
+            string motivo = TextosPromesaRiesgo.Motivo(928370, martes, calculo, null, null, null, VIERNES);
+
+            Assert.AreEqual("Por qué: 42652 (5 uds.): no hay stock: llegan con el pedido al proveedor 220672, previsto el viernes 06/11/2026, " +
+                "y pueden salir el lunes 09/11/2026. El resto está listo en Algete, pero el pedido es «Todo junto» y espera a todo.", motivo);
+        }
+
+        [TestMethod]
+        public void Motivo_ProveedorQueNoHaLlegado_LoDice()
+        {
+            var calculo = new FechaEntregaAgenciaDTO
+            {
+                FechaEntregaAgencia = null,
+                Desglose = new List<PartidaFechaEntregaAgenciaDTO>
+                {
+                    new PartidaFechaEntregaAgenciaDTO
+                    {
+                        Origen = PartidaFechaEntregaAgenciaDTO.ORIGEN_PROVEEDOR, Producto = "42652", Unidades = 1, PedidoProveedor = 220672,
+                        FechaPrevistaProveedor = new DateTime(2026, 10, 20), LlegadaSupuesta = new DateTime(2026, 10, 27)
+                    }
+                }
+            };
+
+            string motivo = TextosPromesaRiesgo.Motivo(928370, PROMETIDA, calculo, null, null, null, VIERNES);
+
+            Assert.AreEqual("Por qué: 42652 (1 ud.): no hay stock y el pedido al proveedor 220672 tenía que haber llegado el martes 20/10/2026 y no ha llegado.", motivo);
         }
 
         [TestMethod]
