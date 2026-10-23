@@ -766,6 +766,34 @@ namespace NestoAPI.Controllers
         /// portes...). Ver <see cref="GestorCambioClientePedido"/>. 400 con el motivo si no se puede.
         /// </summary>
         /// <summary>
+        /// Nesto#552: las líneas de producto pendientes de entregar (estado -1 o 1, sin presupuestos) de todos los
+        /// almacenes, con filtros opcionales de almacén, producto y vendedor del pedido. Solo lectura.
+        /// </summary>
+        [HttpGet]
+        [Route("api/PedidosVenta/PendientesEntregar")]
+        [ResponseType(typeof(List<Infraestructure.PedidosVenta.LineaPendienteEntregarDTO>))]
+        public async Task<IHttpActionResult> GetPendientesEntregar(string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO,
+            string almacen = null, string producto = null, string vendedor = null)
+        {
+            return Ok(await new Infraestructure.PedidosVenta.ServicioPendientesEntregar(db)
+                .Listar(empresa, almacen, producto, vendedor).ConfigureAwait(false));
+        }
+
+        /// <summary>Nesto#552: las mismas líneas que <see cref="GetPendientesEntregar"/> en Excel.</summary>
+        [HttpGet]
+        [Route("api/PedidosVenta/PendientesEntregar/Excel")]
+        public async Task<HttpResponseMessage> GetPendientesEntregarExcel(string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO,
+            string almacen = null, string producto = null, string vendedor = null)
+        {
+            List<Infraestructure.PedidosVenta.LineaPendienteEntregarDTO> lineas = await new Infraestructure.PedidosVenta.ServicioPendientesEntregar(db)
+                .Listar(empresa, almacen, producto, vendedor).ConfigureAwait(false);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new Infraestructure.PedidosVenta.GeneradorExcelPendientesEntregar().GenerarExcel(lineas, DateTime.Today)
+            };
+        }
+
+        /// <summary>
         /// NestoAPI#582: las notas de entrega de ese pedido que siguen sin fecha de entrega (la nota automática nace
         /// sin fecha para no colarse en el picking del día). Nesto lo pregunta tras hacer el albarán desde el detalle.
         /// </summary>
