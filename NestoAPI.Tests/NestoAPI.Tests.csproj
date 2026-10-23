@@ -668,6 +668,7 @@
     <Compile Include="Infrastructure\Reposiciones\ServicioCalendarioReposicionesTests.cs" />
     <Compile Include="Infrastructure\Reposiciones\ListadoReposicionTests.cs" />
     <Compile Include="Infrastructure\Reposiciones\DiferenciasReposicionTests.cs" />
+    <Compile Include="Infrastructure\Reposiciones\CodigosBarrasReposicionesTests.cs" />
     <Compile Include="Infrastructure\Reposiciones\FotosReposicionesTests.cs" />
     <Compile Include="Infrastructure\Reposiciones\ServicioReposicionAutomaticaTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\CorreoConfirmacionPedidoClienteTests.cs" />
