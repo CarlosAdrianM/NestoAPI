@@ -558,6 +558,7 @@
     <Compile Include="Infraestructure\PreparacionAlmacen\CierreReposiciones.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\OrigenesRecepcion.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\TransaccionRecepcionCompras.cs" />
+    <Compile Include="Infraestructure\PreparacionAlmacen\LecturasRecepcionEnCurso.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\RecepcionesAlmacen.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\SalidasAlmacen.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\CambioHuecoPicking.cs" />

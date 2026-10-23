@@ -63,6 +63,12 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         Task DevolverApartadas(string empresa, string diario, IReadOnlyCollection<int> apartadas);
         Task RegistrarEvidencia(string empresa, IEnumerable<EvidenciaRecepcion> filas);
         /// <summary>
+        /// Ariadna#51 (corte 2): lo leído en curso con ese IdRecepcion pasa a Terminada, en esta transacción; con
+        /// <paramref name="abrirOtra"/> (recibida en parte) se abre otro IdRecepcion para lo que queda. 0 si el IdRecepcion no era
+        /// el compartido o la tabla no existe.
+        /// </summary>
+        Task<int> TerminarLecturasEnCurso(ClaveRecepcionEnCurso clave, Guid idRecepcion, bool abrirOtra, string usuario, string dispositivo);
+        /// <summary>
         /// NestoAPI#577: la reposición ya ha entrado en el destino (cabecera ReposicionesTraspasos: quién y cuándo). Sin
         /// cabecera (de Nesto viejo), no hace nada.
         /// </summary>
@@ -362,6 +368,11 @@ WHERE p.Empresa = @p0 AND p.[Almacén] = @p1 AND p.Diario = @p2 AND p.[NºTraspa
         public Task<bool> YaRegistrada(string empresa, IEnumerable<Guid> idsEvidencia)
         {
             return EvidenciasRecepcionSql.YaRegistrada(db, idsEvidencia);
+        }
+
+        public Task<int> TerminarLecturasEnCurso(ClaveRecepcionEnCurso clave, Guid idRecepcion, bool abrirOtra, string usuario, string dispositivo)
+        {
+            return LecturasRecepcionEnCursoSql.Terminar(db, clave, idRecepcion, abrirOtra, usuario, dispositivo);
         }
 
         public Task<List<string>> ProductosRecibidosEnParte(string empresa, int traspaso)

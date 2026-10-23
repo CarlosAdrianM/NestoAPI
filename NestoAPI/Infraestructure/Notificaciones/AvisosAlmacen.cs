@@ -154,13 +154,21 @@ namespace NestoAPI.Infraestructure.Notificaciones
         /// <summary>El dispositivo que hace el POST (si no llega la conexión, se excluyen las de este dispositivo).</summary>
         public const string CABECERA_DISPOSITIVO = "X-Dispositivo";
 
-        private static readonly Regex FORMATO = new Regex(@"^(Recogida:(PICK|REPO):\d{1,9}|Packing:\d{1,9})$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        private static readonly Regex FORMATO = new Regex(@"^(Recogida:(PICK|REPO):\d{1,9}|Packing:\d{1,9}|recepcion:[A-Z]{4}:[A-Z0-9._-]{1,20}:[A-Z0-9]{1,3})$",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
         /// <summary>«Recogida:PICK:99633», «Recogida:REPO:80905».</summary>
         public static string GrupoRecogida(string tipo, int numero) => $"Recogida:{(tipo ?? string.Empty).Trim().ToUpperInvariant()}:{numero}";
 
         /// <summary>«Packing:99633»: todo el picking (la pantalla de packing enseña todas sus entregas).</summary>
         public static string GrupoPacking(int picking) => $"Packing:{picking}";
+
+        /// <summary>
+        /// Ariadna#51 (corte 2): «recepcion:REPO:81119:ALG», «recepcion:COMP:65:ALG». Lo leído de una recepción en curso, compartido
+        /// entre Nesto y Ariadna: quien apunta, quita, descarta o termina avisa a los demás equipos de esa recepción en ese almacén.
+        /// </summary>
+        public static string GrupoRecepcion(string tipo, string documento, string almacen) =>
+            $"recepcion:{(tipo ?? string.Empty).Trim().ToUpperInvariant()}:{(documento ?? string.Empty).Trim().ToUpperInvariant()}:{(almacen ?? string.Empty).Trim().ToUpperInvariant()}";
 
         /// <summary>El grupo bien escrito, o null si no es de los que hay.</summary>
         public static string Normalizar(string grupo)
@@ -171,6 +179,10 @@ namespace NestoAPI.Infraestructure.Notificaciones
                 return null;
             }
             string[] partes = limpio.Split(':');
+            if (partes.Length == 4)
+            {
+                return GrupoRecepcion(partes[1], partes[2], partes[3]);
+            }
             return partes.Length == 3 ? GrupoRecogida(partes[1], int.Parse(partes[2])) : GrupoPacking(int.Parse(partes[1]));
         }
     }

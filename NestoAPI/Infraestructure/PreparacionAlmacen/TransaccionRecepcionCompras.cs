@@ -79,6 +79,11 @@ UPDATE LinPedidoCmp SET [FechaRecepción] = @p2 WHERE Empresa = @p0 AND [NºOrde
             return EvidenciasRecepcionSql.YaRegistrada(db, idsEvidencia);
         }
 
+        public Task<int> TerminarLecturasEnCurso(ClaveRecepcionEnCurso clave, Guid idRecepcion, bool abrirOtra, string usuario, string dispositivo)
+        {
+            return LecturasRecepcionEnCursoSql.Terminar(db, clave, idRecepcion, abrirOtra, usuario, dispositivo);
+        }
+
         public Task<List<LineaCompraPendiente>> LeerLineasBloqueando(string empresa, string almacen, string proveedor)
         {
             return db.Database.SqlQuery<LineaCompraPendiente>(SQL_LINEAS_BLOQUEANDO, empresa, almacen, proveedor).ToListAsync();

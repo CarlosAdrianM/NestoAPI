@@ -144,5 +144,135 @@ namespace NestoAPI.Tests.Controllers
 
             Assert.IsInstanceOfType(resultado, typeof(NotFoundResult));
         }
+
+        // --- Ariadna#51 (corte 2): lo leído en curso, en el servidor ---
+
+        private (RecepcionesController Controller, NestoAPI.Infraestructure.PreparacionAlmacen.IServicioLecturasRecepcion Lecturas,
+            NestoAPI.Infraestructure.Notificaciones.IAvisosAlmacen Avisos) ConLecturas()
+        {
+            var lecturas = A.Fake<NestoAPI.Infraestructure.PreparacionAlmacen.IServicioLecturasRecepcion>();
+            var avisos = A.Fake<NestoAPI.Infraestructure.Notificaciones.IAvisosAlmacen>();
+            var conLecturas = new RecepcionesController(servicio, null, lecturas, avisos)
+            {
+                Request = new HttpRequestMessage(),
+                Configuration = new HttpConfiguration(),
+                User = Usuario("NUEVAVISION\\Paloma", "Tiendas")
+            };
+            return (conLecturas, lecturas, avisos);
+        }
+
+        [TestMethod]
+        public async Task Lecturas_SinTabla_404ConElMotivo()
+        {
+            var (conLecturas, lecturas, _) = ConLecturas();
+            A.CallTo(() => lecturas.Leer("REPO", "1", "ALC", "81119", A<IPrincipal>.Ignored, A<string>.Ignored))
+                .Returns(Task.FromResult<LecturasRecepcionEnCursoDTO>(null));
+
+            HttpResponseMessage respuesta = await (await conLecturas.GetLecturas("REPO", "81119", "alc")).ExecuteAsync(default);
+
+            Assert.AreEqual(HttpStatusCode.NotFound, respuesta.StatusCode);
+            StringAssert.Contains(await respuesta.Content.ReadAsStringAsync(), "Ariadna51_RecepcionesLecturasEnCurso.sql");
+        }
+
+        [TestMethod]
+        public async Task Lecturas_SinElServicio_404()
+        {
+            HttpResponseMessage get = await (await controller.GetLecturas("REPO", "81119", "ALC")).ExecuteAsync(default);
+            HttpResponseMessage post = await (await controller.PostLecturas("REPO", "81119", new List<LecturaRecepcionEnCursoDTO>(), "ALC")).ExecuteAsync(default);
+            HttpResponseMessage delete = await (await controller.DeleteLecturas("REPO", "81119", "ALC")).ExecuteAsync(default);
+
+            Assert.AreEqual(HttpStatusCode.NotFound, get.StatusCode);
+            Assert.AreEqual(HttpStatusCode.NotFound, post.StatusCode);
+            Assert.AreEqual(HttpStatusCode.NotFound, delete.StatusCode);
+        }
+
+        [TestMethod]
+        public async Task Lecturas_SinPermiso_403()
+        {
+            var (conLecturas, lecturas, avisos) = ConLecturas();
+            A.CallTo(() => lecturas.Anotar("REPO", "1", "REI", "81119", A<IEnumerable<LecturaRecepcionEnCursoDTO>>.Ignored, A<IPrincipal>.Ignored))
+                .Throws(new UnauthorizedAccessException("No tiene permiso para recibir reposiciones en REI."));
+
+            HttpResponseMessage respuesta = await (await conLecturas.PostLecturas("REPO", "81119",
+                new List<LecturaRecepcionEnCursoDTO> { new LecturaRecepcionEnCursoDTO { IdCliente = Guid.NewGuid(), Producto = "A", Cantidad = 1 } }, "REI"))
+                .ExecuteAsync(default);
+
+            Assert.AreEqual(HttpStatusCode.Forbidden, respuesta.StatusCode);
+            A.CallTo(() => avisos.HaCambiado(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Lecturas_Post_DevuelveLoSumadoYAvisaAlGrupoDeLaRecepcionMenosAlQueLoManda()
+        {
+            var (conLecturas, lecturas, avisos) = ConLecturas();
+            var sumado = new LecturasRecepcionEnCursoDTO { IdRecepcion = Guid.NewGuid() };
+            A.CallTo(() => lecturas.Anotar("REPO", "1", "ALC", "81119", A<IEnumerable<LecturaRecepcionEnCursoDTO>>.Ignored, A<IPrincipal>.Ignored)).Returns(sumado);
+            conLecturas.Request.Headers.Add("X-Conexion-SignalR", "conexion-de-nesto");
+
+            IHttpActionResult resultado = await conLecturas.PostLecturas("REPO", "81119",
+                new List<LecturaRecepcionEnCursoDTO> { new LecturaRecepcionEnCursoDTO { IdCliente = Guid.NewGuid(), Producto = "A", Cantidad = 1, Dispositivo = "NESTO-RDS" } }, "alc");
+
+            Assert.AreSame(sumado, ((OkNegotiatedContentResult<LecturasRecepcionEnCursoDTO>)resultado).Content);
+            A.CallTo(() => avisos.HaCambiado("recepcion:REPO:81119:ALC", "NUEVAVISION\\Paloma", "conexion-de-nesto", "NESTO-RDS")).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Lecturas_Post_ElDispositivoEsElDeLaCabeceraXDispositivo()
+        {
+            var (conLecturas, lecturas, avisos) = ConLecturas();
+            A.CallTo(() => lecturas.Anotar("REPO", "1", "ALC", "81119", A<IEnumerable<LecturaRecepcionEnCursoDTO>>.Ignored, A<IPrincipal>.Ignored))
+                .Returns(new LecturasRecepcionEnCursoDTO());
+            conLecturas.Request.Headers.Add("X-Dispositivo", "PDA-03");
+
+            _ = await conLecturas.PostLecturas("REPO", "81119",
+                new List<LecturaRecepcionEnCursoDTO> { new LecturaRecepcionEnCursoDTO { IdCliente = Guid.NewGuid(), Producto = "A", Cantidad = 1 } }, "ALC");
+
+            A.CallTo(() => lecturas.Anotar("REPO", "1", "ALC", "81119",
+                A<IEnumerable<LecturaRecepcionEnCursoDTO>>.That.Matches(l => l.All(x => x.Dispositivo == "PDA-03")), A<IPrincipal>.Ignored))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => avisos.HaCambiado("recepcion:REPO:81119:ALC", A<string>.Ignored, null, "PDA-03")).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Lecturas_Delete_DescartaYAvisa()
+        {
+            var (conLecturas, lecturas, avisos) = ConLecturas();
+            var nuevo = new LecturasRecepcionEnCursoDTO { IdRecepcion = Guid.NewGuid() };
+            A.CallTo(() => lecturas.Descartar("REPO", "1", "ALC", "81119", A<IPrincipal>.Ignored, "PDA-03")).Returns(nuevo);
+
+            IHttpActionResult resultado = await conLecturas.DeleteLecturas("REPO", "81119", "ALC", dispositivo: "PDA-03");
+
+            Assert.AreSame(nuevo, ((OkNegotiatedContentResult<LecturasRecepcionEnCursoDTO>)resultado).Content);
+            A.CallTo(() => avisos.HaCambiado("recepcion:REPO:81119:ALC", A<string>.Ignored, null, "PDA-03")).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Lecturas_Get_NoAvisa()
+        {
+            var (conLecturas, lecturas, avisos) = ConLecturas();
+            A.CallTo(() => lecturas.Leer("REPO", "1", "ALC", "81119", A<IPrincipal>.Ignored, A<string>.Ignored)).Returns(new LecturasRecepcionEnCursoDTO());
+
+            _ = await conLecturas.GetLecturas("REPO", "81119", "ALC");
+
+            A.CallTo(() => avisos.HaCambiado(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Terminar_AvisaALosDemasEquipos_PeroNoEnUnEnsayoNiSiYaEstabaTerminada()
+        {
+            var (conLecturas, _, avisos) = ConLecturas();
+            A.CallTo(() => servicio.Terminar("REPO", "1", "ALC", "81119", A<TerminarRecepcionDTO>.Ignored, A<IPrincipal>.Ignored, false))
+                .Returns(new ResultadoTerminarRecepcionDTO { Tipo = "REPO" });
+            A.CallTo(() => servicio.Terminar("REPO", "1", "ALC", "81119", A<TerminarRecepcionDTO>.Ignored, A<IPrincipal>.Ignored, true))
+                .Returns(new ResultadoTerminarRecepcionDTO { Tipo = "REPO", Ensayo = true });
+
+            _ = await conLecturas.PostTerminar("REPO", "81119", new TerminarRecepcionDTO { Dispositivo = "PDA-03" }, "ALC");
+            _ = await conLecturas.PostTerminar("REPO", "81119", new TerminarRecepcionDTO { Dispositivo = "PDA-03" }, "ALC", ensayo: true);
+            A.CallTo(() => servicio.Terminar("REPO", "1", "ALC", "81119", A<TerminarRecepcionDTO>.Ignored, A<IPrincipal>.Ignored, false))
+                .Returns(new ResultadoTerminarRecepcionDTO { Tipo = "REPO", YaEstabaTerminada = true });
+            _ = await conLecturas.PostTerminar("REPO", "81119", new TerminarRecepcionDTO { Dispositivo = "PDA-03" }, "ALC");
+
+            A.CallTo(() => avisos.HaCambiado("recepcion:REPO:81119:ALC", A<string>.Ignored, A<string>.Ignored, "PDA-03")).MustHaveHappenedOnceExactly();
+        }
     }
 }
