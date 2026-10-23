@@ -400,7 +400,11 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 .Select(g => new { Producto = g.Key, Cantidad = g.Sum(l => l.Cantidad) })
                 .Where(l => l.Cantidad > 0)
                 .ToDictionary(l => l.Producto, l => l.Cantidad);
-            if (!lecturas.Any())
+            // Novedad 751 (reposición 81028, 23/10/26): tras recibir en parte (#673), si lo único que queda es lo que no ha
+            // llegado no hay nada que leer y la reposición no se podía cerrar nunca. Sin nada leído solo se termina eso: una
+            // recepción entera (no parcial) de un tipo que admite partes y que ya se ha recibido en parte. Lo que queda pasa a
+            // diferencias, como cualquier falta.
+            if (!lecturas.Any() && !await PuedeTerminarSinNadaLeido(origen, terminar, empresa, almacen, documento).ConfigureAwait(false))
             {
                 throw new NestoBusinessException("No se ha recibido nada: no hay ninguna cantidad mayor que cero.");
             }
@@ -498,6 +502,22 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             return origenes.TryGetValue(clave, out IOrigenRecepcion origen)
                 ? origen
                 : throw new NestoBusinessException($"No se conoce el tipo de recepción «{tipo}». Tipos: {string.Join(", ", origenes.Keys)}.");
+        }
+
+        /// <summary>
+        /// Novedad 751: ¿se puede terminar sin nada leído? Solo la recepción entera de un tipo que admite partes cuando el
+        /// documento ya está recibido en parte (lo que queda es lo que no ha llegado). Nunca una parcial: no daría de alta nada.
+        /// </summary>
+        private static async Task<bool> PuedeTerminarSinNadaLeido(IOrigenRecepcion origen, TerminarRecepcionDTO terminar,
+            string empresa, string almacen, string documento)
+        {
+            if (terminar.Parcial || !(origen is IAdmiteRecepcionParcial))
+            {
+                return false;
+            }
+            List<RecepcionPendienteDTO> pendientes = await origen.LeerPendientes(Limpio(empresa), Limpio(almacen)?.ToUpperInvariant())
+                .ConfigureAwait(false) ?? new List<RecepcionPendienteDTO>();
+            return pendientes.Any(p => p.RecibidaEnParte && string.Equals(p.Documento?.Trim(), Limpio(documento), StringComparison.OrdinalIgnoreCase));
         }
 
         private static string Limpio(string texto)

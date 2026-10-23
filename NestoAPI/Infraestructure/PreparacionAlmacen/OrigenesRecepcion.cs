@@ -661,10 +661,21 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
                 // prdExtrProducto, llamado desde la API, no deja nada pendiente de ubicar (busca el almacén de SYSTEM_USER):
                 // se calcula antes igual que él (ya con lo leído) y se pone después, en la misma transacción
-                PendientesDeUbicarEntrada pendientesDeUbicar = await transaccion.LeerPendientesDeUbicar(solicitud.Empresa, diario).ConfigureAwait(false);
-                await transaccion.Contabilizar(solicitud.Empresa, diario, solicitud.Usuario).ConfigureAwait(false);
+                // Novedad 751 (81028): sin nada leído (lo que quedaba tras recibir en parte no ha llegado) no entra nada. El
+                // ajuste ya ha quitado sus líneas del diario: no hay nada que contabilizar ni que ubicar
+                bool entraAlgo = solicitud.Lecturas.Values.Any(c => c > 0);
+                PendientesDeUbicarEntrada pendientesDeUbicar = entraAlgo
+                    ? await transaccion.LeerPendientesDeUbicar(solicitud.Empresa, diario).ConfigureAwait(false)
+                    : null;
+                if (entraAlgo)
+                {
+                    await transaccion.Contabilizar(solicitud.Empresa, diario, solicitud.Usuario).ConfigureAwait(false);
+                }
                 await transaccion.DevolverApartadas(solicitud.Empresa, diario, apartadas.Concat(noLeidas).ToList()).ConfigureAwait(false);
-                _ = await transaccion.DejarPendientesDeUbicar(solicitud.Empresa, pendientesDeUbicar, solicitud.Usuario).ConfigureAwait(false);
+                if (entraAlgo)
+                {
+                    _ = await transaccion.DejarPendientesDeUbicar(solicitud.Empresa, pendientesDeUbicar, solicitud.Usuario).ConfigureAwait(false);
+                }
                 // NestoAPI#673: en una parcial la reposición sigue abierta: ni cabecera recibida ni bultos leídos (eso, en la final)
                 if (!parcial)
                 {

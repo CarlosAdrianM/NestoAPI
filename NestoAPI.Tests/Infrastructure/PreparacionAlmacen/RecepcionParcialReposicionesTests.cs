@@ -368,6 +368,69 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             Assert.IsFalse(resultado.Mensaje.Contains("Recepción terminada"));
         }
 
+        // Novedad 751 (reposición 81028, 23/10/26): se recibieron en parte 10 de 11 líneas y la que queda no ha llegado. Sin nada
+        // que leer no se podía terminar nunca («No se ha recibido nada») y la reposición se quedaba en Entradas para siempre.
+        [TestMethod]
+        public async Task SinNadaLeidoTrasRecibirEnParte_LoQueQuedaEsDiferenciaYNoSeContabilizaNada()
+        {
+            Enviado(("B", 1));
+
+            ResultadoTerminarRecepcionDTO final = await Reposiciones().Terminar(Solicitud(false));
+
+            Assert.IsFalse(final.Parcial);
+            DiferenciaPreparacionDTO falta = final.Diferencias.Single();
+            Assert.AreEqual("B", falta.Producto);
+            Assert.AreEqual(1, falta.Esperado);
+            Assert.AreEqual(0, falta.Leido);
+            CollectionAssert.AreEqual(new[]
+            {
+                "apartar otros", "ajustar B a 0", "devolver 701", "cabecera recibida", "registrar diferencias B:1/0"
+            }, pasos, string.Join(" | ", pasos));
+            A.CallTo(() => avisador.Avisar("NUEVAVISION\\Andre", A<string>.Ignored, A<IEnumerable<string>>.Ignored)).MustHaveHappenedOnceExactly();
+        }
+
+        private static IOrigenRecepcion OrigenReposicionPendiente(bool recibidaEnParte)
+        {
+            var origen = A.Fake<IOrigenRecepcion>(o => o.Implements<IAdmiteRecepcionParcial>());
+            A.CallTo(() => origen.Tipo).Returns("REPO");
+            A.CallTo(() => origen.SeTerminaDesdeAqui).Returns(true);
+            A.CallTo(() => origen.PuedeTerminar(A<IPrincipal>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(true);
+            A.CallTo(() => origen.LeerPendientes("1", "ALG")).Returns(new List<RecepcionPendienteDTO>
+            {
+                new RecepcionPendienteDTO { Tipo = "REPO", Documento = "81028", RecibidaEnParte = recibidaEnParte }
+            });
+            A.CallTo(() => origen.Terminar(A<SolicitudTerminarRecepcion>.Ignored))
+                .Returns(new ResultadoTerminarRecepcionDTO { Tipo = "REPO", Documento = "81028" });
+            return origen;
+        }
+
+        [TestMethod]
+        public async Task Nucleo_SinNadaLeido_RecibidaEnParte_LaTermina()
+        {
+            IOrigenRecepcion origen = OrigenReposicionPendiente(recibidaEnParte: true);
+
+            _ = await new ServicioRecepciones(new[] { origen }).Terminar("REPO", "1", "ALG", "81028",
+                new TerminarRecepcionDTO { IdRecepcion = Guid.NewGuid() }, Reina());
+
+            A.CallTo(() => origen.Terminar(A<SolicitudTerminarRecepcion>.That.Matches(s => !s.Lecturas.Any() && !s.Parcial)))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [DataTestMethod]
+        [DataRow(false, false, DisplayName = "Sin recibir en parte antes: sigue siendo «No se ha recibido nada»")]
+        [DataRow(true, true, DisplayName = "Pedida como parcial: no daría de alta nada")]
+        public async Task Nucleo_SinNadaLeido_EnLosDemasCasos_SeRechazaSinLlamarle(bool recibidaEnParte, bool parcial)
+        {
+            IOrigenRecepcion origen = OrigenReposicionPendiente(recibidaEnParte);
+
+            NestoBusinessException ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() =>
+                new ServicioRecepciones(new[] { origen }).Terminar("REPO", "1", "ALG", "81028",
+                    new TerminarRecepcionDTO { IdRecepcion = Guid.NewGuid(), Parcial = parcial }, Reina()));
+
+            StringAssert.Contains(ex.Message, "No se ha recibido nada");
+            A.CallTo(() => origen.Terminar(A<SolicitudTerminarRecepcion>.Ignored)).MustNotHaveHappened();
+        }
+
         [TestMethod]
         public async Task Nucleo_UnTipoQueNoAdmiteParcial_LaRechazaSinLlamarle()
         {
