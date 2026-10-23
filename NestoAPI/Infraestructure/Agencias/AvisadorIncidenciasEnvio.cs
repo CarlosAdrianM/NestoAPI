@@ -1,6 +1,7 @@
 using NestoAPI.Infraestructure.Notificaciones;
 using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Models;
+using NestoAPI.Models.Agencias;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -77,11 +78,12 @@ namespace NestoAPI.Infraestructure.Agencias
             try
             {
                 ComercialesPedido comerciales = LeerComerciales(envio);
-                string agencia = db.AgenciasTransportes
+                var datosAgencia = db.AgenciasTransportes
                     .Where(a => a.Numero == envio.Agencia)
-                    .Select(a => a.Nombre).FirstOrDefault()?.Trim();
+                    .Select(a => new { a.Nombre, a.Identificador }).FirstOrDefault();
+                string agencia = datosAgencia?.Nombre?.Trim();
 
-                MailMessage mail = ComponerCorreo(envio, comerciales, agencia);
+                MailMessage mail = ComponerCorreo(envio, comerciales, agencia, datosAgencia?.Identificador?.Trim());
                 _ = servicioCorreo.EnviarCorreoSMTP(mail);
 
                 NotificacionPushDTO notificacion = ComponerNotificacion(envio, comerciales, agencia);
@@ -108,9 +110,16 @@ namespace NestoAPI.Infraestructure.Agencias
             return comerciales ?? lector.LeerDeVendedor(envio.Empresa, envio.Vendedor, envio.Usuario);
         }
 
-        internal static MailMessage ComponerCorreo(EnviosAgencia envio, ComercialesPedido comerciales, string agencia)
+        internal static MailMessage ComponerCorreo(EnviosAgencia envio, ComercialesPedido comerciales, string agencia,
+            string identificadorAgencia = null)
         {
             string cliente = TextoCliente(envio, comerciales);
+            // NestoAPI#697 (Carlos 23/10/26): la web de la agencia casi siempre explica mejor la incidencia que el
+            // estado que nos llega (motivo, intentos, oficina...). Sin agencia registrada o sin datos, sin enlace.
+            string enlace = EnlaceSeguimiento(envio, agencia, identificadorAgencia);
+            string numeroSeguimiento = string.IsNullOrEmpty(enlace)
+                ? $"<b>{Html(envio.CodigoBarras?.Trim())}</b>"
+                : $"<a href=\"{Html(enlace)}\"><b>{Html(envio.CodigoBarras?.Trim())}</b></a>";
             string documento = envio.Pedido.HasValue ? $"el pedido {envio.Pedido}" : $"el envío {envio.Numero}";
             var mail = new MailMessage
             {
@@ -124,9 +133,12 @@ namespace NestoAPI.Infraestructure.Agencias
                     (envio.Pedido.HasValue ? $"<li>Pedido: <b>{envio.Pedido}</b></li>" : string.Empty) +
                     $"<li>Cliente: <b>{Html(cliente)}</b></li>" +
                     $"<li>Agencia: {Html(agencia ?? envio.Agencia.ToString())}</li>" +
-                    $"<li>Número de seguimiento: <b>{Html(envio.CodigoBarras?.Trim())}</b> (envío {envio.Numero})</li>" +
+                    $"<li>Número de seguimiento: {numeroSeguimiento} (envío {envio.Numero})</li>" +
                     $"<li>Incidencia: <b>{Html(DescripcionIncidencia(envio))}</b></li>" +
                     "</ul>" +
+                    (string.IsNullOrEmpty(enlace) ? string.Empty
+                        : $"<p><a href=\"{Html(enlace)}\">Ver el seguimiento en la web de la agencia</a>: " +
+                          "suele explicar el motivo de la incidencia.</p>") +
                     "<p>Revise el envío en Nesto (Agencias, pestaña de incidentados) y, si hace falta, " +
                     "póngase en contacto con el cliente para solucionarlo cuanto antes.</p>"
             };
@@ -206,6 +218,26 @@ namespace NestoAPI.Infraestructure.Agencias
             string numero = (comerciales?.Cliente ?? envio.Cliente)?.Trim();
             string nombre = (comerciales?.NombreCliente ?? envio.Nombre)?.Trim();
             return string.IsNullOrWhiteSpace(nombre) ? numero : $"{numero} - {nombre}";
+        }
+
+        /// <summary>NestoAPI#697: el enlace de seguimiento de la agencia, o null si no se puede construir.</summary>
+        internal static string EnlaceSeguimiento(EnviosAgencia envio, string agencia, string identificadorAgencia)
+        {
+            string codigo = envio?.CodigoBarras?.Trim();
+            if (string.IsNullOrEmpty(codigo) || string.IsNullOrEmpty(agencia))
+            {
+                return null;
+            }
+            string url = RegistroSeguimientoAgencias.ConstruirUrl(new DatosSeguimientoEnvio
+            {
+                AgenciaNombre = agencia,
+                Identificador = identificadorAgencia,
+                CodigoSeguimiento = codigo,
+                CodigoPostal = envio.CodPostal?.Trim(),
+                Cliente = envio.Cliente?.Trim(),
+                Pedido = envio.Pedido ?? 0
+            });
+            return string.IsNullOrWhiteSpace(url) ? null : url;
         }
 
         private static string Html(string texto) => WebUtility.HtmlEncode(texto ?? string.Empty);

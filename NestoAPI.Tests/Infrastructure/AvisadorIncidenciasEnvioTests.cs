@@ -74,6 +74,42 @@ namespace NestoAPI.Tests.Infrastructure
             StringAssert.Contains(mail.Body, "Revise el envío", "De usted");
         }
 
+        // NestoAPI#697 (Carlos 23/10/26): la web de la agencia explica mejor la incidencia; el correo lleva el enlace.
+        [TestMethod]
+        public void ComponerCorreo_AgenciaConocida_LlevaElEnlaceDeSeguimiento()
+        {
+            MailMessage mail = AvisadorIncidenciasEnvio.ComponerCorreo(Envio(), Comerciales(), "CTT");
+
+            StringAssert.Contains(mail.Body, "href=\"https://www.cttexpress.com/localizador-de-envios?sc=ALB123\"");
+            StringAssert.Contains(mail.Body, "Ver el seguimiento en la web de la agencia");
+        }
+
+        [TestMethod]
+        public void ComponerCorreo_Gls_ElEnlaceLlevaElCodigoPostal()
+        {
+            EnviosAgencia envio = Envio();
+            envio.CodPostal = "28110 ";
+
+            MailMessage mail = AvisadorIncidenciasEnvio.ComponerCorreo(envio, Comerciales(), "ASM");
+
+            StringAssert.Contains(mail.Body, "href=\"https://mygls.gls-spain.es/e/ALB123/28110\"");
+        }
+
+        [DataTestMethod]
+        [DataRow("Agencia que no existe", "ALB123", DisplayName = "Agencia sin estrategia de seguimiento")]
+        [DataRow(null, "ALB123", DisplayName = "Sin agencia")]
+        [DataRow("CTT", null, DisplayName = "Sin número de seguimiento")]
+        public void ComponerCorreo_SinDatosParaElEnlace_SaleSinEnlace(string agencia, string codigo)
+        {
+            EnviosAgencia envio = Envio();
+            envio.CodigoBarras = codigo;
+
+            MailMessage mail = AvisadorIncidenciasEnvio.ComponerCorreo(envio, Comerciales(), agencia);
+
+            Assert.IsFalse(mail.Body.Contains("href="), mail.Body);
+            StringAssert.Contains(mail.Body, "Número de seguimiento");
+        }
+
         [TestMethod]
         public void ComponerCorreo_SinNadieConCorreo_VaALogistica()
         {
