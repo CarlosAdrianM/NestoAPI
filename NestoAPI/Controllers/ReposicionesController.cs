@@ -529,11 +529,13 @@ namespace NestoAPI.Controllers
         [HttpPost]
         [Route("EnPreparacion/Terminar")]
         [ResponseType(typeof(ResultadoTerminarReposicionDTO))]
-        public async Task<IHttpActionResult> PostTerminar(string origen, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        public async Task<IHttpActionResult> PostTerminar(string origen, [FromBody] TerminarReposicionDTO peticion = null,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
         {
             try
             {
-                ResultadoTerminarReposicionDTO terminada = await preparacion.Terminar(empresa, origen, User).ConfigureAwait(false);
+                // Sugerencia 753: Ariadna manda lo dado por «No está»; sin cuerpo (Nesto), como siempre
+                ResultadoTerminarReposicionDTO terminada = await preparacion.Terminar(empresa, origen, User, peticion?.NoEsta).ConfigureAwait(false);
                 await CompletarFotos(terminada?.Lineas).ConfigureAwait(false);
                 return Ok(terminada);
             }

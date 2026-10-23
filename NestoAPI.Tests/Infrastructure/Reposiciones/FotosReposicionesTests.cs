@@ -157,7 +157,7 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
         [TestMethod]
         public async Task PostTerminar_LasLineasTerminadasTraenLaFoto()
         {
-            A.CallTo(() => preparacion.Terminar("1", "ALC", A<IPrincipal>._)).Returns(new ResultadoTerminarReposicionDTO
+            A.CallTo(() => preparacion.Terminar("1", "ALC", A<IPrincipal>._, A<IReadOnlyCollection<string>>._)).Returns(new ResultadoTerminarReposicionDTO
             {
                 NumTraspaso = 81010,
                 Lineas = new List<LineaTraspasoTerminadoDTO>

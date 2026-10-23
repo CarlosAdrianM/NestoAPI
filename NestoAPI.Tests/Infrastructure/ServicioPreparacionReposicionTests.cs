@@ -703,6 +703,138 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.IsTrue(repositorio.Estado2.All(e => e.Diario == "RepoAlcAlg" && e.Traspaso == 0), "La reposición sigue en preparación");
         }
 
+        // ---------------------------------------------------------------- Sugerencia 753: «No está» deja el stock a 0
+
+        private ServicioPreparacionReposicion ServicioConStockACero(IServicioStockACeroNoEsta stockACero)
+        {
+            return new ServicioPreparacionReposicion(repositorio,
+                (empresa, origen, destino, corte) => Task.FromResult(propuesta),
+                (origen, control) => control ? huecosAlgete : huecos,
+                (empresa, usuario) => almacenesDeUsuario.TryGetValue(usuario, out string almacen) ? almacen : null,
+                () => AHORA,
+                stockACero: stockACero);
+        }
+
+        private IServicioStockACeroNoEsta StockACeroQueApunta(params string[] cambios)
+        {
+            IServicioStockACeroNoEsta stockACero = A.Fake<IServicioStockACeroNoEsta>();
+            A.CallTo(() => stockACero.PonerACero(A<string>._, A<string>._, A<int>._, A<IEnumerable<string>>._, A<string>._))
+                .ReturnsLazily((string e, string a, int t, IEnumerable<string> productos, string u) =>
+                {
+                    repositorio.Llamadas.Add($"STOCK A 0 {a} {t} [{string.Join(",", productos)}] {u}");
+                    var resultado = new ResultadoStockACero();
+                    resultado.Cambios.AddRange(cambios);
+                    return Task.FromResult(resultado);
+                });
+            return stockACero;
+        }
+
+        [TestMethod]
+        public async Task Terminar_ConNoEsta_DespuesDeConfirmarPoneA0SoloLosDeLaReposicionYLoCuenta()
+        {
+            repositorio.Lineas.Add(Fila(561483000, "36385", 0)); // «No está» del todo: bajada a 0
+            repositorio.Lineas.Add(Fila(561483500, "41980", 2)); // «No está» a medias
+            repositorio.Lineas.Add(Fila(561483600, "21116", 1));
+            repositorio.UltimoTraspaso = 80892;
+            IServicioStockACeroNoEsta stockACero = StockACeroQueApunta("Stock de Alcobendas a 0: 36385 (tenía 1), 41980 (tenía 2).");
+
+            ResultadoTerminarReposicionDTO resultado = await ServicioConStockACero(stockACero)
+                .Terminar("1", "ALC", Paloma, new[] { "36385 ", "41980", "99999", "41980" });
+
+            Assert.AreEqual("STOCK A 0 ALC 80893 [36385,41980] NUEVAVISION\\Paloma", repositorio.Llamadas.Last(),
+                "después del COMMIT, solo productos de la reposición, una vez cada uno");
+            Assert.AreEqual("COMMIT", repositorio.Llamadas[repositorio.Llamadas.Count - 2]);
+            CollectionAssert.AreEqual(new[] { "Stock de Alcobendas a 0: 36385 (tenía 1), 41980 (tenía 2)." }, resultado.Cambios);
+            Assert.AreEqual("Stock de Alcobendas a 0: 36385 (tenía 1), 41980 (tenía 2).", resultado.Mensaje);
+            Assert.AreEqual(80893, resultado.NumTraspaso);
+        }
+
+        [TestMethod]
+        public async Task Terminar_SinNoEsta_NoTocaElStockYNoHayMensaje()
+        {
+            repositorio.Lineas.Add(Fila(561483500, "41980", 3));
+            IServicioStockACeroNoEsta stockACero = StockACeroQueApunta("no debería salir");
+
+            ResultadoTerminarReposicionDTO sinCuerpo = await ServicioConStockACero(stockACero).Terminar("1", "ALC", Paloma);
+
+            A.CallTo(() => stockACero.PonerACero(A<string>._, A<string>._, A<int>._, A<IEnumerable<string>>._, A<string>._)).MustNotHaveHappened();
+            Assert.AreEqual(0, sinCuerpo.Cambios.Count);
+            Assert.IsNull(sinCuerpo.Mensaje);
+        }
+
+        [TestMethod]
+        public async Task Terminar_ConNoEstaDeProductosQueNoSonDeLaReposicion_NoTocaNada()
+        {
+            repositorio.Lineas.Add(Fila(561483500, "41980", 3));
+            IServicioStockACeroNoEsta stockACero = StockACeroQueApunta("no debería salir");
+
+            _ = await ServicioConStockACero(stockACero).Terminar("1", "ALC", Paloma, new[] { "99999", " " });
+
+            A.CallTo(() => stockACero.PonerACero(A<string>._, A<string>._, A<int>._, A<IEnumerable<string>>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Terminar_SiFallaLaReposicion_NoSePoneNadaA0()
+        {
+            repositorio.Lineas.Add(Fila(561483500, "41980", 3));
+            repositorio.ErrorAlContabilizar = new NestoBusinessException("No se puede realizar la acción. Se quedaría un stock negativo.");
+            IServicioStockACeroNoEsta stockACero = StockACeroQueApunta("no debería salir");
+
+            _ = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => ServicioConStockACero(stockACero).Terminar("1", "ALC", Paloma, new[] { "41980" }));
+
+            A.CallTo(() => stockACero.PonerACero(A<string>._, A<string>._, A<int>._, A<IEnumerable<string>>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Terminar_ConNoEsta_DeVerdad_ApuntaEnErrRepoLoQueQuedaEnLaTienda()
+        {
+            // De punta a punta con el servicio de verdad (y la transacción del stock en memoria)
+            repositorio.Lineas.Add(Fila(561483000, "43763", 0));
+            repositorio.Lineas.Add(Fila(561483500, "41980", 2));
+            repositorio.UltimoTraspaso = 81027;
+            var stock = new RepositorioStockACeroFalso();
+            A.CallTo(() => stock.Transaccion.LeerAlmacen("1", "ALC")).Returns(new AlmacenStockACero { Nombre = "Alcobendas", ControlUbicaciones = false });
+            A.CallTo(() => stock.Transaccion.LeerStock("1", "ALC", "43763")).Returns(1);
+            A.CallTo(() => stock.Transaccion.Mover(A<MovimientoStockDiferencia>._)).Returns(new ResultadoMovimientoStock { NumeroOrdenExtracto = 9001 });
+
+            ResultadoTerminarReposicionDTO resultado = await ServicioConStockACero(new ServicioStockACeroNoEsta(() => stock, () => true))
+                .Terminar("1", "ALC", Paloma, new[] { "43763" });
+
+            A.CallTo(() => stock.Transaccion.Mover(A<MovimientoStockDiferencia>.That.Matches(m =>
+                m.Empresa == "1" && m.Almacen == "ALC" && m.Producto == "43763" && m.Cantidad == -1 && m.Traspaso == 81028 &&
+                m.Texto == "Reposición 81028: «No está» al enviar (Paloma)" && m.Usuario == "NUEVAVISION\\Paloma")))
+                .MustHaveHappenedOnceExactly();
+            CollectionAssert.AreEqual(new[] { "Stock de Alcobendas a 0: 43763 (tenía 1)." }, resultado.Cambios);
+            Assert.AreEqual("Stock de Alcobendas a 0: 43763 (tenía 1).", resultado.Mensaje);
+        }
+
+        [TestMethod]
+        public async Task Controlador_Terminar_PasaLoQueNoEstaAlServicio()
+        {
+            IServicioPreparacionReposicion servicio = A.Fake<IServicioPreparacionReposicion>();
+            A.CallTo(() => servicio.Terminar("1", "ALC", A<IPrincipal>._, A<IReadOnlyCollection<string>>._))
+                .Returns(new ResultadoTerminarReposicionDTO { NumTraspaso = 81028, Cambios = new List<string> { "Stock de Alcobendas a 0: 43763 (tenía 1)." } });
+            var controlador = new ReposicionesController(null, servicio) { Request = new HttpRequestMessage(), User = Paloma };
+
+            IHttpActionResult resultado = await controlador.PostTerminar("ALC", new TerminarReposicionDTO { NoEsta = new List<string> { "43763" } });
+
+            A.CallTo(() => servicio.Terminar("1", "ALC", A<IPrincipal>._, A<IReadOnlyCollection<string>>.That.IsSameSequenceAs(new[] { "43763" })))
+                .MustHaveHappenedOnceExactly();
+            Assert.AreEqual(81028, ((OkNegotiatedContentResult<ResultadoTerminarReposicionDTO>)resultado).Content.NumTraspaso);
+        }
+
+        [TestMethod]
+        public async Task Controlador_TerminarSinCuerpo_ComoSiempre()
+        {
+            IServicioPreparacionReposicion servicio = A.Fake<IServicioPreparacionReposicion>();
+            A.CallTo(() => servicio.Terminar("1", "ALC", A<IPrincipal>._, A<IReadOnlyCollection<string>>._)).Returns(new ResultadoTerminarReposicionDTO());
+            var controlador = new ReposicionesController(null, servicio) { Request = new HttpRequestMessage(), User = Paloma };
+
+            _ = await controlador.PostTerminar("ALC");
+
+            A.CallTo(() => servicio.Terminar("1", "ALC", A<IPrincipal>._, null)).MustHaveHappenedOnceExactly();
+        }
+
         // ---------------------------------------------------------------- Controlador
 
         [TestMethod]
@@ -715,7 +847,7 @@ namespace NestoAPI.Tests.Infrastructure
         public async Task Controlador_SinPermiso_Es403NoUnauthorized()
         {
             IServicioPreparacionReposicion servicio = A.Fake<IServicioPreparacionReposicion>();
-            A.CallTo(() => servicio.Terminar("1", "ALC", A<IPrincipal>.Ignored)).Throws(new UnauthorizedAccessException("no"));
+            A.CallTo(() => servicio.Terminar("1", "ALC", A<IPrincipal>.Ignored, A<IReadOnlyCollection<string>>.Ignored)).Throws(new UnauthorizedAccessException("no"));
             var controlador = new ReposicionesController(null, servicio) { Request = new HttpRequestMessage(), User = Paloma };
 
             IHttpActionResult resultado = await controlador.PostTerminar("ALC");

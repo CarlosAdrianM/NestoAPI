@@ -371,6 +371,7 @@
     <Compile Include="Infrastructure\FechasFacturaCompraTests.cs" />
     <Compile Include="Infrastructure\ServicioPropuestaReposicionTests.cs" />
     <Compile Include="Infrastructure\ServicioPreparacionReposicionTests.cs" />
+    <Compile Include="Infrastructure\StockACeroNoEstaTests.cs" />
     <Compile Include="Infrastructure\Ubicaciones\CuadreUbicacionesTests.cs" />
     <Compile Include="Infrastructure\Ubicaciones\PlanificadorReservaHuecosTests.cs" />
     <Compile Include="Infrastructure\Ubicaciones\PuertaUbicacionesTests.cs" />

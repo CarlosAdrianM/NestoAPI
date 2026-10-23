@@ -148,6 +148,13 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public List<string> Huecos { get; set; } = new List<string>();
     }
 
+    /// <summary>Sugerencia 753: el cuerpo (opcional) de POST api/Reposiciones/EnPreparacion/Terminar.</summary>
+    public class TerminarReposicionDTO
+    {
+        /// <summary>Los productos dados por «No está» en Ariadna. En una tienda sin ubicaciones, su stock se pone a 0.</summary>
+        public List<string> NoEsta { get; set; }
+    }
+
     public class ResultadoTerminarReposicionDTO
     {
         /// <summary>El número del traspaso (ContadoresGlobales.TraspasoAlmacén), el que ve el destino como pendiente de recibir.</summary>
@@ -158,6 +165,10 @@ namespace NestoAPI.Infraestructure.Reposiciones
         public string DiarioEntrada { get; set; }
         public List<LineaTraspasoTerminadoDTO> Lineas { get; set; } = new List<LineaTraspasoTerminadoDTO>();
         public int Unidades => Lineas.Sum(l => l.Cantidad);
+        /// <summary>Sugerencia 753: lo hecho después de terminar, una frase por cambio («Stock de Alcobendas a 0: 43763 (tenía 1).»).</summary>
+        public List<string> Cambios { get; set; } = new List<string>();
+        /// <summary>Sugerencia 753: los Cambios en un texto para enseñarlo tal cual. Null si no hay nada que contar.</summary>
+        public string Mensaje { get; set; }
     }
 
     /// <summary>NestoAPI#622: lo que ha hecho el job al sumar la reposición de hoy a la que la tienda tenía sin enviar.</summary>
@@ -617,6 +628,12 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
         /// <summary>Da la reposición por preparada: contabiliza la salida del origen y deja la entrada pendiente de recibir en el destino.</summary>
         Task<ResultadoTerminarReposicionDTO> Terminar(string empresa, string origen, IPrincipal usuario);
         /// <summary>
+        /// Sugerencia 753: lo mismo y, ya confirmada, en una tienda sin control de ubicaciones el stock de cada producto de
+        /// <paramref name="noEsta"/> (los dados por «No está» en Ariadna; solo los de esta reposición) a 0 en la tienda. Un
+        /// fallo ahí no deshace la reposición: se avisa en Cambios y Mensaje.
+        /// </summary>
+        Task<ResultadoTerminarReposicionDTO> Terminar(string empresa, string origen, IPrincipal usuario, IReadOnlyCollection<string> noEsta);
+        /// <summary>
         /// Anula un traspaso cerrado que aún no se ha recogido ni contabilizado: devuelve lo reservado a los huecos y borra
         /// la salida y la entrada. 409 si ya tiene lecturas en Ariadna o está contabilizado; 404 si no existe.
         /// </summary>
@@ -678,6 +695,8 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
         private readonly IViajesReposicionPuntual viajes;
         private readonly CalculadoraFechaReposicion calculadora;
         private readonly IStockLibreReposicionPuntual stockLibre;
+        /// <summary>Sugerencia 753: el stock a 0 de lo que «No está». Null: no se toca (pruebas que no lo miran).</summary>
+        private readonly IServicioStockACeroNoEsta stockACero;
         private readonly NVEntities dbPropio;
 
         public ServicioPreparacionReposicion() : this(new NVEntities())
@@ -694,7 +713,8 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
                 (empresa, origen, dia) => new RepositorioReposicionAutomaticaSql(db).Bloquear(empresa, origen, dia),
                 new ViajesReposicionPuntualSql(db),
                 new StockLibreReposicionPuntualSql(db),
-                new CalculadoraFechaReposicion())
+                new CalculadoraFechaReposicion(),
+                new ServicioStockACeroNoEsta())
         {
             dbPropio = db;
         }
@@ -713,6 +733,7 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
         /// </param>
         /// <param name="stockLibre">Sugerencia 581: lo que la tienda puede mandar sin dejar sin servir sus pedidos. Null: no se mira (pruebas).</param>
         /// <param name="calculadora">Sugerencia 581: festivos y viaje de hoy, como el job. Null: sin festivos (pruebas).</param>
+        /// <param name="stockACero">Sugerencia 753: el stock a 0 de lo que «No está», después de terminar. Null: no se toca (pruebas).</param>
         internal ServicioPreparacionReposicion(IRepositorioPreparacionReposicion repositorio,
             Func<string, string, string, DateTime?, Task<List<LineaPropuestaReposicionDTO>>> propuesta,
             Func<string, bool, IUbicacionesReposicion> ubicaciones,
@@ -722,8 +743,10 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
             Func<string, string, DateTime, Task<IDisposable>> bloquear = null,
             IViajesReposicionPuntual viajes = null,
             IStockLibreReposicionPuntual stockLibre = null,
-            CalculadoraFechaReposicion calculadora = null)
+            CalculadoraFechaReposicion calculadora = null,
+            IServicioStockACeroNoEsta stockACero = null)
         {
+            this.stockACero = stockACero;
             this.viajes = viajes ?? ViajesReposicionPuntualSinControl.Instancia;
             this.calculadora = calculadora ?? new CalculadoraFechaReposicion((dia, almacen) => false);
             this.stockLibre = stockLibre ?? SinStockLibreReposicionPuntual.Instancia;
@@ -1048,7 +1071,12 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
             return await LeerEnPreparacion(empresa, origen, almacen).ConfigureAwait(false);
         }
 
-        public async Task<ResultadoTerminarReposicionDTO> Terminar(string empresa, string origen, IPrincipal usuario)
+        public Task<ResultadoTerminarReposicionDTO> Terminar(string empresa, string origen, IPrincipal usuario)
+        {
+            return Terminar(empresa, origen, usuario, null);
+        }
+
+        public async Task<ResultadoTerminarReposicionDTO> Terminar(string empresa, string origen, IPrincipal usuario, IReadOnlyCollection<string> noEsta)
         {
             empresa = Empresa(empresa);
             origen = Almacen(origen);
@@ -1093,7 +1121,7 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
                 AnotarPromesaRiesgo(empresa, origen, destino, numeroTraspaso, conCantidad);
             }
 
-            return new ResultadoTerminarReposicionDTO
+            var terminada = new ResultadoTerminarReposicionDTO
             {
                 NumTraspaso = numeroTraspaso,
                 Origen = origen,
@@ -1102,6 +1130,37 @@ UPDATE PedidosEspeciales SET [NºTraspaso] = NULL WHERE [NºTraspaso] = @p0";
                 DiarioEntrada = almacenDestino.DiarioEntradaRep,
                 Lineas = conCantidad.Select(f => new LineaTraspasoTerminadoDTO { Producto = f.Producto, Nombre = f.Nombre, Cantidad = f.Cantidad }).ToList()
             };
+            await PonerACeroLoQueNoEsta(terminada, empresa, origen, almacenOrigen, filas, noEsta, quien).ConfigureAwait(false);
+            return terminada;
+        }
+
+        /// <summary>
+        /// Sugerencia 753 (Carlos, 23/10/26): ya confirmada la reposición, en una tienda (sin control de ubicaciones) lo dado por
+        /// «No está» deja su stock a 0 en la tienda: no hay hueco, así que no estar quiere decir que no hay ninguno. Solo los
+        /// productos de esta reposición (las líneas en preparación, también las bajadas a 0). Nunca lanza.
+        /// </summary>
+        private async Task PonerACeroLoQueNoEsta(ResultadoTerminarReposicionDTO terminada, string empresa, string origen,
+            DatosAlmacenReposicion almacenOrigen, List<FilaReposicionEnPreparacion> filas, IReadOnlyCollection<string> noEsta, string quien)
+        {
+            if (stockACero == null || noEsta == null || noEsta.Count == 0 || almacenOrigen.ControlUbicaciones)
+            {
+                return;
+            }
+            var deLaReposicion = new HashSet<string>(filas.Select(f => f.Producto?.Trim()).Where(p => !string.IsNullOrEmpty(p)),
+                StringComparer.OrdinalIgnoreCase);
+            List<string> productos = noEsta.Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p.Trim())
+                .Where(deLaReposicion.Contains).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (productos.Count == 0)
+            {
+                return;
+            }
+            ResultadoStockACero resultado = await stockACero.PonerACero(empresa, origen, terminada.NumTraspaso, productos, quien)
+                .ConfigureAwait(false);
+            if (resultado?.Cambios != null && resultado.Cambios.Count > 0)
+            {
+                terminada.Cambios.AddRange(resultado.Cambios);
+                terminada.Mensaje = string.Join(" ", terminada.Cambios);
+            }
         }
 
         /// <summary>

@@ -1017,6 +1017,7 @@
     <Compile Include="Infraestructure\Reposiciones\PreparacionReposicion.cs" />
     <Compile Include="Infraestructure\Reposiciones\UbicacionesReposicion.cs" />
     <Compile Include="Infraestructure\Reposiciones\TransitoReposiciones.cs" />
+    <Compile Include="Infraestructure\Reposiciones\StockACeroNoEsta.cs" />
     <Compile Include="Infraestructure\Eventos\EstadoSenalEvento.cs" />
     <Compile Include="Infraestructure\Rapports\MotorSugerenciasContacto.cs" />
     <Compile Include="Infraestructure\Rapports\ImpulsoChequesRegaloContacto.cs" />
