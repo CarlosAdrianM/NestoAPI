@@ -96,7 +96,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
         /// <summary>Lo recogido se empaqueta después (hoy, el picking): la app ofrece el packing.</summary>
         public virtual bool TienePacking => false;
-        /// <summary>Si no está en el hueco, se puede ofrecer cogerlo de otro (api/Almacen/Picking/{n}/Alternativas y CambiarHueco).</summary>
+        /// <summary>Si no está en el hueco, se puede ofrecer cogerlo de otro (api/Almacen/Recogidas/{tipo}/{n}/Alternativas y CambiarHueco).</summary>
         public virtual bool PermiteCambiarHueco => false;
 
         /// <summary>El título en la lista y en el recorrido: «Reposición 80905 hacia Reina».</summary>
@@ -949,6 +949,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// <summary>NestoAPI#600: lo que se le dice al mozo de la salida de una reposición (antes estaba en Ariadna).</summary>
         internal class TextosReposicion : TextosTipoSalida
         {
+            // Ariadna#12: la reserva de la reposición (estado 4) se puede pasar a otro hueco (api/Almacen/Recogidas/REPO/{n}/CambiarHueco)
+            public override bool PermiteCambiarHueco => true;
             // NestoAPI#553/#594 (Carlos 06/10/26): el destino es el almacén y va en el título, con su nombre
             public override string Titulo(string tipo, int numero, string nombreDestino) =>
                 string.IsNullOrWhiteSpace(nombreDestino) ? $"Reposición {numero}" : $"Reposición {numero} hacia {nombreDestino}";

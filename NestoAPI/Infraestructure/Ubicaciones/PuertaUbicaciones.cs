@@ -110,6 +110,18 @@ namespace NestoAPI.Infraestructure.Ubicaciones
 
         /// <summary>«002/002/004», como lo pinta Ariadna; null si no tiene hueco.</summary>
         public override string ToString() => TieneHueco ? $"{Pasillo}/{Fila}/{Columna}" : null;
+
+        /// <summary>«002002004», como la etiqueta (y como RTRIM(Pasillo) + RTRIM(Fila) + RTRIM(Columna)); null si no tiene hueco.</summary>
+        public string Codigo => TieneHueco ? Pasillo + Fila + Columna : null;
+
+        /// <summary>De «002002004» o «002/002/004». Null si no son 9 cifras.</summary>
+        public static HuecoUbicacion DeCodigo(string codigo)
+        {
+            string limpio = codigo?.Trim().Replace("/", string.Empty);
+            return limpio != null && limpio.Length == 9 && limpio.All(char.IsDigit)
+                ? De(limpio.Substring(0, 3), limpio.Substring(3, 3), limpio.Substring(6, 3))
+                : null;
+        }
     }
 
     /// <summary>
@@ -251,6 +263,21 @@ namespace NestoAPI.Infraestructure.Ubicaciones
         /// cerrados antes de NestoAPI#651).
         /// </summary>
         Task<ResumenUbicaciones> AnularSalidaDeReposicion(string empresa, string almacenOrigen, int numeroTraspaso, string usuario);
+
+        /// <summary>
+        /// Ariadna#12: el mozo no encuentra en el hueco <paramref name="origen"/> lo que la reposición tiene reservado ahí y lo
+        /// coge de <paramref name="destino"/>. Todo o nada, dentro de la transacción del llamante:
+        /// <list type="bullet">
+        /// <item>En el destino, <paramref name="cantidad"/> unidades libres (estado 0) pasan a reserva de la reposición (4), con el
+        /// NºOrdenRepo de la reserva de origen y el <paramref name="numeroTraspaso"/>: el hueco tiene lo mismo, ahora reservado.</item>
+        /// <item>En el origen, la reserva baja esas unidades y pasan a «pendiente de ubicar» (2), como una falta: en los libros
+        /// estaban ahí y no están.</item>
+        /// </list>
+        /// El stock del almacén no cambia y lo reservado para el traspaso tampoco. Si en el origen no queda reservado bastante, o
+        /// en el destino no hay bastante libre, lanza NestoBusinessException (409) sin haber escrito nada.
+        /// </summary>
+        Task<ResumenUbicaciones> CambiarHuecoReservaReposicion(string empresa, string almacen, int numeroTraspaso, string producto,
+            HuecoUbicacion origen, HuecoUbicacion destino, int cantidad, string usuario);
 
         /// <summary>La entrada en el destino, «pendiente de ubicar» con NºTraspasoRepo. Hoy: CierreReposiciones / prdExtrProducto.</summary>
         Task<ResumenUbicaciones> EntradaDeReposicion(string empresa, string almacenDestino, string producto, int cantidad, int numeroTraspaso, string usuario);

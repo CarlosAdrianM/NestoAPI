@@ -102,6 +102,12 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// no hay nada reservado de ese producto para ese picking, o en el destino no hay nada libre).
         /// </summary>
         Task<int> Cambiar(string empresa, int picking, string producto, string huecoOrigen, string huecoDestino, int cantidad, string usuario);
+
+        /// <summary>
+        /// Ariadna#12: lo mismo que <see cref="Cambiar"/> en una transacción que se deshace SIEMPRE, con las filas de los dos
+        /// huecos antes y después. Si algo falla, no lanza: lo dice en ErrorEnsayo.
+        /// </summary>
+        Task<ResultadoCambioHueco> Ensayar(string empresa, int picking, string producto, string huecoOrigen, string huecoDestino, int cantidad, string usuario);
     }
 
     public class RepositorioCambioHuecoSql : IRepositorioCambioHueco, IDisposable
@@ -189,33 +195,67 @@ DELETE Ubicaciones WHERE [NºOrden] = @p0 AND Cantidad = 0 AND Estado = 0;";
         {
             using (DbContextTransaction transaccion = db.Database.BeginTransaction())
             {
-                List<ReservaEnHueco> reservas = await db.Database.SqlQuery<ReservaEnHueco>(SQL_RESERVAS_EN_EL_HUECO,
-                    Char("@p0", 3, empresa), new SqlParameter("@p1", picking), Char("@p2", 15, producto), Texto("@p3", huecoOrigen))
-                    .ToListAsync().ConfigureAwait(false);
-                if (reservas.Count == 0)
+                int movidas = await Mover(empresa, picking, producto, huecoOrigen, huecoDestino, cantidad, usuario).ConfigureAwait(false);
+                if (movidas > 0)
                 {
-                    return 0;
+                    transaccion.Commit();
                 }
-                List<LibreEnHueco> libres = await db.Database.SqlQuery<LibreEnHueco>(SQL_LIBRES_EN_EL_HUECO,
-                    Char("@p0", 3, empresa), Char("@p1", 3, reservas[0].Almacen), Char("@p2", 15, producto), Texto("@p3", huecoDestino))
-                    .ToListAsync().ConfigureAwait(false);
-
-                List<MovimientoDeReserva> movimientos = PlanificadorCambioHueco.Repartir(reservas, libres, cantidad);
-                string quien = string.IsNullOrWhiteSpace(usuario) ? "Ariadna" : (usuario.Length > 30 ? usuario.Substring(0, 30) : usuario);
-                foreach (MovimientoDeReserva movimiento in movimientos)
-                {
-                    // Primero la reserva nueva en el hueco de destino…
-                    _ = await db.Database.ExecuteSqlCommandAsync(SQL_RESERVAR_DE_LA_LIBRE,
-                        new SqlParameter("@p0", movimiento.Libre.Ubicacion), new SqlParameter("@p1", movimiento.Cantidad),
-                        new SqlParameter("@p2", movimiento.Reserva.Linea), new SqlParameter("@p3", movimiento.Reserva.Pedido),
-                        Char("@p4", 3, movimiento.Reserva.EmpresaLinea), Texto("@p5", quien)).ConfigureAwait(false);
-                    // … y lo que no estaba en el de origen, a «pendiente de ubicar», igual que una falta
-                    _ = await db.Database.ExecuteSqlCommandAsync(TransaccionSalidaSql.SQL_RESERVA_A_PENDIENTE_DE_UBICAR,
-                        movimiento.Reserva.Ubicacion, movimiento.Cantidad, quien).ConfigureAwait(false);
-                }
-                transaccion.Commit();
-                return movimientos.Sum(m => m.Cantidad);
+                return movidas;
             }
+        }
+
+        public async Task<ResultadoCambioHueco> Ensayar(string empresa, int picking, string producto, string huecoOrigen, string huecoDestino, int cantidad, string usuario)
+        {
+            var resultado = new ResultadoCambioHueco { Estado = EstadoCambioHueco.Cambiado, Ensayo = true };
+            using (DbContextTransaction transaccion = db.Database.BeginTransaction())
+            {
+                try
+                {
+                    string almacen = await LeerAlmacenPicking(empresa, picking).ConfigureAwait(false);
+                    DateTime desde = await FotoCambioHueco.Ahora(db).ConfigureAwait(false);
+                    resultado.FilasAntes = await FotoCambioHueco.Leer(db, almacen, producto, huecoOrigen, huecoDestino, desde).ConfigureAwait(false);
+                    resultado.Movidas = await Mover(empresa, picking, producto, huecoOrigen, huecoDestino, cantidad, usuario).ConfigureAwait(false);
+                    resultado.FilasDespues = await FotoCambioHueco.Leer(db, almacen, producto, huecoOrigen, huecoDestino, desde).ConfigureAwait(false);
+                    resultado.Mensaje = "ENSAYO (no se ha guardado nada): " + FotoCambioHueco.Cuadre(resultado.FilasAntes, resultado.FilasDespues, resultado.Movidas);
+                }
+                catch (Exception ex)
+                {
+                    resultado.ErrorEnsayo = ServicioSalidas.MensajeCompleto(ex);
+                    resultado.Mensaje = "ENSAYO: ha fallado y no se ha guardado nada. " + resultado.ErrorEnsayo;
+                }
+                transaccion.Rollback();
+            }
+            return resultado;
+        }
+
+        /// <summary>Dentro de la transacción ya abierta. Devuelve las unidades cambiadas.</summary>
+        private async Task<int> Mover(string empresa, int picking, string producto, string huecoOrigen, string huecoDestino, int cantidad, string usuario)
+        {
+            List<ReservaEnHueco> reservas = await db.Database.SqlQuery<ReservaEnHueco>(SQL_RESERVAS_EN_EL_HUECO,
+                Char("@p0", 3, empresa), new SqlParameter("@p1", picking), Char("@p2", 15, producto), Texto("@p3", huecoOrigen))
+                .ToListAsync().ConfigureAwait(false);
+            if (reservas.Count == 0)
+            {
+                return 0;
+            }
+            List<LibreEnHueco> libres = await db.Database.SqlQuery<LibreEnHueco>(SQL_LIBRES_EN_EL_HUECO,
+                Char("@p0", 3, empresa), Char("@p1", 3, reservas[0].Almacen), Char("@p2", 15, producto), Texto("@p3", huecoDestino))
+                .ToListAsync().ConfigureAwait(false);
+
+            List<MovimientoDeReserva> movimientos = PlanificadorCambioHueco.Repartir(reservas, libres, cantidad);
+            string quien = string.IsNullOrWhiteSpace(usuario) ? "Ariadna" : (usuario.Length > 30 ? usuario.Substring(0, 30) : usuario);
+            foreach (MovimientoDeReserva movimiento in movimientos)
+            {
+                // Primero la reserva nueva en el hueco de destino…
+                _ = await db.Database.ExecuteSqlCommandAsync(SQL_RESERVAR_DE_LA_LIBRE,
+                    new SqlParameter("@p0", movimiento.Libre.Ubicacion), new SqlParameter("@p1", movimiento.Cantidad),
+                    new SqlParameter("@p2", movimiento.Reserva.Linea), new SqlParameter("@p3", movimiento.Reserva.Pedido),
+                    Char("@p4", 3, movimiento.Reserva.EmpresaLinea), Texto("@p5", quien)).ConfigureAwait(false);
+                // … y lo que no estaba en el de origen, a «pendiente de ubicar», igual que una falta
+                _ = await db.Database.ExecuteSqlCommandAsync(TransaccionSalidaSql.SQL_RESERVA_A_PENDIENTE_DE_UBICAR,
+                    movimiento.Reserva.Ubicacion, movimiento.Cantidad, quien).ConfigureAwait(false);
+            }
+            return movimientos.Sum(m => m.Cantidad);
         }
 
         public void Dispose()
@@ -241,12 +281,19 @@ DELETE Ubicaciones WHERE [NºOrden] = @p0 AND Cantidad = 0 AND Estado = 0;";
         public EstadoCambioHueco Estado { get; set; }
         public string Mensaje { get; set; }
         public int Movidas { get; set; }
+        /// <summary>Ariadna#12: es un ensayo (no se ha guardado nada).</summary>
+        public bool Ensayo { get; set; }
+        public List<FilaEnsayoDTO> FilasAntes { get; set; }
+        public List<FilaEnsayoDTO> FilasDespues { get; set; }
+        public string ErrorEnsayo { get; set; }
     }
 
     public interface IServicioCambioHuecoPicking
     {
         Task<List<HuecoAlternativoDTO>> LeerAlternativas(string empresa, int picking, string producto, string hueco);
         Task<ResultadoCambioHueco> Cambiar(string empresa, int picking, CambiarHuecoPickingDTO cambio, string usuario);
+        /// <summary>Ariadna#12: lo mismo que <see cref="Cambiar"/>, deshecho siempre, con las filas antes y después.</summary>
+        Task<ResultadoCambioHueco> Ensayar(string empresa, int picking, CambiarHuecoPickingDTO cambio, string usuario);
     }
 
     public class ServicioCambioHuecoPicking : IServicioCambioHuecoPicking
@@ -268,7 +315,18 @@ DELETE Ubicaciones WHERE [NºOrden] = @p0 AND Cantidad = 0 AND Estado = 0;";
                 return new List<HuecoAlternativoDTO>();
             }
             List<HuecoAlternativoDTO> alternativas = await repositorio.LeerAlternativas(empresa, picking, producto.Trim(), PlanificadorFaltasSalida.NormalizarHueco(hueco))
-                .ConfigureAwait(false) ?? new List<HuecoAlternativoDTO>();
+                .ConfigureAwait(false);
+            return await EnElOrdenDelRecorrido(alternativas, ordenRecorrido, empresa, () => repositorio.LeerAlmacenPicking(empresa, picking)).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// NestoAPI#641: las alternativas en el orden del recorrido del almacén (el almacén solo se lee si hay calles que
+        /// mirar y más de una alternativa). Común al picking y a la reposición (Ariadna#12).
+        /// </summary>
+        internal static async Task<List<HuecoAlternativoDTO>> EnElOrdenDelRecorrido(List<HuecoAlternativoDTO> alternativas, ILectorOrdenRecorrido ordenRecorrido,
+            string empresa, Func<Task<string>> leerAlmacen)
+        {
+            alternativas = alternativas ?? new List<HuecoAlternativoDTO>();
             if (alternativas.Count < 2)
             {
                 return alternativas;
@@ -276,7 +334,7 @@ DELETE Ubicaciones WHERE [NºOrden] = @p0 AND Cantidad = 0 AND Estado = 0;";
             OrdenRecorrido orden = OrdenRecorrido.ComoHoy;
             if (ordenRecorrido != null)
             {
-                string almacen = await repositorio.LeerAlmacenPicking(empresa, picking).ConfigureAwait(false);
+                string almacen = await leerAlmacen().ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(almacen))
                 {
                     orden = await ordenRecorrido.DelAlmacen(empresa, almacen).ConfigureAwait(false);
@@ -303,8 +361,45 @@ DELETE Ubicaciones WHERE [NºOrden] = @p0 AND Cantidad = 0 AND Estado = 0;";
 
         public async Task<ResultadoCambioHueco> Cambiar(string empresa, int picking, CambiarHuecoPickingDTO cambio, string usuario)
         {
-            string origen = PlanificadorFaltasSalida.NormalizarHueco(cambio?.HuecoOrigen);
-            string destino = PlanificadorFaltasSalida.NormalizarHueco(cambio?.HuecoDestino);
+            ResultadoCambioHueco noValido = Validar(cambio, out string origen, out string destino);
+            if (noValido != null)
+            {
+                return noValido;
+            }
+
+            int movidas = await repositorio.Cambiar(empresa, picking, cambio.Producto.Trim(), origen, destino, cambio.Cantidad, usuario).ConfigureAwait(false);
+            if (movidas == 0)
+            {
+                return new ResultadoCambioHueco
+                {
+                    Estado = EstadoCambioHueco.NoSePuede,
+                    Mensaje = "No se ha cambiado nada: en ese hueco ya no queda libre de ese producto, o la reserva del picking ya no está donde decía. Vuelva a abrir la recogida."
+                };
+            }
+            return new ResultadoCambioHueco
+            {
+                Estado = EstadoCambioHueco.Cambiado,
+                Movidas = movidas,
+                Mensaje = movidas < cambio.Cantidad
+                    ? $"Solo había {movidas} libres en ese hueco: esas se cogen de allí y el resto sigue donde estaba."
+                    : null
+            };
+        }
+
+        public async Task<ResultadoCambioHueco> Ensayar(string empresa, int picking, CambiarHuecoPickingDTO cambio, string usuario)
+        {
+            ResultadoCambioHueco noValido = Validar(cambio, out string origen, out string destino);
+            return noValido ?? await repositorio.Ensayar(empresa, picking, cambio.Producto.Trim(), origen, destino, cambio.Cantidad, usuario).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Lo que tiene que traer cualquier cambio de hueco (picking o reposición). Null si vale; los huecos, normalizados a
+        /// 9 cifras (001007002).
+        /// </summary>
+        internal static ResultadoCambioHueco Validar(CambiarHuecoPickingDTO cambio, out string origen, out string destino)
+        {
+            origen = PlanificadorFaltasSalida.NormalizarHueco(cambio?.HuecoOrigen);
+            destino = PlanificadorFaltasSalida.NormalizarHueco(cambio?.HuecoDestino);
             if (cambio == null || string.IsNullOrWhiteSpace(cambio.Producto))
             {
                 return NoValido("Falta el producto.");
@@ -321,29 +416,75 @@ DELETE Ubicaciones WHERE [NºOrden] = @p0 AND Cantidad = 0 AND Estado = 0;";
             {
                 return NoValido("La cantidad tiene que ser mayor que cero.");
             }
-
-            int movidas = await repositorio.Cambiar(empresa, picking, cambio.Producto.Trim(), origen, destino, cambio.Cantidad, usuario).ConfigureAwait(false);
-            if (movidas == 0)
-            {
-                return new ResultadoCambioHueco
-                {
-                    Estado = EstadoCambioHueco.NoSePuede,
-                    Mensaje = "No se ha cambiado nada: en ese hueco ya no queda libre de ese producto, o la reserva del picking ya no está donde decía. Vuelve a abrir la recogida."
-                };
-            }
-            return new ResultadoCambioHueco
-            {
-                Estado = EstadoCambioHueco.Cambiado,
-                Movidas = movidas,
-                Mensaje = movidas < cambio.Cantidad
-                    ? $"Solo había {movidas} libres en ese hueco: esas se cogen de allí y el resto sigue donde estaba."
-                    : null
-            };
+            return null;
         }
 
         private static ResultadoCambioHueco NoValido(string mensaje)
         {
             return new ResultadoCambioHueco { Estado = EstadoCambioHueco.NoValido, Mensaje = mensaje };
+        }
+    }
+
+    /// <summary>
+    /// Ariadna#12: la foto del ensayo de un cambio de hueco (picking o reposición): las filas de Ubicaciones del producto en
+    /// el almacén que están en los dos huecos, más lo «pendiente de ubicar» creado desde que empezó el ensayo. Y si cuadra.
+    /// </summary>
+    internal static class FotoCambioHueco
+    {
+        internal const string SQL_FOTO = @"
+SELECT 'Ubicaciones' AS Tabla, CAST(u.[NºOrden] AS varchar(20)) AS Clave,
+       CONCAT('Producto=', RTRIM(u.[Número]), '; Estado=', u.Estado, '; Cantidad=', u.Cantidad,
+              '; Hueco=', ISNULL(RTRIM(u.Pasillo) + '/' + RTRIM(u.Fila) + '/' + RTRIM(u.Columna), '-'),
+              '; Linea=', u.[NºOrdenVta], '; Pedido=', u.PedidoVta, '; NºOrdenRepo=', u.[NºOrdenRepo], '; NºTraspasoRepo=', u.[NºTraspasoRepo]) AS Datos
+FROM Ubicaciones u
+WHERE u.[Almacén] = @p0 AND u.[Número] = @p1
+  AND (RTRIM(u.Pasillo) + RTRIM(u.Fila) + RTRIM(u.Columna) IN (@p2, @p3)
+       OR (u.Estado = 2 AND u.[FechaCreación] >= @p4))
+ORDER BY u.[NºOrden]";
+
+        /// <summary>El reloj de la base de datos, un segundo antes (para encontrar lo «pendiente de ubicar» que se cree).</summary>
+        internal static Task<DateTime> Ahora(NVEntities db)
+        {
+            return db.Database.SqlQuery<DateTime>("SELECT DATEADD(SECOND, -1, GETDATE())").SingleAsync();
+        }
+
+        internal static Task<List<FilaEnsayoDTO>> Leer(NVEntities db, string almacen, string producto, string origen, string destino, DateTime desde)
+        {
+            return db.Database.SqlQuery<FilaEnsayoDTO>(SQL_FOTO,
+                new SqlParameter("@p0", System.Data.SqlDbType.Char, 3) { Value = (object)almacen ?? DBNull.Value },
+                new SqlParameter("@p1", System.Data.SqlDbType.Char, 15) { Value = (object)producto ?? DBNull.Value },
+                new SqlParameter("@p2", System.Data.SqlDbType.VarChar, 9) { Value = (object)origen ?? DBNull.Value },
+                new SqlParameter("@p3", System.Data.SqlDbType.VarChar, 9) { Value = (object)destino ?? DBNull.Value },
+                new SqlParameter("@p4", System.Data.SqlDbType.DateTime) { Value = desde }).ToListAsync();
+        }
+
+        /// <summary>«se cambiarían 2. Unidades en esas filas: 70 antes y 70 después (cuadra).» (cantidades en valor absoluto)</summary>
+        internal static string Cuadre(List<FilaEnsayoDTO> antes, List<FilaEnsayoDTO> despues, int movidas)
+        {
+            int a = Unidades(antes);
+            int d = Unidades(despues);
+            return $"se cambiarían {movidas}. Unidades en esas filas: {a} antes y {d} después ({(a == d ? "cuadra" : "NO cuadra")}).";
+        }
+
+        internal static int Unidades(IEnumerable<FilaEnsayoDTO> filas)
+        {
+            const string marca = "; Cantidad=";
+            int total = 0;
+            foreach (FilaEnsayoDTO fila in filas ?? Enumerable.Empty<FilaEnsayoDTO>())
+            {
+                int i = fila?.Datos?.IndexOf(marca, StringComparison.Ordinal) ?? -1;
+                if (i < 0)
+                {
+                    continue;
+                }
+                string resto = fila.Datos.Substring(i + marca.Length);
+                int fin = resto.IndexOf(';');
+                if (int.TryParse(fin < 0 ? resto : resto.Substring(0, fin), out int cantidad))
+                {
+                    total += Math.Abs(cantidad);
+                }
+            }
+            return total;
         }
     }
 }

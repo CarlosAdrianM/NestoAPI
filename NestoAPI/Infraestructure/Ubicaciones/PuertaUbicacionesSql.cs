@@ -138,6 +138,56 @@ DELETE FROM Ubicaciones WHERE [NºOrden] = @p0 AND Cantidad = @p1 AND Estado IN 
 INSERT INTO Ubicaciones (Empresa, [Almacén], [Número], Cantidad, Estado, Usuario) VALUES (@p0, @p1, @p2, @p3, 2, @p4);
 SELECT CAST(SCOPE_IDENTITY() AS int);";
 
+        // ---- Ariadna#12: cambiar de hueco la reserva de una reposición (CambiarHuecoReservaReposicion) ----
+
+        // Lo reservado para el traspaso en el hueco donde no estaba (la más nueva primero)
+        internal const string SQL_RESERVAS_DEL_TRASPASO_EN_EL_HUECO = COLUMNAS_FILA + @"
+WHERE [NºTraspasoRepo] = @p0 AND Estado = 4 AND [Almacén] = @p1 AND [Número] = @p2 AND Cantidad > 0
+  AND RTRIM(Pasillo) + RTRIM(Fila) + RTRIM(Columna) = @p3
+ORDER BY [NºOrden] DESC";
+
+        // Lo libre del hueco de donde se va a coger: lo mismo que se ofrece como alternativa (estado 0, sin pedido, albarán ni
+        // reserva), bloqueado hasta el final de la transacción. La más antigua primero, como al reservar con FIFO.
+        internal const string SQL_LIBRES_DEL_HUECO = @"
+SELECT [NºOrden] AS NumeroOrden, RTRIM(Empresa) AS Empresa, RTRIM([Almacén]) AS Almacen, RTRIM([Número]) AS Producto,
+       RTRIM(Pasillo) AS Pasillo, RTRIM(Fila) AS Fila, RTRIM(Columna) AS Columna, Cantidad, ISNULL(Estado, 0) AS Estado,
+       FechaCreación AS FechaCreacion
+FROM Ubicaciones WITH (UPDLOCK, HOLDLOCK)
+WHERE Empresa = @p0 AND [Almacén] = @p1 AND [Número] = @p2 AND Estado = 0 AND Cantidad > 0
+  AND PedidoVta IS NULL AND [AlbaránVta] IS NULL AND [NºOrdenVta] IS NULL AND [NºOrdenRepo] IS NULL
+  AND RTRIM(Pasillo) + RTRIM(Fila) + RTRIM(Columna) = @p3
+ORDER BY FechaCreación, [NºOrden]";
+
+        // En el destino: se resta de la libre y se inserta la reserva (4) en su mismo hueco, con la línea de entrada
+        // (NºOrdenRepo) y el traspaso de la reserva de origen; si la libre se queda a cero, sobra. Devuelve el NºOrden de la
+        // reserva nueva, o NULL si la libre ya no tenía esas unidades (entonces no se ha tocado nada). SCOPE_IDENTITY y no
+        // OUTPUT: la tabla tiene triggers.
+        internal const string SQL_RESERVA_DE_LA_LIBRE_PARA_EL_TRASPASO = @"
+DECLARE @nueva int = NULL;
+IF EXISTS (SELECT 1 FROM Ubicaciones WHERE [NºOrden] = @p0 AND Estado = 0 AND Cantidad >= @p1)
+BEGIN
+    UPDATE Ubicaciones SET Cantidad = Cantidad - @p1, Usuario = @p4 WHERE [NºOrden] = @p0;
+    INSERT INTO Ubicaciones (Empresa, [Almacén], [Número], Cantidad, Pasillo, Fila, Columna, Estado, [NºOrdenRepo], [NºTraspasoRepo], Usuario)
+    SELECT Empresa, [Almacén], [Número], @p1, Pasillo, Fila, Columna, 4, @p2, @p3, @p4 FROM Ubicaciones WHERE [NºOrden] = @p0;
+    SET @nueva = CAST(SCOPE_IDENTITY() AS int);
+    DELETE FROM Ubicaciones WHERE [NºOrden] = @p0 AND Cantidad = 0 AND Estado = 0;
+END
+SELECT @nueva;";
+
+        // En el origen: lo que no estaba sale de la reserva y queda «pendiente de ubicar» (2, sin hueco), como una falta
+        // (EscriturasSalida.SQL_REGISTRO_REPOSICION_A_PENDIENTE_DE_UBICAR). 1 si se ha hecho; 0 si la reserva ya no tenía esas unidades.
+        internal const string SQL_RESERVA_REPOSICION_A_PENDIENTE_DE_UBICAR = @"
+IF EXISTS (SELECT 1 FROM Ubicaciones WHERE [NºOrden] = @p0 AND Estado = 4 AND Cantidad >= @p1)
+BEGIN
+    INSERT INTO Ubicaciones (Empresa, [Almacén], [Número], Cantidad, Estado, Usuario)
+    SELECT Empresa, [Almacén], [Número], @p1, 2, @p2 FROM Ubicaciones WHERE [NºOrden] = @p0;
+    UPDATE Ubicaciones SET Cantidad = Cantidad - @p1, Usuario = @p2 WHERE [NºOrden] = @p0;
+    DELETE FROM Ubicaciones WHERE [NºOrden] = @p0 AND Cantidad = 0 AND Estado = 4;
+    SELECT 1;
+END
+ELSE
+    SELECT 0;";
+
         // ---------------------------------------------------------------- Registro
 
         /// <summary>El punto ÚNICO por donde pasa cada cambio de Ubicaciones. Corte 2: va a UbicacionesMovimientos (<see cref="RegistroMovimientosUbicacionSql"/>).</summary>
@@ -336,6 +386,80 @@ SELECT CAST(SCOPE_IDENTITY() AS int);";
                 new SqlParameter("@p0", SqlDbType.Int) { Value = numeroTraspaso }, Char("@p1", almacenOrigen, 3)).ToListAsync().ConfigureAwait(false);
             return await DevolverAlHueco(salidas, TipoMovimientoUbicacion.AnularSalidaDeReposicion,
                 DocumentoUbicacion.De(TipoDocumentoUbicacion.Traspaso, numeroTraspaso), usuario).ConfigureAwait(false);
+        }
+
+        public async Task<ResumenUbicaciones> CambiarHuecoReservaReposicion(string empresa, string almacen, int numeroTraspaso, string producto,
+            HuecoUbicacion origen, HuecoUbicacion destino, int cantidad, string usuario)
+        {
+            if (origen?.TieneHueco != true || destino?.TieneHueco != true || origen.Codigo == destino.Codigo || cantidad <= 0)
+            {
+                throw new NestoBusinessException("Para cambiar de hueco hacen falta dos huecos distintos y una cantidad mayor que cero.");
+            }
+            string quien = UsuarioAuditoriaHelper.ParaAuditoria(usuario);
+            string articulo = producto?.Trim();
+
+            List<FilaUbicacionReposicion> reservas = await db.Database.SqlQuery<FilaUbicacionReposicion>(SQL_RESERVAS_DEL_TRASPASO_EN_EL_HUECO,
+                new SqlParameter("@p0", SqlDbType.Int) { Value = numeroTraspaso }, Char("@p1", almacen, 3), Char("@p2", articulo, 15),
+                new SqlParameter("@p3", SqlDbType.VarChar, 9) { Value = origen.Codigo }).ToListAsync().ConfigureAwait(false);
+            List<FilaUbicacionLibre> libres = await db.Database.SqlQuery<FilaUbicacionLibre>(SQL_LIBRES_DEL_HUECO,
+                Char("@p0", empresa, 3), Char("@p1", almacen, 3), Char("@p2", articulo, 15),
+                new SqlParameter("@p3", SqlDbType.VarChar, 9) { Value = destino.Codigo }).ToListAsync().ConfigureAwait(false);
+
+            List<TrasladoDeReserva> traslados = PlanificadorCambioHuecoReposicion.Planear(reservas, libres, cantidad, out string motivo);
+            if (traslados == null)
+            {
+                throw new NestoBusinessException($"{motivo} No se ha cambiado nada.") { StatusCode = System.Net.HttpStatusCode.Conflict, IsWarning = true };
+            }
+
+            var resumen = new ResumenUbicaciones();
+            foreach (TrasladoDeReserva traslado in traslados)
+            {
+                // Primero la reserva nueva en el destino…
+                int? nueva = await db.Database.SqlQuery<int?>(SQL_RESERVA_DE_LA_LIBRE_PARA_EL_TRASPASO,
+                    Orden(traslado.Libre.NumeroOrden), new SqlParameter("@p1", SqlDbType.Int) { Value = traslado.Cantidad },
+                    new SqlParameter("@p2", SqlDbType.Int) { Value = (object)traslado.Reserva.NumeroOrdenRepo ?? DBNull.Value },
+                    new SqlParameter("@p3", SqlDbType.Int) { Value = numeroTraspaso },
+                    new SqlParameter("@p4", SqlDbType.VarChar, 30) { Value = quien }).FirstOrDefaultAsync().ConfigureAwait(false);
+                if (nueva == null)
+                {
+                    throw HaCambiado(destino, articulo);
+                }
+                // … y lo que no estaba en el origen, a «pendiente de ubicar»
+                int hecho = await db.Database.SqlQuery<int>(SQL_RESERVA_REPOSICION_A_PENDIENTE_DE_UBICAR,
+                    Orden(traslado.Reserva.NumeroOrden), new SqlParameter("@p1", SqlDbType.Int) { Value = traslado.Cantidad },
+                    new SqlParameter("@p2", SqlDbType.VarChar, 30) { Value = quien }).FirstOrDefaultAsync().ConfigureAwait(false);
+                if (hecho != 1)
+                {
+                    throw HaCambiado(origen, articulo);
+                }
+                resumen.FilasTocadas += 4;
+                DocumentoUbicacion traspaso = DocumentoUbicacion.De(TipoDocumentoUbicacion.Traspaso, numeroTraspaso);
+                Apuntar(resumen, new MovimientoUbicacion
+                {
+                    Tipo = TipoMovimientoUbicacion.CambiarDeHueco,
+                    Empresa = traslado.Libre.Empresa, Almacen = almacen, Producto = articulo, NumeroOrdenUbicacion = nueva,
+                    HuecoOrigen = origen, HuecoDestino = destino, Cantidad = traslado.Cantidad,
+                    EstadoAnterior = EstadosUbicacion.LIBRE, EstadoNuevo = EstadosUbicacion.RESERVA_REPOSICION,
+                    Documento = traspaso, Usuario = quien
+                });
+                Apuntar(resumen, new MovimientoUbicacion
+                {
+                    Tipo = TipoMovimientoUbicacion.Falta,
+                    Empresa = traslado.Reserva.Empresa, Almacen = almacen, Producto = articulo, NumeroOrdenUbicacion = traslado.Reserva.NumeroOrden,
+                    HuecoOrigen = origen, Cantidad = traslado.Cantidad,
+                    EstadoAnterior = EstadosUbicacion.RESERVA_REPOSICION, EstadoNuevo = EstadosUbicacion.PENDIENTE_DE_UBICAR,
+                    Documento = traspaso, Usuario = quien
+                });
+            }
+            return resumen;
+        }
+
+        private static NestoBusinessException HaCambiado(HuecoUbicacion hueco, string producto)
+        {
+            return new NestoBusinessException($"El hueco {hueco} de {producto} ha cambiado mientras se cambiaba de hueco: vuelva a intentarlo. No se ha hecho nada.")
+            {
+                StatusCode = System.Net.HttpStatusCode.Conflict
+            };
         }
 
         // ---------------------------------------------------------------- Diferencias de reposición (NestoAPI#634)
@@ -548,5 +672,86 @@ SELECT CAST(SCOPE_IDENTITY() AS int);";
     public class FilaUbicacionReposicion : FilaUbicacionLibre
     {
         public int? NumeroOrdenRepo { get; set; }
+    }
+
+    /// <summary>Ariadna#12: unidades de una reserva de reposición que pasan a cogerse de una fila libre de otro hueco.</summary>
+    public class TrasladoDeReserva
+    {
+        public FilaUbicacionReposicion Reserva { get; set; }
+        public FilaUbicacionLibre Libre { get; set; }
+        public int Cantidad { get; set; }
+    }
+
+    /// <summary>
+    /// Ariadna#12: qué reserva de reposición pasa a qué fila libre del otro hueco. Puro: sin base de datos. A diferencia del
+    /// picking (que cambia lo que haya libre), aquí es todo o nada: si en el origen no queda reservada toda la cantidad o en
+    /// el destino no hay toda libre, no se planea nada y se dice por qué. Las reservas, en el orden en que vienen; las
+    /// libres, también (las lee la puerta de la más antigua a la más nueva).
+    /// </summary>
+    public static class PlanificadorCambioHuecoReposicion
+    {
+        /// <returns>Los traslados, o null si no se puede (con <paramref name="motivo"/>).</returns>
+        public static List<TrasladoDeReserva> Planear(IEnumerable<FilaUbicacionReposicion> reservas, IEnumerable<FilaUbicacionLibre> libres,
+            int cantidad, out string motivo)
+        {
+            List<FilaUbicacionReposicion> deLaReposicion = (reservas ?? Enumerable.Empty<FilaUbicacionReposicion>())
+                .Where(r => r != null && r.Cantidad > 0 && r.Estado == EstadosUbicacion.RESERVA_REPOSICION).ToList();
+            List<FilaUbicacionLibre> sinReservar = (libres ?? Enumerable.Empty<FilaUbicacionLibre>())
+                .Where(l => l != null && l.Cantidad > 0 && l.Estado == EstadosUbicacion.LIBRE).ToList();
+            int reservado = deLaReposicion.Sum(r => r.Cantidad);
+            int libre = sinReservar.Sum(l => l.Cantidad);
+            motivo = null;
+            if (cantidad <= 0)
+            {
+                motivo = "La cantidad tiene que ser mayor que cero.";
+                return null;
+            }
+            if (reservado == 0)
+            {
+                motivo = "La reposición ya no tiene nada reservado de ese producto en ese hueco (¿se ha cambiado ya o se ha terminado?).";
+                return null;
+            }
+            if (reservado < cantidad)
+            {
+                motivo = $"En ese hueco la reposición solo tiene reservadas {reservado}, no {cantidad}.";
+                return null;
+            }
+            if (libre < cantidad)
+            {
+                motivo = libre == 0
+                    ? "En el hueco de donde se va a coger ya no hay nada libre de ese producto."
+                    : $"En el hueco de donde se va a coger solo hay {libre} libres, no {cantidad}.";
+                return null;
+            }
+
+            var traslados = new List<TrasladoDeReserva>();
+            var quedaLibre = sinReservar.ToDictionary(l => l, l => l.Cantidad);
+            int falta = cantidad;
+            foreach (FilaUbicacionReposicion reserva in deLaReposicion)
+            {
+                int deEstaReserva = Math.Min(falta, reserva.Cantidad);
+                foreach (FilaUbicacionLibre fila in sinReservar)
+                {
+                    if (deEstaReserva == 0)
+                    {
+                        break;
+                    }
+                    int trozo = Math.Min(deEstaReserva, quedaLibre[fila]);
+                    if (trozo == 0)
+                    {
+                        continue;
+                    }
+                    traslados.Add(new TrasladoDeReserva { Reserva = reserva, Libre = fila, Cantidad = trozo });
+                    quedaLibre[fila] -= trozo;
+                    deEstaReserva -= trozo;
+                    falta -= trozo;
+                }
+                if (falta == 0)
+                {
+                    break;
+                }
+            }
+            return traslados;
+        }
     }
 }

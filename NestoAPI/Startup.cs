@@ -256,6 +256,9 @@ namespace NestoAPI
             // Ariadna#12: coger de otro hueco lo que no estaba en el de la parada
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioCambioHueco>(_ => Infraestructure.PreparacionAlmacen.RepositorioCambioHuecoSql.ConContextoPropio());
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioCambioHuecoPicking, Infraestructure.PreparacionAlmacen.ServicioCambioHuecoPicking>();
+            // … y en la salida de una reposición (la reserva en estado 4 pasa de hueco por la puerta única de Ubicaciones)
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioCambioHuecoReposicion>(_ => Infraestructure.PreparacionAlmacen.RepositorioCambioHuecoReposicionSql.ConContextoPropio());
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioCambioHuecoReposicion, Infraestructure.PreparacionAlmacen.ServicioCambioHuecoReposicion>();
             // NestoAPI#646: avisos de «ha cambiado» a las demás PDA del mismo documento (SignalR, AlmacenHub)
             _ = services.AddSingleton<Infraestructure.Notificaciones.IAvisosAlmacen, Infraestructure.Notificaciones.AvisosAlmacenSignalR>();
             // Ariadna#8: el mozo informa de un dato mal de la ficha (foto → Tienda online; lo demás → Compras)

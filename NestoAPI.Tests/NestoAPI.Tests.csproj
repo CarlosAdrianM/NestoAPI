@@ -476,6 +476,7 @@
     <Compile Include="Infrastructure\PreparacionAlmacen\CasadorEscaneosTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\BultosVariasPdaTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\CambioHuecoPickingTests.cs" />
+    <Compile Include="Infrastructure\PreparacionAlmacen\CambioHuecoReposicionTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\OrdenRecorridoTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\FichasProductoAlmacenTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\ProductosMismoHuecoTests.cs" />
