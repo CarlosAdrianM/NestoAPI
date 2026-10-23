@@ -47,6 +47,12 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// <summary>prdCrearAlbaránCmp por su único punto de llamada (PedidosCompraService).</summary>
         Task<int> CrearAlbaran(int pedido, string usuario);
         Task RegistrarEvidencia(string empresa, IEnumerable<EvidenciaRecepcion> filas);
+        /// <summary>
+        /// Ariadna#51 (corte 2): lo leído en curso con ese IdRecepcion pasa a Terminada, en esta transacción; con
+        /// <paramref name="abrirOtra"/> (recibida en parte) se abre otro IdRecepcion para lo que queda. 0 si el IdRecepcion no era
+        /// el compartido o la tabla no existe.
+        /// </summary>
+        Task<int> TerminarLecturasEnCurso(ClaveRecepcionEnCurso clave, Guid idRecepcion, bool abrirOtra, string usuario, string dispositivo);
         /// <summary>Para el ensayo: cómo leer las filas que toca terminar (antes y después), con los pedidos fijados antes.</summary>
         Task<Func<Task<List<FilaEnsayoDTO>>>> PrepararFoto(string empresa, IReadOnlyCollection<int> pedidos);
     }
@@ -280,6 +286,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     Usuario = solicitud.Usuario,
                     Dispositivo = solicitud.Dispositivo
                 }).ToList()).ConfigureAwait(false);
+                // Ariadna#51: lo leído en curso con este IdRecepcion queda terminado con la recepción (lo que no llega sigue
+                // pendiente en los pedidos: la próxima vez se abre otro IdRecepcion al leer)
+                _ = await transaccion.TerminarLecturasEnCurso(ClaveLecturas(solicitud, TIPO), solicitud.IdRecepcion, false,
+                    solicitud.Usuario, solicitud.Dispositivo).ConfigureAwait(false);
                 if (solicitud.Ensayo != null)
                 {
                     await solicitud.Ensayo.Acabar().ConfigureAwait(false);
@@ -347,6 +357,18 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// producto, así un reenvío se reconoce y no se recibe dos veces.
         /// </summary>
         public static Guid IdEvidencia(Guid idRecepcion, string producto) => EvidenciasRecepcionSql.IdEvidencia(idRecepcion, producto);
+
+        /// <summary>Ariadna#51: la recepción en curso de esta solicitud (la misma clave que usan GET/POST/DELETE de …/Lecturas).</summary>
+        internal static ClaveRecepcionEnCurso ClaveLecturas(SolicitudTerminarRecepcion solicitud, string tipo)
+        {
+            return new ClaveRecepcionEnCurso
+            {
+                Empresa = solicitud.Empresa,
+                Tipo = tipo,
+                Documento = solicitud.Documento,
+                Almacen = solicitud.Almacen
+            };
+        }
     }
 
     /// <summary>
@@ -706,6 +728,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     Dispositivo = solicitud.Dispositivo,
                     Parcial = parcial
                 }).ToList()).ConfigureAwait(false);
+                // Ariadna#51: lo leído en curso con este IdRecepcion queda terminado con la recepción; si ha sido en parte, se abre
+                // otro IdRecepcion para lo que queda
+                _ = await transaccion.TerminarLecturasEnCurso(OrigenRecepcionCompras.ClaveLecturas(solicitud, TIPO), solicitud.IdRecepcion, parcial,
+                    solicitud.Usuario, solicitud.Dispositivo).ConfigureAwait(false);
                 // NestoAPI#634: constancia de cada diferencia, con la entrada (el ajuste del origen va después de confirmar)
                 if (diferencias.Any())
                 {

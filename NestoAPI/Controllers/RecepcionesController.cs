@@ -1,4 +1,6 @@
-﻿using NestoAPI.Infraestructure.PreparacionAlmacen;
+﻿using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Notificaciones;
+using NestoAPI.Infraestructure.PreparacionAlmacen;
 using NestoAPI.Models;
 using NestoAPI.Models.PreparacionAlmacen;
 using System;
@@ -27,12 +29,19 @@ namespace NestoAPI.Controllers
     {
         private readonly IServicioRecepciones servicio;
         private readonly IFichasProductoAlmacen fichas;
+        private readonly IServicioLecturasRecepcion lecturas;
+        private readonly IAvisosAlmacen avisos;
 
         /// <param name="fichas">Familia, subgrupo, tamaño y unidad de cada producto que ve el mozo. Sin él, solo el nombre.</param>
-        public RecepcionesController(IServicioRecepciones servicio, IFichasProductoAlmacen fichas = null)
+        /// <param name="lecturas">Ariadna#51 (corte 2): lo leído en curso, en el servidor. Sin él, …/Lecturas da 404 (como sin la tabla).</param>
+        /// <param name="avisos">NestoAPI#646: «ha cambiado» a los demás equipos de la recepción (SignalR). Sin él, no se avisa.</param>
+        public RecepcionesController(IServicioRecepciones servicio, IFichasProductoAlmacen fichas = null,
+            IServicioLecturasRecepcion lecturas = null, IAvisosAlmacen avisos = null)
         {
             this.servicio = servicio;
             this.fichas = fichas;
+            this.lecturas = lecturas;
+            this.avisos = avisos;
         }
 
         // GET api/Almacen/Recepciones?almacen=ALG&empresa=1
@@ -112,13 +121,172 @@ namespace NestoAPI.Controllers
         {
             try
             {
-                return Ok(await servicio.Terminar(tipo, Empresa(empresa), Almacen(almacen), documento?.Trim(), terminar, User, ensayo).ConfigureAwait(false));
+                ResultadoTerminarRecepcionDTO resultado = await servicio
+                    .Terminar(tipo, Empresa(empresa), Almacen(almacen), documento?.Trim(), terminar, User, ensayo).ConfigureAwait(false);
+                // Ariadna#51: las demás pantallas de esta recepción saben que ya está (al pedir lo leído les sale vacío o lo que queda)
+                if (!ensayo && resultado != null && !resultado.YaEstabaTerminada)
+                {
+                    Avisar(tipo, documento, almacen, terminar?.Dispositivo);
+                }
+                return Ok(resultado);
             }
             catch (UnauthorizedAccessException ex)
             {
                 // Identificado pero sin permiso para este tipo: 403, no 401 (con 401 la app intentaría refrescar el token)
-                return ResponseMessage(Request.CreateErrorResponse(HttpStatusCode.Forbidden, ex.Message));
+                return Prohibido(ex);
             }
+        }
+
+        // GET api/Almacen/Recepciones/REPO/81119/Lecturas?almacen=ALC&empresa=1&dispositivo=PDA-03
+        /// <summary>
+        /// Ariadna#51 (corte 2): lo leído de la recepción en curso, de todos los equipos y ya sumado, con su IdRecepcion (el que
+        /// se manda al terminar). Si no hay nada en curso, la abre: IdRecepcion nuevo y listas vacías. 403 si quien llama no puede
+        /// recibir eso en ese almacén. 404 si el servidor todavía no lo guarda (los clientes siguen como antes).
+        /// </summary>
+        [HttpGet]
+        [Route("{tipo}/{documento}/Lecturas")]
+        [ResponseType(typeof(LecturasRecepcionEnCursoDTO))]
+        public async Task<IHttpActionResult> GetLecturas(string tipo, string documento, string almacen = Constantes.Almacenes.ALGETE,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO, string dispositivo = null)
+        {
+            if (lecturas == null)
+            {
+                return SinLecturasEnServidor();
+            }
+            try
+            {
+                LecturasRecepcionEnCursoDTO enCurso = await lecturas
+                    .Leer(tipo, Empresa(empresa), Almacen(almacen), documento?.Trim(), User, Dispositivo(dispositivo)).ConfigureAwait(false);
+                return enCurso == null ? SinLecturasEnServidor() : Ok(enCurso);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Prohibido(ex);
+            }
+        }
+
+        // POST api/Almacen/Recepciones/REPO/81119/Lecturas?almacen=ALC&empresa=1
+        //   [{ IdCliente, Producto | CodigoBulto, Cantidad (+ al leer, − al quitar), Dispositivo, Fecha }]
+        /// <summary>
+        /// Ariadna#51 (corte 2): apunta lecturas en la recepción en curso (se suman a las de los demás equipos) y devuelve lo
+        /// mismo que el GET, ya con todo sumado. Reenviar el mismo IdCliente no lo apunta dos veces. Avisa por SignalR a los
+        /// demás equipos del grupo «recepcion:{tipo}:{documento}:{almacen}» (no al que lo manda).
+        /// </summary>
+        [HttpPost]
+        [Route("{tipo}/{documento}/Lecturas")]
+        [ResponseType(typeof(LecturasRecepcionEnCursoDTO))]
+        public async Task<IHttpActionResult> PostLecturas(string tipo, string documento, [FromBody] List<LecturaRecepcionEnCursoDTO> nuevas,
+            string almacen = Constantes.Almacenes.ALGETE, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            if (lecturas == null)
+            {
+                return SinLecturasEnServidor();
+            }
+            // Equipos[].Dispositivo es el nombre del equipo que manda la cabecera X-Dispositivo (el mismo que excluye el aviso)
+            string cabecera = Cabecera(AvisosAlmacen.CABECERA_DISPOSITIVO);
+            if (cabecera != null)
+            {
+                foreach (LecturaRecepcionEnCursoDTO nueva in (nuevas ?? new List<LecturaRecepcionEnCursoDTO>()).Where(l => l != null))
+                {
+                    nueva.Dispositivo = cabecera;
+                }
+            }
+            try
+            {
+                LecturasRecepcionEnCursoDTO enCurso = await lecturas
+                    .Anotar(tipo, Empresa(empresa), Almacen(almacen), documento?.Trim(), nuevas, User).ConfigureAwait(false);
+                if (enCurso == null)
+                {
+                    return SinLecturasEnServidor();
+                }
+                Avisar(tipo, documento, almacen, nuevas?.Select(l => l?.Dispositivo).FirstOrDefault(d => !string.IsNullOrWhiteSpace(d)));
+                return Ok(enCurso);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Prohibido(ex);
+            }
+        }
+
+        // DELETE api/Almacen/Recepciones/REPO/81119/Lecturas?almacen=ALC&empresa=1&dispositivo=PDA-03
+        /// <summary>
+        /// Ariadna#51 (corte 2): «Descartar lo leído». Lo en curso queda como descartado (no se borra) y se abre la recepción con
+        /// un IdRecepcion nuevo; devuelve lo mismo que el GET (listas vacías). Avisa por SignalR a los demás equipos.
+        /// </summary>
+        [HttpDelete]
+        [Route("{tipo}/{documento}/Lecturas")]
+        [ResponseType(typeof(LecturasRecepcionEnCursoDTO))]
+        public async Task<IHttpActionResult> DeleteLecturas(string tipo, string documento, string almacen = Constantes.Almacenes.ALGETE,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO, string dispositivo = null)
+        {
+            if (lecturas == null)
+            {
+                return SinLecturasEnServidor();
+            }
+            try
+            {
+                LecturasRecepcionEnCursoDTO enCurso = await lecturas
+                    .Descartar(tipo, Empresa(empresa), Almacen(almacen), documento?.Trim(), User, Dispositivo(dispositivo)).ConfigureAwait(false);
+                if (enCurso == null)
+                {
+                    return SinLecturasEnServidor();
+                }
+                Avisar(tipo, documento, almacen, Dispositivo(dispositivo));
+                return Ok(enCurso);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Prohibido(ex);
+            }
+        }
+
+        private IHttpActionResult SinLecturasEnServidor()
+        {
+            return ResponseMessage(Request.CreateErrorResponse(HttpStatusCode.NotFound, ServicioLecturasRecepcion.MENSAJE_SIN_TABLA));
+        }
+
+        private IHttpActionResult Prohibido(UnauthorizedAccessException ex)
+        {
+            return ResponseMessage(Request.CreateErrorResponse(HttpStatusCode.Forbidden, ex.Message));
+        }
+
+        /// <summary>
+        /// NestoAPI#646 / Ariadna#51: a los demás equipos de la recepción, «ha cambiado». Al que lo hace no: su conexión llega en la
+        /// cabecera X-Conexion-SignalR y, si no, se excluyen las de su dispositivo. Nunca rompe la petición.
+        /// </summary>
+        private void Avisar(string tipo, string documento, string almacen, string dispositivoDeLaPeticion)
+        {
+            if (avisos == null)
+            {
+                return;
+            }
+            try
+            {
+                string dispositivo = Cabecera(AvisosAlmacen.CABECERA_DISPOSITIVO) ?? dispositivoDeLaPeticion?.Trim();
+                avisos.HaCambiado(AvisosAlmacen.GrupoRecepcion(tipo, documento, Almacen(almacen)),
+                    UsuarioAuditoriaHelper.ParaAuditoria(UsuarioAuditoriaHelper.Resolver(User, null)),
+                    Cabecera(AvisosAlmacen.CABECERA_CONEXION), string.IsNullOrWhiteSpace(dispositivo) ? null : dispositivo);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(ex);
+            }
+        }
+
+        /// <summary>El dispositivo de la petición: el parámetro o, si no, la cabecera X-Dispositivo.</summary>
+        private string Dispositivo(string dispositivo)
+        {
+            return string.IsNullOrWhiteSpace(dispositivo) ? Cabecera(AvisosAlmacen.CABECERA_DISPOSITIVO) : dispositivo.Trim();
+        }
+
+        private string Cabecera(string nombre)
+        {
+            if (Request?.Headers == null || !Request.Headers.TryGetValues(nombre, out IEnumerable<string> valores))
+            {
+                return null;
+            }
+            string valor = valores?.FirstOrDefault()?.Trim();
+            return string.IsNullOrEmpty(valor) ? null : valor;
         }
 
         private static string Almacen(string almacen)

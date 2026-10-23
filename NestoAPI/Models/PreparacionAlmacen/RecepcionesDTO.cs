@@ -274,4 +274,43 @@ namespace NestoAPI.Models.PreparacionAlmacen
         /// <summary>El error real (procedimiento, trigger, restricción o motivo de negocio) si el ensayo ha fallado.</summary>
         public string ErrorEnsayo { get; set; }
     }
+
+    /// <summary>
+    /// Ariadna#51 (corte 2): lo leído de una recepción en curso, guardado en el servidor y sumado (Nesto y Ariadna, en
+    /// cualquier equipo, ven lo mismo). Es la respuesta de GET, POST y DELETE de …/Recepciones/{tipo}/{documento}/Lecturas.
+    /// </summary>
+    public class LecturasRecepcionEnCursoDTO
+    {
+        /// <summary>El de la recepción en curso, el mismo para todos los equipos: el que se manda al Terminar.</summary>
+        public Guid IdRecepcion { get; set; }
+        /// <summary>Lo leído de cada producto, ya sumado (solo lo que queda en más de cero), en el orden en que se leyó.</summary>
+        public List<LecturaRecepcionDTO> Lecturas { get; set; } = new List<LecturaRecepcionDTO>();
+        /// <summary>Las etiquetas de bulto leídas (sin las quitadas), en el orden en que se leyeron.</summary>
+        public List<string> CodigosBulto { get; set; } = new List<string>();
+        /// <summary>Quién ha leído algo en esta recepción y cuándo por última vez (lo más reciente primero).</summary>
+        public List<EquipoRecepcionDTO> Equipos { get; set; } = new List<EquipoRecepcionDTO>();
+    }
+
+    /// <summary>Ariadna#51: un usuario en un dispositivo que ha leído algo en la recepción en curso.</summary>
+    public class EquipoRecepcionDTO
+    {
+        public string Usuario { get; set; }
+        public string Dispositivo { get; set; }
+        public DateTime Ultima { get; set; }
+    }
+
+    /// <summary>
+    /// Ariadna#51: un apunte de lo leído (POST …/Lecturas). Producto o CodigoBulto; Cantidad positiva al leer y negativa al
+    /// quitar. IdCliente lo genera el dispositivo: reenviarlo no lo apunta dos veces.
+    /// </summary>
+    public class LecturaRecepcionEnCursoDTO
+    {
+        public Guid IdCliente { get; set; }
+        public string Producto { get; set; }
+        public string CodigoBulto { get; set; }
+        public int Cantidad { get; set; }
+        public string Dispositivo { get; set; }
+        /// <summary>Cuándo se leyó en el dispositivo. Sin ella, la hora del servidor.</summary>
+        public DateTime? Fecha { get; set; }
+    }
 }

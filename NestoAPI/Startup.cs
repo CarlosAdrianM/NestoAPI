@@ -244,6 +244,9 @@ namespace NestoAPI
                 sp.GetRequiredService<Infraestructure.Reposiciones.IServicioDiferenciasReposicion>(),
                 sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IRepositorioBultosReposicion>()));
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioRecepciones, Infraestructure.PreparacionAlmacen.ServicioRecepciones>();
+            // Ariadna#51 (corte 2): lo leído de una recepción en curso, en el servidor (Nesto y Ariadna ven lo mismo)
+            _ = services.AddSingleton<Infraestructure.PreparacionAlmacen.IRepositorioLecturasRecepcion, Infraestructure.PreparacionAlmacen.RepositorioLecturasRecepcionSql>();
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioLecturasRecepcion, Infraestructure.PreparacionAlmacen.ServicioLecturasRecepcion>();
             // Lo que ve el mozo de cada producto además del nombre: familia, subgrupo, tamaño y unidad (un solo sitio)
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioFichasProducto>(_ => Infraestructure.PreparacionAlmacen.RepositorioFichasProducto.ConContextoPropio());
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IFotosProductoAlmacen, Infraestructure.PreparacionAlmacen.FotosProductoAlmacen>();
