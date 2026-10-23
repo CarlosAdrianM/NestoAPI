@@ -26,6 +26,20 @@ namespace NestoAPI.Infraestructure.Pagos.Aplazame
         public bool Disponible { get; set; }
         public bool Sandbox { get; set; }
         public string Motivo { get; set; }
+
+        /// <summary>
+        /// TNV#91: la clave PÚBLICA de Aplázame, para que la app pinte el widget oficial de cuotas (<c>aplazame.js</c>) en
+        /// la ficha de producto y en la forma de pago. Es pública (la tienda la publica en su HTML); la privada nunca sale.
+        /// Va siempre que el cliente pueda pagar con Aplázame, aunque ESTE importe no entre en los límites: así la ficha
+        /// sabe enseñar las cuotas cuando, al subir la cantidad, el importe entra. Null si el cliente no puede.
+        /// </summary>
+        public string ClavePublica { get; set; }
+
+        /// <summary>TNV#91: AplazameImporteMinimo (con IVA), con la clave pública. Null: sin límite o sin clave.</summary>
+        public decimal? ImporteMinimo { get; set; }
+
+        /// <summary>TNV#91: AplazameImporteMaximo (con IVA), con la clave pública. Null: sin límite o sin clave.</summary>
+        public decimal? ImporteMaximo { get; set; }
     }
 
     /// <summary>
@@ -122,6 +136,14 @@ namespace NestoAPI.Infraestructure.Pagos.Aplazame
         public DisponibilidadAplazameDTO Disponibilidad(string cliente, decimal importe, bool cobrarCarritoAntes, bool ocultaPrecios)
         {
             DisponibilidadAplazameDTO No(string motivo) => new DisponibilidadAplazameDTO { Disponible = false, Sandbox = Sandbox, Motivo = motivo };
+            // TNV#91: pasadas las condiciones del cliente, la clave pública y los límites van aunque el importe no entre
+            DisponibilidadAplazameDTO ConClave(DisponibilidadAplazameDTO d)
+            {
+                d.ClavePublica = ClavePublica;
+                d.ImporteMinimo = ImporteMinimo;
+                d.ImporteMaximo = ImporteMaximo;
+                return d;
+            }
 
             if (Modo == ModoAplazame.Apagado)
             {
@@ -145,13 +167,13 @@ namespace NestoAPI.Infraestructure.Pagos.Aplazame
             }
             if (ImporteMinimo.HasValue && importe < ImporteMinimo.Value)
             {
-                return No($"Aplázame está disponible para pedidos desde {ImporteMinimo.Value.ToString("N2", Es)} €.");
+                return ConClave(No($"Aplázame está disponible para pedidos desde {ImporteMinimo.Value.ToString("N2", Es)} €."));
             }
             if (ImporteMaximo.HasValue && importe > ImporteMaximo.Value)
             {
-                return No($"Aplázame está disponible para pedidos de hasta {ImporteMaximo.Value.ToString("N2", Es)} €.");
+                return ConClave(No($"Aplázame está disponible para pedidos de hasta {ImporteMaximo.Value.ToString("N2", Es)} €."));
             }
-            return new DisponibilidadAplazameDTO { Disponible = true, Sandbox = Sandbox, Motivo = null };
+            return ConClave(new DisponibilidadAplazameDTO { Disponible = true, Sandbox = Sandbox, Motivo = null });
         }
     }
 }
