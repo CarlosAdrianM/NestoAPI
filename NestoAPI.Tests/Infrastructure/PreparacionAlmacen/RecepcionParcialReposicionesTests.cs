@@ -389,6 +389,35 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             A.CallTo(() => avisador.Avisar("NUEVAVISION\\Andre", A<string>.Ignored, A<IEnumerable<string>>.Ignored)).MustHaveHappenedOnceExactly();
         }
 
+        // Novedad 751 (81028): en el Windows de Alfredo se quedaron leídos los 10 productos ya dados de alta en parte. Salían como
+        // «no se esperaba» y, si se terminaba con ellos, habrían entrado otra vez en el stock de Algete.
+        [TestMethod]
+        public async Task VolverALeerLoYaRecibidoEnParte_SeRechazaSinTocarNada()
+        {
+            Enviado(("B", 1));
+            A.CallTo(() => transaccion.ProductosRecibidosEnParte("1", TRASPASO)).Returns(new List<string> { "A " });
+
+            NestoBusinessException ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() =>
+                Reposiciones().Terminar(Solicitud(false, ("A", 2))));
+
+            StringAssert.Contains(ex.Message, "A ya se dio de alta en esta reposición 80862");
+            StringAssert.Contains(ex.Message, "No se ha recibido nada");
+            AssertNoSeHaTocadoElDiario();
+        }
+
+        [TestMethod]
+        public async Task UnAjenoDeVerdadTrasRecibirEnParte_EntraComoSiempre()
+        {
+            Enviado(("B", 1));
+            A.CallTo(() => transaccion.ProductosRecibidosEnParte("1", TRASPASO)).Returns(new List<string> { "A" });
+
+            ResultadoTerminarRecepcionDTO final = await Reposiciones().Terminar(Solicitud(false, ("B", 1), ("Z", 1)));
+
+            Assert.AreEqual("Z", final.Diferencias.Single().Producto);
+            CollectionAssert.Contains(pasos, "ajustar Z a 1");
+            CollectionAssert.Contains(pasos, "contabilizar");
+        }
+
         private static IOrigenRecepcion OrigenReposicionPendiente(bool recibidaEnParte)
         {
             var origen = A.Fake<IOrigenRecepcion>(o => o.Implements<IAdmiteRecepcionParcial>());

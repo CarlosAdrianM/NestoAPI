@@ -15,6 +15,11 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     public interface ITransaccionCierreReposicion
     {
         Task<bool> YaRegistrada(string empresa, IEnumerable<Guid> idsEvidencia);
+        /// <summary>
+        /// Novedad 751 (81028): los productos de este traspaso ya dados de alta en una recepción en parte (#673), según su
+        /// evidencia. Una vez dados de alta ya no están en el diario, y si se vuelven a leer parecen «no se esperaba».
+        /// </summary>
+        Task<List<string>> ProductosRecibidosEnParte(string empresa, int traspaso);
         /// <summary>Almacenes.DiarioEntradaRep del almacén de destino. Null si no tiene.</summary>
         Task<string> DiarioDeEntrada(string empresa, string almacen);
         /// <summary>Los traspasos que hay en ese diario del almacén, pendientes de contabilizar.</summary>
@@ -359,6 +364,13 @@ WHERE p.Empresa = @p0 AND p.[Almacén] = @p1 AND p.Diario = @p2 AND p.[NºTraspa
             return EvidenciasRecepcionSql.YaRegistrada(db, idsEvidencia);
         }
 
+        public Task<List<string>> ProductosRecibidosEnParte(string empresa, int traspaso)
+        {
+            return db.Database.SqlQuery<string>(EvidenciasRecepcionSql.SQL_PRODUCTOS_RECIBIDOS_EN_PARTE,
+                ParametroChar("@p0", empresa, 3), new SqlParameter("@p1", System.Data.SqlDbType.Int) { Value = traspaso })
+                .ToListAsync();
+        }
+
         public async Task<string> DiarioDeEntrada(string empresa, string almacen)
         {
             string diario = await db.Database.SqlQuery<string>(SQL_DIARIO_ENTRADA, empresa, almacen).FirstOrDefaultAsync().ConfigureAwait(false);
@@ -649,6 +661,12 @@ FROM Ubicaciones u WHERE u.[NºOrden] > @p3 OR ({UBICACIONES})";
         public const string MOTIVO_PARCIAL = "Recepción parcial";
 
         internal const string SQL_YA_REGISTRADA = "SELECT COUNT(*) FROM PreparacionEscaneos WHERE IdCliente IN ({0})";
+
+        /// <summary>Novedad 751: los productos de una reposición ya dados de alta en parte (Motivo «Recepción parcial …»).</summary>
+        internal const string SQL_PRODUCTOS_RECIBIDOS_EN_PARTE = @"
+SELECT DISTINCT RTRIM(LTRIM(Producto)) FROM PreparacionEscaneos
+WHERE Empresa = @p0 AND NumeroOrigen = @p1 AND Fase = '" + FASE + @"' AND TipoOrigen = 'REPO' AND Cantidad > 0
+  AND Motivo LIKE '" + MOTIVO_PARCIAL + @" %'";
 
         internal const string SQL_EVIDENCIA = @"
 INSERT INTO PreparacionEscaneos

@@ -619,6 +619,9 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 List<FilaReposicion> enviado = await transaccion.LeerLineas(solicitud.Empresa, solicitud.Almacen, traspaso).ConfigureAwait(false)
                     ?? new List<FilaReposicion>();
                 List<DiferenciaPreparacionDTO> comparado = Diferencias(enviado, solicitud.Lecturas);
+                // Novedad 751 (81028): lo ya dado de alta en una recepción en parte ya no está en el diario. Si se vuelve a leer
+                // sale como «no se esperaba» y, al terminar, entraría OTRA VEZ en el stock (lo leído que no venía, entra)
+                await ComprobarQueNoSeRepiteLoRecibidoEnParte(transaccion, solicitud, traspaso, comparado).ConfigureAwait(false);
                 if (solicitud.Parcial)
                 {
                     ComprobarParcial(comparado, traspaso);
@@ -827,6 +830,29 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
         /// <summary>Decisión de Carlos (19/10/26): más de 2 días recibida en parte y sin terminar, se avisa.</summary>
         internal static readonly TimeSpan PLAZO_RECIBIDA_EN_PARTE = TimeSpan.FromDays(2);
+
+        /// <summary>
+        /// Novedad 751: rechaza (sin tocar nada) lo leído que no venía cuando es un producto de esta reposición ya dado de alta en
+        /// una recepción en parte. Lo ajeno de verdad (un producto que no era de la reposición) sigue entrando como siempre.
+        /// </summary>
+        private static async Task ComprobarQueNoSeRepiteLoRecibidoEnParte(ITransaccionCierreReposicion transaccion,
+            SolicitudTerminarRecepcion solicitud, int traspaso, IEnumerable<DiferenciaPreparacionDTO> comparado)
+        {
+            List<DiferenciaPreparacionDTO> ajenos = comparado.Where(d => d.Ajeno && d.Leido > 0).ToList();
+            if (!ajenos.Any())
+            {
+                return;
+            }
+            var recibidos = new HashSet<string>((await transaccion.ProductosRecibidosEnParte(solicitud.Empresa, traspaso).ConfigureAwait(false)
+                ?? new List<string>()).Where(p => p != null).Select(p => p.Trim()), StringComparer.OrdinalIgnoreCase);
+            List<string> repetidos = ajenos.Select(d => d.Producto?.Trim()).Where(recibidos.Contains).ToList();
+            if (repetidos.Any())
+            {
+                throw new NestoBusinessException($"{string.Join(", ", repetidos)} ya se {(repetidos.Count == 1 ? "dio" : "dieron")} de alta " +
+                    $"en esta reposición {traspaso} (recibida en parte): no se puede recibir otra vez. {(repetidos.Count == 1 ? "Quítelo" : "Quítelos")} de lo leído (en Ariadna, " +
+                    "«Descartar lo leído») y termine con lo que quede. No se ha recibido nada.");
+            }
+        }
 
         /// <summary>
         /// NestoAPI#645: si el traspaso tiene etiquetas de bulto, hace falta al menos una suya entre las leídas; una etiqueta de
