@@ -189,6 +189,23 @@ namespace NestoAPI.Tests.Infrastructure
             CollectionAssert.AreEqual(new[] { "2-2", "1-1", "2-1" }, filas.Select(f => f.Pedido + "-" + f.Linea).ToArray());
         }
 
+        [TestMethod]
+        public void Excel_EsUnXlsxConNombreDelDia()
+        {
+            var filas = new List<LineaPendienteEntregarDTO>
+            {
+                new LineaPendienteEntregarDTO { Pedido = 928000, Cliente = "1000", NombreCliente = "PELUQUERÍA", FechaEntrega = new DateTime(2026, 10, 24), Producto = "45958", Cantidad = 2, Bruto = 21M }
+            };
+
+            var contenido = new GeneradorExcelPendientesEntregar().GenerarExcel(filas, new DateTime(2026, 10, 23));
+            byte[] bytes = contenido.ReadAsByteArrayAsync().Result;
+
+            Assert.AreEqual(GeneradorExcelPendientesEntregar.CONTENT_TYPE, contenido.Headers.ContentType.MediaType);
+            Assert.AreEqual("PendientesEntregar_20261023.xlsx", contenido.Headers.ContentDisposition.FileName);
+            Assert.AreEqual((byte)'P', bytes[0], "Un .xlsx es un zip (empieza por PK)");
+            Assert.AreEqual((byte)'K', bytes[1]);
+        }
+
         private static DbSet<T> DbSetCon<T>(List<T> datos) where T : class
         {
             var fake = A.Fake<DbSet<T>>(o => o.Implements<IQueryable<T>>().Implements<IDbAsyncEnumerable<T>>());

@@ -779,6 +779,20 @@ namespace NestoAPI.Controllers
                 .Listar(empresa, almacen, producto, vendedor).ConfigureAwait(false));
         }
 
+        /// <summary>Nesto#552: las mismas líneas que <see cref="GetPendientesEntregar"/> en Excel.</summary>
+        [HttpGet]
+        [Route("api/PedidosVenta/PendientesEntregar/Excel")]
+        public async Task<HttpResponseMessage> GetPendientesEntregarExcel(string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO,
+            string almacen = null, string producto = null, string vendedor = null)
+        {
+            List<Infraestructure.PedidosVenta.LineaPendienteEntregarDTO> lineas = await new Infraestructure.PedidosVenta.ServicioPendientesEntregar(db)
+                .Listar(empresa, almacen, producto, vendedor).ConfigureAwait(false);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new Infraestructure.PedidosVenta.GeneradorExcelPendientesEntregar().GenerarExcel(lineas, DateTime.Today)
+            };
+        }
+
         /// <summary>
         /// NestoAPI#582: las notas de entrega de ese pedido que siguen sin fecha de entrega (la nota automática nace
         /// sin fecha para no colarse en el picking del día). Nesto lo pregunta tras hacer el albarán desde el detalle.
