@@ -50,6 +50,28 @@ namespace NestoAPI.Tests.Models.Picking
                     new ErrorContext { ErrorCode = "PICKING_PEDIDO_NO_EXISTE" })));
         }
 
+        // 23/10/26, picking de las 11:00: los únicos pedidos listos (925239, 927223, 927588, 929175) eran de clientes que cierran
+        // el lunes de la entrega y el correo decía «ha fallado… avisad a Informática».
+        private static NestoBusinessException SoloClientesCerrados()
+        {
+            return new NestoBusinessException(
+                "Los pedidos 925239, 927223 no salen: la entrega de este picking sería el lunes 26/10/2026 y el cliente (29268, 37644) cierra ese día.",
+                new ErrorContext { ErrorCode = Constantes.Picking.ERROR_CLIENTE_CERRADO });
+        }
+
+        [TestMethod]
+        public void SoloClientesCerrados_NoSuenaAFallo_YDiceQueHacer()
+        {
+            string asunto = AvisadorPickingAutomatico.AsuntoPara(SoloClientesCerrados());
+            string cuerpo = AvisadorPickingAutomatico.CuerpoPara(SoloClientesCerrados(), MOMENTO);
+
+            Assert.IsFalse(asunto.Contains("AVISO") || asunto.Contains("fallado"), asunto);
+            StringAssert.Contains(asunto, "clientes que cierran");
+            Assert.IsFalse(cuerpo.Contains("ha fallado") || cuerpo.Contains("Informática"), cuerpo);
+            StringAssert.Contains(cuerpo, "925239, 927223");
+            StringAssert.Contains(cuerpo, "pulsad «Picking»");
+        }
+
         [TestMethod]
         public void Asunto_SinTrabajo_NoSuenaAAlarma()
         {

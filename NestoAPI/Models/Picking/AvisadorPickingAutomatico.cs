@@ -47,8 +47,22 @@ namespace NestoAPI.Models.Picking
                 && negocio.Context?.ErrorCode == Constantes.Picking.ERROR_SIN_STOCK;
         }
 
+        /// <summary>
+        /// 23/10/26 (picking de las 11:00): los únicos pedidos listos eran de clientes que cierran el día de la entrega y el
+        /// correo decía «ha fallado… avisad a Informática». Tampoco es un fallo: saldrán solos en el primer picking que les toque.
+        /// </summary>
+        internal static bool EsSoloClientesCerrados(Exception excepcion)
+        {
+            return excepcion is NestoBusinessException negocio
+                && negocio.Context?.ErrorCode == Constantes.Picking.ERROR_CLIENTE_CERRADO;
+        }
+
         internal static string AsuntoPara(Exception excepcion)
         {
+            if (EsSoloClientesCerrados(excepcion))
+            {
+                return "Picking automático: solo había pedidos de clientes que cierran ese día";
+            }
             return EsPickingSinTrabajo(excepcion)
                 ? "Picking automático: no había nada que sacar"
                 : "AVISO: el picking automático ha fallado";
@@ -65,6 +79,16 @@ namespace NestoAPI.Models.Picking
                        "(sin stock suficiente o nada pendiente).</p>" +
                        "<p>No hay que hacer nada: es un resultado normal. " +
                        "Este correo se manda para que sepáis que la tarea SÍ se ha ejecutado.</p>";
+            }
+
+            if (EsSoloClientesCerrados(excepcion))
+            {
+                return "<p>El picking automático se ha ejecutado correctamente a las " + hora + ", " +
+                       "pero <b>no había nada que sacar</b>: los únicos pedidos listos son de clientes que cierran el día en que se " +
+                       "entregarían.</p>" +
+                       "<blockquote>" + Escapar(excepcion?.Message) + "</blockquote>" +
+                       "<p>No hay que hacer nada: saldrán solos en el primer picking que les toque. Si alguno tiene que salir hoy " +
+                       "igualmente, abrid el pedido en Nesto y pulsad «Picking»: preguntará si sacarlo aunque el cliente cierre.</p>";
             }
 
             return "<p>El picking automático de las " + hora + " <b>ha fallado</b> y no se ha sacado nada.</p>" +
