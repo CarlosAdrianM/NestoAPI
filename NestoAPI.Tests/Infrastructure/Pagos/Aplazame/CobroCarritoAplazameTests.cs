@@ -287,6 +287,56 @@ namespace NestoAPI.Tests.Infrastructure.Pagos.Aplazame
         }
 
         [TestMethod]
+        public void Disponible_TNV91_DevuelveLaClavePublicaYLosLimites()
+        {
+            DisponibilidadAplazameDTO d = Config(ModoAplazame.Activo, minimo: 100, maximo: 2500).Disponibilidad(CLIENTE, 300, true, false);
+
+            Assert.IsTrue(d.Disponible);
+            Assert.AreEqual("publica", d.ClavePublica);
+            Assert.AreEqual(100M, d.ImporteMinimo);
+            Assert.AreEqual(2500M, d.ImporteMaximo);
+        }
+
+        [TestMethod]
+        public void Disponible_TNV91_FueraDeLimites_SigueDandoLaClaveParaLaFicha()
+        {
+            // La ficha pregunta con una unidad; si al subir la cantidad el importe entra, tiene que poder enseñar las cuotas
+            ConfiguracionAplazame config = Config(ModoAplazame.Activo, minimo: 100, maximo: 2500);
+
+            DisponibilidadAplazameDTO pocoImporte = config.Disponibilidad(CLIENTE, 50, true, false);
+            DisponibilidadAplazameDTO muchoImporte = config.Disponibilidad(CLIENTE, 3000, true, false);
+
+            Assert.IsFalse(pocoImporte.Disponible);
+            Assert.AreEqual("publica", pocoImporte.ClavePublica);
+            Assert.AreEqual(100M, pocoImporte.ImporteMinimo);
+            Assert.IsFalse(muchoImporte.Disponible);
+            Assert.AreEqual("publica", muchoImporte.ClavePublica);
+            Assert.AreEqual(2500M, muchoImporte.ImporteMaximo);
+        }
+
+        [TestMethod]
+        public void Disponible_TNV91_SiElClienteNoPuede_SinClave()
+        {
+            ConfiguracionAplazame sandbox = Config(ModoAplazame.Sandbox, prueba: new[] { "15191" });
+
+            Assert.IsNull(Config(ModoAplazame.Apagado).Disponibilidad(CLIENTE, 300, true, false).ClavePublica);
+            Assert.IsNull(sandbox.Disponibilidad("10000", 300, true, false).ClavePublica);
+            Assert.IsNull(Config(ModoAplazame.Activo).Disponibilidad(CLIENTE, 300, cobrarCarritoAntes: false, ocultaPrecios: false).ClavePublica);
+            Assert.IsNull(Config(ModoAplazame.Activo).Disponibilidad(CLIENTE, 300, cobrarCarritoAntes: true, ocultaPrecios: true).ClavePublica);
+        }
+
+        [TestMethod]
+        public void Disponible_TNV91_NuncaSaleLaClavePrivada()
+        {
+            DisponibilidadAplazameDTO d = Config(ModoAplazame.Activo).Disponibilidad(CLIENTE, 300, true, false);
+
+            string json = Newtonsoft.Json.JsonConvert.SerializeObject(d);
+
+            Assert.IsTrue(json.Contains("publica"));
+            Assert.IsFalse(json.Contains("privada"));
+        }
+
+        [TestMethod]
         public void Interruptor_SinFilaOValorDesconocido_Apagado()
         {
             Assert.AreEqual(ModoAplazame.Apagado, ConfiguracionAplazame.InterpretarModo(null));
