@@ -81,6 +81,14 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public List<RecuperableRecepcionDTO> Recuperables { get; set; } = new List<RecuperableRecepcionDTO>();
     }
 
+    /// <summary>Ariadna#51: lo que ya entró en una recepción en parte (Cantidad = unidades que entraron).</summary>
+    public class LineaYaRecibidaDTO : LineaRecepcionDTO
+    {
+        /// <summary>Quién lo dio de alta (con dominio, como se guarda).</summary>
+        public string Usuario { get; set; }
+        public DateTime Fecha { get; set; }
+    }
+
     public class RecuperableRecepcionDTO
     {
         public int Pedido { get; set; }
@@ -134,6 +142,12 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public bool AdmiteRecibirEnParte { get; set; }
         /// <summary>NestoAPI#673: «Recibido en parte: 1 línea, 2 ud.» si ya se ha dado de alta una parte; null si no.</summary>
         public string TextoRecibidaEnParte { get; set; }
+        /// <summary>
+        /// Ariadna#51 (reposición 81028, 23/10/26): lo ya dado de alta en recepciones en parte, para que siga en la lista como
+        /// «Recibido el 22/10 (Alfredo)» en vez de desaparecer (el almacén creía que se había borrado y lo volvía a leer). Una
+        /// fila por recepción parcial y producto, con su ficha y sus códigos como las demás líneas. Null si no está recibida en parte.
+        /// </summary>
+        public List<LineaYaRecibidaDTO> YaRecibidas { get; set; }
 
         // NestoAPI#600: los textos de la confirmación antes de terminar, de su tipo, para que la app no mire el código del
         // tipo. La app sabe lo que se ha leído y elige el caso; el texto es del servidor. Cómo se monta la confirmación:

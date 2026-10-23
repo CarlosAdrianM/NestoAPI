@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Infraestructure.PreparacionAlmacen;
@@ -515,6 +515,71 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             RecepcionDTO recepcion = await reposiciones.LeerEsperado("1", "REI", "80862");
 
             Assert.AreEqual("Recibido en parte: 1 línea, 2 ud.", recepcion.TextoRecibidaEnParte);
+        }
+
+        // Ariadna#51 (81028): lo ya dado de alta en parte desaparecía de la lista y en el almacén creían que se había borrado.
+        [TestMethod]
+        public async Task Reposiciones_AlAbrirlaRecibidaEnParte_TraeLoYaRecibido()
+        {
+            var servicio = A.Fake<IServicioRecepcionReposiciones>();
+            A.CallTo(() => servicio.LeerPendientes("1", "ALG")).Returns(new List<ReposicionPendienteDTO>
+            {
+                new ReposicionPendienteDTO { Traspaso = 81028, Lineas = 1, Unidades = 1, LineasRecibidas = 1, UnidadesRecibidas = 2, FechaPrimeraParcial = DateTime.Now }
+            });
+            A.CallTo(() => servicio.LeerRecepcion("1", "ALG", 81028)).Returns(new RecepcionReposicionDTO
+            {
+                Empresa = "1", Almacen = "ALG", Traspaso = 81028,
+                Lineas = new List<LineaReposicionDTO> { new LineaReposicionDTO { Producto = "43763", Cantidad = 1 } }
+            });
+            var fecha = new DateTime(2026, 10, 22, 16, 46, 51);
+            A.CallTo(() => servicio.LeerYaRecibidas("1", 81028)).Returns(new List<LineaYaRecibidaDTO>
+            {
+                new LineaYaRecibidaDTO { Producto = "11345", Descripcion = "SUPER HIDRATANTE NATURAL", Cantidad = 2, Usuario = @"NUEVAVISION\Alfredo", Fecha = fecha }
+            });
+            var reposiciones = new OrigenRecepcionReposiciones(servicio, A.Fake<IRepositorioCierreReposiciones>(), A.Fake<IAvisadorReposiciones>(), (e, u) => "ALG",
+                bultos: A.Fake<IRepositorioBultosReposicion>());
+
+            RecepcionDTO recepcion = await reposiciones.LeerEsperado("1", "ALG", "81028");
+
+            LineaYaRecibidaDTO recibida = recepcion.YaRecibidas.Single();
+            Assert.AreEqual("11345", recibida.Producto);
+            Assert.AreEqual(2, recibida.Cantidad);
+            Assert.AreEqual(@"NUEVAVISION\Alfredo", recibida.Usuario);
+            Assert.AreEqual(fecha, recibida.Fecha);
+            Assert.AreEqual("43763", recepcion.Lineas.Single().Producto, "lo pendiente sigue igual");
+        }
+
+        [TestMethod]
+        public async Task Reposiciones_AlAbrirlaSinParciales_NoPreguntaLoYaRecibido()
+        {
+            var servicio = A.Fake<IServicioRecepcionReposiciones>();
+            A.CallTo(() => servicio.LeerPendientes("1", "ALG")).Returns(new List<ReposicionPendienteDTO>
+            {
+                new ReposicionPendienteDTO { Traspaso = 81028, Lineas = 1, Unidades = 1 }
+            });
+            A.CallTo(() => servicio.LeerRecepcion("1", "ALG", 81028)).Returns(new RecepcionReposicionDTO
+            {
+                Empresa = "1", Almacen = "ALG", Traspaso = 81028,
+                Lineas = new List<LineaReposicionDTO> { new LineaReposicionDTO { Producto = "43763", Cantidad = 1 } }
+            });
+            var reposiciones = new OrigenRecepcionReposiciones(servicio, A.Fake<IRepositorioCierreReposiciones>(), A.Fake<IAvisadorReposiciones>(), (e, u) => "ALG",
+                bultos: A.Fake<IRepositorioBultosReposicion>());
+
+            RecepcionDTO recepcion = await reposiciones.LeerEsperado("1", "ALG", "81028");
+
+            Assert.IsNull(recepcion.YaRecibidas);
+            A.CallTo(() => servicio.LeerYaRecibidas(A<string>._, A<int>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void SqlYaRecibidas_SoloLasEvidenciasDeRecepcionParcialDeReposiciones()
+        {
+            string sql = RepositorioRecepcionReposiciones.SQL_YA_RECIBIDAS;
+
+            StringAssert.Contains(sql, "e.Fase = 'RECE'");
+            StringAssert.Contains(sql, "e.TipoOrigen = 'REPO'");
+            StringAssert.Contains(sql, "e.Motivo LIKE 'Recepción parcial %'");
+            StringAssert.Contains(sql, "e.NumeroOrigen = @p1");
         }
     }
 }

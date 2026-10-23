@@ -3,6 +3,7 @@ using NestoAPI.Models;
 using NestoAPI.Models.PreparacionAlmacen;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
@@ -75,7 +76,9 @@ namespace NestoAPI.Controllers
             }
             if (fichas != null)
             {
-                await fichas.Completar(Empresa(empresa), recepcion.Lineas).ConfigureAwait(false);
+                // Ariadna#51: también lo ya recibido, para reconocer su código al leerlo y enseñar su foto
+                await fichas.Completar(Empresa(empresa), recepcion.Lineas.Concat(recepcion.YaRecibidas ?? new List<LineaYaRecibidaDTO>()))
+                    .ConfigureAwait(false);
             }
             return Ok(recepcion);
         }

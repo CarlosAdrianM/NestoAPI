@@ -28,6 +28,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// contabilizar, el nombre del origen («Algete»); si no, null.
         /// </summary>
         Task<string> LeerOrigenSinSalir(string empresa, string almacen, int traspaso);
+        /// <summary>Ariadna#51: lo ya dado de alta en recepciones en parte de ese traspaso, del más antiguo al más nuevo.</summary>
+        Task<List<LineaYaRecibidaDTO>> LeerYaRecibidas(string empresa, int traspaso);
     }
 
     /// <summary>
@@ -141,6 +143,21 @@ ORDER BY p.[Número]";
         {
             return baseDeDatos.SqlQuery<string>(SalidaReposicionSql.SQL_ORIGEN_SIN_SALIR, empresa, almacen, traspaso).FirstOrDefaultAsync();
         }
+
+        /// <summary>Ariadna#51: la evidencia de las recepciones en parte (la misma que <see cref="EvidenciasRecepcionSql.SQL_PRODUCTOS_RECIBIDOS_EN_PARTE"/>).</summary>
+        internal const string SQL_YA_RECIBIDAS = @"
+SELECT RTRIM(LTRIM(e.Producto)) AS Producto, RTRIM(pr.Nombre) AS Descripcion, CAST(e.Cantidad AS int) AS Cantidad,
+       RTRIM(e.Usuario) AS Usuario, e.FechaEscaneo AS Fecha
+FROM PreparacionEscaneos e
+LEFT JOIN Productos pr ON pr.Empresa = e.Empresa AND pr.[Número] = e.Producto
+WHERE e.Empresa = @p0 AND e.NumeroOrigen = @p1 AND e.Fase = '" + EvidenciasRecepcionSql.FASE + @"' AND e.TipoOrigen = 'REPO' AND e.Cantidad > 0
+  AND e.Motivo LIKE '" + EvidenciasRecepcionSql.MOTIVO_PARCIAL + @" %'
+ORDER BY e.FechaEscaneo";
+
+        public Task<List<LineaYaRecibidaDTO>> LeerYaRecibidas(string empresa, int traspaso)
+        {
+            return baseDeDatos.SqlQuery<LineaYaRecibidaDTO>(SQL_YA_RECIBIDAS, empresa, traspaso).ToListAsync();
+        }
     }
 
     public interface IServicioRecepcionReposiciones
@@ -155,6 +172,8 @@ ORDER BY p.[Número]";
         /// pero su salida del origen sigue sin contabilizar. Si no, no hace nada.
         /// </summary>
         Task ComprobarQueHaSalido(string empresa, string almacen, int traspaso);
+        /// <summary>Ariadna#51: lo ya dado de alta en recepciones en parte de ese traspaso.</summary>
+        Task<List<LineaYaRecibidaDTO>> LeerYaRecibidas(string empresa, int traspaso);
     }
 
     /// <summary>
@@ -181,6 +200,11 @@ ORDER BY p.[Número]";
         public Task<List<ReposicionPendienteDTO>> LeerPendientes(string empresa, string almacen)
         {
             return repositorio.LeerPendientes(empresa, almacen);
+        }
+
+        public Task<List<LineaYaRecibidaDTO>> LeerYaRecibidas(string empresa, int traspaso)
+        {
+            return repositorio.LeerYaRecibidas(empresa, traspaso);
         }
 
         public async Task<RecepcionReposicionDTO> LeerRecepcion(string empresa, string almacen, int traspaso)

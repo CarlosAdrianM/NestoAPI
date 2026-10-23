@@ -546,6 +546,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 Titulo = Titulo(traspaso, pendiente),
                 EsPuntual = pendiente?.EsPuntual == true,
                 TextoRecibidaEnParte = pendiente == null ? null : TextoRecibidaEnParte(pendiente.LineasRecibidas, pendiente.UnidadesRecibidas),
+                // Ariadna#51: lo ya dado de alta en parte sigue en la lista («Recibido el 22/10 (Alfredo)»); solo si lo hay
+                YaRecibidas = pendiente != null && TextoRecibidaEnParte(pendiente.LineasRecibidas, pendiente.UnidadesRecibidas) != null
+                    ? await reposiciones.LeerYaRecibidas(recepcion.Empresa ?? empresa, traspaso).ConfigureAwait(false)
+                    : null,
                 Empresa = recepcion.Empresa,
                 Almacen = recepcion.Almacen,
                 Lineas = recepcion.Lineas.Select(l => new LineaRecepcionDTO
