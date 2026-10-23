@@ -50,13 +50,19 @@ namespace NestoAPI.Infraestructure.Reposiciones
     }
 
     public class LineaReposicionEnPreparacionDTO : Models.PreparacionAlmacen.IConFotoProducto, Models.PreparacionAlmacen.IConProductosMismoHueco,
-        Models.PreparacionAlmacen.IConReferenciaProveedor
+        Models.PreparacionAlmacen.IConReferenciaProveedor, Models.PreparacionAlmacen.IConCodigosBarras
     {
         /// <summary>PreExtrProducto.[Nº Orden]: con él se cambia la cantidad.</summary>
         public int NumeroOrden { get; set; }
         public string Producto { get; set; }
         public string Nombre { get; set; }
+        /// <summary>El código principal (el de la ficha, Productos.CodBarras).</summary>
         public string CodigoBarras { get; set; }
+        /// <summary>
+        /// Ariadna#22 (NestoAPI#605): todos los códigos activos del producto, el principal el primero, para que la salida
+        /// guiada case por cualquiera. Lo rellena FichasProductoAlmacen.CompletarCodigos (una consulta por respuesta).
+        /// </summary>
+        public List<string> CodigosBarras { get; set; }
         public int Cantidad { get; set; }
         /// <summary>Stock actual del producto en el almacén de origen (lo que la tienda tiene para mandar).</summary>
         public int StockOrigen { get; set; }

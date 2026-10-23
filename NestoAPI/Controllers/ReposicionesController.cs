@@ -96,8 +96,13 @@ namespace NestoAPI.Controllers
         private async Task<ReposicionEnPreparacionDTO> ConFotos(ReposicionEnPreparacionDTO reposicion)
         {
             // Ariadna#47: con los demás productos del hueco de cada línea (solo las que salen de un hueco: desde Algete)
+            // Ariadna#22 (NestoAPI#605): y todos los códigos de barras de cada producto (una consulta para todas las líneas)
             await Task.WhenAll(
                 CompletarFotosYReferencias(reposicion?.Empresa, reposicion?.Lineas),
+                fichas == null || reposicion?.Lineas == null
+                    ? Task.CompletedTask
+                    : fichas.CompletarCodigos(string.IsNullOrWhiteSpace(reposicion.Empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : reposicion.Empresa.Trim(),
+                        reposicion.Lineas),
                 fichas == null || reposicion?.Lineas == null || string.IsNullOrWhiteSpace(reposicion.Origen)
                     ? Task.CompletedTask
                     : fichas.CompletarMismoHueco(reposicion.Empresa, reposicion.Origen, reposicion.Lineas)).ConfigureAwait(false);
