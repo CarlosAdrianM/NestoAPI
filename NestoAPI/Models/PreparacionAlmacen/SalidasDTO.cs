@@ -115,7 +115,10 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public int Cantidad { get; set; }
     }
 
-    /// <summary>POST api/Almacen/Picking/{picking}/CambiarHueco: lo que no estaba en un hueco se coge de otro.</summary>
+    /// <summary>
+    /// POST api/Almacen/Picking/{picking}/CambiarHueco y api/Almacen/Recogidas/{tipo}/{numero}/CambiarHueco (PICK y REPO):
+    /// lo que no estaba en un hueco se coge de otro.
+    /// </summary>
     public class CambiarHuecoPickingDTO
     {
         public string Producto { get; set; }
@@ -128,8 +131,21 @@ namespace NestoAPI.Models.PreparacionAlmacen
 
     public class ResultadoCambiarHuecoDTO
     {
-        /// <summary>Unidades cuya reserva ha pasado al otro hueco (puede ser menos de lo pedido).</summary>
+        /// <summary>Unidades cuya reserva ha pasado al otro hueco (en un picking puede ser menos de lo pedido; en una reposición, todo o 409).</summary>
         public int Movidas { get; set; }
         public string Mensaje { get; set; }
+
+        // Ariadna#12: con ?ensayo=true (Admin o Dirección) se hace todo en una transacción que se deshace siempre
+
+        [Newtonsoft.Json.JsonProperty(NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool? Ensayo { get; set; }
+        /// <summary>Ensayo: las filas de Ubicaciones del producto en los dos huecos (y lo nuevo pendiente de ubicar), antes.</summary>
+        [Newtonsoft.Json.JsonProperty(NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public List<FilaEnsayoDTO> FilasAntes { get; set; }
+        [Newtonsoft.Json.JsonProperty(NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public List<FilaEnsayoDTO> FilasDespues { get; set; }
+        /// <summary>Ensayo: el error real si ha fallado (no se ha guardado nada).</summary>
+        [Newtonsoft.Json.JsonProperty(NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string ErrorEnsayo { get; set; }
     }
 }

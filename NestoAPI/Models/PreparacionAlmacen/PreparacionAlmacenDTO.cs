@@ -194,8 +194,10 @@ namespace NestoAPI.Models.PreparacionAlmacen
     public class RecogidaAlmacenDTO
     {
         public string Empresa { get; set; }
-        /// <summary>Ariadna#47: el almacén de donde sale (el de los huecos), para leer qué más hay en ellos. No viaja.</summary>
-        [Newtonsoft.Json.JsonIgnore]
+        /// <summary>
+        /// Ariadna#47: el almacén de donde sale (el de los huecos), para leer qué más hay en ellos. Ariadna#12: viaja, para que
+        /// la app no suponga Algete al cambiar de hueco. Null si no se sabe.
+        /// </summary>
         public string Almacen { get; set; }
         public string Tipo { get; set; }
         public int Numero { get; set; }

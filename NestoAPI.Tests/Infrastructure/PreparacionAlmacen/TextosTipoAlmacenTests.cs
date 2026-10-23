@@ -328,7 +328,8 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
                 recogida.AvisoAlTerminar);
             Assert.AreEqual("Esta reposición ya está terminada.", recogida.AvisoCerrada);
             Assert.IsFalse(recogida.TienePacking);
-            Assert.IsFalse(recogida.PermiteCambiarHueco);
+            // Ariadna#12: la reserva de la reposición también se puede pasar a otro hueco
+            Assert.IsTrue(recogida.PermiteCambiarHueco);
         }
 
         [TestMethod]

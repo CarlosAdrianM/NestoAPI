@@ -37,6 +37,8 @@ namespace NestoAPI.Controllers
         private readonly IFichasProductoAlmacen fichas;
         private readonly IServicioEtiquetasHueco etiquetas;
         private readonly IServicioCambioHuecoPicking cambioHueco;
+        /// <summary>Ariadna#12: lo mismo en la salida de una reposición (REPO). Null: las reposiciones no lo admiten.</summary>
+        private readonly IServicioCambioHuecoReposicion cambioHuecoReposicion;
         /// <summary>NestoAPI#646: avisar a las demás PDA del documento de que ha cambiado (SignalR). Null: no se avisa.</summary>
         private readonly Infraestructure.Notificaciones.IAvisosAlmacen avisosAlmacen;
         /// <summary>NestoAPI#595 (slice 5, Ariadna#13): la etiqueta de agencia desde el packing. Null: no está configurada.</summary>
@@ -49,8 +51,10 @@ namespace NestoAPI.Controllers
             IServicioRecepcionCompras compras, IServicioRecepcionReposiciones reposiciones, IFichasProductoAlmacen fichas = null,
             IServicioEtiquetasHueco etiquetas = null, IServicioCambioHuecoPicking cambioHueco = null,
             Infraestructure.Notificaciones.IAvisosAlmacen avisosAlmacen = null,
-            Infraestructure.Agencias.IServicioEtiquetaPacking etiquetaPacking = null)
+            Infraestructure.Agencias.IServicioEtiquetaPacking etiquetaPacking = null,
+            IServicioCambioHuecoReposicion cambioHuecoReposicion = null)
         {
+            this.cambioHuecoReposicion = cambioHuecoReposicion;
             this.etiquetaPacking = etiquetaPacking;
             this.avisosAlmacen = avisosAlmacen;
             this.cambioHueco = cambioHueco;
@@ -214,12 +218,32 @@ namespace NestoAPI.Controllers
         [HttpGet]
         [Route("Picking/{picking:int}/Alternativas")]
         [ResponseType(typeof(List<HuecoAlternativoDTO>))]
-        public async Task<IHttpActionResult> GetAlternativasDelPicking(int picking, string producto, string hueco = null,
+        public Task<IHttpActionResult> GetAlternativasDelPicking(int picking, string producto, string hueco = null,
             string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
         {
-            return cambioHueco == null
-                ? Ok(new List<HuecoAlternativoDTO>())
-                : Ok(await cambioHueco.LeerAlternativas(Empresa(empresa), picking, producto, hueco).ConfigureAwait(false));
+            return GetAlternativasDeLaRecogida(CasadorEscaneos.ORIGEN_PICKING, picking, producto, hueco, empresa);
+        }
+
+        // GET api/Almacen/Recogidas/REPO/81143/Alternativas?producto=22624&hueco=001007002&empresa=1
+        /// <summary>
+        /// Ariadna#12: lo mismo que Picking/{n}/Alternativas para cualquier salida: PICK (el picking de siempre) y REPO (la
+        /// salida de una reposición: lo libre del almacén de origen). Un tipo que no admite cambiar de hueco, lista vacía.
+        /// </summary>
+        [HttpGet]
+        [Route("Recogidas/{tipo}/{numero:int}/Alternativas")]
+        [ResponseType(typeof(List<HuecoAlternativoDTO>))]
+        public async Task<IHttpActionResult> GetAlternativasDeLaRecogida(string tipo, int numero, string producto, string hueco = null,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            switch (CasadorEscaneos.NormalizarTipoOrigen(tipo))
+            {
+                case CasadorEscaneos.ORIGEN_PICKING when cambioHueco != null:
+                    return Ok(await cambioHueco.LeerAlternativas(Empresa(empresa), numero, producto, hueco).ConfigureAwait(false));
+                case CasadorEscaneos.ORIGEN_REPOSICION when cambioHuecoReposicion != null:
+                    return Ok(await cambioHuecoReposicion.LeerAlternativas(Empresa(empresa), numero, producto, hueco).ConfigureAwait(false));
+                default:
+                    return Ok(new List<HuecoAlternativoDTO>());
+            }
         }
 
         // POST api/Almacen/Picking/99633/CambiarHueco?empresa=1   { "Producto": "22624", "HuecoOrigen": "001007002", "HuecoDestino": "003001002", "Cantidad": 2 }
@@ -231,24 +255,76 @@ namespace NestoAPI.Controllers
         [HttpPost]
         [Route("Picking/{picking:int}/CambiarHueco")]
         [ResponseType(typeof(ResultadoCambiarHuecoDTO))]
-        public async Task<IHttpActionResult> PostCambiarHueco(int picking, [FromBody] CambiarHuecoPickingDTO cambio,
-            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        public Task<IHttpActionResult> PostCambiarHueco(int picking, [FromBody] CambiarHuecoPickingDTO cambio,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO, bool ensayo = false)
         {
-            if (cambioHueco == null)
+            return PostCambiarHuecoDeLaRecogida(CasadorEscaneos.ORIGEN_PICKING, picking, cambio, empresa, ensayo);
+        }
+
+        // POST api/Almacen/Recogidas/REPO/81143/CambiarHueco?empresa=1   { "Producto": "22624", "HuecoOrigen": "001007002", "HuecoDestino": "003001002", "Cantidad": 2 }
+        /// <summary>
+        /// Ariadna#12: lo mismo que Picking/{n}/CambiarHueco para cualquier salida. PICK: la reserva del picking (lo que haya
+        /// libre). REPO: la reserva de la reposición (estado 4) pasa al otro hueco, todo o nada, mientras la salida no esté
+        /// terminada; lo que no estaba queda «pendiente de ubicar». 409 con el motivo si no se puede; 400 si el tipo no lo
+        /// admite. Con <paramref name="ensayo"/> (Admin o Dirección; si no, 403), todo en una transacción que se deshace
+        /// siempre: 200 con las filas de Ubicaciones antes y después.
+        /// </summary>
+        [HttpPost]
+        [Route("Recogidas/{tipo}/{numero:int}/CambiarHueco")]
+        [ResponseType(typeof(ResultadoCambiarHuecoDTO))]
+        public async Task<IHttpActionResult> PostCambiarHuecoDeLaRecogida(string tipo, int numero, [FromBody] CambiarHuecoPickingDTO cambio,
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO, bool ensayo = false)
+        {
+            if (ensayo && !ServicioSalidas.PuedeEnsayar(User))
             {
-                return BadRequest("Este servidor todavía no sabe cambiar de hueco.");
+                return Content(HttpStatusCode.Forbidden, ServicioSalidas.MENSAJE_ENSAYO_SIN_PERMISO);
             }
-            ResultadoCambioHueco resultado = await cambioHueco.Cambiar(Empresa(empresa), picking, cambio, Usuario()).ConfigureAwait(false);
+            string tipoSalida = CasadorEscaneos.NormalizarTipoOrigen(tipo);
+            ResultadoCambioHueco resultado;
+            if (tipoSalida == CasadorEscaneos.ORIGEN_PICKING && cambioHueco != null)
+            {
+                resultado = ensayo
+                    ? await cambioHueco.Ensayar(Empresa(empresa), numero, cambio, Usuario()).ConfigureAwait(false)
+                    : await cambioHueco.Cambiar(Empresa(empresa), numero, cambio, Usuario()).ConfigureAwait(false);
+            }
+            else if (tipoSalida == CasadorEscaneos.ORIGEN_REPOSICION && cambioHuecoReposicion != null)
+            {
+                resultado = await cambioHuecoReposicion.Cambiar(Empresa(empresa), numero, cambio, Usuario(), ensayo).ConfigureAwait(false);
+            }
+            else
+            {
+                return BadRequest(tipoSalida == null
+                    ? $"El tipo de salida tiene que ser {CasadorEscaneos.ORIGEN_PICKING} o {CasadorEscaneos.ORIGEN_REPOSICION}."
+                    : "Este servidor todavía no sabe cambiar de hueco en este tipo de salida.");
+            }
+
+            if (resultado.Ensayo && resultado.Estado != EstadoCambioHueco.NoValido)
+            {
+                return Ok(Dto(resultado));
+            }
             switch (resultado.Estado)
             {
                 case EstadoCambioHueco.Cambiado:
-                    Avisar(Infraestructure.Notificaciones.AvisosAlmacen.GrupoRecogida(CasadorEscaneos.ORIGEN_PICKING, picking)); // NestoAPI#646
-                    return Ok(new ResultadoCambiarHuecoDTO { Movidas = resultado.Movidas, Mensaje = resultado.Mensaje });
+                    Avisar(Infraestructure.Notificaciones.AvisosAlmacen.GrupoRecogida(tipoSalida, numero)); // NestoAPI#646
+                    return Ok(Dto(resultado));
                 case EstadoCambioHueco.NoSePuede:
                     return Content(HttpStatusCode.Conflict, resultado.Mensaje);
                 default:
                     return BadRequest(resultado.Mensaje);
             }
+        }
+
+        private static ResultadoCambiarHuecoDTO Dto(ResultadoCambioHueco resultado)
+        {
+            var dto = new ResultadoCambiarHuecoDTO { Movidas = resultado.Movidas, Mensaje = resultado.Mensaje };
+            if (resultado.Ensayo)
+            {
+                dto.Ensayo = true;
+                dto.FilasAntes = resultado.FilasAntes;
+                dto.FilasDespues = resultado.FilasDespues;
+                dto.ErrorEnsayo = resultado.ErrorEnsayo;
+            }
+            return dto;
         }
 
         // POST api/Almacen/Recogidas/PICK/99739/AnularLecturas?empresa=1   { "Usuario": "Pedro" }
