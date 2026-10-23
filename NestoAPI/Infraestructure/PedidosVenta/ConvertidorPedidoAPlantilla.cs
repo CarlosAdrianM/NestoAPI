@@ -101,7 +101,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         Descuento = linea.DescuentoLinea,
                         AplicarDescuento = linea.AplicarDescuento,
                         IdLineaPago = linea.id,
-                        PagoTienePicking = linea.picking != 0
+                        PagoTienePicking = linea.picking != 0,
+                        Grupo = linea.GrupoProducto?.Trim() // sugerencia 756
                     });
                 }
             }
@@ -133,7 +134,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 IdLineaPago = pagoEsRegalo ? 0 : pago.id,
                 IdLineaOferta = pagoEsRegalo ? pago.id : deOferta.FirstOrDefault()?.id,
                 PagoTienePicking = !pagoEsRegalo && pago.picking != 0,
-                OfertaTienePicking = pagoEsRegalo ? pago.picking != 0 : deOferta.Any(l => l.picking != 0)
+                OfertaTienePicking = pagoEsRegalo ? pago.picking != 0 : deOferta.Any(l => l.picking != 0),
+                Grupo = pago.GrupoProducto?.Trim() // sugerencia 756
             };
 
             // Oferta personalizada (Nesto#371): la parte de oferta va con precio/descuento propios

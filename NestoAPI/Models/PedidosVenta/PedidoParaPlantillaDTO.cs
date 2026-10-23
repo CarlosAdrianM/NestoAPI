@@ -67,6 +67,11 @@ namespace NestoAPI.Models.PedidosVenta
         // quitar desde la plantilla (el cliente lo valida antes del PUT con datos frescos).
         public bool PagoTienePicking { get; set; }
         public bool OfertaTienePicking { get; set; }
+        /// <summary>
+        /// Sugerencia 756 (Sancho, pedido 929207): el grupo del producto (COS, ACC, PEL…). Sin él, la plantilla en modo edición
+        /// no contaba las líneas que ya tenía el pedido en la base bonificable de Ganavisiones (81,17 € en vez de 264,08 €).
+        /// </summary>
+        public string Grupo { get; set; }
     }
 
     /// <summary>Regalo Ganavisiones (confirmado contra la tabla Ganavision por el GET, #279).</summary>

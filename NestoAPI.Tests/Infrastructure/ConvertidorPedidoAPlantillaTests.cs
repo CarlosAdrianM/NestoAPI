@@ -52,6 +52,24 @@ namespace NestoAPI.Tests.Infrastructure
             };
         }
 
+        // Sugerencia 756 (Sancho, pedido 929207, 23/10/26): al modificar con la plantilla, las líneas que ya tenía el pedido llegaban
+        // sin grupo y no contaban en la base bonificable de Ganavisiones (81,17 € en vez de 264,08 €: «ha superado los Ganavisiones»).
+        [TestMethod]
+        public void Convertir_LasLineasLlevanSuGrupo_ConYSinOferta()
+        {
+            LineaPedidoVentaDTO normal = Linea(1, "41938", 1, 89.95M);
+            normal.GrupoProducto = "COS ";
+            LineaPedidoVentaDTO pago = Linea(2, "42276", 3, 6.40M, oferta: 7);
+            pago.GrupoProducto = "ACC";
+            LineaPedidoVentaDTO gratis = Linea(3, "42276", 1, 6.40M, descuento: 1, oferta: 7);
+            gratis.GrupoProducto = "ACC";
+
+            var resultado = ConvertidorPedidoAPlantilla.Convertir(Pedido(normal, pago, gratis));
+
+            Assert.AreEqual("COS", resultado.Lineas.Single(l => l.Producto == "41938").Grupo);
+            Assert.AreEqual("ACC", resultado.Lineas.Single(l => l.Producto == "42276").Grupo);
+        }
+
         // Nesto#476: "Modificar con plantilla" (Nesto#397) tiene que conservar el modo de servicio
         // del pedido (NestoAPI#482), no solo el bool ServirJunto del que deriva.
 
