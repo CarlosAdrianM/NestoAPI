@@ -81,7 +81,10 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
             };
             repositorio = A.Fake<IRepositorioCarteraContacto>();
             A.CallTo(() => repositorio.LeerCartera(A<string>._, A<DateTime>._)).ReturnsLazily(() => Task.FromResult(cartera.Select(Copia).ToList()));
-            A.CallTo(() => repositorio.LeerContactos(A<string>._, A<DateTime>._)).Returns(Task.FromResult(new ContactosVendedor { Hoy = 2, Semana = 5, Mes = 10 }));
+            // Sugerencia 782: hoy 1001 (dos rapports) y 1002, el lunes 1003, el día 2 1004, y hoy uno que no es de la cartera.
+            A.CallTo(() => repositorio.LeerContactos(A<string>._, A<DateTime>._)).Returns(Contactos(
+                Hablo("1001", HOY), Hablo("1001", HOY), Hablo("1002", HOY), Hablo("1003", new DateTime(2026, 10, 5)),
+                Hablo("1004", new DateTime(2026, 10, 2)), Hablo("9999", HOY)));
             A.CallTo(() => repositorio.LeerDelegacion(A<string>._)).Returns(Task.FromResult("REI"));
             probabilidades = A.Fake<IProbabilidadesContacto>();
             A.CallTo(() => probabilidades.Leer(A<string>._, A<string>._, A<string>._)).Returns(Task.FromResult(
@@ -103,6 +106,10 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
             UltimoPedido = HOY.AddDays(-40),
             UltimoContacto = diasContacto.HasValue ? HOY.AddDays(-diasContacto.Value) : (DateTime?)null
         };
+
+        private static Task<List<ContactoClienteDia>> Contactos(params ContactoClienteDia[] contactos) => Task.FromResult(contactos.ToList());
+
+        private static ContactoClienteDia Hablo(string cliente, DateTime dia) => new ContactoClienteDia { Cliente = cliente, Contacto = "0", Dia = dia };
 
         private static ClienteCarteraContacto Copia(ClienteCarteraContacto c) => (ClienteCarteraContacto)typeof(object)
             .GetMethod("MemberwiseClone", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(c, null);
@@ -142,7 +149,9 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
             Assert.AreEqual(1, respuesta.Ritmo.PendientesAlta);
             Assert.AreEqual(1, respuesta.Ritmo.PendientesMedia);
             Assert.AreEqual(1, respuesta.Ritmo.PendientesBaja);
-            Assert.AreEqual(2, respuesta.Ritmo.ContactosHoy);
+            Assert.AreEqual(2, respuesta.Ritmo.ContactosHoy, "clientes distintos de la cartera, no rapports");
+            Assert.AreEqual(3, respuesta.Ritmo.ContactosSemana);
+            Assert.AreEqual(4, respuesta.Ritmo.ContactosMes);
             Assert.AreEqual("REI", delegacionConsultada, "festivos de la delegación del vendedor");
         }
 
@@ -405,7 +414,7 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
         private void CarteraConObjetivoHoy(int clientes)
         {
             cartera = Enumerable.Range(1, clientes).Select(i => Cliente((20000 + i).ToString(), 52, null)).ToList();
-            A.CallTo(() => repositorio.LeerContactos(A<string>._, A<DateTime>._)).Returns(Task.FromResult(new ContactosVendedor()));
+            A.CallTo(() => repositorio.LeerContactos(A<string>._, A<DateTime>._)).Returns(Contactos());
         }
 
         [TestMethod]
@@ -435,8 +444,10 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
         [TestMethod]
         public async Task Leer_ObjetivoHoyCero_SeQuedaElNumeroPedido()
         {
-            CarteraConObjetivoHoy(30);
-            A.CallTo(() => repositorio.LeerContactos(A<string>._, A<DateTime>._)).Returns(Task.FromResult(new ContactosVendedor { Mes = 500 }));
+            // Sugerencia 782: 30 clientes de una llamada al mes, todos contactados ya este mes → objetivo cubierto.
+            cartera = Enumerable.Range(1, 30).Select(i => Cliente((20000 + i).ToString(), 2, null)).ToList();
+            A.CallTo(() => repositorio.LeerContactos(A<string>._, A<DateTime>._)).Returns(Contactos(
+                cartera.Select(c => Hablo(c.Cliente, new DateTime(2026, 10, 2))).ToArray()));
 
             SugerenciasContactoDTO respuesta = await Servicio().Leer("MPP", "Llamada", 20, "", "u");
 
@@ -482,7 +493,8 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
             Fake.ClearRecordedCalls(fakeSugerencias);
 
             // A las 12 ya ha hecho 72 contactos este mes: (576 − 72) / 18 → 28.
-            A.CallTo(() => repositorio.LeerContactos(A<string>._, A<DateTime>._)).Returns(Task.FromResult(new ContactosVendedor { Mes = 72 }));
+            A.CallTo(() => repositorio.LeerContactos(A<string>._, A<DateTime>._)).Returns(Contactos(
+                cartera.Take(72).Select(c => Hablo(c.Cliente, new DateTime(2026, 10, 2))).ToArray()));
             SugerenciasContactoDTO respuesta = await Servicio().Leer("MPP", "Llamada", 20, "", "u");
 
             Assert.AreEqual(28, respuesta.Ritmo.ObjetivoHoy);
@@ -618,6 +630,12 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
             UltimoContacto = ultimoContacto
         };
 
+        /// <summary>Sugerencia 782: los rapports del vendedor son los de la cartera con contacto en octubre, en su día.</summary>
+        private Task<List<ContactoClienteDia>> ContactadosEsteMes() => Contactos(cartera
+            .Where(c => c.UltimoContacto >= new DateTime(2026, 10, 1))
+            .Select(c => Hablo(c.Cliente, c.UltimoContacto.Value))
+            .ToArray());
+
         [TestMethod]
         public async Task Leer_UltimoLaborableDelMes_EntranTodosLosCompradoresSinContactoYSeRegistraElOrigen()
         {
@@ -637,18 +655,21 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
                     ["s2/0"] = new PrediccionContacto { Probabilidad = 0.8f },
                     ["s3/0"] = new PrediccionContacto { Probabilidad = 0.7f }
                 }));
-            A.CallTo(() => repositorio.LeerContactos(A<string>._, A<DateTime>._)).Returns(Task.FromResult(new ContactosVendedor { Mes = 500 }));
+            A.CallTo(() => repositorio.LeerContactos(A<string>._, A<DateTime>._)).Returns(ContactadosEsteMes());
 
             SugerenciasContactoDTO respuesta = await ServicioEl(ahora).Leer("MPP", "Llamada", 20, "", "u");
 
-            Assert.AreEqual(0, respuesta.Ritmo.ObjetivoHoy);
+            // Sugerencia 782: los contadores son clientes distintos (los 3 semanales cuentan 3, no los rapports que lleven), y el
+            // objetivo sigue en llamadas (3 × 4 + 30 = 42): 42 − 3 = 39 el último laborable, que piden más sitios que el cupo.
+            Assert.AreEqual(3, respuesta.Ritmo.ContactosMes);
+            Assert.AreEqual(39, respuesta.Ritmo.ObjetivoHoy);
             Assert.AreEqual(30, respuesta.Ritmo.CompradoresSinContactoMes);
             Assert.AreEqual(30, respuesta.Ritmo.CupoCoberturaHoy, "último laborable: todos los que faltan");
-            Assert.AreEqual(30, respuesta.Sugerencias.Count, "aunque se pidieran 20");
-            Assert.IsTrue(Enumerable.Range(1, 30).All(i => respuesta.Sugerencias.Any(s => s.Cliente == "p" + i)));
-            Assert.IsTrue(respuesta.Sugerencias.All(s => s.Origen == OrigenesSugerenciaContacto.COBERTURA));
-            Assert.AreEqual(30, sugerencias.Count);
-            Assert.IsTrue(sugerencias.All(s => s.Motivo.StartsWith(OrigenesSugerenciaContacto.PREFIJO_MOTIVO_COBERTURA)), "el origen queda en el Motivo registrado");
+            Assert.IsTrue(Enumerable.Range(1, 30).All(i => respuesta.Sugerencias.Any(s => s.Cliente == "p" + i)), "aunque se pidieran 20, entran todos");
+            Assert.AreEqual(33, respuesta.Sugerencias.Count, "los 30 y los 3 semanales");
+            int porCupo = respuesta.Sugerencias.Count(s => s.Origen == OrigenesSugerenciaContacto.COBERTURA);
+            Assert.IsTrue(porCupo > 0);
+            Assert.AreEqual(porCupo, sugerencias.Count(s => s.Motivo.StartsWith(OrigenesSugerenciaContacto.PREFIJO_MOTIVO_COBERTURA)), "el origen queda en el Motivo registrado");
         }
 
         [TestMethod]
@@ -667,7 +688,7 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
                 ["s4/0"] = new PrediccionContacto { Probabilidad = 0.6f }
             };
             A.CallTo(() => probabilidades.Leer(A<string>._, A<string>._, A<string>._)).Returns(Task.FromResult(probabilidadesSemanales));
-            A.CallTo(() => repositorio.LeerContactos(A<string>._, A<DateTime>._)).Returns(Task.FromResult(new ContactosVendedor { Mes = 500 }));
+            A.CallTo(() => repositorio.LeerContactos(A<string>._, A<DateTime>._)).Returns(ContactadosEsteMes());
 
             SugerenciasContactoDTO primera = await ServicioEl(ahora).Leer("MPP", "Llamada", 5, "", "u");
 

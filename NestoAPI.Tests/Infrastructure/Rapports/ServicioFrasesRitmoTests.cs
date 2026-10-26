@@ -41,6 +41,7 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
         {
             ContactosHoy = hoy,
             ContactosMes = mes,
+            ContactosMesAntesDeHoy = mes - hoy,
             ContactosSemana = 30,
             ObjetivoMes = 310,
             PendientesMaxima = 12,

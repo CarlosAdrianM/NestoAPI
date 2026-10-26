@@ -489,13 +489,53 @@ namespace NestoAPI.Infraestructure.Rapports
         /// casaba con la cadencia con la que se le propone (42 pedidos: cada 9 días, 3 llamadas en un mes de 31, no 4).
         /// Lo que el vendedor hace en laborables es el REPARTO: <see cref="CalcularRitmo"/> divide lo que falta entre los
         /// laborables que quedan.
+        /// OJO (sugerencia 782): los contadores ya son clientes distintos (<see cref="ContarContactos"/>) y el cliente que
+        /// pide 2-4 llamadas solo puede sumar 1, así que con clientes de cadencia corta este objetivo no se llega a cubrir
+        /// aunque se hable con toda la cartera (JGP, octubre: 246 clientes, objetivo 256). Pendiente de decidir si pasa a
+        /// ser <c>CarteraObjetivo(cartera).Count()</c>.
         /// </summary>
         public static int ObjetivoMes(IEnumerable<ClienteCarteraContacto> cartera, DateTime hoy)
         {
             int diasDelMes = DateTime.DaysInMonth(hoy.Year, hoy.Month);
-            return cartera
-                .Where(c => c.Pedidos24Meses > 0 || c.Pedidos12Meses > 0)
-                .Sum(c => LlamadasMes(c, diasDelMes));
+            return CarteraObjetivo(cartera).Sum(c => LlamadasMes(c, diasDelMes));
+        }
+
+        /// <summary>Los clientes de la cartera que entran en el objetivo del mes (y en los contadores, sugerencia 782): con compras en 24 meses.</summary>
+        public static IEnumerable<ClienteCarteraContacto> CarteraObjetivo(IEnumerable<ClienteCarteraContacto> cartera)
+            => (cartera ?? Enumerable.Empty<ClienteCarteraContacto>()).Where(c => c.Pedidos24Meses > 0 || c.Pedidos12Meses > 0);
+
+        /// <summary>
+        /// Sugerencia 782 (Carlos, 26/10/26): Hoy, Semana y Mes cuentan CLIENTES DISTINTOS (número + contacto) de la cartera
+        /// del objetivo, no rapports. Varios rapports a un cliente en el periodo cuentan uno; uno que no es de la cartera no
+        /// cuenta. El cliente contactado ayer y hoy cuenta en Hoy y una sola vez en Mes; MesAntesDeHoy son los del mes
+        /// contactados antes de hoy (sin contar dos veces al que se repite hoy). PorDia, los de cada día anterior a hoy, con
+        /// el mismo criterio que Hoy (racha y mejor día). Se cruza aquí, en C#, con la cartera ya leída
+        /// (<see cref="IRepositorioCarteraContacto.LeerCartera"/>): la consulta de contactos solo trae cliente/contacto/día.
+        /// </summary>
+        public static ContactosVendedor ContarContactos(IEnumerable<ContactoClienteDia> registros, IEnumerable<ClienteCarteraContacto> cartera, DateTime hoy)
+        {
+            var claves = new HashSet<string>(CarteraObjetivo(cartera).Select(c => c.Clave), StringComparer.OrdinalIgnoreCase);
+            DateTime dia0 = hoy.Date;
+            DateTime inicioSemana = RepositorioCarteraContactoSql.InicioSemana(dia0);
+            DateTime inicioMes = RepositorioCarteraContactoSql.InicioMes(dia0);
+            var deCartera = (registros ?? Enumerable.Empty<ContactoClienteDia>())
+                .Where(r => r != null && r.Dia.Date <= dia0 && claves.Contains(r.Clave))
+                .Select(r => new { r.Clave, Dia = r.Dia.Date })
+                .ToList();
+            int Distintos(Func<DateTime, bool> enPeriodo) => deCartera
+                .Where(r => enPeriodo(r.Dia)).Select(r => r.Clave).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+
+            return new ContactosVendedor
+            {
+                Hoy = Distintos(d => d == dia0),
+                Semana = Distintos(d => d >= inicioSemana),
+                Mes = Distintos(d => d >= inicioMes),
+                MesAntesDeHoy = Distintos(d => d >= inicioMes && d < dia0),
+                PorDia = deCartera
+                    .Where(r => r.Dia < dia0)
+                    .GroupBy(r => r.Dia)
+                    .ToDictionary(g => g.Key, g => g.Select(r => r.Clave).Distinct(StringComparer.OrdinalIgnoreCase).Count())
+            };
         }
 
         /// <summary>min(4, max(1, redondeo(días naturales del mes / cadencia))).</summary>
@@ -522,6 +562,8 @@ namespace NestoAPI.Infraestructure.Rapports
                 ContactosHoy = contactos.Hoy,
                 ContactosSemana = contactos.Semana,
                 ContactosMes = contactos.Mes,
+                ContactosMesAntesDeHoy = contactos.MesAntesDeHoy,
+                ContactosPorDia = contactos.PorDia ?? new Dictionary<DateTime, int>(),
                 ObjetivoMes = objetivoMes,
                 ObjetivoHoy = objetivoHoy,
                 DiasLaborablesRestantesMes = restantes,

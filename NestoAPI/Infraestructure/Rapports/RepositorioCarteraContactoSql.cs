@@ -15,8 +15,12 @@ namespace NestoAPI.Infraestructure.Rapports
         /// (de su grupo, si lo lleva por grupo), con sus pedidos, importe y últimos contactos (sin los rapports del otro vendedor del cliente).
         /// </summary>
         Task<List<ClienteCarteraContacto>> LeerCartera(string vendedor, DateTime hoy);
-        /// <summary>Rapports Estado 0 de tipo T/V/W del vendedor hoy, desde el lunes y desde el día 1.</summary>
-        Task<ContactosVendedor> LeerContactos(string vendedor, DateTime hoy);
+        /// <summary>
+        /// Sugerencia 782: los clientes (número + contacto) con los que habló el vendedor cada día (rapports suyos Estado 0 de
+        /// tipo T/V/W), de <see cref="RepositorioCarteraContactoSql.DIAS_CONTACTOS"/> días atrás a hoy, una fila por cliente
+        /// y día. Los cuenta <see cref="MotorSugerenciasContacto.ContarContactos"/> cruzando con la cartera.
+        /// </summary>
+        Task<List<ContactoClienteDia>> LeerContactos(string vendedor, DateTime hoy);
         /// <summary>Delegación (almacén) del vendedor para los festivos: DelegaciónDefecto de su usuario, o ALG.</summary>
         Task<string> LeerDelegacion(string vendedor);
     }
@@ -202,12 +206,21 @@ namespace NestoAPI.Infraestructure.Rapports
             LEFT JOIN #Rapports r ON r.Cliente = x.Cliente AND r.Contacto = x.Contacto
             GROUP BY x.Cliente, x.Contacto, x.Nombre, x.Direccion, x.CodPostal, x.Poblacion, x.Provincia, x.Telefono;";
 
+        /// <summary>
+        /// Sugerencia 782: días hacia atrás de <see cref="SQL_CONTACTOS"/>. Cubre el mes y la semana, y los 62 días de la racha de
+        /// las frases (<see cref="GeneradorFrasesRitmo.CalcularSituacion"/>), que antes leía su propia consulta de rapports por día.
+        /// </summary>
+        internal const int DIAS_CONTACTOS = 62;
+
+        /// <summary>
+        /// Sugerencia 782: una fila por cliente + contacto + día (no un recuento de rapports). Los contadores de clientes
+        /// distintos de la cartera los saca <see cref="MotorSugerenciasContacto.ContarContactos"/> en C# con la cartera ya
+        /// leída: así no se repite aquí la asignación de <see cref="SQL_CARTERA"/>. Mismo filtro que antes (los rapports del
+        /// vendedor por Vendedor y Fecha); a lo sumo unos cientos de filas.
+        /// </summary>
         internal const string SQL_CONTACTOS = @"
             SET NOCOUNT ON;
-            SELECT
-                ISNULL(SUM(CASE WHEN s.Fecha >= @Hoy THEN 1 ELSE 0 END), 0) ContactosHoy,
-                ISNULL(SUM(CASE WHEN s.Fecha >= @InicioSemana THEN 1 ELSE 0 END), 0) ContactosSemana,
-                ISNULL(SUM(CASE WHEN s.Fecha >= @InicioMes THEN 1 ELSE 0 END), 0) ContactosMes
+            SELECT DISTINCT s.Número Cliente, s.Contacto, CAST(s.Fecha AS date) Dia
             FROM SeguimientoCliente s WITH (NOLOCK)
             WHERE s.Vendedor = @Vendedor AND s.Fecha >= @Desde AND s.Fecha < @Manana AND s.Estado = 0 AND s.Tipo IN ('T', 'V', 'W');";
 
@@ -264,33 +277,31 @@ namespace NestoAPI.Infraestructure.Rapports
             }));
         }
 
-        public Task<ContactosVendedor> LeerContactos(string vendedor, DateTime hoy)
+        public Task<List<ContactoClienteDia>> LeerContactos(string vendedor, DateTime hoy)
         {
             return Task.Run(() => ReintentosSql.ReintentarSiDeadlock(() =>
             {
-                DateTime inicioSemana = InicioSemana(hoy);
-                DateTime inicioMes = InicioMes(hoy);
+                var contactos = new List<ContactoClienteDia>();
                 using (SqlConnection conexion = AbrirConexion())
                 using (var comando = new SqlCommand(SQL_CONTACTOS, conexion) { CommandTimeout = TIMEOUT_SEGUNDOS })
                 {
                     _ = comando.Parameters.Add(new SqlParameter("@Vendedor", SqlDbType.VarChar, 10) { Value = vendedor.Trim() });
-                    _ = comando.Parameters.Add(new SqlParameter("@Hoy", SqlDbType.DateTime) { Value = hoy.Date });
+                    _ = comando.Parameters.Add(new SqlParameter("@Desde", SqlDbType.DateTime) { Value = hoy.Date.AddDays(-DIAS_CONTACTOS) });
                     _ = comando.Parameters.Add(new SqlParameter("@Manana", SqlDbType.DateTime) { Value = hoy.Date.AddDays(1) });
-                    _ = comando.Parameters.Add(new SqlParameter("@InicioSemana", SqlDbType.DateTime) { Value = inicioSemana });
-                    _ = comando.Parameters.Add(new SqlParameter("@InicioMes", SqlDbType.DateTime) { Value = inicioMes });
-                    _ = comando.Parameters.Add(new SqlParameter("@Desde", SqlDbType.DateTime) { Value = inicioSemana < inicioMes ? inicioSemana : inicioMes });
                     using (SqlDataReader lector = comando.ExecuteReader())
                     {
-                        return lector.Read()
-                            ? new ContactosVendedor
+                        while (lector.Read())
+                        {
+                            contactos.Add(new ContactoClienteDia
                             {
-                                Hoy = Convert.ToInt32(lector["ContactosHoy"]),
-                                Semana = Convert.ToInt32(lector["ContactosSemana"]),
-                                Mes = Convert.ToInt32(lector["ContactosMes"])
-                            }
-                            : new ContactosVendedor();
+                                Cliente = Texto(lector["Cliente"]),
+                                Contacto = Texto(lector["Contacto"]),
+                                Dia = Convert.ToDateTime(lector["Dia"]).Date
+                            });
+                        }
                     }
                 }
+                return contactos;
             }));
         }
 

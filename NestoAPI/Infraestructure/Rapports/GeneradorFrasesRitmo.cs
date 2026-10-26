@@ -227,8 +227,8 @@ namespace NestoAPI.Infraestructure.Rapports
 
         // ---------------- Situación ----------------
 
-        /// <param name="contactosPorDia">Contactos (rapports Estado 0 T/V/W) de los días ANTERIORES a hoy; los días sin
-        /// contactos pueden faltar.</param>
+        /// <param name="contactosPorDia">Clientes distintos de la cartera contactados (sugerencia 782, como
+        /// <see cref="RitmoContactosDTO.ContactosHoy"/>) cada día ANTERIOR a hoy; los días sin contactos pueden faltar.</param>
         public static SituacionRitmo CalcularSituacion(RitmoContactosDTO ritmo, DateTime ahora, Func<DateTime, bool> esLaborable,
             IDictionary<DateTime, int> contactosPorDia, int pedidosHoy, string nombre)
         {
@@ -240,7 +240,9 @@ namespace NestoAPI.Infraestructure.Rapports
 
             int laborablesMes = MotorSugerenciasContacto.DiasLaborablesDelMes(hoy, esLaborable);
             int restantes = MotorSugerenciasContacto.DiasLaborablesRestantes(hoy, esLaborable);
-            int contactosAntesDeHoy = Math.Max(0, ritmo.ContactosMes - ritmo.ContactosHoy);
+            // Sugerencia 782: clientes distintos de la cartera contactados este mes antes de hoy (no Mes − Hoy: quien se
+            // repite hoy ya estaba contado).
+            int contactosAntesDeHoy = Math.Max(0, ritmo.ContactosMesAntesDeHoy);
             int objetivoHoy = esLaborableHoy && restantes > 0
                 ? (int)Math.Ceiling((double)Math.Max(0, ritmo.ObjetivoMes - contactosAntesDeHoy) / restantes)
                 : 0;

@@ -1,3 +1,4 @@
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 
@@ -18,15 +19,33 @@ namespace NestoAPI.Infraestructure.Rapports
     /// <summary>NestoAPI#603: contactos hechos y objetivo para cubrir la cartera este mes.</summary>
     public class RitmoContactosDTO
     {
-        /// <summary>Rapports Estado 0 (se habló) de tipo T/V/W del vendedor hoy.</summary>
+        /// <summary>
+        /// Sugerencia 782 (Carlos, 26/10/26): CLIENTES DISTINTOS (número + contacto) de la cartera del objetivo
+        /// (<see cref="MotorSugerenciasContacto.CarteraObjetivo"/>) con los que el vendedor ha hablado hoy (sus rapports
+        /// Estado 0 de tipo T/V/W). Varios rapports al mismo cliente cuentan uno y un cliente que no es de la cartera no
+        /// cuenta. Antes eran rapports (JGP: 268 rapports en octubre con 172 clientes distintos).
+        /// </summary>
         public int ContactosHoy { get; set; }
-        /// <summary>Ídem, de lunes a hoy.</summary>
+        /// <summary>Ídem, de lunes a hoy (el cliente con rapports el lunes y hoy cuenta uno).</summary>
         public int ContactosSemana { get; set; }
-        /// <summary>Ídem, del día 1 a hoy.</summary>
+        /// <summary>Ídem, del día 1 a hoy (el cliente con rapports ayer y hoy cuenta uno aquí, y también uno en <see cref="ContactosHoy"/>).</summary>
         public int ContactosMes { get; set; }
-        /// <summary>Σ por cliente de la cartera de min(4, max(1, redondeo(pedidos en 12 meses / 12))).</summary>
+        /// <summary>
+        /// Sugerencia 782: clientes distintos de la cartera contactados este mes ANTES de hoy. No es ContactosMes − ContactosHoy:
+        /// quien se repite hoy ya estaba. Para el objetivo de hoy «del principio del día» de las frases. No va en la respuesta.
+        /// </summary>
+        [JsonIgnore]
+        public int ContactosMesAntesDeHoy { get; set; }
+        /// <summary>
+        /// Sugerencia 782: clientes distintos de la cartera contactados cada día ANTERIOR a hoy (62 días; los días sin
+        /// contactos faltan), con el criterio de <see cref="ContactosHoy"/>. Para la racha y el mejor día de las frases. No va
+        /// en la respuesta.
+        /// </summary>
+        [JsonIgnore]
+        public Dictionary<DateTime, int> ContactosPorDia { get; set; } = new Dictionary<DateTime, int>();
+        /// <summary>Σ por cliente de la cartera del objetivo de <see cref="MotorSugerenciasContacto.LlamadasMes"/> (de 1 a 4).</summary>
         public int ObjetivoMes { get; set; }
-        /// <summary>max(0, ObjetivoMes − ContactosMes) / días laborables que quedan (hoy incluido), redondeado hacia arriba.</summary>
+        /// <summary>max(0, ObjetivoMes − ContactosMes (clientes distintos)) / días laborables que quedan (hoy incluido), redondeado hacia arriba.</summary>
         public int ObjetivoHoy { get; set; }
         /// <summary>Lunes a viernes sin festivos, de hoy (incluido si es laborable) a fin de mes.</summary>
         public int DiasLaborablesRestantesMes { get; set; }
@@ -155,11 +174,28 @@ namespace NestoAPI.Infraestructure.Rapports
         public string GrupoSubgrupoMasVendido { get; set; }
     }
 
-    /// <summary>NestoAPI#603: rapports Estado 0 del vendedor hoy, esta semana y este mes.</summary>
+    /// <summary>
+    /// NestoAPI#603 / sugerencia 782: clientes distintos de la cartera del objetivo con los que ha hablado el vendedor hoy,
+    /// esta semana, este mes, este mes antes de hoy y cada día anterior (ver <see cref="RitmoContactosDTO.ContactosHoy"/>).
+    /// Lo calcula <see cref="MotorSugerenciasContacto.ContarContactos"/>.
+    /// </summary>
     public class ContactosVendedor
     {
         public int Hoy { get; set; }
         public int Semana { get; set; }
         public int Mes { get; set; }
+        public int MesAntesDeHoy { get; set; }
+        /// <summary>Días anteriores a hoy (los días sin contactos faltan).</summary>
+        public Dictionary<DateTime, int> PorDia { get; set; } = new Dictionary<DateTime, int>();
+    }
+
+    /// <summary>Sugerencia 782: un cliente (número + contacto) con el que el vendedor habló un día (rapport Estado 0 T/V/W).</summary>
+    public class ContactoClienteDia
+    {
+        public string Cliente { get; set; }
+        public string Contacto { get; set; }
+        public DateTime Dia { get; set; }
+
+        public string Clave => ClienteCarteraContacto.ClaveDe(Cliente, Contacto);
     }
 }

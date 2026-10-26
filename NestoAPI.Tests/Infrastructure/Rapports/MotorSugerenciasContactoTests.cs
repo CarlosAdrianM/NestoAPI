@@ -366,5 +366,78 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
             Assert.AreEqual(0, ritmo.ObjetivoHoy);
             Assert.AreEqual("Lleva 1 contacto hoy y 12 este mes: ya ha cubierto el objetivo de 10. ¡Buen trabajo!", ritmo.Frase);
         }
+
+        // ---------------- Sugerencia 782: clientes distintos de la cartera, no rapports ----------------
+
+        private static ContactoClienteDia Hablo(string cliente, DateTime dia) => new ContactoClienteDia { Cliente = cliente, Contacto = "0", Dia = dia };
+
+        [TestMethod]
+        public void ContarContactos_VariosRapportsAlMismoClienteYFueraDeCartera_CuentanClientesDistintosDeLaCartera()
+        {
+            // a: el 1, dos el 2 y hoy. b: ayer y hoy (con el número relleno de espacios, como viene de la BD). c: el lunes 5.
+            // d está en la lista pero sin compras en 24 meses (fuera del objetivo) y zz no es de la cartera: hoy no cuentan.
+            var cartera = new List<ClienteCarteraContacto> { Cliente("a", 5), Cliente("b", 5), Cliente("c", 5), Cliente("d", 0, pedidos24: 0) };
+            var registros = new List<ContactoClienteDia>
+            {
+                Hablo("a", new DateTime(2026, 10, 1)), Hablo("a", new DateTime(2026, 10, 2)), Hablo("a", new DateTime(2026, 10, 2)), Hablo("a", HOY),
+                Hablo("b   ", HOY.AddDays(-1)), Hablo("b", HOY),
+                Hablo("c", new DateTime(2026, 10, 5)),
+                Hablo("d", HOY), Hablo("zz", HOY), Hablo("zz", new DateTime(2026, 10, 2))
+            };
+
+            ContactosVendedor contactos = MotorSugerenciasContacto.ContarContactos(registros, cartera, HOY);
+
+            Assert.AreEqual(2, contactos.Hoy, "a y b, aunque hoy haya cuatro rapports");
+            Assert.AreEqual(3, contactos.Semana, "a, b y c");
+            Assert.AreEqual(3, contactos.Mes, "a con cuatro rapports y b ayer y hoy cuentan uno cada uno");
+            Assert.AreEqual(3, contactos.MesAntesDeHoy, "a, b y c: no es Mes − Hoy");
+            CollectionAssert.AreEquivalent(new[] { new DateTime(2026, 10, 1), new DateTime(2026, 10, 2), new DateTime(2026, 10, 5), HOY.AddDays(-1) },
+                contactos.PorDia.Keys.ToArray(), "los días anteriores a hoy con algún cliente de la cartera");
+            Assert.IsTrue(contactos.PorDia.Values.All(n => n == 1), "el 2, a con dos rapports cuenta uno");
+        }
+
+        [TestMethod]
+        public void CalcularRitmo_ConClientesDistintos_ElObjetivoDeHoyVaConLosClientesQueFaltan()
+        {
+            // 40 clientes de una llamada al mes: objetivo 40. s1 con cinco rapports este mes, s2-s5 con uno, y diez rapports a
+            // clientes que no son de la cartera: van 5 clientes, faltan 35 en 17 laborables → ⌈2,06⌉ = 3 (con rapports serían 19 y 2).
+            List<ClienteCarteraContacto> cartera = Enumerable.Range(1, 40).Select(i => Cliente("s" + i, 5)).ToList();
+            var registros = new[] { 1, 2, 5, 6, 7 }.Select(d => Hablo("s1", new DateTime(2026, 10, d)))
+                .Concat(Enumerable.Range(2, 4).Select(i => Hablo("s" + i, new DateTime(2026, 10, 2))))
+                .Concat(Enumerable.Range(1, 10).Select(i => Hablo("otro" + i, new DateTime(2026, 10, 6))))
+                .ToList();
+
+            RitmoContactosDTO ritmo = new MotorSugerenciasContacto().CalcularRitmo(cartera,
+                MotorSugerenciasContacto.ContarContactos(registros, cartera, HOY), new List<SugerenciaContactoDTO>(), HOY, laborable);
+
+            Assert.AreEqual(40, ritmo.ObjetivoMes);
+            Assert.AreEqual(5, ritmo.ContactosMes);
+            Assert.AreEqual(1, ritmo.ContactosHoy);
+            Assert.AreEqual(17, ritmo.DiasLaborablesRestantesMes);
+            Assert.AreEqual(3, ritmo.ObjetivoHoy);
+        }
+
+        [TestMethod]
+        public void Situacion_QuedanClientesDeLaCarteraSinContactar_NoEsMesCumplidoAunqueHayaMasRapportsQueObjetivo()
+        {
+            // 10 clientes de una llamada al mes; 9 contactados el día 2 y uno de ellos tres veces más (el 5, ayer y hoy): 12
+            // rapports, 9 clientes. Queda uno: no es «mes cumplido» y el objetivo de hoy (del principio del día) es 1, porque
+            // antes de hoy ya iban los 9 (Mes − Hoy daría 8).
+            List<ClienteCarteraContacto> cartera = Enumerable.Range(1, 10).Select(i => Cliente("s" + i, 5)).ToList();
+            var registros = Enumerable.Range(1, 9).Select(i => Hablo("s" + i, new DateTime(2026, 10, 2)))
+                .Concat(new[] { Hablo("s1", new DateTime(2026, 10, 5)), Hablo("s1", HOY.AddDays(-1)), Hablo("s1", HOY) })
+                .ToList();
+
+            RitmoContactosDTO ritmo = new MotorSugerenciasContacto().CalcularRitmo(cartera,
+                MotorSugerenciasContacto.ContarContactos(registros, cartera, HOY), new List<SugerenciaContactoDTO>(), HOY, laborable);
+            SituacionRitmo s = GeneradorFrasesRitmo.CalcularSituacion(ritmo, HOY.AddHours(12), laborable, ritmo.ContactosPorDia, 0, "Javier");
+
+            Assert.AreEqual(9, ritmo.ContactosMes);
+            Assert.AreEqual(9, ritmo.ContactosMesAntesDeHoy);
+            Assert.AreEqual(1, ritmo.ObjetivoHoy);
+            Assert.AreNotEqual(SituacionesRitmo.MES_CUMPLIDO, s.Clave);
+            Assert.AreEqual(1, s.ObjetivoHoy);
+            Assert.AreEqual(9, s.Mes);
+        }
     }
 }
