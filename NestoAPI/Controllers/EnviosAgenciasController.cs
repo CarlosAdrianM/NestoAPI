@@ -1061,7 +1061,7 @@ namespace NestoAPI.Controllers
         [Authorize]
         [Route("api/EnviosAgencias/{id:int}/ImprimirEtiqueta")]
         [ResponseType(typeof(ImprimirEtiquetaEnvioResultadoDTO))]
-        public async Task<IHttpActionResult> ImprimirEtiqueta(int id, [FromBody] ImprimirEtiquetaEnvioDTO peticion = null)
+        public async Task<IHttpActionResult> ImprimirEtiqueta(int id, [FromBody] ImprimirEtiquetaEnvioDTO peticion)
         {
             EnviosAgencia envio = await db.EnviosAgencias.FindAsync(id);
             if (envio == null)

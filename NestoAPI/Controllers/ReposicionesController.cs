@@ -534,7 +534,7 @@ namespace NestoAPI.Controllers
         [HttpPost]
         [Route("EnPreparacion/Terminar")]
         [ResponseType(typeof(ResultadoTerminarReposicionDTO))]
-        public async Task<IHttpActionResult> PostTerminar(string origen, [FromBody] TerminarReposicionDTO peticion = null,
+        public async Task<IHttpActionResult> PostTerminar(string origen, [FromBody] TerminarReposicionDTO peticion,
             string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
         {
             try

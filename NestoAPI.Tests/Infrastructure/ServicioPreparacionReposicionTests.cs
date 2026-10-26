@@ -830,7 +830,7 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => servicio.Terminar("1", "ALC", A<IPrincipal>._, A<IReadOnlyCollection<string>>._)).Returns(new ResultadoTerminarReposicionDTO());
             var controlador = new ReposicionesController(null, servicio) { Request = new HttpRequestMessage(), User = Paloma };
 
-            _ = await controlador.PostTerminar("ALC");
+            _ = await controlador.PostTerminar("ALC", null);
 
             A.CallTo(() => servicio.Terminar("1", "ALC", A<IPrincipal>._, null)).MustHaveHappenedOnceExactly();
         }
@@ -850,7 +850,7 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => servicio.Terminar("1", "ALC", A<IPrincipal>.Ignored, A<IReadOnlyCollection<string>>.Ignored)).Throws(new UnauthorizedAccessException("no"));
             var controlador = new ReposicionesController(null, servicio) { Request = new HttpRequestMessage(), User = Paloma };
 
-            IHttpActionResult resultado = await controlador.PostTerminar("ALC");
+            IHttpActionResult resultado = await controlador.PostTerminar("ALC", null);
 
             Assert.AreEqual(HttpStatusCode.Forbidden, ((ResponseMessageResult)resultado).Response.StatusCode);
         }

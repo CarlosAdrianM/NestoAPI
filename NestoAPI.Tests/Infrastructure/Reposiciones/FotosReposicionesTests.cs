@@ -167,7 +167,7 @@ namespace NestoAPI.Tests.Infrastructure.Reposiciones
                 }
             });
 
-            var ok = (OkNegotiatedContentResult<ResultadoTerminarReposicionDTO>)await Controlador().PostTerminar("ALC");
+            var ok = (OkNegotiatedContentResult<ResultadoTerminarReposicionDTO>)await Controlador().PostTerminar("ALC", null);
 
             Assert.AreEqual(URL_CERA, ok.Content.Lineas[0].UrlFoto);
             Assert.IsNull(ok.Content.Lineas[1].UrlFoto);

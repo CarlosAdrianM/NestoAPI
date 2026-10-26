@@ -528,6 +528,7 @@
     <Compile Include="Infrastructure\ClienteChangeDetectorTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\SelectorSerieTests.cs" />
     <Compile Include="Infrastructure\SeriesFacturaQuestPdfTests.cs" />
+    <Compile Include="Infrastructure\ParametrosFromBodyOpcionalesTests.cs" />
     <Compile Include="Infrastructure\StartupJwtConfigurationTests.cs" />
     <Compile Include="Infrastructure\Verifactu\GeneradorQrVerifactuTests.cs" />
     <Compile Include="Infrastructure\Verifactu\ProveedorVerifactuTests.cs" />

@@ -84,7 +84,7 @@ namespace NestoAPI.Tests.Controllers
         {
             A.CallTo(() => fakeEnvios.FindAsync(1)).Returns(Task.FromResult<EnviosAgencia>(null));
 
-            Assert.IsInstanceOfType(await controller.ImprimirEtiqueta(1), typeof(NotFoundResult));
+            Assert.IsInstanceOfType(await controller.ImprimirEtiqueta(1, null), typeof(NotFoundResult));
         }
 
         [TestMethod]
@@ -92,7 +92,7 @@ namespace NestoAPI.Tests.Controllers
         {
             ConEnvio(Constantes.Agencias.AGENCIA_GLS, "61771234567890");
 
-            var resultado = await controller.ImprimirEtiqueta(250100) as BadRequestErrorMessageResult;
+            var resultado = await controller.ImprimirEtiqueta(250100, null) as BadRequestErrorMessageResult;
 
             Assert.IsNotNull(resultado);
             StringAssert.Contains(resultado.Message, "todavía se imprime desde Nesto (#552)");
@@ -104,7 +104,7 @@ namespace NestoAPI.Tests.Controllers
         {
             ConEnvio(Constantes.Agencias.AGENCIA_CTT, null);
 
-            var resultado = await controller.ImprimirEtiqueta(250100) as NegotiatedContentResult<string>;
+            var resultado = await controller.ImprimirEtiqueta(250100, null) as NegotiatedContentResult<string>;
 
             Assert.IsNotNull(resultado);
             Assert.AreEqual(HttpStatusCode.Conflict, resultado.StatusCode);
@@ -124,7 +124,7 @@ namespace NestoAPI.Tests.Controllers
                 Tipo = "application/zpl", Codificacion = "base64", Contenido = Convert.ToBase64String(System.Text.Encoding.ASCII.GetBytes("^XA^FDHola^XZ"))
             }));
 
-            var resultado = await controller.ImprimirEtiqueta(250100) as OkNegotiatedContentResult<ImprimirEtiquetaEnvioResultadoDTO>;
+            var resultado = await controller.ImprimirEtiqueta(250100, null) as OkNegotiatedContentResult<ImprimirEtiquetaEnvioResultadoDTO>;
 
             Assert.IsNotNull(resultado);
             Assert.AreEqual(250100, resultado.Content.Envio);
@@ -158,7 +158,7 @@ namespace NestoAPI.Tests.Controllers
         {
             ConEnvio(Constantes.Agencias.AGENCIA_CTT, "CTT123");
 
-            var resultado = await controller.ImprimirEtiqueta(250100) as BadRequestErrorMessageResult;
+            var resultado = await controller.ImprimirEtiqueta(250100, null) as BadRequestErrorMessageResult;
 
             Assert.IsNotNull(resultado);
             StringAssert.Contains(resultado.Message, "no tiene impresora de etiquetas");
@@ -172,7 +172,7 @@ namespace NestoAPI.Tests.Controllers
             A.CallTo(() => parametros.LeerParametro("1", "Alfredo", "ImpresoraCodBarras")).Returns("ZEBRA-EXPEDICION");
             A.CallTo(() => fakeAgencia.ReimprimirAsync("CTT123", null, null)).Returns(Task.FromResult(new EtiquetaDataTrans { Contenido = "JVBERi0=" }));
 
-            var resultado = await controller.ImprimirEtiqueta(250100) as NegotiatedContentResult<string>;
+            var resultado = await controller.ImprimirEtiqueta(250100, null) as NegotiatedContentResult<string>;
 
             Assert.IsNotNull(resultado);
             Assert.AreEqual(HttpStatusCode.BadGateway, resultado.StatusCode);
@@ -189,7 +189,7 @@ namespace NestoAPI.Tests.Controllers
             A.CallTo(() => impresora.Imprimir(A<string>._, A<string>._, A<string>._))
                 .Throws(new ImpresionEtiquetasException("No se puede abrir la impresora ZEBRA-EXPEDICION (error de Windows 5)."));
 
-            var resultado = await controller.ImprimirEtiqueta(250100) as NegotiatedContentResult<string>;
+            var resultado = await controller.ImprimirEtiqueta(250100, null) as NegotiatedContentResult<string>;
 
             Assert.IsNotNull(resultado);
             Assert.AreEqual(HttpStatusCode.BadGateway, resultado.StatusCode);
@@ -206,7 +206,7 @@ namespace NestoAPI.Tests.Controllers
             A.CallTo(() => fakeAgencia.ReimprimirAsync("CTT123", null, null))
                 .ThrowsAsync(new AgenciaRemotaException("CTT (Etiqueta) respondió HTTP 500: CONNECTIVITY") { EsTransitoria = true });
 
-            var resultado = await controller.ImprimirEtiqueta(250100) as ResponseMessageResult;
+            var resultado = await controller.ImprimirEtiqueta(250100, null) as ResponseMessageResult;
 
             Assert.IsNotNull(resultado);
             Assert.AreEqual(HttpStatusCode.BadGateway, resultado.Response.StatusCode);
