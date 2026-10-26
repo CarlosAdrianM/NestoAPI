@@ -33,7 +33,8 @@ WHERE p.Empresa = '1' AND p.Grupo = 'COS' AND p.Estado >= 0
   AND EXISTS (SELECT 1 FROM ProductosCategoriasSecundarias s
               WHERE s.Empresa = '1' AND s.Número = p.Número AND s.Grupo = 'COS' AND s.SubGrupo = 'PRG');
 
-PRINT CONCAT('Productos a cambiar: ', (SELECT COUNT(*) FROM @Packs), ' (esperados 81).');
+DECLARE @ACambiar int = (SELECT COUNT(*) FROM @Packs);
+PRINT CONCAT('Productos a cambiar: ', @ACambiar, ' (esperados 81).');
 
 BEGIN TRANSACTION;
 
