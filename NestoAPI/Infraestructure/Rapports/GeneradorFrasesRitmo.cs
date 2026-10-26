@@ -30,8 +30,8 @@ namespace NestoAPI.Infraestructure.Rapports
         public int Mes { get; set; }
         public int ObjetivoMes { get; set; }
         /// <summary>
-        /// Objetivo de hoy tal como estaba al empezar el día: ⌈(ObjetivoMes − contactos del mes antes de hoy) / laborables
-        /// que quedan (hoy incluido)⌉. No baja a medida que se llama (el <see cref="RitmoContactosDTO.ObjetivoHoy"/> sí).
+        /// Objetivo de hoy tal como estaba al empezar el día (sugerencia 782): ⌈llamadas que faltaban del mes con los días
+        /// contactados antes de hoy / laborables que quedan (hoy incluido)⌉. No baja a medida que se llama (el <see cref="RitmoContactosDTO.ObjetivoHoy"/> sí).
         /// </summary>
         public int ObjetivoHoy { get; set; }
         /// <summary>max(0, ObjetivoHoy − Hoy).</summary>
@@ -240,14 +240,12 @@ namespace NestoAPI.Infraestructure.Rapports
 
             int laborablesMes = MotorSugerenciasContacto.DiasLaborablesDelMes(hoy, esLaborable);
             int restantes = MotorSugerenciasContacto.DiasLaborablesRestantes(hoy, esLaborable);
-            // Sugerencia 782: clientes distintos de la cartera contactados este mes antes de hoy (no Mes − Hoy: quien se
-            // repite hoy ya estaba contado).
-            int contactosAntesDeHoy = Math.Max(0, ritmo.ContactosMesAntesDeHoy);
-            int objetivoHoy = esLaborableHoy && restantes > 0
-                ? (int)Math.Ceiling((double)Math.Max(0, ritmo.ObjetivoMes - contactosAntesDeHoy) / restantes)
-                : 0;
+            // Sugerencia 782 (Carlos, 26/10/26): las llamadas que faltaban al empezar el día (días contactados ANTES de hoy)
+            // entre los laborables que quedan; fijo durante el día.
+            int objetivoHoy = esLaborableHoy ? MotorSugerenciasContacto.ObjetivoHoy(ritmo.LlamadasPendientesInicioDia, restantes) : 0;
             double fraccionDia = esLaborableHoy ? FraccionJornada(ahora) : 0;
-            double ritmoDiario = laborablesMes > 0 ? (double)ritmo.ObjetivoMes / laborablesMes : 0;
+            // Sugerencia 782: el ritmo diario medio va en llamadas (las de la cadencia), como Hoy (clientes distintos del día).
+            double ritmoDiario = laborablesMes > 0 ? (double)ritmo.LlamadasMes / laborablesMes : 0;
 
             var s = new SituacionRitmo
             {

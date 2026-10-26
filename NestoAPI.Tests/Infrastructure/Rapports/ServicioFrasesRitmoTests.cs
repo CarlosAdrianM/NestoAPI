@@ -41,7 +41,9 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
         {
             ContactosHoy = hoy,
             ContactosMes = mes,
-            ContactosMesAntesDeHoy = mes - hoy,
+            // Sugerencia 782: cartera de clientes de una llamada al mes (llamadas = clientes), sin repetidos.
+            LlamadasMes = 310,
+            LlamadasPendientesInicioDia = Math.Max(0, 310 - (mes - hoy)),
             ContactosSemana = 30,
             ObjetivoMes = 310,
             PendientesMaxima = 12,

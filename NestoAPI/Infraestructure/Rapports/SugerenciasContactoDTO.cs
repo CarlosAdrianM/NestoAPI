@@ -22,20 +22,16 @@ namespace NestoAPI.Infraestructure.Rapports
         /// <summary>
         /// Sugerencia 782 (Carlos, 26/10/26): CLIENTES DISTINTOS (número + contacto) de la cartera del objetivo
         /// (<see cref="MotorSugerenciasContacto.CarteraObjetivo"/>) con los que el vendedor ha hablado hoy (sus rapports
-        /// Estado 0 de tipo T/V/W). Varios rapports al mismo cliente cuentan uno y un cliente que no es de la cartera no
-        /// cuenta. Antes eran rapports (JGP: 268 rapports en octubre con 172 clientes distintos).
+        /// Estado 0 de tipo T/V/W). Dos rapports al mismo cliente el mismo día cuentan uno y un cliente que no es de la cartera
+        /// no cuenta. Antes eran rapports (JGP: 268 rapports en octubre con 172 clientes distintos).
         /// </summary>
         public int ContactosHoy { get; set; }
-        /// <summary>Ídem, de lunes a hoy (el cliente con rapports el lunes y hoy cuenta uno).</summary>
+        /// <summary>Pares cliente-día distintos de la cartera de lunes a hoy: la suma de los <see cref="ContactosHoy"/> de la semana
+        /// (el semanal llamado el lunes y el jueves cuenta 2).</summary>
         public int ContactosSemana { get; set; }
-        /// <summary>Ídem, del día 1 a hoy (el cliente con rapports ayer y hoy cuenta uno aquí, y también uno en <see cref="ContactosHoy"/>).</summary>
+        /// <summary>Clientes distintos de la cartera contactados del día 1 a hoy (el de ayer y hoy cuenta uno). Se compara con
+        /// <see cref="ObjetivoMes"/>: «mes cumplido» cuando se ha hablado con todos.</summary>
         public int ContactosMes { get; set; }
-        /// <summary>
-        /// Sugerencia 782: clientes distintos de la cartera contactados este mes ANTES de hoy. No es ContactosMes − ContactosHoy:
-        /// quien se repite hoy ya estaba. Para el objetivo de hoy «del principio del día» de las frases. No va en la respuesta.
-        /// </summary>
-        [JsonIgnore]
-        public int ContactosMesAntesDeHoy { get; set; }
         /// <summary>
         /// Sugerencia 782: clientes distintos de la cartera contactados cada día ANTERIOR a hoy (62 días; los días sin
         /// contactos faltan), con el criterio de <see cref="ContactosHoy"/>. Para la racha y el mejor día de las frases. No va
@@ -43,9 +39,22 @@ namespace NestoAPI.Infraestructure.Rapports
         /// </summary>
         [JsonIgnore]
         public Dictionary<DateTime, int> ContactosPorDia { get; set; } = new Dictionary<DateTime, int>();
-        /// <summary>Σ por cliente de la cartera del objetivo de <see cref="MotorSugerenciasContacto.LlamadasMes"/> (de 1 a 4).</summary>
+        /// <summary>Sugerencia 782: Σ de llamadas que pide la cadencia de cada cliente de la cartera este mes
+        /// (<see cref="MotorSugerenciasContacto.LlamadasDelMes"/>). El ritmo diario medio de las frases. No va en la respuesta.</summary>
+        [JsonIgnore]
+        public int LlamadasMes { get; set; }
+        /// <summary>Sugerencia 782: llamadas que faltan este mes contando los días contactados hasta hoy incluido
+        /// (<see cref="MotorSugerenciasContacto.LlamadasPendientes"/>). No va en la respuesta.</summary>
+        [JsonIgnore]
+        public int LlamadasPendientesMes { get; set; }
+        /// <summary>Sugerencia 782: ídem con los días contactados ANTES de hoy: el objetivo de hoy «del principio del día» de las
+        /// frases. No va en la respuesta.</summary>
+        [JsonIgnore]
+        public int LlamadasPendientesInicioDia { get; set; }
+        /// <summary>Sugerencia 782 (26/10/26): clientes de la cartera del objetivo (<see cref="MotorSugerenciasContacto.ObjetivoMes"/>); antes, llamadas.</summary>
         public int ObjetivoMes { get; set; }
-        /// <summary>max(0, ObjetivoMes − ContactosMes (clientes distintos)) / días laborables que quedan (hoy incluido), redondeado hacia arriba.</summary>
+        /// <summary>Sugerencia 782: ⌈<see cref="LlamadasPendientesMes"/> / días laborables que quedan (hoy incluido)⌉
+        /// (<see cref="MotorSugerenciasContacto.ObjetivoHoy"/>); baja a medida que se llama.</summary>
         public int ObjetivoHoy { get; set; }
         /// <summary>Lunes a viernes sin festivos, de hoy (incluido si es laborable) a fin de mes.</summary>
         public int DiasLaborablesRestantesMes { get; set; }
@@ -175,18 +184,23 @@ namespace NestoAPI.Infraestructure.Rapports
     }
 
     /// <summary>
-    /// NestoAPI#603 / sugerencia 782: clientes distintos de la cartera del objetivo con los que ha hablado el vendedor hoy,
-    /// esta semana, este mes, este mes antes de hoy y cada día anterior (ver <see cref="RitmoContactosDTO.ContactosHoy"/>).
-    /// Lo calcula <see cref="MotorSugerenciasContacto.ContarContactos"/>.
+    /// NestoAPI#603 / sugerencia 782: lo que ha hablado el vendedor con los clientes de la cartera del objetivo (ver
+    /// <see cref="RitmoContactosDTO.ContactosHoy"/>). Lo calcula <see cref="MotorSugerenciasContacto.ContarContactos"/>.
     /// </summary>
     public class ContactosVendedor
     {
+        /// <summary>Clientes distintos hoy.</summary>
         public int Hoy { get; set; }
+        /// <summary>Pares cliente-día distintos de lunes a hoy.</summary>
         public int Semana { get; set; }
+        /// <summary>Clientes distintos del día 1 a hoy.</summary>
         public int Mes { get; set; }
-        public int MesAntesDeHoy { get; set; }
-        /// <summary>Días anteriores a hoy (los días sin contactos faltan).</summary>
+        /// <summary>Clientes distintos de cada día anterior a hoy (los días sin contactos faltan).</summary>
         public Dictionary<DateTime, int> PorDia { get; set; } = new Dictionary<DateTime, int>();
+        /// <summary>Días distintos contactado este mes (hoy incluido), por clave de cliente; los no contactados faltan.</summary>
+        public Dictionary<string, int> DiasMes { get; set; } = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        /// <summary>Ídem, solo los días anteriores a hoy.</summary>
+        public Dictionary<string, int> DiasMesAntesDeHoy { get; set; } = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>Sugerencia 782: un cliente (número + contacto) con el que el vendedor habló un día (rapport Estado 0 T/V/W).</summary>

@@ -483,34 +483,65 @@ namespace NestoAPI.Infraestructure.Rapports
         }
 
         /// <summary>
-        /// Σ por cliente con compras en 24 meses de min(4, max(1, redondeo(días NATURALES del mes / cadencia))): la cadencia va
-        /// en días naturales, así que el mes también (decisión de Carlos, 08/10/26). Antes se dividían los laborables (≈21)
-        /// entre la cadencia y el cliente semanal sumaba 3 en vez de 4; luego (9f38ed86) pedidos del año / 12, que no
-        /// casaba con la cadencia con la que se le propone (42 pedidos: cada 9 días, 3 llamadas en un mes de 31, no 4).
-        /// Lo que el vendedor hace en laborables es el REPARTO: <see cref="CalcularRitmo"/> divide lo que falta entre los
-        /// laborables que quedan.
-        /// OJO (sugerencia 782): los contadores ya son clientes distintos (<see cref="ContarContactos"/>) y el cliente que
-        /// pide 2-4 llamadas solo puede sumar 1, así que con clientes de cadencia corta este objetivo no se llega a cubrir
-        /// aunque se hable con toda la cartera (JGP, octubre: 246 clientes, objetivo 256). Pendiente de decidir si pasa a
-        /// ser <c>CarteraObjetivo(cartera).Count()</c>.
+        /// Decisión de Carlos, 26/10/26 (sugerencia 782), que sustituye a la del 08/10/26 en lo que se enseña como objetivo del
+        /// mes: los CLIENTES de la cartera del objetivo (<see cref="CarteraObjetivo"/>), en la misma unidad que
+        /// <see cref="ContactosVendedor.Mes"/> (clientes distintos contactados este mes). «Mes cumplido» = se ha hablado con
+        /// todos (JGP, octubre: 151 de 246). La cadencia (Σ <see cref="LlamadasMes"/>, la regla del 08/10) no desaparece:
+        /// manda en el objetivo de HOY, que reparte las llamadas que faltan (<see cref="LlamadasPendientes"/>).
         /// </summary>
         public static int ObjetivoMes(IEnumerable<ClienteCarteraContacto> cartera, DateTime hoy)
         {
-            int diasDelMes = DateTime.DaysInMonth(hoy.Year, hoy.Month);
-            return CarteraObjetivo(cartera).Sum(c => LlamadasMes(c, diasDelMes));
+            return CarteraObjetivo(cartera).Count();
         }
 
         /// <summary>Los clientes de la cartera que entran en el objetivo del mes (y en los contadores, sugerencia 782): con compras en 24 meses.</summary>
         public static IEnumerable<ClienteCarteraContacto> CarteraObjetivo(IEnumerable<ClienteCarteraContacto> cartera)
             => (cartera ?? Enumerable.Empty<ClienteCarteraContacto>()).Where(c => c.Pedidos24Meses > 0 || c.Pedidos12Meses > 0);
 
+        /// <summary>Σ por cliente de la cartera del objetivo de <see cref="LlamadasMes"/> (de 1 a 4 según su cadencia, regla del 08/10/26).</summary>
+        public static int LlamadasDelMes(IEnumerable<ClienteCarteraContacto> cartera, DateTime hoy)
+        {
+            int diasDelMes = DateTime.DaysInMonth(hoy.Year, hoy.Month);
+            return CarteraObjetivo(cartera).Sum(c => LlamadasMes(c, diasDelMes));
+        }
+
         /// <summary>
-        /// Sugerencia 782 (Carlos, 26/10/26): Hoy, Semana y Mes cuentan CLIENTES DISTINTOS (número + contacto) de la cartera
-        /// del objetivo, no rapports. Varios rapports a un cliente en el periodo cuentan uno; uno que no es de la cartera no
-        /// cuenta. El cliente contactado ayer y hoy cuenta en Hoy y una sola vez en Mes; MesAntesDeHoy son los del mes
-        /// contactados antes de hoy (sin contar dos veces al que se repite hoy). PorDia, los de cada día anterior a hoy, con
-        /// el mismo criterio que Hoy (racha y mejor día). Se cruza aquí, en C#, con la cartera ya leída
-        /// (<see cref="IRepositorioCarteraContacto.LeerCartera"/>): la consulta de contactos solo trae cliente/contacto/día.
+        /// Sugerencia 782 (Carlos, 26/10/26): las llamadas que faltan este mes. A cada cliente de la cartera del objetivo le faltan
+        /// max(0, <see cref="LlamadasMes"/> − días DISTINTOS en que ya se habló con él este mes): al semanal (4) contactado una vez
+        /// le faltan 3; el mensual (1) ya contactado no aporta; dos rapports el mismo día son un día.
+        /// </summary>
+        /// <param name="diasContactado">Días distintos contactado este mes por clave de cliente (los que faltan, 0).</param>
+        public static int LlamadasPendientes(IEnumerable<ClienteCarteraContacto> cartera, IDictionary<string, int> diasContactado, DateTime hoy)
+        {
+            int diasDelMes = DateTime.DaysInMonth(hoy.Year, hoy.Month);
+            diasContactado = diasContactado ?? new Dictionary<string, int>();
+            return CarteraObjetivo(cartera).Sum(c =>
+                Math.Max(0, LlamadasMes(c, diasDelMes) - (diasContactado.TryGetValue(c.Clave, out int dias) ? dias : 0)));
+        }
+
+        /// <summary>
+        /// Sugerencia 782 (Carlos, 26/10/26): objetivo de hoy = ⌈llamadas que faltan este mes / laborables que quedan (hoy
+        /// incluido)⌉, 0 si no queda ninguno. Como r ≥ 1, nunca pasa de las llamadas que faltan (el último laborable, todas).
+        /// El DTO lo calcula con los días contactados hasta hoy incluido (va bajando al llamar); las frases, con los de antes
+        /// de hoy (fijo desde el principio del día).
+        /// </summary>
+        public static int ObjetivoHoy(int llamadasPendientes, int laborablesRestantes)
+            => laborablesRestantes > 0 ? (int)Math.Ceiling((double)Math.Max(0, llamadasPendientes) / laborablesRestantes) : 0;
+
+        /// <summary>
+        /// Sugerencia 782 (Carlos, 26/10/26): los contadores, solo con los clientes (número + contacto) de la cartera del
+        /// objetivo y nunca por rapports (dos rapports al mismo cliente el mismo día son uno; uno fuera de la cartera no cuenta):
+        /// <list type="bullet">
+        /// <item>Hoy: clientes distintos contactados hoy.</item>
+        /// <item>Semana: pares cliente-día distintos de lunes a hoy (el semanal llamado el lunes y el jueves cuenta 2, como en
+        /// el «Hoy» de cada uno de esos días: la semana es la suma de sus días).</item>
+        /// <item>Mes: clientes distintos del día 1 a hoy (el de ayer y hoy, uno): lo que se compara con <see cref="ObjetivoMes"/>.</item>
+        /// <item>PorDia: los de cada día anterior a hoy, como Hoy (racha y mejor día).</item>
+        /// <item>DiasMes / DiasMesAntesDeHoy: días distintos contactado cada cliente este mes, hasta hoy incluido o antes de hoy
+        /// (para <see cref="LlamadasPendientes"/>).</item>
+        /// </list>
+        /// Se cruza aquí, en C#, con la cartera ya leída (<see cref="IRepositorioCarteraContacto.LeerCartera"/>): la consulta
+        /// de contactos solo trae cliente/contacto/día.
         /// </summary>
         public static ContactosVendedor ContarContactos(IEnumerable<ContactoClienteDia> registros, IEnumerable<ClienteCarteraContacto> cartera, DateTime hoy)
         {
@@ -518,27 +549,32 @@ namespace NestoAPI.Infraestructure.Rapports
             DateTime dia0 = hoy.Date;
             DateTime inicioSemana = RepositorioCarteraContactoSql.InicioSemana(dia0);
             DateTime inicioMes = RepositorioCarteraContactoSql.InicioMes(dia0);
-            var deCartera = (registros ?? Enumerable.Empty<ContactoClienteDia>())
+            // Pares cliente-día distintos (la clave normalizada a mayúsculas para que «b» y «B  » sean el mismo).
+            var pares = (registros ?? Enumerable.Empty<ContactoClienteDia>())
                 .Where(r => r != null && r.Dia.Date <= dia0 && claves.Contains(r.Clave))
-                .Select(r => new { r.Clave, Dia = r.Dia.Date })
+                .Select(r => new { Clave = r.Clave.ToUpperInvariant(), Dia = r.Dia.Date })
+                .Distinct()
                 .ToList();
-            int Distintos(Func<DateTime, bool> enPeriodo) => deCartera
-                .Where(r => enPeriodo(r.Dia)).Select(r => r.Clave).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+            var delMes = pares.Where(p => p.Dia >= inicioMes).ToList();
 
             return new ContactosVendedor
             {
-                Hoy = Distintos(d => d == dia0),
-                Semana = Distintos(d => d >= inicioSemana),
-                Mes = Distintos(d => d >= inicioMes),
-                MesAntesDeHoy = Distintos(d => d >= inicioMes && d < dia0),
-                PorDia = deCartera
-                    .Where(r => r.Dia < dia0)
-                    .GroupBy(r => r.Dia)
-                    .ToDictionary(g => g.Key, g => g.Select(r => r.Clave).Distinct(StringComparer.OrdinalIgnoreCase).Count())
+                Hoy = pares.Count(p => p.Dia == dia0),
+                Semana = pares.Count(p => p.Dia >= inicioSemana),
+                Mes = delMes.Select(p => p.Clave).Distinct().Count(),
+                PorDia = pares.Where(p => p.Dia < dia0).GroupBy(p => p.Dia).ToDictionary(g => g.Key, g => g.Count()),
+                DiasMes = delMes.GroupBy(p => p.Clave)
+                    .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase),
+                DiasMesAntesDeHoy = delMes.Where(p => p.Dia < dia0).GroupBy(p => p.Clave)
+                    .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase)
             };
         }
 
-        /// <summary>min(4, max(1, redondeo(días naturales del mes / cadencia))).</summary>
+        /// <summary>
+        /// min(4, max(1, redondeo(días naturales del mes / cadencia))): la cadencia va en días naturales, así que el mes también
+        /// (decisión de Carlos, 08/10/26). Sugerencia 782: ya no es el objetivo del mes (que son clientes), sino las llamadas
+        /// que pide cada cliente para el objetivo de hoy (<see cref="LlamadasPendientes"/>).
+        /// </summary>
         public static int LlamadasMes(ClienteCarteraContacto c, int diasDelMes)
         {
             int llamadas = (int)Math.Round((double)diasDelMes / Cadencia(c), MidpointRounding.AwayFromZero);
@@ -551,10 +587,11 @@ namespace NestoAPI.Infraestructure.Rapports
             contactos = contactos ?? new ContactosVendedor();
             int restantes = DiasLaborablesRestantes(hoy, esLaborable);
             int objetivoMes = ObjetivoMes(cartera, hoy);
-            int faltan = Math.Max(0, objetivoMes - contactos.Mes);
+            int llamadasPendientes = LlamadasPendientes(cartera, contactos.DiasMes, hoy);
             // El vendedor solo llama en laborables (lunes a viernes sin festivos; los viernes de reunión, de momento,
-            // cuentan como uno más): lo que falta del mes se reparte entre los que quedan, hoy incluido.
-            int objetivoHoy = restantes > 0 ? (int)Math.Ceiling((double)faltan / restantes) : 0;
+            // cuentan como uno más): las llamadas que faltan del mes se reparten entre los que quedan, hoy incluido.
+            // ⌈p / r⌉ ≤ p con r ≥ 1: el último laborable no pide más que lo que de verdad queda.
+            int objetivoHoy = ObjetivoHoy(llamadasPendientes, restantes);
             int sinContactoMes = CompradoresSinContactoMes(cartera, hoy);
 
             return new RitmoContactosDTO
@@ -562,8 +599,10 @@ namespace NestoAPI.Infraestructure.Rapports
                 ContactosHoy = contactos.Hoy,
                 ContactosSemana = contactos.Semana,
                 ContactosMes = contactos.Mes,
-                ContactosMesAntesDeHoy = contactos.MesAntesDeHoy,
                 ContactosPorDia = contactos.PorDia ?? new Dictionary<DateTime, int>(),
+                LlamadasMes = LlamadasDelMes(cartera, hoy),
+                LlamadasPendientesMes = llamadasPendientes,
+                LlamadasPendientesInicioDia = LlamadasPendientes(cartera, contactos.DiasMesAntesDeHoy, hoy),
                 ObjetivoMes = objetivoMes,
                 ObjetivoHoy = objetivoHoy,
                 DiasLaborablesRestantesMes = restantes,

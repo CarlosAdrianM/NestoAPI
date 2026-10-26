@@ -408,8 +408,8 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
         // ---------------- Número del día: al menos el objetivo de hoy ----------------
 
         /// <summary>
-        /// Octubre de 2026 tiene 18 laborables del 7 al 30: n clientes que compran cada semana (52 pedidos, cadencia 7)
-        /// suman 4 llamadas al mes cada uno, sin contactos todavía → ObjetivoHoy = ⌈4n / 18⌉.
+        /// Octubre de 2026 tiene 18 laborables del 7 al 30. Sugerencia 782 (26/10/26): el objetivo de hoy reparte las llamadas que
+        /// faltan; n semanales (4 llamadas cada uno) sin contactos todavía → ObjetivoHoy = ⌈4n / 18⌉ (el objetivo del mes, n clientes).
         /// </summary>
         private void CarteraConObjetivoHoy(int clientes)
         {
@@ -420,7 +420,7 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
         [TestMethod]
         public async Task Leer_ObjetivoHoyMayorQueElNumeroPedido_RegistraYDevuelveElObjetivo()
         {
-            CarteraConObjetivoHoy(144); // 576 / 18 → 32
+            CarteraConObjetivoHoy(144); // 144 × 4 = 576 llamadas / 18 → 32
 
             SugerenciasContactoDTO respuesta = await Servicio().Leer("MPP", "Llamada", 20, "", "u");
 
@@ -432,7 +432,7 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
         [TestMethod]
         public async Task Leer_ObjetivoHoyMenorQueElNumeroPedido_SeQuedaElNumeroPedido()
         {
-            CarteraConObjetivoHoy(45); // 180 / 18 → 10
+            CarteraConObjetivoHoy(45); // 45 × 4 = 180 llamadas / 18 → 10
 
             SugerenciasContactoDTO respuesta = await Servicio().Leer("MPP", "Llamada", 20, "", "u");
 
@@ -459,7 +459,7 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
         [TestMethod]
         public async Task Leer_ObjetivoHoyPorEncimaDelMaximo_SeQuedaEnElMaximo()
         {
-            CarteraConObjetivoHoy(940); // 3760 / 18 → 209
+            CarteraConObjetivoHoy(940); // 940 × 4 = 3760 llamadas / 18 → 209
 
             SugerenciasContactoDTO respuesta = await Servicio().Leer("MPP", "Llamada", 20, "", "u");
 
@@ -487,12 +487,12 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
         [TestMethod]
         public async Task Leer_ElObjetivoDeHoyBajaTrasRegistrarLaLista_SeSiguenDevolviendoTodasLasRegistradas()
         {
-            CarteraConObjetivoHoy(144); // a las 9: 576 / 18 → 32
+            CarteraConObjetivoHoy(144); // a las 9: 576 llamadas / 18 → 32
             await Servicio().Leer("MPP", "Llamada", 20, "", "u");
             Assert.AreEqual(32, sugerencias.Count);
             Fake.ClearRecordedCalls(fakeSugerencias);
 
-            // A las 12 ya ha hecho 72 contactos este mes: (576 − 72) / 18 → 28.
+            // A las 12 ya ha hablado una vez con 72 de los semanales: faltan 576 − 72 = 504 llamadas / 18 → 28.
             A.CallTo(() => repositorio.LeerContactos(A<string>._, A<DateTime>._)).Returns(Contactos(
                 cartera.Take(72).Select(c => Hablo(c.Cliente, new DateTime(2026, 10, 2))).ToArray()));
             SugerenciasContactoDTO respuesta = await Servicio().Leer("MPP", "Llamada", 20, "", "u");
@@ -659,10 +659,12 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
 
             SugerenciasContactoDTO respuesta = await ServicioEl(ahora).Leer("MPP", "Llamada", 20, "", "u");
 
-            // Sugerencia 782: los contadores son clientes distintos (los 3 semanales cuentan 3, no los rapports que lleven), y el
-            // objetivo sigue en llamadas (3 × 4 + 30 = 42): 42 − 3 = 39 el último laborable, que piden más sitios que el cupo.
+            // Sugerencia 782 (26/10/26): mes en clientes (3 de 33) y objetivo de hoy con las llamadas que faltan: a los 3
+            // semanales contactados una vez les faltan 3 a cada uno y a los 30 sin contactar 1: 39, todas el último laborable.
+            // Piden más sitios que el cupo, así que también entran los semanales (por probabilidad).
             Assert.AreEqual(3, respuesta.Ritmo.ContactosMes);
-            Assert.AreEqual(39, respuesta.Ritmo.ObjetivoHoy);
+            Assert.AreEqual(33, respuesta.Ritmo.ObjetivoMes);
+            Assert.AreEqual(39, respuesta.Ritmo.ObjetivoHoy, "no pasa de las llamadas que quedan");
             Assert.AreEqual(30, respuesta.Ritmo.CompradoresSinContactoMes);
             Assert.AreEqual(30, respuesta.Ritmo.CupoCoberturaHoy, "último laborable: todos los que faltan");
             Assert.IsTrue(Enumerable.Range(1, 30).All(i => respuesta.Sugerencias.Any(s => s.Cliente == "p" + i)), "aunque se pidieran 20, entran todos");
