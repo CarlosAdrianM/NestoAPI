@@ -172,6 +172,43 @@ namespace NestoAPI.Tests.Infraestructure.Informes
         }
 
         [TestMethod]
+        public void Sql_LaDireccionEsLaDeEntregaDelPrimerPedido()
+        {
+            // Sugerencia 648 (Carlos, 26/10/26): el contacto de entrega del pedido (CabPedidoVta.Contacto), no el de la factura
+            string sql = GestorFacturacionTienda.SQL_FACTURACION_TIENDA;
+
+            StringAssert.Contains(sql, "INNER JOIN CabPedidoVta p WITH (NOLOCK) ON p.Empresa = l3.Empresa AND p.[Número] = l3.[Número]");
+            StringAssert.Contains(sql, "ORDER BY l3.[Número]) pe", "Si la factura junta varios pedidos, manda el primero");
+            StringAssert.Contains(sql, "c.Contacto = ISNULL(pe.Contacto, f.Contacto)", "La ficha de Clientes es la del contacto de entrega");
+            StringAssert.Contains(sql, "RTRIM(ISNULL(pe.Contacto, f.Contacto)) AS Contacto");
+            Assert.IsFalse(sql.Contains("c.Contacto = f.Contacto"), "Ya no es la dirección del contacto de la factura");
+        }
+
+        [TestMethod]
+        public void Construir_MismoClienteConDosDireccionesDeEntrega_SonDosFilasPorCliente()
+        {
+            List<FacturaTiendaDTO> filas = new List<FacturaTiendaDTO>
+            {
+                new FacturaTiendaDTO { Factura = "NV1", Fecha = new DateTime(2026, 10, 13), Serie = "NV", Cliente = "15191", Contacto = "0",
+                    Pedido = 900001, Direccion = "Calle Mayor, 1", Vendedor = "PA", BaseImponible = 100m, Total = 121m },
+                new FacturaTiendaDTO { Factura = "NV2", Fecha = new DateTime(2026, 10, 14), Serie = "NV", Cliente = "15191", Contacto = "2",
+                    Pedido = 900002, Direccion = "Calle del Centro, 5", Vendedor = "PA", BaseImponible = 50m, Total = 60.5m },
+                new FacturaTiendaDTO { Factura = "NV3", Fecha = new DateTime(2026, 10, 15), Serie = "NV", Cliente = "15191", Contacto = "0",
+                    Pedido = 900003, Direccion = "Calle Mayor, 1", Vendedor = "PA", BaseImponible = 10m, Total = 12.1m }
+            };
+
+            FacturacionTiendaDTO informe = GestorFacturacionTienda.Construir(filas, "ALC", new DateTime(2026, 10, 12), new DateTime(2026, 10, 18));
+
+            Assert.AreEqual(2, informe.Clientes.Count, "Una fila por dirección de entrega");
+            ClienteFacturacionTiendaDTO principal = informe.Clientes.Single(c => c.Contacto == "0");
+            Assert.AreEqual(2, principal.NumeroFacturas);
+            Assert.AreEqual(110m, principal.BaseImponible);
+            Assert.AreEqual("Calle del Centro, 5", informe.Clientes.Single(c => c.Contacto == "2").Direccion);
+            Assert.AreEqual(2, informe.NumeroClientes, "Cliente y contacto de entrega distintos");
+            Assert.AreEqual(900002, informe.Facturas.Single(f => f.Factura == "NV2").Pedido);
+        }
+
+        [TestMethod]
         public void Construir_SinFacturas_DaElInformeVacioConTotalesACero()
         {
             FacturacionTiendaDTO informe = GestorFacturacionTienda.Construir(null, "ALC", new DateTime(2026, 10, 12), new DateTime(2026, 10, 18));
@@ -202,6 +239,8 @@ namespace NestoAPI.Tests.Infraestructure.Informes
                 CollectionAssert.Contains(textos, "Curso");
                 CollectionAssert.Contains(textos, "Sí", "El curso lleva la marca en su columna");
                 CollectionAssert.Contains(textos, "Forma venta");
+                CollectionAssert.Contains(textos, "Dirección de entrega");
+                CollectionAssert.Contains(textos, "Pedido");
                 CollectionAssert.Contains(textos, "DIR, TIE");
                 CollectionAssert.Contains(textos, "Total (3 facturas):");
             }

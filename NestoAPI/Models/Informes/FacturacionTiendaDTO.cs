@@ -32,7 +32,10 @@ namespace NestoAPI.Models.Informes
         public string Serie { get; set; }
         public bool EsCurso { get; set; }
         public string Cliente { get; set; }
+        /// <summary>Sugerencia 648: el contacto de ENTREGA del (primer) pedido de la factura; nombre y dirección son los suyos.</summary>
         public string Contacto { get; set; }
+        /// <summary>Sugerencia 648: el primer pedido de la factura con líneas de la tienda (el que da la dirección de entrega).</summary>
+        public int? Pedido { get; set; }
         public string Nombre { get; set; }
         public string Direccion { get; set; }
         public string CodigoPostal { get; set; }

@@ -17,6 +17,10 @@ namespace NestoAPI.Infraestructure.Informes
     /// ese almacén. Entran la empresa normal y la espejo; las rectificativas restan.</para>
     /// <para>Sugerencia 648: de cada factura también sale su forma de venta (TIE, DIR, TEL…; si sus líneas de la tienda llevan varias,
     /// separadas por comas). Ver una tienda: Dirección, Administración e Informática, cualquiera; el grupo Tiendas, solo la suya.</para>
+    /// <para>Sugerencia 648 (decisión de Carlos, 26/10/26): la dirección es la de <b>entrega del pedido</b> (el Contacto de CabPedidoVta y
+    /// su fila de Clientes; el de cobro es ContactoCobro), no la del contacto de la factura. Si una factura junta pedidos con entregas
+    /// distintas, manda la del primer pedido (el de número más bajo con líneas de la tienda); sin pedido, la del contacto de la factura.
+    /// La vista por cliente agrupa por cliente, contacto de entrega y vendedor: una fila por dirección de entrega.</para>
     /// <para>El comercial de cada factura es el <b>vendedor de la cabecera de la factura</b> (decisión de Carlos, 20/10/26), no el de
     /// la ficha del cliente ni el de peluquería: es a quien se le apunta la venta. Por eso la vista por cliente agrupa por cliente,
     /// contacto y vendedor: si un cliente tiene facturas de dos comerciales en el periodo, sale una fila por comercial.</para>
@@ -41,7 +45,7 @@ namespace NestoAPI.Infraestructure.Informes
         internal const string SQL_FACTURACION_TIENDA = @"
 SELECT RTRIM(f.Empresa) AS Empresa, RTRIM(f.[Número]) AS Factura, f.Fecha, RTRIM(f.Serie) AS Serie,
        CAST(CASE WHEN RTRIM(f.Serie) = @p5 THEN 1 ELSE 0 END AS bit) AS EsCurso,
-       RTRIM(f.[Nº Cliente]) AS Cliente, RTRIM(f.Contacto) AS Contacto,
+       RTRIM(f.[Nº Cliente]) AS Cliente, RTRIM(ISNULL(pe.Contacto, f.Contacto)) AS Contacto, pe.Pedido,
        RTRIM(ISNULL(c.Nombre, f.NombreFiscal)) AS Nombre,
        RTRIM(ISNULL(c.[Dirección], f.DireccionFiscal)) AS Direccion,
        RTRIM(ISNULL(c.CodPostal, f.CodPostalFiscal)) AS CodigoPostal,
@@ -54,10 +58,15 @@ SELECT RTRIM(f.Empresa) AS Empresa, RTRIM(f.[Número]) AS Factura, f.Fecha, RTRI
        CAST(SUM(l.Total) AS decimal(18,4)) AS Total
 FROM CabFacturaVta f WITH (NOLOCK)
      INNER JOIN LinPedidoVta l WITH (NOLOCK) ON l.Empresa = f.Empresa AND l.[Nº Factura] = f.[Número]
-     LEFT JOIN Clientes c WITH (NOLOCK) ON c.Empresa = @p0 AND c.[Nº Cliente] = f.[Nº Cliente] AND c.Contacto = f.Contacto
+     OUTER APPLY (SELECT TOP 1 l3.[Número] AS Pedido, p.Contacto
+                  FROM LinPedidoVta l3 WITH (NOLOCK)
+                       INNER JOIN CabPedidoVta p WITH (NOLOCK) ON p.Empresa = l3.Empresa AND p.[Número] = l3.[Número]
+                  WHERE l3.Empresa = f.Empresa AND l3.[Nº Factura] = f.[Número] AND l3.[Almacén] = @p4
+                  ORDER BY l3.[Número]) pe
+     LEFT JOIN Clientes c WITH (NOLOCK) ON c.Empresa = @p0 AND c.[Nº Cliente] = f.[Nº Cliente] AND c.Contacto = ISNULL(pe.Contacto, f.Contacto)
      LEFT JOIN Vendedores v WITH (NOLOCK) ON v.Empresa = @p0 AND v.[Número] = f.Vendedor
 WHERE f.Empresa IN (@p0, @p1) AND f.Fecha >= @p2 AND f.Fecha < @p3 AND l.[Almacén] = @p4
-GROUP BY f.Empresa, f.[Número], f.Fecha, f.Serie, f.[Nº Cliente], f.Contacto, c.Nombre, f.NombreFiscal, c.[Dirección], f.DireccionFiscal,
+GROUP BY f.Empresa, f.[Número], f.Fecha, f.Serie, f.[Nº Cliente], f.Contacto, pe.Contacto, pe.Pedido, c.Nombre, f.NombreFiscal, c.[Dirección], f.DireccionFiscal,
          c.CodPostal, f.CodPostalFiscal, c.[Población], f.PoblacionFiscal, f.Vendedor, v.[Descripción]
 ORDER BY f.Fecha, f.[Número]";
 
