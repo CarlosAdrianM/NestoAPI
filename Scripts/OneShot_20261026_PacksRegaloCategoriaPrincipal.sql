@@ -17,7 +17,7 @@ GO
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
 
-DECLARE @TambienEmpresa3 bit = 0;
+DECLARE @TambienEmpresa3 bit = 1;   -- Carlos 26/10: también la empresa 3
 
 IF NOT EXISTS (SELECT 1 FROM SubGruposProducto WHERE Empresa = '1' AND Grupo = 'COS' AND Número = 'PRG')
 BEGIN
