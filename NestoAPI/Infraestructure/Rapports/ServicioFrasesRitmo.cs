@@ -30,8 +30,6 @@ namespace NestoAPI.Infraestructure.Rapports
     /// <summary>NestoAPI#603 (corte 4): lo que la situación necesita además del ritmo.</summary>
     public class DatosFrasesRitmo
     {
-        /// <summary>Contactos (rapports Estado 0 T/V/W) de cada día anterior a hoy, de los últimos 62 días.</summary>
-        public Dictionary<DateTime, int> ContactosPorDia { get; set; } = new Dictionary<DateTime, int>();
         /// <summary>Rapports de hoy del vendedor marcados con Pedido.</summary>
         public int PedidosHoy { get; set; }
         /// <summary>Vendedores.Descripción.</summary>
@@ -89,7 +87,8 @@ namespace NestoAPI.Infraestructure.Rapports
         {
             DateTime hoy = ahora.Date;
             DatosFrasesRitmo datos = await repositorio.LeerDatos(vendedor, hoy).ConfigureAwait(false) ?? new DatosFrasesRitmo();
-            SituacionRitmo situacion = GeneradorFrasesRitmo.CalcularSituacion(ritmo, ahora, esLaborable, datos.ContactosPorDia,
+            // Sugerencia 782: la racha y el mejor día van con los clientes distintos de la cartera de cada día, como Hoy.
+            SituacionRitmo situacion = GeneradorFrasesRitmo.CalcularSituacion(ritmo, ahora, esLaborable, ritmo?.ContactosPorDia,
                 datos.PedidosHoy, GeneradorFrasesRitmo.NombreDePila(datos.Descripcion));
 
             // Sin la tabla (script sin lanzar) o con la BD con problemas: plantilla sin memoria, y queda en ELMAH.
@@ -180,11 +179,6 @@ namespace NestoAPI.Infraestructure.Rapports
     {
         internal const string SQL_DATOS = @"
             SET NOCOUNT ON;
-            SELECT CAST(s.Fecha AS date) Dia, COUNT(*) Contactos
-            FROM SeguimientoCliente s WITH (NOLOCK)
-            WHERE s.Vendedor = @Vendedor AND s.Fecha >= @Desde AND s.Fecha < @Hoy AND s.Estado = 0 AND s.Tipo IN ('T', 'V', 'W')
-            GROUP BY CAST(s.Fecha AS date);
-
             SELECT COUNT(*) FROM SeguimientoCliente s WITH (NOLOCK)
             WHERE s.Vendedor = @Vendedor AND s.Fecha >= @Hoy AND s.Fecha < @Manana AND s.Pedido = 1;
 
@@ -211,16 +205,11 @@ namespace NestoAPI.Infraestructure.Rapports
                 using (var comando = new SqlCommand(SQL_DATOS, conexion) { CommandTimeout = TIMEOUT_SEGUNDOS })
                 {
                     _ = comando.Parameters.Add(new SqlParameter("@Vendedor", SqlDbType.VarChar, 10) { Value = vendedor.Trim() });
-                    _ = comando.Parameters.Add(new SqlParameter("@Desde", SqlDbType.DateTime) { Value = hoy.Date.AddDays(-62) });
                     _ = comando.Parameters.Add(new SqlParameter("@Hoy", SqlDbType.DateTime) { Value = hoy.Date });
                     _ = comando.Parameters.Add(new SqlParameter("@Manana", SqlDbType.DateTime) { Value = hoy.Date.AddDays(1) });
                     using (SqlDataReader lector = comando.ExecuteReader())
                     {
-                        while (lector.Read())
-                        {
-                            datos.ContactosPorDia[Convert.ToDateTime(lector["Dia"]).Date] = Convert.ToInt32(lector["Contactos"]);
-                        }
-                        if (lector.NextResult() && lector.Read())
+                        if (lector.Read())
                         {
                             datos.PedidosHoy = Convert.ToInt32(lector[0]);
                         }

@@ -92,7 +92,9 @@ namespace NestoAPI.Infraestructure.Rapports
             Dictionary<string, ClienteConChequeRegalo> conCheque = ImpulsoChequesRegaloContacto.Asignar(cartera,
                 await LeerImpulsosChequeRegalo(vendedorLimpio, hoy).ConfigureAwait(false), hoy);
             List<SugerenciaContactoDTO> pendientes = ImpulsoChequesRegaloContacto.Aplicar(motor.Priorizar(cartera, hoy), conCheque, hoy);
-            ContactosVendedor contactos = await repositorio.LeerContactos(vendedorLimpio, hoy).ConfigureAwait(false);
+            // Sugerencia 782: clientes distintos de la cartera, no rapports.
+            ContactosVendedor contactos = MotorSugerenciasContacto.ContarContactos(
+                await repositorio.LeerContactos(vendedorLimpio, hoy).ConfigureAwait(false), cartera, hoy);
             string delegacion = await repositorio.LeerDelegacion(vendedorLimpio).ConfigureAwait(false) ?? Constantes.Almacenes.ALGETE;
             RitmoContactosDTO ritmo = motor.CalcularRitmo(cartera, contactos, pendientes, hoy, d => !esFestivo(d, delegacion));
             if (frases != null)
