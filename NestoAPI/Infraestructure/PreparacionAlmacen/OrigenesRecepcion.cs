@@ -811,7 +811,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             try
             {
                 await avisador.Avisar(destinatario, $"Reposición {traspaso} ({origen} → {solicitud.Almacen}): lo recibido no coincide con lo enviado",
-                    LineasAviso(diferencias, origen, solicitud, ajustes, registradas.Any())).ConfigureAwait(false);
+                    LineasAviso(diferencias, origen, solicitud, ajustes, registradas.Any()), solicitud.Empresa, datos?.Origen).ConfigureAwait(false);
             }
             catch (Exception ex)
             {

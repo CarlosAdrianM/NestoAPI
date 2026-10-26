@@ -110,7 +110,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             StringAssert.Contains(string.Join(" ", resultado.Avisos), "Sigue pendiente de recibir el resto de la reposición (2 líneas, 4 ud.)");
             A.CallTo(() => transaccion.RegistrarDiferencias(A<IEnumerable<NestoAPI.Infraestructure.Reposiciones.DiferenciaReposicionNueva>>.Ignored))
                 .MustNotHaveHappened();
-            A.CallTo(() => avisador.Avisar(A<string>.Ignored, A<string>.Ignored, A<IEnumerable<string>>.Ignored)).MustNotHaveHappened();
+            A.CallTo(() => avisador.Avisar(A<string>.Ignored, A<string>.Ignored, A<IEnumerable<string>>.Ignored, A<string>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
             A.CallTo(() => diferencias.AjustarOrigenTrasRecibir(A<string>.Ignored, A<IReadOnlyCollection<int>>.Ignored, A<string>.Ignored))
                 .MustNotHaveHappened();
         }
@@ -224,7 +224,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
                 "apartar otros", "ajustar B a 2", "leer pendientes de ubicar", "contabilizar", "devolver 701", "dejar pendientes de ubicar",
                 "cabecera recibida", "registrar diferencias B:3/2"
             }, pasos, string.Join(" | ", pasos));
-            A.CallTo(() => avisador.Avisar("NUEVAVISION\\Andre", A<string>.Ignored, A<IEnumerable<string>>.Ignored)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => avisador.Avisar("NUEVAVISION\\Andre", A<string>.Ignored, A<IEnumerable<string>>.Ignored, A<string>.Ignored, A<string>.Ignored)).MustHaveHappenedOnceExactly();
         }
 
         [TestMethod]
@@ -386,7 +386,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             {
                 "apartar otros", "ajustar B a 0", "devolver 701", "cabecera recibida", "registrar diferencias B:1/0"
             }, pasos, string.Join(" | ", pasos));
-            A.CallTo(() => avisador.Avisar("NUEVAVISION\\Andre", A<string>.Ignored, A<IEnumerable<string>>.Ignored)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => avisador.Avisar("NUEVAVISION\\Andre", A<string>.Ignored, A<IEnumerable<string>>.Ignored, A<string>.Ignored, A<string>.Ignored)).MustHaveHappenedOnceExactly();
         }
 
         // Novedad 751 (81028): en el Windows de Alfredo se quedaron leídos los 10 productos ya dados de alta en parte. Salían como

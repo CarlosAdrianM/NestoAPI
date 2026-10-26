@@ -20,7 +20,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             var notificaciones = A.Fake<IServicioNotificacionesPush>();
             var avisador = new AvisadorReposiciones(notificaciones, () => new List<string> { "Santiago" });
 
-            await avisador.Avisar("NUEVAVISION\\Andre", "Reposición 80862 (ALG → REI)", new[] { "A: enviado 2, leído 1, diferencia -1" });
+            await avisador.Avisar("NUEVAVISION\\Andre", "Reposición 80862 (ALG → REI)", new[] { "A: enviado 2, leído 1, diferencia -1" }, "1", "ALG");
 
             A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Andre", Constantes.Aplicaciones.NESTO,
                 A<NotificacionPushDTO>.That.Matches(n => n.Titulo.Contains("80862") && n.Cuerpo.Contains("leído 1"))))
@@ -35,7 +35,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             var notificaciones = A.Fake<IServicioNotificacionesPush>();
             var avisador = new AvisadorReposiciones(notificaciones, () => new List<string> { "Andre", "Santiago" });
 
-            await avisador.Avisar("NUEVAVISION\\Andre", "t", new[] { "x" });
+            await avisador.Avisar("NUEVAVISION\\Andre", "t", new[] { "x" }, "1", "ALG");
 
             A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Andre", Constantes.Aplicaciones.NESTO, A<NotificacionPushDTO>.Ignored))
                 .MustHaveHappenedOnceExactly();
@@ -48,7 +48,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             var notificaciones = A.Fake<IServicioNotificacionesPush>();
             var avisador = new AvisadorReposiciones(notificaciones, () => new List<string>());
 
-            await avisador.Avisar("NUEVAVISION\\Andre", "t", new[] { "x" });
+            await avisador.Avisar("NUEVAVISION\\Andre", "t", new[] { "x" }, "1", "ALG");
 
             A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("Andre", Constantes.Aplicaciones.ARIADNA,
                 A<NotificacionPushDTO>.That.Matches(n => n.Datos["vista"] == AvisadorReposiciones.VISTA_DIFERENCIAS)))
@@ -61,7 +61,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             var notificaciones = A.Fake<IServicioNotificacionesPush>();
             var avisador = new AvisadorReposiciones(notificaciones, () => new List<string> { "Santiago", "NUEVAVISION\\Alfredo" });
 
-            await avisador.Avisar(null, "Reposición 80862", new[] { "x" });
+            await avisador.Avisar(null, "Reposición 80862", new[] { "x" }, "1", "ALG");
 
             A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Santiago", Constantes.Aplicaciones.NESTO, A<NotificacionPushDTO>.Ignored))
                 .MustHaveHappenedOnceExactly();
@@ -75,10 +75,49 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             var notificaciones = A.Fake<IServicioNotificacionesPush>();
             var avisador = new AvisadorReposiciones(notificaciones, () => new List<string>());
 
-            await avisador.Avisar("Reina ", "t", new[] { "x" });
+            await avisador.Avisar("Reina ", "t", new[] { "x" }, "1", "ALG");
 
             A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Reina", Constantes.Aplicaciones.NESTO, A<NotificacionPushDTO>.Ignored))
                 .MustHaveHappenedOnceExactly();
+        }
+
+        // Sugerencia 781 (Paloma, 26/10/26): en una reposición tienda → Algete la diferencia la comprueba la tienda, pero el
+        // preparador es «ReposicionAutomatica» y solo se avisaba al grupo Almacén: a la tienda no le llegaba nada.
+        [TestMethod]
+        public async Task Avisar_OrigenTienda_TambienALaGenteDeLaTienda()
+        {
+            var notificaciones = A.Fake<IServicioNotificacionesPush>();
+            var avisador = new AvisadorReposiciones(notificaciones, () => new List<string> { "Santiago" },
+                (empresa, almacen) => Task.FromResult(empresa == "1" && almacen == "ALC"
+                    ? new List<string> { "Paloma", "Victoria", "(defecto)" } : new List<string>()));
+
+            await avisador.Avisar("ReposicionAutomatica", "Reposición 81160 (ALC → ALG)", new[] { "x" }, "1", "alc ");
+
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Paloma", Constantes.Aplicaciones.NESTO,
+                A<NotificacionPushDTO>.That.Matches(n => n.Datos["vista"] == AvisadorReposiciones.VISTA_DIFERENCIAS))).MustHaveHappenedOnceExactly();
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("Paloma", Constantes.Aplicaciones.ARIADNA, A<NotificacionPushDTO>.Ignored))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Victoria", Constantes.Aplicaciones.NESTO, A<NotificacionPushDTO>.Ignored))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Santiago", Constantes.Aplicaciones.NESTO, A<NotificacionPushDTO>.Ignored))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario(A<string>.That.Contains("defecto"), A<string>.Ignored, A<NotificacionPushDTO>.Ignored))
+                .MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Avisar_OrigenAlgete_NoSeBuscaLaGenteDeNingunaTienda()
+        {
+            var notificaciones = A.Fake<IServicioNotificacionesPush>();
+            bool buscada = false;
+            var avisador = new AvisadorReposiciones(notificaciones, () => new List<string> { "Santiago" },
+                (empresa, almacen) => { buscada = true; return Task.FromResult(new List<string> { "Reina" }); });
+
+            await avisador.Avisar("NUEVAVISION\\Andre", "Reposición 81162 (ALG → ALC)", new[] { "x" }, "1", "ALG");
+
+            Assert.IsFalse(buscada);
+            A.CallTo(() => notificaciones.GuardarEnBuzonDeUsuario("NUEVAVISION\\Reina", A<string>.Ignored, A<NotificacionPushDTO>.Ignored))
+                .MustNotHaveHappened();
         }
     }
 }

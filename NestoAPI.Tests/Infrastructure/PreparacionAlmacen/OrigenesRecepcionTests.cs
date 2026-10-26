@@ -198,7 +198,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
                 .MustNotHaveHappened();
             Assert.AreEqual(0, resultado.Diferencias.Count);
             Assert.IsNull(resultado.AvisadoA);
-            A.CallTo(() => avisador.Avisar(A<string>.Ignored, A<string>.Ignored, A<IEnumerable<string>>.Ignored)).MustNotHaveHappened();
+            A.CallTo(() => avisador.Avisar(A<string>.Ignored, A<string>.Ignored, A<IEnumerable<string>>.Ignored, A<string>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
         }
 
         [TestMethod]
@@ -208,8 +208,8 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             var avisador = A.Fake<IAvisadorReposiciones>();
             string titulo = null;
             List<string> lineas = null;
-            A.CallTo(() => avisador.Avisar("NUEVAVISION\\Andre", A<string>.Ignored, A<IEnumerable<string>>.Ignored))
-                .Invokes((string d, string t, IEnumerable<string> l) => { titulo = t; lineas = l.ToList(); });
+            A.CallTo(() => avisador.Avisar("NUEVAVISION\\Andre", A<string>.Ignored, A<IEnumerable<string>>.Ignored, A<string>.Ignored, A<string>.Ignored))
+                .Invokes((string d, string t, IEnumerable<string> l, string empresa, string almacenOrigen) => { titulo = t; lineas = l.ToList(); });
 
             ResultadoTerminarRecepcionDTO resultado = await Reposiciones(cierre, avisador).Terminar(SolicitudReposicionLeyendo(("A", 1), ("Z", 3)));
 
@@ -223,6 +223,21 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             Assert.AreEqual("NUEVAVISION\\Andre", resultado.AvisadoA);
         }
 
+        // Sugerencia 781: el aviso lleva la empresa y el almacén de origen, para que llegue también a la gente de la tienda
+        [TestMethod]
+        public async Task Reposiciones_Terminar_ConDiferencias_ElAvisoLlevaLaEmpresaYElOrigen()
+        {
+            var (cierre, transaccion) = CierreFalso(80862);
+            A.CallTo(() => transaccion.LeerDatosTraspaso("1", "REI", "PendRepo", 80862))
+                .Returns(new DatosTraspasoReposicion { Origen = "ALC", Creador = "ReposicionAutomatica" });
+            var avisador = A.Fake<IAvisadorReposiciones>();
+
+            _ = await Reposiciones(cierre, avisador).Terminar(SolicitudReposicionLeyendo(("A", 1)));
+
+            A.CallTo(() => avisador.Avisar(A<string>.Ignored, A<string>.Ignored, A<IEnumerable<string>>.Ignored, "1", "ALC"))
+                .MustHaveHappenedOnceExactly();
+        }
+
         [TestMethod]
         public async Task Reposiciones_Terminar_SinSaberQuienLoCreo_SeAvisaAlGrupoAlmacen()
         {
@@ -232,7 +247,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
 
             ResultadoTerminarRecepcionDTO resultado = await Reposiciones(cierre, avisador).Terminar(SolicitudReposicionLeyendo(("A", 1)));
 
-            A.CallTo(() => avisador.Avisar(null, A<string>.Ignored, A<IEnumerable<string>>.Ignored)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => avisador.Avisar(null, A<string>.Ignored, A<IEnumerable<string>>.Ignored, A<string>.Ignored, A<string>.Ignored)).MustHaveHappenedOnceExactly();
             StringAssert.Contains(string.Join(" ", resultado.Avisos), "Almacén");
             Assert.AreEqual("Almacén", resultado.AvisadoA);
         }
@@ -242,7 +257,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         {
             var (cierre, transaccion) = CierreFalso(80862);
             var avisador = A.Fake<IAvisadorReposiciones>();
-            A.CallTo(() => avisador.Avisar(A<string>.Ignored, A<string>.Ignored, A<IEnumerable<string>>.Ignored)).Throws(new Exception("sin buzón"));
+            A.CallTo(() => avisador.Avisar(A<string>.Ignored, A<string>.Ignored, A<IEnumerable<string>>.Ignored, A<string>.Ignored, A<string>.Ignored)).Throws(new Exception("sin buzón"));
 
             ResultadoTerminarRecepcionDTO resultado = await Reposiciones(cierre, avisador).Terminar(SolicitudReposicionLeyendo(("A", 1)));
 
@@ -266,7 +281,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
 
             CollectionAssert.AreEqual(new[] { "foto", "ajustar", "foto", "contabilizar", "foto" }, pasos);
             Assert.IsNotNull(solicitud.Ensayo.TrasAjustar);
-            A.CallTo(() => avisador.Avisar(A<string>.Ignored, A<string>.Ignored, A<IEnumerable<string>>.Ignored)).MustNotHaveHappened();
+            A.CallTo(() => avisador.Avisar(A<string>.Ignored, A<string>.Ignored, A<IEnumerable<string>>.Ignored, A<string>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
         }
 
         // NestoAPI#634: cada diferencia queda registrada con la entrada (misma transacción) y, después de confirmar, se ajusta el
@@ -303,8 +318,8 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
                     };
                 });
             List<string> lineas = null;
-            A.CallTo(() => avisador.Avisar(A<string>.Ignored, A<string>.Ignored, A<IEnumerable<string>>.Ignored))
-                .Invokes((string d, string t, IEnumerable<string> l) => lineas = l.ToList());
+            A.CallTo(() => avisador.Avisar(A<string>.Ignored, A<string>.Ignored, A<IEnumerable<string>>.Ignored, A<string>.Ignored, A<string>.Ignored))
+                .Invokes((string d, string t, IEnumerable<string> l, string empresa, string almacenOrigen) => lineas = l.ToList());
 
             ResultadoTerminarRecepcionDTO resultado = await Reposiciones(cierre, avisador, diferencias: diferencias).Terminar(SolicitudReposicionLeyendo(("A", 1)));
 
@@ -339,8 +354,8 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
                     new NestoAPI.Infraestructure.Reposiciones.ResultadoAjusteDiferencia { Id = 41, Producto = "A", Diferencia = -1, Ajuste = "Apagado" }
                 });
             List<string> lineas = null;
-            A.CallTo(() => avisador.Avisar(A<string>.Ignored, A<string>.Ignored, A<IEnumerable<string>>.Ignored))
-                .Invokes((string d, string t, IEnumerable<string> l) => lineas = l.ToList());
+            A.CallTo(() => avisador.Avisar(A<string>.Ignored, A<string>.Ignored, A<IEnumerable<string>>.Ignored, A<string>.Ignored, A<string>.Ignored))
+                .Invokes((string d, string t, IEnumerable<string> l, string empresa, string almacenOrigen) => lineas = l.ToList());
 
             _ = await Reposiciones(cierre, avisador, diferencias: diferencias).Terminar(SolicitudReposicionLeyendo(("A", 1)));
 
@@ -361,7 +376,7 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             ResultadoTerminarRecepcionDTO resultado = await Reposiciones(cierre, avisador, diferencias: diferencias).Terminar(SolicitudReposicionLeyendo(("A", 1)));
 
             Assert.AreEqual(1, resultado.Diferencias.Count);
-            A.CallTo(() => avisador.Avisar("NUEVAVISION\\Andre", A<string>.Ignored, A<IEnumerable<string>>.Ignored)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => avisador.Avisar("NUEVAVISION\\Andre", A<string>.Ignored, A<IEnumerable<string>>.Ignored, A<string>.Ignored, A<string>.Ignored)).MustHaveHappenedOnceExactly();
         }
 
         [TestMethod]
