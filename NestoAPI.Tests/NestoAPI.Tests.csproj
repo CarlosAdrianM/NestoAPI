@@ -505,6 +505,7 @@
     <Compile Include="Infrastructure\PreparacionAlmacen\LecturasRecepcionEnCursoTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\RecepcionParcialReposicionesTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\ServicioRecepcionesTests.cs" />
+    <Compile Include="Infrastructure\PreparacionAlmacen\TraductorCodigosRecepcionTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\TextosTipoAlmacenTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\ServicioRecepcionComprasTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\ServicioRecepcionReposicionesTests.cs" />
