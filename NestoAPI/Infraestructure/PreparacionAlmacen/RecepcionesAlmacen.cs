@@ -165,6 +165,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
     {
         private readonly Dictionary<string, IOrigenRecepcion> origenes;
         private readonly Productos.IRepositorioCodigosBarras codigos;
+        /// <summary>Sugerencia 778: lo leído que es un código de barras pasa a ser la referencia de su producto.</summary>
+        private readonly TraductorCodigosRecepcion traductor;
 
         /// <param name="codigos">NestoAPI#605: para buscar también por los códigos alternativos. Sin él, solo número y principal.</param>
         public ServicioRecepciones(IEnumerable<IOrigenRecepcion> origenes, Productos.IRepositorioCodigosBarras codigos = null)
@@ -172,6 +174,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             this.origenes = (origenes ?? Enumerable.Empty<IOrigenRecepcion>())
                 .ToDictionary(o => o.Tipo.Trim().ToUpperInvariant(), o => o);
             this.codigos = codigos;
+            traductor = new TraductorCodigosRecepcion(codigos);
         }
 
         public async Task<List<RecepcionPendienteDTO>> LeerPendientes(string empresa, string almacen)
@@ -347,11 +350,19 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             {
                 return null;
             }
+            List<LecturaRecepcionDTO> leidas = (lecturas ?? Enumerable.Empty<LecturaRecepcionDTO>())
+                .Where(l => !string.IsNullOrWhiteSpace(l?.Producto))
+                .ToList();
+            // Sugerencia 778: un código de barras cuenta como su producto (y, si está en la lista, contra su línea)
+            Dictionary<string, string> traducidos = await traductor.Traducir(Limpio(empresa), leidas.Select(l => l.Producto),
+                () => Task.FromResult(esperado.Lineas.Select(l => l.Producto))).ConfigureAwait(false);
             List<DiferenciaPreparacionDTO> diferencias = CasadorEscaneos.Casar(
                 esperado.Lineas.Select(l => new CasadorEscaneos.Cantidad { Producto = l.Producto, Descripcion = l.Descripcion, Unidades = l.Cantidad }),
-                (lecturas ?? Enumerable.Empty<LecturaRecepcionDTO>())
-                    .Where(l => !string.IsNullOrWhiteSpace(l?.Producto))
-                    .Select(l => new CasadorEscaneos.Cantidad { Producto = l.Producto, Unidades = l.Cantidad }));
+                leidas.Select(l => new CasadorEscaneos.Cantidad
+                {
+                    Producto = traducidos.TryGetValue(PlanificadorRecepcionCompra.Normalizar(l.Producto), out string suyo) ? suyo : l.Producto,
+                    Unidades = l.Cantidad
+                }));
             return new ResultadoCasarRecepcionDTO
             {
                 Tipo = origen.Tipo,
@@ -394,9 +405,16 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             {
                 throw new NestoBusinessException($"Las recepciones de tipo {origen.Tipo} no se dan de alta por partes: termínela con lo leído.");
             }
-            Dictionary<string, int> lecturas = (terminar.Lecturas ?? new List<LecturaRecepcionDTO>())
+            List<LecturaRecepcionDTO> leidas = (terminar.Lecturas ?? new List<LecturaRecepcionDTO>())
                 .Where(l => !string.IsNullOrWhiteSpace(l?.Producto))
-                .GroupBy(l => PlanificadorRecepcionCompra.Normalizar(l.Producto))
+                .ToList();
+            // Sugerencia 778 (reposición 81153): lo leído que es un código de barras (8435454004144) pasa a ser la referencia de su
+            // producto (40945) ANTES de dárselo al tipo; si el producto estaba en la lista, se junta con lo leído de su línea
+            Dictionary<string, string> traducidos = await traductor.Traducir(Limpio(empresa), leidas.Select(l => l.Producto),
+                async () => (await origen.LeerEsperado(Limpio(empresa), Limpio(almacen)?.ToUpperInvariant(), Limpio(documento)).ConfigureAwait(false))
+                    ?.Lineas?.Select(l => l.Producto) ?? Enumerable.Empty<string>()).ConfigureAwait(false);
+            Dictionary<string, int> lecturas = leidas
+                .GroupBy(l => TraductorCodigosRecepcion.Producto(traducidos, l.Producto))
                 .Select(g => new { Producto = g.Key, Cantidad = g.Sum(l => l.Cantidad) })
                 .Where(l => l.Cantidad > 0)
                 .ToDictionary(l => l.Producto, l => l.Cantidad);

@@ -87,6 +87,29 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             CollectionAssert.AreEqual(new[] { "41899", "17404" }, enCurso.Lecturas.Select(l => l.Producto).ToList(), "En el orden en que se leyó");
         }
 
+        // Sugerencia 778 (reposición 81153): el EAN leído se apunta como su producto, para todos los equipos y para Nesto
+        [TestMethod]
+        public async Task Sugerencia778_Post_UnEan_SeApuntaComoSuProducto_YSeJuntaConLoLeidoPorReferencia()
+        {
+            var codigos = A.Fake<NestoAPI.Infraestructure.Productos.IRepositorioCodigosBarras>();
+            A.CallTo(() => codigos.ProductosConCodigo(A<string>.Ignored, A<string>.Ignored))
+                .Returns(new List<NestoAPI.Infraestructure.Productos.ProductoPorCodigoBarrasDTO>());
+            A.CallTo(() => codigos.ProductosConCodigo("1", "8435454004144")).Returns(new List<NestoAPI.Infraestructure.Productos.ProductoPorCodigoBarrasDTO>
+            {
+                new NestoAPI.Infraestructure.Productos.ProductoPorCodigoBarrasDTO { Producto = "40945", Nombre = "MASCARILLA QUIRURGICA", Cantidad = 1, Principal = true }
+            });
+            A.CallTo(() => codigos.LeerProducto(A<string>.Ignored, A<string>.Ignored)).Returns(Task.FromResult<NestoAPI.Models.Producto>(null));
+            servicio = new ServicioLecturasRecepcion(new[] { reposiciones }, repositorio, () => new DateTime(2026, 10, 26, 12, 0, 0), codigos);
+
+            _ = await Anotar(ANDRE, Lectura("40945", 1, "PDA-03"));
+            LecturasRecepcionEnCursoDTO enCurso = await Anotar(ANDRE, Lectura("8435454004144", 1, "PDA-03"));
+
+            Assert.AreEqual(2, Cantidad(enCurso, "40945"));
+            Assert.AreEqual(0, Cantidad(enCurso, "8435454004144"));
+            enCurso = await Anotar(ANDRE, Lectura("8435454004144", -1, "PDA-03"));
+            Assert.AreEqual(1, Cantidad(enCurso, "40945"), "Quitar el EAN (una versión anterior de Ariadna) quita de su producto");
+        }
+
         [TestMethod]
         public async Task Post_LoQuitadoDelTodo_NoSaleEnLaLista()
         {

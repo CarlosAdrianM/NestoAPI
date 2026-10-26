@@ -477,7 +477,10 @@ SELECT @quedan;";
                 .SingleAsync().ConfigureAwait(false);
             if (cantidad > 0 && quedan == 0)
             {
-                throw new NestoBusinessException($"El producto {producto} no existe: no se puede dar entrada a lo leído. No se ha recibido nada.");
+                // Sugerencia 778: los códigos de barras ya llegan cambiados por su referencia (TraductorCodigosRecepcion); esto es lo leído
+                // que no es de ningún producto
+                throw new NestoBusinessException($"El código {producto?.Trim()} no es de ningún producto: no se puede dar entrada a lo leído. " +
+                    "Quítelo de lo leído y vuelva a terminar. No se ha recibido nada.");
             }
         }
 

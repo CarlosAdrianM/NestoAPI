@@ -344,18 +344,24 @@ ELSE
         private readonly Dictionary<string, IOrigenRecepcion> origenes;
         private readonly IRepositorioLecturasRecepcion repositorio;
         private readonly Func<DateTime> ahora;
+        /// <summary>Sugerencia 778: un código de barras se apunta como la referencia de su producto (lo ven así todos los equipos).</summary>
+        private readonly TraductorCodigosRecepcion traductor;
 
-        public ServicioLecturasRecepcion(IEnumerable<IOrigenRecepcion> origenes, IRepositorioLecturasRecepcion repositorio)
-            : this(origenes, repositorio, null)
+        /// <param name="codigos">Sugerencia 778: para apuntar un código de barras como su producto. Sin él, se apunta tal cual.</param>
+        public ServicioLecturasRecepcion(IEnumerable<IOrigenRecepcion> origenes, IRepositorioLecturasRecepcion repositorio,
+            Productos.IRepositorioCodigosBarras codigos = null)
+            : this(origenes, repositorio, null, codigos)
         {
         }
 
-        internal ServicioLecturasRecepcion(IEnumerable<IOrigenRecepcion> origenes, IRepositorioLecturasRecepcion repositorio, Func<DateTime> ahora)
+        internal ServicioLecturasRecepcion(IEnumerable<IOrigenRecepcion> origenes, IRepositorioLecturasRecepcion repositorio, Func<DateTime> ahora,
+            Productos.IRepositorioCodigosBarras codigos = null)
         {
             this.origenes = (origenes ?? Enumerable.Empty<IOrigenRecepcion>())
                 .ToDictionary(o => o.Tipo.Trim().ToUpperInvariant(), o => o);
             this.repositorio = repositorio;
             this.ahora = ahora ?? (() => DateTime.Now);
+            traductor = new TraductorCodigosRecepcion(codigos);
         }
 
         public async Task<LecturasRecepcionEnCursoDTO> Leer(string tipo, string empresa, string almacen, string documento, IPrincipal usuario, string dispositivo)
@@ -375,6 +381,15 @@ ELSE
                 return null;
             }
             List<LecturaRecepcionEnCursoNueva> nuevas = Validar(lecturas);
+            // Sugerencia 778: el EAN leído (8435454004144) se guarda como su producto (40945): así casa con su línea en todos los
+            // equipos y en Nesto, y al terminar llega la referencia (también desde las versiones de Ariadna que mandan el código)
+            Dictionary<string, string> traducidos = await traductor.Traducir(clave.Empresa, nuevas.Select(n => n.Producto),
+                async () => (await Origen(tipo).LeerEsperado(clave.Empresa, clave.Almacen, clave.Documento).ConfigureAwait(false))
+                    ?.Lineas?.Select(l => l.Producto) ?? Enumerable.Empty<string>()).ConfigureAwait(false);
+            foreach (LecturaRecepcionEnCursoNueva nueva in nuevas.Where(n => n.Producto != null))
+            {
+                nueva.Producto = TraductorCodigosRecepcion.Producto(traducidos, nueva.Producto);
+            }
             return Sumar(await repositorio.Anotar(clave, nombre, nuevas).ConfigureAwait(false));
         }
 
