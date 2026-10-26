@@ -72,32 +72,35 @@ namespace NestoAPI.Infraestructure.Informes
 
         private static void HojaFacturas(IXLWorksheet ws, FacturacionTiendaDTO informe)
         {
-            string[] columnas = { "Fecha", "Factura", "Serie", "Cliente", "Contacto", "Nombre", "Dirección", "C.P.", "Población",
-                "Comercial", "Base imponible", "Total" };
+            // Sugerencia 648: «Curso» (Sí en la serie de cursos) y «Forma venta» en columnas propias
+            string[] columnas = { "Fecha", "Factura", "Serie", "Curso", "Cliente", "Contacto", "Nombre", "Dirección", "C.P.", "Población",
+                "Comercial", "Forma venta", "Base imponible", "Total" };
             int fila = Cabecera(ws, informe, columnas);
             foreach (FacturaTiendaDTO f in informe.Facturas ?? new List<FacturaTiendaDTO>())
             {
                 ws.Cell(fila, 1).Value = f.Fecha;
                 ws.Cell(fila, 1).Style.NumberFormat.Format = FORMATO_FECHA;
                 ws.Cell(fila, 2).Value = f.Factura;
-                ws.Cell(fila, 3).Value = f.EsCurso ? $"{f.Serie} (curso)" : f.Serie;
-                ws.Cell(fila, 4).Value = f.Cliente;
-                ws.Cell(fila, 5).Value = f.Contacto;
-                ws.Cell(fila, 6).Value = f.Nombre;
-                ws.Cell(fila, 7).Value = f.Direccion;
-                ws.Cell(fila, 8).Value = f.CodigoPostal;
-                ws.Cell(fila, 9).Value = f.Poblacion;
-                ws.Cell(fila, 10).Value = Comercial(f.Vendedor, f.NombreVendedor);
-                Importe(ws.Cell(fila, 11), f.BaseImponible);
-                Importe(ws.Cell(fila, 12), f.Total);
+                ws.Cell(fila, 3).Value = f.Serie;
+                ws.Cell(fila, 4).Value = f.EsCurso ? "Sí" : string.Empty;
+                ws.Cell(fila, 5).Value = f.Cliente;
+                ws.Cell(fila, 6).Value = f.Contacto;
+                ws.Cell(fila, 7).Value = f.Nombre;
+                ws.Cell(fila, 8).Value = f.Direccion;
+                ws.Cell(fila, 9).Value = f.CodigoPostal;
+                ws.Cell(fila, 10).Value = f.Poblacion;
+                ws.Cell(fila, 11).Value = Comercial(f.Vendedor, f.NombreVendedor);
+                ws.Cell(fila, 12).Value = f.FormaVenta ?? string.Empty;
+                Importe(ws.Cell(fila, 13), f.BaseImponible);
+                Importe(ws.Cell(fila, 14), f.Total);
                 fila++;
             }
-            Pie(ws, fila, 10, $"Total ({informe.NumeroFacturas} facturas):", informe.TotalBaseImponible, informe.Total);
+            Pie(ws, fila, 12, $"Total ({informe.NumeroFacturas} facturas):", informe.TotalBaseImponible, informe.Total);
             if (informe.TotalBaseImponibleCursos != 0)
             {
-                ws.Cell(fila + 1, 10).Value = "De ello, cursos:";
-                ws.Cell(fila + 1, 10).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
-                Importe(ws.Cell(fila + 1, 11), informe.TotalBaseImponibleCursos);
+                ws.Cell(fila + 1, 12).Value = "De ello, cursos:";
+                ws.Cell(fila + 1, 12).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+                Importe(ws.Cell(fila + 1, 13), informe.TotalBaseImponibleCursos);
             }
             Ajustar(ws, columnas.Length);
         }

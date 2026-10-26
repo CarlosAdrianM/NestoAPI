@@ -40,6 +40,8 @@ namespace NestoAPI.Models.Informes
         /// <summary>El comercial: el vendedor de la cabecera de la factura (CabFacturaVta.Vendedor), no el de la ficha del cliente.</summary>
         public string Vendedor { get; set; }
         public string NombreVendedor { get; set; }
+        /// <summary>Sugerencia 648: la forma de venta de sus líneas de la tienda (TIE, DIR…; varias, separadas por comas).</summary>
+        public string FormaVenta { get; set; }
         public decimal BaseImponible { get; set; }
         public decimal Total { get; set; }
     }

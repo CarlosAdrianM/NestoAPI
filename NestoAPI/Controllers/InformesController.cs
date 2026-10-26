@@ -30,27 +30,30 @@ namespace NestoAPI.Controllers
         internal Func<DateTime> Ahora { get; set; } = () => DateTime.Now;
 
         public const string MENSAJE_SIN_PERMISO_FACTURACION_TIENDA =
-            "El informe de facturación de tienda solo lo pueden ver Dirección, Tiendas e Informática.";
+            "El informe de facturación de tienda solo lo pueden ver Dirección, Administración, Informática y cada tienda el suyo.";
+
+        /// <summary>Sugerencia 648: el AlmacénPedidoVta del usuario (sin dominio); sustituible en tests.</summary>
+        internal Func<string, string> AlmacenDelUsuario { get; set; } = usuario =>
+            ParametrosUsuarioController.LeerParametro(Constantes.Empresas.EMPRESA_POR_DEFECTO, usuario, GestorFacturacionTienda.CLAVE_ALMACEN_USUARIO);
 
         /// <summary>
         /// NestoAPI#658 (sugerencia 648 de Paloma): lo facturado en una tienda (REI o ALC) en un periodo, cursos incluidos, factura a
-        /// factura y agrupado por cliente, con dirección, comercial e importe (base y total) y los totales al pie. Sin fechas, la última
-        /// semana cerrada de lunes a domingo; con solo una, la semana que empieza o acaba en ella. Dirección, Tiendas e Informática.
+        /// factura y agrupado por cliente, con dirección, comercial, forma de venta e importe (base y total) y los totales al pie. Sin
+        /// fechas, la última semana cerrada de lunes a domingo; con solo una, la semana que empieza o acaba en ella.
+        /// Dirección, Administración e Informática, cualquier tienda; las tiendas (grupo Tiendas), solo la de su AlmacénPedidoVta
+        /// (sin <paramref name="tienda"/>, la suya; otra, 403).
         /// GET api/Informes/FacturacionTienda?tienda=REI&amp;desde=2026-10-12&amp;hasta=2026-10-18
         /// </summary>
         [HttpGet]
         [Route("api/Informes/FacturacionTienda")]
         [ResponseType(typeof(FacturacionTiendaDTO))]
-        public async Task<IHttpActionResult> GetFacturacionTienda(string tienda, DateTime? desde = null, DateTime? hasta = null)
+        public async Task<IHttpActionResult> GetFacturacionTienda(string tienda = null, DateTime? desde = null, DateTime? hasta = null)
         {
-            if (!PuedeVerFacturacionTienda())
+            HttpStatusCode? codigo = ValidarFacturacionTienda(tienda, desde, hasta, out string error, out string tiendaNormalizada,
+                out DateTime fechaDesde, out DateTime fechaHasta);
+            if (codigo.HasValue)
             {
-                return Content(HttpStatusCode.Forbidden, MENSAJE_SIN_PERMISO_FACTURACION_TIENDA);
-            }
-            string error = ValidarFacturacionTienda(tienda, desde, hasta, out string tiendaNormalizada, out DateTime fechaDesde, out DateTime fechaHasta);
-            if (error != null)
-            {
-                return BadRequest(error);
+                return codigo == HttpStatusCode.Forbidden ? Content(HttpStatusCode.Forbidden, error) : (IHttpActionResult)BadRequest(error);
             }
             FacturacionTiendaDTO informe = await _servicio
                 .LeerFacturacionTiendaAsync(tiendaNormalizada, fechaDesde, fechaHasta)
@@ -61,19 +64,13 @@ namespace NestoAPI.Controllers
         /// <summary>NestoAPI#658: el mismo informe que <see cref="GetFacturacionTienda"/> en Excel (hojas «Facturas» y «Por cliente»).</summary>
         [HttpGet]
         [Route("api/Informes/FacturacionTienda/Excel")]
-        public async Task<HttpResponseMessage> GetFacturacionTiendaExcel(string tienda, DateTime? desde = null, DateTime? hasta = null)
+        public async Task<HttpResponseMessage> GetFacturacionTiendaExcel(string tienda = null, DateTime? desde = null, DateTime? hasta = null)
         {
-            if (!PuedeVerFacturacionTienda())
+            HttpStatusCode? codigo = ValidarFacturacionTienda(tienda, desde, hasta, out string error, out string tiendaNormalizada,
+                out DateTime fechaDesde, out DateTime fechaHasta);
+            if (codigo.HasValue)
             {
-                return new HttpResponseMessage(HttpStatusCode.Forbidden)
-                {
-                    Content = new StringContent(MENSAJE_SIN_PERMISO_FACTURACION_TIENDA)
-                };
-            }
-            string error = ValidarFacturacionTienda(tienda, desde, hasta, out string tiendaNormalizada, out DateTime fechaDesde, out DateTime fechaHasta);
-            if (error != null)
-            {
-                return new HttpResponseMessage(HttpStatusCode.BadRequest)
+                return new HttpResponseMessage(codigo.Value)
                 {
                     Content = new StringContent(error)
                 };
@@ -87,23 +84,69 @@ namespace NestoAPI.Controllers
             };
         }
 
-        private bool PuedeVerFacturacionTienda()
+        private bool PuedeVerCualquierTienda()
         {
             return User != null && (User.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION)
-                || User.IsInRoleSinDominio(Constantes.GruposSeguridad.TIENDAS)
+                || User.IsInRoleSinDominio(Constantes.GruposSeguridad.ADMINISTRACION)
                 || User.IsInRoleSinDominio(NovedadesController.GRUPO_INFORMATICA));
         }
 
-        private string ValidarFacturacionTienda(string tienda, DateTime? desde, DateTime? hasta,
+        private string AlmacenDelUsuarioActual()
+        {
+            string nombre = User?.Identity?.IsAuthenticated == true ? User.Identity.Name : null;
+            if (string.IsNullOrWhiteSpace(nombre))
+            {
+                return null;
+            }
+            string sinDominio = nombre.Contains("\\") ? nombre.Substring(nombre.LastIndexOf('\\') + 1) : nombre;
+            return AlmacenDelUsuario(sinDominio.Trim())?.Trim();
+        }
+
+        /// <summary>Null si se puede consultar; si no, 400 o 403 con su mensaje en <paramref name="error"/>.</summary>
+        private HttpStatusCode? ValidarFacturacionTienda(string tienda, DateTime? desde, DateTime? hasta, out string error,
             out string tiendaNormalizada, out DateTime fechaDesde, out DateTime fechaHasta)
         {
-            tiendaNormalizada = GestorFacturacionTienda.NormalizarTienda(tienda);
-            string errorPeriodo = GestorFacturacionTienda.ResolverPeriodo(desde, hasta, Ahora(), out fechaDesde, out fechaHasta);
-            if (tiendaNormalizada == null)
+            tiendaNormalizada = null;
+            fechaDesde = fechaHasta = default;
+            bool cualquiera = PuedeVerCualquierTienda();
+            bool esTienda = User != null && User.IsInRoleSinDominio(Constantes.GruposSeguridad.TIENDAS);
+            if (!cualquiera && !esTienda)
             {
-                return $"«{tienda}» no es una tienda: tiene que ser {string.Join(" o ", GestorFacturacionTienda.TIENDAS)}.";
+                error = MENSAJE_SIN_PERMISO_FACTURACION_TIENDA;
+                return HttpStatusCode.Forbidden;
             }
-            return errorPeriodo;
+            string pedida = string.IsNullOrWhiteSpace(tienda) ? null : GestorFacturacionTienda.NormalizarTienda(tienda);
+            if (!string.IsNullOrWhiteSpace(tienda) && pedida == null)
+            {
+                error = $"«{tienda}» no es una tienda: tiene que ser {string.Join(" o ", GestorFacturacionTienda.TIENDAS)}.";
+                return HttpStatusCode.BadRequest;
+            }
+            string suya = pedida == null || !cualquiera ? GestorFacturacionTienda.NormalizarTienda(AlmacenDelUsuarioActual()) : null;
+            if (cualquiera)
+            {
+                tiendaNormalizada = pedida ?? suya;
+                if (tiendaNormalizada == null)
+                {
+                    error = $"Diga la tienda: {string.Join(" o ", GestorFacturacionTienda.TIENDAS)}.";
+                    return HttpStatusCode.BadRequest;
+                }
+            }
+            else
+            {
+                if (suya == null)
+                {
+                    error = GestorFacturacionTienda.MENSAJE_SIN_TIENDA;
+                    return HttpStatusCode.Forbidden;
+                }
+                if (pedida != null && pedida != suya)
+                {
+                    error = GestorFacturacionTienda.MENSAJE_SOLO_SU_TIENDA;
+                    return HttpStatusCode.Forbidden;
+                }
+                tiendaNormalizada = suya;
+            }
+            error = GestorFacturacionTienda.ResolverPeriodo(desde, hasta, Ahora(), out fechaDesde, out fechaHasta);
+            return error == null ? (HttpStatusCode?)null : HttpStatusCode.BadRequest;
         }
 
         [HttpGet]

@@ -15,6 +15,8 @@ namespace NestoAPI.Infraestructure.Informes
     /// 20/10/26): lo que se sirve desde Algete no es de la tienda aunque lleve la delegación ALC (desde agosto, 236 facturas así), y los
     /// cursos (serie CV) con almacén ALG tampoco. Los cursos con almacén de la tienda sí entran. De cada factura solo suman las líneas de
     /// ese almacén. Entran la empresa normal y la espejo; las rectificativas restan.</para>
+    /// <para>Sugerencia 648: de cada factura también sale su forma de venta (TIE, DIR, TEL…; si sus líneas de la tienda llevan varias,
+    /// separadas por comas). Ver una tienda: Dirección, Administración e Informática, cualquiera; el grupo Tiendas, solo la suya.</para>
     /// <para>El comercial de cada factura es el <b>vendedor de la cabecera de la factura</b> (decisión de Carlos, 20/10/26), no el de
     /// la ficha del cliente ni el de peluquería: es a quien se le apunta la venta. Por eso la vista por cliente agrupa por cliente,
     /// contacto y vendedor: si un cliente tiene facturas de dos comerciales en el periodo, sale una fila por comercial.</para>
@@ -22,6 +24,14 @@ namespace NestoAPI.Infraestructure.Informes
     public static class GestorFacturacionTienda
     {
         public static readonly string[] TIENDAS = { Constantes.Almacenes.REINA, Constantes.Almacenes.ALCOBENDAS };
+
+        /// <summary>Sugerencia 648: el parámetro de usuario con la tienda de cada uno (la que ve si no es Dirección, Administración o Informática).</summary>
+        public const string CLAVE_ALMACEN_USUARIO = "AlmacénPedidoVta";
+
+        public const string MENSAJE_SOLO_SU_TIENDA = "Cada tienda solo puede ver lo facturado en su almacén.";
+
+        public const string MENSAJE_SIN_TIENDA =
+            "Su usuario no tiene tienda (parámetro AlmacénPedidoVta con REI o ALC): pida a la oficina que se la pongan.";
 
         /// <summary>Tope del periodo, para que nadie lance por error una consulta de años.</summary>
         public const int MAXIMO_DIAS_PERIODO = 366;
@@ -37,6 +47,9 @@ SELECT RTRIM(f.Empresa) AS Empresa, RTRIM(f.[Número]) AS Factura, f.Fecha, RTRI
        RTRIM(ISNULL(c.CodPostal, f.CodPostalFiscal)) AS CodigoPostal,
        RTRIM(ISNULL(c.[Población], f.PoblacionFiscal)) AS Poblacion,
        RTRIM(f.Vendedor) AS Vendedor, RTRIM(v.[Descripción]) AS NombreVendedor,
+       STUFF((SELECT DISTINCT ', ' + RTRIM(l2.[Forma Venta]) FROM LinPedidoVta l2 WITH (NOLOCK)
+              WHERE l2.Empresa = f.Empresa AND l2.[Nº Factura] = f.[Número] AND l2.[Almacén] = @p4
+              FOR XML PATH('')), 1, 2, '') AS FormaVenta,
        CAST(SUM(l.[Base Imponible]) AS decimal(18,4)) AS BaseImponible,
        CAST(SUM(l.Total) AS decimal(18,4)) AS Total
 FROM CabFacturaVta f WITH (NOLOCK)
@@ -161,6 +174,7 @@ ORDER BY f.Fecha, f.[Número]";
             f.Poblacion = f.Poblacion?.Trim();
             f.Vendedor = VacioANull(f.Vendedor);
             f.NombreVendedor = VacioANull(f.NombreVendedor);
+            f.FormaVenta = VacioANull(f.FormaVenta);
             f.BaseImponible = Redondear(f.BaseImponible);
             f.Total = Redondear(f.Total);
             return f;

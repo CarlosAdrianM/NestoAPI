@@ -153,6 +153,25 @@ namespace NestoAPI.Tests.Infraestructure.Informes
         }
 
         [TestMethod]
+        public void Construir_FormaVenta_SeLimpiaYSinFormaQuedaNull()
+        {
+            FacturacionTiendaDTO informe = GestorFacturacionTienda.Construir(Filas(), "REI", new DateTime(2026, 10, 12), new DateTime(2026, 10, 18));
+
+            Assert.AreEqual("DIR, TIE", informe.Facturas.Single(f => f.Factura == "NV2600100").FormaVenta);
+            Assert.AreEqual("ALU", informe.Facturas.Single(f => f.Factura == "CV2600010").FormaVenta);
+            Assert.IsNull(informe.Facturas.Single(f => f.Factura == "RV2600005").FormaVenta);
+        }
+
+        [TestMethod]
+        public void Sql_LaFormaDeVentaSoloMiraLasLineasDeLaTienda()
+        {
+            string sql = GestorFacturacionTienda.SQL_FACTURACION_TIENDA;
+
+            StringAssert.Contains(sql, "AS FormaVenta");
+            StringAssert.Contains(sql, "l2.[Almacén] = @p4", "Una factura con líneas de Algete no enseña sus formas de venta");
+        }
+
+        [TestMethod]
         public void Construir_SinFacturas_DaElInformeVacioConTotalesACero()
         {
             FacturacionTiendaDTO informe = GestorFacturacionTienda.Construir(null, "ALC", new DateTime(2026, 10, 12), new DateTime(2026, 10, 18));
@@ -180,7 +199,10 @@ namespace NestoAPI.Tests.Infraestructure.Informes
                 List<string> textos = doc.WorkbookPart.SharedStringTablePart.SharedStringTable.Elements<SharedStringItem>().Select(i => i.InnerText).ToList();
                 CollectionAssert.Contains(textos, "Peluquería Ejemplo");
                 CollectionAssert.Contains(textos, "PA - Paloma Ejemplo");
-                CollectionAssert.Contains(textos, "CV (curso)");
+                CollectionAssert.Contains(textos, "Curso");
+                CollectionAssert.Contains(textos, "Sí", "El curso lleva la marca en su columna");
+                CollectionAssert.Contains(textos, "Forma venta");
+                CollectionAssert.Contains(textos, "DIR, TIE");
                 CollectionAssert.Contains(textos, "Total (3 facturas):");
             }
             Assert.AreEqual("FacturacionTienda_REI_20261012_20261018.xlsx", GeneradorExcelFacturacionTienda.NombreFichero(informe));
@@ -193,14 +215,14 @@ namespace NestoAPI.Tests.Infraestructure.Informes
             {
                 Empresa = "1  ", Factura = "NV2600100 ", Fecha = new DateTime(2026, 10, 13), Serie = "NV", Cliente = "24680     ", Contacto = "0  ",
                 Nombre = "Peluquería Ejemplo  ", Direccion = "Avenida Ficticia, 7", CodigoPostal = "28100", Poblacion = "Alcobendas",
-                Vendedor = "JE ", NombreVendedor = "   ",
+                Vendedor = "JE ", NombreVendedor = "   ", FormaVenta = "DIR, TIE ",
                 BaseImponible = 150m, Total = 181.5m
             },
             new FacturaTiendaDTO
             {
                 Empresa = "1", Factura = "CV2600010", Fecha = new DateTime(2026, 10, 14), Serie = "CV ", Cliente = "15191", Contacto = "0",
                 Nombre = "Centro Estético Inventado", Direccion = "Calle Mayor, 1 ", CodigoPostal = "28001", Poblacion = "Madrid",
-                Vendedor = "PA", NombreVendedor = "Paloma Ejemplo", BaseImponible = 300m, Total = 363m
+                Vendedor = "PA", NombreVendedor = "Paloma Ejemplo", FormaVenta = "ALU", BaseImponible = 300m, Total = 363m
             },
             new FacturaTiendaDTO
             {
