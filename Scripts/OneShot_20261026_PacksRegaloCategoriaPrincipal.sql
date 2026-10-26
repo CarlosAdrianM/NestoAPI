@@ -8,7 +8,8 @@
 --   - El trigger trgProductosUpd encola cada producto en Nesto_sync (empresa 1) al cambiar el subgrupo, así que la
 --     pasada de los 5 minutos los republica en PrestaShop con la categoría nueva. El trigger solo deja cambiar el
 --     subgrupo a unos usuarios concretos o a sa: EJECUTAR COMO sa.
---   - @TambienEmpresa3 = 1 cambia también el subgrupo de la copia de la ficha en la empresa 3 (55 de ellos la tienen).
+--   - @TambienEmpresa3 = 1 cambiaría también la copia de la ficha en la empresa 3 (55 de ellos), pero allí NO existe el
+--     subgrupo COS/PRG y la FK lo impide (Msg 547, 26/10). Decisión de Carlos: solo la empresa 1.
 --
 -- Comprobado el 26/10 (solo lectura): 81 productos, 110 filas de categorías secundarias a borrar.
 -- Idempotente: si se vuelve a lanzar, ya no quedan productos con Pack Regalo como secundaria y no cambia nada.
@@ -17,7 +18,7 @@ GO
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
 
-DECLARE @TambienEmpresa3 bit = 1;   -- Carlos 26/10: también la empresa 3
+DECLARE @TambienEmpresa3 bit = 0;   -- 26/10: en la empresa 3 no existe el subgrupo COS/PRG (FK_Productos_SubGruposProducto); Carlos: solo la empresa 1
 
 IF NOT EXISTS (SELECT 1 FROM SubGruposProducto WHERE Empresa = '1' AND Grupo = 'COS' AND Número = 'PRG')
 BEGIN
