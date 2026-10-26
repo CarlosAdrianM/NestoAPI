@@ -65,4 +65,35 @@ namespace NestoAPI.Models.Informes
         public decimal BaseImponible { get; set; }
         public decimal Total { get; set; }
     }
+
+    /// <summary>
+    /// Sugerencia 648: cuerpo de POST api/Informes/FacturacionTienda/Correo. Tienda y fechas como en el GET (null: la suya y la
+    /// semana anterior). <see cref="Correo"/> null o vacío: el CorreoDefecto del usuario.
+    /// </summary>
+    public class PeticionCorreoFacturacionTiendaDTO
+    {
+        public string Tienda { get; set; }
+        public DateTime? Desde { get; set; }
+        public DateTime? Hasta { get; set; }
+        public string Correo { get; set; }
+    }
+
+    /// <summary>Sugerencia 648: a quién se ha mandado el Excel (y lo que llevaba, para enseñarlo).</summary>
+    public class CorreoFacturacionTiendaDTO
+    {
+        public string Correo { get; set; }
+        public string Tienda { get; set; }
+        public DateTime Desde { get; set; }
+        public DateTime Hasta { get; set; }
+        public int NumeroFacturas { get; set; }
+        public decimal TotalBaseImponible { get; set; }
+        public decimal Total { get; set; }
+    }
+
+    /// <summary>Sugerencia 648: el correo al que se manda el Excel por defecto (GET api/Informes/FacturacionTienda/Correo).</summary>
+    public class CorreoUsuarioFacturacionTiendaDTO
+    {
+        /// <summary>El CorreoDefecto del usuario; null si no tiene.</summary>
+        public string Correo { get; set; }
+    }
 }

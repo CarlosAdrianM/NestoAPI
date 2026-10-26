@@ -397,6 +397,7 @@
     <Compile Include="Infraestructure\Videos\GestorBorradoVideosTests.cs" />
     <Compile Include="Controllers\BancosControllerTests.cs" />
     <Compile Include="Controllers\InformesControllerTests.cs" />
+    <Compile Include="Controllers\InformesControllerCorreoFacturacionTiendaTests.cs" />
     <Compile Include="Controllers\InformesControllerFacturacionTiendaTests.cs" />
     <Compile Include="Controllers\NotificacionesControllerTests.cs" />
     <Compile Include="Controllers\PedidosVentaJefeEquipoTests.cs" />

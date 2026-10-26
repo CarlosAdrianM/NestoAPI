@@ -7,6 +7,7 @@ using System.Net.Http.Headers;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
+using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Informes;
 using NestoAPI.Infraestructure.PedidosCompra;
 using NestoAPI.Infrastructure;
@@ -20,11 +21,34 @@ namespace NestoAPI.Controllers
     public class InformesController : ApiController
     {
         private readonly IInformesService _servicio;
+        private readonly IServicioCorreoElectronico _servicioCorreo;
 
-        public InformesController(IInformesService servicio)
+        public InformesController(IInformesService servicio) : this(servicio, null)
+        {
+        }
+
+        public InformesController(IInformesService servicio, IServicioCorreoElectronico servicioCorreo)
         {
             _servicio = servicio;
+            _servicioCorreo = servicioCorreo ?? new ServicioCorreoElectronico();
         }
+
+        /// <summary>
+        /// Sugerencia 648: el CorreoDefecto del usuario (sin dominio), SOLO su fila: sin caer en el de «(defecto)» (que es el buzón
+        /// general) ni crearle una, como haría ParametrosUsuarioController.LeerParametro. Null si no tiene. Sustituible en tests.
+        /// </summary>
+        internal Func<string, string> CorreoDelUsuario { get; set; } = usuario =>
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                string valor = db.ParametrosUsuario
+                    .Where(p => p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && p.Usuario == usuario
+                        && p.Clave == Parametros.Claves.CorreoDefecto)
+                    .Select(p => p.Valor)
+                    .FirstOrDefault();
+                return string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();
+            }
+        };
 
         /// <summary>Reloj del controlador (sustituible en tests), para la semana por defecto de FacturacionTienda.</summary>
         internal Func<DateTime> Ahora { get; set; } = () => DateTime.Now;
@@ -84,6 +108,91 @@ namespace NestoAPI.Controllers
             };
         }
 
+        /// <summary>
+        /// Sugerencia 648: el correo al que se manda el Excel si no se dice otro (el CorreoDefecto del usuario; null si no tiene),
+        /// para que Nesto lo enseñe. Mismos permisos que el informe.
+        /// GET api/Informes/FacturacionTienda/Correo
+        /// </summary>
+        [HttpGet]
+        [Route("api/Informes/FacturacionTienda/Correo")]
+        [ResponseType(typeof(CorreoUsuarioFacturacionTiendaDTO))]
+        public IHttpActionResult GetCorreoFacturacionTienda()
+        {
+            if (!PuedeVerCualquierTienda() && !(User != null && User.IsInRoleSinDominio(Constantes.GruposSeguridad.TIENDAS)))
+            {
+                return Content(HttpStatusCode.Forbidden, MENSAJE_SIN_PERMISO_FACTURACION_TIENDA);
+            }
+            return Ok(new CorreoUsuarioFacturacionTiendaDTO { Correo = CorreoDelUsuarioActual() });
+        }
+
+        /// <summary>
+        /// Sugerencia 648: el mismo Excel que <see cref="GetFacturacionTiendaExcel"/>, ADJUNTO en un correo al usuario (Nesto corre en
+        /// el escritorio remoto, donde Office no tiene licencia). Mismos permisos y misma semana por defecto. Sin <c>Correo</c> en el
+        /// cuerpo, a su CorreoDefecto; con él, a ese (si no es el suyo, solo de @nuevavision.es). Devuelve a qué correo se ha mandado.
+        /// POST api/Informes/FacturacionTienda/Correo  { "Tienda": "ALC", "Desde": "2026-10-19", "Hasta": "2026-10-25", "Correo": null }
+        /// </summary>
+        [HttpPost]
+        [Route("api/Informes/FacturacionTienda/Correo")]
+        [ResponseType(typeof(CorreoFacturacionTiendaDTO))]
+        public async Task<IHttpActionResult> PostCorreoFacturacionTienda([FromBody] PeticionCorreoFacturacionTiendaDTO peticion)
+        {
+            peticion = peticion ?? new PeticionCorreoFacturacionTiendaDTO();
+            HttpStatusCode? codigo = ValidarFacturacionTienda(peticion.Tienda, peticion.Desde, peticion.Hasta, out string error,
+                out string tiendaNormalizada, out DateTime fechaDesde, out DateTime fechaHasta);
+            if (codigo.HasValue)
+            {
+                return codigo == HttpStatusCode.Forbidden ? Content(HttpStatusCode.Forbidden, error) : (IHttpActionResult)BadRequest(error);
+            }
+            string destinatario = CorreoFacturacionTienda.ResolverDestinatario(peticion.Correo, CorreoDelUsuarioActual(), out error);
+            if (destinatario == null)
+            {
+                return BadRequest(error);
+            }
+
+            FacturacionTiendaDTO informe = await _servicio
+                .LeerFacturacionTiendaAsync(tiendaNormalizada, fechaDesde, fechaHasta)
+                .ConfigureAwait(false);
+            byte[] excel = new GeneradorExcelFacturacionTienda().GenerarBytes(informe);
+            bool enviado;
+            using (System.Net.Mail.MailMessage correo = CorreoFacturacionTienda.Construir(informe, excel, destinatario))
+            {
+                enviado = _servicioCorreo.EnviarCorreoSMTP(correo);
+            }
+            if (!enviado)
+            {
+                ElmahHelper.Log(new Exception($"[Facturado en tienda 648] No se ha podido mandar el Excel de {tiendaNormalizada} " +
+                    $"({fechaDesde:dd/MM/yyyy}-{fechaHasta:dd/MM/yyyy}) a {destinatario}."));
+                return Content(HttpStatusCode.InternalServerError,
+                    $"No se ha podido mandar el correo a {destinatario}. Inténtelo de nuevo dentro de un rato.");
+            }
+            return Ok(new CorreoFacturacionTiendaDTO
+            {
+                Correo = destinatario,
+                Tienda = informe.Tienda,
+                Desde = informe.Desde,
+                Hasta = informe.Hasta,
+                NumeroFacturas = informe.NumeroFacturas,
+                TotalBaseImponible = informe.TotalBaseImponible,
+                Total = informe.Total
+            });
+        }
+
+        private string UsuarioSinDominio()
+        {
+            string nombre = User?.Identity?.IsAuthenticated == true ? User.Identity.Name : null;
+            if (string.IsNullOrWhiteSpace(nombre))
+            {
+                return null;
+            }
+            return (nombre.Contains("\\") ? nombre.Substring(nombre.LastIndexOf('\\') + 1) : nombre).Trim();
+        }
+
+        private string CorreoDelUsuarioActual()
+        {
+            string usuario = UsuarioSinDominio();
+            return usuario == null ? null : CorreoDelUsuario(usuario)?.Trim();
+        }
+
         private bool PuedeVerCualquierTienda()
         {
             return User != null && (User.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION)
@@ -93,13 +202,8 @@ namespace NestoAPI.Controllers
 
         private string AlmacenDelUsuarioActual()
         {
-            string nombre = User?.Identity?.IsAuthenticated == true ? User.Identity.Name : null;
-            if (string.IsNullOrWhiteSpace(nombre))
-            {
-                return null;
-            }
-            string sinDominio = nombre.Contains("\\") ? nombre.Substring(nombre.LastIndexOf('\\') + 1) : nombre;
-            return AlmacenDelUsuario(sinDominio.Trim())?.Trim();
+            string sinDominio = UsuarioSinDominio();
+            return sinDominio == null ? null : AlmacenDelUsuario(sinDominio)?.Trim();
         }
 
         /// <summary>Null si se puede consultar; si no, 400 o 403 con su mensaje en <paramref name="error"/>.</summary>

@@ -1135,6 +1135,7 @@
     <Compile Include="Infraestructure\Pagos\RevisorConcepto.cs" />
     <Compile Include="Infraestructure\TransaccionesSeguras.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfControlPedidos.cs" />
+    <Compile Include="Infraestructure\Informes\CorreoFacturacionTienda.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorExcelFacturacionTienda.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfDetalleRapports.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfExtractoContable.cs" />
