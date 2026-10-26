@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure;
@@ -43,6 +43,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         private List<EventoSenal> senales;
         private List<Cliente> clientes;
         private List<PagoTPV> pagosTPV;
+        private List<PersonaContactoCliente> personas;
         private DbSet<EventoInscripcion> fakeInscripciones;
         private IServicioPagos pagos;
         private IProcesadorInscripcionPagada procesador;
@@ -85,6 +86,8 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             A.CallTo(() => db.EventosSenales).Returns(Crear(senales));
             A.CallTo(() => db.Clientes).Returns(Crear(clientes));
             A.CallTo(() => db.PagosTPV).Returns(Crear(pagosTPV));
+            personas = new List<PersonaContactoCliente>();
+            A.CallTo(() => db.PersonasContactoClientes).Returns(Crear(personas));
 
             pagos = A.Fake<IServicioPagos>();
             A.CallTo(() => pagos.IniciarPago(A<SolicitudPagoTPV>._, A<string>._)).ReturnsLazily((SolicitudPagoTPV s, string u) =>
@@ -1170,6 +1173,135 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
 
             Assert.IsNotNull(resultado);
             Assert.AreEqual(EstadoInscripcionEvento.Reservada, resultado.Content.Estado);
+        }
+
+        // ---------------- Sugerencia 776: avisos de la ficha al inscribir ----------------
+
+        private void TelefonoDeLaFicha(string telefono) => clientes.First(c => c.Nº_Cliente == "15191" && c.ClientePrincipal).Teléfono = telefono;
+
+        private void Persona(string contacto, string telefono = null, string correo = null) => personas.Add(new PersonaContactoCliente
+        {
+            Empresa = "1",
+            NºCliente = "15191",
+            Contacto = contacto,
+            Número = (personas.Count + 1).ToString(),
+            Teléfono = telefono,
+            CorreoElectrónico = correo
+        });
+
+        private Task<InscripcionEventoDTO> InscribirDesdeNesto() => Servicio().Inscribir(EVENTO_REINA,
+            new InscribirEventoDTO { Cliente = "15191", Origen = "Nesto", GenerarEnlacePago = false }, REINA);
+
+        [TestMethod]
+        public async Task Inscribir_FichaSinTelefono_AvisaDelTelefonoYSeInscribe()
+        {
+            TelefonoDeLaFicha("   ");
+            Persona("0  ", correo: "luna@example.com ");
+
+            InscripcionEventoDTO dto = await InscribirDesdeNesto();
+
+            Assert.AreEqual(1, inscripciones.Count, "El aviso no bloquea la inscripción");
+            CollectionAssert.AreEqual(new List<string> { AvisosFichaInscripcion.FALTA_TELEFONO }, dto.Avisos);
+            Assert.AreEqual("A la ficha de la clienta le falta el teléfono: añádalo para poder avisarla del evento.", dto.Avisos[0]);
+        }
+
+        [TestMethod]
+        public async Task Inscribir_FichaSinCorreo_AvisaDelCorreo()
+        {
+            TelefonoDeLaFicha("91 123 45 67");
+            Persona("0  ", correo: "no es un correo");
+
+            InscripcionEventoDTO dto = await InscribirDesdeNesto();
+
+            CollectionAssert.AreEqual(new List<string> { AvisosFichaInscripcion.FALTA_CORREO }, dto.Avisos);
+        }
+
+        [TestMethod]
+        public async Task Inscribir_FichaSinTelefonoNiCorreo_UnSoloAvisoConLosDos()
+        {
+            TelefonoDeLaFicha("123");
+
+            InscripcionEventoDTO dto = await InscribirDesdeNesto();
+
+            Assert.AreEqual(1, inscripciones.Count);
+            CollectionAssert.AreEqual(new List<string> { AvisosFichaInscripcion.FALTAN_AMBOS }, dto.Avisos);
+        }
+
+        [TestMethod]
+        public async Task Inscribir_FichaConTelefonoYCorreo_SinAvisos()
+        {
+            TelefonoDeLaFicha("912345678/666 11 22 33");
+            Persona("0  ", correo: "luna@example.com");
+
+            InscripcionEventoDTO dto = await InscribirDesdeNesto();
+
+            Assert.IsNotNull(dto.Avisos);
+            Assert.AreEqual(0, dto.Avisos.Count);
+        }
+
+        [TestMethod]
+        public async Task Inscribir_TelefonoEnLaPersonaDeContactoYCorreoEnOtraDireccion_SinAvisos()
+        {
+            Persona("0  ", telefono: "666112233");
+            Persona("1  ", correo: "alcala@example.com");
+
+            InscripcionEventoDTO dto = await InscribirDesdeNesto();
+
+            Assert.AreEqual(0, dto.Avisos.Count);
+        }
+
+        [TestMethod]
+        public async Task Inscribir_TelefonoDeOtraDireccion_NoCuenta()
+        {
+            Persona("1  ", telefono: "666112233", correo: "luna@example.com");
+
+            InscripcionEventoDTO dto = await InscribirDesdeNesto();
+
+            CollectionAssert.AreEqual(new List<string> { AvisosFichaInscripcion.FALTA_TELEFONO }, dto.Avisos);
+        }
+
+        [TestMethod]
+        public async Task Inscribir_LaClientaDesdeLaTiendaOnline_SinAvisos()
+        {
+            InscripcionEventoDTO dto = await Servicio().Inscribir(EVENTO_REINA,
+                new InscribirEventoDTO { Cliente = "15191", FormaPago = "Efectivo", GenerarEnlacePago = false }, ClienteTienda("15191"));
+
+            Assert.IsNull(dto.Avisos, "En TNV no se enseña nada");
+        }
+
+        [TestMethod]
+        public async Task Inscribir_SiFallaLaLecturaDeLasPersonas_SeInscribeSinAvisos()
+        {
+            A.CallTo(() => db.PersonasContactoClientes).Throws(new InvalidOperationException("caída"));
+
+            InscripcionEventoDTO dto = await InscribirDesdeNesto();
+
+            Assert.AreEqual(1, inscripciones.Count);
+            Assert.AreEqual(0, dto.Avisos.Count);
+        }
+
+        [TestMethod]
+        public void AvisosFicha_TelefonosValidos()
+        {
+            Assert.IsTrue(AvisosFichaInscripcion.TieneTelefono("912345678"));
+            Assert.IsTrue(AvisosFichaInscripcion.TieneTelefono("(91) 234-56-78"));
+            Assert.IsTrue(AvisosFichaInscripcion.TieneTelefono("123/666 11 22 33"));
+            Assert.IsTrue(AvisosFichaInscripcion.TieneTelefono("+32 474 46 77 17"));
+            Assert.IsTrue(AvisosFichaInscripcion.TieneTelefono("0033612345678"));
+            Assert.IsFalse(AvisosFichaInscripcion.TieneTelefono(null));
+            Assert.IsFalse(AvisosFichaInscripcion.TieneTelefono("   "));
+            Assert.IsFalse(AvisosFichaInscripcion.TieneTelefono("12345"));
+            Assert.IsFalse(AvisosFichaInscripcion.TieneTelefono("+34 12"));
+        }
+
+        [TestMethod]
+        public void AvisosFicha_CorreosValidos()
+        {
+            Assert.IsTrue(AvisosFichaInscripcion.TieneCorreo("luna@example.com"));
+            Assert.IsTrue(AvisosFichaInscripcion.TieneCorreo("mal; luna@example.com"));
+            Assert.IsFalse(AvisosFichaInscripcion.TieneCorreo(null));
+            Assert.IsFalse(AvisosFichaInscripcion.TieneCorreo("  "));
+            Assert.IsFalse(AvisosFichaInscripcion.TieneCorreo("luna"));
         }
 
         private static DbSet<T> Crear<T>(List<T> datos) where T : class

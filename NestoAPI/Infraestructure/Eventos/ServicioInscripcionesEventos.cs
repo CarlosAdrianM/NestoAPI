@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure.Contabilidad;
+﻿using NestoAPI.Infraestructure.Contabilidad;
 using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Infraestructure.Pagos;
 using NestoAPI.Models;
@@ -195,6 +195,13 @@ namespace NestoAPI.Infraestructure.Eventos
         /// presupuestos ni la línea del curso). Solo en la lista de inscritos del evento; null en el resto.
         /// </summary>
         public decimal? BaseImponibleDia { get; set; }
+        /// <summary>
+        /// Sugerencia 776: avisos (no errores) al inscribir desde la casa, p. ej. que a la ficha le falta el teléfono o el
+        /// correo. Solo en la respuesta de POST api/Eventos/{id}/Inscripciones (vacía si no falta nada); null en el resto y
+        /// cuando se inscribe la propia clienta desde la tienda online.
+        /// </summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public List<string> Avisos { get; set; }
     }
 
     /// <summary>
@@ -519,7 +526,37 @@ GROUP BY RTRIM(c.[Nº Cliente])";
 
             InscripcionEventoDTO dto = Componer(inscripcion, evento, ficha.Nombre?.Trim());
             dto.UrlPago = urlPago;
+            if (origen != OrigenInscripcionEvento.TNV)
+            {
+                dto.Avisos = await AvisosFicha(empresa, cliente, contacto, ficha.Teléfono).ConfigureAwait(false);
+            }
             return dto;
+        }
+
+        /// <summary>
+        /// Sugerencia 776: si a la ficha le falta el teléfono o el correo (<see cref="AvisosFichaInscripcion"/>). Nunca
+        /// bloquea: si algo falla al mirarlo, sin avisos (y a ELMAH).
+        /// </summary>
+        private async Task<List<string>> AvisosFicha(string empresa, string cliente, string contacto, string telefonoFicha)
+        {
+            try
+            {
+                List<AvisosFichaInscripcion.PersonaContacto> personas = await db.PersonasContactoClientes
+                    .Where(p => p.Empresa == empresa && p.NºCliente == cliente)
+                    .Select(p => new AvisosFichaInscripcion.PersonaContacto
+                    {
+                        Contacto = p.Contacto,
+                        Telefono = p.Teléfono,
+                        Correo = p.CorreoElectrónico
+                    })
+                    .ToListAsync().ConfigureAwait(false);
+                return AvisosFichaInscripcion.Calcular(contacto, telefonoFicha, personas);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Sugerencia 776] No se ha podido mirar el teléfono y el correo de {cliente}/{contacto}: {ex.Message}", ex));
+                return new List<string>();
+            }
         }
 
         internal static string ConceptoPago(Evento evento) => $"Señal {evento.Titulo?.Trim()}";

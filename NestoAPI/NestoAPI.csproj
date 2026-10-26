@@ -1071,6 +1071,7 @@
     <Compile Include="Controllers\PreferenciasNotificacionesController.cs" />
     <Compile Include="Infraestructure\Eventos\SenalesEventosJobsService.cs" />
     <Compile Include="Infraestructure\Eventos\EstadoInscripcionEvento.cs" />
+    <Compile Include="Infraestructure\Eventos\AvisosFichaInscripcion.cs" />
     <Compile Include="Infraestructure\Eventos\ServicioInscripcionesEventos.cs" />
     <Compile Include="Infraestructure\Eventos\InscripcionesEventosJobsService.cs" />
     <Compile Include="Infraestructure\Eventos\PermisosEventos.cs" />
