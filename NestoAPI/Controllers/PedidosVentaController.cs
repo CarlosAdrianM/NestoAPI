@@ -2293,6 +2293,12 @@ namespace NestoAPI.Controllers
                 pedido.ParametrosIva = await parametros.ToListAsync().ConfigureAwait(false);
             }
 
+            string faltaIva = ValidarIvaLineas(pedido, pedido.ParametrosIva);
+            if (faltaIva != null)
+            {
+                return BadRequest(faltaIva);
+            }
+
             // El número que vamos a dar al pedido hay que leerlo de ContadoresGlobales.
             // Issue #275: la reserva del número es ATÓMICA (UPDATE ... OUTPUT) para que dos
             // peticiones concurrentes no cojan el mismo y una pierda el pedido por PK duplicada.
@@ -3178,6 +3184,38 @@ namespace NestoAPI.Controllers
             if (plazoPago == null)
             {
                 return $"No existen los plazos de pago {pedido.plazosPago?.Trim()} en la empresa {pedido.empresa?.Trim()}";
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Sugerencia 777: cada línea que no sea de texto necesita un Tipo de IVA que tenga el cliente. Antes, una línea
+        /// de cuenta contable sin IVA (ingresos de YouTube, 70500009) reventaba en el Single de ParametrosIva con «La
+        /// secuencia no contiene ningún elemento coincidente». Sin parámetros de IVA (cliente exento) no hay nada que validar.
+        /// </summary>
+        internal static string ValidarIvaLineas(PedidoVentaDTO pedido, IEnumerable<ParametrosIvaBase> parametrosIva)
+        {
+            if (pedido?.Lineas == null || parametrosIva == null || !parametrosIva.Any())
+            {
+                return null;
+            }
+            foreach (LineaPedidoVentaDTO linea in pedido.Lineas.Where(l => l.tipoLinea != Constantes.TiposLineaVenta.TEXTO))
+            {
+                string queLinea = linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO
+                    ? $"La línea del producto {linea.Producto?.Trim()}"
+                    : $"La línea de la cuenta {linea.Producto?.Trim()}";
+                if (!string.IsNullOrWhiteSpace(linea.texto))
+                {
+                    queLinea += $" («{linea.texto.Trim()}»)";
+                }
+                if (string.IsNullOrWhiteSpace(linea.iva))
+                {
+                    return $"{queLinea} no tiene Tipo de IVA. Póngale el que corresponda (por ejemplo, G21) y vuelva a crear el pedido.";
+                }
+                if (!parametrosIva.Any(p => p.CodigoIvaProducto == linea.iva.Trim()))
+                {
+                    return $"{queLinea} tiene el Tipo de IVA {linea.iva.Trim()}, que no existe para el IVA de este cliente. Corríjalo y vuelva a crear el pedido.";
+                }
             }
             return null;
         }

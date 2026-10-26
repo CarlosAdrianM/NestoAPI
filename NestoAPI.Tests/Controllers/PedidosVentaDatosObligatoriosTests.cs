@@ -7,6 +7,7 @@ using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Models;
+using NestoAPI.Models.PedidosBase;
 using NestoAPI.Models.PedidosVenta;
 
 namespace NestoAPI.Tests.Controllers
@@ -218,6 +219,68 @@ namespace NestoAPI.Tests.Controllers
         public void ValidarMaestrosPedido_ConAmbosMaestros_NoDevuelveError()
         {
             Assert.IsNull(PedidosVentaController.ValidarMaestrosPedido(PedidoCompleto(), new PlazoPago(), new Empresa()));
+        }
+
+        // --- Sugerencia 777: línea sin Tipo de IVA ---
+
+        private static List<ParametrosIvaBase> ParametrosIvaG21()
+        {
+            return new List<ParametrosIvaBase>
+            {
+                new ParametrosIvaBase { CodigoIvaProducto = "G21", PorcentajeIvaProducto = .21M },
+                new ParametrosIvaBase { CodigoIvaProducto = "R10", PorcentajeIvaProducto = .1M }
+            };
+        }
+
+        [TestMethod]
+        public void ValidarIvaLineas_CuentaContableSinTipoIva_AvisaConLaCuentaYElTexto()
+        {
+            // Laura, 23/10/26: los ingresos de YouTube (cuenta 70500009) sin IVA reventaban con
+            // «La secuencia no contiene ningún elemento coincidente» en el Single de ParametrosIva.
+            PedidoVentaDTO pedido = PedidoCompleto();
+            pedido.Lineas = new List<LineaPedidoVentaDTO>
+            {
+                new LineaPedidoVentaDTO { tipoLinea = Constantes.TiposLineaVenta.CUENTA_CONTABLE, Producto = "70500009", texto = "Ingresos septiembre 26", iva = null }
+            };
+
+            string error = PedidosVentaController.ValidarIvaLineas(pedido, ParametrosIvaG21());
+
+            Assert.IsNotNull(error);
+            StringAssert.Contains(error, "70500009");
+            StringAssert.Contains(error, "Ingresos septiembre 26");
+            StringAssert.Contains(error, "Tipo de IVA");
+        }
+
+        [TestMethod]
+        public void ValidarIvaLineas_TipoIvaQueNoTieneElCliente_AvisaConElCodigo()
+        {
+            PedidoVentaDTO pedido = PedidoCompleto();
+            pedido.Lineas.First().iva = "X99";
+
+            string error = PedidosVentaController.ValidarIvaLineas(pedido, ParametrosIvaG21());
+
+            Assert.IsNotNull(error);
+            StringAssert.Contains(error, "X99");
+        }
+
+        [TestMethod]
+        public void ValidarIvaLineas_LineasConIvaYLineaDeTexto_NoDevuelveError()
+        {
+            PedidoVentaDTO pedido = PedidoCompleto();
+            pedido.Lineas.First().iva = "G21 ";
+            pedido.Lineas.Add(new LineaPedidoVentaDTO { tipoLinea = Constantes.TiposLineaVenta.TEXTO, texto = "Un comentario" });
+
+            Assert.IsNull(PedidosVentaController.ValidarIvaLineas(pedido, ParametrosIvaG21()));
+        }
+
+        [TestMethod]
+        public void ValidarIvaLineas_ClienteSinParametrosIva_NoDevuelveError()
+        {
+            // Sin parámetros de IVA (cliente exento) no se calcula el IVA de las líneas: nada que validar.
+            PedidoVentaDTO pedido = PedidoCompleto();
+            pedido.Lineas.First().iva = null;
+
+            Assert.IsNull(PedidosVentaController.ValidarIvaLineas(pedido, new List<ParametrosIvaBase>()));
         }
 
         // --- Punto 2, el más grave: SingleOrDefault sobre ParametrosUsuario sin null-check ---
