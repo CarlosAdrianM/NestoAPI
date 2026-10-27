@@ -1,3 +1,5 @@
+using ModeloLlamadaPedido.Evaluacion;
+
 namespace ModeloLlamadaPedido.Reentrenamiento;
 
 /// <summary>
@@ -29,7 +31,7 @@ public sealed class MetadatosModelo
     /// <summary>Quién lo lanzó: «job mensual» o el usuario del endpoint.</summary>
     public string Origen { get; set; } = "";
 
-    public static MetadatosModelo Desde(ProcesoReentrenamiento r, DateTime fecha, string origen) => new()
+    public static MetadatosModelo Desde(IResultadoReentrenamiento r, DateTime fecha, string origen) => new()
     {
         Fecha = fecha,
         ContactosDesde = r.Desde,
@@ -48,4 +50,17 @@ public sealed class MetadatosModelo
     };
 
     public static double? Numero(double? v) => v == null || double.IsNaN(v.Value) ? null : Math.Round(v.Value, 6);
+}
+
+/// <summary>NestoAPI#618: lo que necesitan los metadatos de cualquiera de los dos procesos (general y por subgrupo).</summary>
+public interface IResultadoReentrenamiento
+{
+    DateTime Desde { get; }
+    DateTime Hasta { get; }
+    int Contactos { get; }
+    int Positivos { get; }
+    OpcionesReentrenamiento Opciones { get; }
+    MetricasPuerta? Actual { get; }
+    MetricasPuerta Nuevo { get; }
+    DecisionPuerta Decision { get; }
 }

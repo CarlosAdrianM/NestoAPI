@@ -52,10 +52,12 @@ public static class Metricas
     /// una lista mensual de clientes), se ordena por la puntuación y se mira cuántos de los k primeros acabaron en pedido.
     /// Los grupos con menos de k clientes no cuentan. Empates: orden estable por cliente.
     /// </summary>
-    public static ResultadoPrecision PrecisionEnK(IReadOnlyList<FilaEntrenamiento> filas, IReadOnlyList<float> puntuaciones, int k)
+    /// <remarks>NestoAPI#618: los grupos son (vendedor, mes, <see cref="IFilaEvaluable.Segmento"/>); en el modelo general el
+    /// segmento es "" y queda igual que antes.</remarks>
+    public static ResultadoPrecision PrecisionEnK<T>(IReadOnlyList<T> filas, IReadOnlyList<float> puntuaciones, int k) where T : IFilaEvaluable
     {
         var grupos = Enumerable.Range(0, filas.Count)
-            .GroupBy(i => (filas[i].Vendedor, filas[i].AnnoMes))
+            .GroupBy(i => (filas[i].Vendedor, filas[i].AnnoMes, filas[i].Segmento))
             .Select(g => (g.Key.Vendedor, Indices: g
                 .GroupBy(i => filas[i].ClienteId)
                 .Select(c => c.OrderBy(i => filas[i].Fecha).First())

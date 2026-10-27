@@ -8,6 +8,8 @@ public sealed class DatosCrudos
     public List<RapportCrudo> Rapports { get; } = new();
     public List<PedidoDia> Pedidos { get; } = new();
     public List<VentaGrupoMes> Ventas { get; } = new();
+    /// <summary>NestoAPI#618: solo si se pide (<c>incluirSubgrupos</c>); vacío en el modelo general.</summary>
+    public List<PedidoSubgrupoDia> PedidosSubgrupo { get; } = new();
 }
 
 /// <summary>
@@ -61,6 +63,23 @@ public sealed class RepositorioDatosSql
             AND l.SubGrupo <> 'MMP'
         GROUP BY cab.[Nº Cliente], cab.Contacto, YEAR(cab.Fecha) * 100 + MONTH(cab.Fecha), l.Grupo + l.SubGrupo;";
 
+    /// <summary>
+    /// NestoAPI#618: 4. Base imponible por cliente, día y grupo+subgrupo (sin MMP), del historial hasta el final de la ventana de
+    /// la etiqueta (como los pedidos): features de relación con el subgrupo y etiqueta «pedido en 7 días que lo incluya».
+    /// </summary>
+    internal const string SQL_SUBGRUPOS = @"
+
+        -- 4. NestoAPI#618: por día y grupo+subgrupo
+        SELECT cab.[Nº Cliente] Cliente, cab.Contacto, CAST(cab.Fecha AS date) Dia, l.Grupo + l.SubGrupo GrupoSubgrupo,
+            SUM(l.[Base Imponible]) Importe
+        FROM CabPedidoVta cab WITH (NOLOCK)
+        INNER JOIN LinPedidoVta l WITH (NOLOCK) ON l.Empresa = cab.Empresa AND l.Número = cab.Número
+        INNER JOIN #Clientes x ON x.Cliente = cab.[Nº Cliente] AND x.Contacto = cab.Contacto
+        WHERE cab.Empresa = '1' AND cab.Fecha >= @DesdeHistorial AND cab.Fecha < @HastaPedidos
+            AND l.TipoLinea = 1 AND l.[Base Imponible] > 0 AND cab.NotaEntrega = 0 AND l.Estado >= -1
+            AND l.SubGrupo <> 'MMP'
+        GROUP BY cab.[Nº Cliente], cab.Contacto, CAST(cab.Fecha AS date), l.Grupo + l.SubGrupo;";
+
     private readonly Func<DbConnection> _crearConexion;
     private readonly int _tiempoComando;
 
@@ -77,13 +96,14 @@ public sealed class RepositorioDatosSql
     /// <param name="vendedor">Solo los clientes con rapports de ese vendedor en la ventana (null = todos).</param>
     /// <param name="mesesHistorial">Meses de historial previo que se cargan para las features.</param>
     /// <param name="diasPositivo">Días después de <paramref name="hasta"/> que se cargan pedidos para la etiqueta.</param>
-    public DatosCrudos Leer(DateTime desde, DateTime hasta, string? vendedor, int mesesHistorial, int diasPositivo)
+    /// <param name="incluirSubgrupos">NestoAPI#618: trae también <see cref="DatosCrudos.PedidosSubgrupo"/> (modelo por subgrupo).</param>
+    public DatosCrudos Leer(DateTime desde, DateTime hasta, string? vendedor, int mesesHistorial, int diasPositivo, bool incluirSubgrupos = false)
     {
         var datos = new DatosCrudos();
         using DbConnection conexion = _crearConexion();
         conexion.Open();
         using DbCommand comando = conexion.CreateCommand();
-        comando.CommandText = SQL;
+        comando.CommandText = incluirSubgrupos ? SQL + SQL_SUBGRUPOS : SQL;
         comando.CommandTimeout = _tiempoComando;
         Parametro(comando, "@Desde", DbType.DateTime, desde);
         Parametro(comando, "@Hasta", DbType.DateTime, hasta);
@@ -117,6 +137,17 @@ public sealed class RepositorioDatosSql
                 Convert.ToInt32(lector[2]),
                 Convert.ToString(lector[3])!.Trim(),
                 Convert.ToDecimal(lector[4])));
+        }
+        if (incluirSubgrupos && lector.NextResult())
+        {
+            while (lector.Read())
+            {
+                datos.PedidosSubgrupo.Add(new PedidoSubgrupoDia(
+                    Claves.ClienteId(lector.GetString(0), lector.GetString(1)),
+                    lector.GetDateTime(2),
+                    Convert.ToString(lector[3])!.Trim(),
+                    Convert.ToDecimal(lector[4])));
+            }
         }
         return datos;
     }

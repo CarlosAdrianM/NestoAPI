@@ -20,7 +20,7 @@ namespace ModeloLlamadaPedido.Reentrenamiento;
 /// <item><see cref="EntrenarFinalYGuardar"/>: el modelo que se guarda se reentrena con TODO el dataset.</item>
 /// </list>
 /// </summary>
-public sealed class ProcesoReentrenamiento
+public sealed class ProcesoReentrenamiento : IResultadoReentrenamiento
 {
     private readonly OpcionesReentrenamiento _op;
     private readonly MLContext _ml;

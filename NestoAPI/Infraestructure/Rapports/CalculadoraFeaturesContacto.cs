@@ -1,3 +1,4 @@
+using ModeloLlamadaPedido.Datos;
 using NestoAPI.Models.Clientes;
 using ModeloContactoEntrada = ModeloLlamadaPedido.Features.ModeloContactoEntrada;
 using System;
@@ -54,9 +55,11 @@ namespace NestoAPI.Infraestructure.Rapports
     {
         private bool[] positivos;
 
+        /// <param name="pedidosSubgrupo">NestoAPI#618: lo comprado por día y grupo+subgrupo (24 meses), para el modelo por subgrupo. Null = nada.</param>
         public HistorialContacto(string clienteId, IEnumerable<PedidoDiaContacto> pedidos, IEnumerable<RapportContactoCrudo> rapports,
-            IEnumerable<VentaGrupoMesContacto> ventas, DateTime? ultimaInteraccion = null)
+            IEnumerable<VentaGrupoMesContacto> ventas, DateTime? ultimaInteraccion = null, IEnumerable<PedidoSubgrupoDia> pedidosSubgrupo = null)
         {
+            PedidosSubgrupo = (pedidosSubgrupo ?? Enumerable.Empty<PedidoSubgrupoDia>()).OrderBy(p => p.Dia).ToList();
             ClienteId = clienteId;
             // Un pedido = un día: se agrupan por si vienen varias filas del mismo día.
             Pedidos = (pedidos ?? Enumerable.Empty<PedidoDiaContacto>())
@@ -72,6 +75,8 @@ namespace NestoAPI.Infraestructure.Rapports
         public IReadOnlyList<PedidoDiaContacto> Pedidos { get; }
         public IReadOnlyList<RapportContactoCrudo> Rapports { get; }
         public IReadOnlyList<VentaGrupoMesContacto> Ventas { get; }
+        /// <summary>NestoAPI#618: lo comprado por día y grupo+subgrupo, ordenado por día (registro del núcleo, el mismo del entrenamiento).</summary>
+        public IReadOnlyList<PedidoSubgrupoDia> PedidosSubgrupo { get; }
         /// <summary>Último rapport Estado 0 sin pedido, de cualquier tipo (definición del endpoint antiguo). Null si no hay.</summary>
         public DateTime? UltimaInteraccion { get; }
 

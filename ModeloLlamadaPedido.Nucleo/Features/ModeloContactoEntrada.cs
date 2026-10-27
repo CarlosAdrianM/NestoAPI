@@ -44,14 +44,31 @@ public class ModeloContactoEntrada
     public float SinHistorial { get; set; }
 }
 
+/// <summary>
+/// NestoAPI#618: lo que necesitan la partición temporal y las métricas de una fila, sea del modelo general o del de subgrupo.
+/// <see cref="Segmento"/> separa los grupos de la precision@k además de (vendedor, mes): "" en el general, el subgrupo en el
+/// de subgrupo (la lista que ve el vendedor al elegir un subgrupo). Las filas lo implementan de forma explícita para que
+/// ML.NET no lo tome por columna.
+/// </summary>
+public interface IFilaEvaluable
+{
+    string ClienteId { get; }
+    bool Label { get; }
+    string Vendedor { get; }
+    DateTime Fecha { get; }
+    int AnnoMes { get; }
+    string Segmento { get; }
+}
+
 /// <summary>Una fila del dataset: la entrada del modelo + etiqueta, peso y datos de evaluación (no son features).</summary>
-public sealed class FilaEntrenamiento : ModeloContactoEntrada
+public sealed class FilaEntrenamiento : ModeloContactoEntrada, IFilaEvaluable
 {
     public bool Label { get; set; }
     public float Peso { get; set; } = 1f;
     public string Vendedor { get; set; } = "";
     public DateTime Fecha { get; set; }
     public int AnnoMes { get; set; }
+    string IFilaEvaluable.Segmento => "";
 }
 
 /// <summary>Salida del modelo (LightGBM/FastTree binario calibrado).</summary>

@@ -85,6 +85,7 @@ namespace NestoAPI.Infraestructure.Rapports
                 {
                     cliente.Probabilidad = prediccion.Probabilidad;
                     cliente.GrupoSubgrupoMasVendido = prediccion.GrupoSubgrupoMasVendido;
+                    cliente.MotivoSubgrupo = prediccion.MotivoSubgrupo;
                 }
             }
 
@@ -256,7 +257,24 @@ namespace NestoAPI.Infraestructure.Rapports
                 dto.Motivo = fila.Motivo;
                 dto.Probabilidad = fila.Probabilidad;
             }
+            if (enCartera)
+            {
+                dto.Motivo = ConMotivoSubgrupo(dto.Motivo, cliente.MotivoSubgrupo);
+            }
             return dto;
+        }
+
+        /// <summary>
+        /// NestoAPI#618: con el modelo por subgrupo, el motivo de la relación con el subgrupo elegido va detrás del motivo de
+        /// siempre (la probabilidad ya es la de comprar ese subgrupo). Solo en la respuesta: lo registrado no cambia.
+        /// </summary>
+        internal static string ConMotivoSubgrupo(string motivo, string motivoSubgrupo)
+        {
+            if (string.IsNullOrWhiteSpace(motivoSubgrupo))
+            {
+                return motivo;
+            }
+            return string.IsNullOrWhiteSpace(motivo) ? motivoSubgrupo : $"{motivo.TrimEnd('.', ' ')}. {motivoSubgrupo}";
         }
 
         public async Task<List<UsoSugerenciasContactoDTO>> LeerUso(DateTime desde, DateTime hasta)

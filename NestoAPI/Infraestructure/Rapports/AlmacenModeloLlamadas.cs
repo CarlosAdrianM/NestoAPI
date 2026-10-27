@@ -27,15 +27,30 @@ namespace NestoAPI.Infraestructure.Rapports
         internal const string NOMBRE_METADATOS_ANTERIOR = "modelo_llamadas_anterior.json";
         internal const string NOMBRE_README = "README_modelo_llamadas.md";
         internal const string NOMBRE_ULTIMO_INFORME = "ultimo_reentrenamiento.md";
+        /// <summary>NestoAPI#618: nombre base del modelo por subgrupo (modelo_llamadas_subgrupo.zip, _anterior.zip, .json...).</summary>
+        internal const string BASE_GENERAL = "modelo_llamadas";
+        internal const string BASE_SUBGRUPO = "modelo_llamadas_subgrupo";
         private const int INTENTOS = 5;
 
         private readonly string rutaDelDeploy;
+        private readonly string nombreBase;
 
-        public AlmacenModeloLlamadas(string carpeta, string rutaDelDeploy)
+        /// <param name="nombreBase">NestoAPI#618: <see cref="BASE_GENERAL"/> (por defecto) o <see cref="BASE_SUBGRUPO"/>.</param>
+        public AlmacenModeloLlamadas(string carpeta, string rutaDelDeploy, string nombreBase = BASE_GENERAL)
         {
             Carpeta = carpeta;
             this.rutaDelDeploy = rutaDelDeploy;
+            this.nombreBase = string.IsNullOrWhiteSpace(nombreBase) ? BASE_GENERAL : nombreBase;
         }
+
+        /// <summary>
+        /// NestoAPI#618: el modelo por subgrupo, en la misma carpeta y sin respaldo en el deploy (hasta que el job promueva el
+        /// primero, no hay: la API sigue con el general y el subgrupo pisado).
+        /// </summary>
+        public static AlmacenModeloLlamadas ProduccionSubgrupo()
+            => new AlmacenModeloLlamadas(CarpetaConfigurada(clave => ConfigurationManager.AppSettings[clave]), null, BASE_SUBGRUPO);
+
+        private bool EsGeneral => nombreBase == BASE_GENERAL;
 
         /// <summary>El de producción: carpeta del appSetting (o la de por defecto) y, de respaldo, el de ModelsIA.</summary>
         public static AlmacenModeloLlamadas Produccion()
@@ -48,12 +63,12 @@ namespace NestoAPI.Infraestructure.Rapports
         }
 
         public string Carpeta { get; }
-        public string RutaModelo => Path.Combine(Carpeta, NOMBRE_MODELO);
-        public string RutaAnterior => Path.Combine(Carpeta, NOMBRE_ANTERIOR);
-        public string RutaMetadatos => Path.Combine(Carpeta, MetadatosModelo.NOMBRE_FICHERO);
-        public string RutaMetadatosAnterior => Path.Combine(Carpeta, NOMBRE_METADATOS_ANTERIOR);
-        public string RutaReadme => Path.Combine(Carpeta, NOMBRE_README);
-        public string RutaUltimoInforme => Path.Combine(Carpeta, NOMBRE_ULTIMO_INFORME);
+        public string RutaModelo => Path.Combine(Carpeta, EsGeneral ? NOMBRE_MODELO : nombreBase + ".zip");
+        public string RutaAnterior => Path.Combine(Carpeta, EsGeneral ? NOMBRE_ANTERIOR : nombreBase + "_anterior.zip");
+        public string RutaMetadatos => Path.Combine(Carpeta, EsGeneral ? MetadatosModelo.NOMBRE_FICHERO : nombreBase + ".json");
+        public string RutaMetadatosAnterior => Path.Combine(Carpeta, EsGeneral ? NOMBRE_METADATOS_ANTERIOR : nombreBase + "_anterior.json");
+        public string RutaReadme => Path.Combine(Carpeta, EsGeneral ? NOMBRE_README : "README_" + nombreBase + ".md");
+        public string RutaUltimoInforme => Path.Combine(Carpeta, EsGeneral ? NOMBRE_ULTIMO_INFORME : "ultimo_reentrenamiento_subgrupo.md");
 
         /// <summary>El que usa la API ahora: el de la carpeta si existe; si no, el del deploy; null si no hay ninguno.</summary>
         public string RutaModeloActivo
@@ -93,7 +108,7 @@ namespace NestoAPI.Infraestructure.Rapports
         public string NuevaRutaTemporal()
         {
             _ = Directory.CreateDirectory(Carpeta);
-            return Path.Combine(Carpeta, $"modelo_llamadas.{DateTime.Now:yyyyMMddHHmmss}.{Guid.NewGuid():N}.tmp");
+            return Path.Combine(Carpeta, $"{nombreBase}.{DateTime.Now:yyyyMMddHHmmss}.{Guid.NewGuid():N}.tmp");
         }
 
         /// <summary>

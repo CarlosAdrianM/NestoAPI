@@ -9,8 +9,11 @@ public sealed class HistorialCliente
     public IReadOnlyList<PedidoDia> Pedidos { get; }
     public IReadOnlyList<RapportCrudo> Rapports { get; }
     public IReadOnlyList<VentaGrupoMes> Ventas { get; }
+    /// <summary>NestoAPI#618: lo comprado por día y grupo+subgrupo, ordenado por día (vacío si no se leyó).</summary>
+    public IReadOnlyList<PedidoSubgrupoDia> PedidosSubgrupo { get; }
 
-    public HistorialCliente(string clienteId, IEnumerable<PedidoDia> pedidos, IEnumerable<RapportCrudo> rapports, IEnumerable<VentaGrupoMes> ventas)
+    public HistorialCliente(string clienteId, IEnumerable<PedidoDia> pedidos, IEnumerable<RapportCrudo> rapports, IEnumerable<VentaGrupoMes> ventas,
+        IEnumerable<PedidoSubgrupoDia>? pedidosSubgrupo = null)
     {
         ClienteId = clienteId;
         // Un pedido = un día: se agrupan por si vienen varias filas del mismo día.
@@ -19,6 +22,7 @@ public sealed class HistorialCliente
             .OrderBy(p => p.Dia).ToList();
         Rapports = rapports.OrderBy(r => r.Fecha).ToList();
         Ventas = ventas.ToList();
+        PedidosSubgrupo = (pedidosSubgrupo ?? Enumerable.Empty<PedidoSubgrupoDia>()).OrderBy(p => p.Dia).ToList();
     }
 
     private bool[]? _positivos;
@@ -35,7 +39,8 @@ public sealed class HistorialCliente
         var pedidos = datos.Pedidos.ToLookup(p => p.ClienteId);
         var rapports = datos.Rapports.ToLookup(r => r.ClienteId);
         var ventas = datos.Ventas.ToLookup(v => v.ClienteId);
+        var subgrupos = datos.PedidosSubgrupo.ToLookup(v => v.ClienteId);
         return datos.Rapports.Select(r => r.ClienteId).Distinct()
-            .ToDictionary(id => id, id => new HistorialCliente(id, pedidos[id], rapports[id], ventas[id]));
+            .ToDictionary(id => id, id => new HistorialCliente(id, pedidos[id], rapports[id], ventas[id], subgrupos[id]));
     }
 }

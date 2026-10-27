@@ -657,6 +657,7 @@
     <Compile Include="Infrastructure\Rapports\RecordatorioSugerenciasContactoTests.cs" />
     <Compile Include="Infrastructure\Rapports\ModeloContactoTests.cs" />
     <Compile Include="Infrastructure\Rapports\ReentrenamientoModeloLlamadasTests.cs" />
+    <Compile Include="Infrastructure\Rapports\ModeloSubgrupoTests.cs" />
     <Compile Include="Controllers\RapportsControllerTests.cs" />
     <Compile Include="Controllers\IndicadoresStockControllerTests.cs" />
     <Compile Include="Infrastructure\IndicadoresStock\CalculadoraIndicadoresStockTests.cs" />

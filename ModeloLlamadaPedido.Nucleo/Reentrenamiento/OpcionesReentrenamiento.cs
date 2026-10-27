@@ -23,6 +23,12 @@ public sealed class OpcionesReentrenamiento
     public bool EvaluarAlternativas { get; set; } = true;
     /// <summary>Zip del modelo de producción con el que se compara. Null o inexistente = no hay con qué comparar (no se promueve).</summary>
     public string? ModeloActual { get; set; }
+    /// <summary>
+    /// NestoAPI#618 (solo modelo por subgrupo): zip del modelo GENERAL activo. Si aún no hay modelo por subgrupo
+    /// (<see cref="ModeloActual"/> no existe), la puerta compara con lo que se hace hoy: el general con el subgrupo pisado.
+    /// Y da P(pedido) para la base «interino» del informe.
+    /// </summary>
+    public string? ModeloGeneral { get; set; }
     /// <summary>Primer día de contactos que el modelo actual NO vio al entrenar (ver <see cref="VentanaReentrenamiento.CorteDesdeFechaModelo"/>).</summary>
     public DateTime? CorteActual { get; set; }
     /// <summary>Fracción: 0,01 = 1 punto de precision@k.</summary>
