@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Ariadna;
 using NestoAPI.Infraestructure.Filters;
 using System;
 using System.Net.Http.Formatting;
@@ -15,6 +16,10 @@ namespace NestoAPI
             // Sincronizar usuario autenticado (JWT/OWIN) con HttpContext.Current.User
             // Esto es necesario para que ELMAH y otros componentes legacy vean el usuario
             config.MessageHandlers.Add(new UserSyncHandler());
+
+            // NestoAPI#657: versión mínima de Ariadna (X-Ariadna-Version frente a Ariadna:VersionMinima del Web.config).
+            // En Sombra solo apunta en ELMAH; en Activo contesta 426. Sin cabecera (Nesto, NestoApp) no hace nada.
+            config.MessageHandlers.Add(new VersionMinimaAriadnaHandler(PoliticaVersionMinimaAriadna.DesdeConfiguracion()));
 
             // Registrar filtro global de excepciones para manejo centralizado de errores
             config.Filters.Add(new GlobalExceptionFilter());

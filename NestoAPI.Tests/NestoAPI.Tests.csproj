@@ -542,6 +542,7 @@
     <Compile Include="Infrastructure\SeriesFacturaQuestPdfTests.cs" />
     <Compile Include="Infrastructure\ParametrosFromBodyOpcionalesTests.cs" />
     <Compile Include="Infrastructure\StartupJwtConfigurationTests.cs" />
+    <Compile Include="Infraestructure\Ariadna\VersionMinimaAriadnaHandlerTests.cs" />
     <Compile Include="Infrastructure\Verifactu\GeneradorQrVerifactuTests.cs" />
     <Compile Include="Infrastructure\Verifactu\ProveedorVerifactuTests.cs" />
     <Compile Include="Infrastructure\Verifactu\ServicioVerifactiTests.cs" />

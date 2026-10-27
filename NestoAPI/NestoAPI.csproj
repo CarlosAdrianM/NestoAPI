@@ -1260,6 +1260,8 @@
     <Compile Include="Infraestructure\Rectificativas\AlmacenRectificativasPendientes.cs" />
     <Compile Include="Infraestructure\Rectificativas\GestorFacturasRectificativas.cs" />
     <Compile Include="Infraestructure\UserSyncHandler.cs" />
+    <Compile Include="Infraestructure\Ariadna\PoliticaVersionMinimaAriadna.cs" />
+    <Compile Include="Infraestructure\Ariadna\VersionMinimaAriadnaHandler.cs" />
     <Compile Include="Infraestructure\UsuarioContextInfoInterceptor.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ConvertidorPedidoAPlantilla.cs" />
     <Compile Include="Controllers\DireccionesController.cs" />
