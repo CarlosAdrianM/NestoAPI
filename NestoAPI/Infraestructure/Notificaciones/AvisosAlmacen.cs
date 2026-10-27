@@ -1,7 +1,9 @@
 ﻿using Microsoft.AspNet.SignalR;
 using System;
 using System.Collections.Concurrent;
+using NestoAPI.Models.PreparacionAlmacen;
 using System.Collections.Generic;
+using System.Configuration;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
@@ -144,6 +146,34 @@ namespace NestoAPI.Infraestructure.Notificaciones
         /// <param name="conexionEmisora">La conexión de SignalR de la PDA que lo ha hecho (cabecera X-Conexion-SignalR). Null si no llega.</param>
         /// <param name="dispositivoEmisor">El dispositivo que lo ha hecho (cabecera X-Dispositivo o el de la petición). Null si no se sabe.</param>
         void HaCambiado(string grupo, string usuario, string conexionEmisora, string dispositivoEmisor);
+
+        /// <summary>
+        /// NestoAPI#710: lo que se acaba de grabar en PreparacionEscaneos para ese grupo, CON SUS DATOS: «lectura(grupo, dispositivo,
+        /// lectura)» si es una y «lecturas(grupo, dispositivo, [..])» si es un lote. Según <see cref="AvisosAlmacen.CLAVE_AVISOS_CON_DATOS"/>,
+        /// detrás va también el «haCambiado» de siempre (las versiones de Ariadna que solo escuchan ese). Mismas exclusiones que
+        /// <see cref="HaCambiado"/>. Nunca lanza.
+        /// </summary>
+        void Lecturas(string grupo, string usuario, string conexionEmisora, string dispositivoEmisor, IReadOnlyList<LecturaAlmacenAvisoDTO> lecturas);
+
+        /// <summary>
+        /// NestoAPI#710: una parada corregida (quitada la falta o lo cogido): «correccion(grupo, dispositivo, correccion)» y, según
+        /// <see cref="AvisosAlmacen.CLAVE_AVISOS_CON_DATOS"/>, el «haCambiado» de siempre. Nunca lanza.
+        /// </summary>
+        void Correccion(string grupo, string usuario, string conexionEmisora, string dispositivoEmisor, CorreccionAlmacenAvisoDTO correccion);
+    }
+
+    /// <summary>
+    /// NestoAPI#710: qué se manda por una lectura o una corrección (Web.config, <see cref="AvisosAlmacen.CLAVE_AVISOS_CON_DATOS"/>).
+    /// Terminar, cambiar de hueco, la foto de un bulto o anular lecturas mandan SIEMPRE «haCambiado» (ahí sí conviene releerlo todo).
+    /// </summary>
+    public enum ModoAvisosConDatos
+    {
+        /// <summary>«Ambos» (por defecto, también sin la clave o con un valor que no se entiende): los eventos con datos y, detrás, «haCambiado».</summary>
+        Ambos,
+        /// <summary>«SoloDatos»: solo los eventos con datos. Cuando todas las PDA tengan Ariadna 2.19 o posterior.</summary>
+        SoloDatos,
+        /// <summary>«SoloHaCambiado»: como antes de NestoAPI#710 (freno de mano si los datos dieran problemas).</summary>
+        SoloHaCambiado
     }
 
     /// <summary>Los nombres de los grupos (los mismos en la API y en Ariadna) y las cabeceras.</summary>
@@ -153,6 +183,17 @@ namespace NestoAPI.Infraestructure.Notificaciones
         public const string CABECERA_CONEXION = "X-Conexion-SignalR";
         /// <summary>El dispositivo que hace el POST (si no llega la conexión, se excluyen las de este dispositivo).</summary>
         public const string CABECERA_DISPOSITIVO = "X-Dispositivo";
+
+        /// <summary>NestoAPI#710: la clave del Web.config con el <see cref="ModoAvisosConDatos"/> (Ambos, SoloDatos o SoloHaCambiado).</summary>
+        public const string CLAVE_AVISOS_CON_DATOS = "Almacen:AvisosConDatos";
+
+        /// <summary>NestoAPI#710: el modo de un valor del Web.config. Vacío o desconocido: <see cref="ModoAvisosConDatos.Ambos"/>.</summary>
+        public static ModoAvisosConDatos LeerModo(string valor)
+        {
+            return Enum.TryParse((valor ?? string.Empty).Trim(), true, out ModoAvisosConDatos modo) && Enum.IsDefined(typeof(ModoAvisosConDatos), modo)
+                ? modo
+                : ModoAvisosConDatos.Ambos;
+        }
 
         private static readonly Regex FORMATO = new Regex(@"^(Recogida:(PICK|REPO):\d{1,9}|Packing:\d{1,9}|recepcion:[A-Z]{4}:[A-Z0-9._-]{1,20}:[A-Z0-9]{1,3})$",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
@@ -187,20 +228,102 @@ namespace NestoAPI.Infraestructure.Notificaciones
         }
     }
 
+    /// <summary>
+    /// NestoAPI#646 y #710: los avisos por SignalR al grupo del documento. Los eventos (los mismos nombres en Ariadna):
+    /// «haCambiado(grupo, dispositivo)», «lectura(grupo, dispositivo, LecturaAlmacenAvisoDTO)», «lecturas(grupo, dispositivo,
+    /// [LecturaAlmacenAvisoDTO])» y «correccion(grupo, dispositivo, CorreccionAlmacenAvisoDTO)».
+    /// </summary>
     public class AvisosAlmacenSignalR : IAvisosAlmacen
     {
         private readonly Func<IHubContext> contexto;
+        private readonly Func<ModoAvisosConDatos> modo;
 
-        public AvisosAlmacenSignalR() : this(() => GlobalHost.ConnectionManager.GetHubContext<AlmacenHub>())
+        public AvisosAlmacenSignalR() : this(() => GlobalHost.ConnectionManager.GetHubContext<AlmacenHub>(),
+            () => AvisosAlmacen.LeerModo(ConfigurationManager.AppSettings[AvisosAlmacen.CLAVE_AVISOS_CON_DATOS]))
         {
         }
 
-        internal AvisosAlmacenSignalR(Func<IHubContext> contexto)
+        internal AvisosAlmacenSignalR(Func<IHubContext> contexto, Func<ModoAvisosConDatos> modo = null)
         {
             this.contexto = contexto;
+            this.modo = modo ?? (() => ModoAvisosConDatos.Ambos);
         }
 
         public void HaCambiado(string grupo, string usuario, string conexionEmisora, string dispositivoEmisor)
+        {
+            Mandar(grupo, usuario, conexionEmisora, dispositivoEmisor, (clientes, limpio, dispositivo) => clientes.haCambiado(limpio, dispositivo));
+        }
+
+        public void Lecturas(string grupo, string usuario, string conexionEmisora, string dispositivoEmisor, IReadOnlyList<LecturaAlmacenAvisoDTO> lecturas)
+        {
+            List<LecturaAlmacenAvisoDTO> lista = (lecturas ?? new List<LecturaAlmacenAvisoDTO>()).Where(l => l != null).ToList();
+            if (lista.Count == 0)
+            {
+                return;
+            }
+            ModoAvisosConDatos ahora = Modo();
+            Mandar(grupo, usuario, conexionEmisora, dispositivoEmisor, (clientes, limpio, dispositivo) =>
+            {
+                if (ahora != ModoAvisosConDatos.SoloHaCambiado)
+                {
+                    foreach (LecturaAlmacenAvisoDTO lectura in lista)
+                    {
+                        lectura.SigueHaCambiado = ahora == ModoAvisosConDatos.Ambos;
+                    }
+                    if (lista.Count == 1)
+                    {
+                        clientes.lectura(limpio, dispositivo, lista[0]);
+                    }
+                    else
+                    {
+                        clientes.lecturas(limpio, dispositivo, lista);
+                    }
+                }
+                if (ahora != ModoAvisosConDatos.SoloDatos)
+                {
+                    clientes.haCambiado(limpio, dispositivo);
+                }
+            });
+        }
+
+        public void Correccion(string grupo, string usuario, string conexionEmisora, string dispositivoEmisor, CorreccionAlmacenAvisoDTO correccion)
+        {
+            if (correccion == null)
+            {
+                return;
+            }
+            ModoAvisosConDatos ahora = Modo();
+            Mandar(grupo, usuario, conexionEmisora, dispositivoEmisor, (clientes, limpio, dispositivo) =>
+            {
+                if (ahora != ModoAvisosConDatos.SoloHaCambiado)
+                {
+                    correccion.SigueHaCambiado = ahora == ModoAvisosConDatos.Ambos;
+                    clientes.correccion(limpio, dispositivo, correccion);
+                }
+                if (ahora != ModoAvisosConDatos.SoloDatos)
+                {
+                    clientes.haCambiado(limpio, dispositivo);
+                }
+            });
+        }
+
+        private ModoAvisosConDatos Modo()
+        {
+            try
+            {
+                return modo();
+            }
+            catch
+            {
+                return ModoAvisosConDatos.Ambos;
+            }
+        }
+
+        /// <summary>
+        /// Lo común: el grupo bien escrito, a todos menos a la PDA que lo ha hecho, y si está sola no se manda nada. Los eventos
+        /// del mismo cambio van seguidos al mismo grupo (SignalR los entrega en ese orden a cada conexión). Nunca lanza.
+        /// </summary>
+        private void Mandar(string grupo, string usuario, string conexionEmisora, string dispositivoEmisor, Action<dynamic, string, string> enviar)
         {
             try
             {
@@ -214,7 +337,8 @@ namespace NestoAPI.Infraestructure.Notificaciones
                 {
                     return; // sola, o nadie mirando: nada que mandar
                 }
-                contexto().Clients.Group(limpio, excluidas.ToArray()).haCambiado(limpio, dispositivoEmisor?.Trim() ?? string.Empty);
+                dynamic clientes = contexto().Clients.Group(limpio, excluidas.ToArray());
+                enviar(clientes, limpio, dispositivoEmisor?.Trim() ?? string.Empty);
             }
             catch (Exception ex)
             {

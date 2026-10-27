@@ -347,6 +347,11 @@ namespace NestoAPI.Controllers
             switch (resultado.Estado)
             {
                 case EstadoAnularLecturas.Anuladas:
+                    if (resultado.Filas > 0)
+                    {
+                        // NestoAPI#710: puede tocar muchas paradas de golpe: las demás PDA releen la salida
+                        Avisar(Infraestructure.Notificaciones.AvisosAlmacen.GrupoRecogida(tipo, numero));
+                    }
                     return Ok(new ResultadoAnularLecturasDTO { Filas = resultado.Filas, Mensaje = resultado.Mensaje });
                 case EstadoAnularLecturas.SinPermiso:
                     return Content(HttpStatusCode.Forbidden, resultado.Mensaje);
@@ -444,26 +449,64 @@ namespace NestoAPI.Controllers
             ResultadoEscaneosAlmacenDTO guardados = await servicio.GuardarEscaneos(Empresa(empresa), escaneos, Usuario()).ConfigureAwait(false);
             if (guardados?.Guardados > 0)
             {
-                // NestoAPI#646: a las demás PDA de cada documento tocado, «ha cambiado»
+                // NestoAPI#710: a las demás PDA de cada documento tocado, lo grabado CON SUS DATOS (y el «haCambiado» de siempre,
+                // según Almacen:AvisosConDatos). Lo rechazado no se manda; lo repetido sí (la PDA que lo recibe no lo cuenta dos veces)
                 string dispositivo = escaneos.Select(e => e?.Dispositivo).FirstOrDefault(d => !string.IsNullOrWhiteSpace(d));
-                foreach (string grupo in GruposDe(escaneos))
+                var rechazados = new HashSet<Guid>((guardados.Rechazados ?? new List<EscaneoRechazadoDTO>()).Select(r => r.IdCliente));
+                string usuario = UsuarioAuditoriaHelper.ParaAuditoria(Usuario());
+                foreach (KeyValuePair<string, List<LecturaAlmacenAvisoDTO>> grupo in LecturasPorGrupo(escaneos.Where(e => e != null && !rechazados.Contains(e.IdCliente)), usuario))
                 {
-                    Avisar(grupo, dispositivo);
+                    AvisarLecturas(grupo.Key, grupo.Value, dispositivo);
                 }
             }
             return Ok(guardados);
         }
 
-        /// <summary>NestoAPI#646: el grupo de SignalR de cada documento de un lote de escaneos (recorrido o packing).</summary>
-        internal static List<string> GruposDe(IEnumerable<EscaneoAlmacenDTO> escaneos)
+        /// <summary>
+        /// NestoAPI#710: las lecturas de un lote de escaneos, por el grupo de SignalR de su documento (recorrido o packing), en el
+        /// orden en que llegaron y sin repetir IdCliente. <paramref name="usuario"/>: el que se guarda en PreparacionEscaneos.
+        /// </summary>
+        internal static Dictionary<string, List<LecturaAlmacenAvisoDTO>> LecturasPorGrupo(IEnumerable<EscaneoAlmacenDTO> escaneos, string usuario)
         {
-            return (escaneos ?? Enumerable.Empty<EscaneoAlmacenDTO>())
-                .Where(e => e != null && CasadorEscaneos.NumeroOrigenDe(e) > 0)
-                .Select(e => string.Equals(e.Fase?.Trim(), CasadorEscaneos.FASE_PACKING, StringComparison.OrdinalIgnoreCase)
-                    ? Infraestructure.Notificaciones.AvisosAlmacen.GrupoPacking(CasadorEscaneos.NumeroOrigenDe(e))
-                    : Infraestructure.Notificaciones.AvisosAlmacen.GrupoRecogida(CasadorEscaneos.TipoOrigenDe(e), CasadorEscaneos.NumeroOrigenDe(e)))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            var porGrupo = new Dictionary<string, List<LecturaAlmacenAvisoDTO>>(StringComparer.OrdinalIgnoreCase);
+            var vistos = new HashSet<Guid>();
+            foreach (EscaneoAlmacenDTO e in escaneos ?? Enumerable.Empty<EscaneoAlmacenDTO>())
+            {
+                if (e == null || CasadorEscaneos.NumeroOrigenDe(e) <= 0 || !vistos.Add(e.IdCliente))
+                {
+                    continue;
+                }
+                string grupo = GrupoDe(e);
+                if (!porGrupo.TryGetValue(grupo, out List<LecturaAlmacenAvisoDTO> lista))
+                {
+                    porGrupo[grupo] = lista = new List<LecturaAlmacenAvisoDTO>();
+                }
+                lista.Add(new LecturaAlmacenAvisoDTO
+                {
+                    IdCliente = e.IdCliente,
+                    TipoOrigen = CasadorEscaneos.TipoOrigenDe(e),
+                    NumeroOrigen = CasadorEscaneos.NumeroOrigenDe(e),
+                    Pedido = e.Pedido,
+                    LineaPedido = e.LineaPedido,
+                    Producto = e.Producto?.Trim(),
+                    Cantidad = e.Cantidad,
+                    Metodo = e.Metodo?.Trim().ToUpperInvariant(),
+                    Fase = e.Fase?.Trim().ToUpperInvariant(),
+                    Bulto = e.Bulto,
+                    Motivo = e.Motivo?.Trim(),
+                    Usuario = usuario,
+                    FechaEscaneo = e.FechaEscaneo
+                });
+            }
+            return porGrupo;
+        }
+
+        /// <summary>NestoAPI#646: el grupo de SignalR del documento de un escaneo (recorrido o packing).</summary>
+        private static string GrupoDe(EscaneoAlmacenDTO e)
+        {
+            return string.Equals(e.Fase?.Trim(), CasadorEscaneos.FASE_PACKING, StringComparison.OrdinalIgnoreCase)
+                ? Infraestructure.Notificaciones.AvisosAlmacen.GrupoPacking(CasadorEscaneos.NumeroOrigenDe(e))
+                : Infraestructure.Notificaciones.AvisosAlmacen.GrupoRecogida(CasadorEscaneos.TipoOrigenDe(e), CasadorEscaneos.NumeroOrigenDe(e));
         }
 
         /// <summary>
@@ -473,6 +516,18 @@ namespace NestoAPI.Controllers
         /// </summary>
         private void Avisar(string grupo, string dispositivoDeLaPeticion = null)
         {
+            AvisarCon(grupo, dispositivoDeLaPeticion, (avisos, usuario, conexion, dispositivo) => avisos.HaCambiado(grupo, usuario, conexion, dispositivo));
+        }
+
+        /// <summary>NestoAPI#710: como <see cref="Avisar"/>, con las lecturas grabadas (sus datos).</summary>
+        private void AvisarLecturas(string grupo, List<LecturaAlmacenAvisoDTO> lecturas, string dispositivoDeLaPeticion)
+        {
+            AvisarCon(grupo, dispositivoDeLaPeticion, (avisos, usuario, conexion, dispositivo) => avisos.Lecturas(grupo, usuario, conexion, dispositivo, lecturas));
+        }
+
+        /// <summary>Lo común de los avisos: quién lo ha hecho y desde qué conexión y dispositivo. Nunca rompe la petición.</summary>
+        private void AvisarCon(string grupo, string dispositivoDeLaPeticion, Action<Infraestructure.Notificaciones.IAvisosAlmacen, string, string, string> avisar)
+        {
             if (avisosAlmacen == null || string.IsNullOrWhiteSpace(grupo))
             {
                 return;
@@ -480,7 +535,7 @@ namespace NestoAPI.Controllers
             try
             {
                 string dispositivo = Cabecera(Infraestructure.Notificaciones.AvisosAlmacen.CABECERA_DISPOSITIVO) ?? dispositivoDeLaPeticion?.Trim();
-                avisosAlmacen.HaCambiado(grupo, UsuarioAuditoriaHelper.ParaAuditoria(Usuario()),
+                avisar(avisosAlmacen, UsuarioAuditoriaHelper.ParaAuditoria(Usuario()),
                     Cabecera(Infraestructure.Notificaciones.AvisosAlmacen.CABECERA_CONEXION), string.IsNullOrWhiteSpace(dispositivo) ? null : dispositivo);
             }
             catch (Exception ex)
@@ -508,7 +563,7 @@ namespace NestoAPI.Controllers
             switch (resultado.Estado)
             {
                 case EstadoCorreccionLectura.Corregida:
-                    Avisar(Infraestructure.Notificaciones.AvisosAlmacen.GrupoRecogida(correccion.TipoOrigen, correccion.NumeroOrigen), correccion.Dispositivo); // NestoAPI#646
+                    AvisarCorreccion(correccion, resultado.Respuesta); // NestoAPI#646 / #710
                     return Ok(resultado.Respuesta);
                 case EstadoCorreccionLectura.Repetida:
                     return Ok(resultado.Respuesta);
@@ -518,6 +573,28 @@ namespace NestoAPI.Controllers
                 default:
                     return BadRequest(resultado.Respuesta?.Mensaje);
             }
+        }
+
+        /// <summary>NestoAPI#710: a las demás PDA de la salida, la parada corregida con lo necesario para deshacerla en local.</summary>
+        private void AvisarCorreccion(CorregirEscaneoDTO correccion, ResultadoCorregirEscaneoDTO respuesta)
+        {
+            string grupo = Infraestructure.Notificaciones.AvisosAlmacen.GrupoRecogida(correccion.TipoOrigen, correccion.NumeroOrigen);
+            AvisarCon(grupo, correccion.Dispositivo, (avisos, usuario, conexion, dispositivo) => avisos.Correccion(grupo, usuario, conexion, dispositivo,
+                new CorreccionAlmacenAvisoDTO
+                {
+                    IdCliente = correccion.IdCliente,
+                    TipoOrigen = CasadorEscaneos.NormalizarTipoOrigen(correccion.TipoOrigen) ?? correccion.TipoOrigen?.Trim().ToUpperInvariant(),
+                    NumeroOrigen = correccion.NumeroOrigen,
+                    Producto = correccion.Producto?.Trim(),
+                    Hueco = correccion.Hueco?.Trim(),
+                    Orden = correccion.Orden,
+                    Tipo = correccion.Tipo?.Trim().ToUpperInvariant(),
+                    Unidades = correccion.Unidades,
+                    Cogidas = respuesta?.Cogidas ?? 0,
+                    Faltas = respuesta?.Faltas ?? 0,
+                    Usuario = usuario,
+                    FechaEscaneo = correccion.FechaEscaneo
+                }));
         }
 
         // POST api/Almacen/Bultos/Foto?idCliente=...&pedido=926940&picking=99633&bulto=1&otrosPedidos=926941
