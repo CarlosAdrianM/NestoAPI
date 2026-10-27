@@ -17,7 +17,8 @@ namespace NestoAPI.Models.Picking
         TodoJuntoSinStock,
         /// <summary>Modo 4 con la primera entrega ya hecha: el resto sale de una vez y falta algo.</summary>
         RestoDeUnaVezSinStock,
-        /// <summary>NestoAPI#529: lo de pago tiene stock, lo que falta son solo regalos (base 0) y no se sirve a medias.</summary>
+        /// <summary>NestoAPI#529: lo de pago tiene stock, lo que falta son solo regalos (base 0) y no se sirve a medias.
+        /// Desde el 27/10/26 las muestras (MMP) no provocan esta espera: GestorMuestrasSinStock las quita y el pedido sale.</summary>
         EsperaSoloRegalos,
         /// <summary>Prepago sin cubrir.</summary>
         RetenidoPorPrepago,

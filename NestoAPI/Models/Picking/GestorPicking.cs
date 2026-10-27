@@ -183,6 +183,11 @@ namespace NestoAPI.Models.Picking
             sinSalirPorCierreCliente = GestorDiasEnServir.RetirarPedidosDeClientesCerrados(candidatos, diaEntrega, diaEntregaRutaPropia, ignorarCierreCliente);
             diaEntregaPicking = diaEntrega;
 
+            // 27/10/26 (Carlos, caso David): una muestra (MMP) sin stock no retiene el pedido ni se queda pendiente. Si sin
+            // ella el pedido sale, se quita del pedido (en memoria aquí; en BD, EscribirMuestrasQuitadas, solo si al final
+            // sale). Antes de «todo ahora», para que la muestra sin stock no acabe en Recoger, y antes de decidir qué sale.
+            GestorMuestrasSinStock.Aplicar(candidatos, Decidir);
+
             // NestoAPI#542: los pedidos que se facturan «todo ahora» convierten lo que falta en Recoger, antes
             // de que las reglas de abajo decidan qué sale.
             GestorFacturarTodoAhora.Aplicar(candidatos);
@@ -212,6 +217,10 @@ namespace NestoAPI.Models.Picking
                     };
                 }
             }
+
+            // 27/10/26 (Carlos): las muestras quitadas de los pedidos que salen, fuera del pedido en BD (con su rastro en
+            // Modificaciones y ELMAH). Va antes de los pendientes y del picking, en el mismo SaveChanges del finalizador.
+            EscritorMuestrasSinStock.Escribir(db, candidatos.Where(c => !c.Borrar));
 
             // Actualizar Pendientes
             GeneradorPendientes generadorPendientes = new GeneradorPendientes(db, candidatos);
@@ -268,7 +277,15 @@ namespace NestoAPI.Models.Picking
                 _ = System.Threading.Tasks.Task.Run(() => GestorAvisosPicking.AvisarEnAplicaciones(avisables,
                     new Infraestructure.Notificaciones.ServicioNotificacionesPush()));
             }
-            
+            // 27/10/26 (Carlos): y al usuario de cada pedido al que se le ha quitado una muestra sin stock, para que lo sepa
+            // (y se lo diga al cliente). También en segundo plano.
+            List<PedidoPicking> conMuestrasQuitadas = candidatos?.Where(c => c != null && c.MuestrasQuitadas != null && c.MuestrasQuitadas.Any()).ToList();
+            if (conMuestrasQuitadas != null && conMuestrasQuitadas.Any())
+            {
+                _ = System.Threading.Tasks.Task.Run(() => GestorMuestrasSinStock.Avisar(conMuestrasQuitadas,
+                    new Infraestructure.Notificaciones.ServicioNotificacionesPush()));
+            }
+
         }
 
         /// <summary>
@@ -282,7 +299,8 @@ namespace NestoAPI.Models.Picking
             return sale;
         }
 
-        private static bool Decidir(PedidoPicking pedido)
+        /// <summary>La decisión sin más (también la ensaya GestorMuestrasSinStock sobre el pedido sin sus muestras).</summary>
+        internal static bool Decidir(PedidoPicking pedido)
         {
             if (!pedido.saleEnPicking())
             {

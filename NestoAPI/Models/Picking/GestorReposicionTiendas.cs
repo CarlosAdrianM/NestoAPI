@@ -46,6 +46,12 @@ namespace NestoAPI.Models.Picking
             {
                 return false;
             }
+            // 27/10/26 (Carlos, caso David): una muestra (MMP) no hace esperar al pedido ni aunque le vaya a llegar stock de una
+            // tienda: si lo demás sale, GestorMuestrasSinStock la quita del pedido y el pedido sale.
+            if (linea.EsMuestra && GestorMuestrasSinStock.Activo)
+            {
+                return false;
+            }
             StockProducto stock = stocksIniciales?.FirstOrDefault(s => s.Producto == linea.Producto);
             if (stock == null)
             {
