@@ -116,7 +116,7 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
             ChequeRegaloCarritoDTO dto = resultado.ParaElCarrito();
             Assert.IsTrue(dto.Aplicado);
             Assert.AreEqual(50M, dto.Importe);
-            Assert.AreEqual("Tu cheque regalo de 50 € está descontado en este pedido.", dto.Mensaje);
+            Assert.AreEqual("Su cheque regalo de 50 € está descontado en este pedido.", dto.Mensaje);
             Assert.IsNull(dto.Codigo);
         }
 
@@ -148,7 +148,7 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
             Assert.IsFalse(resultado.Aplicado);
             Assert.AreEqual(ReglasCanjeChequeRegalo.ERROR_SIN_CHEQUE, resultado.Error.Context.ErrorCode);
             Assert.AreEqual(System.Net.HttpStatusCode.BadRequest, resultado.Error.StatusCode);
-            StringAssert.StartsWith(resultado.Error.Message, "No tienes ningún cheque regalo");
+            StringAssert.StartsWith(resultado.Error.Message, "No tiene ningún cheque regalo");
         }
 
         [TestMethod]
@@ -161,7 +161,7 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
             Assert.IsFalse(dto.Aplicado);
             Assert.AreEqual(50.01M, dto.Falta);
             StringAssert.Contains(dto.Mensaje, "superar 250,00 € de producto");
-            StringAssert.Contains(dto.Mensaje, "Te faltan 50,01 €.");
+            StringAssert.Contains(dto.Mensaje, "Le faltan 50,01 €.");
         }
 
         /// <summary>El pedido de la app de verdad (ConstructorPedidoCliente) con unos plazos de pronto pago.</summary>
@@ -241,7 +241,7 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
             ResultadoChequeCarrito resultado = await Preparar(Pedido(300));
 
             Assert.AreEqual(ReglasCanjeChequeRegalo.ERROR_YA_USADO, resultado.Error.Context.ErrorCode);
-            Assert.AreEqual("Tu cheque regalo ya está aplicado en el pedido 930500: solo se puede usar una vez.", resultado.Error.Message);
+            Assert.AreEqual("Su cheque regalo ya está aplicado en el pedido 930500: solo se puede usar una vez.", resultado.Error.Message);
         }
 
         [TestMethod]
@@ -252,7 +252,7 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
             ResultadoChequeCarrito resultado = await Preparar(Pedido(300));
 
             Assert.AreEqual(ReglasCanjeChequeRegalo.ERROR_FUERA_DE_PLAZO, resultado.Error.Context.ErrorCode);
-            Assert.AreEqual("El plazo para usar tu cheque regalo ya ha terminado.", resultado.Error.Message);
+            Assert.AreEqual("El plazo para usar su cheque regalo ya ha terminado.", resultado.Error.Message);
         }
 
         [TestMethod]
@@ -418,8 +418,8 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
         {
             NotificacionPushDTO n = PlantillaPushChequeRegalo.Generado(Cheque(), new DateTime(2026, 10, 14));
 
-            Assert.AreEqual("Tienes un cheque regalo de 50 €", n.Titulo);
-            Assert.AreEqual("Tienes un cheque regalo de 50 € para tu próximo pedido de más de 250 €. Úsalo hasta el 7 de noviembre.", n.Cuerpo);
+            Assert.AreEqual("Tiene un cheque regalo de 50 €", n.Titulo);
+            Assert.AreEqual("Tiene un cheque regalo de 50 € para su próximo pedido de más de 250 €. Úselo hasta el 7 de noviembre.", n.Cuerpo);
             Assert.AreEqual("chequeregalo", n.Datos["tipo"]);
             Assert.AreEqual("CHEQUE50_OCT_2026", n.Datos["campana"]);
         }
@@ -432,7 +432,7 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
 
             NotificacionPushDTO n = PlantillaPushChequeRegalo.Generado(cheque, new DateTime(2026, 10, 14));
 
-            StringAssert.EndsWith(n.Cuerpo, "Podrás usarlo desde el 20 de octubre hasta el 7 de noviembre.");
+            StringAssert.EndsWith(n.Cuerpo, "Podrá usarlo desde el 20 de octubre hasta el 7 de noviembre.");
         }
 
         [TestMethod]
@@ -440,11 +440,11 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
         {
             NotificacionPushDTO n = PlantillaPushChequeRegalo.Recordatorio(Cheque(), HOY);
 
-            Assert.AreEqual("Te quedan 5 días para usar tu cheque regalo de 50 €", n.Titulo);
-            Assert.AreEqual("Úsalo en un pedido de más de 250 € de producto hasta el 7 de noviembre. Lo tienes en el carrito de la app.", n.Cuerpo);
+            Assert.AreEqual("Le quedan 5 días para usar su cheque regalo de 50 €", n.Titulo);
+            Assert.AreEqual("Úselo en un pedido de más de 250 € de producto hasta el 7 de noviembre. Lo tiene en el carrito de la app.", n.Cuerpo);
             Assert.AreEqual("chequeregalo", n.Datos["tipo"]);
-            Assert.AreEqual("Te queda 1 día para usar tu cheque regalo de 50 €", PlantillaPushChequeRegalo.Recordatorio(Cheque(), new DateTime(2026, 11, 6)).Titulo);
-            Assert.AreEqual("Hoy es el último día para usar tu cheque regalo de 50 €", PlantillaPushChequeRegalo.Recordatorio(Cheque(), new DateTime(2026, 11, 7)).Titulo);
+            Assert.AreEqual("Le queda 1 día para usar su cheque regalo de 50 €", PlantillaPushChequeRegalo.Recordatorio(Cheque(), new DateTime(2026, 11, 6)).Titulo);
+            Assert.AreEqual("Hoy es el último día para usar su cheque regalo de 50 €", PlantillaPushChequeRegalo.Recordatorio(Cheque(), new DateTime(2026, 11, 7)).Titulo);
         }
 
         [TestMethod]
@@ -456,7 +456,7 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
 
             Assert.AreEqual(1, enviadas);
             A.CallTo(() => repositorio.ReservarPushGenerado(7)).MustHaveHappenedOnceExactly()
-                .Then(A.CallTo(() => push.EnviarACliente("1", "15191", A<NotificacionPushDTO>.That.Matches(n => n.Titulo == "Tienes un cheque regalo de 50 €")))
+                .Then(A.CallTo(() => push.EnviarACliente("1", "15191", A<NotificacionPushDTO>.That.Matches(n => n.Titulo == "Tiene un cheque regalo de 50 €")))
                     .MustHaveHappenedOnceExactly());
         }
 
@@ -519,7 +519,7 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
 
             Assert.AreEqual(1, enviados);
             A.CallTo(() => repositorio.ReservarPushRecordatorio(7)).MustHaveHappenedOnceExactly();
-            A.CallTo(() => push.EnviarACliente("1", "15191", A<NotificacionPushDTO>.That.Matches(n => n.Titulo == "Te quedan 5 días para usar tu cheque regalo de 50 €")))
+            A.CallTo(() => push.EnviarACliente("1", "15191", A<NotificacionPushDTO>.That.Matches(n => n.Titulo == "Le quedan 5 días para usar su cheque regalo de 50 €")))
                 .MustHaveHappenedOnceExactly();
             A.CallTo(() => repositorio.ReservarPushGenerado(A<int>._)).MustNotHaveHappened();
         }

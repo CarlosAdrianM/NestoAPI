@@ -45,11 +45,11 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
         {
             CorreoChequeRegalo correo = PlantillaCorreoChequeRegalo.Componer(Campana(), "Lola", IMAGEN, "cid:cheque-regalo");
 
-            Assert.AreEqual("Con tu factura, 50 € de descuento para tu próximo pedido", correo.Asunto);
+            Assert.AreEqual("Con su factura, 50 € de descuento para su próximo pedido", correo.Asunto);
             StringAssert.Contains(correo.Html, "Hola, Lola:");
-            StringAssert.Contains(correo.Html, "un cheque regalo de 50 € de descuento para tu próximo pedido.");
+            StringAssert.Contains(correo.Html, "un cheque regalo de 50 € de descuento para su próximo pedido.");
             StringAssert.Contains(correo.Html, "desde el día de hoy hasta el 7 de noviembre en un pedido de productos computables superior a 250 €, después de los descuentos habituales.");
-            StringAssert.Contains(correo.Html, "¿Qué necesitas para tu centro? Contacta con tu comercial o con nuestra tienda");
+            StringAssert.Contains(correo.Html, "¿Qué necesita para su centro? Contacte con su comercial o con nuestra tienda");
             StringAssert.Contains(correo.Html, "productos de peluquería ni Packs de Navidad «PACK 26»");
             StringAssert.Contains(correo.Html, "Un solo uso por código de cliente.");
             StringAssert.Contains(correo.Html, "El equipo de Nueva Visión.");
@@ -63,7 +63,7 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
 
             CorreoChequeRegalo correo = PlantillaCorreoChequeRegalo.Componer(febrero, "Lola", null, null);
 
-            StringAssert.StartsWith(correo.Asunto, "Con tu factura, 30 €");
+            StringAssert.StartsWith(correo.Asunto, "Con su factura, 30 €");
             StringAssert.Contains(correo.Html, "hasta el 26 de febrero");
             StringAssert.Contains(correo.Html, "superior a 150 €");
             Assert.IsFalse(correo.Html.Contains(" 50 €"));
@@ -76,7 +76,7 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
             CorreoChequeRegalo correo = PlantillaCorreoChequeRegalo.Componer(Campana(), "Lola", IMAGEN, "cid:cheque-regalo");
 
             StringAssert.Contains(correo.Html, "src=\"cid:cheque-regalo\"");
-            StringAssert.Contains(correo.Html, "alt=\"Cheque regalo de 50 € de descuento para tu próximo pedido, hasta el 7 de noviembre\"");
+            StringAssert.Contains(correo.Html, "alt=\"Cheque regalo de 50 € de descuento para su próximo pedido, hasta el 7 de noviembre\"");
             StringAssert.Contains(correo.Html, "width:100%;max-width:600px");
             StringAssert.Contains(correo.Html, "name=\"viewport\"");
             Assert.IsTrue(correo.Html.IndexOf("<img", StringComparison.Ordinal) < correo.Html.IndexOf("Hola,", StringComparison.Ordinal), "La imagen va arriba");
@@ -140,6 +140,66 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
                 "El equipo de Nueva Visión." + Environment.NewLine);
         }
 
+        /// <summary>Formas de tú habituales, como palabras sueltas (\b) para no tropezar con «texto», «tienda» o «content».</summary>
+        private static readonly System.Text.RegularExpressions.Regex FORMAS_DE_TU = new System.Text.RegularExpressions.Regex(
+            @"\b(tu|tus|te|ti|contigo|tienes|puedes|podrás|necesitas|quieres|contacta|úsalo|aprovéchalo|canjéalo|entregarte|llámanos|escríbenos)\b",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+        [TestMethod]
+        public void ElCorreoTrataDeUsted_SinFormasDeTu_EnHtmlTextoYAsunto()
+        {
+            // Carlos 27/10/26: a los clientes, de usted y sin mezclar tratamientos
+            foreach (CampanaCorreoChequeRegalo campana in new[] { Campana(), ConEspera(Campana()) })
+            {
+                CorreoChequeRegalo correo = PlantillaCorreoChequeRegalo.Componer(campana, "Lola", IMAGEN, "cid:cheque-regalo");
+                foreach (string texto in new[] { correo.Asunto, correo.Html, correo.Texto })
+                {
+                    System.Text.RegularExpressions.Match tu = FORMAS_DE_TU.Match(texto);
+                    Assert.IsFalse(tu.Success, $"Forma de tú «{tu.Value}» en: {texto}");
+                }
+                StringAssert.Contains(correo.Html, ">Canjéelo en la tienda online</a>");
+                StringAssert.Contains(correo.Texto, "Aprovéchelo para reponer sus imprescindibles o probar esa novedad que tiene en mente.");
+            }
+        }
+
+        private static CampanaCorreoChequeRegalo ConEspera(CampanaCorreoChequeRegalo campana)
+        {
+            campana.DiasEsperaTrasEntrega = 7;
+            return campana;
+        }
+
+        [TestMethod]
+        public void LaNotaAlPieYLasPushTratanDeUsted()
+        {
+            foreach (DateTime? aviso in new DateTime?[] { new DateTime(2026, 10, 14), null })
+            {
+                string nota = PlantillaCorreoChequeRegalo.NotaAlPie(new ChequeRegaloDeFactura
+                {
+                    ImporteBase = 50,
+                    MinimoCanje = 250,
+                    CanjeHasta = new DateTime(2026, 11, 7),
+                    FechaAvisoCorreo = aviso
+                });
+                Assert.IsFalse(FORMAS_DE_TU.IsMatch(nota), nota);
+            }
+
+            var cheque = new ChequeRegaloParaPush { Codigo = "CHEQUE50_OCT_2026", ImporteBase = 50, MinimoCanje = 250, CanjeHasta = new DateTime(2026, 11, 7) };
+            var push = new List<NotificacionPushDTO>
+            {
+                PlantillaPushChequeRegalo.Generado(cheque, new DateTime(2026, 10, 14)),
+                PlantillaPushChequeRegalo.Recordatorio(cheque, new DateTime(2026, 11, 2)),
+                PlantillaPushChequeRegalo.Recordatorio(cheque, new DateTime(2026, 11, 6)),
+                PlantillaPushChequeRegalo.Recordatorio(cheque, new DateTime(2026, 11, 7))
+            };
+            cheque.FechaActivacion = new DateTime(2026, 10, 20);
+            push.Add(PlantillaPushChequeRegalo.Generado(cheque, new DateTime(2026, 10, 14)));
+            foreach (NotificacionPushDTO n in push)
+            {
+                Assert.IsFalse(FORMAS_DE_TU.IsMatch(n.Titulo), n.Titulo);
+                Assert.IsFalse(FORMAS_DE_TU.IsMatch(n.Cuerpo), n.Cuerpo);
+            }
+        }
+
         [TestMethod]
         public void LaNotaAlPieResumeElChequeYRemiteAlCorreo()
         {
@@ -151,8 +211,8 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
                 FechaAvisoCorreo = new DateTime(2026, 10, 13)
             });
 
-            Assert.AreEqual("Con esta factura tienes un cheque regalo de 50 € para tu próximo pedido de más de 250 € de producto " +
-                "computable, hasta el 7/11/2026. Condiciones en el correo que te hemos enviado.", nota);
+            Assert.AreEqual("Con esta factura tiene un cheque regalo de 50 € para su próximo pedido de más de 250 € de producto " +
+                "computable, hasta el 7/11/2026. Condiciones en el correo que le hemos enviado.", nota);
         }
 
         [TestMethod]
@@ -166,7 +226,7 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
             });
 
             Assert.IsFalse(nota.Contains("correo"));
-            StringAssert.Contains(nota, "Tu comercial");
+            StringAssert.Contains(nota, "Su comercial");
         }
 
         [TestMethod]
@@ -398,7 +458,7 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
             Assert.AreEqual(ResultadoAvisoChequeRegalo.Enviado, avisos.Single().Resultado);
             Assert.AreEqual(1, enviados.Count);
             Assert.AreEqual("lola@centro.es", enviados[0].Para, "El correo mal escrito de la ficha se salta");
-            Assert.AreEqual("Con tu factura, 50 € de descuento para tu próximo pedido", enviados[0].Asunto);
+            Assert.AreEqual("Con su factura, 50 € de descuento para su próximo pedido", enviados[0].Asunto);
             Assert.AreEqual(1, enviados[0].Imagenes, "La imagen va en línea (CID)");
             A.CallTo(() => repositorio.ReservarAviso(7)).MustHaveHappenedOnceExactly()
                 .Then(A.CallTo(() => servicioCorreo.EnviarCorreoSMTP(A<MailMessage>._)).MustHaveHappenedOnceExactly())
@@ -660,13 +720,13 @@ namespace NestoAPI.Tests.Infrastructure.ChequesRegalo
         public void LaFacturaQueGeneroElCheque_LoDiceAlPie()
         {
             IServicioFacturas servicio = A.Fake<IServicioFacturas>();
-            A.CallTo(() => servicio.LeerNotaChequeRegalo(A<string>._, "NV11111")).Returns("Con esta factura tienes un cheque regalo de 50 €");
+            A.CallTo(() => servicio.LeerNotaChequeRegalo(A<string>._, "NV11111")).Returns("Con esta factura tiene un cheque regalo de 50 €");
 
             Factura factura = GestorConFactura(servicio).LeerFactura("1", "NV11111");
 
             int notasSerie = new NestoAPI.Models.Facturas.SeriesFactura.SerieNV().Notas.Count;
             Assert.AreEqual(notasSerie + 1, factura.NotasAlPie.Count, "Las notas de la serie se conservan");
-            Assert.AreEqual("Con esta factura tienes un cheque regalo de 50 €", factura.NotasAlPie.Last().Nota);
+            Assert.AreEqual("Con esta factura tiene un cheque regalo de 50 €", factura.NotasAlPie.Last().Nota);
         }
 
         [TestMethod]

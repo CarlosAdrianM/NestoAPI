@@ -39,10 +39,10 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
             string minimo = PlantillaCorreoChequeRegalo.Euros(cheque.MinimoCanje);
             string hasta = PlantillaCorreoChequeRegalo.Fecha(cheque.CanjeHasta);
             string uso = cheque.FechaActivacion != null && cheque.FechaActivacion.Value.Date > ahora.Date
-                ? $"Podrás usarlo desde el {PlantillaCorreoChequeRegalo.Fecha(cheque.FechaActivacion.Value)} hasta el {hasta}."
-                : $"Úsalo hasta el {hasta}.";
-            return Notificacion($"Tienes un cheque regalo de {importe} €",
-                $"Tienes un cheque regalo de {importe} € para tu próximo pedido de más de {minimo} €. {uso}", cheque);
+                ? $"Podrá usarlo desde el {PlantillaCorreoChequeRegalo.Fecha(cheque.FechaActivacion.Value)} hasta el {hasta}."
+                : $"Úselo hasta el {hasta}.";
+            return Notificacion($"Tiene un cheque regalo de {importe} €",
+                $"Tiene un cheque regalo de {importe} € para su próximo pedido de más de {minimo} €. {uso}", cheque);
         }
 
         public static NotificacionPushDTO Recordatorio(ChequeRegaloParaPush cheque, DateTime hoy)
@@ -50,13 +50,13 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
             string importe = PlantillaCorreoChequeRegalo.Euros(cheque.ImporteBase);
             int dias = DiasQueQuedan(cheque, hoy);
             string titulo = dias <= 0
-                ? $"Hoy es el último día para usar tu cheque regalo de {importe} €"
+                ? $"Hoy es el último día para usar su cheque regalo de {importe} €"
                 : dias == 1
-                    ? $"Te queda 1 día para usar tu cheque regalo de {importe} €"
-                    : $"Te quedan {dias} días para usar tu cheque regalo de {importe} €";
+                    ? $"Le queda 1 día para usar su cheque regalo de {importe} €"
+                    : $"Le quedan {dias} días para usar su cheque regalo de {importe} €";
             return Notificacion(titulo,
-                $"Úsalo en un pedido de más de {PlantillaCorreoChequeRegalo.Euros(cheque.MinimoCanje)} € de producto hasta el " +
-                $"{PlantillaCorreoChequeRegalo.Fecha(cheque.CanjeHasta)}. Lo tienes en el carrito de la app.", cheque);
+                $"Úselo en un pedido de más de {PlantillaCorreoChequeRegalo.Euros(cheque.MinimoCanje)} € de producto hasta el " +
+                $"{PlantillaCorreoChequeRegalo.Fecha(cheque.CanjeHasta)}. Lo tiene en el carrito de la app.", cheque);
         }
 
         /// <summary>Días hasta CanjeHasta (que se incluye): el 2/11 con fecha límite el 7/11 son 5.</summary>

@@ -277,7 +277,7 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
             }).ToList();
 
         internal static string MensajeAplicado(decimal importe)
-            => $"Tu cheque regalo de {PlantillaCorreoChequeRegalo.Euros(importe)} € está descontado en este pedido.";
+            => $"Su cheque regalo de {PlantillaCorreoChequeRegalo.Euros(importe)} € está descontado en este pedido.";
 
         internal static decimal? Falta(NestoBusinessException error)
         {
@@ -308,31 +308,31 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
             switch (ex?.Context?.ErrorCode)
             {
                 case ReglasCanjeChequeRegalo.ERROR_SIN_CHEQUE:
-                    return "No tienes ningún cheque regalo para usar en este pedido. Quítalo del carrito para hacer el pedido.";
+                    return "No tiene ningún cheque regalo para usar en este pedido. Quítelo del carrito para hacer el pedido.";
                 case ReglasCanjeChequeRegalo.ERROR_OTRA_CAMPANA:
-                    return "Ese no es tu cheque regalo. Vuelve a abrir el carrito para cargar el que tienes.";
+                    return "Ese no es su cheque regalo. Vuelva a abrir el carrito para cargar el que tiene.";
                 case ReglasCanjeChequeRegalo.ERROR_YA_USADO:
                     return datos.TryGetValue("pedidoCanje", out object pedido) && pedido != null
-                        ? $"Tu cheque regalo ya está aplicado en el pedido {pedido}: solo se puede usar una vez."
-                        : "Tu cheque regalo ya está aplicado en otro pedido: solo se puede usar una vez.";
+                        ? $"Su cheque regalo ya está aplicado en el pedido {pedido}: solo se puede usar una vez."
+                        : "Su cheque regalo ya está aplicado en otro pedido: solo se puede usar una vez.";
                 case ReglasCanjeChequeRegalo.ERROR_FUERA_DE_PLAZO:
-                    return "El plazo para usar tu cheque regalo ya ha terminado.";
+                    return "El plazo para usar su cheque regalo ya ha terminado.";
                 case ReglasCanjeChequeRegalo.ERROR_CAMPANA_INACTIVA:
                     return "El cheque regalo no se puede usar ahora mismo.";
                 case ReglasCanjeChequeRegalo.ERROR_ANULADO:
-                    return "Tu cheque regalo está anulado. Si crees que es un error, llámanos.";
+                    return "Su cheque regalo está anulado. Si cree que es un error, llámenos.";
                 case ReglasCanjeChequeRegalo.ERROR_NO_ACTIVADO:
                     return ex.Message; // «El cheque regalo se podrá usar a partir del …»: ya habla a la clienta
                 case ReglasCanjeChequeRegalo.ERROR_MISMO_PEDIDO:
                     return "El cheque regalo tiene que ir en un pedido distinto del que lo generó.";
                 case ReglasCanjeChequeRegalo.ERROR_VARIAS_LINEAS:
-                    return "Solo puedes usar un cheque regalo por pedido.";
+                    return "Solo puede usar un cheque regalo por pedido.";
                 case ReglasCanjeChequeRegalo.ERROR_MINIMO_NO_SUPERADO:
                     string minimo = datos.TryGetValue("minimo", out object m) && m != null ? Euros(Convert.ToDecimal(m, CultureInfo.InvariantCulture)) : null;
                     decimal? falta = Falta(ex);
-                    return $"Para usar tu cheque regalo, el pedido tiene que superar {minimo ?? "el mínimo"} € de producto " +
+                    return $"Para usar su cheque regalo, el pedido tiene que superar {minimo ?? "el mínimo"} € de producto " +
                         "(sin IVA; no cuentan los portes ni los productos excluidos en las condiciones del cheque)." +
-                        (falta.HasValue ? $" Te faltan {Euros(falta.Value)} €." : string.Empty);
+                        (falta.HasValue ? $" Le faltan {Euros(falta.Value)} €." : string.Empty);
                 default:
                     return ex?.Message;
             }

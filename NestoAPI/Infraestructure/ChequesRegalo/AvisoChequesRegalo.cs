@@ -153,17 +153,17 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
         internal static string Fecha(DateTime fecha) => fecha.ToString("d 'de' MMMM", es);
 
         public static string Asunto(CampanaCorreoChequeRegalo campana)
-            => $"Con tu factura, {Euros(campana.ImporteBase)} € de descuento para tu próximo pedido";
+            => $"Con su factura, {Euros(campana.ImporteBase)} € de descuento para su próximo pedido";
 
         internal static string TextoAlternativoImagen(CampanaCorreoChequeRegalo campana)
-            => $"Cheque regalo de {Euros(campana.ImporteBase)} € de descuento para tu próximo pedido, hasta el {Fecha(campana.CanjeHasta)}";
+            => $"Cheque regalo de {Euros(campana.ImporteBase)} € de descuento para su próximo pedido, hasta el {Fecha(campana.CanjeHasta)}";
 
         private static string Uso(CampanaCorreoChequeRegalo campana)
         {
             string cuando = campana.DiasEsperaTrasEntrega > 0
-                ? $"desde {campana.DiasEsperaTrasEntrega} días después de entregarte entero este pedido"
+                ? $"desde {campana.DiasEsperaTrasEntrega} días después de entregarle entero este pedido"
                 : "desde el día de hoy";
-            return $"Podrás utilizarlo {cuando} hasta el {Fecha(campana.CanjeHasta)} en un pedido de productos computables " +
+            return $"Podrá utilizarlo {cuando} hasta el {Fecha(campana.CanjeHasta)} en un pedido de productos computables " +
                 $"superior a {Euros(campana.MinimoCanje)} €, después de los descuentos habituales.";
         }
 
@@ -182,24 +182,21 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
         private static List<string> Parrafos(CampanaCorreoChequeRegalo campana, string nombreDePila) => new List<string>
         {
             Saludo(nombreDePila),
-            "Gracias por confiar en Nueva Visión. Junto con tu factura te damos una sorpresa: un cheque regalo de " +
-                $"{Euros(campana.ImporteBase)} € de descuento para tu próximo pedido.",
-            "Aprovéchalo para reponer tus imprescindibles o probar esa novedad que tienes en mente. " + Uso(campana),
-            "¿Qué necesitas para tu centro? Contacta con tu comercial o con nuestra tienda y te ayudaremos a aprovecharlo."
+            "Gracias por confiar en Nueva Visión. Junto con su factura le damos una sorpresa: un cheque regalo de " +
+                $"{Euros(campana.ImporteBase)} € de descuento para su próximo pedido.",
+            "Aprovéchelo para reponer sus imprescindibles o probar esa novedad que tiene en mente. " + Uso(campana),
+            "¿Qué necesita para su centro? Contacte con su comercial o con nuestra tienda y le ayudaremos a aprovecharlo."
         };
 
         private const string FIRMA = "El equipo de Nueva Visión.";
 
         /// <summary>NestoAPI#706: UTM del botón a la tienda; la campaña es el código de la campaña del cheque.</summary>
         internal const string UTM_SOURCE = "correo_cheque_regalo";
-        /// <summary>
-        /// Infinitivo a propósito: el texto del correo (de Alberto) va de tú y los mensajes nuevos van de usted; así el
-        /// botón no mezcla tratamientos.
-        /// </summary>
-        internal const string TEXTO_BOTON_TIENDA = "Canjear en la tienda online";
+        /// <summary>De usted, como todo el correo (Carlos 27/10/26: a los clientes nunca de tú ni mezclado).</summary>
+        internal const string TEXTO_BOTON_TIENDA = "Canjéelo en la tienda online";
 
         /// <summary>
-        /// NestoAPI#706: el enlace del botón «Canjear en la tienda online» (el cheque se canjea en la tienda) con
+        /// NestoAPI#706: el enlace del botón «Canjéelo en la tienda online» (el cheque se canjea en la tienda) con
         /// utm_source=correo_cheque_regalo, utm_medium=email y utm_campaign=&lt;código de la campaña&gt;.
         /// </summary>
         internal static string EnlaceTienda(CampanaCorreoChequeRegalo campana)
@@ -287,9 +284,9 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
         public static string NotaAlPie(ChequeRegaloDeFactura cheque)
         {
             string condiciones = cheque.FechaAvisoCorreo != null
-                ? "Condiciones en el correo que te hemos enviado."
-                : "Tu comercial o nuestra tienda te explicarán las condiciones.";
-            return $"Con esta factura tienes un cheque regalo de {Euros(cheque.ImporteBase)} € para tu próximo pedido de más de " +
+                ? "Condiciones en el correo que le hemos enviado."
+                : "Su comercial o nuestra tienda le explicarán las condiciones.";
+            return $"Con esta factura tiene un cheque regalo de {Euros(cheque.ImporteBase)} € para su próximo pedido de más de " +
                 $"{Euros(cheque.MinimoCanje)} € de producto computable, hasta el {cheque.CanjeHasta.ToString("d/M/yyyy", es)}. {condiciones}";
         }
     }

@@ -182,9 +182,9 @@ namespace NestoAPI.Tests.Infrastructure
             const string ENLACE = "https://www.productosdeesteticaypeluqueriaprofesional.com/?utm_source=correo_cheque_regalo&utm_medium=email&utm_campaign=CHEQUE50_OCT_2026";
 
             StringAssert.Contains(correo.Html, "href=\"" + ENLACE.Replace("&", "&amp;") + "\"");
-            StringAssert.Contains(correo.Html, ">Canjear en la tienda online</a>");
-            StringAssert.Contains(correo.Texto, "Canjear en la tienda online: " + ENLACE);
-            Assert.IsTrue(correo.Html.IndexOf("Canjear en la tienda online") < correo.Html.IndexOf("Letra pequeña"), "El botón va antes de la letra pequeña");
+            StringAssert.Contains(correo.Html, ">Canjéelo en la tienda online</a>");
+            StringAssert.Contains(correo.Texto, "Canjéelo en la tienda online: " + ENLACE);
+            Assert.IsTrue(correo.Html.IndexOf("Canjéelo en la tienda online") < correo.Html.IndexOf("Letra pequeña"), "El botón va antes de la letra pequeña");
         }
 
         [TestMethod]
