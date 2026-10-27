@@ -614,6 +614,7 @@
     <Compile Include="Controllers\PedidosVentaTransferenciaController.cs" />
     <Compile Include="Controllers\PedidosVentaSolicitudesController.cs" />
     <Compile Include="Controllers\PedidosVentaPromesaRiesgoController.cs" />
+    <Compile Include="Controllers\ClientesRiesgoAbandonoController.cs" />
     <Compile Include="Controllers\TarjetasController.cs" />
     <Compile Include="Controllers\PedidosClienteController.cs" />
     <Compile Include="Controllers\PersonasContactoClienteController.cs" />
@@ -968,6 +969,13 @@
     <Compile Include="Infraestructure\PedidosVenta\PromesaRiesgo\RepositorioPromesaRiesgo.cs" />
     <Compile Include="Infraestructure\PedidosVenta\PromesaRiesgo\ServicioPromesaRiesgo.cs" />
     <Compile Include="Infraestructure\PedidosVenta\PromesaRiesgo\TextosPromesaRiesgo.cs" />
+    <Compile Include="Infraestructure\Abandono\CalculadoraAbandono.cs" />
+    <Compile Include="Infraestructure\Abandono\InformeRiesgoAbandono.cs" />
+    <Compile Include="Infraestructure\Abandono\InterruptorAbandono.cs" />
+    <Compile Include="Infraestructure\Abandono\RepositorioRiesgoAbandonoSql.cs" />
+    <Compile Include="Infraestructure\Abandono\ResolucionAbandono.cs" />
+    <Compile Include="Infraestructure\Abandono\RiesgoAbandonoJobsService.cs" />
+    <Compile Include="Infraestructure\Abandono\ServicioRiesgoAbandono.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ValidadorModoServicio.cs" />
     <Compile Include="Infraestructure\Exceptions\ModoServicioNoPermitidoException.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ComercialesPedido.cs" />

@@ -1188,6 +1188,33 @@ namespace NestoAPI
                 }
             );
             Console.WriteLine("✅ Jobs recurrentes 'promesa-riesgo-nocturna' (L-S 5:40) y 'promesa-riesgo-correo' (L-V 9:00 y 15:00) configurados");
+
+            // NestoAPI#714 (corte 1, épica #689): clientes que se están yendo (abandono), EN SOMBRA. De lunes a sábado de madrugada
+            // (fuera de horario): a las 5:10 se etiquetan las filas de ClientesRiesgoAbandono cuyo horizonte ha vencido
+            // (Compró/Abandono/Baja/Desconocido) y a las 5:20 se evalúa la regla baseline (días sin comprar > 1,5 × cadencia) sobre
+            // la cartera de llamadas de cada vendedor activo con la instantánea del día anterior; los lunes, además, la instantánea
+            // de todos los compradores regulares con sus features (datos para el modelo de ML.NET del corte 2). Ligeros (segundos),
+            // en la cola «default». Nadie ve nada: solo GET api/Clientes/RiesgoAbandono/Informe. Interruptor Abandono:Modo
+            // (Apagado/Sombra/Activo) en Web.config; sin la tabla (Scripts/Issue714_ClientesRiesgoAbandono.sql) no hacen nada.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.Abandono.RiesgoAbandonoJobsService.ID_JOB_RESOLVER,
+                () => Infraestructure.Abandono.RiesgoAbandonoJobsService.ResolverVencidas(),
+                Infraestructure.Abandono.RiesgoAbandonoJobsService.CRON_RESOLVER, // Cron: de lunes a sábado a las 5:10
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            RecurringJob.AddOrUpdate(
+                Infraestructure.Abandono.RiesgoAbandonoJobsService.ID_JOB_DIARIO,
+                () => Infraestructure.Abandono.RiesgoAbandonoJobsService.PasadaDiaria(),
+                Infraestructure.Abandono.RiesgoAbandonoJobsService.CRON_DIARIO, // Cron: de lunes a sábado a las 5:20
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Jobs recurrentes 'riesgo-abandono-resolver' (L-S 5:10) y 'riesgo-abandono-diario' (L-S 5:20) configurados (sombra)");
         }
     }
 
