@@ -1215,6 +1215,11 @@ namespace NestoAPI
                 Infraestructure.Abandono.RiesgoAbandonoJobsService.ID_JOB_RESOLVER,
                 () => Infraestructure.Abandono.RiesgoAbandonoJobsService.ResolverVencidas(),
                 Infraestructure.Abandono.RiesgoAbandonoJobsService.CRON_RESOLVER, // Cron: de lunes a sábado a las 5:10
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
             // NestoAPI#716 (2.1, interino): mientras los vendedores no marquen el resultado del rapport, se clasifican con OpenAI
             // los Comentarios de los rapports de ayer y de hoy al mismo catálogo (SeguimientoClienteClasificacion). Todos los
             // días a las 23:15 (fuera de horario; el job sale si no es de noche). Con Rapports:ClasificacionBackfill = true

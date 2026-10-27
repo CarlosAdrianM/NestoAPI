@@ -365,21 +365,24 @@ namespace NestoAPI.Infraestructure.Informes
             public string Columna { get; set; }
         }
 
-        public async Task<List<ManifiestoAgenciaDTO>> LeerManifiestoAgenciaAsync(string empresa, int agencia, DateTime fecha)
-        {
-            const string sql = @"
+        // Sugerencia 789 (Alfredo, 27/10/26): dos envíos al mismo cliente y dirección con los mismos bultos (11121, pedidos
+        // 929302 y 929365, 1 bulto cada uno) salían como una sola línea con 1 bulto, porque Bultos y Reembolso iban en el
+        // GROUP BY en vez de sumarse. Lo correcto es lo que enseña la pantalla: 2 bultos de ese cliente.
+        internal const string SQL_MANIFIESTO_AGENCIA = @"
                 SELECT rtrim(Cliente) Cliente, rtrim(Contacto) Contacto, rtrim(Nombre) Nombre,
                     rtrim(Direccion) Direccion, rtrim(CodPostal) CodigoPostal, rtrim(Poblacion) Poblacion,
-                    rtrim(Provincia) Provincia, Bultos, Reembolso, rtrim(Telefono) TelefonoFijo,
-                    rtrim(Movil) TelefonoMovil, rtrim(Observaciones) Observaciones
+                    rtrim(Provincia) Provincia, CAST(SUM(Bultos) AS smallint) Bultos, SUM(Reembolso) Reembolso,
+                    rtrim(Telefono) TelefonoFijo, rtrim(Movil) TelefonoMovil, rtrim(Observaciones) Observaciones
                 FROM enviosagencia e
                 WHERE e.empresa = @Empresa AND e.estado = 1 AND e.agencia = @Agencia
                     AND CAST(Fecha AS DATE) = CAST(@Fecha AS DATE)
                 GROUP BY nombre, Direccion, CodPostal, Poblacion, Provincia, Telefono,
-                    observaciones, bultos, reembolso, cliente, contacto, Movil";
+                    observaciones, cliente, contacto, Movil";
 
+        public async Task<List<ManifiestoAgenciaDTO>> LeerManifiestoAgenciaAsync(string empresa, int agencia, DateTime fecha)
+        {
             return await db.Database
-                .SqlQuery<ManifiestoAgenciaDTO>(sql,
+                .SqlQuery<ManifiestoAgenciaDTO>(SQL_MANIFIESTO_AGENCIA,
                     new SqlParameter("@Empresa", SqlDbType.NVarChar) { Value = empresa },
                     new SqlParameter("@Agencia", SqlDbType.Int) { Value = agencia },
                     new SqlParameter("@Fecha", SqlDbType.DateTime) { Value = fecha.Date })

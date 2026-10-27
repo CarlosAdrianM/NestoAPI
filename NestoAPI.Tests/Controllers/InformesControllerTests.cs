@@ -654,6 +654,19 @@ namespace NestoAPI.Tests.Controllers
         // ----- ManifiestoAgencia (1A.8) -----
 
         [TestMethod]
+        public void ManifiestoAgencia_SumaLosBultosYElReembolsoDeLosEnviosDelMismoCliente()
+        {
+            // Sugerencia 789 (Alfredo, 27/10/26): dos envíos de 1 bulto al 11121 (929302 y 929365) salían como 1 bulto porque
+            // Bultos y Reembolso iban en el GROUP BY en vez de sumarse.
+            string sql = InformesService.SQL_MANIFIESTO_AGENCIA;
+            StringAssert.Contains(sql, "SUM(Bultos)");
+            StringAssert.Contains(sql, "SUM(Reembolso)");
+            string groupBy = sql.Substring(sql.IndexOf("GROUP BY", StringComparison.OrdinalIgnoreCase));
+            Assert.IsFalse(groupBy.IndexOf("bultos", StringComparison.OrdinalIgnoreCase) >= 0, "Bultos no puede ir en el GROUP BY");
+            Assert.IsFalse(groupBy.IndexOf("reembolso", StringComparison.OrdinalIgnoreCase) >= 0, "Reembolso no puede ir en el GROUP BY");
+        }
+
+        [TestMethod]
         public async Task GetManifiestoAgencia_PasaLosParametrosCorrectosAlServicio()
         {
             DateTime fecha = new DateTime(2026, 4, 16);
