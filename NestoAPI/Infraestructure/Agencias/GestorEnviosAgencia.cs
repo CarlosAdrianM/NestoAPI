@@ -196,13 +196,27 @@ namespace NestoAPI.Infraestructure.Agencias
             s.AppendLine("<p></p>");
             s.AppendLine("<p></p>");
             s.AppendLine("<p></p>");
-            s.AppendLine("<a href=\"https://bit.ly/3skuKxx\"> <img src=\"http://productosdeesteticaypeluqueriaprofesional.com/Repositorio/Firma.jpg\" style=\"max-width:100%;\" /></a>");
+            s.AppendLine(FirmaCorreoEnvio());
 
             // Pie promocional de la app con videoprotocolo
             string piePromoApp = await GenerarPiePromocionAppAsync(envio.Cliente);
             s.AppendLine(piePromoApp);
 
             return s;
+        }
+
+        /// <summary>NestoAPI#706: UTM de los enlaces del correo de envío.</summary>
+        internal const string UTM_SOURCE_CORREO_ENVIO = "correo_envio";
+        internal const string UTM_CAMPAIGN_FIRMA_ENVIO = "firma_envio";
+
+        /// <summary>
+        /// NestoAPI#706: la imagen de la firma enlaza directamente a la landing de ofertas con sus UTM (antes iba por un
+        /// bit.ly genérico que no decía de qué correo venía la visita).
+        /// </summary>
+        internal static string FirmaCorreoEnvio()
+        {
+            string enlace = EnlacesTienda.ConUtm(EnlacesTienda.URL_OFERTAS, UTM_SOURCE_CORREO_ENVIO, EnlacesTienda.MEDIUM_EMAIL, UTM_CAMPAIGN_FIRMA_ENVIO);
+            return "<a href=\"" + enlace + "\"> <img src=\"http://productosdeesteticaypeluqueriaprofesional.com/Repositorio/Firma.jpg\" style=\"max-width:100%;\" /></a>";
         }
 
         /// <summary>
@@ -223,7 +237,8 @@ namespace NestoAPI.Infraestructure.Agencias
         /// </summary>
         internal static string GenerarPiePromocionApp(VideoLookupModel videoprotocolo)
         {
-            const string urlGooglePlay = "https://play.google.com/store/apps/details?id=com.nuevavision.nestotiendas";
+            // NestoAPI#706: con el referrer de instalación para saber que viene de este correo
+            string urlGooglePlay = EnlacesTienda.GooglePlay(UTM_SOURCE_CORREO_ENVIO);
 
             var s = new StringBuilder();
 

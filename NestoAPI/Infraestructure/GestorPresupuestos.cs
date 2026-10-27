@@ -14,6 +14,14 @@ namespace NestoAPI.Infraestructure
 {
     public class GestorPresupuestos
     {
+        /// <summary>NestoAPI#706: UTM de los enlaces a la tienda del correo de pedido.</summary>
+        internal const string UTM_SOURCE_CORREO_PEDIDO = "nesto";
+        internal const string UTM_CAMPAIGN_CORREO_PEDIDO = "correo_pedido";
+
+        /// <summary>NestoAPI#706: el enlace a la ficha que lleva cada línea del correo de pedido. Null = sin enlace.</summary>
+        internal static string EnlaceProductoCorreo(string rutaEnlace)
+            => EnlacesTienda.ConUtm(rutaEnlace, UTM_SOURCE_CORREO_PEDIDO, EnlacesTienda.MEDIUM_EMAIL, UTM_CAMPAIGN_CORREO_PEDIDO);
+
         // Carlos 10/01/24: esto hay que refactorizarlo para poder hacerle tests
         // deben entrar ambos campos por inyección de dependencias
         private readonly NVEntities db = new NVEntities();
@@ -694,9 +702,11 @@ namespace NestoAPI.Infraestructure
                 _ = s.Append("<td>" + linea.Producto + "</td>");
                 if (linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
                 {
-                    string rutaEnlace = await ProductoDTO.RutaEnlace(linea.Producto).ConfigureAwait(false);
-                    rutaEnlace += "&utm_medium=correopedido";
-                    _ = s.Append("<td><a href=\"" + rutaEnlace + "\">" + linea.texto + "</a></td>");
+                    // NestoAPI#706: la URL viene limpia (o null) y el correo le pone sus tres UTM; sin URL, sin enlace
+                    string rutaEnlace = EnlaceProductoCorreo(await ProductoDTO.RutaEnlace(linea.Producto).ConfigureAwait(false));
+                    _ = s.Append(rutaEnlace == null
+                        ? "<td>" + linea.texto + "</td>"
+                        : "<td><a href=\"" + rutaEnlace + "\">" + linea.texto + "</a></td>");
                 }
                 else
                 {

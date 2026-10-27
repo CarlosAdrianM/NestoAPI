@@ -204,6 +204,11 @@ namespace NestoAPI.Models
             }
         }
 
+        /// <summary>
+        /// La URL de la ficha del producto en la tienda, LIMPIA (sin UTM; NestoAPI#706: cada correo o pantalla le pone
+        /// las suyas con <see cref="Infraestructure.EnlacesTienda"/>). Null si el PHP no responde, responde vacío o
+        /// devuelve la URL sin producto («…/-.html»).
+        /// </summary>
         public static async Task<string> RutaEnlace(string producto)
         {
             using (var client = new HttpClient())
@@ -216,20 +221,35 @@ namespace NestoAPI.Models
                     HttpResponseMessage response = await client.GetAsync(parametros).ConfigureAwait(false);
 
 
-                    string rutaEnlace = string.Empty;
-                    if (response.IsSuccessStatusCode)
+                    if (!response.IsSuccessStatusCode)
                     {
-                        rutaEnlace = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                        rutaEnlace += "?utm_source=nuevavision&utm_campaign=nesto";
+                        return null;
                     }
 
-                    return rutaEnlace;
+                    return NormalizarRutaEnlace(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
                 }
                 catch (Exception)
                 {
                     return null;
                 }
             }
+        }
+
+        /// <summary>
+        /// NestoAPI#706: lo que responde enlacePorReferencia.php convertido en una URL limpia. Null si viene vacío, si
+        /// es la URL sin producto («https://…/-.html», que da el PHP cuando no encuentra la referencia) o si no es una
+        /// URL http(s). Las utm_* que pudiera traer se quitan.
+        /// </summary>
+        internal static string NormalizarRutaEnlace(string respuesta)
+        {
+            string url = Infraestructure.EnlacesTienda.UrlValida(respuesta);
+            if (url == null)
+            {
+                return null;
+            }
+            url = Infraestructure.EnlacesTienda.QuitarUtm(url);
+            string sinQuery = url.Split('?', '#')[0];
+            return sinQuery.EndsWith("/-.html", StringComparison.OrdinalIgnoreCase) ? null : url;
         }
 
         /// <summary>
@@ -383,7 +403,7 @@ namespace NestoAPI.Models
             {
                 UrlFoto = await RutaImagen(productoId).ConfigureAwait(false),
                 PrecioPublicoFinal = await LeerPrecioPublicoFinal(productoId, db).ConfigureAwait(false),
-                UrlEnlace = await RutaEnlace(productoId).ConfigureAwait(false),
+                UrlEnlace = Infraestructure.EnlacesTienda.ParaPantallaNesto(await RutaEnlace(productoId).ConfigureAwait(false)),
                 Producto = productoId,
                 Nombre = producto.Nombre?.Trim(),
                 Tamanno = producto.Tamaño,
@@ -862,7 +882,7 @@ namespace NestoAPI.Models
         /// Issue #74: Sistema de correos post-compra.
         /// </summary>
         /// <param name="producto">Referencia del producto (ej: "12345")</param>
-        /// <returns>URL completa del producto en la tienda o null si no existe</returns>
+        /// <returns>URL completa del producto en la tienda (sin UTM) o null si no existe</returns>
         public static async Task<string> LeerUrlTiendaOnline(string producto)
         {
             if (string.IsNullOrWhiteSpace(producto))
@@ -938,11 +958,8 @@ namespace NestoAPI.Models
                     string idProducto = idNode.InnerText;
                     string linkRewrite = linkRewriteNode.InnerText;
 
-                    // 4. Construir la URL amigable con parámetros UTM
-                    string urlTienda = $"https://www.productosdeesteticaypeluqueriaprofesional.com/{idProducto}-{linkRewrite}.html";
-                    urlTienda += "?utm_source=nuevavision&utm_medium=email&utm_campaign=postcompra";
-
-                    return urlTienda;
+                    // 4. Construir la URL amigable, LIMPIA: NestoAPI#706, cada correo le pone sus UTM (EnlacesTienda)
+                    return $"https://www.productosdeesteticaypeluqueriaprofesional.com/{idProducto}-{linkRewrite}.html";
                 }
             }
             catch

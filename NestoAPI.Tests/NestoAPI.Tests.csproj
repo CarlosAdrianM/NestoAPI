@@ -521,6 +521,7 @@
     <Compile Include="Controllers\EtiquetasImpresorasControllerTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfExtractoContableTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfKitsQueSePuedenMontarTests.cs" />
+    <Compile Include="Infrastructure\EnlacesTiendaTests.cs" />
     <Compile Include="Infrastructure\RoundingHelperTests.cs" />
     <Compile Include="Infrastructure\Filters\GlobalExceptionFilterTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfEtiquetasTiendaTests.cs" />

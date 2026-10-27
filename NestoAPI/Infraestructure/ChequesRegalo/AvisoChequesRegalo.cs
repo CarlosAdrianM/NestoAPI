@@ -190,6 +190,21 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
 
         private const string FIRMA = "El equipo de Nueva Visión.";
 
+        /// <summary>NestoAPI#706: UTM del botón a la tienda; la campaña es el código de la campaña del cheque.</summary>
+        internal const string UTM_SOURCE = "correo_cheque_regalo";
+        /// <summary>
+        /// Infinitivo a propósito: el texto del correo (de Alberto) va de tú y los mensajes nuevos van de usted; así el
+        /// botón no mezcla tratamientos.
+        /// </summary>
+        internal const string TEXTO_BOTON_TIENDA = "Canjear en la tienda online";
+
+        /// <summary>
+        /// NestoAPI#706: el enlace del botón «Canjear en la tienda online» (el cheque se canjea en la tienda) con
+        /// utm_source=correo_cheque_regalo, utm_medium=email y utm_campaign=&lt;código de la campaña&gt;.
+        /// </summary>
+        internal static string EnlaceTienda(CampanaCorreoChequeRegalo campana)
+            => EnlacesTienda.ConUtm(EnlacesTienda.URL_TIENDA, UTM_SOURCE, EnlacesTienda.MEDIUM_EMAIL, campana?.Codigo?.Trim());
+
         /// <summary>
         /// El correo. <paramref name="nombreDePila"/>: el de la persona a la que se saluda, ya decidido (null o vacío =
         /// «Hola:»). <paramref name="srcImagen"/>: «cid:…» para mandarlo (imagen en línea) o un data URI para
@@ -199,6 +214,7 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
         {
             string asunto = Asunto(campana);
             List<string> parrafos = Parrafos(campana, nombreDePila);
+            string enlaceTienda = EnlaceTienda(campana);
             bool conImagen = imagen != null && imagen.Length > 0 && !string.IsNullOrEmpty(srcImagen);
 
             const string FUENTE = "font-family:Arial,Helvetica,sans-serif;";
@@ -226,6 +242,13 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
                 _ = h.AppendLine($"<p style=\"margin:0 0 16px 0;\">{Html(parrafo)}</p>");
             }
             _ = h.AppendLine("</td></tr>");
+            // NestoAPI#706: botón a la tienda online (tabla con bgcolor: se ve como botón también en Outlook)
+            _ = h.AppendLine("<tr><td align=\"center\" style=\"padding:0 24px 24px 24px;\">");
+            _ = h.AppendLine("<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\"><tr>" +
+                "<td align=\"center\" bgcolor=\"#2C5F7C\" style=\"border-radius:6px;background-color:#2C5F7C;\">" +
+                $"<a href=\"{Html(enlaceTienda)}\" target=\"_blank\" style=\"display:inline-block;padding:12px 28px;{FUENTE}font-size:16px;" +
+                $"font-weight:bold;color:#ffffff;text-decoration:none;border-radius:6px;\">{Html(TEXTO_BOTON_TIENDA)}</a></td></tr></table>");
+            _ = h.AppendLine("</td></tr>");
             _ = h.AppendLine($"<tr><td style=\"padding:8px 24px 16px 24px;{FUENTE}font-size:12px;line-height:1.4;color:#666666;\">");
             _ = h.AppendLine($"<p style=\"margin:0;\"><strong>Letra pequeña:</strong> {Html(LETRA_PEQUENA)}</p>");
             _ = h.AppendLine("</td></tr>");
@@ -243,6 +266,7 @@ namespace NestoAPI.Infraestructure.ChequesRegalo
             {
                 _ = t.AppendLine(parrafo).AppendLine();
             }
+            _ = t.AppendLine(TEXTO_BOTON_TIENDA + ": " + enlaceTienda).AppendLine();
             _ = t.AppendLine("Letra pequeña: " + LETRA_PEQUENA);
             _ = t.AppendLine(FIRMA);
 

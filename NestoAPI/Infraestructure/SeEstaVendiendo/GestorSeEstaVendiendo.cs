@@ -50,7 +50,8 @@ namespace NestoAPI.Infraestructure.SeEstaVendiendo
                 foreach (var producto in vendidos)
                 {
                     string rutaImagen = await ProductoDTO.RutaImagen(producto).ConfigureAwait(false);
-                    string rutaEnlace = await ProductoDTO.RutaEnlace(producto).ConfigureAwait(false);
+                    // NestoAPI#706: RutaEnlace ya viene limpia; en pantalla se mantienen las UTM de siempre
+                    string rutaEnlace = EnlacesTienda.ParaPantallaNesto(await ProductoDTO.RutaEnlace(producto).ConfigureAwait(false));
                     string nombre = db.Productos.Single(p => p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && p.Número == producto).Nombre.Trim();
 
                     resultado.Add(new SeEstaVendiendoModel

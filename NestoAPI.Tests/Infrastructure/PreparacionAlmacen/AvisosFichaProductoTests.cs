@@ -531,6 +531,8 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
             StringAssert.Contains(enviado.Body, System.Net.WebUtility.HtmlEncode(esperado));
             StringAssert.Contains(enviado.Body, "https://tienda.es/32564");
             StringAssert.Contains(enviado.Body, "https://tienda.es/32565");
+            // NestoAPI#706: el enlace a la tienda del aviso lleva sus tres UTM
+            StringAssert.Contains(enviado.Body, "https://tienda.es/32565?utm_source=nesto&amp;utm_medium=email&amp;utm_campaign=aviso_ficha_producto");
             StringAssert.Contains(enviado.Body, System.Net.WebUtility.HtmlEncode("(leído con el escáner)"));
             StringAssert.Contains(buzon().Cuerpo, esperado);
             StringAssert.Contains(buzon().Cuerpo, "8437017506362 (leído con el escáner)");

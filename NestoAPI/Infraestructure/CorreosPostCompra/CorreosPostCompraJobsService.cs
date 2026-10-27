@@ -242,6 +242,8 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                     return;
                 }
 
+                // NestoAPI#706: si la plantilla (ya programada) no lleva los enlaces a la tienda, la fija
+                plantilla = GeneradorContenidoCorreoPostCompra.AsegurarEnlacesTienda(plantilla);
                 string htmlCorreo = GeneradorContenidoCorreoPostCompra.AplicarPlantilla(
                     plantilla.HtmlPlantilla, saludo, datos);
 
@@ -364,7 +366,8 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
         /// </summary>
         internal static string GenerarPieDescargaApp()
         {
-            const string urlGooglePlay = "https://play.google.com/store/apps/details?id=com.nuevavision.nestotiendas";
+            // NestoAPI#706: con el referrer de instalación para saber que viene de este correo
+            string urlGooglePlay = EnlacesTienda.GooglePlay(GeneradorContenidoCorreoPostCompra.UTM_SOURCE);
 
             var s = new StringBuilder();
 

@@ -14,7 +14,9 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
     /// </summary>
     public static class PlantillaRecordatorioReposicion
     {
-        public const string UTM = "utm_source=correo_reposicion&utm_medium=email&utm_campaign=reposicion";
+        internal const string UTM_SOURCE = "correo_reposicion";
+        internal const string UTM_CAMPAIGN = "reposicion";
+        public const string UTM = "utm_source=" + UTM_SOURCE + "&utm_medium=" + EnlacesTienda.MEDIUM_EMAIL + "&utm_campaign=" + UTM_CAMPAIGN;
         /// <summary>NestoAPI#532 (bajas por tipo): la baja es solo de este aviso; el resto de correos le siguen llegando.</summary>
         public const string FRASE_BAJA = "Si prefiere no recibir estos avisos de reposición, responda a este correo y dejaremos de enviárselos. " +
             "Es solo para este aviso: el resto de nuestros correos le seguirán llegando como siempre.";
@@ -109,14 +111,8 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
             return limpia;
         }
 
+        /// <summary>NestoAPI#706: con el constructor común (quita las utm_* heredadas y pone las de este correo).</summary>
         internal static string ConUtm(string url)
-        {
-            if (string.IsNullOrWhiteSpace(url))
-            {
-                return null;
-            }
-            string limpia = ServicioRecomendacionesPostCompra.LimpiarParametrosUtm(url.Trim());
-            return limpia + (limpia.Contains("?") ? "&" : "?") + UTM;
-        }
+            => EnlacesTienda.ConUtm(url, UTM_SOURCE, EnlacesTienda.MEDIUM_EMAIL, UTM_CAMPAIGN);
     }
 }

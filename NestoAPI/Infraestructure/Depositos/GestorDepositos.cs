@@ -12,6 +12,14 @@ namespace NestoAPI.Infraestructure.Depositos
 {
     public class GestorDepositos
     {
+        /// <summary>NestoAPI#706: UTM de los enlaces a la tienda del correo de depósito.</summary>
+        internal const string UTM_SOURCE_CORREO_DEPOSITO = "nesto";
+        internal const string UTM_CAMPAIGN_CORREO_DEPOSITO = "correo_deposito";
+
+        /// <summary>NestoAPI#706: el enlace a la ficha de cada producto del correo de depósito. Null = sin enlace.</summary>
+        internal static string EnlaceProductoCorreo(string rutaEnlace)
+            => EnlacesTienda.ConUtm(rutaEnlace, UTM_SOURCE_CORREO_DEPOSITO, EnlacesTienda.MEDIUM_EMAIL, UTM_CAMPAIGN_CORREO_DEPOSITO);
+
         private readonly IServicioDeposito servicio;
         private readonly IServicioGestorStocks servicioGestorStocks;
 
@@ -95,7 +103,7 @@ namespace NestoAPI.Infraestructure.Depositos
             return listaCorreos;
         }
 
-        private static StringBuilder GenerarTablaHTML(DepositoCorreoProveedor correo)
+        internal static StringBuilder GenerarTablaHTML(DepositoCorreoProveedor correo)
         {
             StringBuilder s = new StringBuilder();
 
@@ -165,9 +173,11 @@ namespace NestoAPI.Infraestructure.Depositos
 
                 s.Append("<td style=\"text-align:center\"><font color=\"" + dato.ColorTexto +"\">" + dato.ProductoId + "</font></td>");
 
-                string rutaEnlace = dato.Enlace;
-                rutaEnlace += "&utm_medium=correodeposito";
-                s.Append("<td><a href=\"" + rutaEnlace + "\">" + dato.Nombre + "</a></td>");
+                // NestoAPI#706: la URL viene limpia (o null) y el correo le pone sus tres UTM; sin URL, sin enlace
+                string rutaEnlace = EnlaceProductoCorreo(dato.Enlace);
+                s.Append(rutaEnlace == null
+                    ? "<td>" + dato.Nombre + "</td>"
+                    : "<td><a href=\"" + rutaEnlace + "\">" + dato.Nombre + "</a></td>");
                 
                 s.Append("<td style=\"text-align:center\"><font color=\"" + dato.ColorTexto + "\">" + dato.UnidadesEnviadasProveedor.ToString() + "</font></td>");
                 s.Append("<td style=\"text-align:center\"><font color=\"" + dato.ColorTexto + "\">" + dato.UnidadesStock.ToString() + "</font></td>");

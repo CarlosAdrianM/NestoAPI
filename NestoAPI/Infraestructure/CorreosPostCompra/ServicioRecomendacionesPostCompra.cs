@@ -337,8 +337,8 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
 
         /// <summary>
         /// Obtiene las URLs de Prestashop para una lista de productos, en paralelo.
-        /// Las URLs se devuelven sin parámetros UTM (LeerUrlTiendaOnline los añade,
-        /// pero los de esta campaña se añaden después en el generador).
+        /// Las URLs se devuelven sin parámetros UTM (LeerUrlTiendaOnline ya las da limpias desde NestoAPI#706;
+        /// se limpian igualmente por si acaso; las de esta campaña se añaden después en el generador).
         /// </summary>
         private static async Task<Dictionary<string, string>> ObtenerUrlsPrestashop(List<string> productoIds)
         {
@@ -373,33 +373,7 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
         /// <summary>
         /// Elimina los parámetros UTM de una URL para poder añadir los correctos después.
         /// </summary>
-        internal static string LimpiarParametrosUtm(string url)
-        {
-            if (string.IsNullOrEmpty(url))
-            {
-                return url;
-            }
-
-            var indiceQuery = url.IndexOf('?');
-            if (indiceQuery < 0)
-            {
-                return url;
-            }
-
-            var urlBase = url.Substring(0, indiceQuery);
-            var queryString = url.Substring(indiceQuery + 1);
-
-            var parametros = queryString.Split('&')
-                .Where(p => !p.StartsWith("utm_", StringComparison.OrdinalIgnoreCase))
-                .ToList();
-
-            if (!parametros.Any())
-            {
-                return urlBase;
-            }
-
-            return urlBase + "?" + string.Join("&", parametros);
-        }
+        internal static string LimpiarParametrosUtm(string url) => EnlacesTienda.QuitarUtm(url);
 
         /// <summary>
         /// Filtra clientes que cumplen los requisitos básicos para recibir correo post-compra:

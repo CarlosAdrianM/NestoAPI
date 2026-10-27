@@ -212,6 +212,14 @@ namespace NestoAPI.Infraestructure.Informes
             }
         }
 
+        /// <summary>
+        /// NestoAPI#706: la URL del QR de la etiqueta impresa, con utm_medium=qr. Null si el PHP no da una ficha válida
+        /// (vacío o «…/-.html»), y entonces no hay QR.
+        /// </summary>
+        internal static string UrlQr(string respuestaEnlacePorReferencia)
+            => EnlacesTienda.ConUtm(NestoAPI.Models.ProductoDTO.NormalizarRutaEnlace(respuestaEnlacePorReferencia),
+                "nuevavision", "qr", "tienda_alcobendas");
+
         private static async Task<string> ResolverUrlProductoTiendaOnline(string producto)
         {
             try
@@ -224,9 +232,7 @@ namespace NestoAPI.Infraestructure.Informes
                     return null;
                 }
                 string ruta = await respuesta.Content.ReadAsStringAsync().ConfigureAwait(false);
-                return string.IsNullOrWhiteSpace(ruta)
-                    ? null
-                    : ruta + "?utm_source=nuevavision&utm_campaign=tienda_alcobendas";
+                return UrlQr(ruta);
             }
             catch
             {

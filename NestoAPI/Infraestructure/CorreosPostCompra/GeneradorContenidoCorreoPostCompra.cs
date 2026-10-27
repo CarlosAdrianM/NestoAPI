@@ -160,24 +160,22 @@ Devuelve ASUNTO en la primera línea y luego el HTML del cuerpo, sin etiquetas <
 
                 if (!string.IsNullOrEmpty(producto.EnlaceVideoProducto))
                 {
-                    sb.AppendLine($"  Link vídeo: {AgregarUtm(producto.EnlaceVideoProducto)}");
+                    sb.AppendLine($"  Link vídeo: {AgregarUtm(producto.EnlaceVideoProducto, UTM_CONTENT_COMPRADO, producto.ProductoId)}");
                 }
                 else
                 {
-                    sb.AppendLine($"  Link vídeo: {AgregarUtm($"https://www.youtube.com/watch?v={producto.VideoYoutubeId}")}");
+                    sb.AppendLine($"  Link vídeo: {AgregarUtm($"https://www.youtube.com/watch?v={producto.VideoYoutubeId}", UTM_CONTENT_COMPRADO, producto.ProductoId)}");
                 }
 
-                sb.AppendLine($"  Link tienda: {AgregarUtm(producto.EnlaceTienda)}");
+                sb.AppendLine($"  Link tienda: {AgregarUtm(producto.EnlaceTienda, UTM_CONTENT_COMPRADO, producto.ProductoId)}");
 
                 sb.AppendLine();
             }
 
             if (correo.ProductosRecomendados != null && correo.ProductosRecomendados.Any())
             {
-                // Solo incluir recomendados que tengan enlace al vídeo
-                var recomendadosConEnlace = correo.ProductosRecomendados
-                    .Where(p => !string.IsNullOrEmpty(p.EnlaceVideoProducto))
-                    .ToList();
+                // Solo incluir recomendados que tengan enlace al vídeo y a la tienda (NestoAPI#706)
+                var recomendadosConEnlace = RecomendadosConEnlaces(correo.ProductosRecomendados);
 
                 if (recomendadosConEnlace.Any())
                 {
@@ -186,8 +184,8 @@ Devuelve ASUNTO en la primera línea y luego el HTML del cuerpo, sin etiquetas <
                     foreach (var producto in recomendadosConEnlace)
                     {
                         sb.AppendLine($"- Producto: {producto.NombreProducto}");
-                        sb.AppendLine($"  ENLACE OBLIGATORIO al vídeo: {AgregarUtm(producto.EnlaceVideoProducto)}");
-                        sb.AppendLine($"  Link tienda: {AgregarUtm(producto.EnlaceTienda)}");
+                        sb.AppendLine($"  ENLACE OBLIGATORIO al vídeo: {AgregarUtm(producto.EnlaceVideoProducto, UTM_CONTENT_RECOMENDADO, producto.ProductoId)}");
+                        sb.AppendLine($"  Link tienda: {AgregarUtm(producto.EnlaceTienda, UTM_CONTENT_RECOMENDADO, producto.ProductoId)}");
                     }
                     sb.AppendLine();
                 }
@@ -199,16 +197,27 @@ Devuelve ASUNTO en la primera línea y luego el HTML del cuerpo, sin etiquetas <
             return sb.ToString();
         }
 
-        internal static string AgregarUtm(string url)
-        {
-            if (string.IsNullOrEmpty(url))
-            {
-                return url;
-            }
+        internal const string UTM_SOURCE = "correo_postcompra";
+        internal const string UTM_CAMPAIGN = "tutoriales_postcompra";
+        /// <summary>NestoAPI#706: utm_content distingue el producto comprado del recomendado; utm_term lleva su referencia.</summary>
+        internal const string UTM_CONTENT_COMPRADO = "comprado";
+        internal const string UTM_CONTENT_RECOMENDADO = "recomendado";
 
-            var separator = url.Contains("?") ? "&" : "?";
-            return $"{url}{separator}utm_source=correo_postcompra&utm_medium=email&utm_campaign=tutoriales_postcompra";
-        }
+        /// <summary>
+        /// La URL con las UTM del correo post-compra (EnlacesTienda: quita las que traiga y no duplica). Null si no hay
+        /// URL válida. <paramref name="content"/> (comprado|recomendado) y <paramref name="term"/> (la referencia del
+        /// producto) sirven para medir qué enlaces producen ventas.
+        /// </summary>
+        internal static string AgregarUtm(string url, string content = null, string term = null)
+            => EnlacesTienda.ConUtm(url, UTM_SOURCE, EnlacesTienda.MEDIUM_EMAIL, UTM_CAMPAIGN, content, term);
+
+        /// <summary>
+        /// NestoAPI#706: un recomendado solo sale si tiene enlace al vídeo Y a la tienda (antes salía con href="").
+        /// </summary>
+        internal static List<ProductoRecomendadoDTO> RecomendadosConEnlaces(IEnumerable<ProductoRecomendadoDTO> recomendados)
+            => recomendados?
+                .Where(p => !string.IsNullOrEmpty(p.EnlaceVideoProducto) && EnlacesTienda.UrlValida(p.EnlaceTienda) != null)
+                .ToList();
 
         #region Issue #152: Optimización - una sola plantilla por lote semanal
 
@@ -283,6 +292,59 @@ Devuelve ASUNTO en la primera línea y luego el HTML del cuerpo, sin etiquetas <
         /// Se llama una vez por lote semanal.
         /// </summary>
         public async Task<PlantillaSemanal> GenerarPlantillaSemanalAsync()
+        {
+            // NestoAPI#706: la plantilla tiene que llevar {{ENLACE_TIENDA}} en los dos bloques de productos (si no, esos
+            // enlaces, que son los que se miden con UTM, desaparecen). Si el modelo no lo pone, se le pide otra vez y,
+            // si tampoco, se usa la plantilla fija. Si OpenAI no responde la primera vez, null como siempre (no se manda).
+            PlantillaSemanal sinEnlaces = null;
+            for (int intento = 1; intento <= INTENTOS_PLANTILLA; intento++)
+            {
+                PlantillaSemanal leida = await PedirPlantillaSemanalAsync().ConfigureAwait(false);
+                if (leida == null)
+                {
+                    break;
+                }
+                if (PlantillaTieneEnlacesTienda(leida.HtmlPlantilla))
+                {
+                    return leida;
+                }
+                sinEnlaces = leida;
+            }
+            return sinEnlaces == null ? null : PlantillaSemanal.Fija();
+        }
+
+        /// <summary>NestoAPI#706: cuántas veces se le pide la plantilla al modelo antes de usar la fija.</summary>
+        internal const int INTENTOS_PLANTILLA = 2;
+        internal const string MARCA_ENLACE_TIENDA = "{{ENLACE_TIENDA}}";
+
+        /// <summary>
+        /// NestoAPI#706: true si la plantilla lleva {{ENLACE_TIENDA}} dentro del bloque de comprados y dentro del de
+        /// recomendados.
+        /// </summary>
+        internal static bool PlantillaTieneEnlacesTienda(string html)
+            => BloqueContiene(html, "{{#PRODUCTOS_COMPRADOS}}", "{{/PRODUCTOS_COMPRADOS}}", MARCA_ENLACE_TIENDA)
+                && BloqueContiene(html, "{{#PRODUCTOS_RECOMENDADOS}}", "{{/PRODUCTOS_RECOMENDADOS}}", MARCA_ENLACE_TIENDA);
+
+        /// <summary>
+        /// NestoAPI#706: la plantilla que se aplica de verdad. Si la que llega no lleva los enlaces a la tienda (p. ej.
+        /// una generada antes de este cambio que ya estaba programada en Hangfire), la fija.
+        /// </summary>
+        internal static PlantillaSemanal AsegurarEnlacesTienda(PlantillaSemanal plantilla)
+            => plantilla == null || PlantillaTieneEnlacesTienda(plantilla.HtmlPlantilla) ? plantilla : PlantillaSemanal.Fija();
+
+        private static bool BloqueContiene(string html, string marcadorInicio, string marcadorFin, string buscado)
+        {
+            if (string.IsNullOrEmpty(html))
+            {
+                return false;
+            }
+            int inicio = html.IndexOf(marcadorInicio, StringComparison.Ordinal);
+            int fin = html.IndexOf(marcadorFin, StringComparison.Ordinal);
+            return inicio >= 0 && fin > inicio
+                && html.IndexOf(buscado, inicio, fin - inicio, StringComparison.Ordinal) >= 0;
+        }
+
+        private async Task<PlantillaSemanal> PedirPlantillaSemanalAsync()
         {
             var systemPrompt = CrearSystemPromptPlantilla();
             var userMessage = "Genera la plantilla para el correo de esta semana.";
@@ -415,15 +477,13 @@ Ejemplo: entrada [""MARIA PELUQUEROS S.L."", ""Rosa Martínez""] → respuesta [
                     { "{{NOMBRE_PRODUCTO}}", p.NombreProducto ?? "" },
                     { "{{YOUTUBE_ID}}", p.VideoYoutubeId ?? "" },
                     { "{{VIDEO_TITULO}}", p.VideoTitulo ?? "" },
-                    { "{{ENLACE_VIDEO}}", AgregarUtm(p.EnlaceVideoProducto ?? $"https://www.youtube.com/watch?v={p.VideoYoutubeId}") },
-                    { "{{ENLACE_TIENDA}}", AgregarUtm(p.EnlaceTienda ?? "") },
+                    { "{{ENLACE_VIDEO}}", AgregarUtm(p.EnlaceVideoProducto ?? $"https://www.youtube.com/watch?v={p.VideoYoutubeId}", UTM_CONTENT_COMPRADO, p.ProductoId) ?? "" },
+                    { "{{ENLACE_TIENDA}}", AgregarUtm(p.EnlaceTienda, UTM_CONTENT_COMPRADO, p.ProductoId) ?? EnlacesTienda.ConUtm(EnlacesTienda.URL_TIENDA, UTM_SOURCE, EnlacesTienda.MEDIUM_EMAIL, UTM_CAMPAIGN, UTM_CONTENT_COMPRADO, p.ProductoId) },
                     { "{{THUMBNAIL}}", $"https://img.youtube.com/vi/{p.VideoYoutubeId}/hqdefault.jpg" }
                 }).ToList());
 
             // Sustituir bloque condicional de recomendados
-            var recomendadosConEnlace = datos.ProductosRecomendados?
-                .Where(p => !string.IsNullOrEmpty(p.EnlaceVideoProducto))
-                .ToList();
+            var recomendadosConEnlace = RecomendadosConEnlaces(datos.ProductosRecomendados);
 
             if (recomendadosConEnlace != null && recomendadosConEnlace.Any())
             {
@@ -434,8 +494,8 @@ Ejemplo: entrada [""MARIA PELUQUEROS S.L."", ""Rosa Martínez""] → respuesta [
                     recomendadosConEnlace.Select(p => new Dictionary<string, string>
                     {
                         { "{{NOMBRE_PRODUCTO}}", p.NombreProducto ?? "" },
-                        { "{{ENLACE_VIDEO}}", AgregarUtm(p.EnlaceVideoProducto) },
-                        { "{{ENLACE_TIENDA}}", AgregarUtm(p.EnlaceTienda ?? "") }
+                        { "{{ENLACE_VIDEO}}", AgregarUtm(p.EnlaceVideoProducto, UTM_CONTENT_RECOMENDADO, p.ProductoId) ?? "" },
+                        { "{{ENLACE_TIENDA}}", AgregarUtm(p.EnlaceTienda, UTM_CONTENT_RECOMENDADO, p.ProductoId) }
                     }).ToList());
             }
             else
@@ -546,6 +606,7 @@ RESTRICCIONES TÉCNICAS:
 - Botones CTA suaves: ""Ver vídeo"" (NO ""Comprar ahora"")
 - Thumbnail como enlace clicable al vídeo
 - Cada producto DEBE tener enlace clicable
+- OBLIGATORIO: {{ENLACE_TIENDA}} tiene que aparecer como enlace (<a href=""{{ENLACE_TIENDA}}"">) DENTRO del bloque {{#PRODUCTOS_COMPRADOS}} y DENTRO del bloque {{#PRODUCTOS_RECOMENDADOS}} (por ejemplo, un enlace discreto «Ver en la tienda»)
 - Firma: ""El equipo de Nueva Visión"" con teléfono 916 28 19 14 (WhatsApp)
 
 Devuelve ASUNTO en la primera línea y luego el HTML del cuerpo, sin etiquetas <html>, <head> o <body>.";
@@ -558,6 +619,40 @@ Devuelve ASUNTO en la primera línea y luego el HTML del cuerpo, sin etiquetas <
     {
         public string Asunto { get; set; }
         public string HtmlPlantilla { get; set; }
+
+        internal const string ASUNTO_FIJO = "Sus vídeos tutoriales de esta semana";
+
+        /// <summary>
+        /// NestoAPI#706: la plantilla de reserva, de usted, cuando la del modelo no trae los enlaces a la tienda. Mismos
+        /// marcadores y mismo estilo que se le piden al modelo (600 px, #2C5F7C, botón «Ver vídeo»).
+        /// </summary>
+        public static PlantillaSemanal Fija() => new PlantillaSemanal
+        {
+            Asunto = ASUNTO_FIJO,
+            HtmlPlantilla = HTML_FIJO
+        };
+
+        internal const string HTML_FIJO = @"<table role=""presentation"" width=""100%"" cellpadding=""0"" cellspacing=""0"" border=""0"" style=""max-width:600px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;color:#333333;"">
+<tr><td style=""padding:16px 8px;font-size:15px;line-height:1.5;"">
+<p style=""margin:0 0 12px 0;"">{{SALUDO}}</p>
+<p style=""margin:0 0 16px 0;"">Le dejamos los vídeos tutoriales de los productos que ha recibido estos días. Esperamos que le resulten útiles en su día a día.</p>
+</td></tr>
+{{#PRODUCTOS_COMPRADOS}}<tr><td style=""padding:8px;border-top:1px solid #e5e5e5;"">
+<p style=""margin:0 0 8px 0;font-size:16px;font-weight:bold;color:#2C5F7C;"">{{NOMBRE_PRODUCTO}}</p>
+<a href=""{{ENLACE_VIDEO}}"" target=""_blank""><img src=""{{THUMBNAIL}}"" alt=""Vídeo: {{VIDEO_TITULO}}"" width=""320"" style=""width:320px;max-width:100%;height:auto;border:0;display:block;""></a>
+<p style=""margin:12px 0 4px 0;""><a href=""{{ENLACE_VIDEO}}"" target=""_blank"" style=""display:inline-block;padding:10px 20px;background-color:#2C5F7C;color:#ffffff;text-decoration:none;border-radius:4px;font-size:14px;"">Ver vídeo</a></p>
+<p style=""margin:4px 0 8px 0;font-size:13px;""><a href=""{{ENLACE_TIENDA}}"" target=""_blank"" style=""color:#2C5F7C;"">Ver el producto en la tienda online</a></p>
+</td></tr>{{/PRODUCTOS_COMPRADOS}}
+{{#SI_HAY_RECOMENDADOS}}<tr><td style=""padding:16px 8px 8px 8px;border-top:1px solid #e5e5e5;font-size:14px;line-height:1.5;"">
+<p style=""margin:0 0 8px 0;"">En esos mismos vídeos aparecen también estos productos, por si le interesan:</p>
+<ul style=""margin:0;padding-left:20px;"">
+{{#PRODUCTOS_RECOMENDADOS}}<li style=""margin:0 0 6px 0;""><a href=""{{ENLACE_VIDEO}}"" target=""_blank"" style=""color:#2C5F7C;"">{{NOMBRE_PRODUCTO}}</a> · <a href=""{{ENLACE_TIENDA}}"" target=""_blank"" style=""color:#2C5F7C;font-size:13px;"">ver en la tienda</a></li>{{/PRODUCTOS_RECOMENDADOS}}
+</ul>
+</td></tr>{{/SI_HAY_RECOMENDADOS}}
+<tr><td style=""padding:16px 8px;font-size:14px;line-height:1.5;"">
+<p style=""margin:0;"">El equipo de Nueva Visión<br/>916 28 19 14 (WhatsApp)</p>
+</td></tr>
+</table>";
     }
 
     public interface IGeneradorContenidoCorreoPostCompra
