@@ -24,9 +24,9 @@ namespace NestoAPI.Models.PedidosVenta
         /// <summary>Alguna línea pendiente ya tiene picking.</summary>
         public bool TienePicking { get; set; }
         /// <summary>
-        /// Retenido «hasta nuevo aviso» (NestoAPI#698). Mientras #698 no tenga su tabla, se deduce de la costumbre que
-        /// describe: la fecha de entrega más próxima está a más de
-        /// <see cref="Constantes.Pedidos.DIAS_AVISO_FECHA_ENTREGA_LEJANA"/> días (fechas al año que viene, 2099...).
+        /// Retenido «hasta nuevo aviso» (NestoAPI#698): el pedido está en modo de servicio 5 («Retenido», Retener/Liberar).
+        /// Transitorio: también los retenidos a la antigua (fecha de entrega más próxima a más de
+        /// <see cref="Constantes.Pedidos.DIAS_AVISO_FECHA_ENTREGA_LEJANA"/> días), hasta que se conviertan al modo 5.
         /// </summary>
         public bool Retenido { get; set; }
     }

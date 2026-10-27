@@ -112,7 +112,7 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
             FechaEntregaLejanaException ex = Avisa(Pedido(false,
                 Linea(FECHA_929057, "11111"), Linea(FECHA_929057, "22222"), Linea(FECHA_929057, "33333")));
 
-            Assert.AreEqual("La fecha de entrega de las líneas es el miércoles 27/10/2027 (dentro de 365 días). ¿Es correcta?", ex.Message);
+            Assert.AreEqual("La fecha de entrega de las líneas es el miércoles 27/10/2027 (dentro de 365 días). Si lo que quiere es que el pedido no salga hasta nuevo aviso, use «Retener pedido» en vez de cambiar la fecha. ¿Es correcta?", ex.Message);
         }
 
         [TestMethod]
@@ -121,7 +121,7 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
             FechaEntregaLejanaException ex = Avisa(Pedido(false,
                 Linea(HOY.AddDays(1), "11111"), Linea(FECHA_929057, "22222"), Linea(HOY.AddDays(3), "33333")));
 
-            Assert.AreEqual("La fecha de entrega del producto 22222 es el miércoles 27/10/2027 (dentro de 365 días). ¿Es correcta?", ex.Message);
+            Assert.AreEqual("La fecha de entrega del producto 22222 es el miércoles 27/10/2027 (dentro de 365 días). Si lo que quiere es que el pedido no salga hasta nuevo aviso, use «Retener pedido» en vez de cambiar la fecha. ¿Es correcta?", ex.Message);
         }
 
         [TestMethod]
@@ -129,7 +129,7 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
         {
             FechaEntregaLejanaException ex = Avisa(Pedido(false, Linea(FECHA_929057)));
 
-            Assert.AreEqual("La fecha de entrega de la línea es el miércoles 27/10/2027 (dentro de 365 días). ¿Es correcta?", ex.Message);
+            Assert.AreEqual("La fecha de entrega de la línea es el miércoles 27/10/2027 (dentro de 365 días). Si lo que quiere es que el pedido no salga hasta nuevo aviso, use «Retener pedido» en vez de cambiar la fecha. ¿Es correcta?", ex.Message);
         }
 
         [TestMethod]
@@ -138,7 +138,7 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
             FechaEntregaLejanaException ex = Avisa(Pedido(false,
                 Linea(HOY.AddDays(90), "11111"), Linea(FECHA_929057, "22222"), Linea(HOY.AddDays(2), "33333")));
 
-            Assert.AreEqual("La fecha de entrega de 2 líneas llega hasta el miércoles 27/10/2027 (dentro de 365 días). ¿Es correcta?", ex.Message);
+            Assert.AreEqual("La fecha de entrega de 2 líneas llega hasta el miércoles 27/10/2027 (dentro de 365 días). Si lo que quiere es que el pedido no salga hasta nuevo aviso, use «Retener pedido» en vez de cambiar la fecha. ¿Es correcta?", ex.Message);
         }
 
         [TestMethod]
@@ -147,7 +147,7 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
             FechaEntregaLejanaException ex = Avisa(Pedido(false,
                 Linea(FECHA_929057, "11111"), Linea(FECHA_929057, "22222"), Linea(HOY.AddDays(2), "33333")));
 
-            Assert.AreEqual("La fecha de entrega de 2 líneas es el miércoles 27/10/2027 (dentro de 365 días). ¿Es correcta?", ex.Message);
+            Assert.AreEqual("La fecha de entrega de 2 líneas es el miércoles 27/10/2027 (dentro de 365 días). Si lo que quiere es que el pedido no salga hasta nuevo aviso, use «Retener pedido» en vez de cambiar la fecha. ¿Es correcta?", ex.Message);
         }
 
         [TestMethod]
@@ -292,7 +292,7 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
             FechaEntregaLejanaException ex = await Assert.ThrowsExceptionAsync<FechaEntregaLejanaException>(
                 () => controller.PostPedidoVenta(pedido)).ConfigureAwait(false);
 
-            StringAssert.Contains(ex.Message, "(dentro de 365 días). ¿Es correcta?");
+            StringAssert.Contains(ex.Message, "(dentro de 365 días). Si lo que quiere es que el pedido no salga hasta nuevo aviso, use «Retener pedido» en vez de cambiar la fecha. ¿Es correcta?");
             A.CallTo(() => db.SaveChanges()).MustNotHaveHappened();
             A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
         }

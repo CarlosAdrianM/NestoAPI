@@ -65,6 +65,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
     /// NestoAPI#693: SQL a mano, fuera del EDMX, como las tablas recientes (DiferenciasReposiciones #634, la prometida #606):
     /// si el script no se ha lanzado, la API no se cae; simplemente no registra nada. Las lecturas de pedidos, con NOLOCK y
     /// entrando por LinPedidoVta.Producto (el mismo camino que la lectura de pendientes de la sombra del modo de servicio).
+    /// <para>NestoAPI#698: los pedidos retenidos (ModoServicio 5) no son candidatos: un retenido no es una promesa incumplida.
+    /// Al retener, ServicioRetencionPedidos resuelve el riesgo abierto con «Pedido retenido».</para>
     /// </summary>
     public class RepositorioPromesaRiesgo : IRepositorioPromesaRiesgo
     {
@@ -74,6 +76,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 FROM dbo.LinPedidoVta l WITH (NOLOCK)
 INNER JOIN dbo.CabPedidoVta c WITH (NOLOCK) ON c.Empresa = l.Empresa AND c.Número = l.Número
 WHERE l.Empresa = @empresa AND l.Estado >= -1 AND l.Estado <= 1 AND l.TipoLinea = 1{0}
+  AND ISNULL(c.ModoServicio, 0) <> 5
   AND c.FechaEntregaAgenciaPrometida IS NOT NULL
   AND (c.FechaEntregaAgenciaPrometida >= @hoy
        OR EXISTS (SELECT 1 FROM dbo.PedidosPromesaRiesgo r WHERE r.Empresa = c.Empresa AND r.Pedido = c.Número AND r.Resuelto IS NULL))";

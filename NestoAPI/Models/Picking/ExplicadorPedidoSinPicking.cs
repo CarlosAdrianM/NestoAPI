@@ -27,6 +27,8 @@ namespace NestoAPI.Models.Picking
         public const string ERROR_RETENIDO_PREPAGO = "PICKING_RETENIDO_PREPAGO";
         public const string ERROR_ESPERA_REPOSICION_TIENDAS = "PICKING_ESPERA_REPOSICION_TIENDAS";
         public const string ERROR_ENTREGA_FUTURA = "PICKING_ENTREGA_FUTURA";
+        /// <summary>NestoAPI#698: modo 5, retenido hasta nuevo aviso.</summary>
+        public const string ERROR_RETENIDO = "PICKING_RETENIDO";
 
         private const int MAXIMO_PRODUCTOS_EN_MENSAJE = 8;
         private static readonly CultureInfo castellano = new CultureInfo("es-ES");
@@ -56,6 +58,12 @@ namespace NestoAPI.Models.Picking
 
             switch (pedido.MotivoNoSale)
             {
+                case MotivoNoSalePicking.Retenido:
+                    string retenido = pedido.Retencion != null
+                        ? "está " + Infraestructure.PedidosVenta.Retencion.TextosRetencion.Descripcion(pedido.Retencion, false)
+                        : "está retenido hasta nuevo aviso";
+                    return Crear(inicio + retenido + ". No saldrá en ningún picking hasta que se libere: botón «Liberar» en el pedido (lo puede hacer el vendedor o el almacén).",
+                        ERROR_RETENIDO, pedido);
                 case MotivoNoSalePicking.EsperaSoloRegalos:
                     return Crear(inicio + $"lo que se cobra tiene stock, pero faltan regalos ({faltan}) y no se sirve a medias " +
                         "para no mandar luego un envío solo con el regalo. Quita esas líneas o espera a que entren.",

@@ -929,6 +929,82 @@ namespace NestoAPI.Controllers
             return Ok(resultadoCambio.Respuesta);
         }
 
+        /// <summary>NestoAPI#698: el servicio de Retener/Liberar (sustituible en los tests).</summary>
+        internal Func<Infraestructure.PedidosVenta.Retencion.ServicioRetencionPedidos> CrearServicioRetencion { get; set; } = () =>
+            new Infraestructure.PedidosVenta.Retencion.ServicioRetencionPedidos(
+                new Infraestructure.PedidosVenta.Retencion.RepositorioPedidosRetenidos(), new RepositorioPromesaRiesgo());
+
+        /// <summary>
+        /// NestoAPI#698: retener el pedido «hasta nuevo aviso» (o hasta una fecha de revisión). Pasa al modo de servicio 5, que no
+        /// sale en el picking, sin tocar la fecha de entrega. Lo pueden hacer el vendedor y el almacén; un cliente de la tienda no.
+        /// </summary>
+        [HttpPost]
+        [Route("api/PedidosVenta/{empresa}/{numero:int}/Retener")]
+        [ResponseType(typeof(Infraestructure.PedidosVenta.Retencion.RetencionPedidoDTO))]
+        public async Task<IHttpActionResult> PostRetener(string empresa, int numero, [FromBody] Infraestructure.PedidosVenta.Retencion.RetenerPedidoRequest peticion)
+        {
+            if (EsClienteDeTienda())
+            {
+                return StatusCode(HttpStatusCode.Forbidden);
+            }
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, peticion?.Usuario);
+            Infraestructure.PedidosVenta.Retencion.ResultadoRetencion resultado = await CrearServicioRetencion()
+                .Retener(empresa, numero, peticion, usuario).ConfigureAwait(false);
+            return RespuestaRetencion(resultado);
+        }
+
+        /// <summary>NestoAPI#698: liberar el pedido: vuelve a su modo de servicio anterior y entra en el picking.</summary>
+        [HttpPost]
+        [Route("api/PedidosVenta/{empresa}/{numero:int}/Liberar")]
+        [ResponseType(typeof(Infraestructure.PedidosVenta.Retencion.RetencionPedidoDTO))]
+        public async Task<IHttpActionResult> PostLiberar(string empresa, int numero, [FromBody] Infraestructure.PedidosVenta.Retencion.LiberarPedidoRequest peticion)
+        {
+            if (EsClienteDeTienda())
+            {
+                return StatusCode(HttpStatusCode.Forbidden);
+            }
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, peticion?.Usuario);
+            Infraestructure.PedidosVenta.Retencion.ResultadoRetencion resultado = await CrearServicioRetencion()
+                .Liberar(empresa, numero, usuario).ConfigureAwait(false);
+            return RespuestaRetencion(resultado);
+        }
+
+        /// <summary>NestoAPI#698: la retención viva del pedido (200) o nada (204) si no está retenido.</summary>
+        [HttpGet]
+        [Route("api/PedidosVenta/{empresa}/{numero:int}/Retencion")]
+        [ResponseType(typeof(Infraestructure.PedidosVenta.Retencion.RetencionPedidoDTO))]
+        public async Task<IHttpActionResult> GetRetencion(string empresa, int numero)
+        {
+            Infraestructure.PedidosVenta.Retencion.RetencionPedidoDTO retencion = await CrearServicioRetencion().Leer(empresa, numero).ConfigureAwait(false);
+            return retencion == null ? StatusCode(HttpStatusCode.NoContent) : (IHttpActionResult)Ok(retencion);
+        }
+
+        /// <summary>NestoAPI#698: los pedidos retenidos ahora mismo, con cliente y vendedor (vista del almacén y de cada vendedor).</summary>
+        [HttpGet]
+        [Route("api/PedidosVenta/Retenidos")]
+        [ResponseType(typeof(List<Infraestructure.PedidosVenta.Retencion.PedidoRetenidoListadoDTO>))]
+        public async Task<IHttpActionResult> GetRetenidos(string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            if (EsClienteDeTienda())
+            {
+                return StatusCode(HttpStatusCode.Forbidden);
+            }
+            return Ok(await CrearServicioRetencion().Listado(empresa).ConfigureAwait(false));
+        }
+
+        /// <summary>Un cliente de la tienda (JWT con claim "cliente") no retiene ni libera pedidos.</summary>
+        private bool EsClienteDeTienda()
+            => (User?.Identity as System.Security.Claims.ClaimsIdentity)?.FindFirst("cliente") != null;
+
+        private IHttpActionResult RespuestaRetencion(Infraestructure.PedidosVenta.Retencion.ResultadoRetencion resultado)
+        {
+            if (resultado.NoEncontrado)
+            {
+                return NotFound();
+            }
+            return resultado.Error != null ? BadRequest(resultado.Error) : (IHttpActionResult)Ok(resultado.Retencion);
+        }
+
         /// <summary>
         /// NestoAPI#519: la misma regla que aplica el PUT: Dirección, Almacén o el parámetro; Tiendas si todas las
         /// líneas son de su almacén; y, si la denegación pide un permiso propio, tenerlo también.

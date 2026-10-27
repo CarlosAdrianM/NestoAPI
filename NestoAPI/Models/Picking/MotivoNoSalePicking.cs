@@ -23,6 +23,8 @@ namespace NestoAPI.Models.Picking
         /// <summary>Prepago sin cubrir.</summary>
         RetenidoPorPrepago,
         /// <summary>No hay stock de nada que se cobre (HayStockDeAlgo falso).</summary>
-        SinStockDePago
+        SinStockDePago,
+        /// <summary>NestoAPI#698: modo 5, «Retenido hasta nuevo aviso» (Retener/Liberar en el pedido). No sale aunque haya stock de todo.</summary>
+        Retenido
     }
 }
