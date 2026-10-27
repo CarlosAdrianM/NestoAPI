@@ -19,20 +19,25 @@ namespace NestoAPI.Controllers
         private readonly NVEntities db;
         private readonly IGestorProductos _gestorProductos;
         private readonly IProductoService _productoService;
+        private readonly PublicacionTienda _publicacionTienda;
         public PrestashopProductosController()
         {
             db = new NVEntities();
             db.Configuration.LazyLoadingEnabled = false;
             _gestorProductos = new GestorProductos(new SincronizacionEventWrapper(new GooglePubSubEventPublisher()));
             _productoService = new ProductoService();
+            _publicacionTienda = new PublicacionTienda(_gestorProductos);
         }
 
-        public PrestashopProductosController(NVEntities db, IGestorProductos gestorProductos = null, IProductoService productoService = null)
+        /// <param name="publicacionTienda">NestoAPI#701: por defecto, el gestor con reintentos en Hangfire si Pub/Sub falla.</param>
+        public PrestashopProductosController(NVEntities db, IGestorProductos gestorProductos = null, IProductoService productoService = null,
+            PublicacionTienda publicacionTienda = null)
         {
             this.db = db;
             this.db.Configuration.LazyLoadingEnabled = false;
             _gestorProductos = gestorProductos;
             _productoService = productoService;
+            _publicacionTienda = publicacionTienda ?? (gestorProductos == null ? null : new PublicacionTienda(gestorProductos));
         }
 
         // GET: api/PrestashopProductos/17404
@@ -147,41 +152,41 @@ namespace NestoAPI.Controllers
 
             await db.SaveChangesAsync();
 
-            await PublicarProductoEnNestoSync(dto.ProductoId);
+            // NestoAPI#701: lo guardado ya está hecho. Si Pub/Sub falla, la respuesta sigue siendo 200 con un
+            // aviso y el reintento queda programado en Hangfire; el usuario no tiene que volver a guardar.
+            string aviso = await PublicarProductoEnNestoSync(dto.ProductoId);
 
-            return Ok(MapToDTO(producto));
+            PrestashopProductoDTO respuesta = MapToDTO(producto);
+            respuesta.Aviso = aviso;
+            return Ok(respuesta);
         }
 
-        private async Task PublicarProductoEnNestoSync(string productoId)
+        /// <returns>El aviso para el usuario si la tienda se actualizará más tarde; null si se publicó (o no había que publicar).</returns>
+        private async Task<string> PublicarProductoEnNestoSync(string productoId)
         {
-            if (_gestorProductos == null)
+            if (_publicacionTienda == null)
             {
-                return;
-            }
-
-            var productoEntity = await db.Productos
-                .Include(p => p.Kits)
-                .Include(p => p.Familia1)
-                .Include(p => p.SubGruposProducto)
-                .SingleOrDefaultAsync(p => p.Número == productoId && p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO);
-
-            if (productoEntity == null)
-            {
-                return;
+                return null;
             }
 
             // NestoAPI#432: también aquí decide la puerta de publicación. Si el producto no debe
             // estar en la tienda, guardar sus textos no lo publica.
-            ResultadoPuertaPublicacion resultado = await PuertaPublicacionTienda
-                .ConstruirParaPublicarSiPasa(productoEntity, db, _productoService).ConfigureAwait(false);
+            ResultadoPuertaPublicacion resultado = await PublicacionTienda
+                .ConstruirPorLaPuerta(productoId, db, _productoService).ConfigureAwait(false);
+            if (resultado == null)
+            {
+                return null;
+            }
             if (!resultado.Publicable)
             {
                 Console.WriteLine($"⛔ Producto {productoId} no publicable: {resultado.Motivo}");
-                return;
+                return null;
             }
 
             string usuario = User?.Identity?.Name;
-            await _gestorProductos.PublicarProductoSincronizar(resultado.Dto, "Nesto", usuario);
+            ResultadoPublicacionTienda publicacion = await _publicacionTienda
+                .PublicarOAplazar(resultado.Dto, "Nesto", usuario).ConfigureAwait(false);
+            return publicacion.Aviso;
         }
 
         private static PrestashopProductoDTO MapToDTO(PrestashopProducto producto)

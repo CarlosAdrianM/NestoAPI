@@ -28,6 +28,9 @@ namespace NestoAPI.Infraestructure.Novedades
         /// <summary>NestoAPI#526: false si no existe o no es una sugerencia.</summary>
         bool ActualizarSugerencia(int id, ActualizarSugerenciaNovedadDTO cambios, string usuario);
 
+        /// <summary>NestoAPI#703: el ámbito actual de la sugerencia (null si no existe o no es una sugerencia).</summary>
+        string LeerAmbitoSugerencia(int id);
+
         /// <summary>NestoAPI#526: la captura que acompaña a la sugerencia, o null.</summary>
         ImagenComentarioNovedad LeerImagen(int novedadId);
 

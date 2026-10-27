@@ -151,5 +151,11 @@ namespace NestoAPI.Models.Novedades
         public List<string> Perfiles { get; set; }
         /// <summary>NestoAPI#650: pasarla a privada (true) o a pública (false). null = no se toca.</summary>
         public bool? Privada { get; set; }
+        /// <summary>
+        /// NestoAPI#703: el programa en el que se ha implementado (Nesto, NestoAPI, NestoApp o Ariadna). null = se
+        /// deduce de la versión (1.x → escritorio; 2.x → Ariadna, salvo que ya fuera de NestoApp). Lo rellena el
+        /// controlador con <see cref="Infraestructure.Novedades.ReglasSugerenciasNovedades.AmbitoAlImplementar"/>.
+        /// </summary>
+        public string Ambito { get; set; }
     }
 }

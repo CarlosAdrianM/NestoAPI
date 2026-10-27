@@ -1,3 +1,4 @@
+using NestoAPI.Models;
 using NestoAPI.Models.Novedades;
 using System;
 using System.Collections.Generic;
@@ -177,6 +178,72 @@ namespace NestoAPI.Infraestructure.Novedades
             }
             return null;
         }
+
+        #region NestoAPI#703: el ámbito tiene que cuadrar con la versión
+
+        /// <summary>Las novedades del backend salen en el popup del escritorio junto a las de Nesto.</summary>
+        public const string AMBITO_NESTO = Constantes.Aplicaciones.NESTO;
+        public const string AMBITO_NESTOAPI = "NestoAPI";
+        public const string AMBITO_NESTOAPP = Constantes.Aplicaciones.NESTO_APP;
+        public const string AMBITO_ARIADNA = Constantes.Aplicaciones.ARIADNA;
+        public static readonly string[] AMBITOS = { AMBITO_NESTO, AMBITO_NESTOAPI, AMBITO_NESTOAPP, AMBITO_ARIADNA };
+
+        /// <summary>Nesto y NestoAPI van por 1.10.x; las apps (NestoApp y Ariadna), por 2.x.</summary>
+        public const int VERSION_MAYOR_ESCRITORIO = 1;
+        public const int VERSION_MAYOR_APPS = 2;
+
+        /// <summary>NestoApp y Ariadna: las que piden siempre con ?ambito= y viven en el espacio de versiones 2.x.</summary>
+        public static bool EsAmbitoDeApp(string ambito) =>
+            string.Equals(ambito?.Trim(), AMBITO_NESTOAPP, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(ambito?.Trim(), AMBITO_ARIADNA, StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Una novedad con versión parseable que no sea 1.x no es del escritorio. Las no parseables se dejan
+        /// pasar (mejor enseñar de más que perder una novedad por un dato mal grabado).
+        /// </summary>
+        public static bool EsVersionDelEscritorio(string version) =>
+            !Version.TryParse(version, out Version v) || v.Major == VERSION_MAYOR_ESCRITORIO;
+
+        /// <summary>
+        /// NestoAPI#703: el ámbito con el que se graba la sugerencia al implementarla (null = se deja como está).
+        /// El 23/10/26 la 753, escrita desde Nesto, se implementó en Ariadna 2.17 sin cambiar el ámbito, y el popup
+        /// de Nesto (que agrupa por versión y abre la más nueva) enseñó «2.17» en vez de la 1.10.48.
+        ///   - Ámbito explícito en la petición: manda, si es uno conocido.
+        ///   - Versión 1.x: escritorio. Si la sugerencia era de una app, pasa a Nesto; si ya era Nesto o NestoAPI, se queda.
+        ///   - Versión 2.x: una app. Si ya era de NestoApp o Ariadna, se queda; si era del escritorio, pasa a Ariadna
+        ///     (las sugerencias de NestoApp nacen ya con su ámbito; las de Nesto que se hacen en una 2.x son del almacén).
+        ///   - Cualquier otra versión: no se puede deducir, hay que decir el ámbito.
+        /// </summary>
+        public static string AmbitoAlImplementar(string ambitoActual, string version, string ambitoPedido, out string error)
+        {
+            error = null;
+            if (!string.IsNullOrWhiteSpace(ambitoPedido))
+            {
+                string conocido = AMBITOS.FirstOrDefault(a => string.Equals(a, ambitoPedido.Trim(), StringComparison.OrdinalIgnoreCase));
+                if (conocido == null)
+                {
+                    error = "El ámbito tiene que ser " + string.Join(", ", AMBITOS);
+                }
+                return conocido;
+            }
+            if (string.IsNullOrWhiteSpace(version) || !Version.TryParse(version.Trim(), out Version v))
+            {
+                return null;
+            }
+            if (v.Major == VERSION_MAYOR_ESCRITORIO)
+            {
+                return EsAmbitoDeApp(ambitoActual) ? AMBITO_NESTO : null;
+            }
+            if (v.Major == VERSION_MAYOR_APPS)
+            {
+                return EsAmbitoDeApp(ambitoActual) ? null : AMBITO_ARIADNA;
+            }
+            error = $"No se sabe de qué programa es la versión {version.Trim()} (Nesto va por 1.x y las apps por 2.x): " +
+                    "indica el ámbito (" + string.Join(", ", AMBITOS) + ")";
+            return null;
+        }
+
+        #endregion
 
         /// <summary>
         /// NestoAPI#558: los nombres con los que ELMAH puede tener guardado al usuario: tal cual, sin el
