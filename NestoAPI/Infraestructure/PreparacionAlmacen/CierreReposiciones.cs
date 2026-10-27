@@ -46,6 +46,17 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         Task<PendientesDeUbicarEntrada> LeerPendientesDeUbicar(string empresa, string diario);
         /// <summary>Lo deja pendiente de ubicar, salvo lo que ya haya dejado el procedimiento. Devuelve las filas puestas.</summary>
         Task<int> DejarPendientesDeUbicar(string empresa, PendientesDeUbicarEntrada pendientes, string usuario);
+        /// <summary>
+        /// NestoAPI#695: los productos que quedan en el diario de entrada de este traspaso (lo que va a entrar) con un inventario
+        /// en el destino posterior a su fecha de envío (los que el trigger bloquearía con la fecha del envío). Vacía si ninguno.
+        /// </summary>
+        Task<List<InventarioTrasEnvio>> LeerInventariosTrasEnvio(string empresa, string almacen, int traspaso);
+        /// <summary>
+        /// NestoAPI#695 (decisión de Carlos, 27/10/26): la entrada en el destino se apunta con la fecha de la RECEPCIÓN. Pone la
+        /// fecha de ahora a las filas de entrada del traspaso que quedan en el diario (justo antes de contabilizarlas); la salida
+        /// del origen no se toca. Devuelve las filas fechadas.
+        /// </summary>
+        Task<int> FecharEntradaAhora(string empresa, string almacen, string diario, int traspaso);
         /// <summary>prdExtrProducto del diario entero, como hoy desde Nesto viejo.</summary>
         Task Contabilizar(string empresa, string diario, string usuario);
         /// <summary>NestoAPI#553: aparta del diario lo que no es de este traspaso (ver <see cref="ApartadoTraspasosSql"/>).</summary>
@@ -546,6 +557,20 @@ SELECT @puestas;";
                     .SingleAsync().ConfigureAwait(false);
             }
             return puestas;
+        }
+
+        public Task<List<InventarioTrasEnvio>> LeerInventariosTrasEnvio(string empresa, string almacen, int traspaso)
+        {
+            return db.Database.SqlQuery<InventarioTrasEnvio>(InventariosTrasEnvioSql.SQL_INVENTARIOS_TRAS_ENVIO,
+                ParametroChar("@p0", empresa, 3), ParametroChar("@p1", almacen, 3), new SqlParameter("@p2", System.Data.SqlDbType.Int) { Value = traspaso })
+                .ToListAsync();
+        }
+
+        public Task<int> FecharEntradaAhora(string empresa, string almacen, string diario, int traspaso)
+        {
+            return db.Database.ExecuteSqlCommandAsync(InventariosTrasEnvioSql.SQL_FECHAR_ENTRADA_AHORA,
+                ParametroChar("@p0", empresa, 3), ParametroChar("@p1", almacen, 3), ParametroChar("@p2", diario, 10),
+                new SqlParameter("@p3", System.Data.SqlDbType.Int) { Value = traspaso });
         }
 
         public Task Contabilizar(string empresa, string diario, string usuario)

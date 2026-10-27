@@ -19,10 +19,102 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         public int Cantidad { get; set; }
     }
 
+    /// <summary>
+    /// NestoAPI#695: un producto de una reposición pendiente que se ha regularizado por inventario en el destino DESPUÉS de
+    /// enviarla (la caja estaba allí sin recibir y es probable que ya se contara).
+    /// </summary>
+    public class InventarioTrasEnvio
+    {
+        public string Producto { get; set; }
+        /// <summary>Inventarios.Fecha (la misma del apunte _RegInvent).</summary>
+        public DateTime FechaInventario { get; set; }
+        /// <summary>StockReal − StockCalculado: lo que se regularizó (+1, −2…).</summary>
+        public int Regularizado { get; set; }
+        /// <summary>Quién hizo el inventario, con dominio como se graba («NUEVAVISION\Paloma»). Null si no se sabe.</summary>
+        public string Usuario { get; set; }
+        /// <summary>La fecha con la que se envió (la de la fila de entrada en PreExtrProducto).</summary>
+        public DateTime FechaEnvio { get; set; }
+    }
+
+    /// <summary>
+    /// NestoAPI#695 (novedades 751 y 788): al enviar una reposición, las entradas del destino se crean en PreExtrProducto con la
+    /// fecha del ENVÍO. trgExtractoProductoUpd (FOR INSERT, UPDATE) rechaza cualquier apunte con Fecha anterior a un inventario
+    /// (Inventarios con Estado >= 2) del mismo producto y almacén: «Se ha realizado un inventario posterior a esta fecha…». Si
+    /// entre el envío y la recepción alguien regulariza por inventario uno de esos productos en el destino (81028: el 43992 en
+    /// Algete el 19/10; 81177: el 42267 en Alcobendas el 26/10 a las 14:19, una hora después del envío), la recepción se atasca.
+    /// <para>Decisión de Carlos (27/10/26), opción (a): la ENTRADA en el destino se apunta SIEMPRE con la fecha de la recepción
+    /// (cuando la mercancía entra de verdad); la salida del origen se queda con la del envío. Y se avisa a quien recibe de los
+    /// productos con un inventario posterior al envío, por si esa unidad ya se contó.</para>
+    /// </summary>
+    internal static class InventariosTrasEnvioSql
+    {
+        /// <summary>
+        /// Los productos de las filas de ENTRADA pendientes del traspaso en el destino con un inventario hecho (Estado >= 2)
+        /// DESPUÉS de su fecha: la misma condición que el trigger (producto y almacén, sin empresa; p.Fecha &lt; i.Fecha).
+        /// Vacío si ninguno. @p0 empresa, @p1 almacén de destino, @p2 traspaso.
+        /// </summary>
+        internal const string SQL_INVENTARIOS_TRAS_ENVIO = @"
+SELECT DISTINCT RTRIM(p.[Número]) AS Producto, i.Fecha AS FechaInventario, CAST(i.StockReal - i.StockCalculado AS int) AS Regularizado,
+       RTRIM(i.Usuario) AS Usuario, p.Fecha AS FechaEnvio
+FROM PreExtrProducto p
+     JOIN Almacenes a ON a.Empresa = p.Empresa AND a.[Número] = p.[Almacén] AND a.DiarioEntradaRep = p.Diario
+     JOIN Inventarios i ON i.[Número] = p.[Número] AND i.[Almacén] = p.[Almacén] AND i.Estado >= 2 AND p.Fecha < i.Fecha
+WHERE p.Empresa = @p0 AND p.[Almacén] = @p1 AND p.[NºTraspaso] = @p2 AND p.Cantidad > 0
+ORDER BY Producto, FechaInventario";
+
+        /// <summary>
+        /// Las filas de ENTRADA del traspaso en el diario de entrada del destino pasan a la fecha de ahora (la de la recepción)
+        /// justo antes de contabilizarlas: así ningún inventario hecho después del envío las bloquea. La salida del origen (otro
+        /// diario y otro almacén) no se toca. @p0 empresa, @p1 almacén de destino, @p2 diario de entrada, @p3 traspaso.
+        /// </summary>
+        internal const string SQL_FECHAR_ENTRADA_AHORA = @"
+UPDATE PreExtrProducto SET Fecha = GETDATE()
+WHERE Empresa = @p0 AND [Almacén] = @p1 AND Diario = @p2 AND [NºTraspaso] = @p3";
+
+        /// <summary>
+        /// «El 42267 se regularizó por inventario el 26/10 a las 14:19 (+1, Paloma): compruebe que no se cuenta dos veces.»
+        /// Es quien recibe quien decide (Almacén); la API no quita nada.
+        /// </summary>
+        internal static string Aviso(InventarioTrasEnvio inventario)
+        {
+            if (inventario == null || string.IsNullOrWhiteSpace(inventario.Producto))
+            {
+                return null;
+            }
+            var detalles = new List<string>();
+            if (inventario.Regularizado != 0)
+            {
+                detalles.Add((inventario.Regularizado > 0 ? "+" : "") + inventario.Regularizado.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            }
+            string usuario = inventario.Usuario?.Trim();
+            if (!string.IsNullOrEmpty(usuario))
+            {
+                detalles.Add(usuario.Substring(usuario.LastIndexOf('\\') + 1));
+            }
+            string entreParentesis = detalles.Any() ? $" ({string.Join(", ", detalles)})" : string.Empty;
+            System.Globalization.CultureInfo invariante = System.Globalization.CultureInfo.InvariantCulture;
+            return $"El {inventario.Producto.Trim()} se regularizó por inventario el {inventario.FechaInventario.ToString("dd/MM", invariante)} a las " +
+                $"{inventario.FechaInventario.ToString("HH:mm", invariante)}{entreParentesis}, después de enviar la reposición: compruebe que no se cuenta dos veces.";
+        }
+
+        /// <summary>Un aviso por producto (si el mismo producto tiene varios inventarios posteriores, el último).</summary>
+        internal static List<string> Avisos(IEnumerable<InventarioTrasEnvio> inventarios)
+        {
+            return (inventarios ?? Enumerable.Empty<InventarioTrasEnvio>())
+                .Where(i => i != null && !string.IsNullOrWhiteSpace(i.Producto))
+                .GroupBy(i => i.Producto.Trim(), StringComparer.OrdinalIgnoreCase)
+                .Select(g => Aviso(g.OrderByDescending(i => i.FechaInventario).First()))
+                .Where(a => a != null)
+                .ToList();
+        }
+    }
+
     public interface IRepositorioRecepcionReposiciones
     {
         Task<List<ReposicionPendienteDTO>> LeerPendientes(string empresa, string almacen);
         Task<List<FilaReposicion>> LeerLineas(string empresa, string almacen, int traspaso);
+        /// <summary>NestoAPI#695: los productos del traspaso con un inventario en el destino posterior al envío. Vacía si ninguno.</summary>
+        Task<List<InventarioTrasEnvio>> LeerInventariosTrasEnvio(string empresa, string almacen, int traspaso);
         /// <summary>
         /// NestoAPI#577: si el traspaso está en el diario de entrada del almacén pero su salida del origen sigue sin
         /// contabilizar, el nombre del origen («Algete»); si no, null.
@@ -144,6 +236,11 @@ ORDER BY p.[Número]";
             return baseDeDatos.SqlQuery<string>(SalidaReposicionSql.SQL_ORIGEN_SIN_SALIR, empresa, almacen, traspaso).FirstOrDefaultAsync();
         }
 
+        public Task<List<InventarioTrasEnvio>> LeerInventariosTrasEnvio(string empresa, string almacen, int traspaso)
+        {
+            return baseDeDatos.SqlQuery<InventarioTrasEnvio>(InventariosTrasEnvioSql.SQL_INVENTARIOS_TRAS_ENVIO, empresa, almacen, traspaso).ToListAsync();
+        }
+
         /// <summary>Ariadna#51: la evidencia de las recepciones en parte (la misma que <see cref="EvidenciasRecepcionSql.SQL_PRODUCTOS_RECIBIDOS_EN_PARTE"/>).</summary>
         internal const string SQL_YA_RECIBIDAS = @"
 SELECT RTRIM(LTRIM(e.Producto)) AS Producto, RTRIM(pr.Nombre) AS Descripcion, CAST(e.Cantidad AS int) AS Cantidad,
@@ -174,6 +271,11 @@ ORDER BY e.FechaEscaneo";
         Task ComprobarQueHaSalido(string empresa, string almacen, int traspaso);
         /// <summary>Ariadna#51: lo ya dado de alta en recepciones en parte de ese traspaso.</summary>
         Task<List<LineaYaRecibidaDTO>> LeerYaRecibidas(string empresa, int traspaso);
+        /// <summary>
+        /// NestoAPI#695: los avisos de los productos del traspaso regularizados por inventario en el destino después del envío
+        /// («El 42267 se regularizó por inventario el 26/10 a las 14:19…»). Vacía si ninguno.
+        /// </summary>
+        Task<List<string>> AvisosInventariosTrasEnvio(string empresa, string almacen, int traspaso);
     }
 
     /// <summary>
@@ -205,6 +307,11 @@ ORDER BY e.FechaEscaneo";
         public Task<List<LineaYaRecibidaDTO>> LeerYaRecibidas(string empresa, int traspaso)
         {
             return repositorio.LeerYaRecibidas(empresa, traspaso);
+        }
+
+        public async Task<List<string>> AvisosInventariosTrasEnvio(string empresa, string almacen, int traspaso)
+        {
+            return InventariosTrasEnvioSql.Avisos(await repositorio.LeerInventariosTrasEnvio(empresa, almacen, traspaso).ConfigureAwait(false));
         }
 
         public async Task<RecepcionReposicionDTO> LeerRecepcion(string empresa, string almacen, int traspaso)
