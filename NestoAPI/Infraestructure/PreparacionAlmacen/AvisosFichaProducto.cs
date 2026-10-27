@@ -894,6 +894,14 @@ WHERE e.Empresa = @empresa AND e.Producto = @producto AND e.Metodo IN ('MANUAL',
             this.enlaceFicha = enlaceFicha ?? ProductoDTO.RutaEnlace;
         }
 
+        /// <summary>NestoAPI#706: UTM del enlace a la tienda del aviso de ficha (correo interno al equipo).</summary>
+        internal const string UTM_SOURCE_AVISO_FICHA = "nesto";
+        internal const string UTM_CAMPAIGN_AVISO_FICHA = "aviso_ficha_producto";
+
+        private async Task<string> EnlaceFichaConUtm(string producto)
+            => EnlacesTienda.ConUtm(await enlaceFicha(producto).ConfigureAwait(false),
+                UTM_SOURCE_AVISO_FICHA, EnlacesTienda.MEDIUM_EMAIL, UTM_CAMPAIGN_AVISO_FICHA);
+
         internal static string EnlaceCerrar(Guid clave, string resultado) => $"{URL_API}{RUTA_ENLACE}{clave:D}?resultado={resultado}";
 
         public async Task AvisarEquipo(AvisoFicha aviso, DatosFichaActual ficha, IReadOnlyCollection<string> camposNuevos)
@@ -903,7 +911,7 @@ WHERE e.Empresa = @empresa AND e.Producto = @producto AND e.Metodo IN ('MANUAL',
             string enlace = null;
             try
             {
-                enlace = await enlaceFicha(aviso.Producto).ConfigureAwait(false);
+                enlace = await EnlaceFichaConUtm(aviso.Producto).ConfigureAwait(false);
             }
             catch (Exception)
             {
@@ -914,7 +922,7 @@ WHERE e.Empresa = @empresa AND e.Producto = @producto AND e.Metodo IN ('MANUAL',
             {
                 try
                 {
-                    enlaceOtro = await enlaceFicha(aviso.InfoCodigo.OtroProducto.Producto).ConfigureAwait(false);
+                    enlaceOtro = await EnlaceFichaConUtm(aviso.InfoCodigo.OtroProducto.Producto).ConfigureAwait(false);
                 }
                 catch (Exception)
                 {

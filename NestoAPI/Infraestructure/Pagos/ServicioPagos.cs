@@ -1724,7 +1724,11 @@ namespace NestoAPI.Infraestructure.Pagos
         }
 
         private const string URL_LOGO = "https://www.productosdeesteticaypeluqueriaprofesional.com/img/cms/Landing/logo.png";
-        private const string URL_GOOGLE_PLAY_NESTOTIENDAS = "https://play.google.com/store/apps/details?id=com.nuevavision.nestotiendas";
+        // NestoAPI#706: Google Play con el referrer de instalación de cada correo
+        internal const string UTM_SOURCE_CORREO_PRECOBRO = "correo_precobro";
+        internal const string UTM_SOURCE_CORREO_PAGO_DENEGADO = "correo_pago_denegado";
+        private static readonly string URL_GOOGLE_PLAY_PRECOBRO = EnlacesTienda.GooglePlay(UTM_SOURCE_CORREO_PRECOBRO);
+        private static readonly string URL_GOOGLE_PLAY_PAGO_DENEGADO = EnlacesTienda.GooglePlay(UTM_SOURCE_CORREO_PAGO_DENEGADO);
         private const string URL_BADGE_GOOGLE_PLAY = "https://upload.wikimedia.org/wikipedia/commons/7/78/Google_Play_Store_badge_EN.svg";
 
         /// <summary>
@@ -1814,7 +1818,7 @@ namespace NestoAPI.Infraestructure.Pagos
                             &iquest;Lo sab&iacute;a? Puede pagar todas sus facturas de forma r&aacute;pida y c&oacute;moda desde nuestra app.
                         </p>
                         <p style='text-align:center;margin:0 0 16px 0'>
-                            <a href='{URL_GOOGLE_PLAY_NESTOTIENDAS}' target='_blank' style='text-decoration:none'>
+                            <a href='{URL_GOOGLE_PLAY_PRECOBRO}' target='_blank' style='text-decoration:none'>
                                 <img src='{URL_BADGE_GOOGLE_PLAY}' alt='Disponible en Google Play' style='width:130px;height:auto;display:inline-block;border:0' />
                             </a>
                         </p>
@@ -2338,7 +2342,7 @@ namespace NestoAPI.Infraestructure.Pagos
                             &iquest;Lo sab&iacute;a? Puede pagar todas sus facturas de forma r&aacute;pida y c&oacute;moda desde nuestra app.
                         </p>
                         <p style='text-align:center;margin:0 0 16px 0'>
-                            <a href='{URL_GOOGLE_PLAY_NESTOTIENDAS}' target='_blank' style='text-decoration:none'>
+                            <a href='{URL_GOOGLE_PLAY_PAGO_DENEGADO}' target='_blank' style='text-decoration:none'>
                                 <img src='{URL_BADGE_GOOGLE_PLAY}' alt='Disponible en Google Play' style='width:130px;height:auto;display:inline-block;border:0' />
                             </a>
                         </p>

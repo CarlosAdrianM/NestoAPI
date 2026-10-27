@@ -15,6 +15,8 @@ namespace NestoAPI.Infraestructure.Domiciliaciones
 {
     public class GestorDomiciliaciones
     {
+        /// <summary>NestoAPI#706: referrer de Google Play del correo de domiciliaciones.</summary>
+        internal const string UTM_SOURCE_CORREO_DOMICILIACION = "correo_domiciliacion";
         private const decimal TOLERANCIA_CUADRE = 0.00M;
         private readonly IServicioDomiciliaciones servicio;
         private readonly IServicioCorreoElectronico servicioCorreo;
@@ -129,7 +131,8 @@ namespace NestoAPI.Infraestructure.Domiciliaciones
             _ = s.AppendLine("<p>Si algo de lo aquí expresado no es de su conformidad o necesita cualquier otra aclaración adicional, puede contactarnos respondiendo a este mismo correo.</p>");
 
             // Sección para la descarga de la app
-            const string urlGooglePlay = "https://play.google.com/store/apps/details?id=com.nuevavision.nestotiendas";
+            // NestoAPI#706: con el referrer de instalación para saber que viene de este correo
+            string urlGooglePlay = EnlacesTienda.GooglePlay(UTM_SOURCE_CORREO_DOMICILIACION);
             _ = s.AppendLine("<p><strong>Si necesita alguna factura de las mencionadas arriba, puede conseguirlas cómodamente desde nuestra aplicación en su móvil.</strong></p>");
             _ = s.AppendLine("<p>Descárguela ahora desde Google Play:</p>");
             _ = s.AppendLine($"<a href=\"{urlGooglePlay}\" target=\"_blank\">");

@@ -121,7 +121,8 @@ namespace NestoAPI.Tests.Infrastructure.CorreosPostCompra
                     NombreProducto = "Mascarilla Premium",
                     VideoYoutubeId = "abc123",
                     VideoTitulo = "Tutorial",
-                    EnlaceVideoProducto = "https://youtube.com/watch?v=abc123&t=200"
+                    EnlaceVideoProducto = "https://youtube.com/watch?v=abc123&t=200",
+                    EnlaceTienda = "https://tienda.com/mascarilla.html"
                 }
             };
 
@@ -289,6 +290,163 @@ namespace NestoAPI.Tests.Infrastructure.CorreosPostCompra
         {
             var resultado = GeneradorContenidoCorreoPostCompra.AplicarPlantilla(null, "Hola", CrearCorreoValido());
             Assert.IsNull(resultado);
+        }
+
+        #endregion
+
+        #region NestoAPI#706: UTM completas, content/term y plantilla con enlaces a la tienda
+
+        private const string PLANTILLA_CON_ENLACES =
+            "{{SALUDO}}{{#PRODUCTOS_COMPRADOS}}<a href=\"{{ENLACE_VIDEO}}\">v</a><a href=\"{{ENLACE_TIENDA}}\">t</a>{{/PRODUCTOS_COMPRADOS}}" +
+            "{{#SI_HAY_RECOMENDADOS}}{{#PRODUCTOS_RECOMENDADOS}}<a href=\"{{ENLACE_VIDEO}}\">{{NOMBRE_PRODUCTO}}</a><a href=\"{{ENLACE_TIENDA}}\">t</a>{{/PRODUCTOS_RECOMENDADOS}}{{/SI_HAY_RECOMENDADOS}}";
+
+        [TestMethod]
+        public void AgregarUtm_ConContentYTerm_LasPoneTrasLasTresYQuitaLasHeredadas()
+        {
+            var resultado = GeneradorContenidoCorreoPostCompra.AgregarUtm(
+                "https://tienda.com/p.html?utm_source=nuevavision&utm_medium=email&utm_campaign=postcompra", "recomendado", "12345");
+
+            Assert.AreEqual("https://tienda.com/p.html?utm_source=correo_postcompra&utm_medium=email&utm_campaign=tutoriales_postcompra" +
+                "&utm_content=recomendado&utm_term=12345", resultado);
+        }
+
+        [TestMethod]
+        public void AplicarPlantilla_EnlacesDeTiendaYVideo_LlevanLasTresUtmMasContentYTerm()
+        {
+            var datos = CrearCorreoValido();
+            datos.ProductosComprados[0].EnlaceTienda = "https://tienda.com/champu.html";
+            datos.ProductosRecomendados = new List<ProductoRecomendadoDTO>
+            {
+                new ProductoRecomendadoDTO { ProductoId = "RECO1", NombreProducto = "Sérum Extra", EnlaceVideoProducto = "https://youtube.com/watch?v=rec1", EnlaceTienda = "https://tienda.com/serum.html" }
+            };
+
+            var html = GeneradorContenidoCorreoPostCompra.AplicarPlantilla(PLANTILLA_CON_ENLACES, "Hola", datos);
+
+            StringAssert.Contains(html, "https://tienda.com/champu.html?utm_source=correo_postcompra&utm_medium=email&utm_campaign=tutoriales_postcompra&utm_content=comprado&utm_term=PROD001");
+            StringAssert.Contains(html, "https://youtube.com/watch?v=abc123&t=120&utm_source=correo_postcompra&utm_medium=email&utm_campaign=tutoriales_postcompra&utm_content=comprado&utm_term=PROD001");
+            StringAssert.Contains(html, "https://tienda.com/serum.html?utm_source=correo_postcompra&utm_medium=email&utm_campaign=tutoriales_postcompra&utm_content=recomendado&utm_term=RECO1");
+            StringAssert.Contains(html, "https://youtube.com/watch?v=rec1&utm_source=correo_postcompra&utm_medium=email&utm_campaign=tutoriales_postcompra&utm_content=recomendado&utm_term=RECO1");
+            Assert.IsFalse(html.Contains("href=\"\""));
+        }
+
+        [TestMethod]
+        public void AplicarPlantilla_RecomendadoSinEnlaceATienda_NoSeMuestra()
+        {
+            var datos = CrearCorreoValido();
+            datos.ProductosRecomendados = new List<ProductoRecomendadoDTO>
+            {
+                new ProductoRecomendadoDTO { ProductoId = "RECO1", NombreProducto = "Sin Tienda", EnlaceVideoProducto = "https://youtube.com/watch?v=rec1", EnlaceTienda = "" },
+                new ProductoRecomendadoDTO { ProductoId = "RECO2", NombreProducto = "Con Tienda", EnlaceVideoProducto = "https://youtube.com/watch?v=rec2", EnlaceTienda = "https://tienda.com/rec2.html" }
+            };
+
+            var html = GeneradorContenidoCorreoPostCompra.AplicarPlantilla(PLANTILLA_CON_ENLACES, "Hola", datos);
+
+            Assert.IsFalse(html.Contains("Sin Tienda"));
+            StringAssert.Contains(html, "Con Tienda");
+            Assert.IsFalse(html.Contains("href=\"\""));
+        }
+
+        [TestMethod]
+        public void AplicarPlantilla_CompradoSinEnlaceATienda_EnlazaALaPortadaConSusUtm()
+        {
+            var datos = CrearCorreoValido();
+            datos.ProductosComprados[0].EnlaceTienda = null;
+
+            var html = GeneradorContenidoCorreoPostCompra.AplicarPlantilla(PLANTILLA_CON_ENLACES, "Hola", datos);
+
+            StringAssert.Contains(html, "https://www.productosdeesteticaypeluqueriaprofesional.com/?utm_source=correo_postcompra&utm_medium=email&utm_campaign=tutoriales_postcompra&utm_content=comprado&utm_term=PROD001");
+        }
+
+        [TestMethod]
+        public void PlantillaTieneEnlacesTienda_ExigeElMarcadorEnLosDosBloques()
+        {
+            Assert.IsTrue(GeneradorContenidoCorreoPostCompra.PlantillaTieneEnlacesTienda(PLANTILLA_CON_ENLACES));
+            Assert.IsFalse(GeneradorContenidoCorreoPostCompra.PlantillaTieneEnlacesTienda(
+                "{{#PRODUCTOS_COMPRADOS}}{{ENLACE_VIDEO}}{{/PRODUCTOS_COMPRADOS}}{{#PRODUCTOS_RECOMENDADOS}}{{ENLACE_TIENDA}}{{/PRODUCTOS_RECOMENDADOS}}"));
+            Assert.IsFalse(GeneradorContenidoCorreoPostCompra.PlantillaTieneEnlacesTienda(
+                "{{#PRODUCTOS_COMPRADOS}}{{ENLACE_TIENDA}}{{/PRODUCTOS_COMPRADOS}}{{#PRODUCTOS_RECOMENDADOS}}{{ENLACE_VIDEO}}{{/PRODUCTOS_RECOMENDADOS}}"));
+            Assert.IsFalse(GeneradorContenidoCorreoPostCompra.PlantillaTieneEnlacesTienda(
+                "{{ENLACE_TIENDA}}{{#PRODUCTOS_COMPRADOS}}x{{/PRODUCTOS_COMPRADOS}}"));
+            Assert.IsFalse(GeneradorContenidoCorreoPostCompra.PlantillaTieneEnlacesTienda(null));
+        }
+
+        [TestMethod]
+        public void PlantillaFija_LlevaLosEnlacesALaTiendaYVaDeUsted()
+        {
+            var fija = PlantillaSemanal.Fija();
+
+            Assert.IsTrue(GeneradorContenidoCorreoPostCompra.PlantillaTieneEnlacesTienda(fija.HtmlPlantilla));
+            StringAssert.Contains(fija.HtmlPlantilla, "{{SALUDO}}");
+            StringAssert.Contains(fija.HtmlPlantilla, "{{#SI_HAY_RECOMENDADOS}}");
+            StringAssert.Contains(fija.Asunto, "Sus vídeos");
+        }
+
+        [TestMethod]
+        public void PlantillaFija_AplicadaNoDejaMarcadoresNiEnlacesVacios()
+        {
+            var datos = CrearCorreoValido();
+            datos.ProductosComprados[0].EnlaceTienda = "https://tienda.com/champu.html";
+
+            var html = GeneradorContenidoCorreoPostCompra.AplicarPlantilla(PlantillaSemanal.HTML_FIJO, "Hola", datos);
+
+            Assert.IsFalse(html.Contains("{{"));
+            Assert.IsFalse(html.Contains("href=\"\""));
+            StringAssert.Contains(html, "utm_content=comprado&utm_term=PROD001");
+        }
+
+        [TestMethod]
+        public void AsegurarEnlacesTienda_PlantillaSinEnlaces_UsaLaFija()
+        {
+            var sinEnlaces = new PlantillaSemanal { Asunto = "Tus vídeos", HtmlPlantilla = "{{#PRODUCTOS_COMPRADOS}}{{ENLACE_VIDEO}}{{/PRODUCTOS_COMPRADOS}}" };
+            var conEnlaces = new PlantillaSemanal { Asunto = "Tus vídeos", HtmlPlantilla = PLANTILLA_CON_ENLACES };
+
+            Assert.AreEqual(PlantillaSemanal.HTML_FIJO, GeneradorContenidoCorreoPostCompra.AsegurarEnlacesTienda(sinEnlaces).HtmlPlantilla);
+            Assert.AreSame(conEnlaces, GeneradorContenidoCorreoPostCompra.AsegurarEnlacesTienda(conEnlaces));
+        }
+
+        [TestMethod]
+        public async Task GenerarPlantillaSemanalAsync_SinEnlaceTiendaDosVeces_UsaLaFija()
+        {
+            A.CallTo(() => _servicioOpenAIMock.GenerarCorreoHtmlAsync(A<string>.Ignored, A<string>.Ignored))
+                .Returns("ASUNTO: Tus vídeos\n{{#PRODUCTOS_COMPRADOS}}{{ENLACE_VIDEO}}{{/PRODUCTOS_COMPRADOS}}");
+
+            var plantilla = await _generador.GenerarPlantillaSemanalAsync();
+
+            Assert.AreEqual(PlantillaSemanal.HTML_FIJO, plantilla.HtmlPlantilla);
+            Assert.AreEqual(PlantillaSemanal.ASUNTO_FIJO, plantilla.Asunto);
+            A.CallTo(() => _servicioOpenAIMock.GenerarCorreoHtmlAsync(A<string>.Ignored, A<string>.Ignored))
+                .MustHaveHappenedTwiceExactly();
+        }
+
+        [TestMethod]
+        public async Task GenerarPlantillaSemanalAsync_SegundoIntentoConEnlaces_UsaLaDelModelo()
+        {
+            A.CallTo(() => _servicioOpenAIMock.GenerarCorreoHtmlAsync(A<string>.Ignored, A<string>.Ignored))
+                .ReturnsNextFromSequence(
+                    "ASUNTO: Primera\n{{#PRODUCTOS_COMPRADOS}}{{ENLACE_VIDEO}}{{/PRODUCTOS_COMPRADOS}}",
+                    "ASUNTO: Segunda\n" + PLANTILLA_CON_ENLACES);
+
+            var plantilla = await _generador.GenerarPlantillaSemanalAsync();
+
+            Assert.AreEqual("Segunda", plantilla.Asunto);
+            Assert.AreEqual(PLANTILLA_CON_ENLACES, plantilla.HtmlPlantilla);
+        }
+
+        [TestMethod]
+        public async Task GenerarPlantillaSemanalAsync_OpenAINoResponde_DevuelveNullComoSiempre()
+        {
+            A.CallTo(() => _servicioOpenAIMock.GenerarCorreoHtmlAsync(A<string>.Ignored, A<string>.Ignored))
+                .Returns((string)null);
+
+            Assert.IsNull(await _generador.GenerarPlantillaSemanalAsync());
+        }
+
+        [TestMethod]
+        public void PieDescargaApp_GooglePlayLlevaElReferrerDelCorreo()
+        {
+            string pie = CorreosPostCompraJobsService.GenerarPieDescargaApp();
+
+            StringAssert.Contains(pie, "id=com.nuevavision.nestotiendas&referrer=utm_source%3Dcorreo_postcompra%26utm_medium%3Demail");
         }
 
         #endregion

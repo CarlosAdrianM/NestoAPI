@@ -1799,10 +1799,11 @@ namespace NestoAPI.Infraestructure.Facturas
         }
 
         /// <summary>
-        /// URL de descarga de la app en Google Play Store.
-        /// Centralizada para facilitar mantenimiento y reutilización.
+        /// URL de descarga de la app en Google Play Store, con el referrer de instalación del correo de facturas
+        /// (NestoAPI#706). Centralizada para facilitar mantenimiento y reutilización.
         /// </summary>
-        internal const string URL_GOOGLE_PLAY = "https://play.google.com/store/apps/details?id=com.nuevavision.nestotiendas";
+        internal const string UTM_SOURCE_CORREO_FACTURA = "correo_factura";
+        internal static readonly string URL_GOOGLE_PLAY = EnlacesTienda.GooglePlay(UTM_SOURCE_CORREO_FACTURA);
 
         /// <summary>
         /// Genera la sección HTML para promocionar la descarga de la app.

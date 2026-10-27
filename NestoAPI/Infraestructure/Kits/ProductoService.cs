@@ -24,7 +24,7 @@ namespace NestoAPI.Infraestructure.Kits
                 {
                     UrlFoto = fichaCompleta ? await ProductoDTO.RutaImagen(id).ConfigureAwait(false) : null,
                     PrecioPublicoFinal = fichaCompleta ? await ProductoDTO.LeerPrecioPublicoFinal(id, db).ConfigureAwait(false) : 0,
-                    UrlEnlace = fichaCompleta ? await ProductoDTO.RutaEnlace(id).ConfigureAwait(false) : null,
+                    UrlEnlace = fichaCompleta ? EnlacesTienda.ParaPantallaNesto(await ProductoDTO.RutaEnlace(id).ConfigureAwait(false)) : null,
                     Producto = producto.Número?.Trim(),
                     Nombre = producto.Nombre?.Trim(),
                     Tamanno = producto.Tamaño,
