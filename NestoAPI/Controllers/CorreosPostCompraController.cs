@@ -1,6 +1,7 @@
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.CorreosPostCompra;
 using NestoAPI.Infraestructure.OpenAI;
+using NestoAPI.Infrastructure;
 using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
@@ -40,6 +41,42 @@ namespace NestoAPI.Controllers
             _servicioRecomendaciones = servicioRecomendaciones;
             _generadorContenido = generadorContenido;
             _servicioCorreo = servicioCorreo ?? new ServicioCorreoElectronico();
+        }
+
+        /// <summary>NestoAPI#707: de donde lee el informe de conversión. Para tests.</summary>
+        internal IRepositorioRecomendacionesPostCompra RepositorioRecomendaciones { get; set; } = new RepositorioRecomendacionesPostCompraSql();
+
+        /// <summary>NestoAPI#707: hoy (para la ventana por defecto y saber qué ventanas están cerradas). Para tests.</summary>
+        internal Func<DateTime> Hoy { get; set; } = () => DateTime.Today;
+
+        /// <summary>
+        /// NestoAPI#707: conversión del correo post-compra. Por semana del envío, tipo (Comprado/Recomendado), regla y grupo
+        /// control: productos enviados, clientes, cuántos compró ese cliente en los 30 días siguientes (pedidos desde el día
+        /// del envío, sin presupuestos), clientes compradores, unidades y base imponible; y los totales del periodo para comparar
+        /// enviados con grupo control. Sin <paramref name="desde"/>, las últimas 12 semanas; sin <paramref name="hasta"/>, hasta
+        /// hoy incluido. Vacío si aún no se ha lanzado Scripts/Issue707_CorreosPostCompraRecomendaciones.sql. Solo Dirección e
+        /// Informática.
+        /// GET api/CorreosPostCompra/Conversion?desde=2026-11-01
+        /// </summary>
+        [HttpGet]
+        [Authorize]
+        [Route("Conversion")]
+        [ResponseType(typeof(InformeConversionPostCompraDTO))]
+        public async Task<IHttpActionResult> GetConversion(DateTime? desde = null, DateTime? hasta = null)
+        {
+            if (User == null || !(User.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION) || User.IsInRoleSinDominio(NovedadesController.GRUPO_INFORMATICA)))
+            {
+                return StatusCode(System.Net.HttpStatusCode.Forbidden);
+            }
+            DateTime hoy = Hoy().Date;
+            DateTime inicio = (desde ?? hoy.AddDays(-7 * InformeConversionPostCompra.SEMANAS_POR_DEFECTO)).Date;
+            DateTime fin = (hasta?.Date ?? hoy).AddDays(1); // exclusivo
+            if (fin <= inicio)
+            {
+                return BadRequest("La fecha «hasta» no puede ser anterior a «desde».");
+            }
+            List<FilaConversionPostCompra> filas = await RepositorioRecomendaciones.LeerConversion(inicio, fin).ConfigureAwait(false);
+            return Ok(InformeConversionPostCompra.Calcular(filas, inicio, fin, hoy));
         }
 
         /// <summary>

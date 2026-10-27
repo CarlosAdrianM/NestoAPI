@@ -1,4 +1,6 @@
-﻿using NestoAPI.Models;
+﻿using Elmah;
+using NestoAPI.Infraestructure.SugerenciasProductos;
+using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
 using System.Data.Entity;
@@ -11,12 +13,14 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
     {
         private readonly NVEntities _db;
         private readonly bool _dbEsPropio;
+        // NestoAPI#707: de donde salen pares, afinidad y popularidad para ordenar los recomendados (tablas de #669)
+        private readonly IRepositorioSugerenciasProductos _repositorioSugerencias;
 
         public ServicioRecomendacionesPostCompra() : this(null)
         {
         }
 
-        public ServicioRecomendacionesPostCompra(NVEntities dbExterno)
+        public ServicioRecomendacionesPostCompra(NVEntities dbExterno, IRepositorioSugerenciasProductos repositorioSugerencias = null)
         {
             if (dbExterno != null)
             {
@@ -29,6 +33,7 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                 _dbEsPropio = true;
             }
             _db.Configuration.LazyLoadingEnabled = false;
+            _repositorioSugerencias = repositorioSugerencias ?? new RepositorioSugerenciasProductosSql(_db);
         }
 
         public async Task<List<CorreoPostCompraClienteDTO>> ObtenerCorreosSemana(string empresa, DateTime fechaDesde, DateTime fechaHasta)
@@ -84,16 +89,20 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                                 p.CorreoElectrónico != null &&
                                 p.CorreoElectrónico.Trim() != "")
                     .GroupBy(p => p.NºCliente)
-                    .Select(g => new { ClienteId = g.Key, Email = g.FirstOrDefault().CorreoElectrónico })
+                    // NestoAPI#707: correo y contacto de la MISMA persona (una sola fila por cliente)
+                    .Select(g => g.Select(p => new { ClienteId = g.Key, Email = p.CorreoElectrónico, p.Contacto }).FirstOrDefault())
                     .ToListAsync()
                     .ConfigureAwait(false);
 
-                var emailsPorCliente = emails.ToDictionary(e => e.ClienteId, e => e.Email?.Trim());
+                var emailsPorCliente = emails.Where(e => e != null).ToDictionary(e => e.ClienteId, e => e);
 
                 foreach (var cliente in clientes)
                 {
-                    emailsPorCliente.TryGetValue(cliente.ClienteId, out string email);
-                    cliente.Email = email;
+                    if (emailsPorCliente.TryGetValue(cliente.ClienteId, out var email))
+                    {
+                        cliente.Email = email.Email?.Trim();
+                        cliente.Contacto = email.Contacto?.Trim();
+                    }
                 }
 
                 // 3. Filtrar clientes válidos
@@ -182,6 +191,15 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
 
                 AsignarTipoExclusiva(todosProductosEnVideos, mapaTipoExclusiva);
 
+                // NestoAPI#707 (corte 2): pares y popularidad de una vez para toda la semana; la afinidad, por cliente.
+                // Best-effort: si fallan, se ordena como antes (orden de la consulta).
+                List<ParCompradoJunto> paresSemana = await LeerSinRomper(
+                    () => _repositorioSugerencias.LeerPares(productosIds), "pares").ConfigureAwait(false);
+                List<PopularidadProducto> popularidadSemana = await LeerSinRomper(
+                    () => _repositorioSugerencias.LeerPopularidad(todosProductosEnVideos
+                        .Where(p => !string.IsNullOrWhiteSpace(p.ProductoId)).Select(p => p.ProductoId.Trim()).Distinct()),
+                    "popularidad").ConfigureAwait(false);
+
                 // 6. Construir resultado por cliente
                 var resultado = new List<CorreoPostCompraClienteDTO>();
 
@@ -264,9 +282,19 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                             .Select(p => p.Familia.Trim()),
                         StringComparer.OrdinalIgnoreCase);
 
+                    List<AfinidadCliente> afinidadCliente = await LeerSinRomper(
+                        () => _repositorioSugerencias.LeerAfinidad(cliente.ClienteId?.Trim()), "afinidad").ConfigureAwait(false);
+
                     var recomendados = SeleccionarProductosRecomendados(
                         productosEnVideosCliente, productosCompradosSet, productosPrincipalesSet,
-                        familiasCompradas);
+                        familiasCompradas,
+                        new DatosPuntuacionRecomendados
+                        {
+                            ProductosComprados = productosPrincipalesSet,
+                            Pares = paresSemana,
+                            Afinidad = afinidadCliente,
+                            Popularidad = popularidadSemana
+                        });
 
                     // Filtro geográfico: si algún producto del correo tiene TipoExclusiva MAD,
                     // el cliente debe ser de Madrid/Toledo/Guadalajara
@@ -310,10 +338,12 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                         ClienteId = cliente.ClienteId?.Trim(),
                         ClienteNombre = cliente.Nombre?.Trim(),
                         ClienteEmail = cliente.Email,
+                        ClienteContacto = cliente.Contacto,
                         SemanaDesde = fechaDesde,
                         SemanaHasta = fechaHasta,
                         ProductosComprados = topProductos,
-                        ProductosRecomendados = recomendados
+                        ProductosRecomendados = recomendados,
+                        VersionModelo = PuntuadorRecomendacionesPostCompra.VERSION_MODELO
                     });
                 }
 
@@ -332,6 +362,30 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                 {
                     _db?.Dispose();
                 }
+            }
+        }
+
+        private bool _avisadoFalloPuntuacion;
+
+        /// <summary>
+        /// NestoAPI#707: lee datos de puntuación sin cortar el correo. Si falla, lista vacía (esos candidatos se quedan en el
+        /// orden de la consulta) y un solo aviso a ELMAH por ejecución.
+        /// </summary>
+        private async Task<List<T>> LeerSinRomper<T>(Func<Task<List<T>>> leer, string que)
+        {
+            try
+            {
+                return await leer().ConfigureAwait(false) ?? new List<T>();
+            }
+            catch (Exception ex)
+            {
+                if (!_avisadoFalloPuntuacion)
+                {
+                    _avisadoFalloPuntuacion = true;
+                    ErrorLog.GetDefault(null)?.Log(new Error(new Exception(
+                        $"[CorreosPostCompra] NestoAPI#707: no se han podido leer los datos de puntuación ({que}); los recomendados van en el orden de la consulta. {ex.Message}", ex)));
+                }
+                return new List<T>();
             }
         }
 
@@ -430,11 +484,18 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
         /// reglas de exclusividad: misma familia que algún producto comprado, o
         /// familia con TipoExclusiva PRP (propia) o NAC (nacional).
         /// </summary>
+        /// <remarks>
+        /// NestoAPI#707 (corte 2): con <paramref name="datosPuntuacion"/>, los candidatos (ya filtrados) se ordenan por
+        /// <see cref="PuntuadorRecomendacionesPostCompra"/> ANTES de quitar los de enlace de vídeo repetido y quedarse con 4;
+        /// sin datos (o sin puntuación para ninguno), el orden de la consulta, como antes. Cada recomendado lleva su Regla y
+        /// Puntuacion.
+        /// </remarks>
         internal static List<ProductoRecomendadoDTO> SeleccionarProductosRecomendados(
             List<DatosProductoEnVideo> productosEnVideos,
             HashSet<string> productosCompradosHistorico,
             HashSet<string> productosPrincipales,
-            HashSet<string> familiasCompradas)
+            HashSet<string> familiasCompradas,
+            DatosPuntuacionRecomendados datosPuntuacion = null)
         {
             var candidatos = productosEnVideos
                 .Where(p => !string.IsNullOrWhiteSpace(p.ProductoId) &&
@@ -452,6 +513,17 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                     EnlaceVideoProducto = p.EnlaceVideo
                 })
                 .ToList();
+
+            // NestoAPI#707: puntuar y ordenar (sin datos, todos «orden_original» y el orden no cambia)
+            Dictionary<string, PuntuacionCandidato> puntuaciones = PuntuadorRecomendacionesPostCompra.Puntuar(
+                candidatos.Select(c => c.ProductoId), datosPuntuacion);
+            foreach (var candidato in candidatos)
+            {
+                PuntuacionCandidato puntuacion = PuntuadorRecomendacionesPostCompra.Leer(puntuaciones, candidato.ProductoId);
+                candidato.Regla = puntuacion?.Regla ?? PuntuadorRecomendacionesPostCompra.REGLA_ORDEN_ORIGINAL;
+                candidato.Puntuacion = puntuacion?.Puntuacion;
+            }
+            candidatos = PuntuadorRecomendacionesPostCompra.Ordenar(candidatos, c => c.ProductoId, puntuaciones);
 
             // Eliminar duplicados por enlace de vídeo (mismo enlace para productos diferentes)
             var enlacesVistos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -566,6 +638,8 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
         public string ClienteId { get; set; }
         public string Nombre { get; set; }
         public string Email { get; set; }
+        /// <summary>NestoAPI#707: el de la persona de contacto cuyo correo se usa.</summary>
+        public string Contacto { get; set; }
         public int Estado { get; set; }
         public string CodPostal { get; set; }
     }

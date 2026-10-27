@@ -79,6 +79,16 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                         new Exception($"[CorreosPostCompra] Modo test activo. EmailsTest='{emailsTestConfig}'. Correos tras filtro: {correos.Count}")));
                 }
 
+                // NestoAPI#707: grupo control (Web.config, nace a 0 = nadie). A esos clientes no se les enseñan los recomendados,
+                // pero se guardan igual al enviar para medir el uplift.
+                int porcentajeGrupoControl = GrupoControlPostCompra.LeerPorcentaje();
+                if (porcentajeGrupoControl > 0)
+                {
+                    int enGrupoControl = GrupoControlPostCompra.Aplicar(correos, porcentajeGrupoControl);
+                    ErrorLog.GetDefault(null)?.Log(new Error(
+                        new Exception($"[CorreosPostCompra] Grupo control al {porcentajeGrupoControl} %: {enGrupoControl} de {correos.Count} correos sin recomendados.")));
+                }
+
                 // Issue #152: Generar plantilla y saludos con OpenAI (2 llamadas en vez de N)
                 var generador = new GeneradorContenidoCorreoPostCompra(new ServicioOpenAI());
 
@@ -302,14 +312,31 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                         }
                     }
 
-                    var servicioCorreo = new ServicioCorreoElectronico();
-                    servicioCorreo.EnviarCorreoSMTP(mail);
+                    // NestoAPI#707: en modo test no se guarda nada (el correo va a los de prueba, no al cliente)
+                    await EnviarYRegistrar(new ServicioCorreoElectronico(), mail, datos,
+                        modoTest ? null : new RepositorioRecomendacionesPostCompraSql()).ConfigureAwait(false);
                 }
             }
             catch (Exception)
             {
                 throw;
             }
+        }
+
+        /// <summary>
+        /// NestoAPI#707: envía el correo y, si ha salido, guarda en CorreosPostCompraRecomendaciones lo que llevaba (best-effort:
+        /// un fallo al guardar nunca corta ni repite el envío, porque se guarda DESPUÉS y Registrar no lanza). Sin repositorio
+        /// (modo test), solo envía. Devuelve si el correo ha salido.
+        /// </summary>
+        internal static async Task<bool> EnviarYRegistrar(IServicioCorreoElectronico servicioCorreo, MailMessage mail,
+            CorreoPostCompraClienteDTO datos, IRepositorioRecomendacionesPostCompra repositorio, Action<Exception> registrarError = null)
+        {
+            bool enviado = servicioCorreo.EnviarCorreoSMTP(mail);
+            if (enviado && repositorio != null)
+            {
+                await RegistroRecomendacionesPostCompra.Registrar(repositorio, datos, DateTime.Now, registrarError).ConfigureAwait(false);
+            }
+            return enviado;
         }
 
         /// <summary>NestoAPI#532 (bajas por tipo): la baja que se pide contestando es solo de estos correos.</summary>
