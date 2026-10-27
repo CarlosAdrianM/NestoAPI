@@ -1188,6 +1188,22 @@ namespace NestoAPI
                 }
             );
             Console.WriteLine("✅ Jobs recurrentes 'promesa-riesgo-nocturna' (L-S 5:40) y 'promesa-riesgo-correo' (L-V 9:00 y 15:00) configurados");
+
+            // NestoAPI#716 (2.1, interino): mientras los vendedores no marquen el resultado del rapport, se clasifican con OpenAI
+            // los Comentarios de los rapports de ayer y de hoy al mismo catálogo (SeguimientoClienteClasificacion). Todos los
+            // días a las 23:15 (fuera de horario; el job sale si no es de noche). Con Rapports:ClasificacionBackfill = true
+            // (por defecto apagado) rellena además 2024-2026 por tandas de 3.000 por noche (~3 USD en total con gpt-4o-mini).
+            // Sin la tabla (Scripts/Issue716 sin lanzar) o sin OpenAIKey no hace nada.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.Rapports.ClasificacionRapportsJobsService.ID_JOB,
+                () => Infraestructure.Rapports.ClasificacionRapportsJobsService.Procesar(),
+                Infraestructure.Rapports.ClasificacionRapportsJobsService.CRON, // Cron: todos los días a las 23:15
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'clasificar-rapports-nocturno' configurado (diario a las 23:15; solo con la tabla y OpenAIKey)");
         }
     }
 

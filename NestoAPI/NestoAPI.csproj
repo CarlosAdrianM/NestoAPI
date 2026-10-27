@@ -825,6 +825,8 @@
     <Compile Include="Infraestructure\Clientes\CambioDiasEnServirConPicking.cs" />
     <Compile Include="Infraestructure\Clientes\PoliticaPersonasContacto.cs" />
     <Compile Include="Infraestructure\Clientes\PoliticaEmpleadosCliente.cs" />
+    <Compile Include="Infraestructure\Clientes\MotivoCambioEstadoCliente.cs" />
+    <Compile Include="Infraestructure\Clientes\DatosAltaCliente.cs" />
     <Compile Include="Infraestructure\Clientes\PoliticaPreciosOcultos.cs" />
     <Compile Include="Infraestructure\Clientes\ServicioValidacionNif.cs" />
     <Compile Include="Infraestructure\Clientes\BuscadorClientesPorFactura.cs" />
@@ -1044,6 +1046,10 @@
     <Compile Include="Infraestructure\Rapports\ProbabilidadesContactoModelo.cs" />
     <Compile Include="Infraestructure\Rapports\GeneradorFrasesRitmo.cs" />
     <Compile Include="Infraestructure\Rapports\ServicioFrasesRitmo.cs" />
+    <Compile Include="Infraestructure\Rapports\ResultadoRapport.cs" />
+    <Compile Include="Infraestructure\Rapports\DatosExtraRapport.cs" />
+    <Compile Include="Infraestructure\Rapports\ClasificadorRapports.cs" />
+    <Compile Include="Infraestructure\Rapports\ClasificacionRapportsJobsService.cs" />
     <Compile Include="Infraestructure\Rapports\RecordatorioSugerenciasContacto.cs" />
     <Compile Include="Infraestructure\Rapports\CalculadoraFeaturesContacto.cs" />
     <Compile Include="Infraestructure\Rapports\ModeloContacto.cs" />
@@ -1246,6 +1252,7 @@
     <Compile Include="Infraestructure\UsuarioAuditoriaHelper.cs" />
     <Compile Include="Infraestructure\ExtractosProducto\ServicioExtractoProducto.cs" />
     <Compile Include="Infraestructure\ElmahHelper.cs" />
+    <Compile Include="Infraestructure\ColumnasOpcionales.cs" />
     <Compile Include="Infraestructure\ServirJunto\IServicioValidarServirJunto.cs" />
     <Compile Include="Infraestructure\ServirJunto\ServicioValidarServirJunto.cs" />
     <Compile Include="Infraestructure\ValidadoresServirJunto\IValidadorServirJunto.cs" />

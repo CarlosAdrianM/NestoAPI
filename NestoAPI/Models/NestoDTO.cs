@@ -52,6 +52,15 @@ namespace NestoAPI.Models
         // CCC/IBAN. En el PUT de ClienteComercial, null = no tocar (llamantes que aún no lo mandan).
         public string pais { get; set; }
         /// <summary>
+        /// NestoAPI#716: por qué cambia el estado (solo se usa si el PUT de ClienteComercial cambia <c>estado</c>).
+        /// Un código de <see cref="Infraestructure.Clientes.MotivoCambioEstadoCliente"/> (Cierre, Traspaso, Competencia,
+        /// Impago, SinActividad, Duplicado, CambioTitular, PeticionCliente, Distribuidor, PublicoFinal, Reactivacion,
+        /// Otro). Opcional: null no guarda motivo; fuera del catálogo es un 400.
+        /// </summary>
+        public string motivoCambioEstado { get; set; }
+        /// <summary>NestoAPI#716: texto libre que acompaña al motivo (200 caracteres como mucho). Opcional.</summary>
+        public string comentarioCambioEstado { get; set; }
+        /// <summary>
         /// Si la pantalla de rapport tiene que preguntar (o enseñar ya relleno) el número de
         /// empleados. La regla vive en el servidor (PoliticaEmpleadosCliente): Nesto y NestoApp
         /// solo pintan la combo cuando esto es true.
@@ -450,6 +459,15 @@ namespace NestoAPI.Models
         /// cliente principal al crear o modificar el rapport.
         /// </summary>
         public byte? Empleados { get; set; }
+        /// <summary>
+        /// NestoAPI#716: resultado del rapport / motivo de no compra, un código del catálogo
+        /// <see cref="Infraestructure.Rapports.ResultadoRapport"/> (Pedido, PediraMasTarde, NoNecesita, Precio,
+        /// Competencia, CerradoTraspaso, SinStock, NoDecide, SoloInformacion, Otro). Opcional: null no toca nada;
+        /// un valor fuera del catálogo es un 400.
+        /// </summary>
+        public string Resultado { get; set; }
+        /// <summary>NestoAPI#716: cuándo toca volver a contactar (solo la fecha). Opcional.</summary>
+        public DateTime? ProximoContacto { get; set; }
 
         public enum TiposCentro
         {
