@@ -1198,6 +1198,21 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'anomalias-etiquetado' configurado (diario a las 5:30)");
 
+            // NestoAPI#698: pedidos retenidos «hasta nuevo aviso» (modo de servicio 5). De lunes a sábado a las 5:35, fuera de horario y
+            // antes de la pasada de promesa en riesgo: libera solos los que llegan a su fecha de revisión (vuelven a su modo y entran
+            // en el picking) avisando por la campana a quien lo retuvo y al vendedor, y recuerda los que no tienen fecha como mucho
+            // cada Pedidos:Retenidos:DiasRecordatorio días (7). Sin la tabla (Scripts/Issue698_PedidosRetenidos.sql) no hace nada.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.PedidosVenta.Retencion.PedidosRetenidosJobsService.ID_JOB,
+                () => Infraestructure.PedidosVenta.Retencion.PedidosRetenidosJobsService.PasadaNocturna(),
+                Infraestructure.PedidosVenta.Retencion.PedidosRetenidosJobsService.CRON, // Cron: de lunes a sábado a las 5:35
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'pedidos-retenidos-nocturna' configurado (L-S a las 5:35)");
+
             RecurringJob.AddOrUpdate(
                 Infraestructure.PedidosVenta.PromesaRiesgoJobsService.ID_JOB_NOCTURNO,
                 () => Infraestructure.PedidosVenta.PromesaRiesgoJobsService.PasadaNocturna(),

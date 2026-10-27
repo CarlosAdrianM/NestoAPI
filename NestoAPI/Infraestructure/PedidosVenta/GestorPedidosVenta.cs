@@ -805,6 +805,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// <summary>NestoAPI#688: las columnas de la casilla «¿Servir lo pendiente…?» (fuera del EDMX).</summary>
         internal static IRepositorioServirPendienteAlHaberStock RepositorioServirPendiente { get; set; } = new RepositorioServirPendienteAlHaberStock();
 
+        /// <summary>NestoAPI#698: la tabla PedidosRetenidos (fuera del EDMX).</summary>
+        internal static Retencion.IRepositorioPedidosRetenidos RepositorioRetenciones { get; set; } = new Retencion.RepositorioPedidosRetenidos();
+
         internal static async Task<PedidoVentaDTO> LeerPedido(string empresa, int numero)
         {
             using (NVEntities db = new NVEntities())
@@ -818,6 +821,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 decimal totalComprobacion = RoundingHelper.DosDecimalesRound(cabPedidoVta.LinPedidoVtas.Sum(l => l.Total));
 
                 PedidoVentaDTO pedido = CrearCabeceraDTO(cabPedidoVta);
+                // NestoAPI#698: solo los retenidos (modo 5) leen su retención viva (tabla fuera del EDMX).
+                if (Constantes.Pedidos.ModosServicio.EsRetenido(pedido.modoServicio))
+                {
+                    pedido.retencion = RepositorioRetenciones.LeerActivaSincrono(empresa, numero);
+                }
                 // NestoAPI#688: la casilla vive fuera del EDMX; solo se lee cuando aplica (nota o «Todo ahora»).
                 if (pedido.notaEntrega || Constantes.Pedidos.ModosFacturacion.EsTodoAhora(pedido.modoFacturacion ?? 0))
                 {

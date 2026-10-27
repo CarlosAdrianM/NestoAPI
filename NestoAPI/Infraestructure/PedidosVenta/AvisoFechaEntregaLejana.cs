@@ -77,8 +77,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         {
             DateTime fecha = lejanas.Max(l => l.fechaEntrega).Date;
             int dias = (fecha - hoy.Date).Days;
+            // NestoAPI#698: la fecha al año que viene era la forma de retener un pedido; ahora hay botón.
             string cuando = $"el {ES.DateTimeFormat.GetDayName(fecha.DayOfWeek)} {fecha.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)} " +
-                $"(dentro de {dias} {(dias == 1 ? "día" : "días")}). ¿Es correcta?";
+                $"(dentro de {dias} {(dias == 1 ? "día" : "días")}). Si lo que quiere es que el pedido no salga hasta nuevo aviso, use «Retener pedido» en vez de cambiar la fecha. ¿Es correcta?";
             int cuantasCuentan = (todas ?? Enumerable.Empty<LineaPedidoVentaDTO>()).Count(CuentaLaLinea);
             bool mismaFecha = lejanas.Select(l => l.fechaEntrega.Date).Distinct().Count() == 1;
 

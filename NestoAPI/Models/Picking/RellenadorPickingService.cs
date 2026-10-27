@@ -207,7 +207,36 @@ namespace NestoAPI.Models.Picking
 
             RellenarChequesRegalo(resultado);
             RellenarCupones(resultado);
+            RellenarRetenciones(resultado);
             return resultado;
+        }
+
+        /// <summary>
+        /// NestoAPI#698: a los pedidos en modo 5 («Retenido») se les cuelga su retención viva (quién, hasta cuándo, motivo) para
+        /// que el picking de UN pedido lo explique. La decisión de no salir la toma el modo, no esto: si falla, el pedido
+        /// sigue retenido igual y queda en ELMAH.
+        /// </summary>
+        private void RellenarRetenciones(List<PedidoPicking> pedidosPicking)
+        {
+            try
+            {
+                foreach (IGrouping<string, PedidoPicking> grupo in pedidosPicking
+                    .Where(p => p.ModoServicioEfectivo == Constantes.Pedidos.ModosServicio.RETENIDO)
+                    .GroupBy(p => p.Empresa?.Trim() ?? Constantes.Empresas.EMPRESA_POR_DEFECTO))
+                {
+                    List<Infraestructure.PedidosVenta.Retencion.RetencionPedidoDTO> retenciones =
+                        new Infraestructure.PedidosVenta.Retencion.RepositorioPedidosRetenidos().LeerActivasSincrono(grupo.Key, grupo.Select(p => p.Id));
+                    foreach (PedidoPicking pedido in grupo)
+                    {
+                        pedido.Retencion = retenciones.FirstOrDefault(r => r.Pedido == pedido.Id);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Infraestructure.ElmahHelper.Log(new Exception(
+                    $"[Retenidos #698] No se pudo leer la retención de los pedidos del picking: {ex.Message}", ex), "Sistema (picking)");
+            }
         }
 
         /// <summary>

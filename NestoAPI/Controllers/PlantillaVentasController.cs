@@ -446,13 +446,17 @@ namespace NestoAPI.Controllers
                     BaseImponible = l.BaseImponible,
                     FechaEntrega = l.FechaEntrega,
                     NotaEntrega = c.NotaEntrega,
-                    TienePicking = l.TienePicking
+                    TienePicking = l.TienePicking,
+                    // NestoAPI#698: la retención de verdad es el modo 5 («Retenido»), que ponen Retener/Liberar
+                    Retenido = c.ModoServicio == Constantes.Pedidos.ModosServicio.RETENIDO
                 })
                 .OrderBy(p => p.Numero)
                 .ToList();
 
+            // Transitorio (#698): los retenidos «a la antigua» (fecha de entrega al año que viene) se siguen marcando hasta que se
+            // conviertan al modo 5 (one-off comentado en Scripts/Issue698_PedidosRetenidos.sql). Después, esto sobra.
             DateTime limiteRetenido = DateTime.Today.AddDays(Constantes.Pedidos.DIAS_AVISO_FECHA_ENTREGA_LEJANA);
-            foreach (PedidoPendientePlantillaDTO pedido in pedidos)
+            foreach (PedidoPendientePlantillaDTO pedido in pedidos.Where(p => !p.Retenido))
             {
                 pedido.Retenido = pedido.FechaEntrega.HasValue && pedido.FechaEntrega.Value > limiteRetenido;
             }

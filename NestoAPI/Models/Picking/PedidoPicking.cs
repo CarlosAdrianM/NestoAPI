@@ -183,9 +183,19 @@ namespace NestoAPI.Models.Picking
         /// en esta pasada para que salga con el resto. Vacía si ninguna. Viaja en la respuesta del picking.</summary>
         public List<MuestraQuitadaPicking> MuestrasQuitadas { get; set; } = new List<MuestraQuitadaPicking>();
 
+        /// <summary>NestoAPI#698: la retención viva del pedido (quién, hasta cuándo, motivo) cuando está en modo 5. Lo rellena
+        /// RellenadorPickingService; solo sirve para explicar (la decisión la toma el modo).</summary>
+        public Infraestructure.PedidosVenta.Retencion.RetencionPedidoDTO Retencion { get; set; }
+
         public bool saleEnPicking()
         {
             MotivoNoSale = MotivoNoSalePicking.Ninguno;
+            // NestoAPI#698: retenido hasta nuevo aviso. Antes que nada: ni stock ni prepago cambian la decisión.
+            if (ModoServicioEfectivo == Constantes.Pedidos.ModosServicio.RETENIDO)
+            {
+                MotivoNoSale = MotivoNoSalePicking.Retenido;
+                return false;
+            }
             if (ModoServicioEfectivo == Constantes.Pedidos.ModosServicio.TRAS_REPONER_DE_TIENDAS && EsperaReposicionDeTiendas)
             {
                 MotivoNoSale = MotivoNoSalePicking.EsperaReposicionDeTiendas;

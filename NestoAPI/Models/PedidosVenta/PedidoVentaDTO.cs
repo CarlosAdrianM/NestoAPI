@@ -47,9 +47,12 @@ namespace NestoAPI.Models.PedidosVenta
         public string ruta { get; set; }
         public string serie { get; set; }
         public bool servirJunto { get; set; }
-        /// <summary>NestoAPI#482: modo de servicio (1..4, ver Constantes.Pedidos.ModosServicio). Null = el
+        /// <summary>NestoAPI#482: modo de servicio (1..4, ver Constantes.Pedidos.ModosServicio; 5 = retenido, #698). Null = el
         /// cliente no lo manda y se deriva de servirJunto. Al leer, siempre viene con valor.</summary>
         public byte? modoServicio { get; set; }
+        /// <summary>NestoAPI#698: la retención viva («hasta nuevo aviso») cuando modoServicio es 5; null si no está retenido. Solo lectura:
+        /// se pone y se quita con POST …/Retener y …/Liberar, nunca en el PUT.</summary>
+        public Infraestructure.PedidosVenta.Retencion.RetencionPedidoDTO retencion { get; set; }
         /// <summary>NestoAPI#542: modo de facturación (1 por entregas, 2 al completar el pedido, 3 todo ahora y lo
         /// pendiente después; ver Constantes.Pedidos.ModosFacturacion). Null = el cliente no lo manda y se
         /// deriva de mantenerJunto. Al leer, siempre viene con valor.</summary>

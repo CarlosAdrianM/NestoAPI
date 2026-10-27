@@ -509,6 +509,13 @@ namespace NestoAPI.Models
                 /// <summary>Sale ya lo que hay; lo que falta se entrega en UNA sola entrega más, cuando esté
                 /// todo (tras la primera entrega el pedido se comporta como 1 para el resto).</summary>
                 public const byte AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ = 4;
+                /// <summary>
+                /// NestoAPI#698 (Carlos, 23/10/26): «Retenido hasta nuevo aviso». Nunca sale en el picking, sin fechas falsas
+                /// (antes se ponía la entrega al año que viene). NO se elige en el selector: lo pone «Retener» y lo quita
+                /// «Liberar» (ServicioRetencionPedidos), que guardan el porqué, quién y hasta cuándo en PedidosRetenidos y
+                /// devuelven el pedido a su modo anterior. Manda sobre ServirJunto en <see cref="Efectivo"/>.
+                /// </summary>
+                public const byte RETENIDO = 5;
 
                 /// <summary>
                 /// Modo con el que nace un pedido cuando el cliente (NestoApp, TNV, Nesto sin selector)
@@ -527,6 +534,7 @@ namespace NestoAPI.Models
                         case SEGUN_VAYA_ENTRANDO: return "Según vaya entrando";
                         case TRAS_REPONER_DE_TIENDAS: return "Tras reponer de tiendas";
                         case AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ: return "Ahora lo que hay, el resto de una vez";
+                        case RETENIDO: return "Retenido";
                         default: return $"Modo {modo}";
                     }
                 }
@@ -601,7 +609,16 @@ namespace NestoAPI.Models
                     return Normalizar(pedido);
                 }
 
+                /// <summary>Los modos que se pueden ELEGIR (1..4). El 5 (<see cref="RETENIDO"/>) no: lo ponen Retener/Liberar.</summary>
                 public static bool EsValido(byte modo) => modo >= TODO_JUNTO && modo <= AHORA_LO_QUE_HAY_Y_EL_RESTO_DE_UNA_VEZ;
+
+                /// <summary>NestoAPI#698: ¿está retenido hasta nuevo aviso?</summary>
+                public static bool EsRetenido(byte? modo) => modo.HasValue && modo.Value == RETENIDO;
+
+                /// <summary>NestoAPI#698: lo que se contesta a quien intenta cambiar el modo de un pedido retenido.</summary>
+                public const string MENSAJE_RETENIDO_NO_SE_CAMBIA = "El pedido está retenido hasta nuevo aviso. Libérelo con «Liberar» antes de cambiar el modo de servicio.";
+                /// <summary>NestoAPI#698: lo que se contesta a quien manda el 5 desde el selector.</summary>
+                public const string MENSAJE_RETENIDO_SOLO_CON_RETENER = "El modo «Retenido» no se elige en el selector: use «Retener pedido», que guarda el motivo y hasta cuándo.";
 
                 /// <summary>
                 /// El modo que rige de verdad. Regla (Carlos, 16/09/26): <b>ServirJunto marcado SIEMPRE es
@@ -613,6 +630,11 @@ namespace NestoAPI.Models
                 /// </summary>
                 public static byte Efectivo(byte? modoServicio, bool servirJunto)
                 {
+                    // NestoAPI#698: retenido manda sobre todo. ServirJunto se deja como estaba para que «Liberar» lo devuelva igual.
+                    if (EsRetenido(modoServicio))
+                    {
+                        return RETENIDO;
+                    }
                     if (servirJunto)
                     {
                         return TODO_JUNTO;
@@ -662,6 +684,16 @@ namespace NestoAPI.Models
                         return null;
                     }
                     byte modo = pedido.modoServicio.Value;
+                    // NestoAPI#698: un pedido retenido se queda retenido (el cliente devuelve el 5 que leyó); el 5 solo lo pone
+                    // «Retener», y mientras dure nadie cambia el modo desde el selector: primero «Liberar».
+                    if (EsRetenido(modoAlmacenado))
+                    {
+                        return modo == RETENIDO ? null : MENSAJE_RETENIDO_NO_SE_CAMBIA; // servirJunto se deja tal cual: lo recupera «Liberar»
+                    }
+                    if (modo == RETENIDO)
+                    {
+                        return MENSAJE_RETENIDO_SOLO_CON_RETENER;
+                    }
                     if (!EsValido(modo))
                     {
                         return $"El modo de servicio {modo} no existe (1 todo junto, 2 según vaya entrando, 3 tras reponer de tiendas, 4 ahora lo que hay y el resto de una vez)";
