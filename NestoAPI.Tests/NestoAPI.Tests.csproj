@@ -623,6 +623,7 @@
     <Compile Include="Controllers\NovedadesMencionesTests.cs" />
     <Compile Include="Controllers\NovedadesRecordatoriosRespuestaTests.cs" />
     <Compile Include="Controllers\NovedadesPerfilesTests.cs" />
+    <Compile Include="Controllers\NovedadesAmbitoVersionTests.cs" />
     <Compile Include="Controllers\NovedadesAdjuntosTests.cs" />
     <Compile Include="Controllers\NovedadesVideoTests.cs" />
     <Compile Include="Infrastructure\RangoBytesHttpTests.cs" />

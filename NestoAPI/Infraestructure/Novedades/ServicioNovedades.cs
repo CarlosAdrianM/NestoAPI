@@ -127,6 +127,8 @@ namespace NestoAPI.Infraestructure.Novedades
                         Descripcion = ISNULL(@descripcion, Descripcion),
                         Estado = ISNULL(@estado, Estado),
                         Version = ISNULL(@version, Version),
+                        -- NestoAPI#703: al implementarla, el ámbito del programa de esa versión
+                        Ambito = ISNULL(@ambito, Ambito),
                         -- NestoAPI#558: la incidencia que recibe versión es que ya está corregida
                         Categoria = ISNULL(@categoria, CASE WHEN @version IS NOT NULL AND Categoria = N'Incidencia' THEN N'Corregido' ELSE Categoria END),
                         Usuario = @usuario,
@@ -136,9 +138,20 @@ namespace NestoAPI.Infraestructure.Novedades
                     new SqlParameter("@descripcion", SqlDbType.NVarChar, 1000) { Value = (object)cambios.Descripcion ?? DBNull.Value },
                     new SqlParameter("@estado", SqlDbType.VarChar, 20) { Value = (object)cambios.Estado ?? DBNull.Value },
                     new SqlParameter("@version", SqlDbType.VarChar, 23) { Value = (object)cambios.Version ?? DBNull.Value },
+                    new SqlParameter("@ambito", SqlDbType.NVarChar, 20) { Value = (object)cambios.Ambito ?? DBNull.Value },
                     new SqlParameter("@categoria", SqlDbType.NVarChar, 20) { Value = (object)cambios.Categoria ?? DBNull.Value },
                     new SqlParameter("@usuario", SqlDbType.NVarChar, 50) { Value = Recortar(usuario, 50) },
                     new SqlParameter("@id", id)) > 0;
+            }
+        }
+
+        public string LeerAmbitoSugerencia(int id)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                return db.Database.SqlQuery<string>(
+                    "SELECT Ambito FROM Novedades WHERE Id = @id AND TextoOriginal IS NOT NULL",
+                    new SqlParameter("@id", id)).FirstOrDefault()?.Trim();
             }
         }
 

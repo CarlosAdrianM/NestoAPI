@@ -110,7 +110,7 @@ namespace NestoAPI.Controllers
             // tienen espacios de versiones distintos: comparar desdeVersion sin acotar el producto
             // descartaría o colaría entradas del otro.
             string ambitoEfectivo = AmbitoEfectivo(ambito);
-            novedades = novedades.Where(n => EsDelAmbito(n.Ambito, ambitoEfectivo)).ToList();
+            novedades = novedades.Where(n => EsVisibleEnElAmbito(n.Ambito, n.Version, ambitoEfectivo)).ToList();
 
             // Sugerencia 551: a quién afecta cada una y, salvo que pida todas, solo las suyas. El popup de
             // arranque (desdeVersion) y la campana cuentan así solo las de su perfil.
@@ -177,6 +177,18 @@ namespace NestoAPI.Controllers
                 ? string.Equals(ambitoNovedad?.Trim(), ambito.Trim(), StringComparison.OrdinalIgnoreCase)
                 : !string.Equals(ambitoNovedad?.Trim(), AMBITO_NESTOAPP, StringComparison.OrdinalIgnoreCase)
                   && !string.Equals(ambitoNovedad?.Trim(), AMBITO_ARIADNA, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// NestoAPI#703: <see cref="EsDelAmbito"/> y, además, sin ámbito (Nesto de escritorio) solo versiones 1.x:
+        /// una novedad mal etiquetada (la 753, de ámbito Nesto pero implementada en Ariadna 2.17) tapaba la página de
+        /// la 1.10.48 porque 2.17 > 1.10.48. Misma defensa que la del 17/09/26 con NestoApp. Las sugerencias (sin
+        /// versión) y las versiones no parseables pasan.
+        /// </summary>
+        internal static bool EsVisibleEnElAmbito(string ambitoNovedad, string version, string ambito)
+        {
+            return EsDelAmbito(ambitoNovedad, ambito)
+                && (!string.IsNullOrWhiteSpace(ambito) || ReglasSugerenciasNovedades.EsVersionDelEscritorio(version));
         }
 
         /// <summary>El ámbito de lo que se crea desde cada programa.</summary>
@@ -546,8 +558,9 @@ namespace NestoAPI.Controllers
             return respuesta;
         }
 
-        // PUT api/Novedades/Sugerencias/7  { "Titulo": "...", "Descripcion": "...", "Estado": "Aceptada", "Version": "1.10.31.0" }
-        // Desarrollo (Dirección / Informática): el texto claro, el estado y, al implementarla, la versión.
+        // PUT api/Novedades/Sugerencias/7  { "Titulo": "...", "Descripcion": "...", "Estado": "Aceptada", "Version": "1.10.31.0", "Ambito": "Ariadna" }
+        // Desarrollo (Dirección / Informática): el texto claro, el estado y, al implementarla, la versión (y el ámbito,
+        // que si no se dice se deduce de la versión: NestoAPI#703).
         [HttpPut]
         [Authorize]
         [Route("api/Novedades/Sugerencias/{id:int}")]
@@ -576,6 +589,21 @@ namespace NestoAPI.Controllers
             if (cambios.Privada == true && !servicio.AdmitePrivadas())
             {
                 return BadRequest(PrivacidadNovedades.ERROR_SIN_COLUMNA);
+            }
+            // NestoAPI#703: al implementarla, el ámbito tiene que ser el del programa de esa versión (o el que se
+            // pida expresamente); si no se puede deducir, 400 antes de tocar nada.
+            if (cambios.Version != null || !string.IsNullOrWhiteSpace(cambios.Ambito))
+            {
+                cambios.Ambito = ReglasSugerenciasNovedades.AmbitoAlImplementar(
+                    servicio.LeerAmbitoSugerencia(id), cambios.Version, cambios.Ambito, out error);
+                if (error != null)
+                {
+                    return BadRequest(error);
+                }
+            }
+            else
+            {
+                cambios.Ambito = null;
             }
             if (!servicio.ActualizarSugerencia(id, cambios, User?.Identity?.Name))
             {
@@ -608,7 +636,7 @@ namespace NestoAPI.Controllers
             string ambitoEfectivo = AmbitoEfectivo(ambito);
             PrivacidadNovedades privacidad = Privacidad();
             List<SugerenciaNovedadDTO> encontradas = servicio.Buscar(palabras)
-                .Where(n => EsDelAmbito(n.Ambito, ambitoEfectivo))
+                .Where(n => EsVisibleEnElAmbito(n.Ambito, n.Version, ambitoEfectivo)) // NestoAPI#703
                 .Where(n => privacidad.PuedeVerEnLista(n.Id, n.Version, n.SugeridaPor)) // NestoAPI#650
                 .Select(n => n.ADto())
                 .ToList();
