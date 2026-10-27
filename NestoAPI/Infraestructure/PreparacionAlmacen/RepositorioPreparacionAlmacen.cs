@@ -146,30 +146,51 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             this.baseDeDatos = baseDeDatos;
         }
 
-        // La cantidad sale de las ubicaciones reservadas para el picking (estado 3), que guardan la
-        // reserva en negativo; si la línea no tiene ubicación, de la propia línea menos lo que el
-        // cliente recoge. Es la misma cuenta que prdInformePickingAgrupado.
+        // La cantidad sale de las ubicaciones reservadas para el picking (estado 3); si la línea no tiene ubicación, de la
+        // propia línea menos lo que el cliente recoge. Es la misma cuenta que prdInformePickingAgrupado. (El comentario de
+        // antes decía que la reserva va en negativo: en producción, 27/10/26, las 365 filas de los pickings abiertos van en
+        // positivo; el ABS se queda para las dos.)
         // Solo las líneas que siguen en el picking (Estado 1), igual que EscriturasSalida.SQL_PIEZAS_PICKING:
         // las ya albaranadas o facturadas conservan el número de picking y no hay que recogerlas (picking 99648, 03/10/26).
+        // NestoAPI#713: además devuelve lo reservado (Reservado) y lo que piden las líneas de la parada (PendienteLineas),
+        // y RecorteParadasRecogida recorta la cantidad a las líneas si las reservas dicen más (picking 99941, 27/10/26).
+        // OJO: las líneas se suman UNA vez por línea (Lineas → Reservas agrupadas por línea y hueco → Paradas), no sobre el
+        // JOIN con Ubicaciones, que repite la línea por cada fila de reserva: la 329365300 del pedido 929262 (20 uds, dos
+        // reservas de 17 + 3) más la 329365400 (2) daban 42 sumando sobre el JOIN y son 22.
         // Las cuatro columnas fijas del principio son las que rellena después CasadorEscaneos.OrdenarRecorrido:
         // SqlQuery exige una columna por cada propiedad del DTO.
         internal const string SQL_LINEAS_PICKING = @"
+WITH Lineas AS (
+    SELECT l.[Número] AS Pedido, l.[Nº Orden] AS Linea, l.Producto, ISNULL(l.Cantidad, 0) - ISNULL(l.Recoger, 0) AS Pendiente
+    FROM LinPedidoVta l
+         LEFT JOIN Productos p ON p.Empresa = l.Empresa AND p.[Número] = l.Producto
+    WHERE l.Empresa = @p0 AND l.Picking = @p1 AND l.TipoLinea = 1 AND l.Estado = 1 AND ISNULL(p.Ficticio, 0) = 0
+), Reservas AS (
+    SELECT x.Pedido, x.Linea, u.Pasillo, u.Fila, u.Columna, SUM(u.Cantidad) AS Cantidad
+    FROM Lineas x
+         INNER JOIN Ubicaciones u ON u.PedidoVta = x.Pedido AND u.[NºOrdenVta] = x.Linea AND u.Estado = 3
+    GROUP BY x.Pedido, x.Linea, u.Pasillo, u.Fila, u.Columna
+), Paradas AS (
+    SELECT x.Producto, r.Pasillo, r.Fila, r.Columna, SUM(r.Cantidad) AS Reservas, SUM(x.Pendiente) AS Pendiente
+    FROM Lineas x
+         LEFT JOIN Reservas r ON r.Pedido = x.Pedido AND r.Linea = x.Linea
+    GROUP BY x.Producto, r.Pasillo, r.Fila, r.Columna
+)
 SELECT 0 AS Orden, CAST(0 AS bit) AS SinCodigo, CAST(0 AS bit) AS CodigoDuplicado, CAST(NULL AS varchar(11)) AS Ubicacion,
-       RTRIM(l.Producto) AS Producto,
-       RTRIM(MAX(p.Nombre)) AS Descripcion,
-       RTRIM(MAX(p.CodBarras)) AS CodigoBarras,
-       MAX(p.[Tamaño]) AS Tamano,
-       RTRIM(MAX(p.UnidadMedida)) AS UnidadMedida,
-       RTRIM(MAX(f.[Descripción])) AS Familia,
-       CAST(ABS(ISNULL(SUM(u.Cantidad), ISNULL(SUM(l.Cantidad - l.Recoger), 0))) AS int) AS Cantidad,
-       RTRIM(u.Pasillo) AS Pasillo, RTRIM(u.Fila) AS Fila, RTRIM(u.Columna) AS Columna
-FROM LinPedidoVta l
-     LEFT JOIN Ubicaciones u ON l.[Número] = u.PedidoVta AND l.[Nº Orden] = u.[NºOrdenVta] AND u.Estado = 3
-     LEFT JOIN Productos p ON p.Empresa = l.Empresa AND p.[Número] = l.Producto
+       RTRIM(t.Producto) AS Producto,
+       RTRIM(p.Nombre) AS Descripcion,
+       RTRIM(p.CodBarras) AS CodigoBarras,
+       p.[Tamaño] AS Tamano,
+       RTRIM(p.UnidadMedida) AS UnidadMedida,
+       RTRIM(f.[Descripción]) AS Familia,
+       CAST(ABS(ISNULL(t.Reservas, t.Pendiente)) AS int) AS Cantidad,
+       CAST(ABS(t.Reservas) AS int) AS Reservado,
+       CAST(t.Pendiente AS int) AS PendienteLineas,
+       RTRIM(t.Pasillo) AS Pasillo, RTRIM(t.Fila) AS Fila, RTRIM(t.Columna) AS Columna
+FROM Paradas t
+     LEFT JOIN Productos p ON p.Empresa = @p0 AND p.[Número] = t.Producto
      LEFT JOIN Familias f ON f.Empresa = p.Empresa AND f.[Número] = p.Familia
-WHERE l.Empresa = @p0 AND l.Picking = @p1 AND l.TipoLinea = 1 AND l.Estado = 1 AND ISNULL(p.Ficticio, 0) = 0
-GROUP BY l.Producto, u.Pasillo, u.Fila, u.Columna
-HAVING ISNULL(SUM(u.Cantidad), ISNULL(SUM(l.Cantidad - l.Recoger), 0)) <> 0";
+WHERE ISNULL(t.Reservas, t.Pendiente) <> 0";
 
         /// <summary>NestoAPI#641: el almacén de un picking (las mismas líneas que SQL_LINEAS_PICKING). Lo usa también el cambio de hueco.</summary>
         internal const string SQL_ALMACEN_PICKING = @"
@@ -245,6 +266,8 @@ SELECT TOP 1 RTRIM([Descripción]) FROM Almacenes WHERE Empresa = @p0 AND [Núme
         // producto + almacén de origen (traspaso 80885, 05/10/26: 53 de 53 filas así). Lo que no tiene registro (no había
         // nada libre al reservar, o un almacén sin control de ubicaciones) va en una parada sin hueco. Una línea de salida
         // por producto (Nesto viejo y la API consolidan). Mismas columnas que SQL_LINEAS_PICKING.
+        // NestoAPI#713: en una parada con hueco, Reservado es lo del registro y PendienteLineas lo que sale del producto
+        // (RecorteParadasRecogida la recorta si el registro dice más); la parada sin hueco es el resto y no se recorta.
         internal const string SQL_LINEAS_REPOSICION_SALIDA = @"
 WITH Salida AS (
     SELECT s.Empresa, s.[Almacén], s.[NºTraspaso], s.[Número], CAST(-SUM(s.Cantidad) AS int) AS Cantidad
@@ -253,14 +276,15 @@ WITH Salida AS (
     WHERE s.Empresa = @p0 AND s.[NºTraspaso] = @p1 AND s.Diario = a.DiarioSalidaRep AND s.Cantidad < 0
     GROUP BY s.Empresa, s.[Almacén], s.[NºTraspaso], s.[Número]
 ), Huecos AS (
-    SELECT x.[Número], CAST(ABS(u.Cantidad) AS int) AS Cantidad, RTRIM(u.Pasillo) AS Pasillo, RTRIM(u.Fila) AS Fila, RTRIM(u.Columna) AS Columna
+    SELECT x.[Número], CAST(ABS(u.Cantidad) AS int) AS Cantidad, RTRIM(u.Pasillo) AS Pasillo, RTRIM(u.Fila) AS Fila, RTRIM(u.Columna) AS Columna,
+           x.Cantidad AS Salida
     FROM Salida x
          INNER JOIN Ubicaciones u ON u.[NºTraspasoRepo] = x.[NºTraspaso] AND u.[Número] = x.[Número] AND u.[Almacén] = x.[Almacén]
                                  AND u.Estado IN (4, -4)
 ), Paradas AS (
-    SELECT [Número], Cantidad, Pasillo, Fila, Columna FROM Huecos
+    SELECT [Número], Cantidad, Pasillo, Fila, Columna, Salida FROM Huecos
     UNION ALL
-    SELECT x.[Número], x.Cantidad - ISNULL((SELECT SUM(h.Cantidad) FROM Huecos h WHERE h.[Número] = x.[Número]), 0), NULL, NULL, NULL
+    SELECT x.[Número], x.Cantidad - ISNULL((SELECT SUM(h.Cantidad) FROM Huecos h WHERE h.[Número] = x.[Número]), 0), NULL, NULL, NULL, NULL
     FROM Salida x
 )
 SELECT 0 AS Orden, CAST(0 AS bit) AS SinCodigo, CAST(0 AS bit) AS CodigoDuplicado, CAST(NULL AS varchar(11)) AS Ubicacion,
@@ -271,6 +295,8 @@ SELECT 0 AS Orden, CAST(0 AS bit) AS SinCodigo, CAST(0 AS bit) AS CodigoDuplicad
        RTRIM(MAX(p.UnidadMedida)) AS UnidadMedida,
        RTRIM(MAX(f.[Descripción])) AS Familia,
        CAST(SUM(t.Cantidad) AS int) AS Cantidad,
+       CAST(CASE WHEN MAX(t.Salida) IS NULL THEN NULL ELSE SUM(CASE WHEN t.Salida IS NULL THEN 0 ELSE t.Cantidad END) END AS int) AS Reservado,
+       CAST(ISNULL(MAX(t.Salida), SUM(t.Cantidad)) AS int) AS PendienteLineas,
        t.Pasillo, t.Fila, t.Columna
 FROM Paradas t
      LEFT JOIN Productos p ON p.Empresa = @p0 AND p.[Número] = t.[Número]
@@ -318,6 +344,98 @@ INSERT INTO PreparacionEscaneos
        (IdCliente, Empresa, NumeroOrigen, Pedido, LineaPedido, Producto, Fase, Cantidad, Metodo, Bulto, Motivo, Usuario, Dispositivo, FechaEscaneo, TipoOrigen)
 SELECT @p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10, @p11, @p12, @p13, @p14
 WHERE NOT EXISTS (SELECT 1 FROM PreparacionEscaneos WHERE IdCliente = @p0)";
+
+        /// <summary>
+        /// NestoAPI#713: el mismo INSERT con lo que pedía la parada (Scripts/Issue713_PreparacionEscaneosParada.sql). Mientras
+        /// las columnas no existan se usa <see cref="SQL_INSERTAR_ESCANEO"/> y la API sigue guardando igual.
+        /// </summary>
+        internal const string SQL_INSERTAR_ESCANEO_CON_PARADA = @"
+INSERT INTO PreparacionEscaneos
+       (IdCliente, Empresa, NumeroOrigen, Pedido, LineaPedido, Producto, Fase, Cantidad, Metodo, Bulto, Motivo, Usuario, Dispositivo, FechaEscaneo, TipoOrigen, PendienteParada, TotalParada)
+SELECT @p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10, @p11, @p12, @p13, @p14, @p15, @p16
+WHERE NOT EXISTS (SELECT 1 FROM PreparacionEscaneos WHERE IdCliente = @p0)";
+
+        internal const string SQL_HAY_COLUMNAS_PARADA = @"
+SELECT CAST(CASE WHEN COL_LENGTH('dbo.PreparacionEscaneos', 'PendienteParada') IS NOT NULL
+                  AND COL_LENGTH('dbo.PreparacionEscaneos', 'TotalParada') IS NOT NULL THEN 1 ELSE 0 END AS bit)";
+
+        // NestoAPI#713: se mira una vez; si ya están, no se vuelve a preguntar; si no, como mucho cada 5 minutos (para que
+        // las use en cuanto se lance el script, sin reiniciar la API). Igual que RepositorioServirPendienteAlHaberStock.
+        private static readonly TimeSpan REINTENTO_SIN_COLUMNAS_PARADA = TimeSpan.FromMinutes(5);
+        private static readonly object cerrojoColumnasParada = new object();
+        private static bool hayColumnasParada;
+        private static DateTime ultimaComprobacionColumnasParada = DateTime.MinValue;
+
+        /// <summary>Para los tests: olvida lo que se sabía de las columnas de la parada.</summary>
+        internal static void OlvidarColumnasParada()
+        {
+            lock (cerrojoColumnasParada)
+            {
+                hayColumnasParada = false;
+                ultimaComprobacionColumnasParada = DateTime.MinValue;
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#713: ¿están ya PendienteParada y TotalParada? <paramref name="preguntar"/> hace la consulta; si falla, se
+        /// da por que no (y se vuelve a mirar pasados 5 minutos).
+        /// </summary>
+        internal static async Task<bool> HayColumnasParada(Func<Task<bool>> preguntar)
+        {
+            lock (cerrojoColumnasParada)
+            {
+                if (hayColumnasParada || DateTime.Now - ultimaComprobacionColumnasParada < REINTENTO_SIN_COLUMNAS_PARADA)
+                {
+                    return hayColumnasParada;
+                }
+            }
+            bool ahora;
+            try
+            {
+                ahora = await preguntar().ConfigureAwait(false);
+            }
+            catch
+            {
+                ahora = false;
+            }
+            lock (cerrojoColumnasParada)
+            {
+                hayColumnasParada = hayColumnasParada || ahora;
+                ultimaComprobacionColumnasParada = DateTime.Now;
+                return hayColumnasParada;
+            }
+        }
+
+        /// <summary>NestoAPI#713: el INSERT y sus parámetros, con o sin las columnas de la parada.</summary>
+        internal static (string Sql, SqlParameter[] Parametros) ComandoInsertarEscaneo(string empresa, EscaneoAlmacenDTO escaneo, string usuario,
+            bool conParada)
+        {
+            var parametros = new List<SqlParameter>
+            {
+                new SqlParameter("@p0", escaneo.IdCliente),
+                new SqlParameter("@p1", empresa),
+                new SqlParameter("@p2", CasadorEscaneos.NumeroOrigenDe(escaneo)),
+                Entero("@p3", escaneo.Pedido),
+                Entero("@p4", escaneo.LineaPedido),
+                new SqlParameter("@p5", escaneo.Producto.Trim()),
+                new SqlParameter("@p6", escaneo.Fase.Trim().ToUpperInvariant()),
+                new SqlParameter("@p7", escaneo.Cantidad),
+                new SqlParameter("@p8", escaneo.Metodo.Trim().ToUpperInvariant()),
+                Entero("@p9", escaneo.Bulto),
+                Texto("@p10", escaneo.Motivo, 100),
+                Texto("@p11", usuario, 50),
+                Texto("@p12", escaneo.Dispositivo, 50),
+                new SqlParameter("@p13", escaneo.FechaEscaneo),
+                new SqlParameter("@p14", CasadorEscaneos.TipoOrigenDe(escaneo))
+            };
+            if (!conParada)
+            {
+                return (SQL_INSERTAR_ESCANEO, parametros.ToArray());
+            }
+            parametros.Add(Entero("@p15", escaneo.PendienteParada));
+            parametros.Add(Entero("@p16", escaneo.TotalParada));
+            return (SQL_INSERTAR_ESCANEO_CON_PARADA, parametros.ToArray());
+        }
 
         internal const string SQL_LECTURAS = @"
 SELECT RTRIM(e.Producto) AS Producto, CAST(SUM(e.Cantidad) AS int) AS Unidades
@@ -460,9 +578,11 @@ ORDER BY e.Picking DESC, e.Cliente, e.Contacto";
             return baseDeDatos.SqlQuery<EntregaPorEmpaquetar>(SQL_ENTREGAS_POR_EMPAQUETAR, empresa, almacen).ToListAsync();
         }
 
-        public Task<List<LineaPickingAlmacenDTO>> LeerLineasPicking(string empresa, int picking)
+        public async Task<List<LineaPickingAlmacenDTO>> LeerLineasPicking(string empresa, int picking)
         {
-            return baseDeDatos.SqlQuery<LineaPickingAlmacenDTO>(SQL_LINEAS_PICKING, empresa, picking).ToListAsync();
+            List<FilaParadaRecogida> filas = await baseDeDatos.SqlQuery<FilaParadaRecogida>(SQL_LINEAS_PICKING, empresa, picking)
+                .ToListAsync().ConfigureAwait(false);
+            return RecorteParadasRecogida.Aplicar(empresa, CasadorEscaneos.ORIGEN_PICKING, picking, filas);
         }
 
         public Task<List<PickingEnCursoDTO>> LeerPickingsEnCurso(string empresa, string almacen)
@@ -493,8 +613,9 @@ ORDER BY e.Picking DESC, e.Cliente, e.Contacto";
 
         public async Task<ReposicionSalida> LeerReposicionSalida(string empresa, int traspaso)
         {
-            List<LineaPickingAlmacenDTO> lineas = await baseDeDatos.SqlQuery<LineaPickingAlmacenDTO>(SQL_LINEAS_REPOSICION_SALIDA, empresa, traspaso)
+            List<FilaParadaRecogida> filas = await baseDeDatos.SqlQuery<FilaParadaRecogida>(SQL_LINEAS_REPOSICION_SALIDA, empresa, traspaso)
                 .ToListAsync().ConfigureAwait(false);
+            List<LineaPickingAlmacenDTO> lineas = RecorteParadasRecogida.Aplicar(empresa, CasadorEscaneos.ORIGEN_REPOSICION, traspaso, filas);
             if (lineas.Count == 0)
             {
                 return null;
@@ -552,22 +673,10 @@ ORDER BY e.Picking DESC, e.Cliente, e.Contacto";
         {
             try
             {
-                int filas = await baseDeDatos.ExecuteSqlCommandAsync(SQL_INSERTAR_ESCANEO,
-                    new SqlParameter("@p0", escaneo.IdCliente),
-                    new SqlParameter("@p1", empresa),
-                    new SqlParameter("@p2", CasadorEscaneos.NumeroOrigenDe(escaneo)),
-                    Entero("@p3", escaneo.Pedido),
-                    Entero("@p4", escaneo.LineaPedido),
-                    new SqlParameter("@p5", escaneo.Producto.Trim()),
-                    new SqlParameter("@p6", escaneo.Fase.Trim().ToUpperInvariant()),
-                    new SqlParameter("@p7", escaneo.Cantidad),
-                    new SqlParameter("@p8", escaneo.Metodo.Trim().ToUpperInvariant()),
-                    Entero("@p9", escaneo.Bulto),
-                    Texto("@p10", escaneo.Motivo, 100),
-                    Texto("@p11", usuario, 50),
-                    Texto("@p12", escaneo.Dispositivo, 50),
-                    new SqlParameter("@p13", escaneo.FechaEscaneo),
-                    new SqlParameter("@p14", CasadorEscaneos.TipoOrigenDe(escaneo))).ConfigureAwait(false);
+                bool conParada = (escaneo.PendienteParada.HasValue || escaneo.TotalParada.HasValue)
+                    && await HayColumnasParada(() => baseDeDatos.SqlQuery<bool>(SQL_HAY_COLUMNAS_PARADA).FirstAsync()).ConfigureAwait(false);
+                (string sql, SqlParameter[] parametros) = ComandoInsertarEscaneo(empresa, escaneo, usuario, conParada);
+                int filas = await baseDeDatos.ExecuteSqlCommandAsync(sql, parametros).ConfigureAwait(false);
                 return filas > 0;
             }
             catch (SqlException ex) when (ex.Number == 2627 || ex.Number == 2601)

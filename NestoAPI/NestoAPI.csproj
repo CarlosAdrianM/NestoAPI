@@ -567,6 +567,7 @@
     <Compile Include="Infraestructure\PreparacionAlmacen\EscriturasSalida.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\RecepcionComprasAlmacen.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\RecepcionReposicionesAlmacen.cs" />
+    <Compile Include="Infraestructure\PreparacionAlmacen\RecorteParadasRecogida.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\RepositorioPreparacionAlmacen.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\SasBlobAzure.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\TraductorCodigosRecepcion.cs" />

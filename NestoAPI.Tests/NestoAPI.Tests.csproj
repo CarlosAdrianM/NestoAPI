@@ -380,6 +380,7 @@
     <Compile Include="Infrastructure\Ubicaciones\PlanificadorReservaHuecosTests.cs" />
     <Compile Include="Infrastructure\Ubicaciones\PuertaUbicacionesTests.cs" />
     <Compile Include="Infrastructure\Ubicaciones\RegistroMovimientosUbicacionSqlTests.cs" />
+    <Compile Include="Infrastructure\PreparacionAlmacen\RecorteParadasRecogidaTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\ReposicionSalidaSqlTests.cs" />
     <Compile Include="Infrastructure\ServicioTraspasoEmpresaTests.cs" />
     <Compile Include="Models\Picking\GestorAvisosPickingTests.cs" />
