@@ -70,6 +70,12 @@ namespace NestoAPI.Models.PedidosVenta
         public bool vistoBuenoPlazosPago { get; set; }
         public bool CreadoSinPasarValidacion { get; set; }
         /// <summary>
+        /// NestoAPI#712: aviso de fecha de entrega lejana (más de 60 días). Null = el cliente no sabe preguntar y graba como
+        /// siempre, sin aviso. False = la API comprueba y, si alguna línea nueva o con la fecha cambiada va a más de 60 días,
+        /// rechaza con FECHA_ENTREGA_LEJANA (400) y la pregunta en el mensaje. True = el usuario ya ha dicho que sí.
+        /// </summary>
+        public bool? ConfirmarFechaEntregaLejana { get; set; }
+        /// <summary>
         /// Issue #159: permite al vendedor marcar un pedido para que no se le cobre la comisión
         /// por contra reembolso, aunque la forma de pago sea EFC. Solo tiene efecto si la fecha
         /// actual es anterior a <see cref="Constantes.Pedidos.FECHA_CORTE_NO_COBRAR_COMISION_REEMBOLSO"/>;

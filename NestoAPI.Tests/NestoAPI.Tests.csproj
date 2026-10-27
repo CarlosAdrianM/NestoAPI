@@ -301,6 +301,7 @@
     <Compile Include="Infrastructure\Pagos\Aplazame\ServicioCobrosAplazameTests.cs" />
     <Compile Include="Controllers\TarjetasControllerTests.cs" />
     <Compile Include="Controllers\PedidosVentaDatosObligatoriosTests.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\AvisoFechaEntregaLejanaTests.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ValidadorFechaEntregaTests.cs" />
     <Compile Include="Controllers\PedidosVentaPortesTests.cs" />
     <Compile Include="Controllers\PlantillaVentasControllerTests.cs" />
