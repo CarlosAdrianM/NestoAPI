@@ -1086,6 +1086,14 @@ namespace NestoAPI.Controllers
                 return BadRequest($"El país fiscal '{cliente.pais}' no es un código ISO de dos letras.");
             }
 
+            // NestoAPI#716: el motivo del cambio de estado es un catálogo cerrado; fuera de él, 400 antes de tocar nada.
+            string motivoCambioEstado = MotivoCambioEstadoCliente.MotivoParaNoGuardar(cliente.motivoCambioEstado, cliente.comentarioCambioEstado);
+            if (motivoCambioEstado != null)
+            {
+                return BadRequest(motivoCambioEstado);
+            }
+            short? estadoAnterior = clienteDB.Estado;
+
             AplicarCambiosClienteComercial(clienteDB, cliente);
 
             db.Entry(clienteDB).State = System.Data.Entity.EntityState.Modified;
@@ -1112,6 +1120,13 @@ namespace NestoAPI.Controllers
             catch (Exception ex)
             {
                 throw new Exception("No se ha podido actualizar el cliente", ex);
+            }
+
+            // NestoAPI#716: el trigger acaba de apuntar el cambio en SeguimientoCambiosEstadoCliente; le ponemos el porqué.
+            if (clienteDB.Estado.HasValue && clienteDB.Estado != estadoAnterior)
+            {
+                _ = RegistroMotivoCambioEstado.Anotar(db, clienteDB.Empresa, clienteDB.Nº_Cliente, clienteDB.Contacto, clienteDB.Estado.Value,
+                    cliente.motivoCambioEstado, cliente.comentarioCambioEstado, UsuarioAuditoriaHelper.Resolver(User, cliente.usuario));
             }
 
             return StatusCode(HttpStatusCode.NoContent);
@@ -1166,7 +1181,12 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest(ModelState);
             }
-
+            // NestoAPI#716: motivo opcional del catálogo; fuera de él, 400 antes de tocar nada.
+            string motivoCambioEstado = MotivoCambioEstadoCliente.MotivoParaNoGuardar(cliente.MotivoCambioEstado, cliente.ComentarioCambioEstado);
+            if (motivoCambioEstado != null)
+            {
+                return BadRequest(motivoCambioEstado);
+            }
 
             try
             {
@@ -1177,6 +1197,11 @@ namespace NestoAPI.Controllers
                 }
 
                 _ = await db.SaveChangesAsync();
+
+                // NestoAPI#716: solo casa con las fichas cuyo estado acaba de cambiar (fila reciente del trigger).
+                _ = RegistroMotivoCambioEstado.AnotarVarios(db, clientesDB,
+                    cliente.MotivoCambioEstado ?? MotivoCambioEstadoCliente.DEJAR_DE_VISITAR, cliente.ComentarioCambioEstado,
+                    UsuarioAuditoriaHelper.Resolver(User, cliente.Usuario));
             }
             // NestoAPI#476: DejarDeVisitar puede acabar en NULO; si el cliente tiene pendientes o
             // deuda, la guardia lo corta y el motivo llega a la pantalla.
@@ -1253,6 +1278,8 @@ namespace NestoAPI.Controllers
 
             try
             {
+                // NestoAPI#716: desde qué aplicación se da de alta (Clientes.AplicacionAlta); si no lo manda, se deduce del token.
+                clienteCrear.AplicacionAlta = DatosAltaCliente.DeducirAplicacion(User, clienteCrear.AplicacionAlta);
                 Cliente cliente = await _gestorClientes.CrearCliente(clienteCrear, db);
                 return CreatedAtRoute("DefaultApi",
                     new { cliente.Empresa, cliente.Nº_Cliente, cliente.Contacto },

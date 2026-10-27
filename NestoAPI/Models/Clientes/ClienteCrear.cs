@@ -60,6 +60,19 @@ namespace NestoAPI.Models.Clientes
 
         public string Usuario { get; set; }
 
+        /// <summary>
+        /// NestoAPI#716: en PUT api/Clientes/DejarDeVisitar, por qué se deja de visitar (un código de
+        /// MotivoCambioEstadoCliente; fuera del catálogo es un 400). Opcional: sin él la API anota «DejarDeVisitar».
+        /// </summary>
+        public string MotivoCambioEstado { get; set; }
+        /// <summary>NestoAPI#716: texto libre que acompaña al motivo (200 caracteres como mucho). Opcional.</summary>
+        public string ComentarioCambioEstado { get; set; }
+        /// <summary>
+        /// NestoAPI#716: en el POST (alta), desde qué aplicación se da de alta (Clientes.AplicacionAlta, 20 caracteres).
+        /// Opcional: si no viene, la API lo deduce de cómo se autenticó quien llama (Nesto, NestoApp, TiendaOnline).
+        /// </summary>
+        public string AplicacionAlta { get; set; }
+
 
         public virtual ICollection<PersonaContactoDTO> PersonasContacto { get; set; }
     }

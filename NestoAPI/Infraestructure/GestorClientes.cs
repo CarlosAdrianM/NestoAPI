@@ -38,6 +38,8 @@ namespace NestoAPI.Infraestructure
         internal IServicioCorreoElectronico ServicioCorreo { get; set; } = new ServicioCorreoElectronico();
         /// <summary>NestoAPI#541: el aviso que deja preparado PrepararClienteModificar y manda ModificarCliente tras guardar.</summary>
         internal System.Net.Mail.MailMessage avisoAlmacenPendiente;
+        /// <summary>NestoAPI#716: el motivo del cambio de estado que deja PrepararClienteModificar y anota ModificarCliente tras guardar.</summary>
+        internal string motivoCambioEstadoPendiente;
 
         public GestorClientes(IServicioGestorClientes servicio, IServicioAgencias servicioAgencias, SincronizacionEventWrapper sincronizacionEventWrapper)
         {
@@ -1106,8 +1108,11 @@ namespace NestoAPI.Infraestructure
             if ((string.IsNullOrWhiteSpace(clienteDB.CIF_NIF) && !string.IsNullOrWhiteSpace(clienteModificar.Nif)) ||
                 ((clienteDB.Estado == Constantes.Clientes.Estados.PRIMERA_VISITA) && !string.IsNullOrWhiteSpace(clienteDB.CIF_NIF)))
             {
+                short? estadoAntes = clienteDB.Estado;
                 clienteDB.Estado = clienteDB.Vendedore.Estado == Constantes.Vendedores.ESTADO_VENDEDOR_TELEFONICO ?
                     Constantes.Clientes.Estados.VISITA_TELEFONICA : Constantes.Clientes.Estados.VISITA_PRESENCIAL;
+                // NestoAPI#716 (2.2): el porqué se anota tras guardar (la fila la crea el trigger), en ModificarCliente.
+                motivoCambioEstadoPendiente = clienteDB.Estado != estadoAntes ? Clientes.MotivoCambioEstadoCliente.ALTA_CON_NIF : null;
             }
 
             // test se rellenan los datos y el CIF sobre todo
@@ -1739,6 +1744,13 @@ namespace NestoAPI.Infraestructure
                     _ = await db.SaveChangesAsync();
                 }
 
+                // NestoAPI#716 (2.2): si PrepararClienteModificar cambió el estado (alta que completa el NIF), su porqué.
+                if (motivoCambioEstadoPendiente != null && cliente.Estado.HasValue)
+                {
+                    _ = Clientes.RegistroMotivoCambioEstado.Anotar(db, cliente.Empresa, cliente.Nº_Cliente, cliente.Contacto, cliente.Estado.Value,
+                        motivoCambioEstadoPendiente, null, clienteCrear.Usuario);
+                }
+
                 // Publicar evento de sincronización
                 await PublicarClienteSincronizar(cliente);
 
@@ -1760,6 +1772,7 @@ namespace NestoAPI.Infraestructure
             finally
             {
                 avisoAlmacenPendiente = null;
+                motivoCambioEstadoPendiente = null;
             }
         }
 
@@ -1853,6 +1866,9 @@ namespace NestoAPI.Infraestructure
                     cliente.CCC1 = cliente.CCCs.FirstOrDefault();
                     _ = await db.SaveChangesAsync();
                 }
+
+                // NestoAPI#716 (2.3): fecha, usuario y aplicación del alta (columnas fuera del EDMX; best-effort).
+                _ = Clientes.DatosAltaCliente.Registrar(db, cliente, clienteCrear.Usuario, clienteCrear.AplicacionAlta, DateTime.Now);
 
                 await PublicarClienteSincronizar(cliente);
 

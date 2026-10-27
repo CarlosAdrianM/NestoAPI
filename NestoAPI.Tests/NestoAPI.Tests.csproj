@@ -466,6 +466,7 @@
     <Compile Include="Infrastructure\GestorAgenciasGlovoTests.cs" />
     <Compile Include="Infrastructure\GestorClientesTests.cs" />
     <Compile Include="Infrastructure\Clientes\GuardiaAnulacionClienteTests.cs" />
+    <Compile Include="Infrastructure\Clientes\DatosParaModelos716Tests.cs" />
     <Compile Include="Infrastructure\Clientes\ContactoTelefonicoPrimeroTests.cs" />
     <Compile Include="Infrastructure\Clientes\CambioDiasEnServirConPickingTests.cs" />
     <Compile Include="Infrastructure\GestorEnviosAgenciaTests.cs" />
@@ -655,6 +656,7 @@
     <Compile Include="Infrastructure\Vendedores\ServicioVendedoresVisiblesTests.cs" />
     <Compile Include="Infrastructure\Rapports\GeneradorFrasesRitmoTests.cs" />
     <Compile Include="Infrastructure\Rapports\ServicioFrasesRitmoTests.cs" />
+    <Compile Include="Infrastructure\Rapports\ClasificacionRapports716Tests.cs" />
     <Compile Include="Infrastructure\Rapports\RecordatorioSugerenciasContactoTests.cs" />
     <Compile Include="Infrastructure\Rapports\ModeloContactoTests.cs" />
     <Compile Include="Infrastructure\Rapports\ReentrenamientoModeloLlamadasTests.cs" />

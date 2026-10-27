@@ -38,7 +38,7 @@ namespace NestoAPI.Controllers
         public IQueryable<SeguimientoClienteDTO> GetSeguimientosClientes(string empresa, string cliente, string contacto)
         {
             DateTime fechaDesde = DateTime.Today.AddYears(-3);
-            return db.SeguimientosClientes
+            return ConResultado(db.SeguimientosClientes
                 .Include(s => s.Cliente)
                 .Where(s => s.Empresa == empresa && s.Número == cliente && s.Contacto == contacto && s.Fecha >= fechaDesde)
                 .Select(s => new SeguimientoClienteDTO
@@ -62,7 +62,7 @@ namespace NestoAPI.Controllers
                     Usuario = s.Usuario,
                     Vendedor = s.Vendedor
                 })
-                .OrderByDescending(s => s.Id);
+                .OrderByDescending(s => s.Id));
         }
 
         // GET: api/SeguimientosClientes
@@ -76,7 +76,7 @@ namespace NestoAPI.Controllers
                     ? db.SeguimientosClientes.Where(s => s.Vendedor == vendedor)
                     : db.SeguimientosClientes.Where(s => s.Usuario == vendedor)
                 : db.SeguimientosClientes;
-            return seguimientos
+            return ConResultado(seguimientos
                 .Include(s => s.Cliente)
                 .Where(s => s.Fecha >= fechaDesde && s.Fecha < fechaHasta)
                 .Select(s => new SeguimientoClienteDTO
@@ -100,7 +100,7 @@ namespace NestoAPI.Controllers
                     Usuario = s.Usuario,
                     Vendedor = s.Vendedor
                 })
-                .OrderByDescending(s => s.Id);
+                .OrderByDescending(s => s.Id));
         }
 
         // GET: api/SeguimientosClientes
@@ -928,6 +928,13 @@ El mensaje resultante es importante que lo devuelvas en HTML para poner en el cu
                 throw new Exception("No se pueden modificar los rapport de otro usuario");
             }
 
+            // NestoAPI#716: el resultado del rapport es un catálogo cerrado; lo que no case es un 400 antes de tocar nada.
+            string motivoResultado = ResultadoRapport.MotivoParaNoGuardar(seguimientoClienteDTO.Resultado);
+            if (motivoResultado != null)
+            {
+                return BadRequest(motivoResultado);
+            }
+
             seguimientoCliente.Aparatos = seguimientoClienteDTO.Aparatos;
             seguimientoCliente.Aviso = seguimientoClienteDTO.Aviso;
             seguimientoCliente.ClienteNuevo = seguimientoClienteDTO.ClienteNuevo;
@@ -971,6 +978,9 @@ El mensaje resultante es importante que lo devuelvas en HTML para poner en el cu
                 }
             }
 
+            // NestoAPI#716: columnas fuera del EDMX; best-effort tras guardar el rapport.
+            _ = DatosExtraRapport.Guardar(db, seguimientoCliente.NºOrden, seguimientoClienteDTO);
+
             return StatusCode(HttpStatusCode.NoContent);
         }
 
@@ -992,6 +1002,12 @@ El mensaje resultante es importante que lo devuelvas en HTML para poner en el cu
             if (motivoEmpleados != null)
             {
                 return BadRequest(motivoEmpleados);
+            }
+            // NestoAPI#716: el resultado del rapport es un catálogo cerrado; lo que no case es un 400 antes de tocar nada.
+            string motivoResultado = ResultadoRapport.MotivoParaNoGuardar(seguimientoClienteDTO.Resultado);
+            if (motivoResultado != null)
+            {
+                return BadRequest(motivoResultado);
             }
 
             DateTime fechaDesde = new DateTime(seguimientoClienteDTO.Fecha.Year, seguimientoClienteDTO.Fecha.Month, seguimientoClienteDTO.Fecha.Day);
@@ -1103,10 +1119,40 @@ El mensaje resultante es importante que lo devuelvas en HTML para poner en el cu
                 throw new Exception("No se ha podido guardar el seguimiento", ex);
             }
 
+            GuardarDatosExtraRapport(seguimientoCliente.NºOrden, seguimientoClienteDTO);
             await MarcarSugerenciaAtendidaAsync(seguimientoCliente).ConfigureAwait(false);
 
             return CreatedAtRoute("DefaultApi", new { id = seguimientoCliente.NºOrden }, seguimientoCliente);
             } // using transaccion
+        }
+
+        /// <summary>
+        /// NestoAPI#716: Resultado y ProximoContacto (columnas fuera del EDMX) del rapport recién creado. Contexto propio:
+        /// el del controller sigue dentro del using de la transacción ya confirmada. Best-effort (ELMAH).
+        /// </summary>
+        private static void GuardarDatosExtraRapport(int numOrden, SeguimientoClienteDTO dto)
+        {
+            if (!DatosExtraRapport.HayAlgoQueGuardar(dto))
+            {
+                return;
+            }
+            try
+            {
+                using (var contexto = new NVEntities())
+                {
+                    _ = DatosExtraRapport.Guardar(contexto, numOrden, dto);
+                }
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Rapports #716] No se ha podido guardar el resultado del rapport {numOrden}: {ex.Message}", ex));
+            }
+        }
+
+        /// <summary>NestoAPI#716: completa Resultado y ProximoContacto (fuera del EDMX) en lo que devuelven los GET.</summary>
+        private IQueryable<SeguimientoClienteDTO> ConResultado(IQueryable<SeguimientoClienteDTO> consulta)
+        {
+            return DatosExtraRapport.Completar(db, consulta.ToList()).AsQueryable();
         }
 
         /// <summary>
