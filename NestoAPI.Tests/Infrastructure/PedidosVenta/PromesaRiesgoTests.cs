@@ -668,6 +668,96 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
         }
 
         [TestMethod]
+        public void Destinatarios_VendedorGeneralNV_AvisaAQuienGraboElPedido()
+        {
+            // NestoAPI#708: con el vendedor general (NV) no hay comercial real: campana y correo a quien grabó el pedido.
+            var comerciales = new ComercialesPedido
+            {
+                Pedido = PEDIDO,
+                UsuarioPedido = "Laura",
+                CorreoUsuarioPedido = "Laura@NuevaVision.es",
+                Comerciales = new List<ComercialPedido>
+                {
+                    new ComercialPedido { Vendedor = Constantes.Vendedores.VENDEDOR_GENERAL, Correo = "general@nuevavision.es", Usuarios = new List<string> { "General" } }
+                }
+            };
+
+            DestinatariosPromesaRiesgo d = AvisadorPromesaRiesgo.Componer(comerciales, new List<ComercialesPedido>(), new[] { "Carlos", "Manuel" },
+                new[] { "carlosadrian@nuevavision.es", "manuelrodriguez@nuevavision.es" });
+
+            CollectionAssert.AreEqual(new[] { "NUEVAVISION\\Laura", "NUEVAVISION\\Carlos", "NUEVAVISION\\Manuel" }, d.Usuarios);
+            CollectionAssert.AreEqual(new[] { "laura@nuevavision.es", "carlosadrian@nuevavision.es", "manuelrodriguez@nuevavision.es" }, d.Correos);
+        }
+
+        [TestMethod]
+        public void Destinatarios_MixtoNVEnEsteticaEIFEnPeluqueria_IFQuienLoGraboSuJefeYDireccion()
+        {
+            // NestoAPI#708: pedido con NV en la cabecera (estética) e IF en peluquería (VendedoresPedidosGruposProductos):
+            // IF por lo de peluquería, quien lo grabó por lo de estética, el jefe de equipo de IF y Dirección.
+            List<string> codigos = ComercialesPedido.CodigosVendedores(new[] { "COS", "PEL " }, Constantes.Vendedores.VENDEDOR_GENERAL, "IF ",
+                peluqueriaSinVendedorVaAlDeEstetica: true);
+            CollectionAssert.AreEqual(new[] { "IF", Constantes.Vendedores.VENDEDOR_GENERAL }, codigos);
+            var comerciales = new ComercialesPedido
+            {
+                Pedido = PEDIDO,
+                UsuarioPedido = "Laura",
+                CorreoUsuarioPedido = "laura@nuevavision.es",
+                Comerciales = new List<ComercialPedido>
+                {
+                    new ComercialPedido { Vendedor = "IF", EsPeluqueria = true, Correo = "israel@nuevavision.es", Usuarios = new List<string> { "Israel" } },
+                    new ComercialPedido { Vendedor = Constantes.Vendedores.VENDEDOR_GENERAL, Correo = "general@nuevavision.es", Usuarios = new List<string> { "General" } }
+                }
+            };
+            var jefe = new ComercialesPedido
+            {
+                Comerciales = new List<ComercialPedido>
+                {
+                    new ComercialPedido { Vendedor = "ASH", Correo = "alberto@nuevavision.es", Usuarios = new List<string> { "Alberto" } }
+                }
+            };
+
+            DestinatariosPromesaRiesgo d = AvisadorPromesaRiesgo.Componer(comerciales, new[] { jefe }, new[] { "Carlos", "Manuel" },
+                new[] { "carlosadrian@nuevavision.es", "manuelrodriguez@nuevavision.es" });
+
+            CollectionAssert.AreEqual(new[] { "NUEVAVISION\\Israel", "NUEVAVISION\\Laura", "NUEVAVISION\\Alberto", "NUEVAVISION\\Carlos", "NUEVAVISION\\Manuel" },
+                d.Usuarios);
+            CollectionAssert.AreEqual(new[] { "israel@nuevavision.es", "laura@nuevavision.es", "alberto@nuevavision.es", "carlosadrian@nuevavision.es",
+                "manuelrodriguez@nuevavision.es" }, d.Correos);
+        }
+
+        [TestMethod]
+        public void Destinatarios_MixtoNVEIF_SoloSeBuscaElJefeDelComercialReal()
+        {
+            ILectorComercialesPedido lector = A.Fake<ILectorComercialesPedido>();
+            A.CallTo(() => lector.Leer("1", PEDIDO)).Returns(new ComercialesPedido
+            {
+                Pedido = PEDIDO,
+                UsuarioPedido = "Laura",
+                CorreoUsuarioPedido = "laura@nuevavision.es",
+                Comerciales = new List<ComercialPedido>
+                {
+                    new ComercialPedido { Vendedor = "IF", EsPeluqueria = true, Correo = "israel@nuevavision.es", Usuarios = new List<string> { "Israel" } },
+                    new ComercialPedido { Vendedor = Constantes.Vendedores.VENDEDOR_GENERAL }
+                }
+            });
+            A.CallTo(() => lector.LeerDeVendedor("1", "ASH", null)).Returns(new ComercialesPedido
+            {
+                Comerciales = new List<ComercialPedido> { new ComercialPedido { Vendedor = "ASH", Correo = "alberto@nuevavision.es", Usuarios = new List<string> { "Alberto" } } }
+            });
+            IServicioVendedores vendedores = A.Fake<IServicioVendedores>();
+            A.CallTo(() => vendedores.JefeEquipo("1", "IF")).Returns(Task.FromResult(new VendedorDTO { vendedor = "ASH" }));
+            var real = new AvisadorPromesaRiesgo(lector, vendedores, A.Fake<IServicioNotificacionesPush>(), A.Fake<NestoAPI.Infraestructure.IServicioCorreoElectronico>(),
+                () => new List<string> { "Carlos", "Manuel" }, u => u == "Carlos" ? "carlosadrian@nuevavision.es" : null, _ => { });
+
+            DestinatariosPromesaRiesgo d = real.Destinatarios(new RiesgoPromesa { Empresa = "1", Pedido = PEDIDO, FechaPrometida = PROMETIDA, FechaNueva = VIERNES });
+
+            CollectionAssert.AreEqual(new[] { "NUEVAVISION\\Israel", "NUEVAVISION\\Laura", "NUEVAVISION\\Alberto", "NUEVAVISION\\Carlos", "NUEVAVISION\\Manuel" },
+                d.Usuarios);
+            CollectionAssert.AreEqual(new[] { "israel@nuevavision.es", "laura@nuevavision.es", "alberto@nuevavision.es", "carlosadrian@nuevavision.es" }, d.Correos);
+            A.CallTo(() => vendedores.JefeEquipo(A<string>._, Constantes.Vendedores.VENDEDOR_GENERAL)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
         public async Task AvisarCampana_LlegaATodosLosDestinatariosALaCampanaDeNesto()
         {
             ILectorComercialesPedido lector = A.Fake<ILectorComercialesPedido>();

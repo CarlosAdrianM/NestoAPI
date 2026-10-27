@@ -555,6 +555,44 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
         }
 
         [TestMethod]
+        public void LineaConFechaDeEntregaDeOtroAno_ElMotivoLlevaElAno()
+        {
+            // NestoAPI#708: «Tiene fecha de entrega el martes 05/01» parecía de este año; con el año no hay duda.
+            var futura = BEnAlgete();
+            futura.FechaEntrega = new DateTime(2027, 1, 5);
+
+            ResultadoFechaEntregaAgencia resultado = Calcular("2026-12-28 10:30:00", 1, 1, futura);
+
+            Assert.AreEqual(new DateTime(2027, 1, 5), resultado.PrimeraEntrega);
+            StringAssert.Contains(resultado.Motivo, "Sale entero a la agencia el martes 05/01/2027.");
+            StringAssert.Contains(resultado.Motivo, "Tiene fecha de entrega el martes 05/01/2027: no entra en el picking hasta ese día.");
+        }
+
+        [TestMethod]
+        public void LineaConFechaDeEntregaDelMismoAno_ElMotivoNoLlevaElAno()
+        {
+            var futura = BEnAlgete();
+            futura.FechaEntrega = new DateTime(2026, 10, 19);
+
+            ResultadoFechaEntregaAgencia resultado = Calcular("2026-10-13 10:30:00", 1, 1, futura);
+
+            StringAssert.Contains(resultado.Motivo, "Tiene fecha de entrega el lunes 19/10: no entra en el picking hasta ese día.");
+            Assert.IsFalse(resultado.Motivo.Contains("/2026"), resultado.Motivo);
+        }
+
+        [TestMethod]
+        public void Dia_ConElAnoSoloSiNoEsElDeHoy()
+        {
+            var hoy = new DateTime(2026, 10, 27);
+
+            Assert.AreEqual("miércoles 28/10", CalculadoraFechaEntregaAgencia.Dia(new DateTime(2026, 10, 28), hoy));
+            Assert.AreEqual("miércoles 27/10/2027", CalculadoraFechaEntregaAgencia.Dia(new DateTime(2027, 10, 27), hoy));
+            Assert.AreEqual("martes 30/12/2025", CalculadoraFechaEntregaAgencia.Dia(new DateTime(2025, 12, 30), hoy));
+            Assert.AreEqual("28/10", CalculadoraFechaEntregaAgencia.DiaCorto(new DateTime(2026, 10, 28), hoy));
+            Assert.AreEqual("27/10/2027", CalculadoraFechaEntregaAgencia.DiaCorto(new DateTime(2027, 10, 27), hoy));
+        }
+
+        [TestMethod]
         public void ProveedorConFechaPrevistaVencida_SuponeQueLlegaMananaYSaleElLaborableSiguiente()
         {
             // Decisión de Carlos (08/10): martes 13, prevista el viernes 09 y sin recibir → se supone que llega el miércoles 14
