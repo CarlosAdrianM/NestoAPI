@@ -483,6 +483,13 @@ namespace NestoAPI.Models
             public static readonly DateTime FECHA_ENTREGA_MINIMA = new DateTime(2000, 1, 1);
 
             /// <summary>
+            /// NestoAPI#712: al grabar un pedido con alguna línea a más de estos días se pregunta si la fecha es correcta (aviso,
+            /// no bloqueo). Pedido 929057: 27/10/2027 en vez de 2026. La comprobación vive en
+            /// <see cref="Infraestructure.PedidosVenta.AvisoFechaEntregaLejana"/>.
+            /// </summary>
+            public const int DIAS_AVISO_FECHA_ENTREGA_LEJANA = 60;
+
+            /// <summary>
             /// NestoAPI#482: modo de servicio del pedido (CabPedidoVta.ModoServicio). ServirJunto (bit)
             /// se queda corto; se mantiene como columna coherente (modo 1 ⇔ true) durante la transición.
             /// <para>NULL en BD = "no informado": manda ServirJunto (true → 1, false → 2). Así los

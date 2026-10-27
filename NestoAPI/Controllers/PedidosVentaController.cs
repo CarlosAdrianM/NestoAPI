@@ -1087,6 +1087,10 @@ namespace NestoAPI.Controllers
                 errorPersonalizado("No se puede ampliar una nota de entrega");
             }
 
+            // NestoAPI#712 (pedido 929057): una línea nueva o con la fecha cambiada a más de 60 días se pregunta (si el
+            // cliente sabe preguntar: ConfirmarFechaEntregaLejana = false). Lo que ya estaba así y no se toca, no.
+            AvisoFechaEntregaLejana.Comprobar(pedido, cabPedidoVta.LinPedidoVtas, DateTime.Today);
+
             // NestoAPI#176: bloquear desmarcado de servirJunto si una línea MMP o un
             // bonificado Ganavisiones se quedaría pendiente. Cierra el agujero de orden
             // de operaciones sin depender del cliente.
@@ -2151,6 +2155,10 @@ namespace NestoAPI.Controllers
                 return await CrearPedidoVenta(pedido).ConfigureAwait(true);
             }
 
+            // NestoAPI#712 (pedido 929057): antes de separar los cursos, para no dejar creado el pedido de cursos si luego
+            // hay que preguntar por la fecha de los productos.
+            AvisoFechaEntregaLejana.Comprobar(pedido, null, DateTime.Today);
+
             Infraestructure.Eventos.PreparacionCursos cursos = await ServicioCursosPlantilla.Preparar(pedido).ConfigureAwait(true);
             if (cursos.Error != null)
             {
@@ -2875,6 +2883,8 @@ namespace NestoAPI.Controllers
             {
                 throw new NestoBusinessException(Infraestructure.Eventos.ReglasCursosPlantilla.MENSAJE_CURSO_EN_PEDIDO_EXISTENTE);
             }
+            // NestoAPI#712: las líneas de la ampliación (plantilla) son todas nuevas; mismo aviso de fecha lejana que al crear
+            AvisoFechaEntregaLejana.Comprobar(parametroStringIntPedido?.PedidoAmpliacion, null, DateTime.Today);
 
             PedidoVentaDTO pedidoUnido = parametroStringIntPedido == null || parametroStringIntPedido.PedidoAmpliacion == null
                 ? await gestor.UnirPedidos(parametroStringIntInt.Empresa, parametroStringIntInt.NumeroPedidoOriginal, parametroStringIntInt.NumeroPedidoAmpliacion, parametroStringIntInt.SinPasarValidacion).ConfigureAwait(false)
