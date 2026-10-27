@@ -5,8 +5,11 @@
 -- Cada usuario lo puede cambiar él mismo desde Nesto → Parámetros (catálogo de ServicioParametrosEditables, «Diseño
 -- nuevo: menú lateral en lugar de la cinta»): la fila (defecto) es lo que ven los que no lo han tocado.
 -- Plan: (defecto) = '0' ahora; en unas dos semanas, (defecto) = '1' (dejando '0' como vuelta atrás); después se quita la cinta.
--- NavegacionLateralCompacta (si el panel sale abierto o solo con iconos) no necesita filas: sin fila, compacto; la
--- guarda el propio Nesto cuando el usuario abre o cierra el panel.
+-- NavegacionLateralCompacta (si el panel sale abierto o solo con iconos): la guarda el propio Nesto cuando el usuario
+-- abre o cierra el panel con su botón. Tramo 2 (27/10/26): SÍ necesita la fila (defecto) = '1' (compacto, decisión 2).
+-- Sin ella no se recordaba nada: el PUT de api/ParametrosUsuario solo actualiza (sin la fila del usuario devuelve
+-- NotFound) y el GET solo crea la fila del usuario copiando la de (defecto). Con la fila (defecto), el GET del
+-- arranque crea la del usuario y el PUT ya tiene qué actualizar.
 --
 -- BD: NV. Sin GRANTs (INSERT de datos). Idempotente. Ejecutar antes o después del deploy (sin fila → la cinta).
 
@@ -21,6 +24,12 @@ GO
 IF NOT EXISTS (SELECT 1 FROM ParametrosUsuario WHERE Empresa = '1' AND Clave = 'NavegacionLateral' AND Usuario = 'Carlos')
     INSERT INTO ParametrosUsuario (Empresa, Clave, Usuario, Valor, Usuario2, [Fecha Modificación])
     VALUES ('1', 'NavegacionLateral', 'Carlos', '1', 'NestoAPI', GETDATE());
+GO
+
+-- Tramo 2: el panel compacto por defecto, y que se pueda recordar abierto o compacto por usuario
+IF NOT EXISTS (SELECT 1 FROM ParametrosUsuario WHERE Empresa = '1' AND Clave = 'NavegacionLateralCompacta' AND Usuario = '(defecto)')
+    INSERT INTO ParametrosUsuario (Empresa, Clave, Usuario, Valor, Usuario2, [Fecha Modificación])
+    VALUES ('1', 'NavegacionLateralCompacta', '(defecto)', '1', 'NestoAPI', GETDATE());
 GO
 
 -- VERIFICACIÓN:
