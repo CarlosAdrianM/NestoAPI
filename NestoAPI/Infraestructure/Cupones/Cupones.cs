@@ -210,12 +210,48 @@ namespace NestoAPI.Infraestructure.Cupones
         public const string ERROR_MINIMO = "CUPON_PEDIDO_MINIMO";
         /// <summary>NestoAPI#694: ComprobarCarrito sin código y el cliente no tiene ningún cupón que se pueda usar ni que vaya a valer.</summary>
         public const string ERROR_SIN_CUPON = "CUPON_SIN_CUPON";
+        /// <summary>NestoAPI#696: el pedido lleva también la línea del cheque regalo (no son acumulables).</summary>
+        public const string ERROR_CON_CHEQUE_REGALO = "CUPON_CON_CHEQUE_REGALO";
 
         /// <summary>
-        /// NestoAPI#694: el cupón se puede usar en el mismo pedido que el cheque regalo (Carlos, 15/10/26: combina con NVCHEQUE-*;
-        /// en Nesto y TNV nada lo impide). Lo lee el módulo nestocheques de la tienda.
+        /// NestoAPI#696 (Carlos, 22/10/26): el cheque regalo y los cupones de eventos NO son acumulables. Lo lee el módulo nestocheques
+        /// de la tienda (0.4.1): con false, el que elige el cliente sustituye al otro. En Nesto, NestoApp y TNV lo impone
+        /// <see cref="LlevaChequeRegalo(IEnumerable{LinPedidoVta}, IEnumerable{string})"/> al guardar el pedido (#694 lo dejó en true
+        /// provisionalmente).
         /// </summary>
-        public const bool COMBINABLE_CON_CHEQUE_REGALO = true;
+        public const bool COMBINABLE_CON_CHEQUE_REGALO = false;
+
+        /// <summary>
+        /// NestoAPI#696: el pedido lleva alguna línea de producto de cheque regalo (los productos de las campañas,
+        /// <c>IServicioCanjeChequesRegalo.ProductosCheque</c>). Sin productos de cheque, no.
+        /// </summary>
+        public static bool LlevaChequeRegalo(IEnumerable<LinPedidoVta> lineas, IEnumerable<string> productosCheque)
+        {
+            HashSet<string> cheques = ConjuntoProductos(productosCheque);
+            return cheques.Count > 0 && (lineas ?? Enumerable.Empty<LinPedidoVta>()).Any(l =>
+                l != null && (l.TipoLinea == null || l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
+                && !string.IsNullOrWhiteSpace(l.Producto) && cheques.Contains(l.Producto.Trim()));
+        }
+
+        /// <summary>NestoAPI#696: lo mismo sobre el DTO (la línea del cheque también puede venir marcada con EsChequeRegalo).</summary>
+        public static bool LlevaChequeRegalo(IEnumerable<LineaPedidoVentaDTO> lineas, IEnumerable<string> productosCheque)
+        {
+            HashSet<string> cheques = ConjuntoProductos(productosCheque);
+            return (lineas ?? Enumerable.Empty<LineaPedidoVentaDTO>()).Any(l =>
+                l != null && (l.EsChequeRegalo || (cheques.Count > 0 && (l.tipoLinea == null || l.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
+                    && !string.IsNullOrWhiteSpace(l.Producto) && cheques.Contains(l.Producto.Trim()))));
+        }
+
+        /// <summary>NestoAPI#696: el mensaje del rechazo (para el vendedor, Nesto#518 al importar o el carrito de TNV).</summary>
+        public static string MensajeConChequeRegalo(string codigo)
+        {
+            string cupon = string.IsNullOrWhiteSpace(codigo) ? "El cupón" : $"El cupón {codigo.Trim()}";
+            return $"{cupon} y el cheque regalo no son acumulables: no se pueden usar los dos en el mismo pedido. Quite uno de los dos.";
+        }
+
+        private static HashSet<string> ConjuntoProductos(IEnumerable<string> productos) =>
+            new HashSet<string>((productos ?? Enumerable.Empty<string>()).Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p.Trim()),
+                StringComparer.OrdinalIgnoreCase);
 
         /// <summary>NestoAPI#694: el canal con el que queda un cupón gastado en la tienda PrestaShop.</summary>
         public const string CANAL_TIENDA = ReglasEspejoPrestashop.CANAL_PRESTASHOP;

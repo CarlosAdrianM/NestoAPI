@@ -50,6 +50,18 @@ namespace NestoAPI.Models.PedidosVenta
         /// <summary>NestoAPI#482: modo de servicio (1..4, ver Constantes.Pedidos.ModosServicio). Null = el
         /// cliente no lo manda y se deriva de servirJunto. Al leer, siempre viene con valor.</summary>
         public byte? modoServicio { get; set; }
+        /// <summary>
+        /// NestoAPI#704 (caso 929152): de dónde sale el modoServicio que manda el cliente, para poder demostrar después si lo eligió el
+        /// vendedor o venía puesto: «Usuario» (lo eligió en el selector), «Sugerido» (la sugerencia de ModoServicioSugerido aplicada sin
+        /// tocarla), «PorDefecto» (parámetro o defecto del cliente) o «Corregido» (tras un rechazo de #518 o porque dejó de tener
+        /// sentido, #187). Opcional; null = cliente antiguo. Solo se graba (PedidosModoServicioOrigen), no cambia nada del pedido.
+        /// </summary>
+        public string OrigenModoServicio { get; set; }
+        /// <summary>
+        /// NestoAPI#704: la sugerencia que el cliente tenía en pantalla al grabar (el Modo que le devolvió ModoServicioSugerido), si la
+        /// manda. Opcional. Junto con la que calcula el servidor al grabar, dice si el stock cambió entre medias. Solo se graba.
+        /// </summary>
+        public byte? ModoServicioSugerido { get; set; }
         /// <summary>NestoAPI#542: modo de facturación (1 por entregas, 2 al completar el pedido, 3 todo ahora y lo
         /// pendiente después; ver Constantes.Pedidos.ModosFacturacion). Null = el cliente no lo manda y se
         /// deriva de mantenerJunto. Al leer, siempre viene con valor.</summary>

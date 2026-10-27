@@ -410,7 +410,8 @@ namespace NestoAPI.Controllers
         private IServicioCanjeCupones servicioCupones;
         internal IServicioCanjeCupones ServicioCupones
         {
-            get => servicioCupones ?? (servicioCupones = new ServicioCanjeCupones(new RepositorioCupones(db)));
+            // NestoAPI#696: con los productos de cheque regalo, para que el carrito no aplique el cupón si ya lleva el cheque (no son acumulables)
+            get => servicioCupones ?? (servicioCupones = new ServicioCanjeCupones(new RepositorioCupones(db), productosCheque: () => ServicioCanje.ProductosCheque()));
             set => servicioCupones = value;
         }
 

@@ -153,8 +153,9 @@ namespace NestoAPI.Controllers
         private Infraestructure.Cupones.IServicioCanjeCupones servicioCupones;
         internal Infraestructure.Cupones.IServicioCanjeCupones ServicioCupones
         {
+            // NestoAPI#696: con los productos de cheque regalo, para rechazar el pedido que lleva cheque y cupón (no son acumulables)
             get => servicioCupones ?? (servicioCupones = new Infraestructure.Cupones.ServicioCanjeCupones(
-                new Infraestructure.Cupones.RepositorioCupones(db)));
+                new Infraestructure.Cupones.RepositorioCupones(db), productosCheque: () => ServicioCanje.ProductosCheque()));
             set => servicioCupones = value;
         }
 
@@ -1104,6 +1105,8 @@ namespace NestoAPI.Controllers
             // NestoAPI#482: se normaliza antes de validar. Un cliente que no manda el modo (NestoApp)
             // no pisa el modo 3/4 que ya tenga el pedido, salvo que marque servirJunto (→ 1).
             byte modoEfectivoAnterior = Constantes.Pedidos.ModosServicio.Efectivo(cabPedidoVta.ModoServicio, cabPedidoVta.ServirJunto);
+            // NestoAPI#704: lo que manda el cliente sobre el modo, copiado ANTES de normalizar (se registra solo si el modo efectivo cambia).
+            Infraestructure.PedidosVenta.EnvioModoServicio envioModoServicio = Infraestructure.PedidosVenta.RegistroOrigenModoServicio.Capturar(pedido);
             string modoInvalido = Constantes.Pedidos.ModosServicio.Normalizar(pedido, cabPedidoVta.ModoServicio);
             if (modoInvalido != null)
             {
@@ -2086,6 +2089,11 @@ namespace NestoAPI.Controllers
                 Infraestructure.PedidosVenta.Anomalias.OperacionesAnomalia.MODIFICAR, pedido, lineasAntesAnomalias, respuestaValidacion,
                 Infraestructure.PedidosVenta.Anomalias.AplicacionesOrigen.DesdeCabecera(Request), PrincipalParaValidacion()?.Identity?.Name);
 
+            // NestoAPI#704: si el modo efectivo ha cambiado, de dónde salió el nuevo (en segundo plano y best-effort).
+            Infraestructure.PedidosVenta.RegistroOrigenModoServicio.Registrar(Infraestructure.PedidosVenta.RegistroOrigenModoServicio.OPERACION_MODIFICAR,
+                pedido, envioModoServicio, null, modoEfectivoAnterior,
+                Infraestructure.PedidosVenta.Anomalias.AplicacionesOrigen.DesdeCabecera(Request), PrincipalParaValidacion()?.Identity?.Name);
+
             if (avisos.Count > 0)
             {
                 return Ok(new RespuestaModificacionPedidoDTO { Avisos = avisos });
@@ -2212,6 +2220,8 @@ namespace NestoAPI.Controllers
             // ModoServicioPorDefecto del usuario o, si no fuerza nada, el que dicta el stock real del pedido.
             // NestoAPI#518: si el cliente ELIGE modo, tiene que tener sentido con el stock de ahora (no se corrige
             // en silencio: se rechaza diciendo cuál vale). Sin modo, nace en el sugerido y no hay nada que rechazar.
+            // NestoAPI#704: lo que manda el cliente sobre el modo (y de dónde sale) se copia ANTES de normalizar, para dejarlo registrado.
+            Infraestructure.PedidosVenta.EnvioModoServicio envioModoServicio = Infraestructure.PedidosVenta.RegistroOrigenModoServicio.Capturar(pedido);
             ComprobarModoServicioAlCrear(pedido);
             string modoInvalido = Constantes.Pedidos.ModosServicio.NormalizarAlCrear(pedido, ModoServicioAlCrear(pedido));
             if (modoInvalido != null)
@@ -2744,6 +2754,12 @@ namespace NestoAPI.Controllers
             // NestoAPI#563: sombra del sugeridor por causas con el pedido recién creado (en segundo plano; apagada salvo
             // parámetro; nunca cambia la respuesta ni la retrasa). Excluye sus propias líneas de los pendientes.
             SombraModoServicio.Registrar(SombraModoServicio.ORIGEN_CREAR, pedido, pedido.modoServicio);
+
+            // NestoAPI#704 (caso 929152): de dónde salió el modo con el que se ha grabado (lo que mandó el cliente, el que sugería el
+            // servidor y el que ha quedado), en segundo plano y best-effort: ni cambia la respuesta ni la retrasa.
+            Infraestructure.PedidosVenta.RegistroOrigenModoServicio.Registrar(Infraestructure.PedidosVenta.RegistroOrigenModoServicio.OPERACION_CREAR,
+                pedido, envioModoServicio, SugerenciaAlCrear, null,
+                Infraestructure.PedidosVenta.Anomalias.AplicacionesOrigen.DesdeCabecera(Request), PrincipalParaValidacion()?.Identity?.Name);
 
             // NestoAPI#715: señales de anomalía en sombra (interruptor Anomalias:Modo), en segundo plano y best-effort: ni cambia la
             // respuesta ni la retrasa. Deja también la fila de contexto del pedido (aplicación, deuda, forma de pago; #716).
@@ -3686,14 +3702,22 @@ namespace NestoAPI.Controllers
             pedido.servirJunto = Constantes.Pedidos.ModosServicio.EsTodoJunto(modo);
         }
 
+        /// <summary>
+        /// NestoAPI#704: la última sugerencia que calculó <see cref="ModoServicioAlCrear"/> (ya con el parámetro forzado aplicado), para
+        /// registrarla con el pedido recién creado. Null si no se ha calculado o falló.
+        /// </summary>
+        internal SugeridorModoServicio.Sugerencia SugerenciaAlCrear { get; private set; }
+
         internal byte ModoServicioAlCrear(PedidoVentaDTO pedido)
         {
             byte? forzado = ModoServicioForzadoPorParametro();
+            SugerenciaAlCrear = null;
             try
             {
                 SugeridorModoServicio.Sugerencia sugerencia = SugeridorModoServicio.Sugerir(pedido, Stocks(), KitsParaSugerir());
                 // NestoAPI#518: el modo forzado por parámetro solo si tiene sentido para el pedido (en tienda, siempre 2).
-                return forzado.HasValue ? SugeridorModoServicio.AplicarForzado(sugerencia, forzado.Value).Modo : sugerencia.Modo;
+                SugerenciaAlCrear = forzado.HasValue ? SugeridorModoServicio.AplicarForzado(sugerencia, forzado.Value) : sugerencia;
+                return SugerenciaAlCrear.Modo;
             }
             catch (Exception ex)
             {
