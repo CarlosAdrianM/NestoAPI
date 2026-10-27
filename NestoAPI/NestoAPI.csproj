@@ -615,6 +615,7 @@
     <Compile Include="Controllers\PedidosVentaSolicitudesController.cs" />
     <Compile Include="Controllers\PedidosVentaPromesaRiesgoController.cs" />
     <Compile Include="Controllers\ClientesRiesgoAbandonoController.cs" />
+    <Compile Include="Controllers\PedidosVentaAnomaliasController.cs" />
     <Compile Include="Controllers\TarjetasController.cs" />
     <Compile Include="Controllers\PedidosClienteController.cs" />
     <Compile Include="Controllers\PersonasContactoClienteController.cs" />
@@ -978,6 +979,13 @@
     <Compile Include="Infraestructure\Abandono\ResolucionAbandono.cs" />
     <Compile Include="Infraestructure\Abandono\RiesgoAbandonoJobsService.cs" />
     <Compile Include="Infraestructure\Abandono\ServicioRiesgoAbandono.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\Anomalias\AnomaliasPedido.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\Anomalias\AnomaliasJobsService.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\Anomalias\EtiquetadorAnomalias.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\Anomalias\InformeAnomalias.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\Anomalias\RegistroAnomaliasPedido.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\Anomalias\RepositorioAnomaliasPedido.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\Anomalias\SenalesAnomaliaPedido.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ValidadorModoServicio.cs" />
     <Compile Include="Infraestructure\Exceptions\ModoServicioNoPermitidoException.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ComercialesPedido.cs" />

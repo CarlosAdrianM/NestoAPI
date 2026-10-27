@@ -76,6 +76,14 @@ namespace NestoAPI.Models.PedidosVenta
         /// </summary>
         public bool? ConfirmarFechaEntregaLejana { get; set; }
         /// <summary>
+        /// NestoAPI#715 (corte 4, AÚN SIN EFECTO): el equivalente de ConfirmarFechaEntregaLejana para las señales de anomalía
+        /// (cantidad, precio, descuento, importe fuera de lo habitual). En el corte 1 el modo es Sombra: la API registra las
+        /// señales en PedidosAnomalias y no mira este flag. Cuando Anomalias:Modo sea Activo: null = el cliente no sabe
+        /// preguntar y graba como siempre; false = la API comprueba y rechaza con ANOMALIA_PEDIDO (400); true = el usuario ya
+        /// ha dicho que sí.
+        /// </summary>
+        public bool? ConfirmarAnomalias { get; set; }
+        /// <summary>
         /// Issue #159: permite al vendedor marcar un pedido para que no se le cobre la comisión
         /// por contra reembolso, aunque la forma de pago sea EFC. Solo tiene efecto si la fecha
         /// actual es anterior a <see cref="Constantes.Pedidos.FECHA_CORTE_NO_COBRAR_COMISION_REEMBOLSO"/>;

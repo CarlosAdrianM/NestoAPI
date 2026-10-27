@@ -1184,6 +1184,20 @@ namespace NestoAPI
             // horario, todos los pedidos pendientes con promesa de hoy o futura (unas decenas) para lo que no pasa por la API
             // (Nesto viejo: regularizaciones de inventario, albaranes de compra, cambios del calendario...). Y el correo resumen,
             // L-V a las 9:00 y a las 15:00. Interruptor Pedidos:AvisoPromesaRiesgo (Apagado/Sombra/Activo) en Web.config.
+            // NestoAPI#715: etiquetado nocturno de PedidosAnomalias (CorregidoEn48h / Abonado / SinCambios) con LinPedidoVta y la
+            // tabla Modificaciones. A las 5:30, fuera de horario (recorre Modificaciones, sin índice por fecha). Interruptor
+            // Anomalias:Modo (Apagado/Sombra/Activo) en Web.config; Apagado no hace nada.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.PedidosVenta.Anomalias.AnomaliasJobsService.ID_JOB_ETIQUETADO,
+                () => Infraestructure.PedidosVenta.Anomalias.AnomaliasJobsService.EtiquetarNocturno(),
+                Infraestructure.PedidosVenta.Anomalias.AnomaliasJobsService.CRON_ETIQUETADO, // Cron: todos los días a las 5:30
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'anomalias-etiquetado' configurado (diario a las 5:30)");
+
             RecurringJob.AddOrUpdate(
                 Infraestructure.PedidosVenta.PromesaRiesgoJobsService.ID_JOB_NOCTURNO,
                 () => Infraestructure.PedidosVenta.PromesaRiesgoJobsService.PasadaNocturna(),

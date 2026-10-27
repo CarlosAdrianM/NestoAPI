@@ -750,6 +750,10 @@
     <Compile Include="Infrastructure\Abandono\ServicioRiesgoAbandonoTests.cs" />
     <Compile Include="Infrastructure\Abandono\InformeRiesgoAbandonoTests.cs" />
     <Compile Include="Controllers\ClientesRiesgoAbandonoControllerTests.cs" />
+    <Compile Include="Infrastructure\PedidosVenta\Anomalias\SenalesAnomaliaPedidoTests.cs" />
+    <Compile Include="Infrastructure\PedidosVenta\Anomalias\RegistroAnomaliasPedidoTests.cs" />
+    <Compile Include="Infrastructure\PedidosVenta\Anomalias\EtiquetadorAnomaliasTests.cs" />
+    <Compile Include="Infrastructure\PedidosVenta\Anomalias\InformeAnomaliasTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\ServicioFechaEntregaAgenciaTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\Issue687TransaccionAmbienteTests.cs" />
     <Compile Include="Infrastructure\PedidosCompra\ProveedorVencidoTests.cs" />

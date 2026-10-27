@@ -1091,6 +1091,10 @@ namespace NestoAPI.Controllers
             // cliente sabe preguntar: ConfirmarFechaEntregaLejana = false). Lo que ya estaba así y no se toca, no.
             AvisoFechaEntregaLejana.Comprobar(pedido, cabPedidoVta.LinPedidoVtas, DateTime.Today);
 
+            // NestoAPI#715: foto de las líneas grabadas ANTES de tocarlas, para que la sombra de anomalías mire solo lo nuevo o lo que cambia.
+            List<Infraestructure.PedidosVenta.Anomalias.LineaGrabadaAnomalia> lineasAntesAnomalias =
+                Infraestructure.PedidosVenta.Anomalias.RegistroAnomaliasPedido.Instantanea(cabPedidoVta.LinPedidoVtas);
+
             // NestoAPI#176: bloquear desmarcado de servirJunto si una línea MMP o un
             // bonificado Ganavisiones se quedaría pendiente. Cierra el agujero de orden
             // de operaciones sin depender del cliente.
@@ -2076,6 +2080,12 @@ namespace NestoAPI.Controllers
             gestor.Avisos.AddRange(avisosCorreoModificacion);
             await gestor.EnviarCorreo("Modificación");
 
+            // NestoAPI#715: señales de anomalía en sombra (interruptor Anomalias:Modo), en segundo plano y best-effort: ni cambia la
+            // respuesta ni la retrasa. Solo mira las líneas nuevas o que cambian respecto a lineasAntesAnomalias.
+            Infraestructure.PedidosVenta.Anomalias.RegistroAnomaliasPedido.Registrar(
+                Infraestructure.PedidosVenta.Anomalias.OperacionesAnomalia.MODIFICAR, pedido, lineasAntesAnomalias, respuestaValidacion,
+                Infraestructure.PedidosVenta.Anomalias.AplicacionesOrigen.DesdeCabecera(Request), PrincipalParaValidacion()?.Identity?.Name);
+
             if (avisos.Count > 0)
             {
                 return Ok(new RespuestaModificacionPedidoDTO { Avisos = avisos });
@@ -2734,6 +2744,12 @@ namespace NestoAPI.Controllers
             // NestoAPI#563: sombra del sugeridor por causas con el pedido recién creado (en segundo plano; apagada salvo
             // parámetro; nunca cambia la respuesta ni la retrasa). Excluye sus propias líneas de los pendientes.
             SombraModoServicio.Registrar(SombraModoServicio.ORIGEN_CREAR, pedido, pedido.modoServicio);
+
+            // NestoAPI#715: señales de anomalía en sombra (interruptor Anomalias:Modo), en segundo plano y best-effort: ni cambia la
+            // respuesta ni la retrasa. Deja también la fila de contexto del pedido (aplicación, deuda, forma de pago; #716).
+            Infraestructure.PedidosVenta.Anomalias.RegistroAnomaliasPedido.Registrar(
+                Infraestructure.PedidosVenta.Anomalias.OperacionesAnomalia.CREAR, pedido, null, respuestaValidacion,
+                Infraestructure.PedidosVenta.Anomalias.AplicacionesOrigen.DesdeCabecera(Request), PrincipalParaValidacion()?.Identity?.Name);
 
             // esto no sé si está muy bien, porque ponía empresa y lo he cambiado a número. Deberían ir los dos
             return CreatedAtRoute("DefaultApi", new { id = pedido.numero }, pedido);
