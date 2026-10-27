@@ -321,7 +321,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             });
             string nombre = Constantes.Pedidos.ModosServicio.Nombre(alternativo);
             return otro.PrimeraEntrega.HasValue
-                ? $"{inicio}; si elige «{nombre}», la primera parte sale el {Dia(otro.PrimeraEntrega.Value)}."
+                ? $"{inicio}; si elige «{nombre}», la primera parte sale el {Dia(otro.PrimeraEntrega.Value, entrada.Ahora)}."
                 : $"{inicio}; si elige «{nombre}», sale una primera parte en cuanto haya algo (ahora mismo no hay nada que pueda salir).";
         }
 
@@ -493,15 +493,16 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             bool esperoTiendas, bool esperoRegalos, bool fueANota, bool todoANota, List<DateTime> diasCerrados)
         {
             var frases = new List<string>();
+            DateTime hoy = entrada.Ahora.Date;
             if (resultado.PrimeraEntrega.HasValue && resultado.EntregaCompleta == resultado.PrimeraEntrega)
             {
-                frases.Add($"Sale entero a la agencia el {Dia(resultado.PrimeraEntrega.Value)}.");
+                frases.Add($"Sale entero a la agencia el {Dia(resultado.PrimeraEntrega.Value, hoy)}.");
             }
             else if (resultado.PrimeraEntrega.HasValue)
             {
-                frases.Add($"Primera entrega a la agencia el {Dia(resultado.PrimeraEntrega.Value)}; " +
+                frases.Add($"Primera entrega a la agencia el {Dia(resultado.PrimeraEntrega.Value, hoy)}; " +
                     (resultado.EntregaCompleta.HasValue
-                        ? $"entrega completa el {Dia(resultado.EntregaCompleta.Value)} ({resultado.Entregas.Count} entregas)."
+                        ? $"entrega completa el {Dia(resultado.EntregaCompleta.Value, hoy)} ({resultado.Entregas.Count} entregas)."
                         : "la entrega completa no tiene fecha."));
             }
             else
@@ -511,20 +512,19 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
             frases.Add($"Modo «{Constantes.Pedidos.ModosServicio.Nombre(entrada.ModoServicio)}»: {ExplicacionModo(entrada.ModoServicio)}");
 
-            DateTime hoy = entrada.Ahora.Date;
             DateTime primerPicking = GestorPedidosVenta.FechaEntregaAjustada(hoy, entrada.Ruta, Constantes.Almacenes.ALGETE, entrada.Ahora,
                 entrada.HoraCorte, esFestivo);
             List<Lote> porSalir = lotes.Where(l => !l.YaEnPicking).ToList();
             DateTime? primeraElegible = porSalir.Any() ? porSalir.Min(l => l.Elegible) : (DateTime?)null;
             if (primeraElegible.HasValue && primeraElegible.Value > primerPicking)
             {
-                frases.Add($"Tiene fecha de entrega el {Dia(primeraElegible.Value)}: no entra en el picking hasta ese día.");
+                frases.Add($"Tiene fecha de entrega el {Dia(primeraElegible.Value, hoy)}: no entra en el picking hasta ese día.");
             }
             else if (primeraElegible.HasValue && primerPicking > hoy)
             {
                 frases.Add(entrada.Ahora.TimeOfDay >= entrada.HoraCorte && EsLaborable(hoy)
-                    ? $"Pasada la hora de corte ({entrada.HoraCorte:hh\\:mm}), el primer picking es el {Dia(primerPicking)}."
-                    : $"El primer picking es el {Dia(primerPicking)}.");
+                    ? $"Pasada la hora de corte ({entrada.HoraCorte:hh\\:mm}), el primer picking es el {Dia(primerPicking, hoy)}."
+                    : $"El primer picking es el {Dia(primerPicking, hoy)}.");
             }
             if (primeraElegible.HasValue && porSalir.Any(l => l.Elegible > primeraElegible.Value))
             {
@@ -550,21 +550,21 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 switch (g.Origen)
                 {
                     case ORIGEN_KIT:
-                        frases.Add($"{cuantas} desmontando el kit {g.Kit} en Algete: puede{n} salir el {Dia(g.Disponible.Value)}.");
+                        frases.Add($"{cuantas} desmontando el kit {g.Kit} en Algete: puede{n} salir el {Dia(g.Disponible.Value, hoy)}.");
                         break;
                     case ORIGEN_TIENDA:
-                        frases.Add($"{cuantas} en {NombreAlmacen(g.Tienda)}: llega{n} con la reposición y puede{n} salir el {Dia(g.Disponible.Value)}.");
+                        frases.Add($"{cuantas} en {NombreAlmacen(g.Tienda)}: llega{n} con la reposición y puede{n} salir el {Dia(g.Disponible.Value, hoy)}.");
                         break;
                     case ORIGEN_EN_CAMINO:
-                        frases.Add($"{cuantas} ya viene{n} de camino desde una tienda: puede{n} salir el {Dia(g.Disponible.Value)}.");
+                        frases.Add($"{cuantas} ya viene{n} de camino desde una tienda: puede{n} salir el {Dia(g.Disponible.Value, hoy)}.");
                         break;
                     case ORIGEN_PROVEEDOR when g.LlegadaSupuesta.HasValue:
-                        frases.Add($"{cuantas} del proveedor: la fecha prevista del proveedor ({g.FechaProveedor.Value.ToString("dd/MM", castellano)}) " +
-                            $"ya pasó y no ha llegado; suponemos que llega{n} el {Dia(g.LlegadaSupuesta.Value)} y puede{n} salir el {Dia(g.Disponible.Value)}, " +
+                        frases.Add($"{cuantas} del proveedor: la fecha prevista del proveedor ({DiaCorto(g.FechaProveedor.Value, hoy)}) " +
+                            $"ya pasó y no ha llegado; suponemos que llega{n} el {Dia(g.LlegadaSupuesta.Value, hoy)} y puede{n} salir el {Dia(g.Disponible.Value, hoy)}, " +
                             "pero puede retrasarse.");
                         break;
                     case ORIGEN_PROVEEDOR:
-                        frases.Add($"{cuantas} del proveedor (prevista el {g.FechaProveedor.Value.ToString("dd/MM", castellano)}): puede{n} salir el {Dia(g.Disponible.Value)}.");
+                        frases.Add($"{cuantas} del proveedor (prevista el {DiaCorto(g.FechaProveedor.Value, hoy)}): puede{n} salir el {Dia(g.Disponible.Value, hoy)}.");
                         break;
                 }
             }
@@ -582,7 +582,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             }
             if (diasCerrados.Any())
             {
-                string dias = string.Join(", ", diasCerrados.Distinct().Select(Dia));
+                string dias = string.Join(", ", diasCerrados.Distinct().Select(d => Dia(d, hoy)));
                 frases.Add($"El cliente cierra el {dias}: ese picking no lo saca.");
             }
             if (todoANota)
@@ -627,7 +627,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             }
         }
 
-        private static string Dia(DateTime dia) => dia.ToString("dddd dd/MM", castellano);
+        /// <summary>«miércoles 28/10»; con el año si no es el de <paramref name="hoy"/> (NestoAPI#708: «miércoles 27/10/2027»,
+        /// que sin año parecía de este año).</summary>
+        internal static string Dia(DateTime dia, DateTime hoy) => dia.ToString(dia.Year == hoy.Year ? "dddd dd/MM" : "dddd dd/MM/yyyy", castellano);
+
+        /// <summary>«28/10»; con el año si no es el de <paramref name="hoy"/> (NestoAPI#708).</summary>
+        internal static string DiaCorto(DateTime dia, DateTime hoy) => dia.ToString(dia.Year == hoy.Year ? "dd/MM" : "dd/MM/yyyy", castellano);
 
         private bool EsLaborable(DateTime dia) => GestorFestivos.EsLaborable(dia, Constantes.Almacenes.ALGETE, esFestivo);
 
