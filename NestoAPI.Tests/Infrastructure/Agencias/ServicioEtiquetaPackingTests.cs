@@ -245,6 +245,49 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             A.CallTo(() => pasos.CrearDesdePedido(A<CrearEnvioDesdePedidoDTO>._, A<string>._)).MustNotHaveHappened();
         }
 
+        // ------------------------------------------------------------ NestoAPI#552 (fase 4): GLS por la API
+
+        [TestMethod]
+        public async Task Gls_ConElInterruptorEncendido_ImprimeEnElServidorSinRegistrarEnGls()
+        {
+            servicio.GlsEtiquetaPorApi = () => true;
+            CreaElEnvio(Constantes.Agencias.AGENCIA_GLS);
+
+            ResultadoEtiquetaPacking resultado = await servicio.Imprimir(PEDIDO, Peticion(), usuario);
+
+            Assert.AreEqual(TipoResultadoEtiquetaPacking.Hecha, resultado.Tipo);
+            Assert.IsFalse(resultado.Etiqueta.EtiquetaEnNesto);
+            Assert.IsTrue(resultado.Etiqueta.Impresa);
+            Assert.IsFalse(resultado.Etiqueta.Reimpresion);
+            A.CallTo(() => pasos.Tramitar(A<int>._)).MustNotHaveHappened();
+            A.CallTo(() => pasos.Imprimir(5001, null)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Gls_ConElInterruptorEncendidoYElEnvioYaGrabado_EsReimpresion()
+        {
+            servicio.GlsEtiquetaPorApi = () => true;
+            A.CallTo(() => pasos.LeerEnvioEnCurso("1", PEDIDO)).Returns(Envio(Constantes.Agencias.AGENCIA_GLS, "61771234567890"));
+
+            ResultadoEtiquetaPacking resultado = await servicio.Imprimir(PEDIDO, Peticion(), usuario);
+
+            Assert.IsTrue(resultado.Etiqueta.Impresa);
+            Assert.IsTrue(resultado.Etiqueta.Reimpresion);
+            A.CallTo(() => pasos.Tramitar(A<int>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task GlsEmpresaEspejo_ConElInterruptorEncendido_SigueEnNesto()
+        {
+            servicio.GlsEtiquetaPorApi = () => true;
+            CreaElEnvio(Constantes.Agencias.AGENCIA_GLS_EMPRESA_ESPEJO);
+
+            ResultadoEtiquetaPacking resultado = await servicio.Imprimir(PEDIDO, Peticion(), usuario);
+
+            Assert.IsTrue(resultado.Etiqueta.EtiquetaEnNesto);
+            A.CallTo(() => pasos.Imprimir(A<int>._, A<string>._)).MustNotHaveHappened();
+        }
+
         [TestMethod]
         public async Task Canteras_TambienEnNesto()
         {

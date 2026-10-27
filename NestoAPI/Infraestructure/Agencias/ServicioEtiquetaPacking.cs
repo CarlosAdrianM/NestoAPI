@@ -164,6 +164,9 @@ namespace NestoAPI.Infraestructure.Agencias
         private readonly ILectorParametrosUsuario parametros;
         private readonly Action<Exception> registrar;
 
+        /// <summary>NestoAPI#552 (fase 4): el interruptor Agencias:GlsTramitarPorApi. Sustituible en los tests.</summary>
+        internal Func<bool> GlsEtiquetaPorApi { get; set; } = Gls.InterruptorTramitacionGls.EstaActivo;
+
         public ServicioEtiquetaPacking(Func<IPrincipal, IPasosEtiquetaPacking> crearPasos, ILectorParametrosUsuario parametros,
             Action<Exception> registrar = null)
         {
@@ -255,7 +258,10 @@ namespace NestoAPI.Infraestructure.Agencias
                 string agencia = string.IsNullOrWhiteSpace(etiqueta.AgenciaNombre) ? $"la agencia {envio.Agencia}" : etiqueta.AgenciaNombre;
 
                 // 2. GLS (hasta #552) y Canteras: el envío está grabado y la etiqueta sigue saliendo de Nesto.
-                if (ServicioEnvioDesdePedido.FlujoDe(envio.Agencia) != FlujosEnvioDesdePedido.REGISTRAR_AL_IMPRIMIR)
+                // NestoAPI#552 (fase 4): con Agencias:GlsTramitarPorApi encendido, la etiqueta de GLS (agencia 1) la monta e
+                // imprime la API sin grabar en GLS (se tramita al cerrar el día, como siempre). La 5 sigue en Nesto (pendiente).
+                bool glsPorApi = envio.Agencia == Constantes.Agencias.AGENCIA_GLS && GlsEtiquetaPorApi();
+                if (!glsPorApi && ServicioEnvioDesdePedido.FlujoDe(envio.Agencia) != FlujosEnvioDesdePedido.REGISTRAR_AL_IMPRIMIR)
                 {
                     etiqueta.EtiquetaEnNesto = true;
                     etiqueta.Message = $"La etiqueta de {agencia} hay que sacarla en Nesto.";
@@ -265,9 +271,10 @@ namespace NestoAPI.Infraestructure.Agencias
                     return ResultadoEtiquetaPacking.Hecha(etiqueta);
                 }
 
-                // 3. CTT e Innovatrans: registrar el envío en la agencia si aún no tiene albarán.
-                etiqueta.Reimpresion = etiqueta.CodigoBarras != null;
-                if (!etiqueta.Reimpresion)
+                // 3. CTT e Innovatrans: registrar el envío en la agencia si aún no tiene albarán. GLS no se registra aquí: su
+                // código de barras nace con el envío y se graba en GLS con «Tramitar todos».
+                etiqueta.Reimpresion = glsPorApi ? !etiqueta.EnvioNuevo : etiqueta.CodigoBarras != null;
+                if (!glsPorApi && !etiqueta.Reimpresion)
                 {
                     PasoEtiquetaAgencia tramitado = await pasos.Tramitar(envio.Numero);
                     if (!tramitado.Exito)
