@@ -61,6 +61,9 @@ INSERT INTO @novedades (Categoria, Titulo, Descripcion, Perfiles) VALUES
     ('Mejorado', N'Recibir reposición: ya no se atasca por un inventario hecho después del envío',
      N'Las entradas de una reposición se dan de alta en la tienda o en Algete con la fecha en que se reciben, no con la del envío. Así ya no sale «Se ha realizado un inventario posterior a esta fecha» cuando alguien regularizó un producto entre el envío y la recepción (nos pasó tres veces en una semana). Si eso ocurre, al abrir la reposición sale un aviso: «El 42267 se regularizó por inventario el 26/10 a las 14:19: compruebe que no se cuenta dos veces».',
      N'Tiendas,Almacén'),
+    ('Nuevo', N'Rapport: el resultado de la llamada y el próximo contacto',
+     N'En el rapport, debajo de los comentarios, puede marcar con un solo clic cómo ha ido: Pedido, Pedirá más tarde, No necesita, Precio, Competencia, Cerrado/Traspaso, Sin stock, No decide, Solo información u Otro; y, si lo acordó, la fecha del próximo contacto. Es opcional, pero cuanto más lo marque, mejor sabrá Nesto a quién proponerle llamar y por qué. La lista de rapports enseña las dos columnas. Al dar de baja un cliente (o quitarlo de su listado), Nesto pregunta el motivo: también es opcional.',
+     N'Vendedores,Tiendas'),
     ('Mejorado', N'Eventos: Nesto pregunta una sola vez si quiere anunciarlo en las apps',
      N'Al guardar un evento que ya tiene todos los datos (lugar, descripción, horario e imagen) y no se ha anunciado, Nesto pregunta si quiere anunciarlo a los vendedores y a las clientas con la app, que pueden reservar plaza desde ella. Si contesta que no, no vuelve a preguntar en cada guardado: siempre puede hacerlo después con «Anunciar otra vez…».',
      N'Tiendas,Administración');
