@@ -415,6 +415,14 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public string Dispositivo { get; set; }
         /// <summary>La hora del móvil: la lectura puede subir más tarde.</summary>
         public DateTime FechaEscaneo { get; set; }
+        /// <summary>
+        /// NestoAPI#713: lo que quedaba por recoger en la parada desde la que se hace el escaneo, ANTES de aplicarlo. Null si
+        /// no viene de una parada (o de una Ariadna anterior). Se guarda para poder reconstruir casos como el del picking
+        /// 99941 (42 unidades tecleadas cuando el picking pedía 10).
+        /// </summary>
+        public int? PendienteParada { get; set; }
+        /// <summary>NestoAPI#713: la cantidad total de esa parada. Null si no viene de una parada.</summary>
+        public int? TotalParada { get; set; }
     }
 
     public class ResultadoEscaneosAlmacenDTO

@@ -130,6 +130,17 @@ namespace NestoAPI.Tests.Infrastructure.PreparacionAlmacen
         }
 
         [TestMethod]
+        public async Task Correccion_GuardaLoQuePediaLaParadaAntesDeCorregir()
+        {
+            // NestoAPI#713: la parada de A pide 3 y tiene 2 cogidas y 1 en falta (pendiente 0) antes de quitar la falta
+            _ = await servicio.CorregirLectura(EMPRESA, QuitarFalta(), Usuario());
+
+            (EscaneoAlmacenDTO escaneo, string _) = tx.Insertados.Single();
+            Assert.AreEqual(3, escaneo.TotalParada);
+            Assert.AreEqual(0, escaneo.PendienteParada);
+        }
+
+        [TestMethod]
         public async Task DosPdaQuitanLaMismaFaltaALaVez_LaSegundaNoTocaNadaYLaFaltaNoQuedaEnNegativo()
         {
             // Las dos vieron la parada con 2 cogidas y 1 en falta

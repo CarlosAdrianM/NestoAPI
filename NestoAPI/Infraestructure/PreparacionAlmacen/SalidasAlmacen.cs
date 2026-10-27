@@ -547,7 +547,10 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     Metodo = esFalta ? CasadorEscaneos.METODO_FALTA : MetodoDeLaLectura(correccion.Metodo),
                     Motivo = esFalta ? correccion.Hueco?.Trim() : null,
                     Dispositivo = correccion.Dispositivo,
-                    FechaEscaneo = correccion.FechaEscaneo ?? DateTime.Now
+                    FechaEscaneo = correccion.FechaEscaneo ?? DateTime.Now,
+                    // NestoAPI#713: lo que pedía la parada (como la ve el servidor) antes de la corrección
+                    PendienteParada = linea.Pendiente,
+                    TotalParada = linea.Cantidad
                 };
                 _ = await tx.InsertarEscaneo(empresa, escaneo, UsuarioAuditoriaHelper.ParaAuditoria(NombreUsuario(usuario))).ConfigureAwait(false);
                 LineaRecogidaDTO despues = await LineaAhora(origen, empresa, correccion, tx).ConfigureAwait(false);
