@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure.PedidosVenta;
+﻿using NestoAPI.Infraestructure.PedidosVenta;
 using System;
 
 namespace NestoAPI.Models.PedidosVenta
@@ -35,6 +35,11 @@ namespace NestoAPI.Models.PedidosVenta
         public DateTime Actualizado { get; set; }
         public DateTime? AvisadoCampana { get; set; }
         public DateTime? AvisadoCorreo { get; set; }
+        /// <summary>Nesto#546: cuándo se resolvió (null = sigue en riesgo). Solo vienen resueltos pidiéndolos (resueltos=true).</summary>
+        public DateTime? Resuelto { get; set; }
+        /// <summary>Por qué se resolvió (vuelve a cumplir la fecha, se sirvió, se renegoció…).</summary>
+        public string MotivoResolucion { get; set; }
+        public bool EstaResuelto => Resuelto.HasValue;
 
         public static PedidoPromesaRiesgoDTO De(RiesgoPromesaListado r) => new PedidoPromesaRiesgoDTO
         {
@@ -54,7 +59,9 @@ namespace NestoAPI.Models.PedidosVenta
             Detectado = r.Detectado,
             Actualizado = r.Actualizado,
             AvisadoCampana = r.AvisadoCampana,
-            AvisadoCorreo = r.AvisadoCorreo
+            AvisadoCorreo = r.AvisadoCorreo,
+            Resuelto = r.Resuelto,
+            MotivoResolucion = r.MotivoResolucion
         };
     }
 }

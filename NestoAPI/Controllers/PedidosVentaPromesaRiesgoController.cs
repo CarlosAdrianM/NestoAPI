@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure.PedidosVenta;
+﻿using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Infraestructure.Vendedores;
 using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
@@ -45,18 +45,20 @@ namespace NestoAPI.Controllers
             this.vendedores = vendedores;
         }
 
-        // GET api/PedidosVenta/PromesaEnRiesgo?empresa=1&vendedor=JGP
+        // GET api/PedidosVenta/PromesaEnRiesgo?empresa=1&vendedor=JGP&resueltos=true
         /// <summary>
         /// NestoAPI#693: los pedidos registrados en PedidosPromesaRiesgo sin resolver y con algo pendiente, de la fecha prometida
         /// más próxima a la más lejana. Como los demás listados de pedidos del vendedor: con <paramref name="vendedor"/>, los
         /// suyos y, si es jefe de equipo, los de su equipo (403 si el usuario no puede verlo); sin vendedor, Dirección ve todos y
         /// el resto, los de su vendedor y su equipo. Cuenta el vendedor de la cabecera y el de peluquería del pedido. Lista vacía
-        /// si aún no se ha lanzado Scripts/Issue693_PedidosPromesaRiesgo.sql.
+        /// si aún no se ha lanzado Scripts/Issue693_PedidosPromesaRiesgo.sql. Nesto#546: con <paramref name="resueltos"/>,
+        /// detrás van también los resueltos de los últimos <see cref="RepositorioPromesaRiesgo.DIAS_RESUELTOS"/> días (mismas
+        /// reglas de visibilidad), para el filtro «Resueltos» de la pantalla.
         /// </summary>
         [HttpGet]
         [Route("api/PedidosVenta/PromesaEnRiesgo")]
         [ResponseType(typeof(List<PedidoPromesaRiesgoDTO>))]
-        public async Task<IHttpActionResult> GetPromesaEnRiesgo(string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO, string vendedor = null)
+        public async Task<IHttpActionResult> GetPromesaEnRiesgo(string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO, string vendedor = null, bool resueltos = false)
         {
             empresa = string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
             if ((User?.Identity as ClaimsIdentity)?.FindFirst("cliente") != null)
@@ -95,7 +97,7 @@ namespace NestoAPI.Controllers
             {
                 return Ok(new List<PedidoPromesaRiesgoDTO>());
             }
-            List<RiesgoPromesaListado> filas = await repositorio.LeerListado(empresa).ConfigureAwait(false) ?? new List<RiesgoPromesaListado>();
+            List<RiesgoPromesaListado> filas = await repositorio.LeerListado(empresa, resueltos).ConfigureAwait(false) ?? new List<RiesgoPromesaListado>();
             return Ok(Filtrar(filas, filtro).Select(PedidoPromesaRiesgoDTO.De).ToList());
         }
 

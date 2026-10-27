@@ -1,4 +1,4 @@
-using NestoAPI.Models;
+﻿using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -53,8 +53,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// <summary>Sin resolver y aún no en un correo resumen.</summary>
         Task<List<RiesgoPromesa>> LeerSinCorreo(string empresa);
 
-        /// <summary>Sin resolver y con algo pendiente, con cliente y vendedores (para el listado).</summary>
-        Task<List<RiesgoPromesaListado>> LeerListado(string empresa);
+        /// <summary>
+        /// Sin resolver y con algo pendiente, con cliente y vendedores (para el listado). Con <paramref name="incluirResueltos"/>,
+        /// detrás van también los resueltos de los últimos <see cref="RepositorioPromesaRiesgo.DIAS_RESUELTOS"/> días (Nesto#546:
+        /// el filtro «Resueltos» de la pantalla), del más reciente al más antiguo.
+        /// </summary>
+        Task<List<RiesgoPromesaListado>> LeerListado(string empresa, bool incluirResueltos = false);
     }
 
     /// <summary>
@@ -100,7 +104,10 @@ WHERE Id = @id AND Resuelto IS NULL";
 
         internal const string SQL_AVISADO_CORREO = "UPDATE dbo.PedidosPromesaRiesgo SET AvisadoCorreo = @cuando WHERE Id IN ({0})";
 
-        internal const string SQL_LISTADO = @"SELECT r.Id, RTRIM(r.Empresa) AS Empresa, r.Pedido, r.FechaPrometida, r.FechaNueva, r.Motivo, r.Evento, r.Detectado,
+        /// <summary>Nesto#546: cuántos días atrás se enseñan los riesgos ya resueltos en el listado.</summary>
+        public const int DIAS_RESUELTOS = 30;
+
+        private const string SQL_LISTADO_SELECT = @"SELECT r.Id, RTRIM(r.Empresa) AS Empresa, r.Pedido, r.FechaPrometida, r.FechaNueva, r.Motivo, r.Evento, r.Detectado,
   r.Actualizado, r.AvisadoCampana, r.AvisadoCorreo, r.Resuelto, r.MotivoResolucion,
   RTRIM(c.[Nº Cliente]) AS Cliente, RTRIM(c.Contacto) AS Contacto, RTRIM(cl.Nombre) AS NombreCliente, RTRIM(c.Vendedor) AS Vendedor,
   (SELECT TOP 1 RTRIM(v.Vendedor) FROM dbo.VendedoresPedidoGrupoProducto v WITH (NOLOCK)
@@ -109,10 +116,16 @@ WHERE Id = @id AND Resuelto IS NULL";
 FROM dbo.PedidosPromesaRiesgo r
 INNER JOIN dbo.CabPedidoVta c WITH (NOLOCK) ON c.Empresa = r.Empresa AND c.Número = r.Pedido
 LEFT JOIN dbo.Clientes cl WITH (NOLOCK) ON cl.Empresa = c.Empresa AND cl.[Nº Cliente] = c.[Nº Cliente] AND cl.Contacto = c.Contacto
-WHERE r.Empresa = @empresa AND r.Resuelto IS NULL
+WHERE r.Empresa = @empresa AND ";
+
+        internal const string SQL_LISTADO = SQL_LISTADO_SELECT + @"r.Resuelto IS NULL
   AND EXISTS (SELECT 1 FROM dbo.LinPedidoVta l WITH (NOLOCK) WHERE l.Empresa = c.Empresa AND l.Número = c.Número
               AND l.Estado >= -1 AND l.Estado <= 1 AND l.TipoLinea = 1)
 ORDER BY r.FechaPrometida, r.Pedido";
+
+        /// <summary>Nesto#546: los resueltos desde @desde, del más reciente al más antiguo (ya no hace falta que quede algo pendiente).</summary>
+        internal const string SQL_LISTADO_RESUELTOS = SQL_LISTADO_SELECT + @"r.Resuelto IS NOT NULL AND r.Resuelto >= @desde
+ORDER BY r.Resuelto DESC, r.Pedido";
 
         private static readonly TimeSpan REINTENTO_SIN_TABLA = TimeSpan.FromMinutes(5);
         private static readonly object cerrojo = new object();
@@ -312,11 +325,17 @@ ORDER BY r.FechaPrometida, r.Pedido";
             }
         }
 
-        public async Task<List<RiesgoPromesaListado>> LeerListado(string empresa)
+        public async Task<List<RiesgoPromesaListado>> LeerListado(string empresa, bool incluirResueltos = false)
         {
             using (NVEntities db = crearContexto())
             {
-                return await db.Database.SqlQuery<RiesgoPromesaListado>(SQL_LISTADO, ParametroEmpresa(empresa)).ToListAsync().ConfigureAwait(false);
+                List<RiesgoPromesaListado> filas = await db.Database.SqlQuery<RiesgoPromesaListado>(SQL_LISTADO, ParametroEmpresa(empresa)).ToListAsync().ConfigureAwait(false);
+                if (incluirResueltos)
+                {
+                    filas.AddRange(await db.Database.SqlQuery<RiesgoPromesaListado>(SQL_LISTADO_RESUELTOS, ParametroEmpresa(empresa),
+                        Fecha("@desde", DateTime.Today.AddDays(-DIAS_RESUELTOS))).ToListAsync().ConfigureAwait(false));
+                }
+                return filas;
             }
         }
 
