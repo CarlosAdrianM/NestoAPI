@@ -1,4 +1,4 @@
-using ModeloSugerenciasProductos.Entrenamiento;
+﻿using ModeloSugerenciasProductos.Entrenamiento;
 using ModeloSugerenciasProductos.Features;
 using ModeloSugerenciasProductos.Reglas;
 using NestoAPI.Infraestructure.CorreosPostCompra;
@@ -44,17 +44,21 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         private readonly Action<Exception> registrarError;
         private readonly IFotosProductoAlmacen fotos;
         private readonly IPredictorSugerenciasProductos predictor;
+        private readonly IRankingAceptacionSugerencias rankingAceptacion;
 
         /// <param name="fotos">Nesto#537: las fotos de la tienda (las de Ariadna, con caché). Null: las fichas van sin foto.</param>
         /// <param name="predictor">NestoAPI#671 (corte 2c): el modelo 1. Null: solo reglas («reglas-1»), como en el corte 1.</param>
+        /// <param name="rankingAceptacion">NestoAPI#671 (corte 2e): el modelo 2 (aceptación), en sombra o, si se activa, ordenando. Null: nada.</param>
         public ServicioSugerenciasProductos(IRepositorioSugerenciasProductos repositorio, Func<DateTime> ahora = null,
-            Action<Exception> registrarError = null, IFotosProductoAlmacen fotos = null, IPredictorSugerenciasProductos predictor = null)
+            Action<Exception> registrarError = null, IFotosProductoAlmacen fotos = null, IPredictorSugerenciasProductos predictor = null,
+            IRankingAceptacionSugerencias rankingAceptacion = null)
         {
             this.repositorio = repositorio;
             this.ahora = ahora ?? (() => DateTime.Now);
             this.registrarError = registrarError ?? ElmahHelper.Log;
             this.fotos = fotos;
             this.predictor = predictor;
+            this.rankingAceptacion = rankingAceptacion;
         }
 
         /// <summary>
@@ -294,6 +298,25 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
             public string Fuentes { get; set; }
             public bool EsHabitual { get; set; }
             public string Familia { get; set; }
+            /// <summary>NestoAPI#671 (corte 2e): sus features del modelo 1 (para el modelo 2 y la instantánea de la sombra).</summary>
+            public FilaEntrenamiento Entrada { get; set; }
+        }
+
+        /// <summary>NestoAPI#671 (corte 2e): lo que dice el modelo 2 de un candidato en esta llamada (para la sombra).</summary>
+        internal class SombraCandidato
+        {
+            public float P2 { get; set; }
+            public int RangoSombra { get; set; }
+            public int RangoModelo1 { get; set; }
+        }
+
+        /// <summary>NestoAPI#671 (corte 2e): la sombra de una llamada.</summary>
+        internal class SombraLlamada
+        {
+            public string Version { get; set; }
+            public bool Ordena { get; set; }
+            public int Candidatos { get; set; }
+            public Dictionary<CandidatoModelo, SombraCandidato> PorCandidato { get; } = new Dictionary<CandidatoModelo, SombraCandidato>();
         }
 
         /// <summary>NestoAPI#671 (corte 2c): lo que sale del modelo para una llamada.</summary>
@@ -417,8 +440,10 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
             var resultado = new ResultadoRelleno();
             var ocupadas = visibles.Select(v => (int)v.Posicion).ToList();
             int tamanoCarrito = enCarrito.Count;
+            SombraLlamada sombra = null;
 
-            async Task<SugerenciaMostrada> Registrar(CandidatoSugerencia elegida, int posicion, string fuentesProducto, bool exploracion, string version)
+            async Task<SugerenciaMostrada> Registrar(CandidatoSugerencia elegida, int posicion, string fuentesProducto, bool exploracion, string version,
+                CandidatoModelo candidatoModelo = null)
             {
                 var nueva = new SugerenciaMostrada
                 {
@@ -435,6 +460,7 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
                     Exploracion = exploracion
                 };
                 nueva.Id = await repositorio.InsertarMostrada(nueva).ConfigureAwait(false);
+                await RegistrarSombra(nueva.Id, candidatoModelo, sombra).ConfigureAwait(false);
                 ocupadas.Add(posicion);
                 visibles.Add(nueva);
                 _ = resultado.Nuevas.Add(nueva.Id);
@@ -447,6 +473,15 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
                 if (MotorSugerenciasProductos.APLICAR_DIVERSIDAD)
                 {
                     orden = ModeloSugerenciasProductos.Evaluacion.Diversidad.Aplicar(orden, c => c.EsHabitual, c => c.Familia, orden.Count);
+                }
+                // NestoAPI#671 (corte 2e): el modelo 2 puntúa los mismos candidatos; en sombra solo se registra y, en modo
+                // Activo con un modelo entrenado que pasa la puerta, además ordena (VersionMotor «m2-…»)
+                string versionMotor = modelo.Version;
+                sombra = CalcularSombra(orden, sesion, tamanoCarrito);
+                if (sombra != null && sombra.Ordena)
+                {
+                    orden = orden.OrderBy(c => sombra.PorCandidato[c].RangoSombra).ToList();
+                    versionMotor = sombra.Version;
                 }
                 // Los puestos de la exploración son los del orden de esta llamada (antes de elegir nada)
                 List<CandidatoModelo> ordenInicial = orden.ToList();
@@ -464,7 +499,7 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
                         ? ordenInicial[indiceExploracion.Value] : orden[0];
                     bool exploracion = indiceExploracion.HasValue && ReferenceEquals(elegida, ordenInicial[indiceExploracion.Value]);
                     _ = orden.Remove(elegida);
-                    _ = await Registrar(elegida.Candidato, posicion, elegida.Fuentes, exploracion, modelo.Version).ConfigureAwait(false);
+                    _ = await Registrar(elegida.Candidato, posicion, elegida.Fuentes, exploracion, versionMotor, elegida).ConfigureAwait(false);
                 }
 
                 // NestoAPI#682 con el modelo: la mejor nueva frente a la visible sin contestar más floja (P1 de ahora). La del
@@ -481,7 +516,7 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
                     if (floja != null && MotorSugerenciasProductos.MejoraClara(mejor.P1, modelo.P1Visibles[floja.Producto.Trim()]))
                     {
                         await Sustituir(floja, visibles, ocupadas).ConfigureAwait(false);
-                        _ = await Registrar(mejor.Candidato, floja.Posicion, mejor.Fuentes, false, modelo.Version).ConfigureAwait(false);
+                        _ = await Registrar(mejor.Candidato, floja.Posicion, mejor.Fuentes, false, versionMotor, mejor).ConfigureAwait(false);
                     }
                 }
             }
@@ -528,6 +563,127 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
                     urlsFotos.TryGetValue(v.Producto.Trim(), out string url) ? url : null))
                 .ToList();
             return resultado;
+        }
+
+        /// <summary>
+        /// NestoAPI#671 (corte 2e): P2 (modelo 2 o, sin él, el bayesiano) de los candidatos de esta llamada, en el orden del
+        /// modelo 1, con su puesto en cada orden. Se puntúan como si fueran al primer hueco y sin exploración. Null si no hay
+        /// modelo 2, está apagado o falla (a ELMAH): entonces todo sigue como sin él. Nunca lanza.
+        /// </summary>
+        private SombraLlamada CalcularSombra(List<CandidatoModelo> orden, SesionSugerencias sesion, int tamanoCarrito)
+        {
+            if (rankingAceptacion == null || orden == null || orden.Count == 0)
+            {
+                return null;
+            }
+            try
+            {
+                ModoRankingAceptacion modo = rankingAceptacion.Modo;
+                if (modo == ModoRankingAceptacion.Apagado)
+                {
+                    return null;
+                }
+                DateTime momento = ahora();
+                List<ModeloSugerenciasProductos.Aceptacion.MostradaAceptacion> contextos = orden.Select(c => new ModeloSugerenciasProductos.Aceptacion.MostradaAceptacion
+                {
+                    SesionId = sesion.Id.ToString(),
+                    Producto = c.Candidato.Producto,
+                    Motivo = c.Candidato.Motivo,
+                    Fuentes = c.Fuentes,
+                    Puntuacion = (decimal)c.P1,
+                    Posicion = 1,
+                    VersionMotor = ModeloSugerenciasProductos.Aceptacion.RespuestasAceptacion.PREFIJO_MODELO1,
+                    FechaMostrada = momento,
+                    TamanoCarrito = tamanoCarrito,
+                    Vendedor = sesion.Vendedor,
+                    Aplicacion = sesion.Aplicacion,
+                    Cliente = sesion.Cliente
+                }).ToList();
+                PuntuacionAceptacion puntuacion = rankingAceptacion.Puntuar(contextos, orden.Select(c => (ModeloSugerenciaEntrada)c.Entrada).ToList());
+                if (puntuacion?.Puntuaciones == null || puntuacion.Puntuaciones.Count != orden.Count)
+                {
+                    return null;
+                }
+                var sombra = new SombraLlamada
+                {
+                    Version = puntuacion.Version,
+                    Ordena = puntuacion.EsModeloEntrenado && modo == ModoRankingAceptacion.Activo,
+                    Candidatos = orden.Count
+                };
+                var porP2 = orden.Select((c, i) => new { Candidato = c, P2 = puntuacion.Puntuaciones[i], Indice = i })
+                    .OrderByDescending(x => x.P2).ThenBy(x => x.Indice).ToList();
+                for (int k = 0; k < porP2.Count; k++)
+                {
+                    sombra.PorCandidato[porP2[k].Candidato] = new SombraCandidato { P2 = porP2[k].P2, RangoSombra = k + 1, RangoModelo1 = porP2[k].Indice + 1 };
+                }
+                return sombra;
+            }
+            catch (Exception ex)
+            {
+                AvisarFalloSombra(ex);
+                return null;
+            }
+        }
+
+        /// <summary>NestoAPI#671 (corte 2e): la fila de SugerenciasProductosSombra de una sugerencia recién enseñada. Nunca lanza.</summary>
+        private async Task RegistrarSombra(int mostradaId, CandidatoModelo candidato, SombraLlamada sombra)
+        {
+            if (sombra == null || candidato == null || !sombra.PorCandidato.TryGetValue(candidato, out SombraCandidato s))
+            {
+                return;
+            }
+            try
+            {
+                _ = await repositorio.InsertarSombra(new SombraSugerencia
+                {
+                    MostradaId = mostradaId,
+                    VersionSombra = sombra.Version,
+                    PuntuacionSombra = Math.Round((decimal)s.P2, 6, MidpointRounding.AwayFromZero),
+                    RangoSombra = (short)Math.Min(s.RangoSombra, short.MaxValue),
+                    RangoModelo1 = (short)Math.Min(s.RangoModelo1, short.MaxValue),
+                    Candidatos = (short)Math.Min(sombra.Candidatos, short.MaxValue),
+                    VersionFeatures = (byte)(predictor?.VersionFeatures ?? ModeloSugerenciaEntrada.VERSION_FEATURES_INICIAL),
+                    Features = candidato.Entrada == null ? null : ModeloSugerenciasProductos.Aceptacion.InstantaneaFeatures.Serializar(candidato.Entrada)
+                }).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                AvisarFalloSombra(ex);
+            }
+        }
+
+        private static readonly object bloqueoAvisoSombra = new object();
+        private static DateTime ultimoAvisoSombraUtc = DateTime.MinValue;
+
+        /// <summary>Para los tests: que el siguiente fallo de la sombra vuelva a avisar.</summary>
+        internal static void ReiniciarAvisoSombra()
+        {
+            lock (bloqueoAvisoSombra)
+            {
+                ultimoAvisoSombraUtc = DateTime.MinValue;
+            }
+        }
+
+        /// <summary>La sombra es una medición: si falla, como mucho un aviso a ELMAH por hora (no uno por llamada).</summary>
+        private void AvisarFalloSombra(Exception ex)
+        {
+            lock (bloqueoAvisoSombra)
+            {
+                DateTime ahoraUtc = DateTime.UtcNow;
+                if ((ahoraUtc - ultimoAvisoSombraUtc).TotalHours < 1)
+                {
+                    return;
+                }
+                ultimoAvisoSombraUtc = ahoraUtc;
+            }
+            try
+            {
+                registrarError(new Exception($"[Sugerencias #671] No se ha podido calcular o registrar la sombra del modelo de aceptación (lo que se enseña no cambia): {ex.Message}", ex));
+            }
+            catch (Exception)
+            {
+                // nunca rompe Calcular
+            }
         }
 
         /// <summary>
@@ -706,7 +862,8 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
                         P1 = p1,
                         Fuentes = fuentesProducto,
                         EsHabitual = fila.EsHabitual > 0,
-                        Familia = fila.Familia
+                        Familia = fila.Familia,
+                        Entrada = fila
                     });
                 }
                 resultado.Orden = resultado.Orden.OrderByDescending(c => c.P1)

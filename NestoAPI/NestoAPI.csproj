@@ -977,6 +977,8 @@
     <Compile Include="Infraestructure\SugerenciasProductos\InformeUsoSugerenciasProductos.cs" />
     <Compile Include="Infraestructure\SugerenciasProductos\MotorSugerenciasProductos.cs" />
     <Compile Include="Infraestructure\SugerenciasProductos\PredictorSugerenciasProductos.cs" />
+    <Compile Include="Infraestructure\SugerenciasProductos\RankingAceptacionSugerencias.cs" />
+    <Compile Include="Infraestructure\SugerenciasProductos\ReentrenamientoModeloAceptacionJobsService.cs" />
     <Compile Include="Infraestructure\SugerenciasProductos\ReentrenamientoModeloSugerenciasJobsService.cs" />
     <Compile Include="Infraestructure\SugerenciasProductos\RepositorioSugerenciasProductos.cs" />
     <Compile Include="Infraestructure\SugerenciasProductos\ServicioSugerenciasProductos.cs" />

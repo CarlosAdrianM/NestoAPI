@@ -77,6 +77,11 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         Task<DatosGrupoVendedor> LeerDatosGrupoVendedor(string empresa, string cliente, string contacto, string vendedor);
         Task EnlazarPedido(Guid sesion, int pedido);
         Task MarcarEntradaEnPedido(int id, bool entro, int? cantidad);
+        /// <summary>
+        /// NestoAPI#671 (corte 2e): la sombra del modelo 2 de una sugerencia enseñada (SugerenciasProductosSombra, script
+        /// Issue671e). Sin la tabla no hace nada y devuelve false. Quien llama no deja que un fallo rompa Calcular.
+        /// </summary>
+        Task<bool> InsertarSombra(SombraSugerencia sombra);
     }
 
     /// <summary>
@@ -656,6 +661,32 @@ WHERE p.Decision = 'Potenciar' AND p.PotenciarHasta >= @p0";
                 new SqlParameter("@p1", SqlDbType.Bit) { Value = entro },
                 new SqlParameter("@p2", SqlDbType.Int) { Value = (object)cantidad ?? DBNull.Value });
 
+
+        private bool? haySombra;
+
+        public async Task<bool> InsertarSombra(SombraSugerencia s)
+        {
+            // NestoAPI#671 (corte 2e): sin el script Issue671e no se registra (se mira una vez por petición)
+            if (haySombra == null)
+            {
+                haySombra = await ExisteTabla(SugerenciasAceptacionSql.TABLA_SOMBRA).ConfigureAwait(false);
+            }
+            if (haySombra != true || s == null)
+            {
+                return false;
+            }
+            object Nulo(object v) => v ?? DBNull.Value;
+            _ = await db.Database.ExecuteSqlCommandAsync(SugerenciasAceptacionSql.SQL_INSERTAR_SOMBRA,
+                SugerenciasProductosSql.Entero("@p0", s.MostradaId),
+                SugerenciasProductosSql.Varchar("@p1", s.VersionSombra ?? string.Empty, 20),
+                new SqlParameter("@p2", SqlDbType.Decimal) { Precision = 12, Scale = 6, Value = Nulo(s.PuntuacionSombra.HasValue ? Math.Round(Math.Max(-999999m, Math.Min(s.PuntuacionSombra.Value, 999999m)), 6) : (decimal?)null) },
+                new SqlParameter("@p3", SqlDbType.SmallInt) { Value = Nulo(s.RangoSombra) },
+                new SqlParameter("@p4", SqlDbType.SmallInt) { Value = Nulo(s.RangoModelo1) },
+                new SqlParameter("@p5", SqlDbType.SmallInt) { Value = Nulo(s.Candidatos) },
+                new SqlParameter("@p6", SqlDbType.TinyInt) { Value = Nulo(s.VersionFeatures) },
+                new SqlParameter("@p7", SqlDbType.VarChar, -1) { Value = Nulo(s.Features) }).ConfigureAwait(false);
+            return true;
+        }
         private static List<string> Limpios(IEnumerable<string> productos)
             => (productos ?? Enumerable.Empty<string>())
                 .Where(p => !string.IsNullOrWhiteSpace(p))

@@ -563,6 +563,7 @@
     <Compile Include="Infrastructure\SugerenciasProductosTests.cs" />
     <Compile Include="Infrastructure\InformeUsoSugerenciasProductosTests.cs" />
     <Compile Include="Infrastructure\SugerenciasProductosModeloTests.cs" />
+    <Compile Include="Infrastructure\SugerenciasProductosAceptacionTests.cs" />
     <Compile Include="Infrastructure\SugerenciasProductosEstadoTests.cs" />
     <Compile Include="Infrastructure\ComercialesPedidoTests.cs" />
     <Compile Include="Infrastructure\ConvertidorPedidoAPlantillaTests.cs" />

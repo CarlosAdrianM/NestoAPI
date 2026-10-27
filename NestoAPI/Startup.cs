@@ -1075,6 +1075,21 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'entrenar-modelo-sugerencias' configurado (segundo sábado de cada mes a las 2:30)");
 
+            // NestoAPI#671 (corte 2e): reentrenamiento SEMANAL del modelo 2 de sugerencias (aceptación, con las respuestas ✓/✗).
+            // Domingos a las 03:30, misma cola «entrenamiento» (un hilo: no coincide con los de los sábados). Con menos de 1.000
+            // respuestas, 150 «Añadido» o 3 vendedores no entrena (solo deja el informe). No cambia lo que ven los vendedores salvo
+            // con ModeloSugerencias:RankingAceptacion = Activo en Web.config.
+            RecurringJob.AddOrUpdate(
+                Infraestructure.SugerenciasProductos.ReentrenamientoModeloAceptacionJobsService.ID_JOB,
+                () => Infraestructure.SugerenciasProductos.ReentrenamientoModeloAceptacionJobsService.EntrenarProgramado(),
+                Infraestructure.SugerenciasProductos.ReentrenamientoModeloAceptacionJobsService.CRON, // Cron: domingos a las 3:30
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'entrenar-modelo-aceptacion-sugerencias' configurado (domingos a las 3:30)");
+
             // NestoAPI#629 (corte 1 de #628, control de stock obsoleto): el día 1 a las 03:30 rellena la tabla IndicadoresStock con
             // el mes anterior (valor de stock, rotación, cobertura, días en servir…). Si el día 1 es domingo, el día 2 (de madrugada
             // del domingo corre el SP de precios medios). A las 03:30 ya han acabado los jobs de la 1:00 a las 3:00. Va en la cola
