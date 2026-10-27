@@ -5,7 +5,7 @@
     Tanda: NestoAPI (#705 stock de la tienda al grabar pedidos, #706 UTM, #707 recomendaciones post-compra, #708 promesa en
     riesgo ACTIVA, #709 push, #710 SignalR con la lectura, #711 vídeo en Novedades, #712 fecha de entrega lejana, #713 tope de
     las paradas, #695 fecha de recepción, #717 muestras sin stock, GLS fases 4-5 apagadas, ML.NET en sombra #714/#715/#716,
-    #671e, #618, #696 cheque+cupón no acumulables, #704 origen del modo de servicio) + Nesto (783, 787, 790, 733, Nesto.Models a .NET 8, #490 panel lateral tramos 1-2, #711, #712, #558).
+    #671e, #618, #696 cheque+cupón no acumulables, #704 origen del modo de servicio, #703 ámbito de sugerencias, #701 reintento Pub/Sub, #657 versión mínima Ariadna en sombra) + Nesto (783, 787, 790, 733, Nesto.Models a .NET 8, #490 panel lateral tramos 1-2, #711, #712, #558, #546 pantalla fecha en riesgo).
 
     ORDEN:
       1) Scripts sa ANTES de publicar la API: Issue707_CorreosPostCompraRecomendaciones, Issue709_PedidosOrigenPush,
@@ -24,7 +24,8 @@
       - Todo lo de ML.NET en sombra (#714 abandono, #715 anomalías, #716 datos, #671e, #618): nadie ve nada todavía.
       - UTM de los correos (#706), recomendaciones del correo del sábado (#707), atribución de push (#709): es para medir.
       - GLS por la API (#552 fases 4 y 5): apagado.
-      - Nesto.Models a .NET 8, el tope de las paradas (#713) y el registro del origen del modo de servicio (#704): internos.
+      - Nesto.Models a .NET 8, el tope de las paradas (#713), el registro del origen del modo de servicio (#704), el ámbito de
+        las sugerencias (#703) y la versión mínima de Ariadna en sombra (#657): internos.
       - Lo de Ariadna 2.19 (#56, #713, 733 F4): va en su propio script de Novedades de Ariadna.
       - Correo del cheque regalo de usted y con botón a la tienda: lo ven los clientes, no los usuarios de Nesto.
 
@@ -46,6 +47,9 @@ INSERT INTO @novedades (Categoria, Titulo, Descripcion, Perfiles) VALUES
     ('Nuevo', N'Novedades con vídeo',
      N'Algunas novedades llevan un vídeo corto (unos 20 segundos, sin sonido) que enseña cómo se hace. Si una novedad tiene vídeo, verá el botón «▶ Ver vídeo»: solo se descarga al pulsarlo y se reproduce dentro de Nesto. Como mucho hay uno por versión, para no quitarle tiempo.',
      NULL),
+    ('Nuevo', N'Pantalla «Pedidos con la fecha en riesgo»',
+     N'En Clientes › Ventas (y en el menú lateral, sección Ventas) hay un botón «Fecha en riesgo» con la lista de pedidos que no van a llegar a la fecha que se le dijo al cliente: pedido, cliente, vendedor, fecha prometida, fecha nueva (o «Sin fecha»), qué falla y por qué. Cada uno ve los suyos: el vendedor sus pedidos, el jefe de equipo los de su equipo y Dirección todos. Con doble clic se abre el pedido y con «Copiar texto para el cliente» tiene un mensaje listo para avisarle. Los avisos de la campana de este tipo abren esta pantalla con el pedido ya elegido. El filtro «Resueltos» enseña los de los últimos 30 días.',
+     N'Vendedores,Dirección'),
     ('Nuevo', N'Aviso cuando un pedido no va a llegar a la fecha prometida',
      N'Cuando un pedido se retrasa respecto a la fecha de entrega que se le dijo al cliente (o se queda sin fecha), el vendedor, su jefe de equipo y Dirección reciben un aviso en la campana con el motivo (por ejemplo, un producto que tiene que venir de una tienda o no tiene stock) y un correo resumen a las 9:00 y a las 15:00. En los pedidos de la web avisa a quien los grabó; en los de peluquería, a su vendedor. Llevaba una semana en pruebas sin avisar a nadie: desde hoy avisa.',
      N'Vendedores,Dirección'),
@@ -73,6 +77,9 @@ INSERT INTO @novedades (Categoria, Titulo, Descripcion, Perfiles) VALUES
     ('Mejorado', N'Eventos: Nesto pregunta una sola vez si quiere anunciarlo en las apps',
      N'Al guardar un evento que ya tiene todos los datos (lugar, descripción, horario e imagen) y no se ha anunciado, Nesto pregunta si quiere anunciarlo a los vendedores y a las clientas con la app, que pueden reservar plaza desde ella. Si contesta que no, no vuelve a preguntar en cada guardado: siempre puede hacerlo después con «Anunciar otra vez…».',
      N'Tiendas,Administración'),
+    ('Mejorado', N'Guardar los textos web de un producto ya no falla si la tienda tarda en responder',
+     N'Al guardar la ficha web de un producto, si el aviso a la tienda online tarda más de la cuenta, Nesto guarda igual y la tienda se actualiza sola en unos minutos (lo reintenta varias veces). Si al final no lo consigue, avisa por correo a Tienda online. Antes salía un error y había que volver a guardar.',
+     N'Tienda online,Administración'),
     ('Mejorado', N'El cheque regalo y el cupón de evento no se pueden usar en el mismo pedido',
      N'Si un pedido lleva el cheque regalo de la campaña y además un cupón de evento, Nesto no lo graba y explica el motivo («El cupón EV-… y el cheque regalo no son acumulables: quite uno de los dos»). También pasa con los pedidos de la tienda online que se importan: si llega uno con los dos, no entra en silencio, lo ve quien lo importa. La tienda ya no deja aplicar el cupón si el cheque está en el carrito.',
      N'Tiendas,Administración');
