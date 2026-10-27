@@ -1,9 +1,11 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure;
 using NestoAPI.Models;
+using NestoAPI.Models.PedidosVenta;
 using NestoAPI.Tests.Helpers;
+using System;
 using System.Collections.Generic;
 using System.Data.Entity;
 using System.Data.Entity.Infrastructure;
@@ -238,6 +240,105 @@ namespace NestoAPI.Tests.Controllers
                 Almacén = almacen,
                 Cantidad = cantidad,
                 Estado = (short)estado
+            };
+
+        #endregion
+
+        #region PedidosPendientesDetalle (Nesto#550 / Nesto#554)
+
+        [TestMethod]
+        public void GetPedidosPendientesDetalle_AgrupaPorPedidoConFechaLineasBaseEntregaNotaYPicking()
+        {
+            var controller = CrearControllerConPedidos(
+                cabeceras: new[]
+                {
+                    Cabecera(928141, new DateTime(2026, 10, 8), notaEntrega: false),
+                    Cabecera(928422, new DateTime(2026, 10, 14), notaEntrega: true),
+                    Cabecera(900000, new DateTime(2026, 1, 1), notaEntrega: false) // sin líneas pendientes: no sale
+                },
+                lineas: new[]
+                {
+                    LineaPendiente(928141, 100M, new DateTime(2026, 10, 20), estado: Constantes.EstadosLineaVenta.PENDIENTE, picking: null),
+                    LineaPendiente(928141, 38.10M, new DateTime(2026, 10, 9), estado: Constantes.EstadosLineaVenta.EN_CURSO, picking: 55),
+                    LineaPendiente(928141, 999M, new DateTime(2026, 10, 1), estado: Constantes.EstadosLineaVenta.ALBARAN, picking: 55), // albaranada: no cuenta
+                    LineaPendiente(928422, 45.30M, new DateTime(2026, 10, 15), estado: Constantes.EstadosLineaVenta.EN_CURSO, picking: null),
+                    LineaPendiente(900000, 10M, new DateTime(2026, 1, 2), estado: Constantes.EstadosLineaVenta.FACTURA, picking: null),
+                    LineaPendiente(777777, 10M, new DateTime(2026, 10, 2), estado: Constantes.EstadosLineaVenta.PENDIENTE, picking: null, cliente: "99999") // otro cliente
+                });
+
+            List<PedidoPendientePlantillaDTO> resultado = controller.GetPedidosPendientesDetalle("1", "40535");
+
+            Assert.AreEqual(2, resultado.Count);
+            PedidoPendientePlantillaDTO normal = resultado[0];
+            Assert.AreEqual(928141, normal.Numero, "Mismo orden que GetPedidosPendientes: por número");
+            Assert.AreEqual(new DateTime(2026, 10, 8), normal.Fecha);
+            Assert.AreEqual(2, normal.NumeroLineas, "Solo las líneas pendientes (estado -1..1)");
+            Assert.AreEqual(138.10M, normal.BaseImponible);
+            Assert.AreEqual(new DateTime(2026, 10, 9), normal.FechaEntrega, "La entrega más próxima de las pendientes");
+            Assert.IsFalse(normal.NotaEntrega);
+            Assert.IsTrue(normal.TienePicking);
+            Assert.IsFalse(normal.Retenido);
+
+            PedidoPendientePlantillaDTO nota = resultado[1];
+            Assert.AreEqual(928422, nota.Numero);
+            Assert.IsTrue(nota.NotaEntrega, "Nesto#554: la plantilla no ofrece modificar las notas de entrega");
+            Assert.AreEqual(1, nota.NumeroLineas);
+            Assert.AreEqual(45.30M, nota.BaseImponible);
+            Assert.IsFalse(nota.TienePicking);
+        }
+
+        [TestMethod]
+        public void GetPedidosPendientesDetalle_EntregaMasAllaDelAvisoDeFechaLejana_EsRetenido()
+        {
+            DateTime hoy = DateTime.Today;
+            var controller = CrearControllerConPedidos(
+                cabeceras: new[] { Cabecera(929057, hoy, notaEntrega: false), Cabecera(929058, hoy, notaEntrega: false) },
+                lineas: new[]
+                {
+                    LineaPendiente(929057, 10M, hoy.AddYears(1), estado: Constantes.EstadosLineaVenta.PENDIENTE, picking: null),
+                    LineaPendiente(929058, 10M, hoy.AddDays(Constantes.Pedidos.DIAS_AVISO_FECHA_ENTREGA_LEJANA), estado: Constantes.EstadosLineaVenta.PENDIENTE, picking: null)
+                });
+
+            List<PedidoPendientePlantillaDTO> resultado = controller.GetPedidosPendientesDetalle("1", "40535");
+
+            Assert.IsTrue(resultado.Single(p => p.Numero == 929057).Retenido, "Al año que viene: la costumbre de NestoAPI#698");
+            Assert.IsFalse(resultado.Single(p => p.Numero == 929058).Retenido, "Justo en el límite no es retenido");
+        }
+
+        [TestMethod]
+        public void GetPedidosPendientesDetalle_SinPendientes_ListaVacia()
+        {
+            var controller = CrearControllerConPedidos(new CabPedidoVta[0], new LinPedidoVta[0]);
+
+            Assert.AreEqual(0, controller.GetPedidosPendientesDetalle("1", "40535").Count);
+        }
+
+        private static PlantillaVentasController CrearControllerConPedidos(CabPedidoVta[] cabeceras, LinPedidoVta[] lineas)
+        {
+            var db = A.Fake<NVEntities>();
+            var fakeCabeceras = A.Fake<DbSet<CabPedidoVta>>(o => o.Implements<IQueryable<CabPedidoVta>>().Implements<IDbAsyncEnumerable<CabPedidoVta>>());
+            ConfigurarFakeDbSet(fakeCabeceras, cabeceras.AsQueryable());
+            A.CallTo(() => db.CabPedidoVtas).Returns(fakeCabeceras);
+            var fakeLineas = A.Fake<DbSet<LinPedidoVta>>(o => o.Implements<IQueryable<LinPedidoVta>>().Implements<IDbAsyncEnumerable<LinPedidoVta>>());
+            ConfigurarFakeDbSet(fakeLineas, lineas.AsQueryable());
+            A.CallTo(() => db.LinPedidoVtas).Returns(fakeLineas);
+
+            return new PlantillaVentasController(A.Fake<IServicioPlantillaVenta>(), db);
+        }
+
+        private static CabPedidoVta Cabecera(int numero, DateTime fecha, bool notaEntrega)
+            => new CabPedidoVta { Empresa = "1", Número = numero, Nº_Cliente = "40535", Fecha = fecha, NotaEntrega = notaEntrega };
+
+        private static LinPedidoVta LineaPendiente(int numero, decimal baseImponible, DateTime fechaEntrega, int estado, int? picking, string cliente = "40535")
+            => new LinPedidoVta
+            {
+                Empresa = "1",
+                Número = numero,
+                Nº_Cliente = cliente,
+                Base_Imponible = baseImponible,
+                Fecha_Entrega = fechaEntrega,
+                Estado = (short)estado,
+                Picking = picking
             };
 
         #endregion

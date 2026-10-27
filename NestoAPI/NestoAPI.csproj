@@ -1823,6 +1823,7 @@
     </Compile>
     <Compile Include="Models\PedidosVenta\AlmacenDTO.cs" />
     <Compile Include="Models\PedidosVenta\PedidoParaPlantillaDTO.cs" />
+    <Compile Include="Models\PedidosVenta\PedidoPendientePlantillaDTO.cs" />
     <Compile Include="Models\PedidosVenta\DocumentosImpresionPedidoDTO.cs" />
     <Compile Include="Models\PedidosVenta\SerieDTO.cs" />
     <Compile Include="Models\PedidosVenta\CambiarClientePedidoDTO.cs" />

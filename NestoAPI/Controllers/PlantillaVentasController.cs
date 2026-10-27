@@ -2,6 +2,7 @@
 using NestoAPI.Infraestructure.Clientes;
 using NestoAPI.Infraestructure.Productos;
 using NestoAPI.Models;
+using NestoAPI.Models.PedidosVenta;
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -402,7 +403,7 @@ namespace NestoAPI.Controllers
             return Ok(datosPrecio);
         }
 
-        // Devuelve los numeros de los pedidos que tiene pendientes este cliente
+        // Devuelve los numeros de los pedidos que tiene pendientes este cliente (lo usa NestoApp; Nesto usa PedidosPendientesDetalle)
         [HttpGet]
         public List<int> GetPedidosPendientes(string empresa, string clientePendientes)
         {
@@ -412,6 +413,51 @@ namespace NestoAPI.Controllers
                 .Distinct();
 
             return pedidos.ToList();
+        }
+
+        /// <summary>
+        /// Nesto#550 / Nesto#554 (sugerencias 759 y 775, Paloma): los pedidos pendientes del cliente con lo que la plantilla
+        /// necesita para describirlos (fecha, líneas, base, entrega más próxima, nota de entrega, picking, retenido).
+        /// Mismos pedidos y mismo orden (por número) que GetPedidosPendientes.
+        /// </summary>
+        [HttpGet]
+        [Route("PedidosPendientesDetalle")]
+        public List<PedidoPendientePlantillaDTO> GetPedidosPendientesDetalle(string empresa, string cliente)
+        {
+            var lineas = db.LinPedidoVtas
+                .Where(l => l.Empresa == empresa && l.Estado >= -1 && l.Estado <= 1 && l.Nº_Cliente == cliente)
+                .GroupBy(l => l.Número)
+                .Select(g => new
+                {
+                    Numero = g.Key,
+                    NumeroLineas = g.Count(),
+                    BaseImponible = g.Sum(l => l.Base_Imponible),
+                    FechaEntrega = (DateTime?)g.Min(l => l.Fecha_Entrega),
+                    TienePicking = g.Any(l => l.Picking > 0)
+                });
+            var cabeceras = db.CabPedidoVtas.Where(c => c.Empresa == empresa && c.Nº_Cliente == cliente);
+
+            List<PedidoPendientePlantillaDTO> pedidos = lineas
+                .Join(cabeceras, l => l.Numero, c => c.Número, (l, c) => new PedidoPendientePlantillaDTO
+                {
+                    Numero = l.Numero,
+                    Fecha = c.Fecha,
+                    NumeroLineas = l.NumeroLineas,
+                    BaseImponible = l.BaseImponible,
+                    FechaEntrega = l.FechaEntrega,
+                    NotaEntrega = c.NotaEntrega,
+                    TienePicking = l.TienePicking
+                })
+                .OrderBy(p => p.Numero)
+                .ToList();
+
+            DateTime limiteRetenido = DateTime.Today.AddDays(Constantes.Pedidos.DIAS_AVISO_FECHA_ENTREGA_LEJANA);
+            foreach (PedidoPendientePlantillaDTO pedido in pedidos)
+            {
+                pedido.Retenido = pedido.FechaEntrega.HasValue && pedido.FechaEntrega.Value > limiteRetenido;
+            }
+
+            return pedidos;
         }
 
         [HttpPost]
