@@ -959,6 +959,7 @@
     <Compile Include="Infraestructure\PedidosVenta\ServicioFechaEntregaAgencia.cs" />
     <Compile Include="Infraestructure\PedidosVenta\SombraModoServicio.cs" />
     <Compile Include="Infraestructure\PedidosVenta\RepositorioSombraModoServicioSql.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\RegistroOrigenModoServicio.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ModosFacturacionPermitidos.cs" />
     <Compile Include="Infraestructure\PedidosVenta\MantenerJuntoContado.cs" />
     <Compile Include="Infraestructure\PedidosVenta\OpcionesModosPedido.cs" />
