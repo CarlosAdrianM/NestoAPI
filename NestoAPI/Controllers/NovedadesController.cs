@@ -31,6 +31,8 @@ namespace NestoAPI.Controllers
             Notificaciones = new Infraestructure.Notificaciones.ServicioNotificacionesPush();
             LectorParametros = new LectorParametrosUsuario();
             Adjuntos = new ServicioAdjuntosNovedades();
+            Videos = new ServicioVideosNovedades();
+            AlmacenVideos = new AlmacenVideosNovedadesAzure();
             EsperaRespuesta = new RepositorioEsperaRespuestaNovedadesSql();
             LectorMiembrosGrupo = Infraestructure.Verifactu.MiembrosGrupoDominio.Leer;
         }
@@ -49,6 +51,12 @@ namespace NestoAPI.Controllers
 
         /// <summary>NestoAPI#616: los PDF e imágenes de las novedades. null = sin adjuntos (listas vacías).</summary>
         internal IServicioAdjuntosNovedades Adjuntos { get; set; }
+
+        /// <summary>NestoAPI#711: el vídeo de las novedades (la columna y las reproducciones). null = ninguna tiene vídeo.</summary>
+        internal IServicioVideosNovedades Videos { get; set; }
+
+        /// <summary>NestoAPI#711: dónde están los MP4 (Azure). null = no se pueden subir ni servir.</summary>
+        internal IAlmacenVideosNovedades AlmacenVideos { get; set; }
 
         /// <summary>
         /// Carlos, 28/09/26: de dónde se lee a quién avisar de la actividad de Novedades. null = no se
@@ -129,6 +137,7 @@ namespace NestoAPI.Controllers
 
             List<NovedadDTO> resultado = OrdenarPorReacciones(ConFeedback(ordenadas));
             RellenarAdjuntos(resultado);
+            RellenarVideos(resultado); // NestoAPI#711
             return Ok(resultado);
         }
 
@@ -278,6 +287,7 @@ namespace NestoAPI.Controllers
             OcultarContextoSiNoRevisa(sugerencias);
             _ = RellenarFeedback(sugerencias);
             RellenarAdjuntos(sugerencias);
+            RellenarVideos(sugerencias); // NestoAPI#711
             return Ok(sugerencias
                 // NestoAPI#650: las privadas tienen menos prioridad: detrás de las públicas
                 .OrderBy(s => s.Privada ? 1 : 0)
@@ -606,6 +616,7 @@ namespace NestoAPI.Controllers
             OcultarContextoSiNoRevisa(encontradas);
             _ = RellenarFeedback(encontradas);
             RellenarAdjuntos(encontradas);
+            RellenarVideos(encontradas); // NestoAPI#711
             return Ok(encontradas);
         }
 
@@ -766,6 +777,270 @@ namespace NestoAPI.Controllers
                 return StatusCode(HttpStatusCode.Forbidden);
             }
             return Adjuntos.Borrar(id) ? (IHttpActionResult)StatusCode(HttpStatusCode.NoContent) : NotFound();
+        }
+
+        #endregion
+
+        #region NestoAPI#711: vídeo de la novedad (como mucho uno por versión)
+
+        private static int videosFalloRegistrado;
+
+        /// <summary>
+        /// NestoAPI#711: TieneVideo de cada novedad, con UNA consulta para todas. Si falla (o la columna aún no existe),
+        /// las novedades salen igual sin vídeo y el fallo va a ELMAH una sola vez.
+        /// </summary>
+        internal void RellenarVideos<T>(List<T> novedades) where T : NovedadDTO
+        {
+            if (novedades == null || novedades.Count == 0 || Videos == null)
+            {
+                return;
+            }
+            Dictionary<int, int?> conVideo;
+            try
+            {
+                conVideo = Videos.LeerConVideo() ?? new Dictionary<int, int?>();
+            }
+            catch (Exception ex)
+            {
+                if (Interlocked.Exchange(ref videosFalloRegistrado, 1) == 0)
+                {
+                    RegistrarSinRomper(new Exception("Novedades (#711): no se pudo leer qué novedades tienen vídeo; se sirven sin él. " + ex.Message, ex));
+                }
+                return;
+            }
+            foreach (T novedad in novedades)
+            {
+                novedad.TieneVideo = conVideo.TryGetValue(novedad.Id, out int? tamano);
+                novedad.VideoTamano = novedad.TieneVideo ? tamano : null;
+            }
+        }
+
+        // GET api/Novedades/5/Video  → el MP4 (video/mp4). Con «Range: bytes=…» contesta 206 con ese trozo, para que el
+        // reproductor pueda saltar adelante y atrás; 416 si el trozo empieza después del final. Misma autorización que
+        // la imagen de la novedad. No cuenta como reproducción: eso es POST .../Video/Reproduccion (el reproductor
+        // pide el vídeo a trozos muchas veces).
+        [HttpGet]
+        [Authorize]
+        [Route("api/Novedades/{id:int}/Video")]
+        public async System.Threading.Tasks.Task<HttpResponseMessage> GetVideo(int id)
+        {
+            if (Videos == null || AlmacenVideos == null || !PuedeVerNovedad(id))
+            {
+                return Request.CreateResponse(HttpStatusCode.NotFound);
+            }
+            VideoNovedadFila novedad = Videos.Leer(id);
+            if (novedad == null || !novedad.Publicada || string.IsNullOrWhiteSpace(novedad.Video))
+            {
+                return Request.CreateResponse(HttpStatusCode.NotFound);
+            }
+            if (!AlmacenVideos.Configurado)
+            {
+                return Request.CreateErrorResponse(HttpStatusCode.ServiceUnavailable, "El almacenamiento de los vídeos no está configurado.");
+            }
+            byte[] contenido = await AlmacenVideos.Descargar(novedad.Video.Trim()).ConfigureAwait(false);
+            if (contenido == null)
+            {
+                return Request.CreateResponse(HttpStatusCode.NotFound);
+            }
+            return RespuestaConRango(Request, contenido, ReglasVideoNovedades.TIPO_MP4);
+        }
+
+        /// <summary>
+        /// NestoAPI#711: el 200 (entero), 206 (el trozo pedido) o 416 según la cabecera Range. Siempre con
+        /// Accept-Ranges: bytes, para que el reproductor sepa que puede pedir trozos.
+        /// </summary>
+        internal static HttpResponseMessage RespuestaConRango(HttpRequestMessage request, byte[] contenido, string tipo)
+        {
+            string cabecera = request?.Headers?.Range?.ToString();
+            ResultadoRango rango = RangoBytesHttp.Calcular(cabecera, contenido.Length);
+            HttpResponseMessage respuesta;
+            switch (rango.Tipo)
+            {
+                case TipoRespuestaRango.NoSatisfacible:
+                    respuesta = new HttpResponseMessage(HttpStatusCode.RequestedRangeNotSatisfiable)
+                    {
+                        Content = new ByteArrayContent(new byte[0])
+                    };
+                    respuesta.Content.Headers.ContentRange = new ContentRangeHeaderValue(contenido.Length);
+                    break;
+                case TipoRespuestaRango.Parcial:
+                    respuesta = new HttpResponseMessage(HttpStatusCode.PartialContent)
+                    {
+                        Content = new ByteArrayContent(contenido, (int)rango.Desde, (int)rango.Longitud)
+                    };
+                    respuesta.Content.Headers.ContentRange = new ContentRangeHeaderValue(rango.Desde, rango.Hasta, contenido.Length);
+                    respuesta.Content.Headers.ContentType = new MediaTypeHeaderValue(tipo);
+                    respuesta.Content.Headers.ContentLength = rango.Longitud;
+                    break;
+                default:
+                    respuesta = new HttpResponseMessage(HttpStatusCode.OK)
+                    {
+                        Content = new ByteArrayContent(contenido)
+                    };
+                    respuesta.Content.Headers.ContentType = new MediaTypeHeaderValue(tipo);
+                    respuesta.Content.Headers.ContentLength = contenido.Length;
+                    break;
+            }
+            respuesta.Headers.AcceptRanges.Add("bytes");
+            return respuesta;
+        }
+
+        // POST api/Novedades/5/Video  → 200 { NovedadId, TieneVideo: true, VideoTamano }. Solo Dirección / Informática.
+        // El MP4 en multipart/form-data (campo «fichero») o en el cuerpo tal cual con Content-Type: video/mp4.
+        // Máximo 10 MB. 409 si otra novedad de la misma versión y ámbito ya tiene vídeo (como mucho uno por versión);
+        // volver a subirlo a la misma novedad lo sustituye.
+        [HttpPost]
+        [Authorize]
+        [Route("api/Novedades/{id:int}/Video")]
+        [ResponseType(typeof(VideoNovedadDTO))]
+        public async System.Threading.Tasks.Task<IHttpActionResult> PostVideo(int id)
+        {
+            if (!PuedeRevisarFeedback())
+            {
+                return StatusCode(HttpStatusCode.Forbidden);
+            }
+            if (Videos == null || AlmacenVideos == null)
+            {
+                return Content(HttpStatusCode.ServiceUnavailable, new HttpError("Los vídeos de las novedades no están disponibles."));
+            }
+            if (Request.Content == null)
+            {
+                return BadRequest("No ha llegado ningún vídeo.");
+            }
+
+            (string nombre, string tipo, byte[] contenido) = await LeerVideoDeLaPeticion().ConfigureAwait(false);
+            (string error, bool tipoNoPermitido) = ReglasVideoNovedades.Validar(nombre, tipo, contenido);
+            if (error != null)
+            {
+                return tipoNoPermitido
+                    ? Content(HttpStatusCode.UnsupportedMediaType, new HttpError(error))
+                    : (IHttpActionResult)BadRequest(error);
+            }
+
+            if (!Videos.AdmiteVideos())
+            {
+                return BadRequest(ReglasVideoNovedades.MENSAJE_SIN_COLUMNA);
+            }
+            VideoNovedadFila novedad = Videos.Leer(id);
+            if (novedad == null)
+            {
+                return NotFound();
+            }
+            if (string.IsNullOrWhiteSpace(novedad.Version))
+            {
+                return BadRequest(ReglasVideoNovedades.MENSAJE_SIN_VERSION);
+            }
+            if (!AlmacenVideos.Configurado)
+            {
+                return Content(HttpStatusCode.ServiceUnavailable, new HttpError("El almacenamiento de los vídeos no está configurado."));
+            }
+
+            // Primero el blob y después la columna: una columna sin blob diría que hay un vídeo que no existe
+            string ruta = ReglasVideoNovedades.RutaDelBlob(id, Guid.NewGuid());
+            await AlmacenVideos.Subir(ruta, contenido, ReglasVideoNovedades.TIPO_MP4).ConfigureAwait(false);
+
+            ResultadoGuardarVideoNovedad resultado = Videos.GuardarVideo(id, ruta, contenido.Length, User?.Identity?.Name);
+            if (resultado == null || !resultado.Guardado)
+            {
+                await BorrarBlobSinRomper(ruta).ConfigureAwait(false);
+                if (resultado?.OtraNovedadId != null)
+                {
+                    return Content(HttpStatusCode.Conflict, new HttpError(
+                        ReglasVideoNovedades.MensajeYaHayVideo(resultado.Version ?? novedad.Version, resultado.OtraNovedadId.Value, resultado.OtroTitulo)));
+                }
+                return BadRequest(ReglasVideoNovedades.MENSAJE_SIN_COLUMNA);
+            }
+            if (!string.IsNullOrWhiteSpace(resultado.RutaAnterior) && resultado.RutaAnterior.Trim() != ruta)
+            {
+                await BorrarBlobSinRomper(resultado.RutaAnterior.Trim()).ConfigureAwait(false);
+            }
+            return Ok(new VideoNovedadDTO { NovedadId = id, TieneVideo = true, VideoTamano = contenido.Length });
+        }
+
+        /// <summary>El vídeo del multipart (campo «fichero» o la primera parte con fichero) o, si no, el cuerpo tal cual.</summary>
+        private async System.Threading.Tasks.Task<(string Nombre, string Tipo, byte[] Contenido)> LeerVideoDeLaPeticion()
+        {
+            if (Request.Content.IsMimeMultipartContent())
+            {
+                MultipartMemoryStreamProvider partes = await Request.Content.ReadAsMultipartAsync(new MultipartMemoryStreamProvider()).ConfigureAwait(false);
+                foreach (HttpContent parte in partes.Contents)
+                {
+                    ContentDispositionHeaderValue disposicion = parte.Headers.ContentDisposition;
+                    string campo = disposicion?.Name?.Trim('"');
+                    string nombre = disposicion?.FileNameStar ?? disposicion?.FileName?.Trim('"');
+                    if (!string.Equals(campo, ReglasVideoNovedades.CAMPO_FICHERO, StringComparison.OrdinalIgnoreCase) && string.IsNullOrEmpty(nombre))
+                    {
+                        continue; // otros campos del formulario
+                    }
+                    return (nombre, parte.Headers.ContentType?.MediaType, await parte.ReadAsByteArrayAsync().ConfigureAwait(false));
+                }
+                return (null, null, null);
+            }
+            string nombreCuerpo = Request.Content.Headers.ContentDisposition?.FileNameStar
+                ?? Request.Content.Headers.ContentDisposition?.FileName?.Trim('"');
+            return (nombreCuerpo, Request.Content.Headers.ContentType?.MediaType, await Request.Content.ReadAsByteArrayAsync().ConfigureAwait(false));
+        }
+
+        // DELETE api/Novedades/5/Video  → 204 (404 si no tenía). Solo Dirección / Informática.
+        [HttpDelete]
+        [Authorize]
+        [Route("api/Novedades/{id:int}/Video")]
+        public async System.Threading.Tasks.Task<IHttpActionResult> DeleteVideo(int id)
+        {
+            if (!PuedeRevisarFeedback())
+            {
+                return StatusCode(HttpStatusCode.Forbidden);
+            }
+            if (Videos == null)
+            {
+                return NotFound();
+            }
+            string ruta = Videos.QuitarVideo(id, User?.Identity?.Name);
+            if (string.IsNullOrWhiteSpace(ruta))
+            {
+                return NotFound();
+            }
+            await BorrarBlobSinRomper(ruta.Trim()).ConfigureAwait(false);
+            return StatusCode(HttpStatusCode.NoContent);
+        }
+
+        // POST api/Novedades/5/Video/Reproduccion  → 204. Lo llama el cliente al empezar a reproducir: quién y cuándo
+        // (para saber si se ven). Si no se puede apuntar, contesta 204 igual: contar nunca estorba al que lo está viendo.
+        [HttpPost]
+        [Authorize]
+        [Route("api/Novedades/{id:int}/Video/Reproduccion")]
+        public IHttpActionResult PostReproduccionVideo(int id)
+        {
+            if (!PuedeVerNovedad(id))
+            {
+                return NotFound();
+            }
+            try
+            {
+                Videos?.RegistrarReproduccion(id, ReglasFeedbackNovedades.ClaveUsuario(User), ReglasFeedbackNovedades.Cliente(User));
+            }
+            catch (Exception ex)
+            {
+                RegistrarSinRomper(new Exception($"Novedades (#711): no se pudo apuntar la reproducción del vídeo de la novedad {id}. " + ex.Message, ex));
+            }
+            return StatusCode(HttpStatusCode.NoContent);
+        }
+
+        /// <summary>Un blob que sobra (el anterior o uno que no se ha llegado a usar). Si falla, solo queda huérfano: a ELMAH.</summary>
+        private async System.Threading.Tasks.Task BorrarBlobSinRomper(string ruta)
+        {
+            if (AlmacenVideos == null)
+            {
+                return;
+            }
+            try
+            {
+                await AlmacenVideos.Borrar(ruta).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                RegistrarSinRomper(new Exception($"Novedades (#711): no se pudo borrar el vídeo «{ruta}»; queda huérfano en el almacenamiento. " + ex.Message, ex));
+            }
         }
 
         #endregion

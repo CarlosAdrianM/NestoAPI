@@ -29,6 +29,13 @@ namespace NestoAPI.Models.Novedades
         /// novedades sin perfiles, las sugerencias y si la columna aún no existe).
         /// </summary>
         public List<string> Perfiles { get; set; }
+        /// <summary>
+        /// NestoAPI#711: si tiene vídeo (como mucho uno por versión). Se pide con GET api/Novedades/{id}/Video, y solo
+        /// cuando el usuario pulsa «Ver vídeo». false si no tiene (o si la columna aún no existe).
+        /// </summary>
+        public bool TieneVideo { get; set; }
+        /// <summary>NestoAPI#711: los bytes del vídeo (null si no tiene).</summary>
+        public int? VideoTamano { get; set; }
     }
 
     /// <summary>Sugerencia 551: PUT api/Novedades/{id}/Perfiles. Vacía, null o con «Todos» = para todos.</summary>
@@ -94,7 +101,9 @@ namespace NestoAPI.Models.Novedades
             Descripcion = n.Descripcion,
             Ambito = n.Ambito,
             Adjuntos = n.Adjuntos ?? new List<AdjuntoNovedadResumenDTO>(),
-            Perfiles = n.Perfiles
+            Perfiles = n.Perfiles,
+            TieneVideo = n.TieneVideo,
+            VideoTamano = n.VideoTamano
         };
     }
 }
