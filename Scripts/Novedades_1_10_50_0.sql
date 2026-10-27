@@ -5,13 +5,13 @@
     Tanda: NestoAPI (#705 stock de la tienda al grabar pedidos, #706 UTM, #707 recomendaciones post-compra, #708 promesa en
     riesgo ACTIVA, #709 push, #710 SignalR con la lectura, #711 vídeo en Novedades, #712 fecha de entrega lejana, #713 tope de
     las paradas, #695 fecha de recepción, #717 muestras sin stock, GLS fases 4-5 apagadas, ML.NET en sombra #714/#715/#716,
-    #671e, #618, #696 cheque+cupón no acumulables, #704 origen del modo de servicio, #703 ámbito de sugerencias, #701 reintento Pub/Sub, #657 versión mínima Ariadna en sombra) + Nesto (783, 787, 790, 733, Nesto.Models a .NET 8, #490 panel lateral tramos 1-2, #711, #712, #558, #546 pantalla fecha en riesgo).
+    #671e, #618, #696 cheque+cupón no acumulables, #704 origen del modo de servicio, #703 ámbito de sugerencias, #701 reintento Pub/Sub, #657 versión mínima Ariadna en sombra, #698 retener pedido) + Nesto (783, 787, 790, 733, Nesto.Models a .NET 8, #490 panel lateral tramos 1-2, #711, #712, #558, #546 pantalla fecha en riesgo).
 
     ORDEN:
       1) Scripts sa ANTES de publicar la API: Issue707_CorreosPostCompraRecomendaciones, Issue709_PedidosOrigenPush,
          Issue711_NovedadesVideo, Issue713_PreparacionEscaneosParada, Issue671e_SugerenciasProductosSombra,
          Issue714_ClientesRiesgoAbandono, Issue715_PedidosAnomalias, Issue716_DatosParaModelos (su backfill FUERA de horario),
-         Nesto552_ParametroGlsPorApi, Issue704_PedidosModoServicioOrigen. Nesto490_NavegacionLateral YA LANZADO (13:46).
+         Nesto552_ParametroGlsPorApi, Issue704_PedidosModoServicioOrigen, Issue698_PedidosRetenidos. Nesto490_NavegacionLateral YA LANZADO (13:46).
       2) Publicar NestoAPI.
       3) Publicar la ClickOnce (Clean + Rebuild) → 1.10.50.0.
       4) DESPUÉS: ESTE script, y OneShot_20261027_CerrarSugerencias_1_10_50_0.ps1 (las sugerencias 783, 784, 787, 788, 789,
@@ -47,6 +47,9 @@ INSERT INTO @novedades (Categoria, Titulo, Descripcion, Perfiles) VALUES
     ('Nuevo', N'Novedades con vídeo',
      N'Algunas novedades llevan un vídeo corto (unos 20 segundos, sin sonido) que enseña cómo se hace. Si una novedad tiene vídeo, verá el botón «▶ Ver vídeo»: solo se descarga al pulsarlo y se reproduce dentro de Nesto. Como mucho hay uno por versión, para no quitarle tiempo.',
      NULL),
+    ('Nuevo', N'«Retener pedido»: dejar un pedido parado hasta nuevo aviso sin tocar la fecha de entrega',
+     N'Hasta ahora, para que un pedido no saliera se le ponía la fecha de entrega a un año vista: nadie lo veía, parecía un error y contaba como promesa incumplida. Ahora, en el pedido, el botón «Retener…» pregunta el motivo y, si quiere, hasta qué fecha; el pedido queda marcado en amarillo («Retenido por Alfredo desde el 27/10 hasta el 15/11: motivo») y no sale en ningún picking hasta que alguien pulse «Liberar». Si puso fecha, se libera solo ese día y le avisa por la campana (a usted y al vendedor); si no la puso, cada semana le recuerda que sigue retenido. La fecha de entrega no se toca: cuando se libera, el pedido vuelve a su modo de servir de antes.',
+     N'Vendedores,Tiendas,Almacén,Administración'),
     ('Nuevo', N'Pantalla «Pedidos con la fecha en riesgo»',
      N'En Clientes › Ventas (y en el menú lateral, sección Ventas) hay un botón «Fecha en riesgo» con la lista de pedidos que no van a llegar a la fecha que se le dijo al cliente: pedido, cliente, vendedor, fecha prometida, fecha nueva (o «Sin fecha»), qué falla y por qué. Cada uno ve los suyos: el vendedor sus pedidos, el jefe de equipo los de su equipo y Dirección todos. Con doble clic se abre el pedido y con «Copiar texto para el cliente» tiene un mensaje listo para avisarle. Los avisos de la campana de este tipo abren esta pantalla con el pedido ya elegido. El filtro «Resueltos» enseña los de los últimos 30 días.',
      N'Vendedores,Dirección'),
