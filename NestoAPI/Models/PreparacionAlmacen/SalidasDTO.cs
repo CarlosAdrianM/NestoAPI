@@ -91,6 +91,69 @@ namespace NestoAPI.Models.PreparacionAlmacen
         public int Faltas { get; set; }
     }
 
+    /// <summary>
+    /// NestoAPI#710 (incidencia 785): lo que viaja por SignalR a las demás PDA del grupo en el evento «lectura(grupo, dispositivo,
+    /// lectura)» (o en la lista de «lecturas(grupo, dispositivo, [..])»): lo mismo que se acaba de grabar en PreparacionEscaneos,
+    /// para que cada PDA lo aplique en local sin pedir la recogida (o el packing) entera.
+    /// </summary>
+    public class LecturaAlmacenAvisoDTO
+    {
+        /// <summary>El del escaneo: la PDA que lo recibe guarda los aplicados y no lo cuenta dos veces.</summary>
+        public System.Guid IdCliente { get; set; }
+        /// <summary>PICK o REPO.</summary>
+        public string TipoOrigen { get; set; }
+        public int NumeroOrigen { get; set; }
+        public int? Pedido { get; set; }
+        public int? LineaPedido { get; set; }
+        public string Producto { get; set; }
+        /// <summary>Negativa si deshace una lectura (o una falta).</summary>
+        public int Cantidad { get; set; }
+        /// <summary>SCAN, ETIQ, TECLA, FALTA (o MANUAL de las versiones viejas).</summary>
+        public string Metodo { get; set; }
+        /// <summary>PICK (recoger) o PACK (embalar).</summary>
+        public string Fase { get; set; }
+        public int? Bulto { get; set; }
+        /// <summary>En una FALTA del recorrido, el hueco donde no estaba (como lo manda Ariadna).</summary>
+        public string Motivo { get; set; }
+        /// <summary>Quién la ha hecho, con el mismo nombre que se guarda (el de los Lectores de la recogida).</summary>
+        public string Usuario { get; set; }
+        public System.DateTime FechaEscaneo { get; set; }
+        /// <summary>
+        /// Detrás de este evento va el «haCambiado» de compatibilidad del mismo cambio (Almacen:AvisosConDatos = Ambos): la PDA
+        /// que ya aplica los datos no tiene que releer por él.
+        /// </summary>
+        public bool SigueHaCambiado { get; set; }
+    }
+
+    /// <summary>
+    /// NestoAPI#710: lo que viaja en el evento «correccion(grupo, dispositivo, correccion)» cuando se corrige una parada
+    /// (POST api/Almacen/Escaneos/Corregir): con esto la otra PDA la deshace en local.
+    /// </summary>
+    public class CorreccionAlmacenAvisoDTO
+    {
+        /// <summary>El del escaneo en negativo que ha grabado la corrección (para no aplicarla dos veces).</summary>
+        public System.Guid IdCliente { get; set; }
+        public string TipoOrigen { get; set; }
+        public int NumeroOrigen { get; set; }
+        public string Producto { get; set; }
+        /// <summary>El hueco de la parada.</summary>
+        public string Hueco { get; set; }
+        /// <summary>LineaRecogidaDTO.Orden de la parada.</summary>
+        public int Orden { get; set; }
+        /// <summary>FALTA (se ha quitado lo dado por falta) o LECTURA (se ha quitado lo cogido).</summary>
+        public string Tipo { get; set; }
+        /// <summary>Cuántas se han quitado (en positivo).</summary>
+        public int Unidades { get; set; }
+        /// <summary>Lo cogido de la parada en el servidor después de corregir (Resuelto − Faltas).</summary>
+        public int Cogidas { get; set; }
+        /// <summary>Lo dado por falta de la parada en el servidor después de corregir.</summary>
+        public int Faltas { get; set; }
+        public string Usuario { get; set; }
+        public System.DateTime? FechaEscaneo { get; set; }
+        /// <summary>Como en <see cref="LecturaAlmacenAvisoDTO.SigueHaCambiado"/>.</summary>
+        public bool SigueHaCambiado { get; set; }
+    }
+
     /// <summary>Ariadna#6: de qué mozo son las lecturas que se anulan.</summary>
     public class AnularLecturasDTO
     {
