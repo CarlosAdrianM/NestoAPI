@@ -2752,8 +2752,14 @@ namespace NestoAPI.Controllers
                 db.EnviosAgencias.Remove(etiqueta);
             }
 
+            // NestoAPI#705: las líneas las borra el SQL con la cabecera (no pasan por el ChangeTracker y SaveChanges no las
+            // ve), así que sus productos se apuntan aquí para devolver a la tienda el stock que comprometían.
+            List<string> productosAEncolar = await ProductosLineasVentaABorrar(empresa, numero).ConfigureAwait(true);
+
             db.CabPedidoVtas.Remove(cabPedidoVta);
             await db.SaveChangesAsync();
+
+            await db.EncolarProductosLineasVentaSinRomperAsync(productosAEncolar).ConfigureAwait(true);
 
             // NestoAPI#593 (c4): el cheque regalo que estuviera en el pedido vuelve a estar libre. Best-effort: si falla,
             // el cheque se da por libre igual (su pedido ya no tiene la línea) y se cura al volver a usarlo.
@@ -2778,6 +2784,29 @@ namespace NestoAPI.Controllers
             }
 
             return Ok(cabPedidoVta);
+        }
+
+        /// <summary>
+        /// NestoAPI#705: productos de las líneas de un pedido que se va a borrar y que comprometían stock. Best-effort:
+        /// si falla la consulta se borra igual (lo recoge el job nocturno... salvo que la línea ya no exista).
+        /// </summary>
+        private async Task<List<string>> ProductosLineasVentaABorrar(string empresa, int numero)
+        {
+            try
+            {
+                // AsNoTracking: con las líneas en el contexto, EF las borraría él al quitar la cabecera (relación identificadora).
+                List<LinPedidoVta> lineas = await db.LinPedidoVtas.AsNoTracking()
+                    .Where(l => l.Empresa == empresa && l.Número == numero && l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
+                    .ToListAsync().ConfigureAwait(true);
+                return Infraestructure.Sincronizacion.ProductosLineasVentaSync.ProductosAEncolar(
+                    lineas.Select(l => Infraestructure.Sincronizacion.CambioLineaVenta.Borrado(
+                        Infraestructure.Sincronizacion.ProductosLineasVentaSync.Foto(l))));
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[NestoAPI#705] No se han podido leer las líneas del pedido {numero} para encolar sus productos: {ex.Message}", ex));
+                return new List<string>();
+            }
         }
 
         // GET: api/PonerDescuentoTodasLasLineas
