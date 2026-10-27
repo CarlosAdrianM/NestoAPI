@@ -9,6 +9,12 @@ public sealed record PedidoDia(string ClienteId, DateTime Dia, decimal Importe);
 /// <summary>Cantidad vendida por cliente, mes (AAAAMM) y grupo+subgrupo (sin MMP).</summary>
 public sealed record VentaGrupoMes(string ClienteId, int AnnoMes, string GrupoSubgrupo, decimal Cantidad);
 
+/// <summary>
+/// NestoAPI#618: lo comprado de un grupo+subgrupo (sin MMP) en un día (pedido = día, como <see cref="PedidoDia"/>), con su base
+/// imponible. Sirve para las features de relación cliente↔subgrupo y para la etiqueta «pedido en 7 días que incluya el subgrupo».
+/// </summary>
+public sealed record PedidoSubgrupoDia(string ClienteId, DateTime Dia, string GrupoSubgrupo, decimal Importe);
+
 public static class Claves
 {
     public static string ClienteId(string cliente, string contacto) => $"{cliente.Trim()}/{contacto.Trim()}";

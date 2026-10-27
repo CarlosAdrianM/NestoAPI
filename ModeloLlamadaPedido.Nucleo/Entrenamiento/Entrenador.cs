@@ -54,6 +54,10 @@ public static class Entrenador
 
     /// <summary>One-hot de las categóricas → Concatenate → NormalizeMinMax (ANTES del trainer) → árbol binario calibrado.</summary>
     public static IEstimator<ITransformer> Pipeline(MLContext ml, string trainer, bool conPesos)
+        => Pipeline(ml, trainer, conPesos, Categoricas, Numericas);
+
+    /// <summary>NestoAPI#618: el mismo pipeline con otras columnas (el modelo por subgrupo añade las suyas).</summary>
+    public static IEstimator<ITransformer> Pipeline(MLContext ml, string trainer, bool conPesos, IReadOnlyList<string> categoricas, IReadOnlyList<string> numericas)
     {
         string? peso = conPesos ? nameof(FilaEntrenamiento.Peso) : null;
         IEstimator<ITransformer> arbol = trainer switch
@@ -81,10 +85,10 @@ public static class Entrenador
             })
         };
 
-        string[] codificadas = Categoricas.Select(c => c + "Cod").ToArray();
+        string[] codificadas = categoricas.Select(c => c + "Cod").ToArray();
         return ml.Transforms.Categorical.OneHotEncoding(
-                Categoricas.Select(c => new InputOutputColumnPair(c + "Cod", c)).ToArray())
-            .Append(ml.Transforms.Concatenate("Features", codificadas.Concat(Numericas).ToArray()))
+                categoricas.Select(c => new InputOutputColumnPair(c + "Cod", c)).ToArray())
+            .Append(ml.Transforms.Concatenate("Features", codificadas.Concat(numericas).ToArray()))
             .Append(ml.Transforms.NormalizeMinMax("Features"))
             .Append(arbol);
     }

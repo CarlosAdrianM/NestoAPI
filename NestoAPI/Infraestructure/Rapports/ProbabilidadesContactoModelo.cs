@@ -1,7 +1,9 @@
+using ModeloLlamadaPedido.Features;
 using NestoAPI.Models.Clientes;
 using ModeloContactoEntrada = ModeloLlamadaPedido.Features.ModeloContactoEntrada;
 using System;
 using System.Collections.Generic;
+using System.Configuration;
 using System.Linq;
 using System.Runtime.Caching;
 using System.Threading.Tasks;
@@ -22,7 +24,12 @@ namespace NestoAPI.Infraestructure.Rapports
     /// <item>La consulta se cachea 2 h por vendedor y día: el tipo de interacción y el grupo/subgrupo ya no la cambian (son
     /// features que se ponen en memoria), así que cambiar de tipo o de grupo no lanza otra.</item>
     /// <item>Las predicciones se cachean 2 h por vendedor, tipo, grupo/subgrupo, día y mañana/tarde (EsPorLaTarde es feature).</item>
-    /// <item>El grupo/subgrupo que se pregunta sustituye a GrupoSubgrupoMasVendido en una copia; el que se devuelve es el real.</item>
+    /// <item>Sin el modelo por subgrupo, el grupo/subgrupo que se pregunta sustituye a GrupoSubgrupoMasVendido en una copia; el que se devuelve es el real.</item>
+    /// <item>NestoAPI#618: con un subgrupo elegido, el appSetting <see cref="CLAVE_SUBGRUPO_ACTIVO"/> = true y un modelo por
+    /// subgrupo promovido (<see cref="ModeloContacto.RutaSubgrupo"/>), la probabilidad es la de un pedido en 7 días QUE INCLUYA
+    /// el subgrupo (<see cref="ModeloContactoSubgrupoEntrada"/>) y cada cliente lleva su motivo legible. Sin el interruptor
+    /// (por defecto) el modelo por subgrupo está en sombra: el job lo entrena, lo mide y lo promueve, pero aquí no se usa.
+    /// Si falla, a ELMAH y como antes.</item>
     /// </list>
     /// Si el modelo falla se registra en ELMAH y se devuelve vacío (todas las probabilidades a 0: sin prioridad Máxima,
     /// pero la lista sale) y no se cachea.
@@ -30,22 +37,51 @@ namespace NestoAPI.Infraestructure.Rapports
     public class ProbabilidadesContactoModelo : IProbabilidadesContacto
     {
         public static readonly TimeSpan DURACION_CACHE = TimeSpan.FromHours(2);
+        /// <summary>NestoAPI#618: «true» = usar el modelo por subgrupo al elegir un subgrupo. Sin la clave o con otro valor, no (sombra).</summary>
+        public const string CLAVE_SUBGRUPO_ACTIVO = "ModeloLlamadas:Subgrupo:Activo";
         private static readonly MemoryCache cache = MemoryCache.Default;
 
         private readonly IRepositorioFeaturesContacto repositorio;
         private readonly Func<DateTime> ahora;
         private readonly string rutaModelo;
+        private readonly Func<bool> subgrupoActivo;
+        private readonly Func<string> rutaSubgrupo;
+        private readonly Func<IList<ModeloContactoSubgrupoEntrada>, string, List<float>> puntuarSubgrupo;
+        private readonly Action<Exception> registrarError;
 
-        public ProbabilidadesContactoModelo() : this(new RepositorioFeaturesContactoSql(), () => DateTime.Now, null)
+        public ProbabilidadesContactoModelo() : this(SubgrupoActivo(clave => ConfigurationManager.AppSettings[clave]))
         {
         }
 
-        internal ProbabilidadesContactoModelo(IRepositorioFeaturesContacto repositorio, Func<DateTime> ahora, string rutaModelo)
+        private ProbabilidadesContactoModelo(bool activo)
+            : this(new RepositorioFeaturesContactoSql(conSubgrupos: activo), () => DateTime.Now, null, () => activo, () => ModeloContacto.RutaSubgrupo)
+        {
+        }
+
+        /// <param name="subgrupoActivo">NestoAPI#618: el interruptor. Null = apagado.</param>
+        /// <param name="rutaSubgrupo">NestoAPI#618: el zip del modelo por subgrupo (null si no hay). Null = ninguno.</param>
+        /// <param name="puntuarSubgrupo">NestoAPI#618: null = <see cref="ModeloContacto.PuntuarSubgrupo"/>.</param>
+        /// <param name="registrarError">Null = ELMAH.</param>
+        internal ProbabilidadesContactoModelo(IRepositorioFeaturesContacto repositorio, Func<DateTime> ahora, string rutaModelo,
+            Func<bool> subgrupoActivo = null, Func<string> rutaSubgrupo = null,
+            Func<IList<ModeloContactoSubgrupoEntrada>, string, List<float>> puntuarSubgrupo = null, Action<Exception> registrarError = null)
         {
             this.repositorio = repositorio;
             this.ahora = ahora;
             this.rutaModelo = rutaModelo;
+            this.subgrupoActivo = subgrupoActivo ?? (() => false);
+            this.rutaSubgrupo = rutaSubgrupo ?? (() => null);
+            this.puntuarSubgrupo = puntuarSubgrupo ?? ModeloContacto.PuntuarSubgrupo;
+            this.registrarError = registrarError ?? RegistrarEnElmah;
         }
+
+        /// <summary>NestoAPI#618: el interruptor del Web.config (<see cref="CLAVE_SUBGRUPO_ACTIVO"/>); apagado si no está o no es «true».</summary>
+        public static bool SubgrupoActivo(Func<string, string> leerParametro)
+            => bool.TryParse(leerParametro?.Invoke(CLAVE_SUBGRUPO_ACTIVO)?.Trim(), out bool activo) && activo;
+
+        /// <summary>NestoAPI#618: el modelo por subgrupo solo con un subgrupo elegido, el interruptor puesto y un zip promovido.</summary>
+        internal static bool UsarModeloSubgrupo(string grupoSubgrupo, bool activo, string rutaModeloSubgrupo)
+            => activo && !string.IsNullOrWhiteSpace(grupoSubgrupo) && !string.IsNullOrWhiteSpace(rutaModeloSubgrupo);
 
         internal static string ClaveCacheConsulta(string vendedor, DateTime ahora) =>
             $"SugerenciasContacto:Historial:{vendedor?.Trim().ToUpperInvariant()}:{ahora:yyyyMMdd}";
@@ -82,15 +118,8 @@ namespace NestoAPI.Infraestructure.Rapports
             }
             catch (Exception ex)
             {
-                try
-                {
-                    Elmah.ErrorLog.GetDefault(null)?.Log(new Elmah.Error(new Exception(
-                        $"NestoAPI#603: no se pudo calcular la probabilidad del modelo para el vendedor {vendedor}; las sugerencias salen sin ella", ex)));
-                }
-                catch
-                {
-                    // Sin ELMAH (tests, consola): que no tumbe la lista.
-                }
+                registrarError(new Exception(
+                    $"NestoAPI#603: no se pudo calcular la probabilidad del modelo para el vendedor {vendedor}; las sugerencias salen sin ella", ex));
                 return new Dictionary<string, PrediccionContacto>();
             }
         }
@@ -104,21 +133,114 @@ namespace NestoAPI.Infraestructure.Rapports
             }
 
             List<ModeloContactoEntrada> reales = ModeloContacto.Entradas(historiales, momento, tipoInteraccion);
+
+            string ruta = rutaSubgrupo();
+            if (UsarModeloSubgrupo(grupoSubgrupo, subgrupoActivo(), ruta))
+            {
+                try
+                {
+                    return CalcularConSubgrupo(historiales, reales, grupoSubgrupo, momento, ruta);
+                }
+                catch (Exception ex)
+                {
+                    registrarError(new Exception(
+                        $"NestoAPI#618: no se pudo puntuar con el modelo por subgrupo ({grupoSubgrupo}, vendedor {vendedor}); se usa el general con el subgrupo pisado", ex));
+                }
+            }
+
             List<ModeloContactoEntrada> entradas = ModeloContacto.ConGrupoSubgrupo(reales, grupoSubgrupo);
             List<float> probabilidades = ModeloContacto.Puntuar(entradas, rutaModelo);
 
             var resultado = new Dictionary<string, PrediccionContacto>(StringComparer.OrdinalIgnoreCase);
             for (int i = 0; i < reales.Count && i < probabilidades.Count; i++)
             {
-                // Lo que más compra el cliente de verdad, no el grupo que se pregunta.
-                string grupo = reales[i].GrupoSubgrupoMasVendido;
                 resultado[reales[i].ClienteId.Trim()] = new PrediccionContacto
                 {
                     Probabilidad = probabilidades[i],
-                    GrupoSubgrupoMasVendido = string.IsNullOrWhiteSpace(grupo) || grupo == CalculadoraFeaturesContacto.SIN_GRUPO ? null : grupo.Trim()
+                    GrupoSubgrupoMasVendido = GrupoReal(reales[i])
                 };
             }
             return resultado;
+        }
+
+        /// <summary>NestoAPI#618: probabilidad de un pedido con el subgrupo y su motivo, para cada cliente de la cartera.</summary>
+        private Dictionary<string, PrediccionContacto> CalcularConSubgrupo(List<HistorialContacto> historiales, List<ModeloContactoEntrada> reales,
+            string grupoSubgrupo, DateTime momento, string ruta)
+        {
+            List<ModeloContactoSubgrupoEntrada> entradas = EntradasSubgrupo(historiales, reales, grupoSubgrupo, momento);
+            List<float> probabilidades = puntuarSubgrupo(entradas, ruta);
+            if (probabilidades == null || probabilidades.Count != entradas.Count)
+            {
+                throw new InvalidOperationException($"el modelo por subgrupo devolvió {probabilidades?.Count ?? 0} probabilidades para {entradas.Count} clientes");
+            }
+            var resultado = new Dictionary<string, PrediccionContacto>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < entradas.Count; i++)
+            {
+                resultado[reales[i].ClienteId.Trim()] = new PrediccionContacto
+                {
+                    Probabilidad = probabilidades[i],
+                    GrupoSubgrupoMasVendido = GrupoReal(reales[i]),
+                    MotivoSubgrupo = MotivoSubgrupo(entradas[i], probabilidades[i])
+                };
+            }
+            return resultado;
+        }
+
+        /// <summary>NestoAPI#618: la entrada del modelo por subgrupo de cada cliente (las generales de hoy + la relación con el subgrupo).</summary>
+        internal static List<ModeloContactoSubgrupoEntrada> EntradasSubgrupo(IList<HistorialContacto> historiales, IList<ModeloContactoEntrada> reales,
+            string grupoSubgrupo, DateTime momento)
+        {
+            var entradas = new List<ModeloContactoSubgrupoEntrada>(historiales.Count);
+            for (int i = 0; i < historiales.Count && i < reales.Count; i++)
+            {
+                ResumenSubgrupos resumen = CalculadoraFeaturesSubgrupo.Resumir(historiales[i].PedidosSubgrupo, momento);
+                entradas.Add(CalculadoraFeaturesSubgrupo.Calcular<ModeloContactoSubgrupoEntrada>(reales[i], resumen, grupoSubgrupo));
+            }
+            return entradas;
+        }
+
+        /// <summary>
+        /// NestoAPI#618: por qué sale (o no) con el subgrupo elegido, de usted y con cifras que el vendedor puede comprobar:
+        /// «Con COS007: 4 pedidos en el último año (el último hace 23 días); probabilidad de pedido con COS007 del 18 %».
+        /// </summary>
+        internal static string MotivoSubgrupo(ModeloContactoSubgrupoEntrada e, float probabilidad)
+        {
+            string gs = e.GrupoSubgrupo;
+            int pedidos = (int)e.PedidosSubgrupo12Meses;
+            int dias = (int)e.DiasDesdeUltimoPedidoSubgrupo;
+            string relacion;
+            if (pedidos > 0)
+            {
+                relacion = $"Con {gs}: {(pedidos == 1 ? "1 pedido" : $"{pedidos} pedidos")} en el último año (el último hace {dias} {(dias == 1 ? "día" : "días")})";
+            }
+            else if (e.PedidosSubgrupo24Meses > 0)
+            {
+                relacion = $"Con {gs}: no lo compra desde hace {dias} días";
+            }
+            else
+            {
+                relacion = $"No ha comprado {gs} en los dos últimos años (venta cruzada)";
+            }
+            return $"{relacion}; probabilidad de pedido con {gs} del {Math.Round(probabilidad * 100, MidpointRounding.AwayFromZero)} %";
+        }
+
+        /// <summary>Lo que más compra el cliente de verdad, no el grupo que se pregunta.</summary>
+        private static string GrupoReal(ModeloContactoEntrada entrada)
+        {
+            string grupo = entrada.GrupoSubgrupoMasVendido;
+            return string.IsNullOrWhiteSpace(grupo) || grupo == CalculadoraFeaturesContacto.SIN_GRUPO ? null : grupo.Trim();
+        }
+
+        private static void RegistrarEnElmah(Exception ex)
+        {
+            try
+            {
+                Elmah.ErrorLog.GetDefault(null)?.Log(new Elmah.Error(ex));
+            }
+            catch
+            {
+                // Sin ELMAH (tests, consola): que no tumbe la lista.
+            }
         }
     }
 }

@@ -1,3 +1,4 @@
+using ModeloLlamadaPedido.Datos;
 using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
@@ -85,12 +86,41 @@ namespace NestoAPI.Infraestructure.Rapports
             WHERE s.Fecha >= @DesdeHistorial AND s.Estado = 0 AND s.Pedido = 0
             GROUP BY s.Número, s.Contacto;";
 
+        /// <summary>
+        /// NestoAPI#618: 5. Base imponible por cliente, día y grupo+subgrupo (sin MMP) de 24 meses: features del modelo por subgrupo
+        /// (las mismas que en el entrenamiento, RepositorioDatosSql.SQL_SUBGRUPOS). Solo se pide con el modelo por subgrupo activo.
+        /// </summary>
+        internal const string SQL_SUBGRUPOS = @"
+
+            -- 5. NestoAPI#618: por día y grupo+subgrupo
+            SELECT cab.[Nº Cliente] Cliente, cab.Contacto, CAST(cab.Fecha AS date) Dia, l.Grupo + l.SubGrupo GrupoSubgrupo,
+                SUM(l.[Base Imponible]) Importe
+            FROM CabPedidoVta cab WITH (NOLOCK)
+            INNER JOIN LinPedidoVta l WITH (NOLOCK) ON l.Empresa = cab.Empresa AND l.Número = cab.Número
+            INNER JOIN #Clientes x ON x.Cliente = cab.[Nº Cliente] AND x.Contacto = cab.Contacto
+            WHERE cab.Empresa = '1' AND cab.Fecha >= @DesdeHistorial AND cab.Fecha < @Hoy
+                AND l.TipoLinea = 1 AND l.[Base Imponible] > 0 AND cab.NotaEntrega = 0 AND l.Estado >= -1
+                AND l.SubGrupo <> 'MMP'
+            GROUP BY cab.[Nº Cliente], cab.Contacto, CAST(cab.Fecha AS date), l.Grupo + l.SubGrupo;";
+
+        private readonly bool conSubgrupos;
+
+        public RepositorioFeaturesContactoSql() : this(false)
+        {
+        }
+
+        /// <param name="conSubgrupos">NestoAPI#618: trae también lo comprado por día y subgrupo (modelo por subgrupo).</param>
+        public RepositorioFeaturesContactoSql(bool conSubgrupos)
+        {
+            this.conSubgrupos = conSubgrupos;
+        }
+
         /// <summary>Comando con los parámetros (vendedor nunca interpolado). Las fechas llevan un día de margen: el filtro exacto lo hace la calculadora.</summary>
-        internal static SqlCommand CrearComando(SqlConnection conexion, string vendedor, DateTime hoy)
+        internal static SqlCommand CrearComando(SqlConnection conexion, string vendedor, DateTime hoy, bool conSubgrupos = false)
         {
             DateTime d = hoy.Date;
             DateTime inicioMes = new DateTime(d.Year, d.Month, 1);
-            var comando = new SqlCommand(SQL, conexion) { CommandTimeout = TIMEOUT_SEGUNDOS };
+            var comando = new SqlCommand(conSubgrupos ? SQL + SQL_SUBGRUPOS : SQL, conexion) { CommandTimeout = TIMEOUT_SEGUNDOS };
             _ = comando.Parameters.Add(new SqlParameter("@Vendedor", SqlDbType.VarChar, 10) { Value = (object)vendedor?.Trim() ?? DBNull.Value });
             _ = comando.Parameters.Add(new SqlParameter("@Hoy", SqlDbType.DateTime) { Value = d });
             _ = comando.Parameters.Add(new SqlParameter("@DesdeHistorial", SqlDbType.DateTime) { Value = d.AddMonths(-CalculadoraFeaturesContacto.MESES_HISTORIAL).AddDays(-1) });
@@ -106,8 +136,9 @@ namespace NestoAPI.Infraestructure.Rapports
             return ReintentosSql.ReintentarSiDeadlock(() => LeerSinReintentos(vendedor, hoy));
         }
 
-        private static List<HistorialContacto> LeerSinReintentos(string vendedor, DateTime hoy)
+        private List<HistorialContacto> LeerSinReintentos(string vendedor, DateTime hoy)
         {
+            var subgrupos = new List<PedidoSubgrupoDia>();
             var clientes = new List<string>();
             var rapports = new List<KeyValuePair<string, RapportContactoCrudo>>();
             var pedidos = new List<KeyValuePair<string, PedidoDiaContacto>>();
@@ -120,7 +151,7 @@ namespace NestoAPI.Infraestructure.Rapports
                 cadena = contexto.Database.Connection.ConnectionString;
             }
             using (var conexion = new SqlConnection(cadena))
-            using (SqlCommand comando = CrearComando(conexion, vendedor, hoy))
+            using (SqlCommand comando = CrearComando(conexion, vendedor, hoy, conSubgrupos))
             {
                 conexion.Open();
                 using (SqlDataReader lector = comando.ExecuteReader())
@@ -152,23 +183,32 @@ namespace NestoAPI.Infraestructure.Rapports
                     {
                         ultimaInteraccion[ClienteId(lector[0], lector[1])] = lector.GetDateTime(2);
                     }
+                    if (conSubgrupos && lector.NextResult())
+                    {
+                        while (lector.Read())
+                        {
+                            subgrupos.Add(new PedidoSubgrupoDia(ClienteId(lector[0], lector[1]), lector.GetDateTime(2),
+                                Convert.ToString(lector[3]).Trim(), Convert.ToDecimal(lector[4])));
+                        }
+                    }
                 }
             }
 
-            return Agrupar(clientes, rapports, pedidos, ventas, ultimaInteraccion);
+            return Agrupar(clientes, rapports, pedidos, ventas, ultimaInteraccion, subgrupos);
         }
 
         internal static List<HistorialContacto> Agrupar(IEnumerable<string> clientes,
             IEnumerable<KeyValuePair<string, RapportContactoCrudo>> rapports,
             IEnumerable<KeyValuePair<string, PedidoDiaContacto>> pedidos,
             IEnumerable<KeyValuePair<string, VentaGrupoMesContacto>> ventas,
-            IDictionary<string, DateTime> ultimaInteraccion)
+            IDictionary<string, DateTime> ultimaInteraccion, IEnumerable<PedidoSubgrupoDia> subgrupos = null)
         {
             ILookup<string, RapportContactoCrudo> porRapports = rapports.ToLookup(r => r.Key, r => r.Value);
             ILookup<string, PedidoDiaContacto> porPedidos = pedidos.ToLookup(p => p.Key, p => p.Value);
             ILookup<string, VentaGrupoMesContacto> porVentas = ventas.ToLookup(v => v.Key, v => v.Value);
+            ILookup<string, PedidoSubgrupoDia> porSubgrupos = (subgrupos ?? Enumerable.Empty<PedidoSubgrupoDia>()).ToLookup(v => v.ClienteId);
             return clientes.Distinct().Select(id => new HistorialContacto(id, porPedidos[id], porRapports[id], porVentas[id],
-                ultimaInteraccion.TryGetValue(id, out DateTime ultima) ? ultima : (DateTime?)null)).ToList();
+                ultimaInteraccion.TryGetValue(id, out DateTime ultima) ? ultima : (DateTime?)null, porSubgrupos[id])).ToList();
         }
     }
 }

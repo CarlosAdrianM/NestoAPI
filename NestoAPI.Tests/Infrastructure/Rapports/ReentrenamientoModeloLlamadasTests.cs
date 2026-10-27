@@ -50,6 +50,10 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
             errores = new List<Exception>();
             parametros = new Dictionary<string, string>();
             _ = A.CallTo(() => entrenador.Evaluar(A<OpcionesReentrenamiento>._, A<DateTime>._)).Returns(evaluacion);
+            // NestoAPI#618: tras el general se entrena el de subgrupo; aquí no pasa (sus casos, en ModeloSubgrupoTests).
+            IEvaluacionModeloLlamadas subgrupo = A.Fake<IEvaluacionModeloLlamadas>();
+            _ = A.CallTo(() => subgrupo.Decision).Returns(new DecisionPuerta(false, "subgrupo sin datos"));
+            _ = A.CallTo(() => entrenador.EvaluarSubgrupo(A<OpcionesReentrenamiento>._, A<DateTime>._)).Returns(subgrupo);
             _ = A.CallTo(() => evaluacion.Comparacion).Returns("P@20 60,0 % → 62,0 %, AUC 0,740 → 0,750");
             _ = A.CallTo(() => evaluacion.Readme(A<string>._, A<string>._)).ReturnsLazily((string r, string res) => $"README {res}");
             _ = A.CallTo(() => evaluacion.Metadatos(A<DateTime>._, A<string>._)).ReturnsLazily((DateTime f, string o) =>
@@ -297,8 +301,9 @@ namespace NestoAPI.Tests.Infrastructure.Rapports
                 .Throws(new Exception("SignalR caído"));
 
             Assert.AreEqual(EstadoReentrenamiento.Promovido, Servicio().Ejecutar(simular: false, "job mensual"));
-            Assert.AreEqual(1, errores.Count);
+            Assert.AreEqual(2, errores.Count, "el aviso del general y el del de subgrupo (NestoAPI#618)");
             StringAssert.Contains(errores[0].Message, "promovido");
+            Assert.IsTrue(errores.All(e => e.Message.Contains("No se pudo avisar")));
         }
 
         [TestMethod]

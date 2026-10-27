@@ -170,6 +170,8 @@ namespace NestoAPI.Infraestructure.Rapports
         public DateTime? UltimoIntento { get; set; }
         public float Probabilidad { get; set; }
         public string GrupoSubgrupoMasVendido { get; set; }
+        /// <summary>NestoAPI#618: con el modelo por subgrupo, qué ha comprado del subgrupo elegido («De COS007: 4 pedidos en el último año…»). Null si no.</summary>
+        public string MotivoSubgrupo { get; set; }
 
         public string Clave => ClaveDe(Cliente, Contacto);
 
@@ -181,6 +183,11 @@ namespace NestoAPI.Infraestructure.Rapports
     {
         public float Probabilidad { get; set; }
         public string GrupoSubgrupoMasVendido { get; set; }
+        /// <summary>
+        /// NestoAPI#618: solo cuando la probabilidad sale del modelo por subgrupo (subgrupo elegido y
+        /// <see cref="ProbabilidadesContactoModelo.CLAVE_SUBGRUPO_ACTIVO"/>): el motivo legible de la relación con el subgrupo.
+        /// </summary>
+        public string MotivoSubgrupo { get; set; }
     }
 
     /// <summary>

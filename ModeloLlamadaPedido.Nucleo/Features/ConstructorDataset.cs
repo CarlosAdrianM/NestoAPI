@@ -39,7 +39,7 @@ public static class ConstructorDataset
     /// Partición temporal: validación = contactos desde <paramref name="corte"/>; entrenamiento = contactos cuya ventana de
     /// 7 días termina antes del corte (hueco para que ninguna etiqueta de entrenamiento mire dentro de la validación).
     /// </summary>
-    public static (List<int> entrenamiento, List<int> validacion) Particion(IReadOnlyList<FilaEntrenamiento> filas, DateTime corte)
+    public static (List<int> entrenamiento, List<int> validacion) Particion<T>(IReadOnlyList<T> filas, DateTime corte) where T : IFilaEvaluable
     {
         var entrenamiento = new List<int>();
         var validacion = new List<int>();

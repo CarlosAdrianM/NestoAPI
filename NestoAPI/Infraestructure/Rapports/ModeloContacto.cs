@@ -2,6 +2,7 @@ using Microsoft.ML;
 using ModeloLlamadaPedido.Entrenamiento;
 using NestoAPI.Models.Clientes;
 using ModeloContactoEntrada = ModeloLlamadaPedido.Features.ModeloContactoEntrada;
+using ModeloContactoSubgrupoEntrada = ModeloLlamadaPedido.Features.ModeloContactoSubgrupoEntrada;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -20,10 +21,15 @@ namespace NestoAPI.Infraestructure.Rapports
     public static class ModeloContacto
     {
         private static readonly object bloqueo = new object();
-        private static string rutaCargada;
-        private static DateTime fechaCargada;
-        private static ITransformer modeloCargado;
-        private static MLContext contextoCargado;
+        /// <summary>NestoAPI#618: un modelo cargado por ruta (el general y el de subgrupo a la vez, sin recargar al alternar).</summary>
+        private static readonly Dictionary<string, ModeloCargado> cargados = new Dictionary<string, ModeloCargado>(StringComparer.OrdinalIgnoreCase);
+
+        private sealed class ModeloCargado
+        {
+            public DateTime Fecha;
+            public ITransformer Modelo;
+            public MLContext Contexto;
+        }
 
         /// <summary>El zip que va en el deploy (ModelsIA del proyecto).</summary>
         public static string RutaDelDeploy => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ModelsIA", "modelo_llamadas.zip");
@@ -48,17 +54,15 @@ namespace NestoAPI.Infraestructure.Rapports
             DateTime fecha = File.GetLastWriteTimeUtc(ruta);
             lock (bloqueo)
             {
-                if (modeloCargado == null || rutaCargada != ruta || fechaCargada != fecha)
+                if (!cargados.TryGetValue(ruta, out ModeloCargado cargado) || cargado.Fecha != fecha)
                 {
                     MLContext nuevo = CrearContexto();
                     // FileShare.Delete: el job de reentrenamiento puede cambiar el zip (File.Replace) mientras se lee.
-                    modeloCargado = Entrenador.Cargar(nuevo, ruta);
-                    contextoCargado = nuevo;
-                    rutaCargada = ruta;
-                    fechaCargada = fecha;
+                    cargado = new ModeloCargado { Fecha = fecha, Modelo = Entrenador.Cargar(nuevo, ruta), Contexto = nuevo };
+                    cargados[ruta] = cargado;
                 }
-                ml = contextoCargado;
-                return modeloCargado;
+                ml = cargado.Contexto;
+                return cargado.Modelo;
             }
         }
 
@@ -70,6 +74,26 @@ namespace NestoAPI.Infraestructure.Rapports
                 return new List<float>();
             }
             ITransformer modelo = Cargar(ruta ?? RutaPorDefecto, out MLContext ml);
+            IDataView datos = ml.Data.LoadFromEnumerable(entradas);
+            return ml.Data.CreateEnumerable<PrediccionModelo>(modelo.Transform(datos), reuseRowObject: false)
+                .Select(p => p.Probability)
+                .ToList();
+        }
+
+        /// <summary>
+        /// NestoAPI#618: el modelo por subgrupo que deja el job mensual (C:\NestoAPI\ModelosIA\modelo_llamadas_subgrupo.zip). No hay
+        /// copia en el deploy: null si todavía no se ha promovido ninguno.
+        /// </summary>
+        public static string RutaSubgrupo => AlmacenModeloLlamadas.ProduccionSubgrupo().RutaModeloActivo;
+
+        /// <summary>NestoAPI#618: probabilidad de pedido CON el subgrupo de cada entrada, en el mismo orden.</summary>
+        public static List<float> PuntuarSubgrupo(IList<ModeloContactoSubgrupoEntrada> entradas, string ruta)
+        {
+            if (entradas == null || entradas.Count == 0)
+            {
+                return new List<float>();
+            }
+            ITransformer modelo = Cargar(ruta, out MLContext ml);
             IDataView datos = ml.Data.LoadFromEnumerable(entradas);
             return ml.Data.CreateEnumerable<PrediccionModelo>(modelo.Transform(datos), reuseRowObject: false)
                 .Select(p => p.Probability)
