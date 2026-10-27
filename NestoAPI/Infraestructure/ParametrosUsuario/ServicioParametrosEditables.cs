@@ -26,6 +26,8 @@ namespace NestoAPI.Infraestructure.ParametrosUsuario
         /// parámetro no gestiona titular o aún no se ha capturado.</summary>
         public string ValorTitular { get; set; }
         public List<OpcionParametroDTO> Opciones { get; set; }
+        /// <summary>Nesto#490: el cambio no se nota hasta reiniciar Nesto (la ventana de Parámetros lo avisa).</summary>
+        public bool RequiereReiniciar { get; set; }
     }
 
     public class CambioParametroRequest
@@ -54,6 +56,13 @@ namespace NestoAPI.Infraestructure.ParametrosUsuario
             public string Descripcion { get; set; }
             /// <summary>Grupos de seguridad cuyos miembros pueden editar la clave (basta uno).</summary>
             public string[] Grupos { get; set; }
+            /// <summary>Nesto#490: la puede cambiar cualquier usuario (no se miran los grupos).</summary>
+            public bool ParaTodos { get; set; }
+            /// <summary>Nesto#490: el cambio no se nota hasta reiniciar Nesto (se lee al arrancar).</summary>
+            public bool RequiereReiniciar { get; set; }
+            /// <summary>Nesto#490: si el usuario no tiene fila propia, se le enseña el valor de la fila "(defecto)",
+            /// que es el que de verdad tiene (sin esto, el combo saldría vacío).</summary>
+            public bool MostrarDefectoSiNoTieneValor { get; set; }
             /// <summary>Clave donde se guarda el valor TITULAR (null = sin gestión de titular).
             /// Se captura solo la primera vez que el usuario cambia el valor: el que tenía
             /// pasa a ser su titular, y el arranque de Nesto ofrece restaurarlo.</summary>
@@ -72,8 +81,32 @@ namespace NestoAPI.Infraestructure.ParametrosUsuario
                 Grupos = new[] { Constantes.GruposSeguridad.TIENDA_ON_LINE },
                 ClaveTitular = "AlmacénPedidoVtaTitular",
                 CargarOpciones = CargarAlmacenes
+            },
+            // Nesto#490 (panel lateral, 27/10/26): cada usuario elige si usa el diseño nuevo (menú lateral) o la cinta.
+            // Fila "(defecto)" = "0" (la cinta) en Scripts/Nesto490_NavegacionLateral.sql; en unas semanas pasará a "1".
+            // Nesto lo lee al crear la ventana principal: hay que reiniciar para que se note.
+            new DefinicionParametroEditable
+            {
+                Clave = CLAVE_NAVEGACION_LATERAL,
+                Descripcion = "Diseño nuevo: menú lateral en lugar de la cinta (requiere reiniciar Nesto)",
+                Grupos = new string[0],
+                ParaTodos = true,
+                RequiereReiniciar = true,
+                MostrarDefectoSiNoTieneValor = true,
+                CargarOpciones = (bd, empresa) => Task.FromResult(new List<OpcionParametroDTO>
+                {
+                    new OpcionParametroDTO { Valor = "0", Descripcion = "Cinta (el diseño de siempre)" },
+                    new OpcionParametroDTO { Valor = "1", Descripcion = "Menú lateral (el diseño nuevo)" }
+                })
             }
         };
+
+        /// <summary>Nesto#490: la clave del parámetro del menú lateral (Parametros.Claves.NavegacionLateral en Nesto).</summary>
+        internal const string CLAVE_NAVEGACION_LATERAL = "NavegacionLateral";
+
+        /// <summary>Si el usuario puede cambiar el parámetro: todos, o los de alguno de sus grupos.</summary>
+        internal static bool PuedeEditar(DefinicionParametroEditable definicion, IPrincipal user)
+            => definicion.ParaTodos || (definicion.Grupos ?? new string[0]).Any(g => user.IsInRoleSinDominio(g));
 
         private readonly NVEntities db;
         private readonly IReadOnlyList<DefinicionParametroEditable> catalogo;
@@ -117,15 +150,21 @@ namespace NestoAPI.Infraestructure.ParametrosUsuario
             }
             foreach (DefinicionParametroEditable definicion in catalogo)
             {
-                if (!definicion.Grupos.Any(g => user.IsInRoleSinDominio(g)))
+                if (!PuedeEditar(definicion, user))
                 {
                     continue;
+                }
+                string valorActual = await LeerValor(empresa, usuario, definicion.Clave).ConfigureAwait(false);
+                if (string.IsNullOrWhiteSpace(valorActual) && definicion.MostrarDefectoSiNoTieneValor)
+                {
+                    valorActual = await LeerValor(empresa, USUARIO_DEFECTO, definicion.Clave).ConfigureAwait(false);
                 }
                 resultado.Add(new ParametroEditableDTO
                 {
                     Clave = definicion.Clave,
                     Descripcion = definicion.Descripcion,
-                    ValorActual = await LeerValor(empresa, usuario, definicion.Clave).ConfigureAwait(false),
+                    RequiereReiniciar = definicion.RequiereReiniciar,
+                    ValorActual = valorActual,
                     ValorTitular = definicion.ClaveTitular == null
                         ? null
                         : await LeerValor(empresa, usuario, definicion.ClaveTitular).ConfigureAwait(false),
@@ -162,7 +201,7 @@ namespace NestoAPI.Infraestructure.ParametrosUsuario
             {
                 throw new InvalidOperationException($"El parámetro '{clave}' no se puede modificar desde aquí.");
             }
-            if (!definicion.Grupos.Any(g => user.IsInRoleSinDominio(g)))
+            if (!PuedeEditar(definicion, user))
             {
                 throw new InvalidOperationException($"Su usuario no tiene permiso para cambiar '{definicion.Descripcion}' " +
                     $"(hace falta pertenecer a: {string.Join(", ", definicion.Grupos)}).");
@@ -210,7 +249,8 @@ namespace NestoAPI.Infraestructure.ParametrosUsuario
                 Descripcion = definicion.Descripcion,
                 ValorActual = valor,
                 ValorTitular = valorTitular,
-                Opciones = opciones
+                Opciones = opciones,
+                RequiereReiniciar = definicion.RequiereReiniciar
             };
         }
 

@@ -179,5 +179,71 @@ namespace NestoAPI.Tests.Infrastructure
                 new CambioParametroRequest { Empresa = "1", Clave = "AlmacénPedidoVta", Valor = "ALG" }));
             Assert.AreEqual(0, parametrosAnadidos.Count);
         }
+
+        // Nesto#490 (panel lateral, 27/10/26): cada usuario elige desde Parámetros si usa el menú lateral o la cinta.
+        // Se prueba con la entrada REAL del catálogo (las opciones 0/1 no tocan la BD).
+        private ServicioParametrosEditables ServicioConNavegacionLateral()
+            => new ServicioParametrosEditables(db, ServicioParametrosEditables.Catalogo
+                .Where(d => d.Clave == ServicioParametrosEditables.CLAVE_NAVEGACION_LATERAL).ToList());
+
+        [TestMethod]
+        public async Task NavegacionLateral_LaVeCualquierUsuario_ConElValorDelDefectoSiNoTieneFilaPropia()
+        {
+            ConParametros(Parametro("NavegacionLateral", "0", "(defecto)"));
+
+            List<ParametroEditableDTO> editables = await ServicioConNavegacionLateral().LeerEditables(UsuarioDe(), "1");
+
+            ParametroEditableDTO navegacion = editables.Single();
+            Assert.AreEqual("NavegacionLateral", navegacion.Clave);
+            Assert.AreEqual("0", navegacion.ValorActual, "Sin fila propia, el valor que de verdad tiene: el de (defecto)");
+            Assert.IsTrue(navegacion.RequiereReiniciar, "Nesto lo lee al arrancar: la ventana tiene que avisar de reiniciar");
+            StringAssert.Contains(navegacion.Descripcion, "requiere reiniciar Nesto");
+            CollectionAssert.AreEqual(new[] { "0", "1" }, navegacion.Opciones.Select(o => o.Valor).ToArray());
+        }
+
+        [TestMethod]
+        public async Task NavegacionLateral_ConFilaPropia_SeVeLaSuya()
+        {
+            ConParametros(Parametro("NavegacionLateral", "0", "(defecto)"), Parametro("NavegacionLateral", "1"));
+
+            List<ParametroEditableDTO> editables = await ServicioConNavegacionLateral().LeerEditables(UsuarioDe(), "1");
+
+            Assert.AreEqual("1", editables.Single().ValorActual);
+        }
+
+        [TestMethod]
+        public async Task NavegacionLateral_CualquierUsuarioLaPuedeCambiar_YSeAvisaDeReiniciar()
+        {
+            ConParametros(Parametro("NavegacionLateral", "0", "(defecto)"));
+
+            ParametroEditableDTO resultado = await ServicioConNavegacionLateral().Cambiar(UsuarioDe(),
+                new CambioParametroRequest { Empresa = "1", Clave = "NavegacionLateral", Valor = "1" });
+
+            Assert.AreEqual("1", resultado.ValorActual);
+            Assert.IsTrue(resultado.RequiereReiniciar);
+            Assert.IsNull(resultado.ValorTitular, "No gestiona titular");
+            Assert.IsTrue(parametrosAnadidos.Any(p => p.Clave == "NavegacionLateral" && p.Valor == "1" && p.Usuario == "Laura"),
+                "Se le crea su propia fila; la de (defecto) no se toca");
+        }
+
+        [TestMethod]
+        public async Task NavegacionLateral_ValorQueNoEsCeroNiUno_SeRechaza()
+        {
+            await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => ServicioConNavegacionLateral().Cambiar(UsuarioDe(),
+                new CambioParametroRequest { Empresa = "1", Clave = "NavegacionLateral", Valor = "2" }));
+            Assert.AreEqual(0, parametrosAnadidos.Count);
+        }
+
+        [TestMethod]
+        public void Catalogo_ElAlmacenSigueSoloParaTiendaOnLine_YLaNavegacionParaTodos()
+        {
+            var almacen = ServicioParametrosEditables.Catalogo.Single(d => d.Clave == "AlmacénPedidoVta");
+            var navegacion = ServicioParametrosEditables.Catalogo.Single(d => d.Clave == "NavegacionLateral");
+
+            Assert.IsFalse(ServicioParametrosEditables.PuedeEditar(almacen, UsuarioDe(Constantes.GruposSeguridad.COMPRAS)));
+            Assert.IsTrue(ServicioParametrosEditables.PuedeEditar(almacen, UsuarioDe(Constantes.GruposSeguridad.TIENDA_ON_LINE)));
+            Assert.IsTrue(ServicioParametrosEditables.PuedeEditar(navegacion, UsuarioDe()));
+            Assert.IsFalse(almacen.RequiereReiniciar);
+        }
     }
 }
