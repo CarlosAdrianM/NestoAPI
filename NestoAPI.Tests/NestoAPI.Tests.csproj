@@ -812,6 +812,7 @@
     <Compile Include="Infrastructure\Sincronizacion\SincronizacionJobsServiceTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\GestorSincronizacionTests.cs" />
     <Compile Include="Infrastructure\GestorProductosTests.cs" />
+    <Compile Include="Infrastructure\Sincronizacion\PublicacionTiendaTests.cs" />
     <Compile Include="Infrastructure\ProductoSyncMessageCompletoTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\SyncTableRouterTests.cs" />
     <Compile Include="Infrastructure\ClientesSyncHandlerVendedorTests.cs" />

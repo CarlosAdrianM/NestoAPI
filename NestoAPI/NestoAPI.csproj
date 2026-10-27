@@ -1244,6 +1244,7 @@
     <Compile Include="Infraestructure\Clientes\ValidadorCambioClienteComercial.cs" />
     <Compile Include="Models\Picking\GestorDiasEnServir.cs" />
     <Compile Include="Infraestructure\Sincronizacion\PuertaPublicacionTienda.cs" />
+    <Compile Include="Infraestructure\Sincronizacion\PublicacionTienda.cs" />
     <Compile Include="Infraestructure\Sincronizacion\ISyncTableHandler.cs" />
     <Compile Include="Infraestructure\Sincronizacion\SincronizacionEventWrapper.cs" />
     <Compile Include="Infraestructure\Sincronizacion\SentinelPrecioPublicoJobsService.cs" />
