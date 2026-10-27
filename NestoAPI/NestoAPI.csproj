@@ -682,6 +682,7 @@
     <Compile Include="Infraestructure\Agencias\Gls\PeticionGls.cs" />
     <Compile Include="Infraestructure\Agencias\Gls\SombraPeticionesGls.cs" />
     <Compile Include="Infraestructure\Agencias\Gls\AnulacionGls.cs" />
+    <Compile Include="Infraestructure\Agencias\Gls\CambiosGrabacionGls.cs" />
     <Compile Include="Infraestructure\Agencias\Gls\EtiquetaGls.cs" />
     <Compile Include="Infraestructure\Agencias\Gls\ClienteGrabaServiciosGls.cs" />
     <Compile Include="Infraestructure\Agencias\Gls\TramitadorGls.cs" />

@@ -8,6 +8,7 @@ using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
 using System.Web.Http.Results;
+using System.Xml.Linq;
 using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
@@ -108,12 +109,131 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
-        public async Task AgenciaDeLaEmpresaEspejo_400PendienteDeDecidir()
+        public async Task OtraAgencia_400SinLlamarAGls()
         {
-            var resultado = await controller.TramitarTodos(new TramitarEnviosDTO { Agencia = Constantes.Agencias.AGENCIA_GLS_EMPRESA_ESPEJO });
+            var resultado = await controller.TramitarTodos(new TramitarEnviosDTO { Agencia = Constantes.Agencias.AGENCIA_CTT });
 
             Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
             A.CallTo(() => fakeGls.EnviarAsync(A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task AgenciaDeLaEmpresaEspejo_SeTramitaConSuPropiaCuenta()
+        {
+            // NestoAPI#552 (fase 5, Carlos 27/10/26): la agencia 5 pasa a la API igual que la 1, con su uid (AgenciasTransporte 5).
+            controller.CargarDatosGls = e => Task.FromResult((
+                new Empresa { Número = "3  ", Nombre = "Empresa espejo", Dirección = "x", Población = "x", Provincia = "x", CodPostal = "28000", Teléfono = "1", Email = "a@b.c" },
+                new AgenciaTransporte { Numero = 5, Nombre = "ASM", Identificador = "0B00UID-ESPEJO", PrefijoCodigoBarras = "6128331" }));
+            ConEnvio(249723, 928379, e => { e.Agencia = Constantes.Agencias.AGENCIA_GLS_EMPRESA_ESPEJO; e.Empresa = "3  "; e.Servicio = 1; e.CodigoBarras = "61283310249723"; });
+            string mandado = null;
+            A.CallTo(() => fakeGls.EnviarAsync(A<string>._)).Invokes((string soap) => mandado = soap).Returns(Task.FromResult(TramitadorGlsTests.RESPUESTA_OK));
+
+            var respuesta = await controller.TramitarTodos(new TramitarEnviosDTO { Agencia = Constantes.Agencias.AGENCIA_GLS_EMPRESA_ESPEJO, Envios = new List<int> { 249723 } })
+                as OkNegotiatedContentResult<ResultadoTramitarEnviosDTO>;
+
+            Assert.IsNotNull(respuesta);
+            Assert.AreEqual(1, respuesta.Content.Tramitados);
+            StringAssert.Contains(mandado, "uidcliente=\"0B00UID-ESPEJO\"");
+            StringAssert.Contains(mandado, "codbarras=\"61283310249723\"");
+            StringAssert.Contains(mandado, "<Nombre>Nueva Visión</Nombre>", "La empresa espejo sale con Nueva Visión de remitente, como en AgenciaASM");
+            A.CallTo(() => fakeCierre.TramitarAsync(249723, A<string>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task EnvioDeLaAgencia5EnElLoteDeLa1_ErrorSinLlamarAGls()
+        {
+            ConEnvio(249723, 928379, e => e.Agencia = Constantes.Agencias.AGENCIA_GLS_EMPRESA_ESPEJO);
+
+            ResultadoTramitarEnviosDTO resultado = await TramitarTodos(249723);
+
+            Assert.AreEqual(1, resultado.Fallidos);
+            A.CallTo(() => fakeGls.EnviarAsync(A<string>._)).MustNotHaveHappened();
+        }
+
+        // ---------- -33 con datos cambiados (fase 5, decisión de Carlos del 27/10/26) ----------
+
+        /// <summary>La petición que GLS aceptó en su día: la de ahora con lo que se le cambie.</summary>
+        private static XElement GrabadoConDatos(EnviosAgencia envio, Action<EnviosAgencia> comoEra = null)
+        {
+            EnviosAgencia antes = TramitadorGlsTests.Envio();
+            antes.Numero = envio.Numero;
+            antes.Pedido = envio.Pedido;
+            antes.CodigoBarras = envio.CodigoBarras;
+            comoEra?.Invoke(antes);
+            return PeticionGls.ConstruirServicios(antes, TramitadorGlsTests.EmpresaNuevaVision(), "9ABAEE33", new DateTime(2026, 10, 20));
+        }
+
+        [TestMethod]
+        public async Task GlsYaLoTenia_ConLosMismosDatos_SeCierraSinAviso()
+        {
+            EnviosAgencia envio = ConEnvio(249723, 928379);
+            controller.GrabacionAnteriorGls = e => Task.FromResult(GrabadoConDatos(envio));
+            A.CallTo(() => fakeGls.EnviarAsync(A<string>._)).Returns(Task.FromResult(TramitadorGlsTests.Respuesta("-33", "Ya existe el codigo de barras de la expedicion")));
+
+            ResultadoTramitarEnviosDTO resultado = await TramitarTodos(249723);
+
+            Assert.AreEqual(ResultadoTramitarEnvioDTO.TRAMITADO, resultado.Envios.Single().Resultado);
+            Assert.IsTrue(resultado.Envios.Single().YaEstabaEnGls);
+            Assert.IsNull(resultado.Envios.Single().Aviso, "La fecha distinta (la de tramitación) no cuenta");
+            Assert.AreEqual(0, resultado.ConAviso);
+        }
+
+        [TestMethod]
+        public async Task GlsYaLoTenia_ConOtrosDatos_SeCierraYAvisaDeLoQueHaCambiado()
+        {
+            EnviosAgencia envio = ConEnvio(249723, 928379, e => { e.Bultos = 3; e.Reembolso = 25.5M; });
+            controller.GrabacionAnteriorGls = e => Task.FromResult(GrabadoConDatos(envio, antes => { antes.Bultos = 2; antes.Reembolso = 0M; }));
+            A.CallTo(() => fakeGls.EnviarAsync(A<string>._)).Returns(Task.FromResult(TramitadorGlsTests.Respuesta("-33")));
+
+            ResultadoTramitarEnviosDTO resultado = await TramitarTodos(249723);
+
+            ResultadoTramitarEnvioDTO delEnvio = resultado.Envios.Single();
+            Assert.AreEqual(ResultadoTramitarEnvioDTO.TRAMITADO, delEnvio.Resultado, "Se da por bueno igual (Carlos, 27/10/26)");
+            A.CallTo(() => fakeCierre.TramitarAsync(249723, A<string>._)).MustHaveHappenedOnceExactly();
+            Assert.AreEqual(1, resultado.ConAviso);
+            StringAssert.Contains(delEnvio.Aviso, "GLS ya tenía grabado el envío del pedido 928379, pero con otros datos");
+            StringAssert.Contains(delEnvio.Aviso, "Bultos: «2» → «3»");
+            StringAssert.Contains(delEnvio.Aviso, "Reembolso: «0» → «25.5»");
+            StringAssert.Contains(delEnvio.Aviso, "revíselo con GLS");
+        }
+
+        [TestMethod]
+        public async Task GlsYaLoTenia_SinGrabacionAnterior_AvisaDeQueNoSeHaPodidoComprobar()
+        {
+            ConEnvio(249723, 928379);
+            controller.GrabacionAnteriorGls = e => Task.FromResult<XElement>(null);
+            A.CallTo(() => fakeGls.EnviarAsync(A<string>._)).Returns(Task.FromResult(TramitadorGlsTests.Respuesta("-33")));
+
+            ResultadoTramitarEnviosDTO resultado = await TramitarTodos(249723);
+
+            Assert.AreEqual(ResultadoTramitarEnvioDTO.TRAMITADO, resultado.Envios.Single().Resultado);
+            StringAssert.Contains(resultado.Envios.Single().Aviso, "no se encuentra la primera grabación");
+        }
+
+        [TestMethod]
+        public async Task GlsYaLoTenia_SiFallaLaBusqueda_SeCierraIgualYAvisa()
+        {
+            ConEnvio(249723, 928379);
+            controller.GrabacionAnteriorGls = e => throw new InvalidOperationException("la BD no contesta");
+            A.CallTo(() => fakeGls.EnviarAsync(A<string>._)).Returns(Task.FromResult(TramitadorGlsTests.Respuesta("-33")));
+
+            ResultadoTramitarEnviosDTO resultado = await TramitarTodos(249723);
+
+            Assert.AreEqual(ResultadoTramitarEnvioDTO.TRAMITADO, resultado.Envios.Single().Resultado);
+            Assert.IsNotNull(resultado.Envios.Single().Aviso);
+        }
+
+        [TestMethod]
+        public async Task GrabadoAhora_NoBuscaLaGrabacionAnteriorNiAvisa()
+        {
+            ConEnvio(249723, 928379);
+            bool buscada = false;
+            controller.GrabacionAnteriorGls = e => { buscada = true; return Task.FromResult<XElement>(null); };
+
+            ResultadoTramitarEnviosDTO resultado = await TramitarTodos(249723);
+
+            Assert.IsFalse(buscada);
+            Assert.IsNull(resultado.Envios.Single().Aviso);
         }
 
         [TestMethod]
@@ -323,11 +443,52 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
-        public async Task EtiquetaZpl_EmpresaEspejo_400PendienteDeDecidir()
+        public async Task EtiquetaZpl_EmpresaEspejo_TambienLaMontaLaApi()
         {
-            ConEnvio(e => e.Agencia = Constantes.Agencias.AGENCIA_GLS_EMPRESA_ESPEJO);
+            // NestoAPI#552 (fase 5, Carlos 27/10/26): la agencia 5 pasa a la API igual que la 1.
+            ConEnvio(e => { e.Agencia = Constantes.Agencias.AGENCIA_GLS_EMPRESA_ESPEJO; e.CodigoBarras = "61283310249723"; });
+
+            var resultado = await controller.GetEtiquetaZpl(249723) as OkNegotiatedContentResult<EtiquetaEnvioDTO>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual("61283310249723", resultado.Content.CodigoBarras);
+            A.CallTo(() => fakeGrabaServicios.EnviarAsync(A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task EtiquetaZpl_OtraAgencia_400()
+        {
+            ConEnvio(e => e.Agencia = Constantes.Agencias.AGENCIA_CANTERAS);
 
             Assert.IsInstanceOfType(await controller.GetEtiquetaZpl(249723), typeof(BadRequestErrorMessageResult));
+            A.CallTo(() => fakeTsp.EnviarAsync(A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task EtiquetaZpl_GlsContestaSinTsp_502YNoHayEtiqueta()
+        {
+            // Decisión de Carlos (27/10/26): sin código de ruta GLS no entrega; nunca se imprime sin él.
+            ConEnvio();
+            A.CallTo(() => fakeTsp.EnviarAsync(A<string>._)).Returns(Task.FromResult(
+                @"<soap:Envelope xmlns:soap=""http://schemas.xmlsoap.org/soap/envelope/""><soap:Body/></soap:Envelope>"));
+
+            var resultado = await controller.GetEtiquetaZpl(249723) as ResponseMessageResult;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(HttpStatusCode.BadGateway, resultado.Response.StatusCode);
+        }
+
+        [TestMethod]
+        public async Task ImprimirEtiqueta_EmpresaEspejo_LaImprimeEnElServidor()
+        {
+            ConEnvio(e => { e.Agencia = Constantes.Agencias.AGENCIA_GLS_EMPRESA_ESPEJO; e.CodigoBarras = "61283310249723"; });
+
+            var resultado = await controller.ImprimirEtiqueta(249723, new ImprimirEtiquetaEnvioDTO { Impresora = "ZEBRA PACKING" })
+                as OkNegotiatedContentResult<ImprimirEtiquetaEnvioResultadoDTO>;
+
+            Assert.IsNotNull(resultado);
+            A.CallTo(() => fakeImpresora.Imprimir("ZEBRA PACKING", A<string>.That.Contains("^FD61283310249723001^FS"), A<string>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => fakeFabrica.Crear(A<int>._)).MustNotHaveHappened();
         }
 
         [TestMethod]

@@ -456,6 +456,7 @@
     <Compile Include="Infrastructure\Agencias\TramitadorGlsTests.cs" />
     <Compile Include="Controllers\TramitarEnvioGlsTests.cs" />
     <Compile Include="Controllers\TramitarTodosGlsTests.cs" />
+    <Compile Include="Infrastructure\Agencias\CambiosGrabacionGlsTests.cs" />
     <Compile Include="Infrastructure\Agencias\EtiquetaGlsTests.cs" />
     <Compile Include="Infrastructure\Agencias\AnulacionGlsTests.cs" />
     <Compile Include="Controllers\AnularEnvioGlsTests.cs" />

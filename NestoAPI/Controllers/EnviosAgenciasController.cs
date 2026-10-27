@@ -10,6 +10,7 @@ using System.Net.Http;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
+using System.Xml.Linq;
 using NestoAPI.Models;
 using NestoAPI.Models.Agencias;
 using System.Net.Mail;
@@ -45,6 +46,11 @@ namespace NestoAPI.Controllers
         public string EtiquetaContenido { get; set; }
         /// <summary>NestoAPI#552 (fase 2): número de expedición de GLS (codexp) cuando la API tramita GLS. Null en las demás.</summary>
         public string Expedicion { get; set; }
+        /// <summary>
+        /// NestoAPI#552 (fase 5): GLS ya lo tenía grabado (-33) pero con otros datos (o no se encuentra la grabación para
+        /// comprobarlo): para que Almacén lo revise con GLS. Null si no hay nada que revisar.
+        /// </summary>
+        public string AvisoGls { get; set; }
     }
 
     /// <summary>
@@ -67,7 +73,8 @@ namespace NestoAPI.Controllers
     }
 
     /// <summary>
-    /// NestoAPI#552 (fase 4): cuerpo de POST api/EnviosAgencias/TramitarTodos. Sin agencia, GLS (1). Sin envíos, todos los
+    /// NestoAPI#552 (fase 4): cuerpo de POST api/EnviosAgencias/TramitarTodos. Sin agencia, GLS (1); fase 5: también la 5 (GLS
+    /// de la empresa espejo). Sin envíos, todos los
     /// En curso de la agencia; Nesto manda los de su pestaña (ya sin los que el usuario no ha confirmado).
     /// </summary>
     public class TramitarEnviosDTO
@@ -94,6 +101,12 @@ namespace NestoAPI.Controllers
         public string Expedicion { get; set; }
         /// <summary>GLS ya lo tenía grabado (-33): se ha dado por bueno y se ha cerrado.</summary>
         public bool YaEstabaEnGls { get; set; }
+        /// <summary>
+        /// NestoAPI#552 (fase 5, decisión de Carlos del 27/10/26): con -33, si los datos del envío han cambiado desde que se
+        /// grabó en GLS (dirección, bultos, reembolso...), qué ha cambiado, para que Almacén lo revise con GLS (de usted).
+        /// Null si no hay nada que revisar.
+        /// </summary>
+        public string Aviso { get; set; }
 
         internal static ResultadoTramitarEnvioDTO Error(int numero, int? pedido, string mensaje)
             => new ResultadoTramitarEnvioDTO { Numero = numero, Pedido = pedido, Resultado = ERROR, Mensaje = mensaje };
@@ -106,6 +119,8 @@ namespace NestoAPI.Controllers
         public int Tramitados => Envios.Count(e => e.Resultado == ResultadoTramitarEnvioDTO.TRAMITADO);
         public int YaTramitados => Envios.Count(e => e.Resultado == ResultadoTramitarEnvioDTO.YA_TRAMITADO);
         public int Fallidos => Envios.Count(e => e.Resultado == ResultadoTramitarEnvioDTO.ERROR);
+        /// <summary>NestoAPI#552 (fase 5): los que hay que revisar con GLS (ver <see cref="ResultadoTramitarEnvioDTO.Aviso"/>).</summary>
+        public int ConAviso => Envios.Count(e => !string.IsNullOrEmpty(e.Aviso));
     }
 
     /// <summary>NestoAPI#552 (fase 4): la etiqueta de un envío montada en la API (GET api/EnviosAgencias/{id}/EtiquetaZpl).</summary>
@@ -858,8 +873,8 @@ namespace NestoAPI.Controllers
             }
 
             // NestoAPI#552 (fase 2): con el interruptor encendido, la API graba el envío de GLS ella misma. Apagado (por
-            // defecto), GLS sigue dando el 400 de abajo y se tramita desde Nesto (AgenciaASM).
-            if (envio.Agencia == Constantes.Agencias.AGENCIA_GLS && GlsTramitarPorApi())
+            // defecto), GLS sigue dando el 400 de abajo y se tramita desde Nesto (AgenciaASM). Fase 5: la 1 y la 5.
+            if (AgenciasGls.Es(envio.Agencia) && GlsTramitarPorApi())
             {
                 return await TramitarGls(envio);
             }
@@ -1069,9 +1084,8 @@ namespace NestoAPI.Controllers
                 await db.SaveChangesAsync();
             }
 
-            // TODO NestoAPI#552 (pendiente de decidir): el -33 («ya existe el código de barras») se da por bueno, como en Nesto.
-            // Falta decidir qué hacer si GLS contesta -33 al volver a grabar un código que se anuló o cuyo envío cambió de datos
-            // (se daría por bueno con los datos viejos). No se toca hasta que Carlos lo decida.
+            // El -33 («ya existe el código de barras») se da por bueno, como en Nesto. Fase 5 (Carlos, 27/10/26): si los datos
+            // cambiaron desde que se grabó, se avisa (ver AvisoSiYaEstabaEnGls).
             TramitacionGls tramitacion = await new TramitadorGls(ClienteGls)
                 .TramitarAsync(envio, empresa, agenciaTransporte?.Identificador, HoyGls());
             await AuditarGls(envio, tramitacion);
@@ -1105,9 +1119,40 @@ namespace NestoAPI.Controllers
                     Albaran = envio.CodigoBarras.Trim(),
                     Bultos = envio.Bultos,
                     Reimpresion = tramitacion.Resultado.YaRegistrado,
-                    Expedicion = tramitacion.Resultado.CodigoExpedicion
+                    Expedicion = tramitacion.Resultado.CodigoExpedicion,
+                    AvisoGls = tramitacion.Resultado.YaRegistrado ? await AvisoSiYaEstabaEnGls(envio, tramitacion.Peticion) : null
                 }
             };
+        }
+
+        /// <summary>
+        /// NestoAPI#552 (fase 5): la grabación que GLS ya tiene de un envío (el GrabaServicios aceptado guardado en
+        /// AgenciasLlamadasWeb), o null si no se encuentra. Sustituible en los tests.
+        /// </summary>
+        internal Func<EnviosAgencia, Task<XElement>> GrabacionAnteriorGls { get; set; }
+
+        /// <summary>
+        /// NestoAPI#552 (fase 5, decisión de Carlos del 27/10/26): GLS ha contestado -33. Se da por bueno, pero si los datos del
+        /// envío han cambiado desde que se grabó, devuelve el aviso para que Almacén lo revise con GLS (null si coinciden).
+        /// Best-effort: un fallo buscando la grabación no para la tramitación (se avisa de que no se ha podido comprobar).
+        /// </summary>
+        private async Task<string> AvisoSiYaEstabaEnGls(EnviosAgencia envio, string peticionActual)
+        {
+            try
+            {
+                XElement actual = PeticionGls.ServiciosDeLaPeticion(peticionActual);
+                XElement grabado = await (GrabacionAnteriorGls ?? CambiosGrabacionGls.DesdeLaBD(db))(envio);
+                if (grabado == null || actual == null)
+                {
+                    return CambiosGrabacionGls.AvisoSinGrabacionAnterior(envio.Pedido);
+                }
+                return CambiosGrabacionGls.Aviso(envio.Pedido, CambiosGrabacionGls.Detectar(grabado, actual));
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[GLS #552] No se ha podido comprobar si el envío {envio.Numero} cambió desde que se grabó en GLS: {ex.Message}", ex));
+                return CambiosGrabacionGls.AvisoSinGrabacionAnterior(envio.Pedido);
+            }
         }
 
         // POST: api/EnviosAgencias/TramitarTodos   { "agencia": 1, "envios": [249723, 249724] }  (envios opcional)
@@ -1121,8 +1166,9 @@ namespace NestoAPI.Controllers
         /// <item>Un error en un envío no para los demás: cada uno lleva su resultado y su motivo.</item>
         /// <item>Si GLS lo graba pero no se puede cerrar, se avisa: al repetir, GLS contesta -33 y se cierra sin duplicarlo.</item>
         /// </list>
-        /// Detrás de Agencias:GlsTramitarPorApi (apagado: 400, como el envío suelto). Solo la agencia 1: la 5 (GLS de la empresa
-        /// espejo) sigue en Nesto hasta que se decida (ver la issue).
+        /// <item>Fase 5: con -33, si los datos cambiaron desde la grabación, el envío se cierra igual pero lleva un aviso.</item>
+        /// Detrás de Agencias:GlsTramitarPorApi (apagado: 400, como el envío suelto). La agencia 1 y, desde la fase 5, la 5 (GLS de
+        /// la empresa espejo, con su cuenta).
         /// </summary>
         [HttpPost]
         [Authorize]
@@ -1131,14 +1177,13 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> TramitarTodos([FromBody] TramitarEnviosDTO peticion)
         {
             int agencia = peticion?.Agencia ?? Constantes.Agencias.AGENCIA_GLS;
-            if (agencia != Constantes.Agencias.AGENCIA_GLS)
+            if (!AgenciasGls.Es(agencia))
             {
-                // TODO NestoAPI#552: la agencia 5 (GLS de la empresa espejo) queda pendiente de decidir; sigue en Nesto.
-                return BadRequest($"«Tramitar todos» por la API solo está disponible para GLS (agencia {Constantes.Agencias.AGENCIA_GLS}); la agencia {agencia} se sigue tramitando desde Nesto.");
+                return BadRequest($"«Tramitar todos» por la API solo está disponible para GLS (agencias {Constantes.Agencias.AGENCIA_GLS} y {Constantes.Agencias.AGENCIA_GLS_EMPRESA_ESPEJO}); la agencia {agencia} se sigue tramitando desde Nesto.");
             }
             if (!GlsTramitarPorApi())
             {
-                return BadRequest("La agencia 1 no tiene gestión remota en el servidor: GLS se sigue tramitando desde Nesto.");
+                return BadRequest($"La agencia {agencia} no tiene gestión remota en el servidor: GLS se sigue tramitando desde Nesto.");
             }
 
             List<int> numeros = peticion?.Envios?.Where(n => n > 0).Distinct().ToList();
@@ -1180,7 +1225,7 @@ namespace NestoAPI.Controllers
             }
             if (envio.Agencia != agencia)
             {
-                return ResultadoTramitarEnvioDTO.Error(numero, envio.Pedido, $"El envío {numero} no es de GLS (agencia {envio.Agencia}).");
+                return ResultadoTramitarEnvioDTO.Error(numero, envio.Pedido, $"El envío {numero} no es de la agencia {agencia} (es de la {envio.Agencia}).");
             }
             if (envio.Estado >= Constantes.Agencias.ESTADO_TRAMITADO)
             {
@@ -1234,7 +1279,8 @@ namespace NestoAPI.Controllers
                 Mensaje = cierre?.Mensaje ?? $"Envío del pedido {envio.Pedido} tramitado correctamente.",
                 Asiento = cierre?.Asiento ?? 0,
                 Expedicion = grabacion.Resultado.Expedicion,
-                YaEstabaEnGls = grabacion.Resultado.Reimpresion
+                YaEstabaEnGls = grabacion.Resultado.Reimpresion,
+                Aviso = grabacion.Resultado.AvisoGls
             };
         }
 
@@ -1282,9 +1328,8 @@ namespace NestoAPI.Controllers
             {
                 return NotFound();
             }
-            if (envio.Agencia != Constantes.Agencias.AGENCIA_GLS || !GlsTramitarPorApi())
+            if (!AgenciasGls.Es(envio.Agencia) || !GlsTramitarPorApi())
             {
-                // TODO NestoAPI#552: la agencia 5 (GLS de la empresa espejo) queda pendiente de decidir; su etiqueta sigue en Nesto.
                 return BadRequest($"La etiqueta del envío {id} todavía se imprime desde Nesto (#552).");
             }
 
@@ -1463,8 +1508,8 @@ namespace NestoAPI.Controllers
             }
 
             // NestoAPI#552 (fase 4): con el interruptor encendido, la etiqueta de GLS la monta la API (sin grabar en GLS).
-            // TODO NestoAPI#552: la agencia 5 (GLS de la empresa espejo) queda pendiente de decidir; sigue con el 400.
-            if (envio.Agencia == Constantes.Agencias.AGENCIA_GLS && GlsTramitarPorApi())
+            // Fase 5: también la agencia 5 (GLS de la empresa espejo).
+            if (AgenciasGls.Es(envio.Agencia) && GlsTramitarPorApi())
             {
                 return await ImprimirEtiquetaGls(envio, peticion);
             }
@@ -2291,7 +2336,7 @@ namespace NestoAPI.Controllers
         /// TramitacionEnviosService.NombreAgencia), para que el aviso de «no responde» proponga otra agencia y no GLS.
         /// </summary>
         private async Task<string> NombreAgenciaParaUsuario(EnviosAgencia envio)
-            => envio?.Agencia == Constantes.Agencias.AGENCIA_GLS ? "GLS" : await NombreAgenciaDe(envio);
+            => envio != null && AgenciasGls.Es(envio.Agencia) ? "GLS" : await NombreAgenciaDe(envio);
 
         /// <summary>
         /// NestoAPI#512: el nombre de la agencia del envío para la auditoría. La navegación no viene
