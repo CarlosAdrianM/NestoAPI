@@ -149,6 +149,14 @@ namespace NestoAPI.Models.PreparacionAlmacen
         /// </summary>
         public List<LineaYaRecibidaDTO> YaRecibidas { get; set; }
 
+        /// <summary>
+        /// NestoAPI#695: lo que quien recibe tiene que saber antes de leer, una cosa por línea, para enseñar tal cual. Hoy, los
+        /// productos de la reposición regularizados por inventario en el destino DESPUÉS del envío («El 42267 se regularizó por
+        /// inventario el 26/10 a las 14:19 (+1, Paloma), después de enviar la reposición: compruebe que no se cuenta dos veces.»):
+        /// la caja estaba allí sin recibir y es probable que ya se contara. Es Almacén quien decide. Vacía si nada que avisar.
+        /// </summary>
+        public List<string> Avisos { get; set; } = new List<string>();
+
         // NestoAPI#600: los textos de la confirmación antes de terminar, de su tipo, para que la app no mire el código del
         // tipo. La app sabe lo que se ha leído y elige el caso; el texto es del servidor. Cómo se monta la confirmación:
         // TituloConfirmacion de encabezado; después el resumen de lo leído (de la app); después AvisoCoincide si no falta ni

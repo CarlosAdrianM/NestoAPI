@@ -572,6 +572,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 YaRecibidas = pendiente != null && TextoRecibidaEnParte(pendiente.LineasRecibidas, pendiente.UnidadesRecibidas) != null
                     ? await reposiciones.LeerYaRecibidas(recepcion.Empresa ?? empresa, traspaso).ConfigureAwait(false)
                     : null,
+                // NestoAPI#695: los productos regularizados por inventario en el destino después del envío, por si ya se contaron
+                Avisos = await reposiciones.AvisosInventariosTrasEnvio(empresa, almacen, traspaso).ConfigureAwait(false) ?? new List<string>(),
                 Empresa = recepcion.Empresa,
                 Almacen = recepcion.Almacen,
                 Lineas = recepcion.Lineas.Select(l => new LineaRecepcionDTO
@@ -696,8 +698,17 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                 PendientesDeUbicarEntrada pendientesDeUbicar = entraAlgo
                     ? await transaccion.LeerPendientesDeUbicar(solicitud.Empresa, diario).ConfigureAwait(false)
                     : null;
+                var avisosInventario = new List<string>();
                 if (entraAlgo)
                 {
+                    // NestoAPI#695 (novedades 751 y 788; decisión de Carlos, 27/10/26): la entrada en el destino se apunta con la
+                    // fecha de la RECEPCIÓN, siempre (en parte o entera). Con la del envío, un inventario del producto en el destino
+                    // hecho después de enviar (81028: 43992 en Algete; 81177: 42267 en Alcobendas) la bloqueaba (trigger
+                    // trgExtractoProductoUpd: «Se ha realizado un inventario posterior a esta fecha»). Antes de fechar se mira qué
+                    // productos tenían ese inventario, para avisar: esa unidad puede estar ya contada. La salida del origen no se toca
+                    avisosInventario = InventariosTrasEnvioSql.Avisos(
+                        await transaccion.LeerInventariosTrasEnvio(solicitud.Empresa, solicitud.Almacen, traspaso).ConfigureAwait(false));
+                    _ = await transaccion.FecharEntradaAhora(solicitud.Empresa, solicitud.Almacen, diario, traspaso).ConfigureAwait(false);
                     await transaccion.Contabilizar(solicitud.Empresa, diario, solicitud.Usuario).ConfigureAwait(false);
                 }
                 await transaccion.DevolverApartadas(solicitud.Empresa, diario, apartadas.Concat(noLeidas).ToList()).ConfigureAwait(false);
@@ -759,6 +770,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
                     unidadesPendientes = quedan.Sum(d => d.Esperado - d.Leido);
                     avisos.Add(AvisoParcial(solicitud.Lecturas.Count, solicitud.Lecturas.Values.Sum(), lineasPendientes, unidadesPendientes));
                 }
+                avisos.AddRange(avisosInventario);
                 if (solicitud.Ensayo != null)
                 {
                     await solicitud.Ensayo.Acabar().ConfigureAwait(false);
