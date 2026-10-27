@@ -277,9 +277,24 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         }
 
         [TestMethod]
-        public async Task GlsEmpresaEspejo_ConElInterruptorEncendido_SigueEnNesto()
+        public async Task GlsEmpresaEspejo_ConElInterruptorEncendido_TambienSeImprimeEnElServidor()
         {
+            // NestoAPI#552 (fase 5, Carlos 27/10/26): la agencia 5 pasa a la API igual que la 1.
             servicio.GlsEtiquetaPorApi = () => true;
+            CreaElEnvio(Constantes.Agencias.AGENCIA_GLS_EMPRESA_ESPEJO);
+
+            ResultadoEtiquetaPacking resultado = await servicio.Imprimir(PEDIDO, Peticion(), usuario);
+
+            Assert.IsFalse(resultado.Etiqueta.EtiquetaEnNesto);
+            Assert.IsTrue(resultado.Etiqueta.Impresa);
+            A.CallTo(() => pasos.Tramitar(A<int>._)).MustNotHaveHappened();
+            A.CallTo(() => pasos.Imprimir(5001, null)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task GlsEmpresaEspejo_ConElInterruptorApagado_SigueEnNesto()
+        {
+            servicio.GlsEtiquetaPorApi = () => false;
             CreaElEnvio(Constantes.Agencias.AGENCIA_GLS_EMPRESA_ESPEJO);
 
             ResultadoEtiquetaPacking resultado = await servicio.Imprimir(PEDIDO, Peticion(), usuario);

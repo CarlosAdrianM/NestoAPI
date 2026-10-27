@@ -259,8 +259,8 @@ namespace NestoAPI.Infraestructure.Agencias
 
                 // 2. GLS (hasta #552) y Canteras: el envío está grabado y la etiqueta sigue saliendo de Nesto.
                 // NestoAPI#552 (fase 4): con Agencias:GlsTramitarPorApi encendido, la etiqueta de GLS (agencia 1) la monta e
-                // imprime la API sin grabar en GLS (se tramita al cerrar el día, como siempre). La 5 sigue en Nesto (pendiente).
-                bool glsPorApi = envio.Agencia == Constantes.Agencias.AGENCIA_GLS && GlsEtiquetaPorApi();
+                // imprime la API sin grabar en GLS (se tramita al cerrar el día, como siempre). Fase 5: también la 5 (empresa espejo).
+                bool glsPorApi = Gls.AgenciasGls.Es(envio.Agencia) && GlsEtiquetaPorApi();
                 if (!glsPorApi && ServicioEnvioDesdePedido.FlujoDe(envio.Agencia) != FlujosEnvioDesdePedido.REGISTRAR_AL_IMPRIMIR)
                 {
                     etiqueta.EtiquetaEnNesto = true;

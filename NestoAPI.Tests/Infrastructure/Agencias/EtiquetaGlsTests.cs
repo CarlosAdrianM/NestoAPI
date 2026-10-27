@@ -177,5 +177,32 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
 
             await Assert.ThrowsExceptionAsync<AgenciaRemotaException>(() => new GeneradorEtiquetaGls(tsp, null).GenerarAsync(EnvioConPlaza(), null));
         }
+
+        [DataTestMethod]
+        [DataRow(@"<soap:Envelope xmlns:soap=""http://schemas.xmlsoap.org/soap/envelope/""><soap:Body/></soap:Envelope>", DisplayName = "Sin CodTSP (N/A)")]
+        [DataRow("esto no es xml", DisplayName = "XML roto (ERROR)")]
+        [DataRow("", DisplayName = "Vacía (Error)")]
+        public async Task Generar_GlsContestaSinTsp_NoHayEtiqueta_ElTspEsObligatorio(string respuesta)
+        {
+            // Decisión de Carlos (27/10/26): sin código de ruta GLS no entrega el paquete; nunca se imprime sin él (Nesto ponía «N/A»).
+            IClienteTspGls tsp = A.Fake<IClienteTspGls>();
+            A.CallTo(() => tsp.EnviarAsync(A<string>._)).Returns(Task.FromResult(respuesta));
+
+            AgenciaRemotaException ex = await Assert.ThrowsExceptionAsync<AgenciaRemotaException>(() => new GeneradorEtiquetaGls(tsp, null).GenerarAsync(EnvioConPlaza(), null));
+            StringAssert.Contains(ex.Message, "código de ruta (TSP)");
+        }
+
+        [DataTestMethod]
+        [DataRow("MAD-28", true)]
+        [DataRow("SCQ", true)]
+        [DataRow("N/A", false)]
+        [DataRow("ERROR", false)]
+        [DataRow("Error", false)]
+        [DataRow("  ", false)]
+        [DataRow(null, false)]
+        public void EsCodigoValido_SoloUnCodigoDeVerdad(string tsp, bool esperado)
+        {
+            Assert.AreEqual(esperado, RespuestaTspGls.EsCodigoValido(tsp));
+        }
     }
 }

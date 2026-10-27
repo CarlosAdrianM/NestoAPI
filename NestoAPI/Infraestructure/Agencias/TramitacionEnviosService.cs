@@ -739,7 +739,7 @@ namespace NestoAPI.Infraestructure.Agencias
 
         private static string NombreAgencia(EnviosAgencia envio)
         {
-            if (envio.Agencia == Constantes.Agencias.AGENCIA_GLS)
+            if (Gls.AgenciasGls.Es(envio.Agencia))
             {
                 return "GLS";
             }

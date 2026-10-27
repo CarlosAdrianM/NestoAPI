@@ -77,6 +77,15 @@ namespace NestoAPI.Infraestructure.Agencias.Gls
                 return "ERROR";
             }
         }
+
+        /// <summary>
+        /// NestoAPI#552: ¿es un código de ruta de verdad? «N/A», «Error» y «ERROR» son lo que <see cref="Interpretar"/> da cuando
+        /// GLS no lo trae o no se entiende: con ellos no se imprime (TSP obligatorio, decisión de Carlos del 27/10/26).
+        /// </summary>
+        public static bool EsCodigoValido(string tsp)
+            => !string.IsNullOrWhiteSpace(tsp)
+            && !string.Equals(tsp.Trim(), "N/A", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(tsp.Trim(), "ERROR", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -240,6 +249,16 @@ namespace NestoAPI.Infraestructure.Agencias.Gls
 
             string respuesta = await _tsp.EnviarAsync(ClienteTspGls.ConstruirSoap(envio)).ConfigureAwait(false);
             string tsp = RespuestaTspGls.Interpretar(respuesta);
+            // NestoAPI#552 (decisión de Carlos del 27/10/26): sin código de ruta GLS no entrega el paquete, así que nunca se
+            // imprime sin él. Nesto imprimía «N/A» o «ERROR» en su lugar; la API no.
+            if (!RespuestaTspGls.EsCodigoValido(tsp))
+            {
+                throw new AgenciaRemotaException(
+                    $"GLS no ha dado el código de ruta (TSP) del envío {envio.Numero} (contesta «{tsp}»): sin él no se imprime la etiqueta.")
+                {
+                    EsTransitoria = true
+                };
+            }
 
             return new EtiquetaGlsGenerada
             {
