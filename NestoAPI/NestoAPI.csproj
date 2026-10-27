@@ -932,6 +932,7 @@
     <Compile Include="Infraestructure\PedidosVenta\ServicioDatosTransferenciaPedido.cs" />
     <Compile Include="Models\PedidosVenta\DatosTransferenciaPedidoDTO.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ConstructorPedidoCliente.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\OrigenPushPedidos.cs" />
     <Compile Include="Infraestructure\PedidosVenta\CorreoConfirmacionPedidoCliente.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ResumidorPedidosCliente.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ServicioPedidosCliente.cs" />

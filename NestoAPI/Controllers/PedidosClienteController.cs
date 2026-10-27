@@ -9,6 +9,7 @@ using NestoAPI.Infraestructure.Pagos;
 using NestoAPI.Infraestructure.Pagos.Aplazame;
 using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Infraestructure.Seguridad;
+using NestoAPI.Infrastructure;
 using NestoAPI.Models;
 using NestoAPI.Models.Ganavisiones;
 using NestoAPI.Models.Pagos;
@@ -297,7 +298,44 @@ namespace NestoAPI.Controllers
             CorreoConfirmacionPedidoCliente.Encolar(
                 CorreoConfirmacionPedidoCliente.Preparar(respuesta, preparado.Correo, sinPrecios), EncolarCorreoCliente);
 
+            // NestoAPI#709 (TNV#95): la push con la que se abrió la app, si la hubo. Best-effort: nunca lanza.
+            _ = await RegistroOrigenPushPedido.Registrar(RepositorioOrigenPush, peticion,
+                respuesta.Empresa ?? preparado.Pedido.empresa, respuesta.Numero, DateTime.Now).ConfigureAwait(false);
+
             return Ok(respuesta);
+        }
+
+        /// <summary>NestoAPI#709: dónde se guarda y se lee el origen push de los pedidos. Para tests.</summary>
+        internal IRepositorioOrigenPushPedidos RepositorioOrigenPush { get; set; } = new RepositorioOrigenPushPedidosSql();
+
+        /// <summary>NestoAPI#709: hoy (para la ventana por defecto del informe). Para tests.</summary>
+        internal Func<DateTime> Hoy { get; set; } = () => DateTime.Today;
+
+        /// <summary>
+        /// NestoAPI#709 (TNV#95): ¿venden las push? Por semana (de lunes a domingo), los pedidos de la app y su base imponible por tipo
+        /// y campaña de la push con la que se abrió la app (tabla PedidosOrigenPush), frente a los pedidos de la app sin push; y los
+        /// totales del periodo. Sin <paramref name="desde"/>, las últimas 12 semanas; sin <paramref name="hasta"/>, hasta hoy incluido.
+        /// Sin la tabla, todos los pedidos salen sin push. Solo Dirección e Informática.
+        /// GET api/PedidosCliente/OrigenPush/Informe?desde=2026-11-01&amp;hasta=2026-11-30
+        /// </summary>
+        [HttpGet]
+        [Route("~/api/PedidosCliente/OrigenPush/Informe")]
+        [ResponseType(typeof(InformeOrigenPushDTO))]
+        public async Task<IHttpActionResult> GetInformeOrigenPush(DateTime? desde = null, DateTime? hasta = null)
+        {
+            if (User == null || !(User.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION) || User.IsInRoleSinDominio(NovedadesController.GRUPO_INFORMATICA)))
+            {
+                return StatusCode(System.Net.HttpStatusCode.Forbidden);
+            }
+            DateTime hoy = Hoy().Date;
+            DateTime inicio = (desde ?? InformeOrigenPushPedidos.LunesDe(hoy).AddDays(-7 * (InformeOrigenPushPedidos.SEMANAS_POR_DEFECTO - 1))).Date;
+            DateTime fin = (hasta?.Date ?? hoy).AddDays(1); // exclusivo
+            if (fin <= inicio)
+            {
+                return BadRequest("La fecha «hasta» no puede ser anterior a «desde».");
+            }
+            List<FilaPedidoAppOrigenPush> filas = await RepositorioOrigenPush.LeerPedidosApp(inicio, fin).ConfigureAwait(false);
+            return Ok(InformeOrigenPushPedidos.Calcular(filas, inicio, fin));
         }
 
         /// <summary>NestoAPI#444: cómo se encola el correo al cliente (Hangfire); sustituible en tests.</summary>

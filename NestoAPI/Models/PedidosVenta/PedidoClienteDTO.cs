@@ -99,6 +99,19 @@ namespace NestoAPI.Models.PedidosVenta
         /// Ganavisiones se calculan sin él y dicen por qué, y el pedido no se crea (400 con el código CUPON_*).
         /// </summary>
         public string CodigoCupon { get; set; }
+
+        /// <summary>
+        /// NestoAPI#709 (TNV#95): el <c>tipo</c> de la última push con la que se abrió la app (reposicion, chequeregalo…), si fue en
+        /// los últimos 7 días y aún no ha hecho pedido. Opcional: sin push (o versiones antiguas de la app) no viene. Solo sirve para
+        /// medir qué push traen pedidos (tabla PedidosOrigenPush); no cambia nada del pedido.
+        /// </summary>
+        public string OrigenPushTipo { get; set; }
+
+        /// <summary>NestoAPI#709: la campaña de esa push (la de los cheques regalo, por ejemplo), si la traía. Opcional.</summary>
+        public string OrigenPushCampana { get; set; }
+
+        /// <summary>NestoAPI#709: cuándo se abrió la app desde esa push. Opcional.</summary>
+        public System.DateTime? OrigenPushFecha { get; set; }
     }
 
     /// <summary>
