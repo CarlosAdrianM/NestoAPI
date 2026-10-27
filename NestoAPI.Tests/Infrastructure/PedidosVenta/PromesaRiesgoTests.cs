@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure.Notificaciones;
@@ -101,7 +101,7 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
         public Task<List<RiesgoPromesa>> LeerSinCorreo(string empresa) =>
             Task.FromResult(Filas.Where(f => f.Resuelto == null && f.AvisadoCorreo == null).Select(Copia).ToList());
 
-        public Task<List<RiesgoPromesaListado>> LeerListado(string empresa) => Task.FromResult(new List<RiesgoPromesaListado>());
+        public Task<List<RiesgoPromesaListado>> LeerListado(string empresa, bool incluirResueltos = false) => Task.FromResult(new List<RiesgoPromesaListado>());
 
         private static RiesgoPromesa Copia(RiesgoPromesa r) => new RiesgoPromesa
         {
@@ -954,7 +954,12 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
         {
             IRepositorioPromesaRiesgo repo = A.Fake<IRepositorioPromesaRiesgo>();
             A.CallTo(() => repo.TablaExiste()).Returns(true);
-            A.CallTo(() => repo.LeerListado("1")).Returns(Task.FromResult(Listado()));
+            A.CallTo(() => repo.LeerListado("1", false)).Returns(Task.FromResult(Listado()));
+            A.CallTo(() => repo.LeerListado("1", true)).Returns(Task.FromResult(Listado().Concat(new[]
+            {
+                new RiesgoPromesaListado { Id = 5, Empresa = "1", Pedido = 928000, Vendedor = "JGP", FechaPrometida = PROMETIDA.AddDays(-7), FechaNueva = PROMETIDA.AddDays(-5),
+                    Resuelto = PROMETIDA.AddDays(-4), MotivoResolucion = "Se ha servido." }
+            }).ToList()));
             IServicioVendedoresVisibles visibles = A.Fake<IServicioVendedoresVisibles>();
             IServicioVendedores vendedores = A.Fake<IServicioVendedores>();
             var controlador = new PedidosVentaPromesaRiesgoController(repo, visibles, vendedores)
@@ -1014,6 +1019,37 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             var ok = await controlador.GetPromesaEnRiesgo() as OkNegotiatedContentResult<List<PedidoPromesaRiesgoDTO>>;
 
             CollectionAssert.AreEqual(new[] { 928908, 929001 }, ok.Content.Select(p => p.Pedido).ToArray());
+        }
+
+        [TestMethod]
+        public async Task Endpoint_ConResueltos_LosDevuelveDetrasConSuResolucion_YSinResueltosNoVienen()
+        {
+            // Nesto#546: el filtro «Resueltos» de la pantalla pide resueltos=true; por defecto siguen sin venir
+            var (controlador, _, _) = Controlador(Usuario("Carlos", "Dirección"));
+
+            var conResueltos = await controlador.GetPromesaEnRiesgo("1", null, true) as OkNegotiatedContentResult<List<PedidoPromesaRiesgoDTO>>;
+            var sinResueltos = await controlador.GetPromesaEnRiesgo() as OkNegotiatedContentResult<List<PedidoPromesaRiesgoDTO>>;
+
+            Assert.AreEqual(5, conResueltos.Content.Count);
+            PedidoPromesaRiesgoDTO resuelto = conResueltos.Content.Last();
+            Assert.AreEqual(928000, resuelto.Pedido);
+            Assert.IsTrue(resuelto.EstaResuelto);
+            Assert.AreEqual("Se ha servido.", resuelto.MotivoResolucion);
+            Assert.IsTrue(conResueltos.Content.Take(4).All(p => !p.EstaResuelto));
+            Assert.AreEqual(4, sinResueltos.Content.Count);
+            Assert.IsFalse(sinResueltos.Content.Any(p => p.EstaResuelto));
+        }
+
+        [TestMethod]
+        public async Task Endpoint_ConResueltos_ElVendedorSoloVeLosSuyos()
+        {
+            IPrincipal javier = Usuario("Javier");
+            var (controlador, visibles, _) = Controlador(javier);
+            A.CallTo(() => visibles.LeerVisibles(javier, "1")).Returns(Task.FromResult(new List<VendedorVisibleDTO> { new VendedorVisibleDTO { Vendedor = "ASH" } }));
+
+            var ok = await controlador.GetPromesaEnRiesgo("1", null, true) as OkNegotiatedContentResult<List<PedidoPromesaRiesgoDTO>>;
+
+            CollectionAssert.AreEqual(new[] { 929000 }, ok.Content.Select(p => p.Pedido).ToArray());
         }
 
         // ------------------------------------------------------------------ interruptor
