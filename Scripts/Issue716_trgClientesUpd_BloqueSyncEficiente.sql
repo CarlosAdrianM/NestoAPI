@@ -543,8 +543,9 @@ IF (SYSTEM_USER != 'NUEVAVISION\RDS2016$')
         OR UPDATE(Vendedor) OR UPDATE(Estado))
 BEGIN
     -- Verificar si algún campo ha cambiado (ignorando espacios en blanco al final o al inicio)
-	IF EXISTS (
-		SELECT 1
+	-- (variable + SELECT TOP 1 en vez de IF EXISTS: OPTION no se admite dentro de una subconsulta)
+	DECLARE @hayCambiosSync bit = 0;
+	SELECT TOP (1) @hayCambiosSync = 1
 		FROM inserted i
 		JOIN deleted d ON i.Empresa = d.Empresa AND i.[Nº Cliente] = d.[Nº Cliente] AND i.Contacto = d.Contacto
 		WHERE 
@@ -585,8 +586,8 @@ BEGIN
 			(i.Vendedor IS NOT NULL AND d.Vendedor IS NULL) OR
 			(i.Estado IS NULL AND d.Estado IS NOT NULL) OR
 			(i.Estado IS NOT NULL AND d.Estado IS NULL)
-		OPTION (HASH JOIN) -- 27/10/26: inserted/deleted no tienen índice; con muchas filas el bucle anidado es cuadrático
-	)
+		OPTION (HASH JOIN); -- 27/10/26: inserted/deleted no tienen índice; con muchas filas el bucle anidado es cuadrático
+	IF @hayCambiosSync = 1
 	BEGIN
 		-- Si hay cambios, insertar en la tabla de sincronización
 		INSERT INTO Nesto_sync (Tabla, ModificadoId) 
