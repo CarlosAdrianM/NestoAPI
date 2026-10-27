@@ -98,17 +98,22 @@ namespace NestoAPI.Infraestructure.Cupones
         private readonly IEspejoCupones espejo;
         private readonly Func<IServicioCorreoElectronico> correo;
         private readonly Func<bool> usoEnTiendaEncendido;
+        private readonly Func<Task<List<string>>> productosCheque;
 
         public ServicioCupones(NVEntities db) : this(new RepositorioCupones(db), db, null, null, new ServicioEspejoCuponesPrestashop(db),
-            () => new ServicioCorreoElectronico(), () => ReglasEspejoPrestashop.Encendido)
+            () => new ServicioCorreoElectronico(), () => ReglasEspejoPrestashop.Encendido,
+            new ChequesRegalo.ServicioCanjeChequesRegalo(new ChequesRegalo.RepositorioCanjeChequesRegalo(db)).ProductosCheque)
         {
         }
 
         /// <param name="espejo">NestoAPI#614: llevar el cupón a PrestaShop al emitirlo, anularlo o usarlo en la tienda. Null: nada.</param>
         /// <param name="correo">NestoAPI#614: el aviso a Administración de un cupón gastado dos veces. Null: sin correo.</param>
         /// <param name="usoEnTiendaEncendido">NestoAPI#614: Cupones:EspejoPrestashop. Null: apagado.</param>
+        /// <param name="productosCheque">NestoAPI#696: los productos de cheque regalo, para no dar por usado el cupón en un pedido que ya
+        /// lleva el cheque (no son acumulables). Null: no se mira.</param>
         internal ServicioCupones(IRepositorioCupones repositorio, NVEntities db, Func<DateTime> ahora, string productoCupon,
-            IEspejoCupones espejo = null, Func<IServicioCorreoElectronico> correo = null, Func<bool> usoEnTiendaEncendido = null)
+            IEspejoCupones espejo = null, Func<IServicioCorreoElectronico> correo = null, Func<bool> usoEnTiendaEncendido = null,
+            Func<Task<List<string>>> productosCheque = null)
         {
             this.repositorio = repositorio;
             this.db = db;
@@ -117,6 +122,7 @@ namespace NestoAPI.Infraestructure.Cupones
             this.espejo = espejo ?? EspejoCuponesApagado.Instancia;
             this.correo = correo;
             this.usoEnTiendaEncendido = usoEnTiendaEncendido ?? (() => false);
+            this.productosCheque = productosCheque;
         }
 
         public async Task<List<CuponDTO>> LeerDelCliente(string empresa, string cliente, bool todos, IPrincipal usuario)
@@ -367,6 +373,21 @@ namespace NestoAPI.Infraestructure.Cupones
                 };
             }
 
+            // NestoAPI#696 (Carlos, 22/10/26): cheque regalo y cupón no son acumulables. Si el pedido ya lleva la línea del cheque, el
+            // cupón NO se da por usado (sigue libre) y se avisa a Administración: la tienda lo descontó dos veces.
+            if (await PedidoLlevaChequeRegalo(empresa, peticion.Pedido).ConfigureAwait(false))
+            {
+                string conCheque = $"{ReglasCupon.MensajeConChequeRegalo(codigoCupon)} El pedido {peticion.Pedido}{referencia}{descontado} ha " +
+                    "entrado con la línea del cheque regalo y la del cupón: el cupón se deja libre y hay que quitar uno de los dos descuentos a mano.";
+                return new UsoCuponTiendaDTO
+                {
+                    Resultado = ResultadosUsoCuponTienda.CONFLICTO,
+                    Mensaje = conCheque,
+                    AvisoAdministracion = AvisarAdministracion(cupon, peticion, empresa, clientePedido, conCheque),
+                    Cupon = ReglasCupon.ADTO(cupon, hoy, productoCupon)
+                };
+            }
+
             string usuarioAuditoria = UsuarioAuditoriaHelper.ParaAuditoria(UsuarioAuditoriaHelper.Resolver(usuario, null));
             if (await repositorio.UsarEnTienda(cupon.Id, empresa, peticion.Pedido, canal, usuarioAuditoria).ConfigureAwait(false))
             {
@@ -508,6 +529,18 @@ namespace NestoAPI.Infraestructure.Cupones
             CuponDTO dto = ReglasCupon.ADTO(cupon, ahora(), productoCupon);
             await CompletarUsoTienda(cupon, dto).ConfigureAwait(false);
             return dto;
+        }
+
+        /// <summary>NestoAPI#696: el pedido de Nesto tiene alguna línea de producto de cheque regalo. Sin productos de cheque, no.</summary>
+        private async Task<bool> PedidoLlevaChequeRegalo(string empresa, int pedido)
+        {
+            if (productosCheque == null)
+            {
+                return false;
+            }
+            List<string> cheques = (await productosCheque().ConfigureAwait(false) ?? new List<string>())
+                .Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            return cheques.Any() && await repositorio.PedidoTieneLineaDe(empresa, pedido, cheques).ConfigureAwait(false);
         }
 
         private static string MotivoNoLibre(CuponLeido c, string estado) =>

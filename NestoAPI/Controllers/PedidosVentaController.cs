@@ -153,8 +153,9 @@ namespace NestoAPI.Controllers
         private Infraestructure.Cupones.IServicioCanjeCupones servicioCupones;
         internal Infraestructure.Cupones.IServicioCanjeCupones ServicioCupones
         {
+            // NestoAPI#696: con los productos de cheque regalo, para rechazar el pedido que lleva cheque y cupón (no son acumulables)
             get => servicioCupones ?? (servicioCupones = new Infraestructure.Cupones.ServicioCanjeCupones(
-                new Infraestructure.Cupones.RepositorioCupones(db)));
+                new Infraestructure.Cupones.RepositorioCupones(db), productosCheque: () => ServicioCanje.ProductosCheque()));
             set => servicioCupones = value;
         }
 

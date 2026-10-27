@@ -63,15 +63,22 @@ namespace NestoAPI.Infraestructure.Cupones
         private readonly Func<DateTime> ahora;
         private readonly List<string> codigosPedidos = new List<string>();
         private readonly Func<bool> usoEnTiendaEncendido;
+        private readonly Func<Task<List<string>>> productosCheque;
 
         /// <param name="usoEnTiendaEncendido">NestoAPI#614: el espejo en PrestaShop (Cupones:EspejoPrestashop). Null: el del Web.config.</param>
+        /// <param name="productosCheque">
+        /// NestoAPI#696: los productos de cheque regalo de las campañas (<c>IServicioCanjeChequesRegalo.ProductosCheque</c>), para
+        /// rechazar el pedido que lleva cheque y cupón (no son acumulables). Null: no se mira (el carrito de la tienda, que no trae
+        /// el cheque, y los tests que no van de esto).
+        /// </param>
         public ServicioCanjeCupones(IRepositorioCupones repositorio, Func<DateTime> ahora = null, string productoCupon = null,
-            Func<bool> usoEnTiendaEncendido = null)
+            Func<bool> usoEnTiendaEncendido = null, Func<Task<List<string>>> productosCheque = null)
         {
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
             this.ahora = ahora ?? (() => DateTime.Now);
             ProductoCupon = productoCupon ?? ReglasCupon.ProductoCupon;
             this.usoEnTiendaEncendido = usoEnTiendaEncendido ?? (() => ReglasEspejoPrestashop.Encendido);
+            this.productosCheque = productosCheque;
         }
 
         public string ProductoCupon { get; }
@@ -130,6 +137,9 @@ namespace NestoAPI.Infraestructure.Cupones
             }
 
             LinPedidoVta lineaCupon = lineasCupon[0];
+            // NestoAPI#696 (Carlos, 22/10/26): cheque regalo y cupón NO son acumulables. Regla dura, también para el pedido de la
+            // tienda que importa Nesto#518: no entra en silencio, lo ve quien importa y lo resuelve Administración.
+            await ComprobarSinChequeRegalo(lineas, empresa, pedido, cliente).ConfigureAwait(false);
             if (!codigosPedidos.Any() && Constantes.FormasVenta.EsCanalExterno(lineaCupon.Forma_Venta?.Trim()) && usoEnTiendaEncendido())
             {
                 // NestoAPI#614: cupón aplicado en la tienda PrestaShop (CanalesExternos). Lo cobró la tienda con sus reglas y su
@@ -265,6 +275,21 @@ namespace NestoAPI.Infraestructure.Cupones
         }
 
         private static decimal BaseCupon(LinPedidoVta lineaCupon) => Math.Round(lineaCupon.Precio ?? 0, 2, MidpointRounding.AwayFromZero);
+
+        /// <summary>NestoAPI#696: 400 CUPON_CON_CHEQUE_REGALO si entre las líneas hay un producto de cheque regalo.</summary>
+        private async Task ComprobarSinChequeRegalo(IList<LinPedidoVta> lineas, string empresa, int pedido, string cliente)
+        {
+            if (productosCheque == null)
+            {
+                return;
+            }
+            List<string> cheques = await productosCheque().ConfigureAwait(false);
+            if (ReglasCupon.LlevaChequeRegalo(lineas, cheques))
+            {
+                throw ReglasCupon.Error(ReglasCupon.ERROR_CON_CHEQUE_REGALO, ReglasCupon.MensajeConChequeRegalo(codigosPedidos.FirstOrDefault()),
+                    empresa, pedido, cliente);
+            }
+        }
 
         /// <summary>
         /// Carlos (15/10/26): el cupón descuenta siempre su importe exacto, también con recargo de equivalencia: la base sale del

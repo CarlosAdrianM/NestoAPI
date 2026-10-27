@@ -98,7 +98,7 @@ namespace NestoAPI.Tests.Infrastructure.Cupones
             Assert.AreEqual(41.32M, r.BaseImponible, "50 € al 21 %");
             Assert.IsNull(r.ErrorCode);
             Assert.IsNull(r.Falta);
-            Assert.IsTrue(r.CombinableConChequeRegalo);
+            Assert.IsFalse(r.CombinableConChequeRegalo, "NestoAPI#696: cheque regalo y cupón no son acumulables");
             StringAssert.Contains(r.Mensaje, "Puede usar su cupón de 50,00 €");
             A.CallTo(() => repositorio.Reservar(A<int>._, A<string>._, A<int>._, A<string>._, A<string>._)).MustNotHaveHappened();
             A.CallTo(() => repositorio.UsarDesdeTienda(A<int>._, A<string>._, A<string>._, A<string>._, A<decimal?>._, A<string>._)).MustNotHaveHappened();

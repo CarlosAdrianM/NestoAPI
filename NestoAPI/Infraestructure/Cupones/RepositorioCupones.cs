@@ -67,6 +67,8 @@ namespace NestoAPI.Infraestructure.Cupones
         Task<bool> UsarEnTienda(int id, string empresaPedido, int pedido, string canal, string usuario);
         /// <summary>NestoAPI#614: el cliente del pedido si tiene la línea del producto del cupón; null si no la tiene (o no existe).</summary>
         Task<string> LeerClienteDelPedidoConLineaCupon(string empresa, int pedido);
+        /// <summary>NestoAPI#696: el pedido tiene alguna línea de producto de uno de esos productos (los cheques regalo de las campañas).</summary>
+        Task<bool> PedidoTieneLineaDe(string empresa, int pedido, IEnumerable<string> productos);
         /// <summary>
         /// NestoAPI#694: el módulo nestocheques de la tienda ha validado un pedido con el cupón. UPDATE condicionado: pasa a Usado
         /// SIN pedido de Nesto (todavía no ha entrado), con la referencia de la tienda, si está libre (Emitido, Activo o Caducado: se
@@ -410,6 +412,19 @@ END";
                 .Where(l => l.Empresa == e && l.Número == pedido && l.Producto == productoCupon)
                 .Select(l => l.Nº_Cliente).FirstOrDefaultAsync().ConfigureAwait(false);
             return cliente?.Trim();
+        }
+
+        public async Task<bool> PedidoTieneLineaDe(string empresa, int pedido, IEnumerable<string> productos)
+        {
+            string e = empresa?.Trim() ?? Constantes.Empresas.EMPRESA_POR_DEFECTO;
+            List<string> lista = (productos ?? Enumerable.Empty<string>()).Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p.Trim()).ToList();
+            if (!lista.Any())
+            {
+                return false;
+            }
+            return await db.LinPedidoVtas
+                .AnyAsync(l => l.Empresa == e && l.Número == pedido && l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO && lista.Contains(l.Producto))
+                .ConfigureAwait(false);
         }
 
         public async Task<ResultadoUsoDesdeTienda> UsarDesdeTienda(int id, string empresa, string canal, string pedidoCanal, decimal? importeDescontado,
