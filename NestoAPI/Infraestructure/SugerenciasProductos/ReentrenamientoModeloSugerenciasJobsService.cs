@@ -127,6 +127,12 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
         public string RutaInforme(string sufijo) => Path.Combine(Carpeta, $"informe_sugerencias_{sufijo}.md");
         public string RutaLog(string sufijo) => Path.Combine(Carpeta, "logs", $"entrenamiento_sugerencias_{sufijo}.log");
 
+        // NestoAPI#671 (corte 2e): el modelo 2 (aceptación), en la misma carpeta con otro prefijo (el modelo 1 no los ve)
+        public string RutaModeloAceptacion(string sufijo) => Path.Combine(Carpeta, $"{RankingAceptacionSugerencias.PREFIJO_FICHERO}{sufijo}.zip");
+        public string RutaMetadatosAceptacion(string sufijo) => Path.Combine(Carpeta, $"{RankingAceptacionSugerencias.PREFIJO_FICHERO}{sufijo}.json");
+        public string RutaInformeAceptacion(string sufijo) => Path.Combine(Carpeta, $"informe_aceptacion_sugerencias_{sufijo}.md");
+        public string RutaLogAceptacion(string sufijo) => Path.Combine(Carpeta, "logs", $"entrenamiento_aceptacion_{sufijo}.log");
+
         public void Escribir(string ruta, string texto, bool bom = true)
         {
             _ = Directory.CreateDirectory(Path.GetDirectoryName(ruta));
@@ -404,7 +410,10 @@ namespace NestoAPI.Infraestructure.SugerenciasProductos
                    $"R@3 {Pct(modelo?.R3)}, al menos 1 acierto {Pct(modelo?.AlMenos1)}.";
         }
 
-        internal List<string> Destinatarios()
+        internal List<string> Destinatarios() => Destinatarios(leerParametro);
+
+        /// <summary>NestoAPI#671 (corte 2e): también los avisos del modelo 2 (aceptación).</summary>
+        internal static List<string> Destinatarios(Func<string, string> leerParametro)
         {
             string configurados = leerParametro(CLAVE_USUARIOS_AVISO);
             return (string.IsNullOrWhiteSpace(configurados) ? USUARIOS_AVISO_POR_DEFECTO : configurados)

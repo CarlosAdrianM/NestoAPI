@@ -207,7 +207,9 @@ namespace NestoAPI.Controllers
                 return await accion(new ServicioSugerenciasProductos(new RepositorioSugerenciasProductosSql(db),
                     fotos: new Infraestructure.PreparacionAlmacen.FotosProductoAlmacen(),
                     // NestoAPI#671 (corte 2c): el modelo (caché del zip común a todas las peticiones; sin él, reglas-1)
-                    predictor: PredictorSugerenciasProductos.Instancia)).ConfigureAwait(false);
+                    predictor: PredictorSugerenciasProductos.Instancia,
+                    // NestoAPI#671 (corte 2e): el modelo 2 (aceptación), en sombra salvo ModeloSugerencias:RankingAceptacion = Activo
+                    rankingAceptacion: RankingAceptacionSugerencias.Instancia)).ConfigureAwait(false);
             }
         }
     }
