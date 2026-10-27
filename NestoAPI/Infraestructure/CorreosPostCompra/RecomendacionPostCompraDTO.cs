@@ -13,6 +13,8 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
         public string ClienteId { get; set; }
         public string ClienteNombre { get; set; }
         public string ClienteEmail { get; set; }
+        /// <summary>NestoAPI#707: el contacto de la persona de contacto cuyo correo se usa (se guarda en cada fila enviada).</summary>
+        public string ClienteContacto { get; set; }
         public DateTime SemanaDesde { get; set; }
         public DateTime SemanaHasta { get; set; }
 
@@ -26,6 +28,19 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
         /// Hasta 4 productos de los mismos vídeos que el cliente nunca ha comprado.
         /// </summary>
         public List<ProductoRecomendadoDTO> ProductosRecomendados { get; set; } = new List<ProductoRecomendadoDTO>();
+
+        /// <summary>
+        /// NestoAPI#707: el cliente está en el grupo control (CorreosPostCompra:PorcentajeGrupoControl). Recibe el correo con
+        /// lo que ha comprado, pero sin recomendados: los que habría visto van en <see cref="ProductosRecomendadosNoMostrados"/>
+        /// y se guardan con GrupoControl = 1 para medir el uplift.
+        /// </summary>
+        public bool GrupoControl { get; set; }
+
+        /// <summary>NestoAPI#707: los recomendados que se le habrían enseñado a un cliente del grupo control (no salen en el correo).</summary>
+        public List<ProductoRecomendadoDTO> ProductosRecomendadosNoMostrados { get; set; } = new List<ProductoRecomendadoDTO>();
+
+        /// <summary>NestoAPI#707: con qué se ordenaron los recomendados (PuntuadorRecomendacionesPostCompra.VERSION_MODELO; luego, el zip de ML.NET).</summary>
+        public string VersionModelo { get; set; }
     }
 
     /// <summary>
@@ -57,6 +72,12 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
     public class ProductoRecomendadoDTO
     {
         public string ProductoId { get; set; }
+
+        /// <summary>NestoAPI#707: la regla que lo puso en su sitio (pares, afinidad, popularidad u orden_original).</summary>
+        public string Regla { get; set; }
+
+        /// <summary>NestoAPI#707: la puntuación (0-1) con la que se ordenó. Null con orden_original.</summary>
+        public decimal? Puntuacion { get; set; }
         public string NombreProducto { get; set; }
         public string VideoYoutubeId { get; set; }
         public string VideoTitulo { get; set; }

@@ -1285,6 +1285,10 @@
     <Compile Include="Infraestructure\CanalesExternos\Amazon\ServicioFacturasAmazon.cs" />
     <Compile Include="Infraestructure\CanalesExternos\Amazon\AmazonFacturasJobsService.cs" />
     <Compile Include="Infraestructure\CorreosPostCompra\CorreosPostCompraJobsService.cs" />
+    <Compile Include="Infraestructure\CorreosPostCompra\GrupoControlPostCompra.cs" />
+    <Compile Include="Infraestructure\CorreosPostCompra\InformeConversionPostCompra.cs" />
+    <Compile Include="Infraestructure\CorreosPostCompra\PuntuadorRecomendacionesPostCompra.cs" />
+    <Compile Include="Infraestructure\CorreosPostCompra\RegistroRecomendacionesPostCompra.cs" />
     <Compile Include="Infraestructure\CorreosPostCompra\CalculadoraReposicion.cs" />
     <Compile Include="Infraestructure\CorreosPostCompra\ConsumiblesReposicion.cs" />
     <Compile Include="Infraestructure\CorreosPostCompra\PlantillaRecordatorioReposicion.cs" />
