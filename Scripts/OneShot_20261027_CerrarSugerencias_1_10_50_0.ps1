@@ -36,6 +36,8 @@ Implementar 789 "1.10.50.0" "Corregido" "Almacén" "El manifiesto de la agencia 
     "Cuando un cliente tenía dos envíos el mismo día con la misma cantidad de bultos, el informe del manifiesto los juntaba en una línea y contaba los bultos una sola vez. Ahora suma los bultos y el reembolso de todos sus envíos, como en la pantalla. Lo avisó Alfredo."
 Implementar 790 "1.10.50.0" "Mejorado" "Tiendas,Almacén" "Diferencias de reposición: doble clic en el producto abre su ficha" `
     "En «Diferencias de reposición», doble clic en la referencia o en la descripción abre la ficha del producto, igual que en «Recibir reposición». Lo pidió Paloma."
+Implementar 757 "1.10.50.0" "Corregido" $null "Parámetros de usuario: el botón Guardar vuelve a verse" `
+    "La ventana de «Parámetros de usuario» crece con su contenido cuando llegan los parámetros, así que los botones Guardar y Cerrar se ven siempre; si hay muchos parámetros, aparece una barra de desplazamiento y los botones siguen a la vista. Lo avisó Laura."
 Implementar 733 "1.10.50.0" "Nuevo" "Tiendas,Almacén" "Reimprimir las etiquetas de bulto de cualquier reposición" `
     "Si la impresora se atasca o la etiqueta sale en blanco, ya se pueden reimprimir las etiquetas de bulto de una reposición por su número: en Nesto, en «Enviar reposición», la fila «Reimprimir etiquetas de bulto de la reposición nº» (Alt+R; propone la última enviada); en Ariadna, en Salidas, el número de reposición y F4. Lo pidió Paloma, y hoy también Santiago."
 
@@ -45,5 +47,6 @@ Implementar 733 "1.10.50.0" "Nuevo" "Tiendas,Almacén" "Reimprimir las etiquetas
 & "$PSScriptRoot\ContestarComoAsistente.ps1" -Api $Api -Novedad 788 -Texto "@Paloma, desde hoy las entradas de las reposiciones se dan de alta con la fecha en que se reciben, así que ya no volverá a salir el error del inventario. Y si un producto se regularizó entre el envío y la recepción, al abrir la reposición le avisará para que compruebe que no se cuenta dos veces." | Out-Null
 & "$PSScriptRoot\ContestarComoAsistente.ps1" -Api $Api -Novedad 789 -Texto "@Alfredo, ya está publicado: el manifiesto suma los bultos y el reembolso de todos los envíos de cada cliente, como en la pantalla. Compruébelo con el próximo manifiesto." | Out-Null
 & "$PSScriptRoot\ContestarComoAsistente.ps1" -Api $Api -Novedad 790 -Texto "@Paloma, ya está en la versión 1.10.50.0 de Nesto: en «Diferencias de reposición», doble clic en la referencia o en la descripción abre la ficha del producto." | Out-Null
+& "$PSScriptRoot\ContestarComoAsistente.ps1" -Api $Api -Novedad 757 -Texto "@Laura, ya está en la versión 1.10.50.0 de Nesto: la ventana de Parámetros de usuario crece con su contenido y los botones Guardar y Cerrar se ven siempre." | Out-Null
 & "$PSScriptRoot\ContestarComoAsistente.ps1" -Api $Api -Novedad 733 -Texto "@Paloma, ya está en la versión 1.10.50.0 de Nesto: en «Enviar reposición» tiene la fila «Reimprimir etiquetas de bulto de la reposición nº» (Alt+R), que propone la última enviada y vale para cualquier reposición, aunque ya esté recibida. @Santiago, en Ariadna 2.19 es el número de reposición y F4 en Salidas." | Out-Null
 Write-Host "Hecho." -ForegroundColor Green
