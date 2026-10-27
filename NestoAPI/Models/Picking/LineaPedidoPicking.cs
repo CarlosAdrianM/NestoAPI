@@ -37,6 +37,9 @@ namespace NestoAPI.Models.Picking
         public bool EsCupon { get; set; }
         /// <summary>NestoAPI#613: suma para el mínimo del cupón (producto no ficticio y que no es curso). Solo en los pedidos con cupón.</summary>
         public bool ComputaMinimoCupon { get; set; }
+        /// <summary>27/10/26 (Carlos): es una muestra (LinPedidoVta.SubGrupo = MMP, 100 % de descuento). Lo pone el rellenador
+        /// y lo usa GestorMuestrasSinStock: una muestra sin stock no retiene el pedido ni se queda pendiente, se quita.</summary>
+        public bool EsMuestra { get; set; }
         public decimal BaseImponibleEntrega {
             get
             {

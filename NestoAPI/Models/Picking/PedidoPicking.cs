@@ -145,6 +145,10 @@ namespace NestoAPI.Models.Picking
         /// <para>NestoAPI#529: en los modos parciales, si lo único que se quedaría pendiente son
         /// regalos (base 0), no se sirve a medias: se espera a tenerlo todo, como en el 1. Si no,
         /// el regalo acaba saliendo solo en un envío de 0 € (pedido 926923).</para>
+        ///
+        /// <para>27/10/26 (Carlos, caso David): las MUESTRAS (MMP) ya no entran en esa espera cuando lo demás sale:
+        /// GestorMuestrasSinStock las quita del pedido antes de llegar aquí. Si siguen en el pedido es porque también
+        /// falta algo de pago (o un regalo que no es muestra), y entonces se comportan como siempre.</para>
         /// </summary>
         public bool ExigeStockDeTodo()
         {
@@ -174,6 +178,10 @@ namespace NestoAPI.Models.Picking
         /// <summary>NestoAPI#608: las líneas que no tenían todo su stock cuando se decidió que no sale. Se guardan
         /// entonces porque GeneradorPendientes quita después de <see cref="Lineas"/> las que no tienen nada reservado.</summary>
         public List<LineaPedidoPicking> LineasQueFaltanAlDecidir { get; set; }
+
+        /// <summary>27/10/26 (Carlos, caso David): las muestras (MMP) sin stock que GestorMuestrasSinStock ha quitado del pedido
+        /// en esta pasada para que salga con el resto. Vacía si ninguna. Viaja en la respuesta del picking.</summary>
+        public List<MuestraQuitadaPicking> MuestrasQuitadas { get; set; } = new List<MuestraQuitadaPicking>();
 
         public bool saleEnPicking()
         {

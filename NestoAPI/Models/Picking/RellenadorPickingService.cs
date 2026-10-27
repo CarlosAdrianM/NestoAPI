@@ -199,7 +199,9 @@ namespace NestoAPI.Models.Picking
                     FechaEntrega = l.Fecha_Entrega,
                     EsSobrePedido = l.EstadoProducto != Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO && !l.LineaParcial,
                     FechaModificacion = l.Fecha_Modificación,
-                    EsPedidoEspecial = l.TipoLinea == Constantes.TiposLineaVenta.TEXTO && db.PedidosEspeciales.FirstOrDefault(e => e.NºOrdenVta == l.Nº_Orden) != null
+                    EsPedidoEspecial = l.TipoLinea == Constantes.TiposLineaVenta.TEXTO && db.PedidosEspeciales.FirstOrDefault(e => e.NºOrdenVta == l.Nº_Orden) != null,
+                    // 27/10/26 (Carlos): muestra = SubGrupo MMP de la línea (el mismo que GestorPrecios usa para el 100 % de descuento)
+                    EsMuestra = l.SubGrupo != null && l.SubGrupo.Trim() == Constantes.Productos.SUBGRUPO_MUESTRAS
                 }).ToList()
             }).ToList();
 

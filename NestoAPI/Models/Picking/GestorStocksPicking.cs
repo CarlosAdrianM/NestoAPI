@@ -29,6 +29,8 @@ namespace NestoAPI.Models.Picking
         /// a base 0: Ganavisiones, regalo por importe, material promocional, unidades gratis de
         /// una oferta). Servir lo demás obligaría a mandar después el regalo solo, en un envío de
         /// 0 €. Falso si no queda nada pendiente.
+        /// <para>27/10/26 (Carlos): las muestras (MMP) sin stock normalmente ya no llegan aquí: GestorMuestrasSinStock las
+        /// quita antes si con ello el pedido sale. Si siguen, cuentan como un regalo más.</para>
         /// </summary>
         public bool LoPendienteSonSoloRegalos()
         {
