@@ -5,13 +5,13 @@
     Tanda: NestoAPI (#705 stock de la tienda al grabar pedidos, #706 UTM, #707 recomendaciones post-compra, #708 promesa en
     riesgo ACTIVA, #709 push, #710 SignalR con la lectura, #711 vídeo en Novedades, #712 fecha de entrega lejana, #713 tope de
     las paradas, #695 fecha de recepción, #717 muestras sin stock, GLS fases 4-5 apagadas, ML.NET en sombra #714/#715/#716,
-    #671e, #618) + Nesto (783, 787, 790, 733, Nesto.Models a .NET 8, #490 panel lateral tramos 1-2, #711, #712, #558).
+    #671e, #618, #696 cheque+cupón no acumulables, #704 origen del modo de servicio) + Nesto (783, 787, 790, 733, Nesto.Models a .NET 8, #490 panel lateral tramos 1-2, #711, #712, #558).
 
     ORDEN:
       1) Scripts sa ANTES de publicar la API: Issue707_CorreosPostCompraRecomendaciones, Issue709_PedidosOrigenPush,
          Issue711_NovedadesVideo, Issue713_PreparacionEscaneosParada, Issue671e_SugerenciasProductosSombra,
          Issue714_ClientesRiesgoAbandono, Issue715_PedidosAnomalias, Issue716_DatosParaModelos (su backfill FUERA de horario),
-         Nesto552_ParametroGlsPorApi. Nesto490_NavegacionLateral YA LANZADO (13:46).
+         Nesto552_ParametroGlsPorApi, Issue704_PedidosModoServicioOrigen. Nesto490_NavegacionLateral YA LANZADO (13:46).
       2) Publicar NestoAPI.
       3) Publicar la ClickOnce (Clean + Rebuild) → 1.10.50.0.
       4) DESPUÉS: ESTE script, y OneShot_20261027_CerrarSugerencias_1_10_50_0.ps1 (las sugerencias 783, 784, 787, 788, 789,
@@ -24,7 +24,7 @@
       - Todo lo de ML.NET en sombra (#714 abandono, #715 anomalías, #716 datos, #671e, #618): nadie ve nada todavía.
       - UTM de los correos (#706), recomendaciones del correo del sábado (#707), atribución de push (#709): es para medir.
       - GLS por la API (#552 fases 4 y 5): apagado.
-      - Nesto.Models a .NET 8 y el tope de las paradas (#713): internos.
+      - Nesto.Models a .NET 8, el tope de las paradas (#713) y el registro del origen del modo de servicio (#704): internos.
       - Lo de Ariadna 2.19 (#56, #713, 733 F4): va en su propio script de Novedades de Ariadna.
       - Correo del cheque regalo de usted y con botón a la tienda: lo ven los clientes, no los usuarios de Nesto.
 
@@ -72,6 +72,9 @@ INSERT INTO @novedades (Categoria, Titulo, Descripcion, Perfiles) VALUES
      NULL),
     ('Mejorado', N'Eventos: Nesto pregunta una sola vez si quiere anunciarlo en las apps',
      N'Al guardar un evento que ya tiene todos los datos (lugar, descripción, horario e imagen) y no se ha anunciado, Nesto pregunta si quiere anunciarlo a los vendedores y a las clientas con la app, que pueden reservar plaza desde ella. Si contesta que no, no vuelve a preguntar en cada guardado: siempre puede hacerlo después con «Anunciar otra vez…».',
+     N'Tiendas,Administración'),
+    ('Mejorado', N'El cheque regalo y el cupón de evento no se pueden usar en el mismo pedido',
+     N'Si un pedido lleva el cheque regalo de la campaña y además un cupón de evento, Nesto no lo graba y explica el motivo («El cupón EV-… y el cheque regalo no son acumulables: quite uno de los dos»). También pasa con los pedidos de la tienda online que se importan: si llega uno con los dos, no entra en silencio, lo ve quien lo importa. La tienda ya no deja aplicar el cupón si el cheque está en el carrito.',
      N'Tiendas,Administración');
 
 INSERT INTO Novedades (Version, Fecha, Categoria, Titulo, Descripcion, Ambito, Publicada, Usuario, Perfiles)
