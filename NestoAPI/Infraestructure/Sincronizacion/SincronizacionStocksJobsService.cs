@@ -33,18 +33,11 @@ namespace NestoAPI.Infraestructure.Sincronizacion
         internal const int HORAS_VENTANA_NOCTURNA = 48;
         internal const string USUARIO_ENCOLADO = "Sync stocks nocturno";
 
-        /// <summary>Punto de entrada para Hangfire (job recurrente).</summary>
-        public static async Task EncolarProductosConMovimientos(int horasVentana)
-        {
-            Console.WriteLine("🚀 [Hangfire] Encolando productos con movimientos de stock para sincronizar...");
-
-            try
-            {
-                using (var db = new NVEntities())
-                {
-                    // Los mismos almacenes y empresas (titular + espejo) que usa
-                    // ProductoService.CalcularStockProducto para calcular el stock que viaja.
-                    int encolados = await db.Database.ExecuteSqlCommandAsync(@"
+        /// <summary>
+        /// Los mismos almacenes y empresas (titular + espejo) que usa
+        /// ProductoService.CalcularStockProducto para calcular el stock que viaja.
+        /// </summary>
+        internal const string SQL_ENCOLAR_PRODUCTOS_CON_MOVIMIENTOS = @"
                         INSERT INTO Nesto_sync (Tabla, ModificadoId, Usuario, FechaModificacion)
                         SELECT 'Productos', RTRIM(p.Número), @usuario, GETDATE()
                         FROM Productos p
@@ -72,11 +65,36 @@ namespace NestoAPI.Infraestructure.Sincronizacion
                                OR EXISTS (SELECT 1 FROM DescuentosProducto d
                                       WHERE d.Empresa = @empresa
                                         AND d.[Nº Producto] = p.Número
-                                        AND d.[Fecha Modificación] >= @desde))
+                                        AND d.[Fecha Modificación] >= @desde)
+                               -- NestoAPI#705: un pedido pendiente compromete stock (PendienteEntregar,
+                               -- y con él CantidadDisponibleTotal) sin movimiento en ExtractoProducto.
+                               -- La API ya encola al grabar líneas; esto recoge lo que se cambia por
+                               -- fuera (Nesto viejo, SPs) o si aquel encolado falló. Sin filtrar por
+                               -- estado: pasar una línea a presupuesto (-3) o a albarán también cambia
+                               -- el disponible. Sin índice por [Fecha Modificación]: es un único
+                               -- recorrido de LinPedidoVta (~140.000 lecturas, ~0,5 s el 27/10/26), que
+                               -- de noche no molesta. Los borrados de líneas no se ven aquí (ya no están).
+                               OR EXISTS (SELECT 1 FROM LinPedidoVta l
+                                      WHERE l.Empresa IN (@empresa, @empresaEspejo)
+                                        AND l.Producto = p.Número
+                                        AND l.Almacén IN (@almacen1, @almacen2, @almacen3)
+                                        AND l.TipoLinea = 1
+                                        AND l.[Fecha Modificación] >= @desde))
                           AND NOT EXISTS (SELECT 1 FROM Nesto_sync ns
                                           WHERE ns.Tabla = 'Productos'
                                             AND ns.ModificadoId = RTRIM(p.Número)
-                                            AND ns.Sincronizado IS NULL)",
+                                            AND ns.Sincronizado IS NULL)";
+
+        /// <summary>Punto de entrada para Hangfire (job recurrente).</summary>
+        public static async Task EncolarProductosConMovimientos(int horasVentana)
+        {
+            Console.WriteLine("🚀 [Hangfire] Encolando productos con movimientos de stock para sincronizar...");
+
+            try
+            {
+                using (var db = new NVEntities())
+                {
+                    int encolados = await db.Database.ExecuteSqlCommandAsync(SQL_ENCOLAR_PRODUCTOS_CON_MOVIMIENTOS,
                         new SqlParameter("@usuario", USUARIO_ENCOLADO),
                         new SqlParameter("@empresa", Constantes.Empresas.EMPRESA_POR_DEFECTO),
                         new SqlParameter("@empresaEspejo", Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO),

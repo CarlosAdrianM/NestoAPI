@@ -1,4 +1,8 @@
+using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.PedidosVenta;
+using NestoAPI.Infraestructure.Sincronizacion;
+using System;
+using System.Collections.Generic;
 using System.Data.Common;
 using System.Data.Entity;
 using System.Data.Entity.Infrastructure;
@@ -68,16 +72,128 @@ namespace NestoAPI.Models
         // con un 400 claro; aquí se para cualquier otro camino (notas de entrega, líneas partidas, copias...) que cree o
         // cambie la fecha de una línea de venta a una anterior al 01/01/2000, con el mismo mensaje y sin llegar al CHECK
         // de SQL. Las líneas que se modifican sin tocar la fecha no se miran (hay históricas facturadas con 1899-1997).
+        //
+        // NestoAPI#705: además, los productos de las líneas de venta que comprometen o liberan stock se encolan en
+        // Nesto_sync DESPUÉS de grabar, para que la tienda reciba el CantidadDisponibleTotal nuevo (un pedido pendiente
+        // no genera movimiento en ExtractoProducto y el job nocturno no lo veía). Aquí y no en cada controller: por este
+        // punto pasan todas las grabaciones de líneas de la API (POST, PUT, presupuestos, canales externos, tienda...).
         public override int SaveChanges()
         {
             ComprobarFechasEntregaLineasVenta();
-            return base.SaveChanges();
+            List<string> productosAEncolar = ProductosLineasVentaAEncolar();
+            int resultado = base.SaveChanges();
+            EncolarProductosLineasVentaSinRomper(productosAEncolar);
+            return resultado;
         }
 
-        public override Task<int> SaveChangesAsync(CancellationToken cancellationToken)
+        public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken)
         {
             ComprobarFechasEntregaLineasVenta();
-            return base.SaveChangesAsync(cancellationToken);
+            List<string> productosAEncolar = ProductosLineasVentaAEncolar();
+            int resultado = await base.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            await EncolarProductosLineasVentaSinRomperAsync(productosAEncolar).ConfigureAwait(false);
+            return resultado;
+        }
+
+        /// <summary>
+        /// NestoAPI#705: foto de las líneas de venta que se van a grabar (antes de SaveChanges, que las deja Unchanged).
+        /// Best-effort: si algo falla al mirarlas, se loguea y se graba igual.
+        /// </summary>
+        private List<string> ProductosLineasVentaAEncolar()
+        {
+            try
+            {
+                var cambios = new List<CambioLineaVenta>();
+                foreach (DbEntityEntry<LinPedidoVta> entrada in ChangeTracker.Entries<LinPedidoVta>())
+                {
+                    switch (entrada.State)
+                    {
+                        case EntityState.Added:
+                            cambios.Add(CambioLineaVenta.Alta(ProductosLineasVentaSync.Foto(entrada.Entity)));
+                            break;
+                        case EntityState.Deleted:
+                            cambios.Add(CambioLineaVenta.Borrado(FotoOriginal(entrada)));
+                            break;
+                        case EntityState.Modified:
+                            cambios.Add(new CambioLineaVenta
+                            {
+                                Antes = FotoOriginal(entrada),
+                                Despues = ProductosLineasVentaSync.Foto(entrada.Entity),
+                                CamposDeStockModificados = entrada.Property(l => l.Producto).IsModified
+                                    || entrada.Property(l => l.Cantidad).IsModified
+                                    || entrada.Property(l => l.Almacén).IsModified
+                                    || entrada.Property(l => l.Estado).IsModified
+                                    || entrada.Property(l => l.TipoLinea).IsModified
+                                    || entrada.Property(l => l.Empresa).IsModified
+                            });
+                            break;
+                    }
+                }
+                return ProductosLineasVentaSync.ProductosAEncolar(cambios);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[NestoAPI#705] No se han podido mirar las líneas de venta para encolar sus productos: {ex.Message}", ex));
+                return new List<string>();
+            }
+        }
+
+        private static LineaVentaStock FotoOriginal(DbEntityEntry<LinPedidoVta> entrada)
+        {
+            DbPropertyValues originales = entrada.OriginalValues;
+            return new LineaVentaStock
+            {
+                Empresa = originales.GetValue<string>(nameof(LinPedidoVta.Empresa)),
+                Producto = originales.GetValue<string>(nameof(LinPedidoVta.Producto)),
+                Almacen = originales.GetValue<string>(nameof(LinPedidoVta.Almacén)),
+                Estado = originales.GetValue<short>(nameof(LinPedidoVta.Estado)),
+                TipoLinea = originales.GetValue<byte?>(nameof(LinPedidoVta.TipoLinea)),
+                Cantidad = originales.GetValue<short?>(nameof(LinPedidoVta.Cantidad))
+            };
+        }
+
+        private void EncolarProductosLineasVentaSinRomper(List<string> productos)
+        {
+            if (productos == null || productos.Count == 0)
+            {
+                return;
+            }
+            try
+            {
+                _ = EncolarProductosSyncSincrono(productos, ProductosLineasVentaSync.USUARIO_ENCOLADO);
+            }
+            catch (Exception ex)
+            {
+                LoguearFalloEncolado(productos, ex);
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#705: encola sin romper nunca la grabación del pedido (ya está grabado). Si falla, lo recoge el job
+        /// nocturno por la [Fecha Modificación] de la línea. Público para el DELETE de pedidos, cuyas líneas no pasan
+        /// por el ChangeTracker. Virtual para poder comprobarlo en los tests.
+        /// </summary>
+        public virtual async Task EncolarProductosLineasVentaSinRomperAsync(List<string> productos)
+        {
+            if (productos == null || productos.Count == 0)
+            {
+                return;
+            }
+            try
+            {
+                _ = await EncolarProductosSync(productos, ProductosLineasVentaSync.USUARIO_ENCOLADO).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                LoguearFalloEncolado(productos, ex);
+            }
+        }
+
+        private static void LoguearFalloEncolado(List<string> productos, Exception ex)
+        {
+            ElmahHelper.Log(new Exception(
+                $"[NestoAPI#705] Pedido grabado, pero no se han podido encolar en Nesto_sync los productos {string.Join(", ", productos)} " +
+                $"(los recogerá el job nocturno): {ex.Message}", ex));
         }
 
         private void ComprobarFechasEntregaLineasVenta()

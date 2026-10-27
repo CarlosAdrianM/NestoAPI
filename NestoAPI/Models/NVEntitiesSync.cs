@@ -54,13 +54,38 @@ namespace NestoAPI.Models
         /// </summary>
         public virtual async Task<int> EncolarSync(string tabla, IEnumerable<string> ids, string usuario)
         {
+            int encolados = 0;
+            foreach (KeyValuePair<string, object[]> lote in LotesEncolarSync(tabla, ids, usuario))
+            {
+                encolados += await Database.ExecuteSqlCommandAsync(lote.Key, lote.Value).ConfigureAwait(false);
+            }
+            return encolados;
+        }
+
+        /// <summary>
+        /// NestoAPI#705: lo mismo que <see cref="EncolarProductosSync"/> pero síncrono, para el
+        /// <c>SaveChanges()</c> síncrono (que encola los productos de las líneas de venta que graba):
+        /// esperar ahí a la versión async podría bloquear el hilo de la petición.
+        /// </summary>
+        internal int EncolarProductosSyncSincrono(IEnumerable<string> productos, string usuario)
+        {
+            int encolados = 0;
+            foreach (KeyValuePair<string, object[]> lote in LotesEncolarSync("Productos", productos, usuario))
+            {
+                encolados += Database.ExecuteSqlCommand(lote.Key, lote.Value);
+            }
+            return encolados;
+        }
+
+        /// <summary>Sentencia y parámetros de cada lote de 500 (ver <see cref="EncolarProductosSync"/>).</summary>
+        private static IEnumerable<KeyValuePair<string, object[]>> LotesEncolarSync(string tabla, IEnumerable<string> ids, string usuario)
+        {
             List<string> limpios = (ids ?? Enumerable.Empty<string>())
                 .Where(p => !string.IsNullOrWhiteSpace(p))
                 .Select(p => p.Trim())
                 .Distinct()
                 .ToList();
 
-            int encolados = 0;
             const int tamanoLote = 500;
             for (int inicio = 0; inicio < limpios.Count; inicio += tamanoLote)
             {
@@ -77,7 +102,7 @@ namespace NestoAPI.Models
                     parametros.Add(new SqlParameter($"@p{i}", lote[i]));
                 }
 
-                encolados += await Database.ExecuteSqlCommandAsync($@"
+                yield return new KeyValuePair<string, object[]>($@"
                     INSERT INTO Nesto_sync (Tabla, ModificadoId, Usuario, FechaModificacion)
                     SELECT @tabla, v.valor, @usuario, GETDATE()
                     FROM (VALUES {string.Join(",", filas)}) v(valor)
@@ -85,9 +110,8 @@ namespace NestoAPI.Models
                                       WHERE ns.Tabla = @tabla
                                         AND ns.ModificadoId = v.valor
                                         AND ns.Sincronizado IS NULL)",
-                    parametros.ToArray()).ConfigureAwait(false);
+                    parametros.ToArray());
             }
-            return encolados;
         }
     }
 }
