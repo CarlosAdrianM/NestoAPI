@@ -118,7 +118,7 @@ namespace NestoAPI.Tests.Controllers
         public async Task ConCodigoDeBarras_ImprimeEnLaImpresoraDelUsuarioYAudita()
         {
             ConEnvio(Constantes.Agencias.AGENCIA_CTT, "CTT123  ");
-            A.CallTo(() => parametros.LeerParametro("1", "Alfredo", "ImpresoraCodBarras")).Returns("ZEBRA-EXPEDICION ");
+            A.CallTo(() => parametros.LeerParametro("1", "Alfredo", "ImpresoraAgencia")).Returns("ZEBRA-EXPEDICION ");
             // "^XA^FDHola^XZ" en base64
             A.CallTo(() => fakeAgencia.ReimprimirAsync("CTT123", null, null)).Returns(Task.FromResult(new EtiquetaDataTrans
             {
@@ -170,7 +170,7 @@ namespace NestoAPI.Tests.Controllers
         public async Task LaAgenciaNoDevuelveZpl_502YNoImprime()
         {
             ConEnvio(Constantes.Agencias.AGENCIA_CTT, "CTT123");
-            A.CallTo(() => parametros.LeerParametro("1", "Alfredo", "ImpresoraCodBarras")).Returns("ZEBRA-EXPEDICION");
+            A.CallTo(() => parametros.LeerParametro("1", "Alfredo", "ImpresoraAgencia")).Returns("ZEBRA-EXPEDICION");
             A.CallTo(() => fakeAgencia.ReimprimirAsync("CTT123", null, null)).Returns(Task.FromResult(new EtiquetaDataTrans { Contenido = "JVBERi0=" }));
 
             var resultado = await controller.ImprimirEtiqueta(250100, null) as NegotiatedContentResult<string>;
@@ -185,7 +185,7 @@ namespace NestoAPI.Tests.Controllers
         public async Task WindowsNoDejaImprimir_502()
         {
             ConEnvio(Constantes.Agencias.AGENCIA_CTT, "CTT123");
-            A.CallTo(() => parametros.LeerParametro("1", "Alfredo", "ImpresoraCodBarras")).Returns("ZEBRA-EXPEDICION");
+            A.CallTo(() => parametros.LeerParametro("1", "Alfredo", "ImpresoraAgencia")).Returns("ZEBRA-EXPEDICION");
             A.CallTo(() => fakeAgencia.ReimprimirAsync("CTT123", null, null)).Returns(Task.FromResult(new EtiquetaDataTrans { Contenido = "^XA^XZ" }));
             A.CallTo(() => impresora.Imprimir(A<string>._, A<string>._, A<string>._))
                 .Throws(new ImpresionEtiquetasException("No se puede abrir la impresora ZEBRA-EXPEDICION (error de Windows 5)."));
@@ -203,7 +203,7 @@ namespace NestoAPI.Tests.Controllers
             // Sugerencia 507: con CTT caído, el aviso de borrar el código de barras (Nesto#412) despistaba.
             EnviosAgencia envio = ConEnvio(Constantes.Agencias.AGENCIA_CTT, "CTT123");
             envio.AgenciasTransporte = new AgenciaTransporte { Numero = envio.Agencia, Nombre = "CTT" };
-            A.CallTo(() => parametros.LeerParametro("1", "Alfredo", "ImpresoraCodBarras")).Returns("ZEBRA-EXPEDICION");
+            A.CallTo(() => parametros.LeerParametro("1", "Alfredo", "ImpresoraAgencia")).Returns("ZEBRA-EXPEDICION");
             A.CallTo(() => fakeAgencia.ReimprimirAsync("CTT123", null, null))
                 .ThrowsAsync(new AgenciaRemotaException("CTT (Etiqueta) respondió HTTP 500: CONNECTIVITY") { EsTransitoria = true });
 
@@ -218,5 +218,17 @@ namespace NestoAPI.Tests.Controllers
             Assert.IsFalse(auditoria.Exito);
             StringAssert.Contains(auditoria.TextoRespuestaError, "CONNECTIVITY");
         }
+
+        // 28/10/26: la etiqueta de agencia sale por la impresora de agencia de Nesto, no por la de etiquetas de hueco
+
+        [TestMethod]
+        public void ImpresorasAgencia_GlsPorLaDeGls_ElRestoPorLaDeAgencia()
+        {
+            Assert.AreEqual("ImpresoraAgenciaGLS", NestoAPI.Infraestructure.Agencias.ImpresorasAgencia.Parametro(Constantes.Agencias.AGENCIA_GLS));
+            Assert.AreEqual("ImpresoraAgencia", NestoAPI.Infraestructure.Agencias.ImpresorasAgencia.Parametro(Constantes.Agencias.AGENCIA_CTT));
+            Assert.AreNotEqual(NestoAPI.Infraestructure.PreparacionAlmacen.ServicioEtiquetasHueco.PARAMETRO_IMPRESORA,
+                NestoAPI.Infraestructure.Agencias.ImpresorasAgencia.Parametro(Constantes.Agencias.AGENCIA_CTT), "la de hueco es otra impresora");
+        }
+
     }
 }

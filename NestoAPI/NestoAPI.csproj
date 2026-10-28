@@ -809,6 +809,7 @@
     <Compile Include="Infraestructure\Clientes\AltaClienteEspecial.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ReglaIvaContacto.cs" />
     <Compile Include="Infraestructure\PedidosVenta\AdelantoFechaEntrega.cs" />
+    <Compile Include="Infraestructure\Agencias\ImpresorasAgencia.cs" />
     <Compile Include="Infraestructure\Clientes\ConsultasClientePrincipal.cs" />
     <Compile Include="Infraestructure\Productos\FamiliasRestringidas.cs" />
     <Compile Include="Infraestructure\Verifactu\VerifactuJobsService.cs" />

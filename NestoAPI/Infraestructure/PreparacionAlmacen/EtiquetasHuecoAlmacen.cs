@@ -300,16 +300,23 @@ HAVING SUM(u.Cantidad) > 0";
         /// </summary>
         /// <exception cref="ArgumentException">El usuario no tiene impresora de etiquetas: el motivo es para el usuario.</exception>
         public static string ImpresoraDelUsuario(ILectorParametrosUsuario parametros, string empresa, string usuario)
+            => ImpresoraDelUsuario(parametros, empresa, usuario, PARAMETRO_IMPRESORA);
+
+        /// <summary>
+        /// La impresora del usuario para el parámetro que se diga (28/10/26: las etiquetas de AGENCIA van por ImpresoraAgencia /
+        /// ImpresoraAgenciaGLS, las mismas que usa Nesto, no por la de etiquetas de hueco; ver <see cref="Agencias.ImpresorasAgencia"/>).
+        /// </summary>
+        public static string ImpresoraDelUsuario(ILectorParametrosUsuario parametros, string empresa, string usuario, string parametro)
         {
             string sinDominio = (usuario ?? string.Empty).Substring((usuario ?? string.Empty).IndexOf('\\') + 1).Trim();
-            string destino = string.IsNullOrEmpty(sinDominio) ? null : parametros.LeerParametro(empresa, sinDominio, PARAMETRO_IMPRESORA);
+            string destino = string.IsNullOrEmpty(sinDominio) ? null : parametros.LeerParametro(empresa, sinDominio, parametro);
             if (string.IsNullOrWhiteSpace(destino))
             {
-                destino = parametros.LeerParametro(empresa, USUARIO_POR_DEFECTO, PARAMETRO_IMPRESORA);
+                destino = parametros.LeerParametro(empresa, USUARIO_POR_DEFECTO, parametro);
             }
             if (string.IsNullOrWhiteSpace(destino))
             {
-                throw new ArgumentException($"El usuario {sinDominio} no tiene impresora de etiquetas (parámetro {PARAMETRO_IMPRESORA}). Pídasela a informática.");
+                throw new ArgumentException($"El usuario {sinDominio} no tiene impresora de etiquetas (parámetro {parametro}). Pídasela a informática.");
             }
             return destino.Trim();
         }

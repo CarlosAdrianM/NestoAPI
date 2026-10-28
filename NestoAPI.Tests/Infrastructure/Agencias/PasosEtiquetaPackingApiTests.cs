@@ -49,7 +49,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             A.CallTo(() => fabrica.Crear(Constantes.Agencias.AGENCIA_CTT)).Returns(fakeAgencia);
             impresora = A.Fake<IImpresoraEtiquetas>();
             parametros = A.Fake<ILectorParametrosUsuario>();
-            A.CallTo(() => parametros.LeerParametro("1", "Andre", "ImpresoraCodBarras")).Returns("ZEBRA-PACKING");
+            A.CallTo(() => parametros.LeerParametro("1", "Andre", "ImpresoraAgencia")).Returns("ZEBRA-PACKING");
 
             var envios = new EnviosAgenciasController(db, fabrica)
             {

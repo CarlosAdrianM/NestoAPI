@@ -1416,7 +1416,7 @@ namespace NestoAPI.Controllers
                 try
                 {
                     impresora = Infraestructure.PreparacionAlmacen.ServicioEtiquetasHueco.ImpresoraDelUsuario(LectorParametros,
-                        Constantes.Empresas.EMPRESA_POR_DEFECTO, UsuarioAuditoriaHelper.Resolver(User, null));
+                        Constantes.Empresas.EMPRESA_POR_DEFECTO, UsuarioAuditoriaHelper.Resolver(User, null), Infraestructure.Agencias.ImpresorasAgencia.PARAMETRO_IMPRESORA_GLS);
                 }
                 catch (ArgumentException ex)
                 {
@@ -1559,7 +1559,7 @@ namespace NestoAPI.Controllers
                 try
                 {
                     impresora = Infraestructure.PreparacionAlmacen.ServicioEtiquetasHueco.ImpresoraDelUsuario(LectorParametros,
-                        Constantes.Empresas.EMPRESA_POR_DEFECTO, UsuarioAuditoriaHelper.Resolver(User, null));
+                        Constantes.Empresas.EMPRESA_POR_DEFECTO, UsuarioAuditoriaHelper.Resolver(User, null), Infraestructure.Agencias.ImpresorasAgencia.Parametro(envio.Agencia));
                 }
                 catch (ArgumentException ex)
                 {
