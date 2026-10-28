@@ -771,9 +771,17 @@ namespace NestoAPI.Controllers
             return Ok(enviosAgencia);
         }
 
+        /// <summary>NestoAPI#725: código del 409 del PUT cuando cambia un dato que ya viajó a la agencia y no viene la confirmación.</summary>
+        public const string CODIGO_CAMBIO_SIN_AGENCIA = "CAMBIO_SIN_AGENCIA";
+
+        /// <summary>NestoAPI#725: longitud mínima del texto de la confirmación (con quién se habló en la agencia y cuándo).</summary>
+        public const int LONGITUD_MINIMA_CONFIRMACION_AGENCIA = 5;
+
         // PUT: api/EnviosAgencias/5
+        // PUT: api/EnviosAgencias/5?confirmadoConLaAgencia=true&confirmacionAgencia=<con quién y cuándo> (NestoAPI#725)
         [ResponseType(typeof(void))]
-        public async Task<IHttpActionResult> PutEnviosAgencia(int id, EnviosAgencia enviosAgencia)
+        public async Task<IHttpActionResult> PutEnviosAgencia(int id, EnviosAgencia enviosAgencia,
+            bool confirmadoConLaAgencia = false, string confirmacionAgencia = null)
         {
             if (!ModelState.IsValid)
             {
@@ -785,6 +793,12 @@ namespace NestoAPI.Controllers
                 return BadRequest();
             }
 
+            if (confirmadoConLaAgencia && (confirmacionAgencia == null || confirmacionAgencia.Trim().Length < LONGITUD_MINIMA_CONFIRMACION_AGENCIA))
+            {
+                return BadRequest("Indique con quién ha hablado en la agencia y cuándo (al menos " +
+                    $"{LONGITUD_MINIMA_CONFIRMACION_AGENCIA} caracteres): el cambio queda registrado con esa confirmación.");
+            }
+
             // NestoAPI#596: el CP se graba canónico («4480 670» -> «4480-670»).
             enviosAgencia.CodPostal = CodigoPostalEnvio(enviosAgencia.CodPostal, Infraestructure.Direcciones.CodigoPostal.PaisIso(enviosAgencia.Pais));
 
@@ -794,28 +808,44 @@ namespace NestoAPI.Controllers
             {
                 enviosAgencia.Reembolso = 0;
             }
+            // Antes de comparar con lo registrado: las observaciones se graban recortadas.
+            RecortarTextosLibres(enviosAgencia);
 
-            // NestoAPI#512 (22/09/26, envío 248984): el botón «Modificar Envío» de la pestaña En curso
-            // manda el envío entero por aquí. Con CTT/Innovatrans el reembolso ya viajó a la agencia al
-            // registrar, y este PUT lo cambiaba solo en nuestra BD (sin historial, sin contabilidad y
-            // con la agencia cobrando el importe antiguo). Se rechaza con el camino correcto.
-            var registrado = await db.EnviosAgencias.AsNoTracking()
+            // Where + ToListAsync (no FirstOrDefaultAsync con predicado): ver el «Limit1» de TramitacionEnviosService.
+            EnviosAgencia registrado = (await db.EnviosAgencias.AsNoTracking()
                 .Where(e => e.Numero == id)
-                .Select(e => new { e.Reembolso, e.Agencia, e.CodigoBarras, e.Estado, e.Servicio, e.Horario, e.Retorno })
-                .FirstOrDefaultAsync();
-            if (registrado != null && CambioDeReembolsoBloqueado(registrado.Reembolso, enviosAgencia.Reembolso,
-                    registrado.CodigoBarras, registrado.Estado, _perfilesAgencias.Perfil(registrado.Agencia) is Infraestructure.Agencias.Perfiles.IPerfilConGestionRemota))
+                .ToListAsync())
+                .FirstOrDefault();
+
+            // NestoAPI#725 (Carlos, 28/10/26; sustituye los bloqueos de #512, reembolso, y del envío 249990, retorno): nunca
+            // una cosa en nuestra BD y otra en la de la agencia. Con CTT/Innovatrans los datos del envío viajaron al registrarlo
+            // (imprimir la etiqueta): si este PUT cambia alguno, solo se guarda si el usuario confirma que la agencia se lo ha
+            // confirmado por teléfono, y queda marcado. Si no, 409 y nada guardado. GLS (tramita al cierre) sigue igual.
+            List<DatosQueViajaronALaAgencia.CampoCambiado> cambiosQueViajaron = new List<DatosQueViajaronALaAgencia.CampoCambiado>();
+            if (registrado != null && DatosQueViajaronALaAgencia.EstaRegistradoEnLaAgencia(registrado.CodigoBarras, registrado.Estado,
+                    _perfilesAgencias.Perfil(registrado.Agencia) is Infraestructure.Agencias.Perfiles.IPerfilConGestionRemota))
             {
-                return BadRequest($"El envío {id} ya está registrado en la agencia con {registrado.Reembolso:C} de reembolso y no se puede cambiar desde aquí: " +
-                    "la agencia seguiría cobrando el importe antiguo. Anula el envío (Borrar) y vuelve a tramitarlo con el reembolso correcto.");
+                cambiosQueViajaron = DatosQueViajaronALaAgencia.Diferencias(registrado, enviosAgencia);
             }
-            // Envío 249990 (Aida, 28/10/26): lo mismo con el RETORNO. Se registró en CTT sin retorno al imprimir, luego se marcó
-            // «Con retorno» por aquí y CTT nunca lo supo («no habéis grabado el retorno»). El retorno también viaja al registrar.
-            if (registrado != null && CambioDeRetornoBloqueado(registrado.Retorno, enviosAgencia.Retorno,
-                    registrado.CodigoBarras, registrado.Estado, _perfilesAgencias.Perfil(registrado.Agencia) is Infraestructure.Agencias.Perfiles.IPerfilConGestionRemota))
+            if (cambiosQueViajaron.Count > 0 && !confirmadoConLaAgencia)
             {
-                return BadRequest($"El envío {id} ya está registrado en la agencia {(registrado.Retorno == 0 ? "sin retorno" : "con otro tipo de retorno")} y no se puede cambiar desde aquí: " +
-                    "la agencia no se enteraría. Use «Modificar datos» (anula el envío en la agencia y lo registra de nuevo con el retorno) o anule el envío y vuelva a tramitarlo.");
+                List<string> campos = cambiosQueViajaron.Select(c => c.Campo).ToList();
+                string mensaje = DatosQueViajaronALaAgencia.MensajeCambioSinAgencia(id, campos);
+                var error = new HttpError(mensaje)
+                {
+                    ["Codigo"] = CODIGO_CAMBIO_SIN_AGENCIA,
+                    ["Campos"] = campos,
+                    ["Mensaje"] = mensaje
+                };
+                return ResponseMessage(new HttpResponseMessage(HttpStatusCode.Conflict)
+                {
+                    Content = new ObjectContent<HttpError>(error, new System.Net.Http.Formatting.JsonMediaTypeFormatter())
+                });
+            }
+            if (cambiosQueViajaron.Any(c => c.Campo == "Reembolso") && registrado.FechaPagoReembolso.HasValue)
+            {
+                // Como en «Modificar datos» (Carlos 14/12/16): un reembolso ya cobrado no se toca.
+                return BadRequest($"No se puede cambiar el reembolso del envío {id}, porque ya está cobrado.");
             }
 
             // NestoAPI#546 (28/09/26, envíos 249165/249181/249182): un pendiente de GLS se guardó con el
@@ -832,16 +862,26 @@ namespace NestoAPI.Controllers
             }
 
             enviosAgencia.Usuario = User?.Identity?.Name ?? "NestoAPI";
-            RecortarTextosLibres(enviosAgencia);
-            db.Entry(enviosAgencia).State = EntityState.Modified;
-            // NestoAPI#259: DetalleEstado lo escribe SOLO el poll de seguimiento. Como este PUT marca
-            // la entidad entera como Modified, el cliente lo pisaría con el valor que cargó al abrir
-            // la pestaña (o con null si es una versión anterior de Nesto): se excluye del UPDATE.
-            db.Entry(enviosAgencia).Property(e => e.DetalleEstado).IsModified = false;
 
             try
             {
-                await db.SaveChangesAsync();
+                if (cambiosQueViajaron.Count > 0)
+                {
+                    // Confirmado con la agencia: se guarda y queda marcado (historia + Modificaciones, y el reembolso contabilizado).
+                    string usuario = UsuarioAuditoriaHelper.ParaAuditoria(UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"));
+                    ITramitacionEnviosService servicio = tramitacionEnviosService ?? new TramitacionEnviosService(db);
+                    _ = await servicio.GuardarCambioConfirmadoPorAgenciaAsync(id, cambiosQueViajaron, registrado.Reembolso, enviosAgencia.Reembolso,
+                        confirmacionAgencia.Trim(), usuario, async () =>
+                        {
+                            MarcarEnvioModificado(enviosAgencia);
+                            _ = await db.SaveChangesAsync();
+                        });
+                }
+                else
+                {
+                    MarcarEnvioModificado(enviosAgencia);
+                    _ = await db.SaveChangesAsync();
+                }
             }
             catch (DbUpdateConcurrencyException)
             {
@@ -862,6 +902,17 @@ namespace NestoAPI.Controllers
             // cliente pueda encadenar modificaciones sobre el mismo objeto sin recargar (antes
             // 204 sin cuerpo; 200 con cuerpo es compatible con quien solo mira IsSuccessStatusCode).
             return Ok(new { enviosAgencia.RowVersion });
+        }
+
+        /// <summary>
+        /// El PUT marca la entidad entera como Modified. NestoAPI#259: DetalleEstado lo escribe SOLO el poll de seguimiento,
+        /// así que se excluye del UPDATE (el cliente lo pisaría con el valor que cargó al abrir la pestaña).
+        /// internal virtual para interceptarlo en los tests (db.Entry no es fakeable).
+        /// </summary>
+        internal virtual void MarcarEnvioModificado(EnviosAgencia enviosAgencia)
+        {
+            db.Entry(enviosAgencia).State = EntityState.Modified;
+            db.Entry(enviosAgencia).Property(e => e.DetalleEstado).IsModified = false;
         }
 
         // POST: api/EnviosAgencias/5/Tramitar
@@ -2963,32 +3014,6 @@ namespace NestoAPI.Controllers
         // (sin BBDD), por eso se cachea estáticamente.
         private static readonly Infraestructure.Agencias.Perfiles.RegistroAgencias _perfilesAgencias =
             Infraestructure.Agencias.Perfiles.RegistroAgencias.PorReflexionSinPuerta();
-
-        /// <summary>
-        /// NestoAPI#512: ¿hay que rechazar un PUT que cambia el reembolso? Solo cuando el envío ya está
-        /// registrado en una agencia de gestión remota (CTT, Innovatrans: tiene albarán y está en curso o
-        /// más), porque allí el importe ya viajó al registrar y cambiarlo aquí dejaría a la agencia
-        /// cobrando el importe antiguo. Las clásicas (GLS) mandan el reembolso al cierre y siguen igual.
-        /// Pura, para testear sin base de datos.
-        /// </summary>
-        internal static bool CambioDeReembolsoBloqueado(decimal reembolsoBD, decimal reembolsoNuevo, string codigoBarras, short estado, bool agenciaConGestionRemota)
-        {
-            if (!agenciaConGestionRemota || reembolsoBD == reembolsoNuevo)
-            {
-                return false;
-            }
-            return !string.IsNullOrWhiteSpace(codigoBarras) && estado >= Constantes.Agencias.ESTADO_EN_CURSO;
-        }
-
-        /// <summary>Envío 249990: igual que el reembolso, el tipo de retorno (adicional RET / recogida) viaja al registrar.</summary>
-        internal static bool CambioDeRetornoBloqueado(short retornoBD, short retornoNuevo, string codigoBarras, short estado, bool agenciaConGestionRemota)
-        {
-            if (!agenciaConGestionRemota || retornoBD == retornoNuevo)
-            {
-                return false;
-            }
-            return !string.IsNullOrWhiteSpace(codigoBarras) && estado >= Constantes.Agencias.ESTADO_EN_CURSO;
-        }
 
         /// <summary>
         /// NestoAPI#204: rechazos por combinación agencia + destino (mensaje de error o null si es
