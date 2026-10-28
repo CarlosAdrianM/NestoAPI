@@ -82,6 +82,46 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         }
 
         /// <summary>
+        /// Lo mismo que <see cref="Correos"/>, pero diciendo de qué usuarios (sin dominio) es cada correo, para aplicar la
+        /// preferencia de avisos de cada uno (<see cref="PreferenciaAvisosPromesaRiesgo"/>).
+        /// </summary>
+        public List<KeyValuePair<string, List<string>>> CorreosConUsuarios()
+        {
+            var resultado = new List<KeyValuePair<string, List<string>>>();
+            void Anadir(string correo, IEnumerable<string> usuarios)
+            {
+                string limpio = correo?.Trim().ToLowerInvariant();
+                List<string> lista = (usuarios ?? Enumerable.Empty<string>()).Select(SinDominio).Where(u => !string.IsNullOrWhiteSpace(u)).ToList();
+                int donde = resultado.FindIndex(r => r.Key == limpio);
+                if (donde < 0)
+                {
+                    resultado.Add(new KeyValuePair<string, List<string>>(limpio, lista));
+                }
+                else
+                {
+                    resultado[donde].Value.AddRange(lista.Where(u => !resultado[donde].Value.Contains(u, StringComparer.OrdinalIgnoreCase)));
+                }
+            }
+            bool hayQueUsarRespaldo = !Comerciales.Any();
+            foreach (ComercialPedido comercial in Comerciales)
+            {
+                if (EsComercialReal(comercial) && EsCorreoValido(comercial.Correo))
+                {
+                    Anadir(comercial.Correo, comercial.Usuarios);
+                }
+                else
+                {
+                    hayQueUsarRespaldo = true;
+                }
+            }
+            if (hayQueUsarRespaldo && EsCorreoValido(CorreoUsuarioPedido))
+            {
+                Anadir(CorreoUsuarioPedido, new[] { UsuarioPedido });
+            }
+            return resultado;
+        }
+
+        /// <summary>
         /// Usuarios (con dominio, como los guarda el buzón de Nesto) que reciben el aviso en la campana:
         /// los de cada comercial real; por cada comercial sin usuario (o si no hay comerciales), quien
         /// grabó el pedido. Sin duplicados.

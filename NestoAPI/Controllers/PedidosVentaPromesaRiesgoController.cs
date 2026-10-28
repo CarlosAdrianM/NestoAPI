@@ -45,6 +45,46 @@ namespace NestoAPI.Controllers
             this.vendedores = vendedores;
         }
 
+        /// <summary>Carlos (28/10/26): lo que recibe el usuario (parámetro AvisosPedidosEnRiesgo). Sustituibles en los tests.</summary>
+        internal Func<string, string> LeerPreferencia { get; set; }
+        internal Func<string, string, string> GuardarPreferencia { get; set; }
+
+        // GET api/PedidosVenta/PromesaEnRiesgo/Avisos
+        /// <summary>Qué avisos de pedidos en riesgo recibe el usuario (Todo | SoloCorreo | SoloCampana | Nada) y las opciones.</summary>
+        [HttpGet]
+        [Route("api/PedidosVenta/PromesaEnRiesgo/Avisos")]
+        [ResponseType(typeof(AvisosPromesaRiesgoDTO))]
+        public IHttpActionResult GetAvisos()
+        {
+            string usuario = User?.Identity?.Name;
+            if (string.IsNullOrWhiteSpace(usuario))
+            {
+                return Unauthorized();
+            }
+            Func<string, string> leer = LeerPreferencia ?? (u => PreferenciaAvisosPromesaRiesgo.Leer(db, u));
+            return Ok(AvisosPromesaRiesgoDTO.De(leer(usuario)));
+        }
+
+        // PUT api/PedidosVenta/PromesaEnRiesgo/Avisos   { "Valor": "SoloCorreo" }
+        /// <summary>Cambia lo que recibe el usuario. 400 si el valor no es uno de los cuatro.</summary>
+        [HttpPut]
+        [Route("api/PedidosVenta/PromesaEnRiesgo/Avisos")]
+        [ResponseType(typeof(AvisosPromesaRiesgoDTO))]
+        public IHttpActionResult PutAvisos([FromBody] AvisosPromesaRiesgoDTO peticion)
+        {
+            string usuario = User?.Identity?.Name;
+            if (string.IsNullOrWhiteSpace(usuario))
+            {
+                return Unauthorized();
+            }
+            if (!PreferenciaAvisosPromesaRiesgo.EsValido(peticion?.Valor))
+            {
+                return BadRequest($"El valor tiene que ser uno de: {string.Join(", ", PreferenciaAvisosPromesaRiesgo.OPCIONES)}.");
+            }
+            Func<string, string, string> guardar = GuardarPreferencia ?? ((u, v) => PreferenciaAvisosPromesaRiesgo.Guardar(db, u, v));
+            return Ok(AvisosPromesaRiesgoDTO.De(guardar(usuario, peticion.Valor)));
+        }
+
         // GET api/PedidosVenta/PromesaEnRiesgo?empresa=1&vendedor=JGP&resueltos=true
         /// <summary>
         /// NestoAPI#693: los pedidos registrados en PedidosPromesaRiesgo sin resolver y con algo pendiente, de la fecha prometida

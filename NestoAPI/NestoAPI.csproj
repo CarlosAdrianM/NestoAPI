@@ -971,6 +971,7 @@
     <Compile Include="Infraestructure\PedidosVenta\Retencion\RetencionPedido.cs" />
     <Compile Include="Infraestructure\PedidosVenta\Retencion\ServicioRetencionPedidos.cs" />
     <Compile Include="Infraestructure\PedidosVenta\PromesaRiesgo\AvisadorPromesaRiesgo.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\PromesaRiesgo\PreferenciaAvisosPromesaRiesgo.cs" />
     <Compile Include="Infraestructure\PedidosVenta\PromesaRiesgo\CambiosCompraPromesaRiesgo.cs" />
     <Compile Include="Infraestructure\PedidosVenta\PromesaRiesgo\EvaluadorPromesaRiesgo.cs" />
     <Compile Include="Infraestructure\PedidosVenta\PromesaRiesgo\EventosPromesaRiesgo.cs" />

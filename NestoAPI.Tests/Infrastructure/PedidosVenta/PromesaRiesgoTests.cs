@@ -667,6 +667,113 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             CollectionAssert.AreEqual(new[] { "javier@nuevavision.es", "alberto@nuevavision.es", "carlosadrian@nuevavision.es", "manuelrodriguez@nuevavision.es" }, d.Correos);
         }
 
+        // ---------- Carlos (28/10/26): cada usuario elige qué avisos recibe ----------
+
+        [TestMethod]
+        public void PreferenciaAvisos_NormalizaYDecideCanales()
+        {
+            Assert.AreEqual("Todo", PreferenciaAvisosPromesaRiesgo.Normalizar(null));
+            Assert.AreEqual("Todo", PreferenciaAvisosPromesaRiesgo.Normalizar("lo que sea"));
+            Assert.AreEqual("SoloCorreo", PreferenciaAvisosPromesaRiesgo.Normalizar(" solocorreo "));
+            Assert.IsTrue(PreferenciaAvisosPromesaRiesgo.Campana("Todo") && PreferenciaAvisosPromesaRiesgo.Correo("Todo"));
+            Assert.IsTrue(!PreferenciaAvisosPromesaRiesgo.Campana("SoloCorreo") && PreferenciaAvisosPromesaRiesgo.Correo("SoloCorreo"));
+            Assert.IsTrue(PreferenciaAvisosPromesaRiesgo.Campana("SoloCampana") && !PreferenciaAvisosPromesaRiesgo.Correo("SoloCampana"));
+            Assert.IsTrue(!PreferenciaAvisosPromesaRiesgo.Campana("Nada") && !PreferenciaAvisosPromesaRiesgo.Correo("Nada"));
+            Assert.IsFalse(PreferenciaAvisosPromesaRiesgo.EsValido("Siempre"));
+            Assert.AreEqual(4, AvisosPromesaRiesgoDTO.De("Nada").Opciones.Count);
+            Assert.AreEqual("Nada (solo la ventana)", AvisosPromesaRiesgoDTO.De("nada").Texto);
+        }
+
+        [TestMethod]
+        public void Destinatarios_ConPreferencias_CadaUnoRecibeLoQueEligio()
+        {
+            var comerciales = new ComercialesPedido
+            {
+                Pedido = PEDIDO,
+                Comerciales = new List<ComercialPedido>
+                {
+                    new ComercialPedido { Vendedor = "IF", Correo = "javier@nuevavision.es", Usuarios = new List<string> { "Javier" } }
+                }
+            };
+            var jefe = new ComercialesPedido
+            {
+                Comerciales = new List<ComercialPedido> { new ComercialPedido { Vendedor = "ASH", Correo = "alberto@nuevavision.es", Usuarios = new List<string> { "Alberto" } } }
+            };
+            DestinatariosPromesaRiesgo todos = AvisadorPromesaRiesgo.Componer(comerciales, new[] { jefe }, new[] { "Carlos", "Manuel" },
+                new[] { new KeyValuePair<string, string>("Carlos", "carlosadrian@nuevavision.es"), new KeyValuePair<string, string>("Manuel", "manuelrodriguez@nuevavision.es") });
+            CollectionAssert.AreEqual(new[] { "Javier" }, todos.UsuariosDeCorreo["javier@nuevavision.es"]);
+            CollectionAssert.AreEqual(new[] { "Carlos" }, todos.UsuariosDeCorreo["carlosadrian@nuevavision.es"]);
+
+            var preferencias = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Carlos"] = "SoloCorreo", ["Manuel"] = "Nada", ["Alberto"] = "SoloCampana"
+            };
+            DestinatariosPromesaRiesgo d = AvisadorPromesaRiesgo.AplicarPreferencias(todos, u => preferencias.TryGetValue(u, out string v) ? v : null);
+
+            CollectionAssert.AreEqual(new[] { "NUEVAVISION\\Javier", "NUEVAVISION\\Alberto" }, d.Usuarios, "Javier sin fila = Todo; Carlos solo correo; Manuel nada");
+            CollectionAssert.AreEqual(new[] { "javier@nuevavision.es", "carlosadrian@nuevavision.es" }, d.Correos, "Alberto solo campana; Manuel nada");
+        }
+
+        [TestMethod]
+        public void AplicarPreferencias_CorreoCompartido_SeQuedaSiAlgunoLoQuiere_YSinDueñoNoSeFiltra()
+        {
+            var d = new DestinatariosPromesaRiesgo();
+            d.Correos.AddRange(new[] { "tiendaonline@nuevavision.es", "sindueño@nuevavision.es" });
+            d.UsuariosDeCorreo["tiendaonline@nuevavision.es"] = new List<string> { "Laura", "Enrique" };
+            DestinatariosPromesaRiesgo filtrados = AvisadorPromesaRiesgo.AplicarPreferencias(d, u => u == "Laura" ? "Nada" : "Todo");
+            CollectionAssert.AreEqual(new[] { "tiendaonline@nuevavision.es", "sindueño@nuevavision.es" }, filtrados.Correos);
+            filtrados = AvisadorPromesaRiesgo.AplicarPreferencias(d, u => "Nada");
+            CollectionAssert.AreEqual(new[] { "sindueño@nuevavision.es" }, filtrados.Correos);
+        }
+
+        [TestMethod]
+        public async Task Avisador_LeeLaPreferenciaUnaVezPorUsuario_YSiFallaTodo()
+        {
+            ILectorComercialesPedido lector = A.Fake<ILectorComercialesPedido>();
+            A.CallTo(() => lector.Leer("1", PEDIDO)).Returns(new ComercialesPedido
+            {
+                Pedido = PEDIDO,
+                Comerciales = new List<ComercialPedido> { new ComercialPedido { Vendedor = "IF", Correo = "javier@nuevavision.es", Usuarios = new List<string> { "Javier" } } }
+            });
+            IServicioVendedores vendedores = A.Fake<IServicioVendedores>();
+            A.CallTo(() => vendedores.JefeEquipo("1", "IF")).Returns(Task.FromResult<VendedorDTO>(null));
+            var lecturas = new List<string>();
+            var real = new AvisadorPromesaRiesgo(lector, vendedores, A.Fake<IServicioNotificacionesPush>(), A.Fake<NestoAPI.Infraestructure.IServicioCorreoElectronico>(),
+                () => new List<string> { "Carlos", "Manuel" }, u => u == "Carlos" ? "carlosadrian@nuevavision.es" : null, _ => { },
+                preferenciaDeUsuario: u => { lecturas.Add(u); if (u == "Manuel") throw new InvalidOperationException("sin BD"); return u == "Carlos" ? "SoloCorreo" : null; });
+
+            DestinatariosPromesaRiesgo d = real.Destinatarios(new RiesgoPromesa { Empresa = "1", Pedido = PEDIDO, FechaPrometida = PROMETIDA, FechaNueva = VIERNES });
+            DestinatariosPromesaRiesgo otraVez = real.Destinatarios(new RiesgoPromesa { Empresa = "1", Pedido = PEDIDO + 1, FechaPrometida = PROMETIDA, FechaNueva = VIERNES });
+
+            CollectionAssert.AreEqual(new[] { "NUEVAVISION\\Javier", "NUEVAVISION\\Manuel" }, d.Usuarios, "Carlos solo correo; Manuel (falló la lectura) Todo");
+            CollectionAssert.AreEqual(new[] { "javier@nuevavision.es", "carlosadrian@nuevavision.es" }, d.Correos);
+            Assert.AreEqual(3, lecturas.Distinct().Count(), "Javier, Carlos y Manuel");
+            Assert.AreEqual(3, lecturas.Count, "una lectura por usuario y pasada, aunque haya dos pedidos");
+            await Task.CompletedTask;
+        }
+
+        [TestMethod]
+        public void Controlador_Avisos_LeeYGuardaLaPreferenciaDelUsuario()
+        {
+            (PedidosVentaPromesaRiesgoController controlador, _, _) = Controlador(Usuario("Carlos"));
+            var guardado = new Dictionary<string, string>();
+            controlador.LeerPreferencia = u => guardado.TryGetValue(u, out string v) ? v : null;
+            controlador.GuardarPreferencia = (u, v) => guardado[u] = PreferenciaAvisosPromesaRiesgo.Normalizar(v);
+
+            var leido = (OkNegotiatedContentResult<AvisosPromesaRiesgoDTO>)controlador.GetAvisos();
+            Assert.AreEqual("Todo", leido.Content.Valor);
+            Assert.AreEqual(4, leido.Content.Opciones.Count);
+
+            var cambiado = (OkNegotiatedContentResult<AvisosPromesaRiesgoDTO>)controlador.PutAvisos(new AvisosPromesaRiesgoDTO { Valor = "solocorreo" });
+            Assert.AreEqual("SoloCorreo", cambiado.Content.Valor);
+            Assert.AreEqual("Solo el correo resumen", cambiado.Content.Texto);
+            Assert.AreEqual("SoloCorreo", guardado[controlador.User.Identity.Name]);
+            Assert.AreEqual("SoloCorreo", ((OkNegotiatedContentResult<AvisosPromesaRiesgoDTO>)controlador.GetAvisos()).Content.Valor);
+
+            Assert.IsInstanceOfType(controlador.PutAvisos(new AvisosPromesaRiesgoDTO { Valor = "Siempre" }), typeof(BadRequestErrorMessageResult));
+            Assert.IsInstanceOfType(controlador.PutAvisos(null), typeof(BadRequestErrorMessageResult));
+        }
+
         [TestMethod]
         public void Destinatarios_VendedorGeneralNV_AvisaAQuienGraboElPedido()
         {

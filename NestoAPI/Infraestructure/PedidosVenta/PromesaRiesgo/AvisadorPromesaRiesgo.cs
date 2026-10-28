@@ -14,6 +14,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
     {
         public List<string> Usuarios { get; set; } = new List<string>();
         public List<string> Correos { get; set; } = new List<string>();
+        /// <summary>De qué usuarios (sin dominio) es cada correo; un correo sin usuarios conocidos no se filtra por preferencia.</summary>
+        public Dictionary<string, List<string>> UsuariosDeCorreo { get; set; } = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
     }
 
     public interface IAvisadorPromesaRiesgo
@@ -50,9 +52,13 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         private readonly Dictionary<string, ComercialesPedido> jefes = new Dictionary<string, ComercialesPedido>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<int, DestinatariosPromesaRiesgo> destinatariosPedido = new Dictionary<int, DestinatariosPromesaRiesgo>();
 
+        /// <param name="preferenciaDeUsuario">Carlos (28/10/26): (usuario) → Todo | SoloCorreo | SoloCampana | Nada
+        /// (<see cref="PreferenciaAvisosPromesaRiesgo"/>). Null = todos reciben todo.</param>
         public AvisadorPromesaRiesgo(ILectorComercialesPedido lector, IServicioVendedores vendedores, IServicioNotificacionesPush notificaciones,
-            IServicioCorreoElectronico correo, Func<List<string>> usuariosDireccion, Func<string, string> correoDeUsuario, Action<Exception> registrar = null)
+            IServicioCorreoElectronico correo, Func<List<string>> usuariosDireccion, Func<string, string> correoDeUsuario, Action<Exception> registrar = null,
+            Func<string, string> preferenciaDeUsuario = null)
         {
+            this.preferenciaDeUsuario = preferenciaDeUsuario;
             this.lector = lector;
             this.vendedores = vendedores;
             this.notificaciones = notificaciones;
@@ -174,7 +180,57 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             }
         }
 
-        /// <summary>Los del pedido (vendedores y sus jefes) más Dirección. Cacheados por pedido durante la pasada.</summary>
+        private readonly Func<string, string> preferenciaDeUsuario;
+        private readonly Dictionary<string, string> preferencias = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>La preferencia del usuario (sin dominio), leída una vez por pasada. Sin función o si falla, Todo.</summary>
+        private string Preferencia(string usuario)
+        {
+            string sinDominio = ComercialesPedido.SinDominio(usuario) ?? string.Empty;
+            if (preferencias.TryGetValue(sinDominio, out string guardada))
+            {
+                return guardada;
+            }
+            string valor = PreferenciaAvisosPromesaRiesgo.TODO;
+            if (preferenciaDeUsuario != null)
+            {
+                try
+                {
+                    valor = PreferenciaAvisosPromesaRiesgo.Normalizar(preferenciaDeUsuario(sinDominio));
+                }
+                catch (Exception ex)
+                {
+                    Registrar($"no se ha podido leer la preferencia de avisos de {sinDominio}", ex);
+                }
+            }
+            preferencias[sinDominio] = valor;
+            return valor;
+        }
+
+        /// <summary>
+        /// Pura: quita de la campana a quien no la quiere y del correo a quien no lo quiere. Un correo se queda mientras alguno de
+        /// sus usuarios lo quiera (o no se sepa de quién es).
+        /// </summary>
+        internal static DestinatariosPromesaRiesgo AplicarPreferencias(DestinatariosPromesaRiesgo destinatarios, Func<string, string> preferencia)
+        {
+            if (destinatarios == null || preferencia == null)
+            {
+                return destinatarios;
+            }
+            var filtrados = new DestinatariosPromesaRiesgo { UsuariosDeCorreo = destinatarios.UsuariosDeCorreo };
+            filtrados.Usuarios.AddRange(destinatarios.Usuarios.Where(u => PreferenciaAvisosPromesaRiesgo.Campana(preferencia(ComercialesPedido.SinDominio(u)))));
+            foreach (string correo in destinatarios.Correos)
+            {
+                List<string> usuarios = destinatarios.UsuariosDeCorreo != null && destinatarios.UsuariosDeCorreo.TryGetValue(correo, out List<string> lista) ? lista : null;
+                if (usuarios == null || usuarios.Count == 0 || usuarios.Any(u => PreferenciaAvisosPromesaRiesgo.Correo(preferencia(u))))
+                {
+                    filtrados.Correos.Add(correo);
+                }
+            }
+            return filtrados;
+        }
+
+        /// <summary>Los del pedido (vendedores y sus jefes) más Dirección, ya con la preferencia de cada uno. Cacheados por pedido durante la pasada.</summary>
         public DestinatariosPromesaRiesgo Destinatarios(RiesgoPromesa riesgo)
         {
             if (destinatariosPedido.TryGetValue(riesgo.Pedido, out DestinatariosPromesaRiesgo yaLeidos))
@@ -193,7 +249,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             }
             List<string> direccion = usuariosDireccion() ?? new List<string>();
             DestinatariosPromesaRiesgo destinatarios = Componer(comerciales, jefesPedido, direccion,
-                direccion.Select(u => correoDeUsuario(u)).Where(c => !string.IsNullOrWhiteSpace(c)).ToList());
+                direccion.Select(u => new KeyValuePair<string, string>(u, correoDeUsuario(u))).Where(c => !string.IsNullOrWhiteSpace(c.Value)).ToList());
+            destinatarios = AplicarPreferencias(destinatarios, Preferencia);
             destinatariosPedido[riesgo.Pedido] = destinatarios;
             return destinatarios;
         }
@@ -204,8 +261,34 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// </summary>
         internal static DestinatariosPromesaRiesgo Componer(ComercialesPedido comerciales, IEnumerable<ComercialesPedido> jefesEquipo,
             IEnumerable<string> usuariosDireccion, IEnumerable<string> correosDireccion)
+            => Componer(comerciales, jefesEquipo, usuariosDireccion,
+                (correosDireccion ?? Enumerable.Empty<string>()).Select(c => new KeyValuePair<string, string>(null, c)));
+
+        /// <summary>Con los correos de Dirección por usuario (usuario, correo), para que cuente la preferencia de cada uno.</summary>
+        internal static DestinatariosPromesaRiesgo Componer(ComercialesPedido comerciales, IEnumerable<ComercialesPedido> jefesEquipo,
+            IEnumerable<string> usuariosDireccion, IEnumerable<KeyValuePair<string, string>> correosDireccionPorUsuario)
         {
             var d = new DestinatariosPromesaRiesgo();
+            void Dueños(string correo, IEnumerable<string> usuarios)
+            {
+                string limpio = correo?.Trim().ToLowerInvariant();
+                if (string.IsNullOrEmpty(limpio))
+                {
+                    return;
+                }
+                if (!d.UsuariosDeCorreo.TryGetValue(limpio, out List<string> lista))
+                {
+                    lista = new List<string>();
+                    d.UsuariosDeCorreo[limpio] = lista;
+                }
+                foreach (string u in (usuarios ?? Enumerable.Empty<string>()).Select(ComercialesPedido.SinDominio).Where(u => !string.IsNullOrWhiteSpace(u)))
+                {
+                    if (!lista.Contains(u, StringComparer.OrdinalIgnoreCase))
+                    {
+                        lista.Add(u);
+                    }
+                }
+            }
             void Usuario(string usuario)
             {
                 string sinDominio = ComercialesPedido.SinDominio(usuario);
@@ -225,7 +308,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             if (comerciales != null)
             {
                 comerciales.UsuariosBuzon().ForEach(Usuario);
-                comerciales.Correos().ForEach(Correo);
+                foreach (KeyValuePair<string, List<string>> correoConUsuarios in comerciales.CorreosConUsuarios())
+                {
+                    Correo(correoConUsuarios.Key);
+                    Dueños(correoConUsuarios.Key, correoConUsuarios.Value);
+                }
             }
             foreach (ComercialesPedido jefe in jefesEquipo ?? Enumerable.Empty<ComercialesPedido>())
             {
@@ -233,15 +320,20 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 {
                     (comercial.Usuarios ?? new List<string>()).ForEach(Usuario);
                     Correo(comercial.Correo);
+                    Dueños(comercial.Correo, comercial.Usuarios);
                 }
             }
             foreach (string usuario in usuariosDireccion ?? Enumerable.Empty<string>())
             {
                 Usuario(usuario);
             }
-            foreach (string direccion in correosDireccion ?? Enumerable.Empty<string>())
+            foreach (KeyValuePair<string, string> direccion in correosDireccionPorUsuario ?? Enumerable.Empty<KeyValuePair<string, string>>())
             {
-                Correo(direccion);
+                Correo(direccion.Value);
+                if (!string.IsNullOrWhiteSpace(direccion.Key))
+                {
+                    Dueños(direccion.Value, new[] { direccion.Key });
+                }
             }
             return d;
         }

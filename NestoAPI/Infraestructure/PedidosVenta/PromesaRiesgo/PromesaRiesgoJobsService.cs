@@ -129,7 +129,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         internal static AvisadorPromesaRiesgo CrearAvisador(NVEntities db)
         {
             return new AvisadorPromesaRiesgo(new LectorComercialesPedido(db), new ServicioVendedores(), new ServicioNotificacionesPush(),
-                new ServicioCorreoElectronico(), InterruptorAvisoPromesaRiesgo.UsuariosDireccion, usuario => CorreoDeUsuario(db, usuario));
+                new ServicioCorreoElectronico(), InterruptorAvisoPromesaRiesgo.UsuariosDireccion, usuario => CorreoDeUsuario(db, usuario),
+                preferenciaDeUsuario: usuario => PreferenciaAvisosPromesaRiesgo.Leer(db, usuario));
         }
 
         /// <summary>El CorreoDefecto de ParametrosUsuario (Dirección: Carlos y Manuel lo tienen).</summary>

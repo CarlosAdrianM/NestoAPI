@@ -6,6 +6,8 @@ namespace NestoAPI.Models
         {
             // Colocar por orden alfabético
             public const string CorreoDefecto = "CorreoDefecto";
+            /// <summary>Carlos (28/10/26): qué avisos de pedidos en riesgo (#693) recibe el usuario: Todo | SoloCorreo | SoloCampana | Nada.</summary>
+            public const string AvisosPedidosEnRiesgo = "AvisosPedidosEnRiesgo";
             public const string CuentaBancoTarjeta = "CuentaBancoTarjeta";
             /// <summary>NestoAPI#345: días de antelación con los que se giran los recibos
             /// (default 1 si el usuario no tiene el parámetro; p. ej. 5 = estilo eléctricas).</summary>
