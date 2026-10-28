@@ -49,6 +49,7 @@ namespace NestoAPI.Tests.Controllers
             A.CallTo(() => db.ParametrosUsuario).Returns(fakeParametros);
 
             controller = new EnviosAgenciasController(db);
+            controller.MotivoPedidoRetenido = (e, p) => Task.FromResult<string>(null); // NestoAPI#698: sin BD en los tests
             // NestoAPI#513: sin efectos manuales (el fake devuelve listas vacías): manda la forma de pago.
             controller.ServicioPedidosVenta = A.Fake<NestoAPI.Infraestructure.PedidosVenta.IServicioPedidosVenta>();
             controller.Request = new System.Net.Http.HttpRequestMessage

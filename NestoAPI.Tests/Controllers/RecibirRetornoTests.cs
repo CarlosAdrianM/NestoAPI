@@ -33,6 +33,7 @@ namespace NestoAPI.Tests.Controllers
             A.CallTo(() => db.EnviosAgencias).Returns(fakeEnvios);
             A.CallTo(() => db.SaveChangesAsync()).Returns(Task.FromResult(1));
             controller = new EnviosAgenciasController(db);
+            controller.MotivoPedidoRetenido = (e, p) => Task.FromResult<string>(null); // NestoAPI#698: sin BD en los tests
         }
 
         private void ConUsuario(string nombre)

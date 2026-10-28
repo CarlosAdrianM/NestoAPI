@@ -110,11 +110,24 @@ namespace NestoAPI.Infraestructure.PedidosVenta.Retencion
                 Usuario = usuario?.Trim(),
                 Fecha = ahora
             };
-            retencion.Id = await repositorio.Insertar(retencion).ConfigureAwait(false);
+            // 28/10/26: primero el modo y luego la fila. El 28/10 el UPDATE falló (la restricción CK_CabPedidoVta_ModoServicio no admitía
+            // el 5) después de insertar la fila: el 929113 quedó «retenido» en la tabla sin estarlo y sin poder volver a retenerlo.
             await repositorio.CambiarModoServicio(empresa, numero, Constantes.Pedidos.ModosServicio.RETENIDO, usuario,
                 $"Pedido {numero} ModoServicio={Texto(cabecera.ModoServicio)}",
                 $"ModoServicio={Constantes.Pedidos.ModosServicio.RETENIDO} (Retenido #698 {(hasta.HasValue ? "hasta el " + TextosRetencion.Fecha(hasta) : "hasta nuevo aviso")}: {motivo})")
                 .ConfigureAwait(false);
+            try
+            {
+                retencion.Id = await repositorio.Insertar(retencion).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Sin fila no hay retención: el pedido vuelve a su modo para no dejarlo en 5 sin motivo ni quién.
+                await repositorio.CambiarModoServicio(empresa, numero, cabecera.ModoServicio, usuario,
+                    $"Pedido {numero} ModoServicio={Constantes.Pedidos.ModosServicio.RETENIDO}", $"ModoServicio={Texto(cabecera.ModoServicio)} (no se pudo guardar la retención #698)")
+                    .ConfigureAwait(false);
+                throw;
+            }
             await ResolverPromesaRiesgo(empresa, numero, ahora).ConfigureAwait(false);
             await AvisarSiYaTienePicking(retencion, cabecera).ConfigureAwait(false);
             return ResultadoRetencion.Exito(retencion);

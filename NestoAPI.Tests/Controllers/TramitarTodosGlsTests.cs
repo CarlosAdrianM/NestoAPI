@@ -66,6 +66,7 @@ namespace NestoAPI.Tests.Controllers
 
             controller = new EnviosAgenciasController(db, fakeCierre)
             {
+                MotivoPedidoRetenido = (e, p) => Task.FromResult<string>(null), // NestoAPI#698: sin BD en los tests
                 GlsTramitarPorApi = () => true,
                 ClienteGls = fakeGls,
                 HoyGls = () => HOY,
@@ -415,6 +416,7 @@ namespace NestoAPI.Tests.Controllers
 
             controller = new EnviosAgenciasController(db, fakeFabrica)
             {
+                MotivoPedidoRetenido = (e, p) => Task.FromResult<string>(null), // NestoAPI#698: sin BD en los tests
                 GlsTramitarPorApi = () => true,
                 ClienteGls = fakeGrabaServicios,
                 ClienteTspGls = fakeTsp,

@@ -49,6 +49,7 @@ namespace NestoAPI.Tests.Controllers
                 .ReturnsLazily((AgenciaLlamadaWeb l) => l);
 
             controller = new EnviosAgenciasController(db, fakeFabrica);
+            controller.MotivoPedidoRetenido = (e, p) => Task.FromResult<string>(null); // NestoAPI#698: sin BD en los tests
             controller.Request = new System.Net.Http.HttpRequestMessage
             {
                 RequestUri = new System.Uri("http://localhost/api/EnviosAgencias/1/Tramitar")
@@ -225,6 +226,21 @@ namespace NestoAPI.Tests.Controllers
         {
             StringAssert.Contains(EnviosAgenciasController.MensajeCupoAgenciaAgotado("CTT", System.TimeSpan.FromSeconds(20)), "en 1 minuto.");
             StringAssert.StartsWith(EnviosAgenciasController.MensajeCupoAgenciaAgotado(null, null), "La agencia limita");
+        }
+
+        [TestMethod]
+        public async Task Tramitar_PedidoRetenido_409ConElMotivo_SinTocarLaAgencia_698()
+        {
+            EnviosAgencia envio = EnvioPendiente();
+            ConEnvio(envio);
+            A.CallTo(() => fakeFabrica.Crear(Constantes.Agencias.AGENCIA_INNOVATRANS)).Returns(fakeAgencia);
+            controller.MotivoPedidoRetenido = (e, p) => Task.FromResult("El pedido está retenido por Alfredo: no se puede enviar");
+
+            var respuesta = (NegotiatedContentResult<string>)await controller.TramitarEnvio(1);
+
+            Assert.AreEqual(System.Net.HttpStatusCode.Conflict, respuesta.StatusCode);
+            StringAssert.Contains(respuesta.Content, "retenido");
+            A.CallTo(() => fakeAgencia.InsertarYEtiquetarAsync(A<DatosEnvioRemoto>._)).MustNotHaveHappened();
         }
 
         [TestMethod]

@@ -64,6 +64,7 @@ namespace NestoAPI.Tests.Controllers
 
             controller = new EnviosAgenciasController(db, fakeFabrica)
             {
+                MotivoPedidoRetenido = (e, p) => Task.FromResult<string>(null), // NestoAPI#698: sin BD en los tests
                 Request = new HttpRequestMessage { RequestUri = new Uri("http://localhost/api/EnviosAgencias/249723/Anular") }
             };
         }

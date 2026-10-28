@@ -37,6 +37,7 @@ namespace NestoAPI.Tests.Controllers
                 o.Implements<IQueryable<EnvioHistoria>>().Implements<IDbAsyncEnumerable<EnvioHistoria>>());
             A.CallTo(() => db.EnviosHistorias).Returns(fakeHistoria);
             controller = new EnviosAgenciasController(db);
+            controller.MotivoPedidoRetenido = (e, p) => Task.FromResult<string>(null); // NestoAPI#698: sin BD en los tests
         }
 
         private void ConHistoria(params EnvioHistoria[] filas)

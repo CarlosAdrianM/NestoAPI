@@ -35,6 +35,7 @@ namespace NestoAPI.Tests.Controllers
                 o.Implements<IQueryable<EnviosAgencia>>().Implements<IDbAsyncEnumerable<EnviosAgencia>>());
             A.CallTo(() => db.EnviosAgencias).Returns(fakeEnvios);
             controller = new EnviosAgenciasController(db);
+            controller.MotivoPedidoRetenido = (e, p) => Task.FromResult<string>(null); // NestoAPI#698: sin BD en los tests
         }
 
         private void ConEnvios(params EnviosAgencia[] envios)

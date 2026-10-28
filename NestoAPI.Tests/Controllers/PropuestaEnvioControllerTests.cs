@@ -38,8 +38,8 @@ namespace NestoAPI.Tests.Controllers
 
             propuestas = A.Fake<IPropuestaEnvioService>();
             registrados = new List<Exception>();
-            controller = new EnviosAgenciasController(db)
-            {
+            controller = new EnviosAgenciasController(db) {
+                MotivoPedidoRetenido = (e, p) => Task.FromResult<string>(null), // NestoAPI#698: sin BD en los tests
                 PropuestaEnvio = propuestas,
                 RegistrarEnElmah = ex => registrados.Add(ex)
             };
@@ -116,7 +116,7 @@ namespace NestoAPI.Tests.Controllers
         public async Task Post_SinPropuestaInyectada_LaSombraNoRompeElPost()
         {
             // Con la BD falsa, la propuesta real revienta al leer el pedido: el alta sigue y queda registrado.
-            var real = new EnviosAgenciasController(db) { RegistrarEnElmah = ex => registrados.Add(ex) };
+            var real = new EnviosAgenciasController(db) { MotivoPedidoRetenido = (e, p) => Task.FromResult<string>(null), RegistrarEnElmah = ex => registrados.Add(ex) };
             real.Request = new System.Net.Http.HttpRequestMessage { RequestUri = new Uri("http://localhost/api/EnviosAgencias") };
 
             var resultado = await real.PostEnviosAgencia(EnvioDeNesto());

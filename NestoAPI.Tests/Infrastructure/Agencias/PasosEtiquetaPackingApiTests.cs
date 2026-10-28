@@ -53,6 +53,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
 
             var envios = new EnviosAgenciasController(db, fabrica)
             {
+                MotivoPedidoRetenido = (e, p) => Task.FromResult<string>(null), // NestoAPI#698: sin BD en los tests
                 LectorParametros = parametros,
                 ImpresoraEtiquetas = impresora,
                 GlsTramitarPorApi = () => false

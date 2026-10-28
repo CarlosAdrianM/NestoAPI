@@ -36,6 +36,7 @@ namespace NestoAPI.Tests.Controllers
             };
             controller = new EnviosAgenciasController(A.Fake<NVEntities>())
             {
+                MotivoPedidoRetenido = (e, p) => Task.FromResult<string>(null), // NestoAPI#698: sin BD en los tests
                 PlazasAgencias = RegistroPlazasAgencias.PorDefecto(clienteGls, ex => registrados.Add(ex)),
                 CargarAgenciaTransporte = numero => Task.FromResult(agencias.TryGetValue(numero, out AgenciaTransporte a) ? a : null),
                 RegistrarEnElmah = ex => registrados.Add(ex)

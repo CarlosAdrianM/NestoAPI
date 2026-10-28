@@ -45,6 +45,7 @@ namespace NestoAPI.Tests.Controllers
             A.CallTo(() => db.SaveChangesAsync()).Returns(Task.FromResult(1));
             controller = new EnviosAgenciasController(db)
             {
+                MotivoPedidoRetenido = (e, p) => Task.FromResult<string>(null), // NestoAPI#698: sin BD en los tests
                 User = new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim(ClaimTypes.Name, @"NUEVAVISION\aida") }, "Bearer"))
             };
         }

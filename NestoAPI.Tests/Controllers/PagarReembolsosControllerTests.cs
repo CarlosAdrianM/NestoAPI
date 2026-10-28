@@ -30,6 +30,7 @@ namespace NestoAPI.Tests.Controllers
             db = A.Fake<NVEntities>();
             fakeServicio = A.Fake<ITramitacionEnviosService>();
             controller = new EnviosAgenciasController(db, fakeServicio);
+            controller.MotivoPedidoRetenido = (e, p) => Task.FromResult<string>(null); // NestoAPI#698: sin BD en los tests
         }
 
         private void ConUsuario(string nombre)
