@@ -10,6 +10,7 @@ using NestoAPI.Infrastructure;
 using NestoAPI.Models;
 using NestoAPI.Models.Facturas;
 using System;
+using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Security.Claims;
@@ -30,6 +31,7 @@ namespace NestoAPI.Controllers
         private readonly NVEntities db;
         private readonly IServicioPedidosParaFacturacion servicioPedidos;
         private readonly IServicioAgruparPorPO servicioAgruparPorPO;
+        private readonly IServicioFacturarFinDeMes servicioFinDeMes;
 
         /// <summary>
         /// Constructor por defecto (usado en producción)
@@ -39,6 +41,7 @@ namespace NestoAPI.Controllers
             db = new NVEntities();
             servicioPedidos = new ServicioPedidosParaFacturacion(db);
             servicioAgruparPorPO = CrearServicioAgruparPorPO(db);
+            servicioFinDeMes = CrearServicioFinDeMes(db);
         }
 
         /// <summary>
@@ -48,13 +51,21 @@ namespace NestoAPI.Controllers
             NVEntities db,
             IServicioPedidosParaFacturacion servicioPedidos,
             IServicioAgruparPorPO servicioAgruparPorPO = null,
-            Func<IGestorFacturacionRutas> fabricaGestor = null)
+            Func<IGestorFacturacionRutas> fabricaGestor = null,
+            IServicioFacturarFinDeMes servicioFinDeMes = null)
         {
             this.db = db ?? throw new ArgumentNullException(nameof(db));
             this.servicioPedidos = servicioPedidos ?? throw new ArgumentNullException(nameof(servicioPedidos));
             this.servicioAgruparPorPO = servicioAgruparPorPO ?? CrearServicioAgruparPorPO(db);
             this.fabricaGestor = fabricaGestor;
+            this.servicioFinDeMes = servicioFinDeMes ?? CrearServicioFinDeMes(db);
         }
+
+        /// <summary>NestoAPI#727: interruptor Facturacion:FinDeMesPorApi (se fakea en los tests).</summary>
+        internal Func<bool> FinDeMesPorApi { get; set; } = InterruptorFinDeMesPorApi.EstaActivo;
+
+        /// <summary>NestoAPI#727: hoy, para la fecha de corte por defecto (se fakea en los tests).</summary>
+        internal Func<DateTime> Hoy { get; set; } = () => DateTime.Today;
 
         // Para tests: sustituye el gestor real (con sus servicios) por uno falso.
         private readonly Func<IGestorFacturacionRutas> fabricaGestor;
@@ -88,6 +99,16 @@ namespace NestoAPI.Controllers
             return new ServicioAgruparPorPO(
                 db,
                 new EstrategiaAgrupacionPO(db),
+                new MotorAgrupacionPedidos(db),
+                new ServicioFacturas(db));
+        }
+
+        // NestoAPI#727: el fin de mes, con el mismo db compartido y el mismo motor que la agrupación por P.O.
+        private static IServicioFacturarFinDeMes CrearServicioFinDeMes(NVEntities db)
+        {
+            return new ServicioFacturarFinDeMes(
+                db,
+                new EstrategiaAgrupacionFinDeMes(db),
                 new MotorAgrupacionPedidos(db),
                 new ServicioFacturas(db));
         }
@@ -334,6 +355,62 @@ namespace NestoAPI.Controllers
         }
 
         /// <summary>
+        /// NestoAPI#727: facturación de FIN DE MES (lo que hacían prdAgruparAlbaranesVta y el Nesto viejo). Para cada cliente
+        /// con pedidos de periodo FDM sin P.O., reúne en un pedido (el del cliente principal) los albaranes hasta la fecha de
+        /// corte de todos sus contactos y lo factura. Los pedidos con P.O. no entran (van por AgruparPorPO). Un error en un
+        /// cliente no para a los demás.
+        /// </summary>
+        /// <remarks>
+        /// PERMISOS REQUERIDOS: Administración, Dirección o Informática. Detrás de Facturacion:FinDeMesPorApi (apagado: 400).
+        /// Body: { Empresa, FechaCorte (yyyy-MM-dd; por defecto el último día del mes anterior), Cliente?, Contacto? }.
+        /// </remarks>
+        [HttpPost]
+        [Route("FinDeMes")]
+        public async Task<IHttpActionResult> FacturarFinDeMes([FromBody] FacturarFinDeMesRequestDTO request)
+        {
+            if (!TienePermisosFinDeMes())
+                return StatusCode(HttpStatusCode.Forbidden);
+
+            if (!FinDeMesPorApi())
+                return BadRequest(InterruptorFinDeMesPorApi.MOTIVO_APAGADO);
+
+            request = request ?? new FacturarFinDeMesRequestDTO();
+            string empresa = string.IsNullOrWhiteSpace(request.Empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : request.Empresa.Trim();
+            string cliente = string.IsNullOrWhiteSpace(request.Cliente) ? null : request.Cliente.Trim();
+            string contacto = string.IsNullOrWhiteSpace(request.Contacto) ? null : request.Contacto.Trim();
+            if (contacto != null && cliente == null)
+                return BadRequest("Para facturar un solo contacto indique también el cliente.");
+
+            DateTime hoy = Hoy().Date;
+            DateTime fechaCorte;
+            if (string.IsNullOrWhiteSpace(request.FechaCorte))
+            {
+                fechaCorte = new DateTime(hoy.Year, hoy.Month, 1).AddDays(-1);
+            }
+            else if (!DateTime.TryParseExact(request.FechaCorte.Trim(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out fechaCorte))
+            {
+                return BadRequest($"La fecha de corte «{request.FechaCorte}» no es válida: use el formato yyyy-MM-dd.");
+            }
+            if (fechaCorte.Date > hoy)
+                return BadRequest($"La fecha de corte ({fechaCorte:dd/MM/yyyy}) no puede ser posterior a hoy.");
+
+            try
+            {
+                string usuario = ObtenerUsuarioActual();
+                if (string.IsNullOrEmpty(usuario))
+                    return Unauthorized();
+
+                ResultadoFacturacionFinDeMes resultado = await servicioFinDeMes.Facturar(empresa, fechaCorte.Date, cliente, contacto, usuario);
+                return Ok(resultado);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(ex);
+                return InternalServerError(ex);
+            }
+        }
+
+        /// <summary>
         /// Genera un preview (simulación) de facturación de rutas SIN crear nada en la BD.
         /// Muestra qué albaranes, facturas y notas de entrega se crearían, con sus importes.
         /// Útil para validar contra el sistema legacy antes de facturar.
@@ -421,6 +498,20 @@ namespace NestoAPI.Controllers
             return TienePermisosFacturacion() ||
                    user.IsInRoleSinDominio(Constantes.GruposSeguridad.TIENDAS) ||
                    user.IsInRoleSinDominio(Constantes.GruposSeguridad.ADMINISTRACION);
+        }
+
+        /// <summary>
+        /// NestoAPI#727: el fin de mes es cosa de Administración (más Dirección e Informática).
+        /// </summary>
+        private bool TienePermisosFinDeMes()
+        {
+            var user = User as ClaimsPrincipal;
+            if (user == null)
+                return false;
+
+            return user.IsInRoleSinDominio(Constantes.GruposSeguridad.ADMINISTRACION) ||
+                   user.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION) ||
+                   user.IsInRoleSinDominio(Constantes.GruposSeguridad.INFORMATICA);
         }
 
         /// <summary>

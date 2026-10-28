@@ -894,6 +894,15 @@
     <Compile Include="Infraestructure\Facturas\Agrupacion\ResultadoAgrupacionPO.cs" />
     <Compile Include="Infraestructure\Facturas\Agrupacion\IServicioAgruparPorPO.cs" />
     <Compile Include="Infraestructure\Facturas\Agrupacion\ServicioAgruparPorPO.cs" />
+    <Compile Include="Infraestructure\Facturas\Agrupacion\DestinoAgrupacion.cs" />
+    <Compile Include="Infraestructure\Facturas\Agrupacion\GrupoPedidosFinDeMes.cs" />
+    <Compile Include="Infraestructure\Facturas\Agrupacion\IEstrategiaAgrupacionFinDeMes.cs" />
+    <Compile Include="Infraestructure\Facturas\Agrupacion\EstrategiaAgrupacionFinDeMes.cs" />
+    <Compile Include="Infraestructure\Facturas\Agrupacion\ResultadoFacturacionFinDeMes.cs" />
+    <Compile Include="Infraestructure\Facturas\Agrupacion\IServicioFacturarFinDeMes.cs" />
+    <Compile Include="Infraestructure\Facturas\Agrupacion\ServicioFacturarFinDeMes.cs" />
+    <Compile Include="Infraestructure\Facturas\Agrupacion\InterruptorFinDeMesPorApi.cs" />
+    <Compile Include="Models\Facturas\FacturarFinDeMesRequestDTO.cs" />
     <Compile Include="Infraestructure\GestorPrecios.cs" />
     <Compile Include="Infraestructure\CondicionesPrecio\OtrosAparatosNoPuedeLlevarDescuento.cs" />
     <Compile Include="Infraestructure\CondicionesPrecio\RamasonNoPuedeLlevarNingunDescuento.cs" />

@@ -616,6 +616,9 @@
     <Compile Include="Infrastructure\Facturas\Agrupacion\MotorAgrupacionPedidosTests.cs" />
     <Compile Include="Infrastructure\Facturas\Agrupacion\EstrategiaAgrupacionPOTests.cs" />
     <Compile Include="Infrastructure\Facturas\Agrupacion\ServicioAgruparPorPOTests.cs" />
+    <Compile Include="Infrastructure\Facturas\Agrupacion\EstrategiaAgrupacionFinDeMesTests.cs" />
+    <Compile Include="Infrastructure\Facturas\Agrupacion\ServicioFacturarFinDeMesTests.cs" />
+    <Compile Include="Controllers\FacturacionRutasControllerFinDeMesTests.cs" />
     <Compile Include="Infrastructure\GestorKitsTests.cs" />
     <Compile Include="Infrastructure\Filters\GlobalExceptionFilterContextTests.cs" />
     <Compile Include="Infrastructure\PlanesVentajas\PlanesVentajasServiceTests.cs" />

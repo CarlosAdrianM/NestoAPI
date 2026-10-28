@@ -20,5 +20,12 @@ namespace NestoAPI.Infraestructure.Facturas.Agrupacion
         /// No persiste: el llamante hace SaveChanges. Devuelve el pedido destino.
         /// </summary>
         CabPedidoVta Agrupar(IEnumerable<CabPedidoVta> origenes, CabPedidoVta destino);
+
+        /// <summary>
+        /// NestoAPI#727 (fin de mes): igual que <see cref="Agrupar(IEnumerable{CabPedidoVta}, CabPedidoVta)"/>, pero solo
+        /// mueve las líneas en albarán cuya fecha de albarán sea igual o anterior a <paramref name="fechaAlbaranHasta"/>
+        /// (día completo). Con <c>null</c> mueve todas las líneas en albarán (agrupación por P.O.).
+        /// </summary>
+        CabPedidoVta Agrupar(IEnumerable<CabPedidoVta> origenes, CabPedidoVta destino, System.DateTime? fechaAlbaranHasta);
     }
 }

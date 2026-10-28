@@ -67,29 +67,9 @@ namespace NestoAPI.Infraestructure.Facturas.Agrupacion
                 throw new ArgumentException("El grupo no tiene pedidos.", nameof(grupo));
             }
 
-            string contactoPrincipal = ContactoClientePrincipal(grupo.Empresa, grupo.Cliente);
-
-            // Preferimos el pedido (más antiguo) cuyo contacto ya sea el del cliente principal.
-            CabPedidoVta destino = grupo.Pedidos
-                .Where(p => !string.IsNullOrEmpty(contactoPrincipal)
-                         && string.Equals((p.Contacto ?? string.Empty).Trim(), contactoPrincipal,
-                                StringComparison.OrdinalIgnoreCase))
-                .OrderBy(p => p.Número)
-                .FirstOrDefault();
-
-            if (destino != null)
-            {
-                return destino;
-            }
-
-            // Si ninguno es el principal, tomamos el más antiguo y le ponemos el contacto
-            // del principal en cabecera para que el deudor de la factura sea el principal.
-            destino = grupo.Pedidos.OrderBy(p => p.Número).First();
-            if (!string.IsNullOrEmpty(contactoPrincipal))
-            {
-                destino.Contacto = contactoPrincipal;
-            }
-            return destino;
+            // NestoAPI#727: la elección es común con el fin de mes (DestinoAgrupacion).
+            string contactoPrincipal = DestinoAgrupacion.ContactoClientePrincipal(db, grupo.Empresa, grupo.Cliente);
+            return DestinoAgrupacion.Elegir(grupo.Pedidos, contactoPrincipal);
         }
 
         private static bool PedidoListoParaAgrupar(CabPedidoVta pedido)
@@ -97,17 +77,6 @@ namespace NestoAPI.Infraestructure.Facturas.Agrupacion
             return pedido.LinPedidoVtas != null
                 && pedido.LinPedidoVtas.Any()
                 && pedido.LinPedidoVtas.All(l => l.Estado >= Constantes.EstadosLineaVenta.ALBARAN);
-        }
-
-        private string ContactoClientePrincipal(string empresa, string cliente)
-        {
-            return db.Clientes
-                .Where(c => c.Empresa == empresa
-                         && c.Nº_Cliente == cliente
-                         && c.ClientePrincipal)
-                .Select(c => c.Contacto)
-                .FirstOrDefault()
-                ?.Trim();
         }
     }
 }
