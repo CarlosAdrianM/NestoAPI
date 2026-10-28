@@ -399,6 +399,8 @@
     <Compile Include="Controllers\ComisionesControllerTests.cs" />
     <Compile Include="Controllers\FacturasControllerDescargaTests.cs" />
     <Compile Include="Controllers\FacturasControllerEnvioCorreoTests.cs" />
+    <Compile Include="Controllers\EnvioDocumentosCorreoControllerTests.cs" />
+    <Compile Include="Infraestructure\GestorEnvioDocumentosCorreoTests.cs" />
     <Compile Include="Controllers\VideosProductosControllerTests.cs" />
     <Compile Include="Controllers\VideosControllerBorrarTests.cs" />
     <Compile Include="Infraestructure\Videos\GestorBorradoVideosTests.cs" />
