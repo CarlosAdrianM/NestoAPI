@@ -145,6 +145,127 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
                 Constantes.Pedidos.ModosServicio.NormalizarAlCrear(new PedidoVentaDTO { modoServicio = 5 }, 3), "tampoco al crear");
         }
 
+        // ---------- Servicio: Retener con picking en curso (Carlos, 28/10/26) ----------
+
+        [TestMethod]
+        public async Task Retener_ConPickingEnCurso_AvisaAlAlmacen_YSeLoDiceAlUsuario()
+        {
+            var repo = new RepositorioPedidosRetenidosEnMemoria();
+            CabeceraPedidoRetencion cabecera = repo.Cabecera(929057, modo: 1);
+            cabecera.LineasEnPicking = 2;
+            cabecera.PickingsEnCurso = "99813, 99812";
+            var avisos = new List<(RetencionPedidoDTO retencion, CabeceraPedidoRetencion cabecera, List<int> pickings)>();
+            var servicio = new ServicioRetencionPedidos(repo, null, () => AHORA, ex => { }, (r, c, p) => { avisos.Add((r, c, p)); return Task.CompletedTask; });
+
+            ResultadoRetencion resultado = await servicio.Retener("1", 929057, new RetenerPedidoRequest { Motivo = "Cliente de viaje" }, ALFREDO);
+
+            Assert.IsNull(resultado.Error);
+            CollectionAssert.AreEqual(new List<int> { 99812, 99813 }, resultado.Retencion.PickingsEnCurso, "ordenados y sin repetir");
+            StringAssert.Contains(resultado.Retencion.Aviso, "los pickings 99812, 99813");
+            StringAssert.Contains(resultado.Retencion.Aviso, "Almacén");
+            Assert.AreEqual(1, avisos.Count);
+            Assert.AreEqual(929057, avisos[0].retencion.Pedido);
+            Assert.AreSame(cabecera, avisos[0].cabecera);
+            CollectionAssert.AreEqual(new List<int> { 99812, 99813 }, avisos[0].pickings);
+            Assert.AreEqual((byte?)5, repo.Cabeceras[929057].ModoServicio, "retenido igual: lo que para los pickings futuros es el modo");
+        }
+
+        [TestMethod]
+        public async Task Retener_SinPickingEnCurso_NiAvisoNiAlmacen()
+        {
+            var repo = new RepositorioPedidosRetenidosEnMemoria();
+            repo.Cabecera(929057, modo: 2);
+            int avisos = 0;
+            var servicio = new ServicioRetencionPedidos(repo, null, () => AHORA, ex => { }, (r, c, p) => { avisos++; return Task.CompletedTask; });
+
+            ResultadoRetencion resultado = await servicio.Retener("1", 929057, new RetenerPedidoRequest { Motivo = "Cliente de viaje" }, ALFREDO);
+
+            Assert.IsNull(resultado.Error);
+            Assert.IsNull(resultado.Retencion.Aviso);
+            Assert.AreEqual(0, resultado.Retencion.PickingsEnCurso.Count);
+            Assert.AreEqual(0, avisos);
+        }
+
+        [TestMethod]
+        public async Task Retener_SiFallaElAvisoAlAlmacen_RetieneIgual_LoRegistra_YAvisaAlUsuario()
+        {
+            var repo = new RepositorioPedidosRetenidosEnMemoria();
+            CabeceraPedidoRetencion cabecera = repo.Cabecera(929057, modo: 1);
+            cabecera.LineasEnPicking = 1;
+            cabecera.PickingsEnCurso = "99812";
+            var errores = new List<Exception>();
+            var servicio = new ServicioRetencionPedidos(repo, null, () => AHORA, errores.Add, (r, c, p) => throw new InvalidOperationException("sin red"));
+
+            ResultadoRetencion resultado = await servicio.Retener("1", 929057, new RetenerPedidoRequest { Motivo = "Cliente de viaje" }, ALFREDO);
+
+            Assert.IsNull(resultado.Error);
+            Assert.AreEqual((byte?)5, repo.Cabeceras[929057].ModoServicio);
+            StringAssert.Contains(resultado.Retencion.Aviso, "el picking 99812");
+            StringAssert.Contains(errores.Single().Message, "929057");
+            StringAssert.Contains(errores.Single().Message, "sin red");
+        }
+
+        [TestMethod]
+        public async Task AvisadorRetencionAlmacen_CampanaDeNestoYBuzonDeAriadna_ATodoElGrupoAlmacen()
+        {
+            var push = A.Fake<IServicioNotificacionesPush>();
+            var avisador = new AvisadorRetencionAlmacen(push, () => new List<string> { "Andre", "NUEVAVISION\\Santiago", " ", "andre", "(ninguno)" });
+            var retencion = new RetencionPedidoDTO { Empresa = "1", Pedido = 929057, Motivo = "Cliente de viaje", Usuario = ALFREDO, Fecha = AHORA };
+
+            await avisador.Avisar(retencion, new CabeceraPedidoRetencion { Cliente = "15191", NombreCliente = "Isabel Hurtado" }, new List<int> { 99812 });
+
+            A.CallTo(() => push.GuardarEnBuzonDeUsuario("NUEVAVISION\\Andre", Constantes.Aplicaciones.NESTO, A<NotificacionPushDTO>.That.Matches(n =>
+                n.Titulo.Contains("929057") && n.Titulo.Contains("99812") && n.Cuerpo.Contains("Alfredo") && n.Cuerpo.Contains("Isabel Hurtado") && n.Cuerpo.Contains("Cliente de viaje"))))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => push.GuardarEnBuzonDeUsuario("Andre", Constantes.Aplicaciones.ARIADNA, A<NotificacionPushDTO>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => push.GuardarEnBuzonDeUsuario("NUEVAVISION\\Santiago", Constantes.Aplicaciones.NESTO, A<NotificacionPushDTO>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => push.GuardarEnBuzonDeUsuario("Santiago", Constantes.Aplicaciones.ARIADNA, A<NotificacionPushDTO>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => push.GuardarEnBuzonDeUsuario(A<string>._, A<string>._, A<NotificacionPushDTO>._)).MustHaveHappened(4, Times.Exactly);
+        }
+
+        [TestMethod]
+        public async Task AvisadorRetencionAlmacen_SinNadieEnElGrupo_Lanza()
+        {
+            var avisador = new AvisadorRetencionAlmacen(A.Fake<IServicioNotificacionesPush>(), () => new List<string>());
+            await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => avisador.Avisar(new RetencionPedidoDTO { Pedido = 1 }, null, new List<int>()));
+        }
+
+        // ---------- Guardia: un retenido no sale (envío, etiqueta, albarán) ----------
+
+        [TestMethod]
+        public async Task Guardia_PedidoRetenido_DevuelveElMotivoConQuienYPorQue()
+        {
+            var repo = new RepositorioPedidosRetenidosEnMemoria();
+            repo.Cabecera(929057, modo: 5);
+            repo.Filas.Add(new RetencionPedidoDTO { Id = 1, Empresa = "1", Pedido = 929057, Motivo = "Cliente de viaje", Usuario = ALFREDO, Fecha = AHORA });
+
+            string motivo = await GuardiaPedidoRetenido.Motivo(repo, "1", 929057);
+
+            StringAssert.Contains(motivo, "929057");
+            StringAssert.Contains(motivo, "Alfredo");
+            StringAssert.Contains(motivo, "Cliente de viaje");
+            StringAssert.Contains(motivo, "Liberar");
+        }
+
+        [TestMethod]
+        public async Task Guardia_PedidoNoRetenido_OInexistente_Null()
+        {
+            var repo = new RepositorioPedidosRetenidosEnMemoria();
+            repo.Cabecera(929058, modo: 1);
+            Assert.IsNull(await GuardiaPedidoRetenido.Motivo(repo, "1", 929058));
+            Assert.IsNull(await GuardiaPedidoRetenido.Motivo(repo, "1", 1), "no existe: de eso se ocupa cada camino");
+            Assert.IsNull(await GuardiaPedidoRetenido.Motivo(repo, "1", 0));
+        }
+
+        [TestMethod]
+        public async Task Guardia_Modo5SinFilaViva_BloqueaIgual()
+        {
+            var repo = new RepositorioPedidosRetenidosEnMemoria();
+            repo.Cabecera(929057, modo: 5);
+            string motivo = await GuardiaPedidoRetenido.Motivo(repo, "1", 929057);
+            StringAssert.Contains(motivo, "retenido hasta nuevo aviso");
+        }
+
         // ---------- Servicio: Retener ----------
 
         [TestMethod]

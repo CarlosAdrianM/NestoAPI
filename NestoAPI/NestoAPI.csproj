@@ -964,6 +964,8 @@
     <Compile Include="Infraestructure\PedidosVenta\MantenerJuntoContado.cs" />
     <Compile Include="Infraestructure\PedidosVenta\OpcionesModosPedido.cs" />
     <Compile Include="Infraestructure\PedidosVenta\RepositorioServirPendienteAlHaberStock.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\Retencion\AvisadorRetencionAlmacen.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\Retencion\GuardiaPedidoRetenido.cs" />
     <Compile Include="Infraestructure\PedidosVenta\Retencion\PedidosRetenidosJobsService.cs" />
     <Compile Include="Infraestructure\PedidosVenta\Retencion\RepositorioPedidosRetenidos.cs" />
     <Compile Include="Infraestructure\PedidosVenta\Retencion\RetencionPedido.cs" />

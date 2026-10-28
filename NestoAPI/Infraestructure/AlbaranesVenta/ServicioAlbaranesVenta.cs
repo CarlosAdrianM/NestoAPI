@@ -17,6 +17,7 @@ namespace NestoAPI.Infraestructure.AlbaranesVenta
         private readonly bool dbEsExterno;
         private readonly Func<string, int, int, string, Task> trasAlbaran;
         private readonly Func<string, int, Task<List<FaltaSinQuitar>>> faltasSinQuitar;
+        private readonly Func<string, int, Task<string>> motivoPedidoRetenido;
 
         /// <summary>
         /// Constructor por defecto. Crea su propio NVEntities interno.
@@ -50,8 +51,18 @@ namespace NestoAPI.Infraestructure.AlbaranesVenta
         /// pedido. Sustituible en tests; en producción (null) es FaltasSinQuitarSalida con el mismo contexto.
         /// </summary>
         internal ServicioAlbaranesVenta(NVEntities dbExterno, Func<string, int, int, string, Task> trasAlbaran,
-            Func<string, int, Task<List<FaltaSinQuitar>>> faltasSinQuitar)
+            Func<string, int, Task<List<FaltaSinQuitar>>> faltasSinQuitar) : this(dbExterno, trasAlbaran, faltasSinQuitar, null)
         {
+        }
+
+        /// <summary>
+        /// NestoAPI#698: <paramref name="motivoPedidoRetenido"/> dice si el pedido está retenido (modo 5) y por qué; con motivo, no
+        /// hay albarán. Sustituible en tests; en producción (null) es <see cref="PedidosVenta.Retencion.GuardiaPedidoRetenido"/>.
+        /// </summary>
+        internal ServicioAlbaranesVenta(NVEntities dbExterno, Func<string, int, int, string, Task> trasAlbaran,
+            Func<string, int, Task<List<FaltaSinQuitar>>> faltasSinQuitar, Func<string, int, Task<string>> motivoPedidoRetenido)
+        {
+            this.motivoPedidoRetenido = motivoPedidoRetenido ?? PedidosVenta.Retencion.GuardiaPedidoRetenido.Motivo;
             this.trasAlbaran = trasAlbaran ?? NotasEntrega.CreadorNotaEntregaPendiente.TrasAlbaran;
             if (dbExterno != null)
             {
@@ -77,6 +88,13 @@ namespace NestoAPI.Infraestructure.AlbaranesVenta
                 {
                     StatusCode = System.Net.HttpStatusCode.Conflict
                 };
+            }
+
+            // NestoAPI#698 (Carlos, 28/10/26): un pedido retenido no se albaranea aunque ya tenga picking.
+            string retenido = await motivoPedidoRetenido(empresa, pedido).ConfigureAwait(false);
+            if (retenido != null)
+            {
+                throw new NestoBusinessException(retenido) { StatusCode = System.Net.HttpStatusCode.Conflict };
             }
 
             // Usar el db de la clase (puede ser externo o interno según el constructor)

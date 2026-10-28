@@ -23,6 +23,7 @@ namespace NestoAPI.Tests.Controllers
         {
             servicio = A.Fake<IServicioEnvioDesdePedido>();
             controller = new EnviosAgenciasController(A.Fake<NVEntities>()) { EnvioDesdePedido = servicio };
+            controller.MotivoPedidoRetenido = (e, p) => Task.FromResult<string>(null); // NestoAPI#698: sin BD en los tests
         }
 
         private void Devuelve(ResultadoEnvioDesdePedido resultado)
@@ -38,6 +39,18 @@ namespace NestoAPI.Tests.Controllers
 
             Assert.AreSame(dto, ((OkNegotiatedContentResult<EnvioDesdePedidoDTO>)respuesta).Content);
             A.CallTo(() => servicio.Crear(A<CrearEnvioDesdePedidoDTO>.That.Matches(p => p.Pedido == 927700), "NestoAPI")).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task PedidoRetenido_409ConElMotivo_SinLlamarAlServicio_698()
+        {
+            controller.MotivoPedidoRetenido = (e, p) => Task.FromResult(p == 927700 ? "El pedido 927700 está retenido por Alfredo: no se puede enviar" : null);
+
+            var respuesta = (NegotiatedContentResult<string>)await controller.PostEnvioDesdePedido(new CrearEnvioDesdePedidoDTO { Empresa = "1", Pedido = 927700, Peso = 2m });
+
+            Assert.AreEqual(HttpStatusCode.Conflict, respuesta.StatusCode);
+            StringAssert.Contains(respuesta.Content, "retenido");
+            A.CallTo(() => servicio.Crear(A<CrearEnvioDesdePedidoDTO>._, A<string>._)).MustNotHaveHappened();
         }
 
         [TestMethod]

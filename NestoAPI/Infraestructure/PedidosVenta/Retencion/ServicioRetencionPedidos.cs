@@ -40,10 +40,15 @@ namespace NestoAPI.Infraestructure.PedidosVenta.Retencion
         private readonly IRepositorioPromesaRiesgo promesas;
         private readonly Func<DateTime> reloj;
         private readonly Action<Exception> registrar;
+        private readonly Func<RetencionPedidoDTO, CabeceraPedidoRetencion, List<int>, Task> avisarAlmacen;
 
+        /// <param name="avisarAlmacen">Qué hacer cuando el pedido retenido YA tiene picking en el almacén (retención, cabecera, pickings).
+        /// Null = campana de Nesto y buzón de Ariadna al grupo Almacén (<see cref="AvisadorRetencionAlmacen"/>).</param>
         public ServicioRetencionPedidos(IRepositorioPedidosRetenidos repositorio, IRepositorioPromesaRiesgo promesas = null,
-            Func<DateTime> reloj = null, Action<Exception> registrar = null)
+            Func<DateTime> reloj = null, Action<Exception> registrar = null,
+            Func<RetencionPedidoDTO, CabeceraPedidoRetencion, List<int>, Task> avisarAlmacen = null)
         {
+            this.avisarAlmacen = avisarAlmacen ?? ((r, c, p) => new AvisadorRetencionAlmacen().Avisar(r, c, p));
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
             this.promesas = promesas;
             this.reloj = reloj ?? (() => DateTime.Now);
@@ -111,6 +116,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta.Retencion
                 $"ModoServicio={Constantes.Pedidos.ModosServicio.RETENIDO} (Retenido #698 {(hasta.HasValue ? "hasta el " + TextosRetencion.Fecha(hasta) : "hasta nuevo aviso")}: {motivo})")
                 .ConfigureAwait(false);
             await ResolverPromesaRiesgo(empresa, numero, ahora).ConfigureAwait(false);
+            await AvisarSiYaTienePicking(retencion, cabecera).ConfigureAwait(false);
             return ResultadoRetencion.Exito(retencion);
         }
 
@@ -151,6 +157,31 @@ namespace NestoAPI.Infraestructure.PedidosVenta.Retencion
                 UsuarioLiberacion = usuario?.Trim(),
                 MotivoLiberacion = motivoLiberacion
             });
+        }
+
+        /// <summary>
+        /// Carlos, 28/10/26: el modo 5 solo para los pickings que aún no existen. Si el pedido ya tenía líneas en un picking,
+        /// el almacén las está preparando y, sin aviso, salían a la agencia como si nada. Se avisa al grupo Almacén (campana de
+        /// Nesto y buzón de Ariadna) y se le dice a quien retiene. Si falla el aviso, se registra y la retención queda hecha igual
+        /// (el bloqueo de envío y albarán no depende de esto).
+        /// </summary>
+        private async Task AvisarSiYaTienePicking(RetencionPedidoDTO retencion, CabeceraPedidoRetencion cabecera)
+        {
+            List<int> pickings = cabecera?.Pickings() ?? new List<int>();
+            if ((cabecera?.LineasEnPicking ?? 0) <= 0 && pickings.Count == 0)
+            {
+                return;
+            }
+            retencion.PickingsEnCurso = pickings;
+            retencion.Aviso = TextosRetencion.AvisoPickingEnCurso(retencion.Pedido, pickings);
+            try
+            {
+                await avisarAlmacen(retencion, cabecera, pickings).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                registrar(new Exception($"[Retenidos #698] El pedido {retencion.Pedido} se ha retenido con picking en curso pero no se ha podido avisar al almacén: {ex.Message}", ex));
+            }
         }
 
         /// <summary>#693: un retenido no es una promesa incumplida. Si falla, se registra y Retener sigue.</summary>

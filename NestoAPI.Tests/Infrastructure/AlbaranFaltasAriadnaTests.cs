@@ -43,6 +43,24 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public async Task CrearAlbaran_PedidoRetenido_NoLlamaAlProcedimiento_698()
+        {
+            bool trasAlbaran = false;
+            var servicio = new ServicioAlbaranesVenta(A.Fake<NVEntities>(),
+                (e, p, a, u) => { trasAlbaran = true; return Task.CompletedTask; },
+                (e, p) => Task.FromResult(new List<FaltaSinQuitar>()),
+                (e, p) => Task.FromResult(p == 929057 ? "El pedido 929057 está retenido por Alfredo desde el 28/10/2026 hasta nuevo aviso: Cliente de viaje. No se puede enviar ni albaranear" : null));
+
+            NestoBusinessException ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(
+                () => servicio.CrearAlbaran("1", 929057, "Carlos"));
+
+            Assert.AreEqual(HttpStatusCode.Conflict, ex.StatusCode);
+            StringAssert.Contains(ex.Message, "retenido");
+            StringAssert.Contains(ex.Message, "Cliente de viaje");
+            Assert.IsFalse(trasAlbaran);
+        }
+
+        [TestMethod]
         public void Mensaje_VariasFaltas_LasNombraTodas()
         {
             string mensaje = FaltasSinQuitarSalida.Mensaje(927646, new List<FaltaSinQuitar>

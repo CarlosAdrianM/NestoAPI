@@ -47,6 +47,7 @@ namespace NestoAPI.Tests.Controllers
             A.CallTo(() => fakeFabrica.Crear(Constantes.Agencias.AGENCIA_CTT)).Returns(fakeAgencia);
 
             controller = new EnviosAgenciasController(db, fakeFabrica);
+            controller.MotivoPedidoRetenido = (e, p) => Task.FromResult<string>(null); // NestoAPI#698: sin BD en los tests
             controller.Request = new System.Net.Http.HttpRequestMessage
             {
                 RequestUri = new System.Uri("http://localhost/api/EnviosAgencias")

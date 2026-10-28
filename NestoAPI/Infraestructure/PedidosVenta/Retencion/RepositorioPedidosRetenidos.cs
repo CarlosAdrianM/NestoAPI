@@ -92,7 +92,10 @@ namespace NestoAPI.Infraestructure.PedidosVenta.Retencion
         internal const string SQL_CABECERA = @"SELECT RTRIM(c.Empresa) AS Empresa, c.Número AS Pedido, c.ModoServicio, c.ServirJunto, c.NotaEntrega,
        RTRIM(c.[Nº Cliente]) AS Cliente, RTRIM(cl.Nombre) AS NombreCliente, RTRIM(c.Vendedor) AS Vendedor,
        CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.LinPedidoVta l WITH (NOLOCK) WHERE l.Empresa = c.Empresa AND l.Número = c.Número AND l.Estado BETWEEN -1 AND 1)
-                 THEN 1 ELSE 0 END AS bit) AS QuedaPendiente
+                 THEN 1 ELSE 0 END AS bit) AS QuedaPendiente,
+       (SELECT COUNT(*) FROM dbo.LinPedidoVta l WITH (NOLOCK) WHERE l.Empresa = c.Empresa AND l.Número = c.Número AND l.Estado = 1 AND l.Picking > 0) AS LineasEnPicking,
+       STUFF((SELECT DISTINCT ', ' + CAST(l.Picking AS varchar(12)) FROM dbo.LinPedidoVta l WITH (NOLOCK)
+              WHERE l.Empresa = c.Empresa AND l.Número = c.Número AND l.Estado = 1 AND l.Picking > 0 FOR XML PATH('')), 1, 2, '') AS PickingsEnCurso
 FROM dbo.CabPedidoVta c WITH (NOLOCK)
 LEFT JOIN dbo.Clientes cl WITH (NOLOCK) ON cl.Empresa = c.Empresa AND cl.[Nº Cliente] = c.[Nº Cliente] AND cl.Contacto = c.Contacto
 WHERE c.Empresa = @empresa AND c.Número = @pedido";

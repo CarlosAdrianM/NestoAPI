@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Configuration;
 using System.Globalization;
+using System.Linq;
 using NestoAPI.Models;
 
 namespace NestoAPI.Infraestructure.PedidosVenta.Retencion
@@ -30,6 +31,10 @@ namespace NestoAPI.Infraestructure.PedidosVenta.Retencion
         public string MotivoLiberacion { get; set; }
         /// <summary>Último recordatorio por la campana de un retenido sin fecha (la pasada nocturna).</summary>
         public DateTime? UltimoRecordatorio { get; set; }
+        /// <summary>Solo en la respuesta de Retener: los pickings que ya tenía el pedido en el almacén al retenerlo (vacía si ninguno).</summary>
+        public List<int> PickingsEnCurso { get; set; } = new List<int>();
+        /// <summary>Solo en la respuesta de Retener: lo que hay que decirle al usuario (el pedido ya tenía picking: se ha avisado al almacén). Null si nada.</summary>
+        public string Aviso { get; set; }
     }
 
     /// <summary>NestoAPI#698: una retención viva con el cliente y el vendedor del pedido (GET api/PedidosVenta/Retenidos).</summary>
@@ -68,6 +73,14 @@ namespace NestoAPI.Infraestructure.PedidosVenta.Retencion
         public bool NotaEntrega { get; set; }
         /// <summary>Alguna línea pendiente o en curso.</summary>
         public bool QuedaPendiente { get; set; }
+        /// <summary>Líneas en curso (estado 1) que ya tienen picking: están en el almacén y no las para el modo 5.</summary>
+        public int LineasEnPicking { get; set; }
+        /// <summary>Los números de picking de esas líneas, separados por coma (lo da la consulta).</summary>
+        public string PickingsEnCurso { get; set; }
+        public List<int> Pickings()
+        {
+            return (PickingsEnCurso ?? string.Empty).Split(',').Select(t => int.TryParse(t.Trim(), out int n) ? n : 0).Where(n => n > 0).Distinct().OrderBy(n => n).ToList();
+        }
         public string Cliente { get; set; }
         public string NombreCliente { get; set; }
         public string Vendedor { get; set; }
@@ -167,6 +180,51 @@ namespace NestoAPI.Infraestructure.PedidosVenta.Retencion
                 Tipo = TIPO_NOTIFICACION,
                 Datos = Datos(retencion, cabecera, "recordatorio")
             };
+        }
+
+        /// <summary>
+        /// Lo que ve quien retiene un pedido que YA tiene picking: el modo 5 solo para los pickings futuros; lo que está en el
+        /// almacén sigue su curso si nadie lo para. Se avisa al grupo Almacén y el servidor no deja hacer envío ni albarán.
+        /// </summary>
+        public static string AvisoPickingEnCurso(int pedido, List<int> pickings)
+        {
+            string lista = ListaPickings(pickings);
+            return $"El pedido {pedido} ya tiene {lista} en el almacén. Se ha avisado a Almacén para que no lo entregue a la agencia " +
+                "y el servidor no dejará hacer el envío ni el albarán mientras esté retenido, pero confírmelo con el almacén.";
+        }
+
+        /// <summary>Campana de Nesto y buzón de Ariadna al grupo Almacén: hay que parar un picking que ya está en marcha.</summary>
+        public static NotificacionPushDTO NotificacionPickingEnCurso(RetencionPedidoDTO retencion, CabeceraPedidoRetencion cabecera, List<int> pickings)
+        {
+            string cliente = TextoCliente(cabecera);
+            string lista = ListaPickings(pickings);
+            string hasta = retencion.HastaFecha.HasValue ? $"hasta el {Fecha(retencion.HastaFecha)}" : "hasta nuevo aviso";
+            return new NotificacionPushDTO
+            {
+                Titulo = $"NO ENTREGAR: pedido {retencion.Pedido} retenido con {lista}",
+                Cuerpo = $"{NombreUsuario(retencion.Usuario)} acaba de retener el pedido {retencion.Pedido}{cliente} {hasta} ({retencion.Motivo?.Trim()}), " +
+                    $"pero ya tiene {lista} en marcha. No lo entreguen a la agencia: aparten la mercancía o devuélvanla al hueco. " +
+                    "Mientras esté retenido, el servidor no deja crear el envío ni el albarán.",
+                Tipo = TIPO_NOTIFICACION,
+                Datos = Datos(retencion, cabecera, "picking-en-curso")
+            };
+        }
+
+        /// <summary>Lo que contesta el servidor cuando se intenta sacar (envío, etiqueta, albarán) un pedido retenido.</summary>
+        public static string BloqueoSalida(int pedido, RetencionPedidoDTO retencion)
+        {
+            string detalle = retencion != null ? Descripcion(retencion, mayusculaInicial: false) : "retenido hasta nuevo aviso";
+            return $"El pedido {pedido} está {detalle}. No se puede enviar ni albaranear: libérelo desde el pedido (botón «Liberar») si tiene que salir.";
+        }
+
+        private static string ListaPickings(List<int> pickings)
+        {
+            List<int> lista = (pickings ?? new List<int>()).Where(p => p > 0).Distinct().OrderBy(p => p).ToList();
+            if (lista.Count == 0)
+            {
+                return "un picking";
+            }
+            return lista.Count == 1 ? $"el picking {lista[0]}" : $"los pickings {string.Join(", ", lista)}";
         }
 
         private static string RetenidoPor(RetencionPedidoDTO retencion) => $"por {NombreUsuario(retencion.Usuario)} desde el {Fecha(retencion.Fecha)}";

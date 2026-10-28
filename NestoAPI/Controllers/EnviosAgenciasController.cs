@@ -17,6 +17,7 @@ using System.Net.Mail;
 using System.Text;
 using System.Configuration;
 using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.PedidosVenta.Retencion;
 using NestoAPI.Infraestructure.Agencias;
 using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Infraestructure.Agencias.Gls;
@@ -871,6 +872,12 @@ namespace NestoAPI.Controllers
             {
                 return NotFound();
             }
+            // NestoAPI#698: el envío de un pedido retenido no se registra en la agencia (ni se reimprime).
+            string retenido = await MotivoRetenido(envio.Empresa, envio.Pedido);
+            if (retenido != null)
+            {
+                return Content(HttpStatusCode.Conflict, retenido);
+            }
 
             // NestoAPI#552 (fase 2): con el interruptor encendido, la API graba el envío de GLS ella misma. Apagado (por
             // defecto), GLS sigue dando el 400 de abajo y se tramita desde Nesto (AgenciaASM). Fase 5: la 1 y la 5.
@@ -1227,6 +1234,12 @@ namespace NestoAPI.Controllers
             {
                 return ResultadoTramitarEnvioDTO.Error(numero, envio.Pedido, $"El envío {numero} no es de la agencia {agencia} (es de la {envio.Agencia}).");
             }
+            // NestoAPI#698: un pedido retenido no se tramita (tampoco en «Tramitar todos»).
+            string retenido = await MotivoRetenido(envio.Empresa, envio.Pedido);
+            if (retenido != null)
+            {
+                return ResultadoTramitarEnvioDTO.Error(numero, envio.Pedido, retenido);
+            }
             if (envio.Estado >= Constantes.Agencias.ESTADO_TRAMITADO)
             {
                 return new ResultadoTramitarEnvioDTO
@@ -1505,6 +1518,12 @@ namespace NestoAPI.Controllers
             if (envio == null)
             {
                 return NotFound();
+            }
+            // NestoAPI#698: sin etiqueta para un pedido retenido.
+            string retenido = await MotivoRetenido(envio.Empresa, envio.Pedido);
+            if (retenido != null)
+            {
+                return Content(HttpStatusCode.Conflict, retenido);
             }
 
             // NestoAPI#552 (fase 4): con el interruptor encendido, la etiqueta de GLS la monta la API (sin grabar en GLS).
@@ -2466,6 +2485,15 @@ namespace NestoAPI.Controllers
         }
 
         // NestoAPI#595 (slice 2): el alta desde el pedido. Perezosa e inyectable para los tests.
+        /// <summary>
+        /// NestoAPI#698 (Carlos, 28/10/26): un pedido retenido no sale: ni envío nuevo, ni tramitar ni etiqueta. (empresa, pedido)
+        /// → el motivo para el usuario o null. Sustituible en los tests; en producción, <see cref="GuardiaPedidoRetenido"/>.
+        /// </summary>
+        internal Func<string, int, Task<string>> MotivoPedidoRetenido { get; set; } = GuardiaPedidoRetenido.Motivo;
+
+        private async Task<string> MotivoRetenido(string empresa, int? pedido)
+            => pedido.HasValue && pedido.Value > 0 ? await MotivoPedidoRetenido(empresa, pedido.Value).ConfigureAwait(true) : null;
+
         private IServicioEnvioDesdePedido envioDesdePedido;
         internal IServicioEnvioDesdePedido EnvioDesdePedido
         {
@@ -2493,6 +2521,11 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(EnvioDesdePedidoDTO))]
         public async Task<IHttpActionResult> PostEnvioDesdePedido(CrearEnvioDesdePedidoDTO peticion)
         {
+            string retenido = await MotivoRetenido(peticion?.Empresa, peticion?.Pedido);
+            if (retenido != null)
+            {
+                return Content(HttpStatusCode.Conflict, retenido);
+            }
             string usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
             ResultadoEnvioDesdePedido resultado = await EnvioDesdePedido.Crear(peticion, usuario);
             switch (resultado.Tipo)
@@ -2642,6 +2675,12 @@ namespace NestoAPI.Controllers
             if (errorCatalogo != null)
             {
                 return BadRequest(errorCatalogo);
+            }
+            // NestoAPI#698: un pedido retenido no tiene envío.
+            string retenido = await MotivoRetenido(enviosAgencia.Empresa, enviosAgencia.Pedido);
+            if (retenido != null)
+            {
+                return Content(HttpStatusCode.Conflict, retenido);
             }
 
             enviosAgencia.Usuario = Infraestructure.UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
