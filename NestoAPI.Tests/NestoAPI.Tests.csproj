@@ -823,6 +823,7 @@
     <Compile Include="Models\Picking\GestorDiasEnServirTests.cs" />
     <Compile Include="Infrastructure\Picking\ReglasRutaPropiaTests.cs" />
     <Compile Include="Infrastructure\Picking\GestorSugerenciasRutaTests.cs" />
+    <Compile Include="Controllers\PickingControllerRutasPropiasTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\PuertaPublicacionTiendaTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\SincronizacionJobsServiceTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\GestorSincronizacionTests.cs" />

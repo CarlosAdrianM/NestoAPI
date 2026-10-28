@@ -51,6 +51,39 @@ namespace NestoAPI.Controllers
         }
 
         /// <summary>
+        /// Sugerencia 854: picking de PRIMERA HORA «Solo nuestra ruta». Saca únicamente los pedidos cuya ruta es propia
+        /// (AT y 16, las de <see cref="ReglasRutaPropia.RUTAS_PROPIAS"/>) con entrega hasta hoy, para que los repartidores
+        /// puedan salir a las 9 sin esperar al picking de las 11. El picking automático de cierre (las 11) sigue igual y
+        /// saca después todo lo demás (agencias). El horizonte de entrega es el del picking interactivo: a primera hora,
+        /// antes del corte, es hoy.
+        /// GET api/Picking/RutasPropias
+        /// </summary>
+        [HttpGet]
+        [Route("api/Picking/RutasPropias")]
+        [ResponseType(typeof(string))]
+        public async Task<IHttpActionResult> SacarPickingRutasPropias()
+        {
+            List<Ruta> rutasPropias = FiltrarRutasPropias(LeerRutasEmpresa());
+            List<PedidoPicking> pedidos = await Task.Run(() => SacarPickingDeRutas(rutasPropias));
+
+            return Ok(pedidos);
+        }
+
+        /// <summary>Sugerencia 854: de las rutas de la empresa, las propias (AT y 16), sin repetir la lista aquí.</summary>
+        internal static List<Ruta> FiltrarRutasPropias(IEnumerable<Ruta> rutas)
+        {
+            return (rutas ?? Enumerable.Empty<Ruta>())
+                .Where(r => r != null && ReglasRutaPropia.EsRutaPropia(r.Número))
+                .ToList();
+        }
+
+        /// <summary>Sugerencia 854: las rutas de la empresa por defecto. Sustituible en los tests.</summary>
+        internal Func<List<Ruta>> LeerRutasEmpresa { get; set; }
+
+        /// <summary>Sugerencia 854: saca el picking de esas rutas y devuelve los pedidos en picking. Sustituible en los tests.</summary>
+        internal Func<List<Ruta>, List<PedidoPicking>> SacarPickingDeRutas { get; set; }
+
+        /// <summary>
         /// NestoAPI#361: disparo MANUAL del picking de CIERRE del día (el de las 11h).
         ///
         /// Su ejecución normal ya no pasa por aquí: desde la migración a Hangfire la lanza el job
@@ -75,6 +108,13 @@ namespace NestoAPI.Controllers
         public PickingController()
         {
             CrearGestorSugerenciasRuta = () => new GestorSugerenciasRuta(new RepositorioSugerenciasRutaSql(Db));
+            LeerRutasEmpresa = () => Db.Rutas.Where(r => r.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO).ToList();
+            SacarPickingDeRutas = rutas =>
+            {
+                crearModulos();
+                gestorPicking.SacarPicking(rutas);
+                return gestorPicking.PedidosEnPicking();
+            };
         }
 
         // Revisión 13/10/26: el contexto que crea el controlador se libera en Dispose, como en el resto de controladores
