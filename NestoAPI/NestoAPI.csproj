@@ -613,6 +613,7 @@
     <Compile Include="Controllers\PedidosVentaController.cs" />
     <Compile Include="Controllers\PedidosVentaTransferenciaController.cs" />
     <Compile Include="Controllers\PedidosVentaSolicitudesController.cs" />
+    <Compile Include="Controllers\EnvioDocumentosCorreoController.cs" />
     <Compile Include="Controllers\PedidosVentaPromesaRiesgoController.cs" />
     <Compile Include="Controllers\ClientesRiesgoAbandonoController.cs" />
     <Compile Include="Controllers\PedidosVentaAnomaliasController.cs" />
@@ -914,6 +915,10 @@
     <Compile Include="Infraestructure\ErrorClienteException.cs" />
     <Compile Include="Infraestructure\ILogService.cs" />
     <Compile Include="Infraestructure\IServicioCorreoElectronico.cs" />
+    <Compile Include="Infraestructure\EnvioDocumentosCorreo\GestorEnvioDocumentosCorreo.cs" />
+    <Compile Include="Infraestructure\EnvioDocumentosCorreo\IProveedorDocumentosCorreo.cs" />
+    <Compile Include="Infraestructure\EnvioDocumentosCorreo\ProveedorDocumentosCorreo.cs" />
+    <Compile Include="Models\EnvioDocumentoCorreoDTO.cs" />
     <Compile Include="Infraestructure\IServicioGestorClientes.cs" />
     <Compile Include="Infraestructure\IServicioGestorStocks.cs" />
     <Compile Include="Infraestructure\IServicioPlantillaVenta.cs" />
