@@ -208,7 +208,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         }
 
         [TestMethod]
-        public void WebConfig_InterruptorDeGlsPorLaApi_ExisteYNaceApagado()
+        public void WebConfig_InterruptorDeGlsPorLaApi_ExisteYEstaEncendido()
         {
             // bin\Debug -> NestoAPI.Tests -> raíz de la solución -> NestoAPI\Web.config
             string ruta = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\..\..\NestoAPI\Web.config"));
@@ -218,8 +218,10 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             XmlNode nodo = xml.SelectSingleNode("/configuration/appSettings/add[@key='" + InterruptorTramitacionGls.CLAVE + "']");
 
             Assert.IsNotNull(nodo, "Falta la clave del interruptor en Web.config");
-            Assert.IsFalse(InterruptorTramitacionGls.EstaActivo(nodo.Attributes["value"].Value),
-                "La tramitación de GLS por la API nace apagada (#552, fase 2); si se enciende, que sea a propósito y cambiando este test");
+            // Nació apagada (#552, fase 2). ENCENDIDA el 28/10/26 por decisión de Carlos: la etiqueta de GLS sale desde el
+            // packing de Ariadna. Si hay que apagarla, que sea a propósito y cambiando este test.
+            Assert.IsTrue(InterruptorTramitacionGls.EstaActivo(nodo.Attributes["value"].Value),
+                "La tramitación de GLS por la API está encendida desde el 28/10/26 (#552 fase 4, etiquetas desde Ariadna)");
         }
 
         // ---------- Cliente HTTP (sin salir a la red) ----------
