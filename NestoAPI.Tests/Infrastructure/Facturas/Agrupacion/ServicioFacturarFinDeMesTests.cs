@@ -185,6 +185,23 @@ namespace NestoAPI.Tests.Infrastructure.Facturas.Agrupacion
         }
 
         [TestMethod]
+        public async Task Facturar_PedidoSinIva_SeSaltaElClienteSinTocarNada()
+        {
+            CabPedidoVta conIva = Pedido(100, "CLI-1", "5", Linea(1, Constantes.EstadosLineaVenta.ALBARAN, EN_OCTUBRE));
+            CabPedidoVta sinIva = Pedido(200, "CLI-1", "0", Linea(2, Constantes.EstadosLineaVenta.ALBARAN, EN_OCTUBRE));
+            sinIva.IVA = null;
+            ConfigurarCabPedidos(conIva, sinIva,
+                Pedido(300, "CLI-2", "0", Linea(3, Constantes.EstadosLineaVenta.ALBARAN, EN_OCTUBRE)));
+
+            ResultadoFacturacionFinDeMes resultado = await servicio.Facturar("1", CORTE, null, null, "usuario");
+
+            CollectionAssert.AreEqual(new[] { 300 }, facturados);
+            StringAssert.Contains(resultado.Saltados.Single().Motivo, "200");
+            Assert.AreEqual("5", conIva.Contacto, "no se le cambia el contacto a un cliente saltado");
+            Assert.IsFalse(conIva.Agrupada);
+        }
+
+        [TestMethod]
         public async Task Facturar_TodosConAlbaranesPosteriores_SeSalta()
         {
             CabPedidoVta mixto = Pedido(100, "CLI-1", "0",

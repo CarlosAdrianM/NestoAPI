@@ -227,6 +227,7 @@ namespace NestoAPI.Tests.Infrastructure.Facturas.Agrupacion
                 Nº_Cliente = cliente,
                 Contacto = contacto,
                 Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES,
+                IVA = "G21",
                 Agrupada = false,
                 LinPedidoVtas = lineas.ToList()
             };
