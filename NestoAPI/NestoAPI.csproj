@@ -542,6 +542,7 @@
     <Compile Include="Infraestructure\PreparacionAlmacen\AlmacenFotosBultos.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\CasadorEscaneos.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\CorreccionLecturasSalida.cs" />
+    <Compile Include="Infraestructure\PreparacionAlmacen\FichaProductoCompletaAlmacen.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\FichasProductoAlmacen.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\ProductosMismoHueco.cs" />
     <Compile Include="Infraestructure\PreparacionAlmacen\FotosProductoAlmacen.cs" />
@@ -587,6 +588,7 @@
     <Compile Include="Infraestructure\PreparacionAlmacen\AjusteImpresorasEtiquetas.cs" />
     <Compile Include="Models\PreparacionAlmacen\AjusteImpresoraEtiquetasDTO.cs" />
     <Compile Include="Controllers\EtiquetasImpresorasController.cs" />
+    <Compile Include="Models\PreparacionAlmacen\FichaProductoAlmacenDTO.cs" />
     <Compile Include="Models\PreparacionAlmacen\PreparacionAlmacenDTO.cs" />
     <Compile Include="Models\PreparacionAlmacen\BultosReposicionDTO.cs" />
     <Compile Include="Models\PreparacionAlmacen\RecepcionesDTO.cs" />
