@@ -95,7 +95,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta.Retencion
                  THEN 1 ELSE 0 END AS bit) AS QuedaPendiente,
        (SELECT COUNT(*) FROM dbo.LinPedidoVta l WITH (NOLOCK) WHERE l.Empresa = c.Empresa AND l.Número = c.Número AND l.Estado = 1 AND l.Picking > 0) AS LineasEnPicking,
        STUFF((SELECT DISTINCT ', ' + CAST(l.Picking AS varchar(12)) FROM dbo.LinPedidoVta l WITH (NOLOCK)
-              WHERE l.Empresa = c.Empresa AND l.Número = c.Número AND l.Estado = 1 AND l.Picking > 0 FOR XML PATH('')), 1, 2, '') AS PickingsEnCurso
+              WHERE l.Empresa = c.Empresa AND l.Número = c.Número AND l.Estado = 1 AND l.Picking > 0 FOR XML PATH('')), 1, 2, '') AS PickingsEnCurso,
+       (SELECT MIN(l.[Fecha Entrega]) FROM dbo.LinPedidoVta l WITH (NOLOCK) WHERE l.Empresa = c.Empresa AND l.Número = c.Número AND l.Estado = 1 AND l.Picking > 0) AS FechaEntregaPicking
 FROM dbo.CabPedidoVta c WITH (NOLOCK)
 LEFT JOIN dbo.Clientes cl WITH (NOLOCK) ON cl.Empresa = c.Empresa AND cl.[Nº Cliente] = c.[Nº Cliente] AND cl.Contacto = c.Contacto
 WHERE c.Empresa = @empresa AND c.Número = @pedido";

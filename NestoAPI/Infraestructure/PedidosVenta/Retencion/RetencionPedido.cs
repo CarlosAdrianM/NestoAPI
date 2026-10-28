@@ -77,6 +77,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta.Retencion
         public int LineasEnPicking { get; set; }
         /// <summary>Los números de picking de esas líneas, separados por coma (lo da la consulta).</summary>
         public string PickingsEnCurso { get; set; }
+        /// <summary>NestoAPI#722: la fecha de entrega más temprana de las líneas con picking; en el futuro = pedido aplazado.</summary>
+        public DateTime? FechaEntregaPicking { get; set; }
         public List<int> Pickings()
         {
             return (PickingsEnCurso ?? string.Empty).Split(',').Select(t => int.TryParse(t.Trim(), out int n) ? n : 0).Where(n => n > 0).Distinct().OrderBy(n => n).ToList();
@@ -208,6 +210,14 @@ namespace NestoAPI.Infraestructure.PedidosVenta.Retencion
                 Tipo = TIPO_NOTIFICACION,
                 Datos = Datos(retencion, cabecera, "picking-en-curso")
             };
+        }
+
+        /// <summary>NestoAPI#722: lo que contesta el servidor cuando se intenta sacar un pedido aplazado (picking con fecha de entrega futura).</summary>
+        public static string BloqueoAplazado(int pedido, DateTime fechaEntrega, List<int> pickings)
+        {
+            string lista = pickings == null || pickings.Count == 0 ? "picking" : pickings.Count == 1 ? $"el picking {pickings[0]}" : $"los pickings {string.Join(", ", pickings)}";
+            return $"El pedido {pedido} está aplazado hasta el {Fecha(fechaEntrega)} (tiene {lista} en el almacén con esa fecha de entrega). " +
+                "No se puede enviar ni albaranear antes: adelante la fecha de entrega desde el pedido si tiene que salir.";
         }
 
         /// <summary>Lo que contesta el servidor cuando se intenta sacar (envío, etiqueta, albarán) un pedido retenido.</summary>

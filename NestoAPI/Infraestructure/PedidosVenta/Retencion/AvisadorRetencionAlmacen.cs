@@ -41,9 +41,15 @@ namespace NestoAPI.Infraestructure.PedidosVenta.Retencion
                 .ToList();
         }
 
-        public async Task Avisar(RetencionPedidoDTO retencion, CabeceraPedidoRetencion cabecera, List<int> pickings)
+        public Task Avisar(RetencionPedidoDTO retencion, CabeceraPedidoRetencion cabecera, List<int> pickings)
         {
-            if (retencion == null)
+            return retencion == null ? Task.CompletedTask : Avisar(TextosRetencion.NotificacionPickingEnCurso(retencion, cabecera, pickings));
+        }
+
+        /// <summary>NestoAPI#722: la misma campana para cualquier aviso al grupo Almacén (aplazamiento con picking).</summary>
+        public async Task Avisar(NotificacionPushDTO notificacion)
+        {
+            if (notificacion == null)
             {
                 return;
             }
@@ -52,7 +58,6 @@ namespace NestoAPI.Infraestructure.PedidosVenta.Retencion
             {
                 throw new InvalidOperationException("No hay nadie en el grupo Almacén a quien avisar.");
             }
-            NotificacionPushDTO notificacion = TextosRetencion.NotificacionPickingEnCurso(retencion, cabecera, pickings);
             foreach (string usuario in usuarios)
             {
                 await notificaciones.GuardarEnBuzonDeUsuario(usuario, Constantes.Aplicaciones.NESTO, notificacion).ConfigureAwait(false);

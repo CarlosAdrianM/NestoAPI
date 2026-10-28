@@ -1,4 +1,5 @@
 ﻿using NestoAPI.Models;
+using System;
 using System.Threading.Tasks;
 
 namespace NestoAPI.Infraestructure.PedidosVenta.Retencion
@@ -19,13 +20,25 @@ namespace NestoAPI.Infraestructure.PedidosVenta.Retencion
             }
             string empresaLimpia = string.IsNullOrWhiteSpace(empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : empresa.Trim();
             CabeceraPedidoRetencion cabecera = await repositorio.LeerCabecera(empresaLimpia, pedido).ConfigureAwait(false);
-            if (cabecera == null || !Constantes.Pedidos.ModosServicio.EsRetenido(cabecera.ModoServicio))
+            if (cabecera == null)
             {
                 return null;
             }
-            RetencionPedidoDTO viva = await repositorio.LeerActiva(empresaLimpia, pedido).ConfigureAwait(false);
-            return TextosRetencion.BloqueoSalida(pedido, viva);
+            if (Constantes.Pedidos.ModosServicio.EsRetenido(cabecera.ModoServicio))
+            {
+                RetencionPedidoDTO viva = await repositorio.LeerActiva(empresaLimpia, pedido).ConfigureAwait(false);
+                return TextosRetencion.BloqueoSalida(pedido, viva);
+            }
+            // NestoAPI#722: aplazado = picking con fecha de entrega futura (solo se llega ahí aplazando desde el pedido)
+            if (cabecera.FechaEntregaPicking.HasValue && cabecera.FechaEntregaPicking.Value.Date > hoy().Date)
+            {
+                return TextosRetencion.BloqueoAplazado(pedido, cabecera.FechaEntregaPicking.Value, cabecera.Pickings());
+            }
+            return null;
         }
+
+        /// <summary>Para los tests: el día de hoy.</summary>
+        internal static Func<DateTime> hoy = () => DateTime.Today;
 
         /// <summary>El de producción: su propio contexto, como el resto de la retención.</summary>
         public static Task<string> Motivo(string empresa, int pedido) => Motivo(new RepositorioPedidosRetenidos(), empresa, pedido);

@@ -929,6 +929,14 @@ namespace NestoAPI.Controllers
             return Ok(resultadoCambio.Respuesta);
         }
 
+        /// <summary>NestoAPI#722: la campana al grupo Almacén al aplazar un pedido con picking (sustituible en los tests).</summary>
+        internal Infraestructure.PedidosVenta.Retencion.AvisadorRetencionAlmacen AvisadorAlmacen
+        {
+            get => avisadorAlmacen ?? (avisadorAlmacen = new Infraestructure.PedidosVenta.Retencion.AvisadorRetencionAlmacen());
+            set => avisadorAlmacen = value;
+        }
+        private Infraestructure.PedidosVenta.Retencion.AvisadorRetencionAlmacen avisadorAlmacen;
+
         /// <summary>NestoAPI#698: el servicio de Retener/Liberar (sustituible en los tests).</summary>
         internal Func<Infraestructure.PedidosVenta.Retencion.ServicioRetencionPedidos> CrearServicioRetencion { get; set; } = () =>
             new Infraestructure.PedidosVenta.Retencion.ServicioRetencionPedidos(
@@ -1443,6 +1451,10 @@ namespace NestoAPI.Controllers
             }
 
             bool hayAlgunaLineaModificada = false;
+            // NestoAPI#722 (Carlos, 28/10/26): aplazar la fecha de una línea con picking se acepta si la agencia aún no lo tiene
+            // (se avisa al usuario y a Almacén y el pedido no sale hasta la fecha); si ya está tramitado, se rechaza.
+            var lineasAplazadas = new List<Infraestructure.PedidosVenta.Retencion.LineaAplazable>();
+            List<Infraestructure.PedidosVenta.Retencion.EnvioDelPedido> enviosDelPedido = null;
             foreach (LinPedidoVta linea in cabPedidoVta.LinPedidoVtas.ToList())
             {
                 LineaPedidoVentaDTO lineaEncontrada = pedido.Lineas.SingleOrDefault(l => l.id == linea.Nº_Orden);
@@ -1464,8 +1476,29 @@ namespace NestoAPI.Controllers
                     if (lineaEncontrada != null && GestorPedidosVenta.CambiaFechaEntregaDeLineaConPicking(
                             linea.Picking != 0, linea.Estado, linea.Fecha_Entrega, lineaEncontrada.fechaEntrega))
                     {
-                        errorPersonalizado($"No se puede cambiar la fecha de entrega de la línea {linea.Nº_Orden} ({linea.Producto?.Trim()}) " +
-                            $"porque ya tiene picking: sigue siendo el {linea.Fecha_Entrega:dd/MM/yyyy}. Quite el picking primero o deje la fecha como estaba.");
+                        // NestoAPI#722: antes era «quite el picking primero»; ahora se aplaza o se rechaza según la agencia
+                        if (enviosDelPedido == null)
+                        {
+                            enviosDelPedido = db.EnviosAgencias
+                                .Where(e => e.Empresa == pedido.empresa && e.Pedido == pedido.numero)
+                                .Select(e => new Infraestructure.PedidosVenta.Retencion.EnvioDelPedido { Numero = e.Numero, Estado = e.Estado })
+                                .ToList();
+                        }
+                        if (Infraestructure.PedidosVenta.Retencion.AplazamientoPedidoConPicking.YaLoTieneLaAgencia(enviosDelPedido, out int envioEnAgencia))
+                        {
+                            errorPersonalizado(Infraestructure.PedidosVenta.Retencion.AplazamientoPedidoConPicking.MensajeRechazo(pedido.numero, envioEnAgencia));
+                        }
+                        DateTime fechaNueva = this.gestor.FechaEntregaAjustada(lineaEncontrada.fechaEntrega.Date, pedido.ruta, linea.Almacén);
+                        lineasAplazadas.Add(new Infraestructure.PedidosVenta.Retencion.LineaAplazable
+                        {
+                            NumeroOrden = linea.Nº_Orden,
+                            Producto = linea.Producto?.Trim(),
+                            Picking = linea.Picking ?? 0,
+                            FechaAnterior = linea.Fecha_Entrega,
+                            FechaNueva = fechaNueva
+                        });
+                        linea.Fecha_Entrega = fechaNueva;
+                        hayAlgunaLineaModificada = true;
                     }
                     continue;
                 }
@@ -2105,6 +2138,32 @@ namespace NestoAPI.Controllers
 
             // NestoAPI#688: la casilla «¿Servir lo pendiente en cuanto haya stock?» (columna fuera del EDMX). Nunca lanza.
             GuardarServirPendiente(pedido, servirPendienteAGuardar);
+            // NestoAPI#722: líneas con picking aplazadas: aviso al usuario y campana a Almacén (best-effort, ya está guardado).
+            if (lineasAplazadas.Count > 0)
+            {
+                Infraestructure.PedidosVenta.Retencion.ResultadoAplazamiento aplazamiento = Infraestructure.PedidosVenta.Retencion.AplazamientoPedidoConPicking
+                    .Evaluar(pedido.numero, lineasAplazadas, enviosDelPedido, DateTime.Today);
+                if (aplazamiento.Decision == Infraestructure.PedidosVenta.Retencion.DecisionAplazamiento.Aplazar)
+                {
+                    avisos.Add(new AvisoPedidoDTO
+                    {
+                        Tipo = Infraestructure.PedidosVenta.Retencion.AplazamientoPedidoConPicking.TIPO_AVISO,
+                        Mensaje = aplazamiento.Mensaje,
+                        Datos = new { aplazamiento.Pickings, aplazamiento.Etiquetas, FechaNueva = aplazamiento.FechaNueva.ToString("yyyy-MM-dd") }
+                    });
+                    try
+                    {
+                        string nombreCliente = db.Clientes.Where(c => c.Empresa == pedido.empresa && c.Nº_Cliente == pedido.cliente && c.Contacto == pedido.contacto)
+                            .Select(c => c.Nombre).FirstOrDefault();
+                        await AvisadorAlmacen.Avisar(Infraestructure.PedidosVenta.Retencion.AplazamientoPedidoConPicking.Notificacion(
+                            pedido.numero, pedido.cliente, nombreCliente, pedido.Usuario, aplazamiento)).ConfigureAwait(true);
+                    }
+                    catch (Exception ex)
+                    {
+                        ElmahHelper.Log(new Exception($"[Aplazado con picking #722] Pedido {pedido.numero}: no se ha podido avisar al almacén: {ex.Message}", ex));
+                    }
+                }
+            }
 
             // NestoAPI#606 (decisión de Carlos, 08/10): un presupuesto que se convierte en pedido «nace» ahora como pedido: se le
             // da la fecha de entrega a la agencia prometida como al crearlo (solo si aún no tiene: el UPDATE lleva IS NULL).

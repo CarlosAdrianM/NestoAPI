@@ -310,6 +310,7 @@
     <Compile Include="Controllers\AlmacenControllerTests.cs" />
     <Compile Include="Controllers\AlmacenEtiquetaPackingTests.cs" />
     <Compile Include="Infrastructure\PreparacionAlmacen\PerfilAlmacenTests.cs" />
+    <Compile Include="Infrastructure\PreparacionAlmacen\PackingsPendientesTests.cs" />
     <Compile Include="Controllers\PedidosVentaPrepagoConPickingTests.cs" />
     <Compile Include="Controllers\PedidosVentaServirJuntoTests.cs" />
     <Compile Include="Controllers\PedidosCompraControllerTests.cs" />
@@ -750,6 +751,7 @@
     <Compile Include="Infrastructure\PedidosVenta\RepartidorStockFechaEntregaAgenciaTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\CorreoFechaEntregaAgenciaTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\PromesaRiesgoTests.cs" />
+    <Compile Include="Infrastructure\PedidosVenta\AplazamientoPedidoConPickingTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\RetencionPedidosTests.cs" />
     <Compile Include="Infrastructure\Abandono\CalculadoraAbandonoTests.cs" />
     <Compile Include="Infrastructure\Abandono\ResolucionAbandonoTests.cs" />
