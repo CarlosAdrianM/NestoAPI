@@ -384,5 +384,57 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
 
             Assert.IsNull(await servicio.GuardarPrometidaAlCrear("1", 927000));
         }
+
+        // Sugerencia 832: adelantar la fecha de entrega sin picking mueve la prometida si el nuevo cálculo es anterior
+
+        [TestMethod]
+        public async Task AdelantarPrometida_NuevoCalculoAnterior_SustituyeLaPrometida()
+        {
+            A.CallTo(() => repositorio.LeerPedido("1", 927000)).Returns(Task.FromResult(Pedido()));
+            A.CallTo(() => repositorio.LeerPrometida("1", 927000)).Returns(Task.FromResult<DateTime?>(new DateTime(2027, 1, 1)));
+            A.CallTo(() => repositorio.ReemplazarPrometida("1", 927000, A<DateTime>._)).Returns(Task.FromResult(true));
+
+            FechaEntregaAgenciaDTO dto = await servicio.AdelantarPrometida("1  ", 927000);
+
+            Assert.IsNotNull(dto?.FechaEntregaAgencia);
+            Assert.IsTrue(dto.FechaEntregaAgencia.Value < new DateTime(2027, 1, 1));
+            Assert.AreEqual(dto.FechaEntregaAgencia.Value.Date, dto.FechaPrometida, "la prometida es la nueva");
+            A.CallTo(() => repositorio.ReemplazarPrometida("1", 927000, dto.FechaEntregaAgencia.Value.Date)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => repositorio.GuardarPrometida(A<string>._, A<int>._, A<DateTime>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task AdelantarPrometida_NuevoCalculoNoAnterior_NoLaToca()
+        {
+            A.CallTo(() => repositorio.LeerPedido("1", 927000)).Returns(Task.FromResult(Pedido()));
+            A.CallTo(() => repositorio.LeerPrometida("1", 927000)).Returns(Task.FromResult<DateTime?>(new DateTime(2026, 10, 1)));
+
+            FechaEntregaAgenciaDTO dto = await servicio.AdelantarPrometida("1", 927000);
+
+            Assert.AreEqual(new DateTime(2026, 10, 1), dto.FechaPrometida, "una promesa anterior no se pisa: eso sería un retraso");
+            A.CallTo(() => repositorio.ReemplazarPrometida(A<string>._, A<int>._, A<DateTime>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void SeAdelanta_SoloSinPickingYConFechaAnterior()
+        {
+            DateTime antes = new DateTime(2027, 1, 1), despues = new DateTime(2026, 10, 28);
+            Assert.IsTrue(AdelantoFechaEntrega.SeAdelanta(false, antes, despues));
+            Assert.IsFalse(AdelantoFechaEntrega.SeAdelanta(true, antes, despues), "con picking no (eso es #722)");
+            Assert.IsFalse(AdelantoFechaEntrega.SeAdelanta(false, despues, antes), "aplazar no toca la prometida");
+            Assert.IsFalse(AdelantoFechaEntrega.SeAdelanta(false, antes, antes));
+            Assert.IsFalse(AdelantoFechaEntrega.SeAdelanta(false, null, despues));
+
+            var lineas = new List<LineaPedidoVentaDTO>
+            {
+                new LineaPedidoVentaDTO { estado = Constantes.EstadosLineaVenta.EN_CURSO, Cantidad = 1, fechaEntrega = new DateTime(2026, 11, 2) },
+                new LineaPedidoVentaDTO { estado = Constantes.EstadosLineaVenta.EN_CURSO, Cantidad = 1, fechaEntrega = new DateTime(2026, 10, 29) },
+                new LineaPedidoVentaDTO { estado = Constantes.EstadosLineaVenta.ALBARAN, Cantidad = 1, fechaEntrega = new DateTime(2026, 10, 1) },
+                new LineaPedidoVentaDTO { estado = Constantes.EstadosLineaVenta.EN_CURSO, Cantidad = 0, fechaEntrega = new DateTime(2026, 10, 2) }
+            };
+            Assert.AreEqual(new DateTime(2026, 10, 29), AdelantoFechaEntrega.FechaMinima(lineas), "solo líneas vivas con cantidad");
+            Assert.IsNull(AdelantoFechaEntrega.FechaMinima(new List<LineaPedidoVentaDTO>()));
+        }
+
     }
 }

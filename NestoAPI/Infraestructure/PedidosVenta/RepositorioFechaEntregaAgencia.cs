@@ -29,6 +29,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             "UPDATE dbo.CabPedidoVta SET FechaEntregaAgenciaPrometida = @fecha " +
             "WHERE Empresa = @empresa AND Número = @numero AND FechaEntregaAgenciaPrometida IS NULL";
 
+        /// <summary>Sugerencia 832: al adelantar la fecha de entrega sin picking, la prometida se sustituye (sin IS NULL).</summary>
+        internal const string SQL_REEMPLAZAR_PROMETIDA =
+            "UPDATE dbo.CabPedidoVta SET FechaEntregaAgenciaPrometida = @fecha " +
+            "WHERE Empresa = @empresa AND Número = @numero";
+
         private readonly NVEntities db;
 
         public RepositorioFechaEntregaAgencia(NVEntities db)
@@ -146,6 +151,14 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         public async Task<bool> GuardarPrometida(string empresa, int numero, DateTime fecha)
         {
             int filas = await db.Database.ExecuteSqlCommandAsync(SQL_GUARDAR_PROMETIDA,
+                new SqlParameter("@fecha", SqlDbType.DateTime) { Value = fecha.Date },
+                ParametroEmpresa(empresa), ParametroNumero(numero)).ConfigureAwait(false);
+            return filas > 0;
+        }
+
+        public async Task<bool> ReemplazarPrometida(string empresa, int numero, DateTime fecha)
+        {
+            int filas = await db.Database.ExecuteSqlCommandAsync(SQL_REEMPLAZAR_PROMETIDA,
                 new SqlParameter("@fecha", SqlDbType.DateTime) { Value = fecha.Date },
                 ParametroEmpresa(empresa), ParametroNumero(numero)).ConfigureAwait(false);
             return filas > 0;

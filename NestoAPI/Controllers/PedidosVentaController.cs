@@ -1264,6 +1264,8 @@ namespace NestoAPI.Controllers
             // En una segunda fase se podría ajustar para permitir modificar algunos campos, aún teniendo picking
             //bool algunaLineaTienePicking = estaImpresaLaEtiqueta || cabPedidoVta.LinPedidoVtas.FirstOrDefault(l => l.Estado >= ESTADO_LINEA_PENDIENTE && l.Estado <= ESTADO_LINEA_EN_CURSO && l.Picking > 0) != null;
             bool algunaLineaTienePicking = cabPedidoVta.LinPedidoVtas.Any(l => l.Estado >= ESTADO_LINEA_PENDIENTE && l.Estado <= ESTADO_LINEA_EN_CURSO && l.Picking > 0);
+            // Sugerencia 832: la primera fecha de entrega ANTES de tocar nada, para saber si el usuario la adelanta
+            DateTime? fechaEntregaMinimaAntes = Infraestructure.PedidosVenta.AdelantoFechaEntrega.FechaMinima(cabPedidoVta.LinPedidoVtas);
 
             // Nesto#510: el almacén de las líneas solo se cambia (en cualquier serie) si todo el pedido está sin picking,
             // sin albarán ni factura, sin nota de entrega, fuera de un picking en curso y sin etiqueta de agencia viva.
@@ -2194,6 +2196,13 @@ namespace NestoAPI.Controllers
             if (fechaEntregaAgenciaRecienPrometida)
             {
                 fechaEntregaAgencia = await ServicioFechaEntregaAgencia.CalcularYGuardarPrometidaAlCrear(pedido.empresa, pedido.numero);
+            }
+            else if (!pedido.EsPresupuesto && Infraestructure.PedidosVenta.AdelantoFechaEntrega.SeAdelanta(
+                algunaLineaTienePicking, fechaEntregaMinimaAntes, Infraestructure.PedidosVenta.AdelantoFechaEntrega.FechaMinima(pedido.Lineas)))
+            {
+                // Sugerencia 832 (Lidia, 28/10/26; OK de Carlos): al adelantar la entrega de un pedido sin picking, la prometida
+                // pasa al nuevo cálculo si es anterior (el 928658 nació con 01/01/2027 por error y la prometida se quedó ahí).
+                fechaEntregaAgencia = await ServicioFechaEntregaAgencia.AdelantarPrometida(pedido.empresa, pedido.numero);
             }
             else if (!pedido.EsPresupuesto)
             {

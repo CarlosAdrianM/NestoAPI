@@ -42,6 +42,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         Task<DateTime?> LeerPrometida(string empresa, int numero);
         /// <summary>Solo si estaba a NULL (se escribe una vez). True si la ha escrito.</summary>
         Task<bool> GuardarPrometida(string empresa, int numero, DateTime fecha);
+        /// <summary>Sugerencia 832: la sustituye tenga lo que tenga. True si ha escrito.</summary>
+        Task<bool> ReemplazarPrometida(string empresa, int numero, DateTime fecha);
     }
 
     public interface IServicioFechaEntregaAgencia
@@ -63,6 +65,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// prometida de la columna). Null si falla (a ELMAH, como mucho una vez cada media hora). NUNCA lanza.
         /// </summary>
         Task<FechaEntregaAgenciaDTO> CalcularPedidoParaCorreo(string empresa, int numero);
+        /// <summary>
+        /// Sugerencia 832 (Lidia, 28/10/26; OK de Carlos): el usuario ha ADELANTADO la fecha de entrega de un pedido sin picking.
+        /// Se recalcula y, si la nueva fecha de entrega a la agencia es anterior a la prometida (o no había), la prometida pasa a
+        /// ser la nueva. Devuelve el cálculo (con la prometida que queda) para el correo; null si falla. NUNCA lanza.
+        /// </summary>
+        Task<FechaEntregaAgenciaDTO> AdelantarPrometida(string empresa, int numero);
     }
 
     /// <summary>
@@ -162,6 +170,39 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         public async Task<FechaEntregaAgenciaDTO> CalcularYGuardarPrometidaAlCrear(string empresa, int numero)
         {
             return (await CalcularYGuardar(empresa, numero).ConfigureAwait(false)).dto;
+        }
+
+        public async Task<FechaEntregaAgenciaDTO> AdelantarPrometida(string empresa, int numero)
+        {
+            FechaEntregaAgenciaDTO dto;
+            try
+            {
+                PedidoFechaEntregaAgencia pedido;
+                (dto, pedido) = await CalcularPedidoConLineas(empresa, numero).ConfigureAwait(false);
+                AnotarPedidoGrabado(empresa, numero, pedido);
+            }
+            catch (Exception ex)
+            {
+                Registrar($"no se ha podido recalcular la fecha de entrega a la agencia prometida del pedido {numero} al adelantar la entrega", ex);
+                return null;
+            }
+            DateTime? fecha = dto?.FechaEntregaAgencia;
+            if (!fecha.HasValue || (dto.FechaPrometida.HasValue && fecha.Value.Date >= dto.FechaPrometida.Value.Date))
+            {
+                return dto; // sin fecha, o no mejora la promesa: se queda la que había
+            }
+            try
+            {
+                if (await repositorio.ReemplazarPrometida(Empresa(empresa), numero, fecha.Value.Date).ConfigureAwait(false))
+                {
+                    dto.FechaPrometida = fecha.Value.Date;
+                }
+            }
+            catch (Exception ex)
+            {
+                Registrar($"no se ha podido sustituir la fecha de entrega a la agencia prometida del pedido {numero} al adelantar la entrega", ex);
+            }
+            return dto;
         }
 
         public async Task<FechaEntregaAgenciaDTO> CalcularPedidoParaCorreo(string empresa, int numero)
