@@ -809,6 +809,14 @@ namespace NestoAPI.Controllers
                 return BadRequest($"El envío {id} ya está registrado en la agencia con {registrado.Reembolso:C} de reembolso y no se puede cambiar desde aquí: " +
                     "la agencia seguiría cobrando el importe antiguo. Anula el envío (Borrar) y vuelve a tramitarlo con el reembolso correcto.");
             }
+            // Envío 249990 (Aida, 28/10/26): lo mismo con el RETORNO. Se registró en CTT sin retorno al imprimir, luego se marcó
+            // «Con retorno» por aquí y CTT nunca lo supo («no habéis grabado el retorno»). El retorno también viaja al registrar.
+            if (registrado != null && CambioDeRetornoBloqueado(registrado.Retorno, enviosAgencia.Retorno,
+                    registrado.CodigoBarras, registrado.Estado, _perfilesAgencias.Perfil(registrado.Agencia) is Infraestructure.Agencias.Perfiles.IPerfilConGestionRemota))
+            {
+                return BadRequest($"El envío {id} ya está registrado en la agencia {(registrado.Retorno == 0 ? "sin retorno" : "con otro tipo de retorno")} y no se puede cambiar desde aquí: " +
+                    "la agencia no se enteraría. Use «Modificar datos» (anula el envío en la agencia y lo registra de nuevo con el retorno) o anule el envío y vuelva a tramitarlo.");
+            }
 
             // NestoAPI#546 (28/09/26, envíos 249165/249181/249182): un pendiente de GLS se guardó con el
             // servicio 48 / horario 0 de CTT. Solo se valida si el envío está pendiente o si el PUT toca
@@ -2966,6 +2974,16 @@ namespace NestoAPI.Controllers
         internal static bool CambioDeReembolsoBloqueado(decimal reembolsoBD, decimal reembolsoNuevo, string codigoBarras, short estado, bool agenciaConGestionRemota)
         {
             if (!agenciaConGestionRemota || reembolsoBD == reembolsoNuevo)
+            {
+                return false;
+            }
+            return !string.IsNullOrWhiteSpace(codigoBarras) && estado >= Constantes.Agencias.ESTADO_EN_CURSO;
+        }
+
+        /// <summary>Envío 249990: igual que el reembolso, el tipo de retorno (adicional RET / recogida) viaja al registrar.</summary>
+        internal static bool CambioDeRetornoBloqueado(short retornoBD, short retornoNuevo, string codigoBarras, short estado, bool agenciaConGestionRemota)
+        {
+            if (!agenciaConGestionRemota || retornoBD == retornoNuevo)
             {
                 return false;
             }

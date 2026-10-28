@@ -42,5 +42,18 @@ namespace NestoAPI.Tests.Controllers
             // GLS manda el reembolso al cierre del día: cambiarlo antes es lo normal.
             Assert.IsFalse(EnviosAgenciasController.CambioDeReembolsoBloqueado(500M, 0M, "61197140248079", (short)Constantes.Agencias.ESTADO_EN_CURSO, agenciaConGestionRemota: false));
         }
+
+        // Envío 249990 (Aida, 28/10/26): el retorno también viaja a CTT al registrar
+
+        [TestMethod]
+        public void CambioDeRetornoBloqueado_RegistradoEnCTT_SeRechaza_YSiNoCambiaOEstaPendiente_No()
+        {
+            Assert.IsTrue(EnviosAgenciasController.CambioDeRetornoBloqueado(0, 1, ALBARAN_CTT, (short)Constantes.Agencias.ESTADO_EN_CURSO, agenciaConGestionRemota: true));
+            Assert.IsTrue(EnviosAgenciasController.CambioDeRetornoBloqueado(1, 0, ALBARAN_CTT, (short)Constantes.Agencias.ESTADO_TRAMITADO, agenciaConGestionRemota: true));
+            Assert.IsFalse(EnviosAgenciasController.CambioDeRetornoBloqueado(1, 1, ALBARAN_CTT, (short)Constantes.Agencias.ESTADO_EN_CURSO, agenciaConGestionRemota: true));
+            Assert.IsFalse(EnviosAgenciasController.CambioDeRetornoBloqueado(0, 1, null, (short)Constantes.Agencias.ESTADO_PENDIENTE, agenciaConGestionRemota: true), "pendiente: aún no ha viajado");
+            Assert.IsFalse(EnviosAgenciasController.CambioDeRetornoBloqueado(0, 1, "61197140248079", (short)Constantes.Agencias.ESTADO_EN_CURSO, agenciaConGestionRemota: false), "GLS lo manda al cierre");
+        }
+
     }
 }
