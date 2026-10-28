@@ -713,6 +713,89 @@ namespace NestoAPI.Infraestructure.Agencias
             return await ModificarDatosAsync(numeroEnvio, datos, usuario).ConfigureAwait(false);
         }
 
+        /// <summary>Texto que marca en el historial y en Modificaciones un cambio hecho solo en Nesto con la confirmación de la agencia.</summary>
+        public const string PREFIJO_CAMBIO_CONFIRMADO_AGENCIA = "Cambio confirmado por la agencia por teléfono: ";
+
+        /// <summary>
+        /// NestoAPI#725 (Carlos, 28/10/26): guarda un cambio de datos que ya viajaron a la agencia (CTT, Innovatrans) SIN
+        /// reenviarlo, porque el usuario confirma que la agencia se lo ha confirmado por teléfono. Queda marcado: una fila en
+        /// EnviosHistoria (lo que lee GET api/EnviosAgencias/{id}/Historia) y otra en Modificaciones por cada dato, con el texto
+        /// de la confirmación y el usuario; el descuadre, si lo hay, es imputable a la agencia. Si cambia el reembolso, se
+        /// contabiliza como en «Modificar datos» (<see cref="ContabilizarModificacionReembolsoAsync"/>). Todo en una transacción:
+        /// <paramref name="guardarEnvio"/> es el guardado del envío que hace el llamante (el PUT) y su SaveChanges escribe
+        /// también la historia y las modificaciones. Devuelve el asiento del reembolso (0 si no cambia).
+        /// </summary>
+        public async Task<int> GuardarCambioConfirmadoPorAgenciaAsync(int numeroEnvio, IList<DatosQueViajaronALaAgencia.CampoCambiado> cambios,
+            decimal reembolsoAnterior, decimal reembolsoNuevo, string confirmacion, string usuario, Func<Task> guardarEnvio)
+        {
+            if (cambios == null || cambios.Count == 0)
+            {
+                throw new ArgumentException("No hay cambios que registrar.", nameof(cambios));
+            }
+            if (guardarEnvio == null)
+            {
+                throw new ArgumentNullException(nameof(guardarEnvio));
+            }
+            DateTime ahora = DateTime.Now;
+            return await _transaccion.EjecutarAsync(_db, async () =>
+            {
+                foreach (EnvioHistoria fila in HistoriaCambioConfirmado(numeroEnvio, cambios, confirmacion, usuario, ahora))
+                {
+                    _ = _db.EnviosHistorias.Add(fila);
+                }
+                foreach (Modificacion fila in ModificacionesCambioConfirmado(numeroEnvio, cambios, confirmacion, usuario))
+                {
+                    _ = _db.Modificaciones.Add(fila);
+                }
+                await guardarEnvio().ConfigureAwait(false);
+
+                if (reembolsoAnterior == reembolsoNuevo || !cambios.Any(c => c.Campo == CAMPO_REEMBOLSO))
+                {
+                    return 0;
+                }
+                // Where + ToListAsync, nunca SingleOrDefaultAsync con Include: ver la nota de TramitarAsync (Limit1). Si el envío
+                // ya lo sigue el contexto (el PUT), EF devuelve esa misma instancia, ya guardada, con la agencia y la empresa.
+                List<EnviosAgencia> envios = await _db.EnviosAgencias
+                    .Include(e => e.AgenciasTransporte)
+                    .Include(e => e.Empresa1)
+                    .Where(e => e.Numero == numeroEnvio)
+                    .ToListAsync()
+                    .ConfigureAwait(false);
+                EnviosAgencia envio = envios.SingleOrDefault() ?? throw new NestoBusinessException($"No existe el envío {numeroEnvio}.");
+                return await ContabilizarModificacionReembolsoAsync(envio, reembolsoAnterior, reembolsoNuevo, usuario).ConfigureAwait(false);
+            }).ConfigureAwait(false);
+        }
+
+        private const string CAMPO_REEMBOLSO = "Reembolso";
+
+        /// <summary>NestoAPI#725: una fila de EnviosHistoria por dato, con el valor anterior (máx. 50) y la confirmación.</summary>
+        internal static List<EnvioHistoria> HistoriaCambioConfirmado(int numeroEnvio, IEnumerable<DatosQueViajaronALaAgencia.CampoCambiado> cambios,
+            string confirmacion, string usuario, DateTime ahora)
+            => cambios.Select(c => new EnvioHistoria
+            {
+                NumeroEnvio = numeroEnvio,
+                Campo = Acotar(c.Campo, 50),
+                ValorAnterior = Acotar(c.Anterior ?? string.Empty, 50),
+                Observaciones = $"{PREFIJO_CAMBIO_CONFIRMADO_AGENCIA}{confirmacion?.Trim()}. Nuevo valor: {c.Nuevo}. No se ha reenviado a la agencia.",
+                Usuario = Acotar(usuario, 50),
+                FechaModificacion = ahora
+            }).ToList();
+
+        /// <summary>NestoAPI#725: una fila de Modificaciones (Tabla EnviosAgencia) por dato, con anterior, nuevo, confirmación y usuario.</summary>
+        internal static List<Modificacion> ModificacionesCambioConfirmado(int numeroEnvio, IEnumerable<DatosQueViajaronALaAgencia.CampoCambiado> cambios,
+            string confirmacion, string usuario)
+            => cambios.Select(c => new Modificacion
+            {
+                Tabla = "EnviosAgencia",
+                Anterior = $"Envío {numeroEnvio} {c.Campo}={c.Anterior}",
+                Nuevo = $"Envío {numeroEnvio} {c.Campo}={c.Nuevo} ({PREFIJO_CAMBIO_CONFIRMADO_AGENCIA.TrimEnd()} {confirmacion?.Trim()}; usuario {usuario})",
+                // La columna la rellena la BD (Computed); el usuario del token va también en Nuevo.
+                Usuario = Acotar(usuario, 50)
+            }).ToList();
+
+        private static string Acotar(string valor, int maximo)
+            => valor == null || valor.Length <= maximo ? valor : valor.Substring(0, maximo);
+
         /// <summary>Retorno, reembolso o servicio: lo que la agencia leyó al registrar el envío.</summary>
         internal static bool CambiaLoQueLeyoLaAgencia(EnviosAgencia envio, ModificarDatosEnvioDTO datos)
             => envio.Reembolso != datos.Reembolso
@@ -1214,5 +1297,7 @@ namespace NestoAPI.Infraestructure.Agencias
         Task<ResultadoPagoReembolsos> PagarReembolsosAsync(PagoReembolsosDTO datos, string usuario);
         Task<ResultadoModificacionEnvio> ModificarDatosAsync(int numeroEnvio, ModificarDatosEnvioDTO datos, string usuario);
         Task<ResultadoModificacionEnvio> QuitarReembolsoDevueltoAsync(int numeroEnvio, string usuario);
+        Task<int> GuardarCambioConfirmadoPorAgenciaAsync(int numeroEnvio, IList<DatosQueViajaronALaAgencia.CampoCambiado> cambios,
+            decimal reembolsoAnterior, decimal reembolsoNuevo, string confirmacion, string usuario, Func<Task> guardarEnvio);
     }
 }
