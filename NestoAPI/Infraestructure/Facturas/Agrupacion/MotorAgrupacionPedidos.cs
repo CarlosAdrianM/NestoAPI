@@ -32,6 +32,29 @@ namespace NestoAPI.Infraestructure.Facturas.Agrupacion
 
         public CabPedidoVta Agrupar(IEnumerable<CabPedidoVta> origenes, CabPedidoVta destino)
         {
+            return Agrupar(origenes, destino, null);
+        }
+
+        /// <summary>
+        /// NestoAPI#727: ¿se mueve esta línea al agrupar? Las que están en albarán y, si hay fecha tope (fin de mes), cuya
+        /// fecha de albarán es igual o anterior a ese día (una línea en albarán sin fecha de albarán no entra en un corte).
+        /// La usan el motor y el fin de mes para contar lo que se mueve, con el mismo criterio.
+        /// </summary>
+        public static bool LineaAgrupable(LinPedidoVta linea, DateTime? fechaAlbaranHasta)
+        {
+            if (linea == null || linea.Estado != Constantes.EstadosLineaVenta.ALBARAN)
+            {
+                return false;
+            }
+            if (!fechaAlbaranHasta.HasValue)
+            {
+                return true;
+            }
+            return linea.Fecha_Albarán.HasValue && linea.Fecha_Albarán.Value < fechaAlbaranHasta.Value.Date.AddDays(1);
+        }
+
+        public CabPedidoVta Agrupar(IEnumerable<CabPedidoVta> origenes, CabPedidoVta destino, DateTime? fechaAlbaranHasta)
+        {
             if (destino == null)
             {
                 throw new ArgumentNullException(nameof(destino));
@@ -45,10 +68,11 @@ namespace NestoAPI.Infraestructure.Facturas.Agrupacion
             // destino y que están en albarán (Estado == ALBARAN). Las líneas ya facturadas
             // (Estado FACTURA) no se tocan, y las pendientes no deberían llegar aquí porque
             // el gate de facturación (Fase 1) impide agrupar si algún hermano no está listo.
+            // NestoAPI#727: en el fin de mes, además, solo las de fecha de albarán hasta el corte (las demás se quedan).
             List<LinPedidoVta> lineasAMover = origenes
                 .Where(o => o != null && o.Número != destino.Número)
                 .SelectMany(o => (o.LinPedidoVtas ?? new List<LinPedidoVta>())
-                    .Where(l => l.Estado == Constantes.EstadosLineaVenta.ALBARAN))
+                    .Where(l => LineaAgrupable(l, fechaAlbaranHasta)))
                 .ToList();
 
             foreach (LinPedidoVta linea in lineasAMover)
