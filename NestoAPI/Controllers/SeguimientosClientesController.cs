@@ -179,23 +179,31 @@ namespace NestoAPI.Controllers
 
             if (!seguimientos.Any())
             {
-                return NotFound();
+                return Content(HttpStatusCode.NotFound, $"El cliente {cliente?.Trim()}/{contacto?.Trim()} no tiene rapports que resumir.");
             }
-
-            // Crea el texto de entrada para OpenAI, incluyendo la fecha con cada comentario
-            string textoEntrada = "Resumen de seguimientos de un cliente. Los siguientes son los comentarios organizados por fecha:\n\n";
-            foreach (var seguimiento in seguimientos)
+            // Sugerencia 830: por el servicio común de OpenAI (gpt-4o-mini); gpt-3.5-turbo ya no existe y el 500 mudo tiraba Nesto
+            try
             {
-                string pedidoTexto = seguimiento.Pedido ? "Sí" : "No";
-                textoEntrada += $"Fecha: {seguimiento.Fecha:yyyy-MM-dd HH:mm:ss}\nComentario: {seguimiento.Comentarios}\nTerminó en pedido: {pedidoTexto}\n\n";
+                string resumen = await Infraestructure.Rapports.ResumenRapportsCliente.Resumir(ServicioOpenAI,
+                    seguimientos.Select(s => new Infraestructure.Rapports.RapportParaResumen { Fecha = s.Fecha, Comentarios = s.Comentarios, Pedido = s.Pedido }));
+                return string.IsNullOrEmpty(resumen)
+                    ? Content(HttpStatusCode.BadGateway, "OpenAI no ha devuelto ningún resumen. Vuelva a intentarlo en un momento.")
+                    : (IHttpActionResult)Ok(new { Resumen = resumen });
             }
-
-            // Llama a OpenAI para obtener el resumen
-            string resumen = await GenerarResumenOpenAIAsync(textoEntrada);
-
-            return string.IsNullOrEmpty(resumen) ? StatusCode(HttpStatusCode.InternalServerError) : (IHttpActionResult)Ok(new { Resumen = resumen });
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Resumen de rapports 830] Cliente {cliente?.Trim()}/{contacto?.Trim()}: {ex.Message}", ex));
+                return Content(HttpStatusCode.BadGateway, "No se ha podido generar el resumen con OpenAI: " + ex.Message);
+            }
         }
 
+        /// <summary>Sugerencia 830: el servicio de OpenAI del resumen de rapports de un cliente (sustituible en los tests).</summary>
+        internal Infraestructure.OpenAI.IServicioOpenAI ServicioOpenAI
+        {
+            get => servicioOpenAI ?? (servicioOpenAI = new Infraestructure.OpenAI.ServicioOpenAI());
+            set => servicioOpenAI = value;
+        }
+        private Infraestructure.OpenAI.IServicioOpenAI servicioOpenAI;
         [HttpGet]
         [Route("api/SeguimientosClientes/Resumen")]
         public async Task<IHttpActionResult> GetResumenSeguimientosClientes(string empresa, DateTime fecha)
@@ -650,57 +658,6 @@ namespace NestoAPI.Controllers
             return resumen;
         }
 
-        private async Task<string> GenerarResumenOpenAIAsync(string textoEntrada)
-        {
-            string apiKey = ConfigurationManager.AppSettings["OpenAIKey"];
-            string endpoint = "https://api.openai.com/v1/chat/completions";
-
-
-
-
-            HttpClientHandler handler = new HttpClientHandler
-            {
-                UseProxy = false // Cambiar según sea necesario
-            };
-
-            using (HttpClient httpClient = new HttpClient(handler))
-            {
-                httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
-
-                var payload = new
-                {
-                    model = "gpt-3.5-turbo",
-                    messages = new[]
-                    {
-                        new {
-                            role = "system",
-                            content = "Eres un asistente que analiza comentarios de clientes y extrae información comercial útil. Identifica detalles como las marcas que utiliza el cliente, los tratamientos que realiza, los productos que le interesan, y cualquier otra preferencia relevante. Organiza el resumen de forma clara para que sea útil en una interacción comercial."
-                        },
-                        new {
-                            role = "user",
-                            content = textoEntrada
-                        }
-                    },
-                    max_tokens = 500,
-                    temperature = 0.4
-                };
-
-
-
-                StringContent content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
-
-                HttpResponseMessage response = await httpClient.PostAsync(endpoint, content);
-
-                if (response.IsSuccessStatusCode)
-                {
-                    string responseString = await response.Content.ReadAsStringAsync();
-                    dynamic responseJson = JsonConvert.DeserializeObject<dynamic>(responseString);
-                    return responseJson?.choices[0]?.message?.content?.ToString();
-                }
-
-                return null;
-            }
-        }
         private async Task<string> GenerarResumenFechaOpenAIAsync(string textoEntrada)
         {
             string apiKey = ConfigurationManager.AppSettings["OpenAIKey"];

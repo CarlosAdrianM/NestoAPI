@@ -1019,6 +1019,8 @@
     <Compile Include="Infraestructure\IndicadoresStock\IndicadoresStockModelos.cs" />
     <Compile Include="Infraestructure\IndicadoresStock\RepositorioIndicadoresStock.cs" />
     <Compile Include="Infraestructure\Rapports\GestorRapports.cs" />
+    <Compile Include="Infraestructure\Rapports\ResumenRapportsCliente.cs" />
+    <Compile Include="Infraestructure\Rapports\ResumenRapportsCliente.cs" />
     <Compile Include="Infraestructure\Rapports\IServicioRapports.cs" />
     <Compile Include="Infraestructure\Rapports\ResumenRapportsDia.cs" />
     <Compile Include="Infraestructure\Rapports\ServicioRapports.cs" />
