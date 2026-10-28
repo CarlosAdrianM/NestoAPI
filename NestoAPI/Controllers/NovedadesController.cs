@@ -125,9 +125,8 @@ namespace NestoAPI.Controllers
             {
                 // Las entradas con versión no parseable no se filtran: mejor enseñarlas de más
                 // que perder una novedad por un dato mal grabado.
-                novedades = novedades
-                    .Where(n => !Version.TryParse(n.Version, out Version v) || v > versionVista)
-                    .ToList();
+                // 28/10/26: una versión menor nueva (1.10.51.1) saca también las de su versión mayor (1.10.51.0).
+                novedades = ReglasVersionesNovedades.DesdeVersionVista(novedades, versionVista, n => n.Version);
             }
 
             List<NovedadDTO> ordenadas = novedades

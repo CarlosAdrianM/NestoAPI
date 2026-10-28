@@ -859,6 +859,7 @@
     <Compile Include="Infraestructure\Novedades\ReglasMenciones.cs" />
     <Compile Include="Infraestructure\Novedades\ReglasPrivacidadNovedades.cs" />
     <Compile Include="Infraestructure\Novedades\ReglasPerfilesNovedades.cs" />
+    <Compile Include="Infraestructure\Novedades\ReglasVersionesNovedades.cs" />
     <Compile Include="Infraestructure\Novedades\ReglasAdjuntosNovedades.cs" />
     <Compile Include="Infraestructure\Novedades\ServicioAdjuntosNovedades.cs" />
     <Compile Include="Infraestructure\Novedades\AlmacenVideosNovedades.cs" />

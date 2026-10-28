@@ -252,6 +252,7 @@
     <Compile Include="Controllers\ClientesControllerBusquedaPorFacturaTests.cs" />
     <Compile Include="Controllers\EmpresasControllerTests.cs" />
     <Compile Include="Infrastructure\PreciosMedios\AritmeticaMoneyTests.cs" />
+    <Compile Include="Infrastructure\Novedades\ReglasVersionesNovedadesTests.cs" />
     <Compile Include="Infrastructure\Rapports\ResumenRapportsClienteTests.cs" />
     <Compile Include="Infrastructure\PreciosMedios\CalculadoraPrecioMedioFixturesTests.cs" />
     <Compile Include="Infrastructure\PreciosMedios\CalculadoraPrecioMedioReglasTests.cs" />
