@@ -806,6 +806,7 @@
     <Compile Include="Infraestructure\ChequesRegalo\EstadisticaChequesRegalo.cs" />
     <Compile Include="Infraestructure\Clientes\NotificadorNifIncorrecto.cs" />
     <Compile Include="Infraestructure\Clientes\SuPedidoObligatorio.cs" />
+    <Compile Include="Infraestructure\Clientes\AltaClienteEspecial.cs" />
     <Compile Include="Infraestructure\Clientes\ConsultasClientePrincipal.cs" />
     <Compile Include="Infraestructure\Productos\FamiliasRestringidas.cs" />
     <Compile Include="Infraestructure\Verifactu\VerifactuJobsService.cs" />

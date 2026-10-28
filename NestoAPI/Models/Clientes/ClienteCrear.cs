@@ -29,6 +29,16 @@ namespace NestoAPI.Models.Clientes
         public bool EsContacto {get;set;}
         public short? Estado { get; set; }
         public bool Estetica { get; set; }
+        /// <summary>
+        /// Nesto#555 (sugerencia 770): alta de una ALUMNA de cursos y eventos. La API la graba con Estado 10 (Alumna) y
+        /// vendedor NV, ignorando Estado, Estetica, Peluqueria y los vendedores que vengan. Excluyente con <see cref="Publico"/>.
+        /// </summary>
+        public bool Alumna { get; set; }
+        /// <summary>
+        /// Nesto#555 (Laura, comentario 411 de la 770): alta de PÚBLICO FINAL (profesional de otro sector que pide factura).
+        /// La API la graba con Estado 8 (público final) y vendedor NV. Excluyente con <see cref="Alumna"/>.
+        /// </summary>
+        public bool Publico { get; set; }
         public string FormaPago { get; set; }
         public string Iban { get; set; }
         public string Nif {get;set;}

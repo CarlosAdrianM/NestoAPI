@@ -1381,6 +1381,9 @@ namespace NestoAPI.Infraestructure
             // (Nesto, NestoApp) sin depender de que estén actualizados.
             ValidarNombreFiscal(clienteCrear.Nombre);
 
+            // Nesto#555: alumna (estado 10) o público final (estado 8), las dos con vendedor NV: lo decide la API, no el cliente.
+            _ = Clientes.AltaClienteEspecial.Aplicar(clienteCrear);
+
             string contacto = await servicio.CalcularSiguienteContacto(clienteCrear.Empresa, clienteCrear.Cliente);
 
             if (clienteCrear.Nif != null && clienteCrear.Nif.Trim() == string.Empty)

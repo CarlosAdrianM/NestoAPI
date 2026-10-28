@@ -113,6 +113,9 @@ namespace NestoAPI.Models
                 /// TiendasNuevaVision lo usa para EsProfesional y el picking y los pedidos de
                 /// canales externos para EsPrecioPublicoFinal.</summary>
                 public const short PUBLICO_FINAL = 8;
+                /// <summary>Nesto#555 (Paloma, sugerencia 770): alumna de cursos y eventos. Se da de alta desde el
+                /// asistente con este estado y vendedor NV (decisión de Carlos 23/10/26); no es cartera de nadie.</summary>
+                public const short ALUMNA = 10;
                 public const short SIN_ACCION_COMERCIAL_SOLO_ESTETICA = 93;
                 public const short SIN_ACCION_COMERCIAL_SOLO_PELUQUERIA = 11;
                 public const short SIN_ACCION_COMERCIAL_ESTETICA_Y_PELUQUERIA = 22;

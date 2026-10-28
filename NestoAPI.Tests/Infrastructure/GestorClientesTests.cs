@@ -3169,5 +3169,71 @@ namespace NestoAPI.Tests.Infrastructure
         #endregion
 
         #endregion
+
+        // Nesto#555 (sugerencia 770): alumna y público final desde el asistente de alta
+
+        private static ClienteCrear ClienteCrearDeAsistente(bool alumna = false, bool publico = false)
+            => new ClienteCrear
+            {
+                Cliente = "1234",
+                Nif = "A78368255",
+                Nombre = "ACME",
+                Estado = Constantes.Clientes.Estados.PRIMERA_VISITA, // lo que manda Nesto cuando no hay NIF validado
+                Estetica = true,
+                Peluqueria = true,
+                VendedorEstetica = "JE",
+                VendedorPeluqueria = "DV",
+                Alumna = alumna,
+                Publico = publico,
+                PersonasContacto = new List<PersonaContactoDTO>()
+            };
+
+        private GestorClientes GestorParaAltas()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            A.CallTo(() => servicio.CalcularSiguienteContacto(A<string>.Ignored, A<string>.Ignored)).Returns("0");
+            A.CallTo(() => servicio.VendedoresTelefonicos()).Returns(new List<string> { "NV" }); // NV también es «telefónico»: no debe pasar a estado 9
+            return CrearGestorClientes(servicio, servicioAgencia);
+        }
+
+        [TestMethod]
+        public void GestorClientes_PrepararClienteCrear_Alumna_Estado10YVendedorNV()
+        {
+            Cliente clienteNuevo = GestorParaAltas().PrepararClienteCrear(ClienteCrearDeAsistente(alumna: true), A.Fake<NVEntities>()).Result;
+
+            Assert.AreEqual(Constantes.Clientes.Estados.ALUMNA, clienteNuevo.Estado);
+            Assert.AreEqual(Constantes.Vendedores.VENDEDOR_GENERAL, clienteNuevo.Vendedor);
+            Assert.AreEqual(0, clienteNuevo.VendedoresClienteGrupoProductoes.Count, "sin vendedor de peluquería: no es cartera de nadie");
+        }
+
+        [TestMethod]
+        public void GestorClientes_PrepararClienteCrear_Publico_Estado8YVendedorNV()
+        {
+            Cliente clienteNuevo = GestorParaAltas().PrepararClienteCrear(ClienteCrearDeAsistente(publico: true), A.Fake<NVEntities>()).Result;
+
+            Assert.AreEqual(Constantes.Clientes.Estados.PUBLICO_FINAL, clienteNuevo.Estado);
+            Assert.AreEqual(Constantes.Vendedores.VENDEDOR_GENERAL, clienteNuevo.Vendedor);
+            Assert.AreEqual(0, clienteNuevo.VendedoresClienteGrupoProductoes.Count);
+        }
+
+        [TestMethod]
+        public void GestorClientes_PrepararClienteCrear_SinMarcaEspecial_RespetaLoQueViene()
+        {
+            Cliente clienteNuevo = GestorParaAltas().PrepararClienteCrear(ClienteCrearDeAsistente(), A.Fake<NVEntities>()).Result;
+
+            Assert.AreEqual(Constantes.Clientes.Estados.PRIMERA_VISITA, clienteNuevo.Estado);
+            Assert.AreEqual("JE", clienteNuevo.Vendedor);
+            Assert.AreEqual("DV", clienteNuevo.VendedoresClienteGrupoProductoes.Single().Vendedor);
+        }
+
+        [TestMethod]
+        public void GestorClientes_PrepararClienteCrear_AlumnaYPublico_SeRechaza()
+        {
+            var ex = Assert.ThrowsException<AggregateException>(() => GestorParaAltas().PrepararClienteCrear(ClienteCrearDeAsistente(alumna: true, publico: true), A.Fake<NVEntities>()).Result);
+
+            Assert.IsInstanceOfType(ex.InnerException, typeof(ArgumentException));
+            Assert.AreEqual(NestoAPI.Infraestructure.Clientes.AltaClienteEspecial.MOTIVO_EXCLUYENTES, ex.InnerException.Message);
+        }
+
     }
 }
