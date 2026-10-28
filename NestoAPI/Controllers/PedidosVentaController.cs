@@ -2468,6 +2468,24 @@ namespace NestoAPI.Controllers
             vencimientoPedido = vencimientoPedido.AddMonths(plazoPago.MesesPrimerPlazo);
             _ = db.prdAjustarDíasPagoCliente(pedido.empresa, pedido.cliente, pedido.contacto, vencimientoPedido, primerVencimiento);
 
+            // Pedido 929498 (28/10/26): el IVA del pedido es el del contacto de la ficha (la plantilla mandaba el del contacto
+            // de la página de cliente aunque la entrega fuera a uno de recargo). Red de seguridad: nunca impide crear el pedido.
+            try
+            {
+                string ivaContacto = db.Clientes
+                    .Where(c => c.Empresa == pedido.empresa && c.Nº_Cliente == pedido.cliente && c.Contacto == pedido.contacto)
+                    .Select(c => c.IVA).FirstOrDefault();
+                string ivaQueVenia = Infraestructure.PedidosVenta.ReglaIvaContacto.Ajustar(pedido, ivaContacto);
+                if (ivaQueVenia != null)
+                {
+                    ElmahHelper.Log(new Exception(Infraestructure.PedidosVenta.ReglaIvaContacto.MensajeElmah(pedido, ivaQueVenia)));
+                }
+            }
+            catch (Exception)
+            {
+                // sin ficha legible (tests con db falsa, cliente raro): se graba con lo que venga, como hasta ahora
+            }
+
             if (pedido.ParametrosIva == null)
             {
                 var parametros = db.ParametrosIVA

@@ -542,6 +542,7 @@
     <Compile Include="Infrastructure\GeneradorPdfModelo347Tests.cs" />
     <Compile Include="Infrastructure\ClienteChangeDetectorTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\SelectorSerieTests.cs" />
+    <Compile Include="Infrastructure\PedidosVenta\ReglaIvaContactoTests.cs" />
     <Compile Include="Infrastructure\SeriesFacturaQuestPdfTests.cs" />
     <Compile Include="Infrastructure\ParametrosFromBodyOpcionalesTests.cs" />
     <Compile Include="Infrastructure\StartupJwtConfigurationTests.cs" />
