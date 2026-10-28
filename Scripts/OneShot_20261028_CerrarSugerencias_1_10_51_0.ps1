@@ -1,8 +1,8 @@
 # Tras publicar la API y Nesto 1.10.51.0 (28/10/26): las sugerencias de hoy que ya están hechas pasan a Implementadas en esa
 # versión (la sugerencia ES la novedad) y se contesta a cada autor en su hilo; se avisa en las novedades del P.O. y del fin de
 # mes a quienes les toca; y se corrigen los perfiles de las novedades del P.O. (afectan a comerciales y almacén, no solo a
-# Administración). Con -Ariadna220, lo de Ariadna 2.20 (822) cuando Google la acepte en el canal cerrado.
-param([string]$Api = "http://api.nuevavision.es", [switch]$Ariadna220)
+# Administración). Con -Ariadna221, lo de Ariadna 2.21 (822 y 824) cuando Google la acepte en el canal cerrado.
+param([string]$Api = "http://api.nuevavision.es", [switch]$Ariadna221)
 $ErrorActionPreference = "Stop"
 $token = (Invoke-RestMethod -Method Post -Uri "$Api/api/auth/windows-token" -UseDefaultCredentials -AllowUnencryptedAuthentication).token
 $h = @{ Authorization = "Bearer $token" }
@@ -22,12 +22,15 @@ function Contestar($novedad, $texto) {
     Write-Host "Contestada $novedad." -ForegroundColor Green
 }
 
-if ($Ariadna220) {
-    Implementar 822 "2.20" "Mejorado" "Almacén,Tiendas" "Un código que se parece a uno del producto se relee antes de añadirlo" `
+if ($Ariadna221) {
+    Implementar 822 "2.21" "Mejorado" "Almacén,Tiendas" "Un código que se parece a uno del producto se relee antes de añadirlo" `
         "Si lee un código que no es de ningún producto pero se diferencia en una o dos cifras de uno del producto que tiene delante, Ariadna no lo añade a la primera: pide leerlo dos veces más. Si las tres lecturas coinciden se añade y se avisa a Compras; si no, se descarta. La cámara también exige dos detecciones seguidas de un código que no conoce. Lo avisó Santiago (el 28893 leído como 9… en vez de 8…)."
-    Contestar 822 "@Santiago, ya está en Ariadna 2.20, que les llega sola por Play Store: un código que se parece a uno del producto se tiene que leer tres veces antes de añadirse, y se avisa a Compras para que lo compruebe. El 27091 que se creó mal ya está dado de baja. Si vuelve a colarse alguno, escríbalo aquí con el producto."
-    Contestar 846 "@Andre, ya está publicado lo de la lista de salidas: cuando una entrega tiene todas las etiquetas hechas desde Nesto, el picking desaparece de la lista aunque no tenga cajas con foto. Y con Ariadna 2.20, F8 en el packing imprime también las etiquetas de GLS. Si mañana ve un picking que no desaparece, díganos cuál."
-    Write-Host "Hecho (Ariadna 2.20)." -ForegroundColor Green
+    Contestar 822 "@Santiago, ya está en Ariadna 2.21, que les llega sola por Play Store: un código que se parece a uno del producto se tiene que leer tres veces antes de añadirse, y se avisa a Compras para que lo compruebe. El 27091 que se creó mal ya está dado de baja. Si vuelve a colarse alguno, escríbalo aquí con el producto."
+    Contestar 846 "@Andre, ya está publicado lo de la lista de salidas: cuando una entrega tiene todas las etiquetas hechas desde Nesto, el picking desaparece de la lista aunque no tenga cajas con foto. Y con Ariadna 2.21, F8 en el packing imprime también las etiquetas de GLS. Si mañana ve un picking que no desaparece, díganos cuál."
+    Implementar 824 "2.21" "Nuevo" "Almacén,Tiendas" "Ficha del producto desde el inicio: «Producto (0)»" `
+        "En el inicio de Ariadna hay un botón nuevo, «Producto» (tecla 0): leyendo o tecleando un código sale la ficha del producto con la foto, el nombre, la familia, la referencia del proveedor, los códigos de barras con sus unidades y, por cada almacén, el stock, lo pendiente de entregar y los huecos. F2 «Algo está mal», F3 «Añadir código», F4 etiqueta, F5 recargar, Esc volver. Lo pidió Andre."
+    Contestar 824 "@Andre @Alfredo @Santiago, ya está en Ariadna 2.21, que les llega sola por Play Store: en el inicio, «Producto» (tecla 0). Lea o teclee un código y sale la ficha con foto, nombre, familia, referencia del proveedor, códigos de barras con unidades y, por almacén, stock, pendiente de entregar y huecos. F2 avisa de un dato mal, F3 añade un código (con la relectura de seguridad), F4 imprime la etiqueta y Esc vuelve. Lo que echen en falta, aquí."
+    Write-Host "Hecho (Ariadna 2.21)." -ForegroundColor Green
     return
 }
 
