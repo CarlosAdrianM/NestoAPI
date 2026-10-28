@@ -202,7 +202,7 @@ namespace NestoAPI.Controllers
                 var fechaDesde = request.FechaEntregaDesde ?? DateTime.Today;
 
                 // NestoAPI#195 (Fase 3): ANTES de la facturación normal, agrupamos y facturamos
-                // los grupos de PO completos (MantenerJunto + mismo SuPedido, todos en albarán).
+                // los grupos de PO completos (mismo SuPedido, con o sin MantenerJunto, todos en albarán; NestoAPI#727).
                 // Tiene que ir primero para que la facturación normal no facture esos pedidos por
                 // separado: tras agrupar, sus líneas viven en el pedido destino (ya facturado) y
                 // ObtenerPedidosParaFacturar ya no los devuelve.

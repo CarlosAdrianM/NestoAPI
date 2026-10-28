@@ -126,6 +126,39 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
 
         // --- NestoAPI#195: gate por PO ---
 
+        // NestoAPI#727 (Carlos, 28/10/26): con P.O. manda el grupo del P.O., tenga o no MantenerJunto
+
+        [TestMethod]
+        public void PuedeFacturarPedido_ConPO_SinMantenerJunto_HermanoSinAlbaran_DevuelveFalse_YConTodoEnAlbaranTrue()
+        {
+            var hermano = NuevoPedido("1", 200, "CLI-1", mantenerJunto: false, suPedido: "PO-1",
+                lineas: Lineas(Constantes.EstadosLineaVenta.EN_CURSO));
+            ConfigurarFakeDbSet(fakeCabPedidos, new[] { hermano }.AsQueryable());
+            var pedido = NuevoPedido("1", 100, "CLI-1", mantenerJunto: false, suPedido: "PO-1",
+                lineas: Lineas(Constantes.EstadosLineaVenta.ALBARAN));
+
+            Assert.IsFalse(gestor.PuedeFacturarPedido(pedido), "el hermano del mismo P.O. aún no está en albarán");
+
+            hermano.LinPedidoVtas = Lineas(Constantes.EstadosLineaVenta.ALBARAN).ToList();
+            Assert.IsTrue(gestor.PuedeFacturarPedido(pedido));
+        }
+
+        [TestMethod]
+        public void PuedeFacturarPedido_ConPO_SinMantenerJunto_LineasPropiasSinAlbaran_DevuelveFalse_YHermanoAgrupadoNoCuenta()
+        {
+            var agrupado = NuevoPedido("1", 200, "CLI-1", mantenerJunto: false, suPedido: "PO-1",
+                lineas: Lineas(Constantes.EstadosLineaVenta.PENDIENTE));
+            agrupado.Agrupada = true;
+            ConfigurarFakeDbSet(fakeCabPedidos, new[] { agrupado }.AsQueryable());
+
+            var pedido = NuevoPedido("1", 100, "CLI-1", mantenerJunto: false, suPedido: "PO-1",
+                lineas: Lineas(Constantes.EstadosLineaVenta.ALBARAN, Constantes.EstadosLineaVenta.EN_CURSO));
+            Assert.IsFalse(gestor.PuedeFacturarPedido(pedido), "sus propias líneas no están todas en albarán");
+
+            pedido.LinPedidoVtas = Lineas(Constantes.EstadosLineaVenta.ALBARAN).ToList();
+            Assert.IsTrue(gestor.PuedeFacturarPedido(pedido), "el hermano ya agrupado no bloquea");
+        }
+
         [TestMethod]
         public void PuedeFacturarPedido_ConPOyMantenerJunto_HermanoConLineasSinAlbaran_DevuelveFalse()
         {
@@ -160,10 +193,10 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
         }
 
         [TestMethod]
-        public void PuedeFacturarPedido_ConPOSinMantenerJunto_NoBloqueaPorHermanos()
+        public void PuedeFacturarPedido_ConPOSinMantenerJunto_BloqueaPorHermanos()
         {
-            // El propio pedido no tiene MantenerJunto, así que se factura siempre,
-            // independientemente de que haya hermanos del mismo PO no listos.
+            // NestoAPI#727 (Carlos, 28/10/26): con P.O. manda el grupo del P.O., tenga o no MantenerJunto el pedido:
+            // antes se facturaba solo y el P.O. acababa en varias facturas (o mezclado en el fin de mes).
             var hermano = NuevoPedido("1", 200, "CLI-1", mantenerJunto: true,
                 suPedido: "PO-1",
                 lineas: Lineas(Constantes.EstadosLineaVenta.PENDIENTE));
@@ -173,23 +206,23 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
                 suPedido: "PO-1",
                 lineas: Lineas(Constantes.EstadosLineaVenta.ALBARAN));
 
-            Assert.IsTrue(gestor.PuedeFacturarPedido(pedido));
+            Assert.IsFalse(gestor.PuedeFacturarPedido(pedido));
         }
 
         [TestMethod]
-        public void PuedeFacturarPedido_ConPOyMantenerJunto_HermanoSinMantenerJunto_NoBloquea()
+        public void PuedeFacturarPedido_ConPOyMantenerJunto_HermanoSinMantenerJunto_TambienBloquea()
         {
-            // El hermano comparte PO pero NO tiene MantenerJunto: no entra en el grupo.
-            var hermanoNoAgrupable = NuevoPedido("1", 200, "CLI-1", mantenerJunto: false,
+            // NestoAPI#727: el hermano comparte P.O.: entra en el grupo tenga o no MantenerJunto.
+            var hermano = NuevoPedido("1", 200, "CLI-1", mantenerJunto: false,
                 suPedido: "PO-1",
                 lineas: Lineas(Constantes.EstadosLineaVenta.PENDIENTE));
-            ConfigurarFakeDbSet(fakeCabPedidos, new[] { hermanoNoAgrupable }.AsQueryable());
+            ConfigurarFakeDbSet(fakeCabPedidos, new[] { hermano }.AsQueryable());
 
             var pedido = NuevoPedido("1", 100, "CLI-1", mantenerJunto: true,
                 suPedido: "PO-1",
                 lineas: Lineas(Constantes.EstadosLineaVenta.ALBARAN));
 
-            Assert.IsTrue(gestor.PuedeFacturarPedido(pedido));
+            Assert.IsFalse(gestor.PuedeFacturarPedido(pedido));
         }
 
         [TestMethod]

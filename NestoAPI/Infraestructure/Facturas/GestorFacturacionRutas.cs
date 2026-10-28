@@ -145,7 +145,8 @@ namespace NestoAPI.Infraestructure.Facturas
             }
 
             // Si no tiene MantenerJunto, siempre se puede facturar
-            if (!pedido.MantenerJunto)
+            // (NestoAPI#727: salvo que tenga P.O.: entonces el P.O. es la unidad de facturación y manda el grupo)
+            if (!pedido.MantenerJunto && string.IsNullOrWhiteSpace(pedido.SuPedido))
             {
                 return true;
             }
@@ -165,15 +166,15 @@ namespace NestoAPI.Infraestructure.Facturas
                 return false;
             }
 
-            // NestoAPI#195: si tiene PO informado, todos los hermanos del mismo PO con
-            // MantenerJunto=true deben tener también sus líneas en albarán.
+            // NestoAPI#195: si tiene PO informado, todos los hermanos del mismo PO deben tener también sus líneas en
+            // albarán (NestoAPI#727: tengan o no MantenerJunto; los ya agrupados no cuentan).
             if (!string.IsNullOrWhiteSpace(pedido.SuPedido))
             {
                 bool algunHermanoConLineasSinAlbaran = db.CabPedidoVtas
                     .Where(c => c.Empresa == pedido.Empresa
                              && c.Nº_Cliente == pedido.Nº_Cliente
                              && c.Número != pedido.Número
-                             && c.MantenerJunto
+                             && !c.Agrupada
                              && c.SuPedido == pedido.SuPedido)
                     .Any(c => c.LinPedidoVtas.Any(l => l.Estado < Constantes.EstadosLineaVenta.ALBARAN));
 

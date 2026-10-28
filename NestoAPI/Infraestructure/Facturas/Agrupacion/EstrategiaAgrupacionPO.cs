@@ -7,6 +7,9 @@ namespace NestoAPI.Infraestructure.Facturas.Agrupacion
 {
     /// <summary>
     /// NestoAPI#195 (Fase 2): estrategia de agrupación por P.O.
+    /// NestoAPI#727 (Carlos, 28/10/26): el P.O. es la unidad de facturación, tenga o no «Mantener junto» el pedido y sea cual
+    /// sea su periodo (fin de mes incluido): todos los pedidos de un cliente con el mismo P.O. van a UNA factura, cuando todos
+    /// están completamente albaraneados. Los pedidos ya facturados del todo no cuentan (no se vuelven a tocar).
     /// </summary>
     public class EstrategiaAgrupacionPO : IEstrategiaAgrupacionPO
     {
@@ -19,15 +22,19 @@ namespace NestoAPI.Infraestructure.Facturas.Agrupacion
 
         public IEnumerable<GrupoPedidosPO> SeleccionarGrupos(string empresa)
         {
-            // Candidatos: pedidos de la empresa con MantenerJunto, PO informado y no agrupados.
+            // Candidatos: pedidos de la empresa con PO informado y no agrupados (NestoAPI#727: con o sin MantenerJunto).
             // Traemos a memoria para agrupar por PO y revisar el estado de las líneas (el
             // criterio "todas en albarán" se evalúa por pedido, no es trivial en SQL aquí).
             List<CabPedidoVta> candidatos = db.CabPedidoVtas
                 .Where(c => c.Empresa == empresa
-                         && c.MantenerJunto
                          && !c.Agrupada
                          && c.SuPedido != null
                          && c.SuPedido != "")
+                .ToList()
+                // NestoAPI#727: un pedido con todas sus líneas ya facturadas no tiene nada que agrupar ni facturar
+                // (los que aún tienen algo pendiente sí cuentan: bloquean su grupo hasta estar en albarán)
+                .Where(c => c.LinPedidoVtas == null || !c.LinPedidoVtas.Any()
+                         || c.LinPedidoVtas.Any(l => l.Estado != Constantes.EstadosLineaVenta.FACTURA))
                 .ToList();
 
             return candidatos

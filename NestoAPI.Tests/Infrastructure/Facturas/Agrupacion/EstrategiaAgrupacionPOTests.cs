@@ -55,6 +55,39 @@ namespace NestoAPI.Tests.Infrastructure.Facturas.Agrupacion
             Assert.AreEqual(0, grupos.Count);
         }
 
+        // NestoAPI#727 (Carlos, 28/10/26): el P.O. es la unidad de facturación, tenga o no MantenerJunto el pedido
+
+        [TestMethod]
+        public void SeleccionarGrupos_SinMantenerJunto_ConPO_TambienSeAgrupa()
+        {
+            CabPedidoVta a = NuevoPedido("1", 100, "CLI-1", "31", "PO00474329", Linea(Constantes.EstadosLineaVenta.ALBARAN));
+            CabPedidoVta b = NuevoPedido("1", 200, "CLI-1", "51", "PO00474329", Linea(Constantes.EstadosLineaVenta.ALBARAN));
+            a.MantenerJunto = false; b.MantenerJunto = false;
+            a.Periodo_Facturacion = "FDM"; b.Periodo_Facturacion = "FDM";
+            ConfigurarCabPedidos(a, b);
+
+            List<GrupoPedidosPO> grupos = estrategia.SeleccionarGrupos("1").ToList();
+
+            Assert.AreEqual(1, grupos.Count, "contactos distintos y fin de mes: da igual, manda el P.O.");
+            Assert.AreEqual(2, grupos[0].Pedidos.Count);
+        }
+
+        [TestMethod]
+        public void SeleccionarGrupos_PedidoYaFacturadoDelTodo_NoEsCandidato_YDosPOsSonDosGrupos()
+        {
+            CabPedidoVta facturado = NuevoPedido("1", 100, "CLI-1", "0", "PO-VIEJO", Linea(Constantes.EstadosLineaVenta.FACTURA));
+            facturado.MantenerJunto = false;
+            ConfigurarCabPedidos(facturado,
+                NuevoPedido("1", 200, "CLI-1", "0", "PO-A", Linea(Constantes.EstadosLineaVenta.ALBARAN)),
+                NuevoPedido("1", 300, "CLI-1", "0", "PO-B", Linea(Constantes.EstadosLineaVenta.ALBARAN)));
+
+            List<GrupoPedidosPO> grupos = estrategia.SeleccionarGrupos("1").OrderBy(g => g.SuPedido).ToList();
+
+            Assert.AreEqual(2, grupos.Count, "PO-A y PO-B, nunca juntos; el ya facturado no vuelve");
+            Assert.AreEqual("PO-A", grupos[0].SuPedido);
+            Assert.AreEqual("PO-B", grupos[1].SuPedido);
+        }
+
         [TestMethod]
         public void SeleccionarGrupos_PedidoAgrupado_NoSeVuelveAIncluir()
         {
