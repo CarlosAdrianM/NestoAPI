@@ -1,5 +1,6 @@
 ﻿using Microsoft.Reporting.WebForms;
 using NestoAPI.Infraestructure;
+using NestoAPI.Infrastructure;
 using NestoAPI.Infraestructure.Facturas;
 using NestoAPI.Models;
 using NestoAPI.Models.Facturas;
@@ -33,6 +34,49 @@ namespace NestoAPI.Controllers
         }
 
         internal const string MOTIVO_SOLO_EMPLEADOS_CORREO = "Solo los empleados pueden enviar facturas por correo.";
+
+        /// <summary>NestoAPI#723: cambia el P.O. de una factura emitida (empresa, número, P.O., usuario) → el anterior. Sustituible en los tests.</summary>
+        internal Func<string, string, string, string, Task<string>> CambiarSuPedidoFactura { get; set; } = async (empresa, numero, suPedido, usuario) =>
+        {
+            using (var db = new NVEntities())
+            {
+                return await Infraestructure.Clientes.SuPedidoFactura.Cambiar(db, empresa, numero, suPedido, usuario).ConfigureAwait(false);
+            }
+        };
+
+        public const string MOTIVO_SIN_PERMISO_SUPEDIDO = "Solo Administración, Dirección o Informática pueden cambiar el P.O. de una factura emitida.";
+
+        // PUT api/Facturas/1/NV2616075/SuPedido   { "SuPedido": "4500123456" }
+        /// <summary>
+        /// NestoAPI#723: pone o cambia el P.O. («Su pedido») de una factura ya emitida, y el de su pedido. No hace falta abonar y
+        /// facturar de nuevo: el P.O. no forma parte del registro de facturación de Verifactu. Queda en Modificaciones.
+        /// </summary>
+        [HttpPut]
+        [Authorize]
+        [Route("api/Facturas/{empresa}/{numero}/SuPedido")]
+        public async Task<IHttpActionResult> PutSuPedido(string empresa, string numero, [FromBody] SuPedidoFacturaDTO peticion)
+        {
+            var principal = User as System.Security.Claims.ClaimsPrincipal;
+            if (principal == null || !(principal.IsInRoleSinDominio(Constantes.GruposSeguridad.ADMINISTRACION) || principal.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION)
+                || principal.IsInRoleSinDominio(Constantes.GruposSeguridad.INFORMATICA)))
+            {
+                return Content(HttpStatusCode.Forbidden, MOTIVO_SIN_PERMISO_SUPEDIDO);
+            }
+            string motivo = Infraestructure.Clientes.SuPedidoFactura.Normalizar(peticion?.SuPedido, out string limpio);
+            if (motivo != null)
+            {
+                return BadRequest(motivo);
+            }
+            try
+            {
+                string anterior = await CambiarSuPedidoFactura(empresa, numero, limpio, User.Identity?.Name).ConfigureAwait(false);
+                return Ok(new SuPedidoFacturaDTO { Empresa = empresa, Numero = numero?.Trim(), SuPedido = limpio, SuPedidoAnterior = anterior });
+            }
+            catch (Infraestructure.Exceptions.NestoBusinessException ex)
+            {
+                return Content(ex.StatusCode, ex.Message);
+            }
+        }
         // (TNV 07/10/26: y el cliente de la tienda, solo las suyas; ver ComprobarEnvioDelCliente)
 
         /// <summary>

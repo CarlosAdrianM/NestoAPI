@@ -805,6 +805,7 @@
     <Compile Include="Infraestructure\ChequesRegalo\AvisoChequesRegalo.cs" />
     <Compile Include="Infraestructure\ChequesRegalo\EstadisticaChequesRegalo.cs" />
     <Compile Include="Infraestructure\Clientes\NotificadorNifIncorrecto.cs" />
+    <Compile Include="Infraestructure\Clientes\SuPedidoObligatorio.cs" />
     <Compile Include="Infraestructure\Clientes\ConsultasClientePrincipal.cs" />
     <Compile Include="Infraestructure\Productos\FamiliasRestringidas.cs" />
     <Compile Include="Infraestructure\Verifactu\VerifactuJobsService.cs" />
@@ -1392,6 +1393,7 @@
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\Facturas\ISerieFacturaVerifactu.cs" />
+    <Compile Include="Models\Facturas\SuPedidoFacturaDTO.cs" />
     <Compile Include="Models\Facturas\RegistroSeriesVerifactu.cs" />
     <Compile Include="Models\Facturas\SeriesFactura\SerieRC.cs" />
     <Compile Include="Models\Facturas\SeriesFactura\SerieRV.cs" />

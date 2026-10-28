@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Data.Entity;
 using System.Linq;
@@ -45,6 +46,30 @@ namespace NestoAPI.Tests.Infrastructure.Facturas
         }
 
         // --- Regresión del comportamiento previo (sin PO) ---
+
+        [TestMethod]
+        public void PuedeFacturarPedido_ClienteQueExigePO_SinSuPedido_Espera_YConElSi_723()
+        {
+            Func<bool> antes = NestoAPI.Infraestructure.Clientes.ReglaSuPedidoObligatorio.Interruptor;
+            try
+            {
+                NestoAPI.Infraestructure.Clientes.ReglaSuPedidoObligatorio.Interruptor = () => true;
+                var consultados = new List<string>();
+                gestor.ClienteExigeSuPedido = (empresa, cliente) => { consultados.Add(cliente); return cliente == "CHANEL"; };
+                var sinPo = NuevoPedido("1", 100, "CHANEL", mantenerJunto: false);
+                Assert.IsFalse(gestor.PuedeFacturarPedido(sinPo), "espera el P.O.");
+                Assert.IsTrue(gestor.EsperaSuPedido(sinPo));
+                sinPo.SuPedido = "4500123";
+                Assert.IsTrue(gestor.PuedeFacturarPedido(sinPo));
+                var otro = NuevoPedido("1", 101, "OTRO", mantenerJunto: false);
+                Assert.IsTrue(gestor.PuedeFacturarPedido(otro));
+                CollectionAssert.AreEqual(new[] { "CHANEL", "CHANEL", "OTRO" }, consultados, "con P.O. informado no se consulta la marca del cliente");
+            }
+            finally
+            {
+                NestoAPI.Infraestructure.Clientes.ReglaSuPedidoObligatorio.Interruptor = antes;
+            }
+        }
 
         [TestMethod]
         public void PuedeFacturarPedido_NoMantenerJunto_DevuelveTrue()

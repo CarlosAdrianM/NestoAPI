@@ -23,6 +23,8 @@ namespace NestoAPI.Infraestructure.Facturas
     {
         private readonly NVEntities db;
         private readonly bool dbEsExterno;
+        /// <summary>NestoAPI#723: (empresa, cliente) → si el cliente exige el P.O. (sustituible en los tests). Solo se consulta sin P.O.</summary>
+        internal Func<string, string, bool> ClienteExigeSuPedido { get; set; } = (empresa, cliente) => new Clientes.RepositorioSuPedidoObligatorio().ExigeSincronoSeguro(empresa, cliente);
         private readonly Verifactu.IServicioVerifactu servicioVerifactu;
         private readonly ILogService logService;
 
@@ -457,6 +459,15 @@ namespace NestoAPI.Infraestructure.Facturas
             CabPedidoVta cabPedido = db.CabPedidoVtas
                 .Include(p => p.LinPedidoVtas)
                 .Single(p => p.Empresa == empresa && p.Número == pedido);
+            // NestoAPI#723: el cliente exige el P.O. y el pedido no lo tiene: ninguna factura por ningún camino
+            if (Clientes.ReglaSuPedidoObligatorio.Activa && !Clientes.ReglaSuPedidoObligatorio.TieneSuPedido(cabPedido.SuPedido)
+                && ClienteExigeSuPedido(cabPedido.Empresa, cabPedido.Nº_Cliente))
+            {
+                throw new Exceptions.NestoBusinessException(Clientes.ReglaSuPedidoObligatorio.MotivoAlFacturar(cabPedido.Nº_Cliente, pedido, cabPedido.SuPedido, true))
+                {
+                    StatusCode = System.Net.HttpStatusCode.Conflict
+                };
+            }
 
             if (cabPedido.Periodo_Facturacion == Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES && !cabPedido.Agrupada)
             {

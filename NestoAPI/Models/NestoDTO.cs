@@ -41,6 +41,8 @@ namespace NestoAPI.Models
         public decimal noComisiona { get; set; }
         public bool servirJunto { get; set; }
         public bool mantenerJunto { get; set; }
+        /// <summary>NestoAPI#723: el cliente exige el P.O. («Su pedido») en todos sus pedidos (tabla ClientesSuPedidoObligatorio).</summary>
+        public bool suPedidoObligatorio { get; set; }
         public string usuario { get; set; }
 
         // NestoAPI#464: 0 = sin empleados, 1..4, 5 = "5 o más"; null = no se ha preguntado.
@@ -70,6 +72,14 @@ namespace NestoAPI.Models
         public virtual ICollection<VendedorGrupoProductoDTO> VendedoresGrupoProducto { get; set; }
         public virtual ICollection<PersonaContactoDTO> PersonasContacto { get; set; }
     }
+    /// <summary>NestoAPI#723: cuerpo y respuesta de PUT api/Clientes/{empresa}/{cliente}/SuPedidoObligatorio.</summary>
+    public class SuPedidoObligatorioDTO
+    {
+        public string Empresa { get; set; }
+        public string Cliente { get; set; }
+        public bool Exige { get; set; }
+    }
+
     public class ClienteProductoDTO
     {
         public string Vendedor { get; set; }

@@ -16,6 +16,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Data;
 using System.Data.Entity;
 using System.Data.Entity.Infrastructure;
+using NestoAPI.Infrastructure;
 using System.Data.SqlClient;
 using System.Linq;
 using System.Net;
@@ -670,6 +671,7 @@ namespace NestoAPI.Controllers
 
             ClienteDTO clienteDTO = new ClienteDTO
             {
+                suPedidoObligatorio = ClienteExigeSuPedido(clienteEncontrado.Empresa, clienteEncontrado.Nº_Cliente), // NestoAPI#723
                 albaranValorado = clienteEncontrado.AlbaranValorado,
                 cadena = clienteEncontrado.Cadena,
                 ccc = clienteEncontrado.CCC,
@@ -711,6 +713,41 @@ namespace NestoAPI.Controllers
             };
 
             return Ok(clienteDTO);
+        }
+
+        /// <summary>NestoAPI#723: (empresa, cliente) → si exige el P.O. (sustituible en los tests).</summary>
+        internal Func<string, string, bool> ClienteExigeSuPedido { get; set; } = (empresa, cliente) => new Infraestructure.Clientes.RepositorioSuPedidoObligatorio().ExigeSincronoSeguro(empresa, cliente);
+        /// <summary>NestoAPI#723: (empresa, cliente, exige, usuario) → guarda la marca (sustituible en los tests).</summary>
+        internal Func<string, string, bool, string, Task> PonerSuPedidoObligatorio { get; set; } = (empresa, cliente, exige, usuario) => new Infraestructure.Clientes.RepositorioSuPedidoObligatorio().Poner(empresa, cliente, exige, usuario);
+
+        public const string MOTIVO_SIN_PERMISO_SUPEDIDO = "Solo Administración, Dirección o Informática pueden cambiar si un cliente exige el P.O.";
+
+        // PUT api/Clientes/1/12345/SuPedidoObligatorio   { "Exige": true }
+        /// <summary>NestoAPI#723: marca (o quita) que el cliente exige el P.O. en todos sus pedidos. Vale para todos sus contactos.</summary>
+        [HttpPut]
+        [Authorize]
+        [Route("api/Clientes/{empresa}/{cliente}/SuPedidoObligatorio")]
+        public async Task<IHttpActionResult> PutSuPedidoObligatorio(string empresa, string cliente, [FromBody] SuPedidoObligatorioDTO peticion)
+        {
+            var principal = User as System.Security.Claims.ClaimsPrincipal;
+            if (principal == null || !(principal.IsInRoleSinDominio(Constantes.GruposSeguridad.ADMINISTRACION) || principal.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION)
+                || principal.IsInRoleSinDominio(Constantes.GruposSeguridad.INFORMATICA)))
+            {
+                return Content(HttpStatusCode.Forbidden, MOTIVO_SIN_PERMISO_SUPEDIDO);
+            }
+            if (peticion == null || string.IsNullOrWhiteSpace(cliente))
+            {
+                return BadRequest("Falta el cliente o si exige el P.O.");
+            }
+            try
+            {
+                await PonerSuPedidoObligatorio(empresa, cliente, peticion.Exige, User.Identity?.Name).ConfigureAwait(false);
+                return Ok(new SuPedidoObligatorioDTO { Empresa = empresa, Cliente = cliente?.Trim(), Exige = peticion.Exige });
+            }
+            catch (Infraestructure.Exceptions.NestoBusinessException ex)
+            {
+                return Content(ex.StatusCode, ex.Message);
+            }
         }
 
         [HttpGet]

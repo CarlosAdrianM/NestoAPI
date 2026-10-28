@@ -929,6 +929,20 @@ namespace NestoAPI.Controllers
             return Ok(resultadoCambio.Respuesta);
         }
 
+        /// <summary>NestoAPI#723: (empresa, cliente) → si el cliente exige el P.O. en todos sus pedidos (sustituible en los tests).</summary>
+        internal Func<string, string, Task<bool>> ClienteExigeSuPedido { get; set; } = (empresa, cliente) => new Infraestructure.Clientes.RepositorioSuPedidoObligatorio().Exige(empresa, cliente);
+
+        private async Task<string> MotivoSuPedidoObligatorio(PedidoVentaDTO pedido)
+        {
+            if (pedido == null || !Infraestructure.Clientes.ReglaSuPedidoObligatorio.Activa || pedido.EsPresupuesto
+                || Infraestructure.Clientes.ReglaSuPedidoObligatorio.TieneSuPedido(pedido.suPedido))
+            {
+                return null;
+            }
+            bool exige = await ClienteExigeSuPedido(pedido.empresa, pedido.cliente).ConfigureAwait(true);
+            return Infraestructure.Clientes.ReglaSuPedidoObligatorio.MotivoAlGrabar(pedido, exige);
+        }
+
         /// <summary>NestoAPI#722: la campana al grupo Almacén al aplazar un pedido con picking (sustituible en los tests).</summary>
         internal Infraestructure.PedidosVenta.Retencion.AvisadorRetencionAlmacen AvisadorAlmacen
         {
@@ -1065,6 +1079,12 @@ namespace NestoAPI.Controllers
             if (cabPedidoVta == null)
             {
                 return NotFound();
+            }
+            // NestoAPI#723: el cliente exige el P.O. y el pedido no lo trae
+            string sinSuPedido = await MotivoSuPedidoObligatorio(pedido);
+            if (sinSuPedido != null)
+            {
+                return BadRequest(sinSuPedido);
             }
 
             try
@@ -2342,6 +2362,12 @@ namespace NestoAPI.Controllers
             if (faltanDatos != null)
             {
                 return BadRequest(faltanDatos);
+            }
+            // NestoAPI#723: el cliente exige el P.O. y el pedido no lo trae (los presupuestos no lo exigen)
+            string sinSuPedido = await MotivoSuPedidoObligatorio(pedido);
+            if (sinSuPedido != null)
+            {
+                return BadRequest(sinSuPedido);
             }
 
             // NestoAPI#593 (c4): la línea del cheque regalo la pone el servidor, venga como venga (NestoApp mandaría +1

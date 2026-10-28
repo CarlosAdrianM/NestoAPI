@@ -114,6 +114,14 @@ namespace NestoAPI.Infraestructure.Facturas
             return sb.ToString().Normalize(NormalizationForm.FormC);
         }
 
+        /// <summary>NestoAPI#723: (empresa, cliente) → si el cliente exige el P.O. (sustituible en los tests). Solo se consulta sin P.O.</summary>
+        internal Func<string, string, bool> ClienteExigeSuPedido { get; set; } = (empresa, cliente) => new Clientes.RepositorioSuPedidoObligatorio().ExigeSincronoSeguro(empresa, cliente);
+
+        /// <summary>NestoAPI#723: el pedido no se factura porque el cliente exige el P.O. y no lo tiene.</summary>
+        public bool EsperaSuPedido(CabPedidoVta pedido)
+            => pedido != null && Clientes.ReglaSuPedidoObligatorio.Activa && !Clientes.ReglaSuPedidoObligatorio.TieneSuPedido(pedido.SuPedido)
+               && ClienteExigeSuPedido(pedido.Empresa, pedido.Nº_Cliente);
+
         /// <summary>
         /// Verifica si el pedido puede ser facturado.
         /// Reproduce la lógica del procedimiento prdCrearFacturaVta:
@@ -127,6 +135,11 @@ namespace NestoAPI.Infraestructure.Facturas
         public bool PuedeFacturarPedido(CabPedidoVta pedido)
         {
             if (pedido == null)
+            {
+                return false;
+            }
+            // NestoAPI#723: sin el P.O. que exige el cliente, el pedido espera (se avisa en el resumen de la ruta)
+            if (EsperaSuPedido(pedido))
             {
                 return false;
             }
