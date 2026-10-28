@@ -293,5 +293,15 @@ namespace NestoAPI.Tests.Infrastructure
 
             Assert.IsTrue(resultado.AvisarConImporteAlCogerPicking);
         }
+        // NestoAPI#723 / Nesto#562: la plantilla recibe el P.O. para no perderlo al modificar
+        [TestMethod]
+        public void Convertir_ConservaElSuPedido()
+        {
+            var pedido = new PedidoVentaDTO { empresa = "1", cliente = "27593", contacto = "0", numero = 1, suPedido = "PO00474329 ", Lineas = new System.Collections.Generic.List<LineaPedidoVentaDTO>() };
+            Assert.AreEqual("PO00474329", ConvertidorPedidoAPlantilla.Convertir(pedido).SuPedido);
+            pedido.suPedido = null;
+            Assert.IsNull(ConvertidorPedidoAPlantilla.Convertir(pedido).SuPedido);
+        }
+
     }
 }

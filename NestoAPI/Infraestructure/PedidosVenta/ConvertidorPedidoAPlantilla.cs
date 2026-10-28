@@ -46,6 +46,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 ServirJunto = pedido.servirJunto,
                 ModoServicio = pedido.modoServicio,
                 MantenerJunto = pedido.mantenerJunto,
+                SuPedido = pedido.suPedido?.Trim(), // NestoAPI#723 / Nesto#562
                 ModoFacturacion = pedido.modoFacturacion // #542
             };
 
