@@ -41,6 +41,12 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// <summary>Números de bulto distintos con foto (un bulto compartido por dos pedidos cuenta una vez).</summary>
         public int BultosConFoto { get; set; }
         public int BultosSinFoto { get; set; }
+        /// <summary>
+        /// NestoAPI#720 (Andre, 28/10/26): pedidos de la entrega que ya tienen envío con etiqueta (EnviosAgencia en curso o más allá),
+        /// se haya hecho desde el packing de Ariadna o desde Nesto. Con todos los pedidos etiquetados, la entrega está hecha aunque no
+        /// haya bultos con foto (en Algete etiquetan desde Nesto y el picking se quedaba en la lista hasta el albarán).
+        /// </summary>
+        public int PedidosConEtiqueta { get; set; }
         /// <summary>El picking se terminó en Ariadna (PreparacionSalidasTerminadas).</summary>
         public bool Terminado { get; set; }
     }
@@ -562,6 +568,9 @@ SELECT e.Picking, RTRIM(e.Cliente) AS Cliente, RTRIM(e.Contacto) AS Contacto, RT
        (SELECT COUNT(*) FROM EnviosAgenciaBultos b
         WHERE b.Empresa = @p0 AND b.Picking = e.Picking AND b.RutaBlob IS NULL
               AND b.Pedido IN (SELECT li.Pedido FROM lineas li WHERE li.Picking = e.Picking AND li.Cliente = e.Cliente AND li.Contacto = e.Contacto)) AS BultosSinFoto,
+       (SELECT COUNT(DISTINCT ea.Pedido) FROM EnviosAgencia ea
+        WHERE ea.Empresa = @p0 AND ea.Estado >= 0
+              AND ea.Pedido IN (SELECT li.Pedido FROM lineas li WHERE li.Picking = e.Picking AND li.Cliente = e.Cliente AND li.Contacto = e.Contacto)) AS PedidosConEtiqueta,
        CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.PreparacionSalidasTerminadas t
                               WHERE t.Empresa = @p0 AND t.TipoOrigen = 'PICK' AND t.NumeroOrigen = e.Picking) THEN 1 ELSE 0 END AS bit) AS Terminado
 FROM entregas e

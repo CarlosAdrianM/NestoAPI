@@ -338,9 +338,17 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// Una entrega está empaquetada si tiene algún bulto y todos con foto (lo mismo que «TodosConFoto» en la pantalla
         /// de packing de Ariadna); un picking está pendiente si le queda alguna entrega sin empaquetar.
         /// </summary>
+        /// <summary>
+        /// NestoAPI#720 (Andre, 28/10/26): una entrega está hecha con sus bultos fotografiados (packing de Ariadna) O con todos sus
+        /// pedidos etiquetados (EnviosAgencia en curso o más allá, desde Ariadna o desde Nesto). Hasta hoy solo contaba lo primero y,
+        /// como en Algete etiquetan desde Nesto, el picking seguía en la lista hasta el albarán aunque estuviera todo empaquetado.
+        /// </summary>
+        internal static bool EntregaEmpaquetada(EntregaPorEmpaquetar e)
+            => (e.BultosConFoto > 0 && e.BultosSinFoto == 0) || (e.Pedidos > 0 && e.PedidosConEtiqueta >= e.Pedidos);
+
         internal static List<PackingPendienteDTO> MontarPackingsPendientes(IEnumerable<EntregaPorEmpaquetar> entregas)
         {
-            bool Empaquetada(EntregaPorEmpaquetar e) => e.BultosConFoto > 0 && e.BultosSinFoto == 0;
+            bool Empaquetada(EntregaPorEmpaquetar e) => EntregaEmpaquetada(e);
             return (entregas ?? Enumerable.Empty<EntregaPorEmpaquetar>())
                 .GroupBy(e => e.Picking)
                 .Where(g => g.Any(e => !Empaquetada(e)))
