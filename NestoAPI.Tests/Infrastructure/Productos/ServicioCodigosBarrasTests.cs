@@ -155,6 +155,74 @@ namespace NestoAPI.Tests.Infrastructure.Productos
             Assert.AreEqual(2, repositorio.Filas.Count(f => f.Codigo == "8437017506362" && f.Activo));
         }
 
+        // ---------- Sugerencia 822 (Santiago, 28/10/26): un código que se parece a uno del producto ----------
+
+        [TestMethod]
+        public void CodigoParecido_MismaLongitudYHastaDosCifrasDistintas()
+        {
+            Assert.AreEqual("8436538391570", ServicioCodigosBarras.CodigoParecido(new[] { "8436538391570" }, "9439538391570", out int dif), "el caso real del 28893");
+            Assert.AreEqual(2, dif);
+            Assert.AreEqual("8437017506379", ServicioCodigosBarras.CodigoParecido(new[] { "8437017506379" }, "8437017506378", out dif));
+            Assert.AreEqual(1, dif);
+            Assert.IsNull(ServicioCodigosBarras.CodigoParecido(new[] { "8437017506379" }, "9937017506370", out _), "tres cifras: otro código");
+            Assert.IsNull(ServicioCodigosBarras.CodigoParecido(new[] { "8437017506379" }, "8437017506379", out _), "igual no es parecido");
+            Assert.IsNull(ServicioCodigosBarras.CodigoParecido(new[] { "84370175063" }, "8437017506379", out _), "otra longitud");
+            Assert.IsNull(ServicioCodigosBarras.CodigoParecido(null, "8437017506379", out _));
+            Assert.IsNull(ServicioCodigosBarras.CodigoParecido(new[] { "8437017506379" }, " ", out _));
+        }
+
+        [TestMethod]
+        public async Task Anadir_CodigoParecidoAUnoDelProducto_SinPermitirParecido_NoLoAnadeYPideReleer()
+        {
+            // 9737017506379: +1 en la primera cifra y +3 en la segunda (peso 3) = +10, así que el dígito de control sigue cuadrando
+            ResultadoCodigoBarras resultado = await Anadir("32565", "9737017506379");
+
+            Assert.AreEqual(EstadoOperacionCodigoBarras.Parecido, resultado.Estado);
+            Assert.AreEqual("8437017506379", resultado.Parecido.CodigoExistente);
+            Assert.AreEqual(2, resultado.Parecido.Diferencias);
+            StringAssert.Contains(resultado.Parecido.Message, "9737017506379");
+            StringAssert.Contains(resultado.Parecido.Message, "8437017506379");
+            StringAssert.Contains(resultado.Parecido.Message, "lectura mal hecha");
+            Assert.IsFalse(repositorio.Filas.Any(f => f.Codigo == "9737017506379"));
+            Assert.AreEqual(0, repositorio.Guardados);
+        }
+
+        [TestMethod]
+        public async Task Anadir_CodigoParecido_ConPermitirParecido_LoAnadeYAvisaACompras()
+        {
+            var avisos = new List<string>();
+            servicio = new ServicioCodigosBarras(repositorio, (producto, nombre, existente, nuevo, usuario) =>
+            {
+                avisos.Add($"{producto}|{nombre}|{existente}|{nuevo}|{usuario}");
+                return Task.CompletedTask;
+            });
+
+            ResultadoCodigoBarras resultado = await servicio.Anadir("32565", new NuevoCodigoBarrasDTO { Empresa = "1", Codigo = "9737017506379", Origen = "Almacen", PermitirParecido = true }, "Andre");
+
+            Assert.AreEqual(EstadoOperacionCodigoBarras.Creado, resultado.Estado);
+            Assert.IsTrue(repositorio.Filas.Any(f => f.Producto == "32565" && f.Codigo == "9737017506379" && f.Activo));
+            Assert.AreEqual("8437017506379", repositorio.Productos.Single(p => p.Número == "32565").CodBarras, "el principal no cambia: lo decide Compras");
+            Assert.AreEqual("32565|GUANTES NITRILO T/M|8437017506379|9737017506379|Andre", avisos.Single());
+        }
+
+        [TestMethod]
+        public async Task Anadir_CodigoParecido_SiFallaElAvisoACompras_QuedaAnadidoIgual()
+        {
+            servicio = new ServicioCodigosBarras(repositorio, (a, b, c, d, e) => throw new InvalidOperationException("sin red"));
+            ResultadoCodigoBarras resultado = await servicio.Anadir("32565", new NuevoCodigoBarrasDTO { Empresa = "1", Codigo = "9737017506379", Origen = "Almacen", PermitirParecido = true }, "Andre");
+            Assert.AreEqual(EstadoOperacionCodigoBarras.Creado, resultado.Estado);
+        }
+
+        [TestMethod]
+        public async Task Anadir_CodigoDistinto_NoAvisaACompras()
+        {
+            int avisos = 0;
+            servicio = new ServicioCodigosBarras(repositorio, (a, b, c, d, e) => { avisos++; return Task.CompletedTask; });
+            ResultadoCodigoBarras resultado = await servicio.Anadir("32565", new NuevoCodigoBarrasDTO { Empresa = "1", Codigo = "8437017509998", Origen = "Almacen" }, "Andre");
+            Assert.AreEqual(EstadoOperacionCodigoBarras.Creado, resultado.Estado);
+            Assert.AreEqual(0, avisos);
+        }
+
         [TestMethod]
         public async Task Anadir_CodigoDeBajaEnOtroProducto_NoEsConflicto()
         {

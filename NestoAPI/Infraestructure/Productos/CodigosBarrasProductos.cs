@@ -40,6 +40,25 @@ namespace NestoAPI.Infraestructure.Productos
         public string Origen { get; set; }
         /// <summary>True para añadirlo aunque ya esté activo en otro producto (caso guantes).</summary>
         public bool PermitirCompartido { get; set; }
+        /// <summary>
+        /// Sugerencia 822 (Santiago, 28/10/26): true para añadirlo aunque se parezca mucho a uno que ya tiene el producto (el
+        /// mozo ha vuelto a leer el envase y sale el mismo código). Se avisa a Compras para que compruebe cuál es el bueno.
+        /// </summary>
+        public bool PermitirParecido { get; set; }
+    }
+
+    /// <summary>
+    /// Sugerencia 822: cuerpo del 422 cuando el código nuevo se parece mucho a uno activo del producto (misma longitud,
+    /// una o dos cifras distintas): lo más probable es una lectura mal hecha (la cámara del móvil cambió un 8 por un 9 en
+    /// el 28893 y el dígito de control seguía cuadrando).
+    /// </summary>
+    public class CodigoBarrasParecidoDTO
+    {
+        public string Message { get; set; }
+        /// <summary>El código activo del producto al que se parece.</summary>
+        public string CodigoExistente { get; set; }
+        /// <summary>Cuántas cifras cambian.</summary>
+        public int Diferencias { get; set; }
     }
 
     /// <summary>NestoAPI#605: un producto activo que tiene un código (respuesta de api/Productos/PorCodigoBarras).</summary>
@@ -71,7 +90,9 @@ namespace NestoAPI.Infraestructure.Productos
         Creado,
         NoValido,
         NoEncontrado,
-        Compartido
+        Compartido,
+        /// <summary>Sugerencia 822: se parece a uno del producto y no se ha pedido añadirlo igual (422).</summary>
+        Parecido
     }
 
     public class ResultadoCodigoBarras
@@ -80,6 +101,7 @@ namespace NestoAPI.Infraestructure.Productos
         public string Mensaje { get; set; }
         public CodigoBarrasProductoDTO Codigo { get; set; }
         public CodigoBarrasCompartidoDTO Compartido { get; set; }
+        public CodigoBarrasParecidoDTO Parecido { get; set; }
     }
 
     public interface IRepositorioCodigosBarras
@@ -135,10 +157,73 @@ namespace NestoAPI.Infraestructure.Productos
 
         private readonly IRepositorioCodigosBarras repositorio;
 
-        public ServicioCodigosBarras(IRepositorioCodigosBarras repositorio)
+        public ServicioCodigosBarras(IRepositorioCodigosBarras repositorio) : this(repositorio, null)
+        {
+        }
+
+        /// <param name="avisarCompras">Sugerencia 822: (producto, nombre, código existente, código nuevo, usuario) → campana a Compras
+        /// cuando se añade un código que se parece a otro del producto. Null = <see cref="AvisarComprasCodigoParecido"/>.</param>
+        internal ServicioCodigosBarras(IRepositorioCodigosBarras repositorio, Func<string, string, string, string, string, Task> avisarCompras)
         {
             this.repositorio = repositorio ?? throw new ArgumentNullException(nameof(repositorio));
+            this.avisarCompras = avisarCompras ?? AvisarComprasCodigoParecido;
         }
+
+        private readonly Func<string, string, string, string, string, Task> avisarCompras;
+
+        /// <summary>Sugerencia 822: hasta cuántas cifras pueden cambiar para que dos códigos de la misma longitud se consideren «parecidos».</summary>
+        public const int DIFERENCIAS_PARECIDO = 2;
+
+        /// <summary>
+        /// Sugerencia 822: el código activo del producto que se parece a <paramref name="codigo"/> (misma longitud, entre 1 y
+        /// <see cref="DIFERENCIAS_PARECIDO"/> cifras distintas), o null. Una lectura mal hecha de la cámara cambia una o dos
+        /// cifras; el dígito de control puede seguir cuadrando (8436538391570 → 9439538391570: +1 y +3·3 = +10).
+        /// </summary>
+        internal static string CodigoParecido(IEnumerable<string> activos, string codigo, out int diferencias)
+        {
+            diferencias = 0;
+            string limpio = codigo?.Trim();
+            if (string.IsNullOrEmpty(limpio))
+            {
+                return null;
+            }
+            string mejor = null;
+            foreach (string activo in (activos ?? Enumerable.Empty<string>()).Select(a => a?.Trim()).Where(a => !string.IsNullOrEmpty(a)))
+            {
+                if (activo.Length != limpio.Length || string.Equals(activo, limpio, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+                int distintas = 0;
+                for (int i = 0; i < limpio.Length && distintas <= DIFERENCIAS_PARECIDO; i++)
+                {
+                    if (char.ToUpperInvariant(activo[i]) != char.ToUpperInvariant(limpio[i]))
+                    {
+                        distintas++;
+                    }
+                }
+                if (distintas >= 1 && distintas <= DIFERENCIAS_PARECIDO && (mejor == null || distintas < diferencias))
+                {
+                    mejor = activo;
+                    diferencias = distintas;
+                }
+            }
+            return mejor;
+        }
+
+        /// <summary>Campana a Compras (Nesto): el almacén ha añadido un código que se parece al de la ficha; que digan cuál es el bueno.</summary>
+        internal static Task AvisarComprasCodigoParecido(string producto, string nombre, string existente, string nuevo, string usuario)
+        {
+            string quien = string.IsNullOrWhiteSpace(usuario) ? "el almacén" : usuario.Trim().Substring(usuario.Trim().LastIndexOf('\\') + 1);
+            string ficha = string.IsNullOrWhiteSpace(nombre) ? producto?.Trim() : $"{producto?.Trim()} {nombre.Trim()}";
+            return new PreparacionAlmacen.AvisadorCompras(new Notificaciones.ServicioNotificacionesPush()).Avisar(
+                $"Código de barras dudoso en el {producto?.Trim()}",
+                new[] { $"{quien} ha leído varias veces el código {nuevo} en el {ficha}, que tenía el {existente} (cambian pocas cifras). " +
+                    "Se ha añadido como código del producto: compruebe en la ficha cuál de los dos es el bueno y dé de baja el otro." },
+                TIPO_AVISO_CODIGO_PARECIDO);
+        }
+
+        public const string TIPO_AVISO_CODIGO_PARECIDO = "CodigoBarrasParecido";
 
         public static bool PuedeEscribir(IPrincipal usuario)
         {
@@ -278,6 +363,27 @@ namespace NestoAPI.Infraestructure.Productos
                 };
             }
 
+            // Sugerencia 822: ¿se parece a uno que ya tiene el producto? Casi seguro una lectura mal hecha: que lo vuelvan a leer.
+            // Solo si el código no es de ningún otro producto: si existe en el catálogo es un código real (guantes T/P y T/M se parecen).
+            List<string> activosDelProducto = filas.Where(f => f.Activo).Select(f => f.Codigo).ToList();
+            if (!string.IsNullOrWhiteSpace(ficha.CodBarras))
+            {
+                activosDelProducto.Add(ficha.CodBarras);
+            }
+            int diferencias = 0;
+            string parecido = otros.Any() ? null : CodigoParecido(activosDelProducto, codigo, out diferencias);
+            if (parecido != null && !nuevo.PermitirParecido)
+            {
+                string cifras = diferencias == 1 ? "una cifra" : $"{diferencias} cifras";
+                string mensajeParecido = $"El código {codigo} se parece mucho al {parecido} que ya tiene el {numero} (cambia {cifras}): " +
+                    "puede ser una lectura mal hecha. Vuelva a leer el envase; si sigue saliendo el mismo código, confírmelo para añadirlo.";
+                return new ResultadoCodigoBarras
+                {
+                    Estado = EstadoOperacionCodigoBarras.Parecido,
+                    Mensaje = mensajeParecido,
+                    Parecido = new CodigoBarrasParecidoDTO { Message = mensajeParecido, CodigoExistente = parecido, Diferencias = diferencias }
+                };
+            }
             bool hayPrincipal = filas.Any(f => f.Activo && f.Principal);
             bool principal = nuevo.Principal || (!hayPrincipal && codigo.Length <= LONGITUD_MAXIMA_FICHA && string.IsNullOrWhiteSpace(ficha.CodBarras));
             var fila = new ProductoCodigoBarras
@@ -302,6 +408,18 @@ namespace NestoAPI.Infraestructure.Productos
             else
             {
                 await repositorio.GuardarCambios().ConfigureAwait(false);
+            }
+            if (parecido != null)
+            {
+                // Sugerencia 822: añadido a pesar del parecido (el mozo lo ha vuelto a leer): que Compras diga cuál es el bueno. Nunca lanza.
+                try
+                {
+                    await avisarCompras(numero, ficha.Nombre, parecido, codigo, usuario).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    ElmahHelper.Log(new Exception($"[Códigos de barras 822] Añadido el {codigo} al {numero} (parecido al {parecido}) pero no se ha podido avisar a Compras: {ex.Message}", ex));
+                }
             }
             return new ResultadoCodigoBarras { Estado = EstadoOperacionCodigoBarras.Creado, Codigo = ADto(fila) };
         }

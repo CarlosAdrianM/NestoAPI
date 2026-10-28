@@ -39,7 +39,8 @@ namespace NestoAPI.Controllers
         // POST api/Productos/32565/CodigosBarras
         /// <summary>
         /// Añade un código al producto (201). Si ya lo tenía, 200 con la fila (reactivada si estaba de baja). Si está activo
-        /// en otro producto y no viene PermitirCompartido, 409 con { Message, Productos: [ { Producto, Nombre } ] }.
+        /// en otro producto y no viene PermitirCompartido, 409 con { Message, Productos: [ { Producto, Nombre } ] }. Si se parece
+        /// mucho a uno del producto (sugerencia 822) y no viene PermitirParecido, 422 con { Message, CodigoExistente, Diferencias }.
         /// </summary>
         [HttpPost]
         [Route("api/Productos/{producto}/CodigosBarras")]
@@ -112,6 +113,9 @@ namespace NestoAPI.Controllers
                     return Content(HttpStatusCode.NotFound, new { Message = resultado.Mensaje });
                 case EstadoOperacionCodigoBarras.Compartido:
                     return Content(HttpStatusCode.Conflict, resultado.Compartido);
+                case EstadoOperacionCodigoBarras.Parecido:
+                    // Sugerencia 822: 422 con { Message, CodigoExistente, Diferencias }; con PermitirParecido se añade (201).
+                    return Content((HttpStatusCode)422, resultado.Parecido);
                 default:
                     return BadRequest(resultado.Mensaje);
             }
