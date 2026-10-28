@@ -885,6 +885,31 @@ namespace NestoAPI.Tests.Infrastructure
         // cuando lo haya, y no cambiar (sin la línea) cuando no lo haya. GenerarTablaHTML depende de
         // la BD, así que aislamos la generación de la línea en GenerarLineaPO para poder cubrirla.
 
+        // Carlos 28/10/26: copia a Alfredo (jefe de almacén) en el correo del pedido nuevo cuando el IVA viene en
+        // blanco. El exento (EX) no lleva copia. EnviarCorreo depende de la BD, así que aislamos la regla.
+
+        [TestMethod]
+        public void LlevaCopiaAlJefeDeAlmacenPorIvaEnBlanco_PedidoNuevoConIvaNuloOVacio_LlevaCopia()
+        {
+            Assert.IsTrue(GestorPresupuestos.LlevaCopiaAlJefeDeAlmacenPorIvaEnBlanco("Nuevo", null));
+            Assert.IsTrue(GestorPresupuestos.LlevaCopiaAlJefeDeAlmacenPorIvaEnBlanco("Nuevo", ""));
+            Assert.IsTrue(GestorPresupuestos.LlevaCopiaAlJefeDeAlmacenPorIvaEnBlanco("Nuevo", "   "));
+        }
+
+        [TestMethod]
+        public void LlevaCopiaAlJefeDeAlmacenPorIvaEnBlanco_IvaExentoOInformado_NoLlevaCopia()
+        {
+            Assert.IsFalse(GestorPresupuestos.LlevaCopiaAlJefeDeAlmacenPorIvaEnBlanco("Nuevo", "EX"));
+            Assert.IsFalse(GestorPresupuestos.LlevaCopiaAlJefeDeAlmacenPorIvaEnBlanco("Nuevo", "G21"));
+            Assert.IsFalse(GestorPresupuestos.LlevaCopiaAlJefeDeAlmacenPorIvaEnBlanco("Nuevo", "E52"));
+        }
+
+        [TestMethod]
+        public void LlevaCopiaAlJefeDeAlmacenPorIvaEnBlanco_SoloEnElCorreoDelPedidoNuevo()
+        {
+            Assert.IsFalse(GestorPresupuestos.LlevaCopiaAlJefeDeAlmacenPorIvaEnBlanco("Modificación", null));
+        }
+
         [TestMethod]
         public void GenerarLineaPO_ConSuPedido_DevuelveLineaConPO()
         {

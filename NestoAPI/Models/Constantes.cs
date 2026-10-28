@@ -187,6 +187,8 @@ namespace NestoAPI.Models
             public const string ALMACEN = "almacen@nuevavision.es";
             public const string TIENDA_ONLINE = "tiendaonline@nuevavision.es";
             public const string TIENDA_REINA = "tienda@nuevavision.es";
+            /// <summary>Alfredo, jefe de almacén: pedidos por debajo del margen y, desde el 28/10/26, copia del correo del pedido nuevo cuando el IVA viene en blanco.</summary>
+            public const string JEFE_ALMACEN = "alfredo@nuevavision.es";
         }
 
         public static class Cuentas

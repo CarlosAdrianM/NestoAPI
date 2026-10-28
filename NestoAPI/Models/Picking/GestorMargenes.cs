@@ -41,7 +41,7 @@ namespace NestoAPI.Models.Picking
             mail.From = new MailAddress("nesto@nuevavision.es");
             mail.To.Add(new MailAddress("carlosadrian@nuevavision.es"));
             mail.To.Add(new MailAddress("manuelrodriguez@nuevavision.es"));
-            mail.To.Add(new MailAddress("alfredo@nuevavision.es"));
+            mail.To.Add(new MailAddress(Constantes.Correos.JEFE_ALMACEN));
             mail.Subject = "Pedidos por Debajo del Margen Mínimo";
             mail.Body = generarTablaHTML(lineasMargen).ToString();
             mail.IsBodyHtml = true;

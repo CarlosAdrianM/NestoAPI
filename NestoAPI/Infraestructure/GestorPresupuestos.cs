@@ -197,6 +197,10 @@ namespace NestoAPI.Infraestructure
             }
             mail.CC.Add("carlosadrian@nuevavision.es");
             mail.CC.Add("manuelrodriguez@nuevavision.es");
+            if (LlevaCopiaAlJefeDeAlmacenPorIvaEnBlanco(tipoCorreo, pedido.iva))
+            {
+                mail.CC.Add(Constantes.Correos.JEFE_ALMACEN);
+            }
 
             // Carlos 23/10/25: Agregar almacenes con reservas en copia
             // En modificaciones, incluimos tanto los almacenes que tenían reservas antes como los que las tienen ahora
@@ -466,6 +470,14 @@ namespace NestoAPI.Infraestructure
                 return false;
             }
         }
+        /// <summary>
+        /// Carlos 28/10/26: cada vez que alguien mete un pedido con el IVA en blanco (ni G21, ni E52, ni exento) le llega
+        /// copia a Alfredo, en el mismo correo del pedido nuevo. El IVA exento ("EX") NO lleva copia: solo el nulo o vacío.
+        /// Solo en el correo del pedido nuevo; la modificación no cambia.
+        /// </summary>
+        internal static bool LlevaCopiaAlJefeDeAlmacenPorIvaEnBlanco(string tipoCorreo, string iva)
+            => tipoCorreo == "Nuevo" && string.IsNullOrWhiteSpace(iva);
+
         private static void AnadirAdministracionSiFalta(MailMessage mail)
         {
             if (!mail.CC.Any(cc => cc.Address.Equals(Constantes.Correos.CORREO_ADMON, StringComparison.OrdinalIgnoreCase)))
