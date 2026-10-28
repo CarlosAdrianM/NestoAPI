@@ -256,6 +256,12 @@ namespace NestoAPI
             // Ariadna#47: los demás productos con stock en el hueco de cada línea (una consulta por respuesta)
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioProductosMismoHueco>(_ => Infraestructure.PreparacionAlmacen.RepositorioProductosMismoHuecoSql.ConContextoPropio());
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IFichasProductoAlmacen,Infraestructure.PreparacionAlmacen.FichasProductoAlmacen>();
+            // Sugerencia 824: la ficha del producto en Ariadna (botón «Producto»), con lo que ya leen los servicios de arriba
+            _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioFichaProductoAlmacen>(sp => new Infraestructure.PreparacionAlmacen.ServicioFichaProductoAlmacen(
+                sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IServicioUbicacionesAlmacen>(),
+                sp.GetRequiredService<Infraestructure.PreparacionAlmacen.IFichasProductoAlmacen>(),
+                sp.GetRequiredService<Infraestructure.Productos.IServicioCodigosBarras>(),
+                new Infraestructure.Kits.ProductoService()));
             // Ariadna#12: coger de otro hueco lo que no estaba en el de la parada
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IRepositorioCambioHueco>(_ => Infraestructure.PreparacionAlmacen.RepositorioCambioHuecoSql.ConContextoPropio());
             _ = services.AddScoped<Infraestructure.PreparacionAlmacen.IServicioCambioHuecoPicking, Infraestructure.PreparacionAlmacen.ServicioCambioHuecoPicking>();

@@ -43,6 +43,8 @@ namespace NestoAPI.Controllers
         private readonly Infraestructure.Notificaciones.IAvisosAlmacen avisosAlmacen;
         /// <summary>NestoAPI#595 (slice 5, Ariadna#13): la etiqueta de agencia desde el packing. Null: no está configurada.</summary>
         private readonly Infraestructure.Agencias.IServicioEtiquetaPacking etiquetaPacking;
+        /// <summary>Sugerencia 824: la ficha del producto (botón «Producto» del inicio de Ariadna). Null: no está configurada.</summary>
+        private readonly IServicioFichaProductoAlmacen fichaProducto;
 
         /// <param name="fichas">Familia, subgrupo, tamaño y unidad de cada producto que ve el mozo. Sin él, solo el nombre.</param>
         /// <param name="etiquetas">Imprimir etiquetas de hueco (Nesto y Ariadna).</param>
@@ -52,8 +54,10 @@ namespace NestoAPI.Controllers
             IServicioEtiquetasHueco etiquetas = null, IServicioCambioHuecoPicking cambioHueco = null,
             Infraestructure.Notificaciones.IAvisosAlmacen avisosAlmacen = null,
             Infraestructure.Agencias.IServicioEtiquetaPacking etiquetaPacking = null,
-            IServicioCambioHuecoReposicion cambioHuecoReposicion = null)
+            IServicioCambioHuecoReposicion cambioHuecoReposicion = null,
+            IServicioFichaProductoAlmacen fichaProducto = null)
         {
+            this.fichaProducto = fichaProducto;
             this.cambioHuecoReposicion = cambioHuecoReposicion;
             this.etiquetaPacking = etiquetaPacking;
             this.avisosAlmacen = avisosAlmacen;
@@ -831,6 +835,43 @@ namespace NestoAPI.Controllers
                 CompletarFichas(Empresa(empresa), productos),
                 CompletarMismoHueco(Empresa(empresa), Almacen(almacen), productos)).ConfigureAwait(false);
             return Ok(productos);
+        }
+
+        // GET api/Almacen/Productos/8436620930427/Ficha?empresa=1   (o la referencia: Productos/18004/Ficha)
+        /// <summary>
+        /// Sugerencia 824 (Andre): la ficha del producto para Ariadna: foto, nombre, referencia del proveedor, familia, los códigos
+        /// de barras con sus unidades y, en ALG, REI y ALC, el stock, los huecos con sus unidades y lo pendiente de entregar.
+        /// Se busca por la referencia o por cualquiera de sus códigos. 404 si no hay ningún producto; 409 con los candidatos si
+        /// el código lo llevan varios (la app pregunta cuál y vuelve con la referencia).
+        /// </summary>
+        [HttpGet]
+        [Route("Productos/{codigo}/Ficha")]
+        [ResponseType(typeof(FichaProductoAlmacenDTO))]
+        public async Task<IHttpActionResult> GetFichaProducto(string codigo, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            if (fichaProducto == null)
+            {
+                return Content(HttpStatusCode.ServiceUnavailable, "La ficha de producto no está configurada en el servidor.");
+            }
+            string leido = codigo?.Trim();
+            if (string.IsNullOrEmpty(leido))
+            {
+                return BadRequest("Falta el código de barras o la referencia del producto.");
+            }
+            ResultadoFichaProductoAlmacen resultado = await fichaProducto.Leer(Empresa(empresa), leido).ConfigureAwait(false);
+            if (resultado.Ficha != null)
+            {
+                return Ok(resultado.Ficha);
+            }
+            if (resultado.Candidatos.Count > 0)
+            {
+                return Content(HttpStatusCode.Conflict, new FichaProductoAmbiguaDTO
+                {
+                    Message = $"El código {leido} lo llevan {resultado.Candidatos.Count} productos: elija cuál.",
+                    Productos = resultado.Candidatos
+                });
+            }
+            return Content(HttpStatusCode.NotFound, new MensajeFichaProductoDTO { Message = $"No hay ningún producto con el código o la referencia {leido}." });
         }
 
         // GET api/Almacen/Compras/Pendientes?almacen=ALG&empresa=1
