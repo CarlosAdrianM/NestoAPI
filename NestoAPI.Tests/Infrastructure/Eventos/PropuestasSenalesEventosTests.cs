@@ -11,6 +11,7 @@ using System.Collections.Generic;
 using System.Data.Entity;
 using System.Data.Entity.Infrastructure;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Net;
 using System.Net.Http;
 using System.Net.Mail;
@@ -368,6 +369,26 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             Assert.AreEqual(1, await Servicio().ProponerRecientes("1", HOY.AddDays(-15)));
             Assert.AreEqual(8001, guardadas.Single().NumOrdenExtracto);
             Assert.AreEqual(OrigenesPropuestaSenal.BARRIDO, guardadas.Single().Origen);
+        }
+
+        [TestMethod]
+        public async Task Servicio_Barrido_LaConsultaDelExtractoNoLlamaAAddDays()
+        {
+            // Regresión (28/10/26): el Where sobre ExtractosCliente llevaba hoy.AddDays(1) y en producción el job de señales
+            // fallaba cada mañana con NotSupportedException («LINQ to Entities does not recognize the method AddDays»); con la
+            // BD en memoria de los tests no se notaba. Se mira el árbol de expresión que llega al proveedor, que es lo que EF traduce.
+            var expresiones = new List<Expression>();
+            DbSet<ExtractoCliente> extractos = db.ExtractosCliente;
+            A.CallTo(() => ((IQueryable<ExtractoCliente>)extractos).Provider)
+                .ReturnsLazily(() => new ProveedorQueRecuerdaExpresiones<ExtractoCliente>(extracto.AsQueryable().Provider, expresiones));
+            extracto.Add(Apunte(8001, 555, -50, concepto: "CLOASMA"));
+
+            Assert.AreEqual(1, await Servicio().ProponerRecientes("1", HOY.AddDays(-15)));
+
+            Assert.IsTrue(expresiones.Any(), "La consulta tiene que pasar por el proveedor");
+            var buscador = new BuscadorDeMetodo(typeof(DateTime), nameof(DateTime.AddDays));
+            expresiones.ForEach(e => buscador.Visit(e));
+            Assert.IsFalse(buscador.Encontrado, "La consulta a ExtractosCliente lleva DateTime.AddDays dentro del árbol: LINQ to Entities no lo traduce");
         }
 
         [TestMethod]
@@ -747,6 +768,49 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
 
             Assert.IsTrue(enviado);
             CollectionAssert.AreEqual(new[] { "barrido" }, orden);
+        }
+
+        /// <summary>Proveedor de consultas que apunta cada expresión que recibe (para comprobar lo que EF tendría que traducir).</summary>
+        private class ProveedorQueRecuerdaExpresiones<T> : IDbAsyncQueryProvider
+        {
+            private readonly TestDbAsyncQueryProvider<T> interno;
+            private readonly List<Expression> expresiones;
+
+            public ProveedorQueRecuerdaExpresiones(IQueryProvider inner, List<Expression> expresiones)
+            {
+                interno = new TestDbAsyncQueryProvider<T>(inner);
+                this.expresiones = expresiones;
+            }
+
+            public IQueryable CreateQuery(Expression expression) { expresiones.Add(expression); return interno.CreateQuery(expression); }
+            public IQueryable<TElement> CreateQuery<TElement>(Expression expression) { expresiones.Add(expression); return interno.CreateQuery<TElement>(expression); }
+            public object Execute(Expression expression) { expresiones.Add(expression); return interno.Execute(expression); }
+            public TResult Execute<TResult>(Expression expression) { expresiones.Add(expression); return interno.Execute<TResult>(expression); }
+            public Task<object> ExecuteAsync(Expression expression, System.Threading.CancellationToken cancellationToken) { expresiones.Add(expression); return interno.ExecuteAsync(expression, cancellationToken); }
+            public Task<TResult> ExecuteAsync<TResult>(Expression expression, System.Threading.CancellationToken cancellationToken) { expresiones.Add(expression); return interno.ExecuteAsync<TResult>(expression, cancellationToken); }
+        }
+
+        /// <summary>Recorre un árbol de expresión buscando una llamada a un método concreto.</summary>
+        private class BuscadorDeMetodo : ExpressionVisitor
+        {
+            private readonly Type tipo;
+            private readonly string metodo;
+            public bool Encontrado { get; private set; }
+
+            public BuscadorDeMetodo(Type tipo, string metodo)
+            {
+                this.tipo = tipo;
+                this.metodo = metodo;
+            }
+
+            protected override Expression VisitMethodCall(MethodCallExpression node)
+            {
+                if (node.Method.DeclaringType == tipo && node.Method.Name == metodo)
+                {
+                    Encontrado = true;
+                }
+                return base.VisitMethodCall(node);
+            }
         }
 
         private static DbSet<T> Crear<T>(List<T> datos) where T : class

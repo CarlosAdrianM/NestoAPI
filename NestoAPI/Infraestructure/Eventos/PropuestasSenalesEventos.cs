@@ -591,6 +591,8 @@ SELECT @@ROWCOUNT;";
             string empresaLimpia = EmpresaOPorDefecto(empresa);
             DateTime hoy = reloj().Date;
             DateTime fechaDesde = desde.Date;
+            // Calculada fuera de la consulta: LINQ to Entities no traduce DateTime.AddDays (fallaba cada mañana en el job de señales).
+            DateTime manana = hoy.AddDays(1);
             // Solo importes que son la señal de algún evento activo que no ha pasado: sin eso no hay nada que buscar.
             List<decimal> importes = (await db.Eventos
                 .Where(e => e.Empresa == empresaLimpia && e.Activo && e.ImporteSenal > 0 && e.Fecha >= fechaDesde)
@@ -602,7 +604,7 @@ SELECT @@ROWCOUNT;";
             }
             List<decimal> aFavor = importes.Select(i => -i).ToList();
             List<ExtractoCliente> apuntes = await db.ExtractosCliente
-                .Where(e => e.Empresa == empresaLimpia && e.Fecha >= fechaDesde && e.Fecha <= hoy.AddDays(1)
+                .Where(e => e.Empresa == empresaLimpia && e.Fecha >= fechaDesde && e.Fecha <= manana
                     && e.TipoApunte == Constantes.TiposExtractoCliente.PAGO && aFavor.Contains(e.ImportePdte))
                 .ToListAsync().ConfigureAwait(false);
             return await Proponer(empresaLimpia, apuntes, OrigenesPropuestaSenal.BARRIDO).ConfigureAwait(false);
