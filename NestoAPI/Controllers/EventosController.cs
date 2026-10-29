@@ -501,7 +501,7 @@ namespace NestoAPI.Controllers
             SenalEventoDTO senal = await servicio.MarcarSenal(eventoId, peticion, usuario).ConfigureAwait(false);
 
             // NestoAPI#612: con la facturación de cursos encendida, la señal paga la inscripción del cliente (o la crea, con
-            // origen Transferencia) y de ahí sale sola la factura del curso con la señal liquidada. Si falla, la señal queda
+            // origen Cobro) y de ahí sale sola la factura del curso con la señal liquidada. Si falla, la señal queda
             // marcada como hasta hoy (pendiente en la lista de #591) y el error va a ELMAH.
             if (FacturarCursoAlCobrar())
             {

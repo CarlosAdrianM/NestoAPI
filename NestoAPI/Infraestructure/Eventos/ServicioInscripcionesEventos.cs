@@ -171,7 +171,10 @@ namespace NestoAPI.Infraestructure.Eventos
         public string UsuarioPago { get; set; }
         /// <summary>El enlace de pago (PagosTPV.Id del primero; los reintentos cuelgan de él).</summary>
         public int? PagoTPVId { get; set; }
-        /// <summary>La página del enlace de pago, solo mientras se puede pagar (Reservada o Caducada).</summary>
+        /// <summary>
+        /// La página del enlace de pago (https://api.nuevavision.es/pago/{token}), al crear y al leer, solo mientras se puede pagar:
+        /// inscripción Reservada o Caducada con su PagoTPV pendiente (ni autorizado, ni anulado, ni devuelto). Si no, null.
+        /// </summary>
         public string UrlPago { get; set; }
         /// <summary>La señal (#591) cuando el dinero entra por transferencia.</summary>
         public int? EventoSenalId { get; set; }
@@ -1121,7 +1124,7 @@ GROUP BY RTRIM(c.[Nº Cliente])";
 
         /// <summary>
         /// NestoAPI#611: llega una señal (#591) por transferencia. Si el cliente tenía una inscripción sin pagar en el evento,
-        /// pasa a Pagada con esa señal; si no tenía ninguna, se crea con origen Transferencia, ya pagada. Si ya estaba pagada,
+        /// pasa a Pagada con esa señal; si no tenía ninguna, se crea con origen Cobro, ya pagada. Si ya estaba pagada,
         /// solo se le apunta la señal. Pensado para el corte 2 (#612), que es quien lo engancha al marcar la señal.
         /// </summary>
         public async Task<InscripcionEventoDTO> InscribirDesdeTransferencia(int eventoSenalId, string usuario)
@@ -1134,7 +1137,8 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             string usuarioAuditoria = UsuarioAuditoriaHelper.ParaAuditoria(usuario);
             DateTime ahora = reloj();
             // 29/10/26 (primera señal real, cliente 22709): el cobro era un enlace de tarjeta y la inscripción decía «Transferencia».
-            // La forma de pago sale del apunte que es la señal (TAR → Tarjeta, EFC → Efectivo, el resto → Transferencia).
+            // La forma de pago sale del apunte que es la señal (TAR → Tarjeta, EFC → Efectivo, el resto → Transferencia), y el
+            // origen es Cobro (no Transferencia): llegó el dinero sin inscripción previa, fuera por donde fuera.
             string formaPagoApunte = null;
             try
             {
@@ -1147,7 +1151,7 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             {
                 // Sin poder leer el apunte, como antes: Transferencia (es solo la etiqueta de la inscripción).
             }
-            EventoInscripcion inscripcion = await PagarOInscribir(evento, Limpiar(senal.Empresa), cliente, contacto, OrigenInscripcionEvento.Transferencia,
+            EventoInscripcion inscripcion = await PagarOInscribir(evento, Limpiar(senal.Empresa), cliente, contacto, OrigenInscripcionEvento.Cobro,
                 FormaPagoDeLaSenal(formaPagoApunte), senal.Importe, ahora, usuarioAuditoria, senal.Id).ConfigureAwait(false);
             return Componer(inscripcion, evento, null);
         }
@@ -2053,14 +2057,19 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             ILookup<string, PersonaContactoEventoDTO> personasPorCliente = personas.ToLookup(p => p.Key, p => p.Value);
             Dictionary<int, int> justificantes = await LeerJustificantesSinFallar(inscripciones.Select(i => i.Id).ToList()).ConfigureAwait(false);
 
-            List<int> pagosPendientes = inscripciones
+            var porPagar = new HashSet<int>(inscripciones
                 .Where(i => i.PagoTPVId.HasValue && (EstadoDe(i) == EstadoInscripcionEvento.Reservada || EstadoDe(i) == EstadoInscripcionEvento.Caducada))
+                .Select(i => i.Id));
+            List<int> pagosPendientes = inscripciones.Where(i => porPagar.Contains(i.Id))
                 .Select(i => i.PagoTPVId.Value).Distinct().ToList();
+            // 29/10/26: el enlace sale en la lista de inscritos (y en las del cliente) mientras se puede pagar: inscripción sin
+            // pagar y PagoTPV pendiente (ni autorizado, ni anulado, ni devuelto). Una sola consulta para toda la lista.
             Dictionary<int, Guid> tokens = new Dictionary<int, Guid>();
             if (pagosPendientes.Any())
             {
                 tokens = (await db.PagosTPV.Where(p => pagosPendientes.Contains(p.Id))
-                    .Select(p => new { p.Id, p.TokenAcceso }).ToListAsync().ConfigureAwait(false))
+                    .Select(p => new { p.Id, p.TokenAcceso, p.Estado }).ToListAsync().ConfigureAwait(false))
+                    .Where(p => EnlaceSePuedePagar(p.Estado))
                     .ToDictionary(p => p.Id, p => p.TokenAcceso);
             }
 
@@ -2078,9 +2087,9 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                 {
                     dto.PedidoJustificante = pedidoJustificante;
                 }
-                if (i.PagoTPVId.HasValue && tokens.TryGetValue(i.PagoTPVId.Value, out Guid token))
+                if (porPagar.Contains(i.Id) && tokens.TryGetValue(i.PagoTPVId.Value, out Guid token))
                 {
-                    dto.UrlPago = URL_PAGINA_PAGO + token;
+                    dto.UrlPago = ServicioPagos.UrlPaginaPago(token);
                 }
                 if (facturaciones.TryGetValue(i.Id, out FacturacionCursoInscripcion f))
                 {
@@ -2088,6 +2097,18 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                 }
                 return dto;
             }).ToList();
+        }
+
+        /// <summary>
+        /// El enlace de pago de la inscripción todavía sirve: ni cobrado (Autorizado), ni anulado (Cancelado), ni devuelto. Un
+        /// Denegado sí: la página /pago/{token} lleva al reintento.
+        /// </summary>
+        internal static bool EnlaceSePuedePagar(string estadoPagoTPV)
+        {
+            string estado = estadoPagoTPV?.Trim();
+            return !string.Equals(estado, Constantes.EstadosPagoTPV.AUTORIZADO, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(estado, Constantes.EstadosPagoTPV.CANCELADO, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(estado, Constantes.EstadosPagoTPV.DEVUELTO, StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>NestoAPI#731: inscripción → persona que asiste. Sin columna (o si falla): ninguna, y la lista sale igual.</summary>

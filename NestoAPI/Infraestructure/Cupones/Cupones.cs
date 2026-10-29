@@ -67,7 +67,7 @@ namespace NestoAPI.Infraestructure.Cupones
         public bool LineaUsoServida { get; set; }
         /// <summary>
         /// NestoAPI#613 (Carlos, 29/10/26): el pedido mínimo guardado al emitirlo (Cupones.PedidoMinimo, del evento). Null: cupón de
-        /// antes del script Issue613_CuponPedidoMinimoPorEvento.sql (o manual), con la regla de antes. Decide
+        /// antes del script Issue613_CuponPedidoMinimoPorEvento.sql (o manual de antes del 29/10/26), con la regla de antes. Decide
         /// <see cref="ReglasCupon.PedidoMinimo(CuponLeido)"/>.
         /// </summary>
         public decimal? PedidoMinimo { get; set; }
@@ -163,6 +163,11 @@ namespace NestoAPI.Infraestructure.Cupones
         public string Motivo { get; set; }
         /// <summary>Opcional: si no viene, hoy.</summary>
         public DateTime? ValidoDesde { get; set; }
+        /// <summary>
+        /// NestoAPI#613 (Carlos, 29/10/26): pedido mínimo (IVA incluido, solo productos) para usar el cupón. Si no viene,
+        /// <see cref="ReglasCupon.PEDIDO_MINIMO_MANUAL_POR_DEFECTO"/> (200 €); 0 = cualquier importe; negativo, 400.
+        /// </summary>
+        public decimal? PedidoMinimo { get; set; }
     }
 
     /// <summary>Lo que hace falta de la ficha del producto para el mínimo del cupón.</summary>
@@ -205,6 +210,8 @@ namespace NestoAPI.Infraestructure.Cupones
         public const int MESES_VALIDEZ = 6;
         /// <summary>Solo para los cupones sin pedido mínimo guardado (Cupones.PedidoMinimo NULL): la regla de antes del 29/10/26.</summary>
         public const decimal MULTIPLO_PEDIDO_MINIMO = 2M;
+        /// <summary>NestoAPI#613 (Carlos, 29/10/26): el pedido mínimo de un cupón manual cuando no se indica.</summary>
+        public const decimal PEDIDO_MINIMO_MANUAL_POR_DEFECTO = 200M;
         public const string CLAVE_PRODUCTO = "Cupones:Producto";
         /// <summary>El producto ficticio de la línea de descuento (script Issue613_Cupones.sql).</summary>
         public const string PRODUCTO_POR_DEFECTO = "CUPONEVENTO";
@@ -344,7 +351,8 @@ namespace NestoAPI.Infraestructure.Cupones
         /// <summary>
         /// NestoAPI#613: EL ÚNICO SITIO que decide el pedido mínimo de un cupón (IVA incluido, solo productos). Desde el 29/10/26 lo
         /// define el evento y se guarda en el cupón al emitirlo (<paramref name="pedidoMinimoGuardado"/>, Cupones.PedidoMinimo; 0 =
-        /// cualquier importe). Sin él (NULL: cupones de antes del script o manuales), la regla de antes: el doble del cupón.
+        /// cualquier importe). Los manuales lo guardan desde el 29/10/26 (200 € si no se indica). Sin él (NULL: cupones de antes
+        /// del script), la regla de antes: el doble del cupón.
         /// </summary>
         public static decimal PedidoMinimo(decimal importe, decimal? pedidoMinimoGuardado) =>
             pedidoMinimoGuardado.HasValue

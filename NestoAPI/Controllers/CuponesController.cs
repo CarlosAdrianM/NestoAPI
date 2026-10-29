@@ -70,8 +70,11 @@ namespace NestoAPI.Controllers
             return Ok(await servicio.LeerPorCodigo(codigo, User).ConfigureAwait(false));
         }
 
-        // POST api/Cupones   { Empresa, Cliente, Contacto?, Importe, Motivo, ValidoDesde? }
-        /// <summary>Cupón sin evento: solo Dirección, con motivo obligatorio. Mismas reglas de uso; caduca a los 6 meses.</summary>
+        // POST api/Cupones   { Empresa, Cliente, Contacto?, Importe, Motivo, ValidoDesde?, PedidoMinimo? }
+        /// <summary>
+        /// Cupón sin evento: solo Dirección, con motivo obligatorio. Mismas reglas de uso; caduca a los 6 meses. PedidoMinimo: si no
+        /// viene, 200 €; 0, cualquier importe; negativo, 400 (NestoAPI#613, 29/10/26).
+        /// </summary>
         [HttpPost]
         [Authorize]
         [Route("api/Cupones")]

@@ -103,7 +103,7 @@ namespace NestoAPI.Infraestructure.Eventos
         public bool PorInscripcion { get; set; }
         /// <summary>El concepto del cobro menciona el evento (título o fecha).</summary>
         public bool PorConcepto { get; set; }
-        /// <summary>La inscripción reservada que pasará a pagada al confirmar; null: se creará una con origen Transferencia.</summary>
+        /// <summary>La inscripción reservada que pasará a pagada al confirmar; null: se creará una con origen Cobro.</summary>
         public int? InscripcionId { get; set; }
         public string Motivo { get; set; }
         public string Origen { get; set; }
