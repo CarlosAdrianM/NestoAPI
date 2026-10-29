@@ -78,6 +78,9 @@ namespace NestoAPI.Infraestructure.Agencias
         private readonly IDatosPropuestaEnvio datos;
         private readonly Func<string, int, Task<ConsultaReembolsoDTO>> leerConsultaReembolso;
 
+        /// <summary>NestoAPI#739: el interruptor Agencias:RepartoPropio. Sustituible en los tests.</summary>
+        internal Func<bool> RepartoPropioActivo { get; set; } = RepartoPropio.InterruptorRepartoPropio.EstaActivo;
+
         /// <param name="leerConsultaReembolso">NestoAPI#734: la última consulta de reembolso del pedido (null = no se mira).</param>
         public PropuestaEnvioService(IDatosPropuestaEnvio datos, Func<string, int, Task<ConsultaReembolsoDTO>> leerConsultaReembolso = null)
         {
@@ -229,6 +232,11 @@ namespace NestoAPI.Infraestructure.Agencias
                 // VB 3682-3733 + 3740-3758: la más barata del comparador del servidor para el CP real (cuarentena, sombra,
                 // zonas activas y Canarias → Canteras van dentro del comparador).
                 agencia = AgenciaMasEconomica(empresa, propuesta.CodPostal, propuesta.Peso, reembolsoPedido, paisIso, agencias);
+                // NestoAPI#739: los pedidos de ruta propia (AT, 16) van por nuestro reparto, si está encendido y dado de alta.
+                if (VaPorRepartoPropio(pedido.Ruta, agencias))
+                {
+                    agencia = Constantes.Agencias.AGENCIA_REPARTO_PROPIO;
+                }
             }
             propuesta.Agencia = agencia;
 
@@ -256,6 +264,15 @@ namespace NestoAPI.Infraestructure.Agencias
             // VB 3546-3549 + 2374-2384 (#238): coste de la agencia realmente usada; 0 si no se puede.
             propuesta.ImporteGasto = CosteDeAgencia(empresa, propuesta, reembolsoPedido);
         }
+
+        /// <summary>
+        /// NestoAPI#739: ¿se propone el reparto propio? Solo con el interruptor encendido, la agencia 14 dada de alta
+        /// (Scripts/Issue739_RepartoPropio.sql) y un pedido de ruta propia (las de Facturar rutas: AT y 16).
+        /// </summary>
+        internal bool VaPorRepartoPropio(string ruta, IEnumerable<AgenciaTransporte> agencias)
+            => RepartoPropio.RutasRepartoPropio.EsRutaPropia(ruta)
+            && (agencias ?? Enumerable.Empty<AgenciaTransporte>()).Any(a => a.Numero == Constantes.Agencias.AGENCIA_REPARTO_PROPIO)
+            && RepartoPropioActivo();
 
         private int AgenciaMasEconomica(string empresa, string codPostal, decimal peso, decimal reembolso, string paisIso,
             List<AgenciaTransporte> agencias)

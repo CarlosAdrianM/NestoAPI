@@ -129,7 +129,9 @@ namespace NestoAPI.Infraestructure.Agencias
                 try
                 {
                     int asiento = 0;
-                    if (envio.Reembolso != 0)
+                    // NestoAPI#739: el momento lo decide la agencia. El reparto propio (14) no contabiliza al tramitar: lo
+                    // hace al entregar, con lo que de verdad ha cobrado el repartidor (su caja).
+                    if (ContabilizaReembolsoAlTramitar(envio))
                     {
                         asiento = await ContabilizarReembolsoAsync(envio, usuario).ConfigureAwait(false);
                     }
@@ -153,10 +155,24 @@ namespace NestoAPI.Infraestructure.Agencias
         }
 
         /// <summary>
+        /// NestoAPI#739: ¿TramitarAsync contabiliza el reembolso? Si lo hay y la agencia lo contabiliza al tramitar (todas menos el
+        /// reparto propio, que lo hace al entregar: <see cref="MomentosContabilizarReembolso"/>).
+        /// </summary>
+        internal static bool ContabilizaReembolsoAlTramitar(EnviosAgencia envio)
+            => envio.Reembolso != 0 && MomentosContabilizarReembolso.De(envio.Agencia) == MomentoContabilizarReembolso.AlTramitar;
+
+        /// <summary>
         /// Contabiliza el reembolso del envío: crea el apunte de PreContabilidad y lanza el diario.
         /// Devuelve el número de asiento.
         /// </summary>
-        public async Task<int> ContabilizarReembolsoAsync(EnviosAgencia envio, string usuario)
+        public Task<int> ContabilizarReembolsoAsync(EnviosAgencia envio, string usuario)
+            => ContabilizarReembolsoAsync(envio, usuario, null);
+
+        /// <summary>
+        /// NestoAPI#739: lo mismo, por un importe distinto del reembolso del envío (lo que ha cobrado de verdad el repartidor del
+        /// reparto propio). Null = el reembolso del envío, como siempre.
+        /// </summary>
+        public async Task<int> ContabilizarReembolsoAsync(EnviosAgencia envio, string usuario, decimal? importe)
         {
             if (envio.AgenciasTransporte == null || string.IsNullOrWhiteSpace(envio.AgenciasTransporte.CuentaReembolsos))
             {
@@ -164,8 +180,14 @@ namespace NestoAPI.Infraestructure.Agencias
                     "Esta agencia no tiene establecida una cuenta de reembolsos. No se puede contabilizar.");
             }
 
-            ExtractoCliente movimientoLiq = await CalcularMovimientoLiqAsync(envio).ConfigureAwait(false);
+            ExtractoCliente movimientoLiq = importe.HasValue
+                ? await CalcularMovimientoLiqAsync(envio, importe.Value).ConfigureAwait(false)
+                : await CalcularMovimientoLiqAsync(envio).ConfigureAwait(false);
             PreContabilidad linea = ConstruirApunteReembolso(envio, movimientoLiq, _hoy(), usuario);
+            if (importe.HasValue)
+            {
+                linea.Haber = importe.Value;
+            }
             // NestoAPI#431: el apunte entra por la puerta canónica (ContabilidadService.CrearLineas),
             // no con un Add a pelo. La puerta normaliza FechaVto, Fecha_Modificación y el largo del
             // concepto — los campos que aquí se fueron descubriendo de uno en uno el 31/08/26, a

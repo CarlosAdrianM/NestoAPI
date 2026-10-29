@@ -676,8 +676,10 @@ namespace NestoAPI.Infraestructure.Agencias
         // ---------------------------------------------------------------- piezas
 
         /// <summary>CTT e Innovatrans: registrar al imprimir (IPerfilConGestionRemota en el servidor, AgenciaGestionadaPorApi en Nesto).</summary>
+        // NestoAPI#739: el reparto propio también se «registra al imprimir» (numera sus bultos y saca su etiqueta en la API).
         internal static bool EsGestionadaPorApi(int agencia)
-            => agencia == Constantes.Agencias.AGENCIA_CTT || agencia == Constantes.Agencias.AGENCIA_INNOVATRANS;
+            => agencia == Constantes.Agencias.AGENCIA_CTT || agencia == Constantes.Agencias.AGENCIA_INNOVATRANS
+            || agencia == Constantes.Agencias.AGENCIA_REPARTO_PROPIO;
 
         /// <summary>IAgencia.FlujoTramitacion de Nesto (Canteras, que allí es TramitarAlCerrar, aquí es Manual: su nº llega por correo).</summary>
         internal static string FlujoDe(int agencia)

@@ -24,6 +24,8 @@ namespace NestoAPI.Models.PedidosVenta
         public string Vendedor { get; set; }
         public string Comentarios { get; set; }
         public string ComentarioPicking { get; set; }
+        /// <summary>NestoAPI#739: CabPedidoVta.Ruta (sin Trim). Con ruta propia (AT, 16) se propone el reparto propio.</summary>
+        public string Ruta { get; set; }
 
         /// <summary>
         /// Ficha del cliente. Puede ser null, y ESO IMPORTA: Agencias usa "sin ficha" como

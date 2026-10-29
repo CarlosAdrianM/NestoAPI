@@ -13,6 +13,8 @@ namespace NestoAPI.Infraestructure.Agencias
     /// </summary>
     public class DatosEnvioRemoto
     {
+        /// <summary>NestoAPI#739: EnviosAgencia.Numero. El reparto propio numera sus bultos con él (RP{envío}-{N}); las agencias de fuera lo ignoran.</summary>
+        public int NumeroEnvio { get; set; }
         public string Referencia { get; set; }
         public string Nombre { get; set; }
         public string Telefono { get; set; }
@@ -55,6 +57,7 @@ namespace NestoAPI.Infraestructure.Agencias
         /// </summary>
         public static DatosEnvioRemoto DesdeEnvio(EnviosAgencia envio) => new DatosEnvioRemoto
         {
+            NumeroEnvio = envio.Numero,
             Referencia = envio.Pedido?.ToString(),
             Nombre = envio.Nombre?.Trim(),
             Telefono = envio.Telefono?.Trim(),

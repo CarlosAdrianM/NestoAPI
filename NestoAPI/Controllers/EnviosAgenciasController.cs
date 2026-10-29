@@ -293,6 +293,9 @@ namespace NestoAPI.Controllers
         private IFabricaAgenciasRemotas fabricaAgenciasRemotas;
         private ITramitacionEnviosService tramitacionEnviosService;
 
+        /// <summary>NestoAPI#739: para los tests que necesitan a la vez la fábrica de agencias y la tramitación falsas.</summary>
+        internal ITramitacionEnviosService TramitacionEnvios { set => tramitacionEnviosService = value; }
+
         /// <summary>NestoAPI#666: aviso a los comerciales cuando la consulta a demanda descubre una incidencia.
         /// Sustituible en tests (null = no se avisa).</summary>
         internal Func<EnviosAgencia, Task> AvisarIncidencia { get; set; } = AvisadorIncidenciasEnvio.AvisarConContextoPropioAsync;
@@ -975,6 +978,12 @@ namespace NestoAPI.Controllers
                         "Si ese código no es un albarán de esta agencia (p. ej. viene de una etiqueta de otra agencia), " +
                         "borra el código de barras del envío para que se registre de nuevo con albarán propio.");
                 }
+                // NestoAPI#739: si el cierre del reparto propio falló la otra vez, se hace ahora.
+                IHttpActionResult sinCerrar = await CerrarRepartoPropioSiToca(envio);
+                if (sinCerrar != null)
+                {
+                    return sinCerrar;
+                }
                 return Ok(AResultado(envio, envio.CodigoBarras.Trim(), envio.Bultos, reimpresion, reimpresion: true));
             }
 
@@ -1049,7 +1058,40 @@ namespace NestoAPI.Controllers
 
             await AuditarTramitacion(envio, agencia, true, null);
 
+            IHttpActionResult noCerrado = await CerrarRepartoPropioSiToca(envio);
+            if (noCerrado != null)
+            {
+                return noCerrado;
+            }
+
             return Ok(AResultado(envio, resultado.Albaran, (short)resultado.Bultos, resultado.Etiqueta, reimpresion: false));
+        }
+
+        /// <summary>
+        /// NestoAPI#739: el reparto propio no tiene «cierre del día» con nadie: registrado el envío (albarán RP{envío} y bultos),
+        /// queda Tramitado en el acto (el mismo cierre que ConfirmarTramitacion, que para esta agencia NO contabiliza el
+        /// reembolso: eso es al entregar). Así el repartidor lo ve en Ariadna sin que nadie tenga que tramitarlo en Nesto.
+        /// Null si no toca o ha ido bien; si falla, la respuesta de error (el envío ya tiene albarán: reintentar lo cierra).
+        /// </summary>
+        private async Task<IHttpActionResult> CerrarRepartoPropioSiToca(EnviosAgencia envio)
+        {
+            if (envio.Agencia != Constantes.Agencias.AGENCIA_REPARTO_PROPIO || envio.Estado != Constantes.Agencias.ESTADO_EN_CURSO)
+            {
+                return null;
+            }
+            try
+            {
+                ITramitacionEnviosService servicio = tramitacionEnviosService ?? new TramitacionEnviosService(db);
+                _ = await servicio.TramitarAsync(envio.Numero, UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"));
+                return null;
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Reparto propio #739] El envío {envio.Numero} tiene sus bultos numerados pero no se ha podido dar por tramitado: {ex.Message}", ex));
+                return Content(HttpStatusCode.InternalServerError,
+                    $"El envío {envio.Numero} tiene sus bultos numerados ({envio.CodigoBarras?.Trim()}), pero no se ha podido dar por tramitado: {ex.Message} " +
+                    "Vuelva a tramitarlo: no se duplica.");
+            }
         }
 
         // ========== NestoAPI#552 (fase 2): GLS tramitado por la API, detrás de Agencias:GlsTramitarPorApi ==========

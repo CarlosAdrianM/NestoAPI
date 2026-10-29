@@ -235,6 +235,32 @@ namespace NestoAPI.Infraestructure.Agencias.Perfiles
                 : (Servicio: (short)48, Horario: (short)0, Pais: 34);
     }
 
+    /// <summary>
+    /// NestoAPI#739: el reparto propio (rutas AT y 16) como una agencia más. Gestión «remota» sin webservice: tramitar = numerar
+    /// los bultos (RP{envío}-{N}) y la etiqueta la genera la API. Sin seguimiento que consultar: los estados los pone el
+    /// repartidor desde Ariadna (api/RepartoPropio). Con el interruptor Agencias:RepartoPropio apagado, no hay gestión remota
+    /// (Tramitar da el 400 de siempre).
+    /// </summary>
+    public class PerfilAgenciaRepartoPropio : IPerfilConGestionRemota, IPerfilSinCanalesExternos
+    {
+        public int AgenciaId => Constantes.Agencias.AGENCIA_REPARTO_PROPIO;
+
+        /// <summary>El interruptor (Web.config). Sustituible en los tests.</summary>
+        internal Func<bool> Activo { get; set; } = RepartoPropio.InterruptorRepartoPropio.EstaActivo;
+
+        public IAgenciaRemota CrearGestionRemota(NVEntities db)
+        {
+            if (!Activo())
+            {
+                return null;
+            }
+            // Where + ToListAsync (no FindAsync): ver el «Limit1» de TramitacionEnviosService. Sin seguimiento de EF: solo se lee.
+            return new RepartoPropio.AgenciaRemotaRepartoPropio(async numero =>
+                (await System.Data.Entity.QueryableExtensions.ToListAsync(
+                    db.EnviosAgencias.Where(e => e.Numero == numero)).ConfigureAwait(false)).FirstOrDefault());
+        }
+    }
+
     public class PerfilAgenciaSending : IPerfilConDefaultsEnvio
     {
         public int AgenciaId => Constantes.Agencias.AGENCIA_SENDING;

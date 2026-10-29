@@ -19,7 +19,9 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
     {
         private static IEnumerable<IPerfilAgencia> PerfilesQueEnvian()
             => RegistroAgencias.PorReflexionSinPuerta().Perfiles
-                .Where(p => p is IPerfilConSeguimiento || p is IPerfilConGestionRemota);
+                .Where(p => p is IPerfilConSeguimiento || p is IPerfilConGestionRemota)
+                // NestoAPI#739: el reparto propio no sirve Amazon ni la tienda online (lo declara su perfil).
+                .Where(p => !(p is IPerfilSinCanalesExternos));
 
         [TestMethod]
         public void TodaAgenciaConPerfilDeSeguimientoOGestionRemota_TieneEstrategiaDeSeguimiento()
