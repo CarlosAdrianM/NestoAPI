@@ -691,6 +691,8 @@ namespace NestoAPI.Infraestructure.Cupones
             }
             DateTime hoy = ahora().Date;
             DateTime validoDesde = evento.Fecha.Date;
+            // NestoAPI#613 (Carlos, 29/10/26): el pedido mínimo lo define el evento; sin informar, 0 (cualquier importe)
+            decimal pedidoMinimo = await repositorio.LeerPedidoMinimoCuponEvento(evento.Id).ConfigureAwait(false) ?? 0;
             CuponLeido cupon = await repositorio.Insertar(new CuponNuevo
             {
                 Empresa = inscripcion.Empresa?.Trim() ?? Constantes.Empresas.EMPRESA_POR_DEFECTO,
@@ -706,7 +708,8 @@ namespace NestoAPI.Infraestructure.Cupones
                 ValidoDesde = validoDesde,
                 Caducidad = ReglasCupon.Caducidad(validoDesde),
                 Estado = validoDesde > hoy ? EstadosCupon.EMITIDO : EstadosCupon.ACTIVO,
-                Usuario = usuario
+                Usuario = usuario,
+                PedidoMinimo = Math.Max(0, Math.Round(pedidoMinimo, 2, MidpointRounding.AwayFromZero))
             }, () => ReglasCupon.NuevoCodigo(OrigenesCupon.EVENTO, validoDesde)).ConfigureAwait(false);
             if (cupon == null)
             {
@@ -809,8 +812,8 @@ namespace NestoAPI.Infraestructure.Cupones
             {
                 Titulo = $"Cupón de {ReglasCupon.Euros(cupon.Importe)} €",
                 Cuerpo = $"{quien} tiene el cupón {cupon.Codigo?.Trim()}" + (string.IsNullOrWhiteSpace(cupon.Evento) ? "" : $" por «{cupon.Evento.Trim()}»") +
-                    $": vale desde el {ReglasCupon.Fecha(cupon.ValidoDesde)} hasta el {ReglasCupon.Fecha(cupon.Caducidad)} en un pedido de al menos " +
-                    $"{ReglasCupon.Euros(ReglasCupon.PedidoMinimo(cupon.Importe))} € de productos.",
+                    $": vale desde el {ReglasCupon.Fecha(cupon.ValidoDesde)} hasta el {ReglasCupon.Fecha(cupon.Caducidad)} en un pedido " +
+                    $"{ReglasCupon.TextoPedidoMinimo(ReglasCupon.PedidoMinimo(cupon))}.",
                 Tipo = EmisorCuponesEvento.TIPO_NOTIFICACION,
                 Datos = new Dictionary<string, string>
                 {
@@ -848,8 +851,11 @@ namespace NestoAPI.Infraestructure.Cupones
             cuerpo.Append($"<p style='font-size: 22px; font-weight: bold; letter-spacing: 2px;'>{Html(cupon.Codigo?.Trim())}</p>");
             cuerpo.Append("<ul>");
             cuerpo.Append($"<li>Vale desde el {ReglasCupon.Fecha(cupon.ValidoDesde)} hasta el {ReglasCupon.Fecha(cupon.Caducidad)}.</li>");
-            cuerpo.Append($"<li>Se usa una sola vez, en un pedido de al menos {ReglasCupon.Euros(ReglasCupon.PedidoMinimo(cupon.Importe))} € de productos " +
-                "(IVA incluido; no cuentan cursos ni portes). Uno por pedido.</li>");
+            decimal minimo = ReglasCupon.PedidoMinimo(cupon);
+            cuerpo.Append(minimo > 0
+                ? $"<li>Se usa una sola vez, en un pedido de al menos {ReglasCupon.Euros(minimo)} € de productos " +
+                    "(IVA incluido; no cuentan cursos ni portes). Uno por pedido.</li>"
+                : "<li>Se usa una sola vez, en un pedido de productos (no vale para cursos ni portes). Uno por pedido.</li>");
             cuerpo.Append("<li>Si no asiste al evento, el cupón se pierde.</li>");
             cuerpo.Append("</ul>");
             if (!string.IsNullOrEmpty(urlNormas))

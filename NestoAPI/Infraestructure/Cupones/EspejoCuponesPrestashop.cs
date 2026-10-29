@@ -123,7 +123,8 @@ namespace NestoAPI.Infraestructure.Cupones
         /// <summary>
         /// El cart_rule del cupón (épica #610 y #614): de una vez (quantity 1, quantity_per_user 1, sin uso parcial, que no deja otro
         /// vale con lo que sobre), solo para su customer, importe IVA incluido, válido del día del evento a la caducidad, pedido
-        /// mínimo el doble IVA incluido sin portes. Combina con otras reglas (el cheque regalo NVCHEQUE-*: Carlos, 15/10/26).
+        /// mínimo el del cupón (<see cref="ReglasCupon.PedidoMinimo(CuponLeido)"/>: el del evento, 0 = sin mínimo) IVA incluido sin
+        /// portes. Combina con otras reglas (el cheque regalo NVCHEQUE-*: Carlos, 15/10/26).
         /// Desactivado: active 0 y quantity 0. Con <paramref name="idCartRule"/>, para el PUT (el recurso entero).
         /// <para>Restricción a productos (Carlos, 22/10/26: que no aplique sobre los cursos ni cuenten para el mínimo): NO se puede
         /// hacer por el webservice. El recurso cart_rules solo expone el indicador product_restriction; las reglas de producto o
@@ -151,7 +152,7 @@ namespace NestoAPI.Infraestructure.Cupones
                 new XElement("priority", 1),
                 new XElement("partial_use", 0),
                 new XElement("code", cupon.Codigo?.Trim()),
-                new XElement("minimum_amount", Importe(ReglasCupon.PedidoMinimo(cupon.Importe))),
+                new XElement("minimum_amount", Importe(ReglasCupon.PedidoMinimo(cupon))),
                 new XElement("minimum_amount_tax", 1),
                 new XElement("minimum_amount_currency", idMoneda),
                 new XElement("minimum_amount_shipping", 0),

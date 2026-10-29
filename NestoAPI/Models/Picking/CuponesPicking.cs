@@ -12,17 +12,24 @@ namespace NestoAPI.Models.Picking
         public decimal Total { get; set; }
     }
 
+    /// <summary>NestoAPI#613: el cupón usado en un pedido, con su pedido mínimo guardado (null: el de antes, el doble).</summary>
+    public class CuponUsadoPicking
+    {
+        public decimal Importe { get; set; }
+        public decimal? PedidoMinimo { get; set; }
+    }
+
     /// <summary>
     /// NestoAPI#613: prepara los pedidos del picking que llevan la línea de un cupón de evento: la marca, marca lo que suma para
     /// el mínimo y apunta lo ya entregado. Decide <see cref="GestorReservasStock.ReservarCupones"/>.
     /// </summary>
     public static class CuponesPicking
     {
-        /// <param name="leerImporte">pedido → importe del cupón usado en él (IVA incluido); null si no consta.</param>
+        /// <param name="leerCupon">pedido → el cupón usado en él (importe IVA incluido y pedido mínimo guardado); null si no consta.</param>
         public static void Rellenar(List<PedidoPicking> pedidos, string productoCupon,
             Func<string, List<string>, Dictionary<string, ProductoParaCupon>> leerProductos,
             Func<PedidoPicking, List<LineaEntregadaCupon>> leerLineasYaEntregadas,
-            Func<int, decimal?> leerImporte)
+            Func<int, CuponUsadoPicking> leerCupon)
         {
             if (pedidos == null || string.IsNullOrWhiteSpace(productoCupon))
             {
@@ -43,7 +50,8 @@ namespace NestoAPI.Models.Picking
                 }
                 // Sin el cupón en la tabla (no debería pasar), el importe sale del total de la propia línea (con IVA y RE: el
                 // cupón descuenta su importe exacto también con recargo de equivalencia)
-                decimal importe = leerImporte(pedido.Id)
+                CuponUsadoPicking usado = leerCupon(pedido.Id);
+                decimal importe = usado?.Importe
                     ?? Math.Round(Math.Abs(lineasCupon.Sum(l => l.Total)), 2, MidpointRounding.AwayFromZero);
 
                 List<LineaEntregadaCupon> entregadas = leerLineasYaEntregadas(pedido) ?? new List<LineaEntregadaCupon>();
@@ -61,7 +69,7 @@ namespace NestoAPI.Models.Picking
                 }
                 pedido.Cupon = new CuponPicking
                 {
-                    PedidoMinimo = ReglasCupon.PedidoMinimo(importe),
+                    PedidoMinimo = ReglasCupon.PedidoMinimo(importe, usado?.PedidoMinimo),
                     TotalComputableYaEntregado = entregadas
                         .Where(e => ReglasCupon.ComputaParaMinimo(Constantes.TiposLineaVenta.PRODUCTO, ReglasCupon.Buscar(productos, e.Producto)))
                         .Sum(e => e.Total)

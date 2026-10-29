@@ -65,6 +65,12 @@ namespace NestoAPI.Infraestructure.Cupones
         public bool PedidoUsoTieneLaLinea { get; set; }
         /// <summary>La línea del cupón del pedido de uso ya está en albarán o factura (ya no se suelta).</summary>
         public bool LineaUsoServida { get; set; }
+        /// <summary>
+        /// NestoAPI#613 (Carlos, 29/10/26): el pedido mínimo guardado al emitirlo (Cupones.PedidoMinimo, del evento). Null: cupón de
+        /// antes del script Issue613_CuponPedidoMinimoPorEvento.sql (o manual), con la regla de antes. Decide
+        /// <see cref="ReglasCupon.PedidoMinimo(CuponLeido)"/>.
+        /// </summary>
+        public decimal? PedidoMinimo { get; set; }
     }
 
     /// <summary>NestoAPI#613: lo que ven Nesto, NestoApp y TNV.</summary>
@@ -77,7 +83,10 @@ namespace NestoAPI.Infraestructure.Cupones
         public string Contacto { get; set; }
         /// <summary>IVA incluido: lo que se descuenta del pedido.</summary>
         public decimal Importe { get; set; }
-        /// <summary>El pedido tiene que llevar al menos esto de productos (IVA incluido): el doble del cupón.</summary>
+        /// <summary>
+        /// El pedido tiene que llevar al menos esto de productos (IVA incluido). NestoAPI#613 (29/10/26): lo define el evento (0 =
+        /// cualquier importe); los cupones de antes, el doble del cupón.
+        /// </summary>
         public decimal PedidoMinimo { get; set; }
         public string Origen { get; set; }
         public int? EventoId { get; set; }
@@ -182,8 +191,9 @@ namespace NestoAPI.Infraestructure.Cupones
 
     /// <summary>
     /// NestoAPI#613: las reglas del cupón, todas aquí y sin base de datos (decisiones de la épica #610, 08/10/26): de una vez,
-    /// uno por pedido, pedido mínimo el doble del cupón IVA incluido sin contar cursos ni portes, solo productos, convive con
-    /// ofertas y descuentos (va sobre el neto), válido desde el día del evento y durante 6 meses, del mismo cliente.
+    /// uno por pedido, pedido mínimo IVA incluido sin contar cursos ni portes (el del evento desde el 29/10/26, 0 por defecto; el
+    /// doble del cupón en los de antes), solo productos, convive con ofertas y descuentos (va sobre el neto), válido desde el día
+    /// del evento y durante 6 meses, del mismo cliente.
     /// </summary>
     public static class ReglasCupon
     {
@@ -193,6 +203,7 @@ namespace NestoAPI.Infraestructure.Cupones
         /// </summary>
         public const decimal PORCENTAJE_IVA = 21M;
         public const int MESES_VALIDEZ = 6;
+        /// <summary>Solo para los cupones sin pedido mínimo guardado (Cupones.PedidoMinimo NULL): la regla de antes del 29/10/26.</summary>
         public const decimal MULTIPLO_PEDIDO_MINIMO = 2M;
         public const string CLAVE_PRODUCTO = "Cupones:Producto";
         /// <summary>El producto ficticio de la línea de descuento (script Issue613_Cupones.sql).</summary>
@@ -330,7 +341,20 @@ namespace NestoAPI.Infraestructure.Cupones
             return Math.Round(importe / (1 + (p.Iva + p.RecargoEquivalencia) / 100M), 4, MidpointRounding.AwayFromZero);
         }
 
-        public static decimal PedidoMinimo(decimal importe) => Math.Round(importe * MULTIPLO_PEDIDO_MINIMO, 2, MidpointRounding.AwayFromZero);
+        /// <summary>
+        /// NestoAPI#613: EL ÚNICO SITIO que decide el pedido mínimo de un cupón (IVA incluido, solo productos). Desde el 29/10/26 lo
+        /// define el evento y se guarda en el cupón al emitirlo (<paramref name="pedidoMinimoGuardado"/>, Cupones.PedidoMinimo; 0 =
+        /// cualquier importe). Sin él (NULL: cupones de antes del script o manuales), la regla de antes: el doble del cupón.
+        /// </summary>
+        public static decimal PedidoMinimo(decimal importe, decimal? pedidoMinimoGuardado) =>
+            pedidoMinimoGuardado.HasValue
+                ? Math.Max(0, Math.Round(pedidoMinimoGuardado.Value, 2, MidpointRounding.AwayFromZero))
+                : Math.Round(importe * MULTIPLO_PEDIDO_MINIMO, 2, MidpointRounding.AwayFromZero);
+
+        public static decimal PedidoMinimo(CuponLeido cupon) => cupon == null ? 0 : PedidoMinimo(cupon.Importe, cupon.PedidoMinimo);
+
+        /// <summary>NestoAPI#613: «de al menos 200,00 € de productos» o, sin mínimo (0), «de productos» (los textos no hablan de mínimo).</summary>
+        public static string TextoPedidoMinimo(decimal minimo) => minimo > 0 ? $"de al menos {Euros(minimo)} € de productos" : "de productos";
 
         public static DateTime Caducidad(DateTime validoDesde) => validoDesde.Date.AddMonths(MESES_VALIDEZ);
 
@@ -492,8 +516,8 @@ namespace NestoAPI.Infraestructure.Cupones
                         throw Error(ERROR_TODAVIA_NO, $"El cupón {codigo} vale desde el {Fecha(cupon.ValidoDesde)}.", empresa, pedido, cliente);
                 }
             }
-            decimal minimo = PedidoMinimo(cupon.Importe);
-            if (comprobarMinimo && totalComputable < minimo)
+            decimal minimo = PedidoMinimo(cupon);
+            if (comprobarMinimo && minimo > 0 && totalComputable < minimo)
             {
                 decimal falta = minimo - totalComputable;
                 throw Error(ERROR_MINIMO, $"Para usar el cupón {codigo} de {Euros(cupon.Importe)} € el pedido tiene que ser de al menos " +
@@ -508,8 +532,8 @@ namespace NestoAPI.Infraestructure.Cupones
             switch (estado)
             {
                 case EstadosCupon.ACTIVO:
-                    return $"Tiene un cupón de {Euros(c.Importe)} € ({c.Codigo?.Trim()}) para un pedido de al menos {Euros(PedidoMinimo(c.Importe))} € " +
-                        $"de productos, hasta el {Fecha(c.Caducidad)}.";
+                    return $"Tiene un cupón de {Euros(c.Importe)} € ({c.Codigo?.Trim()}) para un pedido {TextoPedidoMinimo(PedidoMinimo(c))}, " +
+                        $"hasta el {Fecha(c.Caducidad)}.";
                 case EstadosCupon.EMITIDO:
                     return $"Tiene un cupón de {Euros(c.Importe)} € ({c.Codigo?.Trim()}) que vale desde el {Fecha(c.ValidoDesde)} hasta el {Fecha(c.Caducidad)}.";
                 case EstadosCupon.USADO:
@@ -536,7 +560,7 @@ namespace NestoAPI.Infraestructure.Cupones
                 Cliente = c.Cliente?.Trim(),
                 Contacto = c.Contacto?.Trim(),
                 Importe = c.Importe,
-                PedidoMinimo = PedidoMinimo(c.Importe),
+                PedidoMinimo = PedidoMinimo(c),
                 Origen = c.Origen?.Trim(),
                 EventoId = c.EventoId,
                 Evento = c.Evento?.Trim(),

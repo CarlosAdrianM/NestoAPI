@@ -25,6 +25,11 @@ namespace NestoAPI.Infraestructure.Cupones
         public DateTime Caducidad { get; set; }
         public string Estado { get; set; }
         public string Usuario { get; set; }
+        /// <summary>
+        /// NestoAPI#613 (29/10/26): el pedido mínimo del evento (0 = cualquier importe). Null: no se guarda (manuales) y vale la
+        /// regla de antes. Sin la columna (script Issue613_CuponPedidoMinimoPorEvento.sql sin lanzar), no se guarda.
+        /// </summary>
+        public decimal? PedidoMinimo { get; set; }
     }
 
     public interface IRepositorioCupones
@@ -79,6 +84,11 @@ namespace NestoAPI.Infraestructure.Cupones
         Task<UsoTiendaCupon> LeerUsoTienda(int id);
         /// <summary>NestoAPI#694: el IVA de la ficha principal del cliente (null si no lleva o no existe), para el mínimo del carrito de la tienda.</summary>
         Task<string> LeerIvaCliente(string empresa, string cliente);
+        /// <summary>
+        /// NestoAPI#613 (29/10/26): Eventos.PedidoMinimoCupon del evento (NULL = 0). Null si no existe la columna (script
+        /// Issue613_CuponPedidoMinimoPorEvento.sql sin lanzar) o el evento.
+        /// </summary>
+        Task<decimal?> LeerPedidoMinimoCuponEvento(int eventoId);
     }
 
     /// <summary>
@@ -97,9 +107,19 @@ namespace NestoAPI.Infraestructure.Cupones
        CAST(CASE WHEN c.UsadoEnPedido IS NOT NULL AND EXISTS (SELECT 1 FROM LinPedidoVta l WHERE l.[Número] = c.UsadoEnPedido AND l.Producto = @prod)
                  THEN 1 ELSE 0 END AS bit) AS PedidoUsoTieneLaLinea,
        CAST(CASE WHEN c.UsadoEnPedido IS NOT NULL AND EXISTS (SELECT 1 FROM LinPedidoVta l WHERE l.[Número] = c.UsadoEnPedido AND l.Producto = @prod AND l.Estado >= 2)
-                 THEN 1 ELSE 0 END AS bit) AS LineaUsoServida";
+                 THEN 1 ELSE 0 END AS bit) AS LineaUsoServida,
+       pmc.Valor AS PedidoMinimo";
 
-        internal const string ORIGEN = "FROM dbo.Cupones c LEFT JOIN dbo.Eventos e ON e.Id = c.EventoId";
+        /// <summary>
+        /// NestoAPI#613 (29/10/26): Cupones.PedidoMinimo SIN romper la consulta si todavía no existe la columna (script
+        /// Issue613_CuponPedidoMinimoPorEvento.sql sin lanzar). Dentro de la subconsulta, «PedidoMinimo» sin prefijo es la columna
+        /// de cm si existe; si no, SQL Server la busca fuera y encuentra la de pmd (NULL, la regla de antes). Comprobado contra NV.
+        /// </summary>
+        internal const string APPLY_PEDIDO_MINIMO = @"
+CROSS APPLY (SELECT CAST(NULL AS decimal(10, 2)) AS PedidoMinimo) pmd
+OUTER APPLY (SELECT CAST(PedidoMinimo AS decimal(10, 2)) AS Valor FROM dbo.Cupones cm WHERE cm.Id = c.Id) pmc";
+
+        internal const string ORIGEN = "FROM dbo.Cupones c LEFT JOIN dbo.Eventos e ON e.Id = c.EventoId" + APPLY_PEDIDO_MINIMO;
 
         private const string COLUMNAS = LISTA_COLUMNAS + " " + ORIGEN;
 
@@ -111,7 +131,7 @@ namespace NestoAPI.Infraestructure.Cupones
        CAST(NULL AS varchar(3)) AS EmpresaUso, CAST(NULL AS int) AS UsadoEnPedido, CAST(NULL AS varchar(3)) AS EmpresaFacturaUso,
        CAST(NULL AS varchar(10)) AS FacturaUso, CAST(NULL AS datetime) AS FechaUso, CAST(NULL AS varchar(20)) AS CanalUso,
        CAST(NULL AS nvarchar(200)) AS MotivoAnulacion, CAST(NULL AS varchar(50)) AS Usuario, CAST(0 AS bit) AS PedidoUsoTieneLaLinea,
-       CAST(0 AS bit) AS LineaUsoServida WHERE 1 = 0";
+       CAST(0 AS bit) AS LineaUsoServida, CAST(NULL AS decimal(10, 2)) AS PedidoMinimo WHERE 1 = 0";
 
         /// <summary>Consulta protegida: si no existe la tabla, nada. <paramref name="donde"/> usa @p0/@p1 (y @prod, el producto).</summary>
         // Sin la tabla, la rama del ELSE no se ejecuta (resolución diferida de nombres): no hace falta SQL dinámico.
@@ -129,7 +149,17 @@ SELECT @Codigo, @Empresa, @Cliente, @Contacto, @Importe, @Origen, @Inscripcion, 
        @Motivo, GETDATE(), @ValidoDesde, @Caducidad, @Estado, @Usuario, GETDATE()
 WHERE @Inscripcion IS NULL
    OR NOT EXISTS (SELECT 1 FROM dbo.Cupones WITH (UPDLOCK, HOLDLOCK) WHERE EventoInscripcionId = @Inscripcion);
-SELECT CAST(ISNULL(SCOPE_IDENTITY(), 0) AS int);";
+DECLARE @id int = CAST(ISNULL(SCOPE_IDENTITY(), 0) AS int);
+-- NestoAPI#613 (29/10/26): el pedido mínimo del evento, solo si ya existe la columna (sin ella, la regla de antes)
+IF @id > 0 AND @PedidoMinimo IS NOT NULL AND COL_LENGTH('dbo.Cupones', 'PedidoMinimo') IS NOT NULL
+    EXEC sp_executesql N'UPDATE dbo.Cupones SET PedidoMinimo = @m WHERE Id = @i', N'@m decimal(10, 2), @i int', @m = @PedidoMinimo, @i = @id;
+SELECT @id;";
+
+        internal const string SQL_PEDIDO_MINIMO_EVENTO = @"
+IF COL_LENGTH('dbo.Eventos', 'PedidoMinimoCupon') IS NULL
+    SELECT CAST(NULL AS decimal(10, 2))
+ELSE
+    EXEC sp_executesql N'SELECT CAST(ISNULL(PedidoMinimoCupon, 0) AS decimal(10, 2)) FROM dbo.Eventos WHERE Id = @id', N'@id int', @id = @p0;";
 
         // El candado del canje: solo pasa si el cupón está libre (Activo, o Emitido con el día ya llegado: el job puede no
         // haber pasado), ya es de este pedido, o su pedido ya no tiene la línea. Con dos pedidos a la vez, el segundo
@@ -344,7 +374,9 @@ END";
                         new SqlParameter("@ValidoDesde", cupon.ValidoDesde.Date),
                         new SqlParameter("@Caducidad", cupon.Caducidad.Date),
                         new SqlParameter("@Estado", cupon.Estado),
-                        new SqlParameter("@Usuario", Usuario(cupon.Usuario))).ToListAsync().ConfigureAwait(false)).FirstOrDefault();
+                        new SqlParameter("@Usuario", Usuario(cupon.Usuario)),
+                        new SqlParameter("@PedidoMinimo", (object)cupon.PedidoMinimo ?? DBNull.Value)
+                        { SqlDbType = System.Data.SqlDbType.Decimal, Precision = 10, Scale = 2 }).ToListAsync().ConfigureAwait(false)).FirstOrDefault();
                     if (id > 0)
                     {
                         return await LeerPorId(id).ConfigureAwait(false);
@@ -444,6 +476,10 @@ END";
         public async Task<UsoTiendaCupon> LeerUsoTienda(int id) =>
             (await db.Database.SqlQuery<UsoTiendaCupon>(SQL_LEER_USO_TIENDA, new SqlParameter("@p0", id)).ToListAsync().ConfigureAwait(false))
                 .FirstOrDefault();
+
+        public async Task<decimal?> LeerPedidoMinimoCuponEvento(int eventoId) =>
+            (await db.Database.SqlQuery<decimal?>(SQL_PEDIDO_MINIMO_EVENTO, new SqlParameter("@p0", eventoId))
+                .ToListAsync().ConfigureAwait(false)).FirstOrDefault();
 
         public async Task<string> LeerIvaCliente(string empresa, string cliente)
         {

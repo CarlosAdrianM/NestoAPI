@@ -122,7 +122,7 @@ namespace NestoAPI.Tests.Infrastructure.Cupones
         public void Reglas_LaLineaEsElImporteIvaIncluidoEntre121()
         {
             Assert.AreEqual(41.3223M, ReglasCupon.PrecioLinea(50));
-            Assert.AreEqual(100M, ReglasCupon.PedidoMinimo(50));
+            Assert.AreEqual(100M, ReglasCupon.PedidoMinimo(50, null), "Sin mínimo guardado (cupones de antes), el doble");
             Assert.AreEqual(new DateTime(2027, 4, 30), ReglasCupon.Caducidad(EVENTO), "6 meses desde el evento");
         }
 
@@ -759,7 +759,7 @@ namespace NestoAPI.Tests.Infrastructure.Cupones
         {
             var pedido = new PedidoPicking { Empresa = "1", Id = 1, Lineas = new List<LineaPedidoPicking> { LineaPicking("CREMA", 2, 120, 1), LineaPicking(PRODUCTO, -1, -50, 0) } };
 
-            CuponesPicking.Rellenar(new List<PedidoPicking> { pedido }, PRODUCTO, ProductosPicking, p => new List<LineaEntregadaCupon>(), p => 50);
+            CuponesPicking.Rellenar(new List<PedidoPicking> { pedido }, PRODUCTO, ProductosPicking, p => new List<LineaEntregadaCupon>(), p => new CuponUsadoPicking { Importe = 50 });
             GestorReservasStock.ReservarCupones(new List<PedidoPicking> { pedido });
 
             Assert.IsTrue(pedido.Cupon.Retenido, "Sale una crema de 60 €: no llega a 100 €");
@@ -773,7 +773,7 @@ namespace NestoAPI.Tests.Infrastructure.Cupones
             var pedido = new PedidoPicking { Empresa = "1", Id = 1, Lineas = new List<LineaPedidoPicking> { LineaPicking("CREMA", 1, 60, 1), LineaPicking(PRODUCTO, -1, -50, 0) } };
 
             CuponesPicking.Rellenar(new List<PedidoPicking> { pedido }, PRODUCTO, ProductosPicking,
-                p => new List<LineaEntregadaCupon> { new LineaEntregadaCupon { Producto = "CREMA", Total = 40 }, new LineaEntregadaCupon { Producto = "CURSO", Total = 200 } }, p => 50);
+                p => new List<LineaEntregadaCupon> { new LineaEntregadaCupon { Producto = "CREMA", Total = 40 }, new LineaEntregadaCupon { Producto = "CURSO", Total = 200 } }, p => new CuponUsadoPicking { Importe = 50 });
             GestorReservasStock.ReservarCupones(new List<PedidoPicking> { pedido });
 
             Assert.IsFalse(pedido.Cupon.Retenido);
