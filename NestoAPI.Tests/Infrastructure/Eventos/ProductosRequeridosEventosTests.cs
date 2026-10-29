@@ -513,6 +513,210 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             Assert.AreEqual(0, lista.Single(e => e.Id == EVENTO_GRATUITO).ProductosRequeridos.Count);
         }
 
+        // ---------------- Modo «Todos» o «Alguno» (Carlos 29/10/26) ----------------
+
+        /// <summary>El evento por compra pide dos productos (45363 y 45364) en el modo que se diga.</summary>
+        private void DosProductos(bool todos)
+        {
+            A.CallTo(() => repositorio.Leer(A<IReadOnlyCollection<int>>._)).ReturnsLazily((IReadOnlyCollection<int> ids) =>
+                Task.FromResult(ids.Contains(EVENTO_POR_COMPRA)
+                    ? new Dictionary<int, List<ProductoRequeridoLeido>>
+                    {
+                        [EVENTO_POR_COMPRA] = new List<ProductoRequeridoLeido>
+                        {
+                            new ProductoRequeridoLeido { EventoId = EVENTO_POR_COMPRA, Producto = "45363", Nombre = "LIFTING COREANO KIT", FechaCreacion = new DateTime(2026, 10, 20, 12, 0, 0) },
+                            new ProductoRequeridoLeido { EventoId = EVENTO_POR_COMPRA, Producto = "45364", Nombre = "SÉRUM LIFTING", FechaCreacion = new DateTime(2026, 10, 20, 12, 0, 0) }
+                        }
+                    }
+                    : new Dictionary<int, List<ProductoRequeridoLeido>>()));
+            A.CallTo(() => repositorio.EventosQueExigenTodos(A<IReadOnlyCollection<int>>._)).ReturnsLazily((IReadOnlyCollection<int> ids) =>
+                Task.FromResult(todos && ids.Contains(EVENTO_POR_COMPRA) ? new HashSet<int> { EVENTO_POR_COMPRA } : new HashSet<int>()));
+        }
+
+        private void Comprado(string producto, int pedido) =>
+            A.CallTo(() => repositorio.BuscarJustificante("1", "15191", A<IReadOnlyCollection<string>>.That.Matches(p => p.Count == 1 && p.Contains(producto)), A<DateTime>._))
+                .Returns(Task.FromResult(new JustificanteCompraEvento { Pedido = pedido, Producto = producto, Estado = Constantes.EstadosLineaVenta.PENDIENTE }));
+
+        [TestMethod]
+        public async Task Todos_ConTodosComprados_InscritaConElPedidoMasReciente()
+        {
+            DosProductos(todos: true);
+            Comprado("45363", PEDIDO);
+            Comprado("45364", PEDIDO + 5);
+
+            InscripcionEventoDTO dto = await Servicio().Inscribir(EVENTO_POR_COMPRA, new InscribirEventoDTO { Cliente = "15191", Origen = "Nesto" }, VENDEDOR);
+
+            Assert.AreEqual(EstadoInscripcionEvento.Inscrita, dto.Estado);
+            Assert.AreEqual(PEDIDO + 5, dto.PedidoJustificante, "El más reciente de los que justifican");
+            A.CallTo(() => repositorio.PonerJustificante(dto.Id, PEDIDO + 5)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Todos_LeFaltaUno_400ConLosQueFaltanYNoSeInscribe()
+        {
+            DosProductos(todos: true);
+            Comprado("45363", PEDIDO);
+            A.CallTo(() => repositorio.BuscarJustificante(A<string>._, A<string>._, A<IReadOnlyCollection<string>>.That.Matches(p => p.Contains("45364")), A<DateTime>._))
+                .Returns(Task.FromResult<JustificanteCompraEvento>(null));
+
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() =>
+                Servicio().Inscribir(EVENTO_POR_COMPRA, new InscribirEventoDTO { Cliente = "15191", Origen = "Nesto" }, VENDEDOR));
+
+            Assert.AreEqual(HttpStatusCode.BadRequest, ex.StatusCode);
+            Assert.AreEqual(ReglasProductosRequeridosEvento.ERROR_REQUIERE_COMPRA, ex.GetErrorCode());
+            Assert.AreEqual("Para apuntarse a «Formación por compra Lifting Coreano» hay que haber comprado o pedido todos estos productos; " +
+                "le faltan: 45364 (SÉRUM LIFTING). Cuentan los pedidos del cliente desde el 21/08/2026.", ex.Message);
+            var productos = (List<ProductoRequeridoEventoDTO>)ex.Context.AdditionalData["productos"];
+            Assert.AreEqual("45364", productos.Single().Producto, "Solo los que faltan");
+            Assert.AreEqual("Todos", ex.Context.AdditionalData["modo"]);
+            Assert.AreEqual(0, inscripciones.Count);
+        }
+
+        [TestMethod]
+        public async Task Alguno_ComoHoy_UnaBusquedaConLosDosYBastaConUno()
+        {
+            DosProductos(todos: false);
+            A.CallTo(() => repositorio.BuscarJustificante(A<string>._, A<string>._, A<IReadOnlyCollection<string>>._, A<DateTime>._))
+                .Returns(Task.FromResult(new JustificanteCompraEvento { Pedido = PEDIDO, Producto = "45364", Estado = 2 }));
+
+            InscripcionEventoDTO dto = await Servicio().Inscribir(EVENTO_POR_COMPRA, new InscribirEventoDTO { Cliente = "15191", Origen = "Nesto" }, VENDEDOR);
+
+            Assert.AreEqual(PEDIDO, dto.PedidoJustificante);
+            A.CallTo(() => repositorio.BuscarJustificante("1", "15191",
+                A<IReadOnlyCollection<string>>.That.Matches(p => p.Count == 2), A<DateTime>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Alguno_SinNinguno_400ConModoAlguno()
+        {
+            DosProductos(todos: false);
+            A.CallTo(() => repositorio.BuscarJustificante(A<string>._, A<string>._, A<IReadOnlyCollection<string>>._, A<DateTime>._))
+                .Returns(Task.FromResult<JustificanteCompraEvento>(null));
+
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() =>
+                Servicio().Inscribir(EVENTO_POR_COMPRA, new InscribirEventoDTO { Cliente = "15191", Origen = "Nesto" }, VENDEDOR));
+
+            StringAssert.Contains(ex.Message, "alguno de estos productos: 45363 (LIFTING COREANO KIT), 45364 (SÉRUM LIFTING)");
+            Assert.AreEqual("Alguno", ex.Context.AdditionalData["modo"]);
+            Assert.AreEqual(2, ((List<ProductoRequeridoEventoDTO>)ex.Context.AdditionalData["productos"]).Count);
+        }
+
+        [TestMethod]
+        public async Task PutEvento_ModoInvalido_400DeUstedSinGuardar()
+        {
+            EventoDTO put = PutPorCompra("45363");
+            put.ProductosRequeridosModo = "Varios";
+
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() =>
+                ServicioEventos().ModificarEvento(EVENTO_POR_COMPRA, put, "x"));
+
+            StringAssert.Contains(ex.Message, "tiene que ser «Alguno»");
+            A.CallTo(() => repositorio.Guardar(A<int>._, A<IReadOnlyCollection<string>>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => repositorio.GuardarModo(A<int>._, A<bool>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task PutEvento_ModoTodos_LoGuardaYLoDevuelve()
+        {
+            A.CallTo(() => repositorio.GuardarModo(EVENTO_POR_COMPRA, true)).ReturnsLazily(() =>
+            {
+                DosProductos(todos: true);
+                return Task.FromResult(true);
+            });
+            var put = new EventoDTO { Titulo = "Formación", Fecha = new DateTime(2026, 11, 25), Activo = true, ProductosRequeridosModo = " todos " };
+
+            EventoDTO dto = await ServicioEventos().ModificarEvento(EVENTO_POR_COMPRA, put, "x");
+
+            A.CallTo(() => repositorio.GuardarModo(EVENTO_POR_COMPRA, true)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => repositorio.Guardar(A<int>._, A<IReadOnlyCollection<string>>._, A<string>._)).MustNotHaveHappened();
+            Assert.AreEqual("Todos", dto.ProductosRequeridosModo);
+        }
+
+        [TestMethod]
+        public async Task PutEvento_SinElCampoModo_NoLoToca()
+        {
+            EventoDTO dto = await ServicioEventos().ModificarEvento(EVENTO_POR_COMPRA,
+                new EventoDTO { Titulo = "Formación", Fecha = new DateTime(2026, 11, 25), Activo = true, ProductosRequeridosModo = null }, "x");
+
+            A.CallTo(() => repositorio.GuardarModo(A<int>._, A<bool>._)).MustNotHaveHappened();
+            Assert.AreEqual("Alguno", dto.ProductosRequeridosModo, "Sin dato, «Alguno»");
+        }
+
+        [TestMethod]
+        public async Task PutEvento_ModoTodosSinLaColumna_400QueFaltaElScript()
+        {
+            A.CallTo(() => repositorio.GuardarModo(A<int>._, A<bool>._)).Returns(Task.FromResult(false));
+
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => ServicioEventos().ModificarEvento(EVENTO_POR_COMPRA,
+                new EventoDTO { Titulo = "Formación", Fecha = new DateTime(2026, 11, 25), Activo = true, ProductosRequeridosModo = "Todos" }, "x"));
+
+            StringAssert.Contains(ex.Message, "Issue732_EventosProductosRequeridosModo.sql");
+        }
+
+        [TestMethod]
+        public async Task PutEvento_ModoAlgunoSinLaColumna_NoPasaNada()
+        {
+            A.CallTo(() => repositorio.GuardarModo(A<int>._, A<bool>._)).Returns(Task.FromResult(false));
+
+            EventoDTO dto = await ServicioEventos().ModificarEvento(EVENTO_POR_COMPRA,
+                new EventoDTO { Titulo = "Formación", Fecha = new DateTime(2026, 11, 25), Activo = true, ProductosRequeridosModo = "Alguno" }, "x");
+
+            Assert.AreEqual("Alguno", dto.ProductosRequeridosModo);
+        }
+
+        [TestMethod]
+        public async Task LeerEventos_TraenSuModo()
+        {
+            DosProductos(todos: true);
+
+            List<EventoDTO> lista = await ServicioEventos().LeerEventos("1", true);
+
+            Assert.AreEqual("Todos", lista.Single(e => e.Id == EVENTO_POR_COMPRA).ProductosRequeridosModo);
+            Assert.AreEqual("Alguno", lista.Single(e => e.Id == EVENTO_GRATUITO).ProductosRequeridosModo);
+        }
+
+        [TestMethod]
+        public async Task Todos_BorrarElPedidoJustificante_Pregunta()
+        {
+            DosProductos(todos: true);
+            Inscripcion(1, EVENTO_POR_COMPRA, EstadoInscripcionEvento.Inscrita);
+            A.CallTo(() => repositorio.InscripcionesDelPedido("1", PEDIDO)).Returns(Task.FromResult(new List<int> { 1 }));
+
+            List<InscripcionAfectadaPedidoDTO> afectadas = await Guardian().AfectadasAlBorrar("1", PEDIDO);
+
+            Assert.AreEqual(1, afectadas.Single().Id);
+        }
+
+        [TestMethod]
+        public async Task Todos_QuitarDelPedidoUnoDeLosRequeridos_PreguntaAunqueQuedeElOtro()
+        {
+            DosProductos(todos: true);
+            Inscripcion(1, EVENTO_POR_COMPRA, EstadoInscripcionEvento.Inscrita);
+            A.CallTo(() => repositorio.InscripcionesDelPedido("1", PEDIDO)).Returns(Task.FromResult(new List<int> { 1 }));
+            string[] tenia = { "45363", "45364", "OTRO" };
+
+            Assert.AreEqual(1, (await Guardian().AfectadasAlModificar("1", PEDIDO, new[] { "45363", "OTRO" }, tenia)).Count, "Con «Todos» sí");
+            Assert.AreEqual(0, (await Guardian().AfectadasAlModificar("1", PEDIDO, new[] { "45363", "45364" }, tenia)).Count, "Quitar OTRO no");
+            Assert.AreEqual(0, (await Guardian().AfectadasAlModificar("1", PEDIDO, new[] { "45364" }, new[] { "45364", "OTRO" })).Count,
+                "El 45363 estaba en otro pedido: este no lo tenía, no se pregunta");
+            DosProductos(todos: false);
+            Assert.AreEqual(0, (await Guardian().AfectadasAlModificar("1", PEDIDO, new[] { "45363", "OTRO" }, tenia)).Count, "Con «Alguno» no");
+        }
+
+        [TestMethod]
+        public void ProductosQueJustifican_SoloLineasConCantidadYEstadoQueCuenta()
+        {
+            var grabadas = new List<LinPedidoVta>
+            {
+                new LinPedidoVta { Producto = "45363 ", Cantidad = 1, Estado = -1 },
+                new LinPedidoVta { Producto = "PRESU", Cantidad = 1, Estado = -3 },
+                new LinPedidoVta { Producto = "CERO", Cantidad = 0, Estado = 1 },
+                new LinPedidoVta { Producto = "45364", Cantidad = 2, Estado = 4 }
+            };
+
+            CollectionAssert.AreEquivalent(new[] { "45363", "45364" }, ReglasProductosRequeridosEvento.ProductosQueJustifican(grabadas));
+        }
+
         private static DbSet<T> Crear<T>(List<T> datos) where T : class
         {
             DbSet<T> fake = A.Fake<DbSet<T>>(o => o.Implements<IQueryable<T>>().Implements<IDbAsyncEnumerable<T>>());

@@ -97,6 +97,7 @@ namespace NestoAPI.Controllers
 
         // PUT api/Eventos/5   { Titulo, Fecha, ImporteSenal, Activo, y solo los campos nuevos que vengan: Almacen, ProductoCurso, Plazas, Lugar, DescripcionLarga }
         // NestoAPI#732: también ProductosRequeridos: [{ Producto: "45363" }] (sustituye la lista; [] = deja de exigir compra; sin el campo, no se toca)
+        //   y ProductosRequeridosModo: "Alguno" (basta con uno, por defecto) o "Todos" (hay que comprarlos todos); null o sin el campo, no se toca
         /// <summary>NestoAPI#611: quien mantiene el evento con la tienda de antes y con la nueva (si se cambia). Conserva los campos nuevos que no vengan.</summary>
         [HttpPut]
         [Route("{id:int}")]

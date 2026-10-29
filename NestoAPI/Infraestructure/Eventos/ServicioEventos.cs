@@ -137,6 +137,21 @@ namespace NestoAPI.Infraestructure.Eventos
 
         /// <summary>NestoAPI#732: ¿viene la lista de productos requeridos para cambiarla? (null no cuenta).</summary>
         public bool TraeProductosRequeridos() => Trae(nameof(ProductosRequeridos)) && productosRequeridos != null;
+
+        private string productosRequeridosModo = ReglasProductosRequeridosEvento.MODO_ALGUNO;
+        /// <summary>
+        /// NestoAPI#732 (Carlos, 29/10/26): «Alguno» (basta con uno de los productos requeridos; por defecto, lo de siempre) o
+        /// «Todos» (hay que haber comprado o pedido cada uno). Al leer, siempre uno de los dos. Al escribir (POST/PUT), solo si
+        /// viene: null o sin el campo, no se toca; otro valor, 400.
+        /// </summary>
+        public string ProductosRequeridosModo
+        {
+            get => productosRequeridosModo;
+            set { productosRequeridosModo = value; recibidos.Add(nameof(ProductosRequeridosModo)); }
+        }
+
+        /// <summary>NestoAPI#732: ¿viene el modo para cambiarlo? (null no cuenta).</summary>
+        public bool TraeProductosRequeridosModo() => Trae(nameof(ProductosRequeridosModo)) && productosRequeridosModo != null;
     }
 
     /// <summary>NestoAPI#591: POST api/Eventos/{id}/Senales. El apunte a favor del extracto que es la señal del evento.</summary>
@@ -351,6 +366,12 @@ namespace NestoAPI.Infraestructure.Eventos
                         ? suyos.Select(r => new ProductoRequeridoEventoDTO { Producto = r.Producto?.Trim(), Nombre = r.Nombre?.Trim() }).ToList()
                         : new List<ProductoRequeridoEventoDTO>();
                 }
+                HashSet<int> exigenTodos = await ProductosRequeridos
+                    .EventosQueExigenTodos(lista.Select(e => e.Id).ToList()).ConfigureAwait(false) ?? new HashSet<int>();
+                foreach (EventoDTO dto in lista)
+                {
+                    dto.ProductosRequeridosModo = ReglasProductosRequeridosEvento.Modo(exigenTodos.Contains(dto.Id));
+                }
             }
             catch (Exception ex)
             {
@@ -403,6 +424,42 @@ namespace NestoAPI.Infraestructure.Eventos
 
         public const string MENSAJE_FALTA_SCRIPT_REQUERIDOS = "Todavía no se pueden poner productos requeridos: falta lanzar el script " +
             "Scripts/Issue732_EventosProductosRequeridos.sql. Avise a Informática.";
+
+        public const string MENSAJE_FALTA_SCRIPT_MODO = "Todavía no se puede exigir que se compren todos los productos requeridos: falta " +
+            "lanzar el script Scripts/Issue732_EventosProductosRequeridosModo.sql. Avise a Informática.";
+
+        /// <summary>
+        /// NestoAPI#732: el modo que viene en el cuerpo («Alguno» o «Todos»), canónico. Null si no viene (no se toca). 400 de usted
+        /// si es otro valor.
+        /// </summary>
+        private static string ValidarModoProductosRequeridos(EventoDTO evento)
+        {
+            if (evento == null || !evento.TraeProductosRequeridosModo())
+            {
+                return null;
+            }
+            return ReglasProductosRequeridosEvento.NormalizarModo(evento.ProductosRequeridosModo)
+                ?? throw new NestoBusinessException($"El modo de los productos requeridos «{evento.ProductosRequeridosModo?.Trim()}» no es válido: " +
+                    $"tiene que ser «{ReglasProductosRequeridosEvento.MODO_ALGUNO}» (basta con uno) o «{ReglasProductosRequeridosEvento.MODO_TODOS}» (hay que comprarlos todos).");
+        }
+
+        /// <summary>
+        /// NestoAPI#732: guarda el modo si viene. Sin la columna (o sin repositorio), «Alguno» no cambia nada (es lo de siempre) y
+        /// «Todos» contesta que falta el script.
+        /// </summary>
+        private async Task GuardarModoProductosRequeridos(int eventoId, string modo)
+        {
+            if (modo == null)
+            {
+                return;
+            }
+            bool todos = modo == ReglasProductosRequeridosEvento.MODO_TODOS;
+            bool guardado = ProductosRequeridos != null && await ProductosRequeridos.GuardarModo(eventoId, todos).ConfigureAwait(false);
+            if (!guardado && todos)
+            {
+                throw new NestoBusinessException(MENSAJE_FALTA_SCRIPT_MODO);
+            }
+        }
 
         private async Task GuardarProductosRequeridos(int eventoId, List<string> productos, string usuario)
         {
@@ -566,11 +623,13 @@ namespace NestoAPI.Infraestructure.Eventos
             }
             await Validar(evento, null).ConfigureAwait(false);
             List<string> requeridos = await ValidarProductosRequeridos(evento, EmpresaOPorDefecto(evento.Empresa)).ConfigureAwait(false);
+            string modoRequeridos = ValidarModoProductosRequeridos(evento);
             var entidad = new Evento { Empresa = EmpresaOPorDefecto(evento.Empresa), Formato = FormatosEvento.PRESENCIAL };
             Copiar(evento, entidad, usuario);
             db.Eventos.Add(entidad);
             await db.SaveChangesAsync().ConfigureAwait(false);
             await GuardarProductosRequeridos(entidad.Id, requeridos, usuario).ConfigureAwait(false);
+            await GuardarModoProductosRequeridos(entidad.Id, modoRequeridos).ConfigureAwait(false);
             return await ConProductosRequeridos(ConAnuncio(ADTO(entidad, 0), null)).ConfigureAwait(false);
         }
 
@@ -584,6 +643,7 @@ namespace NestoAPI.Infraestructure.Eventos
             }
             await Validar(evento, entidad.Almacen).ConfigureAwait(false);
             List<string> requeridos = await ValidarProductosRequeridos(evento, EmpresaOPorDefecto(entidad.Empresa)).ConfigureAwait(false);
+            string modoRequeridos = ValidarModoProductosRequeridos(evento);
             Dictionary<int, int> ocupadas = await PlazasOcupadas(new List<int> { id }).ConfigureAwait(false);
             int ocupadasEvento = ocupadas.TryGetValue(id, out int n) ? n : 0;
             if (evento.Trae(nameof(EventoDTO.Plazas)) && evento.Plazas.HasValue && evento.Plazas.Value < ocupadasEvento)
@@ -603,6 +663,7 @@ namespace NestoAPI.Infraestructure.Eventos
             }
             await db.SaveChangesAsync().ConfigureAwait(false);
             await GuardarProductosRequeridos(id, requeridos, usuario).ConfigureAwait(false);
+            await GuardarModoProductosRequeridos(id, modoRequeridos).ConfigureAwait(false);
             return await ConProductosRequeridos(await ConImagen(ADTO(entidad, ocupadasEvento)).ConfigureAwait(false)).ConfigureAwait(false);
         }
 
