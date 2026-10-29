@@ -20,6 +20,13 @@ namespace NestoAPI.Models.Agencias
         public bool? DescontarPrepagos { get; set; }
         /// <summary>Las dimensiones de los bultos (AnchoxAltoxLargo) si la agencia es Canteras.</summary>
         public string Dimensiones { get; set; }
+        /// <summary>
+        /// NestoAPI#740 (sugerencia 869, 29/10/26): los bultos que dice el mozo al imprimir la etiqueta, como en la reposición
+        /// (eligen la caja al final, al ver el tamaño). Si viene (mayor que 0) manda sobre las cajas cerradas del packing y no hace
+        /// falta haber cerrado ninguna; sin él (o 0), como siempre: los bultos son las cajas cerradas. Negativo o más de
+        /// <see cref="NestoAPI.Infraestructure.Agencias.ServicioEtiquetaPacking.MAXIMO_BULTOS"/>, 400.
+        /// </summary>
+        public int? Bultos { get; set; }
     }
 
     /// <summary>NestoAPI#595 (slice 5): la respuesta 200 (y la 502, con <see cref="Impresa"/> a false) de la etiqueta del packing.</summary>

@@ -158,6 +158,8 @@ namespace NestoAPI.Infraestructure.Agencias
     {
         /// <summary>El parámetro de usuario de «Facturar al imprimir etiqueta» (en Nesto es la casilla de Agencias).</summary>
         public const string PARAMETRO_FACTURAR = "FacturarAlImprimirEtiqueta";
+        /// <summary>NestoAPI#740: tope de los bultos tecleados (un error de tecleo, no un envío real).</summary>
+        public const int MAXIMO_BULTOS = 99;
         internal const string TIPO_ERROR_SIN_LINEAS = "Sin líneas para facturar";
 
         private readonly Func<IPrincipal, IPasosEtiquetaPacking> crearPasos;
@@ -190,6 +192,11 @@ namespace NestoAPI.Infraestructure.Agencias
             {
                 return ResultadoEtiquetaPacking.Invalida(CodigosErrorEnvioDesdePedido.PETICION_INVALIDA, "Hay que indicar el pedido.");
             }
+            if (peticion.Bultos.HasValue && (peticion.Bultos.Value < 0 || peticion.Bultos.Value > MAXIMO_BULTOS))
+            {
+                return ResultadoEtiquetaPacking.Invalida(CodigosErrorEnvioDesdePedido.PETICION_INVALIDA,
+                    $"Los bultos tienen que estar entre 1 y {MAXIMO_BULTOS}.");
+            }
             string empresa = string.IsNullOrWhiteSpace(peticion.Empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : peticion.Empresa.Trim();
             string usuarioAuditoria = UsuarioAuditoriaHelper.Resolver(usuario, "NestoAPI");
 
@@ -208,17 +215,20 @@ namespace NestoAPI.Infraestructure.Agencias
                 if (envio == null)
                 {
                     EntregaParaEtiqueta entrega = await pasos.LeerEntrega(empresa, pedido);
-                    if (entrega == null || entrega.Bultos <= 0)
+                    // NestoAPI#740: los bultos tecleados al imprimir mandan sobre las cajas cerradas (y no exigen ninguna)
+                    bool bultosTecleados = peticion.Bultos.HasValue && peticion.Bultos.Value > 0;
+                    int bultos = bultosTecleados ? peticion.Bultos.Value : entrega?.Bultos ?? 0;
+                    if (bultos <= 0)
                     {
                         return ResultadoEtiquetaPacking.Invalida(CodigosEtiquetaPacking.SIN_BULTOS,
-                            $"El pedido {pedido} no tiene ninguna caja cerrada en el packing. Cierre antes las cajas con su foto.");
+                            $"El pedido {pedido} no tiene ninguna caja cerrada en el packing. Indique los bultos o cierre antes las cajas con su foto.");
                     }
 
                     ResultadoEnvioDesdePedido creado = await pasos.CrearDesdePedido(new CrearEnvioDesdePedidoDTO
                     {
                         Empresa = empresa,
                         Pedido = pedido,
-                        Bultos = (short)Math.Min(entrega.Bultos, short.MaxValue),
+                        Bultos = (short)Math.Min(bultos, short.MaxValue),
                         Peso = peticion.Peso,
                         // La ampliación no se confirma desde aquí: ver más abajo
                         Confirmaciones = (peticion.Confirmaciones ?? new List<string>())
@@ -249,13 +259,14 @@ namespace NestoAPI.Infraestructure.Agencias
                     envio = creado.Envio.Envio;
                     etiqueta.EnvioNuevo = true;
                     etiqueta.Avisos.AddRange(creado.Envio.Avisos ?? new List<string>());
-                    if (entrega.BultosSinFoto > 0)
+                    // Con los bultos tecleados no se cierran cajas: el aviso de cajas sin foto no tiene sentido
+                    if (!bultosTecleados && entrega?.BultosSinFoto > 0)
                     {
                         etiqueta.Avisos.Add(entrega.BultosSinFoto == 1
                             ? "Hay 1 caja sin foto."
                             : $"Hay {entrega.BultosSinFoto} cajas sin foto.");
                     }
-                    if (entrega.OtrosPedidos.Count > 0)
+                    if (entrega?.OtrosPedidos?.Count > 0)
                     {
                         etiqueta.Avisos.Add($"En la misma entrega van también {(entrega.OtrosPedidos.Count == 1 ? "el pedido" : "los pedidos")} " +
                             $"{string.Join(", ", entrega.OtrosPedidos)}: esta etiqueta es para todas las cajas, pero el envío es del pedido {pedido}. " +

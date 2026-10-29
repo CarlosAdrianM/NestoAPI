@@ -195,6 +195,77 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             A.CallTo(() => pasos.CrearDesdePedido(A<CrearEnvioDesdePedidoDTO>._, A<string>._)).MustNotHaveHappened();
         }
 
+        // ------------------------------------------------------------ NestoAPI#740: los bultos se dicen al imprimir
+
+        [TestMethod]
+        public async Task BultosTecleados_SinCajasCerradas_GrabaElEnvioConEsosBultos()
+        {
+            A.CallTo(() => pasos.LeerEntrega("1", PEDIDO)).Returns(new EntregaParaEtiqueta { Bultos = 0 });
+            CreaElEnvio(Constantes.Agencias.AGENCIA_CTT);
+            PeticionEtiquetaPackingDTO peticion = Peticion();
+            peticion.Bultos = 3;
+
+            ResultadoEtiquetaPacking resultado = await servicio.Imprimir(PEDIDO, peticion, usuario);
+
+            Assert.AreNotEqual(TipoResultadoEtiquetaPacking.Invalida, resultado.Tipo);
+            A.CallTo(() => pasos.CrearDesdePedido(A<CrearEnvioDesdePedidoDTO>.That.Matches(p => p.Bultos == 3), A<string>._)).MustHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task BultosTecleados_SinPackingEnCurso_TambienValen()
+        {
+            A.CallTo(() => pasos.LeerEntrega("1", PEDIDO)).Returns(Task.FromResult<EntregaParaEtiqueta>(null));
+            CreaElEnvio(Constantes.Agencias.AGENCIA_CTT);
+            PeticionEtiquetaPackingDTO peticion = Peticion();
+            peticion.Bultos = 1;
+
+            await servicio.Imprimir(PEDIDO, peticion, usuario);
+
+            A.CallTo(() => pasos.CrearDesdePedido(A<CrearEnvioDesdePedidoDTO>.That.Matches(p => p.Bultos == 1), A<string>._)).MustHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task BultosTecleados_MandanSobreLasCajas_YSinAvisoDeCajasSinFoto()
+        {
+            A.CallTo(() => pasos.LeerEntrega("1", PEDIDO)).Returns(new EntregaParaEtiqueta { Bultos = 2, BultosSinFoto = 2, OtrosPedidos = new List<int> { 926941 } });
+            CreaElEnvio(Constantes.Agencias.AGENCIA_CTT);
+            PeticionEtiquetaPackingDTO peticion = Peticion();
+            peticion.Bultos = 4;
+
+            EtiquetaPackingDTO etiqueta = (await servicio.Imprimir(PEDIDO, peticion, usuario)).Etiqueta;
+
+            A.CallTo(() => pasos.CrearDesdePedido(A<CrearEnvioDesdePedidoDTO>.That.Matches(p => p.Bultos == 4), A<string>._)).MustHaveHappened();
+            Assert.IsFalse(etiqueta.Avisos.Any(a => a.Contains("sin foto")));
+            Assert.IsTrue(etiqueta.Avisos.Any(a => a.Contains("926941")), "El aviso de otros pedidos de la entrega sigue saliendo");
+        }
+
+        [TestMethod]
+        public async Task BultosACero_ComoSiempre_LasCajasCerradas()
+        {
+            A.CallTo(() => pasos.LeerEntrega("1", PEDIDO)).Returns(new EntregaParaEtiqueta { Bultos = 2 });
+            CreaElEnvio(Constantes.Agencias.AGENCIA_CTT);
+            PeticionEtiquetaPackingDTO peticion = Peticion();
+            peticion.Bultos = 0;
+
+            await servicio.Imprimir(PEDIDO, peticion, usuario);
+
+            A.CallTo(() => pasos.CrearDesdePedido(A<CrearEnvioDesdePedidoDTO>.That.Matches(p => p.Bultos == 2), A<string>._)).MustHaveHappened();
+        }
+
+        [TestMethod]
+        [DataRow(-1)]
+        [DataRow(ServicioEtiquetaPacking.MAXIMO_BULTOS + 1)]
+        public async Task BultosFueraDeRango_400SinGrabarNada(int bultos)
+        {
+            PeticionEtiquetaPackingDTO peticion = Peticion();
+            peticion.Bultos = bultos;
+
+            ResultadoEtiquetaPacking resultado = await servicio.Imprimir(PEDIDO, peticion, usuario);
+
+            Assert.AreEqual(TipoResultadoEtiquetaPacking.Invalida, resultado.Tipo);
+            A.CallTo(() => pasos.CrearDesdePedido(A<CrearEnvioDesdePedidoDTO>._, A<string>._)).MustNotHaveHappened();
+        }
+
         [TestMethod]
         public async Task SinPacking_SinBultos()
         {
