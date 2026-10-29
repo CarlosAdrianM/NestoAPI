@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 namespace NestoAPI.Models.Agencias
 {
@@ -58,6 +58,8 @@ namespace NestoAPI.Models.Agencias
     {
         /// <summary>400: la entrega no tiene ninguna caja cerrada en el packing de Ariadna.</summary>
         public const string SIN_BULTOS = "SinBultos";
+        /// <summary>400 (NestoAPI#698/#734): el pedido está retenido (o esperando a Administración): no sale etiqueta.</summary>
+        public const string PEDIDO_RETENIDO = "PedidoRetenido";
         /// <summary>
         /// 400: el pedido amplía un envío en curso de otro pedido del mismo cliente y dirección. Los bultos de una ampliación son
         /// los del envío entero y el packing solo sabe los de esta entrega: se hace desde Agencias de Nesto.

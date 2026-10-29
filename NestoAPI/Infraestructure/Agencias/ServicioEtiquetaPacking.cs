@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -167,6 +167,13 @@ namespace NestoAPI.Infraestructure.Agencias
         /// <summary>NestoAPI#552 (fase 4): el interruptor Agencias:GlsTramitarPorApi. Sustituible en los tests.</summary>
         internal Func<bool> GlsEtiquetaPorApi { get; set; } = Gls.InterruptorTramitacionGls.EstaActivo;
 
+        /// <summary>
+        /// NestoAPI#698/#734 (29/10/26, hallado al hacer Ariadna#60): un pedido retenido (también el que espera la respuesta de
+        /// Administración por un enlace de pago pendiente) no saca etiqueta desde el packing, igual que no sale por
+        /// POST api/EnviosAgencias/DesdePedido. (empresa, pedido) → motivo o null. Sustituible en los tests.
+        /// </summary>
+        internal Func<string, int, Task<string>> MotivoPedidoRetenido { get; set; } = PedidosVenta.Retencion.GuardiaPedidoRetenido.Motivo;
+
         public ServicioEtiquetaPacking(Func<IPrincipal, IPasosEtiquetaPacking> crearPasos, ILectorParametrosUsuario parametros,
             Action<Exception> registrar = null)
         {
@@ -185,6 +192,12 @@ namespace NestoAPI.Infraestructure.Agencias
             }
             string empresa = string.IsNullOrWhiteSpace(peticion.Empresa) ? Constantes.Empresas.EMPRESA_POR_DEFECTO : peticion.Empresa.Trim();
             string usuarioAuditoria = UsuarioAuditoriaHelper.Resolver(usuario, "NestoAPI");
+
+            string retenido = await MotivoPedidoRetenido(empresa, pedido);
+            if (retenido != null)
+            {
+                return ResultadoEtiquetaPacking.Invalida(CodigosEtiquetaPacking.PEDIDO_RETENIDO, retenido);
+            }
 
             using (IPasosEtiquetaPacking pasos = crearPasos(usuario))
             {

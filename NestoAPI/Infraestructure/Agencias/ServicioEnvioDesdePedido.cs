@@ -549,8 +549,9 @@ namespace NestoAPI.Infraestructure.Agencias
                         resuelto = PropuestaEnvioService.EsFormatoDimensionesValido(peticion.Dimensiones);
                         break;
                     default:
-                        // Bloqueante (sin agencia): ya ha dado 400.
-                        resuelto = true;
+                        // Bloqueante (sin agencia): ya ha dado 400. NestoAPI#734: la consulta a Administración abierta NO se da
+                        // por resuelta nunca (el pedido espera su respuesta).
+                        resuelto = !string.Equals(aviso.Codigo, CodigosAvisoPropuestaEnvio.CONSULTA_REEMBOLSO_ABIERTA, StringComparison.OrdinalIgnoreCase);
                         break;
                 }
                 if (!resuelto)

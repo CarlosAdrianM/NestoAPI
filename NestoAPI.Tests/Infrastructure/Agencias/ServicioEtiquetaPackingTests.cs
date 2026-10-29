@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Agencias;
@@ -33,7 +33,10 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             parametros = A.Fake<ILectorParametrosUsuario>();
             registrados = new List<Exception>();
             usuario = new GenericPrincipal(new GenericIdentity("Andre", "Bearer"), new[] { "Almacén" });
-            servicio = new ServicioEtiquetaPacking(_ => pasos, parametros, ex => registrados.Add(ex));
+            servicio = new ServicioEtiquetaPacking(_ => pasos, parametros, ex => registrados.Add(ex))
+            {
+                MotivoPedidoRetenido = (e, p) => Task.FromResult<string>(null)
+            };
 
             A.CallTo(() => pasos.LeerEnvioEnCurso(A<string>._, A<int>._)).Returns(Task.FromResult<EnviosAgencia>(null));
             A.CallTo(() => pasos.LeerEntrega("1", PEDIDO)).Returns(new EntregaParaEtiqueta { Bultos = 2 });
@@ -542,6 +545,20 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             Assert.AreEqual("Primero hay que tramitar el envío.", PasosEtiquetaPackingApi.MensajeDe("\"Primero hay que tramitar el envío.\""));
             Assert.AreEqual("texto suelto", PasosEtiquetaPackingApi.MensajeDe(" texto suelto "));
             Assert.IsNull(PasosEtiquetaPackingApi.MensajeDe(""));
+        }
+    
+        /// <summary>NestoAPI#698/#734 (29/10/26): un pedido retenido no saca etiqueta desde el packing ni graba envío.</summary>
+        [TestMethod]
+        public async Task Imprimir_PedidoRetenido_NoGrabaEnvioYDiceElMotivo()
+        {
+            servicio.MotivoPedidoRetenido = (e, p) => Task.FromResult("El pedido está retenido: esperando a Administración.");
+
+            ResultadoEtiquetaPacking resultado = await servicio.Imprimir(PEDIDO, new PeticionEtiquetaPackingDTO(), usuario);
+
+            Assert.AreEqual(TipoResultadoEtiquetaPacking.Invalida, resultado.Tipo);
+            Assert.AreEqual(CodigosEtiquetaPacking.PEDIDO_RETENIDO, resultado.Error.Codigo);
+            A.CallTo(() => pasos.CrearDesdePedido(A<CrearEnvioDesdePedidoDTO>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => pasos.Tramitar(A<int>._)).MustNotHaveHappened();
         }
     }
 }
