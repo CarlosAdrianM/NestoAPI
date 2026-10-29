@@ -295,6 +295,7 @@
     <Compile Include="Controllers\VentasClienteControllerTests.cs" />
     <Compile Include="Controllers\PedidosVentaControllerTests.cs" />
     <Compile Include="Controllers\PedidosClienteControllerTests.cs" />
+    <Compile Include="Controllers\PedidosClienteMetodoPagoTests.cs" />
     <Compile Include="Controllers\PedidosClienteOrigenPushTests.cs" />
     <Compile Include="Controllers\AplazameControllersTests.cs" />
     <Compile Include="Infrastructure\Pagos\Aplazame\AplazameSandboxIntegracionTests.cs" />

@@ -58,6 +58,15 @@ namespace NestoAPI.Models.PedidosVenta
         public int? TarjetaId { get; set; }
 
         /// <summary>
+        /// NestoAPI#728 (TNV#97): opcional, el método con el que se abre la pasarela: "C" (tarjeta), "xpay" (Apple Pay),
+        /// "google" (Google Pay) o "z" (Bizum). Sin él, como siempre. Con "xpay", "google" o "z" no se manda
+        /// <see cref="TarjetaId"/> ni <see cref="PagarConTarjetaGuardada"/> (400) y no se tokeniza: la app abre
+        /// <c>Pago.UrlPaginaPago</c> de la respuesta en el navegador del sistema. Otro valor, 400. Ver
+        /// <see cref="Infraestructure.Pagos.MetodoPagoApp"/>.
+        /// </summary>
+        public string MetodoPago { get; set; }
+
+        /// <summary>
         /// TNV#68: el cobro del carrito que YA está autorizado (el <c>IdPago</c> que devolvió
         /// <c>POST api/Pedidos/Cliente/Carrito/Pago</c>). Cuando viene, el pedido solo se crea si
         /// ese cobro existe, es de este cliente, el banco lo autorizó, no se ha usado ya y su
@@ -208,6 +217,12 @@ namespace NestoAPI.Models.PedidosVenta
 
         public string TarjetaUltimosDigitos { get; set; }
         public string TarjetaDescripcion { get; set; }
+
+        /// <summary>
+        /// NestoAPI#728 (TNV#97): el método fijado ("C", "xpay", "google" o "z"), normalizado; null si no se fijó. Con "xpay",
+        /// "google" o "z" la app abre <c>Pago.UrlPaginaPago</c> en el navegador del sistema (no en el WebView) y no hay tarjeta.
+        /// </summary>
+        public string MetodoPago { get; set; }
     }
 
     public class LineaPedidoClienteRequest
