@@ -152,6 +152,14 @@ namespace NestoAPI.Infraestructure.Eventos
 
         /// <summary>NestoAPI#732: ¿viene el modo para cambiarlo? (null no cuenta).</summary>
         public bool TraeProductosRequeridosModo() => Trae(nameof(ProductosRequeridosModo)) && productosRequeridosModo != null;
+
+        /// <summary>
+        /// NestoAPI#613 (Carlos, 29/10/26): el pedido mínimo (IVA incluido, solo productos) para usar el cupón que gana quien paga la
+        /// señal reembolsable; se copia al cupón al emitirlo. Al leer, siempre un importe (0 = cualquier importe: los eventos de
+        /// antes y los que no lo informan). Al escribir (POST/PUT), si viene se guarda; null o sin el campo, no se toca. Negativo,
+        /// 400; mayor que 0 sin el script Issue613_CuponPedidoMinimoPorEvento.sql, 400.
+        /// </summary>
+        public decimal? PedidoMinimoCupon { get; set; }
     }
 
     /// <summary>NestoAPI#591: POST api/Eventos/{id}/Senales. El apunte a favor del extracto que es la señal del evento.</summary>
@@ -270,6 +278,7 @@ namespace NestoAPI.Infraestructure.Eventos
             anuncios: new RepositorioAnunciosEventosSql(db))
         {
             ProductosRequeridos = new RepositorioProductosRequeridosEventos(db);
+            PedidoMinimoCupon = new RepositorioPedidoMinimoCuponEventos(db);
         }
 
         /// <summary>
@@ -277,6 +286,12 @@ namespace NestoAPI.Infraestructure.Eventos
         /// salen sin ellos y un POST/PUT que los traiga contesta que falta el script.
         /// </summary>
         internal IRepositorioProductosRequeridosEventos ProductosRequeridos { get; set; }
+
+        /// <summary>
+        /// NestoAPI#613: el pedido mínimo del cupón de cada evento (fuera del EDMX). Null (tests): los eventos salen con 0 y un
+        /// POST/PUT con más de 0 contesta que falta el script.
+        /// </summary>
+        internal IRepositorioPedidoMinimoCuponEventos PedidoMinimoCupon { get; set; }
 
         /// <param name="almacenDelUsuario">(empresa, usuario sin dominio) → su AlmacénPedidoVta. Null: el de ParametrosUsuario.</param>
         /// <param name="imagenes">NestoAPI#690: las imágenes de los eventos. Null: los eventos salen sin imagen y no se pueden subir.</param>
@@ -352,6 +367,7 @@ namespace NestoAPI.Infraestructure.Eventos
         /// </summary>
         private async Task<List<EventoDTO>> ConProductosRequeridos(List<EventoDTO> lista)
         {
+            await ConPedidoMinimoCupon(lista).ConfigureAwait(false);
             if (ProductosRequeridos == null || lista == null || !lista.Any())
             {
                 return lista;
@@ -385,6 +401,80 @@ namespace NestoAPI.Infraestructure.Eventos
 
         private async Task<EventoDTO> ConProductosRequeridos(EventoDTO dto) =>
             dto == null ? null : (await ConProductosRequeridos(new List<EventoDTO> { dto }).ConfigureAwait(false)).Single();
+
+        private static int pedidoMinimoFalloRegistrado;
+
+        /// <summary>
+        /// NestoAPI#613: el pedido mínimo del cupón de cada evento, en UNA consulta (0 si no lo tiene, sin el script o si falla; el
+        /// fallo va a ELMAH una vez).
+        /// </summary>
+        private async Task ConPedidoMinimoCupon(List<EventoDTO> lista)
+        {
+            if (lista == null || !lista.Any())
+            {
+                return;
+            }
+            var minimos = new Dictionary<int, decimal>();
+            if (PedidoMinimoCupon != null)
+            {
+                try
+                {
+                    minimos = await PedidoMinimoCupon.Leer(lista.Select(e => e.Id).ToList()).ConfigureAwait(false) ?? minimos;
+                }
+                catch (Exception ex)
+                {
+                    if (System.Threading.Interlocked.Exchange(ref pedidoMinimoFalloRegistrado, 1) == 0)
+                    {
+                        ElmahHelper.Log(new Exception($"[Eventos #613] No se ha podido leer el pedido mínimo del cupón de los eventos: {ex.Message}", ex));
+                    }
+                }
+            }
+            foreach (EventoDTO dto in lista)
+            {
+                dto.PedidoMinimoCupon = minimos.TryGetValue(dto.Id, out decimal minimo) ? minimo : 0;
+            }
+        }
+
+        public const string MENSAJE_FALTA_SCRIPT_PEDIDO_MINIMO = "Todavía no se puede poner un pedido mínimo para usar el cupón: falta lanzar " +
+            "el script Scripts/Issue613_CuponPedidoMinimoPorEvento.sql. Avise a Informática.";
+
+        /// <summary>Lo que cabe en decimal(10, 2).</summary>
+        private const decimal IMPORTE_MAXIMO_PEDIDO_MINIMO = 99999999.99M;
+
+        /// <summary>NestoAPI#613: el pedido mínimo del cupón que viene en el cuerpo, redondeado. Null si no viene (no se toca). Negativo, 400.</summary>
+        private static decimal? ValidarPedidoMinimoCupon(EventoDTO evento)
+        {
+            if (evento?.PedidoMinimoCupon == null)
+            {
+                return null;
+            }
+            if (evento.PedidoMinimoCupon.Value < 0)
+            {
+                throw new NestoBusinessException("El pedido mínimo para usar el cupón no puede ser negativo (0 = cualquier importe).");
+            }
+            if (evento.PedidoMinimoCupon.Value > IMPORTE_MAXIMO_PEDIDO_MINIMO)
+            {
+                throw new NestoBusinessException("El pedido mínimo para usar el cupón es demasiado grande.");
+            }
+            return Math.Round(evento.PedidoMinimoCupon.Value, 2, MidpointRounding.AwayFromZero);
+        }
+
+        /// <summary>
+        /// NestoAPI#613: guarda el pedido mínimo si viene. Sin la columna (o sin repositorio), 0 no cambia nada (es lo de siempre) y
+        /// más de 0 contesta que falta el script.
+        /// </summary>
+        private async Task GuardarPedidoMinimoCupon(int eventoId, decimal? minimo)
+        {
+            if (minimo == null)
+            {
+                return;
+            }
+            bool guardado = PedidoMinimoCupon != null && await PedidoMinimoCupon.Guardar(eventoId, minimo.Value).ConfigureAwait(false);
+            if (!guardado && minimo.Value > 0)
+            {
+                throw new NestoBusinessException(MENSAJE_FALTA_SCRIPT_PEDIDO_MINIMO);
+            }
+        }
 
         /// <summary>
         /// NestoAPI#732: los productos requeridos que vienen en el cuerpo, comprobados (existen en la empresa del evento). Null si
@@ -576,6 +666,7 @@ namespace NestoAPI.Infraestructure.Eventos
             Dictionary<int, int> ocupadas = await PlazasOcupadas(new List<int> { id }).ConfigureAwait(false);
             EventoDTO dto = ADTO(evento, ocupadas.TryGetValue(id, out int n) ? n : 0);
             dto.ImagenUrl = RepositorioImagenesEventos.Url(id, fecha);
+            await ConPedidoMinimoCupon(new List<EventoDTO> { dto }).ConfigureAwait(false);
             return ConAnuncio(dto, await Anunciados(new List<int> { id }).ConfigureAwait(false));
         }
 
@@ -624,12 +715,14 @@ namespace NestoAPI.Infraestructure.Eventos
             await Validar(evento, null).ConfigureAwait(false);
             List<string> requeridos = await ValidarProductosRequeridos(evento, EmpresaOPorDefecto(evento.Empresa)).ConfigureAwait(false);
             string modoRequeridos = ValidarModoProductosRequeridos(evento);
+            decimal? pedidoMinimoCupon = ValidarPedidoMinimoCupon(evento);
             var entidad = new Evento { Empresa = EmpresaOPorDefecto(evento.Empresa), Formato = FormatosEvento.PRESENCIAL };
             Copiar(evento, entidad, usuario);
             db.Eventos.Add(entidad);
             await db.SaveChangesAsync().ConfigureAwait(false);
             await GuardarProductosRequeridos(entidad.Id, requeridos, usuario).ConfigureAwait(false);
             await GuardarModoProductosRequeridos(entidad.Id, modoRequeridos).ConfigureAwait(false);
+            await GuardarPedidoMinimoCupon(entidad.Id, pedidoMinimoCupon).ConfigureAwait(false);
             return await ConProductosRequeridos(ConAnuncio(ADTO(entidad, 0), null)).ConfigureAwait(false);
         }
 
@@ -644,6 +737,7 @@ namespace NestoAPI.Infraestructure.Eventos
             await Validar(evento, entidad.Almacen).ConfigureAwait(false);
             List<string> requeridos = await ValidarProductosRequeridos(evento, EmpresaOPorDefecto(entidad.Empresa)).ConfigureAwait(false);
             string modoRequeridos = ValidarModoProductosRequeridos(evento);
+            decimal? pedidoMinimoCupon = ValidarPedidoMinimoCupon(evento);
             Dictionary<int, int> ocupadas = await PlazasOcupadas(new List<int> { id }).ConfigureAwait(false);
             int ocupadasEvento = ocupadas.TryGetValue(id, out int n) ? n : 0;
             if (evento.Trae(nameof(EventoDTO.Plazas)) && evento.Plazas.HasValue && evento.Plazas.Value < ocupadasEvento)
@@ -664,6 +758,7 @@ namespace NestoAPI.Infraestructure.Eventos
             await db.SaveChangesAsync().ConfigureAwait(false);
             await GuardarProductosRequeridos(id, requeridos, usuario).ConfigureAwait(false);
             await GuardarModoProductosRequeridos(id, modoRequeridos).ConfigureAwait(false);
+            await GuardarPedidoMinimoCupon(id, pedidoMinimoCupon).ConfigureAwait(false);
             return await ConProductosRequeridos(await ConImagen(ADTO(entidad, ocupadasEvento)).ConfigureAwait(false)).ConfigureAwait(false);
         }
 
