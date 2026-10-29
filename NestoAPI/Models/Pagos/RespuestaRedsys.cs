@@ -17,6 +17,14 @@ namespace NestoAPI.Models.Pagos
         public string Ds_TransactionType { get; set; }
         public string Ds_UrlPago2Fases { get; set; }
 
+        /// <summary>
+        /// NestoAPI#728: el método con el que se pagó de verdad (código numérico de Redsys; p.ej.
+        /// Bizum, Apple Pay o Google Pay tienen el suyo). Solo informativo: la contabilidad NO
+        /// depende de él (ver ServicioPagos.DestinoDelCobro), así que un código nuevo o
+        /// desconocido no puede dejar un cobro sin apuntar.
+        /// </summary>
+        public string Ds_ProcessedPayMethod { get; set; }
+
         // NestoAPI#178: campos que manda Redsys cuando el pago se hizo con tokenización
         // (DS_MERCHANT_IDENTIFIER=REQUIRED). El token permite cobros posteriores sin que el
         // cliente meta la tarjeta; el PAN se queda en Redsys.

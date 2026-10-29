@@ -1252,6 +1252,7 @@
     <Compile Include="Infraestructure\Notificaciones\AvisosPedidosJobsService.cs" />
     <Compile Include="Infraestructure\Pagos\IRedsysService.cs" />
     <Compile Include="Infraestructure\Pagos\RedsysService.cs" />
+    <Compile Include="Infraestructure\Pagos\MetodosPagoRedsys.cs" />
     <Compile Include="Infraestructure\Pagos\AvisoCobroEnlaceConReembolso.cs" />
     <Compile Include="Infraestructure\Pagos\AvisoCobroNestoPago.cs" />
     <Compile Include="Infraestructure\Pagos\EnlacesPagoPedido.cs" />

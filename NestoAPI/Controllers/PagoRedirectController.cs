@@ -1,6 +1,7 @@
 using NestoAPI.Infraestructure.Pagos;
 using NestoAPI.Models;
 using System;
+using System.Collections.Generic;
 using System.Data.Entity;
 using System.Linq;
 using System.Net;
@@ -87,34 +88,28 @@ namespace NestoAPI.Controllers
                 string urlOk = urlBase + "/pago/ok.html";
                 string urlKo = urlBase + "/pago/ko.html";
 
-                // Issue #165: si el pago tiene MetodoPago ("C" o "z"), el usuario ya lo
-                // eligió en origen (típicamente desde NestoTiendas). Solo generamos el
-                // formulario de ese método para no ofrecer cambio tras decisión explícita.
-                // Si MetodoPago es null, se generan los dos formularios como antes.
-                bool mostrarTarjeta = pago.MetodoPago == null || pago.MetodoPago == "C";
-                bool mostrarBizum = pago.MetodoPago == null || pago.MetodoPago == "z";
-
-                var parametrosTarjeta = mostrarTarjeta ? _redsysService.CrearParametrosTPVVirtual(
-                    pago.Importe,
-                    pago.Descripcion ?? $"Pago {pago.NumeroOrden}",
-                    pago.Correo,
-                    pago.Cliente?.Trim(),
-                    urlNotificacion,
-                    urlOk,
-                    urlKo,
-                    "C",
-                    pago.NumeroOrden) : null;
-
-                var parametrosBizum = mostrarBizum ? _redsysService.CrearParametrosTPVVirtual(
-                    pago.Importe,
-                    pago.Descripcion ?? $"Pago {pago.NumeroOrden}",
-                    pago.Correo,
-                    pago.Cliente?.Trim(),
-                    urlNotificacion,
-                    urlOk,
-                    urlKo,
-                    "z",
-                    pago.NumeroOrden) : null;
+                // Issue #165: si el pago tiene MetodoPago, el usuario ya lo eligió en origen
+                // (típicamente desde NestoTiendas). Solo generamos el formulario de ese método
+                // para no ofrecer cambio tras decisión explícita. Si MetodoPago es null, se
+                // generan todos: tarjeta, Bizum, Google Pay y, solo en dispositivos de Apple,
+                // Apple Pay (#728). Cada formulario va firmado con su DS_MERCHANT_PAYMETHODS.
+                // UrlOk/UrlKo son ok.html/ko.html, que redirigen a nestotiendas://pago/ok|ko:
+                // si la app abre esta página en el navegador del sistema, al terminar vuelve a ella.
+                string userAgent = Request.Headers.UserAgent?.ToString() ?? "";
+                var formularios = new List<FormularioPago>();
+                foreach (string metodo in MetodosPagoRedsys.AMostrar(pago.MetodoPago, userAgent))
+                {
+                    formularios.Add(new FormularioPago(metodo, _redsysService.CrearParametrosTPVVirtual(
+                        pago.Importe,
+                        pago.Descripcion ?? $"Pago {pago.NumeroOrden}",
+                        pago.Correo,
+                        pago.Cliente?.Trim(),
+                        urlNotificacion,
+                        urlOk,
+                        urlKo,
+                        metodo,
+                        pago.NumeroOrden)));
+                }
 
                 // NumeroOrden se mantiene estable desde la creacion del pago
                 pago.FechaActualizacion = DateTime.Now;
@@ -149,9 +144,8 @@ namespace NestoAPI.Controllers
                     catch { }
                 }
 
-                string userAgent = Request.Headers.UserAgent?.ToString() ?? "";
                 string urlPagina = Request.RequestUri?.ToString() ?? "";
-                string html = GenerarHtmlPaginaPago(pago, nombreCliente, parametrosTarjeta, parametrosBizum, userAgent, urlPagina, mostrarCapturaCorreo, mostrarCheckboxFacturas);
+                string html = GenerarHtmlPaginaPago(pago, nombreCliente, formularios, userAgent, urlPagina, mostrarCapturaCorreo, mostrarCheckboxFacturas);
 
                 var response = Request.CreateResponse(HttpStatusCode.OK);
                 response.Content = new StringContent(html, Encoding.UTF8, "text/html");
@@ -373,7 +367,57 @@ namespace NestoAPI.Controllers
 
         private const string URL_LOGO = "https://www.productosdeesteticaypeluqueriaprofesional.com/img/cms/Landing/logo.png";
 
-        private string GenerarHtmlPaginaPago(PagoTPV pago, string nombreCliente, Models.Pagos.ParametrosRedsysFirmados parametrosTarjeta, Models.Pagos.ParametrosRedsysFirmados parametrosBizum, string userAgent = "", string urlPagina = "", bool mostrarCapturaCorreo = false, bool mostrarCheckboxFacturas = false)
+        /// <summary>Un botón de la página de pago: el método y su formulario firmado para Redsys.</summary>
+        internal sealed class FormularioPago
+        {
+            public FormularioPago(string metodo, Models.Pagos.ParametrosRedsysFirmados parametros)
+            {
+                Metodo = metodo;
+                Parametros = parametros;
+            }
+
+            public string Metodo { get; }
+            public Models.Pagos.ParametrosRedsysFirmados Parametros { get; }
+        }
+
+        /// <summary>
+        /// #728: el formulario HTML de un método. La clase CSS y el texto del botón dependen del
+        /// método; el resto (los tres campos firmados) es igual para todos.
+        /// </summary>
+        internal static string GenerarFormulario(FormularioPago formulario)
+        {
+            var parametros = formulario.Parametros;
+            string clase;
+            string texto;
+            switch (formulario.Metodo)
+            {
+                case MetodosPagoRedsys.BIZUM:
+                    clase = "btn-bizum";
+                    texto = "Pagar con Bizum";
+                    break;
+                case MetodosPagoRedsys.APPLE_PAY:
+                    clase = "btn-applepay";
+                    texto = "Pagar con Apple&nbsp;Pay";
+                    break;
+                case MetodosPagoRedsys.GOOGLE_PAY:
+                    clase = "btn-googlepay";
+                    texto = "Pagar con Google&nbsp;Pay";
+                    break;
+                default:
+                    clase = "btn-tarjeta";
+                    texto = "&#128179; Pagar con tarjeta";
+                    break;
+            }
+            return $@"
+            <form action=""{parametros?.UrlRedsys}"" method=""POST"" data-metodo=""{HttpUtility.HtmlAttributeEncode(formulario.Metodo)}"">
+                <input type=""hidden"" name=""Ds_SignatureVersion"" value=""{parametros?.Ds_SignatureVersion}"" />
+                <input type=""hidden"" name=""Ds_MerchantParameters"" value=""{parametros?.Ds_MerchantParameters}"" />
+                <input type=""hidden"" name=""Ds_Signature"" value=""{parametros?.Ds_Signature}"" />
+                <button type=""submit"" class=""btn-pagar {clase}"">{texto}</button>
+            </form>";
+        }
+
+        private string GenerarHtmlPaginaPago(PagoTPV pago, string nombreCliente, IList<FormularioPago> formularios, string userAgent = "", string urlPagina = "", bool mostrarCapturaCorreo = false, bool mostrarCheckboxFacturas = false)
         {
             // Issue #162: iOS Safari deja la página en blanco al pulsar "Pagar con tarjeta" por
             // restricciones del ITP sobre cookies cross-site que necesita Redsys. Mientras
@@ -383,23 +427,40 @@ namespace NestoAPI.Controllers
                 (userAgent.IndexOf("iPhone", StringComparison.OrdinalIgnoreCase) >= 0
                  || userAgent.IndexOf("iPad", StringComparison.OrdinalIgnoreCase) >= 0
                  || userAgent.IndexOf("iPod", StringComparison.OrdinalIgnoreCase) >= 0);
-            // Issue #165: un formulario u otro puede no existir si el MetodoPago del pago
-            // fija la elección del usuario (p.ej. eligió Bizum en NestoTiendas).
-            string formTarjeta = parametrosTarjeta == null ? "" : $@"
-            <form action=""{parametrosTarjeta.UrlRedsys}"" method=""POST"">
-                <input type=""hidden"" name=""Ds_SignatureVersion"" value=""{parametrosTarjeta.Ds_SignatureVersion}"" />
-                <input type=""hidden"" name=""Ds_MerchantParameters"" value=""{parametrosTarjeta.Ds_MerchantParameters}"" />
-                <input type=""hidden"" name=""Ds_Signature"" value=""{parametrosTarjeta.Ds_Signature}"" />
-                <button type=""submit"" class=""btn-pagar btn-tarjeta"">&#128179; Pagar con tarjeta</button>
-            </form>";
+            // Issue #165 / #728: solo están los formularios de los métodos a mostrar (uno solo si
+            // el MetodoPago del pago fija la elección del usuario, p.ej. Bizum en NestoTiendas).
+            string formulariosHtml = string.Concat((formularios ?? new List<FormularioPago>()).Select(GenerarFormulario));
 
-            string formBizum = parametrosBizum == null ? "" : $@"
-            <form action=""{parametrosBizum.UrlRedsys}"" method=""POST"">
-                <input type=""hidden"" name=""Ds_SignatureVersion"" value=""{parametrosBizum.Ds_SignatureVersion}"" />
-                <input type=""hidden"" name=""Ds_MerchantParameters"" value=""{parametrosBizum.Ds_MerchantParameters}"" />
-                <input type=""hidden"" name=""Ds_Signature"" value=""{parametrosBizum.Ds_Signature}"" />
-                <button type=""submit"" class=""btn-pagar btn-bizum"">Pagar con Bizum</button>
-            </form>";
+            // #728: Apple Pay fijado en origen pero abierto fuera de un dispositivo de Apple: no
+            // se puede completar, así que salen los demás métodos y se explica por qué.
+            string metodoFijado = MetodosPagoRedsys.Normalizar(pago.MetodoPago);
+            string avisoApplePay = metodoFijado == MetodosPagoRedsys.APPLE_PAY && !MetodosPagoRedsys.EsDispositivoApple(userAgent) ? @"
+            <div class=""aviso-ios"">
+                <strong>&#9432; Apple Pay no está disponible en este dispositivo</strong>
+                <p>Apple Pay solo funciona en iPhone, iPad o Mac. Puede pagar con cualquiera de estos otros métodos.</p>
+            </div>" : "";
+
+            // #728: si la app ya eligió Apple Pay o Google Pay (y abre esta página en el navegador
+            // del sistema porque en un WebView no funcionan), se envía sola al cargar para
+            // ahorrar un toque. Solo una vez por pestaña: al volver atrás desde Redsys no se
+            // reenvía. Si hay que ofrecer la captura del correo, no se envía sola.
+            bool enviarAlCargar = !mostrarCapturaCorreo
+                && formularios != null && formularios.Count == 1
+                && (formularios[0].Metodo == MetodosPagoRedsys.APPLE_PAY || formularios[0].Metodo == MetodosPagoRedsys.GOOGLE_PAY)
+                && formularios[0].Metodo == metodoFijado;
+            string scriptEnviarAlCargar = !enviarAlCargar ? "" : $@"
+            <p class=""redirigiendo"">Abriendo el pago&hellip; Si no se abre solo, pulse el botón.</p>
+            <script id=""enviar-al-cargar"">
+                (function () {{
+                    var clave = 'nestopago-enviado-{pago.TokenAcceso}';
+                    try {{
+                        if (sessionStorage.getItem(clave)) {{ return; }}
+                        sessionStorage.setItem(clave, '1');
+                    }} catch (e) {{ }}
+                    var form = document.querySelector('form[data-metodo]');
+                    if (form) {{ form.submit(); }}
+                }})();
+            </script>";
 
             string filasEfectos = "";
             if (pago.PagosTPV_Efectos != null && pago.PagosTPV_Efectos.Any())
@@ -428,7 +489,7 @@ namespace NestoAPI.Controllers
             string avisoIOS = esIOS ? $@"
             <div class=""aviso-ios"">
                 <strong>&#9432; &iquest;Problemas al pagar desde iPhone?</strong>
-                <p>Si tras pulsar el bot&oacute;n la p&aacute;gina queda en blanco, copia este enlace y &aacute;brelo en <b>Safari</b>:</p>
+                <p>Si tras pulsar el bot&oacute;n la p&aacute;gina queda en blanco, copie este enlace y &aacute;bralo en <b>Safari</b>:</p>
                 <input type=""text"" readonly value=""{HttpUtility.HtmlAttributeEncode(urlPagina)}"" onclick=""this.select()"" />
             </div>" : "";
 
@@ -440,13 +501,13 @@ namespace NestoAPI.Controllers
 
             string bloqueCorreo = !mostrarCapturaCorreo ? "" : $@"
             <details class=""correo-bloque"" id=""bloque-correo"">
-                <summary>&#9993;&#65039; &iquest;Quieres el justificante por correo? <span class=""correo-opcional"">(opcional)</span></summary>
+                <summary>&#9993;&#65039; &iquest;Quiere el justificante por correo? <span class=""correo-opcional"">(opcional)</span></summary>
                 <div class=""correo-form"">
                     <label for=""correo-pago"">Correo electr&oacute;nico</label>
-                    <input type=""email"" id=""correo-pago"" inputmode=""email"" autocomplete=""email"" placeholder=""tucorreo@ejemplo.com"" />
+                    <input type=""email"" id=""correo-pago"" inputmode=""email"" autocomplete=""email"" placeholder=""sucorreo@ejemplo.com"" />
                     {checkboxFacturas}
                     <button type=""button"" class=""btn-correo"" onclick=""guardarCorreoPago()"">Guardar</button>
-                    <p class=""correo-aviso"">Tu correo se usar&aacute; solo para enviarte el justificante de este pago{(mostrarCheckboxFacturas ? " y, si lo marcas, tus facturas" : "")}.</p>
+                    <p class=""correo-aviso"">Su correo se usar&aacute; solo para enviarle el justificante de este pago{(mostrarCheckboxFacturas ? " y, si lo marca, sus facturas" : "")}.</p>
                     <p class=""correo-resultado"" id=""correo-resultado"" role=""status""></p>
                 </div>
             </details>
@@ -457,7 +518,7 @@ namespace NestoAPI.Controllers
                     var correo = (input.value || '').trim();
                     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo)) {{
                         resultado.style.color = '#c0392b';
-                        resultado.textContent = 'Introduce un correo válido.';
+                        resultado.textContent = 'Introduzca un correo válido.';
                         return;
                     }}
                     var chk = document.getElementById('chk-facturas');
@@ -471,15 +532,15 @@ namespace NestoAPI.Controllers
                         boton.disabled = false;
                         if (r.ok) {{
                             resultado.style.color = '#27ae60';
-                            resultado.textContent = '✓ Te enviaremos el justificante a ' + correo;
+                            resultado.textContent = '✓ Le enviaremos el justificante a ' + correo;
                         }} else {{
                             resultado.style.color = '#c0392b';
-                            resultado.textContent = 'No se pudo guardar el correo. Puedes pagar igualmente.';
+                            resultado.textContent = 'No se pudo guardar el correo. Puede pagar igualmente.';
                         }}
                     }}).catch(function () {{
                         boton.disabled = false;
                         resultado.style.color = '#c0392b';
-                        resultado.textContent = 'No se pudo guardar el correo. Puedes pagar igualmente.';
+                        resultado.textContent = 'No se pudo guardar el correo. Puede pagar igualmente.';
                     }});
                 }}
             </script>";
@@ -579,6 +640,21 @@ namespace NestoAPI.Controllers
             background: linear-gradient(135deg, #05C3DD 0%, #0A9AB0 100%);
         }}
         .btn-bizum:hover {{ background: linear-gradient(135deg, #04B0C8 0%, #0889A0 100%); }}
+        /* #728: según las guías de marca, Apple Pay en negro y Google Pay en blanco con borde */
+        .btn-applepay {{
+            background: #000;
+            color: #fff;
+            font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+        }}
+        .btn-applepay:hover {{ background: #222; }}
+        .btn-googlepay {{
+            background: #fff;
+            color: #3c4043;
+            border: 1px solid #dadce0;
+            font-family: 'Google Sans', Roboto, Arial, sans-serif;
+        }}
+        .btn-googlepay:hover {{ background: #f8f9fa; }}
+        .redirigiendo {{ margin-top: 12px; font-size: 13px; color: #9B8EAE; text-align: center; }}
         .footer {{
             text-align: center;
             padding: 18px;
@@ -690,8 +766,9 @@ namespace NestoAPI.Controllers
                 <span>{pago.Importe:N2} &euro;</span>
             </div>
             {bloqueCorreo}
-            {formTarjeta}
-            {formBizum}
+            {avisoApplePay}
+            {formulariosHtml}
+            {scriptEnviarAlCargar}
             {avisoIOS}
             <div class=""secure"">
                 &#128274; Pago seguro via Redsys
