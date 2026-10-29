@@ -1133,6 +1133,8 @@
     <Compile Include="Infraestructure\Outlet\ServicioOutlet.cs" />
     <Compile Include="Infraestructure\Outlet\OutletJobsService.cs" />
     <Compile Include="Infraestructure\Stocks\ControlesStockEscritura.cs" />
+    <Compile Include="Infraestructure\Stocks\LectorRepartoStock.cs" />
+    <Compile Include="Infraestructure\Stocks\RepartoStockPorAntiguedad.cs" />
     <Compile Include="Infraestructure\Stocks\Tendencias\DecisionesPropuestasStock.cs" />
     <Compile Include="Infraestructure\Stocks\Tendencias\ConsecuenciasPropuesta.cs" />
     <Compile Include="Infraestructure\Stocks\Tendencias\ServicioDecisionesPropuestasStock.cs" />

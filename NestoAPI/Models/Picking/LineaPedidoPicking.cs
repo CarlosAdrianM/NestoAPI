@@ -9,6 +9,9 @@ namespace NestoAPI.Models.Picking
     {
         public int Id { get; set; }
         public int NumeroPedido { get; set; }
+        /// <summary>NestoAPI#730: la empresa del pedido. Solo la rellena <see cref="Infraestructure.Stocks.ILectorRepartoStock"/>
+        /// (para apartar las líneas del propio pedido al repartir uno solo); el picking no la usa.</summary>
+        public string Empresa { get; set; }
         public byte TipoLinea { get; set; }
         public string Almacen { get; set; }
         public string Producto { get; set; }

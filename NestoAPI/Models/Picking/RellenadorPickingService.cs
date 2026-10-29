@@ -13,6 +13,12 @@ namespace NestoAPI.Models.Picking
 
         private NVEntities db = new NVEntities();
         private List<CabPedidoVta> pedidos = new List<CabPedidoVta>();
+        private readonly Infraestructure.Stocks.ILectorRepartoStock lectorRepartoStock;
+
+        public RellenadorPickingService()
+        {
+            lectorRepartoStock = new Infraestructure.Stocks.LectorRepartoStock(db);
+        }
 
         private void rellenarSinParametros()
         {
@@ -107,26 +113,12 @@ namespace NestoAPI.Models.Picking
                     $"Líneas afectadas: {errores}");
             }
 
-            IEnumerable<LineaPedidoPicking> lineasResultado = db.LinPedidoVtas.Where(l => (l.Estado == Constantes.EstadosLineaVenta.PENDIENTE || l.Estado == Constantes.EstadosLineaVenta.EN_CURSO) && (l.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || l.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) )
-                .Select(l => new LineaPedidoPicking
-                {
-                    Id = l.Nº_Orden,
-                    TipoLinea = (byte)l.TipoLinea,
-                    Almacen = l.Almacén,
-                    Producto = l.Producto,
-                    Cantidad = (int)l.Cantidad - l.Recoger,
-                    CantidadRecogida = l.Recoger,
-                    BaseImponible = l.Base_Imponible,
-                    CantidadReservada = 0,
-                    FechaEntrega = l.Fecha_Entrega,
-                    EsSobrePedido = l.EstadoProducto != Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO && !l.LineaParcial,
-                    FechaModificacion = l.Fecha_Modificación,
-                    EsPedidoEspecial = l.TipoLinea == Constantes.TiposLineaVenta.TEXTO && db.PedidosEspeciales.FirstOrDefault(e => e.NºOrdenVta == l.Nº_Orden) != null
-                });
-
-            lineasResultado = lineasResultado.Where(l => productos.Any(p => p.Key == l.Producto));
-
-            return lineasResultado.OrderBy(l => l.FechaModificacion).ThenBy(l => l.Id).ToList();
+            // NestoAPI#730: la lectura de las líneas que compiten por el stock es la MISMA que usa el reparto de un solo pedido
+            // (fecha de entrega a la agencia, avisos de riesgo). Se filtra por producto en la BD y, además, con la comparación
+            // exacta de siempre en memoria, para que el picking no cambie ni en los casos raros (mayúsculas, espacios).
+            return lectorRepartoStock.LeerLineasPendientes(productos.Select(p => p.Key))
+                .Where(l => productos.Any(p => p.Key == l.Producto))
+                .ToList();
         }
 
         private List<PedidoPicking> Ejecutar()

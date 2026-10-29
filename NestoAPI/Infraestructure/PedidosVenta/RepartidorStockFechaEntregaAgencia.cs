@@ -14,6 +14,10 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         public decimal BaseImponible { get; set; }
         public DateTime? FechaEntrega { get; set; }
         public bool YaEnPicking { get; set; }
+        /// <summary>NestoAPI#730: Nº_Orden de la línea (null o 0 si aún no está grabada).</summary>
+        public int? Id { get; set; }
+        /// <summary>NestoAPI#730: su Fecha_Modificación, que decide su turno en el reparto por antigüedad (null si es nueva).</summary>
+        public DateTime? FechaModificacion { get; set; }
     }
 
     /// <summary>
@@ -37,8 +41,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             string.Equals(almacen?.Trim(), Constantes.Almacenes.ALGETE, StringComparison.OrdinalIgnoreCase);
 
         /// <param name="tiendasPorOrden">Las tiendas en el orden en que se cogen sus unidades.</param>
+        /// <param name="enAlgetePorAntiguedad">NestoAPI#730: las unidades que salen de Algete en cada línea según el reparto por
+        /// antigüedad del picking (<see cref="Stocks.IRepartoStockPorAntiguedad"/>). Es lo que usa siempre
+        /// <see cref="ServicioFechaEntregaAgencia"/>; sin él (solo los tests del resto del reparto) las libres son stock −
+        /// pendientes de los demás, la regla de antes.</param>
         public static List<LineaFechaEntregaAgencia> Repartir(IEnumerable<LineaPedidoFechaEntregaAgencia> lineas, DatosSombraModoServicio datos,
-            IEnumerable<string> tiendasPorOrden, DateTime hoy)
+            IEnumerable<string> tiendasPorOrden, DateTime hoy, IReadOnlyDictionary<LineaPedidoFechaEntregaAgencia, int> enAlgetePorAntiguedad = null)
         {
             datos = datos ?? new DatosSombraModoServicio();
             List<string> tiendas = (tiendasPorOrden ?? TIENDAS).ToList();
@@ -54,6 +62,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 string producto = grupo.First().Producto.Trim();
                 int cantidad = grupo.Sum(l => l.Cantidad);
                 DatosStockCausaModoServicio datosProducto = fuente.Leer(producto, Constantes.Almacenes.ALGETE);
+                if (enAlgetePorAntiguedad != null)
+                {
+                    // NestoAPI#730: las libres de Algete son las que el picking le daría a estas líneas por antigüedad; el resto
+                    // de causas (kits, tiendas, proveedor, sobre pedido) se clasifica igual que antes.
+                    datosProducto = ConLibresEnAlgete(datosProducto, grupo.Sum(l => EnAlgete(enAlgetePorAntiguedad, l)));
+                }
                 CausasLineaModoServicio causas = ClasificadorCausasModoServicio.ClasificarLinea(producto, Constantes.Almacenes.ALGETE,
                     cantidad, datosProducto, hoy);
 
@@ -99,6 +113,10 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         resto -= tomadas;
                         return tomadas;
                     }
+                    int TomarPropias(int unidades)
+                    {
+                        return Tomar(ref unidades);
+                    }
 
                     var repartida = new LineaFechaEntregaAgencia
                     {
@@ -107,7 +125,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         BaseImponible = linea.BaseImponible,
                         FechaEntrega = linea.FechaEntrega,
                         YaEnPicking = linea.YaEnPicking,
-                        EnAlgete = Tomar(ref libres),
+                        EnAlgete = enAlgetePorAntiguedad == null ? Tomar(ref libres) : TomarPropias(EnAlgete(enAlgetePorAntiguedad, linea)),
                         FechaProveedor = causas.FechaPrevista,
                         PedidoProveedor = PedidoProveedor(datos, producto, causas.FechaPrevista),
                         MotivoSinFecha = motivoSinFecha
@@ -243,6 +261,31 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 }
                 return tomadas;
             }
+        }
+
+        /// <summary>NestoAPI#730: lo que le toca a la línea en Algete por antigüedad (nunca más que su cantidad).</summary>
+        private static int EnAlgete(IReadOnlyDictionary<LineaPedidoFechaEntregaAgencia, int> enAlgete, LineaPedidoFechaEntregaAgencia linea)
+        {
+            return enAlgete.TryGetValue(linea, out int unidades) ? Math.Max(0, Math.Min(linea.Cantidad, unidades)) : 0;
+        }
+
+        /// <summary>
+        /// NestoAPI#730: los datos del producto con las libres de Algete fijadas a <paramref name="libres"/> (stock = libres, sin
+        /// pendientes), para que <see cref="ClasificadorCausasModoServicio.ClasificarLinea"/> las dé tal cual. El disponible de
+        /// todas las sedes, lo pedido al proveedor y el estado del producto no cambian.
+        /// </summary>
+        private static DatosStockCausaModoServicio ConLibresEnAlgete(DatosStockCausaModoServicio datos, int libres)
+        {
+            datos = datos ?? new DatosStockCausaModoServicio();
+            return new DatosStockCausaModoServicio
+            {
+                StockAlmacen = libres,
+                PendientesAlmacen = 0,
+                DisponibleTodos = datos.DisponibleTodos,
+                EstadoProducto = datos.EstadoProducto,
+                PendienteRecibir = datos.PendienteRecibir,
+                FechaPrevista = datos.FechaPrevista
+            };
         }
 
         /// <summary>NestoAPI#606 (correo del pedido): el pedido a proveedor de la fecha prevista más temprana de Algete.</summary>

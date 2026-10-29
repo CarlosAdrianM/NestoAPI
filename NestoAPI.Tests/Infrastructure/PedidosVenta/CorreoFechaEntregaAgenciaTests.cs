@@ -2,6 +2,7 @@ using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.PedidosVenta;
+using NestoAPI.Tests.Infrastructure.Stocks;
 using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
 using System;
@@ -46,7 +47,8 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
             A.CallTo(() => repositorio.LeerHoraCorte(A<string>._)).Returns(new TimeSpan(11, 0, 0));
             A.CallTo(() => repositorio.LeerStock(A<string>._, A<int?>._, A<IEnumerable<string>>._)).ReturnsLazily(() => Datos());
             A.CallTo(() => repositorio.GuardarPrometida(A<string>._, A<int>._, A<DateTime>._)).Returns(Task.FromResult(true));
-            servicio = new ServicioFechaEntregaAgencia(repositorio, () => AHORA, EsFestivo, registradas.Add);
+            servicio = new ServicioFechaEntregaAgencia(repositorio, () => AHORA, EsFestivo, registradas.Add,
+                repartoStock: RepartoStockFalso.DesdeSombra(repositorio));
         }
 
         /// <summary>A: 10 en Algete.</summary>
