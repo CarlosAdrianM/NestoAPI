@@ -728,6 +728,12 @@
     <Compile Include="Infraestructure\Agencias\ServicioEnviosAgencia.cs" />
     <Compile Include="Infraestructure\Agencias\DatosQueViajaronALaAgencia.cs" />
     <Compile Include="Infraestructure\Agencias\TramitacionEnviosService.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\AgenciaRemotaRepartoPropio.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\EtiquetaRepartoPropio.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\LogoZplNuevaVision.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\ReglasRepartoPropio.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\RepositorioRepartoPropio.cs" />
+    <Compile Include="Infraestructure\Agencias\RepartoPropio\ServicioRepartoPropio.cs" />
     <Compile Include="Infraestructure\AlbaranesVenta\IGestorAlbaranesVenta.cs" />
     <Compile Include="Infraestructure\CorreoCliente.cs" />
     <Compile Include="Infraestructure\PreciosMedios\AritmeticaMoney.cs" />
@@ -832,6 +838,7 @@
     <Compile Include="Models\Agencias\PropuestaEnvioDTO.cs" />
     <Compile Include="Models\Agencias\EnvioDesdePedidoDTO.cs" />
     <Compile Include="Models\Agencias\EtiquetaPackingDTO.cs" />
+    <Compile Include="Models\Agencias\RepartoPropioDTO.cs" />
     <Compile Include="Infraestructure\Clientes\NombreFiscalPlaceholder.cs" />
     <Compile Include="Infraestructure\Clientes\GuardiaAnulacionCliente.cs" />
     <Compile Include="Infraestructure\Clientes\CambioDiasEnServirConPicking.cs" />
@@ -1203,6 +1210,7 @@
     <Compile Include="Infraestructure\Ubicaciones\RegistroMovimientosUbicacionSql.cs" />
     <Compile Include="Infraestructure\Ubicaciones\RepositorioCuadreUbicaciones.cs" />
     <Compile Include="Controllers\EventosController.cs" />
+    <Compile Include="Controllers\RepartoPropioController.cs" />
     <Compile Include="Controllers\ReposicionesController.cs" />
     <Compile Include="Controllers\UbicacionesController.cs" />
     <Compile Include="Infraestructure\ExtractosRuta\ServicioExtractoRuta.cs" />
