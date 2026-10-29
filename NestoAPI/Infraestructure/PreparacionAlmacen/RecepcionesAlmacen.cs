@@ -81,6 +81,9 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// <summary>Los textos genéricos (los de un tipo que no dice nada propio).</summary>
         public static readonly TextosTipoRecepcion Genericos = new TextosTipoRecepcion();
 
+        /// <summary>Ariadna#63: el nombre del tipo para el filtro de Entradas («Compra», «Reposición»). Null: el código del tipo.</summary>
+        public virtual string NombreTipo => null;
+
         /// <summary>La línea de debajo del título en la lista: «2 líneas · 3 ud. · 06/10».</summary>
         public virtual string Detalle(RecepcionPendienteDTO pendiente)
         {
@@ -248,6 +251,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
             foreach (RecepcionPendienteDTO pendiente in pendientes ?? new List<RecepcionPendienteDTO>())
             {
                 pendiente.Tipo = string.IsNullOrWhiteSpace(pendiente.Tipo) ? origen.Tipo : pendiente.Tipo;
+                pendiente.NombreTipo = Texto(textos, t => t.NombreTipo) ?? pendiente.Tipo;
                 pendiente.Titulo = Limpio(pendiente.Titulo) is string titulo && titulo.Length > 0 ? titulo : $"{pendiente.Tipo} {pendiente.Documento}";
                 pendiente.Detalle = Limpio(pendiente.Detalle) is string detalle && detalle.Length > 0
                     ? detalle

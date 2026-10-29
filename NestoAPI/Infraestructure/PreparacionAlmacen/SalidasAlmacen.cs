@@ -96,6 +96,8 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
 
         /// <summary>Lo recogido se empaqueta después (hoy, el picking): la app ofrece el packing.</summary>
         public virtual bool TienePacking => false;
+        /// <summary>Ariadna#63: el nombre del tipo para el filtro de Salidas («Picking», «Reposición»). Null: el código del tipo.</summary>
+        public virtual string NombreTipo => null;
         /// <summary>Si no está en el hueco, se puede ofrecer cogerlo de otro (api/Almacen/Recogidas/{tipo}/{n}/Alternativas y CambiarHueco).</summary>
         public virtual bool PermiteCambiarHueco => false;
 
@@ -241,6 +243,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         {
             TextosTipoSalida textos = TextosDe(origen);
             recogida.Tipo = string.IsNullOrWhiteSpace(recogida.Tipo) ? origen.Tipo : recogida.Tipo;
+            recogida.NombreTipo = Texto(textos, t => t.NombreTipo) ?? recogida.Tipo;
             recogida.NombreDestino = NombreDestino(recogida.NombreDestino, recogida.Destino);
             recogida.Titulo = Texto(textos, t => t.Titulo(recogida.Tipo, recogida.Numero, recogida.NombreDestino));
             recogida.Detalle = Texto(textos, t => t.Detalle(recogida));
@@ -775,6 +778,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         internal class TextosPicking : TextosTipoSalida
         {
             public override bool TienePacking => true;
+            public override string NombreTipo => "Picking";
             // Ariadna#12: la reserva de un picking se puede pasar a otro hueco
             public override bool PermiteCambiarHueco => true;
             // El destino (la mesa de packing) es siempre el mismo: va en el detalle, no en el título
@@ -952,6 +956,7 @@ namespace NestoAPI.Infraestructure.PreparacionAlmacen
         /// <summary>NestoAPI#600: lo que se le dice al mozo de la salida de una reposición (antes estaba en Ariadna).</summary>
         internal class TextosReposicion : TextosTipoSalida
         {
+            public override string NombreTipo => "Reposición";
             // Ariadna#12: la reserva de la reposición (estado 4) se puede pasar a otro hueco (api/Almacen/Recogidas/REPO/{n}/CambiarHueco)
             public override bool PermiteCambiarHueco => true;
             // NestoAPI#553/#594 (Carlos 06/10/26): el destino es el almacén y va en el título, con su nombre
