@@ -442,6 +442,7 @@
     <Compile Include="Infrastructure\Agencias\TarifasGLSTests.cs" />
     <Compile Include="Infrastructure\Agencias\TarifasGLSEuroTests.cs" />
     <Compile Include="Infrastructure\Agencias\TramitacionEnviosServiceTests.cs" />
+    <Compile Include="Infrastructure\Agencias\ReembolsoAlEntregarTests.cs" />
     <Compile Include="Infrastructure\Agencias\PagoReembolsosServiceTests.cs" />
     <Compile Include="Infrastructure\Agencias\ModificacionEnvioServiceTests.cs" />
     <Compile Include="Infrastructure\Agencias\DatosQueViajaronALaAgenciaTests.cs" />

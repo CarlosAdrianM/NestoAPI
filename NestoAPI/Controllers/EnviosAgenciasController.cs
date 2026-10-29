@@ -296,6 +296,15 @@ namespace NestoAPI.Controllers
         /// <summary>NestoAPI#739: para los tests que necesitan a la vez la fábrica de agencias y la tramitación falsas.</summary>
         internal ITramitacionEnviosService TramitacionEnvios { set => tramitacionEnviosService = value; }
 
+        private IRegistroReembolsosAlEntregar reembolsosAlEntregar;
+
+        /// <summary>NestoAPI#742: el registro de los reembolsos diferidos al entregar (sustituible en tests).</summary>
+        internal IRegistroReembolsosAlEntregar ReembolsosAlEntregar
+        {
+            get => reembolsosAlEntregar ?? (reembolsosAlEntregar = new RegistroReembolsosAlEntregar(db));
+            set => reembolsosAlEntregar = value;
+        }
+
         /// <summary>NestoAPI#666: aviso a los comerciales cuando la consulta a demanda descubre una incidencia.
         /// Sustituible en tests (null = no se avisa).</summary>
         internal Func<EnviosAgencia, Task> AvisarIncidencia { get; set; } = AvisadorIncidenciasEnvio.AvisarConContextoPropioAsync;
@@ -657,7 +666,11 @@ namespace NestoAPI.Controllers
         }
 
         /// <summary>Reembolsos tramitados pendientes de pago por la agencia — pestaña Reembolsos. NestoAPI#676: los
-        /// cerrados a mano (Estado 5) siguen saliendo, como un entregado: la agencia todavía puede pagarlo.</summary>
+        /// cerrados a mano (Estado 5) siguen saliendo, como un entregado: la agencia todavía puede pagarlo.
+        /// NestoAPI#742: NO salen los reembolsos diferidos aún sin contabilizar (tramitados que la agencia no ha entregado, o
+        /// incidentados, devueltos y cerrados a mano que no llegaron a entregarse). Nesto cuadra esta lista contra el saldo
+        /// de la CuentaReembolsos de la agencia (#349): lo que no está contabilizado no puede estar en la lista, y la agencia
+        /// solo nos debe (y liquida) lo que ha entregado. Entran en cuanto el seguimiento contabiliza la entrega.</summary>
         [HttpGet]
         [Route("api/EnviosAgencias/Reembolsos")]
         [ResponseType(typeof(List<EnvioAgenciaListadoDTO>))]
@@ -668,6 +681,11 @@ namespace NestoAPI.Controllers
                     && e.Estado >= Constantes.Agencias.ESTADO_TRAMITADO
                     && e.Reembolso != 0 && e.FechaPagoReembolso == null))
                 .ToListAsync();
+            HashSet<int> sinContabilizar = await ReembolsosAlEntregar.LeerPendientesAsync();
+            if (sinContabilizar.Count > 0)
+            {
+                envios = envios.Where(e => !sinContabilizar.Contains(e.Numero)).ToList();
+            }
             return Ok(envios);
         }
 
@@ -2214,6 +2232,22 @@ namespace NestoAPI.Controllers
                 {
                     ElmahHelper.Log(new System.Exception($"No se pudo avisar de la incidencia del envío {envio.Numero}: {ex.Message}", ex),
                         "Sistema (seguimiento de envíos)");
+                }
+            }
+
+            // NestoAPI#742: si la consulta a demanda es la que ve la entrega, contabiliza ya el reembolso diferido (si no, lo
+            // haría la siguiente pasada del job, que barre todos los entregados pendientes). Idempotente; nunca rompe la respuesta.
+            if (envio.Estado == Constantes.Agencias.ESTADO_ENTREGADO && envio.Reembolso > 0)
+            {
+                try
+                {
+                    ITramitacionEnviosService servicio = tramitacionEnviosService ?? new TramitacionEnviosService(db);
+                    _ = await servicio.ContabilizarReembolsoAlEntregarAsync(envio.Numero, SeguimientoEnviosJobsService.USUARIO_REEMBOLSO_ENTREGADO);
+                }
+                catch (System.Exception ex)
+                {
+                    ElmahHelper.Log(new System.Exception($"No se pudo contabilizar el reembolso del envío {envio.Numero}, entregado: {ex.Message}. " +
+                        "Lo reintenta la siguiente pasada del seguimiento.", ex), "Sistema (seguimiento de envíos)");
                 }
             }
 

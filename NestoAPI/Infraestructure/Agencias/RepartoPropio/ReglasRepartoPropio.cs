@@ -19,12 +19,23 @@ namespace NestoAPI.Infraestructure.Agencias
     /// <summary>
     /// NestoAPI#739 (Carlos 29/10/26): el MOMENTO de contabilizar el reembolso es propiedad de la agencia, en un único sitio por
     /// número de agencia. Hoy todas al tramitar salvo el reparto propio, que contabiliza al entregar (contra la cuenta de caja del
-    /// repartidor, AgenciasTransporte.CuentaReembolsos de la 14). Cambiar el de las demás es otra issue.
+    /// repartidor, AgenciasTransporte.CuentaReembolsos de la 14). NestoAPI#742: las demás, con la sobrecarga de tres parámetros.
     /// </summary>
     public static class MomentosContabilizarReembolso
     {
         public static MomentoContabilizarReembolso De(int agencia)
             => agencia == Constantes.Agencias.AGENCIA_REPARTO_PROPIO
+                ? MomentoContabilizarReembolso.AlEntregar
+                : MomentoContabilizarReembolso.AlTramitar;
+
+        /// <summary>
+        /// NestoAPI#742 (Carlos 29/10/26): con el reembolso al entregar activo (interruptor Agencias:ReembolsoAlEntregar y
+        /// script aplicado), TODAS las agencias contabilizan al entregar. Pero solo las que tienen SEGUIMIENTO: son las únicas
+        /// que pasan solas a Entregado; en una sin seguimiento el reembolso diferido no se contabilizaría nunca. La 14 sigue
+        /// con lo suyo (al entregar, contra la caja del repartidor, en ServicioRepartoPropio).
+        /// </summary>
+        public static MomentoContabilizarReembolso De(int agencia, bool reembolsoAlEntregarActivo, bool agenciaConSeguimiento)
+            => De(agencia) == MomentoContabilizarReembolso.AlEntregar || (reembolsoAlEntregarActivo && agenciaConSeguimiento)
                 ? MomentoContabilizarReembolso.AlEntregar
                 : MomentoContabilizarReembolso.AlTramitar;
     }
