@@ -343,6 +343,56 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             Assert.AreEqual(0, inscripciones.Count);
         }
 
+        /// <summary>NestoAPI#741: el servicio de la petición de un usuario, con el comercial JE (Jesus) y sin equipo.</summary>
+        private ServicioInscripcionesEventos ServicioAcotado(ILectorVendedoresInscripcion lector)
+        {
+            ServicioInscripcionesEventos servicio = Servicio();
+            servicio.AutorizadorInscripcion = new AutorizadorInscripcionEventos(lector);
+            return servicio;
+        }
+
+        private static ILectorVendedoresInscripcion LectorDeJesus()
+        {
+            var lector = A.Fake<ILectorVendedoresInscripcion>();
+            A.CallTo(() => lector.VendedorDelUsuario(A<IPrincipal>._)).Returns("JE");
+            A.CallTo(() => lector.VendedoresDelEquipo(A<string>._, A<string>._)).Returns(Task.FromResult(new List<string> { "JE" }));
+            A.CallTo(() => lector.VendedoresDelCliente("1", "15191", A<string>._)).Returns(Task.FromResult(new List<string> { "JE" }));
+            A.CallTo(() => lector.VendedoresDelCliente("1", "20000", A<string>._)).Returns(Task.FromResult(new List<string> { "NV" }));
+            return lector;
+        }
+
+        [TestMethod]
+        public async Task Inscribir_Acotado_ComercialConSuCliente_Inscribe()
+        {
+            InscripcionEventoDTO dto = await ServicioAcotado(LectorDeJesus()).Inscribir(EVENTO_REINA,
+                new InscribirEventoDTO { Cliente = "15191", Origen = "Nesto" }, VENDEDOR);
+
+            Assert.AreEqual(1, inscripciones.Count);
+            Assert.AreEqual("15191", dto.Cliente?.Trim());
+        }
+
+        [TestMethod]
+        public async Task Inscribir_Acotado_ComercialConClienteAjeno_403DeUstedYNoInscribe()
+        {
+            var ex = await Assert.ThrowsExceptionAsync<NestoBusinessException>(() => ServicioAcotado(LectorDeJesus()).Inscribir(EVENTO_REINA,
+                new InscribirEventoDTO { Cliente = "20000", Origen = "Nesto" }, VENDEDOR));
+
+            Assert.AreEqual(HttpStatusCode.Forbidden, ex.StatusCode);
+            Assert.AreEqual(PermisosEventos.MENSAJE_SIN_PERMISO_INSCRIBIR, ex.Message);
+            Assert.AreEqual(0, inscripciones.Count);
+            A.CallTo(() => pagos.IniciarPago(A<SolicitudPagoTPV>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Inscribir_Acotado_ClienteDeLaTiendaASiMismo_NoPreguntaPorVendedores()
+        {
+            var lector = LectorDeJesus();
+            _ = await ServicioAcotado(lector).Inscribir(EVENTO_REINA, new InscribirEventoDTO { Cliente = "15191", Origen = "TNV" }, ClienteTienda("15191"));
+
+            Assert.AreEqual(1, inscripciones.Count);
+            A.CallTo(() => lector.VendedorDelUsuario(A<IPrincipal>._)).MustNotHaveHappened();
+        }
+
         // ---------------- Cobro del enlace ----------------
 
         [TestMethod]

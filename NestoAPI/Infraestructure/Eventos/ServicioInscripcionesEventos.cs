@@ -388,6 +388,23 @@ GROUP BY RTRIM(c.[Nº Cliente])";
         }
 
         /// <summary>
+        /// NestoAPI#741: el servicio de «Inscribir» a petición de un usuario (POST api/Eventos/{id}/Inscripciones): cada comercial
+        /// solo a sus clientes (<see cref="AutorizadorInscripcion"/>). Los demás flujos que inscriben (señal, plantilla,
+        /// PrestaShop, tienda, jobs) usan el constructor normal y no se acotan.
+        /// </summary>
+        public static ServicioInscripcionesEventos ParaPeticionDeUsuario(NVEntities db) =>
+            new ServicioInscripcionesEventos(db)
+            {
+                AutorizadorInscripcion = new AutorizadorInscripcionEventos(new LectorVendedoresInscripcion(db))
+            };
+
+        /// <summary>
+        /// NestoAPI#741: quién puede inscribir a quién (<see cref="PermisosEventos.PuedeInscribir"/>). Null (los flujos
+        /// automáticos y los tests): no se acota a los usuarios de la casa.
+        /// </summary>
+        internal AutorizadorInscripcionEventos AutorizadorInscripcion { get; set; }
+
+        /// <summary>
         /// NestoAPI#732: los productos requeridos de los eventos «gratuitos por compra» y el pedido que justifica cada inscripción
         /// (fuera del EDMX). Null (tests): ningún evento exige compra.
         /// </summary>
@@ -480,6 +497,12 @@ GROUP BY RTRIM(c.[Nº Cliente])";
 
             Cliente ficha = await LeerFichaCliente(empresa, cliente, Limpiar(peticion.Contacto)).ConfigureAwait(false);
             string contacto = Limpiar(ficha.Contacto);
+
+            // NestoAPI#741: los de la casa, cada comercial a sus clientes (el jefe, a los de su equipo); 403 si no.
+            if (clienteDelToken == null && AutorizadorInscripcion != null)
+            {
+                await AutorizadorInscripcion.Comprobar(usuario, empresa, cliente, contacto).ConfigureAwait(false);
+            }
 
             List<EventoInscripcion> delEvento = await db.EventosInscripciones
                 .Where(i => i.EventoId == evento.Id).ToListAsync().ConfigureAwait(false);

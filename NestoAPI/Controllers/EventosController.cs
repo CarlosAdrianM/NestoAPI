@@ -21,8 +21,9 @@ namespace NestoAPI.Controllers
     /// las marca y desmarca Administración (y Dirección/Informática). 403 si no. Los errores de negocio (apunte ajeno, ya
     /// marcado…) salen como 400 por el filtro global.
     /// <para>NestoAPI#611: cada evento es de una tienda (REI o ALC) y lo mantiene esa tienda (grupo Tiendas con ese
-    /// AlmacénPedidoVta) o Dirección: crear, modificar, marcar pagos y pasar lista. Inscribir puede cualquiera de la casa y el
-    /// cliente de la tienda online a sí mismo (<see cref="PermisosEventos"/>).</para>
+    /// AlmacénPedidoVta) o Dirección: crear, modificar, marcar pagos y pasar lista. Inscribir (NestoAPI#741): cada comercial a
+    /// sus clientes, el jefe de equipo a los de su equipo, Administración/Tiendas/Dirección a todos y el cliente de la tienda
+    /// online a sí mismo (<see cref="PermisosEventos.PuedeInscribir"/>).</para>
     /// </summary>
     [Authorize]
     [RoutePrefix("api/Eventos")]
@@ -42,7 +43,8 @@ namespace NestoAPI.Controllers
         {
             this.db = db;
             this.servicio = servicio ?? new ServicioEventos(db);
-            this.inscripciones = inscripciones ?? new ServicioInscripcionesEventos(db);
+            // NestoAPI#741: el de la petición de un usuario, que acota a quién puede inscribir cada uno
+            this.inscripciones = inscripciones ?? ServicioInscripcionesEventos.ParaPeticionDeUsuario(db);
             this.propuestas = propuestas ?? new ServicioPropuestasSenales(db);
         }
 
@@ -295,7 +297,8 @@ namespace NestoAPI.Controllers
         // POST api/Eventos/5/Inscripciones   { Empresa, Cliente, Contacto?, Origen, FormaPago?, GenerarEnlacePago?, Correo? }
         /// <summary>
         /// Inscribe al cliente (sin pedido). Con tarjeta (o sin forma de pago) y GenerarEnlacePago genera el enlace de pago, que
-        /// viene en UrlPago. Cualquiera de la casa; el cliente de la tienda online, solo a sí mismo.
+        /// viene en UrlPago. NestoAPI#741: cada comercial a sus clientes (jefe de equipo, a los de su equipo; Administración,
+        /// Tiendas y Dirección, a todos); el cliente de la tienda online, solo a sí mismo. 403 si no.
         /// </summary>
         [HttpPost]
         [Route("{id:int}/Inscripciones")]
