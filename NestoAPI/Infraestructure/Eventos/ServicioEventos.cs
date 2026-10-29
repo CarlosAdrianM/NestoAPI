@@ -121,6 +121,22 @@ namespace NestoAPI.Infraestructure.Eventos
         public DateTime? AnunciadoFecha { get; set; }
         /// <summary>NestoAPI#692: solo lectura. Quién lo anunció la última vez.</summary>
         public string AnunciadoUsuario { get; set; }
+
+        private List<ProductoRequeridoEventoDTO> productosRequeridos = new List<ProductoRequeridoEventoDTO>();
+        /// <summary>
+        /// NestoAPI#732: evento «gratuito por compra». Los productos que el cliente tiene que haber comprado o pedido para
+        /// apuntarse (basta con uno). Al leer, siempre una lista (vacía si no exige compra), con Producto y Nombre. Al escribir
+        /// (POST/PUT), solo si viene: la lista que venga sustituye a la que hubiera (vacía = deja de exigir compra); null o sin
+        /// el campo, no se toca. Se manda solo Producto; Nombre se ignora.
+        /// </summary>
+        public List<ProductoRequeridoEventoDTO> ProductosRequeridos
+        {
+            get => productosRequeridos;
+            set { productosRequeridos = value; recibidos.Add(nameof(ProductosRequeridos)); }
+        }
+
+        /// <summary>NestoAPI#732: ¿viene la lista de productos requeridos para cambiarla? (null no cuenta).</summary>
+        public bool TraeProductosRequeridos() => Trae(nameof(ProductosRequeridos)) && productosRequeridos != null;
     }
 
     /// <summary>NestoAPI#591: POST api/Eventos/{id}/Senales. El apunte a favor del extracto que es la señal del evento.</summary>
@@ -238,7 +254,14 @@ namespace NestoAPI.Infraestructure.Eventos
         public ServicioEventos(NVEntities db) : this(db, () => DateTime.Now, imagenes: new RepositorioImagenesEventos(db),
             anuncios: new RepositorioAnunciosEventosSql(db))
         {
+            ProductosRequeridos = new RepositorioProductosRequeridosEventos(db);
         }
+
+        /// <summary>
+        /// NestoAPI#732: los productos requeridos de los eventos «gratuitos por compra» (fuera del EDMX). Null (tests): los eventos
+        /// salen sin ellos y un POST/PUT que los traiga contesta que falta el script.
+        /// </summary>
+        internal IRepositorioProductosRequeridosEventos ProductosRequeridos { get; set; }
 
         /// <param name="almacenDelUsuario">(empresa, usuario sin dominio) → su AlmacénPedidoVta. Null: el de ParametrosUsuario.</param>
         /// <param name="imagenes">NestoAPI#690: las imágenes de los eventos. Null: los eventos salen sin imagen y no se pueden subir.</param>
@@ -299,10 +322,98 @@ namespace NestoAPI.Infraestructure.Eventos
             Dictionary<int, DateTime> conImagen = await FechasImagenes(eventos.Select(e => e.Id).ToList()).ConfigureAwait(false);
             Dictionary<int, AnuncioEventoLeido> anunciados = await Anunciados(eventos.Select(e => e.Id).ToList()).ConfigureAwait(false);
             DateTime hoy = reloj().Date;
-            return eventos.Where(e => e.Fecha.Date >= hoy).OrderBy(e => e.Fecha).ThenBy(e => e.Titulo)
+            List<EventoDTO> lista = eventos.Where(e => e.Fecha.Date >= hoy).OrderBy(e => e.Fecha).ThenBy(e => e.Titulo)
                 .Concat(eventos.Where(e => e.Fecha.Date < hoy).OrderByDescending(e => e.Fecha).ThenBy(e => e.Titulo))
                 .Select(e => ConAnuncio(ConImagen(ADTO(e, ocupadas.TryGetValue(e.Id, out int n) ? n : 0), conImagen), anunciados))
                 .ToList();
+            return await ConProductosRequeridos(lista).ConfigureAwait(false);
+        }
+
+        private static int requeridosFalloRegistrado;
+
+        /// <summary>
+        /// NestoAPI#732: los productos requeridos de cada evento, en UNA consulta. Si falla, los eventos salen sin ellos y el
+        /// fallo va a ELMAH una vez (sin la tabla, el repositorio ya devuelve vacío).
+        /// </summary>
+        private async Task<List<EventoDTO>> ConProductosRequeridos(List<EventoDTO> lista)
+        {
+            if (ProductosRequeridos == null || lista == null || !lista.Any())
+            {
+                return lista;
+            }
+            try
+            {
+                Dictionary<int, List<ProductoRequeridoLeido>> requeridos = await ProductosRequeridos
+                    .Leer(lista.Select(e => e.Id).ToList()).ConfigureAwait(false) ?? new Dictionary<int, List<ProductoRequeridoLeido>>();
+                foreach (EventoDTO dto in lista)
+                {
+                    dto.ProductosRequeridos = requeridos.TryGetValue(dto.Id, out List<ProductoRequeridoLeido> suyos)
+                        ? suyos.Select(r => new ProductoRequeridoEventoDTO { Producto = r.Producto?.Trim(), Nombre = r.Nombre?.Trim() }).ToList()
+                        : new List<ProductoRequeridoEventoDTO>();
+                }
+            }
+            catch (Exception ex)
+            {
+                if (System.Threading.Interlocked.Exchange(ref requeridosFalloRegistrado, 1) == 0)
+                {
+                    ElmahHelper.Log(new Exception($"[Eventos #732] No se han podido leer los productos requeridos de los eventos: {ex.Message}", ex));
+                }
+            }
+            return lista;
+        }
+
+        private async Task<EventoDTO> ConProductosRequeridos(EventoDTO dto) =>
+            dto == null ? null : (await ConProductosRequeridos(new List<EventoDTO> { dto }).ConfigureAwait(false)).Single();
+
+        /// <summary>
+        /// NestoAPI#732: los productos requeridos que vienen en el cuerpo, comprobados (existen en la empresa del evento). Null si
+        /// no vienen (no se tocan). 400 si alguno no existe o si todavía no se ha lanzado el script.
+        /// </summary>
+        private async Task<List<string>> ValidarProductosRequeridos(EventoDTO evento, string empresa)
+        {
+            if (evento == null || !evento.TraeProductosRequeridos())
+            {
+                return null;
+            }
+            if (ProductosRequeridos == null)
+            {
+                throw new NestoBusinessException(MENSAJE_FALTA_SCRIPT_REQUERIDOS);
+            }
+            List<string> productos = ReglasProductosRequeridosEvento.Normalizar(evento.ProductosRequeridos);
+            string largo = productos.FirstOrDefault(p => p.Length > LONGITUD_PRODUCTO);
+            if (largo != null)
+            {
+                throw new NestoBusinessException($"La referencia {largo} no puede tener más de {LONGITUD_PRODUCTO} caracteres.");
+            }
+            if (productos.Any())
+            {
+                List<string> existen = (await db.Productos.Where(p => p.Empresa == empresa && productos.Contains(p.Número))
+                    .Select(p => p.Número).ToListAsync().ConfigureAwait(false))
+                    .Select(p => p?.Trim()).ToList();
+                List<string> noExisten = productos.Where(p => !existen.Contains(p, StringComparer.OrdinalIgnoreCase)).ToList();
+                if (noExisten.Any())
+                {
+                    throw new NestoBusinessException(noExisten.Count == 1
+                        ? $"No existe el producto {noExisten[0]}: revise los productos que hay que comprar para apuntarse."
+                        : $"No existen los productos {string.Join(", ", noExisten)}: revise los productos que hay que comprar para apuntarse.");
+                }
+            }
+            return productos;
+        }
+
+        public const string MENSAJE_FALTA_SCRIPT_REQUERIDOS = "Todavía no se pueden poner productos requeridos: falta lanzar el script " +
+            "Scripts/Issue732_EventosProductosRequeridos.sql. Avise a Informática.";
+
+        private async Task GuardarProductosRequeridos(int eventoId, List<string> productos, string usuario)
+        {
+            if (productos == null)
+            {
+                return;
+            }
+            if (!await ProductosRequeridos.Guardar(eventoId, productos, UsuarioAuditoriaHelper.ParaAuditoria(usuario)).ConfigureAwait(false))
+            {
+                throw new NestoBusinessException(MENSAJE_FALTA_SCRIPT_REQUERIDOS);
+            }
         }
 
         public async Task<EventoDTO> LeerEvento(int id)
@@ -313,7 +424,8 @@ namespace NestoAPI.Infraestructure.Eventos
                 return null;
             }
             Dictionary<int, int> ocupadas = await PlazasOcupadas(new List<int> { id }).ConfigureAwait(false);
-            return await ConImagen(ADTO(evento, ocupadas.TryGetValue(id, out int n) ? n : 0)).ConfigureAwait(false);
+            return await ConProductosRequeridos(await ConImagen(ADTO(evento, ocupadas.TryGetValue(id, out int n) ? n : 0)).ConfigureAwait(false))
+                .ConfigureAwait(false);
         }
 
         private static int anunciosFalloRegistrado;
@@ -453,11 +565,13 @@ namespace NestoAPI.Infraestructure.Eventos
                 evento.ImporteSenalNoReembolsable = ReglasModalidadEvento.SENAL_NO_REEMBOLSABLE_POR_DEFECTO;
             }
             await Validar(evento, null).ConfigureAwait(false);
+            List<string> requeridos = await ValidarProductosRequeridos(evento, EmpresaOPorDefecto(evento.Empresa)).ConfigureAwait(false);
             var entidad = new Evento { Empresa = EmpresaOPorDefecto(evento.Empresa), Formato = FormatosEvento.PRESENCIAL };
             Copiar(evento, entidad, usuario);
             db.Eventos.Add(entidad);
             await db.SaveChangesAsync().ConfigureAwait(false);
-            return ConAnuncio(ADTO(entidad, 0), null);
+            await GuardarProductosRequeridos(entidad.Id, requeridos, usuario).ConfigureAwait(false);
+            return await ConProductosRequeridos(ConAnuncio(ADTO(entidad, 0), null)).ConfigureAwait(false);
         }
 
         public async Task<EventoDTO> ModificarEvento(int id, EventoDTO evento, string usuario)
@@ -469,6 +583,7 @@ namespace NestoAPI.Infraestructure.Eventos
                 evento.Empresa = Limpiar(entidad.Empresa);
             }
             await Validar(evento, entidad.Almacen).ConfigureAwait(false);
+            List<string> requeridos = await ValidarProductosRequeridos(evento, EmpresaOPorDefecto(entidad.Empresa)).ConfigureAwait(false);
             Dictionary<int, int> ocupadas = await PlazasOcupadas(new List<int> { id }).ConfigureAwait(false);
             int ocupadasEvento = ocupadas.TryGetValue(id, out int n) ? n : 0;
             if (evento.Trae(nameof(EventoDTO.Plazas)) && evento.Plazas.HasValue && evento.Plazas.Value < ocupadasEvento)
@@ -487,7 +602,8 @@ namespace NestoAPI.Infraestructure.Eventos
                     : $"Ya hay {ocupadasEvento} inscripciones de pago: el evento no puede pasar a ser gratuito. Anúlelas antes o cree otro evento.");
             }
             await db.SaveChangesAsync().ConfigureAwait(false);
-            return await ConImagen(ADTO(entidad, ocupadasEvento)).ConfigureAwait(false);
+            await GuardarProductosRequeridos(id, requeridos, usuario).ConfigureAwait(false);
+            return await ConProductosRequeridos(await ConImagen(ADTO(entidad, ocupadasEvento)).ConfigureAwait(false)).ConfigureAwait(false);
         }
 
         /// <param name="almacenGuardado">Al modificar, la tienda que ya tiene el evento (si el cuerpo no trae Almacen, se queda esa).</param>

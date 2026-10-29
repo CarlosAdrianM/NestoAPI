@@ -1158,6 +1158,7 @@
     <Compile Include="Infraestructure\Eventos\RecordatorioEventosJobsService.cs" />
     <Compile Include="Infraestructure\Eventos\PropuestasSenalesEventos.cs" />
     <Compile Include="Infraestructure\Eventos\PersonaAsistenteEvento.cs" />
+    <Compile Include="Infraestructure\Eventos\ProductosRequeridosEventos.cs" />
     <Compile Include="Infraestructure\Cupones\Cupones.cs" />
     <Compile Include="Infraestructure\Cupones\CarritoCupones.cs" />
     <Compile Include="Infraestructure\Cupones\RepositorioCupones.cs" />

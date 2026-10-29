@@ -76,6 +76,71 @@ namespace NestoAPI.Controllers
             return new Infraestructure.PreparacionAlmacen.RepositorioPreparacionAlmacen(db).PickingEnCursoDelPedido(empresa, pedido);
         }
 
+        // NestoAPI#732: las inscripciones gratuitas por compra que justifica el pedido (aviso al borrar o quitar la línea). Para tests.
+        private Infraestructure.Eventos.IInscripcionesPorCompraEventos inscripcionesPorCompra;
+        internal Infraestructure.Eventos.IInscripcionesPorCompraEventos InscripcionesPorCompra
+        {
+            get => inscripcionesPorCompra ?? (inscripcionesPorCompra = new Infraestructure.Eventos.ServicioInscripcionesPorCompraEventos(db));
+            set => inscripcionesPorCompra = value;
+        }
+
+        /// <summary>
+        /// NestoAPI#732: las inscripciones que se quedarían sin justificante. Nunca bloquea el pedido por un fallo al mirarlo: sin
+        /// poder leerlo, como antes (lista vacía) y a ELMAH.
+        /// </summary>
+        private async Task<List<Infraestructure.Eventos.InscripcionAfectadaPedidoDTO>> InscripcionesAfectadasSinFallar(
+            Func<Task<List<Infraestructure.Eventos.InscripcionAfectadaPedidoDTO>>> mirar, int pedido)
+        {
+            try
+            {
+                return await mirar().ConfigureAwait(true) ?? new List<Infraestructure.Eventos.InscripcionAfectadaPedidoDTO>();
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Eventos #732] No se ha podido mirar si el pedido {pedido} justifica inscripciones a eventos: {ex.Message}", ex));
+                return new List<Infraestructure.Eventos.InscripcionAfectadaPedidoDTO>();
+            }
+        }
+
+        /// <summary>NestoAPI#732: anula las inscripciones ya confirmadas. El pedido ya está guardado: si falla, a ELMAH y sigue.</summary>
+        private async Task<List<Infraestructure.Eventos.InscripcionAfectadaPedidoDTO>> AnularInscripcionesSinFallar(
+            List<Infraestructure.Eventos.InscripcionAfectadaPedidoDTO> afectadas, int pedido, bool borrarPedido, string usuario)
+        {
+            if (afectadas == null || !afectadas.Any())
+            {
+                return new List<Infraestructure.Eventos.InscripcionAfectadaPedidoDTO>();
+            }
+            try
+            {
+                return await InscripcionesPorCompra.Anular(afectadas, pedido, borrarPedido, usuario).ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Eventos #732] El pedido {pedido} está guardado, pero no se han podido anular las inscripciones " +
+                    $"{string.Join(", ", afectadas.Select(a => a.Id))}: {ex.Message}", ex));
+                return new List<Infraestructure.Eventos.InscripcionAfectadaPedidoDTO>();
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#732: los productos con los que queda el pedido tras el PUT: las líneas que vienen con cantidad positiva (nuevas
+        /// o modificadas) y las grabadas que no vienen y se conservan tal cual (albarán o factura, ver EvaluarLineaProtegida).
+        /// </summary>
+        internal static List<string> ProductosQueQuedanTrasElPut(PedidoVentaDTO pedido, IEnumerable<LinPedidoVta> lineasGrabadas)
+        {
+            List<LineaPedidoVentaDTO> lineas = pedido?.Lineas?.ToList() ?? new List<LineaPedidoVentaDTO>();
+            var idsQueVienen = new HashSet<int>(lineas.Select(l => l.id));
+            IEnumerable<string> conservadas = (lineasGrabadas ?? Enumerable.Empty<LinPedidoVta>())
+                .Where(l => !idsQueVienen.Contains(l.Nº_Orden) && l.Estado >= Constantes.EstadosLineaVenta.ALBARAN && l.Cantidad > 0)
+                .Select(l => l.Producto);
+            return lineas.Where(l => l.Cantidad > 0).Select(l => l.Producto)
+                .Concat(conservadas)
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .Select(p => p.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
         // NestoAPI#593 (c4): el canje del cheque regalo (reglas duras fuera del pipeline de validación). Para tests.
         private Infraestructure.ChequesRegalo.IServicioCanjeChequesRegalo servicioCanje;
         internal Infraestructure.ChequesRegalo.IServicioCanjeChequesRegalo ServicioCanje
@@ -1196,6 +1261,16 @@ namespace NestoAPI.Controllers
             // cliente sabe preguntar: ConfirmarFechaEntregaLejana = false). Lo que ya estaba así y no se toca, no.
             AvisoFechaEntregaLejana.Comprobar(pedido, cabPedidoVta.LinPedidoVtas, DateTime.Today);
 
+            // NestoAPI#732: si el pedido se queda sin el producto que justifica una inscripción gratuita por compra, se pregunta
+            // (409 PEDIDO_JUSTIFICA_INSCRIPCIONES_EVENTO, sin guardar nada) y, confirmado, se anula al guardar.
+            List<string> productosQueQuedan = ProductosQueQuedanTrasElPut(pedido, cabPedidoVta.LinPedidoVtas);
+            List<Infraestructure.Eventos.InscripcionAfectadaPedidoDTO> inscripcionesSinJustificante = await InscripcionesAfectadasSinFallar(
+                () => InscripcionesPorCompra.AfectadasAlModificar(pedido.empresa, pedido.numero, productosQueQuedan), pedido.numero);
+            if (inscripcionesSinJustificante.Any() && pedido.ConfirmarAnularInscripcionesEventos != true)
+            {
+                throw Infraestructure.Eventos.ReglasProductosRequeridosEvento.Aviso(pedido.empresa?.Trim(), pedido.numero, inscripcionesSinJustificante, borrarPedido: false);
+            }
+
             // NestoAPI#715: foto de las líneas grabadas ANTES de tocarlas, para que la sombra de anomalías mire solo lo nuevo o lo que cambia.
             List<Infraestructure.PedidosVenta.Anomalias.LineaGrabadaAnomalia> lineasAntesAnomalias =
                 Infraestructure.PedidosVenta.Anomalias.RegistroAnomaliasPedido.Instantanea(cabPedidoVta.LinPedidoVtas);
@@ -2160,6 +2235,20 @@ namespace NestoAPI.Controllers
 
             // NestoAPI#688: la casilla «¿Servir lo pendiente en cuanto haya stock?» (columna fuera del EDMX). Nunca lanza.
             GuardarServirPendiente(pedido, servirPendienteAGuardar);
+            // NestoAPI#732: confirmado, las inscripciones que se han quedado sin justificante se anulan (y se avisa a la tienda)
+            List<Infraestructure.Eventos.InscripcionAfectadaPedidoDTO> inscripcionesAnuladas = await AnularInscripcionesSinFallar(
+                inscripcionesSinJustificante, pedido.numero, borrarPedido: false, UsuarioAuditoriaHelper.Resolver(User, pedido.Usuario));
+            if (inscripcionesAnuladas.Any())
+            {
+                avisos.Add(new AvisoPedidoDTO
+                {
+                    Tipo = Infraestructure.Eventos.ReglasProductosRequeridosEvento.TIPO_AVISO_ANULADAS,
+                    Mensaje = inscripcionesAnuladas.Count == 1
+                        ? $"Se ha anulado la inscripción de {inscripcionesAnuladas[0].Cliente} a «{inscripcionesAnuladas[0].Evento}» y se ha avisado a la tienda."
+                        : $"Se han anulado {inscripcionesAnuladas.Count} inscripciones a eventos y se ha avisado a la tienda.",
+                    Datos = new { Inscripciones = inscripcionesAnuladas }
+                });
+            }
             // NestoAPI#722: líneas con picking aplazadas: aviso al usuario y campana a Almacén (best-effort, ya está guardado).
             if (lineasAplazadas.Count > 0)
             {
@@ -2959,16 +3048,30 @@ namespace NestoAPI.Controllers
             return CreatedAtRoute("DefaultApi", new { id = pedido.numero }, pedido);
         }
 
-        // DELETE: api/PedidosVenta/5
+        // DELETE: api/PedidosVenta?empresa=1&numero=5[&anularInscripcionesEventos=true]
+        /// <summary>
+        /// NestoAPI#732: si el pedido justifica inscripciones gratuitas por compra a eventos (vivas), sin
+        /// <paramref name="anularInscripcionesEventos"/> contesta 409 PEDIDO_JUSTIFICA_INSCRIPCIONES_EVENTO con la pregunta y las
+        /// inscripciones (error.details.inscripciones) y no borra nada; con true borra el pedido, anula esas inscripciones y avisa
+        /// a la tienda del evento.
+        /// </summary>
         [Authorize]
         [ResponseType(typeof(CabPedidoVta))]
-        public async Task<IHttpActionResult> DeleteCabPedidoVta(string empresa, int numero)
+        public async Task<IHttpActionResult> DeleteCabPedidoVta(string empresa, int numero, bool anularInscripcionesEventos = false)
         {
             CabPedidoVta cabPedidoVta = await db.CabPedidoVtas
                 .FirstOrDefaultAsync(p => p.Empresa == empresa && p.Número == numero);
             if (cabPedidoVta == null)
             {
                 return NotFound();
+            }
+
+            // NestoAPI#732: el pedido justifica inscripciones gratuitas por compra: se pregunta antes de borrar
+            List<Infraestructure.Eventos.InscripcionAfectadaPedidoDTO> inscripcionesJustificadas = await InscripcionesAfectadasSinFallar(
+                () => InscripcionesPorCompra.AfectadasAlBorrar(empresa, numero), numero);
+            if (inscripcionesJustificadas.Any() && !anularInscripcionesEventos)
+            {
+                throw Infraestructure.Eventos.ReglasProductosRequeridosEvento.Aviso(empresa?.Trim(), numero, inscripcionesJustificadas, borrarPedido: true);
             }
 
             // Issue #135: Eliminar etiquetas pendientes asociadas al pedido
@@ -3010,6 +3113,11 @@ namespace NestoAPI.Controllers
             {
                 ElmahHelper.Log(new Exception($"[Cupones #613] No se pudo soltar el cupón del pedido {numero} al borrarlo: {ex.Message}", ex));
             }
+
+            // NestoAPI#732: confirmado, las inscripciones que justificaba se anulan y se avisa a la tienda. Best-effort: el pedido ya
+            // está borrado.
+            _ = await AnularInscripcionesSinFallar(inscripcionesJustificadas, numero, borrarPedido: true,
+                UsuarioAuditoriaHelper.Resolver(User, null)).ConfigureAwait(true);
 
             return Ok(cabPedidoVta);
         }

@@ -221,6 +221,11 @@ namespace NestoAPI.Infraestructure.Eventos
         public string Correo { get; set; }
         /// <summary>NestoAPI#731: solo lectura, de la ficha del contacto (no se guarda): «Calle, CP Población (Provincia)».</summary>
         public string Direccion { get; set; }
+        /// <summary>
+        /// NestoAPI#732: en un evento «gratuito por compra», el pedido de venta que justifica la inscripción (el que tiene el
+        /// producto requerido). Null en el resto. Si se borra ese pedido o se le quita la línea, la inscripción se anula.
+        /// </summary>
+        public int? PedidoJustificante { get; set; }
     }
 
     /// <summary>
@@ -379,7 +384,14 @@ GROUP BY RTRIM(c.[Nº Cliente])";
         {
             baseImponibleDia = new LectorBaseImponibleDia(db);
             PersonasAsistentes = new RepositorioPersonaAsistenteEventos(db);
+            ProductosRequeridos = new RepositorioProductosRequeridosEventos(db);
         }
+
+        /// <summary>
+        /// NestoAPI#732: los productos requeridos de los eventos «gratuitos por compra» y el pedido que justifica cada inscripción
+        /// (fuera del EDMX). Null (tests): ningún evento exige compra.
+        /// </summary>
+        internal IRepositorioProductosRequeridosEventos ProductosRequeridos { get; set; }
 
         /// <summary>NestoAPI#690: la base imponible del día en la lista de inscritos. Null (tests): no se calcula.</summary>
         internal ILectorBaseImponibleDia BaseImponibleDia { get => baseImponibleDia; set => baseImponibleDia = value; }
@@ -503,6 +515,22 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                 personaAsiste = PersonaDelCorreo(personasCliente, cliente, contacto, usuario?.Identity?.Name);
             }
 
+            // NestoAPI#732: «gratuito por compra». Si el evento exige productos, el cliente tiene que haber comprado o pedido
+            // alguno (ReglasProductosRequeridosEvento); el pedido que lo justifica se guarda en la inscripción.
+            JustificanteCompraEvento justificante = null;
+            if (ProductosRequeridos != null)
+            {
+                List<ProductoRequeridoLeido> requeridos = (await ProductosRequeridos.Leer(new List<int> { evento.Id }).ConfigureAwait(false))?
+                    .FirstOrDefault().Value ?? new List<ProductoRequeridoLeido>();
+                if (requeridos.Any())
+                {
+                    DateTime desde = ReglasProductosRequeridosEvento.Desde(requeridos);
+                    justificante = await ProductosRequeridos.BuscarJustificante(empresa, cliente,
+                        requeridos.Select(r => r.Producto).ToList(), desde).ConfigureAwait(false)
+                        ?? throw ReglasProductosRequeridosEvento.RequiereCompra(evento.Titulo, requeridos, desde);
+                }
+            }
+
             // NestoAPI#690: la modalidad fija lo que se cobra y si habrá cupón. La gratuita no se paga: entra Inscrita, sin
             // fecha límite ni forma de pago, y va directa a la lista de asistencia.
             ModalidadInscripcionEvento modalidad = ReglasModalidadEvento.Elegir(evento, peticion.Modalidad);
@@ -532,6 +560,7 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             db.EventosInscripciones.Add(inscripcion);
             await db.SaveChangesAsync().ConfigureAwait(false);
             bool personaGuardada = await GuardarPersonaSinFallar(inscripcion.Id, personaAsiste).ConfigureAwait(false);
+            bool justificanteGuardado = await GuardarJustificanteSinFallar(inscripcion.Id, justificante?.Pedido).ConfigureAwait(false);
 
             string urlPago = null;
             bool conEnlace = !gratuita && peticion.GenerarEnlacePago && importe > 0
@@ -576,6 +605,7 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             personasCliente = personasCliente ?? await LeerPersonasSinFallar(empresa, cliente).ConfigureAwait(false);
             RellenarFicha(dto, ficha.Dirección, ficha.CodPostal, ficha.Población, ficha.Provincia,
                 personasCliente.Where(p => p.Key == cliente).Select(p => p.Value), personaGuardada ? personaAsiste : null);
+            dto.PedidoJustificante = justificanteGuardado ? justificante?.Pedido : null;
             if (origen != OrigenInscripcionEvento.TNV)
             {
                 dto.Avisos = await AvisosFicha(empresa, cliente, contacto, ficha.Teléfono).ConfigureAwait(false);
@@ -724,6 +754,33 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             catch (Exception ex)
             {
                 ElmahHelper.Log(new Exception($"[Eventos #731] La inscripción {inscripcion} está hecha, pero no se ha podido guardar quién asiste ({numero}): {ex.Message}", ex));
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#732: el pedido que justifica la inscripción recién creada. Sin columna o si falla: la inscripción vale igual
+        /// (la compra está comprobada), pero borrar el pedido no la anulará (y queda en ELMAH).
+        /// </summary>
+        private async Task<bool> GuardarJustificanteSinFallar(int inscripcion, int? pedido)
+        {
+            if (!pedido.HasValue || ProductosRequeridos == null)
+            {
+                return false;
+            }
+            try
+            {
+                bool guardado = await ProductosRequeridos.PonerJustificante(inscripcion, pedido.Value).ConfigureAwait(false);
+                if (!guardado)
+                {
+                    ElmahHelper.Log(new Exception($"[Eventos #732] La inscripción {inscripcion} está justificada por el pedido {pedido}, pero falta la " +
+                        "columna EventosInscripciones.PedidoJustificante (Scripts/Issue732_EventosProductosRequeridos.sql)."));
+                }
+                return guardado;
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Eventos #732] La inscripción {inscripcion} está hecha, pero no se ha podido guardar su pedido justificante {pedido}: {ex.Message}", ex));
                 return false;
             }
         }
@@ -1911,6 +1968,7 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                 personas = new List<KeyValuePair<string, PersonaContactoEventoDTO>>();
             }
             ILookup<string, PersonaContactoEventoDTO> personasPorCliente = personas.ToLookup(p => p.Key, p => p.Value);
+            Dictionary<int, int> justificantes = await LeerJustificantesSinFallar(inscripciones.Select(i => i.Id).ToList()).ConfigureAwait(false);
 
             List<int> pagosPendientes = inscripciones
                 .Where(i => i.PagoTPVId.HasValue && (EstadoDe(i) == EstadoInscripcionEvento.Reservada || EstadoDe(i) == EstadoInscripcionEvento.Caducada))
@@ -1933,6 +1991,10 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                 asistentes.TryGetValue(i.Id, out string asiste);
                 RellenarFicha(dto, ficha?.Dirección, ficha?.CodPostal, ficha?.Población, ficha?.Provincia,
                     personasPorCliente[Limpiar(i.Cliente) ?? ""], asiste);
+                if (justificantes.TryGetValue(i.Id, out int pedidoJustificante))
+                {
+                    dto.PedidoJustificante = pedidoJustificante;
+                }
                 if (i.PagoTPVId.HasValue && tokens.TryGetValue(i.PagoTPVId.Value, out Guid token))
                 {
                     dto.UrlPago = URL_PAGINA_PAGO + token;
@@ -1960,6 +2022,24 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             {
                 ElmahHelper.Log(new Exception($"[Eventos #731] No se ha podido leer quién asiste: {ex.Message}", ex));
                 return new Dictionary<int, string>();
+            }
+        }
+
+        /// <summary>NestoAPI#732: inscripción → pedido que la justifica. Sin columna (o si falla): ninguno, y la lista sale igual.</summary>
+        private async Task<Dictionary<int, int>> LeerJustificantesSinFallar(List<int> ids)
+        {
+            if (ProductosRequeridos == null || !ids.Any())
+            {
+                return new Dictionary<int, int>();
+            }
+            try
+            {
+                return await ProductosRequeridos.LeerJustificantes(ids).ConfigureAwait(false) ?? new Dictionary<int, int>();
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception($"[Eventos #732] No se han podido leer los pedidos justificantes: {ex.Message}", ex));
+                return new Dictionary<int, int>();
             }
         }
 
