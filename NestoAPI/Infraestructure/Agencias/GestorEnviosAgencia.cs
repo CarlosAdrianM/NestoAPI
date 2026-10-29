@@ -166,6 +166,16 @@ namespace NestoAPI.Infraestructure.Agencias
                 "<p>Deje el paquete bien cerrado y preparado para cuando pase el repartidor.</p>";
         }
 
+        /// <summary>NestoAPI#744: el párrafo de seguimiento del correo de salida para el reparto propio: el enlace a nuestra página o, si no lo hay, el número.</summary>
+        internal static string ParrafoSeguimientoRepartoPropio(string enlace, string codigoBarras)
+        {
+            string numero = HttpUtility.HtmlEncode(codigoBarras?.Trim() ?? string.Empty);
+            return string.IsNullOrWhiteSpace(enlace) || !enlace.StartsWith("http", StringComparison.OrdinalIgnoreCase)
+                ? "<p>Este pedido se lo entregamos <b>con nuestro propio reparto</b>. El número de envío es <b>" + numero + "</b>.</p>"
+                : "<p>Este pedido se lo entregamos <b>con nuestro propio reparto</b>. Puede ver en todo momento cómo va en " +
+                  "<a href=\"" + HttpUtility.HtmlAttributeEncode(enlace) + "\">su página de seguimiento</a> (envío <b>" + numero + "</b>).</p>";
+        }
+
         private async Task<StringBuilder> GenerarCorreoHTML(EnviosAgencia envio, bool esRecogida = false, bool llevaEtiqueta = false)
         {
             ServicioEnviosAgencia servicio = new ServicioEnviosAgencia();
@@ -187,9 +197,17 @@ namespace NestoAPI.Infraestructure.Agencias
             s.AppendLine("<p>También es muy importante, de cara a una posible reclamación posterior, <strong>comprobar que el nº de bultos que pone en la PDA o albarán coincide con el nº de bultos efectivamente recibido</strong>.</p>");
             }
             s.AppendLine("<p></p>");
+            if (envio.Agencia == Constantes.Agencias.AGENCIA_REPARTO_PROPIO)
+            {
+                // NestoAPI#744: no hay agencia que mande su correo: el enlace es nuestra propia página de seguimiento.
+                s.AppendLine(ParrafoSeguimientoRepartoPropio(envioDTO.EnlaceSeguimiento, envio.CodigoBarras));
+            }
+            else
+            {
             s.AppendLine("<p>La propia agencia le enviará un correo electrónico a esta misma dirección con el enlace al seguimiento de la expedición, para que pueda saber en cada momento por donde va el envío.</p>");
             s.AppendLine("<p>No obstante, le adelantamos que <b>la agencia responsable de la entrega es "+ nombreAgencia +" y el número de envío es <a href=\""+envioDTO.EnlaceSeguimiento+"\">" +envio.CodigoBarras+"</a> </b>");
             s.AppendLine("(es posible que el enlace tarde un rato en estar operativo).</p>");
+            }
             s.AppendLine("<p>Adjunto encontrará un PDF con el pedido completo, en el que hemos marcado <span style=\"color: red;\">en rojo las líneas pendientes de enviar y facturar</span>, que se le enviarán tan ");
             s.AppendLine("pronto como tengamos stock y <span style=\"color: green;\">en verde las que enviamos en esta expedición</span>.</p>");
             s.AppendLine("<p><strong>El archivo adjunto NO es una factura electrónica.</strong> Las facturas electrónicas se envían a partir de las 21h del día en que se emiten.</p>");

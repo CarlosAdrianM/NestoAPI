@@ -1,6 +1,7 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using NestoAPI.Infraestructure.Agencias.RepartoPropio;
 
 namespace NestoAPI.Models.Agencias
 {
@@ -179,6 +180,37 @@ namespace NestoAPI.Models.Agencias
             => SeguimientoUrl.SinEsquema(ConstruirUrl(d)) ?? d.CodigoSeguimiento?.Trim();
     }
 
+    /// <summary>
+    /// NestoAPI#744: el reparto propio (agencia 14, rutas AT y 16). No hay web de agencia: el enlace es nuestra propia
+    /// página pública (<c>{UrlPublicaApi}/seguimiento/{token}</c>, ver <see cref="EnlaceSeguimientoRepartoPropio"/>). El
+    /// envío sale del albarán «RP{envío}» (CodigoBarras) o de un bulto «RP{envío}-{n}».
+    /// <para>Canales externos: null en todo. El reparto propio no sirve pedidos de Amazon ni de la tienda online (su perfil
+    /// es <see cref="Infraestructure.Agencias.Perfiles.IPerfilSinCanalesExternos"/>); si algún día los sirviera, habría que
+    /// dar de alta un transportista en Prestashop que apunte a esta página y decidir el «Other» de Amazon.</para>
+    /// </summary>
+    internal class SeguimientoRepartoPropio : IEstrategiaSeguimientoAgencia
+    {
+        /// <summary>AgenciasTransporte.Nombre de la agencia 14.</summary>
+        public const string NOMBRE = "Reparto propio";
+        public string Nombre => NOMBRE;
+        public IReadOnlyCollection<int> AgenciasId => new[] { Constantes.Agencias.AGENCIA_REPARTO_PROPIO };
+        public string TransportistaPrestashop => null;
+        public string CarrierCodeAmazon => null;
+        public string CarrierNameAmazon => null;
+        public string ShippingMethodAmazon => null;
+        public string ConstruirUrl(DatosSeguimientoEnvio d)
+        {
+            string codigo = d?.CodigoSeguimiento?.Trim();
+            if (CodigoBultoRepartoPropio.TryLeerAlbaran(codigo, out int envio)
+                || CodigoBultoRepartoPropio.TryLeerBulto(codigo, out envio, out _))
+            {
+                return EnlaceSeguimientoRepartoPropio.Url(envio);
+            }
+            return null;
+        }
+        public string TrackingPrestashop(DatosSeguimientoEnvio d) => null;
+    }
+
     internal static class SeguimientoUrl
     {
         /// <summary>Quita el "https://" inicial: la plantilla del transportista genérico de
@@ -197,7 +229,8 @@ namespace NestoAPI.Models.Agencias
                 new SeguimientoCorreosExpress(),
                 new SeguimientoSending(),
                 new SeguimientoInnovatrans(),
-                new SeguimientoCTT()
+                new SeguimientoCTT(),
+                new SeguimientoRepartoPropio()
             }.ToDictionary(e => e.Nombre);
 
         /// <summary>¿Hay una estrategia de seguimiento para esa agencia?</summary>

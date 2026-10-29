@@ -16,6 +16,9 @@ namespace NestoAPI
             // Issue #121: Ignorar rutas de pago para que las maneje Web API (PagoRedirectController)
             routes.IgnoreRoute("pago/{*pathInfo}");
 
+            // NestoAPI#744: la página pública de seguimiento del reparto propio la sirve Web API (SeguimientoController)
+            routes.IgnoreRoute("seguimiento/{*pathInfo}");
+
             // Issue #107: Habilitar attribute routing para DeepLinkController
             routes.MapMvcAttributeRoutes();
 
