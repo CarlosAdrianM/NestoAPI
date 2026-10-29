@@ -1263,9 +1263,11 @@ namespace NestoAPI.Controllers
 
             // NestoAPI#732: si el pedido se queda sin el producto que justifica una inscripción gratuita por compra, se pregunta
             // (409 PEDIDO_JUSTIFICA_INSCRIPCIONES_EVENTO, sin guardar nada) y, confirmado, se anula al guardar.
+            // Con el modo «Todos», solo se pregunta si se va del pedido un producto requerido que el pedido tenía.
             List<string> productosQueQuedan = ProductosQueQuedanTrasElPut(pedido, cabPedidoVta.LinPedidoVtas);
+            List<string> productosQueTenia = Infraestructure.Eventos.ReglasProductosRequeridosEvento.ProductosQueJustifican(cabPedidoVta.LinPedidoVtas);
             List<Infraestructure.Eventos.InscripcionAfectadaPedidoDTO> inscripcionesSinJustificante = await InscripcionesAfectadasSinFallar(
-                () => InscripcionesPorCompra.AfectadasAlModificar(pedido.empresa, pedido.numero, productosQueQuedan), pedido.numero);
+                () => InscripcionesPorCompra.AfectadasAlModificar(pedido.empresa, pedido.numero, productosQueQuedan, productosQueTenia), pedido.numero);
             if (inscripcionesSinJustificante.Any() && pedido.ConfirmarAnularInscripcionesEventos != true)
             {
                 throw Infraestructure.Eventos.ReglasProductosRequeridosEvento.Aviso(pedido.empresa?.Trim(), pedido.numero, inscripcionesSinJustificante, borrarPedido: false);

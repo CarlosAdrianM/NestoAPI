@@ -64,8 +64,9 @@ namespace NestoAPI.Infraestructure.Eventos
     /// <summary>
     /// NestoAPI#732 (Carlos, 29/10/26). Reglas del evento «gratuito por compra».
     /// <list type="bullet">
-    /// <item>Basta con UNO de los productos requeridos (son alternativas). Decisión de este corte: con uno solo, que es el caso
-    /// real (evento 4, ref. 45363), es lo mismo; con varios, si hiciera falta exigirlos todos, sería otra regla.</item>
+    /// <item>Modo del evento (Eventos.ProductosRequeridosTodos, Carlos 29/10/26): «Alguno» (por defecto) basta con UNO de los
+    /// productos requeridos (son alternativas); «Todos» hay que haber comprado o pedido CADA uno, y el justificante es el
+    /// pedido más reciente de los que justifican.</item>
     /// <item>Vale cualquier línea de venta del cliente (empresa del evento + cliente, de cualquier contacto) de ese producto,
     /// con cantidad positiva, en estado pendiente (-1), en curso (1), albarán (2) o factura (4). Presupuestos y notas de
     /// entrega no cuentan.</item>
@@ -91,6 +92,22 @@ namespace NestoAPI.Infraestructure.Eventos
         public const string ERROR_PEDIDO_JUSTIFICA = "PEDIDO_JUSTIFICA_INSCRIPCIONES_EVENTO";
         /// <summary>Tipo del aviso del PUT del pedido cuando, confirmado, se han anulado inscripciones.</summary>
         public const string TIPO_AVISO_ANULADAS = "INSCRIPCIONES_EVENTO_ANULADAS";
+
+        /// <summary>Basta con uno de los productos requeridos (por defecto, lo de siempre).</summary>
+        public const string MODO_ALGUNO = "Alguno";
+        /// <summary>Hay que haber comprado o pedido todos los productos requeridos.</summary>
+        public const string MODO_TODOS = "Todos";
+
+        /// <summary>El modo canónico («Alguno» o «Todos», sin mirar mayúsculas ni espacios); null si no es ninguno de los dos.</summary>
+        public static string NormalizarModo(string modo)
+        {
+            string limpio = modo?.Trim();
+            return string.Equals(limpio, MODO_ALGUNO, StringComparison.OrdinalIgnoreCase) ? MODO_ALGUNO
+                : string.Equals(limpio, MODO_TODOS, StringComparison.OrdinalIgnoreCase) ? MODO_TODOS
+                : null;
+        }
+
+        public static string Modo(bool todos) => todos ? MODO_TODOS : MODO_ALGUNO;
 
         private static readonly CultureInfo es = new CultureInfo("es-ES");
 
@@ -118,11 +135,36 @@ namespace NestoAPI.Infraestructure.Eventos
             $"{desde.ToString("dd/MM/yyyy", es)}. No hemos encontrado ningún pedido del cliente con ese producto.";
 
         public static NestoBusinessException RequiereCompra(string titulo, List<ProductoRequeridoLeido> requeridos, DateTime desde) =>
-            new NestoBusinessException(MensajeRequiereCompra(titulo, requeridos, desde),
+            ErrorRequiereCompra(MensajeRequiereCompra(titulo, requeridos, desde), requeridos, desde, MODO_ALGUNO);
+
+        /// <summary>Modo «Todos»: el texto dice cuáles le faltan.</summary>
+        public static string MensajeRequiereCompraTodos(string titulo, List<ProductoRequeridoLeido> faltan, DateTime desde) =>
+            $"Para apuntarse a «{titulo?.Trim()}» hay que haber comprado o pedido todos estos productos; le faltan: " +
+            $"{string.Join(", ", faltan.OrderBy(r => r.Producto).Select(r => string.IsNullOrWhiteSpace(r.Nombre) ? r.Producto : $"{r.Producto} ({r.Nombre.Trim()})"))}. " +
+            $"Cuentan los pedidos del cliente desde el {desde.ToString("dd/MM/yyyy", es)}.";
+
+        /// <summary>Modo «Todos»: details.productos lleva solo los que faltan y details.modo = "Todos".</summary>
+        public static NestoBusinessException RequiereCompraTodos(string titulo, List<ProductoRequeridoLeido> faltan, DateTime desde) =>
+            ErrorRequiereCompra(MensajeRequiereCompraTodos(titulo, faltan, desde), faltan, desde, MODO_TODOS);
+
+        private static NestoBusinessException ErrorRequiereCompra(string mensaje, List<ProductoRequeridoLeido> productos, DateTime desde, string modo) =>
+            new NestoBusinessException(mensaje,
                 new ErrorContext { ErrorCode = ERROR_REQUIERE_COMPRA }
-                    .WithData("productos", requeridos.Select(r => new ProductoRequeridoEventoDTO { Producto = r.Producto, Nombre = r.Nombre }).ToList())
-                    .WithData("desde", desde.Date))
+                    .WithData("productos", productos.OrderBy(r => r.Producto).Select(r => new ProductoRequeridoEventoDTO { Producto = r.Producto, Nombre = r.Nombre }).ToList())
+                    .WithData("desde", desde.Date)
+                    .WithData("modo", modo))
             { StatusCode = HttpStatusCode.BadRequest, IsWarning = true };
+
+        /// <summary>
+        /// Los productos que justifican hoy en las líneas grabadas del pedido (cantidad positiva, estado que cuenta). Con el modo
+        /// «Todos», al modificar el pedido solo se pregunta si se va alguno de estos.
+        /// </summary>
+        public static List<string> ProductosQueJustifican(IEnumerable<LinPedidoVta> lineasGrabadas) =>
+            (lineasGrabadas ?? Enumerable.Empty<LinPedidoVta>())
+                .Where(l => l.Cantidad > 0 && ESTADOS_QUE_CUENTAN.Contains((int)l.Estado) && !string.IsNullOrWhiteSpace(l.Producto))
+                .Select(l => l.Producto.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
         public static string MensajeAviso(int pedido, List<InscripcionAfectadaPedidoDTO> afectadas, bool borrarPedido)
         {
@@ -163,6 +205,13 @@ namespace NestoAPI.Infraestructure.Eventos
         Task<Dictionary<int, int>> LeerJustificantes(IReadOnlyCollection<int> inscripciones);
         /// <summary>Las inscripciones (todas, de cualquier estado) que justifica el pedido.</summary>
         Task<List<int>> InscripcionesDelPedido(string empresa, int pedido);
+        /// <summary>
+        /// De esos eventos, los que exigen TODOS los productos requeridos (Eventos.ProductosRequeridosTodos,
+        /// Scripts/Issue732_EventosProductosRequeridosModo.sql). Sin la columna, ninguno (todos «Alguno»).
+        /// </summary>
+        Task<HashSet<int>> EventosQueExigenTodos(IReadOnlyCollection<int> eventos);
+        /// <summary>Guarda el modo. False sin la columna.</summary>
+        Task<bool> GuardarModo(int eventoId, bool todos);
     }
 
     public class RepositorioProductosRequeridosEventos : IRepositorioProductosRequeridosEventos
@@ -190,8 +239,13 @@ ORDER BY l.Estado DESC, c.Número DESC";
             "WHERE PedidoJustificante IS NOT NULL AND Id IN ({0})";
         internal const string SQL_DEL_PEDIDO = "SELECT Id FROM dbo.EventosInscripciones WITH (NOLOCK) WHERE Empresa = @empresa AND PedidoJustificante = @pedido";
 
+        internal const string SQL_EXISTE_COLUMNA_MODO = "SELECT CAST(CASE WHEN COL_LENGTH('dbo.Eventos', 'ProductosRequeridosTodos') IS NULL THEN 0 ELSE 1 END AS bit)";
+        internal const string SQL_LEER_MODO = "SELECT Id FROM dbo.Eventos WITH (NOLOCK) WHERE ProductosRequeridosTodos = 1 AND Id IN ({0})";
+        internal const string SQL_GUARDAR_MODO = "UPDATE dbo.Eventos SET ProductosRequeridosTodos = @todos WHERE Id = @id";
+
         private static readonly ComprobadorEsquemaEventos tabla = new ComprobadorEsquemaEventos(SQL_EXISTE_TABLA);
         private static readonly ComprobadorEsquemaEventos columna = new ComprobadorEsquemaEventos(SQL_EXISTE_COLUMNA);
+        private static readonly ComprobadorEsquemaEventos columnaModo = new ComprobadorEsquemaEventos(SQL_EXISTE_COLUMNA_MODO);
         private readonly NVEntities db;
 
         public RepositorioProductosRequeridosEventos(NVEntities db)
@@ -317,6 +371,34 @@ ORDER BY l.Estado DESC, c.Número DESC";
                 new SqlParameter("@pedido", SqlDbType.Int) { Value = pedido }).ToListAsync().ConfigureAwait(false);
         }
 
+        public async Task<HashSet<int>> EventosQueExigenTodos(IReadOnlyCollection<int> eventos)
+        {
+            List<int> ids = (eventos ?? new List<int>()).Distinct().ToList();
+            if (!ids.Any() || !columnaModo.Existe(db))
+            {
+                return new HashSet<int>();
+            }
+            var resultado = new HashSet<int>();
+            foreach (List<int> tanda in RepositorioPersonaAsistenteEventos.Tandas(ids, 500))
+            {
+                resultado.UnionWith(await db.Database.SqlQuery<int>(string.Format(SQL_LEER_MODO, string.Join(",", tanda)))
+                    .ToListAsync().ConfigureAwait(false));
+            }
+            return resultado;
+        }
+
+        public async Task<bool> GuardarModo(int eventoId, bool todos)
+        {
+            if (!columnaModo.Existe(db))
+            {
+                return false;
+            }
+            _ = await db.Database.ExecuteSqlCommandAsync(SQL_GUARDAR_MODO,
+                new SqlParameter("@todos", SqlDbType.Bit) { Value = todos },
+                new SqlParameter("@id", SqlDbType.Int) { Value = eventoId }).ConfigureAwait(false);
+            return true;
+        }
+
         private static string Recortar(string texto, int maximo)
         {
             string limpio = texto?.Trim();
@@ -340,9 +422,12 @@ ORDER BY l.Estado DESC, c.Número DESC";
         Task<List<InscripcionAfectadaPedidoDTO>> AfectadasAlBorrar(string empresa, int pedido);
         /// <summary>
         /// Las que se quedan sin justificante si el pedido queda con estos productos (las líneas que quedan con cantidad
-        /// positiva): las de un evento ninguno de cuyos productos requeridos queda en el pedido.
+        /// positiva): con el modo «Alguno», las de un evento ninguno de cuyos productos requeridos queda en el pedido; con
+        /// «Todos», las de un evento al que se le va del pedido alguno de sus productos requeridos que el pedido tenía
+        /// (<paramref name="productosQueTenia"/>; null = se miran todos los requeridos).
         /// </summary>
-        Task<List<InscripcionAfectadaPedidoDTO>> AfectadasAlModificar(string empresa, int pedido, IEnumerable<string> productosQueQuedan);
+        Task<List<InscripcionAfectadaPedidoDTO>> AfectadasAlModificar(string empresa, int pedido, IEnumerable<string> productosQueQuedan,
+            IEnumerable<string> productosQueTenia = null);
         /// <summary>Anula (Estado Anulada + Modificaciones) y avisa a la tienda. Devuelve las anuladas. Nunca lanza por el aviso.</summary>
         Task<List<InscripcionAfectadaPedidoDTO>> Anular(List<InscripcionAfectadaPedidoDTO> afectadas, int pedido, bool borrarPedido, string usuario);
     }
@@ -377,7 +462,8 @@ ORDER BY l.Estado DESC, c.Número DESC";
         public async Task<List<InscripcionAfectadaPedidoDTO>> AfectadasAlBorrar(string empresa, int pedido) =>
             (await Vivas(empresa, pedido).ConfigureAwait(false)).Select(v => v.Value).ToList();
 
-        public async Task<List<InscripcionAfectadaPedidoDTO>> AfectadasAlModificar(string empresa, int pedido, IEnumerable<string> productosQueQuedan)
+        public async Task<List<InscripcionAfectadaPedidoDTO>> AfectadasAlModificar(string empresa, int pedido, IEnumerable<string> productosQueQuedan,
+            IEnumerable<string> productosQueTenia = null)
         {
             List<KeyValuePair<EventoInscripcion, InscripcionAfectadaPedidoDTO>> vivas = await Vivas(empresa, pedido).ConfigureAwait(false);
             if (!vivas.Any())
@@ -386,12 +472,18 @@ ORDER BY l.Estado DESC, c.Número DESC";
             }
             var quedan = new HashSet<string>((productosQueQuedan ?? Enumerable.Empty<string>())
                 .Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p.Trim()), StringComparer.OrdinalIgnoreCase);
+            HashSet<string> tenia = productosQueTenia == null ? null : new HashSet<string>(productosQueTenia
+                .Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p.Trim()), StringComparer.OrdinalIgnoreCase);
+            List<int> idsEventos = vivas.Select(v => v.Key.EventoId).Distinct().ToList();
             Dictionary<int, List<ProductoRequeridoLeido>> requeridos = await repositorio
-                .Leer(vivas.Select(v => v.Key.EventoId).Distinct().ToList()).ConfigureAwait(false) ?? new Dictionary<int, List<ProductoRequeridoLeido>>();
+                .Leer(idsEventos).ConfigureAwait(false) ?? new Dictionary<int, List<ProductoRequeridoLeido>>();
+            HashSet<int> exigenTodos = await repositorio.EventosQueExigenTodos(idsEventos).ConfigureAwait(false) ?? new HashSet<int>();
             return vivas
                 // Si el evento ya no exige compra, su inscripción no depende del pedido
                 .Where(v => requeridos.TryGetValue(v.Key.EventoId, out List<ProductoRequeridoLeido> r) && r.Any()
-                    && !r.Any(p => quedan.Contains(p.Producto?.Trim() ?? "")))
+                    && (exigenTodos.Contains(v.Key.EventoId)
+                        ? r.Select(p => p.Producto?.Trim() ?? "").Any(p => (tenia == null || tenia.Contains(p)) && !quedan.Contains(p))
+                        : !r.Any(p => quedan.Contains(p.Producto?.Trim() ?? ""))))
                 .Select(v => v.Value)
                 .ToList();
         }

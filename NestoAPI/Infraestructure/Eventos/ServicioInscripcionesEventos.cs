@@ -516,7 +516,8 @@ GROUP BY RTRIM(c.[Nº Cliente])";
             }
 
             // NestoAPI#732: «gratuito por compra». Si el evento exige productos, el cliente tiene que haber comprado o pedido
-            // alguno (ReglasProductosRequeridosEvento); el pedido que lo justifica se guarda en la inscripción.
+            // alguno (modo «Alguno») o todos (modo «Todos»; ReglasProductosRequeridosEvento); el pedido que lo justifica se
+            // guarda en la inscripción.
             JustificanteCompraEvento justificante = null;
             if (ProductosRequeridos != null)
             {
@@ -525,9 +526,13 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                 if (requeridos.Any())
                 {
                     DateTime desde = ReglasProductosRequeridosEvento.Desde(requeridos);
-                    justificante = await ProductosRequeridos.BuscarJustificante(empresa, cliente,
-                        requeridos.Select(r => r.Producto).ToList(), desde).ConfigureAwait(false)
-                        ?? throw ReglasProductosRequeridosEvento.RequiereCompra(evento.Titulo, requeridos, desde);
+                    bool exigeTodos = (await ProductosRequeridos.EventosQueExigenTodos(new List<int> { evento.Id }).ConfigureAwait(false))?
+                        .Contains(evento.Id) == true;
+                    justificante = exigeTodos
+                        ? await JustificanteDeTodos(empresa, cliente, evento.Titulo, requeridos, desde).ConfigureAwait(false)
+                        : await ProductosRequeridos.BuscarJustificante(empresa, cliente,
+                            requeridos.Select(r => r.Producto).ToList(), desde).ConfigureAwait(false)
+                            ?? throw ReglasProductosRequeridosEvento.RequiereCompra(evento.Titulo, requeridos, desde);
                 }
             }
 
@@ -756,6 +761,36 @@ GROUP BY RTRIM(c.[Nº Cliente])";
                 ElmahHelper.Log(new Exception($"[Eventos #731] La inscripción {inscripcion} está hecha, pero no se ha podido guardar quién asiste ({numero}): {ex.Message}", ex));
                 return false;
             }
+        }
+
+        /// <summary>
+        /// NestoAPI#732, modo «Todos»: cada producto requerido tiene que tener su línea (mismas líneas válidas y misma ventana
+        /// que con «Alguno»). Si falta alguno, 400 EVENTO_REQUIERE_COMPRA con los que faltan; si no, el justificante es el pedido
+        /// más reciente de los que justifican.
+        /// </summary>
+        private async Task<JustificanteCompraEvento> JustificanteDeTodos(string empresa, string cliente, string titulo,
+            List<ProductoRequeridoLeido> requeridos, DateTime desde)
+        {
+            var encontrados = new List<JustificanteCompraEvento>();
+            var faltan = new List<ProductoRequeridoLeido>();
+            foreach (ProductoRequeridoLeido requerido in requeridos)
+            {
+                JustificanteCompraEvento suyo = await ProductosRequeridos.BuscarJustificante(empresa, cliente,
+                    new List<string> { requerido.Producto }, desde).ConfigureAwait(false);
+                if (suyo == null)
+                {
+                    faltan.Add(requerido);
+                }
+                else
+                {
+                    encontrados.Add(suyo);
+                }
+            }
+            if (faltan.Any())
+            {
+                throw ReglasProductosRequeridosEvento.RequiereCompraTodos(titulo, faltan, desde);
+            }
+            return encontrados.OrderByDescending(j => j.Pedido).First();
         }
 
         /// <summary>
