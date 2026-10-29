@@ -1,6 +1,7 @@
 using NestoAPI.Infrastructure;
 using NestoAPI.Models;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Security.Claims;
 using System.Security.Principal;
@@ -12,7 +13,9 @@ namespace NestoAPI.Infraestructure.Eventos
     /// con ese AlmacénPedidoVta en ParametrosUsuario) y Administración; uno sin tienda (los de #591 y los que crea el Nesto de
     /// hoy), los mismos que en #591 (Tienda online). Dirección (e Informática) puede con todo. Marcar pagada: además,
     /// Administración en cualquier evento.
-    /// Inscribir puede cualquiera de la casa (Nesto, vendedores en NestoApp) y el cliente de la tienda online, solo a sí mismo.
+    /// Inscribir (NestoAPI#741, Carlos 29/10/26): cada comercial a sus clientes, el jefe de equipo a los de su equipo;
+    /// Administración, Tiendas, Tienda online y Dirección (e Informática) a cualquiera; el cliente de la tienda online, a sí mismo
+    /// (<see cref="PuedeInscribir"/>).
     /// </summary>
     public static class PermisosEventos
     {
@@ -71,6 +74,63 @@ namespace NestoAPI.Infraestructure.Eventos
         public static bool PuedeMarcarPagada(IPrincipal usuario, string almacenUsuario, string almacenEvento) =>
             PuedeMantener(usuario, almacenUsuario, almacenEvento)
             || (usuario != null && ClienteDelToken(usuario) == null && usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.ADMINISTRACION));
+
+        public const string MENSAJE_SIN_PERMISO_INSCRIBIR =
+            "Solo puede inscribir a sus clientes (si es jefe de equipo, también a los de su equipo). Para inscribir a este " +
+            "cliente, pídaselo a su comercial o a Administración.";
+
+        /// <summary>
+        /// NestoAPI#741: los que inscriben a cualquier cliente: Administración, Tiendas, Tienda online y Dirección (e Informática).
+        /// </summary>
+        public static bool PuedeInscribirACualquiera(IPrincipal usuario) =>
+            usuario != null && ClienteDelToken(usuario) == null
+            && (EsDireccion(usuario)
+                || usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.ADMINISTRACION)
+                || usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.TIENDAS)
+                || usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.TIENDA_ON_LINE));
+
+        /// <summary>
+        /// NestoAPI#741: LA regla de quién puede inscribir a quién en un evento (sugerencia 863, Carlos 29/10/26).
+        /// <list type="bullet">
+        /// <item>El cliente de la tienda online: solo a sí mismo.</item>
+        /// <item>Administración, Tiendas, Tienda online y Dirección (e Informática): a cualquiera.</item>
+        /// <item>Un comercial: a los clientes cuyo vendedor de estética o de peluquería (<paramref name="vendedoresCliente"/>)
+        /// es el suyo (<paramref name="vendedorUsuario"/>) o, si es jefe de equipo, de su equipo (<paramref name="equipo"/>).</item>
+        /// <item>Cualquier otro (sin vendedor): nadie.</item>
+        /// </list>
+        /// </summary>
+        public static bool PuedeInscribir(IPrincipal usuario, string cliente, string vendedorUsuario,
+            IEnumerable<string> equipo, IEnumerable<string> vendedoresCliente)
+        {
+            if (usuario == null)
+            {
+                return false;
+            }
+            string clienteDelToken = ClienteDelToken(usuario);
+            if (clienteDelToken != null)
+            {
+                return string.Equals(clienteDelToken, cliente?.Trim(), StringComparison.OrdinalIgnoreCase);
+            }
+            if (PuedeInscribirACualquiera(usuario))
+            {
+                return true;
+            }
+            string propio = vendedorUsuario?.Trim();
+            if (string.IsNullOrEmpty(propio))
+            {
+                return false;
+            }
+            var suyos = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { propio };
+            foreach (string vendedor in equipo ?? Enumerable.Empty<string>())
+            {
+                if (!string.IsNullOrWhiteSpace(vendedor))
+                {
+                    _ = suyos.Add(vendedor.Trim());
+                }
+            }
+            return (vendedoresCliente ?? Enumerable.Empty<string>())
+                .Any(v => !string.IsNullOrWhiteSpace(v) && suyos.Contains(v.Trim()));
+        }
 
         public const string MENSAJE_SIN_PERMISO_IMAGEN =
             "La imagen del evento la pone Tienda online.";
