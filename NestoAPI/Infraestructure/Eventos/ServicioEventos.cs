@@ -129,6 +129,9 @@ namespace NestoAPI.Infraestructure.Eventos
         /// (POST/PUT), solo si viene: la lista que venga sustituye a la que hubiera (vacía = deja de exigir compra); null o sin
         /// el campo, no se toca. Se manda solo Producto; Nombre se ignora.
         /// </summary>
+        // 29/10/26: Replace para que Json.NET cree la lista y llame al setter (con Auto rellenaba la lista ya creada sin
+        // pasar por él, TraeProductosRequeridos() daba false y los productos que mandaba Nesto no se guardaban: evento 4).
+        [Newtonsoft.Json.JsonProperty(ObjectCreationHandling = Newtonsoft.Json.ObjectCreationHandling.Replace)]
         public List<ProductoRequeridoEventoDTO> ProductosRequeridos
         {
             get => productosRequeridos;

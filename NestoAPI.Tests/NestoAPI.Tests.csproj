@@ -660,6 +660,7 @@
     <Compile Include="Infrastructure\CambioAlmacenPedidoTests.cs" />
     <Compile Include="Infrastructure\Reposiciones\ServicioTransitoReposicionesTests.cs" />
     <Compile Include="Infrastructure\Eventos\EstadoSenalEventoTests.cs" />
+    <Compile Include="Infrastructure\Eventos\EventoDTOJsonTests.cs" />
     <Compile Include="Infrastructure\Eventos\ServicioEventosTests.cs" />
     <Compile Include="Infrastructure\Eventos\AnunciosEventosTests.cs" />
     <Compile Include="Controllers\PreferenciasNotificacionesControllerTests.cs" />
