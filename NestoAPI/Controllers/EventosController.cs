@@ -404,6 +404,33 @@ namespace NestoAPI.Controllers
             return ResponseMessage(respuesta);
         }
 
+        // GET api/Eventos/PersonasContacto?empresa=1&cliente=15191&contacto=0
+        /// <summary>
+        /// NestoAPI#731: las personas de contacto del cliente, para el combo «Asiste» de la inscripción: [{ Contacto, Numero, Nombre,
+        /// Correo, Telefono }]. Con contacto, solo las de esa dirección (las que se pueden elegir en una inscripción de ese
+        /// contacto); sin él, las de todas. Solo la casa (403 con el token de la tienda online).
+        /// </summary>
+        [HttpGet]
+        [Route("PersonasContacto")]
+        [ResponseType(typeof(List<PersonaContactoEventoDTO>))]
+        public async Task<IHttpActionResult> GetPersonasContacto(string cliente, string contacto = null, string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            return Ok(await inscripciones.LeerPersonasContacto(empresa, cliente, contacto, User).ConfigureAwait(false));
+        }
+
+        // PUT api/Eventos/Inscripciones/7/PersonaContacto   { PersonaContacto: "2" }   (null o "" = quitarla)
+        /// <summary>
+        /// NestoAPI#731: cambia la persona que asiste (una persona de contacto del mismo cliente y contacto que la inscripción; 400
+        /// si no). Quien mantiene el evento (la tienda del evento, Administración o Dirección). Devuelve la inscripción.
+        /// </summary>
+        [HttpPut]
+        [Route("Inscripciones/{id:int}/PersonaContacto")]
+        [ResponseType(typeof(InscripcionEventoDTO))]
+        public async Task<IHttpActionResult> PutPersonaContactoInscripcion(int id, [FromBody] CambiarPersonaContactoInscripcionDTO peticion)
+        {
+            return Ok(await inscripciones.CambiarPersonaContacto(id, peticion, User).ConfigureAwait(false));
+        }
+
         // GET api/Clientes/1/15191/Inscripciones?contacto=0
         /// <summary>Las inscripciones de un cliente (de todos sus contactos si no se pide uno). El cliente de la tienda, solo las suyas.</summary>
         [HttpGet]
