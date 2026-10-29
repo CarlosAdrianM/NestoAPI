@@ -159,6 +159,7 @@ namespace NestoAPI.Controllers
         /// presenciales, solo a la zona de Madrid; cada cliente puede apagarlo). Fuera de 9:00-21:00 queda programado para las
         /// 9:00. Los mismos que pueden mantener el evento. 400 EVENTO_INCOMPLETO (details.queFalta) si no está completo; 409
         /// EVENTO_YA_ANUNCIADO si ya se anunció y no viene otraVez (para repetir hace falta un Reclamo de hasta 60 caracteres).
+        /// Solo Tienda online o Dirección (Carlos, 29/10/26).
         /// </summary>
         [HttpPost]
         [Route("{id:int}/Anunciar")]
@@ -170,9 +171,9 @@ namespace NestoAPI.Controllers
             {
                 return NotFound();
             }
-            if (!PuedeMantener(null, almacenEvento))
+            if (!PermisosEventos.PuedeAnunciar(User))
             {
-                return Prohibido(PermisosEventos.MENSAJE_SIN_PERMISO_EVENTOS);
+                return Prohibido(PermisosEventos.MENSAJE_SIN_PERMISO_ANUNCIAR);
             }
             return Ok(await Anuncios.Anunciar(id, otraVez, peticion?.Reclamo, UsuarioAuditoriaHelper.Resolver(User, null)).ConfigureAwait(false));
         }

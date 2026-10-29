@@ -1,4 +1,4 @@
-using NestoAPI.Infrastructure;
+﻿using NestoAPI.Infrastructure;
 using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
@@ -78,6 +78,15 @@ namespace NestoAPI.Infraestructure.Eventos
         public const string MENSAJE_SIN_PERMISO_INSCRIBIR =
             "Solo puede inscribir a sus clientes (si es jefe de equipo, también a los de su equipo). Para inscribir a este " +
             "cliente, pídaselo a su comercial o a Administración.";
+
+        /// <summary>
+        /// Anunciar un evento por push (NestoAPI#692): Dirección (e Informática) o Tienda online (Carlos, 29/10/26: «que puedan
+        /// enviarlo Dirección o Tienda online en vez de Dirección o tienda»). Tienda online es quien completa el evento con la foto.
+        /// </summary>
+        public static bool PuedeAnunciar(IPrincipal usuario) =>
+            usuario != null && (EsDireccion(usuario) || usuario.IsInRoleSinDominio(Constantes.GruposSeguridad.TIENDA_ON_LINE));
+
+        public const string MENSAJE_SIN_PERMISO_ANUNCIAR = "Anunciar un evento en las apps lo hacen Tienda online o Dirección.";
 
         /// <summary>
         /// NestoAPI#741: los que inscriben a cualquier cliente: Administración, Tiendas, Tienda online y Dirección (e Informática).

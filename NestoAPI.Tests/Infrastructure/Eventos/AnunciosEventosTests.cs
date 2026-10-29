@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure.Cupones;
@@ -417,7 +417,7 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
         }
 
         [TestMethod]
-        public async Task Controlador_LaTiendaDelEvento_AnunciaConOtraVezYReclamo()
+        public async Task Controlador_TiendaOnline_AnunciaConOtraVezYReclamo()
         {
             IServicioEventos servicio = A.Fake<IServicioEventos>();
             A.CallTo(() => servicio.AlmacenDelEvento(12)).Returns(Task.FromResult("REI"));
@@ -426,7 +426,8 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             var controlador = new EventosController(A.Fake<NVEntities>(), servicio, A.Fake<IServicioInscripcionesEventos>(), A.Fake<IServicioPropuestasSenales>())
             {
                 Request = new HttpRequestMessage(),
-                User = Usuario("Reina", Constantes.GruposSeguridad.TIENDAS),
+                // Carlos (29/10/26): anuncian Tienda online o Dirección (antes, la tienda del evento).
+                User = Usuario("Laura", Constantes.GruposSeguridad.TIENDA_ON_LINE),
                 Anuncios = anunciador
             };
 
@@ -454,6 +455,19 @@ namespace NestoAPI.Tests.Infrastructure.Eventos
             A.CallTo(() => ((IQueryable<T>)fake).ElementType).Returns(typeof(T));
             A.CallTo(() => ((IQueryable<T>)fake).GetEnumerator()).ReturnsLazily(() => datos.ToList().GetEnumerator());
             return fake;
+        }
+    
+        // Carlos (29/10/26): anuncian Tienda online o Dirección (e Informática), no las tiendas ni Administración.
+        [TestMethod]
+        public void PuedeAnunciar_SoloTiendaOnlineYDireccion()
+        {
+            System.Security.Principal.IPrincipal Usuario(params string[] grupos) =>
+                new System.Security.Principal.GenericPrincipal(new System.Security.Principal.GenericIdentity("x"), grupos);
+            Assert.IsTrue(PermisosEventos.PuedeAnunciar(Usuario(Constantes.GruposSeguridad.TIENDA_ON_LINE)));
+            Assert.IsTrue(PermisosEventos.PuedeAnunciar(Usuario(Constantes.GruposSeguridad.DIRECCION)));
+            Assert.IsFalse(PermisosEventos.PuedeAnunciar(Usuario(Constantes.GruposSeguridad.TIENDAS)));
+            Assert.IsFalse(PermisosEventos.PuedeAnunciar(Usuario(Constantes.GruposSeguridad.ADMINISTRACION)));
+            Assert.IsFalse(PermisosEventos.PuedeAnunciar(null));
         }
     }
 }
